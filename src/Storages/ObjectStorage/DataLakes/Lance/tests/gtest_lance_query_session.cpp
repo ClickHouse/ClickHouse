@@ -4,6 +4,7 @@
 
 #include <gtest/gtest.h>
 
+#include <Columns/IColumn.h>
 #include <DataTypes/DataTypesNumber.h>
 #include <Interpreters/Context.h>
 #include <Storages/ObjectStorage/DataLakes/Lance/LanceQuerySession.h>
@@ -544,12 +545,24 @@ TEST(LanceCountSource, RejectsZeroMaxBlockSize)
         Exception);
 }
 
-TEST(LanceCountSource, RejectsPhysicalOutputColumns)
+TEST(LanceCountSource, EmitsDefaultPhysicalColumns)
 {
     const auto header = makeInt64Header();
-    EXPECT_THROW(
-        Lance::CountSource(header, std::make_unique<FakeCountProvider>(1), 1),
-        Exception);
+    Lance::CountSource source(header, std::make_unique<FakeCountProvider>(3), 2);
+
+    auto first = source.generate();
+    ASSERT_TRUE(first);
+    ASSERT_EQ(first.getNumColumns(), 1);
+    ASSERT_EQ(first.getNumRows(), 2);
+    EXPECT_EQ(first.getColumns().front()->getInt(0), 0);
+    EXPECT_EQ(first.getColumns().front()->getInt(1), 0);
+
+    auto second = source.generate();
+    ASSERT_TRUE(second);
+    ASSERT_EQ(second.getNumColumns(), 1);
+    ASSERT_EQ(second.getNumRows(), 1);
+    EXPECT_EQ(second.getColumns().front()->getInt(0), 0);
+    EXPECT_FALSE(source.generate());
 }
 
 TEST(LanceCountSource, CountFailureCancelsAndPropagates)

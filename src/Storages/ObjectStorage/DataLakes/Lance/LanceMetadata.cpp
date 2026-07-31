@@ -1291,22 +1291,8 @@ Pipe LanceMetadata::makeReadPipe(
 
     if (use_row_count_source)
     {
-        ColumnsWithTypeAndName row_count_columns;
-        row_count_columns.reserve(requested_virtual_columns.size());
-        for (const auto & column : output_header)
-        {
-            if (requested_virtual_columns.contains(column.name))
-                row_count_columns.emplace_back(column.type->createColumn(), column.type, column.name);
-        }
-        if (row_count_columns.size() != requested_virtual_columns.size())
-        {
-            throw Exception(
-                ErrorCodes::LOGICAL_ERROR,
-                "`Lance` row-count Source header is missing one or more requested virtual columns");
-        }
-        Block row_count_header(std::move(row_count_columns));
         auto source = std::make_shared<Lance::CountSource>(
-            row_count_header,
+            output_header,
             std::move(dataset),
             std::move(scan_description),
             std::move(cancellation),

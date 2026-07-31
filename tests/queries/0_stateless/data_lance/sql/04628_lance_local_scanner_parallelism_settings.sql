@@ -20,7 +20,7 @@ SETTINGS
 
 SET log_queries = 1;
 
-SELECT count()
+SELECT sum(id)
 FROM lance_local_scanner_parallelism
 FORMAT Null
 SETTINGS

@@ -210,6 +210,7 @@ protected:
 private:
     std::unique_ptr<Provider> provider;
     size_t max_block_size;
+    Block physical_header;
     NamesAndTypesList requested_virtual_columns;
     ReadVirtualValues virtual_values;
     ContextPtr context;

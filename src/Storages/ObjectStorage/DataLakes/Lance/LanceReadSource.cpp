@@ -563,6 +563,18 @@ void addVirtualColumns(
         format_settings);
 }
 
+Block makePhysicalHeader(const Block & output_header, const NamesAndTypesList & requested_virtual_columns)
+{
+    ColumnsWithTypeAndName physical_columns;
+    physical_columns.reserve(output_header.columns());
+    for (const auto & column : output_header)
+    {
+        if (!requested_virtual_columns.contains(column.name))
+            physical_columns.emplace_back(column.type->createColumn(), column.type, column.name);
+    }
+    return Block(std::move(physical_columns));
+}
+
 class DatasetCountProvider final : public CountSource::Provider
 {
 public:
@@ -704,6 +716,7 @@ CountSource::CountSource(
     : ISource(std::make_shared<const Block>(output_header_), /*enable_auto_progress=*/true)
     , provider(std::make_unique<DatasetCountProvider>(std::move(dataset_), scan_, std::move(cancellation_)))
     , max_block_size(scan_.max_block_size)
+    , physical_header(makePhysicalHeader(output_header_, requested_virtual_columns_))
     , requested_virtual_columns(std::move(requested_virtual_columns_))
     , virtual_values(std::move(virtual_values_))
     , context(std::move(context_))
@@ -711,17 +724,6 @@ CountSource::CountSource(
 {
     if (max_block_size == 0)
         throw Exception(ErrorCodes::BAD_ARGUMENTS, "`Lance` row-count Source requires max_block_size greater than zero");
-
-    for (const auto & column : output_header_)
-    {
-        if (!requested_virtual_columns.contains(column.name))
-        {
-            throw Exception(
-                ErrorCodes::LOGICAL_ERROR,
-                "`Lance` row-count Source cannot produce physical output column '{}'",
-                column.name);
-        }
-    }
 }
 
 CountSource::CountSource(
@@ -735,6 +737,7 @@ CountSource::CountSource(
     : ISource(std::make_shared<const Block>(output_header_), /*enable_auto_progress=*/true)
     , provider(std::move(provider_))
     , max_block_size(max_block_size_)
+    , physical_header(makePhysicalHeader(output_header_, requested_virtual_columns_))
     , requested_virtual_columns(std::move(requested_virtual_columns_))
     , virtual_values(std::move(virtual_values_))
     , context(std::move(context_))
@@ -744,17 +747,6 @@ CountSource::CountSource(
         throw Exception(ErrorCodes::LOGICAL_ERROR, "`Lance` row-count Source requires a count provider");
     if (max_block_size == 0)
         throw Exception(ErrorCodes::BAD_ARGUMENTS, "`Lance` row-count Source requires max_block_size greater than zero");
-
-    for (const auto & column : output_header_)
-    {
-        if (!requested_virtual_columns.contains(column.name))
-        {
-            throw Exception(
-                ErrorCodes::LOGICAL_ERROR,
-                "`Lance` row-count Source cannot produce physical output column '{}'",
-                column.name);
-        }
-    }
 }
 
 void CountSource::onCancel() noexcept
@@ -791,7 +783,7 @@ Chunk CountSource::generate()
         if (*rows_remaining == 0)
             is_finished = true;
 
-        Chunk chunk(Columns{}, chunk_rows);
+        auto chunk = cloneConstWithDefault(Chunk{physical_header.getColumns(), 0}, chunk_rows);
         addVirtualColumns(chunk, requested_virtual_columns, virtual_values, context, format_settings);
         return chunk;
     }
