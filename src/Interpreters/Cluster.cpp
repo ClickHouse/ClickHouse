@@ -950,7 +950,7 @@ std::vector<const Cluster::Address *> Cluster::filterAddressesByShardOrReplica(s
 const std::string & Cluster::ShardInfo::insertPathForInternalReplication(bool prefer_localhost_replica, bool use_compact_format) const
 {
     if (!has_internal_replication)
-        throw Exception(ErrorCodes::LOGICAL_ERROR, "internal_replication is not set");
+        throw Exception(ErrorCodes::ARGUMENT_OUT_OF_BOUND, "internal_replication is not set");
 
     const auto & paths = insert_path_for_internal_replication;
     if (!use_compact_format)
@@ -958,7 +958,7 @@ const std::string & Cluster::ShardInfo::insertPathForInternalReplication(bool pr
         const auto & path = prefer_localhost_replica ? paths.prefer_localhost_replica : paths.no_prefer_localhost_replica;
         if (path.size() > NAME_MAX)
         {
-            throw Exception(ErrorCodes::LOGICAL_ERROR,
+            throw Exception(ErrorCodes::ARGUMENT_OUT_OF_BOUND,
                 "Path '{}' for async distributed INSERT is too long (exceed {} limit)", path, NAME_MAX);
         }
         return path;
