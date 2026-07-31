@@ -53,10 +53,20 @@ StoragePtr TableFunctionRemote::executeImpl(const ASTPtr & /*ast_function*/, Con
         }
     }
 
-    if (has_local_shard && !is_insert_query)
-        context->checkAccess(AccessType::SELECT, remote_table_id);
-    else if (has_local_shard)
-        context->checkAccess(AccessType::INSERT, remote_table_id);
+    /// A table-function target has no remote table, so `remote_table_id` is left at the meaningless parser
+    /// default (`system.one`) and checking access on it would demand unrelated privileges: `INSERT` on
+    /// `system.one` (never implicitly granted) for `CREATE TABLE ... AS remote(..., table_function())` and
+    /// for `INSERT INTO FUNCTION remote(..., table_function())`, which must instead be rejected with
+    /// `NOT_IMPLEMENTED` by `StorageDistributed::write`. Access to the target itself is checked by the
+    /// table function when it is executed on a local shard (`ITableFunction::execute` -> `checkSourceAccess`)
+    /// and by `getActualTableStructureWithAccess` when its structure is inferred.
+    if (has_local_shard && !remote_table_function_ptr)
+    {
+        if (!is_insert_query)
+            context->checkAccess(AccessType::SELECT, remote_table_id);
+        else
+            context->checkAccess(AccessType::INSERT, remote_table_id);
+    }
 
     StoragePtr res = std::make_shared<StorageDistributed>(
             StorageID(getDatabaseName(), table_name),

@@ -107,9 +107,9 @@ ParsedRemoteFunctionArguments parseRemoteFunctionArguments(
         if (remote_table_function_ptr)
         {
             /// Match the positional remote('addr', table_function()) form: the parsed table id stays at
-            /// the meaningless parser default (`system.one`), which the callers rely on (it takes part
-            /// in the local-shard access check of `TableFunctionRemote`, while the engine skips it in
-            /// favor of analyzing the function itself).
+            /// the meaningless parser default (`system.one`). It is never used for a table-function
+            /// target: `TableFunctionRemote` skips its access check and the engine analyzes the function
+            /// itself instead.
             database = "system";
         }
         else
