@@ -4,10 +4,11 @@
 -- required right key column still had the full block size. Applying it to the shorter left key
 -- column raised a size-mismatch LOGICAL_ERROR.
 
--- The old analyzer rejects the non-equi ON condition with INVALID_JOIN_ON_EXPRESSION, and
--- swapping the tables makes this a RIGHT join, which is not promoted to RightAny and never
--- reaches the truncated prefix. join_use_nulls decides whether the right key becomes Nullable,
--- which selects which of the two errors below is raised, so it is pinned per query.
+-- The old analyzer rejects the non-equi ON condition with INVALID_JOIN_ON_EXPRESSION. Swapping the
+-- tables makes this a RIGHT ALL join, which is not promoted to RightAny; it can still stop at the
+-- candidate limit, but that path replicates and so has always resized the filter. join_use_nulls
+-- decides whether the right key becomes Nullable, which selects which of the two errors below is
+-- raised, so it is pinned per query.
 SET enable_analyzer = 1;
 SET query_plan_join_swap_table = false;
 SET use_query_cache = 0;
