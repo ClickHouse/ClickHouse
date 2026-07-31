@@ -72,7 +72,7 @@ TEST(CoordinationSettingsValidation, RejectZeroBatchSizes)
 TEST(CoordinationSettingsValidation, WriteSnapshotVersionHotReload)
 {
     auto ctx = std::make_shared<DB::KeeperContext>(true, std::make_shared<DB::CoordinationSettings>());
-    EXPECT_EQ(ctx->getWriteSnapshotVersion(), DB::SnapshotVersion::V6);
+    EXPECT_EQ(ctx->getWriteSnapshotVersion(), DB::SnapshotVersion::V7);
 
     /// write_snapshot_version is hot-reloadable: a valid update takes effect.
     auto updated = std::make_shared<DB::CoordinationSettings>();

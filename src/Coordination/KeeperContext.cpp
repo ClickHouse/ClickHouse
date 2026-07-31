@@ -308,9 +308,6 @@ void KeeperContext::validateCoordinationSettings(const CoordinationSettings & se
         throw Exception(ErrorCodes::BAD_ARGUMENTS, "Unsupported write snapshot version {} (must be between {} and {})",
             version, SnapshotVersion::V6, MAX_SUPPORTED_SNAPSHOT_VERSION);
 
-    /// TTL metadata (destroy_time/ttl) is only serialized starting with snapshot
-    /// V8. Enabling CREATE_TTL with an older write version would silently turn
-    /// TTL nodes into permanent persistent nodes on the next snapshot.
     if (feature_flags.isEnabled(KeeperFeatureFlag::CREATE_TTL) && version < SnapshotVersion::V8)
         throw Exception(ErrorCodes::BAD_ARGUMENTS,
             "Feature flag CREATE_TTL requires write_snapshot_version >= {}, but it is set to {}. "

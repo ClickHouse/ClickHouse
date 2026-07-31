@@ -183,7 +183,7 @@ def test_write_snapshot_version_hot_reload(started_cluster):
     keeper_utils.wait_until_connected(cluster, node)
 
     settings = get_coordination_settings(node)
-    assert settings["write_snapshot_version"] == "6"
+    assert settings["write_snapshot_version"] == "7"
 
     with node.with_replace_config(DYNAMIC_CONFIG_PATH, SNAPSHOT_VERSION_9_CONFIG, reload_after=True):
         wait_for_setting(node, "write_snapshot_version", "9")
@@ -218,13 +218,13 @@ def test_write_snapshot_version_invalid_value_rejected(started_cluster):
     keeper_utils.wait_until_connected(cluster, node)
 
     settings = get_coordination_settings(node)
-    assert settings["write_snapshot_version"] == "6"
+    assert settings["write_snapshot_version"] == "7"
 
     with node.with_replace_config(DYNAMIC_CONFIG_PATH, SNAPSHOT_VERSION_INVALID_CONFIG, reload_after=True):
         node.wait_for_log_line("Unsupported write snapshot version 3")
 
         settings = get_coordination_settings(node)
-        assert settings["write_snapshot_version"] == "6"
+        assert settings["write_snapshot_version"] == "7"
 
         # Keeper must remain fully operational after the rejected reload.
         node.query(
