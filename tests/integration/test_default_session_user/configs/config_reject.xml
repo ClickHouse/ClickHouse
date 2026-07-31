@@ -7,4 +7,12 @@
 
     <grpc_port>9100</grpc_port>
     <arrowflight_port>9110</arrowflight_port>
+
+    <!-- The rejects have to be auditable: `system.session_log` records them as
+         `LoginFailure` events with an empty user name. -->
+    <session_log>
+        <database>system</database>
+        <table>session_log</table>
+        <flush_interval_milliseconds>1000</flush_interval_milliseconds>
+    </session_log>
 </clickhouse>
