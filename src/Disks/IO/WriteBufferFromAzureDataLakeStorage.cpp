@@ -168,7 +168,28 @@ void WriteBufferFromAzureDataLakeStorage::runWithRetries(
 
     Stopwatch watch;
     size_t backoff_ms = 100;
-    for (size_t attempt = 1; attempt < ADLFS_MAX_RETRIES; ++attempt)
+    size_t attempt = 1;
+
+    /// Shared budget/backoff tail for both failure kinds: give up (log + throw) once the retry
+    /// budget is spent, otherwise warn and sleep before the next attempt.
+    auto retry_or_throw = [&](Int32 code, const String & msg, const char * kind)
+    {
+        if (attempt >= max_unexpected_write_error_retries)
+        {
+            log_event(code, msg, watch.elapsedMicroseconds());
+            throw Exception(
+                ErrorCodes::AZURE_BLOB_STORAGE_ERROR,
+                "ADLS Gen2 {} failed for `{}`: {}: {}", what, blob_path, kind, msg);
+        }
+
+        LOG_WARNING(log, "ADLS Gen2 {} attempt {} for `{}` failed: {}: {}. Retrying after {} ms.",
+            what, attempt, blob_path, kind, msg, backoff_ms);
+
+        sleepForMilliseconds(backoff_ms);
+        backoff_ms *= 2;
+    };
+
+    for (; attempt < ADLFS_MAX_RETRIES; ++attempt)
     {
         LOG_TRACE(log, "ADLS Gen2 {} attempt {} for `{}`", what, attempt, blob_path);
         try
@@ -180,8 +201,9 @@ void WriteBufferFromAzureDataLakeStorage::runWithRetries(
         }
         catch (const Azure::Core::RequestFailedException & e)
         {
-            const bool retryable = isRetryableAzureException(e);
-            if (!retryable || attempt >= max_unexpected_write_error_retries)
+            /// A non-retryable HTTP error fails immediately (keeping the numeric status in the
+            /// message); a retryable one goes through the shared budget/backoff tail.
+            if (!isRetryableAzureException(e))
             {
                 log_event(static_cast<Int32>(e.StatusCode), e.Message, watch.elapsedMicroseconds());
                 throw Exception(
@@ -193,32 +215,13 @@ void WriteBufferFromAzureDataLakeStorage::runWithRetries(
                     e.Message);
             }
 
-            LOG_WARNING(log, "ADLS Gen2 {} attempt {} for `{}` failed: HTTP {}: {}. Retrying after {} ms.",
-                what, attempt, blob_path, static_cast<int>(e.StatusCode), e.Message, backoff_ms);
-
-            sleepForMilliseconds(backoff_ms);
-            backoff_ms *= 2;
+            retry_or_throw(static_cast<Int32>(e.StatusCode), e.Message, "HTTP error");
         }
         catch (const Azure::Core::Credentials::AuthenticationException & e)
         {
             /// Credential/RBAC token-acquisition failures are transient during the auth-propagation
             /// window (same rationale as 403 in isRetryableAzureException), so retry within budget.
-            if (attempt >= max_unexpected_write_error_retries)
-            {
-                log_event(static_cast<Int32>(ErrorCodes::AZURE_BLOB_STORAGE_ERROR), e.what(), watch.elapsedMicroseconds());
-                throw Exception(
-                    ErrorCodes::AZURE_BLOB_STORAGE_ERROR,
-                    "ADLS Gen2 {} failed for `{}`: authentication error: {}",
-                    what,
-                    blob_path,
-                    e.what());
-            }
-
-            LOG_WARNING(log, "ADLS Gen2 {} attempt {} for `{}` failed: authentication error: {}. Retrying after {} ms.",
-                what, attempt, blob_path, e.what(), backoff_ms);
-
-            sleepForMilliseconds(backoff_ms);
-            backoff_ms *= 2;
+            retry_or_throw(static_cast<Int32>(ErrorCodes::AZURE_BLOB_STORAGE_ERROR), e.what(), "authentication error");
         }
     }
     log_event(static_cast<Int32>(ErrorCodes::AZURE_BLOB_STORAGE_ERROR), "retries exhausted", watch.elapsedMicroseconds());
