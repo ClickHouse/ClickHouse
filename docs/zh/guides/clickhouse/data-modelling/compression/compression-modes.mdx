@@ -38,17 +38,17 @@ LZ4 和 ZSTD 都出自同一位作者，但取舍各不相同。
   ## 块
 </div>
 
-| 字段                  | 类型      | 描述                                                                       |
-| ------------------- | ------- | ------------------------------------------------------------------------ |
-| checksum            | uint128 |  (头部 + 压缩数据) 的 [哈希值](/zh/resources/develop-contribute/native-protocol/hash) |
-| raw&#95;size        | uint32  | 不含头部的原始大小                                                                |
-| data&#95;size       | uint32  | 未压缩数据大小                                                                  |
-| mode                | byte    | 压缩模式                                                                     |
-| compressed&#95;data | binary  | 压缩数据块                                                                    |
+| 字段                  | 类型      | 描述                                                                      |
+| ------------------- | ------- | ----------------------------------------------------------------------- |
+| checksum            | uint128 | (请求头 + 压缩数据) 的 [哈希](/zh/resources/develop-contribute/native-protocol/hash) |
+| raw&#95;size        | uint32  | 不含请求头的原始大小                                                              |
+| data&#95;size       | uint32  | 未压缩数据大小                                                                 |
+| mode                | byte    | 压缩模式                                                                    |
+| compressed&#95;data | binary  | 压缩数据块                                                                   |
 
 <Image img="/images/data-compression/ch_compression_block.webp" size="md" alt="说明 ClickHouse 压缩块结构的示意图" />
 
-头部为 (raw&#95;size + data&#95;size + mode)，raw&#95;size 的值为 len(header + compressed&#95;data)。
+请求头为 (raw&#95;size + data&#95;size + mode)，raw&#95;size 的值为 len(请求头 + compressed&#95;data)。
 
 校验和为 `hash(header + compressed_data)`，使用 [ClickHouse CityHash](/zh/resources/develop-contribute/native-protocol/hash)。
 
