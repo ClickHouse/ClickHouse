@@ -44,8 +44,13 @@ SETTINGS join_algorithm = 'full_sorting_merge,grace_hash';
 
 -- JoinSwitcher used to swap in MergeJoin once the right side crossed max_rows_in_join,
 -- so the same query silently changed its answer as the right table grew.
+-- Both external-join settings are pinned because the spilling branch of the AUTO arm is
+-- evaluated before the JoinSwitcher one and delegates to a HashJoin, which honours the
+-- mixed condition; the ratio defaults to 0.5 and yields a non-zero threshold on any server
+-- with a memory limit, so pinning only the absolute setting would leave that branch live.
 SELECT 'auto,hash max_rows_in_join=1', count(), sum(t2.a) FROM t1 LEFT JOIN t2 ON (t1.key = t2.key) AND (t1.a * 10 < t2.a)
-SETTINGS join_algorithm = 'auto,hash', max_rows_in_join = 1;
+SETTINGS join_algorithm = 'auto,hash', max_rows_in_join = 1,
+         max_bytes_before_external_join = 0, max_bytes_ratio_before_external_join = 0;
 
 SELECT '-- every kind and strictness that builds a mixed condition --';
 
@@ -63,6 +68,11 @@ SETTINGS join_algorithm = 'full_sorting_merge,hash';
 
 SELECT 'FULL ALL rows', count() FROM t1 FULL JOIN t2 ON (t1.key = t2.key) AND (t1.a * 10 < t2.a)
 SETTINGS join_algorithm = 'full_sorting_merge,hash';
+
+-- MergeJoin, unlike FullSortingMergeJoin, does admit Left + Semi, so partial_merge is the
+-- list that reaches its capability predicate with a Semi strictness.
+SELECT 'LEFT SEMI partial_merge,hash', count() FROM t1 LEFT SEMI JOIN t2 ON (t1.key = t2.key) AND (t1.a * 10 < t2.a)
+SETTINGS join_algorithm = 'partial_merge,hash';
 
 SELECT '-- the hash family was already correct and must stay so --';
 
@@ -86,10 +96,12 @@ SETTINGS join_algorithm = 'full_sorting_merge,hash';
 SELECT 'INNER ALL hash', count(), sum(t2.a) FROM t1 INNER JOIN t2 ON (t1.key = t2.key) AND (t1.a * 10 < t2.a)
 SETTINGS join_algorithm = 'hash';
 
-SELECT 'LEFT SEMI', count() FROM t1 LEFT SEMI JOIN t2 ON (t1.key = t2.key) AND (t1.a * 10 < t2.a)
+-- FullSortingMergeJoin declines Semi and Anti on strictness alone, so these two reach the
+-- hash arm either way; they are must-not-regress rows for that pre-existing rejection.
+SELECT 'LEFT SEMI fsm,hash', count() FROM t1 LEFT SEMI JOIN t2 ON (t1.key = t2.key) AND (t1.a * 10 < t2.a)
 SETTINGS join_algorithm = 'full_sorting_merge,hash';
 
-SELECT 'LEFT ANTI', count() FROM t1 LEFT ANTI JOIN t2 ON (t1.key = t2.key) AND (t1.a * 10 < t2.a)
+SELECT 'LEFT ANTI fsm,hash', count() FROM t1 LEFT ANTI JOIN t2 ON (t1.key = t2.key) AND (t1.a * 10 < t2.a)
 SETTINGS join_algorithm = 'full_sorting_merge,hash';
 
 SELECT '-- rejection when the list has no hash family member is unchanged --';
@@ -156,6 +168,13 @@ SELECT 'oracle_dict', count(), sum(da) FROM
 SELECT 'dict LEFT ANY, no settings', count(), sum(d.a) FROM t3 LEFT ANY JOIN dict AS d ON (t3.key = d.key) AND (t3.a * 10 < d.a);
 
 SELECT 'dict LEFT ALL, no settings', count(), sum(d.a) FROM t3 LEFT JOIN dict AS d ON (t3.key = d.key) AND (t3.a * 10 < d.a);
+
+-- tryDirectJoin also admits Left + Semi and Left + Anti, so these two Semi/Anti shapes reach
+-- a declining predicate with no non-default setting at all. No pair satisfies the residual,
+-- so SEMI keeps no left row and ANTI keeps all three.
+SELECT 'dict LEFT SEMI, no settings', count() FROM t3 LEFT SEMI JOIN dict AS d ON (t3.key = d.key) AND (t3.a * 10 < d.a);
+
+SELECT 'dict LEFT ANTI, no settings', count() FROM t3 LEFT ANTI JOIN dict AS d ON (t3.key = d.key) AND (t3.a * 10 < d.a);
 
 SELECT 'dict LEFT ANY hash', count(), sum(d.a) FROM t3 LEFT ANY JOIN dict AS d ON (t3.key = d.key) AND (t3.a * 10 < d.a)
 SETTINGS join_algorithm = 'hash';

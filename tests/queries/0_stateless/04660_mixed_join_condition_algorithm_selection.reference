@@ -12,6 +12,7 @@ INNER ANY	1	20
 RIGHT ALL	2	30
 RIGHT ALL residual reversed	2	30
 FULL ALL rows	4
+LEFT SEMI partial_merge,hash	1
 -- the hash family was already correct and must stay so --
 hash	3	20
 parallel_hash	3	20
@@ -19,8 +20,8 @@ grace_hash	3	20
 default list	3	20
 INNER ALL fsm,hash	1	20
 INNER ALL hash	1	20
-LEFT SEMI	1
-LEFT ANTI	2
+LEFT SEMI fsm,hash	1
+LEFT ANTI fsm,hash	2
 -- rejection when the list has no hash family member is unchanged --
 -- a merge algorithm is still selected where it is valid --
 equi keeps merge	1
@@ -30,6 +31,8 @@ mixed falls through	0
 oracle_dict	3	0
 dict LEFT ANY, no settings	3	0
 dict LEFT ALL, no settings	3	0
+dict LEFT SEMI, no settings	0
+dict LEFT ANTI, no settings	3
 dict LEFT ANY hash	3	0
 dict equi keeps direct	1
 dict equi value	3	30
