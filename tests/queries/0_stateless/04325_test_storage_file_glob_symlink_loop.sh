@@ -81,10 +81,10 @@ ln -s .. "$TEST_DIR_ABS/preast/root/a/back"
 # `find("**") != npos` over the expanded pattern would falsely classify this as
 # recursive; the correct detector mirrors the per-segment recursion test in
 # `listFilesWithRegexpMatchingImpl` (a path component must equal exactly `**`).
-# TWO such directories are what makes the assertion observable: one file reached under
-# two names must be reported twice, as it is without this change, so the expected answer
-# distinguishes the finite scoping from both substring detection and unconditional
-# canonical deduplication, which would each report one.
+# TWO such directories are what makes the assertion observable: the file is reported once
+# through `a1/back` and once through `a2/back`, so the expected count is two, as it is
+# without this change. One directory would give one under every key. Substring detection
+# of `**` and unconditional canonical deduplication would each report one instead.
 mkdir -p "$TEST_DIR_ABS/adj/root/a1" "$TEST_DIR_ABS/adj/root/a2"
 printf "row1\n" > "$TEST_DIR_ABS/adj/root/file.txt"
 ln -s .. "$TEST_DIR_ABS/adj/root/a1/back"
@@ -212,6 +212,23 @@ for i in $(seq 1 10); do
     prefix_chain_dir="$prefix_chain_dir/l$i"
 done
 printf "row1\n" > "$prefix_chain_dir/f.txt"
+
+# One real directory reached under two symlink names: `aliaswrite/root/target` plus
+# `aliasA` and `aliasB` both pointing at it. For `root/**/f.txt` the walk reaches the
+# same directory three times, so the pattern names one file under three paths and the
+# write must stay refused. The traversal pruning returns before any match is emitted, so
+# the collapse has to be reported where the frame is pruned and not only where a matched
+# path is dropped; without that, this write is allowed and appends to the target.
+mkdir -p "$TEST_DIR_ABS/aliaswrite/root/target"
+printf "row1\n" > "$TEST_DIR_ABS/aliaswrite/root/target/f.txt"
+ln -s target "$TEST_DIR_ABS/aliaswrite/root/aliasA"
+ln -s target "$TEST_DIR_ABS/aliaswrite/root/aliasB"
+
+# A finite glob matching exactly one file, with no symlink anywhere: the write must be
+# ALLOWED, as it is without this change. This is the case a read-only guard keyed on glob
+# syntax rather than on an actual collapse would wrongly refuse.
+mkdir -p "$TEST_DIR_ABS/onematch"
+printf "row1\n" > "$TEST_DIR_ABS/onematch/only.txt"
 
 trap 'rm -rf "$TEST_DIR_ABS"' EXIT
 
@@ -352,6 +369,22 @@ echo "glob-insert-stays-readonly"
 $CLICKHOUSE_CLIENT --query "INSERT INTO TABLE FUNCTION file('$TEST_DIR_NAME/dedup/root/**/mid/*/f.txt', 'TSV', 'val String') VALUES ('written')" </dev/null 2>&1 \
     | grep -qF "readonly mode because of globs" && echo "refused"
 $CLICKHOUSE_CLIENT --query "SELECT count() FROM file('$TEST_DIR_NAME/dedup/root/f.txt', 'TSV', 'val String')"
+
+# The same refusal when the collapse comes from traversal pruning rather than from a
+# dropped matched path: one directory under two alias names. The row count afterwards is
+# what shows the write did not land.
+echo "aliased-dir-insert-stays-readonly"
+$CLICKHOUSE_CLIENT --query "INSERT INTO TABLE FUNCTION file('$TEST_DIR_NAME/aliaswrite/root/**/f.txt', 'TSV', 'val String') VALUES ('written')" </dev/null 2>&1 \
+    | grep -qF "readonly mode because of globs" && echo "refused"
+$CLICKHOUSE_CLIENT --query "SELECT count() FROM file('$TEST_DIR_NAME/aliaswrite/root/target/f.txt', 'TSV', 'val String')"
+
+# A finite glob matching one file stays WRITABLE. Without this assertion, a read-only
+# guard widened to any source containing glob syntax passes every other check here,
+# because the finite scenarios only read and the write scenarios all expect refusal.
+echo "single-match-glob-insert-is-allowed"
+$CLICKHOUSE_CLIENT --query "INSERT INTO TABLE FUNCTION file('$TEST_DIR_NAME/onematch/*.txt', 'TSV', 'val String') VALUES ('written')" </dev/null 2>&1 \
+    | grep -qF "readonly mode because of globs" && echo "unexpectedly refused"
+$CLICKHOUSE_CLIENT --query "SELECT count() FROM file('$TEST_DIR_NAME/onematch/only.txt', 'TSV', 'val String')"
 
 # Server alive afterwards.
 $CLICKHOUSE_CLIENT --query "SELECT 'alive'"

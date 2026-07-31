@@ -178,7 +178,7 @@ void listFilesWithRegexpMatchingImpl(
     std::unordered_set<std::string> & matched_paths,
     bool recursive,
     size_t depth,
-    std::unordered_set<std::string> & visited_frames,
+    std::unordered_map<std::string, std::string> & visited_frames,
     bool deduplicate_by_canonical_path,
     bool & collapsed_a_match)
 {
@@ -339,8 +339,21 @@ void listFilesWithRegexpMatchingImpl(
         /// down (the outer frame sees `/root/**/*.txt` where a re-entry sees `/**/*.txt`) and the
         /// ancestor subtree would be rescanned once per loop instead of being pruned.
         /// `\0` cannot occur in a path or a pattern, so it is an unambiguous separator.
-        if (!visited_frames.emplace(prefix_canonical.string() + '\0' + suffix_with_globs).second)
+        const std::string frame_key = prefix_canonical.string() + '\0' + suffix_with_globs;
+        const std::string lexical_dir = fs::path(prefix_without_globs).lexically_normal().string();
+        const auto [claimed, is_new] = visited_frames.emplace(frame_key, lexical_dir);
+        if (!is_new)
+        {
+            /// Pruning happens before any match is emitted, so a pruned frame can never reach
+            /// `add_matched_path` to report that two paths named one file. Report it here instead,
+            /// but only when this frame arrived by a DIFFERENT lexical directory path than the one
+            /// that claimed the frame: that is a second name for the same place, which the
+            /// read-only guard on writes has to see. Re-entering under the SAME lexical path is a
+            /// globstar re-application at one directory, not a second name, and stays writable.
+            if (claimed->second != lexical_dir)
+                collapsed_a_match = true;
             return; /// This directory has already been walked with this remaining pattern.
+        }
     }
 
     const bool looking_for_directory = next_slash_after_glob_pos != std::string::npos;
@@ -448,7 +461,7 @@ std::vector<std::string> listFilesWithRegexpMatching(
         /// brace-expansion alternatives independent. Only frames whose remaining pattern still has
         /// a whole-segment `**` are recorded, i.e. those that can still recurse without bound (see
         /// `patternHasGlobstarSegment` inside `listFilesWithRegexpMatchingImpl`).
-        std::unordered_set<std::string> visited_frames;
+        std::unordered_map<std::string, std::string> visited_frames;
 
         /// Deduplicate by canonical path only for a `**` expansion, where the recursive descent
         /// can re-enter one directory under many aliases and would otherwise report a file once
