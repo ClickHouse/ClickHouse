@@ -54,48 +54,105 @@ namespace AssignCentroidImpl
 namespace
 {
 
+/// GEMM microkernel shape. `ROW_BLOCK * COL_BLOCK` accumulators must fit in the vector register file:
+/// 6 x 16 floats is 12 YMM registers on AVX2 (of 16) or 6 ZMM on AVX-512, leaving enough for the operands.
+/// Keeping the accumulators in REGISTERS is the entire point - an accumulator block that lives in L1 instead
+/// pays a load and a store per FMA and tops out around a quarter of FP peak no matter how well it is tiled.
+static constexpr size_t ROW_BLOCK = 6;
+static constexpr size_t COL_BLOCK = 16;
+
 DECLARE_MULTITARGET_CODE(
 
-/// Score `n` rows against ONE packed tile of `width` centroids and keep the running best score/id per row.
-/// `pack` is column-major within the tile (`pack[j * width + c]`), so the inner loop over centroids is a
-/// contiguous FMA against a broadcast `x[j]` - the shape the vectorizer wants. `acc` is caller-provided
-/// scratch of at least `width` floats (kept off the stack because `width` is up to the tile size).
+/// Score `n` rows against ONE packed tile of `width` centroids, keeping the running best score/id per row.
+///
+/// This is a GEMM (rows x dim times dim x width), not a sequence of GEMVs, and the distinction is the entire
+/// performance story at large `k`. A per-row pass streams the whole centroid tile for every single vector, so
+/// with a 32768 x 768 centroid set (~100 MB) the kernel is pure memory bandwidth and runs nowhere near FP
+/// peak - measured at ~2.6 ms per vector, which is almost exactly the time to read 100 MB from L3/DRAM.
+/// Blocking `ROW_BLOCK` rows together cuts that traffic by the same factor: the arithmetic per centroid float
+/// loaded goes from 1 MAC to `ROW_BLOCK` MACs.
+///
+/// `pack` is column-major within the tile (`pack[j * width + c]`), so the innermost loop is a contiguous FMA
+/// over `COL_BLOCK` centroids against a broadcast `x[j]`. Both inner extents are compile-time constants, which
+/// is what lets clang fully unroll them and keep `acc` in registers for the whole `dim` loop.
+///
+/// Loop order is row-block outermost so the block's `ROW_BLOCK * dim` floats stay in L1 while every centroid
+/// sub-block streams past; the centroid tile is then read once per row block rather than once per row.
+///
+/// `width` is a multiple of `COL_BLOCK` - the caller pads the tile with zero centroids whose `cnorm` is
+/// infinite, so the padding lanes can never win the argmin and no scalar remainder loop is needed.
+///
+/// Accumulation order per (row, centroid) pair is unchanged, so results are bit-identical to the per-row form.
 ///
 /// All rows are known to have exactly `dim` elements (validated by the caller), so row `r` starts at
 /// `r * dim` and the offsets array does not need to be touched in the hot loop.
 void scoreTile(
     const Float32 * __restrict vec_data, size_t n, size_t dim,
     const Float32 * __restrict pack, const Float32 * __restrict cnorm_tile, const UInt32 * __restrict ids_tile,
-    size_t width, Float32 * __restrict acc, Float32 * __restrict best_score, UInt32 * __restrict res)
+    size_t width, Float32 * __restrict best_score, UInt32 * __restrict res)
 {
-    for (size_t row = 0; row < n; ++row)
+    auto reduce_row = [&](size_t row, const Float32 * __restrict a, size_t c0, size_t count)
     {
-        const Float32 * __restrict x = vec_data + row * dim;
-
-        for (size_t c = 0; c < width; ++c)
-            acc[c] = 0.0f;
-
-        for (size_t j = 0; j < dim; ++j)
-        {
-            const Float32 xj = x[j];
-            const Float32 * __restrict col = pack + j * width;
-            for (size_t c = 0; c < width; ++c)
-                acc[c] += xj * col[c];
-        }
-
         Float32 bs = best_score[row];
         UInt32 bid = res[row];
-        for (size_t c = 0; c < width; ++c)
+        for (size_t c = 0; c < count; ++c)
         {
-            const Float32 score = cnorm_tile[c] - 2.0f * acc[c];
+            const Float32 score = cnorm_tile[c0 + c] - 2.0f * a[c];
             if (score < bs)
             {
                 bs = score;
-                bid = ids_tile[c];
+                bid = ids_tile[c0 + c];
             }
         }
         best_score[row] = bs;
         res[row] = bid;
+    };
+
+    size_t row = 0;
+    for (; row + ROW_BLOCK <= n; row += ROW_BLOCK)
+    {
+        for (size_t c0 = 0; c0 < width; c0 += COL_BLOCK)
+        {
+            Float32 acc[ROW_BLOCK][COL_BLOCK];
+            for (size_t r = 0; r < ROW_BLOCK; ++r)
+                for (size_t c = 0; c < COL_BLOCK; ++c)
+                    acc[r][c] = 0.0f;
+
+            for (size_t j = 0; j < dim; ++j)
+            {
+                const Float32 * __restrict col = pack + j * width + c0;
+                for (size_t r = 0; r < ROW_BLOCK; ++r)
+                {
+                    const Float32 xj = vec_data[(row + r) * dim + j];
+                    for (size_t c = 0; c < COL_BLOCK; ++c)
+                        acc[r][c] += xj * col[c];
+                }
+            }
+
+            for (size_t r = 0; r < ROW_BLOCK; ++r)
+                reduce_row(row + r, acc[r], c0, COL_BLOCK);
+        }
+    }
+
+    /// Tail rows that do not fill a block.
+    for (; row < n; ++row)
+    {
+        for (size_t c0 = 0; c0 < width; c0 += COL_BLOCK)
+        {
+            Float32 acc[COL_BLOCK];
+            for (size_t c = 0; c < COL_BLOCK; ++c)
+                acc[c] = 0.0f;
+
+            for (size_t j = 0; j < dim; ++j)
+            {
+                const Float32 xj = vec_data[row * dim + j];
+                const Float32 * __restrict col = pack + j * width + c0;
+                for (size_t c = 0; c < COL_BLOCK; ++c)
+                    acc[c] += xj * col[c];
+            }
+
+            reduce_row(row, acc, c0, COL_BLOCK);
+        }
     }
 }
 
@@ -110,21 +167,21 @@ void scoreTile(
 void scoreTile(
     const Float32 * vec_data, size_t n, size_t dim,
     const Float32 * pack, const Float32 * cnorm_tile, const UInt32 * ids_tile,
-    size_t width, Float32 * acc, Float32 * best_score, UInt32 * res)
+    size_t width, Float32 * best_score, UInt32 * res)
 {
 #if USE_MULTITARGET_CODE
     if (isArchSupported(TargetArch::x86_64_v4))
     {
-        TargetSpecific::x86_64_v4::scoreTile(vec_data, n, dim, pack, cnorm_tile, ids_tile, width, acc, best_score, res);
+        TargetSpecific::x86_64_v4::scoreTile(vec_data, n, dim, pack, cnorm_tile, ids_tile, width, best_score, res);
         return;
     }
     if (isArchSupported(TargetArch::x86_64_v3))
     {
-        TargetSpecific::x86_64_v3::scoreTile(vec_data, n, dim, pack, cnorm_tile, ids_tile, width, acc, best_score, res);
+        TargetSpecific::x86_64_v3::scoreTile(vec_data, n, dim, pack, cnorm_tile, ids_tile, width, best_score, res);
         return;
     }
 #endif
-    TargetSpecific::Default::scoreTile(vec_data, n, dim, pack, cnorm_tile, ids_tile, width, acc, best_score, res);
+    TargetSpecific::Default::scoreTile(vec_data, n, dim, pack, cnorm_tile, ids_tile, width, best_score, res);
 }
 
 }
@@ -186,18 +243,41 @@ struct CentroidMatrix
         for (size_t row = 0; row < n; ++row)
             res[row] = ids.empty() ? 0 : ids[0];
 
-        constexpr size_t tile = 1024; /// tile * dim * 4B stays in L2, reused across all n rows
+        /// Two-level blocking. The tile is sized so `tile * dim * 4B` stays around L2 (it is re-read once per
+        /// row block), which in turn keeps the `ROW_BLOCK * tile` accumulators inside L1. A fixed tile would
+        /// get this wrong at one end or the other: 1024 centroids is 3 MB at dim=768 (spills L2) but only
+        /// 512 KB at dim=128 (leaves L2 half empty).
+        static constexpr size_t L2_TILE_BYTES = 512 * 1024;
+        constexpr size_t CB = AssignCentroidImpl::COL_BLOCK;
+        const size_t tile = std::clamp<size_t>(
+            (L2_TILE_BYTES / (dim * sizeof(Float32))) / CB * CB, CB, 1024);
+
         VectorWithMemoryTracking<Float32> pack(tile * dim);
-        VectorWithMemoryTracking<Float32> acc(tile);
+        /// Padded to a whole number of `COL_BLOCK`s so the kernel needs no scalar remainder loop. The padding
+        /// centroids are all-zero with an infinite `cnorm`, so they can never win the argmin.
+        VectorWithMemoryTracking<Float32> cnorm_tile(tile);
+        VectorWithMemoryTracking<UInt32> ids_tile(tile);
         for (size_t c0 = 0; c0 < k; c0 += tile)
         {
-            size_t width = std::min(tile, k - c0);
+            const size_t width = std::min(tile, k - c0);
+            const size_t padded = (width + CB - 1) / CB * CB;
+
             for (size_t j = 0; j < dim; ++j) /// pack the tile contiguously (reads ct once per tile)
-                std::copy(&ct[j * k + c0], &ct[j * k + c0] + width, &pack[j * width]);
+            {
+                /// `.data()` arithmetic rather than `&pack[...]`: the end of the last row is one past the end
+                /// of the buffer, and forming that as a reference trips the libc++ hardening bounds check.
+                Float32 * pack_row = pack.data() + j * padded;
+                std::copy(&ct[j * k + c0], &ct[j * k + c0] + width, pack_row);
+                std::fill(pack_row + width, pack_row + padded, 0.0f);
+            }
+            std::copy(&cnorm[c0], &cnorm[c0] + width, cnorm_tile.begin());
+            std::fill(cnorm_tile.begin() + width, cnorm_tile.begin() + padded, std::numeric_limits<Float32>::infinity());
+            std::copy(&ids[c0], &ids[c0] + width, ids_tile.begin());
+            std::fill(ids_tile.begin() + width, ids_tile.begin() + padded, 0u);
 
             AssignCentroidImpl::scoreTile(
-                vec_data, n, dim, pack.data(), &cnorm[c0], &ids[c0], width,
-                acc.data(), best_score.data(), res.data());
+                vec_data, n, dim, pack.data(), cnorm_tile.data(), ids_tile.data(), padded,
+                best_score.data(), res.data());
         }
     }
 };
