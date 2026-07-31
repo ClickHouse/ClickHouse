@@ -3,12 +3,15 @@
 #include <Analyzer/ColumnNode.h>
 #include <Analyzer/ConstantNode.h>
 #include <Analyzer/FunctionNode.h>
+#include <Analyzer/GroupByKeyComparator.h>
 #include <Analyzer/HashUtils.h>
 #include <Analyzer/InDepthQueryTreeVisitor.h>
+#include <Analyzer/InterpolateNode.h>
 #include <Analyzer/ListNode.h>
 #include <Analyzer/Passes/OptimizeKeyExpressionsUtils.h>
 #include <Analyzer/QueryNode.h>
 #include <Analyzer/Utils.h>
+#include <Analyzer/ValidationUtils.h>
 
 #include <Core/ColumnNumbers.h>
 #include <Core/Settings.h>
@@ -40,38 +43,80 @@ enum class GroupByKind : uint8_t
     GROUPING_SETS
 };
 
-/// A key f(g) that was eliminated from the GROUP BY key list together with the single non-constant
-/// argument g it was rewritten to. Under a GROUP BY modifier the output projection still recomputes
-/// f(g); for rows where g is absent from the set being aggregated (CUBE/ROLLUP subtotals, GROUPING SETS
-/// non-member sets) g takes its column default, so f(g) becomes f(default) instead of the required
-/// defaultOf(typeOf(f(g))). We keep the pair here to guard each occurrence of f(g) with a grouping
-/// conditional after the keys are rewritten. See #110715.
+/// A key f(g) eliminated from the GROUP BY key list, paired with the single non-constant argument g it
+/// was rewritten to. See #110715.
 struct EliminatedKey
 {
-    QueryTreeNodePtr original_key; /// f(g), the node still present in the projection/ORDER BY/HAVING
+    QueryTreeNodePtr original_key; /// f(g), the node still present in the output expressions
     QueryTreeNodePtr unwrapped_key; /// g, now a real GROUP BY key
 };
 
-/// The leaves an injective key would be rewritten to, reusing the shared unwrap logic (which also
-/// enforces allow_suspicious_types). Operating on a single-key list lets us require the rewrite to be
-/// cardinality-preserving (exactly one non-constant leaf) before applying it under a modifier.
+/// A single-key list, so the caller can require the rewrite to be cardinality-preserving (exactly one
+/// non-constant leaf) before applying it. Also enforces allow_suspicious_types.
 QueryTreeNodes collectUnwrappedLeaves(const QueryTreeNodePtr & key, bool allow_suspicious_types)
 {
     return unwrapInjectiveFunctionsInKeys({key}, allow_suspicious_types);
 }
 
-using AggredationKeyIndexMap = std::unordered_map<QueryTreeNodePtrWithHashIgnoreAliases, size_t>;
+/// Keyed on aggregation-key identity, which unlike QueryTreeNodePtrWithHashIgnoreAliases distinguishes
+/// l.number from r.number of a self-join. See src/Analyzer/GroupByKeyComparator.h.
+using AggredationKeyIndexMap = AggredationKeyNodeMap<size_t>;
+using EliminatedKeyReplacementMap = AggredationKeyNodeMap<QueryTreeNodePtr>;
 
-/// Rewrites, in an output subtree (projection / ORDER BY / HAVING), every whole occurrence of an
-/// eliminated injective key f(g) into a grouping conditional if(present, f(g), default). This is a
-/// manual recursion (NOT an InDepthQueryTreeVisitor): a matched node is replaced by the prebuilt
-/// conditional and we do NOT descend into that conditional, because it itself contains a copy of f(g)
-/// which would otherwise match and expand forever. Recursion stops at aggregate/window function nodes:
-/// their arguments are evaluated before aggregation, where the __grouping_set column does not exist, so
-/// those occurrences of f(g) must be left untouched. See #110715.
+/// Matches `grouping` and every specialization GroupingFunctionsResolvePass installs before this pass.
+bool isGroupingFunction(const FunctionNode & function)
+{
+    const auto & name = function.getFunctionName();
+    return name == "grouping" || name == "groupingOrdinary" || name == "groupingForRollup"
+        || name == "groupingForCube" || name == "groupingForGroupingSets";
+}
+
+/// Replace each eliminated whole argument f(g) of a GROUPING call with its unwrapped key g. The value is
+/// unaffected: the resolved specialization keeps the argument indexes it was built with.
+///
+/// Re-resolution is required, not optional: an IFunctionBase records the argument types it was built for
+/// (FunctionToFunctionBaseAdaptor::getArgumentTypes), and both QueryTreePassManager's validator and
+/// PlannerActionsVisitor compare those against the actual arguments. Grouping specializations are not in
+/// FunctionFactory and carry per-query state, so the existing IFunction is re-wrapped, not looked up.
+void rewriteGroupingArguments(FunctionNode & function, const EliminatedKeyReplacementMap & unwrapped_keys)
+{
+    bool substituted = false;
+
+    for (auto & argument : function.getArguments().getNodes())
+    {
+        auto it = unwrapped_keys.find(argument);
+        if (it == unwrapped_keys.end())
+            continue;
+
+        auto replacement = it->second->clone();
+        if (argument->hasAlias())
+            replacement->setAlias(argument->getAlias());
+        argument = std::move(replacement);
+        substituted = true;
+    }
+
+    if (!substituted)
+        return;
+
+    const auto * adaptor = typeid_cast<const FunctionToFunctionBaseAdaptor *>(function.getFunction().get());
+    if (!adaptor)
+        return;
+
+    function.resolveAsFunction(
+        std::make_shared<FunctionToOverloadResolverAdaptor>(adaptor->getFunction())->build(function.getArgumentColumns()));
+}
+
+/// In an output subtree (projection / ORDER BY / HAVING / LIMIT BY / INTERPOLATE), replaces every whole
+/// occurrence of an eliminated key f(g) with its prebuilt grouping conditional.
+///
+/// A manual recursion, not an InDepthQueryTreeVisitor, because it must NOT descend into the replacement:
+/// the conditional contains a copy of f(g) and would expand forever. It also stops at aggregate/window
+/// nodes (their arguments are pre-aggregation, where __grouping_set does not exist) and at a GROUPING
+/// call, where the argument is substituted instead. See #110715.
 void rewriteOutputExpression(
     QueryTreeNodePtr & node,
-    const std::unordered_map<QueryTreeNodePtrWithHashIgnoreAliases, QueryTreeNodePtr> & replacements)
+    const EliminatedKeyReplacementMap & replacements,
+    const EliminatedKeyReplacementMap & unwrapped_keys)
 {
     if (!node)
         return;
@@ -87,11 +132,17 @@ void rewriteOutputExpression(
         return; /// Do not recurse into the replacement (it contains a copy of f(g)).
     }
 
-    if (const auto * function = node->as<FunctionNode>())
+    if (auto * function = node->as<FunctionNode>())
     {
         /// Aggregate/window arguments are pre-aggregation: no __grouping_set there.
         if (function->isAggregateFunction() || function->isWindowFunction())
             return;
+
+        if (isGroupingFunction(*function))
+        {
+            rewriteGroupingArguments(*function, unwrapped_keys);
+            return;
+        }
     }
 
     /// Do not descend into nested subqueries: they have their own GROUP BY scope.
@@ -99,7 +150,7 @@ void rewriteOutputExpression(
         return;
 
     for (auto & child : node->getChildren())
-        rewriteOutputExpression(child, replacements);
+        rewriteOutputExpression(child, replacements, unwrapped_keys);
 }
 
 class OptimizeGroupByInjectiveFunctionsVisitor : public InDepthQueryTreeVisitorWithContext<OptimizeGroupByInjectiveFunctionsVisitor>
@@ -152,14 +203,9 @@ private:
     /// the correct output-type default instead of f(default). See #110715.
     void optimizeWithModifier(QueryNode & query, bool allow_suspicious_types)
     {
-        /// Two independent correction mechanisms depending on which modifier is present:
-        ///   - CUBE / ROLLUP / GROUPING SETS put a __grouping_set column on every output row (including the
-        ///     subtotal rows), so eliminated-key outputs are corrected with a grouping conditional. This is
-        ///     the has_grouping_set_column path below.
-        ///   - A plain WITH TOTALS row has no __grouping_set column and is produced on a separate totals
-        ///     port, so it is corrected by the planner overwriting the eliminated-key output columns on the
-        ///     totals stream. These are orthogonal: `GROUP BY ROLLUP(...) WITH TOTALS` uses both (grouping
-        ///     conditional for the subtotal rows, totals-port overwrite for the grand-total row).
+        /// Two orthogonal correction mechanisms, and `ROLLUP(...) WITH TOTALS` uses both: a grouping
+        /// conditional where a __grouping_set column exists on every row, and a totals-port column
+        /// overwrite for the grand-total row, which has no such column.
         const bool has_grouping_set_column = query.isGroupByWithCube() || query.isGroupByWithRollup()
             || query.isGroupByWithGroupingSets();
 
@@ -187,12 +233,10 @@ private:
                 all_keys.insert(key);
 
         std::vector<EliminatedKey> eliminated;
-        /// Leaves already claimed by an earlier elimination, together with the original key they came from.
-        /// A later key may unwrap to an already-claimed leaf only if it is the SAME original key (the same
-        /// injective key repeated across grouping sets, e.g. GROUPING SETS ((k),(k,k))). Two DIFFERENT keys
-        /// unwrapping to one leaf would let analyzeAggregation deduplicate them into a single aggregation
-        /// key, shrinking the CUBE/ROLLUP grouping lattice (missing subtotal levels, wrong GROUPING arity),
-        /// so the second such key is kept wrapped. See #110715.
+        /// Leaves already claimed, with the original key each came from. A later key may reuse a claimed
+        /// leaf only if it is the SAME original key (one injective key repeated across grouping sets, e.g.
+        /// GROUPING SETS ((k),(k,k))); two DIFFERENT keys sharing a leaf would be deduplicated into one
+        /// aggregation key and shrink the lattice, so the second is kept wrapped.
         std::vector<std::pair<QueryTreeNodePtr, QueryTreeNodePtr>> chosen_leaves; /// (leaf, original_key)
 
         for (auto * set : sets)
@@ -215,13 +259,14 @@ private:
                     continue;
 
                 /// Collision guard: the leaf must not equal any OTHER key present in the GROUP BY. If it
-                /// does, unwrapping would merge layouts and corrupt the sibling key's output.
+                /// does, unwrapping would merge layouts and corrupt the sibling key's output. Identity is
+                /// compared the way the aggregation layer does, so l.number and r.number do not collide.
                 bool collides = false;
                 for (const auto & other : all_keys)
                 {
-                    if (other.node->isEqual(*key))
+                    if (compareGroupByKeys(other.node, key))
                         continue;
-                    if (other.node->isEqual(*leaf))
+                    if (compareGroupByKeys(other.node, leaf))
                     {
                         collides = true;
                         break;
@@ -235,7 +280,7 @@ private:
                 bool leaf_taken_by_other = false;
                 for (const auto & [claimed_leaf, claimed_key] : chosen_leaves)
                 {
-                    if (claimed_leaf->isEqual(*leaf) && !claimed_key->isEqual(*key))
+                    if (compareGroupByKeys(claimed_leaf, leaf) && !compareGroupByKeys(claimed_key, key))
                     {
                         leaf_taken_by_other = true;
                         break;
@@ -287,12 +332,12 @@ private:
                 grouping_sets_keys_indexes.emplace_back();
                 auto & set_indexes = grouping_sets_keys_indexes.back();
 
-                QueryTreeNodePtrWithHashSet used_in_set;
+                AggredationKeyNodeMap<std::monostate> used_in_set;
                 for (auto & key : set_keys)
                 {
                     if (used_in_set.contains(key))
                         continue;
-                    used_in_set.insert(key);
+                    used_in_set.emplace(key, std::monostate{});
 
                     auto [it, inserted] = aggregation_key_to_index.emplace(key, next_index);
                     if (inserted)
@@ -314,7 +359,10 @@ private:
         const size_t aggregation_keys_size = aggregation_key_to_index.size();
         const bool force_compatibility = getSettings()[Setting::force_grouping_standard_compatibility];
 
-        std::unordered_map<QueryTreeNodePtrWithHashIgnoreAliases, QueryTreeNodePtr> replacements;
+        EliminatedKeyReplacementMap replacements;
+        /// The same eliminated keys mapped to their unwrapped key g, for GROUPING arguments (see
+        /// rewriteGroupingArguments).
+        EliminatedKeyReplacementMap unwrapped_keys;
 
         for (const auto & entry : eliminated)
         {
@@ -329,27 +377,31 @@ private:
                 grouping_sets_keys_indexes, force_compatibility);
 
             replacements.emplace(entry.original_key, std::move(grouping_conditional));
+            unwrapped_keys.emplace(entry.original_key, entry.unwrapped_key);
         }
 
         if (replacements.empty())
             return;
 
+        /// Every clause evaluated after aggregation must be corrected. Per Planner.cpp those are the
+        /// projection, ORDER BY, HAVING, LIMIT BY and INTERPOLATE; QUALIFY and WINDOW are already declined
+        /// by reachesPostAggregationWindowOrQualify, and LIMIT/OFFSET accept constants only.
         if (query.getProjectionNode())
-            rewriteOutputExpression(query.getProjectionNode(), replacements);
+            rewriteOutputExpression(query.getProjectionNode(), replacements, unwrapped_keys);
         if (query.hasOrderBy())
-            rewriteOutputExpression(query.getOrderByNode(), replacements);
+            rewriteOutputExpression(query.getOrderByNode(), replacements, unwrapped_keys);
         if (query.hasHaving())
-            rewriteOutputExpression(query.getHaving(), replacements);
+            rewriteOutputExpression(query.getHaving(), replacements, unwrapped_keys);
+        if (query.hasLimitBy())
+            rewriteOutputExpression(query.getLimitByNode(), replacements, unwrapped_keys);
+        if (query.hasInterpolate())
+            rewriteOutputExpression(query.getInterpolate(), replacements, unwrapped_keys);
     }
 
-    /// Plain WITH TOTALS (no CUBE/ROLLUP/GROUPING SETS): the grand-total row is produced on a separate
-    /// totals port and carries no __grouping_set column, so it cannot be corrected with a grouping
-    /// conditional. Instead we unwrap the injective key f(g) -> g (narrowing the aggregation key) and record
-    /// which projection output columns are exactly f(g); the planner then overwrites just those columns with
-    /// their type default on the totals stream. We only unwrap a key when every output occurrence of f(g) is
-    /// a whole top-level projection column (so a per-column overwrite is sufficient); if f(g) also appears
-    /// nested inside another output expression, in ORDER BY or in HAVING, we leave that key un-unwrapped
-    /// (same conservative outcome as #110721 for that key). See #110715.
+    /// Plain WITH TOTALS: the grand-total row carries no __grouping_set column, so it records which
+    /// projection positions are exactly f(g) and lets the planner overwrite those columns on the totals
+    /// stream. Only unwraps a key when a per-column overwrite is sufficient; otherwise the key is left
+    /// wrapped (correct but unoptimized). See #110715.
     void optimizeWithTotals(QueryNode & query, bool allow_suspicious_types)
     {
         /// Only the pure WITH TOTALS case. When a grouping-set modifier is also present the grouping
@@ -417,23 +469,13 @@ private:
         query.setEliminatedTotalsDefaultPositions(std::move(eliminated_positions));
     }
 
-    /// True if f(g) appears in the output only as one or more whole top-level projection columns and never
-    /// nested inside a larger projection expression or inside HAVING. Only then can a totals-row
-    /// whole-column overwrite fully correct it.
+    /// True if a whole-column overwrite on the totals row can fully correct f(g), i.e. it appears only as
+    /// whole top-level projection columns.
     ///
-    /// ORDER BY referencing f(g) is allowed: the grand-total row is produced on a separate totals stream
-    /// and is never sorted (the Sorting step reorders only the main stream, and the DefaultTotalsColumns
-    /// overwrite is applied to the totals stream and preserved through it), so ORDER BY over the key sorts
-    /// the main rows on their correct per-row value while the totals column is corrected independently.
-    ///
-    /// HAVING is NOT allowed: it is applied by TotalsHavingStep (before the projection and before the
-    /// totals overwrite), its effect on the totals row depends on totals_mode, and the HAVING expression
-    /// still evaluates f(g) on the totals row. Leaving the key un-unwrapped in that case is conservative
-    /// (correct but unoptimized, same as #110721). See #110715.
-    ///
-    /// QUALIFY and the WINDOW clause are NOT allowed either: window arguments / PARTITION BY / ORDER BY and
-    /// QUALIFY are materialized post-aggregation and still evaluate f(g) on the totals row, which the
-    /// totals-port overwrite (a whole-column projection overwrite) does not reach.
+    /// ORDER BY is allowed: the totals row travels a separate stream that the Sorting step does not
+    /// reorder, so the overwrite survives it. HAVING, LIMIT BY, INTERPOLATE, QUALIFY and WINDOW are not:
+    /// each still evaluates f(g) somewhere the whole-column projection overwrite does not reach. See
+    /// #110715.
     bool occursOnlyAsTopLevelProjection(
         const QueryTreeNodePtr & key, QueryNode & query, const QueryTreeNodes & projection)
     {
@@ -450,6 +492,14 @@ private:
             return false; /// f(g) is not projected at all -> nothing to correct, leave the key wrapped
 
         if (query.hasHaving() && subtreeContains(query.getHaving(), key))
+            return false;
+
+        /// LIMIT BY and INTERPOLATE evaluate f(g) post-aggregation too, and the totals-port overwrite is a
+        /// whole-column projection overwrite that does not reach either clause.
+        if (query.hasLimitBy() && subtreeContains(query.getLimitByNode(), key))
+            return false;
+
+        if (query.hasInterpolate() && subtreeContains(query.getInterpolate(), key))
             return false;
 
         /// Referenced from a window function, from QUALIFY, or from the WINDOW clause: those are evaluated
@@ -503,11 +553,9 @@ private:
         return false;
     }
 
-    /// True if the eliminated key is referenced from a position that is evaluated after aggregation but is
-    /// NOT rewritten by the grouping conditional / totals-port overwrite: inside a window function (its
-    /// arguments or OVER clause) in the projection / ORDER BY / HAVING, anywhere in QUALIFY, or in a named
-    /// WINDOW clause. Such an occurrence would still compute f(column-default) on subtotal / totals rows, so
-    /// the key is kept wrapped (correct but unoptimized, same as #110721 for that key). See #110715.
+    /// True if the key is referenced from a post-aggregation position that neither correction mechanism
+    /// rewrites: inside a window function, anywhere in QUALIFY, or in a named WINDOW clause. Such an
+    /// occurrence would still compute f(column-default), so the key is kept wrapped. See #110715.
     static bool reachesPostAggregationWindowOrQualify(const QueryTreeNodePtr & key, QueryNode & query)
     {
         if (query.getProjectionNode() && containsKeyUnderWindow(query.getProjectionNode(), key))
@@ -525,12 +573,10 @@ private:
 
     /// if(equals(groupingForKind(__grouping_set, unwrapped_key), present_value), original_key, default)
     ///
-    /// The grouping function's key argument must be `unwrapped_key` (the node that is actually a GROUP BY
-    /// key after the unwrap), NOT `original_key` (f(g), which is no longer a key). The value is identical
-    /// either way (FunctionGroupingBase computes only from __grouping_set + the precomputed argument index),
-    /// but ValidateGroupByColumnsVisitor requires every grouping() argument to be a current GROUP BY key,
-    /// and a distributed shard re-analyzes the serialized query from scratch and would otherwise reject
-    /// grouping(f(g)). See #110715.
+    /// The grouping argument must be `unwrapped_key`, not `original_key`: the value is identical either way,
+    /// but ValidateGroupByColumnsVisitor requires a grouping argument to be a current GROUP BY key, and a
+    /// distributed shard re-analyzes the serialized query from scratch. rewriteGroupingArguments applies the
+    /// same rule to the user's own grouping calls.
     QueryTreeNodePtr buildGroupingConditional(
         const QueryTreeNodePtr & original_key,
         const QueryTreeNodePtr & unwrapped_key,

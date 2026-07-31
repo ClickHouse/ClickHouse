@@ -117,3 +117,134 @@
 0	1
 
 	3
+-- two same-named keys from different sources (self-join): each correction must be attributed to
+-- its own aggregation key, so every mixed subtotal keeps the value of the side it belongs to.
+-- Oracle: the same query with the optimization disabled (printed right below each).
+		2
+	0	1
+	1	1
+0		1
+0	0	1
+1		1
+1	1	1
+		2
+	0	1
+	1	1
+0		1
+0	0	1
+1		1
+1	1	1
+	0	1
+	1	1
+0		1
+0	0	1
+1		1
+1	1	1
+	0	1
+	1	1
+0		1
+0	0	1
+1		1
+1	1	1
+-- a user grouping() call over the eliminated key: its argument must become the unwrapped key, so
+-- a distributed shard re-analyzing the serialized query still accepts it. remote() with the
+-- default prefer_localhost_replica takes that serialize/re-analyze path.
+	1	3
+0	0	1
+1	0	1
+2	0	1
+	1	3
+0	0	1
+1	0	1
+2	0	1
+-- and locally, where the grouping() value must be unchanged by the substitution
+	1	3
+0	0	1
+1	0	1
+2	0	1
+	1	3
+0	0	1
+1	0	1
+2	0	1
+-- LIMIT BY over the eliminated key: the subtotal row must not merge with a real group. Oracle:
+-- the same query WITHOUT LIMIT BY, which is a no-op over all-distinct keys (the
+-- optimization-disabled arm is unavailable here, it fails with NOT_FOUND_COLUMN_IN_BLOCK both
+-- before and after this change). Counts are distinct so ORDER BY is a total order.
+	6
+0	1
+1	2
+2	3
+	6
+0	1
+1	2
+2	3
+	6
+0	1
+1	2
+2	3
+	6
+0	1
+1	2
+2	3
+-- INTERPOLATE over the eliminated key: a filled row must carry the String default, not
+-- toString(0). The interpolated column must not be in ORDER BY (that is rejected), so this
+-- orders by the count, made distinct so the row order is deterministic.
+0	1
+1	2
+2	3
+2	4
+2	5
+	6
+	7
+0	1
+1	2
+2	3
+2	4
+2	5
+	6
+	7
+0	1
+1	2
+2	3
+2	4
+2	5
+	6
+	7
+0	1
+1	2
+2	3
+2	4
+2	5
+	6
+	7
+-- INTERPOLATE under plain WITH TOTALS: the totals-port overwrite is a whole-column projection
+-- overwrite and cannot reach the INTERPOLATE clause, so the key stays wrapped there (correct but
+-- unoptimized). Result must still match the optimization-disabled arm.
+0	1
+1	2
+2	3
+2	4
+2	5
+2	6
+2	7
+
+	6
+0	1
+1	2
+2	3
+2	4
+2	5
+2	6
+2	7
+
+	6
+-- per-modifier firing assertion: 1 means the unwrap actually happened (no injective function is
+-- left in the GROUP BY section of the analyzed tree). Without this the assertions above would
+-- also pass if the optimization silently declined for every modifier.
+CUBE	1
+ROLLUP	1
+GROUPING SETS	1
+ROLLUP WITH TOTALS	1
+WITH TOTALS	1
+-- the same assertion reads 0 when the optimization is off, so it is not vacuous
+CUBE off	0

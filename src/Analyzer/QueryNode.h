@@ -699,13 +699,9 @@ public:
     }
 
     /// Projection output column positions whose value on the WITH TOTALS row must be replaced with the
-    /// column type default. Set by OptimizeGroupByInjectiveFunctionsPass when it unwraps an injective key
-    /// f(g) under a plain WITH TOTALS: the totals row fills g with its type default and the projection then
-    /// recomputes f(default) instead of the required defaultOf(typeOf(f(g))). The totals row has no
-    /// __grouping_set column, so it cannot be corrected with a grouping conditional; the planner instead
-    /// overwrites these columns on the totals stream. Positions index getProjectionColumns() (stable: no
-    /// pass reorders or prunes projection columns after this one, and the projection actions preserve that
-    /// order 1:1). See #110715.
+    /// column type default. Set by OptimizeGroupByInjectiveFunctionsPass; applied by the planner on the
+    /// totals stream. Positions index getProjectionColumns(), which is stable here: no later pass reorders
+    /// or prunes projection columns, and the projection actions preserve that order 1:1. See #110715.
     const std::vector<size_t> & getEliminatedTotalsDefaultPositions() const
     {
         return eliminated_totals_default_positions;

@@ -122,3 +122,121 @@ GROUP BY toString(number) WITH TOTALS
 QUALIFY first_value(k) OVER (ORDER BY k) = k
 ORDER BY k, c
 SETTINGS optimize_injective_functions_in_group_by = 0;
+
+SELECT '-- two same-named keys from different sources (self-join): each correction must be attributed to';
+SELECT '-- its own aggregation key, so every mixed subtotal keeps the value of the side it belongs to.';
+SELECT '-- Oracle: the same query with the optimization disabled (printed right below each).';
+SELECT toString(l.number) AS a, toString(r.number) AS b, count() AS c
+FROM numbers(2) AS l JOIN numbers(2) AS r ON l.number = r.number
+GROUP BY CUBE(toString(l.number), toString(r.number)) ORDER BY a, b, c;
+SELECT toString(l.number) AS a, toString(r.number) AS b, count() AS c
+FROM numbers(2) AS l JOIN numbers(2) AS r ON l.number = r.number
+GROUP BY CUBE(toString(l.number), toString(r.number)) ORDER BY a, b, c
+SETTINGS optimize_injective_functions_in_group_by = 0;
+SELECT toString(l.number) AS a, toString(r.number) AS b, count() AS c
+FROM numbers(2) AS l JOIN numbers(2) AS r ON l.number = r.number
+GROUP BY GROUPING SETS ((toString(l.number)), (toString(r.number)), (toString(l.number), toString(r.number)))
+ORDER BY a, b, c;
+SELECT toString(l.number) AS a, toString(r.number) AS b, count() AS c
+FROM numbers(2) AS l JOIN numbers(2) AS r ON l.number = r.number
+GROUP BY GROUPING SETS ((toString(l.number)), (toString(r.number)), (toString(l.number), toString(r.number)))
+ORDER BY a, b, c
+SETTINGS optimize_injective_functions_in_group_by = 0;
+
+SELECT '-- a user grouping() call over the eliminated key: its argument must become the unwrapped key, so';
+SELECT '-- a distributed shard re-analyzing the serialized query still accepts it. remote() with the';
+SELECT '-- default prefer_localhost_replica takes that serialize/re-analyze path.';
+SELECT toString(number) AS k, grouping(toString(number)) AS g, count() AS c
+FROM remote('127.0.0.1', numbers(3))
+GROUP BY CUBE(toString(number)) ORDER BY k, g, c;
+SELECT toString(number) AS k, grouping(toString(number)) AS g, count() AS c
+FROM remote('127.0.0.1', numbers(3))
+GROUP BY CUBE(toString(number)) ORDER BY k, g, c
+SETTINGS optimize_injective_functions_in_group_by = 0;
+SELECT '-- and locally, where the grouping() value must be unchanged by the substitution';
+SELECT toString(number) AS k, grouping(toString(number)) AS g, count() AS c FROM numbers(3)
+GROUP BY ROLLUP(toString(number)) ORDER BY k, g, c;
+SELECT toString(number) AS k, grouping(toString(number)) AS g, count() AS c FROM numbers(3)
+GROUP BY ROLLUP(toString(number)) ORDER BY k, g, c
+SETTINGS optimize_injective_functions_in_group_by = 0;
+
+SELECT '-- LIMIT BY over the eliminated key: the subtotal row must not merge with a real group. Oracle:';
+SELECT '-- the same query WITHOUT LIMIT BY, which is a no-op over all-distinct keys (the';
+SELECT '-- optimization-disabled arm is unavailable here, it fails with NOT_FOUND_COLUMN_IN_BLOCK both';
+SELECT '-- before and after this change). Counts are distinct so ORDER BY is a total order.';
+SELECT toString(x) AS k, count() AS c FROM (SELECT arrayJoin([0, 1, 1, 2, 2, 2]) AS x)
+GROUP BY CUBE(toString(x)) ORDER BY k, c LIMIT 1 BY k;
+SELECT toString(x) AS k, count() AS c FROM (SELECT arrayJoin([0, 1, 1, 2, 2, 2]) AS x)
+GROUP BY CUBE(toString(x)) ORDER BY k, c;
+SELECT toString(x) AS k, count() AS c FROM (SELECT arrayJoin([0, 1, 1, 2, 2, 2]) AS x)
+GROUP BY ROLLUP(toString(x)) ORDER BY k, c LIMIT 1 BY k;
+SELECT toString(x) AS k, count() AS c FROM (SELECT arrayJoin([0, 1, 1, 2, 2, 2]) AS x)
+GROUP BY GROUPING SETS ((toString(x)), ()) ORDER BY k, c LIMIT 1 BY k;
+
+SELECT '-- INTERPOLATE over the eliminated key: a filled row must carry the String default, not';
+SELECT '-- toString(0). The interpolated column must not be in ORDER BY (that is rejected), so this';
+SELECT '-- orders by the count, made distinct so the row order is deterministic.';
+SELECT toString(x) AS k, count() AS c FROM (SELECT arrayJoin([0, 1, 1, 2, 2, 2]) AS x)
+GROUP BY CUBE(toString(x))
+ORDER BY c WITH FILL FROM 1 TO 8 INTERPOLATE (k AS k);
+SELECT toString(x) AS k, count() AS c FROM (SELECT arrayJoin([0, 1, 1, 2, 2, 2]) AS x)
+GROUP BY CUBE(toString(x))
+ORDER BY c WITH FILL FROM 1 TO 8 INTERPOLATE (k AS k)
+SETTINGS optimize_injective_functions_in_group_by = 0;
+SELECT toString(x) AS k, count() AS c FROM (SELECT arrayJoin([0, 1, 1, 2, 2, 2]) AS x)
+GROUP BY ROLLUP(toString(x))
+ORDER BY c WITH FILL FROM 1 TO 8 INTERPOLATE (k AS k);
+SELECT toString(x) AS k, count() AS c FROM (SELECT arrayJoin([0, 1, 1, 2, 2, 2]) AS x)
+GROUP BY ROLLUP(toString(x))
+ORDER BY c WITH FILL FROM 1 TO 8 INTERPOLATE (k AS k)
+SETTINGS optimize_injective_functions_in_group_by = 0;
+
+SELECT '-- INTERPOLATE under plain WITH TOTALS: the totals-port overwrite is a whole-column projection';
+SELECT '-- overwrite and cannot reach the INTERPOLATE clause, so the key stays wrapped there (correct but';
+SELECT '-- unoptimized). Result must still match the optimization-disabled arm.';
+SELECT toString(x) AS k, count() AS c FROM (SELECT arrayJoin([0, 1, 1, 2, 2, 2]) AS x)
+GROUP BY toString(x) WITH TOTALS
+ORDER BY c WITH FILL FROM 1 TO 8 INTERPOLATE (k AS k);
+SELECT toString(x) AS k, count() AS c FROM (SELECT arrayJoin([0, 1, 1, 2, 2, 2]) AS x)
+GROUP BY toString(x) WITH TOTALS
+ORDER BY c WITH FILL FROM 1 TO 8 INTERPOLATE (k AS k)
+SETTINGS optimize_injective_functions_in_group_by = 0;
+
+SELECT '-- per-modifier firing assertion: 1 means the unwrap actually happened (no injective function is';
+SELECT '-- left in the GROUP BY section of the analyzed tree). Without this the assertions above would';
+SELECT '-- also pass if the optimization silently declined for every modifier.';
+SELECT 'CUBE', countIf(explain LIKE '%toString%' AND rn > gb) = 0 FROM (
+    SELECT explain, rowNumberInAllBlocks() AS rn,
+           min(if(explain LIKE '%GROUP BY%', rowNumberInAllBlocks(), 999999)) OVER () AS gb
+    FROM (EXPLAIN QUERY TREE run_passes = 1
+          SELECT toString(number) AS k, count() AS c FROM numbers(3) GROUP BY CUBE(toString(number))));
+SELECT 'ROLLUP', countIf(explain LIKE '%toString%' AND rn > gb) = 0 FROM (
+    SELECT explain, rowNumberInAllBlocks() AS rn,
+           min(if(explain LIKE '%GROUP BY%', rowNumberInAllBlocks(), 999999)) OVER () AS gb
+    FROM (EXPLAIN QUERY TREE run_passes = 1
+          SELECT toString(number) AS k, count() AS c FROM numbers(3) GROUP BY ROLLUP(toString(number))));
+SELECT 'GROUPING SETS', countIf(explain LIKE '%toString%' AND rn > gb) = 0 FROM (
+    SELECT explain, rowNumberInAllBlocks() AS rn,
+           min(if(explain LIKE '%GROUP BY%', rowNumberInAllBlocks(), 999999)) OVER () AS gb
+    FROM (EXPLAIN QUERY TREE run_passes = 1
+          SELECT toString(number) AS k, count() AS c FROM numbers(3)
+          GROUP BY GROUPING SETS ((toString(number)), ())));
+SELECT 'ROLLUP WITH TOTALS', countIf(explain LIKE '%toString%' AND rn > gb) = 0 FROM (
+    SELECT explain, rowNumberInAllBlocks() AS rn,
+           min(if(explain LIKE '%GROUP BY%', rowNumberInAllBlocks(), 999999)) OVER () AS gb
+    FROM (EXPLAIN QUERY TREE run_passes = 1
+          SELECT toString(number) AS k, count() AS c FROM numbers(3)
+          GROUP BY ROLLUP(toString(number)) WITH TOTALS));
+SELECT 'WITH TOTALS', countIf(explain LIKE '%toString%' AND rn > gb) = 0 FROM (
+    SELECT explain, rowNumberInAllBlocks() AS rn,
+           min(if(explain LIKE '%GROUP BY%', rowNumberInAllBlocks(), 999999)) OVER () AS gb
+    FROM (EXPLAIN QUERY TREE run_passes = 1
+          SELECT toString(number) AS k, count() AS c FROM numbers(3)
+          GROUP BY toString(number) WITH TOTALS));
+SELECT '-- the same assertion reads 0 when the optimization is off, so it is not vacuous';
+SELECT 'CUBE off', countIf(explain LIKE '%toString%' AND rn > gb) = 0 FROM (
+    SELECT explain, rowNumberInAllBlocks() AS rn,
+           min(if(explain LIKE '%GROUP BY%', rowNumberInAllBlocks(), 999999)) OVER () AS gb
+    FROM (EXPLAIN QUERY TREE run_passes = 1
+          SELECT toString(number) AS k, count() AS c FROM numbers(3) GROUP BY CUBE(toString(number))
+          SETTINGS optimize_injective_functions_in_group_by = 0));

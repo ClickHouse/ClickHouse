@@ -10,6 +10,7 @@
 
 #include <Analyzer/InDepthQueryTreeVisitor.h>
 #include <Analyzer/QueryNode.h>
+#include <Analyzer/GroupByKeyComparator.h>
 #include <Analyzer/HashUtils.h>
 #include <Analyzer/FunctionNode.h>
 #include <Analyzer/ColumnNode.h>
@@ -33,26 +34,6 @@ namespace ErrorCodes
     extern const int BAD_ARGUMENTS;
     extern const int LOGICAL_ERROR;
 }
-
-struct GroupByKeyComparator
-{
-    GroupByKeyComparator(QueryTreeNodePtr node_) /// NOLINT
-        : node(std::move(node_))
-        , hash(node->getTreeHash({.compare_aliases = false}))
-    {}
-
-    bool operator==(const GroupByKeyComparator & other) const { return hash == other.hash && compareGroupByKeys(node, other.node); }
-
-    bool operator!=(const GroupByKeyComparator & other) const { return !(*this == other); }
-
-    struct Hasher { size_t operator()(const GroupByKeyComparator & key) const { return key.hash.low64; } };
-
-    QueryTreeNodePtr node = nullptr;
-    CityHash_v1_0_2::uint128 hash;
-};
-
-template <typename Value>
-using AggredationKeyNodeMap = std::unordered_map<GroupByKeyComparator, Value, GroupByKeyComparator::Hasher>;
 
 namespace
 {

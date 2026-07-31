@@ -6,9 +6,7 @@ namespace DB
 {
 
 /// On the WITH TOTALS stream only, overwrites the given output column positions with their column type
-/// default. Used to correct the grand-total row after an injective GROUP BY key f(g) was unwrapped to g:
-/// the totals row fills g with its type default, so the projection recomputes f(default) instead of the
-/// required defaultOf(typeOf(f(g))). On the main stream this transform is an identity pass-through.
+/// default. On the main stream it is an identity pass-through.
 /// See OptimizeGroupByInjectiveFunctionsPass and #110715.
 class DefaultTotalsColumnsTransform : public ISimpleTransform
 {
