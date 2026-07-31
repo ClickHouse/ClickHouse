@@ -9,11 +9,23 @@
 #include <Processors/Formats/Impl/ArrowColumnToCHColumn.h>
 #include <Storages/ObjectStorage/DataLakes/Lance/LanceReadSource.h>
 #include <Common/Exception.h>
+#include <Common/ProfileEvents.h>
+#include <Common/Stopwatch.h>
 
 #include <arrow/array/array_nested.h>
 #include <arrow/table.h>
 
 #include <vector>
+
+namespace ProfileEvents
+{
+extern const Event LanceBatchesRead;
+extern const Event LanceRowsRead;
+extern const Event LanceReadBytes;
+extern const Event LanceLocalReadBytes;
+extern const Event LanceS3ReadBytes;
+extern const Event LanceArrowConvertMicroseconds;
+}
 
 namespace DB
 {
@@ -182,11 +194,54 @@ void validateRecordBatchNullability(const arrow::RecordBatch & batch, const Bloc
     }
 }
 
+/// Arrow buffer footprint of the batch (not S3 wire size).
+size_t approximateArrayDataBytes(const arrow::ArrayData & data)
+{
+    size_t bytes = 0;
+    for (const auto & buffer : data.buffers)
+    {
+        if (buffer)
+            bytes += static_cast<size_t>(buffer->size());
+    }
+    for (const auto & child : data.child_data)
+    {
+        if (child)
+            bytes += approximateArrayDataBytes(*child);
+    }
+    if (data.dictionary)
+        bytes += approximateArrayDataBytes(*data.dictionary);
+    return bytes;
+}
+
+size_t approximateRecordBatchBytes(const arrow::RecordBatch & batch)
+{
+    size_t bytes = 0;
+    for (int index = 0; index < batch.num_columns(); ++index)
+    {
+        const auto & column = batch.column(index);
+        if (column && column->data())
+            bytes += approximateArrayDataBytes(*column->data());
+    }
+    return bytes;
+}
+
+void accountLanceBatchMetrics(const arrow::RecordBatch & batch, size_t batch_rows, bool use_s3)
+{
+    const size_t batch_bytes = approximateRecordBatchBytes(batch);
+    ProfileEvents::increment(ProfileEvents::LanceBatchesRead);
+    ProfileEvents::increment(ProfileEvents::LanceRowsRead, batch_rows);
+    ProfileEvents::increment(ProfileEvents::LanceReadBytes, batch_bytes);
+    if (use_s3)
+        ProfileEvents::increment(ProfileEvents::LanceS3ReadBytes, batch_bytes);
+    else
+        ProfileEvents::increment(ProfileEvents::LanceLocalReadBytes, batch_bytes);
+}
+
 }
 
 ReadSource::ReadSource(
     const Block & header, ObjectInfoPtr object_info_, DatasetHandle dataset_, ScanDescription scan_, FormatSettings format_settings_)
-    : ISource(std::make_shared<const Block>(header), false)
+    : ISource(std::make_shared<const Block>(header), /*enable_auto_progress=*/true)
     , object_info(std::move(object_info_))
     , dataset(std::move(dataset_))
     , scan(std::move(scan_))
@@ -225,6 +280,8 @@ Chunk ReadSource::generate()
             if (rows)
             {
                 is_finished = true;
+                ProfileEvents::increment(ProfileEvents::LanceRowsRead, *rows);
+                addTotalRowsApprox(*rows);
                 return Chunk(Columns{}, *rows);
             }
         }
@@ -311,11 +368,35 @@ Chunk ReadSource::generate()
     if (isCancelled())
         return {};
 
+    size_t batch_rows = static_cast<size_t>(record_batch->num_rows());
+    if (scan.limit)
+    {
+        if (rows_emitted >= *scan.limit)
+        {
+            is_finished = true;
+            return {};
+        }
+        const size_t remaining = *scan.limit - rows_emitted;
+        if (batch_rows > remaining)
+        {
+            record_batch = record_batch->Slice(0, static_cast<int64_t>(remaining));
+            batch_rows = remaining;
+        }
+    }
+
+    accountLanceBatchMetrics(*record_batch, batch_rows, dataset.options().use_s3);
+
     ArrowColumnToCHColumn::checkRecordBatchValidityBitmaps(*record_batch);
 
     if (scan.discard_output_columns)
-        return Chunk(Columns{}, static_cast<size_t>(record_batch->num_rows()));
+    {
+        rows_emitted += batch_rows;
+        if (scan.limit && rows_emitted >= *scan.limit)
+            is_finished = true;
+        return Chunk(Columns{}, batch_rows);
+    }
 
+    Stopwatch convert_watch;
     auto table = arrow::Table::FromRecordBatches({record_batch});
     if (!table.ok())
         throw Exception(ErrorCodes::UNKNOWN_EXCEPTION, "Failed to create Lance Arrow table: {}", table.status().ToString());
@@ -339,9 +420,13 @@ Chunk ReadSource::generate()
 
     auto chunk = converter->arrowTableToCHChunk(
         *table, (*table)->num_rows(), /* metadata */ nullptr, /* block_missing_values */ nullptr);
+    ProfileEvents::increment(ProfileEvents::LanceArrowConvertMicroseconds, convert_watch.elapsedMicroseconds());
     /// Run this after conversion because `ArrowColumnToCHColumn` validates nested offsets before
     /// the nullability check uses Arrow `Flatten` to inspect the projected child values.
     validateRecordBatchNullability(*record_batch, getPort().getHeader());
+    rows_emitted += chunk.getNumRows();
+    if (scan.limit && rows_emitted >= *scan.limit)
+        is_finished = true;
     return chunk;
 }
 

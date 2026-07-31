@@ -29,6 +29,7 @@
 #include <Common/Exception.h>
 #include <Common/FailPoint.h>
 #include <Common/FieldVisitorToString.h>
+#include <Common/ProfileEvents.h>
 #if USE_AWS_S3
 #include <Storages/ObjectStorage/S3/Configuration.h>
 #endif
@@ -37,6 +38,14 @@
 #include <fmt/ranges.h>
 
 #include <unordered_map>
+
+namespace ProfileEvents
+{
+extern const Event LancePredicatePushdownComplete;
+extern const Event LancePredicatePushdownPartial;
+extern const Event LanceLimitPushdown;
+extern const Event LanceProjectedColumns;
+}
 
 namespace DB
 {
@@ -123,8 +132,10 @@ public:
 
         is_finished = true;
         auto object_info = std::make_shared<LanceDatasetObjectInfo>(dataset_path, snapshot, dataset);
+        /// Dataset-level byte totals are often unavailable; per-batch progress is reported from
+        /// `Lance::ReadSource` via `ISource::progress` (auto_progress).
         if (callback)
-            callback(FileProgress{0});
+            callback(FileProgress{/*read_bytes=*/0, /*total_bytes_to_read=*/0});
         return object_info;
     }
 
@@ -279,9 +290,19 @@ std::optional<String> comparisonFunctionToLanceOperator(const String & function_
     return std::nullopt;
 }
 
-std::optional<String> extractLancePredicate(const ActionsDAG::Node & node, const ContextPtr & context);
+/// Result of translating a ClickHouse filter DAG into a Lance SQL-like predicate.
+/// Partial AND pushdown may set `predicate` while `is_complete` is false; residual FilterStep
+/// always re-evaluates the full filter. LIMIT and countRows require `is_complete`.
+struct LancePredicatePushdown
+{
+    std::optional<String> predicate;
+    bool is_complete = true;
+};
 
-std::optional<String> tryBuildBooleanPredicate(const ActionsDAG::Node & node, const String & joiner, const ContextPtr & context)
+std::optional<String> translateLancePredicateStrict(const ActionsDAG::Node & node, const ContextPtr & context);
+
+/// All-or-nothing boolean tree (used for OR and for strict translation of nested AND).
+std::optional<String> tryBuildBooleanPredicateStrict(const ActionsDAG::Node & node, const String & joiner, const ContextPtr & context)
 {
     if (node.children.empty())
         return std::nullopt;
@@ -290,7 +311,7 @@ std::optional<String> tryBuildBooleanPredicate(const ActionsDAG::Node & node, co
     predicates.reserve(node.children.size());
     for (const auto * child : node.children)
     {
-        if (auto predicate = extractLancePredicate(*child, context))
+        if (auto predicate = translateLancePredicateStrict(*child, context))
             predicates.push_back(fmt::format("({})", *predicate));
         else
             return std::nullopt;
@@ -391,20 +412,21 @@ std::optional<String> tryBuildInPredicate(const ActionsDAG::Node & node, const C
     return fmt::format("{} IN ({})", *identifier, fmt::join(literals, ", "));
 }
 
-std::optional<String> extractLancePredicate(const ActionsDAG::Node & node, const ContextPtr & context)
+/// Strict (all-or-nothing) translation of a filter subtree, including nested AND/OR.
+std::optional<String> translateLancePredicateStrict(const ActionsDAG::Node & node, const ContextPtr & context)
 {
     if (node.type == ActionsDAG::ActionType::ALIAS && node.children.size() == 1)
-        return extractLancePredicate(*node.children.front(), context);
+        return translateLancePredicateStrict(*node.children.front(), context);
 
     if (node.type != ActionsDAG::ActionType::FUNCTION || !node.function_base)
         return std::nullopt;
 
     const auto function_name = node.function_base->getName();
     if (function_name == "and")
-        return tryBuildBooleanPredicate(node, " AND ", context);
+        return tryBuildBooleanPredicateStrict(node, " AND ", context);
 
     if (function_name == "or")
-        return tryBuildBooleanPredicate(node, " OR ", context);
+        return tryBuildBooleanPredicateStrict(node, " OR ", context);
 
     if (function_name == "isNull" || function_name == "isNotNull")
         return tryBuildNullCheckPredicate(node, function_name);
@@ -415,16 +437,48 @@ std::optional<String> extractLancePredicate(const ActionsDAG::Node & node, const
     return tryBuildComparisonPredicate(node, function_name);
 }
 
-std::optional<String> extractLancePredicate(const FormatFilterInfoPtr & format_filter_info)
+/// Partial AND: flatten conjuncts with extractConjunctionAtoms, push every atom that
+/// translates strictly (OR atoms remain all-or-nothing). Residual FilterStep stays in plan.
+LancePredicatePushdown extractLancePredicatePushdown(const ActionsDAG::Node & node, const ContextPtr & context)
+{
+    const ActionsDAG::Node * root = &node;
+    while (root->type == ActionsDAG::ActionType::ALIAS && root->children.size() == 1)
+        root = root->children.front();
+
+    const auto atoms = ActionsDAG::extractConjunctionAtoms(root);
+    if (atoms.empty())
+        return {.predicate = std::nullopt, .is_complete = false};
+
+    std::vector<String> pushed;
+    pushed.reserve(atoms.size());
+    size_t failed = 0;
+    for (const auto * atom : atoms)
+    {
+        if (auto predicate = translateLancePredicateStrict(*atom, context))
+            pushed.push_back(fmt::format("({})", *predicate));
+        else
+            ++failed;
+    }
+
+    if (pushed.empty())
+        return {.predicate = std::nullopt, .is_complete = false};
+
+    return {
+        .predicate = fmt::format("{}", fmt::join(pushed, " AND ")),
+        .is_complete = failed == 0,
+    };
+}
+
+LancePredicatePushdown extractLancePredicatePushdown(const FormatFilterInfoPtr & format_filter_info)
 {
     if (!format_filter_info || !format_filter_info->filter_actions_dag)
-        return std::nullopt;
+        return {.predicate = std::nullopt, .is_complete = true};
 
     const auto & outputs = format_filter_info->filter_actions_dag->getOutputs();
     if (outputs.size() != 1)
-        return std::nullopt;
+        return {.predicate = std::nullopt, .is_complete = false};
 
-    return extractLancePredicate(*outputs.front(), format_filter_info->context.lock());
+    return extractLancePredicatePushdown(*outputs.front(), format_filter_info->context.lock());
 }
 
 std::pair<Names, NamesAndTypesList> splitVirtualColumns(
@@ -646,7 +700,8 @@ std::optional<Pipe> LanceMetadata::read(
     size_t max_block_size,
     FormatParserSharedResourcesPtr,
     FormatFilterInfoPtr format_filter_info,
-    bool need_only_count) const
+    bool need_only_count,
+    std::optional<size_t> limit) const
 {
     const auto & lance_object = extractLanceObjectInfo(object_info);
     const auto & snapshot = lance_object.snapshot;
@@ -673,9 +728,13 @@ std::optional<Pipe> LanceMetadata::read(
         dataset = std::move(session_handle);
     }
 
+    const auto predicate_pushdown = extractLancePredicatePushdown(format_filter_info);
+    /// Partial predicates must not feed countRows (would over-count). Fall back to scan + residual.
+    const bool effective_need_only_count = need_only_count && predicate_pushdown.is_complete;
+
     Names scan_projection = read_from_format_info.requested_columns.getNames();
     bool discard_output_columns = false;
-    if (!need_only_count && scan_projection.empty())
+    if (!effective_need_only_count && scan_projection.empty())
     {
         const auto schema = dataset.tableSchema(snapshot, local_context);
         if (schema.empty())
@@ -685,13 +744,29 @@ std::optional<Pipe> LanceMetadata::read(
         discard_output_columns = true;
     }
 
+    /// LIMIT is safe only when the residual filter cannot drop rows after the source
+    /// (no filter, or the full filter was translated into Lance).
+    std::optional<UInt64> scan_limit;
+    if (limit && *limit > 0 && !effective_need_only_count && predicate_pushdown.is_complete)
+        scan_limit = static_cast<UInt64>(*limit);
+
+    if (predicate_pushdown.is_complete)
+        ProfileEvents::increment(ProfileEvents::LancePredicatePushdownComplete);
+    else
+        ProfileEvents::increment(ProfileEvents::LancePredicatePushdownPartial);
+    if (scan_limit)
+        ProfileEvents::increment(ProfileEvents::LanceLimitPushdown);
+    ProfileEvents::increment(ProfileEvents::LanceProjectedColumns, scan_projection.size());
+
     Lance::ScanDescription scan
     {
         .snapshot = snapshot,
         .projection = std::move(scan_projection),
-        .predicate = extractLancePredicate(format_filter_info),
+        .predicate = predicate_pushdown.predicate,
+        .predicate_is_complete = predicate_pushdown.is_complete,
         .max_block_size = max_block_size,
-        .need_only_count = need_only_count,
+        .limit = scan_limit,
+        .need_only_count = effective_need_only_count,
         .discard_output_columns = discard_output_columns,
     };
 

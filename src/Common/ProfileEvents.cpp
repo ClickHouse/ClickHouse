@@ -450,6 +450,18 @@
     M(LanceNextBatch, "Number of Lance next-batch calls.", ValueType::Number) \
     M(LanceNextBatchMicroseconds, "Total time spent waiting for Lance next-batch results.", ValueType::Microseconds) \
     M(LanceRuntimeInit, "Number of times the process-wide Lance Tokio runtime was initialized (expected 0 or 1).", ValueType::Number) \
+    M(LanceBatchesRead, "Number of non-empty RecordBatches returned by Lance scans.", ValueType::Number) \
+    M(LanceRowsRead, "Number of rows returned by Lance scans (after scan limit slice, before residual ClickHouse filters).", ValueType::Number) \
+    M(LanceReadBytes, "Approximate uncompressed Arrow buffer bytes observed in Lance RecordBatches (not wire S3 bytes).", ValueType::Bytes) \
+    M(LanceLocalReadBytes, "Subset of LanceReadBytes for local filesystem datasets.", ValueType::Bytes) \
+    M(LanceS3ReadBytes, "Subset of LanceReadBytes for S3 datasets (Arrow buffer size, not S3 GET bytes).", ValueType::Bytes) \
+    M(LanceArrowConvertMicroseconds, "Total time spent converting Lance Arrow batches to ClickHouse chunks.", ValueType::Microseconds) \
+    M(LanceCountRows, "Number of Lance totalRows/countRows fast-path calls from the read source.", ValueType::Number) \
+    M(LanceCountRowsMicroseconds, "Total time spent in Lance totalRows/countRows fast-path calls.", ValueType::Microseconds) \
+    M(LancePredicatePushdownComplete, "Number of Lance scans where every conjunct of the filter was pushed to Lance (or there was no residual filter).", ValueType::Number) \
+    M(LancePredicatePushdownPartial, "Number of Lance scans that pushed only a subset of AND conjuncts; residual FilterStep still runs in ClickHouse.", ValueType::Number) \
+    M(LanceLimitPushdown, "Number of Lance scans that received a row limit on the Lance scanner.", ValueType::Number) \
+    M(LanceProjectedColumns, "Total number of physical columns requested across Lance scan projections.", ValueType::Number) \
     \
     M(SlowRead, "Number of reads from a file that were slow. This indicate system overload. Thresholds are controlled by read_backoff_* settings.", ValueType::Number) \
     M(ReadBackoff, "Number of times the number of query processing threads was lowered due to slow reads.", ValueType::Number) \

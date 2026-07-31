@@ -165,6 +165,8 @@ pub struct ch_lance_scan_options {
     predicate: *const c_char,
     need_only_count: bool,
     max_block_size: u64,
+    /// Soft upper bound on rows; 0 means unlimited.
+    limit: u64,
     cancel: *mut ch_lance_cancel_handle,
 }
 
@@ -1397,6 +1399,7 @@ pub unsafe extern "C" fn ch_lance_plan_scan(
     };
     let version = (*options).version;
     let max_block_size = (*options).max_block_size as usize;
+    let row_limit = (*options).limit;
     let source_dataset = (*dataset).dataset.clone();
     let origin = (*dataset).origin;
     let cancel = cancel_arc_from_ptr((*options).cancel);
@@ -1421,6 +1424,13 @@ pub unsafe extern "C" fn ch_lance_plan_scan(
             }
             if max_block_size != 0 {
                 scanner.batch_size(max_block_size);
+            }
+            if row_limit != 0 {
+                // i64::MAX is far beyond practical row caps; saturate rather than fail open.
+                let limit_i64 = i64::try_from(row_limit).unwrap_or(i64::MAX);
+                scanner
+                    .limit(Some(limit_i64), None)
+                    .map_err(|err| FfiError::from_lance(LanceOperation::PlanScan, origin, err))?;
             }
             scanner
                 .try_into_stream()
@@ -1709,6 +1719,7 @@ mod tests {
             predicate: predicate.as_ptr(),
             need_only_count: false,
             max_block_size: 1024,
+                    limit: 0,
                     cancel: ptr::null_mut(),
         };
         let scan = unsafe { ch_lance_plan_scan(dataset, &scan_options, error) };
@@ -1778,6 +1789,7 @@ mod tests {
             predicate: predicate.as_ptr(),
             need_only_count: false,
             max_block_size: 1024,
+                    limit: 0,
                     cancel: ptr::null_mut(),
         };
         let scan = unsafe { ch_lance_plan_scan(dataset, &scan_options, addr_of_mut!(error)) };
@@ -1819,6 +1831,7 @@ mod tests {
             predicate: ptr::null(),
             need_only_count: false,
             max_block_size: 1,
+                    limit: 0,
                     cancel: ptr::null_mut(),
         };
         let scan = unsafe { ch_lance_plan_scan(dataset, &scan_options, error) };
@@ -1991,6 +2004,7 @@ mod tests {
             predicate: ptr::null(),
             need_only_count: false,
             max_block_size: 1,
+            limit: 0,
             cancel,
         };
         let scan = unsafe { ch_lance_plan_scan(dataset, &scan_options, addr_of_mut!(error)) };
@@ -2009,6 +2023,7 @@ mod tests {
             predicate: ptr::null(),
             need_only_count: false,
             max_block_size: 1,
+            limit: 0,
             cancel: cancel2,
         };
         let scan2 = unsafe { ch_lance_plan_scan(dataset, &scan_options2, addr_of_mut!(error)) };
@@ -2407,6 +2422,7 @@ mod tests {
             predicate: ptr::null(),
             need_only_count: false,
             max_block_size: 1024,
+                    limit: 0,
                     cancel: ptr::null_mut(),
         };
         let scan = unsafe { ch_lance_plan_scan(dataset, &scan_options, addr_of_mut!(error)) };
@@ -2950,6 +2966,7 @@ mod tests {
             predicate: ptr::null(),
             need_only_count: false,
             max_block_size: 8192,
+                    limit: 0,
                     cancel: ptr::null_mut(),
         };
         let scan = unsafe { ch_lance_plan_scan(dataset, &scan_options, addr_of_mut!(error)) };
