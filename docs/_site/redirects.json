@@ -1696,6 +1696,10 @@
     "source": "/cloud/manage/billing/overview#clickpipes-for-streaming-object-storage"
   },
   {
+    "destination": "/products/cloud/reference/billing/clickpipes/clickpipes-for-cdc",
+    "source": "/cloud/manage/billing/overview#clickpipes-for-postgres-cdc"
+  },
+  {
     "destination": "/products/cloud/reference/billing/spend-alerts",
     "source": "/cloud/manage/billing/spend-alerts"
   },
@@ -1996,8 +2000,16 @@
     "source": "/cloud/reference/billing/clickpipes"
   },
   {
+    "destination": "/products/cloud/reference/billing/clickpipes/clickpipes-for-cdc#pricing-dimensions-oltp",
+    "source": "/cloud/reference/billing/clickpipes/postgres-cdc#pricing-dimensions"
+  },
+  {
     "destination": "/products/cloud/reference/billing/clickpipes/clickpipes-for-cdc",
     "source": "/cloud/reference/billing/clickpipes/postgres-cdc"
+  },
+  {
+    "destination": "/products/cloud/reference/billing/clickpipes/clickpipes-for-cdc",
+    "source": "/cloud/reference/billing/clickpipes/postgresql-cdc"
   },
   {
     "destination": "/products/cloud/reference/billing/clickpipes/clickpipes-for-streaming-and-object-storage",
