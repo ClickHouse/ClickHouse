@@ -1547,6 +1547,21 @@ def test_pg_class_oid_is_unique_per_row(started_cluster):
         node.query("DROP TABLE IF EXISTS oid_unique_probe SYNC")
 
 
+def assert_statement_rejected(statement):
+    # A statement that reaches normal query processing and fails there is answered with an
+    # `ErrorResponse` and then tears the connection down: the handler rethrows after replying and the
+    # run loop ends. So each rejection is checked on a connection of its own - reusing the caller's
+    # connection would leave every later assertion running into a socket this rejection already closed.
+    conn = py_psql.connect(
+        host=node.ip_address, port=PG_PORT, user="pguser", password="pgpass", database="default"
+    )
+    try:
+        with pytest.raises(Exception):
+            conn.cursor().execute(statement)
+    finally:
+        conn.close()
+
+
 def test_jdbc_set_noop_requires_exact_statement(started_cluster):
     # The JDBC handshake's `SET extra_float_digits` / `SET application_name` are acknowledged as no-ops
     # only when the packet is exactly such a single statement. A query merely containing that text as a
@@ -1587,8 +1602,13 @@ def test_jdbc_set_noop_requires_exact_statement(started_cluster):
         cur.execute("SET application_name = '%s'" % ("long;value " * 50))
         assert cur.statusmessage == "SET", cur.statusmessage
         # A trailing statement is still rejected even when it is pushed far out by a long value.
-        with pytest.raises(Exception):
-            cur.execute("SET application_name TO '%s'; SELECT 1" % ("x" * 500))
+        assert_statement_rejected("SET application_name TO '%s'; SELECT 1" % ("x" * 500))
+
+        # A non-ASCII value is not a reason to reject the handshake either: the classifier only folds
+        # ASCII, so bytes above 0x7F pass through instead of being handed to the locale-dependent ctype
+        # functions (undefined behavior for a negative `char`).
+        cur.execute("SET application_name TO 'Приложение'")
+        assert cur.statusmessage == "SET", cur.statusmessage
 
         # A query containing the magic text as a literal is executed, not swallowed.
         cur.execute("SELECT 'SET application_name'")
@@ -1598,13 +1618,13 @@ def test_jdbc_set_noop_requires_exact_statement(started_cluster):
         cur.execute("SELECT 'SET application_name TO ''x''; SELECT 1'")
         assert cur.fetchall() == [("SET application_name TO 'x'; SELECT 1",)]
 
-        # A multi-statement packet is not acknowledged by the fast path: it falls through to normal
-        # processing, where the unsupported `SET` fails loudly instead of silently dropping the trailing
-        # statement.
-        with pytest.raises(Exception):
-            cur.execute("SET application_name TO 'x'; SELECT 1")
     finally:
         conn.close()
+
+    # A multi-statement packet is not acknowledged by the fast path: it falls through to normal
+    # processing, where the unsupported `SET` fails loudly instead of silently dropping the trailing
+    # statement.
+    assert_statement_rejected("SET application_name TO 'x'; SELECT 1")
 
 
 def test_copy_to_stdout_zero_rows(started_cluster):
