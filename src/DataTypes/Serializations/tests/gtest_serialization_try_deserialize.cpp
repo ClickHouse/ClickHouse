@@ -75,9 +75,12 @@ public:
             throw Exception(ErrorCodes::CANNOT_PARSE_NUMBER, "injected by InsertingThenFailingSerialization");
     }
 
-    /// The non-throwing failure path: append, then report failure without an exception.
-    bool tryDeserializeText(IColumn & column, ReadBuffer &, const FormatSettings &, bool) const override
+    /// The non-throwing failure path: append, then report failure without an exception. When
+    /// configured to throw, defer to the base wrapper instead - it is the code under test there.
+    bool tryDeserializeText(IColumn & column, ReadBuffer & istr, const FormatSettings & settings, bool whole) const override
     {
+        if (throw_parse_error)
+            return SimpleTextSerialization::tryDeserializeText(column, istr, settings, whole);
         for (size_t i = 0; i < rows_to_append; ++i)
             column.insertDefault();
         return false;
