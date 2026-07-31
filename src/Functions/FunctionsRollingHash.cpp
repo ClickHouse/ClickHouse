@@ -20,7 +20,6 @@ namespace ErrorCodes
 extern const int BAD_ARGUMENTS;
 extern const int ILLEGAL_COLUMN;
 extern const int ILLEGAL_TYPE_OF_ARGUMENT;
-extern const int NUMBER_OF_ARGUMENTS_DOESNT_MATCH;
 }
 
 namespace
@@ -88,25 +87,14 @@ size_t forceCutPositionUtf8(const UInt8 * data, size_t data_size, size_t chunk_s
     const UInt8 * p = data + tentative;
     UTF8::syncBackward(p, data + chunk_start);
     size_t cut_pos = static_cast<size_t>(p - data);
+    /// Malformed UTF-8 (e.g. a non-continuation byte followed by a run of continuation bytes longer
+    /// than max_chunk_size) can yield cut_pos == chunk_start: there is no code point boundary in
+    /// (chunk_start, tentative]. For valid UTF-8 this cannot happen, because a code point occupies
+    /// at most 4 bytes while max_chunk_size is at least 256 KiB. Keep the max_chunk_size cap strict:
+    /// cut at tentative even though it falls inside the malformed byte run. This also guarantees
+    /// progress (tentative > chunk_start), which forEachContentDefinedChunk relies on.
     if (cut_pos <= chunk_start)
-    {
-        p = data + chunk_start;
-        UTF8::syncForward(p, data + data_size);
-        cut_pos = std::min<size_t>(static_cast<size_t>(p - data), data_size);
-    }
-    /// Malformed UTF-8 (e.g. a non-continuation byte followed by a long run of continuation bytes)
-    /// can yield cut_pos == chunk_start: syncBackward lands on chunk_start and syncForward does not advance.
-    /// forEachContentDefinedChunk must always make progress (cut_end > chunk_start).
-    if (cut_pos <= chunk_start)
-    {
-        if (chunk_start + 1 >= data_size)
-            return data_size;
-        p = data + chunk_start + 1;
-        UTF8::syncForward(p, data + data_size);
-        cut_pos = std::min<size_t>(static_cast<size_t>(p - data), data_size);
-        if (cut_pos <= chunk_start)
-            cut_pos = std::min(chunk_start + 1, data_size);
-    }
+        cut_pos = tentative;
     return cut_pos;
 }
 
@@ -203,22 +191,19 @@ void contentDefinedCdcOneRow(
 
 void validateContentDefinedCdcArguments(const ColumnsWithTypeAndName & arguments, const char * func_name)
 {
-    if (arguments.size() != 3)
-        throw Exception(
-            ErrorCodes::NUMBER_OF_ARGUMENTS_DOESNT_MATCH,
-            "Function {} expects 3 arguments (string, window_size, reverse_probability), got {}",
-            func_name,
-            arguments.size());
+    /// The numeric parameters are const-only: they determine chunking geometry for the whole column.
+    FunctionArgumentDescriptors mandatory_args{
+        {"string", static_cast<FunctionArgumentDescriptor::TypeValidator>(&isStringOrFixedString), nullptr, "String or FixedString"},
+        {"window_size", static_cast<FunctionArgumentDescriptor::TypeValidator>(&isUInt), &isColumnConst, "const UInt*"},
+        {"reverse_probability", static_cast<FunctionArgumentDescriptor::TypeValidator>(&isUInt), &isColumnConst, "const UInt*"},
+    };
+    validateFunctionArguments(func_name, arguments, mandatory_args);
 
-    if (!isString(arguments[0].type) && !isFixedString(arguments[0].type))
-        throw Exception(
-            ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT,
-            "First argument of function {} must be String or FixedString, got {}",
-            func_name,
-            arguments[0].type->getName());
-
-    getWindowSize(arguments, func_name);
-    getReverseProbability(arguments, func_name);
+    /// Value-range checks (only possible when the constants are already known).
+    if (arguments[1].column)
+        getWindowSize(arguments, func_name);
+    if (arguments[2].column)
+        getReverseProbability(arguments, func_name);
 }
 
 }
@@ -398,10 +383,10 @@ Min chunk length is `window_size`; max chunk size depends on `reverse_probabilit
 )";
     FunctionDocumentation::Arguments cdc_args = {
         {"string", "Input string or binary data.", {"String", "FixedString"}},
-        {"window_size", "Sliding window size in bytes. Must be in range [1, 256].", {"UInt*"}},
+        {"window_size", "Sliding window size in bytes. Must be a constant in range [1, 256].", {"const UInt*"}},
         {"reverse_probability",
-         "Unsigned divisor: cut when `(buzhash % reverse_probability) == 0`. Must be >= 2. Typical values: 256–65536.",
-         {"UInt*"}},
+         "Unsigned divisor: cut when `(buzhash % reverse_probability) == 0`. Must be a constant >= 2. Typical values: 256–65536.",
+         {"const UInt*"}},
     };
     FunctionDocumentation::ReturnedValue cdc_chunks_ret = {"Array of substrings covering the whole input (empty array for empty string).", {"Array(String)"}};
     FunctionDocumentation::Examples cdc_chunks_ex = {
@@ -415,6 +400,7 @@ Min chunk length is `window_size`; max chunk size depends on `reverse_probabilit
 
     FunctionDocumentation::Description cdc_utf8_desc = R"(
 Same as `contentDefinedChunks`, but cuts only at UTF-8 code point boundaries so chunks never split a multibyte character.
+If the input is not valid UTF-8 (e.g. contains a run of continuation bytes longer than the maximum chunk size), a forced cut at the maximum chunk size may fall inside such a run; the maximum chunk size cap always holds.
 )";
     FunctionDocumentation cdc_utf8_doc = {
         cdc_utf8_desc,
@@ -444,6 +430,7 @@ Returns start byte offsets of each chunk (first offset is always 0 for non-empty
 
     FunctionDocumentation::Description cdc_off_utf8_desc = R"(
 Same as `contentDefinedChunkOffsets`, but only allows boundaries at UTF-8 code point starts.
+If the input is not valid UTF-8, a forced cut at the maximum chunk size may fall inside a malformed byte run; the maximum chunk size cap always holds.
 )";
     FunctionDocumentation cdc_off_utf8_doc = {
         cdc_off_utf8_desc,

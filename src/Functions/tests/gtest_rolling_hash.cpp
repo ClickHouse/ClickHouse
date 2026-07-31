@@ -233,3 +233,34 @@ TEST(RollingHashCDC, ForceCutUtf8MalformedMakesProgress)
     for (const auto & chunk : chunks)
         EXPECT_FALSE(chunk.empty());
 }
+
+/// Malformed UTF-8 must not weaken the max chunk size cap: with 'A' followed by 300000
+/// continuation bytes and a trailing 'B', the forced cut used to jump forward to the next
+/// code point start (offset 300001), emitting a chunk larger than max_chunk_size.
+/// The cap is strict now: the forced cut falls at chunk_start + max_chunk_size.
+TEST(RollingHashCDC, ForceCutUtf8MalformedRespectsMaxChunkSize)
+{
+    const size_t run_length = 300000;
+    const size_t max_chunk_size = 262144;
+    std::string input;
+    input.resize(run_length + 2);
+    input[0] = 'A';
+    for (size_t i = 1; i <= run_length; ++i)
+        input[i] = static_cast<char>(0x80);
+    input[run_length + 1] = 'B';
+
+    const UInt8 * data = reinterpret_cast<const UInt8 *>(input.data());
+    const size_t cut = RollingHashCDC::forceCutPositionUtf8(data, input.size(), 0, max_chunk_size);
+    EXPECT_EQ(cut, max_chunk_size);
+
+    /// End-to-end: reverse_probability = 2 gives max chunk size exactly 262144 (the floor).
+    std::vector<std::string> chunks;
+    std::vector<UInt64> offsets;
+    runCdc(input, 8, 2, true, false, chunks, offsets);
+    EXPECT_EQ(concatChunks(chunks), input);
+    for (const auto & chunk : chunks)
+    {
+        EXPECT_FALSE(chunk.empty());
+        EXPECT_LE(chunk.size(), max_chunk_size);
+    }
+}

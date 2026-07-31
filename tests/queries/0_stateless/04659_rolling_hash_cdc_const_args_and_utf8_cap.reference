@@ -1,0 +1,3 @@
+--- non-constant parameters are rejected
+--- strict max chunk size cap on malformed UTF-8
+1	1
