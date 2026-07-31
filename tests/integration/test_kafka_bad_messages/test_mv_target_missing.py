@@ -1,9 +1,7 @@
 import time
 
 import pytest
-from kafka import KafkaAdminClient
 
-from helpers.kafka.common_direct import *
 from helpers.cluster import ClickHouseCluster
 import helpers.kafka.common as k
 

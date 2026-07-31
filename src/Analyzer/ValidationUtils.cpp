@@ -10,6 +10,7 @@
 #include <Analyzer/QueryNode.h>
 #include <Analyzer/TableNode.h>
 #include <Analyzer/WindowFunctionsUtils.h>
+#include <Analyzer/traverseQueryTree.h>
 #include <Storages/IStorage.h>
 
 #include <memory>
@@ -28,6 +29,7 @@ namespace ErrorCodes
     extern const int NOT_IMPLEMENTED;
     extern const int UNEXPECTED_EXPRESSION;
     extern const int UNSUPPORTED_METHOD;
+    extern const int TOO_DEEP_SUBQUERIES;
 }
 
 namespace
@@ -152,8 +154,12 @@ namespace
 class ValidateGroupByColumnsVisitor : public ConstInDepthQueryTreeVisitor<ValidateGroupByColumnsVisitor>
 {
 public:
-    explicit ValidateGroupByColumnsVisitor(const QueryTreeNodes & group_by_keys_nodes_, const QueryTreeNodePtr & query_node_)
+    explicit ValidateGroupByColumnsVisitor(
+        const QueryTreeNodes & group_by_keys_nodes_,
+        const QueryTreeNodes & original_group_by_keys_nodes_,
+        const QueryTreeNodePtr & query_node_)
         : group_by_keys_nodes(group_by_keys_nodes_)
+        , original_group_by_keys_nodes(original_group_by_keys_nodes_)
         , query_node(query_node_)
     {}
 
@@ -176,7 +182,10 @@ public:
             {
                 bool found_argument_in_group_by_keys = false;
 
-                for (const auto & group_by_key_node : group_by_keys_nodes)
+                /// Arguments of the `grouping` function only identify GROUP BY keys, so they are
+                /// not converted to Nullable when `group_by_use_nulls` is enabled and must be
+                /// compared with the keys in their original form.
+                for (const auto & group_by_key_node : original_group_by_keys_nodes)
                 {
                     if (grouping_function_arguments_node->isEqual(*group_by_key_node))
                     {
@@ -200,7 +209,7 @@ public:
             return;
 
         auto column_node_source = column_node->getColumnSource();
-        if (column_node_source->getNodeType() == QueryTreeNodeType::LAMBDA)
+        if (column_node_source->getNodeType() == QueryTreeNodeType::LAMBDA_ARGS)
             return;
         if (column_node_source->getNodeType() == QueryTreeNodeType::INTERPOLATE)
             return;
@@ -213,6 +222,14 @@ public:
 
     bool needChildVisit(const QueryTreeNodePtr & parent_node, const QueryTreeNodePtr & child_node)
     {
+        /// Arguments of the `grouping` function are validated in visitImpl against the keys
+        /// in the original form. They must not be visited as ordinary expressions: when
+        /// `group_by_use_nulls` is enabled, they are not converted to Nullable and would not
+        /// match the converted GROUP BY keys.
+        if (auto * parent_function_node = parent_node->as<FunctionNode>())
+            if (parent_function_node->getFunctionName() == "grouping")
+                return false;
+
         if (nodeIsAggregateFunctionOrInGroupByKeys(parent_node))
             return false;
 
@@ -238,6 +255,7 @@ private:
     }
 
     const QueryTreeNodes & group_by_keys_nodes;
+    const QueryTreeNodes & original_group_by_keys_nodes;
     const QueryTreeNodePtr & query_node;
 };
 
@@ -246,14 +264,14 @@ private:
 void validateAggregates(const QueryTreeNodePtr & query_node, AggregatesValidationParams params)
 {
     const auto & query_node_typed = query_node->as<QueryNode &>();
-    auto join_tree_node_type = query_node_typed.getJoinTree()->getNodeType();
+    auto join_tree_node_type = query_node_typed.getJoinTreeNode()->getNodeType();
     bool join_tree_is_subquery = join_tree_node_type == QueryTreeNodeType::QUERY || join_tree_node_type == QueryTreeNodeType::UNION;
 
     if (!join_tree_is_subquery)
     {
-        assertNoAggregateFunctionNodes(query_node_typed.getJoinTree(), "in JOIN TREE");
-        assertNoGroupingFunctionNodes(query_node_typed.getJoinTree(), "in JOIN TREE");
-        assertNoWindowFunctionNodes(query_node_typed.getJoinTree(), "in JOIN TREE");
+        assertNoAggregateFunctionNodes(query_node_typed.getJoinTreeNode(), "in JOIN TREE");
+        assertNoGroupingFunctionNodes(query_node_typed.getJoinTreeNode(), "in JOIN TREE");
+        assertNoWindowFunctionNodes(query_node_typed.getJoinTreeNode(), "in JOIN TREE");
     }
 
     if (query_node_typed.hasWhere())
@@ -307,8 +325,13 @@ void validateAggregates(const QueryTreeNodePtr & query_node, AggregatesValidatio
             assertNoWindowFunctionNodes(window_function_node_typed.getWindowNode(), "inside window definition");
     }
 
+    /// GROUP BY keys in the form in which expressions equal to them appear in the query tree
+    /// (converted to Nullable when `group_by_use_nulls` is enabled), and in the original form
+    /// (for `grouping` function arguments, which are never converted).
     QueryTreeNodes group_by_keys_nodes;
+    QueryTreeNodes original_group_by_keys_nodes;
     group_by_keys_nodes.reserve(query_node_typed.getGroupBy().getNodes().size());
+    original_group_by_keys_nodes.reserve(query_node_typed.getGroupBy().getNodes().size());
 
     for (const auto & node : query_node_typed.getGroupBy().getNodes())
     {
@@ -320,6 +343,7 @@ void validateAggregates(const QueryTreeNodePtr & query_node, AggregatesValidatio
                 if (grouping_set_key->as<ConstantNode>())
                     continue;
 
+                original_group_by_keys_nodes.push_back(grouping_set_key);
                 group_by_keys_nodes.push_back(grouping_set_key->clone());
                 if (params.group_by_use_nulls)
                     group_by_keys_nodes.back()->convertToNullable();
@@ -330,6 +354,7 @@ void validateAggregates(const QueryTreeNodePtr & query_node, AggregatesValidatio
             if (node->as<ConstantNode>())
                 continue;
 
+            original_group_by_keys_nodes.push_back(node);
             group_by_keys_nodes.push_back(node->clone());
             if (params.group_by_use_nulls)
                 group_by_keys_nodes.back()->convertToNullable();
@@ -351,7 +376,7 @@ void validateAggregates(const QueryTreeNodePtr & query_node, AggregatesValidatio
 
     if (has_aggregation)
     {
-        ValidateGroupByColumnsVisitor validate_group_by_columns_visitor(group_by_keys_nodes, query_node);
+        ValidateGroupByColumnsVisitor validate_group_by_columns_visitor(group_by_keys_nodes, original_group_by_keys_nodes, query_node);
 
         if (query_node_typed.hasHaving())
             validate_group_by_columns_visitor.visit(query_node_typed.getHaving());
@@ -492,6 +517,31 @@ void validateTreeSize(const QueryTreeNodePtr & node,
             max_size);
 }
 
+void validateSubqueryDepth(const QueryTreeNodePtr &node, size_t initial_subquery_depth, size_t max_subquery_depth)
+{
+    if (!max_subquery_depth)
+        return;
+
+    size_t current_depth = initial_subquery_depth;
+    std::vector<std::pair<QueryTreeNodePtr, bool>> nodes_to_process;
+    nodes_to_process.emplace_back(node, false);
+
+    traverseQueryTree(node, Everything{},
+        [&current_depth, max_subquery_depth](auto & current_node)
+        {
+            if (current_node->getNodeType() == QueryTreeNodeType::QUERY)
+                ++current_depth;
+            if (current_depth > max_subquery_depth)
+                throw Exception(ErrorCodes::TOO_DEEP_SUBQUERIES, "Too deep subqueries. Maximum: {}", max_subquery_depth);
+        },
+        [&current_depth](const QueryTreeNodePtr & current_node)
+        {
+            if (current_node->getNodeType() == QueryTreeNodeType::QUERY)
+                --current_depth;
+        });
+
+}
+
 void validateCorrelatedSubqueries(const QueryTreeNodePtr & node)
 {
     bool has_remote = false;
@@ -557,7 +607,7 @@ void validateFromClause(const QueryTreeNodePtr & node)
     const auto & root_query_node = node->as<QueryNode &>();
     auto correlated_columns_set = root_query_node.getCorrelatedColumnsSet();
 
-    std::vector<QueryTreeNodePtr> nodes_to_process = { root_query_node.getJoinTree() };
+    std::vector<QueryTreeNodePtr> nodes_to_process = { root_query_node.getJoinTreeNode() };
 
     while (!nodes_to_process.empty())
     {
@@ -595,7 +645,7 @@ void validateFromClause(const QueryTreeNodePtr & node)
             case QueryTreeNodeType::ARRAY_JOIN:
             {
                 auto & array_join_node = node_to_process->as<ArrayJoinNode &>();
-                nodes_to_process.push_back(array_join_node.getTableExpression());
+                nodes_to_process.push_back(array_join_node.getTableExpressionNode());
                 break;
             }
             case QueryTreeNodeType::CROSS_JOIN:
@@ -608,8 +658,8 @@ void validateFromClause(const QueryTreeNodePtr & node)
             case QueryTreeNodeType::JOIN:
             {
                 auto & join_node = node_to_process->as<JoinNode &>();
-                nodes_to_process.push_back(join_node.getRightTableExpression());
-                nodes_to_process.push_back(join_node.getLeftTableExpression());
+                nodes_to_process.push_back(join_node.getRightTableExpressionNode());
+                nodes_to_process.push_back(join_node.getLeftTableExpressionNode());
                 break;
             }
             default:

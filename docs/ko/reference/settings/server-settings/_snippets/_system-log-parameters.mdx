@@ -1,0 +1,33 @@
+---
+title: 시스템 로그 매개변수
+---
+
+다음 설정은 하위 태그를 통해 구성할 수 있습니다:
+
+| Setting                            | Description                                                                                                                         | Default             | Note                                                                                |
+| ---------------------------------- | ----------------------------------------------------------------------------------------------------------------------------------- | ------------------- | ----------------------------------------------------------------------------------- |
+| `database`                         | 데이터베이스 이름입니다.                                                                                                                       |                     |                                                                                     |
+| `table`                            | 시스템 테이블 이름입니다.                                                                                                                      |                     |                                                                                     |
+| `engine`                           | 시스템 테이블의 [MergeTree 엔진 정의](/ko/reference/engines/table-engines/mergetree-family/mergetree#table_engine-mergetree-creating-a-table)입니다. |                     | `partition_by` 또는 `order_by`가 정의된 경우 사용할 수 없습니다. 지정하지 않으면 기본적으로 `MergeTree`가 선택됩니다. |
+| `partition_by`                     | 시스템 테이블의 [사용자 지정 파티셔닝 키](/ko/reference/engines/table-engines/mergetree-family/custom-partitioning-key)입니다.                             |                     | 시스템 테이블에 `engine`이 지정된 경우 `partition_by` 매개변수는 &#39;engine&#39; 내부에 직접 지정해야 합니다.    |
+| `ttl`                              | 테이블 [TTL](/ko/reference/engines/table-engines/mergetree-family/mergetree#table_engine-mergetree-ttl)을 지정합니다.                           |                     | 시스템 테이블에 `engine`이 지정된 경우 `ttl` 매개변수는 &#39;engine&#39; 내부에 직접 지정해야 합니다.             |
+| `order_by`                         | 시스템 테이블의 [사용자 지정 정렬 키](/ko/reference/engines/table-engines/mergetree-family/mergetree#order_by)입니다. `engine`이 정의된 경우 사용할 수 없습니다.       |                     | 시스템 테이블에 `engine`이 지정된 경우 `order_by` 매개변수는 &#39;engine&#39; 내부에 직접 지정해야 합니다.        |
+| `storage_policy`                   | 테이블에 사용할 스토리지 정책 이름입니다(선택 사항).                                                                                                      |                     | 시스템 테이블에 `engine`이 지정된 경우 `storage_policy` 매개변수는 &#39;engine&#39; 내부에 직접 지정해야 합니다.  |
+| `settings`                         | MergeTree의 동작을 제어하는 [추가 매개변수](/ko/reference/engines/table-engines/mergetree-family/mergetree#settings)입니다(선택 사항).                      |                     | 시스템 테이블에 `engine`이 지정된 경우 `settings` 매개변수는 &#39;engine&#39; 내부에 직접 지정해야 합니다.        |
+| `flush_interval_milliseconds`      | 메모리 버퍼의 데이터를 테이블로 플러시하는 주기입니다.                                                                                                      | `7500`              |                                                                                     |
+| `max_size_rows`                    | 로그의 최대 행 수입니다. 플러시되지 않은 로그 수가 max&#95;size에 도달하면 로그가 디스크에 덤프됩니다.                                                                    | `1048576`           |                                                                                     |
+| `reserved_size_rows`               | 로그를 위해 미리 할당하는 메모리 크기(행 수)입니다.                                                                                                      | `8192`              |                                                                                     |
+| `buffer_size_rows_flush_threshold` | 행 수에 대한 임계값입니다. 이 임계값에 도달하면 로그를 디스크로 플러시하는 작업이 백그라운드에서 시작됩니다.                                                                       | `max_size_rows / 2` |                                                                                     |
+| `flush_on_crash`                   | 충돌 발생 시 로그를 디스크에 덤프할지 여부를 설정합니다.                                                                                                    | `false`             |                                                                                     |
+
+또한 다음 서버 수준 설정은 모든 시스템 로그 테이블의 기본 플러시 정책을 제어합니다:
+
+```xml
+<default_system_log_flush_policy>
+    <skip_alias_columns>true</skip_alias_columns>
+</default_system_log_flush_policy>
+```
+
+| 설정                   | 설명                                                                            | 기본값     |
+| -------------------- | ----------------------------------------------------------------------------- | ------- |
+| `skip_alias_columns` | `true`로 설정하면 시스템 로그 table 스키마에서 ALIAS 컬럼을 제외합니다. S3를 백엔드로 사용하는 시스템 로그에 필요합니다. | `false` |
