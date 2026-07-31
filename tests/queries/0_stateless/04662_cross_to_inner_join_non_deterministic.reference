@@ -16,7 +16,15 @@
 1
 -- deterministic predicate is still rewritten
 1
--- queryID() is still rewritten
+-- dictGet() is still rewritten
+1
+-- dictGet() answers correctly
+1
+-- queryID() is no longer rewritten
+1
+-- FQDN() is no longer rewritten
+1
+-- a stateful function is no longer rewritten
 1
 -- now() is still rewritten
 1

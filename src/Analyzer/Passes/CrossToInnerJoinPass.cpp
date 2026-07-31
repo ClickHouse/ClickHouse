@@ -55,6 +55,16 @@ void extractJoinConditions(const QueryTreeNodePtr & node, QueryTreeNodes & equi_
     }
 }
 
+/// These report `isDeterministicInScopeOfQuery() = true`, but their value is fixed per executing node
+/// rather than per query: it is read once when the function object is created, and a node that
+/// deserializes a plan creates its own. Both sides of a join key can therefore be built by different
+/// nodes and see different values, so they must not become part of a key. Aliases and letter case are
+/// resolved to these canonical names before the pass runs.
+bool isNodeLocalFunction(const String & function_name)
+{
+    return function_name == "queryID" || function_name == "FQDN";
+}
+
 /// A condition may become a join key only if its value is stable within one query, because in the key
 /// position it is evaluated per row of each joined side instead of once per row of the cross product.
 /// The predicate is `isDeterministicInScopeOfQuery` and not `isDeterministic`: `now()` and the like
@@ -78,6 +88,9 @@ bool canMoveToJoinExpression(const QueryTreeNodePtr & node)
 
             auto function_base = function_node->getFunction();
             if (!function_base || function_base->isStateful() || !function_base->isDeterministicInScopeOfQuery())
+                return false;
+
+            if (isNodeLocalFunction(function_node->getFunctionName()))
                 return false;
         }
 

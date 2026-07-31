@@ -9,6 +9,8 @@ SET query_plan_enable_optimizations = 0;
 DROP TABLE IF EXISTS l;
 DROP TABLE IF EXISTS r;
 DROP TABLE IF EXISTS m;
+DROP DICTIONARY IF EXISTS dict;
+DROP TABLE IF EXISTS dsrc;
 
 CREATE TABLE l (a UInt64, b UInt64) ENGINE = Log;
 CREATE TABLE r (a UInt64, b UInt64) ENGINE = Log;
@@ -17,6 +19,11 @@ CREATE TABLE m (a UInt64) ENGINE = Log;
 INSERT INTO l SELECT number % 16, number % 4 FROM numbers(500);
 INSERT INTO r SELECT number % 16, number % 4 FROM numbers(500);
 INSERT INTO m SELECT number % 4 FROM numbers(40);
+
+CREATE TABLE dsrc (k UInt64, v UInt64) ENGINE = Log;
+INSERT INTO dsrc SELECT number, number % 16 FROM numbers(64);
+CREATE DICTIONARY dict (k UInt64, v UInt64)
+PRIMARY KEY k SOURCE(CLICKHOUSE(TABLE 'dsrc')) LAYOUT(FLAT()) LIFETIME(MIN 0 MAX 0);
 
 -- The second conjunct is single-side, so it is never extracted into the join and pins the key to 3.
 -- Every surviving r.a must therefore be 3. Row counts are not asserted: they are random here.
@@ -74,15 +81,48 @@ SELECT count() > 0 FROM (
     SELECT count() FROM l, r WHERE l.a = r.a SETTINGS cross_to_inner_join_rewrite = 1
 ) WHERE explain ILIKE '%kind: INNER%';
 
--- queryID() has one value for the whole query, so it stays eligible even though it reports
--- isDeterministic() = false. This is the row that catches a guard written against isDeterministic()
--- instead of isDeterministicInScopeOfQuery(). now() and currentUser() are constant-folded before
--- this pass runs, so they cannot serve that purpose.
-SELECT '-- queryID() is still rewritten';
+-- dictGet() reports isDeterministic() = false, but every node reads the same dictionary by name, so it
+-- stays eligible. This is the row that catches a guard written against isDeterministic() instead of
+-- isDeterministicInScopeOfQuery(): now() and currentUser() are constant-folded before this pass runs,
+-- so they cannot serve that purpose.
+SELECT '-- dictGet() is still rewritten';
 SELECT count() > 0 FROM (
+    EXPLAIN QUERY TREE run_passes = 1
+    SELECT count() FROM l, r WHERE dictGet(currentDatabase() || '.dict', 'v', l.a) = r.a
+    SETTINGS cross_to_inner_join_rewrite = 1
+) WHERE explain ILIKE '%kind: INNER%';
+
+SELECT '-- dictGet() answers correctly';
+SELECT uniqExact(r.a) = 1 AND min(r.a) = 3 AND max(r.a) = 3 AND count() > 0
+FROM l, r WHERE dictGet(currentDatabase() || '.dict', 'v', l.a) = r.a
+  AND dictGet(currentDatabase() || '.dict', 'v', l.a) = 3
+SETTINGS cross_to_inner_join_rewrite = 1;
+
+-- queryID() and FQDN() are read once per executing node instead of once per query, so the two sides of
+-- a key can be built by different nodes and compare values that never match.
+SELECT '-- queryID() is no longer rewritten';
+SELECT count() = 0 FROM (
     EXPLAIN QUERY TREE run_passes = 1
     SELECT count() FROM l, r
     WHERE concat(toString(l.a), queryID()) = concat(toString(r.a), queryID())
+    SETTINGS cross_to_inner_join_rewrite = 1
+) WHERE explain ILIKE '%kind: INNER%';
+
+SELECT '-- FQDN() is no longer rewritten';
+SELECT count() = 0 FROM (
+    EXPLAIN QUERY TREE run_passes = 1
+    SELECT count() FROM l, r
+    WHERE concat(toString(l.a), FQDN()) = concat(toString(r.a), FQDN())
+    SETTINGS cross_to_inner_join_rewrite = 1
+) WHERE explain ILIKE '%kind: INNER%';
+
+-- timeSeriesTagsToGroup() is query-deterministic and is not constant-folded, so only the isStateful()
+-- clause can refuse it.
+SELECT '-- a stateful function is no longer rewritten';
+SELECT count() = 0 FROM (
+    EXPLAIN QUERY TREE run_passes = 1
+    SELECT count() FROM l, r
+    WHERE timeSeriesTagsToGroup([], 'k', toString(l.a)) % 16 = r.a
     SETTINGS cross_to_inner_join_rewrite = 1
 ) WHERE explain ILIKE '%kind: INNER%';
 
@@ -113,6 +153,8 @@ SELECT count() = 0 FROM (
     SETTINGS cross_to_inner_join_rewrite = 1
 ) WHERE explain ILIKE '%kind: INNER%';
 
+DROP DICTIONARY dict;
+DROP TABLE dsrc;
 DROP TABLE l;
 DROP TABLE r;
 DROP TABLE m;
