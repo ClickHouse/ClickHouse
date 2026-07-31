@@ -26,22 +26,18 @@ import { Image } from "/snippets/ar/components/Image.jsx";
 </div>
 
 <Note>
-  هذه الخطوات مشابهة لإعداد S3 الآمن كما هو موضح في [&quot;الوصول إلى بيانات S3 بأمان&quot;](/ar/products/cloud/guides/data-sources/accessing-s3-data-securely)، ولكن توجد أيضًا إجراءات إضافية مطلوبة ضمن أذونات الدور.
+  هذه الخطوات مشابهة لإعداد S3 الآمن كما هو موضح في [&quot;الوصول إلى بيانات S3 بأمان&quot;](/ar/products/cloud/guides/data-sources/accessing-s3-data-securely)، ولكن هناك أيضًا إجراءات إضافية مطلوبة ضمن أذونات الدور.
 </Note>
 
 اتبع الخطوات التالية في حساب AWS الخاص بك:
 
 <Steps>
-  <Step>
-    ##### إنشاء حاوية S3 في AWS
-
+  <Step title="إنشاء حاوية S3 في AWS" id="create-s3-bucket">
     أنشئ حاوية S3 في AWS ضمن حسابك في الموقع الذي تريد تصدير النسخ الاحتياطية إليه.
   </Step>
 
-  <Step>
-    ##### إنشاء IAM role
-
-    تستخدم AWS المصادقة المستندة إلى الأدوار، لذا أنشئ IAM role بحيث تتمكن خدمة ClickHouse Cloud من assume هذا الدور للكتابة إلى هذا الـ bucket.
+  <Step title="إنشاء IAM role" id="create-iam-role">
+    تستخدم AWS المصادقة المستندة إلى الأدوار، لذا أنشئ IAM role بحيث تتمكن خدمة ClickHouse Cloud من assume هذا الدور للكتابة إلى هذا الـ حاوية التخزين.
 
     * a. احصل على ARN من صفحة إعدادات خدمة ClickHouse Cloud، ضمن Network security information، وسيبدو مشابهًا لما يلي:
 
@@ -66,11 +62,9 @@ import { Image } from "/snippets/ar/components/Image.jsx";
     ```
   </Step>
 
-  <Step>
-    ##### تحديث أذونات الدور
-
+  <Step title="تحديث أذونات الدور" id="update-permissions-for-role">
     ستحتاج أيضًا إلى ضبط أذونات هذا الدور حتى تتمكن خدمة ClickHouse Cloud هذه من الكتابة إلى حاوية S3.
-    ويتم ذلك بإنشاء policy أذونات لهذا الدور باستخدام JSON مشابه لما يلي، مع استبدال ARN الخاص بالـ bucket في resource في كلا الموضعين.
+    ويتم ذلك بإنشاء سياسة أذونات لهذا الدور باستخدام JSON مشابه لما يلي، مع استبدال ARN الخاص بالـ حاوية التخزين في resource في كلا الموضعين.
 
     ```json
     {
@@ -119,45 +113,35 @@ import { Image } from "/snippets/ar/components/Image.jsx";
 اتبع الخطوات التالية في وحدة تحكم ClickHouse Cloud لتهيئة الحاوية الخارجية:
 
 <Steps>
-  <Step>
-    ##### Change external backup
-
+  <Step title="تغيير النسخ الاحتياطي الخارجي" id="configure-external-bucket">
     في صفحة &quot;Settings&quot;، انقر على &quot;Set up external backup&quot;:
 
     <Image img="/images/cloud/manage/backups/change_external_backup.webp" alt="تغيير النسخ الاحتياطي الخارجي" size="lg" />
   </Step>
 
-  <Step>
-    ##### تهيئة AWS IAM Role ARN وتفاصيل حاوية S3
-
+  <Step title="تهيئة AWS IAM Role ARN وتفاصيل حاوية S3" id="configure-aws-iam-role-arn-and-s3-bucket-details">
     في الشاشة التالية، أدخل AWS IAM Role ARN الذي أنشأته للتو وBucket URL لحاوية S3 بالتنسيق التالي:
 
     <Image img="/images/cloud/manage/backups/configure_arn_s3_details.webp" alt="تهيئة AWS IAM Role ARN وتفاصيل حاوية S3" size="lg" />
   </Step>
 
-  <Step>
-    ##### حفظ التغييرات
-
+  <Step title="حفظ التغييرات" id="save-changes">
     انقر على “Save External Bucket” لحفظ الإعدادات
   </Step>
 
-  <Step>
-    ##### تغيير جدول النسخ الاحتياطي عن الجدول الافتراضي
-
-    ستُحفَظ النسخ الاحتياطية الخارجية الآن في حاويتك وفقًا للجدول الافتراضي.
+  <Step title="تغيير جدول النسخ الاحتياطي عن الجدول الافتراضي" id="changing-the-backup-schedule">
+    ستُحفَظ النسخ الاحتياطية الخارجية الآن في حاوية التخزين الخاصة بك وفقًا للجدول الافتراضي.
     ويمكنك أيضًا تهيئة جدول النسخ الاحتياطي من صفحة “Settings”.
     إذا تم تكوينه بشكل مختلف، فسيُستخدم الجدول المخصص لكتابة النسخ الاحتياطية إلى
-    حاويتك، بينما سيُستخدم الجدول الافتراضي (نسخة احتياطية كل 24 ساعة) للنسخ الاحتياطية في
-    الحاوية المملوكة لـ ClickHouse Cloud.
+    حاوية التخزين الخاصة بك، بينما سيُستخدم الجدول الافتراضي (نسخة احتياطية كل 24 ساعة) للنسخ الاحتياطية في
+    حاوية التخزين المملوكة لـ ClickHouse Cloud.
   </Step>
 
-  <Step>
-    ##### عرض النسخ الاحتياطية المخزنة في حاويتك
-
-    ستعرض صفحة &quot;Backups&quot; هذه النسخ الاحتياطية الموجودة في حاويتك في جدول منفصل،
+  <Step title="عرض النسخ الاحتياطية المخزنة في حاوية التخزين الخاصة بك" id="view-backups-stored-in-your-bucket">
+    ستعرض صفحة &quot;Backups&quot; هذه النسخ الاحتياطية الموجودة في حاوية التخزين الخاصة بك في جدول منفصل،
     كما هو موضح أدناه:
 
-    <Image img="/images/cloud/manage/backups/view_backups.webp" alt="عرض النسخ الاحتياطية المخزنة في حاويتك" size="lg" />
+    <Image img="/images/cloud/manage/backups/view_backups.webp" alt="عرض النسخ الاحتياطية المخزنة في حاوية التخزين الخاصة بك" size="lg" />
   </Step>
 </Steps>
 
@@ -168,23 +152,18 @@ import { Image } from "/snippets/ar/components/Image.jsx";
 اتبع الخطوات التالية لاستعادة النسخ الاحتياطية من AWS:
 
 <Steps>
-  <Step>
-    ##### أنشئ خدمة جديدة للاستعادة إليها
-
+  <Step title="أنشئ خدمة جديدة للاستعادة إليها" id="create-new-service-to-restore-to">
     أنشئ خدمة جديدة لاستعادة النسخة الاحتياطية إليها.
   </Step>
 
-  <Step>
-    ##### أضف ARN الخاص بالخدمة
-
-    أضف ARN الخاص بالخدمة التي أنشأتها حديثًا (من صفحة إعدادات الخدمة في وحدة تحكم ClickHouse Cloud) إلى سياسة الثقة الخاصة بـ IAM role. وهذا مماثل
+  <Step title="أضف ARN الخاص بالخدمة" id="add-service-arn">
+    أضف ARN الخاص بالخدمة التي أنشأتها حديثًا (من صفحة إعدادات الخدمة في وحدة تحكم ClickHouse
+    Cloud) إلى سياسة الثقة الخاصة بـ IAM role. وهذا مماثل
     [للخطوة الثانية](#create-iam-role) في قسم خطوات AWS أعلاه. وهذا مطلوب
     حتى تتمكن الخدمة الجديدة من الوصول إلى حاوية S3.
   </Step>
 
-  <Step>
-    ##### احصل على أمر SQL المستخدم لاستعادة النسخة الاحتياطية
-
+  <Step title="احصل على أمر SQL المستخدم لاستعادة النسخة الاحتياطية" id="obtain-sql-command-to-restore-backup">
     انقر على رابط “access or restore a backup” الموجود أعلى قائمة النسخ الاحتياطية في
     واجهة المستخدم للحصول على أمر SQL لاستعادة النسخة الاحتياطية. سيبدو الأمر كما يلي:
 
@@ -207,9 +186,7 @@ import { Image } from "/snippets/ar/components/Image.jsx";
     </Tip>
   </Step>
 
-  <Step>
-    ##### شغّل أمر الاستعادة
-
+  <Step title="شغّل أمر الاستعادة" id="run-the-restore-command">
     شغّل أمر الاستعادة من SQL Console في الخدمة التي أنشأتها حديثًا
     لاستعادة النسخة الاحتياطية.
   </Step>
@@ -230,15 +207,11 @@ import { Image } from "/snippets/ar/components/Image.jsx";
 </div>
 
 <Steps>
-  <Step>
-    ##### إنشاء حاوية تخزين في GCP
-
+  <Step title="إنشاء حاوية تخزين في GCP" id="create-a-gcp-storage-bucket">
     أنشئ حاوية تخزين في حسابك على GCP لتصدير النسخ الاحتياطية إليها.
   </Step>
 
-  <Step>
-    ##### إنشاء مفتاح HMAC والسر
-
+  <Step title="إنشاء مفتاح HMAC والسر" id="generate-an-hmac-key-and-secret">
     أنشئ مفتاح HMAC والسر، إذ يلزمان للمصادقة المستندة إلى كلمة المرور. اتبع الخطوات التالية لإنشاء المفاتيح:
 
     * a. أنشئ حساب خدمة
@@ -264,47 +237,37 @@ import { Image } from "/snippets/ar/components/Image.jsx";
   #### الخطوات التي يجب اتباعها في ClickHouse Cloud
 </div>
 
-اتبع الخطوات التالية في وحدة تحكم ClickHouse Cloud لتهيئة حاوية خارجي:
+اتبع الخطوات التالية في وحدة تحكم ClickHouse Cloud لتهيئة الحاوية الخارجية:
 
 <Steps>
-  <Step>
-    ##### تغيير النسخ الاحتياطي الخارجي
-
+  <Step title="تغيير النسخ الاحتياطي الخارجي" id="gcp-configure-external-bucket">
     في صفحة `Settings`، انقر على `Change external backup`
 
     <Image img="/images/cloud/manage/backups/change_external_backup.webp" alt="تغيير النسخ الاحتياطي الخارجي" size="lg" />
   </Step>
 
-  <Step>
-    ##### تهيئة GCP HMAC Key and Secret
+  <Step title="تهيئة مفتاح HMAC والسر" id="gcp-configure-gcp-hmac-key-and-secret">
+    في النافذة المنبثقة، أدخل مسار الـ حاوية التخزين في GCP، ومفتاح HMAC والسر اللذين أُنشئا في القسم السابق.
 
-    في النافذة المنبثقة، أدخل مسار الـ bucket في GCP، وHMAC Key وSecret اللذين أُنشئا في القسم السابق.
-
-    <Image img="/images/cloud/manage/backups/gcp_configure.webp" alt="تهيئة GCP HMAC Key and Secret" size="md" />
+    <Image img="/images/cloud/manage/backups/gcp_configure.webp" alt="تهيئة مفتاح HMAC والسر" size="md" />
   </Step>
 
-  <Step>
-    ##### حفظ حاوية خارجي
-
+  <Step title="حفظ الحاوية الخارجية" id="gcp-save-external-bucket">
     انقر على `Save External Bucket` لحفظ الإعدادات.
   </Step>
 
-  <Step>
-    ##### تغيير جدول النسخ الاحتياطي عن الجدولة الافتراضية
-
-    ستُحفَظ النسخ الاحتياطية الخارجية الآن في الـ bucket الخاص بك وفقًا للجدولة الافتراضية.
+  <Step title="تغيير جدول النسخ الاحتياطي عن الجدولة الافتراضية" id="gcp-changing-the-backup-schedule">
+    ستُحفَظ النسخ الاحتياطية الخارجية الآن في الـ حاوية التخزين الخاص بك وفقًا للجدولة الافتراضية.
     وبدلاً من ذلك، يمكنك تهيئة جدول النسخ الاحتياطي من صفحة `Settings`.
     إذا جرى إعدادها بشكل مختلف، فستُستخدَم الجدولة المخصصة لكتابة النسخ الاحتياطية إلى
-    الـ bucket الخاص بك، بينما تُستخدَم الجدولة الافتراضية (نسخة احتياطية كل 24 ساعة) للنسخ الاحتياطية في
+    الـ حاوية التخزين الخاص بك، بينما تُستخدَم الجدولة الافتراضية (نسخة احتياطية كل 24 ساعة) للنسخ الاحتياطية في
     حاوية مملوك لـ ClickHouse Cloud.
   </Step>
 
-  <Step>
-    ##### عرض النسخ الاحتياطية المخزنة في الـ bucket الخاص بك
+  <Step title="عرض النسخ الاحتياطية المخزنة في الـ حاوية التخزين الخاص بك" id="gcp-view-backups-stored-in-your-bucket">
+    يجب أن تعرض صفحة Backups هذه النسخ الاحتياطية الموجودة في الـ حاوية التخزين الخاص بك في جدول منفصل كما هو موضح أدناه:
 
-    يجب أن تعرض صفحة Backups هذه النسخ الاحتياطية الموجودة في الـ bucket الخاص بك في جدول منفصل كما هو موضح أدناه:
-
-    <Image img="/images/cloud/manage/backups/gcp_stored_backups.webp" alt="عرض النسخ الاحتياطية المخزنة في الـ bucket الخاص بك" size="lg" />
+    <Image img="/images/cloud/manage/backups/gcp_stored_backups.webp" alt="عرض النسخ الاحتياطية المخزنة في الـ حاوية التخزين الخاص بك" size="lg" />
   </Step>
 </Steps>
 
@@ -315,15 +278,11 @@ import { Image } from "/snippets/ar/components/Image.jsx";
 اتبع الخطوات التالية لاستعادة النسخ الاحتياطية من GCP:
 
 <Steps>
-  <Step>
-    ##### أنشئ خدمة جديدة للاستعادة إليها
-
+  <Step title="أنشئ خدمة جديدة للاستعادة إليها" id="gcp-create-new-service-to-restore-to">
     أنشئ خدمة جديدة لاستعادة النسخة الاحتياطية إليها.
   </Step>
 
-  <Step>
-    ##### احصل على أمر SQL المستخدم لاستعادة النسخة الاحتياطية
-
+  <Step title="احصل على أمر SQL المستخدم لاستعادة النسخة الاحتياطية" id="gcp-obtain-sql-command-to-restore-backup">
     انقر على الرابط `access or restore a backup` أعلى قائمة النسخ الاحتياطية في
     واجهة المستخدم للحصول على أمر SQL الخاص باستعادة النسخة الاحتياطية. يجب أن يبدو الأمر كما يلي،
     ويمكنك اختيار النسخة الاحتياطية المناسبة من القائمة المنسدلة للحصول على أمر الاستعادة
@@ -349,9 +308,7 @@ import { Image } from "/snippets/ar/components/Image.jsx";
     </Tip>
   </Step>
 
-  <Step>
-    ##### شغّل أمر SQL لاستعادة النسخة الاحتياطية
-
+  <Step title="شغّل أمر SQL لاستعادة النسخة الاحتياطية" id="gcp-run-sql-command-to-restore-backup">
     شغّل أمر الاستعادة من SQL Console في الخدمة التي أنشأتها حديثًا
     لاستعادة النسخة الاحتياطية.
   </Step>
@@ -372,67 +329,53 @@ import { Image } from "/snippets/ar/components/Image.jsx";
 </div>
 
 <Steps>
-  <Step>
-    ##### إنشاء حساب تخزين
-
+  <Step title="إنشاء حساب تخزين" id="azure-create-a-storage-account">
     أنشئ حساب تخزين أو اختر حساب تخزين موجودًا في بوابة Azure حيث تريد تخزين النسخ الاحتياطية.
   </Step>
 
-  <Step>
-    ##### الحصول على سلسلة الاتصال
-
+  <Step title="الحصول على سلسلة الاتصال" id="azure-get-connection-string">
     * a. في صفحة النظرة العامة لحساب التخزين، ابحث عن القسم المسمى `Security + networking` وانقر على `Access keys`.
     * b. هنا ستظهر لك `key1` و`key2`. وتحت كل مفتاح، ستجد حقلاً باسم `Connection string`.
     * c. انقر على `Show` لإظهار سلسلة الاتصال. انسخ سلسلة الاتصال التي ستستخدمها في الإعداد على ClickHouse Cloud.
   </Step>
 </Steps>
 
-<div id="gcp-cloud-steps">
-  #### الخطوات التي يجب اتباعها في ClickHouse Cloud
+<div id="azure-cloud-steps">
+  #### الخطوات الواجب اتباعها في ClickHouse Cloud
 </div>
 
-اتبع الخطوات التالية في وحدة تحكم ClickHouse Cloud لتهيئة حاوية خارجي:
+اتبع الخطوات التالية في وحدة تحكم ClickHouse Cloud لتهيئة الحاوية الخارجية:
 
 <Steps>
-  <Step>
-    ##### تغيير النسخ الاحتياطي الخارجي
-
+  <Step title="تغيير النسخ الاحتياطي الخارجي" id="azure-configure-external-bucket">
     في صفحة `Settings`، انقر على `Change external backup`
 
     <Image img="/images/cloud/manage/backups/change_external_backup.webp" alt="تغيير النسخ الاحتياطي الخارجي" size="lg" />
   </Step>
 
-  <Step>
-    ##### أدخل سلسلة الاتصال واسم الحاوية لحساب تخزين Azure الخاص بك
+  <Step title="أدخل سلسلة الاتصال واسم الحاوية لحساب Azure Storage الخاص بك" id="azure-provide-connection-string-and-container-name-azure">
+    في الشاشة التالية، أدخل `Connection String` و`Container Name` لحساب Azure Storage
+    الذي أنشأته في القسم السابق:
 
-    في الشاشة التالية، أدخل `Connection String` و`Container Name` الخاصَّين
-    بحساب تخزين Azure الذي أنشأته في القسم السابق:
-
-    <Image img="/images/cloud/manage/backups/azure_connection_details.webp" alt="أدخل سلسلة الاتصال واسم الحاوية لحساب تخزين Azure الخاص بك" size="md" />
+    <Image img="/images/cloud/manage/backups/azure_connection_details.webp" alt="أدخل سلسلة الاتصال واسم الحاوية لحساب Azure Storage الخاص بك" size="md" />
   </Step>
 
-  <Step>
-    ##### حفظ حاوية خارجي
-
+  <Step title="حفظ الحاوية الخارجية" id="azure-save-external-bucket">
     انقر على `Save External Bucket` لحفظ الإعدادات
   </Step>
 
-  <Step>
-    ##### تغيير جدول النسخ الاحتياطي عن الجدول الافتراضي
-
-    ستُحفَظ النسخ الاحتياطية الخارجية الآن في الـ bucket الخاص بك وفق الجدول الافتراضي. وبدلاً من ذلك،
-    يمكنك تهيئة جدول النسخ الاحتياطي من صفحة `Settings`. وإذا ضُبط بشكل مختلف،
-    فسيُستخدم الجدول المخصص لكتابة النسخ الاحتياطية إلى الـ bucket الخاص بك، بينما يُستخدم الجدول الافتراضي
-    (نسخ احتياطية كل 24 ساعة) للنسخ الاحتياطية في حاوية مملوك لـ ClickHouse Cloud.
+  <Step title="تغيير جدول النسخ الاحتياطي من الجدول الافتراضي" id="azure-changing-the-backup-schedule">
+    ستُحفَظ النسخ الاحتياطية الخارجية الآن في الحاوية الخاصة بك وفقًا للجدول الافتراضي. وبدلًا من ذلك،
+    يمكنك تهيئة جدول النسخ الاحتياطي من صفحة `Settings`. وإذا تم تكوينه بشكل مختلف،
+    فسيُستخدم الجدول المخصص لكتابة النسخ الاحتياطية إلى الحاوية الخاصة بك، بينما يُستخدم الجدول الافتراضي
+    (نسخة احتياطية كل 24 ساعة) للنسخ الاحتياطية في ClickHouse cloud owned bucket.
   </Step>
 
-  <Step>
-    ##### عرض النسخ الاحتياطية المخزنة في الـ bucket الخاص بك
-
-    يجب أن تعرض صفحة Backups هذه النسخ الاحتياطية الموجودة في الـ bucket الخاص بك في جدول منفصل،
+  <Step title="عرض النسخ الاحتياطية المخزنة في الحاوية الخاصة بك" id="azure-view-backups-stored-in-your-bucket">
+    يجب أن تعرض صفحة Backups هذه النسخ الاحتياطية الموجودة في الحاوية الخاصة بك في جدول منفصل،
     كما هو موضح أدناه:
 
-    <Image img="/images/cloud/manage/backups/view_backups_azure.webp" alt="عرض النسخ الاحتياطية المخزنة في الـ bucket الخاص بك" size="md" />
+    <Image img="/images/cloud/manage/backups/view_backups_azure.webp" alt="عرض النسخ الاحتياطية المخزنة في الحاوية الخاصة بك" size="md" />
   </Step>
 </Steps>
 
@@ -443,20 +386,16 @@ import { Image } from "/snippets/ar/components/Image.jsx";
 لاستعادة النسخ الاحتياطية من Azure، اتبع الخطوات التالية:
 
 <Steps>
-  <Step>
-    ##### أنشئ خدمة جديدة للاستعادة إليها
-
+  <Step title="أنشئ خدمة جديدة للاستعادة إليها" id="azure-create-new-service-to-restore-to">
     أنشئ خدمة جديدة لاستعادة النسخة الاحتياطية إليها. حاليًا، لا ندعم سوى
-    استعادة النسخة الاحتياطية إلى خدمة جديدة.
+    استعادة نسخة احتياطية إلى خدمة جديدة.
   </Step>
 
-  <Step>
-    ##### احصل على أمر SQL المستخدم لاستعادة النسخة الاحتياطية
-
+  <Step title="احصل على أمر SQL المستخدم لاستعادة النسخة الاحتياطية" id="azure-obtain-sql-command-to-restore-backup">
     انقر على الرابط `access or restore a backup` الموجود أعلى قائمة النسخ الاحتياطية في
     واجهة المستخدم للحصول على أمر SQL الخاص باستعادة النسخة الاحتياطية. ينبغي أن يبدو الأمر
     كما يلي، ويمكنك اختيار النسخة الاحتياطية المناسبة من القائمة المنسدلة للحصول على
-    أمر الاستعادة الخاص بتلك النسخة الاحتياطية. ستحتاج إلى إضافة سلسلة اتصال حساب التخزين
+    أمر الاستعادة الخاص بتلك النسخة الاحتياطية. ستحتاج إلى إضافة سلسلة الاتصال لحساب التخزين
     في Azure إلى الأمر.
 
     <Image img="/images/cloud/manage/backups/restore_backups_azure.webp" alt="استعادة النسخ الاحتياطية في Azure" size="md" />
@@ -471,16 +410,14 @@ import { Image } from "/snippets/ar/components/Image.jsx";
       **أمر ASYNC**
 
       بالنسبة إلى أمر الاستعادة، يمكنك أيضًا إضافة الأمر `ASYNC` اختياريًا في النهاية لعمليات الاستعادة الكبيرة.
-      يتيح ذلك تنفيذ عمليات الاستعادة بشكل غير متزامن، بحيث إذا انقطع الاتصال، تستمر عملية الاستعادة في العمل.
+      يتيح ذلك تنفيذ عمليات الاستعادة بشكل غير متزامن، بحيث إذا فُقد الاتصال، تستمر عملية الاستعادة في العمل.
       ومن المهم ملاحظة أن الأمر ASYNC يعيد فورًا حالة نجاح.
       لكن هذا لا يعني أن الاستعادة قد نجحت بالفعل.
       ستحتاج إلى مراقبة جدول `system.backups` لمعرفة ما إذا كانت الاستعادة قد اكتملت، وما إذا كانت قد نجحت أم فشلت.
     </Tip>
   </Step>
 
-  <Step>
-    ##### شغّل أمر SQL لاستعادة النسخة الاحتياطية
-
+  <Step title="شغّل أمر SQL لاستعادة النسخة الاحتياطية" id="azure-run-sql-command-to-restore-backup">
     شغّل أمر الاستعادة من SQL Console في الخدمة المنشأة حديثًا
     لاستعادة النسخة الاحتياطية.
   </Step>
