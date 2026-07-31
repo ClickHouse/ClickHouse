@@ -68,13 +68,14 @@ class _Settings:
     # Sample whole-VM CPU and RAM usage in the background while a job runs and
     # store a decimated timeline in Result.ext["metrics"] (rendered in json.html).
     HOST_METRICS_ENABLED: bool = True
-    # Reporting/window interval: one aggregated point (avg + peak) is emitted per
-    # window, so the timeline stays ~1 point/sec regardless of the fine cadence.
-    HOST_METRICS_SAMPLE_INTERVAL_SEC: float = 1.0
+    # Reporting/window interval: one aggregated point (avg + peak) is emitted and
+    # written per window, so the timeline stays ~1 point / this-many-seconds
+    # regardless of the fine cadence.
+    HOST_METRICS_SAMPLE_INTERVAL_SEC: float = 5.0
     # Fine sampling cadence: /proc is read this often within each reporting window
     # so short bursts are captured as the window's peak instead of being averaged
     # away. Must be <= the reporting interval.
-    HOST_METRICS_FINE_INTERVAL_SEC: float = 0.25
+    HOST_METRICS_FINE_INTERVAL_SEC: float = 1.0
     # Upper bound on points kept per series after min/max decimation, so the
     # payload injected into the Result stays small regardless of job duration.
     HOST_METRICS_MAX_POINTS: int = 400

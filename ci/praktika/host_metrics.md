@@ -12,8 +12,8 @@ covers the job command only (not praktika pre/post-run).
 ## Job level — `Result.ext["metrics"]`
 
 `/proc` is read at a fine cadence (`HOST_METRICS_FINE_INTERVAL_SEC`, default
-`0.25s`) and one aggregated point is emitted per reporting window
-(`HOST_METRICS_SAMPLE_INTERVAL_SEC`, default `1s`), so short bursts survive as
+`1s`) and one aggregated point is emitted (and written) per reporting window
+(`HOST_METRICS_SAMPLE_INTERVAL_SEC`, default `5s`), so short bursts survive as
 the window's peak instead of being averaged away.
 
 | Field | Meaning |
