@@ -57,6 +57,10 @@ WHERE database = currentDatabase() AND table = 'vs_concurrent' AND active;
 --                                                name; the prefetched pool has a different name
 --   force_data_skipping_indices = 'idx'          the query must fail rather than silently degrade to
 --                                                a brute force scan
+--   use_query_cache = 0                          the test runner can enable the query result cache,
+--                                                and a cache hit returns the result without reading
+--                                                the part, so the system.query_log assertions below
+--                                                would see no index search and a single thread
 
 -- vector_search_with_rescoring = 0: the vector column is replaced by _distance, which is the first
 -- clause of the gate that stores per-part read hints.
@@ -109,6 +113,7 @@ SETTINGS merge_tree_min_rows_for_concurrent_read = 1,
          allow_prefetched_read_pool_for_remote_filesystem = 0,
          allow_prefetched_read_pool_for_local_filesystem = 0,
          force_data_skipping_indices = 'idx', vector_search_with_rescoring = 0,
+         use_query_cache = 0,
          log_comment = '02354_vector_search_concurrent_readers_r0';
 
 -- vector_search_with_rescoring = 1 (not the default): the vector column is kept and rows are filtered
@@ -123,6 +128,7 @@ SETTINGS merge_tree_min_rows_for_concurrent_read = 1,
          allow_prefetched_read_pool_for_remote_filesystem = 0,
          allow_prefetched_read_pool_for_local_filesystem = 0,
          force_data_skipping_indices = 'idx', vector_search_with_rescoring = 1,
+         use_query_cache = 0,
          log_comment = '02354_vector_search_concurrent_readers_r1';
 
 -- Row filtering, which drives the rescoring row filter consumers under concurrent readers. Only the
@@ -138,13 +144,16 @@ SETTINGS merge_tree_min_rows_for_concurrent_read = 1,
          allow_prefetched_read_pool_for_remote_filesystem = 0,
          allow_prefetched_read_pool_for_local_filesystem = 0,
          force_data_skipping_indices = 'idx', vector_search_with_rescoring = 1,
+         use_query_cache = 0,
          log_comment = '02354_vector_search_concurrent_readers_filtered';
 
 SYSTEM FLUSH LOGS query_log;
 
--- EXPLAIN PIPELINE above shows how wide the plan is, not how many threads ran. This reads the three
--- executed queries instead: each used several threads and a real index search rather than a brute
--- force scan. Counting to 3 also catches a query whose row is missing altogether.
+-- EXPLAIN PIPELINE above shows how wide the plan is, not that anything ran on more than one thread.
+-- This reads the three executed queries instead: more than one thread was involved in executing each
+-- of them, which a single stream execution cannot produce, and each did a real index search rather
+-- than a brute force scan. thread_ids is the cumulative set of threads attached to the query, so it
+-- does not by itself say they overlapped in time. Counting to 3 also catches a missing row.
 -- The window has to hold exactly this attempt's rows: the test runner re-runs a whole test on retry
 -- and does not recreate a fixed --database, so an earlier attempt's rows are still visible. Counting
 -- them too would over-count, and taking only the newest three would under-count just as badly, by
