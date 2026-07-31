@@ -1,0 +1,37 @@
+count	10000
+max	-15001
+DESC LIMIT 1	-15001
+DESC LIMIT 1 no-opt	-15001
+DESC LIMIT 5	-15001
+DESC LIMIT 5	-15002
+DESC LIMIT 5	-15003
+DESC LIMIT 5	-15004
+DESC LIMIT 5	-15005
+ASC LIMIT 1	-25000
+otf DESC LIMIT 1	-15001
+otf DESC LIMIT 1 no-opt	-15001
+mixed count	50000
+mixed DESC LIMIT 1	49999
+mixed DESC LIMIT 3	49999
+mixed DESC LIMIT 3	49998
+mixed DESC LIMIT 3	49997
+clean DESC LIMIT 1	99999
+EXPLAIN clean: TopK optimization still active
+Description: Filter TopK Granules
+lwu count	50002
+lwu DESC LIMIT 1	50000
+lwu DESC LIMIT 1 no-opt	50000
+otf-upd DESC LIMIT 1	50000
+otf-upd DESC LIMIT 1 no-opt	50000
+lwu-up DESC LIMIT 1	1000000
+lwu-up DESC LIMIT 1 no-opt	1000000
+other-col DESC LIMIT 1	99999
+EXPLAIN other-col: TopK optimization still active
+Description: Filter TopK Granules
+del-otf DESC LIMIT 1	49999
+del-otf DESC LIMIT 1 no-opt	49999
+modify-otf DESC LIMIT 1	13830554455654793000
+modify-otf DESC LIMIT 1 no-opt	13830554455654793000
+modify-other DESC LIMIT 1	99999
+EXPLAIN modify-other: TopK optimization still active
+Description: Filter TopK Granules

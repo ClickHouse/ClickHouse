@@ -1,0 +1,540 @@
+---
+description: 'صفحة توضّح تنميط التخصيص في ClickHouse'
+sidebarTitle: 'تنميط التخصيص'
+slug: /operations/allocation-profiling
+title: 'تنميط التخصيص'
+doc_type: 'guide'
+---
+
+يستخدم ClickHouse ‏[jemalloc](https://github.com/jemalloc/jemalloc) باعتباره allocator العام لديه. ويأتي jemalloc مزوّدًا بأدوات لأخذ عينات التخصيص وإجراء التنميط.
+
+يتيح لك ClickHouse وKeeper التحكّم في أخذ العينات باستخدام إعدادات التهيئة، وإعدادات الاستعلام، وأوامر `SYSTEM`، وأوامر الكلمات ذات الأحرف الأربعة (4LW) في Keeper. وهناك عدة طرق لفحص النتائج:
+
+* اجمع العينات في `system.trace_log` تحت النوع `JemallocSample` لإجراء تحليل لكل استعلام على حدة.
+* اعرض إحصاءات الذاكرة المباشرة واسترجع ملف تعريف الكومة عبر [واجهة الويب المدمجة لـ jemalloc](#jemalloc-web-ui) (26.2+).
+* استعلم عن ملف تعريف الكومة الحالي مباشرةً من SQL باستخدام [`system.jemalloc_profile_text`](#fetching-heap-profiles-from-sql) (26.2+).
+* نفّذ flush لملفات ملف تعريف الكومة إلى disk ثم حلّلها باستخدام [`jeprof`](#analyzing-heap-profile-files-with-jeprof).
+
+<Note>
+  ينطبق هذا الدليل على الإصدارات 25.9+.
+  أما الإصدارات الأقدم، فيُرجى مراجعة [تنميط التخصيص للإصدارات الأقدم من 25.9](/ar/concepts/features/performance/allocation-profiling-old).
+</Note>
+
+<div id="sampling-allocations">
+  ## أخذ عينات من تخصيصات الذاكرة
+</div>
+
+لأخذ عينات من تخصيصات الذاكرة وتنميطها، شغّل ClickHouse/Keeper مع تفعيل إعداد `jemalloc_enable_global_profiler`:
+
+```xml
+<clickhouse>
+    <jemalloc_enable_global_profiler>1</jemalloc_enable_global_profiler>
+</clickhouse>
+```
+
+سيأخذ `jemalloc` عينات من عمليات تخصيص الذاكرة ويخزّن المعلومات داخليًا.
+
+يمكنك أيضًا تمكين أخذ العينات لكل query باستخدام الإعداد `jemalloc_enable_profiler`.
+
+<Warning>
+  **تحذير**
+
+  نظرًا إلى أن ClickHouse تطبيق كثيف الاستخدام لعمليات تخصيص الذاكرة، فقد يفرض أخذ العينات في jemalloc عبئًا إضافيًا على الأداء.
+</Warning>
+
+<div id="storing-jemalloc-samples-in-system-trace-log">
+  ## تخزين عينات jemalloc في `system.trace_log`
+</div>
+
+يمكنك تخزين عينات jemalloc في `system.trace_log` ضمن النوع `JemallocSample`.
+لتمكين ذلك على مستوى النظام بالكامل، استخدم إعداد `jemalloc_collect_global_profile_samples_in_trace_log`:
+
+```xml
+<clickhouse>
+    <jemalloc_collect_global_profile_samples_in_trace_log>1</jemalloc_collect_global_profile_samples_in_trace_log>
+</clickhouse>
+```
+
+<Warning>
+  **تحذير**
+
+  نظرًا لأن ClickHouse تطبيق يستهلك قدرًا كبيرًا من عمليات التخصيص، فإن جمع جميع العينات في system.trace&#95;log قد يتسبب في حمل مرتفع.
+</Warning>
+
+يمكنك أيضًا تفعيل هذا الإعداد لكل query باستخدام `jemalloc_collect_profile_samples_in_trace_log`.
+
+<div id="example-analyzing-memory-usage-trace-log">
+  ### مثال: تحليل استهلاك الذاكرة لاستعلام
+</div>
+
+أولًا، شغِّل استعلامًا مع تفعيل مُحلِّل jemalloc واجمع العيّنات في `system.trace_log`:
+
+```sql
+SELECT *
+FROM numbers(1000000)
+ORDER BY number DESC
+SETTINGS max_bytes_ratio_before_external_sort = 0
+FORMAT `Null`
+SETTINGS jemalloc_enable_profiler = 1, jemalloc_collect_profile_samples_in_trace_log = 1
+
+Query id: 8678d8fe-62c5-48b8-b0cd-26851c62dd75
+
+Ok.
+
+0 rows in set. Elapsed: 0.009 sec. Processed 1.00 million rows, 8.00 MB (108.58 million rows/s., 868.61 MB/s.)
+Peak memory usage: 12.65 MiB.
+```
+
+<Note>
+  إذا كان ClickHouse قد بدأ التشغيل مع `jemalloc_enable_global_profiler`، فلن تحتاج إلى تفعيل `jemalloc_enable_profiler`.
+  وينطبق الأمر نفسه على `jemalloc_collect_global_profile_samples_in_trace_log` و`jemalloc_collect_profile_samples_in_trace_log`.
+</Note>
+
+افرغ `system.trace_log`:
+
+```sql
+SYSTEM FLUSH LOGS trace_log
+```
+
+ثم نفّذ استعلامًا عليه للحصول على الاستخدام التراكمي للذاكرة مع مرور الوقت:
+
+```sql
+WITH per_bucket AS
+(
+    SELECT
+        event_time_microseconds AS bucket_time,
+        sum(size) AS bucket_sum
+    FROM system.trace_log
+    WHERE trace_type = 'JemallocSample'
+      AND query_id = '8678d8fe-62c5-48b8-b0cd-26851c62dd75'
+    GROUP BY bucket_time
+)
+SELECT
+    bucket_time,
+    sum(bucket_sum) OVER (
+        ORDER BY bucket_time ASC
+        ROWS BETWEEN UNBOUNDED PRECEDING AND CURRENT ROW
+    ) AS cumulative_size,
+    formatReadableSize(cumulative_size) AS cumulative_size_readable
+FROM per_bucket
+ORDER BY bucket_time
+```
+
+حدِّد الوقت الذي بلغ فيه استخدام الذاكرة أعلى مستوى:
+
+```sql
+SELECT
+    argMax(bucket_time, cumulative_size),
+    max(cumulative_size)
+FROM
+(
+    WITH per_bucket AS
+    (
+        SELECT
+            event_time_microseconds AS bucket_time,
+            sum(size) AS bucket_sum
+        FROM system.trace_log
+        WHERE trace_type = 'JemallocSample'
+          AND query_id = '8678d8fe-62c5-48b8-b0cd-26851c62dd75'
+        GROUP BY bucket_time
+    )
+    SELECT
+        bucket_time,
+        sum(bucket_sum) OVER (
+            ORDER BY bucket_time ASC
+            ROWS BETWEEN UNBOUNDED PRECEDING AND CURRENT ROW
+        ) AS cumulative_size,
+        formatReadableSize(cumulative_size) AS cumulative_size_readable
+    FROM per_bucket
+    ORDER BY bucket_time
+)
+```
+
+وباستخدام هذه النتيجة، تعرّف على مكدسات التخصيص الأكثر نشاطًا وقت الذروة:
+
+```sql
+SELECT
+    concat(
+        '\n',
+        arrayStringConcat(
+            arrayMap(
+                (x, y) -> concat(x, ': ', y),
+                arrayMap(x -> addressToLine(x), allocation_trace),
+                arrayMap(x -> demangle(addressToSymbol(x)), allocation_trace)
+            ),
+            '\n'
+        )
+    ) AS symbolized_trace,
+    sum(s) AS per_trace_sum
+FROM
+(
+    SELECT
+        ptr,
+        sum(size) AS s,
+        argMax(trace, event_time_microseconds) AS allocation_trace
+    FROM system.trace_log
+    WHERE trace_type = 'JemallocSample'
+      AND query_id = '8678d8fe-62c5-48b8-b0cd-26851c62dd75'
+      AND event_time_microseconds <= '2025-09-04 11:56:21.737139'
+    GROUP BY ptr
+    HAVING s > 0
+)
+GROUP BY ALL
+ORDER BY per_trace_sum ASC
+```
+
+<div id="jemalloc-web-ui">
+  ## واجهة مستخدم ويب لـ jemalloc
+</div>
+
+<Note>
+  ينطبق هذا القسم على الإصدارات 26.2+.
+</Note>
+
+يوفّر ClickHouse واجهة مستخدم ويب مدمجة لعرض إحصاءات ذاكرة jemalloc عند نقطة نهاية HTTP ‏`/jemalloc`.
+وتعرض مقاييس الذاكرة المباشرة مع مخططات، بما في ذلك الذاكرة المخصصة والنشطة والمقيمة والمعيّنة، بالإضافة إلى إحصاءات كل ساحة وكل bin.
+ويمكنك أيضًا جلب ملفات ملف تعريف الكومة العامة وملفات ملف تعريف الكومة لكل استعلام مباشرةً من الواجهة.
+
+<Tabs>
+  <Tab title="ClickHouse">
+    ```text
+    http://localhost:8123/jemalloc
+    ```
+
+    تتضمن واجهة المستخدم الخاصة بالخادم جميع علامات التبويب: Summary وAllocations وArenas وOperations وGlobal Profiler وQuery Profiler وRaw Output.
+  </Tab>
+
+  <Tab title="Keeper">
+    ```text
+    http://localhost:9182/jemalloc
+    ```
+
+    تتوفر واجهة مستخدم Keeper على منفذ HTTP control. هذا المنفذ **معطّل افتراضيًا** ويجب تمكينه صراحةً عبر تعيين `keeper_server.http_control.port` في تهيئة Keeper:
+
+    ```xml
+    <clickhouse>
+        <keeper_server>
+            <http_control>
+                <port>9182</port>
+            </http_control>
+        </keeper_server>
+    </clickhouse>
+    ```
+
+    بمجرد تمكينه، توفّر الواجهة نفس التصورات التي يوفّرها الخادم — Summary وAllocations وArenas وOperations وGlobal Profiler وRaw Output — باستثناء علامة التبويب Query Profiler التي تتطلب SQL و`system.trace_log`.
+
+    <Warning>
+      **الأمان**
+
+      لا يحتوي منفذ HTTP control الخاص بـ Keeper على مصادقة على مستوى التطبيق. وعلى عكس واجهة jemalloc الخاصة بـ ClickHouse Server — حيث تمر جميع استعلامات البيانات عبر معالج SQL HTTP وتتطلب بيانات اعتماد اسم المستخدم/كلمة المرور — فإن نقاط نهاية REST لواجهة برمجة التطبيقات الخاصة بـ Keeper غير محمية بالمصادقة. وهذا متسق مع نقاط نهاية HTTP control الأخرى في Keeper ‏(commands وstorage وdashboard).
+
+      قيّد الوصول إلى هذا المنفذ باستخدام وسائل تحكم على مستوى الشبكة: اربط Keeper بـ localhost، أو استخدم قواعد firewall، أو ضعه خلف reverse proxy مع مصادقة. وعند عدم تهيئة `listen_host`، يستمع Keeper افتراضيًا على localhost فقط.
+    </Warning>
+
+    يكشف Keeper أيضًا عن نقاط نهاية REST لواجهة برمجة التطبيقات للوصول البرمجي:
+
+    * `GET /jemalloc/stats` — مخرجات `malloc_stats_print` الخام
+    * `GET /jemalloc/status` — حالة profiling بصيغة JSON ‏(`prof_enabled`, `prof_active`, `thread_active_init`, `lg_sample`)
+    * `GET /jemalloc/profile?format={collapsed|raw}` — يُفرغ ملف ملف تعريف الكومة مع تحويل الرموز على جانب الخادم، ويعيد collapsed stacks المناسبة لعرض flame graph ‏(افتراضيًا) أو dump jemalloc الخام
+  </Tab>
+</Tabs>
+
+<div id="fetching-heap-profiles-from-sql">
+  ## جلب ملفات تعريف heap من SQL
+</div>
+
+<Note>
+  ينطبق هذا القسم على الإصدارات 26.2+.
+</Note>
+
+يتيح لك جدول النظام `system.jemalloc_profile_text` جلب ملف تعريف الكومة الحالي لـ jemalloc وعرضه مباشرةً من SQL، من دون الحاجة إلى أدوات خارجية أو إلى تفريغه إلى القرص أولًا.
+
+يحتوي الجدول على عمود واحد:
+
+| العمود | النوع  | الوصف                                               |
+| ------ | ------ | --------------------------------------------------- |
+| `line` | String | سطر من ملف تعريف الكومة لـ jemalloc بعد تحليل الرموز. |
+
+يمكنك الاستعلام عن الجدول مباشرةً — لا حاجة إلى تفريغ ملف تعريف الكومة مسبقًا:
+
+```sql
+SELECT * FROM system.jemalloc_profile_text
+```
+
+<div id="output-format">
+  ### تنسيق الإخراج
+</div>
+
+يُتحكَّم في تنسيق الإخراج بواسطة الإعداد `jemalloc_profile_text_output_format`، الذي يدعم ثلاث قيم:
+
+* `raw` — ملف تعريف الكومة خام كما يُنتجه jemalloc.
+* `symbolized` — تنسيق متوافق مع jeprof مع تضمين رموز الدوال. وبما أن الرموز مضمنة بالفعل، يمكن لـ `jeprof` تحليل المخرجات دون الحاجة إلى ملف ClickHouse التنفيذي.
+* `collapsed` (الافتراضي) — مكدسات مطوية متوافقة مع FlameGraph، بمكدس واحد في كل سطر مع عدد البايتات.
+
+على سبيل المثال، للحصول على ملف التعريف الخام:
+
+```sql
+SELECT * FROM system.jemalloc_profile_text
+SETTINGS jemalloc_profile_text_output_format = 'raw'
+```
+
+للحصول على مخرجات تتضمن الرموز المحلولة:
+
+```sql
+SELECT * FROM system.jemalloc_profile_text
+SETTINGS jemalloc_profile_text_output_format = 'symbolized'
+```
+
+<div id="fetching-heap-profiles-settings">
+  ### إعدادات إضافية
+</div>
+
+* `jemalloc_profile_text_symbolize_with_inline` (Bool، الافتراضي: `true`) — ما إذا كان سيتم تضمين الإطارات المضمّنة عند فكّ الرموز. يؤدي تعطيل هذا الخيار إلى تسريع فكّ الرموز بشكل ملحوظ، لكنه يقلل الدقة لأن استدعاءات الدوال المضمّنة لن تظهر في المكدسات. لا يؤثر ذلك إلا في التنسيقين `symbolized` و`collapsed`.
+* `jemalloc_profile_text_collapsed_use_count` (Bool، الافتراضي: `false`) — عند استخدام التنسيق `collapsed`، يتم التجميع حسب عدد التخصيصات بدلًا من البايتات.
+
+<div id="example-flamegraph-from-sql">
+  ### مثال: إنشاء مخطط اللهب من SQL
+</div>
+
+بما أن تنسيق الإخراج الافتراضي هو `collapsed`، يمكنك تمرير الإخراج مباشرةً إلى FlameGraph:
+
+```sh
+clickhouse-client -q "SELECT * FROM system.jemalloc_profile_text" | flamegraph.pl --color=mem --title="Allocation Flame Graph" --width 2400 > result.svg
+```
+
+لإنشاء مخطط اللهب حسب عدد التخصيصات بدلًا من البايتات:
+
+```sh
+clickhouse-client -q "SELECT * FROM system.jemalloc_profile_text SETTINGS jemalloc_profile_text_collapsed_use_count = 1" | flamegraph.pl --color=mem --title="Allocation Count Flame Graph" --width 2400 > result.svg
+```
+
+<div id="flushing-heap-profiles">
+  ## تفريغ ملفات تعريف الكومة إلى القرص
+</div>
+
+إذا كنت بحاجة إلى حفظ ملفات تعريف الكومة كملفات لتحليلها دون اتصال باستخدام `jeprof`، فيمكنك تفريغها إلى القرص.
+
+افتراضيًا، سيتم إنشاء ملف تعريف الكومة في `/tmp/jemalloc_clickhouse._pid_._seqnum_.heap`، حيث يشير `_pid_` إلى معرّف العملية (PID) الخاص بـ ClickHouse، ويشير `_seqnum_` إلى رقم التسلسل العام لملف تعريف الكومة الحالي.
+بالنسبة إلى Keeper، يكون الملف الافتراضي هو `/tmp/jemalloc_keeper._pid_._seqnum_.heap`، ويتبع القواعد نفسها.
+
+لتفريغ ملف التعريف الحالي:
+
+<Tabs>
+  <Tab title="ClickHouse">
+    ```sql
+    SYSTEM JEMALLOC FLUSH PROFILE
+    ```
+
+    سيُرجع مسار ملف التعريف المُفرَّغ.
+  </Tab>
+
+  <Tab title="Keeper">
+    ```sh
+    echo jmfp | nc localhost 9181
+    ```
+  </Tab>
+</Tabs>
+
+يمكن تحديد مسار مختلف عبر إضافة الخيار `prof_prefix` إلى متغير البيئة `MALLOC_CONF`.
+على سبيل المثال، إذا كنت تريد إنشاء ملفات التعريف في المجلد `/data` بحيث تكون بادئة اسم الملف هي `my_current_profile`، فيمكنك تشغيل ClickHouse/Keeper باستخدام متغير البيئة التالي:
+
+```sh
+MALLOC_CONF=prof_prefix:/data/my_current_profile
+```
+
+سيُضاف إلى بادئة الملف المُنشأ معرّف العملية PID ورقم تسلسلي.
+
+<div id="analyzing-heap-profile-files-with-jeprof">
+  ## تحليل ملفات ملف تعريف الكومة باستخدام `jeprof`
+</div>
+
+بعد تفريغ ملفات ملف تعريف الكومة إلى القرص، يمكن تحليلها باستخدام أداة `jemalloc` المسماة [jeprof](https://github.com/jemalloc/jemalloc/blob/dev/bin/jeprof.in). ويمكن تثبيتها بعدة طرق:
+
+* باستخدام مدير الحزم الخاص بالنظام
+* استنساخ [مستودع jemalloc](https://github.com/jemalloc/jemalloc) وتشغيل `autogen.sh` من المجلد الجذر. سيوفّر لك ذلك البرنامج النصي `jeprof` داخل المجلد `bin`
+
+تتوفر العديد من تنسيقات الإخراج المختلفة. شغّل `jeprof --help` للحصول على القائمة الكاملة بالخيارات.
+
+<div id="symbolized-heap-profiles">
+  ### ملفات تعريف الكومة المُرمَّزة بالرموز
+</div>
+
+اعتبارًا من الإصدار 26.1+، ينشئ ClickHouse تلقائيًا ملفات تعريف كومة مُرمَّزة بالرموز عند تنفيذ عملية `flush` باستخدام `SYSTEM JEMALLOC FLUSH PROFILE`.
+ويحتوي ملف التعريف المُرمَّز بالرموز (ذو الامتداد `.symbolized`) على رموز الدوال المضمّنة، ويمكن تحليله باستخدام `jeprof` دون الحاجة إلى الملف التنفيذي لـ ClickHouse.
+
+على سبيل المثال، عند تشغيل:
+
+```sql
+SYSTEM JEMALLOC FLUSH PROFILE
+```
+
+سيُرجع ClickHouse مسار ملف التعريف المُرمَّز بالرموز (على سبيل المثال، `/tmp/jemalloc_clickhouse.12345.0.heap.symbolized`).
+
+يمكنك بعد ذلك تحليله مباشرةً باستخدام `jeprof`:
+
+```sh
+jeprof /tmp/jemalloc_clickhouse.12345.0.heap.symbolized --output_format [ > output_file]
+```
+
+<Note>
+  **لا حاجة إلى الملف التنفيذي**: عند استخدام ملفات التعريف مُرمَّزة بالرموز (ملفات `.symbolized`)، لن تحتاج إلى تمرير مسار الملف التنفيذي لـ ClickHouse إلى `jeprof`. وهذا يجعل تحليل ملفات التعريف أسهل بكثير على أجهزة مختلفة أو بعد تحديث الملف التنفيذي.
+</Note>
+
+إذا كان لديك ملف تعريف قديم للذاكرة غير مُرمَّز بالرموز وما زال بإمكانك الوصول إلى الملف التنفيذي لـ ClickHouse، فيمكنك استخدام الطريقة التقليدية:
+
+```sh
+jeprof path/to/clickhouse path/to/heap/profile --output_format [ > output_file]
+```
+
+<Note>
+  بالنسبة إلى ملفات التعريف غير المُرمَّزة بالرموز، يستخدم `jeprof` الأداة `addr2line` لإنشاء `stacktraces`، وقد يكون ذلك بطيئًا جدًا.
+  إذا كان الأمر كذلك، فيُوصى بتثبيت [نسخة بديلة](https://github.com/gimli-rs/addr2line) من هذه الأداة.
+
+  ```bash
+  git clone https://github.com/gimli-rs/addr2line.git --depth=1 --branch=0.23.0
+  cd addr2line
+  cargo build --features bin --release
+  cp ./target/release/addr2line path/to/current/addr2line
+  ```
+
+  وبدلًا من ذلك، يعمل `llvm-addr2line` بالكفاءة نفسها (لكن انتبه إلى أن `llvm-objdump` غير متوافق مع `jeprof`)
+
+  ثم استخدمه لاحقًا على النحو التالي: `jeprof --tools addr2line:/usr/bin/llvm-addr2line,nm:/usr/bin/llvm-nm,objdump:/usr/bin/objdump,c++filt:/usr/bin/llvm-cxxfilt`
+</Note>
+
+عند مقارنة ملفَّي تعريف، يمكنك استخدام الوسيط `--base`:
+
+```sh
+jeprof --base /path/to/first.heap.symbolized /path/to/second.heap.symbolized --output_format [ > output_file]
+```
+
+<div id="examples">
+  ### أمثلة
+</div>
+
+استخدام ملفات التعريف مُرمَّزة بالرموز (مُستحسن):
+
+* أنشئ ملفًا نصيًا تُكتب فيه كل دالة في سطر منفصل:
+
+```sh
+jeprof /tmp/jemalloc_clickhouse.12345.0.heap.symbolized --text > result.txt
+```
+
+* أنشئ ملف PDF يتضمن مخطط الاستدعاءات:
+
+```sh
+jeprof /tmp/jemalloc_clickhouse.12345.0.heap.symbolized --pdf > result.pdf
+```
+
+استخدام ملفات التوصيف غير المُرمَّزة بالرموز (يتطلب ملفًا تنفيذيًا):
+
+* أنشئ ملفًا نصيًا بحيث يُكتب كل إجراء في سطر مستقل:
+
+```sh
+jeprof /path/to/clickhouse /tmp/jemalloc_clickhouse.12345.0.heap --text > result.txt
+```
+
+* أنشئ ملف PDF يحتوي على مخطط الاستدعاءات:
+
+```sh
+jeprof /path/to/clickhouse /tmp/jemalloc_clickhouse.12345.0.heap --pdf > result.pdf
+```
+
+<div id="generating-flame-graph">
+  ### إنشاء مخطط اللهب
+</div>
+
+يتيح لك `jeprof` إنشاء مكدس مطوي لاستخدامها في إنشاء مخططات اللهب.
+
+تحتاج إلى استخدام الوسيط `--collapsed`:
+
+```sh
+jeprof /tmp/jemalloc_clickhouse.12345.0.heap.symbolized --collapsed > result.collapsed
+```
+
+أو باستخدام ملف تعريف غير مُرمَّز بالرموز:
+
+```sh
+jeprof /path/to/clickhouse /tmp/jemalloc_clickhouse.12345.0.heap --collapsed > result.collapsed
+```
+
+بعد ذلك، يمكنك استخدام العديد من الأدوات المختلفة لتصوّر مكدس مطوي.
+
+الأكثر شيوعًا هو [FlameGraph](https://github.com/brendangregg/FlameGraph)، ويتضمن برنامجًا نصيًا يسمى `flamegraph.pl`:
+
+```sh
+cat result.collapsed | /path/to/FlameGraph/flamegraph.pl --color=mem --title="Allocation Flame Graph" --width 2400 > result.svg
+```
+
+هناك أداة أخرى مفيدة للاهتمام، وهي [speedscope](https://www.speedscope.app/)، تتيح لك تحليل المكدسات التي جُمعت بطريقة أكثر تفاعلية.
+
+<div id="additional-options-for-profiler">
+  ## خيارات إضافية لـ Profiler
+</div>
+
+يوفّر `jemalloc` العديد من الخيارات المرتبطة بـ Profiler، ويمكن التحكم فيها عبر تعديل متغير البيئة `MALLOC_CONF`.
+على سبيل المثال، يمكن التحكم في الفاصل الزمني بين عينات التخصيص باستخدام `lg_prof_sample`.
+إذا كنت تريد إخراج `ملف تعريف الكومة` كل N بايت، فيمكنك تفعيل ذلك باستخدام `lg_prof_interval`.
+
+يُنصح بالرجوع إلى [الصفحة المرجعية](https://jemalloc.net/jemalloc.3.html) الخاصة بـ `jemalloc` للحصول على قائمة كاملة بالخيارات.
+
+<div id="other-resources">
+  ## موارد أخرى
+</div>
+
+يعرض ClickHouse/Keeper مقاييس مرتبطة بـ `jemalloc` بطرق عديدة ومختلفة.
+
+<Warning>
+  **تحذير**
+
+  من المهم الانتباه إلى أن أياً من هذه المقاييس غير متزامن مع الآخر، وقد تختلف القيم بمرور الوقت.
+</Warning>
+
+<div id="system-table-asynchronous_metrics">
+  ### جدول النظام `asynchronous_metrics`
+</div>
+
+```sql
+SELECT *
+FROM system.asynchronous_metrics
+WHERE metric LIKE '%jemalloc%'
+FORMAT Vertical
+```
+
+[المرجع](/ar/reference/system-tables/asynchronous_metrics)
+
+<div id="system-table-jemalloc_bins">
+  ### جدول النظام `jemalloc_bins`
+</div>
+
+يحتوي على معلومات عن تخصيصات الذاكرة التي يجريها مُخصِّص jemalloc عبر فئات الأحجام المختلفة (bins)، والمجمّعة من جميع الساحات.
+
+[مرجع](/ar/reference/system-tables/jemalloc_bins)
+
+<div id="system-table-jemalloc_stats">
+  ### جدول النظام `jemalloc_stats` (26.2+)
+</div>
+
+يعرض الناتج الكامل للدالة `malloc_stats_print()` كسلسلة نصية واحدة. وهو مكافئ للأمر `SYSTEM JEMALLOC STATS`.
+
+```sql
+SELECT * FROM system.jemalloc_stats
+```
+
+<div id="prometheus">
+  ### Prometheus
+</div>
+
+تُعرَض أيضًا جميع المقاييس المتعلقة بـ `jemalloc` من `asynchronous_metrics` عبر نقطة نهاية Prometheus في كلٍّ من ClickHouse وKeeper.
+
+[مرجع](/ar/reference/settings/server-settings/settings#prometheus)
+
+<div id="jmst-4lw-command-in-keeper">
+  ### أمر `jmst` 4LW في Keeper
+</div>
+
+يدعم Keeper الأمر `jmst` ‏4LW الذي يعرض [إحصاءات أساسية للمخصِّص](https://github.com/jemalloc/jemalloc/wiki/Use-Case%3A-Basic-Allocator-Statistics):
+
+```sh
+echo jmst | nc localhost 9181
+```

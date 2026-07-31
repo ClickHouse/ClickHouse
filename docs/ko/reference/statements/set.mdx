@@ -1,0 +1,80 @@
+---
+description: 'SET 문 참고 문서'
+sidebarTitle: 'SET'
+slug: /sql-reference/statements/set
+title: 'SET 문'
+doc_type: 'reference'
+---
+
+```sql
+SET param = value
+```
+
+현재 세션의 `param` [설정](/ko/concepts/features/configuration/settings/overview)에 `value`를 할당합니다. 이 방법으로는 [서버 설정](/ko/reference/settings/server-settings/settings)을 변경할 수 없습니다.
+
+지정한 설정 프로필의 모든 값도 하나의 쿼리로 설정할 수 있습니다.
+
+```sql
+SET profile = 'profile-name-from-the-settings-file'
+```
+
+true로 설정하는 불리언 설정은 값 할당을 생략하는 축약 구문을 사용할 수 있습니다. 설정 이름만 지정하면 자동으로 `1`(true)로 설정됩니다.
+
+```sql
+-- 다음 두 구문은 동일합니다:
+SET force_index_by_date = 1
+SET force_index_by_date
+```
+
+<div id="set-time-zone">
+  ## SET TIME ZONE
+</div>
+
+```sql
+SET TIME ZONE [=] 'timezone'
+```
+
+세션 시간대를 설정합니다. PostgreSQL 및 기타 SQL 데이터베이스와의 호환성을 위해 제공되는 `SET session_timezone = 'timezone'`의 별칭입니다.
+
+많은 SQL 클라이언트, ORM, JDBC 드라이버는 연결 시 `SET TIME ZONE`을 자동으로 실행합니다. 이 구문을 사용하면 이러한 도구를 별도의 사용자 지정 우회 방법 없이 ClickHouse에서 사용할 수 있습니다.
+
+```sql
+SET TIME ZONE 'UTC';
+SET TIME ZONE 'Europe/Amsterdam';
+SET TIME ZONE 'America/New_York';
+
+-- 현재 세션 시간대 확인
+SELECT getSetting('session_timezone');
+```
+
+시간대 값은 [IANA Time Zone Database](https://www.iana.org/time-zones)에 있는 유효한 이름이어야 합니다. 유효하지 않은 시간대 이름을 사용하면 오류가 발생합니다.
+
+`session_timezone` 설정에 관한 자세한 내용은 [session&#95;timezone](/ko/reference/settings/session-settings#session_timezone)을 참조하십시오.
+
+<div id="setting-query-parameters">
+  ## 쿼리 매개변수 설정
+</div>
+
+`SET` 문은 매개변수 이름 앞에 `param_`를 붙여 쿼리 매개변수를 정의하는 데에도 사용할 수 있습니다.
+쿼리 매개변수를 사용하면 실행 시 실제 값으로 대체되는 플레이스홀더를 사용하여 재사용 가능한 쿼리를 작성할 수 있습니다.
+
+```sql
+SET param_name = value
+```
+
+쿼리에서 쿼리 매개변수를 사용하려면 `{name: datatype}` 구문을 사용해 참조하십시오:
+
+```sql
+SET param_id = 42;
+SET param_name = 'John';
+
+SELECT * FROM users
+WHERE id = {id: UInt32}
+AND name = {name: String};
+```
+
+쿼리 매개변수는 동일한 쿼리를 서로 다른 값으로 여러 번 실행해야 할 때 특히 유용합니다.
+
+`Identifier` 유형과 함께 사용하는 방법을 포함해 쿼리 매개변수에 대한 자세한 내용은 [쿼리 매개변수 정의 및 사용](/ko/reference/syntax#defining-and-using-query-parameters)을 참조하십시오.
+
+자세한 내용은 [설정](/ko/reference/settings/session-settings)을 참조하십시오.

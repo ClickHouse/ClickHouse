@@ -63,6 +63,8 @@ void initialize()
 
 #else
 
+#include <Common/LibSSHLogger.h>
+
 namespace ssh
 {
 

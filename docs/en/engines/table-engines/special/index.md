@@ -7,8 +7,6 @@ title: 'Special table engines'
 doc_type: 'reference'
 ---
 
-# Special table engines
-
 There are three main categories of table engines:
 
 - [MergeTree engine family](../../../engines/table-engines/mergetree-family/index.md) for main production use.

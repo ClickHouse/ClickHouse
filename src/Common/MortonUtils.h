@@ -195,7 +195,7 @@ void hyperrectangleToPossibleMortonIntervals(
             {
                 if (source_bit_idx < suffix_size)
                 {
-                    last |= (1 << result_bit_idx);
+                    last |= (UInt64(1) << result_bit_idx);
                 }
                 else
                 {

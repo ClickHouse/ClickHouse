@@ -6,8 +6,6 @@ title: 'WITH Clause'
 doc_type: 'reference'
 ---
 
-# WITH Clause
-
 ClickHouse supports Common Table Expressions ([CTE](https://en.wikipedia.org/wiki/Hierarchical_and_recursive_queries_in_SQL)), Common Scalar Expressions and Recursive Queries.
 
 ## Common Table Expressions {#common-table-expressions}
@@ -274,11 +272,24 @@ ORDER BY table_disk_usage DESC
 LIMIT 10;
 ```
 
-**Example 6:** Reusing expression in a subquery
+**Example 6:** Reusing a common scalar expression in a subquery
 
 ```sql
-WITH test1 AS (SELECT i + 1, j + 1 FROM test1)
-SELECT * FROM test1;
+WITH (value) -> value + 1 AS increment
+SELECT increment(first_increment) AS second_increment
+FROM
+(
+    SELECT increment(number) AS first_increment
+    FROM numbers(3)
+);
+```
+
+```response
+┌─second_increment─┐
+│                2 │
+│                3 │
+│                4 │
+└──────────────────┘
 ```
 
 ## Recursive Queries {#recursive-queries}
