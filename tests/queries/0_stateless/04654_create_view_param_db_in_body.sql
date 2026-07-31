@@ -13,7 +13,7 @@ INSERT INTO {CLICKHOUSE_DATABASE_1:Identifier}.src VALUES (1, 'other');
 
 USE {CLICKHOUSE_DATABASE:Identifier};
 
--- The database of a table in the body comes from a parameter (rebuilt by DDLDependencyVisitor).
+-- The database of a table in the body comes from a parameter (rebuilt by `DDLDependencyVisitor`).
 -- Calling the view twice with different databases shows the target is only known at call time,
 -- which is why no dependency on any one table may be recorded at create time.
 CREATE VIEW v_from AS SELECT v FROM {pdb:Identifier}.src;
@@ -37,13 +37,13 @@ SELECT 'columns', (SELECT v FROM v_columns(pdb = {CLICKHOUSE_DATABASE_1:String})
 RENAME TABLE v_columns TO v_renamed;
 SELECT 'renamed', (SELECT v FROM v_renamed(pdb = {CLICKHOUSE_DATABASE_1:String}));
 
--- The right-hand side of IN is rebuilt by AddDefaultDatabaseVisitor.
+-- The right-hand side of IN is rebuilt by `AddDefaultDatabaseVisitor`.
 CREATE TABLE keys (k UInt64) ENGINE = MergeTree ORDER BY k;
 INSERT INTO keys VALUES (1);
 CREATE VIEW v_in AS SELECT v FROM src WHERE k IN {ptab:Identifier};
 SELECT 'in', (SELECT v FROM v_in(ptab = 'keys'));
 
--- A dictGet name is qualified by AddDefaultDatabaseVisitor without going through createTable.
+-- A `dictGet` name is qualified by `AddDefaultDatabaseVisitor` without going through `createTable`.
 CREATE TABLE dsrc (id UInt64, val String) ENGINE = MergeTree ORDER BY id;
 INSERT INTO dsrc VALUES (1, 'looked_up');
 CREATE DICTIONARY dict (id UInt64, val String) PRIMARY KEY id

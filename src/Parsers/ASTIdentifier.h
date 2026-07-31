@@ -52,7 +52,7 @@ public:
     void updateTreeHashImpl(SipHash & hash_state, bool ignore_alias) const override;
 
     void restoreTable();  // TODO(ilezhankin): get rid of this
-    /// Returns |nullptr| if identifier is not table, or if it is parameterized (see isParam).
+    /// Returns |nullptr| if identifier is not table, or if it is parameterized (see `isParam`).
     boost::intrusive_ptr<ASTTableIdentifier> createTable() const;
 
     String full_name;
