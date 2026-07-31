@@ -196,7 +196,9 @@ void listFilesWithRegexpMatchingImpl(
     /// normalized form. Adjacent globstars (e.g. `**/**/*.tsv`) can reach the same filesystem
     /// entry through both the zero-level branch and the recursive descent, so without this
     /// guard the query would return duplicate rows and double-count `total_bytes_to_read`.
-    auto add_matched_path = [&](const std::string & path, size_t bytes)
+    /// `parent_canonical_hint` lets a caller that has already resolved this path's parent pass the
+    /// result in, so the same directory is not resolved twice for one match.
+    auto add_matched_path = [&](const std::string & path, size_t bytes, const fs::path * parent_canonical_hint = nullptr)
     {
         /// Resolve the PARENT directory but keep the final component as written. A symlink
         /// aliasing an ancestor gives one file several lexical paths that a lexical key cannot
@@ -214,12 +216,19 @@ void listFilesWithRegexpMatchingImpl(
         else
         {
             const fs::path as_path(path);
-            std::error_code canon_ec;
-            const auto parent_canonical = fs::canonical(as_path.parent_path(), canon_ec);
-            if (canon_ec)
-                dedup_key = as_path.lexically_normal().string();
+            if (parent_canonical_hint)
+            {
+                dedup_key = (*parent_canonical_hint / as_path.filename()).string();
+            }
             else
-                dedup_key = (parent_canonical / as_path.filename()).string();
+            {
+                std::error_code canon_ec;
+                const auto parent_canonical = fs::canonical(as_path.parent_path(), canon_ec);
+                if (canon_ec)
+                    dedup_key = as_path.lexically_normal().string();
+                else
+                    dedup_key = (parent_canonical / as_path.filename()).string();
+            }
         }
         if (matched_paths.emplace(std::move(dedup_key)).second)
         {
@@ -245,8 +254,12 @@ void listFilesWithRegexpMatchingImpl(
             /// but the result path will be fs::absolute.
             /// Otherwise it will not allow to work with symlinks in `user_files_path` directory.
             /// Also serves as the existence check: the throwing overload is what makes the
-            /// `catch` below skip a suffix that does not resolve.
-            (void)fs::canonical(path_for_ls + for_match);
+            /// `catch` below skip a suffix that does not resolve. Resolving the PARENT rather than
+            /// the whole candidate keeps that check (a candidate under an unresolvable parent
+            /// cannot resolve either, and the `fs::file_size` below still rejects a missing file)
+            /// and gives the deduplication key its parent directly, so one match resolves one
+            /// directory once instead of resolving the candidate here and its parent again below.
+            const fs::path parent_canonical = fs::canonical(fs::path(path_for_ls + for_match).parent_path());
             fs::path absolute_path = fs::absolute(path_for_ls + for_match);
             absolute_path = absolute_path.lexically_normal(); /// ensure that the resulting path is normalized (e.g., removes any redundant slashes or . and .. segments)
             /// This exact-match branch is reached for suffixes without globs, including the
@@ -256,7 +269,11 @@ void listFilesWithRegexpMatchingImpl(
             /// directory); in that case keep the byte count at zero but still return the path.
             std::error_code size_ec;
             const size_t file_size = fs::file_size(absolute_path, size_ec);
-            add_matched_path(absolute_path.string(), size_ec ? 0 : file_size);
+            /// `fs::file_size` fails for a directory as well as for a missing file, so a
+            /// non-regular target keeps its zero byte count but is still returned, as before.
+            if (size_ec && !fs::exists(absolute_path))
+                return;
+            add_matched_path(absolute_path.string(), size_ec ? 0 : file_size, &parent_canonical);
         }
         catch (const std::exception &) // NOLINT
         {
