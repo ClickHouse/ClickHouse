@@ -21,7 +21,7 @@ public:
 
     ~StorageObjectStorageSink() override;
 
-    String GetName() const override { return "StorageObjectStorageSink"; }
+    String getName() const override { return "StorageObjectStorageSink"; }
 
     void consume(Chunk & chunk) override;
 
