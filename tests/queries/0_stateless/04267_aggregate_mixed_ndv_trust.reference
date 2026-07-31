@@ -1,0 +1,4 @@
+Join: o[100] ⋈ sub
+ResultRows: unknown
+Join: agg[10000] ⋈ di[100]
+ResultRows: 1000

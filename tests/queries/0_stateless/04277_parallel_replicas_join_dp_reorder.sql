@@ -39,8 +39,12 @@ SET
 -- `query_plan_optimize_join_order_algorithm='dpsize'` and uses a 3-way join to exercise the actual
 -- DP optimizer (`query_graph_size_limit > 2` in `optimizeJoinLogicalImpl`).
 --
--- With DP active DP's cost model picks a left-deep tree that surfaces the largest table on the
--- parallelized (outer probe) side, giving the EXPLAIN read-step traversal `c, b, a`. With DP
+-- These tables have no column statistics, so every join-key NDV is unknown and the DP
+-- cardinality estimates are untrusted (see #101398). With `query_plan_join_swap_table='auto'`
+-- the size-based build-side swap is suppressed for untrusted sides, so DP still reorders the
+-- inner pair to `(b JOIN a)` but does not move the large `c` to the probe side on the strength
+-- of a fabricated estimate — building the hash table from the known-bounded `c` rather than the
+-- unknown-size intermediate. The EXPLAIN read-step traversal is therefore `b, a, c`. With DP
 -- disabled (`query_plan_optimize_join_order_limit=0` — the previously forced behaviour)
 -- `optimizeJoinLogicalImpl` exits early without converting the `JoinStepLogical`s, and
 -- `optimizeJoinLegacy` is a no-op on them, so the user-written order `(a JOIN b) JOIN c` reaches

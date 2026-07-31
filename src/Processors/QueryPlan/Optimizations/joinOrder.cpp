@@ -54,11 +54,16 @@ static UInt32 toMask(const BitSet & bits)
     return mask;
 }
 
-DPJoinEntry::DPJoinEntry(size_t id, std::optional<UInt64> rows, std::unordered_map<String, ColumnStats> column_stats_)
+DPJoinEntry::DPJoinEntry(
+    size_t id,
+    std::optional<UInt64> rows,
+    bool rows_estimate_trusted_,
+    std::unordered_map<String, ColumnStats> column_stats_)
     : relations()
     , cost(0.0)
     , estimated_rows(rows)
     , column_stats(std::move(column_stats_))
+    , rows_estimate_trusted(rows_estimate_trusted_ && rows.has_value())
     , relation_id(static_cast<int>(id))
 {
     relations.set(id);
@@ -68,6 +73,7 @@ DPJoinEntry::DPJoinEntry(DPJoinEntryPtr lhs,
         DPJoinEntryPtr rhs,
         double cost_,
         std::optional<UInt64> cardinality_,
+        bool rows_estimate_trusted_,
         JoinOperator join_operator_,
         JoinMethod join_method_)
     : relations(lhs->relations | rhs->relations)
@@ -75,6 +81,7 @@ DPJoinEntry::DPJoinEntry(DPJoinEntryPtr lhs,
     , right(std::move(rhs))
     , cost(cost_)
     , estimated_rows(cardinality_)
+    , rows_estimate_trusted(rows_estimate_trusted_)
     , join_operator(std::move(join_operator_))
     , join_method(join_method_)
 {
@@ -303,6 +310,21 @@ String DPJoinEntry::dump() const
     return fmt::format("Join({})", fmt::join(relations, ","));
 }
 
+/// Selectivity with a `trusted` flag that is false when the NDV-unknown fallback
+/// fired. Consumed by estimateJoinCardinality and the build-side swap heuristic.
+struct SelectivityInfo
+{
+    double value = 1.0;
+    bool trusted = true;
+};
+
+/// Cardinality estimate plus whether it was derived from trusted NDVs end-to-end.
+struct JoinCardinalityEstimate
+{
+    std::optional<UInt64> cardinality;
+    bool trusted = true;
+};
+
 class JoinOrderOptimizer
 {
 public:
@@ -336,12 +358,29 @@ private:
     std::optional<JoinKind> isValidJoinOrder(const BitSet & left_mask, const BitSet & right_mask) const;
     std::vector<JoinActionRef *> getApplicableExpressions(const BitSet & left, const BitSet & right);
 
-    double computeSelectivity(const JoinActionRef & edge);
-    double computeSelectivity(const std::vector<JoinActionRef *> & edges);
-    double computeSelectivity(const std::vector<JoinActionRef *> & edges, const BitSet & left, const BitSet & right);
-    std::optional<UInt64> estimateCardinality(
-        std::optional<UInt64> left_rows, std::optional<UInt64> right_rows, double selectivity, JoinKind join_kind) const;
+    SelectivityInfo computeSelectivity(const JoinActionRef & edge);
+    SelectivityInfo computeSelectivity(const std::vector<JoinActionRef *> & edges);
+    SelectivityInfo computeSelectivity(const std::vector<JoinActionRef *> & edges, const BitSet & left, const BitSet & right);
+    JoinCardinalityEstimate estimateCardinality(
+        std::optional<UInt64> left_rows,
+        bool left_trusted,
+        std::optional<UInt64> right_rows,
+        bool right_trusted,
+        SelectivityInfo selectivity,
+        JoinKind join_kind) const;
     size_t getColumnStats(const BitSet & rels, const String & column_name);
+    std::optional<UInt64> getEstimatedRows(const BitSet & rels);
+
+    /// Build a DP entry; shared by greedy and DPsize so cardinality and trust
+    /// propagation go through one code path.
+    DPJoinEntryPtr buildDPEntry(
+        DPJoinEntryPtr left,
+        DPJoinEntryPtr right,
+        double cost,
+        SelectivityInfo selectivity,
+        JoinKind join_kind,
+        JoinOperator join_operator,
+        JoinMethod join_method = JoinMethod::Hash);
 
     /// Native-mask counterparts of the helpers above, used exclusively by the DPsub acceptor.
     /// They operate on `UInt32` relation masks and the data precomputed by `initDPsubScratch`,
@@ -352,7 +391,7 @@ private:
     /// Returns the connecting (and, for two-relation joins, the early non-connecting) predicates,
     /// reusing an internal scratch buffer that is overwritten on every call.
     const std::vector<JoinActionRef *> & collectJoinEdgesMask(UInt32 left_mask, UInt32 right_mask);
-    double computeSelectivityMask(const std::vector<JoinActionRef *> & edges, UInt32 left_mask, UInt32 right_mask);
+    SelectivityInfo computeSelectivityMask(const std::vector<JoinActionRef *> & edges, UInt32 left_mask, UInt32 right_mask);
 
     /// Periodically called from potentially long running optimization to check time limits and send progress
     void checkLimits();
@@ -390,7 +429,7 @@ private:
 
     QueryGraph query_graph;
     std::unordered_map<JoinActionRef, bool> applied;
-    std::unordered_map<JoinActionRef, double> expression_selectivity;
+    std::unordered_map<JoinActionRef, SelectivityInfo> expression_selectivity;
     std::unordered_map<BitSet, DPJoinEntryPtr> dp_table;
 
     /** Precomputed native-mask view of the query graph for the DPsub hot path. Populated once per
@@ -497,7 +536,7 @@ size_t JoinOrderOptimizer::getColumnStats(const BitSet & rels, const String & co
             auto col_it = it->second->column_stats.find(column_name);
             if (col_it != it->second->column_stats.end())
                 return col_it->second.num_distinct_values;
-            return it->second->estimated_rows.value_or(0);
+            return 0;
         }
         return 0;
     }
@@ -506,44 +545,104 @@ size_t JoinOrderOptimizer::getColumnStats(const BitSet & rels, const String & co
     const auto & col_stats = relation_stat.column_stats;
     if (auto it = col_stats.find(column_name); it != col_stats.end())
         return it->second.num_distinct_values;
-    return relation_stat.estimated_rows.value_or(0);
+    return 0;
 }
 
-double JoinOrderOptimizer::computeSelectivity(const JoinActionRef & edge)
+std::optional<UInt64> JoinOrderOptimizer::getEstimatedRows(const BitSet & rels)
 {
-    auto [it, inserted] = expression_selectivity.try_emplace(edge, 1.0);
-    auto & selectivity = it->second;
+    auto rel_id = rels.getSingleBit();
+    if (rel_id.has_value())
+        return query_graph.relation_stats.at(rel_id.value()).estimated_rows;
+    if (auto it = dp_table.find(rels); it != dp_table.end())
+        return it->second->estimated_rows;
+    return {};
+}
+
+SelectivityInfo JoinOrderOptimizer::computeSelectivity(const JoinActionRef & edge)
+{
+    auto [it, inserted] = expression_selectivity.try_emplace(edge, SelectivityInfo{});
+    auto & info = it->second;
     if (!inserted)
-        return selectivity;
+        return info;
 
     auto [op, lhs, rhs] = edge.asBinaryPredicate();
 
     if (op != JoinConditionOperator::Equals && op != JoinConditionOperator::NullSafeEquals)
-        return 1.0;
+    {
+        /// Non-equality predicates (e.g. `a.v < b.v`) are handled as residual/post-join
+        /// filters, so the DP does not estimate their selectivity here and keeps `value`
+        /// at the default `1.0`. Leaving the estimate trusted would let a join that
+        /// silently ignores a semantics-affecting predicate cross the trust boundary as
+        /// if fully stats-backed and influence upstream join ordering / build-side
+        /// decisions. Per the design contract the estimate must be demoted to untrusted.
+        info.trusted = false;
+        return info;
+    }
+
+    if (op == JoinConditionOperator::NullSafeEquals)
+    {
+        /// `NullSafeEquals` (`a.k IS NOT DISTINCT FROM b.k`) yields a valid row-count
+        /// selectivity - it matches equal keys plus the `NULL = NULL` case - so it is
+        /// estimated below like a plain equality. However, the NDV tightening in the
+        /// `DPJoinEntry` constructor and the equivalence classes in
+        /// `buildColumnEquivalences` only handle `JoinConditionOperator::Equals`, so a
+        /// null-safe join leaves its key NDVs unreduced in the propagated column stats.
+        /// A parent equi-join on one of those keys would then read the stale (un-tightened)
+        /// NDV as if it had been reduced and underestimate its cardinality. Until the NDV
+        /// model covers null-safe equality, demote the estimate to untrusted so it cannot
+        /// drive upstream join ordering / build-side decisions (mirrors the residual-filter
+        /// and mixed-NDV cases).
+        info.trusted = false;
+    }
 
     UInt64 lhs_ndv = getColumnStats(lhs.getSourceRelations(), lhs.getColumnName());
     UInt64 rhs_ndv = getColumnStats(rhs.getSourceRelations(), rhs.getColumnName());
-    UInt64 max_ndv = std::max(lhs_ndv, rhs_ndv);
-    if (max_ndv > 0)
-        selectivity = std::min(selectivity, 1.0 / static_cast<double>(max_ndv));
-    return selectivity;
+    if (lhs_ndv > 0 && rhs_ndv > 0)
+    {
+        info.value = std::min(info.value, 1.0 / static_cast<double>(std::max(lhs_ndv, rhs_ndv)));
+    }
+    else
+    {
+        /// At least one side has no NDV stats. The mixed case (one NDV known, the
+        /// other unknown) still produces a usable denominator from the known side,
+        /// but the resulting selectivity is partially fabricated and must not cross
+        /// the trust boundary - otherwise it could influence upstream join ordering
+        /// and build-side decisions as if it were fully stats-backed.
+        info.trusted = false;
+        UInt64 denom = std::max(lhs_ndv, rhs_ndv);
+        if (denom == 0)
+        {
+            /// Both NDVs unknown: fall back to `1 / max(rows)` (PostgreSQL-style eqjoinsel).
+            auto lhs_rows = getEstimatedRows(lhs.getSourceRelations());
+            auto rhs_rows = getEstimatedRows(rhs.getSourceRelations());
+            if (lhs_rows && rhs_rows)
+                denom = std::max(*lhs_rows, *rhs_rows);
+        }
+        if (denom > 0)
+            info.value = std::min(info.value, 1.0 / static_cast<double>(denom));
+    }
+    return info;
 }
 
-double JoinOrderOptimizer::computeSelectivity(const std::vector<JoinActionRef *> & edges)
+SelectivityInfo JoinOrderOptimizer::computeSelectivity(const std::vector<JoinActionRef *> & edges)
 {
-    double selectivity = 1.0;
+    SelectivityInfo combined;
     for (const auto & edge : edges)
-        selectivity = std::min(selectivity, computeSelectivity(*edge));
-    return selectivity;
+    {
+        auto edge_info = computeSelectivity(*edge);
+        combined.value = std::min(combined.value, edge_info.value);
+        combined.trusted = combined.trusted && edge_info.trusted;
+    }
+    return combined;
 }
 
 /// Compute selectivity combining direct edges and transitive equivalence classes.
 /// Direct edges and transitive equivalences may cover different columns between
 /// the two relation sets, so both contribute to the overall selectivity.
-double JoinOrderOptimizer::computeSelectivity(
+SelectivityInfo JoinOrderOptimizer::computeSelectivity(
     const std::vector<JoinActionRef *> & edges, const BitSet & left, const BitSet & right)
 {
-    double selectivity = computeSelectivity(edges);
+    SelectivityInfo info = computeSelectivity(edges);
 
     /// Also account for transitively-equivalent columns spanning both sides.
     using ConstClassPtr = EquivalenceClasses<JoinActionRef>::ConstClassPtr;
@@ -562,50 +661,86 @@ double JoinOrderOptimizer::computeSelectivity(
         /// Find the maximum NDV across all members of this class that belong
         /// to either side of the join. This is equivalent to evaluating all
         /// (left_member, right_member) pairs and taking the minimum selectivity,
-        /// since min(1/max(l,r)) = 1/max(all l's and r's).
-        size_t max_ndv = 0;
+        /// since min(1/max(l,r)) = 1/max(all l's and r's). Track whether every
+        /// participating member had a known NDV so the trust flag stays consistent
+        /// with the direct-edge path: if any participating column lacks NDV stats,
+        /// the resulting estimate is partially fabricated and must be demoted.
+        UInt64 max_ndv = 0;
         bool has_left = false;
         bool has_right = false;
+        bool all_ndvs_known = true;
         for (const auto & equiv_member : *equiv_class)
         {
             auto relation = equiv_member.getSourceRelations().getSingleBit();
             if (!relation)
                 continue;
+            if (!left.test(*relation) && !right.test(*relation))
+                continue;
             if (left.test(*relation))
-            {
                 has_left = true;
-                max_ndv = std::max(max_ndv, getColumnStats(equiv_member.getSourceRelations(), equiv_member.getColumnName()));
-            }
-            else if (right.test(*relation))
-            {
+            else
                 has_right = true;
-                max_ndv = std::max(max_ndv, getColumnStats(equiv_member.getSourceRelations(), equiv_member.getColumnName()));
+            UInt64 ndv = getColumnStats(equiv_member.getSourceRelations(), equiv_member.getColumnName());
+            if (ndv == 0)
+                all_ndvs_known = false;
+            else
+                max_ndv = std::max(max_ndv, ndv);
+        }
+        if (!has_left || !has_right)
+            continue;
+
+        if (!all_ndvs_known)
+            info.trusted = false;
+
+        if (max_ndv > 0)
+        {
+            info.value = std::min(info.value, 1.0 / static_cast<double>(max_ndv));
+        }
+        else
+        {
+            /// Transitive-only equi-join with all NDVs unknown along the class.
+            /// Same fallback as for direct edges (see computeSelectivity(edge)).
+            auto lhs_rows = getEstimatedRows(left);
+            auto rhs_rows = getEstimatedRows(right);
+            if (lhs_rows && rhs_rows)
+            {
+                UInt64 max_rows = std::max(*lhs_rows, *rhs_rows);
+                if (max_rows > 0)
+                    info.value = std::min(info.value, 1.0 / static_cast<double>(max_rows));
             }
         }
-        if (has_left && has_right && max_ndv > 0)
-            selectivity = std::min(selectivity, 1.0 / static_cast<double>(max_ndv));
     }
 
-    return selectivity;
+    return info;
 }
 
 
 /// Single source of truth for join cardinality estimation. For outer joins the result is
 /// floored by the number of rows from the preserved side(s), since those are always emitted
 /// (NULL-padded when there is no match): LEFT keeps all left rows, RIGHT all right rows, FULL both.
-static std::optional<UInt64> estimateJoinCardinality(
+/// For inner/cross joins with untrusted inputs, the result is additionally floored at
+/// min(lhs_rows, rhs_rows) (PK-FK lower bound) so the DP's selection bias does not propagate
+/// underestimates that would flip build/probe onto huge relations.
+static JoinCardinalityEstimate estimateJoinCardinality(
     std::optional<UInt64> left_rows,
+    bool left_trusted,
     std::optional<UInt64> right_rows,
-    double selectivity,
+    bool right_trusted,
+    SelectivityInfo selectivity,
     JoinKind join_kind)
 {
+    bool trusted = left_trusted && right_trusted && selectivity.trusted;
+
+    /// Keep the fabricated cardinality inside the DP so `computeJoinCost` can still
+    /// compare plans; the trust boundary to outer optimizers is enforced in
+    /// `JoinStepLogical::getTrustedResultRowsEstimation`.
     if (!left_rows || !right_rows)
-        return {};
+        return {std::nullopt, trusted};
 
     double lhs = static_cast<double>(*left_rows);
     double rhs = static_cast<double>(*right_rows);
 
-    double joined_rows = std::max(selectivity * lhs * rhs, 1.0);
+    double joined_rows = std::max(selectivity.value * lhs * rhs, 1.0);
 
     if (join_kind == JoinKind::Left)
         joined_rows = std::max(joined_rows, lhs);
@@ -614,37 +749,63 @@ static std::optional<UInt64> estimateJoinCardinality(
     if (join_kind == JoinKind::Full)
         joined_rows = std::max(joined_rows, lhs + rhs);
 
+    if (!trusted && (isInner(join_kind) || isCrossOrComma(join_kind)))
+        joined_rows = std::max(joined_rows, std::min(lhs, rhs));
+
     /// Use >= to avoid undefined behavior when joined_rows is very close to max UInt64
     /// Due to floating point precision, a value slightly less than max when compared
     /// as double could still overflow when cast to UInt64
     if (joined_rows >= static_cast<double>(std::numeric_limits<UInt64>::max()))
-        return std::numeric_limits<UInt64>::max();
+        return {std::numeric_limits<UInt64>::max(), trusted};
     if (joined_rows < 1)
-        return 1;
-    return static_cast<UInt64>(joined_rows);
+        return {UInt64{1}, trusted};
+    return {static_cast<UInt64>(joined_rows), trusted};
 }
 
-static std::optional<UInt64> estimateJoinCardinality(
-    const std::shared_ptr<DPJoinEntry> & left,
-    const std::shared_ptr<DPJoinEntry> & right,
-    double selectivity,
+static JoinCardinalityEstimate estimateJoinCardinality(
+    const DPJoinEntryPtr & left,
+    const DPJoinEntryPtr & right,
+    SelectivityInfo selectivity,
     JoinKind join_kind = JoinKind::Inner)
 {
-    return estimateJoinCardinality(left->estimated_rows, right->estimated_rows, selectivity, join_kind);
+    return estimateJoinCardinality(
+        left->estimated_rows, left->rows_estimate_trusted,
+        right->estimated_rows, right->rows_estimate_trusted,
+        selectivity, join_kind);
 }
 
-std::optional<UInt64> JoinOrderOptimizer::estimateCardinality(
-    std::optional<UInt64> left_rows, std::optional<UInt64> right_rows, double selectivity, JoinKind join_kind) const
+JoinCardinalityEstimate JoinOrderOptimizer::estimateCardinality(
+    std::optional<UInt64> left_rows,
+    bool left_trusted,
+    std::optional<UInt64> right_rows,
+    bool right_trusted,
+    SelectivityInfo selectivity,
+    JoinKind join_kind) const
 {
-    return estimateJoinCardinality(left_rows, right_rows, selectivity, join_kind);
+    return estimateJoinCardinality(left_rows, left_trusted, right_rows, right_trusted, selectivity, join_kind);
 }
 
-static double computeJoinCost(const std::shared_ptr<DPJoinEntry> & left,
-                              const std::shared_ptr<DPJoinEntry> & right,
-                              double selectivity)
+static double computeJoinCost(
+    const DPJoinEntryPtr & left,
+    const DPJoinEntryPtr & right,
+    double selectivity)
 {
     return left->cost + right->cost
         + selectivity * static_cast<double>(left->estimated_rows.value_or(1)) * static_cast<double>(right->estimated_rows.value_or(1));
+}
+
+DPJoinEntryPtr JoinOrderOptimizer::buildDPEntry(
+    DPJoinEntryPtr left,
+    DPJoinEntryPtr right,
+    double cost,
+    SelectivityInfo selectivity,
+    JoinKind join_kind,
+    JoinOperator join_operator,
+    JoinMethod join_method)
+{
+    auto [cardinality, trusted] = estimateJoinCardinality(left, right, selectivity, join_kind);
+    return std::make_shared<DPJoinEntry>(
+        std::move(left), std::move(right), cost, cardinality, trusted, std::move(join_operator), join_method);
 }
 
 std::shared_ptr<DPJoinEntry> JoinOrderOptimizer::solve()
@@ -682,8 +843,11 @@ std::shared_ptr<DPJoinEntry> JoinOrderOptimizer::solve()
         throw Exception(ErrorCodes::EXPERIMENTAL_FEATURE_ERROR,
             "Failed to find a valid join order, try adding 'greedy' algorithm as fallback to query_plan_optimize_join_order_algorithm setting.");
 
-    LOG_TRACE(log, "Optimized join order in {:.2f} ms, best plan cost: {}, estimated cardinality: {}",
-        static_cast<double>(watch.elapsed()) / 1000.0, best_plan->cost, best_plan->estimated_rows ? toString(*best_plan->estimated_rows) : "unknown");
+    LOG_TRACE(log, "Optimized join order in {:.2f} ms, best plan cost: {}, estimated cardinality: {} (trusted={})",
+        static_cast<double>(watch.elapsed()) / 1000.0,
+        best_plan->cost,
+        best_plan->estimated_rows ? toString(*best_plan->estimated_rows) : "unknown",
+        best_plan->rows_estimate_trusted);
 
     return best_plan;
 }
@@ -874,10 +1038,10 @@ const std::vector<JoinActionRef *> & JoinOrderOptimizer::collectJoinEdgesMask(UI
     return out;
 }
 
-double JoinOrderOptimizer::computeSelectivityMask(
+SelectivityInfo JoinOrderOptimizer::computeSelectivityMask(
     const std::vector<JoinActionRef *> & edges, UInt32 left_mask, UInt32 right_mask)
 {
-    double selectivity = computeSelectivity(edges);
+    SelectivityInfo info = computeSelectivity(edges);
 
     /// Account for transitively-equivalent columns spanning both sides, visiting only the classes
     /// incident to the left relations. A generation stamp deduplicates classes without allocating
@@ -897,29 +1061,40 @@ double JoinOrderOptimizer::computeSelectivityMask(
             size_t max_ndv = 0;
             bool has_left = false;
             bool has_right = false;
+            bool all_ndvs_known = true;
             for (const auto & equiv_member : *dpsub_data.equiv_classes[class_idx])
             {
                 auto relation = equiv_member.getSourceRelations().getSingleBit();
                 if (!relation)
                     continue;
                 const UInt32 relation_bit = static_cast<UInt32>(1) << *relation;
+                if (!((left_mask | right_mask) & relation_bit))
+                    continue;
                 if (left_mask & relation_bit)
-                {
                     has_left = true;
-                    max_ndv = std::max(max_ndv, getColumnStats(equiv_member.getSourceRelations(), equiv_member.getColumnName()));
-                }
-                else if (right_mask & relation_bit)
-                {
+                else
                     has_right = true;
-                    max_ndv = std::max(max_ndv, getColumnStats(equiv_member.getSourceRelations(), equiv_member.getColumnName()));
-                }
+                size_t ndv = getColumnStats(equiv_member.getSourceRelations(), equiv_member.getColumnName());
+                if (ndv == 0)
+                    all_ndvs_known = false;
+                else
+                    max_ndv = std::max(max_ndv, ndv);
             }
-            if (has_left && has_right && max_ndv > 0)
-                selectivity = std::min(selectivity, 1.0 / static_cast<double>(max_ndv));
+            if (!has_left || !has_right)
+                continue;
+
+            /// Mirrors `computeSelectivity(edges, left, right)`: an equivalence class
+            /// with any participating NDV unknown yields a partially fabricated
+            /// estimate that must not cross the trust boundary.
+            if (!all_ndvs_known)
+                info.trusted = false;
+
+            if (max_ndv > 0)
+                info.value = std::min(info.value, 1.0 / static_cast<double>(max_ndv));
         }
     }
 
-    return selectivity;
+    return info;
 }
 
 std::shared_ptr<DPJoinEntry> JoinOrderOptimizer::solveGreedy()
@@ -935,7 +1110,7 @@ std::shared_ptr<DPJoinEntry> JoinOrderOptimizer::solveGreedy()
     for (size_t i = 0; i < query_graph.relation_stats.size(); ++i)
     {
         const auto & rel = query_graph.relation_stats[i];
-        components.push_back(std::make_shared<DPJoinEntry>(i, rel.estimated_rows, rel.column_stats));
+        components.push_back(std::make_shared<DPJoinEntry>(i, rel.estimated_rows, rel.rows_estimate_trusted, rel.column_stats));
     }
 
     std::vector<JoinActionRef *> applied_edges;
@@ -951,8 +1126,8 @@ std::shared_ptr<DPJoinEntry> JoinOrderOptimizer::solveGreedy()
         {
             for (size_t j = i + 1; j < components.size(); j++)
             {
-                auto left = components[i];
-                auto right = components[j];
+                const auto & left = components[i];
+                const auto & right = components[j];
 
                 auto join_kind = isValidJoinOrder(left->relations, right->relations);
                 if (!join_kind)
@@ -965,12 +1140,11 @@ std::shared_ptr<DPJoinEntry> JoinOrderOptimizer::solveGreedy()
                     continue;
 
                 auto selectivity = computeSelectivity(edges, left->relations, right->relations);
-                auto current_cost = computeJoinCost(left, right, selectivity);
+                auto current_cost = computeJoinCost(left, right, selectivity.value);
                 if (!best_plan || current_cost < best_plan->cost)
                 {
                     if (join_kind == JoinKind::Inner && !connected)
                         join_kind = JoinKind::Cross;
-                    auto cardinality = estimateJoinCardinality(left, right, selectivity, join_kind.value());
                     JoinOperator join_operator(join_kind.value(), JoinStrictness::All, JoinLocality::Unspecified);
                     bool is_inner_step = isInner(join_kind.value()) || isCrossOrComma(join_kind.value());
                     for (const auto * e : edges)
@@ -985,7 +1159,7 @@ std::shared_ptr<DPJoinEntry> JoinOrderOptimizer::solveGreedy()
                             join_operator.residual_filter.push_back(*e);
                     }
                     applied_edges = std::move(edges);
-                    best_plan = std::make_shared<DPJoinEntry>(left, right, current_cost, cardinality, std::move(join_operator));
+                    best_plan = buildDPEntry(left, right, current_cost, selectivity, join_kind.value(), std::move(join_operator));
                     best_i = i;
                     best_j = j;
                 }
@@ -1042,7 +1216,7 @@ std::shared_ptr<DPJoinEntry> JoinOrderOptimizer::buildPhysicalPlan(const DPTable
 {
     auto& entry = dptable[S];
     if (!entry.left && !entry.right)
-        return std::make_shared<DPJoinEntry>(std::countr_zero(S), entry.estimated_rows, entry.column_stats);
+        return std::make_shared<DPJoinEntry>(std::countr_zero(S), entry.estimated_rows, entry.rows_estimate_trusted, entry.column_stats);
 
     JoinOperator join_operator(entry.kind, JoinStrictness::All, JoinLocality::Unspecified);
     /// A filter predicate applied at an outer join step must not go to the ON clause, where it
@@ -1059,7 +1233,7 @@ std::shared_ptr<DPJoinEntry> JoinOrderOptimizer::buildPhysicalPlan(const DPTable
 
     auto left = buildPhysicalPlan(dptable, entry.left);
     auto right = buildPhysicalPlan(dptable, entry.right);
-    return std::make_shared<DPJoinEntry>(left, right, entry.cost, entry.estimated_rows, std::move(join_operator));
+    return std::make_shared<DPJoinEntry>(left, right, entry.cost, entry.estimated_rows, entry.rows_estimate_trusted, std::move(join_operator));
 }
 
 /** Implements the `Dpsub` bottom-up dynamic programming algorithm for optimal bushy join tree generation.
@@ -1097,6 +1271,9 @@ std::shared_ptr<DPJoinEntry> JoinOrderOptimizer::solveDPsub()
         std::unordered_map<String, ColumnStats> column_stats = {};
         double cost{.0};
         double sel{.0};
+        /// See DPJoinEntry::rows_estimate_trusted; false by default so an entry that
+        /// never went through the acceptor cannot leak a trusted estimate.
+        bool rows_estimate_trusted{false};
         JoinKind kind{JoinKind::Inner};
         std::vector<JoinActionRef*> edges; // needed for physical plan generation
     };
@@ -1149,7 +1326,7 @@ std::shared_ptr<DPJoinEntry> JoinOrderOptimizer::solveDPsize()
     for (size_t i = 0; i < total_relations_count; ++i)
     {
         const auto & rel = query_graph.relation_stats[i];
-        auto entry = std::make_shared<DPJoinEntry>(i, rel.estimated_rows, rel.column_stats);
+        auto entry = std::make_shared<DPJoinEntry>(i, rel.estimated_rows, rel.rows_estimate_trusted, rel.column_stats);
         components[1][entry->relations] = entry;
         dp_table[entry->relations] = entry;
     }
@@ -1300,7 +1477,7 @@ DPJoinEntryPtr JoinOrderOptimizer::evaluateJoin(
     std::vector<JoinActionRef *> & predicates)
 {
     auto selectivity = computeSelectivity(predicates, left->relations, right->relations);
-    auto new_cost = computeJoinCost(left, right, selectivity);
+    auto new_cost = computeJoinCost(left, right, selectivity.value);
 
     const BitSet combined_rels = left->relations | right->relations;
     auto current_best = dp_table.find(combined_rels);
@@ -1311,11 +1488,12 @@ DPJoinEntryPtr JoinOrderOptimizer::evaluateJoin(
     bool connected = !predicates.empty()
         || query_graph.areTransitivelyConnected(left->relations, right->relations);
     auto effective_kind = (connected && join_kind == JoinKind::Cross) ? JoinKind::Inner : join_kind;
-    auto cardinality = estimateJoinCardinality(left, right, selectivity, effective_kind);
     JoinOperator join_operator(
         effective_kind, JoinStrictness::All, JoinLocality::Unspecified,
         std::ranges::to<std::vector>(predicates | std::views::transform([](const auto * p) { return *p; })));
-    auto new_entry = std::make_shared<DPJoinEntry>(left, right, new_cost, cardinality, std::move(join_operator));
+    /// Route through buildDPEntry so cardinality and trust propagation use the same
+    /// funnel as solveGreedy: DPsize and DPhyp both reach this point.
+    auto new_entry = buildDPEntry(left, right, new_cost, selectivity, effective_kind, std::move(join_operator));
 
     LOG_TEST(log, "New best plan for '{}' as '{} JOIN {}', cost: {}, cardinality: {}, operator: {}",
         new_entry->dump(), left->dump(), right->dump(),
@@ -1681,7 +1859,7 @@ std::shared_ptr<DPJoinEntry> JoinOrderOptimizer::solveDPhyp()
     for (size_t i = 0; i < num_relations; ++i)
     {
         const auto & rel = query_graph.relation_stats[i];
-        auto entry = std::make_shared<DPJoinEntry>(i, rel.estimated_rows, rel.column_stats);
+        auto entry = std::make_shared<DPJoinEntry>(i, rel.estimated_rows, rel.rows_estimate_trusted, rel.column_stats);
         dp_table[entry->relations] = entry;
     }
 

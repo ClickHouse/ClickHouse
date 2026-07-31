@@ -108,10 +108,10 @@ EnumeratorCheckerWithCosts<TDPTable, TOptimizer>::accept(const UInt result_subse
         kind = JoinKind::Inner;
 
     auto selectivity = optimizer.computeSelectivityMask(edge, left_mask, right_mask);
-    auto plan_cost = computeJoinCost(lhs_subset, rhs_subset, selectivity);
+    auto plan_cost = computeJoinCost(lhs_subset, rhs_subset, selectivity.value);
 
     LOG_TEST(logger, "selectivity: {} costs: {}, lhs est. rows: {}, rhs est. rows: {}",
-             selectivity,
+             selectivity.value,
              plan_cost,
              dp_table[lhs_subset].estimated_rows.value_or(0),
              dp_table[rhs_subset].estimated_rows.value_or(0));
@@ -122,9 +122,14 @@ EnumeratorCheckerWithCosts<TDPTable, TOptimizer>::accept(const UInt result_subse
         entry.left = lhs_subset;
         entry.right = rhs_subset;
         entry.cost = plan_cost;
-        entry.sel = selectivity;
+        entry.sel = selectivity.value;
         entry.kind = kind;
-        entry.estimated_rows = optimizer.estimateCardinality(dp_table[lhs_subset].estimated_rows, dp_table[rhs_subset].estimated_rows, selectivity, kind);
+        auto cardinality = optimizer.estimateCardinality(
+            dp_table[lhs_subset].estimated_rows, dp_table[lhs_subset].rows_estimate_trusted,
+            dp_table[rhs_subset].estimated_rows, dp_table[rhs_subset].rows_estimate_trusted,
+            selectivity, kind);
+        entry.estimated_rows = cardinality.cardinality;
+        entry.rows_estimate_trusted = cardinality.trusted && cardinality.cardinality.has_value();
         entry.edges.assign(edge.begin(), edge.end());
     }
 }

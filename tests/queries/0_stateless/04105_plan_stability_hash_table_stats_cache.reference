@@ -1,0 +1,12 @@
+-- use_statistics = 0: cold EXPLAIN (cache empty)
+Join: f[10000] ⋈ d
+ResultRows: unknown
+-- use_statistics = 0: warm EXPLAIN (must match cold)
+Join: f[10000] ⋈ d
+ResultRows: unknown
+-- use_statistics = 1: cold EXPLAIN (trusted estimates, numeric ResultRows)
+Join: f[10000] ⋈ d[33]
+ResultRows: 3300
+-- use_statistics = 1: warm EXPLAIN (must match cold)
+Join: f[10000] ⋈ d[33]
+ResultRows: 3300
