@@ -2,7 +2,6 @@
 
 #include <Parsers/ASTQueryWithOutput.h>
 
-namespace Poco::JSON { class Object; }
 
 namespace DB
 {
@@ -26,7 +25,6 @@ public:
         QueryEstimates, /// 'EXPLAIN ESTIMATE ...'
         TableOverride, /// 'EXPLAIN TABLE OVERRIDE ...'
         CurrentTransaction, /// 'EXPLAIN CURRENT TRANSACTION'
-        Analyze, /// EXPLAIN ANALYZE ...
         WhatIf, /// 'EXPLAIN WHATIF SELECT ...'
     };
 
@@ -42,7 +40,6 @@ public:
             case QueryEstimates: return "EXPLAIN ESTIMATE";
             case TableOverride: return "EXPLAIN TABLE OVERRIDE";
             case CurrentTransaction: return "EXPLAIN CURRENT TRANSACTION";
-            case Analyze: return "EXPLAIN ANALYZE";
             case WhatIf: return "EXPLAIN WHATIF";
         }
     }
@@ -65,8 +62,6 @@ public:
             return TableOverride;
         if (str == "EXPLAIN CURRENT TRANSACTION")
             return CurrentTransaction;
-        if (str == "EXPLAIN ANALYZE")
-            return Analyze;
         if (str == "EXPLAIN WHATIF")
             return WhatIf;
 
@@ -137,9 +132,6 @@ public:
     const ASTPtr & getTableOverride() const { return table_override; }
 
     QueryKind getQueryKind() const override { return QueryKind::Explain; }
-
-    void writeJSON(WriteBuffer & out) const override;
-    void readJSON(const Poco::JSON::Object & json) override;
 
 protected:
     void formatQueryImpl(WriteBuffer & ostr, const FormatSettings & settings, FormatState & state, FormatStateStacked frame) const override

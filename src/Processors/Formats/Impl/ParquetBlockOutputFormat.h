@@ -84,7 +84,7 @@ private:
         /// Otherwise we need to call writeColumnChunkBody().
         DataTypePtr column_type;
         std::string column_name;
-        Columns column_pieces;
+        std::vector<ColumnPtr> column_pieces;
 
         Parquet::ColumnChunkWriteState state;
 

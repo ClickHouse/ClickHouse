@@ -18,10 +18,14 @@ struct PartitionCursor
 
     auto operator<=>(const PartitionCursor & other) const = default;
 };
+using MergeTreeCursor = std::map<String, PartitionCursor>;
 
 /// Convert the generic cursor tree (partition_id → {block_number, block_offset})
 /// produced by the parser into a flat per-partition map.
-std::map<String, PartitionCursor> buildMergeTreeCursor(const CursorTreeNodePtr & cursor);
+MergeTreeCursor buildMergeTreeCursor(const CursorTreeNodePtr & cursor_tree);
+
+/// Adds columns needed for streaming cursors recalculation.
+Names extendWithAuxiliaryColumns(Names columns);
 
 /// Build an ActionsDAG filter for a single partition's snapshot slice.
 FilterDAGInfo buildPartitionFilter(

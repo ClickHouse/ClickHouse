@@ -478,13 +478,6 @@ ColumnPtr tokenizeToArray(const ITokenizer & tokenizer, const IColumn & input, s
     auto tokens_offsets = ColumnArray::ColumnOffsets::create();
     tokens_offsets->reserve(rows);
 
-    /// Reserve token character storage to avoid repeated reallocations of the chars buffer as tokens are appended.
-    if (const auto * col_string = typeid_cast<const ColumnString *>(&input))
-    {
-        const auto & str_offsets = col_string->getOffsets();
-        tokens_data->getChars().reserve(str_offsets[from + rows - 1] - str_offsets[from - 1]);
-    }
-
     auto tokenize = [&](std::string_view doc)
     {
         forEachToken(tokenizer, doc.data(), doc.size(),
@@ -499,9 +492,7 @@ ColumnPtr tokenizeToArray(const ITokenizer & tokenizer, const IColumn & input, s
     {
         const IColumn & data = col_array->getData();
         const IColumn::Offsets & src_offsets = col_array->getOffsets();
-        /// isNullable() is false for LowCardinality(Nullable), so use the helper that also
-        /// covers that case, otherwise getDataAt() throws NOT_IMPLEMENTED on a NULL element.
-        const bool data_is_nullable = isColumnNullableOrLowCardinalityNullable(data);
+        const bool data_is_nullable = data.isNullable();
 
         for (size_t i = from; i < from + rows; ++i)
         {

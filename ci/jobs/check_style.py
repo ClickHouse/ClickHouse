@@ -272,17 +272,6 @@ def check_other():
     return out
 
 
-def check_embedded_doc_snippets():
-    # A shared `docs/snippets/*.mdx` is hand-embedded into the built-in help surfaces
-    # (TerminalMarkdownRenderer.cpp and docs.html); fail if those copies drift from the source.
-    res, out, err = Shell.get_res_stdout_stderr(
-        "python3 ./ci/jobs/scripts/check_style/check_embedded_doc_snippets.py"
-    )
-    if err:
-        out += err
-    return out
-
-
 def check_mypy():
     res, out, err = Shell.get_res_stdout_stderr(
         "./ci/jobs/scripts/check_style/check-mypy"
@@ -523,149 +512,6 @@ def check_file_names(files):
     return ""
 
 
-def check_compose_images(files) -> str:
-    """Ensure every image referenced in docker compose files is served from Docker Hub.
-
-    CI runners pull Docker Hub images through the dockerhub-proxy cache (see
-    tests/ci/terraform/dockerhub-proxy.md). Images hosted on other registries
-    (ghcr.io, mcr.microsoft.com, quay.io, ...) bypass that proxy and are pulled
-    directly, exposing CI to those registries' anonymous rate limits. Mirror such
-    images into the clickhouse/ Docker Hub namespace (see
-    tests/integration/compose/mirror-images.sh) and reference the mirror instead.
-    """
-    image_re = re.compile(r"^\s*image:\s*(.+?)\s*$")
-    # ${VAR:-default} -> default; used to resolve compose variable interpolation.
-    var_default_re = re.compile(r"\$\{[^}:]+:-([^}]*)\}")
-    hub_aliases = {"docker.io", "registry-1.docker.io", "index.docker.io"}
-
-    violations = []
-    for file in files:
-        try:
-            with open(file, "r", encoding="utf-8", errors="replace") as fh:
-                lines = fh.readlines()
-        except OSError as e:
-            violations.append(f"{file}: could not read file: {e}")
-            continue
-
-        for i, line in enumerate(lines):
-            m = image_re.match(line)
-            if not m:
-                continue
-
-            # Strip trailing inline comment and surrounding quotes.
-            value = re.sub(r"\s+#.*$", "", m.group(1)).strip().strip("'\"")
-            # Resolve ${VAR:-default} interpolations to their default value.
-            ref = var_default_re.sub(r"\1", value)
-            # A bare ${VAR} without default leaves the registry undeterminable; skip.
-            if "${" in ref:
-                continue
-
-            # Docker's rule: the first path component is a registry host only when
-            # it contains a '.' or ':' or equals 'localhost'. Otherwise it is a
-            # Docker Hub namespace/official image.
-            first = ref.split("/", 1)[0] if "/" in ref else ""
-            is_registry_host = first and (
-                "." in first or ":" in first or first == "localhost"
-            )
-            if is_registry_host and first not in hub_aliases:
-                violations.append(
-                    f"{file}:{i + 1}: image '{ref}' is not from Docker Hub "
-                    f"(registry '{first}'). Mirror it into the clickhouse/ namespace "
-                    f"via tests/integration/compose/mirror-images.sh and reference the mirror."
-                )
-
-    return "\n".join(violations)
-
-
-def check_settings_changes_history():
-    """Every setting added or value-changed in src/Core/SettingsChangesHistory.cpp by this
-    change must be recorded under the CURRENT version block (in addition to any older block
-    used for backports), so the settings history stays consistent with the release version
-    (together with the 03999_stateless_settings_history functional test, which checks that
-    the recorded value matches the final Settings state).
-
-    Runs only when that file changed; the list of changed setting names is provided by the
-    store_data.py workflow hook (which parses the PR / merge-queue diff). Returns "" on
-    success or a non-empty error string on failure (consumed by Result.from_commands_run).
-    Pure text parsing - no C++ syntax analysis.
-
-    Fail-close: if the file changed but the hook could not fetch the diff (e.g. in the merge
-    queue), fail rather than silently pass - a green here would defeat the purpose."""
-    path = "src/Core/SettingsChangesHistory.cpp"
-    kv = Info().get_kv_data() or {}
-    changed_files = kv.get("changed_files")
-
-    if changed_files is None:
-        # changed_files is stored fail-close by the store_data.py hook for every PR and
-        # merge-queue run; its absence means the check cannot know whether the file changed.
-        return (
-            "Could not determine changed files (no 'changed_files' recorded by the "
-            "store_data.py workflow hook); refusing to pass the settings-history check."
-        )
-    if path not in changed_files:
-        # The history file was not changed in this run - nothing to validate.
-        return ""
-
-    fetch_error = kv.get("settings_history_fetch_error")
-    changed = kv.get("settings_history_changed_settings")
-    if fetch_error or changed is None:
-        return (
-            f"{path} changed but its diff could not be fetched to validate the settings "
-            f"history (the check must not be skipped when the file changed). "
-            f"Error: {fetch_error or 'no data recorded by the store_data.py workflow hook'}."
-        )
-    if not changed:
-        # The file changed but no setting entries were added (e.g. only reason-text edits or
-        # removals) - nothing to validate against the current version block.
-        return ""
-
-    version_txt = Path("cmake/autogenerated_versions.txt").read_text(encoding="utf-8")
-    current_version = "{}.{}".format(
-        re.search(r"SET\(VERSION_MAJOR (\d+)\)", version_txt).group(1),
-        re.search(r"SET\(VERSION_MINOR (\d+)\)", version_txt).group(1),
-    )
-
-    namespace_by_map = {
-        "settings_changes_history": "Session",
-        "merge_tree_settings_changes_history": "MergeTree",
-    }
-    block_re = re.compile(r'addSettingsChanges\(\s*(\w+)\s*,\s*"([\d.]+)"')
-    entry_re = re.compile(r'^\s*\{\s*"([A-Za-z0-9_]+)"')
-
-    # Names recorded under the current version block, per namespace, from the final file.
-    current_block = {"Session": set(), "MergeTree": set()}
-    namespace, version = None, None
-    with open(path, "r", encoding="utf-8", errors="ignore") as f:
-        for line in f:
-            mb = block_re.search(line)
-            if mb and mb.group(1) in namespace_by_map:
-                namespace, version = namespace_by_map[mb.group(1)], mb.group(2)
-                continue
-            me = entry_re.match(line)
-            if me and namespace and version == current_version:
-                current_block[namespace].add(me.group(1))
-
-    # `changed` is a list of {"namespace", "name"} records produced by the hook, where the
-    # namespace is taken from the block the added line sits in - so an overlapping name
-    # changed only in one namespace is not spuriously required in the other.
-    violations = []
-    for item in changed:
-        namespace, name = item["namespace"], item["name"]
-        if name not in current_block.get(namespace, set()):
-            violations.append(
-                f"  {namespace} setting '{name}' must be recorded in the '{current_version}' block"
-            )
-
-    if violations:
-        return (
-            f"These settings were added or value-changed in {path} but are not recorded under "
-            f"the current version ('{current_version}') block of SettingsChangesHistory.cpp. Add "
-            f"an entry for each under the '{current_version}' block (older blocks may keep their "
-            f"entries for backports):\n" + "\n".join(sorted(set(violations)))
-        )
-    return ""
-
-
 def parse_args():
     parser = argparse.ArgumentParser(description="ClickHouse Style Check Job")
     parser.add_argument("--test", help="Sub check name", default="")
@@ -703,12 +549,6 @@ if __name__ == "__main__":
         include_paths=["./tests/queries"],
         exclude_paths=[],
         file_suffixes=[".sql", ".sh", ".py", ".j2"],
-    )
-
-    compose_files = Utils.traverse_paths(
-        include_paths=["./tests/integration/compose"],
-        exclude_paths=[],
-        file_suffixes=[".yml", ".yaml"],
     )
 
     testname = "whitespace_check"
@@ -783,23 +623,6 @@ if __name__ == "__main__":
                 files=cpp_files,
             )
         )
-    testname = "compose_images_from_dockerhub"
-    if testpattern.lower() in testname.lower():
-        results.append(
-            run_check_concurrent(
-                check_name=testname,
-                check_function=check_compose_images,
-                files=compose_files,
-            )
-        )
-    testname = "settings_changes_history"
-    if testpattern.lower() in testname.lower():
-        results.append(
-            Result.from_commands_run(
-                name=testname,
-                command=check_settings_changes_history,
-            )
-        )
     testname = "cpp"
     if testpattern.lower() in testname.lower():
         results.append(
@@ -814,14 +637,6 @@ if __name__ == "__main__":
             Result.from_commands_run(
                 name=testname,
                 command=check_other,
-            )
-        )
-    testname = "embedded_doc_snippets"
-    if testpattern.lower() in testname.lower():
-        results.append(
-            Result.from_commands_run(
-                name=testname,
-                command=check_embedded_doc_snippets,
             )
         )
     testname = "ruff"

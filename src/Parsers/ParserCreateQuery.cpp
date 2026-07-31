@@ -47,12 +47,8 @@ ASTPtr parseComment(IParser::Pos & pos, Expected & expected)
     ParserStringLiteral string_literal_parser;
     ASTPtr comment;
 
-    auto begin = pos;
-    if (s_comment.ignore(pos, expected))
-    {
-        if (!string_literal_parser.parse(pos, comment, expected))
-            pos = begin;
-    }
+    s_comment.ignore(pos, expected) && string_literal_parser.parse(pos, comment, expected);
+
     return comment;
 }
 
@@ -772,7 +768,6 @@ bool ParserCreateTableQuery::parseImpl(Pos & pos, ASTPtr & node, Expected & expe
     ParserSelectWithUnionQuery select_p;
     ParserFunction table_function_p;
     ParserNameList names_p;
-    ParserSQLSecurity sql_security_p;
 
     ASTPtr table;
     ASTPtr to_inner_uuid;
@@ -785,7 +780,6 @@ bool ParserCreateTableQuery::parseImpl(Pos & pos, ASTPtr & node, Expected & expe
     ASTPtr as_table_function;
     ASTPtr select;
     ASTPtr from_path;
-    ASTPtr sql_security;
 
     String cluster_str;
     bool attach = false;
@@ -931,7 +925,6 @@ bool ParserCreateTableQuery::parseImpl(Pos & pos, ASTPtr & node, Expected & expe
 
         /// Accept both "EMPTY COMMENT ... AS" and "COMMENT ... EMPTY AS" orderings.
         try_parse_empty_or_clone();
-        sql_security_p.parse(pos, sql_security, expected);
         comment = parseComment(pos, expected);
         try_parse_empty_or_clone();
 
@@ -969,7 +962,6 @@ bool ParserCreateTableQuery::parseImpl(Pos & pos, ASTPtr & node, Expected & expe
         parse_storage();
 
         try_parse_empty_or_clone();
-        sql_security_p.parse(pos, sql_security, expected);
         if (!comment)
             comment = parseComment(pos, expected);
         try_parse_empty_or_clone();
@@ -1012,23 +1004,8 @@ bool ParserCreateTableQuery::parseImpl(Pos & pos, ASTPtr & node, Expected & expe
         }
     }
 
-    if (select || as_table || as_table_function)
-    {
-        auto select_comment = parseComment(pos, expected);
-        if (comment && select_comment)
-            throw Exception(
-                ErrorCodes::SYNTAX_ERROR,
-                "Comment for a table cannot be specified both before and after AS; please use only one");
-        if (!comment)
-            comment = select_comment;
-    }
-    else if (!comment)
+    if (!comment)
         comment = parseComment(pos, expected);
-
-    /// `AS table` and `AS table_function` are formatted before the SQL SECURITY clause position,
-    /// so allowing them together would produce text that does not parse back.
-    if (sql_security && (as_table || as_table_function))
-        return false;
 
     auto query = make_intrusive<ASTCreateQuery>();
     node = query;
@@ -1060,8 +1037,6 @@ bool ParserCreateTableQuery::parseImpl(Pos & pos, ASTPtr & node, Expected & expe
 
     if (comment)
         query->set(query->comment, comment);
-    if (sql_security)
-        query->set(query->sql_security, sql_security);
 
     if (query->columns_list && query->columns_list->primary_key)
     {
@@ -1292,13 +1267,8 @@ bool ParserCreateWindowViewQuery::parseImpl(Pos & pos, ASTPtr & node, Expected &
     if (!select_p.parse(pos, select, expected))
         return false;
 
-    auto select_comment = parseComment(pos, expected);
-    if (comment && select_comment)
-        throw Exception(
-            ErrorCodes::SYNTAX_ERROR,
-            "Comment for a view cannot be specified both before and after AS SELECT; please use only one");
     if (!comment)
-        comment = select_comment;
+        comment = parseComment(pos, expected);
 
     auto query = make_intrusive<ASTCreateQuery>();
     node = query;
@@ -1782,13 +1752,8 @@ bool ParserCreateViewQuery::parseImpl(Pos & pos, ASTPtr & node, Expected & expec
     if (!select_p.parse(pos, select, expected))
         return false;
 
-    auto select_comment = parseComment(pos, expected);
-    if (comment && select_comment)
-        throw Exception(
-            ErrorCodes::SYNTAX_ERROR,
-            "Comment for a view cannot be specified both before and after AS SELECT; please use only one");
     if (!comment)
-        comment = select_comment;
+        comment = parseComment(pos, expected);
 
     auto query = make_intrusive<ASTCreateQuery>();
     node = query;

@@ -314,10 +314,8 @@ struct Int96Converter : public FixedSizeConverter
 struct GeoConverter : public StringConverter
 {
     GeoColumnMetadata geo_metadata;
-    bool precise_float_parsing = true;
 
-    GeoConverter(const GeoColumnMetadata & geo_metadata_, bool precise_float_parsing_)
-        : geo_metadata(geo_metadata_), precise_float_parsing(precise_float_parsing_) {}
+    explicit GeoConverter(const GeoColumnMetadata & geo_metadata_) : geo_metadata(geo_metadata_) {}
 
     void convertColumn(std::span<const char> chars, const UInt64 * offsets, size_t separator_bytes, size_t num_values, IColumn & col) const override;
 };
