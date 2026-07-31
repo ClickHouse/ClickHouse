@@ -61,6 +61,9 @@ TEST(IcebergCountShortcuts, SnapshotShortcutRequiresExplicitZeroEqualityDeletes)
     snapshot.total_equality_delete_rows = 0;
     EXPECT_TRUE(snapshot.allowsSnapshotTotalRowsShortcut());
     EXPECT_EQ(*snapshot.getTotalRows(), 90u);
+
+    /// Note: IcebergMetadata::totalRows still scans manifests for DV + parquet position-delete
+    /// coexistence before trusting this snapshot shortcut.
 }
 
 #endif

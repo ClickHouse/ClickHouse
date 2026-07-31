@@ -33,6 +33,23 @@ String FileContentTypeToString(FileContentType type)
     throw DB::Exception(DB::ErrorCodes::LOGICAL_ERROR, "Unsupported content type: {}", static_cast<int>(type));
 }
 
+PositionDeleteKindPresence getPositionDeleteKindPresence(
+    const std::vector<ProcessedManifestFileEntryPtr> & position_delete_files)
+{
+    PositionDeleteKindPresence presence;
+    for (const auto & file : position_delete_files)
+    {
+        if (file->parsed_entry->isDeletionVector())
+            presence.has_deletion_vectors = true;
+        else
+            presence.has_parquet_position_deletes = true;
+
+        if (presence.hasBoth())
+            break;
+    }
+    return presence;
+}
+
 void requireDirectReferencedDataFileForPuffinDeletionVector(
     bool set_from_referenced_data_file_field,
     const std::optional<IcebergPathFromMetadata> & referenced_path,

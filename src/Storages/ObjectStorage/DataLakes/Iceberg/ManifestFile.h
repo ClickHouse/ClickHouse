@@ -165,6 +165,20 @@ struct ProcessedManifestFileEntry
 
 using ProcessedManifestFileEntryPtr = std::shared_ptr<const ProcessedManifestFileEntry>;
 
+/// Live POSITION_DELETE entries are either puffin deletion vectors or parquet position-delete files.
+/// Iceberg readers ignore matching parquet position deletes when a DV applies; trivial COUNT must
+/// not subtract both. Detect coexistence so callers can fail closed.
+struct PositionDeleteKindPresence
+{
+    bool has_deletion_vectors = false;
+    bool has_parquet_position_deletes = false;
+
+    bool hasBoth() const { return has_deletion_vectors && has_parquet_position_deletes; }
+};
+
+PositionDeleteKindPresence getPositionDeleteKindPresence(
+    const std::vector<ProcessedManifestFileEntryPtr> & position_delete_files);
+
 /// Puffin deletion vectors must identify the data file via the dedicated `referenced_data_file`
 /// manifest field (non-empty). Position-delete lower/upper bounds must not be used as a fallback.
 void requireDirectReferencedDataFileForPuffinDeletionVector(

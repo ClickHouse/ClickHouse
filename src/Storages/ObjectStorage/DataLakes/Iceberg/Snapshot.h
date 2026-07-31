@@ -36,6 +36,8 @@ struct IcebergDataSnapshot
 
     /// Summary `total-equality-deletes` is optional. Only trust the cheap getTotalRows() shortcut
     /// when the field is present and explicitly zero; absent or >0 must fall through / fail closed.
+    /// Callers must also fail closed when DVs and parquet position deletes coexist in manifests —
+    /// snapshot totals alone cannot express Iceberg DV supersession of matching position deletes.
     bool allowsSnapshotTotalRowsShortcut() const
     {
         return total_equality_delete_rows.has_value() && *total_equality_delete_rows == 0;

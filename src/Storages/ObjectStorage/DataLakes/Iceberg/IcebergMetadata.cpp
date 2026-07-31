@@ -1152,8 +1152,44 @@ std::optional<size_t> IcebergMetadata::totalRows(ContextPtr local_context) const
         && *actual_data_snapshot->total_equality_delete_rows > 0)
         return {};
 
-    /// All these "hints" with total rows or bytes are optional both in
-    /// metadata files and in manifest files, so we try all of them one by one
+    /// Iceberg: when a DV applies to a data file, readers ignore matching parquet position deletes.
+    /// Snapshot/manifest row stats can still list both; subtracting both undercounts (and can wrap
+    /// size_t). Classify live POSITION_DELETE entries across all manifests before trusting totals.
+    bool has_deletion_vectors = false;
+    bool has_parquet_position_deletes = false;
+    Int64 manifest_result = 0;
+    bool manifest_counts_complete = true;
+
+    for (const auto & manifest_list_entry : actual_data_snapshot->manifest_list_entries)
+    {
+        auto manifest_file_ptr = getManifestFileEntriesHandle(
+            object_storage, persistent_components, local_context, log, manifest_list_entry, actual_table_state_snapshot.schema_id);
+        if (!manifest_file_ptr.getFilesWithoutDeleted(FileContentType::EQUALITY_DELETE).empty())
+            return {};
+
+        const auto position_delete_kinds = manifest_file_ptr.getPositionDeleteKindPresence();
+        has_deletion_vectors = has_deletion_vectors || position_delete_kinds.has_deletion_vectors;
+        has_parquet_position_deletes = has_parquet_position_deletes || position_delete_kinds.has_parquet_position_deletes;
+
+        auto data_count = manifest_file_ptr.getRowsCountInAllFilesExcludingDeleted(FileContentType::DATA);
+        auto position_deletes_count = manifest_file_ptr.getRowsCountInAllFilesExcludingDeleted(FileContentType::POSITION_DELETE);
+        if (!data_count.has_value() || !position_deletes_count.has_value())
+        {
+            manifest_counts_complete = false;
+            continue;
+        }
+
+        const Int64 surviving = data_count.value() - position_deletes_count.value();
+        if (surviving < 0)
+            return {};
+
+        manifest_result += surviving;
+    }
+
+    if (has_deletion_vectors && has_parquet_position_deletes)
+        return {};
+
+    /// Snapshot summary is safe only after coexistence is ruled out (summary alone cannot see it).
     if (actual_data_snapshot->allowsSnapshotTotalRowsShortcut())
     {
         if (auto total_rows = actual_data_snapshot->getTotalRows(); total_rows.has_value())
@@ -1162,6 +1198,9 @@ std::optional<size_t> IcebergMetadata::totalRows(ContextPtr local_context) const
             return total_rows;
         }
     }
+
+    if (!manifest_counts_complete)
+        return {};
 
     /// Row counts stored in the metadata layers above the manifest files are not used as
     /// data sources, because writers derive them instead of measuring them against the data:
@@ -1217,7 +1256,7 @@ std::optional<size_t> IcebergMetadata::totalRows(ContextPtr local_context) const
             result);
 
     ProfileEvents::increment(ProfileEvents::IcebergTrivialCountOptimizationApplied);
-    return result;
+    return static_cast<size_t>(manifest_result);
 }
 
 std::optional<size_t> IcebergMetadata::totalBytes(ContextPtr local_context) const
