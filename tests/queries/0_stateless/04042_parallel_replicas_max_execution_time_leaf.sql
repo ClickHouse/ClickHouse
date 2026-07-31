@@ -35,10 +35,16 @@ SET automatic_parallel_replicas_mode = 0;
 -- and far less on machines with more cores.
 SET max_threads = 1;
 
+-- A timeout may fire while a remote leaf query is still in the pending state (e.g. on a cold or heavily
+-- loaded server, or a slow sanitizer/debug build): the kill then surfaces as QUERY_WAS_CANCELLED
+-- ("Query is killed in pending state") instead of TIMEOUT_EXCEEDED, so both codes are accepted below.
+-- A warm-up query (no timeouts involved) makes that race unlikely in the first place.
+SELECT sum(key) FROM test_max_execution_time_leaf FORMAT Null;
+
 -- The whole-query timeout 'max_execution_time' aborts the query.
-SELECT sum(sleepEachRow(0.01)) FROM test_max_execution_time_leaf SETTINGS max_block_size = 1, max_execution_time = 1; -- { serverError TIMEOUT_EXCEEDED }
+SELECT sum(sleepEachRow(0.01)) FROM test_max_execution_time_leaf SETTINGS max_block_size = 1, max_execution_time = 1; -- { serverError TIMEOUT_EXCEEDED, QUERY_WAS_CANCELLED }
 -- The leaf timeout 'max_execution_time_leaf' aborts the per-replica (leaf) execution.
-SELECT sum(sleepEachRow(0.01)) FROM test_max_execution_time_leaf SETTINGS max_block_size = 1, max_execution_time_leaf = 1; -- { serverError TIMEOUT_EXCEEDED }
+SELECT sum(sleepEachRow(0.01)) FROM test_max_execution_time_leaf SETTINGS max_block_size = 1, max_execution_time_leaf = 1; -- { serverError TIMEOUT_EXCEEDED, QUERY_WAS_CANCELLED }
 -- In 'break' mode a partial result is returned instead of an error.
 SELECT sum(sleepEachRow(0.01)) FROM test_max_execution_time_leaf FORMAT Null SETTINGS max_block_size = 1, max_execution_time = 1, timeout_overflow_mode = 'break';
 SELECT sum(sleepEachRow(0.01)) FROM test_max_execution_time_leaf FORMAT Null SETTINGS max_block_size = 1, max_execution_time_leaf = 1, timeout_overflow_mode_leaf = 'break';
@@ -46,10 +52,10 @@ SELECT sum(sleepEachRow(0.01)) FROM test_max_execution_time_leaf FORMAT Null SET
 -- The leaf timeout must win even when a larger whole-query 'max_execution_time' is also set: the leaf value is
 -- substituted only into the per-replica (leaf) execution, while the outer value bounds the initiator. The query
 -- below would finish in well under 100 seconds, so only the one second leaf timeout can abort it.
-SELECT sum(sleepEachRow(0.01)) FROM test_max_execution_time_leaf SETTINGS max_block_size = 1, max_execution_time = 100, max_execution_time_leaf = 1; -- { serverError TIMEOUT_EXCEEDED }
+SELECT sum(sleepEachRow(0.01)) FROM test_max_execution_time_leaf SETTINGS max_block_size = 1, max_execution_time = 100, max_execution_time_leaf = 1; -- { serverError TIMEOUT_EXCEEDED, QUERY_WAS_CANCELLED }
 -- The leaf 'timeout_overflow_mode' must also win over a differing outer 'timeout_overflow_mode': the leaf uses the
 -- default 'throw' mode, so the query aborts even though the outer mode is 'break'.
-SELECT sum(sleepEachRow(0.01)) FROM test_max_execution_time_leaf SETTINGS max_block_size = 1, max_execution_time = 100, max_execution_time_leaf = 1, timeout_overflow_mode = 'break'; -- { serverError TIMEOUT_EXCEEDED }
+SELECT sum(sleepEachRow(0.01)) FROM test_max_execution_time_leaf SETTINGS max_block_size = 1, max_execution_time = 100, max_execution_time_leaf = 1, timeout_overflow_mode = 'break'; -- { serverError TIMEOUT_EXCEEDED, QUERY_WAS_CANCELLED }
 
 -- The leaf timeout is also effective for INSERT SELECT executed with parallel replicas. The local-pipeline
 -- settings ('parallel_replicas_local_plan', 'parallel_replicas_insert_select_local_pipeline',
@@ -64,18 +70,18 @@ CREATE TABLE test_max_execution_time_leaf_insert
 ENGINE = ReplicatedMergeTree('/clickhouse/{database}/test_max_execution_time_leaf_insert', 'r1')
 ORDER BY key;
 
-INSERT INTO test_max_execution_time_leaf_insert SELECT key + sleepEachRow(0.01) FROM test_max_execution_time_leaf SETTINGS parallel_distributed_insert_select = 2, max_block_size = 1, max_execution_time_leaf = 1; -- { serverError TIMEOUT_EXCEEDED }
+INSERT INTO test_max_execution_time_leaf_insert SELECT key + sleepEachRow(0.01) FROM test_max_execution_time_leaf SETTINGS parallel_distributed_insert_select = 2, max_block_size = 1, max_execution_time_leaf = 1; -- { serverError TIMEOUT_EXCEEDED, QUERY_WAS_CANCELLED }
 
 -- The leaf timeout must win for INSERT SELECT too even when a larger whole-query 'max_execution_time' is set.
 -- The query text SETTINGS are stripped from the remote sub-query, so the leaf value shipped in the context is not
 -- overridden by the outer 'max_execution_time' on the remote replicas.
-INSERT INTO test_max_execution_time_leaf_insert SELECT key + sleepEachRow(0.01) FROM test_max_execution_time_leaf SETTINGS parallel_distributed_insert_select = 2, max_block_size = 1, max_execution_time = 100, max_execution_time_leaf = 1; -- { serverError TIMEOUT_EXCEEDED }
+INSERT INTO test_max_execution_time_leaf_insert SELECT key + sleepEachRow(0.01) FROM test_max_execution_time_leaf SETTINGS parallel_distributed_insert_select = 2, max_block_size = 1, max_execution_time = 100, max_execution_time_leaf = 1; -- { serverError TIMEOUT_EXCEEDED, QUERY_WAS_CANCELLED }
 -- The leaf 'timeout_overflow_mode' (default 'throw') must win over the outer 'break', so the INSERT aborts.
-INSERT INTO test_max_execution_time_leaf_insert SELECT key + sleepEachRow(0.01) FROM test_max_execution_time_leaf SETTINGS parallel_distributed_insert_select = 2, max_block_size = 1, max_execution_time = 100, max_execution_time_leaf = 1, timeout_overflow_mode = 'break'; -- { serverError TIMEOUT_EXCEEDED }
+INSERT INTO test_max_execution_time_leaf_insert SELECT key + sleepEachRow(0.01) FROM test_max_execution_time_leaf SETTINGS parallel_distributed_insert_select = 2, max_block_size = 1, max_execution_time = 100, max_execution_time_leaf = 1, timeout_overflow_mode = 'break'; -- { serverError TIMEOUT_EXCEEDED, QUERY_WAS_CANCELLED }
 
 -- A repeated outer 'max_execution_time' in the query text (ParserSetQuery keeps one entry per occurrence) must not
 -- leave a second copy behind on the remote replica: every occurrence is stripped, not just the first.
-INSERT INTO test_max_execution_time_leaf_insert SELECT key + sleepEachRow(0.01) FROM test_max_execution_time_leaf SETTINGS parallel_distributed_insert_select = 2, max_block_size = 1, max_execution_time = 100, max_execution_time = 100, max_execution_time_leaf = 1; -- { serverError TIMEOUT_EXCEEDED }
+INSERT INTO test_max_execution_time_leaf_insert SELECT key + sleepEachRow(0.01) FROM test_max_execution_time_leaf SETTINGS parallel_distributed_insert_select = 2, max_block_size = 1, max_execution_time = 100, max_execution_time = 100, max_execution_time_leaf = 1; -- { serverError TIMEOUT_EXCEEDED, QUERY_WAS_CANCELLED }
 
 -- The stripping must be limited to the top-level SETTINGS of the query text. A timeout the user wrote inside a
 -- nested subquery (the documented leaf-node pattern of 'max_execution_time_leaf') must survive on the remote
@@ -84,12 +90,12 @@ INSERT INTO test_max_execution_time_leaf_insert SELECT key + sleepEachRow(0.01) 
 -- part of the primary key, so the set is built only on the remote replicas (not during initiator planning). The
 -- 100 second leaf timeout shipped in the context cannot fire, so only the one second timeout inside the subquery
 -- can abort the query - and it must do so on a remote replica.
-INSERT INTO test_max_execution_time_leaf_insert SELECT key FROM test_max_execution_time_leaf WHERE (key % 2) IN (SELECT number % 2 FROM numbers(300) WHERE sleepEachRow(0.01) = 0 SETTINGS max_block_size = 1, max_execution_time = 1) SETTINGS parallel_distributed_insert_select = 2, max_execution_time_leaf = 100; -- { serverError TIMEOUT_EXCEEDED }
+INSERT INTO test_max_execution_time_leaf_insert SELECT key FROM test_max_execution_time_leaf WHERE (key % 2) IN (SELECT number % 2 FROM numbers(300) WHERE sleepEachRow(0.01) = 0 SETTINGS max_block_size = 1, max_execution_time = 1) SETTINGS parallel_distributed_insert_select = 2, max_execution_time_leaf = 100; -- { serverError TIMEOUT_EXCEEDED, QUERY_WAS_CANCELLED }
 
 -- When 'max_execution_time_leaf' is not set, the query text must not be rewritten at all: the nested subquery
 -- keeps its user-authored timeout on the remote replicas. The local pipeline is disabled so that the set is built
 -- (and the timeout can fire) only on the remote replicas.
-INSERT INTO test_max_execution_time_leaf_insert SELECT key FROM test_max_execution_time_leaf WHERE (key % 2) IN (SELECT number % 2 FROM numbers(300) WHERE sleepEachRow(0.01) = 0 SETTINGS max_block_size = 1, max_execution_time = 1) SETTINGS parallel_distributed_insert_select = 2, parallel_replicas_insert_select_local_pipeline = 0; -- { serverError TIMEOUT_EXCEEDED }
+INSERT INTO test_max_execution_time_leaf_insert SELECT key FROM test_max_execution_time_leaf WHERE (key % 2) IN (SELECT number % 2 FROM numbers(300) WHERE sleepEachRow(0.01) = 0 SETTINGS max_block_size = 1, max_execution_time = 1) SETTINGS parallel_distributed_insert_select = 2, parallel_replicas_insert_select_local_pipeline = 0; -- { serverError TIMEOUT_EXCEEDED, QUERY_WAS_CANCELLED }
 
 DROP TABLE test_max_execution_time_leaf_insert SYNC;
 DROP TABLE test_max_execution_time_leaf SYNC;
