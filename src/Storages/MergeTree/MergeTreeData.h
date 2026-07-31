@@ -94,6 +94,7 @@ class ExpressionActions;
 using ExpressionActionsPtr = std::shared_ptr<ExpressionActions>;
 using ManyExpressionActions = std::vector<ExpressionActionsPtr>;
 class MergeTreeDeduplicationLog;
+class UniqueKeyDenseIndexOps;
 using PartitionIdToMaxBlock = std::unordered_map<String, Int64>;
 class Set;
 using SetPtr = std::shared_ptr<Set>;
@@ -354,7 +355,8 @@ public:
         const String & name,
         const VolumePtr & volume,
         const String & part_dir,
-        const ReadSettings & read_settings) const;
+        const ReadSettings & read_settings,
+        bool part_may_exist_on_disk = true) const;
 
     /// Auxiliary object to add a set of parts into the working set in two steps:
     /// * First, as PreActive parts (the parts are ready, but not yet in the active set).
@@ -525,6 +527,11 @@ public:
                   bool require_part_metadata_,
                   LoadingStrictnessLevel mode,
                   BrokenPartCallback broken_part_callback_ = [](const String &){});
+
+    /// Out-of-line so the forward-declared `UniqueKeyDenseIndexOps`
+    /// doesn't force a full-type include in callers that destroy
+    /// `MergeTreeData`-derived classes.
+    ~MergeTreeData() override;
 
     /// Build a block of minmax and count values of a MergeTree table. These values are extracted
     /// from minmax_indices, the first expression of primary key, and part rows.
@@ -1523,6 +1530,7 @@ protected:
     friend class VersionMetadataOnDisk; // for access to log
     friend class VersionMetadataOnKeeper; // for access to log
     friend class MutationsState; // for access to log
+    friend class UniqueKeyDenseIndexOps; // for access to log + data_parts_by_info
 
     bool require_part_metadata;
 
@@ -1676,6 +1684,12 @@ protected:
     mutable std::unordered_map<String, StorageMetadataPtr> patch_parts_metadata_cache;
 
     MergeTreePartsMover parts_mover;
+
+    /// UNIQUE KEY — sidecar lifecycle helper (orphan sweep + load-time SST
+    /// rebuild). Constructed unconditionally; methods are no-ops on non-UK
+    /// tables. The sweep also clears stray SSTs left on tables that used to
+    /// have UK metadata.
+    std::unique_ptr<UniqueKeyDenseIndexOps> unique_key_dense_index_ops;
 
     /// Executors are common for both ReplicatedMergeTree and plain MergeTree
     /// but they are being started and finished in derived classes, so let them be protected.

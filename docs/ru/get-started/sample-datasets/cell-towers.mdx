@@ -24,7 +24,7 @@ import SupersetDocker from '/snippets/ru/_add_superset_detail.mdx';
 
 * Загрузить данные OpenCelliD в ClickHouse
 * Подключить Apache Superset к ClickHouse
-* Создать панель мониторинга на основе данных из датасета
+* Создать панель мониторинга на основе данных из набора данных
 
 Ниже показан предварительный просмотр панели мониторинга, созданной в этом руководстве:
 
@@ -52,7 +52,7 @@ import SupersetDocker from '/snippets/ru/_add_superset_detail.mdx';
 
     <Image img="/images/_snippets/cloud-load-data-sample.webp" size="md" alt="Загрузка набора данных о базовых станциях сотовой связи" />
 
-    ### Изучите схему таблицы cell_towers
+    ### Изучите схему таблицы cell&#95;towers
 
     ```sql
     DESCRIBE TABLE cell_towers
@@ -329,18 +329,18 @@ Superset легко запустить в Docker. Если Superset у вас у
 <Image img="/images/getting-started/example-datasets/superset-connect-a-database.webp" size="md" alt="Добавление ClickHouse в качестве источника данных Superset" />
 
 <div id="add-the-table-cell_towers-as-a-superset-dataset">
-  ### Добавьте таблицу **cell_towers** как **датасет** Superset
+  ### Добавьте таблицу **cell&#95;towers** как **набор данных** Superset
 </div>
 
-В Superset **датасет** соответствует таблице в базе данных. Нажмите Add dataset и выберите свой сервис ClickHouse, базу данных, в которой находится таблица (`default`), а затем таблицу `cell_towers`:
+В Superset **набор данных** соответствует таблице в базе данных. Нажмите Add dataset и выберите свой сервис ClickHouse, базу данных, в которой находится таблица (`default`), а затем таблицу `cell_towers`:
 
-<Image img="/images/getting-started/example-datasets/superset-add-dataset.webp" size="md" alt="Добавить таблицу cell_towers как датасет" />
+<Image img="/images/getting-started/example-datasets/superset-add-dataset.webp" size="md" alt="Добавить таблицу cell_towers как набор данных" />
 
 <div id="create-some-charts">
   ### Создайте несколько **диаграмм**
 </div>
 
-При добавлении диаграммы в Superset нужно указать датасет (`cell_towers`) и тип диаграммы. Поскольку датасет OpenCelliD содержит координаты долготы и широты базовых станций сотовой связи, мы создадим диаграмму типа **Map**. Тип **deck.gL Scatterplot** хорошо подходит для этого датасета, так как он эффективно отображает на карте плотные наборы точек данных.
+При добавлении диаграммы в Superset нужно указать набор данных (`cell_towers`) и тип диаграммы. Поскольку набор данных OpenCelliD содержит координаты долготы и широты базовых станций сотовой связи, мы создадим диаграмму **Map**. Тип **deck.gL Scatterplot** хорошо подходит для этого набора данных, так как он эффективно отображает на карте плотные наборы точек данных.
 
 <Image img="/images/getting-started/example-datasets/superset-create-map.webp" size="md" alt="Создание карты в Superset" />
 
@@ -348,7 +348,7 @@ Superset легко запустить в Docker. Если Superset у вас у
   #### Укажите запрос для карты
 </div>
 
-Для deck.gl Scatterplot нужны значения долготы и широты; кроме того, к запросу можно применить один или несколько фильтров. В этом примере используются два фильтра: один — для базовых станций сотовой связи с технологией UMTS, другой — для значения Mobile country code, соответствующего Нидерландам.
+Для deck.gl Scatterplot нужны значения долготы и широты; кроме того, к запросу можно применить один или несколько фильтров. В этом примере используются два фильтра: один — для базовых станций сотовой связи с технологией UMTS, другой — для значения кода страны мобильной сети, соответствующего Нидерландам.
 
 Поля `lon` и `lat` содержат долготу и широту:
 

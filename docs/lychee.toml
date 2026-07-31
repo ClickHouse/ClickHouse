@@ -12,7 +12,7 @@ exclude_path = [
   # Legacy Docusaurus content, pending removal
   "^\\./en/",
   "^\\./changelogs/",
-  "^\\./_description_templates/",
+  "^\\./_templates/",
   "^\\./_includes/",
   "^\\./_migration/",
   # Site source assets (redirects.json, favicon, logos, customization JS) that

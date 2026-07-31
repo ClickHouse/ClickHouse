@@ -2,6 +2,7 @@
 <html>
 <head>
     <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1">
     <link rel="icon" href="data:image/svg+xml;base64,PHN2ZyB4bWxucz0iaHR0cDovL3d3dy53My5vcmcvMjAwMC9zdmciIHdpZHRoPSI1NCIgaGVpZ2h0PSI0OCIgdmlld0JveD0iMCAwIDExIDEwIj48c3R5bGU+LmJne2ZpbGw6I2ZmMH0ub3tmaWxsOiMwMDB9PC9zdHlsZT48cmVjdCBjbGFzcz0iYmciIHg9IjAiIHk9IjAiIHdpZHRoPSIxMDAlIiBoZWlnaHQ9IjEwMCUiLz48cGF0aCBkPSJNMSwxIGgxIHY4IGgtMSB6IiBjbGFzcz0ibyIvPjxwYXRoIGQ9Ik0zLDEgaDEgdjggaC0xIHoiIGNsYXNzPSJvIi8+PHBhdGggZD0iTTUsMSBoMSB2OCBoLTEgeiIgY2xhc3M9Im8iLz48cGF0aCBkPSJNNywxIGgxIHY4IGgtMSB6IiBjbGFzcz0ibyIvPjxwYXRoIGQ9Ik05LDQuMjUgaDEgdjEuNSBoLTEgeiIgY2xhc3M9Im8iLz48L3N2Zz4K">
     <title>ClickHouse Query</title>
 
@@ -197,6 +198,14 @@
             font-family: Roboto Mono, Liberation Sans, DejaVu Sans, sans-serif, Noto Color Emoji, Apple Color Emoji, Segoe UI Emoji;
             background: var(--background-color);
             color: var(--text-color);
+            /* Disable iOS Safari's automatic text inflation ("text autosizing"). On iPhone it
+               rescales the font size of text blocks by a per-block multiplier, which it applies
+               differently to the `#query` textarea and the `#query-backdrop` div behind it. That
+               breaks the character-for-character alignment the syntax-highlighting overlay relies
+               on, so the colors slide out from under the text. iPad, macOS, and visionOS Safari do
+               not inflate, which is why highlighting looks correct there but not on iPhone. */
+            -webkit-text-size-adjust: 100%;
+            text-size-adjust: 100%;
         }
 
         body
@@ -491,8 +500,9 @@
         }
 
         /* Styled like a tab (same border, height and bottom-line alignment) and placed
-           directly after the last tab. */
-        #tab-add
+           directly after the last tab. `#tab-close-others` closes every tab except the
+           active one; it is shown only when there are at least two tabs (see `renderTabBar`). */
+        #tab-add, #tab-close-others
         {
             flex-shrink: 0;
             align-self: flex-end;
@@ -502,18 +512,29 @@
             justify-content: center;
             padding: 0.25rem 0.6rem;
             cursor: pointer;
+            /* Inherit the page font, not just its size: a native <button> otherwise falls
+               back to the system button font (see #databases-hide), whose `normal`
+               line-height differs from the .tab divs' page font. In Firefox that makes the
+               [+] glyph's line box taller, so the button — aligned to flex-end like the
+               tabs — sticks up above them. Inheriting the font makes its height match the
+               tabs exactly, as it already does in Chromium. */
+            font: inherit;
             font-weight: bold;
-            font-size: 100%;
             background: var(--element-background-color);
             color: var(--text-color);
             border: 1px solid var(--border-color);
             border-bottom: none; /* sits on the strip line like the tabs (no second line) */
         }
 
-        #tab-add:hover, #tab-add:focus
+        #tab-add:hover, #tab-add:focus, #tab-close-others:hover, #tab-close-others:focus
         {
             background: var(--button-color);
             color: var(--button-text-color);
+        }
+
+        #tab-close-others[hidden]
+        {
+            display: none; /* the shared display:flex above would otherwise defeat [hidden] */
         }
 
         /* Each tab owns one persistent result panel; only the active one is shown, the
@@ -1418,6 +1439,14 @@
             display: none;
         }
 
+        /* The two run buttons form a pair, so the space between them matches the space to the
+           left of the first one (#main's 0.5rem padding) rather than the 1rem gap that separates
+           the unrelated controls in #run_div. The margin adds to the flex gap, hence -0.5rem. */
+        #run + #run-all
+        {
+            margin-left: -0.5rem;
+        }
+
         #run:hover, #run:focus, #run-all:hover, #run-all:focus, #copy-div:hover, #copy-div:focus, #download-div:hover, #download-div:focus
         {
             color: var(--button-active-text-color);
@@ -1462,6 +1491,22 @@
             0% { opacity: 1; }
             70% { opacity: 1; }
             100% { opacity: 0; }
+        }
+
+        /* Floating preview shown when hovering over a cell whose value is an image URL.
+           Limited to half the viewport in each dimension; smaller images keep their
+           natural size. A single element is reused for every hovered image. */
+        #image-preview
+        {
+            position: fixed;
+            z-index: 1000;
+            max-width: 50vw;
+            max-height: 50vh;
+            background: var(--element-background-color);
+            border: 1px solid var(--border-color);
+            box-shadow: 0 0.25rem 1rem rgba(0, 0, 0, 0.5);
+            pointer-events: none;
+            display: none;
         }
 
         #copy-icon
@@ -1683,6 +1728,21 @@
             color: var(--misc-text-color);
         }
 
+        /* On touch devices, mobile Safari automatically zooms the whole page when the user
+           focuses a form control whose font is smaller than 16px. With the `device-width`
+           viewport above, our 11pt controls fall below that threshold, so tapping the query
+           editor would jump the page. Raise the typography of the controls to 16px, together
+           with every layer that must mirror the textarea's metrics character-for-character
+           (`#query-backdrop`, `#completion-mirror`, `.completion-entry`) and the `#url_status`
+           overlay that sits on the URL input, so the highlighting overlay stays aligned. */
+        @media (hover: none) and (pointer: coarse)
+        {
+            input, textarea, #query-backdrop, #completion-mirror, .completion-entry, #url_status
+            {
+                font-size: 16px;
+            }
+        }
+
         /* Prevents a different color when Chromium auto-fills inputs from the list. */
         input:-webkit-autofill,
         input:-webkit-autofill:hover,
@@ -1725,6 +1785,7 @@
         <div id="tab-bar" hidden>
             <div id="tabs"></div>
             <button id="tab-add" type="button" title="New query (open a new tab)">+</button>
+            <button id="tab-close-others" type="button" title="Close other tabs" hidden>×</button>
             <div id="connection-menu">
                 <button id="connection-key" type="button" title="Connection settings" aria-expanded="false" hidden>🔑</button>
                 <div id="connection-dropdown" hidden></div>
@@ -2085,6 +2146,21 @@ class QueryResultElement extends HTMLElement
                     padding: 0.25rem 0.5rem;
                     max-height: 3lh;
                     overflow: hidden;
+                }
+
+                /* A single-value result (one row, one column, e.g. SHOW CREATE TABLE) is shown
+                   with its full height, so the whole value is visible without selecting the cell.
+                   The rule is scoped to unselected cells: once the cell is selected it falls back
+                   to the .td-selected behavior below, which keeps it bounded to 50vh and scrolling
+                   internally instead of expanding into an unbounded absolutely-positioned overlay.
+                   Only the vertical clamp is dropped (max-height: none): the base "overflow: hidden"
+                   is kept so that with "white-space: pre" a long single line (e.g. SELECT repeat('x', 100000))
+                   is still clipped horizontally at the 40vw cell cap instead of painting across the page.
+                   With no max-height the box grows to the full content height, so nothing is clipped vertically.
+                   No backticks in this comment: this style block lives inside a JS template literal. */
+                #data-table.single-value td:not(.td-selected) .cell-content
+                {
+                    max-height: none;
                 }
 
                 td u
@@ -2570,6 +2646,14 @@ class QueryResultElement extends HTMLElement
             if (!e.target.closest('td') || e.target.closest('.row-number')) this.clearSelection();
         });
 
+        /// Dismiss the floating image preview when a result surface inside this shadow tree
+        /// scrolls (see `attachImagePreview`). An expanded `.td-selected .cell-content` is
+        /// scrollable (max-height + overflow-y:auto), so a long image URL can scroll out from
+        /// under a stationary cursor without firing `mouseleave`. Its `scroll` event does not
+        /// compose out of the shadow root, so the global `document` scroll handler never sees
+        /// it; catch it here in the capture phase (scroll events do not bubble).
+        this.shadowRoot.addEventListener('scroll', () => hideImagePreview(), true);
+
         new ResizeObserver(() => this._resizeChart()).observe(this._chart);
     }
 
@@ -2587,6 +2671,9 @@ class QueryResultElement extends HTMLElement
         /// (e.g. via `multiQueryContainer.innerHTML = ''`) without going through `clear`,
         /// so revoke the image object URL here to avoid leaking the response blob.
         this._clearImage();
+        /// Removing this result from the DOM (tab close, multi-query re-render) also removes
+        /// the hovered link that owns the preview, without any `mouseleave`; dismiss it here.
+        hideImagePreviewOwnedBy(this);
     }
 
     get rowCount() { return this._row_idx; }
@@ -2609,6 +2696,13 @@ class QueryResultElement extends HTMLElement
 
     clear()
     {
+        /// This result's rows (and any hovered image link in them) are about to go away. This
+        /// is the production teardown path for a rerun: `clearPanel` -> `resultEl.clear()` from
+        /// `postSingle`/`postMulti`/`materializeResult`/`beginFlight`. Dismiss the floating
+        /// preview iff it is anchored to THIS result, so a background tab's clear cannot dismiss
+        /// a preview owned by the active, still-hovered result (see `hideImagePreviewOwnedBy`).
+        hideImagePreviewOwnedBy(this);
+
         this._clearElement(this._dataTable);
         this._clearElement(this._graph);
         this._clearElement(this._chart);
@@ -2617,6 +2711,7 @@ class QueryResultElement extends HTMLElement
         this._clearImage();
 
         this._dataTable.classList.remove('fixed');
+        this._dataTable.classList.remove('single-value');
         this._dataDiv.classList.remove('fixed');
         /// Drop the stale single-row marker: it is recomputed in `applyColumnColors` once the new
         /// result finishes rendering. Clearing it here means that while rows are still streaming in,
@@ -2717,6 +2812,17 @@ class QueryResultElement extends HTMLElement
             link.appendChild(node);
             link.href = text;
             link.setAttribute('target', '_blank');
+            /// If the URL points to an image, preview it on hover (see `attachImagePreview`).
+            /// Test the extension against the parsed pathname only: a query string or
+            /// fragment ending in an image extension (e.g. `https://host/endpoint#x.png`)
+            /// must not qualify, because the browser strips the fragment and requests
+            /// the non-image path.
+            let image_url_path = null;
+            try { image_url_path = new URL(text).pathname; } catch (e) { /* unparsable URL */ }
+            if (image_url_path !== null && image_url_path.match(/\.(jpe?g|png|gif|webp)$/i))
+            {
+                attachImagePreview(link, text, this);
+            }
             node = link;
         }
 
@@ -3750,6 +3856,18 @@ class QueryResultElement extends HTMLElement
         table.appendChild(new_tbody);
     }
 
+    /// A result that is exactly one row and one column (for example, `SHOW CREATE TABLE`) is shown
+    /// with its full height instead of the default 3-line clamp, so the whole value is visible
+    /// without having to select the cell.
+    expandSingleValueIfNeeded()
+    {
+        const table = this._dataTable;
+        const is_single_value = !this._totals
+            && Array.isArray(this._header) && this._header.length == 1
+            && table.rows.length == 1;
+        table.classList.toggle('single-value', is_single_value);
+    }
+
     /// Run the measurement-based layout passes that were deferred because this element's tab was
     /// hidden when its query finished (see `_pendingTranspose`/`_pendingChangeLayout`). Called on
     /// activation, once the panel is visible so `offsetWidth`/`offsetHeight` are meaningful.
@@ -3778,12 +3896,23 @@ class QueryResultElement extends HTMLElement
         });
 
         /* Freeze row heights so that absolutely-positioned cell content
-           does not cause reflow. Read all heights first, then write,
-           to avoid layout thrashing. */
+           does not cause reflow of the following rows. Read all heights first,
+           then write, to avoid layout thrashing.
+           A single-value result is deliberately shown unclamped at its full height
+           (see `expandSingleValueIfNeeded`) and has a single row with nothing below it
+           to reflow. Freezing that full height would keep the row full-height even after
+           the cell is selected and its content collapses to a bounded 50vh overlay,
+           leaving a large blank row; so skip the freeze for single-value tables and let
+           the row follow its content (it then shrinks to the row-number cell's height
+           when the value cell is selected). */
+        const freeze_row_heights = !table.classList.contains('single-value');
         let rowHeights = [];
-        for (let row of table.rows)
+        if (freeze_row_heights)
         {
-            rowHeights.push(row.offsetHeight);
+            for (let row of table.rows)
+            {
+                rowHeights.push(row.offsetHeight);
+            }
         }
 
         table.classList.add('fixed');
@@ -3793,10 +3922,13 @@ class QueryResultElement extends HTMLElement
             header.style.width = `${columnWidths[index]}px`;
         });
 
-        let i = 0;
-        for (let row of table.rows)
+        if (freeze_row_heights)
         {
-            row.style.height = `${rowHeights[i++]}px`;
+            let i = 0;
+            for (let row of table.rows)
+            {
+                row.style.height = `${rowHeights[i++]}px`;
+            }
         }
 
         /// Recompute the pinned-column offsets against the now-frozen column widths, so they match
@@ -4450,24 +4582,39 @@ async function ping(url) {
 }
 
 let ping_request_num = 0;
-function checkURL() {
+/// Bumped on every connection edit (url/user/password `input`, see `onCredentialInput` and the `url`
+/// listener below). A `checkURL(true)` ping arms a deferred `checkCredentials` on success, but that
+/// ping is asynchronous: the initial page-load ping (or one from an earlier commit) can resolve after
+/// the user has already resumed typing. Capturing the generation when the ping starts and re-checking
+/// it before probing invalidates such a stale chain, so it never sends the current, still-in-progress
+/// credentials to the server.
+let connection_generation = 0;
+/// `probe_credentials` additionally checks the credentials against the server once the ping succeeds.
+/// It is set for the initial load and for the connection commit (see `commitConnection`),
+/// but NOT for intermediate `url` keystrokes: `getServerStatus` puts the password in the request, so
+/// probing on every edit would send it to a half-typed or still-old endpoint before the connection
+/// tuple is committed.
+function checkURL(probe_credentials) {
     ++ping_request_num;
     const current_ping_request_num = ping_request_num;
+    const current_connection_generation = connection_generation;
     let elem = document.getElementById('url_status');
     elem.className = '';
     document.getElementById('server_info').innerText = '';
     ping(url_elem.value).then(status => {
         if (current_ping_request_num == ping_request_num) {
             elem.className = status ? 'ok' : 'fail';
-            if (status) {
+            /// Only probe if no connection edit happened since this ping was armed — otherwise the
+            /// probe would run against the current, still-in-progress fields (see `connection_generation`).
+            if (status && probe_credentials && current_connection_generation == connection_generation) {
                 checkCredentials();
             }
         }
     });
 };
 
-url_elem.addEventListener('input', checkURL);
-checkURL();
+url_elem.addEventListener('input', () => checkURL(false));
+checkURL(true);
 
 /// The `/docs` page lives on the ClickHouse server addressed by `url_elem.value`, which may differ from
 /// the page's own origin when `/play` is opened locally (`file://`) or pointed at a remote server.
@@ -5530,6 +5677,161 @@ let databases_toggle = document.getElementById('databases-toggle');
 
 let menu_elem = document.getElementById('menu');
 
+/// A single reused floating element that previews an image when the cursor is over a
+/// cell whose value is an image URL. Its size is capped to half the viewport by CSS;
+/// smaller images keep their natural size.
+let image_preview = null;
+/// Latest cursor position, so a deferred `load` handler can place the preview at where
+/// the cursor is now rather than where it was when the hover started.
+let image_preview_x = 0;
+let image_preview_y = 0;
+/// URL the cursor is currently over (null when not over any image link). A load that
+/// finishes after the cursor has left, or after a different image link was entered,
+/// must not reveal the preview - the `load` handler checks this before showing.
+let image_preview_hovered_url = null;
+/// The result element (`query-result`) whose cell owns the current preview. The floating
+/// preview is a single global element, but its anchor lives inside one specific result: when
+/// that result is torn down (rerun via `clearPanel`, tab removal, multi-query re-render) or
+/// its panel is switched away from, the preview must be dismissed - but tearing down a
+/// *different* (e.g. background) result must not dismiss a preview owned by another. See
+/// `hideImagePreviewOwnedBy`, `QueryResultElement.clear`/`disconnectedCallback`, `setActivePanel`.
+let image_preview_owner = null;
+/// The preview only loads and displays while Ctrl (Cmd on Mac) is held: merely
+/// moving the cursor over a table cell must not make the browser fetch a URL taken
+/// from untrusted query results, so an explicit modifier key is required.
+let image_preview_modifier_held = false;
+
+function setImagePreviewModifierHeld(held)
+{
+    if (held === image_preview_modifier_held) { return; }
+    image_preview_modifier_held = held;
+    /// Pressing the modifier does not fetch anything by itself: the fetch stays on the
+    /// pointer path (`mouseenter`/`mousemove` over the link with the modifier already
+    /// held), so an unrelated shortcut such as `Ctrl+Enter` or `Cmd+C` while the cursor
+    /// happens to rest on an image link cannot trigger an outbound request.
+    /// Releasing the modifier hides the preview.
+    if (!held) { hideImagePreview(); }
+}
+
+window.addEventListener('keydown', (event) => {
+    if (event.key === 'Control' || event.key === 'Meta') { setImagePreviewModifierHeld(true); }
+});
+window.addEventListener('keyup', (event) => {
+    if (event.key === 'Control' || event.key === 'Meta') { setImagePreviewModifierHeld(false); }
+});
+/// A held modifier delivers no `keyup` if the window loses focus first (e.g. Alt-Tab
+/// or a devtools popup), so also release on `blur` to avoid a stuck "held" state.
+window.addEventListener('blur', () => { setImagePreviewModifierHeld(false); });
+
+/// Place the preview near the cursor, flipping to the opposite side/edge when it would
+/// otherwise overflow the viewport, so the whole image stays visible.
+function positionImagePreview() {
+    if (!image_preview) return;
+    const margin = 16;
+    const rect = image_preview.getBoundingClientRect();
+    let left = image_preview_x + margin;
+    let top = image_preview_y + margin;
+    if (left + rect.width > window.innerWidth - margin) {
+        left = image_preview_x - margin - rect.width;
+    }
+    if (left < margin) { left = margin; }
+    if (top + rect.height > window.innerHeight - margin) {
+        top = image_preview_y - margin - rect.height;
+    }
+    if (top < margin) { top = margin; }
+    image_preview.style.left = left + 'px';
+    image_preview.style.top = top + 'px';
+}
+
+/// Load and show the image preview for `url`, i.e. actually assign `src` and fetch it.
+/// Only called once the opt-in modifier is held (see `setImagePreviewModifierHeld`).
+/// `owner` is the result element (`query-result`) the hovered cell belongs to, so its
+/// teardown can dismiss the preview it owns (see `hideImagePreviewOwnedBy`).
+function showImagePreview(url, owner) {
+    image_preview_hovered_url = url;
+    image_preview_owner = owner;
+    if (!image_preview) {
+        image_preview = document.createElement('img');
+        image_preview.id = 'image-preview';
+        image_preview.alt = '';
+        document.body.appendChild(image_preview);
+    }
+    /// This exact image is already loaded (e.g. re-entering the same link): show it
+    /// immediately, since no `load` event will fire for an unchanged `src`.
+    if (image_preview.dataset.url === url && image_preview.complete && image_preview.naturalWidth)
+    {
+        image_preview.style.display = 'block';
+        positionImagePreview();
+        return;
+    }
+    /// A different image: keep the preview hidden until the new one finishes loading,
+    /// otherwise the previously shown image would stay visible during the load.
+    image_preview.dataset.url = url;
+    image_preview.style.display = 'none';
+    image_preview.onload = () => {
+        /// Ignore a load the cursor has already moved away from or superseded.
+        if (image_preview_hovered_url !== url) { return; }
+        image_preview.style.display = 'block';
+        positionImagePreview();
+    };
+    /// Keep it hidden if the image fails to load, so a broken image icon is not shown.
+    image_preview.onerror = () => { image_preview.style.display = 'none'; };
+    image_preview.src = url;
+}
+
+/// Show the image preview for `url` on hovering `link` while the modifier is held,
+/// following the cursor while it moves, and hide it when the cursor leaves. `owner` is the
+/// result element the link belongs to, so the preview can be torn down with that result.
+function attachImagePreview(link, url, owner) {
+    /// The gesture is opt-in, so it has to be discoverable: the tooltip shown while the
+    /// cursor rests on the link is what tells the user the modifier reveals a preview.
+    link.title = 'Ctrl/Cmd for preview';
+    link.addEventListener('mouseenter', (event) => {
+        image_preview_x = event.clientX;
+        image_preview_y = event.clientY;
+        if (image_preview_modifier_held) { showImagePreview(url, owner); }
+    });
+    link.addEventListener('mousemove', (event) => {
+        image_preview_x = event.clientX;
+        image_preview_y = event.clientY;
+        /// Pressing the modifier while already over the link starts the preview on the
+        /// next cursor movement: the bare `keydown` must not fetch (see
+        /// `setImagePreviewModifierHeld`), and once the preview is active for this URL
+        /// (`image_preview_hovered_url`), further movement only repositions it.
+        if (image_preview_modifier_held && image_preview_hovered_url !== url) { showImagePreview(url, owner); }
+        positionImagePreview();
+    });
+    link.addEventListener('mouseleave', () => {
+        hideImagePreview();
+    });
+}
+
+/// Hide the floating image preview and stop any pending work for it. Clearing
+/// `image_preview_hovered_url` suppresses an in-flight `load` that would otherwise
+/// reveal a stale preview; detaching the source aborts a still-running download, so a
+/// slow or large image does not keep loading invisibly after the preview is dismissed
+/// (re-showing the link refetches, normally from the browser cache).
+function hideImagePreview() {
+    image_preview_hovered_url = null;
+    image_preview_owner = null;
+    if (image_preview)
+    {
+        image_preview.style.display = 'none';
+        image_preview.onload = null;
+        image_preview.onerror = null;
+        image_preview.removeAttribute('src');
+        delete image_preview.dataset.url;
+    }
+}
+
+/// Dismiss the preview only if it is currently anchored to `owner`. A result being torn
+/// down (rerun via `clearPanel`, tab removal, multi-query re-render) must dismiss the
+/// preview whose hovered link it owns, but tearing down a *different* result (e.g. a
+/// background tab) must not dismiss a preview owned by another, still-hovered result.
+function hideImagePreviewOwnedBy(owner) {
+    if (image_preview_owner === owner) { hideImagePreview(); }
+}
+
 /// Hide the currently visible table-info balloon on any scroll: it uses
 /// position:fixed and would detach from its anchor. Use capture phase so the
 /// listener fires regardless of which element scrolls (scroll events do not
@@ -5566,6 +5868,10 @@ function positionTableBalloon(table) {
 }
 
 document.addEventListener('scroll', () => {
+    /// The image preview follows the cursor and has no keyboard-focus counterpart, so
+    /// hide it on any scroll: the link may have moved out from under a stationary
+    /// cursor, which delivers no mouse event, so `mouseleave` does not fire.
+    hideImagePreview();
     /// When a table row (or one of its balloon links) is focused via the keyboard,
     /// keep its balloon glued to the row across the scroll instead of hiding it.
     /// A column row is nested inside its `.table`, so match it first: `closest` returns the
@@ -5778,9 +6084,31 @@ if (main_container && typeof ResizeObserver !== 'undefined') {
 }
 
 let check_credentials_request_num = 0;
+/// The connection tuple the credential indication was last checked against, or `null` while nothing
+/// has been checked yet. The commit on leaving the connection surface is licensed by the
+/// `connection_edited` latch, which is set from `input`; but `#user` and `#password` are
+/// browser-autofillable, and autofilling a saved login does not always fire `input` on them (the
+/// Documentation link above has to work around exactly the same thing). Relying on the latch alone
+/// would therefore keep the badge painted for the credentials the page was loaded with while the
+/// fields already hold different ones, and leaving the surface would not re-check them. Comparing the
+/// current tuple against the one that produced the indication catches a value change no matter what
+/// raised it, so autofill is committed like a typed edit.
+let checked_connection = null;
+function connectionTuple() {
+    return JSON.stringify([url_elem.value, user_elem.value, password_elem.value]);
+}
+/// The connection no longer matches what the indication reflects, so leaving the surface must
+/// re-check it. `connection_edited` still matters on its own: an edit that ends up back at the last
+/// checked tuple (typing and undoing) has already cleared the indication via `resetCredentialsStatus`,
+/// and the fields must be repainted.
+function connectionNeedsCheck() {
+    return connection_edited || checked_connection !== connectionTuple();
+}
 function checkCredentials() {
     ++check_credentials_request_num;
     const current_check_credentials_request_num = check_credentials_request_num;
+    /// The indication this request is about to produce belongs to the tuple it is sent with.
+    checked_connection = connectionTuple();
     getServerStatus(url_elem.value, user_elem.value, password_elem.value).then(json => {
         if (current_check_credentials_request_num == check_credentials_request_num) {
             if (json) {
@@ -5798,18 +6126,172 @@ function checkCredentials() {
     });
 }
 
+/// Clear the current indication and, crucially, invalidate any in-flight `checkCredentials`.
+/// Bumping the request number is what prevents the stale-response bug: `checkCredentials` guards
+/// its response against this counter, so without the bump a check started against an earlier
+/// (wrong or incomplete) value could still land and paint the field red after the user has
+/// already typed the correct credentials — with the green connection dot left untouched, since
+/// that is driven by the independent `checkURL` ping.
 function resetCredentialsStatus() {
+    ++check_credentials_request_num;
     [user_elem, password_elem].forEach(e => { e.classList.remove('ok'); e.classList.remove('fail'); });
 }
 
-user_elem.addEventListener('input', resetCredentialsStatus);
-password_elem.addEventListener('input', resetCredentialsStatus);
+/// While a connection field is being edited, clear any stale indication and invalidate any in-flight
+/// check (via `resetCredentialsStatus`), but do NOT probe the server on every keystroke.
+/// `getServerStatus` puts the credentials into the request, so probing incomplete input would emit
+/// login attempts with partial — and, for the password, secret — values (`?password=s`,
+/// `?password=se`, ...), polluting access logs and possibly tripping auth rate limits.
+///
+/// Instead the whole connection editing surface is treated as one edit session and the check runs
+/// once, when focus leaves that surface, using only the final, complete tuple. The surface is the
+/// `#inputs` block (url + user + password) when the inputs sit inline in the tool bar; but once a
+/// second query tab appears they are relocated behind the 🔑 button into the connection drop-down,
+/// and the surface becomes the whole `#connection-menu` (the 🔑 button plus the drop-down that now
+/// holds `#inputs`). Focus moving anywhere within that surface — between the fields, or out to the
+/// 🔑 button when the drop-down is toggled or closed with `Escape` (both hand focus back to it) — is
+/// still editing, not a commit; `connectionSurface` resolves the current surface so the boundary
+/// follows the inputs into and out of the drop-down.
+///
+/// Committing only on a real exit is what keeps the probe honest: probing earlier would misfire while
+/// the connection is still being assembled — moving between `user` and `password` sends a mismatched
+/// half-typed pair; moving on to `url`, or leaving focus in the drop-down chrome, would send the full
+/// final password to the *previous* server via `getServerStatus(old_url, ...)`, disclosing it there
+/// and logging a spurious failed login; and a `url` keystroke that happens to hit a reachable
+/// intermediate endpoint would send the credentials there. The commit runs `checkURL(true)`, which
+/// pings the url and only then probes the credentials, so an unreachable server leaves the fields
+/// neutral rather than blaming them. The commit is licensed by `connectionNeedsCheck`, so merely
+/// tabbing through the fields, without changing anything, emits no request. This subsumes the old
+/// paste handlers: a pasted value is committed by the following focus change just like typed input.
+///
+/// `focusout` bubbles, so a single document-level listener catches focus leaving any element of the
+/// surface (including the 🔑 button, which is not inside `#inputs`). Where focus lands cannot be read
+/// from this event's `relatedTarget`: closing the drop-down first blurs the focused field to `<body>`
+/// and only then hands focus to the 🔑 button, so `relatedTarget` here is a transient intermediate
+/// value. The decision is therefore deferred to the next microtask, once focus has come to rest, and
+/// made from the settled `document.activeElement` — if it is back inside the surface the session
+/// continues, otherwise the edit is committed.
+///
+/// One case still needs care: a pointer press on a non-focusable spot inside the surface — the status
+/// dot, or any gap — blurs the active field to `<body>` without leaving the connection UI, so the
+/// settled `activeElement` is `<body>` just as it would be for a genuine keyboard exit to nothing.
+/// `pointer_down_inside_inputs` records whether the active press landed inside the surface (captured
+/// at `focusout` time, before the `pointerup` that clears it), which tells the two apart. An
+/// internal-click blur is not a commit; but the field has already lost focus, so leaving the surface
+/// later raises no `focusout` for it. Remember it in `commit_deferred` and commit on the first later
+/// transition that really leaves the surface — a `pointerdown` outside it, a `focusin` outside it (a
+/// keyboard `Tab` away), or the drop-down closing without returning focus inside (see the `Escape`
+/// handler). A field regaining focus (`focusin` inside the surface) means editing resumed and the
+/// normal exit will commit, so the deferred flag is dropped then.
+///
+/// A blur caused by the page itself losing focus — clicking the browser address bar or another
+/// window — is not a commit either: the user may be mid-switch (e.g. typed the credentials for a new
+/// server and left to copy its URL), and committing would probe the *previous* server with the new
+/// password. The settled `activeElement` is `<body>` with no pointer press inside the surface, so it
+/// would fall through to the commit; `document.hasFocus()` (false once the page has lost focus) tells
+/// this apart from a keyboard exit to nothing. Defer it like the internal-click blur: the commit runs
+/// on the first later transition that really leaves the surface once focus is back in the page.
+function connectionSurface() {
+    /// Resolved live via `getElementById` (not the `const`s declared later in the file), so it is
+    /// safe to call from the handlers registered just below, which run before those declarations.
+    /// The 🔑 button is hidden in the single-tab inline layout; there the surface is `#inputs`.
+    return document.getElementById('connection-key').hidden
+        ? document.getElementById('inputs')
+        : document.getElementById('connection-menu');
+}
+let pointer_down_inside_inputs = false;
+let commit_deferred = false;
+document.addEventListener('pointerdown', (event) => {
+    pointer_down_inside_inputs = connectionSurface().contains(event.target);
+    /// A press outside the surface after a suppressed internal-click blur: the user has finished
+    /// editing the connection, but the field lost focus earlier so no `focusout` is coming — commit now.
+    if (!pointer_down_inside_inputs && commit_deferred) { commitConnection(); }
+});
+document.addEventListener('pointerup', () => { pointer_down_inside_inputs = false; });
+document.addEventListener('pointercancel', () => { pointer_down_inside_inputs = false; });
+let connection_edited = false;
+/// `connection_edited` means "the user has changed the connection in this editing session"; together
+/// with the `checked_connection` tuple comparison (see `connectionNeedsCheck`, which also catches a
+/// change that raised no `input` at all) it is what licenses the commit below to authenticate against
+/// the server. Only a real interaction may set
+/// it: `window.onpopstate` replays synthetic `input` events on these fields to reproduce the side
+/// effects of a connection change when a Back/Forward restores a different connection, and that
+/// replay clears the password (it is never persisted to history). Latching on it would leave the
+/// session marked as edited without the user having touched anything, so a later glance at the
+/// connection UI — merely focusing a field and leaving again — would commit and probe the restored
+/// server with an empty password: an authentication attempt the user never asked for, logged as a
+/// failed login there. Untrusted events still invalidate: they bump the generation (dropping any
+/// probe armed against the connection being navigated away from) and clear the stale badge, exactly
+/// as the replay intends; they just do not arm a commit. The restored connection's credentials are
+/// reported once the user re-enters the password, which is a real edit.
+function onCredentialInput(event) {
+    if (event.isTrusted) { connection_edited = true; }
+    ++connection_generation;
+    resetCredentialsStatus();
+}
+/// Re-check the credentials against the server using the final, complete connection tuple.
+function commitConnection() {
+    connection_edited = false;
+    commit_deferred = false;
+    /// A typed edit already cleared the indication on the first keystroke, but a value change that
+    /// raised no `input` (an autofilled saved login) did not: drop the badge left over from the
+    /// previous tuple instead of showing it until the new check answers.
+    resetCredentialsStatus();
+    checkURL(true);
+}
+document.addEventListener('focusout', (event) => {
+    const surface = connectionSurface();
+    /// Only concerned with focus leaving the connection surface itself.
+    if (!surface.contains(event.target)) { return; }
+    /// Capture whether the active pointer press landed inside the surface now, before the `pointerup`
+    /// that clears the flag runs (it fires before the deferred check below).
+    const pointer_was_inside = pointer_down_inside_inputs;
+    queueMicrotask(() => {
+        /// Focus settled back inside the surface — another field, or the 🔑 button after the drop-down
+        /// closed. Still editing the connection, so no probe.
+        if (connectionSurface().contains(document.activeElement)) { return; }
+        /// Blur to `<body>` caused by a pointer press on a non-focusable spot inside the surface: the
+        /// interaction stayed in the connection UI, so this is not a commit. Defer it to the next
+        /// transition that really leaves the surface.
+        if (pointer_was_inside) {
+            if (connectionNeedsCheck()) { commit_deferred = true; }
+            return;
+        }
+        /// The page itself lost focus (browser address bar, another window) — the user may be
+        /// mid-switch to a different server, so this is not a commit; defer it as above.
+        if (!document.hasFocus()) {
+            if (connectionNeedsCheck()) { commit_deferred = true; }
+            return;
+        }
+        if (!connectionNeedsCheck()) { return; }
+        commitConnection();
+    });
+});
+document.addEventListener('focusin', (event) => {
+    if (connectionSurface().contains(event.target)) {
+        /// A field (or the 🔑 button) regaining focus means editing resumed; the normal exit will
+        /// commit, so drop any deferred commit left over from an internal-click blur.
+        commit_deferred = false;
+    } else if (commit_deferred) {
+        /// Focus moved to an element outside the connection UI (a keyboard `Tab` away after an
+        /// internal-click blur left focus on `<body>`) — the deferred commit's real "finished editing"
+        /// transition, which the pointer path would otherwise miss.
+        commitConnection();
+    }
+});
+user_elem.addEventListener('input', onCredentialInput);
+password_elem.addEventListener('input', onCredentialInput);
 
-/// The password is usually copy-pasted.
-/// To not worry about extracting the clipboard data, but use the value instead,
-/// and not worry too much about input/paste race, add the timeout.
-user_elem.addEventListener('paste', () => setTimeout(checkCredentials, 100));
-password_elem.addEventListener('paste', () => setTimeout(checkCredentials, 100));
+/// A `url` edit may point at a different server, so an in-flight `checkCredentials` against the
+/// previous URL must not paint the fields. `checkURL` (registered on `url` `input` earlier) clears
+/// the connection dot while it re-pings, but the credential colour is independent, so also invalidate
+/// the stale check and clear the old indication here — otherwise the fields would keep the previous
+/// server's colour until the block is committed. Marking the connection edited makes that commit
+/// re-check the credentials against the new server even when only the `url` changed. (Registered
+/// after `check_credentials_request_num` is declared, so the initial synchronous `checkURL(true)`
+/// call above never reaches this before the counter exists.)
+/// Shares `onCredentialInput`'s handling, including its `isTrusted` gate on `connection_edited`.
+url_elem.addEventListener('input', onCredentialInput);
 
 
 function queryToColor(str) {
@@ -5842,8 +6324,241 @@ let elapsed_ns = 0;
 
 const default_format = 'JSONStringsEachRowWithProgress';
 
+/// Low-level marker for an exception raised after the HTTP response body has already started.
+/// Exceptions are normally reported by the output format itself — `JSONEachRowWithProgress` writes
+/// a `{"exception":...}` line when it finalizes, and that still happens. But there is also a newer,
+/// format-agnostic transport-level mechanism: when the HTTP write buffer
+/// (`WriteBufferFromHTTPServerResponse::cancelWithException`) is cancelled with an error after the
+/// body has already been sent, it appends this marker block and breaks the HTTP framing. The Web UI
+/// has to handle it in addition to the `{"exception":...}` line. The block looks like:
+///
+///     \r\n
+///     __exception__\r\n
+///     <TAG>\r\n
+///     <error message, may span several lines>\n
+///     <message_length> <TAG>\r\n
+///     __exception__\r\n
+///
+/// where <TAG> is a random 16-character string repeated to delimit the message unambiguously even
+/// if the message itself contains the marker text.
+const EXCEPTION_MARKER = '__exception__';
+
+/// Extract a `__exception__` marker block embedded anywhere in `text` (typically at the very end of a
+/// streamed response). Returns `{ message, offset }` — the error message and the character offset in
+/// `text` of the opening `__exception__` line of the matched block — or null if no complete block is
+/// present. A complete block is a tag line, the message, a `<length> <TAG>` trailer line, and a closing
+/// `__exception__` line; the message is everything between the tag and the trailer, so it is recovered
+/// verbatim regardless of its own content. The `offset` lets a caller keep the raw output that arrived
+/// *before* the block while hiding the block itself: an earlier line may merely look like the marker (a
+/// raw format can emit `__exception__`, or the whole block shape, as data and then fail later), so the
+/// split point must be the validated block, not the first candidate line. A candidate line that does not
+/// lead to a complete block is skipped and scanning continues, so such lookalikes never abort the search.
+///
+/// `expected_tag`, when supplied, is the value of the `X-ClickHouse-Exception-Tag` response header. The
+/// server picks a fresh random tag per response and repeats it inside the marker block (see
+/// `WriteBufferFromHTTPServerResponse::cancelWithException`), so a genuine transport marker always
+/// carries exactly that tag. Requiring the match rejects a *successful* query whose own output merely
+/// mimics the marker shape — the client cannot know the random per-response tag. For example
+/// `SELECT arrayJoin(['__exception__','0123456789abcdef','hello','5 0123456789abcdef','__exception__']) FORMAT TSV`
+/// is a fully-framed lookalike, but its tag will not match the header, so it is not treated as a failure.
+/// Callers that already know the query failed and have no header at hand (history/snapshot restore) omit
+/// the argument to extract the message without verifying; a `null` value — the header was absent, e.g. a
+/// proxy or an older server sent the block but did not expose `X-ClickHouse-Exception-Tag`, so
+/// `Headers.get` returned `null` — is treated the same as omitting it.
+function parseExceptionMarker(text, expected_tag)
+{
+    const lines = text.split('\n');
+    for (let i = 0; i < lines.length; ++i)
+    {
+        if (lines[i].replace(/\r$/, '') !== EXCEPTION_MARKER) continue;
+
+        const tag = (lines[i + 1] ?? '').replace(/\r$/, '');
+        if (!tag) continue;
+        /// A genuine marker reuses the per-response header tag; a mismatch means this is ordinary output
+        /// that merely looks like a marker, so keep scanning rather than reporting a false failure. Both
+        /// `undefined` (restore callers omit the argument) and `null` (`Headers.get` when the header is
+        /// absent — a proxy or older server that wrote the block without exposing the tag) mean "no tag to
+        /// match": accept the block on its framing alone, otherwise a valid marker would be rejected here.
+        if (expected_tag !== undefined && expected_tag !== null && tag !== expected_tag) continue;
+
+        /// The message ends at the trailer line `<length> <TAG>`; the length lets the server bound
+        /// the message, but here the tag alone is enough to locate the boundary unambiguously.
+        const trailer = ' ' + tag;
+        const message_lines = [];
+        for (let j = i + 2; j < lines.length; ++j)
+        {
+            const stripped = lines[j].replace(/\r$/, '');
+            /// Commit to a failure only for a fully-framed block: the `<length> <TAG>` trailer must be
+            /// immediately followed by the closing `__exception__` line (see the server's
+            /// `WriteBufferFromHTTPServerResponse::cancelWithException`). A lone `<digits> <TAG>` line is
+            /// not proof of a marker — successful output can legitimately contain one, e.g.
+            /// `SELECT arrayJoin(['__exception__', 'x', 'hello', '6 x'])` (tag `x`, trailer `6 x`), which
+            /// without the closing check would be misread as the error "hello".
+            if (/^\d+$/.test(stripped.slice(0, stripped.length - trailer.length)) && stripped.endsWith(trailer)
+                && (lines[j + 1] ?? '').replace(/\r$/, '') === EXCEPTION_MARKER)
+            {
+                /// Char offset of the opening `__exception__` line (`lines[i]`) within `text`, so callers
+                /// can split the raw output on the *validated* block rather than the first candidate line.
+                const offset = i === 0 ? 0 : lines.slice(0, i).join('\n').length + 1;
+                return { message: message_lines.join('\n'), offset };
+            }
+            message_lines.push(lines[j]);
+        }
+        /// This candidate's block never completed (a lookalike `__exception__` line, or a genuine block
+        /// truncated by an incomplete stream): keep scanning for a later, complete block rather than
+        /// giving up, otherwise a raw prefix that contains a lookalike line would mask the real marker.
+    }
+    return null;
+}
+
+/// Char offset within `text` of the first line where a transport marker for THIS response *starts* —
+/// a `__exception__` line whose immediately following line equals `expected_tag` (the server repeats
+/// the per-response `X-ClickHouse-Exception-Tag` right after the opening marker line, see
+/// `WriteBufferFromHTTPServerResponse::cancelWithException`) — or -1 if there is none. The live raw
+/// branch uses this to tell a genuine marker whose block the server truncated by breaking HTTP
+/// framing — the trailing `reader.read()` `TypeError` is then *expected* — apart from ordinary raw
+/// output that merely contains a `__exception__` lookalike line and then hit a real transport failure
+/// (that `TypeError` is a genuine error and must surface, not be reported as an unparsable marker).
+/// The offset (not just a boolean) matters for the truncated-marker case: echoing stopped at the
+/// first *candidate* line, which may be an earlier lookalike in ordinary output, so the withheld
+/// output before the tag-compatible start streamed before the failure and must still be shown — this
+/// is the split point for it, in both the live path and `renderFailedSnapshot`. With no tag to check
+/// against (`expected_tag` null/undefined) a start cannot be ruled out, so the first candidate line
+/// counts (best effort, same permissive stance `parseExceptionMarker` takes when it has no tag).
+function exceptionMarkerStart(text, expected_tag)
+{
+    const match_any_tag = expected_tag === undefined || expected_tag === null;
+    const lines = text.split('\n');
+    let offset = 0;
+    for (let i = 0; i < lines.length; ++i)
+    {
+        if (lines[i].replace(/\r$/, '') === EXCEPTION_MARKER
+            && (match_any_tag || (lines[i + 1] ?? '').replace(/\r$/, '') === expected_tag))
+            return offset;
+        offset += lines[i].length + 1;   /// + 1 for the '\n' that `split` removed
+    }
+    return -1;
+}
+
+/// Reverse the escaping `writeXMLStringForTextElement` applies to an `XML`-format text node: it only
+/// ever produces `&lt;` (for `<`) and `&amp;` (for `&`). Unescape `&amp;` last so a literal `&lt;`
+/// in the message (written as `&amp;lt;`) is not turned into `<`.
+function unescapeXMLText(s)
+{
+    return s.replace(/&lt;/g, '<').replace(/&amp;/g, '&');
+}
+
+/// Formats whose entire response body is a single JSON document, so an in-band failure surfaces as a
+/// top-level `"exception"` string (or, for `GeoJSON`, a trailing `{"exception":...}` element of the
+/// `features` array) that can be read out unambiguously — a successful document of these formats
+/// never carries one. Each-row formats are intentionally absent (see `parseInbandException`).
+const SINGLE_DOCUMENT_JSON_FORMATS = new Set([
+    'JSON', 'JSONStrings', 'JSONCompact', 'JSONCompactStrings',
+    'JSONColumns', 'JSONColumnsWithMetadata', 'JSONObjectEachRow', 'GeoJSON']);
+
+/// Detect a format-level exception that an output format wrote in-band after the response body had
+/// already started (`http_write_exception_in_output_format`, on by default), so the raw branch can
+/// flag the query as failed instead of finishing green. Returns the error message, or null.
+///
+/// ClickHouse writes this exception differently per format, and only some encodings can be told apart
+/// from successful output. This probes exactly the unambiguous ones:
+///   - single-document JSON (`JSON`, `JSONCompact`, `JSONColumns`, `JSONObjectEachRow`, `GeoJSON`, ...):
+///     a top-level `"exception"` string, or a trailing `{"exception":...}` feature for `GeoJSON`;
+///   - `*WithProgress` row streams: a terminal top-level `{"exception":...}` line (every row is
+///     wrapped as `{"row":...}` / `{"progress":...}`, so a bare `{"exception":...}` line is the failure);
+///   - `XML`: the top-level `<exception>` trailer (a one-tab direct child of `<result>`; a row field
+///     named `exception` is far more deeply indented, so it cannot be mistaken for the trailer).
+///
+/// It deliberately does NOT probe the each-row JSON family, because their in-band failure line is
+/// byte-for-byte a valid row, so flagging it could mark a successful query as failed:
+///   - the bare formats `JSONEachRow` / `JSONStringsEachRow` / `JSONLines` write the failure as a
+///     `{"exception":...}` object line, identical to a successful row with an `exception` column;
+///   - `JSONCompactEachRow` / `JSONCompactStringsEachRow` write it as `["..."]`, identical to a
+///     single-column row;
+///   - the pretty-printed aliases `PrettyJSONEachRow` / `PrettyJSONLines` / `PrettyNDJSON` are backed by
+///     the same `JSONEachRowRowOutputFormat` (its `writeSuffix` appends the very same in-band
+///     `{"exception":...}` object, only indented), so they are equally ambiguous.
+/// Non-JSON row formats (`TSV`, `CSV`, `Pretty`, ...) do not write exceptions in-band at all — they
+/// signal a mid-stream failure with the transport-level `__exception__` marker instead. So the one case
+/// the raw branch cannot flag is a mid-stream failure of an each-row JSON format with
+/// `http_write_exception_in_output_format=1` (the default): the server writes an in-band line that is
+/// indistinguishable from a valid row and no marker, so such a query can still finish in the success
+/// state. This is UNSUPPORTED by design — the "all streamed formats" recovery does not cover the
+/// ambiguous each-row JSON encodings — not an oversight; do not widen it to guess on those.
+function parseInbandException(text, format)
+{
+    /// The format may be missing: an error snapshot saved when `fetch` failed before the response
+    /// headers arrived (`Network error`, an early `AbortError`, the direct-browser
+    /// `ERR_INCOMPLETE_CHUNKED_ENCODING`) carries no `X-ClickHouse-Format`, so the restore paths
+    /// call this with `format === undefined`. Bail out before touching string methods on it —
+    /// otherwise the restore would throw a `TypeError` instead of showing the saved error text.
+    if (typeof format !== 'string') return null;
+
+    if (format == 'XML')
+    {
+        /// `XMLRowOutputFormat` writes the in-band failure as a top-level `<exception>` element, indented
+        /// with a single tab as a direct child of `<result>` (see `writeException`). A row field that
+        /// happens to be named `exception` is written far more deeply (`\t\t\t<exception>` inside a
+        /// `\t\t<row>`), so anchor to the one-tab top-level element — otherwise a successful
+        /// `SELECT 'ok' AS exception FORMAT XML` would be misread as a failure. The message text is
+        /// XML-escaped (`<` → `&lt;`), so it can never contain a literal `<exception>` / `</exception>`.
+        const m = text.match(/^\t<exception>([\s\S]*?)<\/exception>/m);
+        return m ? unescapeXMLText(m[1]) : null;
+    }
+
+    /// Only the two unambiguous JSON encodings are probed: a `*WithProgress` row stream (a terminal
+    /// top-level `{"exception":...}` line) or a single-document body (`SINGLE_DOCUMENT_JSON_FORMATS`).
+    /// Everything else — the whole ambiguous each-row JSON family, both the bare formats and the
+    /// pretty-printed `Pretty*` aliases noted above — is deliberately unsupported, so bail out. This is
+    /// an explicit whitelist rather than a `startsWith('JSON')` test, which would falsely imply the
+    /// each-row family is handled (and would not even match the `Pretty*` aliases).
+    if (!format.includes('WithProgress') && !SINGLE_DOCUMENT_JSON_FORMATS.has(format)) return null;
+    if (!text.includes('"exception"')) return null;   /// cheap guard before parsing/scanning the body
+
+    /// `*WithProgress` formats wrap every row, so a standalone top-level `{"exception":...}` line —
+    /// always the terminal content line — is unambiguously the failure.
+    if (format.includes('WithProgress'))
+    {
+        const trimmed = text.replace(/\s+$/, '');
+        const last_line = trimmed.slice(trimmed.lastIndexOf('\n') + 1);
+        if (last_line.startsWith('{"exception"'))
+        {
+            try {
+                const data = JSON.parse(last_line);
+                if (typeof data.exception === 'string') return data.exception;
+            } catch (e) { /* not a standalone exception line */ }
+        }
+        return null;
+    }
+
+    /// Single-document formats: parse the whole body and read the failure out of the one object.
+    if (SINGLE_DOCUMENT_JSON_FORMATS.has(format))
+    {
+        try {
+            const data = JSON.parse(text);
+            if (data && typeof data === 'object')
+            {
+                if (typeof data.exception === 'string') return data.exception;
+                /// `GeoJSON`: `{"type":"FeatureCollection","features":[..., {"exception":...}]}`. The
+                /// appended element has no `type`, so it cannot be mistaken for a real `Feature`.
+                if (Array.isArray(data.features) && data.features.length)
+                {
+                    const last = data.features[data.features.length - 1];
+                    if (last && typeof last.exception === 'string' && last.type === undefined)
+                        return last.exception;
+                }
+            }
+        } catch (e) { /* not a single JSON document */ }
+    }
+
+    return null;
+}
+
 /// Execute a single query, rendering results into the given targetResultEl.
-/// Returns { format, reply, response_ok, is_table, is_raw, is_chart, is_image, is_error }.
+/// Returns { format, reply, response_ok, is_table, is_raw, is_chart, is_image, is_error };
+/// failed runs also carry `exception_tag` and `display_error` — the rendered error text, persisted
+/// with the snapshot so the failure still restores when the body is dropped by the history size cap
+/// (see `renderFailedSnapshot`).
 /// The caller is responsible for top-level UI (download buttons, history, favicon).
 /// `tab` owns the run; `posted_request_num` is a snapshot of `tab.reqNum` taken at launch, so a
 /// late response bails once the tab is re-run/cancelled/closed. `abortController` cancels the fetch.
@@ -5894,7 +6609,12 @@ async function postImpl(tab, posted_request_num, query, targetResultEl, abortCon
     let is_image = false;
     let is_error = false;
 
-    let response, reply, format;
+    /// The rendered error text of a failed run. EVERY failure path sets it (the HTTP-error branch,
+    /// the mid-stream marker / in-band failure returns, and the outer transport catch), so the
+    /// history snapshot always carries the message even when the body itself is dropped by the
+    /// 100 KB size cap — otherwise a large failed result would restore as a blank tab (see
+    /// `renderFailedSnapshot`).
+    let response, reply, format, exception_tag, display_error;
     reply = '';
     try {
         response = await fetch(url, { method: "POST", body: query, signal: abortController.signal,
@@ -5904,6 +6624,10 @@ async function postImpl(tab, posted_request_num, query, targetResultEl, abortCon
         /// Detect image results (e.g. `FORMAT PNG`) by the response `Content-Type` rather than by
         /// parsing the query, so any format that emits an image is rendered inline as a picture.
         const content_type = response.headers.get('Content-Type') ?? '';
+        /// The random per-response tag the server repeats inside a transport `__exception__` marker
+        /// block; passing it to `parseExceptionMarker` tells a genuine marker apart from successful
+        /// output that merely mimics the marker shape (the client cannot know this random tag).
+        exception_tag = response.headers.get('X-ClickHouse-Exception-Tag');
 
         if (!response.ok) {
             is_error = true;
@@ -5913,13 +6637,19 @@ async function postImpl(tab, posted_request_num, query, targetResultEl, abortCon
             let has_exception = false;
             for (const line of reply.split('\n')) {
                 if (line.startsWith(`{"exception":`)) {
-                    targetResultEl.update(JSON.parse(line));
+                    const parsed = JSON.parse(line);
+                    targetResultEl.update(parsed);
+                    display_error = typeof parsed.exception === 'string' ? parsed.exception : line;
                     has_exception = true;
                     break;
                 }
             }
             if (!has_exception) {
                 targetResultEl.renderError(reply);
+                /// Equal to the saved `data` on purpose: when the body IS persisted, restore renders
+                /// it from `data` alone and `renderFailedSnapshot` steps aside on the equality, so the
+                /// error text is not echoed as output first.
+                display_error = reply;
             }
 
             /// If the error message points at a position in the query (e.g. a syntax error),
@@ -5932,7 +6662,7 @@ async function postImpl(tab, posted_request_num, query, targetResultEl, abortCon
                 highlightQueryError(reply, query, queryStart, tab);
             }
 
-            return { format, reply, response_ok: false, is_table, is_raw, is_chart, is_image, is_error };
+            return { format, exception_tag, reply, display_error, response_ok: false, is_table, is_raw, is_chart, is_image, is_error };
         } else if (content_type.startsWith('image/')) {
             is_image = true;
             const blob = await response.blob();
@@ -5944,29 +6674,58 @@ async function postImpl(tab, posted_request_num, query, targetResultEl, abortCon
             const decoder = new TextDecoder();
 
             let buffer = '';
-            let stream_exception = null;   /// set if a `{"exception"}` arrives mid-stream
+            let marker_seen = false;      /// once the `__exception__` block starts, stop parsing rows
+            let stream_exception = null;  /// the error message, from either signalling method
             while (true) {
-                const { done, value } = await reader.read();
+                let done, value;
+                try {
+                    ({ done, value } = await reader.read());
+                } catch (e) {
+                    /// After writing the `__exception__` block the server intentionally breaks the
+                    /// HTTP framing (it omits the terminating chunk to signal the error), so the
+                    /// reader may reject with a network `TypeError`. If the marker was already seen
+                    /// that is expected — parse the buffered block below. Otherwise it is a genuine
+                    /// transport failure, so let the outer handler report it.
+                    if (marker_seen && e instanceof TypeError) break;
+                    throw e;
+                }
                 if (posted_request_num != tab.reqNum) { return { cancelled: true }; }
                 if (done) break;
 
                 let new_content = decoder.decode(value, { stream: true });
-                buffer += new_content;
                 reply += new_content;
+
+                /// Once the marker block has started, the remainder of the stream is that block
+                /// (message + trailer), not JSON rows: keep accumulating `reply` for the parser
+                /// (invoked after the loop) and stop feeding lines to `JSON.parse`.
+                if (marker_seen) continue;
+
+                buffer += new_content;
 
                 let lines = buffer.split('\n');
                 let fragment = document.createDocumentFragment();
 
                 let cont = true;
-                for (const line of lines.slice(0, -1)) {
-                    /// Skip blank lines: a trailing/blank line would make `JSON.parse('')` throw
-                    /// ("Unexpected end of JSON input"), masking the real result with a client error.
-                    if (line.length == 0) continue;
+                for (let idx = 0; idx < lines.length; ++idx) {
+                    const line = lines[idx];
+                    /// The `__exception__` marker signals an exception raised after the body already
+                    /// started (see `EXCEPTION_MARKER`). It always occupies whole lines, so match the
+                    /// line exactly (ignoring the trailing `\r`) — this is robust to chunk-boundary
+                    /// splits, and a row value that merely contains the text is `{"row":...}` and
+                    /// never equals the marker. Everything from here on is the block, not rows: stop
+                    /// parsing and leave it in `reply` for `parseExceptionMarker` after the loop.
+                    if (line.replace(/\r$/, '') === EXCEPTION_MARKER) { marker_seen = true; break; }
+                    /// The last line is a partial row (or a partial marker); keep it in `buffer`.
+                    if (idx == lines.length - 1) break;
+                    /// Skip blank/whitespace-only lines: `JSON.parse` on them throws
+                    /// ("Unexpected end of JSON input"). The marker block is framed by `\r\n`, so
+                    /// its leading bare-`\r` line is skipped here too.
+                    if (line.trim().length == 0) continue;
                     const data = JSON.parse(line);
-                    /// A `{"exception":...}` can arrive mid-stream after a 200 (e.g. a query that
-                    /// streams progress/rows and then hits `max_execution_time`). The response was
-                    /// `ok`, so without this it would be classified as a successful result. Stop the
-                    /// stream and remember the message; it is handled after the loop.
+                    /// The other way an exception is signalled: with `http_write_exception_in_output_format`
+                    /// the format writes a `{"exception":...}` line (this is the pre-marker mechanism, and
+                    /// it can still arrive mid-stream after a 200). Treat it as a failure — like the marker
+                    /// — rather than letting the query fall through to the success path below.
                     if (data.exception) { stream_exception = data.exception; cont = false; break; }
                     cont = targetResultEl.update(data, fragment);
                     if (!cont) { break; }
@@ -5982,6 +6741,11 @@ async function postImpl(tab, posted_request_num, query, targetResultEl, abortCon
                 /// toggles become usable mid-stream rather than only at EOF.
                 targetResultEl._pinStreamedRows(streamed_rows);
 
+                /// The marker block keeps arriving after this: do not abort (that could truncate it)
+                /// and do not carry the marker text as an unfinished row — just keep draining into
+                /// `reply`. The marker line and the rest stay in `buffer` (unused once `marker_seen`).
+                if (marker_seen) continue;
+
                 if (!cont)
                 {
                     abortController.abort();
@@ -5990,10 +6754,20 @@ async function postImpl(tab, posted_request_num, query, targetResultEl, abortCon
                 buffer = lines[lines.length - 1];
             }
 
-            /// A mid-stream exception fails the query. Keep any partial rows that already streamed
-            /// in and render the error beneath them (a partial result is still worth showing), but
-            /// if nothing but a header arrived, hide the empty table so only the error shows. The
-            /// partial table still needs its layout pass (deferred while the tab is hidden).
+            /// The `__exception__` marker (the newer, format-agnostic mechanism) is parsed out of the
+            /// full reply after the stream ended; the format-level `{"exception":...}` line is already
+            /// captured in `stream_exception` above.
+            if (marker_seen && stream_exception === null) {
+                const marker = parseExceptionMarker(reply, exception_tag);
+                stream_exception = (marker !== null ? marker.message : null)
+                    ?? "The query failed after the response body had already started, but the error message could not be parsed.";
+            }
+
+            /// Either way, the query failed after its response body had already started streaming. Keep
+            /// any partial rows that arrived (they are already flushed into the table): finish their
+            /// totals/coloring so they look consistent, then render the error beneath them. If nothing
+            /// but a header arrived, hide the empty table so only the error shows. The partial table
+            /// still needs its layout pass (deferred while the tab is hidden).
             if (stream_exception !== null) {
                 if (targetResultEl.rowCount > 0) {
                     targetResultEl.renderTotals();
@@ -6004,7 +6778,8 @@ async function postImpl(tab, posted_request_num, query, targetResultEl, abortCon
                     targetResultEl.clear();
                 }
                 targetResultEl.renderError(stream_exception);
-                return { format, reply, response_ok: false, is_table: false, is_raw: false, is_chart: false, is_image: false, is_error: true };
+                display_error = stream_exception;
+                return { format, exception_tag, reply, display_error, response_ok: false, is_table: false, is_raw: false, is_chart: false, is_image: false, is_error: true };
             }
         } else if (format == 'JSONCompactColumns') {
             is_chart = true;
@@ -6018,16 +6793,121 @@ async function postImpl(tab, posted_request_num, query, targetResultEl, abortCon
             const reader = response.body.getReader();
             const decoder = new TextDecoder();
 
+            /// A query can fail after its HTTP response body has already started streaming (the status
+            /// is already committed to 200). This branch renders an explicitly-requested streamed
+            /// format (e.g. `FORMAT JSONEachRowWithProgress`, `TSV`, ...) verbatim, so — like the table
+            /// branch above — it must recognize the same two mid-stream failure signals, otherwise a
+            /// failed query would finish in the success state:
+            ///   1. the format-agnostic transport-level `__exception__` marker (see `EXCEPTION_MARKER`),
+            ///      used by formats that do not write exceptions in-band (`TSV`, `CSV`, `Pretty`, ...);
+            ///   2. the in-band `{"exception":...}` a JSON output format writes when
+            ///      `http_write_exception_in_output_format` is set (the default) — see `parseInbandException`.
+            /// The raw output that arrived before the failure is still shown; the error is rendered beneath.
             let buffer = '';
+            let marker_seen = false;      /// a candidate `__exception__` line was seen; stop echoing from it
+            let marker_framing_broken = false;   /// the server broke HTTP framing after the marker (see below)
+            let held_back = '';           /// output withheld from the candidate marker line onward (see below)
+            let stream_exception = null;
             while (true) {
-                const { done, value } = await reader.read();
+                let done, value;
+                try {
+                    ({ done, value } = await reader.read());
+                } catch (e) {
+                    /// After a genuine `__exception__` block the server intentionally breaks the HTTP
+                    /// framing, so the reader may reject with a `TypeError`; that is expected and the block
+                    /// is parsed below. But `marker_seen` only means echoing stopped on a line that *looked*
+                    /// like the marker — ordinary raw output can contain such a line (`ok1\n__exception__\n
+                    /// ok2\n`) and then hit a real transport failure. Treat the error as the expected framing
+                    /// break only when the withheld tail actually began a marker for this response (its
+                    /// opening line carried the response tag); otherwise it is a genuine transport error, so
+                    /// flush the withheld output and let the outer handler report it, exactly as a mid-stream
+                    /// network drop with no marker candidate at all would be handled.
+                    if (marker_seen && e instanceof TypeError && exceptionMarkerStart(held_back, exception_tag) >= 0)
+                    {
+                        marker_framing_broken = true;
+                        break;
+                    }
+                    if (marker_seen && held_back.length) targetResultEl.updateRaw(held_back);
+                    throw e;
+                }
                 if (done) break;
 
                 let new_content = decoder.decode(value, { stream: true });
                 reply += new_content;
 
                 if (posted_request_num != tab.reqNum) { return { cancelled: true }; }
-                targetResultEl.updateRaw(new_content);
+
+                /// After a candidate marker line, withhold the rest of the stream instead of echoing it:
+                /// it is either the marker block (kept hidden) or — if the framing turns out incomplete —
+                /// ordinary output that is re-echoed after the loop. Keep accumulating `reply` regardless.
+                if (marker_seen) { held_back += new_content; continue; }
+
+                /// The marker occupies whole lines, so echo only complete lines and hold the last
+                /// (possibly partial) line in `buffer` — this matches the marker robustly across
+                /// chunk-boundary splits and never echoes the marker block itself into the raw view.
+                buffer += new_content;
+                let lines = buffer.split('\n');
+                let output = '';
+                for (let idx = 0; idx < lines.length; ++idx) {
+                    /// A complete line equal to the marker is only a *candidate*: a successful query can
+                    /// legitimately emit one (e.g. `SELECT '__exception__' FORMAT TSV`). Stop echoing from
+                    /// here and decide after the loop, once the full marker framing is known.
+                    if (lines[idx].replace(/\r$/, '') === EXCEPTION_MARKER) {
+                        marker_seen = true;
+                        held_back = lines.slice(idx).join('\n');
+                        break;
+                    }
+                    /// The last line may be a partial row or a partial marker; keep it in `buffer`.
+                    if (idx == lines.length - 1) break;
+                    output += lines[idx] + '\n';
+                }
+                if (output) targetResultEl.updateRaw(output);
+                if (!marker_seen) buffer = lines[lines.length - 1];
+            }
+
+            if (marker_seen) {
+                /// A genuine transport marker is a fully-framed `__exception__ <TAG> ... <len> <TAG>
+                /// __exception__` block that `parseExceptionMarker` can extract from the withheld tail;
+                /// echoing stopped at the *first* candidate line, but that line may merely look like the
+                /// marker — a raw format can emit `__exception__` (or the whole block shape) as data and
+                /// only then fail. So split on the validated block: flush the output that precedes it
+                /// (withheld from the live view until now) and hide only the block itself. If nothing
+                /// validates: `marker_framing_broken` is set only when the tail actually began a marker for
+                /// this response (the catch verified the tag before swallowing the framing-break
+                /// `TypeError`), so it means a genuine but unparsable/truncated block — flush the withheld
+                /// output up to where that marker starts (an earlier lookalike line withheld with it is
+                /// ordinary output that streamed before the failure), hide the truncated block, and report
+                /// a generic failure; otherwise every candidate was ordinary output that finished cleanly,
+                /// so re-echo the whole withheld tail — and still probe for an in-band failure, exactly
+                /// like the no-marker branch below.
+                const marker = parseExceptionMarker(held_back, exception_tag);
+                if (marker !== null) {
+                    if (marker.offset > 0) targetResultEl.updateRaw(held_back.slice(0, marker.offset));
+                    stream_exception = marker.message;
+                } else if (marker_framing_broken) {
+                    const start = exceptionMarkerStart(held_back, exception_tag);
+                    if (start > 0) targetResultEl.updateRaw(held_back.slice(0, start));
+                    stream_exception = "The query failed after the response body had already started, but the error message could not be parsed.";
+                } else {
+                    /// `marker_seen` may have been tripped by a bare `__exception__` DATA line — `XML`
+                    /// writes field text verbatim, so a row value can put the marker text on a line of
+                    /// its own — while the real failure is the format's top-level in-band trailer
+                    /// further down the withheld tail. Without this probe such a failed `FORMAT XML`
+                    /// query would finish in the success state.
+                    if (held_back.length) targetResultEl.updateRaw(held_back);
+                    stream_exception = parseInbandException(reply, format);
+                }
+            } else {
+                /// Flush the final line (a stream need not end with a newline).
+                if (buffer.length) targetResultEl.updateRaw(buffer);
+                /// No transport marker: a JSON output format may still have reported the failure in-band.
+                stream_exception = parseInbandException(reply, format);
+            }
+
+            if (stream_exception !== null) {
+                targetResultEl.renderError(stream_exception);
+                display_error = stream_exception;
+                return { format, exception_tag, reply, display_error, response_ok: false, is_table: false, is_raw: false, is_chart: false, is_image: false, is_error: true };
             }
         }
 
@@ -6046,6 +6926,9 @@ async function postImpl(tab, posted_request_num, query, targetResultEl, abortCon
             if (is_table) {
                 if (tab.id === activeTabId) targetResultEl.transposeIfNeeded();
                 else targetResultEl._pendingTranspose = true;
+                /// Content-only (toggles a class based on row/column counts, no measurement),
+                /// so it runs even for a hidden tab, like the totals/coloring passes above.
+                targetResultEl.expandSingleValueIfNeeded();
             }
         }
 
@@ -6059,15 +6942,22 @@ async function postImpl(tab, posted_request_num, query, targetResultEl, abortCon
         if (posted_request_num != tab.reqNum) { return { cancelled: true }; }
 
         console.log(e);
+        /// A transport failure (`Network error` / `Query was cancelled` / any other thrown error) can
+        /// strike mid-stream, after the table/raw branch already flushed partial output into
+        /// `targetResultEl` — and into `reply`, which still holds the streamed body so far. Keep that
+        /// body as the snapshot payload and carry the synthetic display message in a SEPARATE
+        /// `display_error` field, so a reload / tab switch replays `partial result + error` exactly as
+        /// shown live instead of collapsing to `error only` (see `renderFailedSnapshot`). Overwriting
+        /// `reply` here (as before) dropped the already-rendered prefix from the persisted snapshot.
         if (e instanceof TypeError) {
-            reply = "Network error";
+            display_error = "Network error";
         } else if (e.name === 'AbortError') {
-            reply = "Query was cancelled";
+            display_error = "Query was cancelled";
         } else {
-            reply = e.toString();
+            display_error = e.toString();
         }
-        targetResultEl.renderError(reply);
-        return { format, reply, response_ok: false, is_table: false, is_raw: false, is_chart: false, is_image: false, is_error: true };
+        targetResultEl.renderError(display_error);
+        return { format, exception_tag, reply, display_error, response_ok: false, is_table: false, is_raw: false, is_chart: false, is_image: false, is_error: true };
     }
 }
 
@@ -6076,7 +6966,8 @@ async function postImpl(tab, posted_request_num, query, targetResultEl, abortCon
 /// failure would lose the error entirely and make the tab reopen blank. Keep the essential error
 /// text within the same size budget: the `{"exception":...}` line if the stream carried one — the
 /// rows that streamed before it are what made the reply large and cannot be kept — otherwise a
-/// bounded prefix of the error body. `restoreErrorSnapshot` renders either form on restore.
+/// bounded prefix of the error body. `renderFailedSnapshot` renders either form on restore (the
+/// bounded-prefix form replays as the streamed prefix with the persisted `display_error` beneath).
 function compactFailureSnapshot(reply)
 {
     /// Locate the `{"exception":...}` line without splitting the whole (potentially huge) reply.
@@ -6168,6 +7059,16 @@ async function postSingle(tab, posted_request_num, query, history_query_text, pa
                 query: history_query_text || query,
                 resultQuery: query,
                 format: result.format,
+                /// The per-response `X-ClickHouse-Exception-Tag`: `renderFailedSnapshot` needs it to split
+                /// a transport `__exception__` marker on the same validated block the live path did (see
+                /// `renderFailedSnapshot`), so restore matches live instead of re-parsing the body tag-blind.
+                exception_tag: result.exception_tag,
+                /// The rendered error text — every failure path in `postImpl` sets it (HTTP error,
+                /// mid-stream marker / in-band failure, transport catch) — so the failure still
+                /// restores as this error even when `data` is dropped by the size cap below. For a
+                /// transport failure it is the synthetic message (`Network error` / `Query was
+                /// cancelled` / ...) rendered beneath the replayed prefix. See `renderFailedSnapshot`.
+                display_error: result.display_error,
                 ok: result.response_ok,
                 /// Unlike the success path, never drop a failure to `null`: keep at least a compact
                 /// summary so a reload restores the error instead of reopening the tab blank.
@@ -6448,19 +7349,26 @@ async function postMulti(tab, posted_request_num, parsed, paramValuesSnapshot, e
 
     /// Snapshot the per-statement results so switching tabs / reloading restores the whole
     /// "Run all" output (not just the queries), the same way a single query's result is kept.
-    /// Mirror the single-query 100 KB cap, but on the TOTAL size across all statements: above
-    /// it we store no data (`multi: null`) and the run is query-only (re-running reproduces it).
+    /// Mirror the single-query 100 KB cap, but on the TOTAL size across all statements: above it,
+    /// drop each statement's raw body but KEEP the per-statement metadata (`display_error`
+    /// included), so a failed statement still restores as its error (see `renderFailedSnapshot`)
+    /// instead of the whole run degrading to query-only and blanking on the first tab switch.
     /// Images stream as a blob (their `reply` stays empty) and cannot be re-rendered from text,
     /// so they are stored with `data: null` and restore as empty, exactly like a single image.
     let multi = collected.map((r, i) => ({
         query: parsed[i].query,
         format: r ? r.format : null,
+        /// See the single-query save: the tag lets restore reproduce the live marker split per statement.
+        exception_tag: r ? r.exception_tag : undefined,
+        /// See the single-query save: the rendered error text of a failed statement, so restore can
+        /// show it even when the statement's body is dropped by the size cap below.
+        display_error: r ? r.display_error : undefined,
         ok: r ? !!r.response_ok : false,
         data: (r && !r.is_image) ? r.reply : null,
     }));
     let multi_size = 0;
     for (const s of multi) multi_size += s.data ? s.data.length : 0;
-    if (multi_size > 100000) multi = null;
+    if (multi_size > 100000) for (const s of multi) s.data = null;
 
     /// Save all queries to browser history, using the full editor content captured at launch.
     saveHistory({
@@ -6478,48 +7386,166 @@ async function postMulti(tab, posted_request_num, parsed, paramValuesSnapshot, e
     }, parsed[0].query, tab);
 }
 
-/// Restore an `ok: false` result snapshot into `el`, mirroring how the live streaming path leaves
-/// a failed query (see the mid-stream exception handling in `postImpl`): the rows that streamed
-/// before a `{"exception":...}` line are replayed first and the exception is rendered beneath
-/// them, so reopening or reloading a failed tab keeps its partial result. Falls back to a bare
-/// error when the snapshot produced no rows, or when its payload is not row JSON at all (e.g. a
-/// non-200 error body). Returns true when partial rows were replayed as a table, so the caller
-/// can run its usual table layout passes.
-function restoreErrorSnapshot(el, data)
-{
-    let exception_line = null;
-    const row_lines = [];
-    for (const line of data.split('\n')) {
-        if (line.length === 0) continue;
-        if (line.startsWith(`{"exception":`)) { exception_line = line; break; }
-        row_lines.push(line);
+/// Render a saved failed-query snapshot (`ok: false`) into `el`, mirroring the live mid-stream
+/// failure rendering in `postImpl`. The saved `data` is the full raw reply that arrived before the
+/// query failed: the partial output (table rows or raw bytes) followed by the failure signal —
+/// either a transport-level `__exception__` marker block, or an in-band `{"exception":...}` line
+/// (for a `*WithProgress` stream) / `exception` field (for a single-document JSON/XML format).
+/// The live path deliberately KEEPS that partial output and renders the error beneath it (see the
+/// table branch's `rowCount > 0` handling and the raw branch's line echoing in `postImpl`), so the
+/// restore must replay the same prefix instead of collapsing to `error only` — otherwise a
+/// mid-stream failure that showed `partial result + error` live degrades to `error only` on the
+/// first tab switch or reload. `data` with no parseable failure signal and no distinct persisted
+/// `display_error` is a plain error string (an HTTP-error body, or a legacy entry saved by
+/// `postImpl`'s catch before `display_error` existed — then `format` may even be missing); render
+/// it as the error alone, with no raw echo.
+///
+/// `tag` is the `X-ClickHouse-Exception-Tag` the producing response carried (persisted in the snapshot —
+/// see `saveHistory`). The live path uses it as the discriminator that tells a genuine transport
+/// `__exception__` block from successful output that merely mimics the marker shape, and it drives the
+/// generic "could not be parsed" message when a marker started but no complete block arrived. Restore
+/// MUST use the same discriminator rather than re-parsing the body tag-blind, otherwise a reload / tab
+/// switch diverges from what the live UI showed: a marker-shaped lookalike in the output would be
+/// misread as the failure (wrong split + wrong message), and an unparsable-marker failure would render
+/// its raw bytes as the error text instead of the generic message. `tag` is `undefined` for legacy
+/// snapshots and for failures with no transport marker (the header is only set when the marker is
+/// written); then matching is skipped, exactly as `parseExceptionMarker` does live.
+function renderFailedSnapshot(el, data, format, tag, display_error) {
+    /// The message the live path shows when a transport marker began but no complete, tag-validated
+    /// block could be recovered (broken framing / a truncated stream). Kept byte-identical to `postImpl`
+    /// so restore reproduces it instead of dumping the raw reply (which holds the truncated marker bytes).
+    const MARKER_UNPARSED = "The query failed after the response body had already started, but the error message could not be parsed.";
+
+    /// The body was dropped by the history size cap (`data: null`), or the failure produced no body at
+    /// all: there is no prefix to replay, but every failure path persists its rendered error text in
+    /// `display_error` (see `postImpl`), so the snapshot still restores as that error instead of a
+    /// blank tab. The `MARKER_UNPARSED` fallback is defensive only, for legacy entries saved before
+    /// `display_error` existed (the restore guards skip those without calling here).
+    if (!data) {
+        el.renderError(typeof display_error === 'string' ? display_error : MARKER_UNPARSED);
+        return;
     }
-    if (exception_line === null) {
-        el.renderError(data);
-        return false;
-    }
-    if (row_lines.length > 0) {
-        try {
-            const fragment = document.createDocumentFragment();
-            for (const line of row_lines) {
-                if (!el.update(JSON.parse(line), fragment)) break;
+
+    /// When `data` IS present, the inner branches below recover the message FROM it — validating the
+    /// transport marker against the persisted tag, splitting the raw prefix on the validated block, and
+    /// finalizing the table exactly as the live path did — so the plain `display_error` replay must not
+    /// pre-empt them. This branch handles the failures whose `data` carries no signal:
+    ///   - a transport failure caught in `postImpl`'s outer catch (`Network error` / cancellation / a
+    ///     thrown error) after partial output had already streamed: `data` is that already-rendered
+    ///     prefix (table rows or raw bytes) and the error text lives only in `display_error`. Replay
+    ///     the prefix exactly as the live path left it and render the error beneath it. Unlike the
+    ///     inner branches, the live outer catch does NOT finalize the table (no `renderTotals` /
+    ///     `applyColumnColors` / `transposeIfNeeded`, and no `clear` of an empty table): it simply
+    ///     throws after the streamed rows were flushed — match that exactly;
+    ///   - an HTTP-error response (`!response.ok`) whose body IS the error text: there `postImpl` sets
+    ///     `display_error` equal to the saved `data`, so this branch steps aside on the equality and
+    ///     the fallthrough below renders `data` as the error alone, without first echoing it as output.
+    const has_failure_signal_in_data =
+        exceptionMarkerStart(data, tag) >= 0 || parseInbandException(data, format) !== null;
+    if (typeof display_error === 'string' && !has_failure_signal_in_data && display_error !== data) {
+        if (format === default_format) {
+            let fragment = document.createDocumentFragment();
+            for (const line of data.split('\n')) {
+                if (line.trim().length === 0) continue;
+                let parsed;
+                /// A truncated/garbled tail must not throw out of the whole restore: stop replaying.
+                try { parsed = JSON.parse(line); } catch (e) { break; }
+                /// A non-terminal in-band failure line the signal probe above cannot see (the live run
+                /// aborted with trailing content after it): leave it to `renderError` below — its
+                /// message is `display_error` — rather than replaying it as a row.
+                if (parsed.exception) break;
+                if (!el.update(parsed, fragment)) break;
             }
             el.flushFragment(fragment);
-        } catch (e) {
-            /// The pre-exception lines are not row JSON (a plain-text error body that merely
-            /// contains an exception line): drop the half-replayed content and show the error alone.
+        } else {
+            el.updateRaw(data);
+        }
+        el.renderError(display_error);
+        return;
+    }
+
+    if (format === default_format) {
+        /// Table branch — mirror `postImpl` (rows are `{"row":...}` / `{"meta":...}` / `{"totals":...}`
+        /// / `{"progress":...}` lines): replay them until the failure signal, keep the partial rows,
+        /// then render the error underneath.
+        let fragment = document.createDocumentFragment();
+        let inband_exception = null;
+        let marker_seen = false;
+        const lines = data.split('\n');
+        for (let idx = 0; idx < lines.length; ++idx) {
+            const line = lines[idx];
+            /// The transport marker occupies a whole line and everything from it on is the marker
+            /// block, not rows (see `EXCEPTION_MARKER`); stop replaying and recover the message below.
+            if (line.replace(/\r$/, '') === EXCEPTION_MARKER) { marker_seen = true; break; }
+            if (line.trim().length === 0) continue;
+            let parsed;
+            /// A truncated/garbled tail (e.g. the reply was cut off) should not throw out of the whole
+            /// restore: stop replaying rows and fall back to the recovered message below.
+            try { parsed = JSON.parse(line); } catch (e) { break; }
+            /// The in-band failure line (`http_write_exception_in_output_format`); like the live path,
+            /// treat it as the terminal failure rather than an ordinary row.
+            if (parsed.exception) { inband_exception = parsed.exception; break; }
+            if (!el.update(parsed, fragment)) break;
+        }
+        el.flushFragment(fragment);
+        if (el.rowCount > 0) {
+            el.renderTotals();
+            el.applyColumnColors();
+            el.transposeIfNeeded();
+        } else {
             el.clear();
         }
+        /// Validate the marker against the persisted tag, exactly as the live table branch did. When a
+        /// marker line was present but no complete block validates, live showed the generic message —
+        /// reproduce it here rather than rendering the raw reply (with the truncated marker bytes).
+        const marker = marker_seen ? parseExceptionMarker(data, tag) : null;
+        const message = inband_exception
+            ?? (marker !== null ? marker.message : null)
+            ?? parseInbandException(data, format)
+            ?? (marker_seen ? MARKER_UNPARSED : data);
+        el.renderError(message);
+        return;
     }
-    if (el.rowCount > 0) {
-        el.renderTotals();
-        el.applyColumnColors();
-        el.renderError(JSON.parse(exception_line).exception);
-        return true;
+
+    /// Raw branch. Mirror the live raw path (`postImpl`): echoing stops at the FIRST line equal to the
+    /// marker, but that line may merely look like the marker, so the real split is the first tag-validated
+    /// block at or after it. A failed raw snapshot that carries a marker line either validated a block
+    /// (show its message) or never completed one (broken framing / truncation ⇒ generic message live);
+    /// it can never fall through to the in-band / plain-string cases, which have no marker line.
+    const first_marker_line = exceptionMarkerStart(data, null);   /// tag-blind: any candidate line
+    if (first_marker_line >= 0) {
+        const marker = parseExceptionMarker(data, tag);
+        if (marker !== null) {
+            /// A complete, tag-validated block: echo the raw output preceding it (any lookalike lines
+            /// included, as the live path did), keep the block hidden, then show its message.
+            if (marker.offset > 0) el.updateRaw(data.slice(0, marker.offset));
+            el.renderError(marker.message);
+        } else {
+            /// A marker began but never validated (broken framing / truncation): live echoed the output up
+            /// to the first *tag-compatible* marker start — an earlier lookalike line is ordinary output
+            /// that streamed before the failure — and showed the generic message. Split the same way; only
+            /// when no tag-compatible start exists (the tag line itself was truncated away, or a foreign /
+            /// pre-tag snapshot) fall back conservatively to the first candidate line.
+            const start = exceptionMarkerStart(data, tag);
+            const split = start >= 0 ? start : first_marker_line;
+            if (split > 0) el.updateRaw(data.slice(0, split));
+            el.renderError(MARKER_UNPARSED);
+        }
+        return;
     }
-    el.clear();
-    el.renderError(JSON.parse(exception_line).exception);
-    return false;
+
+    /// In-band `{"exception":...}` line / `exception` field: the live raw branch echoes the whole
+    /// reply (the exception line included) and renders the parsed error beneath it.
+    const inband_message = parseInbandException(data, format);
+    if (inband_message !== null) {
+        el.updateRaw(data);
+        el.renderError(inband_message);
+        return;
+    }
+
+    /// No mid-stream failure signal — the body IS the error text (an HTTP-error response, whose
+    /// `display_error` equals `data`, or a legacy snapshot with none). Render it alone.
+    el.renderError(data);
 }
 
 /// Render one saved multi-query statement snapshot into `el`, mirroring the live per-statement
@@ -6537,14 +7563,16 @@ async function renderSnapshotIntoElement(el, snap, tab, matToken) {
     /// kept as `data: null`) or a statement that never ran - so restore it as blank. A successful
     /// statement with a legitimately empty body (`data === ''`, e.g. a raw-format `SELECT ... WHERE
     /// 0`) is not that case and must still render, so test null here, not falsiness (mirrors the
-    /// single-query guard in `materializeResult`).
-    if (snap.data == null) return true;
+    /// single-query guard in `materializeResult`). A failed statement whose body was dropped by the
+    /// multi-run size cap still renders: every failure persists its rendered error text in
+    /// `display_error` (see `renderFailedSnapshot`), so only failures with neither survive as blank.
+    if (snap.data == null && typeof snap.display_error !== 'string') return true;
     const format = snap.format;
 
     if (!snap.ok) {
-        /// Replay any rows that streamed before a mid-stream exception, as the live path
-        /// leaves them; the replayed table gets the same transpose pass as the success path.
-        if (restoreErrorSnapshot(el, snap.data)) el.transposeIfNeeded();
+        /// Replay any output that streamed before the mid-stream failure, exactly as the live path
+        /// left it, with the error rendered beneath (see `renderFailedSnapshot`).
+        renderFailedSnapshot(el, snap.data, format, snap.exception_tag, snap.display_error);
         return true;
     }
 
@@ -6588,6 +7616,7 @@ async function renderSnapshotIntoElement(el, snap, tab, matToken) {
         if (is_table) el.renderTotals();
         el.applyColumnColors();
         if (is_table) el.transposeIfNeeded();
+        if (is_table) el.expandSingleValueIfNeeded();
     }
     return true;
 }
@@ -6838,13 +7867,12 @@ async function materializeResult(tab) {
         tab.logoVisible = false;
         tab.progressPhase = 'error';
         tab.failed = true;
-        if (result.data) {
-            /// Replay any rows that streamed before a mid-stream exception, as the live path leaves
-            /// them; the replayed table needs the same layout passes as the success restore below.
-            if (restoreErrorSnapshot(el, result.data)) {
-                el.transposeIfNeeded();
-                el._changeTableLayout();
-            }
+        if (result.data || typeof result.display_error === 'string') {
+            /// Replay any output that streamed before the mid-stream failure, exactly as the live
+            /// path left it, with the error rendered beneath (see `renderFailedSnapshot`); replayed
+            /// table rows need the same layout pass as the success restore below.
+            renderFailedSnapshot(el, result.data, format, result.exception_tag, result.display_error);
+            if (el.rowCount > 0) el._changeTableLayout();
         } else {
             /// The failure body was not stored (too large with no exception line to keep, or a
             /// legacy snapshot): show a notice so the tab restores as failed rather than blank.
@@ -6905,6 +7933,7 @@ async function materializeResult(tab) {
         if (is_table) el.renderTotals();
         el.applyColumnColors();
         if (is_table) el.transposeIfNeeded();
+        if (is_table) el.expandSingleValueIfNeeded();
         if (is_table) el._changeTableLayout();
     }
 
@@ -6983,6 +8012,7 @@ appendTextareaResizer();
 
 const tab_bar_elem = document.getElementById('tab-bar');
 const tabs_elem = document.getElementById('tabs');
+const tab_close_others_elem = document.getElementById('tab-close-others');
 
 /// The connection parameters (url/user/password) live in the `#inputs` element. When the tab
 /// bar is shown they clutter the top of every tab, so we relocate that same element into a
@@ -7095,7 +8125,15 @@ document.addEventListener('keydown', (e) => {
         /// visible focus target and the next Tab continues from the tab bar, not the page top.
         const refocus = connection_dropdown_elem.contains(document.activeElement);
         closeConnectionDropdown();
-        if (refocus) connection_key_elem.focus();
+        if (refocus) {
+            connection_key_elem.focus();
+        } else if (commit_deferred) {
+            /// Focus was already on `<body>` — an earlier internal-click blur inside the connection UI
+            /// deferred a commit. Closing the drop-down is the "finished editing" transition, so flush
+            /// that deferred commit here rather than waiting for a later pointer press a keyboard user
+            /// never makes.
+            commitConnection();
+        }
     }
 });
 
@@ -7234,6 +8272,10 @@ function getOrCreatePanel(tab) {
 function setActivePanel(tab) {
     getOrCreatePanel(tab);
     for (const t of tabs) if (t.panel) t.panel.hidden = (t !== tab);
+    /// Switching tabs hides the previous panel programmatically (no `mouseleave` fires for a
+    /// link hidden this way), so a preview owned by a result now in a hidden panel would stay
+    /// pinned. Dismiss it unless its owner lives in the panel that just became active.
+    if (image_preview_owner && !tab.panel.contains(image_preview_owner)) { hideImagePreview(); }
     resultEl = tab.resultEl;
     multiQueryContainer = tab.multiContainer;
 }
@@ -7489,6 +8531,23 @@ function closeTab(id) {
     scheduleSave();
 }
 
+/// Close every tab except the active one: abort the other tabs' in-flight queries and drop their panels.
+function closeOtherTabs() {
+    markBootstrapDirty();
+
+    for (const tab of tabs) {
+        if (tab.id === activeTabId) continue;
+        abortTabQuery(tab);
+        if (tab.panel) tab.panel.remove();
+    }
+
+    tabs = tabs.filter(t => t.id === activeTabId);
+    renderTabBar();
+    refreshFavicon();   /// closed background tabs may have held the last running query
+
+    scheduleSave();
+}
+
 /// Begin inline editing of the active tab's title. The title `span` itself becomes
 /// editable (rather than swapping in an `input`), so it grows with its content and the
 /// tab width does not jump when editing starts.
@@ -7556,6 +8615,13 @@ function renderTabBar() {
     /// fresh page can be backgrounded: the user needs the `[+]` button to open a second tab (or
     /// switch away) while that first query is still in flight.
     tab_bar_elem.hidden = (tabs.length <= 1 && !(active && active.result && active.result.ran) && !anyInFlight());
+    /// With a single tab there are no "other" tabs to close; show it only for 2+. Hiding a
+    /// focused element strands keyboard focus (same problem `syncConnectionUI` solves for the
+    /// 🔑 button): activating this button with Enter/Space on exactly two tabs hides it in the
+    /// resulting rerender, so hand focus to the query area — always visible — before hiding.
+    const closeOthersHadFocus = document.activeElement === tab_close_others_elem;
+    tab_close_others_elem.hidden = tabs.length < 2;
+    if (closeOthersHadFocus && tab_close_others_elem.hidden) query_area.focus();
     syncConnectionUI();
 
     tabs_elem.textContent = '';
@@ -7678,6 +8744,7 @@ function updateTabIndicator(tab) {
 }
 
 document.getElementById('tab-add').addEventListener('click', addTab);
+tab_close_others_elem.addEventListener('click', closeOtherTabs);
 
 /// Mouse wheel over the tab panel switches tabs: scrolling up or left -> previous (left)
 /// tab, down or right -> next (right) tab. The dominant axis is used, so both vertical and
@@ -8141,6 +9208,16 @@ function saveHistory(stateData, titleForDoc, tab) {
         url: stateData.url,
         user: stateData.user,
         format: stateData.format,
+        /// The `X-ClickHouse-Exception-Tag` of a failed run, so restoring the snapshot (tab switch,
+        /// reload, Back/Forward) can split a transport `__exception__` marker on the validated block —
+        /// see `renderFailedSnapshot`. Undefined for successful runs and legacy entries; then matching
+        /// is skipped, as before.
+        exception_tag: stateData.exception_tag,
+        /// The rendered error text of a failed run — every failure path in `postImpl` sets it: shown
+        /// by `renderFailedSnapshot` beneath the replayed prefix for a transport failure, and alone
+        /// when the body was dropped by the size cap. Round-trips through browser history /
+        /// `IndexedDB` with the snapshot. Undefined for successful runs and legacy entries.
+        display_error: stateData.display_error,
         ok: stateData.ok,
         data: stateData.data,
         /// Per-statement snapshots for a multi-query ("Run all") result; null for single-query
@@ -8247,19 +9324,35 @@ window.onpopstate = function(event) {
         /// the input listeners, so dispatch synthetic `input` events on the connection inputs — every
         /// registered listener (`checkURL`, `updateDocsURL`, `resetCredentialsStatus` and
         /// `resetConnectionScopedState`) then runs exactly as it would for a typed edit. These carry
-        /// `isTrusted === false`, so `markBootstrapDirty` ignores them; this navigation already marked
-        /// the workspace dirty above.
+        /// `isTrusted === false`, so `markBootstrapDirty` ignores them (this navigation already marked
+        /// the workspace dirty above), and so does the `connection_edited` latch in
+        /// `onCredentialInput` — the restore is not a user edit, and treating it as one would let a
+        /// later focus change commit and probe the restored server with the password cleared above.
         ///
         /// Guard the replay so `resetConnectionScopedState` skips its history restamp: the target tab
         /// state is not installed yet (`activeTabId`/`tab.query` are rebound below) and `history.state`
         /// is already the popped entry, so a restamp would corrupt this time-travel target with the
         /// leaving tab's newer state. `onpopstate` restores the entry/URL authoritatively itself.
+        /// The `isTrusted` gate keeps the replay from arming a *new* edit session, but an edit session
+        /// that was already in progress when the navigation happened must not survive it either: the
+        /// user may have typed a password for the connection being left, and the restore just replaced
+        /// the server/user and cleared that password. Committing that session afterwards — on the first
+        /// focus change that leaves the connection surface — would probe the restored server with an
+        /// empty password, the very spurious login this fix avoids. The edit targeted a connection that
+        /// no longer exists in the inputs, so drop both latches; the restored connection is re-checked
+        /// once the user re-enters its password.
+        connection_edited = false;
+        commit_deferred = false;
         restoring_connection_from_history = true;
         try {
             [url_elem, user_elem, password_elem].forEach(el => el.dispatchEvent(new Event('input')));
         } finally {
             restoring_connection_from_history = false;
         }
+        /// Same reason the latches are dropped: the fields hold a restored connection, not an edit, so
+        /// take it as the baseline the (now cleared) indication reflects. Otherwise the tuple would
+        /// differ from the last checked one and merely focusing a field and leaving again would commit.
+        checked_connection = connectionTuple();
     }
     const tab = resolveTabForState(event.state);
     /// Keep this history entry's identity in sync with the tab it actually resolves to, restamping
@@ -8891,6 +9984,11 @@ query_area.onkeydown = (e) => {
 /// Background tabs are untouched (see `clearPanel`).
 function clear()
 {
+    /// Also hide the floating image preview here, not only from `mouseleave` / `scroll`:
+    /// rerunning a query (`Ctrl+Enter`) tears down the hovered result cell through this
+    /// path without delivering either event, so the `position: fixed` preview would
+    /// otherwise stay pinned over the next result until some later scroll.
+    hideImagePreview();
     const tab = getActiveTab();
     if (tab) clearPanel(tab);
 }

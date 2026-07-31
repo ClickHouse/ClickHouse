@@ -10,6 +10,8 @@
 #include <Parsers/ASTRefreshStrategy.h>
 #include <Interpreters/StorageID.h>
 
+namespace Poco::JSON { class Object; }
+
 namespace DB
 {
 
@@ -34,6 +36,8 @@ public:
     String getID(char) const override { return "Storage definition"; }
 
     ASTPtr clone() const override;
+    void writeJSON(WriteBuffer & out) const override;
+    void readJSON(const Poco::JSON::Object & json) override;
 
     bool isExtendedStorageDefinition() const;
 
@@ -74,6 +78,8 @@ public:
     String getID(char) const override { return "Columns definition"; }
 
     ASTPtr clone() const override;
+    void writeJSON(WriteBuffer & out) const override;
+    void readJSON(const Poco::JSON::Object & json) override;
 
     bool empty() const
     {
@@ -154,6 +160,8 @@ public:
     String getID(char delim) const override;
 
     ASTPtr clone() const override;
+    void writeJSON(WriteBuffer & out) const override;
+    void readJSON(const Poco::JSON::Object & json) override;
 
     ASTPtr getRewrittenASTWithoutOnCluster(const WithoutOnClusterASTRewriteParams & params) const override
     {
