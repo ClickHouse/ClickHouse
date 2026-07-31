@@ -18,16 +18,16 @@ sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
 import mergetree_part_conflicts as m  # noqa: E402
 
 
-def P(name, fv=m.FORMAT_VERSION_CUSTOM):
+def P(name):
     """Build a PartInfo from a name (helper for the pure predicate/classify tests)."""
-    info = m.parse_part_name(name, fv)
+    info = m.parse_part_name(name)
     assert info is not None, name
     return info
 
 
-def feed(text, fv=m.FORMAT_VERSION_CUSTOM):
+def feed(text):
     """Run the input reader over a block of text, as if piped in from `find`."""
-    return m.read_parts_from_stream(io.StringIO(text), fv)
+    return m.read_parts_from_stream(io.StringIO(text))
 
 
 class TestParsing(unittest.TestCase):
@@ -48,10 +48,6 @@ class TestParsing(unittest.TestCase):
     def test_hex_hash_partition(self):
         p = P("a1b2c3d4e5f6_10_20_3")
         self.assertEqual((p.partition_id, p.min_block, p.max_block, p.level), ("a1b2c3d4e5f6", 10, 20, 3))
-
-    def test_old_format(self):
-        p = P("20140317_20140323_2_2_0", fv=m.FORMAT_VERSION_OLD)
-        self.assertEqual((p.partition_id, p.min_block, p.max_block, p.level), ("201403", 2, 2, 0))
 
     def test_not_a_part(self):
         for bad in ("detached", "format_version.txt", "tmp_insert_123", "notapart", ""):

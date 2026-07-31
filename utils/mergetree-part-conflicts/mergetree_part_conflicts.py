@@ -38,17 +38,12 @@ from typing import Dict, List, Optional, Tuple
 MAX_LEVEL = 999999999
 LEGACY_MAX_LEVEL = 4294967295  # numeric_limits<UInt32>::max()
 
-# Mirrors src/Storages/MergeTree/MergeTreeDataFormatVersion.h
-FORMAT_VERSION_OLD = 0  # YYYYMMDD_YYYYMMDD_min_max_level (pre custom partitioning)
-FORMAT_VERSION_CUSTOM = 1  # partitionid_min_max_level[_mutation]
-
-# New-format part name: <partition_id>_<min>_<max>_<level>[_<mutation>].
-# partition_id is taken non-greedily so the numeric tail binds to min/max/level
-# (+ optional mutation). This is exact for numeric, hash and "all" partition ids
-# -- i.e. every id that carries no underscore, which is the realistic case.
-_NEW_NAME_RE = re.compile(r"^(?P<pid>.+?)_(?P<min>\d+)_(?P<max>\d+)_(?P<level>\d+)(?:_(?P<mut>\d+))?$")
-# Old-format part name: <min_date>_<max_date>_<min>_<max>_<level>.
-_OLD_NAME_RE = re.compile(r"^(?P<dmin>\d{6,8})_(?P<dmax>\d{6,8})_(?P<min>\d+)_(?P<max>\d+)_(?P<level>\d+)$")
+# Part name: <partition_id>_<min_block>_<max_block>_<level>[_<mutation>] -- the
+# custom-partitioning format used by every table created since 2016. partition_id
+# is matched non-greedily so the numeric tail binds to min/max/level (+ optional
+# mutation); this is exact for numeric, hash and "all" partition ids, i.e. every
+# id that carries no underscore, which is the realistic case.
+_NAME_RE = re.compile(r"^(?P<pid>.+?)_(?P<min>\d+)_(?P<max>\d+)_(?P<level>\d+)(?:_(?P<mut>\d+))?$")
 
 
 @dataclass(frozen=True)
@@ -89,26 +84,9 @@ class PartInfo:
         )
 
 
-def parse_part_name(name: str, format_version: int = FORMAT_VERSION_CUSTOM) -> Optional[PartInfo]:
-    """Parse a part-directory name into a PartInfo, or None if it is not a part.
-
-    ``format_version`` selects the on-disk naming scheme (0 = legacy, 1 = custom
-    partitioning), exactly as the server reads it from ``format_version.txt``.
-    """
-    if format_version == FORMAT_VERSION_OLD:
-        m = _OLD_NAME_RE.match(name)
-        if not m:
-            return None
-        return PartInfo(
-            partition_id=m.group("dmin")[:6],  # YYYYMM month partition
-            min_block=int(m.group("min")),
-            max_block=int(m.group("max")),
-            level=int(m.group("level")),
-            mutation=0,
-            name=name,
-        )
-
-    m = _NEW_NAME_RE.match(name)
+def parse_part_name(name: str) -> Optional[PartInfo]:
+    """Parse a part-directory name into a PartInfo, or None if it is not a part."""
+    m = _NAME_RE.match(name)
     if not m:
         return None
     return PartInfo(
@@ -185,7 +163,7 @@ def classify(parts: List[PartInfo]) -> Dict[str, PartitionReport]:
 # Input
 # --------------------------------------------------------------------------- #
 
-def read_parts_from_stream(stream, format_version: int) -> Dict[str, List[PartInfo]]:
+def read_parts_from_stream(stream) -> Dict[str, List[PartInfo]]:
     """Read parts from a plain-text stream (e.g. the output of ``find``), one per
     line, grouped by table.
 
@@ -213,7 +191,7 @@ def read_parts_from_stream(stream, format_version: int) -> Dict[str, List[PartIn
         name = os.path.basename(token.rstrip("/")) if path else token
         if table is None:
             table = os.path.dirname(path.rstrip("/")) if path else "(input)"
-        info = parse_part_name(name, format_version)
+        info = parse_part_name(name)
         if info is None:
             print(f"warning: not a part name, skipped: {name}", file=sys.stderr)
             continue
@@ -339,15 +317,13 @@ def main(argv: Optional[List[str]] = None) -> int:
         epilog="Feed part names (or full paths), one per line, on stdin. E.g.: "
                "find /var/lib/clickhouse/store -mindepth 3 -maxdepth 3 -type d | %(prog)s",
     )
-    parser.add_argument("--format-version", type=int, choices=[0, 1], default=FORMAT_VERSION_CUSTOM,
-                        help="on-disk part-name format version (default: 1, custom partitioning)")
     parser.add_argument("--json", action="store_true", help="emit machine-readable JSON")
     parser.add_argument("--emit-detach-commands", action="store_true",
                         help="print a read-only shell script that moves the suggested parts "
                              "into detached/ (never executed)")
     args = parser.parse_args(argv)
 
-    tables = read_parts_from_stream(sys.stdin, args.format_version)
+    tables = read_parts_from_stream(sys.stdin)
     report = build_report(tables)
 
     if args.emit_detach_commands:

@@ -45,9 +45,6 @@ clickhouse-client -q "SELECT database || '.' || table || '\t' || name FROM syste
 # Machine-readable output:
 find ... -type d | ./mergetree_part_conflicts.py --json
 
-# Legacy on-disk format (pre custom partitioning):
-find ... -type d | ./mergetree_part_conflicts.py --format-version 0
-
 # Emit a read-only recovery script (concrete `mv` needs full paths as input):
 find /var/lib/clickhouse/store/b11/b11e7407 -mindepth 1 -maxdepth 1 -type d \
     | ./mergetree_part_conflicts.py --emit-detach-commands
