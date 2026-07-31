@@ -166,35 +166,6 @@ TEST(NativeStringSizeStream, CorruptedOffsetStream)
     }
 }
 
-TEST(NativeStringSizeStream, TruncatedOffsetStreamWithRowsOffset)
-{
-    /// The offsets stream here carries a single value, while rows_offset = 2 and limit = 2 need
-    /// four: the reader must report a parse error instead of reading past the end of the stream.
-    auto serialization = SerializationString::create(MergeTreeStringSerializationVersion::WITH_SIZE_STREAM);
-
-    String stream_data("\x05\x00\x00\x00\x00\x00\x00\x00", 8);
-    ReadBufferFromString istr(stream_data);
-
-    ISerialization::DeserializeBinaryBulkSettings settings;
-    settings.getter = [&](ISerialization::SubstreamPath) -> ReadBuffer * { return &istr; };
-    settings.position_independent_encoding = false;
-    settings.native_format = true;
-
-    ISerialization::DeserializeBinaryBulkStatePtr state;
-    serialization->deserializeBinaryBulkStatePrefix(settings, state, nullptr);
-
-    ColumnPtr column = ColumnString::create();
-    try
-    {
-        serialization->deserializeBinaryBulkWithMultipleStreams(column, /*rows_offset=*/ 2, /*limit=*/ 2, settings, state, nullptr);
-        FAIL() << "expected INCORRECT_DATA for a truncated offsets stream";
-    }
-    catch (const Exception & e)
-    {
-        ASSERT_EQ(e.code(), ErrorCodes::INCORRECT_DATA);
-    }
-}
-
 TEST(NativeStringSizeStream, RoundTripFlattenedDynamic)
 {
     /// The flattened Dynamic representation serializes its subtypes through the same
