@@ -1000,7 +1000,9 @@ IcebergMetadata::IcebergHistory IcebergMetadata::getHistory(ContextPtr local_con
 
         /// A retained snapshot can be missing from a trimmed snapshot-log; its log time is then
         /// unrecoverable, so fall back to the snapshot's own commit time instead of the epoch.
-        if (!found_in_snapshot_log && snapshot->has(f_timestamp_ms))
+        /// `timestamp-ms` is required on a snapshot, so a missing one is corrupt metadata: let the
+        /// parse throw rather than reporting the epoch as if it were a real time.
+        if (!found_in_snapshot_log)
             history_record.made_current_at = parse_timestamp_ms(snapshot);
 
         if (std::find(ancestors.begin(), ancestors.end(), history_record.snapshot_id) != ancestors.end())

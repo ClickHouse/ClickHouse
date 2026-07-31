@@ -36,7 +36,7 @@ def _history(instance, table_name):
 
     `made_current_at` is read as unix milliseconds so it can be compared against the raw
     `timestamp-ms` of the metadata it is supposed to come from. That round-trips exactly: the
-    column is DateTime64(6) and Iceberg timestamps are whole milliseconds.
+    column is Nullable(DateTime64(3)) and Iceberg timestamps are whole milliseconds.
     """
     raw = instance.query(
         f"SELECT snapshot_id, toUnixTimestamp64Milli(made_current_at), is_current_ancestor "
