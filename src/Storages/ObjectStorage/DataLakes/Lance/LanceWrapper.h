@@ -7,9 +7,11 @@
 #include <Core/NamesAndTypes.h>
 #include <Core/Types.h>
 #include <Interpreters/Context_fwd.h>
+#include <Storages/ObjectStorage/DataLakes/Lance/LanceTableStateSnapshot.h>
 
 #include <memory>
 #include <optional>
+#include <unordered_set>
 #include <vector>
 
 namespace DB
@@ -20,6 +22,7 @@ struct FormatSettings;
 namespace arrow
 {
 class RecordBatch;
+class Schema;
 }
 
 struct ch_lance_dataset;
@@ -59,11 +62,6 @@ struct DatasetOptions
     String identityKey() const;
 };
 
-struct SnapshotInfo
-{
-    UInt64 version = 0;
-};
-
 struct FragmentInfo
 {
     UInt64 id = 0;
@@ -74,7 +72,6 @@ struct FragmentInfo
 };
 
 struct ScanDescription;
-struct TableStateSnapshot;
 class Scan;
 
 /// Query-scoped cooperative cancel token. Shared across open/plan/count/scan for one unit of work.
@@ -115,11 +112,12 @@ public:
     const DatasetOptions & options() const;
     String identityKey() const;
 
-    SnapshotInfo currentSnapshot() const;
+    TableStateSnapshot currentSnapshot() const;
     NamesAndTypesList tableSchema(
         const TableStateSnapshot & snapshot,
         ContextPtr context,
-        const CancelHandlePtr & cancel = {}) const;
+        const CancelHandlePtr & cancel = {},
+        std::unordered_set<String> * utf8_columns = nullptr) const;
     std::optional<size_t> totalRows(const TableStateSnapshot & snapshot, const CancelHandlePtr & cancel = {}) const;
     std::optional<size_t> countRows(
         const TableStateSnapshot & snapshot,
@@ -154,6 +152,13 @@ private:
 class Scan
 {
 public:
+    struct Batch
+    {
+        std::shared_ptr<arrow::RecordBatch> record_batch;
+        UInt64 rows = 0;
+        UInt64 bytes = 0;
+    };
+
     Scan(const Scan &) = delete;
     Scan & operator=(const Scan &) = delete;
     Scan(Scan && other) noexcept;
@@ -163,7 +168,30 @@ public:
     /// Thread-safe cooperative cancel. Wakes a pending nextBatch; does not free the scan.
     void requestCancel() noexcept;
 
-    std::shared_ptr<arrow::RecordBatch> nextBatch() const;
+    std::optional<Batch> nextBatch() const;
+    void releaseBatch(UInt64 bytes) const noexcept;
+    const std::shared_ptr<arrow::Schema> & schema() const { return projected_schema; }
+
+    struct Stats
+    {
+        UInt64 producer_tasks = 0;
+        UInt64 schema_exports = 0;
+        UInt64 queue_push_batches = 0;
+        UInt64 queue_pop_batches = 0;
+        UInt64 queue_push_wait_microseconds = 0;
+        UInt64 consumer_pop_wait_microseconds = 0;
+        UInt64 queue_peak_batches = 0;
+        UInt64 queue_peak_bytes = 0;
+        UInt64 queued_batches = 0;
+        UInt64 queued_bytes = 0;
+        UInt64 in_flight_batches = 0;
+        UInt64 in_flight_bytes = 0;
+        UInt64 producer_eof = 0;
+        UInt64 producer_error = 0;
+        UInt64 producer_cancel = 0;
+    };
+
+    Stats stats() const noexcept;
 
 private:
     /// Holds the dataset alive for the stream lifetime (scan must outlive free of dataset).
@@ -172,6 +200,7 @@ private:
 
     DatasetHandle dataset;
     ch_lance_scan * scan = nullptr;
+    std::shared_ptr<arrow::Schema> projected_schema;
 };
 
 void ensureRuntime(UInt32 worker_threads = 0);

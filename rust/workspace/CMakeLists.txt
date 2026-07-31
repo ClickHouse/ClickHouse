@@ -18,7 +18,7 @@ endif()
 option (ENABLE_PRQL "Enable prql" ${ENABLE_LIBRARIES})
 option (ENABLE_SKIM "Enable skim" ${ENABLE_LIBRARIES})
 option (ENABLE_POLYGLOT "Enable polyglot SQL transpiler" ${ENABLE_LIBRARIES})
-option (ENABLE_LANCE "Enable Lance DataLake adapter" OFF)
+option (ENABLE_LANCE "Enable Lance DataLake adapter" ${ENABLE_LIBRARIES})
 
 if (NOT ENABLE_PRQL AND NOT ENABLE_SKIM AND NOT ENABLE_POLYGLOT AND NOT ENABLE_LANCE)
     message(STATUS "prql, skim, polyglot, and lance are disabled")

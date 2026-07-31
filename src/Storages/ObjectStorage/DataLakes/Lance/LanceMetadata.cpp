@@ -42,17 +42,21 @@
 #include <mutex>
 #include <numeric>
 #include <unordered_map>
+#include <unordered_set>
 
 namespace ProfileEvents
 {
 extern const Event LancePredicatePushdownComplete;
 extern const Event LancePredicatePushdownPartial;
+extern const Event LancePredicatePushdownDisabled;
 extern const Event LanceLimitPushdown;
 extern const Event LanceProjectedColumns;
 extern const Event LanceScanUnordered;
 extern const Event LanceFragmentsListed;
 extern const Event LanceFragmentPacks;
 extern const Event LanceFragmentParallelismDisabled;
+extern const Event LanceBatchSources;
+extern const Event LanceCountSources;
 }
 
 namespace DB
@@ -66,7 +70,11 @@ extern const SettingsBool lance_scan_in_order;
 extern const SettingsUInt64 lance_fragment_readahead;
 extern const SettingsUInt64 lance_batch_readahead;
 extern const SettingsUInt64 lance_io_buffer_size;
+extern const SettingsUInt64 lance_batch_queue_capacity;
+extern const SettingsUInt64 lance_batch_queue_bytes;
+extern const SettingsUInt64 lance_max_batch_sources;
 extern const SettingsBool lance_enable_fragment_parallelism;
+extern const SettingsBool lance_enable_predicate_pushdown;
 extern const SettingsString lance_fragment_pack_mode;
 extern const SettingsUInt64 lance_max_fragment_packs;
 extern const SettingsUInt64 lance_min_rows_per_pack;
@@ -112,6 +120,13 @@ struct FragmentPack
     UInt64 weight_rows = 0;
     UInt64 weight_bytes = 0;
 };
+
+String lanceDatasetVirtualPath(String path)
+{
+    while (path.size() > 1 && path.ends_with('/'))
+        path.pop_back();
+    return path;
+}
 
 UInt64 fragmentPackWeight(const Lance::FragmentInfo & fragment)
 {
@@ -247,8 +262,7 @@ std::vector<FragmentPack> partitionFragmentsIntoPacks(
     return non_empty;
 }
 
-String makeLancePackSyntheticPath(
-    const String & dataset_path, UInt64 version, size_t pack_index, const std::vector<UInt64> & fragment_ids)
+String makeLanceTaskPath(const String & dataset_path, UInt64 version, size_t pack_index, const std::vector<UInt64> & fragment_ids)
 {
     const UInt64 first_id = fragment_ids.empty() ? 0 : fragment_ids.front();
     return fmt::format("{}#v{}/pack{}_f{}", dataset_path, version, pack_index, first_id);
@@ -281,7 +295,7 @@ public:
         const size_t pack_index = next_index++;
         auto & pack = packs[pack_index];
         auto object_info = std::make_shared<LanceDatasetObjectInfo>(
-            makeLancePackSyntheticPath(dataset_path, snapshot.version, pack_index, pack.fragment_ids),
+            makeLanceTaskPath(dataset_path, snapshot.version, pack_index, pack.fragment_ids),
             snapshot,
             dataset,
             std::move(pack.fragment_ids),
@@ -350,54 +364,89 @@ String quoteLanceStringLiteral(const String & value)
     return result;
 }
 
-std::optional<String> fieldToLanceLiteral(const Field & field, const DataTypePtr & data_type)
+struct LancePhysicalColumn
 {
-    if (field.isNull())
+    DataTypePtr type;
+    bool is_arrow_utf8 = false;
+};
+
+using LancePhysicalSchema = std::unordered_map<String, LancePhysicalColumn>;
+
+LancePhysicalSchema makeLancePhysicalSchema(
+    const NamesAndTypesList & schema,
+    const std::unordered_set<String> & utf8_columns)
+{
+    LancePhysicalSchema result;
+    result.reserve(schema.size());
+    for (const auto & column : schema)
+        result.emplace(column.name, LancePhysicalColumn{column.type, utf8_columns.contains(column.name)});
+    return result;
+}
+
+const ActionsDAG::Node * unwrapTransparentAlias(const ActionsDAG::Node & node)
+{
+    const ActionsDAG::Node * current = &node;
+    while (current->type == ActionsDAG::ActionType::ALIAS && current->children.size() == 1)
+        current = current->children.front();
+    return current;
+}
+
+struct LanceIdentifier
+{
+    String sql;
+    const LancePhysicalColumn * column = nullptr;
+};
+
+std::optional<LanceIdentifier> inputNodeToLanceIdentifier(
+    const ActionsDAG::Node & node,
+    const LancePhysicalSchema & physical_schema)
+{
+    const auto * input = unwrapTransparentAlias(node);
+    if (input->type != ActionsDAG::ActionType::INPUT)
         return std::nullopt;
 
-    const auto type = removeNullable(data_type);
-    const WhichDataType which(type);
+    const auto it = physical_schema.find(input->result_name);
+    if (it == physical_schema.end() || !input->result_type->equals(*it->second.type))
+        return std::nullopt;
 
-    if (which.isStringOrFixedString())
+    return LanceIdentifier{
+        .sql = quoteLanceIdentifier(input->result_name),
+        .column = &it->second,
+    };
+}
+
+bool isSupportedComparisonType(const LancePhysicalColumn & column, const String & function_name)
+{
+    if (column.type->isNullable())
+        return false;
+
+    const WhichDataType which(column.type);
+    if (which.isNativeInt())
+        return true;
+    if (which.isString() && column.is_arrow_utf8)
+        return function_name == "equals" || function_name == "notEquals";
+    return false;
+}
+
+std::optional<String> fieldToLanceLiteral(
+    const Field & field,
+    const DataTypePtr & constant_type,
+    const LancePhysicalColumn & column)
+{
+    if (field.isNull() || !constant_type->equals(*column.type))
+        return std::nullopt;
+
+    const WhichDataType which(column.type);
+    if (which.isString() && column.is_arrow_utf8)
         return quoteLanceStringLiteral(field.safeGet<String>());
-
-    if (which.isDate())
-    {
-        WriteBufferFromOwnString out;
-        writeDateText(DayNum(static_cast<UInt16>(field.safeGet<UInt64>())), out);
-        return fmt::format("DATE '{}'", out.str());
-    }
-
-    if (which.isDate32())
-    {
-        WriteBufferFromOwnString out;
-        writeDateText(ExtendedDayNum(static_cast<Int32>(field.safeGet<Int64>())), out);
-        return fmt::format("DATE '{}'", out.str());
-    }
-
-    if (which.isDateTime())
-    {
-        WriteBufferFromOwnString out;
-        const auto & time_zone = assert_cast<const DataTypeDateTime &>(*type).getTimeZone();
-        writeDateTimeText(static_cast<time_t>(field.safeGet<UInt64>()), out, time_zone);
-        return fmt::format("TIMESTAMP '{}'", out.str());
-    }
-
-    if (which.isDateTime64())
-    {
-        WriteBufferFromOwnString out;
-        const auto & date_time_type = assert_cast<const DataTypeDateTime64 &>(*type);
-        writeDateTimeText(field.safeGet<DateTime64>(), date_time_type.getScale(), out, date_time_type.getTimeZone());
-        return fmt::format("TIMESTAMP '{}'", out.str());
-    }
-
-    if (which.isNativeNumber())
+    if (which.isNativeInt())
         return applyVisitor(FieldVisitorToString(), field);
-
     return std::nullopt;
 }
 
-std::optional<String> constantNodeToLanceLiteral(const ActionsDAG::Node & node)
+std::optional<String> constantNodeToLanceLiteral(
+    const ActionsDAG::Node & node,
+    const LancePhysicalColumn & column)
 {
     if (node.type != ActionsDAG::ActionType::COLUMN || !node.column || node.column->empty())
         return std::nullopt;
@@ -405,14 +454,7 @@ std::optional<String> constantNodeToLanceLiteral(const ActionsDAG::Node & node)
     if (node.column->isNullAt(0))
         return std::nullopt;
 
-    return fieldToLanceLiteral((*node.column)[0], node.result_type);
-}
-
-std::optional<String> inputNodeToLanceIdentifier(const ActionsDAG::Node & node)
-{
-    if (node.type != ActionsDAG::ActionType::INPUT)
-        return std::nullopt;
-    return quoteLanceIdentifier(node.result_name);
+    return fieldToLanceLiteral((*node.column)[0], node.result_type, column);
 }
 
 std::optional<String> reverseComparison(const String & function_name)
@@ -458,10 +500,17 @@ struct LancePredicatePushdown
     bool is_complete = true;
 };
 
-std::optional<String> translateLancePredicateStrict(const ActionsDAG::Node & node, const ContextPtr & context);
+std::optional<String> translateLancePredicateStrict(
+    const ActionsDAG::Node & node,
+    const ContextPtr & context,
+    const LancePhysicalSchema & physical_schema);
 
 /// All-or-nothing boolean tree (used for OR and for strict translation of nested AND).
-std::optional<String> tryBuildBooleanPredicateStrict(const ActionsDAG::Node & node, const String & joiner, const ContextPtr & context)
+std::optional<String> tryBuildBooleanPredicateStrict(
+    const ActionsDAG::Node & node,
+    const String & joiner,
+    const ContextPtr & context,
+    const LancePhysicalSchema & physical_schema)
 {
     if (node.children.empty())
         return std::nullopt;
@@ -470,7 +519,7 @@ std::optional<String> tryBuildBooleanPredicateStrict(const ActionsDAG::Node & no
     predicates.reserve(node.children.size());
     for (const auto * child : node.children)
     {
-        if (auto predicate = translateLancePredicateStrict(*child, context))
+        if (auto predicate = translateLancePredicateStrict(*child, context, physical_schema))
             predicates.push_back(fmt::format("({})", *predicate));
         else
             return std::nullopt;
@@ -478,58 +527,76 @@ std::optional<String> tryBuildBooleanPredicateStrict(const ActionsDAG::Node & no
     return fmt::format("{}", fmt::join(predicates, joiner));
 }
 
-std::optional<String> tryBuildNullCheckPredicate(const ActionsDAG::Node & node, const String & function_name)
+std::optional<String> tryBuildNullCheckPredicate(
+    const ActionsDAG::Node & node,
+    const String & function_name,
+    const LancePhysicalSchema & physical_schema)
 {
     if (node.children.size() != 1)
         return std::nullopt;
 
-    auto identifier = inputNodeToLanceIdentifier(*node.children[0]);
-    if (!identifier)
+    auto identifier = inputNodeToLanceIdentifier(*node.children[0], physical_schema);
+    if (!identifier || !identifier->column->type->isNullable())
         return std::nullopt;
 
     if (function_name == "isNull")
-        return fmt::format("{} IS NULL", *identifier);
+        return fmt::format("{} IS NULL", identifier->sql);
     if (function_name == "isNotNull")
-        return fmt::format("{} IS NOT NULL", *identifier);
+        return fmt::format("{} IS NOT NULL", identifier->sql);
 
     return std::nullopt;
 }
 
-std::optional<String> tryBuildComparisonPredicate(const ActionsDAG::Node & node, const String & function_name)
+std::optional<String> tryBuildComparisonPredicate(
+    const ActionsDAG::Node & node,
+    const String & function_name,
+    const LancePhysicalSchema & physical_schema)
 {
     if (node.children.size() != 2)
         return std::nullopt;
 
+    const auto op = comparisonFunctionToLanceOperator(function_name);
+    if (!op)
+        return std::nullopt;
+
     const auto * lhs = node.children[0];
     const auto * rhs = node.children[1];
-    if (auto identifier = inputNodeToLanceIdentifier(*lhs))
+    if (auto identifier = inputNodeToLanceIdentifier(*lhs, physical_schema))
     {
-        if (auto literal = constantNodeToLanceLiteral(*rhs))
+        if (isSupportedComparisonType(*identifier->column, function_name))
         {
-            if (auto op = comparisonFunctionToLanceOperator(function_name))
-                return fmt::format("{} {} {}", *identifier, *op, *literal);
+            if (auto literal = constantNodeToLanceLiteral(*rhs, *identifier->column))
+                return fmt::format("{} {} {}", identifier->sql, *op, *literal);
         }
     }
 
-    if (auto identifier = inputNodeToLanceIdentifier(*rhs))
+    if (auto identifier = inputNodeToLanceIdentifier(*rhs, physical_schema))
     {
-        if (auto literal = constantNodeToLanceLiteral(*lhs))
+        if (isSupportedComparisonType(*identifier->column, function_name))
         {
-            if (auto op = reverseComparison(function_name))
-                return fmt::format("{} {} {}", *identifier, *op, *literal);
+            if (auto literal = constantNodeToLanceLiteral(*lhs, *identifier->column))
+            {
+                if (auto reverse_op = reverseComparison(function_name))
+                    return fmt::format("{} {} {}", identifier->sql, *reverse_op, *literal);
+            }
         }
     }
 
     return std::nullopt;
 }
 
-std::optional<String> tryBuildInPredicate(const ActionsDAG::Node & node, const ContextPtr & context)
+std::optional<String> tryBuildInPredicate(
+    const ActionsDAG::Node & node,
+    const ContextPtr & context,
+    const LancePhysicalSchema & physical_schema)
 {
     if (!context || node.children.size() != 2)
         return std::nullopt;
 
-    auto identifier = inputNodeToLanceIdentifier(*node.children[0]);
+    auto identifier = inputNodeToLanceIdentifier(*node.children[0], physical_schema);
     if (!identifier || !node.children[1]->column)
+        return std::nullopt;
+    if (!isSupportedComparisonType(*identifier->column, "equals"))
         return std::nullopt;
 
     const IColumn * column = node.children[1]->column.get();
@@ -551,15 +618,17 @@ std::optional<String> tryBuildInPredicate(const ActionsDAG::Node & node, const C
     set->checkColumnsNumber(1);
     const auto type = set->getElementsTypes()[0];
     const auto elements = set->getSetElements()[0];
+    if (!type->equals(*identifier->column->type) || elements->empty())
+        return std::nullopt;
 
     std::vector<String> literals;
     literals.reserve(elements->size());
     for (size_t i = 0; i < elements->size(); ++i)
     {
         if (elements->isNullAt(i))
-            continue;
+            return std::nullopt;
 
-        if (auto literal = fieldToLanceLiteral((*elements)[i], type))
+        if (auto literal = fieldToLanceLiteral((*elements)[i], type, *identifier->column))
             literals.push_back(*literal);
         else
             return std::nullopt;
@@ -568,37 +637,43 @@ std::optional<String> tryBuildInPredicate(const ActionsDAG::Node & node, const C
     if (literals.empty())
         return std::nullopt;
 
-    return fmt::format("{} IN ({})", *identifier, fmt::join(literals, ", "));
+    return fmt::format("{} IN ({})", identifier->sql, fmt::join(literals, ", "));
 }
 
 /// Strict (all-or-nothing) translation of a filter subtree, including nested AND/OR.
-std::optional<String> translateLancePredicateStrict(const ActionsDAG::Node & node, const ContextPtr & context)
+std::optional<String> translateLancePredicateStrict(
+    const ActionsDAG::Node & node,
+    const ContextPtr & context,
+    const LancePhysicalSchema & physical_schema)
 {
     if (node.type == ActionsDAG::ActionType::ALIAS && node.children.size() == 1)
-        return translateLancePredicateStrict(*node.children.front(), context);
+        return translateLancePredicateStrict(*node.children.front(), context, physical_schema);
 
     if (node.type != ActionsDAG::ActionType::FUNCTION || !node.function_base)
         return std::nullopt;
 
     const auto function_name = node.function_base->getName();
     if (function_name == "and")
-        return tryBuildBooleanPredicateStrict(node, " AND ", context);
+        return tryBuildBooleanPredicateStrict(node, " AND ", context, physical_schema);
 
     if (function_name == "or")
-        return tryBuildBooleanPredicateStrict(node, " OR ", context);
+        return tryBuildBooleanPredicateStrict(node, " OR ", context, physical_schema);
 
     if (function_name == "isNull" || function_name == "isNotNull")
-        return tryBuildNullCheckPredicate(node, function_name);
+        return tryBuildNullCheckPredicate(node, function_name, physical_schema);
 
     if (function_name == "in")
-        return tryBuildInPredicate(node, context);
+        return tryBuildInPredicate(node, context, physical_schema);
 
-    return tryBuildComparisonPredicate(node, function_name);
+    return tryBuildComparisonPredicate(node, function_name, physical_schema);
 }
 
 /// Partial AND: flatten conjuncts with extractConjunctionAtoms, push every atom that
 /// translates strictly (OR atoms remain all-or-nothing). Residual FilterStep stays in plan.
-LancePredicatePushdown extractLancePredicatePushdown(const ActionsDAG::Node & node, const ContextPtr & context)
+LancePredicatePushdown extractLancePredicatePushdown(
+    const ActionsDAG::Node & node,
+    const ContextPtr & context,
+    const LancePhysicalSchema & physical_schema)
 {
     const ActionsDAG::Node * root = &node;
     while (root->type == ActionsDAG::ActionType::ALIAS && root->children.size() == 1)
@@ -613,7 +688,7 @@ LancePredicatePushdown extractLancePredicatePushdown(const ActionsDAG::Node & no
     size_t failed = 0;
     for (const auto * atom : atoms)
     {
-        if (auto predicate = translateLancePredicateStrict(*atom, context))
+        if (auto predicate = translateLancePredicateStrict(*atom, context, physical_schema))
             pushed.push_back(fmt::format("({})", *predicate));
         else
             ++failed;
@@ -628,16 +703,24 @@ LancePredicatePushdown extractLancePredicatePushdown(const ActionsDAG::Node & no
     };
 }
 
-LancePredicatePushdown extractLancePredicatePushdown(const FormatFilterInfoPtr & format_filter_info)
+LancePredicatePushdown extractLancePredicatePushdown(
+    const FormatFilterInfoPtr & format_filter_info,
+    const LancePhysicalSchema & physical_schema)
 {
-    if (!format_filter_info || !format_filter_info->filter_actions_dag)
+    if (!format_filter_info)
+        return {.predicate = std::nullopt, .is_complete = true};
+
+    if (format_filter_info->prewhere_info || format_filter_info->row_level_filter)
+        return {.predicate = std::nullopt, .is_complete = false};
+
+    if (!format_filter_info->filter_actions_dag)
         return {.predicate = std::nullopt, .is_complete = true};
 
     const auto & outputs = format_filter_info->filter_actions_dag->getOutputs();
     if (outputs.size() != 1)
         return {.predicate = std::nullopt, .is_complete = false};
 
-    return extractLancePredicatePushdown(*outputs.front(), format_filter_info->context.lock());
+    return extractLancePredicatePushdown(*outputs.front(), format_filter_info->context.lock(), physical_schema);
 }
 
 std::pair<Names, NamesAndTypesList> splitVirtualColumns(
@@ -656,6 +739,56 @@ std::pair<Names, NamesAndTypesList> splitVirtualColumns(
     }
 
     return {physical_columns, virtual_columns};
+}
+
+NamesAndTypesList collectResidualPhysicalColumns(
+    const FormatFilterInfoPtr & format_filter_info,
+    const NamesAndTypesList & requested_virtual_columns,
+    bool predicate_is_complete)
+{
+    if (!format_filter_info || predicate_is_complete)
+        return {};
+
+    std::unordered_set<String> virtual_names;
+    virtual_names.reserve(requested_virtual_columns.size());
+    for (const auto & column : requested_virtual_columns)
+        virtual_names.insert(column.name);
+
+    NamesAndTypesList result;
+    std::unordered_map<String, DataTypePtr> result_types;
+    const auto add_required_columns = [&](const ActionsDAG & actions)
+    {
+        for (const auto & column : actions.getRequiredColumns())
+        {
+            if (virtual_names.contains(column.name))
+                continue;
+
+            const auto [it, inserted] = result_types.emplace(column.name, column.type);
+            if (!inserted)
+            {
+                if (!it->second->equals(*column.type))
+                {
+                    throw Exception(
+                        ErrorCodes::LOGICAL_ERROR,
+                        "Residual `Lance` predicate requires column '{}' with inconsistent types '{}' and '{}'",
+                        column.name,
+                        it->second->getName(),
+                        column.type->getName());
+                }
+                continue;
+            }
+            result.emplace_back(column.name, column.type);
+        }
+    };
+
+    if (format_filter_info->filter_actions_dag)
+        add_required_columns(*format_filter_info->filter_actions_dag);
+    if (format_filter_info->prewhere_info)
+        add_required_columns(format_filter_info->prewhere_info->prewhere_actions);
+    if (format_filter_info->row_level_filter)
+        add_required_columns(format_filter_info->row_level_filter->actions);
+
+    return result;
 }
 
 void validateExplicitLanceSchema(const NamesAndTypesList & explicit_schema, const NamesAndTypesList & inferred_schema)
@@ -734,14 +867,13 @@ NamesAndTypesList LanceMetadata::getTableSchema(ContextPtr local_context) const
         auto session = Lance::QuerySession::get(local_context);
         auto dataset = session->getOrOpen(options);
         const auto snapshot = dataset.currentSnapshot();
-        session->pinVersion(dataset.identityKey(), snapshot.version);
-        return dataset.tableSchema(
-            Lance::TableStateSnapshot{snapshot.version}, local_context, session->getCancelHandle());
+        session->pinSnapshot(dataset.identityKey(), snapshot);
+        return dataset.tableSchema(snapshot, local_context, session->getCancelHandle());
     }
 
     auto dataset = Lance::DatasetHandle::openEphemeral(options);
     const auto snapshot = dataset.currentSnapshot();
-    return dataset.tableSchema(Lance::TableStateSnapshot{snapshot.version}, local_context);
+    return dataset.tableSchema(snapshot, local_context);
 }
 
 std::optional<DataLakeTableStateSnapshot> LanceMetadata::getTableStateSnapshot(ContextPtr local_context) const
@@ -755,15 +887,15 @@ std::optional<DataLakeTableStateSnapshot> LanceMetadata::getTableStateSnapshot(C
         const auto snapshot = dataset.currentSnapshot();
         if (snapshot.version == 0)
             throw Exception(ErrorCodes::LOGICAL_ERROR, "`Lance` returned zero as the current dataset version");
-        session->pinVersion(dataset.identityKey(), snapshot.version);
-        return DataLakeTableStateSnapshot{Lance::TableStateSnapshot{snapshot.version}};
+        session->pinSnapshot(dataset.identityKey(), snapshot);
+        return DataLakeTableStateSnapshot{snapshot};
     }
 
     dataset = Lance::DatasetHandle::openEphemeral(options);
     const auto snapshot = dataset.currentSnapshot();
     if (snapshot.version == 0)
         throw Exception(ErrorCodes::LOGICAL_ERROR, "`Lance` returned zero as the current dataset version");
-    return DataLakeTableStateSnapshot{Lance::TableStateSnapshot{snapshot.version}};
+    return DataLakeTableStateSnapshot{snapshot};
 }
 
 std::unique_ptr<StorageInMemoryMetadata> LanceMetadata::buildStorageMetadataFromState(
@@ -780,7 +912,7 @@ std::unique_ptr<StorageInMemoryMetadata> LanceMetadata::buildStorageMetadataFrom
     if (local_context && local_context->hasQueryContext())
     {
         auto session = Lance::QuerySession::get(local_context);
-        dataset = session->getPinned(options, lance_state->version);
+        dataset = session->getPinned(options, *lance_state);
         auto result = std::make_unique<StorageInMemoryMetadata>();
         result->setColumns(ColumnsDescription{
             dataset.tableSchema(*lance_state, local_context, session->getCancelHandle())});
@@ -810,7 +942,7 @@ ReadFromFormatInfo LanceMetadata::prepareReadingFromFormat(
     std::tie(physical_columns, info.requested_virtual_columns)
         = splitVirtualColumns(requested_columns, storage_snapshot->metadata->virtuals);
 
-    /// `Lance::ReadSource` reads the dataset itself and emits only physical columns.
+    /// `Lance::BatchSource` reads the dataset itself and emits only physical columns.
     /// `StorageObjectStorageSource` appends requested file-like virtual columns after
     /// the custom source has produced a chunk, so the source header must describe the
     /// final physical-plus-virtual chunk while `requested_columns` stays physical-only.
@@ -853,7 +985,7 @@ ObjectIterator LanceMetadata::iterate(
     if (local_context && local_context->hasQueryContext())
     {
         session = Lance::QuerySession::get(local_context);
-        dataset = session->getPinned(options, snapshot.version);
+        dataset = session->getPinned(options, snapshot);
     }
     else
         dataset = Lance::DatasetHandle::openEphemeral(options);
@@ -912,57 +1044,179 @@ std::optional<Pipe> LanceMetadata::read(
     std::optional<size_t> limit) const
 {
     const auto & lance_object = extractLanceObjectInfo(object_info);
-    const auto & snapshot = lance_object.snapshot;
-
-    Lance::CancelHandlePtr cancel_handle = std::make_shared<Lance::CancelHandle>();
-    Lance::DatasetHandle dataset = lance_object.dataset;
-    if (!dataset)
-    {
-        const auto options = getDatasetOptions(local_context);
-        if (local_context && local_context->hasQueryContext())
+    ColumnsWithTypeAndName physical_columns;
+    physical_columns.reserve(read_from_format_info.requested_columns.size());
+    for (const auto & column : read_from_format_info.requested_columns)
+        physical_columns.emplace_back(column.type->createColumn(), column.type, column.name);
+    const Block physical_header(std::move(physical_columns));
+    const size_t requested_sources = std::max<size_t>(
+        1,
+        static_cast<size_t>(std::min<UInt64>(local_context->getSettingsRef()[Setting::max_threads], std::numeric_limits<size_t>::max())));
+    return makeReadPipe(
+        lance_object.snapshot,
+        lance_object.fragment_ids,
+        read_from_format_info,
+        format_settings,
+        std::move(local_context),
+        max_block_size,
+        requested_sources,
+        std::move(format_filter_info),
+        need_only_count,
+        limit,
+        physical_header,
+        {},
         {
-            auto session = Lance::QuerySession::get(local_context);
-            dataset = session->getPinned(options, snapshot.version);
-            cancel_handle = session->getCancelHandle();
-        }
-        else
-            dataset = Lance::DatasetHandle::openEphemeral(options);
-    }
-    else if (local_context && local_context->hasQueryContext())
+            .path = {},
+            .storage_id = StorageID::createEmpty(),
+            .snapshot_version = lance_object.snapshot.version,
+        });
+}
+
+std::optional<Pipe> LanceMetadata::readDataset(
+    const StorageSnapshotPtr & storage_snapshot,
+    const ReadFromFormatInfo & read_from_format_info,
+    const std::optional<FormatSettings> & format_settings,
+    ContextPtr local_context,
+    size_t max_block_size,
+    size_t num_streams,
+    FormatFilterInfoPtr format_filter_info,
+    bool need_only_count,
+    std::optional<size_t> limit,
+    bool distributed_processing) const
+{
+    if (distributed_processing)
+        return std::nullopt;
+    if (!storage_snapshot || !storage_snapshot->metadata || !storage_snapshot->metadata->datalake_table_state)
+        throw Exception(ErrorCodes::LOGICAL_ERROR, "No pinned table state found for local `Lance` dataset read");
+
+    const auto * snapshot = std::get_if<Lance::TableStateSnapshot>(&storage_snapshot->metadata->datalake_table_state.value());
+    if (!snapshot)
+        throw Exception(ErrorCodes::LOGICAL_ERROR, "Unexpected pinned table state type for local `Lance` dataset read");
+
+    FailPointInjection::pauseFailPoint(FailPoints::lance_metadata_iterate_pause);
+
+    const auto options = getDatasetOptions(local_context);
+    return makeReadPipe(
+        *snapshot,
+        {},
+        read_from_format_info,
+        format_settings,
+        std::move(local_context),
+        max_block_size,
+        std::max<size_t>(1, num_streams),
+        std::move(format_filter_info),
+        need_only_count,
+        limit,
+        read_from_format_info.source_header,
+        read_from_format_info.requested_virtual_columns,
+        {
+            .path = lanceDatasetVirtualPath(options.uri),
+            .storage_id = storage_snapshot->storage.getStorageID(),
+            .snapshot_version = snapshot->version,
+        });
+}
+
+Pipe LanceMetadata::makeReadPipe(
+    const Lance::TableStateSnapshot & snapshot,
+    const std::vector<UInt64> & fragment_ids,
+    const ReadFromFormatInfo & read_from_format_info,
+    const std::optional<FormatSettings> & format_settings,
+    ContextPtr local_context,
+    size_t max_block_size,
+    size_t requested_sources,
+    FormatFilterInfoPtr format_filter_info,
+    bool need_only_count,
+    std::optional<size_t> limit,
+    const Block & output_header,
+    NamesAndTypesList requested_virtual_columns,
+    Lance::ReadVirtualValues virtual_values) const
+{
+    const auto options = getDatasetOptions(local_context);
+    auto cancellation = std::make_shared<Lance::ReadCancellation>(local_context);
+    const auto & cancel_handle = cancellation->handle();
+    Lance::DatasetHandle dataset;
+    if (local_context && local_context->hasQueryContext())
     {
-        /// Source of truth is the query session; ObjectInfo handle is a fast path that must match.
         auto session = Lance::QuerySession::get(local_context);
-        auto session_handle = session->getPinned(getDatasetOptions(local_context), snapshot.version);
-        if (session_handle.identityKey() != dataset.identityKey())
-        {
-            throw Exception(
-                ErrorCodes::LOGICAL_ERROR,
-                "Lance ObjectInfo dataset identity does not match the query session handle");
-        }
-        dataset = std::move(session_handle);
-        cancel_handle = session->getCancelHandle();
+        dataset = session->getPinned(options, snapshot);
     }
-
-    const auto predicate_pushdown = extractLancePredicatePushdown(format_filter_info);
-    /// Partial predicates must not feed countRows (would over-count). Fall back to scan + residual.
-    const bool effective_need_only_count = need_only_count && predicate_pushdown.is_complete;
-
-    Names scan_projection = read_from_format_info.requested_columns.getNames();
-    bool discard_output_columns = false;
-    if (!effective_need_only_count && scan_projection.empty())
+    else
     {
-        const auto schema = dataset.tableSchema(snapshot, local_context, cancel_handle);
-        if (schema.empty())
-            throw Exception(ErrorCodes::LOGICAL_ERROR, "Cannot scan a `Lance` dataset without physical columns");
-
-        scan_projection.push_back(schema.front().name);
-        discard_output_columns = true;
+        dataset = Lance::DatasetHandle::openEphemeral(options, cancel_handle);
     }
 
-    /// LIMIT is safe only when the residual filter cannot drop rows after the source
-    /// (no filter, or the full filter was translated into Lance).
+    const auto & settings = local_context->getSettingsRef();
+    const bool has_filter = format_filter_info
+        && (format_filter_info->filter_actions_dag
+            || format_filter_info->prewhere_info
+            || format_filter_info->row_level_filter);
+
+    LancePredicatePushdown predicate_pushdown;
+    std::optional<NamesAndTypesList> pinned_physical_columns;
+    if (!settings[Setting::lance_enable_predicate_pushdown])
+    {
+        predicate_pushdown = {
+            .predicate = std::nullopt,
+            .is_complete = !has_filter,
+        };
+        if (has_filter)
+            ProfileEvents::increment(ProfileEvents::LancePredicatePushdownDisabled);
+    }
+    else if (has_filter)
+    {
+        std::unordered_set<String> utf8_columns;
+        pinned_physical_columns = dataset.tableSchema(snapshot, local_context, cancel_handle, &utf8_columns);
+        const auto physical_schema = makeLancePhysicalSchema(*pinned_physical_columns, utf8_columns);
+        predicate_pushdown = extractLancePredicatePushdown(format_filter_info, physical_schema);
+    }
+
+    const bool effective_need_only_count = need_only_count && predicate_pushdown.is_complete;
+    Names scan_projection = read_from_format_info.requested_columns.getNames();
+    if (effective_need_only_count)
+        scan_projection.clear();
+
+    const auto residual_physical_columns = collectResidualPhysicalColumns(
+        format_filter_info, requested_virtual_columns, predicate_pushdown.is_complete);
+    std::unordered_set<String> projected_names(scan_projection.begin(), scan_projection.end());
+    for (const auto & column : residual_physical_columns)
+    {
+        if (projected_names.emplace(column.name).second)
+            scan_projection.push_back(column.name);
+    }
+
+    if (!residual_physical_columns.empty())
+    {
+        if (!pinned_physical_columns)
+            pinned_physical_columns = dataset.tableSchema(snapshot, local_context, cancel_handle);
+        std::unordered_map<String, DataTypePtr> physical_types;
+        physical_types.reserve(pinned_physical_columns->size());
+        for (const auto & column : *pinned_physical_columns)
+            physical_types.emplace(column.name, column.type);
+        for (const auto & column : residual_physical_columns)
+        {
+            const auto it = physical_types.find(column.name);
+            if (it == physical_types.end())
+            {
+                throw Exception(
+                    ErrorCodes::LOGICAL_ERROR,
+                    "Residual `Lance` predicate requires missing physical column '{}'",
+                    column.name);
+            }
+            if (!it->second->equals(*column.type))
+            {
+                throw Exception(
+                    ErrorCodes::LOGICAL_ERROR,
+                    "Residual `Lance` predicate requires column '{}' with type '{}', but the pinned dataset schema has type '{}'",
+                    column.name,
+                    column.type->getName(),
+                    it->second->getName());
+            }
+        }
+    }
+    const bool use_row_count_source = scan_projection.empty() && residual_physical_columns.empty();
+
     std::optional<UInt64> scan_limit;
-    if (limit && *limit > 0 && !effective_need_only_count && predicate_pushdown.is_complete)
+    if (limit && *limit > 0 && !use_row_count_source && predicate_pushdown.is_complete && fragment_ids.empty())
         scan_limit = static_cast<UInt64>(*limit);
 
     if (predicate_pushdown.is_complete)
@@ -973,7 +1227,6 @@ std::optional<Pipe> LanceMetadata::read(
         ProfileEvents::increment(ProfileEvents::LanceLimitPushdown);
     ProfileEvents::increment(ProfileEvents::LanceProjectedColumns, scan_projection.size());
 
-    const auto & settings = local_context->getSettingsRef();
     const bool scan_in_order = settings[Setting::lance_scan_in_order];
     const auto to_u32_setting = [](UInt64 value, const char * setting_name) -> UInt32
     {
@@ -983,46 +1236,127 @@ std::optional<Pipe> LanceMetadata::read(
     };
     const UInt32 fragment_readahead = to_u32_setting(settings[Setting::lance_fragment_readahead], "lance_fragment_readahead");
     const UInt32 batch_readahead = to_u32_setting(settings[Setting::lance_batch_readahead], "lance_batch_readahead");
-    const UInt64 io_buffer_size = settings[Setting::lance_io_buffer_size];
 
-    if (!scan_in_order)
+    size_t source_count = 1;
+    if (!scan_in_order && !use_row_count_source)
+    {
+        const UInt64 configured_max = settings[Setting::lance_max_batch_sources];
+        const size_t max_sources = configured_max == 0
+            ? requested_sources
+            : static_cast<size_t>(std::min<UInt64>(configured_max, std::numeric_limits<size_t>::max()));
+        source_count = std::max<size_t>(1, std::min(requested_sources, max_sources));
+    }
+
+    constexpr UInt64 MAX_QUEUE_CAPACITY = 1U << 20;
+    constexpr UInt64 AUTO_QUEUE_BYTES = 64U * 1024 * 1024;
+    constexpr UInt64 MAX_QUEUE_BYTES = 16ULL * 1024 * 1024 * 1024;
+    UInt64 queue_capacity = settings[Setting::lance_batch_queue_capacity];
+    if (queue_capacity == 0)
+    {
+        if (source_count > MAX_QUEUE_CAPACITY / 2)
+            throw Exception(ErrorCodes::BAD_ARGUMENTS, "Too many `Lance` batch Sources: {}", source_count);
+        queue_capacity = std::max<UInt64>(2, static_cast<UInt64>(source_count) * 2);
+    }
+    if (queue_capacity > MAX_QUEUE_CAPACITY)
+        throw Exception(ErrorCodes::BAD_ARGUMENTS, "Setting lance_batch_queue_capacity is too large: {}", queue_capacity);
+
+    UInt64 queue_bytes = settings[Setting::lance_batch_queue_bytes];
+    if (queue_bytes == 0)
+        queue_bytes = AUTO_QUEUE_BYTES;
+    if (queue_bytes > MAX_QUEUE_BYTES)
+        throw Exception(ErrorCodes::BAD_ARGUMENTS, "Setting lance_batch_queue_bytes is too large: {}", queue_bytes);
+    /// TODO: Charge Rust-owned Arrow allocations to the ClickHouse `MemoryTracker`.
+    /// Until then, this hard queue limit bounds queued memory; Lance readahead, one
+    /// pending producer batch, and one in-flight batch per Source remain untracked.
+
+    if (!scan_in_order && !use_row_count_source)
         ProfileEvents::increment(ProfileEvents::LanceScanUnordered);
 
-    Lance::ScanDescription scan
-    {
+    Lance::ScanDescription scan_description{
         .snapshot = snapshot,
-        .projection = std::move(scan_projection),
+        .projection = scan_projection,
         .predicate = predicate_pushdown.predicate,
         .predicate_is_complete = predicate_pushdown.is_complete,
         .max_block_size = max_block_size,
         .limit = scan_limit,
-        .need_only_count = effective_need_only_count,
-        .discard_output_columns = discard_output_columns,
+        .need_only_count = use_row_count_source,
         .scan_in_order = scan_in_order,
         .fragment_readahead = fragment_readahead,
         .batch_readahead = batch_readahead,
-        .io_buffer_size = io_buffer_size,
-        .fragment_ids = lance_object.fragment_ids,
+        .io_buffer_size = settings[Setting::lance_io_buffer_size],
+        .queue_capacity = queue_capacity,
+        .queue_bytes = queue_bytes,
+        .fragment_ids = fragment_ids,
     };
 
-    ColumnsWithTypeAndName physical_columns;
-    physical_columns.reserve(read_from_format_info.requested_columns.size());
-    for (const auto & column : read_from_format_info.requested_columns)
-        physical_columns.emplace_back(column.type->createColumn(), column.type, column.name);
+    if (use_row_count_source)
+    {
+        ColumnsWithTypeAndName row_count_columns;
+        row_count_columns.reserve(requested_virtual_columns.size());
+        for (const auto & column : output_header)
+        {
+            if (requested_virtual_columns.contains(column.name))
+                row_count_columns.emplace_back(column.type->createColumn(), column.type, column.name);
+        }
+        if (row_count_columns.size() != requested_virtual_columns.size())
+        {
+            throw Exception(
+                ErrorCodes::LOGICAL_ERROR,
+                "`Lance` row-count Source header is missing one or more requested virtual columns");
+        }
+        Block row_count_header(std::move(row_count_columns));
+        auto source = std::make_shared<Lance::CountSource>(
+            row_count_header,
+            std::move(dataset),
+            std::move(scan_description),
+            std::move(cancellation),
+            std::move(requested_virtual_columns),
+            std::move(virtual_values),
+            std::move(local_context),
+            format_settings);
+        ProfileEvents::increment(ProfileEvents::LanceCountSources);
+        return Pipe(std::move(source));
+    }
 
-    /// `read_from_format_info.source_header` is the final header expected from
-    /// `StorageObjectStorageSource` after virtual columns are appended. `Lance::ReadSource`
-    /// itself must emit only physical Lance columns; otherwise virtual-only reads such as
-    /// `_data_lake_snapshot_version` make the custom source produce an empty chunk for a
-    /// non-empty header.
-    auto source = std::make_shared<Lance::ReadSource>(
-        Block(std::move(physical_columns)),
-        std::move(object_info),
-        std::move(dataset),
-        std::move(scan),
-        std::move(cancel_handle),
-        format_settings ? *format_settings : getFormatSettings(local_context));
-    return Pipe(source);
+    ColumnsWithTypeAndName physical_columns;
+    physical_columns.reserve(scan_projection.size());
+    std::unordered_map<String, DataTypePtr> projected_types;
+    projected_types.reserve(read_from_format_info.requested_columns.size() + residual_physical_columns.size());
+    for (const auto & column : read_from_format_info.requested_columns)
+        projected_types.emplace(column.name, column.type);
+    for (const auto & column : residual_physical_columns)
+        projected_types.emplace(column.name, column.type);
+    for (const auto & column_name : scan_projection)
+    {
+        const auto it = projected_types.find(column_name);
+        if (it == projected_types.end())
+        {
+            throw Exception(
+                ErrorCodes::LOGICAL_ERROR,
+                "No ClickHouse type is available for projected `Lance` column '{}'",
+                column_name);
+        }
+        physical_columns.emplace_back(it->second->createColumn(), it->second, column_name);
+    }
+    Block physical_header(std::move(physical_columns));
+
+    auto coordinator = Lance::ScanCoordinator::create(std::move(dataset), scan_description, std::move(cancellation));
+    ProfileEvents::increment(ProfileEvents::LanceBatchSources, source_count);
+    Pipes pipes;
+    pipes.reserve(source_count);
+    const auto effective_format_settings = format_settings ? *format_settings : getFormatSettings(local_context);
+    for (size_t index = 0; index < source_count; ++index)
+    {
+        pipes.emplace_back(std::make_shared<Lance::BatchSource>(
+            output_header,
+            physical_header,
+            coordinator,
+            requested_virtual_columns,
+            virtual_values,
+            local_context,
+            effective_format_settings));
+    }
+    return Pipe::unitePipes(std::move(pipes));
 }
 
 Lance::DatasetOptions LanceMetadata::getDatasetOptions(const ContextPtr & local_context) const

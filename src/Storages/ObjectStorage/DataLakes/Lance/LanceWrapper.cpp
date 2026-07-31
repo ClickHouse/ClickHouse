@@ -17,6 +17,7 @@
 
 #include <fmt/format.h>
 
+#include <algorithm>
 #include <limits>
 #include <utility>
 
@@ -31,6 +32,8 @@ extern const Event LanceNextBatchMicroseconds;
 extern const Event LanceRuntimeInit;
 extern const Event LanceCountRows;
 extern const Event LanceCountRowsMicroseconds;
+extern const Event LanceListFragmentsCalls;
+extern const Event LanceSnapshotIdentityMismatch;
 }
 
 namespace DB
@@ -44,6 +47,7 @@ extern const int CANNOT_OPEN_FILE;
 extern const int FILE_DOESNT_EXIST;
 extern const int INCORRECT_DATA;
 extern const int LOGICAL_ERROR;
+extern const int MEMORY_LIMIT_EXCEEDED;
 extern const int QUERY_WAS_CANCELLED;
 extern const int S3_ERROR;
 extern const int UNKNOWN_EXCEPTION;
@@ -86,6 +90,9 @@ int toClickHouseErrorCode(UInt32 kind, UInt32 origin)
             return ErrorCodes::UNKNOWN_EXCEPTION;
         case CH_LANCE_ERROR_CANCELLED:
             return ErrorCodes::QUERY_WAS_CANCELLED;
+        case CH_LANCE_ERROR_SNAPSHOT_MISMATCH:
+            return ErrorCodes::INCORRECT_DATA;
+        case CH_LANCE_ERROR_MEMORY_LIMIT: return ErrorCodes::MEMORY_LIMIT_EXCEEDED;
     }
     return ErrorCodes::UNKNOWN_EXCEPTION;
 }
@@ -122,7 +129,9 @@ LanceError takeError(ch_lance_error & error)
         throw Exception(ErrorCodes::LOGICAL_ERROR, "Lance FFI call failed without an error kind: {}", message);
 
     const auto code = ErrorMapping::toClickHouseErrorCode(lance_error.kind, lance_error.origin);
-    if (lance_error.kind > CH_LANCE_ERROR_CANCELLED)
+    if (lance_error.kind == CH_LANCE_ERROR_SNAPSHOT_MISMATCH)
+        ProfileEvents::increment(ProfileEvents::LanceSnapshotIdentityMismatch);
+    if (lance_error.kind > CH_LANCE_ERROR_MEMORY_LIMIT)
         throw Exception(code, "Unknown Lance FFI error kind {}: {}", lance_error.kind, message);
     throw Exception(code, "{}", message);
 }
@@ -148,6 +157,23 @@ ch_lance_dataset_options toNativeOptions(const DatasetOptions & options, ch_lanc
         .s3_connect_timeout_ms = options.s3_connect_timeout_ms,
         .cancel = cancel,
     };
+}
+
+ch_lance_snapshot_info toNativeSnapshot(const TableStateSnapshot & snapshot)
+{
+    snapshot.validate(ErrorCodes::LOGICAL_ERROR);
+    ch_lance_snapshot_info native{
+        .version = snapshot.version,
+        .manifest_id = {},
+        .manifest_size = snapshot.manifest_size,
+        .manifest_sha256 = {},
+        .has_etag = snapshot.has_etag,
+        .etag_sha256 = {},
+    };
+    std::copy(snapshot.manifest_id.begin(), snapshot.manifest_id.end(), native.manifest_id);
+    std::copy(snapshot.manifest_sha256.begin(), snapshot.manifest_sha256.end(), native.manifest_sha256);
+    std::copy(snapshot.etag_sha256.begin(), snapshot.etag_sha256.end(), native.etag_sha256);
+    return native;
 }
 
 }
@@ -286,28 +312,52 @@ ch_lance_dataset * DatasetHandle::raw() const
     return impl->dataset;
 }
 
-SnapshotInfo DatasetHandle::currentSnapshot() const
+TableStateSnapshot DatasetHandle::currentSnapshot() const
 {
     ch_lance_snapshot_info snapshot{};
     ch_lance_error error{};
     if (!ch_lance_current_snapshot(raw(), &snapshot, &error))
         throwLanceError(error);
-    return SnapshotInfo{snapshot.version};
+    TableStateSnapshot result{
+        .version = snapshot.version,
+        .manifest_id = {},
+        .manifest_size = snapshot.manifest_size,
+        .manifest_sha256 = {},
+        .has_etag = snapshot.has_etag,
+        .etag_sha256 = {},
+    };
+    std::copy(std::begin(snapshot.manifest_id), std::end(snapshot.manifest_id), result.manifest_id.begin());
+    std::copy(std::begin(snapshot.manifest_sha256), std::end(snapshot.manifest_sha256), result.manifest_sha256.begin());
+    std::copy(std::begin(snapshot.etag_sha256), std::end(snapshot.etag_sha256), result.etag_sha256.begin());
+    result.validate(ErrorCodes::INCORRECT_DATA);
+    return result;
 }
 
 NamesAndTypesList DatasetHandle::tableSchema(
     const TableStateSnapshot & snapshot,
     ContextPtr context,
-    const CancelHandlePtr & cancel) const
+    const CancelHandlePtr & cancel,
+    std::unordered_set<String> * utf8_columns) const
 {
     ArrowSchema schema{};
     ch_lance_error error{};
-    if (!ch_lance_export_schema(raw(), snapshot.version, &schema, cancel ? cancel->raw() : nullptr, &error))
+    const auto native_snapshot = toNativeSnapshot(snapshot);
+    if (!ch_lance_export_schema(raw(), &native_snapshot, &schema, cancel ? cancel->raw() : nullptr, &error))
         throwLanceError(error, fmt::format("Cannot export schema for `Lance` dataset version {}", snapshot.version));
 
     auto arrow_schema = arrow::ImportSchema(&schema);
     if (!arrow_schema.ok())
         throw Exception(ErrorCodes::INCORRECT_DATA, "Failed to import Lance Arrow schema: {}", arrow_schema.status().ToString());
+
+    if (utf8_columns)
+    {
+        utf8_columns->clear();
+        for (const auto & field : (*arrow_schema)->fields())
+        {
+            if (field->type()->id() == arrow::Type::STRING || field->type()->id() == arrow::Type::LARGE_STRING)
+                utf8_columns->insert(field->name());
+        }
+    }
 
     const auto format_settings = getFormatSettings(context);
     const auto header = ArrowColumnToCHColumn::arrowSchemaToCHHeader(
@@ -329,7 +379,8 @@ std::optional<size_t> DatasetHandle::totalRows(const TableStateSnapshot & snapsh
     bool has_value = false;
     Stopwatch watch;
     ch_lance_error error{};
-    if (!ch_lance_total_rows(raw(), snapshot.version, &rows, &has_value, cancel ? cancel->raw() : nullptr, &error))
+    const auto native_snapshot = toNativeSnapshot(snapshot);
+    if (!ch_lance_total_rows(raw(), &native_snapshot, &rows, &has_value, cancel ? cancel->raw() : nullptr, &error))
         throwLanceError(error, fmt::format("Cannot count rows in `Lance` dataset version {}", snapshot.version));
     ProfileEvents::increment(ProfileEvents::LanceCountRows);
     ProfileEvents::increment(ProfileEvents::LanceCountRowsMicroseconds, watch.elapsedMicroseconds());
@@ -348,9 +399,10 @@ std::optional<size_t> DatasetHandle::countRows(
     bool has_value = false;
     Stopwatch watch;
     ch_lance_error error{};
+    const auto native_snapshot = toNativeSnapshot(snapshot);
     if (!ch_lance_count_rows(
             raw(),
-            snapshot.version,
+            &native_snapshot,
             predicate ? predicate->c_str() : nullptr,
             fragment_ids.empty() ? nullptr : fragment_ids.data(),
             fragment_ids.size(),
@@ -380,10 +432,12 @@ std::optional<size_t> DatasetHandle::totalBytes() const
 
 std::vector<FragmentInfo> DatasetHandle::listFragments(const TableStateSnapshot & snapshot, const CancelHandlePtr & cancel) const
 {
+    ProfileEvents::increment(ProfileEvents::LanceListFragmentsCalls);
     ch_lance_fragment_info * list = nullptr;
     size_t size = 0;
     ch_lance_error error{};
-    if (!ch_lance_list_fragments(raw(), snapshot.version, &list, &size, cancel ? cancel->raw() : nullptr, &error))
+    const auto native_snapshot = toNativeSnapshot(snapshot);
+    if (!ch_lance_list_fragments(raw(), &native_snapshot, &list, &size, cancel ? cancel->raw() : nullptr, &error))
         throwLanceError(error, fmt::format("Cannot list fragments for `Lance` dataset version {}", snapshot.version));
 
     std::vector<FragmentInfo> result;
@@ -415,8 +469,9 @@ Scan DatasetHandle::planScan(const ScanDescription & scan_description, const Can
     };
     /// Keep fragment id storage alive for the duration of ch_lance_plan_scan.
     const auto & fragment_ids = scan_description.fragment_ids;
+    const auto native_snapshot = toNativeSnapshot(scan_description.snapshot);
     ch_lance_scan_options options{
-        .version = scan_description.snapshot.version,
+        .snapshot = native_snapshot,
         .projection = projection_list,
         .predicate = scan_description.predicate ? scan_description.predicate->c_str() : nullptr,
         .need_only_count = scan_description.need_only_count,
@@ -430,6 +485,8 @@ Scan DatasetHandle::planScan(const ScanDescription & scan_description, const Can
         .io_buffer_size = scan_description.io_buffer_size,
         .fragment_ids = fragment_ids.empty() ? nullptr : fragment_ids.data(),
         .fragment_ids_size = fragment_ids.size(),
+        .queue_capacity = scan_description.queue_capacity,
+        .queue_bytes = scan_description.queue_bytes,
     };
 
     Stopwatch plan_watch;
@@ -447,11 +504,30 @@ Scan::Scan(DatasetHandle dataset_, ch_lance_scan * scan_)
     : dataset(std::move(dataset_))
     , scan(scan_)
 {
+    ArrowSchema schema{};
+    ch_lance_error error{};
+    if (!ch_lance_export_scan_schema(scan, &schema, &error))
+    {
+        ch_lance_free_scan(scan);
+        scan = nullptr;
+        throwLanceError(error, "Cannot export planned `Lance` scan schema");
+    }
+
+    auto imported_schema = arrow::ImportSchema(&schema);
+    if (!imported_schema.ok())
+    {
+        ch_lance_free_scan(scan);
+        scan = nullptr;
+        throw Exception(
+            ErrorCodes::INCORRECT_DATA, "Failed to import planned `Lance` Arrow schema: {}", imported_schema.status().ToString());
+    }
+    projected_schema = std::move(*imported_schema);
 }
 
 Scan::Scan(Scan && other) noexcept
     : dataset(std::move(other.dataset))
     , scan(std::exchange(other.scan, nullptr))
+    , projected_schema(std::move(other.projected_schema))
 {
 }
 
@@ -463,6 +539,7 @@ Scan & Scan::operator=(Scan && other) noexcept
             ch_lance_free_scan(scan);
         dataset = std::move(other.dataset);
         scan = std::exchange(other.scan, nullptr);
+        projected_schema = std::move(other.projected_schema);
     }
     return *this;
 }
@@ -479,29 +556,76 @@ void Scan::requestCancel() noexcept
         ch_lance_cancel_scan(scan);
 }
 
-std::shared_ptr<arrow::RecordBatch> Scan::nextBatch() const
+std::optional<Scan::Batch> Scan::nextBatch() const
 {
     ArrowArray array{};
-    ArrowSchema schema{};
+    UInt64 batch_rows = 0;
+    UInt64 batch_bytes = 0;
     bool has_batch = false;
     Stopwatch watch;
     ch_lance_error error{};
-    if (!ch_lance_next_batch(scan, &array, &schema, &has_batch, &error))
+    if (!ch_lance_next_batch(scan, &array, &batch_rows, &batch_bytes, &has_batch, &error))
         throwLanceError(error);
 
     ProfileEvents::increment(ProfileEvents::LanceNextBatch);
     ProfileEvents::increment(ProfileEvents::LanceNextBatchMicroseconds, watch.elapsedMicroseconds());
 
     if (!has_batch)
-        return nullptr;
+        return std::nullopt;
 
-    auto record_batch = arrow::ImportRecordBatch(&array, &schema);
+    auto record_batch = arrow::ImportRecordBatch(&array, projected_schema);
     if (!record_batch.ok())
+    {
+        ch_lance_release_batch(scan, batch_bytes);
         throw Exception(ErrorCodes::INCORRECT_DATA, "Failed to import Lance Arrow record batch: {}", record_batch.status().ToString());
+    }
 
-    return *record_batch;
+    if (static_cast<UInt64>((*record_batch)->num_rows()) != batch_rows)
+    {
+        ch_lance_release_batch(scan, batch_bytes);
+        throw Exception(
+            ErrorCodes::INCORRECT_DATA,
+            "Lance Arrow record batch row count {} differs from FFI row count {}",
+            (*record_batch)->num_rows(),
+            batch_rows);
+    }
+
+    return Batch{
+        .record_batch = std::move(*record_batch),
+        .rows = batch_rows,
+        .bytes = batch_bytes,
+    };
 }
 
+void Scan::releaseBatch(UInt64 bytes) const noexcept
+{
+    if (scan)
+        ch_lance_release_batch(scan, bytes);
+}
+
+Scan::Stats Scan::stats() const noexcept
+{
+    ch_lance_scan_stats native{};
+    if (scan)
+        ch_lance_get_scan_stats(scan, &native);
+    return {
+        .producer_tasks = native.producer_tasks,
+        .schema_exports = native.schema_exports,
+        .queue_push_batches = native.queue_push_batches,
+        .queue_pop_batches = native.queue_pop_batches,
+        .queue_push_wait_microseconds = native.queue_push_wait_microseconds,
+        .consumer_pop_wait_microseconds = native.consumer_pop_wait_microseconds,
+        .queue_peak_batches = native.queue_peak_batches,
+        .queue_peak_bytes = native.queue_peak_bytes,
+        .queued_batches = native.queued_batches,
+        .queued_bytes = native.queued_bytes,
+        .in_flight_batches = native.in_flight_batches,
+        .in_flight_bytes = native.in_flight_bytes,
+        .producer_eof = native.producer_eof,
+        .producer_error = native.producer_error,
+        .producer_cancel = native.producer_cancel,
+    };
+}
 }
 
 #endif

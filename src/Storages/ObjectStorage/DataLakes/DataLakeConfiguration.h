@@ -81,6 +81,12 @@ template <StorageConfiguration BaseStorageConfiguration, typename DataLakeMetada
 class DataLakeConfiguration : public BaseStorageConfiguration, public std::enable_shared_from_this<StorageObjectStorageConfiguration>
 {
 public:
+#if USE_AVRO
+    static constexpr bool SUPPORTS_PREWHERE = std::is_same_v<DataLakeMetadata, IcebergMetadata>;
+#else
+    static constexpr bool SUPPORTS_PREWHERE = false;
+#endif
+
     explicit DataLakeConfiguration(DataLakeStorageSettingsPtr settings_) : settings(settings_) {}
 
     bool isDataLakeConfiguration() const override { return true; }
@@ -271,6 +277,38 @@ public:
             limit);
     }
 
+    std::optional<Pipe> readDataset(
+        const StorageSnapshotPtr & storage_snapshot,
+        const ReadFromFormatInfo & read_from_format_info,
+        const std::optional<FormatSettings> & format_settings,
+        ContextPtr local_context,
+        size_t max_block_size,
+        size_t num_streams,
+        FormatFilterInfoPtr format_filter_info,
+        bool need_only_count,
+        std::optional<size_t> limit,
+        bool distributed_processing) const override
+    {
+        assertInitialized();
+        return current_metadata->readDataset(
+            storage_snapshot,
+            read_from_format_info,
+            format_settings,
+            local_context,
+            max_block_size,
+            num_streams,
+            std::move(format_filter_info),
+            need_only_count,
+            limit,
+            distributed_processing);
+    }
+
+    std::optional<size_t> getMaxCustomReadThreads(bool distributed_processing) const override
+    {
+        assertInitialized();
+        return current_metadata->getMaxCustomReadThreads(distributed_processing);
+    }
+
     std::optional<DataLakeTableStateSnapshot> getTableStateSnapshot(ContextPtr context) const override
     {
         assertInitialized();
@@ -433,11 +471,7 @@ public:
 
     bool supportsPrewhere() const override
     {
-#if USE_AVRO
-        return std::is_same_v<DataLakeMetadata, IcebergMetadata>;
-#else
-        return false;
-#endif
+        return SUPPORTS_PREWHERE;
     }
 
 private:

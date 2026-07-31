@@ -118,39 +118,36 @@ DatasetHandle QuerySession::getOrOpen(const DatasetOptions & options)
     return handle;
 }
 
-void QuerySession::pinVersion(const String & identity_key, UInt64 version)
+void QuerySession::pinSnapshot(const String & identity_key, const TableStateSnapshot & snapshot)
 {
-    if (version == 0)
-        throw Exception(ErrorCodes::LOGICAL_ERROR, "Cannot pin Lance dataset version 0");
+    snapshot.validate(ErrorCodes::LOGICAL_ERROR);
 
     std::lock_guard lock(mutex);
-    if (auto it = pinned_versions.find(identity_key); it != pinned_versions.end())
+    if (auto it = pinned_snapshots.find(identity_key); it != pinned_snapshots.end())
     {
-        if (it->second != version)
+        if (it->second != snapshot)
         {
             throw Exception(
                 ErrorCodes::LOGICAL_ERROR,
-                "Lance dataset identity already pinned to version {}, cannot re-pin to {}",
-                it->second,
-                version);
+                "Lance dataset identity is already pinned to a different immutable snapshot at version {}",
+                it->second.version);
         }
         return;
     }
-    pinned_versions.emplace(identity_key, version);
+    pinned_snapshots.emplace(identity_key, snapshot);
 }
 
-std::optional<UInt64> QuerySession::getPinnedVersion(const String & identity_key) const
+std::optional<TableStateSnapshot> QuerySession::getPinnedSnapshot(const String & identity_key) const
 {
     std::lock_guard lock(mutex);
-    if (auto it = pinned_versions.find(identity_key); it != pinned_versions.end())
+    if (auto it = pinned_snapshots.find(identity_key); it != pinned_snapshots.end())
         return it->second;
     return std::nullopt;
 }
 
-DatasetHandle QuerySession::getPinned(const DatasetOptions & options, UInt64 pinned_version)
+DatasetHandle QuerySession::getPinned(const DatasetOptions & options, const TableStateSnapshot & pinned_snapshot)
 {
-    if (pinned_version == 0)
-        throw Exception(ErrorCodes::LOGICAL_ERROR, "Cannot get Lance dataset for pinned version 0");
+    pinned_snapshot.validate(ErrorCodes::LOGICAL_ERROR);
 
     if (!reuse_enabled)
         return DatasetHandle::openEphemeral(options, cancel_handle);
@@ -158,21 +155,20 @@ DatasetHandle QuerySession::getPinned(const DatasetOptions & options, UInt64 pin
     const auto key = options.identityKey();
     std::lock_guard lock(mutex);
 
-    if (auto pin_it = pinned_versions.find(key); pin_it != pinned_versions.end())
+    if (auto pin_it = pinned_snapshots.find(key); pin_it != pinned_snapshots.end())
     {
-        if (pin_it->second != pinned_version)
+        if (pin_it->second != pinned_snapshot)
         {
             throw Exception(
                 ErrorCodes::LOGICAL_ERROR,
-                "Requested Lance pinned version {} does not match session pin {}",
-                pinned_version,
-                pin_it->second);
+                "Requested Lance immutable snapshot at version {} does not match the query session pin",
+                pinned_snapshot.version);
         }
     }
     else
     {
         /// Analysis normally pins first; allow first pin at execution for paths that bypass analysis.
-        pinned_versions.emplace(key, pinned_version);
+        pinned_snapshots.emplace(key, pinned_snapshot);
     }
 
     if (auto it = open_datasets.find(key); it != open_datasets.end())

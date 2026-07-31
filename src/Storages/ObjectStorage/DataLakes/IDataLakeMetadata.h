@@ -122,6 +122,24 @@ public:
         return std::nullopt;
     }
 
+    /// Dataset formats may provide one logical read pipeline before file iteration.
+    virtual std::optional<Pipe> readDataset(
+        const StorageSnapshotPtr &,
+        const ReadFromFormatInfo &,
+        const std::optional<FormatSettings> &,
+        ContextPtr,
+        size_t,
+        size_t,
+        FormatFilterInfoPtr,
+        bool,
+        std::optional<size_t>,
+        bool) const
+    {
+        return std::nullopt;
+    }
+
+    virtual std::optional<size_t> getMaxCustomReadThreads(bool) const { return std::nullopt; }
+
     /// Whether current metadata object is updateable (instead of recreation from scratch)
     /// to the latest version of table state in data lake.
     virtual bool supportsUpdate() const { return false; }

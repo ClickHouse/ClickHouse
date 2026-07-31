@@ -110,6 +110,22 @@ def test_lance_s3_cluster_matches_single_node(started_cluster):
     assert clustered == single
     assert single.startswith("64\t")
 
+    virtuals = node.query(
+        """
+        SELECT
+            count(),
+            uniqExact(_path),
+            uniqExact(_file),
+            countIf(position(_path, '/pack') > 0)
+        FROM lanceS3Cluster(
+            'cluster_simple',
+            nc_s3,
+            filename = 'lance/multi_frag.lance')
+        SETTINGS lance_max_fragment_packs = 8
+        """
+    )
+    assert virtuals == "64\t1\t1\t0\n"
+
 
 def test_lance_s3_cluster_pure_count_uses_fragment_tasks(started_cluster):
     node = started_cluster.instances["s0_0_0"]
@@ -200,3 +216,88 @@ def test_lance_s3_cluster_filter(started_cluster):
     )
     assert clustered == single
     assert single == "10\t55\n"
+
+
+def test_lance_s3_cluster_bounded_queue_partial_filter_and_limit(started_cluster):
+    node = started_cluster.instances["s0_0_0"]
+    skip_if_lance_s3_cluster_unavailable(node)
+
+    remote_prefix = "data/lance/multi_frag.lance"
+    upload_lance_dataset_to_minio(started_cluster, remote_prefix)
+
+    partial = node.query(
+        """
+        SELECT count(), sum(id), uniqExact(id)
+        FROM lanceS3Cluster(
+            'cluster_simple',
+            nc_s3,
+            filename = 'lance/multi_frag.lance')
+        WHERE id <= 20 AND id % 3 = 0
+        SETTINGS
+            lance_batch_queue_capacity = 1,
+            lance_batch_queue_bytes = 1048576,
+            lance_max_fragment_packs = 2,
+            max_threads = 4
+        """
+    )
+    assert partial == "6\t63\t6\n"
+
+    limited = node.query(
+        """
+        SELECT count(), uniqExact(id)
+        FROM
+        (
+            SELECT id
+            FROM lanceS3Cluster(
+                'cluster_simple',
+                nc_s3,
+                filename = 'lance/multi_frag.lance')
+            LIMIT 7
+            SETTINGS
+                lance_batch_queue_capacity = 1,
+                lance_max_fragment_packs = 2,
+                max_threads = 4
+        )
+        """
+    )
+    assert limited == "7\t7\n"
+
+
+def test_lance_s3_cluster_task_scanners_are_bounded(started_cluster):
+    node = started_cluster.instances["s0_0_0"]
+    skip_if_lance_s3_cluster_unavailable(node)
+
+    remote_prefix = "data/lance/multi_frag.lance"
+    upload_lance_dataset_to_minio(started_cluster, remote_prefix)
+    log_comment = "lance_cluster_scanner_cap"
+
+    result = node.query(
+        f"""
+        SELECT count(), sum(id), uniqExact(id)
+        FROM lanceS3Cluster(
+            'cluster_simple',
+            nc_s3,
+            filename = 'lance/multi_frag.lance')
+        SETTINGS
+            lance_max_fragment_packs = 2,
+            max_threads = 8,
+            log_comment = '{log_comment}'
+        """
+    )
+    assert result == "64\t2080\t64\n"
+
+    plan_counts = []
+    for instance in started_cluster.instances.values():
+        instance.query("SYSTEM FLUSH LOGS query_log")
+        values = instance.query(
+            f"""
+            SELECT ProfileEvents['LancePlanScan']
+            FROM system.query_log
+            WHERE type = 'QueryFinish' AND log_comment = '{log_comment}'
+            """
+        )
+        plan_counts.extend(int(value) for value in values.splitlines())
+
+    assert plan_counts
+    assert sum(plan_counts) >= 1
+    assert max(plan_counts) <= 2

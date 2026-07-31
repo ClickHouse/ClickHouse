@@ -268,6 +268,12 @@ StorageObjectStorageSource::~StorageObjectStorageSource()
 std::string StorageObjectStorageSource::getUniqueStoragePathIdentifier(
     const StorageObjectStorageConfiguration & configuration, const ObjectInfo & object_info, bool include_connection_info)
 {
+    if (!include_connection_info)
+    {
+        if (auto virtual_path = object_info.getPathForVirtualColumns())
+            return *virtual_path;
+    }
+
     auto path = object_info.getPath();
     if (path.starts_with("/"))
         path = path.substr(1);
@@ -539,7 +545,7 @@ Chunk StorageObjectStorageSource::generate()
             progress(num_rows, chunk_size ? chunk_size : chunk.bytes());
 
             const auto & object_info = reader.getObjectInfo();
-            const auto & filename = object_info->getFileName();
+            const auto filename = object_info->getFileNameForVirtualColumns().value_or(object_info->getFileName());
             std::string full_path = object_info->getPath();
 
             const auto reading_path = configuration->getPathForRead().path;

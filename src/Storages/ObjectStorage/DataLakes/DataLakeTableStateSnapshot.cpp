@@ -70,7 +70,7 @@ DataLakeTableStateSnapshot deserializeDataLakeTableStateSnapshot(ReadBuffer & in
             "Cannot deserialize DataLakeTableStateSnapshot with protocol version {}, maximum supported version is {}",
             protocol_version,
             DATA_LAKE_TABLE_STATE_SNAPSHOT_PROTOCOL_VERSION);
-    if (protocol_version == 1)
+    if (protocol_version == 1 || protocol_version == 2)
     {
         int type = 0;
         readVarInt(type, in);

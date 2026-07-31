@@ -14,6 +14,7 @@ futures = "0.3.32"
 object_store = { version = "0.12.5", features = ["aws"] }
 lance = { version = "2.0.1", default-features = false }
 prost = "=0.14.4"
+sha2 = "0.10.9"
 tempfile = "3.27.0"
 tokio = { version = "1.52.3", features = ["rt-multi-thread", "sync", "macros", "time"] }
 url = "2.5.7"

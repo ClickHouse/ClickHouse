@@ -27,6 +27,8 @@ enum
     CH_LANCE_ERROR_INTERNAL = 9,
     /// Cooperative cancellation requested via ch_lance_cancel_scan (or equivalent).
     CH_LANCE_ERROR_CANCELLED = 10,
+    CH_LANCE_ERROR_SNAPSHOT_MISMATCH = 11,
+    CH_LANCE_ERROR_MEMORY_LIMIT = 12,
 };
 
 typedef uint32_t ch_lance_error_origin;
@@ -76,6 +78,11 @@ typedef struct ch_lance_dataset_options
 typedef struct ch_lance_snapshot_info
 {
     uint64_t version;
+    uint8_t manifest_id[32];
+    uint64_t manifest_size;
+    uint8_t manifest_sha256[32];
+    bool has_etag;
+    uint8_t etag_sha256[32];
 } ch_lance_snapshot_info;
 
 typedef struct ch_lance_string_list
@@ -86,7 +93,7 @@ typedef struct ch_lance_string_list
 
 typedef struct ch_lance_scan_options
 {
-    uint64_t version;
+    ch_lance_snapshot_info snapshot;
     ch_lance_string_list projection;
     const char * predicate;
     bool need_only_count;
@@ -111,6 +118,10 @@ typedef struct ch_lance_scan_options
     /// Otherwise Scanner::with_fragments restricted to these ids (from the pinned version).
     const uint64_t * fragment_ids;
     size_t fragment_ids_size;
+    /// Maximum queued batches. 0 selects a bounded automatic default.
+    uint64_t queue_capacity;
+    /// Maximum estimated Arrow bytes queued. 0 selects a bounded automatic default.
+    uint64_t queue_bytes;
 } ch_lance_scan_options;
 
 typedef struct ch_lance_fragment_info
@@ -136,12 +147,31 @@ typedef struct ch_lance_runtime_stats
     uint64_t runtime_initialized;
 } ch_lance_runtime_stats;
 
+typedef struct ch_lance_scan_stats
+{
+    uint64_t producer_tasks;
+    uint64_t schema_exports;
+    uint64_t queue_push_batches;
+    uint64_t queue_pop_batches;
+    uint64_t queue_push_wait_microseconds;
+    uint64_t consumer_pop_wait_microseconds;
+    uint64_t queue_peak_batches;
+    uint64_t queue_peak_bytes;
+    uint64_t queued_batches;
+    uint64_t queued_bytes;
+    uint64_t in_flight_batches;
+    uint64_t in_flight_bytes;
+    uint64_t producer_eof;
+    uint64_t producer_error;
+    uint64_t producer_cancel;
+} ch_lance_scan_stats;
+
 /// Ensure the process-wide Lance Tokio runtime exists. First successful call
 /// wins for worker_threads; later calls are no-ops if the runtime is already up.
 bool ch_lance_runtime_ensure(const ch_lance_runtime_config * config, ch_lance_error * error);
 void ch_lance_get_runtime_stats(ch_lance_runtime_stats * out);
 
-/// Query-scoped cancel handle. Create once per ReadSource / query unit of work.
+/// Query-scoped cancel handle. Create once and share it across metadata and read operations.
 ch_lance_cancel_handle * ch_lance_cancel_handle_create(void);
 /// Thread-safe: signal cancellation. Concurrent with any in-flight open/plan/count/next_batch
 /// that was given this handle (or a scan that inherited it).
@@ -152,32 +182,39 @@ ch_lance_dataset * ch_lance_open_dataset(const ch_lance_dataset_options * option
 void ch_lance_free_dataset(ch_lance_dataset * dataset);
 
 bool ch_lance_current_snapshot(ch_lance_dataset * dataset, ch_lance_snapshot_info * snapshot, ch_lance_error * error);
-bool ch_lance_export_schema(ch_lance_dataset * dataset, uint64_t version, struct ArrowSchema * schema, ch_lance_error * error);
+bool ch_lance_export_schema(
+    ch_lance_dataset * dataset,
+    const ch_lance_snapshot_info * snapshot,
+    struct ArrowSchema * schema,
+    ch_lance_cancel_handle * cancel,
+    ch_lance_error * error);
 /// `cancel` may be null (no cooperative cancel for this call).
 bool ch_lance_total_rows(
     ch_lance_dataset * dataset,
-    uint64_t version,
+    const ch_lance_snapshot_info * snapshot,
     uint64_t * rows,
     bool * has_value,
     ch_lance_cancel_handle * cancel,
     ch_lance_error * error);
 bool ch_lance_count_rows(
     ch_lance_dataset * dataset,
-    uint64_t version,
+    const ch_lance_snapshot_info * snapshot,
     const char * predicate,
+    const uint64_t * fragment_ids,
+    size_t fragment_ids_size,
     uint64_t * rows,
     bool * has_value,
     ch_lance_cancel_handle * cancel,
     ch_lance_error * error);
 bool ch_lance_total_bytes(ch_lance_dataset * dataset, uint64_t * bytes, bool * has_value, ch_lance_error * error);
 
-/// Lists fragments for an exact dataset version (checkout_exact_version).
+/// Lists fragments for an exact immutable dataset snapshot.
 /// On success with size>0: *out_list is allocated; free with ch_lance_free_fragment_list.
 /// Empty datasets: *out_size=0 and *out_list=null.
 /// cancel may be null.
 bool ch_lance_list_fragments(
     ch_lance_dataset * dataset,
-    uint64_t version,
+    const ch_lance_snapshot_info * snapshot,
     ch_lance_fragment_info ** out_list,
     size_t * out_size,
     ch_lance_cancel_handle * cancel,
@@ -185,7 +222,19 @@ bool ch_lance_list_fragments(
 void ch_lance_free_fragment_list(ch_lance_fragment_info * list, size_t size);
 
 ch_lance_scan * ch_lance_plan_scan(ch_lance_dataset * dataset, const ch_lance_scan_options * options, ch_lance_error * error);
-bool ch_lance_next_batch(ch_lance_scan * scan, struct ArrowArray * array, struct ArrowSchema * schema, bool * has_batch, ch_lance_error * error);
+/// Export the fixed projected schema once per scan.
+bool ch_lance_export_scan_schema(ch_lance_scan * scan, struct ArrowSchema * schema, ch_lance_error * error);
+/// Pop one unique batch from the producer queue. The ArrowArray owns its buffers.
+bool ch_lance_next_batch(
+    ch_lance_scan * scan,
+    struct ArrowArray * array,
+    uint64_t * batch_rows,
+    uint64_t * batch_bytes,
+    bool * has_batch,
+    ch_lance_error * error);
+/// Release the in-flight byte reservation after C++ conversion finishes.
+void ch_lance_release_batch(ch_lance_scan * scan, uint64_t batch_bytes);
+void ch_lance_get_scan_stats(const ch_lance_scan * scan, ch_lance_scan_stats * out);
 /// Thread-safe: request cooperative cancellation of a scan. Does not free the scan.
 /// Concurrent with ch_lance_next_batch: wakes a pending next and causes it to return CANCELLED.
 /// Safe to call multiple times. Does not race with ch_lance_free_scan if free happens only after

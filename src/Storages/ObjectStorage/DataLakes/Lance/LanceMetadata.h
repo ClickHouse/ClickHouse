@@ -5,6 +5,7 @@
 #if USE_LANCE
 
 #include <Storages/ObjectStorage/DataLakes/IDataLakeMetadata.h>
+#include <Storages/ObjectStorage/DataLakes/Lance/LanceReadSource.h>
 #include <Storages/ObjectStorage/DataLakes/Lance/LanceTableStateSnapshot.h>
 #include <Storages/ObjectStorage/DataLakes/Lance/LanceWrapper.h>
 #include <Storages/ObjectStorage/StorageObjectStorageConfiguration.h>
@@ -71,7 +72,42 @@ public:
         bool need_only_count,
         std::optional<size_t> limit = {}) const override;
 
+    std::optional<Pipe> readDataset(
+        const StorageSnapshotPtr & storage_snapshot,
+        const ReadFromFormatInfo & read_from_format_info,
+        const std::optional<FormatSettings> & format_settings,
+        ContextPtr local_context,
+        size_t max_block_size,
+        size_t num_streams,
+        FormatFilterInfoPtr format_filter_info,
+        bool need_only_count,
+        std::optional<size_t> limit,
+        bool distributed_processing) const override;
+
+    std::optional<size_t> getMaxCustomReadThreads(bool distributed_processing) const override
+    {
+        /// Vendored Lance does not expose serializable scan tasks. Coarse cluster
+        /// tasks therefore run one scanner at a time per worker; each scanner can
+        /// still feed multiple `BatchSource` conversion consumers.
+        return distributed_processing ? std::optional<size_t>(1) : std::nullopt;
+    }
+
 private:
+    Pipe makeReadPipe(
+        const Lance::TableStateSnapshot & snapshot,
+        const std::vector<UInt64> & fragment_ids,
+        const ReadFromFormatInfo & read_from_format_info,
+        const std::optional<FormatSettings> & format_settings,
+        ContextPtr local_context,
+        size_t max_block_size,
+        size_t requested_sources,
+        FormatFilterInfoPtr format_filter_info,
+        bool need_only_count,
+        std::optional<size_t> limit,
+        const Block & output_header,
+        NamesAndTypesList requested_virtual_columns,
+        Lance::ReadVirtualValues virtual_values) const;
+
     /// When `local_context` is set, fills S3 HTTP timeouts from ClickHouse settings.
     Lance::DatasetOptions getDatasetOptions(const ContextPtr & local_context = {}) const;
 

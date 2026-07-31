@@ -2,6 +2,7 @@
 
 #include <cstdint>
 #include <unordered_map>
+#include <vector>
 
 #include "config.h"
 
@@ -41,6 +42,13 @@ public:
         std::shared_ptr<const arrow::KeyValueMetadata> metadata,
         BlockMissingValues * block_missing_values = nullptr);
 
+    Chunk arrowRecordBatchToCHChunk(
+        const arrow::RecordBatch & batch,
+        std::shared_ptr<const arrow::KeyValueMetadata> metadata,
+        BlockMissingValues * block_missing_values = nullptr);
+
+    bool hasRecordBatchFieldMapping() const { return record_batch_schema != nullptr; }
+
     /// Validate that every validity bitmap in the record batch (recursively, including nested
     /// children and dictionaries) covers its declared rows.  Must be called before building an
     /// arrow::Table from the batch: Arrow computes an unknown FieldNode null_count by scanning
@@ -76,7 +84,18 @@ private:
         std::shared_ptr<arrow::Field> field;
     };
 
+    struct RecordBatchFieldMapping
+    {
+        size_t field_index;
+        std::string column_name;
+    };
+
     using NameToArrowColumn = std::unordered_map<std::string, ArrowColumn>;
+
+    std::vector<RecordBatchFieldMapping> buildRecordBatchFieldMapping(const arrow::Schema & schema) const;
+    NameToArrowColumn mapRecordBatchColumns(
+        const arrow::RecordBatch & batch,
+        const std::vector<RecordBatchFieldMapping> & field_mapping) const;
 
     Chunk arrowColumnsToCHChunk(
         const NameToArrowColumn & name_to_arrow_column,
@@ -101,6 +120,10 @@ private:
     /// To avoid converting dictionary from Arrow Dictionary
     /// to LowCardinality every chunk we save it and reuse.
     std::unordered_map<std::string, DictionaryInfo> dictionary_infos;
+
+    std::shared_ptr<arrow::Schema> record_batch_schema;
+    std::vector<RecordBatchFieldMapping> record_batch_field_mapping;
+    NamesAndTypesList record_batch_header;
 
     std::optional<std::unordered_map<String, String>> parquet_columns_to_clickhouse;
     std::optional<std::unordered_map<String, String>> clickhouse_columns_to_parquet;

@@ -8,17 +8,17 @@ DROP TABLE IF EXISTS lance_local_profile_events;
 CREATE TABLE lance_local_profile_events
 ENGINE = LanceLocal('tests/queries/0_stateless/data_lance/pushdown.lance');
 
--- Complete pushdown (no residual filter): IN translates fully.
+-- Complete pushdown: a null-check is allowed for a nullable physical column.
 SELECT id
 FROM lance_local_profile_events
-WHERE id IN (1)
+WHERE score IS NULL
 FORMAT Null
 SETTINGS log_comment = 'lance_profile_complete';
 
 -- Partial AND: comparison is pushable, lower(name) is residual-only.
 SELECT id
 FROM lance_local_profile_events
-WHERE id IN (2) AND lower(name) = 'b'
+WHERE score IS NULL AND lower(name) = 'b'
 FORMAT Null
 SETTINGS log_comment = 'lance_profile_partial';
 
