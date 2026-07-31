@@ -15,7 +15,7 @@ doc_type: 'reference'
 引入版本：v20.1.0
 
 根据 `key` 数组中指定的键对 `value` 数组进行汇总。返回一个由两个数组组成的元组：按排序顺序排列的键，以及对应键汇总后的值。
-它与 [`sumMap`](/zh/reference/functions/aggregate-functions/sumMap) 函数的区别在于，它在求和时会发生溢出——也就是说，求和结果的数据类型与参数的数据类型相同。
+它与 [`sumMap`](/zh/reference/functions/aggregate-functions/sumMap) 函数的区别在于，它以溢出方式进行求和——也就是说，求和结果的数据类型与参数的数据类型相同。
 
 <Note>
   * 传入由键数组和值数组组成的元组，与传入一个键数组和一个值数组是等价的。

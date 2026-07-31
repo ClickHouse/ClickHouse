@@ -39,9 +39,9 @@ O diagrama abaixo mostra como as organizations do ClickHouse Cloud, as contas de
   ## Arquitetura técnica
 </div>
 
-O BYOC separa o **plano de controle do ClickHouse**, que é executado na VPC do ClickHouse, do **plano de dados**, que é executado inteiramente na sua conta de Cloud. A VPC do ClickHouse hospeda o ClickHouse Cloud Console, autenticação, gerenciamento de usuários, APIs, faturamento, componentes de gerenciamento de infraestrutura, como o controlador de BYOC, além de ferramentas de alertas e incidentes. Esses serviços orquestram e monitoram sua implantação, mas não armazenam seus dados.
+O BYOC separa o **plano de controle do ClickHouse**, que é executado na VPC do ClickHouse, do **plano de dados**, que é executado inteiramente na sua conta de nuvem. A VPC do ClickHouse hospeda o ClickHouse Cloud Console, autenticação, gerenciamento de usuários, APIs, faturamento, componentes de gerenciamento de infraestrutura, como o controlador de BYOC, além de ferramentas de alertas e incidentes. Esses serviços orquestram e monitoram sua implantação, mas não armazenam seus dados.
 
-Na sua **VPC BYOC do cliente**, o ClickHouse provisiona um cluster Kubernetes (por exemplo, Amazon EKS) que executa o plano de dados do ClickHouse. Como mostrado no diagrama, isso inclui o próprio cluster ClickHouse, o ClickHouse Operator e serviços de suporte, como Entrada, DNS, gerenciamento de certificados, exportadores de estado e scrapers. Uma stack de monitoramento dedicada (Prometheus, Grafana, AlertManager e Thanos) também é executada dentro da sua VPC, garantindo que métricas e alertas se originem e permaneçam no seu ambiente.
+Na sua **VPC BYOC do cliente**, o ClickHouse provisiona um cluster do Kubernetes (por exemplo, Amazon EKS) que executa o plano de dados do ClickHouse. Como mostrado no diagrama, isso inclui o próprio cluster ClickHouse, o ClickHouse Operator e serviços de suporte, como Entrada, DNS, gerenciamento de certificados, exportadores de estado e scrapers. Uma stack de monitoramento dedicada (Prometheus, Grafana, AlertManager e Thanos) também é executada dentro da sua VPC, garantindo que métricas e alertas se originem e permaneçam no seu ambiente.
 
 <br />
 
@@ -54,7 +54,7 @@ Os principais recursos de Cloud que o ClickHouse Cloud implantará na sua conta 
 * **VPC:** Uma Virtual Private Cloud dedicada à sua implantação do ClickHouse. Ela pode ser gerenciada pelo ClickHouse ou por você, o cliente, e normalmente é conectada por peering às VPCs das suas aplicações.
 * **Funções e políticas do IAM:** Funções e permissões necessárias para o Kubernetes, os serviços do ClickHouse e a stack de monitoramento. Elas podem ser provisionadas pelo ClickHouse ou fornecidas pelo cliente.
 * **Buckets de armazenamento:** Usados para armazenar partes de dados, backups e, opcionalmente, arquivos de métricas e logs de longo prazo.
-* **Cluster Kubernetes:** Pode ser Amazon EKS, Google GKE ou Azure AKS, dependendo do seu provedor de Cloud, e hospeda os servidores ClickHouse e os serviços de suporte mostrados no diagrama de arquitetura.
+* **Cluster do Kubernetes:** Pode ser Amazon EKS, Google GKE ou Azure AKS, dependendo do seu provedor de Cloud, e hospeda os servidores ClickHouse e os serviços de suporte mostrados no diagrama de arquitetura.
 
 Por padrão, o ClickHouse Cloud provisiona uma VPC nova e dedicada e configura as funções do IAM necessárias para garantir a operação segura dos serviços do Kubernetes. Para organizações com necessidades avançadas de rede ou segurança, também existe a opção de gerenciar a VPC e as funções do IAM por conta própria. Essa abordagem permite maior personalização das configurações de rede e um controle mais preciso sobre as permissões. No entanto, optar por gerenciar esses recursos por conta própria aumentará suas responsabilidades operacionais.
 

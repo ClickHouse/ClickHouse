@@ -39,6 +39,7 @@ Retorna um array de tuplas `(timestamp, value)` ordenado por timestamp em ordem 
 **Uso básico com valores individuais**
 
 ```sql title=Query
+SET allow_experimental_time_series_aggregate_functions = 1;
 WITH
     [110, 120, 130, 140, 140, 100]::Array(UInt32) AS timestamps,
     [1, 6, 8, 17, 19, 5]::Array(Float32) AS values
@@ -61,6 +62,7 @@ FROM
 **Enviando várias amostras de timestamps e valores como arrays do mesmo tamanho**
 
 ```sql title=Query
+SET allow_experimental_time_series_aggregate_functions = 1;
 WITH
     [110, 120, 130, 140, 140, 100]::Array(UInt32) AS timestamps,
     [1, 6, 8, 17, 19, 5]::Array(Float32) AS values

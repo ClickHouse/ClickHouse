@@ -136,7 +136,13 @@ struct HandledSignals
     void setupCommonDeadlySignalHandlers();
     void setupCommonTerminateRequestSignalHandlers();
 
-    void addSignalHandler(const std::vector<int> & signals, signal_function handler, bool register_signal);
+    /// `additional_masked_signals` are blocked while `handler` runs (added to `sa_mask`) but the
+    /// handler is not registered for them.
+    void addSignalHandler(
+        const std::vector<int> & signals,
+        signal_function handler,
+        bool register_signal,
+        const std::vector<int> & additional_masked_signals = {});
 
     void reset(bool close_pipe = true);
 

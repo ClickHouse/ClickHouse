@@ -38,13 +38,13 @@ D’après les [tests de performance de Facebook](https://facebook.github.io/zst
   ## Bloc
 </div>
 
-| champ               | type    | description                                                                                           |
-| ------------------- | ------- | ----------------------------------------------------------------------------------------------------- |
+| champ               | type    | description                                                                                              |
+| ------------------- | ------- | -------------------------------------------------------------------------------------------------------- |
 | checksum            | uint128 | [Somme de contrôle](/fr/resources/develop-contribute/native-protocol/hash) de (header + compressed data) |
-| raw&#95;size        | uint32  | Taille brute sans en-tête                                                                             |
-| data&#95;size       | uint32  | Taille des données non compressées                                                                    |
-| mode                | byte    | Mode de compression                                                                                   |
-| compressed&#95;data | binary  | Bloc de données compressées                                                                           |
+| raw&#95;size        | uint32  | Taille brute sans en-tête                                                                                |
+| data&#95;size       | uint32  | Taille des données non compressées                                                                       |
+| mode                | byte    | Mode de compression                                                                                      |
+| compressed&#95;data | binary  | Bloc de données compressées                                                                              |
 
 <Image img="/images/data-compression/ch_compression_block.webp" size="md" alt="Schéma illustrant la structure du bloc de compression de ClickHouse" />
 
