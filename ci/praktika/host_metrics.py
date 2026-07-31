@@ -96,6 +96,11 @@ class HostMetricsCollector:
         self._n_fine = 0
         self._psi_start: Optional[Dict[str, int]] = None
         self._psi_end: Optional[Dict[str, int]] = None
+        # Monotonic start reference and the true elapsed span, used as the job
+        # duration so stall% is normalized by real wall time (not by the last
+        # sample timestamp, which lags when the sampler is starved under load).
+        self._t0 = 0.0
+        self._elapsed_s = 0.0
         self._started = False
         self._stopped = False
 
@@ -126,6 +131,7 @@ class HostMetricsCollector:
         except OSError as e:
             print(f"WARNING: disk path [{self._disk_path}] is not accessible ({e}) - disk series disabled")
             self._disk_available = False
+        self._t0 = time.monotonic()
         self._psi_start = self._read_psi()
         self._thread = threading.Thread(target=self._run, name="host-metrics", daemon=True)
         self._thread.start()
@@ -142,9 +148,13 @@ class HostMetricsCollector:
         self._stop_event.set()
         if self._thread is not None:
             self._thread.join(timeout=self._report_interval * 2 + 5)
-        # Fallback in case the thread was killed / timed out before recording it.
+        # Fallback if the thread was starved / timed out before recording these.
+        # Capturing the real elapsed span here (not the last sample timestamp) is
+        # what keeps stall% <= 100%: a starved sampler emits stale sample times,
+        # but the PSI delta always spans the true wall-clock interval.
         if self._psi_end is None:
             self._psi_end = self._read_psi()
+            self._elapsed_s = time.monotonic() - self._t0
         if not self._samples:
             return None
         return self._compact(self._samples)
@@ -153,7 +163,7 @@ class HostMetricsCollector:
         # The first /proc/stat read only establishes a baseline; CPU% needs a
         # delta between two reads, so no sample is emitted for it.
         prev_cpu = self._read_cpu_times()
-        start = time.monotonic()
+        start = self._t0
         window_start = start
         last_time = start
         # Each entry is (value, dt) so the window average can be time-weighted:
@@ -241,9 +251,11 @@ class HostMetricsCollector:
                 break
 
         # Emit the trailing partial window and capture PSI as close to the real
-        # end of the job as possible.
+        # end of the job as possible. Record the true elapsed span (>= the PSI
+        # delta interval) so stall percentages stay bounded by 100%.
         flush_window(time.monotonic())
         self._psi_end = self._read_psi()
+        self._elapsed_s = time.monotonic() - self._t0
 
     def _append_to_fs(self, sample: Dict[str, float]):
         try:
@@ -390,7 +402,9 @@ class HostMetricsCollector:
         result = {
             "interval": self._report_interval,
             "fine_interval": self._fine_interval,
-            "duration": samples[-1]["t"] if samples else 0,
+            "duration": round(self._elapsed_s, 1)
+            if self._elapsed_s
+            else (samples[-1]["t"] if samples else 0),
             "mem_total_gb": mem_total_gb,
             "cpu_count": self._cpu_count,
             "n_raw": self._n_fine,

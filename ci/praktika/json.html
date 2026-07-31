@@ -1381,7 +1381,7 @@
         const CPU_COLOR = "#4e79a7";
         const MEM_COLOR = "#e15759";
         const DISK_COLOR = "#59a14f";
-        const pct = (area, weight) => (weight ? area / weight : 0);
+        const pct = (area, weight) => (weight ? Math.min(100, area / weight) : 0);
         const cpuUtil = pct(u.cpu_used_area, u.cpu_core_s);
         const memUtil = pct(u.mem_used_area, u.mem_gb_s);
         const diskUtil = pct(u.disk_used_area, u.disk_gb_s);

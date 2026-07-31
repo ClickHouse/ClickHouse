@@ -219,7 +219,9 @@ class PipelineUtilization(MetaClasses.SerializableSingleton):
         """Derive the human-facing utilization/stall percentages."""
 
         def pct(area, weight):
-            return round(area / weight, 1) if weight else 0.0
+            # A utilization/stall percentage is a fraction of time, so clamp to
+            # 100 - guards against any residual sampling jitter.
+            return round(min(100.0, area / weight), 1) if weight else 0.0
 
         return {
             "jobs": self.jobs,
