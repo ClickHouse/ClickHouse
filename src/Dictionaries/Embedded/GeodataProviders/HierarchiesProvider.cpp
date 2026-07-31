@@ -46,7 +46,7 @@ void RegionsHierarchiesDataProvider::discoverFilesWithCustomHierarchies()
             && (candidate_basename[basename.size()] == '_'))
         {
             const std::string suffix = candidate_basename.substr(basename.size() + 1);
-            hierarchy_files.emplace(suffix, dir_it->path());
+            hierarchy_files.emplace(suffix, pathToGenericString(dir_it->path()));
         }
     }
 }

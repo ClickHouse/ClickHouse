@@ -1,3 +1,4 @@
+#include <Common/timespanFromSeconds.h>
 #include <base/pathToString.h>
 #include <Storages/StorageReplicatedMergeTree.h>
 #include <Storages/MergeTree/ReplicatedMergeTreeQuorumEntry.h>
@@ -217,7 +218,7 @@ size_t ReplicatedMergeTreeSink::checkQuorumPrecondition(const ZooKeeperWithFault
             exists_paths.reserve(replicas.size());
             for (const auto & replica : replicas)
                 if (replica != storage.replica_name)
-                    exists_paths.emplace_back(fs::path(storage.zookeeper_path) / "replicas" / replica / "is_active");
+                    exists_paths.emplace_back(pathToGenericString(fs::path(storage.zookeeper_path) / "replicas" / replica / "is_active"));
 
             auto exists_result = zookeeper->exists(exists_paths);
             auto get_results = zookeeper->get(Strings{storage.replica_path + "/is_active", storage.replica_path + "/host"});
@@ -1299,7 +1300,7 @@ void ReplicatedMergeTreeSink::waitForQuorum(
             if (elapsed_ms >= quorum_timeout_ms)
                 break;
 
-            if (event->tryWait(std::min<UInt64>(quorum_wait_step_ms, quorum_timeout_ms - elapsed_ms)))
+            if (event->tryWait(toPocoMilliseconds(std::min<UInt64>(quorum_wait_step_ms, quorum_timeout_ms - elapsed_ms))))
             {
                 quorum_updated = true;
                 break;

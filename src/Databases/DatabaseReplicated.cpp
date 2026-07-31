@@ -543,7 +543,7 @@ ReplicasInfo DatabaseReplicated::tryGetReplicasInfo(const ClusterPtr & cluster_)
     auto component_guard = Coordination::setCurrentComponent("DatabaseReplicated::tryGetReplicasInfo");
     Strings paths;
 
-    paths.emplace_back(fs::path(zookeeper_path) / "max_log_ptr");
+    paths.emplace_back(pathToGenericString(fs::path(zookeeper_path) / "max_log_ptr"));
 
     const auto & addresses_with_failover = cluster_->getShardsAddresses();
     const auto & shards_info = cluster_->getShardsInfo();
@@ -552,8 +552,8 @@ ReplicasInfo DatabaseReplicated::tryGetReplicasInfo(const ClusterPtr & cluster_)
         for (const auto & replica : addresses_with_failover[shard_index])
         {
             String full_name = getFullReplicaName(replica.database_shard_name, replica.database_replica_name);
-            paths.emplace_back(fs::path(zookeeper_path) / "replicas" / full_name / "active");
-            paths.emplace_back(fs::path(zookeeper_path) / "replicas" / full_name / "log_ptr");
+            paths.emplace_back(pathToGenericString(fs::path(zookeeper_path) / "replicas" / full_name / "active"));
+            paths.emplace_back(pathToGenericString(fs::path(zookeeper_path) / "replicas" / full_name / "log_ptr"));
         }
     }
 

@@ -259,7 +259,7 @@ void Client::refreshCertificatesTask(const Poco::Util::AbstractConfiguration & c
         /// Start the order
         if (!active_order.has_value())
         {
-            lock = std::make_shared<zkutil::ZooKeeperLock>(zk, fs::path(zookeeper_path) / acme_hostname, "active_order", "ACME::Client");
+            lock = std::make_shared<zkutil::ZooKeeperLock>(zk, pathToGenericString(fs::path(zookeeper_path) / acme_hostname), "active_order", "ACME::Client");
             if (!lock->tryLock())
             {
                 LOG_DEBUG(

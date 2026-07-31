@@ -690,7 +690,7 @@ void MetadataStorageFromPlainObjectStorageRemoveRecursiveOperation::finalize()
         LOG_TRACE(log, "Removing directory '{}'", subdir_path);
 
         auto metadata_object_key = layout->constructDirectoryObjectKey(remote_info->remote_path);
-        objects_to_remove.emplace_back(metadata_object_key, path);
+        objects_to_remove.emplace_back(metadata_object_key, pathToGenericString(path));
 
         /// We also need to remove all files inside each of the subdirectories.
         for (const auto & [filename, file_info] : remote_info->files)
@@ -700,7 +700,7 @@ void MetadataStorageFromPlainObjectStorageRemoveRecursiveOperation::finalize()
             LOG_TRACE(log, "Removing file '{}'", file_path);
 
             auto file_object_key = layout->constructFileObjectKey(remote_info->remote_path, filename);
-            objects_to_remove.emplace_back(file_object_key, file_path);
+            objects_to_remove.emplace_back(file_object_key, pathToGenericString(file_path));
         }
     }
 

@@ -613,7 +613,7 @@ ObjectStorageQueueOrderedFileMetadata::BucketHolderPtr ObjectStorageQueueOrdered
 
         return std::make_shared<BucketHolder>(
             bucket,
-            bucket_lock_path,
+            pathToGenericString(bucket_lock_path),
             processor_info,
             log_,
             zookeeper_name_);

@@ -384,7 +384,7 @@ ReplxxLineReader::ReplxxLineReader(ReplxxLineReader::Options && options)
         {
             convertHistoryFile(history_file_path, rx);
 
-            if (flock(history_file_fd, LOCK_SH))
+            if (DB::platformLockFileShared(history_file_fd, /*blocking*/ true))
             {
                 rx.print("Shared lock of history file failed: %s\n", errnoToString().c_str());
             }
@@ -395,7 +395,7 @@ ReplxxLineReader::ReplxxLineReader(ReplxxLineReader::Options && options)
                     rx.print("Loading history failed: %s\n", errnoToString().c_str());
                 }
 
-                if (flock(history_file_fd, LOCK_UN))
+                if (DB::platformUnlockFile(history_file_fd))
                 {
                     rx.print("Unlock of history file failed: %s\n", errnoToString().c_str());
                 }
@@ -785,7 +785,7 @@ void ReplxxLineReader::addToHistory(const String & line)
     // but replxx::Replxx::history_load() does not
     // and that is why flock() is added here.
     bool locked = false;
-    if (history_file_fd >= 0 && flock(history_file_fd, LOCK_EX))
+    if (history_file_fd >= 0 && DB::platformLockFileExclusive(history_file_fd, /*blocking*/ true))
         rx.print("Lock of history file failed: %s\n", errnoToString().c_str());
     else
         locked = true;
@@ -800,7 +800,7 @@ void ReplxxLineReader::addToHistory(const String & line)
     if (history_file_fd >= 0 && !rx.history_save(history_file_path))
         rx.print("Saving history failed: %s\n", errnoToString().c_str());
 
-    if (history_file_fd >= 0 && locked && 0 != flock(history_file_fd, LOCK_UN))
+    if (history_file_fd >= 0 && locked && 0 != DB::platformUnlockFile(history_file_fd))
         rx.print("Unlock of history file failed: %s\n", errnoToString().c_str());
 }
 

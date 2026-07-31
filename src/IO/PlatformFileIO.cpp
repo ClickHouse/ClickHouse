@@ -106,20 +106,69 @@ int platformFDataSync(int fd)
     return ::_commit(fd);
 }
 
-int platformLockFileExclusive(int fd, bool blocking)
+namespace
+{
+
+int lockFile(int fd, DWORD flags)
 {
     auto * handle = toHandle(fd);
     if (handle == INVALID_HANDLE_VALUE)
         return -1;
 
-    DWORD flags = LOCKFILE_EXCLUSIVE_LOCK;
-    if (!blocking)
-        flags |= LOCKFILE_FAIL_IMMEDIATELY;
-
     OVERLAPPED overlapped{};
     if (!LockFileEx(handle, flags, 0, MAXDWORD, MAXDWORD, &overlapped))
     {
         errno = GetLastError() == ERROR_LOCK_VIOLATION ? EWOULDBLOCK : EACCES;
+        return -1;
+    }
+    return 0;
+}
+
+}
+
+int platformLockFileExclusive(int fd, bool blocking)
+{
+    return lockFile(fd, LOCKFILE_EXCLUSIVE_LOCK | (blocking ? 0u : LOCKFILE_FAIL_IMMEDIATELY));
+}
+
+int platformLockFileShared(int fd, bool blocking)
+{
+    return lockFile(fd, blocking ? 0u : LOCKFILE_FAIL_IMMEDIATELY);
+}
+
+int platformUnlockFile(int fd)
+{
+    auto * handle = toHandle(fd);
+    if (handle == INVALID_HANDLE_VALUE)
+        return -1;
+
+    OVERLAPPED overlapped{};
+    if (!UnlockFileEx(handle, 0, MAXDWORD, MAXDWORD, &overlapped))
+    {
+        errno = EACCES;
+        return -1;
+    }
+    return 0;
+}
+
+int platformTruncate(const std::string & path, UInt64 size)
+{
+    auto * handle = CreateFileW(
+        pathFromString(path).c_str(), GENERIC_WRITE, FILE_SHARE_READ, nullptr, OPEN_EXISTING, FILE_ATTRIBUTE_NORMAL, nullptr);
+    if (handle == INVALID_HANDLE_VALUE)
+    {
+        errno = GetLastError() == ERROR_FILE_NOT_FOUND ? ENOENT : EACCES;
+        return -1;
+    }
+
+    LARGE_INTEGER position;
+    position.QuadPart = static_cast<LONGLONG>(size);
+    const bool ok = SetFilePointerEx(handle, position, nullptr, FILE_BEGIN) && SetEndOfFile(handle);
+    CloseHandle(handle);
+
+    if (!ok)
+    {
+        errno = EIO;
         return -1;
     }
     return 0;
@@ -181,6 +230,21 @@ int platformFDataSync(int fd)
 int platformLockFileExclusive(int fd, bool blocking)
 {
     return ::flock(fd, LOCK_EX | (blocking ? 0 : LOCK_NB));
+}
+
+int platformLockFileShared(int fd, bool blocking)
+{
+    return ::flock(fd, LOCK_SH | (blocking ? 0 : LOCK_NB));
+}
+
+int platformUnlockFile(int fd)
+{
+    return ::flock(fd, LOCK_UN);
+}
+
+int platformTruncate(const std::string & path, UInt64 size)
+{
+    return ::truncate(path.c_str(), static_cast<off_t>(size));
 }
 
 int platformOpenDirectory(const std::string & path)

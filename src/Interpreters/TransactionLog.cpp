@@ -142,7 +142,7 @@ void TransactionLog::loadEntries(Strings::const_iterator beg, Strings::const_ite
     std::vector<std::string> entry_paths;
     entry_paths.reserve(entries_count);
     for (auto it = beg; it != end; ++it)
-        entry_paths.emplace_back(fs::path(zookeeper_path_log) / *it);
+        entry_paths.emplace_back(pathToGenericString(fs::path(zookeeper_path_log) / *it));
 
     auto entries = TSA_READ_ONE_THREAD(zookeeper)->get(entry_paths);
     std::vector<std::pair<TIDHash, CSNEntry>> loaded;

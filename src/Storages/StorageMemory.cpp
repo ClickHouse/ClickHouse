@@ -488,15 +488,15 @@ namespace
         {
             fs::path data_path_in_backup_fs = data_path_in_backup;
             data_bin_pos = file_paths.size();
-            file_paths.emplace_back(data_path_in_backup_fs / "data.bin");
+            file_paths.emplace_back(pathToGenericString(data_path_in_backup_fs / "data.bin"));
             index_mrk_pos= file_paths.size();
-            file_paths.emplace_back(data_path_in_backup_fs / "index.mrk");
+            file_paths.emplace_back(pathToGenericString(data_path_in_backup_fs / "index.mrk"));
             columns_txt_pos = file_paths.size();
-            file_paths.emplace_back(data_path_in_backup_fs / "columns.txt");
+            file_paths.emplace_back(pathToGenericString(data_path_in_backup_fs / "columns.txt"));
             count_txt_pos = file_paths.size();
-            file_paths.emplace_back(data_path_in_backup_fs / "count.txt");
+            file_paths.emplace_back(pathToGenericString(data_path_in_backup_fs / "count.txt"));
             sizes_json_pos = file_paths.size();
-            file_paths.emplace_back(data_path_in_backup_fs / "sizes.json");
+            file_paths.emplace_back(pathToGenericString(data_path_in_backup_fs / "sizes.json"));
         }
 
     private:

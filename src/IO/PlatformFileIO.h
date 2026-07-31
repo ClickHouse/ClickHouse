@@ -40,6 +40,19 @@ int platformFDataSync(int fd);
 /// with `errno` set, `EWOULDBLOCK` for a lock already held.
 int platformLockFileExclusive(int fd, bool blocking);
 
+/// The same, shared rather than exclusive: `flock(LOCK_SH)`, or `LockFileEx` without
+/// `LOCKFILE_EXCLUSIVE_LOCK`.
+int platformLockFileShared(int fd, bool blocking);
+
+/// Releases a lock taken by either of the above. `flock(LOCK_UN)`, or `UnlockFileEx`.
+int platformUnlockFile(int fd);
+
+/// `truncate(2)`: set a file's length by path. Windows has no such call - the CRT can only resize
+/// through a descriptor, and `off_t` there is 32 bits - so this opens the file and moves its end
+/// with `SetFilePointerEx`/`SetEndOfFile`, which take a 64-bit offset. Reports failure as `-1`
+/// with `errno` set.
+int platformTruncate(const std::string & path, UInt64 size);
+
 /// Opens a directory, for no purpose other than passing the descriptor to `platformFDataSync` -
 /// which is how MergeTree makes a rename durable. `open(O_DIRECTORY)` on POSIX; on Windows the
 /// CRT's `_open` refuses a directory outright, so this goes through `CreateFileW` with

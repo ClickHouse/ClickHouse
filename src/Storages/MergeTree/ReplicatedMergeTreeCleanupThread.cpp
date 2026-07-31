@@ -497,7 +497,7 @@ void ReplicatedMergeTreeCleanupThread::getBlocksSortedByTime(
         auto status = exists_results[i];
         if (status.error != Coordination::Error::ZNONODE)
         {
-            auto node_name = fs::path(exists_paths[i]).filename();
+            auto node_name = pathToGenericString(fs::path(exists_paths[i]).filename());
             cached_block_stats.emplace(node_name, NodeCacheEntry{status.stat.ctime, status.stat.czxid, status.stat.version});
             timed_blocks.emplace_back(node_name, status.stat.ctime, status.stat.czxid, status.stat.version);
         }

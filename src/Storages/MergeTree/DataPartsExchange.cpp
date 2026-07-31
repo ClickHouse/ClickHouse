@@ -638,7 +638,7 @@ std::pair<MergeTreeData::MutableDataPartPtr, scope_guard> Fetcher::fetchSelected
             auto output_buffer_getter = [](IDataPartStorage & part_storage, const auto & file_name, size_t file_size)
             {
                 auto full_path = fs::path(part_storage.getFullPath()) / file_name;
-                return std::make_unique<WriteBufferFromFile>(full_path, std::min<UInt64>(DBMS_DEFAULT_BUFFER_SIZE, file_size));
+                return std::make_unique<WriteBufferFromFile>(pathToGenericString(full_path), std::min<UInt64>(DBMS_DEFAULT_BUFFER_SIZE, file_size));
             };
 
             return std::make_pair(downloadPartToDisk(part_name, replica_path, to_detached, tmp_prefix, disk, true, *in, output_buffer_getter, projections, throttler, sync), std::move(temporary_directory_lock));

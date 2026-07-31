@@ -111,7 +111,7 @@ void trimPath(FsNodePtr node, const NormalizedPath & path)
     std::vector<std::pair<FsNodePtr, std::string>> spine;
     for (const auto & step : path)
     {
-        spine.emplace_back(node, step);
+        spine.emplace_back(node, pathToGenericString(step));
         node = node->subdirectories.at(pathToGenericString(step));
     }
 
@@ -260,7 +260,7 @@ void FsSnapshot::recordFile(const std::string & path, FileRemoteInfo info)
         throw Exception(ErrorCodes::FILE_ALREADY_EXISTS, "File '{}' already exists", normalized_path.string());
 
     auto new_directory_info = node->info.value();
-    new_directory_info.files.emplace(normalized_path.filename(), std::move(info));
+    new_directory_info.files.emplace(pathToGenericString(normalized_path.filename()), std::move(info));
     root = updateInfo(root, normalized_path.parent_path(), new_directory_info);
     remote_layout_files_delta += 1;
 }

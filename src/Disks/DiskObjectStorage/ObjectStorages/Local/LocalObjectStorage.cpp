@@ -511,7 +511,7 @@ void LocalObjectStorage::listObjects(const std::string & path, RelativePathsWith
             else
             {
                 if (auto metadata = tryGetObjectMetadata(pathToGenericString(entry_path), /*with_tags=*/ false))
-                    children.emplace_back(std::make_shared<RelativePathWithMetadata>(entry_path, std::move(*metadata)));
+                    children.emplace_back(std::make_shared<RelativePathWithMetadata>(pathToGenericString(entry_path), std::move(*metadata)));
             }
 
             it.increment(ec);

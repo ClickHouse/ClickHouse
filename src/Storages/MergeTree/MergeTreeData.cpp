@@ -8190,7 +8190,7 @@ public:
         auto it = temp_part_dirs.find(part_name);
         if (it == temp_part_dirs.end())
         {
-            auto temp_dir_deleter = std::make_unique<TemporaryFileOnDisk>(disk, fs::path{storage->getRelativeDataPath()} / ("tmp_restore_" + part_name + "-"));
+            auto temp_dir_deleter = std::make_unique<TemporaryFileOnDisk>(disk, pathToGenericString(fs::path{storage->getRelativeDataPath()} / ("tmp_restore_" + part_name + "-")));
             auto temp_part_dir = fs::path{temp_dir_deleter->getRelativePath()}.filename();
             /// Attaching parts will rename them so it's expected for a temporary part directory not to exist anymore in the end.
             temp_dir_deleter->setShowWarningIfRemoved(false);

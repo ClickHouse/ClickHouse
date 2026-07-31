@@ -199,7 +199,7 @@ bool ReplicatedMergeTreeQueue::load(zkutil::ZooKeeperPtr zookeeper)
         paths.reserve(children_num);
 
         for (const String & child : children)
-            paths.emplace_back(fs::path(queue_path) / child);
+            paths.emplace_back(pathToGenericString(fs::path(queue_path) / child));
 
         auto results = zookeeper->get(paths);
         for (size_t i = 0; i < children_num; ++i)
@@ -904,7 +904,7 @@ std::pair<int32_t, int32_t> ReplicatedMergeTreeQueue::pullLogsToQueue(zkutil::Zo
             get_paths.reserve(end - begin);
 
             for (auto it = begin; it != end; ++it)
-                get_paths.emplace_back(fs::path(zookeeper_path) / "log" / *it);
+                get_paths.emplace_back(pathToGenericString(fs::path(zookeeper_path) / "log" / *it));
 
             /// Simultaneously add all new entries to the queue and move the pointer to the log.
 
@@ -1217,7 +1217,7 @@ int32_t ReplicatedMergeTreeQueue::updateMutations(zkutil::ZooKeeperPtr zookeeper
         entry_paths.reserve(entries_to_load.size());
 
         for (const String & entry : entries_to_load)
-            entry_paths.emplace_back(fs::path(zookeeper_path) / "mutations" / entry);
+            entry_paths.emplace_back(pathToGenericString(fs::path(zookeeper_path) / "mutations" / entry));
 
         auto entries = zookeeper->tryGet(entry_paths);
 

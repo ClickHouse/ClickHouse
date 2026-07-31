@@ -369,7 +369,7 @@ DataPartStorageOnDiskBase::getReplicatedFilesDescriptionForRemoteDisk(const Name
         if (!fs::is_regular_file(metadata_full_file_path))
             throw Exception(ErrorCodes::CORRUPTED_DATA, "Remote metadata '{}' is not a file", name);
 
-        paths.emplace_back(relative_path / name);
+        paths.emplace_back(pathToGenericString(relative_path / name));
     }
 
     auto serialized_metadata = disk->getSerializedMetadata(paths);
@@ -466,12 +466,12 @@ void DataPartStorageOnDiskBase::backup(
         }
 
         BackupEntryPtr backup_entry = std::make_unique<BackupEntryFromImmutableFile>(
-            disk, filepath_on_disk, copy_encrypted, file_size, file_hash, allow_checksums_from_remote_paths);
+            disk, pathToGenericString(filepath_on_disk), copy_encrypted, file_size, file_hash, allow_checksums_from_remote_paths);
 
         if (temp_dir_owner)
             backup_entry = wrapBackupEntryWith(std::move(backup_entry), temp_dir_owner);
 
-        backup_entries.emplace_back(filepath_in_backup, std::move(backup_entry));
+        backup_entries.emplace_back(pathToGenericString(filepath_in_backup), std::move(backup_entry));
     };
 
     auto * log = &Poco::Logger::get("DataPartStorageOnDiskBase::backup");
@@ -888,7 +888,7 @@ void DataPartStorageOnDiskBase::remove(
         NameSet files_not_to_remove_for_projection;
         for (const auto & file_name : can_remove_description->files_not_to_remove)
             if (file_name.starts_with(proj_dir_name))
-                files_not_to_remove_for_projection.emplace(fs::path(file_name).filename());
+                files_not_to_remove_for_projection.emplace(pathToGenericString(fs::path(file_name).filename()));
 
         if (!files_not_to_remove_for_projection.empty())
             LOG_DEBUG(
@@ -983,16 +983,16 @@ void DataPartStorageOnDiskBase::clearDirectory(
         /// Remove each expected file in directory, then remove directory itself.
         RemoveBatchRequest request;
         for (const auto & file : names_to_remove)
-            request.emplace_back(fs::path(dir) / file);
-        request.emplace_back(fs::path(dir) / "default_compression_codec.txt", true);
-        request.emplace_back(fs::path(dir) / "delete-on-destroy.txt", true);
-        request.emplace_back(fs::path(dir) / VersionMetadata::TXN_VERSION_METADATA_FILE_NAME, true);
+            request.emplace_back(pathToGenericString(fs::path(dir) / file));
+        request.emplace_back(pathToGenericString(fs::path(dir) / "default_compression_codec.txt"), true);
+        request.emplace_back(pathToGenericString(fs::path(dir) / "delete-on-destroy.txt"), true);
+        request.emplace_back(pathToGenericString(fs::path(dir) / VersionMetadata::TXN_VERSION_METADATA_FILE_NAME), true);
         /// A leftover `txn_version.txt.tmp` would otherwise be missed here and leave the directory
         /// non-empty, forcing the slow recursive-removal fallback below.
-        request.emplace_back(fs::path(dir) / VersionMetadata::TMP_TXN_VERSION_METADATA_FILE_NAME, true);
-        request.emplace_back(fs::path(dir) / "metadata_version.txt", true);
-        request.emplace_back(fs::path(dir) / IMergeTreeDataPart::COLUMNS_SUBSTREAMS_FILE_NAME, true);
-        request.emplace_back(fs::path(dir) / IMergeTreeDataPart::INVALIDATED_SYSTEM_COLUMNS_FILE_NAME, true);
+        request.emplace_back(pathToGenericString(fs::path(dir) / VersionMetadata::TMP_TXN_VERSION_METADATA_FILE_NAME), true);
+        request.emplace_back(pathToGenericString(fs::path(dir) / "metadata_version.txt"), true);
+        request.emplace_back(pathToGenericString(fs::path(dir) / IMergeTreeDataPart::COLUMNS_SUBSTREAMS_FILE_NAME), true);
+        request.emplace_back(pathToGenericString(fs::path(dir) / IMergeTreeDataPart::INVALIDATED_SYSTEM_COLUMNS_FILE_NAME), true);
 
         disk->removeSharedFiles(request, !can_remove_shared_data, names_not_to_remove);
         disk->removeDirectory(dir);

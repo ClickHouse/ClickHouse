@@ -102,7 +102,7 @@ std::unique_ptr<WriteBuffer> BackupWriterFile::writeFile(const String & file_nam
 {
     auto file_path = root_path / file_name;
     fs::create_directories(file_path.parent_path());
-    return std::make_unique<WriteBufferFromFile>(file_path, write_buffer_size, -1, write_settings.local_throttler);
+    return std::make_unique<WriteBufferFromFile>(pathToGenericString(file_path), write_buffer_size, -1, write_settings.local_throttler);
 }
 
 void BackupWriterFile::removeFile(const String & file_name)

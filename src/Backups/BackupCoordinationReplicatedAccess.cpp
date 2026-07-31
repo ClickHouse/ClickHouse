@@ -44,7 +44,7 @@ Strings BackupCoordinationReplicatedAccess::getFilePaths(const String & access_z
     res.reserve(file_paths.file_paths.size());
     String filename = pathToGenericString(fs::path{*file_paths.file_paths.begin()}.filename());
     for (const auto & file_path : file_paths.file_paths)
-        res.emplace_back(fs::path{file_path}.replace_filename(filename));
+        res.emplace_back(pathToGenericString(fs::path{file_path}.replace_filename(filename)));
 
     return res;
 }

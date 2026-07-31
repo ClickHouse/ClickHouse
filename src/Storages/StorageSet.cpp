@@ -138,7 +138,7 @@ SinkToStoragePtr StorageSetOrJoinBase::write(const ASTPtr & /*query*/, const Sto
 {
     UInt64 id = ++increment;
     return std::make_shared<SetOrJoinSink>(
-        context, *this, metadata_snapshot, path, fs::path(path) / "tmp/", toString(id) + ".bin", persistent);
+        context, *this, metadata_snapshot, path, pathToGenericString(fs::path(path) / "tmp/"), toString(id) + ".bin", persistent);
 }
 
 

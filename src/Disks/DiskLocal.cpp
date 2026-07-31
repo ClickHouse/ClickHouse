@@ -1,3 +1,4 @@
+#include <IO/PlatformFileIO.h>
 #include <base/pathToString.h>
 #include <Disks/DiskLocal.h>
 #include <Common/IThrottler.h>
@@ -448,7 +449,7 @@ DiskLocal::writeFile(const String & path, size_t buf_size, WriteMode mode, const
 {
     int flags = (mode == WriteMode::Append) ? (O_APPEND | O_CREAT | O_WRONLY) : -1;
     return std::make_unique<WriteBufferFromFile>(
-        fs::path(disk_path) / path,
+        pathToGenericString(fs::path(disk_path) / path),
         buf_size,
         flags,
         settings.local_throttler,
@@ -468,20 +469,20 @@ std::vector<String> DiskLocal::getBlobPath(const String & path) const
 void DiskLocal::writeFileUsingBlobWritingFunction(const String & path, WriteMode mode, WriteBlobFunction && write_blob_function)
 {
     auto fs_path = fs::path(disk_path) / path;
-    std::move(write_blob_function)({fs_path}, mode, {});
+    std::move(write_blob_function)({pathToGenericString(fs_path)}, mode, {});
 }
 
 void DiskLocal::removeFile(const String & path)
 {
     auto fs_path = fs::path(disk_path) / path;
-    if (0 != unlink(fs_path.c_str()))
+    if (0 != unlink(pathToGenericString(fs_path).c_str()))
         ErrnoException::throwFromPath(ErrorCodes::CANNOT_UNLINK, pathToGenericString(fs_path), "Cannot unlink file {}", fs_path);
 }
 
 void DiskLocal::removeFileIfExists(const String & path)
 {
     auto fs_path = fs::path(disk_path) / path;
-    if (0 != unlink(fs_path.c_str()))
+    if (0 != unlink(pathToGenericString(fs_path).c_str()))
     {
         if (errno != ENOENT)
             ErrnoException::throwFromPath(ErrorCodes::CANNOT_UNLINK, pathToGenericString(fs_path), "Cannot unlink file {}", fs_path);
@@ -491,7 +492,7 @@ void DiskLocal::removeFileIfExists(const String & path)
 void DiskLocal::removeDirectory(const String & path)
 {
     auto fs_path = fs::path(disk_path) / path;
-    if (0 != rmdir(fs_path.c_str()))
+    if (0 != rmdir(pathToGenericString(fs_path).c_str()))
         ErrnoException::throwFromPath(ErrorCodes::CANNOT_RMDIR, pathToGenericString(fs_path), "Cannot remove directory {}", fs_path);
 }
 
@@ -500,7 +501,7 @@ void DiskLocal::removeDirectoryIfExists(const String & path)
     auto fs_path = fs::path(disk_path) / path;
     if (!existsDirectory(pathToGenericString(fs_path)))
         return;
-    if (0 != rmdir(fs_path.c_str()))
+    if (0 != rmdir(pathToGenericString(fs_path).c_str()))
         if (errno != ENOENT)
             ErrnoException::throwFromPath(ErrorCodes::CANNOT_RMDIR, pathToGenericString(fs_path), "Cannot remove directory {}", fs_path);
 }
@@ -514,7 +515,7 @@ void DiskLocal::listFiles(const String & path, std::vector<String> & file_names)
 {
     file_names.clear();
     for (const auto & entry : fs::directory_iterator(fs::path(disk_path) / path))
-        file_names.emplace_back(entry.path().filename());
+        file_names.emplace_back(pathToGenericString(entry.path().filename()));
 }
 
 void DiskLocal::setLastModified(const String & path, const Poco::Timestamp & timestamp)
@@ -572,7 +573,7 @@ bool DiskLocal::equivalentNoThrow(const String & p1, const String & p2) const
 
 void DiskLocal::truncateFile(const String & path, size_t size)
 {
-    int res = truncate((fs::path(disk_path) / path).string().data(), size);
+    int res = platformTruncate(pathToGenericString(fs::path(disk_path) / path), size);
     if (-1 == res)
         ErrnoException::throwFromPath(ErrorCodes::CANNOT_TRUNCATE_FILE, path, "Cannot truncate {}", path);
 }
@@ -611,7 +612,7 @@ void DiskLocal::copyDirectoryContent(
 
 SyncGuardPtr DiskLocal::getDirectorySyncGuard(const String & path) const
 {
-    return std::make_unique<LocalDirectorySyncGuard>(fs::path(disk_path) / path);
+    return std::make_unique<LocalDirectorySyncGuard>(pathToGenericString(fs::path(disk_path) / path));
 }
 
 
