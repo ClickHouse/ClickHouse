@@ -10,6 +10,7 @@
 #include <DataTypes/DataTypesNumber.h>
 #include <IO/ReadHelpers.h>
 #include <IO/WriteHelpers.h>
+#include <Common/FieldVisitorConvertToNumber.h>
 #include <DataTypes/IDataType.h>
 #include <Common/StringUtils.h>
 #include <Core/Types.h>
@@ -126,7 +127,13 @@ AggregateFunctionPtr createAggregateFunctionMergeSerializedTDigest(
 
     if (!params.empty())
     {
-        base64_encoded = params[0].safeGet<bool>();
+        /// Validate the literal explicitly: `safeGet<bool>` aliases to UInt64 in `Field`
+        /// and would silently accept any positive integer as `true`.
+        UInt64 v = applyVisitor(FieldVisitorConvertToNumber<UInt64>(), params[0]);
+        if (v != 0 && v != 1)
+            throw Exception(ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT,
+                "Parameter base64_encoded for aggregate function {} must be 0 or 1, got {}", name, v);
+        base64_encoded = (v != 0);
     }
 
     // Create with Float64 as the default numeric type for TDigest
