@@ -404,11 +404,8 @@ static bool hasDefault(const StorageSnapshotPtr & storage_snapshot, const NameAn
     return storage_snapshot->getDefault(name_in_storage).has_value();
 }
 
-/// True if `column` is a subcolumn whose parent column is going to be present in the block.
-/// `column` may come from `Nested::convertToSubcolumns`, which moves the subcolumn delimiter
-/// (`arr.nested.b` becomes `{name_in_storage = "arr", subcolumn = "nested.b"}`), so its own
-/// `getNameInStorage` is not the parent to look for. The metadata knows where the delimiter
-/// really belongs, and both availability sets are keyed by full column name.
+/// `column` may have come from `Nested::convertToSubcolumns`, which moves the subcolumn delimiter,
+/// so its own `getNameInStorage` is not necessarily the parent. Resolve the parent from metadata.
 static bool isSubcolumnOfAvailableColumn(
     const StorageSnapshotPtr & storage_snapshot,
     const NameAndTypePair & column,
