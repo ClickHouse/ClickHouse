@@ -45,10 +45,15 @@ FROM requests;
 
 ### Materialized View Pattern {#materialized-view-pattern}
 
+`serializedQuantiles` returns a final `String` value, not an aggregate function state, so table engines
+such as `AggregatingMergeTree` cannot combine sketches for duplicate keys during background merges.
+Store one sketch per insert batch in a plain `MergeTree` table and combine them at query time with
+[mergeSerializedQuantiles](../../../sql-reference/aggregate-functions/reference/mergeSerializedQuantiles):
+
 ```sql
--- Store sketches for time-series percentile analysis
+-- Store one partial sketch per insert batch
 CREATE MATERIALIZED VIEW hourly_latency_sketches
-ENGINE = AggregatingMergeTree()
+ENGINE = MergeTree()
 ORDER BY (service, hour)
 AS SELECT
     service,
@@ -56,6 +61,13 @@ AS SELECT
     serializedQuantiles(latency_ms) AS latency_sketch
 FROM requests
 GROUP BY service, hour;
+
+-- Combine the partial sketches at query time
+SELECT
+    service,
+    percentileFromQuantiles(mergeSerializedQuantiles(latency_sketch), 0.95) AS p95
+FROM hourly_latency_sketches
+GROUP BY service;
 ```
 
 ## Examples {#examples}

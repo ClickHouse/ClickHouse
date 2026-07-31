@@ -31,7 +31,8 @@ mergeSerializedQuantiles([base64_encoded])(sketch)
 The merge operation is:
 - **Commutative**: Order doesn't matter
 - **Associative**: Can merge in any grouping
-- **Idempotent**: Merging same sketch multiple times is safe
+
+The merge is **not** idempotent: merging the same sketch twice doubles its retained weights and shifts the resulting percentiles, so each sketch must be merged exactly once.
 
 This makes it ideal for distributed aggregation in ClickHouse.
 
@@ -68,15 +69,26 @@ GROUP BY service;
 
 ### Example 3: Time Series Rollup {#example-3-time-series-rollup}
 
+`mergeSerializedQuantiles` returns a final `String` value, not an aggregate function state, so table engines
+such as `AggregatingMergeTree` cannot combine sketches for duplicate keys during background merges.
+Store the partial sketches in a plain `MergeTree` table and merge them at query time:
+
 ```sql
--- Rollup hourly -> daily -> weekly
-CREATE MATERIALIZED VIEW daily_latency_rollup
-ENGINE = AggregatingMergeTree()
-ORDER BY (service, date)
-AS SELECT
+-- Store hourly sketches as plain rows
+CREATE TABLE hourly_latency_sketches
+(
+    service String,
+    hour DateTime,
+    hourly_sketch String
+)
+ENGINE = MergeTree()
+ORDER BY (service, hour);
+
+-- Rollup to daily percentiles at query time
+SELECT
     service,
     toDate(hour) AS date,
-    mergeSerializedQuantiles(hourly_sketch) AS daily_sketch
+    percentileFromQuantiles(mergeSerializedQuantiles(hourly_sketch), 0.95) AS p95
 FROM hourly_latency_sketches
 GROUP BY service, date;
 ```

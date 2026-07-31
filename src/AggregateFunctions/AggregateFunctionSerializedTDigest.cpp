@@ -117,7 +117,7 @@ Creates a serialized TDigest sketch for approximate percentile estimation.
 )";
     FunctionDocumentation::Syntax syntax = "serializedTDigest(expression)";
     FunctionDocumentation::Arguments arguments = {
-        {"expression", "Numeric expression.", {"Int*", "UInt*", "Float*", "Decimal*"}}
+        {"expression", "Numeric expression.", {"Int*", "UInt*", "Float*"}}
     };
     FunctionDocumentation::ReturnedValue returned_value = {
         "Serialized binary TDigest sketch.", {"String"}

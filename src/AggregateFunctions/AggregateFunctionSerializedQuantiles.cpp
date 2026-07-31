@@ -159,7 +159,7 @@ Creates a serialized Quantiles sketch for approximate percentile/quantile estima
 )";
     FunctionDocumentation::Syntax syntax = "serializedQuantiles(expression)";
     FunctionDocumentation::Arguments arguments = {
-        {"expression", "Numeric expression.", {"Int*", "UInt*", "Float*", "Decimal*"}}
+        {"expression", "Numeric expression.", {"Int*", "UInt*", "Float*"}}
     };
     FunctionDocumentation::ReturnedValue returned_value = {
         "Serialized binary Quantiles sketch.", {"String"}
