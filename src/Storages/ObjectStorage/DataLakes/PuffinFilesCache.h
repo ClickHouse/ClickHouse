@@ -83,8 +83,13 @@ public:
     template <typename LoadFunc>
     DataLakeObjectMetadata::ExcludedRowsPtr getOrSetDeletionVector(const PuffinFilesCacheKey & key, LoadFunc && load_fn)
     {
+        /// True if this caller's load_fn ran. Needed because CacheBase::getOrSet returns
+        /// `{value, false}` both for a real hit and when a concurrent clear() discarded the
+        /// insert after load — the latter must still count as a miss.
+        bool loaded = false;
         auto load_fn_wrapper = [&]()
         {
+            loaded = true;
             auto excluded_rows = load_fn();
             const bool is_empty_deletion_vector = !excluded_rows;
             if (is_empty_deletion_vector)
@@ -113,9 +118,30 @@ public:
         };
 
         auto result = Base::getOrSet(key, load_fn_wrapper);
-        if (result.second)
+        if (result.second || loaded)
         {
-            LOG_TRACE(log, "Puffin files cache miss for {} | {} at offset {} length {} for data file {}", key.file_path, key.etag, key.content_offset, key.content_size_in_bytes, key.referenced_data_file);
+            if (!result.second)
+            {
+                LOG_TRACE(
+                    log,
+                    "Puffin files cache miss (load discarded by concurrent clear) for {} | {} at offset {} length {} for data file {}",
+                    key.file_path,
+                    key.etag,
+                    key.content_offset,
+                    key.content_size_in_bytes,
+                    key.referenced_data_file);
+            }
+            else
+            {
+                LOG_TRACE(
+                    log,
+                    "Puffin files cache miss for {} | {} at offset {} length {} for data file {}",
+                    key.file_path,
+                    key.etag,
+                    key.content_offset,
+                    key.content_size_in_bytes,
+                    key.referenced_data_file);
+            }
             ProfileEvents::increment(ProfileEvents::PuffinFilesCacheMisses);
         }
         else if (result.first->is_empty_deletion_vector)
