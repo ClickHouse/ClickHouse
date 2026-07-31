@@ -13,7 +13,7 @@ namespace DB
 
 class WriteBuffer;
 
-class PrometheusTextOutputFormat : public IRowOutputFormat
+class PrometheusTextOutputFormat final : public IRowOutputFormat
 {
 public:
     PrometheusTextOutputFormat(
@@ -27,8 +27,8 @@ protected:
 
     struct ColumnPositions
     {
-        size_t name;
-        size_t value;
+        size_t name{};
+        size_t value{};
         std::optional<size_t> help;
         std::optional<size_t> type;
         std::optional<size_t> labels;

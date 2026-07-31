@@ -1,0 +1,27 @@
+--- LEFT ANTI JOIN, ON syntax ---
+1	0
+3	0
+--- LEFT ANTI JOIN, USING syntax ---
+1	0
+3	0
+--- LEFT ANTI JOIN, parallel_hash algorithm ---
+1	0
+3	0
+--- LEFT ANTI JOIN, grace_hash algorithm ---
+1	0
+3	0
+--- LEFT ANTI JOIN with multiple right columns: only the key was affected, other defaults must keep working ---
+1	0		\N
+3	0		\N
+--- LEFT ANTI JOIN, String keys ---
+alpha	
+gamma	
+--- RIGHT ANTI JOIN with table swap (becomes LEFT ANTI internally) ---
+0	1
+0	3
+--- RIGHT ANTI JOIN without table swap ---
+0	1
+0	3
+--- LEFT ANTI JOIN, multiple join keys ---
+1	10	0	0
+3	30	0	0

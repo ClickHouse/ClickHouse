@@ -1,3 +1,4 @@
+#include <filesystem>
 #include <memory>
 #include <DataTypes/DataTypeArray.h>
 #include <mutex>
@@ -103,7 +104,8 @@ public:
             CreateFileSegmentSettings(FileSegmentKind::Ephemeral), FileCache::getCommonOrigin());
 
         chassert(segment_holder->size() == 1);
-        segment_holder->front().getKeyMetadata()->createBaseDirectory(/* throw_if_failed */true);
+        if (auto ec = segment_holder->front().getKeyMetadata()->createBaseDirectory(); ec)
+            throw std::filesystem::filesystem_error(fmt::format("createBaseDirectory failed for {}", key), ec);
     }
 
     std::unique_ptr<WriteBuffer> write() override
@@ -143,7 +145,7 @@ public:
             context = Context::getGlobalContextInstance();
         read_settings = context->getReadSettings();
         write_settings = context->getWriteSettings();
-        timeouts = ConnectionTimeouts::getTCPTimeoutsWithoutFailover(context->getSettingsRef());
+        timeouts = ConnectionTimeouts::getDistributedCacheTimeouts(context->getSettingsRef());
         receive_throttler = context->getDistributedCacheReadThrottler();
         send_throttler = context->getDistributedCacheWriteThrottler();
         distributed_cache_log = context->getDistributedCacheLog();
@@ -160,7 +162,11 @@ public:
         try
         {
             if (cache_client)
+            {
                 cache_client->makeDropCacheRequest(file_key, /*connection_info_hash=*/0, /*is_temporary_data=*/true);
+                /// The hold is released — the connection can be reused by someone else.
+                cache_client->setForbidReconnect(false);
+            }
         }
         catch (...)
         {
@@ -191,7 +197,7 @@ public:
             buffer_size_ = DBMS_DEFAULT_BUFFER_SIZE;
 
         auto local_read_settings = read_settings;
-        local_read_settings.remote_fs_buffer_size = buffer_size_;
+        local_read_settings.remote_fs_settings.buffer_size = buffer_size_;
         return std::make_unique<ReadBufferFromDistributedCache>(
             file_key,
             bytes_written,
@@ -283,9 +289,9 @@ public:
     std::unique_ptr<SeekableReadBuffer> read(size_t buffer_size_) const override
     {
         ReadSettings settings;
-        settings.local_fs_buffer_size = buffer_size_;
-        settings.remote_fs_buffer_size = buffer_size_;
-        settings.prefetch_buffer_size = buffer_size_;
+        settings.local_fs_settings.buffer_size = buffer_size_;
+        settings.remote_fs_settings.buffer_size = buffer_size_;
+        settings.remote_fs_settings.large_buffer_size = buffer_size_;
 
         return disk->readFile(path_to_file, settings);
     }

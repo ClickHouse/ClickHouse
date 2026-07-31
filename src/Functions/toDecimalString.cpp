@@ -11,7 +11,6 @@
 #include <IO/WriteHelpers.h>
 #include <Interpreters/Context_fwd.h>
 
-
 namespace DB
 {
 
@@ -24,7 +23,7 @@ namespace ErrorCodes
 namespace
 {
 
-class FunctionToDecimalString : public IFunction
+class FunctionToDecimalString final : public IFunction
 {
 public:
     static constexpr auto name = "toDecimalString";
@@ -157,7 +156,7 @@ private:
         DB::DoubleConverter<false>::BufferType buffer;
         double_conversion::StringBuilder builder{buffer, sizeof(buffer)};
 
-        const auto result = DB::DoubleConverter<false>::instance().ToFixed(value, precision, &builder);
+        const auto result = DB::DoubleConverter<false>::instance().ToFixed(static_cast<double>(value), precision, &builder);
 
         if (!result)
             throw DB::Exception(DB::ErrorCodes::CANNOT_PRINT_FLOAT_OR_DOUBLE_NUMBER, "Error processing number: {}", value);

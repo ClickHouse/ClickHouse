@@ -94,7 +94,7 @@ String formatDecimal(const Decimal<T> & x, UInt32 scale)
     return wb.str();
 }
 
-String formatDateTime(const DateTime64 & x, UInt32 scale, const DateLUTImpl & time_zone)
+static String formatDateTime(const DateTime64 & x, UInt32 scale, const DateLUTImpl & time_zone)
 {
     WriteBufferFromOwnString wb;
     writeDateTimeText<'-', ':', 'T', '.', true>(x, scale, wb, time_zone);
@@ -186,7 +186,7 @@ DB::Row getPartitionFields(const String & partition_string, const PaimonTableSch
     return partition_key_value;
 };
 
-String getPartitionString(Paimon::BinaryRow & partition, const PaimonTableSchema & table_schema, const String & partition_default_name)
+static String getPartitionString(Paimon::BinaryRow & partition, const PaimonTableSchema & table_schema, const String & partition_default_name)
 {
     auto get_partition_value = [&partition, &partition_default_name](Int32 i, Paimon::DataType & data_type) -> String
     {

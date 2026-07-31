@@ -8,7 +8,7 @@ namespace DB
 {
 
 /// The big brother of SourceFromSingleChunk.
-class SourceFromChunks : public ISource
+class SourceFromChunks final : public ISource
 {
 public:
     SourceFromChunks(SharedHeader header, Chunks chunks_);
