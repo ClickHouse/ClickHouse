@@ -21,6 +21,10 @@ CURDIR=$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)
 # Print the error code alone, so the reference stays stable across message wording changes.
 code() { grep -oE 'Code: [0-9]+' <<<"$1" | head -1; }
 
+# The NOTIFY rows also print which diagnostic fired: an unknown name and a registered-but-idle name
+# both throw Code 36, so only the message tells the two error paths apart.
+msg() { grep -oE 'Cannot find (channel for )?fail point' <<<"$1" | head -1; }
+
 # Every statement runs under a timeout: if a rejection ever regresses into a wait, the test must fail
 # loudly instead of hanging the job until the global CI timeout.
 run() { timeout 30 ${CLICKHOUSE_LOCAL} --multiquery --query "$1" 2>&1; }
@@ -40,10 +44,10 @@ echo "unknown_wait $(code "$out")"
 out=$(run "SYSTEM WAIT FAILPOINT this_fail_point_does_not_exist PAUSE")
 echo "unknown_wait_pause $(code "$out")"
 
-# NOTIFY already reported an error for an unknown name, so the code here is unchanged and only the
-# message improves. The row pins that the statement keeps rejecting the name.
+# NOTIFY threw Code 36 for an unknown name even before the fix, via the missing-channel path. Pin
+# the message too, so this row only passes with the registration check, not the older error.
 out=$(run "SYSTEM NOTIFY FAILPOINT this_fail_point_does_not_exist")
-echo "unknown_notify $(code "$out")"
+echo "unknown_notify $(code "$out") $(msg "$out")"
 
 # Must not change: the check is on registration, never on enabled state. Disabling a registered fail
 # point that is not currently enabled stays a silent no-op, because callers do idempotent cleanup (a
@@ -61,6 +65,11 @@ echo "registered_not_enabled_wait rc=$rc out=[$out]"
 out=$(run "SYSTEM WAIT FAILPOINT dummy_failpoint PAUSE")
 rc=$?
 echo "registered_not_enabled_wait_pause rc=$rc out=[$out]"
+
+# Must not change, and the counterpart of `unknown_notify`: NOTIFY on a registered fail point that
+# nothing is waiting on keeps reporting the missing channel, not a missing fail point.
+out=$(run "SYSTEM NOTIFY FAILPOINT dummy_failpoint")
+echo "registered_notify_no_channel $(code "$out") $(msg "$out")"
 
 # Must not change: enabling a registered fail point that has no pause semantics still leaves nothing
 # to wait for, so the wait returns rather than blocking.
