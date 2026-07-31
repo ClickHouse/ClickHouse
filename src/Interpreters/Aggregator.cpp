@@ -108,7 +108,7 @@ void initDataVariantsWithSizeHint(
     DB::AggregatedDataVariants & result, DB::AggregatedDataVariants::Type method_chosen, const DB::Aggregator::Params & params)
 {
     const auto & stats_collecting_params = params.stats_collecting_params;
-    const auto max_threads = params.group_by_two_level_threshold != 0 ? std::max(params.max_threads, 1ul) : 1;
+    const auto max_threads = params.group_by_two_level_threshold != 0 ? std::max(params.max_threads, 1uz) : 1;
     if (auto hint = getSizeHint(stats_collecting_params, /*tables_cnt=*/max_threads))
     {
         if (worthConvertToTwoLevel(

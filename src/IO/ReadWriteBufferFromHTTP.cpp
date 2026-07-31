@@ -1,5 +1,9 @@
 #include <IO/ReadWriteBufferFromHTTP.h>
 #include <base/pathToString.h>
+#if defined(OS_WINDOWS)
+#include <Poco/DateTimeFormat.h>
+#include <Poco/DateTimeParser.h>
+#endif
 
 #include <IO/HTTPCommon.h>
 #include <IO/WriteHelpers.h>
@@ -631,7 +635,7 @@ off_t ReadWriteBufferFromHTTP::seek(off_t offset_, int whence)
 
 void ReadWriteBufferFromHTTP::setReadUntilPosition(size_t until)
 {
-    until = std::max(until, 1ul);
+    until = std::max(until, 1uz);
     if (read_range.end && *read_range.end + 1 == until)
         return;
     read_range.end = until - 1;
@@ -802,10 +806,22 @@ ReadWriteBufferFromHTTP::HTTPFileInfo ReadWriteBufferFromHTTP::parseFileInfo(con
     if (response.has("Last-Modified"))
     {
         String date_str = response.get("Last-Modified");
+#if defined(OS_WINDOWS)
+        /// mingw-w64 has no `strptime`. Poco parses this exact format - `Last-Modified` is an
+        /// IMF-fixdate per RFC 7231 - and is already linked, so there is no need for one.
+        Poco::DateTime parsed;
+        int time_zone_differential = 0;
+        if (Poco::DateTimeParser::tryParse(Poco::DateTimeFormat::HTTP_FORMAT, date_str, parsed, time_zone_differential))
+        {
+            parsed.makeUTC(time_zone_differential);
+            res.last_modified = parsed.timestamp().epochTime();
+        }
+#else
         struct tm info{};
         char * end = strptime(date_str.data(), "%a, %d %b %Y %H:%M:%S %Z", &info);
         if (end == date_str.data() + date_str.size())
             res.last_modified = timegm(&info);
+#endif
     }
 
     return res;

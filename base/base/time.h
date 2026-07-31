@@ -12,3 +12,13 @@
 #elif defined (OS_FREEBSD)
 #    define CLOCK_MONOTONIC_COARSE CLOCK_MONOTONIC_FAST
 #endif
+
+#if defined(OS_WINDOWS)
+/// `timegm` is the inverse of `gmtime`: it interprets a broken-down time as UTC, where `mktime`
+/// interprets it as local time and so depends on the current time zone. The Windows CRT provides
+/// exactly this under its own name.
+inline std::time_t timegm(std::tm * tm)
+{
+    return ::_mkgmtime(tm);
+}
+#endif

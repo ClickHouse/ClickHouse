@@ -213,7 +213,7 @@ TEST(MemoryWriteBuffer, WriteAndReread)
     for (size_t s = 0; s < 2500000; s += 500000)
     {
         std::string data = makeTestArray(s);
-        size_t min_s = std::max(s, 1ul);
+        size_t min_s = std::max(s, 1uz);
 
         checkMemoryWriteBuffer(data, MemoryWriteBuffer(min_s));
         checkMemoryWriteBuffer(data, MemoryWriteBuffer(min_s * 2, min_s));
