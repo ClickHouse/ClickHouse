@@ -8,7 +8,7 @@
 #include <IO/SilkSecureFiberStreamSocketImpl.h>
 
 #include <Common/Exception.h>
-#include <Common/SilkThrottler.h>
+#include <Common/Throttler.h>
 #include <Common/tests/gtest_ephemeral_certificate.h>
 #include <Common/tests/gtest_silk_scheduler.h>
 
@@ -84,7 +84,7 @@ TYPED_TEST(SilkFiberSocketTest, RequestResponse)
         [port, impl = this->policy.makeClient()]() -> int
         {
             Poco::Net::StreamSocket socket(impl);
-            const auto throttler = std::make_shared<Silk::Throttler>(/*max_speed_*/ 1'000'000);
+            const auto throttler = std::make_shared<DB::Throttler>(/*max_speed_*/ 1'000'000);
             socket.setSendThrottler(throttler);
             socket.setReceiveThrottler(throttler);
             socket.bind(Poco::Net::SocketAddress("127.0.0.1", 0), /*reuseAddress*/ true);
@@ -233,10 +233,10 @@ TYPED_TEST(SilkFiberSocketTest, ThrottlerLimitEnforced)
             char pong[1] = {};
             EXPECT_EQ(socket.receiveBytes(pong, sizeof(pong)), 1);
 
-            socket.setSendThrottler(std::make_shared<Silk::Throttler>(/*max_speed_*/ 1, /*limit_*/ 1, "Send limit exceeded"));
+            socket.setSendThrottler(std::make_shared<DB::Throttler>(/*max_speed_*/ 1, /*limit_*/ 1, "Send limit exceeded"));
             EXPECT_THROW(socket.sendBytes("x", 1), DB::Exception);
 
-            socket.setReceiveThrottler(std::make_shared<Silk::Throttler>(/*max_speed_*/ 1, /*limit_*/ 1, "Receive limit exceeded"));
+            socket.setReceiveThrottler(std::make_shared<DB::Throttler>(/*max_speed_*/ 1, /*limit_*/ 1, "Receive limit exceeded"));
             char buf[1] = {};
             EXPECT_THROW(socket.receiveBytes(buf, sizeof(buf)), DB::Exception);
 
