@@ -365,7 +365,6 @@ const VersionToSettingsChangesMap & getSettingsChangesHistory()
             {"check_conversion_from_numbers_to_enum", false, true, "New setting"},
             {"allow_experimental_nullable_tuple_type", false, false, "New experimental setting"},
             {"use_skip_indexes_on_data_read", false, false, "Default enable"},
-            {"check_conversion_from_numbers_to_enum", false, false, "New setting"},
             {"archive_adaptive_buffer_max_size_bytes", 8 * 1024 * 1024, 8 * 1024 * 1024, "New setting"},
             {"type_json_allow_duplicated_key_with_literal_and_nested_object", false, false, "Add a new setting to allow duplicated paths in JSON type with literal and nested object"},
             {"use_primary_key", true, true, "New setting controlling whether MergeTree uses the primary key for granule-level pruning."},
@@ -516,7 +515,6 @@ const VersionToSettingsChangesMap & getSettingsChangesHistory()
             {"delta_lake_insert_max_bytes_in_data_file", 1_GiB, 1_GiB, "New setting."},
             {"delta_lake_insert_max_rows_in_data_file", 1000000, 1000000, "New setting."},
             {"promql_evaluation_time", Field{"auto"}, Field{"auto"}, "The setting was renamed. The previous name is `evaluation_time`."},
-            {"evaluation_time", 0, 0, "Old setting which popped up here being renamed."},
             {"os_threads_nice_value_query", 0, 0, "New setting."},
             {"os_threads_nice_value_materialized_view", 0, 0, "New setting."},
             {"os_thread_priority", 0, 0, "Alias for os_threads_nice_value_query."},
@@ -583,7 +581,7 @@ const VersionToSettingsChangesMap & getSettingsChangesHistory()
             {"allow_experimental_correlated_subqueries", false, true, "Mark correlated subqueries support as Beta."},
             {"promql_database", "", "", "New experimental setting"},
             {"promql_table", "", "", "New experimental setting"},
-            {"evaluation_time", 0, 0, "New experimental setting"},
+            {"evaluation_time", 0, Field{"auto"}, "New experimental setting"},
             {"output_format_parquet_date_as_uint16", false, false, "Added a compatibility setting for a minor compatibility-breaking change introduced back in 24.12."},
             {"enable_lightweight_update", false, true, "Lightweight updates were moved to Beta. Added an alias for setting 'allow_experimental_lightweight_update'."},
             {"allow_experimental_lightweight_update", false, true, "Lightweight updates were moved to Beta."},
@@ -784,7 +782,7 @@ const VersionToSettingsChangesMap & getSettingsChangesHistory()
             {"output_format_pretty_max_column_name_width_min_chars_to_cut", 0, 4, "A new setting"},
             {"output_format_pretty_multiline_fields", false, true, "A new setting"},
             {"output_format_pretty_fallback_to_vertical", false, true, "A new setting"},
-            {"output_format_pretty_fallback_to_vertical_max_rows_per_chunk", 0, 100, "A new setting"},
+            {"output_format_pretty_fallback_to_vertical_max_rows_per_chunk", 0, 10, "A new setting"},
             {"output_format_pretty_fallback_to_vertical_min_columns", 0, 5, "A new setting"},
             {"output_format_pretty_fallback_to_vertical_min_table_width", 0, 250, "A new setting"},
             {"merge_table_max_tables_to_look_for_schema_inference", 1, 1000, "A new setting"},
@@ -1102,7 +1100,7 @@ const VersionToSettingsChangesMap & getSettingsChangesHistory()
             {"min_external_table_block_size_bytes", DEFAULT_INSERT_BLOCK_SIZE * 256, DEFAULT_INSERT_BLOCK_SIZE * 256, "Squash blocks passed to external table to specified size in bytes, if blocks are not big enough."},
             {"parallel_replicas_prefer_local_join", true, true, "If true, and JOIN can be executed with parallel replicas algorithm, and all storages of right JOIN part are *MergeTree, local JOIN will be used instead of GLOBAL JOIN."},
             {"optimize_time_filter_with_preimage", true, true, "Optimize Date and DateTime predicates by converting functions into equivalent comparisons without conversions (e.g. toYear(col) = 2023 -> col >= '2023-01-01' AND col <= '2023-12-31')"},
-            {"extract_key_value_pairs_max_pairs_per_row", 0, 0, "Max number of pairs that can be produced by the `extractKeyValuePairs` function. Used as a safeguard against consuming too much memory."},
+            {"extract_key_value_pairs_max_pairs_per_row", 0, 1000, "Max number of pairs that can be produced by the `extractKeyValuePairs` function. Used as a safeguard against consuming too much memory."},
             {"default_view_definer", "CURRENT_USER", "CURRENT_USER", "Allows to set default `DEFINER` option while creating a view"},
             {"default_materialized_view_sql_security", "DEFINER", "DEFINER", "Allows to set a default value for SQL SECURITY option when creating a materialized view"},
             {"default_normal_view_sql_security", "INVOKER", "INVOKER", "Allows to set default `SQL SECURITY` option while creating a normal view"},
@@ -1158,7 +1156,7 @@ const VersionToSettingsChangesMap & getSettingsChangesHistory()
         });
         addSettingsChanges(settings_changes_history, "23.8",
         {
-            {"rewrite_count_distinct_if_with_count_distinct_implementation", false, true, "Rewrite countDistinctIf with count_distinct_implementation configuration"}
+            {"rewrite_count_distinct_if_with_count_distinct_implementation", false, false, "New setting to rewrite countDistinctIf with count_distinct_implementation configuration. It is disabled by default"}
         });
         addSettingsChanges(settings_changes_history, "23.7",
         {
@@ -1229,7 +1227,6 @@ const VersionToSettingsChangesMap & getSettingsChangesHistory()
         });
         addSettingsChanges(settings_changes_history, "22.7",
         {
-            {"cross_to_inner_join_rewrite", 1, 2, "Force rewrite comma join to inner"},
             {"enable_positional_arguments", false, true, "Enable positional arguments feature by default"},
             {"format_csv_allow_single_quotes", true, false, "Most tools don't treat single quote in CSV specially, don't do it by default too"}
         });
