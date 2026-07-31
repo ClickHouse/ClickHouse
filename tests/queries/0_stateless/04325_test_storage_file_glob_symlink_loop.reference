@@ -28,4 +28,12 @@ branching-ancestor-loops-are-pruned
 4
 dense-alias-graph-is-bounded
 10
+file-symlink-keeps-both-names
+2
+alias.txt
+real.txt
+2
+glob-insert-stays-readonly
+refused
+1
 alive

@@ -141,6 +141,16 @@ printf "row1\n" > "$TEST_DIR_ABS/dedup/root/f.txt"
 ln -s ../.. "$TEST_DIR_ABS/dedup/root/deep/mid/aliasA"
 ln -s ../.. "$TEST_DIR_ABS/dedup/root/deep/mid/aliasB"
 
+# A symlink to a FILE, alongside its target. Canonical deduplication would collapse
+# these into one row, but `alias.txt` and `real.txt` are two names the user asked for
+# and both must be reported, so deduplicating by canonical path is restricted to
+# expansions containing a whole-segment `**`, which are the only ones that can walk
+# into a directory an ancestor symlink aliases. A plain `*` and an implicit directory
+# listing must both keep reporting two rows.
+mkdir -p "$TEST_DIR_ABS/filelink/root"
+printf "row1\n" > "$TEST_DIR_ABS/filelink/root/real.txt"
+ln -s real.txt "$TEST_DIR_ABS/filelink/root/alias.txt"
+
 # Several sibling ancestor loops under one root: `branching/root/b1..b3/up -> ../..`.
 # This is the scenario the traversal pruning itself is for, as distinct from output
 # deduplication. Each `up` re-enters the root, where the walk can descend into all
@@ -287,6 +297,26 @@ $CLICKHOUSE_CLIENT --query "SELECT count() FROM file('$TEST_DIR_NAME/branching/r
 # over 700s at ten, while keeping them stays at about 0.1s throughout.
 echo "dense-alias-graph-is-bounded"
 $CLICKHOUSE_CLIENT --query "SELECT count() FROM file('$TEST_DIR_NAME/aliasgraph/root/**/*.txt', 'TSV', 'val String')"
+
+# A file symlink beside its target: both names must still be reported, by a plain `*`
+# and by an implicit directory listing. Deduplicating these by canonical path would
+# drop a `_file` value the user selected, so it must not apply to expansions with no
+# whole-segment `**`.
+echo "file-symlink-keeps-both-names"
+$CLICKHOUSE_CLIENT --query "SELECT count() FROM file('$TEST_DIR_NAME/filelink/root/*.txt', 'TSV', 'val String')"
+$CLICKHOUSE_CLIENT --query "SELECT _file FROM file('$TEST_DIR_NAME/filelink/root/*.txt', 'TSV', 'val String') ORDER BY _file"
+$CLICKHOUSE_CLIENT --query "SELECT count() FROM file('$TEST_DIR_NAME/filelink/root', 'TSV', 'val String')"
+
+# Writes through a glob stay refused even when deduplication leaves one path. The
+# pattern below matches one file under two names, so a read-only test based on the
+# number of surviving paths would let the write through and modify the target.
+# `</dev/null` is required: an `INSERT ... VALUES` makes the client read the data from
+# standard input, so with the runner's standard input still open it would block until
+# the test times out instead of reporting the refusal.
+echo "glob-insert-stays-readonly"
+$CLICKHOUSE_CLIENT --query "INSERT INTO TABLE FUNCTION file('$TEST_DIR_NAME/dedup/root/**/mid/*/f.txt', 'TSV', 'val String') VALUES ('written')" </dev/null 2>&1 \
+    | grep -qF "readonly mode because of globs" && echo "refused"
+$CLICKHOUSE_CLIENT --query "SELECT count() FROM file('$TEST_DIR_NAME/dedup/root/f.txt', 'TSV', 'val String')"
 
 # Server alive afterwards.
 $CLICKHOUSE_CLIENT --query "SELECT 'alive'"
