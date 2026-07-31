@@ -9,8 +9,12 @@ CUR_DIR=$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)
 # keeps retrying and reaches attempt_number > 1 (the formatting branch in
 # RefreshTask::executeRefresh). throwIf reads a column so it throws at refresh
 # execution, not at view creation.
+# APPEND keeps the view creatable on a Replicated database: a non-APPEND
+# refreshable view over a non-replicated inner table is refused there. The retry
+# machinery does not read the append flag, so the formatting branch is reached
+# either way.
 $CLICKHOUSE_CLIENT -q "
-    create materialized view rmv refresh after 1 year settings refresh_retries = 9223372036854775807
+    create materialized view rmv refresh after 1 year settings refresh_retries = 9223372036854775807 append
         (x Int64) engine Memory as select throwIf(number = 0) as x from numbers(1);"
 
 # Wait until the second attempt has started (retry counter advanced past the
