@@ -13,6 +13,8 @@
 #include <Storages/WindowView/StorageWindowView.h>
 #include <Storages/StorageMaterializedView.h>
 #include <Storages/StorageValues.h>
+#include <Storages/StorageAlias.h>
+#include <Storages/StorageView.h>
 
 #include <DataTypes/DataTypeEnum.h>
 #include <Interpreters/ProcessList.h>
@@ -1525,6 +1527,18 @@ Chain InsertDependenciesBuilder::createSinkImpl(StorageIDMaybeEmpty view_id) con
     }
     else
     {
+        /// A normal view cannot be the target of a materialized view. `StorageView` serves an
+        /// insert by forwarding it into its own underlying table through a nested INSERT pipeline,
+        /// and when that table is the source of this very cascade (`CREATE MATERIALIZED VIEW mv TO v
+        /// AS SELECT x FROM src` with `v` reading from `src`), the nested insert triggers the
+        /// cascade again and recurses forever. The nested pipeline is a separate query, so the
+        /// cycle is invisible to this builder. Reject fail-close before creating the sink. The
+        /// target is resolved through `Alias` tables first because they forward writes to their
+        /// own target.
+        if (!view_id.empty() && StorageAlias::resolveRecursively(inner_storage)->as<StorageView>())
+            throw Exception(ErrorCodes::NOT_IMPLEMENTED,
+                "Pushing data from a materialized view into a normal view is not supported");
+
         auto sink = inner_storage->write(select_queries.at(view_id), metadata_snapshots.at(inner_table_id), insert_context, async_insert);
         sink->setRuntimeData(thread_groups.at(view_id));
         sink->setHasDependentMaterializedViews(has_dependent_materialized_views);

@@ -52,6 +52,8 @@ SELECT a, b, c FROM (SELECT ...)
 
 The target of the view must be a table, not another view: a view whose `FROM` item is a normal, materialized, or window view is not insertable and raises `NOT_IMPLEMENTED`, because the intermediate view carries no column `DEFAULT`s of its own, so an omitted column would be stored as a type default instead of the final table's default. Insertable normal views can be temporary: a temporary view over a non-view table accepts `INSERT` under exactly the same rules.
 
+The reverse direction is not supported either: a normal view cannot be the target of a materialized view (`CREATE MATERIALIZED VIEW mv TO v` where `v` is a normal view), even when the view hides behind a table with the `Alias` engine. Such a push would forward the rows back into the view's underlying table and, when that table is the source of the materialized view, recurse forever, so it is rejected with `NOT_IMPLEMENTED`.
+
 ```sql
 CREATE TABLE t (a Int32, b String, c Float64 DEFAULT 0.5) ENGINE = MergeTree ORDER BY a;
 

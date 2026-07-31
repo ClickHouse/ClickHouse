@@ -4,6 +4,7 @@
 #include <Storages/StorageInMemoryMetadata.h>
 #include <Interpreters/DatabaseCatalog.h>
 #include <Access/Common/AccessType.h>
+#include <Common/typeid_cast.h>
 #include <optional>
 
 namespace DB
@@ -36,6 +37,30 @@ public:
     /// Get the target storage this alias points to
     StoragePtr getTargetTable(std::optional<TargetAccess> access_check = std::nullopt) const;
     StoragePtr tryGetTargetTable() const { return DatabaseCatalog::instance().tryGetTable(StorageID(target_database, target_table), getContext()); }
+
+    /// Resolve `storage` through `Alias` tables to the storage that actually serves reads and
+    /// writes. `Alias` currently refuses to point at another `Alias`, so the walk normally makes a
+    /// single step; the bound only keeps it from looping if that ever changes. A dangling alias
+    /// (target table dropped) is returned as is.
+    static StoragePtr resolveRecursively(StoragePtr storage)
+    {
+        static constexpr size_t max_alias_chain_length = 100;
+
+        for (size_t depth = 0; depth < max_alias_chain_length && storage; ++depth)
+        {
+            const auto * alias = typeid_cast<const StorageAlias *>(storage.get());
+            if (!alias)
+                break;
+
+            auto next = alias->tryGetTargetTable();
+            if (!next)
+                break;
+
+            storage = std::move(next);
+        }
+
+        return storage;
+    }
 
     /// Read from target table
     void read(
