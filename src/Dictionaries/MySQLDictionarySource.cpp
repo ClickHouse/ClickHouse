@@ -77,7 +77,7 @@ void registerDictionarySourceMysql(DictionarySourceFactory & factory)
                                    const std::string & /* default_database */,
                                    [[maybe_unused]] bool created_from_ddl) -> DictionarySourcePtr {
 #if USE_MYSQL
-        StreamSettings mysql_input_stream_settings(
+        MySQLStreamSettings mysql_input_stream_settings(
             global_context->getSettingsRef(),
             config.getBool(config_prefix + ".mysql.close_connection", false) || config.getBool(config_prefix + ".mysql.share_connection", false),
             false,
@@ -196,7 +196,14 @@ void registerDictionarySourceMysql(DictionarySourceFactory & factory)
 #endif
     };
 
-    factory.registerSource("mysql", create_table_source);
+    factory.registerSource("mysql", create_table_source, Documentation{
+        .description = "Reads dictionary data from a table in a MySQL server."
+#if !USE_MYSQL
+            " Currently unavailable, because this ClickHouse build does not include MySQL support."
+#endif
+        ,
+        .syntax = "SOURCE(MYSQL(host 'host' port 3306 user 'user' password '' db 'db' table 'table'))",
+        .related = {"clickhouse", "postgresql"}});
 }
 
 }
@@ -213,7 +220,7 @@ MySQLDictionarySource::MySQLDictionarySource(
     const Configuration & configuration_,
     mysqlxx::PoolWithFailoverPtr pool_,
     const Block & sample_block_,
-    const StreamSettings & settings_)
+    const MySQLStreamSettings & settings_)
     : log(getLogger("MySQLDictionarySource"))
     , update_time(std::chrono::system_clock::from_time_t(0))
     , dict_struct(dict_struct_)

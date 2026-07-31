@@ -3,7 +3,9 @@
 #include <Columns/ColumnMap.h>
 #include <Columns/ColumnsNumber.h>
 #include <Common/SipHash.h>
+#include <Core/BlockMissingValues.h>
 #include <Formats/FormatSettings.h>
+#include <Formats/ParseError.h>
 #include <Core/Settings.h>
 #include <DataTypes/DataTypesNumber.h>
 #include <DataTypes/DataTypeNullable.h>
@@ -12,7 +14,6 @@
 #include <DataTypes/DataTypeTuple.h>
 #include <DataTypes/DataTypeMap.h>
 #include <DataTypes/FieldToDataType.h>
-#include <Processors/Formats/IRowInputFormat.h>
 #include <Functions/FunctionFactory.h>
 #include <Interpreters/ExpressionAnalyzer.h>
 #include <Interpreters/ExpressionActions.h>
@@ -65,9 +66,8 @@ static void extractLiteralTokensImpl(
             return;
         }
 
-        auto it = token_map.find(literal);
-        if (it != token_map.end())
-            result.push_back(it->second);
+        if (const auto * token_info = token_map.find(literal))
+            result.push_back(*token_info);
         else
             result.push_back(std::nullopt);
         return;

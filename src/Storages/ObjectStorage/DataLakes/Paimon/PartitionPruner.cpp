@@ -68,7 +68,7 @@ namespace Paimon
                 {},
                 context_);
 
-            DB::ActionsDAGWithInversionPushDown inverted_dag(filter_dag_.getOutputs().front(), context_);
+            DB::ActionsDAGWithInversionPushDown inverted_dag(filter_dag_.getOutputs().front(), context_, /* boolean_context */ true);
             key_condition.emplace(
                 inverted_dag, context_, partition_key.column_names, partition_key.expression, true /* single_point */);
         }

@@ -1,6 +1,7 @@
 #if defined(OS_LINUX)
 
 #include <Client/HedgedConnectionsFactory.h>
+#include <base/sort.h>
 #include <Common/typeid_cast.h>
 #include <Common/ProfileEvents.h>
 #include <Core/ProtocolDefines.h>
@@ -282,7 +283,7 @@ int HedgedConnectionsFactory::getReadyFileDescriptor(bool blocking, AsyncCallbac
 
 HedgedConnectionsFactory::State HedgedConnectionsFactory::resumeConnectionEstablisher(int index, Connection *& connection_out)
 {
-    replicas[index].connection_establisher->resumeConnectionWithForceOption(/*force_connected_*/ shuffled_pools[index].error_count != 0);
+    replicas[index].connection_establisher->resume();
 
     if (replicas[index].connection_establisher->isCancelled())
         return State::CANNOT_CHOOSE;
@@ -409,7 +410,7 @@ HedgedConnectionsFactory::State HedgedConnectionsFactory::setBestUsableReplica(C
         return State::CANNOT_CHOOSE;
 
     /// Sort replicas by staleness.
-    std::stable_sort(
+    ::stableSort(
         indexes.begin(),
         indexes.end(),
         [&](size_t lhs, size_t rhs)

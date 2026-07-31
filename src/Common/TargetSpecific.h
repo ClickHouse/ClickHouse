@@ -124,6 +124,13 @@ String toString(TargetArch arch);
 /// - Newer CPUs (Ice Lake, Sapphire Rapids, AMD Zen 4/5) have minimal throttling
 ///
 /// We explicitly override with `no-prefer-256-bit` to enable 512-bit vectorization for AVX-512 targets.
+///
+/// `X86_64_V3_FUNCTION_SPECIFIC_ATTRIBUTE` is needed for TUs explicitly pinned to `-march=x86-64-v2`
+/// (e.g. `FunctionsHashingMisc.cpp`, `arrayDistance.cpp`, `arrayNorm.cpp`, see their CMakeLists.txt
+/// overrides). At v2 the `Default` namespace inherits v2 codegen (SSE2/XMM), so without a per-function
+/// v3 specialization the runtime dispatcher has no AVX2/YMM body to pick on hosts that support it.
+/// Same rationale applies to `MULTITARGET_FUNCTION_X86_V4_V3` below.
+#define X86_64_V3_FUNCTION_SPECIFIC_ATTRIBUTE __attribute__((target("arch=x86-64-v3")))
 #define X86_64_V4_FUNCTION_SPECIFIC_ATTRIBUTE __attribute__((target("arch=x86-64-v4,no-prefer-256-bit")))
 #define X86_64_ICELAKE_FUNCTION_SPECIFIC_ATTRIBUTE __attribute__((target("arch=icelake-server,no-prefer-256-bit")))
 #define X86_64_SAPPHIRE_FUNCTION_SPECIFIC_ATTRIBUTE __attribute__((target("arch=sapphirerapids,no-prefer-256-bit")))
@@ -283,10 +290,40 @@ DECLARE_X86_SAPPHIRE_SPECIFIC_CODE(
     name \
     FUNCTION_BODY \
 
+/// Generates `_x86_64_v4`, `_x86_64_v3`, and `Default` versions of `name`. Used by callers that need a
+/// per-function v3 specialization in addition to v4 — required for TUs explicitly pinned to
+/// `-march=x86-64-v2` via `set_source_files_properties` (see `arrayDistance.cpp`, `arrayNorm.cpp`),
+/// where the `Default` namespace inherits v2 codegen and the runtime dispatcher would otherwise have
+/// no AVX2/YMM body to pick. Callers must call `name##_x86_64_v4` / `name##_x86_64_v3` from a
+/// dispatcher guarded by `isArchSupported(TargetArch::x86_64_v4)` / `isArchSupported(TargetArch::x86_64_v3)`.
+#define MULTITARGET_FUNCTION_X86_V4_V3(FUNCTION_HEADER, name, FUNCTION_BODY) \
+    FUNCTION_HEADER \
+    \
+    X86_64_V4_FUNCTION_SPECIFIC_ATTRIBUTE \
+    name##_x86_64_v4 \
+    FUNCTION_BODY \
+    \
+    FUNCTION_HEADER \
+    \
+    X86_64_V3_FUNCTION_SPECIFIC_ATTRIBUTE \
+    name##_x86_64_v3 \
+    FUNCTION_BODY \
+    \
+    FUNCTION_HEADER \
+    \
+    name \
+    FUNCTION_BODY \
+
 
 #else
 
 #define MULTITARGET_FUNCTION_X86_V4(FUNCTION_HEADER, name, FUNCTION_BODY) \
+    FUNCTION_HEADER \
+    \
+    name \
+    FUNCTION_BODY \
+
+#define MULTITARGET_FUNCTION_X86_V4_V3(FUNCTION_HEADER, name, FUNCTION_BODY) \
     FUNCTION_HEADER \
     \
     name \

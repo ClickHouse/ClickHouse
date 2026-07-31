@@ -36,7 +36,6 @@ def process_glibc_check():
     for command in commands:
         Shell.check(command, verbose=True, strict=True)
 
-    test_results = []
     ok = True
     with open(f"{temp_path}/glibc.log", "r", encoding="utf-8") as log:
         for line in log:

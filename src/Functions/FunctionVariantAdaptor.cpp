@@ -59,6 +59,16 @@ static void removeLowCardinalityFromResult(DataTypePtr & result_type, ColumnPtr 
     }
 }
 
+/// Expand a function result back to pre-filter size. The nested function may return an input column
+/// unchanged (e.g. concat of one String arg), so `column` can alias the input variant subcolumn;
+/// mutate() clones it when shared, unlike assumeMutable() which would expand it in place.
+static ColumnPtr expandColumnByFilter(ColumnPtr column, const PaddedPODArray<UInt8> & filter)
+{
+    auto mutable_column = IColumn::mutate(std::move(column));
+    mutable_column->expand(filter, false);
+    return mutable_column;
+}
+
 ColumnPtr ExecutableFunctionVariantAdaptor::executeImpl(
     const ColumnsWithTypeAndName & arguments, const DataTypePtr & result_type, size_t, bool dry_run) const
 {
@@ -312,7 +322,7 @@ ColumnPtr ExecutableFunctionVariantAdaptor::executeImpl(
         if (!isVariant(result_type))
         {
             /// Expand filtered result. If it's already Nullable, it will be filled with NULLs.
-            nested_result->assumeMutable()->expand(filter, false);
+            nested_result = expandColumnByFilter(std::move(nested_result), filter);
             /// If result wasn't Nullable, create null-mask from filter and make it Nullable.
             if (!nested_result_type->isNullable() && nested_result_type->canBeInsideNullable())
             {
@@ -354,7 +364,7 @@ ColumnPtr ExecutableFunctionVariantAdaptor::executeImpl(
         /// The nested Variant may have a subset of types compared to the result Variant
         if (isVariant(nested_result_type))
         {
-            nested_result->assumeMutable()->expand(filter, false);
+            nested_result = expandColumnByFilter(std::move(nested_result), filter);
             /// Cast to result type (handles case where nested Variant is a subset)
             try
             {
@@ -399,7 +409,7 @@ ColumnPtr ExecutableFunctionVariantAdaptor::executeImpl(
         }
 
         /// Expand to match the original column size (filling filtered-out rows with NULLs)
-        result->assumeMutable()->expand(filter, false);
+        result = expandColumnByFilter(std::move(result), filter);
         return result;
     }
 
@@ -723,27 +733,22 @@ ColumnPtr ExecutableFunctionVariantAdaptor::executeDryRunImpl(
 
 FunctionBaseVariantAdaptor::FunctionBaseVariantAdaptor(
     std::shared_ptr<const IFunctionOverloadResolver> function_overload_resolver_,
-    ColumnsWithTypeAndName arguments_with_type_)
+    ColumnsWithTypeAndName arguments_with_type_,
+    size_t variant_argument_index_)
     : function_overload_resolver(std::move(function_overload_resolver_))
+    , variant_argument_index(variant_argument_index_)
 {
     arguments.reserve(arguments_with_type_.size());
     for (const auto & arg : arguments_with_type_)
         arguments.push_back(arg.type);
 
-    std::optional<size_t> first_variant_index;
-    for (size_t i = 0; i != arguments.size(); ++i)
-    {
-        if (isVariant(arguments[i]))
-        {
-            first_variant_index = i;
-            break;
-        }
-    }
-
-    if (!first_variant_index.has_value())
-        throw Exception(ErrorCodes::LOGICAL_ERROR, "No variant argument found for {}", function_overload_resolver->getName());
-
-    variant_argument_index = *first_variant_index;
+    if (variant_argument_index >= arguments.size())
+        throw Exception(
+            ErrorCodes::LOGICAL_ERROR,
+            "Variant argument index {} is out of range for {} with {} arguments",
+            variant_argument_index,
+            function_overload_resolver->getName(),
+            arguments.size());
 
     /// Get the Variant argument type and its alternatives.
     const auto * variant_type = typeid_cast<const DataTypeVariant *>(arguments[variant_argument_index].get());

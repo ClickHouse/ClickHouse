@@ -1,0 +1,62 @@
+---
+description: 'Песочница ClickHouse позволяет экспериментировать с ClickHouse,
+  мгновенно выполняя запросы без настройки собственного сервера или кластера.'
+keywords: ['clickhouse', 'playground', 'getting', 'started', 'docs']
+sidebarTitle: 'Песочница ClickHouse'
+slug: /getting-started/playground
+title: 'Песочница ClickHouse'
+doc_type: 'guide'
+---
+
+[Песочница ClickHouse](https://sql.clickhouse.com) позволяет экспериментировать с ClickHouse, мгновенно выполняя запросы без настройки собственного сервера или кластера.
+В Песочнице ClickHouse доступно несколько демонстрационных наборов данных.
+
+Вы можете отправлять запросы в Песочницу ClickHouse с помощью любого HTTP-клиента, например [curl](https://curl.haxx.se) или [wget](https://www.gnu.org/software/wget/), либо установить соединение с использованием драйверов [JDBC](/ru/concepts/features/interfaces/jdbc) или [ODBC](/ru/concepts/features/interfaces/odbc). Более подробная информация о программных продуктах с поддержкой ClickHouse доступна [здесь](/ru/integrations/home).
+
+<div id="credentials">
+  ## Учетные данные
+</div>
+
+| Параметр                     | Значение                           |
+| :--------------------------- | :--------------------------------- |
+| Конечная точка HTTPS         | `https://play.clickhouse.com:443/` |
+| Конечная точка нативного TCP | `play.clickhouse.com:9440`         |
+| Пользователь                 | `explorer` или `play`              |
+| Пароль                       | (пусто)                            |
+
+<div id="limitations">
+  ## Ограничения
+</div>
+
+Запросы выполняются от имени пользователя с доступом только для чтения. Это накладывает некоторые ограничения:
+
+* DDL-запросы не разрешены
+* INSERT-запросы не разрешены
+
+Для сервиса также действуют квоты на использование.
+
+<div id="examples">
+  ## Примеры
+</div>
+
+Пример HTTPS-конечной точки с использованием `curl`:
+
+```bash
+curl "https://play.clickhouse.com/?user=explorer" --data-binary "SELECT 'Play ClickHouse'"
+```
+
+Пример конечной точки TCP с [CLI](/ru/concepts/features/interfaces/cli):
+
+```bash
+clickhouse client --secure --host play.clickhouse.com --user explorer
+```
+
+<div id="specifications">
+  ## Характеристики Песочницы ClickHouse
+</div>
+
+наша Песочница ClickHouse работает со следующими параметрами:
+
+* Размещена в Google Cloud (GCE) в регионе US Central (US-Central-1)
+* Конфигурация из 3 реплик
+* По 256 GiB хранилища и 59 виртуальных CPU на каждую.
