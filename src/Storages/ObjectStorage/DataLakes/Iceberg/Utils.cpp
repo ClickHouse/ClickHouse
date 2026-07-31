@@ -37,6 +37,7 @@
 #include <Poco/UUID.h>
 #include <Poco/UUIDGenerator.h>
 #include <Common/DateLUT.h>
+#include <Common/quoteString.h>
 #include <Core/ColumnWithTypeAndName.h>
 #include <DataTypes/DataTypesNumber.h>
 #include <Disks/IStoragePolicy.h>
@@ -586,7 +587,9 @@ std::pair<Poco::Dynamic::Var, bool> getIcebergType(DataTypePtr type, Int32 & ite
                 Poco::JSON::Object::Ptr field = new Poco::JSON::Object;
                 field->set(Iceberg::f_id, ++iter_fields);
                 field->set(Iceberg::f_name, type_tuple->getNameByPosition(iter_names));
-                auto child_type = getIcebergType(element->getNormalizedType(), iter);
+                /// Recurse on the element itself: `getNormalizedType` would rename a nested
+                /// tuple's elements to "1", "2", ... (`DataTypeTuple::getNormalizedType`).
+                auto child_type = getIcebergType(element, iter);
                 field->set(Iceberg::f_required, child_type.second);
                 field->set(Iceberg::f_type, child_type.first);
                 fields->add(field);
@@ -1007,7 +1010,6 @@ std::pair<Poco::JSON::Object::Ptr, String> createEmptyMetadataFile(
     auto now = std::chrono::system_clock::now();
     auto ms = duration_cast<std::chrono::milliseconds>(now.time_since_epoch());
     new_metadata_file_content->set(Iceberg::f_last_updated_ms, ms.count());
-    new_metadata_file_content->set(Iceberg::f_last_column_id, columns.size());
     new_metadata_file_content->set(Iceberg::f_current_schema_id, 0);
 
     Poco::JSON::Object::Ptr schema_representation = new Poco::JSON::Object;
@@ -1015,6 +1017,10 @@ std::pair<Poco::JSON::Object::Ptr, String> createEmptyMetadataFile(
     schema_representation->set(Iceberg::f_schema_id, 0);
 
     Poco::JSON::Array::Ptr schema_fields = new Poco::JSON::Array;
+    /// Top-level columns get ids 1..N; nested tuple/array/map children get ids
+    /// N+1.. via the shared `iter`. After the loop `iter` is the max assigned
+    /// field id, which is what last-column-id must record (not the top-level
+    /// column count) so a later ADD COLUMN does not reuse a nested field id.
     Int32 iter = static_cast<Int32>(columns.size());
     Int32 iter_for_initial_columns = 0;
     for (const auto & column : columns)
@@ -1028,6 +1034,7 @@ std::pair<Poco::JSON::Object::Ptr, String> createEmptyMetadataFile(
         column_name_to_source_id[column.name] = iter_for_initial_columns;
         schema_fields->add(field);
     }
+    new_metadata_file_content->set(Iceberg::f_last_column_id, iter);
     schema_representation->set(Iceberg::f_fields, schema_fields);
     Poco::JSON::Array::Ptr schema_array = new Poco::JSON::Array;
     schema_array->add(schema_representation);
@@ -1461,6 +1468,9 @@ KeyDescription getSortingKeyDescriptionFromMetadata(Poco::JSON::Object::Ptr meta
             int direction = field->getValue<String>(f_direction) == "asc" ? 1 : -1;
             auto iceberg_transform_name = field->getValue<String>(f_transform);
             auto clickhouse_transform_name = parseTransformAndArgument(iceberg_transform_name);
+            /// Quote the column name so identifiers with special characters (e.g. `@timestamp`)
+            /// produce a parseable ORDER BY clause.
+            auto quoted_column_name = backQuoteIfNeed(column_name);
             String full_argument;
             if (clickhouse_transform_name->transform_name != "identity")
             {
@@ -1469,11 +1479,11 @@ KeyDescription getSortingKeyDescriptionFromMetadata(Poco::JSON::Object::Ptr meta
                 {
                     full_argument += std::to_string(*clickhouse_transform_name->argument) +  ", ";
                 }
-                full_argument += column_name + ")";
+                full_argument += quoted_column_name + ")";
             }
             else
             {
-                full_argument = column_name;
+                full_argument = quoted_column_name;
             }
             if (direction == 1)
                 order_by_str += fmt::format("{} ASC,", full_argument);

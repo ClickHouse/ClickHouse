@@ -173,21 +173,21 @@ SELECT 'ALL FULL' AS kind,
     maxIf(extract(explain, 'matched (not collected|[0-9]+)'), explain LIKE '%Right: rows%') AS matched_right
 FROM (EXPLAIN ANALYZE matches = 1 SELECT count() FROM tl ALL FULL JOIN tr ON tl.k = tr.k SETTINGS joined_block_split_single_row = 1, max_joined_block_size_rows = 1);
 
--- A residual `ON` condition routes the probe through a separate loop. Only shared keys can satisfy
--- `tl.v >= tr.v`, and every shared-key row does, so the counts stay the same.
+-- A residual `ON` condition routes the probe through a separate loop. `tl.v + 1000 >= tr.v` holds for
+-- every equal-key pair, since `tr.v` is at most 520 for a shared key, so the counts stay the same.
 SELECT 'residual condition';
 SELECT 'ALL LEFT' AS kind,
     maxIf(extract(explain, 'matched (not collected|[0-9]+)'), explain LIKE '%Left: rows%') AS matched_left,
     maxIf(extract(explain, 'matched (not collected|[0-9]+)'), explain LIKE '%Right: rows%') AS matched_right
-FROM (EXPLAIN ANALYZE matches = 1 SELECT count() FROM tl ALL LEFT JOIN tr ON tl.k = tr.k AND tl.v >= tr.v SETTINGS join_algorithm = 'hash');
+FROM (EXPLAIN ANALYZE matches = 1 SELECT count() FROM tl ALL LEFT JOIN tr ON tl.k = tr.k AND tl.v + 1000 >= tr.v SETTINGS join_algorithm = 'hash');
 SELECT 'ALL RIGHT' AS kind,
     maxIf(extract(explain, 'matched (not collected|[0-9]+)'), explain LIKE '%Left: rows%') AS matched_left,
     maxIf(extract(explain, 'matched (not collected|[0-9]+)'), explain LIKE '%Right: rows%') AS matched_right
-FROM (EXPLAIN ANALYZE matches = 1 SELECT count() FROM tl ALL RIGHT JOIN tr ON tl.k = tr.k AND tl.v >= tr.v SETTINGS join_algorithm = 'hash');
+FROM (EXPLAIN ANALYZE matches = 1 SELECT count() FROM tl ALL RIGHT JOIN tr ON tl.k = tr.k AND tl.v + 1000 >= tr.v SETTINGS join_algorithm = 'hash');
 SELECT 'ALL FULL' AS kind,
     maxIf(extract(explain, 'matched (not collected|[0-9]+)'), explain LIKE '%Left: rows%') AS matched_left,
     maxIf(extract(explain, 'matched (not collected|[0-9]+)'), explain LIKE '%Right: rows%') AS matched_right
-FROM (EXPLAIN ANALYZE matches = 1 SELECT count() FROM tl ALL FULL JOIN tr ON tl.k = tr.k AND tl.v >= tr.v SETTINGS join_algorithm = 'hash');
+FROM (EXPLAIN ANALYZE matches = 1 SELECT count() FROM tl ALL FULL JOIN tr ON tl.k = tr.k AND tl.v + 1000 >= tr.v SETTINGS join_algorithm = 'hash');
 
 -- With a right column in the output the refs are recorded for materialization anyway, so the counts
 -- must not depend on the projection either.

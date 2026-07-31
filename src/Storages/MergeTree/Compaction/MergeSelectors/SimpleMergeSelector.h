@@ -171,7 +171,7 @@ public:
         /** Heuristic:
           * Lower max_parts_to_merge_at_once automatically when number of parts in partition approaching parts_to_throw_insert
           */
-        bool enable_heuristic_to_lower_max_parts_to_merge_at_once = false;
+        bool enable_heuristic_to_lower_max_parts_to_merge_at_once = true;
         size_t heuristic_to_lower_max_parts_to_merge_at_once_exponent = 5;
         const PartitionsStatistics * partitions_stats = nullptr;
     };

@@ -675,6 +675,7 @@ Settings:
 - `compact` — see [EXPLAIN PLAN](#explain-plan) section. Default: 1.
 - `pretty` — see [EXPLAIN PLAN](#explain-plan) section. Default: 1.
 - `processors` — For `EXPLAIN ANALYZE`, prints an additional line per stage with the per-processor elapsed time distribution: `min`, `median`, `max`, and `sum`. Useful to spot load skew across parallel processors. Default: 0.
+- `matches` — For `EXPLAIN ANALYZE`, makes join steps do the extra bookkeeping needed for the `matched`, `match rate` and `fanout` metrics in the cases where those numbers cannot be derived from what the join produces anyway. Where they can, they are reported without this option. See [Join steps](#explain-analyze-join-steps). Default: 0.
 
 :::note
 Because `EXPLAIN ANALYZE` actually executes the wrapped query, it behaves like that
@@ -775,9 +776,50 @@ Right: rows <right_rows> · matched <matched_right_rows> · match rate <match_ra
 For each side `EXPLAIN ANALYZE` reports:
 
 - `rows <rows>` — the total number of rows of that side that passed through the join.
-- `matched <matched_rows>` — the number of rows of that side that found at least one join partner on the other side, i.e. the rows that participated in the output. For an anti join it is instead the number of rows that did not find a partner.
+- `matched <matched_rows>` — the number of rows of that side that found at least one join partner on the other side. This counts *rows*, not keys: if a key occurs three times on the right and matches, all three right rows count as matched. Rows skipped because their key was `NULL`, or because a condition in the `ON` section excluded them, count as not matched.
 - `match rate <match_rate>%` — the percentage of that side's rows that matched, computed as `100 * <matched_rows> / <rows>`.
-- `fanout <fanout>` — the average number of output rows produced per matched row on that side, computed as `<output_rows> / <matched_rows>`. It is most informative for `ALL` joins, where a single row can be replicated once for every partner it matches; for `ANY`, `SEMI` and `ANTI` joins it stays close to `1`.
+- `fanout <fanout>` — how many output rows an average matched row of that side produced.
+
+A number that cannot be derived exactly is reported as `not collected` rather than as `0`. `match rate` and `fanout` are derived from `matched`, so a side without it reports all three as `not collected`.
+
+#### Fanout {#explain-analyze-fanout}
+
+`fanout` measures row multiplication, and only row multiplication:
+
+```txt
+matched output rows = <output_rows> - <NULL-padded rows of both sides>
+fanout              = <matched output rows> / <matched_rows of that side>
+```
+
+An outer join emits one `NULL`-padded output row for every row of a preserved side that found no partner. Those rows are subtracted so that they do not dilute the ratio:
+
+- `fanout = 1` — a clean 1:1 join; every matched row produced exactly one output row.
+- `fanout > 1` — a 1:N join; duplicate keys on the other side multiplied the rows. A large value on both sides at once is the signature of an unintended Cartesian blowup.
+
+#### When the numbers require `matches = 1` {#explain-analyze-matches}
+
+Most of these numbers fall out of data the join builds anyway and are reported by a plain `EXPLAIN ANALYZE`. Two cases need bookkeeping the join would otherwise not do, so they are only reported with `EXPLAIN ANALYZE matches = 1`:
+
+- the **right** side of `ALL INNER` and `ALL LEFT`, which requires marking every matched right row;
+- the **left** side of `ALL LEFT` and `ALL FULL`.
+
+:::note
+`matches = 1` does not make every combination collectable. Which side a join can report follows from what the join has to do anyway:
+
+| Join | `matched` left | `matched` right |
+|------|----------------|-----------------|
+| `ALL INNER`, `ALL LEFT`, `ALL RIGHT`, `ALL FULL` | yes | yes |
+| `SEMI LEFT`, `ANTI LEFT` | yes | no |
+| `ANY RIGHT`, `ANTI RIGHT` | no | yes |
+| `ASOF` (inner) | yes | no |
+| `SEMI RIGHT` | no | no |
+| `ANY INNER`, `ANY LEFT`, `ASOF LEFT` | no | no |
+| `CROSS`, `COMMA` | no | no |
+
+The right side is unavailable whenever the join keeps only one row per key in its hash table, which `ANY`, `SEMI` and `ANTI` joins do: the duplicate right rows are never stored, so they cannot be counted. The left side is unavailable when the join suppresses the output of a left row whose partner was already claimed by another left row, which makes the emitted rows an undercount of the matched ones.
+
+The set of available metrics depends only on the join kind and strictness — not on the query shape, the `ON` condition or the join algorithm — so the same join reports the same metrics under `hash`, `parallel_hash` and `grace_hash`.
+:::
 
 Depending on the join algorithm, additional lines are then shown.
 
