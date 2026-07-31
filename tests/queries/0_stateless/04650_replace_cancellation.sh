@@ -80,8 +80,10 @@ run "pipe regexp" \
     "SELECT length(replaceRegexpAll(materialize(repeat(repeat('1', 1000000), 60)), materialize('[0-9]((a|b)(c|d)|(e|f)(g|h))?'), materialize('x'))) FROM numbers(1) FORMAT Null"
 
 # 3. Many small rows: the per-row loops, which a checkpoint scoped to a single value would never reach.
+#    max_block_size is pinned like the other per-row cases: the runner randomizes it down to 8000, and a
+#    split block would let the unconditional end-of-call check bound the query on its own.
 run "many rows" \
-    "SELECT sum(length(replaceRegexpAll(materialize(repeat('1', 20000)), materialize('[0-9]{1,3}'), materialize('x')))) FROM numbers(10000)"
+    "SELECT sum(length(replaceRegexpAll(materialize(repeat('1', 20000)), materialize('[0-9]{1,3}'), materialize('x')))) FROM numbers(10000) SETTINGS max_block_size = 10000"
 
 # 4. Many folds, each provably too small to reach a throttled checkpoint, so the three unconditional
 #    per-call checks are the only thing that can stop this query - and the only cover for the bulk-copy
