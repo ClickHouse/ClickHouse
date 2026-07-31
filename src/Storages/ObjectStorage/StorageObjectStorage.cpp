@@ -721,7 +721,8 @@ SinkToStoragePtr StorageObjectStorage::write(
         sample_block,
         local_context,
         configuration->format,
-        configuration->compression_method);
+        configuration->compression_method,
+        !settings.truncate_on_insert);
 }
 
 bool StorageObjectStorage::optimize(
