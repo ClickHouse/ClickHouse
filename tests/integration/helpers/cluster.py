@@ -674,6 +674,7 @@ class ClickHouseCluster:
         self.base_kerberos_kdc_cmd = []
         self.base_rabbitmq_cmd = []
         self.base_nats_cmd = []
+        self.base_pulsar_cmd = []
         self.base_cassandra_cmd = []
         self.base_jdbc_bridge_cmd = []
         self.base_postgres_cmd = []
@@ -706,6 +707,7 @@ class ClickHouseCluster:
         self.with_kerberos_kdc = False
         self.with_rabbitmq = False
         self.with_nats = False
+        self.with_pulsar = False
         self.with_odbc_drivers = False
         self.with_mongo = False
         self.with_net_trics = False
@@ -830,6 +832,10 @@ class ClickHouseCluster:
         self.nats_dir = p.abspath(p.join(self.instances_dir, "nats"))
         self.nats_cert_dir = os.path.join(self.nats_dir, "cert")
         self.nats_ssl_context = None
+
+        self.pulsar_host = "pulsar1"
+        self._pulsar_port = 0
+        self.pulsar_docker_id = None
 
         # available when with_nginx == True
         self.nginx_host = "nginx"
@@ -1105,6 +1111,13 @@ class ClickHouseCluster:
             return self._nats_port
         self._nats_port = self.port_pool.get_port()
         return self._nats_port
+
+    @property
+    def pulsar_port(self):
+        if self._pulsar_port:
+            return self._pulsar_port
+        self._pulsar_port = self.port_pool.get_port()
+        return self._pulsar_port
 
     @property
     def arrowflight_port(self):
@@ -1768,6 +1781,22 @@ class ClickHouseCluster:
         )
         return self.base_nats_cmd
 
+    def setup_pulsar_cmd(self, instance, env_variables, docker_compose_yml_dir):
+        self.with_pulsar = True
+        env_variables["PULSAR_HOST"] = self.pulsar_host
+        env_variables["PULSAR_EXTERNAL_PORT"] = str(self.pulsar_port)
+
+        self.base_cmd.extend(
+            ["--file", p.join(docker_compose_yml_dir, "docker_compose_pulsar.yml")]
+        )
+        self.base_pulsar_cmd = self.compose_cmd(
+            "--env-file",
+            instance.env_file,
+            "--file",
+            p.join(docker_compose_yml_dir, "docker_compose_pulsar.yml"),
+        )
+        return self.base_pulsar_cmd
+
     def setup_mongo_cmd(self, instance, env_variables, docker_compose_yml_dir):
         self.with_mongo = True
         env_variables["MONGO_HOST"] = self.mongo_host
@@ -2091,6 +2120,7 @@ class ClickHouseCluster:
         with_secrets=False,
         with_rabbitmq=False,
         with_nats=False,
+        with_pulsar=False,
         clickhouse_path_dir=None,
         with_odbc_drivers=False,
         with_postgres=False,
@@ -2239,6 +2269,7 @@ class ClickHouseCluster:
             with_kerberos_kdc=with_kerberos_kdc,
             with_rabbitmq=with_rabbitmq,
             with_nats=with_nats,
+            with_pulsar=with_pulsar,
             with_nginx=with_nginx,
             with_secrets=with_secrets
             or with_kerberos_kdc
@@ -2439,6 +2470,11 @@ class ClickHouseCluster:
         if with_nats and not self.with_nats:
             cmds.append(
                 self.setup_nats_cmd(instance, env_variables, docker_compose_yml_dir)
+            )
+
+        if with_pulsar and not self.with_pulsar:
+            cmds.append(
+                self.setup_pulsar_cmd(instance, env_variables, docker_compose_yml_dir)
             )
 
         if with_nginx and not self.with_nginx:
@@ -3189,6 +3225,23 @@ class ClickHouseCluster:
                     raise Exception("NATS is not available")
                 logging.debug("Waiting for NATS to start up")
                 time.sleep(1)
+
+    def wait_pulsar_is_available(self, max_retries=60):
+        retries = 0
+        while True:
+            result = subprocess.run(
+                ["docker", "exec", self.pulsar_docker_id, "bin/pulsar-admin", "brokers", "healthcheck"],
+                stdout=subprocess.DEVNULL,
+                stderr=subprocess.DEVNULL,
+                check=False,
+            )
+            if result.returncode == 0:
+                break
+            retries += 1
+            if retries > max_retries:
+                raise Exception("Pulsar is not available")
+            logging.debug("Waiting for Pulsar to start up")
+            time.sleep(2)
 
     def wait_zookeeper_secure_to_start(self, timeout=20):
         logging.debug("Wait ZooKeeper Secure to start")
@@ -3976,6 +4029,13 @@ class ClickHouseCluster:
                 self.nats_docker_id = self.get_instance_docker_id("nats1")
                 self.up_called = True
                 self.wait_nats_is_available()
+
+            if self.with_pulsar and self.base_pulsar_cmd:
+                logging.debug("Setup Pulsar")
+                subprocess_check_call(self.base_pulsar_cmd + common_opts)
+                self.pulsar_docker_id = self.get_instance_docker_id("pulsar1")
+                self.up_called = True
+                self.wait_pulsar_is_available()
 
             if self.with_nginx and self.base_nginx_cmd:
                 logging.debug("Setup nginx")
@@ -4821,6 +4881,7 @@ class ClickHouseInstance:
         with_kerberos_kdc,
         with_rabbitmq,
         with_nats,
+        with_pulsar,
         with_nginx,
         with_secrets,
         with_mongo,
@@ -4945,6 +5006,7 @@ class ClickHouseInstance:
         self.with_kerberos_kdc = with_kerberos_kdc
         self.with_rabbitmq = with_rabbitmq
         self.with_nats = with_nats
+        self.with_pulsar = with_pulsar
         self.with_nginx = with_nginx
         self.with_secrets = with_secrets
         self.with_mongo = with_mongo
@@ -6393,6 +6455,9 @@ class ClickHouseInstance:
 
         if self.with_nats:
             depends_on.append("nats1")
+
+        if self.with_pulsar:
+            depends_on.append("pulsar1")
 
         if self.with_zookeeper:
             depends_on += list(ZOOKEEPER_CONTAINERS)
