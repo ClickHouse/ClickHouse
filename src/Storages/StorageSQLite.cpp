@@ -30,6 +30,8 @@
 
 namespace DB::ErrorCodes
 {
+    extern const int NUMBER_OF_ARGUMENTS_DOESNT_MATCH;
+    extern const int SQLITE_ENGINE_ERROR;
     extern const int INCORRECT_QUERY;
 }
 
@@ -117,13 +119,6 @@ namespace DB
 namespace Setting
 {
     extern const SettingsBool transform_null_in;
-}
-
-namespace ErrorCodes
-{
-    extern const int NUMBER_OF_ARGUMENTS_DOESNT_MATCH;
-    extern const int SQLITE_ENGINE_ERROR;
-    extern const int INCORRECT_QUERY;
 }
 
 namespace
