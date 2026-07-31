@@ -11,7 +11,7 @@ FILE=${CLICKHOUSE_TMP}/${CLICKHOUSE_DATABASE}.nc
 # hidden data must neither appear in the file nor stretch the dimension of the string.
 $CLICKHOUSE_LOCAL -q "
     SELECT nullIf(repeat(toString(number), number), '4444') AS s,
-           nullIf(toFixedString(toString(number), 2), toFixedString('2', 2)) AS f
+           nullIf(toFixedString(toString(number) || 'x', 2), toFixedString('2x', 2)) AS f
     FROM numbers(5)
     INTO OUTFILE '$FILE' TRUNCATE FORMAT NetCDF"
 

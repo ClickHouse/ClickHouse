@@ -435,21 +435,34 @@ void NetCDFOutputFormat::finalizeImpl()
     {
         if (variable.is_string)
         {
-            if (const auto * fixed_string = typeid_cast<const ColumnFixedString *>(variable.data.get()))
-            {
+            const auto * fixed_string = typeid_cast<const ColumnFixedString *>(variable.data.get());
+            if (fixed_string)
                 variable.string_length = fixed_string->getN();
-            }
-            else
+
+            /// The dimension of a variable of strings is the length of the longest string in the
+            /// column. The rows that are NULL are written as empty strings, and the data under
+            /// them is arbitrary, so they are not taken into account.
+            const UInt8 * null_map = variable.null_map
+                ? assert_cast<const ColumnUInt8 &>(*variable.null_map).getData().data()
+                : nullptr;
+            for (size_t i = 0; i < variable.data->size(); ++i)
             {
-                /// The dimension of the variable is the length of the longest string in the column.
-                /// The rows that are NULL are written as empty strings, and the data under them is
-                /// arbitrary, so they are not taken into account.
-                const UInt8 * null_map = variable.null_map
-                    ? assert_cast<const ColumnUInt8 &>(*variable.null_map).getData().data()
-                    : nullptr;
-                for (size_t i = 0; i < variable.data->size(); ++i)
-                    if (!null_map || !null_map[i])
-                        variable.string_length = std::max<UInt64>(variable.string_length, variable.data->getDataAt(i).size());
+                if (null_map && null_map[i])
+                    continue;
+
+                std::string_view value = variable.data->getDataAt(i);
+
+                /// A string shorter than the dimension of the variable is padded with zero bytes,
+                /// so a value that itself ends in a zero byte cannot be read back intact: every
+                /// reader of the format treats its last byte as padding. Refuse to corrupt it.
+                if (value.ends_with('\0'))
+                    throw Exception(ErrorCodes::BAD_ARGUMENTS,
+                        "The NetCDF format cannot store the value of the column {} at the row {} "
+                        "because it ends in a zero byte, which is indistinguishable from the padding of shorter strings",
+                        variable.name, i);
+
+                if (!fixed_string)
+                    variable.string_length = std::max<UInt64>(variable.string_length, value.size());
             }
 
             /// A dimension of a length of zero is only allowed for the unlimited dimension.

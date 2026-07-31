@@ -105,6 +105,11 @@ Every column becomes a one-dimensional variable over a single dimension named `r
 column additionally gets a dimension that holds the length of the longest string in it. A file
 written by ClickHouse is therefore read back with the same structure.
 
+A string shorter than its dimension is padded with zero bytes, as the format prescribes, so a
+`String` or `FixedString` value that itself ends in a zero byte cannot be stored: it would be read
+back without its trailing zero bytes by every implementation of the format. Writing such a value
+throws an exception instead of corrupting it.
+
 The offsets of the data of the variables are a part of the header, and the header is at the
 beginning of the file, so the whole result is kept in memory until the query finishes.
 

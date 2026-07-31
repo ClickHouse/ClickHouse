@@ -344,7 +344,9 @@ NetCDFHeader readNetCDFHeader(ReadBuffer & in)
 
     UInt64 num_dimensions = readListHeader(in, header.version, NC_DIMENSION, "dimensions");
     header.dimensions.reserve(std::min<UInt64>(num_dimensions, 1024));
-    std::unordered_set<std::string_view> dimension_names;
+    /// The set has to own the names: views into `header.dimensions` would dangle when the vector
+    /// grows past the reserved size and reallocates.
+    std::unordered_set<String> dimension_names;
     for (UInt64 i = 0; i < num_dimensions; ++i)
     {
         NetCDFDimension dimension;
