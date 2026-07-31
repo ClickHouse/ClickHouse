@@ -621,10 +621,12 @@ StorageInMemoryMetadata ReplicatedMergeTreeTableMetadata::Diff::getNewMetadata(c
         {
             ParserStorageOrderByClause parser(allow_order);
             ASTPtr ast = parseQuery(parser, "(" + key_expr + ")", 0, DBMS_DEFAULT_MAX_PARSER_DEPTH, DBMS_DEFAULT_MAX_PARSER_BACKTRACKS);
-            /// The artificial "(" + str + ")" wrapping marks a single-element expression as
-            /// parenthesized; strip the flag so the key does not round-trip as `(x)`.
+            /// Both the artificial "(" + str + ")" wrapping and any parentheses an older leader
+            /// wrote into the key text (`(a) DESC`) are cosmetic. Strip them with the same
+            /// recursive walk the publishing side uses, so the key this replica stores locally is
+            /// the canonical one and `SHOW CREATE` cannot diverge between replicas.
             if (ast)
-                ast->setParenthesized(false);
+                stripArtificialParens(*ast);
             return ast;
         };
 

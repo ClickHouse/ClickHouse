@@ -264,6 +264,58 @@ TEST(ReplicatedMergeTreeTableMetadataCompare, ReverseSortingKeyDiffIsApplicable)
     EXPECT_FALSE(new_metadata.sorting_key.reverse_flags[1]);
 }
 
+TEST(ReplicatedMergeTreeTableMetadataCompare, ParenthesizedKeyFromOldLeaderIsAppliedCanonically)
+{
+    /// A leader running a version that keeps redundant parentheses publishes a real key change as
+    /// `sorting key: (b) DESC, c` / `sampling expression: (b)`. Applying that entry must store the
+    /// same local metadata as the canonical text does, otherwise `SHOW CREATE` on this replica
+    /// would report `ORDER BY tuple((b) DESC, c)` while the leader reports `ORDER BY (b DESC, c)`.
+    tryRegisterFunctions();
+    tryRegisterAggregateFunctions();
+
+    auto context = getContext().context;
+    VirtualColumnsDescription virtuals;
+
+    ColumnsDescription columns;
+    columns.add(ColumnDescription("b", std::make_shared<DataTypeUInt64>()));
+    columns.add(ColumnDescription("c", std::make_shared<DataTypeUInt64>()));
+
+    StorageInMemoryMetadata old_metadata;
+    old_metadata.columns = columns;
+    old_metadata.sorting_key = KeyDescription::parse("b, c", columns, virtuals, context, /*allow_order=*/ true);
+    old_metadata.primary_key = KeyDescription::parse("b", columns, virtuals, context, /*allow_order=*/ true);
+    old_metadata.sampling_key = KeyDescription::parse("c", columns, virtuals, context, /*allow_order=*/ false);
+
+    auto apply = [&] (const String & sorting_key, const String & sampling_expression)
+    {
+        ReplicatedMergeTreeTableMetadata::Diff diff;
+        diff.sorting_key_changed = true;
+        diff.new_sorting_key = sorting_key;
+        diff.sampling_expression_changed = true;
+        diff.new_sampling_expression = sampling_expression;
+        return diff.getNewMetadata(columns, virtuals, context, old_metadata);
+    };
+
+    auto canonical = apply("b DESC, c", "b");
+    auto parenthesized = apply("(b) DESC, c", "(b)");
+
+    /// What `applyMetadataChangesToCreateQuery` writes into the local `CREATE` statement.
+    EXPECT_EQ(
+        parenthesized.sorting_key.definition_ast->formatWithSecretsOneLine(),
+        canonical.sorting_key.definition_ast->formatWithSecretsOneLine());
+    EXPECT_EQ(
+        parenthesized.sampling_key.definition_ast->formatWithSecretsOneLine(),
+        canonical.sampling_key.definition_ast->formatWithSecretsOneLine());
+
+    /// And the key itself is still the intended one.
+    ASSERT_EQ(parenthesized.sorting_key.column_names.size(), 2);
+    EXPECT_EQ(parenthesized.sorting_key.column_names[0], "b");
+    EXPECT_EQ(parenthesized.sorting_key.column_names[1], "c");
+    ASSERT_EQ(parenthesized.sorting_key.reverse_flags.size(), 2);
+    EXPECT_TRUE(parenthesized.sorting_key.reverse_flags[0]);
+    EXPECT_FALSE(parenthesized.sorting_key.reverse_flags[1]);
+}
+
 TEST(ReplicatedMergeTreeTableMetadataCompare, DeclarationIdentityIsSignificant)
 {
     /// Parts of index/projection/constraint declarations that are not AST children:
