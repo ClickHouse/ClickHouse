@@ -15,8 +15,10 @@
 #include <Functions/FunctionFactory.h>
 #include <TableFunctions/TableFunctionFactory.h>
 #include <Interpreters/Context.h>
+#include <Client/ClientBaseHelpers.h>
 #include <Client/Connection.h>
 #include <Client/LocalConnection.h>
+#include <Core/Settings.h>
 
 
 namespace DB
@@ -227,10 +229,14 @@ void Suggest::load(IServerConnection & connection,
 
 void Suggest::fetch(IServerConnection & connection, const ConnectionTimeouts & timeouts, const std::string & query, const ClientInfo & client_info, const Settings & settings)
 {
-    /// Pass the client `settings` (rather than `nullptr`) so this helper query honors `network_compression_method`
-    /// like a regular client query, instead of unconditionally using the built-in default network codec.
+    /// Pass the compression-related settings (rather than `nullptr`) so this helper query honors
+    /// `network_compression_method` like a regular client query, instead of unconditionally using the
+    /// built-in default network codec. The rest of the session settings must not leak into this query -
+    /// it is a plain SQL query issued by the client itself, so, for example, a session-level `dialect`
+    /// would make the server fail to parse it.
+    const Settings compression_settings = networkCompressionSettings(settings);
     connection.sendQuery(
-        timeouts, query, {} /* query_parameters */, "" /* query_id */, QueryProcessingStage::Complete, &settings, &client_info, false, {} /* external_roles*/, {});
+        timeouts, query, {} /* query_parameters */, "" /* query_id */, QueryProcessingStage::Complete, &compression_settings, &client_info, false, {} /* external_roles*/, {});
 
     while (true)
     {

@@ -1,0 +1,45 @@
+#!/usr/bin/expect -f
+
+# The client issues a few plain-SQL helper queries on its own behalf: the autocomplete query, the
+# `system.documentation` lookup behind the interactive `help` command, and the AI metadata query.
+# They are sent with only the network-compression settings (see `networkCompressionSettings`), so
+# that they keep honoring `network_compression_method` without inheriting the rest of the session.
+# In particular a session-level `dialect` must not leak into them, because `Connection::sendQuery`
+# serializes every changed setting into the query packet and the server would then try to parse
+# these SQL queries as Kusto or PRQL.
+
+set basedir [file dirname $argv0]
+set basename [file tail $argv0]
+if {[info exists env(CLICKHOUSE_TMP)]} {
+    set CLICKHOUSE_TMP $env(CLICKHOUSE_TMP)
+} else {
+    set CLICKHOUSE_TMP "."
+}
+exp_internal -f $CLICKHOUSE_TMP/$basename.debuglog 0
+set history_file $CLICKHOUSE_TMP/$basename.history
+
+log_user 0
+set timeout 60
+match_max 100000
+expect_after {
+    # Do not ignore eof from expect
+    -i $any_spawn_id eof { exp_continue }
+    # A default timeout action is to do nothing, change it to fail
+    -i $any_spawn_id timeout { exit 1 }
+}
+
+spawn bash -c "source $basedir/../shell_config.sh ; \$CLICKHOUSE_CLIENT_BINARY \$CLICKHOUSE_CLIENT_EXPECT_OPT --allow_experimental_kusto_dialect 1 --dialect kusto --history_file=$history_file"
+expect ":) "
+
+# A word that matches nothing exercises all three `system.documentation` queries of the help command.
+# Without the fix the queries are sent with `dialect = 'kusto'` and the command reports
+# "The help command failed: ...".
+send -- "help zzzzzzzzzzzznotanentity\r"
+expect {
+    "The help command failed:" { exit 1 }
+    "No documentation found for 'zzzzzzzzzzzznotanentity'." { }
+}
+expect ":) "
+
+send -- "\4"
+expect eof

@@ -13,6 +13,17 @@ namespace DB
 {
 
 class Context;
+struct Settings;
+
+/// A copy of `settings` containing only the knobs that select the network compression codec
+/// (`network_compression_method`, `network_zstd_compression_level` and the codec-validation flags),
+/// and only those of them that were actually changed.
+///
+/// Helper queries issued by the client itself (autocomplete, documentation lookup, metadata for the AI
+/// mode) must honor the user's choice of the network codec, but they must not inherit the rest of the
+/// session settings: `Connection::sendQuery` serializes every changed setting into the query packet, so
+/// passing the whole session would make such a query run under, for example, a non-default `dialect`.
+Settings networkCompressionSettings(const Settings & settings);
 
 /// Should we celebrate a bit?
 bool isNewYearMode();

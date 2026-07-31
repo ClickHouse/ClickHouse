@@ -33,6 +33,18 @@ namespace Setting
     extern const SettingsUInt64 max_parser_backtracks;
 }
 
+Settings networkCompressionSettings(const Settings & settings)
+{
+    static constexpr std::string_view compression_setting_names[]
+        = {"network_compression_method", "network_zstd_compression_level", "allow_suspicious_codecs", "allow_experimental_codecs"};
+
+    Settings result;
+    for (std::string_view name : compression_setting_names)
+        if (settings.isChanged(name))
+            result.set(name, settings.get(name));
+    return result;
+}
+
 /// Should we celebrate a bit?
 bool isNewYearMode()
 {

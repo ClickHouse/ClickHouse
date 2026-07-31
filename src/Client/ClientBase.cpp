@@ -3812,6 +3812,10 @@ std::string ClientBase::executeQueryForSingleString(const std::string & query)
     {
         std::string result;
 
+        /// Only the compression knobs: the rest of the session settings must not leak into this
+        /// client-issued helper query. See `networkCompressionSettings`.
+        const Settings compression_settings = networkCompressionSettings(client_context->getSettingsRef());
+
         /// Send the query
         connection->sendQuery(
             connection_parameters.timeouts,
@@ -3819,7 +3823,7 @@ std::string ClientBase::executeQueryForSingleString(const std::string & query)
             {},  /// query_parameters
             "",  /// query_id
             QueryProcessingStage::Complete,
-            &client_context->getSettingsRef(),  /// settings (so the network codec honors `network_compression_method`)
+            &compression_settings,  /// settings (so the network codec honors `network_compression_method`)
             nullptr,  /// client_info
             false,    /// with_pending_data
             {},       /// external_roles
@@ -3879,13 +3883,17 @@ Block ClientBase::fetchDocumentation(const String & query, const String & word)
 {
     const NameToNameMap query_parameters_for_help{{"word", word}};
 
+    /// Only the compression knobs: the rest of the session settings must not leak into this
+    /// client-issued helper query. See `networkCompressionSettings`.
+    const Settings compression_settings = networkCompressionSettings(client_context->getSettingsRef());
+
     connection->sendQuery(
         connection_parameters.timeouts,
         query,
         query_parameters_for_help,
         "", /// query_id
         QueryProcessingStage::Complete,
-        &client_context->getSettingsRef(), /// settings (so the network codec honors `network_compression_method`)
+        &compression_settings, /// settings (so the network codec honors `network_compression_method`)
         &client_context->getClientInfo(), /// a valid client info (with a query kind) is required by the TCP server
         false, /// with_pending_data
         {}, /// external_roles
