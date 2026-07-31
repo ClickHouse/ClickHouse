@@ -5,6 +5,7 @@
 #include <limits>
 #include <memory>
 #include <optional>
+#include <unordered_map>
 #include <variant>
 #include <vector>
 
@@ -625,10 +626,10 @@ public:
     /// Returns a decompressed view of the given stored (compressed) `StoredBlock`. Every call
     /// decompresses anew: keeping decompressed data resident would defeat the purpose of
     /// `enable_join_in_memory_compression` (saving memory), so there is deliberately no cross-batch
-    /// cache. The callers (`DecompressResolver` / `NonJoinedDecompressResolver`) deduplicate within
-    /// one output batch and hold the result only while that batch is materialized.
-    /// Must only be called when `haveCompressed()` is true.
-    DecompressedColumnsPtr getDecompressedColumns(const StoredBlock * compressed) const;
+    /// cache. The caller (`DecompressResolver`) deduplicates within one output batch, holds the
+    /// result only while that batch is materialized, and releases it early when the working set
+    /// grows past its budget. Must only be called when `haveCompressed()` is true.
+    static DecompressedColumnsPtr getDecompressedColumns(const StoredBlock * compressed);
 
     void setEnableLazyColumnsIndexing(bool value) override { enable_lazy_columns_indexing = value; }
 
@@ -767,5 +768,62 @@ private:
     void reinitUsedFlags();
 
     void doDebugAsserts() const;
+};
+
+/// Translates a stored (possibly compressed) `StoredBlock` pointer to one that can be read directly.
+/// When the join compressed its right-side blocks, a block is decompressed on first use (at most once
+/// per distinct block since the last `release`) and kept alive in `held` until the caller has copied
+/// the values it needs out of it. To keep the probe-side working set bounded when one output batch
+/// references many distinct stored blocks (e.g. a build side made of many tiny blocks, where a batch
+/// could otherwise pin one decompressed block per matched row), the callers check `needReleaseBefore`
+/// as they consume resolved blocks and call `release` to drop the ones already copied from; a block
+/// referenced again later is decompressed anew, trading repeated decompression for a bounded working
+/// set. When compression is off, it is a transparent pass-through with no overhead.
+struct DecompressResolver
+{
+    /// Upper bound on the decompressed data held at once (plus at most one block, since the bound is
+    /// only enforced before decompressing the next one). Large enough that ordinary stored blocks
+    /// (a few MiB each) never trigger early releases, small enough that a compressed multi-GiB build
+    /// side cannot reappear uncompressed during the probe.
+    static constexpr size_t held_bytes_budget = 64 * 1024 * 1024;
+
+    const bool active;
+    std::vector<DecompressedColumnsPtr> held;
+    std::unordered_map<const StoredBlock *, const StoredBlock *> resolved;
+    size_t held_bytes = 0;
+
+    explicit DecompressResolver(const HashJoin & join) : active(join.haveCompressed()) { }
+
+    const StoredBlock * operator()(const StoredBlock * block)
+    {
+        if (!active || block == nullptr)
+            return block;
+
+        auto [it, inserted] = resolved.try_emplace(block, nullptr);
+        if (inserted)
+        {
+            auto decompressed = HashJoin::getDecompressedColumns(block);
+            /// Not StoredBlock::allocatedBytes: it scales by the selector, which is empty on this view.
+            for (const auto & column : decompressed->columns)
+                held_bytes += column->allocatedBytes();
+            it->second = decompressed.get();
+            held.push_back(std::move(decompressed));
+        }
+        return it->second;
+    }
+
+    /// True when resolving `block` would decompress a new block while the working set is already over
+    /// budget: the caller must flush what it copied so far and `release` before resolving it. Checked
+    /// at that moment - not after every consumed row - so that a working set which is over budget but
+    /// still referenced (e.g. a single stored block larger than the whole budget) is kept rather than
+    /// re-decompressed for every row.
+    bool needReleaseBefore(const StoredBlock * block) const
+    {
+        return active && block != nullptr && held_bytes > held_bytes_budget && !resolved.contains(block);
+    }
+
+    /// Drops the decompressed working set (all resolved pointers become dangling). Counts the release
+    /// in a profile event when it was forced by the budget rather than by reaching the end of a batch.
+    void release();
 };
 }

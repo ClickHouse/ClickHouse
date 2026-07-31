@@ -49,6 +49,7 @@
 namespace ProfileEvents
 {
     extern const Event JoinInMemoryCompressedColumns;
+    extern const Event JoinInMemoryDecompressWorkingSetReleases;
 }
 
 namespace DB
@@ -922,7 +923,7 @@ bool HashJoin::addBlockToJoin(const Block & block, ScatteredBlock::Selector sele
     return table_join->sizeLimits().check(total_rows, total_bytes, "JOIN", ErrorCodes::SET_SIZE_LIMIT_EXCEEDED);
 }
 
-DecompressedColumnsPtr HashJoin::getDecompressedColumns(const StoredBlock * compressed) const
+DecompressedColumnsPtr HashJoin::getDecompressedColumns(const StoredBlock * compressed)
 {
     Columns decompressed;
     decompressed.reserve(compressed->columns.size());
@@ -932,6 +933,17 @@ DecompressedColumnsPtr HashJoin::getDecompressedColumns(const StoredBlock * comp
     /// (all null, since decompressed columns are ordinary) so the read paths resolve to a direct
     /// `IColumn *`. `selector`/`block_no` are unused on this decompressed view.
     return std::make_shared<StoredBlock>(std::move(decompressed));
+}
+
+void DecompressResolver::release()
+{
+    if (!active || held.empty())
+        return;
+    if (held_bytes > held_bytes_budget)
+        ProfileEvents::increment(ProfileEvents::JoinInMemoryDecompressWorkingSetReleases);
+    held.clear();
+    resolved.clear();
+    held_bytes = 0;
 }
 
 void HashJoin::shrinkStoredBlocksToFit(size_t & total_bytes_in_join, bool force_optimize)
@@ -1370,33 +1382,43 @@ void HashJoin::updateNonJoinedRowsStatus()
 namespace
 {
 
-/// Resolves stored (possibly compressed) `StoredBlock` pointers to decompressed ones when the join
-/// compressed its right-side blocks, keeping the decompressed blocks alive while it is in scope.
-/// Used by the non-joined-rows streams (RIGHT/FULL JOIN) which read stored columns directly.
-struct NonJoinedDecompressResolver
+/// Fills the output columns of a non-joined-rows stream (RIGHT/FULL JOIN) from collected
+/// (stored block, row number) pairs. When the join compressed its stored blocks, they are resolved
+/// to decompressed views in budget-bounded chunks: each chunk is decompressed, copied into every
+/// output column and released before the next chunk starts, so the decompressed working set never
+/// exceeds the `DecompressResolver` budget even when the pairs reference many distinct tiny blocks.
+void fillFromStoredBlocksAndRowNumbers(
+    const HashJoin & join, MutableColumns & columns_keys_and_right, const ColumnsWithRowNumbers & columns_with_row_numbers)
 {
-    const HashJoin & join;
-    const bool active;
-    std::vector<DecompressedColumnsPtr> held;
-    std::unordered_map<const StoredBlock *, const StoredBlock *> resolved;
-
-    explicit NonJoinedDecompressResolver(const HashJoin & join_) : join(join_), active(join_.haveCompressed()) { }
-
-    const StoredBlock * operator()(const StoredBlock * block)
+    DecompressResolver resolve(join);
+    if (!resolve.active)
     {
-        if (!active || block == nullptr)
-            return block;
-
-        auto [it, inserted] = resolved.try_emplace(block, nullptr);
-        if (inserted)
-        {
-            auto decompressed = join.getDecompressedColumns(block);
-            it->second = decompressed.get();
-            held.push_back(std::move(decompressed));
-        }
-        return it->second;
+        for (size_t j = 0; j < columns_keys_and_right.size(); ++j)
+            columns_keys_and_right[j]->fillFromBlocksAndRowNumbers(j, columns_with_row_numbers);
+        return;
     }
-};
+
+    const auto & many_columns = columns_with_row_numbers.columns;
+    const auto & row_nums = columns_with_row_numbers.row_numbers;
+    ColumnsWithRowNumbers chunk;
+    size_t begin = 0;
+    while (begin < many_columns.size())
+    {
+        size_t end = begin;
+        while (end < many_columns.size() && (end == begin || !resolve.needReleaseBefore(many_columns[end])))
+        {
+            chunk.columns.push_back(resolve(many_columns[end]));
+            chunk.row_numbers.push_back(row_nums[end]);
+            ++end;
+        }
+        for (size_t j = 0; j < columns_keys_and_right.size(); ++j)
+            columns_keys_and_right[j]->fillFromBlocksAndRowNumbers(j, chunk);
+        chunk.columns.clear();
+        chunk.row_numbers.clear();
+        resolve.release();
+        begin = end;
+    }
+}
 
 }
 
@@ -1622,14 +1644,7 @@ private:
             }
         }
 
-        /// If stored blocks were compressed, swap the collected pointers for decompressed views.
-        NonJoinedDecompressResolver resolve(parent);
-        if (resolve.active)
-            for (auto & block : many_columns)
-                block = resolve(block);
-
-        for (size_t j = 0; j < columns_keys_and_right.size(); ++j)
-            columns_keys_and_right[j]->fillFromBlocksAndRowNumbers(j, columns_with_row_numbers);
+        fillFromStoredBlocksAndRowNumbers(parent, columns_keys_and_right, columns_with_row_numbers);
 
         return row_nums.size();
     }
@@ -1669,14 +1684,7 @@ private:
             }
         }
 
-        /// If stored blocks were compressed, swap the collected pointers for decompressed views.
-        NonJoinedDecompressResolver resolve(parent);
-        if (resolve.active)
-            for (auto & block : many_columns)
-                block = resolve(block);
-
-        for (size_t j = 0; j < columns_keys_and_right.size(); ++j)
-            columns_keys_and_right[j]->fillFromBlocksAndRowNumbers(j, columns_with_row_numbers);
+        fillFromStoredBlocksAndRowNumbers(parent, columns_keys_and_right, columns_with_row_numbers);
         rows_added += row_nums.size();
     }
 };

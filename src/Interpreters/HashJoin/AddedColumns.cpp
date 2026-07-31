@@ -1,8 +1,6 @@
 #include <Interpreters/HashJoin/AddedColumns.h>
 #include <DataTypes/NullableUtils.h>
 
-#include <unordered_map>
-
 namespace DB
 {
 
@@ -135,20 +133,30 @@ std::pair<const IColumn *, size_t> getBlockColumnAndRow(const StoredBlock * bloc
 
 void LazyOutput::buildJoinGetOutput(size_t size_to_reserve, MutableColumns & columns, const UInt64 * row_refs_begin, const UInt64 * row_refs_end) const
 {
-    DecompressResolver resolve(*this);
-    for (size_t i = 0; i < columns.size(); ++i)
-    {
-        auto & col = columns[i];
+    /// Rows in the outer loop (not columns) so that all reads from a resolved block happen before
+    /// the next row: the decompressed working set can then be released as soon as it grows past
+    /// the resolver's budget. `joinGet` returns a single column, so the loop order does not matter
+    /// for cache efficiency.
+    DecompressResolver resolve(*join);
+    for (auto & col : columns)
         col->reserve(col->size() + size_to_reserve);
-        for (const UInt64 * row_ref_i = row_refs_begin; row_ref_i != row_refs_end; ++row_ref_i)
+    for (const UInt64 * row_ref_i = row_refs_begin; row_ref_i != row_refs_end; ++row_ref_i)
+    {
+        if (!*row_ref_i)
         {
-            if (!*row_ref_i)
-            {
-                type_name[i].type->insertDefaultInto(*col);
-                continue;
-            }
-            chassert(refWordIsInline(*row_ref_i));
-            const auto * block = resolve(stored_columns[refWordBlockNo(*row_ref_i)]);
+            for (size_t i = 0; i < columns.size(); ++i)
+                type_name[i].type->insertDefaultInto(*columns[i]);
+            continue;
+        }
+        chassert(refWordIsInline(*row_ref_i));
+        const StoredBlock * stored = stored_columns[refWordBlockNo(*row_ref_i)];
+        /// All previous rows are fully copied out, so the working set can be dropped right away.
+        if (resolve.needReleaseBefore(stored))
+            resolve.release();
+        const auto * block = resolve(stored);
+        for (size_t i = 0; i < columns.size(); ++i)
+        {
+            auto & col = columns[i];
             const auto [column_from_block, row_num] = getBlockColumnAndRow(block, refWordRowNo(*row_ref_i), right_indexes[i]);
             if (auto * nullable_col = typeid_cast<ColumnNullable *>(col.get()); nullable_col && !column_from_block->isNullable())
                 nullable_col->insertFromNotNullable(*column_from_block, row_num);
@@ -176,7 +184,20 @@ size_t LazyOutput::buildOutputFromBlocksLimitAndOffset(
     size_t row_idx = 0;
     size_t total_byte_size = 0;
     size_t left_idx = 0; /// position in non-replicated left block
-    DecompressResolver resolve(*this);
+    size_t rows_added = 0;
+    DecompressResolver resolve(*join);
+
+    /// Copy the pairs collected so far into the output columns and drop them, so the decompressed
+    /// blocks they reference can be released when the resolver's working set grows past its budget.
+    auto fill_columns = [&]
+    {
+        rows_added += row_nums.size();
+        for (size_t i = 0; i < columns.size(); ++i)
+            columns[i]->fillFromBlocksAndRowNumbers(type_name[i].type, right_indexes[i], columns_with_row_numbers);
+        many_columns.clear();
+        row_nums.clear();
+    };
+
     for (const UInt64 * row_ref_i = row_refs_begin; rows_limit > 0 && row_ref_i != row_refs_end; ++row_ref_i)
     {
         if (*row_ref_i)
@@ -192,7 +213,13 @@ size_t LazyOutput::buildOutputFromBlocksLimitAndOffset(
                     continue;
                 }
 
-                const auto * block = resolve(stored_columns[refWordBlockNo(ref_word)]);
+                const StoredBlock * stored = stored_columns[refWordBlockNo(ref_word)];
+                if (resolve.needReleaseBefore(stored))
+                {
+                    fill_columns();
+                    resolve.release();
+                }
+                const auto * block = resolve(stored);
                 const size_t row_num = refWordRowNo(ref_word);
 
                 if (bytes_limit)
@@ -233,11 +260,8 @@ size_t LazyOutput::buildOutputFromBlocksLimitAndOffset(
         }
     }
 
-    for (size_t i = 0; i < columns.size(); ++i)
-    {
-        columns[i]->fillFromBlocksAndRowNumbers(type_name[i].type, right_indexes[i], columns_with_row_numbers);
-    }
-    return row_nums.size();
+    fill_columns();
+    return rows_added;
 }
 
 
@@ -252,7 +276,18 @@ void LazyOutput::buildOutputFromBlocks(size_t size_to_reserve, MutableColumns & 
     auto & row_nums = columns_with_row_numbers.row_numbers;
     many_columns.reserve(size_to_reserve);
     row_nums.reserve(size_to_reserve);
-    DecompressResolver resolve(*this);
+    DecompressResolver resolve(*join);
+
+    /// Copy the pairs collected so far into the output columns and drop them, so the decompressed
+    /// blocks they reference can be released when the resolver's working set grows past its budget.
+    auto fill_columns = [&]
+    {
+        for (size_t i = 0; i < columns.size(); ++i)
+            columns[i]->fillFromBlocksAndRowNumbers(type_name[i].type, right_indexes[i], columns_with_row_numbers);
+        many_columns.clear();
+        row_nums.clear();
+    };
+
     for (const UInt64 * row_ref_i = row_refs_begin; row_ref_i != row_refs_end; ++row_ref_i)
     {
         if (*row_ref_i)
@@ -261,7 +296,13 @@ void LazyOutput::buildOutputFromBlocks(size_t size_to_reserve, MutableColumns & 
             {
                 for (const UInt64 ref_word : refsOf(*row_ref_i))
                 {
-                    many_columns.emplace_back(resolve(stored_columns[refWordBlockNo(ref_word)]));
+                    const StoredBlock * stored = stored_columns[refWordBlockNo(ref_word)];
+                    if (resolve.needReleaseBefore(stored))
+                    {
+                        fill_columns();
+                        resolve.release();
+                    }
+                    many_columns.emplace_back(resolve(stored));
                     row_nums.emplace_back(refWordRowNo(ref_word));
                 }
             }
@@ -269,7 +310,13 @@ void LazyOutput::buildOutputFromBlocks(size_t size_to_reserve, MutableColumns & 
             {
                 /// A single inline ref word (a unique-key match or an ASOF match).
                 chassert(refWordIsInline(*row_ref_i));
-                many_columns.emplace_back(resolve(stored_columns[refWordBlockNo(*row_ref_i)]));
+                const StoredBlock * stored = stored_columns[refWordBlockNo(*row_ref_i)];
+                if (resolve.needReleaseBefore(stored))
+                {
+                    fill_columns();
+                    resolve.release();
+                }
+                many_columns.emplace_back(resolve(stored));
                 row_nums.emplace_back(refWordRowNo(*row_ref_i));
             }
         }
@@ -279,10 +326,7 @@ void LazyOutput::buildOutputFromBlocks(size_t size_to_reserve, MutableColumns & 
             row_nums.emplace_back(0);
         }
     }
-    for (size_t i = 0; i < columns.size(); ++i)
-    {
-        columns[i]->fillFromBlocksAndRowNumbers(type_name[i].type, right_indexes[i], columns_with_row_numbers);
-    }
+    fill_columns();
 }
 
 template<>
@@ -307,19 +351,15 @@ void AddedColumns<false>::appendFromBlock(UInt64 ref_word, const bool has_defaul
         applyLazyDefaults();
 
     chassert(refWordIsInline(ref_word));
-    const StoredBlock * block = lazy_output.stored_columns[refWordBlockNo(ref_word)];
+    /// When the join compressed its stored blocks, `decompress_resolver` decompresses this block
+    /// before reading (deduplicated per distinct block across the `appendFromBlock` calls of this
+    /// batch, with the working set released early once it grows past the resolver's budget - the
+    /// rows of the previous calls are fully copied out already, so nothing dangles).
+    const StoredBlock * stored = lazy_output.stored_columns[refWordBlockNo(ref_word)];
+    if (decompress_resolver.needReleaseBefore(stored))
+        decompress_resolver.release();
+    const StoredBlock * block = decompress_resolver(stored);
     const size_t row_num = refWordRowNo(ref_word);
-
-    /// When the join compressed its stored blocks, decompress this block before reading.
-    /// `appendFromBlock` runs once per output row, so the decompressed view is deduplicated
-    /// per distinct block in `decompressed_blocks` and held for the lifetime of this batch.
-    if (lazy_output.have_compressed)
-    {
-        auto & holder = decompressed_blocks[block];
-        if (!holder)
-            holder = lazy_output.join->getDecompressedColumns(block);
-        block = holder.get();
-    }
 #ifndef NDEBUG
     checkColumns(block->columns);
 #endif

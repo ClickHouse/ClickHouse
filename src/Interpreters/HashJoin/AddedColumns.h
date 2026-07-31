@@ -6,8 +6,6 @@
 #include <Interpreters/HashJoin/HashJoin.h>
 #include <Interpreters/TableJoin.h>
 
-#include <unordered_map>
-
 namespace DB
 {
 namespace ErrorCodes
@@ -87,7 +85,7 @@ struct LazyOutput
     size_t join_data_avg_perkey_rows = 0;
 
     /// Set when the join compressed its stored right-side blocks (`enable_join_in_memory_compression`).
-    /// In that case a stored `StoredBlock` must be decompressed (via `join->getDecompressedColumns`) before reading.
+    /// In that case a stored `StoredBlock` must be decompressed (via `HashJoin::getDecompressedColumns`) before reading.
     const HashJoin * join = nullptr;
     bool have_compressed = false;
 
@@ -139,39 +137,6 @@ struct LazyOutput
 private:
 };
 
-/// Translates a stored (possibly compressed) `StoredBlock` pointer to one that can be read directly.
-/// When the join compressed its right-side blocks, they are decompressed on first use (at most once per
-/// distinct block) and kept alive in `held` for as long as this resolver lives (i.e. while the output is
-/// being built), then released.
-/// When compression is off, it is a transparent pass-through with no overhead.
-struct DecompressResolver
-{
-    const HashJoin * join;
-    const bool active;
-    std::vector<DecompressedColumnsPtr> held;
-    std::unordered_map<const StoredBlock *, const StoredBlock *> resolved;
-
-    explicit DecompressResolver(const LazyOutput & lazy_output)
-        : join(lazy_output.join), active(lazy_output.have_compressed)
-    {
-    }
-
-    const StoredBlock * operator()(const StoredBlock * block)
-    {
-        if (!active || block == nullptr)
-            return block;
-
-        auto [it, inserted] = resolved.try_emplace(block, nullptr);
-        if (inserted)
-        {
-            auto decompressed = join->getDecompressedColumns(block);
-            it->second = decompressed.get();
-            held.push_back(std::move(decompressed));
-        }
-        return it->second;
-    }
-};
-
 template <bool lazy>
 class AddedColumns
 {
@@ -193,6 +158,7 @@ public:
         , additional_filter_required_rhs_pos(additional_filter_required_rhs_pos_)
         , rows_to_add(left_block_.rows())
         , enable_prefetch(join.enableSoftwarePrefetch())
+        , decompress_resolver(join)
         , is_join_get(is_join_get_)
     {
         size_t num_columns_to_add = block_with_columns_to_add.columns();
@@ -323,9 +289,10 @@ public:
 
     /// Per-batch deduplication of decompressed stored blocks for the non-lazy path (`ANY` strictness,
     /// `joinGet`), which materializes rows one by one via `appendFromBlock`: each distinct compressed
-    /// block is decompressed at most once and held here while this output batch is being built
-    /// (the lazy path gets the same guarantee from `DecompressResolver`).
-    std::unordered_map<const StoredBlock *, DecompressedColumnsPtr> decompressed_blocks;
+    /// block is decompressed at most once and held here while this output batch is being built, with
+    /// the working set released early when it grows past the resolver's budget (the lazy path gets
+    /// the same guarantees from its own per-batch `DecompressResolver` instances).
+    DecompressResolver decompress_resolver;
 
     void reserve(bool need_replicate)
     {
