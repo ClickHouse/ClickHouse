@@ -531,6 +531,11 @@ class PullRequestPushYamlGen:
             ENV_CHECKOUT_REFERENCE = (
                 YamlGenerator.Templates.TEMPLATE_ENV_CHECKOUT_REF_DEFAULT
             )
+            if self.workflow_config.tags:
+                ENV_CHECKOUT_REFERENCE += (
+                    "\n  DISABLE_CI_CACHE: "
+                    "${{{{ github.ref_type == 'tag' && '1' || github.event.inputs.no_cache || '0' }}}}"
+                )
         elif self.workflow_config.event in (Workflow.Event.MERGE_QUEUE,):
             base_template = YamlGenerator.Templates.TEMPLATE_MERGE_QUEUE_0
             format_kwargs = {}
