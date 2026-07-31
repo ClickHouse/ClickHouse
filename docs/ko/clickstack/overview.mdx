@@ -107,7 +107,7 @@ ClickStack 아키텍처는 배포 방식에 따라 달라집니다. 모든 구�
 
     Managed ClickStack은 **ClickHouse Cloud** 내에서 전적으로 실행되며, 동일한 ClickStack 데이터 모델과 사용자 경험을 유지하면서 완전 관리형 관측성 백엔드를 제공합니다.
 
-    이 모델에서는 **ClickHouse와 ClickStack UI(HyperDX)**를 ClickHouse Cloud가 호스팅하고 운영하며 보안을 관리합니다. 사용자는 텔레메트리 데이터를 관리형 서비스로 보내기 위해 OpenTelemetry Collector만 실행하면 됩니다.
+    이 모델에서는 **ClickHouse와 ClickStack UI(HyperDX)** 를 ClickHouse Cloud가 호스팅하고 운영하며 보안을 관리합니다. 사용자는 텔레메트리 데이터를 관리형 서비스로 보내기 위해 OpenTelemetry Collector만 실행하면 됩니다.
 
     Managed ClickStack은 다음 구성 요소로 이루어져 있습니다:
 
@@ -115,7 +115,7 @@ ClickStack 아키텍처는 배포 방식에 따라 달라집니다. 모든 구�
        HyperDX UI는 ClickHouse Cloud에 완전히 통합되어 있으며 서비스의 일부로 관리됩니다. 로그 검색, 트레이스 탐색, 대시보드, 알림, 텔레메트리 유형 간 상관관계 분석 기능을 제공하며, 인증과 접근 제어가 통합되어 있습니다.
 
     2. **OpenTelemetry collector (self-managed)**
-       사용자는 애플리케이션과 인프라에서 텔레메트리 데이터를 수신하는 OpenTelemetry Collector를 실행합니다. 이 collector는 OTLP를 통해 데이터를 ClickHouse Cloud로 전달합니다. 표준을 준수하는 어떤 OpenTelemetry Collector든 사용할 수 있지만, ClickHouse 수집에 맞게 사전 구성되고 최적화되어 있으며 ClickStack 스키마와 즉시 함께 사용할 수 있는 **ClickStack 배포판**을 강력히 권장합니다.
+       사용자는 애플리케이션과 인프라에서 텔레메트리 데이터를 수신하는 OpenTelemetry Collector를 실행합니다. 이 collector는 OTLP를 통해 데이터를 ClickHouse Cloud로 전달합니다. 표준을 준수하는 어떤 OpenTelemetry Collector든 사용할 수 있지만, ClickHouse 수집에 맞게 사전 구성되고 최적화되어 있으며 ClickStack 스키마와 즉시 작동하는 **ClickStack 배포판**을 강력히 권장합니다.
 
     3. **ClickHouse Cloud**
        ClickHouse는 ClickHouse Cloud에서 완전히 관리되며, 모든 관측성 데이터의 스토리지 및 쿼리 엔진 역할을 합니다. 사용자는 클러스터, 업그레이드 또는 운영 관련 사항을 관리할 필요가 없습니다.
@@ -149,7 +149,7 @@ ClickStack 아키텍처는 배포 방식에 따라 달라집니다. 모든 구�
        ClickHouse 수집에 최적화된 독자적인 스키마로 구성된 맞춤형 collector입니다. OpenTelemetry 프로토콜을 통해 로그, 메트릭, 트레이스를 수신하고 효율적인 배치 삽입을 사용해 이를 ClickHouse에 직접 기록합니다.
 
     3. **ClickHouse**
-       wide events를 위한 중앙 데이터 저장소 역할을 하는 고성능 분석용 데이터베이스입니다. ClickHouse는 열 지향 엔진과 JSON에 대한 네이티브 지원을 활용해 대규모 환경에서 빠른 검색, 필터링, 집계를 지원합니다.
+       대규모 이벤트를 위한 중앙 데이터 저장소 역할을 하는 고성능 분석용 데이터베이스입니다. ClickHouse는 열 지향 엔진과 JSON에 대한 네이티브 지원을 활용해 대규모 환경에서 빠른 검색, 필터링, 집계를 지원합니다.
 
     이 세 가지 구성 요소 외에도 ClickStack은 대시보드, 사용자 계정, 구성 설정과 같은 애플리케이션 상태를 저장하기 위해 **MongoDB 인스턴스**를 사용합니다.
 

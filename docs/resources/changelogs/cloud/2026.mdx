@@ -5,7 +5,6 @@ title: 'Cloud changelog - 2026'
 description: 'ClickHouse Cloud changelog providing descriptions of what is new in each ClickHouse Cloud release'
 doc_type: 'changelog'
 keywords: ['changelog', 'release notes', 'updates', 'new features', 'cloud changes']
-rss: true
 ---
 
 import { Image } from "/snippets/components/Image.jsx";
@@ -74,8 +73,8 @@ ClickHouse Agents is now in public beta at [ai.clickhouse.cloud](http://ai.click
 
 Learn more in the [ClickHouse Agents documentation](/products/cloud/features/ai-ml/agents/index).
 
-### ClickHouse Managed Postgres (public beta)
-ClickHouse Managed Postgres, fully managed Postgres on local NVMe storage, is now in public beta, delivering 5x+ more TPS than AWS RDS and bridging OLTP and OLAP in one managed stack. A native CDC pipeline streams data directly into ClickHouse with no intermediate infrastructure, and the open-source `pg_clickhouse` extension lets you query ClickHouse tables from standard Postgres sessions.
+### ClickHouse Postgres (public beta)
+Fully managed Postgres on local NVMe storage is now in public beta, delivering 5x+ more TPS than AWS RDS and bridging OLTP and OLAP in one managed stack. A native CDC pipeline streams data directly into ClickHouse with no intermediate infrastructure, and the open-source `pg_clickhouse` extension lets you query ClickHouse tables from standard Postgres sessions.
 
 Read more in [Open House 2026 Day 1: Real-time data without lock-in and what teams can build next](https://clickhouse.com/blog/open-house-2026-day-1#postgres-announcements).
 
@@ -161,7 +160,7 @@ See [supported regions](/products/cloud/reference/supported-regions) for the ful
 <Update label="May 8, 2026">
 
 ### Postgres query insights (private preview)
-A new **Query insights** tab is now available in [ClickHouse Managed Postgres](/products/managed-postgres/overview) (Private Preview). It ranks every query pattern by impact and shows why each one is slow across three surfaces:
+A new **Query insights** tab is now available in [ClickHouse Cloud Managed Postgres](/products/managed-postgres/overview) (Private Preview). It ranks every query pattern by impact and shows why each one is slow across three surfaces:
 
 * **Overview** — one-screen database health
 * **Patterns** — table sortable by runtime, CPU, errors, and P95

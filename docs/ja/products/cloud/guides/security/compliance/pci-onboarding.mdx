@@ -7,8 +7,8 @@ doc_type: 'guide'
 keywords: ['pci', 'コンプライアンス', '決済セキュリティ', 'データ保護', 'セキュリティ']
 ---
 
-import { BetaBadge } from "/snippets/ja/components/BetaBadge/BetaBadge.jsx";
-import { EnterprisePlanFeatureBadge } from "/snippets/ja/components/EnterprisePlanFeatureBadge/EnterprisePlanFeatureBadge.jsx";
+import BetaBadge from "/snippets/ja/components/BetaBadge/BetaBadge.jsx";
+import EnterprisePlanFeatureBadge from "/snippets/ja/components/EnterprisePlanFeatureBadge/EnterprisePlanFeatureBadge.jsx";
 
 import { Image } from "/snippets/ja/components/Image.jsx";
 
@@ -21,7 +21,9 @@ ClickHouse のコンプライアンスプログラムおよびサードパーテ
 このページでは、ClickHouse Cloud で PCI 準拠サービスをデプロイできるようにする手順について説明します。
 
 <Steps>
-  <Step title="Enterprise サービスに申し込む" id="sign-up-for-enterprise">
+  <Step>
+    ### Enterprise サービスに申し込む
+
     1. コンソールの左下で組織名を選択します。
     2. **Billing** をクリックします。
     3. 左上で **Plan** を確認します。
@@ -29,10 +31,12 @@ ClickHouse のコンプライアンスプログラムおよびサードパーテ
     5. **Switch to Enterprise** を選択します。
   </Step>
 
-  <Step title="組織で PCI を有効にする" id="enable-hipaa">
+  <Step>
+    ### 組織で PCI を有効にする
+
     1. コンソールの左下で組織名を選択します。
     2. **Organization details** をクリックします。
-    3. **PCI を有効化** をオンにします。
+    3. **Enable PCI** をオンにします。
 
     <br />
 
@@ -49,7 +53,9 @@ ClickHouse のコンプライアンスプログラムおよびサードパーテ
     <br />
   </Step>
 
-  <Step title="サービスを PCI 準拠リージョンにデプロイする" id="deploy-pci-regions">
+  <Step>
+    ### サービスを PCI 準拠リージョンにデプロイする
+
     1. コンソールのホーム画面左上で **New service** を選択します
     2. **Region type** を **HIPAA compliant** に変更します
 

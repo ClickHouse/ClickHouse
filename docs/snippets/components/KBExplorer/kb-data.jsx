@@ -1081,6 +1081,16 @@ export const kbIndex = {
       ]
     },
     {
+      "id": "troubleshooting/exception-too-many-parts",
+      "title": "Resolving \"Too Many Parts\" error in ClickHouse",
+      "description": "Learn how to address the \"Too many parts\" error in ClickHouse by optimizing insert rates, configuring MergeTree settings, and managing partitions effectively.",
+      "href": "/resources/support-center/knowledge-base/troubleshooting/exception-too-many-parts",
+      "category": "Troubleshooting & errors",
+      "tags": [
+        "Errors and Exceptions"
+      ]
+    },
+    {
       "id": "troubleshooting/certificate-verify-failed-error",
       "title": "Resolving SSL Certificate Verify Error in ClickHouse",
       "description": "Learn how to resolve the SSL Exception CERTIFICATE_VERIFY_FAILED error.",
@@ -1088,16 +1098,6 @@ export const kbIndex = {
       "category": "Troubleshooting & errors",
       "tags": [
         "Security and Authentication",
-        "Errors and Exceptions"
-      ]
-    },
-    {
-      "id": "troubleshooting/exception-too-many-parts",
-      "title": "Resolving the \"Too many parts\" exception in ClickHouse",
-      "description": "Learn how to diagnose and resolve the \"Too many parts\" exception by batching inserts, using asynchronous inserts, and choosing an appropriate partitioning key.",
-      "href": "/resources/support-center/knowledge-base/troubleshooting/exception-too-many-parts",
-      "category": "Troubleshooting & errors",
-      "tags": [
         "Errors and Exceptions"
       ]
     },

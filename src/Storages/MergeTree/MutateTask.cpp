@@ -26,6 +26,7 @@
 #include <Processors/QueryPlan/Optimizations/QueryPlanOptimizationSettings.h>
 #include <Processors/Sources/SourceFromSingleChunk.h>
 #include <Processors/Transforms/ColumnGathererTransform.h>
+#include <Processors/Transforms/DistinctSortedTransform.h>
 #include <Processors/Transforms/ExpressionTransform.h>
 #include <Processors/Transforms/MaterializingTransform.h>
 #include <Processors/Transforms/TTLCalcTransform.h>
@@ -1099,9 +1100,6 @@ static NameSet collectFilesToSkip(
     /// Do not hardlink this file because it's always rewritten at the end of mutation.
     files_to_skip.insert(IMergeTreeDataPart::SERIALIZATION_FILE_NAME);
 
-    /// We need to hardlink this file because otherwise hardlinked persistent virtual columns may be rolled back.
-    files_to_skip.erase(IMergeTreeDataPart::INVALIDATED_SYSTEM_COLUMNS_FILE_NAME);
-
     auto skip_index = [&files_to_skip, &mrk_extension, &source_part](const MergeTreeIndexPtr & index)
     {
         /// The substream may live on disk under either its logical name (skp_idx_<name>) or a
@@ -1624,14 +1622,6 @@ struct MutationContext
     /// truncating) the source's skp_idx.packed inode.
     NameSet preserved_skip_index_archive_file_names;
     ColumnsStatistics stats_to_recalc;
-    /// The statistics objects the mutation must compute from the blocks it writes. This is a
-    /// subset of `all_gathered_data.statistics`: the remaining entries were loaded from the
-    /// source part only to be carried over unchanged, and they belong to columns this mutation
-    /// does not rewrite, so their state is already correct for the new part. Building them
-    /// against a block that happens to contain the column at a different type is what produced
-    /// the "Type mismatch when building statistics" logical error. `MergeTask` makes the same
-    /// distinction through `statistics_to_build_by_part`.
-    ColumnsStatistics statistics_to_build;
     std::set<ProjectionDescriptionRawPtr> projections_to_recalc;
     NameSet files_to_skip;
     NameToNameVector files_to_rename;
@@ -1854,8 +1844,8 @@ bool PartMergerWriter::mutateOriginalPartAndPrepareProjections()
         if (ctx->minmax_idx)
             ctx->minmax_idx->update(cur_block, ctx->minmax_idx_columns);
 
-        if (!ctx->statistics_to_build.empty())
-            ctx->statistics_to_build.buildIfExists(cur_block);
+        if (!ctx->all_gathered_data.statistics.empty())
+            ctx->all_gathered_data.statistics.buildIfExists(cur_block);
 
         /// TODO: move this calculation to DELETE FROM mutation
         if (ctx->count_lightweight_deleted_rows)
@@ -1931,42 +1921,15 @@ void PartMergerWriter::createBuildTextIndexesTask()
         temporary_text_index_storage,
         ctx->out->getWriterSettings(),
         ctx->compression_codec,
-        ctx->mrk_extension,
-        *ctx->data->getSettings());
+        ctx->mrk_extension);
 }
 
 void PartMergerWriter::calculateProjection(size_t projection_idx, const Block & block, UInt64 starting_offset)
 {
-    const auto & projection = *ctx->projections_to_build[projection_idx];
-
-    /// When mutations like CLEAR COLUMN do not include all columns in the pipeline output,
-    /// projections that depend on those columns still need to be rebuilt (e.g., for non-full
-    /// part storage). Add any missing required columns with default values so that projection
-    /// calculation does not fail with "Not found column in block".
-    Block block_for_projection;
-    bool added_missing_columns = false;
-    for (const auto & col_name : projection.required_columns)
-    {
-        if (!block.has(col_name))
-        {
-            if (!added_missing_columns)
-            {
-                block_for_projection = block;
-                added_missing_columns = true;
-            }
-            auto column_desc = ctx->metadata_snapshot->getColumns().getPhysical(col_name);
-            block_for_projection.insert(
-                {column_desc.type->createColumnConstWithDefaultValue(block.rows())->convertToFullColumnIfConst(),
-                 column_desc.type,
-                 col_name});
-        }
-    }
-    const Block & projection_input = added_missing_columns ? block_for_projection : block;
-
     Chunk squashed_chunk;
     {
         ProfileEventTimeIncrement<Microseconds> projection_watch(ProfileEvents::MutateTaskProjectionsCalculationMicroseconds);
-        Block block_to_squash = projection.calculate(projection_input, starting_offset, ctx->context);
+        Block block_to_squash = ctx->projections_to_build[projection_idx]->calculate(block, starting_offset, ctx->context);
 
         /// Everything is deleted by lightweight delete
         if (block_to_squash.rows() == 0)
@@ -2082,8 +2045,7 @@ void PartMergerWriter::finalizeTempProjectionsAndIndexes()
                 index,
                 /*merged_part_offsets=*/ nullptr,
                 reader_settings,
-                ctx->out->getWriterSettings(),
-                ctx->need_sync);
+                ctx->out->getWriterSettings());
 
             merge_subtasks.push_back(std::move(merge_task));
         }
@@ -2337,9 +2299,6 @@ private:
                     auto file_name_with_projection_prefix = fs::path(projection_data_part_storage_src->getPartDirectory()) / p_it->name();
                     hardlinked_files.insert(file_name_with_projection_prefix);
                 }
-
-                ctx->new_data_part->getDataPartStorage().commitTransaction();
-                ctx->new_data_part->getDataPartStorage().beginTransaction();
             }
         }
 
@@ -2436,10 +2395,6 @@ private:
             ctx->for_file_renames,
             *ctx->source_part,
             ctx->metadata_snapshot);
-
-        /// This task rewrites every column, so all statistics objects were created empty from the
-        /// current metadata above and all of them have to be computed.
-        ctx->statistics_to_build = ctx->all_gathered_data.statistics;
 
         ctx->out = std::make_shared<MergedBlockOutputStream>(
             ctx->new_data_part,
@@ -2561,17 +2516,6 @@ private:
             *ctx->source_part,
             ctx->metadata_snapshot);
 
-        /// This task rewrites only some of the columns and carries the rest over from the source
-        /// part. Only the statistics `processStatisticsChanges` has just replaced with empty
-        /// objects built from the current metadata may be computed here; every other entry is a
-        /// source-part statistics object to preserve as it is.
-        for (const auto & [stat_name, _] : ctx->stats_to_recalc)
-        {
-            auto it = ctx->all_gathered_data.statistics.find(stat_name);
-            if (it != ctx->all_gathered_data.statistics.end())
-                ctx->statistics_to_build.emplace(stat_name, it->second);
-        }
-
         if (ctx->execute_ttl_type != ExecuteTTLType::NONE)
             ctx->files_to_skip.insert("ttl.txt");
 
@@ -2662,9 +2606,6 @@ private:
                         hardlinked_files.insert(file_name_with_projection_prefix);
                     }
                 }
-
-                ctx->new_data_part->getDataPartStorage().commitTransaction();
-                ctx->new_data_part->getDataPartStorage().beginTransaction();
             }
         }
 
@@ -2677,7 +2618,6 @@ private:
         (*ctx->mutate_entry)->columns_written = ctx->storage_columns.size() - ctx->updated_header.columns();
 
         ctx->new_data_part->checksums = ctx->source_part->checksums;
-        ctx->new_data_part->invalidated_system_columns = ctx->source_part->invalidated_system_columns;
 
         /// When the archive will not be hardlinked from source (packed_skip_index_archive_dirty),
         /// the inherited skp_idx.packed entry must not survive untouched into the new part's
@@ -3603,20 +3543,6 @@ bool MutateTask::prepare()
 
     String tmp_part_dir_name = prefix + ctx->future_part->name;
     ctx->temporary_directory_lock = ctx->data->getTemporaryPartDirectoryHolder(tmp_part_dir_name);
-
-    /// Reclaim a stale leftover temporary directory (a mutation interrupted or rolled back and retried
-    /// with the same deterministic name) BEFORE constructing the part storage. Otherwise packed storage
-    /// seeds its archive reader and snapshots the mark layout from the leftover data.packed, and
-    /// finalizeWriter later carries every logical file the new mutation did not rewrite into the new
-    /// part. The temporary-directory lock above guarantees no concurrent operation owns this name.
-    {
-        auto relative_tmp_dir = fs::path(ctx->data->getRelativeDataPath()) / tmp_part_dir_name;
-        if (ctx->disk->existsDirectory(relative_tmp_dir))
-        {
-            LOG_WARNING(ctx->log, "Removing old temporary directory {}", (fs::path(ctx->disk->getPath()) / relative_tmp_dir).string());
-            ctx->disk->removeRecursive(relative_tmp_dir);
-        }
-    }
 
     auto builder = ctx->data->getDataPartBuilder(ctx->future_part->name, single_disk_volume, tmp_part_dir_name, getReadSettings());
     builder.withPartFormat(ctx->future_part->part_format);

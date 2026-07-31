@@ -32,8 +32,10 @@ Esta opción incluye autenticación, lo que permite conservar dashboards, alerta
 <br />
 
 <Steps>
-  <Step title="Desplegar con Docker" id="deploy-with-docker">
-    Esto iniciará un colector de OpenTelemetry (en los puertos 4317 y 4318) y la UI de HyperDX (en el puerto 8080).
+  <Step>
+    ### Desplegar con Docker
+
+    Esto iniciará un OpenTelemetry collector (en los puertos 4317 y 4318) y la UI de HyperDX (en el puerto 8080).
 
     ```shell
     docker run -p 8080:8080 -p 4317:4317 -p 4318:4318 clickhouse/clickstack-all-in-one:latest
@@ -46,7 +48,9 @@ Esta opción incluye autenticación, lo que permite conservar dashboards, alerta
     </Info>
   </Step>
 
-  <Step title="Acceder a la UI de HyperDX" id="navigate-to-hyperdx-ui">
+  <Step>
+    ### Acceder a la UI de HyperDX
+
     Visite [http://localhost:8080](http://localhost:8080) para acceder a la UI de HyperDX.
 
     Cree un usuario e introduzca un nombre de usuario y una contraseña que cumplan los requisitos.
@@ -55,10 +59,12 @@ Esta opción incluye autenticación, lo que permite conservar dashboards, alerta
 
     <Image img="/images/use-cases/observability/hyperdx-login.webp" alt="UI de HyperDX" size="lg" />
 
-    Para ver un ejemplo de uso de una instancia alternativa de ClickHouse, consulte [&quot;Uso con ClickHouse Cloud&quot;](#using-clickhouse-cloud).
+    Para ver un ejemplo de uso de una instancia alternativa de ClickHouse, consulte [&quot;Uso de ClickHouse Cloud&quot;](#using-clickhouse-cloud).
   </Step>
 
-  <Step title="Ingestar datos" id="ingest-data">
+  <Step>
+    ### Ingestar datos
+
     Para ingestar datos, consulte [&quot;Ingestar datos&quot;](/es/clickstack/ingesting-data/index).
   </Step>
 </Steps>

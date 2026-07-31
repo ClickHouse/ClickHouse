@@ -87,8 +87,6 @@ CREATE TABLE table
                                             | array
                                 -- Optional parameters:
                                 [, preprocessor = expression(str)]
-                                [, postprocessor = expression(str)]
-                                [, support_phrase_search = 0 | 1 ] -- experimental
                                 -- Optional advanced parameters:
                                 [, dictionary_block_size = D]
                                 [, dictionary_block_frontcoding_compression = B]
@@ -123,8 +121,6 @@ ALTER TABLE table
                                             | array
                                 -- Optional parameters:
                                 [, preprocessor = expression(str)]
-                                [, postprocessor = expression(str)]
-                                [, support_phrase_search = 0 | 1 ] -- experimental
                                 -- Optional advanced parameters:
                                 [, dictionary_block_size = D]
                                 [, dictionary_block_frontcoding_compression = B]
@@ -162,7 +158,7 @@ ALTER TABLE table DROP INDEX text_idx;
   明示的に指定しない限り、`min_length` と `max_length` のデフォルト値は 3 と 100 です。
   パラメータ `min_cutoff_length` を指定した場合、長さが `min_cutoff_length` 以上の n-gram のみが返されます。
   `ngrams(N)` と比べると、`sparseGrams` トークナイザーは可変長の N-gram を生成するため、元のテキストをより柔軟に表現できます。
-  たとえば、`tokenizer = sparseGrams(3, 5, 4)` では、内部的には入力文字列から 3-gram、4-gram、5-gram を生成しますが、返されるのは 4-gram と 5-gram のみです。
+  たとえば、`tokenizer = sparseGrams(3, 5, 4)` では、内部的には入力 String から 3-gram、4-gram、5-gram を生成しますが、返されるのは 4-gram と 5-gram のみです。
 * `array` はトークン化を行いません。つまり、各行の値がトークンになります (関数 [array](/ja/reference/functions/regular-functions/array-functions#array) を参照) 。
 
 使用可能なすべてのトークナイザーは [system.tokenizers](/ja/reference/system-tables/tokenizers) に一覧表示されています。
@@ -176,7 +172,7 @@ ALTER TABLE table DROP INDEX text_idx;
   区切り String がたまたま [prefix code](https://en.wikipedia.org/wiki/Prefix_code) を構成している場合は、任意の順序で渡せます。
 </Note>
 
-トークナイザーが入力文字列をどのように分割するかを確認するには、[tokens](/ja/reference/functions/regular-functions/splitting-merging-functions#tokens) 関数および [tokensForLikePattern](/ja/reference/functions/regular-functions/splitting-merging-functions#tokensForLikePattern) 関数を使用できます。
+トークナイザーが入力 String をどのように分割するかを確認するには、[tokens](/ja/reference/functions/regular-functions/splitting-merging-functions#tokens) 関数および [tokensForLikePattern](/ja/reference/functions/regular-functions/splitting-merging-functions#tokensForLikePattern) 関数を使用できます。
 
 例:
 
@@ -192,7 +188,7 @@ SELECT tokens('abc def', 'ngrams', 3);
 テキスト索引は、任意の言語および文字セットのテキストデータに対して作成できます。
 非ASCIIテキストでは、CJK文字を含む Unicode の単語境界を正しく扱えるため、`asciiCJK` トークナイザーの使用を推奨します。
 
-<a id="preprocessor-argument-optional" />**プリプロセッサ引数 (任意)&#x20;**。プリプロセッサとは、トークン化の前に入力文字列へ適用される式を指します。
+**プリプロセッサ引数 (任意)&#x20;**。プリプロセッサとは、トークン化の前に入力文字列へ適用される式を指します。
 
 プリプロセッサ引数の一般的な用途としては、次のようなものがあります
 
@@ -295,195 +291,7 @@ ORDER BY tuple();
 SELECT count() FROM tab WHERE hasAllTokens(mapKeys(map), 'foo');
 ```
 
-<a id="postprocessor-argument-optional" />**ポストプロセッサ引数 (任意)**。ポストプロセッサとは、トークン化の後に各出力トークンへ適用される式のことです。
-
-入力文字列全体をトークナイザーがトークンへ分割する前に変換するプリプロセッサとは異なり、ポストプロセッサはトークンそのものに対して 1 つずつ処理を行います。
-本質的にトークン単位の変換を行うのに適した場所です。
-
-ポストプロセッサ引数の典型的なユースケースは次のとおりです:
-
-1. **ストップワード (極めて高頻度なトークン) のフィルタリング**。&quot;the&quot;、&quot;a&quot;、&quot;is&quot; のような非常によく出現するトークンは、検索との関連性が低いうえ、索引を肥大化させます。
-   ポストプロセッサを使えば、それらを空トークンに変換して除外できます。空トークンは無視され、つまり索引には追加されません。
-   例: `if(str IN ('the', 'a', 'an', 'of', 'in', 'is', 'it'), '', str)`
-2. **タイムスタンプの除去**。ログ行は、`2024-01-15T10:23:45` のような構造化されたタイムスタンプで始まっていることや、それを含んでいることがよくあります。
-   タイムスタンプのトークンを索引化すると、検索上の関連性を持たない文字列によって索引が肥大化します。
-   タイムスタンプを無視するための相補的な方法は 2 つあります:
-   * **ポストプロセッサ方式**: `splitByString` トークナイザー (空白で分割) を使用してタイムスタンプ全体を 1 つのトークンにし、その後 `parseDateTimeOrNull` を使って検出して除外します。
-     例: `if(isNull(parseDateTimeOrNull(str, '%Y-%m-%dT%H:%i:%S')), str, '')`
-     タイムゾーンオフセットや小数秒を含むタイムスタンプには、明示的なフォーマット文字列を使わずに `parseDateTimeBestEffortOrNull(str)` を使用します。
-   * **プリプロセッサ方式**: トークン化の *前* に、正規表現でログ行全体からタイムスタンプを取り除きます。
-     例: `replaceRegexpAll(str, '^[0-9]{4}-[0-9]{2}-[0-9]{2}T[0-9]{2}:[0-9]{2}:[0-9]{2} ', '')`
-     この方法はどのトークナイザーでも機能し、タイムスタンプ文字列がまったくトークン化されないため、より効率的です。
-     両方の方法を組み合わせることもできます。プリプロセッサでタイムスタンプを除去しつつ、ポストプロセッサで残りのトークンを正規化またはフィルタリングします (たとえば、小文字化 + `ERROR` や `INFO` のような重大度を表す語の除去)。
-3. **ステミング**。各トークンをその語幹に対応付けることで、同じ語根を共有する語形の違いにも一致するようになり、検索の再現率が向上します。
-   たとえば、英語のステミングでは &quot;running&quot;、&quot;runs&quot;、&quot;run&quot; はすべて &quot;run&quot; に語幹化されるため、これらの異形のいずれかに対するクエリですべてに一致します。
-   ClickHouse には、複数の言語向けの組み込み [stem](/ja/reference/functions/regular-functions/nlp-functions#stem) 関数があります。
-   例: `stem(str, 'en')`
-4. **大文字小文字の正規化**。たとえば [lower](/ja/reference/functions/regular-functions/string-functions#lower) や [lowerUTF8](/ja/reference/functions/regular-functions/string-functions#lowerUTF8) を使って、トークンを小文字化または大文字化し、大文字小文字を区別しないマッチングを可能にします。
-   小文字化および大文字化には、ポストプロセッサではなくプリプロセッサを推奨します。
-
-ポストプロセッサ式は、[String](/ja/reference/data-types/string) 型のトークンを同じ型のトークンに変換します。
-また、ポストプロセッサ式は、テキスト索引が定義されているカラムまたは式のみを参照する必要があります。
-カラムの型が `Array(String)` の場合でも、ポストプロセッサは個々のトークンをプレーンな `String` 値として処理します。
-
-非決定論的関数の使用は許可されていません。
-
-ポストプロセッサは、index のビルド時に生成される各トークンに適用されます (`array` トークナイザーでは、各配列要素が 1 つのトークンです) 。クエリ時の動作は、関数によって異なります。
-
-* `hasToken`、`hasAllTokens`、`hasAnyTokens`、`hasPhrase` の場合 (サポートされている任意のトークナイザーを使用) : ポストプロセッサは、haystack 側のトークンと検索 needle の両方に適用されるため、完全に正規化されたマッチング (たとえば、大文字と小文字を区別しない検索) が可能になります。`hasPhrase` では、ポストプロセッサ適用後のトークンは詰めて配置されるため、ポストプロセッサによって削除されたトークンがあっても位置上のギャップは生じず、その箇所をまたいでフレーズが一致します。たとえば、`the` を削除するストップワード用ポストプロセッサを使用すると、`hasPhrase(col, 'see cat')` は `see the cat` という文書に一致します。
-* それ以外のすべての関数 (`=`, `IN`, `has`, `hasAny`, `hasAll`, `mapContains*`) : index ヒントのルックアップでは検索 needle にのみポストプロセッサが適用され、行レベルの述語では引き続き元のカラム値と比較されます。
-
-例:
-
-* ポストプロセッサ式を使用してストップワードを削除します:
-
-```sql
-CREATE TABLE table
-(
-    str String,
-    INDEX idx(str) TYPE text(
-        tokenizer = 'splitByNonAlpha',
-        postprocessor = if(str IN ('the', 'a', 'an', 'of', 'in', 'is', 'it'), '', str)
-    )
-)
-ENGINE = MergeTree
-ORDER BY tuple();
-```
-
-* ポストプロセッサ式を使用してタイムスタンプを削除します:
-
-```sql
--- Log lines: '2024-01-15T10:23:45 ERROR connection failed'
--- The splitByString tokenizer (default: whitespace) keeps the full timestamp as one token.
--- parseDateTimeOrNull detects and drops it; non-timestamp words are kept.
-CREATE TABLE logs
-(
-    id   UInt64,
-    line String,
-    INDEX idx(line) TYPE text(
-        tokenizer    = 'splitByString',
-        postprocessor = if(isNull(parseDateTimeOrNull(line, '%Y-%m-%dT%H:%i:%S')), line, '')
-    )
-)
-ENGINE = MergeTree ORDER BY id;
-
--- Only message-level words are indexed; timestamp tokens are not stored.
-SELECT count() FROM logs WHERE hasAllTokens(line, ['ERROR']);       -- fast index lookup
-SELECT count() FROM logs WHERE hasAllTokens(line, ['2024-01-15T10:23:45']);  -- returns 0: token was never indexed
-```
-
-* プリプロセッサ式でタイムスタンプを削除します:
-
-```sql
--- The preprocessor strips the ISO timestamp prefix before tokenization.
--- Any tokenizer can be used; timestamp characters are never seen by the tokenizer.
-CREATE TABLE logs
-(
-    id   UInt64,
-    line String,
-    INDEX idx(line) TYPE text(
-        tokenizer   = 'splitByNonAlpha',
-        preprocessor = replaceRegexpAll(line, '^[0-9]{4}-[0-9]{2}-[0-9]{2}T[0-9]{2}:[0-9]{2}:[0-9]{2} ', '')
-    )
-)
-ENGINE = MergeTree ORDER BY id;
-```
-
-* プリプロセッサとポストプロセッサを組み合わせた式でタイムスタンプを削除します:
-
-```sql
--- Preprocessor strips the timestamp, then lowercases the remainder.
--- Postprocessor drops the severity word (error, info, warn, debug) after tokenization.
--- Result: only substantive message words are stored in the index.
-CREATE TABLE logs
-(
-    id   UInt64,
-    line String,
-    INDEX idx(line) TYPE text(
-        tokenizer    = 'splitByNonAlpha',
-        preprocessor = lower(replaceRegexpAll(line, '^[0-9]{4}-[0-9]{2}-[0-9]{2}T[0-9]{2}:[0-9]{2}:[0-9]{2} ', '')),
-        postprocessor = if(line IN ('error', 'info', 'warn', 'warning', 'debug', 'critical'), '', line)
-    )
-)
-ENGINE = MergeTree ORDER BY id;
-
--- Example log line: '2024-01-15T10:23:45 ERROR connection failed'
--- After preprocessor:  'error connection failed'
--- After tokenization:  ['error', 'connection', 'failed']
--- After postprocessor: ['connection', 'failed']   ← 'error' dropped as severity word
-SELECT count() FROM logs WHERE hasAllTokens(line, ['connection']);
-```
-
-* 後処理式でトークンをステミングします:
-
-```sql
-CREATE TABLE table
-(
-    str String,
-    INDEX idx(str) TYPE text(
-        tokenizer = 'splitByNonAlpha',
-        postprocessor = stem(str, 'en')
-    )
-)
-ENGINE = MergeTree
-ORDER BY tuple();
-
--- The query token 'running' is stemmed to 'run' before the lookup,
--- matching rows that contain 'run', 'runs', 'ran', 'running', etc.
-SELECT count() FROM table WHERE hasAllTokens(str, ['running']);
-```
-
-**関数のサポート**。
-
-テキスト索引を参照する述語では、索引構築時に格納されたものと同じトークンを索引のルックアップで使えるように、グラニュールレベルのチェックの前にプリプロセッサとポストプロセッサが検索値に適用されます。
-ほとんどの関数 (`=`, `IN`, `startsWith`, `endsWith`, `LIKE`, `mapContains*`) では、テキスト索引は無関係なデータブロックをスキップするためにのみ使用されます。ClickHouse はその後も、元のカラムデータに対して元の述語で、残った各行を検証します。
-トークン検索関数 (`hasToken`, `hasAllTokens`, `hasAnyTokens`) では、テキスト索引が主な評価経路になります。ClickHouse は、索引構築時に適用されたものと同じプリプロセッサ、トークナイザー、ポストプロセッサを通して needle を正規化し、この正規化形を索引付き・索引なしの両方のテーブルパーツに対して使用します。ポストプロセッサがある場合は、haystack のトークンもクエリ時に正規化されるため (`array` に限らず、どのトークナイザーでも同様) 、比較の両側が一貫して変換され、結果は索引を直接読み取るかどうか (設定 `query_plan_direct_read_from_text_index`) 、または特定のパーツにマテリアライズされた索引があるかどうかに依存しません。たとえば、`lower` ポストプロセッサを使うと、`hasAllTokens(col, ['FOO'])` で大文字と小文字を区別しないマッチングを有効にできます。
-`support_phrase_search` がない場合、`hasPhrase` は索引をヒントとしてのみ使用し、残った各行を元の述語で検証します。さらに、ポストプロセッサはフレーズと haystack のトークンの両方を同じ方法で正規化するため、結果は読み取り経路に依存せず、ポストプロセッサが削除するトークンによってフレーズの隣接関係が崩れることもありません。`support_phrase_search = 1` の場合、`hasPhrase` は正確な直接読み取りを使用します (存在する場合は、ポストプロセッサも引き続き適用されます) 。
-ポストプロセッサによって空文字列にマップされる検索トークンは無視され、つまり検索フレーズに存在しないものとして扱われます。
-
-| 関数                                                                                                      | プリプロセッサ対応                   | 対応トークナイザー                                                | ポストプロセッサ対応 |
-| ------------------------------------------------------------------------------------------------------- | --------------------------- | -------------------------------------------------------- | ---------- |
-| `=`                                                                                                     | はい                          | すべて                                                      | はい         |
-| `IN`                                                                                                    | はい                          | すべて                                                      | はい         |
-| [hasToken](/ja/reference/functions/regular-functions/string-search-functions#hasToken)                     | はい                          | すべて (`splitByNonAlpha` 向けに設計)                            | はい         |
-| [hasAnyTokens(col, str)](/ja/reference/functions/regular-functions/string-search-functions#hasAnyTokens)   | はい                          | すべて                                                      | はい         |
-| [hasAllTokens(col, str)](/ja/reference/functions/regular-functions/string-search-functions#hasAllTokens)   | はい                          | すべて                                                      | はい         |
-| [hasAnyTokens(col, arr)](/ja/reference/functions/regular-functions/string-search-functions#hasAnyTokens)   | いいえ (配列要素はそのままトークンとして扱われます) | すべて                                                      | はい         |
-| [hasAllTokens(col, arr)](/ja/reference/functions/regular-functions/string-search-functions#hasAllTokens)   | いいえ (配列要素はそのままトークンとして扱われます) | すべて                                                      | はい         |
-| [hasPhrase](/ja/reference/functions/regular-functions/string-search-functions#hasPhrase)                   | はい                          | `splitByNonAlpha`, `splitByString`, `ngrams`, `asciiCJK` | はい         |
-| [startsWith](/ja/reference/functions/regular-functions/string-functions#startsWith)                        | はい                          | `splitByNonAlpha`, `ngrams`, `sparseGrams`, `asciiCJK`   | はい         |
-| [endsWith](/ja/reference/functions/regular-functions/string-functions#endsWith)                            | はい                          | `splitByNonAlpha`, `ngrams`, `sparseGrams`, `asciiCJK`   | はい         |
-| [like](/ja/reference/functions/regular-functions/string-search-functions#like)                             | はい¹                         | `splitByNonAlpha`, `ngrams`, `sparseGrams`, `asciiCJK`¹  | はい¹        |
-| [match](/ja/reference/functions/regular-functions/string-search-functions#match)                           | はい¹                         | `splitByNonAlpha`, `ngrams`, `sparseGrams`, `asciiCJK`¹  | はい¹        |
-| [ilike](/ja/reference/functions/regular-functions/string-search-functions#like)                            | はい² (`lower`/`upper` のみ)    | `splitByNonAlpha`, `array`²                              | いいえ²       |
-| [mapContainsKey](/ja/reference/functions/regular-functions/tuple-map-functions#mapContainsKey)             | はい                          | すべて                                                      | はい         |
-| [mapContainsValue](/ja/reference/functions/regular-functions/tuple-map-functions#mapContainsValue)         | はい                          | すべて                                                      | はい         |
-| [mapContainsKeyLike](/ja/reference/functions/regular-functions/tuple-map-functions#mapContainsKeyLike)     | はい                          | `splitByNonAlpha`, `ngrams`, `sparseGrams`, `asciiCJK`   | はい         |
-| [mapContainsValueLike](/ja/reference/functions/regular-functions/tuple-map-functions#mapContainsValueLike) | はい                          | `splitByNonAlpha`, `ngrams`, `sparseGrams`, `asciiCJK`   | はい         |
-| [has](/ja/reference/functions/regular-functions/array-functions#has)                                       | はい                          | `array`                                                  | はい         |
-| [hasAny](/ja/reference/functions/regular-functions/array-functions#hasAny)                                 | はい                          | `array`                                                  | はい         |
-| [hasAll](/ja/reference/functions/regular-functions/array-functions#hasAll)                                 | はい                          | `array`                                                  | はい         |
-
-¹ `LIKE` と `match` は、記載されたトークナイザーではヒントとして direct read を使用し、それ以外では 総当たりスキャン にフォールバックします。
-`LIKE` はさらに、プリプロセッサやポストプロセッサを使わない `splitByNonAlpha` および `array` トークナイザーに対して、*direct read (ヒントなし)&#x20;*&#x20;もサポートします (`use_text_index_like_evaluation_by_dictionary_scan` で有効化) 。
-
-² `ILIKE` は、direct read (ヒントなし) でのみサポートされます (`use_text_index_like_evaluation_by_dictionary_scan = 1`、`splitByNonAlpha` または `array` トークナイザー) 。
-索引をヒントとして使うフォールバックはありません。設定が無効になっている場合、またはトークナイザーがサポート対象外の場合、`ILIKE` では索引は使用されません。
-プリプロセッサがある場合は `lower` または `upper` である必要があり、ポストプロセッサはサポートされません。
-
-**Experimental: フレーズ検索引数のサポート (任意)&#x20;**。
-
-実験的なパラメータ `support_phrase_search` (デフォルト: `0`) は、索引にトークン位置を保存するかどうかを制御します。
-`1` に設定すると、索引は位置データ (`.pos` ファイル内) も追加で保存し、これにより [`hasPhrase`](#functions-example-hasphrase) 関数で direct read を介した完全なフレーズ一致が可能になります。
-位置情報を保存すると、索引のディスク上のサイズと書き込みコストが増加するため、これはオプトインです。
-ディスク上フォーマットはまだ stable ではないため、このパラメータは Experimental であり、将来の release で変更される可能性があります。
-そのため、`support_phrase_search = 1` を指定して索引を作成するには、MergeTree setting [`allow_experimental_text_index_phrase_search`](/ja/reference/settings/merge-tree-settings#allow_experimental_text_index_phrase_search) を有効にする必要があります。
-ポスティングリストのみの保存を維持するには `support_phrase_search = 0` (デフォルト) を設定してください。この引数を指定せずに作成されたテキスト索引には位置情報は含まれません。
-
-<Warning>
-  この引数は Experimental であり、テスト用途でのみ使用してください。
-  位置情報の保存を有効にするには、MergeTree setting [`allow_experimental_text_index_phrase_search`](/ja/reference/settings/merge-tree-settings#allow_experimental_text_index_phrase_search) を設定してください。
-</Warning>
+**その他の引数 (任意)&#x20;**。
 
 <details markdown="1">
   <summary>任意の詳細パラメータ</summary>
@@ -567,8 +375,8 @@ SELECT クエリでテキスト索引を使用するのは簡単で、一般的�
 
 <Note>
   テキスト索引の検索には、関数 `hasAnyTokens` および `hasAllTokens` の使用を推奨します。詳しくは[以下](#functions-example-hasanytokens-hasalltokens)を参照してください。
-  これらの関数は、利用可能なすべてのトークナイザーと、あらゆるプリプロセッサ式およびポストプロセッサ式に対応しています。
-  一方、その他のサポート対象の関数は歴史的にテキスト索引より前から存在していたため、多くの場合で従来の動作を維持する必要がありました (例: プリプロセッサまたはポストプロセッサをサポートしない) 。
+  これらの関数は、利用可能なすべてのトークナイザーと、あらゆるプリプロセッサ式に対応しています。
+  一方、その他のサポート対象の関数は歴史的にテキスト索引より前から存在していたため、多くの場合で従来の動作を維持する必要がありました (例: プリプロセッサをサポートしない) 。
 </Note>
 
 <div id="functions-support">
@@ -681,9 +489,8 @@ SELECT count() FROM table WHERE multiSearchAny(comment, [' clickhouse ', ' suppo
   #### `startsWith` and `endsWith`
 </div>
 
-`LIKE` と同様に、関数 [startsWith](/ja/reference/functions/regular-functions/string-functions#startsWith) と [endsWith](/ja/reference/functions/regular-functions/string-functions#endsWith) も、検索語から完全なトークンを抽出できる場合にのみ、テキスト索引を利用できます。
-`ngrams` トークナイザーを使用する索引では、ワイルドカードに挟まれた検索文字列の長さが N-gram 長以上の場合に該当します。
-テキスト索引で ポストプロセッサ を使用している場合でも、正規化後に抽出されたヒント トークン が空でなければ、これらの関数は Hint モードでその索引を利用できます。正規化によってすべてのヒント トークン が削除される場合、その predicate では索引は使用されません。
+`LIKE` と同様に、関数 [startsWith](/ja/reference/functions/regular-functions/string-functions#startsWith) と [endsWith](/ja/reference/functions/regular-functions/string-functions#endsWith) も、検索語から完全な token を抽出できる場合にのみ、テキスト索引を利用できます。
+`ngrams` トークナイザーを使用する索引では、ワイルドカードに挟まれた検索文字列の長さが ngram 長以上の場合に該当します。
 
 `splitByNonAlpha` トークナイザーを使用するテキスト索引の例:
 
@@ -706,18 +513,16 @@ startsWith(comment, 'clickhouse supports ')`
 SELECT count() FROM table WHERE endsWith(comment, ' olap engine');
 ```
 
-<div id="functions-example-hastoken">
-  #### `hasToken`
+<div id="functions-example-hastoken-hastokenornull">
+  #### `hasToken` と `hasTokenOrNull`
 </div>
 
 <Note>
-  `hasToken` は、非 `splitByNonAlpha` トークナイザーやプリプロセッサ/ポストプロセッサ式を使用したテキスト索引でのルックアップに用いる場合、いくつか注意点があります。
-  代わりに、`hasAnyTokens` と `hasAllTokens` を使用することを推奨します。
-
-  大文字小文字を区別しないバリアントである `hasTokenCaseInsensitive` と `hasTokenCaseInsensitiveOrNull` はテキスト索引を考慮しません。テキスト索引付きのカラムであっても、常に全行スキャンとして実行されます。大文字小文字を区別しない照合を行うには、`lower(...)` のプリプロセッサまたはポストプロセッサを使用し、それを `hasToken` / `hasAllTokens` / `hasAnyTokens` と組み合わせてください。
+  関数 `hasToken` は一見簡単に使えそうですが、デフォルト以外のトークナイザーやプリプロセッサ式を使う場合には、いくつか注意点があります。
+  代わりに、関数 `hasAnyTokens` と `hasAllTokens` を使用することを推奨します。
 </Note>
 
-関数 [hasToken](/ja/reference/functions/regular-functions/string-search-functions#hasToken) は、指定した単一のトークンに対して照合を行います。
+関数 [hasToken](/ja/reference/functions/regular-functions/string-search-functions#hasToken) と [hasTokenOrNull](/ja/reference/functions/regular-functions/string-search-functions#hasTokenOrNull) は、指定した単一のトークンに対して照合を行います。
 
 前述の関数とは異なり、これらの関数は検索語をトークン化しません (入力が単一のトークンであることを前提としています) 。
 
@@ -756,17 +561,16 @@ SELECT count() FROM table WHERE hasAllTokens(comment, ['clickhouse', 'olap']);
 
 すべてのトークンがどこかに含まれていればよい `hasAllTokens` とは異なり、`hasPhrase` ではそれらが連続した並びとして出現する必要があります。
 検索フレーズは、索引対象のカラムに設定されているものと同じトークナイザーでトークン化されます。
-テキスト索引で ポストプロセッサ を使用している場合、検索フレーズも索引のルックアップ前に正規化されます。
 この関数を使用するには、`splitByNonAlpha`、`splitByString`、`ngrams`、`asciiCJK` のいずれかのトークナイザーが必要です。
 
 例:
 
 ```sql
--- Matches: 'clickhouse' and 'olap' must appear consecutively in that order
+-- 一致: 'clickhouse' と 'olap' がこの順序で連続して出現する必要がある
 SELECT count() FROM table WHERE hasPhrase(comment, 'clickhouse olap');
 
--- Does NOT match a row containing 'olap clickhouse' (wrong order)
--- Does NOT match a row containing 'clickhouse fast olap' (non-consecutive)
+-- 'olap clickhouse' を含む行には一致しない（順序が逆）
+-- 'clickhouse fast olap' を含む行には一致しない（連続していない）
 ```
 
 <div id="functions-example-has">
@@ -1169,42 +973,22 @@ SELECT * FROM events WHERE data.level IN ('error', 'critical');
   ### フレーズ検索
 </div>
 
-通常のテキスト索引検索の例
+テキスト索引は、`hasPhrase` 関数によるフレーズ検索をサポートしています。
+フレーズ内のすべてのトークンは、ドキュメント内で連続し、同じ順序で出現する必要があります。
 
-```sql
-SELECT *
-FROM tab
-WHERE hasAllTokens(col, 'weather in Tokyo')
-```
-
-指定されたトークンを任意の順序で含むすべての行に一致します。
-この例では、`While she stayed in Tokyo, the weather was great.` という行がフィルタに一致します。
-
-これに対して、フレーズ検索では、指定された順序どおりに並んだトークンに一致します。
-例えば、
-
-```sql
-SELECT *
-FROM tab
-WHERE hasPhrase(col, 'weather in Tokyo')
-```
-
-`weather in Tokyo` というトークン列を含む任意の行 (たとえば `How is the weather in Tokyo?`) に一致しますか？
-
-テキスト索引は、フレーズ内のすべてのトークンの posting list の積集合を求めて候補となる グラニュール を特定することで、フレーズ検索を高速化します。
+テキスト索引は、フレーズ内のすべてのトークンのポスティングリストの積集合を取り、候補となる グラニュール を特定することで、フレーズ検索を高速化します。
 その後、ClickHouse はそれらの グラニュール 内で、トークンが正確に隣接していることを検証します。
-この処理は比較的コストが高く、通常のテキスト検索クエリより低速です。
-フレーズ検索クエリを高速化するには、テキスト索引で位置情報の保存を有効にしてください (上記の `Optional parameters` を参照) 。
 
-`hasPhrase` は、トークナイザー `splitByNonAlpha`、`splitByString`、`ngrams`、`asciiCJK` とあわせて使用できます。
-指定したフレーズ文字列は、索引のトークナイザーを使ってトークン化されます。
-フレーズ内の区切り文字は無視されます。`splitByNonAlpha` をトークナイザーとして使用している場合、`hasPhrase(text, 'quick+brown')` は `hasPhrase(text, 'quick brown')` と同等です。
+`hasPhrase` は、`splitByNonAlpha`、`splitByString`、`ngrams`、`asciiCJK` の各トークナイザーでサポートされています。
+
+フレーズ文字列は、索引に設定されたトークナイザーでトークン化されます。
+フレーズ内のトークナイザーの区切り文字は無視されます。`splitByNonAlpha` トークナイザーでは、`hasPhrase(text, 'quick+brown')` は `hasPhrase(text, 'quick brown')` と同等です。
 
 <div id="text-index-phrase-search-example">
   #### 例
 </div>
 
-```sql
+```sql title="Query"
 CREATE TABLE tab (
     id UInt32,
     text String,
@@ -1392,10 +1176,11 @@ LIKE/ILIKE クエリのパターンが `%<スペースを含まない英数字�
   ### キャッシュ
 </div>
 
-テキスト索引の一部をメモリ上に保持するための、サーバー全体で共有されるさまざまな cache があります ([実装の詳細](#implementation) セクションを参照してください) 。
+テキスト索引の一部をメモリ上に保持するために利用できる、さまざまな cache があります ([実装の詳細](#implementation) セクションを参照してください) 。
 現在、I/O を削減するために、テキスト索引のデシリアライズ済みヘッダー、トークン、ポスティングリスト用の cache が用意されています。
-設定 [use&#95;text&#95;index&#95;header&#95;cache](/ja/reference/settings/session-settings#use_text_index_header_cache)、[use&#95;text&#95;index&#95;tokens&#95;cache](/ja/reference/settings/session-settings#use_text_index_tokens_cache)、および [use&#95;text&#95;index&#95;postings&#95;cache](/ja/reference/settings/session-settings#use_text_index_postings_cache) を使用すると、クエリによる個々の cache への読み取りと書き込みを無効にできます。
+これらは、設定 [use&#95;text&#95;index&#95;header&#95;cache](/ja/reference/settings/session-settings#use_text_index_header_cache)、[use&#95;text&#95;index&#95;tokens&#95;cache](/ja/reference/settings/session-settings#use_text_index_tokens_cache)、および [use&#95;text&#95;index&#95;postings&#95;cache](/ja/reference/settings/session-settings#use_text_index_postings_cache) で有効にできます。
 
+デフォルトでは、すべての cache は無効です。
 cache をクリアするには、ステートメント [SYSTEM CLEAR TEXT INDEX CACHES](/ja/reference/statements/system#drop-text-index-caches) を使用します。
 
 cache を設定するには、以下のサーバー設定を参照してください。
@@ -1506,11 +1291,6 @@ Dictionaryブロックファイル (.dct) には、パーツ内のすべての�
 すべてのトークンのポスティングリストは、ポスティングリストファイル内に順番に配置されます。
 容量を節約しつつ高速な積集合およびユニオン操作を可能にするため、ポスティングリストは [roaring bitmaps](https://roaringbitmap.org/) として格納されます。
 ポスティングリストが `posting_list_block_size` より大きい場合は、複数のブロックに分割され、ポスティングリストファイルに順番に格納されます。
-
-**位置ファイル (.pos)**
-
-任意。索引引数 `support_phrase_search = 1` の場合のみ作成されます。
-一致した行内におけるトークンの位置を格納します。
 
 **テキスト索引のマージ**
 

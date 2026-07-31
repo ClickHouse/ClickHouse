@@ -165,26 +165,6 @@ ClickHouse Client は `replxx` (`readline` に類似) をベースにしてい�
 * `q`、`Q` または `:q`
 * `logout` または `logout;`
 
-<div id="getting-help">
-  ### ヘルプの表示
-</div>
-
-クライアントを離れずに、任意の関数、テーブルエンジン、データ型、フォーマット、設定、その他のシステム要素のドキュメントを参照できます。`help` に続けて名前を入力してください (`/help`、`man`、`/man` も同様に使用できます) :
-
-```text
-help domainWithoutWWW
-```
-
-このルックアップでは大文字と小文字を区別せず、[`system.documentation`](/ja/reference/system-tables/documentation) テーブルを照会します。一致したドキュメントは、太字/斜体のテキスト、表、構文ハイライト付きのコードブロックを含む Markdown から、ターミナル上にレンダリングされます。1 つの名前が複数のコンポーネントで共有されている場合 (たとえば `file` は関数であると同時にテーブルエンジンでもあります) 、それらがすべて表示されます。
-
-完全一致するものがない場合、クライアントは類似した名前 (タイプミスを許容) と、その語に言及しているコンポーネントのドキュメントを一覧表示します。
-
-```text
-help maxx_threads
-```
-
-`help` を単独で入力すると、簡単な使い方の概要が表示されます。
-
 <div id="processing-info">
   ### クエリ処理情報
 </div>
@@ -480,8 +460,8 @@ clickhouse-client
 
 AI 設定をより細かく制御するには、以下の場所にある ClickHouse Client の設定ファイルで構成します。
 
-* `$XDG_CONFIG_HOME/clickhouse/config.xml` (`XDG_CONFIG_HOME` が設定されていない場合は `~/.config/clickhouse/config.xml`) (XML フォーマット)
-* `$XDG_CONFIG_HOME/clickhouse/config.yaml` (`XDG_CONFIG_HOME` が設定されていない場合は `~/.config/clickhouse/config.yaml`) (YAML フォーマット)
+* `$XDG_CONFIG_HOME/clickhouse/config.xml` (`XDG_CONFIG_HOME` が設定されていない場合は `~/.config/clickhouse/config.xml`)  (XML フォーマット)
+* `$XDG_CONFIG_HOME/clickhouse/config.yaml` (`XDG_CONFIG_HOME` が設定されていない場合は `~/.config/clickhouse/config.yaml`)  (YAML フォーマット)
 * `~/.clickhouse-client/config.xml` (XML フォーマット、従来の場所)
 * `~/.clickhouse-client/config.yaml` (YAML フォーマット、従来の場所)
 * または、`--config-file` で任意の場所を指定します
@@ -506,10 +486,8 @@ AI 設定をより細かく制御するには、以下の場所にある ClickHo
             {/* スキーマ探索の設定 */}
             <enable_schema_access>true</enable_schema_access>
 
-            {/* 生成パラメータ */}
-            {/* 任意: temperature はここで設定した場合にのみモデルへ送信されます。
-                 一部のモデルはこのパラメーターを受け付けないため、デフォルトでは省略されます。 */}
-            {/* <temperature>0.0</temperature> */}
+            {/* 生成パラメーター */}
+            <temperature>0.0</temperature>
             <max_tokens>1000</max_tokens>
             <timeout_seconds>30</timeout_seconds>
             <max_steps>10</max_steps>
@@ -539,10 +517,8 @@ AI 設定をより細かく制御するには、以下の場所にある ClickHo
       # スキーマアクセスを有効化 - AI がデータベース/テーブル情報をクエリできるようにします
       enable_schema_access: true
 
-      # 生成パラメータ
-      # temperature はここで設定した場合にのみモデルへ送信され、デフォルトでは省略されます
-      # 一部のモデルはこのパラメーターを受け付けないためです。
-      # temperature: 0.0    # ランダム性を制御します（0.0 = 決定論的）
+      # 生成パラメーター
+      temperature: 0.0      # ランダム性を制御します（0.0 = 決定論的）
       max_tokens: 1000      # 応答の最大長
       timeout_seconds: 30   # リクエストのタイムアウト
       max_steps: 10         # スキーマ探索の最大ステップ数
@@ -562,23 +538,23 @@ AI 設定をより細かく制御するには、以下の場所にある ClickHo
 
 ```yaml
 ai:
-  provider: openai  # Use 'openai' for compatibility
+  provider: openai  # 互換性のために 'openai' を使用
   api_key: your-openrouter-api-key
   base_url: https://openrouter.ai/api/v1
-  model: anthropic/claude-3.5-sonnet  # Use OpenRouter model naming
+  model: anthropic/claude-3.5-sonnet  # OpenRouter のモデル名を使用
 ```
 
 **最小構成の例：**
 
 ```yaml
-# Minimal config - uses environment variable for API key
+# 最小設定 - APIキーに環境変数を使用
 ai:
-  provider: openai  # Will use OPENAI_API_KEY env var
+  provider: openai  # OPENAI_API_KEY 環境変数を使用
 
-# No config at all - automatic fallback
-# (Empty or no ai section - will try OPENAI_API_KEY then ANTHROPIC_API_KEY)
+# 設定なし - 自動フォールバック
+# (ai セクションが空または存在しない場合 - OPENAI_API_KEY、次に ANTHROPIC_API_KEY を試行)
 
-# Only override model - uses env var for API key
+# モデルのみ上書き - APIキーに環境変数を使用
 ai:
   provider: openai
   model: gpt-3.5-turbo
@@ -615,7 +591,7 @@ ai:
 </Accordion>
 
 <Accordion title="生成パラメータ">
-  * `temperature` - ランダム性を制御します。0.0 = 決定論的、1.0 = 創造的。デフォルトでは省略され、明示的に設定した場合にのみモデルに送信されます。これは、一部のモデルがこのパラメータを受け付けないためです。
+  * `temperature` - ランダム性を制御します。0.0 = 決定論的、1.0 = 創造的 (デフォルト: `0.0`)
   * `max_tokens` - 応答の最大長 (トークン数)  (デフォルト: `1000`)
   * `system_prompt` - AI へのカスタム指示 (任意)
 </Accordion>
@@ -954,17 +930,15 @@ $ clickhouse-client --max_threads 1
   ### フォーマットオプション
 </div>
 
-| Option                            | Description                                                                                                                                                                                                                                                                                                                       | Default                                  |
-| --------------------------------- | --------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- | ---------------------------------------- |
-| `-f [ --format ] <format>`        | 指定したフォーマットで結果を出力します。 <br /><br />対応フォーマットの一覧については、[入出力データのフォーマット](/ja/reference/formats/index)を参照してください。                                                                                                                                                                                                                             | `TabSeparated`                           |
-| `--pager <command>`               | すべての出力をこのコマンドにパイプして渡します。通常は `less` (例: 幅の広い結果セットを表示するための `less -S`) などを使用します。                                                                                                                                                                                                                                                     | -                                        |
-| `-E [ --vertical ]`               | 結果の出力に [Vertical フォーマット](/ja/reference/formats/Vertical) を使用します。これは `--format Vertical` と同じです。このフォーマットでは各値が別々の行に表示されるため、列数の多いテーブルを表示するときに便利です。                                                                                                                                                                                       | -                                        |
-| `--echo [ <bool> ]`               | 実行前に各クエリを表示します。オプションのブール値を指定できます。                                                                                                                                                                                                                                                                                                 | 対話型モードでは `true`、非対話型 (バッチ) モードでは `false` |
-| `--echo-formatted [ <bool> ]`     | 表示するクエリをフォーマットします。オプションのブール値を指定できます。                                                                                                                                                                                                                                                                                              | 対話型モードでは `true`、非対話型 (バッチ) モードでは `false` |
-| `--echo-query-id [ <bool> ]`      | 実行前にクエリ IDを表示します。オプションのブール値を指定できます。                                                                                                                                                                                                                                                                                               | 対話型モードでは `true`、非対話型 (バッチ) モードでは `false` |
-| `--echo-query-separator <string>` | フォーマット済みの表示クエリの前にこの区切り文字を出力します (`--echo-formatted` が必要)。これにより、入力したクエリと再フォーマット後に表示されるクエリを区別しやすくなります。                                                                                                                                                                                                                               | 空 (無効)                                   |
-| `--highlight [ --hilite ] <bool>` | コマンドプロンプトと表示されるクエリの構文ハイライトを切り替えます。                                                                                                                                                                                                                                                                                                | `true`                                   |
-| `--hints <bool>`                  | カーソルが入力の末尾にあるとき、最もよく一致する候補について、入力中にオートコンプリートのヒント (インラインの「ゴースト」テキスト) を表示します。ヒントの移動には Up/Down (または Ctrl-Up/Ctrl-Down) を使用し、インラインヒントの確定には Tab または Right を使用します。`Enter` は、ヒントが明示的に選択されている場合にのみそのヒントを確定し、それ以外の場合はクエリを実行します。`Tab` では従来の補完リストも開きます。`--highlight` (ヒントの表示には色が必要) と候補提示の仕組みが必要なため、`--disable_suggestion` を指定するとこれも無効になります。 | `true`                                   |
+| Option                            | Description                                                                                                                                 | Default                                  |
+| --------------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------- | ---------------------------------------- |
+| `-f [ --format ] <format>`        | 指定したフォーマットで結果を出力します。 <br /><br />対応フォーマットの一覧については、[入出力データのフォーマット](/ja/reference/formats/index)を参照してください。                                       | `TabSeparated`                           |
+| `--pager <command>`               | すべての出力をこのコマンドにパイプして渡します。通常は `less` (例: 幅の広い結果セットを表示するための `less -S`) などを使用します。                                                               | -                                        |
+| `-E [ --vertical ]`               | 結果の出力に [Vertical フォーマット](/ja/reference/formats/Vertical) を使用します。これは `--format Vertical` と同じです。このフォーマットでは各値が別々の行に表示されるため、列数の多いテーブルを表示するときに便利です。 | -                                        |
+| `--echo [ <bool> ]`               | 実行前に各クエリを表示します。オプションのブール値を指定できます。                                                                                                           | 対話型モードでは `true`、非対話型 (バッチ) モードでは `false` |
+| `--echo-formatted [ <bool> ]`     | 表示するクエリをフォーマットします。オプションのブール値を指定できます。                                                                                                        | 対話型モードでは `true`、非対話型 (バッチ) モードでは `false` |
+| `--echo-query-id [ <bool> ]`      | 実行前に Query id を表示します。オプションのブール値を指定できます。                                                                                                     | 対話型モードでは `true`、非対話型 (バッチ) モードでは `false` |
+| `--highlight [ --hilite ] <bool>` | コマンドプロンプトと表示されるクエリの構文ハイライトを切り替えます。                                                                                                          | `true`                                   |
 
 <div id="command-line-options-execution-details">
   ### 実行の詳細

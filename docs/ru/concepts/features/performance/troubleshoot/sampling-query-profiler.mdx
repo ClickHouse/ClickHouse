@@ -58,7 +58,9 @@ doc_type: 'reference'
 Чтобы использовать профилировщик запросов в самоуправляемых развертываниях, выполните следующие шаги:
 
 <Steps>
-  <Step title="Установите ClickHouse с отладочной информацией" id="debug-info">
+  <Step>
+    ### Установите ClickHouse с отладочной информацией
+
     Установите пакет `clickhouse-common-static-dbg`:
 
     1. Следуйте инструкциям из шага [&quot;Настройте Debian-репозиторий&quot;](/ru/get-started/setup/self-managed/debian-ubuntu#setup-the-debian-repository)
@@ -67,7 +69,9 @@ doc_type: 'reference'
     4. Выполните `clickhouse-client`. Отладочные символы из `clickhouse-common-static-dbg` будут автоматически подхвачены сервером — ничего дополнительно включать не нужно
   </Step>
 
-  <Step title="Проверьте конфигурацию сервера" id="server-config">
+  <Step>
+    ### Проверьте конфигурацию сервера
+
     Убедитесь, что раздел [`trace_log`](/ru/reference/settings/server-settings/settings#trace_log) в вашем [файле конфигурации сервера](/ru/concepts/features/configuration/server-config/configuration-files) настроен. По умолчанию он включен:
 
     ```xml
@@ -93,7 +97,9 @@ doc_type: 'reference'
     После перезапуска сервера ClickHouse не очищает таблицу, и все сохраненные адреса виртуальной памяти могут стать недействительными.
   </Step>
 
-  <Step title="Настройте таймеры профилирования" id="configure-profile-timers">
+  <Step>
+    ### Настройте таймеры профилирования
+
     Настройте параметры [`query_profiler_cpu_time_period_ns`](/ru/reference/settings/session-settings#query_profiler_cpu_time_period_ns) или [`query_profiler_real_time_period_ns`](/ru/reference/settings/session-settings#query_profiler_real_time_period_ns).
     Оба параметра можно использовать одновременно.
 
@@ -105,7 +111,9 @@ doc_type: 'reference'
     Если вам нужно профилировать каждый отдельный запрос, используйте более высокую частоту сэмплирования.
   </Step>
 
-  <Step title={<>Проанализируйте системную таблицу <code>trace_log</code></>} id="analyze-trace-log-system-table">
+  <Step>
+    ### Проанализируйте системную таблицу `trace_log`
+
     Чтобы анализировать системную таблицу `trace_log`, разрешите функции интроспекции с помощью настройки [`allow_introspection_functions`](/ru/reference/settings/session-settings#allow_introspection_functions):
 
     ```sql

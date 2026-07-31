@@ -41,14 +41,16 @@ import { TrackedLink } from "/snippets/ja/components/GalaxyTrackedLink/GalaxyTra
 * EC2 インスタンスメタデータサービスにアクセスできること (デフォルトで有効)
 
 <Steps>
-  <Step title="EC2メタデータにアクセスできることを確認する" id="verify-metadata">
+  <Step>
+    #### EC2メタデータにアクセスできることを確認する
+
     EC2インスタンス上で、メタデータサービスにアクセスできることを確認します。
 
     ```bash
-    # Get metadata token (IMDSv2)
+    # メタデータトークンを取得する (IMDSv2)
     TOKEN=$(curl -X PUT "http://169.254.169.254/latest/api/token" -H "X-aws-ec2-metadata-token-ttl-seconds: 21600")
 
-    # Verify instance metadata
+    # インスタンスメタデータを確認する
     curl -H "X-aws-ec2-metadata-token: $TOKEN" http://169.254.169.254/latest/meta-data/instance-id
     curl -H "X-aws-ec2-metadata-token: $TOKEN" http://169.254.169.254/latest/meta-data/placement/region
     curl -H "X-aws-ec2-metadata-token: $TOKEN" http://169.254.169.254/latest/meta-data/instance-type
@@ -65,40 +67,46 @@ import { TrackedLink } from "/snippets/ja/components/GalaxyTrackedLink/GalaxyTra
     </Note>
   </Step>
 
-  <Step title="syslog ファイルが存在することを確認する" id="verify-syslog">
+  <Step>
+    #### syslog ファイルが存在することを確認する
+
     EC2 インスタンスに syslog ファイルが出力されていることを確認します。
 
     ```bash
-    # Ubuntu instances
+    # Ubuntuインスタンス
     ls -la /var/log/syslog
 
-    # Amazon Linux / RHEL instances
+    # Amazon Linux / RHELインスタンス
     ls -la /var/log/messages
 
-    # View recent entries
+    # 最近のエントリを表示
     tail -20 /var/log/syslog
-    # or
+    # または
     tail -20 /var/log/messages
     ```
   </Step>
 
-  <Step title="OpenTelemetry Collector をインストールする" id="install-collector">
+  <Step>
+    #### OpenTelemetry Collector をインストールする
+
     EC2インスタンスに OpenTelemetry Collector Contrib をインストールします。
 
     ```bash
-    # Download the latest release
+    # 最新リリースをダウンロード
     wget https://github.com/open-telemetry/opentelemetry-collector-releases/releases/download/v0.114.0/otelcol-contrib_0.114.0_linux_amd64.tar.gz
 
-    # Extract and install
+    # 展開してインストール
     tar -xvf otelcol-contrib_0.114.0_linux_amd64.tar.gz
     sudo mv otelcol-contrib /usr/local/bin/
 
-    # Verify installation
+    # インストールを確認
     otelcol-contrib --version
     ```
   </Step>
 
-  <Step title="collector configurationの作成" id="create-config">
+  <Step>
+    #### collector configurationの作成
+
     `/etc/otelcol-contrib/config.yaml` に OpenTelemetry Collector の設定ファイルを作成します：
 
     ```bash
@@ -249,7 +257,9 @@ import { TrackedLink } from "/snippets/ja/components/GalaxyTrackedLink/GalaxyTra
     </Info>
   </Step>
 
-  <Step title="ClickStack APIキーを設定する" id="set-api-key">
+  <Step>
+    #### ClickStack APIキーを設定する
+
     ClickStack APIキーを環境変数としてエクスポートします：
 
     ```bash
@@ -264,7 +274,9 @@ import { TrackedLink } from "/snippets/ja/components/GalaxyTrackedLink/GalaxyTra
     ```
   </Step>
 
-  <Step title="collector を起動する" id="run-collector">
+  <Step>
+    #### collector を起動する
+
     OpenTelemetry Collector を起動します。
 
     ```bash
@@ -278,7 +290,9 @@ import { TrackedLink } from "/snippets/ja/components/GalaxyTrackedLink/GalaxyTra
     </Info>
   </Step>
 
-  <Step title="HyperDX でログを確認する" id="verifying-logs">
+  <Step>
+    #### HyperDX でログを確認する
+
     collector が起動したら、HyperDX にログインし、EC2 メタデータ付きのログが流れていることを確認します。
 
     1. Search view に移動します
@@ -305,7 +319,9 @@ import { TrackedLink } from "/snippets/ja/components/GalaxyTrackedLink/GalaxyTra
 本番環境のインスタンスを構成する前に EC2 ホストログのインテグレーションを試したい方向けに、シミュレーションされた EC2 メタデータを含むデモデータセットを用意しています。
 
 <Steps>
-  <Step title="サンプルデータセットをダウンロードする" id="download-sample">
+  <Step>
+    #### サンプルデータセットをダウンロードする
+
     サンプルのログファイルをダウンロードします：
 
     ```bash
@@ -323,7 +339,9 @@ import { TrackedLink } from "/snippets/ja/components/GalaxyTrackedLink/GalaxyTra
     * 通常の運用と特筆すべきイベントの混在
   </Step>
 
-  <Step title="テスト用collectorの設定を作成する" id="test-config">
+  <Step>
+    #### テスト用collectorの設定を作成する
+
     以下の設定で、`ec2-host-logs-demo.yaml` という名前のファイルを作成します。
 
     ```yaml
@@ -348,7 +366,7 @@ import { TrackedLink } from "/snippets/ja/components/GalaxyTrackedLink/GalaxyTra
             value: "ec2-demo"
 
     processors:
-      # Simulate EC2 metadata for demo (no real EC2 instance required)
+      # デモ用にEC2メタデータをシミュレート（実際のEC2インスタンス不要）
       resource:
         attributes:
           - key: service.name
@@ -395,7 +413,9 @@ import { TrackedLink } from "/snippets/ja/components/GalaxyTrackedLink/GalaxyTra
     </Note>
   </Step>
 
-  <Step title="デモ設定で ClickStack を実行する" id="run-demo">
+  <Step>
+    #### デモ設定で ClickStack を実行する
+
     デモ用のログと設定を使用して ClickStack を実行します。
 
     ```bash
@@ -408,7 +428,9 @@ import { TrackedLink } from "/snippets/ja/components/GalaxyTrackedLink/GalaxyTra
     ```
   </Step>
 
-  <Step title="HyperDX でログを確認する" id="verify-demo-logs">
+  <Step>
+    #### HyperDX でログを確認する
+
     collector が起動したら、次の手順を実行します。
 
     1. [HyperDX](http://localhost:8080/) を開き、アカウントにログインします (必要に応じて先にアカウントを作成してください)
@@ -443,11 +465,13 @@ import { TrackedLink } from "/snippets/ja/components/GalaxyTrackedLink/GalaxyTra
 ClickStack で EC2 ホストログの監視をすぐに始められるよう、クラウドコンテキストを含む主要な可視化を用意しています。
 
 <Steps>
-  <Step title="ダッシュボード設定をダウンロード" id="download">
-    <TrackedLink href={'https://clickhouse-docs-assets.s3.us-east-1.amazonaws.com/examples/host-logs-dashboard.json'} download="host-logs-dashboard.json" eventName="docs.ec2_host_logs_monitoring.dashboard_download">ダッシュボード設定ファイルをダウンロード</TrackedLink>。
+  <Step>
+    #### <TrackedLink href={'https://clickhouse-docs-assets.s3.us-east-1.amazonaws.com/examples/host-logs-dashboard.json'} download="host-logs-dashboard.json" eventName="docs.ec2_host_logs_monitoring.dashboard_download">ダウンロード</TrackedLink> ダッシュボード設定
   </Step>
 
-  <Step title="あらかじめ用意されたダッシュボードをインポートする" id="import-dashboard">
+  <Step>
+    #### あらかじめ用意されたダッシュボードをインポートする
+
     1. HyperDX を開き、Dashboards セクションに移動します
     2. 右上の三点メニューから **Import Dashboard** をクリックします
 
@@ -458,7 +482,9 @@ ClickStack で EC2 ホストログの監視をすぐに始められるよう、�
     <Image img="/images/clickstack/host-logs/import-dashboard.webp" alt="インポートの完了" />
   </Step>
 
-  <Step title="ダッシュボードを表示する" id="created-dashboard">
+  <Step>
+    #### ダッシュボードを表示する
+
     ダッシュボードは、すべての可視化があらかじめ設定された状態で作成されます。
 
     <Image img="/images/clickstack/host-logs/host-logs-dashboard.webp" alt="EC2 ログダッシュボード" />
@@ -470,7 +496,7 @@ ClickStack で EC2 ホストログの監視をすぐに始められるよう、�
     * `host.id:i-0abc123def456` - 特定のインスタンスのログ
 
     <Note>
-      デモデータセットでは、時間範囲を **2025-11-11 00:00:00 - 2025-11-12 00:00:00 (UTC)** に設定してください (ローカルのタイムゾーンに応じて調整してください) 。インポートしたダッシュボードには、デフォルトでは時間範囲が指定されていません。
+      デモデータセットでは、時間範囲を **2025-11-11 00:00:00 - 2025-11-12 00:00:00 (UTC)** に設定してください (ローカルの timezone に応じて調整してください) 。インポートしたダッシュボードには、デフォルトでは時間範囲が指定されていません。
     </Note>
   </Step>
 </Steps>
@@ -598,7 +624,7 @@ sudo journalctl -u otelcol-contrib -n 50
 * セキュリティ監視 (SSH 接続の試行、sudo の使用、ファイアウォールによるブロック) 向けにカスタムダッシュボードを作成します
 
 <div id="going-to-production">
-  ## 本番環境への移行
+  ## 本番環境での運用
 </div>
 
-このガイドでは、ホストレベルの監視における本番環境の推奨構成として、OpenTelemetry Collector を EC2 インスタンスに直接インストールします。多数のインスタンスにわたって collector を管理する場合は、構成管理ツール (Ansible、Chef、Puppet) や、Kubernetes 環境では OpenTelemetry Operator の利用を検討してください。本番環境向けの設定については、[OpenTelemetry データの送信](/ja/clickstack/ingesting-data/opentelemetry) を参照してください。
+このガイドでは、ホストレベルの監視向けの本番環境構成として推奨される方法に従い、OpenTelemetry Collector を EC2 インスタンスに直接インストールします。多数のインスタンスにまたがる collector の管理には、構成管理ツール (Ansible、Chef、Puppet) や、Kubernetes 環境では OpenTelemetry Operator の利用を検討してください。本番環境向けの設定については、[OpenTelemetry データの送信](/ja/clickstack/ingesting-data/opentelemetry) を参照してください。

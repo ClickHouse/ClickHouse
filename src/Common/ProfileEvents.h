@@ -118,7 +118,6 @@ namespace ProfileEvents
         {
             Snapshot();
             Snapshot(Snapshot &&) = default;
-            Snapshot(const Snapshot & other);
 
             Count operator[] (Event event) const noexcept
             {
@@ -126,7 +125,6 @@ namespace ProfileEvents
             }
 
             Snapshot & operator=(Snapshot &&) = default;
-            Snapshot & operator=(const Snapshot & other);
         private:
             std::unique_ptr<Count[]> counters_holder;
 

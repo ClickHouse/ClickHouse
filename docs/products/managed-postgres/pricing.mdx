@@ -2,16 +2,20 @@
 slug: /cloud/managed-postgres/pricing
 sidebarTitle: 'Pricing'
 title: 'Pricing'
-description: 'Pricing model, tiers, instance types, and Beta pricing details for ClickHouse Managed Postgres'
+description: 'Pricing model, tiers, instance types, and Beta pricing details for Postgres managed by ClickHouse'
 keywords: ['postgres pricing', 'managed postgres cost', 'postgres beta pricing', 'postgres pricing calculator', 'nvme pricing', 'postgres tier pricing']
 doc_type: 'reference'
 ---
 
-import { BetaBadge } from "/snippets/components/BetaBadge/BetaBadge.jsx";
+import BetaBadge from "/snippets/components/BetaBadge/BetaBadge.jsx";
 
 <BetaBadge link="https://clickhouse.com/cloud/postgres" galaxyTrack={true} galaxyEvent="docs.managed-postgres.pricing-beta" />
 
-ClickHouse Managed Postgres is built on local NVMe storage, which allows it to offer production-grade performance and native ClickHouse integration without the pricing overhead of traditional network-attached storage architectures. This page covers the pricing model, available instance types, and tier comparison for the service which is in beta.
+Postgres managed by ClickHouse is built on local NVMe storage, which allows it to offer production-grade performance and native ClickHouse integration without the pricing overhead of traditional network-attached storage architectures. This page covers the pricing model, available instance types, and tier comparison for the service.
+
+Postgres managed by ClickHouse is now available in Beta. The service remains free until metering begins on June 15, 2026, giving teams time to size instances appropriately before billing starts.
+
+During the beta period, all plans include a 50% discount, reflecting our commitment to our early customers. Pricing starts at approximately **$30/month** for 1 vCPU, 8 GB RAM, 59 GB NVMe storage configuration.
 
 <Tip>
 **Pricing calculator**

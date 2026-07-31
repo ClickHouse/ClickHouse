@@ -35,7 +35,9 @@ import { TrackedLink } from "/snippets/ja/components/GalaxyTrackedLink/GalaxyTra
 * ログファイルを保存するための十分なディスク容量
 
 <Steps>
-  <Step title="PostgreSQL のログ設定" id="configure-postgres">
+  <Step>
+    #### PostgreSQL のログ設定
+
     PostgreSQL は複数のログ形式をサポートしています。OpenTelemetry で構造化された形でパースするには、一貫性があり、パースしやすい出力が得られる CSV format を推奨します。
 
     `postgresql.conf` ファイルは通常、次の場所にあります。
@@ -47,19 +49,19 @@ import { TrackedLink } from "/snippets/ja/components/GalaxyTrackedLink/GalaxyTra
     `postgresql.conf` に以下の設定を追加または変更します。
 
     ```conf
-    # Required for CSV logging
+    # CSVロギングに必要
     logging_collector = on
     log_destination = 'csvlog'
 
-    # Recommended: Connection logging
+    # 推奨: 接続のロギング
     log_connections = on
     log_disconnections = on
 
-    # Optional: Tune based on your monitoring needs
-    #log_min_duration_statement = 1000  # Log queries taking more than 1 second
-    #log_statement = 'ddl'               # Log DDL statements (CREATE, ALTER, DROP)
-    #log_checkpoints = on                # Log checkpoint activity
-    #log_lock_waits = on                 # Log lock contention
+    # オプション: 監視ニーズに応じて調整
+    #log_min_duration_statement = 1000  # 1秒以上かかるクエリをログに記録
+    #log_statement = 'ddl'               # DDLステートメントをログに記録 (CREATE, ALTER, DROP)
+    #log_checkpoints = on                # チェックポイントのアクティビティをログに記録
+    #log_lock_waits = on                 # ロック競合をログに記録
     ```
 
     <Note>
@@ -69,17 +71,17 @@ import { TrackedLink } from "/snippets/ja/components/GalaxyTrackedLink/GalaxyTra
     これらの変更を行ったら、PostgreSQL を再起動してください:
 
     ```bash
-    # For systemd
+    # systemdの場合
     sudo systemctl restart postgresql
 
-    # For Docker
+    # Dockerの場合
     docker restart 
     ```
 
     ログが出力されていることを確認します:
 
     ```bash
-    # Default log location on Linux
+    # Linuxのデフォルトログの場所
     tail -f /var/lib/postgresql/{version}/main/log/postgresql-*.log
 
     # macOS Homebrew
@@ -87,7 +89,9 @@ import { TrackedLink } from "/snippets/ja/components/GalaxyTrackedLink/GalaxyTra
     ```
   </Step>
 
-  <Step title="カスタム OTel collector 設定を作成する" id="custom-otel">
+  <Step>
+    #### カスタム OTel collector 設定を作成する
+
     ClickStack では、カスタム構成ファイルをマウントして環境変数を設定することで、ベースの OpenTelemetry Collector 構成を拡張できます。カスタム構成は、HyperDX が OpAMP 経由で管理するベース構成にマージされます。
 
     次の内容で、`postgres-logs-monitoring.yaml` という名前のファイルを作成します。
@@ -96,7 +100,7 @@ import { TrackedLink } from "/snippets/ja/components/GalaxyTrackedLink/GalaxyTra
     receivers:
       filelog/postgres:
         include:
-          - /var/lib/postgresql/*/main/log/postgresql-*.csv # Adjust to match your PostgreSQL installation
+          - /var/lib/postgresql/*/main/log/postgresql-*.csv # PostgreSQLのインストール環境に合わせて変更してください
         start_at: end
         multiline:
           line_start_pattern: '^\d{4}-\d{2}-\d{2} \d{2}:\d{2}:\d{2}'
@@ -149,7 +153,9 @@ import { TrackedLink } from "/snippets/ja/components/GalaxyTrackedLink/GalaxyTra
     </Note>
   </Step>
 
-  <Step title="ClickStack でカスタム設定を読み込むように構成する" id="load-custom">
+  <Step>
+    #### ClickStack でカスタム設定を読み込むように構成する
+
     既存の ClickStack デプロイでカスタム collector 設定を有効にするには、次の作業が必要です。
 
     1. カスタム設定ファイルを `/etc/otelcol-contrib/custom.config.yaml` にマウントします
@@ -163,14 +169,14 @@ import { TrackedLink } from "/snippets/ja/components/GalaxyTrackedLink/GalaxyTra
     ```yaml
     services:
       clickstack:
-        # ... existing configuration ...
+        # ... 既存の設定 ...
         environment:
           - CUSTOM_OTELCOL_CONFIG_FILE=/etc/otelcol-contrib/custom.config.yaml
-          # ... other environment variables ...
+          # ... その他の環境変数 ...
         volumes:
           - ./postgres-logs-monitoring.yaml:/etc/otelcol-contrib/custom.config.yaml:ro
           - /var/lib/postgresql:/var/lib/postgresql:ro
-          # ... other volumes ...
+          # ... その他のボリューム ...
     ```
 
     ##### オプション 2: Docker Run (オールインワン イメージ)
@@ -191,7 +197,9 @@ import { TrackedLink } from "/snippets/ja/components/GalaxyTrackedLink/GalaxyTra
     </Note>
   </Step>
 
-  <Step title="HyperDX でログを確認する" id="verifying-logs">
+  <Step>
+    #### HyperDX でログを確認する
+
     設定が完了したら、HyperDX にログインし、ログが取り込まれていることを確認します。
 
     1. Searchビューに移動します
@@ -212,7 +220,9 @@ import { TrackedLink } from "/snippets/ja/components/GalaxyTrackedLink/GalaxyTra
 本番システムを構成する前に PostgreSQL ログのインテグレーションを試したいユーザー向けに、実際に近いパターンを含む、事前生成済みの PostgreSQL ログのサンプルデータセットを提供しています。
 
 <Steps>
-  <Step title="サンプルデータセットをダウンロード" id="download-sample">
+  <Step>
+    #### サンプルデータセットをダウンロード
+
     サンプルログファイルをダウンロードします。
 
     ```bash
@@ -220,7 +230,9 @@ import { TrackedLink } from "/snippets/ja/components/GalaxyTrackedLink/GalaxyTra
     ```
   </Step>
 
-  <Step title="テスト用の collector 設定を作成" id="test-config">
+  <Step>
+    #### テスト用の collector 設定を作成
+
     次の内容で、`postgres-logs-demo.yaml` という名前のファイルを作成します。
 
     ```yaml
@@ -265,7 +277,9 @@ import { TrackedLink } from "/snippets/ja/components/GalaxyTrackedLink/GalaxyTra
     ```
   </Step>
 
-  <Step title="デモ設定で ClickStack を実行" id="run-demo">
+  <Step>
+    #### デモ設定で ClickStack を実行
+
     デモログとこの設定を使用して ClickStack を実行します。
 
     ```bash
@@ -278,7 +292,9 @@ import { TrackedLink } from "/snippets/ja/components/GalaxyTrackedLink/GalaxyTra
     ```
   </Step>
 
-  <Step title="HyperDX でログを確認" id="verify-demo-logs">
+  <Step>
+    #### HyperDX でログを確認
+
     ClickStack の起動後、次の操作を行います。
 
     1. [HyperDX](http://localhost:8080/) を開き、アカウントにログインします (先にアカウント作成が必要な場合があります)
@@ -304,11 +320,13 @@ import { TrackedLink } from "/snippets/ja/components/GalaxyTrackedLink/GalaxyTra
 ClickStack で PostgreSQL の監視を始めるにあたって、PostgreSQL ログ用の基本的な可視化を用意しています。
 
 <Steps>
-  <Step title="ダッシュボード設定をダウンロードする" id="download">
-    <TrackedLink href={'https://clickhouse-docs-assets.s3.us-east-1.amazonaws.com/examples/postgres-logs-dashboard.json'} download="postgresql-logs-dashboard.json" eventName="docs.postgres_logs_monitoring.dashboard_download">ダッシュボード設定ファイルをダウンロード</TrackedLink>。
+  <Step>
+    #### ダッシュボード設定を<TrackedLink href={'https://clickhouse-docs-assets.s3.us-east-1.amazonaws.com/examples/postgres-logs-dashboard.json'} download="postgresql-logs-dashboard.json" eventName="docs.postgres_logs_monitoring.dashboard_download">ダウンロード</TrackedLink>する
   </Step>
 
-  <Step title="あらかじめ用意されたダッシュボードをインポートする" id="import-dashboard">
+  <Step>
+    #### あらかじめ用意されたダッシュボードをインポートする
+
     1. HyperDX を開き、Dashboards セクションに移動します
     2. 右上の三点メニューから **Import Dashboard** をクリックします
 
@@ -319,7 +337,9 @@ ClickStack で PostgreSQL の監視を始めるにあたって、PostgreSQL ロ�
     <Image img="/images/clickstack/postgres/import-logs-dashboard.webp" alt="インポート完了" />
   </Step>
 
-  <Step title="ダッシュボードを表示する" id="created-dashboard">
+  <Step>
+    #### ダッシュボードを表示する
+
     ダッシュボードは、すべての可視化があらかじめ設定された状態で作成されます。
 
     <Image img="/images/clickstack/postgres/postgres-logs-dashboard.webp" alt="ログダッシュボード" />
@@ -385,4 +405,4 @@ docker exec <container> cat /tmp/postgres-demo/postgresql.log | wc -l
   ## 本番環境への移行
 </div>
 
-このガイドでは、迅速にセットアップできるよう、ClickStack に組み込まれた OpenTelemetry Collector を拡張しています。本番環境でデプロイする場合は、独自の OTel collector を実行し、ClickStack の OTLP エンドポイントにデータを送信することを推奨します。本番環境向けの構成については、[OpenTelemetry データの送信](/ja/clickstack/ingesting-data/opentelemetry) を参照してください。
+このガイドでは、迅速にセットアップできるよう、ClickStack に組み込まれている OpenTelemetry Collector を使用します。本番環境でデプロイする場合は、独自の OTel Collector を実行し、データを ClickStack の OTLP エンドポイントに送信することを推奨します。本番環境向けの構成については、[OpenTelemetry データの送信](/ja/clickstack/ingesting-data/opentelemetry) を参照してください。

@@ -67,7 +67,9 @@ Ilustramos as duas arquiteturas abaixo.
 No exemplo a seguir, apresentamos as etapas iniciais para configurar o Vector para receber eventos de log do Filebeat por meio do protocolo Lumberjack. Fornecemos o VRL para mapear os eventos ECS de entrada para a especificação OTel, antes de enviá-los ao ClickStack OpenTelemetry Collector via OTLP. Usuários que consomem eventos do Kafka podem substituir a origem Logstash do Vector pela [origem Kafka](https://vector.dev/docs/reference/configuration/sources/kafka/) — todas as outras etapas permanecem as mesmas.
 
 <Steps>
-  <Step title="Instalar o Vector" id="install-vector">
+  <Step>
+    ### Instalar o Vector
+
     Instale o Vector usando o [guia oficial de instalação](https://vector.dev/docs/setup/installation/).
 
     O Vector pode ser instalado na mesma instância do OTel collector do Elastic Stack.
@@ -75,7 +77,9 @@ No exemplo a seguir, apresentamos as etapas iniciais para configurar o Vector pa
     Você pode seguir as melhores práticas de arquitetura e segurança ao [colocar o Vector em produção](https://vector.dev/docs/setup/going-to-prod/).
   </Step>
 
-  <Step title="Configurar o vector" id="configure-vector">
+  <Step>
+    ### Configurar o vector
+
     O Vector deve ser configurado para receber eventos pelo protocolo Lumberjack, imitando uma instância do Logstash. Isso pode ser feito configurando uma [source `logstash`](https://vector.dev/docs/reference/configuration/sources/logstash/) para o Vector:
 
     ```yaml
@@ -84,8 +88,8 @@ No exemplo a seguir, apresentamos as etapas iniciais para configurar o Vector pa
         type: logstash
         address: 0.0.0.0:5044
         tls:
-          enabled: false  # Set to true if you're using TLS
-          # The files below are generated from the steps at https://www.elastic.co/docs/reference/fleet/secure-logstash-connections#generate-logstash-certs
+          enabled: false  # Defina como true se estiver usando TLS
+          # Os arquivos abaixo são gerados a partir das etapas em https://www.elastic.co/docs/reference/fleet/secure-logstash-connections#generate-logstash-certs
           # crt_file: logstash.crt
           # key_file: logstash.key
           # ca_file: ca.crt
@@ -112,29 +116,29 @@ No exemplo a seguir, apresentamos as etapas iniciais para configurar o Vector pa
 
     <Accordion title="VRL - ECS para OTel">
       ```javascript
-      # Define keys to ignore at root level
+      # Definir chaves a ignorar no nível raiz
       ignored_keys = ["@metadata"]
 
-      # Define resource key prefixes
+      # Definir prefixos de chaves de recurso
       resource_keys = ["host", "cloud", "agent", "service"]
 
-      # Create separate objects for resource and log record fields
+      # Criar objetos separados para campos de recurso e de registro de log
       resource_obj = {}
       log_record_obj = {}
 
-      # Copy all non-ignored root keys to appropriate objects
+      # Copiar todas as chaves raiz não ignoradas para os objetos apropriados
       root_keys = keys(.)
       for_each(root_keys) -> |_index, key| {
           if !includes(ignored_keys, key) {
               val, err = get(., [key])
               if err == null {
-                  # Check if this is a resource field
+                  # Verificar se este é um campo de recurso
                   is_resource = false
                   if includes(resource_keys, key) {
                       is_resource = true
                   }
 
-                  # Add to appropriate object
+                  # Adicionar ao objeto apropriado
                   if is_resource {
                       resource_obj = set(resource_obj, [key], val) ?? resource_obj
                   } else {
@@ -144,11 +148,11 @@ No exemplo a seguir, apresentamos as etapas iniciais para configurar o Vector pa
           }
       }
 
-      # Flatten both objects separately
+      # Nivelar ambos os objetos separadamente
       flattened_resources = flatten(resource_obj, separator: ".")
       flattened_logs = flatten(log_record_obj, separator: ".")
 
-      # Process resource attributes
+      # Processar atributos de recurso
       resource_attributes = []
       resource_keys_list = keys(flattened_resources)
       for_each(resource_keys_list) -> |_index, field_key| {
@@ -166,7 +170,7 @@ No exemplo a seguir, apresentamos as etapas iniciais para configurar o Vector pa
           }
       }
 
-      # Process log record attributes
+      # Processar atributos de registro de log
       log_attributes = []
       log_keys_list = keys(flattened_logs)
       for_each(log_keys_list) -> |_index, field_key| {
@@ -184,14 +188,14 @@ No exemplo a seguir, apresentamos as etapas iniciais para configurar o Vector pa
           }
       }
 
-      # Get timestamp for timeUnixNano (convert to nanoseconds)
+      # Obter timestamp para timeUnixNano (converter para nanossegundos)
       timestamp_nano = if exists(.@timestamp) {
           to_unix_timestamp!(parse_timestamp!(.@timestamp, format: "%Y-%m-%dT%H:%M:%S%.3fZ"), unit: "nanoseconds")
       } else {
           to_unix_timestamp(now(), unit: "nanoseconds")
       }
 
-      # Get message/body field
+      # Obter campo de mensagem/corpo
       body_value = if exists(.message) {
           to_string!(.message)
       } else if exists(.body) {
@@ -200,7 +204,7 @@ No exemplo a seguir, apresentamos as etapas iniciais para configurar o Vector pa
           ""
       }
 
-      # Create the OpenTelemetry structure
+      # Criar a estrutura OpenTelemetry
       . = {
           "resourceLogs": [
               {
@@ -235,10 +239,10 @@ No exemplo a seguir, apresentamos as etapas iniciais para configurar o Vector pa
     sinks:
       otlp:
         type: opentelemetry
-        inputs: [remap_filebeat] # receives events from a remap transform - see below
+        inputs: [remap_filebeat] # recebe eventos de uma transformação remap - veja abaixo
         protocol:
-          type: http  # Use "grpc" for port 4317
-          uri: http://localhost:4318/v1/logs # logs endpoint for the OTel collector 
+          type: http  # Use "grpc" para a porta 4317
+          uri: http://localhost:4318/v1/logs # endpoint de logs para o OTel collector 
           method: post
           encoding:
             codec: json
@@ -261,7 +265,7 @@ No exemplo a seguir, apresentamos as etapas iniciais para configurar o Vector pa
         type: logstash
         address: 0.0.0.0:5044
         tls:
-          enabled: false  # Set to true if you're using TLS
+          enabled: false  # Defina como true se estiver usando TLS
             #crt_file: /data/elasticsearch-9.0.1/logstash/logstash.crt
             #key_file: /data/elasticsearch-9.0.1/logstash/logstash.key
             #ca_file: /data/elasticsearch-9.0.1/ca/ca.crt
@@ -278,7 +282,7 @@ No exemplo a seguir, apresentamos as etapas iniciais para configurar o Vector pa
         type: opentelemetry
         inputs: [remap_filebeat]
         protocol:
-          type: http  # Use "grpc" for port 4317
+          type: http  # Use "grpc" para a porta 4317
           uri: http://localhost:4318/v1/logs
           method: post
           encoding:
@@ -290,23 +294,25 @@ No exemplo a seguir, apresentamos as etapas iniciais para configurar o Vector pa
     ```
   </Step>
 
-  <Step title="Configurar o Filebeat" id="configure-filebeat">
+  <Step>
+    ### Configurar o Filebeat
+
     As instalações existentes do Filebeat só precisam ser modificadas para enviar os eventos ao Vector. Para isso, é necessário configurar uma saída do Logstash — novamente, o TLS pode ser configurado opcionalmente:
 
     ```yaml
-    # ------------------------------ Logstash Output -------------------------------
+    # ------------------------------ Saída do Logstash -------------------------------
     output.logstash:
-      # The Logstash hosts
+      # Os hosts do Logstash
       hosts: ["localhost:5044"]
 
-      # Optional SSL. By default is off.
-      # List of root certificates for HTTPS server verifications
+      # SSL opcional. Por padrão está desativado.
+      # Lista de certificados raiz para verificações do servidor HTTPS
       #ssl.certificate_authorities: ["/etc/pki/root/ca.pem"]
 
-      # Certificate for SSL client authentication
+      # Certificado para autenticação de cliente SSL
       #ssl.certificate: "/etc/pki/client/cert.pem"
 
-      # Client Certificate Key
+      # Chave do certificado do cliente
       #ssl.key: "/etc/pki/client/cert.key"
     ```
   </Step>
@@ -330,11 +336,15 @@ Demonstramos essas duas opções abaixo.
 </div>
 
 <Steps>
-  <Step title="Instalar e configurar o Vector" id="install-configure-vector">
+  <Step>
+    #### Instalar e configurar o Vector
+
     Instale e configure o Vector usando os [mesmos passos](#install-vector) documentados para a migração do Filebeat.
   </Step>
 
-  <Step title="Configurar o Elastic Agent" id="configure-elastic-agent">
+  <Step>
+    #### Configurar o Elastic Agent
+
     O Elastic Agent precisa ser configurado para enviar dados pelo protocolo Lumberjack do Logstash. Esse é um [padrão de implantação compatível](https://www.elastic.co/docs/manage-data/ingest/ingest-reference-architectures/ls-networkbridge) e pode ser configurado centralmente ou [pelo arquivo de configuração do agente `elastic-agent.yaml`](https://www.elastic.co/docs/reference/fleet/logstash-output), se a implantação for feita sem o Fleet.
 
     A configuração central via Kibana pode ser feita adicionando [um Output ao Fleet](https://www.elastic.co/docs/reference/fleet/fleet-settings#output-settings).
@@ -369,19 +379,19 @@ Demonstramos essas duas opções abaixo.
   ### Execute o Elastic Agent como OpenTelemetry Collector
 </div>
 
-O Elastic Agent inclui um EDOT Collector integrado que permite instrumentar seus aplicativos e sua infraestrutura uma única vez e enviar dados para vários fornecedores e backends.
+O Elastic Agent inclui um coletor EDOT integrado que permite instrumentar seus aplicativos e sua infraestrutura uma única vez e enviar dados para vários fornecedores e backends.
 
 <Info>
   **Integrações e orquestração do Agent**
 
-  Os usuários que executam o EDOT Collector distribuído com o Elastic Agent não poderão aproveitar as [integrações existentes oferecidas pelo Agent](https://www.elastic.co/docs/reference/fleet/manage-integrations). Além disso, o coletor não pode ser gerenciado centralmente pelo Fleet, o que obriga o usuário a executar o [Agent no modo standalone](https://www.elastic.co/docs/reference/fleet/configure-standalone-elastic-agents) e gerenciar a configuração por conta própria.
+  Os usuários que executam o coletor EDOT distribuído com o Elastic Agent não poderão aproveitar as [integrações existentes oferecidas pelo Agent](https://www.elastic.co/docs/reference/fleet/manage-integrations). Além disso, o coletor não pode ser gerenciado centralmente pelo Fleet, o que obriga o usuário a executar o [Agent no modo standalone](https://www.elastic.co/docs/reference/fleet/configure-standalone-elastic-agents) e gerenciar a configuração por conta própria.
 </Info>
 
-Para executar o Elastic Agent com o EDOT Collector, consulte o [guia oficial da Elastic](https://www.elastic.co/docs/reference/fleet/otel-agent-transform). Em vez de configurar o endpoint da Elastic, como indicado no guia, remova os `exporters` existentes e configure a saída OTLP para enviar dados ao ClickStack OpenTelemetry Collector. Por exemplo, a configuração dos `exporters` passa a ser:
+Para executar o Elastic Agent com o coletor EDOT, consulte o [guia oficial da Elastic](https://www.elastic.co/docs/reference/fleet/otel-agent-transform). Em vez de configurar o endpoint da Elastic, como indicado no guia, remova os `exporters` existentes e configure a saída OTLP para enviar dados ao ClickStack OpenTelemetry Collector. Por exemplo, a configuração dos `exporters` passa a ser:
 
 ```yaml
 exporters:
-  # Exporter to send logs and metrics to Elasticsearch Managed OTLP Input
+  # Exportador para enviar logs e métricas para o Elasticsearch Managed OTLP Input
   otlp:
     endpoint: localhost:4317
     headers:
@@ -404,7 +414,7 @@ Se o Vector tiver sido configurado para usar TLS mútuo, com o certificado e as 
 
 ```yaml
 exporters:
-  # Exporter to send logs and metrics to Elasticsearch Managed OTLP Input
+  # Exportador para enviar logs e métricas para o Elasticsearch Managed OTLP Input
   otlp:
     endpoint: localhost:4317
     headers:

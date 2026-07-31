@@ -199,15 +199,10 @@ ClickPipes for Postgres 致力于在 ClickHouse 端尽可能以原生方式映�
 目前，我们还不支持在管道中自定义数据类型映射。不过需要注意的是，ClickPipes 使用的默认数据类型映射与原生类型高度贴合。Postgres 中的大多数列类型都会尽可能复制为 ClickHouse 中对应的原生类型。例如，Postgres 中的整数数组类型会复制为 ClickHouse 中的整数数组类型。
 
 <div id="how-are-json-and-jsonb-columns-replicated-from-postgres">
-  ### 如何从 Postgres 复制 `json` 和 `jsonb` 列？
+  ### Postgres 中的 JSON 和 JSONB 列是如何复制过来的？
 </div>
 
-由于与[原生 JSON 类型](/zh/reference/data-types/newjson)不兼容，`json` 和 `jsonb` 列在 ClickHouse 中会以 String 类型复制。例如：
-
-* PostgreSQL 允许顶层为任何有效的 JSON 值 (字符串、数字、数组) ，而 ClickHouse 的 JSON 类型仅支持对象。
-* 包含点号的键 (例如 `"app.kubernetes.io/name"`) 也会被 ClickHouse 的 JSON 类型解释为嵌套路径，这可能会改变数据结构。
-
-要在 Postgres CDC ClickPipe 的下游处理这些 JSON 字符串，可以直接对这些列使用 [JSON functions](/zh/reference/functions/regular-functions/json-functions) 来提取和处理数据。为了获得更好的查询性能，你也可以使用 materialized view 将特定字段提取到类型化列中，或者将该列转换为原生 JSON 类型 (请注意，如果遇到跨平台类型不兼容，转换可能会失败) 。
+JSON 和 JSONB 列会以 ClickHouse 中的 String 类型进行复制。由于 ClickHouse 原生支持 [JSON 类型](/zh/reference/data-types/newjson)，因此在需要时，您可以基于 ClickPipes 表创建 materialized view 来进行转换。或者，也可以直接对 String 列使用 [JSON 函数](/zh/reference/functions/regular-functions/json-functions)。我们正在积极开发一项功能，可将 JSON 和 JSONB 列直接复制为 ClickHouse 的 JSON 类型，预计会在几个月内推出。
 
 <div id="what-happens-to-inserts-when-a-mirror-is-paused">
   ### 当 mirror 暂停时，insert 会发生什么？
@@ -226,7 +221,7 @@ ClickPipes for Postgres 致力于在 ClickHouse 端尽可能以原生方式映�
   ### 是否可以自动化创建 ClickPipe，或通过 API 或 CLI 创建？
 </div>
 
-也可以通过 [OpenAPI](/zh/products/cloud/features/admin-features/api/openapi) 端点来创建和管理 Postgres ClickPipe。此功能目前处于 Beta 阶段，API 参考文档可在[此处](/zh/products/cloud/api-reference/clickpipes/list-clickpipes)查看。我们也在积极开发 Terraform 支持，以便创建 Postgres ClickPipes。
+也可以通过 [OpenAPI](/zh/products/cloud/features/admin-features/api/openapi) 端点来创建和管理 Postgres ClickPipe。此功能目前处于 Beta 阶段，API 参考文档可在[此处](/zh/api-reference/organization/get-list-of-available-organizations#tag/beta)查看。我们也在积极开发 Terraform 支持，以便创建 Postgres ClickPipes。
 
 <div id="how-do-i-speed-up-my-initial-load">
   ### 如何加快初始加载？

@@ -38,17 +38,17 @@ LZ4 と ZSTD はどちらも同じ著者によるものですが、トレード�
   ## ブロック
 </div>
 
-| フィールド               | 型       | 説明                                                                                         |
-| ------------------- | ------- | ------------------------------------------------------------------------------------------ |
+| フィールド               | 型       | 説明                                                                                      |
+| ------------------- | ------- | --------------------------------------------------------------------------------------- |
 | checksum            | uint128 | (header + compressed data) の [ハッシュ](/ja/resources/develop-contribute/native-protocol/hash) |
-| raw&#95;size        | uint32  | ヘッダーを除いた元のサイズ                                                                              |
-| data&#95;size       | uint32  | 非圧縮データサイズ                                                                                  |
-| mode                | byte    | 圧縮モード                                                                                      |
-| compressed&#95;data | binary  | 圧縮データのブロック                                                                                 |
+| raw&#95;size        | uint32  | ヘッダーを除いた元のサイズ                                                                           |
+| data&#95;size       | uint32  | 非圧縮データサイズ                                                                               |
+| mode                | byte    | 圧縮モード                                                                                   |
+| compressed&#95;data | binary  | 圧縮データのブロック                                                                              |
 
 <Image img="/images/data-compression/ch_compression_block.webp" size="md" alt="ClickHouse の圧縮ブロック構造を示す図" />
 
-ヘッダーは (raw&#95;size + data&#95;size + mode) で、元のサイズは len(header + compressed&#95;data) に相当します。
+ヘッダーは (raw&#95;size + data&#95;size + mode) で、raw size は len(header + compressed&#95;data) に相当します。
 
 Checksum は [ClickHouse CityHash](/ja/resources/develop-contribute/native-protocol/hash) を使用した `hash(header + compressed_data)` です。
 

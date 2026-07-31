@@ -21,7 +21,9 @@ description: "هيّئ Prometheus لجمع مقاييس ClickHouse وعرضها 
 </div>
 
 <Steps>
-  <Step title="1. ثبّت kube-prometheus-stack" id="1-install-kube-prometheus-stack">
+  <Step>
+    ### 1. ثبّت kube-prometheus-stack
+
     أضِف مستودع Helm التابع لمجتمع Prometheus إلى عميل Helm المحلي لديك، ثم اسحب الـ chart:
 
     ```bash
@@ -44,7 +46,9 @@ description: "هيّئ Prometheus لجمع مقاييس ClickHouse وعرضها 
     > **ملاحظة:** تضم kube-prometheus-stack كلاً من Prometheus وAlertmanager وGrafana وPrometheus Operator. راجع [وثائق الـ chart](https://github.com/prometheus-community/helm-charts/tree/main/charts/kube-prometheus-stack) للاطلاع على القائمة الكاملة للصور التي يجب مزامنتها إلى سجل الحاويات الخاص بك.
   </Step>
 
-  <Step title="2. فعِّل PodMonitors في ClickHouse Operator" id="2-enable-podmonitors-in-the-clickhouse-operator">
+  <Step>
+    ### 2. فعِّل PodMonitors في ClickHouse Operator
+
     يتضمن مخطط Helm الخاص بـ ClickHouse Operator تعريفات PodMonitor لكلٍّ من ClickHouse Server وKeeper. فعِّلها ضمن قيم Helm الخاصة بالمشغّل:
 
     ```yaml
@@ -79,7 +83,9 @@ description: "هيّئ Prometheus لجمع مقاييس ClickHouse وعرضها 
     > **ملاحظة:** إذا كان مثيل Prometheus لديك يستخدم اسم إصدار مختلفًا، فحدّث محدد تسمية PodMonitor وفقًا لذلك، إما بتجاوز قوالب مخطط الـoperator أو بتهيئة `prometheus.prometheusSpec.podMonitorSelector` في values الخاصة بـ kube-prometheus-stack.
   </Step>
 
-  <Step title="3. فعِّل معالج المقاييس المخصّصة (اختياري)" id="3-enable-the-custom-metrics-handler-optional">
+  <Step>
+    ### 3. فعِّل معالج المقاييس المخصّصة (اختياري)
+
     يكشف خادم ClickHouse عن مقاييس إضافية `ClickHouse_CustomMetric_*` عبر معالج HTTP مخصّص على المنفذ 3123. تتطلب نقطة النهاية هذه المصادقة. لتمكين الكشط:
 
     ```yaml
@@ -101,7 +107,9 @@ description: "هيّئ Prometheus لجمع مقاييس ClickHouse وعرضها 
     للاطلاع على القائمة الكاملة للمقاييس المخصّصة وعتبات التنبيهات الموصى بها، راجع [مرجع المقاييس والتنبيهات](/ar/products/clickhouse-private/reference/metrics-and-alerts-reference).
   </Step>
 
-  <Step title="4. التحقق من أهداف Prometheus" id="4-verify-prometheus-targets">
+  <Step>
+    ### 4. التحقق من أهداف Prometheus
+
     بعد النشر، تأكد من أن Prometheus يكتشف أهداف ClickHouse ويجمع مقاييسها:
 
     ```bash
@@ -117,7 +125,9 @@ description: "هيّئ Prometheus لجمع مقاييس ClickHouse وعرضها 
     ```
   </Step>
 
-  <Step title="5. استيراد لوحات معلومات ClickHouse Grafana Mixin" id="5-import-the-clickhouse-grafana-mixin-dashboards">
+  <Step>
+    ### 5. استيراد لوحات معلومات ClickHouse Grafana Mixin
+
     يوفّر [ClickHouse Grafana mixin](https://grafana.com/docs/grafana-cloud/monitor-infrastructure/integrations/integration-reference/integration-clickhouse/) لوحات معلومات مُعدّة مسبقًا لمقاييس خادم ClickHouse وKeeper. في بيئة معزولة عن الإنترنت، استورد ملفات JSON الخاصة بلوحات المعلومات يدويًا.
 
     #### تنزيل لوحات المعلومات
@@ -160,7 +170,9 @@ description: "هيّئ Prometheus لجمع مقاييس ClickHouse وعرضها 
     تكتشف الحاوية الجانبية لـ Grafana تلقائيًا كائنات ConfigMap التي تحمل الوسم `grafana_dashboard: "1"` وتحمّل لوحات المعلومات.
   </Step>
 
-  <Step title="6. اضبط قواعد التنبيه (اختياري)" id="6-configure-alert-rules-optional">
+  <Step>
+    ### 6. اضبط قواعد التنبيه (اختياري)
+
     استورد قواعد تنبيه ClickHouse الموصى بها إلى Prometheus عبر إنشاء مورد `PrometheusRule`. راجع [إعداد التنبيهات](/ar/products/clickhouse-private/guides/configure-alerting-for-clickhouse) و[مرجع المقاييس والتنبيهات](/ar/products/clickhouse-private/reference/metrics-and-alerts-reference) للاطلاع على جميع تعريفات التنبيهات.
 
     مثال:

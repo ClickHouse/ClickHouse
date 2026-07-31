@@ -24,11 +24,15 @@ description: "يُعد Shared Catalog النهج الجديد لإدارة ال�
 قبل بدء الترحيل، تحقّق من استيفاء المتطلبات الأساسية التالية:
 
 <Steps>
-  <Step title="1. وجود نسختين متماثلتين على الأقل من الخادم" id="1-at-least-2-server-replicas">
+  <Step>
+    ### 1. وجود نسختين متماثلتين على الأقل من الخادم
+
     ينفّذ الـ Operator ترقية متدرجة لترحيل قواعد البيانات إلى محرك قاعدة البيانات Shared الجديد. اضبط قيم Helm ‏`server.replicas` على 2 أو أكثر.
   </Step>
 
-  <Step title="2. استخدام جميع قواعد البيانات لمحرك Replicated" id="2-all-databases-use-the-replicated-engine">
+  <Step>
+    ### 2. استخدام جميع قواعد البيانات لمحرك Replicated
+
     يجب أن تستخدم جميع قواعد البيانات (باستثناء `system`) محرك قاعدة البيانات Replicated. تحقّق من ذلك باستخدام:
 
     ```sql
@@ -43,7 +47,9 @@ description: "يُعد Shared Catalog النهج الجديد لإدارة ال�
     يجب ألا يُرجع الاستعلام أي صفوف.
   </Step>
 
-  <Step title="3. استخدام جميع الجداول لمحركات جداول غير مكررة" id="3-all-tables-use-non-replicated-table-engines">
+  <Step>
+    ### 3. استخدام جميع الجداول لمحركات جداول غير مكررة
+
     يجب ألا تستخدم أي جداول (باستثناء الجداول الموجودة في `system`) محركات جداول مكررة أو قديمة. تحقّق من ذلك باستخدام:
 
     ```sql
@@ -59,7 +65,9 @@ description: "يُعد Shared Catalog النهج الجديد لإدارة ال�
     يجب ألا يُرجع الاستعلام أي صفوف.
   </Step>
 
-  <Step title="4. عدم وجود جداول في حالة detached" id="4-no-detached-tables-exist">
+  <Step>
+    ### 4. عدم وجود جداول في حالة detached
+
     ```sql
     SELECT * FROM system.detached_tables
     ```
@@ -79,11 +87,15 @@ description: "يُعد Shared Catalog النهج الجديد لإدارة ال�
 </Warning>
 
 <Steps>
-  <Step title="1. تمكين إعداد Shared Catalog" id="1-enable-shared-catalog-configuration">
+  <Step>
+    ### 1. تمكين إعداد Shared Catalog
+
     اضبط `featureFlags.enableSharedCatalog` على `true` في قيم Helm الخاصة بك. يؤدي ذلك إلى تمكين هذا الإعداد، لكنه لا يبدأ ترحيل قواعد البيانات. سيؤدي نشر ClickHouse cluster مع تعيين هذا الخيار إلى `true` من دون ترحيل قواعد البيانات `Replicated` الحالية إلى فشل ClickHouse cluster في بدء التشغيل.
   </Step>
 
-  <Step title="2. إضافة مؤشرات الترحيل" id="2-add-the-migration-markers">
+  <Step>
+    ### 2. إضافة مؤشرات الترحيل
+
     اضبط `featureFlags.migrateToSharedCatalog` على `true` في قيم Helm الخاصة بك. يؤدي ذلك إلى ما يلي:
 
     * إضافة الإعداد `shared_database_catalog.migration_from_database_replicated` إلى ClickHouse، لإعلامه بوجود قواعد بيانات `Replicated` حالية أثناء التشغيل في وضع Shared Catalog
@@ -92,17 +104,23 @@ description: "يُعد Shared Catalog النهج الجديد لإدارة ال�
     بعد النشر، سيبدأ الـ Operator ترقية متدرجة لعُقد الخادم. وسيؤدي ذلك أيضاً إلى تغيير نوع جميع قواعد البيانات إلى `Shared`.
   </Step>
 
-  <Step title="3. انتظر حتى تصبح الحالة Ready" id="3-wait-for-the-status-to-be-ready">
+  <Step>
+    ### 3. انتظر حتى تصبح الحالة Ready
+
     ```bash
     kubectl get ClickHouseCluster <instance-name>
     ```
   </Step>
 
-  <Step title="4. إزالة مؤشرات الترحيل" id="4-remove-the-migration-markers">
+  <Step>
+    ### 4. إزالة مؤشرات الترحيل
+
     بمجرد أن تصبح الحالة Ready، اضبط `featureFlags.migrateToSharedCatalog` على `false` في قيم Helm الخاصة بك. وبما أن جميع قواعد البيانات قد رُحِّلت إلى النوع `Shared` بدلاً من `Replicated`، فلن تعود إعدادات الترحيل ذات صلة.
   </Step>
 
-  <Step title="5. التحقق من ترحيل جميع قواعد البيانات" id="5-verify-all-databases-are-migrated">
+  <Step>
+    ### 5. التحقق من ترحيل جميع قواعد البيانات
+
     تأكّد من أن جميع قواعد البيانات غير التابعة للنظام تستخدم محرك Shared:
 
     ```sql
@@ -125,15 +143,21 @@ description: "يُعد Shared Catalog النهج الجديد لإدارة ال�
 إذا واجهت أي مشكلات مع Shared Catalog، يمكنك الرجوع إلى الحالة السابقة:
 
 <Steps>
-  <Step title="1. إزالة مؤشرات الترحيل" id="1-remove-the-migration-markers">
+  <Step>
+    ### 1. إزالة مؤشرات الترحيل
+
     اضبط `featureFlags.migrateToSharedCatalog` على `false` في قيم Helm الخاصة بك.
   </Step>
 
-  <Step title="2. إزالة إعدادات Shared Catalog" id="2-remove-the-shared-catalog-settings">
-    اضبط `featureFlags.enableSharedCatalog` على `false` في قيم Helm الخاصة بك. سيؤدي ذلك إلى جعل الـ Operator يعيد التغييرات.
+  <Step>
+    ### 2. إزالة إعدادات Shared Catalog
+
+    اضبط `featureFlags.enableSharedCatalog` على `false` في قيم Helm الخاصة بك. سيؤدي ذلك إلى جعل Operator يعيد التغييرات.
   </Step>
 
-  <Step title="3. إزالة Catalog من Keeper" id="3-remove-the-catalog-in-keeper">
+  <Step>
+    ### 3. إزالة Catalog من Keeper
+
     أنشئ `port-forward` للاتصال بـ Keeper، ثم ابدأ جلسة keeper-client (باستخدام `clickhouse keeper-client`).
 
     بعد بدء الجلسة، نفّذ الأوامر التالية:
@@ -150,7 +174,9 @@ description: "يُعد Shared Catalog النهج الجديد لإدارة ال�
     سيؤدي ذلك إلى إزالة جميع حالات Shared Catalog من Keeper.
   </Step>
 
-  <Step title="4. التحقق من التراجع" id="4-verify-rollback">
+  <Step>
+    ### 4. التحقق من التراجع
+
     تأكّد من أن جميع قواعد البيانات غير التابعة لـ system تستخدم المحرك Replicated مرة أخرى:
 
     ```sql

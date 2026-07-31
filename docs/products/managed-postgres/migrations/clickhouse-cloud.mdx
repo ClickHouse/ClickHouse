@@ -1,18 +1,18 @@
 ---
 slug: /cloud/managed-postgres/migrations/clickhouse-cloud
 sidebarTitle: 'ClickHouse Cloud'
-title: Migrate to ClickHouse Managed Postgres using ClickHouse Cloud
+title: Migrate to Managed Postgres using ClickHouse Cloud
 description: 'Learn how to migrate your PostgreSQL database to ClickHouse Managed Postgres using the built-in Data sources import wizard in ClickHouse Cloud.'
 keywords: ['postgres', 'postgresql', 'logical replication', 'migration', 'data transfer', 'managed postgres', 'data sources', 'import']
 doc_type: 'guide'
 ---
 
-import { BetaBadge } from "/snippets/components/BetaBadge/BetaBadge.jsx";
+import BetaBadge from "/snippets/components/BetaBadge/BetaBadge.jsx";
 import { Image } from "/snippets/components/Image.jsx";
 
 <BetaBadge/>
 
-ClickHouse Cloud includes a built-in import wizard that migrates your external PostgreSQL database into a ClickHouse Managed Postgres service. The wizard handles the source connection, schema export and import, replication settings, and table selection in five guided steps.
+ClickHouse Cloud includes a built-in import wizard that migrates your external PostgreSQL database into a Managed Postgres service. The wizard handles the source connection, schema export and import, replication settings, and table selection in five guided steps.
 
 ## Prerequisites {#prerequisites}
 - Access to your source PostgreSQL database with a user that has replication privileges.
@@ -24,13 +24,13 @@ ClickHouse Cloud includes a built-in import wizard that migrates your external P
 
 <Steps>
 <Step title="Connect to your source database" id="step-1-connect">
-Open the [ClickHouse Cloud console](https://clickhouse.cloud) and select your ClickHouse Managed Postgres service.
+Open the [ClickHouse Cloud console](https://clickhouse.cloud) and select your Managed Postgres service.
 
-<Image img="/images/managed-postgres/pgpg/servicecard.webp" alt="ClickHouse Managed Postgres service card in the ClickHouse Cloud services list" size="lg" border />
+<Image img="/images/managed-postgres/pgpg/servicecard.webp" alt="Managed Postgres service card in the ClickHouse Cloud services list" size="lg" border />
 
 In the left sidebar, click **Data sources**.
 
-<Image img="/images/managed-postgres/pgpg/overview.webp" alt="Data sources entry in the ClickHouse Managed Postgres service sidebar" size="lg" border />
+<Image img="/images/managed-postgres/pgpg/overview.webp" alt="Data sources entry in the Managed Postgres service sidebar" size="lg" border />
 
 Click **Start import**.
 
@@ -72,10 +72,10 @@ This creates `pg.sql` in your current directory.
 Click **Next**.
 
 </Step>
-<Step title="Import the schema into your ClickHouse Managed Postgres service" id="step-3-import-schema">
+<Step title="Import the schema into your Managed Postgres service" id="step-3-import-schema">
 Select the destination database from the dropdown, or click **Create a new database** to provision one.
 
-The wizard displays a `psql` command to apply the schema dump to your ClickHouse Managed Postgres service. Run it in a terminal:
+The wizard displays a `psql` command to apply the schema dump to your Managed Postgres service. Run it in a terminal:
 
 <Image img="/images/managed-postgres/pgpg/nextimport.webp" alt="Step 3: psql command for schema import" size="lg" border />
 
@@ -182,7 +182,7 @@ BEGIN
 END $$;
 ```
 
-**Cut over application traffic.** Point reads and writes to your ClickHouse Managed Postgres service and monitor for errors, constraint violations, and replication health.
+**Cut over application traffic.** Point reads and writes to your Managed Postgres service and monitor for errors, constraint violations, and replication health.
 
 **Clean up.**  Once you've cut over and confirmed the new service is healthy, delete the migration from **Data sources**. If you used CDC, drop the replication slot from the source to free resources:
 
@@ -191,6 +191,6 @@ SELECT pg_drop_replication_slot('<slot_name>');
 ```
 
 ## Next steps {#next-steps}
-- [ClickHouse Managed Postgres quickstart](/products/managed-postgres/quickstart)
-- [ClickHouse Managed Postgres connection details](/products/managed-postgres/connection)
+- [Managed Postgres quickstart](/products/managed-postgres/quickstart)
+- [Managed Postgres connection details](/products/managed-postgres/connection)
 - [ClickPipes Postgres FAQ](/integrations/clickpipes/postgres/faq)

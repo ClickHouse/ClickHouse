@@ -293,8 +293,6 @@ namespace Setting
     extern const SettingsBool azure_allow_parallel_part_upload;
     extern const SettingsString cluster_for_parallel_replicas;
     extern const SettingsBool cloud_mode;
-    extern const SettingsBool read_through_distributed_cache;
-    extern const SettingsBool write_through_distributed_cache;
     extern const SettingsBool enable_filesystem_cache;
     extern const SettingsBool enable_filesystem_cache_log;
     extern const SettingsBool enable_filesystem_cache_on_write_operations;
@@ -505,6 +503,7 @@ struct ContextSharedPart : boost::noncopyable
     String path TSA_GUARDED_BY(mutex);                       /// Path to the data directory, with a slash at the end.
     String flags_path TSA_GUARDED_BY(mutex);                 /// Path to the directory with some control flags for server maintenance.
     String user_files_path TSA_GUARDED_BY(mutex);            /// Path to the directory with user provided files, usable by 'file' table function.
+    String dictionaries_lib_path TSA_GUARDED_BY(mutex);      /// Path to the directory with user provided binaries and libraries for external dictionaries.
     String user_scripts_path TSA_GUARDED_BY(mutex);          /// Path to the directory with user provided scripts.
     String dynamic_user_defined_executable_functions_path TSA_GUARDED_BY(mutex); /// Path to the directory for executable UDF configs created by drivers.
     String filesystem_caches_path TSA_GUARDED_BY(mutex);     /// Path to the directory with filesystem caches.
@@ -761,8 +760,6 @@ struct ContextSharedPart : boost::noncopyable
 
     /// No lock required for async_insert_queue modified only during initialization
     std::shared_ptr<AsynchronousInsertQueue> async_insert_queue;
-
-    std::atomic_bool is_distributed_cache_server = false;
 
     /// Server listener port registry. Reads come from concurrent SQL contexts
     /// (the `getServerPort` SQL function); writes happen during server startup
@@ -1476,6 +1473,12 @@ String Context::getUserFilesPath() const
     return shared->user_files_path;
 }
 
+String Context::getDictionariesLibPath() const
+{
+    SharedLockGuard lock(shared->mutex);
+    return shared->dictionaries_lib_path;
+}
+
 String Context::getUserScriptsPath() const
 {
     SharedLockGuard lock(shared->mutex);
@@ -1544,25 +1547,25 @@ DatabaseAndTable Context::getOrCacheStorage(const StorageID & id, std::function<
     if (auto it = shard.set.find(id); it != shard.set.end())
     {
         DatabaseAndTable storage = DatabaseCatalog::instance().tryGetByUUID(it->uuid);
-        /// The cache is keyed by qualified name only (see `StorageCache::Shard::set`) and pins a name
-        /// to the storage it first resolved to in this query. That is the whole point of the cache: a
-        /// running query must keep seeing the table version it was planned against even if a
-        /// concurrent query renames or exchanges that table underneath it (see
-        /// `03915_exchange_tables_race` - otherwise the query is analyzed for one column type and
-        /// executed against another, raising a `LOGICAL_ERROR`). So a cache hit whose name was since
-        /// reassigned (by a rename/exchange, so the cached UUID now maps to a different qualified
-        /// name, or a different UUID now maps to the requested name) is NOT stale - the pinned UUID is
-        /// exactly what we want to return. Return it as long as it still resolves to a live table;
-        /// only drop the entry when the cached UUID no longer exists at all (e.g. a refreshable
-        /// materialized view's inner table was dropped and recreated with a new UUID), and fall
-        /// through to a fresh lookup by name.
-        ///
-        /// A rename or exchange performed BY THIS query drops the affected names from this cache (see
-        /// `dropStorageCacheEntry`, called from `InterpreterRenameQuery`), so the query's own later
-        /// lookups of those names re-resolve to the current tables. This is what lets
-        /// `CREATE OR REPLACE ... POPULATE` drop the old table by the temporary name after its
-        /// internal `EXCHANGE` instead of shutting down the live one (see #108726).
-        if (storage.second)
+        /// The cache is keyed by qualified name only (see `StorageCache::Shard::set`), so a hit can
+        /// carry a UUID that no longer matches the name we are resolving. Return the cached storage
+        /// only if it is still fresh. Otherwise the entry is stale and must not be reused:
+        ///  - the table no longer exists by its UUID (e.g. a refreshable materialized view's inner
+        ///    table was dropped and recreated), or
+        ///  - the UUID still exists but the name was reassigned to a different table by a rename or
+        ///    exchange within the same query. This happens during `CREATE OR REPLACE`, which creates a
+        ///    temporary table, populates it (caching the temporary name -> temporary UUID here), then
+        ///    atomically swaps it with the target via `EXCHANGE`. After the swap the temporary name
+        ///    refers to the old table that is about to be dropped, but the cache would still hand out
+        ///    the new (now live) table - so dropping by the temporary name would shut down the live
+        ///    table instead and break it (e.g. detaching a materialized view from its source), or
+        ///  - the caller asked for a specific UUID but the cached entry resolves to a different one
+        ///    (a same-name replacement); returning it would silently substitute the wrong table
+        ///    instead of letting the fresh lookup report `UNKNOWN_TABLE`/`TABLE_UUID_MISMATCH`.
+        /// In all cases remove the stale entry and fall through to a fresh lookup by name.
+        if (storage.second
+            && storage.second->getStorageID().getQualifiedName() == id.getQualifiedName()
+            && (!id.hasUUID() || it->uuid == id.uuid))
             return storage;
 
         shard.set.erase(it);
@@ -1580,15 +1583,6 @@ DatabaseAndTable Context::getOrCacheStorage(const StorageID & id, std::function<
     }
 
     return storage;
-}
-
-void Context::dropStorageCacheEntry(const StorageID & id) const
-{
-    auto & shard = storage_cache.shards[StorageCache::shardIndex(id)];
-    std::lock_guard lock(shard.mutex);
-    /// The set uses name-only equality (`StorageID::DatabaseAndTableNameEqual`), so this erases the
-    /// pinned entry for the qualified name regardless of the UUID it was cached with.
-    shard.set.erase(id);
 }
 
 std::unordered_map<Context::WarningType, PreformattedMessage> Context::getWarnings() const
@@ -1796,6 +1790,9 @@ void Context::setPath(const String & path)
     if (shared->user_files_path.empty())
         shared->user_files_path = shared->path + "user_files/";
 
+    if (shared->dictionaries_lib_path.empty())
+        shared->dictionaries_lib_path = shared->path + "dictionaries_lib/";
+
     if (shared->user_scripts_path.empty())
         shared->user_scripts_path = shared->path + "user_scripts/";
 }
@@ -1967,6 +1964,12 @@ void Context::setUserFilesPath(const String & path)
 {
     std::lock_guard lock(shared->mutex);
     shared->user_files_path = path;
+}
+
+void Context::setDictionariesLibPath(const String & path)
+{
+    std::lock_guard lock(shared->mutex);
+    shared->dictionaries_lib_path = path;
 }
 
 void Context::setUserScriptsPath(const String & path)
@@ -2996,17 +2999,7 @@ StoragePtr Context::executeTableFunction(const ASTPtr & table_expression, const 
 
             ASTCreateQuery create;
             create.set(create.select, query);
-
-            /// The sample block must be analyzed under the view's SQL security context, not the
-            /// invoker's (mirrors buildParameterizedViewStorage).
-            auto sql_security = make_intrusive<ASTSQLSecurity>();
-            sql_security->type = view_metadata->sql_security_type;
-            if (view_metadata->definer)
-                sql_security->definer = make_intrusive<ASTUserNameWithHost>(*view_metadata->definer);
-            create.set(create.sql_security, sql_security);
-
-            auto view_context = view_metadata->getSQLSecurityOverriddenContext(shared_from_this());
-            auto sample_block = InterpreterSelectWithUnionQuery::getSampleBlock(query, view_context);
+            auto sample_block = InterpreterSelectWithUnionQuery::getSampleBlock(query, getQueryContext());
             auto res = std::make_shared<StorageView>(StorageID(database_name, table_name),
                                                      create,
                                                      ColumnsDescription(sample_block->getNamesAndTypesList()),
@@ -6385,17 +6378,6 @@ void Context::reloadClusterConfig() const
     }
 }
 
-bool Context::isDistributedCacheServer() const
-{
-    return shared->is_distributed_cache_server.load(std::memory_order_relaxed);
-}
-
-void Context::setDistributedCacheServer()
-{
-    /// This is set only once on server startup, so atomic is ok.
-    shared->is_distributed_cache_server.store(true);
-}
-
 std::map<String, ClusterPtr> Context::getClusters() const
 {
     std::lock_guard lock(shared->clusters_mutex);
@@ -6723,26 +6705,6 @@ std::shared_ptr<FilesystemCacheLog> Context::getFilesystemCacheLog() const
 
     return shared->system_logs->filesystem_cache_log;
 }
-
-#if ENABLE_DISTRIBUTED_CACHE
-std::shared_ptr<DistributedCacheLog> Context::getDistributedCacheLog() const
-{
-    SharedLockGuard lock(shared->mutex);
-    if (!shared->system_logs)
-        return {};
-
-    return shared->system_logs->distributed_cache_log;
-}
-
-std::shared_ptr<DistributedCacheServerLog> Context::getDistributedCacheServerLog() const
-{
-    SharedLockGuard lock(shared->mutex);
-    if (!shared->system_logs)
-        return {};
-
-    return shared->system_logs->distributed_cache_server_log;
-}
-#endif
 
 std::shared_ptr<ObjectStorageQueueLog> Context::getS3QueueLog() const
 {
@@ -7729,7 +7691,7 @@ void Context::setCurrentUserName(const String & current_user_name)
 
 void Context::setCurrentAddress(const Poco::Net::SocketAddress & current_address)
 {
-    client_info.current_address = Poco::Net::SocketAddress(current_address);
+    client_info.current_address = std::make_shared<Poco::Net::SocketAddress>(current_address);
     need_recalculate_access = true;
 }
 
@@ -7747,7 +7709,7 @@ void Context::setAuthenticatedUserName(const String & authenticated_user_name)
 
 void Context::setInitialAddress(const Poco::Net::SocketAddress & initial_address)
 {
-    client_info.initial_address = Poco::Net::SocketAddress(initial_address);
+    client_info.initial_address = std::make_shared<Poco::Net::SocketAddress>(initial_address);
 }
 
 void Context::setInitialQueryId(const String & initial_query_id)
@@ -8409,12 +8371,6 @@ ReadSettings Context::getReadSettings() const
     res.remote_fs_settings.enable_hdfs_pread = settings_ref[Setting::enable_hdfs_pread];
     res.remote_fs_settings.enable_blob_storage_log = settings_ref[Setting::enable_blob_storage_log_for_read_operations];
 
-    res.read_through_distributed_cache = settings_ref[Setting::read_through_distributed_cache];
-#if ENABLE_DISTRIBUTED_CACHE
-    res.distributed_cache_settings.load(settings_ref);
-    res.distributed_cache_settings.validate();
-#endif
-
     return res;
 }
 
@@ -8434,11 +8390,6 @@ WriteSettings Context::getWriteSettings() const
 
     res.remote_throttler = getRemoteWriteThrottler();
     res.local_throttler = getLocalWriteThrottler();
-
-    res.write_through_distributed_cache = settings_ref[Setting::write_through_distributed_cache];
-#if ENABLE_DISTRIBUTED_CACHE
-    res.distributed_cache_settings.load(settings_ref);
-#endif
 
     return res;
 }
