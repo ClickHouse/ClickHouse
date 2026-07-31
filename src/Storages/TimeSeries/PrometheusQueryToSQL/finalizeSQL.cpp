@@ -285,6 +285,13 @@ namespace
 
         builder.where = std::move(where);
 
+        /// If sort() / sort_desc() was applied, order the output by value.
+        if (result.sort_direction != 0)
+        {
+            builder.order_by.push_back(make_intrusive<ASTIdentifier>(ColumnNames::Value));
+            builder.order_direction = result.sort_direction;
+        }
+
         builder.with = std::move(context.subqueries);
         if (result.select_query)
         {
