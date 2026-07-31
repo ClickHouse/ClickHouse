@@ -23,7 +23,7 @@ public:
         : Base(context)
     {
         // Insert a fake node on top of the stack.
-        scope_nodes_stack.push_back(std::make_shared<LambdaNode>(Names{}, nullptr, false));
+        scope_nodes_stack.push_back(std::make_shared<LambdaNode>(std::make_shared<LambdaArgumentsNode>(Names{}), nullptr, false));
     }
 
     void enterImpl(QueryTreeNodePtr & node)
