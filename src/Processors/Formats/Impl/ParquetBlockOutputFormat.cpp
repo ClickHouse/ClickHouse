@@ -160,7 +160,14 @@ ParquetBlockOutputFormat::ParquetBlockOutputFormat(WriteBuffer & out_, SharedHea
     options.use_dictionary_encoding = options.max_dictionary_size > 0;
 
     if (format_filter_info_ && format_filter_info_->column_mapper)
+    {
         column_field_ids = format_filter_info_->column_mapper->getStorageColumnEncoding();
+        /// The mapper outlives this format (and the encoder threads) via format_filter_info.
+        /// It has to be consulted identically here and on the data paths below: the reader takes its
+        /// max definition level from the schema, while the writer takes the level bit width from the
+        /// state the data path builds, so the two would desynchronize.
+        iceberg_optionality.mapper = format_filter_info_->column_mapper.get();
+    }
 
     const Block & header = getPort(PortKind::Main).getHeader();
     needs_file_level_variant_analysis = headerNeedsFileLevelVariantAnalysis(header, options.output_json_as_variant);
@@ -175,7 +182,7 @@ ParquetBlockOutputFormat::ParquetBlockOutputFormat(WriteBuffer & out_, SharedHea
     else if (!headerNeedsDataDependentVariantSchema(header, options.output_json_as_variant))
     {
         Block materialized_header = materializeBlock(header);
-        schema = convertSchema(materialized_header, options, format_settings, column_field_ids, &variant_wrapper_paths);
+        schema = convertSchema(materialized_header, options, format_settings, column_field_ids, &variant_wrapper_paths, iceberg_optionality);
     }
 }
 
@@ -353,7 +360,7 @@ void ParquetBlockOutputFormat::finalizeImpl()
     {
         Block header = materializeBlock(getPort(PortKind::Main).getHeader());
         if (schema.empty())
-            schema = convertSchema(header, options, format_settings, column_field_ids, &variant_wrapper_paths);
+            schema = convertSchema(header, options, format_settings, column_field_ids, &variant_wrapper_paths, iceberg_optionality);
         base_offset = out.count();
         writeFileHeader(file_state, out);
     }
@@ -457,7 +464,7 @@ void ParquetBlockOutputFormat::writeRowGroupInOneThread(Chunk chunk)
         for (size_t i = 0; i < header.columns(); ++i)
             prepareColumnForWrite(
                 chunk.getColumns()[i], header.getByPosition(i).type, header.getByPosition(i).name,
-                options, format_settings, &columns_to_write, nullptr, column_field_ids, &variant_type_hints, nullptr, nullptr);
+                options, format_settings, &columns_to_write, nullptr, column_field_ids, &variant_type_hints, nullptr, nullptr, iceberg_optionality);
     }
 
     if (file_state.offset == 0)
@@ -657,7 +664,7 @@ void ParquetBlockOutputFormat::threadFunction()
 
             std::vector<ColumnChunkWriteState> subcolumns;
             prepareColumnForWrite(
-                std::move(concatenated), task.column_type, task.column_name, options, format_settings, &subcolumns, nullptr, column_field_ids, &variant_type_hints, nullptr, nullptr);
+                std::move(concatenated), task.column_type, task.column_name, options, format_settings, &subcolumns, nullptr, column_field_ids, &variant_type_hints, nullptr, nullptr, iceberg_optionality);
 
             lock.lock();
 
@@ -726,7 +733,8 @@ void ParquetBlockOutputFormat::initializeSchemaForCustomEncoder(const Columns & 
             column_field_ids,
             &variant_type_hints,
             needs_file_level_variant_analysis ? nullptr : &variant_type_hints,
-            &variant_wrapper_paths);
+            &variant_wrapper_paths,
+            iceberg_optionality);
     }
 }
 

@@ -117,6 +117,8 @@ private:
     size_t staging_bytes = 0;
 
     Parquet::WriteOptions options;
+    /// Filled in by the ctor and read-only afterwards, so the encoder threads can share it.
+    Parquet::IcebergOptionality iceberg_optionality;
     Parquet::SchemaElements schema;
     Parquet::VariantWriteTypeHints variant_type_hints;
     Parquet::VariantWriteAnalysisMap variant_write_analysis;

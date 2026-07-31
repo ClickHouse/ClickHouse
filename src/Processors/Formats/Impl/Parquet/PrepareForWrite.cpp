@@ -12,6 +12,8 @@
 #include <Columns/ColumnMap.h>
 #include <Columns/ColumnVariant.h>
 #include <Core/Block.h>
+#include <DataTypes/NestedUtils.h>
+#include <Formats/FormatFilterInfo.h>
 #include <Common/Exception.h>
 #include <Common/WKB.h>
 #include <DataTypes/DataTypeNullable.h>
@@ -26,7 +28,6 @@
 #include <DataTypes/DataTypeObject.h>
 #include <DataTypes/DataTypeCustom.h>
 #include <DataTypes/DataTypeVariant.h>
-#include <DataTypes/NestedUtils.h>
 #include <IO/ReadHelpers.h>
 #include <Processors/Formats/Impl/Parquet/VariantUtils.h>
 
@@ -250,6 +251,29 @@ void updateRepDefLevelsAndFilterColumnForNullable(ColumnChunkWriteState & s, con
     s.primitive_column = s.primitive_column->filter(filter, /*result_size_hint*/ -1);
 }
 
+/// Adds the definition level of a container group that is OPTIONAL in the Parquet schema but whose
+/// ClickHouse column cannot be null, so every value below it is present.
+///
+/// Must run AFTER updateRepDefLevelsForArray for array/map groups: that function encodes an empty
+/// container as definition level 0, and level 0 under an OPTIONAL ancestor means "container is null"
+/// to a reader. Incrementing afterwards shifts empty-but-present to 1 and leaves 0 free for null.
+void updateDefLevelsForAlwaysPresentOptionalGroup(ColumnChunkWriteState & s)
+{
+    assertNoDefOverflow(s);
+    ++s.max_def;
+
+    /// def is empty iff max_def was 0, so the 0 -> 1 transition has to materialize it.
+    if (s.max_def == 1)
+    {
+        chassert(s.def.empty());
+        s.def.resize_fill(s.primitive_column->size(), 1);
+        return;
+    }
+
+    for (auto & x : s.def)
+        ++x;
+}
+
 void updateRepDefLevelsForArray(ColumnChunkWriteState & s, const IColumn::Offsets & offsets)
 {
     /// Increment all definition levels.
@@ -354,11 +378,14 @@ parq::CompressionCodec::type compressionMethodToParquet(CompressionMethod c)
 }
 
 /// Depth-first traversal of the schema tree for this column.
+/// `column_path` is the dotted Iceberg field path of this node (t.x / arr.element / m.value), built
+/// with the same convention as ColumnMapper's producer; only the Iceberg optionality lookup uses it.
 void prepareColumnRecursive(
     ColumnPtr column, DataTypePtr type, const std::string & name, const WriteOptions & options, const FormatSettings & format_settings,
     ColumnChunkWriteStates & states, SchemaElements & schemas, const std::optional<std::unordered_map<String, Int64>> & column_field_ids,
     const VariantWriteTypeHints * variant_type_hints, VariantWriteTypeHints * out_variant_type_hints, const String & path, const String & schema_path,
     VariantWrapperPaths * out_variant_wrapper_paths,
+    const String & column_path, const IcebergOptionality & iceberg_optionality,
     bool inside_variant = false, bool variant_binary_payload = false);
 
 void analyzeVariantColumnTypesRecursive(
@@ -690,6 +717,9 @@ void prepareColumnVariant(
         appendParquetPath(path, "metadata"),
         appendParquetPath(schema_path, "metadata"),
         out_variant_wrapper_paths,
+        /// Iceberg optionality never applies inside a VARIANT group: the mapper carries no paths here.
+        appendParquetPath(path, "metadata"),
+        IcebergOptionality{},
         true,
         true);
 
@@ -707,6 +737,9 @@ void prepareColumnVariant(
         appendParquetPath(path, "value"),
         appendParquetPath(schema_path, "value"),
         out_variant_wrapper_paths,
+        /// Iceberg optionality never applies inside a VARIANT group: the mapper carries no paths here.
+        appendParquetPath(path, "value"),
+        IcebergOptionality{},
         true,
         true);
 
@@ -726,6 +759,9 @@ void prepareColumnVariant(
             appendParquetPath(path, "typed_value"),
             appendParquetPath(schema_path, "typed_value"),
             out_variant_wrapper_paths,
+            /// Iceberg optionality never applies inside a VARIANT group: the mapper carries no paths here.
+            appendParquetPath(path, "typed_value"),
+            IcebergOptionality{},
             true,
             false);
     }
@@ -739,6 +775,7 @@ void prepareColumnNullable(
     ColumnChunkWriteStates & states, SchemaElements & schemas, const std::optional<std::unordered_map<String, Int64>> & field_ids,
     const VariantWriteTypeHints * variant_type_hints, VariantWriteTypeHints * out_variant_type_hints, const String & path, const String & schema_path,
     VariantWrapperPaths * out_variant_wrapper_paths,
+    const String & column_path, const IcebergOptionality & iceberg_optionality,
     bool inside_variant, bool variant_binary_payload)
 {
     const ColumnNullable * column_nullable = assert_cast<const ColumnNullable *>(column.get());
@@ -750,6 +787,12 @@ void prepareColumnNullable(
     size_t child_schema_idx = schemas.size();
     VariantWrapperPaths nested_variant_wrapper_paths;
 
+    /// Nullable is transparent in Iceberg field naming, so the nested node keeps the same dotted
+    /// path. Tell it that this Nullable already owns the OPTIONAL level for that path, so a container
+    /// below does not add a second one (which would also push us into the "nullable" wrapper branch
+    /// below and rewrite path_in_schema).
+    IcebergOptionality nested_optionality = iceberg_optionality;
+    nested_optionality.owned_by_enclosing_nullable = true;
     prepareColumnRecursive(
         nested_column,
         nested_type,
@@ -764,6 +807,8 @@ void prepareColumnNullable(
         path,
         schema_path,
         out_variant_wrapper_paths ? &nested_variant_wrapper_paths : nullptr,
+        column_path,
+        nested_optionality,
         inside_variant,
         variant_binary_payload);
 
@@ -845,6 +890,7 @@ void prepareColumnTuple(
     ColumnChunkWriteStates & states, SchemaElements & schemas, const std::optional<std::unordered_map<String, Int64>> & column_field_ids,
     const VariantWriteTypeHints * variant_type_hints, VariantWriteTypeHints * out_variant_type_hints, const String & path, const String & schema_path,
     VariantWrapperPaths * out_variant_wrapper_paths,
+    const String & column_path, const IcebergOptionality & iceberg_optionality,
     bool inside_variant, bool variant_binary_payload)
 {
     const auto * column_tuple = assert_cast<const ColumnTuple *>(column.get());
@@ -857,8 +903,10 @@ void prepareColumnTuple(
     if (num_elements == 0)
         throw Exception(ErrorCodes::BAD_ARGUMENTS, "Parquet doesn't support empty tuples");
 
+    const bool optional = iceberg_optionality.isOptional(column_path);
+
     auto & tuple_schema = schemas.emplace_back();
-    tuple_schema.__set_repetition_type(parq::FieldRepetitionType::REQUIRED);
+    tuple_schema.__set_repetition_type(optional ? parq::FieldRepetitionType::OPTIONAL : parq::FieldRepetitionType::REQUIRED);
     tuple_schema.__set_name(name);
     tuple_schema.__set_num_children(static_cast<Int32>(num_elements));
     if (column_field_ids)
@@ -879,6 +927,9 @@ void prepareColumnTuple(
     }
 
     auto sub_field_ids = buildSubFieldIds(column_field_ids, name);
+    /// Children sit at their own dotted paths, which no enclosing Nullable owns.
+    IcebergOptionality child_optionality = iceberg_optionality;
+    child_optionality.owned_by_enclosing_nullable = false;
     for (size_t i = 0; i < num_elements; ++i)
     {
         bool child_inside_variant = inside_variant;
@@ -888,10 +939,11 @@ void prepareColumnTuple(
         else if (wrapper_layout && wrapper_layout->typed_value_pos.has_value() && *wrapper_layout->typed_value_pos == i)
             child_inside_variant = true;
 
+        const auto & element_name = type_tuple->getNameByPosition(i + 1);
         prepareColumnRecursive(
             column_tuple->getColumnPtr(i),
             type_tuple->getElement(i),
-            type_tuple->getNameByPosition(i + 1),
+            element_name,
             options,
             format_settings,
             states,
@@ -899,9 +951,11 @@ void prepareColumnTuple(
             sub_field_ids,
             variant_type_hints,
             out_variant_type_hints,
-            appendParquetPath(path, type_tuple->getNameByPosition(i + 1)),
-            appendParquetPath(schema_path, type_tuple->getNameByPosition(i + 1)),
+            appendParquetPath(path, element_name),
+            appendParquetPath(schema_path, element_name),
             out_variant_wrapper_paths,
+            Nested::concatenateName(column_path, element_name),
+            child_optionality,
             child_inside_variant,
             child_variant_binary_payload);
     }
@@ -911,6 +965,9 @@ void prepareColumnTuple(
         Strings & state_schema_path = states[i].column_chunk.meta_data.path_in_schema;
         /// O(nesting_depth^2), but who cares.
         state_schema_path.insert(state_schema_path.begin(), name);
+
+        if (optional)
+            updateDefLevelsForAlwaysPresentOptionalGroup(states[i]);
     }
 }
 
@@ -919,6 +976,7 @@ void prepareColumnArray(
     ColumnChunkWriteStates & states, SchemaElements & schemas, const std::optional<std::unordered_map<String, Int64>> & column_field_ids,
     const VariantWriteTypeHints * variant_type_hints, VariantWriteTypeHints * out_variant_type_hints, const String & path, const String & schema_path,
     VariantWrapperPaths * out_variant_wrapper_paths,
+    const String & column_path, const IcebergOptionality & iceberg_optionality,
     bool inside_variant, bool variant_binary_payload)
 {
     const auto * column_array = assert_cast<const ColumnArray *>(column.get());
@@ -939,7 +997,9 @@ void prepareColumnArray(
     auto & list_schema = schemas[schemas.size() - 2];
     auto & item_schema = schemas[schemas.size() - 1];
 
-    list_schema.__set_repetition_type(parq::FieldRepetitionType::REQUIRED);
+    const bool optional = iceberg_optionality.isOptional(column_path);
+
+    list_schema.__set_repetition_type(optional ? parq::FieldRepetitionType::OPTIONAL : parq::FieldRepetitionType::REQUIRED);
     list_schema.__set_name(name);
     list_schema.__set_num_children(1);
     list_schema.__set_converted_type(parq::ConvertedType::LIST);
@@ -959,7 +1019,9 @@ void prepareColumnArray(
     std::array<std::string, 2> path_prefix = {list_schema.name, item_schema.name};
     size_t child_states_begin = states.size();
 
-    /// Recurse.
+    /// Recurse. The element sits at its own dotted path, which no enclosing Nullable owns.
+    IcebergOptionality child_optionality = iceberg_optionality;
+    child_optionality.owned_by_enclosing_nullable = false;
     prepareColumnRecursive(
         nested_column,
         nested_type,
@@ -974,6 +1036,8 @@ void prepareColumnArray(
         appendParquetPath(path, "element"),
         appendParquetPath(appendParquetPath(schema_path, "list"), "element"),
         out_variant_wrapper_paths,
+        Nested::concatenateName(column_path, "element"),
+        child_optionality,
         inside_variant,
         variant_binary_payload);
 
@@ -984,6 +1048,11 @@ void prepareColumnArray(
         state_schema_path.insert(state_schema_path.begin(), path_prefix.begin(), path_prefix.end());
 
         updateRepDefLevelsForArray(states[i], offsets);
+
+        /// Strictly after updateRepDefLevelsForArray: it encodes an empty array as level 0, which
+        /// under an OPTIONAL group would read back as a null array instead of an empty one.
+        if (optional)
+            updateDefLevelsForAlwaysPresentOptionalGroup(states[i]);
     }
 }
 
@@ -992,6 +1061,7 @@ void prepareColumnMap(
     ColumnChunkWriteStates & states, SchemaElements & schemas, const std::optional<std::unordered_map<String, Int64>> & column_field_ids,
     const VariantWriteTypeHints * variant_type_hints, VariantWriteTypeHints * out_variant_type_hints, const String & path, const String & schema_path,
     VariantWrapperPaths * out_variant_wrapper_paths,
+    const String & column_path, const IcebergOptionality & iceberg_optionality,
     bool inside_variant, bool variant_binary_payload)
 {
     const auto * column_map = assert_cast<const ColumnMap *>(column.get());
@@ -1009,8 +1079,10 @@ void prepareColumnMap(
     ///     reqiured <...> "key"
     ///     <...> "value"
 
+    const bool optional = iceberg_optionality.isOptional(column_path);
+
     auto & map_schema = schemas.emplace_back();
-    map_schema.__set_repetition_type(parq::FieldRepetitionType::REQUIRED);
+    map_schema.__set_repetition_type(optional ? parq::FieldRepetitionType::OPTIONAL : parq::FieldRepetitionType::REQUIRED);
     map_schema.__set_name(name);
     map_schema.__set_num_children(1);
     map_schema.__set_converted_type(parq::ConvertedType::MAP);
@@ -1032,6 +1104,10 @@ void prepareColumnMap(
     size_t child_states_begin = states.size();
     auto child_field_ids = buildSubFieldIds(column_field_ids, name);
     const auto * column_tuple_typed = assert_cast<const ColumnTuple *>(column_tuple.get());
+    /// Key/value sit at their own dotted paths, which no enclosing Nullable owns. A map key is
+    /// always required per the Iceberg spec, and the producer forces that, so the lookup declines it.
+    IcebergOptionality child_optionality = iceberg_optionality;
+    child_optionality.owned_by_enclosing_nullable = false;
     prepareColumnRecursive(
         column_tuple_typed->getColumnPtr(0),
         map_type->getKeyType(),
@@ -1046,6 +1122,8 @@ void prepareColumnMap(
         appendParquetPath(appendParquetPath(path, "key_value"), "key"),
         appendParquetPath(appendParquetPath(schema_path, "key_value"), "key"),
         out_variant_wrapper_paths,
+        Nested::concatenateName(column_path, "key"),
+        child_optionality,
         inside_variant,
         variant_binary_payload);
     prepareColumnRecursive(
@@ -1062,6 +1140,8 @@ void prepareColumnMap(
         appendParquetPath(appendParquetPath(path, "key_value"), "value"),
         appendParquetPath(appendParquetPath(schema_path, "key_value"), "value"),
         out_variant_wrapper_paths,
+        Nested::concatenateName(column_path, "value"),
+        child_optionality,
         inside_variant,
         variant_binary_payload);
 
@@ -1072,6 +1152,10 @@ void prepareColumnMap(
         state_schema_path.insert(state_schema_path.begin(), name);
 
         updateRepDefLevelsForArray(states[i], offsets);
+
+        /// Strictly after updateRepDefLevelsForArray, for the same reason as in prepareColumnArray.
+        if (optional)
+            updateDefLevelsForAlwaysPresentOptionalGroup(states[i]);
     }
 }
 
@@ -1147,6 +1231,7 @@ void prepareColumnRecursive(
     ColumnChunkWriteStates & states, SchemaElements & schemas, const std::optional<std::unordered_map<String, Int64>> & column_field_ids,
     const VariantWriteTypeHints * variant_type_hints, VariantWriteTypeHints * out_variant_type_hints, const String & path, const String & schema_path,
     VariantWrapperPaths * out_variant_wrapper_paths,
+    const String & column_path, const IcebergOptionality & iceberg_optionality,
     bool inside_variant, bool variant_binary_payload)
 {
     /// Remove const and sparse but leave LowCardinality as the encoder can directly use it for
@@ -1155,10 +1240,10 @@ void prepareColumnRecursive(
 
     switch (type->getTypeId())
     {
-        case TypeIndex::Nullable: prepareColumnNullable(column, type, name, options, format_settings, states, schemas, column_field_ids, variant_type_hints, out_variant_type_hints, path, schema_path, out_variant_wrapper_paths, inside_variant, variant_binary_payload); break;
-        case TypeIndex::Array: prepareColumnArray(column, type, name, options, format_settings, states, schemas, column_field_ids, variant_type_hints, out_variant_type_hints, path, schema_path, out_variant_wrapper_paths, inside_variant, variant_binary_payload); break;
-        case TypeIndex::Tuple: prepareColumnTuple(column, type, name, options, format_settings, states, schemas, column_field_ids, variant_type_hints, out_variant_type_hints, path, schema_path, out_variant_wrapper_paths, inside_variant, variant_binary_payload); break;
-        case TypeIndex::Map: prepareColumnMap(column, type, name, options, format_settings, states, schemas, column_field_ids, variant_type_hints, out_variant_type_hints, path, schema_path, out_variant_wrapper_paths, inside_variant, variant_binary_payload); break;
+        case TypeIndex::Nullable: prepareColumnNullable(column, type, name, options, format_settings, states, schemas, column_field_ids, variant_type_hints, out_variant_type_hints, path, schema_path, out_variant_wrapper_paths, column_path, iceberg_optionality, inside_variant, variant_binary_payload); break;
+        case TypeIndex::Array: prepareColumnArray(column, type, name, options, format_settings, states, schemas, column_field_ids, variant_type_hints, out_variant_type_hints, path, schema_path, out_variant_wrapper_paths, column_path, iceberg_optionality, inside_variant, variant_binary_payload); break;
+        case TypeIndex::Tuple: prepareColumnTuple(column, type, name, options, format_settings, states, schemas, column_field_ids, variant_type_hints, out_variant_type_hints, path, schema_path, out_variant_wrapper_paths, column_path, iceberg_optionality, inside_variant, variant_binary_payload); break;
+        case TypeIndex::Map: prepareColumnMap(column, type, name, options, format_settings, states, schemas, column_field_ids, variant_type_hints, out_variant_type_hints, path, schema_path, out_variant_wrapper_paths, column_path, iceberg_optionality, inside_variant, variant_binary_payload); break;
         case TypeIndex::Object:
         {
             const auto * object_type = typeid_cast<const DataTypeObject *>(type.get());
@@ -1182,7 +1267,7 @@ void prepareColumnRecursive(
             auto nested_type = assert_cast<const DataTypeLowCardinality &>(*type).getDictionaryType();
             if (nested_type->isNullable())
                 prepareColumnNullable(
-                    column->convertToFullColumnIfLowCardinality(), nested_type, name, options, format_settings, states, schemas, column_field_ids, variant_type_hints, out_variant_type_hints, path, schema_path, out_variant_wrapper_paths, inside_variant, variant_binary_payload);
+                    column->convertToFullColumnIfLowCardinality(), nested_type, name, options, format_settings, states, schemas, column_field_ids, variant_type_hints, out_variant_type_hints, path, schema_path, out_variant_wrapper_paths, column_path, iceberg_optionality, inside_variant, variant_binary_payload);
             else
                 /// Use nested data type, but keep ColumnLowCardinality. The encoder can deal with it.
                 preparePrimitiveColumn(column, nested_type, name, options, states, schemas, lookupLeafFieldId(column_field_ids, name), variant_binary_payload);
@@ -1327,12 +1412,26 @@ bool variantWriteRequiresFileLevelAnalysis(const DataTypePtr & type, bool output
     return false;
 }
 
+bool IcebergOptionality::isOptional(const String & path) const
+{
+    /// No mapper, or a mapper that carries only field ids / string paths: keep today's behavior.
+    /// This fallback is load-bearing, not defensive: Iceberg position-delete writes build such a
+    /// mapper (Mutations.cpp) and must keep emitting required containers.
+    if (!mapper || !mapper->hasIcebergRequiredInfo())
+        return false;
+    /// An enclosing Nullable already supplies the OPTIONAL level for this same path.
+    if (owned_by_enclosing_nullable)
+        return false;
+    return mapper->isIcebergOptionalPath(path);
+}
+
 SchemaElements convertSchema(
     const Block & sample,
     const WriteOptions & options,
     const FormatSettings & format_settings,
     const std::optional<std::unordered_map<String, Int64>> & column_field_ids,
-    VariantWrapperPaths * out_variant_wrapper_paths)
+    VariantWrapperPaths * out_variant_wrapper_paths,
+    const IcebergOptionality & iceberg_optionality)
 {
     SchemaElements schema;
     auto & root = schema.emplace_back();
@@ -1347,7 +1446,7 @@ SchemaElements convertSchema(
         if (column_field_ids)
             validateIcebergFieldIds(c.type, c.name, *column_field_ids);
 
-        prepareColumnForWrite(c.column, c.type, c.name, options, format_settings, nullptr, &schema, column_field_ids, nullptr, nullptr, out_variant_wrapper_paths);
+        prepareColumnForWrite(c.column, c.type, c.name, options, format_settings, nullptr, &schema, column_field_ids, nullptr, nullptr, out_variant_wrapper_paths, iceberg_optionality);
     }
 
     return schema;
@@ -1444,7 +1543,8 @@ static void prepareGeoColumn(ColumnPtr & column, DataTypePtr & type)
 void prepareColumnForWrite(
     ColumnPtr column, DataTypePtr type, const std::string & name, const WriteOptions & options, const FormatSettings & format_settings,
     ColumnChunkWriteStates * out_columns_to_write, SchemaElements * out_schema, const std::optional<std::unordered_map<String, Int64>> & column_field_ids,
-    const VariantWriteTypeHints * variant_type_hints, VariantWriteTypeHints * out_variant_type_hints, VariantWrapperPaths * out_variant_wrapper_paths)
+    const VariantWriteTypeHints * variant_type_hints, VariantWriteTypeHints * out_variant_type_hints, VariantWrapperPaths * out_variant_wrapper_paths,
+    const IcebergOptionality & iceberg_optionality)
 {
     if (column->empty() && out_columns_to_write != nullptr)
         throw Exception(ErrorCodes::LOGICAL_ERROR, "Empty column passed to Parquet encoder");
@@ -1453,7 +1553,7 @@ void prepareColumnForWrite(
     SchemaElements schemas;
     if (options.write_geometadata)
         prepareGeoColumn(column, type);
-    prepareColumnRecursive(column, type, name, options, format_settings, states, schemas, column_field_ids, variant_type_hints, out_variant_type_hints, name, name, out_variant_wrapper_paths);
+    prepareColumnRecursive(column, type, name, options, format_settings, states, schemas, column_field_ids, variant_type_hints, out_variant_type_hints, name, name, out_variant_wrapper_paths, name, iceberg_optionality);
 
     if (out_columns_to_write)
         for (auto & s : states)

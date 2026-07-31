@@ -14,6 +14,7 @@
 namespace DB
 {
 class Block;
+class ColumnMapper;
 }
 
 namespace DB::Parquet
@@ -75,6 +76,21 @@ struct WriteOptions
     size_t bloom_filter_flush_threshold_bytes = 1024 * 1024 * 128;
 
     bool write_geometadata = true;
+};
+
+/// Iceberg optionality of complex containers, which is not recoverable from the ClickHouse type:
+/// Array/Map are never wrapped in Nullable, so an Iceberg `optional` list/map/struct arrives here as
+/// a plain container. `mapper == nullptr` (or a mapper without this info) means "no Iceberg info",
+/// in which case the writer keeps its type-derived behavior.
+struct IcebergOptionality
+{
+    const ColumnMapper * mapper = nullptr;
+    /// True while an enclosing Nullable already supplies the OPTIONAL level for this exact path.
+    /// Nullable is transparent in Iceberg field naming, so the container below it sees the same
+    /// dotted path and must not add a second OPTIONAL level.
+    bool owned_by_enclosing_nullable = false;
+
+    bool isOptional(const String & path) const;
 };
 
 struct ColumnChunkIndexes
@@ -185,15 +201,20 @@ SchemaElements convertSchema(
     const WriteOptions & options,
     const FormatSettings & format_settings,
     const std::optional<std::unordered_map<String, Int64>> & column_field_ids,
-    VariantWrapperPaths * out_variant_wrapper_paths = nullptr);
+    VariantWrapperPaths * out_variant_wrapper_paths = nullptr,
+    const IcebergOptionality & iceberg_optionality = {});
 
+/// `iceberg_optionality` must be passed identically on the schema and the data path: the reader
+/// derives its max definition level from the schema while the writer derives the level bit width
+/// from the state produced here, so a schema-only change would desynchronize them.
 void prepareColumnForWrite(
     ColumnPtr column, DataTypePtr type, const std::string & name, const WriteOptions & options, const FormatSettings & format_settings,
     ColumnChunkWriteStates * out_columns_to_write, SchemaElements * out_schema = nullptr,
     const std::optional<std::unordered_map<String, Int64>> & column_field_ids = std::nullopt,
     const VariantWriteTypeHints * variant_type_hints = nullptr,
     VariantWriteTypeHints * out_variant_type_hints = nullptr,
-    VariantWrapperPaths * out_variant_wrapper_paths = nullptr);
+    VariantWrapperPaths * out_variant_wrapper_paths = nullptr,
+    const IcebergOptionality & iceberg_optionality = {});
 
 void analyzeVariantColumnTypesForWrite(
     ColumnPtr column,
