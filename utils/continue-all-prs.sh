@@ -54,6 +54,12 @@ set -euo pipefail
 #   --ccache-size SIZE    ccache max size via CCACHE_MAXSIZE (default: 200G).
 #   --effort LEVEL        Reasoning effort for each worker `claude` (--effort);
 #                         default: medium.
+#   --api-key KEY         Use a custom Anthropic API key for the workers
+#                         (exported as ANTHROPIC_API_KEY). NOTE: visible in `ps`
+#                         while running; prefer --api-key-file.
+#   --api-key-file FILE   Read the custom Anthropic API key from FILE (not shown
+#                         in `ps`). Default: whatever ANTHROPIC_API_KEY / login
+#                         `claude` already uses.
 #   --no-status           Disable the persistent bottom status bar (two lines:
 #                         elapsed, rounds, ok/fail counts, cost and token totals,
 #                         plus the list of PR numbers needing attention). The bar
@@ -114,6 +120,8 @@ CCACHE_DIR_OPT=""      # shared ccache dir for all workers (default: existing $C
 CCACHE_SIZE="200G"     # ccache max size, applied via CCACHE_MAXSIZE env (not persisted to ccache.conf)
 EFFORT="medium"        # reasoning effort passed to each worker `claude` (--effort)
 SHOW_STATUS=1          # show the persistent bottom status bar (TTY only; --no-status disables)
+API_KEY=""             # custom ANTHROPIC_API_KEY for the worker `claude` processes (--api-key)
+API_KEY_FILE=""        # ...or read it from this file (safer: not visible in `ps`)
 
 # PR selection modes (combinable). If none are given, all are enabled.
 MODE_MINE=0       # PRs I authored
@@ -138,6 +146,8 @@ while [[ $# -gt 0 ]]; do
         --ccache-size)    CCACHE_SIZE="$2"; shift 2 ;;
         --effort)         EFFORT="$2"; shift 2 ;;
         --no-status)      SHOW_STATUS=0; shift ;;
+        --api-key)        API_KEY="$2"; shift 2 ;;
+        --api-key-file)   API_KEY_FILE="$2"; shift 2 ;;
         --once)           ONCE=1; shift ;;
         --skip-submodules) SKIP_SUBMODULES=1; shift ;;
         --color)          COLOR_WHEN="$2"; shift 2 ;;
@@ -161,6 +171,20 @@ MAIN_REPO="$(git rev-parse --show-toplevel)"
 # No mode flag given -> select all categories (the default behavior).
 if (( ! MODE_ANY )); then
     MODE_MINE=1; MODE_ASSIGNED=1; MODE_RELATED=1
+fi
+
+# Custom Anthropic API key for the worker `claude` processes. `claude` auth is
+# strictly ANTHROPIC_API_KEY, so we export it and every worker inherits it.
+# Prefer --api-key-file: an inline --api-key is visible in `ps`.
+if [[ -n "$API_KEY_FILE" ]]; then
+    [[ -r "$API_KEY_FILE" ]] || { echo "${S}Error: --api-key-file not readable: $API_KEY_FILE${R}" >&2; exit 1; }
+    API_KEY="$(tr -d ' \t\r\n' < "$API_KEY_FILE")"
+fi
+if [[ -n "$API_KEY" ]]; then
+    export ANTHROPIC_API_KEY="$API_KEY"
+    CUSTOM_KEY=1
+else
+    CUSTOM_KEY=0
 fi
 
 # ----------------------------------------------------------------------------
@@ -763,6 +787,7 @@ banner "Selecting:       $MODES_DESC"
 banner "Per-PR timeout:  ${TIMEOUT}s (shared across up to ${MAX_CONTINUE} turns)"
 banner "ccache:          ${CCACHE_DIR} (max ${CCACHE_MAXSIZE})"
 banner "Effort:          ${EFFORT}"
+(( CUSTOM_KEY )) && banner "API key:         custom (…${ANTHROPIC_API_KEY: -4})"
 (( DRY_RUN )) && banner "DRY RUN: not creating worktrees or running /continue-pr-auto"
 echo ""
 
