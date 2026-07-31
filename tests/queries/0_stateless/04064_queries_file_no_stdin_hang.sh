@@ -3,6 +3,13 @@
 # and stdin is an open pipe with no data/EOF.
 # https://github.com/ClickHouse/ClickHouse/pull/96494
 
+# Random settings limits: send_table_structure_on_insert_with_inline_data=(1, 1)
+# With `send_table_structure_on_insert_with_inline_data = 0` the client would route
+# the default (non `--inline-insert-data`) INSERT cases below into the inline insert
+# data branch, so the legacy `sendData` appending-stdin path would not be exercised.
+# Pin the setting so the default cases deterministically cover the legacy path, while
+# the `--inline-insert-data` cases cover the inline branch.
+
 CURDIR=$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)
 # shellcheck source=../shell_config.sh
 . "$CURDIR"/../shell_config.sh
