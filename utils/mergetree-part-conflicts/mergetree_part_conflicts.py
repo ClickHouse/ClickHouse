@@ -18,10 +18,14 @@ You supply the list of parts yourself (from ``find``, ``clickhouse-disks
 list``, ``system.parts``, etc.), one per line on stdin. It reports, per table
 and partition:
 
-* PARTIAL OVERLAP  -- the crash-causers you must resolve before the table loads.
-* covered layers   -- parts a survivor name-covers; they load fine, but a
-                      re-issued block range can make a survivor *falsely* cover
-                      a part with unique data, so they are worth auditing.
+* PARTIAL OVERLAP      -- the crash-causers you must resolve before the table loads.
+* CROSS-DISK COVERED   -- a covered part whose surviving coverer is on a DIFFERENT
+                          disk. The table loads, but CH silently retires the covered
+                          part on startup; if the coverage is false (a re-issued
+                          block range) that is silent data loss, so it is detached to
+                          preserve it. (Needs part paths to tell the disk.)
+* covered layers       -- a covered part on the SAME disk as its coverer: an ordinary
+                          not-yet-cleaned merge source, left alone.
 
 The tool is strictly read-only: it never moves, attaches, or deletes anything.
 """
@@ -211,30 +215,100 @@ def suggest_keep(cluster: List[PartInfo]) -> PartInfo:
     return max(cluster, key=lambda p: (p.level, p.max_block - p.min_block, p.name))
 
 
+def _group_by_partition(parts: List[PartInfo]) -> Dict[str, List[PartInfo]]:
+    groups: Dict[str, List[PartInfo]] = {}
+    for p in parts:
+        groups.setdefault(p.partition_id, []).append(p)
+    return groups
+
+
+def _table_dir(p: PartInfo) -> Optional[str]:
+    """The part's containing (table-on-a-disk) directory, or None without a path.
+    Two parts of one table on different disks have different table dirs."""
+    return os.path.dirname(p.path.rstrip("/")) if p.path else None
+
+
+# Reasons a part ends up in the detach set.
+DETACH_OVERLAP = "overlap"                       # partial overlap -- aborts load
+DETACH_XDISK_COVERED = "cross-disk-covered"      # covered by a part on another disk
+
+
+def compute_detach(parts: List[PartInfo]) -> List[Tuple[PartInfo, str]]:
+    """Parts (of one partition) to move to detached/, each with the reason.
+
+    Two independent reasons:
+
+    (a) OVERLAP -- for each partial overlap, drop the lower part so the table can
+        load. Done as a fixpoint, because detaching a covering part exposes the
+        parts it covered; if such a part then overlaps a survivor it is dropped in
+        a later round.
+
+    (b) CROSS-DISK-COVERED -- among what survives, a covered part whose surviving
+        coverer sits on a *different disk* is moved aside too. CH would otherwise
+        retire it as Outdated and clean it on startup, and if that coverage is
+        false (a re-issued block range) that is silent data loss. Same-disk covered
+        parts are ordinary not-yet-cleaned merge sources and are left alone. This
+        needs the part path to know the disk; bare-name parts are skipped here.
+    """
+    by_name = {p.name: p for p in parts}
+    result: List[Tuple[PartInfo, str]] = []
+    seen = set()
+
+    # (a) resolve partial overlaps
+    remaining = list(parts)
+    while True:
+        rep = classify_partition(remaining)
+        if not rep.conflicts:
+            break
+        losers = set()
+        for c in rep.conflicts:
+            keep = suggest_keep([c.a, c.b])
+            loser = c.a if keep.name == c.b.name else c.b
+            losers.add(loser.name)
+        for name in sorted(losers):
+            if name not in seen:
+                seen.add(name)
+                result.append((by_name[name], DETACH_OVERLAP))
+        remaining = [p for p in remaining if p.name not in losers]
+
+    # (b) cross-disk covered parts among the survivors
+    rep = classify_partition(remaining)
+    for c in sorted(rep.covered, key=lambda p: (p.min_block, p.max_block, p.level, p.name)):
+        coverer = next((s for s in rep.maximal if s.contains(c)), None)
+        if coverer is None or c.name in seen:
+            continue
+        if _table_dir(c) is not None and _table_dir(coverer) is not None \
+                and _table_dir(c) != _table_dir(coverer):
+            seen.add(c.name)
+            result.append((c, DETACH_XDISK_COVERED))
+    return result
+
+
 def build_report(tables: Dict[str, List[PartInfo]]) -> dict:
-    out: dict = {"tables": {}, "has_conflicts": False}
+    out: dict = {"tables": {}, "has_conflicts": False, "has_detach": False}
     for table, parts in sorted(tables.items()):
-        per_partition = classify(parts)
         partitions: dict = {}
-        for pid, rep in sorted(per_partition.items()):
+        for pid, ps in sorted(_group_by_partition(parts).items()):
+            rep = classify_partition(ps)
             if not rep.conflicts and not rep.covered:
                 continue
-            conflict_parts = {p.name for c in rep.conflicts for p in (c.a, c.b)}
-            detach: List[str] = []
-            if conflict_parts:
-                cluster = [p for p in rep.maximal if p.name in conflict_parts]
-                keep = suggest_keep(cluster)
-                detach = sorted(n for n in conflict_parts if n != keep.name)
+            detach = compute_detach(ps)
+            detach_set = {p.name for p, _ in detach}
             partitions[pid] = {
                 "conflicts": [
                     {"a": c.a.name, "b": c.b.name, "overlap_blocks": list(c.overlap())}
                     for c in rep.conflicts
                 ],
-                "covered_layers": [p.name for p in rep.covered],
-                "suggested_detach": detach,
+                "suggested_detach": sorted(p.name for p, _ in detach),
+                "cross_disk_covered": sorted(p.name for p, r in detach if r == DETACH_XDISK_COVERED),
+                # covered layers that are NOT being detached are benign same-disk
+                # merge sources that load as Outdated and get cleaned normally.
+                "covered_layers": [p.name for p in rep.covered if p.name not in detach_set],
             }
             if rep.conflicts:
                 out["has_conflicts"] = True
+            if detach:
+                out["has_detach"] = True
         if partitions:
             out["tables"][table] = {"partitions": partitions}
     return out
@@ -252,11 +326,14 @@ def print_report(report: dict) -> None:
                 lo, hi = c["overlap_blocks"]
                 print(f"    PARTIAL OVERLAP (aborts load): {c['a']}  <->  {c['b']}  "
                       f"[shared blocks {lo}..{hi}]")
+            if pinfo["cross_disk_covered"]:
+                print(f"    CROSS-DISK COVERED (CH would silently remove on start): "
+                      f"{', '.join(pinfo['cross_disk_covered'])}")
             if pinfo["suggested_detach"]:
-                print(f"      suggested: keep the survivor, DETACH + REATTACH: "
+                print(f"      suggested: move to detached/ before reload: "
                       f"{', '.join(pinfo['suggested_detach'])}")
             if pinfo["covered_layers"]:
-                print(f"    covered layers (load fine; audit for a false dominator): "
+                print(f"    same-disk covered layers (load fine, cleaned normally): "
                       f"{', '.join(pinfo['covered_layers'])}")
 
 
@@ -274,23 +351,18 @@ def emit_detach_commands(tables: Dict[str, List[PartInfo]]) -> List[str]:
     lines = [
         "#!/bin/sh",
         "# READ-ONLY SUGGESTION -- review every line before running; this tool does not execute it.",
-        "# Move the intersecting parts aside so the table can load, WITHOUT losing them.",
-        "# The server must not have these tables loaded while you move files (they are the",
-        "# tables that failed to attach). After moving, reload the tables, then re-attach each",
-        "# moved part to bring its rows back and reconcile duplicates in the overlapping ranges.",
+        "# Move the flagged parts aside so the table loads cleanly (overlaps) AND so the server",
+        "# does not silently drop cross-disk-covered parts on startup -- WITHOUT losing data.",
+        "# Do this with the server stopped, or with the affected tables not loaded. After moving,",
+        "# reload the tables (DETACH/ATTACH DATABASE, or restart), then decide which moved parts",
+        "# to re-attach and reconcile any duplicates in overlapping ranges.",
         "set -eu",
     ]
     any_line = False
     for table, parts in sorted(tables.items()):
-        per_partition = classify(parts)
         header_done = False
-        for pid, rep in sorted(per_partition.items()):
-            if not rep.conflicts:
-                continue
-            conflict_names = {p.name for c in rep.conflicts for p in (c.a, c.b)}
-            cluster = [p for p in rep.maximal if p.name in conflict_names]
-            keep = suggest_keep(cluster)
-            for p in sorted((x for x in cluster if x.name != keep.name), key=lambda x: x.name):
+        for pid, ps in sorted(_group_by_partition(parts).items()):
+            for p, reason in compute_detach(ps):
                 if not header_done:
                     lines.append(f"\n# table: {table}")
                     header_done = True
@@ -299,11 +371,11 @@ def emit_detach_commands(tables: Dict[str, List[PartInfo]]) -> List[str]:
                     table_dir = os.path.dirname(p.path.rstrip("/"))
                     detached_dir = os.path.join(table_dir, "detached")
                     dest = os.path.join(detached_dir, p.name)
-                    lines.append(f"#   partition {pid}: detach {p.name} (keep {keep.name})")
+                    lines.append(f"#   partition {pid}: detach {p.name} ({reason})")
                     lines.append(f"mkdir -p {_sh_quote(detached_dir)}")
                     lines.append(f"mv -- {_sh_quote(p.path)} {_sh_quote(dest)}")
                 else:
-                    lines.append(f"#   partition {pid}: detach {p.name} (keep {keep.name}) "
+                    lines.append(f"#   partition {pid}: detach {p.name} ({reason}) "
                                  f"-- path unknown; feed the part's full path to get an mv command")
 
     if not any_line:
@@ -333,7 +405,7 @@ def main(argv: Optional[List[str]] = None) -> int:
     else:
         print_report(report)
 
-    return 2 if report["has_conflicts"] else 0
+    return 2 if report["has_detach"] else 0
 
 
 if __name__ == "__main__":

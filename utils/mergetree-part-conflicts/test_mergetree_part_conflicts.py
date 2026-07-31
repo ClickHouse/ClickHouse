@@ -181,6 +181,73 @@ class TestReadInput(unittest.TestCase):
         self.assertIn("/mnt/ngx2/clickhouse/store/b11/b11e7407/detached/20260722_2313_113249_107", script)
 
 
+class TestComputeDetach(unittest.TestCase):
+    def _names(self, detach):
+        return {p.name for p, _ in detach}
+
+    def test_simple_overlap_detaches_the_lower(self):
+        detach = m.compute_detach([P("20260722_98_20874_190"), P("20260722_2313_113249_107")])
+        self.assertEqual(self._names(detach), {"20260722_2313_113249_107"})
+        self.assertTrue(all(r == m.DETACH_OVERLAP for _, r in detach))
+
+    def test_pure_cross_disk_containment_detaches_the_covered(self):
+        # No overlap at all: all_10_100_10 (hot) simply CONTAINS all_20_30_5 (ngx2).
+        # The table loads, but CH would silently retire the covered part on startup.
+        # Because its coverer is on another disk, we detach it to preserve it.
+        parts = feed(
+            "nat\t/hot/store/x/y/all_10_100_10\n"       # coverer, hot disk
+            "nat\t/ngx2/store/x/y/all_20_30_5\n"        # covered, ngx2 disk
+        )["nat"]
+        self.assertEqual(m.classify_partition(parts).conflicts, [])  # no overlap
+        detach = m.compute_detach(parts)
+        self.assertEqual([(p.name, r) for p, r in detach],
+                         [("all_20_30_5", m.DETACH_XDISK_COVERED)])
+        script = "\n".join(m.emit_detach_commands({"nat": parts}))
+        self.assertIn("/ngx2/store/x/y/detached/all_20_30_5", script)
+        self.assertIn(m.DETACH_XDISK_COVERED, script)
+
+    def test_same_disk_containment_is_left_alone(self):
+        # Covered part on the SAME disk as its coverer is an ordinary merge source;
+        # CH cleans it correctly, so it is not detached.
+        parts = feed(
+            "nat\t/hot/store/x/y/all_10_100_10\n"
+            "nat\t/hot/store/x/y/all_20_30_5\n"
+        )["nat"]
+        self.assertEqual(m.compute_detach(parts), [])
+
+    def test_cross_disk_needs_a_path(self):
+        # Bare names carry no disk, so cross-disk coverage cannot be judged: not detached.
+        parts = feed("all_10_100_10\nall_20_30_5\n")["(input)"]
+        self.assertEqual(m.compute_detach(parts), [])
+
+    def test_covered_child_across_disks_exposed_by_overlap_is_detached(self):
+        # P_cover (ngx2) overlaps the survivor P_keep (hot) AND covers P_child (hot).
+        # Detaching P_cover for the overlap exposes P_child, which then overlaps P_keep,
+        # so the covered child (on a different disk) is detached too.
+        parts = feed(
+            "nat\t/hot/store/x/y/20260722_98_20874_190\n"       # P_keep  (survivor)
+            "nat\t/ngx2/store/x/y/20260722_2313_113249_107\n"   # P_cover (overlaps P_keep, covers P_child)
+            "nat\t/hot/store/x/y/20260722_2313_50000_50\n"      # P_child (covered by P_cover)
+        )["nat"]
+        self.assertIn("20260722_2313_50000_50",
+                      [p.name for p in m.classify_partition(parts).covered])
+        self.assertEqual(self._names(m.compute_detach(parts)),
+                         {"20260722_2313_113249_107", "20260722_2313_50000_50"})
+        script = "\n".join(m.emit_detach_commands({"nat": parts}))
+        self.assertIn("/ngx2/store/x/y/detached/20260722_2313_113249_107", script)
+        self.assertIn("/hot/store/x/y/detached/20260722_2313_50000_50", script)
+
+    def test_covered_child_outside_overlap_is_left_alone(self):
+        # After its cover is detached for an overlap, this covered child is disjoint from
+        # the survivor, so it loads fine on its own and is not detached.
+        parts = feed(
+            "nat\t/hot/store/x/y/20260722_80_200_9\n"       # survivor, higher level
+            "nat\t/ngx2/store/x/y/20260722_0_100_5\n"       # overlaps survivor -> detached
+            "nat\t/hot/store/x/y/20260722_0_40_2\n"         # covered by _0_100_5, disjoint from survivor
+        )["nat"]
+        self.assertEqual(self._names(m.compute_detach(parts)), {"20260722_0_100_5"})
+
+
 class TestSuggestKeep(unittest.TestCase):
     def test_prefers_higher_level(self):
         keep = m.suggest_keep([P("all_0_100_2"), P("all_0_100_5")])

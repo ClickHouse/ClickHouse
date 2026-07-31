@@ -12,9 +12,12 @@ picture by replaying the server's own classification (`MergeTreePartInfo::contai
 / `isDisjoint`, as used by `PartLoadingTree`):
 
 * **partial overlap** -- neither part contains the other; this is what aborts load.
-* **covered layer** -- a survivor name-covers the part (normally a merge source);
-  reported because a re-issued block range can make a survivor *falsely* cover a
-  part that holds unique data.
+* **cross-disk covered** -- a covered part whose surviving coverer is on a *different*
+  disk. The table loads, but CH silently retires the covered part on startup; if that
+  coverage is false (a re-issued block range) it is silent data loss, so the tool
+  detaches it to preserve it. Needs part paths to tell the disk.
+* **covered layer** -- a covered part on the *same* disk as its coverer: an ordinary
+  not-yet-cleaned merge source, cleaned normally, left alone.
 
 The tool is strictly read-only. It never moves, attaches, or deletes anything.
 
