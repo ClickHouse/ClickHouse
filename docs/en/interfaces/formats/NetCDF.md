@@ -43,6 +43,13 @@ The classic format has no string type. A `char` variable is read as a `String` c
 is the last dimension of the variable, so `char station_name(station, name_length)` is read as one
 string per station. The trailing zero bytes that pad a shorter string are removed.
 
+The last dimension of a `char` variable is taken as the length of the strings only when nothing else
+in the file needs it as a dimension of the row space: it has no variable of its own, it is not the
+unlimited dimension, and it is used nowhere but as the last dimension of a `char` variable. This is
+the same condition that the `concat_characters` option of `xarray` documents. Otherwise, as in
+`char station(station)`, the dimension stays in the row space and the variable is read as one
+character per row.
+
 Attributes of the file and of the variables are not part of the table, with the exception of
 `_FillValue` and `missing_value`, which are used by
 [`input_format_netcdf_fill_value_as_null`](/operations/settings/settings-formats.md/#input_format_netcdf_fill_value_as_null).

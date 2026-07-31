@@ -363,6 +363,12 @@ NetCDFOutputFormat::NetCDFOutputFormat(WriteBuffer & out_, SharedHeader header_)
     dimension_names.emplace_back(ROW_DIMENSION_NAME);
     used_dimension_names.insert(dimension_names.back());
 
+    /// A dimension that has a variable of its own is a dimension of the row space rather than the
+    /// length of a string, so the name of the dimension of a string column has to differ from the
+    /// name of every column, or the reader would not read that column back as a string.
+    for (const auto & column : *header_)
+        used_dimension_names.insert(column.name);
+
     for (const auto & column : *header_)
     {
         checkName(column.name);

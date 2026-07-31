@@ -129,8 +129,41 @@ NetCDFTableLayout getNetCDFTableLayout(const NetCDFHeader & header, const Format
     NetCDFTableLayout layout;
 
     /// The classic format has no string type: a string is an array of characters, and the last
-    /// dimension of a `char` variable is the length of the strings rather than a dimension of the
-    /// row space. The unlimited dimension is never used this way, because it is always the first.
+    /// dimension of a `char` variable can be the length of the strings rather than a dimension of
+    /// the row space. It is one only when nothing else in the file needs it as a real axis, which is
+    /// the condition that `xarray` documents for its `concat_characters`: the dimension has no
+    /// variable of its own, and it is used nowhere but as the last dimension of a `char` variable.
+    /// Otherwise, as in `char station(station)` or in a file where a numeric variable is also over
+    /// the would-be length dimension, the dimension stays in the row space, and the `char` variable
+    /// is read as one character per row.
+    /// The unlimited dimension is never a length, because it is always the first one.
+    std::vector<bool> is_string_length(header.dimensions.size(), true);
+
+    for (size_t i = 0; i < header.dimensions.size(); ++i)
+        if (header.dimensions[i].is_unlimited)
+            is_string_length[i] = false;
+
+    std::unordered_set<std::string_view> variable_names;
+    for (const auto & variable : header.variables)
+        variable_names.insert(variable.name);
+
+    /// A variable with the name of a dimension describes that dimension, so the dimension is a part
+    /// of the row space even if only `char` variables are over it.
+    for (size_t i = 0; i < header.dimensions.size(); ++i)
+        if (variable_names.contains(header.dimensions[i].name))
+            is_string_length[i] = false;
+
+    for (const auto & variable : header.variables)
+    {
+        for (size_t position = 0; position < variable.dimension_ids.size(); ++position)
+        {
+            bool is_trailing_char_dimension = variable.type == NetCDFType::Char
+                && position + 1 == variable.dimension_ids.size();
+            if (!is_trailing_char_dimension)
+                is_string_length[variable.dimension_ids[position]] = false;
+        }
+    }
+
     std::vector<std::vector<size_t>> effective_dimensions(header.variables.size());
     std::vector<UInt64> string_lengths(header.variables.size(), 1);
 
@@ -139,14 +172,11 @@ NetCDFTableLayout getNetCDFTableLayout(const NetCDFHeader & header, const Format
         const auto & variable = header.variables[i];
         effective_dimensions[i] = variable.dimension_ids;
 
-        if (variable.type == NetCDFType::Char && !effective_dimensions[i].empty())
+        if (variable.type == NetCDFType::Char && !effective_dimensions[i].empty()
+            && is_string_length[effective_dimensions[i].back()])
         {
-            const auto & last = header.dimensions[effective_dimensions[i].back()];
-            if (!last.is_unlimited)
-            {
-                string_lengths[i] = last.length;
-                effective_dimensions[i].pop_back();
-            }
+            string_lengths[i] = header.dimensions[effective_dimensions[i].back()].length;
+            effective_dimensions[i].pop_back();
         }
 
         std::unordered_set<size_t> distinct(effective_dimensions[i].begin(), effective_dimensions[i].end());
