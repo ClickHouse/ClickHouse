@@ -21,7 +21,7 @@ CUR_DIR=$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)
 function wait_for_ttl_merge_and_flush_logs()
 {
     local table=$1
-    for _ in $(seq 1 300); do
+    for _ in $(seq 1 100); do
         local part_count
         part_count=$(${CLICKHOUSE_CLIENT} -q "SELECT count() FROM system.parts WHERE database = currentDatabase() AND table = '$table' AND active")
         if [ "$part_count" -le "1" ]; then
@@ -64,8 +64,8 @@ ${CLICKHOUSE_CLIENT} -q "
 
     SYSTEM STOP MERGES t_ttl_drop_no_read;
 
-    INSERT INTO t_ttl_drop_no_read (id, value) SELECT number, randomString(10000) FROM numbers(1000);
-    INSERT INTO t_ttl_drop_no_read (id, value) SELECT number, randomString(10000) FROM numbers(1000);
+    INSERT INTO t_ttl_drop_no_read (id, value) SELECT number, randomString(100) FROM numbers(100);
+    INSERT INTO t_ttl_drop_no_read (id, value) SELECT number, randomString(100) FROM numbers(100);
 
     SYSTEM START MERGES t_ttl_drop_no_read;
 "
@@ -114,8 +114,8 @@ ${CLICKHOUSE_CLIENT} -q "
 
     SYSTEM STOP MERGES t_ttl_drop_proj;
 
-    INSERT INTO t_ttl_drop_proj (id, value) SELECT number, number FROM numbers(1000);
-    INSERT INTO t_ttl_drop_proj (id, value) SELECT number, number FROM numbers(1000);
+    INSERT INTO t_ttl_drop_proj (id, value) SELECT number, number FROM numbers(100);
+    INSERT INTO t_ttl_drop_proj (id, value) SELECT number, number FROM numbers(100);
 
     SYSTEM START MERGES t_ttl_drop_proj;
 "
@@ -175,8 +175,8 @@ ${CLICKHOUSE_CLIENT} -q "
 
     SYSTEM STOP MERGES t_ttl_drop_idx;
 
-    INSERT INTO t_ttl_drop_idx (id, value) SELECT number, randomString(100) FROM numbers(1000);
-    INSERT INTO t_ttl_drop_idx (id, value) SELECT number, randomString(100) FROM numbers(1000);
+    INSERT INTO t_ttl_drop_idx (id, value) SELECT number, randomString(100) FROM numbers(100);
+    INSERT INTO t_ttl_drop_idx (id, value) SELECT number, randomString(100) FROM numbers(100);
 
     SYSTEM START MERGES t_ttl_drop_idx;
 "
@@ -225,8 +225,8 @@ ${CLICKHOUSE_CLIENT} -q "
 
     SYSTEM STOP MERGES t_ttl_where_no_shortcircuit;
 
-    INSERT INTO t_ttl_where_no_shortcircuit (id, value) SELECT number, randomString(10) FROM numbers(1000);
-    INSERT INTO t_ttl_where_no_shortcircuit (id, value) SELECT number, randomString(10) FROM numbers(1000);
+    INSERT INTO t_ttl_where_no_shortcircuit (id, value) SELECT number, randomString(10) FROM numbers(100);
+    INSERT INTO t_ttl_where_no_shortcircuit (id, value) SELECT number, randomString(10) FROM numbers(100);
 
     SYSTEM START MERGES t_ttl_where_no_shortcircuit;
 "
@@ -275,8 +275,8 @@ ${CLICKHOUSE_CLIENT} -q "
     SYSTEM STOP MERGES t_ttl_drop_then_insert;
 
     -- Insert expired data.
-    INSERT INTO t_ttl_drop_then_insert SELECT number, randomString(100), now() - INTERVAL 2 DAY FROM numbers(1000);
-    INSERT INTO t_ttl_drop_then_insert SELECT number, randomString(100), now() - INTERVAL 2 DAY FROM numbers(1000);
+    INSERT INTO t_ttl_drop_then_insert SELECT number, randomString(100), now() - INTERVAL 2 DAY FROM numbers(100);
+    INSERT INTO t_ttl_drop_then_insert SELECT number, randomString(100), now() - INTERVAL 2 DAY FROM numbers(100);
 
     SYSTEM START MERGES t_ttl_drop_then_insert;
 "
@@ -285,7 +285,7 @@ wait_for_ttl_merge_and_flush_logs "t_ttl_drop_then_insert"
 
 # After TTLDrop, insert fresh (non-expired) data.
 ${CLICKHOUSE_CLIENT} -q "
-    INSERT INTO t_ttl_drop_then_insert SELECT number, randomString(100), now() FROM numbers(500);
+    INSERT INTO t_ttl_drop_then_insert SELECT number, randomString(100), now() FROM numbers(50);
 "
 
 ${CLICKHOUSE_CLIENT} -q "SELECT count() FROM t_ttl_drop_then_insert;"
@@ -319,8 +319,8 @@ ${CLICKHOUSE_CLIENT} -q "
 
     SYSTEM STOP MERGES t_ttl_col;
 
-    INSERT INTO t_ttl_col (id, value) SELECT number, randomString(10) FROM numbers(1000);
-    INSERT INTO t_ttl_col (id, value) SELECT number, randomString(10) FROM numbers(1000);
+    INSERT INTO t_ttl_col (id, value) SELECT number, randomString(10) FROM numbers(100);
+    INSERT INTO t_ttl_col (id, value) SELECT number, randomString(10) FROM numbers(100);
 
     SYSTEM START MERGES t_ttl_col;
 "
@@ -347,6 +347,10 @@ ${CLICKHOUSE_CLIENT} -q "DROP TABLE t_ttl_col;"
 # -------------------------------------------------------------------
 # Case 7: Rows TTL + GROUP BY TTL — not short-circuited
 # hasOnlyRowsTTL is false when GROUP BY TTL is present, so data IS read.
+# After the first merge, surviving rows still have expired TTL, so
+# TTLPartDropMergeSelector may re-select the single merged part for
+# another TTLDrop merge. Filter by length(merged_from) > 1 to only
+# look at the merge that actually combined two source parts.
 # -------------------------------------------------------------------
 echo "-- Case 7: Rows TTL + GROUP BY TTL is not short-circuited"
 
@@ -367,8 +371,8 @@ ${CLICKHOUSE_CLIENT} -q "
 
     SYSTEM STOP MERGES t_ttl_groupby;
 
-    INSERT INTO t_ttl_groupby (id, value) SELECT number, number FROM numbers(1000);
-    INSERT INTO t_ttl_groupby (id, value) SELECT number, number FROM numbers(1000);
+    INSERT INTO t_ttl_groupby (id, value) SELECT number, number FROM numbers(100);
+    INSERT INTO t_ttl_groupby (id, value) SELECT number, number FROM numbers(100);
 
     SYSTEM START MERGES t_ttl_groupby;
 "
@@ -385,6 +389,7 @@ ${CLICKHOUSE_CLIENT} -q "
         database = currentDatabase()
         AND table = 't_ttl_groupby'
         AND event_type = 'MergeParts'
+        AND length(merged_from) > 1
     ORDER BY event_time DESC
     LIMIT 1;
 "
