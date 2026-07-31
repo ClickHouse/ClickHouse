@@ -7,6 +7,7 @@
 #include <Storages/MergeTree/MergeTreeIndices.h>
 
 #include <algorithm>
+#include <unordered_map>
 
 namespace DB
 {
@@ -76,7 +77,7 @@ public:
         std::vector<std::pair<size_t, ColumnPtr>> predicate;
     };
 
-    MergeTreeIndexConditionBloomFilter(const ActionsDAG::Node * predicate, ContextPtr context_, const Block & header_, size_t hash_functions_, const Names & normalized_column_names_);
+    MergeTreeIndexConditionBloomFilter(const ActionsDAG::Node * predicate, ContextPtr context_, const Block & header_, size_t hash_functions_, const std::unordered_map<String, String> & normalized_column_name_to_original_);
 
     bool alwaysUnknownOrTrue() const override;
 
@@ -93,12 +94,22 @@ public:
 private:
     const Block & header;
     const size_t hash_functions;
-    const Names normalized_column_names;
+    const std::unordered_map<String, String> normalized_column_name_to_original;
     std::vector<RPNElement> rpn;
 
     bool hasIndexColumn(const String & column_name) const
     {
-        return header.has(column_name) || std::find(normalized_column_names.begin(), normalized_column_names.end(), column_name) != normalized_column_names.end();
+        return header.has(column_name) || normalized_column_name_to_original.find(column_name) != normalized_column_name_to_original.end();
+    }
+
+    size_t getIndexColumnPosition(const String & column_name) const
+    {
+        if (header.has(column_name))
+            return header.getPositionByName(column_name);
+        auto it = normalized_column_name_to_original.find(column_name);
+        if (it != normalized_column_name_to_original.end())
+            return header.getPositionByName(it->second);
+        throw Exception(ErrorCodes::LOGICAL_ERROR, "Column '{}' not found in index", column_name);
     }
 
     bool mayBeTrueOnGranule(const MergeTreeIndexGranuleBloomFilter * granule, const UpdatePartialDisjunctionResultFn & update_partial_result_disjuntion_fn) const;
