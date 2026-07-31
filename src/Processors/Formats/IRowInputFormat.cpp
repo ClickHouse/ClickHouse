@@ -4,6 +4,7 @@
 #include <IO/WriteHelpers.h> // toString
 #include <Processors/Formats/IRowInputFormat.h>
 #include <Formats/ParseError.h>
+#include <Common/CurrentThread.h>
 #include <Common/logger_useful.h>
 
 
@@ -129,6 +130,14 @@ Chunk IRowInputFormat::read()
              && continue_reading;
              ++rows)
         {
+            /// Ask the `QueryStatus` (not `IProcessor::isCancelled`) so that a
+            /// `CancelReason::PartialResult` early stop keeps returning its valid partial result
+            /// instead of failing the query: `ISource::cancel` raises the processor's cancel flag
+            /// ignoring the reason.
+            /// Row 0 is skipped: `read` is entered right after the caller's own cancellation check.
+            if (rows != 0 && rows % CANCELLATION_CHECK_PERIOD_ROWS == 0)
+                CurrentThread::checkIfNotCancelled();
+
             if (max_block_wait_ms != 0 && num_rows > 0)
             {
                 UInt64 elapsed_ms = watch.elapsedMilliseconds();
