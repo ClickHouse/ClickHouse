@@ -4,6 +4,8 @@ DROP TABLE IF EXISTS lance_local_nullable_array_without_nulls;
 DROP TABLE IF EXISTS lance_local_nullable_containers;
 DROP TABLE IF EXISTS lance_local_nullable_struct;
 
+SET print_pretty_type_names = 0;
+
 CREATE TABLE lance_local_rich_types
 ENGINE = LanceLocal('tests/queries/0_stateless/data_lance/rich_types.lance');
 
@@ -49,7 +51,7 @@ FORMAT Null;
 
 SELECT throwIf(
     toTypeName(bool_value) != 'Nullable(Bool)'
-    OR toTypeName(decimal_value) != 'Nullable(Decimal64(4))'
+    OR toTypeName(decimal_value) != 'Nullable(Decimal(18, 4))'
     OR toTypeName(timestamp_ms) != 'Nullable(DateTime64(3, ''UTC''))'
     OR toTypeName(time_us) != 'Nullable(Time64(6))'
     OR toTypeName(duration_us) != 'Nullable(IntervalMicrosecond)'
@@ -109,14 +111,21 @@ CREATE TABLE lance_local_nullable_containers
 ENGINE = LanceLocal('tests/queries/0_stateless/data_lance/nullable_containers.lance');
 
 SELECT nullable_array FROM lance_local_nullable_containers; -- { serverError BAD_ARGUMENTS }
-SELECT nullable_struct FROM lance_local_nullable_containers; -- { serverError BAD_ARGUMENTS }
+SELECT throwIf(toTypeName(nullable_struct) != 'Tuple(value Int32)')
+FROM lance_local_nullable_containers
+LIMIT 1
+FORMAT Null;
+
+SELECT throwIf(count(nullable_struct) != 3)
+FROM lance_local_nullable_containers
+FORMAT Null;
 
 SET enable_nullable_tuple_type = 1;
 
 CREATE TABLE lance_local_nullable_struct
 ENGINE = LanceLocal('tests/queries/0_stateless/data_lance/nullable_containers.lance');
 
-SELECT throwIf(count() != 3 OR count(nullable_struct) != 2)
+SELECT throwIf(count() != 3 OR count(nullable_struct) != 3)
 FROM lance_local_nullable_struct
 FORMAT Null;
 

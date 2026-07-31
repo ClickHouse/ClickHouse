@@ -9,6 +9,7 @@
 #include <Interpreters/Context_fwd.h>
 
 #include <memory>
+#include <optional>
 
 namespace DB
 {
@@ -22,9 +23,15 @@ class RecordBatch;
 
 struct ch_lance_dataset;
 struct ch_lance_scan;
+struct ch_lance_cancel_handle;
 
 namespace DB::Lance
 {
+
+namespace ErrorMapping
+{
+int toClickHouseErrorCode(UInt32 kind, UInt32 origin);
+}
 
 struct DatasetOptions
 {
@@ -41,16 +48,92 @@ struct DatasetOptions
     bool s3_no_sign_request = false;
     bool s3_allow_http = false;
     bool s3_virtual_hosted_style_request = false;
+    /// S3 HTTP request timeout (object_store). 0 = library default.
+    UInt64 s3_request_timeout_ms = 0;
+    /// S3 connect timeout (object_store). 0 = library default.
+    UInt64 s3_connect_timeout_ms = 0;
+
+    /// Stable cache key for query-scoped dataset reuse (includes credentials fingerprint).
+    /// Timeouts are intentionally excluded: they do not change dataset identity.
+    String identityKey() const;
 };
 
 struct SnapshotInfo
 {
-    UInt64 snapshot_id = 0;
-    UInt64 schema_id = 0;
+    UInt64 version = 0;
 };
 
 struct ScanDescription;
 struct TableStateSnapshot;
+class Scan;
+
+/// Query-scoped cooperative cancel token. Shared across open/plan/count/scan for one unit of work.
+class CancelHandle
+{
+public:
+    CancelHandle();
+    ~CancelHandle();
+
+    CancelHandle(const CancelHandle &) = delete;
+    CancelHandle & operator=(const CancelHandle &) = delete;
+    CancelHandle(CancelHandle && other) noexcept;
+    CancelHandle & operator=(CancelHandle && other) noexcept;
+
+    void requestCancel() noexcept;
+    ch_lance_cancel_handle * raw() const { return handle; }
+
+private:
+    ch_lance_cancel_handle * handle = nullptr;
+};
+
+using CancelHandlePtr = std::shared_ptr<CancelHandle>;
+
+/// Shared, copyable handle around a process-runtime-backed Lance dataset.
+class DatasetHandle
+{
+public:
+    DatasetHandle() = default;
+
+    static DatasetHandle open(const DatasetOptions & options, const CancelHandlePtr & cancel = {});
+
+    /// Ephemeral open that does not participate in query-session reuse.
+    /// Used only when there is no query context (CREATE validation, unit tests).
+    static DatasetHandle openEphemeral(const DatasetOptions & options, const CancelHandlePtr & cancel = {});
+
+    explicit operator bool() const { return static_cast<bool>(impl); }
+
+    const DatasetOptions & options() const;
+    String identityKey() const;
+
+    SnapshotInfo currentSnapshot() const;
+    NamesAndTypesList tableSchema(const TableStateSnapshot & snapshot, ContextPtr context) const;
+    std::optional<size_t> totalRows(const TableStateSnapshot & snapshot, const CancelHandlePtr & cancel = {}) const;
+    std::optional<size_t> countRows(
+        const TableStateSnapshot & snapshot,
+        const std::optional<String> & predicate,
+        const CancelHandlePtr & cancel = {}) const;
+    std::optional<size_t> totalBytes() const;
+    Scan planScan(const ScanDescription & scan_description, const CancelHandlePtr & cancel = {}) const;
+
+    ch_lance_dataset * raw() const;
+
+private:
+    struct Impl
+    {
+        explicit Impl(ch_lance_dataset * dataset_, DatasetOptions options_);
+        ~Impl();
+
+        Impl(const Impl &) = delete;
+        Impl & operator=(const Impl &) = delete;
+
+        ch_lance_dataset * dataset = nullptr;
+        DatasetOptions options;
+    };
+
+    explicit DatasetHandle(std::shared_ptr<Impl> impl_) : impl(std::move(impl_)) {}
+
+    std::shared_ptr<Impl> impl;
+};
 
 class Scan
 {
@@ -61,38 +144,31 @@ public:
     Scan & operator=(Scan && other) noexcept;
     ~Scan();
 
+    /// Thread-safe cooperative cancel. Wakes a pending nextBatch; does not free the scan.
+    void requestCancel() noexcept;
+
     std::shared_ptr<arrow::RecordBatch> nextBatch() const;
 
 private:
-    explicit Scan(ch_lance_scan * scan_) : scan(scan_) {}
-    friend class Dataset;
+    /// Holds the dataset alive for the stream lifetime (scan must outlive free of dataset).
+    Scan(DatasetHandle dataset_, ch_lance_scan * scan_);
+    friend class DatasetHandle;
 
+    DatasetHandle dataset;
     ch_lance_scan * scan = nullptr;
 };
 
-class Dataset
+void ensureRuntime(UInt32 worker_threads = 0);
+
+struct RuntimeStats
 {
-public:
-    Dataset(const Dataset &) = delete;
-    Dataset & operator=(const Dataset &) = delete;
-    Dataset(Dataset && other) noexcept;
-    Dataset & operator=(Dataset && other) noexcept;
-    ~Dataset();
-
-    static Dataset open(const DatasetOptions & options);
-
-    SnapshotInfo currentSnapshot() const;
-    NamesAndTypesList tableSchema(const TableStateSnapshot & snapshot, ContextPtr context) const;
-    std::optional<size_t> totalRows(const TableStateSnapshot & snapshot) const;
-    std::optional<size_t> countRows(const TableStateSnapshot & snapshot, const std::optional<String> & predicate) const;
-    std::optional<size_t> totalBytes() const;
-    Scan planScan(const ScanDescription & scan_description) const;
-
-private:
-    explicit Dataset(ch_lance_dataset * dataset_) : dataset(dataset_) {}
-
-    ch_lance_dataset * dataset = nullptr;
+    UInt64 open_dataset_calls = 0;
+    UInt64 plan_scan_calls = 0;
+    UInt64 next_batch_calls = 0;
+    UInt64 runtime_initialized = 0;
 };
+
+RuntimeStats runtimeStats();
 
 }
 

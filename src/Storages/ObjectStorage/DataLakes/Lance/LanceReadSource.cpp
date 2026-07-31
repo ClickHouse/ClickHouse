@@ -21,6 +21,8 @@ namespace ErrorCodes
 {
 extern const int BAD_ARGUMENTS;
 extern const int INCORRECT_DATA;
+extern const int LOGICAL_ERROR;
+extern const int QUERY_WAS_CANCELLED;
 extern const int UNKNOWN_EXCEPTION;
 }
 }
@@ -183,44 +185,136 @@ void validateRecordBatchNullability(const arrow::RecordBatch & batch, const Bloc
 }
 
 ReadSource::ReadSource(
-    const Block & header, ObjectInfoPtr object_info_, DatasetOptions options_, ScanDescription scan_, FormatSettings format_settings_)
+    const Block & header, ObjectInfoPtr object_info_, DatasetHandle dataset_, ScanDescription scan_, FormatSettings format_settings_)
     : ISource(std::make_shared<const Block>(header), false)
     , object_info(std::move(object_info_))
-    , options(std::move(options_))
+    , dataset(std::move(dataset_))
     , scan(std::move(scan_))
     , format_settings(std::move(format_settings_))
 {
+    if (!dataset)
+        throw Exception(ErrorCodes::LOGICAL_ERROR, "Lance ReadSource requires a non-empty DatasetHandle");
+}
+
+void ReadSource::onCancel() noexcept
+{
+    /// Thread-safe: signal the query cancel handle (interrupts open/plan/count/next)
+    /// and the scan handle if already planned. Does not free the scan.
+    if (cancel_handle)
+        cancel_handle->requestCancel();
+    std::lock_guard lock(scan_mutex);
+    if (scan_handle)
+        scan_handle->requestCancel();
 }
 
 Chunk ReadSource::generate()
 {
-    if (is_finished)
+    if (is_finished || isCancelled())
         return {};
-
-    if (!dataset)
-        dataset.emplace(Dataset::open(options));
 
     if (scan.need_only_count && scan.projection.empty())
     {
-        const auto rows = scan.predicate ? dataset->countRows(scan.snapshot, scan.predicate) : dataset->totalRows(scan.snapshot);
-        if (rows)
+        if (isCancelled())
+            return {};
+
+        try
         {
-            is_finished = true;
-            return Chunk(Columns{}, *rows);
+            const auto rows = scan.predicate
+                ? dataset.countRows(scan.snapshot, scan.predicate, cancel_handle)
+                : dataset.totalRows(scan.snapshot, cancel_handle);
+            if (rows)
+            {
+                is_finished = true;
+                return Chunk(Columns{}, *rows);
+            }
+        }
+        catch (const Exception & e)
+        {
+            if (e.code() == ErrorCodes::QUERY_WAS_CANCELLED || isCancelled())
+            {
+                is_finished = true;
+                return {};
+            }
+            throw;
         }
     }
 
     if (!scan_handle)
-        scan_handle.emplace(dataset->planScan(scan));
+    {
+        if (isCancelled())
+            return {};
 
-    auto record_batch = scan_handle->nextBatch();
+        /// Plan outside the mutex so a concurrent cancel is not blocked on metadata I/O.
+        /// cancel_handle is shared so onCancel can interrupt planScan mid-wait.
+        try
+        {
+            auto planned_scan = dataset.planScan(scan, cancel_handle);
+            {
+                std::lock_guard lock(scan_mutex);
+                if (!scan_handle)
+                    scan_handle.emplace(std::move(planned_scan));
+                if (isCancelled())
+                {
+                    if (cancel_handle)
+                        cancel_handle->requestCancel();
+                    if (scan_handle)
+                        scan_handle->requestCancel();
+                    return {};
+                }
+            }
+        }
+        catch (const Exception & e)
+        {
+            if (e.code() == ErrorCodes::QUERY_WAS_CANCELLED || isCancelled())
+            {
+                is_finished = true;
+                return {};
+            }
+            throw;
+        }
+    }
+    else if (isCancelled())
+    {
+        if (cancel_handle)
+            cancel_handle->requestCancel();
+        std::lock_guard lock(scan_mutex);
+        if (scan_handle)
+            scan_handle->requestCancel();
+        return {};
+    }
+
+    std::shared_ptr<arrow::RecordBatch> record_batch;
+    try
+    {
+        /// nextBatch without scan_mutex: requestCancel is thread-safe on the Scan/FFI side.
+        /// scan_handle stays engaged until the source is destroyed (after generate returns).
+        record_batch = scan_handle->nextBatch();
+    }
+    catch (const Exception & e)
+    {
+        /// Cooperative cancel: finish the source without propagating an error so the
+        /// process-list cancel status remains the query outcome (same idea as object storage sources).
+        if (e.code() == ErrorCodes::QUERY_WAS_CANCELLED || isCancelled())
+        {
+            is_finished = true;
+            return {};
+        }
+        throw;
+    }
+
     if (!record_batch)
     {
         is_finished = true;
         return {};
     }
 
+    if (isCancelled())
+        return {};
+
     ArrowColumnToCHColumn::checkRecordBatchValidityBitmaps(*record_batch);
+
+    if (scan.discard_output_columns)
+        return Chunk(Columns{}, static_cast<size_t>(record_batch->num_rows()));
 
     auto table = arrow::Table::FromRecordBatches({record_batch});
     if (!table.ok())

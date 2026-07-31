@@ -21,6 +21,7 @@ struct ScanDescription
     std::optional<String> predicate;
     size_t max_block_size = 0;
     bool need_only_count = false;
+    bool discard_output_columns = false;
 };
 
 }

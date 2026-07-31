@@ -9,18 +9,121 @@ use lance::dataset::ReadParams;
 use lance::io::ObjectStoreParams;
 use lance::Dataset;
 use object_store::aws::{AmazonS3Builder, AmazonS3ConfigKey};
-use object_store::DynObjectStore;
+use object_store::{ClientOptions, DynObjectStore, RetryConfig};
+use std::time::Duration;
 use std::collections::HashMap;
+use std::error::Error as StdError;
 use std::ffi::{CStr, CString};
+use std::future::Future;
 use std::os::raw::c_char;
 use std::pin::Pin;
 use std::ptr;
-use std::sync::Arc;
-use tokio::runtime::Runtime;
+use std::sync::atomic::{AtomicBool, AtomicU32, AtomicU64, Ordering};
+use std::sync::{Arc, Mutex, OnceLock};
+use tokio::runtime::{Builder as RuntimeBuilder, Runtime};
+use tokio::sync::Notify;
 use url::Url;
+
+/// Process-wide multi-thread Tokio runtime shared by all Lance FFI calls.
+static LANCE_RUNTIME: OnceLock<Runtime> = OnceLock::new();
+/// Worker threads requested before first init; 0 means automatic bounded default.
+static LANCE_RUNTIME_WORKER_THREADS: AtomicU32 = AtomicU32::new(0);
+static LANCE_RUNTIME_INITIALIZED: AtomicU64 = AtomicU64::new(0);
+static LANCE_OPEN_DATASET_CALLS: AtomicU64 = AtomicU64::new(0);
+static LANCE_PLAN_SCAN_CALLS: AtomicU64 = AtomicU64::new(0);
+static LANCE_NEXT_BATCH_CALLS: AtomicU64 = AtomicU64::new(0);
+
+fn default_worker_threads() -> usize {
+    // Bound the pool so concurrent ClickHouse queries cannot spawn N * cores threads.
+    let cpus = std::thread::available_parallelism()
+        .map(|n| n.get())
+        .unwrap_or(4);
+    std::cmp::max(2, std::cmp::min(cpus, 8))
+}
+
+fn resolve_worker_threads(configured: u32) -> usize {
+    if configured == 0 {
+        default_worker_threads()
+    } else {
+        configured as usize
+    }
+}
+
+fn build_lance_runtime(worker_threads: usize) -> Result<Runtime, String> {
+    RuntimeBuilder::new_multi_thread()
+        .worker_threads(worker_threads)
+        .enable_all()
+        .thread_name("lance-tokio")
+        .build()
+        .map_err(|err| format!("Cannot create Lance runtime: {}", err))
+}
+
+fn ensure_lance_runtime() -> Result<&'static Runtime, FfiError> {
+    if let Some(runtime) = LANCE_RUNTIME.get() {
+        return Ok(runtime);
+    }
+
+    let configured = LANCE_RUNTIME_WORKER_THREADS.load(Ordering::Acquire);
+    let worker_threads = resolve_worker_threads(configured);
+    match build_lance_runtime(worker_threads) {
+        Ok(runtime) => match LANCE_RUNTIME.set(runtime) {
+            Ok(()) => {
+                LANCE_RUNTIME_INITIALIZED.fetch_add(1, Ordering::Relaxed);
+                Ok(LANCE_RUNTIME
+                    .get()
+                    .expect("Lance runtime must be initialized after successful set"))
+            }
+            Err(_) => Ok(LANCE_RUNTIME
+                .get()
+                .expect("Lance runtime must be initialized after concurrent set")),
+        },
+        Err(message) => {
+            // Another thread may have succeeded while we failed to build.
+            if let Some(runtime) = LANCE_RUNTIME.get() {
+                Ok(runtime)
+            } else {
+                Err(FfiError::internal(ChLanceErrorOrigin::Unknown, message))
+            }
+        }
+    }
+}
+
+fn block_on_lance<F>(future: F) -> Result<F::Output, FfiError>
+where
+    F: Future,
+{
+    let runtime = ensure_lance_runtime()?;
+    Ok(runtime.block_on(future))
+}
+
+#[repr(u32)]
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+enum ChLanceErrorKind {
+    None = 0,
+    InvalidArgument = 1,
+    NotFound = 2,
+    PermissionDenied = 3,
+    Unauthenticated = 4,
+    CorruptData = 5,
+    Unsupported = 6,
+    VersionNotFound = 7,
+    Storage = 8,
+    Internal = 9,
+    Cancelled = 10,
+}
+
+#[repr(u32)]
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+enum ChLanceErrorOrigin {
+    Unknown = 0,
+    Local = 1,
+    S3 = 2,
+}
 
 #[repr(C)]
 pub struct ch_lance_error {
+    kind: u32,
+    origin: u32,
     message: *mut c_char,
 }
 
@@ -39,12 +142,14 @@ pub struct ch_lance_dataset_options {
     s3_no_sign_request: bool,
     s3_allow_http: bool,
     s3_virtual_hosted_style_request: bool,
+    s3_request_timeout_ms: u64,
+    s3_connect_timeout_ms: u64,
+    cancel: *mut ch_lance_cancel_handle,
 }
 
 #[repr(C)]
 pub struct ch_lance_snapshot_info {
-    snapshot_id: u64,
-    schema_id: u64,
+    version: u64,
 }
 
 #[repr(C)]
@@ -55,33 +160,393 @@ pub struct ch_lance_string_list {
 
 #[repr(C)]
 pub struct ch_lance_scan_options {
-    snapshot_id: u64,
+    version: u64,
     projection: ch_lance_string_list,
     predicate: *const c_char,
     need_only_count: bool,
     max_block_size: u64,
+    cancel: *mut ch_lance_cancel_handle,
+}
+
+#[repr(C)]
+pub struct ch_lance_runtime_config {
+    worker_threads: u32,
+}
+
+#[repr(C)]
+pub struct ch_lance_runtime_stats {
+    open_dataset_calls: u64,
+    plan_scan_calls: u64,
+    next_batch_calls: u64,
+    runtime_initialized: u64,
 }
 
 #[repr(C)]
 pub struct ch_lance_dataset {
-    runtime: Runtime,
     dataset: Dataset,
+    origin: ChLanceErrorOrigin,
 }
 
-#[repr(C)]
+/// Cooperative cancel signal. Thread-safe: cancel may be requested from any thread
+/// while open/plan/count/next_batch run on a pipeline thread.
+struct ScanCancel {
+    cancelled: AtomicBool,
+    notify: Notify,
+}
+
+impl ScanCancel {
+    fn new() -> Self {
+        Self {
+            cancelled: AtomicBool::new(false),
+            notify: Notify::new(),
+        }
+    }
+
+    fn cancel(&self) {
+        // Release store so a subsequent Acquire load observes the flag.
+        self.cancelled.store(true, Ordering::Release);
+        self.notify.notify_waiters();
+    }
+
+    fn is_cancelled(&self) -> bool {
+        self.cancelled.load(Ordering::Acquire)
+    }
+}
+
+/// Opaque query-scoped cancel token shared across open/plan/count/scan.
+#[allow(non_camel_case_types)]
+pub struct ch_lance_cancel_handle {
+    inner: Arc<ScanCancel>,
+}
+
+/// Resolve an optional FFI cancel handle into an Arc. Null creates a private token
+/// (scan-only cancel via ch_lance_cancel_scan still works).
+unsafe fn cancel_arc_from_ptr(ptr: *mut ch_lance_cancel_handle) -> Arc<ScanCancel> {
+    if ptr.is_null() {
+        Arc::new(ScanCancel::new())
+    } else {
+        (*ptr).inner.clone()
+    }
+}
+
+unsafe fn optional_cancel_from_ptr(ptr: *mut ch_lance_cancel_handle) -> Option<Arc<ScanCancel>> {
+    if ptr.is_null() {
+        None
+    } else {
+        Some((*ptr).inner.clone())
+    }
+}
+
+type LanceBatchStream = Pin<Box<dyn Stream<Item = lance::Result<arrow_array::RecordBatch>> + Send>>;
+
+/// Opaque to C; only ever manipulated via FFI entry points.
+///
+/// `stream` is behind a mutex so `ch_lance_cancel_scan` may run concurrently with
+/// `ch_lance_next_batch` without taking an exclusive borrow of the whole struct.
+/// Cancel only touches `cancel` (Arc atomics + Notify); stream drop on cancel happens
+/// inside `next_batch` (or `free_scan`) while the mutex is held.
+#[allow(non_camel_case_types)]
 pub struct ch_lance_scan {
-    runtime: Runtime,
-    stream: Pin<Box<dyn Stream<Item = lance::Result<arrow_array::RecordBatch>> + Send>>,
+    /// Taken (set to None) when cancelled or fully consumed so drop cancels Lance I/O queue.
+    stream: Mutex<Option<LanceBatchStream>>,
+    origin: ChLanceErrorOrigin,
+    cancel: Arc<ScanCancel>,
 }
 
-fn set_error(error: *mut ch_lance_error, message: &str) {
+/// Race a one-shot future against cooperative cancellation.
+async fn with_cancel<T, F>(cancel: Option<&ScanCancel>, fut: F) -> Result<T, FfiError>
+where
+    F: Future<Output = Result<T, FfiError>>,
+{
+    let Some(cancel) = cancel else {
+        return fut.await;
+    };
+
+    if cancel.is_cancelled() {
+        return Err(FfiError::cancelled());
+    }
+
+    tokio::pin!(fut);
+    loop {
+        let notified = cancel.notify.notified();
+        tokio::pin!(notified);
+
+        if cancel.is_cancelled() {
+            return Err(FfiError::cancelled());
+        }
+
+        tokio::select! {
+            biased;
+            _ = &mut notified => {
+                if cancel.is_cancelled() {
+                    return Err(FfiError::cancelled());
+                }
+            }
+            result = &mut fut => {
+                return result;
+            }
+        }
+    }
+}
+
+/// Wait for the next stream item or cooperative cancellation.
+///
+/// On cancel, returns `Err` with Cancelled without dropping the stream; the caller must
+/// `take()` the stream while holding exclusive access to `ch_lance_scan`.
+async fn next_batch_or_cancel(
+    stream: &mut LanceBatchStream,
+    cancel: &ScanCancel,
+) -> Result<Option<lance::Result<arrow_array::RecordBatch>>, FfiError> {
+    loop {
+        if cancel.is_cancelled() {
+            return Err(FfiError::cancelled());
+        }
+
+        // Subscribe before re-checking the flag so a cancel between the check and
+        // select cannot be lost (standard Notify pattern).
+        let notified = cancel.notify.notified();
+        tokio::pin!(notified);
+
+        if cancel.is_cancelled() {
+            return Err(FfiError::cancelled());
+        }
+
+        tokio::select! {
+            biased;
+            _ = &mut notified => {
+                if cancel.is_cancelled() {
+                    return Err(FfiError::cancelled());
+                }
+                // Spurious wake: retry.
+            }
+            item = stream.next() => {
+                return Ok(item);
+            }
+        }
+    }
+}
+
+#[derive(Clone, Copy)]
+enum LanceOperation {
+    Open,
+    CheckoutVersion,
+    CountRows,
+    PlanScan,
+    NextBatch,
+}
+
+impl LanceOperation {
+    fn description(self) -> &'static str {
+        match self {
+            Self::Open => "Cannot open Lance dataset",
+            Self::CheckoutVersion => "Cannot check out Lance dataset version",
+            Self::CountRows => "Cannot count Lance rows",
+            Self::PlanScan => "Cannot plan Lance scan",
+            Self::NextBatch => "Cannot read Lance record batch",
+        }
+    }
+}
+
+#[derive(Debug)]
+struct FfiError {
+    kind: ChLanceErrorKind,
+    origin: ChLanceErrorOrigin,
+    message: String,
+}
+
+type FfiResult<T> = Result<T, FfiError>;
+
+impl FfiError {
+    fn new(kind: ChLanceErrorKind, origin: ChLanceErrorOrigin, message: impl Into<String>) -> Self {
+        Self {
+            kind,
+            origin,
+            message: redact_uri_user_info(message.into()),
+        }
+    }
+
+    fn invalid_argument(message: impl Into<String>) -> Self {
+        Self::new(
+            ChLanceErrorKind::InvalidArgument,
+            ChLanceErrorOrigin::Unknown,
+            message,
+        )
+    }
+
+    fn unsupported(message: impl Into<String>) -> Self {
+        Self::new(
+            ChLanceErrorKind::Unsupported,
+            ChLanceErrorOrigin::Unknown,
+            message,
+        )
+    }
+
+    fn internal(origin: ChLanceErrorOrigin, message: impl Into<String>) -> Self {
+        Self::new(ChLanceErrorKind::Internal, origin, message)
+    }
+
+    fn cancelled() -> Self {
+        Self::new(
+            ChLanceErrorKind::Cancelled,
+            ChLanceErrorOrigin::Unknown,
+            "Lance scan was cancelled",
+        )
+    }
+
+    fn from_lance(
+        operation: LanceOperation,
+        origin: ChLanceErrorOrigin,
+        error: lance::Error,
+    ) -> Self {
+        let kind = classify_lance_error(&error, operation);
+        Self::new(
+            kind,
+            origin,
+            format!("{}: {}", operation.description(), error),
+        )
+    }
+
+    fn from_object_store(origin: ChLanceErrorOrigin, error: object_store::Error) -> Self {
+        let kind = classify_object_store_error(&error, LanceOperation::Open);
+        Self::new(kind, origin, error.to_string())
+    }
+
+    fn with_origin(mut self, origin: ChLanceErrorOrigin) -> Self {
+        self.origin = origin;
+        self
+    }
+
+    fn with_context(mut self, context: impl std::fmt::Display) -> Self {
+        self.message = redact_uri_user_info(format!("{}: {}", context, self.message));
+        self
+    }
+}
+
+fn redact_uri_user_info(mut message: String) -> String {
+    let mut search_from = 0;
+    while let Some(relative_scheme_end) = message[search_from..].find("://") {
+        let authority_start = search_from + relative_scheme_end + 3;
+        let authority_end = message[authority_start..]
+            .find(|character: char| {
+                character == '/'
+                    || character.is_whitespace()
+                    || matches!(character, ')' | ']' | '>')
+            })
+            .map_or(message.len(), |offset| authority_start + offset);
+
+        let Some(relative_at) = message[authority_start..authority_end].rfind('@') else {
+            search_from = authority_end;
+            continue;
+        };
+        let user_info_end = authority_start + relative_at;
+        message.replace_range(authority_start..user_info_end, "<redacted>");
+        search_from = authority_start + "<redacted>@".len();
+    }
+    message
+}
+
+fn classify_object_store_error(
+    error: &object_store::Error,
+    operation: LanceOperation,
+) -> ChLanceErrorKind {
+    match error {
+        object_store::Error::NotFound { .. } => ChLanceErrorKind::NotFound,
+        object_store::Error::InvalidPath { .. }
+        | object_store::Error::UnknownConfigurationKey { .. } => ChLanceErrorKind::InvalidArgument,
+        object_store::Error::PermissionDenied { .. } => ChLanceErrorKind::PermissionDenied,
+        object_store::Error::Unauthenticated { .. } => ChLanceErrorKind::Unauthenticated,
+        object_store::Error::NotSupported { .. } | object_store::Error::NotImplemented => {
+            ChLanceErrorKind::Unsupported
+        }
+        object_store::Error::Generic { source, .. } => {
+            classify_error_source(source.as_ref(), operation).unwrap_or(ChLanceErrorKind::Storage)
+        }
+        _ => ChLanceErrorKind::Storage,
+    }
+}
+
+fn classify_error_source(
+    source: &(dyn StdError + 'static),
+    operation: LanceOperation,
+) -> Option<ChLanceErrorKind> {
+    if let Some(error) = source.downcast_ref::<lance::Error>() {
+        return Some(classify_lance_error(error, operation));
+    }
+    if let Some(error) = source.downcast_ref::<object_store::Error>() {
+        return Some(classify_object_store_error(error, operation));
+    }
+    if source.downcast_ref::<url::ParseError>().is_some()
+        || source.downcast_ref::<object_store::path::Error>().is_some()
+    {
+        return Some(ChLanceErrorKind::InvalidArgument);
+    }
+    if source.downcast_ref::<prost::DecodeError>().is_some()
+        || source.downcast_ref::<prost::UnknownEnumValue>().is_some()
+    {
+        return Some(ChLanceErrorKind::CorruptData);
+    }
+    if source.downcast_ref::<tokio::task::JoinError>().is_some() {
+        return Some(ChLanceErrorKind::Internal);
+    }
+    if let Some(inner) = source.source() {
+        if let Some(kind) = classify_error_source(inner, operation) {
+            return Some(kind);
+        }
+    }
+    if let Some(error) = source.downcast_ref::<std::io::Error>() {
+        return Some(match error.kind() {
+            std::io::ErrorKind::NotFound => ChLanceErrorKind::NotFound,
+            std::io::ErrorKind::PermissionDenied => ChLanceErrorKind::PermissionDenied,
+            std::io::ErrorKind::InvalidInput => ChLanceErrorKind::InvalidArgument,
+            std::io::ErrorKind::InvalidData => ChLanceErrorKind::CorruptData,
+            std::io::ErrorKind::Unsupported => ChLanceErrorKind::Unsupported,
+            _ => ChLanceErrorKind::Storage,
+        });
+    }
+    None
+}
+
+fn classify_lance_error(error: &lance::Error, operation: LanceOperation) -> ChLanceErrorKind {
+    match error {
+        lance::Error::InvalidInput { .. }
+        | lance::Error::InvalidTableLocation { .. }
+        | lance::Error::InvalidRef { .. }
+        | lance::Error::DatasetAlreadyExists { .. } => ChLanceErrorKind::InvalidArgument,
+        lance::Error::DatasetNotFound { .. }
+        | lance::Error::NotFound { .. }
+        | lance::Error::IndexNotFound { .. }
+        | lance::Error::RefNotFound { .. } => ChLanceErrorKind::NotFound,
+        lance::Error::CorruptFile { .. }
+        | lance::Error::SchemaMismatch { .. }
+        | lance::Error::Unprocessable { .. }
+        | lance::Error::Arrow { .. }
+        | lance::Error::Schema { .. } => ChLanceErrorKind::CorruptData,
+        lance::Error::NotSupported { .. } => ChLanceErrorKind::Unsupported,
+        lance::Error::VersionNotFound { .. } => ChLanceErrorKind::VersionNotFound,
+        lance::Error::IO { source, .. } => {
+            classify_error_source(source.as_ref(), operation).unwrap_or(ChLanceErrorKind::Storage)
+        }
+        lance::Error::Wrapped { error, .. } => {
+            classify_error_source(error.as_ref(), operation).unwrap_or(ChLanceErrorKind::Internal)
+        }
+        lance::Error::Namespace { source, .. } | lance::Error::External { source } => {
+            classify_error_source(source.as_ref(), operation).unwrap_or(ChLanceErrorKind::Internal)
+        }
+        _ => ChLanceErrorKind::Internal,
+    }
+}
+
+fn set_error(error: *mut ch_lance_error, ffi_error: FfiError) {
     if error.is_null() {
         return;
     }
 
-    let message = CString::new(message)
+    clear_error(error);
+    let message = CString::new(ffi_error.message)
         .unwrap_or_else(|_| CString::new("Lance error contains an interior null byte").unwrap());
     unsafe {
+        (*error).kind = ffi_error.kind as u32;
+        (*error).origin = ffi_error.origin as u32;
         (*error).message = message.into_raw();
     }
 }
@@ -89,12 +554,17 @@ fn set_error(error: *mut ch_lance_error, message: &str) {
 fn clear_error(error: *mut ch_lance_error) {
     if !error.is_null() {
         unsafe {
-            (*error).message = std::ptr::null_mut();
+            if !(*error).message.is_null() {
+                drop(CString::from_raw((*error).message));
+            }
+            (*error).kind = ChLanceErrorKind::None as u32;
+            (*error).origin = ChLanceErrorOrigin::Unknown as u32;
+            (*error).message = ptr::null_mut();
         }
     }
 }
 
-fn cstr_to_string(ptr: *const c_char) -> Result<String, String> {
+fn cstr_to_string(ptr: *const c_char) -> FfiResult<String> {
     if ptr.is_null() {
         return Ok(String::new());
     }
@@ -102,13 +572,16 @@ fn cstr_to_string(ptr: *const c_char) -> Result<String, String> {
     unsafe { CStr::from_ptr(ptr) }
         .to_str()
         .map(|s| s.to_string())
-        .map_err(|err| err.to_string())
+        .map_err(|err| FfiError::invalid_argument(err.to_string()))
 }
 
-fn required_cstr_to_string(ptr: *const c_char, name: &str) -> Result<String, String> {
+fn required_cstr_to_string(ptr: *const c_char, name: &str) -> FfiResult<String> {
     let value = cstr_to_string(ptr)?;
     if value.is_empty() {
-        Err(format!("Lance dataset option `{}` must not be empty", name))
+        Err(FfiError::invalid_argument(format!(
+            "Lance dataset option `{}` must not be empty",
+            name
+        )))
     } else {
         Ok(value)
     }
@@ -118,16 +591,23 @@ fn required_cstr_to_string(ptr: *const c_char, name: &str) -> Result<String, Str
 struct DatasetOpenOptions {
     uri: String,
     storage_options: Option<HashMap<String, String>>,
+    origin: ChLanceErrorOrigin,
 }
 
 struct OpenedDataset {
     dataset: Dataset,
+    origin: ChLanceErrorOrigin,
 }
 
 unsafe fn apply_dataset_options(
     options: &ch_lance_dataset_options,
-) -> Result<DatasetOpenOptions, String> {
-    let uri = required_cstr_to_string(options.uri, "uri")?;
+) -> FfiResult<DatasetOpenOptions> {
+    let origin = if options.use_s3 {
+        ChLanceErrorOrigin::S3
+    } else {
+        ChLanceErrorOrigin::Local
+    };
+    let uri = required_cstr_to_string(options.uri, "uri").map_err(|err| err.with_origin(origin))?;
     let storage_options = if options.use_s3 {
         let mut values = HashMap::new();
 
@@ -141,7 +621,7 @@ unsafe fn apply_dataset_options(
             ("aws_role_session_name", options.s3_role_session_name),
         ];
         for (name, value_ptr) in fields {
-            let value = cstr_to_string(value_ptr)?;
+            let value = cstr_to_string(value_ptr).map_err(|err| err.with_origin(origin))?;
             if !value.is_empty() {
                 values.insert(name.to_string(), value);
             }
@@ -167,6 +647,19 @@ unsafe fn apply_dataset_options(
             }
             .to_string(),
         );
+        // HTTP deadlines (Phase C). Keys match object_store ClientConfigKey humantime strings.
+        if options.s3_request_timeout_ms != 0 {
+            values.insert(
+                "timeout".to_string(),
+                format!("{}ms", options.s3_request_timeout_ms),
+            );
+        }
+        if options.s3_connect_timeout_ms != 0 {
+            values.insert(
+                "connect_timeout".to_string(),
+                format!("{}ms", options.s3_connect_timeout_ms),
+            );
+        }
         Some(values)
     } else {
         None
@@ -174,39 +667,72 @@ unsafe fn apply_dataset_options(
     Ok(DatasetOpenOptions {
         uri,
         storage_options,
+        origin,
     })
 }
 
-async fn open_dataset(options: DatasetOpenOptions) -> Result<OpenedDataset, String> {
-    if let Some(storage_options) = options.storage_options {
-        let object_store = build_s3_store(&options.uri, &storage_options)?;
-        let location = Url::parse(&options.uri).map_err(|err| err.to_string())?;
+async fn open_dataset(options: DatasetOpenOptions) -> FfiResult<OpenedDataset> {
+    let DatasetOpenOptions {
+        uri,
+        storage_options,
+        origin,
+    } = options;
+    if let Some(storage_options) = storage_options {
+        let object_store = build_s3_store(&uri, &storage_options)?;
+        let location = Url::parse(&uri).map_err(|err| {
+            FfiError::new(ChLanceErrorKind::InvalidArgument, origin, err.to_string())
+        })?;
         #[allow(deprecated)]
         let store_options = ObjectStoreParams {
             object_store: Some((object_store, location)),
             ..Default::default()
         };
-        let dataset = DatasetBuilder::from_uri(&options.uri)
+        let dataset = DatasetBuilder::from_uri(&uri)
             .with_read_params(ReadParams {
                 store_options: Some(store_options),
                 ..Default::default()
             })
             .load()
             .await
-            .map_err(|err| err.to_string())?;
-        Ok(OpenedDataset { dataset })
+            .map_err(|err| FfiError::from_lance(LanceOperation::Open, origin, err))?;
+        Ok(OpenedDataset { dataset, origin })
     } else {
-        let dataset = Dataset::open(&options.uri)
+        let dataset = Dataset::open(&uri)
             .await
-            .map_err(|err| err.to_string())?;
-        Ok(OpenedDataset { dataset })
+            .map_err(|err| FfiError::from_lance(LanceOperation::Open, origin, err))?;
+        Ok(OpenedDataset { dataset, origin })
+    }
+}
+
+async fn checkout_exact_version(
+    dataset: &Dataset,
+    version: u64,
+    origin: ChLanceErrorOrigin,
+) -> FfiResult<Dataset> {
+    if version == 0 {
+        return Err(
+            FfiError::invalid_argument("Lance dataset version must be non-zero")
+                .with_origin(origin),
+        );
+    }
+
+    if version == dataset.version().version {
+        Ok(dataset.clone())
+    } else {
+        dataset.checkout_version(version).await.map_err(|err| {
+            let mut ffi_error = FfiError::from_lance(LanceOperation::CheckoutVersion, origin, err);
+            if ffi_error.kind == ChLanceErrorKind::NotFound {
+                ffi_error.kind = ChLanceErrorKind::VersionNotFound;
+            }
+            ffi_error.with_context(format!("Requested Lance dataset version {}", version))
+        })
     }
 }
 
 fn build_s3_store(
     uri: &str,
     storage_options: &HashMap<String, String>,
-) -> Result<Arc<DynObjectStore>, String> {
+) -> FfiResult<Arc<DynObjectStore>> {
     let mut builder = if storage_options
         .get("aws_use_environment_credentials")
         .is_some_and(|value| value == "true")
@@ -216,7 +742,52 @@ fn build_s3_store(
         AmazonS3Builder::new()
     }
     .with_url(uri);
+
+    // Explicit ClientOptions so timeouts are applied even when only one is set.
+    let mut client_options = ClientOptions::new();
+    let mut has_client_options = false;
+    if let Some(timeout) = storage_options.get("timeout") {
+        client_options = client_options.with_timeout(
+            parse_timeout_duration(timeout)
+                .map_err(|err| FfiError::invalid_argument(err).with_origin(ChLanceErrorOrigin::S3))?,
+        );
+        has_client_options = true;
+    }
+    if let Some(connect_timeout) = storage_options.get("connect_timeout") {
+        client_options = client_options.with_connect_timeout(
+            parse_timeout_duration(connect_timeout)
+                .map_err(|err| FfiError::invalid_argument(err).with_origin(ChLanceErrorOrigin::S3))?,
+        );
+        has_client_options = true;
+    }
+    if has_client_options {
+        builder = builder.with_client_options(client_options);
+    }
+
+    // Cap overall retry budget so a flaky/hanging endpoint cannot retry for minutes.
+    // object_store defaults: max_retries=10, retry_timeout=180s.
+    if let Some(timeout) = storage_options.get("timeout") {
+        let request_timeout = parse_timeout_duration(timeout)
+            .map_err(|err| FfiError::invalid_argument(err).with_origin(ChLanceErrorOrigin::S3))?;
+        let retry_timeout = request_timeout
+            .checked_mul(3)
+            .unwrap_or(request_timeout)
+            .max(request_timeout);
+        builder = builder.with_retry(RetryConfig {
+            max_retries: 3,
+            retry_timeout,
+            ..Default::default()
+        });
+    }
+
     for (key, value) in storage_options {
+        // Already applied above; skip to avoid double-setting or unknown-key noise.
+        if key == "timeout"
+            || key == "connect_timeout"
+            || key == "aws_use_environment_credentials"
+        {
+            continue;
+        }
         if let Ok(config_key) = key.parse::<AmazonS3ConfigKey>() {
             builder = builder.with_config(config_key, value);
         }
@@ -224,15 +795,48 @@ fn build_s3_store(
     builder
         .build()
         .map(|store| Arc::new(store) as Arc<DynObjectStore>)
-        .map_err(|err| err.to_string())
+        .map_err(|err| FfiError::from_object_store(ChLanceErrorOrigin::S3, err))
 }
 
-fn projection_from_ffi(list: &ch_lance_string_list) -> Result<Vec<String>, String> {
+fn parse_timeout_duration(value: &str) -> Result<Duration, String> {
+    // We emit `{n}ms` from FFI; also accept `{n}s` and bare milliseconds.
+    let trimmed = value.trim();
+    if let Some(ms_str) = trimmed.strip_suffix("ms") {
+        let ms: u64 = ms_str.trim().parse().map_err(|_| {
+            format!(
+                "Invalid S3 timeout `{}`: expected duration like `30000ms`",
+                value
+            )
+        })?;
+        return Ok(Duration::from_millis(ms));
+    }
+    if let Some(s_str) = trimmed.strip_suffix('s') {
+        // Avoid matching the trailing 's' of "ms" (handled above).
+        let secs: u64 = s_str.trim().parse().map_err(|_| {
+            format!(
+                "Invalid S3 timeout `{}`: expected duration like `30s`",
+                value
+            )
+        })?;
+        return Ok(Duration::from_secs(secs));
+    }
+    if let Ok(ms) = trimmed.parse::<u64>() {
+        return Ok(Duration::from_millis(ms));
+    }
+    Err(format!(
+        "Invalid S3 timeout `{}`: expected `30s`, `30000ms`, or integer milliseconds",
+        value
+    ))
+}
+
+fn projection_from_ffi(list: &ch_lance_string_list) -> FfiResult<Vec<String>> {
     if list.size == 0 {
         return Ok(Vec::new());
     }
     if list.values.is_null() {
-        return Err("Lance projection list is null but size is non-zero".to_string());
+        return Err(FfiError::invalid_argument(
+            "Lance projection list is null but size is non-zero",
+        ));
     }
 
     let mut result = Vec::with_capacity(list.size);
@@ -243,40 +847,67 @@ fn projection_from_ffi(list: &ch_lance_string_list) -> Result<Vec<String>, Strin
     Ok(result)
 }
 
-fn write_schema(schema: arrow_schema::Schema, out: *mut FFI_ArrowSchema) -> Result<(), String> {
+fn write_schema(
+    schema: arrow_schema::Schema,
+    out: *mut FFI_ArrowSchema,
+    origin: ChLanceErrorOrigin,
+) -> FfiResult<()> {
     if out.is_null() {
-        return Err("ArrowSchema output pointer is null".to_string());
+        return Err(
+            FfiError::invalid_argument("ArrowSchema output pointer is null").with_origin(origin),
+        );
     }
 
-    let ffi_schema = FFI_ArrowSchema::try_from(&schema).map_err(|err| err.to_string())?;
+    let ffi_schema = FFI_ArrowSchema::try_from(&schema).map_err(|err| {
+        FfiError::internal(
+            origin,
+            format!(
+                "Cannot export Lance schema through Arrow C Data Interface: {}",
+                err
+            ),
+        )
+    })?;
     unsafe {
         std::ptr::write_unaligned(out, ffi_schema);
     }
     Ok(())
 }
 
-fn validate_schema(schema: &Schema) -> Result<(), String> {
+fn validate_schema(schema: &Schema, origin: ChLanceErrorOrigin) -> FfiResult<()> {
     for field in schema.fields() {
-        validate_field(field, field.name())?;
+        validate_field(field, field.name(), origin)?;
     }
     Ok(())
 }
 
-fn unsupported_column(column_path: &str, message: impl std::fmt::Display) -> String {
-    format!("Unsupported Lance column `{}`: {}", column_path, message)
+fn unsupported_column(
+    column_path: &str,
+    message: impl std::fmt::Display,
+    origin: ChLanceErrorOrigin,
+) -> FfiError {
+    FfiError::unsupported(format!(
+        "Unsupported Lance column `{}`: {}",
+        column_path, message
+    ))
+    .with_origin(origin)
 }
 
-fn validate_field(field: &Field, column_path: &str) -> Result<(), String> {
+fn validate_field(field: &Field, column_path: &str, origin: ChLanceErrorOrigin) -> FfiResult<()> {
     if field.metadata().contains_key("ARROW:extension:name") {
         return Err(unsupported_column(
             column_path,
             "Arrow extension types are not supported",
+            origin,
         ));
     }
-    validate_data_type(column_path, field.data_type())
+    validate_data_type(column_path, field.data_type(), origin)
 }
 
-fn validate_data_type(column_path: &str, data_type: &DataType) -> Result<(), String> {
+fn validate_data_type(
+    column_path: &str,
+    data_type: &DataType,
+    origin: ChLanceErrorOrigin,
+) -> FfiResult<()> {
     match data_type {
         DataType::Boolean
         | DataType::Int8
@@ -316,16 +947,17 @@ fn validate_data_type(column_path: &str, data_type: &DataType) -> Result<(), Str
                         "decimal scale {} must be between 0 and precision {}",
                         scale, precision
                     ),
+                    origin,
                 ));
             }
             Ok(())
         }
         DataType::List(child) | DataType::LargeList(child) | DataType::FixedSizeList(child, _) => {
-            validate_field(child, &format!("{}[]", column_path))
+            validate_field(child, &format!("{}[]", column_path), origin)
         }
         DataType::Struct(fields) => {
             for field in fields {
-                validate_field(field, &format!("{}.{}", column_path, field.name()))?;
+                validate_field(field, &format!("{}.{}", column_path, field.name()), origin)?;
             }
             Ok(())
         }
@@ -334,6 +966,7 @@ fn validate_data_type(column_path: &str, data_type: &DataType) -> Result<(), Str
                 return Err(unsupported_column(
                     column_path,
                     "Arrow extension types are not supported",
+                    origin,
                 ));
             }
 
@@ -341,6 +974,7 @@ fn validate_data_type(column_path: &str, data_type: &DataType) -> Result<(), Str
                 return Err(unsupported_column(
                     column_path,
                     "map entries must use an Arrow struct",
+                    origin,
                 ));
             };
             if fields.len() != 2 {
@@ -350,6 +984,7 @@ fn validate_data_type(column_path: &str, data_type: &DataType) -> Result<(), Str
                         "map entries struct must have two fields, got {}",
                         fields.len()
                     ),
+                    origin,
                 ));
             }
 
@@ -359,30 +994,36 @@ fn validate_data_type(column_path: &str, data_type: &DataType) -> Result<(), Str
                 return Err(unsupported_column(
                     &format!("{}.key", column_path),
                     "map keys must not be nullable",
+                    origin,
                 ));
             }
-            validate_field(key, &format!("{}.key", column_path))?;
-            validate_field(value, &format!("{}.value", column_path))
+            validate_field(key, &format!("{}.key", column_path), origin)?;
+            validate_field(value, &format!("{}.value", column_path), origin)
         }
         DataType::Date64 => Err(unsupported_column(
             column_path,
             "Arrow Date64 does not have a lossless ClickHouse mapping",
+            origin,
         )),
         DataType::FixedSizeBinary(width) => Err(unsupported_column(
             column_path,
             format!("fixed-size binary width {} must be positive", width),
+            origin,
         )),
         DataType::Time32(unit) => Err(unsupported_column(
             column_path,
             format!("Arrow Time32 unit {:?} is not supported", unit),
+            origin,
         )),
         DataType::Time64(unit) => Err(unsupported_column(
             column_path,
             format!("Arrow Time64 unit {:?} is not supported", unit),
+            origin,
         )),
         other => Err(unsupported_column(
             column_path,
             format!("Arrow type {} is not supported", other),
+            origin,
         )),
     }
 }
@@ -391,17 +1032,29 @@ fn write_record_batch(
     batch: arrow_array::RecordBatch,
     array: *mut FFI_ArrowArray,
     schema: *mut FFI_ArrowSchema,
-) -> Result<(), String> {
+    origin: ChLanceErrorOrigin,
+) -> FfiResult<()> {
     if array.is_null() {
-        return Err("ArrowArray output pointer is null".to_string());
+        return Err(
+            FfiError::invalid_argument("ArrowArray output pointer is null").with_origin(origin),
+        );
     }
     if schema.is_null() {
-        return Err("ArrowSchema output pointer is null".to_string());
+        return Err(
+            FfiError::invalid_argument("ArrowSchema output pointer is null").with_origin(origin),
+        );
     }
 
-    validate_schema(batch.schema().as_ref())?;
-    let ffi_schema =
-        FFI_ArrowSchema::try_from(batch.schema().as_ref()).map_err(|err| err.to_string())?;
+    validate_schema(batch.schema().as_ref(), origin)?;
+    let ffi_schema = FFI_ArrowSchema::try_from(batch.schema().as_ref()).map_err(|err| {
+        FfiError::internal(
+            origin,
+            format!(
+                "Cannot export Lance record batch schema through Arrow C Data Interface: {}",
+                err
+            ),
+        )
+    })?;
     let struct_array = StructArray::from(batch);
     let ffi_array = FFI_ArrowArray::new(&struct_array.to_data());
 
@@ -413,41 +1066,98 @@ fn write_record_batch(
 }
 
 #[no_mangle]
+pub unsafe extern "C" fn ch_lance_runtime_ensure(
+    config: *const ch_lance_runtime_config,
+    error: *mut ch_lance_error,
+) -> bool {
+    clear_error(error);
+    if !config.is_null() && LANCE_RUNTIME.get().is_none() {
+        let worker_threads = (*config).worker_threads;
+        LANCE_RUNTIME_WORKER_THREADS.store(worker_threads, Ordering::Release);
+    }
+    match ensure_lance_runtime() {
+        Ok(_) => true,
+        Err(ffi_error) => {
+            set_error(error, ffi_error);
+            false
+        }
+    }
+}
+
+#[no_mangle]
+pub unsafe extern "C" fn ch_lance_get_runtime_stats(out: *mut ch_lance_runtime_stats) {
+    if out.is_null() {
+        return;
+    }
+    (*out).open_dataset_calls = LANCE_OPEN_DATASET_CALLS.load(Ordering::Relaxed);
+    (*out).plan_scan_calls = LANCE_PLAN_SCAN_CALLS.load(Ordering::Relaxed);
+    (*out).next_batch_calls = LANCE_NEXT_BATCH_CALLS.load(Ordering::Relaxed);
+    (*out).runtime_initialized = LANCE_RUNTIME_INITIALIZED.load(Ordering::Relaxed);
+}
+
+#[no_mangle]
 pub unsafe extern "C" fn ch_lance_open_dataset(
     options: *const ch_lance_dataset_options,
     error: *mut ch_lance_error,
 ) -> *mut ch_lance_dataset {
     clear_error(error);
     if options.is_null() {
-        set_error(error, "Lance dataset options pointer is null");
+        set_error(
+            error,
+            FfiError::invalid_argument("Lance dataset options pointer is null"),
+        );
         return std::ptr::null_mut();
     }
 
     let open_options = match apply_dataset_options(&*options) {
         Ok(options) => options,
-        Err(message) => {
-            set_error(error, &message);
+        Err(ffi_error) => {
+            set_error(error, ffi_error);
             return std::ptr::null_mut();
         }
     };
 
-    let runtime = match Runtime::new() {
-        Ok(runtime) => runtime,
-        Err(err) => {
-            set_error(error, &format!("Cannot create Lance runtime: {}", err));
-            return std::ptr::null_mut();
-        }
-    };
+    let cancel = unsafe { optional_cancel_from_ptr((*options).cancel) };
 
-    match runtime.block_on(open_dataset(open_options)) {
-        Ok(opened) => Box::into_raw(Box::new(ch_lance_dataset {
-            runtime,
+    LANCE_OPEN_DATASET_CALLS.fetch_add(1, Ordering::Relaxed);
+    match block_on_lance(with_cancel(
+        cancel.as_deref(),
+        open_dataset(open_options),
+    )) {
+        Ok(Ok(opened)) => Box::into_raw(Box::new(ch_lance_dataset {
             dataset: opened.dataset,
+            origin: opened.origin,
         })),
-        Err(err) => {
-            set_error(error, &err.to_string());
+        Ok(Err(ffi_error)) => {
+            set_error(error, ffi_error);
             std::ptr::null_mut()
         }
+        Err(ffi_error) => {
+            set_error(error, ffi_error);
+            std::ptr::null_mut()
+        }
+    }
+}
+
+#[no_mangle]
+pub unsafe extern "C" fn ch_lance_cancel_handle_create() -> *mut ch_lance_cancel_handle {
+    Box::into_raw(Box::new(ch_lance_cancel_handle {
+        inner: Arc::new(ScanCancel::new()),
+    }))
+}
+
+#[no_mangle]
+pub unsafe extern "C" fn ch_lance_cancel_handle_cancel(handle: *mut ch_lance_cancel_handle) {
+    if handle.is_null() {
+        return;
+    }
+    (*handle).inner.cancel();
+}
+
+#[no_mangle]
+pub unsafe extern "C" fn ch_lance_cancel_handle_free(handle: *mut ch_lance_cancel_handle) {
+    if !handle.is_null() {
+        drop(Box::from_raw(handle));
     }
 }
 
@@ -466,50 +1176,65 @@ pub unsafe extern "C" fn ch_lance_current_snapshot(
 ) -> bool {
     clear_error(error);
     if dataset.is_null() || snapshot.is_null() {
-        set_error(error, "Lance dataset or snapshot pointer is null");
+        set_error(
+            error,
+            FfiError::invalid_argument("Lance dataset or snapshot pointer is null"),
+        );
         return false;
     }
 
     let dataset = &*dataset;
     let version = dataset.dataset.version().version;
-    (*snapshot).snapshot_id = version;
-    (*snapshot).schema_id = 0;
+    if version == 0 {
+        set_error(
+            error,
+            FfiError::internal(
+                dataset.origin,
+                "Lance returned zero as the current dataset version",
+            ),
+        );
+        return false;
+    }
+    (*snapshot).version = version;
     true
 }
 
 #[no_mangle]
 pub unsafe extern "C" fn ch_lance_export_schema(
     dataset: *mut ch_lance_dataset,
-    snapshot_id: u64,
+    version: u64,
     schema: *mut FFI_ArrowSchema,
     error: *mut ch_lance_error,
 ) -> bool {
     clear_error(error);
     if dataset.is_null() {
-        set_error(error, "Lance dataset pointer is null");
+        set_error(
+            error,
+            FfiError::invalid_argument("Lance dataset pointer is null"),
+        );
         return false;
     }
 
-    let dataset = &mut *dataset;
-    let dataset = if snapshot_id == 0 || snapshot_id == dataset.dataset.version().version {
-        dataset.dataset.clone()
-    } else {
-        match dataset
-            .runtime
-            .block_on(dataset.dataset.checkout_version(snapshot_id))
-        {
-            Ok(dataset) => dataset,
-            Err(err) => {
-                set_error(error, &err.to_string());
-                return false;
-            }
+    let dataset_handle = &mut *dataset;
+    let origin = dataset_handle.origin;
+    let dataset = match block_on_lance(checkout_exact_version(
+        &dataset_handle.dataset,
+        version,
+        origin,
+    )) {
+        Ok(Ok(dataset)) => dataset,
+        Ok(Err(ffi_error)) | Err(ffi_error) => {
+            set_error(error, ffi_error);
+            return false;
         }
     };
     let arrow_schema = dataset.schema().into();
-    match validate_schema(&arrow_schema).and_then(|()| write_schema(arrow_schema, schema)) {
+    match validate_schema(&arrow_schema, origin)
+        .and_then(|()| write_schema(arrow_schema, schema, origin))
+    {
         Ok(()) => true,
-        Err(message) => {
-            set_error(error, &message);
+        Err(ffi_error) => {
+            set_error(error, ffi_error);
             false
         }
     }
@@ -518,35 +1243,42 @@ pub unsafe extern "C" fn ch_lance_export_schema(
 #[no_mangle]
 pub unsafe extern "C" fn ch_lance_total_rows(
     dataset: *mut ch_lance_dataset,
-    snapshot_id: u64,
+    version: u64,
     rows: *mut u64,
     has_value: *mut bool,
+    cancel: *mut ch_lance_cancel_handle,
     error: *mut ch_lance_error,
 ) -> bool {
     clear_error(error);
     if dataset.is_null() || rows.is_null() || has_value.is_null() {
-        set_error(error, "Lance dataset, rows, or has_value pointer is null");
+        set_error(
+            error,
+            FfiError::invalid_argument("Lance dataset, rows, or has_value pointer is null"),
+        );
         return false;
     }
+    *has_value = false;
 
     let dataset = &mut *dataset;
-    let count_result = dataset.runtime.block_on(async {
-        let dataset = if snapshot_id == 0 || snapshot_id == dataset.dataset.version().version {
-            dataset.dataset.clone()
-        } else {
-            dataset.dataset.checkout_version(snapshot_id).await?
-        };
-        dataset.count_rows(None).await
-    });
+    let origin = dataset.origin;
+    let source = dataset.dataset.clone();
+    let cancel = optional_cancel_from_ptr(cancel);
+    let count_result = block_on_lance(with_cancel(cancel.as_deref(), async move {
+        let dataset = checkout_exact_version(&source, version, origin).await?;
+        dataset
+            .count_rows(None)
+            .await
+            .map_err(|err| FfiError::from_lance(LanceOperation::CountRows, origin, err))
+    }));
 
     match count_result {
-        Ok(count) => {
+        Ok(Ok(count)) => {
             *rows = count as u64;
             *has_value = true;
             true
         }
-        Err(err) => {
-            set_error(error, &err.to_string());
+        Ok(Err(ffi_error)) | Err(ffi_error) => {
+            set_error(error, ffi_error);
             false
         }
     }
@@ -555,48 +1287,58 @@ pub unsafe extern "C" fn ch_lance_total_rows(
 #[no_mangle]
 pub unsafe extern "C" fn ch_lance_count_rows(
     dataset: *mut ch_lance_dataset,
-    snapshot_id: u64,
+    version: u64,
     predicate: *const c_char,
     rows: *mut u64,
     has_value: *mut bool,
+    cancel: *mut ch_lance_cancel_handle,
     error: *mut ch_lance_error,
 ) -> bool {
     clear_error(error);
     if dataset.is_null() || rows.is_null() || has_value.is_null() {
-        set_error(error, "Lance dataset, rows, or has_value pointer is null");
+        set_error(
+            error,
+            FfiError::invalid_argument("Lance dataset, rows, or has_value pointer is null"),
+        );
         return false;
     }
+    *has_value = false;
 
     let predicate = match cstr_to_string(predicate) {
         Ok(predicate) => predicate,
-        Err(message) => {
-            set_error(error, &message);
+        Err(ffi_error) => {
+            set_error(error, ffi_error);
             return false;
         }
     };
 
     let dataset = &mut *dataset;
-    let count_result = dataset.runtime.block_on(async {
-        let dataset = if snapshot_id == 0 || snapshot_id == dataset.dataset.version().version {
-            dataset.dataset.clone()
-        } else {
-            dataset.dataset.checkout_version(snapshot_id).await?
-        };
+    let origin = dataset.origin;
+    let source = dataset.dataset.clone();
+    let cancel = optional_cancel_from_ptr(cancel);
+    let count_result = block_on_lance(with_cancel(cancel.as_deref(), async move {
+        let dataset = checkout_exact_version(&source, version, origin).await?;
         if predicate.is_empty() {
-            dataset.count_rows(None).await
+            dataset
+                .count_rows(None)
+                .await
+                .map_err(|err| FfiError::from_lance(LanceOperation::CountRows, origin, err))
         } else {
-            dataset.count_rows(Some(predicate)).await
+            dataset
+                .count_rows(Some(predicate))
+                .await
+                .map_err(|err| FfiError::from_lance(LanceOperation::CountRows, origin, err))
         }
-    });
+    }));
 
     match count_result {
-        Ok(count) => {
+        Ok(Ok(count)) => {
             *rows = count as u64;
             *has_value = true;
             true
         }
-        Err(err) => {
-            set_error(error, &err.to_string());
+        Ok(Err(ffi_error)) | Err(ffi_error) => {
+            set_error(error, ffi_error);
             false
         }
     }
@@ -604,18 +1346,23 @@ pub unsafe extern "C" fn ch_lance_count_rows(
 
 #[no_mangle]
 pub unsafe extern "C" fn ch_lance_total_bytes(
-    _dataset: *mut ch_lance_dataset,
-    _bytes: *mut u64,
+    dataset: *mut ch_lance_dataset,
+    bytes: *mut u64,
     has_value: *mut bool,
     error: *mut ch_lance_error,
 ) -> bool {
     clear_error(error);
+    if dataset.is_null() || bytes.is_null() || has_value.is_null() {
+        set_error(
+            error,
+            FfiError::invalid_argument("Lance dataset, bytes, or has_value pointer is null"),
+        );
+        return false;
+    }
     // Lance 2.0.1 does not expose a stable current-snapshot physical byte size
     // through this API. Do not guess from storage listings because that would
     // mix versions and hide object-store errors.
-    if !has_value.is_null() {
-        *has_value = false;
-    }
+    *has_value = false;
     true
 }
 
@@ -627,63 +1374,69 @@ pub unsafe extern "C" fn ch_lance_plan_scan(
 ) -> *mut ch_lance_scan {
     clear_error(error);
     if dataset.is_null() || options.is_null() {
-        set_error(error, "Lance dataset or scan options pointer is null");
+        set_error(
+            error,
+            FfiError::invalid_argument("Lance dataset or scan options pointer is null"),
+        );
         return std::ptr::null_mut();
     }
 
     let projection = match projection_from_ffi(&(*options).projection) {
         Ok(projection) => projection,
-        Err(message) => {
-            set_error(error, &message);
+        Err(ffi_error) => {
+            set_error(error, ffi_error);
             return std::ptr::null_mut();
         }
     };
     let predicate = match cstr_to_string((*options).predicate) {
         Ok(predicate) => predicate,
-        Err(message) => {
-            set_error(error, &message);
+        Err(ffi_error) => {
+            set_error(error, ffi_error);
             return std::ptr::null_mut();
         }
     };
-    let snapshot_id = (*options).snapshot_id;
+    let version = (*options).version;
     let max_block_size = (*options).max_block_size as usize;
     let source_dataset = (*dataset).dataset.clone();
+    let origin = (*dataset).origin;
+    let cancel = cancel_arc_from_ptr((*options).cancel);
 
-    let runtime = match Runtime::new() {
-        Ok(runtime) => runtime,
-        Err(err) => {
-            set_error(error, &format!("Cannot create Lance scan runtime: {}", err));
-            return std::ptr::null_mut();
-        }
-    };
+    LANCE_PLAN_SCAN_CALLS.fetch_add(1, Ordering::Relaxed);
+    let cancel_for_plan = Arc::clone(&cancel);
+    let stream_result = block_on_lance(with_cancel(
+        Some(cancel_for_plan.as_ref()),
+        async move {
+            let dataset = checkout_exact_version(&source_dataset, version, origin).await?;
 
-    let stream_result = runtime.block_on(async move {
-        let dataset = if snapshot_id == 0 || snapshot_id == source_dataset.version().version {
-            source_dataset
-        } else {
-            source_dataset.checkout_version(snapshot_id).await?
-        };
-
-        let mut scanner = dataset.scan();
-        if !projection.is_empty() {
-            scanner.project(&projection)?;
-        }
-        if !predicate.is_empty() {
-            scanner.filter(&predicate)?;
-        }
-        if max_block_size != 0 {
-            scanner.batch_size(max_block_size);
-        }
-        scanner.try_into_stream().await
-    });
+            let mut scanner = dataset.scan();
+            if !projection.is_empty() {
+                scanner
+                    .project(&projection)
+                    .map_err(|err| FfiError::from_lance(LanceOperation::PlanScan, origin, err))?;
+            }
+            if !predicate.is_empty() {
+                scanner
+                    .filter(&predicate)
+                    .map_err(|err| FfiError::from_lance(LanceOperation::PlanScan, origin, err))?;
+            }
+            if max_block_size != 0 {
+                scanner.batch_size(max_block_size);
+            }
+            scanner
+                .try_into_stream()
+                .await
+                .map_err(|err| FfiError::from_lance(LanceOperation::PlanScan, origin, err))
+        },
+    ));
 
     match stream_result {
-        Ok(stream) => Box::into_raw(Box::new(ch_lance_scan {
-            runtime,
-            stream: Box::pin(stream),
+        Ok(Ok(stream)) => Box::into_raw(Box::new(ch_lance_scan {
+            stream: Mutex::new(Some(Box::pin(stream))),
+            origin,
+            cancel,
         })),
-        Err(err) => {
-            set_error(error, &err.to_string());
+        Ok(Err(ffi_error)) | Err(ffi_error) => {
+            set_error(error, ffi_error);
             std::ptr::null_mut()
         }
     }
@@ -699,51 +1452,114 @@ pub unsafe extern "C" fn ch_lance_next_batch(
 ) -> bool {
     clear_error(error);
     if scan.is_null() || has_batch.is_null() {
-        set_error(error, "Lance scan or has_batch pointer is null");
+        set_error(
+            error,
+            FfiError::invalid_argument("Lance scan or has_batch pointer is null"),
+        );
+        return false;
+    }
+    *has_batch = false;
+
+    // Shared borrow only: concurrent ch_lance_cancel_scan only touches Arc cancel state.
+    let scan = &*scan;
+    LANCE_NEXT_BATCH_CALLS.fetch_add(1, Ordering::Relaxed);
+
+    let mut stream_guard = match scan.stream.lock() {
+        Ok(guard) => guard,
+        Err(poisoned) => poisoned.into_inner(),
+    };
+
+    if scan.cancel.is_cancelled() {
+        // Drop stream so Lance ScanScheduler cancels queued I/O.
+        let _ = stream_guard.take();
+        set_error(error, FfiError::cancelled());
         return false;
     }
 
-    let scan = &mut *scan;
-    match scan.runtime.block_on(scan.stream.as_mut().next()) {
+    if stream_guard.is_none() {
+        // Already cancelled / EOF'd: surface cancel if requested, else EOF.
+        if scan.cancel.is_cancelled() {
+            set_error(error, FfiError::cancelled());
+            return false;
+        }
+        return true;
+    }
+
+    let cancel = Arc::clone(&scan.cancel);
+    let stream = stream_guard.as_mut().expect("stream checked above");
+    // Hold the mutex across block_on: only one next_batch at a time (pipeline serial),
+    // and cancel_scan never acquires this mutex.
+    let next = match block_on_lance(next_batch_or_cancel(stream, cancel.as_ref())) {
+        Ok(result) => result,
+        Err(ffi_error) => {
+            set_error(error, ffi_error);
+            return false;
+        }
+    };
+
+    let next = match next {
+        Ok(item) => item,
+        Err(ffi_error) => {
+            // Cancelled while waiting: drop stream under the mutex.
+            let _ = stream_guard.take();
+            set_error(error, ffi_error);
+            return false;
+        }
+    };
+
+    match next {
         None => {
-            *has_batch = false;
+            // EOF: drop stream to release scheduler resources promptly.
+            let _ = stream_guard.take();
             true
         }
         Some(Ok(batch)) => {
-            *has_batch = true;
-            match write_record_batch(batch, array, schema) {
-                Ok(()) => true,
-                Err(message) => {
-                    set_error(error, &message);
+            // Release the stream mutex before Arrow export (CPU work).
+            drop(stream_guard);
+            match write_record_batch(batch, array, schema, scan.origin) {
+                Ok(()) => {
+                    *has_batch = true;
+                    true
+                }
+                Err(ffi_error) => {
+                    set_error(error, ffi_error);
                     false
                 }
             }
         }
         Some(Err(err)) => {
-            set_error(error, &err.to_string());
+            set_error(
+                error,
+                FfiError::from_lance(LanceOperation::NextBatch, scan.origin, err),
+            );
             false
         }
     }
 }
 
+/// Request cooperative cancellation. Thread-safe w.r.t. ch_lance_next_batch.
+/// Does not free the scan or drop the stream (that happens in next_batch / free_scan).
+#[no_mangle]
+pub unsafe extern "C" fn ch_lance_cancel_scan(scan: *mut ch_lance_scan) {
+    if scan.is_null() {
+        return;
+    }
+    // Shared borrow: only signals Arc cancel state; does not touch the stream mutex.
+    (*scan).cancel.cancel();
+}
+
 #[no_mangle]
 pub unsafe extern "C" fn ch_lance_free_scan(scan: *mut ch_lance_scan) {
     if !scan.is_null() {
+        // Dropping the box drops the stream (if still present), which cancels queued I/O.
+        // Caller must ensure no concurrent next_batch (ClickHouse Scan lifetime).
         drop(Box::from_raw(scan));
     }
 }
 
 #[no_mangle]
 pub unsafe extern "C" fn ch_lance_free_error(error: *mut ch_lance_error) {
-    if error.is_null() {
-        return;
-    }
-
-    let message = (*error).message;
-    if !message.is_null() {
-        drop(CString::from_raw(message));
-        (*error).message = ptr::null_mut();
-    }
+    clear_error(error);
 }
 
 #[cfg(test)]
@@ -774,6 +1590,17 @@ mod tests {
             s3_no_sign_request: false,
             s3_allow_http: false,
             s3_virtual_hosted_style_request: false,
+            s3_request_timeout_ms: 0,
+            s3_connect_timeout_ms: 0,
+            cancel: ptr::null_mut(),
+        }
+    }
+
+    fn empty_error() -> ch_lance_error {
+        ch_lance_error {
+            kind: ChLanceErrorKind::None as u32,
+            origin: ChLanceErrorOrigin::Unknown as u32,
+            message: ptr::null_mut(),
         }
     }
 
@@ -789,6 +1616,18 @@ mod tests {
     fn write_test_dataset() -> tempfile::TempDir {
         let dir = tempfile::tempdir().unwrap();
         let batch = make_batch(vec![1, 2, 3]);
+        let schema = batch.schema();
+        let reader = RecordBatchIterator::new(vec![Ok(batch)].into_iter(), schema);
+        Runtime::new()
+            .unwrap()
+            .block_on(Dataset::write(reader, dir.path().to_str().unwrap(), None))
+            .unwrap();
+        dir
+    }
+
+    fn write_empty_dataset() -> tempfile::TempDir {
+        let dir = tempfile::tempdir().unwrap();
+        let batch = make_batch(Vec::new());
         let schema = batch.schema();
         let reader = RecordBatchIterator::new(vec![Ok(batch)].into_iter(), schema);
         Runtime::new()
@@ -852,7 +1691,7 @@ mod tests {
 
     fn scan_row_count(
         dataset: *mut ch_lance_dataset,
-        snapshot_id: u64,
+        version: u64,
         projection: &[CString],
         predicate: &CString,
         error: *mut ch_lance_error,
@@ -862,7 +1701,7 @@ mod tests {
             .map(|value| value.as_ptr())
             .collect::<Vec<_>>();
         let scan_options = ch_lance_scan_options {
-            snapshot_id,
+            version,
             projection: ch_lance_string_list {
                 values: projection_ptrs.as_ptr(),
                 size: projection_ptrs.len(),
@@ -870,6 +1709,7 @@ mod tests {
             predicate: predicate.as_ptr(),
             need_only_count: false,
             max_block_size: 1024,
+                    cancel: ptr::null_mut(),
         };
         let scan = unsafe { ch_lance_plan_scan(dataset, &scan_options, error) };
         assert!(!scan.is_null());
@@ -905,27 +1745,22 @@ mod tests {
         let dir = write_test_dataset();
         let uri = CString::new(dir.path().to_str().unwrap()).unwrap();
         let options = dataset_options(&uri);
-        let mut error = ch_lance_error {
-            message: ptr::null_mut(),
-        };
+        let mut error = empty_error();
 
         let dataset = unsafe { ch_lance_open_dataset(&options, addr_of_mut!(error)) };
         assert!(!dataset.is_null());
 
-        let mut snapshot = ch_lance_snapshot_info {
-            snapshot_id: 0,
-            schema_id: 0,
-        };
+        let mut snapshot = ch_lance_snapshot_info { version: 0 };
         assert!(unsafe {
             ch_lance_current_snapshot(dataset, addr_of_mut!(snapshot), addr_of_mut!(error))
         });
-        assert!(snapshot.snapshot_id > 0);
+        assert!(snapshot.version > 0);
 
         let mut schema = FFI_ArrowSchema::empty();
         assert!(unsafe {
             ch_lance_export_schema(
                 dataset,
-                snapshot.snapshot_id,
+                snapshot.version,
                 addr_of_mut!(schema),
                 addr_of_mut!(error),
             )
@@ -935,7 +1770,7 @@ mod tests {
         let projection_values = [column.as_ptr()];
         let predicate = CString::new("id = 2").unwrap();
         let scan_options = ch_lance_scan_options {
-            snapshot_id: snapshot.snapshot_id,
+            version: snapshot.version,
             projection: ch_lance_string_list {
                 values: projection_values.as_ptr(),
                 size: projection_values.len(),
@@ -943,6 +1778,7 @@ mod tests {
             predicate: predicate.as_ptr(),
             need_only_count: false,
             max_block_size: 1024,
+                    cancel: ptr::null_mut(),
         };
         let scan = unsafe { ch_lance_plan_scan(dataset, &scan_options, addr_of_mut!(error)) };
         assert!(!scan.is_null());
@@ -971,22 +1807,447 @@ mod tests {
         }
     }
 
+    fn plan_full_scan(dataset: *mut ch_lance_dataset, version: u64, error: *mut ch_lance_error) -> *mut ch_lance_scan {
+        let column = CString::new("id").unwrap();
+        let projection_values = [column.as_ptr()];
+        let scan_options = ch_lance_scan_options {
+            version,
+            projection: ch_lance_string_list {
+                values: projection_values.as_ptr(),
+                size: projection_values.len(),
+            },
+            predicate: ptr::null(),
+            need_only_count: false,
+            max_block_size: 1,
+                    cancel: ptr::null_mut(),
+        };
+        let scan = unsafe { ch_lance_plan_scan(dataset, &scan_options, error) };
+        assert!(!scan.is_null());
+        scan
+    }
+
+    #[test]
+    fn ffi_cancel_before_next_returns_cancelled() {
+        let dir = write_test_dataset();
+        let uri = CString::new(dir.path().to_str().unwrap()).unwrap();
+        let options = dataset_options(&uri);
+        let mut error = empty_error();
+
+        let dataset = unsafe { ch_lance_open_dataset(&options, addr_of_mut!(error)) };
+        assert!(!dataset.is_null());
+        let mut snapshot = ch_lance_snapshot_info { version: 0 };
+        assert!(unsafe {
+            ch_lance_current_snapshot(dataset, addr_of_mut!(snapshot), addr_of_mut!(error))
+        });
+
+        let scan = plan_full_scan(dataset, snapshot.version, addr_of_mut!(error));
+        unsafe { ch_lance_cancel_scan(scan) };
+
+        let mut array = FFI_ArrowArray::empty();
+        let mut batch_schema = FFI_ArrowSchema::empty();
+        let mut has_batch = false;
+        let ok = unsafe {
+            ch_lance_next_batch(
+                scan,
+                addr_of_mut!(array),
+                addr_of_mut!(batch_schema),
+                addr_of_mut!(has_batch),
+                addr_of_mut!(error),
+            )
+        };
+        assert!(!ok);
+        assert!(!has_batch);
+        assert_eq!(error.kind, ChLanceErrorKind::Cancelled as u32);
+        unsafe {
+            ch_lance_free_error(addr_of_mut!(error));
+            ch_lance_free_scan(scan);
+            ch_lance_free_dataset(dataset);
+        }
+    }
+
+    #[test]
+    fn ffi_cancel_after_partial_scan_returns_cancelled() {
+        let dir = write_test_dataset();
+        let uri = CString::new(dir.path().to_str().unwrap()).unwrap();
+        let options = dataset_options(&uri);
+        let mut error = empty_error();
+
+        let dataset = unsafe { ch_lance_open_dataset(&options, addr_of_mut!(error)) };
+        assert!(!dataset.is_null());
+        let mut snapshot = ch_lance_snapshot_info { version: 0 };
+        assert!(unsafe {
+            ch_lance_current_snapshot(dataset, addr_of_mut!(snapshot), addr_of_mut!(error))
+        });
+
+        let scan = plan_full_scan(dataset, snapshot.version, addr_of_mut!(error));
+
+        let mut array = FFI_ArrowArray::empty();
+        let mut batch_schema = FFI_ArrowSchema::empty();
+        let mut has_batch = false;
+        assert!(unsafe {
+            ch_lance_next_batch(
+                scan,
+                addr_of_mut!(array),
+                addr_of_mut!(batch_schema),
+                addr_of_mut!(has_batch),
+                addr_of_mut!(error),
+            )
+        });
+        assert!(has_batch);
+        // Release the imported batch so free is clean if any.
+        drop(unsafe { from_ffi(array, &batch_schema) }.unwrap());
+
+        unsafe { ch_lance_cancel_scan(scan) };
+
+        let mut array2 = FFI_ArrowArray::empty();
+        let mut batch_schema2 = FFI_ArrowSchema::empty();
+        let mut has_batch2 = false;
+        let ok = unsafe {
+            ch_lance_next_batch(
+                scan,
+                addr_of_mut!(array2),
+                addr_of_mut!(batch_schema2),
+                addr_of_mut!(has_batch2),
+                addr_of_mut!(error),
+            )
+        };
+        assert!(!ok);
+        assert!(!has_batch2);
+        assert_eq!(error.kind, ChLanceErrorKind::Cancelled as u32);
+
+        // Double cancel + free must be safe.
+        unsafe {
+            ch_lance_cancel_scan(scan);
+            ch_lance_free_error(addr_of_mut!(error));
+            ch_lance_free_scan(scan);
+            ch_lance_free_dataset(dataset);
+        }
+    }
+
+    #[test]
+    fn ffi_cancel_wakes_pending_next_batch() {
+        use std::thread;
+        use std::time::{Duration, Instant};
+
+        // Synthetic stream that stays pending until dropped / cancelled via select.
+        let cancel = Arc::new(ScanCancel::new());
+        let cancel_for_thread = Arc::clone(&cancel);
+        let started = Arc::new(AtomicBool::new(false));
+        let started_flag = Arc::clone(&started);
+
+        let join = thread::spawn(move || {
+            let runtime = ensure_lance_runtime().expect("runtime");
+            runtime.block_on(async move {
+                let mut stream: LanceBatchStream = Box::pin(futures::stream::pending());
+                started_flag.store(true, Ordering::Release);
+                next_batch_or_cancel(&mut stream, cancel_for_thread.as_ref()).await
+            })
+        });
+
+        let deadline = Instant::now() + Duration::from_secs(5);
+        while !started.load(Ordering::Acquire) {
+            assert!(Instant::now() < deadline, "worker did not start");
+            thread::sleep(Duration::from_millis(1));
+        }
+        // Give the worker time to enter select!.
+        thread::sleep(Duration::from_millis(20));
+        let t0 = Instant::now();
+        cancel.cancel();
+        let result = join.join().expect("worker thread");
+        assert!(t0.elapsed() < Duration::from_secs(2), "cancel did not wake promptly");
+        let err = result.expect_err("expected cancel error");
+        assert_eq!(err.kind, ChLanceErrorKind::Cancelled);
+    }
+
+    #[test]
+    fn ffi_cancel_handle_cancels_plan_and_next() {
+        let dir = write_test_dataset();
+        let uri = CString::new(dir.path().to_str().unwrap()).unwrap();
+        let mut options = dataset_options(&uri);
+        let mut error = empty_error();
+
+        let cancel = unsafe { ch_lance_cancel_handle_create() };
+        assert!(!cancel.is_null());
+        options.cancel = cancel;
+
+        let dataset = unsafe { ch_lance_open_dataset(&options, addr_of_mut!(error)) };
+        assert!(!dataset.is_null());
+
+        let mut snapshot = ch_lance_snapshot_info { version: 0 };
+        assert!(unsafe {
+            ch_lance_current_snapshot(dataset, addr_of_mut!(snapshot), addr_of_mut!(error))
+        });
+
+        // Cancel before plan: planScan must fail with CANCELLED.
+        unsafe { ch_lance_cancel_handle_cancel(cancel) };
+        let column = CString::new("id").unwrap();
+        let projection_values = [column.as_ptr()];
+        let scan_options = ch_lance_scan_options {
+            version: snapshot.version,
+            projection: ch_lance_string_list {
+                values: projection_values.as_ptr(),
+                size: projection_values.len(),
+            },
+            predicate: ptr::null(),
+            need_only_count: false,
+            max_block_size: 1,
+            cancel,
+        };
+        let scan = unsafe { ch_lance_plan_scan(dataset, &scan_options, addr_of_mut!(error)) };
+        assert!(scan.is_null());
+        assert_eq!(error.kind, ChLanceErrorKind::Cancelled as u32);
+        unsafe { ch_lance_free_error(addr_of_mut!(error)) };
+
+        // Fresh handle shared with plan + next.
+        let cancel2 = unsafe { ch_lance_cancel_handle_create() };
+        let scan_options2 = ch_lance_scan_options {
+            version: snapshot.version,
+            projection: ch_lance_string_list {
+                values: projection_values.as_ptr(),
+                size: projection_values.len(),
+            },
+            predicate: ptr::null(),
+            need_only_count: false,
+            max_block_size: 1,
+            cancel: cancel2,
+        };
+        let scan2 = unsafe { ch_lance_plan_scan(dataset, &scan_options2, addr_of_mut!(error)) };
+        assert!(!scan2.is_null());
+
+        unsafe { ch_lance_cancel_handle_cancel(cancel2) };
+        let mut array = FFI_ArrowArray::empty();
+        let mut batch_schema = FFI_ArrowSchema::empty();
+        let mut has_batch = false;
+        let ok = unsafe {
+            ch_lance_next_batch(
+                scan2,
+                addr_of_mut!(array),
+                addr_of_mut!(batch_schema),
+                addr_of_mut!(has_batch),
+                addr_of_mut!(error),
+            )
+        };
+        assert!(!ok);
+        assert_eq!(error.kind, ChLanceErrorKind::Cancelled as u32);
+
+        unsafe {
+            ch_lance_free_error(addr_of_mut!(error));
+            ch_lance_free_scan(scan2);
+            ch_lance_cancel_handle_free(cancel2);
+            ch_lance_cancel_handle_free(cancel);
+            ch_lance_free_dataset(dataset);
+        }
+    }
+
+    #[test]
+    fn ffi_cancel_handle_cancels_total_rows() {
+        let dir = write_test_dataset();
+        let uri = CString::new(dir.path().to_str().unwrap()).unwrap();
+        let options = dataset_options(&uri);
+        let mut error = empty_error();
+        let dataset = unsafe { ch_lance_open_dataset(&options, addr_of_mut!(error)) };
+        assert!(!dataset.is_null());
+        let mut snapshot = ch_lance_snapshot_info { version: 0 };
+        assert!(unsafe {
+            ch_lance_current_snapshot(dataset, addr_of_mut!(snapshot), addr_of_mut!(error))
+        });
+
+        let cancel = unsafe { ch_lance_cancel_handle_create() };
+        unsafe { ch_lance_cancel_handle_cancel(cancel) };
+
+        let mut rows = 0;
+        let mut has_value = true;
+        let ok = unsafe {
+            ch_lance_total_rows(
+                dataset,
+                snapshot.version,
+                addr_of_mut!(rows),
+                addr_of_mut!(has_value),
+                cancel,
+                addr_of_mut!(error),
+            )
+        };
+        assert!(!ok);
+        assert!(!has_value);
+        assert_eq!(error.kind, ChLanceErrorKind::Cancelled as u32);
+
+        unsafe {
+            ch_lance_free_error(addr_of_mut!(error));
+            ch_lance_cancel_handle_free(cancel);
+            ch_lance_free_dataset(dataset);
+        }
+    }
+
+    #[test]
+    fn parse_timeout_duration_accepts_ms_and_secs() {
+        assert_eq!(
+            parse_timeout_duration("1500ms").unwrap(),
+            Duration::from_millis(1500)
+        );
+        assert_eq!(parse_timeout_duration("30s").unwrap(), Duration::from_secs(30));
+        assert_eq!(
+            parse_timeout_duration("2500").unwrap(),
+            Duration::from_millis(2500)
+        );
+        assert!(parse_timeout_duration("not-a-duration").is_err());
+    }
+
+    #[test]
+    fn apply_dataset_options_records_timeouts() {
+        let uri = CString::new("s3://bucket/path").unwrap();
+        let region = CString::new("us-east-1").unwrap();
+        let options = ch_lance_dataset_options {
+            uri: uri.as_ptr(),
+            use_s3: true,
+            s3_region: region.as_ptr(),
+            s3_endpoint: ptr::null(),
+            s3_access_key_id: ptr::null(),
+            s3_secret_access_key: ptr::null(),
+            s3_session_token: ptr::null(),
+            s3_role_arn: ptr::null(),
+            s3_role_session_name: ptr::null(),
+            s3_use_environment_credentials: false,
+            s3_no_sign_request: true,
+            s3_allow_http: true,
+            s3_virtual_hosted_style_request: false,
+            s3_request_timeout_ms: 12_000,
+            s3_connect_timeout_ms: 2_000,
+            cancel: ptr::null_mut(),
+        };
+        let open = unsafe { apply_dataset_options(&options) }.unwrap();
+        let storage = open.storage_options.expect("s3 options");
+        assert_eq!(storage.get("timeout").map(String::as_str), Some("12000ms"));
+        assert_eq!(
+            storage.get("connect_timeout").map(String::as_str),
+            Some("2000ms")
+        );
+    }
+
+    #[test]
+    fn with_cancel_wakes_pending_future() {
+        use std::thread;
+        use std::time::{Duration, Instant};
+
+        let cancel = Arc::new(ScanCancel::new());
+        let cancel_for_thread = Arc::clone(&cancel);
+        let started = Arc::new(AtomicBool::new(false));
+        let started_flag = Arc::clone(&started);
+
+        let join = thread::spawn(move || {
+            let runtime = ensure_lance_runtime().expect("runtime");
+            runtime.block_on(async move {
+                started_flag.store(true, Ordering::Release);
+                with_cancel(Some(cancel_for_thread.as_ref()), async {
+                    // Pending forever until cancelled.
+                    futures::future::pending::<Result<(), FfiError>>().await
+                })
+                .await
+            })
+        });
+
+        let deadline = Instant::now() + Duration::from_secs(5);
+        while !started.load(Ordering::Acquire) {
+            assert!(Instant::now() < deadline, "worker did not start");
+            thread::sleep(Duration::from_millis(1));
+        }
+        thread::sleep(Duration::from_millis(20));
+        let t0 = Instant::now();
+        cancel.cancel();
+        let result = join.join().expect("worker thread");
+        assert!(t0.elapsed() < Duration::from_secs(2));
+        let err = result.expect_err("expected cancel");
+        assert_eq!(err.kind, ChLanceErrorKind::Cancelled);
+    }
+
+    #[test]
+    fn ffi_empty_dataset_is_successful() {
+        let dir = write_empty_dataset();
+        let uri = CString::new(dir.path().to_str().unwrap()).unwrap();
+        let options = dataset_options(&uri);
+        let mut error = empty_error();
+
+        let dataset = unsafe { ch_lance_open_dataset(&options, addr_of_mut!(error)) };
+        assert!(!dataset.is_null());
+        assert_eq!(error.kind, ChLanceErrorKind::None as u32);
+
+        let mut snapshot = ch_lance_snapshot_info { version: 0 };
+        assert!(unsafe {
+            ch_lance_current_snapshot(dataset, addr_of_mut!(snapshot), addr_of_mut!(error))
+        });
+
+        let mut rows = 1;
+        let mut has_value = false;
+        assert!(unsafe {
+            ch_lance_total_rows(
+                dataset,
+                snapshot.version,
+                addr_of_mut!(rows),
+                addr_of_mut!(has_value),
+                ptr::null_mut(),
+                addr_of_mut!(error),
+            )
+        });
+        assert!(has_value);
+        assert_eq!(rows, 0);
+        assert_eq!(error.kind, ChLanceErrorKind::None as u32);
+
+        let projection = [CString::new("id").unwrap()];
+        let predicate = CString::new("").unwrap();
+        assert_eq!(
+            scan_row_count(
+                dataset,
+                snapshot.version,
+                &projection,
+                &predicate,
+                addr_of_mut!(error),
+            ),
+            0
+        );
+        assert_eq!(error.kind, ChLanceErrorKind::None as u32);
+
+        unsafe {
+            ch_lance_free_dataset(dataset);
+        }
+    }
+
+    #[test]
+    fn ffi_distinguishes_missing_dataset_from_invalid_uri() {
+        let parent = tempfile::tempdir().unwrap();
+        let missing_path = parent.path().join("missing.lance");
+        let missing_uri = CString::new(missing_path.to_str().unwrap()).unwrap();
+        let missing_options = dataset_options(&missing_uri);
+        let mut error = empty_error();
+
+        let dataset = unsafe { ch_lance_open_dataset(&missing_options, addr_of_mut!(error)) };
+        assert!(dataset.is_null());
+        assert_eq!(error.kind, ChLanceErrorKind::NotFound as u32);
+        assert_eq!(error.origin, ChLanceErrorOrigin::Local as u32);
+        unsafe {
+            ch_lance_free_error(addr_of_mut!(error));
+        }
+
+        let empty_uri = CString::new("").unwrap();
+        let invalid_options = dataset_options(&empty_uri);
+        let dataset = unsafe { ch_lance_open_dataset(&invalid_options, addr_of_mut!(error)) };
+        assert!(dataset.is_null());
+        assert_eq!(error.kind, ChLanceErrorKind::InvalidArgument as u32);
+        assert_eq!(error.origin, ChLanceErrorOrigin::Local as u32);
+        unsafe {
+            ch_lance_free_error(addr_of_mut!(error));
+        }
+    }
+
     #[test]
     fn ffi_total_rows_uses_requested_snapshot() {
         let dir = write_test_dataset();
         let uri = CString::new(dir.path().to_str().unwrap()).unwrap();
         let options = dataset_options(&uri);
-        let mut error = ch_lance_error {
-            message: ptr::null_mut(),
-        };
+        let mut error = empty_error();
 
         let dataset = unsafe { ch_lance_open_dataset(&options, addr_of_mut!(error)) };
         assert!(!dataset.is_null());
 
-        let mut snapshot = ch_lance_snapshot_info {
-            snapshot_id: 0,
-            schema_id: 0,
-        };
+        let mut snapshot = ch_lance_snapshot_info { version: 0 };
         assert!(unsafe {
             ch_lance_current_snapshot(dataset, addr_of_mut!(snapshot), addr_of_mut!(error))
         });
@@ -996,9 +2257,10 @@ mod tests {
         assert!(unsafe {
             ch_lance_total_rows(
                 dataset,
-                snapshot.snapshot_id,
+                snapshot.version,
                 addr_of_mut!(rows),
                 addr_of_mut!(has_value),
+                ptr::null_mut(),
                 addr_of_mut!(error),
             )
         });
@@ -1018,9 +2280,10 @@ mod tests {
         assert!(unsafe {
             ch_lance_total_rows(
                 dataset,
-                snapshot.snapshot_id,
+                snapshot.version,
                 addr_of_mut!(rows),
                 addr_of_mut!(has_value),
+                ptr::null_mut(),
                 addr_of_mut!(error),
             )
         });
@@ -1029,22 +2292,170 @@ mod tests {
 
         let latest_dataset = unsafe { ch_lance_open_dataset(&options, addr_of_mut!(error)) };
         assert!(!latest_dataset.is_null());
+        let mut latest_snapshot = ch_lance_snapshot_info { version: 0 };
+        assert!(unsafe {
+            ch_lance_current_snapshot(
+                latest_dataset,
+                addr_of_mut!(latest_snapshot),
+                addr_of_mut!(error),
+            )
+        });
+        assert!(latest_snapshot.version > snapshot.version);
+
         rows = 0;
         has_value = false;
         assert!(unsafe {
             ch_lance_total_rows(
                 latest_dataset,
-                0,
+                snapshot.version,
                 addr_of_mut!(rows),
                 addr_of_mut!(has_value),
+                ptr::null_mut(),
+                addr_of_mut!(error),
+            )
+        });
+        assert!(has_value);
+        assert_eq!(rows, 3);
+
+        rows = 0;
+        has_value = false;
+        assert!(unsafe {
+            ch_lance_total_rows(
+                latest_dataset,
+                latest_snapshot.version,
+                addr_of_mut!(rows),
+                addr_of_mut!(has_value),
+                ptr::null_mut(),
                 addr_of_mut!(error),
             )
         });
         assert!(has_value);
         assert_eq!(rows, 4);
 
+        let projection = [CString::new("id").unwrap()];
+        let predicate = CString::new("").unwrap();
+        assert_eq!(
+            scan_row_count(
+                latest_dataset,
+                snapshot.version,
+                &projection,
+                &predicate,
+                addr_of_mut!(error),
+            ),
+            3
+        );
+
         unsafe {
             ch_lance_free_dataset(latest_dataset);
+            ch_lance_free_dataset(dataset);
+        }
+    }
+
+    #[test]
+    fn ffi_rejects_zero_dataset_version() {
+        let dir = write_test_dataset();
+        let uri = CString::new(dir.path().to_str().unwrap()).unwrap();
+        let options = dataset_options(&uri);
+        let mut error = empty_error();
+        let dataset = unsafe { ch_lance_open_dataset(&options, addr_of_mut!(error)) };
+        assert!(!dataset.is_null());
+
+        let mut rows = 0;
+        let mut has_value = false;
+        assert!(!unsafe {
+            ch_lance_total_rows(
+                dataset,
+                0,
+                addr_of_mut!(rows),
+                addr_of_mut!(has_value),
+                ptr::null_mut(),
+                addr_of_mut!(error),
+            )
+        });
+        assert_eq!(error.kind, ChLanceErrorKind::InvalidArgument as u32);
+        let message = unsafe { CStr::from_ptr(error.message) }
+            .to_str()
+            .unwrap()
+            .to_string();
+        assert!(message.contains("must be non-zero"));
+
+        unsafe {
+            ch_lance_free_error(addr_of_mut!(error));
+        }
+
+        let mut schema = FFI_ArrowSchema::empty();
+        assert!(!unsafe {
+            ch_lance_export_schema(dataset, 0, addr_of_mut!(schema), addr_of_mut!(error))
+        });
+        assert_eq!(error.kind, ChLanceErrorKind::InvalidArgument as u32);
+        let message = unsafe { CStr::from_ptr(error.message) }
+            .to_str()
+            .unwrap()
+            .to_string();
+        assert!(message.contains("must be non-zero"));
+
+        unsafe {
+            ch_lance_free_error(addr_of_mut!(error));
+        }
+
+        let scan_options = ch_lance_scan_options {
+            version: 0,
+            projection: ch_lance_string_list {
+                values: ptr::null(),
+                size: 0,
+            },
+            predicate: ptr::null(),
+            need_only_count: false,
+            max_block_size: 1024,
+                    cancel: ptr::null_mut(),
+        };
+        let scan = unsafe { ch_lance_plan_scan(dataset, &scan_options, addr_of_mut!(error)) };
+        assert!(scan.is_null());
+        assert_eq!(error.kind, ChLanceErrorKind::InvalidArgument as u32);
+        let message = unsafe { CStr::from_ptr(error.message) }
+            .to_str()
+            .unwrap()
+            .to_string();
+        assert!(message.contains("must be non-zero"));
+
+        unsafe {
+            ch_lance_free_error(addr_of_mut!(error));
+            ch_lance_free_dataset(dataset);
+        }
+    }
+
+    #[test]
+    fn ffi_does_not_fall_back_when_dataset_version_is_missing() {
+        let dir = write_test_dataset();
+        let uri = CString::new(dir.path().to_str().unwrap()).unwrap();
+        let options = dataset_options(&uri);
+        let mut error = empty_error();
+        let dataset = unsafe { ch_lance_open_dataset(&options, addr_of_mut!(error)) };
+        assert!(!dataset.is_null());
+
+        let mut rows = 0;
+        let mut has_value = false;
+        assert!(!unsafe {
+            ch_lance_total_rows(
+                dataset,
+                u64::MAX,
+                addr_of_mut!(rows),
+                addr_of_mut!(has_value),
+                ptr::null_mut(),
+                addr_of_mut!(error),
+            )
+        });
+        assert_eq!(error.kind, ChLanceErrorKind::VersionNotFound as u32);
+        assert_eq!(error.origin, ChLanceErrorOrigin::Local as u32);
+        let message = unsafe { CStr::from_ptr(error.message) }
+            .to_str()
+            .unwrap()
+            .to_string();
+        assert!(message.contains(&u64::MAX.to_string()));
+        assert!(!has_value);
+
+        unsafe {
+            ch_lance_free_error(addr_of_mut!(error));
             ch_lance_free_dataset(dataset);
         }
     }
@@ -1054,16 +2465,11 @@ mod tests {
         let dir = write_pushdown_dataset();
         let uri = CString::new(dir.path().to_str().unwrap()).unwrap();
         let options = dataset_options(&uri);
-        let mut error = ch_lance_error {
-            message: ptr::null_mut(),
-        };
+        let mut error = empty_error();
         let dataset = unsafe { ch_lance_open_dataset(&options, addr_of_mut!(error)) };
         assert!(!dataset.is_null());
 
-        let mut snapshot = ch_lance_snapshot_info {
-            snapshot_id: 0,
-            schema_id: 0,
-        };
+        let mut snapshot = ch_lance_snapshot_info { version: 0 };
         assert!(unsafe {
             ch_lance_current_snapshot(dataset, addr_of_mut!(snapshot), addr_of_mut!(error))
         });
@@ -1080,7 +2486,7 @@ mod tests {
             assert_eq!(
                 scan_row_count(
                     dataset,
-                    snapshot.snapshot_id,
+                    snapshot.version,
                     &projection,
                     &predicate,
                     addr_of_mut!(error),
@@ -1099,16 +2505,11 @@ mod tests {
         let dir = write_pushdown_dataset();
         let uri = CString::new(dir.path().to_str().unwrap()).unwrap();
         let options = dataset_options(&uri);
-        let mut error = ch_lance_error {
-            message: ptr::null_mut(),
-        };
+        let mut error = empty_error();
         let dataset = unsafe { ch_lance_open_dataset(&options, addr_of_mut!(error)) };
         assert!(!dataset.is_null());
 
-        let mut snapshot = ch_lance_snapshot_info {
-            snapshot_id: 0,
-            schema_id: 0,
-        };
+        let mut snapshot = ch_lance_snapshot_info { version: 0 };
         assert!(unsafe {
             ch_lance_current_snapshot(dataset, addr_of_mut!(snapshot), addr_of_mut!(error))
         });
@@ -1119,10 +2520,11 @@ mod tests {
         assert!(unsafe {
             ch_lance_count_rows(
                 dataset,
-                snapshot.snapshot_id,
+                snapshot.version,
                 predicate.as_ptr(),
                 addr_of_mut!(rows),
                 addr_of_mut!(has_value),
+                ptr::null_mut(),
                 addr_of_mut!(error),
             )
         });
@@ -1165,10 +2567,11 @@ mod tests {
         assert!(unsafe {
             ch_lance_count_rows(
                 dataset,
-                snapshot.snapshot_id,
+                snapshot.version,
                 predicate.as_ptr(),
                 addr_of_mut!(rows),
                 addr_of_mut!(has_value),
+                ptr::null_mut(),
                 addr_of_mut!(error),
             )
         });
@@ -1185,9 +2588,7 @@ mod tests {
         let dir = write_test_dataset();
         let uri = CString::new(dir.path().to_str().unwrap()).unwrap();
         let options = dataset_options(&uri);
-        let mut error = ch_lance_error {
-            message: ptr::null_mut(),
-        };
+        let mut error = empty_error();
         let dataset = unsafe { ch_lance_open_dataset(&options, addr_of_mut!(error)) };
         assert!(!dataset.is_null());
 
@@ -1260,7 +2661,7 @@ mod tests {
             ),
         ]);
 
-        assert!(validate_schema(&schema).is_ok());
+        assert!(validate_schema(&schema, ChLanceErrorOrigin::Local).is_ok());
     }
 
     #[test]
@@ -1281,18 +2682,24 @@ mod tests {
             true,
         )]);
 
-        let error = validate_schema(&schema).unwrap_err();
-        assert!(error.contains("Unsupported Lance column `items[].value`"));
-        assert!(error.contains("extension types"));
+        let error = validate_schema(&schema, ChLanceErrorOrigin::Local).unwrap_err();
+        assert_eq!(error.kind, ChLanceErrorKind::Unsupported);
+        assert!(error
+            .message
+            .contains("Unsupported Lance column `items[].value`"));
+        assert!(error.message.contains("extension types"));
     }
 
     #[test]
     fn date64_reports_lossless_mapping_error() {
         let schema = Schema::new(vec![Field::new("event_date", DataType::Date64, true)]);
 
-        let error = validate_schema(&schema).unwrap_err();
-        assert!(error.contains("Unsupported Lance column `event_date`"));
-        assert!(error.contains("lossless ClickHouse mapping"));
+        let error = validate_schema(&schema, ChLanceErrorOrigin::Local).unwrap_err();
+        assert_eq!(error.kind, ChLanceErrorKind::Unsupported);
+        assert!(error
+            .message
+            .contains("Unsupported Lance column `event_date`"));
+        assert!(error.message.contains("lossless ClickHouse mapping"));
     }
 
     #[test]
@@ -1316,9 +2723,130 @@ mod tests {
             true,
         )]);
 
-        let error = validate_schema(&schema).unwrap_err();
-        assert!(error.contains("Unsupported Lance column `attributes.key`"));
-        assert!(error.contains("map keys must not be nullable"));
+        let error = validate_schema(&schema, ChLanceErrorOrigin::Local).unwrap_err();
+        assert_eq!(error.kind, ChLanceErrorKind::Unsupported);
+        assert!(error
+            .message
+            .contains("Unsupported Lance column `attributes.key`"));
+        assert!(error.message.contains("map keys must not be nullable"));
+    }
+
+    fn object_store_error(kind: ChLanceErrorKind) -> object_store::Error {
+        let source = || {
+            Box::new(std::io::Error::other("test object store error"))
+                as Box<dyn StdError + Send + Sync>
+        };
+        match kind {
+            ChLanceErrorKind::NotFound => object_store::Error::NotFound {
+                path: "dataset/_latest.manifest".to_string(),
+                source: source(),
+            },
+            ChLanceErrorKind::PermissionDenied => object_store::Error::PermissionDenied {
+                path: "dataset/_latest.manifest".to_string(),
+                source: source(),
+            },
+            ChLanceErrorKind::Unauthenticated => object_store::Error::Unauthenticated {
+                path: "dataset/_latest.manifest".to_string(),
+                source: source(),
+            },
+            _ => object_store::Error::Generic {
+                store: "test",
+                source: source(),
+            },
+        }
+    }
+
+    #[test]
+    fn ffi_error_discriminants_are_stable() {
+        assert_eq!(ChLanceErrorKind::None as u32, 0);
+        assert_eq!(ChLanceErrorKind::InvalidArgument as u32, 1);
+        assert_eq!(ChLanceErrorKind::NotFound as u32, 2);
+        assert_eq!(ChLanceErrorKind::PermissionDenied as u32, 3);
+        assert_eq!(ChLanceErrorKind::Unauthenticated as u32, 4);
+        assert_eq!(ChLanceErrorKind::CorruptData as u32, 5);
+        assert_eq!(ChLanceErrorKind::Unsupported as u32, 6);
+        assert_eq!(ChLanceErrorKind::VersionNotFound as u32, 7);
+        assert_eq!(ChLanceErrorKind::Storage as u32, 8);
+        assert_eq!(ChLanceErrorKind::Internal as u32, 9);
+        assert_eq!(ChLanceErrorOrigin::Unknown as u32, 0);
+        assert_eq!(ChLanceErrorOrigin::Local as u32, 1);
+        assert_eq!(ChLanceErrorOrigin::S3 as u32, 2);
+    }
+
+    #[test]
+    fn classifies_nested_object_store_errors() {
+        for expected in [
+            ChLanceErrorKind::NotFound,
+            ChLanceErrorKind::PermissionDenied,
+            ChLanceErrorKind::Unauthenticated,
+        ] {
+            let lance_error: lance::Error = object_store_error(expected).into();
+            assert_eq!(
+                classify_lance_error(&lance_error, LanceOperation::Open),
+                expected
+            );
+        }
+
+        let lance_error: lance::Error = object_store_error(ChLanceErrorKind::Storage).into();
+        assert_eq!(
+            classify_lance_error(&lance_error, LanceOperation::Open),
+            ChLanceErrorKind::Storage
+        );
+    }
+
+    #[test]
+    fn classifies_arrow_decode_errors_as_corrupt_data() {
+        let lance_error: lance::Error =
+            arrow_schema::ArrowError::ParseError("invalid dataset metadata".to_string()).into();
+        assert_eq!(
+            classify_lance_error(&lance_error, LanceOperation::Open),
+            ChLanceErrorKind::CorruptData
+        );
+
+        let mut invalid_varint = &[0x80_u8][..];
+        let decode_error = prost::encoding::decode_varint(&mut invalid_varint).unwrap_err();
+        let lance_error: lance::Error = decode_error.into();
+        assert_eq!(
+            classify_lance_error(&lance_error, LanceOperation::Open),
+            ChLanceErrorKind::CorruptData
+        );
+    }
+
+    #[test]
+    fn preserves_kind_when_error_message_contains_null() {
+        let mut error = empty_error();
+        set_error(
+            addr_of_mut!(error),
+            FfiError::new(
+                ChLanceErrorKind::Unsupported,
+                ChLanceErrorOrigin::Local,
+                "unsupported\0column",
+            ),
+        );
+
+        assert_eq!(error.kind, ChLanceErrorKind::Unsupported as u32);
+        assert_eq!(error.origin, ChLanceErrorOrigin::Local as u32);
+        assert_eq!(
+            unsafe { CStr::from_ptr(error.message) }.to_str().unwrap(),
+            "Lance error contains an interior null byte"
+        );
+
+        unsafe {
+            ch_lance_free_error(addr_of_mut!(error));
+        }
+        assert_eq!(error.kind, ChLanceErrorKind::None as u32);
+        assert_eq!(error.origin, ChLanceErrorOrigin::Unknown as u32);
+        assert!(error.message.is_null());
+    }
+
+    #[test]
+    fn redacts_uri_user_info() {
+        assert_eq!(
+            redact_uri_user_info(
+                "Cannot open https://alice:secret@example.com/dataset".to_string()
+            ),
+            "Cannot open https://<redacted>@example.com/dataset"
+        );
     }
 
     #[test]
@@ -1352,6 +2880,7 @@ mod tests {
             .block_on(open_dataset(DatasetOpenOptions {
                 uri,
                 storage_options: Some(storage_options),
+                origin: ChLanceErrorOrigin::S3,
             }))
             .unwrap();
         let rows = runtime.block_on(opened.dataset.count_rows(None)).unwrap();
@@ -1391,17 +2920,15 @@ mod tests {
             s3_no_sign_request: false,
             s3_allow_http: true,
             s3_virtual_hosted_style_request: false,
+            s3_request_timeout_ms: 0,
+            s3_connect_timeout_ms: 0,
+            cancel: ptr::null_mut(),
         };
-        let mut error = ch_lance_error {
-            message: ptr::null_mut(),
-        };
+        let mut error = empty_error();
         let dataset = unsafe { ch_lance_open_dataset(&options, addr_of_mut!(error)) };
         assert!(!dataset.is_null());
 
-        let mut snapshot = ch_lance_snapshot_info {
-            snapshot_id: 0,
-            schema_id: 0,
-        };
+        let mut snapshot = ch_lance_snapshot_info { version: 0 };
         assert!(unsafe {
             ch_lance_current_snapshot(dataset, addr_of_mut!(snapshot), addr_of_mut!(error))
         });
@@ -1415,7 +2942,7 @@ mod tests {
             .map(|value| value.as_ptr())
             .collect::<Vec<_>>();
         let scan_options = ch_lance_scan_options {
-            snapshot_id: snapshot.snapshot_id,
+            version: snapshot.version,
             projection: ch_lance_string_list {
                 values: projection_ptrs.as_ptr(),
                 size: projection_ptrs.len(),
@@ -1423,6 +2950,7 @@ mod tests {
             predicate: ptr::null(),
             need_only_count: false,
             max_block_size: 8192,
+                    cancel: ptr::null_mut(),
         };
         let scan = unsafe { ch_lance_plan_scan(dataset, &scan_options, addr_of_mut!(error)) };
         assert!(!scan.is_null());

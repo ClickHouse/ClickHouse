@@ -27,4 +27,5 @@
             </lance_s3_disk>
         </disks>
     </storage_configuration>
+    <allowed_disks_for_table_engines>lance_s3_disk</allowed_disks_for_table_engines>
 </clickhouse>

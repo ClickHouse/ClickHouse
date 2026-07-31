@@ -5735,6 +5735,14 @@ Enables logging delta lake metadata files into system table.
 If enabled, schema is reloaded from the DeltaLake metadata before each query execution to ensure
 consistency between the schema used during query analysis and the schema used during execution.
 )", 0) \
+    DECLARE(Bool, lance_query_dataset_reuse, true, R"(
+If enabled, Lance reuses a single dataset handle (and the process-wide Tokio runtime) within one query
+for snapshot pin, schema load, and scan. Disable only for debugging.
+)", 0) \
+    DECLARE(UInt64, lance_runtime_threads, 0, R"(
+Number of worker threads for the process-wide Lance Tokio runtime. 0 means an automatic bounded default
+(at most 8). Only the first initialization is effective.
+)", 0) \
     DECLARE(IcebergMetadataLogLevel, iceberg_metadata_log_level, IcebergMetadataLogLevel::None, R"(
 Controls the level of metadata logging for Iceberg tables to system.iceberg_metadata_log.
 Usually this setting can be modified for debugging purposes.

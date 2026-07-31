@@ -43,9 +43,9 @@ Named arguments such as `access_key_id`, `secret_access_key`, `session_token`, `
 
 ## Returned value {#returned-value}
 
-`lanceS3` returns a table whose schema is inferred from the Lance dataset snapshot selected at query analysis time.
+`lanceS3` returns a table whose schema is inferred from the Lance dataset version selected at query analysis time.
 
-The dataset snapshot is pinned in the query metadata. Reads use the pinned snapshot state, so execution does not drift to a newer Lance dataset version while the query is running.
+The dataset version is pinned in the query metadata. Reads use the pinned version, so execution does not drift to a newer Lance dataset version while the query is running. If the pinned version is removed before the query finishes, the query returns an exception instead of reading the latest version.
 
 ## Data types {#data-types}
 
@@ -126,7 +126,7 @@ FROM lanceS3('dataset.lance', SETTINGS disk = 'lance_s3_disk');
 
 `lanceS3` supports the file-like virtual columns provided by the object-storage read path, including `_path`, `_file`, `_size`, `_time`, and `_etag`.
 
-For data lake reads, `_data_lake_snapshot_version` contains the Lance snapshot id used by the query.
+For data lake reads, `_data_lake_snapshot_version` contains the Lance dataset version used by the query.
 
 ## Limitations {#limitations}
 

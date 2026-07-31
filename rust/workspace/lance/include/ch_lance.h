@@ -11,13 +11,44 @@ extern "C" {
 struct ArrowArray;
 struct ArrowSchema;
 
+typedef uint32_t ch_lance_error_kind;
+
+enum
+{
+    CH_LANCE_ERROR_NONE = 0,
+    CH_LANCE_ERROR_INVALID_ARGUMENT = 1,
+    CH_LANCE_ERROR_NOT_FOUND = 2,
+    CH_LANCE_ERROR_PERMISSION_DENIED = 3,
+    CH_LANCE_ERROR_UNAUTHENTICATED = 4,
+    CH_LANCE_ERROR_CORRUPT_DATA = 5,
+    CH_LANCE_ERROR_UNSUPPORTED = 6,
+    CH_LANCE_ERROR_VERSION_NOT_FOUND = 7,
+    CH_LANCE_ERROR_STORAGE = 8,
+    CH_LANCE_ERROR_INTERNAL = 9,
+    /// Cooperative cancellation requested via ch_lance_cancel_scan (or equivalent).
+    CH_LANCE_ERROR_CANCELLED = 10,
+};
+
+typedef uint32_t ch_lance_error_origin;
+
+enum
+{
+    CH_LANCE_ERROR_ORIGIN_UNKNOWN = 0,
+    CH_LANCE_ERROR_ORIGIN_LOCAL = 1,
+    CH_LANCE_ERROR_ORIGIN_S3 = 2,
+};
+
 typedef struct ch_lance_error
 {
+    ch_lance_error_kind kind;
+    ch_lance_error_origin origin;
     char * message;
 } ch_lance_error;
 
 typedef struct ch_lance_dataset ch_lance_dataset;
 typedef struct ch_lance_scan ch_lance_scan;
+/// Query-scoped cooperative cancel token. Thread-safe; may be shared across open/plan/count/scan.
+typedef struct ch_lance_cancel_handle ch_lance_cancel_handle;
 
 typedef struct ch_lance_dataset_options
 {
@@ -34,12 +65,17 @@ typedef struct ch_lance_dataset_options
     bool s3_no_sign_request;
     bool s3_allow_http;
     bool s3_virtual_hosted_style_request;
+    /// Per-request HTTP timeout for S3 (object_store `timeout`). 0 = library default (30s).
+    uint64_t s3_request_timeout_ms;
+    /// TCP/connect timeout for S3 (object_store `connect_timeout`). 0 = library default (5s).
+    uint64_t s3_connect_timeout_ms;
+    /// Optional. When non-null, open can be interrupted by ch_lance_cancel_handle_cancel.
+    ch_lance_cancel_handle * cancel;
 } ch_lance_dataset_options;
 
 typedef struct ch_lance_snapshot_info
 {
-    uint64_t snapshot_id;
-    uint64_t schema_id;
+    uint64_t version;
 } ch_lance_snapshot_info;
 
 typedef struct ch_lance_string_list
@@ -50,24 +86,71 @@ typedef struct ch_lance_string_list
 
 typedef struct ch_lance_scan_options
 {
-    uint64_t snapshot_id;
+    uint64_t version;
     ch_lance_string_list projection;
     const char * predicate;
     bool need_only_count;
     uint64_t max_block_size;
+    /// Optional. When non-null, planScan is interruptible and the resulting scan shares this token.
+    ch_lance_cancel_handle * cancel;
 } ch_lance_scan_options;
+
+typedef struct ch_lance_runtime_config
+{
+    /// Number of Tokio worker threads. 0 means an automatic bounded default.
+    uint32_t worker_threads;
+} ch_lance_runtime_config;
+
+typedef struct ch_lance_runtime_stats
+{
+    uint64_t open_dataset_calls;
+    uint64_t plan_scan_calls;
+    uint64_t next_batch_calls;
+    uint64_t runtime_initialized;
+} ch_lance_runtime_stats;
+
+/// Ensure the process-wide Lance Tokio runtime exists. First successful call
+/// wins for worker_threads; later calls are no-ops if the runtime is already up.
+bool ch_lance_runtime_ensure(const ch_lance_runtime_config * config, ch_lance_error * error);
+void ch_lance_get_runtime_stats(ch_lance_runtime_stats * out);
+
+/// Query-scoped cancel handle. Create once per ReadSource / query unit of work.
+ch_lance_cancel_handle * ch_lance_cancel_handle_create(void);
+/// Thread-safe: signal cancellation. Concurrent with any in-flight open/plan/count/next_batch
+/// that was given this handle (or a scan that inherited it).
+void ch_lance_cancel_handle_cancel(ch_lance_cancel_handle * handle);
+void ch_lance_cancel_handle_free(ch_lance_cancel_handle * handle);
 
 ch_lance_dataset * ch_lance_open_dataset(const ch_lance_dataset_options * options, ch_lance_error * error);
 void ch_lance_free_dataset(ch_lance_dataset * dataset);
 
 bool ch_lance_current_snapshot(ch_lance_dataset * dataset, ch_lance_snapshot_info * snapshot, ch_lance_error * error);
-bool ch_lance_export_schema(ch_lance_dataset * dataset, uint64_t snapshot_id, struct ArrowSchema * schema, ch_lance_error * error);
-bool ch_lance_total_rows(ch_lance_dataset * dataset, uint64_t snapshot_id, uint64_t * rows, bool * has_value, ch_lance_error * error);
-bool ch_lance_count_rows(ch_lance_dataset * dataset, uint64_t snapshot_id, const char * predicate, uint64_t * rows, bool * has_value, ch_lance_error * error);
+bool ch_lance_export_schema(ch_lance_dataset * dataset, uint64_t version, struct ArrowSchema * schema, ch_lance_error * error);
+/// `cancel` may be null (no cooperative cancel for this call).
+bool ch_lance_total_rows(
+    ch_lance_dataset * dataset,
+    uint64_t version,
+    uint64_t * rows,
+    bool * has_value,
+    ch_lance_cancel_handle * cancel,
+    ch_lance_error * error);
+bool ch_lance_count_rows(
+    ch_lance_dataset * dataset,
+    uint64_t version,
+    const char * predicate,
+    uint64_t * rows,
+    bool * has_value,
+    ch_lance_cancel_handle * cancel,
+    ch_lance_error * error);
 bool ch_lance_total_bytes(ch_lance_dataset * dataset, uint64_t * bytes, bool * has_value, ch_lance_error * error);
 
 ch_lance_scan * ch_lance_plan_scan(ch_lance_dataset * dataset, const ch_lance_scan_options * options, ch_lance_error * error);
 bool ch_lance_next_batch(ch_lance_scan * scan, struct ArrowArray * array, struct ArrowSchema * schema, bool * has_batch, ch_lance_error * error);
+/// Thread-safe: request cooperative cancellation of a scan. Does not free the scan.
+/// Concurrent with ch_lance_next_batch: wakes a pending next and causes it to return CANCELLED.
+/// Safe to call multiple times. Does not race with ch_lance_free_scan if free happens only after
+/// next_batch has returned (ClickHouse guarantees this via Scan lifetime).
+void ch_lance_cancel_scan(ch_lance_scan * scan);
 void ch_lance_free_scan(ch_lance_scan * scan);
 
 void ch_lance_free_error(ch_lance_error * error);

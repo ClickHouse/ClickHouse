@@ -1,5 +1,7 @@
 DROP TABLE IF EXISTS lance_local_predicate_pushdown;
 
+SET session_timezone = 'UTC';
+
 CREATE TABLE lance_local_predicate_pushdown
 ENGINE = LanceLocal('tests/queries/0_stateless/data_lance/pushdown.lance');
 

@@ -57,6 +57,8 @@ const VersionToSettingsChangesMap & getSettingsChangesHistory()
         });
         addSettingsChanges(settings_changes_history, "26.7",
         {
+            {"lance_query_dataset_reuse", false, true, "New setting to reuse a single Lance dataset handle within one query (analysis + execution)."},
+            {"lance_runtime_threads", 0, 0, "New setting for the process-wide Lance Tokio runtime worker thread count (0 = automatic bounded default)."},
             {"analyzer_compatibility_allow_non_aggregate_in_having", false, false, "New compatibility setting. When enabled, the analyzer mimics the legacy `HAVING`-to-`WHERE` rewrite for non-aggregate AND-conjuncts instead of raising `NOT_AN_AGGREGATE`."},
             {"dictionary_lazy_load", "auto", "auto", "New setting overriding the server setting `dictionaries_lazy_load` for an individual dictionary."},
             {"discard_query_data", false, false, "New setting to skip sending query result rows to the client over the native TCP protocol."},

@@ -442,6 +442,15 @@
     M(DeltaLakeSnapshotInitializations, "Number of times a DeltaLake table snapshot was initialized (loaded from object storage)", ValueType::Number) \
     M(DeltaLakeScannedFiles, "Number of files scanned during DeltaLake scan callbacks", ValueType::Number) \
     \
+    M(LanceDatasetOpen, "Number of times a Lance dataset was opened through FFI (manifest / storage client init).", ValueType::Number) \
+    M(LanceDatasetOpenMicroseconds, "Total time spent opening Lance datasets through FFI.", ValueType::Microseconds) \
+    M(LanceDatasetCacheHit, "Number of times a Lance dataset handle was reused from the query-scoped session cache.", ValueType::Number) \
+    M(LancePlanScan, "Number of Lance scan plans created.", ValueType::Number) \
+    M(LancePlanScanMicroseconds, "Total time spent planning Lance scans.", ValueType::Microseconds) \
+    M(LanceNextBatch, "Number of Lance next-batch calls.", ValueType::Number) \
+    M(LanceNextBatchMicroseconds, "Total time spent waiting for Lance next-batch results.", ValueType::Microseconds) \
+    M(LanceRuntimeInit, "Number of times the process-wide Lance Tokio runtime was initialized (expected 0 or 1).", ValueType::Number) \
+    \
     M(SlowRead, "Number of reads from a file that were slow. This indicate system overload. Thresholds are controlled by read_backoff_* settings.", ValueType::Number) \
     M(ReadBackoff, "Number of times the number of query processing threads was lowered due to slow reads.", ValueType::Number) \
     \
