@@ -24,11 +24,26 @@ SELECT
     uniqHLL12If(a, b, cond) = (SELECT uniqHLL12(a, b) FROM t_uniq_variadic_if WHERE cond)
 FROM t_uniq_variadic_if;
 
--- Nullable argument: exercises addBatchSinglePlaceNotNull with -If flags and a null map.
+-- Nullable uniq argument, plain -If: routes through AggregateFunctionIfNullVariadic, which merges
+-- cond + the na null-mask into final_null_flags and calls the nested uniq via
+-- addBatchSinglePlaceNotNull(..., -1). This exercises the NotNull batch method with a null map but
+-- with if_argument_pos == -1 (the flags == nullptr path), not the -If flags branch.
 SELECT
     uniqExactIf(na, b, cond) = (SELECT uniqExact(na, b) FROM t_uniq_variadic_if WHERE cond),
     uniqIf(na, b, cond)      = (SELECT uniq(na, b)      FROM t_uniq_variadic_if WHERE cond),
     uniqHLL12If(na, b, cond) = (SELECT uniqHLL12(na, b) FROM t_uniq_variadic_if WHERE cond)
+FROM t_uniq_variadic_if;
+
+-- Nullable uniq argument, -If nested under -OrDefault: this is the only path that reaches
+-- AggregateFunctionUniqVariadic::addBatchSinglePlaceNotNull with if_argument_pos >= 0 (the -If
+-- flags branch). Because -If is no longer the outermost combinator its own null adapter is not
+-- used; the generic Null adapter wraps the whole function and calls addBatchSinglePlaceNotNull,
+-- OrFill forwards it, and AggregateFunctionIf::addBatchSinglePlaceNotNull hands the nested uniq the
+-- filter column position (num_arguments - 1) while the null map carries na's nulls.
+SELECT
+    uniqExactIfOrDefault(na, b, cond) = (SELECT uniqExact(na, b) FROM t_uniq_variadic_if WHERE cond),
+    uniqIfOrDefault(na, b, cond)      = (SELECT uniq(na, b)      FROM t_uniq_variadic_if WHERE cond),
+    uniqHLL12IfOrDefault(na, b, cond) = (SELECT uniqHLL12(na, b) FROM t_uniq_variadic_if WHERE cond)
 FROM t_uniq_variadic_if;
 
 DROP TABLE t_uniq_variadic_if;
