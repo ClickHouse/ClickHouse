@@ -3009,7 +3009,13 @@ DataTypePtr QueryFuzzer::getRandomType()
             return std::make_shared<DataTypeVariant>(elements);
         }
         case TypeIndex::Array: return std::make_shared<DataTypeArray>(getRandomType());
-        case TypeIndex::Map: return std::make_shared<DataTypeMap>(getRandomType(), getRandomType());
+        case TypeIndex::Map: {
+            auto key_type = getRandomType();
+            /// `DataTypeMap`'s constructor rejects a `Nullable`/`LowCardinality(Nullable)` key.
+            if (!DataTypeMap::isValidKeyType(key_type))
+                key_type = std::make_shared<DataTypeString>();
+            return std::make_shared<DataTypeMap>(key_type, getRandomType());
+        }
         case TypeIndex::LowCardinality: {
             auto inner = getRandomType();
             if (!inner->canBeInsideLowCardinality())
@@ -5197,7 +5203,7 @@ void QueryFuzzer::fuzz(ASTPtr & ast)
             Map cursor;
             const size_t num_partitions = fuzz_rand() % 2 + 1;
             /// Distinct partition ids: a flat leaf and a nested object under the same
-            /// key would collide in buildCursorTree when the cursor is formatted.
+            /// key would collide in buildCursorTree.
             const size_t base = fuzz_rand() % cursor_partition_ids.size();
             for (size_t i = 0; i < num_partitions; ++i)
             {
@@ -5238,19 +5244,19 @@ void QueryFuzzer::fuzz(ASTPtr & ast)
             {
                 /// Toggle between bare STREAM and STREAM CURSOR, or regenerate the cursor
                 auto & stream = table_expr->stream_settings->as<ASTStreamSettings &>();
-                if (stream.settings.cursor_tree.has_value() && fuzz_rand() % 2 == 0)
-                    stream.settings.cursor_tree.reset();
+                if (stream.cursor && fuzz_rand() % 2 == 0)
+                    stream.cursor.reset();
                 else
-                    stream.settings.cursor_tree = make_random_cursor();
+                    stream.cursor = buildCursorTree(make_random_cursor());
             }
         }
         else if (table_expr->database_and_table_name && fuzz_rand() % 200 == 0)
         {
             /// Add STREAM [CURSOR {...}]. A bare STREAM read tails new data until
             /// max_execution_time, so keep the probability low.
-            ASTStreamSettings::StreamSettings new_stream_settings;
+            ASTStreamSettings new_stream_settings;
             if (fuzz_rand() % 2 == 0)
-                new_stream_settings.cursor_tree = make_random_cursor();
+                new_stream_settings.cursor = buildCursorTree(make_random_cursor());
             auto stream_node = make_intrusive<ASTStreamSettings>(std::move(new_stream_settings));
             table_expr->stream_settings = stream_node;
             table_expr->children.push_back(stream_node);
