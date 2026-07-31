@@ -1,8 +1,11 @@
 -- Plan-based parallel replicas must keep lookup-backed joins local: a join whose right side is a
 -- Join-engine table (or dictionary / key-value storage) becomes a JoinStepLogicalLookup, which cannot be
 -- cloned/serialized into a shipped fragment. Distributing it used to throw "Cannot clone
--- JoinStepLogicalLookup plan step". Such joins now execute locally (correct results, not distributed),
--- while plain MergeTree-MergeTree joins still distribute. See PR #112268 review (comment r3665280903).
+-- JoinStepLogicalLookup plan step". Only the join is kept local: the coordinated read below it is still
+-- distributed. A plain MergeTree-MergeTree join ships as one fragment instead.
+-- The assertions print the plan steps rather than just "is there a distributed read", so that all three
+-- outcomes are distinguishable: join shipped, join local with a distributed read, fully local.
+-- See PR #112268 review (comments r3665280903, r3678401956).
 
 DROP TABLE IF EXISTS lkj_fact SYNC;
 DROP TABLE IF EXISTS lkj_dim SYNC;
@@ -22,21 +25,34 @@ SET cluster_for_parallel_replicas = 'test_cluster_one_shard_three_replicas_local
 SET parallel_replicas_for_non_replicated_merge_tree = 1;
 SET parallel_replicas_plan_based = 1;
 SET automatic_parallel_replicas_mode = 0;
+-- Pin the plan shape: the local plan must be present to hold the join step, and a randomized join order
+-- can put a `BuildRuntimeFilter` between the join and the coordinated read, blocking the lift by itself.
+SET parallel_replicas_local_plan = 1;
+SET query_plan_optimize_join_order_randomize = 0;
+SET query_plan_join_swap_table = 'false';
 
 -- Lookup join (Join-engine table on the right): must not throw; result equals non-parallel execution.
-SELECT 'JOIN-ENGINE LEFT', count(), sum(lkj_dim.v)
+SELECT 'JOIN-ENGINE result', count(), sum(lkj_dim.v)
 FROM lkj_fact LEFT JOIN lkj_dim ON lkj_fact.k = lkj_dim.k;
--- ... and it is kept local (no distributed read).
-SELECT 'JOIN-ENGINE remote', countIf(explain LIKE '%ReadFromParallelReplicas%') > 0
-FROM (EXPLAIN optimize = 1, description = 0
-      SELECT count(), sum(lkj_dim.v) FROM lkj_fact LEFT JOIN lkj_dim ON lkj_fact.k = lkj_dim.k);
+-- The join itself stays local - it is above the distributed read, not inside the shipped fragment.
+SELECT 'JOIN-ENGINE steps:', arrayStringConcat(groupArray(step), ' ')
+FROM (
+    SELECT trimLeft(explain) AS step
+    FROM (EXPLAIN actions = 0, pretty = 0, optimize = 1, description = 0, header = 0
+          SELECT count(), sum(lkj_dim.v) FROM lkj_fact LEFT JOIN lkj_dim ON lkj_fact.k = lkj_dim.k)
+    WHERE step IN ('Aggregating', 'Union', 'Join', 'FilledJoin', 'ReadFromMergeTree', 'ReadFromParallelReplicas')
+);
 
--- Regression: a plain MergeTree-MergeTree join still distributes (the gate did not over-reject).
-SELECT 'MERGETREE LEFT', count(), sum(lkj_mt.v)
+-- Regression: a plain MergeTree-MergeTree join is shipped whole, so the distributed read comes last.
+SELECT 'MERGETREE result', count(), sum(lkj_mt.v)
 FROM lkj_fact LEFT JOIN lkj_mt ON lkj_fact.k = lkj_mt.k;
-SELECT 'MERGETREE remote', countIf(explain LIKE '%ReadFromParallelReplicas%') > 0
-FROM (EXPLAIN optimize = 1, description = 0
-      SELECT count(), sum(lkj_mt.v) FROM lkj_fact LEFT JOIN lkj_mt ON lkj_fact.k = lkj_mt.k);
+SELECT 'MERGETREE steps:', arrayStringConcat(groupArray(step), ' ')
+FROM (
+    SELECT trimLeft(explain) AS step
+    FROM (EXPLAIN actions = 0, pretty = 0, optimize = 1, description = 0, header = 0
+          SELECT count(), sum(lkj_mt.v) FROM lkj_fact LEFT JOIN lkj_mt ON lkj_fact.k = lkj_mt.k)
+    WHERE step IN ('Aggregating', 'Union', 'Join', 'FilledJoin', 'ReadFromMergeTree', 'ReadFromParallelReplicas')
+);
 
 DROP TABLE lkj_fact SYNC;
 DROP TABLE lkj_dim SYNC;
