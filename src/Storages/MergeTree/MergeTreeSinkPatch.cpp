@@ -36,6 +36,7 @@ void MergeTreeSinkPatch::finishDelayedChunk()
     {
         ProfileEventsScope scoped_attach(&partition.part_counters);
         partition.temp_part->finalize();
+        partition.temp_part->part->getDataPartStorage().commitTransaction();
 
         auto & part = partition.temp_part->part;
 
