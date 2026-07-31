@@ -148,6 +148,8 @@ ProxyConfiguration ProxyConfiguration::load(const Poco::Util::AbstractConfigurat
     res.handshake_timeout_ms = config.getUInt64("proxy.handshake_timeout_ms", 10000);
     res.send_timeout_ms = config.getUInt64("proxy.send_timeout_ms", 300000);
     res.relay_buffer_size = config.getUInt64("proxy.relay_buffer_size", 262144);
+    if (res.relay_buffer_size == 0)
+        throw Exception(ErrorCodes::INVALID_CONFIG_PARAMETER, "'proxy.relay_buffer_size' must be greater than zero");
     res.fiber_stack_size = config.getUInt("proxy.fiber_stack_size", 512 * 1024);
 
     Poco::Util::AbstractConfiguration::Keys keys;
