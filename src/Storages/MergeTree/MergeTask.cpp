@@ -2963,7 +2963,8 @@ void MergeTask::addBuildTextIndexesStep(QueryPlan & plan, const IMergeTreeDataPa
         /*rewrite_primary_key=*/ false,
         /*save_marks_in_cache=*/ false,
         /*save_primary_index_in_memory=*/ false,
-        /*blocks_are_granules_size=*/ false);
+        /*blocks_are_granules_size=*/ false,
+        /*try_adaptive_codec=*/ false); /// Writes text index files, not column data.
 
     auto transform = std::make_shared<BuildTextIndexTransform>(
         plan.getCurrentHeader(),

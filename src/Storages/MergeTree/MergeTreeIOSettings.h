@@ -108,7 +108,8 @@ struct MergeTreeWriterSettings
         bool rewrite_primary_key_,
         bool save_marks_in_cache_,
         bool save_primary_index_in_memory_,
-        bool blocks_are_granules_size_);
+        bool blocks_are_granules_size_,
+        bool try_adaptive_codec_);
 
     /// Maximum allowed value for compression block size settings.
     /// Prevents absurd memory allocations from fuzzed or misconfigured settings.

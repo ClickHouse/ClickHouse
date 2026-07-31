@@ -26,7 +26,6 @@ namespace ErrorCodes
 namespace MergeTreeSetting
 {
     extern const MergeTreeSettingsBool enable_index_granularity_compression;
-    extern const MergeTreeSettingsBool allow_experimental_adaptive_codec_selection;
 }
 
 MergedBlockOutputStream::MergedBlockOutputStream(
@@ -64,10 +63,8 @@ MergedBlockOutputStream::MergedBlockOutputStream(
         /* rewrite_primary_key = */ true,
         save_marks_in_cache,
         save_primary_index_in_memory,
-        blocks_are_granules_size);
-
-    writer_settings.apply_adaptive_codec
-        = try_adaptive_codec && (*storage_settings)[MergeTreeSetting::allow_experimental_adaptive_codec_selection];
+        blocks_are_granules_size,
+        try_adaptive_codec);
 
     data_part_storage->createDirectories();
 

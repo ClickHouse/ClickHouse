@@ -1,17 +1,11 @@
 #include <Storages/MergeTree/MergedColumnOnlyOutputStream.h>
 #include <Storages/MergeTree/MergeTreeDataPartWriterOnDisk.h>
-#include <Storages/MergeTree/MergeTreeSettings.h>
 #include <Core/Settings.h>
 #include <Interpreters/Context.h>
 #include <IO/WriteSettings.h>
 
 namespace DB
 {
-
-namespace MergeTreeSetting
-{
-extern const MergeTreeSettingsBool allow_experimental_adaptive_codec_selection;
-}
 
 MergedColumnOnlyOutputStream::MergedColumnOnlyOutputStream(
     const MergeTreeMutableDataPartPtr & data_part,
@@ -48,10 +42,9 @@ MergedColumnOnlyOutputStream::MergedColumnOnlyOutputStream(
         /*rewrite_primary_key=*/ false,
         save_marks_in_cache,
         save_primary_index_in_memory,
-        /*blocks_are_granules_size=*/ false);
+        /*blocks_are_granules_size=*/ false,
+        try_adaptive_codec);
 
-    writer_settings.apply_adaptive_codec
-        = try_adaptive_codec && (*storage_settings)[MergeTreeSetting::allow_experimental_adaptive_codec_selection];
     writer_settings.external_packed_skip_indices_writer = external_packed_skip_indices_writer;
 
     writer = createMergeTreeDataPartWriter(
