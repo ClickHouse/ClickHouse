@@ -1,4 +1,3 @@
-#include <Core/ProtocolDefines.h>
 #include <Core/Settings.h>
 #include <IO/Operators.h>
 #include <Interpreters/Context.h>
@@ -202,6 +201,8 @@ SortingStep::Settings::Settings(const QueryPlanSerializationSettings & settings)
     min_free_disk_space = settings[QueryPlanSerializationSetting::min_free_disk_space_for_temporary_data];
     max_block_bytes = settings[QueryPlanSerializationSetting::prefer_external_sort_block_bytes];
     read_in_order_use_buffering = false; //settings.read_in_order_use_buffering;
+    /// Hierarchical merging is a local pipeline optimization and is not serialized.
+    max_streams_per_hierarchical_merge = 0;
 
     temporary_files_codec = settings[QueryPlanSerializationSetting::temporary_files_codec];
     temporary_files_buffer_size = settings[QueryPlanSerializationSetting::temporary_files_buffer_size];
@@ -826,9 +827,6 @@ void SortingStep::serialize(Serialization & ctx) const
         throw Exception(ErrorCodes::NOT_IMPLEMENTED, "Serialization of partitioned sorting is not implemented for SortingStep");
 
     writeVarUInt(partition_by_description.size(), ctx.out);
-
-    if (ctx.version >= DBMS_MIN_QUERY_PLAN_SERIALIZATION_VERSION_WITH_HIERARCHICAL_MERGE)
-        writeVarUInt(sort_settings.max_streams_per_hierarchical_merge, ctx.out);
 }
 
 QueryPlanStepPtr SortingStep::clone() const
@@ -851,17 +849,6 @@ QueryPlanStepPtr SortingStep::deserialize(Deserialization & ctx)
 
     if (partition_desc_size)
         throw Exception(ErrorCodes::NOT_IMPLEMENTED, "Deserialization of partitioned sorting is not implemented for SortingStep");
-
-    if (ctx.version >= DBMS_MIN_QUERY_PLAN_SERIALIZATION_VERSION_WITH_HIERARCHICAL_MERGE)
-    {
-        readVarUInt(sort_settings.max_streams_per_hierarchical_merge, ctx.in);
-        checkMaxStreamsPerHierarchicalMerge(sort_settings.max_streams_per_hierarchical_merge);
-    }
-    else
-    {
-        /// Older plans always used a single flat merge node.
-        sort_settings.max_streams_per_hierarchical_merge = 0;
-    }
 
     return std::make_unique<SortingStep>(
         ctx.input_headers.front(), std::move(result_description), 0, std::move(sort_settings));

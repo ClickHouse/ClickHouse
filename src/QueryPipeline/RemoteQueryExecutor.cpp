@@ -178,12 +178,9 @@ RemoteQueryExecutor::RemoteQueryExecutor(
             {
                 // consider only replicas with support of stream id, otherwise we can get incorrect result
                 // replicas with older version considered as unavailable
-                /// Parallel replicas share a plan pre-serialized with the initiator's current version.
-                /// Unlike the single-replica path, this cached plan cannot be lowered per connection.
-                const bool supports_query_plan = !query_plan || query_plan_serialization_version >= DBMS_QUERY_PLAN_SERIALIZATION_VERSION;
                 if (protocol_version >= DBMS_MIN_REVISION_WITH_PARALLEL_REPLICAS
                     && parallel_replicas_version >= DBMS_PARALLEL_REPLICAS_MIN_VERSION_WITH_STREAM_ID
-                    && supports_query_plan)
+                    && (!query_plan || query_plan_serialization_version >= DBMS_MIN_QUERY_PLAN_SERIALIZATION_VERSION_WITH_PARALLEL_REPLICAS))
                 {
                     ProfileEvents::increment(ProfileEvents::ParallelReplicasAvailableCount);
 
@@ -202,7 +199,7 @@ RemoteQueryExecutor::RemoteQueryExecutor(
                         parallel_replicas_version,
                         query_plan_serialization_version,
                         DBMS_PARALLEL_REPLICAS_MIN_VERSION_WITH_STREAM_ID,
-                        DBMS_QUERY_PLAN_SERIALIZATION_VERSION);
+                        DBMS_MIN_QUERY_PLAN_SERIALIZATION_VERSION_WITH_PARALLEL_REPLICAS);
                     result.entry->disconnect();
                 }
             }
