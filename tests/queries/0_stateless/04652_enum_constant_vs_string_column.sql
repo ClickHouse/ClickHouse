@@ -43,8 +43,8 @@ CREATE TABLE pk_nullable (v Nullable(String)) ENGINE = MergeTree ORDER BY v
 SETTINGS index_granularity = 1, allow_nullable_key = 1;
 INSERT INTO pk_nullable VALUES ('7'), ('3'), ('V0'), ('zz');
 
--- FixedString(1) is narrower than the name, FixedString(4) is wider: the wider one only matches if the
--- converted name is zero padded to the column width.
+-- FixedString(1) is exactly as wide as the one byte name, FixedString(4) is wider: the wider one only
+-- matches if the converted name is zero padded to the column width.
 CREATE TABLE pk_fixed1 (v FixedString(1)) ENGINE = MergeTree ORDER BY v SETTINGS index_granularity = 1;
 INSERT INTO pk_fixed1 VALUES ('7'), ('3');
 
@@ -253,7 +253,7 @@ SELECT 'pk_fixed_string_prunes_something', (SELECT sum(toUInt64OrZero(extract(ex
 
 -- PARTITION BY: this plan emits both Min-Max and Partition sections, and both carry a Granules: line, so
 -- the same total over all sections is used here as everywhere else.
--- The two cells that read a plan on this surface pin optimize_trivial_count_query off. Without the pin the
+-- The three cells that read a plan on this surface pin optimize_trivial_count_query off. Without the pin the
 -- old analyzer answers count() from the partition predicate alone, which the analyzer declines to do, so
 -- the plan collapses to ReadFromPreparedSource and prints no Indexes section at all: the granule cell then
 -- compares 0 against 0 and passes vacuously, and the condition cell below reads 0 for lack of any text to
@@ -339,7 +339,8 @@ SELECT 'bloom_filter_has_prunes_something', (SELECT sum(toUInt64OrZero(extract(e
     < sum(toUInt64OrZero(extract(explain, 'Granules: \\d+/(\\d+)')))
     FROM (EXPLAIN indexes = 1 SELECT count() FROM bf_array WHERE has(v, CAST('7', 'Enum8(\'7\' = 3)'))));
 
--- The hint unwrap branch, reached because the key type carries a LowCardinality or Nullable wrapper.
+-- A LowCardinality or Nullable wrapper on the key type. The source hint unwrap branch is covered by the
+-- Nullable(Enum) cells further up; here the wrapper is on the target.
 SELECT 'pk_low_cardinality_prunes', (SELECT sum(toUInt64OrZero(extract(explain, 'Granules: (\\d+)/')))
     FROM (EXPLAIN indexes = 1 SELECT count() FROM pk_lc WHERE v = CAST('7', 'Enum8(\'7\' = 3)')
           SETTINGS use_skip_indexes = 0, optimize_use_implicit_projections = 0))
