@@ -788,11 +788,11 @@ std::optional<String> optimizeUseNormalProjections(
         return {};
     }
 
-    /// `reading` is detached below without running initializePipeline(), so announce its empty read
-    /// set here instead (same guard as optimizeUseAggregateProjections; issue #110518). This must stay
-    /// below the structure check: the announcement reaches the coordinator, which rejects a second one
-    /// for the same replica and stream, so announcing before a possible skip would leave the surviving
-    /// regular read unable to announce its own ranges.
+    /// `reading` is detached below without running `initializePipeline`, so announce its empty read
+    /// set here instead (same guard as `optimizeUseAggregateProjections`; issue #110518). This must
+    /// stay below the structure check: the announcement reaches the coordinator, which rejects a
+    /// second one for the same replica and stream, so announcing before a possible skip would leave
+    /// the surviving regular read unable to announce its own ranges.
     if (projection_replaced_with_prepared_source && !has_parent_parts && reading->isParallelReadingEnabled())
         reading->announceEmptyReadRangesToCoordinatorIfInitiator();
 
