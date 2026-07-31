@@ -442,7 +442,6 @@ namespace ServerSetting
     extern const ServerSettingsUInt64 max_open_files;
     extern const ServerSettingsString path;
     extern const ServerSettingsString user_files_path;
-    extern const ServerSettingsString dictionaries_lib_path;
     extern const ServerSettingsString user_scripts_path;
     extern const ServerSettingsString dynamic_user_defined_executable_functions_path;
     extern const ServerSettingsString top_level_domains_path;
@@ -1302,6 +1301,14 @@ try
     if (server_settings[ServerSetting::remap_executable])
     {
         LOG_DEBUG(log, "Will remap executable in memory.");
+        /// remapExecutable rewrites the whole code segment in place; any other thread executing code during
+        /// the window faults (and the signal handler's code is unmapped too, so it dies silently). The async
+        /// logging threads poll rather than block, so join them for the duration and restart afterwards.
+        stopAsyncLoggingThreads();
+        /// Restart the async logging threads even if remapExecutable throws. Otherwise the logger would stay
+        /// stopped, and the exception unwinding through Server::main would be logged into a queue that no
+        /// consumer thread is draining, silently losing the startup exception and any queued diagnostics.
+        SCOPE_EXIT_SAFE(startAsyncLoggingThreads());
         size_t size = remapExecutable();
         LOG_DEBUG(log, "The code ({}) in memory has been successfully remapped.", ReadableSize(size));
     }
@@ -2080,13 +2087,6 @@ try
             ? getCanonicalPath(String(user_files_path_setting.value), path_str) : String(path / "user_files/");
         global_context->setUserFilesPath(user_files_path);
         fs::create_directories(user_files_path);
-    }
-
-    {
-        const auto & dictionaries_lib_path_setting = server_settings[ServerSetting::dictionaries_lib_path];
-        std::string dictionaries_lib_path = dictionaries_lib_path_setting.changed
-            ? getCanonicalPath(String(dictionaries_lib_path_setting.value), path_str) : String(path / "dictionaries_lib/");
-        global_context->setDictionariesLibPath(dictionaries_lib_path);
     }
 
     {
