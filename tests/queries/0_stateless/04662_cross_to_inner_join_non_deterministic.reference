@@ -34,3 +34,15 @@
 1
 -- nowInBlock() is no longer rewritten
 1
+-- hostName() is no longer rewritten
+1
+-- shardNum() is no longer rewritten
+1
+-- uptime() is no longer rewritten
+1
+-- a deterministic remote() predicate is still rewritten
+1
+-- getServerPort() is no longer rewritten
+1
+-- transactionID() is no longer rewritten
+1

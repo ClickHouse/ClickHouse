@@ -153,6 +153,66 @@ SELECT count() = 0 FROM (
     SETTINGS cross_to_inner_join_rewrite = 1
 ) WHERE explain ILIKE '%kind: INNER%';
 
+-- Server constants (hostName, shardNum, uptime, ... reporting isServerConstant()) are read per
+-- executing node, so they belong to the same class as queryID() above. On a single-node query they are
+-- constant-folded away, which is why each row below joins a remote() table expression: that sets the
+-- query's is_distributed flag, isSuitableForConstantFolding() becomes false, and the function reaches
+-- this pass as a live node. Without remote() these rows would pass on master too.
+SELECT '-- hostName() is no longer rewritten';
+SELECT count() = 0 FROM (
+    EXPLAIN QUERY TREE run_passes = 1
+    SELECT count() FROM remote('127.0.0.1', currentDatabase(), l) AS l2, r
+    WHERE concat(toString(l2.a), hostName()) = concat(toString(r.a), hostName())
+    SETTINGS cross_to_inner_join_rewrite = 1
+) WHERE explain ILIKE '%kind: INNER%';
+
+SELECT '-- shardNum() is no longer rewritten';
+SELECT count() = 0 FROM (
+    EXPLAIN QUERY TREE run_passes = 1
+    SELECT count() FROM remote('127.0.0.1', currentDatabase(), l) AS l2, r
+    WHERE l2.a + shardNum() = r.a
+    SETTINGS cross_to_inner_join_rewrite = 1
+) WHERE explain ILIKE '%kind: INNER%';
+
+SELECT '-- uptime() is no longer rewritten';
+SELECT count() = 0 FROM (
+    EXPLAIN QUERY TREE run_passes = 1
+    SELECT count() FROM remote('127.0.0.1', currentDatabase(), l) AS l2, r
+    WHERE l2.a + uptime() = r.a
+    SETTINGS cross_to_inner_join_rewrite = 1
+) WHERE explain ILIKE '%kind: INNER%';
+
+-- A remote() join with a deterministic predicate must still be rewritten, so the three rows above fail
+-- for the server constant rather than merely for being distributed.
+SELECT '-- a deterministic remote() predicate is still rewritten';
+SELECT count() > 0 FROM (
+    EXPLAIN QUERY TREE run_passes = 1
+    SELECT count() FROM remote('127.0.0.1', currentDatabase(), l) AS l2, r
+    WHERE l2.a = r.a
+    SETTINGS cross_to_inner_join_rewrite = 1
+) WHERE explain ILIKE '%kind: INNER%';
+
+-- getServerPort() is in the same class but does not report isServerConstant(), so only the name list
+-- can refuse it. It is folded on a single-node query like the rows above, so it needs remote() too.
+SELECT '-- getServerPort() is no longer rewritten';
+SELECT count() = 0 FROM (
+    EXPLAIN QUERY TREE run_passes = 1
+    SELECT count() FROM remote('127.0.0.1', currentDatabase(), l) AS l2, r
+    WHERE l2.a + getServerPort('tcp_port') = r.a
+    SETTINGS cross_to_inner_join_rewrite = 1
+) WHERE explain ILIKE '%kind: INNER%';
+
+-- transactionID() is the same class again: it reads the executing node's current transaction in its
+-- constructor. Its two sibling counters throw without allow_experimental_transactions, but this one
+-- does not, so it is reachable and needs the name.
+SELECT '-- transactionID() is no longer rewritten';
+SELECT count() = 0 FROM (
+    EXPLAIN QUERY TREE run_passes = 1
+    SELECT count() FROM remote('127.0.0.1', currentDatabase(), l) AS l2, r
+    WHERE l2.a + toUInt64(transactionID().1) = r.a
+    SETTINGS cross_to_inner_join_rewrite = 1
+) WHERE explain ILIKE '%kind: INNER%';
+
 DROP DICTIONARY dict;
 DROP TABLE dsrc;
 DROP TABLE l;
