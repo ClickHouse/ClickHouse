@@ -260,26 +260,27 @@ SELECT 'partition_key_prunes', (SELECT sum(toUInt64OrZero(extract(explain, 'Gran
     FROM (EXPLAIN indexes = 1 SELECT count() FROM pk_partition WHERE v = '7'
           SETTINGS optimize_use_implicit_projections = 0, optimize_trivial_count_query = 0));
 
--- The equality above is satisfied by two full scans and measures nothing at all if the pinned plan carries
--- no granule counts, which is what happens with the pin removed, so assert the narrowing separately. The
--- ratio is read from the Min-Max section by name rather than summed over every section. Each stage's
--- denominator is the previous stage's numerator, and on a partition key Min-Max narrows to the surviving
--- partitions first, so the Partition stage that follows it always reports N/N and cannot be asserted on.
+-- The equality above is satisfied by two full scans, and it measures nothing at all if the pinned plan
+-- carries no granule counts, which is what happens with the pin removed, so assert the narrowing
+-- separately. Every stage's denominator is the previous stage's numerator, so summing over sections lets
+-- one stage's pruning stand in for another's. The two cells below therefore add use_skip_indexes = 0,
+-- which leaves Min-Max inert at 5/5 with condition true and makes Partition the stage that prunes, and
+-- they read that section by name: measured 1/5 for Partition where the default plan reports 1/1.
 SELECT 'partition_key_prunes_something', (SELECT
-    toUInt64OrZero(extract(arrayStringConcat(groupArray(explain), '|'), 'Min-Max.*?Granules: (\\d+)/'))
-      < toUInt64OrZero(extract(arrayStringConcat(groupArray(explain), '|'), 'Min-Max.*?Granules: \\d+/(\\d+)'))
+    toUInt64OrZero(extract(arrayStringConcat(groupArray(explain), '|'), 'Partition.*?Granules: (\\d+)/'))
+      < toUInt64OrZero(extract(arrayStringConcat(groupArray(explain), '|'), 'Partition.*?Granules: \\d+/(\\d+)'))
     FROM (EXPLAIN indexes = 1 SELECT count() FROM pk_partition WHERE v = CAST('7', 'Enum8(\'7\' = 3)')
-          SETTINGS optimize_use_implicit_projections = 0, optimize_trivial_count_query = 0));
+          SETTINGS optimize_use_implicit_projections = 0, optimize_trivial_count_query = 0,
+                   use_skip_indexes = 0));
 
--- This surface gets a condition text oracle rather than a selected < total companion: a declined index
--- still lets the Min-Max section prune parts here, so a granule count companion would not cleanly fail.
--- Reading the condition is also strictly stronger, because it names which value the key analysis used and
--- so detects the name versus number substitution directly. Both the Min-Max and the Partition section
--- print the condition, hence > 0 rather than = 1 for the name half.
-SELECT 'partition_key_condition_uses_name', (SELECT countIf(explain LIKE '%[\'7\', \'7\']%') > 0
-    AND countIf(explain LIKE '%[\'3\', \'3\']%') = 0
+-- The condition text is strictly stronger than a granule count, because it names which value the key
+-- analysis used and so detects the name versus number substitution directly. It is read out of the
+-- Partition section alone, so pruning by another stage cannot satisfy it.
+SELECT 'partition_key_condition_uses_name', (SELECT
+    extract(arrayStringConcat(groupArray(explain), '|'), 'Partition.*?Condition: \\(([^)]*)\\)')
     FROM (EXPLAIN indexes = 1 SELECT count() FROM pk_partition WHERE v = CAST('7', 'Enum8(\'7\' = 3)')
-          SETTINGS optimize_use_implicit_projections = 0, optimize_trivial_count_query = 0));
+          SETTINGS optimize_use_implicit_projections = 0, optimize_trivial_count_query = 0,
+                   use_skip_indexes = 0)) = 'v in [\'7\', \'7\']';
 
 -- The two cells above pin optimize_trivial_count_query off in order to read a plan, which leaves the route
 -- where count() is answered from the partition predicate alone unmeasured. That route is a separate
