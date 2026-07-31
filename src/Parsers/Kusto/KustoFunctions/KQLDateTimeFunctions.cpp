@@ -605,7 +605,7 @@ bool MakeTimeSpan::convertImpl(String & out, IParser::Pos & pos)
         throw Exception(ErrorCodes::SYNTAX_ERROR, "argument count out of bound in function: {}", fn_name);
 
     //Add dummy yyyy-mm-dd to parse datetime in CH
-    datetime_str = "0000-00-00 " + datetime_str;
+    datetime_str = "1970-01-01 " + datetime_str;
 
     out = fmt::format(
         "CONCAT('{}',toString(SUBSTRING(toString(toTimeWithFixedDate(parseDateTime64BestEffortOrNull('{}', 9,'UTC'))),12)))", day, datetime_str);
