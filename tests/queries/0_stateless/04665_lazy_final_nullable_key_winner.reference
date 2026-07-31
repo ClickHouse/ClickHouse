@@ -10,3 +10,4 @@ control: Array(Nullable(UInt64))	1
 lazy FINAL is planned for a nullable key	1
 lazy FINAL executes for Nullable(UInt64) 1
 lazy FINAL executes for LowCardinality(Nullable(String)) 1
+lazy FINAL set holds the NULL key set_rows=2

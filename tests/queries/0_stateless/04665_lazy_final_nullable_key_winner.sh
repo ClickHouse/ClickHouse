@@ -226,6 +226,20 @@ $CLICKHOUSE_CLIENT $settings -q "
 " --send_logs_level='trace' 2>&1 \
     | grep -c 'LazyMaterializingTransform.*Lazily reading'
 
+# `set_rows` is the row count of the winner-selection `Set` that this fix builds, logged by
+# `LazyFinalKeyAnalysisTransform` immediately after it ran primary-key index analysis with that
+# set. It reads 2 only when the NULL key was inserted and 1 when it was dropped, so it observes
+# the fixed value directly. No cell above can: a failed set-index preparation degrades to an
+# unknown condition that selects every mark, so results stay correct and only this field moves.
+echo -n 'lazy FINAL set holds the NULL key '
+$CLICKHOUSE_CLIENT $settings -q "
+    SELECT k FROM t_null_u64 FINAL PREWHERE flag = 0
+    SETTINGS $lazy
+" --send_logs_level='trace' 2>&1 \
+    | grep -oE 'Lazy FINAL enabled:.*set_rows=[0-9]+' \
+    | grep -oE 'set_rows=[0-9]+' \
+    | head -1
+
 $CLICKHOUSE_CLIENT $settings -q "
     DROP TABLE t_null_u64;
     DROP TABLE t_null_str;
