@@ -4163,12 +4163,14 @@ When enabled together with `read_in_order_use_virtual_row`, emit a virtual row a
 This allows `MergingSortedTransform` to reprioritize sources more frequently, which is useful when downstream filters discard many rows and data is distributed unevenly across parts.
 Note that it disables `read_in_order_use_buffering` optimization and preliminary merge (`read_in_order_two_level_merge_threshold`) for reading.
 )", 0) \
-    DECLARE(Float, read_in_order_max_primary_key_ratio, 0.5, R"(
+    DECLARE(Float, read_in_order_max_primary_key_ratio, 1.0, R"(
 Maximum ratio of selected to total primary key granules for `optimize_read_in_order` to stay enabled.
 When the primary key index selects more than this fraction of granules (i.e., filtering is poor),
 the read-in-order optimization is disabled at runtime and replaced with parallel reading plus
 per-stream sorting. This avoids the parallelism loss inherent in sequential in-order reading.
-Set to 1.0 to never disable read-in-order based on PK selectivity.
+The default of 1.0 keeps read-in-order always enabled (the previous behavior); the heuristic is
+opt-in until its threshold is tuned, because a blanket threshold trades sequential-read parallelism
+against re-sorting cost in a workload-dependent way. Lower the value (e.g. to 0.5) to enable the guard.
 
 The guard also accounts for skip indexes: it disables read-in-order only when the read is still large
 *after* skip-index pruning. Both the primary key granule ratio (`selected_marks_pk / total_marks_pk`)

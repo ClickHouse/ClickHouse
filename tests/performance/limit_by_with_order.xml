@@ -1,7 +1,7 @@
 <test>
     <settings>
         <!-- The MergeTree queries below rely on read-in-order over the (a, b) primary key,
-             without a WHERE clause. With the default `read_in_order_max_primary_key_ratio = 0.5`,
+             without a WHERE clause. With `read_in_order_max_primary_key_ratio` below 1.0,
              these queries get redirected to parallel reading + sorting because the PK does not
              filter many granules, which kills their measured speedup. -->
         <read_in_order_max_primary_key_ratio>1.0</read_in_order_max_primary_key_ratio>
