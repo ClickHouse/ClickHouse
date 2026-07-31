@@ -89,6 +89,7 @@
 
 #include <Processors/Formats/IOutputFormat.h>
 #include <Processors/Executors/CompletedPipelineExecutor.h>
+#include <Processors/Executors/PullingPipelineExecutor.h>
 #include <Processors/Sources/WaitForAsyncInsertSource.h>
 #include <Processors/QueryPlan/BuildQueryPipelineSettings.h>
 #include <Processors/QueryPlan/Optimizations/QueryPlanOptimizationSettings.h>
@@ -97,6 +98,9 @@
 
 #include <Common/QueryFuzzer.h>
 #include <Common/randomSeed.h>
+#include <Common/ThreadPool.h>
+#include <Common/ThreadStatus.h>
+#include <Common/ThreadGroupSwitcher.h>
 
 #include <Poco/Net/SocketAddress.h>
 
@@ -192,6 +196,7 @@ namespace Setting
     extern const SettingsOverflowMode read_overflow_mode;
     extern const SettingsOverflowMode read_overflow_mode_leaf;
     extern const SettingsOverflowMode result_overflow_mode;
+    extern const SettingsBool run_query_in_background;
     extern const SettingsOverflowMode set_overflow_mode;
     extern const SettingsOverflowMode sort_overflow_mode;
     extern const SettingsBool throw_on_unsupported_query_inside_transaction;
@@ -1571,9 +1576,47 @@ static BlockIO executeQueryImpl(
 
         if (out_ast)
         {
+            const bool run_query_in_background_before_settings_from_query = settings[Setting::run_query_in_background].value;
+
             /// Interpret SETTINGS clauses as early as possible (before invoking the corresponding interpreter),
             /// to allow settings to take effect.
             InterpreterSetQuery::applySettingsFromQuery(out_ast, context);
+
+            const auto client_interface = context->getClientInfo().interface;
+            const bool run_query_in_background = settings[Setting::run_query_in_background].value;
+            
+            /// The query itself may contain `SETTINGS run_query_in_background = 1`.
+            /// So to avoid infinite recursion, executeQueryInBackground sets flags.background = true
+            /// which indicates that we're on background query execution thread
+            /// and should ignore any parsed run_query_in_background values.
+            if (flags.background)
+            {
+                if (run_query_in_background)
+                    context->setSetting("run_query_in_background", false);
+            }
+            else if (run_query_in_background
+                && (client_interface == ClientInfo::Interface::TCP || client_interface == ClientInfo::Interface::HTTP))
+            {
+                /// HTTP handler needs to know if run_query_in_background = 1 before calling executeQuery,
+                /// so it can make detached query context (which is copied from global context, not session context).
+                /// So this setting should not be set via query (i.e. `SETTINGS run_query_in_background = 1`).
+                if (client_interface == ClientInfo::Interface::HTTP && !run_query_in_background_before_settings_from_query)
+                    throw Exception(ErrorCodes::BAD_ARGUMENTS,
+                        "run_query_in_background cannot be enabled in the SETTINGS clause of the query. "
+                        "Pass it as a query setting of the native protocol, an HTTP URL parameter, "
+                        "or set it in the session or the profile.");
+
+                if (http_continue_callback)
+                    http_continue_callback();
+
+                if (istr && !istr->eof())
+                    throw Exception(ErrorCodes::BAD_ARGUMENTS,
+                        "A query whose data streams over the connection cannot be run in the background");
+
+                executeQueryInBackground(std::string_view(begin, end), context, CurrentThread::getGroup());
+                return BlockIO();
+            }
+
             validateAnalyzerSettings(out_ast, settings[Setting::allow_experimental_analyzer]);
 
             if (settings[Setting::enforce_strict_identifier_format])
@@ -2509,6 +2552,61 @@ std::pair<ASTPtr, BlockIO> executeQuery(
     }
 
     return std::make_pair(std::move(ast), std::move(res));
+}
+
+void executeQueryInBackground(std::string_view query, ContextMutablePtr context, ThreadGroupPtr thread_group)
+{
+    const auto & settings = context->getSettingsRef();
+    if (settings[Setting::implicit_transaction] && settings[Setting::throw_on_unsupported_query_inside_transaction])
+        throw Exception(ErrorCodes::NOT_IMPLEMENTED, "Background queries with 'implicit_transaction' are not supported");
+
+    if (context->hasSessionContext())
+        throw Exception(ErrorCodes::LOGICAL_ERROR, "A background query context must not be attached to a session");
+
+    GlobalThreadPool::instance().scheduleOrThrow([query_text = String(query), context, thread_group]
+    {
+        ThreadStatus thread_status;
+        ThreadGroupSwitcher switcher(thread_group, ThreadName::BACKGROUND_QUERY);
+
+        try
+        {
+            auto io = executeQuery(query_text, context, QueryFlags{ .background = true }).second;
+            try
+            {
+                if (io.pipeline.initialized())
+                {
+                    if (io.pipeline.pulling())
+                    {
+                        PullingPipelineExecutor executor(io.pipeline);
+                        Block block;
+                        while (executor.pull(block))
+                            ;
+                    }
+                    else if (io.pipeline.completed())
+                    {
+                        CompletedPipelineExecutor executor(io.pipeline);
+                        executor.execute();
+                    }
+                    else
+                    {
+                        throw Exception(ErrorCodes::NOT_IMPLEMENTED, "Queries that receive data from the client cannot be run in the background");
+                    }
+                }
+                io.onFinish();
+            }
+            catch (...)
+            {
+                io.onException();
+                throw;
+            }
+        }
+        catch (...)
+        {
+            tryLogCurrentException("executeQueryInBackground");
+        }
+
+        thread_group->memory_tracker.logPeakMemoryUsage();
+    });
 }
 
 void executeQuery(

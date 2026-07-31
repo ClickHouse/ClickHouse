@@ -73,7 +73,9 @@ namespace Setting
     extern const SettingsInt64 http_zlib_compression_level;
     extern const SettingsUInt64 input_format_max_block_wait_ms;
     extern const SettingsUInt64 readonly;
+    extern const SettingsBool run_query_in_background;
     extern const SettingsBool send_progress_in_http_headers;
+    extern const SettingsBool throw_on_unsupported_query_inside_transaction;
     extern const SettingsInt64 zstd_window_log_max;
 }
 
@@ -87,6 +89,7 @@ namespace ErrorCodes
     extern const int INVALID_CONFIG_PARAMETER;
     extern const int HTTP_LENGTH_REQUIRED;
     extern const int SESSION_ID_EMPTY;
+    extern const int NOT_IMPLEMENTED;
 }
 
 namespace
@@ -238,7 +241,15 @@ void HTTPHandler::processQuery(
     /// after releasing the session below, this whole call will be no-op (due to named_session being nullptr already inside a session).
     SCOPE_EXIT_SAFE({ releaseOrCloseSession(session_id, close_session); });
 
-    auto context = session->makeQueryContext();
+    /// TODO(stetsyuk): make sure SET run_query_in_background = 1; <your queries>; SET run_query_in_background = 0; works
+    const bool run_query_in_background = params.getParsedLast<bool>(
+        "run_query_in_background", session->sessionContext()->getSettingsRef()[Setting::run_query_in_background]);
+
+    if (run_query_in_background && session->sessionContext()->getCurrentTransaction()
+        && session->sessionContext()->getSettingsRef()[Setting::throw_on_unsupported_query_inside_transaction])
+        throw Exception(ErrorCodes::NOT_IMPLEMENTED, "Background queries inside transactions are not supported");
+
+    auto context = run_query_in_background ? session->makeDetachedQueryContext() : session->makeQueryContext();
 
     auto roles = params.getAll("role");
     if (!roles.empty())
@@ -492,13 +503,14 @@ void HTTPHandler::processQuery(
     };
 
     /// While still no data has been sent, we will report about query execution progress by sending HTTP headers.
-    /// Note that we add it unconditionally so the progress is available for `X-ClickHouse-Summary`
-    append_callback([&used_output, &context](const Progress & progress)
-    {
-        used_output.out_holder->onProgress(progress, context);
-    });
+    /// Note that for foreground queries we add it unconditionally so the progress is available for `X-ClickHouse-Summary`
+    if (!run_query_in_background)
+        append_callback([&used_output, &context](const Progress & progress)
+        {
+            used_output.out_holder->onProgress(progress, context);
+        });
 
-    if (settings[Setting::readonly] > 0 && settings[Setting::cancel_http_readonly_queries_on_client_close])
+    if (!run_query_in_background && settings[Setting::readonly] > 0 && settings[Setting::cancel_http_readonly_queries_on_client_close])
     {
         append_callback([&context, &request](const Progress &)
         {

@@ -21,6 +21,8 @@ class IInterpreter;
 class ReadBuffer;
 class WriteBuffer;
 class IOutputFormat;
+class ThreadGroup;
+using ThreadGroupPtr = std::shared_ptr<ThreadGroup>;
 struct QueryStatusInfo;
 struct QueryPlanAndSets;
 
@@ -89,6 +91,8 @@ std::pair<ASTPtr, BlockIO> executeQuery(
     QueryFlags flags = {},
     QueryProcessingStage::Enum stage = QueryProcessingStage::Complete    /// To which stage the query must be executed.
 );
+
+void executeQueryInBackground(std::string_view query, ContextMutablePtr context, ThreadGroupPtr thread_group);
 
 /// Executes BlockIO returned from executeQuery(...)
 /// if built pipeline does not require any input and does not produce any output.

@@ -1,0 +1,26 @@
+--- INSERT SELECT in background: no output, visible and attributed in system.processes, rows land
+no output
+attributed in system.processes
+30
+1	1
+--- KILL QUERY in background kills a background query
+no output
+killed
+--- SELECT in background discards the result
+--- CREATE TABLE AS SELECT in background
+created with rows
+--- HTTP URL parameter: dispatched, server-minted query_id returned in the header, inline body data inserted
+query_id header present
+2
+--- inline SETTINGS over HTTP is rejected synchronously
+BAD_ARGUMENTS
+--- HTTP body that streams data beyond the query text is rejected synchronously
+BAD_ARGUMENTS
+--- queries that cannot work in the background fail asynchronously, inserting nothing
+failed asynchronously
+--- transactions are rejected synchronously
+Background queries inside transactions are not supported
+Background queries with 'implicit_transaction' are not supported
+--- distributed INSERT in background: shards run in the foreground, all rows land
+100
+0

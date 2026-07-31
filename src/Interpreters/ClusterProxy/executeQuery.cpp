@@ -89,6 +89,7 @@ namespace Setting
     extern const SettingsBool parallel_replicas_prefer_local_replica;
     extern const SettingsBool parallel_replicas_allow_view_over_mergetree;
     extern const SettingsMilliseconds queue_max_wait_ms;
+    extern const SettingsBool run_query_in_background;
     extern const SettingsBool skip_unavailable_shards;
     extern const SettingsSkipUnavailableShardsMode skip_unavailable_shards_mode;
     extern const SettingsOverflowMode timeout_overflow_mode;
@@ -234,6 +235,8 @@ static ContextMutablePtr updateSettingsAndClientInfoForCluster(const Cluster & c
         new_settings[Setting::limit] = 0;
         new_settings[Setting::limit].changed = false;
     }
+
+    new_settings[Setting::run_query_in_background].changed = false;
 
     /// Setting additional_table_filters may be applied to Distributed table.
     /// In case if query is executed up to WithMergableState on remote shard, it is impossible to filter on initiator.

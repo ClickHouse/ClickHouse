@@ -2750,6 +2750,17 @@ Has no effect for secondary queries.
 
 Affects only the native TCP protocol.
 )", 0) \
+    DECLARE(Bool, run_query_in_background, false, R"(
+If enabled, the server schedules the query in the background, immediately returns an empty successful result, and runs the query to completion regardless of what happens to the connection.
+
+A background query does not survive a server restart.
+
+Track the query by its `query_id`: in `system.processes` while it is running and in `system.query_log` after it finishes. Poll rather than conclude from a single empty lookup, because between submission and the start of execution the id resolves in neither table. Errors are recorded only in `system.query_log`. `KILL QUERY` works as usual.
+
+Applies to queries received over the native TCP and HTTP protocols. Over HTTP, pass the setting as a URL parameter or set it in the session or the profile.
+
+The main use case is a long `INSERT ... SELECT` that must not be lost when the client connection drops.
+)", 0) \
     \
     DECLARE(Bool, ignore_on_cluster_for_replicated_udf_queries, false, R"(
 Ignore ON CLUSTER clause for replicated UDF management queries.
