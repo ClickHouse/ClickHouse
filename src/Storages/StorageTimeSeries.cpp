@@ -964,7 +964,9 @@ CREATE TABLE my_table ENGINE=TimeSeries
 TAGS INNER COLUMNS (id UInt64 DEFAULT sipHash64(metric_name, all_tags))
 ```
 
-The `id` column can be of any comparable non-Nullable type. If no `DEFAULT` expression is given and the `id_generator` setting is not set, ClickHouse will choose the expression automatically based on the `id` type (only if the `id` type is one of `UUID`, `UInt64`, `UInt128`, or `FixedString(16)`). The `id` types declared in the samples and tags inner tables must match.
+The `id` column can be of any comparable non-Nullable type. The `id` types declared in the samples and tags inner tables must match.
+
+If no `DEFAULT` expression is given for the `id` column and the `id_generator` setting is not set, ClickHouse will choose the `DEFAULT` expression automatically based on the `id` type, but only if the `id` type is one of `UUID`, `UInt64`, `UInt128`, `FixedString(16)`, or a tuple of two of those types. For such a tuple the automatically chosen expression calculates a hash of the metric name in the first component and a hash of all the tags in the second component.
 
 The `id_generator` setting offers the same customization without using the `INNER COLUMNS` clause:
 
