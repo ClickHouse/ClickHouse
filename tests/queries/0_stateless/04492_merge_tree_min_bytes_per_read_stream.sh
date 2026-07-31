@@ -111,7 +111,7 @@ P_RES_OFF=$($CLICKHOUSE_CLIENT -q "SELECT sum(w) FROM t_parts SETTINGS max_threa
 # stream count unchanged instead of charging only the physically present requested columns.
 $CLICKHOUSE_CLIENT -q "DROP TABLE IF EXISTS t_default_dependency"
 $CLICKHOUSE_CLIENT -q "CREATE TABLE t_default_dependency (k UInt64, w UInt16, s String) ENGINE = MergeTree ORDER BY k SETTINGS index_granularity = 1, index_granularity_bytes = 0, min_bytes_for_wide_part = 0"
-$CLICKHOUSE_CLIENT -q "INSERT INTO t_default_dependency SELECT number, number, repeat('x', 65536) FROM numbers(1000)"
+$CLICKHOUSE_CLIENT -q "INSERT INTO t_default_dependency SELECT number, number, repeat('x', 65536) FROM numbers(1000) SETTINGS max_insert_threads = 1"
 $CLICKHOUSE_CLIENT -q "ALTER TABLE t_default_dependency ADD COLUMN d UInt64 DEFAULT length(s)"
 echo "-- unknown DEFAULT dependencies do not cap streams --"
 DEFAULT_ON=$(stream_count "SELECT sum(w), sum(d) FROM t_default_dependency SETTINGS max_threads = 64, merge_tree_min_rows_for_concurrent_read = 0, merge_tree_min_bytes_for_concurrent_read = 0, merge_tree_min_read_task_size = 1")
