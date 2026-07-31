@@ -364,3 +364,31 @@ def test_sts_backup_restore(started_cluster):
     assert "4950" == instance.query("SELECT sum(x) FROM t_sts_backup").strip()
 
     instance.query("DROP TABLE t_sts_backup SYNC")
+
+
+def test_role_arn_override_drops_collection_external_id(started_cluster):
+    # A query that overrides `role_arn` on a named collection must not silently inherit the
+    # collection's `external_id` -- it is the secret half of the STS triple, tied to the
+    # collection's own role. The `s3_role_extid_leak` collection carries a deliberately wrong
+    # external_id (and role_session_name = 'miniorole') but no role_arn. The query supplies its own
+    # role_arn and does not override external_id: the read succeeds only if the collection's wrong
+    # external_id was dropped (the mock STS accepts a request with no ExternalId), and fails with a
+    # 403 if it leaked into the AssumeRole call.
+    instance = started_cluster.instances["s3_with_environment_credentials"]
+    url = f"http://{started_cluster.minio_host}:{started_cluster.minio_port}/{started_cluster.minio_bucket}/test_role_extid_leak.csv"
+
+    instance.query(
+        f"""
+        INSERT INTO FUNCTION s3('{url}', 'minio', '{minio_secret_key}')
+        SELECT number, number * 10, number * 100 FROM numbers(10) SETTINGS s3_truncate_on_insert = 1"""
+    )
+
+    assert "45\t450\t4500\n" == instance.query(
+        """
+        SELECT sum(a), sum(b), sum(c) FROM s3(
+            s3_role_extid_leak,
+            role_arn = 'arn::role',
+            format = 'CSV', structure = 'a Int64, b Int64, c Int64')
+        SETTINGS s3_max_single_read_retries = 1, s3_retry_attempts = 1, s3_request_timeout_ms = 10000
+    """
+    )

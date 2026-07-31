@@ -228,6 +228,13 @@ void registerBackupEngineS3(BackupFactory & factory)
             const bool drop_inherited_token = collection->isQueryOverridden("access_key_id")
                 && collection->isQueryOverridden("secret_access_key") && !collection->isQueryOverridden("session_token");
 
+            /// A query-overridden `role_arn` must not silently inherit the collection's `external_id` (the
+            /// secret half of the STS triple, tied to the collection's own role); drop it unless the query
+            /// supplied its own. Mirrors `S3StorageParsedArguments::fromNamedCollection`.
+            if (params.context->shouldRestrictUserQueryS3Credentials() && collection->isQueryOverridden("role_arn")
+                && !collection->isQueryOverridden("external_id"))
+                external_id.clear();
+
             /// Take every credential field (mechanisms and the static key pair) from the collection, defaulting
             /// to empty/0, so none is inherited from the server `<s3>` config: a URL-only backup collection
             /// stays anonymous and a role-only collection has no base keys to assume the role with (matches

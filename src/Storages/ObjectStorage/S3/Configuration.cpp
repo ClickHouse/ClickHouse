@@ -287,6 +287,14 @@ void S3StorageParsedArguments::fromNamedCollection(const NamedCollection & colle
         s3_settings->auth_settings[S3AuthSetting::session_token] = "";
     }
 
+    /// A query-overridden `role_arn` must not silently inherit the collection's `external_id`: it is the
+    /// secret half of the STS triple, tied to the collection's own role, and reusing it with a
+    /// query-chosen role could unlock any role whose trust policy gates on that ExternalId. Drop it unless
+    /// the query supplied its own.
+    if (context->shouldRestrictUserQueryS3Credentials() && collection.isQueryOverridden("role_arn")
+        && !collection.isQueryOverridden("external_id"))
+        s3_settings->auth_settings[S3AuthSetting::external_id] = "";
+
     /// When the query supplies its own key pair but no `session_token`, drop any token inherited from the
     /// collection: it was issued for the collection's keys and would be sent with the query's keys instead
     /// (and would break the STS base when a query-supplied `role_arn` is also present). Mirrors the
