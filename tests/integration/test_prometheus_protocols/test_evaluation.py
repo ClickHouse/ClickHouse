@@ -920,6 +920,16 @@ def test_function_absent():
         ],
     )
 
+    # Once an equality matcher has been accepted for a label, a later matcher
+    # can delete that inferred label but cannot unlock it for another equality
+    # matcher. This is Prometheus' historic, intentionally order-sensitive rule.
+    do_query_test(
+        'absent(nonexistent_metric_name{job="a", job=~"c", job="d"})',
+        140,
+        '{"resultType": "vector", "result": [{"metric": {}, "value": [140, "1"]}]}',
+        [["[]", "1970-01-01 00:02:20.000", 1]],
+    )
+
     # Labels cannot be inferred through a more complex expression.
     do_query_test(
         'absent(sum(nonexistent_metric_name{job="api"}))',
@@ -3300,6 +3310,15 @@ def test_aggregation_operator_count_values():
         120,
         '{"resultType": "vector", "result": [{"metric": {"__name__": "5"}, "value": [120, "1"]}]}',
         [["[('__name__','5')]", "1970-01-01 00:02:00.000", 1]],
+    )
+
+    # Prometheus 3.x accepts any non-empty UTF-8 label name rather than only
+    # the legacy [A-Za-z_][A-Za-z0-9_]* form.
+    do_query_test(
+        'count_values("value label", vector(5))',
+        120,
+        '{"resultType": "vector", "result": [{"metric": {"value label": "5"}, "value": [120, "1"]}]}',
+        [["[('value label','5')]", "1970-01-01 00:02:00.000", 1]],
     )
 
     do_query_test_expect_error(

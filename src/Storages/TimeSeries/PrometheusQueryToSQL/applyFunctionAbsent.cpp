@@ -39,6 +39,9 @@ const PQT::InstantSelector * peelToInstantSelector(const Node * node)
 ASTPtr makeInferredLabelsMap(const PQT::Function * function_node)
 {
     std::map<String, String> labels;
+    /// This set deliberately stays monotonic, matching Prometheus's historic `has` map:
+    /// a later matcher can delete an inferred label, but it cannot unlock that label name
+    /// for a subsequent equality matcher.
     std::unordered_set<String> labels_with_equality_matcher;
 
     const auto * selector = peelToInstantSelector(function_node->getArguments().at(0));
