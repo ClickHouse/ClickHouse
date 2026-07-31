@@ -37,7 +37,7 @@ This format is only available when ClickHouse is built with the `flatbuffers` co
 | [`Float64`](/sql-reference/data-types/float.md)                                                                               | `Double`               |
 | [`Decimal32`/`Decimal64`](/sql-reference/data-types/decimal.md)                                                               | `Int`                  |
 | [`Decimal128`/`Decimal256`](/sql-reference/data-types/decimal.md)                                                             | `Blob`                 |
-| [`String`](/sql-reference/data-types/string.md), [`FixedString`](/sql-reference/data-types/fixedstring.md)                    | `String`               |
+| [`String`](/sql-reference/data-types/string.md), [`FixedString`](/sql-reference/data-types/fixedstring.md)                    | `Blob` (or `String`)   |
 | [`UUID`](/sql-reference/data-types/uuid.md)                                                                                   | `String` (text form)   |
 | [`IPv4`](/sql-reference/data-types/ipv4.md)                                                                                   | `UInt`                 |
 | [`IPv6`](/sql-reference/data-types/ipv6.md)                                                                                   | `Blob`                 |
@@ -50,6 +50,14 @@ A `Nullable` value that is not `NULL` is serialized as its underlying value.
 The wide numeric types serialized as `Blob` (`(U)Int128`, `(U)Int256`, `Decimal128`, `Decimal256`)
 are written as little-endian byte sequences, so the output is identical on every architecture.
 `IPv6` is written as its 16-byte network-order representation.
+
+ClickHouse `String` and `FixedString` values are arbitrary byte sequences that may contain invalid
+UTF-8 and embedded zero bytes, while FlexBuffers `String` values are expected to be valid UTF-8
+text, so these columns are serialized as `Blob` by default. Set
+[`output_format_flatbuffers_string_as_string`](../../operations/settings/settings-formats.md/#output_format_flatbuffers_string_as_string)
+to serialize them as FlexBuffers `String` instead; the bytes are written verbatim, so it is the
+user's responsibility to ensure they are valid UTF-8. `UUID` is always serialized as its canonical
+text form, which is plain ASCII.
 
 Other types (for example [`Map`](/sql-reference/data-types/map.md)) are not supported and raise an
 exception.

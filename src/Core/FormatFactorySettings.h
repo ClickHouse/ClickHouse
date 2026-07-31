@@ -1561,6 +1561,12 @@ Use BSON String type instead of Binary for String columns.
 Skip fields with unsupported types while schema inference for format BSON.
 )", 0) \
     \
+    DECLARE(Bool, output_format_flatbuffers_string_as_string, false, R"(
+Use FlexBuffers String type instead of Blob for String and FixedString columns in the Flatbuffers output format.
+
+ClickHouse String and FixedString values are arbitrary byte sequences that may contain invalid UTF-8 and embedded zero bytes, while FlexBuffers String values are expected to be valid UTF-8 text, so by default these columns are serialized as Blob. Enable this setting to serialize them as FlexBuffers String instead; the bytes are written verbatim, so it is the user's responsibility to ensure they are valid UTF-8.
+)", 0) \
+    \
     DECLARE(Bool, format_display_secrets_in_show_and_select, false, R"(
 Enables or disables showing secrets in `SHOW` and `SELECT` queries for tables, databases,
 table functions, and dictionaries.

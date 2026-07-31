@@ -613,6 +613,11 @@ struct FormatSettings
 
     struct
     {
+        bool output_string_as_string = false;
+    } flatbuffers{};
+
+    struct
+    {
         bool allow_types_conversion = true;
         bool encode_types_in_binary_format = false;
         bool decode_types_in_binary_format = false;

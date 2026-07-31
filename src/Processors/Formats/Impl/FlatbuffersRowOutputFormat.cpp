@@ -39,8 +39,9 @@ namespace ErrorCodes
     extern const int ILLEGAL_COLUMN;
 }
 
-FlatbuffersRowOutputFormat::FlatbuffersRowOutputFormat(WriteBuffer & out_, SharedHeader header_, const FormatSettings &)
+FlatbuffersRowOutputFormat::FlatbuffersRowOutputFormat(WriteBuffer & out_, SharedHeader header_, const FormatSettings & format_settings_)
     : IRowOutputFormat(header_, out_)
+    , string_as_string(format_settings_.flatbuffers.output_string_as_string)
 {
 }
 
@@ -77,6 +78,18 @@ void FlatbuffersRowOutputFormat::serializeString(std::string_view value)
     /// builder.String before serializeField recurses, so a single reused member is safe.
     string_scratch.assign(value.data(), value.size());
     builder.String(string_scratch);
+}
+
+void FlatbuffersRowOutputFormat::serializeStringOrBlob(std::string_view value)
+{
+    /// ClickHouse String / FixedString values are arbitrary byte sequences: they may contain invalid
+    /// UTF-8 and embedded zero bytes, which the UTF-8-only FlexBuffers String carrier cannot represent
+    /// faithfully. Serialize them as Blob by default; `output_format_flatbuffers_string_as_string`
+    /// opts into FlexBuffers String, writing the bytes verbatim.
+    if (string_as_string)
+        serializeString(value);
+    else
+        builder.Blob(value.data(), value.size());
 }
 
 template <typename ColumnType>
@@ -222,12 +235,12 @@ void FlatbuffersRowOutputFormat::serializeField(const IColumn & column, const Da
         }
         case TypeIndex::String:
         {
-            serializeString(assert_cast<const ColumnString &>(column).getDataAt(row_num));
+            serializeStringOrBlob(assert_cast<const ColumnString &>(column).getDataAt(row_num));
             return;
         }
         case TypeIndex::FixedString:
         {
-            serializeString(assert_cast<const ColumnFixedString &>(column).getDataAt(row_num));
+            serializeStringOrBlob(assert_cast<const ColumnFixedString &>(column).getDataAt(row_num));
             return;
         }
         case TypeIndex::UUID:
@@ -325,7 +338,7 @@ This format is only available when ClickHouse is built with the `flatbuffers` co
 | `Float64`                                               | `Double`               |
 | `Decimal32`/`Decimal64`                                 | `Int`                  |
 | `Decimal128`/`Decimal256`                               | `Blob`                 |
-| `String`, `FixedString`                                 | `String`               |
+| `String`, `FixedString`                                 | `Blob` (or `String`)   |
 | `UUID`                                                  | `String` (text form)   |
 | `IPv4`                                                  | `UInt`                 |
 | `IPv6`                                                  | `Blob`                 |
@@ -339,6 +352,14 @@ example `Map`) are not supported and raise an exception.
 The wide numeric types serialized as `Blob` (`(U)Int128`, `(U)Int256`, `Decimal128`, `Decimal256`)
 are written as little-endian byte sequences, so the output is identical on every architecture.
 `IPv6` is written as its 16-byte network-order representation.
+
+ClickHouse `String` and `FixedString` values are arbitrary byte sequences that may contain invalid
+UTF-8 and embedded zero bytes, while FlexBuffers `String` values are expected to be valid UTF-8
+text, so these columns are serialized as `Blob` by default. Set
+`output_format_flatbuffers_string_as_string`
+to serialize them as FlexBuffers `String` instead; the bytes are written verbatim, so it is the
+user's responsibility to ensure they are valid UTF-8. `UUID` is always serialized as its
+canonical text form, which is plain ASCII.
 
 ## Example usage {#example-usage}
 

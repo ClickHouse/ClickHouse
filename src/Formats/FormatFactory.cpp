@@ -389,6 +389,7 @@ FormatSettings getFormatSettings(const ContextPtr & context, const Settings & se
     format_settings.try_infer_exponent_floats = settings[Setting::input_format_try_infer_exponent_floats];
     format_settings.markdown.escape_special_characters = settings[Setting::output_format_markdown_escape_special_characters];
     format_settings.bson.output_string_as_string = settings[Setting::output_format_bson_string_as_string];
+    format_settings.flatbuffers.output_string_as_string = settings[Setting::output_format_flatbuffers_string_as_string];
     format_settings.bson.skip_fields_with_unsupported_types_in_schema_inference = settings[Setting::input_format_bson_skip_fields_with_unsupported_types_in_schema_inference];
     format_settings.binary.max_binary_string_size = settings[Setting::format_binary_max_string_size];
     format_settings.binary.max_binary_array_size = settings[Setting::format_binary_max_array_size];

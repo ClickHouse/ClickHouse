@@ -39,6 +39,10 @@ private:
     /// so route every string value through a NUL-terminated scratch buffer.
     void serializeString(std::string_view value);
 
+    /// Serialize a String / FixedString value: as Blob by default (ClickHouse strings are arbitrary
+    /// byte sequences), as FlexBuffers String when `output_format_flatbuffers_string_as_string` is set.
+    void serializeStringOrBlob(std::string_view value);
+
     /// Serialize a wide numeric value (Int128/UInt128/Int256/UInt256/Decimal128/Decimal256) as a
     /// little-endian byte sequence, so the produced blob is identical on every architecture (the raw
     /// in-memory bytes would be native-endian and differ on big-endian systems such as s390x).
@@ -48,6 +52,11 @@ private:
     flexbuffers::Builder builder;
     size_t root_start = 0;
     std::string string_scratch;
+
+    /// ClickHouse String / FixedString values are arbitrary byte sequences (possibly invalid UTF-8,
+    /// possibly with embedded zero bytes), while FlexBuffers String is UTF-8 text, so by default
+    /// they are serialized as Blob; `output_format_flatbuffers_string_as_string` opts into String.
+    bool string_as_string = false;
 };
 
 }

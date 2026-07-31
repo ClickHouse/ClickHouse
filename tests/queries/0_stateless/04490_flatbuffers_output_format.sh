@@ -85,9 +85,14 @@ nonempty_output()
     [ "$n" -gt 0 ] && echo 1 || echo 0
 }
 
+# String and FixedString are serialized as Blob by default (they are arbitrary byte sequences,
+# while FlexBuffers String is UTF-8 text); this opt-in setting maps them to FlexBuffers String.
+# The value-level blocks below pin the String mapping, so they enable it explicitly.
+STRING_AS_STRING="--output_format_flatbuffers_string_as_string=1"
+
 # Value-level check: a single row covering scalars, String, Array, Nullable (NULL) and a
 # blob-backed wide integer is decoded back and its values are compared with the selected ones.
-$CLICKHOUSE_LOCAL -q "
+$CLICKHOUSE_LOCAL $STRING_AS_STRING -q "
 SELECT
     42::UInt64 AS u,
     -7::Int32 AS i,
@@ -99,11 +104,11 @@ SELECT
 FORMAT Flatbuffers" | python3 -c "$DECODER"
 
 # Value-level check: several rows keep their own per-row values in order.
-$CLICKHOUSE_LOCAL -q "SELECT number AS n, toString(number) AS s FROM numbers(3) FORMAT Flatbuffers" | python3 -c "$DECODER"
+$CLICKHOUSE_LOCAL $STRING_AS_STRING -q "SELECT number AS n, toString(number) AS s FROM numbers(3) FORMAT Flatbuffers" | python3 -c "$DECODER"
 
 # Value-level check: FixedString and UUID map to String, and wide integers are serialized as
 # little-endian Blobs. 256 makes the byte order observable (0x00 0x01 ... in little-endian).
-$CLICKHOUSE_LOCAL -q "
+$CLICKHOUSE_LOCAL $STRING_AS_STRING -q "
 SELECT
     'abcd'::FixedString(4) AS fs,
     toUUID('61f0c404-5cb3-11e7-907b-a6006ad3dba0') AS uuid,
@@ -119,7 +124,7 @@ FORMAT Flatbuffers" | python3 -c "$DECODER"
 #    decodes to the trailing 0x01);
 #  * Tuple maps to a nested vector, LowCardinality to the underlying value (the dictionary value
 #    'lc', not its index), and FixedString/UUID to their String form.
-$CLICKHOUSE_LOCAL -q "
+$CLICKHOUSE_LOCAL $STRING_AS_STRING -q "
 SELECT
     42::UInt64 AS u64,
     -5::Int32 AS i32,
@@ -149,6 +154,24 @@ SELECT
     '42.42'::Decimal128(2) AS dec128, '42.42'::Decimal256(2) AS dec256,
     'a'::Enum8('a' = 1) AS e8, 'b'::Enum16('b' = 2) AS e16
 FORMAT Flatbuffers" | python3 -c "$DECODER"
+
+# Regression check for the default String / FixedString mapping: ClickHouse strings are arbitrary
+# byte sequences, so by default they are serialized as Blob, which represents invalid UTF-8
+# (0xff) and embedded NUL bytes ('a\0b' = 0x61 0x00 0x62) faithfully — a FlexBuffers String could
+# not carry either. UUID keeps its String (text) form: it is always plain ASCII.
+$CLICKHOUSE_LOCAL -q "
+SELECT
+    'hello'::String AS s,
+    'abcd'::FixedString(4) AS fs,
+    unhex('ff')::String AS invalid_utf8,
+    unhex('610062')::String AS embedded_nul,
+    toUUID('61f0c404-5cb3-11e7-907b-a6006ad3dba0') AS uuid
+FORMAT Flatbuffers" | python3 -c "$DECODER"
+
+# The same embedded NUL byte also survives the opt-in String mapping (FlexBuffers strings are
+# length-prefixed): the decoded length pins that the value is not truncated at the NUL.
+$CLICKHOUSE_LOCAL $STRING_AS_STRING -q "SELECT unhex('610062')::String AS embedded_nul FORMAT Flatbuffers" \
+    | python3 -c "$DECODER" | python3 -c "import sys; print('len=%d' % (len(sys.stdin.buffer.read().splitlines()[0]) - len('[str:]')))"
 
 # An empty result set still produces a valid (non-empty) FlexBuffers root that decodes to zero rows.
 $CLICKHOUSE_LOCAL -q "SELECT 1 AS x WHERE 0 FORMAT Flatbuffers" | nonempty_output
