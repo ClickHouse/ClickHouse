@@ -44,6 +44,13 @@ public:
         /// Whether the `Processing` state is only a cached observation of a foreign
         /// `processing` node, in which case it must not be treated as terminal.
         bool isProcessingByAnotherProcessor() const { return processing_by_another_processor.load(); }
+        /// Whether a file in `Processing` state may be attempted again.
+        /// The state is respected while it belongs to this processor (its owner updates it
+        /// on commit), and, for a cached observation of a foreign `processing` node, for a
+        /// limited time since the observation (to avoid probing keeper on every polling pass).
+        /// After that time the observation is stale: the foreign processor could have released
+        /// the file without committing it, so the next attempt must check keeper again.
+        bool isProcessingRetryable() const;
 
         std::string getException() const;
 
@@ -59,6 +66,8 @@ public:
 
     private:
         std::atomic<bool> processing_by_another_processor = false;
+        /// When the foreign `processing` node was observed the last time.
+        std::atomic<time_t> processing_by_another_processor_since = 0;
 
         mutable std::mutex last_exception_mutex;
         std::string last_exception;

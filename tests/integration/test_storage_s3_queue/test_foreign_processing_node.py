@@ -58,6 +58,10 @@ def test_file_is_retried_after_foreign_processing_node_disappears(started_cluste
     The foreign processor is emulated by a real `processing` node in keeper (there is no
     difference from the point of view of this table - the node just does not carry our own
     processor info), and its disappearance by removing that node.
+
+    The cached observation of the foreign `processing` node is trusted for a limited time
+    (so that the table does not probe keeper for the file on every polling pass), therefore
+    the file is picked up within that timeout after the node disappears, not immediately.
     """
     node = started_cluster.instances["instance"]
 

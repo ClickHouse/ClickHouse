@@ -37,6 +37,14 @@ namespace
     {
         return std::chrono::system_clock::to_time_t(std::chrono::system_clock::now());
     }
+
+    /// How long a cached observation of a foreign `processing` node is trusted.
+    /// While it is trusted, the file is skipped without probing keeper, so that a file
+    /// being processed by another server is not probed on every polling pass.
+    /// After that the file is probed again (and the observation refreshed if the node
+    /// is still there), because the foreign processor could have released the file
+    /// without committing it, which leaves no persistent trace in keeper.
+    constexpr time_t processing_by_another_processor_ttl_sec = 30;
 }
 
 void ObjectStorageQueueIFileMetadata::FileStatus::setProcessingEndTime()
@@ -94,10 +102,19 @@ void ObjectStorageQueueIFileMetadata::FileStatus::updateState(State state_)
 
 void ObjectStorageQueueIFileMetadata::FileStatus::onProcessingByAnotherProcessor()
 {
-    /// Set the flag before the state, so that a concurrent reader which sees `Processing`
-    /// never misses the fact that this state is not ours and therefore not terminal.
+    /// Set the flag and the observation time before the state, so that a concurrent reader
+    /// which sees `Processing` never misses the fact that this state is not ours and
+    /// therefore not terminal.
+    processing_by_another_processor_since = now();
     processing_by_another_processor = true;
     state = FileStatus::State::Processing;
+}
+
+bool ObjectStorageQueueIFileMetadata::FileStatus::isProcessingRetryable() const
+{
+    if (!processing_by_another_processor)
+        return false;
+    return now() - processing_by_another_processor_since.load() >= processing_by_another_processor_ttl_sec;
 }
 
 std::string ObjectStorageQueueIFileMetadata::FileStatus::getException() const
@@ -304,7 +321,7 @@ bool ObjectStorageQueueIFileMetadata::checkProcessingOwnership(std::shared_ptr<Z
 bool ObjectStorageQueueIFileMetadata::trySetProcessing()
 {
     auto state = file_status->state.load();
-    if ((state == FileStatus::State::Processing && !file_status->isProcessingByAnotherProcessor())
+    if ((state == FileStatus::State::Processing && !file_status->isProcessingRetryable())
         || state == FileStatus::State::Processed
         || (state == FileStatus::State::Failed
             && file_status->retries
@@ -343,7 +360,7 @@ ObjectStorageQueueIFileMetadata::prepareSetProcessingRequests(Coordination::Requ
     }
 
     auto state = file_status->state.load();
-    if ((state == FileStatus::State::Processing && !file_status->isProcessingByAnotherProcessor())
+    if ((state == FileStatus::State::Processing && !file_status->isProcessingRetryable())
         || state == FileStatus::State::Processed
         || (state == FileStatus::State::Failed
             && file_status->retries
@@ -391,7 +408,19 @@ void ObjectStorageQueueIFileMetadata::afterSetProcessing(bool success, std::opti
                 /// processable again as soon as the foreign processor releases it.
                 /// Caching it as terminal would make this table skip the file until
                 /// the file status is evicted from the cache or the server is restarted.
-                file_status->onProcessingByAnotherProcessor();
+                ///
+                /// However, if the cached state is already `Processing` and it is our own,
+                /// the node belongs to a concurrent local processor (the file status is
+                /// shared between tables on this server which use the same keeper path,
+                /// and between insert threads): keep the local state, its owner will
+                /// update it on commit.
+                if (file_status->state.load() == FileStatus::State::Processing
+                    && !file_status->isProcessingByAnotherProcessor())
+                {
+                    LOG_TEST(log, "File {} is already being processed by a concurrent local processor", path);
+                }
+                else
+                    file_status->onProcessingByAnotherProcessor();
             }
             else
                 file_status->updateState(file_state.value());
