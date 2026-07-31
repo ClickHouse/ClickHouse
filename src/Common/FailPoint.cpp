@@ -462,7 +462,13 @@ std::vector<FailPointInjection::FailPointInfo> FailPointInjection::getFailPoints
 
 #else // USE_LIBFIU
 
+/// These two are hooks in regular code paths, so they must be no-ops rather than throw.
+
 void FailPointInjection::pauseFailPoint(const String &)
+{
+}
+
+void FailPointInjection::notifyPauseAndWaitForResume(const String &)
 {
 }
 
@@ -471,28 +477,37 @@ bool FailPointInjection::hasAnyFailPointBeenRegistered()
     return false;
 }
 
+/// The rest are only reachable through SYSTEM ... FAILPOINT queries, and pretending
+/// to succeed would leave the caller waiting for a fail point that can never fire.
+
+[[noreturn]] static void throwDisabled()
+{
+    throw Exception(ErrorCodes::SUPPORT_IS_DISABLED, "Fail points are disabled because ClickHouse was built without libfiu");
+}
+
 void FailPointInjection::enableFailPoint(const String &)
 {
+    throwDisabled();
 }
 
 void FailPointInjection::disableFailPoint(const String &)
 {
+    throwDisabled();
 }
 
 void FailPointInjection::notifyFailPoint(const String &)
 {
-}
-
-void FailPointInjection::notifyPauseAndWaitForResume(const String &)
-{
+    throwDisabled();
 }
 
 void FailPointInjection::waitForPause(const String &)
 {
+    throwDisabled();
 }
 
 void FailPointInjection::waitForResume(const String &)
 {
+    throwDisabled();
 }
 
 std::vector<FailPointInjection::FailPointInfo> FailPointInjection::getFailPoints()
