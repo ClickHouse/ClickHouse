@@ -1468,8 +1468,12 @@
     "source": "/cloud/features/ai-ml/agents/sharing-and-access"
   },
   {
-    "destination": "/products/cloud/features/ai-ml/ask-ai",
+    "destination": "/products/cloud/features/ai-ml/aichat/using-ai-chat",
     "source": "/cloud/features/ai-ml/ask-ai"
+  },
+  {
+    "destination": "/products/cloud/features/ai-ml/aichat/using-ai-chat",
+    "source": "/products/cloud/features/ai-ml/ask-ai"
   },
   {
     "destination": "/products/cloud/features/ai-ml/langfuse",

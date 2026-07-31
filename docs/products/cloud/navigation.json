@@ -255,7 +255,6 @@
           "group": "AI tools and agents",
           "pages": [
             "products/cloud/features/ai-ml/index",
-            "products/cloud/features/ai-ml/ask-ai",
             "products/cloud/features/ai-ml/aichat/using-ai-chat",
             "products/cloud/features/ai-ml/aichat/customizing-semantic-layer",
             "products/cloud/features/ai-ml/langfuse",
