@@ -74,7 +74,7 @@ String getStructureHashOfPatch(const String & partition_id);
 
 /// Returns the hash of column names and types of a patch part.
 /// Unlike the hash in the partition id of a v1 patch part, it covers column types as well.
-String getColumnsHashWithTypes(const ColumnsDescription & patch_part_desc);
+String getColumnsHashWithTypes(const ColumnsDescription & columns_desc);
 
 /// Returns true if patch max data version of the patch if higher than max_data_version.
 /// Asserts that the patch's min and max data versions don't intersect max_data_version.
