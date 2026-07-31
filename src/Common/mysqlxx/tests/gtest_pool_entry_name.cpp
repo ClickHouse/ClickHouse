@@ -95,6 +95,27 @@ TEST(MySQLPoolEntryName, TLSCredentialsArePartOfTheKey)
         with_tls("<replica><priority>1</priority><ssl_key_pem>b</ssl_key_pem></replica>"));
 }
 
+/// The hash of the credentials frames every field with its length, so distinct tuples that
+/// concatenate to the same byte stream must not collapse to the same key.
+TEST(MySQLPoolEntryName, TLSCredentialFieldsAreFramed)
+{
+    const auto with_tls = [](const std::string & keys)
+    {
+        return entryName(
+            "<c><source><share_connection>1</share_connection><host>h</host><port>3306</port><user>u</user><db>d</db>"
+            + keys + "</source></c>");
+    };
+
+    /// The same bytes split differently between two adjacent fields.
+    EXPECT_NE(
+        with_tls("<ssl_ca_pem>ab</ssl_ca_pem><ssl_cert_pem>c</ssl_cert_pem>"),
+        with_tls("<ssl_ca_pem>a</ssl_ca_pem><ssl_cert_pem>bc</ssl_cert_pem>"));
+    /// The same value shifted into another field.
+    EXPECT_NE(with_tls("<ssl_ca_pem>x</ssl_ca_pem>"), with_tls("<ssl_cert_pem>x</ssl_cert_pem>"));
+    /// A path and the contents are different credentials even when they read the same.
+    EXPECT_NE(with_tls("<ssl_ca>x</ssl_ca>"), with_tls("<ssl_ca_pem>x</ssl_ca_pem>"));
+}
+
 /// A single physical pool cannot have two different sizes or wait semantics.
 TEST(MySQLPoolEntryName, PoolSettingsArePartOfTheKey)
 {

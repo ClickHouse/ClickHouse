@@ -58,7 +58,13 @@ std::string getPoolEntryName(const Poco::Util::AbstractConfiguration & config,
     {
         SipHash hash;
         for (const auto & key : {"ssl_ca", "ssl_cert", "ssl_key", "ssl_ca_pem", "ssl_cert_pem", "ssl_key_pem"})
-            hash.update(get_param(prefix, key));
+        {
+            /// Frame every field with its length: a raw concatenation would let distinct tuples
+            /// collapse to the same byte stream (`("ab", "c")` vs `("a", "bc")`) and alias the pools.
+            const auto value = get_param(prefix, key);
+            hash.update(value.size());
+            hash.update(value.data(), value.size());
+        }
         return "&ssl=" + std::to_string(hash.get64());
     };
 
