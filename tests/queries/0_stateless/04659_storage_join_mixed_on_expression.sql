@@ -9,6 +9,11 @@ SET allow_experimental_join_condition = 1;
 -- any algorithm other than hash, parallel_hash or grace_hash, and it does so before reaching the
 -- Join-engine branch, so without this pin a randomized join_algorithm changes the expected errors.
 SET join_algorithm = 'hash';
+-- join_use_nulls is load-bearing: the Join engine captures it at CREATE time from the global
+-- context while the query reads the session value, so a session join_use_nulls = 1 makes
+-- getJoinLocked reject every LEFT or FULL join against the engine with its own
+-- "needs the same join_use_nulls setting" error, upstream of the guard under test.
+SET join_use_nulls = 0;
 
 DROP TABLE IF EXISTS t1;
 DROP TABLE IF EXISTS sj_all_left;
