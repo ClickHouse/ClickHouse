@@ -45,6 +45,8 @@ struct MergeTreeReaderSettings
     bool is_low_cardinality_dictionary = false;
     /// True if we read stream that contains some metadata and will be read as a whole at once.
     bool is_metadata_file = false;
+    /// True if we read a stream that holds a single value for the whole part, which every granule reads.
+    bool is_single_value_per_part = false;
     /// Deleted mask is applied to all reads except internal select from mutate some part columns.
     bool apply_deleted_mask = true;
     /// Put reading task in a common I/O pool, return Async state on prepare()
