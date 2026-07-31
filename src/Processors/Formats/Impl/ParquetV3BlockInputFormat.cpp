@@ -133,8 +133,18 @@ void ParquetV3BlockInputFormat::prepareNeedOnlyCountRowGroups(const parquet::for
 
     if (!buckets_to_read)
     {
-        if (global_offsets.back() > 0)
-            need_only_count_row_groups.push_back({.row_num_offset = 0, .num_rows = global_offsets.back()});
+        /// Emit one span per row group (not a single whole-file span). Bounds peak memory when a
+        /// downstream transform (e.g. DeletionVectorTransform) still walks chunk rows, and matches
+        /// the bucketed need-only-count shape.
+        for (size_t row_group_id = 0; row_group_id < num_row_groups; ++row_group_id)
+        {
+            const size_t num_rows = static_cast<size_t>(file_metadata.row_groups[row_group_id].num_rows);
+            if (num_rows == 0)
+                continue;
+
+            need_only_count_row_groups.push_back(
+                {.row_num_offset = global_offsets[row_group_id], .num_rows = num_rows});
+        }
         return;
     }
 

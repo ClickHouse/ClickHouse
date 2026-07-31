@@ -630,6 +630,40 @@ public:
     }
 
     /**
+     * Count set bits in `[range_start, range_end)` without allocating a result bitmap.
+     * Used by need-only-count DV filtering to avoid an O(N) dense Filter over file rows.
+     */
+    UInt64 rb_range_cardinality(UInt64 range_start, UInt64 range_end) const /// NOLINT
+    {
+        UInt64 count = 0;
+        if (range_start >= range_end)
+            return count;
+
+        if (isSmall())
+        {
+            for (const auto & x : small)
+            {
+                const UInt64 val = static_cast<UInt64>(x.getValue());
+                if (val >= range_start && val < range_end)
+                    ++count;
+            }
+            return count;
+        }
+
+        for (auto it = roaring_bitmap->begin(); it != roaring_bitmap->end(); ++it)
+        {
+            if (*it < range_start)
+                continue;
+
+            if (*it < range_end)
+                ++count;
+            else
+                break;
+        }
+        return count;
+    }
+
+    /**
      * Return new set of the smallest `limit` values in set which is no less than `range_start`.
      * It's used in subset and currently only support UInt32
      */

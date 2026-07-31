@@ -152,6 +152,19 @@ TEST(ParquetV3NeedOnlyCountBuckets, CountsOnlyAssignedRowGroups)
     }
 
     {
+        /// Unbucketed need-only-count emits one span per row group (not a single whole-file chunk).
+        ReadBufferFromFile in(path);
+        const auto offsets_and_rows
+            = readNeedOnlyCountOffsetsAndRows(in, shared_header, format_settings, parser_shared_resources, /*buckets=*/ nullptr);
+        ASSERT_EQ(offsets_and_rows.size(), num_groups);
+        for (size_t group = 0; group < num_groups; ++group)
+        {
+            EXPECT_EQ(offsets_and_rows[group].first, group * rows_per_group);
+            EXPECT_EQ(offsets_and_rows[group].second, rows_per_group);
+        }
+    }
+
+    {
         ReadBufferFromFile in(path);
         auto buckets = std::make_shared<ParquetFileBucketInfo>(std::vector<size_t>{1});
         EXPECT_EQ(readNeedOnlyCountTotal(in, shared_header, format_settings, parser_shared_resources, buckets), rows_per_group);
