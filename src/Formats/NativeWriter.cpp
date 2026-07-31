@@ -96,15 +96,17 @@ void NativeWriter::flush()
     serialization.serializeBinaryBulkStateSuffix(settings, state);
 }
 
-std::tuple<SerializationPtr, SerializationInfoPtr, ColumnPtr> NativeWriter::getSerializationAndColumn(UInt64 client_revision, const ColumnWithTypeAndName & column)
+std::tuple<SerializationPtr, SerializationInfoPtr, ColumnPtr> NativeWriter::getSerializationAndColumn(
+    UInt64 client_revision, const ColumnWithTypeAndName & column, const std::optional<FormatSettings> & format_settings)
 {
     /// The size-stream String layout is enabled either by a high enough protocol revision (the
-    /// native TCP protocol) or by an explicit format setting (the Native/Buffers format). It is
-    /// orthogonal to the framing that the revision gates below and needs no per-column wire marker:
-    /// both peers agree through the revision or the setting.
+    /// native TCP protocol) or by an explicit format setting. The setting only applies to the
+    /// version-0 Native/Buffers *format* path, never to the negotiated protocol wire (otherwise a
+    /// server whose profile has the setting on would corrupt the stream for an older peer). It is
+    /// orthogonal to the framing that the revision gates below and needs no per-column wire marker.
     const bool with_string_size_stream
         = client_revision >= DBMS_MIN_REVISION_WITH_STRING_WITH_SIZE_STREAM_SERIALIZATION
-        || (format_settings && format_settings->native.write_string_with_size_stream);
+        || (client_revision == 0 && format_settings && format_settings->native.write_string_with_size_stream);
 
     if (client_revision >= DBMS_MIN_REVISION_WITH_CUSTOM_SERIALIZATION)
     {
@@ -220,7 +222,7 @@ size_t NativeWriter::write(const Block & block)
         SerializationPtr serialization;
         {
             SerializationInfoPtr info;
-            std::tie(serialization, info, column.column) = getSerializationAndColumn(client_revision, column);
+            std::tie(serialization, info, column.column) = getSerializationAndColumn(client_revision, column, format_settings);
             if (info)
             {
                 writeBinary(static_cast<UInt8>(info->hasCustomSerialization()), ostr);

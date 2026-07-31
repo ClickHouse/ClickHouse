@@ -721,9 +721,16 @@ void SerializationString::serializeBinaryBulkWithSizeStream(
     /// preallocate the exact amount of memory. Over the network a whole block is always serialized
     /// (offset == 0), so the offsets are written as-is without rebasing.
     if (settings.position_independent_encoding)
+    {
         serializeStringSizes(column, *size_stream, offset, limit);
+    }
     else
+    {
+        /// The offsets are written as-is (not rebased), which is only correct when the whole block is
+        /// serialized; that is always the case over the network, and the reader relies on it too.
+        chassert(offset == 0);
         SerializationNumber<ColumnString::Offset>::serializeBinaryBulk(offsets, *size_stream, offset, limit);
+    }
 
     settings.path.back() = Substream::Regular;
     auto * stream = settings.getter(settings.path);
@@ -835,23 +842,6 @@ void SerializationString::deserializeBinaryBulkWithSizeStream(
             for (size_t i = prev_offsets_size; i < offsets.size(); ++i)
                 offsets[i] += prev_last_offset;
 
-        /// Validate before reading the data, like SerializationArray::deserializeOffsetsBinaryBulk: a
-        /// corrupted or desynchronized stream can carry non-monotonic or absurd offsets, which would
-        /// otherwise build an internally inconsistent column or reach the allocator sanity check (a
-        /// logical error that aborts debug and sanitizer builds).
-        static constexpr UInt64 max_total_string_size = 1ULL << 48;
-        for (size_t i = prev_offsets_size; i < offsets.size(); ++i)
-        {
-            const IColumn::Offset prev = i == 0 ? 0 : offsets[i - 1];
-            if (offsets[i] < prev || offsets[i] - prev_last_offset > max_total_string_size)
-                throw Exception(
-                    ErrorCodes::INCORRECT_DATA,
-                    "String offsets stream is corrupted (offset {} at row {}, previous {}): most likely the data is corrupted",
-                    offsets[i],
-                    i,
-                    prev);
-        }
-
         settings.path.back() = Substream::Regular;
         auto * data_stream = settings.getter(settings.path);
         if (!data_stream)
@@ -859,16 +849,35 @@ void SerializationString::deserializeBinaryBulkWithSizeStream(
 
         auto & data = string_column.getChars();
         const size_t initial_data_size = data.size();
-        const size_t bytes_to_read = (offsets.empty() ? 0 : offsets.back()) - prev_last_offset;
-        data.resize(initial_data_size + bytes_to_read);
+
+        /// The offsets were appended above; from here any throw (a corrupt offset, an over-large
+        /// allocation, or a short data stream) rolls the offsets and the data back, so the column is
+        /// left exactly as it was.
         try
         {
+            /// Validate before reading the data, like SerializationArray::deserializeOffsetsBinaryBulk:
+            /// a corrupted or desynchronized stream can carry non-monotonic or absurd offsets, which
+            /// would otherwise build an internally inconsistent column or reach the allocator sanity
+            /// check (a logical error that aborts debug and sanitizer builds).
+            static constexpr UInt64 max_total_string_size = 1ULL << 48;
+            for (size_t i = prev_offsets_size; i < offsets.size(); ++i)
+            {
+                const IColumn::Offset prev = i == 0 ? 0 : offsets[i - 1];
+                if (offsets[i] < prev || offsets[i] - prev_last_offset > max_total_string_size)
+                    throw Exception(
+                        ErrorCodes::INCORRECT_DATA,
+                        "String offsets stream is corrupted (offset {} at row {}, previous {}): most likely the data is corrupted",
+                        offsets[i],
+                        i,
+                        prev);
+            }
+
+            const size_t bytes_to_read = (offsets.empty() ? 0 : offsets.back()) - prev_last_offset;
+            data.resize(initial_data_size + bytes_to_read);
             data_stream->readBigStrict(reinterpret_cast<char *>(&data[initial_data_size]), bytes_to_read);
         }
         catch (...)
         {
-            /// The offsets were appended before the data was read; roll both back so a short data
-            /// stream leaves the column exactly as it was.
             offsets.resize_assume_reserved(prev_offsets_size);
             data.resize_assume_reserved(initial_data_size);
             throw;

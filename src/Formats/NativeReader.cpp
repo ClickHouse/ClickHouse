@@ -209,11 +209,13 @@ Block NativeReader::read()
         ColumnPtr read_column;
 
         /// The size-stream String layout is enabled either by a high enough protocol revision (the
-        /// native TCP protocol) or by an explicit format setting (the Native/Buffers format). It is
+        /// native TCP protocol) or by an explicit format setting. The setting only applies to the
+        /// version-0 Native/Buffers *format* path, never to the negotiated protocol wire (otherwise a
+        /// server whose profile has the setting on would misparse blocks from an older peer). It is
         /// orthogonal to the framing gated by the revision and needs no per-column wire marker.
         const bool with_string_size_stream
             = server_revision >= DBMS_MIN_REVISION_WITH_STRING_WITH_SIZE_STREAM_SERIALIZATION
-            || (format_settings && format_settings->native.read_string_with_size_stream);
+            || (server_revision == 0 && format_settings && format_settings->native.read_string_with_size_stream);
 
         if (server_revision >= DBMS_MIN_REVISION_WITH_CUSTOM_SERIALIZATION)
         {

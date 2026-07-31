@@ -280,6 +280,7 @@ void SerializationNumber<T>::deserializeBinary(IColumn & column, ReadBuffer & is
     assert_cast<ColumnVector<T> &>(column).getData().push_back(x);
 }
 
+template <typename T>
 void SerializationNumber<T>::serializeBinaryBulk(const PaddedPODArray<T> & x, WriteBuffer & ostr, size_t offset, size_t limit)
 {
     if (const size_t size = x.size(); limit == 0 || offset + limit > size)
