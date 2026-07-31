@@ -149,6 +149,7 @@ public:
             /// Tuning knobs (see the group_by_top_k_optimization_* settings).
             Float64 load_factor = 1.5;              /// heap slack before a trim, as a multiple of `keys`
             UInt64 observation_rows = 65536;        /// rows before the pure-overhead freeze check; 0 disables it
+            bool synthetic_sort = false;            /// the Sorting step above exists only for the heap; abandoning the heap must remove it too
         };
         std::optional<TopKParams> top_k;
 

@@ -70,6 +70,7 @@ public:
     bool isGroupingSets() const { return !grouping_sets_params.empty(); }
     void applyOrder(SortDescription sort_description_for_merging_, SortDescription group_by_sort_description_);
     void applyTopKOptimization(Aggregator::Params::TopKParams top_k);
+    void abandonTopKOptimization();
     bool memoryBoundMergingWillBeUsed() const;
     void skipMerging() { skip_merging = true; }
     void setLimitHint(size_t limit) { limit_hint = limit; }

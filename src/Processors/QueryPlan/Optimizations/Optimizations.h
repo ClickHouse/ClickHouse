@@ -252,6 +252,8 @@ std::unordered_map<const QueryPlan::Node *, UInt64> calculateHashTableCacheKeys(
 /// AST. Mirrors how join steps get their keys. No-op unless collect_hash_table_stats_during_aggregation.
 void setAggregationHashTableCacheKeys(const QueryPlanOptimizationSettings & optimization_settings, QueryPlan::Node & root);
 
+void abandonUnprofitableGroupByTopK(const QueryPlanOptimizationSettings & optimization_settings, QueryPlan::Node & root);
+
 /// Populates two maps in lock-step:
 ///   raw_hashes[N]  = bottom-up hash of the sub-plan rooted at N, independent of N's parent.
 ///   cache_keys[N]  = raw_hashes[N] XOR (the per-side contribution of N's parent join step).

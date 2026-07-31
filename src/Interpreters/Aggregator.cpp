@@ -770,15 +770,6 @@ Aggregator::Aggregator(const Block & header_, const Params & params_)
             ;
     }
 
-    if (params.top_k && params.stats_collecting_params.isCollectionAndUseEnabled())
-    {
-        if (const auto hint = DB::getHashTablesStatistics<DB::AggregationEntry>().getSizeHint(params.stats_collecting_params);
-            hint
-            && static_cast<Float64>(hint->sum_of_sizes)
-                <= static_cast<Float64>(params.top_k->keys) * params.top_k->load_factor)
-            params.top_k.reset();
-    }
-
     HashMethodContext::Settings cache_settings;
     cache_settings.max_threads = params.max_threads;
     cache_settings.serialize_string_with_zero_byte = params.serialize_string_with_zero_byte;

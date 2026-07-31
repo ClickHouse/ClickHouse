@@ -1,9 +1,13 @@
 #include <Interpreters/ActionsDAG.h>
+#include <Interpreters/HashTablesStatistics.h>
 #include <Processors/QueryPlan/AggregatingStep.h>
 #include <Processors/QueryPlan/ExpressionStep.h>
 #include <Processors/QueryPlan/LimitStep.h>
 #include <Processors/QueryPlan/Optimizations/Optimizations.h>
+#include <Processors/QueryPlan/Optimizations/QueryPlanOptimizationSettings.h>
 #include <Processors/QueryPlan/SortingStep.h>
+
+#include <unordered_map>
 
 namespace DB::QueryPlanOptimizations
 {
@@ -179,9 +183,65 @@ size_t tryOptimizeGroupByTopK(QueryPlan::Node * parent_node, QueryPlan::Nodes & 
         .key_columns = num_key_columns,
         .load_factor = settings.top_k_optimization_load_factor,
         .observation_rows = settings.top_k_optimization_observation_rows,
+        .synthetic_sort = sorting_step == nullptr,
     });
 
     return 0;
+}
+
+void abandonUnprofitableGroupByTopK(const QueryPlanOptimizationSettings & optimization_settings, QueryPlan::Node & root)
+{
+    if (optimization_settings.is_explain)
+        return;
+
+    std::unordered_map<const QueryPlan::Node *, QueryPlan::Node *> parents;
+    std::vector<QueryPlan::Node *> stack;
+    stack.push_back(&root);
+
+    while (!stack.empty())
+    {
+        auto * node = stack.back();
+        stack.pop_back();
+
+        for (auto * child : node->children)
+        {
+            parents[child] = node;
+            stack.push_back(child);
+        }
+
+        auto * aggregating_step = typeid_cast<AggregatingStep *>(node->step.get());
+        if (!aggregating_step)
+            continue;
+
+        const auto & params = aggregating_step->getParams();
+        if (!params.top_k || !params.stats_collecting_params.isCollectionAndUseEnabled())
+            continue;
+
+        const auto hint = getHashTablesStatistics<AggregationEntry>().getSizeHint(params.stats_collecting_params);
+        if (!hint
+            || static_cast<Float64>(hint->sum_of_sizes)
+                > static_cast<Float64>(params.top_k->keys) * params.top_k->load_factor)
+            continue;
+
+        if (params.top_k->synthetic_sort)
+        {
+            auto parent_it = parents.find(node);
+            QueryPlan::Node * sort_node = parent_it == parents.end() ? nullptr : parent_it->second;
+            if (!sort_node || !typeid_cast<SortingStep *>(sort_node->step.get())
+                || sort_node->children.size() != 1 || sort_node->children.front() != node)
+                continue;
+
+            auto grandparent_it = parents.find(sort_node);
+            if (grandparent_it == parents.end())
+                continue;
+
+            for (auto & child : grandparent_it->second->children)
+                if (child == sort_node)
+                    child = node;
+        }
+
+        aggregating_step->abandonTopKOptimization();
+    }
 }
 
 }

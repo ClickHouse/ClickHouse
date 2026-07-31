@@ -190,6 +190,11 @@ void AggregatingStep::applyTopKOptimization(Aggregator::Params::TopKParams top_k
     params.top_k = std::move(top_k);
 }
 
+void AggregatingStep::abandonTopKOptimization()
+{
+    params.top_k.reset();
+}
+
 std::vector<size_t> AggregatingStep::getStepGroups() const
 {
     return {
