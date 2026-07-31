@@ -1380,9 +1380,11 @@
         if (!u || !u.cpu_core_s) return;
         const CPU_COLOR = "#4e79a7";
         const MEM_COLOR = "#e15759";
+        const DISK_COLOR = "#59a14f";
         const pct = (area, weight) => (weight ? area / weight : 0);
         const cpuUtil = pct(u.cpu_used_area, u.cpu_core_s);
         const memUtil = pct(u.mem_used_area, u.mem_gb_s);
+        const diskUtil = pct(u.disk_used_area, u.disk_gb_s);
         // "some" stalls are wall-clock pressure fractions -> weighted by runtime;
         // "full" stalls waste every core -> weighted by provisioned core-seconds.
         const cpuStall = pct(u.cpu_stall_area, u.wall_time_s);
@@ -1390,6 +1392,10 @@
         const ioStall = pct(u.io_stall_area, u.wall_time_s);
         const memFull = pct(u.mem_full_area, u.cpu_core_s);
         const ioFull = pct(u.io_full_area, u.cpu_core_s);
+        // Provisioned capacity-time, in hours (cores/GB * duration).
+        const cpuHours = u.cpu_core_s / 3600;
+        const memHours = u.mem_gb_s / 3600;
+        const diskHours = u.disk_gb_s / 3600;
 
         const statusContainer = document.getElementById("status-container");
         const wrapper = document.createElement("div");
@@ -1397,9 +1403,19 @@
 
         const title = document.createElement("div");
         title.style.fontSize = "0.8em";
-        title.style.marginBottom = "2px";
-        title.textContent = `pipeline utilization (${u.jobs} job${u.jobs === 1 ? "" : "s"})`;
+        title.textContent = "pipeline utilization";
         wrapper.appendChild(title);
+
+        // Faded sub-line: job count and provisioned capacity-time.
+        const sub = document.createElement("div");
+        sub.style.fontSize = "0.7em";
+        sub.style.opacity = "0.55";
+        sub.style.marginBottom = "4px";
+        const fmtH = (h) => (h >= 100 ? Math.round(h) : h.toFixed(1));
+        sub.textContent =
+            `${u.jobs} job${u.jobs === 1 ? "" : "s"} · ${fmtH(cpuHours)} cpu-h · ${fmtH(memHours)} GiB-h` +
+            (u.disk_gb_s ? ` · ${fmtH(diskHours)} disk-GiB-h` : "");
+        wrapper.appendChild(sub);
 
         const cols = document.createElement("div");
         cols.style.display = "flex";
@@ -1423,6 +1439,9 @@
         const utilCol = mkCol("left");
         addRow(utilCol, `<span style="color:${CPU_COLOR}">■</span> cpu ${cpuUtil.toFixed(0)}%`);
         addRow(utilCol, `<span style="color:${MEM_COLOR}">■</span> ram ${memUtil.toFixed(0)}%`);
+        if (u.disk_gb_s) {
+            addRow(utilCol, `<span style="color:${DISK_COLOR}">■</span> disk ${diskUtil.toFixed(0)}%`);
+        }
         cols.appendChild(utilCol);
 
         const stallCol = mkCol("right");
@@ -1813,7 +1832,7 @@
             nameLine.style.whiteSpace = "normal";
             nameLine.style.overflow = "hidden";
             nameLine.style.maxWidth = "100%";
-            nameLine.style.height = "2.6em"; // Reserve space for 2 lines
+            nameLine.style.height = "3.9em"; // Reserve space for 3 lines
             nameLine.style.lineHeight = "1.3em";
             nameLine.style.textAlign = "left";
             widget.appendChild(nameLine);

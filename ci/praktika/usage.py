@@ -141,8 +141,10 @@ class PipelineUtilization(MetaClasses.SerializableSingleton):
     wall_time_s: float = 0.0  # sum(duration) - the "some"-stall weight/denominator
     cpu_core_s: float = 0.0  # sum(cpu_count * duration) - provisioned core-seconds
     mem_gb_s: float = 0.0  # sum(mem_total_gb * duration) - provisioned GB-seconds
+    disk_gb_s: float = 0.0  # sum(disk_total_gb * duration) - provisioned disk GB-seconds
     cpu_used_area: float = 0.0  # sum(avg_cpu% * cpu_count * duration)
     mem_used_area: float = 0.0  # sum(avg_mem% * mem_total_gb * duration)
+    disk_used_area: float = 0.0  # sum(peak_disk% * disk_total_gb * duration)
     cpu_stall_area: float = 0.0  # sum(cpu_some_s * 100)  (duration-weighted)
     mem_stall_area: float = 0.0  # sum(mem_some_s * 100)
     io_stall_area: float = 0.0  # sum(io_some_s * 100)
@@ -155,8 +157,10 @@ class PipelineUtilization(MetaClasses.SerializableSingleton):
         self.wall_time_s += other.wall_time_s
         self.cpu_core_s += other.cpu_core_s
         self.mem_gb_s += other.mem_gb_s
+        self.disk_gb_s += other.disk_gb_s
         self.cpu_used_area += other.cpu_used_area
         self.mem_used_area += other.mem_used_area
+        self.disk_used_area += other.disk_used_area
         self.cpu_stall_area += other.cpu_stall_area
         self.mem_stall_area += other.mem_stall_area
         self.io_stall_area += other.io_stall_area
@@ -182,6 +186,10 @@ class PipelineUtilization(MetaClasses.SerializableSingleton):
         psi = metrics.get("psi", {})
         cpu_avg = averages.get("cpu") or 0
         mem_avg = averages.get("mem") or 0
+        # Disk uses the peak footprint (you size a disk for its high-water mark),
+        # weighted like RAM by GB-time.
+        disk_gb = metrics.get("disk_total_gb") or 0
+        disk_peak = (metrics.get("peaks") or {}).get("disk") or 0
         # Stalls are wall-clock PSI fractions; the duration-weighted numerator is
         # stall% * duration = (stall_s / duration * 100) * duration = stall_s * 100,
         # divided by wall_time_s on read.
@@ -196,8 +204,10 @@ class PipelineUtilization(MetaClasses.SerializableSingleton):
             wall_time_s=duration,
             cpu_core_s=cores * duration,
             mem_gb_s=gb * duration,
+            disk_gb_s=disk_gb * duration,
             cpu_used_area=cpu_avg * cores * duration,
             mem_used_area=mem_avg * gb * duration,
+            disk_used_area=disk_peak * disk_gb * duration,
             cpu_stall_area=cpu_stall_s * 100.0,
             mem_stall_area=mem_stall_s * 100.0,
             io_stall_area=io_stall_s * 100.0,
@@ -214,8 +224,13 @@ class PipelineUtilization(MetaClasses.SerializableSingleton):
         return {
             "jobs": self.jobs,
             "wall_time_s": round(self.wall_time_s, 1),
+            # Provisioned capacity-time (cores/GB * duration), in hours.
+            "cpu_hours": round(self.cpu_core_s / 3600.0, 1),
+            "mem_gb_hours": round(self.mem_gb_s / 3600.0, 1),
+            "disk_gb_hours": round(self.disk_gb_s / 3600.0, 1),
             "cpu_util_pct": pct(self.cpu_used_area, self.cpu_core_s),
             "mem_util_pct": pct(self.mem_used_area, self.mem_gb_s),
+            "disk_util_pct": pct(self.disk_used_area, self.disk_gb_s),
             "cpu_stall_pct": pct(self.cpu_stall_area, self.wall_time_s),
             "mem_stall_pct": pct(self.mem_stall_area, self.wall_time_s),
             "io_stall_pct": pct(self.io_stall_area, self.wall_time_s),
