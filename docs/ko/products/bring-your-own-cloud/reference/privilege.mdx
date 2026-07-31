@@ -1,0 +1,80 @@
+---
+title: 'BYOC 권한'
+slug: /cloud/reference/byoc/reference/privilege
+sidebarTitle: '권한'
+keywords: ['BYOC', '클라우드', '자체 클라우드', '권한']
+description: '자체 클라우드 인프라에 ClickHouse 배포'
+doc_type: '참고'
+---
+
+<div id="aws-iam-roles">
+  ## AWS IAM 역할
+</div>
+
+<div id="bootstrap-iam-role">
+  ### Bootstrap IAM 역할
+</div>
+
+Bootstrap IAM 역할에는 다음 권한이 필요합니다:
+
+* **EC2 및 VPC 작업**: VPC 및 EKS 클러스터를 설정하는 데 필요합니다.
+* **S3 작업(예: `s3:CreateBucket`)**: ClickHouse BYOC Storage용 버킷을 생성하는 데 필요합니다.
+* **IAM 작업(예: `iam:CreatePolicy`)**: 컨트롤러가 추가 역할을 생성하는 데 필요합니다(자세한 내용은 다음 섹션을 참조하십시오).
+* **EKS 작업**: 이름이 `clickhouse-cloud` 접두사로 시작하는 리소스로 제한됩니다.
+
+<div id="additional-iam-roles-created-by-the-controller">
+  ### 컨트롤러가 생성하는 추가 IAM 역할
+</div>
+
+CloudFormation을 통해 생성된 `ClickHouseManagementRole` 외에도 컨트롤러는 몇 가지 추가 역할을 생성합니다.
+
+이러한 역할은 고객의 EKS 클러스터 내에서 실행되는 애플리케이션이 수임하도록 구성됩니다.
+
+* **State Exporter Role**
+  * 서비스 상태 정보를 ClickHouse Cloud에 보고하는 ClickHouse 구성 요소입니다.
+  * ClickHouse Cloud가 소유한 SQS 큐에 쓰기 권한이 필요합니다.
+* **Load-Balancer Controller**
+  * 표준 AWS 로드 밸런서 컨트롤러입니다.
+  * ClickHouse 서비스의 볼륨을 관리하는 EBS CSI Controller입니다.
+* **External-DNS**
+  * DNS 구성을 Route 53에 전파합니다.
+* **Cert-Manager**
+  * BYOC 서비스 도메인용 TLS 인증서를 프로비저닝합니다.
+* **Cluster Autoscaler**
+  * 필요에 따라 노드 그룹 크기를 조정합니다.
+
+**K8s-control-plane** 및 **k8s-worker** 역할은 AWS EKS 서비스가 수임하도록 되어 있습니다.
+
+마지막으로, **`data-plane-mgmt`**는 ClickHouse Cloud 컨트롤 플레인 구성 요소가 `ClickHouseCluster` 및 Istio Virtual Service/Gateway와 같은 필요한 사용자 지정 리소스를 reconcile할 수 있도록 허용합니다.
+
+<div id="gcp-service-accounts">
+  ## GCP 서비스 계정
+</div>
+
+<div id="bootstrap-service-account">
+  ### Bootstrap 서비스 계정
+</div>
+
+Bootstrap 서비스 계정에는 다음 권한이 포함된 프로젝트 범위의 custom 역할이 부여됩니다:
+
+* **Common**: 기본 읽기 및 아이덴티티 권한입니다.
+* **VPC**: BYOC 인프라를 호스팅하는 VPC, 서브넷, 라우팅, Private Service Connect attachment를 관리합니다.
+* **Cluster**: GKE 클러스터와 클러스터 내 리소스를 관리합니다.
+* **Storage**: ClickHouse 백업, 공유 상태, 모니터링 데이터에 사용되는 Cloud Storage 버킷을 관리하는 데 사용됩니다.
+* **IAM 역할**: 프로젝트 내 서비스 계정과 custom 역할을 관리합니다. 이 역할은 서비스 계정 키 생성, organization 정책 바인딩, 또는 다른 프로젝트의 리소스 작업 권한은 부여하지 않습니다.
+
+<div id="additional-service-accounts-created-by-the-controller">
+  ### 컨트롤러가 추가로 생성하는 서비스 계정
+</div>
+
+온보딩 과정의 일부로 Terraform을 통해 생성되는 `clickhouse-management` 서비스 계정 외에도, 첫 번째 BYOC 서비스를 프로비저닝하면 ClickHouse의 컨트롤 플레인(`clickhouse-management`로 인증)이 프로젝트 내 특정 인클러스터 워크로드용 추가 서비스 계정을 생성합니다. 이러한 계정은 각각 제한된 단일 목적의 권한 세트로 생성됩니다.
+
+* **GKE 노드 런타임 아이덴티티**
+  * BYOC 클러스터의 모든 GKE 노드 가상 머신에 연결됩니다.
+  * 큐블릿, 노드 로컬 agent, Cloud Operations collector가 로그와 메트릭을 내보내는 데 사용되며, 이미지 풀링 하위 시스템이 컨테이너 이미지를 다운로드하는 데에도 사용됩니다.
+* **청구 scraper 아이덴티티**
+  * 독립 실행형 scraper 워크로드가 청구 텔레메트리를 수집하는 데 사용됩니다.
+* **모니터링 아이덴티티**
+  * 클러스터에서 실행되는 모니터링 스택의 대상 아이덴티티입니다. 이 배포 전용 GCS 버킷의 장기 메트릭 저장소를 읽고 쓰는 데 사용됩니다.
+* **ClickHouse 런타임 관리 아이덴티티**
+  * Private Service Connect 엔드포인트 관리, 버킷 수명 주기 조정, 서비스 계정 교체와 같은 Day 2 운영 작업을 처리하는 ClickHouse의 런타임 데이터 플레인 관리 컨트롤러에서 사용됩니다.

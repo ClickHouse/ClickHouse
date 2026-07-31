@@ -1,7 +1,7 @@
 ---
 description: 'A table engine which provides a table-like interface to SELECT from
-  and INSERT into files, similar to the s3 table function. Use `file()` when working
-  with local files, and `s3()` when working with buckets in object storage such as
+  and INSERT into files, similar to the s3 table function. Use `file` when working
+  with local files, and `s3` when working with buckets in object storage such as
   S3, GCS, or MinIO.'
 sidebar_label: 'file'
 sidebar_position: 60
@@ -15,7 +15,7 @@ import CloudNotSupportedBadge from '@theme/badges/CloudNotSupportedBadge';
 
 # file Table Function
 
-A table engine which provides a table-like interface to SELECT from and INSERT into files, similar to the [s3](/sql-reference/table-functions/url.md) table function. Use `file()` when working with local files, and `s3()` when working with buckets in object storage such as S3, GCS, or MinIO.
+A table engine which provides a table-like interface to SELECT from and INSERT into files, similar to the [s3](/sql-reference/table-functions/s3.md) table function. Use `file` when working with local files, and `s3` when working with buckets in object storage such as S3, GCS, or MinIO.
 
 The `file` function can be used in `SELECT` and `INSERT` queries to read from or write to files.
 
@@ -35,7 +35,7 @@ file(['file1.csv', 'file2.csv'], 'CSV', 'column1 UInt32, column2 UInt32')
 
 | Parameter         | Description                                                                                                                                                                                                                                                                                                   |
 |-------------------|---------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------|
-| `path`            | The relative path to the file from [user_files_path](operations/server-configuration-parameters/settings.md#user_files_path), or an `Array(String)` of paths in `SELECT` queries. Supports in read-only mode the following [globs](#globs-in-path): `*`, `?`, `{abc,def}` (with `'abc'` and `'def'` being strings) and `{N..M}` (with `N` and `M` being numbers). |
+| `path`            | The relative path to the file from [user_files_path](/operations/server-configuration-parameters/settings.md#user_files_path), or an `Array(String)` of paths in `SELECT` queries. Supports in read-only mode the following [globs](#globs-in-path): `*`, `?`, `{abc,def}` (with `'abc'` and `'def'` being strings) and `{N..M}` (with `N` and `M` being numbers). |
 | `path_to_archive` | The relative path to a zip/tar/7z archive. Supports the same globs as `path`.                                                                                                                                                                                                                                 |
 | `format`          | The [format](/interfaces/formats) of the file.                                                                                                                                                                                                                                                                |
 | `structure`       | Structure of the table. Format: `'column1_name column1_type, column2_name column2_type, ...'`.                                                                                                                                                                                                                |
@@ -84,7 +84,7 @@ As a result, the data is written into the file `test.tsv`:
 
 ### Partitioned write to multiple TSV files {#partitioned-write-to-multiple-tsv-files}
 
-If you specify a `PARTITION BY` expression when inserting data into a table function of type `file()`, then a separate file is created for each partition. Splitting the data into separate files helps to improve performance of read operations.
+If you specify a `PARTITION BY` expression when inserting data into a table function of type `file`, then a separate file is created for each partition. Splitting the data into separate files helps to improve performance of read operations.
 
 ```sql
 INSERT INTO TABLE FUNCTION
@@ -260,11 +260,11 @@ SELECT * FROM file('data/path/date=*/country=*/code=*/*.parquet') WHERE date > '
 |--------------------------------------------------------------------------------------------------------------------|-----------------------------------------------------------------------------------------------------------------------------------------------------------------------------|
 | [engine_file_empty_if_not_exists](/operations/settings/settings#engine_file_empty_if_not_exists)                   | allows to select empty data from a file that doesn't exist. Disabled by default.                                                                                            |
 | [engine_file_truncate_on_insert](/operations/settings/settings#engine_file_truncate_on_insert)                     | allows to truncate file before insert into it. Disabled by default.                                                                                                         |
-| [engine_file_allow_create_multiple_files](operations/settings/settings.md#engine_file_allow_create_multiple_files) | allows to create a new file on each insert if format has suffix. Disabled by default.                                                                                       |
-| [engine_file_skip_empty_files](operations/settings/settings.md#engine_file_skip_empty_files)                       | allows to skip empty files while reading. Disabled by default.                                                                                                              |
+| [engine_file_allow_create_multiple_files](/operations/settings/settings.md#engine_file_allow_create_multiple_files) | allows to create a new file on each insert if format has suffix. Disabled by default.                                                                                       |
+| [engine_file_skip_empty_files](/operations/settings/settings.md#engine_file_skip_empty_files)                       | allows to skip empty files while reading. Disabled by default.                                                                                                              |
 | [storage_file_read_method](/operations/settings/settings#engine_file_empty_if_not_exists)                          | method of reading data from storage file, one of: read, pread, mmap (only for clickhouse-local). Default value: `pread` for clickhouse-server, `mmap` for clickhouse-local. |
 
 ## Related {#related}
 
-- [Virtual columns](engines/table-engines/index.md#table_engines-virtual_columns)
-- [Rename files after processing](operations/settings/settings.md#rename_files_after_processing)
+- [Virtual columns](/engines/table-engines/index.md#table_engines-virtual_columns)
+- [Rename files after processing](/operations/settings/settings.md#rename_files_after_processing)

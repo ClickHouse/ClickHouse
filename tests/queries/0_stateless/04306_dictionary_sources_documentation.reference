@@ -1,0 +1,8 @@
+1	0	0
+clickhouse	1
+executable	1
+file	1
+http	1
+mysql	1
+['mysql','postgresql']
+ytsaurus	1	1

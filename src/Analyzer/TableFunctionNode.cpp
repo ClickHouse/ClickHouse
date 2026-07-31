@@ -23,7 +23,7 @@ namespace ErrorCodes
 }
 
 TableFunctionNode::TableFunctionNode(String table_function_name_)
-    : IQueryTreeNode(children_size)
+    : ITableExpressionNode(children_size)
     , table_function_name(table_function_name_)
     , storage_id("system", "one")
 {
@@ -35,7 +35,8 @@ void TableFunctionNode::resolve(TableFunctionPtr table_function_value, StoragePt
     table_function = std::move(table_function_value);
     storage = std::move(storage_value);
     storage_id = storage->getStorageID();
-    storage_snapshot = storage->getStorageSnapshot(storage->getInMemoryMetadataPtr(context, false), context);
+    const auto metadata_snapshot = storage->getInMemoryMetadataPtr(context, false);
+    storage_snapshot = storage->getStorageSnapshot(metadata_snapshot, context);
     unresolved_arguments_indexes = std::move(unresolved_arguments_indexes_);
 }
 
@@ -120,6 +121,7 @@ void TableFunctionNode::updateTreeHashImpl(HashState & state, CompareOptions) co
     {
         state.update(change.name.size());
         state.update(change.name);
+        state.update(change.shorthand);
 
         const auto & value_dump = change.value.dump();
         state.update(value_dump.size());

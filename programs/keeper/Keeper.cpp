@@ -17,6 +17,7 @@
 #include <Common/ErrorHandlers.h>
 #include <Common/assertProcessUserMatchesDataOwner.h>
 #include <Common/makeSocketAddress.h>
+#include <IO/SharedThreadPools.h>
 #include <Server/waitServersToFinish.h>
 #include <Server/CloudPlacementInfo.h>
 #include <base/getMemoryAmount.h>
@@ -388,6 +389,7 @@ try
     SCOPE_EXIT({
         Stopwatch watch;
         LOG_INFO(log, "Waiting for background threads");
+        DB::StaticThreadPool::shutdownAll();
         GlobalThreadPool::instance().shutdown();
         LOG_INFO(log, "Background threads finished in {} ms", watch.elapsedMilliseconds());
     });
@@ -399,6 +401,12 @@ try
         .correct_tracker = server_settings[ServerSetting::memory_worker_correct_memory_tracker],
         .decay_adjustment_period_ms = server_settings[ServerSetting::memory_worker_decay_adjustment_period_ms],
         .use_cgroup = server_settings[ServerSetting::memory_worker_use_cgroup],
+        /// `memory_worker_rss_speculative_reserve_ratio` is intentionally not wired here:
+        /// speculation only influences the global `will_be_rss > current_hard_limit`
+        /// branch in `MemoryTracker::allocImpl`, but `clickhouse-keeper` never sets the
+        /// global hard limit (it enforces `keeper_server.max_memory_usage_soft_limit`
+        /// separately in `KeeperServer::isExceedingMemorySoftLimit`), so the speculation
+        /// would have no effect and is left disabled (`ratio = 0`).
     };
 
     MemoryWorker memory_worker(memory_worker_config, /*page_cache_=*/nullptr);
@@ -584,10 +592,11 @@ try
         port_name = "keeper_server.http_control.secure_port";
         createServer(listen_host, port_name, listen_try, [&](UInt16 port) mutable
         {
+#if USE_SSL
             auto my_http_context = httpContext();
 
-            Poco::Net::ServerSocket socket;
-            auto address = socketBindListen(socket, listen_host, port);
+            Poco::Net::SecureServerSocket socket;
+            auto address = socketBindListen(socket, listen_host, port, /* secure = */ true);
             socket.setReceiveTimeout(my_http_context->getReceiveTimeout());
             socket.setSendTimeout(my_http_context->getSendTimeout());
             servers->emplace_back(
@@ -600,6 +609,10 @@ try
                     server_pool,
                     socket,
                     http_params));
+#else
+            UNUSED(port);
+            throw Exception(ErrorCodes::SUPPORT_IS_DISABLED, "HTTPS control protocol is disabled because Poco library was built without NetSSL support.");
+#endif
         });
     }
 

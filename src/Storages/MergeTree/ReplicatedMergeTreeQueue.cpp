@@ -24,6 +24,12 @@
 #include <shared_mutex>
 #include <Poco/Timestamp.h>
 
+namespace ProfileEvents
+{
+    extern const Event ZooKeeperWatchTriggeredReplicatedMergeTreeLog;
+    extern const Event ZooKeeperWatchTriggeredReplicatedMergeTreeMutations;
+}
+
 namespace DB
 {
 
@@ -836,7 +842,10 @@ std::pair<int32_t, int32_t> ReplicatedMergeTreeQueue::pullLogsToQueue(zkutil::Zo
     Coordination::Stat stat;
     zookeeper->get(fs::path(zookeeper_path) / "log", &stat);
 
-    Strings log_entries = zookeeper->getChildrenWatch(fs::path(zookeeper_path) / "log", nullptr, watch_callback);
+    Strings log_entries = zookeeper->getChildrenWatch(
+        fs::path(zookeeper_path) / "log",
+        nullptr,
+        Coordination::WatchCallbackPtrOrEventPtr{watch_callback, ProfileEvents::ZooKeeperWatchTriggeredReplicatedMergeTreeLog});
 
     /// We update mutations after we have loaded the list of log entries, but before we insert them
     /// in the queue.
@@ -1138,7 +1147,10 @@ int32_t ReplicatedMergeTreeQueue::updateMutations(zkutil::ZooKeeperPtr zookeeper
     std::lock_guard lock(update_mutations_mutex);
 
     Coordination::Stat mutations_stat;
-    Strings entries_in_zk = zookeeper->getChildrenWatch(fs::path(zookeeper_path) / "mutations", &mutations_stat, watch_callback);
+    Strings entries_in_zk = zookeeper->getChildrenWatch(
+        fs::path(zookeeper_path) / "mutations",
+        &mutations_stat,
+        Coordination::WatchCallbackPtrOrEventPtr{watch_callback, ProfileEvents::ZooKeeperWatchTriggeredReplicatedMergeTreeMutations});
     StringSet entries_in_zk_set(entries_in_zk.begin(), entries_in_zk.end());
 
     /// Compare with the local state, delete obsolete entries and determine which new entries to load.
@@ -1900,6 +1912,27 @@ bool ReplicatedMergeTreeQueue::shouldExecuteLogEntry(
             }
 
             return false;
+        }
+    }
+
+    /// A fetched part keeps its own metadata version, so it can be ahead of this replica's table until
+    /// this replica applies its own ALTER_METADATA. MergeFromLogEntryTask::prepare has the same rule.
+    if (entry.type == LogEntry::MUTATE_PART && !entry.source_parts.empty())
+    {
+        if (auto part = data.getPartIfExists(entry.source_parts[0],
+            {MergeTreeDataPartState::PreActive, MergeTreeDataPartState::Active, MergeTreeDataPartState::Outdated}))
+        {
+            const auto metadata_snapshot = storage.getInMemoryMetadataPtr(storage.getContext(), false);
+            int32_t part_metadata_version = part->getMetadataVersion();
+            int32_t table_metadata_version = metadata_snapshot->getMetadataVersion();
+            if (part_metadata_version > table_metadata_version)
+            {
+                constexpr auto fmt_string = "Not executing log entry {} of type {} for part {} because source part {} metadata version {} "
+                                            "is newer than the table metadata version {}. ALTER_METADATA is still in progress.";
+                LOG_TRACE(LogToStr(out_postpone_reason, log), fmt_string, entry.znode_name, entry.typeToString(),
+                          entry.new_part_name, part->name, part_metadata_version, table_metadata_version);
+                return false;
+            }
         }
     }
 

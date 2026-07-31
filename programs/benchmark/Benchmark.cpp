@@ -12,6 +12,8 @@
 #include <Common/Config/parseConnectionCredentials.h>
 #include <Common/Stopwatch.h>
 #include <Common/ThreadPool.h>
+#include <IO/SharedThreadPools.h>
+#include <Common/scope_guard_safe.h>
 #include <AggregateFunctions/ReservoirSampler.h>
 #include <AggregateFunctions/registerAggregateFunctions.h>
 #include <Client/ClientBaseHelpers.h>
@@ -897,6 +899,13 @@ int mainEntryClickHouseBenchmark(int argc, char ** argv)
 {
     using namespace DB;
     bool print_stacktrace = false;
+
+    /// Join global-pool threads before the statics they may have accessed are destroyed.
+    /// That way, accesses happen-before destruction.
+    SCOPE_EXIT_SAFE({
+        DB::StaticThreadPool::shutdownAll();
+        GlobalThreadPool::shutdown();
+    });
 
     try
     {

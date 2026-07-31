@@ -1,8 +1,11 @@
 #include <Common/SipHash.h>
+#include <Common/checkStackSize.h>
 #include <Common/FieldVisitorDump.h>
 #include <Common/FieldVisitorToString.h>
 #include <Common/FieldVisitorHash.h>
 #include <Parsers/ASTLiteral.h>
+#include <Parsers/ASTJSONHelpers.h>
+#include <Parsers/ASTJSONReadHelpers.h>
 #include <IO/WriteHelpers.h>
 #include <IO/WriteBufferFromString.h>
 #include <IO/Operators.h>
@@ -11,6 +14,11 @@
 namespace DB
 {
 
+namespace ErrorCodes
+{
+    extern const int BAD_ARGUMENTS;
+}
+
 void ASTLiteral::updateTreeHashImpl(SipHash & hash_state, bool ignore_aliases) const
 {
     const char * prefix = "Literal_";
@@ -18,6 +26,25 @@ void ASTLiteral::updateTreeHashImpl(SipHash & hash_state, bool ignore_aliases) c
     applyVisitor(FieldVisitorHash(hash_state), value);
     if (!ignore_aliases)
         ASTWithAlias::updateTreeHashImpl(hash_state, ignore_aliases);
+}
+
+void ASTLiteral::writeJSON(WriteBuffer & out) const
+{
+    JSONObjectWriter w(out, "Literal");
+    w.writeFieldValue("value", value);
+    w.writeAlias(*this);
+}
+
+void ASTLiteral::readJSON(const Poco::JSON::Object & json)
+{
+    JSONObjectReader r(json);
+    /// A `Literal` always requires an explicit `value` key (a NULL literal is written
+    /// with an explicit `value`), so reject input that omits it instead of silently
+    /// deserializing as a NULL literal, which the SQL parser cannot produce.
+    if (!r.has("value"))
+        throw Exception(ErrorCodes::BAD_ARGUMENTS, "Missing required 'value' key for Literal during AST JSON deserialization");
+    value = r.readField("value");
+    r.readAlias(*this);
 }
 
 String ASTLiteral::getID(char delim) const
@@ -49,6 +76,8 @@ private:
 template<>
 String FieldVisitorToColumnName::operator() (const Tuple & x) const
 {
+    checkStackSize();
+
     WriteBufferFromOwnString wb;
 
     wb << "tuple(";
