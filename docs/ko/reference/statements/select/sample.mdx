@@ -1,0 +1,121 @@
+---
+description: 'SAMPLE 절 문서'
+sidebarTitle: 'SAMPLE'
+slug: /sql-reference/statements/select/sample
+title: 'SAMPLE 절'
+doc_type: 'reference'
+---
+
+`SAMPLE` 절은 `SELECT` 쿼리를 근사 방식으로 처리할 수 있게 합니다.
+
+데이터 샘플링이 활성화되면 쿼리는 전체 데이터가 아니라 데이터의 특정 비율(샘플)에 대해서만 수행됩니다. 예를 들어 전체 visits에 대한 통계를 계산해야 한다면, 전체 visits의 1/10에 대해서만 쿼리를 실행한 뒤 결과에 10을 곱해도 충분합니다.
+
+근사 쿼리 처리는 다음과 같은 경우에 유용할 수 있습니다:
+
+* 엄격한 지연 시간 요구 사항(예: 100ms 미만)이 있지만, 이를 충족하기 위한 추가 하드웨어 리소스 비용을 정당화하기 어려운 경우
+* 원시 데이터 자체가 정확하지 않아, 근사값을 사용해도 품질이 눈에 띄게 저하되지 않는 경우
+* 비즈니스 요구 사항상 근사 결과가 적합한 경우(예: 비용 효율성을 위해, 또는 정확한 결과를 프리미엄 사용자에게만 제공하기 위해)
+
+<Note>
+  샘플링은 [MergeTree](/ko/reference/engines/table-engines/mergetree-family/mergetree) 계열의 테이블에서만 사용할 수 있으며, 테이블 생성 시 샘플링 표현식이 지정된 경우에만 사용할 수 있습니다([MergeTree 엔진](/ko/reference/engines/table-engines/mergetree-family/mergetree#table_engine-mergetree-creating-a-table) 참고).
+</Note>
+
+데이터 샘플링의 특징은 다음과 같습니다:
+
+* 데이터 샘플링은 결정적 메커니즘입니다. 동일한 `SELECT .. SAMPLE` 쿼리의 결과는 항상 같습니다.
+* 샘플링은 서로 다른 테이블에서도 일관되게 동작합니다. 단일 샘플링 키를 가진 테이블에서는 같은 계수를 사용하는 샘플이 항상 가능한 데이터 중 동일한 부분 집합을 선택합니다. 예를 들어 사용자 ID를 기준으로 샘플링하면, 서로 다른 테이블에서도 가능한 전체 사용자 ID 중 동일한 부분 집합에 해당하는 행이 선택됩니다. 즉, [IN](/ko/reference/statements/in) 절의 서브쿼리에서 샘플을 사용할 수 있습니다. 또한 [JOIN](/ko/reference/statements/select/join) 절로 샘플끼리 조인할 수도 있습니다.
+* 샘플링을 사용하면 디스크에서 읽는 데이터 양을 줄일 수 있습니다. 단, 샘플링 키를 올바르게 지정해야 합니다. 자세한 내용은 [Creating a MergeTree Table](/ko/reference/engines/table-engines/mergetree-family/mergetree#table_engine-mergetree-creating-a-table)을 참고하십시오.
+
+`SAMPLE` 절에서는 다음 구문을 지원합니다:
+
+| SAMPLE 절 구문         | 설명                                                                                                                                                     |
+| ------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------ |
+| `SAMPLE k`          | 여기서 `k`는 0에서 1 사이의 숫자입니다. 쿼리는 데이터의 `k` 비율에 대해 실행됩니다. 예를 들어 `SAMPLE 0.1`은 데이터의 10%에 대해 쿼리를 실행합니다. [더 보기](#sample-k)                                     |
+| `SAMPLE n`          | 여기서 `n`은 충분히 큰 정수입니다. 쿼리는 최소 `n`개의 행을 포함하는 샘플에 대해 실행됩니다(단, 이보다 크게 많지는 않음). 예를 들어 `SAMPLE 10000000`은 최소 10,000,000개의 행에 대해 쿼리를 실행합니다. [더 보기](#sample-n) |
+| `SAMPLE k OFFSET m` | 여기서 `k`와 `m`은 0에서 1 사이의 숫자입니다. 쿼리는 데이터의 `k` 비율에 해당하는 샘플에 대해 실행됩니다. 샘플에 사용되는 데이터는 `m` 비율만큼 오프셋됩니다. [더 보기](#sample-k-offset-m)                           |
+
+<div id="sample-k">
+  ## SAMPLE K
+</div>
+
+여기서 `k`는 0부터 1까지의 값이며(분수 표기와 소수 표기를 모두 지원함), 예를 들어 `SAMPLE 1/2` 또는 `SAMPLE 0.5`와 같습니다.
+
+`SAMPLE k` 절에서는 데이터의 `k` 비율에 해당하는 부분에서 샘플을 추출합니다. 예시는 아래와 같습니다:
+
+```sql
+SELECT
+    Title,
+    count() * 10 AS PageViews
+FROM hits_distributed
+SAMPLE 0.1
+WHERE
+    CounterID = 34
+GROUP BY Title
+ORDER BY PageViews DESC LIMIT 1000
+```
+
+이 예시에서는 데이터의 0.1(10%) 샘플에서 쿼리를 실행합니다. 집계 함수 값은 자동으로 보정되지 않으므로, 근사값을 얻으려면 `count()` 값에 10을 수동으로 곱해야 합니다.
+
+<div id="sample-n">
+  ## SAMPLE N
+</div>
+
+여기서 `n`은 충분히 큰 정수입니다. 예를 들어 `SAMPLE 10000000`입니다.
+
+이 경우 쿼리는 최소 `n`개의 행을 포함하는 샘플에서 실행됩니다(단, 이보다 크게 초과하지는 않습니다). 예를 들어 `SAMPLE 10000000`은 최소 10,000,000개의 행을 대상으로 쿼리를 실행합니다.
+
+데이터 읽기의 최소 단위는 그래뉼 하나이며(크기는 `index_granularity` 설정으로 지정됨), 샘플은 그래뉼 크기보다 훨씬 크게 설정하는 것이 좋습니다.
+
+`SAMPLE n` 절을 사용하면 데이터 중 상대적으로 몇 퍼센트가 처리되었는지 알 수 없습니다. 따라서 집계 함수에 곱해야 할 계수도 알 수 없습니다. 근사 결과를 얻으려면 `_sample_factor` 가상 컬럼을 사용하십시오.
+
+`_sample_factor` 컬럼에는 동적으로 계산되는 상대 계수가 들어 있습니다. 이 컬럼은 지정된 샘플링 키로 테이블을 [생성](/ko/reference/engines/table-engines/mergetree-family/mergetree#table_engine-mergetree-creating-a-table)할 때 자동으로 만들어집니다. `_sample_factor` 컬럼의 사용 예시는 아래에 나와 있습니다.
+
+사이트 방문 통계를 담고 있는 `visits` 테이블을 살펴보겠습니다. 첫 번째 예시는 페이지 조회 수를 계산하는 방법을 보여줍니다:
+
+```sql
+SELECT sum(PageViews * _sample_factor)
+FROM visits
+SAMPLE 10000000
+```
+
+다음 예시는 총 방문 수를 계산하는 방법을 보여줍니다:
+
+```sql
+SELECT sum(_sample_factor)
+FROM visits
+SAMPLE 10000000
+```
+
+아래 예시는 평균 세션 시간을 계산하는 방법을 보여줍니다. 평균값을 계산할 때는 상대 계수를 사용할 필요가 없다는 점에 유의하십시오.
+
+```sql
+SELECT avg(Duration)
+FROM visits
+SAMPLE 10000000
+```
+
+<div id="sample-k-offset-m">
+  ## SAMPLE K OFFSET M
+</div>
+
+여기서 `k`와 `m`은 0에서 1 사이의 숫자입니다. 아래에 예시를 보여줍니다.
+
+**예시 1**
+
+```sql
+SAMPLE 1/10
+```
+
+이 예시에서 샘플은 전체 데이터의 1/10에 해당합니다:
+
+`[++------------]`
+
+**예시 2**
+
+```sql
+SAMPLE 1/10 OFFSET 1/2
+```
+
+여기서는 데이터의 후반부에서 10%를 표본으로 추출합니다.
+
+`[------++------]`

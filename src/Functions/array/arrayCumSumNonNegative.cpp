@@ -78,7 +78,7 @@ struct ArrayCumSumNonNegativeImpl
             Dst accumulated{};
             for (; pos < offset; ++pos)
             {
-                accumulated += src_values[pos];
+                accumulated += static_cast<Dst>(src_values[pos]);
                 if (accumulated < Dst{})
                     accumulated = {};
                 res_values[pos] = accumulated;

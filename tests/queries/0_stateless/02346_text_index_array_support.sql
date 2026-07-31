@@ -1,6 +1,6 @@
 -- Tags: no-parallel-replicas, no-azure-blob-storage
-
 -- Tests that text indexes can be build on and used with Array columns.
+SET explain_query_plan_default = 'legacy';
 
 SET enable_analyzer = 1;
 
@@ -16,7 +16,7 @@ CREATE TABLE tab
 )
 ENGINE = MergeTree()
 ORDER BY (id)
-SETTINGS index_granularity = 1;
+SETTINGS index_granularity = 1, text_index_posting_list_block_size = 10000;
 
 INSERT INTO tab SELECT number, ['abc'], ['abc'] FROM numbers(512);
 INSERT INTO tab SELECT number, ['foo'], ['foo'] FROM numbers(512);

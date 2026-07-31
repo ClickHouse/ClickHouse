@@ -6,7 +6,7 @@ title: 'User Defined Functions (UDFs)'
 doc_type: 'reference'
 ---
 
-import PrivatePreviewBadge from '@theme/badges/PrivatePreviewBadge';
+import BetaBadge from '@theme/badges/BetaBadge';
 import Tabs from '@theme/Tabs';
 import TabItem from '@theme/TabItem';
 import CloudNotSupportedBadge from '@theme/badges/CloudNotSupportedBadge';
@@ -19,14 +19,14 @@ ClickHouse supports several types of user defined functions (UDFs):
 - [Executable UDFs](#executable-user-defined-functions) start an external program or script (Python, Bash, etc.) and stream blocks of data to it over STDIN / STDOUT. Use them to integrate existing code or tooling without recompiling ClickHouse. They have higher per‑call overhead compared to in‑process options and are best for heavier logic or where a different runtime is required.
 - [SQL UDFs](#sql-user-defined-functions) are defined with `CREATE FUNCTION` purely in SQL. They are inlined/expanded into the query plan (no process boundary), making them lightweight and ideal for reusing expression logic or simplifying complex calculated columns.
 - [Experimental WebAssembly UDFs](#webassembly-user-defined-functions) run code compiled to WebAssembly inside a sandbox within the server process. They offer lower per‑call overhead than external executables with better isolation than native extensions, making them suitable for custom algorithms written in languages that can target WASM (e.g. C/C++/Rust).
+- [Experimental driver-based executable UDFs](#driver-based-executable-user-defined-functions) let an operator-supplied "driver" turn a code snippet supplied in `CREATE FUNCTION ... ENGINE = DriverName(...) AS '...'` into an executable UDF at function-creation time (for example, by compiling it). They build on executable UDFs and require server-side driver configuration.
 
 ## Executable User Defined Functions {#executable-user-defined-functions}
 
-<PrivatePreviewBadge/>
+<BetaBadge/>
 
 :::note
-This feature is supported in private preview in ClickHouse Cloud.
-Please contact ClickHouse Support at https://clickhouse.cloud/support to access.
+In ClickHouse Cloud, executable UDFs are in public beta and are created through the Cloud console UI. See [User-defined functions in Cloud](/cloud/features/user-defined-functions) for the Cloud-specific workflow.
 :::
 
 ClickHouse can call any external executable program or script to process data.
@@ -482,6 +482,125 @@ SELECT my_function(10, 20);
 ### More Information
 
 Refer to the documentation on [WebAssembly User Defined Functions](wasm_udf.md) for more details.
+
+## Driver-based Executable User Defined Functions {#driver-based-executable-user-defined-functions}
+
+<CloudNotSupportedBadge/>
+<ExperimentalBadge/>
+
+:::note
+This is an experimental feature that may change in backward-incompatible ways in future releases. Enable it with the [`allow_experimental_executable_udf_drivers`](../../operations/server-configuration-parameters/settings.md#allow_experimental_executable_udf_drivers) server setting.
+:::
+
+A *driver* is an operator-supplied adapter that turns a user code snippet into a runnable [executable UDF](#executable-user-defined-functions). When a function is created with `ENGINE = DriverName(...)`, ClickHouse runs the driver's `create_command`, passing it the function signature and the code body; the driver compiles or otherwise processes the body and prints an executable UDF configuration, which ClickHouse then stores and loads.
+
+This lets administrators offer users a safe, narrow way to define functions in an arbitrary language (for example, C compiled inside a sandboxed container) without giving them access to the server's configuration files or filesystem. The set of available drivers is entirely controlled by the operator.
+
+### Enabling drivers {#enabling-drivers}
+
+Driver-based executable UDFs are disabled by default. To enable them:
+
+1. Set the experimental gate in the server configuration:
+
+   ```xml
+   <clickhouse>
+       <allow_experimental_executable_udf_drivers>true</allow_experimental_executable_udf_drivers>
+   </clickhouse>
+   ```
+
+2. Point [`user_defined_executable_function_drivers_config`](../../operations/server-configuration-parameters/settings.md#user_defined_executable_function_drivers_config) at one or more driver configuration files (a glob is supported), and optionally set [`dynamic_user_defined_executable_functions_path`](../../operations/server-configuration-parameters/settings.md#dynamic_user_defined_executable_functions_path), the directory where the generated executable UDF configurations are stored:
+
+   ```xml
+   <clickhouse>
+       <user_defined_executable_function_drivers_config>user_defined_executable_function_drivers_config.d/*_driver.xml</user_defined_executable_function_drivers_config>
+       <dynamic_user_defined_executable_functions_path>/var/lib/clickhouse/dynamic_user_defined_executable_functions/</dynamic_user_defined_executable_functions_path>
+   </clickhouse>
+   ```
+
+The driver registry is loaded on server start and refreshed on `SYSTEM RELOAD CONFIG`, so drivers can be added, changed, or removed without restarting the server.
+
+### Driver configuration {#driver-configuration}
+
+A driver is described by an XML (or YAML) file with a top-level `<driver>` element. The following fields are supported:
+
+| Field              | Description                                                                                                                                                              | Required |
+|--------------------|------------------------------------------------------------------------------------------------------------------------------------------------------------------------|----------|
+| `name`             | The driver name, as used in `CREATE FUNCTION ... ENGINE = <name>(...)`.                                                                                                  | Yes      |
+| `create_command`   | Path to the program invoked to create a UDF from a code snippet. Relative paths are resolved against the driver configuration file.                                       | Yes      |
+| `drop_command`     | Path to the program invoked when a function based on this driver is dropped.                                                                                              | No       |
+| `engine_arguments` | Declares the arguments allowed inside `ENGINE = DriverName(...)`. Each child element is an argument name; a `<required>true</required>` child marks it as mandatory.       | No       |
+| `env`              | Environment variables exported when invoking the driver commands.                                                                                                         | No       |
+
+Example driver configuration:
+
+```xml
+<clickhouse>
+    <driver>
+        <name>DockerC</name>
+        <create_command>../user_defined_executable_function_drivers/docker_c_create.sh</create_command>
+        <drop_command>../user_defined_executable_function_drivers/docker_c_drop.sh</drop_command>
+        <engine_arguments>
+            <opt_level><required>false</required></opt_level>
+        </engine_arguments>
+        <env>
+            <CLICKHOUSE_C_DRIVER_MEMORY>256m</CLICKHOUSE_C_DRIVER_MEMORY>
+            <CLICKHOUSE_C_DRIVER_CPUS>1.0</CLICKHOUSE_C_DRIVER_CPUS>
+        </env>
+    </driver>
+</clickhouse>
+```
+
+#### Driver invocation contract {#driver-invocation-contract}
+
+When `CREATE FUNCTION` runs, `create_command` is invoked with the configured `env` variables set and the following arguments:
+
+- `--name <function_name>`
+- `--return <return_type>` (if a `RETURNS` clause is present)
+- `--args <signature>` (if an `ARGUMENTS` clause is present), where the signature is the declared argument list, for example `x UInt8, y DateTime`
+- `--<key> <value>` for every declared engine argument supplied in `ENGINE = DriverName(key = value)`
+
+The user code body (the text after `AS`) is sent to the command's standard input. The command must print the configuration of an executable UDF to its standard output. The format is auto-detected: output that starts with `<` is treated as XML, otherwise as YAML. The defined function name in the generated configuration must match the name being created. If `create_command` exits with a non-zero status, the statement fails with an exception that includes the exit code and the driver's standard error.
+
+`drop_command`, when present, is invoked the same way (without a code body on stdin) when the function is dropped.
+
+### Creating a function {#creating-a-function-with-a-driver}
+
+```sql
+CREATE [OR REPLACE] FUNCTION [IF NOT EXISTS] name [ON CLUSTER cluster]
+    ARGUMENTS (a UInt8, b String) RETURNS UInt64
+    ENGINE = DriverName(key1 = 'value1', key2 = 42)
+    AS '...code body...'
+```
+
+ClickHouse runs the driver's `create_command`, writes the generated configuration into [`dynamic_user_defined_executable_functions_path`](../../operations/server-configuration-parameters/settings.md#dynamic_user_defined_executable_functions_path), and the existing executable UDF loader picks it up. The function can then be called like any other function.
+
+### Dropping a function {#dropping-a-function-with-a-driver}
+
+```sql
+DROP FUNCTION [IF EXISTS] name [ON CLUSTER cluster]
+```
+
+`DROP FUNCTION` invokes the driver's `drop_command` (if present), removes the generated dynamic configuration and the per-function working directory, reloads the executable UDF loader, and removes the persisted query.
+
+### Persistence and restart {#driver-persistence-and-restart}
+
+The originating query is persisted as an `ATTACH FUNCTION ...` statement in the user-defined SQL objects directory, so the function survives a server restart. On start, the generated configurations in [`dynamic_user_defined_executable_functions_path`](../../operations/server-configuration-parameters/settings.md#dynamic_user_defined_executable_functions_path) are loaded directly without re-running the driver. If a persisted `ATTACH FUNCTION` has no matching generated configuration (for example, the dynamic directory was lost), the driver is re-run to recreate it.
+
+### Limitations {#driver-limitations}
+
+- The feature is experimental and gated behind `allow_experimental_executable_udf_drivers`.
+- Driver-based functions are not supported with replicated user-defined function storage (`ON CLUSTER` and `<user_defined_zookeeper_path>`), because only the originating query is replicated, not the generated artifacts.
+- `RESTORE` of a backed-up driver-based function persists the query but does not re-run the driver; the generated configuration is materialized later by restart recovery.
+
+### Example C drivers {#example-c-drivers}
+
+The source tree ships proof-of-concept drivers under `programs/server/user_defined_executable_function_drivers_config.d/` that compile and run a C function body. They are examples and are **not installed by packages**:
+
+- `DockerC` - compiles and runs the code inside sandboxed Docker containers (`--network=none --read-only --cap-drop=ALL --security-opt=no-new-privileges`, plus memory/CPU/PID limits), emitting an `executable_pool` UDF.
+- `GVisorC` - a variant that runs the compiled binary under the [gVisor](https://gvisor.dev/) `runsc` runtime.
+- `UnsafeC` - compiles and runs the code directly on the host without a sandbox. As the name indicates, it provides no isolation and is intended only for trusted environments and testing.
+
+These example drivers are intended as a starting point; review and harden the sandboxing for your environment before exposing them to untrusted users.
 
 ## Related Content {#related-content}
 - [User-defined functions in ClickHouse Cloud](https://clickhouse.com/blog/user-defined-functions-clickhouse-udfs)

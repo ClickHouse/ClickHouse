@@ -1,7 +1,7 @@
 #include <Functions/FunctionFactory.h>
 #include <Functions/FunctionBinaryArithmetic.h>
 
-#include <Functions/divide/divide.h>
+#include <Functions/divideImpl.h>
 
 
 namespace DB

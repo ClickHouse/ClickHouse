@@ -187,12 +187,12 @@ table_dst count	6
 OK
 
 Test case 17: insert_method=InsertSelect engine=MergeTree use_insert_token=False single_thread=True deduplicate_src_table=True deduplicate_dst_table=True insert_unique_blocks=False
-table_src count	1
-table_dst count	2
+table_src count	8
+table_dst count	16
 0
 0
-table_src count	1
-table_dst count	2
+table_src count	8
+table_dst count	16
 0
 0
 OK
@@ -209,11 +209,11 @@ table_dst count	12
 OK
 
 Test case 19: insert_method=InsertSelect engine=MergeTree use_insert_token=False single_thread=True deduplicate_src_table=True deduplicate_dst_table=False insert_unique_blocks=False
-table_src count	1
+table_src count	8
 table_dst count	16
 0
 0
-table_src count	1
+table_src count	8
 table_dst count	32
 0
 0
@@ -232,11 +232,11 @@ OK
 
 Test case 21: insert_method=InsertSelect engine=MergeTree use_insert_token=False single_thread=True deduplicate_src_table=False deduplicate_dst_table=True insert_unique_blocks=False
 table_src count	8
-table_dst count	2
+table_dst count	16
 0
 0
 table_src count	16
-table_dst count	2
+table_dst count	16
 0
 0
 OK
@@ -275,12 +275,12 @@ table_dst count	6
 OK
 
 Test case 25: insert_method=InsertSelect engine=MergeTree use_insert_token=False single_thread=False deduplicate_src_table=True deduplicate_dst_table=True insert_unique_blocks=False
-table_src count	1
-table_dst count	2
+table_src count	8
+table_dst count	16
 0
 0
-table_src count	1
-table_dst count	2
+table_src count	8
+table_dst count	16
 0
 0
 OK
@@ -297,11 +297,11 @@ table_dst count	12
 OK
 
 Test case 27: insert_method=InsertSelect engine=MergeTree use_insert_token=False single_thread=False deduplicate_src_table=True deduplicate_dst_table=False insert_unique_blocks=False
-table_src count	1
+table_src count	8
 table_dst count	16
 0
 0
-table_src count	1
+table_src count	8
 table_dst count	32
 0
 0
@@ -320,11 +320,11 @@ OK
 
 Test case 29: insert_method=InsertSelect engine=MergeTree use_insert_token=False single_thread=False deduplicate_src_table=False deduplicate_dst_table=True insert_unique_blocks=False
 table_src count	8
-table_dst count	2
+table_dst count	16
 0
 0
 table_src count	16
-table_dst count	2
+table_dst count	16
 0
 0
 OK
@@ -539,12 +539,12 @@ table_dst count	6
 OK
 
 Test case 49: insert_method=InsertValues engine=MergeTree use_insert_token=False single_thread=True deduplicate_src_table=True deduplicate_dst_table=True insert_unique_blocks=False
-table_src count	1
-table_dst count	2
+table_src count	8
+table_dst count	16
 0
 0
-table_src count	1
-table_dst count	2
+table_src count	8
+table_dst count	16
 0
 0
 OK
@@ -561,11 +561,11 @@ table_dst count	12
 OK
 
 Test case 51: insert_method=InsertValues engine=MergeTree use_insert_token=False single_thread=True deduplicate_src_table=True deduplicate_dst_table=False insert_unique_blocks=False
-table_src count	1
+table_src count	8
 table_dst count	16
 0
 0
-table_src count	1
+table_src count	8
 table_dst count	32
 0
 0
@@ -584,11 +584,11 @@ OK
 
 Test case 53: insert_method=InsertValues engine=MergeTree use_insert_token=False single_thread=True deduplicate_src_table=False deduplicate_dst_table=True insert_unique_blocks=False
 table_src count	8
-table_dst count	2
+table_dst count	16
 0
 0
 table_src count	16
-table_dst count	2
+table_dst count	16
 0
 0
 OK
@@ -627,12 +627,12 @@ table_dst count	6
 OK
 
 Test case 57: insert_method=InsertValues engine=MergeTree use_insert_token=False single_thread=False deduplicate_src_table=True deduplicate_dst_table=True insert_unique_blocks=False
-table_src count	1
-table_dst count	2
+table_src count	8
+table_dst count	16
 0
 0
-table_src count	1
-table_dst count	2
+table_src count	8
+table_dst count	16
 0
 0
 OK
@@ -649,11 +649,11 @@ table_dst count	12
 OK
 
 Test case 59: insert_method=InsertValues engine=MergeTree use_insert_token=False single_thread=False deduplicate_src_table=True deduplicate_dst_table=False insert_unique_blocks=False
-table_src count	1
+table_src count	8
 table_dst count	16
 0
 0
-table_src count	1
+table_src count	8
 table_dst count	32
 0
 0
@@ -672,11 +672,11 @@ OK
 
 Test case 61: insert_method=InsertValues engine=MergeTree use_insert_token=False single_thread=False deduplicate_src_table=False deduplicate_dst_table=True insert_unique_blocks=False
 table_src count	8
-table_dst count	2
+table_dst count	16
 0
 0
 table_src count	16
-table_dst count	2
+table_dst count	16
 0
 0
 OK

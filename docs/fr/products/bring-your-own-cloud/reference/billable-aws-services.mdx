@@ -1,0 +1,65 @@
+---
+title: 'Services AWS facturables'
+slug: /cloud/reference/byoc/billable-aws-services
+sidebarTitle: 'Services AWS facturables'
+keywords: ['BYOC', 'Bring Your Own Cloud', 'AWS', 'facturation', 'coût', 'EKS', 'EC2', 'S3', 'passerelle NAT', 'PrivateLink']
+description: 'Services AWS provisionnés par ClickHouse BYOC, classés comme obligatoires ou facultatifs, avec des indications sur ceux qui entrent dans votre facture AWS'
+doc_type: 'reference'
+---
+
+ClickHouse BYOC provisionne un plan de données autonome dans votre compte AWS. Cette page répertorie tous les services AWS utilisés par le déploiement, indique pour chacun s’il est obligatoire ou facultatif, et précise lesquels entrent dans votre facture AWS.
+
+<Note>
+  Les coûts d’infrastructure AWS sont facturés directement par AWS sur votre compte et sont indépendants de votre abonnement ClickHouse Cloud.
+</Note>
+
+<div id="mandatory-services">
+  ## Services obligatoires
+</div>
+
+Ces services sont provisionnés dans chaque déploiement BYOC.
+
+| Service                                                                                         | Rôle                                                                                                                                                                                                                  | Facturable ?                                        |
+| ----------------------------------------------------------------------------------------------- | --------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- | --------------------------------------------------- |
+| **Amazon EKS**                                                                                  | Plan de contrôle Kubernetes géré qui exécute le plan de données ClickHouse.                                                                                                                                           | Oui — par heure de cluster                          |
+| **Amazon EC2** (instances worker via des groupes de nœuds gérés EKS)                            | Capacité de calcul pour les pods du serveur ClickHouse, ClickHouse Keeper et les modules complémentaires de la plateforme. Familles d’instances optimisées pour la mémoire par défaut.                                | Oui — par heure d’instance                          |
+| **Amazon EBS** (volumes gp3)                                                                    | Stockage local pour l’OS des nœuds, les images de conteneur et les journaux du serveur ClickHouse.                                                                                                                    | Oui — par Go-mois + IOPS/débit                      |
+| **Amazon S3**                                                                                   | Stockage principal des tables ClickHouse, des sauvegardes et de la télémétrie de la plateforme. Les politiques de bucket imposent `BucketOwnerEnforced`, le blocage de l’accès public et le chiffrement côté serveur. | Oui — stockage + requêtes + transfert de données    |
+| **Amazon VPC** (VPC, sous-réseaux, tables de routage, groupes de sécurité, passerelle Internet) | Isolation réseau du plan de données. Trois sous-réseaux privés et trois sous-réseaux publics répartis sur les AZ.                                                                                                     | Non — les ressources VPC elles-mêmes sont gratuites |
+| **NAT Gateway + Elastic IP** (une par AZ)                                                       | Sortie Internet depuis les sous-réseaux privés (connectivité du plan de contrôle, téléchargement d’images, télémétrie).                                                                                               | Oui — par heure + traitement des données            |
+| **VPC Endpoint for S3** (endpoint de passerelle)                                                | Accès privé à S3 sans passer par le NAT.                                                                                                                                                                              | Non — les endpoints de passerelle sont gratuits     |
+| **Elastic Load Balancing (NLB)**                                                                | Trafic entrant des clients vers les services ClickHouse. Créé par l’AWS Load Balancer Controller dans le cluster. Par défaut : accessible uniquement en interne.                                                      | Oui — par LCU-heure + données traitées              |
+| **AWS IAM** (rôles, politiques, OIDC provider, associations Pod Identity)                       | Accès intercomptes pour ClickHouse Cloud, IRSA pour les contrôleurs dans le cluster (cert-manager, external-dns, load-balancer-controller, cluster-autoscaler, EBS CSI driver, state-exporter).                       | Non                                                 |
+| **Amazon CloudWatch Logs**                                                                      | Logs du plan de contrôle EKS (api, audit, authenticator, controllerManager, scheduler).                                                                                                                               | Oui — ingestion + stockage                          |
+
+<div id="optional-services">
+  ## Services facultatifs
+</div>
+
+Ces services sont provisionnés uniquement lorsque la fonctionnalité correspondante est activée.
+
+| Service                                    | Activé lorsque                                                                                                  | Facturé ?                                                                                      |
+| ------------------------------------------ | --------------------------------------------------------------------------------------------------------------- | ---------------------------------------------------------------------------------------------- |
+| **AWS PrivateLink** (VPC Endpoint Service) | Vous activez la connectivité PrivateLink pour le trafic client à la place du NLB, ou en complément de celui-ci. | Oui — par heure de VPC endpoint + données traitées                                             |
+| **VPC Peering Connection**                 | Vous demandez un peering entre le VPC BYOC et un autre VPC de votre compte.                                     | Non pour la connexion elle-même. Le transfert de données inter-AZ et inter-région est facturé. |
+
+<div id="data-transfer-charges">
+  ## Frais de transfert de données
+</div>
+
+Même lorsque les ressources individuelles sont gratuites, des frais de transfert de données AWS s&#39;appliquent :
+
+* **Trafic inter-AZ** entre les nœuds EKS et entre les réplicas dans les déploiements multi-AZ.
+* **Trafic sortant vers Internet** via une NAT Gateway, pour les heartbeats du plan de contrôle, la télémétrie et le téléchargement d&#39;images.
+* **Trafic sortant vers le plan de contrôle de ClickHouse Cloud** via la surcouche chiffrée (Tailscale).
+* **Trafic sortant vers les réseaux clients** via le NLB ou l&#39;endpoint PrivateLink.
+
+Consultez la [tarification du transfert de données AWS](https://aws.amazon.com/ec2/pricing/on-demand/#Data_Transfer) pour connaître les tarifs en vigueur.
+
+<div id="related">
+  ## Voir aussi
+</div>
+
+* [Architecture BYOC](/fr/products/bring-your-own-cloud/overview/architecture) — composants déployés par ClickHouse Cloud dans votre compte
+* [Sécurité réseau BYOC](/fr/products/bring-your-own-cloud/reference/network-security) — comment le plan de données se connecte à ClickHouse Cloud
+* [Privilège BYOC](/fr/products/bring-your-own-cloud/reference/privilege) — IAM roles créés lors de la configuration de BYOC

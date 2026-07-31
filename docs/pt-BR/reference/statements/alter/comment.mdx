@@ -1,0 +1,95 @@
+---
+description: 'Documentação para ALTER TABLE ... MODIFY COMMENT, que permite
+adicionar, modificar ou remover comentários da tabela'
+sidebarTitle: 'ALTER TABLE ... MODIFY COMMENT'
+slug: /sql-reference/statements/alter/comment
+title: 'ALTER TABLE ... MODIFY COMMENT'
+keywords: ['ALTER TABLE', 'MODIFY COMMENT']
+doc_type: 'reference'
+---
+
+Adiciona, modifica ou remove um comentário da tabela, independentemente de ele ter sido definido
+anteriormente ou não. A alteração no comentário é refletida tanto em [`system.tables`](/pt-BR/reference/system-tables/tables)
+quanto na consulta `SHOW CREATE TABLE`.
+
+<div id="syntax">
+  ## Sintaxe
+</div>
+
+```sql
+ALTER TABLE [db].name [ON CLUSTER cluster] MODIFY COMMENT 'Comment'
+```
+
+<div id="examples">
+  ## Exemplos
+</div>
+
+Para criar uma tabela com comentário:
+
+```sql title="Consulta"
+CREATE TABLE table_with_comment
+(
+    `k` UInt64,
+    `s` String
+)
+ENGINE = Memory()
+COMMENT 'The temporary table';
+```
+
+Para alterar o comentário da tabela:
+
+```sql title="Consulta"
+ALTER TABLE table_with_comment 
+MODIFY COMMENT 'new comment on a table';
+```
+
+Para ver o comentário modificado:
+
+```sql title="Consulta"
+SELECT comment 
+FROM system.tables 
+WHERE database = currentDatabase() AND name = 'table_with_comment';
+```
+
+```text title="Response"
+┌─comment────────────────┐
+│ new comment on a table │
+└────────────────────────┘
+```
+
+Para remover o comentário da tabela:
+
+```sql title="Consulta"
+ALTER TABLE table_with_comment MODIFY COMMENT '';
+```
+
+Para verificar se o comentário foi removido:
+
+```sql title="Consulta"
+SELECT comment 
+FROM system.tables 
+WHERE database = currentDatabase() AND name = 'table_with_comment';
+```
+
+```text title="Response"
+┌─comment─┐
+│         │
+└─────────┘
+```
+
+<div id="caveats">
+  ## Ressalvas
+</div>
+
+Para tabelas Replicated, o comentário pode ser diferente entre as réplicas.
+A modificação do comentário se aplica a uma única réplica.
+
+O recurso está disponível desde a versão 23.9. Ele não funciona em versões
+anteriores do ClickHouse.
+
+<div id="related-content">
+  ## Conteúdo relacionado
+</div>
+
+* cláusula [`COMMENT`](/pt-BR/reference/statements/create/table#comment-clause)
+* [`ALTER DATABASE ... MODIFY COMMENT`](/pt-BR/reference/statements/alter/database-comment)

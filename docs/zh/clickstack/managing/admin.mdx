@@ -1,0 +1,26 @@
+---
+slug: /use-cases/observability/clickstack/admin
+title: 'ClickStack - 管理'
+sidebarTitle: '管理'
+description: '如何在 ClickStack 中执行基本管理任务。'
+doc_type: 'guide'
+keywords: ['clickstack', 'admin']
+---
+
+ClickStack 中的大多数管理任务都直接在底层的 ClickHouse 数据库中执行。部署 ClickStack 的用户应熟悉 ClickHouse 的相关概念和基础管理知识。
+
+管理操作通常涉及执行 DDL 语句。可用选项取决于您使用的是托管 ClickStack 还是 ClickStack 开源版。
+
+<div id="clickstack-oss">
+  ## ClickStack 开源版
+</div>
+
+对于 ClickStack 开源版部署，用户可使用 [ClickHouse 客户端](/zh/concepts/features/interfaces/cli) 执行管理任务。该客户端通过 ClickHouse 原生协议连接到数据库，支持完整的 DDL 和管理操作，并可为查询提供交互式反馈。
+
+<div id="clickstack-managed">
+  ## 托管 ClickStack
+</div>
+
+在托管 ClickStack 中，用户也可以使用 ClickHouse 客户端和 [SQL 控制台](/zh/products/cloud/features/sql-console-features/sql-console)。如果要通过客户端连接，用户需要获取该[服务的凭据](/zh/products/cloud/guides/sql-console/connection-details)。
+
+[SQL 控制台](/zh/products/cloud/features/sql-console-features/sql-console)是一个基于 Web 的界面，提供了更多便捷功能，包括 SQL 自动补全、查询历史记录，以及用于结果可视化的内置图表。
