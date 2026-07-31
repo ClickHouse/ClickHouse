@@ -6,8 +6,6 @@ title: 'clickhouse-keeper-client utility'
 doc_type: 'reference'
 ---
 
-# clickhouse-keeper-client utility
-
 A client application to interact with clickhouse-keeper by its native protocol.
 
 ## Keys {#clickhouse-keeper-client}

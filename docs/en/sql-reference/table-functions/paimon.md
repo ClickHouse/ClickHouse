@@ -50,7 +50,7 @@ Here is an example of configuring a named collection for storing the URL and cre
     <named_collections>
         <paimon_conf>
             <url>http://test.s3.amazonaws.com/clickhouse-bucket/</url>
-            <access_key_id>test<access_key_id>
+            <access_key_id>test</access_key_id>
             <secret_access_key>test</secret_access_key>
             <format>auto</format>
             <structure>auto</structure>

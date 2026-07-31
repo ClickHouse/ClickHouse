@@ -1,0 +1,274 @@
+---
+date: 2025-01-29
+title: Comment récupérer après un snapshot Keeper corrompu
+tags: ['Dépannage']
+keywords: ['Keeper', 'snapshot corrompu']
+description: 'Article décrivant comment récupérer après un snapshot Keeper corrompu : comment le problème se manifeste, ce qu’est un snapshot, où le trouver et les stratégies de récupération possibles.'
+---
+
+Des snapshots ClickHouse Keeper corrompus ou défectueux peuvent provoquer une forte instabilité du système, notamment des incohérences de métadonnées, des tables en lecture seule, un épuisement des ressources ou des échecs de sauvegarde. Cet article couvre :
+
+* [Ce que sont les snapshots et où les trouver](#overview)
+* [Comment le problème se manifeste](#symptoms)
+* [Les stratégies de récupération possibles](#recovery-strategies) et ce que chacune d’elles implique
+
+<div id="overview">
+  ## Vue d’ensemble des snapshots de Keeper
+</div>
+
+<div id="what-is-snapshot">
+  ### Qu’est-ce qu’un snapshot ?
+</div>
+
+Un snapshot est un état sérialisé des données internes de Keeper (comme les métadonnées sur les clusters, les chemins de coordination des tables et les configurations) à un instant donné. Les snapshots sont essentiels pour resynchroniser les nœuds Keeper au sein d’un cluster, restaurer les métadonnées en cas de défaillance, ainsi que pour les processus de démarrage ou de redémarrage qui s’appuient sur un état valide connu de Keeper.
+
+<div id="where-to-find-snapshots">
+  ### Où puis-je trouver des snapshots ?
+</div>
+
+Les snapshots sont stockés sous forme de fichiers sur le système de fichiers local des nœuds Keeper. Par défaut, ils sont enregistrés dans `/var/lib/clickhouse/coordination/snapshots/`, ou dans le chemin personnalisé défini par `snapshot_storage_path` dans votre fichier `keeper_server.xml`. Les snapshots sont numérotés de manière incrémentielle (par exemple, snapshot.23), les plus récents portant des numéros plus élevés.
+
+Dans les clusters multinœuds, chaque nœud Keeper possède son propre répertoire de snapshots.
+
+<Note>
+  La cohérence des snapshots entre les nœuds est essentielle à la récupération.
+</Note>
+
+<div id="symptoms">
+  ## Principaux symptômes et manifestations de snapshots Keeper corrompus
+</div>
+
+Le tableau ci-dessous présente quelques symptômes et manifestations courants de snapshots Keeper corrompus :
+
+| **Catégorie**                      | **Type de problème**                | **À surveiller**                                                                                                   |
+| ---------------------------------- | ----------------------------------- | ------------------------------------------------------------------------------------------------------------------ |
+| **Problèmes opérationnels**        | Mode lecture seule                  | Les tables passent inopinément en mode lecture seule                                                               |
+|                                    | Échecs de requête                   | Échecs persistants de requêtes avec des erreurs `Coordination::Exception`                                          |
+| **Corruption des métadonnées**     | Métadonnées obsolètes               | Tables supprimées non prises en compte ; échecs d&#39;opération dus à des métadonnées obsolètes                    |
+| **Surcharge des ressources**       | Épuisement des ressources système   | Les nœuds Keeper consomment excessivement le CPU, la mémoire ou l&#39;espace disque ; risque d&#39;indisponibilité |
+|                                    | Disque plein                        | Disque saturé pendant la création du snapshot                                                                      |
+| **Sauvegarde et restauration**     | Échecs de sauvegarde                | Les sauvegardes échouent en raison de métadonnées Keeper manquantes ou incohérentes                                |
+| **Création/transfert de snapshot** | Crash de Keeper                     | Crash de Keeper en cours de snapshot (recherchez les erreurs « SEGFAULT »)                                         |
+|                                    | Corruption du transfert de snapshot | Corruption lors du transfert du snapshot entre les répliques                                                       |
+|                                    | Race condition                      | Race condition pendant la compaction des logs - thread de commit en arrière-plan accédant à des logs supprimés     |
+|                                    | Synchronisation réseau              | Problèmes réseau empêchant la synchronisation du snapshot depuis le leader vers les followers                      |
+
+**Indicateurs dans les logs :**
+
+Avant de diagnostiquer une corruption de snapshot, vérifiez les **logs Keeper** afin d&#39;identifier des motifs d&#39;erreur spécifiques :
+
+| **Type de log**                       | **À surveiller**                                                                                                                                                                                                                                                                                                                                     |
+| ------------------------------------- | ---------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| **Erreurs de corruption de snapshot** | • `Aborting because of failure to load from latest snapshot with index`<br />• `Failure to load from latest snapshot with index {}: {}. Manual intervention is necessary for recovery`<br />• `Failed to preprocess stored log at index {}, aborting to avoid inconsistent state`<br />• Échecs de sérialisation/chargement du snapshot au démarrage |
+| **Autres problèmes Keeper**           | • `Coordination::Exception`<br />• `Zookeeper::Session Timeout`<br />• Problèmes de synchronisation ou d&#39;élection<br />• Race conditions lors de la compaction des logs                                                                                                                                                                          |
+
+<div id="recovery-strategies">
+  ## Récupération après des snapshots Keeper corrompus
+</div>
+
+Avant de toucher aux fichiers, veillez toujours à :
+
+1. Arrêter tous les nœuds Keeper pour éviter toute corruption supplémentaire
+2. Sauvegarder l’ensemble en copiant l’intégralité du répertoire de coordination dans un emplacement sûr
+3. Vérifier le quorum du cluster afin de vous assurer qu’au moins un nœud dispose de données intactes
+
+***
+
+<div id="restore-from-existing-backup">
+  ### 1. Restaurer à partir d’une sauvegarde existante
+</div>
+
+Suivez cette procédure si :
+
+* La corruption des métadonnées de Keeper ou d’un snapshot rend les données actuelles irrécupérables.
+* Une sauvegarde existe avec un état Keeper connu comme sain.
+
+Suivez les étapes ci-dessous pour restaurer une sauvegarde existante :
+
+1. Repérez et validez la sauvegarde la plus récente afin de vérifier la cohérence des métadonnées.
+2. Arrêtez les services ClickHouse et Keeper.
+3. Remplacez les snapshots et les logs défectueux par ceux du répertoire de sauvegarde.
+4. Redémarrez le cluster Keeper et vérifiez la synchronisation des métadonnées.
+
+<Tip>
+  **Sauvegardez régulièrement**
+
+  Si les sauvegardes ne sont pas à jour, vous risquez de perdre des modifications récentes des métadonnées. C’est pourquoi nous vous recommandons d’effectuer des sauvegardes régulièrement.
+</Tip>
+
+***
+
+<div id="rollback-to-older-snapshot">
+  ### 2. Revenir à un snapshot plus ancien
+</div>
+
+Suivez cette procédure dans les cas suivants :
+
+* Des snapshots récents sont corrompus, mais d’anciens snapshots restent exploitables.
+* Les logs incrémentiels sont intacts, ce qui permet une restauration cohérente.
+
+Suivez les étapes ci-dessous pour revenir à un snapshot plus ancien :
+
+1. Identifiez et sélectionnez un ancien snapshot valide (par exemple, snapshot.19) dans le répertoire Keeper.
+2. Supprimez les snapshots et les logs plus récents.
+3. Redémarrez Keeper afin qu’il rejoue les logs pour reconstruire l’état des métadonnées.
+
+<Warning>
+  **Risque de désynchronisation des métadonnées**
+
+  Il existe un risque de désynchronisation des métadonnées si des snapshots et des logs sont manquants ou incomplets.
+</Warning>
+
+***
+
+<div id="restore-metadata-with-system-restore-replica">
+  ### 3. Restaurer les métadonnées à l’aide de `SYSTEM RESTORE REPLICA`
+</div>
+
+Vous devez suivre ce processus dans les cas suivants :
+
+* les métadonnées de Keeper sont perdues ou corrompues, mais les données de la table existent toujours sur le disque
+* les tables sont passées en mode lecture seule en raison de métadonnées ZooKeeper/Keeper manquantes
+* vous devez recréer les métadonnées dans Keeper à partir des parties de données disponibles localement
+
+Suivez les étapes ci-dessous pour restaurer les métadonnées :
+
+1. Vérifiez que les données de la table existent localement dans le chemin de données de votre clickhouse-server, défini par `<path>` dans votre configuration. (`/var/lib/clickhouse/data/` par défaut)
+
+2. Pour chaque table concernée, exécutez :
+
+```sql
+SYSTEM RESTART REPLICA [db.]table_name;
+SYSTEM RESTORE REPLICA [db.]table_name;
+```
+
+3. Pour une récupération au niveau de la base de données (si vous utilisez le moteur de base de données Replicated) :
+
+```sql
+SYSTEM RESTORE DATABASE REPLICA db_name;
+```
+
+4. Attendez la fin de la synchronisation :
+
+```sql
+SYSTEM SYNC REPLICA [db.]table_name;
+```
+
+5. Vérifiez la récupération en vérifiant que `system.replicas` a `is_readonly = 0` et en surveillant `system.detached_parts`
+
+<Info>
+  **Comment cela fonctionne**
+
+  `SYSTEM RESTORE REPLICA` détache toutes les parts existantes, recrée les métadonnées dans Keeper (comme s’il s’agissait d’une nouvelle table vide), puis réattache toutes les parts. Cela évite de retélécharger les données via le réseau.
+</Info>
+
+<Warning>
+  **Prérequis**
+
+  Cela fonctionne uniquement si les parties de données locales sont intactes. Si les données sont également corrompues, utilisez plutôt la stratégie #5 (reconstruire le cluster).
+</Warning>
+
+***
+
+<div id="drop-and-recreate-replica-metadata">
+  ### 4. Supprimer et recréer les métadonnées de la réplique dans Keeper
+</div>
+
+Vous devez suivre cette procédure dans les cas suivants :
+
+* L&#39;erreur se produit sur une seule réplique du cluster et les métadonnées correspondantes dans Keeper sont corrompues ou incohérentes
+* Vous rencontrez des erreurs du type &quot;Part XXXXX intersects previous part YYYYY&quot;
+* Vous devez réinitialiser complètement les métadonnées d&#39;une réplique dans Keeper tout en conservant les données locales
+
+Suivez les étapes ci-dessous pour supprimer et recréer les métadonnées :
+
+1. Sur la réplique affectée, détachez la table :
+
+```sql
+DETACH TABLE [db.]table_name;
+```
+
+2. Supprimez de Keeper les métadonnées de la réplique (à exécuter sur n’importe quelle réplique) :
+
+```sql
+SYSTEM DROP REPLICA 'replica_name' FROM ZKPATH '/clickhouse/tables/{shard}/table_name';
+```
+
+Pour trouver le bon chemin ZooKeeper :
+
+```sql
+SELECT zookeeper_path, replica_name FROM system.replicas WHERE table = 'table_name';
+```
+
+3. Réattachez la table (elle sera en mode lecture seule) :
+
+```sql
+ATTACH TABLE [db.]table_name;
+```
+
+4. Restaurez les métadonnées de la réplique :
+
+```sql
+SYSTEM RESTORE REPLICA [db.]table_name;
+```
+
+5. Synchronisez-vous avec les autres répliques :
+
+```sql
+SYSTEM SYNC REPLICA [db.]table_name;
+```
+
+6. Vérifiez `system.detached_parts` sur toutes les répliques après la récupération
+
+<Warning>
+  **Exécutez cette opération sur toutes les répliques affectées**
+
+  Si la corruption affecte plusieurs répliques, répétez ces étapes sur chacune d&#39;elles, l&#39;une après l&#39;autre.
+</Warning>
+
+<Tip>
+  **Pour toute la base de données**
+
+  Si vous utilisez une base de données Replicated, vous pouvez utiliser `SYSTEM DROP REPLICA ... FROM DATABASE db_name` à la place.
+</Tip>
+
+**Alternative : utiliser le flag force&#95;restore&#95;data**
+
+Pour récupérer automatiquement toutes les tables répliquées au démarrage du serveur :
+
+1. Arrêtez le serveur ClickHouse
+2. Créez le flag de récupération :
+
+```bash
+sudo -u clickhouse touch /var/lib/clickhouse/flags/force_restore_data
+```
+
+3. Démarrez le serveur ClickHouse
+4. Le serveur supprimera automatiquement le flag et restaurera toutes les tables répliquées
+5. Surveillez les logs pour suivre la progression de la restauration
+
+Cette approche est utile lorsque plusieurs tables doivent être restaurées simultanément.
+
+***
+
+<div id="rebuild-keeper-cluster">
+  ### 5. Reconstruire le cluster Keeper
+</div>
+
+Vous devez suivre ce processus lorsque :
+
+* Ni snapshots, ni logs, ni sauvegardes valides ne sont disponibles pour la restauration.
+* Vous devez recréer l’intégralité du cluster Keeper et de ses métadonnées.
+
+Suivez les étapes ci-dessous pour reconstruire le cluster Keeper :
+
+1. Arrêtez complètement les clusters ClickHouse et Keeper.
+2. Réinitialisez chaque nœud Keeper en nettoyant les répertoires de snapshots et de logs.
+3. Initialisez un nœud Keeper comme leader, puis ajoutez progressivement les autres nœuds.
+4. Réimportez les métadonnées si elles sont disponibles depuis des enregistrements externes.
+
+<Warning>
+  **Processus long**
+
+  Ce processus est long et comporte un risque d’indisponibilité prolongée. Une reconstruction complète des données est requise.
+</Warning>
