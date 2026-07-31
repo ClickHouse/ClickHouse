@@ -19,6 +19,14 @@ FilterSortedStreamByRange::FilterSortedStreamByRange(
         *header_, getOutputPort().getHeader(), "Expression for FilterSortedStreamByRange should not change header");
 }
 
+void FilterSortedStreamByRange::onCancel() noexcept
+{
+    ISimpleTransform::onCancel();
+    /// The pipeline cancels only this outer processor, so forward the cancellation
+    /// into the inner FilterTransform to interrupt long-running functions in its expression.
+    filter_transform.cancel();
+}
+
 void FilterSortedStreamByRange::transform(Chunk & chunk)
 {
     const UInt64 rows_before_filtration = chunk.getNumRows();

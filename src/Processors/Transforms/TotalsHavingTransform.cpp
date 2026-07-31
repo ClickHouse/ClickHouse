@@ -8,6 +8,8 @@
 #include <Common/typeid_cast.h>
 #include <Core/SettingsEnums.h>
 #include <DataTypes/DataTypeAggregateFunction.h>
+#include <Functions/IFunction.h>
+#include <Interpreters/ActionsDAG.h>
 #include <Interpreters/ExpressionActions.h>
 
 namespace DB
@@ -150,6 +152,19 @@ void TotalsHavingTransform::work()
         ISimpleTransform::work();
 }
 
+void TotalsHavingTransform::onCancel() noexcept
+{
+    ISimpleTransform::onCancel();
+    if (expression)
+    {
+        for (const auto & node : expression->getNodes())
+        {
+            if (node.type == ActionsDAG::ActionType::FUNCTION && node.function)
+                node.function->cancelExecution();
+        }
+    }
+}
+
 void TotalsHavingTransform::transform(Chunk & chunk)
 {
     /// Block with values not included in `max_rows_to_group_by`. We'll postpone it.
@@ -193,7 +208,15 @@ void TotalsHavingTransform::transform(Chunk & chunk)
                 throw Exception(ErrorCodes::ILLEGAL_COLUMN, "Having clause cannot contain arrayJoin");
         }
 
-        expression->execute(finalized_block, num_rows);
+        expression->execute(finalized_block, num_rows, false, false, [this]() { return isCancelled(); });
+
+        if (isCancelled())
+        {
+            stopReading();
+            chunk.clear();
+            return;
+        }
+
         ColumnPtr filter_column_ptr = finalized_block.getByPosition(filter_column_pos).column;
         if (remove_filter)
             finalized_block.erase(filter_column_name);
@@ -298,7 +321,11 @@ void TotalsHavingTransform::prepareTotals()
     {
         size_t num_rows = totals.getNumRows();
         auto block = finalized_header.cloneWithColumns(totals.detachColumns());
-        expression->execute(block, num_rows);
+        expression->execute(block, num_rows, false, false, [this]() { return isCancelled(); });
+
+        if (isCancelled())
+            return;
+
         if (remove_filter)
             block.erase(filter_column_name);
         /// Note: after expression totals may have several rows if `arrayJoin` was used in expression.

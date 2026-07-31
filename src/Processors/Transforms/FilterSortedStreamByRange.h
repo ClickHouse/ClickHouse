@@ -26,6 +26,8 @@ public:
 
     void transform(Chunk & chunk) override;
 
+    void onCancel() noexcept override;
+
 private:
     FilterTransform filter_transform;
 };
