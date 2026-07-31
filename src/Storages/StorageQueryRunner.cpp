@@ -351,6 +351,22 @@ public:
             LOG_WARNING(log, "The table is shutting down, discarding the query");
         else
             LOG_ERROR(LogFrequencyLimiter(log, 5), "The queue is full (max_queue_size = {}), discarding the query", max_queue_size);
+
+        if (batch)
+        {
+            /// In synchronous mode, discarding a query is a user-visible error:
+            /// the INSERT must fail so the caller knows that not all queries were
+            /// executed. Retire the seq (so PrefixLatch does not wedge) but do NOT
+            /// count down the latch — that would make the INSERT appear successful.
+            pending.retire(seq);
+            throw Exception(
+                ErrorCodes::BAD_ARGUMENTS,
+                "Synchronous mode: the queue is full (max_queue_size = {}), "
+                "discarding the query. Use 'asynchronous' mode, "
+                "increase 'max_queue_size', or reduce the batch size",
+                max_queue_size);
+        }
+
         finishJob(batch, seq);
     }
 
