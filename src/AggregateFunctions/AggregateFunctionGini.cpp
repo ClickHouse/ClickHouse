@@ -45,6 +45,18 @@ struct AggregateFunctionGiniData
     using Array = PODArrayWithStackMemory<Value, bytes_in_arena>;
     Array array;
 
+    [[noreturn]] static void throwTooLargeArraySize()
+    {
+        throw Exception(ErrorCodes::TOO_LARGE_ARRAY_SIZE,
+                        "Too large array size in aggregate function `gini` (maximum: {})", GINI_MAX_ARRAY_SIZE);
+    }
+
+    static void checkArraySize(size_t size)
+    {
+        if (unlikely(size > GINI_MAX_ARRAY_SIZE))
+            throwTooLargeArraySize();
+    }
+
     static bool isNaNValue(const Value & value)
     {
         if constexpr (std::is_same_v<Value, BFloat16>)
@@ -83,16 +95,23 @@ struct AggregateFunctionGiniData
         if (x < Value{})
             throw Exception(ErrorCodes::BAD_ARGUMENTS, "Aggregate function `gini` does not support negative values");
 
+        if (unlikely(array.size() >= GINI_MAX_ARRAY_SIZE))
+            throwTooLargeArraySize();
+
         array.push_back(x);
     }
 
     void merge(const AggregateFunctionGiniData<Value> & rhs)
     {
+        if (unlikely(array.size() > GINI_MAX_ARRAY_SIZE || rhs.array.size() > GINI_MAX_ARRAY_SIZE - array.size()))
+            throwTooLargeArraySize();
+
         array.insert(rhs.array.begin(), rhs.array.end());
     }
 
     void serialize(WriteBuffer & buf) const
     {
+        checkArraySize(array.size());
         writeVarUInt(array.size(), buf);
         buf.write(reinterpret_cast<const char *>(array.data()), array.size() * sizeof(array[0]));
     }
@@ -101,9 +120,7 @@ struct AggregateFunctionGiniData
     {
         size_t size = 0;
         readVarUInt(size, buf);
-        if (unlikely(size > GINI_MAX_ARRAY_SIZE))
-            throw Exception(ErrorCodes::TOO_LARGE_ARRAY_SIZE,
-                            "Too large array size in aggregate function gini (maximum: {})", GINI_MAX_ARRAY_SIZE);
+        checkArraySize(size);
         array.resize(size);
         buf.readStrict(reinterpret_cast<char *>(array.data()), size * sizeof(array[0]));
     }
