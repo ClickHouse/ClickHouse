@@ -81,9 +81,9 @@ ExecutingGraph::Edge & ExecutingGraph::addEdge(Edges & edges, Edge edge, const I
         throw Exception(
             ErrorCodes::LOGICAL_ERROR,
             "Processor {} was found as {} for processor {}, but not found in list of processors",
-            to->getName(),
+            to->getUniqID(),
             edge.backward ? "input" : "output",
-            from->getName());
+            from->getUniqID());
 
     edge.to = it->second;
     auto & added_edge = edges.emplace_back(std::move(edge));
