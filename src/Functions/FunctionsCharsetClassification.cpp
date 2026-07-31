@@ -105,7 +105,7 @@ struct CharsetClassificationImpl
             std::string_view result_value;
 
             /// Go through the dictionary and find the charset with the highest weight
-            Float64 max_result = zero_frequency_log * (max_string_size);
+            Float64 max_result = zero_frequency_log * max_string_size;
             for (const auto & item : encodings_freq)
             {
                 Float64 score = naiveBayes(item.map, model, max_result);
@@ -122,7 +122,9 @@ struct CharsetClassificationImpl
 
             size_t result_value_size = result_value.size();
             res_data.resize(current_result_offset + result_value_size);
-            memcpy(&res_data[current_result_offset], result_value.data(), result_value_size);
+            /// result_value can be empty with null data(); memcpy(null, 0) is UB (nonnull argument).
+            if (result_value_size)
+                memcpy(&res_data[current_result_offset], result_value.data(), result_value_size);
             current_result_offset += result_value_size;
             res_offsets[i] = current_result_offset;
         }

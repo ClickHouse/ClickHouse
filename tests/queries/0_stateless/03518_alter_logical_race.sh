@@ -33,6 +33,14 @@
 # exception is a run disrupted by a benign table/replica shutdown (a concurrent restart): that
 # is not the test's fault, so it records a "disrupted" marker and the progress requirement is
 # waived.
+#
+# Because a single ADD -> MODIFY -> DROP cycle can take longer than the soft time budget on the
+# slowest builds (sanitizers + s3 storage + parallel load), the workers do not give up at the
+# soft budget when a side has made no progress yet: they keep running - INSERTs and ALTERs
+# still concurrent - until both sides have made progress or a generous hard cap is reached (see
+# `within_budget`). Only then, if a side still made zero progress, does the test fail. This
+# keeps the guard meaningful without flaking on slow builds, where the right answer is to run a
+# little longer, not to declare the race never happened.
 
 CURDIR=$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)
 # shellcheck source=../shell_config.sh
@@ -45,12 +53,57 @@ set -e
 # the script. The prefix is unique per test invocation so parallel runs of the stateless
 # suite do not collide.
 PROGRESS_PREFIX="${CLICKHOUSE_TMP}/03518_progress_${CLICKHOUSE_TEST_UNIQUE_NAME}"
-rm -f "${PROGRESS_PREFIX}".*
+# Markers a worker touches the first time each side of the race makes progress: a completed
+# ALTER cycle and a landed INSERT. `within_budget` consults them to decide when the workers may
+# stop (see below). The single `rm -f "${PROGRESS_PREFIX}"*` glob clears every per-invocation
+# file at once: the `.cycles.*`/`.inserts.*` counters, the progress markers, and the
+# `_disrupted` marker.
+ALTER_PROGRESS_MARKER="${PROGRESS_PREFIX}_alter_progress"
+INSERT_PROGRESS_MARKER="${PROGRESS_PREFIX}_insert_progress"
+rm -f "${PROGRESS_PREFIX}"*
 
-trap '$CLICKHOUSE_CLIENT -q "DROP TABLE IF EXISTS alter_table"; rm -f "${PROGRESS_PREFIX}".* "${PROGRESS_PREFIX}_disrupted"' EXIT
+trap '$CLICKHOUSE_CLIENT -q "DROP TABLE IF EXISTS alter_table"; rm -f "${PROGRESS_PREFIX}"*' EXIT
 
 $CLICKHOUSE_CLIENT -q "DROP TABLE IF EXISTS alter_table"
-$CLICKHOUSE_CLIENT -q "CREATE TABLE alter_table (a UInt8, b UInt8, c UInt8, d UInt8, e UInt8, f UInt8, g UInt8) ENGINE = ReplicatedMergeTree('/clickhouse/tables/{database}/test_03518/alter_table', 'r1') ORDER BY a PARTITION BY b % 10 SETTINGS old_parts_lifetime = 1"
+# Disable the throttles that defer `MODIFY COLUMN`'s data mutation behind merges: under this test's
+# concurrent INSERT load they can starve the first mutation, which (replicated alters finish in strict
+# version order) stalls every later `MODIFY` until `timeout` fires with a spurious failure. CI report:
+# https://s3.amazonaws.com/clickhouse-test-reports/json.html?REF=master&sha=2a3a502d2ed0af65bb0a5c91223c91c1b2e28047&name_0=MasterCI&name_1=Stateless%20tests%20%28arm_binary%2C%20parallel%29
+$CLICKHOUSE_CLIENT << SQL
+CREATE TABLE alter_table (a UInt8, b UInt8, c UInt8, d UInt8, e UInt8, f UInt8, g UInt8)
+ENGINE = ReplicatedMergeTree('/clickhouse/tables/{database}/test_03518/alter_table', 'r1')
+ORDER BY a
+PARTITION BY b % 10
+SETTINGS old_parts_lifetime = 1,
+  max_replicated_mutations_in_queue = 100000,
+  number_of_free_entries_in_pool_to_execute_mutation = 0
+SQL
+
+# True while the workers should keep issuing (and retrying) statements. Every worker - both
+# `thread_alter` and `thread_insert` loops, and the retry loop inside `run_with_retry` - gates
+# on this, so they all wind down together.
+#
+# The contract: always run through the soft budget (`SOFT_DEADLINE`); past it, keep going only
+# until BOTH sides have made progress - an ALTER cycle completed and an INSERT landed, recorded
+# via the progress markers. That is what lets a slow build which needs more than the soft
+# budget to land its first ALTER cycle finish it instead of being failed by the progress guard,
+# while INSERTs keep running concurrently the whole time so the race is still genuinely
+# exercised. `HARD_DEADLINE` is a backstop so a truly stuck run still terminates well within the
+# 600s per-test budget - and is then correctly reported as NO ALTER/INSERT PROGRESS.
+function within_budget()
+{
+    if [ "$SECONDS" -ge "$HARD_DEADLINE" ]
+    then
+        return 1
+    fi
+    if [ "$SECONDS" -ge "$SOFT_DEADLINE" ] \
+        && [ -e "$ALTER_PROGRESS_MARKER" ] \
+        && [ -e "$INSERT_PROGRESS_MARKER" ]
+    then
+        return 1
+    fi
+    return 0
+}
 
 # Run a single statement, retrying it on transient/retryable conditions until it
 # actually lands (or until the time budget for this thread runs out). Retrying is what
@@ -72,7 +125,7 @@ function run_with_retry()
 {
     local STMT="$1"
 
-    while [ $SECONDS -lt "$TIMELIMIT" ]
+    while within_budget
     do
         OUTPUT=$(timeout 120s $CLICKHOUSE_CLIENT --query "$STMT" 2>&1) && RC=0 || RC=$?
         local ERROR=${OUTPUT//$'\n'/ }
@@ -134,8 +187,9 @@ function run_with_retry()
         return 0
     done
 
-    # Time budget exhausted while the statement had not yet landed (only retryable errors
-    # were seen). Signal the caller so it does not run the next, dependent step.
+    # `within_budget` became false (the run is winding down, or the hard cap was hit) while the
+    # statement had not yet landed - only retryable errors were seen. Signal the caller so it
+    # does not run the next, dependent step.
     return 1
 }
 
@@ -143,13 +197,15 @@ function thread_alter()
 {
     local col="$1"
     local cycles=0
-    local TIMELIMIT=$((SECONDS+TIMEOUT))
-    while [ $SECONDS -lt "$TIMELIMIT" ]
+    while within_budget
     do
         run_with_retry "ALTER TABLE alter_table ADD COLUMN $col String DEFAULT '0'" || break
         run_with_retry "ALTER TABLE alter_table MODIFY COLUMN $col UInt64" || break
         run_with_retry "ALTER TABLE alter_table DROP COLUMN $col" || break
         cycles=$((cycles + 1))
+        # Record that the ALTER side has made progress, so `within_budget` may let the run wind
+        # down once the INSERT side has too. Idempotent: `touch` from either ALTER worker is fine.
+        touch "$ALTER_PROGRESS_MARKER"
     done
     # Record completed cycles so the parent can fail the test if no worker made progress.
     echo "$cycles" > "${PROGRESS_PREFIX}.cycles.${col}"
@@ -159,8 +215,7 @@ function thread_insert()
 {
     local id="$1"
     local inserts=0
-    local TIMELIMIT=$((SECONDS+TIMEOUT))
-    while [ $SECONDS -lt "$TIMELIMIT" ]
+    while within_budget
     do
         # A non-zero return means `run_with_retry` gave up before the INSERT landed: either
         # the time budget ran out or the table/replica was shut down (disrupted). Stop the
@@ -169,13 +224,26 @@ function thread_insert()
         # then returns 0), so it still fails the empty-reference test.
         run_with_retry "INSERT INTO alter_table (a, b, c, d, e, f, g) SELECT rand(1), rand(2), rand(3), rand(4), rand(5), rand(6), rand(7) FROM numbers(1000)" || break
         inserts=$((inserts + 1))
+        # Record that the INSERT side has made progress (see `within_budget`).
+        touch "$INSERT_PROGRESS_MARKER"
     done
     # Record landed INSERTs so the parent can fail the test if no INSERT ever ran concurrently
     # with the ALTERs (otherwise the test would prove only the ALTER side of the race).
     echo "$inserts" > "${PROGRESS_PREFIX}.inserts.${id}"
 }
 
+# Soft budget: in the common case both sides make progress within a few seconds, so the workers
+# stop at the soft deadline. Hard cap: when a side has not made a single bit of progress yet -
+# which happens on the slowest sanitizer + s3 storage + parallel builds, where one
+# ADD -> MODIFY -> DROP cycle alone can exceed the soft budget - the workers keep running past
+# it, with INSERTs and ALTERs still concurrent, until the first progress lands or the hard cap
+# is reached (see `within_budget`). The hard cap stays well under the 600s per-test budget.
+# `$SECONDS` is the seconds-since-shell-start timeline shared by the background workers, so the
+# deadlines are computed once here and read by every worker.
 TIMEOUT=10
+MAX_TIMEOUT=180
+SOFT_DEADLINE=$((SECONDS + TIMEOUT))
+HARD_DEADLINE=$((SECONDS + MAX_TIMEOUT))
 
 pids=()
 thread_alter h & pids+=("$!")
