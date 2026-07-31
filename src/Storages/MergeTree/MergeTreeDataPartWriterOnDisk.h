@@ -11,6 +11,8 @@
 #include <Parsers/parseQuery.h>
 #include <Storages/MarkCache.h>
 #include <Storages/MergeTree/MergeTreeIndicesSerialization.h>
+#include <Columns/IColumn_fwd.h>
+#include <Compression/ICompressionCodec.h>
 
 namespace DB
 {
@@ -117,6 +119,9 @@ protected:
 
     virtual ISerialization::SerializeBinaryBulkSettings getSerializationSettings() const = 0;
 
+    /// This is useful only for vector codecs (like SZ3).
+    static void setVectorDimensionsIfNeeded(CompressionCodecPtr codec, const IColumn * column);
+
     const MergeTreeIndices skip_indices;
     const String marks_file_extension;
     const CompressionCodecPtr default_codec;
@@ -131,7 +136,7 @@ protected:
 
     /// Optional packed archive shared by all skip-index substreams that stayed under the
     /// per-substream size threshold. Substreams that exceeded it were spilled to standalone
-    /// files on data_part_storage by the SizeAdaptiveSpoolBuffer wrapper and are not part of
+    /// files on data_part_storage by the size-adaptive packing wrapper and are not part of
     /// this archive. Null when packing is disabled (packed_skip_index_max_bytes = 0) or when
     /// this writer is borrowing another writer's archive via @skip_indices_packed_writer_borrowed.
     std::unique_ptr<PackedFilesWriter> skip_indices_packed_writer;

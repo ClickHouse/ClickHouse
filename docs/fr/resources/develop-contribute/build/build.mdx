@@ -93,7 +93,7 @@ mkdir build
 cd build
 ```
 
-Vous pouvez avoir plusieurs répertoires distincts (par ex. `build_release`, `build_debug`, etc.) pour différents types de build.
+Vous pouvez avoir plusieurs répertoires distincts (par ex. `build_release`, `build_debug`, etc.) pour différents types de compilation.
 
 Facultatif : si plusieurs versions du compilateur sont installées, vous pouvez préciser le compilateur exact à utiliser.
 
@@ -114,7 +114,7 @@ cmake -D CMAKE_BUILD_TYPE=Debug ..
   Si vous souhaitez utiliser un débogueur comme gdb, ajoutez `-D DEBUG_O_LEVEL="0"` à la commande ci-dessus afin de supprimer toutes les optimisations du compilateur, qui peuvent empêcher gdb de voir ou d’accéder aux variables.
 </Note>
 
-Exécutez ninja pour générer la build :
+Exécutez ninja pour générer la compilation :
 
 ```sh
 ninja clickhouse
@@ -134,15 +134,16 @@ ninja -j 1 clickhouse
 
 <Note>
   `clickhouse-server`, `clickhouse-client` et d’autres binaires similaires sont des liens symboliques dans le répertoire `programs/` qui pointent vers l’exécutable `clickhouse` une fois la compilation terminée.
+</Note>
 
-  :::tip
+<Tip>
   CMake fournit des raccourcis pour les commandes ci-dessus :
 
   ```sh
   cmake -S . -B build  # configurer la compilation, à exécuter depuis le répertoire racine du dépôt
   cmake --build build  # compiler
   ```
-</Note>
+</Tip>
 
 <div id="running-the-clickhouse-executable">
   ## Exécution de l’exécutable ClickHouse

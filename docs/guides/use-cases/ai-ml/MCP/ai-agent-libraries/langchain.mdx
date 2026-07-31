@@ -25,8 +25,7 @@ This example can be found as a notebook in the [examples repository](https://git
 You can run the following steps either from your Python REPL or via script.
 
 <Steps>
-<Step>
-## Install libraries {#install-libraries}
+<Step title="Install libraries" id="install-libraries">
 
 Install the required libraries by running the following commands:
 
@@ -35,8 +34,7 @@ pip install -q --upgrade pip
 pip install -q langchain-mcp-adapters langgraph "langchain[anthropic]"
 ```
 </Step>
-<Step>
-## Setup credentials {#setup-credentials}
+<Step title="Setup credentials" id="setup-credentials">
 
 Next, you'll need to provide your Anthropic API key:
 
@@ -56,8 +54,7 @@ If you don't have an Anthropic API key, and want to use another LLM provider,
 you can find the instructions for setting up your credentials in the [Langchain Providers docs](https://python.langchain.com/docs/integrations/providers/)
 </Info>
 </Step>
-<Step>
-## Initialize MCP server {#initialize-mcp-and-agent}
+<Step title="Initialize MCP server" id="initialize-mcp-and-agent">
 
 Now configure the ClickHouse MCP server to point at the ClickHouse SQL playground:
 
@@ -83,8 +80,7 @@ server_params = StdioServerParameters(
 )
 ```
 </Step>
-<Step>
-## Configure the stream handler {#configure-the-stream-handler}
+<Step title="Configure the stream handler" id="configure-the-stream-handler">
 
 When working with Langchain and ClickHouse MCP server, query results are often 
 returned as streaming data rather than a single response. For large datasets or
@@ -142,8 +138,7 @@ class UltraCleanStreamHandler:
             self.last_was_tool = True
 ```
 </Step>
-<Step>
-## Call the agent {#call-the-agent}
+<Step title="Call the agent" id="call-the-agent">
 
 Finally, call your agent and ask it who's committed the most code to ClickHouse:
 
