@@ -1,3 +1,4 @@
+#include <base/defines.h>
 #include <base/unaligned.h>
 #include <Common/filesystemHelpers.h>
 #include <Compression/CompressionCodecNone.h>
@@ -183,6 +184,9 @@ TEST(CompressedWriteBufferNone, ViolatedExclusivityIsDetected)
     /// The exclusivity declared by declareOutBufferExclusive is enforced, not just documented:
     /// if something else moves the position of `out` while a zero-copy block is in flight,
     /// flushing the block must throw instead of writing a corrupted block.
+#ifdef DEBUG_OR_SANITIZER_BUILD
+    GTEST_SKIP() << "this test triggers LOGICAL_ERROR, runs only if DEBUG_OR_SANITIZER_BUILD is not defined";
+#else
     auto tmp_file = createTemporaryFile("/tmp/");
     WriteBufferFromFile out(tmp_file->path(), 1 << 20);
     CompressedWriteBuffer compressed_out(out, std::make_shared<CompressionCodecNone>(), 1024);
@@ -194,6 +198,7 @@ TEST(CompressedWriteBufferNone, ViolatedExclusivityIsDetected)
 
     EXPECT_THROW(compressed_out.next(), DB::Exception);
     compressed_out.cancel();
+#endif
 }
 
 }
