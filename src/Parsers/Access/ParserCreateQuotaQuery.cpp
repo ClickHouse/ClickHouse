@@ -12,6 +12,7 @@
 #include <Parsers/ExpressionListParsers.h>
 #include <Parsers/parseIdentifierOrStringLiteral.h>
 #include <Parsers/parseIntervalKind.h>
+#include <base/arithmeticOverflow.h>
 #include <base/range.h>
 #include <boost/algorithm/string/case_conv.hpp>
 #include <boost/algorithm/string/join.hpp>
@@ -210,6 +211,17 @@ namespace
         }
         else
         {
+            if (max_field.getType() == Field::Types::String)
+            {
+                /// A quoted string is parsed as an integer with an optional size suffix, so the scaled
+                /// value is computed with integer arithmetic: the double product loses low bits above
+                /// 2^53 (e.g. MAX execution_time = '18446744073' would be stored as the rounded
+                /// 18446744072999999488 nanoseconds and would not round-trip through SHOW CREATE QUOTA).
+                QuotaValue unscaled_value = fieldToNumber<QuotaValue>(max_field);
+                if (common::mulOverflow(unscaled_value, type_info.output_denominator, max_value))
+                    throw Exception(ErrorCodes::BAD_ARGUMENTS, "Quota max value is out of range");
+                return true;
+            }
             /// Reject a negative value by the sign bit before scaling: a tiny negative literal
             /// (e.g. MAX execution_time = -1e-400) underflows to -0.0, which compares equal to zero.
             double value = fieldToNumber<double>(max_field);
@@ -222,15 +234,12 @@ namespace
             /// product is 2^64). A literal of an unknown form (e.g. inf) or a scaled value that does not
             /// fit is left to the range check on the product below. A scaled value below a whole
             /// nanosecond is truncated, as the cast of the product below truncates it.
-            if (max_field.getType() != Field::Types::String)
+            if (auto parts = splitNumericLiteral(literal_text))
             {
-                if (auto parts = splitNumericLiteral(literal_text))
+                if (auto exact_value = exactScaledValueOfNumericLiteral(*parts, type_info.output_denominator))
                 {
-                    if (auto exact_value = exactScaledValueOfNumericLiteral(*parts, type_info.output_denominator))
-                    {
-                        max_value = *exact_value;
-                        return true;
-                    }
+                    max_value = *exact_value;
+                    return true;
                 }
             }
             /// Bound the scaled value to the QuotaValue (UInt64) range before the cast: an out-of-range or

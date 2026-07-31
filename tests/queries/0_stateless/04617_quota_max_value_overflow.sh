@@ -54,6 +54,7 @@ CREATE QUOTA $QUOTA FOR INTERVAL 1 hour MAX queries = 0x1p64; -- { clientError C
 CREATE QUOTA $QUOTA FOR INTERVAL 1 hour MAX queries = inf; -- { clientError CANNOT_CONVERT_TYPE }
 
 CREATE QUOTA $QUOTA FOR INTERVAL 1 hour MAX execution_time = '18446744073709551616'; -- { clientError CANNOT_PARSE_NUMBER }
+CREATE QUOTA $QUOTA FOR INTERVAL 1 hour MAX execution_time = '18446744073709551615'; -- { clientError BAD_ARGUMENTS }
 CREATE QUOTA $QUOTA FOR INTERVAL 1 hour MAX queries = '18446744073709551616'; -- { clientError CANNOT_PARSE_NUMBER }
 CREATE QUOTA $QUOTA FOR INTERVAL 1 hour MAX queries = '18446744073709551T'; -- { clientError CANNOT_PARSE_NUMBER }
 
@@ -103,6 +104,12 @@ SHOW CREATE QUOTA ${QUOTA}_i;
 -- The same scaled value in the exponent form, whose mantissa does not fit into the range on its own.
 CREATE QUOTA ${QUOTA}_o FOR INTERVAL 1 hour MAX execution_time = 184467440737095516150e-10;
 SHOW CREATE QUOTA ${QUOTA}_o;
+
+-- A quoted limit of a scaled type is multiplied by the denominator with integer arithmetic too:
+-- the double product of '18446744073' seconds and 10^9 loses its low bits, so the stored value
+-- used to be 18446744072999999488 nanoseconds and did not round-trip through SHOW CREATE QUOTA.
+CREATE QUOTA ${QUOTA}_q FOR INTERVAL 1 hour MAX execution_time = '18446744073';
+SHOW CREATE QUOTA ${QUOTA}_q;
 " | sed "s/$QUOTA/q_04617/g"
 
 # A scaled limit at the top of the range must be replayable: `SHOW CREATE QUOTA` used to render it
@@ -122,5 +129,6 @@ DROP QUOTA ${QUOTA}_n;
 DROP QUOTA ${QUOTA}_s;
 DROP QUOTA ${QUOTA}_i;
 DROP QUOTA ${QUOTA}_o;
+DROP QUOTA ${QUOTA}_q;
 DROP QUOTA ${QUOTA}_r;
 "
