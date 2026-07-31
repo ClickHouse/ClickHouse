@@ -65,7 +65,7 @@ namespace
 {
 
 /// Strip control characters (U+0000..U+001F except \t \n \r) that break JSON serialization.
-String sanitizeTextForAI(std::string_view input)
+String sanitizeForModel(std::string_view input)
 {
     String output;
     output.reserve(input.size());
@@ -377,7 +377,7 @@ ColumnPtr FunctionBaseAI::executeImpl(const ColumnsWithTypeAndName & arguments, 
     /// Row-independent validation must run before the zero-row fast path so malformed constant
     /// arguments fail consistently regardless of source size.
     checkSanityBeforeExecuteImpl(arguments, result_type, input_rows_count);
-    String system_prompt = sanitizeTextForAI(buildSystemPrompt(arguments, params));
+    String system_prompt = sanitizeForModel(buildSystemPrompt(arguments, params));
     auto response_format = buildResponseFormat(arguments);
     auto provider = createAIProvider(params.collection.provider, params.collection.endpoint, params.collection.api_key, params.collection.api_version);
 
@@ -434,7 +434,7 @@ ColumnPtr FunctionBaseAI::executeImpl(const ColumnsWithTypeAndName & arguments, 
             continue;
         }
 
-        String user_message = sanitizeTextForAI(buildUserMessage(arguments, i));
+        String user_message = sanitizeForModel(buildUserMessage(arguments, i));
         String result;
         bool success = false;
 

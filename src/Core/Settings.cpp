@@ -8686,7 +8686,7 @@ Name of the named collection used by the text AI functions (`aiGenerate`, `aiCla
 Name of the named collection used by `aiEmbed` when the call does not pass `credentials` in its parameter map. Empty means no default: such calls must pass `credentials` explicitly. `aiEmbed` takes `model` as a required positional argument, not from the named collection. Kept separate from `ai_function_text_default_credentials` because an embeddings endpoint differs from a chat one.
 )", EXPERIMENTAL) \
     DECLARE(Bool, ai_function_allow_insecure_endpoint, false, R"(
-If false (default), AI functions refuse to use a named-collection `endpoint` that would send prompts and API keys over an unencrypted connection to a remote host: any non-`https://` endpoint whose host is not loopback is rejected with an exception. Loopback endpoints (e.g. a local `http://localhost` model server) are always allowed. Set to true to permit plaintext `http://` endpoints on remote hosts.
+If false (default), AI functions refuse to use a named-collection `endpoint` that would send prompts and API keys over an unencrypted connection to a remote host: any non-HTTPS endpoint whose host is not loopback is rejected with an exception. Loopback endpoints (e.g. a local `http://localhost` model server) are always allowed. Set to true to permit plaintext `http://` endpoints on remote hosts.
 )", EXPERIMENTAL) \
     /* ############ END OF EXPERIMENTAL FEATURES ############# */ \
     /* ####################################################### */ \

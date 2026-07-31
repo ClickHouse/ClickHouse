@@ -6,8 +6,6 @@
 #include <Poco/JSON/Parser.h>
 #include <Poco/JSON/Object.h>
 
-#include <algorithm>
-
 namespace DB
 {
 
@@ -22,8 +20,7 @@ namespace
 {
 
 /// Replace control characters (including `\t \n \r`) with spaces so a provider's response cannot
-/// forge log lines or corrupt a terminal when embedded in a logged exception. Stricter than
-/// `sanitizeTextForAI`, which keeps whitespace controls because it feeds the model, not the log.
+/// forge log lines or corrupt a terminal when embedded in a logged exception.
 String sanitizeForLog(std::string_view input)
 {
     String output;
@@ -35,6 +32,9 @@ String sanitizeForLog(std::string_view input)
 
 }
 
+/// Prefers the structured `error.message`/`error.type` fields, falling back to the first 256
+/// bytes of the body. Every part is drawn from the (external) response, so control characters are
+/// replaced with spaces to stop the endpoint from forging log lines or corrupting a terminal.
 String formatProviderError(int status_code, const String & response_body)
 {
     try
@@ -58,9 +58,9 @@ String formatProviderError(int status_code, const String & response_body)
     {
     }
 
-    const size_t max_len = 256;
-    const std::string_view snippet(std::string_view(response_body).substr(0, std::min(response_body.size(), max_len)));
-    return fmt::format("HTTP {} (response truncated to {} chars): {}", status_code, max_len, sanitizeForLog(snippet));
+    constexpr size_t max_len = 256;
+    const std::string_view snippet = std::string_view(response_body).substr(0, max_len);
+    return fmt::format("HTTP {}: {}", status_code, sanitizeForLog(snippet));
 }
 
 AIProviderHTTPException::AIProviderHTTPException(Poco::Net::HTTPResponse::HTTPStatus http_status_, PreformattedMessage msg)

@@ -15,7 +15,7 @@ AI functions can return unpredictable outputs. The result will highly depend on 
 :::
 
 :::warning Prompt injection
-The input text is sent to the model and can steer its output (prompt injection). Text from external, unverified, or unsanitized sources may contain instructions that make the model return attacker-controlled content, ignore the requested format, or emit malicious payloads. Treat AI function output as untrusted: validate or sanitize it before using it in downstream steps such as building SQL, shell commands, further queries, or access-control decisions. The output format constraints used by `aiClassify` and `aiExtract` reduce, but do not eliminate, this risk.
+The input text is sent to the model and can steer its output (prompt injection). Text from external, unverified, or unsanitized sources may contain instructions that make the model return attacker-controlled content, ignore the requested format, or emit malicious payloads. Treat AI function output as untrusted: validate or sanitize it before using it in downstream steps such as building SQL, shell commands, further queries, or access-control decisions.
 :::
 
 All functions are sharing a common infrastructure that provides:
@@ -120,7 +120,7 @@ The transport is determined solely by the scheme of the `endpoint` URL. There is
 - `https://` — the connection uses TLS. The request body (input text, prompts) and the `api_key` in the request headers are encrypted in transit, and the provider's certificate is validated. Use this for any remote provider.
 - `http://` — the connection is **not encrypted**. The request body and the `api_key` are sent in cleartext. Only use this for a trusted provider on a private network (e.g. a local `vLLM` or `Ollama` instance).
 
-By default, AI functions reject an `endpoint` that would send data in cleartext to a remote host: any non-`https://` endpoint whose host is not loopback raises an exception. Loopback hosts (`localhost`, `127.0.0.0/8`, `::1`) are exempt, so a local `http://localhost` model server works out of the box. To allow a plaintext `http://` endpoint on a remote host, set [`ai_function_allow_insecure_endpoint`](/operations/settings/settings#ai_function_allow_insecure_endpoint) to `1`. This check is independent of [`remote_url_allow_hosts`](/operations/server-configuration-parameters/settings#remote_url_allow_hosts): that setting is a host allowlist and does not inspect the URL scheme, so an `http://` endpoint pointed at an allowed host still passes it.
+By default, AI functions reject an `endpoint` that would send data in cleartext to a remote host: any non-HTTPS endpoint whose host is not loopback raises an exception. Loopback hosts (`localhost`, `127.0.0.0/8`, `::1`) are exempt, so a local `http://localhost` model server works out of the box. To allow a plaintext `http://` endpoint on a remote host, set [`ai_function_allow_insecure_endpoint`](/operations/settings/settings#ai_function_allow_insecure_endpoint) to `1`. This check is independent of [`remote_url_allow_hosts`](/operations/server-configuration-parameters/settings#remote_url_allow_hosts): that setting is a host allowlist and does not inspect the URL scheme, so an `http://` endpoint pointed at an allowed host still passes it.
 
 Note that in either case the provider receives the input data in cleartext after TLS termination; TLS protects the data only on the network path between the server and the provider.
 
