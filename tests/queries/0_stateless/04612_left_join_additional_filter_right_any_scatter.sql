@@ -35,11 +35,13 @@ LEFT JOIN (SELECT toNullable(number) AS a, number - 1 AS b FROM numbers(2)) AS r
 SETTINGS join_algorithm = 'hash', max_joined_block_size_rows = 256, join_use_nulls = 1;
 
 -- The aggregates above are the same whether or not the two conditions the bug needs hold, so
--- assert both. The right table is the build side only while the join is not swapped, and 1000
--- left rows are probed 2464 times only while the block is split; a swapped join reads 1000 build
--- rows and 3 probes, and an unsplit one probes exactly 1000.
-SYSTEM FLUSH LOGS query_log;
-SELECT build_rows = 2 AND probe_rows > 1000 AS promoted_and_split
+-- assert both of them separately.
+SYSTEM FLUSH LOGS query_log, text_log;
+
+-- The right table is the build side only while the join is not swapped, and 1000 left rows are
+-- probed 2464 times only while the block is split; a swapped join reads 1000 build rows and 3
+-- probes, and an unsplit one probes exactly 1000.
+SELECT build_rows = 2 AND probe_rows > 1000 AS split
 FROM (
     SELECT ProfileEvents['JoinBuildTableRowCount'] AS build_rows,
            ProfileEvents['JoinProbeTableRowCount'] AS probe_rows
@@ -49,3 +51,20 @@ FROM (
     ORDER BY event_time_microseconds DESC
     LIMIT 1
 );
+
+-- HashJoin::onBuildPhaseFinish decides the promotion from the data alone, and it is reported by no
+-- setting, profile event or result, so assert the message it logs. The counters above cannot stand
+-- in for it: a LEFT ALL join on the same unique right keys reads the same 2 build rows and splits
+-- the same way.
+SELECT count() > 0 AS promoted
+FROM system.text_log
+WHERE event_date >= yesterday() AND event_time >= now() - 600
+  AND message LIKE '%Promoting join strictness to RightAny%'
+  AND query_id IN (
+      SELECT query_id
+      FROM system.query_log
+      WHERE type = 'QueryFinish' AND current_database = currentDatabase()
+        AND log_comment = '04612_nullable' AND event_date >= yesterday()
+      ORDER BY event_time_microseconds DESC
+      LIMIT 1
+  );
