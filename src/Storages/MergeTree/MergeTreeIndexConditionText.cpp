@@ -11,6 +11,7 @@
 #include <Functions/MultiSearchImpl.h>
 #include <Functions/checkHyperscanRegexp.h>
 #include <Functions/hasAnyAllTokens.h>
+#include <IO/WriteBufferFromString.h>
 #include <Functions/Regexps.h>
 #include <Interpreters/Context.h>
 #include <Interpreters/ExpressionActions.h>
@@ -841,6 +842,17 @@ std::vector<OptimizedRegularExpression> MergeTreeIndexConditionText::stringLikeT
     return patterns;
 }
 
+/// Converts a Field value to its text representation using `serializeText`,
+/// matching the format produced by `JSONAllValues`.
+static String serializeFieldAsText(const Field & value, const DataTypePtr & type)
+{
+    auto column = type->createColumn();
+    column->insert(value);
+    WriteBufferFromOwnString buf;
+    type->getDefaultSerialization()->serializeText(*column, 0, buf, {});
+    return buf.str();
+}
+
 static void validateRegexpPatterns(const Array & patterns, const Settings & settings)
 {
     VectorWithMemoryTracking<std::string_view> needles;
@@ -901,7 +913,7 @@ bool MergeTreeIndexConditionText::traverseFunctionNode(
         /// Keep array values as-is for special text index functions.
         if (!is_special_text_index_function && !WhichDataType(value_type).isStringOrFixedString())
         {
-            value_field = serializeJSONValueAsText(value_field, value_type);
+            value_field = serializeFieldAsText(value_field, value_type);
             value_type = std::make_shared<DataTypeString>();
         }
     }
