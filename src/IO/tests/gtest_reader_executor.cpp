@@ -355,7 +355,16 @@ TEST(ReaderExecutor, AheadRelaunchesAfterBackwardSeek)
     executor.seek(0);
     auto chain = executor.readNextWindow();
     ASSERT_EQ(chain.range().offset, 0u);
-    EXPECT_TRUE(inspect(executor).hasInflightPrefetch())
+    /// Read-ahead must relaunch. Assert that deterministically: either a
+    /// prefetch machine is still in flight, OR (under a slow/sanitizer build,
+    /// where the async worker can finish before we look) it already completed
+    /// and banked the next window ahead of the just-served one. A stale ahead
+    /// cursor would retire every post-seek job, leaving NEITHER.
+    const size_t served_end = chain.range().end();
+    bool banked_ahead = false;
+    for (const auto & iv : inspect(executor).bankIntervals())
+        if (iv.end() > served_end) { banked_ahead = true; break; }
+    EXPECT_TRUE(inspect(executor).hasInflightPrefetch() || banked_ahead)
         << "a stale ahead cursor would retire every post-seek job and kill read-ahead";
 }
 

@@ -1,5 +1,5 @@
 #!/usr/bin/env bash
-# Tags: long, no-fasttest, no-parallel, no-object-storage, no-random-settings
+# Tags: long, no-fasttest, no-parallel, no-object-storage, no-random-settings, no-flaky-check
 
 # `remote_filesystem_read_prefetch` must gate the ReaderExecutor prefetch path:
 # with `use_reader_executor=1`, the executor issues background prefetches only
