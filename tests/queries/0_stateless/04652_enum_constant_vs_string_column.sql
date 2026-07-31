@@ -260,11 +260,14 @@ SELECT 'partition_key_prunes', (SELECT sum(toUInt64OrZero(extract(explain, 'Gran
     FROM (EXPLAIN indexes = 1 SELECT count() FROM pk_partition WHERE v = '7'
           SETTINGS optimize_use_implicit_projections = 0, optimize_trivial_count_query = 0));
 
--- The equality above only measures anything if the pinned plan really carries granule counts, so assert
--- that separately: with the pin removed this reads 0 and that equality degenerates to 0 = 0.
-SELECT 'partition_key_prunes_something', (SELECT sum(toUInt64OrZero(extract(explain, 'Granules: (\\d+)/')))
+-- The equality above is satisfied by two full scans, and it measures nothing at all if the pinned plan
+-- carries no granule counts, which is what happens with the pin removed. Require instead that the plan
+-- names a Partition section and leaves granules unread, so neither a full scan nor a missing section passes.
+SELECT 'partition_key_prunes_something', (SELECT countIf(explain LIKE '%Partition%') > 0
+    AND sum(toUInt64OrZero(extract(explain, 'Granules: (\\d+)/')))
+      < sum(toUInt64OrZero(extract(explain, 'Granules: \\d+/(\\d+)')))
     FROM (EXPLAIN indexes = 1 SELECT count() FROM pk_partition WHERE v = CAST('7', 'Enum8(\'7\' = 3)')
-          SETTINGS optimize_use_implicit_projections = 0, optimize_trivial_count_query = 0)) > 0;
+          SETTINGS optimize_use_implicit_projections = 0, optimize_trivial_count_query = 0));
 
 -- This surface gets a condition text oracle rather than a selected < total companion: a declined index
 -- still lets the Min-Max section prune parts here, so a granule count companion would not cleanly fail.
@@ -287,6 +290,16 @@ SELECT 'partition_key_condition_uses_name', (SELECT countIf(explain LIKE '%[\'7\
 SELECT 'partition_key_count', (SELECT count() FROM pk_partition WHERE v = CAST('7', 'Enum8(\'7\' = 3)')
     SETTINGS optimize_trivial_count_query = 1, optimize_use_implicit_projections = 0)
     = (SELECT count() FROM ref_str WHERE v = CAST('7', 'Enum8(\'7\' = 3)'));
+
+-- The cell above only covers that route while the route is actually selected, and only the old analyzer
+-- selects it: the planner declines trivial count whenever a WHERE is present. Rather than pin an analyzer,
+-- which a subquery cannot do, assert that route selection still follows the analyzer in use. This reads 1
+-- on either analyzer today and turns 0 if the old analyzer stops taking the partition predicate route,
+-- which is the case that would quietly reduce the cell above to an ordinary scan.
+SELECT 'partition_key_count_route_follows_analyzer', (SELECT countIf(explain LIKE '%Optimized trivial count%') > 0
+    FROM (EXPLAIN SELECT count() FROM pk_partition WHERE v = CAST('7', 'Enum8(\'7\' = 3)')
+          SETTINGS optimize_trivial_count_query = 1, optimize_use_implicit_projections = 0))
+    = (SELECT NOT getSetting('enable_analyzer'));
 
 SELECT 'bloom_filter_fixed_string_prunes', (SELECT sum(toUInt64OrZero(extract(explain, 'Granules: (\\d+)/')))
     FROM (EXPLAIN indexes = 1 SELECT count() FROM bf_fixed4 WHERE v = CAST('7', 'Enum8(\'7\' = 3)')))
