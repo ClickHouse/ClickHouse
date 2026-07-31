@@ -61,6 +61,7 @@
 
 namespace ProfileEvents
 {
+extern const Event IcebergIteratorInitializationMicroseconds;
 extern const Event IcebergMetadataReadWaitTimeMicroseconds;
 extern const Event IcebergMetadataReturnedObjectInfos;
 extern const Event IcebergMinMaxNonPrunedDeleteFiles;
@@ -357,6 +358,8 @@ void IcebergIterator::ensureDeletesReady()
     std::lock_guard lock(deletes_mutex);
     if (!deletes_ready)
     {
+        /// Deferred part of the iterator initialization, charged to the same event as the constructor.
+        ProfileEventTimeIncrement<Microseconds> watch(ProfileEvents::IcebergIteratorInitializationMicroseconds);
         try
         {
             decodeDeleteManifests();
