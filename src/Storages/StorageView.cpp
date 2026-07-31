@@ -1062,7 +1062,7 @@ StoragePtr StorageView::getUnderlyingMergeTreeStorageForParallelReplicas(const C
                         || hasWindowFunctionNodes(query_node.getProjectionNode()))
                         return nullptr;
 
-                    node = query_node.getJoinTree().get();
+                    node = query_node.getJoinTreeNode().get();
                     break;
                 }
                 case QueryTreeNodeType::UNION:
