@@ -6,6 +6,7 @@ The EventFeed sanitizer must handle both old (lowercase) and new (uppercase) for
 """
 
 import os
+import pytest
 import sys
 import time
 
@@ -71,3 +72,28 @@ def test_sanitize_completed_untouched():
     old_ts = int(time.time()) - 13 * 3600
     e = _sanitize_via_feed(_make_event("OK", timestamp=old_ts))
     assert e.ci_status == "OK"
+
+
+def test_update_retries_conditional_request_conflict(monkeypatch):
+    """The 409 lost-race code must be retried like PreconditionFailed (#112786)."""
+    boto3 = pytest.importorskip("boto3")
+    from botocore.exceptions import ClientError
+
+    class _Client:
+        put_calls = 0
+
+        def get_object(self, **kwargs):
+            raise ClientError({"Error": {"Code": "NoSuchKey"}}, "GetObject")
+
+        def put_object(self, **kwargs):
+            self.put_calls += 1
+            if self.put_calls == 1:
+                raise ClientError(
+                    {"Error": {"Code": "ConditionalRequestConflict"}}, "PutObject"
+                )
+            return {"ETag": '"etag"'}
+
+    client = _Client()
+    monkeypatch.setattr(boto3, "client", lambda service, **kwargs: client)
+    EventFeed.update("user", _make_event("OK"), s3_path="bucket/prefix")
+    assert client.put_calls == 2
