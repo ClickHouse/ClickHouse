@@ -1,5 +1,4 @@
--- Tags: no-parallel-replicas, no-darwin
--- no-darwin: STREAM reads are Linux-only (server raises SUPPORT_IS_DISABLED elsewhere).
+-- Tags: no-parallel-replicas
 -- no-parallel-replicas: EXPLAIN ANALYZE rejects distributed plans (NOT_IMPLEMENTED).
 
 -- EXPLAIN ANALYZE over a streaming (FROM ... STREAM) read used to abort in debug/sanitizer builds
