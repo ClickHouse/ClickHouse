@@ -858,7 +858,7 @@ void DatabaseCatalog::updateMetadataFile(const String & database_name, const AST
     try
     {
         /// rename atomically replaces the old file with the new one.
-        default_db_disk->replaceFile(pathToGenericString(metadata_tmp_file_path), metadata_file_path);
+        default_db_disk->replaceFile(pathToGenericString(metadata_tmp_file_path), pathToGenericString(metadata_file_path));
     }
     catch (...)
     {

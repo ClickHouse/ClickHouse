@@ -175,7 +175,7 @@ void DataPartStorageOnDiskFull::moveFile(const String & from_name, const String 
     executeWriteOperation([&](auto & disk)
     {
         auto relative_path = fs::path(root_path) / part_dir;
-        disk.moveFile(pathToGenericString(relative_path / from_name), relative_path / to_name);
+        disk.moveFile(pathToGenericString(relative_path / from_name), pathToGenericString(relative_path / to_name));
     });
 }
 
@@ -184,18 +184,18 @@ void DataPartStorageOnDiskFull::replaceFile(const String & from_name, const Stri
     executeWriteOperation([&](auto & disk)
     {
         auto relative_path = fs::path(root_path) / part_dir;
-        disk.replaceFile(relative_path / from_name, relative_path / to_name);
+        disk.replaceFile(pathToGenericString(relative_path / from_name), relative_path / to_name);
     });
 }
 
 void DataPartStorageOnDiskFull::removeFile(const String & name)
 {
-    executeWriteOperation([&](auto & disk) { disk.removeFile(fs::path(root_path) / part_dir / name); });
+    executeWriteOperation([&](auto & disk) { disk.removeFile(pathToGenericString(fs::path(root_path) / part_dir / name)); });
 }
 
 void DataPartStorageOnDiskFull::removeFileIfExists(const String & name)
 {
-    executeWriteOperation([&](auto & disk) { disk.removeFileIfExists(fs::path(root_path) / part_dir / name); });
+    executeWriteOperation([&](auto & disk) { disk.removeFileIfExists(pathToGenericString(fs::path(root_path) / part_dir / name)); });
 }
 
 void DataPartStorageOnDiskFull::createHardLinkFrom(const IDataPartStorage & source, const std::string & from, const std::string & to)
@@ -210,7 +210,7 @@ void DataPartStorageOnDiskFull::createHardLinkFrom(const IDataPartStorage & sour
     executeWriteOperation([&](auto & disk)
     {
         disk.createHardLink(
-            fs::path(source_on_disk->getRelativePath()) / from,
+            pathToGenericString(fs::path(source_on_disk->getRelativePath()) / from),
             fs::path(root_path) / part_dir / to);
     });
 }
@@ -229,13 +229,13 @@ void DataPartStorageOnDiskFull::copyFileFrom(const IDataPartStorage & source, co
     source_on_disk->getDisk()->copyFile(
         pathToGenericString(fs::path(source_on_disk->getRelativePath()) / from),
         *volume->getDisk(),
-        fs::path(root_path) / part_dir / to,
+        pathToGenericString(fs::path(root_path) / part_dir / to),
         getReadSettings());
 }
 
 void DataPartStorageOnDiskFull::createProjection(const std::string & name)
 {
-    executeWriteOperation([&](auto & disk) { disk.createDirectory(fs::path(root_path) / part_dir / name); });
+    executeWriteOperation([&](auto & disk) { disk.createDirectory(pathToGenericString(fs::path(root_path) / part_dir / name)); });
 }
 
 void DataPartStorageOnDiskFull::beginTransaction()

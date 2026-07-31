@@ -1150,7 +1150,7 @@ void BackupCoordinationStageSync::createFinishNodeAndRemoveAliveNode(Coordinatio
         {
             if (host != current_host)
             {
-                String node_path = zookeeper_path / ("finished|" + host);
+                String node_path = pathToGenericString(zookeeper_path / ("finished|" + host));
                 non_existent_node_pos.emplace_back(requests.size(), node_path);
                 zkutil::addCheckNotExistsRequest(requests, *zookeeper, node_path);
             }
@@ -1499,7 +1499,7 @@ void BackupCoordinationStageSync::createErrorNode(const Exception & exception, C
     }
 
     zookeeper->createIfNotExists(operation_zookeeper_path, "");
-    zookeeper->createIfNotExists(zookeeper_path, "");
+    zookeeper->createIfNotExists(pathToGenericString(zookeeper_path), "");
 
     auto code = zookeeper->tryCreate(error_node_path, serialized_error, zkutil::CreateMode::Persistent);
 

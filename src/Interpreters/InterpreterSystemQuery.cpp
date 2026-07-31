@@ -1934,14 +1934,14 @@ std::optional<String> InterpreterSystemQuery::getDetachedDatabaseFromKeeperPath(
     for (const auto it = default_db_disk->iterateDirectory(pathToGenericString(metadata_dir_path)); it->isValid(); it->next())
     {
         auto sub_path = fs::path(it->path());
-        if (!default_db_disk->existsFile(sub_path))
+        if (!default_db_disk->existsFile(pathToGenericString(sub_path)))
             continue;
 
         String db_name = sub_path.filename().string();
         if (sub_path.extension() == ".sql")
             db_name = sub_path.stem();
 
-        auto buf = default_db_disk->readFile(sub_path, getContext()->getReadSettings());
+        auto buf = default_db_disk->readFile(pathToGenericString(sub_path), getContext()->getReadSettings());
         std::string query;
         readStringUntilEOF(query, *buf);
         ParserCreateQuery parser;

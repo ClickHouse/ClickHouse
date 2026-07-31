@@ -379,12 +379,12 @@ void DiskLocal::replaceFile(const String & from_path, const String & to_path)
 
 void DiskLocal::renameExchange(const std::string & old_path, const std::string & new_path)
 {
-    DB::renameExchange(pathToGenericString(fs::path(disk_path) / old_path), fs::path(disk_path) / new_path);
+    DB::renameExchange(pathToGenericString(fs::path(disk_path) / old_path), pathToGenericString(fs::path(disk_path) / new_path));
 }
 
 bool DiskLocal::renameExchangeIfSupported(const std::string & old_path, const std::string & new_path)
 {
-    return DB::renameExchangeIfSupported(pathToGenericString(fs::path(disk_path) / old_path), fs::path(disk_path) / new_path);
+    return DB::renameExchangeIfSupported(pathToGenericString(fs::path(disk_path) / old_path), pathToGenericString(fs::path(disk_path) / new_path));
 }
 
 void DiskLocal::prepareRead(
@@ -519,22 +519,22 @@ void DiskLocal::listFiles(const String & path, std::vector<String> & file_names)
 
 void DiskLocal::setLastModified(const String & path, const Poco::Timestamp & timestamp)
 {
-    FS::setModificationTime(fs::path(disk_path) / path, timestamp.epochTime());
+    FS::setModificationTime(pathToGenericString(fs::path(disk_path) / path), timestamp.epochTime());
 }
 
 Poco::Timestamp DiskLocal::getLastModified(const String & path) const
 {
-    return FS::getModificationTimestamp(fs::path(disk_path) / path);
+    return FS::getModificationTimestamp(pathToGenericString(fs::path(disk_path) / path));
 }
 
 time_t DiskLocal::getLastChanged(const String & path) const
 {
-    return FS::getChangeTime(fs::path(disk_path) / path);
+    return FS::getChangeTime(pathToGenericString(fs::path(disk_path) / path));
 }
 
 void DiskLocal::createHardLink(const String & src_path, const String & dst_path)
 {
-    DB::createHardLink(fs::path(disk_path) / src_path, fs::path(disk_path) / dst_path);
+    DB::createHardLink(pathToGenericString(fs::path(disk_path) / src_path), fs::path(disk_path) / dst_path);
 }
 
 bool DiskLocal::isSymlink(const String & path) const

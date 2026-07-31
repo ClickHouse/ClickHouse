@@ -4603,18 +4603,18 @@ void MergeTreeData::dropAllData()
         }
 
         LOG_INFO(log, "dropAllData: remove format_version.txt, detached, moving and write ahead logs");
-        disk->removeFileIfExists(fs::path(relative_data_path) / FORMAT_VERSION_FILE_NAME);
+        disk->removeFileIfExists(pathToGenericString(fs::path(relative_data_path) / FORMAT_VERSION_FILE_NAME));
 
-        if (disk->existsDirectory(fs::path(relative_data_path) / DETACHED_DIR_NAME))
+        if (disk->existsDirectory(pathToGenericString(fs::path(relative_data_path) / DETACHED_DIR_NAME)))
         {
             if (disk->supportZeroCopyReplication())
-                disk->removeSharedRecursive(fs::path(relative_data_path) / DETACHED_DIR_NAME, /*keep_all_shared_data*/ true, {});
+                disk->removeSharedRecursive(pathToGenericString(fs::path(relative_data_path) / DETACHED_DIR_NAME), /*keep_all_shared_data*/ true, {});
             else
-                disk->removeRecursive(fs::path(relative_data_path) / DETACHED_DIR_NAME);
+                disk->removeRecursive(pathToGenericString(fs::path(relative_data_path) / DETACHED_DIR_NAME));
         }
 
-        if (disk->existsDirectory(fs::path(relative_data_path) / MOVING_DIR_NAME))
-            disk->removeRecursive(fs::path(relative_data_path) / MOVING_DIR_NAME);
+        if (disk->existsDirectory(pathToGenericString(fs::path(relative_data_path) / MOVING_DIR_NAME)))
+            disk->removeRecursive(pathToGenericString(fs::path(relative_data_path) / MOVING_DIR_NAME));
 
         try
         {
@@ -4673,8 +4673,8 @@ void MergeTreeData::dropIfEmpty()
             if (disk->isBroken())
                 continue;
             /// Non recursive, exception is thrown if there are more files.
-            disk->removeFileIfExists(fs::path(relative_data_path) / FORMAT_VERSION_FILE_NAME);
-            disk->removeDirectory(fs::path(relative_data_path) / DETACHED_DIR_NAME);
+            disk->removeFileIfExists(pathToGenericString(fs::path(relative_data_path) / FORMAT_VERSION_FILE_NAME));
+            disk->removeDirectory(pathToGenericString(fs::path(relative_data_path) / DETACHED_DIR_NAME));
             disk->removeDirectory(relative_data_path);
         }
     }
@@ -5814,7 +5814,7 @@ void MergeTreeData::changeSettings(
                     {
                         auto disk = new_storage_policy->getDiskByName(disk_name);
                         disk->createDirectories(relative_data_path);
-                        disk->createDirectories(fs::path(relative_data_path) / DETACHED_DIR_NAME);
+                        disk->createDirectories(pathToGenericString(fs::path(relative_data_path) / DETACHED_DIR_NAME));
                     }
                     /// FIXME how would that be done while reloading configuration???
 
@@ -5904,7 +5904,7 @@ void MergeTreeData::PartsTemporaryRename::tryRenameAll()
             if (old_dir.empty() || new_dir.empty())
                 throw DB::Exception(ErrorCodes::LOGICAL_ERROR, "Empty part name. Most likely it's a bug.");
             const auto full_path = fs::path(storage.relative_data_path) / source_dir;
-            disk->moveDirectory(fs::path(full_path) / old_dir, fs::path(full_path) / new_dir);
+            disk->moveDirectory(pathToGenericString(fs::path(full_path) / old_dir), fs::path(full_path) / new_dir);
         }
         catch (...)
         {
@@ -5930,7 +5930,7 @@ void MergeTreeData::PartsTemporaryRename::rollBackAll()
 
         try
         {
-            const String full_path = fs::path(storage.relative_data_path) / source_dir;
+            const String full_path = pathToGenericString(fs::path(storage.relative_data_path) / source_dir);
             disk->moveFile(fs::path(full_path) / new_dir, fs::path(full_path) / old_dir);
         }
         catch (...)

@@ -129,7 +129,7 @@ void SetOrJoinSink::onFinish()
         compressed_backup_buf->finalize();
         backup_buf->finalize();
 
-        table.disk->replaceFile(pathToGenericString(fs::path(backup_tmp_path) / backup_file_name), fs::path(backup_path) / backup_file_name);
+        table.disk->replaceFile(pathToGenericString(fs::path(backup_tmp_path) / backup_file_name), pathToGenericString(fs::path(backup_path) / backup_file_name));
     }
 }
 

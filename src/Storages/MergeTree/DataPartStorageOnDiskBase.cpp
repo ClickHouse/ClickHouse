@@ -537,20 +537,20 @@ MutableDataPartStoragePtr DataPartStorageOnDiskBase::freeze(
     /// the dangerous tmp-only state.
     if (params.external_transaction)
     {
-        params.external_transaction->removeFileIfExists(fs::path(to) / dir_path / "delete-on-destroy.txt");
-        params.external_transaction->removeFileIfExists(fs::path(to) / dir_path / VersionMetadata::TMP_TXN_VERSION_METADATA_FILE_NAME);
-        params.external_transaction->removeFileIfExists(fs::path(to) / dir_path / VersionMetadata::TXN_VERSION_METADATA_FILE_NAME);
+        params.external_transaction->removeFileIfExists(pathToGenericString(fs::path(to) / dir_path / "delete-on-destroy.txt"));
+        params.external_transaction->removeFileIfExists(pathToGenericString(fs::path(to) / dir_path / VersionMetadata::TMP_TXN_VERSION_METADATA_FILE_NAME));
+        params.external_transaction->removeFileIfExists(pathToGenericString(fs::path(to) / dir_path / VersionMetadata::TXN_VERSION_METADATA_FILE_NAME));
         if (!params.keep_metadata_version)
-            params.external_transaction->removeFileIfExists(fs::path(to) / dir_path / IMergeTreeDataPart::METADATA_VERSION_FILE_NAME);
+            params.external_transaction->removeFileIfExists(pathToGenericString(fs::path(to) / dir_path / IMergeTreeDataPart::METADATA_VERSION_FILE_NAME));
         IMergeTreeDataPart::writeInvalidatedSystemColumnsFile(*params.external_transaction, fs::path(to) / dir_path, params.invalidated_columns_to_write, write_settings);
     }
     else
     {
-        disk->removeFileIfExists(fs::path(to) / dir_path / "delete-on-destroy.txt");
-        disk->removeFileIfExists(fs::path(to) / dir_path / VersionMetadata::TMP_TXN_VERSION_METADATA_FILE_NAME);
-        disk->removeFileIfExists(fs::path(to) / dir_path / VersionMetadata::TXN_VERSION_METADATA_FILE_NAME);
+        disk->removeFileIfExists(pathToGenericString(fs::path(to) / dir_path / "delete-on-destroy.txt"));
+        disk->removeFileIfExists(pathToGenericString(fs::path(to) / dir_path / VersionMetadata::TMP_TXN_VERSION_METADATA_FILE_NAME));
+        disk->removeFileIfExists(pathToGenericString(fs::path(to) / dir_path / VersionMetadata::TXN_VERSION_METADATA_FILE_NAME));
         if (!params.keep_metadata_version)
-            disk->removeFileIfExists(fs::path(to) / dir_path / IMergeTreeDataPart::METADATA_VERSION_FILE_NAME);
+            disk->removeFileIfExists(pathToGenericString(fs::path(to) / dir_path / IMergeTreeDataPart::METADATA_VERSION_FILE_NAME));
         IMergeTreeDataPart::writeInvalidatedSystemColumnsFile(*disk, fs::path(to) / dir_path, params.invalidated_columns_to_write, write_settings);
     }
 
@@ -608,8 +608,8 @@ MutableDataPartStoragePtr DataPartStorageOnDiskBase::freezeRemote(
     /// the dangerous tmp-only state.
     if (params.external_transaction)
     {
-        params.external_transaction->removeFileIfExists(fs::path(to) / dir_path / "delete-on-destroy.txt");
-        params.external_transaction->removeFileIfExists(fs::path(to) / dir_path / VersionMetadata::TMP_TXN_VERSION_METADATA_FILE_NAME);
+        params.external_transaction->removeFileIfExists(pathToGenericString(fs::path(to) / dir_path / "delete-on-destroy.txt"));
+        params.external_transaction->removeFileIfExists(pathToGenericString(fs::path(to) / dir_path / VersionMetadata::TMP_TXN_VERSION_METADATA_FILE_NAME));
         params.external_transaction->removeFileIfExists(fs::path(to) / dir_path / VersionMetadata::TXN_VERSION_METADATA_FILE_NAME);
         if (!params.keep_metadata_version)
             params.external_transaction->removeFileIfExists(fs::path(to) / dir_path / IMergeTreeDataPart::METADATA_VERSION_FILE_NAME);

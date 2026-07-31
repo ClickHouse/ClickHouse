@@ -911,7 +911,7 @@ void StorageKeeperMap::dropTableFromZooKeeper(zkutil::ZooKeeperPtr zookeeper, St
         if (table.starts_with(uuid))
         {
             LOG_INFO(logger, "Removing table {} in /tables", table);
-            auto code = zookeeper->tryRemove(fs::path(zk_tables_path_to_remove) / table);
+            auto code = zookeeper->tryRemove(pathToGenericString(fs::path(zk_tables_path_to_remove) / table));
             if (code == Coordination::Error::ZNONODE)
                 throw Exception(ErrorCodes::TABLE_WAS_NOT_DROPPED, "Table at {} is already started to be removed by another replica right now", zk_root_path_);
         }
@@ -1189,8 +1189,8 @@ void StorageKeeperMap::backupData(BackupEntriesCollector & backup_entries_collec
         auto path_with_data = coordination->getKeeperMapDataPath(zk_root_path);
         if (path_with_data != my_data_path_in_backup)
         {
-            std::string source_path = fs::path(my_data_path_in_backup) / backup_data_filename;
-            std::string target_path = fs::path(path_with_data) / backup_data_filename;
+            std::string source_path = pathToGenericString(fs::path(my_data_path_in_backup) / backup_data_filename);
+            std::string target_path = pathToGenericString(fs::path(path_with_data) / backup_data_filename);
             backup_entries_collector.addBackupEntries({{source_path, std::make_shared<BackupEntryReference>(std::move(target_path))}});
             return;
         }
@@ -1278,7 +1278,7 @@ void StorageKeeperMap::restoreDataImpl(
 
     fs::path data_path_in_backup_fs = data_path_in_backup;
 
-    String data_file = data_path_in_backup_fs /  backup_data_filename;
+    String data_file = pathToGenericString(data_path_in_backup_fs /  backup_data_filename);
 
     if (!backup->fileExists(data_file))
         throw Exception(ErrorCodes::CANNOT_RESTORE_TABLE, "File {} in backup is required to restore table", data_file);

@@ -158,7 +158,7 @@ void BackupWriterDisk::copyFile(const String & destination, const String & sourc
     auto dest_file_path = root_path / destination;
     auto src_file_path = root_path / source;
     disk->createDirectories(pathToGenericString(dest_file_path.parent_path()));
-    disk->copyFile(src_file_path, *disk, dest_file_path, read_settings, write_settings);
+    disk->copyFile(pathToGenericString(src_file_path), *disk, dest_file_path, read_settings, write_settings);
 }
 
 }

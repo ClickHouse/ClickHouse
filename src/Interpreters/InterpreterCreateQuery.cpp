@@ -379,7 +379,7 @@ BlockIO InterpreterCreateQuery::createDatabase(ASTCreateQuery & create)
         if (need_write_metadata)
         {
             /// Prevents from overwriting metadata of detached database
-            default_db_disk->moveFile(pathToGenericString(metadata_tmp_file_path), metadata_file_path);
+            default_db_disk->moveFile(pathToGenericString(metadata_tmp_file_path), pathToGenericString(metadata_file_path));
             renamed = true;
         }
 
@@ -1810,7 +1810,7 @@ BlockIO InterpreterCreateQuery::createTable(ASTCreateQuery & create)
                 data_path = (user_files / data_path).lexically_normal();
             if (!startsWith(data_path, user_files))
                 throw Exception(ErrorCodes::PATH_ACCESS_DENIED,
-                                "Data directory {} must be inside {} to attach it", pathToGenericString(data_path), String(user_files));
+                                "Data directory {} must be inside {} to attach it", pathToGenericString(data_path), pathToGenericString(user_files));
 
             /// Data path must be relative to root_path
             create.attach_from_path = fs::relative(data_path, root_path) / "";
@@ -1820,7 +1820,7 @@ BlockIO InterpreterCreateQuery::createTable(ASTCreateQuery & create)
             fs::path data_path = (root_path / create.attach_from_path).lexically_normal();
             if (!startsWith(data_path, user_files))
                 throw Exception(ErrorCodes::PATH_ACCESS_DENIED,
-                                "Data directory {} must be inside {} to attach it", String(data_path), String(user_files));
+                                "Data directory {} must be inside {} to attach it", pathToGenericString(data_path), pathToGenericString(user_files));
         }
     }
     else if (create.attach && !create.attach_short_syntax && !getContext()->isDDLOrOnClusterInternal())
@@ -3190,7 +3190,7 @@ void InterpreterCreateQuery::clearTransactionMetadata(const String & table_data_
             for (auto it = disk->iterateDirectory(table_data_path); it->isValid(); it->next())
             {
                 String part_name = it->name();
-                String part_path = fs::path(table_data_path) / part_name;
+                String part_path = pathToGenericString(fs::path(table_data_path) / part_name);
 
                 /// Check if it's a directory (part directory)
                 if (!disk->existsDirectory(part_path))
@@ -3209,7 +3209,7 @@ void InterpreterCreateQuery::clearTransactionMetadata(const String & table_data_
                 for (const auto * file_name : {VersionMetadata::TMP_TXN_VERSION_METADATA_FILE_NAME,
                                                VersionMetadata::TXN_VERSION_METADATA_FILE_NAME})
                 {
-                    String txn_file = fs::path(part_path) / file_name;
+                    String txn_file = pathToGenericString(fs::path(part_path) / file_name);
                     if (disk->existsFile(txn_file))
                     {
                         disk->removeFile(txn_file);

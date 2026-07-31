@@ -1164,7 +1164,7 @@ String DDLWorker::enqueueQueryAttempt(DDLLogEntry & entry)
 {
     auto zookeeper = getZooKeeperFromContext();
 
-    String query_path_prefix = fs::path(queue_dir) / "query-";
+    String query_path_prefix = pathToGenericString(fs::path(queue_dir) / "query-");
     zookeeper->createAncestors(query_path_prefix);
 
     NameSet host_ids;
@@ -1211,7 +1211,7 @@ bool DDLWorker::initializeMainThread()
         try
         {
             auto zookeeper = getAndSetZooKeeper();
-            zookeeper->createAncestors(fs::path(queue_dir) / "");
+            zookeeper->createAncestors(pathToGenericString(fs::path(queue_dir) / ""));
             initializeReplication();
             markReplicasActive(/*reinitialized=*/true);
             initialized = true;
@@ -1356,7 +1356,7 @@ void DDLWorker::runMainThread()
 void DDLWorker::initializeReplication()
 {
     auto zookeeper = getZooKeeper();
-    zookeeper->createAncestors(fs::path(replicas_dir) / "");
+    zookeeper->createAncestors(pathToGenericString(fs::path(replicas_dir) / ""));
 }
 
 void DDLWorker::createReplicaDirs(const ZooKeeperPtr & zookeeper, const NameSet & host_ids)
@@ -1365,7 +1365,7 @@ void DDLWorker::createReplicaDirs(const ZooKeeperPtr & zookeeper, const NameSet 
     for (const auto & host_id : host_ids)
     {
         LOG_INFO(log, "Creating replica dir for host id {}", host_id);
-        zookeeper->createAncestors(fs::path(replicas_dir) / host_id / "");
+        zookeeper->createAncestors(pathToGenericString(fs::path(replicas_dir) / host_id / ""));
     }
 }
 
@@ -1463,7 +1463,7 @@ void DDLWorker::markReplicasActive(bool reinitialized)
         if (it != active_node_holders.end())
             continue;
 
-        String active_path = fs::path(replicas_dir) / host_id / "active";
+        String active_path = pathToGenericString(fs::path(replicas_dir) / host_id / "active");
         String active_id = toString(ServerUUID::get());
 
         LOG_TRACE(log, "Trying to mark a replica active: active_path={}, active_id={}", active_path, active_id);
@@ -1495,7 +1495,7 @@ void DDLWorker::markReplicasActive(bool reinitialized)
         Coordination::Responses res;
         ops.emplace_back(zkutil::makeCreateRequest(active_path, active_id, zkutil::CreateMode::Ephemeral));
         /// To bump node mtime
-        ops.emplace_back(zkutil::makeSetRequest(fs::path(replicas_dir) / host_id, "", -1));
+        ops.emplace_back(zkutil::makeSetRequest(pathToGenericString(fs::path(replicas_dir) / host_id), "", -1));
         auto code = zookeeper->tryMulti(ops, res);
 
         /// We have this tryMulti for a very weird edge case when it's related to localhost.
@@ -1538,7 +1538,7 @@ void DDLWorker::cleanupStaleReplicas(Int64 current_time_seconds, const ZooKeeper
             if (stat.mtime / 1000 + REPLICA_MAX_INACTIVE_SECONDS < current_time_seconds)
             {
                 LOG_INFO(log, "Replica {} is stale, removing it", replica);
-                auto code = zookeeper->tryRemove(replica_path, -1);
+                auto code = zookeeper->tryRemove(pathToGenericString(replica_path), -1);
                 if (code != Coordination::Error::ZOK)
                     LOG_WARNING(log, "Cannot remove stale replica {}, code {}", replica, Coordination::errorMessage(code));
             }

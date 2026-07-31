@@ -941,7 +941,7 @@ void DatabaseOnDisk::modifySettingsMetadata(const SettingsChanges & settings_cha
         /*content=*/statement,
         getContext()->getSettingsRef()[Setting::fsync_metadata]);
 
-    default_db_disk->replaceFile(pathToGenericString(metadata_tmp_file_path), metadata_file_path);
+    default_db_disk->replaceFile(pathToGenericString(metadata_tmp_file_path), pathToGenericString(metadata_file_path));
 }
 
 void DatabaseOnDisk::checkTableNameLength(const String & table_name) const

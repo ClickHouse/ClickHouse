@@ -287,9 +287,9 @@ void FormatSchemaInfo::storeSchemaOnDisk(const fs::path & file_path, const Strin
         out.close();
 
         if (fs::exists(file_path))
-            DB::renameExchange(pathToGenericString(temp_path), file_path);
+            DB::renameExchange(pathToGenericString(temp_path), pathToGenericString(file_path));
         else
-            DB::renameNoReplace(pathToGenericString(temp_path), file_path);
+            DB::renameNoReplace(pathToGenericString(temp_path), pathToGenericString(file_path));
 
         fs::remove(temp_path);
     }

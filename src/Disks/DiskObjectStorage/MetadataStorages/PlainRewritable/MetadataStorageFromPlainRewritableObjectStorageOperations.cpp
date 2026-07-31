@@ -243,7 +243,7 @@ void MetadataStorageFromPlainObjectStorageMoveDirectoryOperation::execute()
         rewriteSingleDirectory(sub_path_from, sub_path_to, *write_buf);
     }
 
-    fs_tree->moveDirectory(pathToGenericString(path_from), path_to);
+    fs_tree->moveDirectory(pathToGenericString(path_from), pathToGenericString(path_to));
 }
 
 void MetadataStorageFromPlainObjectStorageMoveDirectoryOperation::undo()
@@ -297,7 +297,7 @@ void MetadataStorageFromPlainObjectStorageRemoveDirectoryOperation::execute()
     auto metadata_object = StoredObject(/*remote_path*/ metadata_object_key, /*local_path*/ path, path.string().length());
     object_storage->removeObjectIfExists(metadata_object);
 
-    fs_tree->removeDirectory(path);
+    fs_tree->removeDirectory(pathToGenericString(path));
     ProfileEvents::increment(metrics->directory_removed);
 }
 
@@ -342,10 +342,10 @@ void MetadataStorageFromPlainObjectStorageWriteFileOperation::execute()
 {
     LOG_TEST(getLogger("MetadataStorageFromPlainObjectStorageWriteFileOperation"), "Creating metadata for a file '{}', size: {}", path, object.bytes_size);
 
-    if (fs_tree->existsFile(path))
-        fs_tree->removeFile(path);
+    if (fs_tree->existsFile(pathToGenericString(path)))
+        fs_tree->removeFile(pathToGenericString(path));
 
-    fs_tree->recordFile(path, {object.bytes_size, std::time(nullptr)});
+    fs_tree->recordFile(pathToGenericString(path), {object.bytes_size, std::time(nullptr)});
 }
 
 MetadataStorageFromPlainObjectStorageUnlinkMetadataFileOperation::MetadataStorageFromPlainObjectStorageUnlinkMetadataFileOperation(
@@ -374,7 +374,7 @@ void MetadataStorageFromPlainObjectStorageUnlinkMetadataFileOperation::execute()
         "Unlinking metadata for a write '{}'",
         path);
 
-    if (!fs_tree->existsFile(path))
+    if (!fs_tree->existsFile(pathToGenericString(path)))
     {
         if (if_exists)
             return;
@@ -388,12 +388,12 @@ void MetadataStorageFromPlainObjectStorageUnlinkMetadataFileOperation::execute()
     remote_tmp_path = layout->constructFileObjectKey(PlainRewritableLayout::ROOT_DIRECTORY_TOKEN, getRandomASCIIString(16));
 
     copy_started = true;
-    object_storage->copyObject(StoredObject(remote_source_path), StoredObject(remote_tmp_path), getReadSettings(), getWriteSettings());
+    object_storage->copyObject(StoredObject(pathToGenericString(remote_source_path)), StoredObject(pathToGenericString(remote_tmp_path)), getReadSettings(), getWriteSettings());
 
     remove_started = true;
-    object_storage->removeObjectIfExists(StoredObject(remote_source_path));
+    object_storage->removeObjectIfExists(StoredObject(pathToGenericString(remote_source_path)));
 
-    fs_tree->removeFile(path);
+    fs_tree->removeFile(pathToGenericString(path));
 }
 
 void MetadataStorageFromPlainObjectStorageUnlinkMetadataFileOperation::undo()

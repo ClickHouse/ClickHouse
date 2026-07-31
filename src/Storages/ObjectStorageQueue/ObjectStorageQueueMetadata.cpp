@@ -849,7 +849,7 @@ void ObjectStorageQueueMetadata::unregisterActive(const StorageID & storage_id)
     const auto table_path = registry_path / getProcessorID(storage_id);
 
     Coordination::Error code = {};
-    getKeeperRetriesControl(log).retryLoop([&] { code = getZooKeeper()->tryRemove(table_path); });
+    getKeeperRetriesControl(log).retryLoop([&] { code = getZooKeeper()->tryRemove(pathToGenericString(table_path)); });
 
     if (code == Coordination::Error::ZOK)
     {
@@ -952,19 +952,19 @@ void ObjectStorageQueueMetadata::unregisterNonActive(const StorageID & storage_i
                 LOG_TRACE(log, "Removing all metadata in keeper by path: {}", zookeeper_path.string());
                 if (supports_remove_recursive)
                 {
-                    requests.push_back(zkutil::makeCheckRequest(registry_path, stat.version));
+                    requests.push_back(zkutil::makeCheckRequest(pathToGenericString(registry_path), stat.version));
                     requests.push_back(zkutil::makeRemoveRecursiveRequest(*zk_client, zookeeper_path, /*remove_nodes_limit=*/10000));
                 }
                 else
                 {
-                    requests.push_back(zkutil::makeCheckRequest(registry_path, stat.version));
-                    requests.push_back(zkutil::makeCreateRequest(drop_lock_path, "", zkutil::CreateMode::Ephemeral));
+                    requests.push_back(zkutil::makeCheckRequest(pathToGenericString(registry_path), stat.version));
+                    requests.push_back(zkutil::makeCreateRequest(pathToGenericString(drop_lock_path), "", zkutil::CreateMode::Ephemeral));
                 }
                 code = zk_client->tryMulti(requests, responses);
             }
             else
             {
-                code = zk_client->trySet(registry_path, new_registry_str, stat.version);
+                code = zk_client->trySet(pathToGenericString(registry_path), new_registry_str, stat.version);
             }
         }
         catch (const zkutil::KeeperMultiException & e)
@@ -997,10 +997,10 @@ void ObjectStorageQueueMetadata::unregisterNonActive(const StorageID & storage_i
                 /// Take a drop lock and do recursive remove as a separate request.
                 /// In case of unsupported "remove_recursive" feature, it will
                 /// do getChildren and remove them one by one.
-                auto drop_lock = zkutil::EphemeralNodeHolder::existing(drop_lock_path, *zk_client->getKeeper());
+                auto drop_lock = zkutil::EphemeralNodeHolder::existing(pathToGenericString(drop_lock_path), *zk_client->getKeeper());
                 try
                 {
-                    zk_client->removeRecursive(zookeeper_path);
+                    zk_client->removeRecursive(pathToGenericString(zookeeper_path));
                 }
                 catch (const zkutil::KeeperMultiException & e)
                 {
@@ -1231,7 +1231,7 @@ void ObjectStorageQueueMetadata::cleanupThreadFuncImpl()
     /// Create a lock so that with distributed processing
     /// multiple nodes do not execute cleanup in parallel.
     auto ephemeral_node = zkutil::EphemeralNodeHolder::tryCreate(
-        zookeeper_cleanup_lock_path, *zk_client->getKeeper(), toString(getCurrentTime()));
+        pathToGenericString(zookeeper_cleanup_lock_path), *zk_client->getKeeper(), toString(getCurrentTime()));
 
     if (!ephemeral_node)
     {
@@ -1245,7 +1245,7 @@ void ObjectStorageQueueMetadata::cleanupThreadFuncImpl()
     if (table_metadata.hasTrackedFilesLimit())
     {
         if (cleanup_processed_files)
-            cleanupTrackedNodes(zookeeper_path / "processed", "processed");
+            cleanupTrackedNodes(pathToGenericString(zookeeper_path / "processed"), "processed");
 
         if (cleanup_failed_files)
             cleanupTrackedNodes(zookeeper_path / "failed", "failed");

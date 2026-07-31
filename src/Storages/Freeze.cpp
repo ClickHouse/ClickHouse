@@ -159,7 +159,7 @@ BlockIO Unfreezer::systemUnfreeze(const String & backup_name)
             for (auto prefix_it = disk->iterateDirectory(pathToGenericString(store_path)); prefix_it->isValid(); prefix_it->next())
             {
                 auto prefix_directory = store_path / prefix_it->name();
-                for (auto table_it = disk->iterateDirectory(prefix_directory); table_it->isValid(); table_it->next())
+                for (auto table_it = disk->iterateDirectory(pathToGenericString(prefix_directory)); table_it->isValid(); table_it->next())
                 {
                     auto table_directory = prefix_directory / table_it->name();
                     auto current_result_info = unfreezePartitionsFromTableDirectory(

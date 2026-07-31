@@ -1539,7 +1539,7 @@ bool StorageReplicatedMergeTree::dropReplica(
             flat_nodes.emplace_back("parts");
         for (const auto & node : flat_nodes)
         {
-            bool removed_quickly = zookeeper->tryRemoveChildrenRecursive(fs::path(remote_replica_path) / node, /* probably flat */ true);
+            bool removed_quickly = zookeeper->tryRemoveChildrenRecursive(pathToGenericString(fs::path(remote_replica_path) / node), /* probably flat */ true);
             if (!removed_quickly)
                 LOG_WARNING(logger, "Failed to quickly remove node '{}' and its children, fell back to recursive removal (replica: {})",
                             node, remote_replica_path);
@@ -1660,7 +1660,7 @@ bool StorageReplicatedMergeTree::removeTableNodesFromZooKeeper(zkutil::ZooKeeper
     /// First try to remove paths that are known to be flat
     for (const auto * node : flat_nodes)
     {
-        bool removed_quickly = zookeeper->tryRemoveChildrenRecursive(fs::path(zookeeper_path) / node, /* probably flat */ true);
+        bool removed_quickly = zookeeper->tryRemoveChildrenRecursive(pathToGenericString(fs::path(zookeeper_path) / node), /* probably flat */ true);
         if (!removed_quickly)
             LOG_WARNING(logger, "Failed to quickly remove node '{}' and its children, fell back to recursive removal (table: {})",
                         node, zookeeper_path);
@@ -1696,7 +1696,7 @@ bool StorageReplicatedMergeTree::removeTableNodesFromZooKeeper(zkutil::ZooKeeper
     for (const auto & child : children)
     {
         if (child != "dropped")
-            zookeeper->tryRemoveRecursive(fs::path(zookeeper_path) / child);
+            zookeeper->tryRemoveRecursive(pathToGenericString(fs::path(zookeeper_path) / child));
     }
 
     FailPointInjection::pauseFailPoint(FailPoints::replicated_table_remove_zk_before_final_multi);
@@ -1704,7 +1704,7 @@ bool StorageReplicatedMergeTree::removeTableNodesFromZooKeeper(zkutil::ZooKeeper
     ops.clear();
     Coordination::Responses responses;
     ops.emplace_back(zkutil::makeRemoveRequest(metadata_drop_lock->getPath(), -1));
-    ops.emplace_back(zkutil::makeRemoveRequest(fs::path(zookeeper_path) / "dropped", -1));
+    ops.emplace_back(zkutil::makeRemoveRequest(pathToGenericString(fs::path(zookeeper_path) / "dropped"), -1));
     ops.emplace_back(zkutil::makeRemoveRequest(zookeeper_path, -1));
     code = zookeeper->tryMulti(ops, responses, /* check_session_valid */ true);
 
@@ -1892,7 +1892,7 @@ void StorageReplicatedMergeTree::paranoidCheckForCoveredPartsInZooKeeperOnStart(
 
         bool found = false;
         for (const DiskPtr & disk : disks)
-            if (disk->existsDirectory(fs::path(path) / part_name))
+            if (disk->existsDirectory(pathToGenericString(fs::path(path) / part_name)))
                 found = true;
 
         /// It is OK if the exact covered part is absent locally when an active

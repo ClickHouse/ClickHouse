@@ -243,7 +243,7 @@ LoadTaskPtrs loadMetadata(ContextMutablePtr context, const String & default_data
         if (sub_path.filename().empty())
             sub_path = sub_path.parent_path();
 
-        if (default_db_disk->isSymlinkSupported() && default_db_disk->isSymlink(sub_path))
+        if (default_db_disk->isSymlinkSupported() && default_db_disk->isSymlink(pathToGenericString(sub_path)))
         {
             String db_name = sub_path.filename().string();
             if (!isSystemOrInformationSchema(db_name))
@@ -251,12 +251,12 @@ LoadTaskPtrs loadMetadata(ContextMutablePtr context, const String & default_data
             continue;
         }
 
-        if (default_db_disk->existsDirectory(sub_path))
+        if (default_db_disk->existsDirectory(pathToGenericString(sub_path)))
             continue;
 
         if (sub_path.extension() == ".sql")
         {
-            String db_name = sub_path.stem();
+            String db_name = pathToGenericString(sub_path.stem());
             orphan_directories_and_symlinks.erase(unescapeForFileName(db_name));
             if (!isSystemOrInformationSchema(db_name))
                 databases.emplace(unescapeForFileName(db_name), sub_path);
@@ -268,7 +268,7 @@ LoadTaskPtrs loadMetadata(ContextMutablePtr context, const String & default_data
             LOG_WARNING(log, "Removing temporary file {}", sub_path.string());
             try
             {
-                default_db_disk->removeFileIfExists(sub_path);
+                default_db_disk->removeFileIfExists(pathToGenericString(sub_path));
             }
             catch (...)
             {

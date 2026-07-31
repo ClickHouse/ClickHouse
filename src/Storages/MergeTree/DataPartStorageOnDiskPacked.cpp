@@ -436,9 +436,9 @@ void DataPartStorageOnDiskPacked::createFile(const String & name)
         /// if the file already exists (see VersionMetadataOnDisk::storeInfoToDataPartStorage).
         auto file_path = fs::path(root_path) / part_dir / name;
         if (transaction)
-            transaction->createFile(file_path);
+            transaction->createFile(pathToGenericString(file_path));
         else
-            volume->getDisk()->createFile(file_path);
+            volume->getDisk()->createFile(pathToGenericString(file_path));
         return;
     }
 
@@ -453,7 +453,7 @@ void DataPartStorageOnDiskPacked::moveFile(const String & from_name, const Strin
     executeBinaryWriteOperation(from_name, to_name,
         [](auto & disk, const auto & from_path, const auto & to_path)
         {
-            disk.moveFile(from_path, to_path);
+            disk.moveFile(pathToGenericString(from_path), to_path);
         });
 }
 
@@ -462,7 +462,7 @@ void DataPartStorageOnDiskPacked::replaceFile(const String & from_name, const St
     executeBinaryWriteOperation(from_name, to_name,
         [](auto & disk, const auto & from_path, const auto & to_path)
         {
-            disk.replaceFile(from_path, to_path);
+            disk.replaceFile(pathToGenericString(from_path), to_path);
         });
 }
 
@@ -471,7 +471,7 @@ void DataPartStorageOnDiskPacked::removeFile(const String & name)
     executeUnaryWriteOperation(name,
         [](auto & disk, const auto & path)
         {
-            disk.removeFile(path);
+            disk.removeFile(pathToGenericString(path));
         });
 }
 
@@ -480,7 +480,7 @@ void DataPartStorageOnDiskPacked::removeFileIfExists(const String & name)
     executeUnaryWriteOperation(name,
         [](auto & disk, const auto & path)
         {
-            disk.removeFileIfExists(path);
+            disk.removeFileIfExists(pathToGenericString(path));
         });
 }
 
@@ -512,7 +512,7 @@ void DataPartStorageOnDiskPacked::copyFileFrom(const IDataPartStorage &, const s
 
 void DataPartStorageOnDiskPacked::createProjection(const std::string & name)
 {
-    executeWriteOperation([&](auto & disk) { disk.createDirectory(fs::path(root_path) / part_dir / name); });
+    executeWriteOperation([&](auto & disk) { disk.createDirectory(pathToGenericString(fs::path(root_path) / part_dir / name)); });
 }
 
 void DataPartStorageOnDiskPacked::beginTransaction()
@@ -608,7 +608,7 @@ void DataPartStorageOnDiskPacked::undoTransaction()
 
 String DataPartStorageOnDiskPacked::getRelativeDataPath() const
 {
-    return fs::path(root_path) / part_dir / DATA_FILE_NAME;
+    return pathToGenericString(fs::path(root_path) / part_dir / DATA_FILE_NAME);
 }
 
 bool DataPartStorageOnDiskPacked::isWrittenSeparately(const String & file_name) const
@@ -973,7 +973,7 @@ MutableDataPartStoragePtr DataPartStorageOnDiskPacked::freeze(
     src_disk->listFiles(getRelativePath(), all_files);
     for (const auto & file : all_files)
     {
-         if (src_disk->existsDirectory(fs::path(getRelativePath()) / file))
+         if (src_disk->existsDirectory(pathToGenericString(fs::path(getRelativePath()) / file)))
          {
              auto projection_storage = getProjection(file);
              auto params_copy = params;
@@ -1107,7 +1107,7 @@ MutableDataPartStoragePtr DataPartStorageOnDiskPacked::freezeRemote(
     src_disk->listFiles(getRelativePath(), all_files);
     for (const auto & file : all_files)
     {
-         if (src_disk->existsDirectory(fs::path(getRelativePath()) / file))
+         if (src_disk->existsDirectory(pathToGenericString(fs::path(getRelativePath()) / file)))
          {
              auto projection_storage = getProjection(file);
              auto params_copy = params;
