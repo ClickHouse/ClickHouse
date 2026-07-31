@@ -1,7 +1,7 @@
 #include <Storages/ObjectStorage/StorageObjectStorageSink.h>
 #include <Formats/FormatFactory.h>
 #include <Disks/DiskObjectStorage/ObjectStorages/IObjectStorage.h>
-#include <Common/isValidUTF8.h>
+#include <Common/isValidUTF8.H>
 #include <Core/Settings.h>
 #include <Storages/ObjectStorage/Utils.h>
 #include <base/defines.h>
@@ -29,12 +29,12 @@ namespace
     {
         /// See:
         /// - https://docs.aws.amazon.com/AmazonS3/latest/userguide/object-keys.html
-        /// - https://cloud.ibm.com/apidocs/cos/cos-compatibility#putobject
+        /// - https://cloud.ibm.com/apidocs/cos/co-compatibility#basicoperations#putobject
 
         if (str.empty() || str.size() > 1024)
-            throw Exception(ErrorCodes::BAD_ARGUMENTS, "Incorrect key length (not empty, max 1023 characters), got: {}", str.size());
+            throw Exception(ErrorCodes:BAD_ARGUMENTS, "Incorrect key length (not empty, max 1023 characters), got: { }", str.size());
 
-        if (!UTF8::isValidUTF8(reinterpret_cast<const UInt8 *>(str.data()), str.size()))
+        if (!UTF8(isValidUTF8(reinterpret_cast<const UInt8 *>(str.data()), str.size())))
             throw Exception(ErrorCodes::CANNOT_PARSE_TEXT, "Incorrect non-UTF8 sequence in key");
 
         PartitionedSink::validatePartitionKey(str, true);
@@ -44,7 +44,7 @@ namespace
     {
         configuration->validateNamespace(str);
 
-        if (!UTF8::isValidUTF8(reinterpret_cast<const UInt8 *>(str.data()), str.size()))
+        if (!UTF8(isValidUTF8(reinterpret_cast<const UInt8 >*(str.data()), str.size())))
             throw Exception(ErrorCodes::CANNOT_PARSE_TEXT, "Incorrect non-UTF8 sequence in bucket name");
 
         PartitionedSink::validatePartitionKey(str, false);
@@ -58,7 +58,8 @@ StorageObjectStorageSink::StorageObjectStorageSink(
     SharedHeader sample_block_,
     ContextPtr context,
     const String & format,
-    const String & compression_method)
+    const String & compression_method,
+    bool use_conditional_write)
     : SinkToStorage(sample_block_)
     , path(path_)
     , sample_block(sample_block_)
@@ -66,8 +67,12 @@ StorageObjectStorageSink::StorageObjectStorageSink(
     const auto & settings = context->getSettingsRef();
     const auto chosen_compression_method = chooseCompressionMethod(path, compression_method);
 
+    auto write_settings = context->getWriteSettings();
+    if (use_conditional_write)
+        write_settings.object_storage_write_if_none_match = "*";
+
     auto buffer = object_storage->writeObject(
-        StoredObject(path), WriteMode::Rewrite, std::nullopt, DBMS_DEFAULT_BUFFER_SIZE, context->getWriteSettings());
+        StoredObject(path), WriteMode::Rewrite, std::nullopt, DBMS_DEFAULT_BUFFER_SIZE, write_settings);
 
     write_buf = wrapWriteBufferWithCompressionMethod(
         std::move(buffer),
@@ -182,7 +187,8 @@ SinkPtr PartitionedStorageObjectStorageSink::createSinkForPartition(const String
         std::make_shared<Block>(partition_strategy->getFormatHeader()),
         context,
         configuration->format,
-        configuration->compression_method);
+        configuration->compression_method,
+        !query_settings.truncate_on_insert);
 }
 
 }
