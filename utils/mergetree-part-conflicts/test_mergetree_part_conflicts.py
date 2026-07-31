@@ -166,6 +166,20 @@ class TestReadInput(unittest.TestCase):
         self.assertEqual(list(tables), ["db.t"])
         self.assertEqual(len(tables["db.t"]), 2)
 
+    def test_one_table_across_several_disks(self):
+        # Tiered storage: the same table has parts on two disks. Labelling every line
+        # with the same table name unifies them, so a part on one disk that overlaps a
+        # part on another is detected; each part keeps its own path.
+        text = ("nat\t/var/lib/clickhouse/store/b11/b11e7407/20260722_98_20874_190\n"
+                "nat\t/mnt/ngx2/clickhouse/store/b11/b11e7407/20260722_2313_113249_107\n")
+        tables = feed(text)
+        self.assertEqual(list(tables), ["nat"])
+        rep = m.classify(tables["nat"])["20260722"]
+        self.assertEqual(len(rep.conflicts), 1)
+        # --emit-detach-commands moves the part into detached/ on its own disk (ngx2)
+        script = "\n".join(m.emit_detach_commands(tables))
+        self.assertIn("/mnt/ngx2/clickhouse/store/b11/b11e7407/detached/20260722_2313_113249_107", script)
+
 
 class TestSuggestKeep(unittest.TestCase):
     def test_prefers_higher_level(self):

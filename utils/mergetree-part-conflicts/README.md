@@ -37,6 +37,14 @@ find /var/lib/clickhouse/store/b11/b11e7407 -mindepth 1 -maxdepth 1 -type d -pri
 find /var/lib/clickhouse/store -mindepth 3 -maxdepth 3 -type d \
     | ./mergetree_part_conflicts.py
 
+# One table whose parts are spread across several disks (tiered storage). Label every
+# line with the same table name so parts from all disks are analysed together -- a part
+# on one disk can intersect a part on another. Full paths are kept, so
+# --emit-detach-commands moves each part into detached/ on its own disk.
+for disk in /var/lib/clickhouse /mnt/ngx2/clickhouse; do
+    find "$disk/store/b11/b11e7407" -mindepth 1 -maxdepth 1 -type d -printf 'nat\t%p\n'
+done | ./mergetree_part_conflicts.py
+
 # From a running server (a healthy table, as a sanity check):
 clickhouse-client -q "SELECT database || '.' || table || '\t' || name FROM system.parts
                       WHERE active FORMAT TSVRaw" \
