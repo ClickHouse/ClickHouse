@@ -71,6 +71,165 @@ def test_deletion_vectors(started_cluster_iceberg_with_spark, storage_type, run_
     ]
 
 
+@pytest.mark.parametrize("run_on_cluster", [False, True])
+@pytest.mark.parametrize("storage_type", ["s3", "azure", "local"])
+def test_deletion_vectors_aggregates(started_cluster_iceberg_with_spark, storage_type, run_on_cluster):
+    """Aggregates over Iceberg v3 tables must ignore rows covered by deletion vectors."""
+    if storage_type == "local" and run_on_cluster:
+        pytest.skip("Local storage with cluster execution is not supported")
+
+    instance = started_cluster_iceberg_with_spark.instances["node1"]
+    spark = started_cluster_iceberg_with_spark.spark_session
+    table_name = "test_deletion_vectors_aggregates_" + storage_type + "_" + get_uuid_str()
+    deleted_ids = {2, 5, 7, 50, 99}
+    remaining_ids = [i for i in range(100) if i not in deleted_ids]
+    # value = 10 * id, so sum/avg expectations stay integer-friendly where possible.
+    remaining_values = [10 * i for i in remaining_ids]
+
+    spark.sql(
+        f"""
+        CREATE TABLE {table_name} (id bigint, value bigint, group_id int) USING iceberg
+        TBLPROPERTIES (
+            'format-version' = '3',
+            'write.delete.mode' = 'merge-on-read',
+            'write.update.mode' = 'merge-on-read',
+            'write.merge.mode' = 'merge-on-read'
+        )
+        """
+    )
+    spark.sql(
+        f"""
+        INSERT INTO {table_name}
+        SELECT id, 10 * id, CAST(id % 3 AS INT)
+        FROM range(0, 100)
+        """
+    )
+    spark.sql(
+        f"DELETE FROM {table_name} WHERE id IN ({', '.join(str(x) for x in sorted(deleted_ids))})"
+    )
+
+    upload_table(started_cluster_iceberg_with_spark, storage_type, table_name)
+
+    expression = get_creation_expression(
+        storage_type,
+        table_name,
+        started_cluster_iceberg_with_spark,
+        run_on_cluster=run_on_cluster,
+        table_function=True,
+    )
+
+    spark_row = spark.sql(
+        f"""
+        SELECT
+            count(*) AS cnt,
+            sum(id) AS sum_id,
+            sum(value) AS sum_value,
+            min(id) AS min_id,
+            max(id) AS max_id,
+            avg(value) AS avg_value
+        FROM {table_name}
+        """
+    ).collect()[0]
+
+    expected_count = len(remaining_ids)
+    expected_sum_id = sum(remaining_ids)
+    expected_sum_value = sum(remaining_values)
+    expected_min_id = min(remaining_ids)
+    expected_max_id = max(remaining_ids)
+    expected_avg_value = expected_sum_value / expected_count
+
+    assert spark_row["cnt"] == expected_count
+    assert spark_row["sum_id"] == expected_sum_id
+    assert spark_row["sum_value"] == expected_sum_value
+    assert spark_row["min_id"] == expected_min_id
+    assert spark_row["max_id"] == expected_max_id
+    assert abs(float(spark_row["avg_value"]) - expected_avg_value) < 1e-9
+
+    ch_row = instance.query(
+        f"""
+        SELECT
+            count(),
+            count(id),
+            sum(id),
+            sum(value),
+            min(id),
+            max(id),
+            avg(value),
+            uniqExact(id),
+            countIf(id % 2 = 0),
+            sumIf(value, id % 2 = 0)
+        FROM {expression}
+        """
+    ).strip().split("\t")
+
+    assert int(ch_row[0]) == expected_count
+    assert int(ch_row[1]) == expected_count
+    assert int(ch_row[2]) == expected_sum_id
+    assert int(ch_row[3]) == expected_sum_value
+    assert int(ch_row[4]) == expected_min_id
+    assert int(ch_row[5]) == expected_max_id
+    assert abs(float(ch_row[6]) - expected_avg_value) < 1e-9
+    assert int(ch_row[7]) == expected_count
+
+    expected_even_ids = [i for i in remaining_ids if i % 2 == 0]
+    expected_count_if = len(expected_even_ids)
+    expected_sum_if = sum(10 * i for i in expected_even_ids)
+    assert int(ch_row[8]) == expected_count_if
+    assert int(ch_row[9]) == expected_sum_if
+
+    # Trivial COUNT must match the full scan once deletion vectors are applied.
+    assert (
+        int(
+            instance.query(
+                f"SELECT count() FROM {expression}",
+                settings={"optimize_trivial_count_query": 1},
+            )
+        )
+        == expected_count
+    )
+    assert (
+        int(
+            instance.query(
+                f"SELECT count() FROM {expression}",
+                settings={"optimize_trivial_count_query": 0},
+            )
+        )
+        == expected_count
+    )
+
+    # GROUP BY aggregates must also exclude deleted rows.
+    spark_groups = {
+        int(row["group_id"]): (int(row["cnt"]), int(row["sum_value"]))
+        for row in spark.sql(
+            f"""
+            SELECT group_id, count(*) AS cnt, sum(value) AS sum_value
+            FROM {table_name}
+            GROUP BY group_id
+            ORDER BY group_id
+            """
+        ).collect()
+    }
+    ch_groups = {}
+    for line in instance.query(
+        f"""
+        SELECT group_id, count(), sum(value)
+        FROM {expression}
+        GROUP BY group_id
+        ORDER BY group_id
+        """
+    ).strip().split("\n"):
+        group_id, cnt, sum_value = line.split("\t")
+        ch_groups[int(group_id)] = (int(cnt), int(sum_value))
+
+    expected_groups = {}
+    for group_id in (0, 1, 2):
+        ids = [i for i in remaining_ids if i % 3 == group_id]
+        expected_groups[group_id] = (len(ids), sum(10 * i for i in ids))
+
+    assert spark_groups == expected_groups
+    assert ch_groups == expected_groups
+
+
 @pytest.mark.parametrize("storage_type", ["s3", "azure", "local"])
 def test_deletion_vectors_complex(started_cluster_iceberg_with_spark, storage_type):
     instance = started_cluster_iceberg_with_spark.instances["node1"]
