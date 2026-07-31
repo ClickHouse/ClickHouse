@@ -1693,7 +1693,7 @@ void StorageKeeperMap::mutate(const MutationCommands & commands, ContextPtr loca
             });
 
             if (status == Coordination::Error::ZOK)
-                return;
+                continue;
 
             if (status != Coordination::Error::ZNONODE)
                 throw zkutil::KeeperMultiException(status, delete_requests, responses);
