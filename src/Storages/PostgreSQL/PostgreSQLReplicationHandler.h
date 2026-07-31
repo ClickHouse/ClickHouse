@@ -122,6 +122,13 @@ public:
     /// engine; the database engine instead discards the stopped handler and rebuilds one from scratch.
     void restartCoordinatedReplicationAfterFailedTeardown();
 
+    /// Recovery for the plain (non-coordinated) single-table engine's refused DROP TABLE: the handler was
+    /// stopped by `flushAndShutdown`, but the nested table and the PostgreSQL slot/publication survived
+    /// (the nested-table drop threw before `shutdownFinal` ran). Re-arm the retrying background startup
+    /// path in attach mode, so replication resumes from the existing slot instead of leaving the table
+    /// mounted but dead until a server restart.
+    void restartReplicationAfterFailedDrop();
+
     /// Add storage pointer to let handler know which tables it needs to keep in sync.
     void addStorage(const std::string & table_name, StorageMaterializedPostgreSQL * storage);
 

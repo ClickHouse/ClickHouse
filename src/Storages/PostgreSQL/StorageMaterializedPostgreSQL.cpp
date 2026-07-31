@@ -410,12 +410,41 @@ void StorageMaterializedPostgreSQL::dropInnerTableIfAny(bool sync, ContextPtr lo
         return;
     }
 
+    /// Plain single-table engine: drop the local nested table BEFORE the authoritative PostgreSQL teardown.
+    /// `shutdownFinal` removes the shared publication/slot (and the handler is destroyed right after), so
+    /// running it first would make a refused (thrown) nested-table drop unrecoverable: `DatabaseAtomic::dropTable`
+    /// aborts before removing the outer table's metadata, leaving the table mounted but already shut down,
+    /// with no replication handler and no PostgreSQL objects left to resume from. In this order a refused
+    /// nested drop keeps the slot/publication, and the handler is re-armed below to resume consuming from
+    /// the slot's confirmed_flush_lsn; `shutdownFinal` itself reports PostgreSQL cleanup errors instead of
+    /// throwing, so once the nested table is gone the drop always completes.
+    ///
+    /// Stop the handler first (idempotent - the regular DROP path has already done it in `flushAndShutdown`),
+    /// preserving the previous order's guarantee that the consumer no longer writes while the nested table
+    /// is being dropped.
+    replication_handler->shutdown();
+    try
+    {
+        /// Simulates the local nested-table drop below failing (e.g. a filesystem error), to test recovery of
+        /// the handler that `flushAndShutdown` has already stopped on the DROP path.
+        fiu_do_on(FailPoints::materialized_postgresql_fail_nested_table_drop,
+        {
+            throw Exception(ErrorCodes::FAULT_INJECTED,
+                "Injected failure while dropping the local nested table of a plain MaterializedPostgreSQL table");
+        });
+
+        if (tryGetNested())
+            InterpreterDropQuery::executeDropQuery(ASTDropQuery::Kind::Drop, getContext(), local_context, getNestedStorageID(), sync, /* ignore_sync_setting */ true);
+    }
+    catch (...)
+    {
+        if (replication_handler->isStopped())
+            replication_handler->restartReplicationAfterFailedDrop();
+        throw;
+    }
+
     replication_handler->shutdownFinal();
     replication_handler.reset();
-
-    auto nested_table = tryGetNested() != nullptr;
-    if (nested_table)
-        InterpreterDropQuery::executeDropQuery(ASTDropQuery::Kind::Drop, getContext(), local_context, getNestedStorageID(), sync, /* ignore_sync_setting */ true);
 }
 
 

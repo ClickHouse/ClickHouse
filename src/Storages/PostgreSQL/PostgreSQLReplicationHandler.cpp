@@ -2135,66 +2135,89 @@ void PostgreSQLReplicationHandler::coordinatedTeardownBeforeDataDrop()
     /// keeper path would resume from confirmed_flush_lsn into empty tables.
     auto component_guard = Coordination::setCurrentComponent("PostgreSQLReplicationHandler::coordinatedTeardownBeforeDataDrop");
 
-    /// Tear down the identity the shared data actually lives under, not the one the current configuration
-    /// expands to (they differ after a configuration-only macro change, which the startup refuses but which
-    /// must not make the drop orphan the original coordination state). Everything below, including the
-    /// post-data teardown in `shutdownFinal`, then works on the adopted identity.
-    adoptPersistedCoordinationIdentityForTeardown();
-
-    /// Make the fail-close last-replica decision first: unregisterReplicaAndCheckLast throws if Keeper is
-    /// unreachable, which aborts the drop before any nested table is removed (and, importantly, before the
-    /// consumer below is stopped, so a transient Keeper outage does not disturb an otherwise-healthy replica).
-    const bool is_last = unregisterReplicaAndCheckLast();
-
-    /// Record the decision so shutdownFinal (the post-data teardown) does not re-run the race-free check: if this
-    /// replica was the last one it has already removed the shared /replicas node here, and re-checking there
-    /// would read its absence as "another replica was last" and skip the shared PostgreSQL cleanup (a leak).
-    coordinated_teardown_was_last = is_last;
-
-    if (!is_last)
+    /// The retrying startup task must not run concurrently with the teardown. It could otherwise observe the
+    /// <keeper_path>/teardown ownership token that unregisterReplicaAndCheckLast creates below and misread it
+    /// as the leftover of this replica's own earlier refused drop - reclaiming (removing) the token and
+    /// re-registering the replica mid-drop (see ensureCoordinatedNamingCompatible), after which shutdownFinal
+    /// no longer owns the teardown and skips the shared slot/publication removal, leaking them. It would also
+    /// race the identity adoption below, which mutates the members the startup path reads. Deactivation waits
+    /// for an in-flight execution to finish; if the teardown is refused (throws) before the handler was
+    /// stopped, reactivate the task so a replica whose startup was still retrying keeps retrying.
+    startup_task->deactivate();
+    try
     {
-        /// Not the last replica: the shared state must stay. We had to remove /replicas/<name> to make the
-        /// last-replica decision race-free, so re-register it - this replica keeps counting as a live data
-        /// holder until its nested tables have actually been dropped. The authoritative removal then happens
-        /// in shutdownFinal, AFTER the caller has dropped the nested tables, so a failure while dropping them
-        /// never leaves this replica unregistered while it still holds a copy of the shared data. Re-register
-        /// BEFORE stopping the consumer below: this is the teardown's last refusable Keeper write, so a
-        /// refused (thrown) drop leaves the live replication handler untouched.
-        ///
-        /// Do not create ancestors here: a missing /replicas parent means a concurrent dropper on a peer has
-        /// won the last-replica fence in the meantime and removed the shared coordination state. Re-creating
-        /// the node would resurrect a tree that peer is tearing down, and throwing would refuse this
-        /// otherwise-valid drop; proceed unregistered instead - the re-check in shutdownFinal then reads the
-        /// parent's absence as "another replica was last" and correctly skips the shared cleanup.
-        auto zookeeper = getContext()->getZooKeeper();
-        const String replica_path = coordination_keeper_path + "/replicas/" + coordination_replica_name;
-        const auto code = zookeeper->tryCreate(replica_path, coordination_replica_owner, zkutil::CreateMode::Persistent);
-        if (code == Coordination::Error::ZNONODE)
-            LOG_INFO(log,
-                "Not re-registering replica '{}': the shared /replicas node was removed by a concurrent last-replica teardown",
-                coordination_replica_name);
-        else if (code != Coordination::Error::ZOK && code != Coordination::Error::ZNODEEXISTS)
-            throw zkutil::KeeperException::fromPath(code, replica_path);
+        /// Tear down the identity the shared data actually lives under, not the one the current configuration
+        /// expands to (they differ after a configuration-only macro change, which the startup refuses but which
+        /// must not make the drop orphan the original coordination state). Everything below, including the
+        /// post-data teardown in `shutdownFinal`, then works on the adopted identity.
+        adoptPersistedCoordinationIdentityForTeardown();
+
+        /// Make the fail-close last-replica decision first: unregisterReplicaAndCheckLast throws if Keeper is
+        /// unreachable, which aborts the drop before any nested table is removed (and, importantly, before the
+        /// consumer below is stopped, so a transient Keeper outage does not disturb an otherwise-healthy replica).
+        const bool is_last = unregisterReplicaAndCheckLast();
+
+        /// Record the decision so shutdownFinal (the post-data teardown) does not re-run the race-free check: if this
+        /// replica was the last one it has already removed the shared /replicas node here, and re-checking there
+        /// would read its absence as "another replica was last" and skip the shared PostgreSQL cleanup (a leak).
+        coordinated_teardown_was_last = is_last;
+
+        if (!is_last)
+        {
+            /// Not the last replica: the shared state must stay. We had to remove /replicas/<name> to make the
+            /// last-replica decision race-free, so re-register it - this replica keeps counting as a live data
+            /// holder until its nested tables have actually been dropped. The authoritative removal then happens
+            /// in shutdownFinal, AFTER the caller has dropped the nested tables, so a failure while dropping them
+            /// never leaves this replica unregistered while it still holds a copy of the shared data. Re-register
+            /// BEFORE stopping the consumer below: this is the teardown's last refusable Keeper write, so a
+            /// refused (thrown) drop leaves the live replication handler untouched.
+            ///
+            /// Do not create ancestors here: a missing /replicas parent means a concurrent dropper on a peer has
+            /// won the last-replica fence in the meantime and removed the shared coordination state. Re-creating
+            /// the node would resurrect a tree that peer is tearing down, and throwing would refuse this
+            /// otherwise-valid drop; proceed unregistered instead - the re-check in shutdownFinal then reads the
+            /// parent's absence as "another replica was last" and correctly skips the shared cleanup.
+            auto zookeeper = getContext()->getZooKeeper();
+            const String replica_path = coordination_keeper_path + "/replicas/" + coordination_replica_name;
+            const auto code = zookeeper->tryCreate(replica_path, coordination_replica_owner, zkutil::CreateMode::Persistent);
+            if (code == Coordination::Error::ZNONODE)
+                LOG_INFO(log,
+                    "Not re-registering replica '{}': the shared /replicas node was removed by a concurrent last-replica teardown",
+                    coordination_replica_name);
+            else if (code != Coordination::Error::ZOK && code != Coordination::Error::ZNODEEXISTS)
+                throw zkutil::KeeperException::fromPath(code, replica_path);
+        }
+
+        shutdown();
+
+        /// Simulates a Keeper failure in the only teardown step that runs after the handler has been stopped
+        /// (the last replica's removeCoordinationNodes below), to test the callers' recovery from a drop
+        /// refused after that point.
+        fiu_do_on(FailPoints::materialized_postgresql_fail_teardown_after_shutdown,
+        {
+            throw Exception(ErrorCodes::FAULT_INJECTED,
+                "Injected failure in coordinated teardown after the replication handler was shut down");
+        });
+
+        if (is_last)
+        {
+            /// Last replica: remove the shared coordination nodes (including the snapshot_completed marker) now,
+            /// before the caller drops the last local copy. The shared PostgreSQL slot/publication are cleaned up
+            /// authoritatively in shutdownFinal (a leaked slot/publication is recoverable, and with the marker
+            /// already gone a recreate correctly redoes the snapshot rather than resuming into empty tables).
+            removeCoordinationNodes();
+        }
     }
-
-    shutdown();
-
-    /// Simulates a Keeper failure in the only teardown step that runs after the handler has been stopped
-    /// (the last replica's removeCoordinationNodes below), to test the callers' recovery from a drop
-    /// refused after that point.
-    fiu_do_on(FailPoints::materialized_postgresql_fail_teardown_after_shutdown,
+    catch (...)
     {
-        throw Exception(ErrorCodes::FAULT_INJECTED,
-            "Injected failure in coordinated teardown after the replication handler was shut down");
-    });
-
-    if (is_last)
-    {
-        /// Last replica: remove the shared coordination nodes (including the snapshot_completed marker) now,
-        /// before the caller drops the last local copy. The shared PostgreSQL slot/publication are cleaned up
-        /// authoritatively in shutdownFinal (a leaked slot/publication is recoverable, and with the marker
-        /// already gone a recreate correctly redoes the snapshot rather than resuming into empty tables).
-        removeCoordinationNodes();
+        /// A teardown refused before shutdown() ran (a Keeper error in the steps above) leaves the handler
+        /// alive; the callers' recovery only re-arms a STOPPED handler, so undo the deactivation here.
+        /// The startup task matters exactly when replication has not started yet (it keeps retrying, e.g.
+        /// while the configured coordination identity mismatches the persisted one); once replication runs,
+        /// rescheduling it is a harmless idempotent no-op.
+        if (!stop_synchronization)
+            startup_task->activateAndSchedule();
+        throw;
     }
 }
 
@@ -2213,6 +2236,22 @@ void PostgreSQLReplicationHandler::restartCoordinatedReplicationAfterFailedTeard
     /// stale decision so a later drop re-runs the race-free last-replica check from scratch instead of reusing
     /// `coordinated_teardown_was_last` (which a retried drop that skips the teardown would otherwise trust).
     coordinated_teardown_was_last = false;
+    stop_synchronization.store(false);
+    retry_startup_on_error.store(true);
+    startup_task->activateAndSchedule();
+}
+
+
+void PostgreSQLReplicationHandler::restartReplicationAfterFailedDrop()
+{
+    chassert(!coordination_enabled);
+
+    /// The plain engine's refused drop: `shutdown` (run by `flushAndShutdown` on the DROP path) deactivated
+    /// the background tasks and destroyed the consumer, but the nested table still holds the data and the
+    /// slot/publication still exist in PostgreSQL. Resume from the slot's confirmed_flush_lsn exactly like an
+    /// ATTACH does - without `is_attach`, `startSynchronization` would drop the existing slot and redo the
+    /// initial snapshot, needlessly reloading everything into the surviving nested table.
+    is_attach = true;
     stop_synchronization.store(false);
     retry_startup_on_error.store(true);
     startup_task->activateAndSchedule();
