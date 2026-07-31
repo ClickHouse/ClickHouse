@@ -2299,13 +2299,11 @@ bool ColumnObject::SortedPathsIterator::isCurrentTypedNull() const
 }
 
 void ColumnObject::SortedPathsIterator::serializeCurrentValueBinary(
-    const std::unordered_map<String, DataTypePtr> * typed_path_types, // STYLE_CHECK_ALLOW_STD_CONTAINERS
+    const std::unordered_map<String, SerializationPtr> & typed_path_serializations, // STYLE_CHECK_ALLOW_STD_CONTAINERS
     WriteBuffer & buf) const
 {
     if (current_path_type == PathType::SHARED_DATA)
     {
-        /// Shared-data values are already stored in Dynamic binary format.
-        /// Copy the bytes directly without deserializing and re-serializing.
         auto value_data = shared_data_values->getDataAt(shared_data_it);
         buf.write(value_data.data(), value_data.size());
         return;
@@ -2319,27 +2317,18 @@ void ColumnObject::SortedPathsIterator::serializeCurrentValueBinary(
         return;
     }
 
-    /// TYPED path.
-    /// Serialize with the exact declared DataType (e.g. Date, DateTime, Map, JSON) so that
-    /// the original type is preserved verbatim.  Typed paths are always stored as atomic
-    /// leaves — Map and JSON typed paths are not flattened into child paths.
     chassert(current_path_type == PathType::TYPED);
     const IColumn & col = *column_object.typed_paths.find(*typed_paths_it)->second;
-
-    if (typed_path_types)
+    auto ser_it = typed_path_serializations.find(String(*typed_paths_it));
+    if (ser_it != typed_path_serializations.end())
     {
-        auto tit = typed_path_types->find(String(*typed_paths_it));
-        if (tit != typed_path_types->end())
-        {
-            const DataTypePtr & raw_type = tit->second;
-            encodeDataType(raw_type, buf);
-            raw_type->getDefaultSerialization()->serializeBinary(col, row, buf, getFormatSettings());
-            return;
-        }
+        /// Write the value bare — no type tag — so the blob can be deserialized
+        /// directly with the same serialization (§2/§3 of mergedJSONPatch design).
+        ser_it->second->serializeBinary(col, row, buf, getFormatSettings());
+        return;
     }
 
-    /// No declared type available (should not normally happen): serialize via Dynamic so
-    /// the caller receives valid bytes regardless.
+    /// No declared serialization available: fall back to Dynamic binary via Field.
     Field field;
     col.get(row, field);
     DataTypeDynamic().getDefaultSerialization()->serializeBinary(field, buf, getFormatSettings());

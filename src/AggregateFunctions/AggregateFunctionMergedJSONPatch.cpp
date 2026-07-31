@@ -3,6 +3,8 @@
 #include <Common/FieldVisitorToString.h>
 #include <AggregateFunctions/FactoryHelpers.h>
 #include <Columns/ColumnObject.h>
+#include <Columns/ColumnDecimal.h>
+#include <Columns/ColumnVector.h>
 #include <DataTypes/DataTypeDynamic.h>
 #include <DataTypes/DataTypeNullable.h>
 #include <DataTypes/DataTypeObject.h>
@@ -10,6 +12,7 @@
 #include <IO/WriteHelpers.h>
 #include <IO/ReadHelpers.h>
 #include <IO/ReadBufferFromString.h>
+#include <IO/WriteBufferFromString.h>
 #include <IO/WriteBufferFromVector.h>
 #include <Common/Arena.h>
 #include <Common/FieldBinaryEncoding.h>
@@ -18,7 +21,6 @@
 
 #include <algorithm>
 #include <memory>
-#include <boost/smart_ptr/intrusive_ptr.hpp>
 
 
 namespace DB
@@ -83,239 +85,77 @@ namespace ErrorCodes
   *    (e.g. `a.b` → `a%2Eb`), making them distinct from nested paths and eliminating the
   *    false conflict.
   */
-struct AggregateFunctionMergedJSONPatchData
+
+/// Sort key types: concrete uniform structs, stored inline, no virtual dispatch.
+
+/// Fixed-width numeric and date/time types: (U)Int*, Float*, Decimal*, Date, DateTime, DateTime64
+template <typename ValueType>
+struct KeyFixed
 {
+    ValueType value{};
 
-    /// Efficient sort-key value. Stores Int64/UInt64 inline (no allocation), String in-place,
-    /// and falls back to a heap-allocated Field only for exotic types (Float, Decimal, UUID, …).
-    /// Comparisons dispatch on a small enum; for Nullable(scalar) keys where null and non-null
-    /// rows produce different kinds, the comparison falls back to Field::operator<.
-    ///
-    /// Composite and Variant/Dynamic sort key types are rejected at registration time.
-    ///
-    /// All leaf paths in one input row share the same sort key. To avoid copying a potentially
-    /// large String N times (once per path), SortKeyData is ref-counted via boost::intrusive_ptr
-    /// with a plain (non-atomic) int refcount — the aggregate state is single-threaded.
-    struct SortKeyData
+    void set(const IColumn & column, size_t row)
     {
-        enum class Kind : UInt8
-        {
-            Int64  = 0,
-            UInt64 = 1,
-            String = 2,
-            Field  = 3,  ///< fallback for Float, Decimal, UUID, etc.
-        };
-
-        Kind kind;
-        Int64  i64 = 0;
-        UInt64 u64 = 0;
-        String str; // STYLE_CHECK_ALLOW_STD_CONTAINERS
-        Field  field;
-
-        int refcount = 0;
-
-        /// Construct from a Field, choosing the most compact representation.
-        explicit SortKeyData(Field v)
-        {
-            switch (v.getType())
-            {
-                case Field::Types::Int64:
-                    kind = Kind::Int64;
-                    i64  = v.safeGet<Int64>();
-                    break;
-                case Field::Types::UInt64:
-                    kind = Kind::UInt64;
-                    u64  = v.safeGet<UInt64>();
-                    break;
-                case Field::Types::String:
-                    kind = Kind::String;
-                    str  = v.safeGet<String>();
-                    break;
-                default:
-                    kind  = Kind::Field;
-                    field = std::move(v);
-                    break;
-            }
-        }
-
-        bool operator<(const SortKeyData & other) const
-        {
-            /// Fast path: same kind on both sides (the common case for non-nullable keys).
-            if (kind == other.kind)
-            {
-                switch (kind)
-                {
-                    case Kind::Int64:  return i64   < other.i64;
-                    case Kind::UInt64: return u64   < other.u64;
-                    case Kind::String: return str   < other.str;
-                    case Kind::Field:  return field < other.field;
-                }
-                UNREACHABLE();
-            }
-            /// Kinds differ — this happens with Nullable(T): null rows yield Field::Null (Kind::Field)
-            /// while non-null rows use Kind::Int64 / UInt64 / String.  Fall back to Field comparison,
-            /// which orders Null before any non-null value (Field::Types::Null == 0).
-            return toField() < other.toField();
-        }
-
-        bool operator<=(const SortKeyData & other) const { return !(other < *this); }
-        bool operator>(const SortKeyData & other) const  { return other < *this; }
-
-        Field toField() const
-        {
-            switch (kind)
-            {
-                case Kind::Int64:  return Field(i64);
-                case Kind::UInt64: return Field(u64);
-                case Kind::String: return Field(str);
-                case Kind::Field:  return field;
-            }
-            UNREACHABLE();
-        }
-
-        friend void intrusive_ptr_add_ref(SortKeyData * p) noexcept { ++p->refcount; }
-        friend void intrusive_ptr_release(SortKeyData * p) noexcept { if (--p->refcount == 0) delete p; }
-    };
-
-    using SortKeyPtr = boost::intrusive_ptr<SortKeyData>;
-
-    static SortKeyPtr makeSortKey(Field v)
-    {
-        return SortKeyPtr(new SortKeyData(std::move(v)));
+        value = assert_cast<const ColumnVectorOrDecimal<ValueType> &>(column).getData()[row];
     }
 
-    /// Thin wrapper that lets call sites use comparison operators directly on a SortKeyPtr.
-    /// We pass SortKeyPtr by const-ref everywhere; this avoids bumping the refcount on comparisons.
-    struct SortKey
+    bool less(const KeyFixed & other) const { return value < other.value; }
+
+    void serialize(WriteBuffer & buffer) const { writeBinary(value, buffer); }
+
+    void deserialize(ReadBuffer & buffer) { readBinary(value, buffer); }
+};
+
+/// String sort keys: owns a String (avoids Field's wrapper)
+struct KeyString
+{
+    String value; // STYLE_CHECK_ALLOW_STD_CONTAINERS
+
+    void set(const IColumn & column, size_t row)
     {
-        SortKeyPtr ptr;
+        value = column.getDataAt(row);
+    }
 
-        bool operator<(const SortKey & other) const  { return *ptr < *other.ptr; }
-        bool operator<=(const SortKey & other) const { return *ptr <= *other.ptr; }
-        bool operator>(const SortKey & other) const  { return *ptr > *other.ptr; }
-    };
+    bool less(const KeyString & other) const { return value < other.value; }
 
-    struct EncodedField
-    {
-        enum class Kind : UInt8
-        {
-            Empty = 0,
-            Int64 = 1,
-            UInt64 = 2,
-            String = 3,
-            BinaryNonObjectField = 4,
-            /// Dynamic binary format: encodeDataType(type) + type->serializeBinary(value).
-            /// Used for typed-path leaf values so that types like Date, DateTime, UUID that
-            /// have no corresponding Field type are preserved across serialization round-trips.
-            DynamicBinary = 5,
-        };
+    void serialize(WriteBuffer & buffer) const { writeStringBinary(value, buffer); }
 
-        Kind kind = Kind::Empty;
-        Int64 inline_int64 = 0;
-        UInt64 inline_uint64 = 0;
-        /// Owned string storage for String, BinaryNonObjectField, and DynamicBinary kinds.
-        /// Using owned String rather than an arena pointer means the bytes are freed immediately
-        /// when the Entry is erased, keeping memory proportional to the live state size rather
-        /// than to the total number of updates processed.
-        String data; // STYLE_CHECK_ALLOW_STD_CONTAINERS
+    void deserialize(ReadBuffer & buffer) { readStringBinary(value, buffer); }
+};
 
-        EncodedField() = default;
+/// Generic fallback: UUID, IPv*, Decimal256, any other comparable scalar — owns a Field
+struct KeyGeneric
+{
+    Field value;
 
-        explicit EncodedField(Int64 value_)
-            : kind(Kind::Int64)
-            , inline_int64(value_)
-        {
-        }
+    void set(const IColumn & column, size_t row) { column.get(row, value); }
 
-        explicit EncodedField(UInt64 value_)
-            : kind(Kind::UInt64)
-            , inline_uint64(value_)
-        {
-        }
+    bool less(const KeyGeneric & other) const { return value < other.value; }
 
-        EncodedField(Kind kind_, String data_)
-            : kind(kind_)
-            , data(std::move(data_))
-        {
-        }
+    void serialize(WriteBuffer & buffer) const { encodeField(value, buffer); }
 
-        std::string_view dataView() const { return data; }
+    void deserialize(ReadBuffer & buffer) { value = decodeField(buffer); }
+};
 
-        Field get() const
-        {
-            switch (kind)
-            {
-                case Kind::Empty:
-                    return {};
-                case Kind::Int64:
-                    return Field(inline_int64);
-                case Kind::UInt64:
-                    return Field(inline_uint64);
-                case Kind::String:
-                    return Field(data);
-                case Kind::BinaryNonObjectField:
-                {
-                    ReadBufferFromString buf(data);
-                    return decodeField(buf);
-                }
-                case Kind::DynamicBinary:
-                {
-                    Field field;
-                    ReadBufferFromString buf(data);
-                    DataTypeDynamic().getDefaultSerialization()->deserializeBinary(field, buf, {});
-                    return field;
-                }
-            }
+/// Value storage: a String binary blob
+/// Encoding per path kind:
+/// - Typed path: bare value via serialization (from typed_path_serializations map)
+/// - Dynamic path: self-describing Dynamic binary (encodeDataType + serialized value)
+/// - Shared-data path: Dynamic binary bytes copied verbatim
 
-            UNREACHABLE();
-        }
-
-        /// True if the stored value is a null / Nothing (written by Dynamic serialization for
-        /// absent typed-path values that escaped the Nullable null-skip path).
-        bool isNull() const
-        {
-            if (kind == Kind::Empty)
-                return true;
-            if (kind == Kind::DynamicBinary)
-            {
-                Field f = get();
-                return f.isNull();
-            }
-            return false;
-        }
-    };
-
+template <typename KeyData>
+struct AggregateFunctionMergedJSONPatchData
+{
     struct Entry
     {
-        /// Owned string for the path. Freed when the entry is erased, so path memory is
-        /// proportional to the number of live entries, not to the total number of updates.
         String path; // STYLE_CHECK_ALLOW_STD_CONTAINERS
-        EncodedField value;
-        SortKey sort_key;
+        String value_blob; // STYLE_CHECK_ALLOW_STD_CONTAINERS
+        KeyData sort_key;
 
         std::string_view pathView() const { return path; }
     };
 
     VectorWithMemoryTracking<Entry> entries;
-
-    static EncodedField encodeField(Field value)
-    {
-        switch (value.getType())
-        {
-            case Field::Types::Int64:
-                return EncodedField(value.safeGet<Int64>());
-            case Field::Types::UInt64:
-                return EncodedField(value.safeGet<UInt64>());
-            case Field::Types::String:
-                return EncodedField(EncodedField::Kind::String, value.safeGet<String>());
-            default:
-            {
-                WriteBufferFromOwnString buf;
-                ::DB::encodeField(value, buf);
-                return EncodedField(EncodedField::Kind::BinaryNonObjectField, std::move(buf.str()));
-            }
-        }
-    }
 
     static bool isDescendantPath(std::string_view ancestor, std::string_view path)
     {
@@ -341,18 +181,18 @@ struct AggregateFunctionMergedJSONPatchData
             });
     }
 
-    bool hasNewerConflictingEntry(std::string_view path, const SortKey & sort_key) const
+    bool hasNewerConflictingEntry(std::string_view path, const KeyData & sort_key) const
     {
         for (const auto & entry : entries)
         {
-            if (pathsConflict(entry.pathView(), path) && entry.sort_key > sort_key)
+            if (pathsConflict(entry.pathView(), path) && entry.sort_key.less(sort_key))
                 return true;
         }
 
         return false;
     }
 
-    void eraseShadowedEntries(std::string_view path, const SortKey & sort_key)
+    void eraseShadowedEntries(std::string_view path, const KeyData & sort_key)
     {
         entries.erase(
             std::remove_if(
@@ -360,159 +200,35 @@ struct AggregateFunctionMergedJSONPatchData
                 entries.end(),
                 [&](const Entry & entry)
                 {
-                    return pathsConflict(entry.pathView(), path) && entry.sort_key <= sort_key;
+                    return pathsConflict(entry.pathView(), path) && !sort_key.less(entry.sort_key);
                 }),
             entries.end());
     }
 
-    void pushLeafEntry(std::string_view path, EncodedField value, const SortKey & sort_key)
+    void pushLeafEntry(std::string_view path, String value_blob, const KeyData & sort_key)
     {
         Entry entry;
         entry.path = path;
-        entry.value = std::move(value);
+        entry.value_blob = std::move(value_blob);
         entry.sort_key = sort_key;
 
         auto it = findInsertPosition(entries, path);
         entries.insert(it, std::move(entry));
     }
 
-    static EncodedField readEncodedField(ReadBuffer & buf)
-    {
-        UInt8 encoded_kind = 0;
-        readBinary(encoded_kind, buf);
-
-        auto kind = static_cast<EncodedField::Kind>(encoded_kind);
-
-        if (kind != EncodedField::Kind::Empty
-            && kind != EncodedField::Kind::Int64
-            && kind != EncodedField::Kind::UInt64
-            && kind != EncodedField::Kind::String
-            && kind != EncodedField::Kind::BinaryNonObjectField
-            && kind != EncodedField::Kind::DynamicBinary)
-        {
-            throw Exception(
-                ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT,
-                "Invalid terminal kind while deserializing `mergedJSONPatch`: byte={}",
-                static_cast<UInt64>(encoded_kind));
-        }
-
-        switch (kind)
-        {
-            case EncodedField::Kind::Empty:
-                return EncodedField();
-            case EncodedField::Kind::Int64:
-            {
-                Int64 value = 0;
-                readVarInt(value, buf);
-                return EncodedField(value);
-            }
-            case EncodedField::Kind::UInt64:
-            {
-                UInt64 value = 0;
-                readVarUInt(value, buf);
-                return EncodedField(value);
-            }
-            case EncodedField::Kind::String:
-            case EncodedField::Kind::BinaryNonObjectField:
-            case EncodedField::Kind::DynamicBinary:
-            {
-                String stored;
-                readStringBinary(stored, buf);
-                return EncodedField(kind, std::move(stored));
-            }
-        }
-
-        UNREACHABLE();
-    }
-
-    void addWithKey(const IColumn & json_column, const IColumn & key_column, size_t row_num, const DataTypeObject * obj_type = nullptr)
-    {
-        const auto & object_column = assert_cast<const ColumnObject &>(json_column);
-        /// Create one SortKeyData and share it across all leaf paths from this row.
-        /// Copying a SortKeyPtr is O(1) regardless of key size.
-        SortKey sort_key{makeSortKey(key_column[row_num])};
-        addKeyValuePairs(object_column, row_num, sort_key, obj_type);
-    }
-
-    /// A leaf entry used as a staging buffer before atomic batch insertion.
-    /// path is owned (String) so deserialize can move/copy into it safely.
     struct LeafRef
     {
-        String path;
-        EncodedField value;
-        SortKey sort_key;
+        String path; // STYLE_CHECK_ALLOW_STD_CONTAINERS
+        String value_blob; // STYLE_CHECK_ALLOW_STD_CONTAINERS
+        KeyData sort_key;
     };
 
-    void addKeyValuePairs(const ColumnObject & object_column, size_t row_num, const SortKey & sort_key,
-                          const DataTypeObject * obj_type)
-    {
-        /// Collect all leaf (path, value) pairs from the row, then insert them atomically.
-        ///
-        /// insertBatchAtomic scopes all conflict checks and erasures to the pre-existing state,
-        /// so intra-row siblings (e.g. "a" and "a.b" from JSON(a UInt32, `a.b` UInt32)) cannot
-        /// erase each other.
-        ///
-        /// SortedPathsIterator skips null dynamic paths (null = absent).
-        /// For typed paths backed by Nullable columns isCurrentTypedNull() handles the same skip.
-        ///
-        /// Non-Nullable typed paths (e.g. UInt32) have no null representation.  Their column
-        /// stores the type default (e.g. 0) whenever the patch omitted the path.  We cannot
-        /// distinguish "written as 0" from "absent, filled with default", so we pass them
-        /// through — see the documentation limitation for the consequence.
-        std::vector<LeafRef> batch; // STYLE_CHECK_ALLOW_STD_CONTAINERS
-
-        const auto * typed_path_types = obj_type ? &obj_type->getTypedPaths() : nullptr;
-
-        ColumnObject::SortedPathsIterator it(object_column, row_num);
-        while (!it.end())
-        {
-            /// Skip Nullable typed paths that are null — null means the patch omitted this path.
-            if (it.isCurrentTypedNull())
-            {
-                it.next();
-                continue;
-            }
-
-            /// Serialize the value in Dynamic binary format directly from the column.
-            /// This preserves the exact DataType (e.g. Date, Map, JSON) without going through
-            /// Field, which loses type fidelity. All path types — TYPED, DYNAMIC, SHARED_DATA —
-            /// are serialized as atomic leaves; typed Map/JSON paths are not flattened.
-            WriteBufferFromOwnString val_buf;
-            it.serializeCurrentValueBinary(typed_path_types, val_buf);
-            batch.push_back({String(it.getCurrentPath()),
-                EncodedField(EncodedField::Kind::DynamicBinary, std::move(val_buf.str())),
-                sort_key});
-
-            it.next();
-        }
-
-        insertBatchAtomic(batch);
-    }
-
-    /// Insert a flat list of leaf entries into this state, treating the entire batch as atomic
-    /// with respect to the pre-existing state.
-    ///
-    /// All three call sites (addKeyValuePairs, merge, deserialize) use this path.  A state can
-    /// legitimately contain conflicting-path entries at the same sort key (e.g. both "a" and
-    /// "a.b" from a row of JSON(a UInt32, `a.b` UInt32)). Replaying them one-by-one through
-    /// insertLeafEntry would let a later entry erase an earlier sibling, because
-    /// eraseShadowedEntries uses sort_key <= incoming, which is true for equal keys.
-    ///
-    /// Three-phase approach:
-    ///   1. Filter: find batch entries not blocked by a pre-existing newer entry.
-    ///   2. Erase:  remove all pre-existing entries shadowed by any survivor.
-    ///   3. Insert: push all survivors into the now-clean state.
-    ///
-    /// Phases 2 and 3 are kept strictly separate so that a survivor pushed in phase 3 is
-    /// never seen by the erase pass of another survivor.  Using a positional index limit
-    /// (entries[0..existing_count)) breaks down when pushLeafEntry inserts into a sorted
-    /// position that falls below the limit, causing a later survivor's erase pass to
-    /// mis-identify the newly pushed sibling as a pre-existing entry and erase it.
+    /// Insert batch atomically: filter survivors, erase shadowed entries, push survivors.
+    /// This avoids siblings within the batch erasing each other.
     void insertBatchAtomic(std::vector<LeafRef> & batch) // STYLE_CHECK_ALLOW_STD_CONTAINERS
     {
         size_t existing_count = entries.size();
 
-        /// Phase 1: collect indices of batch entries not blocked by a pre-existing newer entry.
         std::vector<size_t> survivors; // STYLE_CHECK_ALLOW_STD_CONTAINERS
         survivors.reserve(batch.size());
         for (size_t i = 0; i < batch.size(); ++i)
@@ -520,7 +236,7 @@ struct AggregateFunctionMergedJSONPatchData
             bool blocked = false;
             for (size_t j = 0; j < existing_count; ++j)
             {
-                if (pathsConflict(entries[j].pathView(), batch[i].path) && entries[j].sort_key > batch[i].sort_key)
+                if (pathsConflict(entries[j].pathView(), batch[i].path) && batch[i].sort_key.less(entries[j].sort_key))
                 {
                     blocked = true;
                     break;
@@ -530,9 +246,6 @@ struct AggregateFunctionMergedJSONPatchData
                 survivors.push_back(i);
         }
 
-        /// Phase 2: remove all pre-existing entries shadowed by any survivor.
-        /// No insertions happen here, so entries contains only pre-existing data and the
-        /// j < existing_count guard is unnecessary — entries.size() == existing_count still.
         for (size_t idx : survivors)
         {
             entries.erase(
@@ -542,15 +255,13 @@ struct AggregateFunctionMergedJSONPatchData
                     [&](const Entry & e)
                     {
                         return pathsConflict(e.pathView(), batch[idx].path)
-                            && e.sort_key <= batch[idx].sort_key;
+                            && !batch[idx].sort_key.less(e.sort_key);
                     }),
                 entries.end());
         }
 
-        /// Phase 3: push all survivors. The pre-existing state is already clean; batch
-        /// siblings are not yet in entries, so pushLeafEntry cannot accidentally erase them.
         for (size_t idx : survivors)
-            pushLeafEntry(batch[idx].path, std::move(batch[idx].value), batch[idx].sort_key);
+            pushLeafEntry(batch[idx].path, std::move(batch[idx].value_blob), batch[idx].sort_key);
     }
 
     void merge(const AggregateFunctionMergedJSONPatchData & other)
@@ -558,7 +269,7 @@ struct AggregateFunctionMergedJSONPatchData
         std::vector<LeafRef> batch; // STYLE_CHECK_ALLOW_STD_CONTAINERS
         batch.reserve(other.entries.size());
         for (const auto & entry : other.entries)
-            batch.push_back({String(entry.pathView()), entry.value, entry.sort_key});
+            batch.push_back({String(entry.pathView()), String(entry.value_blob), entry.sort_key});
         insertBatchAtomic(batch);
     }
 
@@ -568,24 +279,8 @@ struct AggregateFunctionMergedJSONPatchData
         for (const auto & entry : entries)
         {
             writeStringBinary(entry.pathView(), buf);
-            writeBinary(static_cast<UInt8>(entry.value.kind), buf);
-            switch (entry.value.kind)
-            {
-                case EncodedField::Kind::Empty:
-                    break;
-                case EncodedField::Kind::Int64:
-                    writeVarInt(entry.value.inline_int64, buf);
-                    break;
-                case EncodedField::Kind::UInt64:
-                    writeVarUInt(entry.value.inline_uint64, buf);
-                    break;
-                case EncodedField::Kind::String:
-                case EncodedField::Kind::BinaryNonObjectField:
-                case EncodedField::Kind::DynamicBinary:
-                    writeStringBinary(entry.value.dataView(), buf);
-                    break;
-            }
-            DB::encodeField(entry.sort_key.ptr->toField(), buf);
+            writeStringBinary(entry.value_blob, buf);
+            entry.sort_key.serialize(buf);
         }
     }
 
@@ -596,10 +291,6 @@ struct AggregateFunctionMergedJSONPatchData
         size_t size = 0;
         readVarUInt(size, buf);
 
-        /// Read all entries into a batch first, then insert atomically.
-        /// Inserting one-by-one through insertPathValue is incorrect: a state can contain
-        /// conflicting-path siblings (e.g. "a" and "a.b") at the same sort key, and sequential
-        /// insertion would let the second sibling erase the first.
         std::vector<LeafRef> batch; // STYLE_CHECK_ALLOW_STD_CONTAINERS
         batch.reserve(size);
 
@@ -607,14 +298,16 @@ struct AggregateFunctionMergedJSONPatchData
         {
             LeafRef & lv = batch.emplace_back();
             readStringBinary(lv.path, buf);
-            lv.value = readEncodedField(buf);
-            lv.sort_key = SortKey{makeSortKey(decodeField(buf))};
+            readStringBinary(lv.value_blob, buf);
+            lv.sort_key.deserialize(buf);
         }
 
         insertBatchAtomic(batch);
     }
 
-    void insertResultInto(IColumn & to, const DataTypePtr & result_type_) const
+    void insertResultInto(
+        IColumn & to,
+        const std::unordered_map<std::string, SerializationPtr> & typed_path_serializations) const // STYLE_CHECK_ALLOW_STD_CONTAINERS
     {
         auto & result_column = assert_cast<ColumnObject &>(to);
 
@@ -626,44 +319,20 @@ struct AggregateFunctionMergedJSONPatchData
 
         size_t current_size = result_column.size();
         auto [shared_data_paths, shared_data_values] = result_column.getSharedDataPathsAndValues();
-
-        /// Typed path declarations from the result type. Used to deserialize DynamicBinary entries
-        /// directly into typed columns without going through Field — necessary for types like
-        /// Variant, Tuple, and others whose serialization does not implement the Field overload.
-        const auto * result_obj_type = typeid_cast<const DataTypeObject *>(result_type_.get());
-        const auto * typed_path_result_types = result_obj_type ? &result_obj_type->getTypedPaths() : nullptr;
-
         for (const auto & entry : entries)
         {
             std::string_view path = entry.pathView();
 
             if (auto typed_it = result_column.getTypedPaths().find(path); typed_it != result_column.getTypedPaths().end())
             {
-                if (entry.value.kind == EncodedField::Kind::DynamicBinary && typed_path_result_types)
-                {
-                    /// Deserialize directly into the typed column using the declared type's
-                    /// serialization. This avoids the Field round-trip, which throws NOT_IMPLEMENTED
-                    /// for types like Variant and Tuple that do not support the Field binary overload.
-                    auto type_it = typed_path_result_types->find(String(path));
-                    if (type_it != typed_path_result_types->end())
-                    {
-                        ReadBufferFromString val_buf(entry.value.dataView());
-                        decodeDataType(val_buf); /// skip the type prefix written by serializeCurrentValueBinary
-                        type_it->second->getDefaultSerialization()->deserializeBinary(*typed_it->second, val_buf, {});
-                        continue;
-                    }
-                }
-                /// Fallback: non-DynamicBinary entries (e.g. from old serialized state) go through
-                /// Field. All simple typed paths (Int64, UInt64, String, Date, etc.) work fine here.
-                typed_it->second->insert(entry.value.get());
+                ReadBufferFromString val_buf(entry.value_blob);
+                auto ser_it = typed_path_serializations.find(String(path));
+                if (ser_it != typed_path_serializations.end())
+                    ser_it->second->deserializeBinary(*typed_it->second, val_buf, {});
             }
-            else if (entry.value.kind == EncodedField::Kind::DynamicBinary)
+            else
             {
-                /// DynamicBinary stores encodeDataType + value bytes, exactly the format that
-                /// ColumnDynamic and shared-data use internally. Deserialise directly into the
-                /// target column to avoid FieldToDataType re-deriving the type (which would turn
-                /// Date{18262} back into UInt16 when going through Field).
-                ReadBufferFromString val_buf(entry.value.dataView());
+                ReadBufferFromString val_buf(entry.value_blob);
                 if (auto dynamic_it = result_column.getDynamicPathsPtrs().find(path);
                     dynamic_it != result_column.getDynamicPathsPtrs().end())
                 {
@@ -675,44 +344,14 @@ struct AggregateFunctionMergedJSONPatchData
                 }
                 else
                 {
-                    /// Dynamic path limit reached: copy bytes directly to shared data.
-                    /// The bytes are already in the correct format — no re-serialization needed.
                     auto type = decodeDataType(val_buf);
                     if (!isNothing(type))
                     {
                         shared_data_paths->insertData(path.data(), path.size());
                         auto & chars = shared_data_values->getChars();
-                        /// Rewind and copy the full DynamicBinary blob (type tag + value).
-                        std::string_view bytes = entry.value.dataView();
-                        chars.insert(chars.end(), bytes.begin(), bytes.end());
+                        chars.insert(chars.end(), entry.value_blob.begin(), entry.value_blob.end());
                         shared_data_values->getOffsets().push_back(chars.size());
                     }
-                }
-            }
-            else
-            {
-                Field value = entry.value.get();
-                if (auto dynamic_it = result_column.getDynamicPathsPtrs().find(path);
-                    dynamic_it != result_column.getDynamicPathsPtrs().end())
-                {
-                    dynamic_it->second->insert(value);
-                }
-                else if (auto * dynamic_path_column = result_column.tryToAddNewDynamicPath(path))
-                {
-                    dynamic_path_column->insert(value);
-                }
-                else if (!value.isNull())
-                {
-                    /// Dynamic path limit reached: write directly to shared data using Dynamic
-                    /// binary serialization. This is the same encoding ColumnObject::insert uses
-                    /// for overflow paths and handles any Field including arrays containing objects.
-                    shared_data_paths->insertData(path.data(), path.size());
-                    auto & chars = shared_data_values->getChars();
-                    {
-                        WriteBufferFromVector<ColumnString::Chars> value_buf(chars, AppendModeTag{});
-                        DataTypeDynamic().getDefaultSerialization()->serializeBinary(value, value_buf, {});
-                    }
-                    shared_data_values->getOffsets().push_back(chars.size());
                 }
             }
         }
@@ -720,69 +359,85 @@ struct AggregateFunctionMergedJSONPatchData
         result_column.getSharedDataOffsets().push_back(shared_data_paths->size());
 
         for (auto & [_, column] : result_column.getTypedPaths())
-        {
             if (column->size() == current_size)
                 column->insertDefault();
-        }
 
         for (auto & [_, column] : result_column.getDynamicPathsPtrs())
-        {
             if (column->size() == current_size)
                 column->insertDefault();
-        }
     }
 };
 
-
-class AggregateFunctionMergedJSONPatch final
-    : public IAggregateFunctionDataHelper<AggregateFunctionMergedJSONPatchData, AggregateFunctionMergedJSONPatch>
+/// Template specialization for each KeyData type
+template <typename KeyData>
+class AggregateFunctionMergedJSONPatchImpl final
+    : public IAggregateFunctionDataHelper<AggregateFunctionMergedJSONPatchData<KeyData>, AggregateFunctionMergedJSONPatchImpl<KeyData>>
 {
 private:
-    /// Typed-path declarations from the input JSON type; null if the type has no typed paths.
-    const DataTypeObject * obj_type;
+    std::unordered_map<std::string, SerializationPtr> typed_path_serializations; // STYLE_CHECK_ALLOW_STD_CONTAINERS
+
+    using Data = AggregateFunctionMergedJSONPatchData<KeyData>;
 
 public:
-    explicit AggregateFunctionMergedJSONPatch(const DataTypes & argument_types_)
-        : IAggregateFunctionDataHelper<AggregateFunctionMergedJSONPatchData, AggregateFunctionMergedJSONPatch>(
+    explicit AggregateFunctionMergedJSONPatchImpl(
+        const DataTypes & argument_types_,
+        const std::unordered_map<std::string, SerializationPtr> & typed_path_serializations_)
+        : IAggregateFunctionDataHelper<Data, AggregateFunctionMergedJSONPatchImpl<KeyData>>(
             argument_types_, {}, argument_types_[0])
-        , obj_type(typeid_cast<const DataTypeObject *>(argument_types_[0].get()))
+        , typed_path_serializations(typed_path_serializations_)
     {
     }
 
-    String getName() const override
-    {
-        return "mergedJSONPatch";
-    }
+    String getName() const override { return "mergedJSONPatch"; }
 
     bool allocatesMemoryInArena() const override { return false; }
 
     void add(AggregateDataPtr __restrict place, const IColumn ** columns, size_t row_num, Arena *) const override
     {
-        data(place).addWithKey(*columns[0], *columns[1], row_num, obj_type);
+        auto & data = this->data(place);
+        KeyData sort_key;
+        sort_key.set(*columns[1], row_num);
+
+        const auto & object_column = assert_cast<const ColumnObject &>(*columns[0]);
+        std::vector<typename Data::LeafRef> batch;
+
+        ColumnObject::SortedPathsIterator iterator(object_column, row_num);
+        for (; !iterator.end(); iterator.next())
+        {
+            if (iterator.isCurrentTypedNull())
+                continue;
+
+            WriteBufferFromOwnString value_buffer;
+            iterator.serializeCurrentValueBinary(typed_path_serializations, value_buffer);
+            batch.push_back({String(iterator.getCurrentPath()), std::move(value_buffer.str()), sort_key});
+        }
+
+        data.insertBatchAtomic(batch);
     }
 
     void mergeImpl(AggregateDataPtr __restrict place, ConstAggregateDataPtr rhs, Arena *) const override
     {
-        data(place).merge(data(rhs));
+        this->data(place).merge(this->data(rhs));
     }
 
     void serialize(ConstAggregateDataPtr __restrict place, WriteBuffer & buf, std::optional<size_t> /* version */) const override
     {
-        data(place).serialize(buf);
+        this->data(place).serialize(buf);
     }
 
     void deserialize(AggregateDataPtr __restrict place, ReadBuffer & buf, std::optional<size_t> /* version */, Arena *) const override
     {
-        data(place).deserialize(buf);
+        this->data(place).deserialize(buf);
     }
 
     void insertResultInto(AggregateDataPtr __restrict place, IColumn & to, Arena *) const override
     {
-        data(place).insertResultInto(to, result_type);
+        this->data(place).insertResultInto(to, typed_path_serializations);
     }
 };
 
-
+/// Factory dispatch: pick KeyData type from argument_types[1]
+/// Mirrors createWithTwoTypesSecond (argMax shape); also builds typed_path_serializations map (§3, §5)
 static AggregateFunctionPtr createAggregateFunctionMergedJSONPatch(
     const std::string & name, const DataTypes & argument_types, const Array & parameters, const Settings *)
 {
@@ -798,30 +453,82 @@ static AggregateFunctionPtr createAggregateFunctionMergedJSONPatch(
             "Illegal type {} of first argument for aggregate function {}. Expected type JSON",
             argument_types[0]->getName(), name);
 
-    /// Only scalar sort-key types are supported. Composite types (Tuple, Array, Map) may
-    /// contain Variant or Dynamic elements whose column comparison order (by discriminator
-    /// index / type name) differs from Field::operator<, silently picking the wrong winner.
-    /// Variant and Dynamic are rejected directly for the same reason.
-    /// Nullable(scalar) is allowed; the cross-kind null comparison is handled correctly.
+    // Build typed-path serializations map from JSON type (§3, §5)
+    // Resolved once at construction; used in add() and insertResultInto()
+    std::unordered_map<std::string, SerializationPtr> typed_path_serializations; // STYLE_CHECK_ALLOW_STD_CONTAINERS
     {
-        const IDataType * key_type = argument_types[1].get();
-        if (const auto * nullable = typeid_cast<const DataTypeNullable *>(key_type))
-            key_type = nullable->getNestedType().get();
-        WhichDataType which(key_type->getTypeId());
-        if (which.isVariant() || which.isDynamic() || which.isTuple() || which.isArray() || which.isMap())
-            throw Exception(ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT,
-                "Illegal type {} of second argument for aggregate function {}. "
-                "Composite and Variant/Dynamic sort key types are not supported. "
-                "Use a scalar sort key (e.g. a numeric version or timestamp column).",
-                argument_types[1]->getName(), name);
+        const auto * obj_type = typeid_cast<const DataTypeObject *>(argument_types[0].get());
+        if (obj_type)
+            typed_path_serializations = obj_type->getTypedPathSerializations();
     }
+
+    // Validate and dispatch sort-key type
+    // Mirror createWithTwoTypesSecond: numeric types, Date/DateTime with FieldType,
+    // String, or KeyGeneric for other comparable scalars.
+    // NOTE: Nullable(scalar) must always dispatch to KeyGeneric because KeyFixed and
+    // KeyString have no null slot — only Field holds Field::Null to preserve sorting semantics
+    // (null sorts before any non-null value).
+    const IDataType * key_type = argument_types[1].get();
+    bool is_nullable = false;
+    if (const auto * nullable = typeid_cast<const DataTypeNullable *>(key_type))
+    {
+        is_nullable = true;
+        key_type = nullable->getNestedType().get();
+    }
+
+    WhichDataType which_key(key_type->getTypeId());
+
+    // Reject composite and non-comparable types
+    if (which_key.isVariant() || which_key.isDynamic() || which_key.isTuple() || which_key.isArray() || which_key.isMap())
+        throw Exception(ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT,
+            "Illegal type {} of second argument for aggregate function {}. "
+            "Composite and Variant/Dynamic sort key types are not supported. "
+            "Use a scalar sort key (e.g. a numeric version or timestamp column).",
+            argument_types[1]->getName(), name);
 
     if (!argument_types[1]->isComparable())
         throw Exception(ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT,
             "Illegal type {} of second argument for aggregate function {}. Expected comparable type for sort key",
             argument_types[1]->getName(), name);
 
-    return std::make_shared<AggregateFunctionMergedJSONPatch>(argument_types);
+    // Dispatch to appropriate KeyData type (§5)
+    // If type is Nullable, dispatch to KeyGeneric (Field preserves null semantics)
+    if (is_nullable)
+        return std::make_shared<AggregateFunctionMergedJSONPatchImpl<KeyGeneric>>(argument_types, typed_path_serializations);
+
+#define DISPATCH_KEY_TYPE(TYPE) \
+    return std::make_shared<AggregateFunctionMergedJSONPatchImpl<KeyFixed<TYPE>>>(argument_types, typed_path_serializations);
+
+    if (which_key.idx == TypeIndex::UInt8) { DISPATCH_KEY_TYPE(UInt8) }
+    if (which_key.idx == TypeIndex::UInt16) { DISPATCH_KEY_TYPE(UInt16) }
+    if (which_key.idx == TypeIndex::UInt32) { DISPATCH_KEY_TYPE(UInt32) }
+    if (which_key.idx == TypeIndex::UInt64) { DISPATCH_KEY_TYPE(UInt64) }
+    if (which_key.idx == TypeIndex::UInt128) { DISPATCH_KEY_TYPE(UInt128) }
+    if (which_key.idx == TypeIndex::UInt256) { DISPATCH_KEY_TYPE(UInt256) }
+    if (which_key.idx == TypeIndex::Int8) { DISPATCH_KEY_TYPE(Int8) }
+    if (which_key.idx == TypeIndex::Int16) { DISPATCH_KEY_TYPE(Int16) }
+    if (which_key.idx == TypeIndex::Int32) { DISPATCH_KEY_TYPE(Int32) }
+    if (which_key.idx == TypeIndex::Int64) { DISPATCH_KEY_TYPE(Int64) }
+    if (which_key.idx == TypeIndex::Int128) { DISPATCH_KEY_TYPE(Int128) }
+    if (which_key.idx == TypeIndex::Int256) { DISPATCH_KEY_TYPE(Int256) }
+    if (which_key.idx == TypeIndex::Float32) { DISPATCH_KEY_TYPE(Float32) }
+    if (which_key.idx == TypeIndex::Float64) { DISPATCH_KEY_TYPE(Float64) }
+    if (which_key.idx == TypeIndex::Decimal32) { DISPATCH_KEY_TYPE(Decimal32) }
+    if (which_key.idx == TypeIndex::Decimal64) { DISPATCH_KEY_TYPE(Decimal64) }
+    if (which_key.idx == TypeIndex::Decimal128) { DISPATCH_KEY_TYPE(Decimal128) }
+    if (which_key.idx == TypeIndex::Decimal256) { DISPATCH_KEY_TYPE(Decimal256) }
+    if (which_key.idx == TypeIndex::Date) { DISPATCH_KEY_TYPE(UInt16) }
+    if (which_key.idx == TypeIndex::Date32) { DISPATCH_KEY_TYPE(Int32) }
+    if (which_key.idx == TypeIndex::DateTime) { DISPATCH_KEY_TYPE(UInt32) }
+    if (which_key.idx == TypeIndex::DateTime64) { DISPATCH_KEY_TYPE(UInt64) }
+
+#undef DISPATCH_KEY_TYPE
+
+    if (which_key.idx == TypeIndex::String)
+        return std::make_shared<AggregateFunctionMergedJSONPatchImpl<KeyString>>(argument_types, typed_path_serializations);
+
+    // Fallback: UUID, IPv*, Decimal256, any other comparable scalar
+    return std::make_shared<AggregateFunctionMergedJSONPatchImpl<KeyGeneric>>(argument_types, typed_path_serializations);
 }
 
 void registerAggregateFunctionMergedJSONPatch(AggregateFunctionFactory & factory)
@@ -933,4 +640,3 @@ SELECT mergedJSONPatch(json, sort_key) FROM
 }
 
 }
-

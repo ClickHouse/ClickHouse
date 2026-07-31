@@ -337,19 +337,16 @@ public:
         /// Always false for DYNAMIC and SHARED_DATA (null dynamic paths are skipped by the iterator).
         bool isCurrentTypedNull() const;
 
-        /// Serialize the current path's value into `buf` in Dynamic binary format
-        /// (encodeDataType(type) + type->serializeBinary(value)).
-        /// `typed_path_types` is the DataTypeObject::getTypedPaths() map; pass nullptr if there
-        /// are no typed paths.
+        /// Serialize the current path's value into `buf`.
         ///
-        /// All path types — TYPED, DYNAMIC, and SHARED_DATA — are always serialized as
-        /// atomic leaves.  Typed paths with structured types (Map, JSON, Dynamic) are stored
-        /// as a single binary blob; they are never flattened into child paths.
+        /// For TYPED paths, writes the bare value using the declared serialization from
+        /// `typed_path_serializations` (no type tag). For DYNAMIC paths, writes Dynamic binary
+        /// (encodeDataType + value). For SHARED_DATA, copies the bytes verbatim.
         ///
-        /// For SHARED_DATA paths the raw bytes are copied directly from shared_data_values
-        /// without a deserialize+reserialize round-trip.
+        /// All path types are serialized as atomic leaves — Map and JSON typed paths are
+        /// never flattened into child paths.
         void serializeCurrentValueBinary(
-            const std::unordered_map<String, DataTypePtr> * typed_path_types, // STYLE_CHECK_ALLOW_STD_CONTAINERS
+            const std::unordered_map<String, SerializationPtr> & typed_path_serializations, // STYLE_CHECK_ALLOW_STD_CONTAINERS
             WriteBuffer & buf) const;
 
     private:
