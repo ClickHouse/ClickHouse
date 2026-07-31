@@ -342,7 +342,7 @@ void collectCTEJoinKeysInQuery(
     };
 
     std::vector<StackEntry> nodes_to_visit;
-    nodes_to_visit.push_back({query_node.getJoinTree().get(), false});
+    nodes_to_visit.push_back({query_node.getJoinTreeNode().get(), false});
 
     while (!nodes_to_visit.empty())
     {
@@ -374,8 +374,8 @@ void collectCTEJoinKeysInQuery(
         const bool left_nullable = entry.in_nullable_position || kind == JoinKind::Right || kind == JoinKind::Full;
         const bool right_nullable = entry.in_nullable_position || kind == JoinKind::Left || kind == JoinKind::Full;
 
-        nodes_to_visit.push_back({join_node->getLeftTableExpression().get(), left_nullable});
-        nodes_to_visit.push_back({join_node->getRightTableExpression().get(), right_nullable});
+        nodes_to_visit.push_back({join_node->getLeftTableExpressionNode().get(), left_nullable});
+        nodes_to_visit.push_back({join_node->getRightTableExpressionNode().get(), right_nullable});
     }
 }
 
