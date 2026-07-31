@@ -108,3 +108,38 @@ ALTER TABLE test_nested_subcolumn_refill_null DROP COLUMN `arr.nested`;
 ALTER TABLE test_nested_subcolumn_refill_null ADD COLUMN `arr.nested` Array(Nullable(Float64));
 SELECT 'null subcolumn', arr.nested.null, arr.nested FROM test_nested_subcolumn_refill_null;
 DROP TABLE test_nested_subcolumn_refill_null;
+
+-- Same shape with a DDL DEFAULT on the re-added column, read on the old part. The DDL default
+-- must win here, and reading the element beside its parent hit the same wrongly-typed slot.
+DROP TABLE IF EXISTS test_nested_subcolumn_refill_default;
+CREATE TABLE test_nested_subcolumn_refill_default
+(
+    `id` UInt64,
+    `arr.id` Array(UInt64),
+    `arr.nested` Array(Tuple(a String, b Float64))
+)
+ENGINE = MergeTree ORDER BY (id) SETTINGS share_nested_offsets = 1;
+INSERT INTO test_nested_subcolumn_refill_default VALUES (1, [1], [('y', 2.5)]);
+ALTER TABLE test_nested_subcolumn_refill_default DROP COLUMN `arr.nested`;
+ALTER TABLE test_nested_subcolumn_refill_default ADD COLUMN `arr.nested` Array(Tuple(a String, b Float64)) DEFAULT [('dflt', 42.5)];
+SELECT 'default subcolumn alone', arr.nested.b FROM test_nested_subcolumn_refill_default;
+SELECT 'default subcolumn and parent', arr.nested.b, arr.nested FROM test_nested_subcolumn_refill_default;
+SELECT 'default parent alone', arr.nested FROM test_nested_subcolumn_refill_default;
+SELECT 'default string element', arr.nested.a, arr.nested FROM test_nested_subcolumn_refill_default;
+DROP TABLE test_nested_subcolumn_refill_default;
+
+-- A DEFAULT that reads a sibling column proves the expression is evaluated rather than the
+-- element being synthesized from the shared offsets, which would yield the type default.
+DROP TABLE IF EXISTS test_nested_subcolumn_refill_default_sibling;
+CREATE TABLE test_nested_subcolumn_refill_default_sibling
+(
+    `id` UInt64,
+    `arr.id` Array(UInt64),
+    `arr.nested` Array(Tuple(a String, b Float64))
+)
+ENGINE = MergeTree ORDER BY (id) SETTINGS share_nested_offsets = 1;
+INSERT INTO test_nested_subcolumn_refill_default_sibling VALUES (7, [1], [('y', 2.5)]);
+ALTER TABLE test_nested_subcolumn_refill_default_sibling DROP COLUMN `arr.nested`;
+ALTER TABLE test_nested_subcolumn_refill_default_sibling ADD COLUMN `arr.nested` Array(Tuple(a String, b Float64)) DEFAULT arrayMap(x -> ('sib', toFloat64(id)), `arr.id`);
+SELECT 'sibling default subcolumn', arr.nested.b, arr.nested FROM test_nested_subcolumn_refill_default_sibling;
+DROP TABLE test_nested_subcolumn_refill_default_sibling;

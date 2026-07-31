@@ -17,3 +17,8 @@ wide read	[0]	[('',0)]
 compact part	Compact
 compact read	[0]	[('',0)]
 null subcolumn	[1]	[NULL]
+default subcolumn alone	[42.5]
+default subcolumn and parent	[42.5]	[('dflt',42.5)]
+default parent alone	[('dflt',42.5)]
+default string element	['dflt']	[('dflt',42.5)]
+sibling default subcolumn	[7]	[('sib',7)]
