@@ -2,6 +2,7 @@
 #include <Disks/DiskObjectStorage/DiskObjectStorage.h>
 #include <Disks/DiskObjectStorage/ObjectStorages/IObjectStorage.h>
 #include <Storages/MergeTree/MergeTreeSettings.h>
+#include <Storages/MergeTree/MergeTreeIOSettings.h>
 #include <Storages/MergeTree/Compaction/CompactionStatistics.h>
 #include <Storages/MergeTree/FutureMergedMutatedPart.h>
 #include <Storages/MergeTree/MergeProjectionPartsTask.h>
@@ -64,6 +65,7 @@ namespace MergeTreeSetting
     extern const MergeTreeSettingsUInt64 max_number_of_mutations_for_replica;
     extern const MergeTreeSettingsUInt64 min_columns_to_activate_adaptive_write_buffer;
     extern const MergeTreeSettingsNonZeroUInt64 object_shared_data_buckets_for_wide_part;
+    extern const MergeTreeSettingsBool use_adaptive_write_buffer_for_dynamic_subcolumns;
     extern const MergeTreeSettingsUInt64 number_of_free_entries_in_pool_to_execute_mutation;
     extern const MergeTreeSettingsUInt64 number_of_free_entries_in_pool_to_lower_max_size_of_merge;
     extern const MergeTreeSettingsBool vertical_merge_optimize_ttl_delete;
@@ -71,6 +73,7 @@ namespace MergeTreeSetting
 
 namespace Setting
 {
+    extern const SettingsUInt64 max_compress_block_size;
     extern const SettingsUInt64 s3_max_single_part_upload_size;
     extern const SettingsUInt64 s3_min_upload_part_size;
     extern const SettingsUInt64 s3_max_upload_part_size;
@@ -149,6 +152,60 @@ size_t countColumnStreams(const NamesAndTypesList & columns)
         }, column.type);
     }
     return streams;
+}
+
+/// A count of writer streams together with the share of them the writer opens WITHOUT an adaptive write
+/// buffer. MergeTreeDataPartWriterWide::addStreams decides adaptivity PER STREAM: a stream is adaptive when
+/// the writer's own columns list reaches min_columns_to_activate_adaptive_write_buffer (a per-writer, not
+/// per-table, condition - the caller applies it, see estimateNeededMemoryForMerge) or when
+/// use_adaptive_write_buffer_for_dynamic_subcolumns is on and the substream is dynamic
+/// (ISerialization::isDynamicSubcolumn). An adaptive stream's compressor block and file buffer start at
+/// adaptive_write_buffer_initial_size and only grow with the data written through them, while a non-adaptive
+/// stream allocates both at the full max_compress_block_size up front, so pricing the two classes together
+/// at the full size over-reserves a JSON / Dynamic merge - whose streams are almost all dynamic - by orders
+/// of magnitude, the same starvation pattern the data-volume bounds exist to avoid.
+struct WriterStreamCounts
+{
+    size_t total = 0;
+    size_t non_adaptive = 0;
+};
+
+/// Streams of a column's default-serialization skeleton the writer does NOT treat as dynamic subcolumns:
+/// ISerialization::isDynamicSubcolumn holds for every substream inside a Dynamic / Object subtree (any of
+/// DynamicStructure / DynamicData / ObjectStructure / ObjectData on the path), so for a top-level JSON or
+/// Dynamic column this is zero - even its structure and shared-data streams live inside that subtree - while
+/// a composite keeps its non-dynamic skeleton (Array(JSON) offsets, the scalar elements of
+/// Tuple(UInt64, JSON)) at the full write buffer.
+size_t countNonAdaptiveColumnStreams(const NameAndTypePair & column)
+{
+    size_t streams = 0;
+    auto serialization = column.type->getDefaultSerialization();
+    serialization->enumerateStreams([&](const ISerialization::SubstreamPath & substream_path)
+    {
+        if (!ISerialization::isEphemeralSubcolumn(substream_path, substream_path.size())
+            && !ISerialization::isDynamicSubcolumn(substream_path, substream_path.size()))
+            ++streams;
+    }, column.type);
+    return streams;
+}
+
+/// The non-adaptive share of a column's counted streams, for a count produced by any of the per-column
+/// arms below (a recorded-substream union, a recovered legacy layout, a capacity bound). A column without
+/// dynamic structure cannot have dynamic substreams, so all of its streams are non-adaptive. For a column
+/// WITH dynamic structure, everything counted beyond its static non-adaptive skeleton is a dynamic
+/// substream (a dynamic path, a variant, shared data) that the writer opens adaptively - but a source part
+/// may record a non-dynamic skeleton stream in its SPARSE form, which adds one extra recorded stream name
+/// (the sparse offsets) next to the full one, and such a stream is NOT a dynamic subcolumn. Allow up to
+/// twice the skeleton's non-adaptive count before classifying the remainder as adaptive: classifying a
+/// sparse offsets stream as adaptive would under-price its eagerly allocated full-size buffers (the
+/// admission-gate bug this estimate exists to close), while the doubled allowance can only over-price up to
+/// one extra full-size buffer pair per non-dynamic substream - the safe direction, and exactly zero for the
+/// common pure JSON / Dynamic column.
+size_t nonAdaptiveStreamsShare(const NameAndTypePair & column, size_t column_streams)
+{
+    if (!column.type->hasDynamicStructure())
+        return column_streams;
+    return std::min(column_streams, 2 * countNonAdaptiveColumnStreams(column));
 }
 
 /// On-disk column data file (.bin) names a wide part physically stores: one per non-ephemeral substream.
@@ -566,23 +623,26 @@ size_t countVisibleProjectionColumnStreams(
 /// the old part's streams are recorded (or recoverable from its .bin files) and must not be dropped just
 /// because its declared type differs. For simple projection columns and bare identifiers of same-type base
 /// columns all of this is a no-op.
-size_t countRebuiltProjectionStreams(
+WriterStreamCounts countRebuiltProjectionStreams(
     const NamesAndTypesList & projection_columns,
     const MergeTreeDataPartsVector & source_parts,
     const MergeTreeSettings & settings,
     const NameSet & default_filled_dynamic_columns)
 {
-    size_t streams = 0;
+    WriterStreamCounts counts;
     for (const auto & column : projection_columns)
     {
+        size_t column_streams = 0;
         if (auto recorded = tryCountBareIdentifierProjectionSubstreams(column, source_parts, default_filled_dynamic_columns, settings))
-            streams += *recorded;
+            column_streams = *recorded;
         else
-            streams += std::max(
+            column_streams = std::max(
                 countColumnStreams({column}) + countDynamicCapacityStreams(*column.type, settings),
                 countVisibleProjectionColumnStreams(column, source_parts, settings));
+        counts.total += column_streams;
+        counts.non_adaptive += nonAdaptiveStreamsShare(column, column_streams);
     }
-    return streams;
+    return counts;
 }
 
 /// Number of on-disk column streams the merged wide part will write. Its substream set is estimated per output
@@ -624,7 +684,7 @@ size_t countRebuiltProjectionStreams(
 /// Throughout, a source column absent from output_columns (removed by a metadata-only ALTER DROP COLUMN but
 /// still carried on an old part's disk / columns.txt) is ignored - the merge never writes it, so it must not
 /// inflate the estimate. For simple columns and modern parts of the current type all adjustments are no-ops.
-size_t countOutputStreams(
+WriterStreamCounts countOutputStreams(
     const NamesAndTypesList & output_columns,
     const MergeTreeDataPartsVector & source_parts,
     const MergeTreeSettings & settings,
@@ -636,8 +696,12 @@ size_t countOutputStreams(
     /// current, wider type - and a dynamic-structure column some source part default-fills. Those columns are
     /// remembered and priced after the legacy-part recovery below, once the streams visible for them in the
     /// source parts (recorded substreams and real .bin files alike) are known, so neither the recovery nor
-    /// the floor prices them again.
+    /// the floor prices them again. Alongside the count, track the share of the streams the writer opens
+    /// without an adaptive write buffer (see nonAdaptiveStreamsShare) - each per-column arm contributes its
+    /// own share, and the purely dynamic aggregates (recovered dynamic files, compact capacity) contribute
+    /// none.
     size_t streams = 0;
+    size_t non_adaptive_streams = 0;
     std::unordered_set<std::string_view> capacity_priced_columns;
     for (const auto & column : output_columns)
     {
@@ -650,9 +714,16 @@ size_t countOutputStreams(
             });
 
         if (type_widened || default_filled_dynamic_columns.contains(column.name))
+        {
             capacity_priced_columns.insert(column.name);
+        }
         else
-            streams += tryCountColumnSubstreamsFromParts(column.name, source_parts).value_or(countColumnStreams({column}));
+        {
+            const size_t column_streams
+                = tryCountColumnSubstreamsFromParts(column.name, source_parts).value_or(countColumnStreams({column}));
+            streams += column_streams;
+            non_adaptive_streams += nonAdaptiveStreamsShare(column, column_streams);
+        }
     }
 
     /// The per-column union above can only see substreams recorded in columns_substreams.txt. A source part
@@ -686,6 +757,7 @@ size_t countOutputStreams(
     /// this adds nothing.
     const ISerialization::StreamFileNameSettings stream_file_name_settings(settings);
     std::unordered_set<std::string> unrecorded_dynamic_files;
+    std::unordered_set<std::string> unrecorded_non_adaptive_files;
     std::unordered_map<std::string, std::unordered_set<std::string>> capacity_priced_dynamic_files;
     std::unordered_set<std::string> compact_recovered_columns;
     size_t compact_dynamic_streams = 0;
@@ -722,7 +794,11 @@ size_t countOutputStreams(
             /// max(capacity, visible streams) pricing of such columns below rather than into the shared union,
             /// so they are not priced twice.
             const auto static_files = collectStaticStreamFileNames(part_columns, stream_file_name_settings);
-            std::vector<std::string> recoverable_escaped_columns;
+            /// The recovered file's adaptivity class follows its owning column: a file of a column with
+            /// dynamic structure that survived the skeleton subtraction is a dynamic substream the writer
+            /// opens adaptively, while a file of a plain column that survived it is a non-dynamic extra (a
+            /// sparse offsets stream the full skeleton does not name) that keeps the full write buffer.
+            std::vector<std::pair<std::string, bool>> recoverable_escaped_columns;
             std::vector<std::pair<std::string, std::string>> capacity_priced_escaped_columns;
             for (const auto & column : part_columns)
             {
@@ -731,18 +807,20 @@ size_t countOutputStreams(
                 if (capacity_priced_columns.contains(column.name))
                     capacity_priced_escaped_columns.emplace_back(escapeForFileName(column.name), column.name);
                 else
-                    recoverable_escaped_columns.push_back(escapeForFileName(column.name));
+                    recoverable_escaped_columns.emplace_back(escapeForFileName(column.name), column.type->hasDynamicStructure());
             }
 
             for (const auto & file_name : collectWidePartDataFileNames(*part))
             {
                 if (static_files.contains(file_name))
                     continue;
-                if (std::any_of(
-                        recoverable_escaped_columns.begin(), recoverable_escaped_columns.end(),
-                        [&](const auto & escaped) { return streamFileBelongsToColumn(file_name, escaped); }))
+                const auto recoverable = std::find_if(
+                    recoverable_escaped_columns.begin(), recoverable_escaped_columns.end(),
+                    [&](const auto & escaped) { return streamFileBelongsToColumn(file_name, escaped.first); });
+                if (recoverable != recoverable_escaped_columns.end())
                 {
-                    unrecorded_dynamic_files.insert(file_name);
+                    if (unrecorded_dynamic_files.insert(file_name).second && !recoverable->second)
+                        unrecorded_non_adaptive_files.insert(file_name);
                     continue;
                 }
                 for (const auto & [escaped, name] : capacity_priced_escaped_columns)
@@ -778,7 +856,11 @@ size_t countOutputStreams(
             }
         }
     }
+    /// The recovered dynamic files and the compact write-time capacity model streams inside Dynamic / Object
+    /// subtrees, which the writer opens adaptively; only the sparse extras of plain columns keep the full
+    /// write buffer.
     streams += unrecorded_dynamic_files.size() + compact_dynamic_streams;
+    non_adaptive_streams += unrecorded_non_adaptive_files.size();
 
     /// Price the capacity-priced (widened / default-filled) columns now that every stream visible for them in
     /// the source parts is known: the recorded substream union by name (tryCountColumnSubstreamsFromParts does
@@ -808,7 +890,10 @@ size_t countOutputStreams(
             = tryCountColumnSubstreamsFromParts(column.name, source_parts).value_or(countColumnStreams({column}));
         if (const auto it = capacity_priced_dynamic_files.find(column.name); it != capacity_priced_dynamic_files.end())
             visible_streams += it->second.size();
-        streams += std::max(countColumnStreams({column}) + countDynamicCapacityStreams(*column.type, settings), visible_streams);
+        const size_t column_streams
+            = std::max(countColumnStreams({column}) + countDynamicCapacityStreams(*column.type, settings), visible_streams);
+        streams += column_streams;
+        non_adaptive_streams += nonAdaptiveStreamsShare(column, column_streams);
     }
 
     /// The merged wide part is never narrower than any single source part, so floor the estimate at the
@@ -820,7 +905,16 @@ size_t countOutputStreams(
     for (const auto & part : source_parts)
         max_source_streams = std::max(max_source_streams, countPartStreamsForColumns(*part, output_columns));
 
-    return std::max(streams, max_source_streams);
+    /// When the floor wins, the excess streams cannot be attributed to a column, so classify them as
+    /// non-adaptive - the direction that can only over-price, and only on the legacy upgrade path where the
+    /// widest source part exceeds the per-column accounting above.
+    if (max_source_streams > streams)
+    {
+        non_adaptive_streams += max_source_streams - streams;
+        streams = max_source_streams;
+    }
+
+    return {.total = streams, .non_adaptive = non_adaptive_streams};
 }
 
 /// The rows a column has to be SYNTHESIZED for: only the rows of the source parts that do not physically
@@ -880,13 +974,6 @@ UInt64 estimateNeededMemoryForMerge(
             return local_read_buffer_size;
         return part->getDataPartStorage().getCacheName() ? cached_remote_read_buffer_size : remote_read_buffer_size;
     };
-
-    /// Per-stream write buffer size on a local disk: a writer stream keeps the compressor block and the
-    /// file buffer, both sized by max_compress_block_size.
-    UInt64 max_compress_block_size = settings[MergeTreeSetting::max_compress_block_size];
-    if (max_compress_block_size == 0)
-        max_compress_block_size = DBMS_DEFAULT_BUFFER_SIZE;
-    const UInt64 local_write_buffer_size = 2 * max_compress_block_size;
 
     /// Per-stream write buffer size on multipart object storage (S3 / Azure). A stream's upload buffers
     /// follow the multipart buffer allocation policy of its writer (see BufferAllocationPolicy /
@@ -1188,9 +1275,43 @@ UInt64 estimateNeededMemoryForMerge(
         }
     }
 
-    const size_t output_streams = future_part.part_format.part_type == MergeTreeDataPartType::Wide
+    /// A compact output part writes every column through one shared writer buffer, and that writer does not
+    /// take the wide writer's per-stream adaptive decision, so its single stream is priced non-adaptive.
+    const auto output_stream_counts = future_part.part_format.part_type == MergeTreeDataPartType::Wide
         ? countOutputStreams(output_columns, source_and_patch_parts, settings, default_filled_dynamic_columns)
-        : 1;
+        : WriterStreamCounts{.total = 1, .non_adaptive = 1};
+    const size_t output_streams = output_stream_counts.total;
+
+    /// Per-stream write buffer size on a local disk: a writer stream keeps the compressor block and the
+    /// file buffer, both sized by the stream's max_compress_block_size. That size is not one table-wide
+    /// constant: MergeTreeDataPartWriterWide::addStreams resolves it per stream from the column-level
+    /// max_compress_block_size setting when the column overrides it, falling back to the table setting and
+    /// then to the global one, and clamps the result (see MergeTreeWriterSettings). Collapse the per-stream
+    /// sizes to the LARGEST size any written column resolves to: one size can only over-reserve the streams
+    /// of the other columns (the safe direction, and exact for the common table without overrides), while
+    /// sizing everything from the table setting would under-reserve every stream of a column whose override
+    /// is LARGER - the writer would allocate bigger eager buffers than were reserved, and the admission gate
+    /// could admit more concurrent merges than the reservation is supposed to bound.
+    UInt64 max_compress_block_size = settings[MergeTreeSetting::max_compress_block_size];
+    if (max_compress_block_size == 0)
+        max_compress_block_size = context->getSettingsRef()[Setting::max_compress_block_size];
+    max_compress_block_size = std::min<UInt64>(max_compress_block_size, MergeTreeWriterSettings::MAX_COMPRESS_BLOCK_SIZE);
+    for (const auto & column : output_columns)
+    {
+        const auto column_desc = columns_description.tryGetColumnDescription(
+            GetColumnsOptions(GetColumnsOptions::AllPhysical), column.getNameInStorage());
+        if (!column_desc)
+            continue;
+        const auto * override_value = column_desc->settings.tryGet("max_compress_block_size");
+        if (!override_value)
+            continue;
+        const UInt64 column_override = override_value->safeGet<UInt64>();
+        if (column_override == 0)
+            continue;
+        max_compress_block_size = std::max(
+            max_compress_block_size, std::min<UInt64>(column_override, MergeTreeWriterSettings::MAX_COMPRESS_BLOCK_SIZE));
+    }
+    const UInt64 local_write_buffer_size = 2 * max_compress_block_size;
 
     /// Worst case: every stream allocates all of its buffers in full. A zero remote_write_buffer_size
     /// means the output is not written through multipart upload buffers (a local disk, a known remote disk
@@ -1219,11 +1340,30 @@ UInt64 estimateNeededMemoryForMerge(
     /// Without this cap a merge of tiny parts in a table with many columns on object storage would reserve
     /// gigabytes it can never touch, and concurrent merges would saturate the soft limit and starve each
     /// other for no reason.
+    /// Which streams start at adaptive_write_buffer_initial_size is a PER-STREAM, PER-WRITER decision
+    /// (MergeTreeDataPartWriterWide::addStreams): a stream is adaptive when the writer's own columns list
+    /// reaches min_columns_to_activate_adaptive_write_buffer - the list of THAT writer, so a vertical
+    /// merge's gathering stage, which writes one column per writer, never activates the count-based rule
+    /// however wide the table is - or when use_adaptive_write_buffer_for_dynamic_subcolumns is on and the
+    /// substream is dynamic, regardless of the column count. Price the two classes separately: charging a
+    /// dynamic substream the full 2 * max_compress_block_size (as one shared per-stream size would) is the
+    /// same over-reservation/starvation pattern the data-volume bounds unwind - a wide JSON / Dynamic merge
+    /// has thousands of dynamic substreams whose eager buffers are 16 KiB, not megabytes - while charging a
+    /// non-adaptive stream the adaptive initial size under-reserves its eagerly allocated full-size buffers.
     const UInt64 min_columns_for_adaptive = settings[MergeTreeSetting::min_columns_to_activate_adaptive_write_buffer];
-    const bool adaptive_write_buffer = min_columns_for_adaptive != 0 && output_columns.size() >= min_columns_for_adaptive;
-    const UInt64 eager_buffers_per_stream = adaptive_write_buffer
-        ? 2 * settings[MergeTreeSetting::adaptive_write_buffer_initial_size]
-        : local_write_buffer_size;
+    const bool adaptive_for_dynamic_subcolumns = settings[MergeTreeSetting::use_adaptive_write_buffer_for_dynamic_subcolumns];
+    const UInt64 adaptive_eager_buffers_per_stream = 2 * settings[MergeTreeSetting::adaptive_write_buffer_initial_size];
+    const auto non_adaptive_stream_count = [&](const WriterStreamCounts & counts, size_t writer_columns) -> size_t
+    {
+        if (min_columns_for_adaptive != 0 && writer_columns >= min_columns_for_adaptive)
+            return 0;
+        return adaptive_for_dynamic_subcolumns ? counts.non_adaptive : counts.total;
+    };
+    const auto eager_write_buffers = [&](const WriterStreamCounts & counts, size_t writer_columns) -> UInt64
+    {
+        const size_t non_adaptive = non_adaptive_stream_count(counts, writer_columns);
+        return non_adaptive * local_write_buffer_size + (counts.total - non_adaptive) * adaptive_eager_buffers_per_stream;
+    };
 
     /// A writer stream on multipart object storage allocates up to its first upload buffer
     /// (MultipartUploadMemory::guaranteed) regardless of how little data ends up flowing through it, while
@@ -1245,6 +1385,19 @@ UInt64 estimateNeededMemoryForMerge(
     const UInt64 remote_stream_remnant = remote_write_buffer_size != 0
         ? std::max<UInt64>(local_write_buffer_size, remote_write_buffer_guaranteed_size)
         : local_write_buffer_size;
+
+    /// The remnant of an ADAPTIVE stream is smaller: its compressor block and file buffer start at
+    /// adaptive_write_buffer_initial_size and only grow with real data (which the reactive
+    /// background_memory_tracker sees as it materializes - the same accounting as the remnant itself),
+    /// while the multipart first upload buffer is allocated regardless of the write buffer mode.
+    const UInt64 adaptive_stream_remnant = remote_write_buffer_size != 0
+        ? std::max<UInt64>(adaptive_eager_buffers_per_stream, remote_write_buffer_guaranteed_size)
+        : adaptive_eager_buffers_per_stream;
+    const auto stream_remnants = [&](const WriterStreamCounts & counts, size_t writer_columns) -> UInt64
+    {
+        const size_t non_adaptive = non_adaptive_stream_count(counts, writer_columns);
+        return non_adaptive * remote_stream_remnant + (counts.total - non_adaptive) * adaptive_stream_remnant;
+    };
 
     /// The input-volume bound holds only for data the merge actually READS. A column filled from its
     /// DEFAULT expression for the rows of parts that predate its ALTER ... ADD COLUMN
@@ -1275,15 +1428,18 @@ UInt64 estimateNeededMemoryForMerge(
                 += countRowsMissingColumn(future_part.parts, column.name) * column.type->getMaximumSizeOfValueInMemory();
     }
 
-    size_t default_filled_output_streams = 0;
+    WriterStreamCounts default_filled_stream_counts;
     if (!default_filled_output_columns.empty())
-        default_filled_output_streams = future_part.part_format.part_type == MergeTreeDataPartType::Wide
+        default_filled_stream_counts = future_part.part_format.part_type == MergeTreeDataPartType::Wide
             ? countOutputStreams(default_filled_output_columns, source_and_patch_parts, settings, default_filled_dynamic_columns)
-            : 1;
+            : WriterStreamCounts{.total = 1, .non_adaptive = 1};
 
-    const UInt64 default_filled_term = default_filled_output_streams * remote_stream_remnant + 3 * default_filled_value_bytes;
+    /// The default-filled columns are written by the same horizontal writer as the rest of the output, so
+    /// the count-based adaptive rule sees the full output column list.
+    const UInt64 default_filled_term
+        = stream_remnants(default_filled_stream_counts, output_columns.size()) + 3 * default_filled_value_bytes;
 
-    const UInt64 output_data_bound = output_streams * eager_buffers_per_stream
+    const UInt64 output_data_bound = eager_write_buffers(output_stream_counts, output_columns.size())
         + 3 * sum_input_bytes_uncompressed
         + default_filled_term;
 
@@ -1422,19 +1578,27 @@ UInt64 estimateNeededMemoryForMerge(
 
             if (gathering_columns.size() >= settings[MergeTreeSetting::vertical_merge_algorithm_min_columns_to_activate])
             {
-                const size_t merging_streams
+                const auto merging_stream_counts
                     = countOutputStreams(merging_columns, source_and_patch_parts, settings, default_filled_dynamic_columns);
 
+                /// The eager buffers are priced per WRITER, mirroring how a vertical merge writes: the
+                /// horizontal stage's writer sees only the merging columns (so the count-based adaptive
+                /// rule uses their count, not the table width), and each gathering column is written by
+                /// its own single-column writer, for which the count-based rule never fires - take the
+                /// most expensive single gathering writer, since only one gathers at a time.
                 size_t gathering_streams_total = 0;
                 size_t max_gathering_column_streams = 0;
+                UInt64 max_gathering_column_eager_buffers = 0;
                 UInt64 max_gathering_column_uncompressed = 0;
                 for (const auto & column : gathering_columns)
                 {
                     const NamesAndTypesList single_column{column};
-                    const size_t column_streams
+                    const auto column_stream_counts
                         = countOutputStreams(single_column, source_and_patch_parts, settings, default_filled_dynamic_columns);
-                    gathering_streams_total += column_streams;
-                    max_gathering_column_streams = std::max(max_gathering_column_streams, column_streams);
+                    gathering_streams_total += column_stream_counts.total;
+                    max_gathering_column_streams = std::max(max_gathering_column_streams, column_stream_counts.total);
+                    max_gathering_column_eager_buffers
+                        = std::max(max_gathering_column_eager_buffers, eager_write_buffers(column_stream_counts, 1));
 
                     UInt64 column_uncompressed = 0;
                     for (const auto & part : source_and_patch_parts)
@@ -1449,10 +1613,16 @@ UInt64 estimateNeededMemoryForMerge(
                 const UInt64 delayed_streams = remote_write_buffer_size != 0
                     ? std::min<UInt64>(gathering_streams_total, settings[MergeTreeSetting::max_merge_delayed_streams_for_parallel_write])
                     : 0;
-                const UInt64 alive_streams = merging_streams + max_gathering_column_streams + delayed_streams;
+                const UInt64 alive_streams = merging_stream_counts.total + max_gathering_column_streams + delayed_streams;
 
                 const UInt64 vertical_worst_case = saturatingStreamsTimesBuffer(alive_streams, write_buffer_size);
-                const UInt64 vertical_data_bound = alive_streams * eager_buffers_per_stream
+                /// A delayed stream's adaptivity is not attributable (any of the gathering columns' streams
+                /// can be the ones kept alive), so its eager buffers are priced at the full non-adaptive
+                /// size - the direction that can only over-price, and bounded by
+                /// max_merge_delayed_streams_for_parallel_write.
+                const UInt64 vertical_data_bound = eager_write_buffers(merging_stream_counts, merging_columns.size())
+                    + max_gathering_column_eager_buffers
+                    + delayed_streams * local_write_buffer_size
                     + 3 * (merging_uncompressed + max_gathering_column_uncompressed)
                     + delayed_streams * remote_stream_remnant
                     + default_filled_term;
@@ -1584,7 +1754,7 @@ UInt64 estimateNeededMemoryForMerge(
                 /// stream per substream); count them with countRebuiltProjectionStreams rather than the default
                 /// serialization, which would collapse such a column to a single stream and undersize the
                 /// reservation.
-                const size_t projection_wide_streams = countRebuiltProjectionStreams(
+                const auto projection_wide_stream_counts = countRebuiltProjectionStreams(
                     projection.sample_block.getNamesAndTypesList(), source_and_patch_parts, settings, default_filled_dynamic_columns);
 
                 /// A temporary projection part is written as Wide only when it is big enough:
@@ -1658,8 +1828,8 @@ UInt64 estimateNeededMemoryForMerge(
 
                 const auto temp_projection_format = future_part.parts.front()->storage.choosePartFormat(
                     projection_uncompressed_bytes, projection_rows, future_part.part_info.level, &projection);
-                const size_t projection_streams
-                    = temp_projection_format.part_type == MergeTreeDataPartType::Compact ? 1 : projection_wide_streams;
+                const bool temp_projection_is_compact = temp_projection_format.part_type == MergeTreeDataPartType::Compact;
+                const size_t projection_streams = temp_projection_is_compact ? 1 : projection_wide_stream_counts.total;
 
                 /// The rebuild writes the projected rows twice (the temporary parts, then the read-back merge
                 /// into the final projection part), so its data-dependent buffers are bounded by twice the
@@ -1688,7 +1858,14 @@ UInt64 estimateNeededMemoryForMerge(
                 const UInt64 projection_read_buffer_size
                     = output_on_remote_disk ? cached_remote_read_buffer_size : local_read_buffer_size;
                 const UInt64 projection_worst_case = saturatingStreamsTimesBuffer(projection_streams, write_buffer_size);
-                const UInt64 projection_data_bound = projection_streams * remote_stream_remnant
+                /// A Wide temp part is written by the same wide writer as the base output, so its
+                /// per-stream remnants follow the same per-stream adaptive split (the count-based rule
+                /// sees the temp-part writer's own columns list - the projection's columns); a Compact
+                /// temp part's single shared stream is non-adaptive.
+                const UInt64 projection_stream_remnants = temp_projection_is_compact
+                    ? remote_stream_remnant
+                    : stream_remnants(projection_wide_stream_counts, projection.sample_block.columns());
+                const UInt64 projection_data_bound = projection_stream_remnants
                     + 3 * 2 * projection_uncompressed_bytes;
                 projection_memory += std::min(projection_worst_case, projection_data_bound)
                     + MergeProjectionPartsTask::max_parts_to_merge_in_one_level * projection_streams * projection_read_buffer_size;
