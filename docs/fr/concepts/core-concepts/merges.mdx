@@ -36,7 +36,7 @@ Le `merge level` d&#39;une part augmente de un à chaque fusion supplémentaire.
   ## Suivi des fusions
 </div>
 
-Dans l’exemple [Que sont les parties de table](/fr/concepts/core-concepts/parts), nous avons [montré](/fr/concepts/core-concepts/parts#monitoring-table-parts) que ClickHouse suit toutes les parties de table dans la table système [parts](/fr/reference/system-tables/parts). Nous avons utilisé la requête suivante pour récupérer le niveau de fusion et le nombre de lignes stockées pour chaque partie active de la table d’exemple :
+Dans l’exemple [Que sont les parts de table](/fr/concepts/core-concepts/parts), nous avons [montré](/fr/concepts/core-concepts/parts#monitoring-table-parts) que ClickHouse suit toutes les parts de table dans la table système [parts](/fr/reference/system-tables/parts). Nous avons utilisé la requête suivante pour récupérer le niveau de fusion et le nombre de lignes stockées pour chaque part active de la table d’exemple :
 
 ```sql
 SELECT
@@ -59,7 +59,7 @@ Le résultat de la requête [précédemment documentée](/fr/concepts/core-conce
    └─────────────┴───────┴─────────┘
 ```
 
-[En exécutant](https://sql.clickhouse.com/?query=U0VMRUNUCiAgICBuYW1lLAogICAgbGV2ZWwsCiAgICByb3dzCkZST00gc3lzdGVtLnBhcnRzCldIRVJFIChkYXRhYmFzZSA9ICd1aycpIEFORCAoYHRhYmxlYCA9ICd1a19wcmljZV9wYWlkX3NpbXBsZScpIEFORCBhY3RpdmUKT1JERVIgQlkgbmFtZSBBU0M7\&run_query=true\&tab=results) la requête montre désormais que les quatre parties ont fusionné en une seule partie finale (tant qu&#39;aucune autre insertion n&#39;est effectuée dans la table) :
+[En exécutant](https://sql.clickhouse.com/?query=U0VMRUNUCiAgICBuYW1lLAogICAgbGV2ZWwsCiAgICByb3dzCkZST00gc3lzdGVtLnBhcnRzCldIRVJFIChkYXRhYmFzZSA9ICd1aycpIEFORCAoYHRhYmxlYCA9ICd1a19wcmljZV9wYWlkX3NpbXBsZScpIEFORCBhY3RpdmUKT1JERVIgQlkgbmFtZSBBU0M7\&run_query=true\&tab=results) la requête montre désormais que les quatre parts ont fusionné en une seule part finale (tant qu&#39;aucune autre insertion n&#39;est effectuée dans la table) :
 
 ```response
    ┌─name───────┬─level─┬─────rows─┐
@@ -171,7 +171,7 @@ Cependant, `ReplacingMergeTree` supprime les lignes dupliquées ayant la même c
   ### Fusions par sommation
 </div>
 
-Les données numériques sont automatiquement agrégées lors des fusions de parties d’une table [SummingMergeTree](/fr/reference/engines/table-engines/mergetree-family/summingmergetree) :
+Les données numériques sont automatiquement agrégées lors des fusions de parts d’une table [SummingMergeTree](/fr/reference/engines/table-engines/mergetree-family/summingmergetree) :
 
 <Image img="/images/managing-data/core-concepts/merges_06.webp" size="lg" alt="FUSIONS DE PARTIES" />
 

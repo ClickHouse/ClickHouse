@@ -1,15 +1,43 @@
 ---
 slug: /operations/overview
 sidebarTitle: 'パフォーマンスと最適化の概要'
-description: 'パフォーマンスと最適化の概要'
+description: 'パフォーマンスと最適化の概要ページ'
 title: 'パフォーマンスと最適化'
 keywords: ['パフォーマンス最適化', 'ベストプラクティス', '最適化ガイド', 'ClickHouse パフォーマンス', 'データベース最適化']
 doc_type: 'reference'
+mode: wide
 ---
 
-import TableOfContents from '/snippets/ja/_performance_optimizations_table_of_contents.mdx';
+このセクションには、ClickHouse のパフォーマンスを向上させるためのヒントやベストプラクティスがまとめられています。
+このセクションを読む前に、[Core Concepts](/ja/concepts/core-concepts/parts) を参照することをおすすめします。
+このページでは、パフォーマンス改善に必要となる主要な概念を説明しています。
 
-このセクションでは、ClickHouse のパフォーマンスを向上させるためのヒントとベストプラクティスを紹介します。
-パフォーマンス向上に必要な主要な概念を扱う [Core Concepts](/ja/concepts/core-concepts/parts) を、このセクションの前提として読むことをお勧めします。
+<CardGroup cols={2}>
+  <Card title="PREWHERE 最適化" icon="filter" href="/ja/concepts/features/performance/prewhere">
+    `PREWHERE` が不要なカラムを読み込む前にデータを絞り込むことで I/O をどのように削減するか、またその効果をどのように監視するかを説明します。
+  </Card>
 
-<TableOfContents />
+  <Card title="メモリ割り当てプロファイリング" icon="memory" href="/ja/concepts/features/performance/allocation-profiling">
+    jemalloc を使用してメモリ割り当てをプロファイルします。
+  </Card>
+
+  <Card title="25.9 より前のバージョン向けメモリ割り当てプロファイリング" icon="clock-rotate-left" href="/ja/concepts/features/performance/allocation-profiling-old">
+    ClickHouse 25.9 より前のバージョン向けのメモリ割り当てプロファイリングです。
+  </Card>
+
+  <Card title="キャッシュ" icon="hard-drive" href="/ja/concepts/features/performance/caches/caches">
+    クエリキャッシュ、クエリ条件キャッシュ、ユーザー空間ページキャッシュなど、各種 cache の概要です。
+  </Card>
+
+  <Card title="データスキッピングインデックス" icon="forward" href="/ja/concepts/features/performance/skip-indexes/skipping-indexes">
+    例を交えながらデータスキッピングインデックスを解説します。
+  </Card>
+
+  <Card title="遅延マテリアライゼーション" icon="hourglass-half" href="/ja/concepts/features/performance/lazy-materialization">
+    実際に必要になるまでカラムデータの読み取りを遅らせます。
+  </Card>
+
+  <Card title="トラブルシューティング" icon="bug" href="/ja/concepts/features/performance/troubleshoot/debugging-memory-issues">
+    メモリ問題のデバッグ、ハードウェアのテスト、サンプリングクエリプロファイラについて説明します。
+  </Card>
+</CardGroup>
