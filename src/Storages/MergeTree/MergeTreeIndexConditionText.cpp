@@ -28,6 +28,7 @@
 #include <absl/container/inlined_vector.h>
 #include <DataTypes/DataTypeMapHelpers.h>
 #include <DataTypes/DataTypeNullable.h>
+#include <Columns/ColumnNullable.h>
 #include <Columns/ColumnTuple.h>
 #include <Columns/ColumnSet.h>
 #include <Functions/FunctionHelpers.h>
@@ -641,7 +642,11 @@ bool MergeTreeIndexConditionText::traverseAtomNode(const RPNBuilderTreeNode & no
         auto lhs_argument = function.getArgumentAt(0);
         auto rhs_argument = function.getArgumentAt(1);
 
-        if ((function_name == "in" || function_name == "globalIn")
+        /// `nullIn`/`globalNullIn` are what `in`/`globalIn` become under `transform_null_in = 1`.
+        /// For a set without NULL they select the same rows, so the index applies. A set that does
+        /// contain NULL is refused inside the helper: `nullIn` also matches the column's NULL rows,
+        /// which token search cannot represent.
+        if ((function_name == "in" || function_name == "globalIn" || function_name == "nullIn" || function_name == "globalNullIn")
             && tryPrepareSetForTextSearch(lhs_argument, rhs_argument, function_name, out))
         {
             out.function = RPNElement::FUNCTION_HAS_ANY_ELEMENTS;
@@ -1699,13 +1704,31 @@ bool MergeTreeIndexConditionText::tryPrepareSetForTextSearch(
         return false;
 
     const auto & set_column = *columns[*set_key_position];
-    if (!WhichDataType(set_column.getDataType()).isStringOrFixedString())
+
+    /// Set::getElementTypes strips Nullable only when `transform_null_in` is off, so at
+    /// `transform_null_in = 1` a Nullable key keeps the wrapper on its set elements even when no
+    /// element is NULL. Look through it here and decide on the values in the loop below.
+    const auto * set_column_nullable = typeid_cast<const ColumnNullable *>(&set_column);
+    const auto & set_column_values = set_column_nullable ? set_column_nullable->getNestedColumn() : set_column;
+
+    if (!WhichDataType(set_column_values.getDataType()).isStringOrFixedString())
         return false;
+
+    /// isNullable() is false for LowCardinality(Nullable), so use the helper that also covers it.
+    const bool set_column_is_nullable = isColumnNullableOrLowCardinalityNullable(set_column);
 
     size_t total_row_count = prepared_set->getTotalRowCount();
 
     for (size_t row = 0; row < total_row_count; ++row)
     {
+        /// `nullIn` also matches the column's NULL rows, which token search cannot express, and
+        /// getDataAt() throws on a NULL element. Keep the original predicate in that case.
+        if (set_column_is_nullable && set_column.isNullAt(row))
+        {
+            out.text_search_queries.clear();
+            return false;
+        }
+
         auto ref = set_column.getDataAt(row);
 
         /// Reject the index usage when there is an empty string in the set.
