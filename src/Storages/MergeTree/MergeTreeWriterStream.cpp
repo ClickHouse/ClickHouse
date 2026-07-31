@@ -213,6 +213,14 @@ void SizeAdaptiveSpoolBuffer::sync()
 /// marks files share a coordinator so they always end up in the same layout. Otherwise
 /// (column streams, or skip indices when packing is disabled) write straight to
 /// data_part_storage.
+/// declareOutBufferExclusive must be called before the downstream HashingWriteBuffer captures the
+/// compressor's working buffer, i.e. inside the member initializer list; hence this pass-through.
+static CompressedWriteBuffer & declareOutBufferExclusive(CompressedWriteBuffer & compressor)
+{
+    compressor.declareOutBufferExclusive();
+    return compressor;
+}
+
 static std::unique_ptr<WriteBufferFromFileBase> openStreamFile(
     const MutableDataPartStoragePtr & data_part_storage,
     PackedFilesWriter * packed_writer,
@@ -309,22 +317,18 @@ MergeTreeWriterStream::MergeTreeWriterStream(
     data_file_extension{data_file_extension_},
     marks_file_extension{marks_file_extension_},
     is_size_adaptive(packing.writer != nullptr && (!packing.data_name.empty() || !packing.marks_name.empty())),
-    /// The compressor below takes the zero-copy NONE path, which reserves COMPRESSED_BLOCK_PREFIX_SIZE
-    /// bytes for the checksum and header in front of the data inside this file buffer. Size the buffer
-    /// to `max_compress_block_size_ + COMPRESSED_BLOCK_PREFIX_SIZE` so the direct window can still hold
-    /// a full max_compress_block_size_ block; otherwise a NONE-coded block would flush one prefix short
-    /// of the configured size, splitting a frame that should have fit.
-    plain_file(openStreamFile(data_part_storage, packing.writer, packing.data_name, data_path_ + data_file_extension, max_compress_block_size_ + CompressedWriteBuffer::COMPRESSED_BLOCK_PREFIX_SIZE, query_write_settings, packing.spill_threshold, spool_coupled_spilled)),
+    /// +COMPRESSED_BLOCK_PREFIX_SIZE: the compressor writes NONE-coded blocks directly into this
+    /// buffer (see declareOutBufferExclusive below), and the direct window must fit a whole block
+    /// plus the checksum-and-header prefix, or blocks would flush one prefix short of the setting.
+    plain_file(openStreamFile(data_part_storage, packing.writer, packing.data_name, data_path_ + data_file_extension, max_compress_block_size_ + COMPRESSED_BLOCK_PREFIX_SIZE, query_write_settings, packing.spill_threshold, spool_coupled_spilled)),
     plain_hashing(*plain_file),
-    /// This stream is the sole writer of plain_hashing, so the compressor may write NONE-coded data
-    /// directly into the output buffer without copying (out_buffer_is_exclusive = true).
-    compressor(plain_hashing, compression_codec_, max_compress_block_size_, query_write_settings.use_adaptive_write_buffer, query_write_settings.adaptive_write_buffer_initial_size, /*out_buffer_is_exclusive=*/ true),
-    compressed_hashing(compressor),
+    compressor(plain_hashing, compression_codec_, max_compress_block_size_, query_write_settings.use_adaptive_write_buffer, query_write_settings.adaptive_write_buffer_initial_size),
+    /// This stream is the sole writer of plain_hashing: enable the zero-copy NONE path.
+    compressed_hashing(declareOutBufferExclusive(compressor)),
     marks_file(openStreamFile(data_part_storage, packing.writer, packing.marks_name, marks_path_ + marks_file_extension, 4096, query_write_settings, packing.spill_threshold, spool_coupled_spilled)),
     marks_hashing(*marks_file),
-    /// Unlike the data compressor above, the marks compressor must not take the zero-copy path:
-    /// marks_file has a small fixed-size buffer (4096 bytes), so the direct path would clamp
-    /// NONE-coded mark blocks to it instead of the configured marks_compress_block_size.
+    /// Unlike the data compressor, the marks compressor must not declare marks_hashing exclusive:
+    /// marks_file has a small fixed-size buffer (4096 bytes) that would clamp NONE-coded mark blocks.
     marks_compressor(marks_hashing, marks_compression_codec_, marks_compress_block_size_, query_write_settings.use_adaptive_write_buffer, query_write_settings.adaptive_write_buffer_initial_size),
     marks_compressed_hashing(marks_compressor),
     compress_marks(MarkType(marks_file_extension).compressed)

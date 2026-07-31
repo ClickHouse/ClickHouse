@@ -1,7 +1,5 @@
 #pragma once
 
-#include <city.h>
-
 #include <Common/PODArray.h>
 
 #include <IO/WriteBuffer.h>
@@ -15,21 +13,24 @@ namespace DB
 class CompressedWriteBuffer : public BufferWithOwnMemory<WriteBuffer>
 {
 public:
-    /// Service bytes that precede the payload of every compressed block on disk: the checksum
-    /// followed by the compression header (method byte + compressed size + uncompressed size).
-    /// The zero-copy NONE path reserves this much room in front of the data inside `out`, so a
-    /// buffer that must hold a full block of `block_size` bytes has to be at least
-    /// `block_size + COMPRESSED_BLOCK_PREFIX_SIZE` bytes; otherwise the block is one prefix short.
-    static constexpr size_t COMPRESSED_BLOCK_PREFIX_SIZE
-        = sizeof(CityHash_v1_0_2::uint128) + ICompressionCodec::getHeaderSize();
-
     explicit CompressedWriteBuffer(
         WriteBuffer & out_,
         CompressionCodecPtr codec_ = nullptr,
         size_t buf_size = DBMS_DEFAULT_BUFFER_SIZE,
         bool use_adaptive_buffer_size_ = false,
-        size_t adaptive_buffer_initial_size = DBMS_DEFAULT_INITIAL_ADAPTIVE_BUFFER_SIZE,
-        bool out_buffer_is_exclusive_ = false);
+        size_t adaptive_buffer_initial_size = DBMS_DEFAULT_INITIAL_ADAPTIVE_BUFFER_SIZE);
+
+    /// Declares that this buffer is the sole writer of `out`: nothing else moves out.position()
+    /// between our blocks. This enables the zero-copy path for the NONE codec: the working buffer
+    /// points directly into `out`, leaving COMPRESSED_BLOCK_PREFIX_SIZE bytes in front for the
+    /// checksum and the header, which nextImpl fills in place instead of copying the payload.
+    /// The declaration is enforced: nextImpl throws LOGICAL_ERROR if out.position() has moved.
+    /// Must be called before writing any data and before anything captures the working buffer
+    /// (e.g. a HashingWriteBuffer wrapping this one, which adopts the nested buffer as its own).
+    /// Must not be used when `out` is shared, e.g. by the per-column streams of compact parts. The zero-copy path also needs `out` to expose
+    /// block_size + COMPRESSED_BLOCK_PREFIX_SIZE contiguous free bytes; until it does, the data
+    /// goes through the owned buffer and is copied on flush.
+    void declareOutBufferExclusive();
 
     /// The amount of compressed data
     size_t getCompressedBytes()
@@ -58,10 +59,8 @@ public:
 private:
     void nextImpl() override;
 
-    /// Choose where the caller writes the next block's data.
-    /// For the NONE codec we point the working buffer directly into `out` (leaving room for the
-    /// checksum and header in front) so the data is written straight to the output buffer without
-    /// an intermediate copy. Otherwise (or when `out` has no room) we use the owned buffer.
+    /// Choose where the caller writes the next block: directly into `out` (zero-copy NONE path)
+    /// or into the owned buffer.
     void setupBufferForNextBlock();
 
     /// Advance the adaptive block size after a complete block has been written.
@@ -77,12 +76,8 @@ private:
     WriteBuffer & out;
     CompressionCodecPtr codec;
 
-    /// True if this buffer is the only writer of `out` and writes to it strictly sequentially
-    /// (nothing else moves out.position() between our blocks). Only then can the NONE codec write
-    /// data directly into out's buffer ahead of finalizing the header (the zero-copy path).
-    /// It must stay false when `out` is shared with other CompressedWriteBuffers and written
-    /// interleaved (e.g. per-column streams in compact parts share one output buffer).
-    bool out_buffer_is_exclusive;
+    /// See declareOutBufferExclusive.
+    bool out_buffer_is_exclusive = false;
 
     /// If true, the size of internal buffer will be exponentially increased up to
     /// adaptive_buffer_max_size after each nextImpl call. It can be used to avoid
@@ -92,16 +87,15 @@ private:
 
     /// The size of the block that is currently being filled. It equals adaptive_buffer_max_size,
     /// unless the adaptive buffer size is used, in which case it starts small and grows up to it.
-    /// The zero-copy NONE path is enabled only while `out` can expose a window of this size plus
-    /// COMPRESSED_BLOCK_PREFIX_SIZE, so that the block size is honored no matter which buffer is
-    /// used for the payload.
     size_t block_size;
 
     PODArray<char> compressed_buffer;
 
-    /// True when the working buffer currently points directly into `out` (zero-copy NONE path),
-    /// so nextImpl only has to write the header and checksum in place instead of copying the data.
-    bool current_block_is_direct = false;
+    /// On the zero-copy NONE path: the position of `out` at the moment the working buffer was
+    /// pointed into it. nextImpl checks that `out` has not moved before finishing the block in
+    /// place, enforcing the exclusivity declared by declareOutBufferExclusive.
+    /// nullptr when the working buffer is the owned one.
+    char * expected_out_position = nullptr;
 };
 
 }

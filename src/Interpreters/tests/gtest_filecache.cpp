@@ -1,4 +1,5 @@
 #include <Columns/IColumn.h>
+#include <Compression/CompressionInfo.h>
 #include <IO/copyData.h>
 #include <Interpreters/FileCache/IFileCachePriority.h>
 #include <gtest/gtest.h>
@@ -1829,7 +1830,7 @@ TEST_F(FileCacheTest, TemporaryDataReadBufferSize)
 }
 
 /// Regression test: with the NONE codec, TemporaryDataBuffer writes the data directly into the
-/// file buffer (out_buffer_is_exclusive), reserving COMPRESSED_BLOCK_PREFIX_SIZE bytes in front of
+/// file buffer (declareOutBufferExclusive), reserving COMPRESSED_BLOCK_PREFIX_SIZE bytes in front of
 /// the payload for the checksum and the header. The file buffer must be enlarged accordingly, so
 /// that a block of exactly settings.buffer_size bytes fits into one compressed frame instead of
 /// being split one prefix short of the block size.
@@ -1838,7 +1839,7 @@ TEST_F(FileCacheTest, TemporaryDataExactBlockFitWithNoneCodec)
     ServerUUID::setRandomForUnitTests();
 
     constexpr size_t block_size = 64_KiB;
-    constexpr size_t prefix_size = CompressedWriteBuffer::COMPRESSED_BLOCK_PREFIX_SIZE;
+    constexpr size_t prefix_size = COMPRESSED_BLOCK_PREFIX_SIZE;
 
     TemporaryDataOnDiskSettings settings;
     settings.compression_codec = "NONE";

@@ -64,9 +64,8 @@ MergeTreeDataPartWriterCompact::MergeTreeDataPartWriterCompact(
 
     if (index_granularity_info.mark_type.compressed)
     {
-        /// The marks compressor must not take the zero-copy NONE path (out_buffer_is_exclusive):
-        /// marks_file has a small fixed-size buffer (4096 bytes), so the direct path would clamp
-        /// NONE-coded mark blocks to it instead of the configured marks_compress_block_size.
+        /// The marks compressor must not declare marks_file_hashing exclusive: marks_file has a
+        /// small fixed-size buffer (4096 bytes) that would clamp NONE-coded mark blocks.
         marks_compressor = std::make_unique<CompressedWriteBuffer>(
             *marks_file_hashing,
              CompressionCodecFactory::instance().get(settings_.marks_compression_codec),

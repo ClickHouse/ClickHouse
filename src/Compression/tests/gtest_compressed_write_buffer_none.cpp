@@ -1,6 +1,7 @@
 #include <base/unaligned.h>
 #include <Common/filesystemHelpers.h>
 #include <Compression/CompressionCodecNone.h>
+#include <Compression/CompressionInfo.h>
 #include <Compression/CompressedReadBufferFromFile.h>
 #include <Compression/CompressedWriteBuffer.h>
 #include <IO/ReadBufferFromFile.h>
@@ -19,7 +20,7 @@ namespace
 using namespace DB;
 
 /// Round-trips `data` through a CompressedWriteBuffer with the NONE codec and the zero-copy
-/// (out_buffer_is_exclusive) path enabled, then reads it back and checks it is byte-identical.
+/// path enabled (declareOutBufferExclusive), then reads it back and checks it is byte-identical.
 /// `out_buf_size` controls the size of the output file buffer, which is what decides whether the
 /// direct write window fits or the owned-buffer fallback kicks in. `write_chunk` controls how the
 /// data is split across write() calls.
@@ -29,13 +30,8 @@ void roundTrip(const std::vector<char> & data, size_t block_size, size_t out_buf
 
     {
         WriteBufferFromFile out(tmp_file->path(), out_buf_size);
-        CompressedWriteBuffer compressed_out(
-            out,
-            std::make_shared<CompressionCodecNone>(),
-            block_size,
-            /*use_adaptive_buffer_size_=*/ false,
-            DBMS_DEFAULT_INITIAL_ADAPTIVE_BUFFER_SIZE,
-            /*out_buffer_is_exclusive_=*/ true);
+        CompressedWriteBuffer compressed_out(out, std::make_shared<CompressionCodecNone>(), block_size);
+        compressed_out.declareOutBufferExclusive();
 
         size_t written = 0;
         while (written < data.size())
@@ -67,12 +63,8 @@ std::vector<size_t> writeAndGetFrameSizes(
     {
         WriteBufferFromFile out(tmp_file->path(), out_buf_size);
         CompressedWriteBuffer compressed_out(
-            out,
-            std::make_shared<CompressionCodecNone>(),
-            block_size,
-            use_adaptive_buffer_size,
-            DBMS_DEFAULT_INITIAL_ADAPTIVE_BUFFER_SIZE,
-            /*out_buffer_is_exclusive_=*/ true);
+            out, std::make_shared<CompressionCodecNone>(), block_size, use_adaptive_buffer_size, DBMS_DEFAULT_INITIAL_ADAPTIVE_BUFFER_SIZE);
+        compressed_out.declareOutBufferExclusive();
 
         compressed_out.write(data.data(), data.size());
         compressed_out.finalize();
@@ -144,7 +136,7 @@ TEST(CompressedWriteBufferNone, BlockSizeIsHonoredForAnyOutputBufferSize)
 
     for (size_t out_buf_size : {size_t(4096),                                    /// far too small
                                 block_size,                                      /// one prefix short
-                                block_size + CompressedWriteBuffer::COMPRESSED_BLOCK_PREFIX_SIZE, /// exact fit
+                                block_size + COMPRESSED_BLOCK_PREFIX_SIZE, /// exact fit
                                 size_t(1) << 20})                                /// plenty of room
     {
         auto frame_sizes = writeAndGetFrameSizes(data, block_size, out_buf_size, /*use_adaptive_buffer_size=*/ false);
@@ -162,7 +154,7 @@ TEST(CompressedWriteBufferNone, AdaptiveBlockSizeGrowsToTheMaximum)
     const size_t block_size = 1 << 20;
     auto data = makeData(16 * block_size);
 
-    for (size_t out_buf_size : {size_t(4096), block_size + CompressedWriteBuffer::COMPRESSED_BLOCK_PREFIX_SIZE})
+    for (size_t out_buf_size : {size_t(4096), block_size + COMPRESSED_BLOCK_PREFIX_SIZE})
     {
         auto frame_sizes = writeAndGetFrameSizes(data, block_size, out_buf_size, /*use_adaptive_buffer_size=*/ true);
 
@@ -184,6 +176,24 @@ TEST(CompressedWriteBufferNone, ChunkedWritesAcrossBlocks)
     auto data = makeData(1 << 18);
     for (size_t chunk : {size_t(1), size_t(7), size_t(63), size_t(997), size_t(65536)})
         roundTrip(data, /*block_size=*/ 16384, /*out_buf_size=*/ 65536, chunk);
+}
+
+TEST(CompressedWriteBufferNone, ViolatedExclusivityIsDetected)
+{
+    /// The exclusivity declared by declareOutBufferExclusive is enforced, not just documented:
+    /// if something else moves the position of `out` while a zero-copy block is in flight,
+    /// flushing the block must throw instead of writing a corrupted block.
+    auto tmp_file = createTemporaryFile("/tmp/");
+    WriteBufferFromFile out(tmp_file->path(), 1 << 20);
+    CompressedWriteBuffer compressed_out(out, std::make_shared<CompressionCodecNone>(), 1024);
+    compressed_out.declareOutBufferExclusive();
+
+    compressed_out.write("hello", 5);
+    /// Someone else writes to `out` even though it was declared exclusive.
+    out.write("x", 1);
+
+    EXPECT_THROW(compressed_out.next(), DB::Exception);
+    compressed_out.cancel();
 }
 
 }

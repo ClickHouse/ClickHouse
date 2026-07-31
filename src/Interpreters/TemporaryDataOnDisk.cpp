@@ -77,15 +77,14 @@ inline CompressionCodecPtr getCodec(const TemporaryDataOnDiskSettings & settings
     return CompressionCodecFactory::instance().get(settings.compression_codec);
 }
 
-/// With the NONE codec, CompressedWriteBuffer writes the data directly into the file buffer
-/// (out_buffer_is_exclusive), reserving COMPRESSED_BLOCK_PREFIX_SIZE bytes in front of the payload
-/// for the checksum and the header. The file buffer must be that much larger than the block size,
+/// With the NONE codec, CompressedWriteBuffer writes blocks directly into the file buffer
+/// (see declareOutBufferExclusive), so the buffer must also fit the checksum-and-header prefix,
 /// or every full block would be split one prefix short of settings.buffer_size.
 inline size_t getFileBufferSize(const TemporaryDataOnDiskSettings & settings)
 {
     size_t buffer_size = settings.buffer_size;
     if (getCodec(settings)->isNone())
-        buffer_size += CompressedWriteBuffer::COMPRESSED_BLOCK_PREFIX_SIZE;
+        buffer_size += COMPRESSED_BLOCK_PREFIX_SIZE;
     return buffer_size;
 }
 
@@ -404,12 +403,11 @@ TemporaryDataBuffer::TemporaryDataBuffer(std::shared_ptr<TemporaryDataOnDiskScop
     : WriteBuffer(nullptr, 0)
     , parent(parent_)
     , file_holder(parent->file_provider(parent->getSettings(), reserve_size))
-    /// This buffer is the sole writer of the underlying file buffer, so the compressor may write
-    /// NONE-coded data directly into the output buffer without copying (out_buffer_is_exclusive).
-    , out_compressed_buf(file_holder->write(), getCodec(parent->getSettings()), parent->getSettings().buffer_size,
-        /*use_adaptive_buffer_size_=*/ false, DBMS_DEFAULT_INITIAL_ADAPTIVE_BUFFER_SIZE, /*out_buffer_is_exclusive=*/ true)
+    , out_compressed_buf(file_holder->write(), getCodec(parent->getSettings()), parent->getSettings().buffer_size)
     , metrics(parent->getSettings().metrics)
 {
+    /// We are the sole writer of the underlying file buffer: enable the zero-copy NONE path.
+    out_compressed_buf->declareOutBufferExclusive();
     WriteBuffer::set(out_compressed_buf->buffer().begin(), out_compressed_buf->buffer().size());
 }
 
