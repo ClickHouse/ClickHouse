@@ -87,7 +87,8 @@ void deleteFilesFromS3(
     BlobStorageLogWriterPtr blob_storage_log,
     const Strings & local_paths_for_blob_storage_log,
     const VectorWithMemoryTracking<size_t> & file_sizes_for_blob_storage_log,
-    std::optional<ProfileEvents::Event> profile_event)
+    std::optional<ProfileEvents::Event> profile_event,
+    Strings * successful_keys)
 {
     chassert(local_paths_for_blob_storage_log.empty() || (local_paths_for_blob_storage_log.size() == keys.size()));
     chassert(file_sizes_for_blob_storage_log.empty() || (file_sizes_for_blob_storage_log.size() == keys.size()));
@@ -183,18 +184,26 @@ void deleteFilesFromS3(
                 {
                     /// All the objects were removed.
                     LOG_DEBUG(log, "Objects with paths [{}] were removed from S3", comma_separated_keys);
+
+                    if (successful_keys)
+                        for (const auto & chunk : current_chunk)
+                        {
+                            successful_keys->emplace_back(chunk.GetKey());
+                        }
                 }
                 else
                 {
                     /// Mixed success/error response - some objects were removed, and some were not.
                     /// We need to extract more detailed information from the outcome.
-                    UnorderedSetWithMemoryTracking<std::string_view> removed_keys{keys.begin(), keys.end()};
+                    UnorderedSetWithMemoryTracking<std::string_view> removed_keys;
                     String not_found_keys;
                     std::exception_ptr other_error;
 
+                    for (const auto & chunk : current_chunk)
+                        removed_keys.insert(chunk.GetKey());
+
                     for (const auto & err : errors)
                     {
-                        removed_keys.erase(err.GetKey());
                         auto error_type = static_cast<Aws::S3::S3Errors>(Aws::S3::S3ErrorMapper::GetErrorForName(err.GetCode().c_str()).GetErrorType());
                         if (if_exists && S3::isNotFoundError(error_type))
                         {
@@ -202,11 +211,14 @@ void deleteFilesFromS3(
                                 not_found_keys += ", ";
                             not_found_keys += err.GetKey();
                         }
-                        else if (!other_error)
+                        else
                         {
-                            other_error = std::make_exception_ptr(
-                                S3Exception{error_type, "{} (Code: {}) while removing object with path {} from S3",
-                                            err.GetMessage(), err.GetCode(), err.GetKey()});
+                            removed_keys.erase(err.GetKey());
+
+                            if (!other_error)
+                                other_error = std::make_exception_ptr(
+                                    S3Exception{error_type, "{} (Code: {}) while removing object with path {} from S3",
+                                                err.GetMessage(), err.GetCode(), err.GetKey()});
                         }
                     }
 
@@ -218,6 +230,9 @@ void deleteFilesFromS3(
                             if (!removed_keys_comma_separated.empty())
                                 removed_keys_comma_separated += ", ";
                             removed_keys_comma_separated += key;
+
+                            if (successful_keys)
+                                successful_keys->emplace_back(key);
                         }
                         LOG_DEBUG(log, "Objects with paths [{}] were removed from S3", removed_keys_comma_separated);
                     }
@@ -275,6 +290,9 @@ void deleteFilesFromS3(
         deleteFileFromS3(s3_client, bucket, keys[i], if_exists,
                          blob_storage_log, local_path_for_blob_storage_log, file_size_for_blob_storage_log,
                          profile_event);
+
+        if (successful_keys)
+            successful_keys->emplace_back(keys[i]);
     }
 }
 

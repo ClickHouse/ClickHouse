@@ -222,11 +222,16 @@ void HDFSObjectStorage::removeObjectIfExists(const StoredObject & object)
         removeObject(object);
 }
 
-void HDFSObjectStorage::removeObjectsIfExist(const StoredObjects & objects)
+void HDFSObjectStorage::removeObjectsIfExist(const StoredObjects & objects, StoredObjects * successful_objects)
 {
     initializeHDFSFS();
     for (const auto & object : objects)
+    {
         removeObjectIfExists(object);
+
+        if (successful_objects)
+            successful_objects->emplace_back(object);
+    }
 }
 
 ObjectMetadata HDFSObjectStorage::getObjectMetadata(const std::string & path, bool) const

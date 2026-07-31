@@ -85,7 +85,7 @@ public:
 
     void removeObjectIfExists(const StoredObject & object) override;
 
-    void removeObjectsIfExist(const StoredObjects & objects) override;
+    void removeObjectsIfExist(const StoredObjects & objects, StoredObjects * successful_objects = nullptr) override;
 
     void tagObjects(const StoredObjects & objects, const std::string & tag_key, const std::string & tag_value) override;
 
@@ -134,7 +134,8 @@ private:
         const StoredObject & object,
         const std::shared_ptr<const AzureBlobStorage::ContainerClient> & client_ptr,
         bool if_exists,
-        BlobStorageLogWriterPtr blob_storage_log);
+        BlobStorageLogWriterPtr blob_storage_log,
+        StoredObjects * successful_objects = nullptr);
 
     void removeObjectsBatchIfExists(
         const StoredObjects & objects,

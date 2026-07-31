@@ -1183,6 +1183,9 @@ void StorageObjectStorageQueue::commit(
     else
         chassert(last_processed_file_per_partition.empty());
 
+    // Nothing is changed in zookeeper.
+    const auto mode = getTableMetadata().getMode();
+
     if (mode != ObjectStorageQueueMode::EXCLUSIVE && requests.empty())
     {
         LOG_TEST(log, "Nothing to commit");
@@ -1197,8 +1200,6 @@ void StorageObjectStorageQueue::commit(
         postProcess(successful_objects);
     }
 
-    // Nothing is changed in zookeeper.
-    const auto mode = getTableMetadata().getMode();
     if (mode == ObjectStorageQueueMode::EXCLUSIVE)
     {
         commitExclusive(successful_objects, sources, transaction_start_time);

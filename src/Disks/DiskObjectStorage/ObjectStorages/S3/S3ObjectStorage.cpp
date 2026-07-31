@@ -409,7 +409,7 @@ void S3ObjectStorage::removeObjectImpl(const StoredObject & object, bool if_exis
                       ProfileEvents::DiskS3DeleteObjects);
 }
 
-void S3ObjectStorage::removeObjectsImpl(const StoredObjects & objects, bool if_exists)
+void S3ObjectStorage::removeObjectsImpl(const StoredObjects & objects, bool if_exists, StoredObjects * successful_objects)
 {
     if (objects.empty())
         return;
@@ -432,10 +432,24 @@ void S3ObjectStorage::removeObjectsImpl(const StoredObjects & objects, bool if_e
 
     auto settings_ptr = s3_settings.get();
 
+    Strings successful_keys;
+
     deleteFilesFromS3(client.get(), uri.bucket, keys, if_exists,
                       s3_capabilities, settings_ptr->request_settings[S3RequestSetting::objects_chunk_size_to_delete],
                       blob_storage_log, local_paths_for_blob_storage_log, file_sizes_for_blob_storage_log,
-                      ProfileEvents::DiskS3DeleteObjects);
+                      ProfileEvents::DiskS3DeleteObjects,
+                      &successful_keys);
+
+    if (successful_objects)
+    {
+        UnorderedSetWithMemoryTracking<std::string_view> successful_keys_set(successful_keys.begin(), successful_keys.end());
+
+        for (const auto & object : objects)
+        {
+            if (successful_keys_set.contains(object.remote_path))
+                successful_objects->emplace_back(object);
+        }
+    }
 }
 
 void S3ObjectStorage::removeObjectIfExists(const StoredObject & object)
@@ -443,9 +457,9 @@ void S3ObjectStorage::removeObjectIfExists(const StoredObject & object)
     removeObjectImpl(object, true);
 }
 
-void S3ObjectStorage::removeObjectsIfExist(const StoredObjects & objects)
+void S3ObjectStorage::removeObjectsIfExist(const StoredObjects & objects, StoredObjects * successful_objects)
 {
-    removeObjectsImpl(objects, true);
+    removeObjectsImpl(objects, true, successful_objects);
 }
 
 static void putObjectsTagOnS3(

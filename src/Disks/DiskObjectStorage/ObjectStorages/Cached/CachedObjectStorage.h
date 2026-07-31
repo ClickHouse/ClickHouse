@@ -61,7 +61,7 @@ public:
 
     void removeObjectIfExists(const StoredObject & object) override;
 
-    void removeObjectsIfExist(const StoredObjects & objects) override;
+    void removeObjectsIfExist(const StoredObjects & objects, StoredObjects * successful_objects = nullptr) override;
 
     void copyObject( /// NOLINT
         const StoredObject & object_from,

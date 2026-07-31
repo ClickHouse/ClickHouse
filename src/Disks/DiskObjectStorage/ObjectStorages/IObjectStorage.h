@@ -318,7 +318,7 @@ public:
     virtual void removeObjectIfExists(const StoredObject & object) = 0;
 
     /// Remove objects on path if exists
-    virtual void removeObjectsIfExist(const StoredObjects & object) = 0;
+    virtual void removeObjectsIfExist(const StoredObjects & object, StoredObjects * successful_objects = nullptr) = 0;
 
     /// Copy object with different attributes if required
     virtual void copyObject( /// NOLINT

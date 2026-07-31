@@ -334,7 +334,8 @@ void AzureObjectStorage::removeObjectImpl(
     const StoredObject & object,
     const std::shared_ptr<const AzureBlobStorage::ContainerClient> & client_ptr,
     bool if_exists,
-    BlobStorageLogWriterPtr blob_storage_log)
+    BlobStorageLogWriterPtr blob_storage_log,
+    StoredObjects * successful_objects)
 {
     ProfileEvents::increment(ProfileEvents::AzureDeleteObjects);
     if (client_ptr->IsClientForDisk())
@@ -404,6 +405,10 @@ void AzureObjectStorage::removeObjectImpl(
         tryLogCurrentException(__PRETTY_FUNCTION__);
         throw;
     }
+
+    if (successful_objects)
+        successful_objects->emplace_back(object);
+
     auto elapsed = watch.elapsedMicroseconds();
 
     if (blob_storage_log)
@@ -502,7 +507,7 @@ void AzureObjectStorage::removeObjectsBatchIfExists(
     }
 }
 
-void AzureObjectStorage::removeObjectsIfExist(const StoredObjects & objects)
+void AzureObjectStorage::removeObjectsIfExist(const StoredObjects & objects, StoredObjects * successful_objects)
 {
     if (objects.empty())
         return;
@@ -513,7 +518,7 @@ void AzureObjectStorage::removeObjectsIfExist(const StoredObjects & objects)
     if (isAdlsGen2Endpoint(connection_params.endpoint))
     {
         for (const auto & object : objects)
-            removeObjectImpl(object, client_ptr, /*if_exists=*/ true, blob_storage_log);
+            removeObjectImpl(object, client_ptr, /*if_exists=*/ true, blob_storage_log, successful_objects);
         return;
     }
 
