@@ -30,9 +30,11 @@ add_compile_definitions (_poco_xml PRIVATE XML_GE=0)
 # TODO: remove these warning exclusions
 target_compile_options (_poco_xml
     PRIVATE
+        -Wno-c99-extensions
         -Wno-cast-qual
         -Wno-covered-switch-default
         -Wno-deprecated-dynamic-exception-spec
+        -Wno-disabled-macro-expansion
         -Wno-implicit-fallthrough
         -Wno-missing-noreturn
         -Wno-old-style-cast

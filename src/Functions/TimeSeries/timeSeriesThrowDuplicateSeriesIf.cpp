@@ -22,7 +22,7 @@ namespace ErrorCodes
 /// throws an exception with the following message "Multiple series have the same tags <tags>,
 /// duplicate series in the same result set are not allowed".
 /// If the `condition` is false the function returns 0.
-class FunctionTimeSeriesThrowDuplicateSeriesIf : public IFunction
+class FunctionTimeSeriesThrowDuplicateSeriesIf final : public IFunction
 {
 public:
     static constexpr auto name = "timeSeriesThrowDuplicateSeriesIf";
@@ -37,6 +37,16 @@ public:
     String getName() const override { return name; }
 
     size_t getNumberOfArguments() const override { return 2; }
+
+    /// Function timeSeriesThrowDuplicateSeriesIf uses information stored in the query context, it's deterministic in the scope of the current query.
+    bool isDeterministic() const override { return false; }
+    bool isDeterministicInScopeOfQuery() const override { return true; }
+
+    /// Stateful: result depends on the per-query tags collector populated by timeSeriesStoreTags().
+    bool isStateful() const override { return true; }
+
+    /// Disable constant folding: the per-query tags collector is not populated at analysis time.
+    bool isSuitableForConstantFolding() const override { return false; }
 
     bool isSuitableForShortCircuitArgumentsExecution(const DataTypesWithConstInfo & /*arguments*/) const override { return true; }
 

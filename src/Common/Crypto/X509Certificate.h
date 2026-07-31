@@ -59,6 +59,10 @@ public:
     std::string validFrom() const;
     std::string expiresOn() const;
 
+    /// Validity period as Unix timestamps (seconds since epoch).
+    time_t notBefore() const;
+    time_t notAfter() const;
+
     class Subjects
     {
     public:
@@ -85,7 +89,7 @@ public:
         bool operator==(const X509Certificate::Subjects & rhs) const;
     };
 
-    Subjects extractAllSubjects();
+    Subjects extractAllSubjects() const;
 
 private:
     X509 * certificate;

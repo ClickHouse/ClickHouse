@@ -11,7 +11,6 @@ import time
 from datetime import datetime
 from typing import Dict, List, Optional
 from dataclasses import dataclass
-from typing import Optional
 from integration.helpers.client import Client, CommandRequest
 from integration.helpers.cluster import ClickHouseCluster, ClickHouseInstance
 
@@ -43,13 +42,11 @@ class ElOracloDeLeaks:
             client = Client(
                 host=next_node.ip_address, port=9000, command=cluster.client_bin_path
             )
-            metrics_str = client.query(
-                """
+            metrics_str = client.query("""
                 SELECT metric, value
                 FROM system.asynchronous_metrics
                 WHERE metric = 'MemoryResident';
-                """
-            )
+                """)
             if not isinstance(metrics_str, str) or metrics_str == "":
                 self.logger.warning(
                     f"No tables found to fetch on node {next_node.name}"
@@ -76,7 +73,7 @@ class ElOracloDeLeaks:
         self.snapshots.clear()
         baseline = self._get_memory_snapshot("baseline", cluster)
         if baseline is None:
-            self.logger.error(f"Could not get baseline capture")
+            self.logger.error("Could not get baseline capture")
             return
         self.snapshots.append(baseline)
         self._print_snapshot(baseline)
@@ -117,7 +114,7 @@ class ElOracloDeLeaks:
         """
         # Check baseline
         if len(self.snapshots) == 0:
-            self.logger.error(f"No previous captures exist")
+            self.logger.error("No previous captures exist")
             return
         leak_detected = False
         try:
@@ -186,7 +183,7 @@ class ElOracloDeLeaks:
                         or result2 == ""
                     ):
                         self.logger.warning(
-                            f"Could not fetch number of merges or mutations"
+                            "Could not fetch number of merges or mutations"
                         )
                         return False
 
@@ -203,7 +200,7 @@ class ElOracloDeLeaks:
                     "SELECT name FROM system.databases WHERE name NOT IN ('system', 'information_schema', 'INFORMATION_SCHEMA');"
                 )
                 if not isinstance(dbs_str, str) or dbs_str == "":
-                    self.logger.warning(f"Could not fetch databases")
+                    self.logger.warning("Could not fetch databases")
                     return False
                 fetched_dbs: list[str] = [line for line in dbs_str.split("\n") if line]
                 for db_name in fetched_dbs:

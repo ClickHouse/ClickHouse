@@ -1,0 +1,57 @@
+---
+description: 'CHECK GRANT 文档'
+sidebarTitle: 'CHECK GRANT'
+slug: /sql-reference/statements/check-grant
+title: 'CHECK GRANT 语句'
+doc_type: 'reference'
+---
+
+`CHECK GRANT` 查询用于检查当前用户/角色是否已被授予某项特定权限。
+
+<div id="syntax">
+  ## 语法
+</div>
+
+查询的基本语法如下：
+
+```sql
+CHECK GRANT privilege[(column_name [,...])] [,...] ON {db.table[*]|db[*].*|*.*|table[*]|*}
+```
+
+* `privilege` — 权限类型。
+
+<div id="examples">
+  ## 示例
+</div>
+
+如果该用户此前已被授予该权限，则 `check_grant` 的返回值为 `1`。否则，`check_grant` 的返回值为 `0`。
+
+如果 `table_1.col1` 存在，且当前用户被授予了权限 `SELECT`/`SELECT(con)` 或被授予了拥有该权限的角色，则返回值为 `1`。
+
+```sql
+CHECK GRANT SELECT(col1) ON table_1;
+```
+
+```text
+┌─result─┐
+│      1 │
+└────────┘
+```
+
+如果 `table_2.col2` 不存在，或者当前用户未被授予 `SELECT`/`SELECT(con)` 权限或具有该权限的角色，则返回 `0`。
+
+```sql
+CHECK GRANT SELECT(col2) ON table_2;
+```
+
+```text
+┌─result─┐
+│      0 │
+└────────┘
+```
+
+<div id="wildcard">
+  ## 通配符
+</div>
+
+指定权限时，可以使用星号 (`*`) 代替表名或数据库名。有关通配符规则，请参见 [WILDCARD GRANTS](/zh/reference/statements/grant#wildcard-grants)。
