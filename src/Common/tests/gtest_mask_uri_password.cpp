@@ -3,6 +3,7 @@
 #include <Common/maskURIPassword.h>
 #include <Common/re2.h>
 
+#include <random>
 #include <string>
 #include <vector>
 
@@ -74,6 +75,32 @@ TEST(MaskURIPassword, MatchesTheRegularExpressionItReplaced)
 
         EXPECT_EQ(scanned, matched) << "return value differs for: " << input;
         EXPECT_EQ(with_scan, with_re2) << "result differs for: " << input;
+    }
+}
+
+TEST(MaskURIPassword, AgreesWithTheRegularExpressionOnRandomStrings)
+{
+    /// The fixed corpus above documents the interesting cases; this is the safety net for the ones
+    /// nobody thought of. The alphabet is the characters the regular expression assigns meaning to.
+    constexpr std::string_view alphabet = "ab:@/.\n";
+    std::mt19937_64 rng(20260731); /// NOLINT(cert-msc32-c,cert-msc51-cpp) deterministic seed, so a failure is reproducible
+    std::uniform_int_distribution<size_t> length_dist(0, 32);
+    std::uniform_int_distribution<size_t> char_dist(0, alphabet.size() - 1);
+
+    for (size_t round = 0; round < 200000; ++round)
+    {
+        std::string input(length_dist(rng), ' ');
+        for (auto & c : input)
+            c = alphabet[char_dist(rng)];
+
+        std::string with_scan = input;
+        std::string with_re2 = input;
+
+        bool scanned = maskURIPassword(&with_scan);
+        bool matched = maskURIPasswordWithRE2(&with_re2);
+
+        ASSERT_EQ(scanned, matched) << "return value differs for: " << input;
+        ASSERT_EQ(with_scan, with_re2) << "result differs for: " << input;
     }
 }
 
@@ -168,6 +195,38 @@ TEST(MaskS3URLCredentials, MatchTheRegularExpressionsTheyReplaced)
         EXPECT_EQ(maskPresignedURLParameters(with_scan), maskPresignedURLParametersWithRE2(with_re2))
             << "presign return value differs for: " << input;
         EXPECT_EQ(with_scan, with_re2) << "presign result differs for: " << input;
+    }
+}
+
+TEST(MaskS3URLCredentials, AgreeWithTheRegularExpressionsOnRandomStrings)
+{
+    /// Random characters would almost never spell a presigned parameter name, so the strings are
+    /// built from the tokens the two regular expressions care about.
+    const std::vector<std::string> tokens = {
+        "https://", "s3://", "1://", "-x://", ":/", "user", "pass", ":", "@", "/", "?", "&", "=", "#",
+        "Signature", "AWSAccessKeyId", "Expires", "GoogleAccessId", "X-Amz-", "X-Goog-", "Credential", "_", "a", "\n", "",
+    };
+    std::mt19937_64 rng(20260731); /// NOLINT(cert-msc32-c,cert-msc51-cpp) deterministic seed, so a failure is reproducible
+    std::uniform_int_distribution<size_t> count_dist(0, 12);
+    std::uniform_int_distribution<size_t> token_dist(0, tokens.size() - 1);
+
+    /// Fewer rounds than for `maskURIPassword`: each round runs two scans and two regular
+    /// expressions, and `RE2::GlobalReplace` dominates - sanitizer builds multiply that.
+    for (size_t round = 0; round < 50000; ++round)
+    {
+        std::string input;
+        for (size_t i = 0, count = count_dist(rng); i < count; ++i)
+            input += tokens[token_dist(rng)];
+
+        std::string with_scan = input;
+        std::string with_re2 = input;
+
+        ASSERT_EQ(maskURIUserinfo(with_scan), maskURIUserinfoWithRE2(with_re2)) << "userinfo return value differs for: " << input;
+        ASSERT_EQ(with_scan, with_re2) << "userinfo result differs for: " << input;
+
+        ASSERT_EQ(maskPresignedURLParameters(with_scan), maskPresignedURLParametersWithRE2(with_re2))
+            << "presign return value differs for: " << input;
+        ASSERT_EQ(with_scan, with_re2) << "presign result differs for: " << input;
     }
 }
 
