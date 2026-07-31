@@ -89,8 +89,12 @@ try
             member.set("priority", m.priority);
             member.set("is_leader", m.is_leader);
             member.set("is_self", m.is_self);
-            if (m.last_log_index.has_value())
-                member.set("last_log_index", *m.last_log_index);
+            /// Self reports its own log index; peers are reported from the leader's view.
+            /// Serialized as a string: UInt64 does not fit into a JSON number without
+            /// precision loss above 2^53, and the UI does the lag arithmetic with BigInt.
+            const auto & last_log_index = m.last_log_index.has_value() ? m.last_log_index : m.peer_last_log_index;
+            if (last_log_index.has_value())
+                member.set("last_log_index", toString(*last_log_index));
             else
                 member.set("last_log_index", Poco::Dynamic::Var());
             if (m.is_alive.has_value())

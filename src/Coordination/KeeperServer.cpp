@@ -480,7 +480,7 @@ void KeeperServer::KeeperRaftServer::applyPeerHealthToMembers(
             const auto & peer = it->second;
             info.is_alive = peer.last_succ_resp_us_ <= expiry_us;
             info.is_synced = self_log_idx <= peer.last_log_idx_ + stale_gap;
-            info.last_log_index = peer.last_log_idx_;
+            info.peer_last_log_index = peer.last_log_idx_;
             info.last_succ_resp_ms = peer.last_succ_resp_us_ / 1000;
         }
         else
