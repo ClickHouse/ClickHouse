@@ -26,12 +26,11 @@ using PredictParameters = MapWithMemoryTracking<String, Int64>;
 
 /// Extreme Gradient Boosting model, driven directly by XGBoostDictionary.
 ///
-/// Training follows a streaming lifecycle so that datasets that do not fit in memory can be fed batch
-/// by batch:
+/// Training is fed batch by batch:
 ///
 ///     XGBoostModel(hyper_parameters) -> startTraining -> addTrainingData* -> finalizeTraining -> predict*
 ///
-/// NOTE: batches are currently staged in memory.
+/// Note: training is not out-of-core yet, the blocks are accumulated in memory and then training is realized.
 class XGBoostModel
 {
 public:

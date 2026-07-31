@@ -78,7 +78,13 @@ The ground truth is `2*1 + 3*2 = 8`, so the model's prediction is close.
 
 ## How it works {#how-it-works}
 
-**Training (at load time).** Each source row is a `(features..., target)` observation. When the dictionary loads, all rows are streamed into XGBoost and the model is trained once. Feature and target values are read as floats, so the key columns must be numeric and the target attribute floating-point (see [Dictionary structure](#dictionary-structure)).
+**Training (at load time).** Each source row is a `(features..., target)` observation. When the dictionary loads, the source is read block by block and the model is then trained once over the whole set. Feature and target values are read as floats, so the key columns must be numeric and the target attribute floating-point (see [Dictionary structure](#dictionary-structure)).
+
+:::warning
+**Training holds the entire training set in memory.** Reading the source in blocks is not out-of-core training: each block is accumulated rather than consumed, so the whole training set is resident before the first boosting round and stays resident until the last one.
+
+Size the source table for a load that fits in memory. Training a table that does not fit fails the load with a memory-limit exception, or gets the server OOM-killed.
+:::
 
 **Predicting (at query time).** To predict, the model takes the feature vector — in the same order as the key columns were declared — and runs it through the trained booster, returning a `Float64`.
 
@@ -94,7 +100,7 @@ SYSTEM RELOAD DICTIONARY model;
 A non-zero `LIFETIME` also retrains, since a lifetime-triggered reload is an ordinary load. Use it to refresh the model periodically as the training data grows.
 
 :::warning
-Every load trains on the whole source table, and nothing about a trained model survives it. A restart, a `SYSTEM RELOAD DICTIONARY`, or each expiry of a non-zero `LIFETIME` pays the full training cost again, and on a large source table that cost is not small: `LIFETIME(3600)` on a table that takes ten minutes to train means retraining for ten minutes of every hour, indefinitely. Choose `LIFETIME` from how long training actually takes, not from how often the data changes, and prefer `LIFETIME(0)` with an explicit `SYSTEM RELOAD DICTIONARY` when you want to control when that cost is paid.
+Every load trains on the whole source table, and nothing about a trained model survives it. A restart, a `SYSTEM RELOAD DICTIONARY`, or each expiry of a non-zero `LIFETIME` pays the full training cost again — the time *and* the memory, since every load again holds the entire training set in memory as described above. On a large source table neither is small: `LIFETIME(3600)` on a table that takes ten minutes to train means retraining for ten minutes of every hour, indefinitely, with the whole training set resident for each of those ten minutes. A `LIFETIME` that looks affordable on the clock can still exhaust memory, so choose it from how long training takes *and* how much memory the training set needs, not from how often the data changes, and prefer `LIFETIME(0)` with an explicit `SYSTEM RELOAD DICTIONARY` when you want to control when that cost is paid.
 :::
 
 ## Dictionary structure {#dictionary-structure}
