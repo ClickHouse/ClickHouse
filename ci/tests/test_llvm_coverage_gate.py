@@ -6,9 +6,9 @@ message states. `coverage_drop` rounds the difference so the binary-float
 representation of a decimal subtraction cannot push it over the threshold.
 """
 
+import ast
 import os
 import sys
-import textwrap
 
 sys.path.insert(0, os.path.join(os.path.dirname(__file__), "../.."))
 
@@ -32,11 +32,36 @@ def _gate_snippet() -> str:
 
     The gate lives inside `if __name__ == "__main__":`, so it cannot be imported;
     exec'ing its own source keeps this test honest about what the job really does.
+
+    The two statements are collected as AST NODES and re-emitted at top level.
+    A line-range slice plus textwrap.dedent cannot express this: the drop
+    assignment and the verdict chain sit at DIFFERENT nesting depths (the
+    assignment is under `if _measurement_comparable:`, which is what keeps a
+    fabricated drop from being computed for two unparsed measurements), so the
+    raw slice is not a valid suite at any single indent. Extracting nodes makes
+    the extraction indentation-independent, so a future re-nesting of either
+    statement cannot silently degenerate this into an IndentationError.
     """
-    lines = open(_JOB, encoding="utf-8").read().splitlines(True)
-    start = next(i for i, l in enumerate(lines) if "_drop = coverage_drop(" in l)
-    end = next(i for i, l in enumerate(lines) if "diff_res.set_failed()" in l)
-    return textwrap.dedent("".join(lines[start : end + 1]))
+    src = open(_JOB, encoding="utf-8").read()
+    tree = ast.parse(src)
+    assign = [
+        n
+        for n in ast.walk(tree)
+        if isinstance(n, ast.Assign)
+        and ast.unparse(n).startswith("_drop = coverage_drop(")
+    ]
+    verdict = [
+        n
+        for n in ast.walk(tree)
+        if isinstance(n, ast.If)
+        and ast.unparse(n.test) == "not _measurement_comparable"
+        and "diff_res.set_failed()" in ast.unparse(n)
+    ]
+    assert len(assign) == 1, f"expected one drop assignment, found {len(assign)}"
+    assert len(verdict) == 1, f"expected one verdict chain, found {len(verdict)}"
+    mod = ast.Module(body=[assign[0], verdict[0]], type_ignores=[])
+    ast.fix_missing_locations(mod)
+    return ast.unparse(mod)
 
 
 class _ResultStub:
@@ -70,6 +95,12 @@ def _run_gate(
         "COVERAGE_DROP_TOLERANCE": COVERAGE_DROP_TOLERANCE,
         "b_line_cov": baseline,
         "c_line_cov": current,
+        # Node extraction carries the whole three-arm chain, including the
+        # did-not-degrade arm that the previous line-range slice stopped short
+        # of. That arm reports the delta, computed here exactly as production
+        # computes it, so the pass path is now executed rather than merely
+        # not-failed.
+        "delta": current - baseline,
         # The gate only reaches a tolerance verdict for two comparable
         # measurements; these tests are about the tolerance, so they say so.
         "_measurement_comparable": comparable,
@@ -92,6 +123,10 @@ def test_gate_snippet_is_the_real_verdict_block():
     # The verdict is reached only for two comparable measurements; if this guard
     # ever leaves the block, the comparable=False assertions below go vacuous.
     assert "_measurement_comparable" in src
+    # All THREE arms, so the pass path below is executed rather than merely
+    # not-failed. The previous line-range extraction stopped at set_failed() and
+    # so never carried this arm.
+    assert "did not degrade beyond tolerance" in src
 
 
 def test_tolerance_is_unchanged():

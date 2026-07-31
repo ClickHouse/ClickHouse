@@ -368,26 +368,34 @@ if __name__ == "__main__":
         b_branch_hit = b_branch_total = c_branch_hit = c_branch_total = 0
 
         if _diff_ran:
-            # Baseline coverage from the primary master run.
-            (b_line_cov, b_line_hit, b_line_total), \
-            (b_function_cov, b_func_hit, b_func_total), \
-            (b_branch_cov, b_branch_hit, b_branch_total) = get_lcov_summary(
-                f"{TEMP_DIR}/base_llvm_coverage.info"
-            )
+            # A baseline-side cause is only knowable after the script has run, so the
+            # script legitimately ran and this block is reached with the measurement
+            # already known incomparable. Parsing the two summaries and printing a
+            # delta here would put three numbers between two abstention notices,
+            # which is the reading confusion this gate exists to remove. The
+            # zero-initialisations above keep the unparsed variables safe.
+            if _measurement_comparable:
+                # Baseline coverage from the primary master run.
+                (b_line_cov, b_line_hit, b_line_total), \
+                (b_function_cov, b_func_hit, b_func_total), \
+                (b_branch_cov, b_branch_hit, b_branch_total) = get_lcov_summary(
+                    f"{TEMP_DIR}/base_llvm_coverage.info"
+                )
 
-            # Current coverage for the current branch
-            (c_line_cov, c_line_hit, c_line_total), \
-            (c_function_cov, c_func_hit, c_func_total), \
-            (c_branch_cov, c_branch_hit, c_branch_total) = get_lcov_summary(
-                f"{TEMP_DIR}/llvm_coverage.info"
-            )
+                # Current coverage for the current branch
+                (c_line_cov, c_line_hit, c_line_total), \
+                (c_function_cov, c_func_hit, c_func_total), \
+                (c_branch_cov, c_branch_hit, c_branch_total) = get_lcov_summary(
+                    f"{TEMP_DIR}/llvm_coverage.info"
+                )
 
-            delta = c_line_cov - b_line_cov
-            print(f"Baseline coverage : {b_line_cov:.2f}%")
-            print(f"Current coverage  : {c_line_cov:.2f}%")
-            print(f"Delta             : {delta:+.2f}%")
+                delta = c_line_cov - b_line_cov
+                print(f"Baseline coverage : {b_line_cov:.2f}%")
+                print(f"Current coverage  : {c_line_cov:.2f}%")
+                print(f"Delta             : {delta:+.2f}%")
 
-            _drop = coverage_drop(b_line_cov, c_line_cov)
+                _drop = coverage_drop(b_line_cov, c_line_cov)
+
             if not _measurement_comparable:
                 # SKIPPED counts as OK, so the job stays green while stating that it
                 # did not judge. Reddening instead would turn a tool crash the PR
@@ -432,7 +440,10 @@ if __name__ == "__main__":
                 )
                 diff_res.files.extend(_diff_files)
                 diff_res.assets.extend(_diff_assets)
-        else:
+        elif _measurement_comparable:
+            # Only a comparable run can conclude that nothing coverable changed.
+            # When it is not comparable the reason was already printed above, and
+            # repeating this sentence would name a cause that was never established.
             print("No C/C++ source files changed — differential coverage report was not generated.")
 
         results.append(diff_res)
@@ -443,7 +454,13 @@ if __name__ == "__main__":
             Path(TEMP_DIR + "changes.diff").exists()
             and Path(TEMP_DIR + "current.changed.info").exists()
         )
-        if _diff_inputs_exist and not _measurement_comparable:
+        # Comparability is tested FIRST because the two conditions are not
+        # independent: a current-side cause short-circuits the differential script,
+        # which is the sole writer of both diff inputs, so their absence there means
+        # "the script never ran", not "nothing coverable changed". Testing
+        # _diff_inputs_exist first would therefore report the no-C++-changes reason
+        # on the very paths this gate exists to abstain on.
+        if not _measurement_comparable:
             # The uncovered-code analysis compares the changed-line slice of the two
             # measurements, extracted from the same merged data as the totals, so its
             # output is fabricated for exactly the same reason.

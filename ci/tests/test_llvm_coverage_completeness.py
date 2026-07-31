@@ -344,15 +344,78 @@ def test_success_finish_semantics_are_unchanged():
     assert SUCCESS_FINISH_SIGNS == ["All tests have finished", "No tests were run"]
 
 
-def test_runner_emits_the_marker_only_when_it_completed_and_kept_its_workers():
+_MARKER = "Coverage run completed all selected tests."
+
+
+def _marker_predicate_node():
+    """The real `if` statement in tests/clickhouse-test that prints the marker.
+
+    Selected as the INNERMOST enclosing ast.If by smallest line span:
+    ast.walk yields outer nodes first, so its first match could be an enclosing
+    `if` whose span covers most of main.
+    """
     src = open(_CH_TEST, encoding="utf-8").read()
-    assert "Coverage run completed all selected tests." in src
-    # Both halves of the predicate must be present, and the existing marker text
-    # and exit contract untouched.
-    idx = src.index("Coverage run completed all selected tests.")
-    window = src[idx - 400 : idx]
-    assert "total_tests_run != 0" in window
-    assert "runner_process_killed.is_set()" in window
+    tree = ast.parse(src)
+    enclosing = [
+        n
+        for n in ast.walk(tree)
+        if isinstance(n, ast.If) and _MARKER in (ast.get_source_segment(src, n) or "")
+    ]
+    assert enclosing, "no if statement encloses the coverage marker"
+    return min(enclosing, key=lambda n: n.end_lineno - n.lineno)
+
+
+def test_runner_emits_the_marker_only_when_it_completed_and_kept_its_workers():
+    # EXECUTES the real predicate rather than asserting that both operand
+    # substrings appear somewhere near it: replaying two such `in` checks against
+    # a window whose `and` has been swapped for `or` passes, so a substring pair
+    # is blind to the operator by construction - and `or` admits exactly the two
+    # states this marker exists to exclude (a killed worker and a zero-test run),
+    # each of which then lets a short profile be merged.
+    src = open(_CH_TEST, encoding="utf-8").read()
+    assert _MARKER in src
+    node = _marker_predicate_node()
+
+    # Exact, not two independent `in` checks: an operator swap must fail
+    # structurally as well as behaviourally.
+    assert (
+        ast.unparse(node.test)
+        == "total_tests_run != 0 and (not runner_process_killed.is_set())"
+    ), ast.unparse(node.test)
+
+    mod = ast.Module(body=[node], type_ignores=[])
+    ast.fix_missing_locations(mod)
+    code = compile(mod, _CH_TEST, "exec")
+
+    class _Event:
+        def __init__(self, state):
+            self._state = state
+
+        def is_set(self):
+            return self._state
+
+    emitted = {}
+    for total_tests_run in (0, 7):
+        for killed in (False, True):
+            out = []
+            exec(
+                code,
+                {
+                    "total_tests_run": total_tests_run,
+                    "runner_process_killed": _Event(killed),
+                    "print": lambda *a, **k: out.append(" ".join(str(x) for x in a)),
+                },
+            )
+            emitted[(total_tests_run, killed)] = any(_MARKER in line for line in out)
+
+    assert emitted == {
+        (7, False): True,  # completed and kept its workers: the only publishing state
+        (7, True): False,  # the r19 case: a worker was killed mid-run
+        (0, False): False,  # zero tests ran, so nothing was measured
+        (0, True): False,
+    }, emitted
+
+    # The existing marker text and exit contract stay untouched.
     assert 'print("All tests have finished.")' in src
     assert 'print("No tests were run.")' in src
 
@@ -503,8 +566,15 @@ def test_master_path_writes_no_cidb_row_for_an_incomplete_measurement():
 
 
 def test_uncovered_code_analysis_is_skipped_when_incomparable():
+    # Comparability is tested FIRST, unconjoined: on a current-side cause the
+    # differential script never runs, so its two output files are absent and a
+    # guard conjoined with _diff_inputs_exist could not fire at all. The
+    # behavioural counterparts are the three
+    # test_incomparable_*_uncovered_analysis / test_a_comparable_run_with_no_*
+    # cells below, which observe print_res rather than the source text.
     src = open(_JOB, encoding="utf-8").read()
-    assert "if _diff_inputs_exist and not _measurement_comparable:" in src
+    assert "if not _measurement_comparable:" in src
+    assert "if _diff_inputs_exist and not _measurement_comparable:" not in src
     # ... and its counts block is withheld too.
     assert "if _diff_ran and _measurement_comparable:" in src
 
@@ -835,7 +905,7 @@ def _load_job_module_namespace():
     return ns
 
 
-def _write_baseline_outputs(tmpdir, artifact_names, complete=True):
+def _write_baseline_outputs(tmpdir, artifact_names, complete=True, diff_inputs=True):
     """Reproduce what generate_diff_coverage_report.sh leaves in TEMP_DIR.
 
     The script is the SOLE writer of base_llvm_coverage.meta.json (its wget) and
@@ -844,6 +914,13 @@ def _write_baseline_outputs(tmpdir, artifact_names, complete=True):
     the reads that consume them. Every field is produced by the real module
     functions rather than a literal dict, so a schema change cannot leave this
     stub silently describing something the production reader no longer accepts.
+
+    diff_inputs=False reproduces the script's `${#patterns[@]} -eq 0` exit: it
+    has already fetched and selected the baseline, but nothing coverable changed,
+    so it never extracts current.changed.info and never runs genhtml - hence no
+    report directory either. That is the only state in which the job may
+    legitimately conclude "No C/C++ source files changed", so it is the reverse
+    direction of the comparability-first ordering below.
     """
     base_info = os.path.join(tmpdir, "base_llvm_coverage.info")
     with open(base_info, "w", encoding="utf-8") as f:
@@ -857,7 +934,14 @@ def _write_baseline_outputs(tmpdir, artifact_names, complete=True):
     )
     with open(os.path.join(tmpdir, "selected_base_commit.txt"), "w", encoding="utf-8") as f:
         f.write("a" * 40 + "\n")
+    if not diff_inputs:
+        return
     os.makedirs(os.path.join(tmpdir, "llvm_coverage_diff_html_report"), exist_ok=True)
+    # genhtml's --diff-file and print_uncovered_code.py's two inputs.
+    with open(os.path.join(tmpdir, "changes.diff"), "w", encoding="utf-8") as f:
+        f.write("diff --git a/src/a.cpp b/src/a.cpp\n")
+    with open(os.path.join(tmpdir, "current.changed.info"), "w", encoding="utf-8") as f:
+        f.write("SF:/src/a.cpp\nDA:1,1\nend_of_record\n")
 
 
 def _drive_diff_gate(
@@ -869,6 +953,7 @@ def _drive_diff_gate(
     merge_ok=True,
     baseline_complete=True,
     sidecar_override=None,
+    diff_inputs=True,
 ):
     """Drive the real diff-gate out of the job source.
 
@@ -890,19 +975,23 @@ def _drive_diff_gate(
         for s in main_if.body
         if isinstance(s, ast.If) and ast.unparse(s.test) == "not is_master_branch"
     ][0]
-    # Slice through the `if _diff_ran:` statement, not merely to the comparability
-    # verdict: the "Baseline coverage / Current coverage / Delta" prints live inside
-    # it, and a cell asserting that they are absent is VACUOUS unless they are in
-    # the executed region at all.
+    # Slice through `results.append(print_res)`, not merely to the comparability
+    # verdict: the "Baseline coverage / Current coverage / Delta" prints and the
+    # whole Print Uncovered Code branch live below it, and a cell asserting on
+    # either is VACUOUS unless they are in the executed region at all.
     keep = []
     for st in block.body:
         keep.append(st)
         txt = ast.get_source_segment(src, st) or ""
-        if txt.startswith("if _diff_ran:"):
+        if txt.startswith("results.append(print_res)"):
             break
-    assert any(
-        "Baseline coverage" in (ast.get_source_segment(src, s) or "") for s in keep
+    _sliced = "\n".join((ast.get_source_segment(src, s) or "") for s in keep)
+    assert (
+        "Baseline coverage" in _sliced
     ), "harness slice no longer contains the delta prints it asserts on"
+    assert (
+        "No C/C++ source files changed" in _sliced
+    ), "harness slice no longer contains the no-C++-changes messages it asserts on"
     mod = ast.Module(body=keep, type_ignores=[])
     ast.fix_missing_locations(mod)
     code = compile(mod, job_path or _JOB, "exec")
@@ -928,13 +1017,18 @@ def _drive_diff_gate(
         invocations.append(command)
         ok = os.path.exists(info_path)
         if ok:
-            _write_baseline_outputs(tmpdir, names, complete=baseline_complete)
+            _write_baseline_outputs(
+                tmpdir, names, complete=baseline_complete, diff_inputs=diff_inputs
+            )
         return Result.create_from(name=name, status=ok)
 
     class _ResultShim:
         Status = Result.Status
         create_from = staticmethod(Result.create_from)
         from_commands_run = staticmethod(_from_commands_run)
+        from_fs = staticmethod(
+            lambda name: Result.create_from(name=name, status=Result.Status.OK)
+        )
 
     printed = []
     sidecar = (
@@ -946,17 +1040,28 @@ def _drive_diff_gate(
     )
     # lcov is not required to be installed here, so the only summary values the
     # slice needs are stubbed - but the two verdict helpers are the REAL ones, so
-    # the tolerance semantics under test cannot drift from production.
+    # the tolerance semantics under test cannot drift from production. The two
+    # sides return DISTINCT percentages keyed on the path, so the printed numbers
+    # are distinguishable and a swapped-argument regression is visible; the 0.30
+    # pp gap is an improvement, which keeps the healthy arm's verdict green.
+    def _stub_lcov_summary(path):
+        pct = 84.10 if "base_" in os.path.basename(path) else 84.40
+        return ((pct, 1, 2), (pct, 1, 2), (pct, 1, 2))
+
     job_ns = _load_job_module_namespace()
     ns = {
         "Path": pathlib.Path,
         "TEMP_DIR": tmpdir,
         "Result": _ResultShim,
-        "Utils": types.SimpleNamespace(compress_gz=lambda *a, **k: None),
+        "Shell": types.SimpleNamespace(run=lambda *a, **k: None),
+        "Utils": types.SimpleNamespace(
+            compress_gz=lambda *a, **k: None,
+            normalize_string=lambda s: s.lower().replace(" ", "_"),
+        ),
         "completeness": completeness,
         "print": lambda *a, **k: printed.append(" ".join(str(x) for x in a)),
         "shutil": shutil,
-        "get_lcov_summary": lambda path: ((50.0, 1, 2), (50.0, 1, 2), (50.0, 1, 2)),
+        "get_lcov_summary": _stub_lcov_summary,
         "coverage_drop": job_ns["coverage_drop"],
         "coverage_degraded": job_ns["coverage_degraded"],
         "collect_html_report_files": lambda *a, **k: ([], []),
@@ -964,11 +1069,14 @@ def _drive_diff_gate(
         "_sidecar": sidecar,
         "_measurement_comparable": True,
         "_incomparable_reason": "",
+        "results": [],
     }
     exec(code, ns)
     return types.SimpleNamespace(
         invocations=invocations,
         diff_res=ns.get("diff_res"),
+        print_res=ns.get("print_res"),
+        results=ns.get("results"),
         comparable=ns.get("_measurement_comparable"),
         reason=ns.get("_incomparable_reason"),
         selected_base=ns.get("_selected_base_commit"),
@@ -1068,6 +1176,16 @@ def test_a_baseline_side_cause_still_runs_the_script_and_uses_the_override():
     assert "generate_diff_coverage_report.sh" in " ".join(got.invocations[0])
     assert got.comparable is False
     assert "baseline measurement is incomplete" in got.reason, got.reason
+    # The override still fires: it is the ONLY thing that turns the OK sub-result
+    # from_commands_run produced into SKIPPED on this path.
+    assert got.diff_res.status == Result.Status.SKIPPED, got.diff_res.status
+    # ... and no delta is printed. The script legitimately ran, so this block IS
+    # reached with the measurement already known incomparable; parsing the two
+    # summaries here would print three numbers between two abstention notices,
+    # which is the reading confusion this gate exists to remove.
+    assert not any(
+        "Baseline coverage" in line or "Delta" in line for line in got.printed
+    ), got.printed
 
 
 def test_the_short_circuit_reason_cannot_drift_from_the_verdict_function():
@@ -1109,6 +1227,65 @@ def test_two_complete_sides_reach_a_real_comparable_verdict():
     assert got.reason == "", got.reason
     assert got.selected_base == "a" * 40, repr(got.selected_base)
     assert any("Comparing against baseline commit" in line for line in got.printed), got.printed
+    # Reverse direction of the delta suppression above: a comparable run MUST
+    # still print all three numbers, so that suppression cannot be widened into
+    # "never print a delta". The two stubbed sides differ (84.10 / 84.40), so a
+    # swapped-argument regression is visible in the printed values too.
+    assert any("Baseline coverage : 84.10%" in l for l in got.printed), got.printed
+    assert any("Current coverage  : 84.40%" in l for l in got.printed), got.printed
+    assert any("Delta             : +0.30%" in l for l in got.printed), got.printed
+
+
+_NO_CPP = "No C/C++ source files changed"
+
+
+def test_incomparable_pr_side_does_not_report_no_cpp_changes():
+    # The short-circuit is the SOLE reason the two diff inputs are absent on this
+    # path, because the differential script that writes them never ran. Testing
+    # _diff_inputs_exist before comparability therefore reported "No C/C++ source
+    # files changed" twice on a run whose C++ files may well have changed - the
+    # job log contradicting itself on the very path this gate exists to serve.
+    with tempfile.TemporaryDirectory() as d:
+        got = _drive_diff_gate(
+            True, d, present_names=[completeness.profile_basename(_GATE_ARTIFACTS[0])]
+        )
+    assert got.comparable is False
+    assert got.print_res.status == Result.Status.SKIPPED, got.print_res.status
+    assert got.reason in got.print_res.info, (got.reason, got.print_res.info)
+    assert not any(_NO_CPP in line for line in got.printed), got.printed
+    # The abstention must not redden anything: SKIPPED counts as OK.
+    parent = Result.create_from(name="LLVM Coverage", results=got.results)
+    assert parent.is_ok(), f"job is not green: {parent.status}"
+
+
+def test_an_empty_measurement_does_not_report_no_cpp_changes():
+    # Same ordering defect reached by the other current-side cause: the aggregate
+    # merge published no llvm_coverage.info at all, so there is nothing to compare
+    # - which is emphatically not the same statement as "nothing changed".
+    with tempfile.TemporaryDirectory() as d:
+        got = _drive_diff_gate(False, d)
+    assert got.comparable is False
+    assert got.print_res.status == Result.Status.SKIPPED, got.print_res.status
+    assert got.reason in got.print_res.info, (got.reason, got.print_res.info)
+    assert not any(_NO_CPP in line for line in got.printed), got.printed
+    parent = Result.create_from(name="LLVM Coverage", results=got.results)
+    assert parent.is_ok(), f"job is not green: {parent.status}"
+
+
+def test_a_comparable_run_with_no_coverable_changes_still_reports_no_cpp_changes():
+    # The reverse direction, and the cell that keeps the fix from being widened
+    # into "always report SKIPPED": both sides are complete and comparable, the
+    # script ran and selected a baseline, but nothing coverable changed, so it
+    # took its own `${#patterns[@]} -eq 0` exit and wrote neither diff input.
+    # That is the one state in which this sentence is TRUE, and it must survive.
+    with tempfile.TemporaryDirectory() as d:
+        got = _drive_diff_gate(True, d, diff_inputs=False)
+    assert got.comparable is True, f"gate abstained: {got.reason}"
+    assert got.print_res.status == Result.Status.OK, got.print_res.status
+    assert _NO_CPP in got.print_res.info, got.print_res.info
+    assert any(_NO_CPP in line for line in got.printed), got.printed
+    parent = Result.create_from(name="LLVM Coverage", results=got.results)
+    assert parent.is_ok(), f"job is not green: {parent.status}"
 
 
 # --------------------------------------------------------------------------
