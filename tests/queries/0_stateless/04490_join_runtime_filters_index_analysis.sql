@@ -35,6 +35,7 @@ SET query_plan_join_swap_table = 'false';
 -- Left-side join pruning is intentionally disabled under parallel replicas, so pin PR off to
 -- exercise the feature (the ParallelReplicas CI job otherwise forces it on).
 SET enable_parallel_replicas = 0;
+SET join_runtime_filter_min_probe_rows = 0;
 
 -- PK join
 SELECT s1.id, s1.country, s1.amount
