@@ -18,6 +18,12 @@ FAILPOINT = "database_replicated_fail_active_node_removal_on_shutdown"
 INJECTED = "Injected Keeper error while removing the active node"
 BEST_EFFORT_LOG = "Failed to stop replication of database"
 
+# The same site, but with a user-class Keeper error instead of a hardware one.
+NONRETRYABLE_FAILPOINT = "database_replicated_fail_active_node_removal_nonretryable"
+NONRETRYABLE_INJECTED = (
+    "Injected non-retryable Keeper error while removing the active node"
+)
+
 cluster = ClickHouseCluster(__file__)
 node = cluster.add_instance(
     "node",
@@ -142,6 +148,29 @@ def test_detach_database_still_reports_keeper_error(started_cluster):
 
     assert INJECTED in error, f"DETACH swallowed the Keeper error: {error}"
     assert _database_count(db) == "1", "The database was detached despite the error."
+
+    node.query(f"DROP DATABASE IF EXISTS {db} SYNC")
+
+
+def test_drop_database_still_reports_non_hardware_keeper_error(started_cluster):
+    # Must-not-regress: the best-effort handling is narrowed to HARDWARE Keeper errors, which are
+    # transient and release the ephemeral node when the session expires anyway. A user-class error
+    # (here ZBADVERSION) means a real inconsistency rather than a lost connection, so it must still
+    # fail the DROP instead of being swallowed.
+    db = "rdb_drop_nonretryable"
+    _create_replicated_database(db)
+
+    node.query(f"SYSTEM ENABLE FAILPOINT {NONRETRYABLE_FAILPOINT}")
+    try:
+        error = node.query_and_get_error(f"DROP DATABASE {db} SYNC")
+    finally:
+        node.query(f"SYSTEM DISABLE FAILPOINT {NONRETRYABLE_FAILPOINT}")
+
+    assert NONRETRYABLE_INJECTED in error, (
+        f"DROP swallowed a non-hardware Keeper error: {error}"
+    )
+    # The DROP genuinely failed rather than half-succeeding.
+    assert _database_count(db) == "1", "The database was dropped despite the error."
 
     node.query(f"DROP DATABASE IF EXISTS {db} SYNC")
 

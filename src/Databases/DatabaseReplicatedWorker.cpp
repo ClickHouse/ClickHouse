@@ -53,6 +53,7 @@ namespace FailPoints
     extern const char database_replicated_delay_entry_execution[];
     extern const char database_replicated_stop_entry_execution[];
     extern const char database_replicated_fail_active_node_removal_on_shutdown[];
+    extern const char database_replicated_fail_active_node_removal_nonretryable[];
 }
 
 
@@ -171,6 +172,11 @@ void DatabaseReplicatedDDLWorker::shutdown()
         {
             throw Coordination::Exception(Coordination::Error::ZCONNECTIONLOSS,
                 "Injected Keeper error while removing the active node, path {}", active_path);
+        });
+        fiu_do_on(FailPoints::database_replicated_fail_active_node_removal_nonretryable,
+        {
+            throw Coordination::Exception(Coordination::Error::ZBADVERSION,
+                "Injected non-retryable Keeper error while removing the active node, path {}", active_path);
         });
         active_node_holder_zookeeper->tryRemove(active_path);
     }

@@ -120,6 +120,7 @@ static struct InitFiu
     REGULAR(database_catalog_throw_on_table_prepare_shutdown) \
     REGULAR(database_replicated_throw_on_stop_replication) \
     REGULAR(database_replicated_fail_active_node_removal_on_shutdown) \
+    REGULAR(database_replicated_fail_active_node_removal_nonretryable) \
     REGULAR(dummy_failpoint) \
     REGULAR(prefetched_reader_pool_failpoint) \
     REGULAR(taskstats_counters_reset_throw) \
