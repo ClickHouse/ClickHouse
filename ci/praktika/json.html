@@ -1383,9 +1383,13 @@
         const pct = (area, weight) => (weight ? area / weight : 0);
         const cpuUtil = pct(u.cpu_used_area, u.cpu_core_s);
         const memUtil = pct(u.mem_used_area, u.mem_gb_s);
-        const cpuStall = pct(u.cpu_stall_area, u.cpu_core_s);
-        const memStall = pct(u.mem_stall_area, u.mem_gb_s);
-        const ioStall = pct(u.io_stall_area, u.cpu_core_s);
+        // "some" stalls are wall-clock pressure fractions -> weighted by runtime;
+        // "full" stalls waste every core -> weighted by provisioned core-seconds.
+        const cpuStall = pct(u.cpu_stall_area, u.wall_time_s);
+        const memStall = pct(u.mem_stall_area, u.wall_time_s);
+        const ioStall = pct(u.io_stall_area, u.wall_time_s);
+        const memFull = pct(u.mem_full_area, u.cpu_core_s);
+        const ioFull = pct(u.io_full_area, u.cpu_core_s);
 
         const statusContainer = document.getElementById("status-container");
         const wrapper = document.createElement("div");
@@ -1424,8 +1428,8 @@
         const stallCol = mkCol("right");
         stallCol.style.opacity = "0.7";
         addRow(stallCol, `cpu stalled ${cpuStall.toFixed(0)}%`);
-        addRow(stallCol, `mem stalled ${memStall.toFixed(0)}%`);
-        addRow(stallCol, `io stalled ${ioStall.toFixed(0)}%`);
+        addRow(stallCol, `mem stalled ${memStall.toFixed(0)}%` + (memFull >= 1 ? ` (full ${memFull.toFixed(0)}%)` : ""));
+        addRow(stallCol, `io stalled ${ioStall.toFixed(0)}%` + (ioFull >= 1 ? ` (full ${ioFull.toFixed(0)}%)` : ""));
         cols.appendChild(stallCol);
 
         wrapper.appendChild(cols);

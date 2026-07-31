@@ -120,24 +120,34 @@ class PipelineUtilization(MetaClasses.SerializableSingleton):
     """Whole-pipeline CPU/RAM utilization and CPU/mem/io stall, accumulated over
     all jobs that qualified for host-metrics labelling.
 
-    Each job is weighted by its provisioned resource-time - core-seconds
-    (cpu_count * duration) for CPU/io, GB-seconds (mem_total_gb * duration) for
-    RAM - so a bigger runner and/or a longer job impacts the KPI more. Values
-    are kept as running sums so merging across jobs is exact; the percentages
-    are derived on read (see to_summary). Lets a whole pipeline be monitored for
-    over-provisioning (low utilization) or contention (high stall) and be
-    normalized across differently-sized runners.
+    Utilization (cpu, mem) is weighted by provisioned resource-time -
+    core-seconds (cpu_count * duration) for CPU, GB-seconds
+    (mem_total_gb * duration) for RAM - so it is a true efficiency ratio
+    (used resource-time / provisioned resource-time) and a bigger runner and/or
+    a longer job impacts it more.
+
+    Stalls come in two PSI flavours. ``some`` (time at least one task was
+    stalled) is a wall-clock pressure fraction independent of machine size, so
+    it is duration-weighted - "what % of pipeline runtime was under pressure".
+    ``full`` (all tasks stalled at once, so the box made zero progress; exists
+    for mem and io, not cpu) wastes the whole machine, so it is weighted by
+    core-seconds - the wasted-compute share of provisioned CPU.
+
+    Values are kept as running sums so merging across jobs is exact; the
+    percentages are derived on read (see to_summary).
     """
 
     jobs: int = 0
-    wall_time_s: float = 0.0  # sum of qualifying job durations (context only)
+    wall_time_s: float = 0.0  # sum(duration) - the "some"-stall weight/denominator
     cpu_core_s: float = 0.0  # sum(cpu_count * duration) - provisioned core-seconds
     mem_gb_s: float = 0.0  # sum(mem_total_gb * duration) - provisioned GB-seconds
     cpu_used_area: float = 0.0  # sum(avg_cpu% * cpu_count * duration)
     mem_used_area: float = 0.0  # sum(avg_mem% * mem_total_gb * duration)
-    cpu_stall_area: float = 0.0  # sum(cpu_stall% * cpu_count * duration)
-    mem_stall_area: float = 0.0  # sum(mem_stall% * mem_total_gb * duration)
-    io_stall_area: float = 0.0  # sum(io_stall% * cpu_count * duration)
+    cpu_stall_area: float = 0.0  # sum(cpu_some_s * 100)  (duration-weighted)
+    mem_stall_area: float = 0.0  # sum(mem_some_s * 100)
+    io_stall_area: float = 0.0  # sum(io_some_s * 100)
+    mem_full_area: float = 0.0  # sum(mem_full_s * cpu_count * 100)  (core-weighted)
+    io_full_area: float = 0.0  # sum(io_full_s * cpu_count * 100)
     ext: Dict[str, Any] = dataclasses.field(default_factory=dict)
 
     def merge_with(self, other: "PipelineUtilization"):
@@ -150,6 +160,8 @@ class PipelineUtilization(MetaClasses.SerializableSingleton):
         self.cpu_stall_area += other.cpu_stall_area
         self.mem_stall_area += other.mem_stall_area
         self.io_stall_area += other.io_stall_area
+        self.mem_full_area += other.mem_full_area
+        self.io_full_area += other.io_full_area
         return self
 
     @classmethod
@@ -170,11 +182,15 @@ class PipelineUtilization(MetaClasses.SerializableSingleton):
         psi = metrics.get("psi", {})
         cpu_avg = averages.get("cpu") or 0
         mem_avg = averages.get("mem") or 0
-        # stall% over the run = stall_seconds / duration * 100; multiplied by the
-        # resource-time weight (cores*duration) the duration cancels out.
+        # Stalls are wall-clock PSI fractions; the duration-weighted numerator is
+        # stall% * duration = (stall_s / duration * 100) * duration = stall_s * 100,
+        # divided by wall_time_s on read.
         cpu_stall_s = psi.get("cpu_s", 0) or 0
         mem_stall_s = psi.get("mem_some_s", 0) or 0
         io_stall_s = psi.get("io_some_s", 0) or 0
+        # full stall wastes every core -> weighted by cpu_count.
+        mem_full_s = psi.get("mem_full_s", 0) or 0
+        io_full_s = psi.get("io_full_s", 0) or 0
         return cls(
             jobs=1,
             wall_time_s=duration,
@@ -182,9 +198,11 @@ class PipelineUtilization(MetaClasses.SerializableSingleton):
             mem_gb_s=gb * duration,
             cpu_used_area=cpu_avg * cores * duration,
             mem_used_area=mem_avg * gb * duration,
-            cpu_stall_area=cpu_stall_s * cores * 100.0,
-            mem_stall_area=mem_stall_s * gb * 100.0,
-            io_stall_area=io_stall_s * cores * 100.0,
+            cpu_stall_area=cpu_stall_s * 100.0,
+            mem_stall_area=mem_stall_s * 100.0,
+            io_stall_area=io_stall_s * 100.0,
+            mem_full_area=mem_full_s * cores * 100.0,
+            io_full_area=io_full_s * cores * 100.0,
         )
 
     def to_summary(self) -> Dict[str, Any]:
@@ -198,7 +216,9 @@ class PipelineUtilization(MetaClasses.SerializableSingleton):
             "wall_time_s": round(self.wall_time_s, 1),
             "cpu_util_pct": pct(self.cpu_used_area, self.cpu_core_s),
             "mem_util_pct": pct(self.mem_used_area, self.mem_gb_s),
-            "cpu_stall_pct": pct(self.cpu_stall_area, self.cpu_core_s),
-            "mem_stall_pct": pct(self.mem_stall_area, self.mem_gb_s),
-            "io_stall_pct": pct(self.io_stall_area, self.cpu_core_s),
+            "cpu_stall_pct": pct(self.cpu_stall_area, self.wall_time_s),
+            "mem_stall_pct": pct(self.mem_stall_area, self.wall_time_s),
+            "io_stall_pct": pct(self.io_stall_area, self.wall_time_s),
+            "mem_full_pct": pct(self.mem_full_area, self.cpu_core_s),
+            "io_full_pct": pct(self.io_full_area, self.cpu_core_s),
         }
