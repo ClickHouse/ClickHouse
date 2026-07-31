@@ -1,3 +1,4 @@
+#include <Common/timespanFromSeconds.h>
 #include <Common/HTTPConnectionPool.h>
 #include <Common/HostResolvePool.h>
 
@@ -624,6 +625,10 @@ private:
         /// Called after connect/reconnect so the async metrics thread can map sockets to netlink data.
         void notifySocketInode()
         {
+#if defined(OS_WINDOWS)
+            /// A Windows `SOCKET` is not a file descriptor and has no inode; there is nothing to
+            /// correlate it with either, since the metrics source on the other end is netlink.
+#else
             try
             {
                 auto fd = Session::socket().impl()->sockfd();
@@ -636,6 +641,7 @@ private:
             catch (...) // NOLINT(bugprone-empty-catch) Ok: socket may not be connected yet
             {
             }
+#endif
         }
 
         void doConnect(UInt64 * connect_time)
@@ -1216,7 +1222,7 @@ class HTTPConnectionPools::Impl
 {
 private:
     const size_t DEFAULT_WIPE_TIMEOUT_SECONDS = 10 * 60;
-    const Poco::Timespan wipe_timeout = Poco::Timespan(DEFAULT_WIPE_TIMEOUT_SECONDS, 0);
+    const Poco::Timespan wipe_timeout = timespanFromSeconds(DEFAULT_WIPE_TIMEOUT_SECONDS);
 
     ConnectionGroup::Ptr disk_group = std::make_shared<ConnectionGroup>(HTTPConnectionGroupType::DISK);
     ConnectionGroup::Ptr storage_group = std::make_shared<ConnectionGroup>(HTTPConnectionGroupType::STORAGE);

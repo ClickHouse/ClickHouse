@@ -2,6 +2,8 @@
 
 /// Ships stack traces from the signal handler to the trace log over a pipe. Follows
 /// `QueryProfiler` and `SignalHandlers`, which are what feed it.
+#include <Common/TraceType.h>
+
 #if !defined(OS_WINDOWS)
 
 
@@ -18,19 +20,6 @@ namespace DB
 {
 
 class TraceCollector;
-
-enum class TraceType : uint8_t
-{
-    Real,
-    CPU,
-    Memory,
-    MemorySample,
-    MemoryPeak,
-    ProfileEvent,
-    JemallocSample,
-    MemoryAllocatedWithoutCheck,
-    Instrumentation
-};
 
 /// This is the second part of TraceCollector, that sends stacktrace to the pipe.
 /// It has been split out to avoid dependency from interpreters part.

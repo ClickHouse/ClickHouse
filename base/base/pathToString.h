@@ -38,6 +38,21 @@ inline std::string pathToString(const std::filesystem::path & path)
 #endif
 }
 
+/// The same, but always separated by `/` rather than by the host's preferred separator.
+///
+/// For paths that are not the local filesystem's: keys in an object store, entries inside an
+/// archive, the virtual paths of `IDisk`. Those are `/`-separated by definition, so a `path`
+/// assembled from them with `operator/` - which appends `\` on Windows - has to be read back
+/// generically or it stops being the path it names. On POSIX this is identical to `pathToString`.
+inline std::string pathToGenericString(const std::filesystem::path & path)
+{
+#if defined(OS_WINDOWS)
+    return detail::u8StringToString(path.generic_u8string());
+#else
+    return path.generic_string();
+#endif
+}
+
 inline std::filesystem::path pathFromString(std::string_view path)
 {
 #if defined(OS_WINDOWS)

@@ -456,10 +456,6 @@ void FailPointInjection::enableFailPoint(const String &)
 {
 }
 
-void FailPointInjection::enablePauseFailPoint(const String &, UInt64)
-{
-}
-
 void FailPointInjection::disableFailPoint(const String &)
 {
 }
@@ -468,7 +464,7 @@ void FailPointInjection::notifyFailPoint(const String &)
 {
 }
 
-void FailPointInjection::wait(const String &)
+void FailPointInjection::notifyPauseAndWaitForResume(const String &)
 {
 }
 
@@ -478,17 +474,6 @@ void FailPointInjection::waitForPause(const String &)
 
 void FailPointInjection::waitForResume(const String &)
 {
-}
-
-void FailPointInjection::enableFromGlobalConfig(const Poco::Util::AbstractConfiguration & config)
-{
-    String root_key = "fail_points_active";
-
-    Poco::Util::AbstractConfiguration::Keys fail_point_names;
-    config.keys(root_key, fail_point_names);
-
-    if (!fail_point_names.empty())
-        throw Exception(ErrorCodes::SUPPORT_IS_DISABLED, "FIU is not enabled");
 }
 
 std::vector<FailPointInjection::FailPointInfo> FailPointInjection::getFailPoints()

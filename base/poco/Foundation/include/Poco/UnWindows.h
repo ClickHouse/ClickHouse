@@ -150,6 +150,12 @@
 #undef ERROR
 #undef IGNORE
 #undef STRICT
+/// `IN` and `OUT` are the legacy SAL parameter annotations, which expand to nothing. `IN` is a
+/// SQL keyword and so a `ParserKeyword` enumerator; both are too short and too ordinary to leave
+/// defined. Undefining them is safe because they annotate rather than declare - a Windows header
+/// included later still compiles, it just loses the annotation.
+#undef IN
+#undef OUT
 #endif // POCO_NO_UNWINDOWS
 
 #endif // Foundation_UnWindows_INCLUDED

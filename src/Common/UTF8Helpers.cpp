@@ -72,7 +72,7 @@ struct UTF8Decoder
     UInt32 codepoint {0};
 };
 
-static int wcwidth(wchar_t wc)
+static int wcwidth(char32_t wc)
 {
     int width = widechar_wcwidth(wc);
     switch (width)

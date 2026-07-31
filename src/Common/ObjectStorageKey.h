@@ -6,7 +6,14 @@
 
 namespace DB
 {
-    struct ObjectStorageKey
+    /// Joins two parts of an object storage key with a single `/`.
+///
+/// Spelled out rather than delegated to `std::filesystem::path`, which is what this used to be:
+/// an object storage key is not a filesystem path, and `path::operator/` appends the host's
+/// preferred separator - a backslash on Windows, which is an ordinary character in a key.
+String appendObjectStorageKeySegment(const String & prefix, const String & suffix);
+
+struct ObjectStorageKey
     {
         ObjectStorageKey() = default;
 

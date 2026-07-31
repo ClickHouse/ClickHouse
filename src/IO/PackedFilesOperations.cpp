@@ -101,22 +101,22 @@ MapWithMemoryTracking<fs::path, ArchiveListing> listPackedRecursive(const DiskPt
     for (auto it = disk_in->iterateDirectory(pathToString(input_dir)); it->isValid(); it->next())
     {
         auto in_path = input_dir / it->name();
-        if (disk_in->existsDirectory(in_path))
+        if (disk_in->existsDirectory(pathToGenericString(in_path)))
         {
-            auto subtree_listing = listPackedRecursive(disk_in, base_input_dir, sub_dir_path / it->name());
+            auto subtree_listing = listPackedRecursive(disk_in, base_input_dir, pathToGenericString(sub_dir_path / it->name()));
             for (auto & [subtree_path, subtree_files] : subtree_listing)
                 listing[subtree_path] = subtree_files;
         }
         else if (in_path.extension() == PackedFilesIO::ARCHIVE_EXTENSION)
         {
             auto & current_listing = listing[sub_dir_path];
-            auto more_files = listPacked(disk_in, in_path);
+            auto more_files = listPacked(disk_in, pathToGenericString(in_path));
             current_listing.insert(current_listing.end(), more_files.begin(), more_files.end());
         }
         else
         {
             auto & current_listing = listing[sub_dir_path];
-            auto size = disk_in->getFileSize(in_path);
+            auto size = disk_in->getFileSize(pathToGenericString(in_path));
             current_listing.push_back({it->name(), "", PackedFilesIO::FileOffset{0, size}});
         }
     }
@@ -241,7 +241,7 @@ void createPackedRecursive(const DiskPtr & disk_in, const String & input_dir, co
         disk_out->createDirectories(pathToString(output_dir_path));
 
     auto output_file = fs::path(output_dir_path) / (String("data") + PackedFilesIO::ARCHIVE_EXTENSION);
-    createPacked(disk_in, input_dir, disk_out, output_file, file_order_hint);
+    createPacked(disk_in, input_dir, disk_out, pathToGenericString(output_file), file_order_hint);
 
     for (auto it = disk_in->iterateDirectory(input_dir); it->isValid(); it->next())
     {

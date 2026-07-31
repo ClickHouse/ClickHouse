@@ -12,6 +12,7 @@
 #include <IO/WriteHelpers.h>
 
 #include <Common/AsyncTaskExecutor.h>
+#include <Common/Fiber.h>
 #include <Interpreters/Context.h>
 
 namespace DB

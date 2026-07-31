@@ -8,7 +8,7 @@
 #include <base/errnoToString.h>
 #include <unordered_map>
 #include <mutex>
-#include <unistd.h>
+#include <IO/PlatformFileIO.h>
 #include <fcntl.h>
 
 
@@ -66,7 +66,7 @@ IAsynchronousReader::Result SynchronousReader::execute(Request request)
 
         {
             CurrentMetrics::Increment metric_increment{CurrentMetrics::Read};
-            res = ::pread(fd, request.buf, request.size, request.offset);
+            res = platformPRead(fd, request.buf, request.size, request.offset);
         }
         if (!res)
             break;

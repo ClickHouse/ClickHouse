@@ -1,5 +1,6 @@
 #pragma once
 
+#include <Common/timespanFromSeconds.h>
 #include <Core/Defines.h>
 #include <Interpreters/Context_fwd.h>
 
@@ -77,11 +78,6 @@ APPLY_FOR_ALL_CONNECTION_TIMEOUT_MEMBERS(DECLARE_BUILDER_FOR_MEMBER)
 /// wide on LP64 platforms - on LLP64 ones (Windows) it is 32, and a `size_t` count of seconds
 /// would be truncated. Its microsecond constructor takes a 64-bit `TimeDiff`, so go through
 /// that instead; the resulting span is the same.
-inline Poco::Timespan timespanFromSeconds(size_t seconds)
-{
-    return Poco::Timespan(static_cast<Poco::Timespan::TimeDiff>(seconds) * Poco::Timespan::SECONDS);
-}
-
 /// NOLINTBEGIN(bugprone-macro-parentheses)
 #define DEFINE_BUILDER_FOR_MEMBER(member, setter_func) \
     inline ConnectionTimeouts & ConnectionTimeouts::setter_func(size_t seconds) \

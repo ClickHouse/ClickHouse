@@ -48,7 +48,7 @@ ParallelReadBuffer::ParallelReadBuffer(
     , schedule(std::move(schedule_))
     , input(input_)
     , file_size(file_size_)
-    , range_step(std::max(1ul, range_step_))
+    , range_step(std::max(1uz, range_step_))
 {
     LOG_TRACE(getLogger("ParallelReadBuffer"), "Parallel reading is used");
 

@@ -10,6 +10,7 @@
 #include <Common/CurrentMetrics.h>
 #include <Common/Throttler.h>
 #include <IO/ReadBufferFromFileDescriptor.h>
+#include <IO/PlatformFileIO.h>
 #include <IO/WriteHelpers.h>
 #include <Common/filesystemHelpers.h>
 #if defined(OS_WINDOWS)
@@ -37,51 +38,6 @@ namespace CurrentMetrics
 {
     extern const Metric Read;
 }
-
-#if defined(OS_WINDOWS)
-namespace
-{
-
-/// `read`/`pread` for Windows. `ReadFile` with an `OVERLAPPED` offset is the positional read:
-/// unlike `_lseeki64` followed by `_read` it leaves the descriptor's shared file position alone,
-/// which is exactly what `pread` promises and what makes concurrent reads of one file safe.
-/// Reports failure the way the POSIX calls do, through `-1` and `errno`.
-ssize_t readWindows(int fd, char * to, size_t bytes, bool use_pread, size_t offset)
-{
-    auto * handle = reinterpret_cast<HANDLE>(_get_osfhandle(fd));
-    if (handle == INVALID_HANDLE_VALUE)
-    {
-        errno = EBADF;
-        return -1;
-    }
-
-    /// `ReadFile` counts in `DWORD`.
-    const DWORD to_read = static_cast<DWORD>(std::min<size_t>(bytes, std::numeric_limits<DWORD>::max()));
-
-    OVERLAPPED overlapped{};
-    OVERLAPPED * positional = nullptr;
-    if (use_pread)
-    {
-        overlapped.Offset = static_cast<DWORD>(offset & 0xFFFFFFFFull);
-        overlapped.OffsetHigh = static_cast<DWORD>(offset >> 32);
-        positional = &overlapped;
-    }
-
-    DWORD bytes_read = 0;
-    if (!ReadFile(handle, to, to_read, &bytes_read, positional))
-    {
-        /// Reading at or past the end of a file with an explicit offset is reported this way
-        /// rather than as a short read; it is the end of file, not an error.
-        if (GetLastError() == ERROR_HANDLE_EOF)
-            return 0;
-        errno = EIO;
-        return -1;
-    }
-    return static_cast<ssize_t>(bytes_read);
-}
-
-}
-#endif
 
 namespace DB
 {
@@ -121,14 +77,10 @@ size_t ReadBufferFromFileDescriptor::readImpl(char * to, size_t min_bytes, size_
         {
             CurrentMetrics::Increment metric_increment{CurrentMetrics::Read};
 
-#if defined(OS_WINDOWS)
-            res = readWindows(fd, to + bytes_read, to_read, use_pread, offset + bytes_read);
-#else
             if (use_pread)
-                res = ::pread(fd, to + bytes_read, to_read, offset + bytes_read);
+                res = platformPRead(fd, to + bytes_read, to_read, offset + bytes_read);
             else
-                res = ::read(fd, to + bytes_read, to_read);
-#endif
+                res = platformRead(fd, to + bytes_read, to_read);
         }
         if (!res)
             break;
