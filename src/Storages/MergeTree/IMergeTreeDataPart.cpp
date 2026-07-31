@@ -43,6 +43,9 @@
 #include <Storages/MergeTree/checkDataPart.h>
 #include <Storages/StorageReplicatedMergeTree.h>
 #include <base/JSON.h>
+
+#include <unordered_set>
+
 #include <Common/StackTrace.h>
 #include <Common/CurrentMetrics.h>
 #include <Common/CurrentThread.h>
@@ -2942,7 +2945,12 @@ void IMergeTreeDataPart::calculateSecondaryIndicesSizesOnDisk() const
     {
         auto index_ptr = MergeTreeIndexFactory::instance().get(storage_metadata_snapshot, index_description, *storage.getSettings());
         auto index_name = index_ptr->getFileName();
-        auto index_substreams = index_ptr->getSubstreams();
+        /// Union of all on-disk versions (`getAllSubstreamsInPart`) so the size counts every payload
+        /// present, including a stale legacy file a part may still carry alongside the current one.
+        auto index_substreams = index_ptr->getAllSubstreamsInPart(checksums, index_name, &getDataPartStorage());
+
+        /// A shared mark file (substreams resolving to the same stream name) is counted once.
+        std::unordered_set<std::string> counted_mark_streams;
 
         for (const auto & index_substream : index_substreams)
         {
@@ -2980,7 +2988,8 @@ void IMergeTreeDataPart::calculateSecondaryIndicesSizesOnDisk() const
                     substream_size.data_uncompressed = size;
             }
 
-            substream_size.marks = getFileSizeOrZeroResolved(index_stream_name, getMarksFileExtension());
+            if (counted_mark_streams.emplace(index_stream_name).second)
+                substream_size.marks = getFileSizeOrZeroResolved(index_stream_name, getMarksFileExtension());
 
             total_secondary_indices_size.add(substream_size);
             new_secondary_index_sizes[index_description.name].add(substream_size);
@@ -3076,7 +3085,9 @@ bool IMergeTreeDataPart::isSkipIndexInPackedArchive(const IMergeTreeIndex & skip
     if (!disk_storage)
         return false;
     const String file_name = skip_index.getFileName();
-    for (const auto & substream : skip_index.getSubstreams())
+    /// Probe what the part actually holds, not the writer's current `getSubstreams`, so a legacy
+    /// member inside `skp_idx.packed` on an upgraded part is found.
+    for (const auto & substream : skip_index.getAllSubstreamsInPart(checksums, file_name, &getDataPartStorage()))
         if (disk_storage->isFileInPackedSkipIndicesArchive(file_name + substream.suffix + substream.extension))
             return true;
     return false;
