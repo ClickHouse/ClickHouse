@@ -28,6 +28,8 @@ branching-ancestor-loops-are-pruned
 4
 dense-alias-graph-is-bounded
 10
+finite-prefix-before-globstar-is-pruned
+1
 file-symlink-keeps-both-names
 2
 alias.txt

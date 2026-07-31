@@ -189,6 +189,25 @@ for i in $(seq 1 10); do
     done
 done
 
+# A chain of ten nested directories where every level also carries five symlinks to its
+# own real child, so the number of LEXICAL paths from the root down to the leaf is 6^10
+# while only ten distinct directories exist. The query below spends nine finite `*`
+# components walking that chain before it reaches the `**`, and none of those levels
+# loops back to an ancestor. A guard that only tracked the `**` segment itself would
+# leave every one of those finite frames unrecorded and re-walk the whole subtree once
+# per lexical spelling; the file is still found exactly once, so no count can see the
+# difference. Recording every frame whose remaining pattern still holds a `**` prunes
+# the chain to one visit per directory. Measured on this shape: tracking the finite
+# prefix answers in 0.2s, tracking only the `**` segment does not finish within 300s.
+mkdir -p "$TEST_DIR_ABS/prefixchain/root"
+prefix_chain_dir="$TEST_DIR_ABS/prefixchain/root"
+for i in $(seq 1 10); do
+    mkdir -p "$prefix_chain_dir/l$i"
+    for a in 1 2 3 4 5; do ln -s "l$i" "$prefix_chain_dir/al$a"; done
+    prefix_chain_dir="$prefix_chain_dir/l$i"
+done
+printf "row1\n" > "$prefix_chain_dir/f.txt"
+
 trap 'rm -rf "$TEST_DIR_ABS"' EXIT
 
 # Ancestor-loop symlink: `loop/dir1/dir2/loop_to_root` points back at `loop/dir1`,
@@ -298,6 +317,13 @@ $CLICKHOUSE_CLIENT --query "SELECT count() FROM file('$TEST_DIR_NAME/branching/r
 # over 700s at ten, while keeping them stays at about 0.1s throughout.
 echo "dense-alias-graph-is-bounded"
 $CLICKHOUSE_CLIENT --query "SELECT count() FROM file('$TEST_DIR_NAME/aliasgraph/root/**/*.txt', 'TSV', 'val String')"
+
+# Finite `*` components BEFORE the `**`, over a chain of aliased directories: must return 1
+# and must finish. The nine `*` levels are walked before any `**` is reached, so this is the
+# assertion that fails if frame tracking is narrowed to the `**` segment itself while every
+# other scenario here still passes, including the two above, which both begin at a `**`.
+echo "finite-prefix-before-globstar-is-pruned"
+$CLICKHOUSE_CLIENT --query "SELECT count() FROM file('$TEST_DIR_NAME/prefixchain/root/*/*/*/*/*/*/*/*/*/**/f.txt', 'TSV', 'val String')"
 
 # A file symlink beside its target: both names must still be reported, by a plain `*`,
 # by a recursive `**`, and by an implicit directory listing. The `**` spelling is the one
