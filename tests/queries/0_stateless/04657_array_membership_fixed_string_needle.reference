@@ -21,6 +21,14 @@ Nullable(FixedString) LowCardinality(Nullable)	[0,1]	[0,1]
 Nullable(FixedString) multiplicity and position	2	1	2	1
 Nullable(String) needle	[0]	[0]
 Nullable(FixedString) NULL needle	[]
+-- a nullable non-string needle keeps the supertype comparison
+Nullable(UInt32) needle on Int32	0	0	0	0
+Nullable(Int32) needle on UInt32	0	0	0	0
+Int64 element, Nullable(UInt64) needle oracle	0
+UInt64 element, Nullable(Int64) needle oracle	0
+Array(Nullable(Int64)), Nullable(UInt64) needle oracle	0
+Nullable(Int32) needle present	1	1	1
+Nullable(Date) needle	1	1
 -- constant array, compared as Fields
 1	1	2
 1	1	1

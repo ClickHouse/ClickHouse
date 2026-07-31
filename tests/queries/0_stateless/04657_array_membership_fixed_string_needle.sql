@@ -63,6 +63,51 @@ SELECT 'Nullable(FixedString) multiplicity and position', countEqual(v, CAST(toF
 SELECT 'Nullable(String) needle',                        groupArray(id), (SELECT groupArray(id) FROM t_str WHERE arrayExists(x -> x = CAST('V0' AS Nullable(String)), v)) FROM t_str WHERE has(v, CAST('V0' AS Nullable(String)));
 SELECT 'Nullable(FixedString) NULL needle',              groupArray(id) FROM t_str WHERE has(v, CAST(NULL AS Nullable(FixedString(3))));
 
+-- Peeling the wrapper is only about a string-family layout. A nullable needle of any other type must
+-- keep reaching the supertype cast: comparing it raw would equate a negative signed value with its
+-- unsigned bit-pattern twin, and where the two types have no common type at all the refusal must
+-- survive rather than turn into an answer.
+SELECT '-- a nullable non-string needle keeps the supertype comparison';
+DROP TABLE IF EXISTS t_i32;
+DROP TABLE IF EXISTS t_u32;
+DROP TABLE IF EXISTS t_i64_wide;
+DROP TABLE IF EXISTS t_u64_wide;
+DROP TABLE IF EXISTS t_i64_null;
+DROP TABLE IF EXISTS t_date_n;
+CREATE TABLE t_i32       (v Array(Int32))            ENGINE = Memory;
+CREATE TABLE t_u32       (v Array(UInt32))           ENGINE = Memory;
+CREATE TABLE t_i64_wide  (v Array(Int64))            ENGINE = Memory;
+CREATE TABLE t_u64_wide  (v Array(UInt64))           ENGINE = Memory;
+CREATE TABLE t_i64_null  (v Array(Nullable(Int64)))  ENGINE = Memory;
+CREATE TABLE t_date_n    (v Array(Date))             ENGINE = Memory;
+INSERT INTO t_i32      VALUES ([1, -1]);
+INSERT INTO t_u32      VALUES ([4294967295, 1]);
+INSERT INTO t_i64_wide VALUES ([1, -1]);
+INSERT INTO t_u64_wide VALUES ([18446744073709551615, 1]);
+INSERT INTO t_i64_null VALUES ([1, -1]);
+INSERT INTO t_date_n   VALUES (['2020-01-01', '2021-01-01']);
+SELECT 'Nullable(UInt32) needle on Int32', has(v, CAST(4294967295 AS Nullable(UInt32))), indexOf(v, CAST(4294967295 AS Nullable(UInt32))), countEqual(v, CAST(4294967295 AS Nullable(UInt32))), arrayExists(x -> assumeNotNull(x = CAST(4294967295 AS Nullable(UInt32))), v) FROM t_i32;
+SELECT 'Nullable(Int32) needle on UInt32', has(v, CAST(-1 AS Nullable(Int32))), indexOf(v, CAST(-1 AS Nullable(Int32))), countEqual(v, CAST(-1 AS Nullable(Int32))), arrayExists(x -> assumeNotNull(x = CAST(-1 AS Nullable(Int32))), v) FROM t_u32;
+-- At 64 bits there is no common type, so the refusal itself is the contract. The oracle above each
+-- throw records what `=` answers, so a future change that starts answering can be judged against it.
+SELECT 'Int64 element, Nullable(UInt64) needle oracle', arrayExists(x -> assumeNotNull(x = CAST(18446744073709551615 AS Nullable(UInt64))), v) FROM t_i64_wide;
+SELECT has(v, CAST(18446744073709551615 AS Nullable(UInt64))) FROM t_i64_wide; -- { serverError NO_COMMON_TYPE }
+SELECT 'UInt64 element, Nullable(Int64) needle oracle', arrayExists(x -> assumeNotNull(x = CAST(-1 AS Nullable(Int64))), v) FROM t_u64_wide;
+SELECT has(v, CAST(-1 AS Nullable(Int64))) FROM t_u64_wide; -- { serverError NO_COMMON_TYPE }
+-- The both-nullable path reaches the same peel, so it needs its own cell.
+SELECT 'Array(Nullable(Int64)), Nullable(UInt64) needle oracle', arrayExists(x -> assumeNotNull(x = CAST(18446744073709551615 AS Nullable(UInt64))), v) FROM t_i64_null;
+SELECT has(v, CAST(18446744073709551615 AS Nullable(UInt64))) FROM t_i64_null; -- { serverError NO_COMMON_TYPE }
+-- Control: identical on both arms. A representable needle that IS present still matches.
+SELECT 'Nullable(Int32) needle present', has(v, CAST(1 AS Nullable(Int32))), indexOf(v, CAST(1 AS Nullable(Int32))), arrayExists(x -> assumeNotNull(x = CAST(1 AS Nullable(Int32))), v) FROM t_i32;
+-- Control: identical on both arms. A non-string, non-numeric needle the gate excludes.
+SELECT 'Nullable(Date) needle', has(v, CAST('2020-01-01' AS Nullable(Date))), arrayExists(x -> assumeNotNull(x = CAST('2020-01-01' AS Nullable(Date))), v) FROM t_date_n;
+DROP TABLE t_i32;
+DROP TABLE t_u32;
+DROP TABLE t_i64_wide;
+DROP TABLE t_u64_wide;
+DROP TABLE t_i64_null;
+DROP TABLE t_date_n;
+
 SELECT '-- constant array, compared as Fields';
 SELECT has(['V0', 'V0\0'], toFixedString('V0', 3)), indexOf(['V0', 'V0\0'], toFixedString('V0', 3)), countEqual(['V0', 'V0\0'], toFixedString('V0', 3));
 SELECT has(['V0', 'V0\0'], toFixedString('V0', 5)), has([toFixedString('V0', 4)], 'V0'), has([toFixedString('V0', 3)], 'V0\0\0\0');

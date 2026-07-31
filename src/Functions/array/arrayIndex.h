@@ -667,8 +667,15 @@ private:
           * value would fall through to `executeGeneric`, losing the `FixedString` layout. Peel the
           * `Nullable` off the constant so it becomes the `Const(T)` the handlers already treat
           * correctly. An all-NULL needle is left alone: `executeNothing` answers it.
+          *
+          * Only string-family needles are peeled. That is the set whose layout the padded comparison
+          * is about, and it is what `needsZeroPaddedComparison` is defined over. A numeric needle must
+          * keep reaching `executeGeneric`, which casts both sides to a common supertype; peeling it
+          * would route it to `executeIntegral`, whose raw comparison equates a negative signed value
+          * with its unsigned bit-pattern twin.
           */
-        if (!arg_nullable && !arg_column->onlyNull())
+        if (!arg_nullable && !arg_column->onlyNull()
+            && WhichDataType(removeNullable(recursiveRemoveLowCardinality(arguments[1].type))).isStringOrFixedString())
         {
             if (const auto * arg_const = checkAndGetColumnConst<ColumnNullable>(&*arg_column))
             {
