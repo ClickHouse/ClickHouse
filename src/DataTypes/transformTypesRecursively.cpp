@@ -1,6 +1,7 @@
 #include <DataTypes/transformTypesRecursively.h>
 #include <DataTypes/DataTypeArray.h>
 #include <DataTypes/DataTypeMap.h>
+#include <DataTypes/DataTypeNested.h>
 #include <DataTypes/DataTypeTuple.h>
 #include <DataTypes/DataTypeNullable.h>
 #include <Formats/SchemaInferenceUtils.h>
@@ -185,23 +186,93 @@ void transformTypesRecursively(
     transform_simple_types(types, type_indexes);
 }
 
+namespace
+{
+
+/// Applies `callback` to the simple types nested in `type` and rebuilds the enclosing containers
+/// around any type the callback replaced. Returns nullptr when nothing was replaced, so an untouched
+/// subtree keeps its original type object together with its customizations (a custom name such as
+/// `Point`, a custom serialization).
+DataTypePtr replaceNestedSimpleTypes(const DataTypePtr & type, const std::function<void(DataTypePtr &)> & callback)
+{
+    DataTypePtr replacement;
+
+    if (const auto * type_nullable = typeid_cast<const DataTypeNullable *>(type.get()))
+    {
+        if (auto new_nested = replaceNestedSimpleTypes(type_nullable->getNestedType(), callback))
+            replacement = std::make_shared<DataTypeNullable>(new_nested);
+    }
+    else if (const auto * type_array = typeid_cast<const DataTypeArray *>(type.get()))
+    {
+        if (auto new_nested = replaceNestedSimpleTypes(type_array->getNestedType(), callback))
+        {
+            replacement = std::make_shared<DataTypeArray>(new_nested);
+
+            /// `Nested` semantics - `isNested`, subcolumn resolution, the printed name - key off the
+            /// custom name, so it must survive the rebuild.
+            if (isNested(type))
+            {
+                if (const auto * new_tuple = typeid_cast<const DataTypeTuple *>(new_nested.get()))
+                    replacement->setCustomization(std::make_unique<DataTypeCustomDesc>(
+                        std::make_unique<DataTypeNestedCustomName>(new_tuple->getElements(), new_tuple->getElementNames())));
+            }
+        }
+    }
+    else if (const auto * type_tuple = typeid_cast<const DataTypeTuple *>(type.get()))
+    {
+        DataTypes new_elements = type_tuple->getElements();
+        bool any_replaced = false;
+        for (auto & element : new_elements)
+        {
+            if (auto new_element = replaceNestedSimpleTypes(element, callback))
+            {
+                element = new_element;
+                any_replaced = true;
+            }
+        }
+
+        if (any_replaced)
+        {
+            if (type_tuple->hasExplicitNames())
+                replacement = std::make_shared<DataTypeTuple>(new_elements, type_tuple->getElementNames());
+            else
+                replacement = std::make_shared<DataTypeTuple>(new_elements);
+        }
+    }
+    else if (const auto * type_map = typeid_cast<const DataTypeMap *>(type.get()))
+    {
+        auto new_key = replaceNestedSimpleTypes(type_map->getKeyType(), callback);
+        auto new_value = replaceNestedSimpleTypes(type_map->getValueType(), callback);
+        if (new_key || new_value)
+            replacement = std::make_shared<DataTypeMap>(
+                new_key ? new_key : type_map->getKeyType(), new_value ? new_value : type_map->getValueType());
+    }
+    else
+    {
+        DataTypePtr maybe_replaced = type;
+        callback(maybe_replaced);
+        if (maybe_replaced != type)
+            replacement = maybe_replaced;
+    }
+
+    if (!replacement)
+        return nullptr;
+
+    /// A custom name is part of the observable type, so a wrapper whose custom name cannot be
+    /// faithfully rebuilt (the callback is responsible for the custom names of the types it replaces)
+    /// is kept as it was rather than replaced with a type that lies about its name.
+    if (type->hasCustomName() && !replacement->hasCustomName())
+        return nullptr;
+
+    return replacement;
+}
+
+}
+
 void callOnNestedSimpleTypes(DataTypePtr & type, std::function<void(DataTypePtr &)> callback)
 {
-    DataTypes types = {type};
-    bool replaced = false;
-    transformTypesRecursively(types, [&](auto & data_types, TypeIndexesSet &)
-    {
-        DataTypePtr before = data_types[0];
-        callback(data_types[0]);
-        if (data_types[0] != before)
-            replaced = true;
-    }, {});
-
-    /// The callback may replace a nested type instead of modifying it in place, and only then is the
-    /// rebuilt type worth taking: `transformTypesRecursively` reconstructs the enclosing containers,
-    /// which loses custom names such as `Point` or `Nested`.
-    if (replaced)
-        type = types[0];
+    if (auto replaced = replaceNestedSimpleTypes(type, callback))
+        type = replaced;
 }
 
 }

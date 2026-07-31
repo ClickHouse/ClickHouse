@@ -9,6 +9,7 @@
 
 #include <Formats/FormatSettings.h>
 #include <DataTypes/DataTypeAggregateFunction.h>
+#include <DataTypes/DataTypeCustomSimpleAggregateFunction.h>
 #include <DataTypes/Serializations/SerializationAggregateFunction.h>
 #include <DataTypes/DataTypeFactory.h>
 #include <DataTypes/transformTypesRecursively.h>
@@ -352,8 +353,24 @@ void setVersionToAggregateFunctions(DataTypePtr & type, bool if_empty, std::opti
         if (aggregate_function_type->hasExplicitVersion() && aggregate_function_type->getVersion() == new_version)
             return;
 
-        column_type = std::make_shared<DataTypeAggregateFunction>(
+        auto new_type = std::make_shared<DataTypeAggregateFunction>(
             function, aggregate_function_type->getArgumentsDataTypes(), aggregate_function_type->getParameters(), new_version);
+
+        /// A custom name is part of the observable type and must survive the replacement. The only
+        /// custom name an `AggregateFunction` type can carry is `SimpleAggregateFunction` over an
+        /// `AggregateFunction` argument; it prints its own stored argument types, so the rebuilt name
+        /// stays identical and only the serialization version changes.
+        if (column_type->hasCustomName())
+        {
+            const auto * simple = typeid_cast<const DataTypeCustomSimpleAggregateFunction *>(column_type->getCustomName());
+            if (!simple)
+                return;
+
+            new_type->setCustomization(std::make_unique<DataTypeCustomDesc>(std::make_unique<DataTypeCustomSimpleAggregateFunction>(
+                simple->getFunction(), simple->getArgumentsDataTypes(), simple->getParameters())));
+        }
+
+        column_type = new_type;
     };
 
     callOnNestedSimpleTypes(type, callback);
