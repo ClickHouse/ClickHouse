@@ -308,6 +308,8 @@ CREATE TABLE [IF NOT EXISTS] [db.]table_name [ON CLUSTER cluster]
 
 `boolean_expr_1` could by any boolean expression. If constraints are defined for the table, each of them will be checked for every row in `INSERT` query. If any constraint is not satisfied — server will raise an exception with constraint name and checking expression.
 
+Subqueries are not allowed in a `CHECK` constraint expression, with one exception: a direct subquery on the right-hand side of an `IN` operator, e.g. `CONSTRAINT c CHECK x IN (SELECT ...)`, is allowed. Any other subquery (including a scalar subquery such as `x = (SELECT 1)`, a subquery nested deeper inside the `IN` operand, or a subquery hidden inside the body of a SQL user-defined function) is rejected with a `BAD_ARGUMENTS` exception at `CREATE TABLE` and `ALTER TABLE ... ADD|MODIFY CONSTRAINT` time. Tables whose metadata already contains such a constraint keep loading, but the same exception is raised when the constraint is compiled on `INSERT`.
+
 Adding large amount of constraints can negatively affect performance of big `INSERT` queries.
 
 Existing constraints across all tables can be inspected via the [`system.constraints`](/operations/system-tables/constraints) table.

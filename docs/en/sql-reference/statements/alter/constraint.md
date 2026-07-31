@@ -17,6 +17,8 @@ ALTER TABLE [db].name [ON CLUSTER cluster] DROP CONSTRAINT [IF EXISTS] constrain
 
 As with table creation, a constraint can be declared either as `CHECK` (enforced on `INSERT`) or as `ASSUME` (trusted by the optimizer without being checked). See [constraints](../../../sql-reference/statements/create/table.md#constraints) for the difference between the two.
 
+A `CHECK` constraint expression must not contain subqueries, except a direct subquery on the right-hand side of an `IN` operator; `ADD CONSTRAINT` and `MODIFY CONSTRAINT` reject other subqueries (including those hidden inside SQL user-defined functions) with a `BAD_ARGUMENTS` exception. See [constraints](../../../sql-reference/statements/create/table.md#constraint) for details.
+
 `MODIFY CONSTRAINT` replaces the declaration of an existing constraint, keeping its position in the table definition. It can also change the constraint kind (for example, from `CHECK` to `ASSUME`). It is equivalent to dropping the constraint and adding it again with the new declaration. If the constraint does not exist, the query throws an error, unless `IF EXISTS` is specified.
 
 See more on [constraints](../../../sql-reference/statements/create/table.md#constraints).
