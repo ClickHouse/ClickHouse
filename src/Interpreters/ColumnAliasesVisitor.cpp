@@ -84,10 +84,7 @@ void ColumnAliasesMatcher::visit(ASTIdentifier & node, ASTPtr & ast, Data & data
             alias_data.changed = false;
             Visitor(alias_data).visit(alias_expr);
 
-            if (data.replacement_mode == ColumnAliasReplacementMode::QueryAnalysis)
-                ast = addTypeConversionToAST(std::move(alias_expr), col.type->getName(), data.columns.getAll(), data.context);
-            else
-                ast = std::move(alias_expr);
+            ast = addTypeConversionToAST(std::move(alias_expr), col.type->getName(), data.columns.getAll(), data.context);
             // We need to set back the original column name, or else the process of naming resolution will complain.
             if (data.replacement_mode == ColumnAliasReplacementMode::QueryAnalysis)
             {
