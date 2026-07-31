@@ -543,10 +543,10 @@ try
     auto cleanup = makeTemporaryFilesCleaner(object_storage, path, all_temporary_files_for_cleanup);
 
     query_context->setSetting("distributed_plan_execute_locally", 1);
-    auto cancellation_flag = std::make_shared<std::atomic<bool>>(false);
+    auto cancellation = std::make_shared<DistributedQueryCancellation>();
 
     /// Just execute the distributed query plan without checking the result
-    auto executor = createDistributedQueryExecutor(query_uuid, distributed_query_plan, nullptr, query_context, cancellation_flag);
+    auto executor = createDistributedQueryExecutor(query_uuid, distributed_query_plan, nullptr, query_context, cancellation);
 
     try
     {
