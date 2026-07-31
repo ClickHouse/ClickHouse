@@ -127,16 +127,9 @@ private:
     std::vector<UUID> external_roles;
     AuthenticationData user_authenticated_with;
 
-<<<<<<< HEAD
     /// TLS client certificate presented on this connection, if any.
     std::optional<ClientCertificateInfo> certificate_info;
 
-    /// When the user was authenticated with a bearer/access token, this holds the
-    /// effective token expiry captured at authentication time.
-    std::optional<std::chrono::system_clock::time_point> auth_token_expires_at;
-
-=======
->>>>>>> 40a2b77fcc6 (Merge pull request #1809 from Altinity/feature/antalya-26.3/oauth-executable-token-in-client)
     ContextMutablePtr session_context;
     mutable bool query_context_created = false;
 

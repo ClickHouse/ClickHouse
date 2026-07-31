@@ -88,13 +88,10 @@ namespace ErrorCodes
     extern const int BAD_ARGUMENTS;
     extern const int EMPTY_DATA_PASSED;
     extern const int LOGICAL_ERROR;
-<<<<<<< HEAD
     extern const int TOO_LARGE_ARRAY_SIZE;
-=======
 #if USE_JWT_CPP && USE_SSL
     extern const int AUTHENTICATION_FAILED;
 #endif
->>>>>>> 40a2b77fcc6 (Merge pull request #1809 from Altinity/feature/antalya-26.3/oauth-executable-token-in-client)
 }
 
 Connection::~Connection()

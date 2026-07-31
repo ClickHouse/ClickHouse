@@ -304,7 +304,7 @@ void ExternalAuthenticators::reset()
 ///
 /// Throws if ANY processor fails to parse. The caller is expected to react by
 /// disabling token authentication for this configuration cycle (fail-closed).
-void parseTokenProcessors(std::map<String, std::shared_ptr<ITokenProcessor>> & token_processors,
+static void parseTokenProcessors(std::map<String, std::shared_ptr<ITokenProcessor>> & token_processors,
                         const Poco::Util::AbstractConfiguration & config,
                         const String & token_processors_config,
                         const ConnectionTimeouts & timeouts,

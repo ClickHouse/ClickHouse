@@ -51,8 +51,6 @@ namespace ErrorCodes
 extern const int AUTHENTICATION_FAILED;
 }
 
-void writeCachedRefreshToken(const std::string & client_id, const std::string & refresh_token);
-
 namespace
 {
 

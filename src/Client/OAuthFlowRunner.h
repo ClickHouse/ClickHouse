@@ -17,6 +17,9 @@ Poco::JSON::Object::Ptr postOAuthForm(const std::string & url, const std::string
 std::string runOAuthAuthCodeFlow(const OAuthCredentials & creds);
 std::string runOAuthDeviceFlow(OAuthCredentials creds);
 
+/// Defined in OAuthLogin.cpp, used by the flow runners to persist the refresh token.
+void writeCachedRefreshToken(const std::string & client_id, const std::string & refresh_token);
+
 }
 
 #endif // USE_JWT_CPP && USE_SSL
