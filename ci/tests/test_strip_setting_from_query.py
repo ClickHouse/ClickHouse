@@ -115,6 +115,25 @@ CASES = [
         f"CREATE TABLE t (a UInt64) ENGINE = MergeTree ORDER BY tuple() settings {SETTING} = 1, index_granularity = 8192",
         "CREATE TABLE t (a UInt64) ENGINE = MergeTree ORDER BY tuple() settings index_granularity = 8192",
     ),
+    # Comments are allowed anywhere whitespace is: a block comment between the
+    # setting name and `=` must not defeat the match.
+    (
+        "block_comment_between_name_and_eq",
+        f"CREATE TABLE t (a UInt64) ENGINE = MergeTree ORDER BY tuple() SETTINGS {SETTING} /* keep */ = 0, index_granularity = 8192",
+        "CREATE TABLE t (a UInt64) ENGINE = MergeTree ORDER BY tuple() SETTINGS index_granularity = 8192",
+    ),
+    # A `--` line comment between the name and `=` (the `=` on the next line).
+    (
+        "line_comment_between_name_and_eq",
+        f"CREATE TABLE t (a UInt64) ENGINE = MergeTree ORDER BY tuple() SETTINGS {SETTING} -- keep\n = 1, index_granularity = 8192",
+        "CREATE TABLE t (a UInt64) ENGINE = MergeTree ORDER BY tuple() SETTINGS index_granularity = 8192",
+    ),
+    # A block comment between `=` and the value.
+    (
+        "block_comment_between_eq_and_value",
+        f"CREATE TABLE t (a UInt64) ENGINE = MergeTree ORDER BY tuple() SETTINGS {SETTING} = /* keep */ 1, index_granularity = 8192",
+        "CREATE TABLE t (a UInt64) ENGINE = MergeTree ORDER BY tuple() SETTINGS index_granularity = 8192",
+    ),
 ]
 
 
@@ -387,3 +406,34 @@ def test_value_aware_comment_markers_inside_string_value_are_kept():
         f"SETTINGS {SETTING} = '0 /* x */'"
     )
     assert strip_setting_from_query(query, SETTING, ALLOWED) == query
+
+
+def test_value_aware_comment_between_name_and_eq_is_stripped():
+    # Regression: a comment between the setting name and `=` used to be a hard
+    # mismatch (the name scan only skipped whitespace before `=`), so the query
+    # was returned unchanged and `perf.py` re-raised `UNKNOWN_SETTING` on the
+    # baseline even though the fixture pinned a baseline-equivalent value.
+    query = (
+        "CREATE TABLE t (a UInt64) ENGINE = MergeTree ORDER BY tuple() "
+        f"SETTINGS {SETTING} /* keep */ = 0, index_granularity = 8192"
+    )
+    expected = (
+        "CREATE TABLE t (a UInt64) ENGINE = MergeTree ORDER BY tuple() "
+        "SETTINGS index_granularity = 8192"
+    )
+    assert strip_setting_from_query(query, SETTING, ALLOWED) == expected
+
+
+def test_value_aware_comment_between_eq_and_value_is_stripped():
+    # Same regression on the other side of `=`: a comment between `=` and the
+    # value must not shift `value_start` onto the comment text, which would
+    # make the baseline-default value miss the allowlist.
+    query = (
+        "CREATE TABLE t (a UInt64) ENGINE = MergeTree ORDER BY tuple() "
+        f"SETTINGS {SETTING} = -- keep\n 0, index_granularity = 8192"
+    )
+    expected = (
+        "CREATE TABLE t (a UInt64) ENGINE = MergeTree ORDER BY tuple() "
+        "SETTINGS index_granularity = 8192"
+    )
+    assert strip_setting_from_query(query, SETTING, ALLOWED) == expected

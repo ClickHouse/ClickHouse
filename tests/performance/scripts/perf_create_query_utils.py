@@ -140,6 +140,27 @@ def strip_setting_from_query(query, setting_name, allowed_values=None):
             i += 1
         return -1
 
+    def skip_whitespace_and_comments(text, pos):
+        length = len(text)
+        while pos < length:
+            c = text[pos]
+            next_c = text[pos + 1] if pos + 1 < length else ""
+            if c in " \t\r\n":
+                pos += 1
+            elif (c == "-" and next_c == "-") or c == "#":
+                while pos < length and text[pos] != "\n":
+                    pos += 1
+            elif c == "/" and next_c == "*":
+                pos += 2
+                while pos < length:
+                    if text[pos] == "*" and pos + 1 < length and text[pos + 1] == "/":
+                        pos += 2
+                        break
+                    pos += 1
+            else:
+                break
+        return pos
+
     settings_pos = find_table_settings_keyword(query)
     if settings_pos < 0:
         return query
@@ -238,13 +259,13 @@ def strip_setting_from_query(query, setting_name, allowed_values=None):
                 and after_idx < n
                 and not (query[after_idx].isalnum() or query[after_idx] == "_")
             ):
-                j = after_idx
-                while j < n and query[j] in " \t\r\n":
-                    j += 1
+                # Comments are allowed anywhere whitespace is, including
+                # between the setting name and `=` and between `=` and the
+                # value, so skip them with the same comment-aware scanner
+                # used for the post-cut cleanup below.
+                j = skip_whitespace_and_comments(query, after_idx)
                 if j < n and query[j] == "=":
-                    j += 1
-                    while j < n and query[j] in " \t\r\n":
-                        j += 1
+                    j = skip_whitespace_and_comments(query, j + 1)
                     name_start = i
                     value_start = j
                     break
@@ -419,27 +440,6 @@ def strip_setting_from_query(query, setting_name, allowed_values=None):
     # the query may legitimately contain `SETTINGS` or commas inside
     # string literals (e.g. in a column `COMMENT`), which a global
     # regex would corrupt.
-    def skip_whitespace_and_comments(text, pos):
-        length = len(text)
-        while pos < length:
-            c = text[pos]
-            next_c = text[pos + 1] if pos + 1 < length else ""
-            if c in " \t\r\n":
-                pos += 1
-            elif (c == "-" and next_c == "-") or c == "#":
-                while pos < length and text[pos] != "\n":
-                    pos += 1
-            elif c == "/" and next_c == "*":
-                pos += 2
-                while pos < length:
-                    if text[pos] == "*" and pos + 1 < length and text[pos + 1] == "/":
-                        pos += 2
-                        break
-                    pos += 1
-            else:
-                break
-        return pos
-
     after_keyword = settings_pos + len("SETTINGS")
 
     # Drop a stray leading `,` that the structural cut above may have
