@@ -11,11 +11,8 @@
 #include <Common/Exception.h>
 #include <Common/quoteString.h>
 #include <Common/callOnce.h>
-<<<<<<< HEAD
 #include <base/scope_guard.h>
-=======
 #include "Access/Common/AuthenticationType.h"
->>>>>>> ad5b91c853d (Merge pull request #1658 from Altinity/feature/antalya-26.3/pr-1430-1596)
 #include <IO/WriteHelpers.h>
 #include <Interpreters/Context.h>
 #include <Parsers/parseIdentifierOrStringLiteral.h>

@@ -16,8 +16,5 @@ The following external authenticators and directories are supported:
 - Kerberos [Authenticator](/operations/external-authenticators/kerberos#kerberos-as-an-external-authenticator-for-existing-users)
 - [SSL X.509 authentication](/operations/external-authenticators/ssl-x509)
 - HTTP [Authenticator](./http.md)
-<<<<<<< HEAD
 - [JWT authentication](/operations/external-authenticators/jwt)
-=======
 - Token-based [Authenticator](./tokens.md)
->>>>>>> ad5b91c853d (Merge pull request #1658 from Altinity/feature/antalya-26.3/pr-1430-1596)
