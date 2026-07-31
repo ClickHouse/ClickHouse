@@ -47,8 +47,12 @@ ASTPtr parseComment(IParser::Pos & pos, Expected & expected)
     ParserStringLiteral string_literal_parser;
     ASTPtr comment;
 
-    s_comment.ignore(pos, expected) && string_literal_parser.parse(pos, comment, expected);
-
+    auto begin = pos;
+    if (s_comment.ignore(pos, expected))
+    {
+        if (!string_literal_parser.parse(pos, comment, expected))
+            pos = begin;
+    }
     return comment;
 }
 
