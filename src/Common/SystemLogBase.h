@@ -1,5 +1,6 @@
 #pragma once
 
+#include <atomic>
 #include <condition_variable>
 #include <limits>
 #include <memory>
@@ -101,6 +102,13 @@ public:
     /// Handles crash, flushes log without blocking if notify_flush_on_crash is set
     virtual void handleCrash() = 0;
 
+    /// Temporarily stop accepting new log records (SYSTEM STOP LOGS). Unlike shutdown(),
+    /// the saving thread stays alive and FLUSH LOGS still works. Process-local; cleared on restart.
+    virtual void stop() = 0;
+    /// Resume accepting new log records (SYSTEM START LOGS).
+    virtual void start() = 0;
+    virtual bool isStopped() const = 0;
+
     virtual ~ISystemLog();
 
     virtual void savingThreadFunction() = 0;
@@ -136,11 +144,20 @@ public:
 
     void shutdown();
 
+    /// SYSTEM STOP/START LOGS: pause/resume enqueueing without tearing down the saving thread.
+    void stop();
+    void start();
+    bool isStopped() const { return is_stopped.load(std::memory_order_relaxed); }
+
     // producer method: fill the element in place under a memory-tracker blocker, then enqueue it (moved).
     template <typename FillElement>
     requires std::is_invocable_r_v<void, FillElement, LogElement &>
     void add(FillElement && fill)
     {
+        /// Fast path: avoid building the element when logging is paused.
+        if (is_stopped.load(std::memory_order_relaxed))
+            return;
+
         MemoryTrackerUntrackedAllocationsBlockerInThread untracked_allocations_blocker;
         MemoryTrackerBlockerInThread block_memory_tracker;
         LogElement element{};
@@ -204,6 +221,7 @@ private:
     size_t ignored_logs = 0;
 
     bool is_shutdown = false;
+    std::atomic<bool> is_stopped{false};
 
     std::condition_variable confirm_event;
     std::condition_variable flush_event;
@@ -248,6 +266,10 @@ public:
 
     /// Handles crash, flushes log without blocking if notify_flush_on_crash is set
     void handleCrash() override;
+
+    void stop() override;
+    void start() override;
+    bool isStopped() const override;
 
     String getName() const override { return LogElement::name(); }
 

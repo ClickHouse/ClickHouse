@@ -1105,6 +1105,20 @@ BlockIO InterpreterSystemQuery::execute()
             system_logs.flush(query.tables);
             break;
         }
+        case Type::STOP_LOGS:
+        {
+            getContext()->checkAccess(AccessType::SYSTEM_LOGS);
+            auto system_logs = getContext()->getSystemLogs();
+            system_logs.stop(query.tables, /*with_flush=*/ query.with_flush);
+            break;
+        }
+        case Type::START_LOGS:
+        {
+            getContext()->checkAccess(AccessType::SYSTEM_LOGS);
+            auto system_logs = getContext()->getSystemLogs();
+            system_logs.start(query.tables);
+            break;
+        }
         case Type::STOP_LISTEN:
         {
             getContext()->checkAccess(AccessType::SYSTEM_LISTEN);
@@ -3050,6 +3064,12 @@ AccessRightsElements InterpreterSystemQuery::getRequiredAccessForDDLOnCluster() 
         case Type::FLUSH_LOGS:
         {
             required_access.emplace_back(AccessType::SYSTEM_FLUSH_LOGS);
+            break;
+        }
+        case Type::STOP_LOGS:
+        case Type::START_LOGS:
+        {
+            required_access.emplace_back(AccessType::SYSTEM_LOGS);
             break;
         }
         case Type::FLUSH_ASYNC_INSERT_QUEUE:

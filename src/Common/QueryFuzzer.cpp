@@ -6734,6 +6734,7 @@ void QueryFuzzer::fuzz(ASTPtr & ast)
         {
             static const std::pair<Type, Type> toggleable_pairs[] = {
                 {Type::STOP_MERGES, Type::START_MERGES},
+                {Type::STOP_LOGS, Type::START_LOGS},
                 {Type::STOP_TTL_MERGES, Type::START_TTL_MERGES},
                 {Type::STOP_FETCHES, Type::START_FETCHES},
                 {Type::STOP_MOVES, Type::START_MOVES},

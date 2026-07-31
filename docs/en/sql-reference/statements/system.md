@@ -313,6 +313,54 @@ If you don't want to flush everything, you can flush one or more individual logs
 SYSTEM FLUSH LOGS query_log, system.query_views_log;
 ```
 
+## SYSTEM STOP LOGS {#stop-logs}
+
+Stops writing new records to system log tables (for example `system.query_log`, `system.part_log`).
+The effect is process-wide: it applies to all sessions and background threads on the current server, is not tied to the client session, and is not persisted to configuration.
+After a server restart, system logs resume according to the server configuration.
+
+```sql
+SYSTEM STOP LOGS [ON CLUSTER cluster_name] [WITH FLUSH] [log_name|[database.table]] [, ...]
+```
+
+Without log names, all currently enabled system logs are stopped.
+Log names follow the same rules as [`SYSTEM FLUSH LOGS`](#flush-logs) (short name such as `query_log`, or `system.query_log`).
+
+By default, `SYSTEM STOP LOGS` only stops enqueueing new records. Records already in the queue may still be flushed later by the background saving thread or by [`SYSTEM FLUSH LOGS`](#flush-logs).
+Use `WITH FLUSH` to stop enqueueing first and then synchronously flush the residual queue before the statement returns (there is no race window for new records between flush and stop).
+
+`SYSTEM STOP LOGS` takes precedence over session settings such as `log_queries`: even with `log_queries=1`, stopped logs do not accept new records.
+Reading from system log tables remains allowed.
+The command is idempotent.
+
+Requires the `SYSTEM LOGS` privilege.
+
+```sql
+SYSTEM STOP LOGS;
+SYSTEM STOP LOGS WITH FLUSH;
+SYSTEM STOP LOGS query_log, part_log;
+SYSTEM STOP LOGS WITH FLUSH system.query_log;
+```
+
+## SYSTEM START LOGS {#start-logs}
+
+Resumes writing to system log tables previously stopped by [`SYSTEM STOP LOGS`](#stop-logs).
+Like `SYSTEM STOP LOGS`, the effect is process-wide and not persisted; a restart also restores the default (configured) behavior.
+
+```sql
+SYSTEM START LOGS [ON CLUSTER cluster_name] [log_name|[database.table]] [, ...]
+```
+
+After `START`, session and profile settings still apply (for example `log_queries=0` continues to suppress `query_log`).
+The command is idempotent.
+
+Requires the `SYSTEM LOGS` privilege.
+
+```sql
+SYSTEM START LOGS;
+SYSTEM START LOGS query_log;
+```
+
 ## SYSTEM RELOAD CONFIG {#reload-config}
 
 Reloads ClickHouse configuration. Used when configuration is stored in ZooKeeper. Note that `SYSTEM RELOAD CONFIG` does not reload `USER` configuration stored in ZooKeeper, it only reloads `USER` configuration that is stored in `users.xml`.  To reload all `USER` config use `SYSTEM RELOAD USERS`

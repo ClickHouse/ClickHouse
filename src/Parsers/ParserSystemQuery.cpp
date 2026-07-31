@@ -924,6 +924,8 @@ bool ParserSystemQuery::parseImpl(IParser::Pos & pos, ASTPtr & node, Expected & 
 
         case Type::FLUSH_ASYNC_INSERT_QUEUE:
         case Type::FLUSH_LOGS:
+        case Type::STOP_LOGS:
+        case Type::START_LOGS:
         {
             Pos prev_token = pos;
             if (ParserKeyword{Keyword::ON}.ignore(pos, expected))
@@ -932,6 +934,9 @@ bool ParserSystemQuery::parseImpl(IParser::Pos & pos, ASTPtr & node, Expected & 
                 if (!parseQueryWithOnCluster(res, pos, expected))
                     return false;
             }
+
+            if (res->type == Type::STOP_LOGS && ParserKeyword{Keyword::WITH_FLUSH}.ignore(pos, expected))
+                res->with_flush = true;
 
             ParserToken s_dot(TokenType::Dot);
             ParserIdentifier table_parser(true);

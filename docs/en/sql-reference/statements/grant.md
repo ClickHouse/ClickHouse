@@ -298,6 +298,7 @@ The hierarchy of privileges in ClickHouse is shown below:
     - `SYSTEM FLUSH`
       - `SYSTEM FLUSH ASYNC INSERT QUEUE`
       - `SYSTEM FLUSH LOGS`
+    - `SYSTEM LOGS`
     - `SYSTEM JEMALLOC`
     - `SYSTEM KILL QUERY`
     - `SYSTEM KILL TRANSACTION`
@@ -613,6 +614,7 @@ Allows a user to execute [SYSTEM](../../sql-reference/statements/system.md) quer
   - `SYSTEM FLUSH`. Level: `GROUP`
     - `SYSTEM FLUSH DISTRIBUTED`. Level: `TABLE`. Aliases: `FLUSH DISTRIBUTED`
     - `SYSTEM FLUSH LOGS`. Level: `GLOBAL`. Aliases: `FLUSH LOGS`
+  - `SYSTEM LOGS`. Level: `GLOBAL`. Aliases: `SYSTEM STOP LOGS`, `SYSTEM START LOGS`, `STOP LOGS`, `START LOGS`
 
 The `SYSTEM UNLOAD DICTIONARY` and `SYSTEM UNLOAD DICTIONARIES` commands reuse the `SYSTEM RELOAD DICTIONARY` privilege, so a user with `SYSTEM RELOAD DICTIONARY` can also unload dictionaries.
 

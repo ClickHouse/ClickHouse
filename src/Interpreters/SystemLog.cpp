@@ -1,5 +1,7 @@
 #include <Interpreters/SystemLog.h>
 #include <Common/Exception.h>
+
+#include <algorithm>
 #include <Common/ZooKeeper/ZooKeeperCommon.h>
 #include <Daemon/BaseDaemon.h>
 
@@ -448,69 +450,69 @@ constexpr String getLowerCaseAndRemoveUnderscores(const String & name)
 }
 }
 
+std::vector<ISystemLog *> SystemLogs::resolveLogs(const std::vector<std::pair<String, String>> & names) const
+{
+    if (names.empty())
+        return getAllLogs();
+
+    #define GET_MAP_VALUES(log_type, member, descr) \
+        { getLowerCaseAndRemoveUnderscores(#member), (member).get() }, \
+        { getLowerCaseAndRemoveUnderscores((member).get() ? (member)->getTableID().getFullTableName() : "system."#member), (member).get() },
+
+    std::unordered_map<String, ISystemLog *> logs_map
+    {
+        LIST_OF_ALL_SYSTEM_LOGS(GET_MAP_VALUES)
+        #if CLICKHOUSE_CLOUD
+            LIST_OF_CLOUD_SYSTEM_LOGS(GET_MAP_VALUES)
+        #endif
+    };
+    #undef GET_MAP_VALUES
+
+    std::vector<ISystemLog *> result;
+    result.reserve(names.size());
+
+    for (const auto & name : names)
+    {
+        if (!name.first.empty() && name.first != "system")
+            throw Exception(ErrorCodes::BAD_ARGUMENTS, "Log name '{}.{}' does not exist", name.first, name.second);
+
+        String log_name = getLowerCaseAndRemoveUnderscores(name.second);
+
+        auto it = logs_map.find(log_name);
+        if (it == logs_map.end())
+            throw Exception(ErrorCodes::BAD_ARGUMENTS, "Log name '{}' does not exist", name);
+
+        if (it->second == nullptr)
+            /// The log exists but it's not initialized. Nothing to do
+            continue;
+
+        result.push_back(it->second);
+    }
+
+    return result;
+}
+
 void SystemLogs::flushImpl(const std::vector<std::pair<String, String>> & names, bool should_prepare_tables_anyway, bool ignore_errors)
 {
     std::vector<std::pair<ISystemLog *, ISystemLog::Index>> logs_to_wait;
 
-    if (names.empty())
+    const auto logs = resolveLogs(names);
+
+    if (names.empty() || std::find(logs.begin(), logs.end(), text_log.get()) != logs.end())
     {
         if (text_log)
             flushAsyncTextLogsIfPossible();
-
-        for (auto * log : getAllLogs())
-        {
-            log->flushBufferToLog(std::chrono::system_clock::now());
-
-            auto last_log_index = log->getLastLogIndex();
-            logs_to_wait.push_back({log, last_log_index});
-            if (should_prepare_tables_anyway)
-                log->setManualFlushTargetIndex(last_log_index);
-            log->notifyFlush(last_log_index, should_prepare_tables_anyway);
-        }
     }
-    else
+
+    for (auto * log : logs)
     {
-        #define GET_MAP_VALUES(log_type, member, descr) \
-            { getLowerCaseAndRemoveUnderscores(#member), (member).get() }, \
-            { getLowerCaseAndRemoveUnderscores((member).get() ? (member)->getTableID().getFullTableName() : "system."#member), (member).get() },
+        log->flushBufferToLog(std::chrono::system_clock::now());
 
-        std::unordered_map<String, ISystemLog *> logs_map
-        {
-            LIST_OF_ALL_SYSTEM_LOGS(GET_MAP_VALUES)
-            #if CLICKHOUSE_CLOUD
-                LIST_OF_CLOUD_SYSTEM_LOGS(GET_MAP_VALUES)
-            #endif
-        };
-        #undef GET_MAP_VALUES
-
-        for (const auto & name : names)
-        {
-            if (!name.first.empty() && name.first != "system")
-                throw Exception(ErrorCodes::BAD_ARGUMENTS, "Log name '{}.{}' does not exist", name.first, name.second);
-
-            String log_name = getLowerCaseAndRemoveUnderscores(name.second);
-
-            auto it = logs_map.find(log_name);
-            if (it == logs_map.end())
-                throw Exception(ErrorCodes::BAD_ARGUMENTS, "Log name '{}' does not exist", name);
-
-            if (it->second == nullptr)
-                /// The log exists but it's not initialized. Nothing to do
-                continue;
-
-            auto * log = it->second;
-
-            if (log == text_log.get())
-                flushAsyncTextLogsIfPossible();
-
-            log->flushBufferToLog(std::chrono::system_clock::now());
-
-            const auto last_log_index = log->getLastLogIndex();
-            logs_to_wait.push_back({log, last_log_index});
-            if (should_prepare_tables_anyway)
-                log->setManualFlushTargetIndex(last_log_index);
-            log->notifyFlush(last_log_index, should_prepare_tables_anyway);
-        }
+        auto last_log_index = log->getLastLogIndex();
+        logs_to_wait.push_back({log, last_log_index});
+        if (should_prepare_tables_anyway)
+            log->setManualFlushTargetIndex(last_log_index);
+        log->notifyFlush(last_log_index, should_prepare_tables_anyway);
     }
 
     /// We must wait for the async flushes to finish
@@ -535,6 +537,32 @@ void SystemLogs::flushImpl(const std::vector<std::pair<String, String>> & names,
 void SystemLogs::flush(const std::vector<std::pair<String, String>> & names)
 {
     flushImpl(names, /*should_prepare_tables_anyway=*/ true, /*ignore_errors=*/ false);
+}
+
+void SystemLogs::stop(const std::vector<std::pair<String, String>> & names, bool with_flush)
+{
+    const auto logs = resolveLogs(names);
+
+    for (auto * log : logs)
+    {
+        LOG_INFO(getLogger("SystemLogs"), "Stopping system log {}", log->getName());
+        log->stop();
+    }
+
+    /// stop → flush (never flush → stop): cut off new enqueueing before draining the queue.
+    if (with_flush)
+        flushImpl(names, /*should_prepare_tables_anyway=*/ true, /*ignore_errors=*/ false);
+}
+
+void SystemLogs::start(const std::vector<std::pair<String, String>> & names)
+{
+    const auto logs = resolveLogs(names);
+
+    for (auto * log : logs)
+    {
+        LOG_INFO(getLogger("SystemLogs"), "Starting system log {}", log->getName());
+        log->start();
+    }
 }
 
 void SystemLogs::flushAndShutdown()

@@ -159,6 +159,10 @@ public:
     SystemLogs(const SystemLogs & other) = default;
 
     void flush(const std::vector<std::pair<String, String>> & names);
+    /// SYSTEM STOP LOGS [WITH FLUSH] [names...]. Stops enqueueing; with_flush then sync-flushes residual queue.
+    void stop(const std::vector<std::pair<String, String>> & names, bool with_flush);
+    /// SYSTEM START LOGS [names...]. Resumes enqueueing.
+    void start(const std::vector<std::pair<String, String>> & names);
     void flushAndShutdown();
     void shutdown();
     void handleCrash();
@@ -174,6 +178,10 @@ public:
 
 private:
     std::vector<ISystemLog *> getAllLogs() const;
+
+    /// Resolve log names the same way as SYSTEM FLUSH LOGS. Empty names → all enabled logs.
+    /// Unknown name → BAD_ARGUMENTS. Disabled (null) log → omitted.
+    std::vector<ISystemLog *> resolveLogs(const std::vector<std::pair<String, String>> & names) const;
 
     void flushImpl(const std::vector<std::pair<String, String>>  & names, bool should_prepare_tables_anyway, bool ignore_errors);
 };
