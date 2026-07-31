@@ -381,7 +381,7 @@ private:
 public:
     explicit AggregateFunctionMergedJSONPatchImpl(
         const DataTypes & argument_types_,
-        const std::unordered_map<std::string, SerializationPtr> & typed_path_serializations_)
+        const std::unordered_map<std::string, SerializationPtr> & typed_path_serializations_)  // STYLE_CHECK_ALLOW_STD_CONTAINERS
         : IAggregateFunctionDataHelper<Data, AggregateFunctionMergedJSONPatchImpl<KeyData>>(
             argument_types_, {}, argument_types_[0])
         , typed_path_serializations(typed_path_serializations_)
@@ -399,7 +399,7 @@ public:
         sort_key.set(*columns[1], row_num);
 
         const auto & object_column = assert_cast<const ColumnObject &>(*columns[0]);
-        std::vector<typename Data::LeafRef> batch;
+        std::vector<typename Data::LeafRef> batch;  // STYLE_CHECK_ALLOW_STD_CONTAINERS
 
         ColumnObject::SortedPathsIterator iterator(object_column, row_num);
         for (; !iterator.end(); iterator.next())
