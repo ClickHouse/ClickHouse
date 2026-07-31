@@ -13,12 +13,21 @@ LowCardinality	[0,1]	[0,1]
 -- multiplicity and position with both class members in one row
 String	2	1	2
 LowCardinality	2	1	2
+-- a nullable constant needle behaves like the non-nullable one
+Nullable(FixedString) String	[0,1]	[0,1]
+Nullable(FixedString) LowCardinality	[0,1]	[0,1]
+Nullable(FixedString) Nullable	[0,1]	[0,1]
+Nullable(FixedString) LowCardinality(Nullable)	[0,1]	[0,1]
+Nullable(FixedString) multiplicity and position	2	1	2	1
+Nullable(String) needle	[0]	[0]
+Nullable(FixedString) NULL needle	[]
 -- constant array, compared as Fields
 1	1	2
 1	1	1
 per row	1	1
 per row	1	1
 per row	1	1
+non-const needle	1	1	2	1	2
 indexOfAssumeSorted	1	1	1
 indexOfAssumeSorted wider needle	1	1	1
 indexOfAssumeSorted String needle	1	2	1	2

@@ -662,6 +662,26 @@ private:
         const auto & arg_column = arguments[1].column;
         const ColumnNullable * arg_nullable = checkAndGetColumn<ColumnNullable>(&*arg_column);
 
+        /** A constant nullable needle arrives as `Const(Nullable(T))`, which the check above does not
+          * see through, so the handlers below would receive a shape none of them recognizes and the
+          * value would fall through to `executeGeneric`, losing the `FixedString` layout. Peel the
+          * `Nullable` off the constant so it becomes the `Const(T)` the handlers already treat
+          * correctly. An all-NULL needle is left alone: `executeNothing` answers it.
+          */
+        if (!arg_nullable && !arg_column->onlyNull())
+        {
+            if (const auto * arg_const = checkAndGetColumnConst<ColumnNullable>(&*arg_column))
+            {
+                auto unwrapped = arguments;
+                unwrapped[1].column = ColumnConst::create(
+                    assert_cast<const ColumnNullable &>(arg_const->getDataColumn()).getNestedColumnPtr(),
+                    arg_const->size());
+                unwrapped[1].type = removeNullable(arguments[1].type);
+
+                return executeArrayImpl(unwrapped, result_type);
+            }
+        }
+
         if (!nullable && !arg_nullable)
         {
             return executeOnNonNullable(arguments, result_type);

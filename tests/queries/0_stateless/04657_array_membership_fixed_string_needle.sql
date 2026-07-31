@@ -50,10 +50,26 @@ INSERT INTO t_both_lc VALUES (['V0', 'V0\0']);
 SELECT 'String',         countEqual(v, toFixedString('V0', 3)), indexOf(v, toFixedString('V0', 3)), arraySum(arrayMap(y -> toUInt8(y = toFixedString('V0', 3)), v)) FROM t_both;
 SELECT 'LowCardinality', countEqual(v, toFixedString('V0', 3)), indexOf(v, toFixedString('V0', 3)), arraySum(arrayMap(y -> toUInt8(y = toFixedString('V0', 3)), v)) FROM t_both_lc;
 
+-- A nullable constant needle is the same constant FixedString argument up to nullability, so it must
+-- give the same answers. It arrives wrapped as a constant nullable column, which is a shape the
+-- string handlers do not recognize unless the wrapper is peeled off first.
+SELECT '-- a nullable constant needle behaves like the non-nullable one';
+SELECT 'Nullable(FixedString) String',                   groupArray(id), (SELECT groupArray(id) FROM t_str     WHERE arrayExists(x -> x = CAST(toFixedString('V0', 3) AS Nullable(FixedString(3))), v)) FROM t_str     WHERE has(v, CAST(toFixedString('V0', 3) AS Nullable(FixedString(3))));
+SELECT 'Nullable(FixedString) LowCardinality',           groupArray(id), (SELECT groupArray(id) FROM t_lc      WHERE arrayExists(x -> x = CAST(toFixedString('V0', 3) AS Nullable(FixedString(3))), v)) FROM t_lc      WHERE has(v, CAST(toFixedString('V0', 3) AS Nullable(FixedString(3))));
+SELECT 'Nullable(FixedString) Nullable',                 groupArray(id), (SELECT groupArray(id) FROM t_null    WHERE arrayExists(x -> x = CAST(toFixedString('V0', 3) AS Nullable(FixedString(3))), v)) FROM t_null    WHERE has(v, CAST(toFixedString('V0', 3) AS Nullable(FixedString(3))));
+SELECT 'Nullable(FixedString) LowCardinality(Nullable)', groupArray(id), (SELECT groupArray(id) FROM t_lc_null WHERE arrayExists(x -> x = CAST(toFixedString('V0', 3) AS Nullable(FixedString(3))), v)) FROM t_lc_null WHERE has(v, CAST(toFixedString('V0', 3) AS Nullable(FixedString(3))));
+SELECT 'Nullable(FixedString) multiplicity and position', countEqual(v, CAST(toFixedString('V0', 3) AS Nullable(FixedString(3)))), indexOf(v, CAST(toFixedString('V0', 3) AS Nullable(FixedString(3)))), arraySum(arrayMap(y -> toUInt8(assumeNotNull(y = CAST(toFixedString('V0', 3) AS Nullable(FixedString(3))))), v)), arrayFirstIndex(y -> assumeNotNull(y = CAST(toFixedString('V0', 3) AS Nullable(FixedString(3)))), v) FROM t_both;
+-- Must not regress: peeling the wrapper must not make a String needle padded.
+SELECT 'Nullable(String) needle',                        groupArray(id), (SELECT groupArray(id) FROM t_str WHERE arrayExists(x -> x = CAST('V0' AS Nullable(String)), v)) FROM t_str WHERE has(v, CAST('V0' AS Nullable(String)));
+SELECT 'Nullable(FixedString) NULL needle',              groupArray(id) FROM t_str WHERE has(v, CAST(NULL AS Nullable(FixedString(3))));
+
 SELECT '-- constant array, compared as Fields';
 SELECT has(['V0', 'V0\0'], toFixedString('V0', 3)), indexOf(['V0', 'V0\0'], toFixedString('V0', 3)), countEqual(['V0', 'V0\0'], toFixedString('V0', 3));
 SELECT has(['V0', 'V0\0'], toFixedString('V0', 5)), has([toFixedString('V0', 4)], 'V0'), has([toFixedString('V0', 3)], 'V0\0\0\0');
 SELECT 'per row', has(['V0', 'V0\0'], toFixedString('V0', 3)), indexOf(['V0', 'V0\0'], toFixedString('V0', 3)) FROM t_str ORDER BY id;
+-- A non-const needle takes the per-row comparison in the constant-array handler, which the rows
+-- above cannot reach: with a constant needle the whole array is scanned once instead.
+SELECT 'non-const needle', has(['V0', 'V0\0'], materialize(toFixedString('V0', 3))), indexOf(['V0', 'V0\0'], materialize(toFixedString('V0', 3))), countEqual(['V0', 'V0\0'], materialize(toFixedString('V0', 3))), arrayFirstIndex(y -> y = materialize(toFixedString('V0', 3)), ['V0', 'V0\0']), arraySum(arrayMap(y -> toUInt8(y = materialize(toFixedString('V0', 3))), ['V0', 'V0\0']));
 -- `indexOfAssumeSorted` assumes ascending order, and ['V0', 'V0\0'] is sorted bytewise, so its
 -- precondition holds. Order under zero-padded comparison need not match the order the binary search
 -- relies on, so a constant FixedString needle takes the linear scan instead. `arrayFirstIndex` is a
