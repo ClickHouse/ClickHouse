@@ -53,7 +53,13 @@ except ImportError:
     TimestampNTZType = None
 
 from .clickhousetospark import ClickHouseMapping, ClickHouseTypeMapper
-from .laketables import LakeCatalogs, LakeFormat, SparkColumn, TableStorage
+from .laketables import (
+    LakeCatalogs,
+    LakeFormat,
+    SparkColumn,
+    TableStorage,
+    quote_ch_table_path,
+)
 
 _TS_TYPES = (
     (TimestampType,) if TimestampNTZType is None else (TimestampType, TimestampNTZType)
@@ -167,7 +173,7 @@ class FileTable:
         self.compression = compression
 
     def get_clickhouse_path(self) -> str:
-        return f"{self.database_name}.{self.table_name}"
+        return quote_ch_table_path(self.database_name, self.table_name)
 
     def get_table_full_path(self) -> str:
         """Spark-side reads go through a session-scoped temp view over the data file."""

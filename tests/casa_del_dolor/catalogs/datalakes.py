@@ -17,6 +17,7 @@ from .laketables import (
     LakeFormat,
     LakeCatalogs,
     SparkTable,
+    quote_ch_table_path,
 )
 from .tablegenerator import LakeTableGenerator, sample_from_dict, true_false_lambda
 from .datagenerator import LakeDataGenerator
@@ -1057,7 +1058,7 @@ logger.jetty.level = warn
                 nloops = random.randint(1, 50)
                 is_file = data["engine"] == "file"
                 tbl = (
-                    f"{data['catalog_name']}.{data['table_name']}"
+                    quote_ch_table_path(data["catalog_name"], data["table_name"])
                     if data["engine"] in ("kafka", "file")
                     else next_table.get_clickhouse_path()
                 )

@@ -294,24 +294,36 @@ class LakeDataGenerator:
     @staticmethod
     def _decode_enum_literal(mode: str, text: str):
         """Decode one enum element literal: plain `'..'` (already unescaped), hex `x'..'`
-        or binary `b'..'`. Returns None for names that are not valid UTF-8, which cannot
-        round-trip through a Spark string."""
+        or binary `b'..'`. Returns the raw element bytes, so a name that is not valid UTF-8
+        survives for the BINARY mapping, or None for a malformed literal."""
         try:
             if mode == "x":
-                return bytes.fromhex(text).decode("utf-8")
+                return bytes.fromhex(text)
             if mode == "b":
                 n = int(text, 2)
-                return n.to_bytes(max(1, (len(text) + 7) // 8), "big").decode("utf-8")
-        except (ValueError, UnicodeDecodeError):
+                return n.to_bytes(max(1, (len(text) + 7) // 8), "big")
+        except ValueError:
             return None
-        return text
+        return text.encode("utf-8")
+
+    @staticmethod
+    def _enum_text_values(values):
+        """The elements a STRING-mapped column can carry: Spark strings are UTF-8, so a
+        non-UTF-8 element is reachable only through the BINARY mapping."""
+        res = []
+        for val in values or []:
+            try:
+                res.append(val.decode("utf-8"))
+            except UnicodeDecodeError:
+                pass
+        return res
 
     @staticmethod
     def _parse_enum_values(ch_type: str):
-        """Collect the declared element names of every `Enum` in a ClickHouse type string.
-        Handles `'..'`, hex `x'..'` and binary `b'..'` element literals. Returns their
-        intersection (union when disjoint, so a nested type mixing distinct enums may
-        still yield an invalid element), or None when the type has no enums."""
+        """Collect the declared element names of every `Enum` in a ClickHouse type string,
+        as raw bytes, from `'..'`, hex `x'..'` and binary `b'..'` literals. Returns their
+        intersection (union when disjoint, so a nested type mixing distinct enums may still
+        yield an invalid element), or None when the type has no enums."""
         defs = []
         for m in re.finditer(r"\bEnum(?:8|16)?\(", ch_type):
             values = []
@@ -352,7 +364,7 @@ class LakeDataGenerator:
         pool = list(dict.fromkeys(pool))
         # Names holding U+FFFD were likely mangled in JSON transport of invalid UTF-8
         # and would not match the server-side element bytes
-        clean = [v for v in pool if "�" not in v]
+        clean = [v for v in pool if "�".encode("utf-8") not in v]
         return clean or pool
 
     def _rand_date(self):
@@ -512,7 +524,7 @@ class LakeDataGenerator:
                 return self._rand_time_string()
             # Same for Enum columns: values must be declared enum elements
             if ch_hint.startswith("Enum"):
-                enum_values = self._parse_enum_values(ch_hint)
+                enum_values = self._enum_text_values(self._parse_enum_values(ch_hint))
                 if enum_values:
                     return random.choice(enum_values)
             # Empty `Tuple()` is STRING-mapped and casts back by parsing its text form
@@ -536,11 +548,12 @@ class LakeDataGenerator:
                 val = val[:-1]
             return val
         if isinstance(dtype, BinaryType):
-            # Enum columns may also be BINARY-mapped; same declared-element constraint
+            # Enum columns may also be BINARY-mapped; same declared-element constraint.
+            # This branch carries the raw bytes, so non-UTF-8 elements work here.
             if ch_hint.startswith("Enum"):
                 enum_values = self._parse_enum_values(ch_hint)
                 if enum_values:
-                    return random.choice(enum_values).encode("utf-8")
+                    return random.choice(enum_values)
             if re.match(r"Tuple\(\s*\)$", ch_hint):
                 return b"()"
             return self._rand_binary(
@@ -847,10 +860,11 @@ class LakeDataGenerator:
             )
             return f"CAST('{value}' AS DECIMAL({dtype.precision}, {dtype.scale}))"
         if isinstance(dtype, (StringType, CharType, VarcharType)):
+            enum_texts = self._enum_text_values(enum_values)
             s = (
                 (
-                    random.choice(enum_values)
-                    if enum_values
+                    random.choice(enum_texts)
+                    if enum_texts
                     else self._rand_string(random.randint(0, 16))
                 )
                 .replace("\\", "\\\\")
@@ -867,7 +881,7 @@ class LakeDataGenerator:
             )
         if isinstance(dtype, BinaryType):
             if enum_values:
-                return f"X'{random.choice(enum_values).encode('utf-8').hex()}'"
+                return f"X'{random.choice(enum_values).hex()}'"
             return f"X'{self._rand_binary(random.randint(0, 8)).hex()}'"
         return None
 
