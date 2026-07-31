@@ -1,6 +1,7 @@
 #pragma once
 
 #include <IO/ChainedBuffers.h>
+#include <algorithm>
 #include <IO/IntervalSet.h>
 #include <Disks/DiskObjectStorage/ObjectStorages/StoredObject.h>
 #include <base/types.h>
@@ -21,10 +22,10 @@ enum class CacheTier
     FilesystemCache,
 };
 
-/// Per-range buffer API: `lookAt` steps decompose a read into HIT ranges (each
-/// owning a held `CacheReader`) and MISS cells; `openWriter` opens the held
-/// `CacheWriter` for a cell the plan decides to fill. The buffers are held by
-/// the executor's plan across many read windows. Coordinates are FILE-LEVEL
+/// Per-range buffer API: `resolve` decomposes a read into HIT ranges (each
+/// owning a held `CacheReader`) and MISS cells, each carrying a held
+/// `CacheWriter` when the provider populates. The buffers are held by the
+/// executor's plan across many read windows. Coordinates are FILE-LEVEL
 /// throughout.
 
 /// Held, re-readable view of ONE resident (hit) file-level range. Owns the pin
@@ -175,12 +176,6 @@ public:
 
     virtual String name() const = 0;
 
-    /// UPGRADE step: open the held write buffer for ONE miss cell the plan
-    /// decided to fill (the prune already ran), without re-probing residency.
-    /// Null when `!populatesOnMiss()` - fill sites skip null writers.
-    virtual CacheWriterPtr openWriter(
-        const StoredObject & object, size_t object_file_offset, ByteRange cell) = 0;
-
     /// One step of the residency walk (the executor's iterator consumes this).
     struct Resolution
     {
@@ -200,27 +195,24 @@ public:
         /// Hit only. A re-ask of the same run may return a fresh reader or a
         /// null one - the walker collects exactly one per run either way.
         CacheReaderPtr reader;
+        /// Miss only: the cell's OPEN writer (populating tiers; null on
+        /// bypass/read-only configurations).
+        CacheWriterPtr writer;
     };
 
-    /// One residency walk: step-wise probe state OWNED BY THE WALKER, so a
-    /// shared provider stays concurrency-safe (the `readBigAt` fan-out probes
-    /// one provider from many threads - each walk gets its own cursor). The
-    /// cursor pins chunks lazily while stepping; dropping it drops its pins -
-    /// what the plan keeps pinned travels in the handed-out readers.
-    class IProbeCursor
-    {
-    public:
-        virtual ~IProbeCursor() = default;
-
-        /// Resolve one position of `object`'s residency - THE read-only probe.
-        /// EACH MISS IS ONE CELL of the tier: the provider owns the alignment
-        /// policy (boundary-aligned optimal cells for the filesystem cache;
-        /// whole blocks for the page cache) and the executor derives all fetch
-        /// shaping from the cell edges. MUST NOT mutate the cache.
-        virtual Resolution lookAt(const StoredObject & object, size_t object_file_offset, size_t pos_in_file) = 0;
-    };
-
-    virtual std::unique_ptr<IProbeCursor> probe() = 0;
+    /// Resolve `range` in ONE pass: every resolution covering it, in offset
+    /// order, each once - hits carry readers. Whether a MISS carries an open
+    /// writer is THE PROVIDER'S decision, not the caller's: a populating cache
+    /// opens the writer at this call (one cache transaction resolves and
+    /// allocates); a read-only / bypass cache returns the miss writer-less. The
+    /// caller subtracts faster-tier hits BEFORE asking, so no writer opens for a
+    /// pruned cell. Cells at the range edges may overhang it (grid rounding,
+    /// object-end clamping). MUST NOT mutate the cache beyond that populate
+    /// decision (a read-only cache never does). Holds no per-call state, so a
+    /// shared provider is safe to resolve from many threads (the `readBigAt`
+    /// fan-out).
+    virtual VectorWithMemoryTracking<Resolution> resolve(
+        const StoredObject & object, size_t object_file_offset, ByteRange range) = 0;
 };
 
 }

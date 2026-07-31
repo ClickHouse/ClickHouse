@@ -115,13 +115,35 @@ public:
     bool fillsWholeCell() const override { return true; }
     String name() const override { return "MockFileCache"; }
 
-    std::unique_ptr<IProbeCursor> probe() override { return std::make_unique<Cursor>(block_size, state); }
-
-    CacheWriterPtr openWriter(const StoredObject &, size_t, ByteRange cell) override
+    /// Tile the asked range into file-level blocks: a fully-resident block is a Hit (fresh reader),
+    /// else a Miss carrying a Writer (null on a bypass tier, which never populates). Past EOF -> empty.
+    VectorWithMemoryTracking<Resolution> resolve(const StoredObject &, size_t, ByteRange range) override
     {
-        if (bypass)   /// a passive `*_if_exists_otherwise_bypass` tier: serves hits, never populates
-            return nullptr;
-        return std::make_unique<Writer>(cell, state);
+        VectorWithMemoryTracking<Resolution> out;
+        const size_t file_size = state->declared_size;
+        if (range.offset >= file_size)
+            return out;
+        const size_t ask_end = std::min(range.end(), file_size);
+        for (size_t pos = range.offset / block_size * block_size; pos < ask_end; )
+        {
+            const ByteRange block{pos, std::min(block_size, file_size - pos)};
+            Resolution r;
+            r.range = block;
+            if (state->resident.subtract(block).empty())
+            {
+                r.kind = Resolution::Kind::Hit;
+                r.reader = std::make_unique<Reader>(block, state);
+            }
+            else
+            {
+                r.kind = Resolution::Kind::Miss;
+                if (!bypass)   /// a passive `*_if_exists_otherwise_bypass` tier serves hits, never populates
+                    r.writer = std::make_unique<Writer>(block, state);
+            }
+            out.push_back(std::move(r));
+            pos += block.size;
+        }
+        return out;
     }
 
 private:
@@ -193,34 +215,6 @@ private:
         }
     private:
         ByteRange r;
-        std::shared_ptr<MockCacheState> state;
-    };
-
-    /// Steps one file-level block per `lookAt`: resident block -> Hit (with a fresh reader),
-    /// else Miss; past EOF -> End (a default `Resolution`).
-    class Cursor : public IProbeCursor
-    {
-    public:
-        Cursor(size_t block_size_, std::shared_ptr<MockCacheState> s_) : block_size(block_size_), state(std::move(s_)) {}
-        Resolution lookAt(const StoredObject &, size_t, size_t pos_in_file) override
-        {
-            const size_t file_size = state->declared_size;
-            if (pos_in_file >= file_size)
-                return Resolution{};
-            const size_t block_start = pos_in_file / block_size * block_size;
-            Resolution r;
-            r.range = ByteRange{block_start, std::min(block_size, file_size - block_start)};
-            if (state->resident.subtract(r.range).empty())
-            {
-                r.kind = Resolution::Kind::Hit;
-                r.reader = std::make_unique<Reader>(r.range, state);
-            }
-            else
-                r.kind = Resolution::Kind::Miss;
-            return r;
-        }
-    private:
-        size_t block_size;
         std::shared_ptr<MockCacheState> state;
     };
 
@@ -594,7 +588,7 @@ TEST_F(ReaderExecutorTest, SiblingLedCellIsFetchedThrough)
 
 TEST_F(ReaderExecutorTest, BypassTierServesCachedCellAfterHeadMiss)
 {
-    /// A read-only (bypass) tier - `openWriter` returns null, like `*_if_exists_otherwise_bypass = 1`
+    /// A read-only (bypass) tier - `resolve` returns writer-less misses, like `*_if_exists_otherwise_bypass = 1`
     /// - has no writer, so an all-miss window reads from source. It must still serve a cell cached
     /// AFTER a head miss: read source only up to the miss cell and re-probe, never swallow the whole
     /// window. Regression for the bot finding (window read the whole `window_size` and skipped a warm

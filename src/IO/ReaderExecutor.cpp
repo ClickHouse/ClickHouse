@@ -369,9 +369,10 @@ ChainedBuffers ReaderExecutor::readSource(size_t file_offset, size_t want)
 ChainedBuffers ReaderExecutor::readThroughCaches(size_t window_offset, size_t max_serve)
 {
     chassert(!cache_chain.empty());
-    /// Resolve only the window START: probe each tier (front = fastest); a hit serves one block from
-    /// cache, an all-miss fetches the covering cell(s) and populates. Coarse fetch, fine serve -- the
-    /// fetched cell tail primes the following windows as hits.
+    /// Resolve only the window START: ask each tier (front = fastest) for the resolution covering
+    /// `window_offset`; a hit serves one block from cache, an all-miss fetches the covering cell(s)
+    /// and populates. Coarse fetch, fine serve -- the fetched cell tail primes the following windows
+    /// as hits.
     const auto start_piece = offset_map.map(ByteRange{window_offset, 1});
     chassert(!start_piece.empty());
     const StoredObject & object = start_piece.front().object;
@@ -380,31 +381,36 @@ ChainedBuffers ReaderExecutor::readThroughCaches(size_t window_offset, size_t ma
     /// Serve one block from `window_offset`, capped by the window and by what is available up to `end`.
     auto serve_len = [&](size_t end) { return std::min({block_size, max_serve, end - window_offset}); };
 
-    struct MissTier { ICacheProvider * cache; ByteRange cell; };
+    /// A populating miss carries its own open writer; a bypass tier's miss is writer-less.
+    struct MissTier { CacheWriterPtr writer; ByteRange cell; };
     VectorWithMemoryTracking<MissTier> miss_tiers;
     for (auto & cache : cache_chain)
     {
         stats.add(Stats::CacheGetRequests);
-        auto cursor = cache->probe();
-        auto r = cursor->lookAt(object, object_file_offset, window_offset);
-        if (r.kind == ICacheProvider::Resolution::Kind::Hit && r.reader)
+        /// `resolve` returns the window's residency in offset order; the first run reaching past
+        /// `window_offset` is the one covering it (coverage is contiguous from the ask start).
+        auto resolutions = cache->resolve(object, object_file_offset, ByteRange{window_offset, 1});
+        for (auto & r : resolutions)
         {
-            return r.reader->read(ByteRange{window_offset, serve_len(r.range.end())});
+            if (r.range.end() <= window_offset)
+                continue;
+            if (r.kind == ICacheProvider::Resolution::Kind::Hit && r.reader)
+                return r.reader->read(ByteRange{window_offset, serve_len(r.range.end())});
+            if (r.kind == ICacheProvider::Resolution::Kind::Miss)
+                miss_tiers.push_back(MissTier{std::move(r.writer), r.range});
+            break;
         }
-        if (r.kind == ICacheProvider::Resolution::Kind::Miss)
-            miss_tiers.push_back(MissTier{cache.get(), r.range});
     }
 
-    /// Every tier missed. Open + claim the start cell of each writing tier BEFORE the fetch.
+    /// Every tier missed. Claim the start cell of each writing tier BEFORE the fetch.
     struct Claimed { CacheWriterPtr writer; ByteRange cell; CacheWriter::FillClaim claim; };
     VectorWithMemoryTracking<Claimed> claimed;
-    for (const auto & m : miss_tiers)
+    for (auto & m : miss_tiers)
     {
-        auto writer = m.cache->openWriter(object, object_file_offset, m.cell);
-        if (!writer)
+        if (!m.writer)
             continue;  /// a bypass tier populates nothing
-        auto claim = writer->claim(m.cell);
-        claimed.push_back(Claimed{std::move(writer), m.cell, std::move(claim)});
+        auto claim = m.writer->claim(m.cell);
+        claimed.push_back(Claimed{std::move(m.writer), m.cell, std::move(claim)});
     }
 
     /// A cell a sibling is already downloading is fetched through below (its `write` lands 0).

@@ -100,9 +100,9 @@ private:
 };
 
 /// `CacheWriter` over one cache-aligned miss range. Owns its OWN
-/// `FileSegmentsHolder` (one `getOrSet`, built by `openWriter`), appends
-/// across windows and is finalized at destruction - the holder's destructor
-/// shrinks a partial segment to its downloaded size.
+/// `FileSegmentsHolder` (the `getOrSet` transaction in `resolve` builds it),
+/// appends across windows and is finalized at destruction - the holder's
+/// destructor shrinks a partial segment to its downloaded size.
 class DiskCacheWriter : public CacheWriter
 {
 public:
@@ -110,7 +110,7 @@ public:
         FileCachePtr cache_,
         size_t object_file_offset_,
         const FilesystemCacheSettings & cache_settings_,
-        FileSegmentsHolderPtr holder_,
+        std::shared_ptr<FileSegmentsHolder> holder_,
         ByteRange aligned_range_in_file);
 
     ByteRange range() const override { return aligned_range; }
@@ -131,7 +131,9 @@ private:
     FileCachePtr cache;
     size_t object_file_offset;
     FilesystemCacheSettings cache_settings;
-    FileSegmentsHolderPtr holder;
+    /// SHARED with sibling writers born of the same ranged `resolve` - each
+    /// writer's `aligned_range` selects its own segment(s) from the holder.
+    std::shared_ptr<FileSegmentsHolder> holder;
     IntervalSet committed_ranges;
     /// Guards `committed_ranges` only. Per-segment write exclusion is the FileCache
     /// downloader (`getOrSetDownloader`), but the worker and the foreground can append
@@ -170,35 +172,13 @@ public:
     CacheTier tier() const override { return CacheTier::FilesystemCache; }
     bool populatesOnMiss() const override { return !cache_settings.read_if_exists_otherwise_bypass; }
 
-    /// One `cache->get` (no segment creation): each resident sub-range becomes
-    /// a `HitEntry`, each gap a cache-aligned writer-null `MissEntry`. A
-    /// concurrently-DOWNLOADING segment credits its committed prefix as a hit
-    /// and misses only the tail. Miss runs are TILED into optimal fill cells
-    /// (`optimalFillCell`) on the absolute grid; a cut never falls inside an
-    /// EXISTING segment, so each emitted range maps to whole cells and
-    /// the writer upgrade never hands two writers the same segment.
-    std::unique_ptr<IProbeCursor> probe() override;
-
-private:
-    /// Defined in the .cpp; nested for private-member access.
-    class ProbeCursor;
-
-public:
-
-    /// One `getOrSet` per surviving miss cell; the held holder is owned by each writer.
-    CacheWriterPtr openWriter(
-        const StoredObject & object, size_t object_file_offset, ByteRange cell) override;
+    /// Resolve `range` into hits (readers) and misses (writers when
+    /// populating); see the definition for the get/getOrSet split.
+    VectorWithMemoryTracking<Resolution> resolve(
+        const StoredObject & object, size_t object_file_offset, ByteRange range) override;
 
 private:
 
-    /// The cache boundary grid: the quantum of segment starts/extents (as
-    /// `getOrSet` resolves it).
-    size_t resolvedBoundaryAlignment() const;
-    /// The extent virgin miss runs are tiled into: the S3-optimal request size
-    /// (~8 MiB - past it the per-request cost is amortized and larger cells
-    /// mostly risk dying partial at query end), clamped to the cache's max
-    /// segment size and kept a multiple of the boundary grid.
-    size_t optimalFillCell() const;
 
     FileCachePtr cache;
     FilesystemCacheSettings cache_settings;
