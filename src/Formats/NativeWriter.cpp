@@ -123,13 +123,15 @@ std::tuple<SerializationPtr, SerializationInfoPtr, ColumnPtr> NativeWriter::getS
     }
 
     /// Below the custom-serialization revision there is no per-column kind on the wire, so the column
-    /// must be dense. A format setting can still select the size-stream String layout; the info is
-    /// used only to build the serialization and is not sent (no `has_custom_serialization` byte).
-    ColumnPtr result_column = recursiveRemoveSparse(column.column->convertToFullColumnIfReplicated());
+    /// must be fully dense. `recursiveRemoveReplicated` also strips nested `ColumnReplicated` (e.g. a
+    /// replicated tuple child), which `convertToFullColumnIfReplicated` leaves in place.
+    ColumnPtr result_column = recursiveRemoveSparse(recursiveRemoveReplicated(column.column));
     if (with_string_size_stream)
     {
-        auto info = column.type->getSerializationInfo(
-            *result_column, SerializationInfoSettings::enableAllSupportedSerializations(true));
+        /// Build the serialization from a type-level info (default kinds), exactly like the reader on
+        /// this no-marker path, so we never emit a column-derived kind the reader would not
+        /// reconstruct; the info only selects the size-stream String version.
+        auto info = column.type->createSerializationInfo(SerializationInfoSettings::enableAllSupportedSerializations(true));
         return {column.type->getSerialization(*info), nullptr, result_column};
     }
 
