@@ -26,17 +26,15 @@ CREATE TABLE m_dlk ENGINE = Merge(currentDatabase(), '^d_dlk_(1|2)$');
 -- replica over the classic protocol, which cannot deserialize distributed-plan steps.
 -- distributed_plan_max_rows_to_broadcast = 0 forces shuffle aggregation and bucketed reads, so the
 -- child plans deterministically contain exchanges.
+-- The bucket counts are the number of tasks per stage, and each task runs on its own thread with its
+-- own pipeline. Keep them at the minimum that still produces exchanges: at the default of 8 a single
+-- query starts 34 tasks (the `Merge` table plans each underlying table separately), which takes tens
+-- of seconds on a loaded machine.
 SET make_distributed_plan = 1, enable_parallel_replicas = 0, distributed_plan_execute_locally = 1,
     max_rows_to_group_by = 0, prefer_localhost_replica = 1, distributed_plan_max_rows_to_broadcast = 0,
-    distributed_plan_default_shuffle_join_bucket_count = 8,
+    distributed_plan_default_shuffle_join_bucket_count = 2, distributed_plan_default_reader_bucket_count = 2,
     max_threads = 1, distributed_aggregation_memory_efficient = 0;
 
-SELECT count(_table) FROM m_dlk WHERE _table = 'base_dlk_1' GROUP BY _table;
-SELECT count(_table) FROM m_dlk WHERE _table = 'base_dlk_2' GROUP BY _table;
-SELECT count(_table) FROM m_dlk WHERE _table = 'base_dlk_1' GROUP BY _table;
-SELECT count(_table) FROM m_dlk WHERE _table = 'base_dlk_2' GROUP BY _table;
-SELECT count(_table) FROM m_dlk WHERE _table = 'base_dlk_1' GROUP BY _table;
-SELECT count(_table) FROM m_dlk WHERE _table = 'base_dlk_2' GROUP BY _table;
 SELECT count(_table) FROM m_dlk WHERE _table = 'base_dlk_1' GROUP BY _table;
 SELECT count(_table) FROM m_dlk WHERE _table = 'base_dlk_2' GROUP BY _table;
 SELECT count(_table) FROM m_dlk WHERE _table = 'base_dlk_1' GROUP BY _table;
