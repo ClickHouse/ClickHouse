@@ -1191,15 +1191,6 @@ void BackupImpl::writeFile(const BackupFileInfo & info, BackupEntryPtr entry)
     if (entry->isReference())
         return;
 
-    if (entry->isFromRemoteFile())
-    {
-        LOG_TRACE(log, "Writing backup for file {} : skipped because of lightweight snapshot", info.data_file_name);
-        std::lock_guard lock{mutex};
-        original_endpoint = entry->getEndpointURI();
-        original_namespace = entry->getNamespace();
-        return;
-    }
-
     if (open_mode == OpenMode::READ)
         throw Exception(ErrorCodes::LOGICAL_ERROR, "The backup file should not be opened for reading. Something is wrong internally");
 
@@ -1321,6 +1312,16 @@ void BackupImpl::setCompressedSize()
         compressed_size = writer ? writer->getFileSize(archive_params.archive_name) : reader->getFileSize(archive_params.archive_name);
     else
         compressed_size = uncompressed_size;
+}
+
+
+void BackupImpl::setOriginalEndpointAndNamespaceIfEmpty(const String & endpoint_, const String & namespace_) noexcept
+{
+    if (original_endpoint.empty())
+    {
+        original_endpoint = endpoint_;
+        original_namespace = namespace_;
+    }
 }
 
 
