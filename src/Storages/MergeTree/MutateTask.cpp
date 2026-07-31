@@ -21,6 +21,7 @@
 #include <Interpreters/PreparedSets.h>
 #include <Interpreters/Squashing.h>
 #include <Interpreters/createSubcolumnsExtractionActions.h>
+#include <Interpreters/replaceSubcolumnsToGetSubcolumnFunctionInQuery.h>
 #include <Processors/Executors/PullingPipelineExecutor.h>
 #include <Processors/QueryPlan/CreatingSetsStep.h>
 #include <Processors/QueryPlan/Optimizations/QueryPlanOptimizationSettings.h>
@@ -3280,6 +3281,11 @@ void updateIndicesToRecalculateAndDrop(std::shared_ptr<MutationContext> & ctx)
 
     if ((!ctx->indices_to_recalc.empty() || !ctx->text_indices_to_recalc.empty()) && builder.initialized())
     {
+        /// An index may read a subcolumn (e.g. `t.a`), while the mutation stream provides only the
+        /// updated whole column (`t`). Replace subcolumns with `getSubcolumn` so the recalculation
+        /// extracts them from the updated column instead of failing to find `t.a` in the block (or,
+        /// worse, reading a stale pre-extracted subcolumn).
+        replaceSubcolumnsToGetSubcolumnFunctionInQuery(indices_recalc_expr_list, builder.getHeader().getNamesAndTypesList());
         auto indices_recalc_syntax
             = TreeRewriter(ctx->context).analyze(indices_recalc_expr_list, builder.getHeader().getNamesAndTypesList());
         auto indices_recalc_expr = ExpressionAnalyzer(indices_recalc_expr_list, indices_recalc_syntax, ctx->context).getActions(false);
