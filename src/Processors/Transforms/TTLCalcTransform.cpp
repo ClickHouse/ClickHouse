@@ -58,12 +58,11 @@ TTLCalcTransform::TTLCalcTransform(
     {
         for (const auto & [name, description] : metadata_snapshot_->getColumnTTLs())
         {
-            /// `columns_ttl` is keyed by the part's stamped column ID (matching ttl.txt).
-            auto column_in_part = data_part->getColumns().tryGetByName(name);
-            String column_id = column_in_part ? column_in_part->getColumnIdInStorage() : name;
+            auto column_in_part = data_part->tryGetColumnBySnapshotName(name, metadata_snapshot_);
+            String ttl_key = column_in_part ? column_in_part->getColumnId().value() : name;
             algorithms.emplace_back(std::make_unique<TTLUpdateInfoAlgorithm>(
                 getExpressions(description, subqueries_for_sets, context), description,
-                TTLUpdateField::COLUMNS_TTL, column_id, old_ttl_infos.columns_ttl[column_id], current_time_, force_));
+                TTLUpdateField::COLUMNS_TTL, ttl_key, old_ttl_infos.columns_ttl[ttl_key], current_time_, force_));
         }
     }
 

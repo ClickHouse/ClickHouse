@@ -78,41 +78,13 @@ void MergeTreeReaderCompact::fillColumnPositions()
     for (size_t i = 0; i < columns_num; ++i)
     {
         auto & column_to_read = columns_to_read[i];
-        auto position = data_part_info_for_read->getColumnPosition(column_to_read.getNameInStorage());
+        /// A miss (id absent from this part -- DROP + re-ADD reused the name under a fresh id, or a
+        /// new column) leaves the slot empty and defaults are filled downstream.
+        auto position = data_part_info_for_read->getColumnPosition(column_to_read.getColumnId());
 
         /// Column was dropped by a pending mutation. Don't read stale data; let defaults be used.
         if (position.has_value() && isColumnDroppedByPendingMutation(i))
             position.reset();
-
-        /// Stale-slot guard for column-IDs tables.  After a DROP COLUMN b /
-        /// ADD COLUMN b cycle (across two ALTERs), the table mapping points
-        /// `b` to a fresh column ID, but the on-disk part still has the
-        /// old `b` data under its original physical name.  Reading by
-        /// logical name would hand back the old bytes through the new
-        /// column.  Reset the slot when the part's effective ID disagrees
-        /// with the requested column_id.
-        ///
-        /// Read column_id from the part's underlying `NamesAndTypesList`
-        /// (`getColumns()`) rather than from `part_columns` -- the latter
-        /// is a `ColumnsDescription` view that DOES NOT preserve
-        /// `column_id`, so the older `part_columns.tryGetColumn(...)`
-        /// path always observed an empty column_id and could not
-        /// distinguish the stale-slot case from the normal case.
-        /// Treat an empty part-side `column_id` as the part's logical
-        /// name (pre-activation parts persist columns under their logical
-        /// names with no explicit column_id, and `remapColumnsWithPhysicalNames`
-        /// preserves the column unchanged in the columns list to keep
-        /// compact ordinal slots stable).  This is the same convention
-        /// `MergeTreeReaderWide::getStream` uses.
-        if (position.has_value() && !column_to_read.column_id.empty())
-        {
-            auto it = data_part_info_for_read->getColumns().begin();
-            std::advance(it, *position);
-            const String & part_effective_id = it->column_id.empty()
-                ? it->getNameInStorage() : it->column_id;
-            if (part_effective_id != column_to_read.column_id)
-                position.reset();
-        }
 
         if (position.has_value() && column_to_read.isSubcolumn())
         {
@@ -207,7 +179,7 @@ void MergeTreeReaderCompact::findPositionForMissedNested(size_t pos)
         partially_read_columns.insert(column.name);
     }
 
-    column_positions[pos] = data_part_info_for_read->getColumnPosition(column_for_offsets->column.name);
+    column_positions[pos] = data_part_info_for_read->getColumnPosition(column_for_offsets->column.getColumnId());
     serializations_of_full_columns[column.getNameInStorage()] = column_for_offsets->serialization;
 }
 
@@ -407,7 +379,10 @@ void MergeTreeReaderCompact::initSubcolumnsDeserializationOrder()
     enumerate_settings.use_specialized_prefixes_and_suffixes_substreams = true;
     for (const auto & [column, subcolumns_indexes] : column_to_subcolumns_indexes)
     {
-        auto pos = data_part_info_for_read->getColumnPosition(column);
+        /// `column` is a name-in-storage grouping key (used below to query the name-indexed
+        /// part_columns); resolve the part slot by the id carried on the grouped read columns.
+        auto pos = data_part_info_for_read->getColumnPosition(
+            columns_to_read[subcolumns_indexes.front()].getColumnId());
         auto & deserialization_order = subcolumns_deserialization_order[column];
         /// If there is no such column in the part, the subcolumns order doesn't matter.
         if (!pos)
@@ -446,7 +421,7 @@ void MergeTreeReaderCompact::initSubcolumnsDeserializationOrder()
             const auto & first_col = columns_to_read[subcolumns_indexes.front()];
             if (!first_col.column_id.empty())
             {
-                column_id_for_substreams = first_col.getColumnIdInStorage();
+                column_id_for_substreams = first_col.getColumnId().value();
                 logical_name_for_substreams = first_col.getNameInStorage();
             }
         }

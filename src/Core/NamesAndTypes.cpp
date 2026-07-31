@@ -4,6 +4,7 @@
 #include <Common/HashTable/HashMap.h>
 #include <DataTypes/DataTypeFactory.h>
 #include <DataTypes/IDataType.h>
+#include <DataTypes/NestedUtils.h>
 #include <IO/ReadBuffer.h>
 #include <IO/WriteBuffer.h>
 #include <IO/ReadHelpers.h>
@@ -41,12 +42,19 @@ String NameAndTypePair::getNameInStorage() const
     return name.substr(0, *subcolumn_delimiter_position);
 }
 
-String NameAndTypePair::getColumnIdInStorage() const
+ColumnId NameAndTypePair::getColumnId() const
 {
     if (column_id.empty())
-        return getNameInStorage();
+        return ColumnId{getNameInStorage()};
 
     return column_id;
+}
+
+ColumnId NameAndTypePair::getStorageKey() const
+{
+    return isSubcolumn()
+        ? ColumnId{Nested::concatenateName(getColumnId().value(), getSubcolumnName())}
+        : getColumnId();
 }
 
 bool NameAndTypePair::operator<(const NameAndTypePair & rhs) const
@@ -76,7 +84,7 @@ String NameAndTypePair::dump() const
     out << "name: " << name << "\n"
         << "type: " << type->getName() << "\n"
         << "name in storage: " << getNameInStorage() << "\n"
-        << "column ID in storage: " << getColumnIdInStorage() << "\n"
+        << "column ID in storage: " << getColumnId().value() << "\n"
         << "type in storage: " << getTypeInStorage()->getName();
 
     return out.str();
@@ -131,7 +139,7 @@ void NamesAndTypesList::writeText(WriteBuffer & buf, bool use_column_ids) const
     writeString(" columns:\n", buf);
     for (const auto & it : *this)
     {
-        const auto & col_name = (use_column_ids && !it.column_id.empty()) ? it.column_id : it.name;
+        const auto & col_name = (use_column_ids && !it.column_id.empty()) ? it.column_id.value() : it.name;
         writeBackQuotedString(col_name, buf);
         writeChar(' ', buf);
         writeString(it.type->getName(), buf);
@@ -216,7 +224,7 @@ std::unordered_map<String, const NameAndTypePair *> NamesAndTypesList::getIndexB
     std::unordered_map<String, const NameAndTypePair *> res;
     res.reserve(size());
     for (const NameAndTypePair & column : *this)
-        res.emplace(column.getColumnIdInStorage(), &column);
+        res.emplace(column.getColumnId().value(), &column);
     return res;
 }
 
@@ -272,19 +280,20 @@ NamesAndTypesList NamesAndTypesList::eraseNames(const NameSet & names) const
 NamesAndTypesList NamesAndTypesList::addTypes(const Names & names) const
 {
     /// NOTE: It's better to make a map in `IStorage` than to create it here every time again.
-    HashMapWithSavedHash<std::string_view, const DataTypePtr *, StringViewHash> types;
+    HashMapWithSavedHash<std::string_view, const NameAndTypePair *, StringViewHash> pairs;
 
     for (const auto & column : *this)
-        types[column.name] = &column.type;
+        pairs[column.name] = &column;
 
     NamesAndTypesList res;
     for (const String & name : names)
     {
-        const auto * it = types.find(name);
-        if (it == types.end())
+        const auto * it = pairs.find(name);
+        if (it == pairs.end())
             throw Exception(ErrorCodes::THERE_IS_NO_COLUMN, "No column {}", name);
 
-        res.emplace_back(name, *it->getMapped());
+        /// Carry the source pair's stable storage ID so a resolved read binds the right on-disk column.
+        res.push_back(*it->getMapped());
     }
 
     return res;

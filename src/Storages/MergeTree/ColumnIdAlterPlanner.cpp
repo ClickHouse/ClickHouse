@@ -26,6 +26,9 @@ namespace ErrorCodes
     extern const int NOT_IMPLEMENTED;
 }
 
+namespace
+{
+
 /// Table settings as they will be after this ALTER's `MODIFY SETTING` clauses
 /// apply, so ALTERs mixing settings and column commands are evaluated against
 /// the post-change state.
@@ -40,9 +43,6 @@ MergeTreeSettings settingsAfterAlter(
             /*is_loading_from_existing_metadata=*/true);
     return settings;
 }
-
-namespace
-{
 
 /// The table setting that opts a table into column IDs.
 bool columnIdSettingsEnabled(const MergeTreeSettings & settings)

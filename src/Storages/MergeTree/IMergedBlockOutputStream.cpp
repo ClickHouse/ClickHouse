@@ -69,7 +69,7 @@ NameSet IMergedBlockOutputStream::removeEmptyColumnsFromPart(
     std::map<String, size_t> stream_counts;
     for (const auto & column : columns)
     {
-        data_part->getSerialization(column.name)->enumerateStreams(
+        data_part->getSerialization(column.getStorageKey())->enumerateStreams(
             [&](const ISerialization::SubstreamPath & substream_path)
             {
                 auto stream_name = IMergeTreeDataPart::getStreamNameForColumn(column, substream_path, ".bin", checksums, data_part->storage.getSettings());
@@ -85,11 +85,14 @@ NameSet IMergedBlockOutputStream::removeEmptyColumnsFromPart(
     const String mrk_extension = data_part->getMarksFileExtension();
     for (const auto & column_name : empty_columns)
     {
-        auto serialization = data_part->tryGetSerialization(column_name);
+        auto column_in_part = columns.tryGetByName(column_name);
+
+        /// When the empty column is absent from the list, fall back to the name resolver (legacy/non-id parts).
+        auto serialization = column_in_part
+            ? data_part->tryGetSerialization(column_in_part->getStorageKey())
+            : data_part->tryGetSerializationByNameUnsafe(column_name); /// legacy id-less part fallback
         if (!serialization)
             continue;
-
-        auto column_in_part = columns.tryGetByName(column_name);
 
         /// Deriving stream names from the logical name alone would produce
         /// filenames that cannot exist on disk for an ID-stamped part.
@@ -119,7 +122,7 @@ NameSet IMergedBlockOutputStream::removeEmptyColumnsFromPart(
         /// logical name (freshly produced by the write path); drop both.
         serialization_infos.erase(column_name);
         if (column_in_part)
-            serialization_infos.erase(column_in_part->getColumnIdInStorage());
+            serialization_infos.erase(column_in_part->getColumnId().value());
     }
 
     /// Remove files on disk and checksums

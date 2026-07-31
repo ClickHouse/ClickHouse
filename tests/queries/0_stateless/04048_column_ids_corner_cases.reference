@@ -12,10 +12,10 @@ f	b
 2	two	3.14
 1	one	3.14
 2	two	3.14
-3	three	2.72
+3	three	2.5
 1	one	3.14
 2	two	3.14
-3	three	2.72
+3	three	2.5
 a	a
 d	1
 name	b
@@ -77,6 +77,10 @@ b	b
 1	dflt
 2	hello
 3	world
+10	1000
+0	x
+100	x
+200	x
 10	1000
 0	x
 100	x
@@ -200,3 +204,36 @@ n.y	n.y
 a
 d
 x
+detach_part	['1']
+drop_part	['1']
+drop_partition	['1']
+truncate	['1']
+clear_added_renamed	0
+clear_original_renamed	0
+dropb_wide	1	10
+dropa_wide	1	20
+dropb_compact	1	10
+dropa_compact	1	20
+readd	1	7
+wide_data	1	7
+wide_readd_marks_null	1
+compact_data	1	7
+compact_readd_marks_null	1
+wide_data	1	10	7
+wide_absent_marks_null	1
+compact_data	1	10	7
+compact_absent_marks_null	1
+wide_a10	1	10	100	0
+wide_a10	2	10	100	0
+wide_a10	5	10	100	9
+wide_b300	4
+wide_a40_b400	6
+wide_total	6
+compact_a10	1	10	100	0
+compact_a10	2	10	100	0
+compact_a10	5	10	100	9
+compact_b300	4
+compact_a40_b400	6
+compact_total	6
+dropped_a_has_bytes	1
+live_a_size_zero	1

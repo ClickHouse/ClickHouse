@@ -235,8 +235,8 @@ NameSet injectRequiredColumns(
 }
 
 MergeTreeBlockSizePredictor::MergeTreeBlockSizePredictor(
-    const DataPartPtr & data_part_, const Names & columns, const Block & sample_block, bool allow_subcolumns_sizes_calculation_)
-    : data_part(data_part_), allow_subcolumns_sizes_calculation(allow_subcolumns_sizes_calculation_)
+    const DataPartPtr & data_part_, const Names & columns, const Block & sample_block, const StorageMetadataPtr & storage_metadata_, bool allow_subcolumns_sizes_calculation_)
+    : data_part(data_part_), storage_metadata(storage_metadata_), allow_subcolumns_sizes_calculation(allow_subcolumns_sizes_calculation_)
 {
     number_of_rows_in_part = data_part->rows_count;
     /// Initialize with sample block until update won't called.
@@ -266,8 +266,8 @@ void MergeTreeBlockSizePredictor::initialize(const Block & sample_block, const C
         if (typeid_cast<const ColumnConst *>(column_data.get()))
             continue;
 
-        auto column_from_part = data_part->tryGetColumn(column_name);
-        if ((!column_from_part || !column_from_part->isSubcolumn()) && column_data->valuesHaveFixedSize())
+        auto column_in_snapshot = storage_metadata->getColumns().tryGetColumnOrSubcolumn(GetColumnsOptions::AllPhysical, column_name);
+        if ((!column_in_snapshot || !column_in_snapshot->isSubcolumn()) && column_data->valuesHaveFixedSize())
         {
             size_t size_of_value = column_data->sizeOfValueIfFixed();
             fixed_columns_bytes_per_row += column_data->sizeOfValueIfFixed();
@@ -277,13 +277,13 @@ void MergeTreeBlockSizePredictor::initialize(const Block & sample_block, const C
         {
             ColumnInfo info;
             info.name = column_name;
-            info.is_subcolumn = column_from_part && column_from_part->isSubcolumn();
+            info.is_subcolumn = column_in_snapshot && column_in_snapshot->isSubcolumn();
             /// If column isn't fixed and doesn't have checksum, than take first
             ColumnSize column_size;
             if (info.is_subcolumn && allow_subcolumns_sizes_calculation)
-                column_size = data_part->getSubcolumnSize(column_name);
+                column_size = data_part->getSubcolumnSize(*column_in_snapshot);
             else
-                column_size = data_part->getColumnSize(column_from_part ? column_from_part->getNameInStorage() : column_name);
+                column_size = data_part->getColumnSize(column_in_snapshot ? column_in_snapshot->getColumnId() : ColumnId{column_name});
 
             info.bytes_per_row_global = column_size.data_uncompressed
                 ? static_cast<double>(column_size.data_uncompressed) / static_cast<double>(number_of_rows_in_part)

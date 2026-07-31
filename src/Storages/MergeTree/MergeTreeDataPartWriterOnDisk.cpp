@@ -727,7 +727,7 @@ void MergeTreeDataPartWriterOnDisk::initColumnsSubstreamsIfNeeded()
         serialize_settings.stream_mark_getter = [&](const ISerialization::SubstreamPath &){ return MarkInCompressedFile(); };
 
         ISerialization::SerializeBinaryBulkStatePtr state;
-        auto serialization = getSerialization(name_and_type.name);
+        auto serialization = getSerialization(name_and_type);
         const auto & column = block_sample.getByName(name_and_type.name);
         serialization->serializeBinaryBulkStatePrefix(*column.column, serialize_settings, state);
         serialization->serializeBinaryBulkWithMultipleStreams(*column.column, column.column->size(), 0, serialize_settings, state);

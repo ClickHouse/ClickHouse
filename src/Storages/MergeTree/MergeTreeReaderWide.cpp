@@ -397,26 +397,12 @@ ReadBuffer * MergeTreeReaderWide::getStream(
     auto stream_name = IMergeTreeDataPart::getStreamNameForColumn(name_and_type, substream_path, ".bin", checksums, storage_settings);
     if (!stream_name)
     {
-        /// A numeric-ID column requested from an old part that predates its current
-        /// ID (DROP + re-ADD reassigns the ID; see ColumnIdMapping.h) has no matching
-        /// stream here — return nullptr so the reader fills defaults instead of throwing.
-        if (!name_and_type.column_id.empty()
-            && name_and_type.getColumnIdInStorage() != name_and_type.getNameInStorage())
-        {
-            auto col_pos = data_part_info_for_read->getColumnPosition(name_and_type.getNameInStorage());
-            if (!col_pos)
-                return nullptr;
-
-            auto it = data_part_info_for_read->getColumns().begin();
-            std::advance(it, *col_pos);
-            /// Treat an empty part-side `column_id` as the part's logical name
-            /// (pre-activation parts persist columns under their logical name
-            /// with no explicit column_id).  A non-identity new mapping that
-            /// disagrees with the part's effective ID is a stale slot.
-            const String & part_effective_id = it->column_id.empty() ? it->name : it->column_id;
-            if (part_effective_id != name_and_type.column_id)
-                return nullptr;
-        }
+        /// A miss here is expected: the requested id is absent from this part -- a DROP + re-ADD
+        /// reassigned the id (see ColumnIdMapping.h) so an old part carries the column under a
+        /// different id, or the column is new to the table. Return nullptr so the reader fills
+        /// defaults instead of throwing.
+        if (!data_part_info_for_read->getColumnPosition(name_and_type.getColumnId()))
+            return nullptr;
 
         auto column = data_part_info_for_read->getColumnsDescription().tryGetColumn(GetColumnsOptions::AllPhysical, name_and_type.getNameInStorage());
         if (column && (!name_and_type.isSubcolumn() || column->type->hasSubcolumn(name_and_type.getSubcolumnName())))

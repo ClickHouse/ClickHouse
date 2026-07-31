@@ -14,7 +14,7 @@ static String getStatisticsFilename(const String & column_name, const NamesAndTy
 {
     /// Note, we cannot use replaceFileNameToHashIfNeeded(), since we do not handle hashes->column names for statistics in getColumnForStatisticsFile()
     auto column_in_part = part_columns.tryGetByName(column_name);
-    String file_key = column_in_part ? column_in_part->getColumnIdInStorage() : column_name;
+    String file_key = column_in_part ? column_in_part->getColumnId().value() : column_name;
     return String(STATS_FILE_PREFIX) + escapeForFileName(file_key) + String(STATS_FILE_SUFFIX);
 }
 

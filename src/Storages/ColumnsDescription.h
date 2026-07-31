@@ -27,6 +27,8 @@
 namespace DB
 {
 
+class ColumnIdMapping;
+
 namespace ErrorCodes
 {
     extern const int LOGICAL_ERROR;
@@ -103,6 +105,13 @@ struct ColumnDescription
     SettingsChanges settings;
     ASTPtr ttl;
     ColumnStatisticsDescription statistics;
+
+    /// Stable on-disk storage ID, mirroring NameAndTypePair::column_id (empty ⇒ use `name`).
+    /// In-memory only: NOT serialized by writeText/readText or into the CREATE AST -- the
+    /// on-disk source of truth is column_ids.json. `operator==` ignores it (it is a
+    /// storage-physical attribute, not a logical-schema difference), matching
+    /// NameAndTypePair::operator==.
+    ColumnId column_id;
 
     ColumnDescription() = default;
     ColumnDescription(const ColumnDescription & other) { *this = other; }
@@ -190,6 +199,11 @@ public:
     bool hasSubcolumn(GetColumnsOptions::Kind kind, const String & column_name) const;
     const ColumnDescription & get(const String & column_name) const;
     const ColumnDescription * tryGet(const String & column_name) const;
+
+    /// Stamp each ColumnDescription's `column_id` from `mapping` (load / ALTER republish), so
+    /// every derived NameAndTypePair carries its ID for free. Columns not in the mapping keep
+    /// an empty ID (fall back to name).
+    void setColumnIds(const ColumnIdMapping & mapping);
 
     template <typename F>
     void modify(const String & column_name, F && f)

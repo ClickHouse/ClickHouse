@@ -56,7 +56,8 @@ public:
 
     const ColumnsSubstreams & getColumnsSubstreams() const override { return data_part->getColumnsSubstreams(); }
 
-    std::optional<size_t> getColumnPosition(const String & column_name) const override { return data_part->getColumnPosition(column_name); }
+    std::optional<size_t> getColumnPosition(const ColumnId & column_id) const override { return data_part->getColumnPosition(column_id); }
+    std::optional<NameAndTypePair> tryGetColumn(const ColumnId & column_id) const override { return data_part->tryGetColumn(column_id); }
 
     AlterConversionsPtr getAlterConversions() const override { return alter_conversions; }
 
@@ -79,7 +80,7 @@ public:
 
     const SerializationInfoByName & getSerializationInfos() const override { return data_part->getSerializationInfos(); }
 
-    SerializationPtr getSerialization(const NameAndTypePair & column) const override { return data_part->getSerialization(column.name); }
+    SerializationPtr getSerialization(const NameAndTypePair & column) const override { return data_part->getSerialization(column.getStorageKey()); }
 
     String getTableName() const override { return data_part->storage.getStorageID().getNameForLogs(); }
 

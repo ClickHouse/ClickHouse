@@ -997,10 +997,9 @@ MergeTreeTemporaryPartPtr MergeTreeDataWriter::writeTempPartImpl(
 
     for (const auto & [name, ttl_entry] : metadata_snapshot->getColumnTTLs())
     {
-        /// `columns_ttl` is keyed by the part's stamped column ID (matching ttl.txt).
         auto column_in_part = columns.tryGetByName(name);
-        String column_id = column_in_part ? column_in_part->getColumnIdInStorage() : name;
-        updateTTL(context, ttl_entry, new_data_part->ttl_infos, new_data_part->ttl_infos.columns_ttl[column_id], block, true);
+        String ttl_key = column_in_part ? column_in_part->getColumnId().value() : name;
+        updateTTL(context, ttl_entry, new_data_part->ttl_infos, new_data_part->ttl_infos.columns_ttl[ttl_key], block, true);
     }
 
     const auto & recompression_ttl_entries = metadata_snapshot->getRecompressionTTLs();

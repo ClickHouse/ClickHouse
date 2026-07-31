@@ -162,8 +162,7 @@ MergeTreeReadTask::Readers MergeTreeReadTask::createReaders(
 
     auto create_reader = [&](const NamesAndTypesList & columns_to_read, bool is_prewhere)
     {
-        auto part_info = std::make_shared<LoadedMergeTreeDataPartInfoForReader>(
-            read_info->data_part, read_info->alter_conversions);
+        auto part_info = std::make_shared<LoadedMergeTreeDataPartInfoForReader>(read_info->data_part, read_info->alter_conversions);
 
         return createMergeTreeReader(
             part_info,

@@ -3,6 +3,7 @@
 #include <Core/NamesAndTypes.h>
 
 #include <memory>
+#include <optional>
 #include <unordered_map>
 
 
@@ -80,6 +81,11 @@ public:
 
     bool hasLogicalName(const String & logical_name) const;
     bool hasColumnId(const String & column_id) const;
+
+    /// Guard + lookup folded together for the pattern call sites repeat: translate a logical
+    /// name to its (typed) id, or an id back to its logical name. `nullopt` when unmapped.
+    std::optional<ColumnId> tryGetColumnId(const String & logical_name) const;
+    std::optional<String> tryGetLogicalName(const ColumnId & column_id) const;
 
     /// Allocates the next numeric column ID and advances the counter.
     /// Also sets `active = true` as a side effect (first allocation activates the mapping).

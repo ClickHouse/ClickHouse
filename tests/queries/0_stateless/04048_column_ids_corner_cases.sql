@@ -1,5 +1,6 @@
--- Tags: no-random-settings, no-random-merge-tree-settings
+-- Tags: no-parallel, no-parallel-replicas, no-random-settings, no-random-merge-tree-settings, no-object-storage
 -- why: column-ID corner cases -- metadata-only RENAME/DROP mechanics, rejected ALTERs, TTL, partition transfer, projections, Nested.
+-- The later sections (marks/minmax/byte-size introspection) assert on local part layout, hence no-object-storage / no-parallel-replicas.
 
 SET allow_experimental_column_ids = 1;
 SET mutations_sync = 1;
@@ -30,7 +31,7 @@ ALTER TABLE t_ids_multi_op
     RENAME COLUMN b TO name,
     DROP COLUMN c;
 SELECT a, name, d FROM t_ids_multi_op ORDER BY a;
-INSERT INTO t_ids_multi_op VALUES (3, 'three', 2.72);
+INSERT INTO t_ids_multi_op VALUES (3, 'three', 2.5);
 SELECT a, name, d FROM t_ids_multi_op ORDER BY a;
 OPTIMIZE TABLE t_ids_multi_op FINAL;
 SELECT a, name, d FROM t_ids_multi_op ORDER BY a;
@@ -172,6 +173,22 @@ ALTER TABLE t_sparse_rename RENAME COLUMN s TO s2;
 SELECT countIf(s2 != ''), count() FROM t_sparse_rename;
 SELECT a, s2 FROM t_sparse_rename WHERE s2 != '' ORDER BY a LIMIT 3;
 DROP TABLE t_sparse_rename SYNC;
+
+-- why: with optimize_functions_to_subcolumns=1, `s2 != ''` is rewritten into a read of the
+-- Sparse column's SIZE subcolumn (s2.size). After a metadata-only RENAME the part still holds the
+-- load-time name, so the subcolumn size must resolve by the stable id -- resolving by the renamed
+-- name misses the part and throws NO_SUCH_COLUMN_IN_TABLE. Keep the optimization ON.
+CREATE TABLE t_sparse_rename_subcolumn (a UInt64) ENGINE = MergeTree ORDER BY a
+SETTINGS
+    min_bytes_for_wide_part = 0,
+    serialization_info_version = 'with_column_ids',
+    ratio_of_defaults_for_sparse_serialization = 0.5;
+ALTER TABLE t_sparse_rename_subcolumn ADD COLUMN s String;
+INSERT INTO t_sparse_rename_subcolumn SELECT number, if(number % 100 = 0, 'x', '') FROM numbers(1000);
+ALTER TABLE t_sparse_rename_subcolumn RENAME COLUMN s TO s2;
+SELECT countIf(s2 != ''), count() FROM t_sparse_rename_subcolumn SETTINGS optimize_functions_to_subcolumns = 1;
+SELECT a, s2 FROM t_sparse_rename_subcolumn WHERE s2 != '' ORDER BY a LIMIT 3 SETTINGS optimize_functions_to_subcolumns = 1;
+DROP TABLE t_sparse_rename_subcolumn SYNC;
 
 -- why: after DROP c(String) + ADD c(UInt64), the old part's same-named dead String
 -- column has a different ID and must not contribute its type to the read.
@@ -555,3 +572,321 @@ ALTER TABLE t_ids_name_id_guard ADD COLUMN b UInt64; -- { serverError BAD_ARGUME
 ALTER TABLE t_ids_name_id_guard RENAME COLUMN x TO b; -- { serverError BAD_ARGUMENTS }
 SELECT name FROM system.columns WHERE database = currentDatabase() AND table = 't_ids_name_id_guard' ORDER BY name;
 DROP TABLE t_ids_name_id_guard SYNC;
+
+
+-- ===== empty covering parts (DETACH/DROP PART, DROP PARTITION, TRUNCATE) must be id-keyed =====
+-- Before the fix, createEmptyPart wrote the covering part's columns.txt from the current logical
+-- schema without stamping ids, so system.parts_columns.column_id reported the logical name (e.g.
+-- 'c1') instead of the stable id ('1'). Large old_parts_lifetime keeps the transient Outdated
+-- covering part observable so the assertion is not racing GC.
+
+-- DETACH PART
+DROP TABLE IF EXISTS t_detach SYNC;
+CREATE TABLE t_detach (a UInt64) ENGINE = MergeTree ORDER BY a
+    SETTINGS allow_experimental_column_ids = 1, serialization_info_version = 'with_column_ids',
+             min_bytes_for_wide_part = 0, min_rows_for_wide_part = 0,
+             old_parts_lifetime = 100000, merge_tree_clear_old_parts_interval_seconds = 100000;
+INSERT INTO t_detach VALUES (1);
+ALTER TABLE t_detach ADD COLUMN c UInt64 DEFAULT 7;
+INSERT INTO t_detach (a, c) VALUES (2, 20);
+ALTER TABLE t_detach RENAME COLUMN c TO c1;
+ALTER TABLE t_detach DETACH PART 'all_2_2_0';
+SELECT 'detach_part', arraySort(groupArrayDistinct(column_id))
+FROM system.parts_columns
+WHERE database = currentDatabase() AND table = 't_detach' AND column = 'c1';
+
+-- DROP PART
+DROP TABLE IF EXISTS t_drop SYNC;
+CREATE TABLE t_drop (a UInt64) ENGINE = MergeTree ORDER BY a
+    SETTINGS allow_experimental_column_ids = 1, serialization_info_version = 'with_column_ids',
+             min_bytes_for_wide_part = 0, min_rows_for_wide_part = 0,
+             old_parts_lifetime = 100000, merge_tree_clear_old_parts_interval_seconds = 100000;
+INSERT INTO t_drop VALUES (1);
+ALTER TABLE t_drop ADD COLUMN c UInt64 DEFAULT 7;
+INSERT INTO t_drop (a, c) VALUES (2, 20);
+ALTER TABLE t_drop RENAME COLUMN c TO c1;
+ALTER TABLE t_drop DROP PART 'all_2_2_0';
+SELECT 'drop_part', arraySort(groupArrayDistinct(column_id))
+FROM system.parts_columns
+WHERE database = currentDatabase() AND table = 't_drop' AND column = 'c1';
+
+-- DROP PARTITION
+DROP TABLE IF EXISTS t_droppart SYNC;
+CREATE TABLE t_droppart (a UInt64) ENGINE = MergeTree ORDER BY a
+    SETTINGS allow_experimental_column_ids = 1, serialization_info_version = 'with_column_ids',
+             min_bytes_for_wide_part = 0, min_rows_for_wide_part = 0,
+             old_parts_lifetime = 100000, merge_tree_clear_old_parts_interval_seconds = 100000;
+INSERT INTO t_droppart VALUES (1);
+ALTER TABLE t_droppart ADD COLUMN c UInt64 DEFAULT 7;
+INSERT INTO t_droppart (a, c) VALUES (2, 20);
+ALTER TABLE t_droppart RENAME COLUMN c TO c1;
+ALTER TABLE t_droppart DROP PARTITION tuple();
+SELECT 'drop_partition', arraySort(groupArrayDistinct(column_id))
+FROM system.parts_columns
+WHERE database = currentDatabase() AND table = 't_droppart' AND column = 'c1';
+
+-- TRUNCATE
+DROP TABLE IF EXISTS t_trunc SYNC;
+CREATE TABLE t_trunc (a UInt64) ENGINE = MergeTree ORDER BY a
+    SETTINGS allow_experimental_column_ids = 1, serialization_info_version = 'with_column_ids',
+             min_bytes_for_wide_part = 0, min_rows_for_wide_part = 0,
+             old_parts_lifetime = 100000, merge_tree_clear_old_parts_interval_seconds = 100000;
+INSERT INTO t_trunc VALUES (1);
+ALTER TABLE t_trunc ADD COLUMN c UInt64 DEFAULT 7;
+INSERT INTO t_trunc (a, c) VALUES (2, 20);
+ALTER TABLE t_trunc RENAME COLUMN c TO c1;
+TRUNCATE TABLE t_trunc;
+SELECT 'truncate', arraySort(groupArrayDistinct(column_id))
+FROM system.parts_columns
+WHERE database = currentDatabase() AND table = 't_trunc' AND column = 'c1';
+
+DROP TABLE t_detach SYNC;
+DROP TABLE t_drop SYNC;
+DROP TABLE t_droppart SYNC;
+DROP TABLE t_trunc SYNC;
+
+
+-- ===== CLEAR COLUMN must reset a renamed column to its default =====
+-- The part keeps its load-time name after a metadata-only RENAME, so a name-resolved file drop
+-- missed the id-keyed file, leaving the data intact (a silent no-op). The fix resolves the part's
+-- column by its physical id. Covered for an added (id-keyed) column and an original (id == name).
+SET mutations_sync = 2;
+DROP TABLE IF EXISTS cv SYNC;
+CREATE TABLE cv (k UInt64) ENGINE = MergeTree PARTITION BY k ORDER BY k
+    SETTINGS allow_experimental_column_ids = 1, serialization_info_version = 'with_column_ids',
+             min_bytes_for_wide_part = 0;
+ALTER TABLE cv ADD COLUMN c UInt64 DEFAULT 0;
+INSERT INTO cv VALUES (1, 111);
+ALTER TABLE cv RENAME COLUMN c TO c1;
+ALTER TABLE cv CLEAR COLUMN c1 IN PARTITION 1;
+SELECT 'clear_added_renamed', c1 FROM cv;
+
+DROP TABLE IF EXISTS co SYNC;
+CREATE TABLE co (k UInt64, c UInt64) ENGINE = MergeTree PARTITION BY k ORDER BY k
+    SETTINGS allow_experimental_column_ids = 1, serialization_info_version = 'with_column_ids',
+             min_bytes_for_wide_part = 0;
+INSERT INTO co VALUES (1, 111);
+ALTER TABLE co RENAME COLUMN c TO c1;
+ALTER TABLE co CLEAR COLUMN c1 IN PARTITION 1;
+SELECT 'clear_original_renamed', c1 FROM co;
+DROP TABLE cv SYNC;
+DROP TABLE co SYNC;
+
+
+-- ===== rename onto a name freed by an earlier rename/drop: orphan stream keeps its own slot =====
+-- On reload the part's physical column list must resolve every key in ID-space: the live column
+-- keeps the name, the orphan keeps its slot under its own key -- never re-bound to the live
+-- sibling's stream. A regression here made the reloaded part a duplicate-column error.
+
+-- Two-column rotation is rejected: after a -> x, column x holds id 'a', so renaming b onto 'a'
+-- would make a logical name equal to another active column's id. It must fail loudly.
+DROP TABLE IF EXISTS t_rot;
+CREATE TABLE t_rot (k UInt64, a UInt64, b UInt64) ENGINE = MergeTree ORDER BY k
+SETTINGS min_bytes_for_wide_part = 0, min_rows_for_wide_part = 0;
+INSERT INTO t_rot VALUES (1, 10, 20);
+ALTER TABLE t_rot MODIFY SETTING serialization_info_version = 'with_column_ids';
+ALTER TABLE t_rot RENAME COLUMN a TO x;
+ALTER TABLE t_rot RENAME COLUMN b TO a; -- { serverError BAD_ARGUMENTS }
+
+-- DROP then RENAME the survivor onto the dropped name -- Wide and Compact, both the last-slot
+-- orphan (DROP b) and the middle-slot orphan (DROP a).
+DROP TABLE IF EXISTS t_dropb_wide;
+CREATE TABLE t_dropb_wide (k UInt64, a UInt64, b UInt64) ENGINE = MergeTree ORDER BY k
+SETTINGS min_bytes_for_wide_part = 0, min_rows_for_wide_part = 0;
+INSERT INTO t_dropb_wide VALUES (1, 10, 20);
+ALTER TABLE t_dropb_wide MODIFY SETTING serialization_info_version = 'with_column_ids';
+ALTER TABLE t_dropb_wide DROP COLUMN b;
+ALTER TABLE t_dropb_wide RENAME COLUMN a TO b;
+DETACH TABLE t_dropb_wide;
+ATTACH TABLE t_dropb_wide;
+SELECT 'dropb_wide', k, b FROM t_dropb_wide;
+
+DROP TABLE IF EXISTS t_dropa_wide;
+CREATE TABLE t_dropa_wide (k UInt64, a UInt64, b UInt64) ENGINE = MergeTree ORDER BY k
+SETTINGS min_bytes_for_wide_part = 0, min_rows_for_wide_part = 0;
+INSERT INTO t_dropa_wide VALUES (1, 10, 20);
+ALTER TABLE t_dropa_wide MODIFY SETTING serialization_info_version = 'with_column_ids';
+ALTER TABLE t_dropa_wide DROP COLUMN a;
+ALTER TABLE t_dropa_wide RENAME COLUMN b TO a;
+DETACH TABLE t_dropa_wide;
+ATTACH TABLE t_dropa_wide;
+SELECT 'dropa_wide', k, a FROM t_dropa_wide;
+
+DROP TABLE IF EXISTS t_dropb_compact;
+CREATE TABLE t_dropb_compact (k UInt64, a UInt64, b UInt64) ENGINE = MergeTree ORDER BY k
+SETTINGS min_bytes_for_wide_part = 1000000000, min_rows_for_wide_part = 1000000000;
+INSERT INTO t_dropb_compact VALUES (1, 10, 20);
+ALTER TABLE t_dropb_compact MODIFY SETTING serialization_info_version = 'with_column_ids';
+ALTER TABLE t_dropb_compact DROP COLUMN b;
+ALTER TABLE t_dropb_compact RENAME COLUMN a TO b;
+DETACH TABLE t_dropb_compact;
+ATTACH TABLE t_dropb_compact;
+SELECT 'dropb_compact', k, b FROM t_dropb_compact;
+
+DROP TABLE IF EXISTS t_dropa_compact;
+CREATE TABLE t_dropa_compact (k UInt64, a UInt64, b UInt64) ENGINE = MergeTree ORDER BY k
+SETTINGS min_bytes_for_wide_part = 1000000000, min_rows_for_wide_part = 1000000000;
+INSERT INTO t_dropa_compact VALUES (1, 10, 20);
+ALTER TABLE t_dropa_compact MODIFY SETTING serialization_info_version = 'with_column_ids';
+ALTER TABLE t_dropa_compact DROP COLUMN a;
+ALTER TABLE t_dropa_compact RENAME COLUMN b TO a;
+DETACH TABLE t_dropa_compact;
+ATTACH TABLE t_dropa_compact;
+SELECT 'dropa_compact', k, a FROM t_dropa_compact;
+
+-- DROP then re-ADD the same name: the reused name gets a fresh ID absent from the old part, so the
+-- orphan is not re-adopted and the reader default-fills.
+DROP TABLE IF EXISTS t_readd;
+CREATE TABLE t_readd (k UInt64, a UInt64) ENGINE = MergeTree ORDER BY k
+SETTINGS min_bytes_for_wide_part = 0, min_rows_for_wide_part = 0;
+INSERT INTO t_readd VALUES (1, 99);
+ALTER TABLE t_readd MODIFY SETTING serialization_info_version = 'with_column_ids';
+ALTER TABLE t_readd DROP COLUMN a;
+ALTER TABLE t_readd ADD COLUMN a UInt64 DEFAULT 7;
+DETACH TABLE t_readd;
+ATTACH TABLE t_readd;
+SELECT 'readd', k, a FROM t_readd;
+DROP TABLE t_rot;
+DROP TABLE t_dropb_wide;
+DROP TABLE t_dropa_wide;
+DROP TABLE t_dropb_compact;
+DROP TABLE t_dropa_compact;
+DROP TABLE t_readd;
+
+
+-- ===== DROP + re-ADD: marks introspection must resolve the part column by id, not name =====
+-- The re-added column gets a fresh id absent from the old part, whose original orphan stream still
+-- sits on disk under the old id. The marks path must resolve by id, else it binds the orphan
+-- stream and reports its marks for a column absent from the part. Only the marks path is observable.
+DROP TABLE IF EXISTS t_readd_marks_wide;
+CREATE TABLE t_readd_marks_wide (k UInt64, a UInt64) ENGINE = MergeTree ORDER BY k
+SETTINGS min_bytes_for_wide_part = 0, min_rows_for_wide_part = 0, index_granularity = 1;
+INSERT INTO t_readd_marks_wide VALUES (1, 99);
+ALTER TABLE t_readd_marks_wide MODIFY SETTING serialization_info_version = 'with_column_ids';
+ALTER TABLE t_readd_marks_wide DROP COLUMN a;
+ALTER TABLE t_readd_marks_wide ADD COLUMN a UInt64 DEFAULT 7;
+DETACH TABLE t_readd_marks_wide;
+ATTACH TABLE t_readd_marks_wide;
+SELECT 'wide_data', k, a FROM t_readd_marks_wide;
+SELECT 'wide_readd_marks_null',
+       min(tupleElement(`a.mark`, 1) IS NULL AND tupleElement(`a.mark`, 2) IS NULL) AS marks_null
+FROM mergeTreeIndex(currentDatabase(), 't_readd_marks_wide', with_marks = true)
+WHERE part_name = 'all_1_1_0';
+
+DROP TABLE IF EXISTS t_readd_marks_compact;
+CREATE TABLE t_readd_marks_compact (k UInt64, a UInt64) ENGINE = MergeTree ORDER BY k
+SETTINGS min_bytes_for_wide_part = 1000000000, min_rows_for_wide_part = 1000000000, index_granularity = 1;
+INSERT INTO t_readd_marks_compact VALUES (1, 99);
+ALTER TABLE t_readd_marks_compact MODIFY SETTING serialization_info_version = 'with_column_ids';
+ALTER TABLE t_readd_marks_compact DROP COLUMN a;
+ALTER TABLE t_readd_marks_compact ADD COLUMN a UInt64 DEFAULT 7;
+DETACH TABLE t_readd_marks_compact;
+ATTACH TABLE t_readd_marks_compact;
+SELECT 'compact_data', k, a FROM t_readd_marks_compact;
+SELECT 'compact_readd_marks_null',
+       min(tupleElement(`a.mark`, 1) IS NULL AND tupleElement(`a.mark`, 2) IS NULL) AS marks_null
+FROM mergeTreeIndex(currentDatabase(), 't_readd_marks_compact', with_marks = true)
+WHERE part_name = 'all_1_1_0';
+DROP TABLE t_readd_marks_wide;
+DROP TABLE t_readd_marks_compact;
+
+
+-- ===== orphan placeholder collision: a fresh-id column absent from the part must default-fill =====
+-- DROP b + RENAME a TO b makes the orphan's stale name 'b' collide with the live 'b'; the orphan is
+-- renamed to a unique placeholder so the part's column list has no duplicate name. A later 'b_' is a
+-- real column absent from the old part -- its marks must be NULL (fillMarks resolves by stable id).
+DROP TABLE IF EXISTS t_orphan_collide_wide;
+CREATE TABLE t_orphan_collide_wide (k UInt64, a UInt64, b UInt64) ENGINE = MergeTree ORDER BY k
+SETTINGS min_bytes_for_wide_part = 0, min_rows_for_wide_part = 0, index_granularity = 1;
+INSERT INTO t_orphan_collide_wide VALUES (1, 10, 20);
+ALTER TABLE t_orphan_collide_wide MODIFY SETTING serialization_info_version = 'with_column_ids';
+ALTER TABLE t_orphan_collide_wide DROP COLUMN b;
+ALTER TABLE t_orphan_collide_wide RENAME COLUMN a TO b;
+ALTER TABLE t_orphan_collide_wide ADD COLUMN `b_` UInt64 DEFAULT 7;
+DETACH TABLE t_orphan_collide_wide;
+ATTACH TABLE t_orphan_collide_wide;
+SELECT 'wide_data', k, b, `b_` FROM t_orphan_collide_wide;
+SELECT 'wide_absent_marks_null',
+       min(tupleElement(`b_.mark`, 1) IS NULL AND tupleElement(`b_.mark`, 2) IS NULL) AS marks_null
+FROM mergeTreeIndex(currentDatabase(), 't_orphan_collide_wide', with_marks = true)
+WHERE part_name = 'all_1_1_0';
+
+DROP TABLE IF EXISTS t_orphan_collide_compact;
+CREATE TABLE t_orphan_collide_compact (k UInt64, a UInt64, b UInt64) ENGINE = MergeTree ORDER BY k
+SETTINGS min_bytes_for_wide_part = 1000000000, min_rows_for_wide_part = 1000000000, index_granularity = 1;
+INSERT INTO t_orphan_collide_compact VALUES (1, 10, 20);
+ALTER TABLE t_orphan_collide_compact MODIFY SETTING serialization_info_version = 'with_column_ids';
+ALTER TABLE t_orphan_collide_compact DROP COLUMN b;
+ALTER TABLE t_orphan_collide_compact RENAME COLUMN a TO b;
+ALTER TABLE t_orphan_collide_compact ADD COLUMN `b_` UInt64 DEFAULT 7;
+DETACH TABLE t_orphan_collide_compact;
+ATTACH TABLE t_orphan_collide_compact;
+SELECT 'compact_data', k, b, `b_` FROM t_orphan_collide_compact;
+SELECT 'compact_absent_marks_null',
+       min(tupleElement(`b_.mark`, 1) IS NULL AND tupleElement(`b_.mark`, 2) IS NULL) AS marks_null
+FROM mergeTreeIndex(currentDatabase(), 't_orphan_collide_compact', with_marks = true)
+WHERE part_name = 'all_1_1_0';
+DROP TABLE t_orphan_collide_wide;
+DROP TABLE t_orphan_collide_compact;
+
+
+-- ===== minmax partition pruning must resolve each part's minmax file by the partition-key id =====
+-- MinMaxIndex::load and the checkConsistencyBase minmax checks resolve id-first, so a foreign
+-- column's minmax_<id>.idx can never bind to a different partition-key column. Mapping churn
+-- (ADD/DROP of a non-partition column) keeps a non-trivial live mapping across a part reload.
+DROP TABLE IF EXISTS mm_wide;
+CREATE TABLE mm_wide (k UInt64, a UInt64, b UInt64) ENGINE = MergeTree PARTITION BY (a, b) ORDER BY k
+SETTINGS min_bytes_for_wide_part = 0, min_rows_for_wide_part = 0;
+INSERT INTO mm_wide VALUES (1, 10, 100), (2, 10, 100), (3, 20, 200), (4, 30, 300);
+ALTER TABLE mm_wide MODIFY SETTING serialization_info_version = 'with_column_ids';
+ALTER TABLE mm_wide ADD COLUMN c UInt64 DEFAULT 0;
+ALTER TABLE mm_wide DROP COLUMN c;
+ALTER TABLE mm_wide ADD COLUMN d UInt64 DEFAULT 0;
+INSERT INTO mm_wide VALUES (5, 10, 100, 9), (6, 40, 400, 9);
+OPTIMIZE TABLE mm_wide FINAL;
+DETACH TABLE mm_wide;
+ATTACH TABLE mm_wide;
+SELECT 'wide_a10', k, a, b, d FROM mm_wide WHERE a = 10 ORDER BY k;
+SELECT 'wide_b300', k FROM mm_wide WHERE b = 300 ORDER BY k;
+SELECT 'wide_a40_b400', k FROM mm_wide WHERE a = 40 AND b = 400 ORDER BY k;
+SELECT 'wide_total', count() FROM mm_wide;
+
+DROP TABLE IF EXISTS mm_compact;
+CREATE TABLE mm_compact (k UInt64, a UInt64, b UInt64) ENGINE = MergeTree PARTITION BY (a, b) ORDER BY k
+SETTINGS min_bytes_for_wide_part = 1000000000, min_rows_for_wide_part = 1000000000;
+INSERT INTO mm_compact VALUES (1, 10, 100), (2, 10, 100), (3, 20, 200), (4, 30, 300);
+ALTER TABLE mm_compact MODIFY SETTING serialization_info_version = 'with_column_ids';
+ALTER TABLE mm_compact ADD COLUMN c UInt64 DEFAULT 0;
+ALTER TABLE mm_compact DROP COLUMN c;
+ALTER TABLE mm_compact ADD COLUMN d UInt64 DEFAULT 0;
+INSERT INTO mm_compact VALUES (5, 10, 100, 9), (6, 40, 400, 9);
+OPTIMIZE TABLE mm_compact FINAL;
+DETACH TABLE mm_compact;
+ATTACH TABLE mm_compact;
+SELECT 'compact_a10', k, a, b, d FROM mm_compact WHERE a = 10 ORDER BY k;
+SELECT 'compact_b300', k FROM mm_compact WHERE b = 300 ORDER BY k;
+SELECT 'compact_a40_b400', k FROM mm_compact WHERE a = 40 AND b = 400 ORDER BY k;
+SELECT 'compact_total', count() FROM mm_compact;
+DROP TABLE mm_wide;
+DROP TABLE mm_compact;
+
+
+-- ===== orphan column-size attribution: an orphan whose id-token equals a live name must be skipped =====
+-- DROP a; ADD a: the re-added 'a' gets a fresh id, and the old part's original 'a' stream becomes an
+-- orphan whose stamped id equals the new live column's logical name 'a'. The column-size aggregate
+-- keys live columns by name and orphans by id-token (both plain strings that can coincide), so an
+-- orphan with no live logical name must be skipped, else its bytes are attributed to the live 'a'.
+DROP TABLE IF EXISTS t_orphan_size;
+CREATE TABLE t_orphan_size (k UInt64, a String) ENGINE = MergeTree ORDER BY k
+SETTINGS serialization_info_version = 'with_column_ids',
+         min_bytes_for_wide_part = 0, min_rows_for_wide_part = 0;
+INSERT INTO t_orphan_size SELECT number, toString(rand64()) || toString(rand64()) FROM numbers(20000);
+SELECT 'dropped_a_has_bytes', data_compressed_bytes > 0 AS big
+FROM system.columns WHERE database = currentDatabase() AND table = 't_orphan_size' AND name = 'a';
+ALTER TABLE t_orphan_size DROP COLUMN a;
+ALTER TABLE t_orphan_size ADD COLUMN a String;
+DETACH TABLE t_orphan_size;
+ATTACH TABLE t_orphan_size;
+SELECT 'live_a_size_zero', data_compressed_bytes = 0 AS is_zero
+FROM system.columns WHERE database = currentDatabase() AND table = 't_orphan_size' AND name = 'a';
+DROP TABLE t_orphan_size;

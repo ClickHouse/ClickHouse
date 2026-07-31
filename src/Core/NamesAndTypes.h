@@ -1,5 +1,6 @@
 #pragma once
 
+#include <Core/ColumnId.h>
 #include <Core/Names.h>
 #include <DataTypes/IDataType.h>
 #include <base/types.h>
@@ -29,11 +30,19 @@ public:
     NameAndTypePair(const String & name_, const DataTypePtr & type_)
         : name(name_), type(type_), type_in_storage(type_) {}
 
+    NameAndTypePair(const String & name_, const DataTypePtr & type_, ColumnId column_id_)
+        : name(name_), type(type_), column_id(std::move(column_id_)), type_in_storage(type_) {}
+
     NameAndTypePair(const String & name_in_storage_, const String & subcolumn_name_,
         const DataTypePtr & type_in_storage_, const DataTypePtr & subcolumn_type_);
 
     String getNameInStorage() const;
-    String getColumnIdInStorage() const;
+    /// Key for the part's whole-column-keyed maps -- `getColumnPosition`, `getColumnSize`,
+    /// `tryGetColumn` -- so a subcolumn reports its parent's id: it has no entry of its own there.
+    ColumnId getColumnId() const;
+    /// Key for `getSerialization`, the one part map that also holds subcolumn entries: the id for a
+    /// whole column, `"<id>.<subpath>"` for a subcolumn. A pure read -- the id must already be stamped.
+    ColumnId getStorageKey() const;
     String getSubcolumnName() const;
 
     bool isSubcolumn() const { return subcolumn_delimiter_position != std::nullopt; }
@@ -47,7 +56,7 @@ public:
     /// Can be used to convert "t.a.b.c" from meaning "column `t` in storage, subcolumn `a.b.c` inside it"
     /// to meaning "column `t.a.b` in storage, subcolumn `c` inside it".
     void setDelimiterAndTypeInStorage(const String & name_in_storage_, DataTypePtr type_in_storage_);
-    void setColumnId(const String & column_id_) { column_id = column_id_; }
+    void setColumnId(ColumnId column_id_) { column_id = std::move(column_id_); }
 
     String name;
     DataTypePtr type;
@@ -63,7 +72,7 @@ public:
     ///
     /// When empty (the default), the logical `name` is used as the file name --
     /// this is the traditional behavior for tables without column ID mapping.
-    String column_id;
+    ColumnId column_id;
 
 private:
     DataTypePtr type_in_storage;
@@ -130,7 +139,7 @@ public:
     /// Creates a mapping from name to the type
     UnorderedMapWithMemoryTracking<std::string, DataTypePtr> getNameToTypeMap() const;
 
-    /// Index each element by its `getColumnIdInStorage()` (the stamped column ID, or
+    /// Index each element by its `getColumnId()` (the stamped column ID, or
     /// the logical name when no ID is stamped). The returned pointers borrow from this
     /// list, so the list must outlive the map.
     std::unordered_map<String, const NameAndTypePair *> getIndexByStorageColumnId() const;

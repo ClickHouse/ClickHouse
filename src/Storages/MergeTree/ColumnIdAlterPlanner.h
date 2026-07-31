@@ -49,12 +49,6 @@ struct ColumnIdAlterPlan
     bool persists_column_id_settings = false;
 };
 
-/// Table settings as they will be after this ALTER's `MODIFY SETTING` clauses
-/// apply, so ALTERs mixing settings and column commands are evaluated against
-/// the post-change state.
-MergeTreeSettings settingsAfterAlter(
-    const MergeTreeSettings & current_settings, const StorageInMemoryMetadata & new_metadata, ContextPtr context);
-
 /// Compute how the column ID mapping should change for the given ALTER.
 /// Handles first-time activation, two-phase renames, column adds/drops, and
 /// the flattened Nested guard. `current_mapping` is null when the table has no

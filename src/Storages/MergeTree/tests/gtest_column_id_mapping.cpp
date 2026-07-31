@@ -104,7 +104,7 @@ TEST(ColumnIdMapping, UnmappedColumnsPassthrough)
 
     EXPECT_EQ(mapping.getColumnIdOrDefault("_row_exists"), "_row_exists");
 
-    /// A virtual column is left UNSTAMPED; `getColumnIdInStorage()` falls back to the name,
+    /// A virtual column is left UNSTAMPED; `getColumnId()` falls back to the name,
     /// so empty is equivalent to the old write behavior of stamping it to its own name.
     auto columns = makeColumns({"a", "_row_exists"});
     mapping.stampColumnIds(columns);
@@ -114,9 +114,9 @@ TEST(ColumnIdMapping, UnmappedColumnsPassthrough)
 
     ASSERT_TRUE(a.has_value());
     ASSERT_TRUE(row_exists.has_value());
-    EXPECT_EQ(a->getColumnIdInStorage(), "a");
+    EXPECT_EQ(a->getColumnId().value(), "a");
     EXPECT_TRUE(row_exists->column_id.empty());
-    EXPECT_EQ(row_exists->getColumnIdInStorage(), "_row_exists");
+    EXPECT_EQ(row_exists->getColumnId().value(), "_row_exists");
 }
 
 TEST(ColumnIdMapping, TwoPhaseRenameNormal)
@@ -197,15 +197,26 @@ TEST(ColumnIdMapping, ConcurrentDropAddCycle)
 
 TEST(ColumnIdMapping, RenameToExistingColumnIdIsRejected)
 {
+    /// Renaming a column to a name equal to another active column's id is rejected: on-disk
+    /// artifacts are keyed by the column id, so such a logical name makes name-vs-id resolution
+    /// ambiguous (reachable via a mutation that then reads/writes the wrong streams). The
+    /// two-phase rotation a->x; b->a is a special case of this and is likewise rejected.
     auto mapping = ColumnIdMapping::createIdentity(makeColumns({"a", "b"}));
     auto id = mapping.allocateColumnId();
     mapping.addColumn("c", id);
+    ASSERT_EQ(id, "1");
 
-    /// Renaming "a" to "1" collides with column c's ID "1".
+    /// Renaming "a" to "1" collides with column c's id "1".
     EXPECT_THROW(mapping.renameColumn("a", id), Exception);
     EXPECT_THROW(mapping.beginRename("a", id), Exception);
 
-    /// Self-case: renaming "c" to its own ID "1" is allowed.
+    /// Two-phase rotation: after a->x, "x" holds id "a", so renaming "b" to "a" is rejected.
+    auto rot = ColumnIdMapping::createIdentity(makeColumns({"a", "b"}));
+    rot.beginRename("a", "x");
+    rot.finishRename("a");
+    EXPECT_THROW(rot.beginRename("b", "a"), Exception);
+
+    /// Self-case: renaming "c" to its own id "1" is allowed.
     EXPECT_NO_THROW(mapping.renameColumn("c", id));
     EXPECT_EQ(mapping.getColumnId(id), id);
 }
@@ -230,14 +241,14 @@ TEST(ColumnIdMapping, StampForReadPreservesExistingId)
 
     /// A pre-stamped old-part column keeps its own id.
     NamesAndTypesList prestamped = makeColumns({"a"});
-    prestamped.front().setColumnId("a");
+    prestamped.front().setColumnId(ColumnId{"a"});
     mapping.stampColumnIds(prestamped);
-    EXPECT_EQ(prestamped.front().getColumnIdInStorage(), "a");
+    EXPECT_EQ(prestamped.front().getColumnId().value(), "a");
 
     /// An id-less query column (the main read path) still gets stamped to the live id.
     NamesAndTypesList idless = makeColumns({"a"});
     mapping.stampColumnIds(idless);
-    EXPECT_EQ(idless.front().getColumnIdInStorage(), "1");
+    EXPECT_EQ(idless.front().getColumnId().value(), "1");
 }
 
 /// DROP q; RENAME p TO q (two metadata-only ALTERs, no part reload) leaves a packed part carrying
@@ -319,15 +330,15 @@ TEST(ColumnIdMapping, StampColumnIdsStampsMappedLeavesVirtualEmpty)
 
     auto columns = makeColumns({"a", BlockNumberColumn::name});
     mapping.stampColumnIds(columns);
-    EXPECT_EQ(columns.tryGetByName("a")->getColumnIdInStorage(), "1");
+    EXPECT_EQ(columns.tryGetByName("a")->getColumnId().value(), "1");
     /// Virtual left unstamped; name fallback yields its own name (the old write behavior).
     EXPECT_TRUE(columns.tryGetByName(BlockNumberColumn::name)->column_id.empty());
-    EXPECT_EQ(columns.tryGetByName(BlockNumberColumn::name)->getColumnIdInStorage(), BlockNumberColumn::name);
+    EXPECT_EQ(columns.tryGetByName(BlockNumberColumn::name)->getColumnId().value(), BlockNumberColumn::name);
 
     NamesAndTypesList prestamped = makeColumns({"a"});
-    prestamped.front().setColumnId("42");
+    prestamped.front().setColumnId(ColumnId{"42"});
     mapping.stampColumnIds(prestamped);
-    EXPECT_EQ(prestamped.front().getColumnIdInStorage(), "42");
+    EXPECT_EQ(prestamped.front().getColumnId().value(), "42");
 }
 
 /// Lenient stamp: mapped columns get their id, columns outside the mapping (synthetic
@@ -339,7 +350,7 @@ TEST(ColumnIdMapping, StampColumnIdsLenientLeavesUnmappedEmpty)
 
     auto columns = makeColumns({"a", "sum(c)"});
     EXPECT_NO_THROW(mapping.stampColumnIdsLenient(columns));
-    EXPECT_EQ(columns.tryGetByName("a")->getColumnIdInStorage(), "a");
+    EXPECT_EQ(columns.tryGetByName("a")->getColumnId().value(), "a");
     EXPECT_TRUE(columns.tryGetByName("sum(c)")->column_id.empty());
 }
 

@@ -419,7 +419,7 @@ String ISerialization::getFileNameForStreamByColumnId(const NameAndTypePair & co
     if (column.column_id.empty())
         return getFileNameForStream(column, path, settings);
 
-    return getFileNameForStreamByColumnId(column.getColumnIdInStorage(), column.getNameInStorage(), path, settings);
+    return getFileNameForStreamByColumnId(column.getColumnId().value(), column.getNameInStorage(), path, settings);
 }
 
 static bool isPossibleOffsetsOfNested(const ISerialization::SubstreamPath & path)

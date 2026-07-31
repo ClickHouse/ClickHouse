@@ -345,8 +345,7 @@ Pipe createMergeTreeSequentialSource(
     }
 
     auto result_header = std::make_shared<const Block>(storage_snapshot->getSampleBlockForColumns(columns_to_read));
-    LoadedMergeTreeDataPartInfoForReader info_for_reader(
-        info->data_part, info->alter_conversions);
+    LoadedMergeTreeDataPartInfoForReader info_for_reader(info->data_part, info->alter_conversions);
 
     info->task_columns = getReadTaskColumnsForMerge(info_for_reader, storage_snapshot, columns_to_read, info->mutation_steps);
     info->task_columns.moveAllColumnsFromPrewhere();

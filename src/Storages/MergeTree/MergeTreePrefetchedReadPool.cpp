@@ -357,13 +357,13 @@ void MergeTreePrefetchedReadPool::fillPerPartStatistics()
         auto update_stat_for_column = [&](const auto & column_name)
         {
             size_t column_size = 0;
-            auto column = read_info.data_part->tryGetColumn(column_name);
+            auto column = storage_snapshot->metadata->getColumns().tryGetColumnOrSubcolumn(GetColumnsOptions::AllPhysical, column_name);
             if (column)
             {
                 if (column->isSubcolumn() && settings[Setting::allow_calculating_subcolumns_sizes_for_merge_tree_reading])
-                    column_size = read_info.data_part->getSubcolumnSize(column_name).data_compressed;
+                    column_size = read_info.data_part->getSubcolumnSize(*column).data_compressed;
                 else
-                    column_size = read_info.data_part->getColumnSize(column->getNameInStorage()).data_compressed;
+                    column_size = read_info.data_part->getColumnSize(column->getColumnId()).data_compressed;
             }
 
             part_stat.estimated_memory_usage_for_single_prefetch += std::min<size_t>(column_size, settings[Setting::prefetch_buffer_size]);

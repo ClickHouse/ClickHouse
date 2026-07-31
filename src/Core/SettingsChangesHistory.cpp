@@ -41,11 +41,11 @@ const VersionToSettingsChangesMap & getSettingsChangesHistory()
         /// Note: please check if the key already exists to prevent duplicate entries.
         addSettingsChanges(settings_changes_history, "26.8",
         {
+            {"allow_experimental_column_ids", false, false, "New setting to gate persistent column IDs for MergeTree"},
             {"allow_lossy_numeric_supertype", false, false, "New setting that lets if/multiIf/coalesce/ifNull/array/map resolve all-numeric branches with no lossless common type (e.g. Decimal + Float64) to a numeric supertype (Float64, with possible precision loss), so the result can be aggregated. Independent of use_variant_as_common_type: with it off such branches previously raised NO_COMMON_TYPE, with it on they became a Variant; either way they now resolve to Float64."},
         });
         addSettingsChanges(settings_changes_history, "26.7",
         {
-            {"allow_experimental_column_ids", false, false, "New setting to gate persistent column IDs for MergeTree"},
             {"analyzer_compatibility_allow_non_aggregate_in_having", false, false, "New compatibility setting. When enabled, the analyzer mimics the legacy `HAVING`-to-`WHERE` rewrite for non-aggregate AND-conjuncts instead of raising `NOT_AN_AGGREGATE`."},
             {"dictionary_lazy_load", "auto", "auto", "New setting overriding the server setting `dictionaries_lazy_load` for an individual dictionary."},
             {"discard_query_data", false, false, "New setting to skip sending query result rows to the client over the native TCP protocol."},
@@ -1319,9 +1319,12 @@ const VersionToSettingsChangesMap & getMergeTreeSettingsChangesHistory()
     static std::once_flag initialized_flag;
     std::call_once(initialized_flag, [&]
     {
-        addSettingsChanges(merge_tree_settings_changes_history, "26.7",
+        addSettingsChanges(merge_tree_settings_changes_history, "26.8",
         {
             {"serialization_info_version", "with_types", "with_types", "Add `with_column_ids` option for persistent column IDs"},
+        });
+        addSettingsChanges(merge_tree_settings_changes_history, "26.7",
+        {
             {"allow_experimental_text_index_phrase_search", false, false, "New setting"},
             {"merge_selector_enable_heuristic_to_lower_max_parts_to_merge_at_once", false, true, "Enable by default"},
             {"compute_exact_num_defaults_for_sparse_columns", false, false, "New setting gating exact per-column num_defaults computation for sparsity-based pruning and trivial-count rewrite"},

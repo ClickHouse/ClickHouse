@@ -634,9 +634,21 @@ void MergeTreeData::loadColumnIdMappingFromDisk(bool attach)
     if (mapping_json.has_value())
     {
         ReadBufferFromString buf(*mapping_json);
-        setColumnIdMapping(ColumnIdMapping::deserialize(buf));
+        auto loaded_mapping = ColumnIdMapping::deserialize(buf);
         skipWhitespaceIfAny(buf);
         assertEOF(buf);
+
+        /// Refuse a torn/hand-edited `column_ids.json` that misses a still-present column BEFORE
+        /// publishing it: publishing stamps the schema off the mapping, so a missing entry would
+        /// otherwise trip the in-memory desync assertion (a debug abort) instead of this clear,
+        /// file-naming refusal. reconcileColumnIdMappingWithMetadata repeats the check on the
+        /// published mapping; here it must precede the stamp.
+        /// Only an ACTIVE mapping is the file-naming authority, so only it must cover the schema.
+        /// An inactive leftover (a failed activation) names nothing -- parts still use logical
+        /// filenames -- and is expected to be empty.
+        if (loaded_mapping.isActive())
+            checkColumnIdMappingCoversMetadata(loaded_mapping);
+        setColumnIdMapping(std::move(loaded_mapping));
 
         /// Migrate an old multi-disk layout to a single authoritative copy.
         /// Best-effort: the in-memory mapping is already correct, and a failed
@@ -771,14 +783,9 @@ void MergeTreeData::removeColumnIdMappingFromDisk() const
     }
 }
 
-void MergeTreeData::reconcileColumnIdMappingWithMetadata()
+void MergeTreeData::checkColumnIdMappingCoversMetadata(const ColumnIdMapping & mapping) const
 {
-    if (!hasColumnIdMapping())
-        return;
-
-    auto mapping = getColumnIdMapping();
     auto metadata_snapshot = getInMemoryMetadataPtr(nullptr, false);
-    auto metadata_columns = metadata_snapshot->getColumns().getAllPhysical();
 
     /// Fail loud if metadata names a column the mapping does not cover.
     /// This is the mapping-behind-schema window: `column_ids.json` was
@@ -788,9 +795,9 @@ void MergeTreeData::reconcileColumnIdMappingWithMetadata()
     /// column ID alone — silent rebuild could mix the new column with
     /// orphaned data from a previously-dropped column.
     Names missing_from_mapping;
-    for (const auto & col : metadata_columns)
+    for (const auto & col : metadata_snapshot->getColumns().getAllPhysical())
     {
-        if (!mapping->hasLogicalName(col.name))
+        if (!mapping.hasLogicalName(col.name))
             missing_from_mapping.push_back(col.name);
     }
     if (!missing_from_mapping.empty())
@@ -805,6 +812,18 @@ void MergeTreeData::reconcileColumnIdMappingWithMetadata()
             "`column_ids.json` manually.",
             getStorageID().getNameForLogs(),
             fmt::join(missing_from_mapping, ", "));
+}
+
+void MergeTreeData::reconcileColumnIdMappingWithMetadata()
+{
+    if (!hasColumnIdMapping())
+        return;
+
+    auto mapping = getColumnIdMapping();
+    auto metadata_snapshot = getInMemoryMetadataPtr(nullptr, false);
+    auto metadata_columns = metadata_snapshot->getColumns().getAllPhysical();
+
+    checkColumnIdMappingCoversMetadata(*mapping);
 
     /// Trim mapping entries whose logical name is no longer in metadata
     /// (mapping-ahead-of-schema window from a crash between the mapping
@@ -6056,9 +6075,9 @@ void MergeTreeData::changeSettings(
                         disk->createDirectories(relative_data_path);
                         disk->createDirectories(fs::path(relative_data_path) / DETACHED_DIR_NAME);
                     }
-                    /// TODO(column-ids): a config reload that changes which disk is the
-                    /// policy's first (authoritative) one does not move `column_ids.json`
-                    /// there; the load-time migration adopts a copy found elsewhere.
+                    /// Known limitation: a config reload that changes which disk is the policy's
+                    /// first (authoritative) one does not move `column_ids.json` there; load-time
+                    /// migration adopts a copy found elsewhere.
 
                     has_storage_policy_changed = true;
                     pending_storage_policy = new_storage_policy;
@@ -7705,10 +7724,14 @@ void MergeTreeData::addPartContributionToColumnAndSecondaryIndexSizes(const Data
 /// Aggregate sizes are keyed by CURRENT logical name.  A part loaded before a
 /// metadata-only RENAME still stamps the old name, so derive the key from the
 /// stamped column ID; `renameColumnSizesEntry` re-keys the aggregate on RENAME.
-static String columnSizesKey(const NameAndTypePair & column, const ColumnIdMapping * mapping)
+/// An orphan (a dropped column's stream still present in an old part) has no live logical name;
+/// `nullopt` skips it, so its bytes never land in the size aggregate. Keying it by its id-token
+/// instead would risk colliding with a live column whose logical name equals that token (the id
+/// and name namespaces are both plain strings), attributing the dropped column's bytes to it.
+static std::optional<String> columnSizesKey(const NameAndTypePair & column, const ColumnIdMapping * mapping)
 {
-    if (mapping && !column.column_id.empty() && mapping->hasColumnId(column.column_id))
-        return mapping->getLogicalName(column.column_id);
+    if (mapping)
+        return mapping->tryGetLogicalName(column.column_id);
     return column.name;
 }
 
@@ -7717,8 +7740,11 @@ void MergeTreeData::addPartContributionToColumnAndSecondaryIndexSizesUnlocked(co
     auto mapping = getActiveColumnIdMapping();
     for (const auto & column : part->getColumns())
     {
-        ColumnSize & total_column_size = column_sizes[columnSizesKey(column, mapping.get())];
-        ColumnSize part_column_size = part->getColumnSize(column.name);
+        auto key = columnSizesKey(column, mapping.get());
+        if (!key)
+            continue;
+        ColumnSize & total_column_size = column_sizes[*key];
+        ColumnSize part_column_size = part->getColumnSize(column.getColumnId());
         total_column_size.add(part_column_size);
     }
 
@@ -7737,34 +7763,29 @@ void MergeTreeData::addPartContributionToColumnAndSecondaryIndexSizesUnlocked(co
 IStorage::ColumnSizeByName MergeTreeData::getColumnSizes(const Names & columns) const
 {
     auto result = getColumnSizes();
+    auto metadata_snapshot = getInMemoryMetadataPtr(CurrentThread::tryGetQueryContext(), false);
 
-    /// Collect subcolumn names that are not already in the result.
-    Names subcolumn_names;
+    /// A requested name absent from the whole-column map may be a subcolumn, whose size only the
+    /// parts know. Classify against the current schema (the isSubcolumn check keeps unknown names
+    /// from inserting zero-size entries); the part resolves a stale-after-rename name itself.
+    NamesAndTypesList subcolumns;
     for (const auto & col_name : columns)
     {
         if (result.contains(col_name))
             continue;
 
-        subcolumn_names.push_back(col_name);
+        auto column = metadata_snapshot->getColumns().tryGetColumnOrSubcolumn(GetColumnsOptions::AllPhysical, col_name);
+        if (column && column->isSubcolumn())
+            subcolumns.push_back(*column);
     }
 
-    if (subcolumn_names.empty())
+    if (subcolumns.empty())
         return result;
 
-    /// For each requested column that is a subcolumn and not already in the result,
-    /// aggregate its size across all active parts using getSubcolumnSize.
-    /// This gives the correct on-disk size for subcolumns based on required substreams.
     auto parts_lock = readLockParts();
-    auto committed_parts_range = getDataPartsStateRange(DataPartState::Active);
-    for (const auto & part : committed_parts_range)
-    {
-        for (const auto & col_name : subcolumn_names)
-        {
-            auto column = part->tryGetColumn(col_name);
-            if (column && column->isSubcolumn())
-                result[col_name].add(part->getSubcolumnSize(col_name));
-        }
-    }
+    for (const auto & part : getDataPartsStateRange(DataPartState::Active))
+        for (const auto & subcolumn : subcolumns)
+            result[subcolumn.name].add(part->getSubcolumnSize(subcolumn));
 
     return result;
 }
@@ -7779,8 +7800,11 @@ void MergeTreeData::removePartContributionToColumnAndSecondaryIndexSizes(const D
     auto mapping = getActiveColumnIdMapping();
     for (const auto & column : part->getColumns())
     {
-        ColumnSize & total_column_size = column_sizes[columnSizesKey(column, mapping.get())];
-        ColumnSize part_column_size = part->getColumnSize(column.name);
+        auto key = columnSizesKey(column, mapping.get());
+        if (!key)
+            continue;
+        ColumnSize & total_column_size = column_sizes[*key];
+        ColumnSize part_column_size = part->getColumnSize(column.getColumnId());
 
         auto log_subtract = [&](size_t & from, size_t value, const char * field)
         {
@@ -12300,13 +12324,14 @@ static void updateSerializationHintsForPart(
     {
         /// Part records are keyed by the stamped column ID; hints by the current
         /// logical name. Join them through the part's stamped column list.
-        auto info = part_infos.tryGet(part_column.getColumnIdInStorage());
+        auto info = part_infos.tryGet(part_column.getColumnId().value());
         if (!info)
             continue;
 
         String hint_name = part_column.name;
-        if (column_id_mapping && column_id_mapping->hasColumnId(part_column.getColumnIdInStorage()))
-            hint_name = column_id_mapping->getLogicalName(part_column.getColumnIdInStorage());
+        if (column_id_mapping)
+            if (auto name = column_id_mapping->tryGetLogicalName(part_column.getColumnId()))
+                hint_name = *name;
 
         auto new_hint = hints.tryGet(hint_name);
         if (!new_hint)

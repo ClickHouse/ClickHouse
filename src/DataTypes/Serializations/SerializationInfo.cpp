@@ -453,14 +453,14 @@ void SerializationInfoByName::reKeyToColumnIds(const NamesAndTypesList & columns
         return;
 
     bool has_distinct_column_ids = std::any_of(columns.begin(), columns.end(),
-        [](const auto & column) { return !column.column_id.empty() && column.column_id != column.name; });
+        [](const auto & column) { return !column.column_id.empty() && column.column_id.value() != column.name; });
 
     if (!has_distinct_column_ids)
         return;
 
     std::unordered_map<String, String> id_by_name;
     for (const auto & column : columns)
-        id_by_name.emplace(column.name, column.getColumnIdInStorage());
+        id_by_name.emplace(column.name, column.getColumnId().value());
 
     /// Rebuild into a fresh map: re-keying in place would overwrite another
     /// column's record when a logical name equals that column's ID (RENAME
@@ -478,7 +478,7 @@ SerializationInfoByName SerializationInfoByName::reKeyToLogicalNames(const Names
 {
     std::unordered_map<String, String> name_by_id;
     for (const auto & column : columns)
-        name_by_id.emplace(column.getColumnIdInStorage(), column.name);
+        name_by_id.emplace(column.getColumnId().value(), column.name);
 
     SerializationInfoByName rekeyed(settings);
     for (const auto & [id, info] : *this)
@@ -511,8 +511,7 @@ bool SerializationInfoByName::needsPersistence() const
     return !empty() || getVersion() > MergeTreeSerializationInfoVersion::BASIC;
 }
 
-template <typename NameMapper>
-static void writeJSONImpl(const SerializationInfoByName & infos, WriteBuffer & out, NameMapper && name_mapper)
+static void writeJSONImpl(const SerializationInfoByName & infos, WriteBuffer & out)
 {
     auto version = infos.getVersion();
     const auto & settings = infos.getSettings();
@@ -528,8 +527,7 @@ static void writeJSONImpl(const SerializationInfoByName & infos, WriteBuffer & o
             writeChar(',', out);
         first = false;
 
-        String mapped_name = name_mapper(name);
-        info->writeJSON(out, &mapped_name);
+        info->writeJSON(out, &name);
     }
     writeChar(']', out);
 
@@ -571,7 +569,7 @@ static void writeJSONImpl(const SerializationInfoByName & infos, WriteBuffer & o
 
 void SerializationInfoByName::writeJSON(WriteBuffer & out) const
 {
-    writeJSONImpl(*this, out, [](const String & name) { return name; });
+    writeJSONImpl(*this, out);
 }
 
 SerializationInfoByName SerializationInfoByName::clone() const
@@ -751,7 +749,7 @@ SerializationInfoByName SerializationInfoByName::readJSONWithColumnIds(const Nam
     std::unordered_map<String, const NameAndTypePair *> column_by_stored_key = columns.getIndexByStorageColumnId();
     for (const auto & column : columns)
     {
-        if (!column.column_id.empty() && column.column_id != column.name)
+        if (!column.column_id.empty() && column.column_id.value() != column.name)
             column_by_stored_key.emplace(column.name, &column);
     }
 
@@ -769,7 +767,7 @@ SerializationInfoByName SerializationInfoByName::readJSONWithColumnIds(const Nam
 
         auto info = it->second->type->createSerializationInfo(infos.getSettings());
         info->fromJSON(*elem_object);
-        infos.emplace(it->second->getColumnIdInStorage(), std::move(info));
+        infos.emplace(it->second->getColumnId().value(), std::move(info));
     }
 
     return infos;

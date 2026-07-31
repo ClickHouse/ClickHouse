@@ -40,7 +40,7 @@ public:
 
     bool hasColumnFiles(const NameAndTypePair & column) const override;
 
-    std::optional<time_t> getColumnModificationTime(const String & column_name) const override;
+    std::optional<time_t> getColumnModificationTime(const ColumnId & column_id) const override;
 
     std::optional<String> getFileNameForColumn(const NameAndTypePair & /* column */) const override { return DATA_FILE_NAME; }
 

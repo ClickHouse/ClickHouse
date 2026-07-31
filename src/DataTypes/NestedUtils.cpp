@@ -527,6 +527,10 @@ NamesAndTypesList convertToSubcolumns(const NamesAndTypesList & names_and_types,
         if (split.second.empty())
             continue;
 
+        /// Rebuilding the pair below via the subcolumn ctor drops the stable storage ID; carry
+        /// it across so the reader still resolves the right on-disk stream after the remap.
+        const ColumnId column_id = name_type.column_id;
+
         if (name_type.isSubcolumn())
         {
             /// If this is a subcolumn (e.g. `c0.c2.null` — subcolumn `null` of `c0.c2`)
@@ -542,7 +546,10 @@ NamesAndTypesList convertToSubcolumns(const NamesAndTypesList & names_and_types,
                 {
                     auto new_subcolumn = concatenateName(storage_split.second, name_type.getSubcolumnName());
                     if (auto subcolumn_type = it->second->tryGetSubcolumnType(new_subcolumn))
+                    {
                         name_type = NameAndTypePair{storage_split.first, new_subcolumn, it->second, subcolumn_type};
+                        name_type.column_id = column_id;
+                    }
                 }
             }
             continue;
@@ -550,7 +557,10 @@ NamesAndTypesList convertToSubcolumns(const NamesAndTypesList & names_and_types,
 
         auto it = nested_types.find(split.first);
         if (it != nested_types.end())
+        {
             name_type = NameAndTypePair{split.first, split.second, it->second, it->second->getSubcolumnType(split.second)};
+            name_type.column_id = column_id;
+        }
     }
 
     return res;

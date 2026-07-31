@@ -134,6 +134,20 @@ bool ColumnIdMapping::hasColumnId(const String & column_id) const
     return id_to_logical.contains(column_id);
 }
 
+std::optional<ColumnId> ColumnIdMapping::tryGetColumnId(const String & logical_name) const
+{
+    if (!hasLogicalName(logical_name))
+        return std::nullopt;
+    return ColumnId{getColumnId(logical_name)};
+}
+
+std::optional<String> ColumnIdMapping::tryGetLogicalName(const ColumnId & column_id) const
+{
+    if (!hasColumnId(column_id.value()))
+        return std::nullopt;
+    return getLogicalName(column_id.value());
+}
+
 String ColumnIdMapping::allocateColumnId()
 {
     /// The counter is monotonically increasing and never recycled.
@@ -213,6 +227,12 @@ void ColumnIdMapping::beginRename(const String & old_logical_name, const String 
 
     auto column_id = it->second;
 
+    /// Reject renaming a column to a name equal to another active column's physical id. On-disk
+    /// artifacts (streams, minmax, sizes) are keyed by the column id, so a logical name that equals
+    /// a foreign column's id makes name-vs-id resolution ambiguous -- reachable via a mutation that
+    /// then reads/writes the wrong streams (silent data corruption). Allowing it safely would need
+    /// id-vs-name disambiguation at every by-name resolution site; until then, reject it loudly.
+    /// The self-case (a column adopting its own id as its name) is fine.
     if (id_to_logical.contains(new_logical_name) && new_logical_name != column_id)
         throw Exception(ErrorCodes::BAD_ARGUMENTS,
             "Cannot rename column '{}' to '{}': the new name collides with an existing column ID",
@@ -376,8 +396,8 @@ void ColumnIdMapping::stampColumnIds(NamesAndTypesList & columns) const
             continue;
 
         const auto name_in_storage = column.getNameInStorage();
-        if (hasLogicalName(name_in_storage))
-            column.setColumnId(getColumnId(name_in_storage));
+        if (auto id = tryGetColumnId(name_in_storage))
+            column.setColumnId(*id);
         /// Virtual columns are not id-managed: persistent ones are stored by name, ephemeral
         /// ones (e.g. `_part_offset`, `_part_data_version`) are materialized by the reader.
         /// Leave them UNSTAMPED (empty id ≡ name-keyed on disk) for the name-resolution path.
@@ -399,8 +419,8 @@ void ColumnIdMapping::stampColumnIdsLenient(NamesAndTypesList & columns) const
     for (auto & column : columns)
     {
         const auto name_in_storage = column.getNameInStorage();
-        if (hasLogicalName(name_in_storage))
-            column.setColumnId(getColumnId(name_in_storage));
+        if (auto id = tryGetColumnId(name_in_storage))
+            column.setColumnId(*id);
         /// Everything else (synthetic projection aggregates, not-yet-applied ALTER columns,
         /// a projection part's parent-mapping-stamped columns) is left UNSTAMPED
         /// (empty id ≡ name-keyed on disk). No throw.

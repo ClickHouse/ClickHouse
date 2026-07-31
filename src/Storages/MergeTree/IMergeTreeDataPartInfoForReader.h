@@ -78,7 +78,11 @@ public:
 
     virtual const ColumnsSubstreams & getColumnsSubstreams() const = 0;
 
-    virtual std::optional<size_t> getColumnPosition(const String & column_name) const = 0;
+    /// Direct lookup by stable storage id (IMergeTreeDataPart::getColumnPosition).
+    virtual std::optional<size_t> getColumnPosition(const ColumnId & column_id) const = 0;
+
+    /// The part's own stored column carrying this id (id-carrying pair, part's on-disk type).
+    virtual std::optional<NameAndTypePair> tryGetColumn(const ColumnId & column_id) const = 0;
 
     virtual String getColumnNameWithMinimumCompressedSize(const NamesAndTypesList & available_columns) const = 0;
 

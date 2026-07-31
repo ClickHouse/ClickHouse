@@ -469,16 +469,15 @@ void StorageMergeTree::finalizeColumnIdRenames(const std::vector<String> & old_n
     ColumnIdMapping finalized = *current;
     for (const auto & old_name : old_names)
     {
-        String column_id = finalized.hasLogicalName(old_name) ? finalized.getColumnId(old_name) : "";
+        auto column_id = finalized.tryGetColumnId(old_name);
         finalized.finishRename(old_name);
 
         /// The rename is committed; move the old name's table-level size
         /// aggregate to the new name so the optimizer sees the full totals.
-        if (!column_id.empty() && finalized.hasColumnId(column_id))
+        if (column_id)
         {
-            String new_name = finalized.getLogicalName(column_id);
-            if (new_name != old_name)
-                renameColumnSizesEntry(old_name, new_name);
+            if (auto new_name = finalized.tryGetLogicalName(*column_id); new_name && *new_name != old_name)
+                renameColumnSizesEntry(old_name, *new_name);
         }
     }
     persistMapping(std::move(finalized));

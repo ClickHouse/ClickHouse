@@ -117,13 +117,15 @@ public:
     virtual bool isStoredOnRemoteDiskWithZeroCopySupport() const = 0;
 
     /// NOTE: Returns zeros if column files are not found in checksums.
-    /// Otherwise return information about column size on disk.
-    ColumnSize getColumnSize(const String & column_name) const;
+    /// Otherwise return information about column size on disk. Keyed by stable storage id.
+    ColumnSize getColumnSize(const ColumnId & column_id) const;
     ColumnSizeByNameConstPtr getColumnSizes() const;
     /// Return the size of all files required to read the specified subcolumn.
-    ColumnSize getSubcolumnSize(const String & /*subcolumn_name*/) const;
+    /// Name-based by nature: a subcolumn shares its parent's id and has none of its own, so the
+    /// size cache is keyed by the subcolumn name. Callers pass a part-own subcolumn name.
+    ColumnSize getSubcolumnSize(const NameAndTypePair & subcolumn) const;
 
-    virtual std::optional<time_t> getColumnModificationTime(const String & column_name) const = 0;
+    virtual std::optional<time_t> getColumnModificationTime(const ColumnId & column_id) const = 0;
 
     /// NOTE: Returns zeros if secondary indexes are not found in checksums.
     /// Otherwise return information about secondary index size on disk.
@@ -159,7 +161,7 @@ public:
     String getTypeName() const { return getType().toString(); }
 
     /// We could have separate method like setMetadata, but it's much more convenient to set it up with columns
-    /// `new_infos` must be keyed by the columns' stamped IDs (`getColumnIdInStorage`).
+    /// `new_infos` must be keyed by the columns' stamped IDs (`getColumnId`).
     /// Callers holding name-keyed writer stats run `reKeyToColumnIds` first;
     /// only they know the keying, which is ambiguous when a column's name equals
     /// another column's ID.
@@ -189,8 +191,25 @@ public:
     const ColumnsSubstreams & getColumnsSubstreams() const { return columns_substreams; }
     StorageMetadataPtr getMetadataSnapshot() const;
 
-    NameAndTypePair getColumn(const String & name) const;
-    std::optional<NameAndTypePair> tryGetColumn(const String & column_name) const;
+    /// Return this part's own column carrying the given stable storage id (top-level; a subcolumn
+    /// shares its parent's id). The result is an id-carrying NameAndTypePair.
+    std::optional<NameAndTypePair> tryGetColumn(const ColumnId & column_id) const;
+
+    /// Canonical name -> id -> part bridge: resolve @current_name against the operation @snapshot's
+    /// schema (subcolumn-aware) to its stable id, then return this part's slot carrying that id.
+    /// The part keeps its load-time names after a metadata-only RENAME, so a caller holding a current
+    /// logical name must go through the id -- never the part's own (possibly stale) name. A legacy /
+    /// unmapped snapshot column carries an empty id, which getColumnId falls back to the name, so the
+    /// lookup degrades to name-based on the part. `nullopt` if the name is not in the snapshot or the
+    /// part has no such slot. @current_name may name a subcolumn, which resolves to the parent's slot
+    /// -- subcolumns have no position entry -- so the returned `type` is the parent's.
+    std::optional<NameAndTypePair> tryGetColumnBySnapshotName(const String & current_name, const StorageMetadataPtr & snapshot) const;
+
+    /// Unsafe: resolve by name off the part's OWN columns. The caller must hold a bare part-own name
+    /// (never a current/renamed name, which the part may not carry yet) and have no column id in
+    /// scope -- prefer the id overloads.
+    std::optional<NameAndTypePair> tryGetColumnByNameUnsafe(const String & column_name) const;
+    SerializationPtr tryGetSerializationByNameUnsafe(const String & column_name) const;
 
     /// Get sample column from part. For ordinary columns it just creates column using it's type.
     /// For columns with dynamic structure it reads sample column with 0 rows from the part.
@@ -200,8 +219,10 @@ public:
 
     const SerializationByName & getSerializations() const { return serializations; }
 
-    SerializationPtr getSerialization(const String & column_name) const;
-    SerializationPtr tryGetSerialization(const String & column_name) const;
+    /// Serialization lookup by stable storage id (as produced by NameAndTypePair::getColumnId(),
+    /// subcolumns as "<id>.<subpath>" -- see NameAndTypePair::getStorageKey). No name->id resolution.
+    SerializationPtr getSerialization(const ColumnId & column_id) const;
+    SerializationPtr tryGetSerialization(const ColumnId & column_id) const;
 
     void remove();
 
@@ -241,12 +262,10 @@ public:
     String getNewName(const MergeTreePartInfo & new_part_info) const;
 
     /// Returns column position in part structure or std::nullopt if it's missing in part.
-    ///
-    /// NOTE: Doesn't take column renames into account, if some column renames
-    /// take place, you must take original name of column for this part from
-    /// storage and pass it to this method.
-    std::optional<size_t> getColumnPosition(const String & column_name) const;
-    const NameToNumber & getColumnPositions() const { return column_name_to_position; }
+    /// `column_id` is a storage key as produced by NameAndTypePair::getColumnId(). An empty or
+    /// unknown id yields nullopt. See setColumns for the id-keying invariant.
+    std::optional<size_t> getColumnPosition(const ColumnId & column_id) const;
+    const NameToNumber & getColumnPositions() const { return column_storage_key_to_position; }
 
     /// Returns the name of a column with minimum compressed size (as returned by getColumnSize()).
     /// If no checksums are present returns the name of the first physically existing column.
@@ -713,17 +732,6 @@ public:
         const IDataPartStorage & storage_,
         const MergeTreeSettingsPtr & settings);
 
-    /// Resolve a column's stream name for an introspection query that only has the logical
-    /// name in hand. When the name is one of this part's columns we resolve through the
-    /// `NameAndTypePair` overload (id-aware stream naming + old-part settings-compat retry);
-    /// otherwise we fall back to the bare-name overload.
-    std::optional<String> getStreamNameForColumnOrName(
-        const String & column_name,
-        const ISerialization::SubstreamPath & substream_path,
-        const String & extension,
-        const Checksums & checksums_,
-        const MergeTreeSettingsPtr & settings) const;
-
     mutable std::atomic<DataPartRemovalState> removal_state = DataPartRemovalState::NOT_ATTEMPTED;
 
     mutable std::atomic<time_t> last_removal_attempt_time = 0;
@@ -804,7 +812,7 @@ protected:
     virtual void calculateEachColumnSizes(ColumnSizeByName & each_columns_size, ColumnSize & total_size) const = 0;
 
     /// Calculate the size of all files required to read a specified subcolumn.
-    virtual ColumnSize calculateSubcolumnSize(const String & /*subcolumn_name*/) const { return {}; }
+    virtual ColumnSize calculateSubcolumnSize(const NameAndTypePair & /*subcolumn*/) const { return {}; }
 
     std::optional<String> getRelativePathForDetachedPart(const String & prefix, bool broken) const;
 
@@ -828,13 +836,15 @@ private:
     String mutable_name;
     mutable std::atomic<MergeTreeDataPartState> state{MergeTreeDataPartState::Temporary};
 
-    /// In compact parts order of columns is necessary
-    NameToNumber column_name_to_position;
+    /// In compact parts order of columns is necessary.
+    /// Keyed by stable storage id (getColumnId()), not logical name -- see setColumns.
+    NameToNumber column_storage_key_to_position;
 
     /// Map from name of column to its serialization info.
     SerializationInfoByName serialization_infos{{}};
 
-    /// Serializations for every columns and subcolumns by their names.
+    /// Serializations for every column and subcolumn, keyed by stable storage id
+    /// (subcolumns as "<id>.<subpath>") -- see setColumns.
     SerializationByName serializations;
 
     /// Columns description for more convenient access
@@ -916,6 +926,12 @@ private:
     void decrementStateMetric(MergeTreeDataPartState state) const;
 
     void checkConsistencyBase() const;
+
+    /// Key of a partition-key column's `minmax_<key>.idx` in THIS part: its stamped id, or the
+    /// name for a part predating column ids (getColumnId() falls back). Answered from the part's
+    /// own columns, never the live mapping -- after DROP + re-ADD the mapping holds a fresh id
+    /// while this part's file still carries the old one.
+    String minmaxFileKey(const String & column_name) const;
 
     /// Returns the name of projection for projection part, empty string for regular part.
     String getProjectionName() const;

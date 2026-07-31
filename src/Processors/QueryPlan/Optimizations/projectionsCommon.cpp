@@ -339,8 +339,9 @@ static bool projectionPartHasRequiredColumns(
 
     for (const auto & name : required_column_names)
     {
-        /// (1) Stored by the projection part.
-        if (projection_part.tryGetColumn(name))
+        /// (1) Stored by the projection part. Resolved by the projection part's own name: a projection's
+        /// columns cannot be renamed, so its stored names never go stale.
+        if (projection_part.tryGetColumnByNameUnsafe(name))
             continue;
 
         /// (2) Virtual column, provided by the reading step.
@@ -348,8 +349,9 @@ static bool projectionPartHasRequiredColumns(
             continue;
 
         /// (3) Drift: the parent part still stores the column, or it is not a stored table column,
-        /// so the projection part is stale for it and must not be read.
-        if (parent_part.tryGetColumn(name)
+        /// so the projection part is stale for it and must not be read. The parent part is resolved
+        /// through the snapshot, since a parent column may have been renamed after the part was written.
+        if (parent_part.tryGetColumnBySnapshotName(name, parent_metadata)
             || !parent_table_columns.hasColumnOrSubcolumn(GetColumnsOptions::AllPhysical, name))
             return false;
 

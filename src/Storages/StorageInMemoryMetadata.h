@@ -98,6 +98,10 @@ struct StorageInMemoryMetadata
     /// rides the schema it is consistent with instead of being threaded separately.
     ColumnIdMappingPtr getActiveColumnIdMapping() const;
 
+    /// Stamp `columns` from the active `column_id_mapping` (in-memory-C re-sync). Call after any
+    /// (re)publish of the mapping onto this metadata so the schema itself carries per-column IDs.
+    void syncColumnIdsFromMapping();
+
     /// If metadata was cloned we need to extend lifetime of previous metadata.
     std::shared_ptr<const StorageInMemoryMetadata> cloned_from = nullptr;
 

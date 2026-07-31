@@ -54,7 +54,7 @@ public:
         MergeTreeData::DataPartsVector data_parts_,
         ContextPtr context_,
         bool with_marks_,
-        ColumnIdMappingPtr column_id_mapping_)
+        StorageMetadataHandle source_metadata_)
         : ISource(header_)
         , WithContext(context_)
         , header(std::move(header_))
@@ -62,7 +62,7 @@ public:
         , minmax_header(std::move(minmax_header_))
         , data_parts(std::move(data_parts_))
         , with_marks(with_marks_)
-        , column_id_mapping(std::move(column_id_mapping_))
+        , source_metadata(std::move(source_metadata_))
     {
     }
 
@@ -208,35 +208,28 @@ private:
         bool has_marks_in_part = false;
         size_t num_rows = part->index_granularity->getMarksCount();
 
+        const auto unescaped_name = unescapeForFileName(column_name);
+
+        /// An ID absent from the part means the column is missing here (NULL marks) -- never fall
+        /// back to a by-name lookup, which could bind a same-named orphan stream left by a DROP +
+        /// re-ADD. A name outside the mapping (non-ID table, or a virtual/helper column) keeps the
+        /// traditional by-name resolution.
+        const auto column_id_mapping = source_metadata->getActiveColumnIdMapping();
+        std::optional<ColumnId> column_id;
+        if (column_id_mapping)
+            column_id = column_id_mapping->tryGetColumnId(unescaped_name);
+
         if (isWidePart(part))
         {
-            /// Resolve through the part's stamped column: with column IDs the
-            /// on-disk stream is named by the ID, not the logical column name.
-            const auto unescaped_name = unescapeForFileName(column_name);
             std::optional<String> stream_name;
-            if (auto column_in_part = part->getColumns().tryGetByName(unescaped_name))
+            if (column_id)
             {
-                stream_name = IMergeTreeDataPart::getStreamNameForColumn(
-                    *column_in_part, {}, ".bin", part->checksums, part->storage.getSettings());
+                if (auto column_in_part = part->tryGetColumn(*column_id))
+                    stream_name = IMergeTreeDataPart::getStreamNameForColumn(
+                        *column_in_part, {}, ".bin", part->checksums, part->storage.getSettings());
             }
             else
-            {
-                /// A metadata-only RENAME does not refresh the part's cached column list, so a
-                /// part loaded before the rename still carries the old logical name while its
-                /// stamped ID is unchanged. Map the current name to its ID via the captured
-                /// mapping, then locate the part column by that ID to build the ID-keyed stream name.
-                if (column_id_mapping && column_id_mapping->hasLogicalName(unescaped_name))
-                {
-                    const auto index_by_id = part->getColumns().getIndexByStorageColumnId();
-                    if (auto it = index_by_id.find(column_id_mapping->getColumnId(unescaped_name)); it != index_by_id.end())
-                        stream_name = IMergeTreeDataPart::getStreamNameForColumn(
-                            *it->second, {}, ".bin", part->checksums, part->storage.getSettings());
-                }
-
-                /// Non-ID tables and truly-absent columns: fall back to raw-name resolution.
-                if (!stream_name)
-                    stream_name = IMergeTreeDataPart::getStreamNameOrHash(column_name, ".bin", part->checksums);
-            }
+                stream_name = IMergeTreeDataPart::getStreamNameOrHash(column_name, ".bin", part->checksums);
 
             if (stream_name)
             {
@@ -249,35 +242,33 @@ private:
         {
             if (part->index_granularity_info.mark_type.with_substreams)
             {
-                /// column_name is a substream name. On non-id parts the substream map is keyed by
-                /// that logical name, so look it up directly first. On id-active parts the map is
-                /// keyed by the stamped column ID, so the by-name lookup misses -- resolve the part
-                /// column and locate its ID-keyed substream instead. A streamless-root column
-                /// (e.g. a Tuple) has no matching substream: has_marks_in_part stays false (NULL marks).
-                if (auto substream_position = part->getColumnsSubstreams().tryGetSubstreamPosition(column_name))
+                /// column_name is a substream name. Resolve the part column by ID (id-active) and
+                /// locate its ID-keyed substream; a streamless-root column (e.g. a Tuple) has no
+                /// matching substream, so has_marks_in_part stays false (NULL marks). On non-id
+                /// parts the substream map is keyed by the logical name, so look it up by name.
+                if (column_id)
                 {
-                    col_idx = *substream_position;
-                    has_marks_in_part = true;
-                }
-                else
-                {
-                    auto unescaped_name = unescapeForFileName(column_name);
-                    if (auto column_position = part->getColumnPosition(unescaped_name))
+                    auto column_position = part->getColumnPosition(*column_id);
+                    auto column_in_part = part->tryGetColumn(*column_id);
+                    if (column_position && column_in_part)
                     {
-                        auto column_in_part = part->getColumns().tryGetByName(unescaped_name);
-                        if (auto id_substream_position = part->getColumnsSubstreams().tryGetSubstreamPosition(
+                        if (auto substream_position = part->getColumnsSubstreams().tryGetSubstreamPosition(
                                 *column_position, *column_in_part, {}, part->storage.getSettings()))
                         {
-                            col_idx = *id_substream_position;
+                            col_idx = *substream_position;
                             has_marks_in_part = true;
                         }
                     }
                 }
+                else if (auto substream_position = part->getColumnsSubstreams().tryGetSubstreamPosition(column_name))
+                {
+                    col_idx = *substream_position;
+                    has_marks_in_part = true;
+                }
             }
             else
             {
-                auto unescaped_name = unescapeForFileName(column_name);
-                if (auto column_position = part->getColumnPosition(unescaped_name))
+                if (auto column_position = part->getColumnPosition(column_id.value_or(ColumnId{unescaped_name})))
                 {
                     col_idx = *column_position;
                     has_marks_in_part = true;
@@ -322,9 +313,10 @@ private:
     SharedHeader minmax_header;
     MergeTreeData::DataPartsVector data_parts;
     bool with_marks;
-    /// Source table's active mapping, captured once at pipeline init (this source holds no
-    /// StorageSnapshot of the source table); fillMarks resolves logical names->IDs through it.
-    ColumnIdMappingPtr column_id_mapping;
+    /// Source table's live metadata, captured once at pipeline init (this source holds no
+    /// StorageSnapshot of the source table). fillMarks resolves a current logical name to its
+    /// stable ID through its active column-ID mapping, then locates the part column by that ID.
+    StorageMetadataHandle source_metadata;
 
     size_t part_index = 0;
 };
@@ -486,8 +478,9 @@ void ReadFromMergeTreeIndex::initializePipeline(QueryPipelineBuilder & pipeline,
         filtered_parts.size(),
         storage->source_table->getStorageID().getNameForLogs());
 
-    /// Capture the source table's active mapping once here (this step holds no StorageSnapshot
-    /// of the source table); the source threads it into fillMarks for name->ID resolution.
+    /// Capture the source table's live metadata once here (this step holds no StorageSnapshot
+    /// of the source table); fillMarks uses its active column-ID mapping to resolve current
+    /// names to stable IDs before locating the part column by ID.
     auto source_metadata = storage->source_table->getInMemoryMetadataPtr(context, false);
 
     pipeline.init(Pipe(std::make_shared<MergeTreeIndexSource>(
@@ -497,7 +490,7 @@ void ReadFromMergeTreeIndex::initializePipeline(QueryPipelineBuilder & pipeline,
         std::move(filtered_parts),
         context,
         storage->with_marks,
-        source_metadata->getActiveColumnIdMapping())));
+        std::move(source_metadata))));
 }
 
 }

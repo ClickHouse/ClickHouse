@@ -323,9 +323,9 @@ TEST(SerializationInfoColumnIds, CanonicalizeNameEqualsOtherColumnsId)
     auto type = std::make_shared<DataTypeUInt64>();
 
     NameAndTypePair col_d("d", type);
-    col_d.setColumnId("b");
+    col_d.setColumnId(ColumnId{"b"});
     NameAndTypePair col_b("b", type);
-    col_b.setColumnId("1");
+    col_b.setColumnId(ColumnId{"1"});
 
     for (const auto & columns : {NamesAndTypesList{col_d, col_b}, NamesAndTypesList{col_b, col_d}})
     {
@@ -355,9 +355,9 @@ TEST(SerializationInfoColumnIds, ReadJSONWithColumnIdsIdOwnsItsKey)
     /// to the ID's owner regardless of the columns' order.
     auto type = std::make_shared<DataTypeUInt64>();
     NameAndTypePair col_d("d", type);
-    col_d.setColumnId("b");
+    col_d.setColumnId(ColumnId{"b"});
     NameAndTypePair col_b("b", type);
-    col_b.setColumnId("1");
+    col_b.setColumnId(ColumnId{"1"});
 
     String json = R"({"version":0,"columns":[)"
         R"({"name":"b","kind":"Sparse","num_rows":100,"num_defaults":96},)"

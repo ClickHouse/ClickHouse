@@ -2113,6 +2113,12 @@ protected:
     static MutableDataPartPtr asMutableDeletingPart(const DataPartPtr & part);
 
 private:
+    /// Throws `CORRUPTED_DATA` (naming the table, the offending column(s) and `column_ids.json`) if
+    /// any physical metadata column has no entry in @mapping. Runs on the load path BEFORE the
+    /// mapping is published, so a torn/hand-edited `column_ids.json` is refused with a clear,
+    /// file-naming error rather than tripping the schema-stamp desync assertion (a debug abort).
+    void checkColumnIdMappingCoversMetadata(const ColumnIdMapping & mapping) const;
+
     /// Checking that candidate part doesn't break invariants: correct partition
     void checkPartPartition(MutableDataPartPtr & part, const DataPartsAnyLock & lock) const;
     void checkPartDuplicate(MutableDataPartPtr & part, Transaction & transaction, const DataPartsAnyLock & lock) const;

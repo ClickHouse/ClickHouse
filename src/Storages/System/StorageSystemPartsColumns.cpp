@@ -163,8 +163,9 @@ void StorageSystemPartsColumns::processNextStorage(
             /// IDs no longer in the mapping are dropped-column orphans; for those the
             /// part's recorded (historical) name is the informative display.
             String column_name = column.name;
-            if (column_id_mapping && !column.column_id.empty() && column_id_mapping->hasColumnId(column.column_id))
-                column_name = column_id_mapping->getLogicalName(column.column_id);
+            if (column_id_mapping)
+                if (auto name = column_id_mapping->tryGetLogicalName(column.column_id))
+                    column_name = *name;
 
             if (columns_mask[src_index++])
                 columns[res_index++]->insert(part->partition.serializeToString(part_metadata_snapshot));
@@ -241,7 +242,7 @@ void StorageSystemPartsColumns::processNextStorage(
             if (columns_mask[src_index++])
                 columns[res_index++]->insert(column_name);
             if (columns_mask[src_index++])
-                columns[res_index++]->insert(column.getColumnIdInStorage());
+                columns[res_index++]->insert(column.getColumnId().value());
             if (columns_mask[src_index++])
                 columns[res_index++]->insert(column.type->getName());
             if (columns_mask[src_index++])
@@ -263,7 +264,7 @@ void StorageSystemPartsColumns::processNextStorage(
                     columns[res_index++]->insertDefault();
             }
 
-            ColumnSize column_size = part->getColumnSize(column.name);
+            ColumnSize column_size = part->getColumnSize(column.getColumnId());
             if (columns_mask[src_index++])
                 columns[res_index++]->insert(column_size.data_compressed + column_size.marks);
             if (columns_mask[src_index++])
@@ -274,12 +275,12 @@ void StorageSystemPartsColumns::processNextStorage(
                 columns[res_index++]->insert(column_size.marks);
             if (columns_mask[src_index++])
             {
-                if (auto column_modification_time = part->getColumnModificationTime(column.name))
+                if (auto column_modification_time = part->getColumnModificationTime(column.getColumnId()))
                     columns[res_index++]->insert(UInt64(column_modification_time.value()));
                 else
                     columns[res_index++]->insertDefault();
             }
-            const String ttl_key = column.getColumnIdInStorage();
+            const String ttl_key = column.getColumnId().value();
             bool column_has_ttl = part->ttl_infos.columns_ttl.contains(ttl_key);
             if (columns_mask[src_index++])
             {
@@ -349,7 +350,7 @@ void StorageSystemPartsColumns::processNextStorage(
                     columns[res_index++]->insertDefault();
             }
 
-            auto serialization = part->getSerialization(column.name);
+            auto serialization = part->getSerialization(column.getStorageKey());
             if (columns_mask[src_index++])
                 columns[res_index++]->insert(ISerialization::kindStackToString(serialization->getKindStack()));
 

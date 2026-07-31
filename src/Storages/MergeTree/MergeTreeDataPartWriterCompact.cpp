@@ -136,7 +136,7 @@ void MergeTreeDataPartWriterCompact::addStreams(const NameAndTypePair & name_and
     enumerate_settings.map_buckets_coefficient = settings.map_buckets_coefficient;
     enumerate_settings.map_buckets_min_avg_size = settings.map_buckets_min_avg_size;
     enumerate_settings.data_part_type = MergeTreeDataPartType::Compact;
-    auto serialization = getSerialization(name_and_type.name);
+    auto serialization = getSerialization(name_and_type);
     auto substream_data = ISerialization::SubstreamData(serialization).withType(name_and_type.type).withColumn(block_sample.getByName(name_and_type.name).column);
     serialization->enumerateStreams(enumerate_settings, callback, substream_data);
 }
@@ -386,7 +386,7 @@ void MergeTreeDataPartWriterCompact::writeDataBlock(const Block & block, const G
 
             writeColumnSingleGranule(
                 block.getByName(name_and_type->name), block_sample.getByName(name_and_type->name),
-                getSerialization(name_and_type->name),
+                getSerialization(*name_and_type),
                 stream_getter, stream_mark_getter, granule.start_row, granule.rows_to_write, !data_written, getSerializationSettings());
 
             if (settings.compress_per_column_in_compact_parts)

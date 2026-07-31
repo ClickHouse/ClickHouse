@@ -176,7 +176,7 @@ static void checkCompactColumnIdSubstreamPositions(
     size_t column_position = 0;
     for (const auto & column : columns_list)
     {
-        auto it = serialization_infos.find(column.getColumnIdInStorage());
+        auto it = serialization_infos.find(column.getColumnId().value());
         auto serialization = it == serialization_infos.end()
             ? column.type->getSerialization(serialization_infos.getSettings())
             : column.type->getSerialization(*it->second);
@@ -194,7 +194,7 @@ static void checkCompactColumnIdSubstreamPositions(
                     "Substream layout mismatch in compact part {} at position {}: column '{}' (ID '{}') "
                     "does not own the substreams recorded there. `columns.txt` is reordered relative to "
                     "`columns_substreams.txt`; reads would return swapped columns.",
-                    data_part_storage.getFullPath(), column_position, column.name, column.getColumnIdInStorage());
+                    data_part_storage.getFullPath(), column_position, column.name, column.getColumnId().value());
         }, data);
         ++column_position;
     }
@@ -265,8 +265,8 @@ static IMergeTreeDataPart::Checksums checkDataPart(
             /// and `remapColumnsWithPhysicalNames`.
             if (pn_mapping->hasColumnId(col.name))
                 phys = col.name;
-            else if (pn_mapping->hasLogicalName(col.name))
-                phys = pn_mapping->getColumnId(col.name);
+            else if (auto id = pn_mapping->tryGetColumnId(col.name))
+                phys = id->value();
             else
             {
                 /// A counter-format token below the counter is an orphan of a dropped
@@ -344,7 +344,7 @@ static IMergeTreeDataPart::Checksums checkDataPart(
     auto get_serialization = [&serialization_infos](const auto & column)
     {
         /// Records are keyed by the stamped column ID (identity for parts without IDs).
-        auto it = serialization_infos.find(column.getColumnIdInStorage());
+        auto it = serialization_infos.find(column.getColumnId().value());
         return it == serialization_infos.end()
             ? column.type->getSerialization(serialization_infos.getSettings())
             : column.type->getSerialization(*it->second);
