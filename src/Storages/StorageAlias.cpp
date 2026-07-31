@@ -269,18 +269,28 @@ void StorageAlias::truncate(
     const ASTPtr & query,
     const StorageMetadataPtr & /*metadata_snapshot*/,
     ContextPtr local_context,
-    TableExclusiveLockHolder & /*table_lock_holder*/)
+    TableExclusiveLockHolder & table_lock_holder)
 {
     auto target_storage = getTargetTable(TargetAccess{local_context, AccessType::TRUNCATE});
 
     /// The interpreter locked the alias, but the data belongs to the target and readers lock the
     /// target (see read() above), so without this the target's data can be destroyed under them.
-    /// MergeTree is exempt for the same reason as in InterpreterDropQuery: it synchronizes
-    /// truncation itself and this lock is heavyweight.
-    TableExclusiveLockHolder target_lock;
-    if (!std::dynamic_pointer_cast<MergeTreeData>(target_storage))
-        target_lock = target_storage->lockExclusively(
-            local_context->getCurrentQueryId(), local_context->getSettingsRef()[Setting::lock_acquire_timeout]);
+    /// MergeTree is exempt, as InterpreterDropQuery puts it: "We don't need any lock for
+    /// ReplicatedMergeTree and for simple MergeTree" -- they synchronize truncation themselves and
+    /// this lock is extremely heavyweight. On that path forward the alias's own holder, because
+    /// StorageReplicatedMergeTree::truncate releases it to keep the truncate asynchronous.
+    if (std::dynamic_pointer_cast<MergeTreeData>(target_storage))
+    {
+        auto target_metadata = target_storage->getInMemoryMetadataPtr(local_context, false);
+        target_storage->truncate(query, target_metadata, local_context, table_lock_holder);
+        return;
+    }
+
+    /// NO_QUERY, not the current query id: TRUNCATE TABLES ... LIKE runs one shared context over a
+    /// thread pool, so two tasks reaching the same target would hit RWLockImpl::getLock's
+    /// same-query fast path and get a LOGICAL_ERROR instead of waiting.
+    TableExclusiveLockHolder target_lock = target_storage->lockExclusively(
+        RWLockImpl::NO_QUERY, local_context->getSettingsRef()[Setting::lock_acquire_timeout]);
 
     auto target_metadata = target_storage->getInMemoryMetadataPtr(local_context, false);
     target_storage->truncate(query, target_metadata, local_context, target_lock);
