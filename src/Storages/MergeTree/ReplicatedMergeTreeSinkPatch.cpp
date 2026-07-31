@@ -49,6 +49,7 @@ void ReplicatedMergeTreeSinkPatch::finishDelayed(const ZooKeeperWithFaultInjecti
         auto group_switcher = ThreadGroupSwitcher(partition.thread_group, ThreadName::MERGETREE_WRITE_PART, /*allow_existing_group*/ true);
 
         partition.temp_part->finalize();
+        partition.temp_part->part->getDataPartStorage().commitTransaction();
 
         auto & part = partition.temp_part->part;
         if (!part->info.isPatch())

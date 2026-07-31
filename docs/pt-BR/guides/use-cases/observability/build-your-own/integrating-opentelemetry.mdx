@@ -60,15 +60,15 @@ Abaixo, assumimos um collector do tipo agente simples, enviando seus eventos dir
 
 A principal vantagem de usar um collector é permitir que seus serviços descarreguem os dados rapidamente, deixando o Collector cuidar de etapas adicionais, como novas tentativas, agrupamento em lotes, criptografia e até filtragem de dados sensíveis.
 
-O Collector usa os termos [receiver](https://opentelemetry.io/docs/collector/configuration/#receivers), [processor](https://opentelemetry.io/docs/collector/configuration/#processors) e [exporter](https://opentelemetry.io/docs/collector/configuration/#exporters) para seus três principais estágios de processamento. Receivers são usados para a coleta de dados e podem operar por extração ou envio. Processors permitem realizar transformações e enriquecimento das mensagens. Exporters são responsáveis por enviar os dados para um serviço downstream. Embora esse serviço possa, em teoria, ser outro collector, assumimos que todos os dados sejam enviados diretamente ao ClickHouse na discussão inicial abaixo.
+O Collector usa os termos [receiver](https://opentelemetry.io/docs/collector/configuration/#receivers), [processador](https://opentelemetry.io/docs/collector/configuration/#processors) e [exportador](https://opentelemetry.io/docs/collector/configuration/#exporters) para seus três principais estágios de processamento. Receivers são usados para a coleta de dados e podem operar por extração ou envio. Processadores permitem realizar transformações e enriquecimento das mensagens. Exportadores são responsáveis por enviar os dados para um serviço downstream. Embora esse serviço possa, em teoria, ser outro collector, assumimos que todos os dados sejam enviados diretamente ao ClickHouse na discussão inicial abaixo.
 
 <Image img="/images/use-cases/observability/observability-3.webp" alt="Coletando logs" size="md" />
 
-Recomendamos que os usuários se familiarizem com o conjunto completo de receivers, processors e exporters.
+Recomendamos que os usuários se familiarizem com o conjunto completo de receivers, processadores e exportadores.
 
 O collector oferece dois principais receivers para coletar logs:
 
-**Via OTLP** - Nesse caso, os logs são enviados (push) diretamente ao collector a partir dos SDKs do OpenTelemetry por meio do protocolo OTLP. A [demo do OpenTelemetry](https://opentelemetry.io/docs/demo/) usa essa abordagem, com os exporters OTLP em cada linguagem assumindo um endpoint local do collector. Nesse caso, o collector deve ser configurado com o receiver OTLP — veja a [demo acima para uma configuração](https://github.com/ClickHouse/opentelemetry-demo/blob/main/src/otelcollector/otelcol-config.yml#L5-L12). A vantagem dessa abordagem é que os dados de log conterão automaticamente IDs de trace, permitindo que os usuários identifiquem depois os traces de um log específico e vice-versa.
+**Via OTLP** - Nesse caso, os logs são enviados (push) diretamente ao collector a partir dos SDKs do OpenTelemetry por meio do protocolo OTLP. A [demo do OpenTelemetry](https://opentelemetry.io/docs/demo/) usa essa abordagem, com os exportadores OTLP em cada linguagem assumindo um endpoint local do collector. Nesse caso, o collector deve ser configurado com o receiver OTLP — veja a [demo acima para uma configuração](https://github.com/ClickHouse/opentelemetry-demo/blob/main/src/otelcollector/otelcol-config.yml#L5-L12). A vantagem dessa abordagem é que os dados de log conterão automaticamente IDs de trace, permitindo que os usuários identifiquem depois os traces de um log específico e vice-versa.
 
 <Image img="/images/use-cases/observability/observability-4.webp" alt="Coletando logs via otlp" size="md" />
 
@@ -721,11 +721,11 @@ exporters:
   otlp:
     endpoint: localhost:4317
     tls:
-      insecure: true # Defina como false se você estiver usando uma conexão segura
+      insecure: true # Set to false if you are using a secure connection
 service:
   telemetry:
     metrics:
-      address: 0.0.0.0:9888 # Modificado pois há 2 collectors sendo executados no mesmo host
+      address: 0.0.0.0:9888 # Modified as 2 collectors running on same host
   pipelines:
     logs:
       receivers: [filelog]
