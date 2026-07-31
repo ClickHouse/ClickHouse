@@ -1262,6 +1262,11 @@ void MergeJoin::addConditionJoinColumn(Block & block, JoinTableSide block_side) 
 
 bool MergeJoin::isSupported(const std::shared_ptr<TableJoin> & table_join)
 {
+    /// MergeJoin matches rows on the equality keys only and never evaluates a mixed
+    /// (cross-side non-equi) ON condition, so accepting one here would silently drop it.
+    if (table_join->getMixedJoinExpression())
+        return false;
+
     return isSupported(table_join->kind(), table_join->strictness()) && table_join->oneDisjunct();
 }
 
