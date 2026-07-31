@@ -7,8 +7,8 @@ Actions: INPUT : 0 -> __table1.uid Int16 : 0
          ALIAS __table1.age :: 2 -> age Int16 : 1
 Positions: 3 0 1
   JoinLogical
-  Join: R0[3] ⋈ Memory[3]
-  ResultRows: 3
+  Join: R0[no_stats~3] ⋈ Memory[3]
+  ResultRows: ~~3
   Type: INNER
   Strictness: ALL
   Locality: UNSPECIFIED
