@@ -1789,6 +1789,7 @@ ReadFromMergeTree::AnalysisResultPtr MergeTreeDataSelectExecutor::estimateNumMar
     const Names & column_names_to_return,
     const StorageMetadataPtr & metadata_snapshot,
     const SelectQueryInfo & query_info,
+    const std::optional<TopKFilterInfo> & top_k_filter_info,
     ContextPtr context,
     size_t num_streams,
     PartitionIdToMaxBlockPtr max_block_numbers_to_read) const
@@ -1802,7 +1803,7 @@ ReadFromMergeTree::AnalysisResultPtr MergeTreeDataSelectExecutor::estimateNumMar
         parts,
         mutations_snapshot,
         std::nullopt,
-        std::nullopt,
+        top_k_filter_info,
         metadata_snapshot,
         query_info,
         context,
