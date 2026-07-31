@@ -320,13 +320,33 @@ ColumnsDescription DatabaseRemote::fetchTableStructure(const String & table_name
                     if (!local_database_is_remote)
                         local_context->checkAccess(AccessType::SHOW_COLUMNS, remote_database, table_name);
                     auto metadata_snapshot = storage->getInMemoryMetadataPtr(local_context, /* bypass_metadata_cache = */ false);
-                    return metadata_snapshot->getColumns();
+                    auto columns = metadata_snapshot->getColumns();
+
+                    /// The columns can come back empty because of a race with concurrent DDL (e.g.
+                    /// `REPLACE TABLE` or lazy storage initialization). The table exists, so the empty
+                    /// set must not be returned as a successful resolution: `fetchTable` interprets an
+                    /// empty structure as an absent table, misreporting the race as `UNKNOWN_TABLE`.
+                    /// Treat it as a transient condition instead, exactly like `getStructureOfRemoteTable`
+                    /// does: fall through to the same-shard remote replicas, and when there are none,
+                    /// report the failed attempt so the caller can retry.
+                    if (!columns.empty())
+                        return columns;
+
+                    if (!remote_only_cluster)
+                        throw NetException(
+                            ErrorCodes::NO_REMOTE_SHARD_AVAILABLE,
+                            "The table {}.{} exists on the local shard, but its structure is temporarily unavailable "
+                            "(e.g. because of a concurrent REPLACE TABLE or lazy storage initialization), "
+                            "and there are no remote replicas to fall back to. Retry the query",
+                            backQuoteIfNeed(remote_database),
+                            backQuoteIfNeed(table_name));
                 }
             }
         }
 
-        /// The local replica does not have the database or the table, but it may still exist on the
-        /// remote replicas (e.g. `Remote('127.0.0.1|other_host', db)`), so fall back to them instead
+        /// The local replica does not have the database or the table (or the structure of its local
+        /// table is temporarily empty, see above), but the table may still exist on the remote
+        /// replicas (e.g. `Remote('127.0.0.1|other_host', db)`), so fall back to them instead
         /// of reporting the table as missing. The remote-only cluster keeps the fallback off a TCP
         /// self-connection, which would resolve local metadata under the stored engine credentials
         /// rather than the caller's own; it also becomes the cluster of the resulting `Distributed`
