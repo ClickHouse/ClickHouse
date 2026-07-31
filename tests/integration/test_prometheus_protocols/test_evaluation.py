@@ -3159,7 +3159,7 @@ def test_aggregation_operator_count_values():
     # The sample value is part of the grouping key and therefore changes from one
     # grid point to another. This exercises unroll, regroup, and sparse repacking.
     do_query_test(
-        'count_values("value", round(last_over_time(bar[10]), 100))[50:10]',
+        'count_values("value", floor((last_over_time(bar[10]) + 50) / 100) * 100)[50:10]',
         150,
         '{"resultType": "matrix", "result": [{"metric": {"value": "0"}, "values": [[110, "4"], [120, "2"], [150, "1"]]}, {"metric": {"value": "100"}, "values": [[130, "2"]]}, {"metric": {"value": "1000"}, "values": [[150, "1"]]}, {"metric": {"value": "700"}, "values": [[140, "1"]]}]}',
         [
@@ -3176,7 +3176,7 @@ def test_aggregation_operator_count_values():
     # The destination label is set before `by`, so it overwrites an input label
     # with the same name and is then used as the value bucket.
     do_query_test(
-        '(count_values("shape", round(last_over_time(bar[10]), 100)) by (shape))[50:10]',
+        '(count_values("shape", floor((last_over_time(bar[10]) + 50) / 100) * 100) by (shape))[50:10]',
         150,
         '{"resultType": "matrix", "result": [{"metric": {"shape": "0"}, "values": [[110, "4"], [120, "2"], [150, "1"]]}, {"metric": {"shape": "100"}, "values": [[130, "2"]]}, {"metric": {"shape": "1000"}, "values": [[150, "1"]]}, {"metric": {"shape": "700"}, "values": [[140, "1"]]}]}',
         [
@@ -3192,7 +3192,7 @@ def test_aggregation_operator_count_values():
 
     # Independent `by` labels are retained alongside the changing value label.
     do_query_test(
-        '(count_values("value", round(last_over_time(bar[10]), 100)) by (size))[50:10]',
+        '(count_values("value", floor((last_over_time(bar[10]) + 50) / 100) * 100) by (size))[50:10]',
         150,
         '{"resultType": "matrix", "result": [{"metric": {"size": "l", "value": "0"}, "values": [[110, "2"], [120, "1"]]}, {"metric": {"size": "l", "value": "100"}, "values": [[130, "2"]]}, {"metric": {"size": "l", "value": "1000"}, "values": [[150, "1"]]}, {"metric": {"size": "s", "value": "0"}, "values": [[110, "1"], [120, "1"]]}, {"metric": {"size": "s", "value": "700"}, "values": [[140, "1"]]}, {"metric": {"size": "xl", "value": "0"}, "values": [[110, "1"], [150, "1"]]}]}',
         [
