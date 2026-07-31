@@ -795,14 +795,12 @@ bool WindowTransform::arePeers(const RowNumber & x, const RowNumber & y) const
         return true;
     }
 
-    if (window_description.frame.type == WindowFrame::FrameType::ROWS)
-    {
-        // For ROWS frame, row is only peers with itself (checked above);
-        return false;
-    }
-
-    // For RANGE and GROUPS frames, rows that compare equal w/ORDER BY are peers.
-    chassert(window_description.frame.type == WindowFrame::FrameType::RANGE);
+    // RANK, DENSE_RANK, PERCENT_RANK, and CUME_DIST use peer group semantics
+    // regardless of the frame type per the SQL standard. ROWS frames should
+    // not treat every row as its own peer -- ORDER BY values determine peers.
+    // The frame boundaries (not peer groups) control which rows are included
+    // in aggregate calculations, so removing the ROWS short-circuit is safe
+    // for all window function types.
     const size_t n = order_by_indices.size();
     if (n == 0)
     {
