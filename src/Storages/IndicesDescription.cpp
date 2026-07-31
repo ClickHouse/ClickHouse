@@ -39,7 +39,7 @@ IndexDescription::IndexDescription(const IndexDescription & other)
     , granularity(other.granularity)
     , is_implicitly_created(other.is_implicitly_created)
     , escape_filenames(other.escape_filenames)
-    , normalized_column_names(other.normalized_column_names)
+    , normalized_column_name_to_original(other.normalized_column_name_to_original)
 {
     if (other.expression)
         expression = other.expression->clone();
@@ -80,7 +80,7 @@ IndexDescription & IndexDescription::operator=(const IndexDescription & other)
     granularity = other.granularity;
     is_implicitly_created = other.is_implicitly_created;
     escape_filenames = other.escape_filenames;
-    normalized_column_names = other.normalized_column_names;
+    normalized_column_name_to_original = other.normalized_column_name_to_original;
     return *this;
 }
 
@@ -171,9 +171,10 @@ IndexDescription IndexDescription::getIndexFromAST(
             ASTPtr normalized = expr->clone();
             normalizeColumnExpression(normalizeColumnExpression, normalized);
             String normalized_name = normalized->getColumnName();
+            String original_name = expr->getColumnName();
             // Only add the normalized name if it differs from the original
-            if (normalized_name != expr->getColumnName())
-                result.normalized_column_names.push_back(normalized_name);
+            if (normalized_name != original_name)
+                result.normalized_column_name_to_original[normalized_name] = original_name;
         }
     }
 
