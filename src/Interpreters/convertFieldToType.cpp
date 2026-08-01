@@ -382,10 +382,12 @@ Field convertFieldToTypeImpl(const Field & src, const IDataType & type, const ID
             return convertNumericType<UInt16>(src, type, strict, convert_inexact_floats);
         }
 
-        if (which_type.isDateTime() && src.getType() == Field::Types::UInt64)
+        if (which_type.isDateTime() && (src.getType() == Field::Types::UInt64 || src.getType() == Field::Types::Int64))
         {
-            /// `DateTime` stores `UInt32` under the hood, so `UInt64` is the canonical `Field` type and no conversion is needed.
-            return src;
+            /// `DateTime` stores `UInt32` under the hood; convert through `UInt32` to produce the canonical
+            /// `UInt64` `Field` and to range-check the input so out-of-range integers are not silently
+            /// truncated by the `DateTime` serializer downstream.
+            return convertNumericType<UInt32>(src, type, strict, convert_inexact_floats);
         }
 
         if (which_type.isTime() && (src.getType() == Field::Types::UInt64 || src.getType() == Field::Types::Int64))
@@ -398,8 +400,10 @@ Field convertFieldToTypeImpl(const Field & src, const IDataType & type, const ID
 
         if (which_type.isDate32() && src.getType() == Field::Types::Int64)
         {
-            /// We don't need any conversion Int64 is under type of Date32
-            return src;
+            /// `Date32` stores `Int32` under the hood; convert through `Int32` to range-check the input
+            /// (the canonical `Field` type stays `Int64`) so out-of-range integers are not silently
+            /// truncated by the `Date32` serializer downstream.
+            return convertNumericType<Int32>(src, type, strict, convert_inexact_floats);
         }
 
         if (which_type.isDateTime64() && src.getType() == Field::Types::Decimal64)
