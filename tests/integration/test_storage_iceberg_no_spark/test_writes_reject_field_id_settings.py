@@ -148,6 +148,29 @@ def test_writes_reject_field_id_settings(
         == "1\n"
     )
 
+    # The same ambient settings must not break writes through the Iceberg
+    # table functions either. A table function has no definition that could
+    # express an intent to override the ids, so every value reaching the write
+    # is ambient (server/profile/session) and is ignored — the datalake
+    # column-id mapping stays authoritative.
+    table_function_expr = get_creation_expression(
+        storage_type,
+        ambient_table,
+        started_cluster_iceberg_no_spark,
+        table_function=True,
+    )
+    instance.query(
+        f"INSERT INTO FUNCTION {table_function_expr} VALUES (2);",
+        settings={"allow_insert_into_iceberg": 1, **ambient_settings},
+    )
+    assert (
+        instance.query(
+            f"SELECT * FROM {table_function_expr} ORDER BY ALL",
+            settings=ambient_settings,
+        )
+        == "1\n2\n"
+    )
+
     # A legacy table created before the definition-time guard existed can still
     # carry these settings in its stored definition. Replaying such a stored
     # definition (short ATTACH, server startup, replica recovery, RESTORE) must

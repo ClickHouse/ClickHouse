@@ -1674,14 +1674,14 @@ Top-level columns are addressed by name (e.g. `col_a`), and nested fields by dot
 
 The value of the map is a string holding a non-negative `Int32` `field_id` (ClickHouse's setting parser only accepts string literals as `Map` values). IDs must be unique across the map. IDs above `2147483447` are rejected: Iceberg reserves that range for its own metadata fields, so a data column written with such an ID would be ignored when the file is read as an Iceberg table.
 
-Takes precedence over `output_format_parquet_auto_assign_field_ids` for any path that appears in the map. It cannot be combined with a datalake table that provides its own column-id mapping (e.g. Iceberg): such a table's metadata is the source of truth for `field_id`s, so putting this setting into an `ENGINE = Iceberg*` table definition is rejected with `BAD_ARGUMENTS`, and a value coming from the session or the profile is ignored for those tables.
+Takes precedence over `output_format_parquet_auto_assign_field_ids` for any path that appears in the map. It cannot be combined with a datalake table that provides its own column-id mapping (e.g. Iceberg): such a table's metadata is the source of truth for `field_id`s, so putting this setting into an `ENGINE = Iceberg*` table definition is rejected with `BAD_ARGUMENTS`, and a value coming from the session or the profile is ignored for those tables (including writes through the `iceberg*` table functions).
 
 Example: `SET output_format_parquet_column_field_ids = {'col_a': '1', 'col_b': '2', 'col_c': '3'}`.
 )", 0) \
     DECLARE(Bool, output_format_parquet_auto_assign_field_ids, false, R"(
 When enabled, every output column and every nested field (Array `element`, Map `key`/`value`, Tuple subfields) is assigned a unique Parquet `field_id` automatically (sequential, starting at 1, in schema DFS order), matching the convention used by Apache Iceberg writers. Paths with an explicit override in `output_format_parquet_column_field_ids` keep the overridden value; remaining paths fill in around those overrides.
 
-Disabled by default so that existing Parquet output is unchanged. It cannot be used when writing to a datalake table that provides its own column-id mapping: putting it into an `ENGINE = Iceberg*` table definition is rejected with `BAD_ARGUMENTS`, and a value coming from the session or the profile is ignored for those tables.
+Disabled by default so that existing Parquet output is unchanged. It cannot be used when writing to a datalake table that provides its own column-id mapping: putting it into an `ENGINE = Iceberg*` table definition is rejected with `BAD_ARGUMENTS`, and a value coming from the session or the profile is ignored for those tables (including writes through the `iceberg*` table functions).
 )", 0) \
     DECLARE(Bool, into_outfile_create_parent_directories, false, R"(
 Automatically create parent directories when using INTO OUTFILE if they do not already exists.
