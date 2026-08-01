@@ -13,7 +13,9 @@
 #include <Common/PoolId.h>
 #include <Common/parseAddress.h>
 #include <Common/parseRemoteDescription.h>
+#include <Common/RemoteHostFilter.h>
 #include <Common/AsyncLoader.h>
+#include <IO/WriteHelpers.h>
 #include <Core/BackgroundSchedulePool.h>
 #include <Core/Settings.h>
 #include <Core/UUID.h>
@@ -531,33 +533,8 @@ void DatabaseMaterializedPostgreSQL::drop(ContextPtr local_context)
 DatabaseTablesIteratorPtr DatabaseMaterializedPostgreSQL::getTablesIterator(
     ContextPtr local_context, const DatabaseOnDisk::FilterByNameFunction & filter_by_table_name, bool skip_not_loaded) const
 {
-    /// Internal queries (replication machinery, DDL, backups) work on the nested ReplacingMergeTree
-    /// tables directly. If materialized_tables is empty, all access goes to the nested tables as
-    /// well - it is the case after replication_handler was shutdown (see tryGetTable).
-    if (local_context->isInternalQuery() || materialized_tables.empty())
-        return DatabaseAtomic::getTablesIterator(StorageMaterializedPostgreSQL::makeNestedTableContext(local_context), filter_by_table_name, skip_not_loaded);
-
-    /// For user-facing enumeration return the StorageMaterializedPostgreSQL wrappers, consistently
-    /// with tryGetTable. Otherwise consumers reading data through the iterator (e.g. StorageMerge)
-    /// would read the nested tables directly - without the `_sign = 1` filter and the forced
-    /// `FINAL` - exposing stale and deleted row versions.
-    Tables tables;
-    {
-        std::lock_guard lock(tables_mutex);
-        for (const auto & [table_name, storage] : materialized_tables)
-        {
-            if (filter_by_table_name && !filter_by_table_name(table_name))
-                continue;
-
-            /// A table is considered to exist once its nested table was created (see tryGetTable).
-            if (!storage->as<StorageMaterializedPostgreSQL>()->hasNested())
-                continue;
-
-            tables.emplace(table_name, storage);
-        }
-    }
-
-    return std::make_unique<DatabaseTablesSnapshotIterator>(std::move(tables), getDatabaseName());
+    /// Modify context into nested_context and pass query to Atomic database.
+    return DatabaseAtomic::getTablesIterator(StorageMaterializedPostgreSQL::makeNestedTableContext(local_context), filter_by_table_name, skip_not_loaded);
 }
 
 
@@ -609,11 +586,7 @@ DatabaseMaterializedPostgreSQL::getTablesForBackup(const FilterByNameFunction & 
         }
     }
 
-    /// Enumerate through the nested context: the base implementation lists tables via
-    /// `getTablesIterator`, which for user-facing (non-internal) contexts returns the
-    /// `StorageMaterializedPostgreSQL` wrappers, while backups must keep backing up the nested
-    /// ReplacingMergeTree tables directly.
-    return DatabaseAtomic::getTablesForBackup(filter, StorageMaterializedPostgreSQL::makeNestedTableContext(local_context));
+    return DatabaseAtomic::getTablesForBackup(filter, local_context);
 }
 
 void registerDatabaseMaterializedPostgreSQL(DatabaseFactory & factory);
@@ -654,9 +627,53 @@ void registerDatabaseMaterializedPostgreSQL(DatabaseFactory & factory)
 
             configuration.host = parsed_host_port.first;
             configuration.port = parsed_host_port.second;
+            configuration.addresses = {std::make_pair(configuration.host, configuration.port)};
             configuration.database = safeGetLiteralValue<String>(engine_args[1], engine_name);
             configuration.username = safeGetLiteralValue<String>(engine_args[2], engine_name);
             configuration.password = safeGetLiteralValue<String>(engine_args[3], engine_name);
+        }
+
+        /// An internal metadata replay (server startup / restore, the same distinction
+        /// `DatabaseDataLake` uses) must keep loading whatever definition was already persisted:
+        /// startup rebuilds every database from persisted metadata with an ATTACH query and
+        /// `loadMetadata` aborts on the first exception, so a validation added after the database
+        /// was created must not turn its stored definition into a server that cannot boot.
+        const bool is_internal_metadata_replay = args.internal && args.mode >= LoadingStrictnessLevel::ATTACH;
+
+        /// A named collection may specify the endpoint as `addresses_expr`, which fills only
+        /// `configuration.addresses` and leaves `host` / `port` empty, while the connection string
+        /// below is built from `host` / `port`. This engine keeps a single replication connection,
+        /// so exactly one address is accepted; canonicalize it back into `host` / `port`.
+        if (configuration.host.empty())
+        {
+            if (configuration.addresses.size() == 1)
+            {
+                configuration.host = configuration.addresses.front().first;
+                configuration.port = configuration.addresses.front().second;
+            }
+            else if (!is_internal_metadata_replay)
+            {
+                throw Exception(ErrorCodes::BAD_ARGUMENTS,
+                                "Engine `{}` requires a single `host:port` address, but `addresses_expr` defines {} addresses",
+                                engine_name, configuration.addresses.size());
+            }
+            /// On a replay a legacy multi-address definition keeps its historical behavior: it could
+            /// be created before this validation existed (replication starts asynchronously, so the
+            /// broken connection string never aborted the CREATE), and the database must keep loading
+            /// with replication failing and retrying in the background rather than abort startup.
+        }
+
+        /// Enforce the server's outbound-host policy, exactly like the table engine and the table
+        /// function do in `StoragePostgreSQL::getConfiguration`: a user must not be able to open a
+        /// long-lived replication connection to a host that `remote_url_allow_hosts` forbids elsewhere.
+        /// Skip it only for an internal metadata replay: enforcing the policy there would turn one
+        /// database created before the whitelist was tightened into a server that cannot boot.
+        /// A user-issued `ATTACH DATABASE` is not a replay and stays fail-closed, otherwise it
+        /// would be a direct bypass of the policy.
+        if (!is_internal_metadata_replay)
+        {
+            for (const auto & address : configuration.addresses)
+                args.context->getRemoteHostFilter().checkHostAndPort(address.first, toString(address.second));
         }
 
         auto connection_info = postgres::formatConnectionString(
