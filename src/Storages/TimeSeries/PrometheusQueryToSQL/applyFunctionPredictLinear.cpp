@@ -1,4 +1,4 @@
-#include <Storages/TimeSeries/PrometheusQueryToSQL/applyFunctionOverRange.h>
+#include <Storages/TimeSeries/PrometheusQueryToSQL/applyFunctionPredictLinear.h>
 
 #include <Parsers/ASTExpressionList.h>
 #include <Parsers/ASTFunction.h>
@@ -15,6 +15,7 @@
 namespace DB::ErrorCodes
 {
     extern const int CANNOT_EXECUTE_PROMQL_QUERY;
+    extern const int NOT_IMPLEMENTED;
 }
 
 
@@ -23,136 +24,82 @@ namespace DB::PrometheusQueryToSQL
 
 namespace
 {
-    /// Checks if the types of the specified arguments are valid for the function.
-    void checkArgumentTypes(std::string_view function_name, const std::vector<SQLQueryPiece> & arguments, const ConverterContext & context)
-    {
-        size_t expected_number_of_arguments = 1;
 
-        if (arguments.size() != expected_number_of_arguments)
-        {
-                throw Exception(ErrorCodes::CANNOT_EXECUTE_PROMQL_QUERY,
-                                "Function '{}' expects {} {}, got {} arguments",
-                                function_name, expected_number_of_arguments, (expected_number_of_arguments == 1 ? "argument" : "arguments"),
-                                arguments.size());
-        }
+/// The name of the ClickHouse aggregate function that implements `predict_linear` on a time grid.
+/// It is the `is_predict = true` variant of the linear-regression aggregate
+/// (see AggregateFunctionTimeseriesLinearRegression.h) and accepts a fifth parameter,
+/// `predict_offset`, in seconds.
+constexpr std::string_view ch_function_name = "timeSeriesPredictLinearToGrid";
 
-        const auto & argument = arguments[0];
-        if (argument.type != ResultType::RANGE_VECTOR)
-        {
-            throw Exception(ErrorCodes::CANNOT_EXECUTE_PROMQL_QUERY,
-                            "Function {} expects an argument of type {}, but expression {} has type {}",
-                            function_name, ResultType::RANGE_VECTOR,
-                            getPromQLText(argument, context), argument.type);
-        }
-    }
-
-    struct ImplInfo
-    {
-        std::string_view ch_function_name;
-        bool drop_metric_name = true;
-    };
-
-    /// Returns information about how the specified prometheus function is implemented.
-    /// Returns nullptr if not found.
-    const ImplInfo * getImplInfo(std::string_view function_name)
-    {
-        static const std::unordered_map<std::string_view, ImplInfo> impl_map = {
-            {"rate",
-             {
-                 "timeSeriesRateToGrid",
-                 /* drop_metric_name = */ true,
-             }},
-
-            {"increase",
-             {
-                 "timeSeriesIncreaseToGrid",
-                 /* drop_metric_name = */ true,
-             }},
-
-            {"irate",
-             {
-                 "timeSeriesInstantRateToGrid",
-                 /* drop_metric_name = */ true,
-             }},
-
-            {"delta",
-             {
-                 "timeSeriesDeltaToGrid",
-                 /* drop_metric_name = */ true,
-             }},
-
-            {"idelta",
-             {
-                 "timeSeriesInstantDeltaToGrid",
-                 /* drop_metric_name = */ true,
-             }},
-
-            {"last_over_time",
-             {
-                 "timeSeriesLastToGrid",
-                 /* drop_metric_name = */ false,
-             }},
-
-            {"present_over_time",
-             {
-                 "timeSeriesPresentToGrid",
-                 /* drop_metric_name = */ false,
-             }},
-
-            /// TODO:
-            /// resets
-            /// deriv
-            /// avg_over_time
-            /// min_over_time
-            /// max_over_time
-            /// sum_over_time
-            /// count_over_time
-            /// stddev_over_time"
-            /// stdvar_over_time
-            /// mad_over_time
-            /// ts_of_min_over_time
-            /// ts_of_max_over_time
-            /// ts_of_last_over_time
-            /// first_over_time
-            /// ts_of_first_over_time
-        };
-
-        auto it = impl_map.find(function_name);
-        if (it == impl_map.end())
-            return nullptr;
-
-        return &it->second;
-    }
-}
+/// `predict_linear` always drops the metric name (PromQL: function outputs have no `__name__`).
+constexpr bool drop_metric_name = true;
 
 
-bool isFunctionOverRange(std::string_view function_name)
+/// Checks that the arguments are valid for `predict_linear`:
+///   - exactly 2 arguments
+///   - first argument is a RANGE_VECTOR
+///   - second argument is a SCALAR
+void checkArgumentTypes(std::string_view function_name, const std::vector<SQLQueryPiece> & arguments, const ConverterContext & context)
 {
-    return getImplInfo(function_name) != nullptr;
+    if (arguments.size() != 2)
+    {
+        throw Exception(ErrorCodes::CANNOT_EXECUTE_PROMQL_QUERY,
+                        "Function '{}' expects 2 arguments, but was called with {} arguments",
+                        function_name, arguments.size());
+    }
+
+    const auto & range_argument = arguments[0];
+    if (range_argument.type != ResultType::RANGE_VECTOR)
+    {
+        throw Exception(ErrorCodes::CANNOT_EXECUTE_PROMQL_QUERY,
+                        "Function {} expects first argument of type {}, but expression {} has type {}",
+                        function_name, ResultType::RANGE_VECTOR,
+                        getPromQLText(range_argument, context), range_argument.type);
+    }
+
+    const auto & scalar_argument = arguments[1];
+    if (scalar_argument.type != ResultType::SCALAR)
+    {
+        throw Exception(ErrorCodes::CANNOT_EXECUTE_PROMQL_QUERY,
+                        "Function {} expects second argument of type {}, but expression {} has type {}",
+                        function_name, ResultType::SCALAR,
+                        getPromQLText(scalar_argument, context), scalar_argument.type);
+    }
+}
+
 }
 
 
-SQLQueryPiece applyFunctionOverRange(
+bool isFunctionPredictLinear(std::string_view function_name)
+{
+    return function_name == "predict_linear";
+}
+
+
+SQLQueryPiece applyFunctionPredictLinear(
     const PQT::Function * function_node, std::vector<SQLQueryPiece> && arguments, ConverterContext & context)
 {
-    return applyFunctionOverRange(function_node, function_node->function_name, std::move(arguments), context);
-}
-
-
-SQLQueryPiece applyFunctionOverRange(
-    const Node * node,
-    std::string_view function_name,
-    std::vector<SQLQueryPiece> && arguments,
-    ConverterContext & context)
-{
-    const auto * impl_info = getImplInfo(function_name);
-    chassert(impl_info);
-
+    const auto function_name = function_node->function_name;
     checkArgumentTypes(function_name, arguments, context);
 
-    auto node_range = context.node_range_getter.get(node);
+    /// The second argument is the prediction horizon `t` in seconds. It is passed to the
+    /// aggregate function as the `predict_offset` parameter. The aggregate registration
+    /// (see AggregateFunctionTimeseriesHelpers.cpp) multiplies this value by the timestamp
+    /// scale multiplier internally, so we pass it as a plain Float64 in seconds.
+    auto & scalar_argument = arguments[1];
+    if (scalar_argument.store_method != StoreMethod::CONST_SCALAR)
+    {
+        throw Exception(ErrorCodes::NOT_IMPLEMENTED,
+                        "Function '{}' currently requires a constant scalar as the second argument (the prediction horizon), "
+                        "but expression {} is not a constant scalar",
+                        function_name, getPromQLText(scalar_argument, context));
+    }
+
+    const Float64 predict_offset_seconds = scalar_argument.scalar_value;
+
+    auto node_range = context.node_range_getter.get(function_node);
     if (node_range.empty())
-        return SQLQueryPiece{node, ResultType::INSTANT_VECTOR, StoreMethod::EMPTY};
+        return SQLQueryPiece{function_node, ResultType::INSTANT_VECTOR, StoreMethod::EMPTY};
 
     auto start_time = node_range.start_time;
     auto end_time = node_range.end_time;
@@ -162,7 +109,7 @@ SQLQueryPiece applyFunctionOverRange(
     auto argument = std::move(arguments[0]);
 
     SQLQueryPiece res = argument;
-    res.node = node;
+    res.node = function_node;
     res.type = ResultType::INSTANT_VECTOR;
 
     bool has_group = false;
@@ -201,7 +148,7 @@ SQLQueryPiece applyFunctionOverRange(
         case StoreMethod::SCALAR_GRID:
         {
             /// SELECT <aggregate_function>(timeSeriesRange(<start_time>, <end_time>, <step>),
-            ///                             values)) AS values
+            ///                             values) AS values
             /// FROM <scalar_grid>
             values = make_intrusive<ASTIdentifier>(ColumnNames::Values);
             break;
@@ -211,7 +158,7 @@ SQLQueryPiece applyFunctionOverRange(
         {
             /// SELECT group,
             ///        <aggregate_function>((timeSeriesFromGrid(<start_time>, <end_time>, <step>, values) AS time_series).1,
-            ///                             time_series.2)) AS values
+            ///                             time_series.2) AS values
             /// FROM <vector_grid>
             /// GROUP BY group
             has_group = true;
@@ -273,13 +220,19 @@ SQLQueryPiece applyFunctionOverRange(
     if (has_group)
         builder.select_list.push_back(make_intrusive<ASTIdentifier>(ColumnNames::Group));
 
-    /// <aggregate_function>(<timestamps>, <values>) AS values
+    /// timeSeriesPredictLinearToGrid(start_timestamp, end_timestamp, grid_step, staleness, predict_offset)(timestamps, values)
+    ///
+    /// The first four parameters (start, end, step, window) are the same as for the other range
+    /// functions. The fifth parameter, `predict_offset`, is the prediction horizon `t` in seconds,
+    /// passed as a Float64 literal. The aggregate registration multiplies it by the timestamp scale
+    /// multiplier to convert it to the internal timestamp units.
     builder.select_list.push_back(addParametersToAggregateFunction(
-        makeASTFunction(impl_info->ch_function_name, std::move(timestamps), std::move(values)),
+        makeASTFunction(std::string{ch_function_name}, std::move(timestamps), std::move(values)),
         timeSeriesTimestampToAST(start_time, context.timestamp_data_type),
         timeSeriesTimestampToAST(end_time, context.timestamp_data_type),
         timeSeriesDurationToAST(step, context.timestamp_data_type),
-        timeSeriesDurationToAST(window, context.timestamp_data_type)));
+        timeSeriesDurationToAST(window, context.timestamp_data_type),
+        make_intrusive<ASTLiteral>(predict_offset_seconds)));
 
     builder.select_list.back()->setAlias(ColumnNames::Values);
 
@@ -298,7 +251,7 @@ SQLQueryPiece applyFunctionOverRange(
     res.end_time = end_time;
     res.step = step;
 
-    if (has_group && impl_info->drop_metric_name)
+    if (has_group && drop_metric_name)
         res = dropMetricName(std::move(res), context);
 
     return res;
