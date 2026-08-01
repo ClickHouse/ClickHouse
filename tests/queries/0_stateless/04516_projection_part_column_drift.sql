@@ -457,6 +457,22 @@ ALTER TABLE t_proj_shared_default_dep ADD COLUMN d UInt64 DEFAULT e + f;
 SELECT 'shared-dep force projection', a, d FROM t_proj_shared_default_dep ORDER BY a
 SETTINGS optimize_use_projections = 1, force_optimize_projection = 1;
 
+-- a second part, so the merge predicate (a separate copy of the same rule) is exercised too
+INSERT INTO t_proj_shared_default_dep (a) VALUES (2);
+
+OPTIMIZE TABLE t_proj_shared_default_dep FINAL;
+
+SELECT 'shared-dep force projection after merge', a, d FROM t_proj_shared_default_dep ORDER BY a
+SETTINGS optimize_use_projections = 1, force_optimize_projection = 1;
+
+SYSTEM FLUSH LOGS part_log;
+
+SELECT 'shared-dep merged not rebuilt',
+       sum(ProfileEvents['MergedProjections']) > 0, sum(ProfileEvents['RebuiltProjections'])
+FROM system.part_log
+WHERE database = currentDatabase() AND table = 't_proj_shared_default_dep'
+  AND event_type = 'MergeParts';
+
 DROP TABLE t_proj_shared_default_dep;
 
 -- a lambda's formal parameter is bound during evaluation and is not a column of the table, so it
@@ -477,6 +493,21 @@ ALTER TABLE t_proj_lambda_default_dep ADD COLUMN d Array(UInt64) DEFAULT arrayMa
 
 SELECT 'lambda-dep force projection', a, d FROM t_proj_lambda_default_dep ORDER BY a
 SETTINGS optimize_use_projections = 1, force_optimize_projection = 1;
+
+INSERT INTO t_proj_lambda_default_dep (a, arr) VALUES (2, [10, 20]);
+
+OPTIMIZE TABLE t_proj_lambda_default_dep FINAL;
+
+SELECT 'lambda-dep force projection after merge', a, d FROM t_proj_lambda_default_dep ORDER BY a
+SETTINGS optimize_use_projections = 1, force_optimize_projection = 1;
+
+SYSTEM FLUSH LOGS part_log;
+
+SELECT 'lambda-dep merged not rebuilt',
+       sum(ProfileEvents['MergedProjections']) > 0, sum(ProfileEvents['RebuiltProjections'])
+FROM system.part_log
+WHERE database = currentDatabase() AND table = 't_proj_lambda_default_dep'
+  AND event_type = 'MergeParts';
 
 DROP TABLE t_proj_lambda_default_dep;
 

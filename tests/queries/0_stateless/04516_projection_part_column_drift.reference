@@ -50,7 +50,13 @@ chain-dep force projection after merge	1	43
 chain-dep force projection after merge	2	43
 chain-dep merged not rebuilt	1	0
 shared-dep force projection	1	87
+shared-dep force projection after merge	1	87
+shared-dep force projection after merge	2	87
+shared-dep merged not rebuilt	1	0
 lambda-dep force projection	1	[2,3,4]
+lambda-dep force projection after merge	1	[2,3,4]
+lambda-dep force projection after merge	2	[11,21]
+lambda-dep merged not rebuilt	1	0
 chain-unfillable read after drift	1	12
 chain-unfillable read after merge	1	12
 agg read after drift	1	501
