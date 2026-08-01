@@ -87,6 +87,10 @@ SELECT 'C t64 s9 negative', toString(toTime64('-100:00:00.123456789', 9));
 C t64 s9 negative	-100:00:00.123456789
 SELECT 'C t64 s9 cast', CAST(toTime64('100:00:00.123456789', 9) AS String);
 C t64 s9 cast	100:00:00.123456789
+-- A scale 7 value discriminates three ways: .123456 before the fix, .123456700 after it, and
+-- .1234567 if the route stopped consulting the setting at all.
+SELECT 'C t64 s7 cast', CAST(toTime64('100:00:00.1234567', 7) AS String);
+C t64 s7 cast	100:00:00.123456700
 SELECT 'C t64 s6 .123456', toString(toTime64('100:00:00.123456', 6));
 C t64 s6 .123456	100:00:00.123456
 SELECT 'C t64 s4 .0007', toString(toTime64('100:00:00.0007', 4));
@@ -104,6 +108,28 @@ SELECT 'D nullable', toString(toNullable(toDateTime64('2024-01-01 00:00:00.12345
 D nullable	2024-01-01 00:00:00.123456789
 SELECT toDateTime64('2024-01-01 00:00:00.123456789', 9, 'UTC') AS d FORMAT TSV;
 2024-01-01 00:00:00.123456789
+-- The scale 9 rows above pin the reported output, but a value whose every digit is significant
+-- prints nine digits with the setting on or off, so each route also gets a scale 7 twin: those
+-- read .123456700 only when the route consults the setting AND the round-up is uncapped.
+SELECT 'D cast s7', CAST(toDateTime64('2024-01-01 00:00:00.1234567', 7, 'UTC') AS String);
+D cast s7	2024-01-01 00:00:00.123456700
+SELECT 'D tuple s7', toString(tuple(toDateTime64('2024-01-01 00:00:00.1234567', 7, 'UTC')));
+D tuple s7	(\'2024-01-01 00:00:00.123456700\')
+SELECT 'D array s7', toString([toDateTime64('2024-01-01 00:00:00.1234567', 7, 'UTC')]);
+D array s7	[\'2024-01-01 00:00:00.123456700\']
+SELECT 'D nullable s7', toString(toNullable(toDateTime64('2024-01-01 00:00:00.1234567', 7, 'UTC')));
+D nullable s7	2024-01-01 00:00:00.123456700
+SELECT toDateTime64('2024-01-01 00:00:00.1234567', 7, 'UTC') AS d FORMAT TSV;
+2024-01-01 00:00:00.123456700
+SELECT toDateTime64('2024-01-01 00:00:00.1234567', 7, 'UTC') AS d FORMAT JSONEachRow;
+{"d":"2024-01-01 00:00:00.123456700"}
+-- Row output honours the setting only under the default 'simple' mode, as the setting documents.
+SELECT toDateTime64('2024-01-01 00:00:00.123000000', 9, 'UTC') AS d SETTINGS date_time_output_format = 'iso' FORMAT TSV;
+2024-01-01T00:00:00.123000000Z
+SELECT toDateTime64('2024-01-01 00:00:00.123000000', 9, 'UTC') AS d SETTINGS date_time_output_format = 'unix_timestamp' FORMAT TSV;
+1704067200.123000000
+SELECT 'D toString under iso', toString(toDateTime64('2024-01-01 00:00:00.123000000', 9, 'UTC')) SETTINGS date_time_output_format = 'iso';
+D toString under iso	2024-01-01 00:00:00.123
 SELECT toDateTime64('2024-01-01 00:00:00.000000700', 9, 'UTC') AS d FORMAT TSV;
 2024-01-01 00:00:00.000000700
 SELECT toDateTime64('2024-01-01 00:00:00.123456789', 9, 'UTC') AS d FORMAT JSONEachRow;

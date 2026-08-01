@@ -759,8 +759,10 @@ See also:
     DECLARE(Bool, date_time_64_output_format_cut_trailing_zeros_align_to_groups_of_thousands, false, R"(
 Dynamically trim the trailing zeros of `DateTime64` values, rounding the output scale up to the next
 multiple of three that keeps every significant digit: [0, 3, 6, 9], corresponding to 'seconds',
-'milliseconds', 'microseconds' and 'nanoseconds'. `Time64` values are trimmed the same way when converted
-to a string with `toString` or `CAST`, but not yet in the row output formats.)", 0) \
+'milliseconds', 'microseconds' and 'nanoseconds'. Conversion to a string with `toString` or `CAST` is
+always trimmed; row output formats are trimmed only under the default `date_time_output_format = 'simple'`,
+because `iso` and `unix_timestamp` always print the full declared scale. `Time64` values are trimmed the
+same way by `toString` and `CAST`, but not yet in the row output formats.)", 0) \
     DECLARE(Bool, input_format_read_datetime_number_as_raw_value, false, R"(
 Read a bare unquoted integer for a `DateTime`/`DateTime64` column as the raw underlying value — seconds for
 `DateTime`, ticks at the column precision for `DateTime64` — instead of a Unix timestamp in seconds.
