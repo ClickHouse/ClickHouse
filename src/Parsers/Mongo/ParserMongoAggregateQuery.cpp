@@ -268,10 +268,12 @@ void translateProject(SelectChain & chain, const rapidjson::Value & stage)
         std::string name(stringView(it->name));
         const auto & value = it->value;
 
-        const bool is_flag = value.IsBool() || (value.IsNumber() && !value.IsDouble());
+        /// A number or a boolean says whether to keep the field; only a document or a `$` prefixed
+        /// expression computes one.
+        const bool is_flag = value.IsBool() || value.IsNumber();
         if (is_flag)
         {
-            const bool included = value.IsBool() ? value.GetBool() : value.GetInt64() != 0;
+            const bool included = value.IsBool() ? value.GetBool() : value.GetDouble() != 0;
             if (included)
                 fields.push_back({name, make_intrusive<ASTIdentifier>(name)});
             else
@@ -341,7 +343,7 @@ void translateSort(SelectChain & chain, const rapidjson::Value & stage)
     {
         if (!it->value.IsInt64() || (it->value.GetInt64() != 1 && it->value.GetInt64() != -1))
             throw Exception(
-                ErrorCodes::NOT_IMPLEMENTED, "The direction of '$sort' must be 1 or -1, got '{}'", stringView(it->name));
+                ErrorCodes::NOT_IMPLEMENTED, "The direction of '$sort' on '{}' must be 1 or -1", stringView(it->name));
 
         const int direction = static_cast<int>(it->value.GetInt64());
         auto element = make_intrusive<ASTOrderByElement>();
