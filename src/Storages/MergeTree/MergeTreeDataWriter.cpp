@@ -448,11 +448,9 @@ void MergeTreeTemporaryPart::finalize()
 
     part->getDataPartStorage().precommitTransaction();
 
-    /// Syncing the part directory persists the `<projection>.proj` entry but not the entries inside
-    /// it, so each projection directory needs an fsync of its own or the projection can come back
-    /// empty after a power loss. It happens here rather than where the projection is written because
-    /// `Packed` storage creates `data.packed` in precommitTransaction below, so a sync taken any
-    /// earlier would run before the archive exists.
+    /// Syncing the part directory does not persist the entries inside `<projection>.proj`, so each
+    /// projection directory needs an fsync of its own. It must stay below the projection's
+    /// precommitTransaction: that is where `Packed` storage creates `data.packed`.
     const bool fsync_projection_directory
         = (*part->storage.getSettings())[MergeTreeSetting::fsync_part_directory];
 
