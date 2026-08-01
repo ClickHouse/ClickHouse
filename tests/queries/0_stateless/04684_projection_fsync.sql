@@ -15,6 +15,10 @@
 -- its own, the sub-merge decides to sync by itself and the assertion cannot observe whether the
 -- parent's decision is propagated. `min_compressed_bytes_to_fsync_after_merge = 0` disables the
 -- byte arm for the same reason (`needSyncPart` is an OR of the two arms).
+--
+-- `min_bytes_for_full_part_storage = 0` keeps the parts in `Full` storage. A `Packed` part is a
+-- single blob with no per-file syncs to count, so the deltas below would read 0 even for a
+-- correctly synced projection. That setting is randomized in CI, so it must be pinned here.
 
 DROP TABLE IF EXISTS t_proj;
 DROP TABLE IF EXISTS t_plain;
@@ -25,6 +29,7 @@ ENGINE = MergeTree ORDER BY id
 SETTINGS fsync_after_insert = 1, fsync_part_directory = 1,
          min_rows_to_fsync_after_merge = 1000, min_compressed_bytes_to_fsync_after_merge = 0,
          min_bytes_for_wide_part = 0, min_rows_for_wide_part = 0,
+         min_bytes_for_full_part_storage = 0,
          max_bytes_to_merge_at_max_space_in_pool = 1;
 
 CREATE TABLE t_plain (id UInt64, key String, v UInt64)
@@ -32,6 +37,7 @@ ENGINE = MergeTree ORDER BY id
 SETTINGS fsync_after_insert = 1, fsync_part_directory = 1,
          min_rows_to_fsync_after_merge = 1000, min_compressed_bytes_to_fsync_after_merge = 0,
          min_bytes_for_wide_part = 0, min_rows_for_wide_part = 0,
+         min_bytes_for_full_part_storage = 0,
          max_bytes_to_merge_at_max_space_in_pool = 1;
 
 -- `INSERT` path: `fsync_after_insert = 1` must fsync the projection files too.
@@ -91,6 +97,7 @@ ENGINE = MergeTree ORDER BY id
 SETTINGS fsync_after_insert = 1, fsync_part_directory = 1,
          min_rows_to_fsync_after_merge = 1000, min_compressed_bytes_to_fsync_after_merge = 0,
          min_bytes_for_wide_part = 0, min_rows_for_wide_part = 0,
+         min_bytes_for_full_part_storage = 0,
          max_bytes_to_merge_at_max_space_in_pool = 1;
 
 INSERT INTO t_mat SELECT number, concat('k', toString(number % 7)), number FROM numbers(10000);
