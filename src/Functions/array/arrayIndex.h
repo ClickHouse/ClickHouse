@@ -676,18 +676,9 @@ private:
         const auto & arg_column = arguments[1].column;
         const ColumnNullable * arg_nullable = checkAndGetColumn<ColumnNullable>(&*arg_column);
 
-        /** A constant nullable needle arrives as `Const(Nullable(T))`, which the check above does not
-          * see through, so the handlers below would receive a shape none of them recognizes and the
-          * value would fall through to `executeGeneric`, losing the `FixedString` layout. Peel the
-          * `Nullable` off the constant so it becomes the `Const(T)` the handlers already treat
-          * correctly. An all-NULL needle is left alone: `executeNothing` answers it.
-          *
-          * Only string-family needles are peeled. That is the set whose layout the padded comparison
-          * is about, and it is what `needsZeroPaddedComparison` is defined over. A numeric needle must
-          * keep reaching `executeGeneric`, which casts both sides to a common supertype; peeling it
-          * would route it to `executeIntegral`, whose raw comparison equates a negative signed value
-          * with its unsigned bit-pattern twin.
-          */
+        /// Peel the `Nullable` off a `Const(Nullable(T))` needle so the handlers below see the `Const(T)`
+        /// they recognize and the `FixedString` layout survives. Only the string family may be peeled: a
+        /// peeled numeric needle would reach `executeIntegral`, whose comparison is by raw physical number.
         if (!arg_nullable && !arg_column->onlyNull()
             && WhichDataType(removeNullable(recursiveRemoveLowCardinality(arguments[1].type))).isStringOrFixedString())
         {
@@ -893,24 +884,9 @@ private:
      * Tips and tricks tried can be found at https://github.com/ClickHouse/ClickHouse/pull/12550 .
      */
 
-    /** Is [code] a way for the probe's own cast to DECLINE, rather than a fault of the probe?
-      *
-      * Only these may be read as the cast refusing its input. Anything else -- a memory limit, a
-      * logical error, a cancellation -- is a failure of the probe itself and must propagate, or the
-      * guard would silently decline on an unrelated fault and hide it.
-      *
-      * A decline alone does not say WHICH question was answered, the one about this value or the one
-      * about the type pair; see [classifyNeedleCast] for how the two are separated.
-      *
-      * Each entry was raised by an actual `CAST` of a plausible needle: `TOO_LARGE_STRING_SIZE` by
-      * `String -> FixedString` that does not fit, `CANNOT_PARSE_TEXT`/`_NUMBER` by a
-      * `String -> UInt8`/`Decimal`, the dated/UUID/IP/Bool ones by a `String` to each of those,
-      * `UNKNOWN_ELEMENT_OF_ENUM` by a `String -> Enum8`, `CANNOT_CONVERT_TYPE` by `nan -> Int64`,
-      * `DECIMAL_OVERFLOW` by an out-of-range `Float -> Decimal64`, `ILLEGAL_TYPE_OF_ARGUMENT` by a
-      * composite (`Array`, `Tuple`) needle against a scalar element, and
-      * `VALUE_IS_OUT_OF_RANGE_OF_DATA_TYPE`/`NOT_IMPLEMENTED` by the accurate cast back and by pairs
-      * that have no conversion at all.
-      */
+    /// Is [code] a way for the probe's own cast to DECLINE its input, rather than a fault of the probe?
+    /// ONLY these may be read as a decline; anything else (a memory limit, a logical error, a
+    /// cancellation) is a fault of the probe and MUST propagate instead of being read as one.
     static bool isNeedleCastDecline(int code)
     {
         return code == ErrorCodes::CANNOT_CONVERT_TYPE
@@ -930,18 +906,9 @@ private:
             || code == ErrorCodes::VALUE_IS_OUT_OF_RANGE_OF_DATA_TYPE;
     }
 
-    /** Does casting [needle_column] into [element_type] and back preserve its value exactly?
-      *
-      * The dictionary lookup casts the needle down to the element type and then matches by bytes, so a
-      * cast that changes the value makes the lookup ask about a value the needle does not denote. The
-      * test is a ROUND TRIP rather than a single cast, because a one-way cast cannot report that it
-      * lost anything: casting a non-midnight `DateTime` to `Date` truncates the time of day and
-      * succeeds, so only converting back and comparing distinguishes it from an exact midnight.
-      *
-      * [declined] separates the two ways of not preserving the value: the trip either COMPLETED and
-      * came back with something else, or the cast REFUSED to run (it threw a decline, or the accurate
-      * way back answered NULL). Only the refusal is ambiguous about what it is a fact about.
-      */
+    /// Does casting [needle_column] into [element_type] and back preserve its value exactly? A ROUND TRIP,
+    /// because one way cannot report loss: `DateTime -> Date` truncates the time of day and succeeds.
+    /// [declined] tells apart "came back changed" from "the cast refused to run" (only the latter is ambiguous).
     static bool roundTripPreservesNeedleValue(
         const ColumnPtr & needle_column,
         const DataTypePtr & needle_type,
@@ -982,13 +949,9 @@ private:
         }
     }
 
-    /** What the needle's round trip through the element type established.
-      *
-      * [ValueLost] is a fact about the VALUE: the pair does convert, and this particular value does
-      * not survive the trip, so no element of the element type equals the needle. [NotConvertible] is
-      * a fact about the type PAIR: the cast has no implementation for it, so the probe never got as
-      * far as asking about the value and knows nothing about it.
-      */
+    /// What the needle's round trip through the element type established. [ValueLost] is a fact about the
+    /// VALUE (the pair converts, this value does not survive, so no element equals the needle);
+    /// [NotConvertible] is a fact about the type PAIR and says nothing about the value.
     enum class NeedleCastOutcome : uint8_t
     {
         Preserved,
@@ -996,20 +959,9 @@ private:
         NotConvertible,
     };
 
-    /** Ask the type question before the value question.
-      *
-      * A cast declining its input means "this value is outside the image of the element type" only
-      * while that cast could have accepted some OTHER value of the same type. When it declines the
-      * needle type's own DEFAULT value just as flatly, the decline belongs to the pair -- `IPv4 ->
-      * UInt8` has no implementation at all -- and says nothing about this needle.
-      *
-      * The probe is structural rather than a list of error codes because the codes conflate the two
-      * facts: `FunctionsConversion` raises `CANNOT_CONVERT_TYPE` both for an unsupported pair and for
-      * a genuine value refusal such as `nan -> Int64`, so no membership test can separate them.
-      *
-      * It costs a second round trip, and only for a needle that already failed the first one; a needle
-      * that converts exactly -- the common case -- never reaches it.
-      */
+    /// Ask the type question before the value one: re-run the trip on the needle type's own DEFAULT, which
+    /// separates the two facts. The probe must be structural rather than an error-code list because the
+    /// codes conflate them (`CANNOT_CONVERT_TYPE` covers an unsupported pair AND a real value refusal).
     static NeedleCastOutcome classifyNeedleCast(
         const ColumnPtr & needle_column, const DataTypePtr & needle_type, const DataTypePtr & element_type)
     {
@@ -1027,22 +979,15 @@ private:
         bool default_declined = false;
         roundTripPreservesNeedleValue(std::move(probe), needle_type, element_type, default_declined);
 
-        /// A cast that takes the default value but not this one is answering about the value. One that
-        /// refuses both is refusing the pair. The default's own round trip may well not PRESERVE its
-        /// value (`Date -> DateTime` and back is exact, `DateTime(0) -> Date` and back is too, but a
-        /// lossy pair need not be), which is why only the decline is read, never the preservation.
+        /// A cast taking the default but not this value is answering about the value; refusing both refuses
+        /// the pair. Only the DECLINE of the default may be read, never its preservation, which a merely
+        /// lossy pair need not achieve.
         return default_declined ? NeedleCastOutcome::NotConvertible : NeedleCastOutcome::ValueLost;
     }
 
-    /** Why the dictionary shortcut may not be taken for a given needle.
-      *
-      * The two reasons are NOT interchangeable. [Shape] says only "this lookup cannot answer it", so
-      * the value must be computed by the general path. [NoElementCanEqual] is a positive result about
-      * the VALUE: the needle lies outside the image of the element type, so no element can equal it
-      * and the answer is a zero-filled column. Collapsing the second into the first hands the value
-      * to `executeIntegral`, whose comparison is by RAW PHYSICAL NUMBER, and a `Date` day number then
-      * matches a `DateTime` epoch second that it does not equal.
-      */
+    /// Why the dictionary shortcut may not be taken. NOT interchangeable: [Shape] says only "this lookup
+    /// cannot answer it", so the general path must compute the value, while [NoElementCanEqual] is a
+    /// positive result ABOUT the value, whose answer is a zero-filled column.
     enum class DictionaryShortcut : uint8_t
     {
         Admit,
@@ -1050,18 +995,9 @@ private:
         NoElementCanEqual,
     };
 
-    /** The LowCardinality fast path resolves the needle to ONE dictionary index and then compares
-      * indices, so it is sound only when the needle identifies exactly one element value AND the
-      * dictionary's lookup, which is by BYTE identity, coincides with that type's equality.
-      *
-      * The string-family clauses are an allow-list on the TYPES because their equality is
-      * width-sensitive in a way a value round trip does not see. Everything else is decided by
-      * [classifyNeedleCast] on the actual constant. A FLOAT ELEMENT is refused outright: byte
-      * identity is not equality there even for a same-type needle, since `+0.0 == -0.0` with
-      * different bytes and `NaN != NaN` with equal bytes, so the dictionary both misses rows a `0.0`
-      * needle must match and invents a `NaN` match. A float NEEDLE against a non-float element is
-      * fine as long as it converts exactly.
-      */
+    /// Sound only when the needle denotes ONE value AND the dictionary's BYTE identity coincides with the
+    /// type's equality. The string clauses are a TYPE allow-list because their width-sensitivity is invisible
+    /// to a value round trip; a float ELEMENT is refused (`+0.0 == -0.0` differ in bytes, `NaN != NaN` do not).
     static DictionaryShortcut needleMapsToSingleDictionaryValue(
         const DataTypePtr & element_type,
         const DataTypePtr & needle_type,
@@ -1092,10 +1028,8 @@ private:
 
         if (which_element.isFixedString())
         {
-            /// A `String` needle is padded up to the element width by the cast the dictionary lookup
-            /// performs, which is exact while it fits, so it still denotes one value. A needle LONGER
-            /// than the element width does not: the cast would throw, and its equivalence class can
-            /// hold values the element type cannot store.
+            /// A `String` needle padded up to the element width by the lookup's own cast is exact while it
+            /// FITS, so it still denotes one value; a longer one does not.
             const size_t element_n = assert_cast<const DataTypeFixedString &>(*element).getN();
             return needle_constant_size.has_value() && *needle_constant_size <= element_n
                 ? DictionaryShortcut::Admit
@@ -1111,15 +1045,9 @@ private:
         if (const auto * value_nullable = checkAndGetColumn<ColumnNullable>(value.get()))
             value = value_nullable->getNestedColumnPtr();
 
-        /// A round trip that runs and loses the value is a fact about the VALUE, not about the lookup:
-        /// the needle is not in the image of the element type, so no element of that type equals it and
-        /// the answer is "no match" for every row. Reporting that as a shape decline instead would send
-        /// the pair to `executeIntegral`, which compares raw physical numbers and would match a `Date`
-        /// day number against an equal `DateTime` epoch second.
-        ///
-        /// A pair the cast cannot convert AT ALL establishes neither: the general path still compares
-        /// the two through their common supertype, which is how `getReturnType` admitted the query, so
-        /// the value must be computed rather than declared absent.
+        /// A trip that RUNS and loses the value proves no element equals the needle; a pair that cannot
+        /// convert AT ALL proves neither, so the value must still be computed. Reporting the first as a
+        /// shape decline reaches `executeIntegral`, matching a `Date` day number to an equal `DateTime` second.
         switch (classifyNeedleCast(value, needle, element))
         {
             case NeedleCastOutcome::Preserved:
@@ -1160,22 +1088,15 @@ private:
         const auto & array_type  = assert_cast<const DataTypeArray &>(*arguments[0].type);
         const auto target_type = recursiveRemoveLowCardinality(array_type.getNestedType());
 
-        /// `dictionaryIndexForConstant` answers a NULL needle with index 0, which is the NULL slot
-        /// only for a nullable dictionary; for a non-nullable one index 0 is the type's DEFAULT
-        /// value (`ColumnUnique::getDefaultValueIndex`), so a NULL needle would match every row
-        /// holding that default. Let such a needle fall through: `executeNothing` answers it.
+        /// `dictionaryIndexForConstant` answers a NULL needle with index 0, which is the NULL slot ONLY for a
+        /// nullable dictionary; otherwise index 0 is the type's DEFAULT, which a NULL would then match in
+        /// every row holding it. Let such a needle fall through to `executeNothing`.
         if (right_const->isNullAt(0) && !isNullableOrLowCardinalityNullable(array_type.getNestedType()))
             return nullptr;
 
-        /// The needle's own byte length, which decides whether a `String` needle fits a `FixedString`
-        /// element. `getDataAt` returns `sizeAt` for a `ColumnString` (no terminator) and `N` for a
-        /// `ColumnFixedString`, so it is the real length either way; it is unavailable for a NULL,
-        /// where it throws, and for a column that does not store contiguous bytes.
-        /// `useDefaultImplementationForLowCardinalityColumns` is false for this function, so the
-        /// needle keeps its own wrappers. Peel them the same way the TYPE side is normalized in
-        /// [needleMapsToSingleDictionaryValue], or the very same bytes would be admitted as a
-        /// `String` and declined as a `LowCardinality(String)`. The `isNullAt` guard stays FIRST
-        /// because `ColumnNullable::getDataAt` throws.
+        /// The needle's byte length MUST be read through the same wrappers the TYPE side peels in
+        /// [needleMapsToSingleDictionaryValue], or identical bytes are admitted as `String` and declined as
+        /// `LowCardinality(String)`. The `isNullAt` guard MUST come first: `ColumnNullable::getDataAt` throws.
         std::optional<size_t> needle_constant_size;
         if (!right_const->isNullAt(0))
         {
@@ -1194,10 +1115,9 @@ private:
         auto shortcut = needleMapsToSingleDictionaryValue(
             array_type.getNestedType(), arguments[1].type, needle_constant_size, right_const->getDataColumnPtr());
 
-        /// A NULL needle carries no value, so the round trip inside the guard inspects the nested
-        /// column's arbitrary placeholder rather than the needle. Only the reached-here case is left
-        /// (a NULL needle on a NULLABLE dictionary), where index 0 IS the NULL slot and the lookup is
-        /// the right answer, so the verdict must never be read as "no element can equal it".
+        /// A NULL needle carries no value, so the guard's round trip inspected an arbitrary placeholder and
+        /// its verdict must never be read as "no element can equal it". Reaching here means the dictionary is
+        /// NULLABLE, where index 0 IS the NULL slot and the lookup is the right answer.
         if (right_const->isNullAt(0) && shortcut == DictionaryShortcut::NoElementCanEqual)
             shortcut = DictionaryShortcut::Admit;
 
@@ -1527,10 +1447,8 @@ private:
         return result;
     }
 
-    /** String-family equality is zero-padded exactly when one side is a `FixedString`
-      * (`toFixedString('abc', 5) = 'abc'`), while `String` vs `String` stays exact
-      * (`'V0' = 'V0\0'` is false).
-      */
+    /// String-family equality is zero-padded exactly when one side is a `FixedString`
+    /// (`toFixedString('abc', 5) = 'abc'`).
     static bool needsZeroPaddedComparison(const DataTypePtr & element_type, const DataTypePtr & needle_type)
     {
         const auto element = removeNullable(recursiveRemoveLowCardinality(element_type));

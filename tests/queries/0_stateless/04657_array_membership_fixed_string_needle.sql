@@ -63,10 +63,9 @@ SELECT 'Nullable(FixedString) multiplicity and position', countEqual(v, CAST(toF
 SELECT 'Nullable(String) needle',                        groupArray(id), (SELECT groupArray(id) FROM t_str WHERE arrayExists(x -> x = CAST('V0' AS Nullable(String)), v)) FROM t_str WHERE has(v, CAST('V0' AS Nullable(String)));
 SELECT 'Nullable(FixedString) NULL needle',              groupArray(id) FROM t_str WHERE has(v, CAST(NULL AS Nullable(FixedString(3))));
 
--- Peeling the wrapper is only about a string-family layout. A nullable needle of any other type must
--- keep reaching the supertype cast: comparing it raw would equate a negative signed value with its
--- unsigned bit-pattern twin, and where the two types have no common type at all the refusal must
--- survive rather than turn into an answer.
+-- A nullable needle of a NON-string type must keep reaching the supertype cast: raw comparison would
+-- equate a negative signed value with its unsigned twin, and where the two types have no common type
+-- the refusal must survive rather than turn into an answer.
 SELECT '-- a nullable non-string needle keeps the supertype comparison';
 DROP TABLE IF EXISTS t_i32;
 DROP TABLE IF EXISTS t_u32;
@@ -115,10 +114,9 @@ SELECT 'per row', has(['V0', 'V0\0'], toFixedString('V0', 3)), indexOf(['V0', 'V
 -- A non-const needle takes the per-row comparison in the constant-array handler, which the rows
 -- above cannot reach: with a constant needle the whole array is scanned once instead.
 SELECT 'non-const needle', has(['V0', 'V0\0'], materialize(toFixedString('V0', 3))), indexOf(['V0', 'V0\0'], materialize(toFixedString('V0', 3))), countEqual(['V0', 'V0\0'], materialize(toFixedString('V0', 3))), arrayFirstIndex(y -> y = materialize(toFixedString('V0', 3)), ['V0', 'V0\0']), arraySum(arrayMap(y -> toUInt8(y = materialize(toFixedString('V0', 3))), ['V0', 'V0\0']));
--- `indexOfAssumeSorted` assumes ascending order, and ['V0', 'V0\0'] is sorted bytewise, so its
--- precondition holds. Order under zero-padded comparison need not match the order the binary search
--- relies on, so a constant FixedString needle takes the linear scan instead. `arrayFirstIndex` is a
--- separate implementation, so it is an independent position oracle, and `indexOf` must agree too.
+-- `indexOfAssumeSorted`'s ascending-order precondition holds (['V0', 'V0\0'] is sorted bytewise), but
+-- zero-padded order need not match it, so a constant FixedString needle takes the linear scan.
+-- `arrayFirstIndex` is a separate implementation, hence an independent position oracle.
 SELECT 'indexOfAssumeSorted',              indexOfAssumeSorted(['V0', 'V0\0'], toFixedString('V0', 3)), indexOf(['V0', 'V0\0'], toFixedString('V0', 3)), arrayFirstIndex(x -> x = toFixedString('V0', 3), ['V0', 'V0\0']);
 SELECT 'indexOfAssumeSorted wider needle', indexOfAssumeSorted(['V0', 'V0\0'], toFixedString('V0', 5)), indexOf(['V0', 'V0\0'], toFixedString('V0', 5)), arrayFirstIndex(x -> x = toFixedString('V0', 5), ['V0', 'V0\0']);
 -- Must not regress: a String needle keeps the binary search, which must stay correct.
@@ -131,11 +129,9 @@ INSERT INTO t_map    VALUES (0, {'V0':1}), (1, {'V0\0':1}), (2, {'X':1});
 INSERT INTO t_map_lc VALUES (0, {'V0':1}), (1, {'V0\0':1}), (2, {'X':1});
 SELECT 'Map',                 groupArray(id) FROM t_map    WHERE has(m, toFixedString('V0', 3));
 SELECT 'Map(LowCardinality)', groupArray(id) FROM t_map_lc WHERE has(m, toFixedString('V0', 3));
--- `has(Map, ...)` strips LowCardinality before dispatch, so it cannot reach the LowCardinality
--- shortcut. `mapContainsValue` goes through the Map-to-array adapter, which keeps LowCardinality.
--- `mapContainsKey` reaches that adapter only with the rewrite disabled: at the default,
--- `FunctionToSubcolumnsPass` replaces it with `has(m.keys, ...)`, and there is no such rewrite for
--- `mapContainsValue`. Hence four key rows: both spellings x both element types.
+-- `mapContainsKey` reaches the Map-to-array adapter (which keeps LowCardinality) ONLY with the rewrite
+-- disabled: at the default, `FunctionToSubcolumnsPass` replaces it with `has(m.keys, ...)`, which strips
+-- the wrapper. Hence the `optimize_functions_to_subcolumns = 0` pin, and four rows: both spellings x both types.
 CREATE TABLE t_map_val    (id UInt64, m Map(UInt8, String)) ENGINE = Memory;
 CREATE TABLE t_map_val_lc (id UInt64, m Map(UInt8, LowCardinality(String))) ENGINE = Memory;
 INSERT INTO t_map_val    VALUES (0, {0:'V0'}), (1, {1:'V0\0'}), (2, {2:'X'});
@@ -149,10 +145,9 @@ SELECT 'mapContainsKey no-subcolumns',                groupArray(id), (SELECT gr
 SELECT 'mapContainsKey LowCardinality no-subcolumns', groupArray(id), (SELECT groupArray(id) FROM t_map_lc WHERE arrayExists(x -> x = toFixedString('V0', 3), mapKeys(m)))   FROM t_map_lc WHERE mapContainsKey(m, toFixedString('V0', 3)) SETTINGS optimize_functions_to_subcolumns = 0;
 SELECT 'mapContainsValue',                 groupArray(id), (SELECT groupArray(id) FROM t_map_val    WHERE arrayExists(x -> x = toFixedString('V0', 3), mapValues(m))) FROM t_map_val    WHERE mapContainsValue(m, toFixedString('V0', 3));
 SELECT 'mapContainsValue LowCardinality',  groupArray(id), (SELECT groupArray(id) FROM t_map_val_lc WHERE arrayExists(x -> x = toFixedString('V0', 3), mapValues(m))) FROM t_map_val_lc WHERE mapContainsValue(m, toFixedString('V0', 3));
--- The four key rows above only assert two distinct paths if the rewrite really is on at 1 and off at
--- 0, which is what these rows measure: 1 means the plan holds `has` over the `m.keys` subcolumn, 0
--- means it still holds `mapContainsKey` over the Map column. `enable_analyzer` is pinned on the OUTER
--- query because `EXPLAIN QUERY TREE` needs the analyzer, and a subquery may not change that setting.
+-- The four key rows above only assert two distinct paths if the rewrite really is on at 1 and off at 0,
+-- which is what these rows measure. `enable_analyzer` is pinned on the OUTER query because
+-- `EXPLAIN QUERY TREE` needs the analyzer and a subquery may not change that setting.
 SELECT 'rewrite fires at 1',                  countIf(explain LIKE '%function_name: has%'), countIf(explain LIKE '%column_name: m.keys%'), countIf(explain LIKE '%function_name: mapContainsKey%') FROM (EXPLAIN QUERY TREE SELECT mapContainsKey(m, toFixedString('V0', 3)) FROM t_map    SETTINGS optimize_functions_to_subcolumns = 1) SETTINGS enable_analyzer = 1;
 SELECT 'rewrite declines at 0',               countIf(explain LIKE '%function_name: has%'), countIf(explain LIKE '%column_name: m.keys%'), countIf(explain LIKE '%function_name: mapContainsKey%') FROM (EXPLAIN QUERY TREE SELECT mapContainsKey(m, toFixedString('V0', 3)) FROM t_map    SETTINGS optimize_functions_to_subcolumns = 0) SETTINGS enable_analyzer = 1;
 SELECT 'rewrite fires at 1 LowCardinality',   countIf(explain LIKE '%function_name: has%'), countIf(explain LIKE '%column_name: m.keys%'), countIf(explain LIKE '%function_name: mapContainsKey%') FROM (EXPLAIN QUERY TREE SELECT mapContainsKey(m, toFixedString('V0', 3)) FROM t_map_lc SETTINGS optimize_functions_to_subcolumns = 1) SETTINGS enable_analyzer = 1;
@@ -163,10 +158,9 @@ SELECT 'FixedString needle', (SELECT groupArray(id) FROM t_str WHERE arrayExists
                           = (SELECT groupArray(id) FROM t_str WHERE arrayExists(x -> x = toFixedString('V0', 3), v) SETTINGS optimize_rewrite_array_exists_to_has = 0);
 SELECT 'String needle',      (SELECT groupArray(id) FROM t_str WHERE arrayExists(x -> x = 'V0', v) SETTINGS optimize_rewrite_array_exists_to_has = 1)
                           = (SELECT groupArray(id) FROM t_str WHERE arrayExists(x -> x = 'V0', v) SETTINGS optimize_rewrite_array_exists_to_has = 0);
--- The two rows above only compare two DIFFERENT plans if the rewrite really fires at 1, and it has
--- six silent decline gates; a cross String/FixedString pair passes the last of them only because
--- `tryGetLeastSupertype(String, FixedString)` is `String`. Nothing else pins that, so without these
--- two rows a declined rewrite would leave both sides byte-identical and read 1 for the wrong reason.
+-- The two rows above only compare two DIFFERENT plans if the rewrite really fires at 1; it has six
+-- silent decline gates, and a declined rewrite would leave both sides byte-identical and read 1 for
+-- the wrong reason. These rows pin that it fires.
 SELECT 'rewrite fires for a FixedString needle', countIf(explain LIKE '%function_name: has%'), countIf(explain LIKE '%function_name: arrayExists%') FROM (EXPLAIN QUERY TREE SELECT arrayExists(x -> x = toFixedString('V0', 3), v) FROM t_str SETTINGS optimize_rewrite_array_exists_to_has = 1) SETTINGS enable_analyzer = 1;
 SELECT 'rewrite declines at 0',                  countIf(explain LIKE '%function_name: has%'), countIf(explain LIKE '%function_name: arrayExists%') FROM (EXPLAIN QUERY TREE SELECT arrayExists(x -> x = toFixedString('V0', 3), v) FROM t_str SETTINGS optimize_rewrite_array_exists_to_has = 0) SETTINGS enable_analyzer = 1;
 
@@ -181,21 +175,16 @@ SELECT 'FixedString(4) elements',           groupArray(id), (SELECT groupArray(i
 SELECT 'LowCardinality(FixedString(3))',    groupArray(id), (SELECT groupArray(id) FROM t_lc_fs3 WHERE arrayExists(x -> x = toFixedString('V0', 3), v)) FROM t_lc_fs3 WHERE has(v, toFixedString('V0', 3));
 -- A needle wider than a FixedString element used to throw TOO_LARGE_STRING_SIZE here.
 SELECT 'wider needle on LowCardinality(FixedString(3))', groupArray(id), (SELECT groupArray(id) FROM t_lc_fs3 WHERE arrayExists(x -> x = toFixedString('V0', 5), v)) FROM t_lc_fs3 WHERE has(v, toFixedString('V0', 5));
--- A plain `String` needle against a `LowCardinality(FixedString(N))` element. The needle is padded up
--- to N by the cast the dictionary lookup performs, which is exact while it FITS, so a needle of at
--- most N bytes still denotes one value and the shortcut stays correct. A LONGER one does not: the
--- cast would throw, so it must decline and be answered by the fallback instead.
+-- A plain `String` needle against `LowCardinality(FixedString(N))`: padded up to N by the lookup's own
+-- cast, exact while it FITS, so at most N bytes still denotes one value. A longer one must decline.
 DROP TABLE IF EXISTS t_fs3_wide;
 CREATE TABLE t_fs3_wide (id UInt64, v Array(FixedString(3))) ENGINE = Memory;
 INSERT INTO t_fs3_wide VALUES (0, ['V0']), (1, ['X']);
 SELECT 'String needle shorter than the element',     groupArray(id), (SELECT groupArray(id) FROM t_lc_fs3 WHERE arrayExists(x -> x = 'V0', v)      SETTINGS optimize_rewrite_array_exists_to_has = 0) FROM t_lc_fs3 WHERE has(v, 'V0');
 SELECT 'String needle exactly the element width',    groupArray(id), (SELECT groupArray(id) FROM t_lc_fs3 WHERE arrayExists(x -> x = 'V0\0', v)    SETTINGS optimize_rewrite_array_exists_to_has = 0) FROM t_lc_fs3 WHERE has(v, 'V0\0');
--- The wider needle declines and is answered by the fallback. Its answer disagrees with the inline `=`
--- oracle, which is a SEPARATE pre-existing defect and not this PR's contract: `=` pads a plain
--- `String` needle too, while every membership path truncates it to the element width. Measured
--- identical on master for a NON-LowCardinality `Array(FixedString(3))` (`[]` against the oracle's
--- `[0]`), so it is neither introduced nor widened here. Asserted at the LowCardinality answer so a
--- future fix has a failing line pointing at itself, with the plain-array control beside it.
+-- The pinned answer deliberately DISAGREES with an `=` oracle: `=` pads a plain `String` needle while
+-- every membership path truncates it to the element width. That is a separate pre-existing defect,
+-- measured identical on master for a non-LowCardinality element, whose answer is the control beside it.
 SELECT 'String needle wider than the element',       groupArray(id), (SELECT groupArray(id) FROM t_fs3_wide WHERE has(v, 'V0\0\0')) FROM t_lc_fs3 WHERE has(v, 'V0\0\0');
 SELECT 'String needle indexOf exactly the width',    groupArray(id), (SELECT groupArray(id) FROM t_lc_fs3 WHERE arrayExists(x -> x = 'V0\0', v)    SETTINGS optimize_rewrite_array_exists_to_has = 0) FROM t_lc_fs3 WHERE indexOf(v, 'V0\0') > 0;
 SELECT 'String needle countEqual exactly the width', groupArray(id), (SELECT groupArray(id) FROM t_lc_fs3 WHERE arrayExists(x -> x = 'V0\0', v)    SETTINGS optimize_rewrite_array_exists_to_has = 0) FROM t_lc_fs3 WHERE countEqual(v, 'V0\0') > 0;
@@ -206,10 +195,8 @@ INSERT INTO t_map_val_lc_fs3 VALUES (0, {0:'V0'}), (1, {1:'X'});
 SELECT 'String needle mapContainsValue exactly the width', groupArray(id), (SELECT groupArray(id) FROM t_map_val_lc_fs3 WHERE arrayExists(x -> x = 'V0\0', mapValues(m)) SETTINGS optimize_rewrite_array_exists_to_has = 0) FROM t_map_val_lc_fs3 WHERE mapContainsValue(m, 'V0\0');
 DROP TABLE t_map_val_lc_fs3;
 DROP TABLE t_fs3_wide;
--- Control, not coverage of the fix: this wrapper and needle combination is answered by the
--- LowCardinality dictionary shortcut, which returns a column before executeArrayImpl is entered, so
--- it BYPASSES the Nullable peel. Measured identical on master, because the shortcut casts the
--- Nullable(FixedString(3)) needle down losslessly anyway.
+-- CONTROL, not coverage: this combination is answered by the dictionary shortcut, which returns before
+-- `executeArrayImpl` is entered and so BYPASSES the Nullable peel. Measured identical on master.
 SELECT 'nullable needle on LowCardinality(FixedString(3))', groupArray(id), (SELECT groupArray(id) FROM t_lc_fs3 WHERE arrayExists(x -> x = CAST(toFixedString('V0', 3) AS Nullable(FixedString(3))), v)) FROM t_lc_fs3 WHERE has(v, CAST(toFixedString('V0', 3) AS Nullable(FixedString(3))));
 -- The NULL payload of the same shape. The dictionary shortcut resolves a NULL needle to index 0,
 -- which is the NULL slot only for a nullable dictionary; on a non-nullable one index 0 is the type's
@@ -254,14 +241,9 @@ SELECT 'longer non-NUL String needle',      has(v, materialize('V0abc')) FROM t_
 -- `Nothing` is not the element type, so the shortcut is refused one line later by
 -- needleMapsToSingleDictionaryValue and never reaches the nullability test.
 SELECT 'NULL needle',                       groupArray(id) FROM t_lc_null WHERE has(v, NULL);
--- Must-not-regress: a typed NULL needle on a NULLABLE dictionary must keep finding the NULL element
--- and must not match the default-valued row. These rows assert that RESULT only. They deliberately
--- do not discriminate which implementation produced it: whether the dictionary shortcut answers or
--- declines and `executeNothing` answers instead is not observable from SQL -- no profile event or
--- plan text exposes the shortcut, and both paths return these same rows. The oracle is `isNull`
--- rather than `x = NULL` because equals(NULL, NULL) is NULL, so an `= NULL` lambda answers [] for
--- every array; `isNull` is a separate implementation of the same membership question and cannot be
--- rewritten into `has`.
+-- Must-not-regress: a typed NULL needle on a NULLABLE dictionary must keep finding the NULL element and
+-- must not match the default-valued row. Asserts that RESULT only; which implementation answers is not
+-- observable from SQL. The oracle is `isNull` because `equals(NULL, NULL)` is NULL, so `= NULL` answers [].
 DROP TABLE IF EXISTS t_lc_null_def;
 DROP TABLE IF EXISTS t_lc_nfs3_def;
 CREATE TABLE t_lc_null_def  (id UInt64, v Array(LowCardinality(Nullable(String))))         ENGINE = Memory;
@@ -325,11 +307,9 @@ SELECT 'has 255 on UInt8', groupArray(id), (SELECT groupArray(id) FROM t_u8 WHER
 DROP TABLE t_u8_lc;
 DROP TABLE t_u8;
 
--- The same question at every unsigned width, each against its own `=` oracle, so the widest element
--- is evidenced here rather than inferred from a width-independent argument. The plain array is shown
--- for the maximum needle only: for `-1` at 32 and 64 bits it answers [0] against an oracle of [],
--- which is the raw-comparison defect of the non-LowCardinality path also noted for `Int64` max below,
--- pre-existing and out of scope here, so pinning it would fix a wrong answer in place.
+-- Every unsigned width against its own `=` oracle, so the widest element is evidenced rather than
+-- inferred. The plain array is shown for the maximum needle ONLY: for `-1` at 32 and 64 bits it answers
+-- [0] against an oracle of [], a pre-existing defect of the non-LowCardinality path (see `Int64` below).
 DROP TABLE IF EXISTS t_u16_lc;
 DROP TABLE IF EXISTS t_u16;
 DROP TABLE IF EXISTS t_u32_lc;
@@ -361,10 +341,9 @@ DROP TABLE t_u32;
 DROP TABLE t_u64_lc;
 DROP TABLE t_u64;
 
--- A needle of a DIFFERENT type than the element is admitted exactly when converting it into the
--- element type preserves its value, which is a stronger question than "are the types equal". Both
--- directions matter: a needle that converts exactly must keep being answered by the dictionary
--- shortcut, and one that does not must decline.
+-- A needle of a DIFFERENT type is admitted exactly when converting it into the element type preserves
+-- its value. Both directions matter: one that converts exactly must keep the shortcut, one that does not
+-- must decline.
 DROP TABLE IF EXISTS t_i64_exact_lc;
 DROP TABLE IF EXISTS t_i64_exact;
 CREATE TABLE t_i64_exact_lc (id UInt64, v Array(LowCardinality(Int64))) ENGINE = Memory;
@@ -379,10 +358,9 @@ SELECT 'Float64 needle countEqual',            groupArray(id), (SELECT groupArra
 DROP TABLE t_i64_exact_lc;
 DROP TABLE t_i64_exact;
 
--- The same question for a temporal pair, where a single cast cannot report the loss: casting a
--- non-midnight DateTime to Date truncates the time of day and SUCCEEDS, so only converting back
--- separates it from an exact midnight. The midnight needle must match; the non-midnight one must not,
--- because no Date value equals it.
+-- A temporal pair, where one cast cannot report the loss: `DateTime -> Date` truncates the time of day
+-- and SUCCEEDS, so only converting back separates it from an exact midnight. The midnight needle must
+-- match, the non-midnight one must not.
 DROP TABLE IF EXISTS t_date_lc;
 DROP TABLE IF EXISTS t_date;
 CREATE TABLE t_date_lc (id UInt64, v Array(LowCardinality(Date))) ENGINE = Memory;
@@ -396,11 +374,9 @@ SELECT 'DateTime needle midnight count',   groupArray(id), (SELECT groupArray(id
 DROP TABLE t_date_lc;
 DROP TABLE t_date;
 
--- A declined needle must not be answered by comparing RAW PHYSICAL NUMBERS. Date is stored as a day
--- number and DateTime as epoch seconds, so day 1 and second 1 share a physical value while denoting
--- different instants; the rows above use 3600 seconds, so they never collide and pass for a reason
--- unrelated to the guard. These use the colliding values, where only an equality-correct answer is
--- empty. The rows above stay as the non-collision control.
+-- A declined needle must not be answered by comparing RAW PHYSICAL NUMBERS: a `Date` day number and a
+-- `DateTime` epoch second share a physical value. The rows above use 3600 seconds and never collide, so
+-- they would pass for a reason unrelated to the guard; these use colliding values and keep those as control.
 DROP TABLE IF EXISTS t_coll_date_lc;
 DROP TABLE IF EXISTS t_coll_dt_lc;
 CREATE TABLE t_coll_date_lc (id UInt64, v Array(LowCardinality(Date)))            ENGINE = Memory;
@@ -416,23 +392,18 @@ SELECT 'DateTime second 1 vs Date day 1 count',   groupArray(id), (SELECT groupA
 DROP TABLE t_coll_date_lc;
 DROP TABLE t_coll_dt_lc;
 
--- The numeric member of the same class: 2^63 as a Float64 is what the Int64 maximum ROUNDS to, so a
--- raw comparison equates them while `=` does not. The ...993/...992 rows above must stay green.
---
--- Only the LowCardinality row is asserted against its oracle. The PLAIN array reaches the same raw
--- integral comparison with no dictionary involved, so it answers [0] against an oracle of [] on
--- master too; that is a separate pre-existing defect of the non-LowCardinality path, tracked apart
--- from this change, and asserting the current answer here would pin a wrong result.
+-- The numeric member of the same class: 2^63 as a `Float64` is what the `Int64` maximum ROUNDS to, so a
+-- raw comparison equates them while `=` does not. Only the LowCardinality row is asserted against its
+-- oracle; the plain array answers [0] against [] on master too, a separate pre-existing defect.
 DROP TABLE IF EXISTS t_coll_i64_lc;
 CREATE TABLE t_coll_i64_lc (id UInt64, v Array(LowCardinality(Int64))) ENGINE = Memory;
 INSERT INTO t_coll_i64_lc VALUES (0, [9223372036854775807]);
 SELECT 'Int64 max vs Float64 2^63', groupArray(id), (SELECT groupArray(id) FROM t_coll_i64_lc WHERE arrayExists(x -> x = 9223372036854775808.0::Float64, v)) FROM t_coll_i64_lc WHERE has(v, 9223372036854775808.0::Float64);
 DROP TABLE t_coll_i64_lc;
 
--- A `nan`/`inf` needle against an integral element has no integral counterpart, so it matches nothing
--- and must ANSWER that rather than propagate the conversion failure of the guard's own probe. The
--- plain array has always answered 0; only the `LowCardinality` spelling raised `Code 70`, which is
--- the same wrapper-changes-the-answer defect in its loudest form.
+-- A `nan`/`inf` needle has no integral counterpart, so it matches nothing and must ANSWER that rather
+-- than propagate the guard probe's own conversion failure. The plain array always answered 0; only the
+-- `LowCardinality` spelling raised `Code 70`.
 DROP TABLE IF EXISTS t_nan_lc;
 DROP TABLE IF EXISTS t_nan;
 CREATE TABLE t_nan_lc (id UInt64, v Array(LowCardinality(Int8))) ENGINE = Memory;
@@ -446,11 +417,9 @@ SELECT 'nan needle count',   groupArray(id), (SELECT groupArray(id) FROM t_nan_l
 DROP TABLE t_nan_lc;
 DROP TABLE t_nan;
 
--- The opposite kind of conversion failure: a type PAIR the cast has no implementation for, which the
--- `nan` rows above must not be confused with. `IPv4` and `UInt8` have a common supertype, so the query
--- is accepted and the general path compares them correctly, but neither direction has a direct cast --
--- so a guard that reads any refusal as "no element can equal the needle" answers 0 where `=` answers 1.
--- The `nan`/`inf` rows above are the control that the value case still zero-fills.
+-- The OPPOSITE conversion failure: a type PAIR with no implementation, whose control is the `nan` rows
+-- above (the value case must still zero-fill). `IPv4`/`UInt8` share a supertype, so a guard reading any
+-- refusal as "no element can equal it" answers 0 where `=` answers 1.
 DROP TABLE IF EXISTS t_ip_lc;
 DROP TABLE IF EXISTS t_ip;
 DROP TABLE IF EXISTS t_ipu32_lc;
@@ -492,10 +461,8 @@ DROP TABLE t_ipu32_lc;
 DROP TABLE t_ipu32;
 
 SELECT '-- a LowCardinality wrapper on the NEEDLE must not change the answer';
--- The type side of the guard normalises the needle through `recursiveRemoveLowCardinality`, but the
--- byte-length read that decides whether a `String` needle fits a `FixedString` element must do the
--- same, or the very same three bytes are admitted as a `String` and declined as a
--- `LowCardinality(String)`. Both wrapper orders can arrive.
+-- The byte-length read must peel the same wrappers as the type side, or the very same three bytes are
+-- admitted as `String` and declined as `LowCardinality(String)`. Both wrapper orders can arrive.
 DROP TABLE IF EXISTS t_needle_lc;
 CREATE TABLE t_needle_lc (id UInt64, v Array(LowCardinality(FixedString(3)))) ENGINE = Memory;
 INSERT INTO t_needle_lc VALUES (0, ['V0']);
