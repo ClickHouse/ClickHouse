@@ -1056,6 +1056,7 @@ def test_nats_restore_failed_connection_without_losses_on_write(nats_cluster):
 
 
 RESUBSCRIBE_LOG_LINE = "A subscription was closed by the NATS server, resubscribing"
+SUBSCRIBED_LOG_LINE = "Subscribed to subject test_subject"
 
 
 def _setup_restart_table(subject, consumer_name):
@@ -1111,26 +1112,48 @@ def _wait_for_parked_pull_request(consumer_name = "test_consumer", time_limit_se
         "no pull request is parked for consumer {}: num_waiting is {}".format(consumer_name, num_waiting))
 
 
-def _restart_nats(nats_cluster):
-    # Confirms a pull request is parked server side, then restarts the broker.
+def _restart_nats(nats_cluster, attempts = 4):
+    # Restarts the broker with a pull request parked, retrying until the restart lands outside the
+    # window this fix does not cover.
     #
     # This fix recovers a subscription that the NATS client has closed, which happens when the server
     # answers our outstanding pull request while shutting down. A restart landing in the milliseconds
     # between a re-subscribe and its request being parked instead leaves the client holding a
     # subscription it has no status for, so nothing reports it as closed and it never consumes again -
     # the residual this fix deliberately does not cover, which a hard kill or a network partition
-    # reaches the same way. Keeping the restart out of that window is what the wait is for.
+    # reaches the same way.
     #
-    # The wait deliberately does not publish anything. A pull request is parked as soon as the
-    # subscription is created, so `num_waiting` establishes the precondition without perturbing the
-    # request, whereas publishing to check the same thing was measured to be followed by a
-    # re-subscribe, which is what the restart then raced. This changes WHEN the broker is restarted,
-    # not what is asserted.
-    _wait_for_parked_pull_request()
+    # Such a restart cannot be excluded in advance. Delivering the backlog these tests drain to reach
+    # the idle state is itself followed by a re-subscribe at an unpredictable delay, and `num_waiting`
+    # cannot rule one out because it counts parked requests broker side without saying which
+    # subscription parked them: it reads one for the previous request while a fresh subscription has
+    # none parked yet.
+    #
+    # So it is detected afterwards instead. A re-subscribe logs before it can park a request, so a
+    # subscribe line written between the parked-request check and the restart marks a restart that
+    # never exercised the recovery, and that attempt is retried. Every measured failure has such a
+    # line within tens of milliseconds of the restart and no passing run has one. This decides which
+    # restarts count as a trial and cannot mask the bug it tests for: without the fix, the restart
+    # still lands with no subscribe line in between, so the attempt proceeds and the consumption
+    # assertion fails, which is what the pristine-master arm confirms.
+    for attempt in range(attempts):
+        _wait_for_parked_pull_request()
 
-    nats_helpers.kill_nats(nats_cluster)
-    time.sleep(4)
-    nats_helpers.revive_nats(nats_cluster)
+        anchor = nats_helpers.log_line_count(instance)
+        nats_helpers.kill_nats(nats_cluster)
+        time.sleep(4)
+        resubscribed = nats_helpers.count_in_log_after(instance, SUBSCRIBED_LOG_LINE, anchor)
+        nats_helpers.revive_nats(nats_cluster)
+        if not resubscribed:
+            return
+
+        logging.info(
+            "restart attempt %s raced a re-subscribe, retrying so the restart exercises the recovery",
+            attempt)
+
+    raise AssertionError(
+        "every one of {} restarts raced a re-subscribe, so the recovery was never exercised".format(
+            attempts))
 
 
 def test_nats_jet_stream_resumes_consuming_after_broker_restart(nats_cluster):
