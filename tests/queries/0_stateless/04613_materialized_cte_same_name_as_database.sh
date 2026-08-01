@@ -48,6 +48,27 @@ SETTINGS enable_materialized_cte = 1, enable_analyzer = 1,
     analyzer_compatibility_prefer_alias_over_subcolumn = 1, single_join_prefer_left_table = 0;
 "
 
+# The same compatibility path also has to treat the visible CTE name as a qualifier carrier when the
+# qualified column competes with a same-named subcolumn: `cte.id` must resolve to the qualified column
+# `id` of the CTE, not to the `id` element of the CTE column `cte`, exactly as it does for a regular CTE
+# or a subquery alias. A materialized CTE is stored under an internal temporary table name, so without
+# the CTE name this path is never taken for it.
+$CLICKHOUSE_CLIENT --query "
+WITH cte AS MATERIALIZED (SELECT 1 AS id, CAST(tuple(2), 'Tuple(id Int32)') AS cte)
+SELECT cte.id
+FROM cte
+SETTINGS enable_materialized_cte = 1, enable_analyzer = 1,
+    analyzer_compatibility_prefer_alias_over_subcolumn = 1;
+"
+
+# The same shape with a regular CTE, which is the behavior the materialized CTE has to match.
+$CLICKHOUSE_CLIENT --query "
+WITH cte AS (SELECT 1 AS id, CAST(tuple(2), 'Tuple(id Int32)') AS cte)
+SELECT cte.id
+FROM cte
+SETTINGS enable_analyzer = 1, analyzer_compatibility_prefer_alias_over_subcolumn = 1;
+"
+
 # The qualifier of a qualified matcher is looked up as a table expression after the expression lookup
 # misses, and a materialized CTE is stored under an internal temporary table name. The CTE name has to
 # be accepted there as well, otherwise `${DB}.*` throws `Qualified matcher does not find table`.

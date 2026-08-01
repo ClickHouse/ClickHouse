@@ -871,7 +871,20 @@ IdentifierResolveResult IdentifierResolver::tryResolveIdentifierFromTableExpress
         const bool prefix_matches_table_name = !table_name_compat.empty() && path_start == table_name_compat;
         const bool prefix_matches_alias
             = table_expression_node->hasAlias() && path_start == table_expression_node->getAlias();
-        if (prefix_matches_table_name || prefix_matches_alias)
+        /** A materialized CTE is stored under an internal temporary table name, so its `table_name` never
+          * matches the qualifier the user wrote. Its visible CTE name is a qualifier carrier just like a
+          * table name or an alias, and it has to take part in this compatibility path as well, otherwise
+          * `cte.id` prefers a same-named subcolumn of the CTE while the equivalent shape with a regular CTE
+          * or a table alias prefers the qualified column.
+          */
+        bool prefix_matches_cte_name = false;
+        if (table_expression_node_type == QueryTreeNodeType::TABLE)
+        {
+            const auto * table_node = table_expression_node->as<TableNode>();
+            prefix_matches_cte_name
+                = table_node->isMaterializedCTE() && path_start == table_node->getMaterializedCTE()->cte_name;
+        }
+        if (prefix_matches_table_name || prefix_matches_alias || prefix_matches_cte_name)
         {
             auto alias_prefix_result = tryResolveIdentifierFromStorage(
                 identifier_lookup, table_expression_node, table_expression_data, scope,
