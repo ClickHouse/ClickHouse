@@ -429,6 +429,10 @@ public:
         void update(const Block & block, const NamesAndTypesList & columns);
         void merge(const MinMaxIndex & other);
         Names getProbablyWrittenFiles(const IMergeTreeDataPart & part) const;
+        /// The only place a minmax file name is spelled. Its argument comes from one of the
+        /// getFileColumnName overloads below -- i.e. an already resolved (minmaxFileKey) and
+        /// escaped key, never a raw logical column name.
+        static String getFileName(const String & file_column_name) { return "minmax_" + file_column_name + ".idx"; }
         /// For Store
         static String getFileColumnName(const String & column_name, const MergeTreeSettingsPtr & storage_settings_, const IDataPartStorage & data_part_storage);
         /// For Load

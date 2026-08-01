@@ -174,8 +174,6 @@ void IMergeTreeDataPart::MinMaxIndex::load(const IMergeTreeDataPart & part)
     const auto & part_info = part.isProjectionPart() ? part.getParentPart()->info : part.info;
     const bool fill_virtuals = !part_info.isPatch() && part_info.getBlocksCount() == 1 && part_info.level == 0 && part_info.mutation == 0;
 
-    auto pn_mapping = part.storage.getActiveColumnIdMapping();
-
     FormatSettings format_settings;
     for (const auto & [column_name, column_type] : MergeTreeData::getMinMaxColumns(partition_key, data_settings))
     {
@@ -198,14 +196,7 @@ void IMergeTreeDataPart::MinMaxIndex::load(const IMergeTreeDataPart & part)
             continue;
         }
 
-        /// Resolve the minmax file id-first. Parts written after column-ID activation key their
-        /// minmax files by the stable column id, and a rename can leave a partition-key column's
-        /// logical name equal to a foreign partition-key column's id, so a name-first probe could
-        /// bind the wrong column's minmax range and prune wrong ranges. A name outside the active
-        /// mapping (legacy id-less part, or a virtual/helper column) resolves by name.
-        const String key_name = pn_mapping ? pn_mapping->getColumnIdOrDefault(column_name) : column_name;
-
-        const String file_name = "minmax_" + getFileColumnName(key_name, part.checksums) + ".idx";
+        const String file_name = getFileName(getFileColumnName(part.minmaxFileKey(column_name), part.checksums));
 
         /// Treat missing columns as universe range so they don't prune; the file gets created on the next merge or mutation.
         auto file = part.readFileIfExists(file_name);
@@ -273,7 +264,7 @@ IMergeTreeDataPart::MinMaxIndex::WrittenFiles IMergeTreeDataPart::MinMaxIndex::s
         if (!isNullableOrLowCardinalityNullable(column_type) && (hyperrectangle[i].left.isNull() || hyperrectangle[i].right.isNull()))
             break;
 
-        String file_name = "minmax_" + getFileColumnName(column_name, storage_settings, part_storage) + ".idx";
+        String file_name = getFileName(getFileColumnName(column_name, storage_settings, part_storage));
         auto serialization = column_type->getDefaultSerialization();
 
         auto out = part_storage.writeFile(file_name, 4096, {});
@@ -379,7 +370,7 @@ Names IMergeTreeDataPart::MinMaxIndex::getProbablyWrittenFiles(const IMergeTreeD
         minmax_columns.resize(hyperrectangle.size());
 
     return minmax_columns.getNames()
-        | std::views::transform([&](const auto & column_name) { return "minmax_" + getFileColumnName(column_name, data_settings, data_part_storage) + ".idx"; })
+        | std::views::transform([&](const auto & column_name) { return getFileName(getFileColumnName(part.minmaxFileKey(column_name), data_settings, data_part_storage)); })
         | std::ranges::to<Names>();
 }
 
@@ -391,11 +382,11 @@ String IMergeTreeDataPart::MinMaxIndex::getFileColumnName(const String & column_
 String IMergeTreeDataPart::MinMaxIndex::getFileColumnName(const String & column_name, const Checksums & checksums_)
 {
     String stream_name = escapeForFileName(column_name);
-    if (checksums_.files.contains("minmax_" + stream_name + ".idx"))
+    if (checksums_.files.contains(getFileName(stream_name)))
         return stream_name;
 
     auto hash = sipHash128String(stream_name);
-    if (checksums_.files.contains("minmax_" + hash + ".idx"))
+    if (checksums_.files.contains(getFileName(hash)))
         return hash;
     return stream_name;
 }
@@ -2990,12 +2981,10 @@ void IMergeTreeDataPart::checkConsistencyBase() const
             {
                 for (const String & col_name : partition_key.expression->getRequiredColumns())
                 {
-                    auto check_minmax = [&](const String & minmax_col)
-                    {
-                        return checksums.files.contains("minmax_" + escapeForFileName(minmax_col) + ".idx")
-                            || checksums.files.contains("minmax_" + sipHash128String(escapeForFileName(minmax_col)) + ".idx");
-                    };
-                    if (!check_minmax(minmaxFileKey(col_name)))
+                    /// getFileColumnName returns whichever of the escaped / hashed variants the
+                    /// checksums hold, else the escaped one -- which is then absent, as required.
+                    auto file_column = MinMaxIndex::getFileColumnName(minmaxFileKey(col_name), checksums);
+                    if (!checksums.files.contains(MinMaxIndex::getFileName(file_column)))
                         throw Exception(ErrorCodes::NO_FILE_IN_DATA_PART, "No minmax idx file checksum for column {}", col_name);
                 }
             }
@@ -3053,26 +3042,22 @@ void IMergeTreeDataPart::checkConsistencyBase() const
 
             if (!parent_part)
             {
-                /// Try the escaped then the hashed variant of the part's own key.
-                auto check_minmax_file_not_empty = [&](const String & col_name)
+                /// There are no checksums here to say which variant was written, so probe the
+                /// filesystem: escaped first, then hashed. If neither is there, re-check the
+                /// escaped one so it owns the error message.
+                auto try_file = [&](const String & file_name)
                 {
-                    auto try_file = [&](const String & file_name) -> bool
-                    {
-                        try { check_file_not_empty(file_name); return true; }
-                        catch (Exception &) { return false; }
-                    };
-
-                    auto escaped = escapeForFileName(minmaxFileKey(col_name));
-                    if (try_file("minmax_" + escaped + ".idx"))
-                        return;
-                    if (try_file("minmax_" + sipHash128String(escaped) + ".idx"))
-                        return;
-
-                    check_file_not_empty("minmax_" + escaped + ".idx");
+                    try { check_file_not_empty(file_name); return true; }
+                    catch (Exception &) { return false; }
                 };
 
                 for (const String & col_name : partition_key.expression->getRequiredColumns())
-                    check_minmax_file_not_empty(col_name);
+                {
+                    auto escaped = escapeForFileName(minmaxFileKey(col_name));
+                    if (!try_file(MinMaxIndex::getFileName(escaped))
+                        && !try_file(MinMaxIndex::getFileName(sipHash128String(escaped))))
+                        check_file_not_empty(MinMaxIndex::getFileName(escaped));
+                }
             }
         }
     }
