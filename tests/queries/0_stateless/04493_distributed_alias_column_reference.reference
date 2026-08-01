@@ -1,0 +1,10 @@
+clusterAllReplicas, SELECT *, ORDER BY column
+1	x	1	x	10	1
+2	y	2	y	20	2
+clusterAllReplicas, SELECT *, ORDER BY tuple()
+cluster(), SELECT *, ORDER BY column
+1	x	1	x	10	1
+2	y	2	y	20	2
+cluster(), explicit alias columns, ORDER BY
+1	x	1	x	10	1
+2	y	2	y	20	2

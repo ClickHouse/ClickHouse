@@ -630,8 +630,8 @@ private:
 
     struct Attribute
     {
-        AttributeUnderlyingType type;
-        bool is_nullable;
+        AttributeUnderlyingType type{};
+        bool is_nullable{};
 
         std::variant<
             ContainerType<UInt8>,

@@ -36,7 +36,7 @@ Like [multiSearchFirstPosition](#multiSearchFirstPosition) but assumes `haystack
         "SELECT multiSearchFirstPositionUTF8('Здравствуй, мир',['мир', 'вст', 'авст'])",
         R"(
 ┌─multiSearchFirstPositionUTF8('Здравствуй, мир', ['мир', 'вст', 'авст'])─┐
-│                                                                       3 │
+│                                                                       4 │
 └─────────────────────────────────────────────────────────────────────────┘
         )"
     }

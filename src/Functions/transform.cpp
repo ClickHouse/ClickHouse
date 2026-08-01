@@ -80,7 +80,7 @@ namespace
     /// Forward declaration; defined after FunctionTransform.
     TransformCachePtr initializeTransformCache(const ColumnsWithTypeAndName & arguments, const DataTypePtr & result_type);
 
-    class FunctionTransform : public IFunction
+    class FunctionTransform final : public IFunction
     {
     public:
         static constexpr auto name = "transform";
@@ -844,7 +844,7 @@ namespace
     }
 
 
-    class FunctionTransformOverloadResolver : public IFunctionOverloadResolver
+    class FunctionTransformOverloadResolver final : public IFunctionOverloadResolver
     {
     public:
         static constexpr auto name = "transform";

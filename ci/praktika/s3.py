@@ -4,7 +4,7 @@ import mimetypes
 import os
 import time
 from pathlib import Path
-from typing import Any, Dict
+from typing import Dict
 from urllib.parse import quote
 
 from ._environment import _Environment
@@ -235,7 +235,7 @@ class S3:
             f"aws s3api put-object --bucket {bucket} --key {key} --body {local_path}"
         )
         if if_none_matched:
-            command += f' --if-none-match "*"'
+            command += ' --if-none-match "*"'
         if if_match:
             command += f' --if-match "{if_match}"'
         if metadata:
@@ -399,6 +399,33 @@ class S3:
             return None
         else:
             return cls.Object(**json.loads(output))
+
+    @classmethod
+    def assert_read_access(cls, s3_path):
+        """Probe S3 read access via head_object.
+
+        Returns normally if read access works (even when the key does not
+        exist). Raises RuntimeError if S3 returns any other error (e.g.
+        AccessDenied), so callers can fail loud instead of silently
+        treating missing access as a cache miss.
+        """
+        s3_path = str(s3_path).removeprefix("s3://")
+        bucket, key = s3_path.split("/", maxsplit=1)
+        client = cls._get_boto3_client()
+        assert client, "boto3 client is required for S3 read-access probe"
+
+        def _probe():
+            try:
+                client.head_object(Bucket=bucket, Key=key)
+            except ClientError as e:
+                error_code = e.response.get("Error", {}).get("Code", "")
+                if error_code in ("404", "NoSuchKey", "NotFound"):
+                    return
+                raise RuntimeError(
+                    f"S3 read-access probe failed for [s3://{bucket}/{key}]: {error_code}"
+                ) from e
+
+        cls._retry_on_no_credentials(_probe)
 
     @classmethod
     def delete(cls, s3_path):
@@ -595,7 +622,7 @@ class S3:
                     if version == 0:
                         # DESTRUCTIVE: Version 0 overwrites without conditions (NOT safe for concurrent use)
                         print(
-                            f"Uploading file with version 0 (destructive reset) using boto3"
+                            "Uploading file with version 0 (destructive reset) using boto3"
                         )
                         client.upload_file(
                             str(local_path), bucket, key, ExtraArgs=extra_args
@@ -664,7 +691,7 @@ class S3:
             if version == 0:
                 # DESTRUCTIVE: Version 0 uploads without conditions (NOT safe for concurrent use)
                 print(
-                    f"Uploading file with version 0 (destructive reset) using AWS CLI"
+                    "Uploading file with version 0 (destructive reset) using AWS CLI"
                 )
                 result_uploaded = cls.put(
                     s3_path=s3_path,

@@ -19,7 +19,7 @@ namespace DB
 namespace QueryPlanOptimizations
 {
 
-ReadFromMergeTree * findReadingStep(const QueryPlan::Node & node)
+static ReadFromMergeTree * findReadingStep(const QueryPlan::Node & node)
 {
     IQueryPlanStep * step = node.step.get();
     if (auto * reading = typeid_cast<ReadFromMergeTree *>(step))
@@ -30,13 +30,22 @@ ReadFromMergeTree * findReadingStep(const QueryPlan::Node & node)
         if (reading->isParallelReadingEnabled())
             return nullptr;
 
+        /// A reading already claimed by the independent-partitions optimization (for DISTINCT,
+        /// LIMIT BY or aggregation) outputs one port per partition, while reading by layers outputs
+        /// one port per primary-key range. Both are contracts about which rows go to which output
+        /// port, consumed positionally by the steps above, so a single read can satisfy only one of
+        /// them: partitions generally do not form primary-key ranges, and there is no repartitioning
+        /// step between the two consumers that could convert one port layout into the other.
+        if (reading->willOutputEachPartitionThroughSeparatePort())
+            return nullptr;
+
         return reading;
     }
 
     return nullptr;
 }
 
-ActionsDAG makeSourceDAG(ReadFromMergeTree & source)
+static ActionsDAG makeSourceDAG(ReadFromMergeTree & source)
 {
     if (const auto & prewhere_info = source.getPrewhereInfo())
         return prewhere_info->prewhere_actions.clone();
@@ -45,7 +54,7 @@ ActionsDAG makeSourceDAG(ReadFromMergeTree & source)
 }
 
 /// This function builds a common DAG which is a merge of DAGs from Filter and Expression steps chain.
-bool updateDAG(const QueryPlan::Node & node, ActionsDAG & dag)
+static bool updateDAG(const QueryPlan::Node & node, ActionsDAG & dag)
 {
     if (node.children.size() != 1)
         return false;
@@ -95,7 +104,7 @@ bool updateDAG(const QueryPlan::Node & node, ActionsDAG & dag)
 /// which is also used in JOIN equality condition.
 ///
 /// Only the prefix size is needed, but here we additionally return names for debugging.
-JoinStep::PrimaryKeySharding findCommonPrimaryKeyPrefixByJoinKey(
+static JoinStep::PrimaryKeySharding findCommonPrimaryKeyPrefixByJoinKey(
     ReadFromMergeTree * lhs_reading, const ActionsDAG & lhs_dag,
     ReadFromMergeTree * rhs_reading, const ActionsDAG & rhs_dag,
     const TableJoin::JoinOnClause & clause)

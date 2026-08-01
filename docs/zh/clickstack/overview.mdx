@@ -1,0 +1,161 @@
+---
+slug: /use-cases/observability/clickstack/overview
+title: 'ClickStack - ClickHouse 可观测性栈'
+sidebarTitle: '概览'
+description: 'ClickStack - ClickHouse 可观测性栈概览'
+doc_type: 'guide'
+keywords: ['clickstack', '可观测性', '日志', '监控', '平台']
+---
+
+import { Image } from "/snippets/zh/components/Image.jsx";
+
+<Image img="/images/use-cases/observability/hyperdx-landing.webp" alt="首页" size="lg" />
+
+**ClickStack** 是一个基于 ClickHouse 构建的生产级可观测性平台，将日志、链路追踪、指标和会话统一到一个高性能解决方案中。它专为监控和调试复杂系统而设计，使开发人员和 SRE 无需在不同工具之间切换，也无需借助时间戳或关联 ID 手动拼接数据，就能端到端追踪问题。
+
+ClickStack 的核心理念很简单，却非常强大：所有可观测性数据都应以宽事件形式摄取。这些事件会按数据类型存储在 ClickHouse 表中——日志、链路追踪、指标和会话——但在数据库层面仍可被完整查询并进行跨类型关联分析。
+
+ClickStack 利用 ClickHouse 的列式架构、适用于高基数属性的灵活 schema，以及完全并行化的执行引擎，能够高效处理高基数工作负载。这使其能够在海量数据集上实现亚秒级查询、在大时间范围内快速完成聚合，并对单个链路追踪进行深入分析。
+
+<div id="features">
+  ## 功能
+</div>
+
+该技术栈包含多项专为调试和根因分析设计的关键功能：
+
+* 在同一处统一关联和搜索日志、指标、会话回放和链路追踪
+* 与 schema 无关，可直接基于您现有的 ClickHouse schema 运行
+* 针对 ClickHouse 优化的极速搜索与可视化
+* 直观的全文搜索和属性搜索语法 (例如 `level:err`) ，也可选用 SQL
+* 使用 Event deltas 分析异常趋势
+* 只需点击几下即可设置告警
+* 无需复杂的查询语言即可将高基数事件可视化
+* 原生 JSON 字符串查询
+* 实时查看日志和链路追踪的尾部，始终获取最新事件
+* 开箱即用支持 OpenTelemetry (OTel)
+* 从 HTTP 请求到 DB 查询 (APM) 监控健康状况和性能
+* 使用 Event deltas 识别异常和性能回归
+* 日志模式识别
+
+<div id="components">
+  ## 组件
+</div>
+
+ClickStack 由三个核心组件组成：
+
+1. **ClickStack UI (HyperDX)** – 用于浏览和可视化可观测性数据的专用前端
+2. **OpenTelemetry Collector** – 一个定制且预配置的 collector，为日志、链路追踪和指标采用了一套预设 schema
+3. **ClickHouse** – 整个技术栈核心的高性能分析型数据库
+
+这些组件既可以一起部署为完整的 **自管理 ClickStack 开源版本**，也可以拆分部署在托管和自托管环境中。在 **托管 ClickStack** 中，ClickHouse 和 HyperDX UI 托管并运行于 [ClickHouse Cloud](/zh/products/cloud/getting-started/cloud-get-started)，而用户只需运行 OpenTelemetry Collector。
+
+此外，还提供基于浏览器的 HyperDX UI 版本，用户无需部署额外的 UI 基础设施，即可直接连接到现有的 ClickHouse 部署。
+
+要开始使用，请先查看[入门指南](/zh/clickstack/getting-started/index)，然后再加载[示例数据集](/zh/clickstack/example-datasets/index)。您还可以查阅有关[部署选项](/zh/clickstack/deployment/overview)和[生产环境最佳实践](/zh/clickstack/managing/production)的文档。
+
+<div id="clickstack-principles">
+  ## 原则
+</div>
+
+ClickStack 的设计遵循一系列核心原则，在可观测性栈的各个层面优先兼顾易用性、性能和灵活性：
+
+<div id="clickstack-easy-to-setup">
+  ### 几分钟内即可轻松完成设置
+</div>
+
+ClickStack 可与任何 ClickHouse 实例和 schema 开箱即用，只需极少配置。无论你是从零开始，还是集成到现有环境中，都能在几分钟内完成部署并开始使用。
+
+<div id="user-friendly-purpose-built">
+  ### 易于使用且专为此打造
+</div>
+
+HyperDX UI 同时支持 SQL 和 Lucene 风格语法，用户可选择最适合其工作流的查询接口。该 UI 专为可观测性场景打造，并经过优化，可帮助团队快速定位根本原因，顺畅处理复杂数据。
+
+<div id="end-to-end-observability">
+  ### 端到端可观测性
+</div>
+
+ClickStack 提供全栈可视性，涵盖从前端用户会话到后端基础设施指标、应用日志和分布式链路追踪的各个层面。这种统一视图让你能够在整个系统范围内进行深度关联分析。
+
+<div id="built-for-clickhouse">
+  ### 专为 ClickHouse 而构建
+</div>
+
+该技术栈的每一层都旨在充分发挥 ClickHouse 的能力。查询经过优化，可充分利用 ClickHouse 的分析函数和列式引擎，确保在海量数据上实现快速搜索与聚合。
+
+<div id="open-telemetry-native">
+  ### OpenTelemetry 原生
+</div>
+
+ClickStack 与 OpenTelemetry 原生集成，所有数据都通过 OpenTelemetry 收集器端点进行摄取。对于高级用户，它还支持使用原生文件格式、自定义管道或 Vector 等第三方工具，直接将数据摄取到 ClickHouse。
+
+<div id="open-source-and-customizable">
+  ### 开源且完全可定制
+</div>
+
+ClickStack 是完全开源的，可部署在任何环境中。schema 灵活且支持用户修改，UI 也经过设计，可适配自定义 schema 而无需变更。所有组件 (包括采集器、ClickHouse 和 UI) 都可以独立扩缩容，以满足摄取、查询或存储需求。
+
+<div id="architectural-overview">
+  ## 架构概览
+</div>
+
+ClickStack 的架构会因部署方式不同而有所差异。**开源 ClickStack** 与 **托管 ClickStack** 在架构上有重要区别：前者的所有组件都由用户自行管理，后者则由 ClickHouse Cloud 托管并运行 ClickHouse 和 HyperDX UI。虽然两种模式的核心组件相同，但各组件在托管、扩缩容和安全保障方面的责任划分并不一样。
+
+<Tabs>
+  <Tab title="托管 ClickStack">
+    <Image img="/images/use-cases/observability/clickstack-simple-managed-architecture.webp" alt="托管 ClickStack 架构" size="md" />
+
+    托管 ClickStack 完全运行在 **ClickHouse Cloud** 中，在保留相同 ClickStack 数据模型和用户体验的同时，提供全托管的可观测性后端。
+
+    在这种模式下，**ClickHouse 和 ClickStack UI (HyperDX)&#x20;**&#x20;由 ClickHouse Cloud 负责托管、运维和安全保障。用户只需运行 OpenTelemetry Collector，将遥测数据发送到托管服务。
+
+    托管 ClickStack 包含以下组件：
+
+    1. **ClickStack UI (HyperDX)**
+       HyperDX UI 完全集成在 ClickHouse Cloud 中，并作为服务的一部分进行管理。它提供日志搜索、链路追踪分析、仪表盘、告警以及跨不同遥测类型的关联分析，并集成了身份验证和访问控制。
+
+    2. **OpenTelemetry collector (自管理)&#x20;**&#xA;用户运行一个 OpenTelemetry Collector，用于接收来自其应用和基础设施的遥测数据。该 Collector 通过 OTLP 将数据转发到 ClickHouse Cloud。虽然任何符合标准的 OpenTelemetry Collector 都可以使用，但我们强烈推荐 **ClickStack 发行版**，它已针对 ClickHouse 摄取进行了预配置和优化，并可开箱即用地配合 ClickStack schema 使用。
+
+    3. **ClickHouse Cloud**
+       ClickHouse 在 ClickHouse Cloud 中由平台全托管，作为所有可观测性数据的存储和查询引擎。用户无需管理集群、升级或其他运维事项。
+
+    托管 ClickStack 提供以下几个关键优势：
+
+    * **计算与存储解耦，计算资源可自动扩缩容**
+    * **基于对象存储的低成本、近乎无限的数据保留能力**
+    * **使用 ClickHouse Cloud 仓库实现读写隔离**
+    * **集成的身份验证和访问控制**
+    * **自动备份**
+    * **安全与合规能力**
+    * **无运维停机的无缝升级**
+
+    这种部署模型让团队能够将精力完全集中在可观测性工作流和插桩上，而无需承担自行运维 ClickHouse 或 ClickStack UI 的负担。
+
+    对于要在生产环境中部署 ClickStack 的用户，托管 ClickStack 是推荐选项。有关使用 ClickHouse Cloud 部署 ClickStack 的说明，请参阅[入门指南](/zh/clickstack/getting-started/managed)。
+
+    <br />
+  </Tab>
+
+  <Tab title="开源 ClickStack">
+    <Image img="/images/use-cases/observability/clickstack-simple-oss-architecture.webp" alt="OSS 简化架构" size="md" />
+
+    开源 ClickStack 由三个核心组件构成：
+
+    1. **ClickStack UI (HyperDX)**
+       一个为可观测性打造、对用户友好的界面。它支持 Lucene 风格查询、SQL 查询、交互式仪表盘、告警、链路追踪分析等功能——并且都针对以 ClickHouse 作为后端进行了优化。
+
+    2. **OpenTelemetry collector**
+       一个定制构建的 Collector，采用为 ClickHouse 摄取优化的预设 schema 配置。它通过 OpenTelemetry 协议接收日志、指标和链路追踪，并通过高效的批次插入将其直接写入 ClickHouse。
+
+    3. **ClickHouse**
+       作为宽事件中央数据存储的高性能分析型数据库。ClickHouse 凭借其列式引擎和对 JSON 的原生支持，实现了大规模下的快速搜索、过滤和聚合。
+
+    除这三个组件外，ClickStack 还使用一个 **MongoDB 实例** 来存储应用状态，例如仪表盘、用户账户和配置设置。
+
+    完整的架构图和部署细节可在[架构章节](/zh/clickstack/architecture)中找到。
+
+    对于有兴趣将开源 ClickStack 部署到生产环境的用户，我们建议阅读[&quot;Production&quot;](/zh/clickstack/managing/production)指南。
+
+    <br />
+  </Tab>
+</Tabs>
