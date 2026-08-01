@@ -605,6 +605,26 @@ String computeFileCacheVersionToken(const struct stat & file_stat)
         file_stat.st_size);
 }
 
+/// Whether the version token computed from `file_stat` is trustworthy for correctness decisions.
+/// The token proves a rewrite only after the file has settled: filesystem timestamps are coarser
+/// than the wall clock (one clock tick of ~1-10 ms on most Linux filesystems, a full second on
+/// ext3, two seconds on FAT), so a rewrite that keeps the inode and the byte size and lands in
+/// the same timestamp tick as the previous write produces an identical token. Once the last
+/// modification is comfortably in the past, its tick is over and any further write is guaranteed
+/// to change the token. For files modified more recently - or with an mtime in the future, e.g.
+/// due to clock skew on a network mount - anything keyed on the token (the format metadata cache,
+/// the query condition cache) must fail close and stay bypassed rather than risk a stale entry.
+bool isFileCacheVersionSettled(const struct stat & file_stat)
+{
+#if defined(OS_DARWIN)
+    const auto mtim_sec = file_stat.st_mtimespec.tv_sec;
+#else
+    const auto mtim_sec = file_stat.st_mtim.tv_sec;
+#endif
+    static constexpr Int64 file_version_settle_seconds = 3;
+    return static_cast<Int64>(mtim_sec) + file_version_settle_seconds <= static_cast<Int64>(time(nullptr));
+}
+
 /// Re-stats `path` and reports whether it still produces `expected_token`. Used to bracket a
 /// local-file read (once right after opening, once right before trusting the read for the Query
 /// Condition Cache) so a rewrite by another writer that lands strictly between the initial `stat`
@@ -1757,25 +1777,12 @@ Chunk StorageFileSource::generate()
                         "(version changed from {} to {})",
                         current_path, *expected_file_cache_version, *current_file_cache_version);
 
-                /// The version token above proves a rewrite only after the file has settled.
-                /// Filesystem timestamps are coarser than the wall clock (one clock tick of
-                /// ~1-10 ms on most Linux filesystems, a full second on ext3, two seconds on
-                /// FAT), so a rewrite that keeps the inode and the byte size and lands in the
-                /// same timestamp tick as the previous write produces an identical token. Once
-                /// the last modification is comfortably in the past, its tick is over and any
-                /// further write is guaranteed to change the token. The query condition cache
-                /// skips whole row groups based on this token, so for files modified more
-                /// recently - or with an mtime in the future, e.g. due to clock skew on a
-                /// network mount - it fails close and stays bypassed (see the gates below)
-                /// rather than risking stale results.
-#if defined(OS_DARWIN)
-                const auto mtim_sec = file_stat.st_mtimespec.tv_sec;
-#else
-                const auto mtim_sec = file_stat.st_mtim.tv_sec;
-#endif
-                static constexpr Int64 file_version_settle_seconds = 3;
-                current_file_version_settled
-                    = static_cast<Int64>(mtim_sec) + file_version_settle_seconds <= static_cast<Int64>(time(nullptr));
+                /// The version token above proves a rewrite only after the file has settled
+                /// (see `isFileCacheVersionSettled`). The query condition cache skips whole
+                /// row groups and the format metadata cache reuses parsed footers based on
+                /// this token, so for unsettled files both fail close and stay bypassed (see
+                /// the gates below) rather than risking stale results.
+                current_file_version_settled = isFileCacheVersionSettled(file_stat);
 
                 if (getContext()->getSettingsRef()[Setting::engine_file_skip_empty_files] && file_stat.st_size == 0)
                     continue;
@@ -1830,11 +1837,17 @@ Chunk StorageFileSource::generate()
             /// creator is taken instead, and `ParquetV3BlockInputFormat` receives a null
             /// cache — neither reading from nor populating `ParquetMetadataCache`. This
             /// matches `StorageObjectStorageSource`.
+            ///
+            /// Also gated on `current_file_version_settled`: until the token has settled it
+            /// cannot prove a rewrite (a same-size in-place rewrite within the same timestamp
+            /// tick keeps it stable), so keying the metadata cache on it could serve a footer
+            /// cached for the previous file generation against the new bytes — stale row-group
+            /// offsets fed into the reader. Fail close and parse the footer instead.
             std::optional<RelativePathWithMetadata> object_with_metadata;
             if (getContext()->getSettingsRef()[Setting::use_parquet_metadata_cache]
                 && !storage->use_table_fd && !storage->archive_info && !current_path.empty()
                 && current_file_size.has_value() && current_file_last_modified.has_value()
-                && current_file_cache_version.has_value())
+                && current_file_cache_version.has_value() && current_file_version_settled)
             {
                 ObjectMetadata md;
                 md.size_bytes = *current_file_size;
@@ -2373,7 +2386,14 @@ void ReadFromFile::initializePipeline(QueryPipelineBuilder & pipeline, const Bui
                 /// `trySplitParquetFileFromCacheOnly` (returns empty) and
                 /// `splitParquetFileWithCache` (parses without caching) honor the setting,
                 /// matching `StorageObjectStorageSource`.
+                ///
+                /// Also bypass the cache while the version token has not settled (see
+                /// `isFileCacheVersionSettled`): an unsettled token cannot prove a rewrite,
+                /// so a footer cached under it for the previous file generation could drive
+                /// the split decision for the new bytes - stale row-group offsets and counts.
+                /// The split itself still proceeds, parsing the footer directly.
                 auto metadata_cache = ctx->getSettingsRef()[Setting::use_parquet_metadata_cache]
+                        && isFileCacheVersionSettled(file_stat)
                     ? ctx->tryGetParquetMetadataCache()
                     : nullptr;
 
