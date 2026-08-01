@@ -64,6 +64,12 @@
 1
 -- getClientHTTPHeader() is no longer rewritten
 1
+-- addressToSymbol() is no longer rewritten
+1
+-- addressToLine() is no longer rewritten
+1
+-- addressToLineWithInlines() is no longer rewritten
+1
 -- financialNetPresentValueExtended() over a Dynamic argument is still rewritten
 1
 -- financialNetPresentValueExtended() over a Variant argument is still rewritten

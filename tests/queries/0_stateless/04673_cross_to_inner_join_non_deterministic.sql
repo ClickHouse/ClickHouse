@@ -307,6 +307,32 @@ SELECT count() = 0 FROM (
     SETTINGS cross_to_inner_join_rewrite = 1, allow_get_client_http_header = 1
 ) WHERE explain ILIKE '%kind: INNER%';
 
+-- The three address symbolizers resolve an address against the object files and the address space
+-- layout of the node that runs them, so they are node-local too, and like showCertificate() they report
+-- no determinism predicate at all. The argument must be non-constant for the same reason as the
+-- filesystem* rows above. These rows only read the plan shape: EXPLAIN QUERY TREE never executes the
+-- predicate, so no symbolization is attempted and no platform tag is needed.
+SELECT '-- addressToSymbol() is no longer rewritten';
+SELECT count() = 0 FROM (
+    EXPLAIN QUERY TREE run_passes = 1
+    SELECT count() FROM l, r WHERE l.a + length(addressToSymbol(l.a)) = r.a
+    SETTINGS cross_to_inner_join_rewrite = 1, allow_introspection_functions = 1
+) WHERE explain ILIKE '%kind: INNER%';
+
+SELECT '-- addressToLine() is no longer rewritten';
+SELECT count() = 0 FROM (
+    EXPLAIN QUERY TREE run_passes = 1
+    SELECT count() FROM l, r WHERE l.a + length(addressToLine(l.a)) = r.a
+    SETTINGS cross_to_inner_join_rewrite = 1, allow_introspection_functions = 1
+) WHERE explain ILIKE '%kind: INNER%';
+
+SELECT '-- addressToLineWithInlines() is no longer rewritten';
+SELECT count() = 0 FROM (
+    EXPLAIN QUERY TREE run_passes = 1
+    SELECT count() FROM l, r WHERE l.a + length(addressToLineWithInlines(l.a)) = r.a
+    SETTINGS cross_to_inner_join_rewrite = 1, allow_introspection_functions = 1
+) WHERE explain ILIKE '%kind: INNER%';
+
 -- financialNetPresentValueExtended() also reports isDeterministic() = false, but it is stable within
 -- one node's query and every node computes the same value, so it must stay eligible. Over a Dynamic or
 -- a Variant argument it is additionally wrapped in an adaptor that declines constant folding, which is
