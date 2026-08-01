@@ -715,6 +715,11 @@ public:
     static bool isLowCardinalityDictionarySubcolumn(const SubstreamPath & path);
     static bool isMetadataStream(const SubstreamPath & path);
 
+    /// Returns true if the stream holds a single value for the whole part, which every granule reads
+    /// (the product quantization codebook). Such a value is written once, after the data of all granules,
+    /// so the marks do not delimit it and it has to be read as a whole file.
+    static bool isSingleValuePerPartStream(const SubstreamPath & path);
+
     /// Returns true if stream with specified path corresponds to Variant subcolumn.
     static bool isVariantSubcolumn(const SubstreamPath & path);
 
