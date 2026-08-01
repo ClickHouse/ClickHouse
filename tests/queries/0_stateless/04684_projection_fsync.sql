@@ -105,12 +105,20 @@ DROP TABLE t_plain;
 -- The comparison is against the SAME table's plain row-rewriting mutation rather than against a
 -- projection-less table: an `ALTER ... UPDATE` that rewrites every row touches a different set of
 -- files than a projection materialization, so only a before/after on one table is meaningful.
+--
+-- The bound below counts files, so nothing unrelated may add any. Statistics do: implicit
+-- statistics put one more file in the mutated part, which is enough to satisfy the bound without
+-- any projection file being synced. Both settings that produce them are randomized in CI
+-- (`materialize_statistics_on_insert` to true in 95% of runs), so both must be pinned here.
+SET materialize_statistics_on_insert = 0;
+
 CREATE TABLE t_mat (id UInt64, key String, v UInt64)
 ENGINE = MergeTree ORDER BY id
 SETTINGS fsync_after_insert = 1, fsync_part_directory = 1,
          min_rows_to_fsync_after_merge = 1000, min_compressed_bytes_to_fsync_after_merge = 0,
          min_bytes_for_wide_part = 0, min_rows_for_wide_part = 0,
          min_bytes_for_full_part_storage = 0,
+         auto_statistics_types = '',
          max_bytes_to_merge_at_max_space_in_pool = 1;
 
 INSERT INTO t_mat SELECT number, concat('k', toString(number % 7)), number FROM numbers(10000);
