@@ -230,14 +230,14 @@ Field convertDecimalType(const Field & from, const To & type, bool strict)
 }
 
 /// Bounds of the numeric domain for a Field being coerced into a temporal column
-/// (mirror MAX_TIME_TIMESTAMP / MAX_DATETIME_TIMESTAMP / MAX_DATETIME64_TIMESTAMP in
+/// (mirror MAX_TIME_TIMESTAMP / MAX_DATETIME_TIMESTAMP / MAX_DATE32_TIMESTAMP in
 /// Functions/DateTimeTransforms.h and the day-number maxima in Common/DateLUTImpl.h).
 constexpr Int64 MAX_TIME_TIMESTAMP_FIELD = 3599999;      /// 999:59:59
 constexpr Int64 MAX_DATETIME_TIMESTAMP_FIELD = 0xFFFFFFFF;
 constexpr Int64 DATE_DAY_NUM_MAX_FIELD = DATE_LUT_MAX_DAY_NUM;               /// 0xFFFF, 2149-06-06
 constexpr Int64 DATE_MAX_TIMESTAMP_FIELD = 0xFFFFFFFF;                       /// MAX_DATETIME_TIMESTAMP
 constexpr Int64 DATE32_DAY_NUM_MAX_FIELD = DATE_LUT_MAX_EXTEND_DAY_NUM;      /// last extended day num
-constexpr Int64 DATE32_MAX_TIMESTAMP_FIELD = 10413791999LL;                  /// MAX_DATETIME64_TIMESTAMP, 2299-12-31
+constexpr Int64 DATE32_MAX_TIMESTAMP_FIELD = 10413791999LL;                  /// MAX_DATE32_TIMESTAMP, 2299-12-31
 
 /// Clamp an in-bounds numeric value to a time_t (mirrors saturateToRange in FunctionsConversion.h):
 /// the value is proven inside [min_bound, max_bound] with accurate comparisons before the narrowing
@@ -345,11 +345,10 @@ template <typename T>
 Field coerceNumericToDateField(const T & value, const DateLUTImpl & time_zone, FormatSettings::DateTimeOverflowBehavior overflow)
 {
     const bool throw_mode = overflow == FormatSettings::DateTimeOverflowBehavior::Throw;
+    /// Only reached under `throw`; the saturating modes clamp at the call sites below.
     auto out_of_bounds = [&]() -> Field
     {
-        if (throw_mode)
-            throw Exception(ErrorCodes::VALUE_IS_OUT_OF_RANGE_OF_DATA_TYPE, "Value {} is out of bounds of type Date", value);
-        return Field(); /// caller turns Null into 0 / default consistently
+        throw Exception(ErrorCodes::VALUE_IS_OUT_OF_RANGE_OF_DATA_TYPE, "Value {} is out of bounds of type Date", value);
     };
 
     if constexpr (is_floating_point<T>)
@@ -375,7 +374,7 @@ Field coerceNumericToDateField(const T & value, const DateLUTImpl & time_zone, F
 /// Coerce a numeric value into a Date32 day-number Field, mirroring the numeric CAST path
 /// (ToDate32TransformFromSecondsOrDays): a value within [daynum_min_offset, DATE_LUT_MAX_EXTEND_DAY_NUM)
 /// is a (possibly negative) day number, a larger value is a unix timestamp clamped to
-/// MAX_DATETIME64_TIMESTAMP then converted with toDayNum. `throw` raises on out-of-range;
+/// MAX_DATE32_TIMESTAMP then converted with toDayNum. `throw` raises on out-of-range;
 /// `saturate`/`ignore` clamp. The result is an Int64 Field (Date32 is Int32 under the hood).
 template <typename T>
 Field coerceNumericToDate32Field(const T & value, const DateLUTImpl & time_zone, FormatSettings::DateTimeOverflowBehavior overflow)
@@ -457,7 +456,7 @@ bool isNumericFieldForTemporalCoercion(const Field & src)
     }
 }
 
-Field convertFieldToTypeImpl(const Field & src, const IDataType & type, const IDataType * from_type_hint, const FormatSettings & format_settings, bool strict, bool convert_inexact_floats)
+Field convertFieldToTypeImpl(const Field & src, const IDataType & type, const IDataType * from_type_hint, const FormatSettings & format_settings, bool strict, bool convert_inexact_floats, bool temporal_numeric_is_offset)
 {
     if (from_type_hint && from_type_hint->equals(type))
     {
@@ -624,7 +623,11 @@ Field convertFieldToTypeImpl(const Field & src, const IDataType & type, const ID
         ///    and must stay addressable.
         ///  - value materialization: clamp like CAST, via the coerce helpers.
         /// In saturate/throw modes both callers coerce overflow-awarely, consistent with numeric CAST.
-        const bool ignore_exact_target = overflow_ignore && exact;
+        /// A window frame `RANGE` offset is a distance in the target's underlying units, not a temporal
+        /// point, so it must never be read as a day number / unix timestamp nor clamped to the visible
+        /// range: it always takes the storage-type arm, in every overflow mode, and an offset outside the
+        /// storage type is rejected (Null) exactly as it was before the coerce helpers existed.
+        const bool ignore_exact_target = (overflow_ignore && exact) || temporal_numeric_is_offset;
 
         if (which_type.isDate() && isNumericFieldForTemporalCoercion(src))
         {
@@ -787,7 +790,7 @@ Field convertFieldToTypeImpl(const Field & src, const IDataType & type, const ID
             Array res(src_arr_size);
             for (size_t i = 0; i < src_arr_size; ++i)
             {
-                res[i] = convertFieldToType(src_arr[i], element_type, nullptr, format_settings, strict, convert_inexact_floats);
+                res[i] = convertFieldToType(src_arr[i], element_type, nullptr, format_settings, strict, convert_inexact_floats, temporal_numeric_is_offset);
                 if (res[i].isNull() && !canContainNull(element_type))
                 {
                     // See the comment for Tuples below.
@@ -819,7 +822,7 @@ Field convertFieldToTypeImpl(const Field & src, const IDataType & type, const ID
             for (size_t i = 0; i < dst_tuple_size; ++i)
             {
                 const auto & element_type = *(type_tuple->getElements()[i]);
-                res[i] = convertFieldToType(src_tuple[i], element_type, nullptr, format_settings, strict, convert_inexact_floats);
+                res[i] = convertFieldToType(src_tuple[i], element_type, nullptr, format_settings, strict, convert_inexact_floats, temporal_numeric_is_offset);
                 if (res[i].isNull() && !canContainNull(element_type))
                 {
                     /*
@@ -1011,12 +1014,12 @@ Field convertFieldToTypeImpl(const Field & src, const IDataType & type, const ID
 
                 Tuple updated_entry(2);
 
-                updated_entry[0] = convertFieldToType(key, key_type, nullptr, format_settings, strict, convert_inexact_floats);
+                updated_entry[0] = convertFieldToType(key, key_type, nullptr, format_settings, strict, convert_inexact_floats, temporal_numeric_is_offset);
 
                 if (updated_entry[0].isNull() && !canContainNull(key_type))
                     have_unconvertible_element = true;
 
-                updated_entry[1] = convertFieldToType(value, value_type, nullptr, format_settings, strict, convert_inexact_floats);
+                updated_entry[1] = convertFieldToType(value, value_type, nullptr, format_settings, strict, convert_inexact_floats, temporal_numeric_is_offset);
                 if (updated_entry[1].isNull() && !canContainNull(value_type))
                     have_unconvertible_element = true;
 
@@ -1160,7 +1163,7 @@ Field tryConvertFieldToType(const Field & from_value, const IDataType & to_type,
     }
 }
 
-Field convertFieldToType(const Field & from_value, const IDataType & to_type, const IDataType * from_type_hint, const FormatSettings & format_settings, bool strict, bool convert_inexact_floats)
+Field convertFieldToType(const Field & from_value, const IDataType & to_type, const IDataType * from_type_hint, const FormatSettings & format_settings, bool strict, bool convert_inexact_floats, bool temporal_numeric_is_offset)
 {
     checkStackSize();
 
@@ -1171,7 +1174,7 @@ Field convertFieldToType(const Field & from_value, const IDataType & to_type, co
         return from_value;
 
     if (const auto * low_cardinality_type = typeid_cast<const DataTypeLowCardinality *>(&to_type))
-        return convertFieldToType(from_value, *low_cardinality_type->getDictionaryType(), from_type_hint, format_settings, strict, convert_inexact_floats);
+        return convertFieldToType(from_value, *low_cardinality_type->getDictionaryType(), from_type_hint, format_settings, strict, convert_inexact_floats, temporal_numeric_is_offset);
     if (const auto * nullable_type = typeid_cast<const DataTypeNullable *>(&to_type))
     {
         const IDataType & nested_type = *nullable_type->getNestedType();
@@ -1182,13 +1185,13 @@ Field convertFieldToType(const Field & from_value, const IDataType & to_type, co
 
         if (from_type_hint && from_type_hint->equals(nested_type))
             return from_value;
-        return convertFieldToTypeImpl(from_value, nested_type, from_type_hint, format_settings, strict, convert_inexact_floats);
+        return convertFieldToTypeImpl(from_value, nested_type, from_type_hint, format_settings, strict, convert_inexact_floats, temporal_numeric_is_offset);
     }
-    return convertFieldToTypeImpl(from_value, to_type, from_type_hint, format_settings, strict, convert_inexact_floats);
+    return convertFieldToTypeImpl(from_value, to_type, from_type_hint, format_settings, strict, convert_inexact_floats, temporal_numeric_is_offset);
 }
 
 
-Field convertFieldToTypeOrThrow(const Field & from_value, const IDataType & to_type, const IDataType * from_type_hint, const FormatSettings & format_settings, bool convert_inexact_floats)
+Field convertFieldToTypeOrThrow(const Field & from_value, const IDataType & to_type, const IDataType * from_type_hint, const FormatSettings & format_settings, bool convert_inexact_floats, bool temporal_numeric_is_offset)
 {
     bool is_null = from_value.isNull();
     if (is_null && !canContainNull(to_type))
@@ -1202,7 +1205,7 @@ Field convertFieldToTypeOrThrow(const Field & from_value, const IDataType & to_t
     /// string literal (e.g. `DROP PARTITION '0.1'`) is still parsed into the target type by string
     /// deserialization before this exactness check and rounds there - a pre-existing string-parsing
     /// behavior shared with string-to-float comparisons, unchanged by this fix. See the header.
-    Field converted = convertFieldToType(from_value, to_type, from_type_hint, format_settings, /*strict=*/false, convert_inexact_floats);
+    Field converted = convertFieldToType(from_value, to_type, from_type_hint, format_settings, /*strict=*/false, convert_inexact_floats, temporal_numeric_is_offset);
 
     if (!is_null && converted.isNull())
         throw Exception(ErrorCodes::ARGUMENT_OUT_OF_BOUND,

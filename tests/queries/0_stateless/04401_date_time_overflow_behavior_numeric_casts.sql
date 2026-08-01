@@ -36,6 +36,15 @@ SELECT CAST(340282366920938463463374607431768211455::UInt128, 'Time'); -- { serv
 SELECT CAST(99999999999999999999999999::Int256, 'DateTime'); -- { serverError VALUE_IS_OUT_OF_RANGE_OF_DATA_TYPE }
 SELECT CAST(99999999999999999999999999::Int256, 'Time'); -- { serverError VALUE_IS_OUT_OF_RANGE_OF_DATA_TYPE }
 SELECT CAST(-99999999999999999999999999::Int256, 'DateTime'); -- { serverError VALUE_IS_OUT_OF_RANGE_OF_DATA_TYPE }
+-- UInt256, Int128 and BFloat16 each have their own alternative in the DateTime/Time dispatch; keep one
+-- row per alternative per target so deleting any of them reddens this test rather than passing silently.
+SELECT CAST(99999999999999999999999999::UInt256, 'DateTime'); -- { serverError VALUE_IS_OUT_OF_RANGE_OF_DATA_TYPE }
+SELECT CAST(99999999999999999999999999::UInt256, 'Time'); -- { serverError VALUE_IS_OUT_OF_RANGE_OF_DATA_TYPE }
+SELECT CAST(99999999999999999999999999::Int128, 'DateTime'); -- { serverError VALUE_IS_OUT_OF_RANGE_OF_DATA_TYPE }
+SELECT CAST(99999999999999999999999999::Int128, 'Time'); -- { serverError VALUE_IS_OUT_OF_RANGE_OF_DATA_TYPE }
+SELECT CAST(-99999999999999999999999999::Int128, 'Time'); -- { serverError VALUE_IS_OUT_OF_RANGE_OF_DATA_TYPE }
+SELECT CAST(CAST(1e30, 'BFloat16'), 'DateTime'); -- { serverError VALUE_IS_OUT_OF_RANGE_OF_DATA_TYPE }
+SELECT CAST(CAST(1e30, 'BFloat16'), 'Time'); -- { serverError VALUE_IS_OUT_OF_RANGE_OF_DATA_TYPE }
 
 SELECT '-- throw: float extremes (huge / Inf / NaN) must raise a clean error, not narrow to garbage';
 -- Formatting the rejected value with static_cast<Int64>(from) was undefined behavior for these
@@ -60,6 +69,32 @@ SELECT '-- throw: in-range numeric casts must still succeed';
 SELECT CAST(1700000000::Int64, 'DateTime');
 SELECT CAST(20000::Int64, 'Date');
 SELECT CAST(20000::Int64, 'Date32');
+
+SELECT '-- throw: accurateCastOrNull must never raise; only accurateCast does';
+-- accurateCastOrNull's contract is a NULL (or the converted value), never an exception, so the numeric
+-- temporal transforms are instantiated in ignore mode on that path: rejection is the accurate precheck's
+-- job. Enabling the previously dead Throw specializations made a Throw transform reachable there and it
+-- raised from inside the vectorised loop. The two carriers the current precheck's single generic-DateTime
+-- window misses are a Time target (4000000 is inside 0xFFFFFFFF but above MAX_TIME_TIMESTAMP) and a Date32
+-- target (absent from the precheck's type list); PR #110459 corrects those windows, at which point these
+-- two rows start returning \N instead of the clamped value. Either way they must not raise.
+SELECT accurateCastOrNull(4000000, 'Time');
+SELECT accurateCastOrNull(999999999999, 'Date32');
+-- Control: the generic window already rejects this one, so it must keep returning \N.
+SELECT accurateCastOrNull(99999999999, 'DateTime');
+-- Controls: in-range values must still convert, so the rows above cannot pass by rejecting everything.
+SELECT accurateCastOrNull(100, 'Time'), accurateCastOrNull(100, 'DateTime');
+-- The throwing sibling is untouched and must still raise for the same value.
+SELECT accurateCast(4000000, 'Time'); -- { serverError VALUE_IS_OUT_OF_RANGE_OF_DATA_TYPE }
+SELECT accurateCast(999999999999, 'Date32'); -- { serverError VALUE_IS_OUT_OF_RANGE_OF_DATA_TYPE }
+
+SELECT '-- throw: the values() table function does not see the session setting (known boundary)';
+-- values() constructs its coercion with a default FormatSettings (TableFunctionValues.cpp), so the session
+-- date_time_overflow_behavior never reaches it and it keeps clamping in every mode, while CAST of the same
+-- literal now raises. Aligning them would make values() start raising, so it is left to a follow-up; this
+-- pair pins the current divergence so it cannot change unnoticed.
+SELECT toInt32(c) FROM values('c Time', 9999999);
+SELECT CAST(9999999 AS Time); -- { serverError VALUE_IS_OUT_OF_RANGE_OF_DATA_TYPE }
 
 SELECT '-- saturate: out-of-range numeric casts must clamp to the boundary';
 SET date_time_overflow_behavior = 'saturate';
@@ -101,6 +136,18 @@ SELECT CAST(3e38::Float32, 'DateTime');
 SELECT CAST(inf::Float64, 'DateTime');
 SELECT CAST((-inf)::Float64, 'Time');
 SELECT CAST(nan::Float64, 'DateTime');
+
+SELECT '-- saturate: UInt256 / Int128 / BFloat16 -> DateTime and Time clamp on their own dispatch alternatives';
+-- Keyed on toInt32 for Time so the printed 999:59:59 cannot hide a wrap.
+SELECT CAST(99999999999999999999999999::UInt256, 'DateTime');
+SELECT toInt32(CAST(99999999999999999999999999::UInt256, 'Time'));
+SELECT CAST(99999999999999999999999999::Int128, 'DateTime');
+SELECT toInt32(CAST(99999999999999999999999999::Int128, 'Time'));
+SELECT CAST(-99999999999999999999999999::Int128, 'DateTime');
+SELECT toInt32(CAST(-99999999999999999999999999::Int128, 'Time'));
+SELECT CAST(CAST(1e30, 'BFloat16'), 'DateTime');
+SELECT toInt32(CAST(CAST(1e30, 'BFloat16'), 'Time'));
+SELECT toInt32(CAST(CAST(-1e30, 'BFloat16'), 'Time'));
 
 SELECT '-- saturate: NaN must clamp to the minimum for every target, not fall through to a narrowing cast';
 -- The Float* -> Date branch skipped the day-num/timestamp split for NaN (both from<0 and
@@ -389,3 +436,47 @@ SELECT toString(CAST(toUInt32(4294967295) AS DateTime)), toString(CAST(toUInt32(
 SELECT toInt32(CAST(c AS Time)), toString(CAST(c AS DateTime)) FROM (SELECT toUInt32(4294967295) AS c);
 SELECT toInt32(CAST(toNullable(toUInt32(4000000)) AS Nullable(Time)));
 SELECT toString(CAST(toUInt64(18446744073709551615) AS DateTime)), toString(CAST(toUInt128(18446744073709551615) + 1 AS DateTime));
+
+-- A window frame RANGE offset is a distance in the ORDER BY column's underlying units, not a temporal
+-- point, so it must never be reinterpreted as a day number / unix timestamp nor clamped to the target's
+-- visible range. WindowTransform coerces the offset through convertFieldToTypeOrThrow with
+-- convert_inexact_floats = true, which stopped taking the plain storage-type arm once the temporal coerce
+-- helpers appeared: a Date offset of 65536 was silently read as a timestamp and became a ~0-day frame
+-- instead of being rejected, and a Time offset above MAX_TIME_TIMESTAMP was clamped, shrinking the frame.
+-- Both are wrong results, so the offset now always takes the storage-type arm in every overflow mode.
+DROP TABLE IF EXISTS t_win_date;
+DROP TABLE IF EXISTS t_win_time;
+CREATE TABLE t_win_date (d Date) ENGINE = Memory;
+INSERT INTO t_win_date VALUES ('2020-01-01'), ('2020-01-02'), ('2020-01-03');
+CREATE TABLE t_win_time (t Time) ENGINE = Memory;
+INSERT INTO t_win_time VALUES (-200000), (0), (3599999);
+
+SELECT '-- window frame offset: ignore mode';
+SET date_time_overflow_behavior = 'ignore';
+-- 65536 is outside the UInt16 storage of Date, so the offset is rejected in every mode.
+SELECT d, count() OVER (ORDER BY d RANGE BETWEEN 65536 PRECEDING AND CURRENT ROW) FROM t_win_date ORDER BY d; -- { serverError ARGUMENT_OUT_OF_BOUND }
+-- A Time offset of 4000000 seconds is a legitimate distance and fits Int32, so it must be taken verbatim.
+-- Asserted through frame membership: verbatim reaches -400001 from the last row and includes -200000
+-- (3 rows), while clamping the offset to 3599999 would reach 0 and exclude it (2 rows).
+SELECT toInt32(t), count() OVER (ORDER BY t RANGE BETWEEN 4000000 PRECEDING AND CURRENT ROW) FROM t_win_time ORDER BY t;
+-- In-range controls, so the rows above cannot pass by rejecting or shrinking everything.
+SELECT d, count() OVER (ORDER BY d RANGE BETWEEN 1 PRECEDING AND CURRENT ROW) FROM t_win_date ORDER BY d;
+SELECT toInt32(t), count() OVER (ORDER BY t RANGE BETWEEN 200000 PRECEDING AND CURRENT ROW) FROM t_win_time ORDER BY t;
+
+SELECT '-- window frame offset: saturate mode';
+SET date_time_overflow_behavior = 'saturate';
+SELECT d, count() OVER (ORDER BY d RANGE BETWEEN 65536 PRECEDING AND CURRENT ROW) FROM t_win_date ORDER BY d; -- { serverError ARGUMENT_OUT_OF_BOUND }
+SELECT toInt32(t), count() OVER (ORDER BY t RANGE BETWEEN 4000000 PRECEDING AND CURRENT ROW) FROM t_win_time ORDER BY t;
+SELECT d, count() OVER (ORDER BY d RANGE BETWEEN 1 PRECEDING AND CURRENT ROW) FROM t_win_date ORDER BY d;
+SELECT toInt32(t), count() OVER (ORDER BY t RANGE BETWEEN 200000 PRECEDING AND CURRENT ROW) FROM t_win_time ORDER BY t;
+
+SELECT '-- window frame offset: throw mode';
+SET date_time_overflow_behavior = 'throw';
+SELECT d, count() OVER (ORDER BY d RANGE BETWEEN 65536 PRECEDING AND CURRENT ROW) FROM t_win_date ORDER BY d; -- { serverError ARGUMENT_OUT_OF_BOUND }
+SELECT toInt32(t), count() OVER (ORDER BY t RANGE BETWEEN 4000000 PRECEDING AND CURRENT ROW) FROM t_win_time ORDER BY t;
+SELECT d, count() OVER (ORDER BY d RANGE BETWEEN 1 PRECEDING AND CURRENT ROW) FROM t_win_date ORDER BY d;
+SELECT toInt32(t), count() OVER (ORDER BY t RANGE BETWEEN 200000 PRECEDING AND CURRENT ROW) FROM t_win_time ORDER BY t;
+SET date_time_overflow_behavior = 'ignore';
+
+DROP TABLE t_win_date;
+DROP TABLE t_win_time;

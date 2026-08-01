@@ -495,7 +495,29 @@ case FormatSettings::DateTimeOverflowBehavior::OVERFLOW_MODE: \
                     {
                         switch (settings.date_time_overflow_behavior)
                         {
-                            GENERATE_OVERFLOW_MODE_CASE(Throw, DateTimeAccurateOrNullConvertStrategyAdditions)
+                            /// `accurateCastOrNull` must yield NULL for a value it cannot represent, never raise, so
+                            /// the numeric temporal transforms are instantiated in Ignore mode on this path even when
+                            /// the session asks for Throw: a Throw transform raises from inside the vectorised loop,
+                            /// where the OrNull strategy has no way to turn the error into a NULL. Rejecting an
+                            /// out-of-range value is the job of the accurate precheck in `Transformer::vector`
+                            /// (Functions/DateTimeTransforms.h), which sets the null map; its per-target windows are
+                            /// corrected by PR #110459, so widening them is deliberately left to that PR rather than
+                            /// duplicated here. Written out longhand instead of reusing GENERATE_OVERFLOW_MODE_CASE
+                            /// so the divergence from the mode the caller asked for stays visible.
+                            case FormatSettings::DateTimeOverflowBehavior::Throw:
+                                result_column = ConvertImpl<
+                                    LeftDataType,
+                                    RightDataType,
+                                    FunctionCastName,
+                                    FormatSettings::DateTimeOverflowBehavior::Ignore>::
+                                    execute(
+                                        arguments,
+                                        result_type,
+                                        input_rows_count,
+                                        BehaviourOnErrorFromString::ConvertDefaultBehaviorTag,
+                                        settings,
+                                        DateTimeAccurateOrNullConvertStrategyAdditions());
+                                break;
                             GENERATE_OVERFLOW_MODE_CASE(Ignore, DateTimeAccurateOrNullConvertStrategyAdditions)
                             GENERATE_OVERFLOW_MODE_CASE(Saturate, DateTimeAccurateOrNullConvertStrategyAdditions)
                         }

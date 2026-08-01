@@ -4,6 +4,13 @@
 2023-11-14 22:13:20
 2024-10-04
 2024-10-04
+-- throw: accurateCastOrNull must never raise; only accurateCast does
+999:59:59
+2299-12-31
+\N
+00:01:40	1970-01-01 00:01:40
+-- throw: the values() table function does not see the session setting (known boundary)
+3599999
 -- saturate: out-of-range numeric casts must clamp to the boundary
 2106-02-07 06:28:15
 2106-02-07 06:28:15
@@ -35,6 +42,16 @@
 2106-02-07 06:28:15
 -999:59:59
 1970-01-01 00:00:00
+-- saturate: UInt256 / Int128 / BFloat16 -> DateTime and Time clamp on their own dispatch alternatives
+2106-02-07 06:28:15
+3599999
+2106-02-07 06:28:15
+3599999
+1970-01-01 00:00:00
+-3599999
+2106-02-07 06:28:15
+3599999
+-3599999
 -- saturate: NaN must clamp to the minimum for every target, not fall through to a narrowing cast
 1970-01-01
 1970-01-01
@@ -148,3 +165,33 @@ CAST  	2149-06-06
 3599999	2106-02-07 06:28:15
 3599999
 2106-02-07 06:28:15	2106-02-07 06:28:15
+-- window frame offset: ignore mode
+-200000	1
+0	2
+3599999	3
+2020-01-01	1
+2020-01-02	2
+2020-01-03	2
+-200000	1
+0	2
+3599999	1
+-- window frame offset: saturate mode
+-200000	1
+0	2
+3599999	3
+2020-01-01	1
+2020-01-02	2
+2020-01-03	2
+-200000	1
+0	2
+3599999	1
+-- window frame offset: throw mode
+-200000	1
+0	2
+3599999	3
+2020-01-01	1
+2020-01-02	2
+2020-01-03	2
+-200000	1
+0	2
+3599999	1
