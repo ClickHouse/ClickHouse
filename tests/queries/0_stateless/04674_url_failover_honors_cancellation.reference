@@ -1,0 +1,17 @@
+--- cancelled, two options ---
+reported as a cancellation
+code TIMEOUT_EXCEEDED, options attempted: 1
+--- cancelled, three options ---
+reported as a cancellation
+code TIMEOUT_EXCEEDED, options attempted: 1
+--- cancelled while the last option is in flight ---
+reported as a cancellation
+code TIMEOUT_EXCEEDED, options attempted: 2
+--- not cancelled, all options down ---
+All uri (2) options are unreachable
+code NETWORK_ERROR, options attempted: 2
+--- not cancelled, failover to a working option ---
+failover_reached_second_option
+--- timeout_overflow_mode = break ---
+All uri (2) options are unreachable
+code NETWORK_ERROR, options attempted: 2
