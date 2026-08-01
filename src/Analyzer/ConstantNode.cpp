@@ -71,6 +71,15 @@ String ConstantNode::getValueStringRepresentation() const
     return applyVisitor(FieldVisitorToString(), getValue());
 }
 
+bool ConstantNode::requiresCastCallForResultType(const DataTypePtr & data_type)
+{
+    /// A value of one of these types is inferred back to a Field of the same shape (Array -> Array,
+    /// Tuple -> Tuple, Nullable -> Null or the nested shape, which requiresCastCall() rejects too),
+    /// so requiresCastCall() answers true for it whatever the elements are.
+    WhichDataType which_data_type(data_type);
+    return which_data_type.isNullable() || which_data_type.isArray() || which_data_type.isTuple();
+}
+
 bool ConstantNode::requiresCastCall(const DataTypePtr & field_type, const DataTypePtr & data_type)
 {
     WhichDataType which_field_type(field_type);
@@ -226,6 +235,12 @@ ASTPtr ConstantNode::toASTImpl(const ConvertToASTOptions & options) const
 
     auto requires_cast = [this]()
     {
+        /// Nullable/Array/Tuple always require a cast, and the Field's shape for those is already
+        /// implied by the result type, so answer from the type instead of materializing the value:
+        /// inferring the type of a large Array/Tuple constant is O(elements).
+        if (requiresCastCallForResultType(getResultType()))
+            return true;
+
         try
         {
             auto field_type = applyVisitor(FieldToDataType(), getValue());
