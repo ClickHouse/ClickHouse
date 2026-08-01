@@ -254,6 +254,16 @@ IMergeTreeDataPart::MinMaxIndex::WrittenFiles IMergeTreeDataPart::MinMaxIndex::s
             break;
 
         String file_name = "minmax_" + getFileColumnName(column_name, storage_settings, part_storage) + ".idx";
+
+        /// The caller may have carried the file over already — a mutation that does not rewrite the whole
+        /// part hardlinks the source part's files, so the file in the new part shares its inode with the
+        /// source part and writing through it would corrupt the source part.
+        if (out_checksums.files.contains(file_name))
+        {
+            ++i;
+            continue;
+        }
+
         auto serialization = column_type->getDefaultSerialization();
 
         auto out = part_storage.writeFile(file_name, 4096, {});
