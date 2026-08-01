@@ -127,11 +127,9 @@ void preadSegmentNode(
         reader->seek(static_cast<off_t>(offset_in_file), SEEK_SET);
     }
 
-    /// Abandon a checked-out slot reader on ANY exception before check-in — a read
-    /// error OR a throw from `result.append` (e.g. bad_alloc). Without this a throw
-    /// after checkout leaves the slot permanently `checked_out`, disabling reuse for
-    /// the provider's lifetime. Disarmed once `checkin` hands the reader back. A
-    /// fresh (non-slot) reader leaves `from_slot` false, so the guard is a no-op.
+    /// Abandon a checked-out slot reader on ANY throw before check-in (read error or a throw from
+    /// `result.append`); otherwise the slot stays `checked_out` forever, killing reuse. Disarmed at
+    /// `checkin`; a no-op for fresh (non-slot) readers.
     SCOPE_EXIT_SAFE({ if (from_slot && stream_slot) stream_slot->abandon(); });
 
     size_t copied = 0;
@@ -154,11 +152,9 @@ void preadSegmentNode(
     result.append(ChainedBufferNode{
         std::move(buf), 0, overlap_size, overlap_start + object_file_offset});
 
-    /// A reader reused from the slot is already kept warm by the slot, so
-    /// re-anchoring it every window is a redundant locked `CacheBase` insert (plus
-    /// the `path` key copy). Anchor only freshly opened readers: the anchor cache
-    /// earns its keep across DIFFERENT segment paths / the `readBigAt` fan-out,
-    /// where the single slot cannot.
+    /// A slot-reused reader is already kept warm by the slot; re-anchoring it every window is a
+    /// redundant locked insert. Anchor only fresh readers — the anchor cache earns its keep across
+    /// different paths / the `readBigAt` fan-out.
     const bool reused_from_slot = from_slot;
     if (stream_slot)
     {
@@ -180,9 +176,8 @@ size_t segmentCommittedEnd(const FileSegment & segment)
 }
 
 /// Append every committed sub-range of `holder` overlapping `sub_in_object`
-/// (object-local) to `result`, in segment order, via `preadSegmentNode`. Shared by
-/// the read buffer and the write buffer's served-prefix read; they differ only in
-/// whether a streaming-reader slot / anchors / throttler are supplied.
+/// (object-local) to `result`, in segment order, via `preadSegmentNode`. Shared by the read buffer
+/// and the write buffer's served-prefix read.
 void readOverlappingSegments(
     ChainedBuffers & result,
     FileSegmentsHolder & holder,
@@ -318,10 +313,8 @@ size_t DiskCacheWriter::write(ChainedBuffers data)
         if (segment.isDetached())
             continue;
 
-        /// `claim` is the sole role-acquisition site: only segments this thread claimed
-        /// accept bytes. A role a sibling freed mid-window is NOT adopted here - the next
-        /// claim takes it - so the roles this thread holds always equal its open claims'
-        /// won sets, and the claims' destructors are the complete release story.
+        /// Only segments this thread claimed accept bytes; roles a sibling freed are picked up by
+        /// the NEXT claim, not here - so open claims fully describe this thread's roles.
         if (!segment.isDownloader())
         {
             LOG_TRACE(log, "DiskCacheWriter::write: segment [{}, {}] not claimed by this thread, skipping",
@@ -413,16 +406,12 @@ ChainedBuffers DiskCacheWriter::read(ByteRange subrange)
 
 CacheWriter::FillClaim DiskCacheWriter::claim(ByteRange window)
 {
-    /// `window` is FILE-space, clamped per segment. For each held segment overlapping it:
-    /// a DOWNLOADED segment is already cached (`sibling_led`: serve from cache, a wait on
-    /// it returns immediately); for an undownloaded one, `getOrSetDownloader` either makes
-    /// us the downloader (`to_fetch`: fetch+write it on this thread while the claim is open)
-    /// or a sibling leads it (`sibling_led`). Only roles NEWLY won here enter the claim's
-    /// release set: a nested claim over segments this thread already leads (a tile write
-    /// inside a window-long claim) must not release the outer claim's roles. The release
-    /// completes-and-resets exactly those segments - a claim whose fetch never reached a
-    /// segment would otherwise leak it DOWNLOADING, and the foreground teardown cannot reset
-    /// a foreign (this worker's) downloader, aborting the holder dtor on
+    /// `window` is FILE-space, clamped per segment. DOWNLOADED → `sibling_led` (serve from cache);
+    /// else `getOrSetDownloader` makes us the downloader (`to_fetch`: fetch+write while the claim is
+    /// open) or a sibling leads it (`sibling_led`). Only roles NEWLY won here enter the release set
+    /// (a nested tile-claim inside a window-long claim must not release the outer's). The release
+    /// completes-and-resets exactly those segments - else one leaks DOWNLOADING and the foreground
+    /// teardown, unable to reset a foreign downloader, aborts the holder dtor on
     /// `chassert(!is_last_holder)`.
     FillClaim c;
     if (!holder)
@@ -532,10 +521,9 @@ ChainedBuffers DiskCacheWriter::waitAndReadSiblingLed(ByteRange subrange)
 
 CacheWriter::CacheSegmentPin DiskCacheWriter::pin(size_t frontier) const
 {
-    /// `frontier` is a file-level half-open lower bound. Find the segment in the
-    /// held holder containing object-local `(frontier - object_file_offset)` and
-    /// return a bare `FileSegmentPtr` into the holder as the pin (keeps it
-    /// non-evictable; the holder still owns it for continued appends).
+    /// `frontier` is a file-level half-open lower bound. Find the containing segment in the held
+    /// holder and return a bare `FileSegmentPtr` as the pin (keeps it non-evictable; the holder
+    /// still owns it for appends).
     if (!holder || frontier < object_file_offset)
         return nullptr;
     const size_t frontier_obj = frontier - object_file_offset;
@@ -546,12 +534,9 @@ CacheWriter::CacheSegmentPin DiskCacheWriter::pin(size_t frontier) const
         if (!seg_range.contains(frontier_obj))
             continue;
 
-        /// A DOWNLOADING segment is pinnable too: a claim holds the downloader role for
-        /// its whole lifetime and releases it only after the collect, so the pin decision
-        /// can race the release - the same partial segment shows as DOWNLOADING or
-        /// PARTIALLY_DOWNLOADED depending on thread timing. The pin is a plain holder
-        /// reference; taken while still DOWNLOADING it protects the partial across the
-        /// following plan rebuild with no unprotected gap.
+        /// A DOWNLOADING segment is pinnable: the pin decision can race the claim's role release,
+        /// so the same partial shows DOWNLOADING or PARTIALLY_DOWNLOADED by timing. The plain holder
+        /// reference protects it across the next plan rebuild with no gap.
         const auto state = segment->state();
         const bool partial = state == FileSegmentState::DOWNLOADING
                           || state == FileSegmentState::PARTIALLY_DOWNLOADED
@@ -606,15 +591,11 @@ bool DiskCacheWriter::tryWriteToSegment(FileSegment & segment, char * data, size
 
 DiskCacheTouchBook::~DiskCacheTouchBook()
 {
-    /// Deferred LRU bump: raise the priority of each segment the probe's readers
-    /// actually read, so a hit next to fresh inserts isn't aged below them. Bump
-    /// directly on the held `holder` - it pins exactly the segments the readers
-    /// read from, so there is no need to re-`cache->get` them (which would
-    /// re-take the per-key metadata lock and re-hash the key). A sequential run
-    /// records many contiguous sub-ranges over the same few segments; sorting the
-    /// records lets the linear sweep below bump each touched segment exactly
-    /// once. Runs at the LAST owner's death - after every reader of the probe is
-    /// released (the executor orders write-buffer destruction before that).
+    /// Deferred LRU bump of segments the probe's readers actually read, so a hit next to fresh
+    /// inserts isn't aged below them. Bump on the held `holder` directly - it pins exactly those
+    /// segments, so no re-`cache->get` (no re-lock, no re-hash). Sorted records let one linear sweep
+    /// bump each touched segment once. Runs at the LAST owner's death, after every reader is
+    /// released (the executor orders write-buffer destruction first).
     if (touched.empty() || !holder)
         return;
 
@@ -667,24 +648,17 @@ DiskCacheProvider::DiskCacheProvider(
     /// byte cap an entry count.
     , reader_anchors(CurrentMetrics::end(), CurrentMetrics::end(), /*max_size_in_bytes=*/16)
 {
-    /// Register a per-query context if `query_id_` is non-empty and the
-    /// cache settings request a per-query download budget. `getQueryContextHolder`
-    /// returns null when `filesystem_cache_max_download_size == 0` or no query
-    /// limit is configured on the cache, which is the unbounded path.
+    /// Register a per-query context; null when no download budget is configured
+    /// (`filesystem_cache_max_download_size == 0` / no query limit), the unbounded path.
     query_context_holder = cache->getQueryContextHolder(query_id_, cache_settings);
 }
 
-/// The disk tier's residency walk. One `resolve` call is one cache transaction
-/// and the method holds no per-call state, so a shared provider is safe to
-/// resolve from many threads (the `readBigAt` fan-out). Mirrors the legacy
-/// reader's get/getOrSet split
-/// (`CachedOnDiskReadBufferFromFile::nextFileSegmentsBatch`). POPULATING
-/// (write-through) cache: one `getOrSet` transaction - the cache's own
-/// `splitRange` shapes the virgin segments (cells = segments), hits carry
-/// readers, misses carry OPEN writers sharing the one holder. READ-ONLY /
-/// bypass cache (`read_if_exists_otherwise_bypass`): `cache->get` only -
-/// existing segments come back, hits carry readers, gaps and uncommitted tails
-/// are boundary-aligned writer-less misses, nothing is created or reserved.
+/// The disk tier's residency walk. One `resolve` = one cache transaction, no per-call state (shared
+/// across `readBigAt` threads). Mirrors the legacy reader's get/getOrSet split. POPULATING: one
+/// `getOrSet` - the cache's `splitRange` shapes virgin segments (cells = segments), hits carry
+/// readers, misses carry OPEN writers on one shared holder. READ-ONLY / bypass
+/// (`read_if_exists_otherwise_bypass`): `cache->get` only - existing segments, gaps and tails as
+/// boundary-aligned writer-less misses, nothing created.
 VectorWithMemoryTracking<ICacheProvider::Resolution> DiskCacheProvider::resolve(
     const StoredObject & object, size_t object_file_offset, ByteRange range)
 {
@@ -700,12 +674,9 @@ VectorWithMemoryTracking<ICacheProvider::Resolution> DiskCacheProvider::resolve(
     auto resolved_key = custom_cache_key.value_or(FileCacheKey::fromPath(object.remote_path));
     auto resolved_origin = custom_origin.value_or(cache->getCommonOriginWithSegmentKeyType(object.local_path));
 
-    /// READ-ONLY / bypass cache (mirrors the legacy reader's `cache->get` branch
-    /// in `CachedOnDiskReadBufferFromFile`): return existing segments only -
-    /// hits at their committed extent, gaps and uncommitted tails as
-    /// boundary-aligned writer-less misses. Nothing is created, reserved, or
-    /// evicted, so a bypass read (a merge) never perturbs the cache. The executor
-    /// serves a writer-less miss from source (up to the miss cell), never populating.
+    /// READ-ONLY / bypass (`cache->get`): existing segments only - hits at their committed extent,
+    /// gaps and uncommitted tails as boundary-aligned writer-less misses. Nothing created/reserved/
+    /// evicted, so a bypass read (a merge) never perturbs the cache (the executor serves misses from source).
     if (!populatesOnMiss())
     {
         const size_t boundary = cache_settings.boundary_alignment.value_or(cache->getBoundaryAlignment());

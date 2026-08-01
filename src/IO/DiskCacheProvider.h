@@ -15,11 +15,9 @@
 namespace DB
 {
 
-/// Bounded keep-alive cache of open cache-segment readers, at most one per
-/// segment path. The readers are held only as ANCHORS, never read through:
-/// keeping a recently-used reader alive keeps its `OpenedFile` alive, so the
-/// next `createReadBufferFromFileBase` is an `OpenedFileCache` hit (no `open`
-/// syscall). `CacheBase` is internally synchronized.
+/// Bounded keep-alive cache of open cache-segment readers (one per path). Held only as
+/// ANCHORS, never read through: keeping a reader alive keeps its `OpenedFile` warm, so the next
+/// open is an `OpenedFileCache` hit. Internally synchronized.
 using ReaderAnchorCache = CacheBase<String, ReadBufferFromFileBase>;
 
 /// One held cache-segment reader, reused across windows by the sequential read
@@ -93,8 +91,7 @@ private:
     ThrottlerPtr local_throttler;
     ReaderAnchorCache * anchors = nullptr;
     StreamingReaderSlot * stream_slot = nullptr;
-    /// The probe's shared deferred-bump book: each `read` records its `subrange`
-    /// here; the bump runs when the book's last owner dies.
+    /// Shared deferred-LRU-bump book; see `DiskCacheTouchBook`.
     std::shared_ptr<DiskCacheTouchBook> touch_book;
     LoggerPtr log = getLogger("DiskCacheReader");
 };
@@ -135,9 +132,8 @@ private:
     /// writer's `aligned_range` selects its own segment(s) from the holder.
     std::shared_ptr<FileSegmentsHolder> holder;
     IntervalSet committed_ranges;
-    /// Guards `committed_ranges` only. Per-segment write exclusion is the FileCache
-    /// downloader (`getOrSetDownloader`), but the worker and the foreground can append
-    /// disjoint segments of the SAME writer concurrently, racing this `IntervalSet`.
+    /// Guards `committed_ranges` only. Per-segment write exclusion is the FileCache downloader;
+    /// worker and foreground append disjoint segments of the SAME writer concurrently, racing this set.
     mutable std::mutex committed_mutex;
     ByteRange aligned_range;
     LoggerPtr log = getLogger("DiskCacheWriter");
@@ -149,10 +145,8 @@ private:
 /// members and the internally-locked `FileCache`; the shared mutable state
 /// (`ReaderAnchorCache`, `StreamingReaderSlot`) is internally synchronized.
 ///
-/// Cache identity per object: `custom_cache_key` when set (single-object,
-/// etag-keyed flow), else `FileCacheKey::fromPath(object.remote_path)`
-/// (multi-object gather mode). Origin: `custom_origin` when set, else the
-/// per-object `Data`/`System` classification by file extension.
+/// Cache key = `custom_cache_key` else `FileCacheKey::fromPath`; origin = `custom_origin` else the
+/// per-object `Data`/`System` classification.
 class DiskCacheProvider : public ICacheProvider
 {
 public:
@@ -178,17 +172,13 @@ public:
         const StoredObject & object, size_t object_file_offset, ByteRange range) override;
 
 private:
-
-
     FileCachePtr cache;
     FilesystemCacheSettings cache_settings;
-    /// Forwarded into each `DiskCacheReader` so cache-file reads honour
-    /// `max_local_read_bandwidth`.
+    /// Forwarded to each `DiskCacheReader` to honour `max_local_read_bandwidth`.
     ThrottlerPtr local_throttler;
     std::optional<FileCacheKey> custom_cache_key;
     std::optional<FileCacheOriginInfo> custom_origin;
-    /// Keeps the per-query budget context registered for the provider's
-    /// lifetime (see the constructor doc).
+    /// Keeps the per-query budget context alive; see the constructor.
     FileCache::QueryContextHolderPtr query_context_holder;
     /// Keep-alive anchors for recently-used cache-segment readers; see
     /// `ReaderAnchorCache`.

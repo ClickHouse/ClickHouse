@@ -114,9 +114,7 @@ public:
     void setSource(BufferCreator creator, StoredObjects objects, const ReadSettings & read_settings);
 
     /// -- Gather stage (ReadBufferFromRemoteFSGather) --
-    /// Joins multiple stored objects into a single seekable buffer.
-    /// Required for object storage where one logical file maps to multiple blobs.
-    /// Not needed for local disk where one file = one file.
+    /// Joins an object's multiple blobs into one seekable buffer (object storage only, not local disk).
     void needGather();
 
     /// -- Filesystem cache stage --
@@ -146,7 +144,6 @@ public:
     /// -- Distributed cache stage (sits between Gather and MemoryCache) --
     /// Implementation is in the DistributedCache module (ENABLE_DISTRIBUTED_CACHE).
     /// When enabled, reads go through the distributed cache with fallback to Gather.
-    /// Also affects: use_page_cache condition and min_bytes_for_seek in AsyncPrefetch.
     /// @param include_credentials_in_cache_key  When true, object storage credentials are
     ///        included in the cache key hash. Set to true for table engine reads (s3(...), etc.)
     ///        where different users may access the same path with different credentials.
@@ -180,10 +177,8 @@ public:
     /// e.g. "Source -> FilesystemCache -> Gather -> Async".
     String describe() const;
 
-    /// Creates a copy of this pipeline (all stages are preserved).
     ReadPipeline clone() const;
 
-    /// Queries.
     bool hasSource() const { return source.has_value(); }
     const StoredObjects & getStoredObjects() const;
 

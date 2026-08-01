@@ -226,8 +226,7 @@ private:
     /// Immutable per-layer decryption config, parsed once by `initDecryption`. SSL builds only.
     ReaderExecutorDecryptor decryptor;
 #endif
-    /// Byte offset of the first plaintext byte in the physical stream (0 without encryption);
-    /// logical `p` maps to physical `p + data_start_offset`.
+    /// Byte offset of the first plaintext byte in the physical stream (0 without encryption).
     size_t data_start_offset = 0;
 
     Stats stats;

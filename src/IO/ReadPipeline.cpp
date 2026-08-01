@@ -376,12 +376,9 @@ std::unique_ptr<ReadBufferFromFileBase> ReadPipeline::buildGatherStage(const std
         };
     }
 
-    /// use_external_buffer is true only when a downstream stage (memory cache, async prefetch)
-    /// manages the working buffer. Distributed cache does NOT require it — it reads from TCP
-    /// and manages its own buffer, so memory_cache/async_prefetch are the only stages that
-    /// hand external memory to the inner reader via `set()`. `usesMemoryCache()` (not a bare
-    /// `memory_cache.has_value()`) so an unknown-size object — for which the memory cache stage is
-    /// skipped — does not leave this reader in external-buffer mode without a driver.
+    /// External buffer only when a downstream stage drives the reader via `set()`: the memory cache
+    /// or async prefetch (distributed cache reads from TCP and manages its own buffer). `usesMemoryCache`
+    /// (not `memory_cache.has_value`) skips unknown-size objects -- see its definition.
     bool use_external_buffer = usesMemoryCache() || async_prefetch.has_value();
 
     size_t total_objects_size = getTotalSize(source->objects);
@@ -460,12 +457,9 @@ std::unique_ptr<ReadBufferFromFileBase> ReadPipeline::buildSingleObjectStage(con
     const auto & settings = source->read_settings;
     const auto & object = source->objects[0];
 
-    /// use_external_buffer for the outermost buffer: true when a downstream
-    /// stage (memory cache, async prefetch) manages the working buffer.
-    /// Inner cache layers always use external buffer (the outer cache calls set()).
-    /// `usesMemoryCache()` (not a bare `memory_cache.has_value()`) so an unknown-size object — for
-    /// which the memory cache stage is skipped — does not leave this reader in external-buffer
-    /// mode without a driver.
+    /// External buffer when a downstream stage (memory cache / async prefetch) drives the reader;
+    /// inner cache layers always do (the outer cache calls `set()`). `usesMemoryCache` (not
+    /// `memory_cache.has_value`) skips unknown-size objects -- see its definition.
     bool use_ext_buf = usesMemoryCache() || async_prefetch.has_value();
 
     /// -- Stage 2.5 (non-gather): Distributed cache --
