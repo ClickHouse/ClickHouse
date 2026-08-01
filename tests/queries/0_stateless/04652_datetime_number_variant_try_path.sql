@@ -8,7 +8,7 @@ SELECT '-- default: Variant try-path reads an unquoted number as a Unix timestam
 SELECT v FROM format(JSONEachRow, 'v Variant(String, DateTime64(3))', '{"v":1703363853.035}') ORDER BY toString(v);
 SELECT v FROM format(Values, 'v Variant(String, DateTime64(3))', '(1703363853.035)') ORDER BY toString(v);
 SELECT v FROM format(JSONEachRow, 'v Variant(String, DateTime)', '{"v":1703363853.7}') ORDER BY toString(v);
-SELECT v FROM format(Values, 'v Variant(String, DateTime)', '(1703363853)') ORDER BY toString(v);
+SELECT v FROM format(Values, 'v Variant(String, DateTime)', '(1703363853.7)') ORDER BY toString(v);
 
 SELECT '-- compatibility: DateTime64 bare integer is read as the raw value (ticks)';
 SELECT v FROM format(JSONEachRow, 'v Variant(String, DateTime64(3))', '{"v":1703363853035}') ORDER BY toString(v) SETTINGS input_format_read_datetime_number_as_raw_value = 1;
