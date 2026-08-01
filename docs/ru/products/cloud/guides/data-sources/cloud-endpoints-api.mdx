@@ -13,7 +13,7 @@ import { Image } from "/snippets/ru/components/Image.jsx";
   ## API статических IP-адресов
 </div>
 
-Если вам нужно получить список статических IP-адресов, вы можете использовать следующую конечную точку ClickHouse Cloud API: [`https://api.clickhouse.cloud/static-ips.json`](https://api.clickhouse.cloud/static-ips.json). Этот API предоставляет конечные точки сервисов ClickHouse Cloud, такие как ingress/egress IP-адреса и конечные точки S3 для каждого региона и облачного провайдера.
+Если вам нужно получить список статических IP-адресов, вы можете использовать следующую конечную точку ClickHouse Cloud API: [`https://api.clickhouse.cloud/static-ips.json`](https://api.clickhouse.cloud/static-ips.json). Этот API предоставляет конечные точки сервисов ClickHouse Cloud, такие как входящие/исходящие IP-адреса и конечные точки S3 для каждого региона и облачного провайдера.
 
 Если вы используете интеграцию, такую как MySQL или движок PostgreSQL, вам может потребоваться разрешить ClickHouse Cloud доступ к вашим инстансам. С помощью этого API можно получить публичные IP-адреса и настроить их в `firewalls` или `Authorized networks` в GCP, в `Security Groups` для Azure и AWS либо в любой другой системе управления исходящим трафиком, которую вы используете в своей инфраструктуре.
 

@@ -476,7 +476,7 @@ Cluster::Cluster(const Poco::Util::AbstractConfiguration & config,
         if (!shard_with_replicas && !shard_without_replicas)
             throw Exception(ErrorCodes::UNKNOWN_ELEMENT_IN_CONFIG, "Unknown element in config: {}", key);
 
-        const auto & prefix = config_prefix + key + ((shard_with_replicas) ? ".":  "");
+        const auto & prefix = config_prefix + key + (shard_with_replicas ? ".":  "");
         const auto weight = config.getInt(prefix + ".weight", default_weight);
         auto shard_name = use_shards_names ? config.getString(prefix + ".name") : "";
         if (use_shards_names)
