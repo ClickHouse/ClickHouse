@@ -8,7 +8,9 @@
 #include <Poco/URI.h>
 #include <Common/Exception.h>
 
+#include <array>
 #include <unordered_map>
+#include <unordered_set>
 
 namespace DB
 {
@@ -145,9 +147,11 @@ BigQueryConfiguration BigQueryConfiguration::fromArguments(ASTs & args, ContextP
 
         const auto & fields = configurationFields();
         std::vector<String> positional;
+        std::unordered_set<std::string_view> provided;
         for (auto & arg : args)
         {
-            /// Trailing arguments can be given in the key = value form.
+            /// Any argument can be given in the key = value form; they can be interleaved
+            /// with the positional ones.
             if (const auto * equals_function = arg->as<ASTFunction>(); equals_function && equals_function->name == "equals")
             {
                 auto [key, value] = getKeyValueFromAST(arg, context);
@@ -156,6 +160,8 @@ BigQueryConfiguration BigQueryConfiguration::fromArguments(ASTs & args, ContextP
                     throw Exception(ErrorCodes::BAD_ARGUMENTS, "Unknown BigQuery argument '{}'. {}", key, USAGE);
                 if (value.getType() != Field::Types::String)
                     throw Exception(ErrorCodes::BAD_ARGUMENTS, "BigQuery argument '{}' must be a string literal", key);
+                if (!provided.emplace(it->first).second)
+                    throw Exception(ErrorCodes::BAD_ARGUMENTS, "BigQuery argument '{}' is specified more than once", key);
                 configuration.*(it->second) = value.safeGet<String>();
             }
             else
@@ -167,20 +173,22 @@ BigQueryConfiguration BigQueryConfiguration::fromArguments(ASTs & args, ContextP
             }
         }
 
-        if (positional.size() < 3)
+        /// Positional arguments fill the 'project', 'dataset', 'table' and 'access_token'
+        /// slots in this order; each slot can be filled at most once.
+        static constexpr std::array<std::string_view, 4> positional_slots{"project", "dataset", "table", "access_token"};
+        for (size_t i = 0; i < positional.size(); ++i)
+        {
+            if (!provided.emplace(positional_slots[i]).second)
+                throw Exception(
+                    ErrorCodes::BAD_ARGUMENTS,
+                    "BigQuery argument '{}' is specified both positionally and in the key = value form", positional_slots[i]);
+            configuration.*(fields.at(positional_slots[i])) = positional[i];
+        }
+
+        if (!provided.contains("project") || !provided.contains("dataset") || !provided.contains("table"))
             throw Exception(
                 ErrorCodes::NUMBER_OF_ARGUMENTS_DOESNT_MATCH,
-                "BigQuery requires at least 'project', 'dataset' and 'table' arguments: {}", USAGE);
-
-        configuration.project = positional[0];
-        configuration.dataset = positional[1];
-        configuration.table = positional[2];
-        if (positional.size() >= 4)
-        {
-            if (!configuration.access_token.empty())
-                throw Exception(ErrorCodes::BAD_ARGUMENTS, "BigQuery access token is specified twice");
-            configuration.access_token = positional[3];
-        }
+                "BigQuery requires the 'project', 'dataset' and 'table' arguments: {}", USAGE);
     }
 
     validate(configuration);

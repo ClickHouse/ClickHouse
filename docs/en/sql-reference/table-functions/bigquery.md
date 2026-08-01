@@ -30,6 +30,8 @@ bigquery(named_collection[, key = value, ...])
 | `table`        | The table name.                                                                                 |
 | `access_token` | An OAuth 2.0 access token (optional positional argument, see [Authentication](#authentication)). |
 
+The `project`, `dataset`, `table` and `access_token` arguments can also be given in the `key = value` form; positional arguments fill these slots in this order, and specifying an argument both positionally and as a key (or the same key twice) is an error.
+
 The following arguments can be specified in the `key = value` form (or as keys of a named collection):
 
 | Key                   | Description                                                                             |

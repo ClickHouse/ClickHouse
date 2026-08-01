@@ -1296,6 +1296,47 @@ def test_secret_masking_fails_closed_on_invalid_arguments():
     assert "[HIDDEN]" in logged
 
 
+def test_named_target_arguments():
+    # `project`, `dataset` and `table` are first-class `key = value` arguments in the
+    # non-collection form, for both the table function and the engine.
+    assert (
+        node.query(
+            f"SELECT count() FROM bigquery(project = '{PROJECT}', dataset = '{DATASET}', "
+            f"table = 'test_paging', access_token = '{ACCESS_TOKEN}', base_url = '{BASE_URL}')"
+        )
+        == "10\n"
+    )
+    node.query("DROP TABLE IF EXISTS bq_named_target")
+    node.query(
+        f"CREATE TABLE bq_named_target ENGINE = BigQuery(project = '{PROJECT}', dataset = '{DATASET}', "
+        f"table = 'test_paging', access_token = '{ACCESS_TOKEN}', base_url = '{BASE_URL}')"
+    )
+    assert node.query("SELECT count() FROM bq_named_target") == "10\n"
+    node.query("DROP TABLE bq_named_target")
+
+    # A positional argument clashing with a named one is rejected instead of silently
+    # targeting the positional value.
+    error = node.query_and_get_error(
+        f"SELECT count() FROM bigquery('{PROJECT}', '{DATASET}', 'test_paging', "
+        f"table = 'other_table', access_token = '{ACCESS_TOKEN}', base_url = '{BASE_URL}')"
+    )
+    assert "specified both positionally" in error
+
+    # Repeating a `key = value` argument is rejected as well.
+    error = node.query_and_get_error(
+        f"SELECT count() FROM bigquery(project = '{PROJECT}', dataset = '{DATASET}', "
+        f"table = 'test_paging', table = 'other_table', access_token = '{ACCESS_TOKEN}', base_url = '{BASE_URL}')"
+    )
+    assert "more than once" in error
+
+    # Named target arguments alone are not enough: the target must be complete.
+    error = node.query_and_get_error(
+        f"SELECT count() FROM bigquery(project = '{PROJECT}', dataset = '{DATASET}', "
+        f"access_token = '{ACCESS_TOKEN}', base_url = '{BASE_URL}')"
+    )
+    assert "requires the 'project', 'dataset' and 'table' arguments" in error
+
+
 def test_unsupported_table_types():
     # Only native tables can be read; views, materialized views and external tables are rejected
     # up front with a clear error, matching the documented contract.
