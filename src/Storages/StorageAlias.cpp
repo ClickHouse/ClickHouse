@@ -285,7 +285,9 @@ void StorageAlias::truncate(
     /// Resolve the storage the exemption below is decided on, following BOTH link kinds: a database
     /// with `lazy_load_tables = 1` hands out a StorageProxy, and while that proxy is unloaded its
     /// getName() is "TableProxy", so the constructor's "cannot refer to another Alias" guard lets an
-    /// alias chain through it. `visited` bounds the walk: no cycle is reachable today, because the
+    /// alias chain through it. That guard inspects only an already-existing target and `RENAME` does not
+    /// re-validate, so a chain also forms by renaming an alias onto a then-free target name.
+    /// `visited` bounds the walk: no cycle is reachable today, because the
     /// catalog's dependency graph rejects one, but that check lives far from here and a walk trusting
     /// it would hang rather than fail. A cycle falls through to the non-exempt branch, which is safe.
     /// Only the DECISION uses this pointer. The lock below is deliberately taken on target_storage,
