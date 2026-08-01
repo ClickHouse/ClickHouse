@@ -52,8 +52,12 @@ than `HOST_METRICS_MIN_LABEL_MEM_GB` (15 GB) of RAM — and never to skipped job
 
 Every qualifying job's metrics are accumulated into the workflow `Result` (same
 plumbing as `storage_usage` / `compute_usage`), giving one KPI to monitor and be
-motivated to improve a whole pipeline. Stored as running sums (exact merge);
-percentages are derived by `PipelineUtilization.to_summary`:
+motivated to improve a whole pipeline. Stored as running sums (associative
+merge); percentages are derived by `PipelineUtilization.to_summary`. Stall
+percentages are the duration-weighted **average share of qualifying job-time**
+under pressure — not a single elapsed-workflow fraction (jobs run in parallel on
+different runners). Per-job contributions are reconstructed from rounded,
+sampled-window averages, so they are estimates rather than bit-exact:
 
 | Summary field | Meaning & weighting |
 |---|---|

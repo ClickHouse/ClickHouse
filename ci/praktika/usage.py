@@ -128,13 +128,18 @@ class PipelineUtilization(MetaClasses.SerializableSingleton):
 
     Stalls come in two PSI flavours. ``some`` (time at least one task was
     stalled) is a wall-clock pressure fraction independent of machine size, so
-    it is duration-weighted - "what % of pipeline runtime was under pressure".
-    ``full`` (all tasks stalled at once, so the box made zero progress; exists
-    for mem and io, not cpu) wastes the whole machine, so it is weighted by
-    core-seconds - the wasted-compute share of provisioned CPU.
+    it is duration-weighted - the average share of qualifying job-time spent
+    under pressure. Note this is NOT a single elapsed-workflow fraction: jobs
+    run in parallel on different runners, so two 10s jobs where only one stalls
+    the whole time read as 50%, not 100%. ``full`` (all tasks stalled at once,
+    so the box made zero progress; exists for mem and io, not cpu) wastes the
+    whole machine, so it is weighted by core-seconds - the wasted-compute share
+    of provisioned CPU.
 
-    Values are kept as running sums so merging across jobs is exact; the
-    percentages are derived on read (see to_summary).
+    Values are kept as running sums so merging across jobs is associative. The
+    per-job utilization contributions are reconstructed from the rounded,
+    sampled-window averages, so they are estimates (not bit-exact). Percentages
+    are derived on read (see to_summary).
     """
 
     jobs: int = 0

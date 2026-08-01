@@ -1400,6 +1400,10 @@ class _ResultS3:
                 workflow_result.ext["compute_usage"] = workflow_compute_usage
 
             if pipeline_utilization:
+                # TODO: like storage_usage/compute_usage above, this only adds -
+                # a job rerun double-counts its contribution (jobs, *_area, ...).
+                # Reruns are rare and this is a monitoring aggregate; make it
+                # rerun-safe (recompute from the workflow sub-results) if needed.
                 workflow_pipeline_utilization = PipelineUtilization.from_dict(workflow_result.ext.get("pipeline_utilization", {})).merge_with(pipeline_utilization)
                 workflow_result.ext["pipeline_utilization"] = workflow_pipeline_utilization
 
