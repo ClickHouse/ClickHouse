@@ -250,27 +250,26 @@ printf "row1\n" > "$TEST_DIR_ABS/nestedalias/root/target/inner/f.txt"
 ln -s target "$TEST_DIR_ABS/nestedalias/root/aliasA"
 ln -s target "$TEST_DIR_ABS/nestedalias/root/aliasB"
 
-# A collision that happens BEFORE its claiming frame has found any match. `root/aaa/back -> ..`
-# loops back to the root, and the only matching file sits under the sibling `mmm`, so the loop
-# re-enters the root frame while that frame may still have matched nothing. The file has two
-# names under `root/**/*.txt` (`root/mmm/zzz.txt` and `root/aaa/back/mmm/zzz.txt`, which the
-# finite spellings `root/*/*.txt` and `root/*/*/*/*.txt` return one each), so the write must be
-# refused either way.
+# A collision that happens BEFORE its claiming frame has found any match. One child of
+# `latematch/root` holds `back -> ..`, which loops the walk back into the root frame, and the
+# other holds the only matching file, so the collision happens while the root frame has matched
+# nothing yet. The file has two names under `root/**/*.txt` (`root/<match>/zzz.txt` and
+# `root/<loop>/back/<match>/zzz.txt`, which the finite spellings `root/*/*.txt` and
+# `root/*/*/*/*.txt` return one each), so the write must be refused.
 #
-# Which of the two names the walk visits first is `readdir` order, which is a property of the
-# filesystem and not of the names: ext4 returns its hash order and XFS returns creation order,
-# so a single fixture only puts the collision before the match on some filesystems. Hence a
-# MIRROR PAIR sharing one name set `{aaa, mmm}`, with the loop and the match swapped between
-# them. Both directories are read in the same order, so whichever name that order visits
-# first, exactly one of `lmA` and `lmB` has its collision strictly before its claimant's first
-# match, and the pair discriminates on every filesystem. Deciding at the collision rather than
-# after the walk reads a match count of zero for that one and allows its write.
-mkdir -p "$TEST_DIR_ABS/lmA/root/aaa" "$TEST_DIR_ABS/lmA/root/mmm"
-printf "row1\n" > "$TEST_DIR_ABS/lmA/root/mmm/zzz.txt"
-ln -s .. "$TEST_DIR_ABS/lmA/root/aaa/back"
-mkdir -p "$TEST_DIR_ABS/lmB/root/aaa" "$TEST_DIR_ABS/lmB/root/mmm"
-printf "row1\n" > "$TEST_DIR_ABS/lmB/root/aaa/zzz.txt"
-ln -s .. "$TEST_DIR_ABS/lmB/root/mmm/back"
+# For the collision to precede the match, the walk has to enter the loop child first, and
+# `fs::directory_iterator` performs no sorting: the order is `readdir` order, a property of the
+# filesystem rather than of the names. Measured over identical name sets, ext4 and tmpfs return
+# a hash order while XFS returns creation order, so neither naming nor creation order fixes
+# which child comes first. So do not assume an order, read it: create both children, ask the
+# filesystem which one it enumerates first (`ls -U`, the same unsorted order the iterator
+# uses), and put the loop under that one. Adding entries inside the children does not reorder
+# the parent, so the order observed here is the order the walk takes.
+mkdir -p "$TEST_DIR_ABS/latematch/root/aaa" "$TEST_DIR_ABS/latematch/root/mmm"
+LATEMATCH_LOOP=$(ls -U "$TEST_DIR_ABS/latematch/root" | head -1)
+LATEMATCH_MATCH=$(ls -U "$TEST_DIR_ABS/latematch/root" | tail -1)
+ln -s .. "$TEST_DIR_ABS/latematch/root/$LATEMATCH_LOOP/back"
+printf "row1\n" > "$TEST_DIR_ABS/latematch/root/$LATEMATCH_MATCH/zzz.txt"
 
 trap 'rm -rf "$TEST_DIR_ABS"' EXIT
 
@@ -443,17 +442,14 @@ $CLICKHOUSE_CLIENT --query "INSERT INTO TABLE FUNCTION file('$TEST_DIR_NAME/nest
 $CLICKHOUSE_CLIENT --query "SELECT count() FROM file('$TEST_DIR_NAME/nestedalias/root/target/inner/f.txt', 'TSV', 'val String')"
 
 # The refusal must hold when the alias collides before the claiming frame has matched anything,
-# which is what deciding after the walk rather than at the collision is for. Both halves of the
-# mirror pair are asserted because only one of them carries that ordering on any given
-# filesystem. The finite spellings show the two names the recursive pattern reaches, and each
-# file staying at one row shows no write leaked through.
+# which is what deciding after the walk rather than at the collision is for. The finite
+# spellings show the two names the recursive pattern reaches, and each staying at one row shows
+# that no write leaked through.
 echo "late-match-alias-insert-stays-readonly"
-for lm_dir in lmA lmB; do
-    $CLICKHOUSE_CLIENT --query "INSERT INTO TABLE FUNCTION file('$TEST_DIR_NAME/$lm_dir/root/**/*.txt', 'TSV', 'val String') VALUES ('written')" </dev/null 2>&1 \
-        | grep -qF "readonly mode because of globs" && echo "refused"
-    $CLICKHOUSE_CLIENT --query "SELECT count() FROM file('$TEST_DIR_NAME/$lm_dir/root/*/*.txt', 'TSV', 'val String')"
-    $CLICKHOUSE_CLIENT --query "SELECT count() FROM file('$TEST_DIR_NAME/$lm_dir/root/*/*/*/*.txt', 'TSV', 'val String')"
-done
+$CLICKHOUSE_CLIENT --query "INSERT INTO TABLE FUNCTION file('$TEST_DIR_NAME/latematch/root/**/*.txt', 'TSV', 'val String') VALUES ('written')" </dev/null 2>&1 \
+    | grep -qF "readonly mode because of globs" && echo "refused"
+$CLICKHOUSE_CLIENT --query "SELECT count() FROM file('$TEST_DIR_NAME/latematch/root/*/*.txt', 'TSV', 'val String')"
+$CLICKHOUSE_CLIENT --query "SELECT count() FROM file('$TEST_DIR_NAME/latematch/root/*/*/*/*.txt', 'TSV', 'val String')"
 
 # Server alive afterwards.
 $CLICKHOUSE_CLIENT --query "SELECT 'alive'"
