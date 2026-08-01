@@ -232,6 +232,12 @@ void ASTSetQuery::writeJSON(WriteBuffer & out) const
             if (i > 0) o << ',';
             o << "{\"name\":";
             writeJSONString(changes[i].name, o, fs);
+            /// The valueless form has to survive the JSON round trip for the same reason it has to
+            /// survive the SQL one (see `formatImpl`): reconstructed as an explicit `name = true` it
+            /// would be accepted for a setting of any type, which is what the shorthand check exists
+            /// to prevent. The value is Bool `true`, so it carries no information beyond the flag.
+            if (changes[i].shorthand)
+                o << ",\"shorthand\":true";
             /// Write "value" key and the field as a JSON object via writeFieldValue.
             /// We use a trick: writeFieldValue writes, "key":{field_json},
             /// but since we just wrote {"name":"..." the comma is exactly what we need.
@@ -295,10 +301,23 @@ void ASTSetQuery::readJSON(const Poco::JSON::Object & json)
             /// `BAD_ARGUMENTS` instead of being coerced (e.g. a number stringified into a setting name).
             JSONObjectReader change_reader(*change_obj);
             change.name = change_reader.getString("name");
+            /// Restore the valueless form so `checkShorthandChange` still rejects a non-`Bool`
+            /// setting written without a value; otherwise the JSON dialect is a way around it.
+            change.shorthand = change_reader.getBool("shorthand");
             auto value_obj = change_obj->getObject("value");
             if (!value_obj)
                 throw Exception(ErrorCodes::BAD_ARGUMENTS, "Missing 'value' object at index {} in 'changes' array during AST JSON deserialization", i);
             change.value = JSONObjectReader::readFieldFromObject(*value_obj);
+            /// The parser only ever pairs the flag with Bool `true`, and both `formatImpl` and
+            /// `hasSecretParts` skip the value of a valueless setting on that basis. Reject any other
+            /// pairing here so a crafted payload cannot hide a real value (a secret one, in
+            /// particular) from formatting and from the query log behind the flag.
+            if (change.shorthand && change.value != Field(true))
+                throw Exception(
+                    ErrorCodes::BAD_ARGUMENTS,
+                    "Setting '{}' is marked as valueless but its value is not `true` "
+                    "during AST JSON deserialization",
+                    change.name);
             changes.push_back(std::move(change));
         }
     }
@@ -334,6 +353,12 @@ bool ASTSetQuery::hasSecretParts() const
 {
     for (const auto & change : changes)
     {
+        /// A valueless setting carries Bool `true` and can never be secret, but this runs before any
+        /// settings validation (`executeQueryImpl` masks the query for logging first), so reading the
+        /// value as a String below would report `BAD_GET` instead of the intended `TYPE_MISMATCH`.
+        if (change.shorthand)
+            continue;
+
         CustomType custom;
         if (change.value.tryGet<CustomType>(custom) && custom.isSecret())
             return true;

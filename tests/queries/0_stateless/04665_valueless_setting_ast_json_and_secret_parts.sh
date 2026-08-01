@@ -1,0 +1,44 @@
+#!/usr/bin/env bash
+
+CUR_DIR=$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)
+# shellcheck source=../shell_config.sh
+. "$CUR_DIR"/../shell_config.sh
+
+# `SETTINGS name` with no value is a shorthand for `= true`, and is rejected for a setting whose type
+# is not `Bool`. Two paths used to sidestep that rule.
+
+# 1. The AST JSON round trip dropped `SettingChange::shorthand`, so the `clickhouse_json` dialect
+# reconstructed the valueless form as an explicit `name = true`, which is accepted for a setting of
+# any type. The formatted round trip must keep the valueless form.
+$CLICKHOUSE_CLIENT -q "SELECT formatQueryFromJSON(parseQueryToJSON(\$\$SELECT 1 SETTINGS max_threads\$\$))
+    = formatQuerySingleLine(\$\$SELECT 1 SETTINGS max_threads\$\$)"
+$CLICKHOUSE_CLIENT -q "SELECT formatQueryFromJSON(parseQueryToJSON(\$\$SELECT 1 SETTINGS max_threads\$\$))"
+$CLICKHOUSE_CLIENT -q "SELECT position(parseQueryToJSON(\$\$SELECT 1 SETTINGS max_threads\$\$), '\"shorthand\":true') > 0"
+
+# A setting given an explicit value is unaffected, and a genuine `Bool` setting still round-trips
+# in either form.
+$CLICKHOUSE_CLIENT -q "SELECT formatQueryFromJSON(parseQueryToJSON(\$\$SELECT 1 SETTINGS max_threads = 4\$\$))"
+$CLICKHOUSE_CLIENT -q "SELECT formatQueryFromJSON(parseQueryToJSON(\$\$SELECT 1 SETTINGS optimize_move_to_prewhere\$\$))"
+$CLICKHOUSE_CLIENT -q "SELECT position(parseQueryToJSON(\$\$SELECT 1 SETTINGS max_threads = 4\$\$), 'shorthand') = 0"
+
+# Executing the JSON payload must be rejected exactly like the SQL form, instead of silently running
+# with the setting equal to 1.
+JSON=$($CLICKHOUSE_CLIENT -q "SELECT parseQueryToJSON(\$\$SELECT 1 SETTINGS max_threads\$\$)")
+$CLICKHOUSE_CLIENT --dialect clickhouse_json --allow_experimental_json_ast_dialect 1 -q "$JSON" 2>&1 | grep -o "TYPE_MISMATCH" | head -n 1
+# The valueless form of a `Bool` setting still executes.
+JSON_BOOL=$($CLICKHOUSE_CLIENT -q "SELECT parseQueryToJSON(\$\$SELECT 1 SETTINGS optimize_move_to_prewhere\$\$)")
+$CLICKHOUSE_CLIENT --dialect clickhouse_json --allow_experimental_json_ast_dialect 1 -q "$JSON_BOOL"
+
+# The flag is only ever paired with `true`. A payload pairing it with a real value is rejected, so it
+# cannot be used to hide that value from formatting and from the query log.
+$CLICKHOUSE_CLIENT -q "SELECT formatQueryFromJSON(replaceAll(parseQueryToJSON(\$\$SELECT 1 SETTINGS format_avro_schema_registry_url = 'http://user:pass@localhost'\$\$), '{\"name\":\"format_avro_schema_registry_url\"', '{\"name\":\"format_avro_schema_registry_url\",\"shorthand\":true'))" 2>&1 | grep -o "BAD_ARGUMENTS" | head -n 1
+
+# 2. `ASTSetQuery::hasSecretParts` read the value of `format_avro_schema_registry_url` as a String.
+# `executeQueryImpl` masks the query for logging before any settings validation runs, so a valueless
+# setting reached it as Bool `true` and reported `BAD_GET` instead of the intended `TYPE_MISMATCH`.
+# The top-level form is validated before that; a subquery reaches the masking path first.
+$CLICKHOUSE_CLIENT -q "SELECT * FROM (SELECT 1 SETTINGS format_avro_schema_registry_url)" 2>&1 | grep -o "TYPE_MISMATCH" | head -n 1
+$CLICKHOUSE_CLIENT -q "SELECT 1 SETTINGS format_avro_schema_registry_url" 2>&1 | grep -o "TYPE_MISMATCH" | head -n 1
+
+# A setting that really carries a secret is still detected and formatted through the masking path.
+$CLICKHOUSE_CLIENT -q "SELECT formatQuerySingleLine(\$\$SELECT 1 SETTINGS format_avro_schema_registry_url = 'http://user:pass@localhost'\$\$)"
