@@ -13,11 +13,17 @@ CUR_DIR=$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)
 # refreshable view over a non-replicated inner table is refused there. The retry
 # machinery does not read the append flag, so the formatting branch is reached
 # either way.
+# all_replicas = 1 keeps refresh uncoordinated, so the replica this client is
+# connected to runs its own refresh. Without it, an APPEND view on a Replicated
+# database refreshes on one arbitrarily chosen same-shard replica: the retry
+# counter would still be visible here because it lives in shared Keeper state,
+# but query_log is replica-local, so the formatted comment below could be written
+# on another replica and never observed by this client.
 $CLICKHOUSE_CLIENT -q "
-    create materialized view rmv refresh after 1 year settings refresh_retries = 9223372036854775807 append
+    create materialized view rmv refresh after 1 year settings refresh_retries = 9223372036854775807, all_replicas = 1 append
         (x Int64) engine Memory as select throwIf(number = 0) as x from numbers(1);"
 
-# Wait until a third attempt has been scheduled. system.view_refreshes.retry is
+# Wait until attempt 2 has entered executeRefresh. system.view_refreshes.retry is
 # attempt_number minus one while a refresh is in flight, so retry = 1 is also
 # reached before the second attempt starts; retry >= 2 is reachable only once
 # attempt 2 has entered executeRefresh, which is where the '(attempt N/total)'
