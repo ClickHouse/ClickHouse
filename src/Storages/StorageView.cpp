@@ -456,9 +456,7 @@ void StorageView::readImpl(
     ///
     /// `INVOKER` views need no barrier: their inner query runs with the invoker's own rights, so
     /// there is nothing the invoker could learn that they are not already entitled to.
-    const auto sql_security_type = storage_snapshot->metadata->sql_security_type;
-    if ((sql_security_type == SQLSecurityType::DEFINER || sql_security_type == SQLSecurityType::NONE)
-        && context->getServerSettings()[ServerSetting::sql_security_views_are_optimization_barriers])
+    if (isSecurityBarrier(*storage_snapshot->metadata, context))
     {
         auto * root = query_plan.getRootNode();
         /// Marking the individual filtering steps lets an outer predicate still sink through the
@@ -627,6 +625,16 @@ Used for implementing views (for more information, see the `CREATE VIEW query`).
 )DOCS_MD",
         .syntax = "CREATE VIEW name AS SELECT ...",
         .related = {"MaterializedView"}});
+}
+
+bool StorageView::isSecurityBarrier(const StorageInMemoryMetadata & metadata, const ContextPtr & context)
+{
+    /// `INVOKER` needs no barrier: the inner query runs with the invoker's own rights, so there is
+    /// nothing they could learn that they are not already entitled to.
+    if (metadata.sql_security_type != SQLSecurityType::DEFINER && metadata.sql_security_type != SQLSecurityType::NONE)
+        return false;
+
+    return context->getServerSettings()[ServerSetting::sql_security_views_are_optimization_barriers];
 }
 
 ContextPtr StorageView::getViewSubqueryContext(ContextPtr context, const StorageSnapshotPtr &storage_snapshot)

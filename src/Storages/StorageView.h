@@ -61,6 +61,12 @@ public:
 
     static ContextPtr getViewSubqueryContext(ContextPtr context, const StorageSnapshotPtr & storage_snapshot);
 
+    /// Whether the view's inner query runs as somebody other than the invoker, so that the rows it
+    /// filters out are rows the invoker has no right to observe. Such a view must not be inlined
+    /// into the invoker's query, and expressions from the invoker's query must not be evaluated
+    /// below its own filtering. See `IQueryPlanStep::isSecurityBarrier`.
+    static bool isSecurityBarrier(const StorageInMemoryMetadata & metadata, const ContextPtr & context);
+
 protected:
     bool is_parameterized_view;
 };

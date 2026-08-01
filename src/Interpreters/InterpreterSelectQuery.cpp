@@ -834,11 +834,19 @@ InterpreterSelectQuery::InterpreterSelectQuery(
     {
         /// Allow push down and other optimizations for VIEW: replace with subquery and rewrite it.
         ASTPtr view_table;
+
+        /// Except for a view whose inner query runs as somebody else. Inlining it lets the rewrite
+        /// below merge the outer `WHERE` into the view's own `WHERE`, so an expression written by
+        /// the invoker would decide about rows the view does not expose — the same leak that
+        /// `IQueryPlanStep::isSecurityBarrier` prevents in the plan built by the analyzer. Reading
+        /// the view through `StorageView::read` instead keeps the outer predicate outside of it.
+        const bool inline_view = view && !StorageView::isSecurityBarrier(*metadata_snapshot, context);
+
         if (view)
-        {
             query_info.is_parameterized_view = view->isParameterizedView();
+
+        if (inline_view)
             StorageView::replaceWithSubquery(getSelectQuery(), view_table, metadata_snapshot, view->isParameterizedView());
-        }
 
         syntax_analyzer_result = TreeRewriter(context).analyzeSelect(
             query_ptr,
@@ -857,7 +865,8 @@ InterpreterSelectQuery::InterpreterSelectQuery(
         if (view)
         {
             /// Restore original view name. Save rewritten subquery for future usage in StorageView.
-            query_info.view_query = StorageView::restoreViewName(getSelectQuery(), view_table);
+            if (inline_view)
+                query_info.view_query = StorageView::restoreViewName(getSelectQuery(), view_table);
             view = nullptr;
         }
 
