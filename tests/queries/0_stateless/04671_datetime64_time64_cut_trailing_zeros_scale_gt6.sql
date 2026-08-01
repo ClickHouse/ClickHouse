@@ -65,6 +65,15 @@ SELECT 'C t64 s1 .7', toString(toTime64('100:00:00.7', 1));
 SELECT 'C t64 s9 zero', toString(toTime64('100:00:00.000000000', 9));
 SELECT 'C t64 s1 zero', toString(toTime64('100:00:00.0', 1));
 SELECT 'C dt64 s9 zero', toString(toDateTime64('2024-01-01 00:00:00.000000000', 9, 'UTC'));
+-- Only a DIRECT scalar `toString`/`CAST` trims `Time64`. Nested inside a tuple, array or map the value
+-- goes through `SerializationTime64::serializeText`, which ignores this setting, so the declared scale is
+-- printed. Scale 7 discriminates: .1234567 is the untrimmed declared scale, .123456700 would mean the
+-- nested route started consulting the setting. The `DateTime64` twins trim, so the gap is `Time64`-specific.
+SELECT 'C t64 s7 tuple untrimmed', toString(tuple(toTime64('100:00:00.1234567', 7)));
+SELECT 'C t64 s7 array untrimmed', toString([toTime64('100:00:00.1234567', 7)]);
+SELECT 'C t64 s7 map untrimmed', toString(map('k', toTime64('100:00:00.1234567', 7)));
+SELECT 'C dt64 s7 tuple trimmed', toString(tuple(toDateTime64('2024-01-01 00:00:00.1234567', 7, 'UTC')));
+SELECT 'C dt64 s7 array trimmed', toString([toDateTime64('2024-01-01 00:00:00.1234567', 7, 'UTC')]);
 
 -- D. More than one route reaches the fixed code: the conversion functions and the serialization.
 SELECT 'D cast', CAST(toDateTime64('2024-01-01 00:00:00.123456789', 9, 'UTC') AS String);

@@ -762,8 +762,9 @@ multiple of three that keeps every significant digit: [0, 3, 6, 9], correspondin
 'milliseconds', 'microseconds' and 'nanoseconds'. An all-zero fraction is dropped entirely. Conversion to a
 string with `toString` or `CAST` is always trimmed; row output formats are trimmed only under the default
 `date_time_output_format = 'simple'`, because `iso` and `unix_timestamp` always print the full declared
-scale. `Time64` values are trimmed the same way by `toString` and `CAST`, except that an all-zero fraction
-keeps three digits rather than being dropped, and they are not trimmed in the row output formats yet.)", 0) \
+scale. `Time64` values are trimmed the same way by a direct scalar `toString` or `CAST`, except that an
+all-zero fraction keeps three digits rather than being dropped. A `Time64` nested in a tuple, array or map is
+not trimmed yet, and neither are the `Time64` row output formats: both print the declared scale.)", 0) \
     DECLARE(Bool, input_format_read_datetime_number_as_raw_value, false, R"(
 Read a bare unquoted integer for a `DateTime`/`DateTime64` column as the raw underlying value — seconds for
 `DateTime`, ticks at the column precision for `DateTime64` — instead of a Unix timestamp in seconds.
