@@ -41,7 +41,7 @@ namespace Setting
     extern const SettingsUInt64 partial_merge_join_rows_in_right_blocks;
     extern const SettingsUInt64 join_on_disk_max_files_to_merge;
 
-    extern const SettingsNonZeroUInt64 grace_hash_join_initial_buckets;
+    extern const SettingsUInt64 grace_hash_join_initial_buckets;
     extern const SettingsNonZeroUInt64 grace_hash_join_max_buckets;
 
     extern const SettingsUInt64 max_rows_in_set_to_optimize_join;
@@ -92,7 +92,7 @@ namespace QueryPlanSerializationSetting
     extern const QueryPlanSerializationSettingsUInt64 partial_merge_join_rows_in_right_blocks;
     extern const QueryPlanSerializationSettingsUInt64 join_on_disk_max_files_to_merge;
 
-    extern const QueryPlanSerializationSettingsNonZeroUInt64 grace_hash_join_initial_buckets;
+    extern const QueryPlanSerializationSettingsUInt64 grace_hash_join_initial_buckets;
     extern const QueryPlanSerializationSettingsNonZeroUInt64 grace_hash_join_max_buckets;
 
     extern const QueryPlanSerializationSettingsUInt64 max_bytes_before_external_join;

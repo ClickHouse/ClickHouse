@@ -2,6 +2,7 @@
 
 #include <atomic>
 #include <mutex>
+#include <optional>
 
 #include <Core/Block.h>
 #include <Core/Block_fwd.h>
@@ -55,7 +56,8 @@ public:
         size_t initial_num_buckets_,
         size_t max_num_buckets_,
         const StatsCollectingParams & stats_collecting_params_ = {},
-        bool any_take_last_row_ = false);
+        bool any_take_last_row_ = false,
+        std::optional<size_t> rhs_size_estimation_ = std::nullopt);
 
     /// Concurrent mode: wraps a ConcurrentHashJoin.
     SpillingHashJoin(
@@ -67,7 +69,8 @@ public:
         size_t max_num_buckets_,
         size_t concurrent_slots_,
         const StatsCollectingParams & stats_collecting_params_ = {},
-        bool any_take_last_row_ = false);
+        bool any_take_last_row_ = false,
+        std::optional<size_t> rhs_size_estimation_ = std::nullopt);
 
     ~SpillingHashJoin() override;
 
@@ -117,6 +120,7 @@ private:
 
     void switchToGraceHashJoin();
     void tryConvertSlots();
+    size_t getInitialNumBucketsForGraceJoin(size_t total_rows, size_t total_bytes) const;
 
     LoggerPtr log;
     std::shared_ptr<TableJoin> table_join;
@@ -127,6 +131,7 @@ private:
     size_t max_num_buckets;
     bool any_take_last_row;
     size_t max_bytes_before_external_join;
+    std::optional<size_t> rhs_size_estimation;
 
     SharedMutex switch_mutex;
     std::atomic<size_t> next_slot_to_convert{0};

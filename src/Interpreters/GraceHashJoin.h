@@ -11,6 +11,7 @@
 #include <Common/SharedMutex.h>
 
 #include <mutex>
+#include <optional>
 
 namespace DB
 {
@@ -99,6 +100,15 @@ public:
     void onBuildPhaseFinish() override;
 
     static bool isSupported(const std::shared_ptr<TableJoin> & table_join);
+
+    /// Resolve the configured initial bucket count. Zero means automatic: when an estimate and
+    /// a per-bucket limit are available, create enough buckets that an evenly distributed bucket
+    /// stays below the limit. Otherwise, start with one bucket.
+    static size_t getInitialNumBuckets(
+        size_t configured_num_buckets,
+        size_t max_num_buckets,
+        std::optional<size_t> total_size_estimation = std::nullopt,
+        size_t max_bucket_size = 0);
 
     void forceSpill() { force_spill = true; }
 

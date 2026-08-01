@@ -1,21 +1,22 @@
 #include <Compression/CompressedWriteBuffer.h>
+#include <Core/Settings.h>
 #include <Formats/NativeWriter.h>
 #include <Formats/formatBlock.h>
 #include <Interpreters/Context.h>
 #include <Interpreters/GraceHashJoin.h>
 #include <Interpreters/HashJoin/HashJoin.h>
+#include <Interpreters/IJoin.h>
 #include <Interpreters/TableJoin.h>
 #include <Interpreters/TemporaryDataOnDisk.h>
 #include <base/FnTraits.h>
+#include <Common/BitHelpers.h>
 #include <Common/SharedMutex.h>
 #include <Common/formatReadable.h>
 #include <Common/logger_useful.h>
 #include <Common/thread_local_rng.h>
-#include <Interpreters/IJoin.h>
-#include <Core/Settings.h>
 
-#include <numeric>
 #include <fmt/format.h>
+#include <numeric>
 
 
 namespace CurrentMetrics
@@ -28,6 +29,7 @@ namespace ProfileEvents
     extern const Event ExternalJoinCompressedBytes;
     extern const Event ExternalJoinUncompressedBytes;
     extern const Event ExternalJoinWritePart;
+    extern const Event JoinGraceHashJoinInitialBuckets;
 }
 
 namespace DB
@@ -286,10 +288,10 @@ void GraceHashJoin::initBuckets()
     if (!buckets.empty())
         return;
 
-    size_t initial_rounded_num_buckets = roundUpToPowerOfTwoOrZero(
-        std::clamp<size_t>(initial_num_buckets, 1, max_num_buckets));
+    size_t initial_rounded_num_buckets = getInitialNumBuckets(initial_num_buckets, max_num_buckets);
 
     addBuckets(initial_rounded_num_buckets);
+    ProfileEvents::increment(ProfileEvents::JoinGraceHashJoinInitialBuckets, initial_rounded_num_buckets);
 
     if (buckets.empty())
         throw Exception(ErrorCodes::LOGICAL_ERROR, "No buckets created");
@@ -298,6 +300,36 @@ void GraceHashJoin::initBuckets()
 
     current_bucket = buckets.front().get();
     current_bucket->startJoining();
+}
+
+size_t GraceHashJoin::getInitialNumBuckets(
+    size_t configured_num_buckets,
+    size_t max_num_buckets,
+    std::optional<size_t> total_size_estimation,
+    size_t max_bucket_size)
+{
+    chassert(max_num_buckets > 0);
+
+    size_t initial_num_buckets = configured_num_buckets;
+    if (initial_num_buckets == 0)
+    {
+        initial_num_buckets = 1;
+        if (total_size_estimation && max_bucket_size > 0)
+        {
+            /// `SizeLimits::softCheck` treats equality as an overflow. Add one bucket after
+            /// integer division so the estimated size of every evenly distributed bucket is
+            /// strictly below the limit. Saturate before adding to avoid overflow.
+            const size_t full_buckets = *total_size_estimation / max_bucket_size;
+            initial_num_buckets = full_buckets >= max_num_buckets ? max_num_buckets : full_buckets + 1;
+        }
+    }
+
+    const size_t rounded_num_buckets = roundUpToPowerOfTwoOrZero(std::clamp(initial_num_buckets, 1uz, max_num_buckets));
+    if (rounded_num_buckets <= max_num_buckets)
+        return rounded_num_buckets;
+
+    /// The maximum may not be a power of two. Keep the result both valid and within the limit.
+    return 1uz << bitScanReverse(max_num_buckets);
 }
 
 bool GraceHashJoin::isSupported(const std::shared_ptr<TableJoin> & table_join)

@@ -7,6 +7,9 @@
 #include <Common/ProfileEvents.h>
 #include <Common/logger_useful.h>
 
+#include <algorithm>
+#include <limits>
+
 namespace ProfileEvents
 {
 extern const Event JoinSpillingHashJoinSwitchedToGraceJoin;
@@ -23,7 +26,8 @@ SpillingHashJoin::SpillingHashJoin(
     size_t initial_num_buckets_,
     size_t max_num_buckets_,
     const StatsCollectingParams & stats_collecting_params_,
-    bool any_take_last_row_)
+    bool any_take_last_row_,
+    std::optional<size_t> rhs_size_estimation_)
     : log(getLogger("SpillingHashJoin"))
     , table_join(std::move(table_join_))
     , left_sample_block(std::move(left_sample_block_))
@@ -33,6 +37,7 @@ SpillingHashJoin::SpillingHashJoin(
     , max_num_buckets(max_num_buckets_)
     , any_take_last_row(any_take_last_row_)
     , max_bytes_before_external_join(table_join->maxBytesBeforeExternalJoin())
+    , rhs_size_estimation(rhs_size_estimation_)
 {
     hash_join = std::make_shared<HashJoin>(
         table_join, right_sample_block_, any_take_last_row, /*reserve_num_=*/0, /*instance_id_=*/"",
@@ -48,7 +53,8 @@ SpillingHashJoin::SpillingHashJoin(
     size_t max_num_buckets_,
     size_t concurrent_slots_,
     const StatsCollectingParams & stats_collecting_params_,
-    bool any_take_last_row_)
+    bool any_take_last_row_,
+    std::optional<size_t> rhs_size_estimation_)
     : log(getLogger("SpillingHashJoin"))
     , table_join(std::move(table_join_))
     , left_sample_block(std::move(left_sample_block_))
@@ -58,6 +64,7 @@ SpillingHashJoin::SpillingHashJoin(
     , max_num_buckets(max_num_buckets_)
     , any_take_last_row(any_take_last_row_)
     , max_bytes_before_external_join(table_join->maxBytesBeforeExternalJoin())
+    , rhs_size_estimation(rhs_size_estimation_)
 {
     concurrent_join = std::make_shared<ConcurrentHashJoin>(
         table_join,
@@ -95,6 +102,44 @@ void SpillingHashJoin::tryConvertSlots()
             blocks.pop_front();
         }
     }
+}
+
+size_t SpillingHashJoin::getInitialNumBucketsForGraceJoin(size_t total_rows, size_t total_bytes) const
+{
+    if (initial_num_buckets > 0)
+        return GraceHashJoin::getInitialNumBuckets(initial_num_buckets, max_num_buckets);
+
+    const size_t estimated_total_rows = std::max(total_rows, rhs_size_estimation.value_or(0));
+    size_t result = GraceHashJoin::getInitialNumBuckets(
+        /*configured_num_buckets=*/0,
+        max_num_buckets,
+        estimated_total_rows,
+        table_join->sizeLimits().max_rows);
+
+    if (max_bytes_before_external_join > 0)
+    {
+        size_t estimated_total_bytes = total_bytes;
+        if (total_rows > 0 && estimated_total_rows > total_rows)
+        {
+            const UInt128 numerator = static_cast<UInt128>(total_bytes) * estimated_total_rows;
+            const UInt128 estimate = numerator / total_rows + (numerator % total_rows != 0);
+            estimated_total_bytes = static_cast<size_t>(
+                std::min<UInt128>(estimate, std::numeric_limits<size_t>::max()));
+        }
+
+        /// `GraceHashJoin` spills when twice the in-memory bucket size reaches the external
+        /// join threshold. Express the same boundary without multiplication to avoid overflow.
+        const size_t max_bucket_bytes = max_bytes_before_external_join / 2 + max_bytes_before_external_join % 2;
+        result = std::max(
+            result,
+            GraceHashJoin::getInitialNumBuckets(
+                /*configured_num_buckets=*/0,
+                max_num_buckets,
+                estimated_total_bytes,
+                max_bucket_bytes));
+    }
+
+    return result;
 }
 
 std::string SpillingHashJoin::getName() const
@@ -186,9 +231,12 @@ void SpillingHashJoin::switchToGraceHashJoin()
 
             print_threshold_reached_log(concurrent_join, "ConcurrentHashJoin");
 
+            const size_t grace_initial_num_buckets = getInitialNumBucketsForGraceJoin(
+                concurrent_join->getTotalRowCount(), concurrent_join->getTotalByteCount());
+
             /// Create GraceHashJoin.
             grace_join = std::make_shared<GraceHashJoin>(
-                initial_num_buckets,
+                grace_initial_num_buckets,
                 max_num_buckets,
                 table_join,
                 left_sample_block,
@@ -212,10 +260,12 @@ void SpillingHashJoin::switchToGraceHashJoin()
     print_threshold_reached_log(hash_join, "HashJoin");
     /// Single-thread path: extract from HashJoin, feed to GraceHashJoin.
     ProfileEvents::increment(ProfileEvents::JoinSpillingHashJoinSwitchedToGraceJoin);
+    const size_t grace_initial_num_buckets = getInitialNumBucketsForGraceJoin(
+        hash_join->getTotalRowCount(), hash_join->getTotalByteCount());
     BlocksList right_blocks = hash_join->releaseJoinedBlocks(/*restructure=*/false);
 
     chosen_join = std::make_shared<GraceHashJoin>(
-        initial_num_buckets,
+        grace_initial_num_buckets,
         max_num_buckets,
         table_join,
         left_sample_block,

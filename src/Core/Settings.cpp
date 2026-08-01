@@ -8320,8 +8320,8 @@ Wait for committed changes to become actually visible in the latest snapshot
     DECLARE(Bool, implicit_transaction, false, R"(
 If enabled and not already inside a transaction, wraps the query inside a full transaction (begin + commit or rollback)
 )", EXPERIMENTAL) \
-    DECLARE(NonZeroUInt64, grace_hash_join_initial_buckets, 1, R"(
-Initial number of grace hash join buckets
+    DECLARE(UInt64, grace_hash_join_initial_buckets, 0, R"(
+Initial number of grace hash join buckets. If set to `0`, ClickHouse chooses the number automatically based on the estimated or actual size of the right table. Positive values preserve the explicitly configured number of initial buckets.
 )", EXPERIMENTAL) \
     DECLARE(NonZeroUInt64, grace_hash_join_max_buckets, 1024, R"(
 Limit on the number of grace hash join buckets

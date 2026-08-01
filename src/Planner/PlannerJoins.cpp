@@ -70,7 +70,7 @@ namespace Setting
     extern const SettingsJoinAlgorithm join_algorithm;
     extern const SettingsUInt64 parallel_hash_join_threshold;
     extern const SettingsSeconds lock_acquire_timeout;
-    extern const SettingsNonZeroUInt64 grace_hash_join_initial_buckets;
+    extern const SettingsUInt64 grace_hash_join_initial_buckets;
     extern const SettingsNonZeroUInt64 grace_hash_join_max_buckets;
     extern const SettingsBool allow_dynamic_type_in_join_keys;
     extern const SettingsUInt64 max_bytes_before_external_join;
@@ -1217,7 +1217,8 @@ static std::shared_ptr<IJoin> tryCreateJoin(
                         params.grace_hash_join_max_buckets,
                         params.max_threads,
                         stats_collecting_params,
-                        params.join_any_take_last_row);
+                        params.join_any_take_last_row,
+                        params.rhs_size_estimation);
                 }
             }
 
@@ -1229,7 +1230,8 @@ static std::shared_ptr<IJoin> tryCreateJoin(
                 params.grace_hash_join_initial_buckets,
                 params.grace_hash_join_max_buckets,
                 stats_collecting_params,
-                params.join_any_take_last_row);
+                params.join_any_take_last_row,
+                params.rhs_size_estimation);
         }
 
         if (table_join->allowParallelHashJoin())
@@ -1267,8 +1269,16 @@ static std::shared_ptr<IJoin> tryCreateJoin(
 
         if (GraceHashJoin::isSupported(table_join))
         {
-            return std::make_shared<GraceHashJoin>(
+            std::optional<size_t> rhs_size_estimation;
+            if (params.rhs_size_estimation)
+                rhs_size_estimation = static_cast<size_t>(*params.rhs_size_estimation);
+            const size_t initial_num_buckets = GraceHashJoin::getInitialNumBuckets(
                 params.grace_hash_join_initial_buckets,
+                params.grace_hash_join_max_buckets,
+                rhs_size_estimation,
+                table_join->sizeLimits().max_rows);
+            return std::make_shared<GraceHashJoin>(
+                initial_num_buckets,
                 params.grace_hash_join_max_buckets,
                 table_join,
                 left_table_expression_header,
@@ -1299,7 +1309,8 @@ static std::shared_ptr<IJoin> tryCreateJoin(
                     params.grace_hash_join_max_buckets,
                     params.max_threads,
                     stats_collecting_params,
-                    params.join_any_take_last_row);
+                    params.join_any_take_last_row,
+                    params.rhs_size_estimation);
             }
 
             return std::make_shared<SpillingHashJoin>(
@@ -1310,7 +1321,8 @@ static std::shared_ptr<IJoin> tryCreateJoin(
                 params.grace_hash_join_initial_buckets,
                 params.grace_hash_join_max_buckets,
                 stats_collecting_params,
-                params.join_any_take_last_row);
+                params.join_any_take_last_row,
+                params.rhs_size_estimation);
         }
 
         if (MergeJoin::isSupported(table_join))
