@@ -2969,6 +2969,13 @@ std::optional<BlockIO> InterpreterCreateQuery::fillMaterializedViewAtomically(co
         /// A failure after the subscription (e.g. while building the population pipeline) is rolled back the
         /// same way: the DROP also removes the registered dependencies. The drop runs under the global
         /// context, like the internal drop of a view's inner table: the user needed only CREATE to get here.
+        ///
+        /// The drop is asynchronous. Everything the rollback needs - unsubscribing the view from the source,
+        /// removing it from the catalog and renaming away its metadata, so that the name is free again for a
+        /// retry - happens synchronously inside `DatabaseAtomic::dropTable`; only the removal of the (empty)
+        /// data is deferred to the background drop task, exactly as for a plain `DROP TABLE`. Waiting for
+        /// that here would buy nothing and can hang the failed `CREATE` indefinitely: `clickhouse-local`
+        /// never finishes `waitTableFinallyDropped`, so a synchronous drop turns a rollback into a hang.
         try
         {
             InterpreterDropQuery::executeDropQuery(
@@ -2976,7 +2983,7 @@ std::optional<BlockIO> InterpreterCreateQuery::fillMaterializedViewAtomically(co
                 getContext()->getGlobalContext(),
                 getContext(),
                 StorageID{create.getDatabase(), create.getTable(), create.uuid},
-                /* sync */ true,
+                /* sync */ false,
                 /* ignore_sync_setting */ true);
         }
         catch (...)
