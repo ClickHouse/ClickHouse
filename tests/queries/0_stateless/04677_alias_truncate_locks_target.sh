@@ -48,10 +48,17 @@ $CLICKHOUSE_CLIENT --query_id="$READER_ID" -q "
 # read_rows > 0 rather than mere presence in system.processes: the ProcessList entry is published
 # before the interpreter is built, hence before any table lock is taken, so presence alone can be
 # true while the lock does not exist yet.
+# The outcome is asserted, not just waited for: on a timeout this loop would fall through with no
+# reader holding the lock, and the assertions below would then measure an uncontended truncate.
+reader_started=0
 for _ in {1..200}; do
-    [[ $($CLICKHOUSE_CLIENT -q "SELECT count() FROM system.processes WHERE query_id = '$READER_ID' AND read_rows > 0") -gt 0 ]] && break
+    if [[ $($CLICKHOUSE_CLIENT -q "SELECT count() FROM system.processes WHERE query_id = '$READER_ID' AND read_rows > 0") -gt 0 ]]; then
+        reader_started=1
+        break
+    fi
     sleep 0.05
 done
+echo -e "reader started\t$reader_started"
 
 $CLICKHOUSE_CLIENT -q "TRUNCATE TABLE rdb_alias SETTINGS lock_acquire_timeout = 3" 2>&1 \
     | grep -c -m1 "DEADLOCK_AVOIDED" | sed 's/^/truncate blocked by reader\t/'
@@ -78,23 +85,39 @@ $CLICKHOUSE_CLIENT -q "CREATE TABLE $LAZY_DB.mt_alias ENGINE = Alias($LAZY_DB, '
 $CLICKHOUSE_CLIENT -q "SELECT 'lazy target is a proxy', engine = 'TableProxy' FROM system.tables WHERE database = '$LAZY_DB' AND name = 'mt'"
 
 LAZY_READER_ID="lazy_reader_$CLICKHOUSE_DATABASE"
+# Only stdout is redirected, unlike a suppressed 2>&1: a reader that fails outright must surface,
+# because the runner fails any test with non-empty stderr. Measured that the deliberate kill below
+# and the following DROP DATABASE write nothing to stderr, so this cannot fail spuriously.
 $CLICKHOUSE_CLIENT --query_id="$LAZY_READER_ID" -q "
     SELECT sum(sleepEachRow(0.2)) FROM $LAZY_DB.mt SETTINGS max_block_size = 1, max_threads = 1
-" > /dev/null 2>&1 &
+" > /dev/null &
 
+# Asserted for the same reason as the first cell, and it matters more here: this cell's headline
+# assertion is that the truncate is NOT blocked, which a reader that never started would also
+# satisfy. Without this row the whole lazy-proxy cell could pass having tested nothing.
+lazy_reader_started=0
 for _ in {1..200}; do
-    [[ $($CLICKHOUSE_CLIENT -q "SELECT count() FROM system.processes WHERE query_id = '$LAZY_READER_ID' AND read_rows > 0") -gt 0 ]] && break
+    if [[ $($CLICKHOUSE_CLIENT -q "SELECT count() FROM system.processes WHERE query_id = '$LAZY_READER_ID' AND read_rows > 0") -gt 0 ]]; then
+        lazy_reader_started=1
+        break
+    fi
     sleep 0.05
 done
+echo -e "lazy reader started\t$lazy_reader_started"
 
-$CLICKHOUSE_CLIENT -q "TRUNCATE TABLE $LAZY_DB.mt_alias SETTINGS lock_acquire_timeout = 3" 2>&1 \
-    | grep -c -m1 "DEADLOCK_AVOIDED" | sed 's/^/truncate lazy proxied MergeTree blocked\t/'
+# Status and stderr captured separately rather than folded into one grep: `grep -c DEADLOCK_AVOIDED`
+# reads 0 both when the truncate succeeds and when it fails for any unrelated reason, so on its own
+# it cannot tell "not blocked" from "broken". The succeeded row closes that half.
+lazy_err=$($CLICKHOUSE_CLIENT -q "TRUNCATE TABLE $LAZY_DB.mt_alias SETTINGS lock_acquire_timeout = 3" 2>&1)
+lazy_rc=$?
+echo -e "truncate lazy proxied MergeTree succeeded\t$((lazy_rc == 0 ? 1 : 0))"
+echo -e "truncate lazy proxied MergeTree blocked\t$(echo "$lazy_err" | grep -c -m1 "DEADLOCK_AVOIDED")"
 kill %1 2>/dev/null
 wait 2>/dev/null
 $CLICKHOUSE_CLIENT -q "DROP DATABASE IF EXISTS $LAZY_DB SYNC"
 
 # TRUNCATE TABLES ... LIKE, which can want the same target lock from several pool tasks at once,
-# is covered by 04674_alias_truncate_tables_like_overlap: forcing that overlap needs a server-global
+# is covered by 04678_alias_truncate_tables_like_overlap: forcing that overlap needs a server-global
 # failpoint, so it lives in its own no-parallel test and this one stays parallel-safe.
 
 # The target is still usable through every route, so neither the storage nor its handle was lost.

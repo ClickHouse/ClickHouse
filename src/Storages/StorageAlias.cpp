@@ -19,6 +19,7 @@
 #include <Access/Common/AccessFlags.h>
 #include <Common/assert_cast.h>
 #include <Common/Exception.h>
+#include <Common/FailPoint.h>
 
 
 namespace DB
@@ -34,6 +35,11 @@ namespace ErrorCodes
     extern const int NUMBER_OF_ARGUMENTS_DOESNT_MATCH;
     extern const int BAD_ARGUMENTS;
     extern const int NOT_IMPLEMENTED;
+}
+
+namespace FailPoints
+{
+    extern const char alias_truncate_pause_holding_target_lock[];
 }
 
 StorageAlias::StorageAlias(
@@ -304,6 +310,10 @@ void StorageAlias::truncate(
     /// same-query fast path and get a LOGICAL_ERROR instead of waiting.
     TableExclusiveLockHolder target_lock = target_storage->lockExclusively(
         RWLockImpl::NO_QUERY, local_context->getSettingsRef()[Setting::lock_acquire_timeout]);
+
+    /// Lets a test hold this lock while another task asks for it, which is the only interleaving
+    /// where the query id above matters. PAUSEABLE_ONCE, so only the first task parks.
+    FailPointInjection::pauseFailPoint(FailPoints::alias_truncate_pause_holding_target_lock);
 
     auto target_metadata = target_storage->getInMemoryMetadataPtr(local_context, false);
     target_storage->truncate(query, target_metadata, local_context, target_lock);

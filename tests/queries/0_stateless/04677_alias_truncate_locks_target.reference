@@ -1,6 +1,9 @@
+reader started	1
 truncate blocked by reader	1
 truncate after reader	1
 lazy target is a proxy	1
+lazy reader started	1
+truncate lazy proxied MergeTree succeeded	1
 truncate lazy proxied MergeTree blocked	0
 rows after truncate	0
 direct	1
