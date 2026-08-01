@@ -16,6 +16,7 @@
 #include <IO/WriteBufferFromString.h>
 #include <IO/WriteHelpers.h>
 #include <absl/container/inlined_vector.h>
+#include <optional>
 #include <Common/Arena.h>
 #include <Common/assert_cast.h>
 #include <Common/typeid_cast.h>
@@ -99,6 +100,28 @@ void createStateFromValues(const AggregateFunctionPtr & function, IColumn & colu
     column_concrete.getData().push_back(place);
 }
 
+/// Backward compatibility: released parsed the single-argument `value` payload with the argument type's
+/// `deserializeTextCSV`, which consults `input_format_csv_enum_as_number` for an `Enum` argument and never
+/// looked at `input_format_tsv_enum_as_number`. The unified path parses the payload with the escaped or
+/// whole-text serialization instead, and those two consult `input_format_tsv_enum_as_number`: with it
+/// enabled they read the payload as a number and reject the enum names released accepted here (verified on
+/// released `26.7.1`: with `input_format_tsv_enum_as_number = 1` and `aggregate_function_input_format =
+/// 'value'`, the name `a` was accepted for `AggregateFunction(any, Enum8('a' = 1))` in `TabSeparated`,
+/// `TSVRaw` and the string-wrapped `JSONEachRow` form). So disable the TSV setting for that payload.
+/// Both forms keep working afterwards, because `EnumValues::getValue` falls back to parsing the name as a
+/// number - which is also why the numeric form was never lost in the first place, regardless of
+/// `input_format_csv_enum_as_number`. Composite argument types containing an `Enum` are unaffected: their
+/// nested elements are parsed with the quoted serialization on both the released and the unified path.
+std::optional<FormatSettings> legacyEnumValueSettings(const DataTypePtr & argument_type, const FormatSettings & settings)
+{
+    if (!settings.tsv.enum_as_number || !isEnum(removeNullable(removeLowCardinality(argument_type))))
+        return {};
+
+    FormatSettings result = settings;
+    result.tsv.enum_as_number = false;
+    return result;
+}
+
 using DeserializeMethod = void(SerializationPtr, IColumn &, ReadBuffer &, const FormatSettings &);
 #define DESERIALIZE_METHOD(method) [] (SerializationPtr serde, auto column_, auto istr_, auto settings_) { \
     serde->method(column_, istr_, settings_); \
@@ -115,7 +138,13 @@ void deserializeFromValues(IColumn & column, ReadBuffer & istr, const FormatSett
     if (settings.aggregate_function_input_format == FormatSettings::AggregateFunctionInputFormat::Value)
     {
         const auto tmp_column = value_type->createColumn();
-        Method(value_type->getDefaultSerialization(), *tmp_column, istr, settings);
+        const auto legacy_enum_settings
+            = argument_types.size() == 1 ? legacyEnumValueSettings(argument_types[0], settings) : std::nullopt;
+        Method(
+            value_type->getDefaultSerialization(),
+            *tmp_column,
+            istr,
+            legacy_enum_settings ? *legacy_enum_settings : settings);
 
         absl::InlinedVector<const IColumn *, 7> columns_ptrs;
         if (argument_types.size() == 1)
@@ -261,6 +290,11 @@ void deserializeFromSingleNullableArgumentLegacyValue(
     const auto tmp_column = value_type->createColumn();
     const auto nested_type = removeNullable(removeLowCardinality(value_type));
 
+    /// See `legacyEnumValueSettings`: the whole-text parses below must not read a `Nullable(Enum)` payload
+    /// as a number only.
+    const auto legacy_enum_settings = legacyEnumValueSettings(value_type, settings);
+    const FormatSettings & value_settings = legacy_enum_settings ? *legacy_enum_settings : settings;
+
     if (value == settings.csv.null_representation)
     {
         /// The released CSV parse of the unwrapped content produced a null for the CSV null representation
@@ -275,7 +309,7 @@ void deserializeFromSingleNullableArgumentLegacyValue(
         /// those two words into a null instead, so parse the content as the nested type here.
         const auto nested_column = nested_type->createColumn();
         ReadBufferFromString buf(value);
-        nested_type->getDefaultSerialization()->deserializeWholeText(*nested_column, buf, settings);
+        nested_type->getDefaultSerialization()->deserializeWholeText(*nested_column, buf, value_settings);
         tmp_column->insert((*nested_column)[0]);
     }
     else
@@ -283,7 +317,7 @@ void deserializeFromSingleNullableArgumentLegacyValue(
         /// For the remaining nested types the released CSV parse of `NULL` produced a default value rather
         /// than a null, so accepting the `NULL` keyword of the whole-text parse only adds a form.
         ReadBufferFromString buf(value);
-        value_type->getDefaultSerialization()->deserializeWholeText(*tmp_column, buf, settings);
+        value_type->getDefaultSerialization()->deserializeWholeText(*tmp_column, buf, value_settings);
     }
 
     const IColumn * arg_columns[1] = {tmp_column.get()};
