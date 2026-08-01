@@ -278,7 +278,17 @@ void NetCDFHeader::resolveNumberOfRecords(UInt64 file_size)
 
     /// A file written in the streaming mode does not store the number of records, so the reader is
     /// expected to derive it from the size of the file.
-    if (record_size == 0 || file_size <= records_begin)
+    ///
+    /// A file with zero records ends exactly where its first record variable begins: later record
+    /// variables may point past the end of the file, but the earliest one cannot. A record section
+    /// that begins past the end of the file means that the file was truncated inside the header
+    /// padding or the data of the non-record variables.
+    if (record_size != 0 && file_size < records_begin)
+        throw Exception(ErrorCodes::INCORRECT_DATA,
+            "The NetCDF file does not store the number of records and its record section begins at the offset {}, "
+            "but the file is only {} bytes: the file is truncated", records_begin, file_size);
+
+    if (record_size == 0 || file_size == records_begin)
     {
         num_records = 0;
     }
@@ -454,6 +464,26 @@ NetCDFHeader readNetCDFHeader(ReadBuffer & in)
 
     if (num_record_variables == 1)
         header.record_size = last_record_variable->slab_size;
+
+    for (const auto & variable : header.variables)
+    {
+        /// The data has to come after the header, or the bytes of the header itself would be
+        /// served as the values of the variable.
+        if (variable.begin < header.size)
+            throw Exception(ErrorCodes::INCORRECT_DATA,
+                "The variable {} of the NetCDF file begins at the offset {}, inside the header of {} bytes",
+                variable.name, variable.begin, header.size);
+
+        /// The slab of a record variable has to fit inside the record, or reading it would return
+        /// the bytes of another record.
+        UInt64 slab_end = 0;
+        if (variable.is_record
+            && (common::addOverflow(variable.begin - header.records_begin, variable.slab_size, slab_end)
+                || slab_end > header.record_size))
+            throw Exception(ErrorCodes::INCORRECT_DATA,
+                "The variable {} of the NetCDF file begins at the offset {} of a record of {} bytes",
+                variable.name, variable.begin - header.records_begin, header.record_size);
+    }
 
     return header;
 }
