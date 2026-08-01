@@ -129,6 +129,7 @@ namespace ObjectStorageQueueSetting
     extern const ObjectStorageQueueSettingsUInt64 min_insert_block_size_rows_for_materialized_views;
     extern const ObjectStorageQueueSettingsUInt64 min_insert_block_size_bytes_for_materialized_views;
     extern const ObjectStorageQueueSettingsBool use_persistent_processing_nodes;
+    extern const ObjectStorageQueueSettingsUInt64 foreign_processing_node_cache_ttl_seconds;
     extern const ObjectStorageQueueSettingsBool commit_on_select;
     extern const ObjectStorageQueueSettingsBool deduplication_v2;
     extern const ObjectStorageQueueSettingsUInt32 persistent_processing_node_ttl_seconds;
@@ -441,6 +442,7 @@ StorageObjectStorageQueue::StorageObjectStorageQueue(
         (*queue_settings_)[ObjectStorageQueueSetting::cleanup_interval_max_ms],
         /* use_persistent_processing_nodes */true,
         (*queue_settings_)[ObjectStorageQueueSetting::persistent_processing_node_ttl_seconds],
+        (*queue_settings_)[ObjectStorageQueueSetting::foreign_processing_node_cache_ttl_seconds],
         getContext()->getServerSettings()[ServerSetting::keeper_multiread_batch_size],
         (*queue_settings_)[ObjectStorageQueueSetting::metadata_cache_size_bytes],
         (*queue_settings_)[ObjectStorageQueueSetting::metadata_cache_size_elements]);

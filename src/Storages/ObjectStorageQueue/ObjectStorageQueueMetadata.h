@@ -80,6 +80,7 @@ public:
         size_t cleanup_interval_max_ms_,
         bool use_persistent_processing_nodes_,
         size_t persistent_processing_nodes_ttl_seconds_,
+        time_t foreign_processing_node_cache_ttl_seconds_,
         size_t keeper_multiread_batch_size_,
         size_t metadata_cache_size_bytes_,
         size_t metadata_cache_size_elements_);
@@ -229,6 +230,8 @@ private:
     std::atomic<size_t> cleanup_interval_max_ms;
     std::atomic<bool> use_persistent_processing_nodes;
     std::atomic<size_t> persistent_processing_node_ttl_seconds;
+    /// How long an observation of a `processing` node of another processor is trusted.
+    const time_t foreign_processing_node_cache_ttl_seconds;
 
     size_t buckets_num;
     std::unique_ptr<ThreadFromGlobalPool> update_registry_thread;

@@ -59,9 +59,10 @@ def test_file_is_retried_after_foreign_processing_node_disappears(started_cluste
     difference from the point of view of this table - the node just does not carry our own
     processor info), and its disappearance by removing that node.
 
-    The cached observation of the foreign `processing` node is trusted for a limited time
-    (so that the table does not probe keeper for the file on every polling pass), therefore
-    the file is picked up within that timeout after the node disappears, not immediately.
+    The cached observation of the foreign `processing` node is trusted for
+    `s3queue_foreign_processing_node_cache_ttl_seconds` (so that the table does not probe keeper
+    for the file on every polling pass), therefore the file is picked up within that timeout
+    after the node disappears, not immediately.
     """
     node = started_cluster.instances["instance"]
 
@@ -83,6 +84,9 @@ def test_file_is_retried_after_foreign_processing_node_disappears(started_cluste
             "keeper_path": keeper_path,
             "s3queue_processing_threads_num": 1,
             "s3queue_loading_retries": 100,
+            # Do not trust the observation of the foreign `processing` node for long,
+            # so that the file is retried quickly after the node disappears.
+            "s3queue_foreign_processing_node_cache_ttl_seconds": 5,
         },
     )
 

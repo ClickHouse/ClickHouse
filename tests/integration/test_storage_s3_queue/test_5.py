@@ -1673,8 +1673,8 @@ def test_metadata_cache_exact_size_tracking(started_cluster):
     sizeof_file_status = cache_size_bytes
     logging.info(f"sizeof(FileStatus) = {sizeof_file_status} bytes")
 
-    # Sanity check: FileStatus has 2 mutexes + 6 atomics + 1 string + additional cache tracking fields
-    assert 200 <= sizeof_file_status <= 300, f"Unexpected sizeof(FileStatus) = {sizeof_file_status}"
+    # Sanity check: FileStatus has 2 mutexes + 7 atomics + 1 string + additional cache tracking fields
+    assert 200 <= sizeof_file_status <= 320, f"Unexpected sizeof(FileStatus) = {sizeof_file_status}"
 
     # Process 19 more files
     files_to_generate = 19

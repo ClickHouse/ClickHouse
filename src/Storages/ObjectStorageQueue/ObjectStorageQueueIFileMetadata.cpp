@@ -38,13 +38,6 @@ namespace
         return std::chrono::system_clock::to_time_t(std::chrono::system_clock::now());
     }
 
-    /// How long a cached observation of a foreign `processing` node is trusted.
-    /// While it is trusted, the file is skipped without probing keeper, so that a file
-    /// being processed by another server is not probed on every polling pass.
-    /// After that the file is probed again (and the observation refreshed if the node
-    /// is still there), because the foreign processor could have released the file
-    /// without committing it, which leaves no persistent trace in keeper.
-    constexpr time_t processing_by_another_processor_ttl_sec = 30;
 }
 
 void ObjectStorageQueueIFileMetadata::FileStatus::setProcessingEndTime()
@@ -59,7 +52,7 @@ void ObjectStorageQueueIFileMetadata::FileStatus::setGetObjectTime(size_t elapse
 
 void ObjectStorageQueueIFileMetadata::FileStatus::onProcessing()
 {
-    processing_by_another_processor = false;
+    processing_by_another_processor_since = 0;
     state = FileStatus::State::Processing;
     processing_start_time = now();
     processing_end_time = {};
@@ -85,7 +78,7 @@ void ObjectStorageQueueIFileMetadata::FileStatus::onFailed(const std::string & e
 
 void ObjectStorageQueueIFileMetadata::FileStatus::reset()
 {
-    processing_by_another_processor = false;
+    processing_by_another_processor_since = 0;
     state = FileStatus::State::None;
     processing_start_time = {};
     processing_end_time = {};
@@ -96,25 +89,31 @@ void ObjectStorageQueueIFileMetadata::FileStatus::reset()
 void ObjectStorageQueueIFileMetadata::FileStatus::updateState(State state_)
 {
     if (state_ != FileStatus::State::Processing)
-        processing_by_another_processor = false;
+        processing_by_another_processor_since = 0;
     state = state_;
 }
 
 void ObjectStorageQueueIFileMetadata::FileStatus::onProcessingByAnotherProcessor()
 {
-    /// Set the flag and the observation time before the state, so that a concurrent reader
-    /// which sees `Processing` never misses the fact that this state is not ours and
-    /// therefore not terminal.
+    /// The observation time is set before the state, so that a concurrent reader
+    /// which sees `Processing` never misses that this state is not ours.
     processing_by_another_processor_since = now();
-    processing_by_another_processor = true;
     state = FileStatus::State::Processing;
+    /// Reset the per-attempt fields of the previous local attempt (but keep `retries`),
+    /// otherwise introspection shows a `Processing` file with stale failure data.
+    processing_start_time = now();
+    processing_end_time = {};
+    processed_rows = 0;
+    std::lock_guard lock(last_exception_mutex);
+    last_exception = {};
 }
 
-bool ObjectStorageQueueIFileMetadata::FileStatus::isProcessingRetryable() const
+bool ObjectStorageQueueIFileMetadata::FileStatus::isProcessingRetryable(time_t ttl_sec) const
 {
-    if (!processing_by_another_processor)
+    const time_t since = processing_by_another_processor_since.load();
+    if (!since)
         return false;
-    return now() - processing_by_another_processor_since.load() >= processing_by_another_processor_ttl_sec;
+    return now() - since >= ttl_sec;
 }
 
 std::string ObjectStorageQueueIFileMetadata::FileStatus::getException() const
@@ -162,6 +161,7 @@ ObjectStorageQueueIFileMetadata::ObjectStorageQueueIFileMetadata(
     size_t max_loading_retries_,
     std::atomic<size_t> & metadata_ref_count_,
     bool use_persistent_processing_nodes_,
+    time_t foreign_processing_node_cache_ttl_sec_,
     LoggerPtr log_)
     : path(path_)
     , zookeeper_name(zookeeper_name_)
@@ -170,6 +170,7 @@ ObjectStorageQueueIFileMetadata::ObjectStorageQueueIFileMetadata(
     , max_loading_retries(max_loading_retries_)
     , metadata_ref_count(metadata_ref_count_)
     , use_persistent_processing_nodes(use_persistent_processing_nodes_)
+    , foreign_processing_node_cache_ttl_sec(foreign_processing_node_cache_ttl_sec_)
     , processing_node_path(processing_node_path_)
     , processed_node_path(processed_node_path_)
     , failed_node_path(failed_node_path_)
@@ -321,7 +322,7 @@ bool ObjectStorageQueueIFileMetadata::checkProcessingOwnership(std::shared_ptr<Z
 bool ObjectStorageQueueIFileMetadata::trySetProcessing()
 {
     auto state = file_status->state.load();
-    if ((state == FileStatus::State::Processing && !file_status->isProcessingRetryable())
+    if ((state == FileStatus::State::Processing && !file_status->isProcessingRetryable(foreign_processing_node_cache_ttl_sec))
         || state == FileStatus::State::Processed
         || (state == FileStatus::State::Failed
             && file_status->retries
@@ -360,7 +361,7 @@ ObjectStorageQueueIFileMetadata::prepareSetProcessingRequests(Coordination::Requ
     }
 
     auto state = file_status->state.load();
-    if ((state == FileStatus::State::Processing && !file_status->isProcessingRetryable())
+    if ((state == FileStatus::State::Processing && !file_status->isProcessingRetryable(foreign_processing_node_cache_ttl_sec))
         || state == FileStatus::State::Processed
         || (state == FileStatus::State::Failed
             && file_status->retries
@@ -401,19 +402,10 @@ void ObjectStorageQueueIFileMetadata::afterSetProcessing(bool success, std::opti
 
             if (file_state.value() == FileStatus::State::Processing)
             {
-                /// The `processing` node exists, but it was created by someone else,
-                /// because our own attempt to create it has just failed.
-                /// Remember the state only as a hint: unlike `Processed` or `Failed`,
-                /// it is not backed by a persistent keeper node, so the file becomes
-                /// processable again as soon as the foreign processor releases it.
-                /// Caching it as terminal would make this table skip the file until
-                /// the file status is evicted from the cache or the server is restarted.
-                ///
-                /// However, if the cached state is already `Processing` and it is our own,
-                /// the node belongs to a concurrent local processor (the file status is
-                /// shared between tables on this server which use the same keeper path,
-                /// and between insert threads): keep the local state, its owner will
-                /// update it on commit.
+                /// A locally owned `Processing` state is kept as is: the node belongs to a
+                /// concurrent local processor (the file status is shared between tables and threads).
+                /// Otherwise the node is foreign, and it is remembered only as a non-terminal hint,
+                /// because it is not backed by a persistent keeper node.
                 if (file_status->state.load() == FileStatus::State::Processing
                     && !file_status->isProcessingByAnotherProcessor())
                 {

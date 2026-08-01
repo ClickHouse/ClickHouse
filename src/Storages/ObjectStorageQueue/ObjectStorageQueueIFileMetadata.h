@@ -38,19 +38,14 @@ public:
         void reset();
         void onFailed(const std::string & exception);
         void updateState(State state_);
-        /// The `processing` node in keeper is held by a processor other than this one
+        /// The `processing` node in keeper is held by another processor
         /// (another server, or another table on this server).
         void onProcessingByAnotherProcessor();
-        /// Whether the `Processing` state is only a cached observation of a foreign
-        /// `processing` node, in which case it must not be treated as terminal.
-        bool isProcessingByAnotherProcessor() const { return processing_by_another_processor.load(); }
-        /// Whether a file in `Processing` state may be attempted again.
-        /// The state is respected while it belongs to this processor (its owner updates it
-        /// on commit), and, for a cached observation of a foreign `processing` node, for a
-        /// limited time since the observation (to avoid probing keeper on every polling pass).
-        /// After that time the observation is stale: the foreign processor could have released
-        /// the file without committing it, so the next attempt must check keeper again.
-        bool isProcessingRetryable() const;
+        /// Whether the `Processing` state is only a cached observation of a foreign node.
+        bool isProcessingByAnotherProcessor() const { return processing_by_another_processor_since.load() != 0; }
+        /// Whether a file in `Processing` state may be attempted again: only if the state is a
+        /// cached observation of a foreign node and the observation is older than `ttl_sec`.
+        bool isProcessingRetryable(time_t ttl_sec) const;
 
         std::string getException() const;
 
@@ -65,8 +60,8 @@ public:
         std::atomic<UInt64> get_object_time_ms = 0;
 
     private:
-        std::atomic<bool> processing_by_another_processor = false;
-        /// When the foreign `processing` node was observed the last time.
+        /// When the `processing` node of another processor was observed the last time.
+        /// Zero means that the state, if it is `Processing`, belongs to this processor.
         std::atomic<time_t> processing_by_another_processor_since = 0;
 
         mutable std::mutex last_exception_mutex;
@@ -120,6 +115,7 @@ public:
         size_t max_loading_retries_,
         std::atomic<size_t> & metadata_ref_count_,
         bool use_persistent_processing_nodes_,
+        time_t foreign_processing_node_cache_ttl_sec_,
         LoggerPtr log_);
 
     virtual ~ObjectStorageQueueIFileMetadata();
@@ -245,6 +241,8 @@ protected:
     const size_t max_loading_retries;
     const std::atomic<size_t> & metadata_ref_count;
     const bool use_persistent_processing_nodes;
+    /// How long an observation of a `processing` node of another processor is trusted.
+    const time_t foreign_processing_node_cache_ttl_sec;
     const std::string processing_node_path;
     const std::string processed_node_path;
     const std::string failed_node_path;
