@@ -234,6 +234,40 @@ WHERE database = currentDatabase() AND table = 't_proj_ignore_default_drift' AND
 
 DROP TABLE t_proj_ignore_default_drift;
 
+-- same, but the missing projection column is one the PARENT part stores. That is an
+-- IGNORE-tolerable miss on its own, so the scan must not stop at it: its default still reads the
+-- non-stored `f`, and merging the stale part throws UNKNOWN_IDENTIFIER on that dependency.
+DROP TABLE IF EXISTS t_proj_ignore_parent_stored_dep;
+
+CREATE TABLE t_proj_ignore_parent_stored_dep
+(
+    a UInt64,
+    b UInt64,
+    f UInt64,
+    d UInt64 DEFAULT f * 10,
+    c UInt64 ALIAS b + 1,
+    PROJECTION p (SELECT a, c ORDER BY a)
+)
+ENGINE = MergeTree ORDER BY a SETTINGS deduplicate_merge_projection_mode = 'ignore';
+
+SYSTEM STOP MERGES t_proj_ignore_parent_stored_dep;
+
+INSERT INTO t_proj_ignore_parent_stored_dep (a, b, f) VALUES (1, 100, 5);
+INSERT INTO t_proj_ignore_parent_stored_dep (a, b, f) VALUES (2, 200, 6);
+
+-- `d` predates the parts, so the parent stores it; re-pointing the alias makes the projection
+-- require `d`, which its own part never stored
+ALTER TABLE t_proj_ignore_parent_stored_dep MODIFY COLUMN c UInt64 ALIAS d + 1;
+
+SELECT 'ignore-parent-stored read after drift', a, c FROM t_proj_ignore_parent_stored_dep ORDER BY a;
+
+SYSTEM START MERGES t_proj_ignore_parent_stored_dep;
+OPTIMIZE TABLE t_proj_ignore_parent_stored_dep FINAL;
+
+SELECT 'ignore-parent-stored read after merge', a, c FROM t_proj_ignore_parent_stored_dep ORDER BY a;
+
+DROP TABLE t_proj_ignore_parent_stored_dep;
+
 -- subcolumn default dependency: the late-added `d DEFAULT n.x` references the subcolumn `n.x` of the
 -- tuple `n`, which the projection part stores and which is still a current projection column. The part
 -- resolves subcolumns, so the default IS fillable there; the fillability check must accept a stored

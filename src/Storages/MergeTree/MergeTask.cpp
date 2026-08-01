@@ -1337,12 +1337,11 @@ void MergeTask::ExecuteAndFinalizeHorizontalPart::prepareProjectionsToMergeAndRe
                     /// Drift: the parent part still stores it, or it is not a parent table column.
                     if (part->tryGetColumn(column.name)
                         || !parent_table_columns.hasColumnOrSubcolumn(GetColumnsOptions::AllPhysical, column.name))
-                    {
                         projection_part_misses_column = true;
-                        break;
-                    }
 
-                    /// Late-add: usable only if its default can be filled from the projection part.
+                    /// Merging the stale part fills this column from its default, so an unfillable one
+                    /// throws instead. Do not stop at a tolerable miss above: the column it hides may
+                    /// be the unfillable one that has to rebuild even under IGNORE.
                     if (!projection_part_can_fill_default(*it->second, column.name))
                     {
                         projection_part_misses_column = true;
