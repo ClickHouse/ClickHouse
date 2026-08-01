@@ -1526,11 +1526,11 @@ void StorageObjectStorageQueue::alter(
             auto get_names = [](const SettingsChanges & settings)
             {
                 std::set<std::string> names;
-                for (const auto & [name, _] : settings)
+                for (const auto & change : settings)
                 {
-                    auto inserted = names.insert(name).second;
+                    auto inserted = names.insert(change.name).second;
                     if (!inserted)
-                        throw Exception(ErrorCodes::BAD_ARGUMENTS, "Setting {} is duplicated", name);
+                        throw Exception(ErrorCodes::BAD_ARGUMENTS, "Setting {} is duplicated", change.name);
                 }
                 return names;
             };
@@ -1887,7 +1887,7 @@ String StorageObjectStorageQueue::chooseZooKeeperPath(
         result_zk_path = fs::path(zk_path_prefix) / toString(database_uuid) / toString(table_id.uuid);
     }
 
-    if (context_ && result_zk_path.find('{') != String::npos)
+    if (context_ && result_zk_path.contains('{'))
     {
         Macros::MacroExpansionInfo info;
         info.table_id = table_id;
