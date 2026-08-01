@@ -42,6 +42,41 @@ std::vector<std::string> splitByNewline(const std::string & s)
     return result;
 }
 
+/// Tells whether the value of a filter field is a subdocument naming nested fields, as opposed to
+/// the operators applied to the field it is the value of.
+static bool isSubdocument(const rapidjson::Value & value)
+{
+    if (!value.IsObject() || value.ObjectEmpty())
+        return false;
+
+    for (auto it = value.MemberBegin(); it != value.MemberEnd(); ++it)
+    {
+        std::string_view name = it->name.GetString();
+        if (name.empty() || name.front() == '$')
+            return false;
+    }
+    return true;
+}
+
+/// Replaces a subdocument by the fields it names: a nested field is the column of its dotted path,
+/// so `{"profile" : {"name" : "x"}}` has to reach the parser as `{"profile.name" : "x"}`.
+static void flattenSubdocument(
+    rapidjson::Value & subdocument, const String & path, rapidjson::Value & out, rapidjson::Document::AllocatorType & allocator)
+{
+    for (auto it = subdocument.MemberBegin(); it != subdocument.MemberEnd(); ++it)
+    {
+        auto result_path = path + "." + it->name.GetString();
+        if (isSubdocument(it->value))
+        {
+            flattenSubdocument(it->value, result_path, out, allocator);
+            continue;
+        }
+
+        rapidjson::Value new_key(result_path.c_str(), allocator);
+        out.AddMember(new_key, it->value, allocator);
+    }
+}
+
 static void AddPrefixToKeys(
     rapidjson::Value & value, rapidjson::Document::AllocatorType & allocator, const String & current_path = "", bool in_projection = false)
 {
@@ -60,8 +95,15 @@ static void AddPrefixToKeys(
                 else
                 {
                     auto result_path = current_path.empty() ? key : current_path + "." + key;
-                    rapidjson::Value new_key(result_path.c_str(), allocator);
-                    new_object.AddMember(new_key, it->value, allocator);
+                    if (isSubdocument(it->value))
+                    {
+                        flattenSubdocument(it->value, result_path, new_object, allocator);
+                    }
+                    else
+                    {
+                        rapidjson::Value new_key(result_path.c_str(), allocator);
+                        new_object.AddMember(new_key, it->value, allocator);
+                    }
                 }
             }
             else if (it->value.IsString())

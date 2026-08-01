@@ -61,6 +61,11 @@ std::vector<Document> UpdateHandler::handle(const std::vector<OpMessageSection> 
             serialized_filter = serializeRequiredMember(json_representation, "q");
             serialized_update = serializeRequiredMember(json_representation, "u");
 
+            /// A filter names a nested field either as a subdocument or as a dotted path, while a
+            /// column is always the dotted path, so the filter of an `update` is normalized the
+            /// same way as the one of a `find` or a `delete`.
+            serialized_filter = modifyFilter(serialized_filter);
+
             auto multi_it = json_representation.FindMember("multi");
             if (multi_it == json_representation.MemberEnd() || !multi_it->value.IsBool() || !multi_it->value.GetBool())
                 throw Exception(
