@@ -580,8 +580,10 @@ SELECT count() FROM t_keep_lc_arr WHERE has(v, 18264);
 SELECT count() FROM t_keep_lc_arr WHERE has(v, 18264) SETTINGS use_skip_indexes = 0;
 
 SELECT '-- 28. dropping the LowCardinality wrapper is a framing change, so it must refuse';
--- The granule holds a dictionary plus indexes; read as a bare column those bytes are not values at
--- all. Without the pairwise requirement the allow-list entry alone would wave this through.
+-- Cases 28-29 refuse with or without case 26's branch, since a one-sided wrapper falls through to
+-- false either way. What they pin is that the match stays PAIRWISE: the granule holds a dictionary
+-- plus indexes, so read as a bare column those bytes are not values at all. Unwrapping one side only
+-- reintroduces the PARAMETER_OUT_OF_BOUND that this case's granule assertion then catches.
 DROP TABLE IF EXISTS t_stale_lc_unwrap;
 CREATE TABLE t_stale_lc_unwrap (k UInt64, v LowCardinality(DateTime), INDEX idx v TYPE set(100) GRANULARITY 1)
 ENGINE = MergeTree ORDER BY k SETTINGS index_granularity = 4;
@@ -589,6 +591,9 @@ INSERT INTO t_stale_lc_unwrap SELECT number, toDateTime(1600000000 + intDiv(numb
 SYSTEM STOP MERGES t_stale_lc_unwrap;
 ALTER TABLE t_stale_lc_unwrap MODIFY COLUMN v DateTime;
 KILL MUTATION WHERE table = 't_stale_lc_unwrap' AND database = currentDatabase() FORMAT Null;
+-- The result alone would also pass if the index were used and merely happened not to misprune this
+-- value, so assert the index was refused: no granule is dropped.
+SELECT count() > 0 FROM (EXPLAIN indexes = 1 SELECT count() FROM t_stale_lc_unwrap WHERE v = 1600003600) WHERE explain ILIKE '%Granules: 16/16%';
 SELECT count() FROM t_stale_lc_unwrap WHERE v = 1600003600;
 SELECT count() FROM t_stale_lc_unwrap WHERE v = 1600003600 SETTINGS use_skip_indexes = 0;
 
@@ -600,6 +605,7 @@ INSERT INTO t_stale_lc_wrap SELECT number, toDateTime(1600000000 + intDiv(number
 SYSTEM STOP MERGES t_stale_lc_wrap;
 ALTER TABLE t_stale_lc_wrap MODIFY COLUMN v LowCardinality(DateTime);
 KILL MUTATION WHERE table = 't_stale_lc_wrap' AND database = currentDatabase() FORMAT Null;
+SELECT count() > 0 FROM (EXPLAIN indexes = 1 SELECT count() FROM t_stale_lc_wrap WHERE v = 1600003600) WHERE explain ILIKE '%Granules: 16/16%';
 SELECT count() FROM t_stale_lc_wrap WHERE v = 1600003600;
 SELECT count() FROM t_stale_lc_wrap WHERE v = 1600003600 SETTINGS use_skip_indexes = 0;
 

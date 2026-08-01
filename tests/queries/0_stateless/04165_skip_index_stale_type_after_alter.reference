@@ -116,8 +116,10 @@
 4
 4
 -- 28. dropping the LowCardinality wrapper is a framing change, so it must refuse
+1
 4
 4
 -- 29. adding the LowCardinality wrapper must refuse for the same reason
+1
 4
 4
