@@ -51,6 +51,7 @@
 #include <DataTypes/DataTypeTuple.h>
 #include <DataTypes/DataTypeArray.h>
 #include <DataTypes/DataTypeMap.h>
+#include <DataTypes/DataTypeNullable.h>
 #include <DataTypes/getLeastSupertype.h>
 #include <DataTypes/validateGroupByKeyType.h>
 
@@ -60,6 +61,7 @@
 #include <Functions/UserDefined/UserDefinedSQLFunctionFactory.h>
 #include <Formats/FormatFactory.h>
 #include <Columns/IColumn.h>
+#include <Interpreters/JoinUtils.h>
 #include <Interpreters/convertColumnToType.h>
 #include <TableFunctions/TableFunctionFactory.h>
 #include <Storages/IStorage.h>
@@ -5594,6 +5596,23 @@ void QueryAnalyzer::resolveJoin(QueryTreeNodePtr & join_node, IdentifierResolveS
 
             auto expression_types = DataTypes{result_left_table_expression->getResultType(), result_right_table_expression->getResultType()};
             DataTypePtr common_type = tryGetLeastSupertype(expression_types);
+
+            /** There can be no type that is able to hold all the values of both keys, for example, for `UInt64` and `Int64`.
+              * The result of an INNER JOIN contains only the values that both of the keys have in common,
+              * and the type of these values is enough. See `JoinCommon::tryGetCommonSubtypeForJoinKeys`.
+              * For the other kinds of JOIN the result also contains the unmatched values, which may be out of this range.
+              * For ASOF JOIN the last column in the USING list is compared by the order of the values, not by equality.
+              */
+            if (!common_type
+                && join_node_typed.getKind() == JoinKind::Inner
+                && join_node_typed.getStrictness() != JoinStrictness::Asof)
+            {
+                if (auto subtype = JoinCommon::tryGetCommonSubtypeForJoinKeys(expression_types[0], expression_types[1]))
+                {
+                    bool is_nullable = isNullableOrLowCardinalityNullable(expression_types[0]) || isNullableOrLowCardinalityNullable(expression_types[1]);
+                    common_type = is_nullable ? makeNullable(subtype) : subtype;
+                }
+            }
 
             if (!common_type)
                 throw Exception(ErrorCodes::NO_COMMON_TYPE,

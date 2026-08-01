@@ -17,6 +17,7 @@
 #include <DataTypes/DataTypesNumber.h>
 #include <DataTypes/DataTypeDynamic.h>
 #include <DataTypes/DataTypeNullable.h>
+#include <DataTypes/getLeastSupertype.h>
 
 #include <Functions/FunctionFactory.h>
 #include <Functions/ComparisonNames.h>
@@ -34,6 +35,7 @@
 #include <Interpreters/HashJoin/HashJoin.h>
 #include <Interpreters/IJoin.h>
 #include <Interpreters/JoinExpressionActions.h>
+#include <Interpreters/JoinUtils.h>
 #include <Interpreters/PasteJoin.h>
 #include <Interpreters/TableJoin.h>
 #include <Interpreters/HashTablesStatistics.h>
@@ -709,7 +711,17 @@ struct JoinPlanningContext
     bool is_storage_join{};
 };
 
-static void predicateOperandsToCommonType(JoinActionRef & left_node, JoinActionRef & right_node, const JoinSettings & join_settings, const JoinPlanningContext & planning_context)
+/** Convert the operands of an equality (or ASOF inequality) predicate in the JOIN ON section to a common type.
+  * `allow_conversion_to_subtype` enables the fallback described in `JoinCommon::tryGetCommonSubtypeForJoinKeys`.
+  * It is not applicable to null-safe comparisons, because there NULL matches NULL,
+  * and to ASOF inequalities, because there the order of the values matters, not only their equality.
+  */
+static void predicateOperandsToCommonType(
+    JoinActionRef & left_node,
+    JoinActionRef & right_node,
+    const JoinSettings & join_settings,
+    const JoinPlanningContext & planning_context,
+    bool allow_conversion_to_subtype)
 {
     const auto & left_type = left_node.getType();
     const auto & right_type = right_node.getType();
@@ -733,24 +745,37 @@ static void predicateOperandsToCommonType(JoinActionRef & left_node, JoinActionR
         return;
 
     DataTypePtr common_type;
+    bool cast_to_subtype = false;
     try
     {
         common_type = getLeastSupertype(DataTypes{left_type, right_type});
     }
     catch (Exception & ex)
     {
-        ex.addMessage("JOIN cannot infer common type in ON section for keys. Left key '{}' type {}. Right key '{}' type {}",
-            left_node.getColumnName(), left_type->getName(),
-            right_node.getColumnName(), right_type->getName());
-        throw;
+        if (allow_conversion_to_subtype)
+        {
+            if (auto subtype = JoinCommon::tryGetCommonSubtypeForJoinKeys(left_type, right_type))
+                common_type = makeNullable(subtype);
+        }
+
+        if (!common_type)
+        {
+            ex.addMessage("JOIN cannot infer common type in ON section for keys. Left key '{}' type {}. Right key '{}' type {}",
+                left_node.getColumnName(), left_type->getName(),
+                right_node.getColumnName(), right_type->getName());
+            throw;
+        }
+        cast_to_subtype = true;
     }
 
-    auto cast_transform = [&common_type, &planning_context](auto & dag, auto && nodes)
+    auto cast_transform = [&common_type, &planning_context, cast_to_subtype](auto & dag, auto && nodes)
     {
         auto arg = nodes.at(0);
         auto mapped_it = planning_context.actions_after_join_map.find(arg->result_name);
         if (mapped_it != planning_context.actions_after_join_map.end() && mapped_it->second->result_type->equals(*common_type))
             return mapped_it->second;
+        if (cast_to_subtype)
+            return &dag.addAccurateCastOrNull(*arg, common_type, {}, nullptr);
         return &dag.addCast(*arg, common_type, {}, nullptr);
     };
     if (!left_type->equals(*common_type))
@@ -786,8 +811,8 @@ static bool addJoinPredicatesToTableJoin(std::vector<JoinActionRef> & predicates
         else if (!lhs.fromLeft() || !rhs.fromRight())
             continue;
 
-        predicateOperandsToCommonType(lhs, rhs, join_settings, planning_context);
         bool null_safe_comparison = JoinConditionOperator::NullSafeEquals == predicate_op;
+        predicateOperandsToCommonType(lhs, rhs, join_settings, planning_context, /* allow_conversion_to_subtype= */ !null_safe_comparison);
         if (null_safe_comparison && isNullableOrLowCardinalityNullable(lhs.getType()) && isNullableOrLowCardinalityNullable(rhs.getType()))
         {
             /**
@@ -1209,7 +1234,7 @@ static QueryPlanNode buildPhysicalJoinImpl(
                 throw Exception(ErrorCodes::INVALID_JOIN_ON_EXPRESSION, "ASOF join does not support multiple inequality predicates in JOIN ON expression");
             found_asof_predicate_it = it;
 
-            predicateOperandsToCommonType(lhs, rhs, join_settings, planning_context);
+            predicateOperandsToCommonType(lhs, rhs, join_settings, planning_context, /* allow_conversion_to_subtype= */ false);
 
             used_expressions.push_back(lhs);
             used_expressions.push_back(rhs);

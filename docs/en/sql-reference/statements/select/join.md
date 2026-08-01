@@ -398,7 +398,9 @@ Be careful when using `GLOBAL`. For more information, see the [Distributed subqu
 
 ## Implicit type conversion {#implicit-type-conversion}
 
-`INNER JOIN`, `LEFT JOIN`, `RIGHT JOIN`, and `FULL JOIN` queries support the implicit type conversion for "join keys". However the query can not be executed, if join keys from the left and the right tables cannot be converted to a single type (for example, there is no data type that can hold all values from both `UInt64` and `Int64`, or `String` and `Int32`).
+`INNER JOIN`, `LEFT JOIN`, `RIGHT JOIN`, and `FULL JOIN` queries support the implicit type conversion for "join keys". However the query can not be executed, if join keys from the left and the right tables cannot be converted to a single type (for example, `String` and `Int32`).
+
+There is no data type that can hold all the values of both `UInt64` and `Int64`, but the keys of an equality condition in the `ON` section still can be joined: they are converted to the type of the values that these types have in common, which is `UInt64`, holding the values from `0` to `9223372036854775807`. A value outside of this range is not equal to any value from the other side, so it does not match anything. This does not apply to the `USING` section, where the join key is also a column of the result, and to null-safe comparisons (`IS NOT DISTINCT FROM`), where `NULL` matches `NULL`.
 
 **Example**
 

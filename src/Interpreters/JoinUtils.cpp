@@ -11,6 +11,7 @@
 #include <DataTypes/DataTypeNullable.h>
 #include <DataTypes/DataTypesNumber.h>
 #include <DataTypes/NullableUtils.h>
+#include <DataTypes/getMostSubtype.h>
 
 #include <Interpreters/ActionsDAG.h>
 #include <Interpreters/TableJoin.h>
@@ -172,6 +173,20 @@ void changeLowCardinalityInplace(ColumnWithTypeAndName & column)
         typeid_cast<ColumnLowCardinality &>(*lc).insertRangeFromFullColumn(*column.column, 0, column.column->size());
         column.column = std::move(lc);
     }
+}
+
+DataTypePtr tryGetCommonSubtypeForJoinKeys(const DataTypePtr & left_type, const DataTypePtr & right_type)
+{
+    DataTypes types{
+        removeNullable(recursiveRemoveLowCardinality(left_type)),
+        removeNullable(recursiveRemoveLowCardinality(right_type))};
+
+    auto subtype = getMostSubtype(types, /* throw_if_result_is_nothing= */ false);
+    /// `accurateCastOrNull` reports an inexact conversion by returning NULL, so the type has to be allowed inside Nullable.
+    if (isNothing(subtype) || !subtype->canBeInsideNullable())
+        return nullptr;
+
+    return subtype;
 }
 
 bool canBecomeNullable(const DataTypePtr & type)

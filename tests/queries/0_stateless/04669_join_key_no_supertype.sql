@@ -1,0 +1,78 @@
+-- JOIN keys of types that have no least supertype, such as `UInt64` and `Int64`.
+-- It is enough to convert both keys to the type of the values they have in common.
+-- https://github.com/ClickHouse/ClickHouse/issues/21794
+
+SELECT 'The query from the issue';
+SELECT *
+FROM (SELECT number FROM numbers(10)) AS a
+INNER JOIN (SELECT number FROM numbers(10)) AS b ON a.number = b.number - 1
+ORDER BY ALL;
+
+DROP TABLE IF EXISTS t_unsigned;
+DROP TABLE IF EXISTS t_signed;
+
+CREATE TABLE t_unsigned (x UInt64) ENGINE = Memory;
+CREATE TABLE t_signed (y Int64) ENGINE = Memory;
+
+INSERT INTO t_unsigned VALUES (0), (1), (9223372036854775807), (9223372036854775808), (18446744073709551615);
+INSERT INTO t_signed VALUES (-9223372036854775808), (-1), (0), (1), (9223372036854775807);
+
+SELECT 'INNER';
+SELECT x, y FROM t_unsigned INNER JOIN t_signed ON x = y ORDER BY ALL;
+
+SELECT 'LEFT';
+SELECT x, y FROM t_unsigned LEFT JOIN t_signed ON x = y ORDER BY ALL;
+
+SELECT 'RIGHT';
+SELECT x, y FROM t_unsigned RIGHT JOIN t_signed ON x = y ORDER BY ALL;
+
+SELECT 'FULL';
+SELECT x, y FROM t_unsigned FULL JOIN t_signed ON x = y ORDER BY ALL;
+
+SELECT 'The types of the result are not affected';
+SELECT toTypeName(x), toTypeName(y) FROM t_unsigned INNER JOIN t_signed ON x = y LIMIT 1;
+
+SELECT 'The same for every JOIN algorithm';
+SELECT count() FROM t_unsigned INNER JOIN t_signed ON x = y SETTINGS join_algorithm = 'hash';
+SELECT count() FROM t_unsigned INNER JOIN t_signed ON x = y SETTINGS join_algorithm = 'parallel_hash';
+SELECT count() FROM t_unsigned INNER JOIN t_signed ON x = y SETTINGS join_algorithm = 'grace_hash';
+SELECT count() FROM t_unsigned INNER JOIN t_signed ON x = y SETTINGS join_algorithm = 'partial_merge';
+SELECT count() FROM t_unsigned INNER JOIN t_signed ON x = y SETTINGS join_algorithm = 'full_sorting_merge';
+
+SELECT 'An expression as a key';
+SELECT x, y FROM t_unsigned INNER JOIN t_signed ON x = -y ORDER BY ALL;
+
+SELECT 'Multiple keys';
+SELECT x, y FROM t_unsigned INNER JOIN t_signed ON x = y AND x + 1 = y + 1 ORDER BY ALL;
+
+SELECT 'A narrower signed type: only the values from 0 to 127 can match';
+SELECT x, y FROM t_unsigned INNER JOIN (SELECT CAST(number, 'Int8') AS y FROM numbers(200)) AS t ON x = y ORDER BY ALL;
+
+SELECT 'The widest types';
+SELECT * FROM (SELECT CAST(18446744073709551615, 'UInt256') AS x) AS a
+INNER JOIN (SELECT CAST(18446744073709551615, 'Int256') AS y) AS b ON a.x = b.y;
+
+SELECT 'Nullable and LowCardinality keys';
+SELECT * FROM (SELECT CAST(1, 'Nullable(UInt64)') AS x) AS a
+INNER JOIN (SELECT CAST(1, 'Int64') AS y) AS b ON a.x = b.y;
+SELECT * FROM (SELECT CAST(1, 'LowCardinality(UInt64)') AS x) AS a
+INNER JOIN (SELECT CAST(1, 'Int64') AS y) AS b ON a.x = b.y
+SETTINGS allow_suspicious_low_cardinality_types = 1;
+
+SELECT 'USING is supported for INNER JOIN, where the result contains only the common values';
+SELECT x, toTypeName(x) FROM t_unsigned INNER JOIN (SELECT y AS x FROM t_signed) AS t USING (x) ORDER BY ALL;
+SELECT x FROM t_unsigned INNER JOIN (SELECT y AS x FROM t_signed) AS t USING (x) ORDER BY ALL SETTINGS join_algorithm = 'full_sorting_merge';
+
+SELECT 'For the other kinds of JOIN the result also contains the values that are out of the common range';
+SELECT x FROM t_unsigned LEFT JOIN (SELECT y AS x FROM t_signed) AS t USING (x); -- { serverError NO_COMMON_TYPE }
+SELECT x FROM t_unsigned RIGHT JOIN (SELECT y AS x FROM t_signed) AS t USING (x); -- { serverError NO_COMMON_TYPE }
+SELECT x FROM t_unsigned FULL JOIN (SELECT y AS x FROM t_signed) AS t USING (x); -- { serverError NO_COMMON_TYPE }
+
+SELECT 'A null-safe comparison cannot be done this way, because NULL matches NULL there';
+SELECT * FROM t_unsigned INNER JOIN t_signed ON x IS NOT DISTINCT FROM y; -- { serverError ILLEGAL_TYPE_OF_ARGUMENT }
+
+SELECT 'The ASOF inequality needs the order of the values, not only the equality';
+SELECT * FROM (SELECT x, 1 AS k FROM t_unsigned) AS a ASOF JOIN (SELECT y, 1 AS k FROM t_signed) AS b ON a.k = b.k AND a.x > b.y; -- { serverError NO_COMMON_TYPE }
+
+DROP TABLE t_unsigned;
+DROP TABLE t_signed;

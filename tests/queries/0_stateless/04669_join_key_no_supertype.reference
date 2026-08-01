@@ -1,0 +1,66 @@
+The query from the issue
+0	1
+1	2
+2	3
+3	4
+4	5
+5	6
+6	7
+7	8
+8	9
+INNER
+0	0
+1	1
+9223372036854775807	9223372036854775807
+LEFT
+0	0
+1	1
+9223372036854775807	9223372036854775807
+9223372036854775808	0
+18446744073709551615	0
+RIGHT
+0	-9223372036854775808
+0	-1
+0	0
+1	1
+9223372036854775807	9223372036854775807
+FULL
+0	-9223372036854775808
+0	-1
+0	0
+1	1
+9223372036854775807	9223372036854775807
+9223372036854775808	0
+18446744073709551615	0
+The types of the result are not affected
+UInt64	Int64
+The same for every JOIN algorithm
+3
+3
+3
+3
+3
+An expression as a key
+0	0
+1	-1
+Multiple keys
+0	0
+1	1
+A narrower signed type: only the values from 0 to 127 can match
+0	0
+1	1
+The widest types
+18446744073709551615	18446744073709551615
+Nullable and LowCardinality keys
+1	1
+1	1
+USING is supported for INNER JOIN, where the result contains only the common values
+0	UInt64
+1	UInt64
+9223372036854775807	UInt64
+0
+1
+9223372036854775807
+For the other kinds of JOIN the result also contains the values that are out of the common range
+A null-safe comparison cannot be done this way, because NULL matches NULL there
+The ASOF inequality needs the order of the values, not only the equality

@@ -395,17 +395,21 @@ bool tryAddJoinRuntimeFilter(QueryPlan::Node & node, QueryPlan::Nodes & nodes, c
 
         if (!join_key_build_side.type->equals(*join_key_probe_side.type))
         {
+            DataTypePtr common_type;
             try
             {
-                common_types.push_back(getLeastSupertype(DataTypes{join_key_build_side.type, join_key_probe_side.type}));
+                common_type = getLeastSupertype(DataTypes{join_key_build_side.type, join_key_probe_side.type});
             }
-            catch (Exception & ex)
+            catch (const Exception &)
             {
-                ex.addMessage("JOIN cannot infer common type in ON section for keys. Left key '{}' type {}. Right key '{}' type {}",
-                    join_key_probe_side.name, join_key_probe_side.type->getName(),
-                    join_key_build_side.name, join_key_build_side.type->getName());
-                throw;
+                /// The keys still can be joined by the values that they have in common, see
+                /// `JoinCommon::tryGetCommonSubtypeForJoinKeys`, but a runtime filter cannot be built this way:
+                /// the values that are out of the common range become NULL, and for `NOT IN` that would
+                /// filter out the rows that have to be preserved. Give up on the filter, it is only an optimization.
+                /// If the JOIN itself cannot be performed, it will report this type mismatch on its own.
+                return false;
             }
+            common_types.push_back(std::move(common_type));
         }
         else
         {
