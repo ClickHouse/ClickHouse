@@ -53,13 +53,13 @@ WHERE database = currentDatabase() AND table = 'vs_concurrent' AND active;
 --   merge_tree_min_rows_for_concurrent_read = 1  one part must be split across read tasks, so that
 --   merge_tree_min_bytes_for_concurrent_read = 1  several readers are created for it. The minimum
 --                                                task size is the larger of the two thresholds
---                                                divided by the respective granularity. The rows arm
---                                                is the binding one here: at its default it asks for
---                                                1280 marks against a 157 mark part, so the part is
---                                                read by a single stream. The bytes arm is set
---                                                alongside it for symmetry; with the byte
---                                                granularity pinned above it asks for 24 marks,
---                                                which this part already satisfies
+--                                                divided by the respective granularity, so BOTH must
+--                                                be pinned: against this 21 mark part the rows arm
+--                                                asks for 1280 marks at its default and the bytes
+--                                                arm for 24, so either one left at its default
+--                                                still reduces the part to a single stream.
+--                                                Measured: pinning both yields 3 readers, pinning
+--                                                only the rows arm yields 0
 --   max_threads = 4                              the number of concurrent readers
 --   use_concurrency_control = 0                  the executor downscales worker threads when CPU
 --                                                slots are scarce, which would leave the read
