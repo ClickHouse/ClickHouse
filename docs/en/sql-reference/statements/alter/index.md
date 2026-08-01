@@ -86,7 +86,9 @@ Approaches that avoid the race:
 
 ### Combining `MATERIALIZE INDEX` clauses {#combining-materialize-index-clauses}
 
-Multiple `MATERIALIZE INDEX` clauses in one `ALTER` are supported. In particular, packing several `ADD INDEX` clauses together with `MATERIALIZE INDEX` for those same new indexes in a single statement works (see `tests/queries/0_stateless/02911_add_index_and_materialize_index.sql`). The multi-clause form also applies when materializing already-existing indexes: each clause is resolved against the current table metadata before the mutation is prepared.
+Multiple `MATERIALIZE INDEX` clauses can appear in one `ALTER`. The covered case in-tree is packing several `ADD INDEX` clauses together with `MATERIALIZE INDEX` for those same new indexes in a single statement (see `tests/queries/0_stateless/02911_add_index_and_materialize_index.sql`).
+
+On current `master`, each `MATERIALIZE INDEX` clause is resolved against the table metadata snapshot when the mutation is prepared, so materialize-only multi-clause forms on already-existing indexes follow the same preparation path. That exact shape is not yet covered by a focused stateless test; treat it as current implementation behavior rather than a separately guaranteed contract until such coverage exists.
 
 If you need ordered mutation apply, you can still issue one `MATERIALIZE INDEX` per statement and wait with [`mutations_sync`](/operations/settings/settings.md/#mutations_sync).
 
