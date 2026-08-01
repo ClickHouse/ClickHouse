@@ -1,6 +1,6 @@
 -- A spilling join must use the temporary data scope of the running query,
 -- so that `max_temporary_data_on_disk_size_for_query` is accounted for it.
--- Covers the new analyzer path, where the physical join is built from the logical join step.
+-- Covers the analyzer path, where the physical join is built from the logical join step.
 
 SET enable_analyzer = 1;
 SET join_algorithm = 'grace_hash';
