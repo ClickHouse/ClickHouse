@@ -174,7 +174,7 @@ private:
     /// Allows to check if some transactions is committed.
     struct CSNEntry
     {
-        CSN csn;
+        CSN csn{};
         TransactionID tid;
     };
     using TIDMap = std::unordered_map<TIDHash, CSNEntry>;

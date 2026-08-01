@@ -6,8 +6,11 @@
 #if USE_WASMTIME
 
 #include <cstdint>
+#include <limits>
+#include <optional>
 #include <ranges>
 #include <span>
+#include <string>
 #include <variant>
 #include <fmt/core.h>
 #include <fmt/ranges.h>
@@ -30,10 +33,38 @@ namespace DB::ErrorCodes
     extern const int WASM_ERROR;
     extern const int NOT_IMPLEMENTED;
     extern const int BAD_ARGUMENTS;
+    extern const int LOGICAL_ERROR;
 }
 
 namespace DB::WebAssembly
 {
+
+namespace
+{
+
+void setStoreFuel(wasmtime::Store::Context ctx, const WasmModule::Config & cfg, std::string_view phase)
+{
+    if (!cfg.usesFuelAccounting())
+        return;
+
+    /// `wasmtime::Context::set_fuel` returns an error when the engine was created
+    /// with `consume_fuel(false)`. The early return above keeps us off that path.
+    const auto fuel = cfg.fuel_limit ? cfg.fuel_limit : std::numeric_limits<uint64_t>::max();
+    auto result = ctx.set_fuel(fuel);
+    if (!result)
+        throw Exception(ErrorCodes::WASM_ERROR, "Failed to set fuel for {}: {}", phase, result.err().message());
+}
+
+wasmtime::Module compileModuleWithEngine(wasmtime::Engine & engine, std::string_view module_bytes, std::string_view phase)
+{
+    std::span<uint8_t> bytes(reinterpret_cast<uint8_t *>(const_cast<char *>(module_bytes.data())), module_bytes.size());
+    auto result = wasmtime::Module::compile(engine, bytes);
+    if (!result)
+        throw Exception(ErrorCodes::WASM_ERROR, "Failed to compile wasm code ({}): {}", phase, result.err().message());
+    return std::move(result.ok());
+}
+
+}
 
 template <WasmValKind val_kind>
 auto wasmtimeToNative(const wasmtime::Val & val)
@@ -52,18 +83,20 @@ auto wasmtimeToNative(const wasmtime::Val & val)
         static_assert(false, "Unsupported WasmValKind");
 }
 
-wasmtime::ValKind toWasmTimeValKind(WasmValKind value)
+static wasmtime::ValType toWasmTimeValType(WasmValKind value)
 {
-    #define M(T) \
-        if (value == WasmValKind::T) \
-            return wasmtime::ValKind::T;
-
-    APPLY_FOR_WASM_TYPES(M)
-    #undef M
+    switch (value)
+    {
+        case WasmValKind::I32: return wasmtime::ValType::i32();
+        case WasmValKind::I64: return wasmtime::ValType::i64();
+        case WasmValKind::F32: return wasmtime::ValType::f32();
+        case WasmValKind::F64: return wasmtime::ValType::f64();
+        case WasmValKind::V128: return wasmtime::ValType::v128();
+    }
     throw Exception(ErrorCodes::NOT_IMPLEMENTED, "Unsupported wasm implementation type");
 }
 
-WasmValKind fromWasmTimeValKind(wasmtime::ValKind val_type)
+static WasmValKind fromWasmTimeValKind(wasmtime::ValKind val_type)
 {
     #define M(T) \
         if (wasmtime::ValKind::T == val_type) \
@@ -74,7 +107,17 @@ WasmValKind fromWasmTimeValKind(wasmtime::ValKind val_type)
     throw Exception(ErrorCodes::NOT_IMPLEMENTED, "Unsupported wasm implementation type");
 }
 
-WasmVal fromWasmTimeValue(const wasmtime::Val & wasm_val)
+static WasmValKind fromWasmTimeValType(wasmtime::ValType::Ref ref)
+{
+    if (ref == wasmtime::ValType::i32()) return WasmValKind::I32;
+    if (ref == wasmtime::ValType::i64()) return WasmValKind::I64;
+    if (ref == wasmtime::ValType::f32()) return WasmValKind::F32;
+    if (ref == wasmtime::ValType::f64()) return WasmValKind::F64;
+    if (ref == wasmtime::ValType::v128()) return WasmValKind::V128;
+    throw Exception(ErrorCodes::NOT_IMPLEMENTED, "Unsupported wasm implementation type");
+}
+
+static WasmVal fromWasmTimeValue(const wasmtime::Val & wasm_val)
 {
     #define M(T) \
     { \
@@ -90,7 +133,7 @@ WasmVal fromWasmTimeValue(const wasmtime::Val & wasm_val)
     throw Exception(ErrorCodes::NOT_IMPLEMENTED, "Unsupported wasm implementation type");
 }
 
-wasmtime::Val toWasmTimeValue(WasmVal val)
+static wasmtime::Val toWasmTimeValue(WasmVal val)
 {
     #define M(T) \
     { \
@@ -105,21 +148,21 @@ wasmtime::Val toWasmTimeValue(WasmVal val)
     throw Exception(ErrorCodes::NOT_IMPLEMENTED, "Unsupported wasm implementation type");
 }
 
-wasmtime::FuncType toWasmFunctionType(const WasmFunctionDeclaration & host_function_decl)
+static wasmtime::FuncType toWasmFunctionType(const WasmFunctionDeclaration & host_function_decl)
 {
     auto argument_types = host_function_decl.getArgumentTypes();
     std::vector<wasmtime::ValType> param_types;
     param_types.reserve(argument_types.size());
     for (auto & argument_type : argument_types)
     {
-        param_types.emplace_back(toWasmTimeValKind(argument_type));
+        param_types.emplace_back(toWasmTimeValType(argument_type));
     }
 
     std::vector<wasmtime::ValType> result_type;
     result_type.reserve(1);
     if (auto return_type = host_function_decl.getReturnType())
     {
-        result_type.emplace_back(toWasmTimeValKind(return_type.value()));
+        result_type.emplace_back(toWasmTimeValType(return_type.value()));
     }
 
     return wasmtime::FuncType::from_iters(param_types, result_type);
@@ -127,19 +170,32 @@ wasmtime::FuncType toWasmFunctionType(const WasmFunctionDeclaration & host_funct
 
 struct WasmTimeRuntime::Impl
 {
-    static wasmtime::Config getConfig()
+    static wasmtime::Config getConfig(bool consume_fuel)
     {
         wasmtime::Config config;
-        config.consume_fuel(true);
+        config.consume_fuel(consume_fuel);
+        /// Epoch interruption stays enabled even without fuel consumption because `max_execution_time`,
+        /// `KILL QUERY`, and shutdown cancellation must still interrupt `(start)` and exported calls.
+        /// Wasmtime epoch checks happen at safepoints, not as a per-instruction tax.
         config.epoch_interruption(true);
         config.signals_based_traps(false);
         config.wasm_exceptions(true);
+#if !defined(NDEBUG)
+        /// The Cranelift optimizer is prohibitively slow in debug builds and can
+        /// hit debug-only traps while simplifying even small modules.
+        config.cranelift_opt_level(wasmtime::OptLevel::None);
+#endif
         return config;
     }
 
-    explicit Impl() : engine(getConfig()) {}
+    explicit Impl()
+        : engine_with_fuel(getConfig(true))
+        , engine_without_fuel(getConfig(false))
+    {
+    }
 
-    wasmtime::Engine engine;
+    wasmtime::Engine engine_with_fuel;
+    wasmtime::Engine engine_without_fuel;
 };
 
 WasmTimeRuntime::WasmTimeRuntime()
@@ -163,7 +219,7 @@ struct WasmTimeStoreData
     std::shared_ptr<std::atomic_bool> stop_requested;
 };
 
-wasmtime::Result<wasmtime::DeadlineKind> epochDeadlineCallback(
+static wasmtime::Result<wasmtime::DeadlineKind> epochDeadlineCallback(
     wasmtime::Store::Context ctx, uint64_t & epoch_deadline_delta)
 {
     epoch_deadline_delta += 1;
@@ -208,11 +264,7 @@ public:
 
     VectorWithMemoryTracking<WasmVal> invokeImpl(std::string_view function_name, const VectorWithMemoryTracking<WasmVal> & params, StopToken stop_token) override
     {
-        {
-            auto result = store.context().set_fuel(cfg.fuel_limit ? cfg.fuel_limit : std::numeric_limits<uint64_t>::max());
-            if (!result)
-                throw Exception(ErrorCodes::WASM_ERROR, "Failed to set fuel to wasm instance: {}", result.err().message());
-        }
+        setStoreFuel(store.context(), cfg, "function call");
 
         auto get_function_result = instance.get(store, function_name);
         if (!get_function_result.has_value())
@@ -351,7 +403,7 @@ wasmtime::Result<std::monostate, wasmtime::Trap> callHostFunction(
 }
 }
 
-WasmFunctionDeclaration buildFunctionDeclaration(std::string_view module_name, std::string_view function_name, wasmtime::FuncType::Ref function_info)
+static WasmFunctionDeclaration buildFunctionDeclaration(std::string_view module_name, std::string_view function_name, wasmtime::FuncType::Ref function_info)
 {
     if (function_info.results().size() > 1)
         throw Exception(ErrorCodes::WASM_ERROR, "Function '{}' has more than one return value", function_name);
@@ -359,14 +411,14 @@ WasmFunctionDeclaration buildFunctionDeclaration(std::string_view module_name, s
     std::optional<WasmValKind> return_type;
     if (function_info.results().size() == 1)
     {
-        return_type = fromWasmTimeValKind(function_info.results().begin()->kind());
+        return_type = fromWasmTimeValType(*function_info.results().begin());
     }
 
     std::vector<WasmValKind> argument_types;
     argument_types.reserve(function_info.params().size());
     for (auto function_argument : function_info.params())
     {
-        argument_types.emplace_back(fromWasmTimeValKind(function_argument.kind()));
+        argument_types.emplace_back(fromWasmTimeValType(function_argument));
     }
 
     return WasmFunctionDeclaration(module_name, function_name, std::move(argument_types), return_type);
@@ -375,9 +427,14 @@ WasmFunctionDeclaration buildFunctionDeclaration(std::string_view module_name, s
 class WasmTimeModule : public WasmModule
 {
 public:
-    explicit WasmTimeModule(std::string_view module_name_, wasmtime::Engine engine_, wasmtime::Module && module_)
+    explicit WasmTimeModule(
+        std::string_view module_name_,
+        wasmtime::Engine engine_,
+        wasmtime::Module && module_,
+        FuelMode fuel_mode_)
         : engine(std::move(engine_))
         , module(std::move(module_))
+        , fuel_mode(fuel_mode_)
         , module_name(module_name_)
     {
         all_exports_list = module.exports();
@@ -401,15 +458,14 @@ public:
 
     std::unique_ptr<WasmCompartment> instantiate(Config cfg, StopToken stop_token) const override
     {
+        if (cfg.fuel_mode != fuel_mode)
+            throw Exception(ErrorCodes::LOGICAL_ERROR, "WebAssembly module fuel mode does not match instantiation config");
+
         wasmtime::Store store(engine);
         if (cfg.memory_limit)
             store.limiter(cfg.memory_limit, -1, -1, -1, -1);
 
-        {
-            auto result = store.context().set_fuel(cfg.fuel_limit ? cfg.fuel_limit : std::numeric_limits<uint64_t>::max());
-            if (!result)
-                throw Exception(ErrorCodes::WASM_ERROR, "Failed to set fuel for wasm module instantiation: {}", result.err().message());
-        }
+        setStoreFuel(store.context(), cfg, "wasm module instantiation");
 
         /// The module's `(start)` function runs as part of `Linker::instantiate` below, so we set up
         /// epoch interruption *before* instantiate. The long-lived `WasmTimeCompartment` does not
@@ -499,6 +555,7 @@ public:
 private:
     mutable wasmtime::Engine engine;
     wasmtime::Module module;
+    FuelMode fuel_mode;
 
     wasmtime::ExportType::List all_exports_list;
     std::map<std::string, wasmtime::FuncType::Ref, std::less<>> function_exports_map;
@@ -512,17 +569,16 @@ private:
     LoggerPtr log = getLogger("WasmTimeModule");
 };
 
-std::unique_ptr<WasmModule> WasmTimeRuntime::compileModule(std::string_view module_name, std::string_view wasm_code) const
+std::unique_ptr<WasmModule> WasmTimeRuntime::compileModule(
+    std::string_view module_name,
+    std::string_view wasm_code,
+    FuelMode fuel_mode) const
 {
-    std::span<uint8_t> bytes(reinterpret_cast<uint8_t *>(const_cast<char *>(wasm_code.data())), wasm_code.size());
-    auto compilation_result = wasmtime::Module::compile(impl->engine, bytes);
-    if (!compilation_result)
-    {
-        throw Exception(ErrorCodes::WASM_ERROR, "Failed to compile wasm code: {}", compilation_result.err().message());
-    }
-    auto module = compilation_result.ok();
+    auto & engine = fuel_mode == FuelMode::Enabled ? impl->engine_with_fuel : impl->engine_without_fuel;
+    const char * phase_label = fuel_mode == FuelMode::Enabled ? "fuel" : "no-fuel";
+    auto module = compileModuleWithEngine(engine, wasm_code, phase_label);
 
-    return std::make_unique<WasmTimeModule>(module_name, impl->engine, std::move(module));
+    return std::make_unique<WasmTimeModule>(module_name, engine, std::move(module), fuel_mode);
 };
 
 WasmTimeRuntime::~WasmTimeRuntime() = default;
@@ -546,7 +602,10 @@ struct WasmTimeRuntime::Impl
 
 WasmTimeRuntime::WasmTimeRuntime() : impl(std::make_unique<Impl>()) { }
 
-std::unique_ptr<WasmModule> WasmTimeRuntime::compileModule(std::string_view /* module_name */, std::string_view /* wasm_code */) const
+std::unique_ptr<WasmModule> WasmTimeRuntime::compileModule(
+    std::string_view /* module_name */,
+    std::string_view /* wasm_code */,
+    FuelMode /*fuel_mode*/) const
 {
     throw Exception(ErrorCodes::SUPPORT_IS_DISABLED, "Wasmtime support is disabled");
 }

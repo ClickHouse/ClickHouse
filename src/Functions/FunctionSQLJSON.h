@@ -10,6 +10,7 @@
 #include <Columns/ColumnTuple.h>
 #include <Core/Settings.h>
 #include <DataTypes/DataTypeArray.h>
+#include <DataTypes/DataTypeLowCardinality.h>
 #include <DataTypes/DataTypeNullable.h>
 #include <DataTypes/DataTypeString.h>
 #include <DataTypes/DataTypeTuple.h>
@@ -277,7 +278,7 @@ public:
 
         struct PlanNode
         {
-            NodeKind kind;
+            NodeKind kind = NodeKind::Leaf;
             IColumn * dest = nullptr;           /// destination column for this node
             size_t array_size = 0;              /// for Array nodes: constant number of elements
             IColumn::Offsets * array_offsets = nullptr; /// for Array nodes: offsets column
@@ -412,6 +413,14 @@ public:
         }
     };
 
+    /// SQL JSON functions rely on the default Nullable/LowCardinality implementation, but for a
+    /// Dynamic argument that stripping has not happened yet at return-type declaration, so do it here
+    /// (top-level Nullable only, matching what executeImpl receives).
+    static DataTypePtr normalizeDynamicPathArgument(const DataTypePtr & type)
+    {
+        return removeNullable(recursiveRemoveLowCardinality(type));
+    }
+
     /// Build a return type that mirrors the path argument structure,
     /// replacing each String leaf with `leaf_type`.
     static DataTypePtr buildReturnType(const DataTypePtr & path_type, const DataTypePtr & leaf_type)
@@ -490,6 +499,12 @@ public:
             Name::name, arguments, function_json_value_return_type_allow_nullable);
     }
 
+    DataTypePtr getReturnTypeForDefaultImplementationForDynamic(const DataTypes & arguments) const override
+    {
+        return Impl<DummyJSONParser, DefaultJSONStringSerializer<DummyJSONParser::Element>>::getReturnTypeForDynamic(
+            arguments, function_json_value_return_type_allow_nullable);
+    }
+
     ColumnPtr executeImpl(const ColumnsWithTypeAndName & arguments, const DataTypePtr & result_type, size_t input_rows_count) const override
     {
         /// Choose JSONParser.
@@ -547,12 +562,24 @@ public:
         return std::make_shared<DataTypeUInt8>();
     }
 
+    static DataTypePtr getReturnTypeForDynamic(const DataTypes & arguments, bool)
+    {
+        if (arguments.size() >= 2)
+        {
+            auto path = FunctionSQLJSONHelpers::normalizeDynamicPathArgument(arguments[1]);
+            if (FunctionSQLJSONHelpers::isMultiPathType(path))
+                return FunctionSQLJSONHelpers::buildReturnType(path, std::make_shared<DataTypeUInt8>());
+        }
+
+        return std::make_shared<DataTypeUInt8>();
+    }
+
     static size_t getNumberOfIndexArguments(const ColumnsWithTypeAndName & arguments) { return arguments.size() - 1; }
 
     static bool insertResultToColumn(IColumn & dest, const Element & root, GeneratorJSONPath<JSONParser> & generator_json_path, bool)
     {
         Element current_element = root;
-        VisitorStatus status;
+        VisitorStatus status = {};
         while ((status = generator_json_path.getNextItem(current_element)) != VisitorStatus::Exhausted)
         {
             if (status == VisitorStatus::Ok)
@@ -616,12 +643,29 @@ public:
         return std::make_shared<DataTypeString>();
     }
 
+    static DataTypePtr getReturnTypeForDynamic(const DataTypes & arguments, bool function_json_value_return_type_allow_nullable)
+    {
+        if (arguments.size() >= 2)
+        {
+            auto path = FunctionSQLJSONHelpers::normalizeDynamicPathArgument(arguments[1]);
+            if (FunctionSQLJSONHelpers::isMultiPathType(path))
+            {
+                DataTypePtr leaf_type = std::make_shared<DataTypeString>();
+                if (function_json_value_return_type_allow_nullable)
+                    leaf_type = makeNullable(leaf_type);
+                return FunctionSQLJSONHelpers::buildReturnType(path, leaf_type);
+            }
+        }
+
+        return std::make_shared<DataTypeString>();
+    }
+
     static size_t getNumberOfIndexArguments(const ColumnsWithTypeAndName & arguments) { return arguments.size() - 1; }
 
     static bool insertResultToColumn(IColumn & dest, const Element & root, GeneratorJSONPath<JSONParser> & generator_json_path, bool function_json_value_return_type_allow_complex)
     {
         Element current_element = root;
-        VisitorStatus status;
+        VisitorStatus status = {};
 
         while ((status = generator_json_path.getNextItem(current_element)) != VisitorStatus::Exhausted)
         {
@@ -703,6 +747,18 @@ public:
         return std::make_shared<DataTypeString>();
     }
 
+    static DataTypePtr getReturnTypeForDynamic(const DataTypes & arguments, bool)
+    {
+        if (arguments.size() >= 2)
+        {
+            auto path = FunctionSQLJSONHelpers::normalizeDynamicPathArgument(arguments[1]);
+            if (FunctionSQLJSONHelpers::isMultiPathType(path))
+                return FunctionSQLJSONHelpers::buildReturnType(path, std::make_shared<DataTypeString>());
+        }
+
+        return std::make_shared<DataTypeString>();
+    }
+
     static size_t getNumberOfIndexArguments(const ColumnsWithTypeAndName & arguments) { return arguments.size() - 1; }
 
     static bool insertResultToColumn(IColumn & dest, const Element & root, GeneratorJSONPath<JSONParser> & generator_json_path, bool)
@@ -710,7 +766,7 @@ public:
         ColumnString & col_str = assert_cast<ColumnString &>(dest);
 
         Element current_element = root;
-        VisitorStatus status;
+        VisitorStatus status = {};
         bool success = false;
         const char * array_begin = "[";
         const char * array_end = "]";

@@ -36,14 +36,14 @@ UInt32 myersDistance(const SymbolT<is_utf8> * haystack, size_t haystack_size, co
         haystack, static_cast<UInt32>(haystack_size), needle, static_cast<UInt32>(needle_size));
 }
 
-VectorWithMemoryTracking<UInt32> toUTF8CodePoints(std::u8string_view s)
+static VectorWithMemoryTracking<UInt32> toUTF8CodePoints(std::u8string_view s)
 {
     VectorWithMemoryTracking<UInt32> out;
     parseUTF8String(reinterpret_cast<const char *>(s.data()), s.size(), [&](UInt32 cp) { out.push_back(cp); });
     return out;
 }
 
-void runTest(std::string_view a, std::string_view b)
+static void runTest(std::string_view a, std::string_view b)
 {
     if (a.empty() || b.empty())
         return;
@@ -59,7 +59,7 @@ void runTest(std::string_view a, std::string_view b)
     ASSERT_EQ(expected, actual) << "haystack: [" << haystack << "]\n" << "needle: [" << needle << "]";
 }
 
-void runTestUTF8(std::u8string_view a_raw, std::u8string_view b_raw)
+static void runTestUTF8(std::u8string_view a_raw, std::u8string_view b_raw)
 {
     auto a = toUTF8CodePoints(a_raw);
     auto b = toUTF8CodePoints(b_raw);
@@ -287,7 +287,7 @@ INSTANTIATE_TEST_SUITE_P(
     ::testing::Values(1, 2, 63, 64, 65, 127, 128, 129, 255, 256, 257, 511, 512, 513, 1023, 1024, 1025, 4095, 4096, 4097, 8191, 8192, 8193));
 
 
-std::string toHex(const UInt8 * data, size_t size)
+static std::string toHex(const UInt8 * data, size_t size)
 {
     std::ostringstream oss;
     oss << std::hex << std::setfill('0');
@@ -296,7 +296,7 @@ std::string toHex(const UInt8 * data, size_t size)
     return oss.str();
 }
 
-std::string toHex(const UInt32 * data, size_t size)
+static std::string toHex(const UInt32 * data, size_t size)
 {
     std::ostringstream oss;
     oss << std::hex << std::setfill('0');

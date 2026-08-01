@@ -30,7 +30,7 @@ public:
         , process_list_elem(std::move(process_list_elem_))
         , progress_callback(std::move(progress_callback_))
     {
-        assert(insert_future.valid());
+        chassert(insert_future.valid());
     }
 
     String getName() const override { return "WaitForAsyncInsert"; }

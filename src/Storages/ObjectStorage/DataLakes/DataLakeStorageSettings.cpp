@@ -22,10 +22,7 @@ DataLakeStorageSettings::DataLakeStorageSettings(const DataLakeStorageSettings &
 {
 }
 
-DataLakeStorageSettings::DataLakeStorageSettings(DataLakeStorageSettings && settings) noexcept
-    : impl(std::make_unique<DataLakeStorageSettingsImpl>(std::move(*settings.impl)))
-{
-}
+DataLakeStorageSettings::DataLakeStorageSettings(DataLakeStorageSettings && settings) noexcept = default;
 
 
 DataLakeStorageSettings::~DataLakeStorageSettings() = default;
@@ -50,7 +47,7 @@ bool DataLakeStorageSettings::hasBuiltin(std::string_view name)
 
 void DataLakeStorageSettings::loadFromSettingsChanges(const SettingsChanges & changes)
 {
-    for (const auto & [name, value] : changes)
+    for (const auto & [name, value, _] : changes)
     {
         if (impl->has(name))
             impl->set(name, value);

@@ -1,5 +1,6 @@
 -- { echo }
 
+SET optimize_rewrite_has_to_in = 0;
 DROP TABLE IF EXISTS test;
 CREATE TABLE test
 (
@@ -63,6 +64,62 @@ Expression ((Project names + Projection))
             Keys:
               toDate(dt)
             Condition: not((toDate(dt) in 1-element set))
+            Parts: 40/40
+            Granules: 960/960
+          Ranges: 40
+-- rerun tests with rewrite has to in
+SET optimize_rewrite_has_to_in = 1;
+SELECT count()
+FROM test
+WHERE has([toDateTime('2026-01-10 00:00:00')], dt);
+1
+EXPLAIN indexes=1
+SELECT count()
+FROM test
+WHERE has([toDateTime('2026-01-10 00:00:00')], dt);
+Expression ((Project names + Projection))
+  Aggregating
+    Expression (Before GROUP BY)
+      Filter ((WHERE + Change column names to column identifiers))
+        ReadFromMergeTree (default.test)
+        Indexes:
+          Min-Max
+            Keys:
+              dt
+            Condition: (dt in 1-element set)
+            Parts: 1/40
+            Granules: 24/960
+          Partition
+            Keys:
+              toDate(dt)
+            Condition: (toDate(dt) in 1-element set)
+            Parts: 1/1
+            Granules: 24/24
+          Ranges: 1
+SELECT count()
+FROM test
+WHERE NOT has([toDateTime('2026-01-10 00:00:00')], dt);
+959
+EXPLAIN indexes=1
+SELECT count()
+FROM test
+WHERE NOT has([toDateTime('2026-01-10 00:00:00')], dt);
+Expression ((Project names + Projection))
+  Aggregating
+    Expression (Before GROUP BY)
+      Filter ((WHERE + Change column names to column identifiers))
+        ReadFromMergeTree (default.test)
+        Indexes:
+          Min-Max
+            Keys:
+              dt
+            Condition: (dt notIn 1-element set)
+            Parts: 40/40
+            Granules: 960/960
+          Partition
+            Keys:
+              toDate(dt)
+            Condition: (toDate(dt) notIn 1-element set)
             Parts: 40/40
             Granules: 960/960
           Ranges: 40

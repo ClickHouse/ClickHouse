@@ -14,13 +14,14 @@
 #include <IO/CachedInMemoryReadBufferFromFile.h>
 #include <IO/ReadPipeline.h>
 #include <Disks/DiskObjectStorage/ObjectStorages/Cached/CachedObjectStorage.h>
+#include <Disks/DiskObjectStorage/Replication/ClusterConfiguration.h>
+#include <Disks/DiskObjectStorage/Replication/ObjectStorageRouter.h>
 #include <Interpreters/FileCache/FileCache.h>
 #include <Disks/IO/ReadBufferFromRemoteFSGather.h>
 #include <Disks/IO/AsynchronousBoundedReadBuffer.h>
 #include <Disks/DiskObjectStorage/DiskObjectStorageTransaction.h>
 #include <Disks/DiskObjectStorage/Replication/BlobKillerThread.h>
 #include <Disks/DiskObjectStorage/Replication/BlobCopierThread.h>
-#include <Disks/FakeDiskTransaction.h>
 #include <Common/Scheduler/Workload/IWorkloadEntityStorage.h>
 #include <Common/ThreadPool.h>
 #include <Poco/Util/AbstractConfiguration.h>
@@ -28,11 +29,20 @@
 
 #include <Parsers/ASTCreateResourceQuery.h>
 #if ENABLE_DISTRIBUTED_CACHE
+#if CLICKHOUSE_CLOUD
 #include <DistributedCache/Utils.h>
+#endif
 #endif
 #include <Core/Settings.h>
 #include <Core/ServerSettings.h>
 #include <base/sleep.h>
+
+namespace CurrentMetrics
+{
+    extern const Metric DiskObjectStorageCopyObjectThreads;
+    extern const Metric DiskObjectStorageCopyObjectThreadsActive;
+    extern const Metric DiskObjectStorageCopyObjectThreadsScheduled;
+}
 
 namespace DB
 {
@@ -48,10 +58,20 @@ namespace ErrorCodes
     extern const int CANNOT_RMDIR;
 }
 
+namespace
+{
+    constexpr size_t DEFAULT_COPY_OBJECT_THREAD_POOL_SIZE = 16;
+
+    size_t getCopyObjectThreadPoolSize(const Poco::Util::AbstractConfiguration & config, const String & config_prefix)
+    {
+        /// A pool with `max_threads == 0` can accept jobs but never start workers, which makes
+        /// `TaskTracker::waitAll` block forever. Clamp to at least 1 so the pool always makes progress.
+        return std::max<size_t>(1, config.getUInt64(config_prefix + ".copy_object_thread_pool_size", DEFAULT_COPY_OBJECT_THREAD_POOL_SIZE));
+    }
+}
+
 DiskTransactionPtr DiskObjectStorage::createTransaction()
 {
-    if (use_fake_transaction)
-        return std::make_shared<FakeDiskTransaction>(*this);
     return createObjectStorageTransaction();
 }
 
@@ -62,12 +82,12 @@ ObjectStoragePtr DiskObjectStorage::getObjectStorage()
 
 DiskTransactionPtr DiskObjectStorage::createObjectStorageTransaction()
 {
-    return std::make_shared<DiskObjectStorageTransaction>(cluster, metadata_storage, object_storages, blob_killer, wait_blob_removal, getReadResourceName(), getWriteResourceName());
+    return std::make_shared<DiskObjectStorageTransaction>(cluster, metadata_storage, object_storages, blob_killer, copy_object_pool, wait_blob_removal, getReadResourceName(), getWriteResourceName());
 }
 
 DiskTransactionPtr DiskObjectStorage::createObjectStorageTransactionToAnotherDisk(DiskObjectStorage & to_disk)
 {
-    return std::make_shared<MultipleDisksObjectStorageTransaction>(cluster, metadata_storage, object_storages, to_disk.cluster, to_disk.metadata_storage, to_disk.object_storages, getReadResourceName(), to_disk.getWriteResourceName());
+    return std::make_shared<MultipleDisksObjectStorageTransaction>(cluster, metadata_storage, object_storages, to_disk.cluster, to_disk.metadata_storage, to_disk.object_storages, to_disk.copy_object_pool, getReadResourceName(), to_disk.getWriteResourceName());
 }
 
 DiskObjectStorage::DiskObjectStorage(
@@ -77,8 +97,7 @@ DiskObjectStorage::DiskObjectStorage(
     ObjectStorageRouterPtr object_storages_,
     DiskObjectStorageConstPtr wrapped_disk_,
     const Poco::Util::AbstractConfiguration & config,
-    const String & config_prefix,
-    bool use_fake_transaction_)
+    const String & config_prefix)
     : IDisk(name_, config, config_prefix)
     , wrapped_disk(std::move(wrapped_disk_))
     , log(getLogger("DiskObjectStorage(" + name + ")"))
@@ -87,10 +106,14 @@ DiskObjectStorage::DiskObjectStorage(
     , object_storages(std::move(object_storages_))
     , blob_killer(std::make_shared<BlobKillerThread>(name, Context::getGlobalContextInstance(), cluster, metadata_storage, object_storages, wrapped_disk ? wrapped_disk->blob_killer : nullptr))
     , blob_copier(std::make_shared<BlobCopierThread>(name, Context::getGlobalContextInstance(), cluster, metadata_storage, object_storages))
+    , copy_object_pool(std::make_shared<ThreadPool>(
+        CurrentMetrics::DiskObjectStorageCopyObjectThreads,
+        CurrentMetrics::DiskObjectStorageCopyObjectThreadsActive,
+        CurrentMetrics::DiskObjectStorageCopyObjectThreadsScheduled,
+        getCopyObjectThreadPoolSize(config, config_prefix)))
     , read_resource_name_from_config(config.getString(config_prefix + ".read_resource", ""))
     , write_resource_name_from_config(config.getString(config_prefix + ".write_resource", ""))
     , enable_distributed_cache(config.getBool(config_prefix + ".enable_distributed_cache", true))
-    , use_fake_transaction(use_fake_transaction_)
     , wait_blob_removal(config.getBool(config_prefix + ".wait_for_blob_removal", Context::getGlobalContextInstance()->getServerSettings()[ServerSetting::disk_transaction_wait_for_blob_removal]))
     , remove_shared_recursive_file_limit(config.getUInt64(config_prefix + ".remove_shared_recursive_file_limit", DEFAULT_REMOVE_SHARED_RECURSIVE_FILE_LIMIT))
 {
@@ -104,7 +127,7 @@ DiskObjectStorage::DiskObjectStorage(
         .is_cached = object_storages->takePointingTo(cluster->getLocalLocation())->supportsCache(),
         .zookeeper_name = metadata_storage->getZooKeeperName(),
     };
-    resource_changes_subscription = Context::getGlobalContextInstance()->getWorkloadEntityStorage().getAllEntitiesAndSubscribe(
+    resource_changes_subscription = Context::getGlobalContextInstance()->getWorkloadEntityStoragePtr()->getAllEntitiesAndSubscribe(
         [this] (const std::vector<IWorkloadEntityStorage::Event> & events)
         {
             std::unique_lock lock{resource_mutex};
@@ -201,6 +224,7 @@ DiskObjectStorage::DiskObjectStorage(
     cluster->applyNewSettings(config, config_prefix);
     blob_killer->applyNewSettings(config, config_prefix + ".data_background_cleanup");
     blob_copier->applyNewSettings(config, config_prefix + ".data_background_replication");
+    copy_object_pool->setMaxThreads(getCopyObjectThreadPoolSize(config, config_prefix));
 }
 
 DiskObjectStorage::~DiskObjectStorage()
@@ -276,8 +300,18 @@ void DiskObjectStorage::copyFile( /// NOLINT
         /// It may use s3-server-side copy
         auto & to_disk_object_storage = dynamic_cast<DiskObjectStorage &>(to_disk);
         auto transaction = createObjectStorageTransactionToAnotherDisk(to_disk_object_storage);
-        transaction->copyFile(from_file_path, to_file_path, read_settings, write_settings);
-        transaction->commit();
+        try
+        {
+            transaction->copyFile(from_file_path, to_file_path, read_settings, write_settings);
+            transaction->commit();
+        }
+        catch (...)
+        {
+            // Roll back any destination blobs that were copied in case copyFile()
+            // threw an exception and commit() was not reached.
+            transaction->undo();
+            throw;
+        }
     }
     else
     {
@@ -553,7 +587,7 @@ bool DiskObjectStorage::tryReserve(UInt64 bytes, const std::optional<Reservation
             }
 
             /// Check min_ratio constraint
-            if (constraints->min_ratio > 0.0)
+            if (constraints->min_ratio > 0.0f)
             {
                 UInt64 min_bytes_from_ratio = static_cast<UInt64>(constraints->min_ratio * (static_cast<Float32>(*total_space)));
                 if (free_bytes_after < min_bytes_from_ratio)
@@ -709,6 +743,7 @@ bool DiskObjectStorage::isSharedCompatible() const
         case MetadataStorageType::Plain:
         case MetadataStorageType::PlainRewritable:
         case MetadataStorageType::StaticWeb:
+        case MetadataStorageType::WebIndex:
             return true;
         default:
             return false;
@@ -719,7 +754,6 @@ bool DiskObjectStorage::supportsHardLinks() const
 {
     return !metadata_storage->isWriteOnce() && !metadata_storage->isPlain();
 }
-
 
 String DiskObjectStorage::getReadResourceName() const
 {
@@ -782,8 +816,8 @@ void DiskObjectStorage::prepareRead(
 
     /// Avoid cache fragmentation by choosing a bigger buffer size when filesystem cache is active.
     /// Must be done before setSource, which stores read_settings in the pipeline.
-    bool prefer_bigger_buffer_size = read_settings.filesystem_cache_prefer_bigger_buffer_size
-        && !read_settings.read_from_filesystem_cache_if_exists_otherwise_bypass_cache
+    bool prefer_bigger_buffer_size = read_settings.filesystem_cache_settings.prefer_bigger_buffer_size
+        && !read_settings.filesystem_cache_settings.read_if_exists_otherwise_bypass
         && file_cache_enabled;
 #if ENABLE_DISTRIBUTED_CACHE
     if (use_distributed_cache && !read_settings.distributed_cache_settings.prefer_bigger_buffer_size)
@@ -791,7 +825,7 @@ void DiskObjectStorage::prepareRead(
 #endif
 
     if (prefer_bigger_buffer_size)
-        read_settings.remote_fs_buffer_size = std::max<size_t>(read_settings.remote_fs_buffer_size, read_settings.prefetch_buffer_size);
+        read_settings.remote_fs_settings.buffer_size = std::max<size_t>(read_settings.remote_fs_settings.buffer_size, read_settings.remote_fs_settings.large_buffer_size);
 
     /// Object storage files may be split across multiple blobs — gather joins them.
     pipeline.needGather();
@@ -800,12 +834,23 @@ void DiskObjectStorage::prepareRead(
     /// CachedObjectStorage::prepareRead adds needFilesystemCache automatically.
     storage->prepareRead(storage, storage_objects, read_settings, read_hint, pipeline);
 
+    /// Let the experimental ReaderExecutor reuse held source connections across sequential
+    /// windows; independent of the cache / prefetch stages below. A null limit (feature off
+    /// or 0 slots) keeps the stateless one-shot path.
+    if (read_settings.reader_executor.enabled && read_settings.reader_executor.use_long_connections)
+        pipeline.needLongConnectionLimit(global_context->getLongConnectionLimit());
+
     if (use_distributed_cache)
         pipeline.needDistributedCache();
 
     /// Memory cache (page cache).
+    /// We explicitly disable page cache for disks with deterministic blob ids - the problem is that
+    /// during rewrite of a file blob id will be reused but previously cached segments will not be invalidated.
+    /// NOTE: It is not possible to implement invalidate method for page cache like fs cache implements, because
+    ///       page cache stores data in internal hash map keyed by offset and lengh of blob segment that are a query level settings.
     const bool use_page_cache =
-        read_settings.page_cache
+        read_settings.page_cache_settings.cache
+        && (metadata_storage->areBlobPathsRandom() || metadata_storage->isReadOnly())
         && (use_distributed_cache
             ? read_settings.use_page_cache_with_distributed_cache
             : (read_settings.use_page_cache_for_disks_without_file_cache && !file_cache_enabled));
@@ -819,7 +864,7 @@ void DiskObjectStorage::prepareRead(
         if (!object_namespace.empty())
             cache_path_prefix += object_namespace + "/";
 
-        pipeline.needMemoryCache(read_settings.page_cache, std::move(cache_path_prefix), read_settings.getPageCacheSettings());
+        pipeline.needMemoryCache(std::move(cache_path_prefix), read_settings.page_cache_settings);
     }
 
     /// Async prefetch.
@@ -827,7 +872,7 @@ void DiskObjectStorage::prepareRead(
     /// prefetching: it maintains the position/seek/setReadUntilPosition contract that upstream
     /// buffers (e.g. `ReadBufferFromEncryptedFile`) rely on. `ReadBufferFromDistributedCache`
     /// does not implement this contract on its own.
-    if (read_settings.remote_fs_method == RemoteFSReadMethod::threadpool || use_distributed_cache)
+    if (read_settings.remote_fs_settings.method == RemoteFSReadMethod::threadpool || use_distributed_cache)
     {
         auto & reader = global_context->getThreadPoolReader(FilesystemReaderType::ASYNCHRONOUS_REMOTE_FS_READER);
         pipeline.needAsyncPrefetch(
@@ -891,6 +936,16 @@ void DiskObjectStorage::waitBlobsCleanup()
     blob_killer->triggerAndWait();
 }
 
+int64_t DiskObjectStorage::getDeadBlobsQueueEstimate() const
+{
+    return metadata_storage->getDeadBlobsQueueEstimate();
+}
+
+int64_t DiskObjectStorage::getMissingBlobsQueueEstimate() const
+{
+    return metadata_storage->getMissingBlobsQueueEstimate();
+}
+
 void DiskObjectStorage::applyNewSettings(const Poco::Util::AbstractConfiguration & config, ContextPtr context, const String & config_prefix, const DisksMap & map)
 {
     IDisk::applyNewSettings(config, context, config_prefix, map);
@@ -916,6 +971,7 @@ void DiskObjectStorage::applyNewSettings(const Poco::Util::AbstractConfiguration
     wait_blob_removal = config.getBool(config_prefix + ".wait_for_blob_removal", context->getServerSettings()[ServerSetting::disk_transaction_wait_for_blob_removal]);
     blob_killer->applyNewSettings(config, config_prefix + ".data_background_cleanup");
     blob_copier->applyNewSettings(config, config_prefix + ".data_background_replication");
+    copy_object_pool->setMaxThreads(getCopyObjectThreadPoolSize(config, config_prefix));
 }
 
 #if USE_AWS_S3

@@ -120,7 +120,7 @@ namespace
 
                     for (const auto & primary_key_ast : primary_key_only_asts)
                     {
-                        ComparisonGraphCompareResult actual_result;
+                        ComparisonGraphCompareResult actual_result = {};
                         if (index == 0)
                             actual_result = graph.compare(primary_key_ast, func->arguments->children[index]);
                         else

@@ -34,7 +34,7 @@ private:
     size_t counter = 0;
 };
 
-String getAlphabetWithDigits()
+static String getAlphabetWithDigits()
 {
     String contents;
     for (char c = 'a'; c <= 'z'; ++c)
