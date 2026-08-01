@@ -8,6 +8,7 @@ namespace ProfileEvents
 {
     extern const Event TextIndexUseHint;
     extern const Event TextIndexDiscardHint;
+    extern const Event TextIndexUsedEmbeddedPostings;
 }
 
 namespace DB
@@ -228,7 +229,20 @@ void TextIndexAnalyzer::addTokenInfo(std::string_view token, TokenPostingsInfoPt
     });
 
     if (token_info->embedded_postings)
+    {
+        /// Count the USE of an embedded posting list here, not where it is decoded: a tokens-cache
+        /// hit reaches this point without deserializing anything, and a background merge deserializes
+        /// every token without any query using it.
+        /// `isTokenNeeded` excludes a token whose every query has already failed or been bypassed,
+        /// because `processTokenOperation` below then applies the postings to zero query builders.
+        /// Note the asymmetry with the early return above: there only the row-range metadata is
+        /// consulted (`clipRowsRange`), so no posting list was used, whereas `addPostings` reads the
+        /// bitmap itself, so even a clipped-to-empty result counts as a use.
+        if (isTokenNeeded(token))
+            ProfileEvents::increment(ProfileEvents::TextIndexUsedEmbeddedPostings);
+
         addPostings(token, token_info->embedded_postings);
+    }
 }
 
 void TextIndexAnalyzer::addPostings(std::string_view token, PostingListPtr postings)
