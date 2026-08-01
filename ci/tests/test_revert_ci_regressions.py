@@ -55,7 +55,23 @@ def test_failures_query_counts_tests_and_whole_check_failures():
     assert "AND check_status != 'success'" in query
     # ... plus the failures that carry no test name at all. A `skipped` check is
     # not a success either, and must not be counted as a failure.
-    assert "OR (test_name = '' AND check_status IN ('failure', 'error'))" in query
+    assert (
+        "test_name = ''\n            AND check_status IN ('failure', 'error')" in query
+    )
+
+
+def test_failures_query_does_not_count_a_check_row_that_restates_a_test_failure():
+    """A check that failed because a test in it failed writes both a test row
+    and a check row saying "Failed: 1, Passed: 12096". Counting the check row
+    too would double every test failure and, since a check collects the failures
+    of all its tests, outrank the tests it summarizes. Measured over 24 hours of
+    master, 28 of 37 check-level failure rows were such duplicates."""
+    query = job.failures_query()
+    assert "runs_with_a_failing_test" in query
+    # `task_url` is the job the rows came from. `check_start_time` cannot be
+    # used: a test row carries the test's own start time, not the check's.
+    assert "SELECT DISTINCT task_url" in query
+    assert "task_url = '' OR task_url NOT IN runs_with_a_failing_test" in query
 
 
 def test_failures_query_always_groups_by_test_name_and_check_name():
@@ -63,8 +79,9 @@ def test_failures_query_always_groups_by_test_name_and_check_name():
     can have different causes, and each is investigated on its own evidence."""
     query = job.failures_query()
     assert "GROUP BY test_name, check_name" in query
-    # Both columns come straight from `checks`, so the rows join back to it.
-    assert query.lstrip().startswith("SELECT\n    test_name,\n    check_name,")
+    # Both are projected straight from `checks`, unaliased, so the recorded rows
+    # join back to it on either column.
+    assert "\nSELECT\n    test_name,\n    check_name,\n" in query
     assert "GROUP BY test_name, check_name" in job.recent_investigations_query()
 
 

@@ -271,11 +271,43 @@ def failures_query(
     Both kinds group the same way, so this is one pass over the table rather
     than a union of two: the check-level rows simply carry an empty `test_name`.
 
+    A check that failed *because* a test in it failed writes both a test row and
+    a check row, and the check row is then not a second failure -- it is the
+    same one, restated as "Failed: 1, Passed: 12096". Counted as well, those
+    duplicates outrank the tests they summarize (a check collects the failures
+    of every test in it) and take over the whole per-run budget, while asking
+    "why does this check fail" instead of "why does this test fail" is a
+    question with no single answer to act on. So a check row counts only when
+    that run of the check reported no failing test. `task_url` is the job the
+    rows came from, which is what ties a check row to its test rows -- their
+    `check_start_time` differs, since a test row carries the test's own start
+    time. The rare row with no `task_url` cannot be tied to anything and is
+    kept: over-reporting a failure only costs an investigation, and the agent
+    and the guards still stand between that and a revert.
+
     `toUInt32` keeps the counters out of JSON 64-bit integer quoting, and the
     format is fixed in the query so the caller does not depend on server-side
     format settings.
     """
+    master_runs = (
+        f"check_start_time >= now() - INTERVAL {int(hours)} HOUR\n"
+        f"      AND head_ref = '{BASE_BRANCH}'\n"
+        f"      AND startsWith(head_repo, 'ClickHouse/')"
+    )
+    failing_test = (
+        "test_status != 'SKIPPED'\n"
+        "            AND (test_status LIKE 'F%' OR test_status LIKE 'E%')"
+    )
     return f"""\
+WITH runs_with_a_failing_test AS
+(
+    SELECT DISTINCT task_url
+    FROM {Settings.CI_DB_TABLE_NAME}
+    WHERE {master_runs}
+      AND task_url != ''
+      AND test_name != ''
+      AND {failing_test}
+)
 SELECT
     test_name,
     check_name,
@@ -286,16 +318,17 @@ SELECT
     argMax(report_url, check_start_time) AS report_url,
     substring(argMax(test_context_raw, check_start_time), 1, {int(context_limit)}) AS context
 FROM {Settings.CI_DB_TABLE_NAME}
-WHERE check_start_time >= now() - INTERVAL {int(hours)} HOUR
-    AND head_ref = '{BASE_BRANCH}'
-    AND startsWith(head_repo, 'ClickHouse/')
+WHERE {master_runs}
     AND (
         (
-            test_status != 'SKIPPED'
-            AND (test_status LIKE 'F%' OR test_status LIKE 'E%')
+            {failing_test}
             AND check_status != 'success'
         )
-        OR (test_name = '' AND check_status IN ('failure', 'error'))
+        OR (
+            test_name = ''
+            AND check_status IN ('failure', 'error')
+            AND (task_url = '' OR task_url NOT IN runs_with_a_failing_test)
+        )
     )
 GROUP BY test_name, check_name
 HAVING failure_count >= {int(min_failures)}
@@ -322,6 +355,11 @@ FORMAT JSONEachRow
 
 def parse_json_each_row(text: str) -> List[dict]:
     return [json.loads(line) for line in (text or "").splitlines() if line.strip()]
+
+
+def _db_time(value: datetime) -> str:
+    """Render a timestamp the way the CI database stores `DateTime`, in UTC."""
+    return value.astimezone(timezone.utc).strftime("%Y-%m-%d %H:%M:%S")
 
 
 def parse_db_time(value: str) -> datetime:
@@ -1069,7 +1107,7 @@ def record(cidb: CIDB, investigations: List[Investigation], now: datetime) -> No
         print("Nothing to record")
         return
     task_url = Info().get_job_url()
-    timestamp = now.strftime("%Y-%m-%d %H:%M:%S")
+    timestamp = _db_time(now)
     cidb.insert_rows(
         [json.dumps(i.to_record(timestamp, task_url)) for i in investigations],
         table=INVESTIGATION_TABLE,
@@ -1097,7 +1135,61 @@ def step(results: List[Result], name: str, command) -> bool:
     return results[-1].is_ok()
 
 
-def run(results: List[Result]) -> None:
+def dry_run_action(investigation: Investigation, repo: str, now: datetime) -> None:
+    """Say what the revert would do, running every read-only guard for real.
+
+    The guards are what decide whether an actionable verdict actually leads to a
+    revert, so a dry run that skipped them would only be exercising the agent.
+    They query GitHub and the local history and change nothing, so they run as
+    they normally would; only the revert itself is replaced by a note."""
+    number = investigation.offending_pull_request_number
+    pull_request = get_pull_request(number, repo)
+    if not pull_request:
+        investigation.action = Action.SKIPPED_GUARD
+        investigation.note(
+            f"Would not revert: pull request #{number} could not be read."
+        )
+        return
+
+    guard = culprit_guard(pull_request, investigation.failure, now)
+    if not guard:
+        merge_commit = pull_request["mergeCommit"]["oid"]
+        if not Shell.check(
+            f"git merge-base --is-ancestor {shlex.quote(merge_commit)} "
+            f"origin/{BASE_BRANCH}"
+        ):
+            guard = (
+                f"the merge commit {merge_commit} of pull request #{number} is not in "
+                f"the history of {BASE_BRANCH}"
+            )
+        else:
+            guard = already_handled(
+                merge_commit, f"{REVERT_BRANCH_PREFIX}{number}", repo
+            )
+    if guard:
+        investigation.action = Action.SKIPPED_GUARD
+        investigation.note(f"Would not revert: {guard}.")
+        print(f"Would not revert #{number}: {guard}")
+        return
+
+    investigation.action = Action.REVERTED
+    investigation.note(
+        f"Would revert pull request #{number} in a new `{REVERT_BRANCH_PREFIX}{number}` "
+        f"pull request, merge it with administrator privileges, and open a draft "
+        f"`{REINTRODUCE_BRANCH_PREFIX}{number}` pull request reintroducing the change."
+    )
+    print(f"Would revert #{number} and reintroduce it as a draft")
+
+
+def run(results: List[Result], dry_run=False) -> None:
+    """Investigate the repeated failures and revert what caused them.
+
+    With `dry_run`, nothing is changed anywhere: no table is created, no rows are
+    written, no branch is pushed and no pull request is created or merged. The
+    agent still runs and every read-only guard is still evaluated, and the rows
+    that would have been written are printed instead, so a run can be judged
+    before it is trusted to act.
+    """
     info = Info()
     os.makedirs(TEMP_DIR, exist_ok=True)
 
@@ -1105,7 +1197,9 @@ def run(results: List[Result]) -> None:
         return
 
     cidb = connect()
-    if not step(
+    if dry_run:
+        print(f"Dry run: {INVESTIGATION_TABLE} is not created and nothing is written")
+    elif not step(
         results,
         f"Create {INVESTIGATION_TABLE}",
         lambda: cidb.query(INVESTIGATION_TABLE_DDL) is not None,
@@ -1149,8 +1243,14 @@ def run(results: List[Result]) -> None:
                 continue
             step(
                 results,
-                f"Revert #{investigation.offending_pull_request_number}",
-                lambda i=investigation: act(i, info.repo_name, now) or True,
+                f"{'Would revert' if dry_run else 'Revert'} "
+                f"#{investigation.offending_pull_request_number}",
+                lambda i=investigation: (
+                    dry_run_action(i, info.repo_name, now)
+                    if dry_run
+                    else act(i, info.repo_name, now)
+                )
+                or True,
             )
             if investigation.action == Action.REVERTED:
                 reverts += 1
@@ -1167,18 +1267,24 @@ def run(results: List[Result]) -> None:
     finally:
         # Record what was investigated even if a revert blew up halfway: these
         # rows are how anybody finds out what this job did.
-        step(
-            results,
-            "Record investigations",
-            lambda: record(cidb, investigations, now) or True,
-        )
+        if dry_run:
+            print(f"Dry run: rows that would go into {INVESTIGATION_TABLE}:")
+            for investigation in investigations:
+                print(json.dumps(investigation.to_record(_db_time(now), "dry-run")))
+            results.append(Result(name="Would record investigations"))
+        else:
+            step(
+                results,
+                "Record investigations",
+                lambda: record(cidb, investigations, now) or True,
+            )
         results[-1].set_info(summary(investigations))
 
 
 if __name__ == "__main__":
     job_results: List[Result] = []
     try:
-        run(job_results)
+        run(job_results, dry_run="--dry-run" in sys.argv)
     except Exception as error:
         print(f"ERROR: {error}")
         traceback.print_exc()
