@@ -1,3 +1,4 @@
+#include <Common/StringUtils.h>
 #include <Parsers/Prometheus/PrometheusQueryParsingUtil.h>
 
 #include <Common/UTF8Helpers.h>
@@ -6,7 +7,6 @@
 #include <IO/ReadHelpers.h>
 #include <IO/readDecimalText.h>
 #include <IO/readIntText.h>
-#include <boost/algorithm/string/predicate.hpp>
 
 
 namespace DB
@@ -332,7 +332,7 @@ namespace
 
         if constexpr (is_decimal<T>)
         {
-            if (boost::iequals(input, "Inf") || boost::iequals(input, "NaN"))
+            if (equalsCaseInsensitive(input, "Inf") || equalsCaseInsensitive(input, "NaN"))
             {
                 setErrorMessage(error_message, "Cannot parse {} {}: Should be finite", getTypeName<T>(), quoteString(input));
                 setErrorPos(error_pos, 0);
