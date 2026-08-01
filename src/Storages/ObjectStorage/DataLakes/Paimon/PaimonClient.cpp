@@ -324,7 +324,7 @@ std::pair<std::vector<PaimonManifestFileMeta>, size_t> PaimonTableClient::getMan
 {
     /// read manifest list file
     auto context = getContext();
-    RelativePathWithMetadata relative_path(std::filesystem::path(table_location) / (PAIMON_MANIFEST_DIR) / manifest_list_path);
+    RelativePathWithMetadata relative_path(std::filesystem::path(table_location) / PAIMON_MANIFEST_DIR / manifest_list_path);
     auto read_settings = getPaimonMetadataReadSettings(disable_filesystem_cache);
     auto manifest_list_buf = createReadBuffer(relative_path, object_storage, context, log, read_settings);
     /// createReadBuffer fills relative_path.metadata->size_bytes via a HEAD request.
@@ -350,7 +350,7 @@ PaimonTableClient::getDataManifest(String manifest_path, const PaimonTableSchema
         return {};
 
     auto context = getContext();
-    RelativePathWithMetadata object_info(std::filesystem::path(table_location) / (PAIMON_MANIFEST_DIR) / manifest_path);
+    RelativePathWithMetadata object_info(std::filesystem::path(table_location) / PAIMON_MANIFEST_DIR / manifest_path);
     auto read_settings = getPaimonMetadataReadSettings(disable_filesystem_cache);
     auto manifest_buf = createReadBuffer(object_info, object_storage, context, log, read_settings);
     /// createReadBuffer fills object_info.metadata->size_bytes via a HEAD request.
