@@ -1802,6 +1802,19 @@ IStorage::ColumnSizeByName StorageMerge::getColumnSizes() const
     return column_sizes;
 }
 
+IStorage::ColumnSizeByName StorageMerge::getColumnSizes(const Names & columns) const
+{
+    ColumnSizeByName column_sizes;
+
+    forEachTable([&](const auto & table)
+    {
+        for (const auto & [name, size] : table->getColumnSizes(columns))
+            column_sizes[name].add(size);
+    });
+
+    return column_sizes;
+}
+
 std::optional<IStorage::ColumnSizeByName> StorageMerge::tryGetColumnSizes() const
 {
     try

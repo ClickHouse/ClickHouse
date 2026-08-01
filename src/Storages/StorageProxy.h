@@ -36,6 +36,7 @@ public:
     bool supportsColumnsWithDynamicStructure() const override { return getNested()->supportsColumnsWithDynamicStructure(); }
 
     ColumnSizeByName getColumnSizes() const override { return getNested()->getColumnSizes(); }
+    ColumnSizeByName getColumnSizes(const Names & columns) const override { return getNested()->getColumnSizes(columns); }
 
     StorageSnapshotPtr getStorageSnapshot(const StorageMetadataPtr & base_metadata, ContextPtr query_context) const override
     {
@@ -165,7 +166,6 @@ public:
     }
 
     void checkTableCanBeDropped([[ maybe_unused ]] ContextPtr query_context) const override { getNested()->checkTableCanBeDropped(query_context); }
-    void checkTableSizeBelowDropLimit([[ maybe_unused ]] ContextPtr query_context) const override { getNested()->checkTableSizeBelowDropLimit(query_context); }
 
     bool storesDataOnDisk() const override { return getNested()->storesDataOnDisk(); }
     Strings getDataPaths() const override { return getNested()->getDataPaths(); }

@@ -95,6 +95,11 @@ MutableDataPartStoragePtr MergeTreeDataPartBuilder::getPartStorageByType(
     if (!volume_)
         throw Exception(ErrorCodes::LOGICAL_ERROR, "Cannot create part storage, because volume is not specified");
 
+    /// The storage object and its `root_path` / `part_dir` strings live for the part's whole lifetime.
+    /// Create them in the dedicated arena here: on the write paths this runs while configuring the
+    /// builder, before `build()` enters its own scope, so the scope there would otherwise miss them.
+    ScopedJemallocThreadArena mergetree_arena_scope(JemallocMergeTreeArena::getArenaIndex());
+
     using Type = MergeTreeDataPartStorageType;
     switch (storage_type_.getValue())
     {

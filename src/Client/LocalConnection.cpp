@@ -827,11 +827,6 @@ void LocalConnection::sendMergeTreeReadTaskResponse(const ParallelReadResponse &
     throw Exception(ErrorCodes::NOT_IMPLEMENTED, "Not implemented");
 }
 
-void LocalConnection::sendMergeTreeAllRangesAnnouncementResponse(const InitialAllRangesAnnouncementResponse &)
-{
-    throw Exception(ErrorCodes::NOT_IMPLEMENTED, "Not implemented");
-}
-
 ServerConnectionPtr LocalConnection::createConnection(
     const ConnectionParameters &,
     ContextPtr current_context,

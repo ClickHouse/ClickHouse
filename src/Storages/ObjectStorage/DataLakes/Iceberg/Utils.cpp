@@ -1,5 +1,6 @@
 
 #include <memory>
+#include <sstream>
 #include <string>
 #include <unordered_set>
 #include <config.h>
@@ -33,6 +34,7 @@
 #include <Poco/UUID.h>
 #include <Poco/UUIDGenerator.h>
 #include <Common/DateLUT.h>
+#include <Common/quoteString.h>
 #include <Core/ColumnWithTypeAndName.h>
 #include <DataTypes/DataTypesNumber.h>
 #include <Disks/IStoragePolicy.h>
@@ -48,10 +50,7 @@
 #include <filesystem>
 #include <regex>
 
-#include <Databases/DataLake/Common.h>
-#include <Databases/DataLake/ICatalog.h>
 #include <Interpreters/Context.h>
-#include <Interpreters/StorageID.h>
 #include <Storages/ObjectStorage/DataLakes/Common/Common.h>
 #include <Storages/ObjectStorage/DataLakes/DataLakeStorageSettings.h>
 #include <Storages/ObjectStorage/DataLakes/Iceberg/IcebergMetadataFilesCache.h>
@@ -1050,7 +1049,9 @@ std::pair<Poco::JSON::Object::Ptr, String> createEmptyMetadataFile(
     sort_orders->add(sort_order);
     new_metadata_file_content->set(Iceberg::f_sort_orders, sort_orders);
 
-    return {new_metadata_file_content, stringifyJSON(new_metadata_file_content, 4)};
+    std::ostringstream oss; // STYLE_CHECK_ALLOW_STD_STRING_STREAM
+    Poco::JSON::Stringifier::stringify(new_metadata_file_content, oss, 4);
+    return {new_metadata_file_content, removeEscapedSlashes(oss.str())};
 }
 
 /**
@@ -1273,61 +1274,6 @@ MetadataFileWithInfo getLatestOrExplicitMetadataFileAndVersion(
     }
 }
 
-MetadataFileWithInfo getLatestMetadataFileAndVersionWithCatalog(
-    const ObjectStoragePtr & object_storage,
-    const std::shared_ptr<DataLake::ICatalog> & catalog,
-    const String & table_identifier,
-    const String & table_path,
-    const DataLakeStorageSettings & data_lake_settings,
-    IcebergMetadataFilesCachePtr metadata_cache,
-    const ContextPtr & local_context,
-    Poco::Logger * log,
-    const std::optional<String> & table_uuid,
-    CompressionMethod known_compression_method,
-    bool ignore_explicit_metadata_file_path)
-{
-    if (!catalog)
-        return getLatestOrExplicitMetadataFileAndVersion(
-            object_storage,
-            table_path,
-            data_lake_settings,
-            metadata_cache,
-            local_context,
-            log,
-            table_uuid,
-            known_compression_method,
-            /* force_fetch_latest_metadata */ true,
-            ignore_explicit_metadata_file_path);
-
-    DataLake::TableMetadata table_metadata;
-    table_metadata.withDataLakeSpecificProperties().withLocation();
-    const auto & [namespace_name, table_name] = DataLake::parseTableName(table_identifier);
-    catalog->getTableMetadata(namespace_name, table_name, table_metadata);
-
-    auto specific_properties = table_metadata.getDataLakeSpecificProperties();
-    if (!specific_properties.has_value() || specific_properties->iceberg_metadata_file_location.empty())
-        throw Exception(
-            ErrorCodes::BAD_ARGUMENTS,
-            "Catalog did not return a metadata file location for table '{}.{}'",
-            namespace_name, table_name);
-
-    DataLakeStorageSettings effective_settings = data_lake_settings;
-    effective_settings[DataLakeStorageSetting::iceberg_metadata_file_path]
-        = table_metadata.getMetadataLocation(specific_properties->iceberg_metadata_file_location);
-
-    return getLatestOrExplicitMetadataFileAndVersion(
-        object_storage,
-        table_path,
-        effective_settings,
-        metadata_cache,
-        local_context,
-        log,
-        table_uuid,
-        known_compression_method,
-        /* force_fetch_latest_metadata */ true,
-        /* ignore_explicit_metadata_file_path */ false);
-}
-
 
 std::pair<Poco::JSON::Object::Ptr, Int32> parseTableSchemaV2Method(const Poco::JSON::Object::Ptr & metadata_object)
 {
@@ -1411,6 +1357,9 @@ KeyDescription getSortingKeyDescriptionFromMetadata(Poco::JSON::Object::Ptr meta
             int direction = field->getValue<String>(f_direction) == "asc" ? 1 : -1;
             auto iceberg_transform_name = field->getValue<String>(f_transform);
             auto clickhouse_transform_name = parseTransformAndArgument(iceberg_transform_name);
+            /// Quote the column name so identifiers with special characters (e.g. `@timestamp`)
+            /// produce a parseable ORDER BY clause.
+            auto quoted_column_name = backQuoteIfNeed(column_name);
             String full_argument;
             if (clickhouse_transform_name->transform_name != "identity")
             {
@@ -1419,11 +1368,11 @@ KeyDescription getSortingKeyDescriptionFromMetadata(Poco::JSON::Object::Ptr meta
                 {
                     full_argument += std::to_string(*clickhouse_transform_name->argument) +  ", ";
                 }
-                full_argument += column_name + ")";
+                full_argument += quoted_column_name + ")";
             }
             else
             {
-                full_argument = column_name;
+                full_argument = quoted_column_name;
             }
             if (direction == 1)
                 order_by_str += fmt::format("{} ASC,", full_argument);

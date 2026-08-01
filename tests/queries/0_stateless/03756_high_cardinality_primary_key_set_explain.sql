@@ -10,8 +10,6 @@ CREATE TABLE high_cardinality_primary_key_set
 ORDER BY (u, d)
 SETTINGS index_granularity = 1;
 
-SET explain_query_plan_default = 'legacy';
-
 INSERT INTO high_cardinality_primary_key_set SELECT toDate('2025-01-01') - number, number FROM numbers(100);
 
 EXPLAIN indexes = 1

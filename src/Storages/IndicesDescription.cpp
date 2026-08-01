@@ -273,9 +273,9 @@ ExpressionActionsPtr IndicesDescription::getSingleExpressionForIndices(const Col
     return ExpressionAnalyzer(combined_expr_list, syntax_result, context).getActions(false);
 }
 
-VectorWithMemoryTracking<String> IndicesDescription::getAllRegisteredNames() const
+Names IndicesDescription::getAllRegisteredNames() const
 {
-    VectorWithMemoryTracking<String> result;
+    Names result;
     for (const auto & index : *this)
     {
         result.emplace_back(index.name);
