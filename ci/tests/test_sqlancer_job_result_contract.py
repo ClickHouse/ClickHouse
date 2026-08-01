@@ -25,9 +25,14 @@ workflow report, with only CIDB recording the failure:
 
 The status-token and merge assertions exercise `ci.praktika.result` directly;
 the exit-status assertions run the scripts' own shell text, extracted verbatim,
-so that reverting any of the three fixes in the scripts reddens this test.
+so that reverting any of the three fixes in the scripts reddens this test. That
+includes the two regions that actually *produce* the values under test: the
+`JOB_NAME_RAW` lookup (so a hardcoded or empty name reddens) and
+`sqlancer_pp_job.sh`'s oracle loop (so a regression in the status token it
+assigns reddens).
 """
 
+import dataclasses
 import json
 import os
 import re
@@ -38,6 +43,7 @@ import pytest
 
 sys.path.insert(0, os.path.join(os.path.dirname(__file__), "../.."))
 
+from ci.praktika._environment import _Environment
 from ci.praktika.result import Result
 from ci.praktika.utils import Utils
 
@@ -77,6 +83,81 @@ def _tail_from(text, marker):
         if line.startswith(marker):
             return "\n".join(lines[i:])
     raise AssertionError(f"marker {marker!r} not found")
+
+
+def _extract_compound(text, start_marker, end_line, path):
+    """Lines from the line starting with start_marker to the next end_line.
+
+    Keyed on the text, never on line numbers, so it survives edits elsewhere in
+    the script. `end_line` is matched at column 0, i.e. the closing keyword of a
+    top-level compound statement.
+    """
+    lines = text.splitlines()
+    start = None
+    for i, line in enumerate(lines):
+        if line.startswith(start_marker):
+            start = i
+            break
+    assert start is not None, f"{start_marker!r} not found in {path}"
+    for j in range(start + 1, len(lines)):
+        if lines[j] == end_line:
+            return "\n".join(lines[start : j + 1])
+    raise AssertionError(f"no closing {end_line!r} for {start_marker!r} in {path}")
+
+
+def _extract_job_name_init(text, path):
+    """The script's own `JOB_NAME_RAW` / `NORMALIZED_JOB_NAME` lookup block.
+
+    Both scripts read `JOB_NAME` out of the serialized praktika environment with
+    an inline `python3 -c`, because `JOB_NAME` is not propagated into the docker
+    container. Extracting it verbatim is what makes a regression there (a
+    hardcoded literal, or a lookup that degrades to an empty string) visible: an
+    empty `name` no-ops `update_sub_result` exactly like a wrong one.
+    """
+    return _extract_compound(text, "JOB_NAME_RAW=$(python3 -c '", "')", path)
+
+
+def _write_environment_json(root, job_name, workflow_name="NightlySQLancer"):
+    """Materialize the `ci/tmp/environment.json` that the init block reads.
+
+    `_Environment.file_name_static` is `f"{Settings.TEMP_DIR}/{cls.name}.json"`
+    with `TEMP_DIR = "./ci/tmp"`, i.e. relative to the *process* cwd, so the
+    harness has to run from a scratch tree rather than the repo. The field list
+    is generated from the dataclass instead of spelled out: a partial dict makes
+    `_Environment.from_fs` raise `TypeError: missing N required positional
+    arguments`, so hardcoding it would rot the moment a field is added.
+    """
+    required = [
+        f.name
+        for f in dataclasses.fields(_Environment)
+        if f.default is dataclasses.MISSING and f.default_factory is dataclasses.MISSING
+    ]
+    env = {name: (0 if name == "PR_NUMBER" else "") for name in required}
+    env["JOB_NAME"] = job_name
+    env["WORKFLOW_NAME"] = workflow_name
+
+    tmp_dir = os.path.join(root, "ci", "tmp")
+    os.makedirs(tmp_dir, exist_ok=True)
+    with open(os.path.join(tmp_dir, "environment.json"), "w", encoding="utf-8") as f:
+        json.dump(env, f)
+
+
+def _make_praktika_tree(root, job_name, workflow_name="NightlySQLancer"):
+    """A scratch cwd from which the extracted init block resolves `ci.praktika`.
+
+    Symlinks the real `ci/praktika` and `ci/settings` rather than copying, so the
+    block runs against the in-tree framework, and keeps the generated
+    `environment.json` out of the shared worktree.
+    """
+    ci_dir = os.path.join(root, "ci")
+    os.makedirs(ci_dir, exist_ok=True)
+    repo_ci = os.path.abspath(_CI_DIR)
+    for name in ("praktika", "settings"):
+        link = os.path.join(ci_dir, name)
+        if not os.path.lexists(link):
+            os.symlink(os.path.join(repo_ci, name), link)
+    _write_environment_json(root, job_name, workflow_name)
+    return root
 
 
 def _workflow_snapshot(node_names):
@@ -214,12 +295,15 @@ def test_scripts_only_assign_valid_status_tokens(script):
 # ---------------------------------------------------------------------------
 
 
-def _run_sqlancer_write_result(tmp_path, overall_status):
+def _run_sqlancer_write_result(tmp_path, overall_status, job_name=_SQLANCER_NODE):
     """Run `sqlancer_job.sh`'s real `write_result` (via its EXIT trap).
 
-    Returns (exit_code, parsed_result_json).
+    The `JOB_NAME_RAW` lookup is the script's own, so the emitted `name` comes
+    from the real `_Environment` read rather than from this test. Returns
+    (exit_code, parsed_result_json).
     """
     text = _read(_SQLANCER_JOB)
+    cwd = _make_praktika_tree(str(tmp_path / "cwd"), job_name)
     harness = "\n".join(
         [
             "set -exu",
@@ -229,7 +313,7 @@ def _run_sqlancer_write_result(tmp_path, overall_status):
             f'OUTPUT_PATH="{tmp_path}/out"',
             'mkdir -p "$OUTPUT_PATH"',
             "JOB_START_TIME=$(date +%s)",
-            f'JOB_NAME_RAW="{_SQLANCER_NODE}"',
+            _extract_job_name_init(text, _SQLANCER_JOB),
             _extract_block(text, r"^json_escape\(\) \{$", _SQLANCER_JOB),
             _extract_block(text, r"^write_result\(\) \{$", _SQLANCER_JOB),
             "TEST_RESULTS=()",
@@ -251,7 +335,7 @@ def _run_sqlancer_write_result(tmp_path, overall_status):
     script = tmp_path / "harness.sh"
     script.write_text(harness, encoding="utf-8")
     proc = subprocess.run(
-        ["bash", str(script)], capture_output=True, text=True, timeout=120
+        ["bash", str(script)], capture_output=True, text=True, timeout=120, cwd=cwd
     )
     with open(tmp_path / "result_test.json", encoding="utf-8") as f:
         return proc.returncode, json.load(f)
@@ -283,17 +367,19 @@ def test_sqlancer_write_result_emits_job_name_verbatim(tmp_path):
     assert " " in result["name"] and "(" in result["name"]
 
 
-def _run_sqlancer_pp_tail(tmp_path, overall_status):
+def _run_sqlancer_pp_tail(tmp_path, overall_status, job_name=_SQLANCER_PP_NODE):
     """Run `sqlancer_pp_job.sh`'s real tail: the result-writing block to EOF.
 
     `sqlancer_pp_job.sh` has no EXIT trap, so its result JSON and its exit
     status both come from the tail of the script. Everything from the JSON
     block's opening brace to the end of the file is run verbatim, with the
-    server-facing commands stubbed out.
+    server-facing commands stubbed out. `OVERALL_STATUS` is supplied here;
+    `_run_sqlancer_pp_oracle_loop` covers the code that assigns it.
     """
     text = _read(_SQLANCER_PP_JOB)
     lines = text.splitlines()
     tail = "\n".join(lines[lines.index("{") :])
+    cwd = _make_praktika_tree(str(tmp_path / "cwd"), job_name)
 
     harness = "\n".join(
         [
@@ -303,7 +389,7 @@ def _run_sqlancer_pp_tail(tmp_path, overall_status):
             'mkdir -p "$OUTPUT_PATH"',
             f'RESULT_FILE="{tmp_path}/result_test.json"',
             "JOB_START_TIME=$(date +%s)",
-            f'JOB_NAME_RAW="{_SQLANCER_PP_NODE}"',
+            _extract_job_name_init(text, _SQLANCER_PP_JOB),
             _extract_block(text, r"^json_escape\(\) \{$", _SQLANCER_PP_JOB),
             f"OVERALL_STATUS={overall_status}",
             'TEST_RESULTS=("NoREC,FAIL,exit=1; boom")',
@@ -318,7 +404,7 @@ def _run_sqlancer_pp_tail(tmp_path, overall_status):
     script = tmp_path / "harness_pp.sh"
     script.write_text(harness, encoding="utf-8")
     proc = subprocess.run(
-        ["bash", str(script)], capture_output=True, text=True, timeout=120
+        ["bash", str(script)], capture_output=True, text=True, timeout=120, cwd=cwd
     )
     with open(tmp_path / "result_test.json", encoding="utf-8") as f:
         return proc.returncode, json.load(f)
@@ -344,6 +430,30 @@ def test_sqlancer_pp_exits_zero_on_ok(tmp_path):
         (_run_sqlancer_pp_tail, _SQLANCER_PP_NODE),
     ],
 )
+def test_emitted_name_comes_from_the_environment_lookup(tmp_path, runner, node):
+    """The emitted `name` tracks `JOB_NAME`, and is never empty.
+
+    An empty `name` is the failure mode of a broken lookup: it produces a
+    plausible-looking result file whose merge silently no-ops, exactly like a
+    wrong name. Driving a second, distinct `JOB_NAME` through the real init block
+    is what distinguishes a lookup from a hardcoded literal that happens to match
+    the node.
+    """
+    other = node.replace("arm_asan_ubsan", "amd_asan_ubsan")
+    assert other != node
+
+    _, result = runner(tmp_path, "FAIL", job_name=other)
+    assert result["name"], "an empty result name no-ops the report merge"
+    assert result["name"] == other, "the name must come from JOB_NAME, not a literal"
+
+
+@pytest.mark.parametrize(
+    "runner, node",
+    [
+        (_run_sqlancer_write_result, _SQLANCER_NODE),
+        (_run_sqlancer_pp_tail, _SQLANCER_PP_NODE),
+    ],
+)
 def test_emitted_result_reaches_the_report(tmp_path, runner, node):
     """End to end: what each script writes on failure does fail the workflow.
 
@@ -358,6 +468,104 @@ def test_emitted_result_reaches_the_report(tmp_path, runner, node):
     assert workflow_status == Result.Status.FAIL
     assert node_status == Result.Status.FAIL
     assert node_duration is not None
+
+
+def _run_sqlancer_pp_oracle_loop(tmp_path, java_exit=0, java_stdout="", server_up=True):
+    """Run `sqlancer_pp_job.sh`'s real oracle loop and report what it assigned.
+
+    This is the code that decides `OVERALL_STATUS`; `_run_sqlancer_pp_tail`
+    supplies that value itself, so without this the loop's own tokens are
+    uncovered. Only `wget` and `java` are stubbed: no server, no jar, no docker.
+
+    Returns (overall_status, [test_result_rows]).
+    """
+    text = _read(_SQLANCER_PP_JOB)
+    loop = _extract_compound(
+        text, 'for ORACLE in "${ORACLES[@]}"; do', "done", _SQLANCER_PP_JOB
+    )
+
+    out_dir = tmp_path / "out"
+    out_dir.mkdir(parents=True, exist_ok=True)
+    wget_body = "printf 'Ok.'" if server_up else "printf 'nope'"
+    java_body = f"printf '%s\\n' {java_stdout!r}; return {java_exit}"
+
+    harness = "\n".join(
+        [
+            "set -u",
+            f'OUTPUT_PATH="{out_dir}"',
+            f'JAR="{tmp_path}/nonexistent.jar"',
+            "NUM_THREADS=1",
+            "NUM_QUERIES=1",
+            "TIMEOUT=1",
+            'SQLANCER_USER="sqlancer"',
+            'SQLANCER_PASSWORD="sqlancer"',
+            'ORACLES=( "WHERE" "NoREC" )',
+            "TEST_RESULTS=()",
+            "ATTACHED_FILES_ARRAY=()",
+            # The loop's precondition, straight from the script.
+            "OVERALL_STATUS=OK",
+            f"wget() {{ {wget_body}; }}",
+            f"java() {{ {java_body}; }}",
+            loop,
+            'printf "OVERALL=%s\\n" "$OVERALL_STATUS"',
+            'printf "ROW=%s\\n" "${TEST_RESULTS[@]}"',
+        ]
+    )
+    script = tmp_path / "harness_pp_loop.sh"
+    script.write_text(harness, encoding="utf-8")
+    proc = subprocess.run(
+        ["bash", str(script)], capture_output=True, text=True, timeout=120
+    )
+    assert proc.returncode == 0, f"the loop harness itself failed:\n{proc.stderr}"
+
+    overall = re.findall(r"^OVERALL=(.*)$", proc.stdout, re.M)
+    rows = re.findall(r"^ROW=(.*)$", proc.stdout, re.M)
+    assert len(overall) == 1, f"expected one OVERALL line, got {overall}"
+    assert rows, "the loop produced no TEST_RESULTS rows"
+    return overall[0], rows
+
+
+@pytest.mark.parametrize(
+    "kwargs, expect_ok, expect_leaf",
+    [
+        ({}, True, Result.Status.OK),
+        ({"java_exit": 3}, False, Result.Status.FAIL),
+        # `java` succeeds but leaves an assertion behind: still a failure.
+        (
+            {"java_stdout": "java.lang.AssertionError: boom"},
+            False,
+            Result.Status.FAIL,
+        ),
+        ({"server_up": False}, False, Result.Status.ERROR),
+    ],
+    ids=["clean", "java-fails", "assertion-only", "server-down"],
+)
+def test_pp_oracle_loop_assigns_statuses_that_reach_the_report(
+    tmp_path, kwargs, expect_ok, expect_leaf
+):
+    """The loop's own `OVERALL_STATUS` and leaf tokens, fed into the real merge.
+
+    Covering the clean branch as well is what stops this from passing by always
+    expecting a failure.
+    """
+    overall, rows = _run_sqlancer_pp_oracle_loop(tmp_path, **kwargs)
+
+    leaves = {row.split(",")[1] for row in rows}
+    assert leaves == {expect_leaf}, f"unexpected leaf statuses {leaves}"
+
+    workflow_status, node_status, _ = _merge(
+        _SQLANCER_PP_NODE, _SQLANCER_PP_NODE, overall
+    )
+    if expect_ok:
+        assert overall == Result.Status.OK
+        assert workflow_status == Result.Status.OK
+        assert node_status == Result.Status.OK
+    else:
+        assert workflow_status == Result.Status.FAIL, (
+            f"the oracle loop assigned {overall!r}, which does not fail the "
+            "workflow rollup"
+        )
+        assert node_status == Result.Status.FAIL
 
 
 def test_pp_failure_path_emits_a_status_that_fails_the_report(tmp_path):
