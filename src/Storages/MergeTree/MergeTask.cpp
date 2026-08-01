@@ -9,6 +9,7 @@
 #include <memory>
 #include <fmt/format.h>
 
+#include <Common/checkStackSize.h>
 #include <Common/scope_guard_safe.h>
 #include <Compression/CompressedWriteBuffer.h>
 #include <Core/Settings.h>
@@ -1303,6 +1304,9 @@ void MergeTask::ExecuteAndFinalizeHorizontalPart::prepareProjectionsToMergeAndRe
         {
             auto can_fill = [&](const String & name, NameSet & resolving, NameSet & known_fillable, auto & self) -> bool
             {
+                /// Incremental ALTERs can chain defaults arbitrarily deep, as on the reader's own paths.
+                checkStackSize();
+
                 if (known_fillable.contains(name))
                     return true;
 

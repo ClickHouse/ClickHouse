@@ -266,6 +266,19 @@ OPTIMIZE TABLE t_proj_ignore_parent_stored_dep FINAL;
 
 SELECT 'ignore-parent-stored read after merge', a, c FROM t_proj_ignore_parent_stored_dep ORDER BY a;
 
+-- reading the parent rows would also succeed if the projection were merely dropped, so pin that the
+-- projection was rebuilt and now materializes the current column set
+SELECT 'ignore-parent-stored part columns after merge', name, column FROM system.projection_parts_columns
+WHERE database = currentDatabase() AND table = 't_proj_ignore_parent_stored_dep' AND active ORDER BY name, column;
+
+SYSTEM FLUSH LOGS part_log;
+
+SELECT 'ignore-parent-stored rebuilt not merged',
+       sum(ProfileEvents['MergedProjections']), sum(ProfileEvents['RebuiltProjections']) > 0
+FROM system.part_log
+WHERE database = currentDatabase() AND table = 't_proj_ignore_parent_stored_dep'
+  AND event_type = 'MergeParts';
+
 DROP TABLE t_proj_ignore_parent_stored_dep;
 
 -- subcolumn default dependency: the late-added `d DEFAULT n.x` references the subcolumn `n.x` of the

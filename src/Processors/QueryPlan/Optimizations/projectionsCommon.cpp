@@ -3,6 +3,7 @@
 
 #include <Columns/ColumnConst.h>
 #include <Common/assert_cast.h>
+#include <Common/checkStackSize.h>
 #include <Common/scope_guard_safe.h>
 #include <Processors/QueryPlan/ExpressionStep.h>
 #include <Processors/QueryPlan/FilterStep.h>
@@ -331,6 +332,9 @@ static bool projectionPartCanFillDefault(
     NameSet & resolving,
     NameSet & known_fillable)
 {
+    /// Incremental ALTERs can chain defaults arbitrarily deep, as on the reader's own recursive paths.
+    checkStackSize();
+
     if (known_fillable.contains(column_name))
         return true;
 
