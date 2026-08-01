@@ -22,6 +22,15 @@ ARGS_MIXED=(--insert-method InsertSelect --table-engine MergeTree --use-insert-t
 # the statement dump below.
 SETTINGS_RE_ST='SET max_insert_threads=1;|SET update_insert_deduplication_token_in_dependent_materialized_views=1;|SET deduplicate_blocks_in_dependent_materialized_views=1;|SET max_block_size=1;'
 
+# One row per statement: join lines, split on the statement terminator, collapse whitespace so
+# the result is insensitive to the generator's indentation only. Shared by the statement dump
+# and by the driver replay's payload-equality check so the two cannot normalize differently.
+norm() {
+    tr '\n' ' ' | tr ';' '\n' \
+        | sed 's/[[:space:]]\+/ /g; s/^ //; s/ $//' \
+        | grep -v '^$'
+}
+
 for sub in insert_several_blocks_into_table mv_generates_several_blocks several_mv_into_one_table; do
     main=$(python3 "$GEN" "$sub" "${ARGS[@]}")
     # The success path carries no diagnostics at all.
@@ -54,12 +63,7 @@ done
 for sub in insert_several_blocks_into_table mv_generates_several_blocks several_mv_into_one_table; do
     for phase in first second; do
         emit=$(python3 "$GEN" "$sub" "${ARGS_MIXED[@]}" --emit-debug-only "$phase")
-        # One row per statement: join lines, split on the statement terminator, collapse
-        # whitespace so the dump is insensitive to the generator's indentation only.
-        printf '%s\n' "$emit" | tr '\n' ' ' | tr ';' '\n' \
-            | sed 's/[[:space:]]\+/ /g; s/^ //; s/ $//' \
-            | grep -v '^$' \
-            | sed "s|^|$sub $phase stmt |"
+        printf '%s\n' "$emit" | norm | sed "s|^|$sub $phase stmt |"
         # On master the probes ran on the success path, so invalid SQL in them broke every
         # case immediately. They only run on failure now, so nothing else would notice. Kept
         # alongside the dump because it fails with a clearer signal than a multi-line diff.
@@ -99,8 +103,30 @@ done
 # the diagnostics rerun and the stderr forwarding observable instead of merely present.
 # Both phases are driven, because a driver that dispatched only one of them would silently
 # skip the rerun for the other and the failure would carry no diagnostics.
+#
+# The rerun is checked by comparing its whole payload against what the generator produces for
+# this driver's own subcommand and this replay's own arguments. Asserting properties of the
+# rerun instead (it contains DEBUG, it names this phase, it mutates nothing) can only pin the
+# properties somebody thought of: dropping "${CASE_ARGS[@]}" or swapping the subcommand leaves
+# every such property unchanged while being a real defect in the driver.
+#
+# This shape must DIFFER from the generator's argparse defaults, otherwise a rerun that dropped
+# "${CASE_ARGS[@]}" would still produce a byte-identical payload and the check would be vacuous.
+# Measured: against the defaults it moves SET max_insert_threads 1 -> 10 and every destination
+# guard constant (26 statements for phase first, 30 for second). Do not "simplify" it back to
+# the defaults.
+REPLAY_ARGS=(--insert-method InsertSelect --table-engine MergeTree --use-insert-token False
+      --single-thread False --deduplicate-src-table False --deduplicate-dst-table False
+      --insert-unique-blocks False --get-logs false)
 for drv in "$CURDIR"/03008_deduplication_*_replicated.sh "$CURDIR"/03008_deduplication_*_nonreplicated.sh; do
     name=$(basename "$drv" .sh)
+    # Derived from the driver's MAIN invocation, not from its rerun line: reading it from the
+    # rerun would make the payload comparison tautological under the subcommand-swap mutation
+    # it exists to catch. Emitted in a row of its own so a driver edit that breaks the
+    # derivation fails loudly instead of silently comparing against an empty subcommand.
+    # shellcheck disable=SC2016  # the literal text ${CASE_ARGS[@]} is searched for, not expanded
+    SUB=$(sed -n 's|.*03008_deduplication\.python \([a-z_]*\) "\${CASE_ARGS\[@\]}")$|\1|p' "$drv" | head -n 1)
+    echo "$name main subcommand [$SUB]"
     for phase in first second; do
         W=$(mktemp -d "$CLICKHOUSE_TMP/03008_dedup_probe_XXXXXX")
         # Expanding here-doc: only $phase is substituted, the stub's own variables are escaped.
@@ -122,18 +148,25 @@ STUB
           echo "CLICKHOUSE_CLIENT='$W/client'"
           echo "CASE_STDERR='$W/stderr'"
           echo "CURDIR='$CURDIR'"
-          echo 'CASE_ARGS=(--insert-method InsertSelect --table-engine MergeTree --use-insert-token True
-            --single-thread True --deduplicate-src-table True --deduplicate-dst-table True
-            --insert-unique-blocks True --get-logs false)'
+          # The same array the payload comparison below uses, written once and interpolated, so
+          # the driver's rerun and the expected payload cannot be computed from two shapes that
+          # silently drift apart and make the comparison vacuous.
+          echo "CASE_ARGS=(${REPLAY_ARGS[*]})"
           sed 's/^                        //' "$W/block.sh"
         } > "$W/run.sh"
         out=$(bash "$W/run.sh" 2> "$W/fwd")
         echo "$name $phase failure verdict [$out]"
         echo "$name $phase failure client invocations $(cat "$W/n")"
-        echo "$name $phase failure rerun is diagnostics-only $( [ -f "$W/sql.2" ] && { grep -c 'DEBUG' "$W/sql.2" || true; } | awk '{print ($1>0)?1:0}' )"
+        # The rerun's whole payload, not just properties of it: this pins WHICH subcommand and
+        # WHICH arguments the driver replayed with, so dropping the case arguments or replaying
+        # a different subcommand cannot pass.
+        exp=$(python3 "$GEN" "$SUB" "${REPLAY_ARGS[@]}" --emit-debug-only "$phase" | norm)
+        got=$( [ -f "$W/sql.2" ] && norm < "$W/sql.2" || echo MISSING )
+        echo "$name $phase failure rerun payload matches $( [ "$exp" = "$got" ] && echo 1 || echo 0 )"
+        # Subsumed by the payload comparison, but kept because it fails with a far clearer
+        # signal than a payload mismatch: the rerun must not destroy or re-create the state the
+        # failed assertion left behind.
         echo "$name $phase failure rerun mutating $( [ -f "$W/sql.2" ] && { grep -ciE 'DROP |CREATE |INSERT |throwIf' "$W/sql.2" || true; } || echo NA )"
-        # The rerun must carry THIS phase's diagnostics, not the other phase's.
-        echo "$name $phase failure rerun phase $( [ -f "$W/sql.2" ] && { grep -c "DEBUG $phase" "$W/sql.2" || true; } )"
         echo "$name $phase failure marker forwarded $(grep -c 'DEDUP_ASSERT_FAILED' "$W/fwd")"
         rm -rf "$W"
     done
