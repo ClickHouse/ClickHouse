@@ -6,9 +6,13 @@ Focus: a run stopped early by `--max-failures` / `--max-failures-chain`
 (exit code `MAX_FAILURES_EXIT_CODE`) must be reported as real failures plus a
 "Too many test failures" leaf - NOT as "Server died" with the per-test
 attribution demoted to UNKNOWN (which is what the aborted-run exit codes do).
+
+Also: a run killed by a signal with no failure observed at all must not claim
+the server died, since the exit code alone does not establish that.
 """
 
 import os
+import signal
 import sys
 
 # Repo root so `ci.*` resolves; the `ci` dir so the bare `from praktika...`
@@ -18,6 +22,8 @@ sys.path.insert(0, os.path.join(os.path.dirname(__file__), "../.."))
 sys.path.insert(0, os.path.join(os.path.dirname(__file__), ".."))
 
 from ci.jobs.scripts.functional_tests_results import (
+    KILLED_BY_SIGNAL_EXIT_CODES,
+    KILLED_BY_SIGNAL_RESULT_NAME,
     MAX_FAILURES_EXIT_CODE,
     STOP_TESTING_EXIT_CODE,
     FTResultsProcessor,
@@ -38,6 +44,18 @@ _ONE_FAILURE = (
     "04545_regression_test: [ FAIL ] 1.23 sec.\n"
     "server died with SIGABRT\n"
 )
+
+# Tests were flowing normally when something killed the runner: every parsed
+# row passed and there is no "All tests have finished" line.
+_NO_FAILURES = (
+    "00001_first_test: [ OK ] 1.23 sec.\n"
+    "00002_second_test: [ OK ] 0.50 sec.\n"
+    "00003_third_test: [ OK ] 0.75 sec.\n"
+)
+
+# A test on the blacklist that unexpectedly passed. It increments the parser's
+# `failed` counter but is stored with a status string outside `is_failure()`.
+_NOT_FAILED = "00001_blacklisted_test: [ NOT_FAILED ] 1.00 sec.\n"
 
 
 def _process(tmp_path, output, runner_exit_code, is_bugfix_validation=False):
@@ -155,3 +173,132 @@ def test_bugfix_validation_single_crash_counts_as_reproduction(tmp_path):
     culprit = _named(result, "04545_regression_test")[0]
     assert culprit.status == Result.Status.OK
     assert _named(result, "Server died")[0].status == Result.Status.OK
+
+
+def test_signal_killed_with_no_failures_is_not_labelled_server_died(tmp_path):
+    """The exit code proves only that the run was killed, so with nothing
+    reported as failed the leaf must not claim the server died."""
+    result = _process(tmp_path, _NO_FAILURES, 128 + signal.SIGTERM)
+
+    assert not _named(result, "Server died")
+
+    leaves = _named(result, KILLED_BY_SIGNAL_RESULT_NAME)
+    assert len(leaves) == 1
+    assert leaves[0].status == Result.Status.ERROR
+    assert result.status == Result.Status.ERROR
+
+    # The `clickhouse-test` fallback leaf fires only when `state` is still OK.
+    assert not _named(result, "clickhouse-test")
+
+    # The aggregate keeps the counters that made the old label contradictory.
+    assert result.info == "Failed: 0, Passed: 3, Skipped: 0"
+
+
+def test_signal_killed_negative_exit_code_form(tmp_path):
+    """`Popen.returncode` reports the wrapper bash dying from a signal as `-N`.
+    Neither the runner's nor the server's fate is established there either, so
+    the leaf name must not vary by encoding."""
+    result = _process(tmp_path, _NO_FAILURES, -signal.SIGTERM)
+
+    assert not _named(result, "Server died")
+    leaves = _named(result, KILLED_BY_SIGNAL_RESULT_NAME)
+    assert len(leaves) == 1
+    assert leaves[0].status == Result.Status.ERROR
+    assert str(-signal.SIGTERM) in leaves[0].info
+    assert result.status == Result.Status.ERROR
+
+
+def test_signal_killed_with_a_failure_keeps_server_died(tmp_path):
+    """Narrowness guard: once any failure was observed, the branch keeps its
+    old behaviour, including demoting the attributed culprit."""
+    result = _process(tmp_path, _ONE_FAILURE, 128 + signal.SIGTERM)
+
+    assert result.status == Result.Status.FAIL
+    assert len(_named(result, "Server died")) == 1
+    assert _named(result, "Server died")[0].status == Result.Status.FAIL
+    assert not _named(result, KILLED_BY_SIGNAL_RESULT_NAME)
+    assert _named(result, "04545_regression_test")[0].status == Result.Status.ERROR
+
+
+def test_stop_testing_exit_code_keeps_server_died_with_no_failures(tmp_path):
+    """`STOP_TESTING_EXIT_CODE` is excluded by design: the parent reached its
+    own `StopTesting` handler, which it raises on an observed server death."""
+    assert STOP_TESTING_EXIT_CODE not in KILLED_BY_SIGNAL_EXIT_CODES
+
+    result = _process(tmp_path, _NO_FAILURES, STOP_TESTING_EXIT_CODE)
+
+    assert result.status == Result.Status.FAIL
+    assert len(_named(result, "Server died")) == 1
+    assert _named(result, "Server died")[0].status == Result.Status.FAIL
+    assert not _named(result, KILLED_BY_SIGNAL_RESULT_NAME)
+
+
+def test_bugfix_validation_signal_kill_is_inconclusive_not_a_reproduction(tmp_path):
+    """A signal kill with nothing attributed must not read as a successful
+    reproduction. `ERROR` routes it to the inverter's inconclusive guard; a
+    `FAIL` leaf here would be flipped to OK and report a validation from an
+    exit code alone."""
+    from ci.jobs.functional_tests import invert_bugfix_validation_status
+
+    result = _process(
+        tmp_path, _NO_FAILURES, 128 + signal.SIGTERM, is_bugfix_validation=True
+    )
+
+    no_repro = invert_bugfix_validation_status(result)
+
+    assert no_repro is False
+    for r in result.results:
+        assert r.has_label(Result.Label.XFAIL), r.name
+
+    # Inconclusive, not a reproduction: the inverter left the aggregate at
+    # ERROR instead of calling `set_success`, and did not flip the leaf to OK
+    # the way it flips a FAIL row.
+    assert result.status == Result.Status.ERROR
+    assert _named(result, KILLED_BY_SIGNAL_RESULT_NAME)[0].status == Result.Status.ERROR
+
+
+def test_bugfix_validation_signal_kill_with_a_blocker_fatal_still_reproduces(tmp_path):
+    """`ERROR` loses no crash coverage: `reconcile_bugfix_crash_repro` runs
+    first and a `BLOCKER` fatal in the server log downgrades the ERROR rows to
+    FAIL, so a genuine crash still validates (#105789)."""
+    from ci.jobs.functional_tests import (
+        invert_bugfix_validation_status,
+        reconcile_bugfix_crash_repro,
+    )
+
+    result = _process(
+        tmp_path, _NO_FAILURES, 128 + signal.SIGTERM, is_bugfix_validation=True
+    )
+    assert _named(result, KILLED_BY_SIGNAL_RESULT_NAME)[0].status == Result.Status.ERROR
+
+    fatal = Result(
+        name="Sanitizer assert or Fatal messages in server logs",
+        status=Result.Status.FAIL,
+    )
+    fatal.set_label(Result.Label.BLOCKER)
+
+    assert reconcile_bugfix_crash_repro(result, [fatal]) is True
+    assert _named(result, KILLED_BY_SIGNAL_RESULT_NAME)[0].status == Result.Status.FAIL
+
+    no_repro = invert_bugfix_validation_status(result)
+
+    assert no_repro is False
+    assert result.status == Result.Status.OK
+    assert _named(result, KILLED_BY_SIGNAL_RESULT_NAME)[0].status == Result.Status.OK
+
+
+def test_not_failed_row_keeps_server_died(tmp_path):
+    """A `[ NOT_FAILED ]` row increments the parser's `failed` counter but is
+    stored with a status string outside `is_failure()`. It is an observed
+    failure, so the gate must see it - which it does only because it reads the
+    summary counters rather than filtering the rows."""
+    result = _process(tmp_path, _NOT_FAILED, 128 + signal.SIGTERM)
+
+    # Guard against a vacuous fixture: the row must really parse as NOT_FAILED.
+    row = _named(result, "00001_blacklisted_test")
+    assert len(row) == 1
+    assert row[0].status == "NOT_FAILED"
+    assert not row[0].is_failure()
+
+    assert len(_named(result, "Server died")) == 1
+    assert not _named(result, KILLED_BY_SIGNAL_RESULT_NAME)

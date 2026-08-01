@@ -49,15 +49,22 @@ MAX_FAILURES_EXIT_CODE = _clickhouse_test_globals["MAX_FAILURES_EXIT_CODE"]
 # `MAX_FAILURES_EXIT_CODE` is likewise excluded: the run stopped early because
 # too many tests failed, but the server is alive and those failures are real
 # and already attributed - so they must be reported as FAIL, not "Server died".
-ABORTED_RUN_EXIT_CODES = frozenset(
+#
+# Kept as its own set because, unlike `STOP_TESTING_EXIT_CODE`, these codes
+# establish only that the run was killed, never by whom.
+KILLED_BY_SIGNAL_EXIT_CODES = frozenset(
     {
-        STOP_TESTING_EXIT_CODE,
         128 + signal.SIGTERM,  # 143
         128 + signal.SIGKILL,  # 137
         -signal.SIGTERM,  # -15
         -signal.SIGKILL,  # -9
     }
 )
+
+# Derived so the two sets cannot drift apart.
+ABORTED_RUN_EXIT_CODES = frozenset({STOP_TESTING_EXIT_CODE}) | KILLED_BY_SIGNAL_EXIT_CODES
+
+KILLED_BY_SIGNAL_RESULT_NAME = "Test command killed by signal"
 
 SUCCESS_FINISH_SIGNS = ["All tests have finished", "No tests were run"]
 
@@ -231,6 +238,25 @@ class FTResultsProcessor:
             state = Result.Status.FAIL
             test_results.append(
                 Result("Some queries hung", Result.Status.FAIL, info="Some queries hung")
+            )
+        elif (
+            runner_exit_code in KILLED_BY_SIGNAL_EXIT_CODES
+            and s.failed == 0
+            and s.unknown == 0
+        ):
+            # The exit code does not identify the sender, so report the run as
+            # inconclusive rather than claim a dead server nothing observed. Gate
+            # on the counters: `NOT_FAILED` rows are invisible to `is_failure()`.
+            state = Result.Status.ERROR
+            test_results.append(
+                Result(
+                    KILLED_BY_SIGNAL_RESULT_NAME,
+                    Result.Status.ERROR,
+                    info=f"The test command exited with {runner_exit_code} (killed by "
+                    "signal) and no test was reported as failed, so the cause could "
+                    "not be attributed. A server crash is reported separately by the "
+                    "`Check errors` stage where that stage runs.",
+                )
             )
         elif runner_exit_code in ABORTED_RUN_EXIT_CODES:
             state = Result.Status.FAIL
