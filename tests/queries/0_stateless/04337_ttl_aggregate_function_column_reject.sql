@@ -1358,3 +1358,82 @@ TTL toDateTime(arrayElement(arrayMap(x -> x, arr), 1)) + INTERVAL 1 DAY;
 DROP TABLE test_ttl_array_map_dynamic_input_reject;
 
 SET allow_suspicious_ttl_expressions = 0;
+
+DROP TABLE IF EXISTS test_ttl_selector_lifted_branch_accept;
+
+-- A selector converts every value branch to its result type, so a branch that is no carrier at all still
+-- only contributes the payloads that conversion produces from its values: `if(cond, CAST(n, 'Dynamic'), m)`
+-- over `n`, `m UInt32` holds a numeric payload whichever branch is taken, and `toDateTime` consumes it.
+CREATE TABLE test_ttl_selector_lifted_branch_accept
+(
+    cond UInt8,
+    n UInt32,
+    m UInt32,
+    d DateTime
+)
+ENGINE = MergeTree()
+ORDER BY tuple()
+TTL toDateTime(if(cond, CAST(n, 'Dynamic'), m)) + INTERVAL 1 DAY;
+
+DROP TABLE test_ttl_selector_lifted_branch_accept;
+
+DROP TABLE IF EXISTS test_ttl_selector_lifted_literal_accept;
+
+-- The same for a literal branch lifted to the carrier result type.
+CREATE TABLE test_ttl_selector_lifted_literal_accept
+(
+    cond UInt8,
+    d DateTime
+)
+ENGINE = MergeTree()
+ORDER BY tuple()
+TTL toDateTime(if(cond, CAST(1, 'Dynamic'), 2)) + INTERVAL 1 DAY;
+
+DROP TABLE test_ttl_selector_lifted_literal_accept;
+
+DROP TABLE IF EXISTS test_ttl_selector_lifted_state_branch_reject;
+
+-- Lifting a branch does not weaken the check: the aggregate state of the other branch stays in the union
+-- of the domains, so a consumer that cannot handle it is still rejected.
+CREATE TABLE test_ttl_selector_lifted_state_branch_reject
+(
+    cond UInt8,
+    state AggregateFunction(max, UInt32),
+    m UInt32,
+    d DateTime
+)
+ENGINE = MergeTree()
+ORDER BY tuple()
+TTL toDateTime(if(cond, CAST(state, 'Dynamic'), m)) + INTERVAL 1 DAY; -- { serverError BAD_TTL_EXPRESSION }
+
+DROP TABLE IF EXISTS test_ttl_selector_lifted_string_branch_reject;
+
+-- A *string* branch is lifted by a conversion that infers the payload out of the row contents, so its
+-- domain is unknown and the selector falls back to the static enumeration of the result type.
+CREATE TABLE test_ttl_selector_lifted_string_branch_reject
+(
+    cond UInt8,
+    n UInt32,
+    s String,
+    d DateTime
+)
+ENGINE = MergeTree()
+ORDER BY tuple()
+TTL toDateTime(if(cond, CAST(n, 'Dynamic'), s)) + INTERVAL 1 DAY; -- { serverError BAD_TTL_EXPRESSION }
+
+SET allow_suspicious_ttl_expressions = 1;
+
+CREATE TABLE test_ttl_selector_lifted_string_branch_reject
+(
+    cond UInt8,
+    n UInt32,
+    s String,
+    d DateTime
+)
+ENGINE = MergeTree()
+ORDER BY tuple()
+TTL toDateTime(if(cond, CAST(n, 'Dynamic'), s)) + INTERVAL 1 DAY;
+
+DROP TABLE test_ttl_selector_lifted_string_branch_reject;
+
+SET allow_suspicious_ttl_expressions = 0;
