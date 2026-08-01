@@ -203,7 +203,7 @@ bool IParserColumnDeclaration<NameParser>::parseImpl(Pos & pos, ASTPtr & node, E
     }
 
     /** column name should be followed by type name if it
-      *    is not immediately followed by {DEFAULT, MATERIALIZED, ALIAS, COMMENT}
+      *    is not immediately followed by a column modifier keyword
       */
     ASTPtr type;
     ColumnDefaultSpecifier default_specifier = ColumnDefaultSpecifier::Empty;
@@ -245,7 +245,10 @@ bool IParserColumnDeclaration<NameParser>::parseImpl(Pos & pos, ASTPtr & node, E
         && !s_primary_key.checkWithoutMoving(pos, expected)
         && (require_type
             || (!s_comment.checkWithoutMoving(pos, expected)
-                && !s_codec.checkWithoutMoving(pos, expected))))
+                && !s_codec.checkWithoutMoving(pos, expected)
+                && !s_stat.checkWithoutMoving(pos, expected)
+                && !s_collate.checkWithoutMoving(pos, expected)
+                && !s_settings.checkWithoutMoving(pos, expected))))
     {
         if (check_type_keyword && !s_type.ignore(pos, expected))
             return false;

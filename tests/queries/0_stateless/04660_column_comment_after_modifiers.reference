@@ -24,9 +24,9 @@ a	a new comment
 b	b newer comment
 c	c comment
 d	
-e	e comment
-f	f comment
-g	g comment
+e	e new comment
+f	f newer comment
+g	g new comment
 h	h comment
 i	i comment
 j	j comment
@@ -46,5 +46,8 @@ CREATE TABLE t\n(\n    `a` DateTime COMMENT \'a comment\' TTL a + toIntervalDay(
 CREATE TABLE t\n(\n    `a` String COMMENT \'a comment\' COLLATE utf8_bin\n)\nENGINE = Memory
 CREATE TABLE t\n(\n    `a` String TTL now() COLLATE utf8_bin\n)\nENGINE = MergeTree\nORDER BY a
 ALTER TABLE t\n    (MODIFY COLUMN `a` UInt64 COMMENT \'a comment\' CODEC(ZSTD))
+ALTER TABLE t\n    (MODIFY COLUMN `a` COMMENT \'a comment\' SETTINGS (max_compress_block_size = 1024))
+ALTER TABLE t\n    (MODIFY COLUMN `a` COMMENT \'a comment\' STATISTICS(tdigest))
+ALTER TABLE t\n    (MODIFY COLUMN `a` COMMENT \'a comment\' COLLATE utf8_bin)
 CREATE TABLE t\n(\n    `a` String COMMENT \'a comment\' COLLATE utf8_bin\n)\nENGINE = Memory
 CREATE TABLE t\n(\n    `a` String TTL now() COLLATE utf8_bin\n)\nENGINE = MergeTree\nORDER BY a

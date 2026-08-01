@@ -33,6 +33,13 @@ ALTER TABLE t_column_comment_order ADD COLUMN k UInt64 SETTINGS (max_compress_bl
 ALTER TABLE t_column_comment_order MODIFY COLUMN b UInt64 COMMENT 'b new comment' SETTINGS mutations_sync = 2;
 ALTER TABLE t_column_comment_order MODIFY COLUMN b UInt64 CODEC(ZSTD) COMMENT 'b newer comment' SETTINGS mutations_sync = 2;
 
+-- Type-less `MODIFY COLUMN`: a leading `SETTINGS`, `STATISTICS` or `COLLATE` is a modifier, not a data type,
+-- so the modifiers can be reordered here as well.
+ALTER TABLE t_column_comment_order MODIFY COLUMN f SETTINGS (max_compress_block_size = 2048) COMMENT 'f new comment';
+ALTER TABLE t_column_comment_order MODIFY COLUMN g STATISTICS(tdigest) COMMENT 'g new comment';
+ALTER TABLE t_column_comment_order MODIFY COLUMN e CODEC(LZ4) COMMENT 'e new comment';
+ALTER TABLE t_column_comment_order MODIFY COLUMN f SETTINGS (max_compress_block_size = 4096) COMMENT 'f newer comment' SETTINGS mutations_sync = 2;
+
 SELECT name, comment FROM system.columns WHERE database = currentDatabase() AND table = 't_column_comment_order' ORDER BY name;
 
 DROP TABLE t_column_comment_order;
@@ -53,6 +60,9 @@ SELECT formatQuery('CREATE TABLE t (a DateTime TTL a + toIntervalDay(1) COMMENT 
 SELECT formatQuery('CREATE TABLE t (a String COLLATE utf8_bin COMMENT \'a comment\') ENGINE = Memory');
 SELECT formatQuery('CREATE TABLE t (a String TTL now() COLLATE utf8_bin) ENGINE = MergeTree ORDER BY a');
 SELECT formatQuery('ALTER TABLE t MODIFY COLUMN a UInt64 CODEC(ZSTD) COMMENT \'a comment\'');
+SELECT formatQuery('ALTER TABLE t MODIFY COLUMN a SETTINGS (max_compress_block_size = 1024) COMMENT \'a comment\'');
+SELECT formatQuery('ALTER TABLE t MODIFY COLUMN a STATISTICS(tdigest) COMMENT \'a comment\'');
+SELECT formatQuery('ALTER TABLE t MODIFY COLUMN a COLLATE utf8_bin COMMENT \'a comment\'');
 
 -- Formatting is idempotent: the canonical order prints `COLLATE` last, and it is parsed back.
 SELECT formatQuery(formatQuery('CREATE TABLE t (a String COLLATE utf8_bin COMMENT \'a comment\') ENGINE = Memory'));
