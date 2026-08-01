@@ -7,6 +7,7 @@
 #include <DataTypes/DataTypeDate.h>
 #include <DataTypes/DataTypeDateTime.h>
 #include <DataTypes/DataTypeEnum.h>
+#include <DataTypes/DataTypeLowCardinality.h>
 #include <DataTypes/DataTypeNullable.h>
 #include <DataTypes/DataTypesNumber.h>
 #include <DataTypes/NestedUtils.h>
@@ -145,6 +146,20 @@ bool isRepresentationPreservingConversion(const IDataType * from, const IDataTyp
         {
             from = nullable_from->getNestedType().get();
             to = nullable_to->getNestedType().get();
+            continue;
+        }
+
+        /// LowCardinality keeps its own framing (a dictionary plus indexes) whatever the dictionary
+        /// type is, and forwards value bytes to the dictionary type's own serialization, so a
+        /// dictionary-side conversion that is representation-preserving leaves every byte alone.
+        /// Pairwise like the wrappers above: adding or dropping the wrapper changes the framing
+        /// itself, which is a real difference no allow-list entry may wave through.
+        const auto * low_cardinality_from = typeid_cast<const DataTypeLowCardinality *>(from);
+        const auto * low_cardinality_to = typeid_cast<const DataTypeLowCardinality *>(to);
+        if (low_cardinality_from && low_cardinality_to)
+        {
+            from = low_cardinality_from->getDictionaryType().get();
+            to = low_cardinality_to->getDictionaryType().get();
             continue;
         }
 

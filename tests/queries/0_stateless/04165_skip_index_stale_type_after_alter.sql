@@ -549,6 +549,60 @@ SELECT count() > 0 FROM (EXPLAIN indexes = 1 SELECT count() FROM t_keep_qbit_sub
 SELECT count() FROM t_keep_qbit_sub WHERE `vec.8` = CAST(unhex('02'), 'FixedString(1)');
 SELECT count() FROM t_keep_qbit_sub WHERE `vec.8` = CAST(unhex('02'), 'FixedString(1)') SETTINGS use_skip_indexes = 0;
 
+-- LowCardinality keeps its own framing (a dictionary plus indexes) whatever the dictionary type is,
+-- so a dictionary-side representation-preserving conversion must still prune. Cases 26-27 are the
+-- wrapped forms of the allow-list; 28-29 pin that the wrapper itself is not part of the allowance.
+SET allow_suspicious_low_cardinality_types = 1;
+
+SELECT '-- 26. over-fire control: LowCardinality(DateTime) -> LowCardinality(UInt32) still prunes';
+DROP TABLE IF EXISTS t_keep_lc;
+CREATE TABLE t_keep_lc (k UInt64, v LowCardinality(DateTime), INDEX idx v TYPE set(100) GRANULARITY 1)
+ENGINE = MergeTree ORDER BY k SETTINGS index_granularity = 4;
+INSERT INTO t_keep_lc SELECT number, toDateTime(1600000000 + intDiv(number, 4) * 3600) FROM numbers(64);
+SYSTEM STOP MERGES t_keep_lc;
+ALTER TABLE t_keep_lc MODIFY COLUMN v LowCardinality(UInt32);
+KILL MUTATION WHERE table = 't_keep_lc' AND database = currentDatabase() FORMAT Null;
+SELECT count() > 0 FROM (EXPLAIN indexes = 1 SELECT count() FROM t_keep_lc WHERE v = 1600003600) WHERE explain ILIKE '%Granules: 1/16%';
+SELECT count() FROM t_keep_lc WHERE v = 1600003600;
+SELECT count() FROM t_keep_lc WHERE v = 1600003600 SETTINGS use_skip_indexes = 0;
+
+SELECT '-- 27. over-fire control: Array(LowCardinality(Date)) -> Array(LowCardinality(UInt16)) still prunes';
+-- Nested inside Array, so the walk has to reach the dictionary through another wrapper.
+DROP TABLE IF EXISTS t_keep_lc_arr;
+CREATE TABLE t_keep_lc_arr (k UInt64, v Array(LowCardinality(Date)), INDEX idx v TYPE set(100) GRANULARITY 1)
+ENGINE = MergeTree ORDER BY k SETTINGS index_granularity = 4;
+INSERT INTO t_keep_lc_arr SELECT number, [toDate('2020-01-01') + intDiv(number, 4)] FROM numbers(64);
+SYSTEM STOP MERGES t_keep_lc_arr;
+ALTER TABLE t_keep_lc_arr MODIFY COLUMN v Array(LowCardinality(UInt16));
+KILL MUTATION WHERE table = 't_keep_lc_arr' AND database = currentDatabase() FORMAT Null;
+SELECT count() > 0 FROM (EXPLAIN indexes = 1 SELECT count() FROM t_keep_lc_arr WHERE has(v, 18264)) WHERE explain ILIKE '%Granules: 1/16%';
+SELECT count() FROM t_keep_lc_arr WHERE has(v, 18264);
+SELECT count() FROM t_keep_lc_arr WHERE has(v, 18264) SETTINGS use_skip_indexes = 0;
+
+SELECT '-- 28. dropping the LowCardinality wrapper is a framing change, so it must refuse';
+-- The granule holds a dictionary plus indexes; read as a bare column those bytes are not values at
+-- all. Without the pairwise requirement the allow-list entry alone would wave this through.
+DROP TABLE IF EXISTS t_stale_lc_unwrap;
+CREATE TABLE t_stale_lc_unwrap (k UInt64, v LowCardinality(DateTime), INDEX idx v TYPE set(100) GRANULARITY 1)
+ENGINE = MergeTree ORDER BY k SETTINGS index_granularity = 4;
+INSERT INTO t_stale_lc_unwrap SELECT number, toDateTime(1600000000 + intDiv(number, 4) * 3600) FROM numbers(64);
+SYSTEM STOP MERGES t_stale_lc_unwrap;
+ALTER TABLE t_stale_lc_unwrap MODIFY COLUMN v DateTime;
+KILL MUTATION WHERE table = 't_stale_lc_unwrap' AND database = currentDatabase() FORMAT Null;
+SELECT count() FROM t_stale_lc_unwrap WHERE v = 1600003600;
+SELECT count() FROM t_stale_lc_unwrap WHERE v = 1600003600 SETTINGS use_skip_indexes = 0;
+
+SELECT '-- 29. adding the LowCardinality wrapper must refuse for the same reason';
+DROP TABLE IF EXISTS t_stale_lc_wrap;
+CREATE TABLE t_stale_lc_wrap (k UInt64, v DateTime, INDEX idx v TYPE set(100) GRANULARITY 1)
+ENGINE = MergeTree ORDER BY k SETTINGS index_granularity = 4;
+INSERT INTO t_stale_lc_wrap SELECT number, toDateTime(1600000000 + intDiv(number, 4) * 3600) FROM numbers(64);
+SYSTEM STOP MERGES t_stale_lc_wrap;
+ALTER TABLE t_stale_lc_wrap MODIFY COLUMN v LowCardinality(DateTime);
+KILL MUTATION WHERE table = 't_stale_lc_wrap' AND database = currentDatabase() FORMAT Null;
+SELECT count() FROM t_stale_lc_wrap WHERE v = 1600003600;
+SELECT count() FROM t_stale_lc_wrap WHERE v = 1600003600 SETTINGS use_skip_indexes = 0;
+
 DROP TABLE t_stale_nullable;
 DROP TABLE t_stale_plain;
 DROP TABLE t_stale_json;
@@ -591,3 +645,7 @@ DROP TABLE t_absent_bool_prefix;
 DROP TABLE t_absent_bool_dotted;
 DROP TABLE t_absent_qbit_sub;
 DROP TABLE t_keep_qbit_sub;
+DROP TABLE t_keep_lc;
+DROP TABLE t_keep_lc_arr;
+DROP TABLE t_stale_lc_unwrap;
+DROP TABLE t_stale_lc_wrap;

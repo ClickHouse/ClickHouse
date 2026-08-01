@@ -107,3 +107,17 @@
 1
 1
 1
+-- 26. over-fire control: LowCardinality(DateTime) -> LowCardinality(UInt32) still prunes
+1
+4
+4
+-- 27. over-fire control: Array(LowCardinality(Date)) -> Array(LowCardinality(UInt16)) still prunes
+1
+4
+4
+-- 28. dropping the LowCardinality wrapper is a framing change, so it must refuse
+4
+4
+-- 29. adding the LowCardinality wrapper must refuse for the same reason
+4
+4
