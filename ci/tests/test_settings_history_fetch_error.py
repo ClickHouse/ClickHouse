@@ -127,6 +127,10 @@ def test_auth_failure_names_credentials_and_does_not_retry(fake_gh):
     assert "very large diffs" not in message
     # Non-retryable class: retrying a bad token cannot help.
     assert fake_gh.invocations() == 1
+    # The count the message REPORTS has to agree with the count of invocations made: a
+    # report claiming zero attempts next to a nonzero exit code contradicts itself and
+    # sends a maintainer looking at the wiring instead of the token.
+    assert f"after [{fake_gh.invocations()}] attempts" in message
 
 
 def test_server_error_names_the_5xx_and_retries(fake_gh):
@@ -138,6 +142,7 @@ def test_server_error_names_the_5xx_and_retries(fake_gh):
     assert "exit_code:[1]" in message
     assert "very large diffs" not in message
     assert fake_gh.invocations() == Settings.MAX_RETRIES_GH
+    assert f"after [{fake_gh.invocations()}] attempts" in message
 
 
 def test_transient_failure_recovers_on_the_next_attempt(fake_gh, tmp_path):
@@ -375,6 +380,26 @@ def test_get_output_with_retries_strict_reports_exit_code_and_stderr(fake_gh):
     message = str(excinfo.value)
     assert "exit_code:[7]" in message
     assert "502" in message
+
+
+@pytest.mark.parametrize(
+    "stderr_line",
+    [
+        "gh: Bad credentials (HTTP 401)",
+        "gh: Validation Failed (HTTP 422)",
+        "gh: Resource not accessible by integration",
+    ],
+)
+def test_the_diagnostic_counts_the_attempt_a_non_retryable_class_made(
+    fake_gh, stderr_line
+):
+    """Every non-retryable class leaves the loop before the retry counter moves, so the
+    reported count must come from where the subprocess is invoked, not from that counter."""
+    fake_gh(f'echo "{stderr_line}" >&2', 1)
+    with pytest.raises(RuntimeError) as excinfo:
+        GH.get_output_with_retries("gh api fake", strict=True)
+    assert fake_gh.invocations() == 1
+    assert "after [1] attempts" in str(excinfo.value)
 
 
 def test_the_diagnostic_front_loads_the_cause_and_bounds_each_field(fake_gh):

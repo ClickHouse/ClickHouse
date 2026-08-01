@@ -237,8 +237,12 @@ class GH:
         indistinguishable from an empty result.
         """
         retry_count = 0
+        # Counted where the subprocess is invoked, so a non-retryable class that breaks out
+        # of the loop still reports the attempt it made. retry_count counts retries taken.
+        attempts = 0
         out, err, ret_code = "", "", -1
         while retry_count < Settings.MAX_RETRIES_GH:
+            attempts += 1
             ret_code, out, err = Shell.get_res_stdout_stderr(command, verbose=verbose)
             if ret_code == 0:
                 return out
@@ -260,7 +264,7 @@ class GH:
         # page), so the fields naming the cause come before the API-controlled output.
         message = (
             f"Failed to execute gh command [{command}] exit_code:[{ret_code}] "
-            f"after [{retry_count}] attempts err:[{_elide(err)}] out:[{_elide(out)}]"
+            f"after [{attempts}] attempts err:[{_elide(err)}] out:[{_elide(out)}]"
         )
         print(f"ERROR: {message}")
         if strict:
