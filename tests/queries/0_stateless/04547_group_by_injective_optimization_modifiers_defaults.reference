@@ -440,3 +440,32 @@ fixed string cube fires	1
 -- reference diff alone cannot catch it.
 compatibility 0 fires	1
 compatibility 0 off	0
+-- a correlated subquery in a corrected clause is a decline reason: it is not a separate GROUP BY
+-- scope (it reads a column of THIS query), yet the output rewriter stops at every nested query, so
+-- an occurrence there would still compute f(column-default) on an absent-key row. The pair below
+-- proves the decline is targeted: the correlated shape reads 0 while the otherwise identical shape
+-- with the subquery replaced by a plain reference to the same alias still reads 1.
+correlated projection declined	0
+plain alias sibling fires	1
+-- an UNCORRELATED subquery in the projection is a separate scope and is NOT a decline reason
+uncorrelated projection fires	1
+-- a correlated subquery reading a DIFFERENT, non-injective key is the one shape of this family
+-- that produces rows at all: the shapes whose subquery reads the injective key (or recomputes it
+-- from the leaf) are NOT_IMPLEMENTED both with and without this optimization, so they have no
+-- result to assert. The oracle here is self-consistency (yy = y must be 1 on every row), not a
+-- second arm: the optimization-disabled arm of the injective-key shapes errors out, and pinning
+-- that message would pin unrelated decorrelation behaviour.
+corr other key		0	0	1	1	2
+corr other key		100	100	1	1	1
+corr other key		101	101	1	1	1
+corr other key	0	0	0	1	0	1
+corr other key	0	100	100	1	0	1
+corr other key	1	0	0	1	0	1
+corr other key	1	101	101	1	0	1
+corr other key off		0	0	1	1	2
+corr other key off		100	100	1	1	1
+corr other key off		101	101	1	1	1
+corr other key off	0	0	0	1	0	1
+corr other key off	0	100	100	1	0	1
+corr other key off	1	0	0	1	0	1
+corr other key off	1	101	101	1	0	1

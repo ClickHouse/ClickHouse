@@ -452,6 +452,15 @@ private:
     /// INTERPOLATE) plus QUALIFY and WINDOW, which have no rewrite at all. A carrier missing here is a
     /// wrong-results hole: rewriteOutputExpression stops at a window function, so the occurrence is
     /// neither declined nor corrected. Keep the two lists in step, using the same accessors.
+    ///
+    /// A correlated subquery in any of those clauses is a decline reason for the same reason. It is NOT a
+    /// separate GROUP BY scope: it reads a column of THIS query, yet rewriteOutputExpression stops at every
+    /// nested query, so such an occurrence would still compute f(column-default) on absent-key rows. It is
+    /// declined rather than corrected because a correlated subquery is planned from the correlated leaf
+    /// column (buildQueryPlanForCorrelatedSubquery), not from the outer expression, so there is no node here
+    /// for the conditional to wrap. The test is deliberately coarse: ANY correlated subquery in a scanned
+    /// clause declines the key, without asking whether the subquery reads the key - the correlated column
+    /// names the leaf, not the wrapped key, so a contains-the-key test would not match it.
     static bool reachesPostAggregationWindowOrQualify(const QueryTreeNodePtr & key, QueryNode & query)
     {
         if (query.getProjectionNode() && containsKeyUnderWindow(query.getProjectionNode(), key))
@@ -467,6 +476,21 @@ private:
         if (query.hasQualify() && subtreeContains(query.getQualify(), key))
             return true;
         if (query.hasWindow() && subtreeContains(query.getWindowNode(), key))
+            return true;
+
+        if (query.getProjectionNode() && containsCorrelatedSubquery(query.getProjectionNode()))
+            return true;
+        if (query.hasOrderBy() && containsCorrelatedSubquery(query.getOrderByNode()))
+            return true;
+        if (query.hasHaving() && containsCorrelatedSubquery(query.getHaving()))
+            return true;
+        if (query.hasLimitBy() && containsCorrelatedSubquery(query.getLimitByNode()))
+            return true;
+        if (query.hasInterpolate() && containsCorrelatedSubquery(query.getInterpolate()))
+            return true;
+        if (query.hasQualify() && containsCorrelatedSubquery(query.getQualify()))
+            return true;
+        if (query.hasWindow() && containsCorrelatedSubquery(query.getWindowNode()))
             return true;
         return false;
     }

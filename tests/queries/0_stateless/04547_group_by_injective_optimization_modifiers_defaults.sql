@@ -582,4 +582,48 @@ SELECT 'compatibility 0 off', countIf(explain LIKE '%toString%' AND rn > gb AND 
           SETTINGS force_grouping_standard_compatibility = 0,
                    optimize_injective_functions_in_group_by = 0)));
 
+SELECT '-- a correlated subquery in a corrected clause is a decline reason: it is not a separate GROUP BY';
+SELECT '-- scope (it reads a column of THIS query), yet the output rewriter stops at every nested query, so';
+SELECT '-- an occurrence there would still compute f(column-default) on an absent-key row. The pair below';
+SELECT '-- proves the decline is targeted: the correlated shape reads 0 while the otherwise identical shape';
+SELECT '-- with the subquery replaced by a plain reference to the same alias still reads 1.';
+SELECT 'correlated projection declined', countIf(explain LIKE '%toString%' AND rn > gb AND rn < nxt) = 0 FROM (
+    SELECT explain, rn, gb, min(if(rn > gb AND match(explain, '^  [A-Z]'), rn, 999999)) OVER () AS nxt FROM (
+    SELECT explain, rowNumberInAllBlocks() AS rn,
+           min(if(explain LIKE '  GROUP BY%', rowNumberInAllBlocks(), 999999)) OVER () AS gb
+    FROM (EXPLAIN QUERY TREE run_passes = 1
+          SELECT toString(number) AS k, (SELECT k) AS kk, count() AS c FROM numbers(3)
+          GROUP BY CUBE(toString(number)))));
+SELECT 'plain alias sibling fires', countIf(explain LIKE '%toString%' AND rn > gb AND rn < nxt) = 0 FROM (
+    SELECT explain, rn, gb, min(if(rn > gb AND match(explain, '^  [A-Z]'), rn, 999999)) OVER () AS nxt FROM (
+    SELECT explain, rowNumberInAllBlocks() AS rn,
+           min(if(explain LIKE '  GROUP BY%', rowNumberInAllBlocks(), 999999)) OVER () AS gb
+    FROM (EXPLAIN QUERY TREE run_passes = 1
+          SELECT toString(number) AS k, k AS kk, count() AS c FROM numbers(3)
+          GROUP BY CUBE(toString(number)))));
+SELECT '-- an UNCORRELATED subquery in the projection is a separate scope and is NOT a decline reason';
+SELECT 'uncorrelated projection fires', countIf(explain LIKE '%toString%' AND rn > gb AND rn < nxt) = 0 FROM (
+    SELECT explain, rn, gb, min(if(rn > gb AND match(explain, '^  [A-Z]'), rn, 999999)) OVER () AS nxt FROM (
+    SELECT explain, rowNumberInAllBlocks() AS rn,
+           min(if(explain LIKE '  GROUP BY%', rowNumberInAllBlocks(), 999999)) OVER () AS gb
+    FROM (EXPLAIN QUERY TREE run_passes = 1
+          SELECT toString(number) AS k, (SELECT 42) AS kk, count() AS c FROM numbers(3)
+          GROUP BY CUBE(toString(number)))));
+
+SELECT '-- a correlated subquery reading a DIFFERENT, non-injective key is the one shape of this family';
+SELECT '-- that produces rows at all: the shapes whose subquery reads the injective key (or recomputes it';
+SELECT '-- from the leaf) are NOT_IMPLEMENTED both with and without this optimization, so they have no';
+SELECT '-- result to assert. The oracle here is self-consistency (yy = y must be 1 on every row), not a';
+SELECT '-- second arm: the optimization-disabled arm of the injective-key shapes errors out, and pinning';
+SELECT '-- that message would pin unrelated decorrelation behaviour.';
+SELECT 'corr other key', toString(x) AS k, y, (SELECT y) AS yy, yy = y AS same,
+       grouping(toString(x)) AS g, count() AS c
+FROM (SELECT number AS x, number + 100 AS y FROM numbers(2))
+GROUP BY CUBE(toString(x), y) ORDER BY g DESC, k, y;
+SELECT 'corr other key off', toString(x) AS k, y, (SELECT y) AS yy, yy = y AS same,
+       grouping(toString(x)) AS g, count() AS c
+FROM (SELECT number AS x, number + 100 AS y FROM numbers(2))
+GROUP BY CUBE(toString(x), y) ORDER BY g DESC, k, y
+SETTINGS optimize_injective_functions_in_group_by = 0;
+
 DROP TABLE t_04547_lc;
