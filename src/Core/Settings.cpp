@@ -8258,6 +8258,8 @@ For example, if set to `0.6`, `JOIN` will allow using `60%` of the available mem
 If both `max_bytes_before_external_join` and `max_bytes_ratio_before_external_join` are set, the smaller resulting threshold is used. If the ratio is `0`, only the absolute setting applies.
 
 Has effect only when `join_algorithm` is `hash`, `parallel_hash`, `default`, or `auto` and a temporary data path is configured.
+
+A join that may spill normally prevents the read in order through join optimization; see [`query_plan_read_in_order_through_spilling_join`](#query_plan_read_in_order_through_spilling_join) for when the optimization applies anyway and the join is pinned in memory instead, so that reaching this ratio does not convert it to grace hash join.
 )", 0) \
     DECLARE(Bool, enable_join_fixed_hash_table_conversion, true, R"(
 Enable converting the hash table to a flat array for joins when the key is a single integer with a small value range.
