@@ -144,6 +144,11 @@ bash -ex /packages/keeper_test.sh""",
 def test_install_tgz(image: DockerImage) -> List[Result]:
     # FIXME: I couldn't find why Type=notify is broken in centos:8
     # systemd just ignores the watchdog completely
+
+    # `doinst.sh` copies the unpacked tree into the system instead of moving it, so a
+    # package occupies twice its size - 6.8 GiB for `clickhouse-common-static-dbg` -
+    # until the tree is removed. These are by far the most disk hungry tests of the
+    # job, and they used to fail with `No space left on device`.
     tests = {
         f"Install server tgz in {image}": r"""#!/bin/bash -ex
 [ -f /etc/debian_version ] && CONFIGURE=configure || CONFIGURE=
@@ -152,6 +157,7 @@ for pkg in /packages/clickhouse-{common,client,server}*tgz; do
     package=${package##*/}
     tar xf "$pkg"
     "/$package/install/doinst.sh" $CONFIGURE
+    rm -rf "/${package:?}"
 done
 [ -f /etc/yum.conf ] && echo CLICKHOUSE_WATCHDOG_ENABLE=0 > /etc/default/clickhouse-server
 bash -ex /packages/server_test.sh""",
@@ -162,8 +168,57 @@ for pkg in /packages/clickhouse-keeper*tgz; do
     package=${package##*/}
     tar xf "$pkg"
     "/$package/install/doinst.sh" $CONFIGURE
+    rm -rf "/${package:?}"
 done
 bash -ex /packages/keeper_test.sh""",
+        f"Install tgz over a symlinked config in {image}": r"""#!/bin/bash -ex
+# An installation may keep its config elsewhere and link to it from the installed path.
+# The installer has to write through such a symlink instead of replacing it.
+mkdir -p /etc/clickhouse-client /shared
+: > /shared/config.xml
+ln -s /shared/config.xml /etc/clickhouse-client/config.xml
+for pkg in /packages/clickhouse-client*tgz; do
+    package=${pkg%-*}
+    package=${package##*/}
+    tar xf "$pkg"
+    "/$package/install/doinst.sh"
+done
+[ -L /etc/clickhouse-client/config.xml ]
+[ "$(readlink /etc/clickhouse-client/config.xml)" = "/shared/config.xml" ]
+[ -s /shared/config.xml ]""",
+        f"Install tgz over a hard-linked config in {image}": r"""#!/bin/bash -ex
+# An installed file may have other hard links to it, and replacing the destination by a
+# rename would leave them pointing at the pre-upgrade contents. The installer has to write
+# through such a destination so that every link sees the new contents.
+mkdir -p /etc/clickhouse-client /backup
+echo "<clickhouse></clickhouse>" > /etc/clickhouse-client/config.xml
+ln /etc/clickhouse-client/config.xml /backup/config.xml
+inode=$(stat -c %i /etc/clickhouse-client/config.xml)
+for pkg in /packages/clickhouse-client*tgz; do
+    package=${pkg%-*}
+    package=${package##*/}
+    tar xf "$pkg"
+    "/$package/install/doinst.sh"
+done
+[ "$(stat -c %i /etc/clickhouse-client/config.xml)" = "$inode" ]
+[ "$(stat -c %h /etc/clickhouse-client/config.xml)" = "2" ]
+# `cmp`/`diff` are not installed in the minimal images, compare the contents in the shell.
+[ "$(cat /etc/clickhouse-client/config.xml)" = "$(cat /backup/config.xml)" ]
+[ "$(cat /etc/clickhouse-client/config.xml)" != "<clickhouse></clickhouse>" ]""",
+        f"Install tgz over a dangling symlink in {image}": r"""#!/bin/bash -ex
+# A symlink whose target does not exist yet has to survive the installation as well: `-e`
+# follows the link, so the installer must test for the link itself before testing existence.
+mkdir -p /etc/clickhouse-client /shared
+ln -s /shared/config.xml /etc/clickhouse-client/config.xml
+for pkg in /packages/clickhouse-client*tgz; do
+    package=${pkg%-*}
+    package=${package##*/}
+    tar xf "$pkg"
+    "/$package/install/doinst.sh"
+done
+[ -L /etc/clickhouse-client/config.xml ]
+[ "$(readlink /etc/clickhouse-client/config.xml)" = "/shared/config.xml" ]
+[ -s /shared/config.xml ]""",
     }
     return test_install(image, tests)
 
@@ -171,8 +226,12 @@ bash -ex /packages/keeper_test.sh""",
 def test_install(image: DockerImage, tests: Dict[str, str]) -> List[Result]:
     test_results = []  # type: List[Result]
     for name, command in tests.items():
+        # Note, `--rm` is deliberately not used: it reclaims the writable layer of the
+        # container asynchronously, while every test writes several gigabytes of
+        # installed files there and the next test starts right away. The layer is
+        # removed synchronously by `docker rm` below instead.
         run_command = (
-            f"docker run --rm --privileged --detach --cap-add=SYS_PTRACE "
+            f"docker run --privileged --detach --cap-add=SYS_PTRACE "
             f"--volume={TEMP_PATH}:/packages {image}"
         )
         print(f"Running docker container: [{run_command}]")
@@ -187,8 +246,27 @@ def test_install(image: DockerImage, tests: Dict[str, str]) -> List[Result]:
                 command=install_command,
             )
         )
-        Shell.check(f"docker kill -s 9 {container_id}", verbose=True)
+        # Strict: if the writable layer cannot be reclaimed, the job is about to run out of
+        # disk space, and the failure has to surface here rather than in the next test.
+        Shell.check(
+            f"docker rm --force --volumes {container_id}", verbose=True, strict=True
+        )
+        # The job runs out of disk space from time to time, and the failure surfaces as
+        # an unrelated error in whatever test happens to be running, so keep track of it.
+        Shell.check("df -h /", verbose=True)
     return test_results
+
+
+def free_packages(pattern: str) -> None:
+    """Delete the packages that have already been tested.
+
+    All the package flavours are downloaded into the same directory, which is mounted
+    into every container, and together they take more than 6 GiB - as much as a single
+    container needs to install them. Nothing reads a package once its own tests are
+    done, so drop it to leave room for the tests that follow.
+    """
+    Shell.check(f"rm -f {TEMP_PATH}/{pattern}", verbose=True)
+    Shell.check("df -h /", verbose=True)
 
 
 def parse_args() -> argparse.Namespace:
@@ -241,9 +319,11 @@ def main():
     if args.deb:
         print("Test debian")
         test_results.extend(test_install_deb(deb_image))
+        free_packages("*.deb")
     if args.rpm:
         print("Test rpm")
         test_results.extend(test_install_rpm(rpm_image))
+        free_packages("*.rpm")
     if args.tgz:
         print("Test tgz")
         test_results.extend(test_install_tgz(deb_image))
