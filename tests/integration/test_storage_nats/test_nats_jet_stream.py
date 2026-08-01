@@ -137,6 +137,16 @@ async def delete_durable_consumer(cluster_inst, stream_name, consumer_name):
     await nc.close()
 
 
+async def get_num_waiting(cluster_inst, stream_name, consumer_name):
+    nc = await nats_helpers.nats_connect_ssl(cluster_inst)
+    js = nc.jetstream()
+
+    consumer_info = await js.consumer_info(stream_name, consumer_name)
+
+    await nc.close()
+    return consumer_info.num_waiting
+
+
 # Fixtures
 
 @pytest.fixture(scope="module")
@@ -1085,6 +1095,21 @@ def _publish_and_expect(subject, keys, total_expected):
         result, total_expected)
 
 
+def _wait_for_parked_pull_request(consumer_name = "test_consumer", time_limit_sec = 60):
+    # Waits until the consumer has a pull request parked server side. `num_waiting` counts exactly
+    # those, so this reads the precondition off the broker instead of inferring it.
+    deadline = time.monotonic() + time_limit_sec
+    num_waiting = 0
+    while time.monotonic() < deadline:
+        num_waiting = asyncio.run(get_num_waiting(cluster, "test_stream", consumer_name))
+        if num_waiting >= 1:
+            return
+        time.sleep(0.2)
+
+    raise AssertionError(
+        "no pull request is parked for consumer {}: num_waiting is {}".format(consumer_name, num_waiting))
+
+
 def _restart_nats(nats_cluster, probe_key, total_expected):
     # Confirm the subscription is actually live, then restart the broker. Returns the new expected
     # key count, including the probe message.
@@ -1096,11 +1121,16 @@ def _restart_nats(nats_cluster, probe_key, total_expected):
     # milliseconds of one of those fresh subscriptions, the server goes down before that request is
     # parked, never answers it, and the client is left holding a subscription it has no status for -
     # the residual this fix deliberately does not cover (a hard kill or a network partition has the
-    # same shape). Consuming a message proves a pull request is parked server side, which is exactly
-    # the precondition the fix needs, so probing here keeps each restart in the window under test.
+    # same shape). Keeping each restart out of that residual is what the two waits below are for.
     # This changes WHEN the broker is restarted, not what is asserted.
     total_expected += 1
     _publish_and_expect("test_subject", [probe_key], total_expected)
+
+    # Consuming the probe proves a pull request was parked, but recovery is asynchronous: one queued
+    # while the broker was restoring its streams can re-subscribe right after, leaving a fresh
+    # subscription whose request is not parked yet. Reading `num_waiting` immediately before the kill
+    # asserts the precondition still holds at that instant, whatever happened in between.
+    _wait_for_parked_pull_request()
 
     nats_helpers.kill_nats(nats_cluster)
     time.sleep(4)
