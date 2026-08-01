@@ -1995,7 +1995,8 @@ void Counters::incrementSignalSafe(Event event, Count amount)
 
     Counters * current = this;
     /// Must stay async-signal-safe (called from signal/crash handlers), so unlike `incrementNoTrace`
-    /// it does not call `sched_getcpu`; `cpu = -1` routes every level to its row 0.
+    /// it does not look up the current CPU (`PerCPU::getCurrentCPU` may lazily register an rseq
+    /// area); `cpu = -1` routes every level to its row 0.
     do
     {
         current->fetchAdd(event, amount, -1);
