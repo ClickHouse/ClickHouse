@@ -1,6 +1,8 @@
 #include <Common/QueryFuzzer.h>
 
 #include <Core/UUID.h>
+#include <Common/DateLUT.h>
+
 #include <DataTypes/DataTypeAggregateFunction.h>
 #include <DataTypes/DataTypeArray.h>
 #include <DataTypes/DataTypeDateTime.h>
@@ -6888,7 +6890,8 @@ void QueryFuzzer::fuzz(ASTPtr & ast)
             if (system_query->fake_time_for_view.has_value())
                 system_query->fake_time_for_view.reset();
             else
-                system_query->fake_time_for_view = static_cast<Int64>(fuzz_rand() % 2000000000LL);
+                system_query->fake_time_for_view
+                    = DateLUT::instance().timeToString(static_cast<time_t>(fuzz_rand() % 2000000000LL));
         }
         /// Toggle CLEAR FILESYSTEM CACHE between clearing all, by name, and by name+key+offset
         if (system_query->type == Type::CLEAR_FILESYSTEM_CACHE && fuzz_rand() % 5 == 0)
