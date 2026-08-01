@@ -61,7 +61,7 @@ def _run(
     *,
     body: bytes = b"",
     token_preset: bool = False,
-    transport_error: bool = False,
+    transport_error=None,
     **kwargs,
 ):
     """Drive the real `get_gh_api` against scripted responses.
@@ -78,19 +78,11 @@ def _run(
         calls["count"] += 1
         auth_seen.append("Authorization" in (get_kwargs.get("headers") or {}))
         if transport_error:
-            raise requests.ConnectionError("connection reset by peer")
+            raise transport_error("transport failure")
         status = statuses[index] if index < len(statuses) else statuses[-1]
         return FakeResponse(status, body)
 
-    monkeypatch.setattr(
-        bdh,
-        "requests",
-        types.SimpleNamespace(
-            get=fake_get,
-            HTTPError=requests.HTTPError,
-            ConnectionError=requests.ConnectionError,
-        ),
-    )
+    monkeypatch.setattr(bdh.requests, "get", fake_get)
     monkeypatch.setattr(bdh, "time", types.SimpleNamespace(sleep=sleeps.append))
 
     class FakeRobotToken:
@@ -213,10 +205,17 @@ def test_4xx_budgets_unchanged(monkeypatch, status, body):
     assert sum(sleeps) == 12
 
 
-# Row 9: a transport error carries no status at all, and was attempt 1 of the
-# reported production failure (a read timeout).
-def test_transport_error_gets_backoff(monkeypatch):
-    attempts, sleeps, outcome, _ = _run(monkeypatch, [200], transport_error=True)
+# Row 9: a transport error carries no status at all. A read timeout was attempt 1
+# of the reported production failure, and is not a `ConnectionError` subclass, so
+# both classes are exercised.
+@pytest.mark.parametrize(
+    "transport_error",
+    [requests.ConnectionError, requests.ReadTimeout],
+)
+def test_transport_error_gets_backoff(monkeypatch, transport_error):
+    attempts, sleeps, outcome, _ = _run(
+        monkeypatch, [200], transport_error=transport_error
+    )
 
     assert outcome == "APIException"
     assert attempts == bdh.DOWNLOAD_RETRIES_COUNT
