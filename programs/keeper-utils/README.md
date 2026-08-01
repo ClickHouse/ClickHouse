@@ -109,7 +109,7 @@ When using `--dump-sessions`, the output includes the following information for 
 
 Analyze Keeper snapshots and print summary information and statistics.
 
-The snapshot is streamed from disk without building the storage in memory, so the analysis runs in O(1) memory regardless of snapshot size. It prints metadata (format version, last log index/term, ZXID, digest), node and session counts, data-size and path-length statistics, a children-count histogram, a random sample of nodes, and a predicted `KeeperMemNodesStorage` memory usage breakdown. Both zstd-compressed and `CompressedWriteBuffer`-compressed snapshots are detected and decompressed automatically.
+The snapshot is streamed from disk without building the storage in memory, so the analysis runs in O(1) memory regardless of snapshot size. It prints metadata (format version, last log index/term, ZXID, digest), node and session counts, data-size and path-length statistics, a children-count histogram, the nodes with the most children, a random sample of nodes, and a predicted `KeeperMemNodesStorage` memory usage breakdown. Both zstd-compressed and `CompressedWriteBuffer`-compressed snapshots are detected and decompressed automatically.
 
 #### Usage
 ```bash
@@ -121,6 +121,7 @@ clickhouse-keeper-utils snapshot-analyzer [options]
 - `--with-node-stats`: Additionally compute and show the biggest subtrees (the nodes with the most descendants). This keeps all node paths in memory (O(number of nodes)), which is the only part of the analysis that is not O(1) memory.
 - `--subtrees-limit <N>`: Show the top N biggest subtrees (default: 10). Only has an effect together with `--with-node-stats`.
 - `--sample-size <N>`: Show N randomly chosen nodes with their data sizes (default: 20). Set to 0 to disable the random sample.
+- `--top-children <N>`: Show the paths of the top N nodes by children count (default: 5). Set to 0 to disable.
 - `--help, -h`: Displays the help message.
 
 #### Examples

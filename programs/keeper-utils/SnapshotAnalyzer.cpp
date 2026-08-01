@@ -1,5 +1,6 @@
 #include <SnapshotAnalyzer.h>
 
+#include <algorithm>
 #include <array>
 #include <bit>
 #include <cstring>
@@ -79,6 +80,52 @@ struct SnapshotStats
 
     /// Reservoir sample of (path, data size) chosen uniformly at random.
     std::vector<std::pair<std::string, uint64_t>> sample;
+    /// Nodes with the most children, sorted by children count descending.
+    std::vector<std::pair<std::string, int32_t>> top_children;
+};
+
+/// Streaming tracker of the K nodes with the most children.
+/// Candidates not better than the K-th best seen so far are rejected with a single comparison.
+/// The rest go into a buffer of capacity 2K that is compacted back to K elements with quickselect
+/// whenever it fills up, so adding a node takes amortized O(1) time and the memory usage is O(K).
+class TopChildrenTracker
+{
+public:
+    explicit TopChildrenTracker(size_t limit_) : limit(limit_) { buffer.reserve(2 * limit); }
+
+    void add(std::string_view path, int32_t num_children)
+    {
+        if (limit == 0 || num_children <= threshold)
+            return;
+        buffer.emplace_back(path, num_children);
+        if (buffer.size() >= 2 * limit)
+        {
+            /// Quickselect the K-th largest; everything after it can't make the top K
+            /// (ties are broken arbitrarily).
+            std::nth_element(buffer.begin(), buffer.begin() + limit - 1, buffer.end(), byChildrenDesc);
+            buffer.resize(limit);
+            threshold = buffer.back().second;
+        }
+    }
+
+    std::vector<std::pair<std::string, int32_t>> finish() &&
+    {
+        std::sort(buffer.begin(), buffer.end(), byChildrenDesc);
+        if (buffer.size() > limit)
+            buffer.resize(limit);
+        return std::move(buffer);
+    }
+
+private:
+    static bool byChildrenDesc(const std::pair<std::string, int32_t> & a, const std::pair<std::string, int32_t> & b)
+    {
+        return a.second > b.second;
+    }
+
+    size_t limit;
+    /// Children count of the K-th best node seen so far (-1 until the buffer first fills up).
+    int32_t threshold = -1;
+    std::vector<std::pair<std::string, int32_t>> buffer;
 };
 
 std::unique_ptr<ReadBuffer> openSnapshotFile(const std::string & path)

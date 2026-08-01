@@ -16,6 +16,7 @@ void analyzeSnapshot(
     const std::string & snapshot_path,
     bool with_node_stats,
     size_t subtrees_limit,
-    size_t sample_size);
+    size_t sample_size,
+    size_t top_children_limit);
 
 }

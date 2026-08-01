@@ -941,6 +941,7 @@ int mainEntryClickHouseKeeperUtils(int argc, char ** argv)
                 ("with-node-stats", po::bool_switch()->default_value(false), "Calculate and show subtree statistics")
                 ("subtrees-limit", po::value<std::size_t>()->default_value(10), "Show top N biggest subtrees, requires --with-node-stats")
                 ("sample-size", po::value<std::size_t>()->default_value(20), "Show N randomly chosen nodes")
+                ("top-children", po::value<std::size_t>()->default_value(5), "Show top N nodes by children count")
             ;
 
             try
@@ -973,7 +974,8 @@ int mainEntryClickHouseKeeperUtils(int argc, char ** argv)
                     analyzer_vm["snapshot-path"].as<std::string>(),
                     analyzer_vm["with-node-stats"].as<bool>(),
                     analyzer_vm["subtrees-limit"].as<size_t>(),
-                    analyzer_vm["sample-size"].as<size_t>());
+                    analyzer_vm["sample-size"].as<size_t>(),
+                    analyzer_vm["top-children"].as<size_t>());
                 return 0;
             }
             catch (const std::exception & e)
