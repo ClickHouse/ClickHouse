@@ -2,11 +2,12 @@
 pull request caused each of them, and revert that pull request.
 
 The job takes the failures the CI database recorded for `master` in the last
-day, groups them the way a human reading the "Failed checks" dashboard would --
-by test name, and by check name for the failures that belong to no test -- and
-keeps the groups that failed more than twice. A sporadic failure is not
-interesting; a failure that repeats is either a regression somebody merged or a
-test that has to be looked at anyway.
+day, groups them by test name and check name -- the pair that identifies a
+failure there, with an empty test name for the failures that belong to no test,
+such as a build failure or a job that ran out of time -- and keeps the groups
+that failed more than twice. A sporadic failure is not interesting; a failure
+that repeats is either a regression somebody merged or a test that has to be
+looked at anyway.
 
 Every group is then handed to an AI agent (the `codex` CLI, the same one the
 Code Review job runs). The agent has the repository, `gh`, and read-only access
@@ -87,8 +88,8 @@ RUN_BUDGET_SEC = 45 * 60
 MAX_CULPRIT_AGE_DAYS = 3
 
 # Table in the CI database that records the investigations. It joins with
-# `checks`: `test_name`, `check_name`, `check_names`, `commit_shas`,
-# `report_url` and `offending_pull_request_number` all carry values from there.
+# `checks`: `test_name`, `check_name`, `commit_shas`, `report_url` and
+# `offending_pull_request_number` all carry values from there.
 INVESTIGATION_TABLE = "checks_investigated"
 
 INVESTIGATION_TABLE_DDL = f"""\
@@ -96,10 +97,8 @@ CREATE TABLE IF NOT EXISTS {INVESTIGATION_TABLE}
 (
     `investigation_time` DateTime COMMENT 'When the investigation ran',
     `task_url` String COMMENT 'The CI job that ran the investigation',
-    `failure_kind` LowCardinality(String) COMMENT 'test: a failing test case. check: a failing CI check with no test attached',
-    `test_name` LowCardinality(String) COMMENT 'checks.test_name, empty for a check-level failure',
-    `check_name` LowCardinality(String) COMMENT 'checks.check_name, empty for a test-level failure, which is grouped across checks',
-    `check_names` Array(LowCardinality(String)) COMMENT 'Every checks.check_name the failure was seen in',
+    `test_name` LowCardinality(String) COMMENT 'checks.test_name, empty when the check failed without attributing the failure to a test',
+    `check_name` LowCardinality(String) COMMENT 'checks.check_name',
     `failure_count` UInt32 COMMENT 'Occurrences within the observation window',
     `first_failure_time` DateTime COMMENT 'First occurrence within the observation window',
     `last_failure_time` DateTime COMMENT 'Last occurrence within the observation window',
@@ -115,7 +114,7 @@ CREATE TABLE IF NOT EXISTS {INVESTIGATION_TABLE}
     `reintroduce_pull_request_number` UInt32 COMMENT 'The draft pull request reintroducing the change, 0 if none'
 )
 ENGINE = ReplicatedMergeTree
-ORDER BY (investigation_time, failure_kind, test_name, check_name)
+ORDER BY (investigation_time, test_name, check_name)
 """
 
 # Branch names. `revert-<pr>` is what `.github/workflows/revert_broken_prs.yml`
@@ -160,12 +159,16 @@ class RevertConflict(Exception):
 
 @dataclass
 class Failure:
-    """A group of CI failures on master that repeated within the window."""
+    """A group of CI failures on master that repeated within the window.
 
-    failure_kind: str
+    Identified by the pair the CI database records it under: the test that
+    failed and the check it failed in. The same test failing in the debug and
+    in the tsan build is two failures, not one -- they can have different
+    causes, and each is investigated on its own evidence. A check that failed
+    without attributing the failure to a test has an empty `test_name`."""
+
     test_name: str
     check_name: str
-    check_names: List[str]
     failure_count: int
     first_failure_time: str
     last_failure_time: str
@@ -174,26 +177,26 @@ class Failure:
     context: str = ""
 
     @property
-    def key(self) -> Tuple[str, str, str]:
-        return (self.failure_kind, self.test_name, self.check_name)
+    def key(self) -> Tuple[str, str]:
+        return (self.test_name, self.check_name)
 
     @property
     def title(self) -> str:
-        return self.test_name or self.check_name
+        if not self.test_name:
+            return self.check_name
+        return f"{self.test_name} in {self.check_name}"
 
     @property
     def markdown(self) -> str:
-        if self.failure_kind == "test":
-            return f"test `{self.test_name}`"
-        return f"check `{self.check_name}`"
+        if not self.test_name:
+            return f"check `{self.check_name}`"
+        return f"test `{self.test_name}` in check `{self.check_name}`"
 
     @classmethod
     def from_row(cls, row: dict) -> "Failure":
         return cls(
-            failure_kind=row["failure_kind"],
             test_name=row["test_name"],
             check_name=row["check_name"],
-            check_names=list(row.get("check_names") or []),
             failure_count=int(row["failure_count"]),
             first_failure_time=row["first_failure_time"],
             last_failure_time=row["last_failure_time"],
@@ -234,10 +237,8 @@ class Investigation:
         return {
             "investigation_time": investigation_time,
             "task_url": task_url,
-            "failure_kind": failure.failure_kind,
             "test_name": failure.test_name,
             "check_name": failure.check_name,
-            "check_names": failure.check_names,
             "failure_count": failure.failure_count,
             "first_failure_time": failure.first_failure_time,
             "last_failure_time": failure.last_failure_time,
@@ -257,77 +258,46 @@ class Investigation:
 def failures_query(
     hours=FAILURE_WINDOW_HOURS, min_failures=MIN_FAILURES, context_limit=CONTEXT_LIMIT
 ) -> str:
-    """Failures on master that repeated within the window, grouped the way the
-    "Failed checks" dashboard groups them.
+    """Failures on master that repeated within the window, grouped by test name
+    and check name -- the pair that identifies a failure in the CI database.
 
-    Two kinds of rows are counted. Test-level rows are the failing test cases: a
-    `test_status` of `FAIL`/`FAILURE`/`ERROR` inside a check that did not
-    succeed, grouped by `test_name` across every check the test failed in -- one
-    test failing in both the debug and the tsan build is one failure. Check-level
-    rows are the failures no test carries: a check that ended in `failure` or
-    `error` with no test name, which is how a build failure, a server that would
-    not start, or a job that ran out of time is recorded. Those are grouped by
-    `check_name`. A `skipped` check is not a failure and is not counted.
+    Two kinds of rows are counted. A failing test case: a `test_status` of
+    `FAIL`/`FAILURE`/`ERROR` inside a check that did not succeed. And a failure
+    that no test carries: a check that ended in `failure` or `error` with an
+    empty `test_name`, which is how a build failure, a server that would not
+    start, or a job that ran out of time is recorded. A `skipped` check is not a
+    failure and is not counted, even though it is not a success either.
 
-    The group columns are named apart from the source columns (`group_test`,
-    `group_check`): aliasing `'' AS test_name` next to a real `test_name` would
-    make the alias shadow the column in the same `SELECT`.
+    Both kinds group the same way, so this is one pass over the table rather
+    than a union of two: the check-level rows simply carry an empty `test_name`.
 
     `toUInt32` keeps the counters out of JSON 64-bit integer quoting, and the
     format is fixed in the query so the caller does not depend on server-side
     format settings.
     """
-    table = Settings.CI_DB_TABLE_NAME
-    master_runs = (
-        f"check_start_time >= now() - INTERVAL {int(hours)} HOUR\n"
-        f"        AND head_ref = '{BASE_BRANCH}'\n"
-        f"        AND startsWith(head_repo, 'ClickHouse/')"
-    )
     return f"""\
-WITH failures AS
-(
-    SELECT
-        'test' AS failure_kind,
-        test_name AS group_test,
-        '' AS group_check,
-        check_name AS seen_in_check,
-        commit_sha,
-        check_start_time,
-        report_url,
-        test_context_raw
-    FROM {table}
-    WHERE {master_runs}
-        AND test_status != 'SKIPPED'
-        AND (test_status LIKE 'F%' OR test_status LIKE 'E%')
-        AND check_status != 'success'
-    UNION ALL
-    SELECT
-        'check' AS failure_kind,
-        '' AS group_test,
-        check_name AS group_check,
-        check_name AS seen_in_check,
-        commit_sha,
-        check_start_time,
-        report_url,
-        test_context_raw
-    FROM {table}
-    WHERE {master_runs}
-        AND test_name = ''
-        AND check_status IN ('failure', 'error')
-)
 SELECT
-    failure_kind,
-    group_test AS test_name,
-    group_check AS check_name,
+    test_name,
+    check_name,
     toUInt32(count()) AS failure_count,
     toString(min(check_start_time)) AS first_failure_time,
     toString(max(check_start_time)) AS last_failure_time,
-    arraySort(groupUniqArray(20)(seen_in_check)) AS check_names,
     arraySort(groupUniqArray(50)(commit_sha)) AS commit_shas,
     argMax(report_url, check_start_time) AS report_url,
     substring(argMax(test_context_raw, check_start_time), 1, {int(context_limit)}) AS context
-FROM failures
-GROUP BY failure_kind, group_test, group_check
+FROM {Settings.CI_DB_TABLE_NAME}
+WHERE check_start_time >= now() - INTERVAL {int(hours)} HOUR
+    AND head_ref = '{BASE_BRANCH}'
+    AND startsWith(head_repo, 'ClickHouse/')
+    AND (
+        (
+            test_status != 'SKIPPED'
+            AND (test_status LIKE 'F%' OR test_status LIKE 'E%')
+            AND check_status != 'success'
+        )
+        OR (test_name = '' AND check_status IN ('failure', 'error'))
+    )
+GROUP BY test_name, check_name
 HAVING failure_count >= {int(min_failures)}
 ORDER BY failure_count DESC, test_name, check_name
 FORMAT JSONEachRow
@@ -339,14 +309,13 @@ def recent_investigations_query(hours=FAILURE_WINDOW_HOURS) -> str:
     already led to a revert within the window."""
     return f"""\
 SELECT
-    failure_kind,
     test_name,
     check_name,
     toString(max(investigation_time)) AS last_investigation_time,
     toUInt8(max(action = '{Action.REVERTED}')) AS reverted
 FROM {INVESTIGATION_TABLE}
 WHERE investigation_time >= now() - INTERVAL {int(hours)} HOUR
-GROUP BY failure_kind, test_name, check_name
+GROUP BY test_name, check_name
 FORMAT JSONEachRow
 """
 
@@ -363,7 +332,7 @@ def parse_db_time(value: str) -> datetime:
 
 
 def skip_reason(
-    failure: Failure, prior: Dict[Tuple[str, str, str], dict], now: datetime
+    failure: Failure, prior: Dict[Tuple[str, str], dict], now: datetime
 ) -> str:
     """Why this failure is not investigated in this run, or "" to investigate it.
 
@@ -542,11 +511,10 @@ def already_handled(merge_commit: str, revert_branch: str, repo: str) -> str:
 
 
 def investigation_prompt(failure: Failure, verdict_file: str) -> str:
-    checks = ", ".join(f"`{name}`" for name in failure.check_names)
     commits = ", ".join(failure.commit_shas)
     what = (
-        f"The test `{failure.test_name}` fails."
-        if failure.failure_kind == "test"
+        f"The test `{failure.test_name}` fails in the CI check `{failure.check_name}`."
+        if failure.test_name
         else f"The CI check `{failure.check_name}` fails without attributing the "
         f"failure to any test."
     )
@@ -560,7 +528,6 @@ The failure:
 - {what}
 - Seen {failure.failure_count} times in the last {FAILURE_WINDOW_HOURS} hours on `{BASE_BRANCH}`,
   between {failure.first_failure_time} and {failure.last_failure_time} UTC.
-- In these CI checks: {checks}
 - On these `{BASE_BRANCH}` commits: {commits}
 - Most recent CI report: {failure.report_url}
 - Output recorded with the most recent occurrence (truncated):
@@ -583,8 +550,10 @@ What you have:
 
 How to investigate:
 1. Establish when the failure started. Query the last 30 days of `{BASE_BRANCH}` runs for this test
-   or check, ordered by `check_start_time`, and find the earliest commit that failed and the last
-   commit that passed before it.
+   in this check, ordered by `check_start_time`, and find the earliest commit that failed and the
+   last commit that passed before it. Widening the query to the other checks the same test runs in
+   is worth doing as corroboration: a real regression usually shows up in more than one build, while
+   a failure confined to a single sanitizer or storage configuration points at that configuration.
 2. Decide whether this is a regression at all. It is not one when:
    - the test or check has been failing on and off for a long time, which makes it flaky;
    - it also fails on pull requests that change nothing related;
@@ -632,7 +601,6 @@ def revert_body(pull_request: dict, investigation: Investigation) -> str:
     revert with what it reverts, and it is what tells the merge-readiness check
     that this is a revert."""
     failure = investigation.failure
-    checks = "\n".join(f"- `{name}`" for name in failure.check_names)
     return f"""\
 Reverts ClickHouse/ClickHouse#{pull_request["number"]}
 
@@ -643,9 +611,7 @@ for checks so that `{BASE_BRANCH}` is usable again.
 **Failure:** {failure.markdown}
 
 Seen {failure.failure_count} times in the last {FAILURE_WINDOW_HOURS} hours on `{BASE_BRANCH}`,
-between {failure.first_failure_time} and {failure.last_failure_time} UTC, in:
-
-{checks}
+between {failure.first_failure_time} and {failure.last_failure_time} UTC.
 
 Most recent report: {failure.report_url}
 
@@ -1076,7 +1042,7 @@ def select_failures(cidb: CIDB, now: datetime) -> List[Failure]:
         f"on {BASE_BRANCH} in the last {FAILURE_WINDOW_HOURS} hours"
     )
     prior = {
-        (row["failure_kind"], row["test_name"], row["check_name"]): row
+        (row["test_name"], row["check_name"]): row
         for row in parse_json_each_row(cidb.query(recent_investigations_query()))
     }
     selected = []

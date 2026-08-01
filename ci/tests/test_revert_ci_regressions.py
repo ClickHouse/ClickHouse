@@ -15,10 +15,8 @@ NOW = datetime(2026, 7, 31, 22, 0, 0, tzinfo=timezone.utc)
 
 def make_failure(**overrides):
     row = {
-        "failure_kind": "test",
         "test_name": "04611_join_runtime_filters",
-        "check_name": "",
-        "check_names": ["Stateless tests (amd_debug, parallel)"],
+        "check_name": "Stateless tests (amd_debug, parallel)",
         "failure_count": 8,
         "first_failure_time": "2026-07-31 13:28:40",
         "last_failure_time": "2026-07-31 21:12:40",
@@ -55,24 +53,19 @@ def test_failures_query_counts_tests_and_whole_check_failures():
     # Test cases that failed inside a check that did not succeed ...
     assert "test_status LIKE 'F%' OR test_status LIKE 'E%'" in query
     assert "AND check_status != 'success'" in query
-    # ... plus the failures that carry no test name at all.
-    assert (
-        "AND test_name = ''\n        AND check_status IN ('failure', 'error')" in query
-    )
-    assert "UNION ALL" in query
+    # ... plus the failures that carry no test name at all. A `skipped` check is
+    # not a success either, and must not be counted as a failure.
+    assert "OR (test_name = '' AND check_status IN ('failure', 'error'))" in query
 
 
-def test_failures_query_does_not_shadow_source_columns_with_group_aliases():
-    """`'' AS test_name` next to a real `test_name` in the same SELECT makes the
-    alias shadow the column, which silently empties the grouping. The group
-    columns are therefore named apart and renamed only in the outer SELECT."""
+def test_failures_query_always_groups_by_test_name_and_check_name():
+    """One test failing in the debug and in the tsan build is two failures: they
+    can have different causes, and each is investigated on its own evidence."""
     query = job.failures_query()
-    assert "'' AS group_test" in query
-    assert "'' AS group_check" in query
-    assert "check_name AS seen_in_check" in query
-    assert "'' AS test_name" not in query
-    assert "'' AS check_name" not in query
-    assert "GROUP BY failure_kind, group_test, group_check" in query
+    assert "GROUP BY test_name, check_name" in query
+    # Both columns come straight from `checks`, so the rows join back to it.
+    assert query.lstrip().startswith("SELECT\n    test_name,\n    check_name,")
+    assert "GROUP BY test_name, check_name" in job.recent_investigations_query()
 
 
 def test_failures_query_keeps_only_repeated_failures_on_master():
@@ -140,14 +133,38 @@ def test_failure_already_reverted_is_left_alone_for_the_whole_window():
     assert "already created" in job.skip_reason(failure, prior, NOW)
 
 
-def test_test_level_and_check_level_failures_are_different_keys():
-    assert (
-        make_failure().key
-        != make_failure(
-            failure_kind="check",
-            test_name="",
-            check_name="Stateless tests (amd_debug, parallel)",
-        ).key
+def test_the_same_test_in_two_checks_is_two_failures():
+    """The cooldown of a test in one build must not silence the same test
+    failing in another one, which may have a different cause."""
+    debug = make_failure(check_name="Stateless tests (amd_debug, parallel)")
+    tsan = make_failure(check_name="Stateless tests (amd_tsan, parallel)")
+    assert debug.key != tsan.key
+
+    prior = {
+        debug.key: {
+            "last_investigation_time": NOW.strftime("%Y-%m-%d %H:%M:%S"),
+            "reverted": 1,
+        }
+    }
+    assert job.skip_reason(debug, prior, NOW)
+    assert job.skip_reason(tsan, prior, NOW) == ""
+
+
+def test_a_check_that_names_no_test_is_keyed_by_the_check_alone():
+    failure = make_failure(test_name="", check_name="Install packages (amd_release)")
+    assert failure.key == ("", "Install packages (amd_release)")
+    assert failure.title == "Install packages (amd_release)"
+    assert failure.markdown == "check `Install packages (amd_release)`"
+
+
+def test_a_failing_test_is_named_together_with_the_check_it_failed_in():
+    failure = make_failure()
+    assert failure.title == (
+        "04611_join_runtime_filters in Stateless tests (amd_debug, parallel)"
+    )
+    assert failure.markdown == (
+        "test `04611_join_runtime_filters` in check "
+        "`Stateless tests (amd_debug, parallel)`"
     )
 
 
@@ -487,7 +504,7 @@ def test_every_investigation_is_recorded_including_the_negative_ones():
     assert record["revert_pull_request_number"] == 0
     # The columns that join back to `checks`.
     assert record["test_name"] == "04611_join_runtime_filters"
-    assert record["check_names"] == ["Stateless tests (amd_debug, parallel)"]
+    assert record["check_name"] == "Stateless tests (amd_debug, parallel)"
     assert record["commit_shas"] == ["a" * 40]
     assert record["report_url"] == "https://example.invalid/report"
     # Every column of the table is filled in, so no INSERT relies on defaults.

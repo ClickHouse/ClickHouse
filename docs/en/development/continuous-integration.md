@@ -264,7 +264,9 @@ The performance test report is described in detail [here](https://github.com/Cli
 
 This is not a check on your pull request: it runs on `master` every hour, and it may revert a pull request that has already been merged.
 
-The job takes the failures the CI database recorded for `master` over the last 24 hours and groups them by test name, and by check name for the failures that are not attributed to any test, such as a build failure or a job that ran out of time.
+The job takes the failures the CI database recorded for `master` over the last 24 hours and groups them by test name and check name, the pair that identifies a failure there.
+Failures that are not attributed to any test, such as a build failure or a job that ran out of time, have an empty test name and are grouped by their check alone.
+The same test failing in two different checks is two failures: they can have different causes, and each is investigated on its own evidence.
 A group that failed more than twice is handed to an AI agent, which is given the repository, the `gh` CLI and read-only access to the CI database, and answers a single question: was this failure introduced by a recently merged pull request, and which one.
 
 Only an unambiguous answer leads to an action.
