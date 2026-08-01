@@ -38,7 +38,7 @@ void resetTrackers()
 }
 
 #if defined(OS_LINUX)
-/// Pin the current thread to one CPU, so sync()'s sched_getcpu() is stable across a test.
+/// Pin the current thread to one CPU, so the CPU id sync() observes is stable across a test.
 bool pinTo(int cpu)
 {
     cpu_set_t one;
@@ -245,7 +245,7 @@ TEST(PerCPUMemory, MigrationMovesContribution)
     if (!ran)
         GTEST_SKIP() << "cannot pin CPU";
 
-    /// release() uses state.contributed_on_cpu, not sched_getcpu(), so it is correct unpinned.
+    /// release() uses state.contributed_on_cpu, not the current CPU, so it is correct unpinned.
     memory.release(state);
     EXPECT_EQ(memory.netOnCPU(cpu_b), 0);
 }
