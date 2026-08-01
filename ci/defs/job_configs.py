@@ -45,6 +45,9 @@ build_digest_config = Job.CacheDigestConfig(
         "./rust",
         "./ci/jobs/build_clickhouse.py",
         "./ci/jobs/scripts/job_hooks/build_profile_hook.py",
+        # The build job also assembles the deb, rpm and tgz packages, so changes to
+        # their definitions and to the packaging script have to schedule a rebuild.
+        "./packages",
         "./utils/list-licenses",
         "./utils/self-extracting-executable",
     ],
@@ -201,7 +204,15 @@ class JobConfigs:
         command="python3 ./ci/jobs/ci_tests_job.py",
         timeout=1200,
         run_in_docker=f"clickhouse/integration-tests-runner+root+--privileged+--dns-search='.'+--security-opt seccomp=unconfined+--cap-add=SYS_PTRACE+{docker_sock_mount}+--volume=clickhouse_integration_tests_volume:/var/lib/docker+--cgroupns=host",
-        digest_config=Job.CacheDigestConfig(include_paths=["./ci"]),
+        digest_config=Job.CacheDigestConfig(
+            include_paths=[
+                "./ci",
+                # The ci/tests/ guards for the expect-trace / bash-xtrace separation read these
+                # two files, so a change to either must run this job.
+                "./tests/clickhouse-test",
+                "./tests/queries/shell_config.sh",
+            ]
+        ),
         post_hooks=["python3 ci/jobs/scripts/job_hooks/docker_volume_clean_up_hook.py"],
     )
     fast_test = Job.Config(
@@ -236,7 +247,7 @@ class JobConfigs:
             # cannot fail the job, and a timed-out job already fails).
             'for i in $(seq 2 16); do sudo ifconfig lo0 -alias 127.0.0.$i 2>/dev/null || true; done',
             "python3 ./ci/jobs/scripts/job_hooks/clickhouse_test_cleanup_hook.py",
-            "sudo rm -rf /Users/ec2-user/actions-runner/_work/ClickHouse/ClickHouse/ci/tmp/run* /System/Volumes/Data/System/Library/Caches/com.apple.coresymbolicationd/data",
+            "sudo rm -rf /Users/ec2-user/actions-runner/_work/ClickHouse/ClickHouse/ci/tmp/run* /System/Volumes/Data/System/Library/Caches/com.apple.coresymbolicationd/data /System/Volumes/Data/private/var/db/diagnostics/*",
         ],
     ).parametrize(
         Job.ParamSet(
@@ -505,6 +516,28 @@ class JobConfigs:
             runs_on=RunnerLabels.ARM_LARGE,
         ),
     )
+    # tests/fuzz/build.sh runs as a POST_BUILD step of the `fuzzers` target and
+    # stages the .options files, a source-derived fallback all.dict, and seed
+    # corpora repacked from tests/queries/0_stateless/*.sql into the build
+    # output (see ArtifactConfigs.fuzzers), so the produced artifact also
+    # depends on the inputs under tests/fuzz and on the stateless test queries,
+    # which the shared build digest does not cover. Extend the digest of the
+    # fuzzers build only, so that a dictionary generation or corpus change
+    # cannot cache-hit a stale artifact while the other builds are unaffected.
+    special_build_jobs = [
+        (
+            job.set_digest_config(
+                Job.CacheDigestConfig(
+                    include_paths=build_digest_config.include_paths
+                    + ["./tests/fuzz/", "./tests/queries/0_stateless/"],
+                    with_git_submodules=True,
+                )
+            )
+            if job.parameter == BuildTypes.ARM_FUZZERS
+            else job
+        )
+        for job in special_build_jobs
+    ]
     install_check_jobs = Job.Config(
         name=JobNames.INSTALL_TEST,
         runs_on=[],  # from parametrize()
@@ -1605,9 +1638,19 @@ class JobConfigs:
         name=JobNames.LIBFUZZER_TEST,
         runs_on=RunnerLabels.ARM_MEDIUM,
         command="python3 ./ci/jobs/libfuzzer_test_check.py 'libFuzzer tests'",
-        requires=[ArtifactNames.ARM_FUZZERS, ArtifactNames.FUZZERS_CORPUS],
+        # The release binary is used to generate the fuzzer dictionary (all.dict)
+        # from the actual set of functions, data types and keywords.
+        requires=[
+            ArtifactNames.ARM_FUZZERS,
+            ArtifactNames.FUZZERS_CORPUS,
+            ArtifactNames.CH_ARM_RELEASE,
+        ],
         digest_config=Job.CacheDigestConfig(
-            include_paths=["./ci/jobs/libfuzzer_test_check.py"],
+            include_paths=[
+                "./ci/jobs/libfuzzer_test_check.py",
+                "./tests/fuzz/update_dict.sh",
+                "./tests/fuzz/dictionaries/old.dict",
+            ],
         ),
     )
     collect_clickhouse_profiles_jobs = Job.Config(

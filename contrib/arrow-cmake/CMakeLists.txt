@@ -24,6 +24,14 @@ if (NOT ENABLE_PARQUET)
     return()
 endif()
 
+# ORC lives here because Arrow has an adapter for it, but nothing about reading Parquet needs it.
+# It is also the only thing in the whole tree that runs `protoc`, and on a cross-compile that means
+# bootstrapping a native protobuf first, so turning it off is what makes a Parquet-only build cheap.
+option (ENABLE_ORC "Enable ORC (pulls in protobuf and, when cross-compiling, a native protoc)" ON)
+if (NOT ENABLE_ORC)
+    message(STATUS "Not using ORC")
+endif()
+
 # Support C11
 if(NOT DEFINED CMAKE_C_STANDARD)
   set(CMAKE_C_STANDARD 11)
@@ -78,11 +86,13 @@ else ()
 endif()
 set(PROTO_DIR "${ORC_SOURCE_DIR}/../proto")
 
-add_custom_command(OUTPUT orc_proto.pb.h orc_proto.pb.cc
-        COMMAND ${PROTOBUF_EXECUTABLE}
-        -I ${PROTO_DIR}
-        --cpp_out="${CMAKE_CURRENT_BINARY_DIR}"
-        "${PROTO_DIR}/orc_proto.proto")
+if (ENABLE_ORC)
+    add_custom_command(OUTPUT orc_proto.pb.h orc_proto.pb.cc
+            COMMAND ${PROTOBUF_EXECUTABLE}
+            -I ${PROTO_DIR}
+            --cpp_out="${CMAKE_CURRENT_BINARY_DIR}"
+            "${PROTO_DIR}/orc_proto.proto")
+endif()
 
 # === flatbuffers
 set(FLATBUFFERS_SRC_DIR "${ClickHouse_SOURCE_DIR}/contrib/flatbuffers")
@@ -116,6 +126,10 @@ add_library(ch_contrib::arrow_ipc_metadata ALIAS _arrow_ipc_metadata)
 # ===  hdfs
 # NOTE: cannot use ch_contrib::hdfs since it's INCLUDE_DIRECTORIES does not includes trailing "hdfs/"
 set(HDFS_INCLUDE_DIR "${ClickHouse_SOURCE_DIR}/contrib/libhdfs3/include/hdfs/")
+
+# Everything down to the end of the `_orc` target below is ORC. Left un-indented inside the
+# condition to keep it comparable with the Arrow build description it was transcribed from.
+if (ENABLE_ORC)
 
 # arrow-cmake cmake file calling orc cmake subroutine which detects certain compiler features.
 # Apple Clang compiler failed to compile this code without specifying c++11 standard.
@@ -236,6 +250,8 @@ target_include_directories(_orc SYSTEM PRIVATE
     ${ORC_BUILD_SRC_DIR}
     ${ORC_ADDITION_SOURCE_DIR}
     ${ARROW_SRC_DIR})
+
+endif() # ENABLE_ORC
 
 # === arrow
 
@@ -477,6 +493,11 @@ set(ARROW_SRCS
         "${ARROW_SRC_DIR}/arrow/adapters/orc/options.cc"
         )
 
+if (NOT ENABLE_ORC)
+    # The Arrow-to-ORC adapter is the one part of Arrow that includes `orc/OrcFile.hh`.
+    list (FILTER ARROW_SRCS EXCLUDE REGEX "/adapters/orc/")
+endif()
+
 add_definitions(-DARROW_WITH_BROTLI)
 SET(ARROW_SRCS "${LIBRARY_DIR}/util/compression_brotli.cc" ${ARROW_SRCS})
 
@@ -543,11 +564,14 @@ target_link_libraries(_arrow PRIVATE
     ch_contrib::brotli
     ch_contrib::bzip2
 )
-target_link_libraries(_arrow PUBLIC _orc)
 # PUBLIC so the xsimd headers are visible to _parquet too (it links _arrow PUBLIC).
 target_link_libraries(_arrow PUBLIC ch_contrib::xsimd)
 
-add_dependencies(_arrow protoc)
+if (ENABLE_ORC)
+    target_link_libraries(_arrow PUBLIC _orc)
+    # ORC is the only thing here with generated protobuf sources.
+    add_dependencies(_arrow protoc)
+endif()
 
 target_include_directories(_arrow SYSTEM BEFORE PUBLIC ${ARROW_SRC_DIR})
 target_include_directories(_arrow SYSTEM BEFORE PUBLIC "${ClickHouse_SOURCE_DIR}/contrib/arrow-cmake/cpp/src")
