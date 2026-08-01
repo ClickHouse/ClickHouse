@@ -26,10 +26,16 @@ def _settings_history_entry_signature(entry_body):
 
 def parse_settings_history_changes(patch, file_lines):
     """Given the unified diff of src/Core/SettingsChangesHistory.cpp and the lines of the file
-    at HEAD, return a list of {"namespace", "name"} for settings whose value changed or that
-    were newly added. Reason-only edits (added entry whose value-signature was also removed)
-    are ignored. The namespace comes from the block that physically contains each added line
-    (new-file line number), not from global name presence - names can exist in both histories."""
+    at HEAD, return a list of {"namespace", "name"} for settings whose recorded value changed or
+    that were newly added (including an in-place value edit of an existing entry). Reason-only
+    edits (an added entry whose value-signature was also removed) are ignored. The namespace
+    comes from the block that physically contains each added line (new-file line number), not
+    from global name presence - names can exist in both histories.
+
+    Whether such a change must sit under the CURRENT version block is decided by the caller
+    (check_settings_changes_history), which enforces the rule as soon as any other C++ source
+    file changed. A change that edits only this file - fixing what a past release recorded -
+    is a historical correction, not a default change made now, so it is allowed there."""
     added = []  # (new_line_number, name, signature)
     removed_signatures = set()
     new_lineno = None
