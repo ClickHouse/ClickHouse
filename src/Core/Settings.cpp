@@ -4470,7 +4470,9 @@ Disabled by default.
     DECLARE(Bool, s3_allow_server_credentials_in_user_queries, false, R"(
 Allow S3 access that originates from user SQL to use server-managed credentials.
 
-When disabled (the default), the `s3`/`s3Cluster` table functions, the `S3`/`S3Queue` engines, S3 named collections, dynamic `disk(type=s3, ...)` definitions, `BACKUP`/`RESTORE TO S3`, DataLake table-data reads, and `DataLakeCatalog` databases (Glue, BigLake) may not resolve credentials from the environment, instance metadata (IMDS), IRSA, ECS, instance profile, SSO, AWS config/credentials files, `role_arn`-based STS assume-role, or the GCP OAuth metadata service. A request that asks for one of those server-managed sources (for example `use_environment_credentials = 1`, a `role_arn`, or `http_client = gcp_oauth`) without supplying usable explicit credentials is rejected with `ACCESS_DENIED`. A request that asks for none of them is sent unsigned (anonymous), the same as if `NOSIGN` had been given.
+When disabled (the default), the `s3`/`s3Cluster` table functions, the `S3`/`S3Queue` engines, S3 named collections, dynamic `disk(type=s3, ...)` definitions, `BACKUP`/`RESTORE TO S3`, DataLake table-data reads, and `DataLakeCatalog` databases (Glue, BigLake) may not resolve credentials from the environment, instance metadata (IMDS), IRSA, ECS, instance profile, SSO, AWS config/credentials files, or the GCP OAuth metadata service. A request that asks for one of those server-managed sources (for example `use_environment_credentials = 1` or `http_client = gcp_oauth`) without supplying usable explicit credentials is rejected with `ACCESS_DENIED`. A request that asks for none of them is sent unsigned (anonymous), the same as if `NOSIGN` had been given.
+
+`role_arn`-based STS assume-role (`extra_credentials(role_arn = '...')`) stays allowed even when this setting is disabled: the target role must explicitly trust the identity the server runs under, and only the assumed role's credentials ever sign the query's S3 requests, so the server's own credentials are not exposed to the query. This is the documented way to grant ClickHouse Cloud access to a private bucket. The role is assumed with the query's own base keys when the query supplies a complete pair; otherwise the STS AssumeRole call is signed by the server's ambient identity. Static keys from the server `<s3>`/endpoint config or from a named collection are never used as the STS base for a query-supplied role, and a `role_arn` configured in the server `<s3>` config is not applied to user queries at all. Dynamic `disk(type=s3, role_arn=...)` definitions remain covered by the restriction.
 
 Whether a credential-less request asks for environment credentials is decided by `use_environment_credentials`. Named collections default it to `0`, so a collection that only specifies a URL reads anonymously. The `s3`/`s3Cluster` table functions and `S3`/`S3Queue` engines use the built-in default (`1`) unless the server `<s3>` config sets it otherwise; set `<s3><use_environment_credentials>0</use_environment_credentials></s3>` to make their credential-less reads anonymous by default too (otherwise such a request is refused and must use `NOSIGN`). Disks defined in the server configuration are unaffected and keep using environment credentials by default; user-created dynamic `disk(type = s3, ...)` definitions are covered by the restriction (see above) and are rejected when they rely on default/environment credentials.
 
@@ -6089,8 +6091,19 @@ Force the use of optimization when it is applicable, but heuristics decided not 
     DECLARE(Bool, allow_limit_by_partitions_independently, true, R"(
 Enable independent `LIMIT BY` evaluation per partition on separate threads when the partition expression is a deterministic function of the `LIMIT BY` columns.
 )", 0) \
+    DECLARE(Bool, allow_distinct_partitions_independently, true, R"(
+Enable independent `DISTINCT` evaluation per partition on separate threads when the partition expression is a deterministic function of the `DISTINCT` columns, skipping the cross-stream merge. Beneficial when the number of partitions is close to the number of cores and partitions have roughly the same size; otherwise a cost heuristic skips it, see [max_number_of_partitions_for_independent_distinct](#max_number_of_partitions_for_independent_distinct) and [force_distinct_partitions_independently](#force_distinct_partitions_independently). Not applied with `FINAL` or parallel replicas.
+
+Not applied when [max_rows_in_distinct](#max_rows_in_distinct) or [max_bytes_in_distinct](#max_bytes_in_distinct) is set: those limits are enforced by the single `DISTINCT` transform that sees the whole merged result, so the cross-stream merge is kept to preserve their global meaning.
+)", 0) \
+    DECLARE(Bool, force_distinct_partitions_independently, false, R"(
+Force independent `DISTINCT` evaluation per partition when it is applicable, but the cost heuristic decided not to use it. Only bypasses the cost heuristic of [allow_distinct_partitions_independently](#allow_distinct_partitions_independently); the remaining conditions still apply.
+)", 0) \
     DECLARE(UInt64, max_number_of_partitions_for_independent_aggregation, 128, R"(
-Maximal number of partitions in table to apply optimization
+Maximal number of partitions in table to apply independent aggregation per partition. Part of the cost heuristic of [allow_aggregate_partitions_independently](#allow_aggregate_partitions_independently).
+)", 0) \
+    DECLARE(UInt64, max_number_of_partitions_for_independent_distinct, 128, R"(
+Maximal number of partitions in table to apply independent `DISTINCT` per partition. Part of the cost heuristic of [allow_distinct_partitions_independently](#allow_distinct_partitions_independently).
 )", 0) \
     DECLARE(Float, min_hit_rate_to_use_consecutive_keys_optimization, 0.5, R"(
 Minimal hit rate of a cache which is used for consecutive keys optimization in aggregation to keep it enabled
@@ -7861,7 +7874,7 @@ Cloud default value: `1`.
 Allow the analyzer.
 )", IMPORTANT, enable_analyzer) \
     DECLARE(Bool, analyzer_compatibility_join_using_top_level_identifier, false, R"(
-Force to resolve identifier in JOIN USING from projection (for example, in `SELECT a + 1 AS b FROM t1 JOIN t2 USING (b)` join will be performed by `t1.a + 1 = t2.b`, rather then `t1.b = t2.b`).
+Force to resolve identifier in JOIN USING from projection (for example, in `SELECT a + 1 AS b FROM t1 JOIN t2 USING (b)` join will be performed by `t1.a + 1 = t2.b`, rather then `t1.b = t2.b`). Aliases defined on subexpressions inside the SELECT list are also considered (for example, in `SELECT uniqExact(a + 1 AS b) FROM t1 JOIN t2 USING (b)` the join is performed by `t1.a + 1 = t2.b`). When the matching alias is defined on a subexpression inside the SELECT list rather than as a top-level alias, parallel replicas are disabled for the query. For queries sent to remote servers (`Distributed` tables, the `remote` table function), such a query is rejected with an exception only when the identifier cannot be resolved on the remote server at all; if the alias shadows a real column of the left table, the remote server joins by that column instead, so the results may differ from local execution.
 )", 0) \
     DECLARE(Bool, analyzer_compatibility_allow_compound_identifiers_in_unflatten_nested, true, R"(
 Allow to add compound identifiers to nested. This is a compatibility setting because it changes the query result. When disabled, `SELECT a.b.c FROM table ARRAY JOIN a` does not work, and `SELECT a FROM table` does not include `a.b.c` column into `Nested a` result.
@@ -9165,6 +9178,16 @@ SettingsChanges Settings::changes() const
 void Settings::applyChanges(const SettingsChanges & changes)
 {
     impl->applyChanges(changes);
+}
+
+void Settings::checkShorthandChange(const SettingChange & change) const
+{
+    impl->checkShorthandChange(change);
+}
+
+void Settings::checkShorthandChanges(const SettingsChanges & changes) const
+{
+    impl->checkShorthandChanges(changes);
 }
 
 VectorWithMemoryTracking<std::string_view> Settings::getAllRegisteredNames() const
