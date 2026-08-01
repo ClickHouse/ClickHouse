@@ -4,7 +4,9 @@
 -- that backs the `compatibility` setting and `system.settings_changes`.
 
 -- Every recorded change, with the name it is recorded under resolved to the setting it belongs to, the way
--- `compatibility` resolves it: a change recorded under an alias of a setting belongs to that setting.
+-- `compatibility` resolves it: a change recorded under an alias of a setting belongs to that setting. The
+-- exception is a record written under an alias for the sole purpose of registering that alias: it is the history
+-- of the alias alone, because it neither introduces the setting it aliases nor changes its default.
 CREATE VIEW session_changes AS
 SELECT
     if(s.alias_for != '', s.alias_for, ch.recorded_name) AS name,
@@ -22,7 +24,9 @@ FROM
         tupleElement(c, 'reason') AS reason
     FROM system.settings_changes WHERE type = 'Session'
 ) AS ch
-INNER JOIN system.settings AS s ON s.name = ch.recorded_name;
+INNER JOIN system.settings AS s ON s.name = ch.recorded_name
+WHERE NOT (s.alias_for != '' AND ch.previous_value = ch.new_value AND match(ch.reason,
+    '(?i)\\b(?:add\\w*|new|introduc\\w*)\\b[^.]{0,20}\\balias\\b|(?:^|[.;]\\s+)(?:an?\\s+)?alias\\s+(?:for|of|to)\\b'));
 
 -- A setting has a history section exactly when it has recorded changes, and never otherwise. The history of an
 -- alias is the one recorded under the alias itself, which is the version in which the alias was added.
@@ -106,6 +110,14 @@ SELECT description FROM system.documentation WHERE type = 'Setting' AND name = '
 -- An alias is introduced in a particular version and has a history of its own, distinct from the history of the
 -- setting it resolves to.
 SELECT description FROM system.documentation WHERE type = 'Setting' AND name = 'enable_analyzer';
+
+-- A record that only registers an alias does not become the history of the setting it aliases, and in particular
+-- does not claim to introduce it: `max_insert_block_size` is older than the change history and has no recorded
+-- change of its own, so it has no history at all, while its alias `max_insert_block_size_rows` — registered in
+-- 26.1 — has one.
+SELECT description FROM system.documentation WHERE type = 'Setting' AND name = 'max_insert_block_size_rows';
+SELECT position(description, '**History**') = 0, position(description, '**Introduced in:**') = 0
+FROM system.documentation WHERE type = 'Setting' AND name = 'max_insert_block_size';
 
 -- The history of a setting that was renamed is not cut at the rename: `enable_full_text_index` was called
 -- `allow_experimental_full_text_index` when it appeared in 24.6, and that change is recorded under the old name.

@@ -405,6 +405,20 @@ struct SettingsHistory
     SettingsHistoryIndex by_recorded_name;
 };
 
+/// Whether the reason authored for a change in `SettingsChangesHistory.cpp` says that the record is there to
+/// register an alias of a setting: "Added an alias for setting `x`", "Add alias to x", "Added as an alias for 'x'",
+/// "Alias for os_threads_nice_value_query.".
+///
+/// The bound of the first form keeps the verb and the alias in one phrase, and the second form is anchored at the
+/// beginning of a sentence, so that a record which introduces a setting and mentions an alias of it in passing
+/// ("New setting ... . 'y' is an alias for this setting.") is not mistaken for one.
+bool reasonRegistersAnAlias(std::string_view reason)
+{
+    static const re2::RE2 registers_an_alias(
+        R"((?i)\b(?:add\w*|new|introduc\w*)\b[^.]{0,20}\balias\b|(?:^|[.;]\s+)(?:an?\s+)?alias\s+(?:for|of|to)\b)");
+    return re2::RE2::PartialMatch(reason, registers_an_alias);
+}
+
 /// Inverts the change history — a map of version to the changes made in that version — into per-setting indices.
 template <typename SettingsCollection>
 SettingsHistory buildSettingsHistory(const VersionToSettingsChangesMap & history)
@@ -419,9 +433,20 @@ SettingsHistory buildSettingsHistory(const VersionToSettingsChangesMap & history
             const SettingHistoryEntry entry{version_string, &change};
             result.by_recorded_name[change.name].push_back(entry);
 
+            const std::string_view canonical = SettingsCollection::resolveName(change.name);
+
+            /// A record written under an alias for the sole purpose of registering that alias is the history of
+            /// the alias and not of the setting it aliases: it neither introduces that setting nor changes its
+            /// default. Without this, `max_insert_block_size` — older than the change history and with no
+            /// recorded change of its own — would pick up the 26.1 record that registered its alias
+            /// `max_insert_block_size_rows` and claim to have been introduced in that version.
+            if (canonical != change.name && change.previous_value == change.new_value
+                && reasonRegistersAnAlias(change.reason))
+                continue;
+
             /// A change that concerns both an alias and its canonical setting is recorded twice, once under each
             /// name; the history of the setting mentions it once.
-            auto & entries = result.by_setting[SettingsCollection::resolveName(change.name)];
+            auto & entries = result.by_setting[canonical];
             const bool already_recorded = std::any_of(entries.begin(), entries.end(), [&](const SettingHistoryEntry & other)
             {
                 return other.version == version_string && other.change->previous_value == change.previous_value
@@ -449,16 +474,12 @@ SettingsHistory buildSettingsHistory(const VersionToSettingsChangesMap & history
 /// A record that adds an alias introduces the alias and not the setting it aliases — hence `documenting_an_alias`.
 bool reasonRecordsIntroduction(std::string_view reason, bool documenting_an_alias)
 {
-    /// "Added an alias for setting `x`", "Add alias to x", "Added as an alias for 'x'". The bound keeps the verb
-    /// and the alias in one phrase, so that describing an alias of a setting being introduced ("New setting ... .
-    /// 'y' is an alias for this setting.") is not mistaken for adding one.
-    static const re2::RE2 adds_an_alias(R"((?i)\b(?:add\w*|new|introduc\w*)\b[^.]{0,20}\balias\b)");
     /// "Obsolete setting", "Old setting which popped up here being renamed", "Made this setting adjustable on a
     /// per-query level", "became the Beta tier feature", "was moved to Beta", "is now Beta".
     static const re2::RE2 concerns_an_existing_setting(
         R"((?i)\bobsolete\b|\bdeprecated\b|\bold setting\b|made this setting|no longer|became (?:the\s)?\w+ tier|moved to beta|is now beta)");
 
-    if (re2::RE2::PartialMatch(reason, adds_an_alias))
+    if (reasonRegistersAnAlias(reason))
         return documenting_an_alias;
     return !re2::RE2::PartialMatch(reason, concerns_an_existing_setting);
 }
