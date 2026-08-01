@@ -494,7 +494,9 @@ std::vector<FailPointInjection::FailPointInfo> FailPointInjection::getFailPoints
 
 #else // USE_LIBFIU
 
-/// These two are hooks in regular code paths, so they must be no-ops rather than throw.
+/// These are hooks in regular code paths, so they must be no-ops rather than throw.
+/// In particular, `disableFailPoint` is called unconditionally during quorum cleanup
+/// in `StorageReplicatedMergeTree` and `ReplicatedMergeTreeRestartingThread`.
 
 void FailPointInjection::pauseFailPoint(const String &)
 {
@@ -504,13 +506,18 @@ void FailPointInjection::notifyPauseAndWaitForResume(const String &)
 {
 }
 
+void FailPointInjection::disableFailPoint(const String &)
+{
+}
+
 bool FailPointInjection::hasAnyFailPointBeenRegistered()
 {
     return false;
 }
 
-/// The rest are only reachable through SYSTEM ... FAILPOINT queries, and pretending
-/// to succeed would leave the caller waiting for a fail point that can never fire.
+/// The rest are only reachable through SYSTEM ... FAILPOINT queries (whose interpreter
+/// already throws in builds without libfiu), and pretending to succeed would leave the
+/// caller waiting for a fail point that can never fire.
 
 [[noreturn]] static void throwDisabled()
 {
@@ -518,11 +525,6 @@ bool FailPointInjection::hasAnyFailPointBeenRegistered()
 }
 
 void FailPointInjection::enableFailPoint(const String &)
-{
-    throwDisabled();
-}
-
-void FailPointInjection::disableFailPoint(const String &)
 {
     throwDisabled();
 }
