@@ -287,12 +287,17 @@ def test_non_directory_destination_is_rejected(started_cluster, shape, plant):
     node.query(f"DROP DATABASE {database} SYNC")
 
 
-def test_unreadable_destination_parent_is_rejected(started_cluster):
-    """The pre-flight cannot tell whether an unreadable path is free, and it must not guess
+def test_uninspectable_destination_is_rejected(started_cluster):
+    """The pre-flight cannot tell whether an uninspectable path is free, and it must not guess
     that it is: a "free" answer publishes the table and the relocation then hits the same
     error. `FS::existsNoFollow` reports absence only for `not_found` and throws otherwise, so
-    the statement fails before publication."""
-    database = "unreadable_parent"
+    the statement fails before publication.
+
+    The obstruction is a symlink loop rather than an unreadable parent, because mode bits do
+    not constrain uid 0 and the server's uid is a property of the environment: the instance
+    container gets `user=os.getuid()`, which is the test runner's uid, and that is 0 whenever
+    the runner itself runs as root. `ELOOP` is returned to every uid alike."""
+    database = "uninspectable_dst"
     node.query(f"DROP DATABASE IF EXISTS {database} SYNC")
     node.query(f"CREATE DATABASE {database} ENGINE = Ordinary")
 
@@ -301,44 +306,50 @@ def test_unreadable_destination_parent_is_rejected(started_cluster):
     assert seed_files > 0
 
     parent = f"/var/lib/clickhouse/data/{database}"
+    ring = f"{parent}-ring"
+    saved = f"{parent}-saved"
     destination = f"{parent}/dst"
     sh(node, "rm -rf /var/lib/clickhouse/trash")
-    sh(node, f"rm -rf {destination} && mkdir -p {destination}")
-    sh(node, f"echo occupant > {destination}/occupant")
-    # The premise of the row: the server cannot inspect the destination. It has to be
-    # checked as the server's own user, because `sh` runs as root, which ignores mode bits.
-    sh(node, f"chmod 000 {parent}")
+    # Stand a pair of symlinks pointing at each other where the database directory is, so
+    # resolving anything below it returns `ELOOP`. The real directory is moved aside rather
+    # than recreated afterwards, because `sh` runs as root and a directory it creates would
+    # not be writable by the server's own uid. Both link names are cleared first so a rerun
+    # cannot leave one of them pointing at a real directory.
+    sh(node, f"rm -rf {destination} {ring} {saved}")
+    sh(node, f"mv {parent} {saved}")
+    sh(node, f"ln -s {database}-ring {parent}")
+    sh(node, f"ln -s {database} {ring}")
+    attach = f"ATTACH TABLE {database}.dst FROM '{seed_name}' (k UInt64) ENGINE = Log"
     try:
-        assert (
-            sh(
-                node,
-                f"su -s /bin/bash clickhouse -c 'test -e {destination} "
-                f"-o -L {destination}' && echo yes || echo no",
-            ).strip()
-            == "no"
+        # The premise of the row: the path cannot be inspected at all, by any uid. Asserting
+        # it as root is what makes the row uid-independent, since root is the most privileged
+        # uid the server can run as.
+        assert "Too many levels of symbolic links" in sh(
+            node, f"stat {destination} 2>&1 || true"
         )
 
-        attach = (
-            f"ATTACH TABLE {database}.dst FROM '{seed_name}' (k UInt64) ENGINE = Log"
-        )
         error = node.query_and_get_error(attach)
-        assert "Permission denied" in error, error
+        assert "Cannot determine whether the path exists" in error, error
+        assert "Too many levels of symbolic links" in error, error
+        # Not the occupied-destination rejection: that one answers a question this path
+        # cannot answer, so seeing it here would mean the guard guessed.
+        assert "TABLE_ALREADY_EXISTS" not in error, error
 
         # Nothing was published, so the statement stays retryable.
         assert is_published(node, database, "dst") == "0"
         assert count_files(node, f"{USER_FILES}/{seed_name}") == seed_files
         assert count_entries(node, "/var/lib/clickhouse/trash") == 0
     finally:
-        sh(node, f"chmod 755 {parent}")
+        sh(node, f"rm -f {parent} {ring}")
+        sh(node, f"mv {saved} {parent}")
 
-    # The occupant survived, so the destination was never touched.
-    assert exists(node, f"{destination}/occupant") == "yes"
     node.restart_clickhouse()
     assert is_published(node, database, "dst") == "0"
 
-    # The unrelated occupant is what the statement refused to disturb, so it is still in the
-    # database directory and `DROP DATABASE` would fail on it.
-    sh(node, f"rm -rf {destination}")
+    # With the loop gone the destination is free, so the statement now succeeds: the refusal
+    # was about not being able to look, not about the destination being taken.
+    node.query(attach)
+    assert node.query(f"SELECT count() FROM {database}.dst").strip() == "4"
     node.query(f"DROP DATABASE {database} SYNC")
 
 
