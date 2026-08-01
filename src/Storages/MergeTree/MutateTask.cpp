@@ -828,8 +828,36 @@ getColumnsForNewDataPart(
         /// But in wide part we must keep serialization infos for columns that are not touched by mutation.
         if (!updated_header.has(new_name))
         {
-            if (isWidePart(source_part))
-                new_serialization_infos.emplace(new_name, old_info);
+            if (!isWidePart(source_part))
+                continue;
+
+            auto source_type = part_columns.getPhysical(name).type;
+            auto storage_column = storage_columns.tryGetByName(new_name);
+
+            /// A mutation that hardlinks the columns it does not touch carries their data over
+            /// byte for byte, so the serialization the source part has stays valid for them.
+            ///
+            /// A mutation that rewrites the whole part instead re-reads this column at the current
+            /// type in storage, so a `SerializationInfo` built for the stale type the source part
+            /// has must not be carried over: the new part records the storage type, and
+            /// `IMergeTreeDataPart::setColumns` passes the info to `getSerialization` of that type,
+            /// which `assert_cast`s it to its own kind - `DataTypeTuple` to `SerializationInfoTuple`,
+            /// for example.
+            if (rewrites_all_columns && storage_column && !storage_column->type->equals(*source_type))
+            {
+                const auto & storage_type = storage_column->type;
+                if (settings.isAlwaysDefault() || !settings.canUseSparseSerialization(*storage_type))
+                    continue;
+
+                auto rebuilt_info = storage_type->createSerializationInfo(settings);
+                if (old_info->structureEquals(*rebuilt_info))
+                    rebuilt_info = old_info->createWithType(*source_type, *storage_type, settings);
+
+                new_serialization_infos.emplace(new_name, std::move(rebuilt_info));
+                continue;
+            }
+
+            new_serialization_infos.emplace(new_name, old_info);
             continue;
         }
 

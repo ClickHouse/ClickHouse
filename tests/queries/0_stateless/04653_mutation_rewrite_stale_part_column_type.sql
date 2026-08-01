@@ -62,3 +62,38 @@ SELECT 'read from the projection';
 SELECT a, b FROM t_stale_part_type_2 ORDER BY a SETTINGS optimize_use_projections = 1, force_optimize_projection = 1;
 
 DROP TABLE t_stale_part_type_2;
+
+SELECT '--- a stale tuple type and its serialization info ---';
+
+DROP TABLE IF EXISTS t_stale_part_type_3;
+
+-- The part also carries a `SerializationInfo` per column, and it describes the type the part has.
+-- `SerializationInfoTuple` keeps one entry per tuple element, so the info of the stale `Tuple(x String)`
+-- has fewer elements than the `Tuple(x String, y String)` the rewritten part records. Carrying it over
+-- makes `DataTypeTuple::getSerialization` read past the end of that list.
+CREATE TABLE t_stale_part_type_3 (a String, t Tuple(x String), c String MATERIALIZED concat(a, '!'))
+ENGINE = MergeTree ORDER BY a
+SETTINGS min_bytes_for_wide_part = 0, min_bytes_for_full_part_storage = 0,
+         ratio_of_defaults_for_sparse_serialization = 0.9;
+
+INSERT INTO t_stale_part_type_3 SELECT 'x', tuple('') FROM numbers(100);
+
+ALTER TABLE t_stale_part_type_3 DETACH PART 'all_1_1_0';
+ALTER TABLE t_stale_part_type_3 MODIFY COLUMN t Tuple(x String, y String);
+ALTER TABLE t_stale_part_type_3 ATTACH PART 'all_1_1_0';
+
+SELECT 'part type before the rewrite';
+SELECT column, type FROM system.parts_columns
+WHERE database = currentDatabase() AND table = 't_stale_part_type_3' AND active AND column = 't';
+
+ALTER TABLE t_stale_part_type_3 ADD PROJECTION p_at (SELECT a, t ORDER BY a);
+ALTER TABLE t_stale_part_type_3 MATERIALIZE COLUMN c, MATERIALIZE PROJECTION p_at SETTINGS mutations_sync = 1;
+
+SELECT 'part type after the rewrite';
+SELECT column, type FROM system.parts_columns
+WHERE database = currentDatabase() AND table = 't_stale_part_type_3' AND active AND column = 't';
+
+SELECT 'data';
+SELECT DISTINCT a, t, c FROM t_stale_part_type_3;
+
+DROP TABLE t_stale_part_type_3;

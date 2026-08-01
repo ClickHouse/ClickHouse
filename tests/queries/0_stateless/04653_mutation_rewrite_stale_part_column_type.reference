@@ -10,3 +10,10 @@ data
 x	y	x!
 read from the projection
 x	y
+--- a stale tuple type and its serialization info ---
+part type before the rewrite
+t	Tuple(x String)
+part type after the rewrite
+t	Tuple(x String, y String)
+data
+x	('','')	x!
