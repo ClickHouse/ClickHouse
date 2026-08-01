@@ -116,7 +116,6 @@ createParser(rapidjson::Value data_, std::shared_ptr<QueryMetadata> metadata_, c
     }
 }
 
-
 }
 
 }
