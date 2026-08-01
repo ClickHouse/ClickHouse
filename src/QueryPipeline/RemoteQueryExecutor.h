@@ -212,6 +212,11 @@ public:
 
     void setMainTable(StorageID main_table_) { main_table = std::move(main_table_); }
 
+    /// Check the status of these tables instead of the main table when establishing the connection.
+    /// Used when the query reads through a table that is not replicated itself (a `Merge` table),
+    /// whose own status says nothing about the freshness of the data the query reads.
+    void setTablesToCheck(std::vector<QualifiedTableName> tables_to_check_) { tables_to_check = std::move(tables_to_check_); }
+
     void setLogger(LoggerPtr logger) { log = logger; }
 
     void setUnavailableShardTracker(UnavailableShardTrackerPtr tracker) { unavailable_shard_tracker = std::move(tracker); }
@@ -334,6 +339,7 @@ private:
 
     PoolMode pool_mode = PoolMode::GET_MANY;
     StorageID main_table = StorageID::createEmpty();
+    std::vector<QualifiedTableName> tables_to_check;
 
     LoggerPtr log = getLogger("RemoteQueryExecutor");
 

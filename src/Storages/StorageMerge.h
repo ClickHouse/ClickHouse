@@ -2,6 +2,7 @@
 
 #include <functional>
 
+#include <Core/QualifiedTableName.h>
 #include <Processors/QueryPlan/QueryPlan.h>
 #include <Processors/QueryPlan/SourceStepWithFilter.h>
 #include <Storages/IStorage.h>
@@ -109,6 +110,13 @@ public:
     /// under the current settings (`parallel_replicas_allow_merge_tables` and, when some
     /// underlying table is not replicated, `parallel_replicas_for_non_replicated_merge_tree`).
     bool canUseParallelReplicas(const ContextPtr & query_context) const;
+
+    /// Full names of the underlying tables that support replication. A `Merge` table is not
+    /// replicated itself, so its own table status says nothing about the freshness of the data
+    /// a query reads through it: parallel replicas check the replication delay of these tables
+    /// instead before letting a remote replica participate in coordinated reading
+    /// (`max_replica_delay_for_distributed_queries`).
+    std::vector<QualifiedTableName> getReplicatedChildTableNames(const ContextPtr & query_context) const;
 
     static ColumnsDescription getColumnsDescriptionFromSourceTables(
         const ContextPtr & query_context,

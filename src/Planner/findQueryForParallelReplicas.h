@@ -1,4 +1,6 @@
 #pragma once
+#include <base/types.h>
+
 #include <list>
 #include <memory>
 
@@ -21,6 +23,18 @@ const QueryNode * findQueryForParallelReplicas(const QueryTreeNodePtr & query_tr
 /// Find a table expression from which we should read on follower replica. It's the left-most table within all JOINs and UNIONs.
 /// The result is either a TableNode or a TableFunctionNode (for the `merge` table function).
 const IQueryTreeNode * findTableForParallelReplicas(const QueryTreeNodePtr & query_tree_node, const SelectQueryOptions & select_query_options);
+
+/// The same, but without the precondition that this server is a replica reading for an initiator:
+/// the initiator uses it on the query it sends to find out which table expression the replicas will
+/// designate, and passes it to them in `parallel_replicas_designated_table`.
+const IQueryTreeNode * findTableDesignatedForParallelReplicas(const QueryTreeNodePtr & query_tree_node);
+
+/// A name identifying a table expression designated for coordinated reading with parallel replicas,
+/// used to compare the designation of an initiator with the designation of a replica. A table function
+/// is identified only by its name: the text of its arguments is not guaranteed to survive the
+/// rewriting of the query that is sent to the replicas, and a designated table function can only be
+/// `merge(...)` anyway.
+String parallelReplicasDesignatedTableName(const IQueryTreeNode * table_expression);
 
 class IStorage;
 using StoragePtr = std::shared_ptr<IStorage>;

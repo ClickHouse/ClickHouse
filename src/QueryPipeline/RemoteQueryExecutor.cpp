@@ -58,6 +58,7 @@ namespace Setting
     extern const SettingsBool use_hedged_requests;
     extern const SettingsBool push_external_roles_in_interserver_queries;
     extern const SettingsMilliseconds parallel_replicas_connect_timeout_ms;
+    extern const SettingsBool fallback_to_stale_replicas_for_distributed_queries;
     extern const SettingsUInt64 max_network_bandwidth;
     extern const SettingsUInt64 max_network_bytes;
 }
@@ -152,7 +153,15 @@ RemoteQueryExecutor::RemoteQueryExecutor(
 
         ConnectionPoolWithFailover::TryResult result;
         std::string fail_message;
-        if (main_table)
+        if (!tables_to_check.empty())
+        {
+            /// The query reads through a table that is not replicated itself (a `Merge` table):
+            /// the freshness of the underlying replicated tables is what decides whether this
+            /// replica may participate in coordinated reading.
+            ConnectionEstablisher connection_establisher(pool, &timeouts, settings, log, tables_to_check);
+            connection_establisher.run(result, fail_message);
+        }
+        else if (main_table)
         {
             auto table_name = main_table.getQualifiedName();
 
@@ -165,8 +174,22 @@ RemoteQueryExecutor::RemoteQueryExecutor(
             connection_establisher.run(result, fail_message);
         }
 
+        /// A replica whose delay exceeds `max_replica_delay_for_distributed_queries` is still allowed
+        /// to participate as long as falling back to stale replicas is permitted: replicas are
+        /// established independently of each other here, so there is no cross-replica view in which
+        /// "fall back to a stale replica only if no replica is fresh" could be decided. When the
+        /// fallback is switched off, the request for fresh data is unconditional and is honored.
+        const bool skip_stale_replica = !result.entry.isNull() && result.is_usable && !result.is_up_to_date
+            && !settings[Setting::fallback_to_stale_replicas_for_distributed_queries];
+        if (skip_stale_replica)
+            LOG_DEBUG(
+                log,
+                "Replica {} is not used for reading with parallel replicas: it lags behind by {} seconds",
+                pool->getAddress(),
+                result.delay);
+
         ConnectionPoolEntries connection_entries;
-        if (!result.entry.isNull() && result.is_usable)
+        if (!result.entry.isNull() && result.is_usable && !skip_stale_replica)
         {
             chassert(result.entry->isConnected());
 

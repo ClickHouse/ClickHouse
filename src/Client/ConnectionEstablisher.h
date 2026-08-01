@@ -1,5 +1,7 @@
 #pragma once
 
+#include <span>
+
 #include <Common/AsyncTaskExecutor.h>
 #include <Common/Epoll.h>
 #include <Common/Fiber.h>
@@ -23,6 +25,17 @@ public:
                           LoggerPtr log,
                           const QualifiedTableName * table_to_check = nullptr);
 
+    /// The same, but the replica is checked against several tables at once: it is usable only if
+    /// every one of them exists on it, and its delay is the largest delay among them. Used when a
+    /// query reads through a table that is not replicated itself (a `Merge` table), so that the
+    /// freshness of the underlying replicated tables is what decides whether the replica may
+    /// participate. `tables_to_check_` must outlive this object.
+    ConnectionEstablisher(ConnectionPoolPtr pool_,
+                          const ConnectionTimeouts * timeouts_,
+                          const Settings & settings_,
+                          LoggerPtr log,
+                          const std::vector<QualifiedTableName> & tables_to_check_);
+
     /// Establish connection and save it in result, write possible exception message in fail_message.
     /// The connection is returned from the connection pool and it can be stale (the server may have
     /// closed it while it was idle). The pooled connection is not pinged before use: pinging it adds
@@ -40,7 +53,8 @@ private:
     const ConnectionTimeouts * timeouts;
     const Settings & settings;
     LoggerPtr log;
-    const QualifiedTableName * table_to_check;
+    /// Empty when the replica is taken as usable without looking at any table status.
+    std::span<const QualifiedTableName> tables_to_check;
 
     AsyncCallback async_callback = {};
 };

@@ -7838,6 +7838,9 @@ Allow parallel replicas to execute the outer query of a simple view over `MergeT
     DECLARE(Bool, parallel_replicas_allow_merge_tables, false, R"(
 Allow parallel replicas to execute queries over `Merge` tables and the `merge` table function. Reading from every underlying `MergeTree` table is coordinated across replicas (each underlying table forms its own data stream in the reading coordinator). Only applies when every underlying table is a `MergeTree` table; non-replicated underlying tables additionally require `parallel_replicas_for_non_replicated_merge_tree`.
 )", BETA) \
+    DECLARE(String, parallel_replicas_designated_table, "", R"(
+This is internal setting that should not be used directly and represents an implementation detail of the 'parallel replicas' mode. This setting will be automatically set up by the initiator server to the table expression it designated for coordinated reading. A replica that plans the same query and designates a different table expression - which can happen when the set of underlying tables of a `Merge` table differs on it - fails the query instead of reading a different table in full.
+)", BETA) \
     DECLARE(Bool, distributed_index_analysis, false, R"(
 Index analysis will be distributed across replicas.
 Beneficial for shared storage and huge amount of data in cluster.

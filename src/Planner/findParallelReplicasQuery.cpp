@@ -576,6 +576,30 @@ const IQueryTreeNode * findTableForParallelReplicas(const QueryTreeNodePtr & que
     return findTableForParallelReplicas(query_tree_node.get(), context);
 }
 
+const IQueryTreeNode * findTableDesignatedForParallelReplicas(const QueryTreeNodePtr & query_tree_node)
+{
+    const auto * query_node = query_tree_node->as<QueryNode>();
+    const auto * union_node = query_tree_node->as<UnionNode>();
+
+    if (!query_node && !union_node)
+        return nullptr;
+
+    auto context = query_node ? query_node->getContext() : union_node->getContext();
+
+    return findTableForParallelReplicas(query_tree_node.get(), context);
+}
+
+String parallelReplicasDesignatedTableName(const IQueryTreeNode * table_expression)
+{
+    if (const auto * table_node = typeid_cast<const TableNode *>(table_expression))
+        return table_node->getStorageID().getFullTableName();
+
+    if (const auto * table_function_node = typeid_cast<const TableFunctionNode *>(table_expression))
+        return "table function " + table_function_node->getTableFunctionName();
+
+    return {};
+}
+
 /// Walk the query tree looking for a UNION node whose every child query
 /// ultimately reads from a table eligible for parallel replicas.
 /// Returns the first such UNION node, or nullptr if none found.

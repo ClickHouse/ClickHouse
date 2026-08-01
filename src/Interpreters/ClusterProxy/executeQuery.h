@@ -1,6 +1,7 @@
 #pragma once
 
 #include <Client/ConnectionPool_fwd.h>
+#include <Core/QualifiedTableName.h>
 #include <Core/QueryProcessingStage.h>
 #include <Interpreters/Context_fwd.h>
 #include <Parsers/IAST_fwd.h>
@@ -121,6 +122,10 @@ std::optional<QueryPipeline> executeInsertSelectWithParallelReplicas(
     std::vector<ConnectionPoolPtr> reused_connection_pools = {},
     std::optional<size_t> reused_local_replica_index = std::nullopt);
 
+/// `tables_to_check` overrides `storage_id` when deciding whether a replica is fresh enough to
+/// participate in coordinated reading: it is used when the query reads through a table that is not
+/// replicated itself (a `Merge` table or the `merge` table function) and holds the full names of
+/// its underlying replicated tables.
 void executeQueryWithParallelReplicas(
     QueryPlan & query_plan,
     const StorageID & storage_id,
@@ -131,7 +136,8 @@ void executeQueryWithParallelReplicas(
     PlannerContextPtr planner_context,
     ContextPtr context,
     std::shared_ptr<const StorageLimitsList> storage_limits,
-    QueryPlanStepPtr read_from_merge_tree);
+    QueryPlanStepPtr read_from_merge_tree,
+    std::vector<QualifiedTableName> tables_to_check = {});
 
 void executeQueryWithParallelReplicas(
     QueryPlan & query_plan,
@@ -149,7 +155,8 @@ void executeQueryWithParallelReplicas(
     const PlannerContextPtr & planner_context,
     ContextPtr context,
     std::shared_ptr<const StorageLimitsList> storage_limits,
-    QueryPlanStepPtr read_from_merge_tree);
+    QueryPlanStepPtr read_from_merge_tree,
+    std::vector<QualifiedTableName> tables_to_check = {});
 
 QueryPlanPtr createParallelReplicasPlan(QueryPlanPtr plan_fragment, ContextPtr context);
 

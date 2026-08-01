@@ -107,7 +107,8 @@ public:
         std::vector<ConnectionPoolPtr> pools_to_use,
         std::optional<size_t> exclude_pool_index_ = std::nullopt,
         ConnectionPoolWithFailoverPtr connection_pool_with_failover_ = nullptr,
-        std::shared_ptr<const QueryPlan> query_plan_ = nullptr);
+        std::shared_ptr<const QueryPlan> query_plan_ = nullptr,
+        std::vector<QualifiedTableName> tables_to_check_ = {});
 
     String getName() const override { return "ReadFromRemoteParallelReplicas"; }
 
@@ -141,6 +142,10 @@ private:
     QueryTreeNodePtr query_tree;
     PlannerContextPtr planner_context;
     StorageID storage_id;
+    /// When not empty, the status of these tables (instead of `storage_id`) decides whether a
+    /// replica is fresh enough to participate: the query reads through a table that is not
+    /// replicated itself (a `Merge` table), and these are its underlying replicated tables.
+    std::vector<QualifiedTableName> tables_to_check;
     ParallelReplicasReadingCoordinatorPtr coordinator;
     QueryProcessingStage::Enum stage;
     ContextMutablePtr context;

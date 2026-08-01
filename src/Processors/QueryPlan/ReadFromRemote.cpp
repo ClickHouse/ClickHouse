@@ -86,6 +86,7 @@ namespace FailPoints
 {
     extern const char use_delayed_remote_source[];
     extern const char parallel_replicas_wait_for_unused_replicas[];
+    extern const char parallel_replicas_pause_before_sending_queries[];
 }
 
 static void addConvertingActions(Pipe & pipe, const Block & header, const ContextPtr & context, bool use_positions_to_match = false)
@@ -1028,13 +1029,15 @@ ReadFromParallelRemoteReplicasStep::ReadFromParallelRemoteReplicasStep(
     std::vector<ConnectionPoolPtr> pools_to_use_,
     std::optional<size_t> exclude_pool_index_,
     ConnectionPoolWithFailoverPtr connection_pool_with_failover_,
-    std::shared_ptr<const QueryPlan> query_plan_)
+    std::shared_ptr<const QueryPlan> query_plan_,
+    std::vector<QualifiedTableName> tables_to_check_)
     : SourceStepWithFilterBase(std::move(header_))
     , cluster(cluster_)
     , query_ast(query_ast_)
     , query_tree(query_tree_)
     , planner_context(planner_context_)
     , storage_id(storage_id_)
+    , tables_to_check(std::move(tables_to_check_))
     , coordinator(std::move(coordinator_))
     , stage(std::move(stage_))
     , context(context_)
@@ -1078,6 +1081,10 @@ void ReadFromParallelRemoteReplicasStep::enforceAggregationInOrder(const SortDes
 
 void ReadFromParallelRemoteReplicasStep::initializePipeline(QueryPipelineBuilder & pipeline, const BuildQueryPipelineSettings &)
 {
+    /// For tests: the initiator has finished planning (and building its local plan) and is about to
+    /// send the query to the replicas, which will plan it themselves.
+    FailPointInjection::pauseFailPoint(FailPoints::parallel_replicas_pause_before_sending_queries);
+
     if (context->getSettingsRef()[Setting::parallel_replicas_filter_pushdown] && filter_actions_dag)
         addFilters(&external_tables, context, query_ast, query_tree, planner_context, *filter_actions_dag);
 
@@ -1190,6 +1197,11 @@ Pipe ReadFromParallelRemoteReplicasStep::createPipeForSingeReplica(
     /// could be checked when establishing connections.
     if (storage_id)
         remote_query_executor->setMainTable(storage_id);
+    /// Reading through a `Merge` table (or the `merge` table function): the status of the wrapper
+    /// itself is meaningless for freshness (it is never replicated, and for a table function it
+    /// does not even exist on the replicas), so check its underlying replicated tables instead.
+    if (!tables_to_check.empty())
+        remote_query_executor->setTablesToCheck(tables_to_check);
     remote_query_executor->setDistributedFanout(pools_to_use.size() - (exclude_pool_index.has_value() ? 1 : 0));
 
     Pipe pipe

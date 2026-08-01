@@ -161,6 +161,7 @@ namespace Setting
     extern const SettingsBool parallel_replicas_allow_materialized_views;
     extern const SettingsBool parallel_replicas_allow_view_over_mergetree;
     extern const SettingsBool parallel_replicas_allow_merge_tables;
+    extern const SettingsString parallel_replicas_designated_table;
     extern const SettingsBool parallel_replicas_plan_based;
 }
 
@@ -1848,6 +1849,28 @@ JoinTreeQueryPlan buildQueryPlanForTableExpression(TableExpressionNodePtr table_
                     const bool no_tables_or_another_table_chosen_for_reading_with_parallel_replicas_mode
                         = query_context->canUseParallelReplicasOnFollower()
                         && table_expression_for_parallel_replicas != planner_context->getGlobalPlannerContext()->parallel_replicas_table;
+
+                    /// The mirror image of the check below: this replica designated this `Merge` leaf for
+                    /// coordinated reading, while the initiator designated a different leaf (the eligibility
+                    /// of a `Merge` leaf depends on its set of underlying tables, which may differ here).
+                    /// This replica would then read its share of this leaf and the other leaf in full, while
+                    /// the initiator does the opposite - fail closed instead of returning a wrong result.
+                    if (!no_tables_or_another_table_chosen_for_reading_with_parallel_replicas_mode
+                        && table_expression_for_parallel_replicas
+                        && query_context->canUseParallelReplicasOnFollower()
+                        && settings[Setting::parallel_replicas_allow_merge_tables]
+                        && typeid_cast<const StorageMerge *>(storage.get())
+                        && !settings[Setting::parallel_replicas_designated_table].value.empty()
+                        && settings[Setting::parallel_replicas_designated_table].value
+                            != parallelReplicasDesignatedTableName(table_expression_for_parallel_replicas))
+                        throw Exception(
+                            ErrorCodes::SUPPORT_IS_DISABLED,
+                            "Cannot coordinate reading from table {} with parallel replicas: the initiator "
+                            "designated {} for coordinated reading, so the set of the underlying tables of this "
+                            "`Merge` table changed after the query was planned, or differs on this replica",
+                            storage->getStorageID().getNameForLogs(),
+                            settings[Setting::parallel_replicas_designated_table].value);
+
                     if (no_tables_or_another_table_chosen_for_reading_with_parallel_replicas_mode)
                     {
                         bool disable_parallel_replicas_for_storage = true;
@@ -1868,21 +1891,41 @@ JoinTreeQueryPlan buildQueryPlanForTableExpression(TableExpressionNodePtr table_
                         if (disable_parallel_replicas_for_storage)
                         {
                             /// Fail closed instead of falling back to a plain uncoordinated read: this replica
-                            /// collaborates with an initiator that designated some leaf for coordinated reading,
-                            /// but re-planning the same query on this replica designated no table at all. For a
-                            /// `Merge` leaf that means the set of its underlying tables no longer passes the
+                            /// collaborates with an initiator that designated this leaf for coordinated reading,
+                            /// but re-planning the same query here designated another leaf or no leaf at all. For
+                            /// a `Merge` leaf that means the set of its underlying tables no longer passes the
                             /// eligibility check here — it changed after the initiator planned the query, or
                             /// differs on this replica. A plain read would return the whole result from this
-                            /// replica on top of the coordinated result of the other replicas, duplicating rows.
-                            if (!planner_context->getGlobalPlannerContext()->parallel_replicas_table
-                                && !planner_context->getGlobalPlannerContext()->parallel_replicas_table_union
-                                && settings[Setting::parallel_replicas_allow_merge_tables]
+                            /// replica on top of the coordinated result of the other replicas, duplicating rows;
+                            /// and if another leaf got designated here instead, this replica would also read only
+                            /// its share of a table that the initiator reads in full.
+                            /// The initiator tells which leaf it designated in `parallel_replicas_designated_table`;
+                            /// an initiator that does not (an older version) makes this fail closed whenever
+                            /// re-planning designated nothing at all.
+                            if (settings[Setting::parallel_replicas_allow_merge_tables]
                                 && typeid_cast<const StorageMerge *>(storage.get()))
-                                throw Exception(
-                                    ErrorCodes::SUPPORT_IS_DISABLED,
-                                    "Cannot coordinate reading from table {} with parallel replicas: "
-                                    "the set of its underlying tables changed after the query was planned, or differs on this replica",
-                                    storage->getStorageID().getNameForLogs());
+                            {
+                                const String & designated_on_initiator = settings[Setting::parallel_replicas_designated_table];
+
+                                if (!designated_on_initiator.empty()
+                                    && designated_on_initiator
+                                        == parallelReplicasDesignatedTableName(table_expression_for_parallel_replicas))
+                                    throw Exception(
+                                        ErrorCodes::SUPPORT_IS_DISABLED,
+                                        "Cannot coordinate reading from table {} with parallel replicas: the initiator "
+                                        "designated it for coordinated reading, but the set of its underlying tables "
+                                        "changed after the query was planned, or differs on this replica",
+                                        storage->getStorageID().getNameForLogs());
+
+                                if (designated_on_initiator.empty()
+                                    && !planner_context->getGlobalPlannerContext()->parallel_replicas_table
+                                    && !planner_context->getGlobalPlannerContext()->parallel_replicas_table_union)
+                                    throw Exception(
+                                        ErrorCodes::SUPPORT_IS_DISABLED,
+                                        "Cannot coordinate reading from table {} with parallel replicas: "
+                                        "the set of its underlying tables changed after the query was planned, or differs on this replica",
+                                        storage->getStorageID().getNameForLogs());
+                            }
 
                             auto mutable_context = Context::createCopy(query_context);
                             mutable_context->setSetting("allow_experimental_parallel_reading_from_replicas", Field(0));
@@ -2017,6 +2060,17 @@ JoinTreeQueryPlan buildQueryPlanForTableExpression(TableExpressionNodePtr table_
                                 till_stage = QueryProcessingStage::WithMergeableState;
                                 QueryPlan query_plan_parallel_replicas;
                                 QueryPlanStepPtr reading_step = std::move(reading_node->step);
+
+                                /// A `Merge` table is not replicated itself, and for the `merge` table
+                                /// function it does not even exist on the replicas, so its own table
+                                /// status says nothing about the freshness of the data the query reads.
+                                /// Check the replication delay of its underlying replicated tables
+                                /// instead, so that `max_replica_delay_for_distributed_queries` keeps
+                                /// excluding a lagging replica from coordinated reading.
+                                std::vector<QualifiedTableName> tables_to_check;
+                                if (const auto * merge_storage = typeid_cast<const StorageMerge *>(storage.get()))
+                                    tables_to_check = merge_storage->getReplicatedChildTableNames(query_context);
+
                                 /// A storage created by a table function (e.g. merge(...)) does not exist
                                 /// on remote replicas under its generated id, so the id must not be used
                                 /// to check tables status on remote replicas.
@@ -2028,7 +2082,8 @@ JoinTreeQueryPlan buildQueryPlanForTableExpression(TableExpressionNodePtr table_
                                     table_expression_query_info.planner_context,
                                     query_context,
                                     table_expression_query_info.storage_limits,
-                                    std::move(reading_step));
+                                    std::move(reading_step),
+                                    std::move(tables_to_check));
                                 query_plan = std::move(query_plan_parallel_replicas);
                             }
                             else

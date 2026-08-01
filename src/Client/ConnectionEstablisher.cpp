@@ -45,7 +45,19 @@ ConnectionEstablisher::ConnectionEstablisher(
     const Settings & settings_,
     LoggerPtr log_,
     const QualifiedTableName * table_to_check_)
-    : pool(std::move(pool_)), timeouts(timeouts_), settings(settings_), log(log_), table_to_check(table_to_check_)
+    : pool(std::move(pool_)), timeouts(timeouts_), settings(settings_), log(log_)
+{
+    if (table_to_check_)
+        tables_to_check = std::span<const QualifiedTableName>(table_to_check_, 1);
+}
+
+ConnectionEstablisher::ConnectionEstablisher(
+    ConnectionPoolPtr pool_,
+    const ConnectionTimeouts * timeouts_,
+    const Settings & settings_,
+    LoggerPtr log_,
+    const std::vector<QualifiedTableName> & tables_to_check_)
+    : pool(std::move(pool_)), timeouts(timeouts_), settings(settings_), log(log_), tables_to_check(tables_to_check_)
 {
 }
 
@@ -92,10 +104,10 @@ void ConnectionEstablisher::run(ConnectionEstablisher::TryResult & result, std::
         result.entry->forceConnected(*timeouts);
 
         UInt64 server_revision = 0;
-        if (table_to_check)
+        if (!tables_to_check.empty())
             server_revision = result.entry->getServerRevision(*timeouts);
 
-        if (!table_to_check || server_revision < DBMS_MIN_REVISION_WITH_TABLES_STATUS)
+        if (tables_to_check.empty() || server_revision < DBMS_MIN_REVISION_WITH_TABLES_STATUS)
         {
             ProfileEvents::increment(ProfileEvents::DistributedConnectionUsable);
             result.is_usable = true;
@@ -103,29 +115,46 @@ void ConnectionEstablisher::run(ConnectionEstablisher::TryResult & result, std::
             return;
         }
 
-        /// Only status of the remote table corresponding to the Distributed table is taken into account.
+        /// Only status of the remote tables the query reads from is taken into account: the table
+        /// corresponding to the Distributed table, or the underlying replicated tables of a `Merge`
+        /// table read with parallel replicas.
         /// TODO: request status for joined tables also.
         TablesStatusRequest status_request;
-        status_request.tables.emplace(*table_to_check);
+        for (const auto & table_to_check : tables_to_check)
+            status_request.tables.emplace(table_to_check);
 
         TablesStatusResponse status_response = result.entry->getTablesStatus(*timeouts, status_request);
-        auto table_status_it = status_response.table_states_by_id.find(*table_to_check);
-        if (table_status_it == status_response.table_states_by_id.end())
+
+        /// The replica is only as fresh as the most lagging of the tables the query reads.
+        const QualifiedTableName * most_delayed_table = nullptr;
+        UInt32 max_delay = 0;
+
+        for (const auto & table_to_check : tables_to_check)
         {
-            LOG_WARNING(LogToStr(fail_message, log), "There is no table {}.{} on server: {}",
-                        backQuote(table_to_check->database), backQuote(table_to_check->table), result.entry->getDescription());
-            ProfileEvents::increment(ProfileEvents::DistributedConnectionMissingTable);
-            return;
+            auto table_status_it = status_response.table_states_by_id.find(table_to_check);
+            if (table_status_it == status_response.table_states_by_id.end())
+            {
+                LOG_WARNING(LogToStr(fail_message, log), "There is no table {}.{} on server: {}",
+                            backQuote(table_to_check.database), backQuote(table_to_check.table), result.entry->getDescription());
+                ProfileEvents::increment(ProfileEvents::DistributedConnectionMissingTable);
+                return;
+            }
+
+            if (table_status_it->second.is_readonly)
+            {
+                result.is_readonly = true;
+                LOG_TRACE(log, "Table {}.{} is readonly on server {}", table_to_check.database, table_to_check.table, result.entry->getDescription());
+            }
+
+            if (!most_delayed_table || table_status_it->second.absolute_delay > max_delay)
+            {
+                most_delayed_table = &table_to_check;
+                max_delay = table_status_it->second.absolute_delay;
+            }
         }
 
         ProfileEvents::increment(ProfileEvents::DistributedConnectionUsable);
         result.is_usable = true;
-
-        if (table_status_it->second.is_readonly)
-        {
-            result.is_readonly = true;
-            LOG_TRACE(log, "Table {}.{} is readonly on server {}", table_to_check->database, table_to_check->table, result.entry->getDescription());
-        }
 
         const UInt64 max_allowed_delay = settings[Setting::max_replica_delay_for_distributed_queries];
         if (!max_allowed_delay)
@@ -134,8 +163,7 @@ void ConnectionEstablisher::run(ConnectionEstablisher::TryResult & result, std::
             return;
         }
 
-        const UInt32 delay = table_status_it->second.absolute_delay;
-        if (delay < max_allowed_delay)
+        if (max_delay < max_allowed_delay)
         {
             result.is_up_to_date = true;
 
@@ -148,9 +176,9 @@ void ConnectionEstablisher::run(ConnectionEstablisher::TryResult & result, std::
         else
         {
             result.is_up_to_date = false;
-            result.delay = delay;
+            result.delay = max_delay;
 
-            LOG_TRACE(log, "Server {} has unacceptable replica delay for table {}.{}: {}", result.entry->getDescription(), table_to_check->database, table_to_check->table, delay);
+            LOG_TRACE(log, "Server {} has unacceptable replica delay for table {}.{}: {}", result.entry->getDescription(), most_delayed_table->database, most_delayed_table->table, max_delay);
             ProfileEvents::increment(ProfileEvents::DistributedConnectionStaleReplica);
         }
     };

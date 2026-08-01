@@ -28,6 +28,7 @@
 #endif
 #include <Parsers/ASTInsertQuery.h>
 #include <Planner/Utils.h>
+#include <Planner/findQueryForParallelReplicas.h>
 #include <Processors/QueryPlan/ParallelReplicasLocalPlan.h>
 #include <Processors/QueryPlan/QueryPlan.h>
 #include <Processors/QueryPlan/ReadFromLocalReplica.h>
@@ -853,7 +854,8 @@ void executeQueryWithParallelReplicas(
     PlannerContextPtr planner_context,
     ContextPtr context,
     std::shared_ptr<const StorageLimitsList> storage_limits,
-    QueryPlanStepPtr analyzed_read_from_merge_tree)
+    QueryPlanStepPtr analyzed_read_from_merge_tree,
+    std::vector<QualifiedTableName> tables_to_check)
 {
     auto logger = getLogger("executeQueryWithParallelReplicas");
     /// The storage id is empty when reading from a table function (the storage it creates
@@ -863,6 +865,16 @@ void executeQueryWithParallelReplicas(
 
     auto [cluster, shard_num] = prepareClusterForParallelReplicas(logger, context);
     auto new_context = updateContextForParallelReplicas(logger, context, shard_num);
+
+    /// Every replica plans the query it receives for itself and designates a table expression of it for
+    /// coordinated reading. Tell them which one this initiator designated - the eligibility of a `Merge`
+    /// table expression depends on the set of its underlying tables, so a replica can arrive at a
+    /// different designation, and would then read one table only partially and another one in full.
+    if (query_tree)
+        new_context->setSetting(
+            "parallel_replicas_designated_table",
+            parallelReplicasDesignatedTableName(findTableDesignatedForParallelReplicas(query_tree)));
+
     auto [connection_pools, max_replicas_to_use] = prepareConnectionPoolsForParallelReplicas(logger, new_context, cluster);
 
     auto external_tables = new_context->getExternalTables();
@@ -932,7 +944,8 @@ void executeQueryWithParallelReplicas(
             std::move(connection_pools),
             local_replica_index,
             shard.pool,
-            std::move(remote_query_plan));
+            std::move(remote_query_plan),
+            tables_to_check);
 
         auto remote_plan = std::make_unique<QueryPlan>();
         remote_plan->addStep(std::move(read_from_remote));
@@ -971,7 +984,9 @@ void executeQueryWithParallelReplicas(
             std::move(storage_limits),
             std::move(connection_pools),
             std::nullopt,
-            shard.pool);
+            shard.pool,
+            /*query_plan_=*/ nullptr,
+            std::move(tables_to_check));
 
         query_plan.addStep(std::move(read_from_remote));
     }
@@ -1041,7 +1056,8 @@ void executeQueryWithParallelReplicas(
     const PlannerContextPtr & planner_context,
     ContextPtr context,
     std::shared_ptr<const StorageLimitsList> storage_limits,
-    QueryPlanStepPtr analyzed_read_from_merge_tree)
+    QueryPlanStepPtr analyzed_read_from_merge_tree,
+    std::vector<QualifiedTableName> tables_to_check)
 {
     QueryTreeNodePtr modified_query_tree = query_tree->clone();
     rewriteJoinToGlobalJoin(modified_query_tree, context);
@@ -1063,7 +1079,8 @@ void executeQueryWithParallelReplicas(
         new_planner_context,
         context,
         storage_limits,
-        std::move(analyzed_read_from_merge_tree));
+        std::move(analyzed_read_from_merge_tree),
+        std::move(tables_to_check));
 }
 
 void executeQueryWithParallelReplicas(

@@ -355,6 +355,26 @@ std::optional<bool> StorageMerge::supportsParallelReplicasReading(const ContextP
     return all_tables_replicated;
 }
 
+std::vector<QualifiedTableName> StorageMerge::getReplicatedChildTableNames(const ContextPtr & query_context) const
+{
+    std::vector<QualifiedTableName> names;
+
+    traverseTablesUntilImpl(
+        query_context,
+        this,
+        database_name_or_regexp,
+        [&](const StoragePtr & table)
+        {
+            if (table && table->supportsReplication())
+                names.push_back(table->getStorageID().getQualifiedName());
+
+            /// Never stop early: every matching table has to be looked at.
+            return false;
+        });
+
+    return names;
+}
+
 bool StorageMerge::canUseParallelReplicas(const ContextPtr & query_context) const
 {
     const auto & settings = query_context->getSettingsRef();
