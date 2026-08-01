@@ -2,7 +2,7 @@
 -- { echo }
 select count() from (select * from test_1m);
 989999
--- The `Distributed:` block lists one row per replica of test_cluster_one_shard_two_replicas.
+-- The `Distributed:` block lists one row per replica of `test_cluster_one_shard_two_replicas`.
 -- 127.0.0.2 is not guaranteed to be up, and when it is down its row degenerates to an empty
 -- `Address:` with zero counters while the local replica absorbs its parts. Assert the
 -- aggregate `Parts:`/`Granules:` and the pushed-down `Condition:` instead.
@@ -23,3 +23,4 @@ Expression ((Project names + (Projection + (Change column names to column identi
         Granules: 99/100
         Distributed:
       Ranges: 99
+DistributedIndexAnalysisMicroseconds>0=1, DistributedIndexAnalysisReplicaFallback=0, DistributedIndexAnalysisMissingParts=0
