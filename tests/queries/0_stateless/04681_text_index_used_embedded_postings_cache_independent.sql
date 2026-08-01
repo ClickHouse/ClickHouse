@@ -1,7 +1,9 @@
--- Tags: no-parallel
+-- Tags: no-parallel, no-parallel-replicas
 -- no-parallel: SYSTEM DROP TEXT INDEX TOKENS CACHE is server-global, so a concurrent test could
 --              both drop this test's warm entries and warm them between the cold arm's drop and its
 --              query.
+-- no-parallel-replicas: the assertions read ProfileEvents from the initiator's query_log row, and
+--                       events raised on a remote replica are not merged into it.
 
 -- `TextIndexUsedEmbeddedPostings` counts uses of a posting list embedded in the text index
 -- dictionary. A use must be counted whether the token info came from the dictionary on disk or from
@@ -10,6 +12,9 @@
 SET use_skip_indexes_on_data_read = 1;
 SET query_plan_direct_read_from_text_index = 1;
 SET enable_analyzer = 1;
+-- The warm arm needs the server-global tokens cache: a `compatibility` setting below 26.7 restores
+-- this to false, which swaps it for a per-query local cache and removes the cross-query hit.
+SET use_text_index_tokens_cache = 1;
 
 DROP TABLE IF EXISTS tab;
 
@@ -55,3 +60,48 @@ GROUP BY arm
 ORDER BY arm;
 
 DROP TABLE tab;
+
+-- The counter must not fire for an embedded posting list that no live query can still consume.
+-- Two tokens at cardinality 3 (<= MAX_CARDINALITY_FOR_EMBEDDED_POSTINGS, so their postings are
+-- embedded) in disjoint id ranges: an All-mode search fails after the first token, so the second
+-- token's posting list is applied to zero query builders and must not be counted.
+DROP TABLE IF EXISTS tab_dead;
+
+CREATE TABLE tab_dead
+(
+    id UInt64,
+    str String,
+    INDEX idx_str str TYPE text(tokenizer = splitByNonAlpha) GRANULARITY 8
+)
+ENGINE = MergeTree ORDER BY id;
+
+INSERT INTO tab_dead SELECT number, 'aaa' FROM numbers(3);
+INSERT INTO tab_dead SELECT 1000 + number, 'bbb' FROM numbers(3);
+-- One part, so the per-part counter is pinned and the assertion below can be an exact count.
+OPTIMIZE TABLE tab_dead FINAL;
+
+-- Both tokens must really be embedded, otherwise the counter cannot fire at all and the assertion
+-- below would pass for the wrong reason.
+SELECT token, has_embedded_postings
+FROM mergeTreeTextIndex(currentDatabase(), tab_dead, idx_str)
+WHERE token IN ('aaa', 'bbb')
+ORDER BY token;
+
+SYSTEM DROP TEXT INDEX TOKENS CACHE;
+
+SELECT count() FROM tab_dead WHERE hasAllTokens(str, ['aaa', 'bbb']) SETTINGS log_comment = '04681_dead';
+
+SYSTEM FLUSH LOGS query_log;
+
+-- Exactly one use: the first token is still needed when its postings are added, the second is not
+-- because the first already emptied the All-mode intersection. Without the guard this reads 2.
+SELECT
+    'dead' AS arm,
+    argMax(ProfileEvents['TextIndexUsedEmbeddedPostings'], event_time_microseconds) AS used_embedded_postings
+FROM system.query_log
+WHERE type = 'QueryFinish'
+  AND event_date >= yesterday()
+  AND current_database = currentDatabase()
+  AND log_comment = '04681_dead';
+
+DROP TABLE tab_dead;
