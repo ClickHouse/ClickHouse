@@ -90,6 +90,14 @@ Instead, define the policy on the underlying local tables on each remote server;
 CREATE ROW POLICY filter ON mydb.local_table USING a < 1000 TO john;
 ```
 
+:::warning
+This works while the query is shipped as text, which is the default. With `serialize_query_plan = 1` the initiator
+ships an already-built read plan instead, and a remote server executing such a plan does not apply its own row
+policies, so a read of a `Distributed` table over `local_table` returns unfiltered rows. Keep
+`serialize_query_plan = 0` for users whose row policies must be enforced.
+See [issue #112891](https://github.com/ClickHouse/ClickHouse/issues/112891).
+:::
+
 ## ON CLUSTER Clause {#on-cluster-clause}
 
 Allows creating row policies on a cluster, see [Distributed DDL](../../../sql-reference/distributed-ddl.md). This is also the convenient way to create the policy on the local tables of every server of the cluster.
