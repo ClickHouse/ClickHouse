@@ -308,6 +308,13 @@ FormatSettings getFormatSettings(const ContextPtr & context, const Settings & se
     format_settings.schema.is_server = context->hasGlobalContext() && (context->getGlobalContext()->getApplicationType() == Context::ApplicationType::SERVER);
     format_settings.schema.output_format_schema = settings[Setting::output_format_schema];
     format_settings.skip_unknown_fields = settings[Setting::input_format_skip_unknown_fields];
+    /// Columns mapped from HTTP headers via http_column_* must never be silently skipped
+    /// from the body even when skip_unknown_fields = 1: the body and the header are
+    /// mutually exclusive sources, so a body field that matches a mapped column is always
+    /// an error. Populate the set here so every format constructed from this context
+    /// inherits the restriction automatically.
+    for (const auto & [col_name, _] : context->getHTTPHeaderColumns())
+        format_settings.http_column_names.insert(col_name);
     format_settings.template_settings.resultset_format = settings[Setting::format_template_resultset];
     format_settings.template_settings.row_between_delimiter = settings[Setting::format_template_rows_between_delimiter];
     format_settings.template_settings.row_format = settings[Setting::format_template_row];

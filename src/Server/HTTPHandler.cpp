@@ -49,6 +49,7 @@
 #include <Poco/Util/LayeredConfiguration.h>
 
 #include <algorithm>
+#include <boost/algorithm/string/replace.hpp>
 #include <boost/algorithm/string/trim.hpp>
 #include <memory>
 #include <optional>
@@ -59,6 +60,9 @@
 
 namespace DB
 {
+
+static constexpr char HTTP_COLUMN_PREFIX[] = "http_column_";
+
 namespace Setting
 {
     extern const SettingsBool add_http_cors_header;
@@ -80,6 +84,7 @@ namespace Setting
 namespace ErrorCodes
 {
     extern const int LOGICAL_ERROR;
+    extern const int BAD_QUERY_PARAMETER;
 
     extern const int NO_ELEMENTS_IN_CONFIG;
 
@@ -852,6 +857,28 @@ DynamicQueryHandler::DynamicQueryHandler(
 {
 }
 
+/// Resolve one http_column_* mapping: validate both names, look up the header
+/// value, and register it on the context. Throws BAD_QUERY_PARAMETER for any
+/// invalid input (empty names, absent header) — mirrors param_* semantics.
+/// Shared by the dynamic handler and the predefined header_column_mappings.
+static void addHTTPHeaderColumnFromRequest(
+    const ContextMutablePtr & context, const String & header_name, const String & column_name)
+{
+    if (header_name.empty())
+        throw Exception(ErrorCodes::BAD_QUERY_PARAMETER,
+            "http_column_ parameter has an empty header name.");
+    if (column_name.empty())
+        throw Exception(ErrorCodes::BAD_QUERY_PARAMETER,
+            "http_column_ parameter for header '{}' has an empty column name.", header_name);
+    const auto & http_headers = context->getClientInfo().http_headers;
+    auto it = http_headers.find(header_name);
+    if (it == http_headers.end())
+        throw Exception(ErrorCodes::BAD_QUERY_PARAMETER,
+            "HTTP header '{}' required by http_column parameter for column '{}' is absent from the request.",
+            header_name, column_name);
+    context->addHTTPHeaderColumn(column_name, it->second);
+}
+
 bool DynamicQueryHandler::customizeQueryParam(ContextMutablePtr context, const std::string & key, const std::string & value)
 {
     if (key == param_name)
@@ -864,6 +891,15 @@ bool DynamicQueryHandler::customizeQueryParam(ContextMutablePtr context, const s
 
         if (!context->getQueryParameters().contains(parameter_name))
             context->setQueryParameter(parameter_name, value);
+        return true;
+    }
+
+    if (startsWith(key, HTTP_COLUMN_PREFIX))
+    {
+        /// Map an HTTP request header value to an INSERT column.
+        const String header_name = key.substr(strlen(HTTP_COLUMN_PREFIX));
+        const String & column_name = value;
+        addHTTPHeaderColumnFromRequest(context, header_name, column_name);
         return true;
     }
 
@@ -911,12 +947,14 @@ PredefinedQueryHandler::PredefinedQueryHandler(
     const std::string & predefined_query_,
     const CompiledRegexPtr & url_regexp_,
     const std::unordered_map<String, CompiledRegexPtr> & header_name_with_regexp_,
-    const HTTPResponseHeaderSetup & http_response_headers_override_)
+    const HTTPResponseHeaderSetup & http_response_headers_override_,
+    std::vector<std::pair<String, String>> header_column_mappings_)
     : HTTPHandler(server_, connection_config, "PredefinedQueryHandler", http_response_headers_override_)
     , receive_params(receive_params_)
     , predefined_query(predefined_query_)
     , url_regexp(url_regexp_)
     , header_name_with_capture_regexp(header_name_with_regexp_)
+    , header_column_mappings(std::move(header_column_mappings_))
 {
 }
 
@@ -987,6 +1025,15 @@ void PredefinedQueryHandler::customizeContext(HTTPServerRequest & request, Conte
         copyDataMaxBytes(body, value, settings[Setting::http_max_request_param_data_size]);
         context->setQueryParameter("_request_body", value.str());
     }
+
+    /// Resolve config-declared header→column mappings.
+    /// Values are sourced from ClientInfo::http_headers (already filtered for sensitive headers).
+    /// First occurrence wins — same semantics as http_column_* in the dynamic handler.
+    if (!header_column_mappings.empty())
+    {
+        for (const auto & [header_name, column_name] : header_column_mappings)
+            addHTTPHeaderColumnFromRequest(context, header_name, column_name);
+    }
 }
 
 std::string PredefinedQueryHandler::getQuery(HTTPServerRequest & request, HTMLForm & params, ContextMutablePtr context)
@@ -1054,6 +1101,38 @@ HTTPRequestHandlerFactoryPtr createPredefinedHandlerFactory(IServer & server,
         http_response_headers_override.value().insert(common_headers.begin(), common_headers.end());
     }
 
+    /// Parse optional <header_column_mappings> block.
+    /// Each child tag is treated as <HeaderName>column_name</HeaderName>.
+    /// Stored as a vector to preserve declaration order; first occurrence wins
+    /// when two entries target the same column.
+    ///
+    /// config.keys() returns Poco-escaped names: dots become `\.` and repeated
+    /// siblings become `Name[N]`. We use the escaped key for value lookup, but
+    /// unescape it before storing as the runtime header name so that a tag like
+    /// <X.Trace-Id> correctly looks up "X.Trace-Id" in the request headers.
+    std::vector<std::pair<String, String>> header_column_mappings;
+    const std::string mappings_key = config_prefix + ".handler.header_column_mappings";
+    if (config.has(mappings_key))
+    {
+        Poco::Util::AbstractConfiguration::Keys escaped_names;
+        config.keys(mappings_key, escaped_names);
+        for (const auto & escaped_name : escaped_names)
+        {
+            const String column_name = config.getString(mappings_key + "." + escaped_name);
+
+            /// Unescape the Poco-encoded tag name to recover the real XML element
+            /// name: strip any trailing `[N]` index (repeated siblings), then
+            /// replace `\.` escape sequences with literal dots.
+            String header_name = escaped_name;
+            if (auto bracket = header_name.rfind('['); bracket != String::npos)
+                header_name.resize(bracket);
+            boost::replace_all(header_name, "\\.", ".");
+
+            if (!header_name.empty() && !column_name.empty())
+                header_column_mappings.emplace_back(header_name, column_name);
+        }
+    }
+
     auto creator = [
         &server,
         analyze_receive_params,
@@ -1061,7 +1140,8 @@ HTTPRequestHandlerFactoryPtr createPredefinedHandlerFactory(IServer & server,
         url_regexp = regexps.url_regexp,
         headers_name_with_regexp = std::move(regexps.headers_name_with_regexp),
         http_response_headers_override,
-        connection_config]
+        connection_config,
+        hdr_col_mappings = std::move(header_column_mappings)]
         -> std::unique_ptr<PredefinedQueryHandler>
     {
         return std::make_unique<PredefinedQueryHandler>(
@@ -1071,7 +1151,8 @@ HTTPRequestHandlerFactoryPtr createPredefinedHandlerFactory(IServer & server,
             predefined_query,
             url_regexp,
             headers_name_with_regexp,
-            http_response_headers_override);
+            http_response_headers_override,
+            hdr_col_mappings);
     };
     auto factory = std::make_shared<HandlingRuleHTTPHandlerFactory<PredefinedQueryHandler>>(std::move(creator));
     factory->addFiltersFromConfig(config, config_prefix);

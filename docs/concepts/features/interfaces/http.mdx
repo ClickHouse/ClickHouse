@@ -275,6 +275,90 @@ $ echo 'DROP TABLE t' | curl 'http://localhost:8123/' --data-binary @-
 
 For successful requests that don't return a data table, an empty response body is returned.
 
+## Mapping HTTP headers to columns {#http-column-mapping}
+
+You can map HTTP request header values to `INSERT` columns using `http_column_` URL parameters.
+The format is `http_column_<Header-Name>=<column_name>`. ClickHouse reads the specified header from the request
+and inserts its value into the corresponding column for every row.
+
+This is useful for webhook receivers and HTTP-based data pipelines where metadata
+(event type, signature, tenant ID, etc.) arrives in headers while the payload is in the request body.
+
+For example, given this table:
+
+```sql
+CREATE TABLE events (
+    event_type LowCardinality(String),
+    signature  String,
+    payload    String
+) ENGINE = MergeTree ORDER BY tuple();
+```
+
+You can insert data with headers mapped to columns:
+
+```bash
+$ curl -sS \
+    -H 'X-Event-Type: push' \
+    -H 'X-Signature: sha256=abc123' \
+    'http://localhost:8123/?query=INSERT+INTO+events+(payload)+FORMAT+JSONEachRow&http_column_X-Event-Type=event_type&http_column_X-Signature=signature' \
+    -d '{"payload":"hello"}'
+```
+
+This inserts a row with `event_type = 'push'`, `signature = 'sha256=abc123'`, and `payload = 'hello'`.
+
+Header names are case-insensitive per RFC 9110, so `http_column_x-event-type` and `http_column_X-Event-Type`
+match the same header. Column names must exist in the target table.
+
+If the specified header is absent from the request, ClickHouse rejects the query with `BAD_QUERY_PARAMETER`. Every mapped header must be present, mirroring the behaviour of query parameters (`param_*`).
+
+### Value parsing {#http-column-value-parsing}
+
+Header values are parsed the same way the corresponding column type is read from text, so numeric,
+`Array`, `Map`, `DateTime`, and other types work as long as the header string is a valid text
+representation of the type. Parsing respects the query's format settings (for example
+[`date_time_input_format`](/operations/settings/formats#date_time_input_format)).
+A value that cannot be parsed as the column type raises an error.
+
+Only insertable columns can be targeted. Mapping an `ALIAS` column is always rejected. A `MATERIALIZED`
+column is rejected unless [`insert_allow_materialized_columns`](/operations/settings/settings#insert_allow_materialized_columns)
+is enabled.
+
+### One value per column: body or header, not both {#http-column-one-source}
+
+A column must receive its value from exactly one source, either the request body or an HTTP header,
+never both. ClickHouse enforces this in every case:
+
+- If a column is named in the explicit `INSERT` column list and also mapped with an `http_column_`
+  parameter, the query is rejected with `DUPLICATE_COLUMN`.
+- If the `INSERT` has no explicit column list and a self-describing format (such as `JSONEachRow`,
+  `TSKV`, `CSVWithNames`, or `JSONCompactEachRowWithNames`) carries a field whose name matches a
+  mapped column, the query is rejected as an unknown field. This holds even with
+  [`input_format_skip_unknown_fields`](/operations/settings/formats#input_format_skip_unknown_fields)
+  set to `1`; a mapped column is never silently overwritten by body data.
+
+The match between a body field and a mapped column follows the format's column-name matching mode
+([`input_format_column_name_matching_mode`](/operations/settings/formats#input_format_column_name_matching_mode)),
+so under `auto` or `ignore_case` a differently-cased body field is still detected as a conflict.
+
+### Async inserts {#http-column-async}
+
+The feature works with both synchronous and asynchronous inserts (`async_insert=1`).
+With async inserts, each request's header values are preserved per entry, so rows from
+different requests in the same batch carry their own header values. Requests that map headers
+and requests that do not are never coalesced into the same batch. Header values are validated
+when the request is queued and parsed again against the current column type when the batch is
+flushed, so a schema change while entries are buffered (for example `ALTER TABLE ... MODIFY COLUMN`)
+is handled per entry: an entry whose value no longer fits the new type fails on its own without
+aborting the other entries in the batch, and (with `wait_for_async_insert=1`) the waiting client
+receives that error.
+
+<Note>
+The `http_column_` parameters only affect `INSERT` queries. For `SELECT` queries they are ignored.
+Header values come from the same filtered request-header set that the
+[`getClientHTTPHeader`](/sql-reference/functions/other-functions#getClientHTTPHeader) function reads,
+so restricted headers such as `Authorization` and `X-ClickHouse-*` are stripped and cannot be mapped.
+</Note>
+
 ## Compression {#compression}
 
 Compression can be used to reduce network traffic when transmitting a large amount of data, or for creating dumps that are immediately compressed.
@@ -847,6 +931,33 @@ curl -X POST 'http://localhost:8123/api/events?id=123' \
 <Note>
 In one `predefined_query_handler` only one `query` is supported.
 </Note>
+
+#### Mapping request headers to INSERT columns {#predefined-handler-http-column-mapping}
+
+`predefined_query_handler` can map HTTP request header values directly to `INSERT` columns using a
+`<header_column_mappings>` block, the static-config equivalent of the `http_column_<Header-Name>=<column_name>`
+URL parameter available in the dynamic handler. Each entry maps a header name to a target column;
+when a header maps to the same column more than once, the first declared mapping wins.
+
+```xml
+<http_handlers>
+    <rule>
+        <methods>POST</methods>
+        <url>/ingest_events</url>
+        <handler>
+            <type>predefined_query_handler</type>
+            <query>INSERT INTO events (payload) FORMAT JSONEachRow</query>
+            <header_column_mappings>
+                <X-Event-Type>event_type</X-Event-Type>
+                <X-Signature>signature</X-Signature>
+            </header_column_mappings>
+        </handler>
+    </rule>
+</http_handlers>
+```
+
+See [Mapping HTTP headers to columns](#http-column-mapping) for the full description of the feature,
+including value parsing, the body-or-header invariant, and async insert behavior.
 
 ### dynamic_query_handler {#dynamic_query_handler}
 

@@ -1,5 +1,7 @@
 #pragma once
 
+#include <Core/HTTPHeaderColumns.h>
+#include <Core/Names.h>
 #include <QueryPipeline/BlockIO.h>
 #include <IO/ReadBuffer.h>
 #include <Interpreters/IInterpreter.h>
@@ -63,6 +65,16 @@ public:
     void setSkipTargetInsertAccessCheck(bool skip) { skip_target_insert_access_check = skip; }
 
     static bool shouldAddSquashingForStorage(const StoragePtr & table, ContextPtr context);
+
+    /// Validates http_column_* mappings against the table schema and, when the INSERT
+    /// has an explicit column list, appends the mapped column names to it so that
+    /// getSampleBlock includes them in the pipeline header (treating them as client-provided).
+    /// Throws if any mapped column is non-insertable or conflicts with the explicit list.
+    static void expandInsertQueryWithHTTPHeaderColumns(
+        ASTInsertQuery & query,
+        const StorageMetadataPtr & metadata_snapshot,
+        const HTTPHeaderColumns & http_header_columns,
+        bool allow_materialized = false);
 
     static void setInsertContextValues(ContextMutablePtr context_, const ASTInsertQuery & insert_query, const StoragePtr & table);
 

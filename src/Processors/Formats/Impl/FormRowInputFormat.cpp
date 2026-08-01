@@ -77,7 +77,7 @@ void FormRowInputFormat::readFormData(MutableColumns & columns)
 
         if (!it)
         {
-            if (!format_settings.skip_unknown_fields)
+            if (!format_settings.skip_unknown_fields || format_settings.isHTTPColumnName(name_ref))
                 throw Exception(ErrorCodes::INCORRECT_DATA, "Unknown field found while parsing Form format: {}", name_ref);
 
             /// Skip the value if key is not found.

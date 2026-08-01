@@ -11,6 +11,7 @@
 #include <Core/ServerSettings.h>
 #include <Core/DeduplicateInsert.h>
 #include <DataTypes/DataTypeNullable.h>
+#include <Formats/FormatFactory.h>
 #include <Interpreters/ApplyWithAliasVisitor.h>
 #include <Interpreters/ApplyWithSubqueryVisitor.h>
 #include <Interpreters/DatabaseCatalog.h>
@@ -25,6 +26,7 @@
 #include <Interpreters/Context.h>
 #include <Interpreters/InsertDependenciesBuilder.h>
 #include <Parsers/ASTFunction.h>
+#include <Parsers/ASTIdentifier.h>
 #include <Parsers/ASTInsertQuery.h>
 #include <Parsers/ASTSelectQuery.h>
 #include <Parsers/ASTSelectWithUnionQuery.h>
@@ -36,6 +38,7 @@
 #include <Processors/Transforms/PlanSquashingTransform.h>
 #include <Processors/Transforms/ApplySquashingTransform.h>
 #include <Processors/Transforms/getSourceFromASTInsertQuery.h>
+#include <Processors/Transforms/HTTPHeaderColumnsTransform.h>
 #include <QueryPipeline/QueryPipelineBuilder.h>
 #include <Storages/MergeTree/MergeTreeData.h>
 #include <Storages/MergeTree/MergeTreeSettings.h>
@@ -752,6 +755,77 @@ std::optional<QueryPipeline> InterpreterInsertQuery::buildInsertSelectPipelinePa
 }
 
 
+void InterpreterInsertQuery::expandInsertQueryWithHTTPHeaderColumns(
+    ASTInsertQuery & query,
+    const StorageMetadataPtr & metadata_snapshot,
+    const HTTPHeaderColumns & http_header_columns,
+    bool allow_materialized)
+{
+    const auto & columns_desc = metadata_snapshot->getColumns();
+
+    for (const auto & [col_name, _] : http_header_columns)
+    {
+        if (!columns_desc.has(col_name))
+            throw Exception(
+                ErrorCodes::NO_SUCH_COLUMN_IN_TABLE,
+                "http_column mapping references column '{}' which does not exist in table '{}'.",
+                col_name, query.table_id.empty() ? "(table function)" : query.table_id.getFullTableName());
+
+        const auto kind = columns_desc.get(col_name).default_desc.kind;
+        const bool insertable = (kind == ColumnDefaultKind::Default || kind == ColumnDefaultKind::Ephemeral)
+            || (allow_materialized && kind == ColumnDefaultKind::Materialized);
+        if (!insertable)
+            throw Exception(
+                ErrorCodes::ILLEGAL_COLUMN,
+                "http_column mapping references column '{}' in table '{}' which is not insertable{}.",
+                col_name, query.table_id.empty() ? "(table function)" : query.table_id.getFullTableName(),
+                kind == ColumnDefaultKind::Alias ? " (ALIAS columns are never insertable)"
+                    : " (MATERIALIZED columns require insert_allow_materialized_columns=1)");
+    }
+
+    if (!query.columns)
+    {
+        /// No explicit column list. Synthesize one with all insertable body columns
+        /// (minus the http_column_*-mapped ones) followed by the mapped columns.
+        /// This enforces the "body or header, not both" invariant consistently with
+        /// the explicit-list path: the format only ever sees the body columns, so a
+        /// body field matching a mapped column is treated as unknown by the format
+        /// regardless of input_format_skip_unknown_fields.
+        query.columns = make_intrusive<ASTExpressionList>();
+        for (const auto & col : columns_desc)
+        {
+            if (http_header_columns.contains(col.name))
+                continue;
+            const auto kind = col.default_desc.kind;
+            const bool is_body_col = (kind == ColumnDefaultKind::Default || kind == ColumnDefaultKind::Ephemeral)
+                || (allow_materialized && kind == ColumnDefaultKind::Materialized);
+            if (is_body_col)
+                query.columns->children.push_back(make_intrusive<ASTIdentifier>(col.name));
+        }
+        for (const auto & [col_name, _] : http_header_columns)
+            query.columns->children.push_back(make_intrusive<ASTIdentifier>(col_name));
+    }
+    else
+    {
+        /// Explicit list: check for conflicts and append mapped columns.
+        NameSet existing_columns;
+        for (const auto & child : query.columns->children)
+            existing_columns.insert(child->getColumnName());
+
+        for (const auto & [col_name, _] : http_header_columns)
+        {
+            if (existing_columns.contains(col_name))
+                throw Exception(
+                    ErrorCodes::DUPLICATE_COLUMN,
+                    "http_column mapping conflicts with column '{}' already listed in the INSERT column list. "
+                    "A column must come from either the request body or an HTTP header, not both.",
+                    col_name);
+            query.columns->children.push_back(make_intrusive<ASTIdentifier>(col_name));
+        }
+    }
+}
+
+
 QueryPipeline InterpreterInsertQuery::buildInsertPipeline(ASTInsertQuery & query, StoragePtr table)
 {
     auto context = getContext();
@@ -763,6 +837,9 @@ QueryPipeline InterpreterInsertQuery::buildInsertPipeline(ASTInsertQuery & query
     {
         auto mutable_context = Context::createCopy(context);
         mutable_context->setSetting("enable_parallel_replicas", Field{0});
+        /// http_header_columns are request-scoped and not copied by createCopy;
+        /// restore them explicitly so HTTPHeaderColumnsTransform is still added.
+        mutable_context->setHTTPHeaderColumns(context->getHTTPHeaderColumns());
         context = mutable_context;
     }
 
@@ -833,6 +910,28 @@ QueryPipeline InterpreterInsertQuery::buildInsertPipeline(ASTInsertQuery & query
                 chain.getInputSharedHeader()));
     }
 
+    /// For http_column_* mappings: inject an expanding transform that adds the http_column
+    /// columns to the block before addMissingDefaults sees it. addMissingDefaults then
+    /// treats these columns as client-provided and skips evaluating their DEFAULT expressions.
+    /// The transform uses a body-only input header so positional formats (TSV, CSV, Values)
+    /// only see the columns present in the body, not the injected ones.
+    const auto & http_header_columns = context->getHTTPHeaderColumns();
+    if (!http_header_columns.empty())
+    {
+        /// full_header: what the chain expects (body cols + http_column cols).
+        /// format_header: body-only block that the format source will produce.
+        const Block & full_header = *chain.getInputSharedHeader();
+        Block format_header;
+        for (size_t i = 0; i < full_header.columns(); ++i)
+        {
+            const auto & col = full_header.getByPosition(i);
+            if (!http_header_columns.contains(col.name))
+                format_header.insert(col);
+        }
+        chain.addSource(std::make_shared<HTTPHeaderColumnsTransform>(
+            format_header, full_header, http_header_columns, getFormatSettings(context)));
+    }
+
     auto counting = std::make_shared<CountingTransform>(chain.getInputSharedHeader(), context->getQuota(), context->getNormalizedQueryHash());
     counting->setProcessListElement(context->getProcessListElement());
     counting->setProgressCallback(context->getProgressCallback());
@@ -850,7 +949,9 @@ QueryPipeline InterpreterInsertQuery::buildInsertPipeline(ASTInsertQuery & query
 
     if (query.hasInlinedData() && !async_insert)
     {
-        auto format = getInputFormatFromASTInsertQuery(query_ptr, true, *query_sample_block, context, nullptr);
+        /// Use the pipeline's current input header (body-only after HTTPHeaderColumnsTransform
+        /// was added above) so that the format source produces only body columns.
+        auto format = getInputFormatFromASTInsertQuery(query_ptr, true, *pipeline.getSharedHeader(), context, nullptr);
 
         if (settings[Setting::enable_parsing_to_custom_serialization])
             format->setSerializationHints(table->getSerializationHints());
@@ -1043,6 +1144,26 @@ BlockIO InterpreterInsertQuery::execute()
 
     table->updateExternalDynamicMetadataIfExists(context);
     auto metadata_snapshot = table->getInMemoryMetadataPtr(context, false);
+
+    /// If http_column_* URL params mapped HTTP headers to column names, add those
+    /// columns to the INSERT's column list so getSampleBlock includes them in the
+    /// pipeline header. This tells the pipeline that these columns are client-provided,
+    /// skipping DEFAULT expressions. For the sync path the actual values are injected
+    /// via a transform added in buildInsertPipeline.
+    const auto & http_header_columns = context->getHTTPHeaderColumns();
+    if (!http_header_columns.empty())
+    {
+        /// http_column_* is only supported for pure FORMAT inserts.
+        /// INSERT ... SELECT already has getClientHTTPHeader for reading headers.
+        if (query.select)
+            throw Exception(
+                ErrorCodes::NOT_IMPLEMENTED,
+                "http_column_* URL parameters are not supported with INSERT ... SELECT. "
+                "Use getClientHTTPHeader() in the SELECT clause instead");
+
+        expandInsertQueryWithHTTPHeaderColumns(query, metadata_snapshot, http_header_columns, allow_materialized);
+    }
+
     auto query_sample_block = getSampleBlock(query, table, metadata_snapshot, context, no_destination, allow_materialized);
     /// For table functions we check access while executing
     /// getTable() -> ITableFunction::execute().

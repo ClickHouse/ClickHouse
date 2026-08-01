@@ -8,6 +8,8 @@
 #include <IO/ReadBufferFromFile.h>
 #include <IO/EmptyReadBuffer.h>
 #include <Processors/Transforms/getSourceFromASTInsertQuery.h>
+#include <Formats/FormatFactory.h>
+#include <Formats/parseColumnFromString.h>
 #include <Processors/Transforms/AddingDefaultsTransform.h>
 #include <Storages/IStorage.h>
 #include <QueryPipeline/Pipe.h>
@@ -102,9 +104,28 @@ Pipe getSourceFromInputFormat(
 
         if (columns && columns->hasDefaults())
         {
+            /// If http_column_* URL params inject columns, pass them to AddingDefaultsTransform
+            /// so DEFAULT expressions that reference an injected column (e.g. `b DEFAULT a + 1`
+            /// where `a` comes from a header) evaluate against the real header value instead of
+            /// the column's own default. The values are parsed once here into single-row columns.
+            ColumnsWithTypeAndName injected_columns;
+            const auto & http_header_columns = context->getHTTPHeaderColumns();
+            if (!http_header_columns.empty())
+            {
+                const auto format_settings = getFormatSettings(context);
+                for (const auto & [col_name, str_value] : http_header_columns)
+                {
+                    if (!columns->has(col_name))
+                        continue;
+                    const auto & col_type = columns->get(col_name).type;
+                    auto value = parseColumnValueFromString(col_type, str_value, format_settings);
+                    injected_columns.push_back({std::move(value), col_type, col_name});
+                }
+            }
+
             pipe.addSimpleTransform([&](const SharedHeader & cur_header)
             {
-                return std::make_shared<AddingDefaultsTransform>(cur_header, *columns, *format, context);
+                return std::make_shared<AddingDefaultsTransform>(cur_header, *columns, *format, context, injected_columns);
             });
         }
     }

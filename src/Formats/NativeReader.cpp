@@ -298,7 +298,7 @@ Block NativeReader::read()
             }
             else
             {
-                if (format_settings && !format_settings->skip_unknown_fields)
+                if (format_settings && (!format_settings->skip_unknown_fields || format_settings->isHTTPColumnName(column.name)))
                     throw Exception(ErrorCodes::INCORRECT_DATA, "Unknown column with name {} found while reading data in Native format", column.name);
                 use_in_result = false;
             }

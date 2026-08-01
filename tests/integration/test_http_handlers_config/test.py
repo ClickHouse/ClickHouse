@@ -933,3 +933,86 @@ def test_catch_all_handler():
             response = cluster.instance.http_request(path, method="GET")
             assert response.status_code == 200, f"{path} -> {response.status_code}"
             assert response.content == b"catch-all matched", path
+
+
+def test_predefined_handler_header_column_mappings():
+    """predefined_query_handler with <header_column_mappings> injects HTTP header
+    values as INSERT columns without exposing them as URL parameters."""
+    with contextlib.closing(
+        SimpleCluster(
+            ClickHouseCluster(__file__),
+            "predefined_handler_http_columns",
+            "test_predefined_handler_http_columns",
+        )
+    ) as cluster:
+        cluster.instance.query(
+            "CREATE TABLE http_column_test "
+            "(event_type String, signature String, payload String) "
+            "ENGINE = MergeTree ORDER BY tuple()"
+        )
+
+        # Inject two header values into separate INSERT columns.
+        response = cluster.instance.http_request(
+            "ingest_events",
+            method="POST",
+            headers={"X-Event-Type": "push", "X-Signature": "sha256=abc"},
+            data=b'{"payload":"hello"}',
+        )
+        assert response.status_code == 200, response.content
+
+        result = cluster.instance.query(
+            "SELECT event_type, signature, payload FROM http_column_test"
+        )
+        assert result == "push\tsha256=abc\thello\n"
+
+        # A missing mapped header is rejected with BAD_QUERY_PARAMETER.
+        response = cluster.instance.http_request(
+            "ingest_events",
+            method="POST",
+            data=b'{"payload":"no-headers"}',
+        )
+        assert response.status_code == 500, response.content
+        assert b"BAD_QUERY_PARAMETER" in response.content, response.content
+
+
+def test_predefined_handler_header_column_mappings_async():
+    """predefined_query_handler with <header_column_mappings> works correctly
+    with async inserts: the header value is injected per-entry and survives
+    async buffering until flush. Reuses the sync-handler config."""
+    with contextlib.closing(
+        SimpleCluster(
+            ClickHouseCluster(__file__),
+            "predefined_handler_http_columns_async",
+            "test_predefined_handler_http_columns",
+        )
+    ) as cluster:
+        cluster.instance.query(
+            "CREATE TABLE http_column_test "
+            "(event_type String, signature String, payload String) "
+            "ENGINE = MergeTree ORDER BY tuple()"
+        )
+
+        # Two requests with different header values; wait_for_async_insert=1 ensures
+        # each is flushed and visible before we query.
+        response = cluster.instance.http_request(
+            "ingest_events",
+            method="POST",
+            headers={"X-Event-Type": "push", "X-Signature": "sig1"},
+            params={"async_insert": "1", "wait_for_async_insert": "1"},
+            data=b'{"payload":"first"}',
+        )
+        assert response.status_code == 200, response.content
+
+        response = cluster.instance.http_request(
+            "ingest_events",
+            method="POST",
+            headers={"X-Event-Type": "release", "X-Signature": "sig2"},
+            params={"async_insert": "1", "wait_for_async_insert": "1"},
+            data=b'{"payload":"second"}',
+        )
+        assert response.status_code == 200, response.content
+
+        result = cluster.instance.query(
+            "SELECT event_type, signature, payload FROM http_column_test ORDER BY payload"
+        )
+        assert result == "push\tsig1\tfirst\nrelease\tsig2\tsecond\n"

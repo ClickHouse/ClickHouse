@@ -1,0 +1,17 @@
+
+<clickhouse>
+    <http_handlers>
+        <rule>
+            <methods>POST</methods>
+            <url>/ingest_events</url>
+            <handler>
+                <type>predefined_query_handler</type>
+                <query>INSERT INTO http_column_test (payload) FORMAT JSONEachRow</query>
+                <header_column_mappings>
+                    <X-Event-Type>event_type</X-Event-Type>
+                    <X-Signature>signature</X-Signature>
+                </header_column_mappings>
+            </handler>
+        </rule>
+    </http_handlers>
+</clickhouse>

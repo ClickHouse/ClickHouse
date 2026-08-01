@@ -1357,6 +1357,9 @@ ContextData::ContextData(const ContextData &o) :
     runtime_filter_lookup(o.runtime_filter_lookup),
     kitchen_sink(o.kitchen_sink),
     query_parameters(o.query_parameters),
+    /// http_header_columns intentionally not copied: they are request-scoped
+    /// (set by the HTTP handler from URL params) and must not bleed into
+    /// sub-contexts such as distributed local shard execution.
     host_context(o.host_context),
     metadata_transaction(o.metadata_transaction),
     merge_tree_transaction(o.merge_tree_transaction),
@@ -7559,6 +7562,21 @@ void Context::addQueryParameters(const NameToNameMap & parameters)
 {
     for (const auto & [name, value] : parameters)
         query_parameters.insert_or_assign(name, value);
+}
+
+const HTTPHeaderColumns & Context::getHTTPHeaderColumns() const
+{
+    return http_header_columns;
+}
+
+void Context::setHTTPHeaderColumns(HTTPHeaderColumns mapping)
+{
+    http_header_columns = std::move(mapping);
+}
+
+void Context::addHTTPHeaderColumn(const String & column_name, const String & header_value)
+{
+    http_header_columns.add(column_name, header_value);
 }
 
 

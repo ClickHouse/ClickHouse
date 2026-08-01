@@ -130,7 +130,7 @@ bool TSKVRowInputFormat::readRow(MutableColumns & columns, RowReadExtension & ex
                 auto * it = name_map.find(name_ref);
                 if (!it)
                 {
-                    if (!format_settings.skip_unknown_fields)
+                    if (!format_settings.skip_unknown_fields || format_settings.isHTTPColumnName(name_ref))
                         throw Exception(ErrorCodes::INCORRECT_DATA, "Unknown field found while parsing TSKV format: {}", name_ref);
 
                     /// If the key is not found, skip the value.

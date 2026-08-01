@@ -1,0 +1,115 @@
+--- sync: no explicit column list (body provides remaining columns)
+push	s	no-list
+--- sync: no explicit column list, body also contains a header-mapped field is an error
+INCORRECT_DATA
+--- sync: basic header-to-column mapping
+push	sha256=abc123	hello
+--- sync: multiple rows
+release	sha256=def456	row1
+release	sha256=def456	row2
+release	sha256=def456	row3
+--- sync: case-insensitive header name
+issues	case-test
+--- sync: missing header is rejected
+BAD_QUERY_PARAMETER
+--- sync: positional format (TSV) - body-only columns, header injected separately
+tsv-push	hello-tsv
+--- sync: filtered header (Authorization) is rejected
+BAD_QUERY_PARAMETER
+--- sync: empty header name is rejected
+BAD_QUERY_PARAMETER
+--- sync: empty column name is rejected
+BAD_QUERY_PARAMETER
+--- sync: duplicate http_column_* to same column, first wins
+first	dup
+--- sync: type parse error surfaces immediately
+BAD_QUERY_PARAMETER
+--- sync: INSERT ... SELECT rejected
+NOT_IMPLEMENTED
+--- async: no explicit column list (body provides remaining columns)
+push	s	no-list
+--- async: no explicit column list, body also contains a header-mapped field is an error
+INCORRECT_DATA
+--- async: basic header-to-column mapping
+push	sha256=abc123	hello
+--- async: multiple rows
+release	sha256=def456	row1
+release	sha256=def456	row2
+release	sha256=def456	row3
+--- async: case-insensitive header name
+issues	case-test
+--- async: missing header is rejected
+BAD_QUERY_PARAMETER
+--- async: positional format (TSV) - body-only columns, header injected separately
+tsv-push	hello-tsv
+--- async: filtered header (Authorization) is rejected
+BAD_QUERY_PARAMETER
+--- async: empty header name is rejected
+BAD_QUERY_PARAMETER
+--- async: empty column name is rejected
+BAD_QUERY_PARAMETER
+--- async: duplicate http_column_* to same column, first wins
+first	dup
+--- async: type parse error surfaces immediately
+BAD_QUERY_PARAMETER
+--- async: INSERT ... SELECT rejected
+NOT_IMPLEMENTED
+--- async: different header values per request coalesce into one batch
+push	sig1	batch1
+release	sig2	batch2
+--- error: CSVWithNames body header contains http_column_* target (skip_unknown_fields=1 must not bypass)
+INCORRECT_DATA
+--- error: case-insensitive body field matches http_column_* target
+INCORRECT_DATA
+--- error: column listed in both INSERT list and http_column_*
+DUPLICATE_COLUMN
+--- error: non-existent column
+NO_SUCH_COLUMN_IN_TABLE
+--- error: MATERIALIZED column without insert_allow_materialized_columns
+ILLEGAL_COLUMN
+--- error: ALIAS column is never insertable
+ILLEGAL_COLUMN
+--- sync: MATERIALIZED column allowed with insert_allow_materialized_columns=1
+mat-test	42
+--- async: MATERIALIZED column allowed with insert_allow_materialized_columns=1
+mat-test	42
+--- sync: non-String column types
+42	['a','b']	3.14	typed
+--- async: non-String column types
+42	['a','b']	3.14	typed
+--- sync: INSERT INTO FUNCTION remote()
+remote-event	remote
+--- async: INSERT INTO FUNCTION remote()
+remote-event	remote
+--- sync: DEFAULT expression referencing injected column (explicit column list)
+--- sync: DEFAULT expression referencing injected column (no explicit column list)
+7	8	default-no-list
+5	6	default-test
+--- async: DEFAULT expression referencing injected column (explicit column list)
+--- async: DEFAULT expression referencing injected column (no explicit column list)
+7	8	default-no-list
+5	6	default-test
+--- sync: bad header value with input_format_defaults_for_omitted_fields=1
+BAD_QUERY_PARAMETER
+--- async: multi-header middle-entry failure isolation (alter)
+--- async: multi-header middle-entry failure isolation (results)
+aa	first	entry1
+bb	third	entry3
+--- async: schema drift same TypeIndex (FixedString shrink) (alter)
+--- async: schema drift same TypeIndex (FixedString shrink) - valid entry survives
+ab	short-valid
+--- async: failed dedup token remains retryable after schema drift (alter)
+--- async: failed dedup token remains retryable after schema drift
+ab	dedup-valid
+ab	dedup-retry
+ab	dedup-valid
+--- async: text-compatible schema drift (String->Array(String)) succeeds via text re-parse
+['a','b']	text-compat
+--- async: schema drift with wait_for_async_insert=1, waiter receives error
+TOO_LARGE_STRING_SIZE
+0
+--- sync: FORMAT Native body-column conflict is rejected
+INCORRECT_DATA
+--- sync: absent mapped header is rejected
+BAD_QUERY_PARAMETER
+0

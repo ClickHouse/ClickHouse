@@ -98,6 +98,10 @@ public:
         std::unique_ptr<Settings> settings;
 
         AsynchronousInsertQueueDataKind data_kind;
+        /// Column names injected from HTTP headers via http_column_* URL params.
+        /// Part of the batching key so that requests with header-mapped columns
+        /// are never coalesced with requests that provide those columns in the body.
+        Names http_header_column_names;
         UInt128 hash{};
 
         InsertQuery(
@@ -108,7 +112,8 @@ public:
             const String & initial_user_,
             const String & authenticated_user_,
             const Settings & settings_,
-            AsynchronousInsertQueueDataKind data_kind_);
+            AsynchronousInsertQueueDataKind data_kind_,
+            Names http_header_column_names_ = {});
 
         InsertQuery(const InsertQuery & other);
         InsertQuery & operator=(const InsertQuery & other);
@@ -116,7 +121,7 @@ public:
         StorageID getStorageID() const;
 
     private:
-        auto toTupleCmp() const { return std::tie(data_kind, query_str, user_id, current_roles, current_user, initial_user, authenticated_user, setting_changes); }
+        auto toTupleCmp() const { return std::tie(data_kind, query_str, user_id, current_roles, current_user, initial_user, authenticated_user, setting_changes, http_header_column_names); }
 
         std::vector<SettingChange> setting_changes;
     };
@@ -171,6 +176,15 @@ private:
             MemoryTracker * const user_memory_tracker;
             const std::chrono::time_point<std::chrono::system_clock> create_time;
             NameToNameMap query_parameters;
+            /// Raw HTTP header values for the injected columns, positionally aligned
+            /// to InsertQuery::http_header_column_names. Both are kept in URL parameter
+            /// declaration order (the order the http_column_* params appear in the
+            /// request URL). Declaration order defines the batch key: two requests with
+            /// the same mappings in different URL order land in different batches. This
+            /// is intentional — declaration order is stable per client and avoids a sort
+            /// on every push. The injected column set is part of the batch key, so it is
+            /// the same for every entry in a batch and need not be stored per entry.
+            std::vector<String> http_header_column_values;
 
             Entry(
                 DataChunk && chunk_,
@@ -322,6 +336,7 @@ private:
 
     template <typename LogFunc>
     static Chunk processPreprocessedEntries(
+        const InsertQuery & key,
         const InsertDataPtr & data,
         const Block & header,
         const ContextPtr & context_,

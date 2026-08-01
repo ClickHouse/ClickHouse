@@ -14,6 +14,7 @@
 #include <Core/DeduplicateInsert.h>
 #include <Core/ServerSettings.h>
 #include <Formats/FormatFactory.h>
+#include <Formats/parseColumnFromString.h>
 #include <IO/ConcatReadBuffer.h>
 #include <IO/LimitReadBuffer.h>
 #include <IO/ReadBufferFromString.h>
@@ -103,6 +104,7 @@ namespace ErrorCodes
     extern const int UNKNOWN_EXCEPTION;
     extern const int UNKNOWN_FORMAT;
     extern const int BAD_ARGUMENTS;
+    extern const int BAD_QUERY_PARAMETER;
     extern const int LOGICAL_ERROR;
     extern const int INVALID_SETTING_VALUE;
 }
@@ -123,7 +125,8 @@ AsynchronousInsertQueue::InsertQuery::InsertQuery(
     const String & initial_user_,
     const String & authenticated_user_,
     const Settings & settings_,
-    AsynchronousInsertQueueDataKind data_kind_)
+    AsynchronousInsertQueueDataKind data_kind_,
+    Names http_header_column_names_)
     : query(query_->clone())
     , query_str(query->formatWithSecretsOneLine())
     , user_id(user_id_)
@@ -133,6 +136,7 @@ AsynchronousInsertQueue::InsertQuery::InsertQuery(
     , authenticated_user(authenticated_user_)
     , settings(std::make_unique<Settings>(settings_))
     , data_kind(data_kind_)
+    , http_header_column_names(std::move(http_header_column_names_))
 {
     SipHash siphash;
 
@@ -171,6 +175,12 @@ AsynchronousInsertQueue::InsertQuery::InsertQuery(
         }
     }
 
+    for (const auto & col_name : http_header_column_names)
+    {
+        siphash.update(col_name.size());
+        siphash.update(col_name);
+    }
+
     hash = siphash.get128();
 }
 
@@ -185,6 +195,7 @@ AsynchronousInsertQueue::InsertQuery::InsertQuery(const InsertQuery & other)
     authenticated_user = other.authenticated_user;
     settings = std::make_unique<Settings>(*other.settings);
     data_kind = other.data_kind;
+    http_header_column_names = other.http_header_column_names;
     hash = other.hash;
     setting_changes = other.setting_changes;
 }
@@ -203,6 +214,7 @@ AsynchronousInsertQueue::InsertQuery::operator=(const InsertQuery & other)
         authenticated_user = other.authenticated_user;
         settings = std::make_unique<Settings>(*other.settings);
         data_kind = other.data_kind;
+        http_header_column_names = other.http_header_column_names;
         hash = other.hash;
         setting_changes = other.setting_changes;
     }
@@ -413,6 +425,19 @@ void AsynchronousInsertQueue::preprocessInsertQuery(const ASTPtr & query, const 
 
     auto table = interpreter.getTable(insert_query);
     const auto metadata_snapshot = table->getInMemoryMetadataPtr(query_context, false);
+
+    /// If http_column_* URL params mapped HTTP headers to column names, add those
+    /// columns to the INSERT's column list so getSampleBlock includes them in the
+    /// pipeline header. This tells the pipeline that these columns are client-provided,
+    /// skipping DEFAULT expressions. The actual values are injected per-entry at flush.
+    const auto & http_header_columns = query_context->getHTTPHeaderColumns();
+    if (!http_header_columns.empty())
+    {
+        InterpreterInsertQuery::expandInsertQueryWithHTTPHeaderColumns(
+            insert_query, metadata_snapshot, http_header_columns,
+            query_context->getSettingsRef()[Setting::insert_allow_materialized_columns]);
+    }
+
     auto sample_block = InterpreterInsertQuery::getSampleBlock(
         insert_query,
         table,
@@ -548,6 +573,58 @@ AsynchronousInsertQueue::PushResult AsynchronousInsertQueue::pushDataChunk(ASTPt
     if (insert_query.format == "Values")
         entry->query_parameters = query_context->getQueryParameters();
 
+    /// Parse HTTP header values into typed columns at push time.
+    /// Errors (e.g. "not-a-number" for UInt64) surface immediately to the client.
+    const auto & http_header_columns = query_context->getHTTPHeaderColumns();
+    Names http_col_names;
+    if (!http_header_columns.empty())
+    {
+        /// Use InterpreterInsertQuery::getTable so that both regular tables and
+        /// INSERT INTO FUNCTION targets are resolved through the same path.
+        auto insert_context_for_table = Context::createCopy(query_context);
+        InterpreterInsertQuery interpreter_for_table(
+            query,
+            insert_context_for_table,
+            query_context->getSettingsRef()[Setting::insert_allow_materialized_columns],
+            /* no_squash */ false,
+            /* no_destination */ false,
+            /* async_insert */ false);
+        auto table = interpreter_for_table.getTable(insert_query);
+        auto metadata = table->getInMemoryMetadataPtr(query_context, false);
+        const auto format_settings = getFormatSettings(query_context);
+
+        /// The mapping is already in declaration order. Use it as-is so the batch key
+        /// (http_col_names), the per-entry values, and the query expansion all share
+        /// one canonical order. The flush loop indexes by position, so values and
+        /// names must be pushed in lockstep here.
+        http_col_names.reserve(http_header_columns.size());
+        for (const auto & [col_name, str_value] : http_header_columns)
+        {
+            /// expandInsertQueryWithHTTPHeaderColumns already validated insertability;
+            /// here we just retrieve the type for parsing.
+            const auto & col_type = metadata->getColumns().get(col_name).type;
+
+            /// Validate the header value at push time so that type errors
+            /// (e.g. "not-a-number" for UInt64) surface immediately to the client.
+            /// We store only the raw string; flush time re-parses against the
+            /// then-current column type, which handles schema drift naturally.
+            try
+            {
+                parseColumnValueFromString(col_type, str_value, format_settings);
+            }
+            catch (const Exception & e)
+            {
+                throw Exception(ErrorCodes::BAD_QUERY_PARAMETER,
+                    "http_column parameter for column '{}' contains value '{}' that cannot be parsed as {}: {}",
+                    col_name, str_value, col_type->getName(), e.message());
+            }
+            /// Store only the value; its position matches http_col_names, so the
+            /// column name is recovered from the key at flush.
+            entry->http_header_column_values.push_back(str_value);
+            http_col_names.push_back(col_name);
+        }
+    }
+
     const auto & client_info = query_context->getClientInfo();
     InsertQuery key{
         query,
@@ -557,7 +634,8 @@ AsynchronousInsertQueue::PushResult AsynchronousInsertQueue::pushDataChunk(ASTPt
         client_info.initial_user,
         client_info.authenticated_user,
         settings,
-        data_kind};
+        data_kind,
+        std::move(http_col_names)};
     InsertDataPtr data_to_process;
     std::future<ResultProgress> progress_future;
 
@@ -1238,7 +1316,7 @@ try
         if (key.data_kind == AsynchronousInsertQueueDataKind::Parsed)
             chunk = processEntriesWithParsing(key, data, *header, insert_context, log, add_entry_to_asynchronous_insert_log);
         else
-            chunk = processPreprocessedEntries(data, *header, insert_context, log, add_entry_to_asynchronous_insert_log);
+            chunk = processPreprocessedEntries(key, data, *header, insert_context, log, add_entry_to_asynchronous_insert_log);
 
         ProfileEvents::increment(ProfileEvents::AsyncInsertRows, chunk.getNumRows());
 
@@ -1303,14 +1381,73 @@ Chunk AsynchronousInsertQueue::processEntriesWithParsing(
     InsertData::EntryPtr current_entry;
     String current_exception;
 
-    auto format = getInputFormatFromASTInsertQuery(key.query, false, header, insert_context, nullptr);
+    /// Build a body-only header: the full pipeline header minus http_column_* columns.
+    /// The format only reads columns from the body; positional formats (TSV, CSV, etc.)
+    /// must not see the injected columns or they expect them in the body.
+    /// The injected columns are appended after the executor loop.
+    struct InjectedColumnInfo
+    {
+        size_t header_col_idx = 0;   /// Position in the full pipeline header.
+        size_t entry_parsed_idx = 0; /// Position in entry->http_header_column_values.
+        DataTypePtr type;
+    };
+    std::vector<InjectedColumnInfo> injected_column_infos;
+    Block format_header;  /// Body-only block passed to the format and AddingDefaultsTransform.
+    if (!key.http_header_column_names.empty())
+    {
+        /// The batch key carries the sorted injected-column names, and each entry's
+        /// http_header_column_values is positionally aligned to that list. So the
+        /// injected column set is authoritative from the key alone, without inspecting
+        /// any entry, and the position doubles as entry_parsed_idx.
+        std::unordered_map<String, size_t> injected_name_to_idx;
+        for (size_t i = 0; i < key.http_header_column_names.size(); ++i)
+            injected_name_to_idx.emplace(key.http_header_column_names[i], i);
+
+        for (size_t i = 0; i < header.columns(); ++i)
+        {
+            const auto & col_name = header.getByPosition(i).name;
+            auto it = injected_name_to_idx.find(col_name);
+            if (it != injected_name_to_idx.end())
+                injected_column_infos.push_back({i, it->second, header.getByPosition(i).type});
+            else
+                format_header.insert(header.getByPosition(i));
+        }
+    }
+    if (format_header.columns() == 0 && injected_column_infos.empty())
+        format_header = header;  /// No injection: use the full header as-is.
+
+    /// The flush-time insert_context does not carry the http_column_* mapping, so the
+    /// FormatSettings guard that rejects a body field duplicating a mapped column would
+    /// be lost for async inserts. Populate it on a copy used only for format creation
+    /// (not for the pipeline, which already expanded the column list at push time and
+    /// would otherwise re-expand and fail with DUPLICATE_COLUMN).
+    ContextPtr format_context = insert_context;
+    if (!injected_column_infos.empty())
+    {
+        auto ctx = Context::createCopy(insert_context);
+        /// Only the column names matter here (they feed the FormatSettings guard);
+        /// values are irrelevant, so leave them empty.
+        HTTPHeaderColumns http_cols;
+        http_cols.reserve(injected_column_infos.size());
+        for (const auto & info : injected_column_infos)
+            http_cols.add(header.getByPosition(info.header_col_idx).name, String{});
+        ctx->setHTTPHeaderColumns(std::move(http_cols));
+        format_context = ctx;
+    }
+
+    auto format = getInputFormatFromASTInsertQuery(key.query, false, format_header, format_context, nullptr);
     std::shared_ptr<ISimpleTransform> adding_defaults_transform;
 
     if (insert_context->getSettingsRef()[Setting::input_format_defaults_for_omitted_fields] && insert_context->hasInsertionTableColumnsDescription())
     {
         const auto & columns = *insert_context->getInsertionTableColumnsDescription();
         if (columns.hasDefaults())
-            adding_defaults_transform = std::make_shared<AddingDefaultsTransform>(std::make_shared<const Block>(header), columns, *format, insert_context);
+        {
+            /// Injected columns are set per-entry via setInjectedColumns() before
+            /// each executor.execute() call, so we start with an empty list here.
+            adding_defaults_transform = std::make_shared<AddingDefaultsTransform>(
+                std::make_shared<const Block>(format_header), columns, *format, insert_context);
+        }
     }
 
     auto on_error = [&](const MutableColumns & result_columns, const ColumnCheckpoints & checkpoints, Exception & e)
@@ -1326,8 +1463,16 @@ Chunk AsynchronousInsertQueue::processEntriesWithParsing(
         return 0;
     };
 
+    /// Keep a raw pointer before moving the shared_ptr into the executor so we can
+    /// call setInjectedColumns() per entry without a use-after-move.
+    /// The executor holds the shared_ptr and keeps the object alive.
+    AddingDefaultsTransform * defaults_transform_ptr =
+        adding_defaults_transform
+            ? static_cast<AddingDefaultsTransform *>(adding_defaults_transform.get())
+            : nullptr;
+
     StreamingFormatExecutor executor(
-        header,
+        format_header,
         format,
         std::move(on_error),
         data->size_in_bytes,
@@ -1337,6 +1482,50 @@ Chunk AsynchronousInsertQueue::processEntriesWithParsing(
 
     auto deduplication_info = DeduplicationInfo::create(/*async_insert=*/true);
 
+    /// Track per-entry row counts for result assembly.
+    std::vector<size_t> entry_num_rows;
+    entry_num_rows.reserve(data->entries.size());
+
+    /// Pre-parse all injected column raw values against flush-time types before the
+    /// executor loop. Parsing at flush time handles schema drift naturally: if the
+    /// column type changed (ALTER TABLE during buffering), the raw string is parsed
+    /// against the new type directly — no explicit drift detection or re-serialization
+    /// needed. Failed entries are skipped from the executor entirely, so no
+    /// post-loop compaction of body columns is ever needed.
+    struct EntryParsed
+    {
+        ColumnsWithTypeAndName injected; /// one element per injected_column_infos, 1 row each
+        std::exception_ptr exc;          /// set when any injected column fails to parse
+    };
+    std::vector<EntryParsed> entry_parsed;
+    const FormatSettings fmt_settings = getFormatSettings(insert_context);
+    if (!injected_column_infos.empty())
+    {
+        entry_parsed.reserve(data->entries.size());
+        for (const auto & entry : data->entries)
+        {
+            EntryParsed ep;
+            ep.injected.reserve(injected_column_infos.size());
+            for (const auto & info : injected_column_infos)
+            {
+                const auto & raw = entry->http_header_column_values[info.entry_parsed_idx];
+                try
+                {
+                    auto col = parseColumnValueFromString(info.type, raw, fmt_settings);
+                    ep.injected.push_back({std::move(col), info.type, header.getByPosition(info.header_col_idx).name});
+                }
+                catch (...)
+                {
+                    ep.exc = std::current_exception();
+                    ep.injected.clear();
+                    break;
+                }
+            }
+            entry_parsed.push_back(std::move(ep));
+        }
+    }
+
+    size_t ei = 0;
     for (const auto & entry : data->entries)
     {
         current_entry = entry;
@@ -1346,37 +1535,112 @@ Chunk AsynchronousInsertQueue::processEntriesWithParsing(
             throw Exception(ErrorCodes::LOGICAL_ERROR,
                 "Expected entry with data kind Parsed. Got: {}", entry->chunk.getDataKind());
 
-        auto buffer = std::make_unique<ReadBufferFromString>(*bytes);
+        /// Skip entries whose injected column values failed to parse against the
+        /// current flush-time type (e.g. incompatible ALTER TABLE during buffering).
+        if (!entry_parsed.empty() && entry_parsed[ei].exc)
+        {
+            LOG_ERROR(logger, "Failed http_column parsing for entry {}, skipping.", entry->query_id);
+            /// Capture the byte count before finish(): finish() calls resetChunk()
+            /// internally, which destroys the chunk storage that bytes points into.
+            const size_t entry_bytes = bytes->size();
+            entry->finish(entry_parsed[ei].exc);
+            entry_num_rows.push_back(0);
+            add_to_async_insert_log(entry, "http_column parse error at flush time", 0, entry_bytes);
+            ++ei;
+            continue;
+        }
+
         executor.setQueryParameters(entry->query_parameters);
 
+        /// Supply this entry's injected column values to AddingDefaultsTransform so
+        /// DEFAULT expressions that reference them (e.g. `b DEFAULT a + 1`) evaluate
+        /// with the correct per-entry value.
+        if (!entry_parsed.empty() && defaults_transform_ptr)
+            defaults_transform_ptr->setInjectedColumns(entry_parsed[ei].injected);
+
+        auto buffer = std::make_unique<ReadBufferFromString>(*bytes);
         size_t num_bytes = bytes->size();
         size_t num_rows = executor.execute(*buffer, num_bytes);
 
         total_rows += num_rows;
-
-        /// it is ok if total_rows is 0 here or async_dedup_token is empty
-        deduplication_info->setUserToken(entry->async_dedup_token, num_rows);
+        entry_num_rows.push_back(num_rows);
 
         add_to_async_insert_log(entry, current_exception, num_rows, num_bytes);
         current_exception.clear();
         entry->resetChunk();
+        ++ei;
     }
 
     LOG_DEBUG(logger, "Processed {} rows with parsing them for {} entries", total_rows, data->entries.size());
 
-    Chunk chunk(executor.getResultColumns(), total_rows);
+    auto body_columns = executor.getResultColumns();  /// Matches format_header.
+
+    /// Build the full result matching the pipeline header by interleaving body columns
+    /// (from the executor) and injected columns (parsed per-entry above).
+    MutableColumns result_columns;
+    if (injected_column_infos.empty())
+    {
+        result_columns = std::move(body_columns);
+    }
+    else
+    {
+        result_columns.reserve(header.columns());
+        size_t body_idx = 0;
+        size_t inj_counter = 0;
+        for (size_t col_idx = 0; col_idx < header.columns(); ++col_idx)
+        {
+            if (inj_counter < injected_column_infos.size()
+                && injected_column_infos[inj_counter].header_col_idx == col_idx)
+            {
+                const size_t local_inj = inj_counter++;
+                auto new_col = injected_column_infos[local_inj].type->createColumn();
+                new_col->reserve(total_rows);
+                for (size_t ep_idx = 0; ep_idx < entry_parsed.size(); ++ep_idx)
+                {
+                    if (entry_num_rows[ep_idx] > 0)
+                        new_col->insertManyFrom(*entry_parsed[ep_idx].injected[local_inj].column, 0, entry_num_rows[ep_idx]);
+                }
+                result_columns.push_back(std::move(new_col));
+            }
+            else
+            {
+                result_columns.push_back(std::move(body_columns[body_idx++]));
+            }
+        }
+    }
+
+    /// Register dedup tokens only for entries that actually contributed rows.
+    /// Entries that failed parsing are skipped so their tokens remain retryable.
+    {
+        size_t dedup_ei = 0;
+        for (const auto & entry : data->entries)
+        {
+            if (entry_num_rows[dedup_ei] > 0)
+                deduplication_info->setUserToken(entry->async_dedup_token, entry_num_rows[dedup_ei]);
+            ++dedup_ei;
+        }
+    }
+
+    Chunk chunk(std::move(result_columns), total_rows);
     chunk.getChunkInfos().add(std::move(deduplication_info));
     return chunk;
 }
 
 template <typename LogFunc>
 Chunk AsynchronousInsertQueue::processPreprocessedEntries(
+    const InsertQuery & key,
     const InsertDataPtr & data,
     const Block & header,
     const ContextPtr & context_,
     LoggerPtr logger,
     LogFunc && add_to_async_insert_log)
 {
+    /// http_column_* injection is only supported on the Parsed path. Preprocessed entries
+    /// arrive as already-complete blocks (e.g. from native protocol clients) and have no
+    /// per-entry raw header strings to inject. A non-empty column name list here means
+    /// something pushed an entry onto the wrong queue shard.
+    chassert(key.http_header_column_names.empty());
+
     size_t total_rows = 0;
     auto deduplication_info = DeduplicationInfo::create(/*async_insert=*/true);
     auto result_columns = header.cloneEmptyColumns();

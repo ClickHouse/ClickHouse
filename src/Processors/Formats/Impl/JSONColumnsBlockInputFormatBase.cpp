@@ -168,7 +168,7 @@ Chunk JSONColumnsBlockInputFormatBase::read()
             auto idx = name_to_index.get(*column_name);
             if (idx == CaseAwareBlockNameMap::NOT_FOUND)
             {
-                if (!format_settings.skip_unknown_fields)
+                if (!format_settings.skip_unknown_fields || format_settings.isHTTPColumnName(*column_name))
                     throw Exception(ErrorCodes::INCORRECT_DATA, "Unknown column found in input data: {}", *column_name);
 
                 reader->skipColumn();

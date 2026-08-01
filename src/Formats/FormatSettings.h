@@ -639,6 +639,39 @@ struct FormatSettings
         bool validate_geometry = true;
     } geojson{};
 
+    /// Column names that must never be silently skipped as unknown fields, even
+    /// when skip_unknown_fields = true. Used by HTTP header column injection
+    /// (http_column_* URL params) to enforce "body or header, not both":
+    /// a body field that matches a mapped column is always an error.
+    NameSet http_column_names = {};
+
+    /// Returns true when name matches a protected http_column_* target,
+    /// respecting the active column-name case-sensitivity mode.
+    bool isHTTPColumnName(std::string_view name) const noexcept
+    {
+        if (http_column_names.empty())
+            return false;
+        if (http_column_names.contains(String(name)))
+            return true;
+        /// AUTO and IGNORE_CASE modes match columns case-insensitively. The stored
+        /// set keeps the original spellings, so compare lowercase on both sides to
+        /// catch e.g. body field EVENT_TYPE against mapped column event_type.
+        if (input_format_column_matching_case_sensitivity != InputFormatColumnMatchingCaseSensitivity::MATCH_CASE)
+        {
+            auto to_lower = [](std::string_view s)
+            {
+                String r(s);
+                std::transform(r.begin(), r.end(), r.begin(),
+                               [](unsigned char c){ return static_cast<char>(std::tolower(c)); });
+                return r;
+            };
+            const String lname = to_lower(name);
+            for (const auto & col : http_column_names)
+                if (to_lower(col) == lname)
+                    return true;
+        }
+        return false;
+    }
 };
 
 }
