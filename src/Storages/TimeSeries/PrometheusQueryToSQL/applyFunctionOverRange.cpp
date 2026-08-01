@@ -105,6 +105,30 @@ namespace
                  /* drop_metric_name = */ true,
              }},
 
+            {"ts_of_first_over_time",
+             {
+                 "timeSeriesTsOfFirstToGrid",
+                 /* drop_metric_name = */ false,
+             }},
+
+            {"ts_of_last_over_time",
+             {
+                 "timeSeriesTsOfLastToGrid",
+                 /* drop_metric_name = */ false,
+             }},
+
+            {"ts_of_min_over_time",
+             {
+                 "timeSeriesTsOfMinToGrid",
+                 /* drop_metric_name = */ true,
+             }},
+
+            {"ts_of_max_over_time",
+             {
+                 "timeSeriesTsOfMaxToGrid",
+                 /* drop_metric_name = */ true,
+             }},
+
             /// TODO:
             /// resets
             /// predict_linear
@@ -119,10 +143,6 @@ namespace
             /// stdvar_over_time
             /// present_over_time
             /// absent_over_time
-            /// ts_of_min_over_time
-            /// ts_of_max_over_time
-            /// ts_of_last_over_time
-            /// ts_of_first_over_time
         };
 
         auto it = impl_map.find(function_name);
