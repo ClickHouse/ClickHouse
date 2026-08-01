@@ -193,6 +193,17 @@ m	Map(UInt64, Nullable(Int64))
 m	Map(String, Nullable(UInt64))					
 {'a':1,'b':1}
 {'a':18446744073709551615}
+group 13b: the negative marking survives unifying one row\'s own map elements
+m	Nullable(String)					
+{-1:1,18446744073709551615:1}
+m	Nullable(String)					
+{\'a\':-1,\'b\':18446744073709551615}
+c	Nullable(String)					
+[{-1:1,18446744073709551615:1}]
+m	Map(Int64, Nullable(Int64))					
+{1:1,2:1}
+m	Map(Int64, Nullable(Int64))					
+{-1:1,-2:1}
 group 14: one column\'s marking does not leak into another column
 x	Nullable(Int64)					
 y	Nullable(UInt64)					

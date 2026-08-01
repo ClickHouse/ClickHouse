@@ -287,6 +287,28 @@ SELECT * FROM format(TSKV, unhex('6D3D7B313A312C323A317D0A6D3D7B3138343436373434
 DESC format(TSKV, unhex('6D3D7B2761273A312C2762273A317D0A6D3D7B2761273A31383434363734343037333730393535313631357D0A'));
 SELECT * FROM format(TSKV, unhex('6D3D7B2761273A312C2762273A317D0A6D3D7B2761273A31383434363734343037333730393535313631357D0A'));
 
+-- 13b. All the map rows above spread the negative and the UInt64-range literal across two ROWS, which
+-- merges them through transformTypesIfNeeded. A single row holding both goes through a different
+-- statement instead: the element types of that one map are unified inside tryInferMapOrObject, which
+-- must consult the same provenance or the negative key is widened and the row cannot be read back.
+SELECT 'group 13b: the negative marking survives unifying one row''s own map elements';
+-- m={-1:1,18446744073709551615:1} - both keys in ONE row, so the KEY list is unified intra-row
+DESC format(TSKV, unhex('6D3D7B2D313A312C31383434363734343037333730393535313631353A317D0A'));
+SELECT * FROM format(TSKV, unhex('6D3D7B2D313A312C31383434363734343037333730393535313631353A317D0A'));
+-- m={'a':-1,'b':18446744073709551615} - the same for the VALUE list
+DESC format(TSKV, unhex('6D3D7B2761273A2D312C2762273A31383434363734343037333730393535313631357D0A'));
+SELECT * FROM format(TSKV, unhex('6D3D7B2761273A2D312C2762273A31383434363734343037333730393535313631357D0A'));
+-- c=[{-1:1,18446744073709551615:1}] - nested one level, since the unification is inside the recursion
+DESC format(TSKV, unhex('633D5B7B2D313A312C31383434363734343037333730393535313631353A317D5D0A'));
+SELECT * FROM format(TSKV, unhex('633D5B7B2D313A312C31383434363734343037333730393535313631353A317D5D0A'));
+-- Controls, unchanged by consulting the provenance here:
+-- m={1:1,2:1} - two non-negative keys already unify as Int64 without widening
+DESC format(TSKV, unhex('6D3D7B313A312C323A317D0A'));
+SELECT * FROM format(TSKV, unhex('6D3D7B313A312C323A317D0A'));
+-- m={-1:1,-2:1} - two negative keys must still unify as Int64
+DESC format(TSKV, unhex('6D3D7B2D313A312C2D323A317D0A'));
+SELECT * FROM format(TSKV, unhex('6D3D7B2D313A312C2D323A317D0A'));
+
 -- 14. The marking is keyed on the type object address, and one column's dropped type object can be
 -- freed while another column is still being inferred. If the address is then reused, the marking is
 -- read as belonging to whatever type landed there, so an unrelated column declines a widening it

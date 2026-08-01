@@ -1425,9 +1425,9 @@ namespace
         }
 
         if (!checkIfTypesAreEqual(key_types))
-            transformInferredTypesIfNeededImpl<is_json>(key_types, settings);
+            transformInferredTypesIfNeededImpl<is_json>(key_types, settings, json_info);
         if (!checkIfTypesAreEqual(value_types))
-            transformInferredTypesIfNeededImpl<is_json>(value_types, settings);
+            transformInferredTypesIfNeededImpl<is_json>(value_types, settings, json_info);
 
         if (!checkIfTypesAreEqual(key_types) || !checkIfTypesAreEqual(value_types))
             return nullptr;
