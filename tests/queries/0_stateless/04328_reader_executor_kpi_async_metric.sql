@@ -46,13 +46,25 @@ SYSTEM RELOAD ASYNCHRONOUS METRICS;
 SYSTEM FLUSH LOGS query_log, asynchronous_metric_log;
 
 -- (1) The query itself recorded a non-zero modeled cost.
-SELECT ProfileEvents['ReaderExecutorModeledCostMicroseconds'] > 0
+-- The counters are incremented on whichever replica reads the mark, so under parallel
+-- replicas they land on secondary rows whose `current_database` is `default`. Resolve the
+-- initiator rows by `current_database`, then sum over every row of those queries via
+-- `initial_query_id`.
+WITH initial_query_ids AS
+(
+    SELECT query_id
+    FROM system.query_log
+    WHERE event_date >= yesterday() AND event_time >= now() - 600
+      AND current_database = currentDatabase()
+      AND type = 'QueryFinish'
+      AND is_initial_query = 1
+      AND log_comment = '04328_reader_executor_kpi_probe'
+)
+SELECT sum(ProfileEvents['ReaderExecutorModeledCostMicroseconds']) > 0
 FROM system.query_log
-WHERE log_comment = '04328_reader_executor_kpi_probe'
+WHERE event_date >= yesterday() AND event_time >= now() - 600
   AND type = 'QueryFinish'
-  AND current_database = currentDatabase()
-ORDER BY event_time_microseconds DESC
-LIMIT 1;
+  AND initial_query_id IN (SELECT query_id FROM initial_query_ids);
 
 -- (2) In the same time slot (at or after the query started), the asynchronous KPI
 -- metric logged a non-zero value. Scoping by the probe's start time excludes the
