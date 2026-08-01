@@ -2,10 +2,9 @@
 
 #include <Interpreters/Context.h>
 #include <Interpreters/ExpressionActions.h>
+#include <Interpreters/castColumn.h>
 
 #include <AggregateFunctions/AggregateFunctionFactory.h>
-
-#include <DataTypes/DataTypeLowCardinality.h>
 
 #include <Core/Settings.h>
 
@@ -82,9 +81,11 @@ TTLAggregationAlgorithm::TTLAggregationAlgorithm(
     time_t current_time_,
     bool force_,
     const Block & header_,
-    const MergeTreeData & storage_)
+    const MergeTreeData & storage_,
+    bool input_sorted_by_group_by_keys_)
     : ITTLAlgorithm(ttl_expressions_, addImplicitlyAggregatedColumns(description_, header_, storage_.getContext()), old_ttl_info_, current_time_, force_)
     , header(header_)
+    , input_sorted_by_group_by_keys(input_sorted_by_group_by_keys_)
 {
     current_key_value.resize(description.group_by_keys.size());
 
@@ -146,86 +147,13 @@ void TTLAggregationAlgorithm::execute(Block & block)
             return;
         }
     }
+    else if (input_sorted_by_group_by_keys)
+    {
+        executeSorted(block, result_columns, some_rows_were_aggregated);
+    }
     else
     {
-        const auto & column_names = header.getNames();
-        MutableColumns aggregate_columns = header.cloneEmptyColumns();
-
-        auto ttl_column = executeExpressionAndGetColumn(ttl_expressions.expression, block, description.result_column);
-        auto where_column = executeExpressionAndGetColumn(ttl_expressions.where_expression, block, description.where_result_column);
-
-        size_t rows_aggregated = 0;
-        size_t current_key_start = 0;
-        size_t rows_with_current_key = 0;
-
-        for (size_t i = 0; i < block.rows(); ++i)
-        {
-            Int64 cur_ttl = getTimestampByIndex(ttl_column.get(), i);
-            bool where_filter_passed = !where_column || where_column->getBool(i);
-            bool ttl_expired = isTTLExpired(cur_ttl) && where_filter_passed;
-
-            bool same_as_current = true;
-            for (size_t j = 0; j < description.group_by_keys.size(); ++j)
-            {
-                const String & key_column = description.group_by_keys[j];
-                const IColumn * values_column = block.getByName(key_column).column.get();
-                if (!same_as_current || (*values_column)[i] != current_key_value[j])
-                {
-                    values_column->get(i, current_key_value[j]);
-                    same_as_current = false;
-                }
-            }
-
-            /// We are observing the row with new the aggregation key.
-            /// In this case we definitely need to finish the current aggregation for the previuos key and
-            /// write results to `result_columns`.
-            const bool observing_new_key = !same_as_current;
-            /// We are observing the row with the same aggregation key, but TTL is not expired anymore.
-            /// In this case we need to finish aggregation here. The current row has to be written as is.
-            const bool no_new_rows_to_aggregate_within_the_same_key = same_as_current && !ttl_expired;
-            /// The aggregation for this aggregation key is done.
-            const bool need_to_flush_aggregation_state = observing_new_key || no_new_rows_to_aggregate_within_the_same_key;
-
-            if (need_to_flush_aggregation_state)
-            {
-                if (rows_with_current_key)
-                {
-                    some_rows_were_aggregated = true;
-                    calculateAggregates(aggregate_columns, current_key_start, rows_with_current_key);
-                }
-                finalizeAggregates(result_columns);
-
-                current_key_start = rows_aggregated;
-                rows_with_current_key = 0;
-            }
-
-            if (ttl_expired)
-            {
-                ++rows_with_current_key;
-                ++rows_aggregated;
-                for (const auto & name : column_names)
-                {
-                    const IColumn * values_column = block.getByName(name).column.get();
-                    auto & column = aggregate_columns[header.getPositionByName(name)];
-                    column->insertFrom(*values_column, i);
-                }
-            }
-            else
-            {
-                for (const auto & name : column_names)
-                {
-                    const IColumn * values_column = block.getByName(name).column.get();
-                    auto & column = result_columns[header.getPositionByName(name)];
-                    column->insertFrom(*values_column, i);
-                }
-            }
-        }
-
-        if (rows_with_current_key)
-        {
-            some_rows_were_aggregated = true;
-            calculateAggregates(aggregate_columns, current_key_start, rows_with_current_key);
-        }
+        executeUnsorted(block, result_columns, some_rows_were_aggregated);
     }
 
     block = header.cloneWithColumns(std::move(result_columns));
@@ -241,6 +169,137 @@ void TTLAggregationAlgorithm::execute(Block & block)
             if (where_filter_passed)
                 new_ttl_info.update(getTimestampByIndex(ttl_column_after_aggregation.get(), i));
         }
+    }
+}
+
+void TTLAggregationAlgorithm::executeSorted(Block & block, MutableColumns & result_columns, bool & some_rows_were_aggregated)
+{
+    const auto & column_names = header.getNames();
+    MutableColumns aggregate_columns = header.cloneEmptyColumns();
+
+    auto ttl_column = executeExpressionAndGetColumn(ttl_expressions.expression, block, description.result_column);
+    auto where_column = executeExpressionAndGetColumn(ttl_expressions.where_expression, block, description.where_result_column);
+
+    size_t rows_aggregated = 0;
+    size_t current_key_start = 0;
+    size_t rows_with_current_key = 0;
+
+    for (size_t i = 0; i < block.rows(); ++i)
+    {
+        Int64 cur_ttl = getTimestampByIndex(ttl_column.get(), i);
+        bool where_filter_passed = !where_column || where_column->getBool(i);
+        bool ttl_expired = isTTLExpired(cur_ttl) && where_filter_passed;
+
+        bool same_as_current = true;
+        for (size_t j = 0; j < description.group_by_keys.size(); ++j)
+        {
+            const String & key_column = description.group_by_keys[j];
+            const IColumn * values_column = block.getByName(key_column).column.get();
+            if (!same_as_current || (*values_column)[i] != current_key_value[j])
+            {
+                values_column->get(i, current_key_value[j]);
+                same_as_current = false;
+            }
+        }
+
+        /// We are observing the row with new the aggregation key.
+        /// In this case we definitely need to finish the current aggregation for the previuos key and
+        /// write results to `result_columns`.
+        const bool observing_new_key = !same_as_current;
+        /// We are observing the row with the same aggregation key, but TTL is not expired anymore.
+        /// In this case we need to finish aggregation here. The current row has to be written as is.
+        const bool no_new_rows_to_aggregate_within_the_same_key = same_as_current && !ttl_expired;
+        /// The aggregation for this aggregation key is done.
+        const bool need_to_flush_aggregation_state = observing_new_key || no_new_rows_to_aggregate_within_the_same_key;
+
+        if (need_to_flush_aggregation_state)
+        {
+            if (rows_with_current_key)
+            {
+                some_rows_were_aggregated = true;
+                calculateAggregates(aggregate_columns, current_key_start, rows_with_current_key);
+            }
+            finalizeAggregates(result_columns);
+
+            current_key_start = rows_aggregated;
+            rows_with_current_key = 0;
+        }
+
+        if (ttl_expired)
+        {
+            ++rows_with_current_key;
+            ++rows_aggregated;
+            for (const auto & name : column_names)
+            {
+                const IColumn * values_column = block.getByName(name).column.get();
+                auto & column = aggregate_columns[header.getPositionByName(name)];
+                column->insertFrom(*values_column, i);
+            }
+        }
+        else
+        {
+            for (const auto & name : column_names)
+            {
+                const IColumn * values_column = block.getByName(name).column.get();
+                auto & column = result_columns[header.getPositionByName(name)];
+                column->insertFrom(*values_column, i);
+            }
+        }
+    }
+
+    if (rows_with_current_key)
+    {
+        some_rows_were_aggregated = true;
+        calculateAggregates(aggregate_columns, current_key_start, rows_with_current_key);
+    }
+}
+
+void TTLAggregationAlgorithm::executeUnsorted(Block & block, MutableColumns & result_columns, bool & some_rows_were_aggregated)
+{
+    /// The input is not ordered by this TTL's group_by_keys (an earlier GROUP BY TTL's SET rewrote
+    /// one of them), so the streaming flush-on-key-change used by executeSorted would finalize each
+    /// non-contiguous run of a key as its own group and lose data. Accumulate every expired row into
+    /// the aggregation state and never finalize mid-stream; the state carries across blocks and is
+    /// flushed once on the end-of-stream empty block, so all rows of a key merge into one group
+    /// regardless of order. Non-expired rows pass through unchanged, as in executeSorted.
+    const auto & column_names = header.getNames();
+    MutableColumns aggregate_columns = header.cloneEmptyColumns();
+
+    auto ttl_column = executeExpressionAndGetColumn(ttl_expressions.expression, block, description.result_column);
+    auto where_column = executeExpressionAndGetColumn(ttl_expressions.where_expression, block, description.where_result_column);
+
+    size_t rows_to_aggregate = 0;
+    for (size_t i = 0; i < block.rows(); ++i)
+    {
+        Int64 cur_ttl = getTimestampByIndex(ttl_column.get(), i);
+        bool where_filter_passed = !where_column || where_column->getBool(i);
+        bool ttl_expired = isTTLExpired(cur_ttl) && where_filter_passed;
+
+        if (ttl_expired)
+        {
+            ++rows_to_aggregate;
+            for (const auto & name : column_names)
+            {
+                const IColumn * values_column = block.getByName(name).column.get();
+                auto & column = aggregate_columns[header.getPositionByName(name)];
+                column->insertFrom(*values_column, i);
+            }
+        }
+        else
+        {
+            for (const auto & name : column_names)
+            {
+                const IColumn * values_column = block.getByName(name).column.get();
+                auto & column = result_columns[header.getPositionByName(name)];
+                column->insertFrom(*values_column, i);
+            }
+        }
+    }
+
+    if (rows_to_aggregate)
+    {
+        some_rows_were_aggregated = true;
+        calculateAggregates(aggregate_columns, 0, rows_to_aggregate);
     }
 }
 
@@ -276,20 +335,16 @@ void TTLAggregationAlgorithm::finalizeAggregates(MutableColumns & result_columns
             {
                 it.expression->execute(agg_block);
 
-                /// Restore LowCardinality wrappers on SET expression results if needed
-                /// Aggregation strips LowCardinality, but result_columns expects it
+                /// The SET expression result type may diverge from the declared column type:
+                /// aggregation strips LowCardinality, and the mismatch can be nested (e.g. a Tuple
+                /// whose element wrapper differs). result_columns expects the declared type exactly,
+                /// so coerce the result to it before inserting to keep the block structure valid.
                 const auto & result_column_type = header.getByName(it.column_name).type;
-                if (result_column_type->lowCardinality())
+                auto & column_with_type = agg_block.getByName(it.expression_result_column_name);
+                if (!column_with_type.type->equals(*result_column_type))
                 {
-                    auto & column_with_type = agg_block.getByName(it.expression_result_column_name);
-                    // Only convert if the column doesn't already have LowCardinality
-                    if (!column_with_type.type->lowCardinality())
-                    {
-                        auto nested_type = recursiveRemoveLowCardinality(result_column_type);
-                        column_with_type.column = recursiveLowCardinalityTypeConversion(
-                            column_with_type.column, nested_type, result_column_type);
-                        column_with_type.type = result_column_type;
-                    }
+                    column_with_type.column = castColumn(column_with_type, result_column_type);
+                    column_with_type.type = result_column_type;
                 }
             }
 
