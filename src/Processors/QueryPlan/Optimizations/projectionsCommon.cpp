@@ -326,7 +326,17 @@ static bool projectionPartCanFillDefault(
     const ColumnsDescription & parent_table_columns,
     const String & column_name)
 {
+    /// A subcolumn has no default of its own: it is extracted from the evaluated default of its
+    /// column in storage, so resolve the default through the base name (as the reader does in
+    /// MergeTreeBlockReadUtils::injectRequiredColumnsRecursively).
     auto column_default = parent_table_columns.getDefault(column_name);
+    if (!column_default)
+    {
+        auto column_in_storage = parent_table_columns.tryGetColumnOrSubcolumn(GetColumnsOptions::AllPhysical, column_name);
+        if (column_in_storage && column_in_storage->isSubcolumn())
+            column_default = parent_table_columns.getDefault(column_in_storage->getNameInStorage());
+    }
+
     if (!column_default || !column_default->expression)
         return true;
 

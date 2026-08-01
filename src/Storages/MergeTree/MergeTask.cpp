@@ -1299,7 +1299,15 @@ void MergeTask::ExecuteAndFinalizeHorizontalPart::prepareProjectionsToMergeAndRe
         const auto & projection_metadata_columns = projection.metadata->getColumns();
         auto projection_part_can_fill_default = [&](const IMergeTreeDataPart & projection_part, const String & column_name)
         {
+            /// A subcolumn has no default of its own: resolve it through its column in storage.
             auto column_default = parent_table_columns.getDefault(column_name);
+            if (!column_default)
+            {
+                auto column_in_storage = parent_table_columns.tryGetColumnOrSubcolumn(GetColumnsOptions::AllPhysical, column_name);
+                if (column_in_storage && column_in_storage->isSubcolumn())
+                    column_default = parent_table_columns.getDefault(column_in_storage->getNameInStorage());
+            }
+
             if (!column_default || !column_default->expression)
                 return true;
 

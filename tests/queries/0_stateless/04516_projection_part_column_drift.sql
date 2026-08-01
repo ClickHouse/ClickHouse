@@ -262,6 +262,9 @@ SELECT 'subcol-dep read after drift', a, c FROM t_proj_subcol_default_dep ORDER 
 SELECT 'subcol-dep force projection', a, c FROM t_proj_subcol_default_dep ORDER BY a
 SETTINGS optimize_use_projections = 1, force_optimize_projection = 1;
 
+-- a second part, so the OPTIMIZE below merges two projection parts instead of trivially rewriting one
+INSERT INTO t_proj_subcol_default_dep (a, n) VALUES (2, (300, 400));
+
 -- merging keeps the projection (no needless rebuild) and stays correct
 OPTIMIZE TABLE t_proj_subcol_default_dep FINAL;
 
@@ -270,7 +273,52 @@ SELECT 'subcol-dep read after merge', a, c FROM t_proj_subcol_default_dep ORDER 
 SELECT 'subcol-dep force projection after merge', a, c FROM t_proj_subcol_default_dep ORDER BY a
 SETTINGS optimize_use_projections = 1, force_optimize_projection = 1;
 
+-- merging and rebuilding yield the same values here, so a result-only assertion cannot tell them
+-- apart: assert the discriminating profile events to pin that the projection was merged
+SYSTEM FLUSH LOGS part_log;
+
+SELECT 'subcol-dep merged not rebuilt',
+       sum(ProfileEvents['MergedProjections']) > 0, sum(ProfileEvents['RebuiltProjections'])
+FROM system.part_log
+WHERE database = currentDatabase() AND table = 't_proj_subcol_default_dep'
+  AND event_type = 'MergeParts';
+
 DROP TABLE t_proj_subcol_default_dep;
+
+-- the drifted counterpart of the case above (the reason the fillability check must resolve a
+-- subcolumn through its column in storage): the projection now requires the SUBCOLUMN `g.x`, whose
+-- base `g` is a late-added column with a default reading the non-stored `f`. A subcolumn carries no
+-- default of its own, so an exact-name default lookup finds none, wrongly declares `g.x` fillable,
+-- and the read throws UNKNOWN_IDENTIFIER on `f` instead of routing to the parent.
+DROP TABLE IF EXISTS t_proj_subcol_unfillable_dep;
+
+CREATE TABLE t_proj_subcol_unfillable_dep
+(
+    a UInt64,
+    b UInt64,
+    f UInt64,
+    c UInt64 ALIAS b + 1,
+    PROJECTION p (SELECT a, c ORDER BY a)
+)
+ENGINE = MergeTree ORDER BY a;
+
+INSERT INTO t_proj_subcol_unfillable_dep (a, b, f) VALUES (1, 100, 7);
+
+ALTER TABLE t_proj_subcol_unfillable_dep ADD COLUMN g Tuple(x UInt64) DEFAULT tuple(f);
+ALTER TABLE t_proj_subcol_unfillable_dep MODIFY COLUMN c UInt64 ALIAS tupleElement(g, 'x') + 1;
+
+-- served from the parent: c = g.x + 1 = f + 1 = 8
+SELECT 'subcol-unfillable read after drift', a, c FROM t_proj_subcol_unfillable_dep ORDER BY a;
+
+SELECT a, c FROM t_proj_subcol_unfillable_dep ORDER BY a
+SETTINGS optimize_use_projections = 1, force_optimize_projection = 1; -- { serverError PROJECTION_NOT_USED }
+
+-- the merge must rebuild rather than throw on the missing `f`
+OPTIMIZE TABLE t_proj_subcol_unfillable_dep FINAL;
+
+SELECT 'subcol-unfillable read after merge', a, c FROM t_proj_subcol_unfillable_dep ORDER BY a;
+
+DROP TABLE t_proj_subcol_unfillable_dep;
 
 -- same but with an array-size subcolumn (`arr.size0`): a fixed physical subcolumn with its own stream,
 -- fillable from the stored current `arr`, so the projection must stay usable here too
@@ -295,6 +343,20 @@ SELECT 'arrsize-dep read after drift', a, c FROM t_proj_arrsize_default_dep ORDE
 
 SELECT 'arrsize-dep force projection', a, c FROM t_proj_arrsize_default_dep ORDER BY a
 SETTINGS optimize_use_projections = 1, force_optimize_projection = 1;
+
+INSERT INTO t_proj_arrsize_default_dep (a, arr) VALUES (2, [40, 50]);
+
+OPTIMIZE TABLE t_proj_arrsize_default_dep FINAL;
+
+SELECT 'arrsize-dep read after merge', a, c FROM t_proj_arrsize_default_dep ORDER BY a;
+
+SYSTEM FLUSH LOGS part_log;
+
+SELECT 'arrsize-dep merged not rebuilt',
+       sum(ProfileEvents['MergedProjections']) > 0, sum(ProfileEvents['RebuiltProjections'])
+FROM system.part_log
+WHERE database = currentDatabase() AND table = 't_proj_arrsize_default_dep'
+  AND event_type = 'MergeParts';
 
 DROP TABLE t_proj_arrsize_default_dep;
 

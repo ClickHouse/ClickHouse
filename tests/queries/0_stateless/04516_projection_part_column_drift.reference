@@ -29,9 +29,17 @@ ignore-drift part columns after merge	p	d
 subcol-dep read after drift	1	101
 subcol-dep force projection	1	101
 subcol-dep read after merge	1	101
+subcol-dep read after merge	2	301
 subcol-dep force projection after merge	1	101
+subcol-dep force projection after merge	2	301
+subcol-dep merged not rebuilt	1	0
+subcol-unfillable read after drift	1	8
+subcol-unfillable read after merge	1	8
 arrsize-dep read after drift	1	4
 arrsize-dep force projection	1	4
+arrsize-dep read after merge	1	4
+arrsize-dep read after merge	2	3
+arrsize-dep merged not rebuilt	1	0
 agg read after drift	1	501
 agg read after merge	1	501
 agg read after merge	2	601
