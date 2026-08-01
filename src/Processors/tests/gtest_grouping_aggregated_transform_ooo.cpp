@@ -124,7 +124,10 @@ PushedBucket reMergeBucketChunk(const AggregatingTransformParamsPtr & params, Ch
     connect(merger_output, consumer);
 
     Chunk merged;
-    bool delivered = false;
+    /// Holds the chunk until it is delivered, and is reset afterwards, so the loop can move out of
+    /// it at most once. The chunk itself cannot serve as that flag: its header is empty, so it is
+    /// indistinguishable from a moved-from one.
+    std::optional<Chunk> pending(std::move(chunk));
     for (int guard = 0; guard < 100; ++guard)
     {
         consumer.setNeeded();
@@ -147,10 +150,10 @@ PushedBucket reMergeBucketChunk(const AggregatingTransformParamsPtr & params, Ch
 
         if (status == IProcessor::Status::NeedData)
         {
-            if (!delivered)
+            if (pending)
             {
-                feeder.push(std::move(chunk));
-                delivered = true;
+                feeder.push(std::move(*pending));
+                pending.reset();
             }
             else
                 feeder.finish();
