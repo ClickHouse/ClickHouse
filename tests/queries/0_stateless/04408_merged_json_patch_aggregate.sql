@@ -489,6 +489,14 @@ FROM
     SELECT '{"a":2}'::JSON, nan::Nullable(Float64)
 );
 
-
+-- Nullable(Float64) with NULL: NULL sorts as minimum (Field::Null < Field::Float64), finite key wins.
+-- Expected: {"a":1}.
+SELECT toJSONString(mergedJSONPatch(patch, version))
+FROM
+(
+    SELECT '{"a":1}'::JSON AS patch, 1.0::Nullable(Float64) AS version
+    UNION ALL
+    SELECT '{"a":2}'::JSON, CAST(NULL, 'Nullable(Float64)')
+);
 
 DROP TABLE t_bad_sort_keys;

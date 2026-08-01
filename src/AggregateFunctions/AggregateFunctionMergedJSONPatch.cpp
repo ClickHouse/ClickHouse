@@ -157,13 +157,11 @@ struct KeyGeneric
     {
         // Field::operator< uses nan_direction_hint = 1 (NaN is maximum), but we need NaN to be
         // the minimum (same as argMax / IColumn::compareAt semantics) so finite keys always win.
-        // For Float64 fields, use FloatCompareHelper with nan_direction_hint = -1 explicitly.
-        if (value.getType() == Field::Types::Float64)
-        {
-            const double a = value.safeGet<Float64>();
-            const double b = other.value.safeGet<Float64>();
-            return FloatCompareHelper<Float64>::less(a, b, -1);
-        }
+        // Apply the NaN fix only when both sides hold a Float64 — if either side is Null (from
+        // Nullable(Float*)) or any other type, fall through to Field::operator<, which already
+        // orders Field::Null before all non-null values.
+        if (value.getType() == Field::Types::Float64 && other.value.getType() == Field::Types::Float64)
+            return FloatCompareHelper<Float64>::less(value.safeGet<Float64>(), other.value.safeGet<Float64>(), -1);
         return value < other.value;
     }
 
