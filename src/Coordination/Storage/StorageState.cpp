@@ -152,78 +152,88 @@ NodeRef StorageState::getUncommittedNode(const NodePathWithHash & path)
 
 NodeRef StorageState::appendCommittedNode(FullNode & node)
 {
-    const DB::CoordinationSettings & settings = keeper_context->getCoordinationSettings();
-
-    if (!mutable_memtable ||
-        /// (Quirk: this condition will usually pass just after allocating a new block in the memtable.
-        ///  So we'll usually finalize the memtable with a nearly empty last block, wasting its capacity.
-        ///  That's fine, memtable usually has lots of blocks, this is a tiny waste of memory.)
-        mutable_memtable->total_bytes > settings[DB::CoordinationSetting::committed_memtable_size])
+    try
     {
-        if (mutable_memtable)
+        const DB::CoordinationSettings & settings = keeper_context->getCoordinationSettings();
+
+        if (!mutable_memtable ||
+            /// (Quirk: this condition will usually pass just after allocating a new block in the memtable.
+            ///  So we'll usually finalize the memtable with a nearly empty last block, wasting its capacity.
+            ///  That's fine, memtable usually has lots of blocks, this is a tiny waste of memory.)
+            mutable_memtable->total_bytes > settings[DB::CoordinationSetting::committed_memtable_size])
         {
-            immutable_memtables.push_back(std::move(mutable_memtable));
-            recalculateWriteThrottling();
-            background->maybeStartFlush();
+            if (mutable_memtable)
+            {
+                immutable_memtables.push_back(std::move(mutable_memtable));
+                recalculateWriteThrottling();
+                background->maybeStartFlush();
+            }
+
+            mutable_memtable = std::make_shared<Memtable>();
+            mutable_memtable->target_block_size = settings[DB::CoordinationSetting::memtable_block_size];
+            mutable_memtable->file_seqno = next_file_seqno++;
+
+            LOG_DEBUG(log, "Creating new memtable {}", mutable_memtable->file_seqno);
+
+            /// TODO: Create block_cache (if not memory-only mode) or update its settings if changed.
         }
 
-        mutable_memtable = std::make_shared<Memtable>();
-        mutable_memtable->target_block_size = settings[DB::CoordinationSetting::memtable_block_size];
-        mutable_memtable->file_seqno = next_file_seqno++;
+        const NodePathHash hash = node.getOrCalculatePathHash();
+        auto * lookup = node_cache.map.find(hash);
+        std::optional<NodeAction> combined;
 
-        LOG_DEBUG(log, "Creating new memtable {}", mutable_memtable->file_seqno);
-
-        /// TODO: Create block_cache (if not memory-only mode) or update its settings if changed.
-    }
-
-    const NodePathHash hash = node.getOrCalculatePathHash();
-    auto * lookup = node_cache.map.find(hash);
-    std::optional<NodeAction> combined;
-
-    /// Validate `action` before mutating anything.
-    if (lookup)
-    {
-        /// The node already exists, so its history so far combines to Create.
-        /// Combine that with the new action, strictly (e.g. asserts we don't Create it again).
-        combined = combineActions(NodeAction::Create, node.action, /*strict=*/ true);
-        chassert(!combined || combined == NodeAction::Create);
-    }
-    else
-    {
-        if (node.action != NodeAction::Create)
-            throw DB::Exception(
-                DB::ErrorCodes::LOGICAL_ERROR, "Unexpected NodeAction {} for a node that doesn't exist",
-                uint32_t(node.action));
-    }
-
-    const NodeRef ref = mutable_memtable->appendNode(node, /*strict=*/ true);
-
-    /// Update `node_cache`. (We hold storage_mutex exclusively, so no concurrent readers;
-    /// no need for the per-entry spinlocks.)
-    if (lookup)
-    {
-        if (!combined)
+        /// Validate `action` before mutating anything.
+        if (lookup)
         {
-            /// Create + Remove: `node_cache` doesn't keep removed nodes.
-            node_cache.map.erase(hash);
+            /// The node already exists, so its history so far combines to Create.
+            /// Combine that with the new action, strictly (e.g. asserts we don't Create it again).
+            combined = combineActions(NodeAction::Create, node.action, /*strict=*/ true);
+            chassert(!combined || combined == NodeAction::Create);
         }
         else
         {
-            NodeRefCache::Entry & info = lookup->getMapped();
+            if (node.action != NodeAction::Create)
+                throw DB::Exception(
+                    DB::ErrorCodes::LOGICAL_ERROR, "Unexpected NodeAction {} for a node that doesn't exist",
+                    uint32_t(node.action));
+        }
+
+        const NodeRef ref = mutable_memtable->appendNode(node, /*strict=*/ true);
+
+        /// Update `node_cache`. (We hold storage_mutex exclusively, so no concurrent readers;
+        /// no need for the per-entry spinlocks.)
+        if (lookup)
+        {
+            if (!combined)
+            {
+                /// Create + Remove: `node_cache` doesn't keep removed nodes.
+                node_cache.map.erase(hash);
+            }
+            else
+            {
+                NodeRefCache::Entry & info = lookup->getMapped();
+                info.file_seqno = mutable_memtable->file_seqno;
+                info.block.store(ref.block);
+                info.node_offset = ref.offset;
+            }
+        }
+        else
+        {
+            NodeRefCache::Entry & info = node_cache.map[hash];
             info.file_seqno = mutable_memtable->file_seqno;
             info.block.store(ref.block);
             info.node_offset = ref.offset;
         }
-    }
-    else
-    {
-        NodeRefCache::Entry & info = node_cache.map[hash];
-        info.file_seqno = mutable_memtable->file_seqno;
-        info.block.store(ref.block);
-        info.node_offset = ref.offset;
-    }
 
-    return ref;
+        return ref;
+    }
+    catch (...)
+    {
+        /// Maybe MEMORY_LIMIT_EXCEEDED is possible here. We currently don't handle it, and the
+        /// caller doesn't handle it.
+        DB::tryLogCurrentException(log, "Unexpected exception");
+        std::abort();
+    }
 }
 
 void StorageState::listCommittedChildrenNames(
@@ -284,27 +294,37 @@ void StorageState::getNodeCountAndDataSize(uint64_t & out_node_count, uint64_t &
 
 NodeRef StorageState::appendUncommittedNode(FullNode & node, int64_t zxid)
 {
-    const DB::CoordinationSettings & settings = keeper_context->getCoordinationSettings();
-
-    if (uncommitted.empty()
-        || uncommitted.back().memtable->total_bytes > settings[DB::CoordinationSetting::uncommitted_memtable_size])
+    try
     {
-        if (!uncommitted.empty())
-            LOG_DEBUG(log, "Creating new uncommitted memtable (last memtable max_zxid = {}, current zxid = {})", uncommitted.back().max_zxid, zxid);
+        const DB::CoordinationSettings & settings = keeper_context->getCoordinationSettings();
 
-        UncommittedMemtable u;
-        u.memtable = std::make_shared<Memtable>();
-        u.memtable->target_block_size = settings[DB::CoordinationSetting::memtable_block_size];
-        uncommitted.push_back(std::move(u));
+        if (uncommitted.empty()
+            || uncommitted.back().memtable->total_bytes > settings[DB::CoordinationSetting::uncommitted_memtable_size])
+        {
+            if (!uncommitted.empty())
+                LOG_DEBUG(log, "Creating new uncommitted memtable (last memtable max_zxid = {}, current zxid = {})", uncommitted.back().max_zxid, zxid);
+
+            UncommittedMemtable u;
+            u.memtable = std::make_shared<Memtable>();
+            u.memtable->target_block_size = settings[DB::CoordinationSetting::memtable_block_size];
+            uncommitted.push_back(std::move(u));
+        }
+
+        UncommittedMemtable & u = uncommitted.back();
+        u.max_zxid = std::max(u.max_zxid, zxid);
+        /// strict=false: see the comment at Memtable::appendNode.
+        NodeRef ref = u.memtable->appendNode(node, /*strict=*/ false);
+        /// Loose model: the last record for a path wins, including Remove tombstones.
+        u.nodes[node.getOrCalculatePathHash()] = ref;
+        return ref;
     }
-
-    UncommittedMemtable & u = uncommitted.back();
-    u.max_zxid = std::max(u.max_zxid, zxid);
-    /// strict=false: see the comment at Memtable::appendNode.
-    NodeRef ref = u.memtable->appendNode(node, /*strict=*/ false);
-    /// Loose model: the last record for a path wins, including Remove tombstones.
-    u.nodes[node.getOrCalculatePathHash()] = ref;
-    return ref;
+    catch (...)
+    {
+        /// Maybe MEMORY_LIMIT_EXCEEDED is possible here. We currently don't handle it, and the
+        /// caller doesn't handle it.
+        DB::tryLogCurrentException(log, "Unexpected exception");
+        std::abort();
+    }
 }
 
 void StorageState::cleanupUncommittedState(int64_t committed_zxid)
