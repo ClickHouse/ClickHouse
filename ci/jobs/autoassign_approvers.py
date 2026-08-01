@@ -59,10 +59,12 @@ def fetch_prs_without_assignees(hours_back: int = 4) -> List[dict]:
             "%Y-%m-%dT%H:%M:%S"
         )
 
-        # Fetch PRs without assignees, include reviews to check for approvals
-        # Use search query to filter by update time
+        # Fetch PRs and keep the unassigned ones. Whether a PR is approved is decided
+        # later, per PR, from its full paginated review history: the `reviews` field of
+        # `gh pr list` is capped at the first 100 review events, so using it as the
+        # candidacy gate would drop approvals made late on long-lived PRs.
         search_query = f"is:pr is:open updated:>{time_threshold}"
-        cmd = f"gh pr list --search '{search_query}' --json number,title,assignees,reviews,author --limit 1000"
+        cmd = f"gh pr list --search '{search_query}' --json number,title,assignees,author --limit 1000"
         output = Shell.get_output(cmd, verbose=True)
 
         if not output or not output.strip():
@@ -94,58 +96,6 @@ def parse_timestamp(timestamp: str) -> Optional[datetime]:
     if not timestamp:
         return None
     return datetime.fromisoformat(timestamp.replace("Z", "+00:00"))
-
-
-def get_approved_prs(prs: List[dict], org_contributors: set = None) -> List[dict]:
-    """
-    Filter PRs that have at least one approval from an org contributor.
-
-    This is only a cheap candidacy pre-filter: the nested `reviews` list from
-    `gh pr list` is capped at the first 100 review events, so the approver map it
-    yields can be stale on long-lived PRs. The authoritative approver list for the
-    actual assignment decision is fetched per candidate PR by `fetch_approvers`.
-
-    Args:
-        prs: List of PR dictionaries
-        org_contributors: Set of org contributor usernames (if None, no filtering)
-
-    Returns:
-        List of PRs with approvals from org contributors, including their approvers in
-        chronological order of the first approval, mapped to the time of their latest
-        approval
-    """
-    approved_prs = []
-    skipped_count = 0
-
-    for pr in prs:
-        reviews = pr.get("reviews", [])
-
-        # Approvals from org contributors: login -> time of the latest approval.
-        # Reviews come in chronological order, so the first key is the first approver.
-        approvers: Dict[str, Optional[datetime]] = {}
-        for review in reviews:
-            if review.get("state") != "APPROVED":
-                continue
-            potential_approver = review.get("author", {}).get("login")
-            if not potential_approver:
-                continue
-            # If org_contributors is provided, only accept org members
-            if (
-                org_contributors is not None
-                and potential_approver not in org_contributors
-            ):
-                skipped_count += 1
-                continue
-            approvers[potential_approver] = parse_timestamp(review.get("submittedAt"))
-
-        if approvers:
-            pr["approvers"] = approvers
-            approved_prs.append(pr)
-
-    print(f"  Found {len(approved_prs)} PRs with approvals from org contributors")
-    if org_contributors and skipped_count > 0:
-        print(f"  Skipped {skipped_count} approvals from non-org contributors")
-    return approved_prs
 
 
 def fetch_approvers(
@@ -232,13 +182,17 @@ def select_approver_to_assign(pr: dict, org_contributors: set = None) -> Optiona
     Pick the first approver who was not unassigned from the PR after their approval.
 
     Args:
-        pr: PR dictionary of a candidate selected by `get_approved_prs`
+        pr: PR dictionary of an unassigned PR
         org_contributors: Set of org contributor usernames (if None, no filtering)
 
     Returns:
-        The login to assign, or None if every approver was unassigned deliberately
+        The login to assign, or None if the PR has no approval from an org contributor,
+        or every approver was unassigned deliberately
     """
     approvers = fetch_approvers(pr.get("number"), org_contributors)
+    if not approvers:
+        return None
+
     removed_assignees = fetch_removed_assignees(pr.get("number"))
 
     for approver, approved_at in approvers.items():
@@ -284,7 +238,8 @@ def process_and_assign_prs(
     Process PRs and assign approvers.
 
     Args:
-        prs: List of PR dictionaries with approvals
+        prs: List of PR dictionaries of the unassigned PRs; the ones without an approval
+            from an org contributor are skipped
         org_contributors: Set of org contributor usernames (if None, no filtering)
 
     Returns:
@@ -298,7 +253,7 @@ def process_and_assign_prs(
         print("No PRs to process")
         return successful, failed, skipped
 
-    print(f"\n--- Assigning approvers to {len(prs)} PRs ---")
+    print(f"\n--- Checking {len(prs)} PRs without assignees ---")
 
     for pr in prs:
         pr_number = pr.get("number")
@@ -352,15 +307,12 @@ if __name__ == "__main__":
     def fetch_and_filter_prs():
         global prs_to_assign
 
-        # Fetch PRs without assignees
-        prs = fetch_prs_without_assignees()
+        # Fetch PRs without assignees. Their approvals are read per PR, from the full
+        # paginated review history, by `select_approver_to_assign`.
+        prs_to_assign = fetch_prs_without_assignees()
 
-        if not prs:
+        if not prs_to_assign:
             print("No PRs without assignees found")
-            return True
-
-        # Filter for approved PRs by org contributors
-        prs_to_assign = get_approved_prs(prs, org_contributors)
 
         return True
 
@@ -392,10 +344,10 @@ if __name__ == "__main__":
         print(f"PRs processed: {len(prs_to_assign)}")
         print(f"Successfully assigned: {successful_assignments}")
         print(f"Failed assignments: {failed_assignments}")
-        print(f"Skipped (approvers unassigned deliberately): {skipped_prs}")
+        print(f"Skipped (not approved, or approvers unassigned): {skipped_prs}")
     elif results[-1].is_ok() and not prs_to_assign:
         print("\n=== Summary ===")
-        print("No approved PRs without assignees found")
+        print("No PRs without assignees found")
     else:
         print("ERROR: Failed to fetch PRs")
 
