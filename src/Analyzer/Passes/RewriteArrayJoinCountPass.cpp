@@ -182,9 +182,9 @@ public:
         const auto & column_name = physical_column->getColumnName();
         auto context = getContext();
 
-        /// A hopped wrapper is transparent only if its declared columns are the ones the read executes
-        /// against, which the type comparison below establishes without naming any wrapper type. For an
-        /// unwrapped storage it is a tautology.
+        /// A hopped wrapper is transparent only if its declared columns are the ones the read executes against, which the
+        /// comparison below establishes without naming a wrapper type. NOTE: an Alias resolves its target by name with no lock and
+        /// resolves again in read(), so unlike the accepted canMoveConditionsToPrewhere race a swapped target miscounts, not fails.
         auto resolved_metadata = resolved_storage->getInMemoryMetadataPtr(context, false);
         if (!resolved_metadata)
             return;
