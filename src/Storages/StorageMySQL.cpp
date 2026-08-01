@@ -188,7 +188,7 @@ void StorageMySQL::readImpl(
         sample_block.insert({ column_data.type, column_data.name });
     }
 
-    StreamSettings mysql_input_stream_settings(context_->getSettingsRef(),
+    MySQLStreamSettings mysql_input_stream_settings(context_->getSettingsRef(),
             (*mysql_settings)[MySQLSetting::connection_auto_close]);
     query_plan.addStep(std::make_unique<ReadFromMySQLStep>(
         sample_block,
@@ -436,7 +436,7 @@ ReadFromMySQLStep::ReadFromMySQLStep(
     const Block & sample_block_,
     mysqlxx::PoolWithFailoverPtr pool_,
     const std::string & query_str_,
-    const StreamSettings & mysql_input_stream_settings_
+    const MySQLStreamSettings & mysql_input_stream_settings_
 )
     : ISourceStep(std::make_shared<const Block>(sample_block_.cloneEmpty()))
     , pool(std::move(pool_))
