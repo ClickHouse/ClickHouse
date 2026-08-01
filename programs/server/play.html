@@ -8641,6 +8641,7 @@ function startTitleEdit(tab, titleEl) {
         if (done) return;
         done = true;
         if (activeTitleCommit === commit) activeTitleCommit = null;
+        const old_title = tab.title;
         if (save) {
             /// Collapse any pasted newlines/runs of whitespace into single spaces.
             const v = titleEl.textContent.replace(/\s+/g, ' ').trim();
@@ -8649,9 +8650,15 @@ function startTitleEdit(tab, titleEl) {
             if (v) tab.title = uniqueTitle(v, tab.id);
         }
         renderTabBar();   /// rebuilds the bar, replacing this editable span with a static one
-        /// A rename writes the current history entry (and the URL) for the active tab, so it is a
-        /// structural boundary exactly like `switchToTab`/`addTab`/`closeTab`/`closeOtherTabs`: route
-        /// it through the same capture funnel first. `tab.query` is already kept in sync by
+        /// A rename that did NOT change the title — canceled with `Escape`, committed to the same
+        /// text, or resolved to empty — is a pure UI action, not a history boundary: reaching the
+        /// funnel below would copy an unrun draft into the current entry, the URL and
+        /// `lastSavedQuery`, so a later reload restores text the contract says is only recorded on
+        /// a run or a real structural change.
+        if (tab.title === old_title) return;
+        /// An ACTUAL rename writes the current history entry (and the URL) for the active tab, so it
+        /// is a structural boundary exactly like `switchToTab`/`addTab`/`closeTab`/`closeOtherTabs`:
+        /// route it through the same capture funnel first. `tab.query` is already kept in sync by
         /// `onQueryInput`, but `tab.params` can still carry a binding for a placeholder the latest
         /// edit removed — the `param_*` input is only dropped by the asynchronous `updateQueryParams`
         /// rebuild — so a rename landing in that window would otherwise stamp `?param_x=1#SELECT 1`

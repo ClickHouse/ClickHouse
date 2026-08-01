@@ -290,6 +290,16 @@ function rename(tab, title)
     titleEl.dispatchEvent({ type: 'keydown', key: 'Enter', preventDefault() {}, stopPropagation() {} });
 }
 
+/// A CANCELED rename: drives the real editor with the new text typed in, then abandons it with
+/// Escape, exactly as the tab bar does.
+function cancelRename(tab, title)
+{
+    const titleEl = makeTitleEl(tab.title);
+    sandbox.startTitleEdit(tab, titleEl);
+    titleEl.textContent = title;
+    titleEl.dispatchEvent({ type: 'keydown', key: 'Escape', preventDefault() {}, stopPropagation() {} });
+}
+
 /// A run's launch, exactly as `postOne`/`postAll` bind it: snapshot the parameter VALUES
 /// synchronously at launch (`resolveRunParams` — live inputs, or the tab's saved params during a
 /// pending restore), then bind the parameter NAMES to the run's own tokenization of the launched
@@ -694,6 +704,35 @@ function reset()
     assert_params('rename with a kept placeholder: the binding survives', active().params, { x: '1' });
     assert_eq('rename with a kept placeholder: the entry keeps the binding', curUrl().includes('param_x=1'), true);
     assert_eq('rename with a kept placeholder: the entry carries the new draft', curState().query, 'SELECT {x:Int32} + 1');
+
+    /// A rename that does NOT change the title is a pure UI action, not a history boundary:
+    /// canceling the editor with `Escape`, committing the unchanged text, or committing an
+    /// all-whitespace title must leave the current entry, the URL and the tab title exactly as
+    /// they were — with an unrun draft in the editor, reaching the capture funnel would copy the
+    /// draft into `history.state`/the URL, so a reload would restore text the contract says is
+    /// only recorded on a run or a real structural change. An ACTUAL rename over the same draft
+    /// remains a history writer (the control at the end).
+    reset();
+    await run('SELECT 1');
+    const noop_title = active().title;
+    await type('SELECT 2');   /// unrun draft; no placeholder change, so no rebuild refresh either
+    assert_eq('no-op rename baseline: the entry still shows the run', curState().query, 'SELECT 1');
+    assert_eq('no-op rename baseline: the clean run keeps run=1', curUrl().includes('run=1'), true);
+    cancelRename(active(), 'abandoned');
+    assert_eq('canceled rename: the title is unchanged', active().title, noop_title);
+    assert_eq('canceled rename: the entry does not swallow the draft', curState().query, 'SELECT 1');
+    assert_eq('canceled rename: run=1 survives', curUrl().includes('run=1'), true);
+    assert_eq('canceled rename: the draft itself is intact', active().query, 'SELECT 2');
+    rename(active(), noop_title);   /// committed, but resolves to no actual title change
+    assert_eq('same-title rename: the entry does not swallow the draft', curState().query, 'SELECT 1');
+    assert_eq('same-title rename: run=1 survives', curUrl().includes('run=1'), true);
+    rename(active(), '   ');        /// collapses to empty: the old title is kept
+    assert_eq('empty-title rename: the title is unchanged', active().title, noop_title);
+    assert_eq('empty-title rename: the entry does not swallow the draft', curState().query, 'SELECT 1');
+    rename(active(), 'actually renamed');
+    assert_eq('control rename: the title is committed', active().title, 'actually renamed');
+    assert_eq('control rename: the entry carries the draft', curState().query, 'SELECT 2');
+    assert_eq('control rename: the diverged draft drops run=1', curUrl().includes('run=1'), false);
 
     /// A trusted `param_*` edit is a history writer too: the listener on a live input persists the
     /// edited values into the active tab and rewrites the current entry (`syncHistory`). After a

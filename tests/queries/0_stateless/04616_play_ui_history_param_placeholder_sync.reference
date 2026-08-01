@@ -75,6 +75,19 @@ rename before rebuild: the entry stays clean after the rebuild lands
 rename with a kept placeholder: the binding survives
 rename with a kept placeholder: the entry keeps the binding
 rename with a kept placeholder: the entry carries the new draft
+no-op rename baseline: the entry still shows the run
+no-op rename baseline: the clean run keeps run=1
+canceled rename: the title is unchanged
+canceled rename: the entry does not swallow the draft
+canceled rename: run=1 survives
+canceled rename: the draft itself is intact
+same-title rename: the entry does not swallow the draft
+same-title rename: run=1 survives
+empty-title rename: the title is unchanged
+empty-title rename: the entry does not swallow the draft
+control rename: the title is committed
+control rename: the entry carries the draft
+control rename: the diverged draft drops run=1
 param edit baseline: the run URL carries both bindings
 param edit before rebuild: the capture prunes the removed binding
 param edit before rebuild: no stale param_x in the entry
