@@ -34,8 +34,11 @@ SELECT count() FROM t_text_index_pr_plan_based WHERE hasToken(s, 'hello');
 SELECT countIf(explain LIKE '%ReadFromParallelReplicas%') > 0
 FROM (EXPLAIN pretty=0, description=0 SELECT count() FROM t_text_index_pr_plan_based PREWHERE hasToken(s, 'hello') WHERE hasToken(s, 'hello'));
 
--- A read without a text-index direct read is still split.
+-- A read without a text-index direct read is still split. The aggregate reads the column on purpose:
+-- a plain `count()` can be answered by `optimize_trivial_count_query` or
+-- `optimize_trivial_count_with_sparsity_filter` without reading the table at all, and then there is
+-- no `ReadFromMergeTree` to distribute.
 SELECT countIf(explain LIKE '%ReadFromParallelReplicas%') > 0
-FROM (EXPLAIN pretty=0, description=0 SELECT count() FROM t_text_index_pr_plan_based WHERE s != '');
+FROM (EXPLAIN pretty=0, description=0 SELECT sum(length(s)) FROM t_text_index_pr_plan_based WHERE s != '');
 
 DROP TABLE t_text_index_pr_plan_based;
