@@ -20,11 +20,6 @@
 
 namespace DB
 {
-namespace Setting
-{
-    extern const SettingsTimezone session_timezone;
-}
-
 namespace
 {
 
@@ -38,7 +33,7 @@ namespace
 
 #if (defined(__ELF__) && !defined(OS_FREEBSD)) || defined(OS_DARWIN)
     /// buildId() - returns the compiler build id of the running binary.
-    class FunctionBuildId final : public FunctionServerConstantBase<FunctionBuildId, String, DataTypeString>
+    class FunctionBuildId : public FunctionServerConstantBase<FunctionBuildId, String, DataTypeString>
     {
     public:
         static constexpr auto name = "buildId";
@@ -49,7 +44,7 @@ namespace
 
 
     /// Get the host name. It is constant on single server, but is not constant in distributed queries.
-    class FunctionHostName final : public FunctionServerConstantBase<FunctionHostName, String, DataTypeString>
+    class FunctionHostName : public FunctionServerConstantBase<FunctionHostName, String, DataTypeString>
     {
     public:
         static constexpr auto name = "hostName";
@@ -58,7 +53,7 @@ namespace
     };
 
 
-    class FunctionServerUUID final : public FunctionServerConstantBase<FunctionServerUUID, UUID, DataTypeUUID>
+    class FunctionServerUUID : public FunctionServerConstantBase<FunctionServerUUID, UUID, DataTypeUUID>
     {
     public:
         static constexpr auto name = "serverUUID";
@@ -67,7 +62,7 @@ namespace
     };
 
 
-    class FunctionTCPPort final : public FunctionServerConstantBase<FunctionTCPPort, UInt16, DataTypeUInt16>
+    class FunctionTCPPort : public FunctionServerConstantBase<FunctionTCPPort, UInt16, DataTypeUInt16>
     {
     public:
         static constexpr auto name = "tcpPort";
@@ -77,24 +72,16 @@ namespace
 
 
     /// Returns timezone for current session.
-    /// When session_timezone is explicitly set it is propagated to every remote shard as
-    /// a query setting, so the value is query-wide constant and can always be folded.
-    /// When session_timezone is empty the effective timezone falls back to the server's
-    /// local timezone, which may differ per shard — preserve per-shard evaluation then.
-    class FunctionTimezone final : public FunctionServerConstantBase<FunctionTimezone, String, DataTypeString>
+    class FunctionTimezone : public FunctionServerConstantBase<FunctionTimezone, String, DataTypeString>
     {
     public:
         static constexpr auto name = "timezone";
         static FunctionPtr create(ContextPtr context) { return std::make_shared<FunctionTimezone>(context); }
-        explicit FunctionTimezone(ContextPtr context)
-            : FunctionServerConstantBase(
-                DateLUT::instance().getTimeZone(),
-                context->isDistributed() && context->getSettingsRef()[Setting::session_timezone].value.empty())
-        {}
+        explicit FunctionTimezone(ContextPtr context) : FunctionServerConstantBase(DateLUT::instance().getTimeZone(), context->isDistributed()) {}
     };
 
     /// Returns the server time zone (timezone in which server runs).
-    class FunctionServerTimezone final : public FunctionServerConstantBase<FunctionServerTimezone, String, DataTypeString>
+    class FunctionServerTimezone : public FunctionServerConstantBase<FunctionServerTimezone, String, DataTypeString>
     {
     public:
         static constexpr auto name = "serverTimezone";
@@ -104,7 +91,7 @@ namespace
 
 
     /// Returns server uptime in seconds.
-    class FunctionUptime final : public FunctionServerConstantBase<FunctionUptime, UInt32, DataTypeUInt32>
+    class FunctionUptime : public FunctionServerConstantBase<FunctionUptime, UInt32, DataTypeUInt32>
     {
     public:
         static constexpr auto name = "uptime";
@@ -114,7 +101,7 @@ namespace
 
 
     /// version() - returns the current version as a string.
-    class FunctionVersion final : public FunctionServerConstantBase<FunctionVersion, String, DataTypeString>
+    class FunctionVersion : public FunctionServerConstantBase<FunctionVersion, String, DataTypeString>
     {
     public:
         static constexpr auto name = "version";
@@ -123,7 +110,7 @@ namespace
     };
 
     /// revision() - returns the current revision.
-    class FunctionRevision final : public FunctionServerConstantBase<FunctionRevision, UInt32, DataTypeUInt32>
+    class FunctionRevision : public FunctionServerConstantBase<FunctionRevision, UInt32, DataTypeUInt32>
     {
     public:
         static constexpr auto name = "revision";
@@ -131,7 +118,7 @@ namespace
         explicit FunctionRevision(ContextPtr context) : FunctionServerConstantBase(ClickHouseRevision::getVersionRevision(), context->isDistributed()) {}
     };
 
-    class FunctionZooKeeperSessionUptime final : public FunctionServerConstantBase<FunctionZooKeeperSessionUptime, UInt32, DataTypeUInt32>
+    class FunctionZooKeeperSessionUptime : public FunctionServerConstantBase<FunctionZooKeeperSessionUptime, UInt32, DataTypeUInt32>
     {
     public:
         static constexpr auto name = "zookeeperSessionUptime";
@@ -142,7 +129,7 @@ namespace
         static FunctionPtr create(ContextPtr context) { return std::make_shared<FunctionZooKeeperSessionUptime>(context); }
     };
 
-    class FunctionGetOSKernelVersion final : public FunctionServerConstantBase<FunctionGetOSKernelVersion, String, DataTypeString>
+    class FunctionGetOSKernelVersion : public FunctionServerConstantBase<FunctionGetOSKernelVersion, String, DataTypeString>
     {
     public:
         static constexpr auto name = "getOSKernelVersion";
@@ -150,7 +137,7 @@ namespace
         static FunctionPtr create(ContextPtr context) { return std::make_shared<FunctionGetOSKernelVersion>(context); }
     };
 
-    class FunctionDisplayName final : public FunctionServerConstantBase<FunctionDisplayName, String, DataTypeString>
+    class FunctionDisplayName : public FunctionServerConstantBase<FunctionDisplayName, String, DataTypeString>
     {
     public:
         static constexpr auto name = "displayName";

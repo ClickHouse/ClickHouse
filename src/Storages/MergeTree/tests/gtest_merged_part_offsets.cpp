@@ -9,7 +9,7 @@ using namespace DB;
 constexpr static size_t PAGE_SIZE = 1024;
 
 // Helper to generate monotonically increasing values
-static std::vector<UInt64> generateMonotonicValues(size_t count, UInt64 start = 0, UInt64 max_step = 10)
+std::vector<UInt64> generateMonotonicValues(size_t count, UInt64 start = 0, UInt64 max_step = 10)
 {
     std::vector<UInt64> result;
     result.reserve(count);
@@ -280,6 +280,29 @@ TEST(PackedPartOffsetsTest, VeryLargeValues)
     {
         EXPECT_EQ(offsets[i], values[i]);
     }
+}
+
+// Test with all identical values (should fail assertion)
+TEST(PackedPartOffsetsTest, DISABLED_AllIdenticalValues)
+{
+    // Note: This test is disabled because it should trigger an assertion failure
+    // Enable with caution for debugging
+    PackedPartOffsets offsets;
+
+    offsets.insert(100);
+    offsets.insert(100); // This should trigger assertion
+}
+
+// Test with non-monotonic values (should fail assertion)
+TEST(PackedPartOffsetsTest, DISABLED_NonMonotonicValues)
+{
+    // Note: This test is disabled because it should trigger an assertion failure
+    // Enable with caution for debugging
+    PackedPartOffsets offsets;
+
+    offsets.insert(100);
+    offsets.insert(200);
+    offsets.insert(150); // This should trigger assertion
 }
 
 // Test memory allocation

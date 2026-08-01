@@ -39,9 +39,9 @@ static void serializeHeader(const Block & header, WriteBuffer & out)
     }
 }
 
-static Block deserializeHeader(ReadBuffer & in, size_t max_type_complexity)
+static Block deserializeHeader(ReadBuffer & in)
 {
-    UInt64 num_columns = 0;
+    UInt64 num_columns;
     readVarUInt(num_columns, in);
 
     ColumnsWithTypeAndName columns(num_columns);
@@ -49,7 +49,7 @@ static Block deserializeHeader(ReadBuffer & in, size_t max_type_complexity)
     for (auto & column : columns)
     {
         readStringBinary(column.name, in);
-        column.type = decodeDataType(in, max_type_complexity);
+        column.type = decodeDataType(in);
     }
 
     /// Fill columns in header. Some steps expect them to be not empty.
@@ -62,8 +62,6 @@ static Block deserializeHeader(ReadBuffer & in, size_t max_type_complexity)
 /// Nothing is here for now
 struct QueryPlan::SerializationFlags
 {
-    /// Query-plan serialization version of the stream, set on deserialize from the leading version field.
-    UInt64 version = 0;
 };
 
 void QueryPlan::serialize(WriteBuffer & out, size_t max_supported_version) const
@@ -72,7 +70,6 @@ void QueryPlan::serialize(WriteBuffer & out, size_t max_supported_version) const
     writeVarUInt(version, out);
 
     SerializationFlags flags;
-    flags.version = version;
     serialize(out, flags);
 }
 
@@ -130,7 +127,6 @@ void QueryPlan::serialize(WriteBuffer & out, const SerializationFlags & flags) c
         settings.writeChangedBinary(out);
 
         IQueryPlanStep::Serialization ctx{out, registry};
-        ctx.version = flags.version;
         node->step->serialize(ctx);
     }
 
@@ -161,9 +157,9 @@ bool QueryPlan::isSerialized() const
     return serialized_plan != nullptr;
 }
 
-QueryPlanAndSets QueryPlan::deserialize(ReadBuffer & in, const ContextPtr & context, size_t max_type_complexity)
+QueryPlanAndSets QueryPlan::deserialize(ReadBuffer & in, const ContextPtr & context)
 {
-    UInt64 version = 0;
+    UInt64 version;
     readVarUInt(version, in);
 
     if (version > DBMS_QUERY_PLAN_SERIALIZATION_VERSION)
@@ -172,11 +168,10 @@ QueryPlanAndSets QueryPlan::deserialize(ReadBuffer & in, const ContextPtr & cont
             version, DBMS_QUERY_PLAN_SERIALIZATION_VERSION);
 
     SerializationFlags flags;
-    flags.version = version;
-    return deserialize(in, context, flags, max_type_complexity);
+    return deserialize(in, context, flags);
 }
 
-QueryPlanAndSets QueryPlan::deserialize(ReadBuffer & in, const ContextPtr & context, const SerializationFlags & flags, size_t max_type_complexity)
+QueryPlanAndSets QueryPlan::deserialize(ReadBuffer & in, const ContextPtr & context, const SerializationFlags & flags)
 {
     QueryPlanStepRegistry & step_registry = QueryPlanStepRegistry::instance();
 
@@ -200,7 +195,7 @@ QueryPlanAndSets QueryPlan::deserialize(ReadBuffer & in, const ContextPtr & cont
         auto & frame = stack.top();
         if (frame.next_child == 0)
         {
-            UInt64 num_children = 0;
+            UInt64 num_children;
             readVarUInt(num_children, in);
             frame.children.resize(num_children);
         }
@@ -217,7 +212,7 @@ QueryPlanAndSets QueryPlan::deserialize(ReadBuffer & in, const ContextPtr & cont
         readStringBinary(step_name, in);
         readStringBinary(step_description, in);
 
-        auto output_header  = std::make_shared<const Block>(deserializeHeader(in, max_type_complexity));
+        auto output_header  = std::make_shared<const Block>(deserializeHeader(in));
 
         QueryPlanSerializationSettings settings;
         settings.readBinary(in);
@@ -227,7 +222,7 @@ QueryPlanAndSets QueryPlan::deserialize(ReadBuffer & in, const ContextPtr & cont
         for (const auto & child : frame.children)
             input_headers.push_back(child->step->getOutputHeader());
 
-        IQueryPlanStep::Deserialization ctx{in, sets_registry, {}, context, input_headers, output_header, settings, max_type_complexity, flags.version};
+        IQueryPlanStep::Deserialization ctx{in, sets_registry, {}, context, input_headers, output_header, settings};
         auto step = step_registry.createStep(step_name, ctx);
 
         if (step->hasOutputHeader())
@@ -249,7 +244,7 @@ QueryPlanAndSets QueryPlan::deserialize(ReadBuffer & in, const ContextPtr & cont
         stack.pop();
     }
 
-    return deserializeSets(std::move(plan), sets_registry, in, flags, context, max_type_complexity);
+    return deserializeSets(std::move(plan), sets_registry, in, flags, context);
 }
 
 }

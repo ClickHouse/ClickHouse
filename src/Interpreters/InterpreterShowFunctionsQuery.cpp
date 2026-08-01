@@ -49,7 +49,6 @@ FROM {}.{})",
     return rewritten_query;
 }
 
-void registerInterpreterShowFunctionsQuery(InterpreterFactory & factory);
 void registerInterpreterShowFunctionsQuery(InterpreterFactory & factory)
 {
     auto create_fn = [] (const InterpreterFactory::Arguments & args)

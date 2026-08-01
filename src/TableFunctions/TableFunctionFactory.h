@@ -69,7 +69,7 @@ public:
     bool isTableFunctionName(const std::string & name) const;
 
 private:
-    using TableFunctions = std::unordered_map<std::string, Value>; // STYLE_CHECK_ALLOW_STD_CONTAINERS
+    using TableFunctions = std::unordered_map<std::string, Value>;
 
     const TableFunctions & getMap() const override { return table_functions; }
 
