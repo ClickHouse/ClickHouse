@@ -11,7 +11,7 @@ binary. These tests pin the retry policy:
     capped exponential backoff;
   * the backoff base is the caller-supplied `sleep`, so callers that ask for no
     sleep at all (`pr_info.RETRY_SLEEP = 0`) still get none;
-  * every 4xx keeps its existing behaviour, including the 403/404 auth failover
+  * every other 4xx keeps its existing behaviour, including the 403/404 auth failover
     and the 403 bodies the rate-limit predicate does not match.
 """
 
@@ -149,12 +149,15 @@ def test_zero_sleep_caller_is_unaffected(monkeypatch):
 
 
 # Row 5: a bare 429 carries no `rate limit exceeded` body, so it gets neither the
-# auth failover nor (before this) any backoff growth.
+# auth failover nor (before this) any backoff growth. 429 is the only status that is
+# both a 4xx and newly retryable, so this row pins both halves.
 def test_bare_429_gets_backoff(monkeypatch):
-    _, sleeps, outcome, _ = _run(monkeypatch, [429])
+    attempts, sleeps, outcome, auth_seen = _run(monkeypatch, [429])
 
     assert outcome == "APIException"
     assert sleeps == [3, 6, 12, 24]
+    assert attempts == bdh.DOWNLOAD_RETRIES_COUNT
+    assert not any(auth_seen)
 
 
 # Row 6: the 403 rate-limit failover still sets the auth header, still resets the
