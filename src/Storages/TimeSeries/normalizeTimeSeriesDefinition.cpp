@@ -719,7 +719,7 @@ namespace
     /// engine — both when we generate it and when the user specifies an aggregating engine explicitly.
     void allowOffKeyDimensionsForAggregatingTagsEngine(ASTStorage & storage)
     {
-        if (!storage.engine || storage.engine->name.find("Aggregating") == std::string::npos)
+        if (!storage.engine || !storage.engine->name.contains("Aggregating"))
             return;
 
         if (storage.settings)
