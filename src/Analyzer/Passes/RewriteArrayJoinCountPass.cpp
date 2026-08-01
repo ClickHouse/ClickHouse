@@ -229,8 +229,8 @@ public:
         }
 
         /// The subsequent FunctionToSubcolumnsPass folds length(<column>) into the <column>.size0
-        /// subcolumn so only offsets are read. That fold has its own exclusions (an index column, and
-        /// FINAL), where the ARRAY JOIN still goes but the whole column is read: correct, not cheaper.
+        /// subcolumn so only offsets are read. Where that fold is excluded (an index column, FINAL) the
+        /// ARRAY JOIN has already been removed and the whole column is read: correct, just not cheaper.
         auto length_function = std::make_shared<FunctionNode>("length");
         length_function->getArguments().getNodes().push_back(join_alias_column->getExpression());
         resolveOrdinaryFunctionNodeByName(*length_function, "length", getContext());

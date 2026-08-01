@@ -129,9 +129,9 @@ SELECT count() = 0 FROM (EXPLAIN PLAN actions = 1 SELECT count() FROM t_count_aj
 -- Pin prefer_localhost_replica: with the remote path the initiator plan is a bare ReadFromRemote, so
 -- the ARRAY JOIN step is only observable in the local-replica plan.
 SELECT count() > 0 FROM (EXPLAIN PLAN actions = 1 SELECT count() FROM t_count_aj_dist ARRAY JOIN arr SETTINGS prefer_localhost_replica = 1) WHERE explain ILIKE '%ARRAY JOIN%';
--- A secondary query runs only the resolve passes, so a shard does not recover the optimization; the
--- initiator declines because its declared type is not the shard's. This row pins the LOCAL path over
--- the same underlying table, which does optimize.
+-- The initiator declines at the capability check: Distributed opts out of
+-- supportsOptimizationToSubcolumns, and a shard does not recover the optimization either,
+-- since a secondary query runs only the resolve passes. This row pins the LOCAL path.
 SELECT count() > 0 FROM (EXPLAIN PLAN actions = 1 SELECT count() FROM t_count_aj_shard ARRAY JOIN arr) WHERE explain ILIKE '%arr.size0%';
 DROP TABLE t_count_aj_dist;
 DROP TABLE t_count_aj_shard;
