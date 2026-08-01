@@ -1479,8 +1479,7 @@ MergeTreeIndexTextGranuleBuilder::MergeTreeIndexTextGranuleBuilder(
     TokenizerPtr tokenizer_,
     const IPostingListCodec * posting_list_codec_)
     : params(std::move(params_))
-    , owned_tokenizer(tokenizer_ && tokenizer_->isStateful() ? tokenizer_->clone() : nullptr)
-    , tokenizer(owned_tokenizer ? owned_tokenizer.get() : tokenizer_)
+    , tokenizer(tokenizer_)
     , posting_list_codec(posting_list_codec_)
     , arena(std::make_unique<Arena>())
     , position_map(params.positions ? std::make_unique<TokenToPositionListMap>() : nullptr)

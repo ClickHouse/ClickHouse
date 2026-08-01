@@ -468,10 +468,6 @@ struct MergeTreeIndexTextGranuleBuilder
     void reset();
 
     MergeTreeIndexTextParams params;
-    /// A stateful tokenizer (e.g. sparseGrams) is cloned so each builder advances its own
-    /// iterator: aggregators for different parts are created from the index's single tokenizer
-    /// and run concurrently during inserts and merges. Empty for stateless tokenizers.
-    std::unique_ptr<ITokenizer> owned_tokenizer;
     TokenizerPtr tokenizer;
     const IPostingListCodec * posting_list_codec = nullptr;
 
