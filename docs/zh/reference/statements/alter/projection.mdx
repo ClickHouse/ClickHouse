@@ -234,6 +234,57 @@ WHERE _part_starting_offset + _part_offset IN (
 SETTINGS enable_shared_storage_snapshot_in_query = 1
 ```
 
+<div id="example-projection-with-where">
+  ### 带 `WHERE` 子句的 PROJECTION 示例
+</div>
+
+PROJECTION 可以包含 `WHERE` 子句，只存储部分行。如果查询经常按某个已知条件进行过滤，这就很有用——PROJECTION 只会物化符合条件的行，从而减少存储占用并提高查询性能。
+
+创建一个表并添加一个带过滤条件的 PROJECTION：
+
+```sql
+CREATE TABLE events
+(
+    `event_type` String,
+    `time` DateTime,
+    `message` String
+)
+ENGINE = MergeTree()
+ORDER BY time;
+
+ALTER TABLE events ADD PROJECTION proj_pageview (
+    SELECT event_type, time, message
+    WHERE event_type = 'pageview'
+    ORDER BY time
+);
+
+ALTER TABLE events MATERIALIZE PROJECTION proj_pageview;
+```
+
+插入数据：
+
+```sql
+INSERT INTO events VALUES
+    ('pageview', '2024-01-01', 'homepage'),
+    ('click', '2024-01-02', 'button'),
+    ('pageview', '2024-01-03', 'about');
+```
+
+当某个查询的 `WHERE` 子句**涵盖**PROJECTION 的 `WHERE` 子句时 (也就是说，PROJECTION 过滤器中的每个条件也都出现在查询过滤器中) ，如果优化器判断这样做更有利，就可以自动使用该 PROJECTION：
+
+```sql
+-- This query implies the projection's WHERE, so the projection may be used:
+SELECT time, message FROM events WHERE event_type = 'pageview';
+
+-- A stricter query also implies the projection's WHERE:
+SELECT time, message FROM events WHERE event_type = 'pageview' AND time > '2024-01-01';
+
+-- This query does NOT imply the projection, so the base table is scanned:
+SELECT time, message FROM events WHERE event_type = 'click';
+```
+
+这种蕴含检查是保守的——它基于表达式的规范化形式对合取项进行精确匹配。它可能会错过一些有效的优化机会 (例如区间蕴含) ，但绝不会产生错误结果。
+
 <div id="manipulating-projections">
   ## 管理投影
 </div>
@@ -244,11 +295,19 @@ SETTINGS enable_shared_storage_snapshot_in_query = 1
   ### ADD PROJECTION
 </div>
 
-使用以下语句为表元数据添加投影描述：
+使用以下语句为表的元数据添加 PROJECTION 描述：
 
 ```sql
-ALTER TABLE [db.]name [ON CLUSTER cluster] ADD PROJECTION [IF NOT EXISTS] name ( SELECT <COLUMN LIST EXPR> [GROUP BY] [ORDER BY] ) [WITH SETTINGS ( setting_name1 = setting_value1, setting_name2 = setting_value2, ...)]
+-- Normal projection (supports WHERE)
+ALTER TABLE [db.]name [ON CLUSTER cluster] ADD PROJECTION [IF NOT EXISTS] name ( SELECT <COLUMN LIST EXPR> [WHERE <expr>] [ORDER BY] ) [WITH SETTINGS ( setting_name1 = setting_value1, setting_name2 = setting_value2, ...)]
+
+-- Aggregate projection (supports WHERE)
+ALTER TABLE [db.]name [ON CLUSTER cluster] ADD PROJECTION [IF NOT EXISTS] name ( SELECT <COLUMN LIST EXPR> [WHERE <expr>] [GROUP BY] ) [WITH SETTINGS ( setting_name1 = setting_value1, setting_name2 = setting_value2, ...)]
 ```
+
+<Note>
+  当 PROJECTION 定义了 `WHERE` 子句时，只有匹配该谓词的行才会被物化。优化器可以在查询的 `WHERE` 在逻辑上蕴含该 PROJECTION 的 `WHERE`，且该 PROJECTION 对查询计划有利时使用此类 PROJECTION。这同时适用于普通 PROJECTION 和聚合 PROJECTION。
+</Note>
 
 <div id="with-settings">
   #### `WITH SETTINGS` 子句
