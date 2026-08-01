@@ -31,6 +31,7 @@
 #include <Interpreters/RequiredSourceColumnsVisitor.h>
 #include <Interpreters/TreeRewriter.h>
 #include <Interpreters/addTypeConversionToAST.h>
+#include <Interpreters/applyColumnsTransformer.h>
 #include <Interpreters/replaceAliasColumnsInQuery.h>
 #include <Parsers/ASTAsterisk.h>
 #include <Parsers/ASTColumnDeclaration.h>
@@ -1205,7 +1206,7 @@ void applyColumnTransformers(ASTs & columns, const ASTPtr & transformers)
         return;
 
     for (const auto & transformer : transformers->children)
-        IASTColumnsTransformer::transform(transformer, columns);
+        applyColumnsTransformer(transformer, columns);
 }
 
 ASTs expandColumnMatcher(const ASTPtr & matcher, const ColumnsDescription & columns, ContextPtr context)

@@ -268,9 +268,10 @@ struct ToTimeImpl
 
     static Int32 execute(Int64 dt64, const DateLUTImpl & time_zone)
     {
-        /// Compute local seconds-of-day using timezone offset (aligned with DateTime64 -> Time64)
+        /// Compute local seconds-of-day using timezone offset (aligned with DateTime64 -> Time64).
+        /// Reduce modulo 86400 before adding the offset so the sum cannot overflow for extreme dt64 (e.g. INT64_MIN).
         Int64 offset = time_zone.timezoneOffset(dt64);
-        Int64 local_seconds = (dt64 + offset) % 86400;
+        Int64 local_seconds = (dt64 % 86400 + offset) % 86400;
         if (local_seconds < 0)
             local_seconds += 86400;
 
@@ -2223,7 +2224,9 @@ struct ConvertImpl
                     fraction += from_scale_mult;
                 }
                 Int64 offset = time_zone->timezoneOffset(static_cast<Int64>(utc_seconds));
-                Int64 local_seconds = (static_cast<Int64>(utc_seconds) + offset) % 86400;
+                /// Reduce modulo 86400 before adding the offset: the sum overflows Int64 for extreme
+                /// inputs such as INT64_MIN, and reducing first leaves the seconds-of-day unchanged.
+                Int64 local_seconds = (static_cast<Int64>(utc_seconds) % 86400 + offset) % 86400;
                 if (local_seconds < 0)
                     local_seconds += 86400;
 
@@ -4225,10 +4228,10 @@ struct ToDateMonotonicity
              && ((left.isNull() || left.safeGet<UInt64>() <= max_day_num) && (right.isNull() || right.safeGet<UInt64>() > max_day_num)))
             || ((left.getType() == Field::Types::Int64 || left.isNull()) && (right.getType() == Field::Types::Int64 || right.isNull())
                 && ((left.isNull() || left.safeGet<Int64>() <= static_cast<Int64>(max_day_num)) && (right.isNull() || right.safeGet<Int64>() > static_cast<Int64>(max_day_num))))
-            || ((
+            || (
                 (left.getType() == Field::Types::Float64 || left.isNull())
                 && (right.getType() == Field::Types::Float64 || right.isNull())
-                && ((left.isNull() || left.safeGet<Float64>() <= static_cast<Float64>(max_day_num)) && (right.isNull() || right.safeGet<Float64>() > static_cast<Float64>(max_day_num)))))
+                && ((left.isNull() || left.safeGet<Float64>() <= static_cast<Float64>(max_day_num)) && (right.isNull() || right.safeGet<Float64>() > static_cast<Float64>(max_day_num))))
             || !isNativeNumber(type))
         {
             return {};

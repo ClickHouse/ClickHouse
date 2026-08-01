@@ -31,7 +31,9 @@ SELECT count() FROM t_index_typed_alias WHERE b = 300 SETTINGS force_data_skippi
 SELECT count() FROM t_index_typed_alias WHERE b = 300 SETTINGS force_data_skipping_indices = 'idx', enable_analyzer = 0;
 
 -- The index actually prunes: only the granule holding alias value 44 is read.
-SELECT trimLeft(explain) FROM (EXPLAIN indexes = 1 SELECT count() FROM t_index_typed_alias WHERE b = 44 SETTINGS enable_analyzer = 1) WHERE explain LIKE '%Granules:%' SETTINGS enable_analyzer = 1;
+-- The leading indentation is stripped along with the tree-drawing characters that appear
+-- when the plan is nested deeper, as it is with parallel replicas.
+SELECT replaceRegexpOne(explain, '^[^A-Za-z]*', '') FROM (EXPLAIN indexes = 1 SELECT count() FROM t_index_typed_alias WHERE b = 44 SETTINGS enable_analyzer = 1) WHERE explain LIKE '%Granules:%' SETTINGS enable_analyzer = 1;
 
 -- The persisted definition keeps the live alias reference, while the analyzed
 -- expression carries the alias type conversion.

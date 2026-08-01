@@ -1,3 +1,4 @@
+#include <Interpreters/applyColumnsTransformer.h>
 #include <Common/typeid_cast.h>
 #include <Core/NamesAndTypes.h>
 #include <Interpreters/JoinToSubqueryTransformVisitor.h>
@@ -175,7 +176,7 @@ private:
         if (columns_regexp_matcher.transformers)
         {
             for (const auto & transformer : columns_regexp_matcher.transformers->children)
-                IASTColumnsTransformer::transform(transformer, columns);
+                applyColumnsTransformer(transformer, columns);
         }
     }
 
@@ -207,7 +208,7 @@ private:
                 if (transformer->as<ASTColumnsApplyTransformer>() ||
                     transformer->as<ASTColumnsExceptTransformer>() ||
                     transformer->as<ASTColumnsReplaceTransformer>())
-                    IASTColumnsTransformer::transform(transformer, columns);
+                    applyColumnsTransformer(transformer, columns);
                 else
                     throw Exception(ErrorCodes::LOGICAL_ERROR, "Qualified COLUMNS matcher must only have children of IASTColumnsTransformer type");
             }
@@ -233,7 +234,7 @@ private:
                 if (asterisk->transformers)
                 {
                     for (const auto & transformer : asterisk->transformers->children)
-                        IASTColumnsTransformer::transform(transformer, columns);
+                        applyColumnsTransformer(transformer, columns);
                 }
             }
             else if (const auto * qualified_asterisk = child->as<ASTQualifiedAsterisk>())
@@ -254,7 +255,7 @@ private:
                         if (transformer->as<ASTColumnsApplyTransformer>() ||
                             transformer->as<ASTColumnsExceptTransformer>() ||
                             transformer->as<ASTColumnsReplaceTransformer>())
-                            IASTColumnsTransformer::transform(transformer, columns);
+                            applyColumnsTransformer(transformer, columns);
                         else
                             throw Exception(ErrorCodes::LOGICAL_ERROR, "Qualified asterisk must only have children of IASTColumnsTransformer type");
                     }
@@ -270,7 +271,7 @@ private:
                 if (columns_list_matcher->transformers)
                 {
                     for (const auto & transformer : columns_list_matcher->transformers->children)
-                        IASTColumnsTransformer::transform(transformer, columns);
+                        applyColumnsTransformer(transformer, columns);
                 }
             }
             else if (const auto * columns_regexp_matcher = child->as<ASTColumnsRegexpMatcher>())
