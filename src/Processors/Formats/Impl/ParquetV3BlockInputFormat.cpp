@@ -369,6 +369,20 @@ UInt64 ParquetFileBucketInfo::getMinProtocolVersion() const
         : DBMS_CLUSTER_PROCESSING_PROTOCOL_VERSION_WITH_FILE_BUCKETS_INFO;
 }
 
+bool ParquetFileBucketInfo::coversWholeFile() const
+{
+    /// The bucket must hold every row group of the file: for `file_num_row_groups` total row
+    /// groups that is exactly the ids `0 .. file_num_row_groups - 1`, which `splitToBuckets` /
+    /// `computeBucketsByCount` emit in ascending order. A count of 0 means the total is unknown,
+    /// so whole-file coverage cannot be proven.
+    if (file_num_row_groups == 0 || row_group_ids.size() != file_num_row_groups)
+        return false;
+    for (size_t i = 0; i < row_group_ids.size(); ++i)
+        if (row_group_ids[i] != i)
+            return false;
+    return true;
+}
+
 void registerParquetFileBucketInfo(std::unordered_map<String, FileBucketInfoPtr> & instances);
 void registerParquetFileBucketInfo(std::unordered_map<String, FileBucketInfoPtr> & instances)
 {

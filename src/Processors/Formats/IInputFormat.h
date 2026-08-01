@@ -73,6 +73,13 @@ struct FileBucketInfo
     /// is the version that introduced `file_bucket_info` itself.
     virtual UInt64 getMinProtocolVersion() const;
 
+    /// Whether this bucket covers the whole file (a trivial split into a single bucket). For such a
+    /// bucket, dropping it from a task is semantically safe: a worker reading the plain path once
+    /// returns exactly the same rows, because there is no second bucket to duplicate or omit. Used to
+    /// avoid failing a task for an older worker (see `ClusterFunctionReadTaskResponse::serialize`)
+    /// when nothing semantics-affecting would be lost. The default is the safe answer.
+    virtual bool coversWholeFile() const { return false; }
+
     virtual ~FileBucketInfo() = default;
 };
 using FileBucketInfoPtr = std::shared_ptr<FileBucketInfo>;

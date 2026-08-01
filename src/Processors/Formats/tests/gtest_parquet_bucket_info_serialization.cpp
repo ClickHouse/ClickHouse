@@ -119,4 +119,22 @@ TEST(ParquetFileBucketInfoSerialization, MinProtocolVersionRequiresRowGroupCount
         static_cast<UInt64>(DBMS_CLUSTER_PROCESSING_PROTOCOL_VERSION_WITH_FILE_BUCKETS_INFO));
 }
 
+/// A trivial one-bucket split covering every row group of the file may be stripped from a task for
+/// an older worker (`ClusterFunctionReadTaskResponse::serialize`): reading the plain path once
+/// returns exactly the same rows. Anything less than proven whole-file coverage must answer false,
+/// so the fail-close protocol gate stays in force.
+TEST(ParquetFileBucketInfoSerialization, CoversWholeFile)
+{
+    EXPECT_TRUE(ParquetFileBucketInfo({0, 1, 2}, /*file_num_row_groups=*/3).coversWholeFile());
+    EXPECT_TRUE(ParquetFileBucketInfo({0}, /*file_num_row_groups=*/1).coversWholeFile());
+
+    /// A strict subset of the row groups.
+    EXPECT_FALSE(ParquetFileBucketInfo({0, 1}, /*file_num_row_groups=*/3).coversWholeFile());
+    /// Unknown total: coverage cannot be proven.
+    EXPECT_FALSE(ParquetFileBucketInfo({0, 1, 2}, /*file_num_row_groups=*/0).coversWholeFile());
+    /// Right size but not the full 0..n-1 range.
+    EXPECT_FALSE(ParquetFileBucketInfo({1, 2, 3}, /*file_num_row_groups=*/3).coversWholeFile());
+    EXPECT_FALSE(ParquetFileBucketInfo({0, 0, 2}, /*file_num_row_groups=*/3).coversWholeFile());
+}
+
 #endif

@@ -38,6 +38,7 @@ struct ParquetFileBucketInfo : public FileBucketInfo
     std::shared_ptr<FileBucketInfo> filterByMatchingRowGroups(
         const std::vector<size_t> & matching_row_groups, size_t file_num_row_groups) const override;
     UInt64 getMinProtocolVersion() const override;
+    bool coversWholeFile() const override;
 };
 using ParquetFileBucketInfoPtr = std::shared_ptr<ParquetFileBucketInfo>;
 
