@@ -31,7 +31,7 @@
 #include <Parsers/ASTIdentifier.h>
 #include <Parsers/ASTLiteral.h>
 #include <Parsers/ASTSelectQuery.h>
-#include <Parsers/parseIdentifierOrStringLiteral.h>
+#include <Interpreters/parseIdentifiersOrStringLiteralsWithSettings.h>
 #include <Processors/ConcatProcessor.h>
 #include <Processors/Merges/MergingSortedTransform.h>
 #include <Processors/QueryPlan/IParameterLookup.h>
@@ -4186,33 +4186,8 @@ void ReadFromMergeTree::initializePipeline(QueryPipelineBuilder & pipeline, [[ma
     /// Initializing parallel replicas coordinator with empty ranges to read in case of
     /// local plan for initiator to prevent coordinator initialization by other replicas
     /// (which may skip index analysis).
-    if (result.parts_with_ranges.empty() && isParallelReplicasLocalPlanForInitiator())
-    {
-        const auto & client_info = context->getClientInfo();
-
-        auto extension = ParallelReadingExtension{
-            all_ranges_callback.value(),
-            read_task_callback.value(),
-            number_of_current_replica.value_or(client_info.number_of_current_replica),
-            context->getClusterForParallelReplicas()->getShardsInfo().at(0).getAllNodeCount(),
-            data.getStorageID().getFullTableName()};
-
-        auto get_coordination_mode = [&]
-        {
-            if (!query_info.input_order_info)
-                return CoordinationMode::Default;
-
-            if (!query_info.input_order_info->direction)
-                return CoordinationMode::Default;
-
-            return query_info.input_order_info->direction > 0
-                ? CoordinationMode::WithOrder
-                : CoordinationMode::ReverseOrder;
-        };
-        // This code is executed only if there is no parts to read, so the parameter values don't really matter
-        std::ignore = extension.sendInitialRequest(
-            get_coordination_mode(), result.parts_with_ranges.getDescriptions(), /*mark_segment_size=*/1, /*min_marks_per_request=*/1);
-    }
+    if (result.parts_with_ranges.empty())
+        announceEmptyReadRangesToCoordinatorIfInitiator();
 
     if (result.parts_with_ranges.empty() && !query_info.isStream())
     {
@@ -5069,6 +5044,38 @@ std::shared_ptr<ParallelReadingExtension> ReadFromMergeTree::getParallelReadingE
         number_of_current_replica.value_or(client_info.number_of_current_replica),
         context->getClusterForParallelReplicas()->getShardsInfo().at(0).getAllNodeCount(),
         data.getStorageID().getFullTableName());
+}
+
+bool ReadFromMergeTree::announceEmptyReadRangesToCoordinatorIfInitiator()
+{
+    if (!isParallelReplicasLocalPlanForInitiator())
+        return false;
+
+    const auto & client_info = context->getClientInfo();
+
+    auto extension = ParallelReadingExtension{
+        all_ranges_callback.value(),
+        read_task_callback.value(),
+        number_of_current_replica.value_or(client_info.number_of_current_replica),
+        context->getClusterForParallelReplicas()->getShardsInfo().at(0).getAllNodeCount(),
+        data.getStorageID().getFullTableName()};
+
+    auto get_coordination_mode = [&]
+    {
+        if (!query_info.input_order_info)
+            return CoordinationMode::Default;
+
+        if (!query_info.input_order_info->direction)
+            return CoordinationMode::Default;
+
+        return query_info.input_order_info->direction > 0
+            ? CoordinationMode::WithOrder
+            : CoordinationMode::ReverseOrder;
+    };
+    // This code is executed only if there is no parts to read, so the parameter values don't really matter
+    std::ignore = extension.sendInitialRequest(
+        get_coordination_mode(), /*description=*/{}, /*mark_segment_size=*/1, /*min_marks_per_request=*/1);
+    return true;
 }
 
 void ReadFromMergeTree::createReadTasksForTextIndex(const UsefulSkipIndexes & skip_indexes, const IndexReadColumns & added_columns, const Names & removed_columns, bool is_final)
