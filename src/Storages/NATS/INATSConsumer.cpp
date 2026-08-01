@@ -49,9 +49,9 @@ bool INATSConsumer::isSubscribed() const
     return !subscriptions.empty();
 }
 
-bool INATSConsumer::hasClosedSubscription() const
+bool INATSConsumer::allSubscriptionsClosed() const
 {
-    return std::ranges::any_of(
+    return std::ranges::all_of(
         subscriptions, [](const auto & subscription) { return !natsSubscription_IsValid(subscription.get()); });
 }
 

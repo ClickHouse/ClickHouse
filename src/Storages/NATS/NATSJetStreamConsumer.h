@@ -25,11 +25,10 @@ public:
 
     bool needsAck() const override { return true; }
 
-    /// An asynchronous pull subscription is renewed only when a message is delivered, and a
-    /// reconnect resends the `SUB` line but not the outstanding pull request, so a subscription
-    /// whose fetch the client has terminated never consumes again. JetStream redelivers unacked
-    /// messages, so re-subscribing is safe here.
-    bool needsResubscribe() const override { return isSubscribed() && hasClosedSubscription(); }
+    /// A subscription whose fetch the client terminated never consumes again, and JetStream
+    /// redelivers unacked messages, so re-subscribing is safe. Requires all of them to be closed:
+    /// teardown is per consumer, so a live sibling must not be dropped.
+    bool needsResubscribe() const override { return isSubscribed() && allSubscriptionsClosed(); }
 
 protected:
     void subscribeImpl() override;

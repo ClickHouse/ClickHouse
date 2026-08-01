@@ -1255,6 +1255,26 @@ def test_nats_jet_stream_settles_after_one_broker_restart(nats_cluster):
     assert resubscribes == 0, "kept resubscribing after recovery: {} more lines".format(resubscribes)
 
 
+def test_nats_jet_stream_resumes_consuming_multiple_subjects_after_broker_restart(nats_cluster):
+    # One subscription per subject, and teardown is per consumer, so recovery must wait until the
+    # client has closed all of them: firing on the first closed one drains a live sibling, which
+    # takes the conn -> sub lock the client's own pull renewal takes as sub -> conn.
+    _setup_restart_table("test_subject,right_insert1", "test_consumer")
+
+    total_expected = 10
+    _publish_and_expect("test_subject", range(0, 10), total_expected)
+
+    _restart_nats(nats_cluster)
+
+    # Consuming has to resume on both subjects, so recovery cannot simply give up when the
+    # subscriptions do not all report closed at the same instant.
+    total_expected += 10
+    _publish_and_expect("test_subject", range(100, 110), total_expected)
+
+    total_expected += 10
+    _publish_and_expect("right_insert1", range(200, 210), total_expected)
+
+
 def test_nats_no_connection_at_startup_1(nats_cluster):
 
     asyncio.run(add_durable_consumer(cluster, "test_stream", "test_consumer"))
