@@ -1170,7 +1170,7 @@ bool Reader::decodeDictionaryPage(
             : size_t(header.uncompressed_page_size);
         reserved_bytes = Dictionary::decodedFootprintUpperBound(
             column.meta->meta_data.codec, header.dictionary_page_header.encoding, column_info.decoder,
-            size_t(header.dictionary_page_header.num_values), page_bytes, *column_info.decoded_type);
+            size_t(header.dictionary_page_header.num_values), page_bytes, *column_info.rawDecodedType());
         if (!reservation.tryReserve(reserved_bytes))
             return false;
     }
@@ -1257,7 +1257,7 @@ void Reader::decodeDictionaryPageImpl(const parq::PageHeader & header, std::span
     /// drive a huge `reserve`/`resize` inside Dictionary::decode.
     if (header.dictionary_page_header.num_values < 0)
         throw Exception(ErrorCodes::INCORRECT_DATA, "Negative number of values in dictionary page");
-    column.dictionary.decode(header.dictionary_page_header.encoding, column_info.decoder, size_t(header.dictionary_page_header.num_values), data, *column_info.decoded_type);
+    column.dictionary.decode(header.dictionary_page_header.encoding, column_info.decoder, size_t(header.dictionary_page_header.num_values), data, *column_info.rawDecodedType());
 }
 
 bool Reader::BloomFilterLookup::findAnyHash(const std::vector<uint64_t> & hashes)
@@ -1294,6 +1294,13 @@ bool Reader::BloomFilterLookup::findAnyHash(const std::vector<uint64_t> & hashes
             return true;
     }
     return false;
+}
+
+DataTypePtr Reader::PrimitiveColumnInfo::rawDecodedType() const
+{
+    if (const auto * lc_type = typeid_cast<const DataTypeLowCardinality *>(decoded_type.get()))
+        return removeNullable(lc_type->getDictionaryType());
+    return decoded_type;
 }
 
 bool Reader::columnChunkCanUseDictionaryFilter(const parq::ColumnChunk & column_meta) const
@@ -1465,7 +1472,7 @@ static std::optional<HashSet<UInt64>> hashDictionaryValues(
         for (size_t i = 0; i < count; ++i)
             indexes_data[i] = static_cast<UInt32>(i);
 
-        auto values = column_info.decoded_type->createColumn();
+        auto values = column_info.rawDecodedType()->createColumn();
         values->reserve(count);
         column.dictionary.index(*indexes, *values);
         hashes = parquetTryHashColumn(values.get(), &desc);

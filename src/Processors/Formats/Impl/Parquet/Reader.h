@@ -170,6 +170,15 @@ struct Reader
         DataTypePtr decoded_type; // what decoder outputs, not Nullable
         DataTypePtr output_type; // maybe Nullable
         DataTypePtr low_cardinality_dictionary_type; // set when `decoded_type` is `LowCardinality`
+
+        /// The type the page decoders and `Dictionary` materialize *values* into. This is
+        /// `decoded_type` with the `LowCardinality` wrapper (and the `Nullable` of its dictionary
+        /// type) removed: `Dictionary` stores plain values and hands them to
+        /// `Dictionary::insertIndexesIntoLowCardinalityColumn`, which assembles the
+        /// `ColumnLowCardinality` itself. Passing the `LowCardinality` type to `Dictionary::decode`
+        /// or materializing dictionary values into a column of it produces a `ColumnLowCardinality`
+        /// where a plain column is expected.
+        DataTypePtr rawDecodedType() const;
         bool output_nullable = false;
         bool preserve_unexpanded_nullable = false;
         /// This leaf is inside a Tuple group that is requested as Nullable(Tuple(...)) and is
