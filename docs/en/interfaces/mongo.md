@@ -56,9 +56,51 @@ Collections with the same name in different MongoDB databases are different Clic
 
 ### Supported commands {#supported-commands}
 
-`insert`, `find`, `count`, `update`, `delete`, `create`, `drop`, `createIndexes`, `listDatabases`, `listCollections`, `isMaster` and `saslStart`.
+`insert`, `find`, `aggregate`, `count`, `update`, `delete`, `create`, `drop`, `createIndexes`, `listDatabases`, `listCollections`, `isMaster` and `saslStart`.
 
-A `find` supports a filter, a projection, `limit` and `sort`. Inside a filter, the operators `$or`, `$lt`, `$lte`, `$gt`, `$gte`, `$ne` and `$regex` are supported, and a projection may compute `$add`, `$sub`, `$mul` and `$div`. An `update` supports `$set` and `$inc`.
+A `find` supports a filter, a projection, `limit` and `sort`. A projection may compute `$add`, `$sub`, `$mul` and `$div`, and an `update` supports `$set` and `$inc`.
+
+#### Filters {#filters}
+
+A filter - of a `find`, a `delete`, an `update` or a `$match` stage - supports:
+
+- the comparisons `$eq`, `$ne`, `$lt`, `$lte`, `$gt` and `$gte`;
+- the set membership tests `$in` and `$nin`;
+- the connectives `$and`, `$or`, `$nor` and `$not`;
+- `$regex` with the options `i`, `m`, `s` and `x`, which is matched as a regular expression rather than as a `LIKE` pattern;
+- the Extended JSON wrappers `$numberInt`, `$numberLong`, `$numberDouble`, `$numberDecimal`, `$oid` and `$date`, which the drivers send for the types JSON cannot represent.
+
+Several operators on the same field all have to hold, so a range is written the way MongoDB writes it:
+
+```javascript
+{"EventDate": {"$gte": {"$date": "2013-07-01"}, "$lte": {"$date": "2013-07-31"}}}
+```
+
+#### Aggregation pipelines {#aggregation-pipelines}
+
+An `aggregate` translates its pipeline into a chain of `SELECT`s: each stage fills a clause of the query being built, and a stage that needs a clause already filled continues on top of a subquery. The stages `$match`, `$group`, `$project`, `$set` (`$addFields`), `$sort`, `$skip`, `$limit`, `$count` and `$unionWith` are supported.
+
+```javascript
+db.hits.aggregate([
+    {"$match": {"SearchPhrase": {"$ne": ""}}},
+    {"$group": {"_id": "$SearchPhrase", "c": {"$sum": 1}}},
+    {"$sort": {"c": -1}},
+    {"$limit": 10}
+])
+```
+
+`$group` supports the accumulators `$sum`, `$avg`, `$min`, `$max`, `$first`, `$last`, `$push`, `$addToSet`, `$count`, `$stdDevPop` and `$stdDevSamp`. A `_id` of `null` aggregates the whole stream into one document, and a `_id` that is a document groups by each of its fields, which become the `_id.<field>` columns of the result.
+
+Inside a stage, an expression may use `$literal`, the arithmetic `$add`, `$subtract`, `$multiply`, `$divide`, `$mod`, `$pow`, `$abs`, `$ceil`, `$floor`, `$round`, `$sqrt`, `$exp`, `$ln` and `$log10`, the comparisons and connectives listed above in their expression form, the conditionals `$cond`, `$switch` and `$ifNull`, the conversions `$toString`, `$toInt`, `$toLong`, `$toDouble`, `$toDecimal`, `$toBool` and `$toDate`, the string operators `$concat`, `$strLenBytes`, `$strLenCP`, `$toUpper`, `$toLower`, `$split`, `$substrBytes`, `$substrCP`, `$regexMatch` and `$regexFind`, the array operators `$size`, `$first`, `$last`, `$arrayElemAt`, `$in` and `$reverseArray`, and the date parts `$year`, `$month`, `$dayOfMonth`, `$dayOfWeek`, `$dayOfYear`, `$week`, `$hour`, `$minute`, `$second`, `$millisecond` and `$dateTrunc`.
+
+A `$regexFind` becomes the `match`, `idx` and `captures` fields of its result document, following the same mapping of a nested field onto an `a.b` column as everywhere else:
+
+```javascript
+db.hits.aggregate([
+    {"$set": {"k": {"$regexFind": {"input": "$Referer", "regex": "^https?://([^/]+)/"}}}},
+    {"$group": {"_id": {"$first": "$k.captures"}, "c": {"$sum": 1}}}
+])
+```
 
 ### Schemas {#schemas}
 
@@ -75,8 +117,9 @@ A collection created explicitly with `createCollection` has no document to infer
 
 - An `update` is translated into `ALTER TABLE ... UPDATE`, which is asynchronous: the new value does not have to be visible to the next `find`.
 - The number of documents affected by `update` and `delete` is always reported as `0`.
-- Cursors are not implemented, so the whole result of a `find` is returned in the first batch.
-- Aggregation pipelines, transactions, change streams and the `OP_COMPRESSED` message are not supported.
+- Cursors are not implemented, so the whole result of a `find` or an `aggregate` is returned in the first batch.
+- A projection lists exactly the fields it names: `_id` is not added to it implicitly, because a ClickHouse table has no implicit `_id` column.
+- `$lookup`, `$unwind`, `$facet` and the other pipeline stages not listed above are not supported, and neither are transactions, change streams and the `OP_COMPRESSED` message.
 - Database and collection names must consist of letters, digits, `_` and `-`.
 
 ## MongoDB dialect {#mongodb-dialect}
@@ -89,6 +132,7 @@ SET dialect = 'mongo';
 db.users.find({"age" : {"$gt" : 20}});
 db.users.find({"$projection" : {"name" : "name", "total" : {"$add" : ["price", "tax"]}}});
 db.users.find({}).limit(10).sort({"age" : 1});
+db.users.aggregate([{"$group" : {"_id" : "$city", "c" : {"$sum" : 1}}}, {"$sort" : {"c" : -1}}]);
 ```
 
 The first name of a query is the database. The literal `db`, as written by the MongoDB shell, means the current database; any other name addresses that database explicitly:

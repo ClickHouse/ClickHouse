@@ -70,11 +70,19 @@ std::shared_ptr<QueryMetadata> extractMetadataFromRequest(const char * begin, co
         throw Exception(ErrorCodes::BAD_ARGUMENTS, "Invalid query: unknown operation '{}'", key);
     }
 
-    MongoQueryKeyNameExtractor limit_extractor(".limit");
-    auto limit = limit_extractor.extractInt(begin, end);
+    /// `.limit(...)` and `.sort(...)` are suffixes of a `find`. Looking for them in any other
+    /// query would match the text of its argument - an aggregation pipeline is free to hold a
+    /// field path such as `$a.limit` - and the pattern is searched for as plain text.
+    std::optional<int> limit;
+    std::optional<std::string> order_by;
+    if (*query_type == QueryMetadata::QueryType::select)
+    {
+        MongoQueryKeyNameExtractor limit_extractor(".limit");
+        limit = limit_extractor.extractInt(begin, end);
 
-    MongoQueryKeyNameExtractor order_by_extractor(".sort");
-    auto order_by = order_by_extractor.extractString(begin, end);
+        MongoQueryKeyNameExtractor order_by_extractor(".sort");
+        order_by = order_by_extractor.extractString(begin, end);
+    }
 
     return std::make_shared<QueryMetadata>(std::move(database_name), std::move(collection_name), *query_type, limit, order_by);
 }

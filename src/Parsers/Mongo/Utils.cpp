@@ -32,12 +32,39 @@ std::pair<const char *, const char *> getSettingsSubstring(const char * begin, c
         throw Exception(ErrorCodes::BAD_ARGUMENTS, "Invalid query: can not find settings in query");
     }
 
-    const char * position_end = findKth<')'>(begin, end, 1);
-    if (position_end == end)
+    /// The parenthesis that closes the argument list, and not the first one in the text: a
+    /// parenthesis inside a string literal - a regular expression such as `(?:www\.)?` for
+    /// instance - is part of the argument, and so is a parenthesis of a nested call.
+    size_t depth = 0;
+    bool inside_string = false;
+    char quote = 0;
+    for (const char * position = position_start; position != end; ++position)
     {
-        throw Exception(ErrorCodes::BAD_ARGUMENTS, "Invalid query: can not find settings in your query ");
+        if (inside_string)
+        {
+            if (*position == '\\' && position + 1 != end)
+                ++position;
+            else if (*position == quote)
+                inside_string = false;
+            continue;
+        }
+
+        if (*position == '"' || *position == '\'')
+        {
+            inside_string = true;
+            quote = *position;
+        }
+        else if (*position == '(')
+            ++depth;
+        else if (*position == ')')
+        {
+            --depth;
+            if (depth == 0)
+                return {position_start + 1, position};
+        }
     }
-    return {position_start + 1, position_end};
+
+    throw Exception(ErrorCodes::BAD_ARGUMENTS, "Invalid query: can not find settings in your query ");
 }
 
 std::optional<rapidjson::Value>

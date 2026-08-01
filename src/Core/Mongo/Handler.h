@@ -35,6 +35,13 @@ struct CollectionRef
   */
 CollectionRef getCollectionRef(const Document & command, const String & command_name);
 
+/** Runs a `SELECT` and builds the reply a Mongo client expects from a command that returns
+  * documents: `{"cursor": {"firstBatch": [...], "id": 0, "ns": "<database>.<collection>"}, "ok": 1}`.
+  * The whole result is returned in the first batch, so the cursor is already exhausted.
+  */
+std::vector<Document>
+executeSelectIntoCursor(const String & sql_query, const CollectionRef & collection, std::shared_ptr<QueryExecutor> executor);
+
 /** Whether an object exists, e.g. `object_kind` = `TABLE` and `name` = `` `db`.`users` ``.
   * Mongo treats operations on a namespace that does not exist as a no-op rather than an error,
   * so the handlers have to be able to tell it apart.

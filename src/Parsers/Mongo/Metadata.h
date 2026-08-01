@@ -28,6 +28,7 @@ public:
         insert_one = 2,
         delete_many = 3,
         update_many = 4,
+        aggregate = 5,
     };
 
     static constexpr std::pair<const char *, QueryType> queryTypeKeyWords[] = {
@@ -36,6 +37,7 @@ public:
         {"insertOne", QueryType::insert_one},
         {"deleteMany", QueryType::delete_many},
         {"updateMany", QueryType::update_many},
+        {"aggregate", QueryType::aggregate},
     };
 
     static constexpr size_t queryTypeKeyWordsLength = sizeof(queryTypeKeyWords) / sizeof(queryTypeKeyWords[0]);

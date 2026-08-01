@@ -49,24 +49,6 @@ public:
 std::shared_ptr<IMongoParser> createParser(
     rapidjson::Value data_, std::shared_ptr<QueryMetadata> metadata_, const std::string & edge_name_, bool literal_as_default = false);
 
-/// Creates a inversed parsed based on edge name and data.
-/// Inversed means that mongo syntax have inversed order of elements in tree.
-/// Example : $lt operator. In mongo syntax it should have structure like { quantity: { $lt: 20 } }
-/// So tree for this json looks like
-///
-///       quantity
-///      /        \
-/// (operator <)  20
-///
-/// But in AST representation looks like
-///
-///     (operator <)
-///    /           \
-///  quantity      20
-///
-/// So some operators needs in special parsers
-std::shared_ptr<IMongoParser>
-createInversedParser(rapidjson::Value data_, std::shared_ptr<QueryMetadata> metadata_, const std::string & edge_name_);
 
 
 /// Class to connect mongo and clickhouse parsers

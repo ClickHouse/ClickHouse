@@ -6,6 +6,7 @@ namespace DB::MongoProtocol
 HandlerRegitstry::HandlerRegitstry()
 {
     registerFindHandler(this);
+    registerAggregateHandler(this);
     registerInsertHandler(this);
     registerIsMasterHandler(this);
     registerDropHandler(this);

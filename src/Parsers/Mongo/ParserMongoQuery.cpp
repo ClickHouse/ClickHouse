@@ -19,7 +19,7 @@
 #include <Parsers/IParserBase.h>
 
 #include <Parsers/Mongo/Metadata.h>
-#include <Parsers/Mongo/ParserMongoCompareFunctions.h>
+#include <Parsers/Mongo/ParserMongoAggregateQuery.h>
 #include <Parsers/Mongo/ParserMongoDeleteQuery.h>
 #include <Parsers/Mongo/ParserMongoFilter.h>
 #include <Parsers/Mongo/ParserMongoFunction.h>
@@ -53,6 +53,9 @@ bool ParserMongoQuery::parseImpl(Pos & /*pos*/, ASTPtr & node, Expected & /*expe
         case QueryMetadata::QueryType::update_many: {
             return ParserMongoUpdateQuery(std::move(data), metadata).parseImpl(node);
         }
+        case QueryMetadata::QueryType::aggregate: {
+            return ParserMongoAggregateQuery(std::move(*data.GetArray().Begin()), metadata, "").parseImpl(node);
+        }
     }
 }
 
@@ -62,6 +65,14 @@ createParser(rapidjson::Value data_, std::shared_ptr<QueryMetadata> metadata_, c
     if (edge_name_ == "$or")
     {
         return std::make_shared<MongoOrFunction>(std::move(data_), metadata_, edge_name_);
+    }
+    if (edge_name_ == "$and")
+    {
+        return std::make_shared<MongoAndFunction>(std::move(data_), metadata_, edge_name_);
+    }
+    if (edge_name_ == "$nor")
+    {
+        return std::make_shared<MongoNorFunction>(std::move(data_), metadata_, edge_name_);
     }
     if (edge_name_ == "$add")
     {
@@ -105,35 +116,6 @@ createParser(rapidjson::Value data_, std::shared_ptr<QueryMetadata> metadata_, c
     }
 }
 
-std::shared_ptr<IMongoParser>
-createInversedParser(rapidjson::Value data_, std::shared_ptr<QueryMetadata> metadata_, const std::string & edge_name_)
-{
-    if (static_cast<std::string>(data_.MemberBegin()->name.GetString()) == "$lt")
-    {
-        return std::make_shared<MongoLtFunction>(copyValue(data_.MemberBegin()->value, metadata_->getAllocator()), metadata_, edge_name_);
-    }
-    if (static_cast<std::string>(data_.MemberBegin()->name.GetString()) == "$lte")
-    {
-        return std::make_shared<MongoLteFunction>(copyValue(data_.MemberBegin()->value, metadata_->getAllocator()), metadata_, edge_name_);
-    }
-    if (static_cast<std::string>(data_.MemberBegin()->name.GetString()) == "$gt")
-    {
-        return std::make_shared<MongoGtFunction>(copyValue(data_.MemberBegin()->value, metadata_->getAllocator()), metadata_, edge_name_);
-    }
-    if (static_cast<std::string>(data_.MemberBegin()->name.GetString()) == "$gte")
-    {
-        return std::make_shared<MongoGteFunction>(copyValue(data_.MemberBegin()->value, metadata_->getAllocator()), metadata_, edge_name_);
-    }
-    if (static_cast<std::string>(data_.MemberBegin()->name.GetString()) == "$ne")
-    {
-        return std::make_shared<MongoNotEqualsFunction>(copyValue(data_.MemberBegin()->value, metadata_->getAllocator()), metadata_, edge_name_);
-    }
-    if (static_cast<std::string>(data_.MemberBegin()->name.GetString()) == "$regex")
-    {
-        return std::make_shared<MongoLikeFunction>(copyValue(data_.MemberBegin()->value, metadata_->getAllocator()), metadata_, edge_name_);
-    }
-    return nullptr;
-}
 
 }
 

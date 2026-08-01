@@ -54,17 +54,63 @@ public:
 };
 
 
-class MongoOrFunction : public IMongoFunction
+/// Base class of the filter operators that combine a list of filters: `$and`, `$or` and `$nor`.
+class IMongoLogicalFunction : public IMongoFunction
 {
 public:
-    std::string getFunctionName() const override { return "$or"; }
-
-    explicit MongoOrFunction(rapidjson::Value array_elements_, std::shared_ptr<QueryMetadata> metadata_, const std::string & edge_name_)
+    explicit IMongoLogicalFunction(
+        rapidjson::Value array_elements_, std::shared_ptr<QueryMetadata> metadata_, const std::string & edge_name_)
         : IMongoFunction(std::move(array_elements_), metadata_, edge_name_)
     {
     }
 
+    virtual std::string getFunctionAlias() const = 0;
+
+    /// `$nor` is `$or` with the result negated.
+    virtual bool isNegated() const { return false; }
+
     bool parseImpl(ASTPtr & node) override;
+};
+
+class MongoOrFunction : public IMongoLogicalFunction
+{
+public:
+    std::string getFunctionName() const override { return "$or"; }
+
+    std::string getFunctionAlias() const override { return "or"; }
+
+    explicit MongoOrFunction(rapidjson::Value array_elements_, std::shared_ptr<QueryMetadata> metadata_, const std::string & edge_name_)
+        : IMongoLogicalFunction(std::move(array_elements_), metadata_, edge_name_)
+    {
+    }
+};
+
+class MongoAndFunction : public IMongoLogicalFunction
+{
+public:
+    std::string getFunctionName() const override { return "$and"; }
+
+    std::string getFunctionAlias() const override { return "and"; }
+
+    explicit MongoAndFunction(rapidjson::Value array_elements_, std::shared_ptr<QueryMetadata> metadata_, const std::string & edge_name_)
+        : IMongoLogicalFunction(std::move(array_elements_), metadata_, edge_name_)
+    {
+    }
+};
+
+class MongoNorFunction : public IMongoLogicalFunction
+{
+public:
+    std::string getFunctionName() const override { return "$nor"; }
+
+    std::string getFunctionAlias() const override { return "or"; }
+
+    bool isNegated() const override { return true; }
+
+    explicit MongoNorFunction(rapidjson::Value array_elements_, std::shared_ptr<QueryMetadata> metadata_, const std::string & edge_name_)
+        : IMongoLogicalFunction(std::move(array_elements_), metadata_, edge_name_)
+    {
+    }
 };
 
 /// Base class for arithmetic functions like add, multiplication and others.

@@ -9,50 +9,166 @@
 #include <Parsers/IAST_fwd.h>
 
 #include <Parsers/ASTAssignment.h>
+#include <Parsers/Mongo/MongoConstants.h>
 #include <Parsers/Mongo/ParserMongoQuery.h>
 #include <Parsers/Mongo/Utils.h>
 #include <Parsers/ASTExpressionList.h>
 
+#include <string_view>
+#include <unordered_map>
+
 namespace DB
 {
+
+namespace ErrorCodes
+{
+extern const int BAD_ARGUMENTS;
+extern const int NOT_IMPLEMENTED;
+}
 
 namespace Mongo
 {
 
+namespace
+{
+
+std::string_view stringView(const rapidjson::Value & value)
+{
+    return {value.GetString(), value.GetStringLength()};
+}
+
+/// True when every member of the document belongs to a regular expression, so that translating it
+/// into a single match does not drop a sibling operator.
+bool isOnlyRegularExpression(const rapidjson::Value & value)
+{
+    for (auto it = value.MemberBegin(); it != value.MemberEnd(); ++it)
+    {
+        auto name = stringView(it->name);
+        if (name != "$regex" && name != "$options" && name != "$regularExpression")
+            return false;
+    }
+    return true;
+}
+
+/** One `<field>: {<operator>: <argument>}` condition of a filter.
+  *
+  * `document` is the whole operator document, which `$regex` needs because its `$options` are a
+  * sibling member rather than part of its own argument.
+  */
+ASTPtr parseFieldOperator(
+    const std::string & field,
+    std::string_view name,
+    const rapidjson::Value & argument,
+    const rapidjson::Value & document,
+    const std::shared_ptr<QueryMetadata> & metadata)
+{
+    static const std::unordered_map<std::string_view, std::string> comparisons = {
+        {"$eq", "equals"},
+        {"$ne", "notEquals"},
+        {"$lt", "less"},
+        {"$lte", "lessOrEquals"},
+        {"$gt", "greater"},
+        {"$gte", "greaterOrEquals"},
+    };
+
+    auto identifier = [&] { return make_intrusive<ASTIdentifier>(field); };
+
+    if (auto it = comparisons.find(name); it != comparisons.end())
+    {
+        auto constant = tryParseMongoConstant(argument);
+        if (!constant)
+            throw Exception(ErrorCodes::BAD_ARGUMENTS, "The argument of '{}' must be a constant", name);
+        return makeASTFunction(it->second, identifier(), constant);
+    }
+
+    if (name == "$regex" || name == "$regularExpression")
+    {
+        auto pattern = tryParseMongoRegularExpression(document);
+        if (!pattern)
+            throw Exception(ErrorCodes::BAD_ARGUMENTS, "Cannot read the regular expression of '{}'", name);
+        return makeASTFunction("match", identifier(), make_intrusive<ASTLiteral>(Field(*pattern)));
+    }
+
+    if (name == "$in" || name == "$nin")
+    {
+        if (!argument.IsArray())
+            throw Exception(ErrorCodes::BAD_ARGUMENTS, "The argument of '{}' must be an array", name);
+
+        auto array = makeASTFunction("array");
+        for (const auto & element : argument.GetArray())
+        {
+            auto constant = tryParseMongoConstant(element);
+            if (!constant)
+                throw Exception(ErrorCodes::NOT_IMPLEMENTED, "Only constants are supported in the array of '{}'", name);
+            array->arguments->children.push_back(std::move(constant));
+        }
+
+        auto condition = makeASTFunction("has", array, identifier());
+        return name == "$in" ? condition : makeASTFunction("not", condition);
+    }
+
+    if (name == "$not")
+    {
+        ASTPtr negated;
+        if (!MongoIdentityFunction(copyValue(argument, metadata->getAllocator()), metadata, field).parseImpl(negated))
+            throw Exception(ErrorCodes::BAD_ARGUMENTS, "Cannot translate the argument of '$not'");
+        return makeASTFunction("not", negated);
+    }
+
+    throw Exception(ErrorCodes::NOT_IMPLEMENTED, "The filter operator '{}' is not supported", name);
+}
+
+}
+
 bool MongoIdentityFunction::parseImpl(ASTPtr & node)
 {
-    /// Scalar comparisons must cover every type the insert path can create a column
-    /// from: bool, int, long, double, and String.
-    Field scalar_value;
-    if (data.IsBool())
-        scalar_value = Field(data.GetBool());
-    else if (data.IsInt())
-        scalar_value = Field(data.GetInt());
-    else if (data.IsInt64())
-        scalar_value = Field(data.GetInt64());
-    else if (data.IsNumber())
-        scalar_value = Field(data.GetDouble());
-    else if (data.IsString())
-        scalar_value = Field(data.GetString());
-    else if (data.IsObject())
+    /// A regular expression matches the field against a pattern.
+    if (data.IsObject() && isOnlyRegularExpression(data))
     {
-        /// An operator object supports exactly one known operator; anything else (an empty
-        /// object, several operators at once, or an unknown operator such as `$in`) is
-        /// rejected here instead of silently dropping conditions or dereferencing a null
-        /// parser below.
-        if (data.MemberCount() != 1)
-            return false;
-        auto parser = createInversedParser(std::move(data), metadata, edge_name);
-        if (!parser)
-            return false;
-        return parser->parseImpl(node);
+        if (auto pattern = tryParseMongoRegularExpression(data))
+        {
+            node = makeASTFunction("match", make_intrusive<ASTIdentifier>(edge_name), make_intrusive<ASTLiteral>(Field(*pattern)));
+            return true;
+        }
     }
-    else
+
+    /// A constant compares the field for equality. It covers every scalar the insert path can
+    /// create a column from, and the Extended JSON wrappers a Mongo driver sends for the types
+    /// JSON cannot represent.
+    if (auto constant = tryParseMongoConstant(data))
+    {
+        node = makeASTFunction("equals", make_intrusive<ASTIdentifier>(edge_name), constant);
+        return true;
+    }
+
+    if (!data.IsObject())
         return false;
 
-    auto identifier = make_intrusive<ASTIdentifier>(edge_name);
-    auto literal = make_intrusive<ASTLiteral>(std::move(scalar_value));
-    node = makeASTFunction("equals", identifier, literal);
+    /// Otherwise the document holds operators, and all of them have to hold at once: Mongo spells
+    /// a range as `{"$gte": <from>, "$lte": <to>}`.
+    std::vector<ASTPtr> conditions;
+    for (auto it = data.MemberBegin(); it != data.MemberEnd(); ++it)
+    {
+        auto name = stringView(it->name);
+        /// The options belong to the `$regex` of the same document.
+        if (name == "$options")
+            continue;
+        conditions.push_back(parseFieldOperator(edge_name, name, it->value, data, metadata));
+    }
+
+    if (conditions.empty())
+        return false;
+
+    if (conditions.size() == 1)
+    {
+        node = conditions.front();
+        return true;
+    }
+
+    auto result = makeASTFunction("and");
+    for (auto & condition : conditions)
+        result->arguments->children.push_back(std::move(condition));
+    node = result;
     return true;
 }
 
@@ -87,7 +203,7 @@ bool MongoLiteralFunction::parseImpl(ASTPtr & node)
 }
 
 
-bool MongoOrFunction::parseImpl(ASTPtr & node)
+bool IMongoLogicalFunction::parseImpl(ASTPtr & node)
 {
     if (!data.IsArray())
     {
@@ -114,15 +230,19 @@ bool MongoOrFunction::parseImpl(ASTPtr & node)
     if (child_trees.size() == 1)
     {
         node = child_trees[0];
-        return true;
+    }
+    else
+    {
+        auto result = makeASTFunction(getFunctionAlias());
+        for (const auto & elem : child_trees)
+        {
+            result->arguments->children.push_back(elem);
+        }
+        node = result;
     }
 
-    auto result = makeASTFunction("or");
-    for (const auto & elem : child_trees)
-    {
-        result->arguments->children.push_back(elem);
-    }
-    node = result;
+    if (isNegated())
+        node = makeASTFunction("not", node);
     return true;
 }
 

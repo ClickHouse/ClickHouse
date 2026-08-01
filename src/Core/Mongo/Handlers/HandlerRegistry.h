@@ -20,6 +20,7 @@ private:
 };
 
 void registerFindHandler(HandlerRegitstry * registry);
+void registerAggregateHandler(HandlerRegitstry * registry);
 void registerInsertHandler(HandlerRegitstry * registry);
 void registerIsMasterHandler(HandlerRegitstry * registry);
 void registerDropHandler(HandlerRegitstry * registry);

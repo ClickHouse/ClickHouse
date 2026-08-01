@@ -109,56 +109,7 @@ std::vector<Document> FindHandler::handle(const std::vector<OpMessageSection> & 
     sql_query += " FORMAT JSON";
     sql_query += " SETTINGS allow_suspicious_types_in_order_by = 1";
 
-    std::vector<Document> selected;
-    {
-        auto output = executor->execute(sql_query);
-
-        rapidjson::Document result_json;
-        if (result_json.Parse(output.data()).HasParseError())
-            throw Exception(ErrorCodes::BAD_ARGUMENTS, "Can not parse the result of the query");
-
-        auto data_it = result_json.FindMember("data");
-        if (data_it == result_json.MemberEnd() || !data_it->value.IsArray())
-            throw Exception(ErrorCodes::BAD_ARGUMENTS, "The result of the query has no rows");
-
-        for (const auto & json_data : data_it->value.GetArray())
-        {
-            rapidjson::StringBuffer json_buffer;
-            rapidjson::Writer<rapidjson::StringBuffer> json_writer(json_buffer);
-            json_data.Accept(json_writer);
-            selected.emplace_back(String(json_buffer.GetString()));
-        }
-    }
-
-    /// Build the `{"cursor": {"firstBatch": [...], "id": 0, "ns": "db.collection"}, "ok": 1}`
-    /// reply. `bson_append_array_begin` turns `first_batch` into a writer into `cursor` and
-    /// `bson_append_array_end` finishes it, so it must not be allocated separately.
-    bson_t cursor;
-    bson_init(&cursor);
-
-    {
-        static constexpr std::string_view key_identifier = "firstBatch";
-        bson_t first_batch;
-        bson_append_array_begin(&cursor, key_identifier.data(), static_cast<int>(key_identifier.size()), &first_batch);
-        for (size_t i = 0; i < selected.size(); ++i)
-        {
-            auto key_str = std::to_string(i);
-            bson_append_document(&first_batch, key_str.c_str(), static_cast<int>(key_str.size()), selected[i].getBson());
-        }
-        bson_append_array_end(&cursor, &first_batch);
-    }
-    BSON_APPEND_INT64(&cursor, "id", 0);
-    String namespace_name = collection.database + "." + collection.collection;
-    BSON_APPEND_UTF8(&cursor, "ns", namespace_name.c_str());
-
-    bson_t * result_doc = bson_new();
-    BSON_APPEND_DOCUMENT(result_doc, "cursor", &cursor);
-    BSON_APPEND_DOUBLE(result_doc, "ok", 1.0);
-    bson_destroy(&cursor);
-
-    std::vector<Document> result;
-    result.emplace_back(result_doc);
-    return result;
+    return executeSelectIntoCursor(sql_query, collection, executor);
 }
 
 void registerFindHandler(HandlerRegitstry * registry)

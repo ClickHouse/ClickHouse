@@ -2,6 +2,13 @@
 -- a column from (bool, long, double - not only int and String), preserve apostrophes inside
 -- double quoted string literals, accept single quoted string literals, and reject unknown or
 -- malformed operator objects with a parse error instead of dereferencing a null parser.
+-- It must also match `$regex` as a regular expression rather than as a `LIKE` pattern, and let
+-- several operators on the same field all hold at once.
+--
+-- An empty operator document holds no condition at all, and an unknown operator would silently
+-- drop one, so both are errors.
+--
+-- The comments have to stay out of the `mongo` dialect: there a comment is part of the query text.
 
 SET dialect='clickhouse';
 
@@ -25,6 +32,12 @@ db.users.find({'name' : 'plain'});
 db.users.find({"active" : {"$ne" : true}});
 db.users.find({"score" : {"$gt" : 2.0}});
 db.users.find({"big" : {"$lt" : 0}});
-db.users.find({"id" : {"$in" : [1, 2]}}); -- { clientError SYNTAX_ERROR }
+db.users.find({"id" : {"$in" : [1, 2]}});
+db.users.find({"id" : {"$nin" : [1]}});
+db.users.find({"name" : {"$regex" : "^p"}});
+db.users.find({"name" : {"$regex" : "^P", "$options" : "i"}});
+db.users.find({"name" : {"$not" : {"$regex" : "^p"}}});
+db.users.find({"big" : {"$numberLong" : "5000000000"}});
+db.users.find({"id" : {"$gt" : 0, "$lt" : 2}});
 db.users.find({"id" : {}}); -- { clientError SYNTAX_ERROR }
-db.users.find({"id" : {"$gt" : 0, "$lt" : 2}}); -- { clientError SYNTAX_ERROR }
+db.users.find({"id" : {"$mod" : [2, 0]}}); -- { clientError NOT_IMPLEMENTED }
