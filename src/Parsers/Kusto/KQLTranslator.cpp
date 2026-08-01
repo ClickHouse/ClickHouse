@@ -551,19 +551,47 @@ private:
             {
                 ASTs columns;
                 ASTs group_by;
+                ASTs precomputed;
                 size_t ordinal = 1;
 
                 for (const auto & named : op.by_expressions)
                 {
                     ASTPtr key = named.expression;
                     const String name = named.alias.empty() ? defaultGroupKeyName(key, ordinal) : named.alias;
+
+                    /// A bare column groups by itself.
+                    if (key->as<ASTIdentifier>() && named.alias.empty())
+                    {
+                        columns.push_back(key->clone());
+                        group_by.push_back(key->clone());
+                        ++ordinal;
+                        continue;
+                    }
+
+                    /// Anything computed is evaluated one level down under a name of our own.
+                    /// Kusto names `bin(Timestamp, 1h)` after its source column, and grouping
+                    /// by `Timestamp` when `Timestamp AS` is also in the select list either
+                    /// fails to resolve or - under `prefer_column_name_to_alias` - silently
+                    /// groups by the raw column instead of the binned value.
+                    const String internal = fmt::format("__kql_groupkey_{}", ordinal);
                     ++ordinal;
 
-                    ASTPtr projected = key->clone();
-                    if (!projected->as<ASTIdentifier>() || !named.alias.empty())
-                        projected->setAlias(name);
+                    ASTPtr computed = key->clone();
+                    computed->setAlias(internal);
+                    precomputed.push_back(computed);
+
+                    ASTPtr projected = ident(internal);
+                    projected->setAlias(name);
                     columns.push_back(projected);
-                    group_by.push_back(key);
+                    group_by.push_back(ident(internal));
+                }
+
+                if (!precomputed.empty())
+                {
+                    ASTs with_keys{make_intrusive<ASTAsterisk>()};
+                    for (auto & key : precomputed)
+                        with_keys.push_back(std::move(key));
+                    builder.setProjection(std::move(with_keys));
                 }
 
                 for (const auto & named : op.expressions)

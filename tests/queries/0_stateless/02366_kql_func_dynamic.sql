@@ -139,7 +139,9 @@ print '-- repeat()';
 -- print repeat(1, 0);
 -- [removed in the KQL rewrite] Received exception from server (version 26.8.1):
 -- print repeat(1, 3);
-print repeat("asd", 3);
+-- [removed in the KQL rewrite] 'repeat' builds an array in Kusto and repeats a string in
+-- ClickHouse, so the name is rejected rather than resolved to the wrong one.
+-- print repeat("asd", 3);
 -- [removed in the KQL rewrite] Received exception from server (version 26.8.1):
 -- print repeat(timespan(1d), 3);
 -- [removed in the KQL rewrite] Received exception from server (version 26.8.1):

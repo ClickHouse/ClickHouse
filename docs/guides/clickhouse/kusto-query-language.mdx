@@ -64,6 +64,22 @@ rejected rather than passed through, so a Kusto name can never quietly mean some
 `range` is the clearest case — `range(1, 3, 1)` is `[1, 2, 3]` in Kusto and `[1, 2]` in
 ClickHouse, so writing it in KQL is an error rather than a wrong answer.
 
+## Coverage against the Kusto reference
+
+Measured against Microsoft's own indexes
+([tabular operators](https://learn.microsoft.com/en-us/kusto/query/queries),
+[scalar functions](https://learn.microsoft.com/en-us/kusto/query/scalar-functions),
+[aggregation functions](https://learn.microsoft.com/en-us/kusto/query/aggregation-functions)):
+
+| | Kusto documents | supported here |
+|---|---|---|
+| Tabular operators | 52 | 20 |
+| Scalar and aggregate functions | 307 | 123 |
+
+The supported operators are the ones Microsoft's own *Learn common operators* tutorial teaches,
+plus `datatable`, `range`, `print`, `union` and `join` — enough for the shape of query that
+tutorial and the KQL Quick Reference build up to.
+
 ## What is not supported
 
 Rejected with a parse error, rather than mistranslated:
@@ -80,6 +96,15 @@ Rejected with a parse error, rather than mistranslated:
   (`x['k']`). Only `dynamic` arrays are mapped, onto ClickHouse `Array`.
 - Cross-cluster and cross-database references such as `cluster(...)` and `database(...)`.
 - Query and `join` hints (`hint.strategy`, `hint.shufflekey`, ...).
+- **User-defined functions**: `let f = (x: long) { x * 2 }`. `let` binds a scalar or a whole
+  tabular expression, but not a lambda with parameters.
+- Operator options: `mv-expand ... to typeof(T)` / `limit N` / `bagexpansion`, `summarize`
+  hints, `union kind=` / `withsource=` / `isfuzzy=`, `join hint.*`.
+- The `evaluate` plugin mechanism entirely, and with it `bag_unpack`, `pivot`, `narrow`,
+  `python`, `R` and the rest.
+- Application statements: `alias database`, `declare pattern`,
+  `declare query_parameters`, `restrict access to`.
+- Obfuscated string literals (`h"..."`) and multi-line literals (triple backtick).
 
 ## Behaviour worth knowing
 
