@@ -128,6 +128,7 @@ static struct InitFiu
     ONCE(mt_alter_throw_after_mutation_registered) \
     ONCE(mt_throw_after_mutation_commit) \
     ONCE(mt_alter_throw_in_durable_rollback) \
+    REGULAR(mt_select_parts_to_mutate_no_free_threads) \
     ONCE(shared_set_full_update_fails_when_initializing) \
     PAUSEABLE(after_kill_part_pause) \
     ONCE(parallel_replicas_reading_response_timeout) \
