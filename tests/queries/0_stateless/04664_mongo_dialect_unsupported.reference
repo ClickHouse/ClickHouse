@@ -6,6 +6,13 @@ Code: 36. The argument of '$in' must be an array
 Code: 36. The argument of '$mod' must be an array of a divisor and a remainder
 Code: 36. The argument of '$exists' must be a boolean
 Code: 62. Cannot parse the Mongo query
+-- inputs that used to reach the rest of the server as a malformed tree
+Code: 36. A filter must be a document
+Code: 36. A filter must be a document
+Code: 36. A filter must be a document
+Code: 36. A filter must not name an empty field
+Code: 36. The filter at the position 0 of '$or' holds no condition
+Code: 36. The filter at the position 0 of '$and' holds no condition
 -- arguments MongoDB rejects
 Code: 36. '$or' must be a non empty array of filters
 Code: 36. '$and' must be a non empty array of filters

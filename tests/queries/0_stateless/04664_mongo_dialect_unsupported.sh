@@ -8,7 +8,9 @@
 # it annotates.
 #
 # The arguments MongoDB itself rejects are taken from the integration suite of FerretDB, which
-# compares itself against a real MongoDB server for each of them.
+# compares itself against a real MongoDB server for each of them. Four of those inputs used to
+# reach the rest of the server as a tree with a hole in it and crash it, so they are kept here as
+# a regression test rather than only as a check of the wording of an error.
 
 CUR_DIR=$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)
 # shellcheck source=../shell_config.sh
@@ -36,6 +38,14 @@ run 'db.docs.find({"id" : {"$in" : "not an array"}});'
 run 'db.docs.find({"id" : {"$mod" : [2]}});'
 run 'db.docs.find({"id" : {"$exists" : 1}});'
 run 'db.docs.find({"id" : {}});'
+
+echo '-- inputs that used to reach the rest of the server as a malformed tree'
+run 'db.docs.find({"$and" : [{"id" : 1}, true]});'
+run 'db.docs.find({"$or" : [{"id" : 1}, "string"]});'
+run 'db.docs.find({"$nor" : [{"id" : 1}, 42]});'
+run 'db.docs.find({"" : "foo"});'
+run 'db.docs.find({"$or" : [{}, {}]});'
+run 'db.docs.find({"$and" : [{"$comment" : "only a comment"}, {"id" : 1}]});'
 
 echo '-- arguments MongoDB rejects'
 run 'db.docs.find({"$or" : []});'
