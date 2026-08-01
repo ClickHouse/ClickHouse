@@ -198,6 +198,7 @@ namespace
         // Move constructor
         ScopedDecrement(ScopedDecrement&& other) noexcept
             : atomic_var(std::move(other.atomic_var))
+            , value_after_decrement(other.value_after_decrement)
         {
             other.atomic_var.reset();
         }
@@ -208,6 +209,7 @@ namespace
             if (this != &other)
             {
                 atomic_var.swap(other.atomic_var);
+                std::swap(value_after_decrement, other.value_after_decrement);
             }
             return *this;
         }
@@ -215,14 +217,23 @@ namespace
         explicit ScopedDecrement(std::atomic<int64_t>& var)
             : atomic_var(var)
         {
-            atomic_var->get().fetch_sub(1, std::memory_order_relaxed);
+            value_after_decrement = atomic_var->get().fetch_sub(1, std::memory_order_relaxed) - 1;
         }
+
+        /// The value of the counter right after this object took its unit from it. When the counter
+        /// tracks a limited resource, a negative value means that this object took a unit that did not
+        /// exist, so its owner has to give it back (which the destructor does) and report an error.
+        /// Exactly one owner observes each value, so concurrent takers cannot all see the same one.
+        int64_t valueAfterDecrement() const { return value_after_decrement; }
 
         ~ScopedDecrement()
         {
             if (atomic_var)
                 atomic_var->get().fetch_add(1, std::memory_order_relaxed);
         }
+
+    private:
+        int64_t value_after_decrement = 0;
     };
 }
 
@@ -235,6 +246,11 @@ public:
     Priority priority;
     CurrentMetrics::Increment metric_increment;
     ScopedDecrement available_threads_decrement;
+
+    /// Set only for jobs scheduled through `scheduleThreadOrThrow`. Holds the worker slot that such a
+    /// job occupies until it finishes; destroying the job (after it ran, or when the queue is drained
+    /// on shutdown) gives the slot back.
+    std::optional<ScopedDecrement> thread_job_slot;
 
     DB::OpenTelemetry::TracingContextOnThread thread_trace_context;
 
@@ -254,9 +270,11 @@ public:
     JobWithPriority(
         Job job_, Priority priority_, CurrentMetrics::Metric metric,
         const DB::OpenTelemetry::TracingContextOnThread & thread_trace_context_,
-        bool capture_frame_pointers, ScopedDecrement available_threads_decrement_)
+        bool capture_frame_pointers, ScopedDecrement available_threads_decrement_,
+        std::optional<ScopedDecrement> thread_job_slot_)
         : job(job_), priority(priority_), metric_increment(metric),
         available_threads_decrement(std::move(available_threads_decrement_)),
+        thread_job_slot(std::move(thread_job_slot_)),
         thread_trace_context(thread_trace_context_), enable_job_stack_trace(capture_frame_pointers)
     {
         if (!capture_frame_pointers)
@@ -315,6 +333,7 @@ ThreadPoolImpl<Thread>::ThreadPoolImpl(
     max_threads = std::min(max_threads, static_cast<size_t>(MAX_THEORETICAL_THREAD_COUNT));
     max_free_threads = std::min(max_free_threads, static_cast<size_t>(MAX_THEORETICAL_THREAD_COUNT));
     remaining_pool_capacity.store(max_threads, std::memory_order_relaxed);
+    remaining_thread_job_capacity.store(max_threads, std::memory_order_relaxed);
     available_threads.store(0, std::memory_order_relaxed);
 }
 
@@ -324,6 +343,7 @@ void ThreadPoolImpl<Thread>::setMaxThreads(size_t value)
     value = std::min(value, static_cast<size_t>(MAX_THEORETICAL_THREAD_COUNT));
     std::lock_guard lock(mutex);
     remaining_pool_capacity.fetch_add(value - max_threads, std::memory_order_relaxed);
+    remaining_thread_job_capacity.fetch_add(value - max_threads, std::memory_order_relaxed);
 
     bool need_start_threads = (value > max_threads);
     bool need_finish_free_threads = (value < max_free_threads);
@@ -401,7 +421,8 @@ void ThreadPoolImpl<Thread>::setQueueSize(size_t value)
 
 template <typename Thread>
 template <typename ReturnType>
-ReturnType ThreadPoolImpl<Thread>::scheduleImpl(Job job, Priority priority, std::optional<uint64_t> wait_microseconds, bool propagate_opentelemetry_tracing_context)
+ReturnType ThreadPoolImpl<Thread>::scheduleImpl(
+    Job job, Priority priority, std::optional<uint64_t> wait_microseconds, bool propagate_opentelemetry_tracing_context, bool job_occupies_thread)
 {
     auto on_error = [&](const std::string & reason)
     {
@@ -425,6 +446,27 @@ ReturnType ThreadPoolImpl<Thread>::scheduleImpl(Job job, Priority priority, std:
     // This ensures that available_threads decreases when a new job starts
     // and automatically increments when the job completes or goes out of scope.
     ScopedDecrement available_threads_decrement(available_threads);
+
+    /// A job that occupies its worker for the worker's whole lifetime must be given one of the
+    /// `max_threads` slots right away. Queueing it is not an option: the workers are held by other
+    /// such jobs, which never return, so a queued job would never start even though its creator
+    /// already treats its thread as running. Take a slot optimistically and give it back below if it
+    /// turned out not to exist; on any early return the destructor releases it as well.
+    std::optional<ScopedDecrement> thread_job_slot;
+    if (job_occupies_thread)
+    {
+        thread_job_slot.emplace(remaining_thread_job_capacity);
+        if (thread_job_slot->valueAfterDecrement() < 0)
+        {
+            std::lock_guard lock(mutex); // needed to read and reset first_exception.
+            if constexpr (std::is_same_v<Thread, GlobalThreadType>)
+                return on_error(fmt::format(
+                    "all {} threads of the global thread pool are already occupied by long-lived threads, "
+                    "consider increasing the `max_thread_pool_size` setting", max_threads));
+            else
+                return on_error(fmt::format("all {} threads of the pool are already occupied by long-lived threads", max_threads));
+        }
+    }
 
     std::unique_ptr<ThreadFromThreadPool> new_thread;
     // Load the current capacity
@@ -544,7 +586,8 @@ ReturnType ThreadPoolImpl<Thread>::scheduleImpl(Job job, Priority priority, std:
                     propagate_opentelemetry_tracing_context ? DB::OpenTelemetry::CurrentContext() : DB::OpenTelemetry::TracingContextOnThread(),
                     /// capture_frame_pointers
                     DB::Exception::enable_job_stack_trace,
-                    std::move(available_threads_decrement));
+                    std::move(available_threads_decrement),
+                    std::move(thread_job_slot));
 
             ++scheduled_jobs;
 
@@ -653,6 +696,15 @@ template <typename Thread>
 void ThreadPoolImpl<Thread>::scheduleOrThrow(Job job, Priority priority, uint64_t wait_microseconds, bool propagate_opentelemetry_tracing_context)
 {
     scheduleImpl<void>(std::move(job), priority, wait_microseconds, propagate_opentelemetry_tracing_context);
+}
+
+template <typename Thread>
+void ThreadPoolImpl<Thread>::scheduleThreadOrThrow(Job job, Priority priority, bool propagate_opentelemetry_tracing_context)
+{
+    /// `wait_microseconds` is zero: the caller needs the thread now, and waiting for a worker slot to
+    /// be freed by another long-lived thread is not something it can usefully do.
+    scheduleImpl<void>(
+        std::move(job), priority, /* wait_microseconds= */ 0, propagate_opentelemetry_tracing_context, /* job_occupies_thread= */ true);
 }
 
 template <typename Thread>
@@ -1264,9 +1316,11 @@ void startThreadFromGlobalPool(
     bool propagate_opentelemetry_context)
 {
     /// NOTE:
-    /// - If scheduleOrThrow throws, the ThreadFromGlobalPoolImpl destructor won't be called.
+    /// - If scheduleThreadOrThrow throws, the ThreadFromGlobalPoolImpl destructor won't be called.
     /// - `this` cannot be passed in the lambda since after detach() it is no longer valid.
-    GlobalThreadPool::instance().scheduleOrThrow(
+    /// The job runs for the whole lifetime of the thread it represents, so it must get a worker slot
+    /// of its own rather than be queued behind other threads that never return.
+    GlobalThreadPool::instance().scheduleThreadOrThrow(
         [my_state = std::move(state),
          my_func = std::move(func),
          global_profiler_real_time_period_ns,
@@ -1293,7 +1347,6 @@ void startThreadFromGlobalPool(
             function();
         },
         {},
-        0,
         propagate_opentelemetry_context);
 }
 
