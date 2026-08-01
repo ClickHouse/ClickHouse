@@ -8,6 +8,7 @@
 #include <Analyzer/IdentifierNode.h>
 #include <Analyzer/InDepthQueryTreeVisitor.h>
 #include <Analyzer/Passes/QueryAnalysisPass.h>
+#include <Analyzer/QueryNode.h>
 #include <Analyzer/QueryTreeBuilder.h>
 #include <Analyzer/TableNode.h>
 #include <Analyzer/Utils.h>
@@ -117,6 +118,23 @@ bool columnDefaultKindHasSameType(ColumnDefaultKind lhs, ColumnDefaultKind rhs)
 
     if (columnIsPhysical(lhs) == columnIsPhysical(rhs))
         return true;
+
+    return false;
+}
+
+bool queryHasOrderBy(const SelectQueryInfo & query_info)
+{
+    if (query_info.query_tree)
+    {
+        if (const auto * query_node = query_info.query_tree->as<QueryNode>())
+            return query_node->hasOrderBy();
+    }
+
+    if (query_info.query)
+    {
+        if (const auto * select = query_info.query->as<ASTSelectQuery>())
+            return select->orderBy() != nullptr;
+    }
 
     return false;
 }
@@ -626,9 +644,19 @@ void ReadFromMerge::initializePipeline(QueryPipelineBuilder & pipeline, const Bu
     // Using narrowPipe instead. But in case of reading in order of primary key, we cannot do it,
     // because narrowPipe doesn't preserve order. Also, if we are doing a memory efficient distributed agggregation, bucket
     // order must be preserved.
-    const bool should_not_narrow = query_info.input_order_info || (
-        context->getSettingsRef()[Setting::distributed_aggregation_memory_efficient]
-        && common_processed_stage == QueryProcessingStage::Enum::WithMergeableState);
+    //
+    // Order must be preserved as well when the children were read at a stage above `FetchColumns` and the query has an
+    // `ORDER BY`: every child then sorts on its own (a `Distributed` child sorts on the shards), so the step on top of
+    // `ReadFromMerge` is `Sorting (Merge sorted streams ... for ORDER BY)`, which requires each input stream to be
+    // sorted. Narrowing would feed it unsorted streams, silently producing a wrongly ordered - and, together with
+    // `LIMIT`, incomplete - result.
+    const bool children_produce_sorted_streams
+        = common_processed_stage > QueryProcessingStage::FetchColumns && queryHasOrderBy(query_info);
+
+    const bool should_not_narrow = query_info.input_order_info
+        || children_produce_sorted_streams
+        || (context->getSettingsRef()[Setting::distributed_aggregation_memory_efficient]
+            && common_processed_stage == QueryProcessingStage::Enum::WithMergeableState);
     if (!should_not_narrow)
     {
         size_t tables_count = selected_tables.size();
