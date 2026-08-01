@@ -42,7 +42,10 @@
 #include <Parsers/ASTWithElement.h>
 #include <Parsers/ASTAlterQuery.h>
 #include <Parsers/ASTCheckQuery.h>
+#include <Parsers/ASTCreateIndexQuery.h>
 #include <Parsers/ASTDeleteQuery.h>
+#include <Parsers/ASTHypotheticalIndexQuery.h>
+#include <Parsers/ASTIndexDeclaration.h>
 #include <Parsers/ASTDropQuery.h>
 #include <Parsers/ASTUndropQuery.h>
 #include <Parsers/ASTOptimizeQuery.h>
@@ -171,6 +174,7 @@ namespace Setting
     extern const SettingsBool allow_experimental_prql_dialect;
     extern const SettingsBool allow_materialized_view_with_bad_select;
     extern const SettingsBool allow_settings_after_format_in_insert;
+    extern const SettingsBool create_index_ignore_unique;
     extern const SettingsBool ast_fuzzer_any_query;
     extern const SettingsFloat ast_fuzzer_runs;
     extern const SettingsBool async_insert;
@@ -1343,12 +1347,34 @@ bool mainTableExistenceRequired(const IAST & ast)
 /// `CREATE OR REPLACE`/`REPLACE` forms replace an existing object, so only they keep the target eligible
 /// (the `AS src` source of any `CREATE` form stays eligible independently — the interpreter reads the
 /// source's structure before the destination existence check, see the `ASTCreateQuery` branch in
-/// `collectTablesInQuery`).
-bool mainTableTouchedIfExists(const IAST & ast)
+/// `collectTablesInQuery`). The index-management statements that also travel through
+/// `ASTQueryWithTableAndOutput` are handled below for the same reason.
+bool mainTableTouchedIfExists(const IAST & ast, const ContextPtr & context)
 {
     if (const auto * create = ast.as<ASTCreateQuery>())
         return create->replace_table || create->replace_view;
     if (ast.as<ASTUndropQuery>())
+        return false;
+    /// `CREATE INDEX` reaches the table only through the `ALTER TABLE ... ADD INDEX` statement
+    /// `InterpreterCreateIndexQuery::execute` rewrites it to, and it rewrites only after
+    /// `validateCreateIndexQuery` accepts the statement. `CREATE UNIQUE INDEX` throws `NOT_IMPLEMENTED`
+    /// unless `create_index_ignore_unique` is set, and `CREATE INDEX` without a `TYPE` either throws
+    /// `INCORRECT_QUERY` or (with `allow_create_index_without_type`) returns an empty `BlockIO` — in all
+    /// of those cases the statement fails or no-ops before touching the table. Unlike `DROP INDEX`, which
+    /// always rewrites, `CREATE INDEX` is therefore eligible only in the shape that really rewrites.
+    if (const auto * create_index = ast.as<ASTCreateIndexQuery>())
+    {
+        if (create_index->unique && !context->getSettingsRef()[Setting::create_index_ignore_unique])
+            return false;
+        const auto * index_decl = create_index->index_decl ? create_index->index_decl->as<ASTIndexDeclaration>() : nullptr;
+        return index_decl && index_decl->getType();
+    }
+    /// `CREATE`/`DROP HYPOTHETICAL INDEX` never mutates the table it names:
+    /// `InterpreterHypotheticalIndexQuery` only reads the table's metadata and updates the session-local
+    /// `HypotheticalIndexStore`. Detaching and attaching the table would be a side effect on live table
+    /// state that the query never changes (and `DROP HYPOTHETICAL INDEX ... IF EXISTS` may be a pure
+    /// no-op), so these references are not eligible.
+    if (ast.as<ASTHypotheticalIndexQuery>())
         return false;
     return true;
 }
@@ -1602,9 +1628,10 @@ void collectTablesInQuery(const ASTPtr & ast, CollectTablesData & data, std::uno
         /// table of the same name that the query never touches, so skip temporary-table references.
         ///
         /// Targets whose query never touches an existing table of that name (plain `CREATE`/`ATTACH`,
-        /// `CREATE ... IF NOT EXISTS`, `UNDROP` — see `mainTableTouchedIfExists`) are skipped too:
+        /// `CREATE ... IF NOT EXISTS`, `UNDROP`, the failing/no-op shapes of `CREATE INDEX`, and the
+        /// session-local hypothetical-index statements — see `mainTableTouchedIfExists`) are skipped too:
         /// resolving them would detach a table the statement is about to fail on or no-op against.
-        if (!query_with_output->isTemporary() && mainTableTouchedIfExists(*ast))
+        if (!query_with_output->isTemporary() && mainTableTouchedIfExists(*ast, data.context))
             data.addTableIfNotEmpty(query_with_output->getDatabase(), query_with_output->getTable(), active_ctes, mainTableResolveNamespace(*ast), requiredAccessForTableQuery(*ast), mainTableExistenceRequired(*ast), mainTableExpectedObjectKind(*ast));
 
         /// Some `ASTQueryWithTableAndOutput` classes reference additional real tables that live neither in the

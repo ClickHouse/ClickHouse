@@ -534,3 +534,27 @@ ${CLICKHOUSE_CLIENT} -q "DROP TABLE IF EXISTS t_reattach_shadow_new"
 check_if_detached "CREATE TEMPORARY TABLE t_reattach_shadow (a UInt64); CREATE TABLE t_reattach_shadow_new AS t_reattach_shadow" "t_reattach_shadow"
 ${CLICKHOUSE_CLIENT} -q "DROP TABLE IF EXISTS t_reattach_shadow_new"
 ${CLICKHOUSE_CLIENT} -q "DROP TABLE IF EXISTS t_reattach_shadow"
+
+# Index-management statements travel through `ASTQueryWithTableAndOutput` like `ALTER TABLE`, but not all of
+# them reach the table. `InterpreterCreateIndexQuery` rewrites `CREATE INDEX` to `ALTER TABLE ... ADD INDEX`
+# only after `validateCreateIndexQuery` accepts it: `CREATE UNIQUE INDEX` throws unless
+# `create_index_ignore_unique` is set, and `CREATE INDEX` without a `TYPE` either throws or (with
+# `allow_create_index_without_type`) is a no-op. Those shapes must NOT detach the table, while the shapes
+# that really rewrite — and `DROP INDEX`, which always rewrites — must.
+${CLICKHOUSE_CLIENT} -q "DROP TABLE IF EXISTS t_reattach_index"
+${CLICKHOUSE_CLIENT} -q "CREATE TABLE t_reattach_index (a UInt64, b UInt64) ENGINE = MergeTree ORDER BY a"
+
+check_fails_kind_without_detach "CREATE UNIQUE INDEX idx_u ON t_reattach_index (b) TYPE minmax GRANULARITY 1" "t_reattach_index" "NOT_IMPLEMENTED"
+check_fails_kind_without_detach "CREATE INDEX idx_no_type ON t_reattach_index (b)" "t_reattach_index" "INCORRECT_QUERY"
+check_if_not_detached "SET allow_create_index_without_type = 1; CREATE INDEX idx_no_type ON t_reattach_index (b)" "t_reattach_index"
+
+check_if_detached "SET create_index_ignore_unique = 1; CREATE UNIQUE INDEX idx_u ON t_reattach_index (b) TYPE minmax GRANULARITY 1" "t_reattach_index"
+check_if_detached "CREATE INDEX idx_t ON t_reattach_index (b) TYPE minmax GRANULARITY 1" "t_reattach_index"
+check_if_detached "DROP INDEX idx_t ON t_reattach_index" "t_reattach_index"
+
+# `CREATE`/`DROP HYPOTHETICAL INDEX` never mutates the table: the interpreter only reads its metadata and
+# updates the session-local hypothetical-index store, so the hook must not detach the table for them.
+check_if_not_detached "CREATE HYPOTHETICAL INDEX idx_h ON t_reattach_index (b) TYPE minmax GRANULARITY 1" "t_reattach_index"
+check_if_not_detached "DROP HYPOTHETICAL INDEX IF EXISTS idx_h ON t_reattach_index" "t_reattach_index"
+
+${CLICKHOUSE_CLIENT} -q "DROP TABLE IF EXISTS t_reattach_index"
