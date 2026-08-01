@@ -40,8 +40,11 @@ done
 # the target's share lock, TRUNCATE through the alias must wait for it and report DEADLOCK_AVOIDED,
 # and must succeed once that reader is gone. This holds on every build flavour, not just sanitizers.
 READER_ID="reader_$CLICKHOUSE_DATABASE"
+# The reader must still hold the lock when the truncate below gives up, so its scan has to outlast the
+# handshake plus that truncate's own lock_acquire_timeout. It is killed rather than awaited, so a
+# window far longer than needed costs nothing.
 $CLICKHOUSE_CLIENT --query_id="$READER_ID" -q "
-    SELECT sum(sleepEachRow(0.2)) FROM (SELECT k FROM rdb LIMIT 25) SETTINGS max_block_size = 1, max_threads = 1
+    SELECT sum(sleepEachRow(0.2)) FROM (SELECT k FROM rdb LIMIT 150) SETTINGS max_block_size = 1, max_threads = 1
 " > /dev/null &
 
 # Wait until the reader has actually started scanning, so the target's share lock is really held.
@@ -62,7 +65,8 @@ echo -e "reader started\t$reader_started"
 
 $CLICKHOUSE_CLIENT -q "TRUNCATE TABLE rdb_alias SETTINGS lock_acquire_timeout = 3" 2>&1 \
     | grep -c -m1 "DEADLOCK_AVOIDED" | sed 's/^/truncate blocked by reader\t/'
-wait
+kill %1 2>/dev/null
+wait 2>/dev/null
 
 $CLICKHOUSE_CLIENT -q "TRUNCATE TABLE rdb_alias SETTINGS lock_acquire_timeout = 3" \
     && echo -e "truncate after reader\t1"
@@ -168,8 +172,10 @@ $CLICKHOUSE_CLIENT -q "ATTACH DATABASE $LAZY_RDB_DB"
 $CLICKHOUSE_CLIENT -q "SELECT 'lazy rocksdb target is a proxy', engine = 'TableProxy' FROM system.tables WHERE database = '$LAZY_RDB_DB' AND name = 'rdb'"
 
 LAZY_RDB_READER_ID="lazy_rdb_reader_$CLICKHOUSE_DATABASE"
+# LIMIT 150 for the same reason as the first cell: this row also asserts a block, so the reader has to
+# outlast the truncate's lock_acquire_timeout below.
 $CLICKHOUSE_CLIENT --query_id="$LAZY_RDB_READER_ID" -q "
-    SELECT sum(sleepEachRow(0.2)) FROM (SELECT k FROM $LAZY_RDB_DB.rdb LIMIT 25) SETTINGS max_block_size = 1, max_threads = 1
+    SELECT sum(sleepEachRow(0.2)) FROM (SELECT k FROM $LAZY_RDB_DB.rdb LIMIT 150) SETTINGS max_block_size = 1, max_threads = 1
 " > /dev/null &
 
 # Asserted, not assumed, for the same reason as every cell above: without a reader actually holding
