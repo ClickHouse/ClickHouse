@@ -390,6 +390,9 @@ ObjectStorageQueueSource::FileIterator::next()
 
                 if (num_successful_objects != new_batch.size())
                 {
+                    /// file_metadatas is empty when the keeper tryMulti above failed and
+                    /// cleared it (see the chassert below); only compact it when populated.
+                    const bool compact_file_metadatas = !file_metadatas.empty();
                     size_t batch_i = 0;
                     for (size_t i = 0; i < num_successful_objects; ++i, ++batch_i)
                     {
@@ -405,10 +408,12 @@ ObjectStorageQueueSource::FileIterator::next()
                         }
 
                         new_batch[i] = new_batch[batch_i];
-                        file_metadatas[i] = file_metadatas[batch_i];
+                        if (compact_file_metadatas)
+                            file_metadatas[i] = file_metadatas[batch_i];
                     }
                     new_batch.resize(num_successful_objects);
-                    file_metadatas.resize(num_successful_objects);
+                    if (compact_file_metadatas)
+                        file_metadatas.resize(num_successful_objects);
                 }
 
                 chassert(file_metadatas.empty() || new_batch.size() == file_metadatas.size());
