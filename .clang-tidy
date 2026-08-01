@@ -23,9 +23,11 @@ Checks: [
 
   '-bugprone-assignment-in-if-condition',
   '-bugprone-branch-clone',
+  '-bugprone-derived-method-shadowing-base-method',
   '-bugprone-easily-swappable-parameters',
   '-bugprone-exception-escape',
   '-bugprone-implicit-widening-of-multiplication-result',
+  '-bugprone-invalid-enum-default-initialization',
   '-bugprone-multi-level-implicit-pointer-conversion',
   '-bugprone-narrowing-conversions',
   '-bugprone-unchecked-optional-access',
@@ -34,6 +36,7 @@ Checks: [
   '-bugprone-forward-declaration-namespace',
   '-bugprone-nondeterministic-pointer-iteration-order',
   '-bugprone-sizeof-expression', # too aggressive
+  '-bugprone-throwing-static-initialization',
 
   '-cert-dcl16-c',
   '-cert-arr39-c', # alias of bugprone-sizeof-expression
@@ -41,10 +44,13 @@ Checks: [
 
   '-clang-analyzer-core.BitwiseShift', # false positive on boost::dynamic_bitset::to_ulong
 
+  '-clang-analyzer-core.NullPointerArithm',
+
   '-clang-analyzer-optin.performance.Padding',
 
   '-clang-analyzer-security.ArrayBound', # only false positives
 
+  '-clang-analyzer-cplusplus.NewDelete', # false positive on boost::split/is_any_of, reported inside the header so NOLINT at the call site cannot suppress it
   '-clang-analyzer-cplusplus.NewDeleteLeaks', # false positives, slow
   '-clang-analyzer-unix.Malloc', # fixme, false positive in contrib somehow
 
@@ -133,11 +139,14 @@ Checks: [
   '-misc-const-correctness',
   '-misc-include-cleaner', # useful but far too many occurrences
   '-misc-no-recursion',
+  '-misc-multiple-inheritance',
   '-misc-non-private-member-variables-in-classes',
+  '-misc-override-with-different-visibility',
   '-misc-use-anonymous-namespace',
   '-misc-use-internal-linkage',
 
   '-modernize-avoid-c-arrays',
+  '-modernize-avoid-c-style-cast',
   '-modernize-concat-nested-namespaces',
   '-modernize-pass-by-value',
   '-modernize-return-braced-init-list',
@@ -170,11 +179,14 @@ Checks: [
   '-readability-function-cognitive-complexity',
   '-readability-function-size',
   '-readability-identifier-length',
+  '-readability-inconsistent-declaration-parameter-name',
   '-readability-identifier-naming', # useful but too slow
   '-readability-implicit-bool-conversion',
+  '-readability-inconsistent-ifelse-braces',
   '-readability-magic-numbers',
   '-readability-named-parameter',
   '-readability-redundant-declaration',
+  '-readability-redundant-typename',
   '-readability-redundant-inline-specifier', # useful but incompatible with __attribute((always_inline))__ (aka. ALWAYS_INLINE, base/base/defines.h).
         # ALWAYS_INLINE only has an effect if combined with `inline`: https://godbolt.org/z/Eefd74qdM
   '-readability-redundant-member-init', # Useful but triggers another problem. Imagine a struct S with multiple String members. Structs are often instantiated via designated
