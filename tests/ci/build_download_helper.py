@@ -114,11 +114,9 @@ def get_gh_api(
                 token_is_set = True
                 try_cnt = 0
                 continue
-            # Only statuses that are transient by definition get the longer window.
-            # Deliberately not extended to 4xx: telling a transient 403 (GitHub's
-            # secondary rate limit, or abuse detection) from a terminal one requires
-            # matching a response body, and the predicate above provably misses both
-            # of those messages, so widening this would change how they are retried.
+            # Only statuses transient by definition get the longer window: telling a
+            # transient 403 from a terminal one would need a body match the predicate
+            # above provably misses. See the PR description.
             retryable_backoff = (
                 e.response.status_code >= 500 or e.response.status_code == 429
             )

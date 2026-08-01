@@ -138,8 +138,8 @@ def test_backoff_is_capped(monkeypatch):
     _, sleeps, outcome, _ = _run(monkeypatch, [503], retries=10)
 
     assert outcome == "APIException"
+    assert sleeps == [3, 6, 12, 24, 48, 60, 60, 60, 60]
     assert max(sleeps) == bdh.DOWNLOAD_RETRY_MAX_BACKOFF
-    assert all(s <= bdh.DOWNLOAD_RETRY_MAX_BACKOFF for s in sleeps)
 
 
 # Row 4: `pr_info.RETRY_SLEEP = 0` feeds five call sites that deliberately ask
