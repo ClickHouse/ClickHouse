@@ -1,7 +1,24 @@
 #pragma once
 
-#if !defined(__x86_64__) && !defined(__aarch64__) && !defined(__PPC__) && !defined(__s390x__) && !(defined(__loongarch64)) && !(defined(__riscv) && (__riscv_xlen == 64)) && !defined(__e2k__)
-#    error "The only supported platforms are x86_64 and AArch64, PowerPC (work in progress), s390x (work in progress), loongarch64 (experimental), RISC-V 64 (experimental) and E2K (experimental, work in progress)"
+#if !defined(__x86_64__) && !defined(__aarch64__) && !defined(__PPC__) && !defined(__s390x__) && !(defined(__loongarch64)) && !(defined(__riscv) && (__riscv_xlen == 64)) && !defined(__e2k__) && !defined(__wasm__)
+#    error "The only supported platforms are x86_64 and AArch64, PowerPC (work in progress), s390x (work in progress), loongarch64 (experimental), RISC-V 64 (experimental), E2K (experimental, work in progress) and WebAssembly (only a subset of the code, such as the SQL parser, is expected to build)"
+#endif
+
+/// Whether plain `long` is a type of its own, distinct from every fixed-width integer type.
+/// On Darwin `Int64` is `long long`, and on 32-bit platforms (WebAssembly) `Int32` is `int`
+/// while `long` is a separate 32-bit type. In both cases functions overloaded on the
+/// fixed-width types need an overload for `long` as well, or calls with a `long` argument
+/// become ambiguous.
+#if defined(OS_DARWIN) || !defined(__LP64__)
+#    define LONG_IS_A_DISTINCT_TYPE 1
+#endif
+
+/// Whether `size_t` is a type of its own, distinct from every fixed-width integer type.
+/// This is a strictly narrower condition than `LONG_IS_A_DISTINCT_TYPE`: `size_t` is
+/// `unsigned long` on Darwin and WebAssembly, but on the other 32-bit platforms it is
+/// `unsigned int`, which is exactly `UInt32`, so it must not get an overload of its own there.
+#if defined(OS_DARWIN) || defined(__wasm__)
+#    define SIZE_T_IS_A_DISTINCT_TYPE 1
 #endif
 
 #if !defined(likely)
