@@ -62,7 +62,9 @@ bool isPlainRowCount(const FunctionNode & function_node)
 /// These storages declare their own column list and can serve the read from a differently typed
 /// destination, target table or inner query, so the analyzed declared type is not the type the read
 /// executes against. `typeid_cast` (exact type) and not `isView()`, which StorageMaterializedView
-/// also answers true to and StorageProxy forwards, so it would widen the set unpredictably.
+/// and StorageWindowView also answer true to and StorageProxy forwards, so it would widen the set
+/// unpredictably. StorageWindowView never reaches here anyway: it does not override
+/// supportsSubcolumns, so the capability check above declines it.
 bool readsAgainstAnotherSchema(const IStorage * storage)
 {
     return typeid_cast<const StorageBuffer *>(storage)
@@ -182,14 +184,31 @@ public:
         if (readsAgainstAnotherSchema(resolved_storage.get()))
             return;
 
+        const auto & analyzed_type = physical_column->getColumnType();
+        const auto & column_name = physical_column->getColumnName();
+        auto context = getContext();
+
+        /// A wrapper the loop hopped over is only transparent if its declared columns are the ones the
+        /// read executes against. StorageTableFunctionProxy deliberately breaks that: it exposes cached
+        /// columns and appends a conversion AFTER reading a differently structured nested storage, so
+        /// `arr` may not be an array there and `arr.size0` would not exist. A StorageAlias resolves its
+        /// target by name without a lock and resolves again in read(), so the storage validated here is
+        /// provably the executed one only while its declared type still matches. Comparing the resolved
+        /// storage's own declared type covers both, and any future wrapper of the same kind, without
+        /// naming a type. For an unwrapped storage this is a tautology.
+        auto resolved_metadata = resolved_storage->getInMemoryMetadataPtr(context, false);
+        if (!resolved_metadata)
+            return;
+        auto resolved_column = resolved_metadata->getColumns().tryGetColumn(
+            GetColumnsOptions(GetColumnsOptions::All).withSubcolumns(), column_name);
+        if (!resolved_column || !resolved_column->type->equals(*analyzed_type))
+            return;
+
         /// supportsOptimizationToSubcolumns() on a Merge is the AND over its children, and a MergeTree
         /// child satisfies it whatever its column types are, so it is blind to type heterogeneity. A
         /// Merge declares its own column list, which need not equal any child's.
         if (const auto * storage_merge = typeid_cast<const StorageMerge *>(resolved_storage.get()))
         {
-            const auto & analyzed_type = physical_column->getColumnType();
-            const auto & column_name = physical_column->getColumnName();
-            auto context = getContext();
             auto access = context->getAccess();
             /// NOTE: this validates the child set as it is NOW, while execution re-enumerates children
             /// independently in ReadFromMerge::getSelectedTables, with no snapshot or lock spanning
