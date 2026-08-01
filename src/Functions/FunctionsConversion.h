@@ -179,7 +179,9 @@ static auto formatOutOfBoundsValue(const FromType & from)
 /// infinite floats) is compared at full precision. The narrowing static_cast<time_t> only runs
 /// once `from` is proven to be inside the bounds, so it never wraps (unsigned > INT64_MAX),
 /// truncates (wide int) or hits undefined behavior (float out of time_t range). NaN is treated as
-/// below the range (callers reach saturation only in non-throw modes; throw guards NaN earlier).
+/// below the range (the float-capable callers guard NaN before reaching here in throw mode; the
+/// narrow signed transforms cannot receive a float at all, since dispatch restricts them to
+/// Int8/Int16/Int32).
 template <typename FromType>
 static time_t saturateToRange(const FromType & from, time_t min_bound, time_t max_bound)
 {
@@ -433,7 +435,7 @@ struct ToDateTimeTransform64
                 throw Exception(ErrorCodes::VALUE_IS_OUT_OF_RANGE_OF_DATA_TYPE, "Timestamp value {} is out of bounds of type DateTime", from);
         }
         /// Clamp before narrowing: static_cast<time_t>(from) would wrap for an unsigned source above
-        /// INT64_MAX (e.g. UInt64::max -> -1), producing 1970 instead of the saturated maximum.
+        /// INT64_MAX (e.g. 9223372036854775813 -> 5), producing 1970 instead of the saturated maximum.
         return static_cast<ToType>(saturateToRange(from, 0, MAX_DATETIME_TIMESTAMP));
     }
 };

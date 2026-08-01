@@ -393,10 +393,10 @@ Field coerceNumericToDate32Field(const T & value, const DateLUTImpl & time_zone,
         return Field(static_cast<Int64>(daynum_min_offset));
     }
 
-    /// Above the extended day-number domain: treat as a unix timestamp.
-    /// `> N-1` is the CAST transform's `from >= DATE_LUT_MAX_EXTEND_DAY_NUM` boundary, not an
-    /// off-by-one: the two agree for every integer source, and no fractional float reaches here.
-    if (accurate::greaterOp(value, DATE32_DAY_NUM_MAX_FIELD - 1))
+    /// Above the extended day-number domain: treat as a unix timestamp. Predicate kept
+    /// identical to ToDate32TransformFromSecondsOrDays so a fractional day number just
+    /// below the boundary lands on the same arm as CAST.
+    if (accurate::greaterOrEqualsOp(value, DATE32_DAY_NUM_MAX_FIELD))
     {
         if (throw_mode && accurate::greaterOp(value, DATE32_MAX_TIMESTAMP_FIELD))
             throw Exception(ErrorCodes::VALUE_IS_OUT_OF_RANGE_OF_DATA_TYPE, "Timestamp value {} is out of bounds of type Date32", value);

@@ -276,6 +276,41 @@ SELECT 'VALUES', toString(x) FROM t_parity ORDER BY x;
 SELECT 'CAST  ', toString(CAST(v AS Date)) FROM (SELECT arrayJoin([65535, 65536, 100000, 5662310399]) AS v) ORDER BY CAST(v AS Date);
 DROP TABLE t_parity;
 
+-- Same parity requirement at the Date32 boundary, for a FRACTIONAL day number. This pins the coerce
+-- helper's day-number/timestamp predicate to the transform's own form: `> N-1` and `>= N` agree for
+-- every integer source but diverge on a fractional value in (N-1, N), where the day-number arm keeps
+-- ~2299 while the timestamp arm reinterprets the value as seconds and lands in 1970. 120530 is the
+-- first timestamp-domain day number (DATE_LUT_MAX_EXTEND_DAY_NUM), so 120529.5 is the carrier;
+-- 120528.5 and 120530.5 are controls that already agreed, so the test cannot pass by routing
+-- everything to one arm. Both sides are printed per row, so a future divergence diffs.
+--
+-- Reaching the coerce helper needs BOTH: an expression rather than a bare literal (`+ 0`; a literal
+-- goes through the text serializer, see the note above the t_vals_time section), AND templates
+-- disabled. With the default input_format_values_deduce_templates_of_expressions = 1 the row is
+-- parsed by an expression template whose evaluateAll ends in castColumn, i.e. the CAST
+-- implementation itself, so both sides of this assertion would agree no matter what the helper does.
+SELECT '-- VALUES coercion agrees with CAST for a fractional Date32 day number at the boundary (ignore)';
+SET date_time_overflow_behavior = 'ignore';
+SET input_format_values_deduce_templates_of_expressions = 0;
+CREATE TABLE t_parity_frac (v Float64, x Date32) ENGINE = Memory;
+INSERT INTO t_parity_frac VALUES (120528.5, 120528.5 + 0), (120529.5, 120529.5 + 0), (120530.5, 120530.5 + 0);
+SELECT toString(v), 'VALUES', toString(x), 'CAST', toString(CAST(v AS Date32)) FROM t_parity_frac ORDER BY v;
+DROP TABLE t_parity_frac;
+
+SELECT '-- VALUES coercion agrees with CAST for a fractional Date32 day number at the boundary (saturate)';
+SET date_time_overflow_behavior = 'saturate';
+CREATE TABLE t_parity_frac (v Float64, x Date32) ENGINE = Memory;
+INSERT INTO t_parity_frac VALUES (120528.5, 120528.5 + 0), (120529.5, 120529.5 + 0), (120530.5, 120530.5 + 0);
+SELECT toString(v), 'VALUES', toString(x), 'CAST', toString(CAST(v AS Date32)) FROM t_parity_frac ORDER BY v;
+DROP TABLE t_parity_frac;
+SET input_format_values_deduce_templates_of_expressions = 1;
+
+-- The `values` table function reaches the same helper through convertFieldToTypeOrThrow, with its own
+-- default format settings (so it is not affected by the SET above), and needs no template opt-out.
+SELECT '-- values() table function agrees with CAST for the same fractional Date32 day numbers';
+SELECT toString(v), 'VALUES', toString(CAST(x AS Date32)), 'CAST', toString(CAST(v AS Date32))
+FROM values('v Float64, x Date32', (120528.5, 120528.5), (120529.5, 120529.5), (120530.5, 120530.5)) ORDER BY v;
+
 -- The overflow-aware coercion above applies only in the explicit saturate/throw modes. In the default
 -- ignore mode the Date/Date32/Time coercion still rejects an out-of-storage-range value (Null ->
 -- ARGUMENT_OUT_OF_BOUND in convertFieldToTypeOrThrow), so a DROP/OPTIMIZE PARTITION with a bogus numeric
