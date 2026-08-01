@@ -140,6 +140,10 @@ public:
 
     MergeTreeIndexSubstreams getSubstreams() const override { return {{MergeTreeIndexSubstream::Type::Regular, "", ".idx2"}}; }
     MergeTreeIndexFormat getDeserializedFormat(const IMergeTreeDataPart & part, const std::string & relative_path_prefix) const override;
+    MergeTreeIndexSubstreams getAllSubstreamsInPart(
+        const MergeTreeDataPartChecksums & checksums,
+        const std::string & path_prefix,
+        const IDataPartStorage * storage) const override;
 };
 
 /// Bulk container for minmax skip indexes: holds the min and the max of every deserialized granule

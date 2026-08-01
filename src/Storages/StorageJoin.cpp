@@ -17,6 +17,7 @@
 #include <Common/quoteString.h>
 #include <Common/Exception.h>
 #include <Core/ColumnsWithTypeAndName.h>
+#include <Core/BaseSettings.h>
 #include <Core/Settings.h>
 #include <Interpreters/JoinUtils.h>
 #include <Formats/NativeWriter.h>
@@ -412,6 +413,14 @@ void registerStorageJoin(StorageFactory & factory)
         {
             for (const auto & setting : args.storage_def->settings->changes)
             {
+                /// These settings are read here rather than applied to a `BaseSettings`, so there is no
+                /// settings schema to check the value-less form `SETTINGS name` against - it stands for
+                /// `name = true` and is only meaningful for the Bool ones. Without this check
+                /// `SETTINGS max_rows_in_join` would silently become `max_rows_in_join = 1`.
+                if (setting.shorthand && setting.name != "join_use_nulls" && setting.name != "join_any_take_last_row"
+                    && setting.name != "any_join_distinct_right_table_keys" && setting.name != "persistent")
+                    BaseSettingsHelpers::throwValuelessSettingIsNotBool(setting.name);
+
                 if (setting.name == "join_use_nulls")
                     join_use_nulls = setting.value;
                 else if (setting.name == "max_rows_in_join")
