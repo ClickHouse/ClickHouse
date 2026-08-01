@@ -692,6 +692,12 @@ Can be overridden by explicit `dictionary_block_frontcoding_compression` index a
 Default posting list block size for text indexes (rows).
 Can be overridden by explicit `posting_list_block_size` index argument.
 )", 0) \
+    DECLARE(NonZeroUInt64, text_index_max_processed_tokens_before_flush, 100000000, R"(
+Maximum number of processed tokens accumulated by a text index builder before flushing a temporary segment.
+)", 0) \
+    DECLARE(NonZeroUInt64, text_index_max_memory_usage_before_flush, "1Gi", R"(
+Maximum estimated memory retained by a text index builder before flushing a temporary segment.
+)", 0) \
     DECLARE(TextIndexPostingListCodec, text_index_posting_list_codec, TextIndexPostingListCodec::None, R"(
 Default posting list codec for text indexes.
 Can be overridden by explicit `posting_list_codec` index argument.
@@ -1708,9 +1714,26 @@ To provide a safeguard against accidentally creating tables with very low
 `index_granularity_bytes`.
 )", 1024) \
     DECLARE(Bool, use_const_adaptive_granularity, false, R"(
-Always use constant granularity for whole part. It allows to compress in
-memory values of index granularity. It can be useful in extremely large
-workloads with thin tables.
+Non-const adaptive granularity (the default, `index_granularity_bytes` is not `0`) keeps
+granules at a constant size in bytes, so their row count varies: for every
+written block, rows per granule is `index_granularity_bytes` divided by the
+average size of a row in that block, capped at `index_granularity`. Because it differs
+from granule to granule, the row count of every granule in the part has to be kept in
+memory, 8 bytes each, which on large tables adds up to tens of gigabytes.
+
+Enabling constant adaptive granularity (this setting) keeps granules at a constant number of rows instead,
+so their size in bytes varies. The number is computed once from the average size of a
+row in the part being written, and a part stores that single value
+instead of one value per granule. Because all granules contain the same number of rows,
+no additional row count per granule needs to be stored.
+
+The amount of memory currently spent on these values is reported by the
+`TotalIndexGranularityBytesInMemory` metric in `system.asynchronous_metrics`,
+and per part in `system.parts.index_granularity_bytes_in_memory`.
+
+The setting is applied only to parts written after it was changed. Use
+[ALTER TABLE ... REWRITE PARTS](/sql-reference/statements/alter/partition#rewrite-parts)
+to apply it to existing parts. `Compact` parts always use adaptive granularity.
 )", 0) \
     DECLARE(Bool, enable_index_granularity_compression, true, R"(
 Compress in memory values of index granularity if it is possible
@@ -2395,7 +2418,7 @@ void MergeTreeSettingsImpl::loadFromQuery(ASTStorage & storage_def, ContextPtr c
             auto changes = storage_def.settings->changes;
             MergeTreeSettings::resolveDiskSetting(changes, context, is_loading_from_existing_metadata, for_system_database);
 
-            for (const auto & [name, value] : changes)
+            for (const auto & [name, value, _] : changes)
             {
                 if (name == "disk")
                 {

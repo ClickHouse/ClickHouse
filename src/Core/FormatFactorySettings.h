@@ -204,6 +204,9 @@ When reading Parquet files, skip whole row groups based on the WHERE/PREWHERE ex
     DECLARE(Bool, input_format_parquet_bloom_filter_push_down, true, R"(
 When reading Parquet files, skip whole row groups based on the WHERE expressions and bloom filter in the Parquet metadata.
 )", 0) \
+    DECLARE(UInt64, input_format_parquet_dictionary_filter_push_down, 1024 * 1024, R"(
+When reading Parquet files (with reader v3), skip whole row groups based on the WHERE/PREWHERE expressions and the dictionary page contents, when all data pages of a column chunk are dictionary-encoded. The value is the maximum dictionary page size (in bytes) for which this optimization is applied; set to 0 to disable. This takes precedence over the bloom filter when both are available.
+)", 0) \
     DECLARE(Bool, input_format_parquet_enable_json_parsing, true, R"(
 When reading Parquet files, parse JSON columns as ClickHouse JSON Column.
 )", 0) \
@@ -759,6 +762,26 @@ See also:
     DECLARE(Bool, date_time_64_output_format_cut_trailing_zeros_align_to_groups_of_thousands, false, R"(
 Dynamically trim the trailing zeros of datetime64 values to adjust the output scale to [0, 3, 6],
 corresponding to 'seconds', 'milliseconds', and 'microseconds')", 0) \
+    DECLARE(Bool, input_format_read_datetime_number_as_raw_value, false, R"(
+Read a bare unquoted integer for a `DateTime`/`DateTime64` column as the raw underlying value — seconds for
+`DateTime`, ticks at the column precision for `DateTime64` — instead of a Unix timestamp in seconds.
+
+Disabled by default: an unquoted number is a Unix timestamp in seconds (with optional sub-second precision),
+consistent with the `Values` format, `CAST` and `toDateTime64`. Enable it (or `SET compatibility = '26.7'`) to
+restore the behavior of versions up to and including 26.7, where a bare unquoted integer fed to a `DateTime64`
+column was interpreted as the raw scaled value (ticks). The legacy path accepts only such a bare integer:
+with the setting enabled, a number with a fractional or exponent part is rejected by the row input paths
+(as before 26.8), while in `JSONExtract` and the typed `JSON` type a fractional number is still read as
+seconds for `DateTime64` and rejected for `DateTime` (also as before 26.8). In the `Values` format itself,
+a number the streaming parser rejects then falls back to SQL expression evaluation and is read as seconds,
+both before 26.8 and with this setting enabled — so the `Values` behavior for a fractional number is the
+same in every configuration.
+
+This setting governs only the `JSON`, `Values`/`Quoted` and `JSONExtract`/typed `JSON` paths (the `Quoted` path
+covers every format parsing fields with the `Quoted` escaping rule: `Values`, `MySQLDump`, and
+`Template`/`CustomSeparated`/`Regexp` configured with `Quoted` field escaping). The tab-separated, CSV and other
+escaped/whole-text formats are unaffected: there a large unquoted `DateTime64` number is still read as ticks.
+)", 0) \
     DECLARE(Bool, input_format_ipv4_default_on_conversion_error, false, R"(
 Deserialization of IPv4 will use default values instead of throwing exception on conversion error.
 
