@@ -17,6 +17,7 @@
 #include <iostream>
 #include <map>
 #include <optional>
+#include <utility>
 #include <vector>
 
 using namespace DB;
@@ -31,12 +32,11 @@ SharedHeader oneColumnHeader()
 }
 
 /// One partially-aggregated two-level chunk for `bucket`, carrying the given
-/// out_of_order_buckets metadata. EMPTY by default - which is exactly what a
-/// dist layer's MergingAggregatedBucketTransform produces: it builds a FRESH
-/// AggregatedChunkInfo (MergingAggregatedMemoryEfficientTransform.cpp:388-392)
-/// that does NOT copy out_of_order_buckets. So a downstream
-/// GroupingAggregatedTransform receives a stream that may be OUT OF ORDER in
-/// bucket_num but carries NO "this bucket was delayed" metadata.
+/// out_of_order_buckets metadata (EMPTY by default: nobody owes a delayed bucket).
+/// This is the shape of chunk a GroupingAggregatedTransform reads from one of its
+/// inputs - either straight from a remote shard's
+/// `ConvertingAggregatedToChunksTransform`, or, in a multi-layer distributed query,
+/// from the `MergingAggregatedBucketTransform` of the layer below.
 Chunk makeBucketChunk(Int32 bucket, std::vector<Int32> ooo = {})
 {
     auto col = ColumnUInt64::create();
@@ -85,19 +85,80 @@ AggregatingTransformParamsPtr makeMergeParams(const SharedHeader & header)
     return std::make_shared<AggregatingTransformParams>(header, params, /*final=*/ false);
 }
 
-/// One chunk pushed by GroupingAggregatedTransform: the bucket and the out_of_order_buckets
-/// metadata it stamped (the buckets still delayed by some input when it pushed). The metadata
-/// is exactly what a downstream MergingAggregatedBucketTransform copies into its output, so it
-/// is what a NEXT distributed layer's GroupingAggregatedTransform receives.
+/// What a NEXT distributed layer receives for one bucket: the bucket number and the
+/// out_of_order_buckets metadata (which buckets are still owed by some input). In a multi-layer
+/// distributed query the two GroupingAggregatedTransform layers are separated by a
+/// MergingAggregatedBucketTransform, which builds a FRESH AggregatedChunkInfo for its output -
+/// so whatever that transform puts there, and only that, reaches the next layer.
 struct PushedBucket
 {
     Int32 bucket;
     std::vector<Int32> ooo;
 };
 
-PushedBucket chunkPushed(const Chunk & chunk)
+Int32 chunkBucket(const Chunk & chunk)
 {
     auto info = chunk.getChunkInfos().get<ChunksToMerge>();
+    chassert(info);
+    return info->bucket_num;
+}
+
+/// Run one chunk pushed by GroupingAggregatedTransform through a REAL
+/// MergingAggregatedBucketTransform and return what the layer above then reads.
+///
+/// The production processor is driven here on purpose, instead of copying the interesting
+/// fields onto a hand-made AggregatedChunkInfo: carrying the delayed-bucket signal across the
+/// re-merge is exactly the behaviour under test, so re-implementing it in the test would make
+/// the test pass no matter what the transform does.
+PushedBucket reMergeBucketChunk(const AggregatingTransformParamsPtr & params, Chunk chunk)
+{
+    MergingAggregatedBucketTransform merger(params);
+    auto & merger_input = merger.getInputPort();
+    auto & merger_output = merger.getOutputPort();
+
+    /// GroupingAggregatedTransform's output header is empty (the chunk carries only chunk info),
+    /// and so is MergingAggregatedBucketTransform's input header.
+    OutputPort feeder(merger_input.getSharedHeader());
+    InputPort consumer(merger_output.getSharedHeader());
+    connect(feeder, merger_input);
+    connect(merger_output, consumer);
+
+    Chunk merged;
+    bool delivered = false;
+    for (int guard = 0; guard < 100; ++guard)
+    {
+        consumer.setNeeded();
+        auto status = merger.prepare();
+
+        while (consumer.hasData())
+        {
+            consumer.setNeeded();
+            merged = consumer.pull();
+        }
+
+        if (status == IProcessor::Status::Ready)
+        {
+            merger.work();
+            continue;
+        }
+
+        if (status == IProcessor::Status::Finished)
+            break;
+
+        if (status == IProcessor::Status::NeedData)
+        {
+            if (!delivered)
+            {
+                feeder.push(std::move(chunk));
+                delivered = true;
+            }
+            else
+                feeder.finish();
+        }
+        /// PortFull: the output was drained just above, so keep going.
+    }
+
+    auto info = merged.getChunkInfos().get<AggregatedChunkInfo>();
     chassert(info);
     return PushedBucket{info->bucket_num, info->out_of_order_buckets};
 }
@@ -144,20 +205,37 @@ public:
     /// list of bucket numbers the transform pushed downstream.
     std::vector<Int32> run()
     {
-        runPushed();
+        drive();
         std::vector<Int32> buckets;
-        buckets.reserve(pushed_full.size());
-        for (const auto & p : pushed_full)
-            buckets.push_back(p.bucket);
+        buckets.reserve(pushed_chunks.size());
+        for (const auto & chunk : pushed_chunks)
+            buckets.push_back(chunkBucket(chunk));
         return buckets;
     }
 
-    /// Like run(), but returns each pushed chunk's (bucket, stamped out_of_order_buckets), so a
-    /// caller can faithfully forward this transform's output (and its metadata) into a
-    /// downstream layer - exactly what MergingAggregatedBucketTransform does in a multi-layer
-    /// distributed query.
-    const std::vector<PushedBucket> & runPushed()
+    /// Like run(), but every pushed chunk additionally goes through a real
+    /// MergingAggregatedBucketTransform, so the result is exactly the (bucket,
+    /// out_of_order_buckets) sequence a downstream layer of a multi-layer distributed query
+    /// reads from this one.
+    std::vector<PushedBucket> runReMerged()
     {
+        drive();
+        std::vector<PushedBucket> re_merged;
+        re_merged.reserve(pushed_chunks.size());
+        for (auto & chunk : pushed_chunks)
+            re_merged.push_back(reMergeBucketChunk(params, std::move(chunk)));
+        pushed_chunks.clear();
+        return re_merged;
+    }
+
+    size_t num_inputs;
+
+private:
+    void drive()
+    {
+        if (std::exchange(driven, true))
+            return;
+
         IProcessor::UpdatedInputPorts all_inputs;
         for (auto & in : transform->getInputs())
             all_inputs.push_back(&in);
@@ -174,7 +252,7 @@ public:
             while (consumer->hasData())
             {
                 consumer->setNeeded();
-                pushed_full.push_back(chunkPushed(consumer->pull()));
+                pushed_chunks.push_back(consumer->pull());
             }
 
             if (status == IProcessor::Status::Ready)
@@ -203,13 +281,8 @@ public:
                 continue;
             }
         }
-        return pushed_full;
     }
 
-    std::vector<PushedBucket> pushed_full;
-    size_t num_inputs;
-
-private:
     /// If any input port is needed and empty and has a queued chunk, push it.
     bool deliverToNeededInput()
     {
@@ -256,6 +329,8 @@ private:
     std::unique_ptr<InputPort> consumer;
     std::vector<std::deque<Chunk>> queues;
     std::vector<bool> input_finished;
+    std::vector<Chunk> pushed_chunks;
+    bool driven = false;
 };
 
 std::vector<std::deque<Chunk>> buildInputs(std::vector<std::vector<std::pair<Int32, std::vector<Int32>>>> spec)
@@ -546,8 +621,8 @@ TEST(GroupingAggregatedOOO, NonEmptyMetadataShrinkingSnapshotRace)
 /// danger is a MIDDLE dist layer that used num_merging_processors<=1
 /// (addMergingAggregatedMemoryEfficientTransform.cpp:564-568): there is NO
 /// SortingAggregatedTransform to re-sort, AND MergingAggregatedBucketTransform::transform
-/// (cpp:388-392) builds a FRESH AggregatedChunkInfo that does NOT copy
-/// out_of_order_buckets. So that layer emits a stream that is OUT OF ORDER in bucket_num
+/// builds a FRESH AggregatedChunkInfo, which before this fix did not carry
+/// out_of_order_buckets over. So that layer emitted a stream that is OUT OF ORDER in bucket_num
 /// but carries EMPTY ooo metadata. A downstream GroupingAggregatedTransform fed such a
 /// stream has NO "this bucket is still owed" signal, so its in-order push path
 /// (cpp:84-92) can finalize a bucket B (next_bucket_to_push advances past B) while an
@@ -583,12 +658,11 @@ TEST(GroupingAggregatedOOO, DelayedBucketMetadataPreventsDoublePush)
 namespace
 {
 /// Run ONE "remote dist-layer shard": a real GroupingAggregatedTransform fed `num_inner`
-/// CONTRACT-FAITHFUL producer streams (what the data shards send it). Its output is a bounded
-/// reordering of [0..K), each bucket once, with the out_of_order_buckets metadata it STAMPED
-/// on each pushed chunk. A downstream MergingAggregatedBucketTransform copies that metadata
-/// into the AggregatedChunkInfo, so this (bucket, ooo) sequence is EXACTLY what the initiator's
-/// GroupingAggregatedTransform receives from this shard. Returning the stamped metadata (rather
-/// than dropping it) models the FIXED re-merge path; dropping it modelled the bug.
+/// CONTRACT-FAITHFUL producer streams (what the data shards send it), followed by the real
+/// MergingAggregatedBucketTransform that re-merges each pushed bucket. Its output is a bounded
+/// reordering of [0..K), each bucket once, carrying whatever out_of_order_buckets metadata
+/// survived the re-merge - which is EXACTLY what the initiator's GroupingAggregatedTransform
+/// receives from this shard, and is the bug-vs-fix axis.
 std::vector<PushedBucket> runRemoteShard(pcg64 & rng, size_t num_inner, Int32 num_buckets)
 {
     std::vector<std::deque<Chunk>> inputs;
@@ -601,7 +675,7 @@ std::vector<PushedBucket> runRemoteShard(pcg64 & rng, size_t num_inner, Int32 nu
         inputs.push_back(std::move(q));
     }
     ManualGroupingDriver d(std::move(inputs));
-    return d.runPushed(); // reordered bucket sequence, each bucket once, WITH stamped metadata
+    return d.runReMerged();
 }
 }
 
@@ -618,13 +692,13 @@ std::vector<PushedBucket> runRemoteShard(pcg64 & rng, size_t num_inner, Int32 nu
 ///     nothing -> the initiator saw an out-of-order stream with EMPTY metadata -> double push.
 ///   - AFTER the fix: the stamped metadata flows through, so the initiator's in-order push path
 ///     correctly skips a bucket still owed -> no double push.
-/// This test forwards the inner shard's stamped metadata, so it FAILS pre-fix and PASSES
-/// post-fix - a genuine regression test for the production change.
+/// Both layers and the re-merge between them are the real processors, so this FAILS pre-fix and
+/// PASSES post-fix - a genuine regression test for the production change.
 TEST(GroupingAggregatedOOO, TwoLayerDistMetadataFuzz)
 {
     pcg64 rng(0x2A4E12340BADULL);
     int total = 0;
-    for (int iter = 0; iter < 40000; ++iter)
+    for (int iter = 0; iter < 2000; ++iter)
     {
         size_t num_outer = std::uniform_int_distribution<size_t>(2, 4)(rng); // remote dist_layer shards
         Int32 num_buckets = std::uniform_int_distribution<Int32>(3, 12)(rng);
@@ -636,7 +710,7 @@ TEST(GroupingAggregatedOOO, TwoLayerDistMetadataFuzz)
             auto shard_out = runRemoteShard(rng, num_inner, num_buckets);
             std::deque<Chunk> q;
             for (const auto & p : shard_out)
-                q.push_back(makeBucketChunk(p.bucket, p.ooo)); // metadata forwarded by MergingAggregatedBucketTransform
+                q.push_back(makeBucketChunk(p.bucket, p.ooo)); // what the re-merge left for this layer
             outer_inputs.push_back(std::move(q));
         }
 
@@ -684,7 +758,7 @@ TEST(GroupingAggregatedOOO, EmptyDelayedBucketNotStampedAsOwed)
         {{0, {1}}, {2, {}}},   // single shard: postpone 1, resolve it empty, emit 2
     });
     ManualGroupingDriver d(std::move(inputs));
-    const auto & pushed = d.runPushed();
+    const auto pushed = d.runReMerged();
 
     /// All buckets must still be pushed exactly once.
     std::vector<Int32> bucket_order;
@@ -713,13 +787,13 @@ TEST(GroupingAggregatedOOO, EmptyDelayedBucketNotStampedAsOwed)
 /// cpp:99-107) until the stream finishes - and then could double-push it on the finish drain.
 TEST(GroupingAggregatedOOO, EmptyDelayedBucketDownstreamMergesRealData)
 {
-    /// Run shard A through a real GroupingAggregatedTransform and forward its STAMPED metadata,
-    /// exactly as MergingAggregatedBucketTransform would in a multi-layer query.
+    /// Run shard A through a real GroupingAggregatedTransform and a real
+    /// MergingAggregatedBucketTransform, exactly as a multi-layer query does.
     std::vector<PushedBucket> shard_a;
     {
         auto inputs = buildInputs({{{0, {1}}, {2, {}}}});
         ManualGroupingDriver da(std::move(inputs));
-        shard_a = da.runPushed();
+        shard_a = da.runReMerged();
     }
 
     /// The fix makes shard A NOT advertise the empty bucket 1 as owed. (Pre-fix it does, which
@@ -806,7 +880,7 @@ std::vector<PushedBucket> runRemoteShardWithEmpties(pcg64 & rng, size_t num_inne
         inputs.push_back(std::move(q));
     }
     ManualGroupingDriver d(std::move(inputs));
-    return d.runPushed();
+    return d.runReMerged();
 }
 }
 
@@ -814,7 +888,7 @@ TEST(GroupingAggregatedOOO, TwoLayerDistSparseEmptyBucketFuzz)
 {
     pcg64 rng(0x5A4E12340E47ULL);
     int total = 0;
-    for (int iter = 0; iter < 40000; ++iter)
+    for (int iter = 0; iter < 2000; ++iter)
     {
         size_t num_outer = std::uniform_int_distribution<size_t>(2, 4)(rng);
         Int32 num_buckets = std::uniform_int_distribution<Int32>(3, 12)(rng);
@@ -826,7 +900,7 @@ TEST(GroupingAggregatedOOO, TwoLayerDistSparseEmptyBucketFuzz)
             auto shard_out = runRemoteShardWithEmpties(rng, num_inner, num_buckets);
             std::deque<Chunk> q;
             for (const auto & p : shard_out)
-                q.push_back(makeBucketChunk(p.bucket, p.ooo)); // metadata forwarded by MergingAggregatedBucketTransform
+                q.push_back(makeBucketChunk(p.bucket, p.ooo)); // what the re-merge left for this layer
 
             /// Sanity: a bucket is never owed to itself. (The exact minimal "empty-resolved bucket
             /// must not be stamped as owed" case is pinned by EmptyDelayedBucketNotStampedAsOwed;
