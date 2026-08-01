@@ -105,7 +105,7 @@ static NamesAndTypesList getColumnsFromTableExpression(
         }
 
         const auto & function_storage = query_context->executeTableFunction(table_function);
-        auto function_metadata_snapshot = function_storage->getInMemoryMetadataPtr(query_context, false);
+        auto function_metadata_snapshot = function_storage->getInMemoryMetadataQueryCached(query_context);
         const auto & columns = function_metadata_snapshot->getColumns();
         names_and_type_list = columns.getOrdinary();
         materialized = columns.getMaterialized();
@@ -116,7 +116,7 @@ static NamesAndTypesList getColumnsFromTableExpression(
     {
         auto table_id = context->resolveStorageID(table_expression.database_and_table_name);
         const auto & table = DatabaseCatalog::instance().getTable(table_id, context);
-        auto table_metadata_snapshot = table->getInMemoryMetadataPtr(context, false);
+        auto table_metadata_snapshot = table->getInMemoryMetadataQueryCached(context);
         const auto & columns = table_metadata_snapshot->getColumns();
         names_and_type_list = columns.getOrdinary();
         materialized = columns.getMaterialized();

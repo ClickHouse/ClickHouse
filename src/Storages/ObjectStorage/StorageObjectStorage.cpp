@@ -389,13 +389,13 @@ bool StorageObjectStorage::canMoveConditionsToPrewhere() const
 
 std::optional<NameSet> StorageObjectStorage::supportedPrewhereColumns() const
 {
-    auto metadata_snapshot = getInMemoryMetadataPtr(CurrentThread::tryGetQueryContext(), false);
+    auto metadata_snapshot = getInMemoryMetadataQueryCached(CurrentThread::tryGetQueryContext());
     return metadata_snapshot->getColumnsWithoutDefaultExpressions(/*exclude=*/ hive_partition_columns_to_read_from_file_path);
 }
 
 IStorage::ColumnSizeByName StorageObjectStorage::getColumnSizes() const
 {
-    auto metadata_snapshot = getInMemoryMetadataPtr(CurrentThread::tryGetQueryContext(), false);
+    auto metadata_snapshot = getInMemoryMetadataQueryCached(CurrentThread::tryGetQueryContext());
     return metadata_snapshot->getFakeColumnSizes();
 }
 
@@ -446,7 +446,7 @@ void StorageObjectStorage::updateExternalDynamicMetadataIfExists(ContextPtr quer
     if (!state)
         return;
 
-    auto current_metadata = getInMemoryMetadataPtr(query_context, false);
+    auto current_metadata = getInMemoryMetadataQueryCached(query_context);
     auto new_metadata = *current_metadata;
     /// Always pin the current snapshot version to prevent logical races between query
     /// analysis (which picks the schema) and query execution (which iterates files).
@@ -912,7 +912,7 @@ void StorageObjectStorage::mutate([[maybe_unused]] const MutationCommands & comm
     /// analyzer/interpreter for `SELECT` and `INSERT` queries, but `InterpreterAlterQuery`
     /// does not call it before invoking `mutate`.
     updateExternalDynamicMetadataIfExists(context_);
-    auto metadata_snapshot = getInMemoryMetadataPtr(context_, false);
+    auto metadata_snapshot = getInMemoryMetadataQueryCached(context_);
     auto storage = getStorageID();
     configuration->mutate(commands, context_, shared_from_this(), storage, metadata_snapshot, catalog, format_settings);
 }
@@ -932,7 +932,7 @@ Pipe StorageObjectStorage::executeCommand(const String & command_name, const AST
 
 void StorageObjectStorage::alter(const AlterCommands & params, ContextPtr context, AlterLockHolder & /*alter_lock_holder*/)
 {
-    auto metadata_snapshot = getInMemoryMetadataPtr(context, false);
+    auto metadata_snapshot = getInMemoryMetadataQueryCached(context);
     StorageInMemoryMetadata new_metadata = *metadata_snapshot;
     params.apply(new_metadata, context);
 

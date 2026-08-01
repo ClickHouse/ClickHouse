@@ -536,7 +536,7 @@ static bool getRMVCoordinationInfo(
     const auto storage = DatabaseCatalog::instance().tryGetByUUID(parent_uuid).second;
     if (!storage)
         return false;
-    auto in_memory_metadata = storage->getInMemoryMetadataPtr(context, false);
+    auto in_memory_metadata = storage->getInMemoryMetadataQueryCached(context);
     const auto * refresh = in_memory_metadata->refresh->as<ASTRefreshStrategy>();
     if (!refresh || refresh->append)
         return false;

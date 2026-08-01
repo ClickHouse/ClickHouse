@@ -215,9 +215,23 @@ public:
     /// Get immutable version (snapshot) of storage metadata. Metadata object is
     /// multiversion, so it can be concurrently changed, but returned copy can be
     /// used without any locks.
-    /// Pass query context to enable metadata caching in MergeTree.
-    /// Pass nullptr when no query context is available.
-    virtual StorageMetadataHandle getInMemoryMetadataPtr(ContextPtr /*context*/, bool /*bypass_metadata_cache*/) const
+    ///
+    /// Two intent-revealing reads:
+    ///   getInMemoryMetadataUncached    - the current committed metadata, bypassing the per-query metadata
+    ///                                     cache; a fresh read each time. Use for commits (under the alter
+    ///                                     lock) and wherever the latest metadata is required.
+    ///   getInMemoryMetadataQueryCached - the query-scoped cached snapshot (MergeTree pins it for the whole
+    ///                                     query, giving all subqueries a consistent view). Use for reads.
+    /// Both keep the context because wrappers (Merge/MV/Alias/Proxy) compose metadata from it; pass nullptr
+    /// when no query context is available. The base implementations are identical (a fresh read); only
+    /// MergeTreeData overrides getInMemoryMetadataQueryCached to consult the per-query pin, so for every
+    /// other engine the two are interchangeable.
+    virtual StorageMetadataHandle getInMemoryMetadataUncached(ContextPtr /*context*/) const
+    {
+        return metadata.get();
+    }
+
+    virtual StorageMetadataHandle getInMemoryMetadataQueryCached(ContextPtr /*context*/) const
     {
         return metadata.get();
     }
@@ -313,7 +327,14 @@ public:
     /// sure, that we execute only one simultaneous alter. Doesn't affect share lock.
     using AlterLockHolder = std::unique_lock<std::timed_mutex>;
     AlterLockHolder lockForAlter(const Poco::Timespan & acquire_timeout);
+    /// Convenience overload using the query context's lock_acquire_timeout setting.
+    AlterLockHolder lockForAlter(ContextPtr context);
     std::optional<AlterLockHolder> tryLockForAlter(const Poco::Timespan & acquire_timeout);
+
+    /// True if `holder` locks this storage's own alter_lock. A delegating storage (Proxy/Alias) must
+    /// re-anchor the lock to the nested/target object before forwarding to its `alter`; committing
+    /// `alter` implementations assert this so a mis-forwarded holder is caught in debug builds.
+    bool holdsOwnAlterLock(const AlterLockHolder & holder) const { return holder.mutex() == &alter_lock; }
 
     /// Lock table exclusively. This lock must be acquired if you want to be
     /// sure, that no other thread (SELECT, merge, ALTER, etc.) doing something

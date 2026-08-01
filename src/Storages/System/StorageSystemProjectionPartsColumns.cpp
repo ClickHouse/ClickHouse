@@ -84,7 +84,7 @@ void StorageSystemProjectionPartsColumns::processNextStorage(
         String default_expression;
     };
 
-    auto storage_metadata = info.storage->getInMemoryMetadataPtr(context, false);
+    auto storage_metadata = info.storage->getInMemoryMetadataQueryCached(context);
     std::unordered_map<String, std::unordered_map<String, ColumnInfo>> projection_columns_info;
     for (const auto & projection : storage_metadata->getProjections())
     {

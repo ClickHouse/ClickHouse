@@ -204,7 +204,7 @@ void StorageAlias::read(
         local_context->getCurrentQueryId(),
         local_context->getSettingsRef()[Setting::lock_acquire_timeout]);
 
-    auto target_metadata = target_storage->getInMemoryMetadataPtr(local_context, false);
+    auto target_metadata = target_storage->getInMemoryMetadataQueryCached(local_context);
     auto target_snapshot = target_storage->getStorageSnapshot(target_metadata, local_context);
 
     target_storage->read(
@@ -228,7 +228,7 @@ SinkToStoragePtr StorageAlias::write(
     bool async_insert)
 {
     auto target_storage = getTargetTable(TargetAccess{local_context, AccessType::INSERT});
-    auto target_metadata = target_storage->getInMemoryMetadataPtr(local_context, false);
+    auto target_metadata = target_storage->getInMemoryMetadataQueryCached(local_context);
 
     /// Use AliasSink which executes full INSERT pipeline on target
     /// Therefore it will trigger the MV on the target
@@ -238,7 +238,7 @@ SinkToStoragePtr StorageAlias::write(
 void StorageAlias::alter(
     const AlterCommands & params,
     ContextPtr local_context,
-    AlterLockHolder & table_lock_holder)
+    AlterLockHolder & /*table_lock_holder*/)
 {
     auto target_storage = getTargetTable(TargetAccess{local_context, AccessType::ALTER});
 
@@ -261,7 +261,12 @@ void StorageAlias::alter(
         }
     }
 
-    target_storage->alter(params, local_context, table_lock_holder);
+    /// Re-anchor the alter lock to the target storage. The interpreter locked THIS alias's alter_lock,
+    /// which is a different object from the target's, so without re-locking here the target's own
+    /// self-locking metadata writers are not excluded and a concurrent direct ALTER on the target can
+    /// lose a committed change. Lock order is alias (already held) -> target.
+    auto target_alter_lock = target_storage->lockForAlter(local_context);
+    target_storage->alter(params, local_context, target_alter_lock);
 }
 
 void StorageAlias::truncate(
@@ -271,7 +276,7 @@ void StorageAlias::truncate(
     TableExclusiveLockHolder & table_lock_holder)
 {
     auto target_storage = getTargetTable(TargetAccess{local_context, AccessType::TRUNCATE});
-    auto target_metadata = target_storage->getInMemoryMetadataPtr(local_context, false);
+    auto target_metadata = target_storage->getInMemoryMetadataQueryCached(local_context);
     target_storage->truncate(query, target_metadata, local_context, table_lock_holder);
 }
 
@@ -286,7 +291,7 @@ bool StorageAlias::optimize(
     ContextPtr local_context)
 {
     auto target_storage = getTargetTable(TargetAccess{local_context, AccessType::OPTIMIZE});
-    auto target_metadata = target_storage->getInMemoryMetadataPtr(local_context, false);
+    auto target_metadata = target_storage->getInMemoryMetadataQueryCached(local_context);
     return target_storage->optimize(query, target_metadata, partition, final, deduplicate,
                                     deduplicate_by_columns, cleanup, local_context);
 }
@@ -297,7 +302,7 @@ Pipe StorageAlias::alterPartition(
     ContextPtr local_context)
 {
     auto target_storage = getTargetTable(TargetAccess{local_context, AccessType::ALTER});
-    auto target_metadata = target_storage->getInMemoryMetadataPtr(local_context, false);
+    auto target_metadata = target_storage->getInMemoryMetadataQueryCached(local_context);
     return target_storage->alterPartition(target_metadata, commands, local_context);
 }
 
@@ -308,7 +313,7 @@ void StorageAlias::checkAlterPartitionIsPossible(
     ContextPtr local_context) const
 {
     auto target_storage = getTargetTable();
-    auto target_metadata = target_storage->getInMemoryMetadataPtr(local_context, false);
+    auto target_metadata = target_storage->getInMemoryMetadataQueryCached(local_context);
     target_storage->checkAlterPartitionIsPossible(commands, target_metadata, settings, local_context);
 }
 
@@ -410,7 +415,7 @@ QueryProcessingStage::Enum StorageAlias::getQueryProcessingStage(
     SelectQueryInfo & query_info) const
 {
     auto target_storage = getTargetTable();
-    auto target_metadata = target_storage->getInMemoryMetadataPtr(local_context, false);
+    auto target_metadata = target_storage->getInMemoryMetadataQueryCached(local_context);
     auto target_snapshot = target_storage->getStorageSnapshot(target_metadata, local_context);
     return target_storage->getQueryProcessingStage(local_context, to_stage, target_snapshot, query_info);
 }

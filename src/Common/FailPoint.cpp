@@ -51,6 +51,7 @@ static struct InitFiu
     ONCE(smt_restore_attach_retry) \
     PAUSEABLE_ONCE(smt_commit_tweaks_gate_open) \
     PAUSEABLE_ONCE(smt_commit_tweaks_gate_close) \
+    PAUSEABLE_ONCE(alter_pause_in_mergetree_commit) \
     ONCE(smt_commit_merge_change_version_before_op) \
     ONCE(smt_merge_mutate_intention_freeze_in_destructor) \
     ONCE(smt_add_part_sleep_after_add_before_commit) \
@@ -240,6 +241,9 @@ static struct InitFiu
     ONCE(database_iceberg_gcs) \
     REGULAR(rmt_delay_execute_drop_range) \
     REGULAR(rmt_delay_commit_part) \
+    REGULAR(rmt_alter_fail_before_zk_multi) \
+    REGULAR(atomic_db_fail_before_commit_alter_table) \
+    REGULAR(atomic_db_fail_after_txn_commit_before_rename) \
     ONCE(local_object_storage_network_error_during_remove) \
     REGULAR(lightweight_show_tables) \
     REGULAR(smt_part_update_duplicated_part) \
@@ -279,7 +283,10 @@ static struct InitFiu
     PAUSEABLE_ONCE(limit_by_sorted_stream_transform_after_loop_pause) \
     PAUSEABLE_ONCE(limit_by_transform_after_loop_pause) \
     PAUSEABLE_ONCE(limit_by_sorted_stream_transform_mid_loop_pause) \
-    PAUSEABLE_ONCE(limit_by_transform_mid_loop_pause)
+    PAUSEABLE_ONCE(limit_by_transform_mid_loop_pause) \
+    PAUSEABLE_ONCE(alter_pause_before_alter_lock) \
+    PAUSEABLE_ONCE(alter_pause_after_alter_under_lock) \
+    PAUSEABLE_ONCE(rmt_pause_after_apply_metadata_alter)
 
 namespace FailPoints
 {

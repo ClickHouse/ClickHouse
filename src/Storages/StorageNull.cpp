@@ -81,7 +81,7 @@ void StorageNull::alter(const AlterCommands & params, ContextPtr context, AlterL
 {
     auto table_id = getStorageID();
 
-    auto metadata_snapshot = getInMemoryMetadataPtr(context, false);
+    auto metadata_snapshot = getInMemoryMetadataQueryCached(context);
     StorageInMemoryMetadata new_metadata = *metadata_snapshot;
     params.apply(new_metadata, context);
     DatabaseCatalog::instance().getDatabase(table_id.database_name)->alterTable(context, table_id, new_metadata, /*validate_new_create_query=*/true);

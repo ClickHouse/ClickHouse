@@ -151,7 +151,7 @@ static NameSet getAllPossibleStreamNames(
 ColumnsDescription TableFunctionMergeTreeIndex::getActualTableStructure(ContextPtr context, bool /*is_insert_query*/) const
 {
     auto source_table = DatabaseCatalog::instance().getTable(source_table_id, context);
-    auto metadata_snapshot = source_table->getInMemoryMetadataPtr(context, false);
+    auto metadata_snapshot = source_table->getInMemoryMetadataQueryCached(context);
 
     const auto * merge_tree = dynamic_cast<const MergeTreeData *>(source_table.get());
     if (!merge_tree)

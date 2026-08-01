@@ -412,7 +412,7 @@ void AsynchronousInsertQueue::preprocessInsertQuery(const ASTPtr & query, const 
         /* async_insert */ false);
 
     auto table = interpreter.getTable(insert_query);
-    const auto metadata_snapshot = table->getInMemoryMetadataPtr(query_context, false);
+    const auto metadata_snapshot = table->getInMemoryMetadataQueryCached(query_context);
     auto sample_block = InterpreterInsertQuery::getSampleBlock(
         insert_query,
         table,

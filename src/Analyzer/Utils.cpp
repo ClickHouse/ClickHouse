@@ -1495,7 +1495,7 @@ bool verifyMaterializedCTESubqueryMatchesStorage(
         ? subquery->as<QueryNode>()->getProjectionColumns()
         : subquery->as<UnionNode>()->computeProjectionColumns();
 
-    auto storage_metadata = storage->getInMemoryMetadataPtr(context, /*throw_on_invalid=*/false);
+    auto storage_metadata = storage->getInMemoryMetadataQueryCached(context);
     const NamesAndTypesList storage_columns = storage_metadata->getColumns().getOrdinary();
 
     if (projection_columns.size() != storage_columns.size())

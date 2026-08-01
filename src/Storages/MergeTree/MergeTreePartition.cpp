@@ -241,7 +241,7 @@ MergeTreePartition::MergeTreePartition(Row value_) : value(std::move(value_))
 
 String MergeTreePartition::getID(const MergeTreeData & storage) const
 {
-    auto storage_metadata_snapshot = storage.getInMemoryMetadataPtr(storage.getContext(), false);
+    auto storage_metadata_snapshot = storage.getInMemoryMetadataUncached(storage.getContext());
     return getID(storage_metadata_snapshot->getPartitionKey().sample_block);
 }
 

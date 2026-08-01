@@ -28,6 +28,7 @@ namespace Setting
     extern const SettingsBool parallelize_output_from_storages;
     extern const SettingsBool distributed_aggregation_memory_efficient;
     extern const SettingsBool allow_experimental_analyzer;
+    extern const SettingsSeconds lock_acquire_timeout;
 }
 
 namespace ErrorCodes
@@ -108,6 +109,11 @@ IStorage::AlterLockHolder IStorage::lockForAlter(const Poco::Timespan & acquire_
                         "Possible deadlock avoided. Client should retry.",
                         getStorageID().getFullTableName(), acquire_timeout.totalMilliseconds());
     return std::move(*lock);
+}
+
+IStorage::AlterLockHolder IStorage::lockForAlter(ContextPtr context)
+{
+    return lockForAlter(context->getSettingsRef()[Setting::lock_acquire_timeout]);
 }
 
 
@@ -227,7 +233,7 @@ Pipe IStorage::alterPartition(
 void IStorage::alter(const AlterCommands & params, ContextPtr context, AlterLockHolder &)
 {
     auto table_id = getStorageID();
-    auto storage_metadata_snapshot = getInMemoryMetadataPtr(context, false);
+    auto storage_metadata_snapshot = getInMemoryMetadataUncached(context);
     StorageInMemoryMetadata new_metadata = *storage_metadata_snapshot;
     params.apply(new_metadata, context);
     DatabaseCatalog::instance().getDatabase(table_id.database_name)->alterTable(context, table_id, new_metadata, /*validate_new_create_query=*/true);
@@ -319,7 +325,7 @@ StorageID IStorage::getStorageID() const
 
 bool IStorage::supportsSampling() const
 {
-    auto storage_metadata_snapshot = getInMemoryMetadataPtr(CurrentThread::tryGetQueryContext(), false);
+    auto storage_metadata_snapshot = getInMemoryMetadataQueryCached(CurrentThread::tryGetQueryContext());
     return storage_metadata_snapshot->hasSamplingKey();
 }
 
@@ -338,7 +344,7 @@ VectorWithMemoryTracking<String> IStorage::getAllRegisteredNames() const
 {
     VectorWithMemoryTracking<String> result;
     auto getter = [](const auto & column) { return column.name; };
-    const auto metadata_snapshot = getInMemoryMetadataPtr(CurrentThread::tryGetQueryContext(), false);
+    const auto metadata_snapshot = getInMemoryMetadataQueryCached(CurrentThread::tryGetQueryContext());
     const auto & available_columns = metadata_snapshot->getColumns().getAllPhysical();
     std::transform(available_columns.begin(), available_columns.end(), std::back_inserter(result), getter);
     return result;
@@ -352,7 +358,7 @@ NameDependencies IStorage::getDependentViewsByColumn(ContextPtr context) const
     for (const auto & view_id : view_ids)
     {
         auto view = DatabaseCatalog::instance().getTable(view_id, context);
-        auto view_metadata = view->getInMemoryMetadataPtr(context, false);
+        auto view_metadata = view->getInMemoryMetadataQueryCached(context);
         if (view_metadata->select.inner_query)
         {
             const auto & select_query = view_metadata->select.inner_query;

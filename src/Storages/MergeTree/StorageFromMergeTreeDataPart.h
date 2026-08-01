@@ -28,7 +28,7 @@ public:
         , storage(part_->storage)
         , partition_id(part_->info.getPartitionId())
     {
-        auto storage_metadata_snapshot = storage.getInMemoryMetadataPtr(storage.getContext(), false);
+        auto storage_metadata_snapshot = storage.getInMemoryMetadataUncached(storage.getContext());
         setInMemoryMetadata(*storage_metadata_snapshot);
     }
 
@@ -38,7 +38,7 @@ public:
         ReadFromMergeTree::AnalysisResultPtr analysis_result_ptr_)
         : IStorage(storage_.getStorageID()), storage(storage_), analysis_result_ptr(analysis_result_ptr_)
     {
-        auto storage_metadata_snapshot = storage.getInMemoryMetadataPtr(storage.getContext(), false);
+        auto storage_metadata_snapshot = storage.getInMemoryMetadataUncached(storage.getContext());
         setInMemoryMetadata(*storage_metadata_snapshot);
     }
 

@@ -694,7 +694,7 @@ bool StorageKafka::streamToViews(UInt64 cycle_epoch)
     CurrentMetrics::Increment metric_increment{CurrentMetrics::KafkaBackgroundReads};
     ProfileEvents::increment(ProfileEvents::KafkaBackgroundReads);
 
-    const auto metadata_snapshot = getInMemoryMetadataPtr(getContext(), false);
+    const auto metadata_snapshot = getInMemoryMetadataUncached(getContext());
     auto storage_snapshot = getStorageSnapshot(metadata_snapshot, getContext());
 
     // Create an INSERT query for streaming data

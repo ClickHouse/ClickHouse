@@ -405,6 +405,34 @@ public:
         const StorageInMemoryMetadata & /*metadata*/,
         bool validate_new_create_query);
 
+    /// Result of the fallible prepare phase of alterTable: the new table definition written to a
+    /// temporary file, ready for an atomic commit.
+    struct PreparedAlterTable
+    {
+        String table_metadata_tmp_path;
+        String table_metadata_path;
+        String statement;
+    };
+
+    /// Split of alterTable into a fallible prepare (read/parse/validate the definition and write the
+    /// temporary metadata file) and an atomic commit (commitAlterTable — the coordinator pivot for
+    /// Replicated databases, the file rename otherwise). This lets a caller run every fallible step
+    /// before its coordinator write and perform only the atomic commit after it. `alterTable` is the
+    /// prepare+commit convenience for callers that commit in one step.
+    /// Call both under the alter_lock of the corresponding table.
+    virtual PreparedAlterTable prepareAlterTable(
+        ContextPtr /*context*/,
+        const StorageID & /*table_id*/,
+        const StorageInMemoryMetadata & /*metadata*/,
+        bool /*validate_new_create_query*/);
+
+    virtual void commitAlterTable(
+        const StorageID & /*table_id*/,
+        const String & /*table_metadata_tmp_path*/,
+        const String & /*table_metadata_path*/,
+        const String & /*statement*/,
+        ContextPtr /*query_context*/);
+
     /// Special method for ReplicatedMergeTree and DatabaseReplicated
     virtual bool canExecuteReplicatedMetadataAlter() const { return true; }
 

@@ -140,7 +140,7 @@ public:
         }
         else
         {
-            const auto metadata_snapshot = inner_storage->getInMemoryMetadataPtr(context, false);
+            const auto metadata_snapshot = inner_storage->getInMemoryMetadataQueryCached(context);
             auto inner_storage_snapshot = inner_storage->getStorageSnapshot(metadata_snapshot, context);
             inner_storage->read(
                     plan,

@@ -84,7 +84,7 @@ protected:
 
         auto add_constraints = [&](const String & db_name, const String & tbl_name, const StoragePtr & table)
         {
-            const auto metadata_snapshot = table->getInMemoryMetadataPtr(context, false);
+            const auto metadata_snapshot = table->getInMemoryMetadataQueryCached(context);
             if (!metadata_snapshot)
                 return;
             const auto & constraints = metadata_snapshot->getConstraints();

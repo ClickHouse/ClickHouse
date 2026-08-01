@@ -567,7 +567,7 @@ void StorageSystemDocumentation::fillData(MutableColumns & res_columns, ContextP
         {
             if (const auto & table = iterator->table())
             {
-                const auto metadata_snapshot = table->getInMemoryMetadataPtr(context, false);
+                const auto metadata_snapshot = table->getInMemoryMetadataQueryCached(context);
                 if (metadata_snapshot)
                 {
                     /// Bind to a reference first: `typeid(*table)` would warn about evaluating an expression with

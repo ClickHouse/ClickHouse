@@ -675,7 +675,7 @@ NameSet MergeTreeData::MutationsSnapshotBase::getColumnsUpdatedInPatches() const
         for (const auto & patch : patches)
         {
             const auto & columns = patch->getColumns();
-            auto metadata_snapshot = patch->storage.getInMemoryMetadataPtr(patch->storage.getContext(), false);
+            auto metadata_snapshot = patch->storage.getInMemoryMetadataUncached(patch->storage.getContext());
 
             for (const auto & column : columns)
             {
@@ -2049,7 +2049,7 @@ std::optional<UInt64> MergeTreeData::totalRowsByPartitionPredicateImpl(
     if (parts.empty())
         return 0;
 
-    auto metadata_snapshot = getInMemoryMetadataPtr(local_context, false);
+    auto metadata_snapshot = getInMemoryMetadataQueryCached(local_context);
     auto virtual_columns_block = getBlockWithVirtualsForFilter(metadata_snapshot, {parts[0]});
 
     auto filter_dag = VirtualColumnUtils::splitFilterDagForAllowedInputs(
@@ -2763,7 +2763,7 @@ void MergeTreeData::loadDataParts(bool skip_sanity_checks, std::optional<std::un
     Stopwatch watch;
     LOG_DEBUG(log, "Loading data parts");
 
-    auto metadata_snapshot = getInMemoryMetadataPtr(getContext(), false);
+    auto metadata_snapshot = getInMemoryMetadataUncached(getContext());
     const auto settings = getSettings();
 
     auto disks = getStoragePolicy()->getDisks();
@@ -3027,7 +3027,7 @@ void MergeTreeData::loadDataParts(bool skip_sanity_checks, std::optional<std::un
     if (uk_storage_is_writable)
         unique_key_dense_index_ops->sweepOrphans(part_lock);
     {
-        auto metadata_snapshot_for_rebuild = getInMemoryMetadataPtr(getContext(), /*bypass_metadata_cache=*/false);
+        auto metadata_snapshot_for_rebuild = getInMemoryMetadataUncached(getContext());
         if (metadata_snapshot_for_rebuild && metadata_snapshot_for_rebuild->hasUniqueKey())
         {
             for (const auto & p : data_parts_by_info)
@@ -3207,7 +3207,7 @@ void MergeTreeData::refreshDataPartsOnce(UInt64 interval_milliseconds)
     Stopwatch watch;
     LOG_DEBUG(log, "Refreshing data parts");
 
-    auto metadata_snapshot = getInMemoryMetadataPtr(getContext(), false);
+    auto metadata_snapshot = getInMemoryMetadataUncached(getContext());
     const auto settings = getSettings();
 
     auto disks = getStoragePolicy()->getDisks();
@@ -3681,7 +3681,7 @@ void MergeTreeData::prewarmCaches(ThreadPool & pool, const CachesToPrewarm & cac
 
     if (caches.mark_cache)
     {
-        auto metadata_snaphost = getInMemoryMetadataPtr(getContext(), false);
+        auto metadata_snaphost = getInMemoryMetadataUncached(getContext());
         columns_to_prewarm_marks = getColumnsToPrewarmMarks(*getSettings(), metadata_snaphost->getColumns().getAllPhysical());
     }
 
@@ -4853,7 +4853,9 @@ void MergeTreeData::checkAlterIsPossible(const AlterCommands & commands, Context
     }
 
     /// Check that needed transformations can be applied to the list of columns without considering type conversions.
-    auto storage_metadata_snapshot = getInMemoryMetadataPtr(local_context, false);
+    /// Fresh command-application base, read under the caller's lockForAlter; the lock freezes committed
+    /// metadata, so it equals the interpreter's entry snapshot in InterpreterAlterQuery::runCommandSegments.
+    auto storage_metadata_snapshot = getInMemoryMetadataUncached(local_context);
     StorageInMemoryMetadata new_metadata = *storage_metadata_snapshot;
     const StorageInMemoryMetadata & old_metadata = *storage_metadata_snapshot;
 
@@ -5656,7 +5658,7 @@ void MergeTreeData::checkMutationIsPossible(const MutationCommands & commands, c
     /// Reject mutations that bypass UK dedup: DELETE/UPDATE rewrite rows;
     /// MATERIALIZE COLUMN / CLEAR COLUMN (the latter serialized as
     /// `DROP_COLUMN` with `clear=true`) rewrite stored bytes.
-    if (auto uk_metadata = getInMemoryMetadataPtr(getContext(), false); uk_metadata->hasUniqueKey())
+    if (auto uk_metadata = getInMemoryMetadataUncached(getContext()); uk_metadata->hasUniqueKey())
     {
         const auto & uk_column_names = uk_metadata->getUniqueKeyColumns();
 
@@ -5718,7 +5720,7 @@ void MergeTreeData::checkMutationIsPossible(const MutationCommands & commands, c
     }
 
     const auto index_mode = (*getSettings())[MergeTreeSetting::alter_column_secondary_index_mode];
-    auto secondary_indices_metadata = getInMemoryMetadataPtr(getContext(), false);
+    auto secondary_indices_metadata = getInMemoryMetadataUncached(getContext());
     if (index_mode == AlterColumnSecondaryIndexMode::THROW && secondary_indices_metadata->hasSecondaryIndices())
     {
         for (const auto & command : commands)
@@ -5732,7 +5734,7 @@ void MergeTreeData::checkMutationIsPossible(const MutationCommands & commands, c
         }
     }
 
-    const auto text_index_metadata_snapshot = getInMemoryMetadataPtr(getContext(), false);
+    const auto text_index_metadata_snapshot = getInMemoryMetadataUncached(getContext());
     if (hasTextIndexMaterialization(commands, text_index_metadata_snapshot))
     {
         auto data_parts = getDataPartsVectorForInternalUsage();
@@ -5755,7 +5757,7 @@ void MergeTreeData::checkMutationIsPossible(const MutationCommands & commands, c
     /// Reject it here, synchronously, before the mutation is queued -- throwing inside the
     /// background mutation instead would leave the mutation retrying forever and wedge the table.
     {
-        const auto index_metadata_snapshot = getInMemoryMetadataPtr(getContext(), false);
+        const auto index_metadata_snapshot = getInMemoryMetadataUncached(getContext());
         const auto & indices = index_metadata_snapshot->getSecondaryIndices();
         for (const auto & command : commands)
         {
@@ -5810,7 +5812,7 @@ MergeTreeDataPartFormat MergeTreeData::choosePartFormat(
         /// Hold the table metadata snapshot in a local so its columns reference stays alive for the loop.
         StorageMetadataHandle table_metadata;
         if (!projection)
-            table_metadata = getInMemoryMetadataPtr(getContext(), false);
+            table_metadata = getInMemoryMetadataUncached(getContext());
         const auto & columns = projection ? projection->metadata->getColumns() : table_metadata->getColumns();
         for (const auto & column : columns)
         {
@@ -5833,111 +5835,128 @@ MergeTreeDataPartBuilder MergeTreeData::getDataPartBuilder(
     return MergeTreeDataPartBuilder(*this, name, volume, relative_data_path, part_dir, read_settings_, part_may_exist_on_disk);
 }
 
+std::optional<MergeTreeData::PreparedSettingsChange> MergeTreeData::prepareSettingsChange(
+    const ASTPtr & new_settings,
+    bool run_sanity_checks)
+{
+    if (!new_settings)
+        return std::nullopt;
+
+    bool has_storage_policy_changed = false;
+
+    auto new_changes = new_settings->as<const ASTSetQuery &>().changes;
+    MergeTreeSettings::resolveDiskSetting(new_changes, getContext(), /*is_loading_from_existing_metadata=*/true);
+
+    StoragePolicyPtr new_storage_policy = nullptr;
+
+    for (const auto & change : new_changes)
+    {
+        if (change.name == "disk" || change.name == "storage_policy")
+        {
+            if (change.name == "disk")
+                new_storage_policy = getContext()->getStoragePolicyFromDisk(change.value.safeGet<String>());
+            else
+                new_storage_policy = getContext()->getStoragePolicy(change.value.safeGet<String>());
+            StoragePolicyPtr old_storage_policy = getStoragePolicy();
+
+            /// StoragePolicy of different version or name is guaranteed to have different pointer
+            if (new_storage_policy != old_storage_policy)
+            {
+                checkStoragePolicy(new_storage_policy);
+
+                std::unordered_set<String> all_diff_disk_names;
+                for (const auto & disk : new_storage_policy->getDisks())
+                    all_diff_disk_names.insert(disk->getName());
+                for (const auto & disk : old_storage_policy->getDisks())
+                    all_diff_disk_names.erase(disk->getName());
+
+                for (const String & disk_name : all_diff_disk_names)
+                {
+                    auto disk = new_storage_policy->getDiskByName(disk_name);
+                    if (disk->existsDirectory(relative_data_path))
+                        throw Exception(ErrorCodes::LOGICAL_ERROR, "New storage policy contain disks which already contain data of a table with the same name");
+                }
+
+                for (const String & disk_name : all_diff_disk_names)
+                {
+                    auto disk = new_storage_policy->getDiskByName(disk_name);
+                    disk->createDirectories(relative_data_path);
+                    disk->createDirectories(fs::path(relative_data_path) / DETACHED_DIR_NAME);
+                }
+                /// FIXME how would that be done while reloading configuration???
+
+                has_storage_policy_changed = true;
+            }
+        }
+    }
+
+    /// Reset to default settings before applying existing.
+    auto copy = getDefaultSettings();
+    copy->applyChanges(new_changes, getContext(), /*is_loading_from_existing_metadata=*/true);
+    if (run_sanity_checks)
+    {
+        const auto & ac = getContext()->getAccessControl();
+        bool allow_experimental = ac.getAllowExperimentalTierSettings();
+        bool allow_beta = ac.getAllowBetaTierSettings();
+        copy->sanityCheck(
+            getContext()->getMergeMutateExecutor()->getMaxTasksCount(),
+            allow_experimental,
+            allow_beta,
+            getContext()->wasBackgroundPoolAutoLowered());
+    }
+
+    bool has_escape_index_filenames_changed
+        = (*storage_settings.get())[MergeTreeSetting::escape_index_filenames] != (*copy)[MergeTreeSetting::escape_index_filenames];
+
+    bool has_refresh_statistics_interval_changed
+        = (*storage_settings.get())[MergeTreeSetting::refresh_statistics_interval].totalSeconds() != (*copy)[MergeTreeSetting::refresh_statistics_interval].totalSeconds();
+
+    /// Route the new `StorageInMemoryMetadata` clone into the dedicated MergeTree arena.
+    ScopedJemallocThreadArena mergetree_arena_scope(JemallocMergeTreeArena::getArenaIndex());
+
+    auto storage_metadata_snapshot = getInMemoryMetadataUncached(getContext());
+    StorageInMemoryMetadata new_metadata = *storage_metadata_snapshot;
+    new_metadata.setSettingsChanges(new_settings);
+
+    if (has_escape_index_filenames_changed)
+    {
+        /// We need to update the metadata fields and indices so we use the new setting when reading indices
+        bool new_value = (*copy)[MergeTreeSetting::escape_index_filenames];
+        new_metadata.escape_index_filenames = new_value;
+        for (auto & idx : new_metadata.secondary_indices)
+            idx.escape_filenames = new_value;
+    }
+
+    return PreparedSettingsChange{
+        .settings_copy = std::move(copy),
+        .new_metadata = std::move(new_metadata),
+        .has_storage_policy_changed = has_storage_policy_changed,
+        .has_refresh_statistics_interval_changed = has_refresh_statistics_interval_changed,
+    };
+}
+
+void MergeTreeData::applySettingsChange(PreparedSettingsChange prepared)
+{
+    storage_settings.set(std::move(prepared.settings_copy));
+
+    /// Route the deeper clone produced by `setInMemoryMetadata` into the dedicated MergeTree arena.
+    ScopedJemallocThreadArena mergetree_arena_scope(JemallocMergeTreeArena::getArenaIndex());
+    setInMemoryMetadata(prepared.new_metadata);
+
+    if (prepared.has_storage_policy_changed)
+        startBackgroundMovesIfNeeded();
+
+    if (prepared.has_refresh_statistics_interval_changed)
+        startStatisticsCache();
+}
+
 void MergeTreeData::changeSettings(
     const ASTPtr & new_settings,
     AlterLockHolder & /* table_lock_holder */,
     bool run_sanity_checks)
 {
-    if (new_settings)
-    {
-        bool has_storage_policy_changed = false;
-
-        auto new_changes = new_settings->as<const ASTSetQuery &>().changes;
-        MergeTreeSettings::resolveDiskSetting(new_changes, getContext(), /*is_loading_from_existing_metadata=*/true);
-
-        StoragePolicyPtr new_storage_policy = nullptr;
-
-        for (const auto & change : new_changes)
-        {
-            if (change.name == "disk" || change.name == "storage_policy")
-            {
-                if (change.name == "disk")
-                    new_storage_policy = getContext()->getStoragePolicyFromDisk(change.value.safeGet<String>());
-                else
-                    new_storage_policy = getContext()->getStoragePolicy(change.value.safeGet<String>());
-                StoragePolicyPtr old_storage_policy = getStoragePolicy();
-
-                /// StoragePolicy of different version or name is guaranteed to have different pointer
-                if (new_storage_policy != old_storage_policy)
-                {
-                    checkStoragePolicy(new_storage_policy);
-
-                    std::unordered_set<String> all_diff_disk_names;
-                    for (const auto & disk : new_storage_policy->getDisks())
-                        all_diff_disk_names.insert(disk->getName());
-                    for (const auto & disk : old_storage_policy->getDisks())
-                        all_diff_disk_names.erase(disk->getName());
-
-                    for (const String & disk_name : all_diff_disk_names)
-                    {
-                        auto disk = new_storage_policy->getDiskByName(disk_name);
-                        if (disk->existsDirectory(relative_data_path))
-                            throw Exception(ErrorCodes::LOGICAL_ERROR, "New storage policy contain disks which already contain data of a table with the same name");
-                    }
-
-                    for (const String & disk_name : all_diff_disk_names)
-                    {
-                        auto disk = new_storage_policy->getDiskByName(disk_name);
-                        disk->createDirectories(relative_data_path);
-                        disk->createDirectories(fs::path(relative_data_path) / DETACHED_DIR_NAME);
-                    }
-                    /// FIXME how would that be done while reloading configuration???
-
-                    has_storage_policy_changed = true;
-                }
-            }
-        }
-
-        /// Reset to default settings before applying existing.
-        auto copy = getDefaultSettings();
-        copy->applyChanges(new_changes, getContext(), /*is_loading_from_existing_metadata=*/true);
-        if (run_sanity_checks)
-        {
-            const auto & ac = getContext()->getAccessControl();
-            bool allow_experimental = ac.getAllowExperimentalTierSettings();
-            bool allow_beta = ac.getAllowBetaTierSettings();
-            copy->sanityCheck(
-                getContext()->getMergeMutateExecutor()->getMaxTasksCount(),
-                allow_experimental,
-                allow_beta,
-                getContext()->wasBackgroundPoolAutoLowered());
-        }
-
-        bool has_escape_index_filenames_changed
-            = (*storage_settings.get())[MergeTreeSetting::escape_index_filenames] != (*copy)[MergeTreeSetting::escape_index_filenames];
-
-        UInt64 has_refresh_statistics_interval_changed
-            = (*storage_settings.get())[MergeTreeSetting::refresh_statistics_interval].totalSeconds() != (*copy)[MergeTreeSetting::refresh_statistics_interval].totalSeconds();
-
-        storage_settings.set(std::move(copy));
-
-        /// Route the new `StorageInMemoryMetadata` clone (and the deeper clone produced by
-        /// `setInMemoryMetadata`) into the dedicated MergeTree arena.
-        ScopedJemallocThreadArena mergetree_arena_scope(JemallocMergeTreeArena::getArenaIndex());
-
-        auto storage_metadata_snapshot = getInMemoryMetadataPtr(getContext(), false);
-        StorageInMemoryMetadata new_metadata = *storage_metadata_snapshot;
-        new_metadata.setSettingsChanges(new_settings);
-
-        if (has_escape_index_filenames_changed)
-        {
-            /// We need to update the metadata fields and indices so we use the new setting when reading indices
-            bool new_value = (*storage_settings.get())[MergeTreeSetting::escape_index_filenames];
-            new_metadata.escape_index_filenames = new_value;
-            for (auto & idx : new_metadata.secondary_indices)
-                idx.escape_filenames = new_value;
-        }
-
-        setInMemoryMetadata(new_metadata);
-
-        if (has_storage_policy_changed)
-            startBackgroundMovesIfNeeded();
-
-        if (has_refresh_statistics_interval_changed)
-        {
-            startStatisticsCache();
-        }
-    }
+    if (auto prepared = prepareSettingsChange(new_settings, run_sanity_checks))
+        applySettingsChange(std::move(*prepared));
 }
 
 std::pair<String, bool> MergeTreeData::getNewImplicitStatisticsTypes(const StorageInMemoryMetadata & new_metadata, const MergeTreeSettings & old_settings) const
@@ -6490,7 +6509,7 @@ MergeTreeData::PartsToRemoveFromZooKeeper MergeTreeData::removePartsInRangeFromW
 
     if (clone_to_detached)
     {
-        auto metadata_snapshot = getInMemoryMetadataPtr(getContext(), false);
+        auto metadata_snapshot = getInMemoryMetadataUncached(getContext());
         for (const auto & part : parts_to_remove)
         {
             String part_dir = part->getDataPartStorage().getPartDirectory();
@@ -6588,7 +6607,7 @@ void MergeTreeData::restoreAndActivatePart(const DataPartPtr & part)
 void MergeTreeData::outdateUnexpectedPartAndCloneToDetached(const DataPartPtr & part_to_detach)
 {
     LOG_INFO(log, "Cloning part {} to unexpected_{} and making it obsolete.", part_to_detach->getDataPartStorage().getPartDirectory(), part_to_detach->name);
-    const auto metadata_snapshot = getInMemoryMetadataPtr(getContext(), false);
+    const auto metadata_snapshot = getInMemoryMetadataUncached(getContext());
     part_to_detach->makeCloneInDetached("unexpected", metadata_snapshot, /*disk_transaction*/ {});
 
     auto lock = lockParts();
@@ -7439,7 +7458,7 @@ void MergeTreeData::calculateColumnAndSecondaryIndexSizesLazily(DataPartsSharedL
     ///
     /// Note, the result will be still correct, since it is guarded by the
     /// columns_and_secondary_indices_sizes_mutex.
-    auto storage_metadata_snapshot = getInMemoryMetadataPtr(getContext(), false);
+    auto storage_metadata_snapshot = getInMemoryMetadataUncached(getContext());
     if (hasColumnsWithDynamicSubcolumns(storage_metadata_snapshot->getSampleBlock()))
     {
         DataParts data_parts(committed_parts_range.begin(), committed_parts_range.end());
@@ -7476,7 +7495,7 @@ void MergeTreeData::addPartContributionToColumnAndSecondaryIndexSizesUnlocked(co
         total_column_size.add(part_column_size);
     }
 
-    const auto metadata_snapshot = getInMemoryMetadataPtr(getContext(), false);
+    const auto metadata_snapshot = getInMemoryMetadataUncached(getContext());
     auto indexes_descriptions = metadata_snapshot->secondary_indices;
     for (const auto & index : indexes_descriptions)
     {
@@ -7549,7 +7568,7 @@ void MergeTreeData::removePartContributionToColumnAndSecondaryIndexSizes(const D
         log_subtract(total_column_size.marks, part_column_size.marks, ".marks");
     }
 
-    const auto metadata_ptr = getInMemoryMetadataPtr(getContext(), false);
+    const auto metadata_ptr = getInMemoryMetadataUncached(getContext());
     for (auto & [secondary_index_name, total_secondary_index_size] : secondary_index_sizes)
     {
         if (!part->hasSecondaryIndex(secondary_index_name, metadata_ptr))
@@ -8205,7 +8224,7 @@ void MergeTreeData::restoreDataFromBackup(RestorerFromBackup & restorer, const S
     /// are not preserved across backup/restore, so restoring data parts would
     /// resurrect deleted rows. BACKUP is already rejected; gate the symmetric
     /// restore path too for backups produced by older builds.
-    if (auto uk_metadata = getInMemoryMetadataPtr(getContext(), false); uk_metadata && uk_metadata->hasUniqueKey())
+    if (auto uk_metadata = getInMemoryMetadataUncached(getContext()); uk_metadata && uk_metadata->hasUniqueKey())
         throw Exception(ErrorCodes::SUPPORT_IS_DISABLED,
             "RESTORE of data is not supported for UNIQUE KEY tables yet: delete-bitmap "
             "sidecars are not preserved across backup/restore.");
@@ -8607,7 +8626,7 @@ String MergeTreeData::getPartitionIDFromQuery(const ASTPtr & ast, ContextPtr loc
     }
 
     /// Re-parse partition key fields using the information about expected field types.
-    auto metadata_snapshot = getInMemoryMetadataPtr(local_context, false);
+    auto metadata_snapshot = getInMemoryMetadataQueryCached(local_context);
     const Block & key_sample_block = metadata_snapshot->getPartitionKey().sample_block;
     size_t fields_count = key_sample_block.columns();
     if (partition_ast_fields_count != fields_count)
@@ -9649,7 +9668,7 @@ bool MergeTreeData::isPartInTTLDestination(const TTLDescription & ttl, const IMe
 
 CompressionCodecPtr MergeTreeData::getCompressionCodecForPart(size_t part_size_compressed, const IMergeTreeDataPart::TTLInfos & ttl_infos, time_t current_time) const
 {
-    auto metadata_snapshot = getInMemoryMetadataPtr(getContext(), false);
+    auto metadata_snapshot = getInMemoryMetadataUncached(getContext());
 
     const auto & recompression_ttl_entries = metadata_snapshot->getRecompressionTTLs();
     auto best_ttl_entry = selectTTLDescriptionForTTLInfos(recompression_ttl_entries, ttl_infos.recompression_ttl, current_time, true);
@@ -11540,7 +11559,7 @@ std::expected<void, PreformattedMessage> MergeTreeData::supportsLightweightUpdat
     /// would produce duplicate live keys. Reject here so the rewrite path in
     /// InterpreterAlterQuery::tryRewriteToLightweightUpdate falls back through
     /// the heavy path, which is rejected by checkMutationIsPossible.
-    if (auto uk_metadata = getInMemoryMetadataPtr(getContext(), false); uk_metadata->hasUniqueKey())
+    if (auto uk_metadata = getInMemoryMetadataUncached(getContext()); uk_metadata->hasUniqueKey())
         return std::unexpected(PreformattedMessage::create(
             "Lightweight updates are not supported on tables with UNIQUE KEY"));
 
@@ -11594,7 +11613,7 @@ QueryPipeline MergeTreeData::updateLightweightImpl(const MutationCommands & comm
     mutation_settings.max_threads = query_context->getSettingsRef()[Setting::max_threads];
     mutation_settings.recalculate_dependencies_of_updated_columns = false;
 
-    const auto metadata_snapshot = getInMemoryMetadataPtr(query_context, false);
+    const auto metadata_snapshot = getInMemoryMetadataQueryCached(query_context);
     MutationsInterpreter interpreter(
         shared_from_this(), metadata_snapshot,
         commands_to_run, query_context, mutation_settings);
@@ -11925,7 +11944,7 @@ void MergeTreeData::resetSerializationHints(const DataPartsLock & /*lock*/)
         (*getSettings())[MergeTreeSetting::propagate_types_serialization_versions_to_nested_types],
     };
 
-    const auto metadata_snapshot = getInMemoryMetadataPtr(getContext(), false);
+    const auto metadata_snapshot = getInMemoryMetadataUncached(getContext());
     const auto & storage_columns = metadata_snapshot->getColumns();
 
     serialization_hints = SerializationInfoByName(storage_columns.getAllPhysical(), settings);
@@ -11942,7 +11961,7 @@ void MergeTreeData::updateSerializationHints(const AddedParts & added_parts, con
     /// belong in the parts arena.
     ScopedJemallocThreadArena mergetree_arena_scope(JemallocMergeTreeArena::getArenaIndex());
 
-    const auto metadata_snapshot = getInMemoryMetadataPtr(getContext(), false);
+    const auto metadata_snapshot = getInMemoryMetadataUncached(getContext());
     const auto & storage_columns = metadata_snapshot->getColumns();
 
     for (const auto & part : added_parts)
@@ -12025,25 +12044,34 @@ MergeTreeSettingsPtr MergeTreeData::getSettings(const SettingsChanges * settings
     return data_settings;
 }
 
-StorageMetadataHandle MergeTreeData::getInMemoryMetadataPtr(ContextPtr query_context, bool bypass_metadata_cache) const
+StorageMetadataHandle MergeTreeData::getInMemoryMetadataUncached(ContextPtr query_context) const
+{
+    StorageMetadataHandle base = IStorage::getInMemoryMetadataUncached(query_context);
+
+    /// Let's return copy of storage metadata to catch lifetime bugs where reference to underlying metadata field was stored without pointer to metadata.
+#if defined(DEBUG_OR_SANITIZER_BUILD)
+    return std::make_shared<StorageInMemoryMetadata>(*base);
+#else
+    return base;
+#endif
+}
+
+StorageMetadataHandle MergeTreeData::getInMemoryMetadataQueryCached(ContextPtr query_context) const
 {
     auto base = [&]() -> StorageMetadataHandle
     {
-        if (bypass_metadata_cache)
-            return IStorage::getInMemoryMetadataPtr(query_context, bypass_metadata_cache);
-
         if (!query_context || !query_context->hasQueryContext() || !query_context->getQueryMetadataCache())
-            return IStorage::getInMemoryMetadataPtr(query_context, bypass_metadata_cache);
+            return IStorage::getInMemoryMetadataUncached(query_context);
 
         if (!query_context->getSettingsRef()[Setting::enable_shared_storage_snapshot_in_query])
-            return IStorage::getInMemoryMetadataPtr(query_context, bypass_metadata_cache);
+            return IStorage::getInMemoryMetadataUncached(query_context);
 
         auto [cache, lock] = query_context->getQueryMetadataCache()->getStorageMetadataCache();
         auto it = cache->find(this);
         if (it != cache->end())
             return it->second;
 
-        const StorageMetadataHandle metadata = IStorage::getInMemoryMetadataPtr(query_context, bypass_metadata_cache);
+        const StorageMetadataHandle metadata = IStorage::getInMemoryMetadataUncached(query_context);
         return cache->emplace(this, metadata).first->second;
     }();
 

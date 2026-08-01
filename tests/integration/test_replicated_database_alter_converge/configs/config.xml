@@ -1,0 +1,7 @@
+<clickhouse>
+    <allow_experimental_transactions>42</allow_experimental_transactions>
+    <async_load_databases>false</async_load_databases>
+    <merge_tree>
+        <initialization_retry_period>10</initialization_retry_period>
+    </merge_tree>
+</clickhouse>

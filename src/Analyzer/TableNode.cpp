@@ -51,7 +51,7 @@ ASTPtr getParameterizedViewInnerQuery(const StoragePtr & storage)
     auto * view = storage->as<StorageView>();
     if (!view || !view->isParameterizedView())
         return nullptr;
-    auto metadata_snapshot = view->getInMemoryMetadataPtr(nullptr, false);
+    auto metadata_snapshot = view->getInMemoryMetadataUncached(nullptr);
     return metadata_snapshot->getSelectQuery().inner_query;
 }
 
@@ -83,7 +83,7 @@ TableNode::TableNode(StoragePtr storage_, const ContextPtr & context)
     , storage(std::move(storage_))
     , storage_id(storage->getStorageID())
     , storage_lock(storage->lockForShare(context->getInitialQueryId(), context->getSettingsRef()[Setting::lock_acquire_timeout]))
-    , storage_metadata(storage->getInMemoryMetadataPtr(context, false))
+    , storage_metadata(storage->getInMemoryMetadataQueryCached(context))
     , storage_snapshot(storage->getStorageSnapshot(storage_metadata, context))
     , materialized_cte(extractCTE(storage))
 {
@@ -127,7 +127,7 @@ void TableNode::updateStorage(StoragePtr storage_value, const ContextPtr & conte
     storage = std::move(storage_value);
     storage_id = storage->getStorageID();
     storage_lock = storage->lockForShare(context->getInitialQueryId(), context->getSettingsRef()[Setting::lock_acquire_timeout]);
-    const auto metadata_snapshot = storage->getInMemoryMetadataPtr(context, false);
+    const auto metadata_snapshot = storage->getInMemoryMetadataQueryCached(context);
     storage_snapshot = storage->getStorageSnapshot(metadata_snapshot, context);
 }
 

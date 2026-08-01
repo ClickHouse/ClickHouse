@@ -1463,7 +1463,7 @@ Chunk StorageKeeperMap::getByKeys(const ColumnsWithTypeAndName & keys, const Nam
 
     /// `StorageMetadataHandle` owns the snapshot, so it has to be bound to a named local:
     /// `operator->` is deleted on a temporary.
-    auto metadata_snapshot = getInMemoryMetadataPtr(getContext(), false);
+    auto metadata_snapshot = getInMemoryMetadataUncached(getContext());
     auto pk_type = metadata_snapshot->getSampleBlock().getByName(primary_key).type;
     /// `null_map` is an output parameter, so start from a clean state: `resize_fill` alone would keep
     /// pre-existing values if the caller passed an already sized array.
@@ -1483,7 +1483,7 @@ Chunk StorageKeeperMap::getByKeys(const ColumnsWithTypeAndName & keys, const Nam
 Chunk StorageKeeperMap::getBySerializedKeys(
     const std::span<const std::string> keys, PaddedPODArray<UInt8> * null_map, bool with_version, const ContextPtr & local_context) const
 {
-    auto metadata_snapshot = getInMemoryMetadataPtr(local_context, false);
+    auto metadata_snapshot = getInMemoryMetadataQueryCached(local_context);
     Block sample_block = metadata_snapshot->getSampleBlock();
     MutableColumns columns = sample_block.cloneEmptyColumns();
     MutableColumnPtr version_column = nullptr;
@@ -1579,7 +1579,7 @@ Chunk StorageKeeperMap::getBySerializedKeys(
 
 Block StorageKeeperMap::getSampleBlock(const Names &) const
 {
-    auto metadata = getInMemoryMetadataPtr(getContext(), false);
+    auto metadata = getInMemoryMetadataUncached(getContext());
     return metadata->getSampleBlock();
 }
 
@@ -1619,7 +1619,7 @@ void StorageKeeperMap::mutate(const MutationCommands & commands, ContextPtr loca
 
     chassert(commands.size() == 1);
 
-    auto metadata_snapshot = getInMemoryMetadataPtr(local_context, false);
+    auto metadata_snapshot = getInMemoryMetadataQueryCached(local_context);
     auto storage = getStorageID();
     auto storage_ptr = DatabaseCatalog::instance().getTable(storage, local_context);
 

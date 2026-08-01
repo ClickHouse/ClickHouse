@@ -75,7 +75,7 @@ BlockIO InterpreterHypotheticalIndexQuery::execute()
 
     /// CREATE HYPOTHETICAL INDEX
     const auto & index_ast = query.index_decl->as<ASTIndexDeclaration &>();
-    auto metadata = table->getInMemoryMetadataPtr(context, /* bypass_metadata_cache = */ false);
+    auto metadata = table->getInMemoryMetadataQueryCached(context);
 
     /// `IF NOT EXISTS` must short-circuit before building/validating the descriptor,
     /// matching `ALTER TABLE ... ADD INDEX IF NOT EXISTS`. The name is taken if a

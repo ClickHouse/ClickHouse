@@ -753,7 +753,7 @@ StorageInfo PostgreSQLReplicationHandler::loadFromSnapshot(postgres::Connection 
         /* async_isnert */ false);
     auto block_io = interpreter.execute();
 
-    auto nested_metadata = nested_storage->getInMemoryMetadataPtr(insert_context, false);
+    auto nested_metadata = nested_storage->getInMemoryMetadataQueryCached(insert_context);
     const StorageInMemoryMetadata & storage_metadata = *nested_metadata;
     auto sample_block = std::make_shared<const Block>(storage_metadata.getSampleBlockNonMaterialized());
 

@@ -2410,7 +2410,7 @@ void ClientBase::sendData(Block & sample, const ColumnsDescription & columns_des
 
         try
         {
-            auto metadata = storage->getInMemoryMetadataPtr(client_context, false);
+            auto metadata = storage->getInMemoryMetadataQueryCached(client_context);
             QueryPlan plan;
             storage->read(
                 plan,

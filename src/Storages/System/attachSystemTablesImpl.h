@@ -44,7 +44,7 @@ void attachImpl(ContextPtr context, IDatabase & system_database, const String & 
     /// Set the comment
     auto table = DatabaseCatalog::instance().getTable(table_id, context);
     chassert(table);
-    auto metadata_snapshot = table->getInMemoryMetadataPtr(context, false);
+    auto metadata_snapshot = table->getInMemoryMetadataQueryCached(context);
     StorageInMemoryMetadata metadata = *metadata_snapshot;
     metadata.comment = comment;
     table->setInMemoryMetadata(metadata);

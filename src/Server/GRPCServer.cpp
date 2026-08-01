@@ -1018,7 +1018,7 @@ namespace
             if (context != query_context)
                 throw Exception(ErrorCodes::LOGICAL_ERROR, "Unexpected context in Input initializer");
             input_function_is_used = true;
-            auto metadata_snapshot = input_storage->getInMemoryMetadataPtr(context, false);
+            auto metadata_snapshot = input_storage->getInMemoryMetadataQueryCached(context);
             initializePipeline(metadata_snapshot->getSampleBlock());
         });
 
@@ -1203,7 +1203,7 @@ namespace
                 if (!external_table.data().empty())
                 {
                     /// The data will be written directly to the table.
-                    auto metadata_snapshot = storage->getInMemoryMetadataPtr(query_context, false);
+                    auto metadata_snapshot = storage->getInMemoryMetadataQueryCached(query_context);
                     auto sink = storage->write(ASTPtr(), metadata_snapshot, query_context, /*async_insert=*/false);
 
                     String format = external_table.format();

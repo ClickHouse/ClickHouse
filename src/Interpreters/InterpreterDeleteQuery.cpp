@@ -95,7 +95,7 @@ BlockIO InterpreterDeleteQuery::execute()
     /// metadata is not loaded until the first access.  Initialize it now so that
     /// supportsDelete() and subsequent mutation checks see valid metadata.
     table->updateExternalDynamicMetadataIfExists(getContext());
-    auto metadata_snapshot = table->getInMemoryMetadataPtr(getContext(), false);
+    auto metadata_snapshot = table->getInMemoryMetadataUncached(getContext());
 
     if (table->supportsDelete())
     {

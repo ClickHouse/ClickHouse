@@ -114,7 +114,7 @@ protected:
                 const auto table = tables_it.table();
                 if (!table)
                     continue;
-                const auto metadata_snapshot = table->getInMemoryMetadataPtr(context, false);
+                const auto metadata_snapshot = table->getInMemoryMetadataQueryCached(context);
                 if (!metadata_snapshot)
                     continue;
                 const auto & projections = metadata_snapshot->getProjections();

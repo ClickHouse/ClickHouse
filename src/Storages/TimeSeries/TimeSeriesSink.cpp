@@ -491,7 +491,7 @@ void TimeSeriesSink::initTagsAndSamplesPipelines()
     /// match the data types of the columns in the "tags" or "samples" tables.
 
     auto tags_target = time_series_storage.getTargetTable(ViewTarget::Tags, getContext());
-    auto tags_target_metadata = tags_target->getInMemoryMetadataPtr(getContext(), false);
+    auto tags_target_metadata = tags_target->getInMemoryMetadataUncached(getContext());
     const auto & settings = *time_series_settings;
 
     /// Resolve the expression for generating `id`.

@@ -221,7 +221,7 @@ bool ReplicatedMergeTreeRestartingThread::tryStartup()
         const bool replica_metadata_version_exists = replica_metadata_version != -1;
         if (replica_metadata_version_exists)
         {
-            auto storage_metadata_snapshot = storage.getInMemoryMetadataPtr(storage.getContext(), false);
+            auto storage_metadata_snapshot = storage.getInMemoryMetadataUncached(storage.getContext());
             /// This metadata snapshot lives for the table's lifetime, so route the clone into the
             /// dedicated MergeTree arena like the ALTER paths (this runs on the restarting thread,
             /// outside the constructor's arena scope).

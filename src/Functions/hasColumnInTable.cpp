@@ -108,7 +108,7 @@ ColumnPtr FunctionHasColumnInTable::executeImpl(const ColumnsWithTypeAndName & a
     const StoragePtr & table = DatabaseCatalog::instance().getTable(
         {database_name, table_name},
         const_pointer_cast<Context>(getContext()));
-    auto table_metadata = table->getInMemoryMetadataPtr(getContext(), false);
+    auto table_metadata = table->getInMemoryMetadataUncached(getContext());
     bool has_column = table_metadata->getColumns().hasPhysical(column_name);
     bool has_alias_column = table_metadata->getColumns().hasAlias(column_name);
 

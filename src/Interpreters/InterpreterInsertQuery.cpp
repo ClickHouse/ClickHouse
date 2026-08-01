@@ -389,7 +389,7 @@ QueryPipeline InterpreterInsertQuery::addInsertToSelectPipeline(ASTInsertQuery &
         context = mutable_context;
     }
 
-    auto metadata_snapshot = table->getInMemoryMetadataPtr(context, false);
+    auto metadata_snapshot = table->getInMemoryMetadataQueryCached(context);
     auto query_sample_block = getSampleBlock(query, table, metadata_snapshot, context, no_destination, allow_materialized);
 
     pipeline.dropTotalsAndExtremes();
@@ -767,7 +767,7 @@ QueryPipeline InterpreterInsertQuery::buildInsertPipeline(ASTInsertQuery & query
     }
 
     const Settings & settings = context->getSettingsRef();
-    auto metadata_snapshot = table->getInMemoryMetadataPtr(context, false);
+    auto metadata_snapshot = table->getInMemoryMetadataQueryCached(context);
     auto query_sample_block
         = std::make_shared<const Block>(getSampleBlock(query, table, metadata_snapshot, context, no_destination, allow_materialized));
     if (query_sample_block->empty())
@@ -944,7 +944,7 @@ std::optional<QueryPipeline> InterpreterInsertQuery::distributedWriteIntoReplica
         {
             try
             {
-                const auto metadata = src_storage_cluster->getInMemoryMetadataPtr(local_context, false);
+                const auto metadata = src_storage_cluster->getInMemoryMetadataQueryCached(local_context);
                 const auto snapshot = src_storage_cluster->getStorageSnapshot(metadata, local_context);
                 const auto columns = snapshot->getColumns(GetColumnsOptions(GetColumnsOptions::All).withVirtuals(VirtualsKind::All, VirtualsMaterializationPlace::All));
                 auto syntax = TreeRewriter(local_context).analyze(condition_ast, columns);
@@ -963,7 +963,7 @@ std::optional<QueryPipeline> InterpreterInsertQuery::distributedWriteIntoReplica
             }
         }
     }
-    const auto src_metadata_snapshot = src_storage_cluster->getInMemoryMetadataPtr(local_context, false);
+    const auto src_metadata_snapshot = src_storage_cluster->getInMemoryMetadataQueryCached(local_context);
     auto extension = src_storage_cluster->getTaskIteratorExtension(
         predicate, filter_dag ? &*filter_dag : nullptr, local_context, src_cluster, src_metadata_snapshot);
 
@@ -1042,7 +1042,7 @@ BlockIO InterpreterInsertQuery::execute()
     auto table_lock = table->lockForShare(context->getInitialQueryId(), settings[Setting::lock_acquire_timeout]);
 
     table->updateExternalDynamicMetadataIfExists(context);
-    auto metadata_snapshot = table->getInMemoryMetadataPtr(context, false);
+    auto metadata_snapshot = table->getInMemoryMetadataQueryCached(context);
     auto query_sample_block = getSampleBlock(query, table, metadata_snapshot, context, no_destination, allow_materialized);
     /// For table functions we check access while executing
     /// getTable() -> ITableFunction::execute().
@@ -1127,7 +1127,7 @@ void InterpreterInsertQuery::extendQueryLogElemImpl(QueryLogElement & elem, cons
 
 void InterpreterInsertQuery::setInsertContextValues(ContextMutablePtr context_, const ASTInsertQuery & insert_query, const StoragePtr & table)
 {
-    const auto metadata_snapshot = table->getInMemoryMetadataPtr(context_, false);
+    const auto metadata_snapshot = table->getInMemoryMetadataQueryCached(context_);
     std::optional<Names> insert_columns;
     if (insert_query.columns)
     {

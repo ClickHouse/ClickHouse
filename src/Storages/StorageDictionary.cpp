@@ -335,7 +335,7 @@ void StorageDictionary::alter(const AlterCommands & params, ContextPtr alter_con
     if (location == Location::Custom)
         return;
 
-    auto metadata_snapshot = getInMemoryMetadataPtr(alter_context, false);
+    auto metadata_snapshot = getInMemoryMetadataQueryCached(alter_context);
     auto new_comment = metadata_snapshot->comment;
 
     /// It's better not to update an associated `IDictionary` directly here because it can be not loaded yet or

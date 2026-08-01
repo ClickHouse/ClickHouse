@@ -91,7 +91,7 @@ public:
 
     Block getRightSampleBlock() const
     {
-        auto metadata_snapshot = getInMemoryMetadataPtr(CurrentThread::tryGetQueryContext(), false);
+        auto metadata_snapshot = getInMemoryMetadataQueryCached(CurrentThread::tryGetQueryContext());
         Block block = metadata_snapshot->getSampleBlock();
         convertRightBlock(block);
         return block;

@@ -251,6 +251,7 @@ namespace MergeTreeSetting
 
 namespace FailPoints
 {
+    extern const char rmt_pause_after_apply_metadata_alter[];
     extern const char replicated_queue_fail_next_entry[];
     extern const char replicated_queue_unfail_entries[];
     extern const char finish_set_quorum_failed_parts[];
@@ -266,6 +267,7 @@ namespace FailPoints
     extern const char replicated_table_remove_zk_before_get_children[];
     extern const char replicated_table_remove_zk_before_final_multi[];
     extern const char check_table_inject_retryable_zk_error[];
+    extern const char rmt_alter_fail_before_zk_multi[];
 }
 
 namespace ErrorCodes
@@ -630,7 +632,7 @@ StorageReplicatedMergeTree::StorageReplicatedMergeTree(
         return;
     }
 
-    auto metadata_snapshot = getInMemoryMetadataPtr(getContext(), false);
+    auto metadata_snapshot = getInMemoryMetadataUncached(getContext());
 
     has_metadata_in_zookeeper = true;
 
@@ -673,7 +675,7 @@ StorageReplicatedMergeTree::StorageReplicatedMergeTree(
                     ScopedJemallocThreadArena mergetree_arena_scope(JemallocMergeTreeArena::getArenaIndex());
                     setInMemoryMetadata(metadata_snapshot->withMetadataVersion(metadata_version));
                 }
-                metadata_snapshot = getInMemoryMetadataPtr(getContext(), true);
+                metadata_snapshot = getInMemoryMetadataUncached(getContext());
             }
         }
         catch (Coordination::Exception & e)
@@ -1816,7 +1818,7 @@ bool StorageReplicatedMergeTree::checkTableStructureAttempt(
 void StorageReplicatedMergeTree::setTableStructure(const StorageID & table_id, const ContextPtr & local_context,
     ColumnsDescription new_columns, const ReplicatedMergeTreeTableMetadata::Diff & metadata_diff, int32_t new_metadata_version)
 {
-    auto metadata_snapshot = getInMemoryMetadataPtr(local_context, false);
+    auto metadata_snapshot = getInMemoryMetadataQueryCached(local_context);
     const StorageInMemoryMetadata & old_metadata = *metadata_snapshot;
 
     StorageInMemoryMetadata new_metadata = metadata_diff.getNewMetadata(new_columns, old_metadata.virtuals, local_context, old_metadata);
@@ -2638,7 +2640,7 @@ bool StorageReplicatedMergeTree::executeFetch(LogEntry & entry, bool need_to_che
     /// Looking for covering part. After that entry.actual_new_part_name may be filled.
     String replica = findReplicaHavingCoveringPart(entry, true);
     const auto storage_settings_ptr = getSettings();
-    auto metadata_snapshot = getInMemoryMetadataPtr(getContext(), false);
+    auto metadata_snapshot = getInMemoryMetadataUncached(getContext());
 
     try
     {
@@ -2858,7 +2860,7 @@ MergeTreeData::MutableDataPartPtr StorageReplicatedMergeTree::executeFetchShared
     }
 
     const auto storage_settings_ptr = getSettings();
-    auto metadata_snapshot = getInMemoryMetadataPtr(getContext(), false);
+    auto metadata_snapshot = getInMemoryMetadataUncached(getContext());
 
     try
     {
@@ -3026,7 +3028,7 @@ bool StorageReplicatedMergeTree::executeReplaceRange(LogEntry & entry)
     /// command must be applied to all parts on disk.
     waitForOutdatedPartsToBeLoaded();
 
-    auto metadata_snapshot = getInMemoryMetadataPtr(getContext(), false);
+    auto metadata_snapshot = getInMemoryMetadataUncached(getContext());
     auto storage_settings_ptr = getSettings();
 
     /// Range with only one block has special meaning: it's ATTACH PARTITION or MOVE PARTITION, so there is no drop range
@@ -3096,7 +3098,7 @@ bool StorageReplicatedMergeTree::executeReplaceRange(LogEntry & entry)
 
     auto table_lock_holder_dst_table = lockForShare(
             RWLockImpl::NO_QUERY, (*getSettings())[MergeTreeSetting::lock_acquire_timeout_for_background_operations]);
-    auto dst_metadata_snapshot = getInMemoryMetadataPtr(getContext(), false);
+    auto dst_metadata_snapshot = getInMemoryMetadataUncached(getContext());
 
     for (size_t i = 0; i < entry_replace.new_part_names.size(); ++i)
     {
@@ -3160,7 +3162,7 @@ bool StorageReplicatedMergeTree::executeReplaceRange(LogEntry & entry)
             return 0;
         }
 
-        auto src_metadata_snapshot = source_table->getInMemoryMetadataPtr(getContext(), false);
+        auto src_metadata_snapshot = source_table->getInMemoryMetadataUncached(getContext());
         MergeTreeData * src_data = nullptr;
         try
         {
@@ -3498,7 +3500,7 @@ void StorageReplicatedMergeTree::executeClonePartFromShard(const LogEntry & entr
     MutableDataPartPtr part;
 
     {
-        auto metadata_snapshot = getInMemoryMetadataPtr(getContext(), false);
+        auto metadata_snapshot = getInMemoryMetadataUncached(getContext());
         String source_replica_path = entry.source_shard + "/replicas/" + replica;
         ReplicatedMergeTreeAddress address(getZooKeeper()->get(source_replica_path + "/host"));
         auto timeouts = getHTTPTimeouts(getContext());
@@ -3741,7 +3743,7 @@ void StorageReplicatedMergeTree::cloneReplica(const String & source_replica, Coo
 
     if ((*getSettings())[MergeTreeSetting::detach_old_local_parts_when_cloning_replica])
     {
-        auto metadata_snapshot = getInMemoryMetadataPtr(getContext(), false);
+        auto metadata_snapshot = getInMemoryMetadataUncached(getContext());
 
         for (const auto & part : parts_to_remove_from_working_set)
         {
@@ -3916,7 +3918,7 @@ void StorageReplicatedMergeTree::cloneMetadataIfNeeded(const String & source_rep
         return;
     }
 
-    auto metadata_snapshot = getInMemoryMetadataPtr(getContext(), false);
+    auto metadata_snapshot = getInMemoryMetadataUncached(getContext());
     Int32 source_metadata_version = parse<Int32>(source_metadata_version_str);
     if (metadata_snapshot->getMetadataVersion() == source_metadata_version)
         return;
@@ -4846,7 +4848,7 @@ void StorageReplicatedMergeTree::removePartAndEnqueueFetch(const String & part_n
         if (!broken_part_info.contains(part->info))
             continue;
 
-        const auto storage_metadata = getInMemoryMetadataPtr(getContext(), false);
+        const auto storage_metadata = getInMemoryMetadataUncached(getContext());
         if (broken_part_info == part->info)
         {
             chassert(!broken_part);
@@ -6225,7 +6227,7 @@ void StorageReplicatedMergeTree::read(
         {
             auto modified_query_info = query_info;
             modified_query_info.cluster = std::move(cluster);
-            auto metadata_snapshot = getInMemoryMetadataPtr(local_context, false);
+            auto metadata_snapshot = getInMemoryMetadataQueryCached(local_context);
             ClusterProxy::executeQueryWithParallelReplicasCustomKey(
                 query_plan,
                 getStorageID(),
@@ -6461,7 +6463,7 @@ bool StorageReplicatedMergeTree::optimize(
         throw Exception(ErrorCodes::NOT_A_LEADER, "OPTIMIZE cannot be done on this replica because it is not a leader");
 
     const auto mode = (*getSettings())[MergeTreeSetting::deduplicate_merge_projection_mode];
-    auto projections_metadata_snapshot = getInMemoryMetadataPtr(query_context, false);
+    auto projections_metadata_snapshot = getInMemoryMetadataQueryCached(query_context);
     if (deduplicate && projections_metadata_snapshot->hasProjections()
         && (mode == DeduplicateMergeProjectionMode::THROW || mode == DeduplicateMergeProjectionMode::IGNORE))
         throw Exception(ErrorCodes::SUPPORT_IS_DISABLED,
@@ -6488,7 +6490,7 @@ bool StorageReplicatedMergeTree::optimize(
 
     auto zookeeper = getZooKeeperAndAssertNotReadonly();
     const auto storage_settings_ptr = getSettings();
-    auto metadata_snapshot = getInMemoryMetadataPtr(query_context, false);
+    auto metadata_snapshot = getInMemoryMetadataQueryCached(query_context);
     std::vector<ReplicatedMergeTreeLogEntryData> merge_entries;
 
     auto try_assign_merge = [&](const String & partition_id) -> bool
@@ -6667,7 +6669,9 @@ bool StorageReplicatedMergeTree::optimize(
 
 bool StorageReplicatedMergeTree::executeMetadataAlter(const StorageReplicatedMergeTree::LogEntry & entry)
 {
-    auto current_metadata = getInMemoryMetadataPtr(getContext(), false);
+    /// Pre-lock read, used only for the cheap stale-entry version check below and to parse the
+    /// entry's metadata. The structural diff base is re-read under the alter lock (see below).
+    auto current_metadata = getInMemoryMetadataUncached(getContext());
     if (entry.alter_version < current_metadata->getMetadataVersion())
     {
         /// TODO Can we replace it with LOGICAL_ERROR?
@@ -6727,12 +6731,22 @@ bool StorageReplicatedMergeTree::executeMetadataAlter(const StorageReplicatedMer
         auto alter_lock_holder = lockForAlter((*getSettings())[MergeTreeSetting::lock_acquire_timeout_for_background_operations]);
         LOG_INFO(log, "Metadata changed in ZooKeeper. Applying changes locally.");
 
-        const auto table_metadata = ReplicatedMergeTreeTableMetadata(*this, current_metadata);
-        auto metadata_diff = table_metadata.checkAndFindDiff(metadata_from_entry, current_metadata->columns, current_metadata->virtuals, getStorageID().getNameForLogs(), getContext());
+        /// Re-read the committed metadata under the alter lock: the pre-lock read can be stale relative
+        /// to a concurrent inline settings/comment ALTER (or another metadata apply) that committed while
+        /// we waited for the lock. The structural diff base must reflect the state as of holding the lock,
+        /// consistent with setTableStructure's own under-lock read that the diff is applied against.
+        auto locked_metadata = getInMemoryMetadataUncached(getContext());
+        const auto table_metadata = ReplicatedMergeTreeTableMetadata(*this, locked_metadata);
+        auto metadata_diff = table_metadata.checkAndFindDiff(metadata_from_entry, locked_metadata->columns, locked_metadata->virtuals, getStorageID().getNameForLogs(), getContext());
         setTableStructure(table_id, alter_context, std::move(columns_from_entry), metadata_diff, entry.alter_version);
 
-        auto applied_metadata_snapshot = getInMemoryMetadataPtr(getContext(), true);
+        auto applied_metadata_snapshot = getInMemoryMetadataUncached(getContext());
         LOG_INFO(log, "Applied changes to the metadata of the table. Current metadata version: {}", applied_metadata_snapshot->getMetadataVersion());
+
+        /// Test-only (issue #110036): keep lockForAlter held with the ALTER_METADATA applied, so a test can
+        /// resume a foreground comment/settings ALTER whose metadata pin predates this commit and verify
+        /// the commit is not clobbered.
+        FailPointInjection::pauseFailPoint(FailPoints::rmt_pause_after_apply_metadata_alter);
     }
 
     {
@@ -6800,10 +6814,18 @@ void StorageReplicatedMergeTree::alter(
     auto component_guard = Coordination::setCurrentComponent("StorageReplicatedMergeTree::alter");
     assertNotReadonly();
 
+    /// The commit below reads and writes this storage's committed metadata under the alter lock, so
+    /// the holder must lock THIS object's alter_lock. A delegating storage (Proxy/Alias) must
+    /// re-anchor the lock to this nested object rather than forwarding its own holder.
+    chassert(holdsOwnAlterLock(table_lock_holder));
+
     auto table_id = getStorageID();
     const auto & query_settings = query_context->getSettingsRef();
 
-    auto metadata_snapshot = getInMemoryMetadataPtr(query_context, false);
+    /// Fresh command-application base, read under the caller's lockForAlter. The lock freezes
+    /// committed metadata, so it equals the interpreter's entry snapshot in
+    /// InterpreterAlterQuery::runCommandSegments.
+    auto metadata_snapshot = getInMemoryMetadataUncached(query_context);
     StorageInMemoryMetadata future_metadata = *metadata_snapshot;
     /// Snapshot the sorting key before applying commands, to compare with the resolved future one.
     KeyDescription old_sorting_key = future_metadata.sorting_key;
@@ -6831,8 +6853,23 @@ void StorageReplicatedMergeTree::alter(
     {
         /// We don't replicate storage_settings_ptr ALTER. It's local operation.
         /// Also we don't upgrade alter lock to table structure lock.
+        ///
+        /// Commit protocol: run every fallible step (build the new settings, write the durable .sql)
+        /// before the durable/coordinator commit, and publish the in-memory state only after it, so a
+        /// rejected commit leaves settings, metadata and .sql all unchanged (a failed ALTER is a no-op).
+        auto prepared_settings = prepareSettingsChange(future_metadata.settings_changes);
+
+        auto database = DatabaseCatalog::instance().getDatabase(table_id.database_name);
+        /// Safe because the early max_query_size check already passed.
+        auto prepared_alter = database->prepareAlterTable(query_context, table_id, future_metadata, /*validate_new_create_query=*/true);
+
+        /// Pivot: durable .sql rename, and the coordinator commit for a Replicated database.
+        database->commitAlterTable(table_id, prepared_alter.table_metadata_tmp_path, prepared_alter.table_metadata_path, prepared_alter.statement, query_context);
+
+        /// Infallible publish after the commit.
         merge_strategy_picker.refreshState();
-        changeSettings(future_metadata.settings_changes, table_lock_holder);
+        if (prepared_settings)
+            applySettingsChange(std::move(*prepared_settings));
 
         if (statistics_changed)
         {
@@ -6840,22 +6877,23 @@ void StorageReplicatedMergeTree::alter(
             ScopedJemallocThreadArena mergetree_arena_scope(JemallocMergeTreeArena::getArenaIndex());
             setInMemoryMetadata(future_metadata);
         }
-
-        /// Safe because the early max_query_size check already passed.
-        DatabaseCatalog::instance().getDatabase(table_id.database_name)->alterTable(query_context, table_id, future_metadata, /*validate_new_create_query=*/true);
         return;
     }
 
     if (commands.isCommentAlter())
     {
-        {
-            /// Route the long-lived metadata snapshot clone into the dedicated MergeTree arena.
-            ScopedJemallocThreadArena mergetree_arena_scope(JemallocMergeTreeArena::getArenaIndex());
-            setInMemoryMetadata(future_metadata);
-        }
-
+        /// Same commit protocol as the settings branch: durable/coordinator commit first, in-memory
+        /// publish after, so a rejected comment ALTER leaves both memory and .sql unchanged.
+        auto database = DatabaseCatalog::instance().getDatabase(table_id.database_name);
         /// Safe because the early max_query_size check already passed.
-        DatabaseCatalog::instance().getDatabase(table_id.database_name)->alterTable(query_context, table_id, future_metadata, /*validate_new_create_query=*/true);
+        auto prepared_alter = database->prepareAlterTable(query_context, table_id, future_metadata, /*validate_new_create_query=*/true);
+
+        /// Pivot: durable .sql rename, and the coordinator commit for a Replicated database.
+        database->commitAlterTable(table_id, prepared_alter.table_metadata_tmp_path, prepared_alter.table_metadata_path, prepared_alter.statement, query_context);
+
+        /// Infallible publish after the commit.
+        ScopedJemallocThreadArena mergetree_arena_scope(JemallocMergeTreeArena::getArenaIndex());
+        setInMemoryMetadata(future_metadata);
         return;
     }
 
@@ -6865,25 +6903,38 @@ void StorageReplicatedMergeTree::alter(
     /// routing (ASTAlterQuery::isSettingsOrCommentAlter) that sends it to every replica.
     if (commands.areNonReplicatedAlterCommands())
     {
-        merge_strategy_picker.refreshState();
-        changeSettings(future_metadata.settings_changes, table_lock_holder);
+        /// Same commit protocol as the branches above (durable/coordinator commit first, publish
+        /// after) for the settings+comment combination.
+        auto prepared_settings = prepareSettingsChange(future_metadata.settings_changes);
 
-        /// changeSettings is the sole writer of the setting-derived escape fields and has
-        /// already committed them; carry them into future_metadata so the comment commit
-        /// below does not revert the index filename policy (commands.apply never sets them).
-        auto committed_metadata = getInMemoryMetadataPtr(query_context, /*bypass_metadata_cache=*/true);
-        future_metadata.escape_index_filenames = committed_metadata->escape_index_filenames;
-        for (auto & index : future_metadata.secondary_indices)
-            index.escape_filenames = committed_metadata->escape_index_filenames;
+        /// changeSettings is the sole writer of the setting-derived escape fields; carry the prepared
+        /// values into future_metadata so the comment commit does not revert the index filename policy
+        /// (commands.apply never sets them). Read them from the prepared change instead of from
+        /// committed state, since nothing is committed yet at this point.
+        if (prepared_settings)
+        {
+            future_metadata.escape_index_filenames = prepared_settings->new_metadata.escape_index_filenames;
+            for (auto & index : future_metadata.secondary_indices)
+                index.escape_filenames = prepared_settings->new_metadata.escape_index_filenames;
+        }
+
+        auto database = DatabaseCatalog::instance().getDatabase(table_id.database_name);
+        /// Safe because the early max_query_size check already passed.
+        auto prepared_alter = database->prepareAlterTable(query_context, table_id, future_metadata, /*validate_new_create_query=*/true);
+
+        /// Pivot: durable .sql rename, and the coordinator commit for a Replicated database.
+        database->commitAlterTable(table_id, prepared_alter.table_metadata_tmp_path, prepared_alter.table_metadata_path, prepared_alter.statement, query_context);
+
+        /// Infallible publish after the commit.
+        merge_strategy_picker.refreshState();
+        if (prepared_settings)
+            applySettingsChange(std::move(*prepared_settings));
 
         {
             /// Route the long-lived metadata snapshot clone into the dedicated MergeTree arena.
             ScopedJemallocThreadArena mergetree_arena_scope(JemallocMergeTreeArena::getArenaIndex());
             setInMemoryMetadata(future_metadata);
         }
-
-        /// Safe because the early max_query_size check already passed.
-        DatabaseCatalog::instance().getDatabase(table_id.database_name)->alterTable(query_context, table_id, future_metadata, /*validate_new_create_query=*/true);
         return;
     }
 
@@ -6937,7 +6988,20 @@ void StorageReplicatedMergeTree::alter(
         alter_entry.emplace();
         mutation_znode.reset();
 
-        auto current_metadata = getInMemoryMetadataPtr(query_context, false);
+        /// Mid-commit current read: this is the retry loop's per-iteration view of the committed
+        /// metadata, used as the ZooKeeper CAS base version. It must observe this loop's own
+        /// settings/comment commit from a previous CAS iteration, so it deliberately bypasses the
+        /// query-scoped pin (which would otherwise keep returning the entry snapshot).
+        auto current_metadata = getInMemoryMetadataUncached(query_context);
+
+        /// The local settings/comment change is prepared before the ZooKeeper CAS below and published
+        /// only after it succeeds (see the commit block after the ZOK break), so a rejected CAS leaves
+        /// no divergent local state. These hold the prepared, not-yet-published change for this iteration.
+        bool settings_are_changed = false;
+        bool comment_is_changed = false;
+        std::optional<PreparedSettingsChange> prepared_settings;
+        std::optional<IDatabase::PreparedAlterTable> prepared_settings_comment_alter;
+        std::optional<StorageInMemoryMetadata> settings_comment_metadata_to_publish;
 
         ReplicatedMergeTreeTableMetadata future_metadata_in_zk(*this, current_metadata);
         if (ast_to_str(future_metadata.sorting_key.definition_ast) != ast_to_str(current_metadata->sorting_key.definition_ast))
@@ -6985,8 +7049,8 @@ void StorageReplicatedMergeTree::alter(
         String new_columns_str = future_metadata.columns.toString(true);
         ops.emplace_back(zkutil::makeSetRequest(fs::path(zookeeper_path) / "columns", new_columns_str, -1));
 
-        bool settings_are_changed = (ast_to_str(current_metadata->settings_changes) != ast_to_str(future_metadata.settings_changes));
-        bool comment_is_changed = (current_metadata->comment != future_metadata.comment);
+        settings_are_changed = (ast_to_str(current_metadata->settings_changes) != ast_to_str(future_metadata.settings_changes));
+        comment_is_changed = (current_metadata->comment != future_metadata.comment);
 
         if (settings_are_changed || comment_is_changed)
         {
@@ -7002,19 +7066,16 @@ void StorageReplicatedMergeTree::alter(
             /// future_metadata while metadata_copy grows). Check its size before mutating any in-memory state.
             checkMetadataDoesNotExceedMaxQuerySize(table_id, metadata_copy, query_context);
 
-            /// Just change settings
-            if (settings_are_changed)
-                changeSettings(metadata_copy.settings_changes, table_lock_holder);
-
+            /// Prepare the local settings/comment change (build the new settings, write the durable .sql
+            /// to a temporary file) but do not publish it yet. It is committed only after the ZooKeeper CAS
+            /// below succeeds, so a rejected ALTER leaves settings, in-memory metadata and .sql unchanged.
             /// The comment is not replicated as of today, but we can implement it later.
-            if (comment_is_changed)
-            {
-                /// Route the long-lived metadata snapshot clone into the dedicated MergeTree arena.
-                ScopedJemallocThreadArena mergetree_arena_scope(JemallocMergeTreeArena::getArenaIndex());
-                setInMemoryMetadata(metadata_copy);
-            }
+            if (settings_are_changed)
+                prepared_settings = prepareSettingsChange(metadata_copy.settings_changes);
 
-            DatabaseCatalog::instance().getDatabase(table_id.database_name)->alterTable(query_context, table_id, metadata_copy, /*validate_new_create_query=*/true);
+            prepared_settings_comment_alter = DatabaseCatalog::instance().getDatabase(table_id.database_name)
+                ->prepareAlterTable(query_context, table_id, metadata_copy, /*validate_new_create_query=*/true);
+            settings_comment_metadata_to_publish = std::move(metadata_copy);
         }
 
         /// We can be sure, that in case of successful commit in zookeeper our
@@ -7087,6 +7148,11 @@ void StorageReplicatedMergeTree::alter(
             ops.emplace_back(zkutil::makeSetRequest(metadata_zk_path, getObjectDefinitionFromCreateQuery(ast), -1));
         }
 
+        fiu_do_on(FailPoints::rmt_alter_fail_before_zk_multi,
+        {
+            throw Exception(ErrorCodes::FAULT_INJECTED, "Injected failure before the ALTER metadata CAS");
+        });
+
         Coordination::Responses results;
         Coordination::Error rc = zookeeper->tryMulti(ops, results);
 
@@ -7116,6 +7182,31 @@ void StorageReplicatedMergeTree::alter(
                 alter_entry->znode_name = alter_path.substr(alter_path.find_last_of('/') + 1);
                 LOG_DEBUG(log, "Created log entry {} to update table metadata to version {}",
                           alter_entry->znode_name, alter_entry->alter_version);
+            }
+
+            /// The CAS succeeded. Now commit the prepared local settings/comment change: the durable
+            /// .sql rename (the coordinator commit for a Replicated database, though branch T never
+            /// carries settings/comment there), then publish it in memory. These run after the pivot,
+            /// so a rejected CAS above (continue / throw) never leaves them applied. A .sql.tmp left by
+            /// a rejected iteration is overwritten on retry and dropped on startup by DatabaseOnDisk.
+            if (settings_are_changed || comment_is_changed)
+            {
+                DatabaseCatalog::instance().getDatabase(table_id.database_name)->commitAlterTable(
+                    table_id,
+                    prepared_settings_comment_alter->table_metadata_tmp_path,
+                    prepared_settings_comment_alter->table_metadata_path,
+                    prepared_settings_comment_alter->statement,
+                    query_context);
+
+                if (settings_are_changed && prepared_settings)
+                    applySettingsChange(std::move(*prepared_settings));
+
+                if (comment_is_changed)
+                {
+                    /// Route the long-lived metadata snapshot clone into the dedicated MergeTree arena.
+                    ScopedJemallocThreadArena mergetree_arena_scope(JemallocMergeTreeArena::getArenaIndex());
+                    setInMemoryMetadata(*settings_comment_metadata_to_publish);
+                }
             }
             break;
         }
@@ -7252,7 +7343,7 @@ void StorageReplicatedMergeTree::restoreMetadataInZooKeeper(
         throw Exception(ErrorCodes::CONCURRENT_ACCESS_NOT_SUPPORTED, "Replica restoration in progress");
     SCOPE_EXIT({ are_restoring_replica.store(false); });
 
-    auto metadata_snapshot = getInMemoryMetadataPtr(getContext(), false);
+    auto metadata_snapshot = getInMemoryMetadataUncached(getContext());
 
     waitForOutdatedPartsToBeLoaded();
     const DataPartsVector all_parts = getAllDataPartsVector();
@@ -9091,8 +9182,8 @@ void StorageReplicatedMergeTree::replacePartitionFrom(
     auto lock2 = source_table->lockForShare(query_context->getCurrentQueryId(), query_context->getSettingsRef()[Setting::lock_acquire_timeout]);
 
     const auto storage_settings_ptr = getSettings();
-    const auto source_metadata_snapshot = source_table->getInMemoryMetadataPtr(query_context, false);
-    const auto metadata_snapshot = getInMemoryMetadataPtr(query_context, false);
+    const auto source_metadata_snapshot = source_table->getInMemoryMetadataQueryCached(query_context);
+    const auto metadata_snapshot = getInMemoryMetadataQueryCached(query_context);
     const MergeTreeData & src_data = checkStructureAndGetMergeTreeData(source_table, source_metadata_snapshot, metadata_snapshot);
 
     std::unordered_set<String> partitions;
@@ -9466,8 +9557,8 @@ void StorageReplicatedMergeTree::movePartitionToTable(const StoragePtr & dest_ta
     auto lock2 = dest_table->lockForShare(query_context->getCurrentQueryId(), query_context->getSettingsRef()[Setting::lock_acquire_timeout]);
     auto storage_settings_ptr = getSettings();
 
-    auto dest_metadata_snapshot = dest_table->getInMemoryMetadataPtr(query_context, false);
-    auto metadata_snapshot = getInMemoryMetadataPtr(query_context, false);
+    auto dest_metadata_snapshot = dest_table->getInMemoryMetadataQueryCached(query_context);
+    auto metadata_snapshot = getInMemoryMetadataQueryCached(query_context);
 
     Stopwatch watch;
     ProfileEventsScope profile_events_scope;
@@ -9784,7 +9875,7 @@ void StorageReplicatedMergeTree::movePartitionToShard(
 
     {
         /// Optimistic check that for compatible destination table structure.
-        const auto storage_metadata = getInMemoryMetadataPtr(getContext(), false);
+        const auto storage_metadata = getInMemoryMetadataUncached(getContext());
         checkTableStructure(to, storage_metadata, /* metadata_version = */ nullptr, /* strict_check = */ true, /* zookeeper_retries_info = */ {});
     }
 
@@ -11347,7 +11438,7 @@ bool StorageReplicatedMergeTree::createEmptyPartInsteadOfLost(zkutil::ZooKeeperP
     LOG_INFO(log, "Going to replace lost part {} with empty part", lost_part_name);
 
     auto new_part_info = MergeTreePartInfo::fromPartName(lost_part_name, format_version);
-    auto table_metadata = getInMemoryMetadataPtr(getContext(), false);
+    auto table_metadata = getInMemoryMetadataUncached(getContext());
 
     MergeTreePartition partition;
     /// Use a sibling part's metadata when possible so patch parts get patch-part metadata.
@@ -11719,7 +11810,7 @@ void StorageReplicatedMergeTree::applyMetadataChangesToCreateQueryForBackup(cons
         /// Try to adjust the create query using values from ZooKeeper.
         auto zookeeper = getZooKeeper();
         auto columns_from_entry = ColumnsDescription::parse(zookeeper->get(fs::path(zookeeper_path) / "columns"));
-        auto current_metadata = getInMemoryMetadataPtr(getContext(), false);
+        auto current_metadata = getInMemoryMetadataUncached(getContext());
         auto metadata_from_entry = ReplicatedMergeTreeTableMetadata::parseAndNormalize(
             zookeeper->get(fs::path(zookeeper_path) / "metadata"), columns_from_entry,
             current_metadata->add_minmax_index_for_numeric_columns,
@@ -11888,7 +11979,7 @@ void StorageReplicatedMergeTree::attachRestoredParts(
     MutableDataPartsVector && parts, const std::optional<ZooKeeperRetriesInfo> & zookeeper_retries_info)
 {
     auto component_guard = Coordination::setCurrentComponent("StorageReplicatedMergeTree::attachRestoredParts");
-    auto metadata_snapshot = getInMemoryMetadataPtr(getContext(), false);
+    auto metadata_snapshot = getInMemoryMetadataUncached(getContext());
 
     auto sink = std::make_shared<ReplicatedMergeTreeSink>(
         /* async_insert */ false, *this, metadata_snapshot, /* quorum */ 0, /* quorum_timeout_ms */ 0, /* max_parts_per_block */ 0, /* quorum_parallel */ false,

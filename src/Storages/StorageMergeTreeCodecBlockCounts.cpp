@@ -323,7 +323,7 @@ void StorageMergeTreeCodecBlockCounts::read(
 {
     storage_snapshot->check(column_names);
 
-    const auto source_metadata = source_table->getInMemoryMetadataPtr(context, false);
+    const auto source_metadata = source_table->getInMemoryMetadataQueryCached(context);
     const auto source_storage_id = source_table->getStorageID();
     context->checkAccess(AccessType::SELECT, source_storage_id, source_metadata->getColumns().getNamesOfPhysical());
 

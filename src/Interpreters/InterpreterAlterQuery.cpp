@@ -5,6 +5,7 @@
 #include <Access/Common/AccessRightsElement.h>
 #include <Backups/BackupsWorker.h>
 #include <Common/typeid_cast.h>
+#include <Common/FailPoint.h>
 #include <Core/Settings.h>
 #include <Core/ServerSettings.h>
 #include <Databases/DatabaseFactory.h>
@@ -20,7 +21,6 @@
 #include <Interpreters/MutationsDateTimeLiteralVisitor.h>
 #include <Interpreters/MutationsNonDeterministicHelpers.h>
 #include <Interpreters/QueryLog.h>
-#include <Interpreters/QueryMetadataCache.h>
 #include <Interpreters/executeDDLQueryOnCluster.h>
 #include <Parsers/ASTAlterQuery.h>
 #include <Parsers/ASTAssignment.h>
@@ -47,6 +47,12 @@
 
 namespace DB
 {
+
+namespace FailPoints
+{
+    extern const char alter_pause_before_alter_lock[];
+    extern const char alter_pause_after_alter_under_lock[];
+}
 
 namespace MergeTreeSetting
 {
@@ -162,7 +168,7 @@ CommandSegments parseAlterCommandSegments(const ASTAlterQuery & alter, const Sto
             if (!session_tz.empty())
             {
                 auto source_alter = mutation_command->ast();
-                auto metadata_snapshot = table->getInMemoryMetadataPtr(context, true);
+                auto metadata_snapshot = table->getInMemoryMetadataUncached(context);
                 auto tz_rewritten_ast = rewriteDateTimeLiteralsWithTimezone(
                     *source_alter, metadata_snapshot->columns, session_tz);
                 if (tz_rewritten_ast)
@@ -314,17 +320,19 @@ BlockIO runCommandSegments(CommandSegments & segments, const StoragePtr & table,
     {
         if (auto * alter_commands = std::get_if<AlterCommands>(&segment))
         {
+            /// Test-only (issue #110036): park the ALTER between its access-check metadata pin
+            /// (getRequiredAccess -> isRowExistsLightweightDeleteMarker, before this lock) and lockForAlter,
+            /// so a test can deterministically apply a concurrent ALTER_METADATA inside that window.
+            FailPointInjection::pauseFailPoint(FailPoints::alter_pause_before_alter_lock);
+
             auto alter_lock = table->lockForAlter(settings[Setting::lock_acquire_timeout]);
-            /// Drop the query-scoped metadata cache, which may hold a snapshot pinned before this
-            /// lock. The reads below (validate/prepare/checkAlterIsPossible and the storage's alter)
-            /// then all repopulate from the metadata committed as of holding the lock.
-            if (auto metadata_cache = context->getQueryMetadataCache())
-            {
-                auto [cache, cache_lock] = metadata_cache->getStorageMetadataCache();
-                cache->clear();
-            }
-            auto metadata_snapshot = table->getInMemoryMetadataPtr(context, /*bypass_metadata_cache=*/ false);
-            alter_commands->validate(table, context);
+            /// Single entry base for the whole ALTER pipeline, read uncached so it bypasses any
+            /// snapshot the query may have pinned in the query-scoped metadata cache before taking
+            /// this lock. Threaded explicitly into validate and prepare; checkAlterIsPossible and
+            /// the storage's alter read the same committed base uncached under this lock (which
+            /// freezes the locked storage's metadata), so every phase observes the same value.
+            auto metadata_snapshot = table->getInMemoryMetadataUncached(context);
+            alter_commands->validate(table, *metadata_snapshot, context);
 
             bool share_nested = true;
             if (auto * merge_tree = dynamic_cast<MergeTreeData *>(table.get()))
@@ -333,12 +341,16 @@ BlockIO runCommandSegments(CommandSegments & segments, const StoragePtr & table,
             alter_commands->prepare(*metadata_snapshot, share_nested);
             table->checkAlterIsPossible(*alter_commands, context);
             table->alter(*alter_commands, context, alter_lock);
+
+            /// Test-only (issue #110036): keep lockForAlter held after this commit, so a test can prove a
+            /// concurrent (plain MergeTree) ALTER's pre-lock metadata pin is stale relative to it.
+            FailPointInjection::pauseFailPoint(FailPoints::alter_pause_after_alter_under_lock);
         }
         else if (auto * mutation_commands = std::get_if<MutationCommands>(&segment))
         {
             if (mutation_commands->hasNonEmptyMutationCommands())
             {
-                auto metadata_snapshot = table->getInMemoryMetadataPtr(context, true);
+                auto metadata_snapshot = table->getInMemoryMetadataUncached(context);
                 table->checkMutationIsPossible(*mutation_commands, settings);
                 /// Replicated-storage non-determinism check must always run, even when
                 /// `validate_mutation_query=0` — bypassing it would let nondeterministic mutations
@@ -356,7 +368,7 @@ BlockIO runCommandSegments(CommandSegments & segments, const StoragePtr & table,
         }
         else if (auto * partition_commands = std::get_if<PartitionCommands>(&segment))
         {
-            auto metadata_snapshot = table->getInMemoryMetadataPtr(context, true);
+            auto metadata_snapshot = table->getInMemoryMetadataUncached(context);
             table->checkAlterPartitionIsPossible(*partition_commands, metadata_snapshot, settings, context);
             auto partition_commands_pipe = table->alterPartition(metadata_snapshot, *partition_commands, context);
             if (!partition_commands_pipe.empty())
@@ -575,7 +587,7 @@ bool InterpreterAlterQuery::isRowExistsLightweightDeleteMarker(const StoragePtr 
     /// A null storage (non-local ON CLUSTER target) fails closed -> treated as a regular column.
     if (!storage)
         return false;
-    const auto metadata_snapshot = storage->getInMemoryMetadataPtr(context_, false);
+    const auto metadata_snapshot = storage->getInMemoryMetadataQueryCached(context_);
     return metadata_snapshot->isVirtualColumn(RowExistsColumn::name);
 }
 

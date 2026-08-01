@@ -460,7 +460,7 @@ protected:
         /// `table` can be null for an unresolvable table (e.g. a DataLakeCatalog table whose
         /// metadata cannot be fetched). Always advance `res_index` so the column stays aligned
         /// with the others; otherwise the whole system.tables scan aborts.
-        const auto metadata_snapshot = table ? table->getInMemoryMetadataPtr(context, false) : nullptr;
+        const auto metadata_snapshot = table ? table->getInMemoryMetadataQueryCached(context) : nullptr;
         if (!metadata_snapshot)
         {
             columns[res_index++]->insertDefault();
@@ -762,7 +762,7 @@ protected:
 
                 StorageMetadataHandle metadata_snapshot;
                 if (table)
-                    metadata_snapshot = table->getInMemoryMetadataPtr(context, false);
+                    metadata_snapshot = table->getInMemoryMetadataQueryCached(context);
 
                 if (columns_mask[src_index++])
                 {
