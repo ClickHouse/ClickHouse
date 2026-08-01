@@ -59,20 +59,29 @@ echo "===== nor through the value in a cast error message ====="
 ${CLICKHOUSE_CLIENT} --user "$user" --query \
     "SELECT * FROM $db.filtering_view WHERE toUInt8(secret) = 1" 2>&1 | grep -c -F "HIDDEN"
 
+# The plan shape does not depend on who runs the query, and wrapping EXPLAIN in a subquery needs
+# CREATE TEMPORARY TABLE, so these two run as the default user.
 echo "===== a view that hides no rows is not a barrier ====="
 # PREWHERE for the outer predicate must survive, otherwise every DEFINER view pays for the fix.
-${CLICKHOUSE_CLIENT} --user "$user" --query \
+${CLICKHOUSE_CLIENT} --query \
     "SELECT count() > 0 FROM (
          EXPLAIN actions = 1, indexes = 0 SELECT * FROM $db.projecting_view WHERE secret = 'x'
          SETTINGS optimize_move_to_prewhere = 1
-     ) WHERE explain ILIKE '%Prewhere filter%'"
+     ) WHERE explain ILIKE '%Prewhere filter column: %secret%'"
 
 echo "===== SQL SECURITY INVOKER is not a barrier either ====="
-${CLICKHOUSE_CLIENT} --user "$user" --query \
+${CLICKHOUSE_CLIENT} --query \
     "SELECT count() > 0 FROM (
          EXPLAIN actions = 1, indexes = 0 SELECT * FROM $db.invoker_view WHERE secret = 'x'
          SETTINGS optimize_move_to_prewhere = 1
-     ) WHERE explain ILIKE '%Prewhere filter%'"
+     ) WHERE explain ILIKE '%Prewhere filter column: %secret%'"
+
+echo "===== but a filtering DEFINER view keeps the outer predicate out of PREWHERE ====="
+${CLICKHOUSE_CLIENT} --query \
+    "SELECT count() > 0 FROM (
+         EXPLAIN actions = 1, indexes = 0 SELECT * FROM $db.filtering_view WHERE secret = 'x'
+         SETTINGS optimize_move_to_prewhere = 1
+     ) WHERE explain ILIKE '%Prewhere filter column: %secret%'"
 
 echo "===== results through a barrier view are still correct ====="
 ${CLICKHOUSE_CLIENT} --user "$user" --query \
