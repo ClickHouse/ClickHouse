@@ -1745,7 +1745,7 @@ void StorageURL::processNamedCollectionResult(Configuration & configuration, con
 static String removeDotSegments(const String & path)
 {
     /// Fast path: no dot segments present.
-    if (path.find("/.") == String::npos)
+    if (!path.contains("/."))
         return path;
 
     /// Split the path into segments and process each one.
@@ -1815,7 +1815,7 @@ static String normalizeDotSegmentsInURL(const String & url, size_t authority_sta
     String path = url.substr(path_start, path_end - path_start);
 
     /// Fast check: no dot segments.
-    if (path.find("/.") == String::npos)
+    if (!path.contains("/."))
         return url;
 
     String normalized = removeDotSegments(path);
@@ -2071,7 +2071,7 @@ AzureURLParts parseAzureURL(const String & url)
     const String host = (slash_pos == String::npos) ? rest : rest.substr(0, slash_pos);
     const String path = (slash_pos == String::npos) ? "" : rest.substr(slash_pos + 1);
 
-    if (host.find('.') == String::npos)
+    if (!host.contains('.'))
         throw Exception(
             ErrorCodes::BAD_ARGUMENTS,
             "Azure `{}` URL must include the storage account host, e.g. "
