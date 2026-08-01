@@ -133,7 +133,7 @@ The _samples_ table must have columns:
 
 | Name | Mandatory? | Default type | Possible types | Description |
 |---|---|---|---|---|
-| `id` | [x] | `UUID` | any | Identifies a combination of a metric names and tags |
+| `id` | [x] | `Tuple(UInt64, UUID)` | any | Identifies a combination of a metric names and tags |
 | `timestamp` | [x] | `DateTime64(3)` | `DateTime64(X)` | A time point |
 | `value` | [x] | `Float64` | `Float32` or `Float64` | A value associated with the `timestamp` |
 
@@ -150,7 +150,7 @@ The _tags_ table must have columns:
 
 | Name | Mandatory? | Default type | Possible types | Description |
 |---|---|---|---|---|
-| `id` | [x] | `UUID` | any (must match the type of `id` in the [samples](#samples-table) table) | An `id` identifies a combination of a metric name and tags. The DEFAULT expression specifies how to calculate such an identifier |
+| `id` | [x] | `Tuple(UInt64, UUID)` | any (must match the type of `id` in the [samples](#samples-table) table) | An `id` identifies a combination of a metric name and tags. The DEFAULT expression specifies how to calculate such an identifier |
 | `metric_name` | [x] | `LowCardinality(String)` | `String` or `LowCardinality(String)` | The name of a metric |
 | `<tag_value_column>` | [ ] | `String` | `String` or `LowCardinality(String)` or `LowCardinality(Nullable(String))` | The value of a specific tag, the tag's name and the name of a corresponding column are specified in the [tags_to_columns](#settings) setting |
 | `tags` | [x] | `Map(LowCardinality(String), String)` | `Map(String, String)` or `Map(LowCardinality(String), String)` or `Map(LowCardinality(String), LowCardinality(String))` | Map of tags excluding the tag `__name__` containing the name of a metric and excluding tags with names enumerated in the [tags_to_columns](#settings) setting |
@@ -196,14 +196,14 @@ CREATE TABLE my_table
 ENGINE = TimeSeries
 SAMPLES INNER COLUMNS
 (
-    `id` UUID,
+    `id` Tuple(UInt64, UUID),
     `timestamp` DateTime64(3) CODEC(DoubleDelta, ZSTD(1)),
     `value` Float64 CODEC(Gorilla, ZSTD(1))
 )
 SAMPLES INNER ENGINE = MergeTree ORDER BY (id, timestamp)
 TAGS INNER COLUMNS
 (
-    `id` UUID DEFAULT reinterpretAsUUID(sipHash128(metric_name, all_tags)),
+    `id` Tuple(UInt64, UUID) DEFAULT tuple(sipHash64(metric_name), reinterpretAsUUID(sipHash128(metric_name, all_tags))),
     `metric_name` LowCardinality(String),
     `tags` Map(LowCardinality(String), String),
     `all_tags` Map(String, String) EPHEMERAL,
@@ -231,7 +231,7 @@ and each target table has its own set of columns:
 ```sql
 CREATE TABLE default.`.inner_id.samples.xxxxxxxx-xxxx-xxxx-xxxx-xxxxxxxxxxxx`
 (
-    `id` UUID,
+    `id` Tuple(UInt64, UUID),
     `timestamp` DateTime64(3) CODEC(DoubleDelta, ZSTD(1)),
     `value` Float64 CODEC(Gorilla(8), ZSTD(1))
 )
@@ -242,7 +242,7 @@ ORDER BY (id, timestamp)
 ```sql
 CREATE TABLE default.`.inner_id.tags.xxxxxxxx-xxxx-xxxx-xxxx-xxxxxxxxxxxx`
 (
-    `id` UUID DEFAULT reinterpretAsUUID(sipHash128(metric_name, all_tags)),
+    `id` Tuple(UInt64, UUID) DEFAULT tuple(sipHash64(metric_name), reinterpretAsUUID(sipHash128(metric_name, all_tags))),
     `metric_name` LowCardinality(String),
     `tags` Map(LowCardinality(String), String),
     `all_tags` Map(String, String) EPHEMERAL,
