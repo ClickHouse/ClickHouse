@@ -279,6 +279,7 @@ static struct InitFiu
     PAUSEABLE_ONCE(limit_by_transform_mid_loop_pause) \
     PAUSEABLE_ONCE(filter_transform_pause) \
     PAUSEABLE_ONCE(totals_having_transform_pause) \
+    PAUSEABLE_ONCE(totals_having_transform_totals_pause) \
     PAUSEABLE(wasm_guest_pause)
 
 namespace FailPoints

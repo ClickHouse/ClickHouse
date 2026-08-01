@@ -18,6 +18,7 @@ namespace DB
 namespace FailPoints
 {
     extern const char totals_having_transform_pause[];
+    extern const char totals_having_transform_totals_pause[];
 }
 
 namespace ErrorCodes
@@ -331,8 +332,18 @@ void TotalsHavingTransform::prepareTotals()
         auto block = finalized_header.cloneWithColumns(totals.detachColumns());
         expression->execute(block, num_rows, false, false, [this]() { return isCancelled(); });
 
+        FailPointInjection::pauseFailPoint(FailPoints::totals_having_transform_totals_pause);
+
         if (isCancelled())
+        {
+            /// The query is being cancelled and the result is discarded anyway.
+            /// The columns of `totals` are already detached into `block`, so put an empty chunk
+            /// matching the totals port header in its place, and mark the totals as prepared,
+            /// so that `prepare` does not schedule this method again.
+            totals = Chunk(getTotalsPort().getHeader().cloneEmptyColumns(), 0);
+            total_prepared = true;
             return;
+        }
 
         if (remove_filter)
             block.erase(filter_column_name);
