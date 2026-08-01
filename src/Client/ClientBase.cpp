@@ -1290,12 +1290,30 @@ void ClientBase::initLogsOutputStream()
             }
             else
             {
-                auto file_buf = std::make_unique<AutoCanceledWriteBuffer<WriteBufferFromFile>>(
-                    server_logs_file, DBMS_DEFAULT_BUFFER_SIZE, O_WRONLY | O_APPEND | O_CREAT);
                 /// The user-specified path is not necessarily a regular file: it can be a FIFO,
-                /// character device or socket, which can block in write() just like a terminal. Track
-                /// it as the terminal-facing sink so it is armed on the responsive path below; for a
-                /// regular file setCancellationHook is a no-op (fstat marks it as non-blocking).
+                /// character device or socket, which can block in write() just like a terminal, and
+                /// a reader-less FIFO blocks already in open(). So acquire the descriptor with the
+                /// interruptible open (this runs from onLogData / onProfileEvents, i.e. with the
+                /// interrupt handler armed for the query) and track the buffer as the terminal-facing
+                /// sink so it is armed on the responsive path below; for a regular file both are a
+                /// no-op (the open succeeds at once and fstat marks the sink as non-blocking).
+                int logs_fd = openFileCancellable(
+                    server_logs_file,
+                    O_WRONLY | O_APPEND | O_CREAT,
+                    [this]() { return query_interrupt_handler.interruptedWhileRunning(); });
+
+                /// The constructor below takes ownership and resets `logs_fd` to -1; this only
+                /// covers the case when it throws before doing so.
+                SCOPE_EXIT({
+                    if (logs_fd != -1)
+                    {
+                        [[maybe_unused]] int err = ::close(logs_fd);
+                        chassert(!(err && errno == EBADF));
+                    }
+                });
+
+                auto file_buf = std::make_unique<AutoCanceledWriteBuffer<WriteBufferFromFile>>(
+                    logs_fd, server_logs_file, DBMS_DEFAULT_BUFFER_SIZE);
                 logs_out_terminal_buf = file_buf.get();
                 out_logs_buf = std::move(file_buf);
                 wb = out_logs_buf.get();
