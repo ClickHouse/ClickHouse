@@ -844,11 +844,28 @@ openssl pkeyutl -encrypt -pubin -inkey {key_path} -in {aes_key_path} -out {aes_k
         Shell.run(f"openssl enc -aes-256-cbc -in {path} -out {path}.enc -pbkdf2 -pass file:{aes_key_path}")
         return f"{path}.enc"
 
-    # `tar` exit 1 is "some files differ", which includes a file appended to while
-    # being read. Every archive built here contains files the job is still writing
-    # (its own log, the docker log, live test instance directories), so 1 is the
-    # normal outcome and its archive is complete. Exit 2 and a signal death are not.
-    TAR_OK_RETURN_CODES = (0, 1)
+    # Return codes whose archive is accepted without further checking. `tar` exit 1
+    # is "some files differ", which a file appended to while being read produces, and
+    # every archive built here contains files the job is still writing.
+    TAR_UNCONDITIONALLY_OK_RETURN_CODES = (0, 1)
+
+    @classmethod
+    def _archive_reads_back(cls, archive, rc, timeout=None):
+        """Whether `archive` is a complete, listable archive despite `tar` exit `rc`.
+
+        `tar -tzf` walks the member stream, so it accepts an archive whose write
+        completed and rejects one cut short mid-member; it is not a stand-in for the
+        rc, it answers the only question the caller has. A negative rc is the
+        watchdog's SIGTERM, which by construction interrupted the write, so it is
+        rejected without asking. Bounded by the caller's `timeout` and silent about
+        its own failure, because this helper must not raise either.
+        """
+        if rc < 0:
+            return False
+        return (
+            Shell.run(f"tar -tzf {archive} > /dev/null", verbose=False, timeout=timeout)
+            == 0
+        )
 
     @classmethod
     def compress_files_gz(cls, files, archive_name, timeout=None):
@@ -866,6 +883,13 @@ openssl pkeyutl -encrypt -pubin -inkey {key_path} -in {aes_key_path} -out {aes_k
         destination directly would publish that truncation as the logs; and the two
         callers that write the job's `logs.tar.gz` would then overwrite each other's
         archive rather than just their own temporary file.
+
+        A non-zero `tar` exit does not by itself mean the archive is unusable, so the
+        rc only decides which cases still need proving: a negative rc is the
+        watchdog's SIGTERM and its archive is always truncated, while a positive rc
+        can accompany a complete archive of every input that did exist (an input path
+        that cannot be stat'ed makes `tar` exit 2 after archiving the rest). Those are
+        separated by asking whether the archive reads back, not by the rc.
         """
         files = [
             os.path.relpath(file) if os.path.isabs(file) else file for file in files
@@ -898,10 +922,19 @@ openssl pkeyutl -encrypt -pubin -inkey {key_path} -in {aes_key_path} -out {aes_k
                 timeout=timeout,
             )
 
-        if rc not in cls.TAR_OK_RETURN_CODES:
-            print(f"WARNING: failed to archive into [{archive_name}], tar rc [{rc}]")
-            Path(tmp_archive).unlink(missing_ok=True)
-            return None
+        if rc not in cls.TAR_UNCONDITIONALLY_OK_RETURN_CODES:
+            if not cls._archive_reads_back(tmp_archive, rc, timeout):
+                print(
+                    f"WARNING: failed to archive into [{archive_name}], tar rc [{rc}]"
+                )
+                Path(tmp_archive).unlink(missing_ok=True)
+                return None
+            # Kept, but the rc is reported: it usually means an input was gone, so the
+            # archive is complete yet covers fewer inputs than the caller asked for.
+            print(
+                f"WARNING: archiving into [{archive_name}] reported tar rc [{rc}] but "
+                "the archive reads back, publishing it"
+            )
 
         try:
             os.replace(tmp_archive, archive_name)

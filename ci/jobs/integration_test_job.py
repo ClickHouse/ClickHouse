@@ -627,6 +627,26 @@ def is_empty_best_effort_skip(
     return (is_flaky_check or is_targeted_check) and not has_results and timed_out
 
 
+def checkpoint_collected_results(job_name: str, test_results: list, is_local_run: bool):
+    """
+    Write the results collected so far into the job's existing result file, so a job
+    script that dies during post-processing still leaves them on disk for the runner to
+    publish instead of the empty `RUNNING` stub.
+
+    Updates the existing result rather than building a fresh one: `Result.create_from`
+    takes no `ext`, so it would drop the on_error_hook the job script sets and the run
+    url. No status is assigned - the runner's `KILLED` patch keeps the children and
+    decides the status, and every status decision in `main` still runs on a normal job.
+    `set_results` dumps by itself, since `_pre_run` created the file.
+
+    Skipped on a local run, which has no runner to publish anything. This does not cover
+    the whole runner process being cancelled: nothing local is left to upload then.
+    """
+    if is_local_run:
+        return
+    Result.from_fs(job_name).set_results(test_results)
+
+
 def main():
     sw = Utils.Stopwatch()
     info = Info()
@@ -646,12 +666,16 @@ def main():
 
     # Set on_error_hook to collect logs on hard timeout.
     # The archive is built under a temporary name unique to this shell and renamed in
-    # only when tar reported success: the hook writes the same logs.tar.gz the normal
-    # path produces, and the upload only checks that the file exists. Writing the
-    # destination directly would publish an archive cut short by the hook timeout, and
-    # would destroy a complete archive the normal path had already written.
-    # `tar` exit 1 is "some files differ" - normal here, since the archive contains
-    # logs still being appended to - so it is accepted; 2 and a signal death are not.
+    # only once it is known to be usable: the hook writes the same logs.tar.gz the
+    # normal path produces, and the upload only checks that the file exists. Writing
+    # the destination directly would publish an archive cut short by the hook timeout,
+    # and would destroy a complete archive the normal path had already written.
+    # A non-zero tar exit does not mean the archive is unusable, so it only decides
+    # what still needs proving: 0 and 1 ("some files differ", routine here since the
+    # inputs are logs still being appended to) are taken as they are, and any other
+    # code is settled by reading the archive back. The globs below are the reason:
+    # `_instances*` matches nothing until a cluster starts, and the unexpanded pattern
+    # makes tar exit 2 after archiving every input that did exist.
     # The whole hook stays non-fatal (the trailing `:`).
     Result.from_fs(info.job_name).set_on_error_hook(
         """
@@ -663,7 +687,8 @@ tar --warning=no-file-changed -czf "$tmp_archive" \
   ./ci/tmp/*.log \
   ./ci/tmp/*.jsonl
 tar_rc=$?
-if [ "$tar_rc" -le 1 ]; then
+if [ "$tar_rc" -le 1 ] || tar -tzf "$tmp_archive" >/dev/null 2>&1; then
+  echo "on_error_hook archiving finished, tar rc [$tar_rc]"
   mv "$tmp_archive" ./ci/tmp/logs.tar.gz
 else
   echo "WARNING: on_error_hook archiving failed, tar rc [$tar_rc]"
@@ -1237,17 +1262,8 @@ fi
                 if any(not r.is_ok() for r in bt_test_results):
                     break
 
-    # Checkpoint the collected results into the existing RUNNING result before any
-    # post-processing, so a job script that dies later still leaves them on disk for
-    # the runner to publish. Updates the RUNNING result rather than building a fresh
-    # one: `Result.create_from` takes no `ext`, so it would drop the on_error_hook set
-    # above and the run url. No status is assigned - the runner's KILLED patch keeps
-    # the children and decides the status, and every status decision below still runs
-    # on a normal job. `set_results` dumps by itself, `_pre_run` created the file.
-    # This does not cover the whole runner process being cancelled: nothing local is
-    # left to upload the checkpoint then.
-    if not info.is_local_run:
-        Result.from_fs(info.job_name).set_results(test_results)
+    # Before any post-processing, so an archiving overrun below cannot cost the results.
+    checkpoint_collected_results(info.job_name, test_results, info.is_local_run)
 
     # Collect logs before re-run
     attached_files = []

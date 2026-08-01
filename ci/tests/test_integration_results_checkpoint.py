@@ -1,14 +1,10 @@
 """
 Tests for the interim result checkpoint in `ci/jobs/integration_test_job.py`.
 
-Background
-----------
-`integration_test_job.main` collected every test result into `test_results` and dumped it
-only at the very end, with unbounded post-processing in between, so a job that died in
-that window published the pre-run `RUNNING` stub as an `ERROR` with no children.
-
-`main` now writes the collected results into that existing result file before any
-post-processing. Two properties are load-bearing and neither is obvious from the call:
+`main` writes the results collected so far into its existing result file before any
+post-processing, so a job script that dies in that window leaves them on disk instead of
+the empty `RUNNING` stub. Three properties are load-bearing and none is obvious from the
+call:
 
 * it must UPDATE the existing result rather than build a new one. `Result.create_from`
   takes no `ext`, so a fresh result would drop `ext["on_error_hook"]` (set by this same
@@ -21,12 +17,15 @@ post-processing. Two properties are load-bearing and neither is obvious from the
   -- a bugfix-validation job would report its non-inverted verdict. Left `RUNNING`, the
   runner's own `KILLED` patch decides the status, and because `add_error` and `set_status`
   touch only `ext["errors"]` and `status`, the children survive that patch.
+* it must actually RUN. The checkpoint is a guarded call, so the structural arms here can
+  only show that the call exists; the runtime arms drive the real helper, which is why it
+  is a module-level function rather than inline in `main` (the same reason
+  `is_empty_best_effort_skip` was extracted).
 
-This is honest defence in depth, not the primary fix: it recovers a job script that dies
-while the runner survives (a crash, a non-zero exit, the hard TeePopen timeout). It cannot
-recover the whole runner process being cancelled, which is what happened on the evidenced
-job -- nothing local is left to upload the checkpoint then. The primary fix is bounding
-the archiving that starves the upload (`test_shell_timeout_watchdog.py`).
+This is defence in depth, not the primary fix: it recovers a job script that dies while
+the runner survives, not the whole runner process being cancelled - nothing local is left
+to upload the checkpoint then. The primary fix is bounding the archiving that starves the
+upload (`test_shell_timeout_watchdog.py`).
 """
 
 import ast
@@ -35,6 +34,7 @@ import sys
 
 sys.path.insert(0, os.path.join(os.path.dirname(__file__), "../.."))
 
+from ci.jobs.integration_test_job import checkpoint_collected_results
 from ci.praktika.result import Result, ResultInfo
 from ci.praktika.settings import Settings
 from ci.praktika.utils import Utils
@@ -47,11 +47,27 @@ _JOB_SCRIPT = os.path.abspath(
 # --- the checkpoint runs BEFORE the archiving it protects against ---------------------
 
 
-def _find_main(tree):
+_CHECKPOINT_HELPER = "checkpoint_collected_results"
+
+
+def _find_function(tree, name):
     for node in ast.walk(tree):
-        if isinstance(node, ast.FunctionDef) and node.name == "main":
+        if isinstance(node, ast.FunctionDef) and node.name == name:
             return node
-    raise AssertionError("main() not found in integration_test_job.py")
+    raise AssertionError(f"{name}() not found in integration_test_job.py")
+
+
+def _find_main(tree):
+    return _find_function(tree, "main")
+
+
+def _find_checkpoint(tree):
+    """The helper that performs the checkpoint.
+
+    Resolved by name so a checkpoint moved back inline reddens here rather than making
+    the arms below silently match nothing.
+    """
+    return _find_function(tree, _CHECKPOINT_HELPER)
 
 
 def _call_lines(scope, predicate):
@@ -64,6 +80,10 @@ def _call_lines(scope, predicate):
 
 def _is_set_results_call(node):
     return isinstance(node.func, ast.Attribute) and node.func.attr == "set_results"
+
+
+def _is_checkpoint_helper_call(node):
+    return isinstance(node.func, ast.Name) and node.func.id == _CHECKPOINT_HELPER
 
 
 def _is_compress_call(node):
@@ -147,11 +167,11 @@ def test_checkpoint_precedes_the_archiving_in_main():
         tree = ast.parse(f.read(), filename=_JOB_SCRIPT)
     main = _find_main(tree)
 
-    checkpoints = _call_lines(main, _is_set_results_call)
+    checkpoints = _call_lines(main, _is_checkpoint_helper_call)
     archives = _call_lines(main, _is_compress_call)
 
     assert checkpoints, (
-        "main() contains no set_results call: the collected results are never "
+        f"main() never calls {_CHECKPOINT_HELPER}: the collected results are not "
         "checkpointed before post-processing"
     )
     assert archives, (
@@ -161,6 +181,74 @@ def test_checkpoint_precedes_the_archiving_in_main():
     assert checkpoints[0] < archives[0], (
         f"the first checkpoint is at line {checkpoints[0]} but archiving starts at line "
         f"{archives[0]}: an archiving overrun would again discard the collected results"
+    )
+
+
+def test_main_hands_the_checkpoint_its_collected_results():
+    """`main` must pass the results it collected, not some other expression.
+
+    The helper is tested directly below; this is the one property only the call site can
+    show. `checkpoint_collected_results(job_name, [], is_local_run)` would satisfy every
+    other assertion here while writing the empty report the change exists to prevent.
+    """
+    with open(_JOB_SCRIPT, encoding="utf-8") as f:
+        tree = ast.parse(f.read(), filename=_JOB_SCRIPT)
+    main = _find_main(tree)
+
+    calls = [
+        node
+        for node in ast.walk(main)
+        if isinstance(node, ast.Call) and _is_checkpoint_helper_call(node)
+    ]
+    assert calls, f"main() never calls {_CHECKPOINT_HELPER}"
+
+    for node in calls:
+        passed = node.args + [kw.value for kw in node.keywords]
+        names = [arg.id for arg in passed if isinstance(arg, ast.Name)] + [
+            arg.attr for arg in passed if isinstance(arg, ast.Attribute)
+        ]
+        assert "test_results" in names, (
+            f"the checkpoint call at line {node.lineno} does not pass `test_results` "
+            f"(passes {names}); anything else can persist an empty report"
+        )
+        assert "is_local_run" in names, (
+            f"the checkpoint call at line {node.lineno} hard-codes its local-run flag "
+            f"(passes {names}); the helper's guard would then decide on a constant"
+        )
+
+
+def test_the_checkpoint_call_is_unconditional():
+    """`main` must call the checkpoint on every path, not under a condition of its own.
+
+    The helper owns the only guard there should be, and the runtime arms drive the
+    helper. A second guard wrapped around the CALL SITE is therefore invisible to every
+    other arm here while stopping the checkpoint from ever running in CI, which is the
+    whole defect. Asserted as "a bare call statement in main's own body", the property
+    that makes it unconditional.
+    """
+    with open(_JOB_SCRIPT, encoding="utf-8") as f:
+        tree = ast.parse(f.read(), filename=_JOB_SCRIPT)
+    main = _find_main(tree)
+
+    calls = [
+        node
+        for node in ast.walk(main)
+        if isinstance(node, ast.Call) and _is_checkpoint_helper_call(node)
+    ]
+    assert calls, f"main() never calls {_CHECKPOINT_HELPER}"
+
+    top_level = [
+        statement
+        for statement in main.body
+        if isinstance(statement, ast.Expr)
+        and isinstance(statement.value, ast.Call)
+        and _is_checkpoint_helper_call(statement.value)
+    ]
+    assert len(top_level) == len(calls), (
+        f"only {len(top_level)} of {len(calls)} checkpoint calls are bare statements of "
+        "main()'s body; the rest are nested inside a conditional, loop or try, so the "
+        "checkpoint would not run on every path -- and the helper already owns the only "
+        "guard there should be"
     )
 
 
@@ -275,18 +363,50 @@ def test_the_on_error_hook_publishes_its_archive_by_rename():
             "the on_error_hook does not accept tar's benign exit 1, so it would discard "
             f"a complete archive whenever an input was appended to. Hook:\n{hook}"
         )
+        # And an rc outside 0/1 is not by itself fatal. The hook's `_instances*` glob
+        # matches nothing until a cluster starts, and the unexpanded pattern makes tar
+        # exit 2 after archiving every input that did exist, so gating on the rc alone
+        # discards a complete archive on the very path this hook exists to serve.
+        assert 'tar -tzf "$tmp_archive"' in hook, (
+            "the on_error_hook rejects on tar's exit code alone: it never checks whether "
+            f"the archive reads back, so a complete one is discarded. Hook:\n{hook}"
+        )
+        probe = hook.index('tar -tzf "$tmp_archive"')
+        publish = hook.index('mv "$tmp_archive" ./ci/tmp/logs.tar.gz')
+        assert probe < publish, (
+            "the on_error_hook reads the archive back only after publishing it, so the "
+            f"check cannot gate the rename. Hook:\n{hook}"
+        )
 
 
 def test_checkpoint_uses_the_existing_result_not_a_fresh_one():
     """The checkpoint must be built with `from_fs`, never `Result.create_from`.
 
     `create_from` takes no `ext`, so it would drop the on_error_hook and the run url.
+
+    The `create_from` half is asserted as an absence, not only as a property of the
+    `set_results` receiver: a rewrite to `Result.create_from(...).dump()` has no
+    `set_results` call at all, so a receiver-only check would iterate over nothing and
+    pass.
     """
     with open(_JOB_SCRIPT, encoding="utf-8") as f:
         tree = ast.parse(f.read(), filename=_JOB_SCRIPT)
-    main = _find_main(tree)
+    checkpoint = _find_checkpoint(tree)
 
-    for node in ast.walk(main):
+    constructors = sorted(
+        node.func.attr
+        for node in ast.walk(checkpoint)
+        if isinstance(node, ast.Call)
+        and isinstance(node.func, ast.Attribute)
+        and node.func.attr in ("from_fs", "create_from")
+    )
+    assert constructors == ["from_fs"], (
+        f"{_CHECKPOINT_HELPER}() builds its result with {constructors} instead of "
+        "exactly ['from_fs']; anything but from_fs discards ext, which holds the "
+        "on_error_hook and the run url"
+    )
+
+    for node in ast.walk(checkpoint):
         if not (isinstance(node, ast.Call) and _is_set_results_call(node)):
             continue
         receiver = node.func.value
@@ -301,21 +421,22 @@ def test_checkpoint_uses_the_existing_result_not_a_fresh_one():
 
 
 def test_checkpoint_persists_the_collected_results():
-    """The checkpoint must pass the collected results, not some other expression.
+    """The helper must persist its own argument, not some other expression.
 
     `set_results([])` satisfies every structural property of the call while writing an
     empty result list, which is precisely the empty report the change exists to prevent.
     """
     with open(_JOB_SCRIPT, encoding="utf-8") as f:
         tree = ast.parse(f.read(), filename=_JOB_SCRIPT)
-    main = _find_main(tree)
+    checkpoint = _find_checkpoint(tree)
+    parameters = [arg.arg for arg in checkpoint.args.args]
 
     calls = [
         node
-        for node in ast.walk(main)
+        for node in ast.walk(checkpoint)
         if isinstance(node, ast.Call) and _is_set_results_call(node)
     ]
-    assert calls, "main() contains no set_results call"
+    assert calls, f"{_CHECKPOINT_HELPER}() contains no set_results call"
 
     for node in calls:
         assert len(node.args) == 1, (
@@ -323,9 +444,9 @@ def test_checkpoint_persists_the_collected_results():
             "arguments; expected exactly the collected results"
         )
         argument = node.args[0]
-        assert isinstance(argument, ast.Name) and argument.id == "test_results", (
+        assert isinstance(argument, ast.Name) and argument.id in parameters, (
             f"the checkpoint at line {node.lineno} passes "
-            f"{ast.dump(argument)} instead of the `test_results` collected so far; "
+            f"{ast.dump(argument)} instead of one of its own parameters {parameters}; "
             "anything else can persist an empty report"
         )
 
@@ -334,19 +455,20 @@ def test_checkpoint_assigns_no_status_at_the_call_site():
     """The checkpoint statement must not assign a status.
 
     Every status decision in main() runs after this point, so a status assigned here
-    would be published as final on a killed job. Asserted structurally because the
-    behavioural arm drives `Result` directly and cannot see main()'s own call.
+    would be published as final on a killed job. Asserted structurally as well as
+    behaviourally: the runtime arm can only see the status the helper happens to leave,
+    not a `set_status` that a later refactor puts back on the same statement.
     """
     with open(_JOB_SCRIPT, encoding="utf-8") as f:
         tree = ast.parse(f.read(), filename=_JOB_SCRIPT)
-    main = _find_main(tree)
+    checkpoint = _find_checkpoint(tree)
 
     calls = [
         node
-        for node in ast.walk(main)
+        for node in ast.walk(checkpoint)
         if isinstance(node, ast.Call) and _is_set_results_call(node)
     ]
-    assert calls, "main() contains no set_results call"
+    assert calls, f"{_CHECKPOINT_HELPER}() contains no set_results call"
 
     for node in calls:
         # Anywhere in the same chain, e.g. `.set_results(x).set_status(OK)`.
@@ -357,7 +479,7 @@ def test_checkpoint_assigns_no_status_at_the_call_site():
             and isinstance(sub.func, ast.Attribute)
             and sub.func.attr in _STATUS_ASSIGNING_METHODS
         ]
-        statement = _smallest_enclosing_statement(main, node)
+        statement = _smallest_enclosing_statement(checkpoint, node)
         assert statement is not None, f"no statement encloses line {node.lineno}"
         on_statement = _status_assignments_in(statement)
         assert chained == [] and on_statement == [], (
@@ -373,8 +495,13 @@ def test_checkpoint_assigns_no_status_at_the_call_site():
 _SENTINEL_HOOK = "echo checkpoint-hook-sentinel"
 
 
-def _checkpointed_result(tmp_path, children):
-    """A RUNNING result with a hook, then checkpointed with `children`. Re-read from fs."""
+def _checkpointed_result(tmp_path, children, is_local_run=False):
+    """A RUNNING result with a hook, then checkpointed with `children`. Re-read from fs.
+
+    The checkpoint is performed by calling the job script's own helper, so a checkpoint
+    that never runs (a wrong guard, a disabled body) reddens here. Re-implementing the
+    setter sequence by hand would pass in that case.
+    """
     original_temp_dir = Settings.TEMP_DIR
     Settings.TEMP_DIR = str(tmp_path)
     try:
@@ -389,9 +516,7 @@ def _checkpointed_result(tmp_path, children):
             start_time=Utils.timestamp(),
         ).set_on_error_hook(_SENTINEL_HOOK).dump()
 
-        # The checkpoint, exactly as main() performs it: no trailing .dump(), because
-        # set_results dumps through _dump_if_persisted once the file exists.
-        Result.from_fs(name).set_results(children)
+        checkpoint_collected_results(name, children, is_local_run)
 
         return Result.from_fs(name)
     finally:
@@ -406,12 +531,31 @@ def _children(count):
 
 
 def test_checkpoint_persists_the_children(tmp_path):
-    """The collected results must be on disk after the checkpoint, with no extra dump."""
+    """The collected results must be on disk after the checkpoint, with no extra dump.
+
+    This is the arm that catches a checkpoint which never executes. The structural arms
+    above see only that the call exists, so a guard that is never true -- or a body
+    disabled outright -- satisfies all of them while restoring the empty report.
+    """
     reread = _checkpointed_result(tmp_path, _children(3))
 
     assert len(reread.results) == 3, (
         f"the checkpoint persisted {len(reread.results)} children instead of 3; "
         "set_results did not reach disk"
+    )
+
+
+def test_checkpoint_is_skipped_on_a_local_run(tmp_path):
+    """A local run has no runner to publish anything, so nothing is written.
+
+    Pins the guard's polarity. Inverted, this arm sees the children appear and the arm
+    above sees them vanish, so the two together fix the guard's direction.
+    """
+    reread = _checkpointed_result(tmp_path, _children(3), is_local_run=True)
+
+    assert reread.results == [], (
+        f"a local run wrote {len(reread.results)} children to the result file; the "
+        "guard's polarity is inverted"
     )
 
 
@@ -468,6 +612,8 @@ if __name__ == "__main__":
     from pathlib import Path
 
     test_checkpoint_precedes_the_archiving_in_main()
+    test_main_hands_the_checkpoint_its_collected_results()
+    test_the_checkpoint_call_is_unconditional()
     test_every_archiving_call_site_is_bounded()
     test_the_on_error_hook_is_bounded()
     test_the_on_error_hook_publishes_its_archive_by_rename()
@@ -476,6 +622,7 @@ if __name__ == "__main__":
     test_checkpoint_assigns_no_status_at_the_call_site()
     for fn in (
         test_checkpoint_persists_the_children,
+        test_checkpoint_is_skipped_on_a_local_run,
         test_checkpoint_assigns_no_status,
         test_checkpoint_preserves_the_on_error_hook,
         test_runner_patch_turns_the_checkpoint_into_a_populated_error,

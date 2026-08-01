@@ -2,47 +2,35 @@
 Regression tests for bounded post-run archiving (`Utils.compress_files_gz`) and the
 `Shell` watchdog (`Shell._check_timeout`) that enforces its bound.
 
-Background
-----------
-An integration shard hung ~80 minutes in the unbounded post-run `tar` that runs between
-collecting the results and the only result dump, and published a job-level ERROR with no
-children while 502 per-test outcomes sat in its own log.
+Archiving sits between collecting the results and the only result dump, so the bound
+must cost the tarball and nothing else. Four properties carry that, and a bounding-only
+change gets each of them wrong:
 
-`Utils.compress_files_gz` now takes a `timeout`, and so does the `on_error_hook` in
-`Runner._get_result_object` (the second unbounded archiving path ahead of the upload).
-An overrun must cost the tarball only, so three properties are required beyond the bound
-itself, each of which a bounding-only change gets wrong:
-
-* it must not raise. `Shell.check(..., strict=True, timeout=N)` raises `RuntimeError` on
-  the timeout, so merely adding `timeout=` converts the hang into an exception that still
-  skips the result dump. A missing input and a failed publish must not raise either.
+* it must not raise. `Shell.check(..., strict=True, timeout=N)` raises on the timeout,
+  which still skips the result dump. Nor may a missing input or a failed publish raise.
 * it must not publish a partial archive. `tar` killed by SIGTERM leaves a large truncated
-  archive that the upload's existence check accepts, so it would be published as the
-  logs. The archive is built under a temporary name and renamed in on success only, and
-  that name is unique per writer: the two callers that write the job's `logs.tar.gz`
-  otherwise share one temporary, and the loser keeps writing into the published archive.
-* it must tell a real failure from a benign one, in BOTH directions:
-  - `tar -cf - -T <list> | gzip > <archive>` reported only gzip's status (`Shell.run` uses
-    bash without `pipefail`), so a tar that failed part-way exited 0 and the previous
-    `strict=True` could not catch it at all. The direct `tar -czf` form reports it.
-  - `tar` exit 1 is "some files differ", which a file appended to while being read
-    produces. Every archive here contains such files, so rejecting 1 would discard a
-    complete archive on essentially every failing shard - a worse regression than the
-    hang, because it needs no timeout to fire.
+  archive that the upload's existence check accepts, so the archive is built under a
+  temporary name and renamed in only once it is known good.
+* that temporary name must be unique per writer. Both callers writing the job's
+  `logs.tar.gz` stage beside it, and a shared name lets the loser keep writing into the
+  archive the winner already published.
+* it must judge the archive, not `tar`'s exit code. `tar` reports failure for an input it
+  cannot stat while archiving everything else and finishing the stream, so the exit code
+  alone cannot tell a complete archive from a truncated one; `tar -tzf` can, because it
+  walks the member stream. `tar -cf - | gzip` could not even report the failure - without
+  `pipefail` only gzip's status was visible - which is why the direct `-czf` form is used.
 
-The watchdog fix is a prerequisite, not separate scope: bounding is what starts passing
+The watchdog is a prerequisite, not separate scope: bounding is what starts passing
 `timeout=` to short-lived commands inside long-lived processes, and `_check_timeout` slept
-the timeout out unconditionally and then killpg'd the group, so a command that finished
-immediately left a live watchdog that would later signal a possibly PID-recycled group.
-It now waits on an `Event` set when the attempt's child is reaped, with a process-GROUP
-liveness backstop: a leader-only `poll()` returns without enforcing anything whenever a
-background descendant holds the output pipes that keep `finished` unset. The `Event` is
-created inside the retry loop, because a single Event hoisted out of it would already be
-set when attempt 2's watchdog began waiting, leaving every retry after the first
-unenforced.
+the timeout out unconditionally before killpg'ing the group, so a command that finished
+immediately left a live watchdog aimed at a possibly PID-recycled group. It now waits on
+an `Event` set when the attempt's child is reaped, backstopped by a process-GROUP liveness
+test: a background descendant holding the output pipes keeps `finished` unset while the
+leader is already reaped, so a leader-only test would return without enforcing anything.
+The `Event` is per attempt, since one hoisted out of the retry loop is already set when
+attempt 2 begins waiting.
 
-`TeePopen._check_timeout` had the same blind sleep and was fixed by cfb2ac8ff0c244;
-`Shell._check_timeout` was the remaining twin.
+`TeePopen._check_timeout` had the same blind sleep and was fixed by cfb2ac8ff0c244.
 """
 
 import os
@@ -128,10 +116,9 @@ def test_the_archive_command_does_not_pipe_tar_into_gzip():
     `strict=True` never caught a tar failure, and which would make the success-gated
     rename publish a silently incomplete archive as the logs.
 
-    This is asserted on the command rather than behaviourally because every way of making
-    tar fail deterministically is either unavailable to a test (a path vanishing
-    mid-archive) or ineffective for root, which is who the CI Tests job runs as. The
-    behavioural counterpart below covers a non-root developer run.
+    Asserted on the command as well as behaviourally, because the behavioural arms can
+    only show that the current form reports a failure - not that a future refactor back
+    to a pipe would stop reporting it.
     """
     calls = []
 
@@ -163,41 +150,38 @@ def test_the_archive_command_does_not_pipe_tar_into_gzip():
 
 
 def test_archive_reports_tar_failure_and_publishes_nothing(tmp_path):
-    """Behavioural counterpart: a failing tar is reported and publishes nothing.
+    """A tar that could not finish writing must be reported and publish nothing.
 
-    Uses an unreadable input, which root can read regardless, so this is skipped there
-    (the CI Tests job runs as root in its container) and the command-form test above is
-    what holds in CI. Skipping loudly rather than returning silently, so it cannot look
-    like a passing assertion.
+    The counterpart of the arm above: the same non-zero exit, but this time the archive
+    is genuinely unusable, so the two together show that the outcome follows the
+    archive's state rather than the exit code. A write limit on the output is the
+    trigger, because it is what a real out-of-space archiving looks like and needs no
+    privileges - unlike an unreadable input, which root reads regardless.
     """
-    src = tmp_path / "src"
-    src.mkdir()
-    good = src / "good.txt"
-    good.write_text("payload\n")
-    unreadable = src / "unreadable.txt"
-    unreadable.write_text("payload\n")
-    unreadable.chmod(0o000)
-    if os.access(unreadable, os.R_OK):
-        unreadable.chmod(0o644)
-        import pytest
-
-        pytest.skip("running as root: an unreadable file is still readable")
-
+    src = _slow_tree(tmp_path)
     archive = tmp_path / "logs.tar.gz"
+
+    original_run = Shell.run
+
+    def run_with_a_write_limit(command, **kwargs):
+        # `ulimit -f` is in 512-byte blocks: 100 blocks = 50KB, far below the archive.
+        return original_run(f"ulimit -f 100; {command}", **kwargs)
+
+    Shell.run = staticmethod(run_with_a_write_limit)
     try:
-        result = Utils.compress_files_gz(
-            [str(good), str(unreadable)], str(archive), timeout=600
-        )
+        result = Utils.compress_files_gz([str(src)], str(archive), timeout=600)
     finally:
-        unreadable.chmod(0o644)
+        Shell.run = original_run
 
     assert result is None, (
-        f"a failing tar reported success ({result!r}); the pipe form hides tar's exit "
-        "status, so a silently incomplete archive would be published"
+        f"a tar that could not finish writing reported success ({result!r}); the "
+        "truncated archive would be published as the logs"
     )
     assert (
         not archive.exists()
     ), "a failing tar left an archive at the destination instead of being discarded"
+    leftovers = [p.name for p in tmp_path.iterdir() if p.name.startswith("logs.tar.gz")]
+    assert leftovers == [], f"temporary archive files were left behind: {leftovers}"
 
 
 def test_archive_failure_leaves_an_existing_archive_intact(tmp_path):
@@ -230,11 +214,10 @@ def test_archive_publishes_a_member_appended_to_while_read(tmp_path):
     complete archive. Every archive this helper builds for a CI job contains such files -
     the job's own log, the docker log, live test instance directories - so treating 1 as
     failure would discard a complete archive on essentially every failing shard, without
-    the timeout ever firing. The old pipe form hid this by reporting only gzip's status.
+    the timeout ever firing.
 
-    Reliability: the appended-to member is pre-seeded so tar spends measurable time
-    reading it. Measured 10/10 at 1MB and 2MB with a tight-loop writer (tar itself ~0.1s),
-    and 10/10 at 2-20MB with a 5ms-interval writer.
+    The appended-to member is pre-seeded large enough that tar spends measurable time
+    reading it, which is what makes the overlap with the writer reliable.
     """
     src = tmp_path / "src"
     src.mkdir()
@@ -271,13 +254,68 @@ def test_archive_publishes_a_member_appended_to_while_read(tmp_path):
     ), f"the published archive is missing members: {listing!r}"
 
 
+def test_archive_publishes_a_complete_archive_despite_a_failing_tar_exit(tmp_path):
+    """A complete archive must be published even when `tar` exits non-zero.
+
+    `tar` reports failure for an input it cannot stat, yet archives every input that it
+    could and finishes the stream. Both archiving paths routinely hit that: the hook's
+    `_instances*` glob is unexpanded whenever the job errored before a cluster started,
+    and here an input vanishes between the existence filter and tar. Rejecting on the rc
+    alone therefore discards a complete archive without the timeout ever firing.
+
+    Needs no privileges, unlike the unreadable-input arm below, so it also covers the
+    failure direction on the root CI runner. Deterministic: the input is removed from
+    inside the mocked `Shell.run`, once, immediately before the real call.
+    """
+    src = tmp_path / "src"
+    src.mkdir()
+    (src / "kept.txt").write_text("payload\n")
+    doomed = tmp_path / "doomed"
+    doomed.mkdir()
+    (doomed / "x.txt").write_text("about to vanish\n")
+    archive = tmp_path / "logs.tar.gz"
+
+    original_run = Shell.run
+    removed = []
+
+    def remove_then_run(command, **kwargs):
+        if not removed:
+            removed.append(True)
+            subprocess.run(["rm", "-rf", str(doomed)], check=True)
+        return original_run(command, **kwargs)
+
+    Shell.run = staticmethod(remove_then_run)
+    try:
+        result = Utils.compress_files_gz(
+            [str(src), str(doomed)], str(archive), timeout=600
+        )
+    finally:
+        Shell.run = original_run
+
+    assert removed, "the input was never removed: this arm proves nothing"
+    assert result == str(archive), (
+        f"a complete archive was discarded over tar's exit code ({result!r}); the "
+        "surviving inputs were archived and the stream finished"
+    )
+    listing = subprocess.run(
+        ["tar", "-tzf", str(archive)], capture_output=True, text=True, check=True
+    ).stdout
+    assert (
+        "kept.txt" in listing
+    ), f"the surviving input is not in the archive: {listing!r}"
+    assert "x.txt" not in listing, (
+        f"the vanished input appears in the archive: {listing!r}; the trigger did not "
+        "work as intended"
+    )
+
+
 def test_archive_skips_missing_inputs_without_raising(tmp_path):
     """A declared-but-absent input must be dropped, not raise.
 
     `Result.from_pytest_run` registers the pytest log and report files before running
-    pytest, and a conftest import error or a usage error leaves both absent (measured with
-    pytest 7.4.4). Raising here would skip the caller's result upload, which is exactly
-    the outcome the bound exists to prevent.
+    pytest, and a conftest import error or a usage error leaves both absent. Raising here
+    would skip the caller's result upload, which is exactly the outcome the bound exists
+    to prevent.
     """
     present = tmp_path / "present.txt"
     present.write_text("payload\n")
@@ -338,8 +376,7 @@ def test_the_temporary_archive_name_is_unique_per_writer(tmp_path):
     Both callers that write the job's `logs.tar.gz` stage next to it. Sharing one
     temporary name introduces a corruption mode the destination-writing form did not
     have: one writer's rename publishes the file while the other's open descriptor
-    follows the inode and keeps writing into the PUBLISHED archive (measured out of
-    tree: 21495808 -> 81990028 bytes after publication, and `tar -tzf` then rejects it).
+    follows the inode and keeps writing into the PUBLISHED archive.
 
     Asserted by observing the staged name, because reproducing the overlap needs two
     concurrent archiving processes racing on one path.
@@ -458,8 +495,7 @@ def test_timeout_is_enforced_when_a_background_descendant_holds_the_pipes():
     over, so a background descendant inheriting those pipes keeps the readers blocked and
     `finished` unset while the shell leader is already reaped. A leader-only `poll()`
     backstop sees the reaped leader and returns without signalling the group, leaving the
-    command entirely unbounded (measured: 60.0s against a 3s bound). Testing the process
-    GROUP instead restores enforcement.
+    command entirely unbounded. Testing the process GROUP instead restores enforcement.
     """
     start = time.monotonic()
     Shell.run(
@@ -517,15 +553,15 @@ def test_every_retry_attempt_is_bounded():
     elapsed = time.monotonic() - start
 
     # The primary pin is the return code, not the duration: an unenforced attempt 2 runs
-    # the command to completion, so it SUCCEEDS and the call returns 0 (measured: rc 0
-    # after 64s with a shared Event, against rc -15 after 6s when bounded).
+    # the command to completion, so it SUCCEEDS and the call returns 0, where a bounded
+    # one is killed and returns -15.
     assert rc != 0, (
         f"the call reported success (rc {rc}); the last attempt ran to completion, so its "
         "timeout was never enforced -- which is what a shared timeout Event causes"
     )
     # Corroborating bound, tight enough to also discriminate: bounded costs about one
-    # timeout per attempt plus the delay (6s measured), unbounded costs the child's full
-    # sleep (64s measured).
+    # timeout per attempt plus the inter-attempt delay, unbounded costs the child's full
+    # sleep.
     ceiling = retries * WATCHDOG_TIMEOUT + inter_attempt_delay + 15
     assert elapsed < ceiling, (
         f"{retries} attempts took {elapsed:.1f}s (>= {ceiling}s); attempt 2 ran "
@@ -549,6 +585,7 @@ if __name__ == "__main__":
         test_archive_reports_tar_failure_and_publishes_nothing,
         test_archive_failure_leaves_an_existing_archive_intact,
         test_archive_publishes_a_member_appended_to_while_read,
+        test_archive_publishes_a_complete_archive_despite_a_failing_tar_exit,
         test_archive_skips_missing_inputs_without_raising,
         test_archive_of_nothing_returns_none,
         test_archive_publish_failure_is_reported_not_raised,
