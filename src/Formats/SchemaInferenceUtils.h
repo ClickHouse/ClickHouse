@@ -124,8 +124,11 @@ void transformInferredTypesIfNeeded(DataTypePtr & first, DataTypePtr & second, c
 /// True if merging these two types could perform the one widening whose correctness depends on
 /// inference provenance: Int64 to UInt64, at the top level or at the same nested position. A caller
 /// that has no provenance available can use this to decline the merge instead of widening blind.
-/// When the two shapes do not line up positionally, the answer is whether one side contains an Int64
-/// and the other a UInt64 at all: a shape difference on its own is not a sign-dependent widening.
+/// The pairing follows transformTypesRecursively, which is what would run the widening: Nullable is
+/// peeled at every level, and a container is descended into only when both sides are the same
+/// container kind (with matching element counts and names for Tuple). Once the shapes diverge the
+/// answer is false, because the transformation never pairs the integers below that point and there is
+/// no widening there to decline.
 bool isSignDependentIntegerWidening(const DataTypePtr & first, const DataTypePtr & second);
 
 /// Re-record on `to` the inference provenance held for the equal type `from`, recursively for nested
