@@ -821,6 +821,11 @@ void FunctionSecretArgumentsFinder::findTableEngineSecretArguments()
         /// the same finder (it also handles the named-collection form `Remote(named_collection, ...)`).
         findRemoteFunctionSecretArguments();
     }
+    else if (engine_name == "NATS")
+    {
+        /// NATS(named_collection, nats_password = 'password', nats_credentials = '...', ...)
+        findNATSTableEngineSecretArguments();
+    }
     else if ((engine_name == "JDBC") || (engine_name == "ODBC"))
     {
         /// JDBC('DSN', database, table)
@@ -828,6 +833,17 @@ void FunctionSecretArgumentsFinder::findTableEngineSecretArguments()
         /// The DSN (connection string) may contain credentials.
         findXDBCSecretArguments();
     }
+}
+
+void FunctionSecretArgumentsFinder::findNATSTableEngineSecretArguments()
+{
+    /// NATS(named_collection [, nats_password = 'password'] [, nats_token = 'token']
+    ///      [, nats_credential_file = '/path'] [, nats_credentials = 'user JWT and seed'], ...)
+    /// The only positional argument the engine accepts is the name of a named collection, so the
+    /// credentials can only appear as named overrides. The `SETTINGS` clause form is masked
+    /// separately by `NATS::SETTINGS_TO_HIDE`.
+    for (const auto & key : nats_secret_keys)
+        findSecretNamedArgument(key);
 }
 
 void FunctionSecretArgumentsFinder::findExternalDistributedTableEngineSecretArguments()

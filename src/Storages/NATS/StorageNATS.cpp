@@ -846,15 +846,55 @@ String StorageNATS::getConsumerName() const
     return getContext()->getMacros()->expand((*nats_settings)[NATSSetting::nats_consumer_name]);
 }
 
+namespace
+{
+
+/// `nats_credential_file` and `nats_credentials` are two ways to provide the same credentials, so only one
+/// of them may be specified. A source specified in the query (in the `SETTINGS` clause or as a named-collection
+/// override) is more specific than one stored in the named collection, so it replaces it instead of conflicting
+/// with it - otherwise a named collection with one of the sources could not be reused by a table which provides
+/// the other one.
+void resolveCredentialSource(NATSSettings & nats_settings, bool credential_file_from_collection, bool credentials_from_collection)
+{
+    const bool credential_file_set = !nats_settings[NATSSetting::nats_credential_file].value.empty();
+    const bool credentials_set = !nats_settings[NATSSetting::nats_credentials].value.empty();
+
+    const bool credential_file_from_query = credential_file_set && !credential_file_from_collection;
+    const bool credentials_from_query = credentials_set && !credentials_from_collection;
+
+    if (credential_file_from_query && credentials_from_query)
+        throw Exception(ErrorCodes::BAD_ARGUMENTS, "You can specify only one of `nats_credential_file` and `nats_credentials`");
+
+    if (credential_file_from_collection && credentials_from_collection)
+        throw Exception(
+            ErrorCodes::BAD_ARGUMENTS,
+            "The named collection can specify only one of `nats_credential_file` and `nats_credentials`");
+
+    if (credential_file_from_query && credentials_from_collection)
+        nats_settings[NATSSetting::nats_credentials] = String{};
+    else if (credentials_from_query && credential_file_from_collection)
+        nats_settings[NATSSetting::nats_credential_file] = String{};
+}
+
+}
+
 void registerStorageNATS(StorageFactory & factory);
 void registerStorageNATS(StorageFactory & factory)
 {
     auto creator_fn = [](const StorageFactory::Arguments & args)
     {
         auto nats_settings = std::make_unique<NATSSettings>();
+        /// Whether a credential source comes from the named collection itself rather than from a query override.
+        bool credential_file_from_collection = false;
+        bool credentials_from_collection = false;
         if (auto named_collection = tryGetNamedCollectionWithOverrides(args.engine_args, args.getLocalContext(), true, nullptr, &args.table_id))
         {
             nats_settings->loadFromNamedCollection(named_collection);
+
+            credential_file_from_collection = !(*nats_settings)[NATSSetting::nats_credential_file].value.empty()
+                && !named_collection->isQueryOverridden("nats_credential_file");
+            credentials_from_collection = !(*nats_settings)[NATSSetting::nats_credentials].value.empty()
+                && !named_collection->isQueryOverridden("nats_credentials");
         }
         else if (!args.storage_def->settings)
             throw Exception(ErrorCodes::BAD_ARGUMENTS, "NATS engine must have settings");
@@ -870,8 +910,7 @@ void registerStorageNATS(StorageFactory & factory)
         if (!(*nats_settings)[NATSSetting::nats_subjects].changed)
             throw Exception(ErrorCodes::NUMBER_OF_ARGUMENTS_DOESNT_MATCH, "You must specify `nats_subjects` setting");
 
-        if ((*nats_settings)[NATSSetting::nats_credential_file].changed && (*nats_settings)[NATSSetting::nats_credentials].changed)
-            throw Exception(ErrorCodes::BAD_ARGUMENTS, "You can specify only one of `nats_credential_file` and `nats_credentials`");
+        resolveCredentialSource(*nats_settings, credential_file_from_collection, credentials_from_collection);
 
         if ((*nats_settings)[NATSSetting::nats_consumer_name].changed && !(*nats_settings)[NATSSetting::nats_stream].changed)
             throw Exception(ErrorCodes::NUMBER_OF_ARGUMENTS_DOESNT_MATCH, "To use NATS jet stream, you must specify `nats_stream` setting");
