@@ -806,13 +806,13 @@ def _fe(t, body):
 def test_extended_query_ready_for_query_and_describe(started_cluster):
     # Regression for the extended-query protocol contract on the typed-Bind path.
     #
-    # ReadyForQuery must be emitted exactly once per Sync. Marking only
-    # Parse/Bind (not Describe/Close/Execute) as in-progress caused a standalone
-    # Describe/Sync or Close/Sync to emit ReadyForQuery mid-cycle (before the
-    # Sync was read) and then again for the Sync, desyncing strict clients that
-    # count one ReadyForQuery per Sync. Every extended-query message now sets
-    # is_query_in_progress; only Sync clears it and emits the single
-    # ReadyForQuery that ends the series.
+    # ReadyForQuery must be emitted exactly once per Sync. Emitting it at the top
+    # of every idle loop iteration caused a standalone Describe/Sync or Close/Sync
+    # to emit ReadyForQuery mid-cycle (before the Sync was read) and then again for
+    # the Sync, desyncing strict clients that count one ReadyForQuery per Sync. It
+    # is now armed only at explicit protocol boundaries -- startup, a completed
+    # simple query, and Sync -- so extended-query messages never produce one of
+    # their own.
     #
     # Describe is a silent no-op: this wire implementation does not know the row
     # layout until the query runs, and the RowDescription is emitted at Execute
