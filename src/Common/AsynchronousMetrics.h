@@ -2,7 +2,6 @@
 
 #include <Common/CgroupsMemoryUsageObserver.h>
 #include <Common/MemoryStatisticsOS.h>
-#include <Common/MemoryWorker.h>
 #include <Common/ThreadPool.h>
 #include <Common/Stopwatch.h>
 #include <Common/SharedMutex.h>
@@ -93,15 +92,8 @@ protected:
 private:
     virtual void updateImpl(TimePoint update_time, TimePoint current_time, bool force_update, bool first_run, AsynchronousMetricValues & new_values) = 0;
     virtual void logImpl(AsynchronousMetricValues &) { }
-    static const AsynchronousMetricValue * getAsynchronousMetricValue(const AsynchronousMetricValues & values, std::string_view name);
+    static auto tryGetMetricValue(const AsynchronousMetricValues & values, const String & metric, size_t default_value = 0);
     void processWarningForMutationStats(const AsynchronousMetricValues & new_values) const;
-
-    void processWarningForMemoryOverload(const AsynchronousMetricValues & new_values) const;
-    void processWarningForCPUOverload(const AsynchronousMetricValues & new_values) const;
-
-    using Clock = std::chrono::steady_clock;
-    mutable std::optional<Clock::time_point> mem_overload_started;
-    mutable std::optional<Clock::time_point> cpu_overload_started;
 
     ProtocolServerMetricsFunc protocol_server_metrics_func;
 
@@ -150,7 +142,7 @@ private:
     std::unordered_map<String /* PSI stall type */, uint64_t> prev_pressure_vals TSA_GUARDED_BY(data_mutex);
 
     std::optional<ReadBufferFromFilePRead> cgroupmem_limit_in_bytes TSA_GUARDED_BY(data_mutex);
-    std::shared_ptr<ICgroupsReader> cgroupmem_reader;
+    std::optional<ReadBufferFromFilePRead> cgroupmem_usage_in_bytes TSA_GUARDED_BY(data_mutex);
     std::optional<ReadBufferFromFilePRead> cgroupcpu_cfs_period TSA_GUARDED_BY(data_mutex);
     std::optional<ReadBufferFromFilePRead> cgroupcpu_cfs_quota TSA_GUARDED_BY(data_mutex);
     std::optional<ReadBufferFromFilePRead> cgroupcpu_max TSA_GUARDED_BY(data_mutex);
@@ -159,7 +151,6 @@ private:
 
     std::optional<ReadBufferFromFilePRead> vm_max_map_count TSA_GUARDED_BY(data_mutex);
     std::optional<ReadBufferFromFilePRead> vm_maps TSA_GUARDED_BY(data_mutex);
-    std::optional<ReadBufferFromFilePRead> process_status TSA_GUARDED_BY(data_mutex);
 
     std::vector<std::unique_ptr<ReadBufferFromFilePRead>> thermal TSA_GUARDED_BY(data_mutex);
 

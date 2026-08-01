@@ -103,22 +103,36 @@ public:
     void updateAggregationState();
     void writeOutCurrentRow();
 
-    Columns & inputAt(const RowNumber & x);
+    Columns & inputAt(const RowNumber & x)
+    {
+        assert(x.block >= first_block_number);
+        assert(x.block - first_block_number < blocks.size());
+        return blocks[x.block - first_block_number].input_columns;
+    }
+
     const Columns & inputAt(const RowNumber & x) const
     {
         return const_cast<WindowTransform *>(this)->inputAt(x);
     }
 
-    WindowTransformBlock & blockAt(UInt64 block_number);
-    const WindowTransformBlock & blockAt(UInt64 block_number) const
+    auto & blockAt(const UInt64 block_number)
+    {
+        assert(block_number >= first_block_number);
+        assert(block_number - first_block_number < blocks.size());
+        return blocks[block_number - first_block_number];
+    }
+
+    const auto & blockAt(const UInt64 block_number) const
     {
         return const_cast<WindowTransform *>(this)->blockAt(block_number);
     }
-    WindowTransformBlock & blockAt(const RowNumber & x)
+
+    auto & blockAt(const RowNumber & x)
     {
         return blockAt(x.block);
     }
-    const WindowTransformBlock & blockAt(const RowNumber & x) const
+
+    const auto & blockAt(const RowNumber & x) const
     {
         return const_cast<WindowTransform *>(this)->blockAt(x);
     }
@@ -127,15 +141,21 @@ public:
     {
         return blockAt(x).rows;
     }
-    MutableColumns & outputAt(const RowNumber & x);
+
+    MutableColumns & outputAt(const RowNumber & x)
+    {
+        assert(x.block >= first_block_number);
+        assert(x.block - first_block_number < blocks.size());
+        return blocks[x.block - first_block_number].output_columns;
+    }
 
     void advanceRowNumber(RowNumber & x) const
     {
-        chassert(x.block >= first_block_number);
-        chassert(x.block - first_block_number < blocks.size());
+        assert(x.block >= first_block_number);
+        assert(x.block - first_block_number < blocks.size());
 
         const auto block_rows = blockAt(x).rows;
-        chassert(x.row < block_rows);
+        assert(x.row < block_rows);
 
         ++x.row;
         if (x.row < block_rows)
@@ -146,6 +166,7 @@ public:
         x.row = 0;
         ++x.block;
     }
+
     RowNumber nextRowNumber(const RowNumber & x) const
     {
         RowNumber result = x;
@@ -166,17 +187,18 @@ public:
         }
 
         --x.block;
-        chassert(x.block >= first_block_number);
-        chassert(x.block < first_block_number + blocks.size());
-        chassert(blockAt(x).rows > 0);
+        assert(x.block >= first_block_number);
+        assert(x.block < first_block_number + blocks.size());
+        assert(blockAt(x).rows > 0);
         x.row = blockAt(x).rows - 1;
 
 #ifndef NDEBUG
         auto advanced_retreated_x = x;
         advanceRowNumber(advanced_retreated_x);
-        chassert(advanced_retreated_x == original_x);
+        assert(advanced_retreated_x == original_x);
 #endif
     }
+
     RowNumber prevRowNumber(const RowNumber & x) const
     {
         RowNumber result = x;
@@ -189,16 +211,18 @@ public:
 
     void assertValid(const RowNumber & x) const
     {
-        chassert(x.block >= first_block_number);
+        assert(x.block >= first_block_number);
         if (x.block == first_block_number + blocks.size())
-            chassert(x.row == 0);
+            assert(x.row == 0);
         else
-            chassert(x.row < blockRowsNumber(x));
+            assert(x.row < blockRowsNumber(x));
     }
+
     RowNumber blocksEnd() const
     {
         return RowNumber{first_block_number + blocks.size(), 0};
     }
+
     RowNumber blocksBegin() const
     {
         return RowNumber{first_block_number, 0};

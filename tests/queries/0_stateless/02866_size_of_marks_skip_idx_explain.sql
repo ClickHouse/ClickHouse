@@ -1,5 +1,4 @@
--- Tags: no-random-merge-tree-settings, no-parallel-replicas
--- no-parallel-replicas - because explain produced different plan
+-- Tags: no-random-merge-tree-settings
 
 SET optimize_move_to_prewhere = 1;
 SET convert_query_to_cnf = 0;

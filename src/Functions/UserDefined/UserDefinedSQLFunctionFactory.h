@@ -1,8 +1,7 @@
 #pragma once
 
-#include <Core/Types.h>
 #include <Common/NamePrompter.h>
-#include <Parsers/ASTCreateSQLFunctionQuery.h>
+#include <Parsers/ASTCreateFunctionQuery.h>
 #include <Interpreters/Context_fwd.h>
 
 
@@ -10,20 +9,18 @@ namespace DB
 {
 class BackupEntriesCollector;
 class RestorerFromBackup;
-class IUserDefinedSQLObjectsStorage;
-class WasmModuleManager;
 
 /// Factory for SQLUserDefinedFunctions
-class UserDefinedSQLFunctionFactory : public IHints<>, private WithContext
+class UserDefinedSQLFunctionFactory : public IHints<>
 {
 public:
     static UserDefinedSQLFunctionFactory & instance();
 
     /// Register function for function_name in factory for specified create_function_query.
-    bool registerFunction(const ContextMutablePtr & current_context, const String & function_name, ASTPtr create_function_query, bool throw_if_exists, bool replace_if_exists);
+    bool registerFunction(const ContextMutablePtr & context, const String & function_name, ASTPtr create_function_query, bool throw_if_exists, bool replace_if_exists);
 
     /// Unregister function for function_name.
-    bool unregisterFunction(const ContextMutablePtr & current_context, const String & function_name, bool throw_if_not_exists);
+    bool unregisterFunction(const ContextMutablePtr & context, const String & function_name, bool throw_if_not_exists);
 
     /// Get function create query for function_name. If no function registered with function_name throws exception.
     ASTPtr get(const String & function_name) const;
@@ -35,7 +32,7 @@ public:
     bool has(const String & function_name) const;
 
     /// Get all user defined functions registered names.
-    Strings getAllRegisteredNames() const override;
+    std::vector<String> getAllRegisteredNames() const override;
 
     /// Check whether any UDFs have been registered
     bool empty() const;
@@ -46,12 +43,14 @@ public:
     /// Restores user-defined SQL functions from the backup.
     void restore(RestorerFromBackup & restorer, const String & data_path_in_backup);
 
-    void loadFunctions(IUserDefinedSQLObjectsStorage & function_storage, WasmModuleManager & wasm_module_manager);
-
 private:
+    /// Checks that a specified function can be registered, throws an exception if not.
+    static void checkCanBeRegistered(const ContextPtr & context, const String & function_name, const IAST & create_function_query);
+    static void checkCanBeUnregistered(const ContextPtr & context, const String & function_name);
+
+    ContextPtr global_context;
+
     UserDefinedSQLFunctionFactory();
 };
-
-ASTPtr normalizeCreateFunctionQuery(const IAST & create_function_query, const ContextPtr & context);
 
 }

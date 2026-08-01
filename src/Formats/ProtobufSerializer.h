@@ -29,10 +29,9 @@ public:
     virtual void setColumns(const ColumnPtr * columns, size_t num_columns) = 0;
     virtual void writeRow(size_t row_num) = 0;
     virtual void finalizeWrite() {}
-    virtual void resetState() {}
+    virtual void reset() {}
 
     virtual void setColumns(const MutableColumnPtr * columns, size_t num_columns) = 0;
-    virtual void startReading() {}
     virtual void readRow(size_t row_num) = 0;
     virtual void insertDefaults(size_t row_num) = 0;
 
@@ -46,7 +45,6 @@ public:
         bool with_length_delimiter,
         bool with_envelope,
         bool flatten_google_wrappers,
-        bool oneof_presence,
         ProtobufReader & reader);
 
     static std::unique_ptr<ProtobufSerializer> create(
@@ -59,7 +57,7 @@ public:
         ProtobufWriter & writer);
 };
 
-NamesAndTypesList
-protobufSchemaToCHSchema(const google::protobuf::Descriptor * message_descriptor, bool skip_unsupported_fields, bool oneof_presence);
+NamesAndTypesList protobufSchemaToCHSchema(const google::protobuf::Descriptor * message_descriptor, bool skip_unsupported_fields);
+
 }
 #endif

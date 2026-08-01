@@ -7,12 +7,8 @@
 #include <Interpreters/Context.h>
 #include <Interpreters/DatabaseCatalog.h>
 #include <Processors/Formats/ISchemaReader.h>
-#include <Processors/Port.h>
 #include <Storages/IStorage.h>
 #include <Common/assert_cast.h>
-#include <base/scope_guard.h>
-
-#include <stdexcept>
 
 namespace DB
 {
@@ -55,7 +51,7 @@ static std::optional<NamesAndTypesList> getOrderedColumnsList(const NamesAndType
     return res;
 }
 
-static bool isRetryableSchemaInferenceError(int code)
+bool isRetryableSchemaInferenceError(int code)
 {
     return code == ErrorCodes::EMPTY_DATA_PASSED || code == ErrorCodes::ONLY_NULLS_WHILE_READING_SCHEMA;
 }
@@ -102,18 +98,16 @@ static const std::vector<String> & getSimilarFormatsSetForDetection()
     return formats_order;
 }
 
-static std::pair<ColumnsDescription, String> readSchemaFromFormatImpl(
+std::pair<ColumnsDescription, String> readSchemaFromFormatImpl(
     std::optional<String> format_name,
     const std::optional<FormatSettings> & format_settings,
     IReadBufferIterator & read_buffer_iterator,
     const ContextPtr & context)
 try
 {
-    FormatFactory & format_factory = FormatFactory::instance();
-
     NamesAndTypesList names_and_types;
     SchemaInferenceMode mode = context->getSettingsRef()[Setting::schema_inference_mode];
-    if (format_name && mode == SchemaInferenceMode::UNION && !format_factory.checkIfFormatSupportsSubsetOfColumns(*format_name, context, format_settings))
+    if (format_name && mode == SchemaInferenceMode::UNION && !FormatFactory::instance().checkIfFormatSupportsSubsetOfColumns(*format_name, context, format_settings))
     {
         String additional_message;
         /// Better exception message for WithNames(AndTypes) formats.
@@ -123,9 +117,9 @@ try
         throw Exception(ErrorCodes::BAD_ARGUMENTS, "UNION schema inference mode is not supported for format {}, because it doesn't support reading subset of columns{}", *format_name, additional_message);
     }
 
-    if (format_name && format_factory.checkIfFormatHasExternalSchemaReader(*format_name))
+    if (format_name && FormatFactory::instance().checkIfFormatHasExternalSchemaReader(*format_name))
     {
-        auto external_schema_reader = format_factory.getExternalSchemaReader(*format_name, context, format_settings);
+        auto external_schema_reader = FormatFactory::instance().getExternalSchemaReader(*format_name, context, format_settings);
         try
         {
             return {ColumnsDescription(external_schema_reader->readSchema()), *format_name};
@@ -138,7 +132,7 @@ try
         }
     }
 
-    if (!format_name || format_factory.checkIfFormatHasSchemaReader(*format_name))
+    if (!format_name || FormatFactory::instance().checkIfFormatHasSchemaReader(*format_name))
     {
         IReadBufferIterator::Data iterator_data;
         std::vector<std::pair<NamesAndTypesList, String>> schemas_for_union_mode;
@@ -243,7 +237,7 @@ try
 
             if (format_name)
             {
-                if (!format_factory.checkIfFormatHasSchemaReader(*format_name))
+                if (!FormatFactory::instance().checkIfFormatHasSchemaReader(*format_name))
                 {
                     throw Exception(
                         ErrorCodes::BAD_ARGUMENTS,
@@ -251,14 +245,10 @@ try
                         *format_name);
                 }
                 SchemaReaderPtr schema_reader;
-                auto schema_reader_settings = format_settings;
-                if (!schema_reader_settings)
-                    schema_reader_settings = getFormatSettings(context);
-                schema_reader_settings->log_full_buffer_fallback_during_schema_inference = true;
 
                 try
                 {
-                    schema_reader = format_factory.getSchemaReader(*format_name, *iterator_data.buf, context, schema_reader_settings);
+                    schema_reader = FormatFactory::instance().getSchemaReader(*format_name, *iterator_data.buf, context, format_settings);
                     schema_reader->setMaxRowsAndBytesToRead(max_rows_to_read, max_bytes_to_read);
                     names_and_types = schema_reader->readSchema();
                     auto num_rows = schema_reader->readNumberOrRows();
@@ -280,7 +270,7 @@ try
                     if (schema_reader && mode == SchemaInferenceMode::DEFAULT)
                     {
                         size_t rows_read = schema_reader->getNumRowsRead();
-                        chassert(rows_read <= max_rows_to_read);
+                        assert(rows_read <= max_rows_to_read);
                         max_rows_to_read -= schema_reader->getNumRowsRead();
                         size_t bytes_read = iterator_data.buf->count();
                         /// We could exceed max_bytes_to_read a bit to complete row parsing.
@@ -336,7 +326,7 @@ try
                 {
                     try
                     {
-                        SchemaReaderPtr schema_reader = format_factory.getSchemaReader(format_to_detect, support_buf_recreation ? *iterator_data.buf : *peekable_buf, context, format_settings);
+                        SchemaReaderPtr schema_reader = FormatFactory::instance().getSchemaReader(format_to_detect, support_buf_recreation ? *iterator_data.buf : *peekable_buf, context, format_settings);
                         schema_reader->setMaxRowsAndBytesToRead(max_rows_to_read, max_bytes_to_read);
                         names_and_types = schema_reader->readSchema();
                         if (names_and_types.empty())
@@ -352,7 +342,7 @@ try
 
                         break;
                     }
-                    catch (const std::exception &)
+                    catch (...)
                     {
                         /// We failed to infer the schema for this format.
                         /// Recreate read buffer or rollback to the beginning of the data
@@ -381,7 +371,7 @@ try
                     {
                         try
                         {
-                            SchemaReaderPtr schema_reader = format_factory.getSchemaReader(
+                            SchemaReaderPtr schema_reader = FormatFactory::instance().getSchemaReader(
                                 formats_set_to_detect[i], support_buf_recreation ? *iterator_data.buf : *peekable_buf, context, format_settings);
                             schema_reader->setMaxRowsAndBytesToRead(max_rows_to_read, max_bytes_to_read);
                             auto tmp_names_and_types = schema_reader->readSchema();
@@ -389,7 +379,7 @@ try
                             if (!tmp_names_and_types.empty())
                                 format_to_schema[formats_set_to_detect[i]] = tmp_names_and_types;
                         }
-                        catch (const std::exception &) // NOLINT(bugprone-empty-catch)
+                        catch (...) // NOLINT(bugprone-empty-catch)
                         {
                             /// Try next format.
                         }
@@ -446,19 +436,11 @@ try
         if (!format_name)
             throw Exception(ErrorCodes::CANNOT_DETECT_FORMAT, "The data format cannot be detected by the contents of the files. You can specify the format manually");
 
-        if (!format_factory.checkIfFormatHasSchemaReader(*format_name))
-        {
-            throw Exception(
-                ErrorCodes::BAD_ARGUMENTS,
-                "{} file format doesn't support schema inference. You must specify the structure manually",
-                *format_name);
-        }
-
         /// We need some stateless methods of ISchemaReader, but during reading schema we
         /// could not even create a schema reader (for example when we got schema from cache).
         /// Let's create stateless schema reader from empty read buffer.
         EmptyReadBuffer empty;
-        SchemaReaderPtr stateless_schema_reader = format_factory.getSchemaReader(*format_name, empty, context, format_settings);
+        SchemaReaderPtr stateless_schema_reader = FormatFactory::instance().getSchemaReader(*format_name, empty, context, format_settings);
 
         if (mode == SchemaInferenceMode::UNION)
         {
@@ -533,7 +515,7 @@ try
         if (!stateless_schema_reader->hasStrictOrderOfColumns() && !insertion_table.empty())
         {
             auto storage = DatabaseCatalog::instance().getTable(insertion_table, context);
-            auto metadata = storage->getInMemoryMetadataPtr(context, false);
+            auto metadata = storage->getInMemoryMetadataPtr();
             auto names_in_storage = metadata->getColumns().getNamesOfPhysical();
             auto ordered_list = getOrderedColumnsList(names_and_types, names_in_storage);
             if (ordered_list)

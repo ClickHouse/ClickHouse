@@ -2,6 +2,7 @@
 
 #include <AggregateFunctions/IAggregateFunction.h>
 #include <DataTypes/DataTypeArray.h>
+#include <DataTypes/DataTypesNumber.h>
 #include <DataTypes/DataTypesDecimal.h>
 #include <DataTypes/DataTypeTuple.h>
 #include <Columns/ColumnVector.h>
@@ -74,8 +75,7 @@ public:
         void merge(const Data & rhs, Arena * arena)
         {
             reserve(size + rhs.size, arena);
-            if (rhs.size)
-                memcpy(elements + size, rhs.elements, rhs.size * sizeof(Element));
+            memcpy(elements + size, rhs.elements, rhs.size * sizeof(Element));
             size += rhs.size;
         }
 
@@ -358,6 +358,25 @@ public:
     {
     }
 
+    void addBatchSparse(
+        size_t row_begin,
+        size_t row_end,
+        AggregateDataPtr * places,
+        size_t place_offset,
+        const IColumn ** columns,
+        Arena * arena) const override
+    {
+        const auto & column_sparse = typeid_cast<const ColumnSparse &>(*columns[0]);
+        const auto * values = &column_sparse.getValuesColumn();
+        const auto & offsets = column_sparse.getOffsetsData();
+
+        size_t from = std::lower_bound(offsets.begin(), offsets.end(), row_begin) - offsets.begin();
+        size_t to = std::lower_bound(offsets.begin(), offsets.end(), row_end) - offsets.begin();
+
+        for (size_t i = from; i < to; ++i)
+            add(places[offsets[i]] + place_offset, &values, i + 1, arena);
+    }
+
     void merge(AggregateDataPtr __restrict place, ConstAggregateDataPtr rhs, Arena * arena) const override
     {
         data(place).merge(data(rhs), arena);
@@ -379,7 +398,7 @@ public:
 
     void deserialize(AggregateDataPtr __restrict place, ReadBuffer & buf, std::optional<size_t> /* version */, Arena * arena) const override
     {
-        UInt16 format_version = 0;
+        UInt16 format_version;
         readBinaryLittleEndian(format_version, buf);
 
         if (format_version != FORMAT_VERSION)
@@ -389,7 +408,7 @@ public:
                 FORMAT_VERSION, format_version);
 
         Data & data = this->data(place);
-        size_t size = 0;
+        size_t size;
         readBinaryLittleEndian(size, buf);
 
         data.reserve(size, arena);

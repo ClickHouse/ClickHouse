@@ -98,7 +98,7 @@ private:
     NativeWriter writer;
 };
 
-class NativeSchemaReader final : public ISchemaReader
+class NativeSchemaReader : public ISchemaReader
 {
 public:
     explicit NativeSchemaReader(ReadBuffer & in_, const FormatSettings & settings_) : ISchemaReader(in_), settings(settings_) {}
@@ -115,7 +115,6 @@ private:
 };
 
 
-void registerInputFormatNative(FormatFactory & factory);
 void registerInputFormatNative(FormatFactory & factory)
 {
     factory.registerInputFormat("Native", [](
@@ -129,7 +128,6 @@ void registerInputFormatNative(FormatFactory & factory)
     factory.markFormatSupportsSubsetOfColumns("Native");
 }
 
-void registerOutputFormatNative(FormatFactory & factory);
 void registerOutputFormatNative(FormatFactory & factory)
 {
     factory.registerOutputFormat("Native", [](
@@ -145,7 +143,6 @@ void registerOutputFormatNative(FormatFactory & factory)
 }
 
 
-void registerNativeSchemaReader(FormatFactory & factory);
 void registerNativeSchemaReader(FormatFactory & factory)
 {
     factory.registerSchemaReader("Native", [](ReadBuffer & buf, const FormatSettings & settings)

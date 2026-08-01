@@ -1,6 +1,5 @@
 #include <Formats/ReadSchemaUtils.h>
 
-#include <Core/Block_fwd.h>
 #include <Core/Settings.h>
 
 #include <IO/ReadBufferFromString.h>
@@ -54,11 +53,7 @@ public:
 
 private:
     StoragePtr executeImpl(const ASTPtr & ast_function, ContextPtr context, const std::string & table_name, ColumnsDescription cached_columns, bool is_insert_query) const override;
-    const char * getStorageEngineName() const override
-    {
-        /// No underlying storage engine
-        return "";
-    }
+    const char * getStorageEngineName() const override { return "Values"; }
 
     ColumnsDescription getActualTableStructure(ContextPtr context, bool is_insert_query) const override;
     void parseArguments(const ASTPtr & ast_function, ContextPtr context) override;
@@ -126,7 +121,7 @@ Block TableFunctionFormat::parseData(const ColumnsDescription & columns, const S
     auto pipeline = std::make_unique<QueryPipeline>(QueryPipelineBuilder::getPipeline(std::move(builder)));
     auto reader = std::make_unique<PullingPipelineExecutor>(*pipeline);
 
-    Blocks blocks;
+    std::vector<Block> blocks;
     while (reader->pull(block))
         blocks.push_back(std::move(block));
 
@@ -225,10 +220,9 @@ Result:
 }
 
 
-void registerTableFunctionFormat(TableFunctionFactory & factory);
 void registerTableFunctionFormat(TableFunctionFactory & factory)
 {
-    factory.registerFunction<TableFunctionFormat>(format_table_function_documentation, {false}, TableFunctionFactory::Case::Insensitive);
+    factory.registerFunction<TableFunctionFormat>({format_table_function_documentation, false}, TableFunctionFactory::Case::Insensitive);
 }
 
 }

@@ -27,8 +27,7 @@ public:
         const std::shared_ptr<const std::vector<UUID>> & external_roles_,
         const Settings & settings_,
         const String & current_database_,
-        const ClientInfo & client_info_,
-        const std::optional<UUID> & initial_user_id_);
+        const ClientInfo & client_info_);
 
     const std::optional<UUID> user_id;
 
@@ -57,7 +56,7 @@ public:
     const String quota_key;
 
     /// Initial user is used to combine row policies with.
-    const std::optional<UUID> initial_user_id;
+    const String initial_user;
 
     /// Outputs `ContextAccessParams` to string for logging.
     String toString() const;

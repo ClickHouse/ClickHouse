@@ -2,7 +2,6 @@
 
 #include <Access/ContextAccess.h>
 #include <Core/NamesAndTypes.h>
-#include <DataTypes/DataTypeLowCardinality.h>
 #include <DataTypes/DataTypeString.h>
 #include <DataTypes/DataTypeUUID.h>
 #include <DataTypes/DataTypesNumber.h>
@@ -28,7 +27,7 @@ namespace DB
 namespace
 {
 
-class DetachedTablesBlockSource final : public ISource
+class DetachedTablesBlockSource : public ISource
 {
 public:
     DetachedTablesBlockSource(
@@ -48,7 +47,7 @@ public:
         detached_tables.reserve(size);
         for (size_t idx = 0; idx < size; ++idx)
         {
-            detached_tables.insert(std::string{detached_tables_->getDataAt(idx)});
+            detached_tables.insert(detached_tables_->getDataAt(idx).toString());
         }
     }
 
@@ -68,7 +67,7 @@ protected:
         size_t rows_count = 0;
         for (; database_idx < databases->size(); ++database_idx)
         {
-            database_name = databases->getDataAt(database_idx);
+            database_name = databases->getDataAt(database_idx).toString();
             database = DatabaseCatalog::instance().tryGetDatabase(database_name);
 
             if (!database)
@@ -171,7 +170,7 @@ private:
     ColumnPtr filtered_tables_column;
 };
 
-StorageSystemDetachedTables::StorageSystemDetachedTables(const StorageID & table_id_) : StorageWithCommonVirtualColumns(table_id_)
+StorageSystemDetachedTables::StorageSystemDetachedTables(const StorageID & table_id_) : IStorage(table_id_)
 {
     StorageInMemoryMetadata storage_metadata;
 
@@ -185,19 +184,10 @@ StorageSystemDetachedTables::StorageSystemDetachedTables(const StorageID & table
 
     storage_metadata.setColumns(std::move(description));
 
-    storage_metadata.setVirtuals(createVirtuals());
     setInMemoryMetadata(storage_metadata);
 }
 
-VirtualColumnsDescription StorageSystemDetachedTables::createVirtuals()
-{
-    VirtualColumnsDescription desc;
-    desc.addEphemeral("_table", std::make_shared<DataTypeLowCardinality>(std::make_shared<DataTypeString>()), "", VirtualsMaterializationPlace::Plan);
-    desc.addEphemeral("_database", std::make_shared<DataTypeLowCardinality>(std::make_shared<DataTypeString>()), "", VirtualsMaterializationPlace::Plan);
-    return desc;
-}
-
-void StorageSystemDetachedTables::readImpl(
+void StorageSystemDetachedTables::read(
     QueryPlan & query_plan,
     const Names & column_names,
     const StorageSnapshotPtr & storage_snapshot,

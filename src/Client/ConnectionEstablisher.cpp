@@ -28,7 +28,6 @@ namespace ErrorCodes
     extern const int NETWORK_ERROR;
     extern const int SOCKET_TIMEOUT;
     extern const int CANNOT_READ_FROM_SOCKET;
-    extern const int CANNOT_WRITE_TO_SOCKET;
 }
 
 namespace FailPoints
@@ -126,7 +125,7 @@ void ConnectionEstablisher::run(ConnectionEstablisher::TryResult & result, std::
 
         if (e.code() != ErrorCodes::NETWORK_ERROR && e.code() != ErrorCodes::SOCKET_TIMEOUT
             && e.code() != ErrorCodes::ATTEMPT_TO_READ_AFTER_EOF && e.code() != ErrorCodes::DNS_ERROR
-            && e.code() != ErrorCodes::CANNOT_READ_FROM_SOCKET && e.code() != ErrorCodes::CANNOT_WRITE_TO_SOCKET)
+            && e.code() != ErrorCodes::CANNOT_READ_FROM_SOCKET)
             throw;
 
         fail_message = getCurrentExceptionMessage(/* with_stacktrace = */ false);
@@ -175,11 +174,7 @@ void ConnectionEstablisherAsync::processAsyncEvent(int fd, Poco::Timespan socket
 void ConnectionEstablisherAsync::clearAsyncEvent()
 {
     timeout_descriptor.reset();
-    if (socket_fd != -1)
-    {
-        epoll.remove(socket_fd);
-        socket_fd = -1;
-    }
+    epoll.remove(socket_fd);
 }
 
 bool ConnectionEstablisherAsync::checkBeforeTaskResume()
@@ -216,36 +211,13 @@ bool ConnectionEstablisherAsync::checkTimeout()
             is_timeout_alarmed = true;
     }
 
-    if (is_timeout_alarmed && !is_socket_ready)
+    if (is_timeout_alarmed && !is_socket_ready && !haveMoreAddressesToConnect())
     {
-        if (haveMoreAddressesToConnect())
-        {
-            /// There are more addresses to try. Set a flag on the Connection so that
-            /// when the fiber resumes, it will throw a timeout exception and the
-            /// Connection::connect() loop can try the next address.
-            if (!result.entry.isNull())
-                result.entry->setAddressConnectTimeoutExpired();
-            /// Reset the timer and remove socket from epoll so we can try the next address.
-            timeout_descriptor.reset();
-            if (socket_fd != -1)
-            {
-                epoll.remove(socket_fd);
-                socket_fd = -1;
-            }
-            /// Return true to resume the fiber, which will throw the timeout exception.
-            return true;
-        }
-
-        /// No more addresses to try - fail the connection attempt.
         /// In not async case timeout exception would be thrown and caught in ConnectionEstablisher::run,
         /// but in async case we process timeout outside and cannot throw exception. So, we just save fail message.
         fail_message = getSocketTimeoutExceededMessageByTimeoutType(timeout_type, timeout, socket_description);
 
-        if (socket_fd != -1)
-        {
-            epoll.remove(socket_fd);
-            socket_fd = -1;
-        }
+        epoll.remove(socket_fd);
         /// Restart task, so the connection process will start from the beginning in the next resume().
         restart();
         /// The result should be Null in case of timeout.

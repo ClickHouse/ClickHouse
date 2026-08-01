@@ -111,13 +111,6 @@ struct RestoreSettings
     /// If this flag is false then RESTORE will throw an exception in that case.
     bool skip_unresolved_access_dependencies = false;
 
-    /// If true, RESTORE will not fail when the backup contains users/roles with more permissions
-    /// than the restoring user is allowed to grant. Instead, the restored grants will be limited
-    /// to what the restoring user can grant (similar to GRANT CURRENT GRANTS).
-    /// This is useful for cloud environments where the restoring user may not have all the permissions
-    /// that were present in the original system.
-    bool restore_access_entities_with_current_grants = false;
-
     /// Try to update dependents of restored access entities.
     /// For example: if a backup contains a profile assigned to a user: `CREATE PROFILE p1; CREATE USER u1 SETTINGS PROFILE p1`
     /// and now we're restoring only profile `p1` and user `u1` already exists, then
@@ -171,14 +164,6 @@ struct RestoreSettings
 
     static RestoreSettings fromRestoreQuery(const ASTBackupQuery & query);
     void copySettingsToQuery(ASTBackupQuery & query) const;
-
-    /// Returns only the non-restore-specific settings from a `RESTORE` query.
-    /// In contrast to `fromRestoreQuery`, this helper does not touch the
-    /// `base_backup_name` AST node, so it is safe to call before
-    /// `ReplaceQueryParameterVisitor` has substituted query parameters.
-    /// Used by `InterpreterSetQuery::applySettingsFromQuery` to apply core
-    /// settings (e.g. `max_execution_time`) before `ProcessList::insert`.
-    static SettingsChanges extractCoreSettingsFromQuery(const ASTBackupQuery & query);
 };
 
 }

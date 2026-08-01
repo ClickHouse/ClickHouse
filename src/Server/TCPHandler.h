@@ -19,9 +19,9 @@
 #include <QueryPipeline/BlockIO.h>
 #include <base/getFQDNOrHostName.h>
 #include <Common/CurrentMetrics.h>
+#include <Common/CurrentThread.h>
 #include <Common/ProfileEvents.h>
 #include <Common/Stopwatch.h>
-#include <Common/StringWithMemoryTracking.h>
 
 #include <IO/WriteBuffer.h>
 #include <Interpreters/AsynchronousInsertQueue.h>
@@ -42,8 +42,6 @@ namespace Poco { class Logger; }
 namespace DB
 {
 
-class ICompressionCodec;
-using CompressionCodecPtr = std::shared_ptr<ICompressionCodec>;
 class Session;
 struct Settings;
 struct QueryPlanAndSets;
@@ -84,13 +82,8 @@ struct QueryState
     std::unique_ptr<NativeWriter> block_out;
     Block block_for_insert;
 
-    /// Query text. Uses `StringWithMemoryTracking` so that the resize on
-    /// receive goes through the throwing memory-tracker path. A client
-    /// sending an oversized query body trips `MEMORY_LIMIT_EXCEEDED`
-    /// cleanly, rather than driving the server's RSS past
-    /// `max_server_memory_usage` via `allocNoThrow` and getting
-    /// cgroup-OOM-killed.
-    StringWithMemoryTracking query;
+    /// Query text.
+    String query;
     std::shared_ptr<QueryPlanAndSets> plan_and_sets;
     /// Parsed query
     ASTPtr parsed_query;
@@ -259,7 +252,7 @@ private:
 
     /// `callback_mutex` protects using `out` (WriteBuffer), `in` (ReadBuffer) and other members concurrent inside callbacks.
     /// All the methods which are run inside callbacks are marked with TSA_REQUIRES.
-    std::shared_ptr<std::mutex> callback_mutex = std::make_shared<std::mutex>();
+    std::mutex callback_mutex;
 
     /// Last block input parameters are saved to be able to receive unexpected data packet sent after exception.
     LastBlockInputParameters last_block_in;
@@ -318,12 +311,11 @@ private:
 
     void sendHello();
     void sendData(QueryState & state, const Block & block); /// Write a block to the network.
-    static void sendLogData(QueryState & state, const Block & block, std::shared_ptr<WriteBufferFromPocoSocketChunked> out, UInt32 client_tcp_protocol_version);
+    void sendLogData(QueryState & state, const Block & block);
     void sendTableColumns(QueryState & state, const ColumnsDescription & columns);
     void sendException(const Exception & e, bool with_stack_trace);
     void sendProgress(QueryState & state);
-    static void sendLogs(QueryState & state, std::shared_ptr<WriteBufferFromPocoSocketChunked> out, UInt32 client_tcp_protocol_version);
-    void sendLogs(QueryState & state) TSA_REQUIRES(callback_mutex);
+    void sendLogs(QueryState & state);
     void sendEndOfStream(QueryState & state);
     void sendPartUUIDs(QueryState & state);
     void sendReadTaskRequest() TSA_REQUIRES(callback_mutex);
@@ -332,17 +324,15 @@ private:
     void sendProfileInfo(QueryState & state, const ProfileInfo & info);
     void sendTotals(QueryState & state, const Block & totals);
     void sendExtremes(QueryState & state, const Block & extremes);
-    void sendProfileEvents(QueryState & state) TSA_REQUIRES(callback_mutex) TSA_REQUIRES(callback_mutex);
-    void sendSelectProfileEvents(QueryState & state) TSA_REQUIRES(callback_mutex);
-    void sendInsertProfileEvents(QueryState & state) TSA_REQUIRES(callback_mutex);
+    void sendProfileEvents(QueryState & state);
+    void sendSelectProfileEvents(QueryState & state);
+    void sendInsertProfileEvents(QueryState & state);
     void sendTimezone(QueryState & state);
 
     /// Creates state.block_in/block_out for blocks read/write, depending on whether compression is enabled.
-    static void initMaybeCompressedOut(QueryState & state, std::shared_ptr<WriteBufferFromPocoSocketChunked> out);
-    void initMaybeCompressedOut(QueryState & state);
     void initBlockInput(QueryState & state);
     void initBlockOutput(QueryState & state, const Block & block);
-    static void initLogsBlockOutput(QueryState & state, const Block & block, std::shared_ptr<WriteBufferFromPocoSocketChunked> out, UInt32 client_tcp_protocol_version);
+    void initLogsBlockOutput(QueryState & state, const Block & block);
     void initProfileEventsBlockOutput(QueryState & state, const Block & block);
     static CompressionCodecPtr getCompressionCodec(const Settings & query_settings, Protocol::Compression compression);
 

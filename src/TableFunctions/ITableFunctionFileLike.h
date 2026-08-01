@@ -13,7 +13,7 @@ namespace DB
 
 namespace ErrorCodes
 {
-    extern const int NUMBER_OF_ARGUMENTS_DOESNT_MATCH;
+    extern const int LOGICAL_ERROR;
 }
 
 class ColumnsDescription;
@@ -48,10 +48,10 @@ public:
     static void updateStructureAndFormatArgumentsIfNeeded(ASTs & args, const String & structure, const String & format, const ContextPtr & context, bool with_structure)
     {
         if (args.empty() || args.size() > getMaxNumberOfArguments())
-            throw Exception(ErrorCodes::NUMBER_OF_ARGUMENTS_DOESNT_MATCH, "Expected 1 to {} arguments in table function, got {}", getMaxNumberOfArguments(), args.size());
+            throw Exception(ErrorCodes::LOGICAL_ERROR, "Expected 1 to {} arguments in table function, got {}", getMaxNumberOfArguments(), args.size());
 
-        auto format_literal = make_intrusive<ASTLiteral>(format);
-        auto structure_literal = make_intrusive<ASTLiteral>(structure);
+        auto format_literal = std::make_shared<ASTLiteral>(format);
+        auto structure_literal = std::make_shared<ASTLiteral>(structure);
 
         for (auto & arg : args)
             arg = evaluateConstantExpressionOrIdentifierAsLiteral(arg, context);

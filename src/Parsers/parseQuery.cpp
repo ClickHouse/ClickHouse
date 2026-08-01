@@ -1,5 +1,6 @@
 #include <Parsers/parseQuery.h>
 
+#include <Interpreters/OpenTelemetrySpanLog.h>
 #include <Parsers/ParserQuery.h>
 #include <Parsers/ASTInsertQuery.h>
 #include <Parsers/ASTExplainQuery.h>
@@ -9,6 +10,7 @@
 #include <Common/StringUtils.h>
 #include <Common/typeid_cast.h>
 #include <Common/UTF8Helpers.h>
+#include <base/find_symbols.h>
 #include <IO/WriteHelpers.h>
 #include <IO/WriteBufferFromString.h>
 #include <IO/Operators.h>
@@ -32,7 +34,7 @@ std::pair<size_t, size_t> getLineAndCol(const char * begin, const char * pos)
 {
     size_t line = 0;
 
-    const char * nl = nullptr;
+    const char * nl;
     while ((nl = find_first_symbols<'\n'>(begin, pos)) < pos)
     {
         ++line;
@@ -79,8 +81,8 @@ void writeQueryWithHighlightedErrorPositions(
     {
         const char * current_position_to_hilite = positions_to_hilite[position_to_hilite_idx].begin;
 
-        chassert(current_position_to_hilite <= end);
-        chassert(current_position_to_hilite >= begin);
+        assert(current_position_to_hilite <= end);
+        assert(current_position_to_hilite >= begin);
 
         out.write(pos, current_position_to_hilite - pos);
 
@@ -305,8 +307,6 @@ ASTPtr tryParseQuery(
             if (lookahead->isError())
             {
                 out_error_message = getLexicalErrorMessage(query_begin, all_queries_end, *lookahead, hilite, query_description);
-                // Advance the position for further processing of possible test hint.
-                _out_query_end = token_iterator.max().end;
                 return nullptr;
             }
 
@@ -350,15 +350,10 @@ ASTPtr tryParseQuery(
         return nullptr;
     }
 
-    IParser::Pos this_query_end_pos = token_iterator;
-    while (!this_query_end_pos->isEnd() && !this_query_end_pos->isError()
-        && this_query_end_pos->type != TokenType::Semicolon)
-        ++this_query_end_pos;
-
     if (!parse_res)
     {
         /// Generic parse error.
-        out_error_message = getSyntaxErrorMessage(query_begin, this_query_end_pos->end,
+        out_error_message = getSyntaxErrorMessage(query_begin, all_queries_end,
             last_token, expected, hilite, query_description);
         return nullptr;
     }
@@ -368,7 +363,7 @@ ASTPtr tryParseQuery(
         && token_iterator->type != TokenType::Semicolon)
     {
         expected.add(last_token.begin, "end of query");
-        out_error_message = getSyntaxErrorMessage(query_begin, this_query_end_pos->end,
+        out_error_message = getSyntaxErrorMessage(query_begin, all_queries_end,
             last_token, expected, hilite, query_description);
         return nullptr;
     }
@@ -478,7 +473,6 @@ std::pair<const char *, bool> splitMultipartQuery(
 
         ast = parseQueryAndMovePosition(parser, pos, end, "", true, max_query_size, max_parser_depth, max_parser_backtracks);
 
-        bool is_insert_with_data = false;
         if (ASTInsertQuery * insert = getInsertAST(ast); insert && insert->data)
         {
             /// Data for INSERT is broken on the new line
@@ -486,33 +480,12 @@ std::pair<const char *, bool> splitMultipartQuery(
             while (*pos && *pos != '\n')
                 ++pos;
             insert->end = pos;
-            is_insert_with_data = true;
         }
 
-        /// `pos` now points at the end of the current query. For an INSERT with inline data this is the
-        /// boundary of the data line and must not be extended further, otherwise a trailing comment would
-        /// be handed to the format reader as input data.
-        const char * query_end = pos;
+        queries_list.emplace_back(queries.substr(begin - queries.data(), pos - begin));
 
-        /// Skip trailing whitespace and semicolons before the next query.
         while (isWhitespaceASCII(*pos) || *pos == ';')
             ++pos;
-
-        /// If only whitespace and/or comments remain, there is no further query to parse. Consume the rest
-        /// so the trailing comment is not handed to the parser as a separate, comment-only `Empty query`.
-        Tokens tokens(pos, end, max_query_size, true);
-        IParser::Pos token_iterator(tokens, static_cast<uint32_t>(max_parser_depth), static_cast<uint32_t>(max_parser_backtracks));
-
-        if (token_iterator->isEnd())
-        {
-            pos = end;
-            /// For a non-INSERT query fold the trailing comment into the returned fragment (it is harmless);
-            /// for an INSERT keep the boundary at the data line so the tail is dropped rather than parsed as data.
-            if (!is_insert_with_data)
-                query_end = end;
-        }
-
-        queries_list.emplace_back(queries.substr(begin - queries.data(), query_end - begin));
     }
 
     return std::make_pair(begin, pos == end);

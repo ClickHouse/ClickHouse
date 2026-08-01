@@ -1,23 +1,23 @@
 Parquet
-a	UInt64					
-b	String					
-c	Array(UInt64)					
-d	Tuple(\n    a UInt64,\n    b String)					
+a	Nullable(UInt64)					
+b	Nullable(String)					
+c	Array(Nullable(UInt64))					
+d	Tuple(\n    a Nullable(UInt64),\n    b Nullable(String))					
 ORC
 a	Nullable(Int64)					
 b	Nullable(String)					
 c	Array(Nullable(Int64))					
 d	Tuple(\n    a Nullable(Int64),\n    b Nullable(String))					
 Arrow
-a	UInt64					
-b	String					
-c	Array(UInt64)					
-d	Tuple(\n    a UInt64,\n    b String)					
+a	Nullable(UInt64)					
+b	Nullable(String)					
+c	Array(Nullable(UInt64))					
+d	Tuple(\n    a Nullable(UInt64),\n    b Nullable(String))					
 ArrowStream
-a	UInt64					
-b	String					
-c	Array(UInt64)					
-d	Tuple(\n    a UInt64,\n    b String)					
+a	Nullable(UInt64)					
+b	Nullable(String)					
+c	Array(Nullable(UInt64))					
+d	Tuple(\n    a Nullable(UInt64),\n    b Nullable(String))					
 Avro
 a	Int64					
 b	String					

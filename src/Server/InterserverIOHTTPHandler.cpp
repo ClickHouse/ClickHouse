@@ -78,13 +78,13 @@ void InterserverIOHTTPHandler::processQuery(HTTPServerRequest & request, HTTPSer
         endpoint->processQuery(params, request.getStream(), *output, response);
     }
     /// Make sure that request stream is not used after this function.
-    chassert(request.getStream().use_count() == 2);
+    assert(request.getStream().use_count() == 2);
 }
 
 
 void InterserverIOHTTPHandler::handleRequest(HTTPServerRequest & request, HTTPServerResponse & response, const ProfileEvents::Event & write_event)
 {
-    DB::setThreadName(ThreadName::INTERSERVER_HANDLER);
+    setThreadName("IntersrvHandler");
 
     /// In order to work keep-alive.
     if (request.getVersion() == HTTPServerRequest::HTTP_1_1)

@@ -22,7 +22,7 @@ bool parseOneOperation(ASTCreateResourceQuery::Operation & operation, IParser::P
 {
     ParserIdentifier disk_name_p;
 
-    ResourceAccessMode mode = {};
+    ResourceAccessMode mode;
     ASTPtr node;
     std::optional<String> disk;
 
@@ -142,7 +142,7 @@ bool ParserCreateResourceQuery::parseImpl(IParser::Pos & pos, ASTPtr & node, Exp
     if (!parseOperations(pos, expected, operations))
         return false;
 
-    auto create_resource_query = make_intrusive<ASTCreateResourceQuery>();
+    auto create_resource_query = std::make_shared<ASTCreateResourceQuery>();
     node = create_resource_query;
 
     create_resource_query->resource_name = resource_name;

@@ -1,16 +1,11 @@
-#include <Processors/IProcessor.h>
-
 #include <iostream>
-#include <IO/WriteBufferFromString.h>
-#include <IO/WriteHelpers.h>
+#include <Processors/IProcessor.h>
 #include <Processors/Port.h>
 #include <Processors/QueryPlan/IQueryPlanStep.h>
 #include <Common/CurrentThread.h>
-#include <Common/ThreadStatus.h>
 
-#ifdef OS_LINUX
-#include <sys/epoll.h>
-#endif
+#include <IO/WriteHelpers.h>
+#include <IO/WriteBufferFromString.h>
 
 
 namespace DB
@@ -63,24 +58,13 @@ int IProcessor::schedule()
     throw Exception(ErrorCodes::NOT_IMPLEMENTED, "Method 'schedule' is not implemented for {} processor", getName());
 }
 
-#ifdef OS_LINUX
-std::pair<int, uint32_t> IProcessor::scheduleForEvent()
+Processors IProcessor::expandPipeline()
 {
-    return {schedule(), EPOLLIN | EPOLLERR};
-}
-#endif
-
-IProcessor::PipelineUpdate IProcessor::updatePipeline()
-{
-    throw Exception(ErrorCodes::NOT_IMPLEMENTED, "Method 'updatePipeline' is not implemented for {} processor", getName());
+    throw Exception(ErrorCodes::NOT_IMPLEMENTED, "Method 'expandPipeline' is not implemented for {} processor", getName());
 }
 
-void IProcessor::cancel(IProcessor::CancelReason reason) noexcept
+void IProcessor::cancel() noexcept
 {
-    /// PartialResult means the consumer has enough data and only wants external ingress to stop
-    /// while the rest of the pipeline drains. Only sources act on it;
-    if (reason == CancelReason::PartialResult)
-        return;
 
     bool already_cancelled = is_cancelled.exchange(true, std::memory_order_acq_rel);
     if (already_cancelled)
@@ -136,44 +120,6 @@ IProcessor::ProcessorDataStats IProcessor::getProcessorDataStats() const
     return stats;
 }
 
-IProcessor::ProcessorsProfileLogInfo IProcessor::getProcessorsProfileLogInfo() const
-{
-    ProcessorsProfileLogInfo info;
-
-    auto get_proc_id = [](const IProcessor & proc) -> UInt64 { return reinterpret_cast<std::uintptr_t>(&proc); };
-
-    info.id = get_proc_id(*this);
-
-    for (const auto & port : outputs)
-    {
-        if (!port.isConnected())
-            continue;
-        const IProcessor & next = port.getInputPort().getProcessor();
-        info.parent_ids.push_back(get_proc_id(next));
-    }
-
-    info.plan_step = reinterpret_cast<std::uintptr_t>(query_plan_step);
-    info.plan_step_name = plan_step_name;
-    info.plan_step_description = plan_step_description;
-    info.plan_group = query_plan_step_group;
-    info.processor_uniq_id = getUniqID();
-    info.step_uniq_id = step_uniq_id;
-
-    info.processor_name = getName();
-
-    info.elapsed_us = static_cast<UInt64>(elapsed_ns / 1000U);
-    info.input_wait_elapsed_us = static_cast<UInt64>(input_wait_elapsed_ns / 1000U);
-    info.output_wait_elapsed_us = static_cast<UInt64>(output_wait_elapsed_ns / 1000U);
-
-    auto stats = getProcessorDataStats();
-    info.input_rows = stats.input_rows;
-    info.input_bytes = stats.input_bytes;
-    info.output_rows = stats.output_rows;
-    info.output_bytes = stats.output_bytes;
-
-    return info;
-}
-
 String IProcessor::debug() const
 {
     WriteBufferFromOwnString buf;
@@ -227,8 +173,8 @@ std::string IProcessor::statusToName(std::optional<Status> status)
             return "Ready";
         case Status::Async:
             return "Async";
-        case Status::UpdatePipeline:
-            return "UpdatePipeline";
+        case Status::ExpandPipeline:
+            return "ExpandPipeline";
     }
 }
 

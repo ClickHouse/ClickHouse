@@ -322,8 +322,6 @@ int SecureSocketImpl::sendBytes(const void* buffer, int length, int flags)
 
 		rc = handleError(rc);
 		if (rc == 0) throw SSLConnectionUnexpectedlyClosedException();
-		if (rc < 0 && _pSocket->getBlocking())
-			throw Poco::TimeoutException("SSL_write timed out");
 	}
 
 	_pSocket->useSendThrottlerBudget(rc);
@@ -366,10 +364,7 @@ int SecureSocketImpl::receiveBytes(void* buffer, int length, int flags)
 	while (mustRetry(rc, remaining_time));
 	if (rc <= 0)
 	{
-		rc = handleError(rc);
-		if (rc < 0 && _pSocket->getBlocking())
-			throw Poco::TimeoutException("SSL_read timed out");
-		return rc;
+		return handleError(rc);
 	}
 
 	_pSocket->useRecvThrottlerBudget(rc);
@@ -403,10 +398,7 @@ int SecureSocketImpl::completeHandshake()
 	while (mustRetry(rc, remaining_time));
 	if (rc <= 0)
 	{
-		rc = handleError(rc);
-		if (rc < 0 && _pSocket->getBlocking())
-			throw Poco::TimeoutException("SSL handshake timed out");
-		return rc;
+		return handleError(rc);
 	}
 	_needHandshake = false;
 	return rc;
@@ -443,23 +435,27 @@ long SecureSocketImpl::verifyPeerCertificateImpl(const std::string& hostName)
 	    (mode != Context::VERIFY_STRICT && isLocalHost(hostName)))
 		return X509_V_OK;
 
+	// SSL_get1_peer_certificate returns a certificate whose reference count has
+	// been incremented; the caller owns that reference and must X509_free it,
+	// otherwise the peer certificate leaks on every verified handshake.
 	X509* pCert = SSL_get1_peer_certificate(_pSSL);
 	if (pCert)
 	{
+        long result = X509_V_ERR_APPLICATION_VERIFICATION;
         if (X509_check_host(pCert, hostName.c_str(), hostName.length(), 0, nullptr) == 1)
         {
-            return X509_V_OK;
+            result = X509_V_OK;
         }
         else
         {
             IPAddress ip;
             if (IPAddress::tryParse(hostName, ip))
             {
-                auto result = X509_check_ip_asc(pCert, hostName.c_str(), 0) == 1;
-                return result ? X509_V_OK : X509_V_ERR_APPLICATION_VERIFICATION;
+                result = X509_check_ip_asc(pCert, hostName.c_str(), 0) == 1 ? X509_V_OK : X509_V_ERR_APPLICATION_VERIFICATION;
             }
         }
-        return X509_V_ERR_APPLICATION_VERIFICATION;;
+        X509_free(pCert);
+        return result;
 	}
 	else return X509_V_OK;
 }

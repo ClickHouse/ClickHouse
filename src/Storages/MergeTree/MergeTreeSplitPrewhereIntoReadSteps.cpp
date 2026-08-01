@@ -1,6 +1,12 @@
-#include <Storages/MergeTree/MergeTreeSplitPrewhereIntoReadSteps.h>
-
-#include <Columns/ColumnConst.h>
+#include <Functions/CastOverloadResolver.h>
+#include <Functions/FunctionsLogical.h>
+#include <Functions/IFunctionAdaptors.h>
+#include <Storages/SelectQueryInfo.h>
+#include <Storages/MergeTree/MergeTreeRangeReader.h>
+#include <DataTypes/DataTypeNullable.h>
+#include <DataTypes/DataTypeString.h>
+#include <DataTypes/DataTypeLowCardinality.h>
+#include <Interpreters/ExpressionActions.h>
 
 
 namespace DB
@@ -103,7 +109,7 @@ const ActionsDAG::Node & addClonedDAGToDAG(
     if (original_dag_node->type == ActionsDAG::ActionType::COLUMN)
     {
         const auto & new_node = new_dag->addColumn(
-            original_dag_node->column, original_dag_node->result_type, original_dag_node->result_name);
+            ColumnWithTypeAndName(original_dag_node->column, original_dag_node->result_type, original_dag_node->result_name));
         node_remap[original_dag_node] = {new_dag.get(), &new_node};
         return new_node;
     }
@@ -154,7 +160,7 @@ const ActionsDAG::Node & addCast(
     if (node_to_cast.result_type->equals(*to_type))
         return node_to_cast;  /// NOLINT(bugprone-return-const-ref-from-parameter)
 
-    const auto & new_node = dag->addCast(node_to_cast, to_type, {}, nullptr);
+    const auto & new_node = dag->addCast(node_to_cast, to_type, {});
     return new_node;
 }
 
@@ -168,10 +174,11 @@ const ActionsDAG::Node & addAndTrue(
 {
     Field const_true_value(true);
 
-    auto const_true_type = std::make_shared<DataTypeUInt8>();
-    auto const_true_column = const_true_type->createColumnConst(0, const_true_value);
+    ColumnWithTypeAndName const_true_column;
+    const_true_column.column = DataTypeUInt8().createColumnConst(0, const_true_value);
+    const_true_column.type = std::make_shared<DataTypeUInt8>();
 
-    const auto * const_true_node = &dag->addColumn(std::move(const_true_column), std::move(const_true_type), "");
+    const auto * const_true_node = &dag->addColumn(std::move(const_true_column));
     ActionsDAG::NodeRawConstPtrs children = {&filter_node_to_normalize, const_true_node};
     FunctionOverloadResolverPtr func_builder_and = std::make_unique<FunctionToOverloadResolverAdaptor>(std::make_shared<FunctionAnd>());
     return addFunction(dag, func_builder_and, children);
@@ -255,7 +262,7 @@ bool tryBuildPrewhereSteps(
         const auto & condition_group = condition_groups[step_index];
         ActionsDAGPtr step_dag = std::make_unique<ActionsDAG>();
         const ActionsDAG::Node * original_node = nullptr;
-        const ActionsDAG::Node * result_node = nullptr;
+         const ActionsDAG::Node * result_node;
 
         std::vector<const ActionsDAG::Node *> new_condition_nodes;
         for (const auto * node : condition_group)
@@ -274,6 +281,12 @@ bool tryBuildPrewhereSteps(
         else
         {
             result_node = new_condition_nodes.front();
+            /// Check if explicit cast is needed for the condition to serve as a filter.
+            if (!isUInt8(removeNullable(removeLowCardinality(result_node->result_type))))
+            {
+                /// Build "condition AND True" expression to "cast" the condition to UInt8 or Nullable(UInt8) depending on its type.
+                result_node = &addAndTrue(step_dag, *result_node);
+            }
         }
 
         step_dag->getOutputs().insert(step_dag->getOutputs().begin(), result_node);
@@ -292,10 +305,7 @@ bool tryBuildPrewhereSteps(
         if (node_remap.contains(output))
         {
             const auto & new_node_info = node_remap[output];
-            auto & new_outputs = new_node_info.dag->getOutputs();
-            // If not `remove_prewhere_column` then column present in all_outputs, but it's already in the outputs
-            if (std::ranges::find(new_outputs, new_node_info.node) == new_outputs.end())
-                new_outputs.push_back(new_node_info.node);
+            new_node_info.dag->getOutputs().push_back(new_node_info.node);
         }
         else if (output->result_name == prewhere_info->prewhere_column_name)
         {
@@ -339,7 +349,6 @@ bool tryBuildPrewhereSteps(
                     step.original_node && !all_outputs.contains(step.original_node) && node_to_step[step.original_node] <= step_index,
                 .need_filter = force_short_circuit_execution,
                 .perform_alter_conversions = true,
-                .columns_overwritten_by_chain = {},
                 .mutation_version = std::nullopt,
             };
 

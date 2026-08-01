@@ -17,7 +17,6 @@ struct TreeRewriterResult;
 class ASTSelectQuery;
 
 bool hasJoin(const ASTSelectQuery & select);
-bool hasArrayJoin(const ASTSelectQuery & select);
 bool removeJoin(ASTSelectQuery & select, TreeRewriterResult & rewriter_result, ContextPtr context);
 
 SharedHeader getHeaderForProcessingStage(

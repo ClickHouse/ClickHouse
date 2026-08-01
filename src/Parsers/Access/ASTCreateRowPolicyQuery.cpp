@@ -12,7 +12,7 @@ namespace
 {
     void formatRenameTo(const String & new_short_name, WriteBuffer & ostr, const IAST::FormatSettings &)
     {
-        ostr << " RENAME TO " << backQuoteIfNeed(new_short_name);
+        ostr << " RENAME TO " << backQuote(new_short_name);
     }
 
 
@@ -119,13 +119,13 @@ String ASTCreateRowPolicyQuery::getID(char) const
 
 ASTPtr ASTCreateRowPolicyQuery::clone() const
 {
-    auto res = make_intrusive<ASTCreateRowPolicyQuery>(*this);
+    auto res = std::make_shared<ASTCreateRowPolicyQuery>(*this);
 
     if (names)
-        res->names = boost::static_pointer_cast<ASTRowPolicyNames>(names->clone());
+        res->names = std::static_pointer_cast<ASTRowPolicyNames>(names->clone());
 
     if (roles)
-        res->roles = boost::static_pointer_cast<ASTRolesOrUsersSet>(roles->clone());
+        res->roles = std::static_pointer_cast<ASTRolesOrUsersSet>(roles->clone());
 
     /// `res->filters` is already initialized by the copy constructor of ASTCreateRowPolicyQuery (see the first line of this function).
     /// But the copy constructor just copied the pointers inside `filters` instead of cloning.
@@ -169,7 +169,7 @@ void ASTCreateRowPolicyQuery::formatImpl(WriteBuffer & ostr, const FormatSetting
                     << backQuoteIfNeed(storage_name);
 
     formatOnCluster(ostr, settings);
-    chassert(names->cluster.empty());
+    assert(names->cluster.empty());
 
     if (!new_short_name.empty())
         formatRenameTo(new_short_name, ostr, settings);

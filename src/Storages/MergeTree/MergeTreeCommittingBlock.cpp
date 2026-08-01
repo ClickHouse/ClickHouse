@@ -44,14 +44,14 @@ Enum fromIntChecked(int64_t underlying)
     return checked.value();
 }
 
-void serializeCommittingBlockOpToBuffer(CommittingBlock::Op op, WriteBuffer & out)
+static void serializeCommittingBlockOpToBuffer(CommittingBlock::Op op, WriteBuffer & out)
 {
     out << "operation: " << toIntChecked(op) << "\n";
 }
 
-CommittingBlock::Op deserializeCommittingBlockOpFromBuffer(ReadBuffer & in)
+static CommittingBlock::Op deserializeCommittingBlockOpFromBuffer(ReadBuffer & in)
 {
-    int64_t op = 0;
+    int64_t op;
     in >> "operation: " >> op >> "\n";
     return fromIntChecked<CommittingBlock::Op>(op);
 }
@@ -76,7 +76,7 @@ CommittingBlock::Op deserializeCommittingBlockOpFromString(const std::string & r
         assertEOF(in);
         return committing_block_op;
     }
-    catch (const Exception &)
+    catch (...)
     {
         return CommittingBlock::Op::Unknown;
     }

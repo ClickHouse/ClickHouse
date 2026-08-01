@@ -3,7 +3,6 @@
 #include <Formats/FormatFactory.h>
 #include <Formats/EscapingRuleUtils.h>
 #include <Formats/JSONUtils.h>
-#include <Processors/Port.h>
 
 namespace DB
 {
@@ -30,7 +29,6 @@ bool JSONColumnsReader::checkChunkEnd()
 }
 
 
-void registerInputFormatJSONColumns(FormatFactory & factory);
 void registerInputFormatJSONColumns(FormatFactory & factory)
 {
     factory.registerInputFormat(
@@ -46,7 +44,6 @@ void registerInputFormatJSONColumns(FormatFactory & factory)
     factory.markFormatSupportsSubsetOfColumns("JSONColumns");
 }
 
-void registerJSONColumnsSchemaReader(FormatFactory & factory);
 void registerJSONColumnsSchemaReader(FormatFactory & factory)
 {
     factory.registerSchemaReader(

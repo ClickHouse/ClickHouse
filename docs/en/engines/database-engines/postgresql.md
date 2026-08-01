@@ -4,8 +4,9 @@ sidebar_label: 'PostgreSQL'
 sidebar_position: 40
 slug: /engines/database-engines/postgresql
 title: 'PostgreSQL'
-doc_type: 'guide'
 ---
+
+# PostgreSQL
 
 Allows to connect to databases on a remote [PostgreSQL](https://www.postgresql.org) server. Supports read and write operations (`SELECT` and `INSERT` queries) to exchange data between ClickHouse and PostgreSQL.
 

@@ -10,22 +10,14 @@ CURDIR=$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)
 
 check_replicas_read_in_order() {
     # NOTE: lack of "current_database = '$CLICKHOUSE_DATABASE'" filter is made on purpose
-    # Secondary parallel-replica queries push their query_log/text_log rows asynchronously
-    # after the initiator has already returned, so retry until they become visible.
-    local result="0"
-    for _ in $(seq 1 60); do
-        result=$($CLICKHOUSE_CLIENT -q "
-            SYSTEM FLUSH LOGS query_log, text_log;
+    $CLICKHOUSE_CLIENT -q "
+        SYSTEM FLUSH LOGS query_log, text_log;
 
-            SELECT COUNT() > 0
-            FROM system.text_log
-            WHERE query_id IN (SELECT query_id FROM system.query_log WHERE query_id != '$1' AND initial_query_id = '$1' AND event_date >= yesterday() AND event_time >= now() - 600)
-                AND event_date >= yesterday() AND message ILIKE '%Reading%ranges in order%'
-            SETTINGS max_rows_to_read=0")
-        [ "$result" = "1" ] && break
-        sleep 0.5
-    done
-    echo "$result"
+        SELECT COUNT() > 0
+        FROM system.text_log
+        WHERE query_id IN (SELECT query_id FROM system.query_log WHERE query_id != '$1' AND initial_query_id = '$1' AND event_date >= yesterday())
+            AND event_date >= yesterday() AND message ILIKE '%Reading%ranges in order%'
+        SETTINGS max_rows_to_read=0"
 }
 
 # replicas should use reading in order following initiator's decision to execute aggregation in order.
@@ -39,7 +31,7 @@ test1() {
         GROUP BY CounterID, URL, EventDate
         ORDER BY URL, EventDate
         LIMIT 5 OFFSET 10
-        SETTINGS optimize_aggregation_in_order = 1, enable_memory_bound_merging_of_aggregation_results = 1, enable_parallel_replicas = 1, automatic_parallel_replicas_mode = 0, parallel_replicas_for_non_replicated_merge_tree = 1, max_parallel_replicas = 3, query_plan_aggregation_in_order = 1, optimize_read_in_order = 1, optimize_group_by_constant_keys = 1, max_rows_to_read = 0"
+        SETTINGS optimize_aggregation_in_order = 1, enable_memory_bound_merging_of_aggregation_results = 1, enable_parallel_replicas = 1, parallel_replicas_for_non_replicated_merge_tree = 1, max_parallel_replicas = 3"
     check_replicas_read_in_order $query_id
 }
 
@@ -54,7 +46,7 @@ test2() {
         GROUP BY URL, EventDate
         ORDER BY URL, EventDate
         LIMIT 5 OFFSET 10
-        SETTINGS optimize_aggregation_in_order = 1, enable_memory_bound_merging_of_aggregation_results = 1, enable_parallel_replicas = 1, automatic_parallel_replicas_mode = 0, parallel_replicas_for_non_replicated_merge_tree = 1, max_parallel_replicas = 3, query_plan_aggregation_in_order = 1, optimize_read_in_order = 1, max_rows_to_read = 0"
+        SETTINGS optimize_aggregation_in_order = 1, enable_memory_bound_merging_of_aggregation_results = 1, enable_parallel_replicas = 1, parallel_replicas_for_non_replicated_merge_tree = 1, max_parallel_replicas = 3, query_plan_aggregation_in_order = 1"
     check_replicas_read_in_order $query_id
 }
 
@@ -70,7 +62,7 @@ test3() {
             FROM test.hits
             WHERE CounterID = 1704509 AND UserID = 4322253409885123546
             GROUP BY URL, EventDate
-            SETTINGS optimize_aggregation_in_order = 1, enable_memory_bound_merging_of_aggregation_results = 1, enable_parallel_replicas = 1, automatic_parallel_replicas_mode = 0, parallel_replicas_for_non_replicated_merge_tree = 1, max_parallel_replicas = 3, parallel_replicas_local_plan=1, query_plan_aggregation_in_order = 1, optimize_read_in_order = 1
+            SETTINGS optimize_aggregation_in_order = 1, enable_memory_bound_merging_of_aggregation_results = 1, enable_parallel_replicas = 1, parallel_replicas_for_non_replicated_merge_tree = 1, max_parallel_replicas = 3, parallel_replicas_local_plan=1
         )
         WHERE explain LIKE '%Aggr%Transform%' OR explain LIKE '%InOrder%'"
 }

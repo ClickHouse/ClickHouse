@@ -1,11 +1,10 @@
 #pragma once
 
 #include <memory>
+#include <string>
 #include <vector>
 #include <deque>
 
-#include <Parsers/IAST_fwd.h>
-#include <Common/Exception.h>
 #include <Common/TypePromotion.h>
 
 #include <city.h>
@@ -19,6 +18,9 @@ namespace ErrorCodes
 {
 extern const int UNSUPPORTED_METHOD;
 }
+
+class IAST;
+using ASTPtr = std::shared_ptr<IAST>;
 
 class IDataType;
 using DataTypePtr = std::shared_ptr<const IDataType>;
@@ -135,16 +137,6 @@ public:
       *
       * Alias of query tree node is part of query tree hash.
       * Original AST is not part of query tree hash.
-      *
-      * The result is not cached: every call traverses the whole subtree, so the cost is
-      * proportional to the subtree size. Nodes referenced through weak pointers are hashed too:
-      * for example, hashing a `ColumnNode` also hashes its column source (a `TableNode` or
-      * `QueryNode` with all its columns). Because of that, computing the hash per node — e.g.
-      * looking up each projection node in a container keyed by tree hash, such as
-      * `QueryTreeNodePtrWithHashSet` — can make query analysis quadratic in the number of
-      * columns for queries over wide tables. When such a container is usually empty, skip
-      * the lookup explicitly for the empty case (see `QueryAnalyzer::resolveExpressionNode`
-      * and `PlannerActionsVisitorImpl::visitColumn`).
       */
     Hash getTreeHash(CompareOptions compare_options = { .compare_aliases = true, .compare_types = true, .ignore_cte = false }) const;
 
@@ -193,18 +185,6 @@ public:
     void removeAlias()
     {
         alias = {};
-    }
-
-    /// Returns true if the expression was parenthesized in the original query
-    bool isParenthesized() const
-    {
-        return parenthesized;
-    }
-
-    /// Set parenthesized flag
-    void setParenthesized(bool value)
-    {
-        parenthesized = value;
     }
 
     /// Returns true if query tree node has original AST, false otherwise
@@ -320,8 +300,6 @@ private:
     /// but we need to keep the original one to support additional_table_filters.
     String original_alias;
     ASTPtr original_ast;
-    /// If the expression has extra parentheses around it in the original query
-    bool parenthesized = false;
 };
 
 }

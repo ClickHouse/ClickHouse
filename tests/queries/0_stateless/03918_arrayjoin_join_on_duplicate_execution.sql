@@ -96,17 +96,10 @@ SELECT 'control_subquery_new=1', count() FROM (
 INNER JOIN tags_arrjoin ON sub.tag_id = tags_arrjoin.id
 SETTINGS query_plan_use_new_logical_join_step = 1;
 
--- (8) Runtime filters off.
-SELECT 'no_rt_filter_new=1', count() FROM items_arrjoin INNER JOIN tags_arrjoin
-    ON arrayJoin(items_arrjoin.tag_ids) = tags_arrjoin.id
-    WHERE items_arrjoin.filter_key = 'target'
-    SETTINGS query_plan_use_new_logical_join_step = 1, enable_join_runtime_filters = 0;
-
--- (9) Disjunction push-down off.
-SELECT 'no_disj_pd_new=1', count() FROM items_arrjoin INNER JOIN tags_arrjoin
-    ON arrayJoin(items_arrjoin.tag_ids) = tags_arrjoin.id
-    WHERE items_arrjoin.filter_key = 'target'
-    SETTINGS query_plan_use_new_logical_join_step = 1, use_join_disjunctions_push_down = 0;
+-- (8)-(9) omitted in the 25.8 backport: the `enable_join_runtime_filters` and
+--      `use_join_disjunctions_push_down` settings do not exist on 25.8, and those
+--      optimizations are not present, so the "off" controls are redundant with the
+--      baseline here.
 
 -- (10)-(12) BILATERAL arrayJoin: both sides of JOIN ON use arrayJoin.
 --      Covers THREE WHERE shapes so both left- and right-side

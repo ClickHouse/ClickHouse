@@ -60,7 +60,7 @@ bool ParserKQLMakeSeries ::parseAggregationColumns(AggregationColumns & aggregat
         else
             aggregation_fun = std::move(first_token);
 
-        if (!allowed_aggregation.contains(aggregation_fun))
+        if (allowed_aggregation.find(aggregation_fun) == allowed_aggregation.end())
             return false;
 
         if (open_bracket.ignore(pos, expected))
@@ -139,32 +139,11 @@ bool ParserKQLMakeSeries ::parseFromToStepClause(FromToStepClause & from_to_step
     ++step_pos;
     from_to_step.step_str = String(step_pos->begin, end_pos->end);
 
-    ParserKQLDateTypeTimespan timespan;
-    /// `step_str` is either a bare timespan literal like `1h`, a `time(...)`/`timespan(...)`
-    /// wrapper, or a numeric value. For wrappers, extract the inner literal so that
-    /// `parseConstKQLTimespan` can recognize it. We must never call `toSeconds` without
-    /// a successful `parseConstKQLTimespan` first, otherwise it reads uninitialized state.
-    const String step_token(step_pos->begin, step_pos->end);
-    String timespan_literal = from_to_step.step_str;
-    if (step_token == "time" || step_token == "timespan")
-    {
-        const auto open = timespan_literal.find('(');
-        const auto close = timespan_literal.rfind(')');
-        if (open == String::npos || close == String::npos || close <= open + 1)
-            return false;
-        timespan_literal = timespan_literal.substr(open + 1, close - open - 1);
-        if (!timespan.parseConstKQLTimespan(timespan_literal))
-            return false;
-        from_to_step.is_timespan = true;
-        from_to_step.step = timespan.toSeconds();
-    }
-    else if (timespan.parseConstKQLTimespan(from_to_step.step_str))
+    if (String(step_pos->begin, step_pos->end) == "time" || String(step_pos->begin, step_pos->end) == "timespan"
+        || ParserKQLDateTypeTimespan().parseConstKQLTimespan(from_to_step.step_str))
     {
         from_to_step.is_timespan = true;
-        /// `getExprFromToken` would wrap timespan literals like `1h` in a KQL display-format
-        /// expression (`concat(...)`), which `std::stod` cannot parse. Use the timespan parser's
-        /// `toSeconds` directly instead.
-        from_to_step.step = timespan.toSeconds();
+        from_to_step.step = std::stod(getExprFromToken(from_to_step.step_str, pos.max_depth, pos.max_backtracks));
     }
     else
         from_to_step.step = std::stod(from_to_step.step_str);
@@ -172,7 +151,7 @@ bool ParserKQLMakeSeries ::parseFromToStepClause(FromToStepClause & from_to_step
     return true;
 }
 
-bool ParserKQLMakeSeries ::makeSeries(KQLMakeSeries & kql_make_series, ASTPtr & select_node, const Pos & parent_pos)
+bool ParserKQLMakeSeries ::makeSeries(KQLMakeSeries & kql_make_series, ASTPtr & select_node, uint32_t max_depth, uint32_t max_backtracks)
 {
     const uint64_t era_diff
         = 62135596800; // this magic number is the differicen is second form 0001-01-01 (Azure start time ) and 1970-01-01 (CH start time)
@@ -190,15 +169,15 @@ bool ParserKQLMakeSeries ::makeSeries(KQLMakeSeries & kql_make_series, ASTPtr & 
     auto step = from_to_step.step;
 
     if (!kql_make_series.from_to_step.from_str.empty())
-        start_str = getExprFromToken(kql_make_series.from_to_step.from_str, parent_pos);
+        start_str = getExprFromToken(kql_make_series.from_to_step.from_str, max_depth, max_backtracks);
 
     if (!kql_make_series.from_to_step.to_str.empty())
-        end_str = getExprFromToken(from_to_step.to_str, parent_pos);
+        end_str = getExprFromToken(from_to_step.to_str, max_depth, max_backtracks);
 
     auto date_type_cast = [&](String & src)
     {
         Tokens tokens(src.data(), src.data() + src.size(), 0, true);
-        IParser::Pos pos(tokens, parent_pos);
+        IParser::Pos pos(tokens, max_depth, max_backtracks);
         String res;
         while (isValidKQLPos(pos))
         {
@@ -215,17 +194,6 @@ bool ParserKQLMakeSeries ::makeSeries(KQLMakeSeries & kql_make_series, ASTPtr & 
     start_str = date_type_cast(start_str);
     end_str = date_type_cast(end_str);
 
-    /// `datetime(...)` literals are wrapped in `substring(replaceOne(toString(...), ' ', 'T'), 1, 27)` for
-    /// KQL ISO display formatting, which produces a String. The arithmetic below (toUInt64, toFloat64)
-    /// would silently coerce that String to 0, so for the time-axis case we re-parse it as DateTime64.
-    if (from_to_step.is_timespan)
-    {
-        if (!start_str.empty())
-            start_str = fmt::format("parseDateTime64BestEffortOrNull(toString({}), 9, 'UTC')", start_str);
-        if (!end_str.empty())
-            end_str = fmt::format("parseDateTime64BestEffortOrNull(toString({}), 9, 'UTC')", end_str);
-    }
-
     String bin_str;
     String start;
     String end;
@@ -238,7 +206,7 @@ bool ParserKQLMakeSeries ::makeSeries(KQLMakeSeries & kql_make_series, ASTPtr & 
     {
         std::vector<String> group_expression_tokens;
         Tokens tokens(group_expression.data(), group_expression.data() + group_expression.size(), 0, true);
-        IParser::Pos pos(tokens, parent_pos);
+        IParser::Pos pos(tokens, max_depth, max_backtracks);
         while (isValidKQLPos(pos))
         {
             if (String(pos->begin, pos->end) == "AS")
@@ -334,7 +302,7 @@ bool ParserKQLMakeSeries ::makeSeries(KQLMakeSeries & kql_make_series, ASTPtr & 
 
     ASTPtr sub_query_node;
 
-    if (!ParserSimpleCHSubquery(select_node).parseByString(sub_sub_query, sub_query_node, parent_pos))
+    if (!ParserSimpleCHSubquery(select_node).parseByString(sub_sub_query, sub_query_node, max_depth, max_backtracks))
         return false;
     select_node->as<ASTSelectQuery>()->setExpression(ASTSelectQuery::Expression::TABLES, std::move(sub_query_node));
 
@@ -389,7 +357,7 @@ bool ParserKQLMakeSeries ::makeSeries(KQLMakeSeries & kql_make_series, ASTPtr & 
     else
         main_query = fmt::format("{},{}", group_expression_alias, final_axis_agg_alias_list);
 
-    if (!ParserSimpleCHSubquery(select_node).parseByString(sub_query, sub_query_node, parent_pos))
+    if (!ParserSimpleCHSubquery(select_node).parseByString(sub_query, sub_query_node, max_depth, max_backtracks))
         return false;
     select_node->as<ASTSelectQuery>()->setExpression(ASTSelectQuery::Expression::TABLES, std::move(sub_query_node));
 
@@ -449,10 +417,10 @@ bool ParserKQLMakeSeries ::parseImpl(Pos & pos, ASTPtr & node, Expected & expect
             subquery_columns += ", " + column_str;
     }
 
-    makeSeries(kql_make_series, node, pos);
+    makeSeries(kql_make_series, node, pos.max_depth, pos.max_backtracks);
 
     Tokens token_main_query(kql_make_series.main_query.data(), kql_make_series.main_query.data() + kql_make_series.main_query.size(), 0, true);
-    IParser::Pos pos_main_query(token_main_query, pos);
+    IParser::Pos pos_main_query(token_main_query, pos.max_depth, pos.max_backtracks);
 
     if (!ParserNotEmptyExpressionList(true).parse(pos_main_query, select_expression_list, expected))
         return false;

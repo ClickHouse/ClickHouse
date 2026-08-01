@@ -1,24 +1,23 @@
 ---
-description: 'Table engine that allows importing data from a YTsaurus cluster.'
+description: 'The engine allows to import data from the YTsaurus cluster.'
 sidebar_label: 'YTsaurus'
 sidebar_position: 185
 slug: /engines/table-engines/integrations/ytsaurus
-title: 'YTsaurus table engine'
-keywords: ['YTsaurus', 'table engine']
-doc_type: 'reference'
+title: 'YTsaurus'
 ---
 
 import CloudNotSupportedBadge from '@theme/badges/CloudNotSupportedBadge';
 import ExperimentalBadge from '@theme/badges/ExperimentalBadge';
 
-# YTsaurus table engine
+# YTsaurus
 
 <ExperimentalBadge/>
 <CloudNotSupportedBadge/>
 
-The YTsaurus table engine allows you to import data from a YTsaurus cluster.
+Experimental table
+The engine allows to import data from the YTsaurus cluster.
 
-## Creating a table {#creating-a-table}
+## Creating a Table {#creating-a-table}
 
 ```sql
     CREATE TABLE [IF NOT EXISTS] [db.]table_name
@@ -29,54 +28,50 @@ The YTsaurus table engine allows you to import data from a YTsaurus cluster.
 ```
 
 :::info
-This is an experimental feature that may change in backwards-incompatible ways in future releases.
+This is an experimental feature that may change in backwards-incompatible ways in the future releases.
 Enable usage of the YTsaurus table engine
-using setting [`allow_experimental_ytsaurus_table_engine`](/operations/settings/settings#allow_experimental_ytsaurus_table_engine).
-
-You can do so using:
-
-`SET allow_experimental_ytsaurus_table_engine = 1`.
+with [allow_experimental_ytsaurus_table_engine](/operations/settings/settings#allow_experimental_ytsaurus_table_engine) setting.
+Input the command `set allow_experimental_ytsaurus_table_engine = 1`.
 :::
 
-**Engine parameters**
+**Engine Parameters**
 
 - `http_proxy_url` — URL to the YTsaurus http proxy.
 - `cypress_path` — Cypress path to the data source.
 - `oauth_token` — OAuth token.
 
-## Usage example {#usage-example}
+## Usage Example {#usage-example}
 
 Shows a query creating the YTsaurus table:
 
-```sql title="Query"
+```sql
 SHOW CREATE TABLE yt_saurus;
 ```
 
-```sql title="Response"
+```text
 CREATE TABLE yt_saurus
 (
     `a` UInt32,
     `b` String
 )
 ENGINE = YTsaurus('http://localhost:8000', '//tmp/table', 'password')
+
 ```
 
-To return the data from the table, run:
+Returns the data from the table:
 
-```sql title="Query"
+```sql
 SELECT * FROM yt_saurus;
 ```
 
-```response title="Response"
+```text
  ┌──a─┬─b──┐
  │ 10 │ 20 │
  └────┴────┘
 ```
 
 ## Data types {#data-types}
-
 ### Primitive data types {#primitive-data-types}
-
 | YTsaurus data type | Clickhouse data type    |
 | ------------------ | ----------------------- |
 | `int8`             | `Int8`                  |
@@ -109,7 +104,6 @@ SELECT * FROM yt_saurus;
 | `T` with `required = False`| `Nullable(T)`   |
 
 ### Composite types {#composite-data-types}
-
 | YTsaurus data type | Clickhouse data type |
 | ------------------ | -------------------- |
 | `decimal`          | `Decimal`            |

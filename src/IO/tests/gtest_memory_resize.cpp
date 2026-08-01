@@ -2,7 +2,6 @@
 #include <IO/ReadHelpers.h>
 #include <IO/BufferWithOwnMemory.h>
 #include <gtest/gtest.h>
-#include <Common/ErrnoException.h>
 
 #define EXPECT_THROW_ERROR_CODE(statement, expected_exception, expected_code)    \
     EXPECT_THROW(                                                                \
@@ -51,9 +50,9 @@ public:
         return dummy_address;
     }
 
-    void free([[maybe_unused]] void * buf, size_t /*size*/, size_t /*alignment*/ = 0)
+    void free([[maybe_unused]] void * buf, size_t /*size*/)
     {
-        chassert(buf == dummy_address);
+        assert(buf == dummy_address);
     }
 
     // the same check as in Common/Allocator.h
@@ -234,8 +233,7 @@ TEST(MemoryResizeTest, BigInitAndSmallResizeOverflowWhenPadding)
 TEST(MemoryResizeTest, AlignmentWithRealAllocator)
 {
     {
-        auto memory
-            = Memory<>(0, 3); // not a power of 2 but less than MALLOC_MIN_ALIGNMENT so user-defined alignment is ignored at Allocator
+        auto memory = Memory<>(0, 3); // not the power of 2 but less than MALLOC_MIN_ALIGNMENT 8 so user-defined alignment is ignored at Allocator
         ASSERT_EQ(memory.m_data, nullptr);
         ASSERT_EQ(memory.m_capacity, 0);
         ASSERT_EQ(memory.m_size, 0);
@@ -273,7 +271,7 @@ TEST(MemoryResizeTest, AlignmentWithRealAllocator)
 
 #if !defined(ADDRESS_SANITIZER) && !defined(THREAD_SANITIZER) && !defined(MEMORY_SANITIZER) && !defined(UNDEFINED_BEHAVIOR_SANITIZER)
     {
-        auto memory = Memory<>(0, 20); // not a power of 2, but more than MALLOC_MIN_ALIGNMENT
+        auto memory = Memory<>(0, 10); // not the power of 2
         ASSERT_EQ(memory.m_data, nullptr);
         ASSERT_EQ(memory.m_capacity, 0);
         ASSERT_EQ(memory.m_size, 0);

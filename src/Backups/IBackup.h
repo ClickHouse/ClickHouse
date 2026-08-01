@@ -135,6 +135,9 @@ public:
 
     /// Try to remove all files copied to the backup. Could be used after setIsCorrupted().
     virtual bool tryRemoveAllFiles() noexcept = 0;
+
+    /// Try to remove all files of a directory from original object storage.
+    virtual bool tryRemoveAllFilesUnderDirectory(const String & directory) const noexcept = 0;
 };
 
 using BackupPtr = std::shared_ptr<const IBackup>;

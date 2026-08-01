@@ -26,16 +26,17 @@ public:
     std::vector<std::string> getRemotePaths(const std::string & file_name) const override;
     String getUniqueId() const override;
 
-    void prepareRead(
+    std::unique_ptr<ReadBufferFromFileBase> readFile(
         const std::string & name,
         const ReadSettings & settings,
         std::optional<size_t> read_hint,
-        ReadPipeline & pipeline) const override;
+        std::optional<size_t> file_size) const override;
 
     std::unique_ptr<ReadBufferFromFileBase> readFileIfExists(
         const std::string & name,
         const ReadSettings & settings,
-        std::optional<size_t> read_hint) const override;
+        std::optional<size_t> read_hint,
+        std::optional<size_t> file_size) const override;
 
     void createProjection(const std::string & name) override;
 
@@ -59,12 +60,6 @@ public:
     void commitTransaction() override;
     void precommitTransaction() override {}
     bool hasActiveTransaction() const override { return transaction != nullptr; }
-#if CLICKHOUSE_CLOUD
-    TransactionCommitOutcomeVariant tryCommitTransaction(const TransactionCommitOptionsVariant & options) override;
-    void undoTransaction() override;
-    void serializeAuxiliaryInfo(WriteBuffer &) const override {}
-    void deserializeAuxiliaryInfo(ReadBuffer &) override {}
-#endif
 
 private:
     DataPartStorageOnDiskFull(VolumePtr volume_, std::string root_path_, std::string part_dir_, DiskTransactionPtr transaction_);

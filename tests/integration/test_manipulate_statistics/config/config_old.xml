@@ -1,8 +1,0 @@
-<clickhouse>
-    <profiles>
-        <default>
-            <allow_experimental_statistics>1</allow_experimental_statistics>
-            <mutations_sync>2</mutations_sync>
-        </default>
-    </profiles>
-</clickhouse>

@@ -23,9 +23,11 @@ String HashOutputFormat::getName() const
 
 void HashOutputFormat::consume(Chunk chunk)
 {
-    for (size_t i = 0, rows = chunk.getNumRows(); i < rows; ++i)
-        for (const auto & column : chunk.getColumns())
+    for (const auto & column : chunk.getColumns())
+    {
+        for (size_t i = 0; i < column->size(); ++i)
             column->updateHashWithValue(i, hash);
+    }
 }
 
 void HashOutputFormat::finalizeImpl()
@@ -36,7 +38,6 @@ void HashOutputFormat::finalizeImpl()
     out.next();
 }
 
-void registerOutputFormatHash(FormatFactory & factory);
 void registerOutputFormatHash(FormatFactory & factory)
 {
     factory.registerOutputFormat("Hash",
