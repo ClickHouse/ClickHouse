@@ -1097,8 +1097,8 @@ def _publish_and_expect(subject, keys, total_expected):
 
 def _wait_for_parked_pull_request(consumer_name = "test_consumer", time_limit_sec = 60):
     # Waits until the consumer has a pull request parked server side. `num_waiting` counts exactly
-    # those, so this reads the precondition off the broker rather than inferring it, and unlike
-    # consuming a message it does not terminate the fetch it is checking for.
+    # those, so this reads the precondition off the broker rather than inferring it, and observes the
+    # parked request without publishing anything.
     deadline = time.monotonic() + time_limit_sec
     num_waiting = 0
     while time.monotonic() < deadline:
