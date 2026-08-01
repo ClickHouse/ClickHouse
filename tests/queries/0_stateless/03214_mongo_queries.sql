@@ -2,6 +2,9 @@ SET dialect='clickhouse';
 
 -- Force a single thread so the Memory-engine read order is deterministic:
 -- the `find` queries below translate to `SELECT`s without an `ORDER BY`.
+--
+-- `$regex` is a regular expression, so the pattern that selects the values containing an `a` is
+-- `a` and not the `LIKE` pattern `%a%`.
 SET max_threads = 1;
 
 DROP TABLE IF EXISTS test;
@@ -38,7 +41,7 @@ db.test.find({"c0" : 1, "c1" : {"$lte" : 3}});
 db.test.find({"c0" : 1, "c1" : {"$gt" : 1}});
 db.test.find({"c0" : 1, "c1" : {"$gte" : 2}});
 db.test.find({"c0" : 1, "c1" : {"$ne" : 0}});
-db.test.find({"c2" : {"$regex" : "%a%"}});
+db.test.find({"c2" : {"$regex" : "a"}});
 db.test.find({}).limit(1);
 db.test.find({}).sort({"c0" : 1});
 db.test.find({"$projection" : {"b0" : "c0"}});

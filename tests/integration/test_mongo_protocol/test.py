@@ -467,10 +467,65 @@ def test_unknown_operator_is_an_error(started_cluster):
     collection.insert_many([{"id": 1}, {"id": 2}])
 
     with pytest.raises(pymongo.errors.PyMongoError):
-        [doc for doc in collection.find({"id": {"$in": [1, 2]}})]
+        [doc for doc in collection.find({"id": {"$mod": [2, 0]}})]
 
     # The server is still healthy after the rejected query.
     assert [doc["id"] for doc in collection.find({"id": 1})] == [1]
+
+
+def test_aggregate(started_cluster):
+    """An aggregation pipeline becomes a chain of `SELECT`s, so the stages that fill a clause
+    already filled by an earlier one have to continue on top of a subquery."""
+    client = make_client()
+    collection = client["db"]["aggregate"]
+
+    collection.drop()
+    collection.insert_many(
+        [
+            {"id": 1, "city": "berlin", "score": 10},
+            {"id": 2, "city": "berlin", "score": 20},
+            {"id": 3, "city": "paris", "score": 30},
+            {"id": 4, "city": "paris", "score": 40},
+            {"id": 5, "city": "rome", "score": 50},
+        ]
+    )
+
+    assert list(collection.aggregate([{"$group": {"_id": None, "c": {"$sum": 1}, "s": {"$sum": "$score"}}}])) == [
+        {"_id": None, "c": 5, "s": 150}
+    ]
+
+    assert list(
+        collection.aggregate(
+            [
+                {"$match": {"city": {"$ne": "rome"}}},
+                {"$group": {"_id": "$city", "c": {"$sum": 1}, "a": {"$avg": "$score"}}},
+                {"$sort": {"_id": 1}},
+            ]
+        )
+    ) == [{"_id": "berlin", "c": 2, "a": 15.0}, {"_id": "paris", "c": 2, "a": 35.0}]
+
+    # A `$match` after a `$group` filters the groups rather than the documents.
+    assert list(
+        collection.aggregate(
+            [
+                {"$group": {"_id": "$city", "c": {"$sum": 1}}},
+                {"$match": {"c": {"$gt": 1}}},
+                {"$sort": {"_id": 1}},
+            ]
+        )
+    ) == [{"_id": "berlin", "c": 2}, {"_id": "paris", "c": 2}]
+
+    assert list(collection.aggregate([{"$match": {"score": {"$gte": 30}}}, {"$count": "c"}])) == [{"c": 3}]
+
+    # `$skip` before `$limit` is a `LIMIT ... OFFSET ...`, the other order is not.
+    assert [doc["score"] for doc in collection.aggregate([{"$sort": {"score": 1}}, {"$skip": 1}, {"$limit": 2}])] == [20, 30]
+    assert [doc["score"] for doc in collection.aggregate([{"$sort": {"score": 1}}, {"$limit": 2}, {"$skip": 1}])] == [20]
+
+    with pytest.raises(pymongo.errors.PyMongoError):
+        list(collection.aggregate([{"$unwind": "$city"}]))
+
+    # The server is still healthy after the rejected pipeline.
+    assert list(collection.aggregate([{"$match": {"id": 1}}, {"$count": "c"}])) == [{"c": 1}]
 
 
 def test_heterogeneous_array_insert(started_cluster):
