@@ -447,7 +447,7 @@ The wait time in milliseconds for a connection when the connection pool is full.
 Possible values:
 
 - Positive integer.
-- 0 — Infinite timeout.
+- 0 — Infinite timeout: wait until a connection is returned to the pool.
 )", 0) \
     DECLARE(Milliseconds, replace_running_query_max_wait_ms, 5000, R"(
 The wait time for running the query with the same `query_id` to finish, when the [replace_running_query](#replace_running_query) setting is active.
