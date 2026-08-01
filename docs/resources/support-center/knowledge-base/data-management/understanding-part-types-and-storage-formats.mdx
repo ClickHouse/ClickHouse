@@ -61,7 +61,7 @@ Storage formats determine how a part's files are physically stored on disk.
 | Format | Description | Availability |
 |--------|-------------|--------------|
 | **Full** | Each file is stored individually in the part directory | Open source and Cloud |
-| **Packed** | All files are bundled into a single archive file | Open source and Cloud |
+| **Packed** | Most part files are bundled into a single archive file (projections and a few service files are written separately) | Open source and Cloud |
 
 ### Full storage {#full-storage}
 
@@ -69,7 +69,7 @@ In Full storage, each part consists of multiple separate files stored individual
 
 ### Packed storage {#packed-storage}
 
-In Packed storage, all part files are bundled into a single archive. This significantly reduces the number of file operations, which is critical for remote storage like S3 where each request has associated latency and cost.
+In Packed storage, most part files are bundled into a single archive. Projections and a few service files - `txn_version.txt`, `delete-on-destroy.txt` and `invalidated_system_columns.txt` - are still written separately, because they can be created or rewritten after the part itself has been written. This significantly reduces the number of file operations, which is critical for remote storage like S3 where each request has associated latency and cost.
 
 **Benefits of Packed storage:**
 - Fewer S3/object storage API calls
