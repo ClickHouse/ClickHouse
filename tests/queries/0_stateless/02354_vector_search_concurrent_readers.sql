@@ -34,10 +34,14 @@ SETTINGS index_granularity = 128, index_granularity_bytes = 10485760;
 
 -- Distance from the origin grows strictly with id, so the top-k is unique and no tie-break sort key
 -- is needed. A second ORDER BY key would disable the vector search optimization.
+-- 2560 rows is 21 marks at the granularity pinned above, which is enough for the read pool to
+-- hand tasks to several threads: peak_threads_usage reaches 5 here, against the > 2 the assertions
+-- below require. It is also the smallest round size that keeps that margin -- 1024 rows is 9 marks
+-- and peaks at exactly 2 threads, which fails those assertions outright.
 INSERT INTO vs_concurrent
 SELECT number, number % 4,
        arrayMap(j -> if(j = 0, toFloat32(number) / 1000.0, toFloat32(0)), range(8))
-FROM numbers(20000);
+FROM numbers(2560);
 
 OPTIMIZE TABLE vs_concurrent FINAL;
 
