@@ -1,8 +1,11 @@
 #include <Processors/Sources/RecursiveCTESource.h>
 
 #include <Storages/IStorage.h>
+#include <Storages/StorageAlias.h>
 #include <Storages/StorageDistributed.h>
+#include <Storages/StorageMaterializedView.h>
 #include <Storages/StorageMemory.h>
+#include <Storages/StorageProxy.h>
 
 #include <Processors/Sinks/SinkToStorage.h>
 #include <Processors/Transforms/ExpressionTransform.h>
@@ -109,14 +112,50 @@ std::vector<TableNode *> collectTableNodesWithTemporaryTableName(const std::stri
 /// shard with more than one node. Such reads therefore run as plain remote reads today, and
 /// the forcing mode has nothing to fail on — the rejection must not fire for them either.
 ///
-/// Only `StorageDistributed` (which backs `Distributed` tables and the `remote` / `cluster` /
-/// `clusterAllReplicas` table functions) exposes the cluster the read would go to; any other
-/// remote storage counts as eligible, which is the fail-closed side of the check.
+/// This is a positive capability check: among remote storages, only reads served by
+/// `ClusterProxy::executeQuery` consult the parallel-replica settings at all, and the only
+/// storage routing there is `StorageDistributed` (which backs `Distributed` tables and the
+/// `remote` / `cluster` / `clusterAllReplicas` table functions). Every other remote engine —
+/// `MongoDB`, `MySQL`, `PostgreSQL`, `YTsaurus`, the `*Cluster` object-storage functions, ... —
+/// builds its source pipe directly and never looks at
+/// `allow_experimental_parallel_reading_from_replicas` (the object-storage cluster conversion
+/// driven by `parallel_replicas_for_cluster_engines` happens at table-function resolution
+/// time, before this source runs, so by now it is an ordinary `IStorageCluster` read), so
+/// disabling the setting cannot downgrade them and the forcing mode has nothing to fail on.
+/// Storages that delegate their read to another storage are unwrapped: a table defined
+/// `AS remote(...)` is a `StorageProxy` over `StorageDistributed`, a materialized view
+/// with a `Distributed` target reads that target directly (this is independent of
+/// `parallel_replicas_allow_materialized_views`, which gates only the planner's
+/// `MergeTree`-family rule), and an `Alias` table reads its target. `Buffer` and `Merge`
+/// tables over a remote child are not unwrapped — their targets are not reachable through
+/// a public accessor here — so they do not count as eligible: the read stays correct
+/// (parallel replicas are still disabled below), only the forced-mode rejection does not
+/// fire for them.
 bool mayEngageParallelReplicasForRemoteStorage(const IStorage & storage, const ContextPtr & context)
 {
+    /// `isRemote` on these wrappers already forced the nested/target storage, so unwrapping
+    /// it here has no extra side effect.
+    if (const auto * proxy = dynamic_cast<const StorageProxy *>(&storage))
+    {
+        const auto nested = proxy->getNested();
+        return nested && nested->isRemote() && mayEngageParallelReplicasForRemoteStorage(*nested, context);
+    }
+
+    if (const auto * materialized_view = dynamic_cast<const StorageMaterializedView *>(&storage))
+    {
+        const auto target = materialized_view->tryGetTargetTable();
+        return target && target->isRemote() && mayEngageParallelReplicasForRemoteStorage(*target, context);
+    }
+
+    if (const auto * alias = dynamic_cast<const StorageAlias *>(&storage))
+    {
+        const auto target = alias->getTargetTable();
+        return target && target->isRemote() && mayEngageParallelReplicasForRemoteStorage(*target, context);
+    }
+
     const auto * distributed = dynamic_cast<const StorageDistributed *>(&storage);
     if (!distributed)
-        return true;
+        return false;
 
     auto cluster = distributed->getCluster();
 
@@ -183,9 +222,10 @@ bool mayEngageParallelReplicasForRemoteStorage(const IStorage & storage, const C
 ///
 /// Remote storages (`Distributed`, `remote`, `cluster`) are eligible in addition: they are not
 /// covered by that rule (which only accepts the `MergeTree` family), yet every mode can split a
-/// read across a cluster's replicas — but only when the cluster has a suitable shape, which is
-/// what `mayEngageParallelReplicasForRemoteStorage` checks. This is the fail-closed side of the
-/// check — a storage counts as eligible when parallel replicas could be engaged for it.
+/// read across a cluster's replicas — but only for storages whose read actually goes through
+/// the parallel-replica machinery and only when the cluster has a suitable shape, which is
+/// what `mayEngageParallelReplicasForRemoteStorage` checks positively. Remote engines that
+/// read directly (`MongoDB`, `MySQL`, ...) never consult the setting and are not eligible.
 ///
 /// The walk is scoped to `scope_context`: subqueries with a `SETTINGS` clause of their
 /// own get their own context, and the settings that decide whether parallel replicas

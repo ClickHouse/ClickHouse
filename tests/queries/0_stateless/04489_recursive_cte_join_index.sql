@@ -901,6 +901,71 @@ SETTINGS allow_experimental_parallel_reading_from_replicas = 2, max_parallel_rep
 
 DROP TABLE edges_dist;
 
+-- The forced-mode rejection is a positive capability check: among remote storages, only
+-- reads served by `ClusterProxy` (`Distributed` tables and the `remote` / `cluster` /
+-- `clusterAllReplicas` table functions) consult the parallel-replica settings at all. A
+-- cluster table function (`urlCluster` here) distributes its read by itself, never reads
+-- `allow_experimental_parallel_reading_from_replicas`, and so cannot be downgraded by the
+-- recursive-step disable — the forcing mode must not reject it, even though the cluster it
+-- reads over has a shard with several replicas. The same goes for remote engines with a
+-- direct read path (`MongoDB`, `YTsaurus`, ...), which cannot be exercised in a stateless
+-- test.
+WITH RECURSIVE cluster_fn_pr AS
+(
+    SELECT 1 AS n
+  UNION ALL
+    SELECT n + toUInt64(u.one) FROM cluster_fn_pr AS t
+        INNER JOIN urlCluster('test_cluster_one_shard_three_replicas_localhost',
+            'http://localhost:8123/?query=select+1+format+TSV', 'TSV', 'one UInt8') AS u
+            ON u.one = toUInt8(t.n > 0)
+    WHERE n < 10
+)
+SELECT sum(n) FROM cluster_fn_pr
+SETTINGS allow_experimental_parallel_reading_from_replicas = 2, max_parallel_replicas = 2,
+    parallel_replicas_for_non_replicated_merge_tree = 1, automatic_parallel_replicas_mode = 0;
+
+-- A table defined `AS cluster(...)` is a lazy proxy (`StorageProxy`) over the underlying
+-- `Distributed` storage; the capability check unwraps it, so the forcing mode is still
+-- rejected when the proxied read really can engage parallel replicas.
+DROP TABLE IF EXISTS edges_cluster_proxy;
+CREATE TABLE edges_cluster_proxy AS cluster('test_cluster_one_shard_three_replicas_localhost', currentDatabase(), edges);
+
+WITH RECURSIVE proxy_pr_throw AS
+(
+    SELECT 1 AS n
+  UNION ALL
+    SELECT n + 1 FROM proxy_pr_throw AS t INNER JOIN edges_cluster_proxy AS e ON e.from_id = t.n
+    WHERE n < 10
+)
+SELECT sum(n) FROM proxy_pr_throw
+SETTINGS allow_experimental_parallel_reading_from_replicas = 2, max_parallel_replicas = 2,
+    parallel_replicas_for_non_replicated_merge_tree = 1, automatic_parallel_replicas_mode = 0; -- { serverError SUPPORT_IS_DISABLED }
+
+DROP TABLE edges_cluster_proxy;
+
+-- A materialized view reads its target table directly, so a view targeting a `Distributed`
+-- table over a multi-replica cluster is unwrapped the same way and still fails closed under
+-- the forcing mode.
+DROP VIEW IF EXISTS edges_dist_mv;
+DROP TABLE IF EXISTS edges_dist_replicas;
+CREATE TABLE edges_dist_replicas AS edges
+    ENGINE = Distributed('test_cluster_one_shard_three_replicas_localhost', currentDatabase(), edges);
+CREATE MATERIALIZED VIEW edges_dist_mv TO edges_dist_replicas AS SELECT * FROM edges;
+
+WITH RECURSIVE mv_pr_throw AS
+(
+    SELECT 1 AS n
+  UNION ALL
+    SELECT n + 1 FROM mv_pr_throw AS t INNER JOIN edges_dist_mv AS e ON e.from_id = t.n
+    WHERE n < 10
+)
+SELECT sum(n) FROM mv_pr_throw
+SETTINGS allow_experimental_parallel_reading_from_replicas = 2, max_parallel_replicas = 2,
+    parallel_replicas_for_non_replicated_merge_tree = 1, automatic_parallel_replicas_mode = 0; -- { serverError SUPPORT_IS_DISABLED }
+
+DROP VIEW edges_dist_mv;
+DROP TABLE edges_dist_replicas;
+
 DROP TABLE edges;
 DROP TABLE two_hop;
 DROP TABLE t_a;
