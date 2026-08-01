@@ -30,6 +30,7 @@ Each row describes one data part.
     - `data_version` - optional value, incremented when a part is mutated (again, mutated data is always only written to a new part, since parts are immutable)
 - `uuid` ([UUID](/sql-reference/data-types/uuid)) — The UUID of data part.
 - `part_type` ([String](/sql-reference/data-types/string)) — The data part storing format. Possible values: `Wide` — each column is stored in a separate file, `Compact` — all columns are stored in one file. Data storing format is controlled by the `min_bytes_for_wide_part` and `min_rows_for_wide_part` settings of the MergeTree table.
+- `part_storage_type` ([String](/sql-reference/data-types/string)) — The type of `DataPartStorage`. Possible values: `Packed` - most part files are stored in a single archive (projections and a few service files such as `txn_version.txt` are written separately), `Full` - each file is stored separately.
 - `active` ([UInt8](/sql-reference/data-types/int-uint)) — Flag that indicates whether the data part is active. If a data part is active, it's used in a table. Otherwise, it's about to be deleted. Inactive data parts appear after merging and mutating operations.
 - `marks` ([UInt64](/sql-reference/data-types/int-uint)) — The number of marks. To get the approximate number of rows in a data part, multiply marks by the index granularity (usually 8192) (this hint does not work for adaptive granularity).
 - `rows` ([UInt64](/sql-reference/data-types/int-uint)) — The number of rows.
@@ -72,7 +73,7 @@ Each row describes one data part.
 - `move_ttl_info.expression` ([Array(String)](/sql-reference/data-types/array)) — Array of expressions. Each expression defines a TTL MOVE rule.
 - `move_ttl_info.min` ([Array(DateTime)](/sql-reference/data-types/array)) — Array of date and time values. Each element describes the minimum key value for a TTL MOVE rule.
 - `move_ttl_info.max` ([Array(DateTime)](/sql-reference/data-types/array)) — Array of date and time values. Each element describes the maximum key value for a TTL MOVE rule.
-- `default_compression_codec` ([String](/sql-reference/data-types/string)) — The name of the codec used to compress this data part (in case when there is no explicit codec for columns).
+- `default_compression_codec` ([String](/sql-reference/data-types/string)) — The name of the codec used to compress this data part (when a column has no explicit codec or uses `CODEC(Default)`). With `allow_experimental_adaptive_codec_selection`, individual blocks of such columns can use other codecs, reported per codec by the [`mergeTreeCodecBlockCounts`](/sql-reference/table-functions/mergeTreeCodecBlockCounts) table function.
 - `recompression_ttl_info.expression` ([Array(String)](/sql-reference/data-types/array)) — The TTL expression.
 - `recompression_ttl_info.min` ([Array(DateTime)](/sql-reference/data-types/array)) — The minimum value of the calculated TTL expression within this part. Used to understand whether we have at least one row with expired TTL.
 - `recompression_ttl_info.max` ([Array(DateTime)](/sql-reference/data-types/array)) — The maximum value of the calculated TTL expression within this part. Used to understand whether we have all rows with expired TTL.
@@ -112,6 +113,7 @@ Row 1:
 partition:                             tuple()
 name:                                  all_1_4_1_6
 part_type:                             Wide
+part_storage_type:                     Full
 active:                                1
 marks:                                 2
 rows:                                  6
