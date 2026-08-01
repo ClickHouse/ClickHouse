@@ -59,6 +59,12 @@ SELECT 'C t64 s7 cast', CAST(toTime64('100:00:00.1234567', 7) AS String);
 SELECT 'C t64 s6 .123456', toString(toTime64('100:00:00.123456', 6));
 SELECT 'C t64 s4 .0007', toString(toTime64('100:00:00.0007', 4));
 SELECT 'C t64 s1 .7', toString(toTime64('100:00:00.7', 1));
+-- An all-zero fraction keeps three digits for `Time64`, because its writer always emits the
+-- delimiter, whereas the `DateTime64` writer drops the fraction. Pre-existing and unchanged by the
+-- new rule (both the old and new formulas yield width three here); pinned so the two stay described.
+SELECT 'C t64 s9 zero', toString(toTime64('100:00:00.000000000', 9));
+SELECT 'C t64 s1 zero', toString(toTime64('100:00:00.0', 1));
+SELECT 'C dt64 s9 zero', toString(toDateTime64('2024-01-01 00:00:00.000000000', 9, 'UTC'));
 
 -- D. More than one route reaches the fixed code: the conversion functions and the serialization.
 SELECT 'D cast', CAST(toDateTime64('2024-01-01 00:00:00.123456789', 9, 'UTC') AS String);
