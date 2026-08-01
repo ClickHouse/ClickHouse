@@ -18,9 +18,9 @@ ARGS_MIXED=(--insert-method InsertSelect --table-engine MergeTree --use-insert-t
 # Each alternative carries its own terminating semicolon so a longer value cannot match as a
 # prefix: without it, "SET max_insert_threads=10;" matches the "max_insert_threads=1" branch
 # and a diagnostics run reporting a value the failing run never used would pass unnoticed.
-# One pattern per argument shape, since the two shapes apply different values.
+# Only the ARGS shape needs a pattern; the ARGS_MIXED shape's values are pinned literally by
+# the statement dump below.
 SETTINGS_RE_ST='SET max_insert_threads=1;|SET update_insert_deduplication_token_in_dependent_materialized_views=1;|SET deduplicate_blocks_in_dependent_materialized_views=1;|SET max_block_size=1;'
-SETTINGS_RE_MT='SET max_insert_threads=10;|SET update_insert_deduplication_token_in_dependent_materialized_views=1;|SET deduplicate_blocks_in_dependent_materialized_views=1;|SET max_block_size=1;'
 
 for sub in insert_several_blocks_into_table mv_generates_several_blocks several_mv_into_one_table; do
     main=$(python3 "$GEN" "$sub" "${ARGS[@]}")
@@ -44,28 +44,25 @@ for sub in insert_several_blocks_into_table mv_generates_several_blocks several_
     done
 done
 
-# The payload of the diagnostics, not just how many statements it has.
+# The payload of the diagnostics, statement by statement, not just aggregate counts of it.
+# Enumerating individual observables (projections, FROM tables, guard constants, ...) can only
+# pin the clauses somebody thought to enumerate: a changed WHERE filter, IN list or ORDER BY
+# stayed invisible. Dumping every statement normalized is closed under that class by
+# construction, and a diff names the exact statements that moved. It also subsumes the
+# aggregate rows it replaces: the guard constants, read tables, projections, the applied
+# SET values and the absence of DROP/CREATE/INSERT/throwIf are all literally in the dump.
 for sub in insert_several_blocks_into_table mv_generates_several_blocks several_mv_into_one_table; do
     for phase in first second; do
         emit=$(python3 "$GEN" "$sub" "${ARGS_MIXED[@]}" --emit-debug-only "$phase")
-        # The guard constants each phase compares against, so a phase reporting the other
-        # phase's expectations shows up here.
-        echo "$sub $phase guards [$(echo "$emit" | grep -oE '!= [0-9]+' | sort -u | tr '\n' ' ')]"
-        # Every table the probes read, so a probe aimed at the wrong table shows up here.
-        echo "$sub $phase tables [$(echo "$emit" | grep -oE 'FROM [a-z_.]+' | sort -u | sed 's/FROM //' | tr '\n' ' ')]"
-        # The payload each probe actually selects. Nothing else in the file depends on the
-        # projection lists, and CLICKHOUSE_FORMAT only parses the AST, so a thinned or
-        # unresolvable probe would otherwise pass CI and only fail when a case really fails.
-        echo "$sub $phase projections [$(echo "$emit" \
-            | grep -oE 'SELECT [A-Za-z_][A-Za-z_0-9, ()]*$' \
-            | sed 's/^ *//;s/ *$//' | sort -u | tr '\n' ' ')]"
-        # The settings block carries the failing run's values, not fresh-session defaults.
-        echo "$sub $phase threads [$(echo "$emit" | grep -oE 'SET max_insert_threads=[0-9]+')]"
-        # This shape's own expected values, so a setting mutated only on the many-threads
-        # branch cannot hide behind the single-thread shape's expectation.
-        echo "$sub $phase emit probed settings $(echo "$emit" | grep -oE "$SETTINGS_RE_MT" | sort -u | wc -l)"
+        # One row per statement: join lines, split on the statement terminator, collapse
+        # whitespace so the dump is insensitive to the generator's indentation only.
+        printf '%s\n' "$emit" | tr '\n' ' ' | tr ';' '\n' \
+            | sed 's/[[:space:]]\+/ /g; s/^ //; s/ $//' \
+            | grep -v '^$' \
+            | sed "s|^|$sub $phase stmt |"
         # On master the probes ran on the success path, so invalid SQL in them broke every
-        # case immediately. They only run on failure now, so nothing else would notice.
+        # case immediately. They only run on failure now, so nothing else would notice. Kept
+        # alongside the dump because it fails with a clearer signal than a multi-line diff.
         if printf '%s' "$emit" | $CLICKHOUSE_FORMAT --multiquery > /dev/null 2>&1; then
             echo "$sub $phase emit parses 1"
         else
@@ -76,13 +73,22 @@ done
 
 # A marker the generator emits must be one every driver can parse, and each driver must
 # still take the main invocation without diagnostics and re-run them for the failed phase.
-MARKER=$(python3 "$GEN" several_mv_into_one_table "${ARGS[@]}" \
-    | grep -oE 'DEDUP_ASSERT_FAILED phase=second table=[a-z_]+' | head -n 1)
-LINE="Code: 395. DB::Exception: ${MARKER}: while executing"
+# Both phases are checked: a driver whose parser recognized only one of them would leave the
+# other phase's failure with an empty FAILED_PHASE, so the guarded rerun is skipped and that
+# failure ships with no diagnostics at all.
+MAIN_OUT=$(python3 "$GEN" several_mv_into_one_table "${ARGS[@]}")
 for drv in "$CURDIR"/03008_deduplication_*_replicated.sh "$CURDIR"/03008_deduplication_*_nonreplicated.sh; do
     name=$(basename "$drv" .sh)
     prog=$(sed -n "s/.*FAILED_PHASE=\$(sed -n '\(.*\)' \"\\\$CASE_STDERR\".*/\1/p" "$drv")
-    echo "$name parses [$(echo "$LINE" | sed -n "$prog" | head -n 1)]"
+    for phase in first second; do
+        # The line is built from a marker the generator really emits for this phase, so the row
+        # also fails if the generator stops emitting it in the shape the drivers parse.
+        MARKER=$(printf '%s\n' "$MAIN_OUT" \
+            | grep -oE "DEDUP_ASSERT_FAILED phase=$phase table=[a-z_]+" | head -n 1)
+        LINE="Code: 395. DB::Exception: ${MARKER}: while executing"
+        echo "$name $phase parses [$(echo "$LINE" | sed -n "$prog" | head -n 1)]"
+    done
+    # Per-driver, not per-phase, so these stay outside the phase loop.
     echo "$name main debug-on-fail $(grep -c 'debug-on-fail' "$drv")"
     # shellcheck disable=SC2016  # the literal text $FAILED_PHASE is searched for, not expanded
     echo "$name emit-debug-only $(grep -c 'emit-debug-only "\$FAILED_PHASE"' "$drv")"
@@ -91,38 +97,44 @@ done
 # Drive each driver's own failure-handling block, extracted verbatim from the driver, with a
 # stub client that fails the first invocation the way the server does. That makes the guard,
 # the diagnostics rerun and the stderr forwarding observable instead of merely present.
+# Both phases are driven, because a driver that dispatched only one of them would silently
+# skip the rerun for the other and the failure would carry no diagnostics.
 for drv in "$CURDIR"/03008_deduplication_*_replicated.sh "$CURDIR"/03008_deduplication_*_nonreplicated.sh; do
     name=$(basename "$drv" .sh)
-    W=$(mktemp -d "$CLICKHOUSE_TMP/03008_dedup_probe_XXXXXX")
-    cat > "$W/client" <<'STUB'
+    for phase in first second; do
+        W=$(mktemp -d "$CLICKHOUSE_TMP/03008_dedup_probe_XXXXXX")
+        # Expanding here-doc: only $phase is substituted, the stub's own variables are escaped.
+        cat > "$W/client" <<STUB
 #!/usr/bin/env bash
-D="$(dirname "$0")"
-n=$(cat "$D/n" 2>/dev/null || echo 0); n=$((n+1)); echo "$n" > "$D/n"
-printf '%s' "${!#}" > "$D/sql.$n"
-if [ "$n" = 1 ]; then
-  echo "Code: 395. DB::Exception: DEDUP_ASSERT_FAILED phase=second table=t: while executing" >&2
+D="\$(dirname "\$0")"
+n=\$(cat "\$D/n" 2>/dev/null || echo 0); n=\$((n+1)); echo "\$n" > "\$D/n"
+printf '%s' "\${!#}" > "\$D/sql.\$n"
+if [ "\$n" = 1 ]; then
+  echo "Code: 395. DB::Exception: DEDUP_ASSERT_FAILED phase=$phase table=t: while executing" >&2
   exit 395
 fi
 exit 0
 STUB
-    chmod +x "$W/client"
-    # shellcheck disable=SC2016  # the literal text $CLICKHOUSE_CLIENT is searched for, not expanded
-    sed -n '/^                        if \$CLICKHOUSE_CLIENT/,/^                        fi$/p' "$drv" > "$W/block.sh"
-    {
-      echo "CLICKHOUSE_CLIENT='$W/client'"
-      echo "CASE_STDERR='$W/stderr'"
-      echo "CURDIR='$CURDIR'"
-      echo 'CASE_ARGS=(--insert-method InsertSelect --table-engine MergeTree --use-insert-token True
-        --single-thread True --deduplicate-src-table True --deduplicate-dst-table True
-        --insert-unique-blocks True --get-logs false)'
-      sed 's/^                        //' "$W/block.sh"
-    } > "$W/run.sh"
-    out=$(bash "$W/run.sh" 2> "$W/fwd")
-    echo "$name failure verdict [$out]"
-    echo "$name failure client invocations $(cat "$W/n")"
-    echo "$name failure rerun is diagnostics-only $( [ -f "$W/sql.2" ] && { grep -c 'DEBUG' "$W/sql.2" || true; } | awk '{print ($1>0)?1:0}' )"
-    echo "$name failure rerun mutating $( [ -f "$W/sql.2" ] && { grep -ciE 'DROP |CREATE |INSERT |throwIf' "$W/sql.2" || true; } || echo NA )"
-    echo "$name failure rerun phase second $( [ -f "$W/sql.2" ] && { grep -c 'DEBUG second' "$W/sql.2" || true; } )"
-    echo "$name failure marker forwarded $(grep -c 'DEDUP_ASSERT_FAILED' "$W/fwd")"
-    rm -rf "$W"
+        chmod +x "$W/client"
+        # shellcheck disable=SC2016  # the literal text $CLICKHOUSE_CLIENT is searched for, not expanded
+        sed -n '/^                        if \$CLICKHOUSE_CLIENT/,/^                        fi$/p' "$drv" > "$W/block.sh"
+        {
+          echo "CLICKHOUSE_CLIENT='$W/client'"
+          echo "CASE_STDERR='$W/stderr'"
+          echo "CURDIR='$CURDIR'"
+          echo 'CASE_ARGS=(--insert-method InsertSelect --table-engine MergeTree --use-insert-token True
+            --single-thread True --deduplicate-src-table True --deduplicate-dst-table True
+            --insert-unique-blocks True --get-logs false)'
+          sed 's/^                        //' "$W/block.sh"
+        } > "$W/run.sh"
+        out=$(bash "$W/run.sh" 2> "$W/fwd")
+        echo "$name $phase failure verdict [$out]"
+        echo "$name $phase failure client invocations $(cat "$W/n")"
+        echo "$name $phase failure rerun is diagnostics-only $( [ -f "$W/sql.2" ] && { grep -c 'DEBUG' "$W/sql.2" || true; } | awk '{print ($1>0)?1:0}' )"
+        echo "$name $phase failure rerun mutating $( [ -f "$W/sql.2" ] && { grep -ciE 'DROP |CREATE |INSERT |throwIf' "$W/sql.2" || true; } || echo NA )"
+        # The rerun must carry THIS phase's diagnostics, not the other phase's.
+        echo "$name $phase failure rerun phase $( [ -f "$W/sql.2" ] && { grep -c "DEBUG $phase" "$W/sql.2" || true; } )"
+        echo "$name $phase failure marker forwarded $(grep -c 'DEDUP_ASSERT_FAILED' "$W/fwd")"
+        rm -rf "$W"
+    done
 done
