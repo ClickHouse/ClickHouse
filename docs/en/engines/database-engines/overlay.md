@@ -181,7 +181,8 @@ The dual-grant checks are fail-closed even when a source database is broken or u
 (for example a `PostgreSQL` or `MySQL` source whose server is down). The data entrypoints that
 resolve a facade name to a source table (`SELECT`, `INSERT`, `WATCH`, `CHECK TABLE`) prove
 source-side visibility **before** the source table is resolved and loaded — for every table of the
-query, including the tables of a `JOIN`, and both with and without the analyzer — so a user without a
+query, including the tables of a `JOIN`, the right-hand side of an `IN` and the tables of the
+subqueries of a distributed query, and both with and without the analyzer — so a user without a
 grant on the source receives the same access-denied error for a hidden broken source as for a
 hidden healthy one: the facade never surfaces the hidden source's own error and cannot be used
 as an oracle for the state of sources the user is not allowed to see. Once the source-side

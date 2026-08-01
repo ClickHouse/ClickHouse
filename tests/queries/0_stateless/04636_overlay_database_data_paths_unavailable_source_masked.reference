@@ -4,6 +4,12 @@ ACCESS_DENIED
 Facade-only grants: a JOIN with the facade on the right side is denied under both analyzers
 ACCESS_DENIED
 ACCESS_DENIED
+Facade-only grants: a bare facade table on the right side of IN is denied under both analyzers
+ACCESS_DENIED
+ACCESS_DENIED
+Facade-only grants: a facade table in a subquery of a distributed query is denied under both analyzers
+ACCESS_DENIED
+ACCESS_DENIED
 Facade-only grants: INSERT is denied, not the connection error
 ACCESS_DENIED
 Facade-only grants: WATCH is denied, not the connection error
@@ -11,6 +17,8 @@ ACCESS_DENIED
 Facade-only grants: CHECK TABLE is denied, not the connection error
 ACCESS_DENIED
 Dual grants: the source connection error is visible, the same as on direct access
+POSTGRESQL_CONNECTION_FAILURE
+POSTGRESQL_CONNECTION_FAILURE
 POSTGRESQL_CONNECTION_FAILURE
 POSTGRESQL_CONNECTION_FAILURE
 POSTGRESQL_CONNECTION_FAILURE

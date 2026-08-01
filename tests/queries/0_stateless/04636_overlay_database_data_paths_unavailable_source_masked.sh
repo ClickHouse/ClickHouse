@@ -47,6 +47,10 @@ ${CLICKHOUSE_CLIENT} -nm --query "
     CREATE DATABASE ${DB_LOC};
     CREATE TABLE ${DB_LOC}.l (x UInt64) ENGINE = Memory;
     INSERT INTO ${DB_LOC}.l VALUES (1);
+    -- A two-shard `Distributed` table: only for such a table does the old analyzer run
+    -- `InJoinSubqueriesPreprocessor`, which looks up every table of an `IN` / `JOIN` subquery
+    -- while rewriting it.
+    CREATE TABLE ${DB_LOC}.d (x UInt64) ENGINE = Distributed(test_cluster_two_shards, ${DB_LOC}, l);
 
     CREATE USER ${USER_OVL} NOT IDENTIFIED;
     CREATE USER ${USER_DUAL} NOT IDENTIFIED;
@@ -67,6 +71,14 @@ echo 'Facade-only grants: a JOIN with the facade on the right side is denied und
 ${CLICKHOUSE_CLIENT} --user="${USER_OVL}" --query "SELECT * FROM ${DB_LOC}.l AS a JOIN ${DB_OVL}.t AS b ON a.x = b.x SETTINGS enable_analyzer = 1" 2>&1 | grep -o ACCESS_DENIED | uniq
 ${CLICKHOUSE_CLIENT} --user="${USER_OVL}" --query "SELECT * FROM ${DB_LOC}.l AS a JOIN ${DB_OVL}.t AS b ON a.x = b.x SETTINGS enable_analyzer = 0" 2>&1 | grep -o ACCESS_DENIED | uniq
 
+echo 'Facade-only grants: a bare facade table on the right side of IN is denied under both analyzers'
+${CLICKHOUSE_CLIENT} --user="${USER_OVL}" --query "SELECT * FROM ${DB_LOC}.l WHERE x IN ${DB_OVL}.t SETTINGS enable_analyzer = 1" 2>&1 | grep -o ACCESS_DENIED | uniq
+${CLICKHOUSE_CLIENT} --user="${USER_OVL}" --query "SELECT * FROM ${DB_LOC}.l WHERE x IN ${DB_OVL}.t SETTINGS enable_analyzer = 0" 2>&1 | grep -o ACCESS_DENIED | uniq
+
+echo 'Facade-only grants: a facade table in a subquery of a distributed query is denied under both analyzers'
+${CLICKHOUSE_CLIENT} --user="${USER_OVL}" --query "SELECT * FROM ${DB_LOC}.d WHERE x GLOBAL IN (SELECT x FROM ${DB_OVL}.t) SETTINGS enable_analyzer = 1" 2>&1 | grep -o ACCESS_DENIED | uniq
+${CLICKHOUSE_CLIENT} --user="${USER_OVL}" --query "SELECT * FROM ${DB_LOC}.d WHERE x GLOBAL IN (SELECT x FROM ${DB_OVL}.t) SETTINGS enable_analyzer = 0" 2>&1 | grep -o ACCESS_DENIED | uniq
+
 echo 'Facade-only grants: INSERT is denied, not the connection error'
 ${CLICKHOUSE_CLIENT} --user="${USER_OVL}" --query "INSERT INTO ${DB_OVL}.t VALUES (1)" 2>&1 | grep -o ACCESS_DENIED | uniq
 
@@ -83,6 +95,8 @@ ${CLICKHOUSE_CLIENT} --user="${USER_DUAL}" --query "INSERT INTO ${DB_OVL}.t VALU
 ${CLICKHOUSE_CLIENT} --user="${USER_DUAL}" --query "SELECT * FROM ${DB_PG}.t" 2>&1 | grep -o POSTGRESQL_CONNECTION_FAILURE | uniq
 ${CLICKHOUSE_CLIENT} --user="${USER_DUAL}" --query "SELECT * FROM ${DB_LOC}.l AS a JOIN ${DB_OVL}.t AS b ON a.x = b.x SETTINGS enable_analyzer = 1" 2>&1 | grep -o POSTGRESQL_CONNECTION_FAILURE | uniq
 ${CLICKHOUSE_CLIENT} --user="${USER_DUAL}" --query "SELECT * FROM ${DB_LOC}.l AS a JOIN ${DB_OVL}.t AS b ON a.x = b.x SETTINGS enable_analyzer = 0" 2>&1 | grep -o POSTGRESQL_CONNECTION_FAILURE | uniq
+${CLICKHOUSE_CLIENT} --user="${USER_DUAL}" --query "SELECT * FROM ${DB_LOC}.l WHERE x IN ${DB_OVL}.t SETTINGS enable_analyzer = 1" 2>&1 | grep -o POSTGRESQL_CONNECTION_FAILURE | uniq
+${CLICKHOUSE_CLIENT} --user="${USER_DUAL}" --query "SELECT * FROM ${DB_LOC}.l WHERE x IN ${DB_OVL}.t SETTINGS enable_analyzer = 0" 2>&1 | grep -o POSTGRESQL_CONNECTION_FAILURE | uniq
 
 ${CLICKHOUSE_CLIENT} -nm --query "
     DROP DATABASE ${DB_OVL};

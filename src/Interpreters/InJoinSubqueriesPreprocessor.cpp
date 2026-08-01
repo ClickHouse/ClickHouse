@@ -1,4 +1,5 @@
 #include <Interpreters/InJoinSubqueriesPreprocessor.h>
+#include <Databases/DatabaseOverlay.h>
 #include <Interpreters/Context.h>
 #include <Interpreters/DatabaseAndTableWithAlias.h>
 #include <Interpreters/DatabaseCatalog.h>
@@ -38,6 +39,13 @@ StoragePtr tryGetTable(const ASTPtr & database_and_table, ContextPtr context)
     auto table_id = context->tryResolveStorageID(database_and_table);
     if (!table_id)
         return {};
+    /// The rewriting of a distributed `IN` / `JOIN` subquery looks the table up only to recognize a
+    /// `Distributed` engine, but the lookup loads it. Behind a read-only `Overlay` facade that
+    /// loads the underlying source table before any source-side grant is proven, so a hidden broken
+    /// source would surface its own error to a user granted only on the facade. Run the same
+    /// fail-closed precheck as the other old-analyzer lookups; the precise privilege on both the
+    /// facade and the source is still verified against the loaded storage later.
+    DatabaseOverlay::checkSourceTableAccessIfFacade(table_id, context, AccessType::SHOW_TABLES);
     return DatabaseCatalog::instance().tryGetTable(table_id, context);
 }
 
