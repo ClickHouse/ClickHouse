@@ -372,6 +372,12 @@ bool ParserDataType::parseImpl(Pos & pos, ASTPtr & node, Expected & expected)
     /// failure used to parse the argument list a second time, which doubled the work at every
     /// nesting level - a malformed `Tuple(Tuple(...))` of depth N cost 2^N and exhausted
     /// `max_parser_backtracks` instead of reporting a syntax error.
+    ///
+    /// The one exception is an element `DEFAULT` expression, e.g. `Tuple(s String DEFAULT 'Hello')`:
+    /// `ASTTupleDataType` has nowhere to keep it, so the generic parser - which uses
+    /// `ParserNameTypePairWithDefault` and produces `ASTNameTypePair` elements carrying the default -
+    /// has to parse such a tuple. Only that shape falls through, so the doubled work above is not
+    /// reintroduced for malformed input.
     bool use_tuple_fast_path = type_name == "Tuple" && pos->type == TokenType::OpeningRoundBracket;
     if (use_tuple_fast_path)
     {
@@ -382,6 +388,7 @@ bool ParserDataType::parseImpl(Pos & pos, ASTPtr & node, Expected & expected)
 
     if (use_tuple_fast_path)
     {
+        auto tuple_start_pos = pos;
         ++pos;
 
         auto tuple_node = make_intrusive<ASTTupleDataType>();
@@ -390,6 +397,7 @@ bool ParserDataType::parseImpl(Pos & pos, ASTPtr & node, Expected & expected)
         tuple_node->children.push_back(arguments);
 
         bool has_named_elements = false;
+        bool has_element_default = false;
         Strings element_names_tmp;
         bool first_element = true;
 
@@ -414,6 +422,12 @@ bool ParserDataType::parseImpl(Pos & pos, ASTPtr & node, Expected & expected)
             auto element_pos = pos;
             if (identifier_parser.parse(pos, identifier_node, expected) && type_parser.parse(pos, type_node, expected))
             {
+                if (ParserKeyword(Keyword::DEFAULT).checkWithoutMoving(pos, expected))
+                {
+                    has_element_default = true;
+                    break;
+                }
+
                 /// Named element: name Type
                 String elem_name;
                 tryGetIdentifierNameInto(identifier_node, elem_name);
@@ -440,21 +454,28 @@ bool ParserDataType::parseImpl(Pos & pos, ASTPtr & node, Expected & expected)
             }
         }
 
-        if (pos->type == TokenType::ClosingRoundBracket && !arguments->children.empty())
+        if (!has_element_default)
         {
-            ++pos;
-            /// Only store element_names if tuple has any named elements
-            if (has_named_elements)
+            if (pos->type == TokenType::ClosingRoundBracket && !arguments->children.empty())
             {
-                element_names_tmp.shrink_to_fit();
-                tuple_node->element_names = std::move(element_names_tmp);
+                ++pos;
+                /// Only store element_names if tuple has any named elements
+                if (has_named_elements)
+                {
+                    element_names_tmp.shrink_to_fit();
+                    tuple_node->element_names = std::move(element_names_tmp);
+                }
+                arguments->children.shrink_to_fit();
+                node = tuple_node;
+                return true;
             }
-            arguments->children.shrink_to_fit();
-            node = tuple_node;
-            return true;
+
+            return false;
         }
 
-        return false;
+        /// An element carries a `DEFAULT` expression - re-parse the whole argument list with the
+        /// generic parser below, which keeps the default in an `ASTNameTypePair`.
+        pos = tuple_start_pos;
     }
 
     auto data_type_node = make_intrusive<ASTDataType>();
