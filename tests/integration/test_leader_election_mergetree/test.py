@@ -1845,7 +1845,8 @@ def test_attach_partition_from_undone_when_lease_goes_stale_mid_rename(started_c
         try:
             with pytest.raises(Exception, match="middle of publishing a batch"):
                 node1.query(f"ALTER TABLE {table} ATTACH PARTITION 1 FROM {plain}")
-            assert int(node1.query(f"SELECT count() FROM {table}").strip()) == 2, (
+            # `WHERE x > 0` excludes the `x = 0` probe rows inserted by `wait_for_leader`.
+            assert int(node1.query(f"SELECT count() FROM {table} WHERE x > 0").strip()) == 2, (
                 "ATTACH PARTITION FROM was rejected but part of the batch still took effect"
             )
         finally:
@@ -1856,13 +1857,13 @@ def test_attach_partition_from_undone_when_lease_goes_stale_mid_rename(started_c
         node1.query(f"DETACH TABLE {table}")
         node1.query(f"ATTACH TABLE {table}")
         wait_for_leader([node1], table_name=table)
-        assert int(node1.query(f"SELECT count() FROM {table}").strip()) == 2, (
+        assert int(node1.query(f"SELECT count() FROM {table} WHERE x > 0").strip()) == 2, (
             "A part of the aborted ATTACH PARTITION FROM was left on shared storage"
         )
 
         # With the failpoint cleared the same command succeeds and publishes the whole batch.
         node1.query(f"ALTER TABLE {table} ATTACH PARTITION 1 FROM {plain}")
-        assert int(node1.query(f"SELECT count() FROM {table}").strip()) == 4
+        assert int(node1.query(f"SELECT count() FROM {table} WHERE x > 0").strip()) == 4
     finally:
         try:
             node1.query(f"SYSTEM DISABLE FAILPOINT {failpoint}")
