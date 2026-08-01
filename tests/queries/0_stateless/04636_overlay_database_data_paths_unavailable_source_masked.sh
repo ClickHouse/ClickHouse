@@ -47,8 +47,8 @@ ${CLICKHOUSE_CLIENT} -nm --query "
     CREATE DATABASE ${DB_LOC};
     CREATE TABLE ${DB_LOC}.l (x UInt64) ENGINE = Memory;
     INSERT INTO ${DB_LOC}.l VALUES (1);
-    -- A two-shard `Distributed` table: only for such a table does the old analyzer run
-    -- `InJoinSubqueriesPreprocessor`, which looks up every table of an `IN` / `JOIN` subquery
+    -- A two-shard Distributed table: only for such a table does the old analyzer run
+    -- InJoinSubqueriesPreprocessor, which looks up every table of an IN / JOIN subquery
     -- while rewriting it.
     CREATE TABLE ${DB_LOC}.d (x UInt64) ENGINE = Distributed(test_cluster_two_shards, ${DB_LOC}, l);
 

@@ -16,6 +16,8 @@
 
 #include <AggregateFunctions/AggregateFunctionFactory.h>
 
+#include <Databases/DatabaseOverlay.h>
+
 #include <DataTypes/DataTypeSet.h>
 #include <DataTypes/DataTypeFunction.h>
 #include <DataTypes/DataTypeString.h>
@@ -1298,6 +1300,13 @@ FutureSetPtr ActionsMatcher::makeSet(const ASTFunction & node, Data & data, bool
         if (identifier)
         {
             auto table_id = data.getContext()->resolveStorageID(right_in_operand);
+            /// The lookup recognizes a `Set` storage on the right-hand side, but it loads the
+            /// table. Behind a read-only `Overlay` facade it would load the underlying source
+            /// table before any source-side grant is proven, so a hidden broken source would
+            /// surface its own error to a user granted only on the facade. Run the same
+            /// fail-closed precheck as the other table lookups of the old analyzer; the precise
+            /// privilege on both the facade and the source is still verified later.
+            DatabaseOverlay::checkSourceTableAccessIfFacade(table_id, data.getContext(), AccessType::SHOW_TABLES);
             StoragePtr table = DatabaseCatalog::instance().tryGetTable(table_id, data.getContext());
 
             if (table)
