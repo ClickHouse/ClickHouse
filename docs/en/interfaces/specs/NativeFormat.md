@@ -140,7 +140,7 @@ A single byte. `0x00` is false; any non-zero value is true (canonically `0x01`).
 [Column × num_columns]    column entries, omitted when num_columns = 0
 ```
 
-Whether the `BlockInfo` prefix is present depends on the channel, because the writer is parameterized by a *revision* (see [Protocol revision and the Native format](#protocol-revision) for the full treatment, including how `client_protocol_version` raises it on both the output and the input side over HTTP):
+Whether the `BlockInfo` prefix is present depends on the channel, because the writer is parameterized by a *revision* (see [Protocol revision and the Native format](#protocol-revision) for the full treatment, including how `client_protocol_version` raises the output side over HTTP while the input side always stays at revision `0`):
 
 - On the **native TCP protocol**, the server writes blocks at the connection's negotiated revision (a large value — `DBMS_TCP_PROTOCOL_VERSION`, see `src/Core/ProtocolDefines.h`). `BlockInfo` is written whenever that revision is greater than zero, which is always the case for a real connection. The `has_custom_serialization` byte in each column (see [column wire layout](#column-wire-layout)) is written at revision `54454` and above.
 - The `Native` *output format* — `SELECT ... FORMAT Native` over HTTP, `INTO OUTFILE ... FORMAT Native`, and the `Native` format produced by `clickhouse-client` — serializes at revision `0` *by default*. At revision `0` the `BlockInfo` prefix and the `has_custom_serialization` byte are both omitted, so a block is just `num_columns`, `num_rows`, and the columns.
