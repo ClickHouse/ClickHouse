@@ -10119,7 +10119,13 @@ void MergeTreeData::Transaction::renameParts()
                 throw;
             }
 
-            published_in_this_call.emplace_back(part_need_rename, part_need_rename->getDataPartStorage().getPartDirectory());
+            /// `renameTo` takes a path relative to the table root, so a part staged from the
+            /// detached namespace (`ATTACH PARTITION`) must be restored under `detached/`,
+            /// not just under its directory name.
+            String previous_directory = part_need_rename->getDataPartStorage().getPartDirectory();
+            if (part_need_rename->getDataPartStorage().getParentDirectory() == DETACHED_DIR_NAME)
+                previous_directory = String(DETACHED_DIR_NAME) + "/" + previous_directory;
+            published_in_this_call.emplace_back(part_need_rename, previous_directory);
         }
 
         LOG_TEST(data.log, "Renaming part to {}", part_need_rename->name);

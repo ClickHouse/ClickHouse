@@ -3593,38 +3593,69 @@ PartitionCommandsResultInfo StorageMergeTree::attachPartition(
     PartsTemporaryRename renamed_parts(*this, DETACHED_DIR_NAME);
     MutableDataPartsVector loaded_parts = tryLoadPartsToAttach(command, local_context, renamed_parts, admission_epoch);
 
-    for (size_t i = 0; i < loaded_parts.size(); ++i)
-    {
-        LOG_INFO(log, "Attaching part {} from {}", loaded_parts[i]->name, renamed_parts.old_and_new_names[i].new_dir);
-        /// We should write version metadata on part creation to distinguish it from parts that were created without transaction.
-        auto txn = local_context->getCurrentTransaction();
-        TransactionID tid = txn ? txn->tid : Tx::NonTransactionalTID;
-        loaded_parts[i]->version->setAndStoreCreationTID(tid, nullptr);
+    if (loaded_parts.empty())
+        return results;
 
-        /// It's important to create it outside of lock scope because
-        /// otherwise it can lock parts in destructor and deadlock is possible.
-        MergeTreeData::Transaction transaction(*this, local_context->getCurrentTransaction().get());
+    /// All parts are published through a single transaction so that a lease lost — or lost and
+    /// reacquired — in the middle of the batch undoes the renames already done instead of
+    /// leaving the command partially applied. It's important to create it outside of lock scope
+    /// because otherwise it can lock parts in destructor and deadlock is possible.
+    MergeTreeData::Transaction transaction(*this, local_context->getCurrentTransaction().get());
+    {
+        /// The renames below publish the attached parts into the (possibly shared) storage
+        /// prefix; a lease lost during `tryLoadPartsToAttach` must fail closed before any part
+        /// becomes visible to the new leader, and the fence is re-checked before each individual
+        /// rename (see `Transaction::renameParts`).
+        if (leader_election_ptr)
+            transaction.setPublishFenceEpoch(admission_epoch);
+
+        auto lock = lockParts();
+        std::vector<std::unique_ptr<PlainCommittingBlockHolder>> block_holders;
+
+        for (size_t i = 0; i < loaded_parts.size(); ++i)
         {
-            auto lock = lockParts();
-            /// The rename below publishes the attached part into the (possibly shared) storage
-            /// prefix; a lease lost — or lost and reacquired — during `tryLoadPartsToAttach`
-            /// must fail closed here, before the part becomes visible to the new leader.
-            assertWritableLeaderAtEpoch(admission_epoch);
-            auto block_holder = fillNewPartNameAndResetLevel(loaded_parts[i], lock);
-            renameTempPartAndAdd(loaded_parts[i], transaction, lock, /*rename_in_transaction=*/ false);
-            transaction.commit(lock);
+            LOG_INFO(log, "Attaching part {} from {}", loaded_parts[i]->name, renamed_parts.old_and_new_names[i].new_dir);
+            /// We should write version metadata on part creation to distinguish it from parts that were created without transaction.
+            auto txn = local_context->getCurrentTransaction();
+            TransactionID tid = txn ? txn->tid : Tx::NonTransactionalTID;
+            loaded_parts[i]->version->setAndStoreCreationTID(tid, nullptr);
+
+            block_holders.emplace_back(fillNewPartNameAndResetLevel(loaded_parts[i], lock));
+            renameTempPartAndAdd(loaded_parts[i], transaction, lock, /*rename_in_transaction=*/ true);
         }
 
+        try
+        {
+            assertWritableLeaderAtEpoch(admission_epoch);
+            transaction.renameParts();
+        }
+        catch (...)
+        {
+            /// `renameParts` renamed the parts it already published back into `detached/` (the
+            /// recorded directories are process-scoped `attaching_` names, so restoring them
+            /// cannot collide). Remove the parts from the working set; they were never visible
+            /// to anyone. `is_temp` is deliberately NOT set: the directories belong to the
+            /// user's `detached/` namespace, and `renamed_parts`'s destructor restores their
+            /// original names because `old_dir` is cleared only on success below.
+            if (!local_context->getCurrentTransaction())
+                transaction.rollbackPartsToTemporaryState(&lock);
+            throw;
+        }
+
+        transaction.commit(lock);
+    }
+
+    for (size_t i = 0; i < loaded_parts.size(); ++i)
+    {
         results.push_back(PartitionCommandResultInfo{
             .command_type = "ATTACH_PART",
             .partition_id = loaded_parts[i]->info.getPartitionId(),
             .part_name = loaded_parts[i]->name,
             .old_part_name = renamed_parts.old_and_new_names[i].old_dir,
         });
-
         renamed_parts.old_and_new_names[i].old_dir.clear();
-        LOG_INFO(log, "Finished attaching part");
     }
+    LOG_INFO(log, "Finished attaching {} parts", loaded_parts.size());
 
     return results;
 }
@@ -4321,20 +4352,47 @@ void StorageMergeTree::attachRestoredParts(MutableDataPartsVector && parts, cons
 {
     /// Same admission-epoch fence as `attachPartition`: restoring parts publishes them into the
     /// (possibly shared) storage prefix, so a lease lost during the restore must fail closed
-    /// before each rename.
+    /// before each rename, and the whole batch is published through a single transaction so
+    /// that a lease lost in the middle undoes the renames already done instead of leaving the
+    /// restore partially applied.
     const UInt64 admission_epoch = currentLeadershipEpoch();
-    for (auto part : parts)
+
+    if (parts.empty())
+        return;
+
+    /// It's important to create it outside of lock scope because
+    /// otherwise it can lock parts in destructor and deadlock is possible.
+    MergeTreeData::Transaction transaction(*this, NO_TRANSACTION_RAW);
     {
-        /// It's important to create it outside of lock scope because
-        /// otherwise it can lock parts in destructor and deadlock is possible.
-        MergeTreeData::Transaction transaction(*this, NO_TRANSACTION_RAW);
+        if (leader_election_ptr)
+            transaction.setPublishFenceEpoch(admission_epoch);
+
+        auto lock = lockParts();
+        std::vector<std::unique_ptr<PlainCommittingBlockHolder>> block_holders;
+
+        for (auto part : parts)
         {
-            auto lock = lockParts();
-            assertWritableLeaderAtEpoch(admission_epoch);
-            auto block_holder = fillNewPartName(part, lock);
-            renameTempPartAndAdd(part, transaction, lock, /*rename_in_transaction=*/ false);
-            transaction.commit(lock);
+            block_holders.emplace_back(fillNewPartName(part, lock));
+            renameTempPartAndAdd(part, transaction, lock, /*rename_in_transaction=*/ true);
         }
+
+        try
+        {
+            assertWritableLeaderAtEpoch(admission_epoch);
+            transaction.renameParts();
+        }
+        catch (...)
+        {
+            /// The restored parts never became visible; remove them from the working set and
+            /// restore temporary ownership (cleared by `preparePartForCommit`) so their
+            /// never-published directories are removed by the destructors.
+            transaction.rollbackPartsToTemporaryState(&lock);
+            for (auto & part : parts)
+                part->is_temp = true;
+            throw;
+        }
+
+        transaction.commit(lock);
     }
 }
 
