@@ -47,8 +47,8 @@ SYSTEM FLUSH LOGS query_log;
 -- held path served real bytes, and over-read is expected -- gap-bridging reads past the requested
 -- window, so source bytes are at least the requested bytes (the inverse of 04327's strict equality).
 -- The counters are incremented on whichever replica reads the window, so under parallel replicas they
--- land on secondary rows whose `current_database` is `default`. Resolve the initiator rows by
--- `current_database`, then sum over every row of those queries via `initial_query_id`.
+-- land on secondary rows whose `current_database` is `default`. Resolve this run's own initiator by
+-- `current_database`, then sum over every row of that one query via `initial_query_id`.
 WITH initial_query_ids AS
 (
     SELECT query_id
@@ -58,6 +58,8 @@ WITH initial_query_ids AS
       AND type = 'QueryFinish'
       AND is_initial_query = 1
       AND log_comment = '04341_long_conn_on'
+    ORDER BY event_time_microseconds DESC
+    LIMIT 1
 )
 SELECT
     sum(ProfileEvents['ReaderExecutorLongConnectionOpened']) > 0,
@@ -79,6 +81,8 @@ WITH initial_query_ids AS
       AND type = 'QueryFinish'
       AND is_initial_query = 1
       AND log_comment = '04341_long_conn_off'
+    ORDER BY event_time_microseconds DESC
+    LIMIT 1
 )
 SELECT
     sum(ProfileEvents['ReaderExecutorSourceRequests']) > 0,

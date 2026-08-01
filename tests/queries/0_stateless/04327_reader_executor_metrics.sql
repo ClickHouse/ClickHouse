@@ -48,8 +48,8 @@ SYSTEM FLUSH LOGS query_log;
 
 -- Per-query ProfileEvents for the marked query, summed over every row of that query.
 -- The counters are incremented on whichever replica reads the mark, so under parallel replicas they
--- land on secondary rows whose `current_database` is `default`. Resolve the initiator rows by
--- `current_database`, then sum over every row of those queries via `initial_query_id`.
+-- land on secondary rows whose `current_database` is `default`. Resolve this run's own initiator by
+-- `current_database`, then sum over every row of that one query via `initial_query_id`.
 -- Columns (all expected 1):
 --   1: source requests happened
 --   2: bytes were read from source
@@ -67,6 +67,8 @@ WITH initial_query_ids AS
       AND type = 'QueryFinish'
       AND is_initial_query = 1
       AND log_comment = '04327_reader_executor_metrics_probe'
+    ORDER BY event_time_microseconds DESC
+    LIMIT 1
 )
 SELECT
     sum(ProfileEvents['ReaderExecutorSourceRequests']) > 0,
