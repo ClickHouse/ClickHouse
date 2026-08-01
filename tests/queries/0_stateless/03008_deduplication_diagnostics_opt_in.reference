@@ -31,6 +31,30 @@ several_mv_into_one_table second emit DEBUG total 11
 several_mv_into_one_table second emit DEBUG phase 5
 several_mv_into_one_table second emit probed settings 4
 several_mv_into_one_table second emit mutating 0
+insert_several_blocks_into_table first guards [!= 10 != 5 ]
+insert_several_blocks_into_table first tables [system.parts system.settings table_a_b table_when_b_even ]
+insert_several_blocks_into_table first threads [SET max_insert_threads=10]
+insert_several_blocks_into_table first emit parses 1
+insert_several_blocks_into_table second guards [!= 10 != 20 ]
+insert_several_blocks_into_table second tables [system.parts system.settings table_a_b table_when_b_even ]
+insert_several_blocks_into_table second threads [SET max_insert_threads=10]
+insert_several_blocks_into_table second emit parses 1
+mv_generates_several_blocks first guards [!= 5 != 9 ]
+mv_generates_several_blocks first tables [system.parts system.settings system.tables table_a_b table_when_b_even_and_joined ]
+mv_generates_several_blocks first threads [SET max_insert_threads=10]
+mv_generates_several_blocks first emit parses 1
+mv_generates_several_blocks second guards [!= 10 != 18 ]
+mv_generates_several_blocks second tables [system.parts system.settings system.tables table_a_b table_when_b_even_and_joined ]
+mv_generates_several_blocks second threads [SET max_insert_threads=10]
+mv_generates_several_blocks second emit parses 1
+several_mv_into_one_table first guards [!= 6 != 8 ]
+several_mv_into_one_table first tables [system.parts system.settings system.tables table_dst table_src ]
+several_mv_into_one_table first threads [SET max_insert_threads=10]
+several_mv_into_one_table first emit parses 1
+several_mv_into_one_table second guards [!= 12 != 16 ]
+several_mv_into_one_table second tables [system.parts system.settings system.tables table_dst table_src ]
+several_mv_into_one_table second threads [SET max_insert_threads=10]
+several_mv_into_one_table second emit parses 1
 03008_deduplication_insert_several_blocks_replicated parses [second]
 03008_deduplication_insert_several_blocks_replicated main debug-on-fail 0
 03008_deduplication_insert_several_blocks_replicated emit-debug-only 1
@@ -49,3 +73,39 @@ several_mv_into_one_table second emit mutating 0
 03008_deduplication_several_mv_into_one_table_nonreplicated parses [second]
 03008_deduplication_several_mv_into_one_table_nonreplicated main debug-on-fail 0
 03008_deduplication_several_mv_into_one_table_nonreplicated emit-debug-only 1
+03008_deduplication_insert_several_blocks_replicated failure verdict [FAIL]
+03008_deduplication_insert_several_blocks_replicated failure client invocations 2
+03008_deduplication_insert_several_blocks_replicated failure rerun is diagnostics-only 1
+03008_deduplication_insert_several_blocks_replicated failure rerun mutating 0
+03008_deduplication_insert_several_blocks_replicated failure rerun phase second 5
+03008_deduplication_insert_several_blocks_replicated failure marker forwarded 1
+03008_deduplication_mv_generates_several_blocks_replicated failure verdict [FAIL]
+03008_deduplication_mv_generates_several_blocks_replicated failure client invocations 2
+03008_deduplication_mv_generates_several_blocks_replicated failure rerun is diagnostics-only 1
+03008_deduplication_mv_generates_several_blocks_replicated failure rerun mutating 0
+03008_deduplication_mv_generates_several_blocks_replicated failure rerun phase second 5
+03008_deduplication_mv_generates_several_blocks_replicated failure marker forwarded 1
+03008_deduplication_several_mv_into_one_table_replicated failure verdict [FAIL]
+03008_deduplication_several_mv_into_one_table_replicated failure client invocations 2
+03008_deduplication_several_mv_into_one_table_replicated failure rerun is diagnostics-only 1
+03008_deduplication_several_mv_into_one_table_replicated failure rerun mutating 0
+03008_deduplication_several_mv_into_one_table_replicated failure rerun phase second 5
+03008_deduplication_several_mv_into_one_table_replicated failure marker forwarded 1
+03008_deduplication_insert_several_blocks_nonreplicated failure verdict [FAIL]
+03008_deduplication_insert_several_blocks_nonreplicated failure client invocations 2
+03008_deduplication_insert_several_blocks_nonreplicated failure rerun is diagnostics-only 1
+03008_deduplication_insert_several_blocks_nonreplicated failure rerun mutating 0
+03008_deduplication_insert_several_blocks_nonreplicated failure rerun phase second 5
+03008_deduplication_insert_several_blocks_nonreplicated failure marker forwarded 1
+03008_deduplication_mv_generates_several_blocks_nonreplicated failure verdict [FAIL]
+03008_deduplication_mv_generates_several_blocks_nonreplicated failure client invocations 2
+03008_deduplication_mv_generates_several_blocks_nonreplicated failure rerun is diagnostics-only 1
+03008_deduplication_mv_generates_several_blocks_nonreplicated failure rerun mutating 0
+03008_deduplication_mv_generates_several_blocks_nonreplicated failure rerun phase second 5
+03008_deduplication_mv_generates_several_blocks_nonreplicated failure marker forwarded 1
+03008_deduplication_several_mv_into_one_table_nonreplicated failure verdict [FAIL]
+03008_deduplication_several_mv_into_one_table_nonreplicated failure client invocations 2
+03008_deduplication_several_mv_into_one_table_nonreplicated failure rerun is diagnostics-only 1
+03008_deduplication_several_mv_into_one_table_nonreplicated failure rerun mutating 0
+03008_deduplication_several_mv_into_one_table_nonreplicated failure rerun phase second 5
+03008_deduplication_several_mv_into_one_table_nonreplicated failure marker forwarded 1
