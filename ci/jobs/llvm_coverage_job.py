@@ -594,7 +594,12 @@ if __name__ == "__main__":
                     ),
                     "pull_request_number": pr_number,
                     "commit_sha": current_commit_sha,
-                    "base_commit_sha": base_commit_sha,
+                    # The ancestor the report was actually generated against, which
+                    # is generally NOT base_commit_sha: that is the NEAREST master
+                    # ancestor, while the selector walks past any that is unusable.
+                    # Storing the nearest one would attribute the delta to a
+                    # revision that was never measured.
+                    "base_commit_sha": _selected_base_commit or base_commit_sha,
                     "branch": branch,
                     "base_branch": base_branch,
                     "status": diff_res.status,

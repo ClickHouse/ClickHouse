@@ -23,19 +23,20 @@ IFS=',' read -ra COMMITS <<< "${PREV_30_COMMITS}"
 
 BASE_S3_PREFIX="https://clickhouse-builds.s3.amazonaws.com/REFs/master"
 
-# Our own completeness metadata, written by the job before this script runs. Used
-# to prefer a baseline that measured the same artifact manifest.
-OUR_MANIFEST_FP=""
-if [ -f "llvm_coverage.meta.json" ]; then
-  OUR_MANIFEST_FP=$(python3 -c "import json,sys; print(json.load(open(sys.argv[1])).get('manifest_fp',''))" llvm_coverage.meta.json 2>/dev/null || true)
-fi
-
 # Two passes over the same ancestor list.
 #
-# Pass 1 prefers an ancestor that published a COMPLETE measurement of the same
-# artifact manifest. Most master runs are not complete, so selecting the first
-# ancestor that merely has an .info would make the gate abstain on the majority of
-# runs rather than judge them.
+# Pass 1 prefers an ancestor the job will actually be able to compare against.
+# Most master runs are not complete, so selecting the first ancestor that merely
+# has an .info would make the gate abstain on the majority of runs rather than
+# judge them.
+#
+# Its predicate is llvm_coverage_completeness.comparable itself, not a local
+# approximation of it. A selection test weaker than the usability test lets a
+# candidate win here that the job then rejects, which turns "walk on to the next
+# usable baseline" into a whole-job abstention. Reusing the one function keeps the
+# two from drifting apart again, and it is why the candidate .info is downloaded
+# before the decision: the torn-pair check digests the very bytes that would be
+# compared.
 #
 # Pass 2 is byte-for-byte the previous behaviour, and it is what keeps this
 # backward compatible: no master commit published before this change carries
@@ -45,7 +46,7 @@ fi
 FOUND=0
 FIRST_BASE_COMMIT=""
 for PASS in prefer_complete any_info; do
-  if [ "$PASS" = "prefer_complete" ] && [ -z "$OUR_MANIFEST_FP" ]; then
+  if [ "$PASS" = "prefer_complete" ] && [ ! -f llvm_coverage.meta.json ]; then
     echo "No local completeness metadata; skipping the complete-baseline pass"
     continue
   fi
@@ -65,19 +66,30 @@ for PASS in prefer_complete any_info; do
         echo "  no completeness metadata for ${TEST_COMMIT}"
         continue
       fi
-      if ! python3 -c "
-import json, sys
-d = json.load(open('base_llvm_coverage.meta.json'))
-sys.exit(0 if d.get('complete') and d.get('manifest_fp') == sys.argv[1] else 1)
-" "${OUR_MANIFEST_FP}" 2>/dev/null; then
-        rm -f base_llvm_coverage.meta.json
-        echo "  ${TEST_COMMIT} is not a complete measurement of our artifact manifest"
+      wget --quiet "${COVERAGE_URL}" -O base_llvm_coverage.info
+      if ! REASON=$(PYTHONPATH="${WORKSPACE_PATH}" python3 -c "
+import sys
+from ci.jobs.scripts import llvm_coverage_completeness as completeness
+
+ok, reason = completeness.comparable(
+    completeness.read_sidecar('llvm_coverage.meta.json'),
+    completeness.read_sidecar('base_llvm_coverage.meta.json'),
+    baseline_info_path='base_llvm_coverage.info',
+)
+if ok:
+    sys.exit(0)
+sys.stdout.write(reason)
+sys.exit(1)
+"); then
+        rm -f base_llvm_coverage.meta.json base_llvm_coverage.info
+        echo "  ${TEST_COMMIT} is not usable as a baseline: ${REASON}"
         continue
       fi
-      echo "  ${TEST_COMMIT} reports a complete measurement of our artifact manifest"
+      echo "  ${TEST_COMMIT} is a usable baseline for this measurement"
+    else
+      wget --quiet "${COVERAGE_URL}" -O base_llvm_coverage.info
     fi
     echo "Found coverage file at ${COVERAGE_URL}"
-    wget --quiet "${COVERAGE_URL}" -O base_llvm_coverage.info
     FIRST_BASE_COMMIT="${TEST_COMMIT}"
     FOUND=1
     break

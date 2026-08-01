@@ -1886,6 +1886,15 @@ def _run_selector(ancestors):
         work = os.path.join(d, "work")
         os.makedirs(os.path.join(work, "ci", "tmp"))
         tmp = os.path.join(work, "ci", "tmp")
+        # Production sets WORKSPACE_PATH to the repo root, and the selector puts it
+        # on PYTHONPATH to import the completeness module. `ci` and `ci.jobs` are
+        # namespace packages, so linking jobs/ makes the REAL module importable from
+        # this synthetic workspace - the selector's predicate under test is then the
+        # production function, not a copy of it.
+        os.symlink(
+            os.path.abspath(os.path.join(_CI_ROOT, "jobs")),
+            os.path.join(work, "ci", "jobs"),
+        )
         with open(os.path.join(tmp, "llvm_coverage.info"), "w") as f:
             f.write("SF:/a.cpp\nDA:1,1\nend_of_record\n")
         completeness.write_sidecar(
@@ -1970,6 +1979,68 @@ def test_job_reads_the_selected_commit_rather_than_rewalking_s3():
     src = open(_JOB, encoding="utf-8").read()
     assert "selected_base_commit.txt" in src
     assert "base_llvm_coverage.meta.json" in src
+
+
+def test_selector_walks_past_a_newer_schema_version_to_the_next_usable_one():
+    # The selection predicate must be the USABILITY predicate. A candidate the
+    # job will later reject must not win selection here: doing so converts "pick
+    # an older usable baseline" into a whole-job abstention, which is the exact
+    # self-disabling failure this protocol exists to avoid.
+    newer = _sidecar()
+    newer["schema_version"] = completeness.SCHEMA_VERSION + 1
+    # Confirm the premise: the job's own verdict function rejects this candidate.
+    assert completeness.comparable(_sidecar(), newer)[0] is False
+    sel, rc, _ = _run_selector([("near", True, newer), ("far", True, _sidecar())])
+    assert rc == 0
+    assert sel == "far"
+
+
+def test_selector_walks_past_a_torn_sidecar_info_pair_to_the_next_usable_one():
+    # The other cause `comparable` rejects after download. Detecting it requires
+    # the candidate's .info bytes, so the selector must fetch before deciding.
+    torn = _sidecar()
+    torn["info_digest"] = "0" * 16  # describes an .info that is not the one served
+    assert completeness.comparable(_sidecar(), torn)[0] is True, (
+        "digest mismatch is only detectable with the .info in hand"
+    )
+    sel, rc, out = _run_selector([("near", True, torn), ("far", True, _sidecar())])
+    assert rc == 0
+    assert sel == "far"
+    assert "does not describe" in out, out
+
+
+def test_a_selected_baseline_is_actually_usable_by_the_job():
+    # The reverse direction of the two rows above: pass 1 must still SELECT a
+    # candidate that is usable, so the tightened predicate cannot pass by
+    # rejecting everything.
+    sel, rc, _ = _run_selector([("near", True, _sidecar())])
+    assert rc == 0
+    assert sel == "near"
+
+
+def test_emitted_metadata_names_the_baseline_that_was_measured():
+    # A silent data-integrity defect in the STORED row: coverage_ci.coverage_data
+    # is keyed on base_commit_sha, so serializing the NEAREST ancestor while the
+    # report was generated against an older one attributes the delta to a
+    # revision that was never measured, with nothing in the payload revealing it.
+    with tempfile.TemporaryDirectory() as d:
+        got = _drive_diff_gate(True, d)
+        assert got.comparable is True
+        assert got.comment_written
+        with open(os.path.join(d, "coverage_comment.json")) as f:
+            payload = json.load(f)
+        # _write_baseline_outputs writes "a" * 40 as the selected commit; the
+        # harness passes "b" * 40 as the job's own nearest-ancestor base.
+        assert got.selected_base == "a" * 40
+        assert payload["base_commit_sha"] == "a" * 40, payload["base_commit_sha"]
+
+
+def test_emitted_metadata_falls_back_to_the_nearest_ancestor():
+    # Back-compat: when no marker exists (an older script, or a run that never
+    # reached it) the payload keeps today's value rather than an empty string,
+    # so the stored row never loses its baseline key entirely.
+    src = open(_JOB, encoding="utf-8").read()
+    assert '"base_commit_sha": _selected_base_commit or base_commit_sha,' in src
 
 
 # --------------------------------------------------------------------------
