@@ -544,9 +544,9 @@ SinkToStoragePtr StorageSQLite::write(const ASTPtr & query, const StorageMetadat
     /// Fail closed on a missing file, exactly like the read path and the `sqlite` table function.
     openConnectionIfNeeded(/* throw_on_error */ true, /* allow_create */ false);
 
-    /// Fallback: `updateExternalDynamicMetadataIfExists` normally repairs the pending classification before the
-    /// insert's metadata snapshot is taken; this covers any path that reaches `write` without that hook.
-    /// Idempotent - it runs at most once and is a no-op once the classification has been repaired.
+    /// Last-resort repair for a path that reaches `write` without the pre-snapshot metadata hook. The snapshot
+    /// passed to this call is already frozen, so this cannot repair the current pipeline, but it prevents the
+    /// stale classification from persisting into later queries. Idempotent once the classification is repaired.
     reclassifyGeneratedColumnsFromRemote(context_);
 
     Names explicitly_inserted_columns;

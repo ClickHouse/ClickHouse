@@ -1128,6 +1128,11 @@ bool InsertDependenciesBuilder::observePath(const DependencyPath & path)
     }
 
     chassert(storage);
+    /// The root insert target is refreshed by `InterpreterInsertQuery`. Refresh every dependency before caching
+    /// its metadata snapshot and output header, because a target reached through a materialized view only passes
+    /// through this path.
+    if (current != init_table_id)
+        storage->updateExternalDynamicMetadataIfExists(init_context);
     auto metadata = storage->getInMemoryMetadataPtr(init_context, false);
     auto * materialized_view = dynamic_cast<StorageMaterializedView *>(storage.get());
 
