@@ -349,43 +349,49 @@ SETTINGS optimize_injective_functions_in_group_by = 0;
 SELECT '-- per-modifier firing assertion: 1 means the unwrap actually happened (no injective function is';
 SELECT '-- left in the GROUP BY section of the analyzed tree). Without this the assertions above would';
 SELECT '-- also pass if the optimization silently declined for every modifier.';
-SELECT 'CUBE', countIf(explain LIKE '%toString%' AND rn > gb) = 0 FROM (
+SELECT 'CUBE', countIf(explain LIKE '%toString%' AND rn > gb AND rn < nxt) = 0 FROM (
+    SELECT explain, rn, gb, min(if(rn > gb AND match(explain, '^  [A-Z]'), rn, 999999)) OVER () AS nxt FROM (
     SELECT explain, rowNumberInAllBlocks() AS rn,
-           min(if(explain LIKE '%GROUP BY%', rowNumberInAllBlocks(), 999999)) OVER () AS gb
+           min(if(explain LIKE '  GROUP BY%', rowNumberInAllBlocks(), 999999)) OVER () AS gb
     FROM (EXPLAIN QUERY TREE run_passes = 1
-          SELECT toString(number) AS k, count() AS c FROM numbers(3) GROUP BY CUBE(toString(number))));
-SELECT 'ROLLUP', countIf(explain LIKE '%toString%' AND rn > gb) = 0 FROM (
+          SELECT toString(number) AS k, count() AS c FROM numbers(3) GROUP BY CUBE(toString(number)))));
+SELECT 'ROLLUP', countIf(explain LIKE '%toString%' AND rn > gb AND rn < nxt) = 0 FROM (
+    SELECT explain, rn, gb, min(if(rn > gb AND match(explain, '^  [A-Z]'), rn, 999999)) OVER () AS nxt FROM (
     SELECT explain, rowNumberInAllBlocks() AS rn,
-           min(if(explain LIKE '%GROUP BY%', rowNumberInAllBlocks(), 999999)) OVER () AS gb
+           min(if(explain LIKE '  GROUP BY%', rowNumberInAllBlocks(), 999999)) OVER () AS gb
     FROM (EXPLAIN QUERY TREE run_passes = 1
-          SELECT toString(number) AS k, count() AS c FROM numbers(3) GROUP BY ROLLUP(toString(number))));
-SELECT 'GROUPING SETS', countIf(explain LIKE '%toString%' AND rn > gb) = 0 FROM (
+          SELECT toString(number) AS k, count() AS c FROM numbers(3) GROUP BY ROLLUP(toString(number)))));
+SELECT 'GROUPING SETS', countIf(explain LIKE '%toString%' AND rn > gb AND rn < nxt) = 0 FROM (
+    SELECT explain, rn, gb, min(if(rn > gb AND match(explain, '^  [A-Z]'), rn, 999999)) OVER () AS nxt FROM (
     SELECT explain, rowNumberInAllBlocks() AS rn,
-           min(if(explain LIKE '%GROUP BY%', rowNumberInAllBlocks(), 999999)) OVER () AS gb
-    FROM (EXPLAIN QUERY TREE run_passes = 1
-          SELECT toString(number) AS k, count() AS c FROM numbers(3)
-          GROUP BY GROUPING SETS ((toString(number)), ())));
-SELECT 'ROLLUP WITH TOTALS', countIf(explain LIKE '%toString%' AND rn > gb) = 0 FROM (
-    SELECT explain, rowNumberInAllBlocks() AS rn,
-           min(if(explain LIKE '%GROUP BY%', rowNumberInAllBlocks(), 999999)) OVER () AS gb
+           min(if(explain LIKE '  GROUP BY%', rowNumberInAllBlocks(), 999999)) OVER () AS gb
     FROM (EXPLAIN QUERY TREE run_passes = 1
           SELECT toString(number) AS k, count() AS c FROM numbers(3)
-          GROUP BY ROLLUP(toString(number)) WITH TOTALS));
+          GROUP BY GROUPING SETS ((toString(number)), ()))));
+SELECT 'ROLLUP WITH TOTALS', countIf(explain LIKE '%toString%' AND rn > gb AND rn < nxt) = 0 FROM (
+    SELECT explain, rn, gb, min(if(rn > gb AND match(explain, '^  [A-Z]'), rn, 999999)) OVER () AS nxt FROM (
+    SELECT explain, rowNumberInAllBlocks() AS rn,
+           min(if(explain LIKE '  GROUP BY%', rowNumberInAllBlocks(), 999999)) OVER () AS gb
+    FROM (EXPLAIN QUERY TREE run_passes = 1
+          SELECT toString(number) AS k, count() AS c FROM numbers(3)
+          GROUP BY ROLLUP(toString(number)) WITH TOTALS)));
 SELECT '-- plain WITH TOTALS reads 0: it is DECLINED on purpose (its correction cannot survive the';
 SELECT '-- conversion of the query tree to an AST). The grouping-set modifiers above still read 1.';
-SELECT 'WITH TOTALS declined', countIf(explain LIKE '%toString%' AND rn > gb) = 0 FROM (
+SELECT 'WITH TOTALS declined', countIf(explain LIKE '%toString%' AND rn > gb AND rn < nxt) = 0 FROM (
+    SELECT explain, rn, gb, min(if(rn > gb AND match(explain, '^  [A-Z]'), rn, 999999)) OVER () AS nxt FROM (
     SELECT explain, rowNumberInAllBlocks() AS rn,
-           min(if(explain LIKE '%GROUP BY%', rowNumberInAllBlocks(), 999999)) OVER () AS gb
+           min(if(explain LIKE '  GROUP BY%', rowNumberInAllBlocks(), 999999)) OVER () AS gb
     FROM (EXPLAIN QUERY TREE run_passes = 1
           SELECT toString(number) AS k, count() AS c FROM numbers(3)
-          GROUP BY toString(number) WITH TOTALS));
+          GROUP BY toString(number) WITH TOTALS)));
 SELECT '-- the same assertion reads 0 when the optimization is off, so it is not vacuous';
-SELECT 'CUBE off', countIf(explain LIKE '%toString%' AND rn > gb) = 0 FROM (
+SELECT 'CUBE off', countIf(explain LIKE '%toString%' AND rn > gb AND rn < nxt) = 0 FROM (
+    SELECT explain, rn, gb, min(if(rn > gb AND match(explain, '^  [A-Z]'), rn, 999999)) OVER () AS nxt FROM (
     SELECT explain, rowNumberInAllBlocks() AS rn,
-           min(if(explain LIKE '%GROUP BY%', rowNumberInAllBlocks(), 999999)) OVER () AS gb
+           min(if(explain LIKE '  GROUP BY%', rowNumberInAllBlocks(), 999999)) OVER () AS gb
     FROM (EXPLAIN QUERY TREE run_passes = 1
           SELECT toString(number) AS k, count() AS c FROM numbers(3) GROUP BY CUBE(toString(number))
-          SETTINGS optimize_injective_functions_in_group_by = 0));
+          SETTINGS optimize_injective_functions_in_group_by = 0)));
 
 SELECT '-- firing assertions for the four special-path shapes above, whose other assertions compare';
 SELECT '-- results against the optimization-disabled arm and would therefore also pass if the pass had';

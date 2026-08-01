@@ -500,9 +500,14 @@ private:
     /// canBeExecutedOnLowCardinalityDictionary() = false and the re-wrap in
     /// IFunctionOverloadResolver::getReturnType is gated on it.
     ///
-    /// Only the condition-independent part is built: the first argument's value cannot affect the return
-    /// type (FunctionIf::getReturnTypeImpl only type-checks it as UInt8), so a placeholder is sound and
-    /// avoids duplicating the grouping-resolver construction.
+    /// Only the condition-independent part is built, which avoids duplicating the grouping-resolver
+    /// construction. A constant placeholder condition is sound because
+    /// FunctionIf::canBeExecutedOnLowCardinalityDictionary() is false: it is the FIRST term of the
+    /// LowCardinality re-wrap condition in IFunctionOverloadResolver::getReturnType (IFunction.cpp:797), so
+    /// the &&-chain short-circuits and both the placeholder and the real conditional return
+    /// type_without_low_cardinality. That matters because the rest of that re-wrap does depend on argument
+    /// CONSTNESS - it classifies each argument by `arg.column && isColumnConst(*arg.column)` and counts
+    /// full-vs-const columns - and constness is exactly what a placeholder changes.
     bool groupingConditionalPreservesType(const QueryTreeNodePtr & original_key)
     {
         auto result_type = original_key->getResultType();
