@@ -21,6 +21,14 @@
 #    define SIZE_T_IS_A_DISTINCT_TYPE 1
 #endif
 
+/// Whether the platform delivers POSIX signals to the process: handlers installed with
+/// `sigaction`, masked with `pthread_sigmask`, raised with `raise`. A WebAssembly sandbox has no
+/// signals at all - nothing can fault into one and nothing can send one - so arming a handler
+/// there is a no-op rather than an error.
+#if !defined(OS_WASM)
+#    define OS_HAS_SIGNAL_HANDLERS 1
+#endif
+
 #if !defined(likely)
 #    define likely(x)   (__builtin_expect(!!(x), 1))
 #endif

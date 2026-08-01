@@ -15,6 +15,10 @@ elseif (CMAKE_SYSTEM_PROCESSOR MATCHES "loongarch64")
     set (ARCH_LOONGARCH64 1)
 elseif (CMAKE_SYSTEM_PROCESSOR MATCHES "e2k")
     set (ARCH_E2K 1)
+elseif (CMAKE_SYSTEM_NAME STREQUAL "Emscripten")
+    # This file runs before target.cmake, so `OS_WASM` is not set yet; recognize the toolchain
+    # by name instead. Emscripten leaves `CMAKE_SYSTEM_PROCESSOR` as the host's.
+    set (ARCH_WASM 1)
 else ()
     message (FATAL_ERROR "Platform ${CMAKE_SYSTEM_PROCESSOR} is not supported")
 endif ()

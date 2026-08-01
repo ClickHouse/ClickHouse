@@ -168,7 +168,9 @@ inline ALWAYS_INLINE size_t untrackMemory(void * ptr [[maybe_unused]], Allocatio
 #else
         if (size)
             actual_size = size;
-#    if defined(_GNU_SOURCE)
+    /// Emscripten's libc++ defines `_GNU_SOURCE`, but its musl-derived libc has no
+    /// `malloc_usable_size`.
+#    if defined(_GNU_SOURCE) && !defined(OS_WASM)
         /// It's innaccurate resource free for sanitizers. malloc_usable_size() result is greater or equal to allocated size.
         else
             actual_size = malloc_usable_size(ptr);
