@@ -234,6 +234,8 @@ private:
         /// no buffers allocated, and the result is an empty part.
         bool ttl_drop_short_circuit{false};
         CompressionCodecPtr compression_codec{nullptr};
+        /// T when `compression_codec` came from an explicit (non-`Default`) `RECOMPRESS` TTL. Adaptive codec selection must not override it.
+        bool is_explicit_recompression{false};
 
         NamesAndTypesList gathering_columns{};
         NameSet merge_required_columns{};
