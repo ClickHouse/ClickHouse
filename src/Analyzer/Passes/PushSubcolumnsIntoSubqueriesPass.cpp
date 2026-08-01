@@ -302,7 +302,13 @@ QueryTreeNodePtr buildSubcolumnProjectionNode(const PushdownGroup & group, const
     if (table_node || table_function_node)
     {
         const auto & storage_snapshot = table_node ? table_node->getStorageSnapshot() : table_function_node->getStorageSnapshot();
-        if (!storage_snapshot->storage.supportsSubcolumns())
+
+        /// Some storages expose subcolumns syntactically but opt out of rewriting reads of a column
+        /// into direct reads of its subcolumns (e.g. StorageFile, StorageURL, StorageDistributed).
+        if (!storage_snapshot->storage.supportsOptimizationToSubcolumns())
+            return nullptr;
+
+        if (storage_snapshot->metadata->isVirtualColumn(inner_column->getColumnName()))
             return nullptr;
 
         auto subcolumn_full_name = inner_column->getColumnName() + "." + group.subcolumn_path;
@@ -345,7 +351,7 @@ QueryTreeNodePtr buildSubcolumnProjectionNode(const PushdownGroup & group, const
 }
 
 /// Add the subcolumn to the subquery projection. Returns false if the pushdown is not possible.
-bool applyGroup(PushdownGroup & group, const ContextPtr & context)
+bool applyGroup(PushdownGroup & group)
 {
     auto & subquery = group.source->as<QueryNode &>();
 
@@ -379,7 +385,7 @@ bool applyGroup(PushdownGroup & group, const ContextPtr & context)
     }
 
     const auto & inner_node = subquery.getProjection().getNodes()[*projection_index];
-    auto new_projection_node = buildSubcolumnProjectionNode(group, inner_node, context);
+    auto new_projection_node = buildSubcolumnProjectionNode(group, inner_node, subquery.getContext());
     if (!new_projection_node)
         return false;
 
@@ -425,7 +431,13 @@ void processQuery(QueryNode & query_node, QueryProcessingState & state)
 
         for (auto it = state.eligible_targets.begin(); it != state.eligible_targets.end();)
         {
-            if (canAddProjectionColumns(it->second->as<const QueryNode &>()))
+            const auto & target_query = it->second->as<const QueryNode &>();
+
+            /// The subquery can carry its own settings (SETTINGS clause, view definition),
+            /// and disabling the setting there must protect that subquery from the rewrite.
+            bool enabled_in_target = target_query.getContext()->getSettingsRef()[Setting::optimize_push_subcolumns_into_subqueries];
+
+            if (enabled_in_target && canAddProjectionColumns(target_query))
                 ++it;
             else
                 it = state.eligible_targets.erase(it);
@@ -478,7 +490,7 @@ void processQuery(QueryNode & query_node, QueryProcessingState & state)
     for (auto & group : state.groups)
     {
         if (group.viable)
-            any_group_applied |= applyGroup(group, context);
+            any_group_applied |= applyGroup(group);
     }
 
     if (any_group_applied)
