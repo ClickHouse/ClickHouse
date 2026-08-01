@@ -92,6 +92,7 @@ namespace Setting
 namespace FailPoints
 {
     extern const char keepermap_fail_drop_data[];
+    extern const char keeper_map_delete_pause_before_multi[];
 }
 
 namespace ErrorCodes
@@ -1686,6 +1687,10 @@ void StorageKeeperMap::mutate(const MutationCommands & commands, ContextPtr loca
                     local_context->getProcessListElement()}};
 
             Coordination::Error status = {};
+
+            /// Lets a test modify the keys behind our back after the block (and its versions) has been read.
+            FailPointInjection::pauseFailPoint(FailPoints::keeper_map_delete_pause_before_multi);
+
             zk_retry.retryLoop([&]
             {
                 auto client = getClient();
@@ -1696,6 +1701,13 @@ void StorageKeeperMap::mutate(const MutationCommands & commands, ContextPtr loca
                 continue;
 
             if (status != Coordination::Error::ZNONODE)
+                throw zkutil::KeeperMultiException(status, delete_requests, responses);
+
+            /// In strict mode the delete requests carry the versions read by the mutation scan, so the multi request is
+            /// the only thing that makes the delete atomic with respect to that scan. Retrying key by key would drop
+            /// those version checks and could remove a row that another session has updated in the meantime, which
+            /// contradicts the documented strict mode guarantee. Surface the conflict instead.
+            if (strict)
                 throw zkutil::KeeperMultiException(status, delete_requests, responses);
 
             LOG_INFO(log, "Failed to delete all nodes at once, will try one by one");

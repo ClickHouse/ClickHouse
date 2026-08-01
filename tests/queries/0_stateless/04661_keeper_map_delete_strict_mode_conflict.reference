@@ -1,0 +1,6 @@
+-- one of the matched keys is deleted concurrently
+mutation failed
+2	22
+-- one matched key is deleted and another is updated concurrently
+mutation failed
+2	222
