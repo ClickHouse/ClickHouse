@@ -77,6 +77,15 @@ SELECT * FROM tab ORDER BY event_id;
 
 **2.** Filtering on `Time` values
 
+:::note Legacy `toTime`
+Before v25.5, function `toTime` converted a date with time to a fixed date while preserving the time component.
+That legacy function is still available as [`toTimeWithFixedDate`](/sql-reference/functions/date-time-functions#toTimeWithFixedDate),
+and setting [`use_legacy_to_time`](/operations/settings/settings#use_legacy_to_time) to `1` also keeps the name `toTime` bound to it
+instead of the conversion to `Time` shown below.
+The examples on this page set the setting explicitly because it defaulted to `1` from v25.6 to v26.6.
+Use `CAST(x AS Time)` or `x::Time` to convert to `Time` while the setting is enabled.
+:::
+
 ``` sql
 SET use_legacy_to_time = 0;
 SELECT * FROM tab WHERE time = toTime('14:30:25')
