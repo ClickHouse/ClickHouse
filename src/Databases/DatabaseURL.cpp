@@ -18,6 +18,7 @@
 #include <Common/quoteString.h>
 
 #include <filesystem>
+#include <mutex>
 
 namespace fs = std::filesystem;
 
@@ -59,12 +60,63 @@ bool hasURLScheme(const String & url)
     return true;
 }
 
-/// At resolution time the database cannot know whether the table is the source or the target of
-/// the query, so it only requires either of the READ / WRITE source grants there, and this proxy
-/// enforces the operation-specific one. Reading checks READ. The delegate storage itself may be
-/// writable (`INSERT INTO web.`s3://...``), and the interpreter checks only the INSERT privilege
-/// on the logical table name, so the proxy intercepts every write entry point (INSERT, async
-/// insert, a materialized view target) and runs the source-access check in write mode.
+/// A table of a `URL` database is a thin wrapper over the `url` table function, which dispatches
+/// the URL to the matching backend (`file`, `s3`, `azureBlobStorage`, ...).
+struct URLTableDelegate
+{
+    TableFunctionPtr table_function;
+    StoragePtr storage;
+};
+
+/// Resolve a table of a `URL` database into the delegate storage of the `url` table function.
+///
+/// `is_insert_query` selects the mode the delegate is constructed in, and the source access is
+/// checked in the same mode (READ for a read, WRITE for a write). The mode is not an optimization:
+/// the backends behave differently for reads and writes — `azureBlobStorage` creates the container
+/// only in write mode — so a storage constructed in read mode must not be written to.
+URLTableDelegate makeURLTableDelegate(const String & url, const String & name, ContextPtr context, bool is_insert_query)
+{
+    auto ast_function_ptr = makeASTFunction("url", make_intrusive<ASTLiteral>(url));
+
+    /// The table is referenced in the query by an identifier (`db.table`), which cannot be
+    /// rewritten into a `urlCluster(...)` table function call for sending to other replicas.
+    /// Disable the parallel-replicas auto-conversion to cluster storages: otherwise the `url`
+    /// table function would create `StorageURLCluster`, whose `updateQueryToSendIfNeeded`
+    /// requires a table function in the query and throws a logical error for identifiers.
+    ContextMutablePtr context_copy = Context::createCopy(context);
+    context_copy->setSetting("parallel_replicas_for_cluster_engines", Field(false));
+
+    auto table_function = TableFunctionFactory::instance().get(ast_function_ptr, context_copy);
+    if (!table_function)
+        return {};
+
+    /// The `url` table function throws if a table cannot be created from the URL (for example, the
+    /// resource is unreachable). Such errors are not swallowed as "table does not exist" even from
+    /// `tryGetTable`, because they are more informative. The tables are intentionally not cached:
+    /// the remote data (and the inferred schema) can change between queries.
+    ///
+    /// The table is referenced by an identifier and governed by the grants on this database and
+    /// the source access, so the `CREATE TEMPORARY TABLE` privilege required for a table function
+    /// call written in a query does not apply here.
+    auto storage = table_function->execute(
+        ast_function_ptr,
+        context_copy,
+        name,
+        /* cached_columns_ */ {},
+        /* use_global_context */ false,
+        is_insert_query,
+        /* check_create_temporary_table */ false);
+
+    return {std::move(table_function), std::move(storage)};
+}
+
+/// Resolving a table of a `URL` database requires the READ source grant: the table is resolved by
+/// inferring its structure from the data, and the catalog then exposes that structure to the user
+/// (`DESCRIBE`, `EXPLAIN`, the analyzer) without necessarily reading the data. Writing requires the
+/// WRITE source grant on top of that: the delegate storage itself may be writable
+/// (`INSERT INTO web.`s3://...``) and the interpreter checks only the INSERT privilege on the
+/// logical table name, so the proxy intercepts every write entry point (INSERT, async insert, a
+/// materialized view target, `TRUNCATE`) and re-resolves the delegate in write mode.
 ///
 /// The proxy also carries the logical storage ID (`db`.`name`): the table function creates the
 /// nested storage under the internal `_table_function` database, and privilege checks against the
@@ -73,8 +125,9 @@ bool hasURLScheme(const String & url)
 class StorageURLDatabaseTable final : public StorageProxy
 {
 public:
-    StorageURLDatabaseTable(const StorageID & storage_id_, StoragePtr nested_, TableFunctionPtr table_function_)
+    StorageURLDatabaseTable(const StorageID & storage_id_, const String & url_, StoragePtr nested_, TableFunctionPtr table_function_)
         : StorageProxy(storage_id_)
+        , url(url_)
         , nested(std::move(nested_))
         , table_function(std::move(table_function_))
     {
@@ -126,10 +179,6 @@ public:
         size_t max_block_size,
         size_t num_streams) override
     {
-        /// Table resolution accepts either the READ or the WRITE source grant (the direction of
-        /// the access is unknown there), so reading must enforce the exact one.
-        table_function->checkSourceAccess(context, /* is_insert_query */ false);
-
         const auto nested_metadata = nested->getInMemoryMetadataPtr(context, false);
         auto nested_snapshot = nested->getStorageSnapshot(nested_metadata, context);
         nested->read(query_plan, column_names, nested_snapshot, query_info, context, processed_stage, max_block_size, num_streams);
@@ -146,8 +195,7 @@ public:
 
     SinkToStoragePtr write(const ASTPtr & query, const StorageMetadataPtr & metadata_snapshot, ContextPtr context, bool async_insert) override
     {
-        table_function->checkSourceAccess(context, /* is_insert_query */ true);
-        return nested->write(query, metadata_snapshot, context, async_insert);
+        return getNestedForWrite(context)->write(query, metadata_snapshot, context, async_insert);
     }
 
     void truncate(
@@ -156,13 +204,44 @@ public:
         ContextPtr context,
         TableExclusiveLockHolder & lock) override
     {
-        table_function->checkSourceAccess(context, /* is_insert_query */ true);
-        nested->truncate(query, metadata_snapshot, context, lock);
+        getNestedForWrite(context)->truncate(query, metadata_snapshot, context, lock);
+    }
+
+    void shutdown(bool is_drop) override
+    {
+        nested->shutdown(is_drop);
+
+        std::lock_guard lock(nested_for_write_mutex);
+        if (nested_for_write)
+            nested_for_write->shutdown(is_drop);
     }
 
 private:
+    /// The delegate of a write is a separate storage: the backends of the `url` table function
+    /// construct different clients for reads and writes (`azureBlobStorage` creates the container
+    /// only in write mode), and the resolved one is a read-mode storage. It is created on the first
+    /// write and reused, because a single `INSERT` may write through several sinks.
+    /// The write source grant is checked as part of the resolution (see `makeURLTableDelegate`).
+    StoragePtr getNestedForWrite(ContextPtr context) const
+    {
+        std::lock_guard lock(nested_for_write_mutex);
+        if (!nested_for_write)
+            nested_for_write
+                = makeURLTableDelegate(url, getStorageID().getTableName(), context, /* is_insert_query */ true).storage;
+
+        if (!nested_for_write)
+            throw Exception(ErrorCodes::UNKNOWN_TABLE, "Cannot write to the table {}: the URL {} is not writable",
+                            getStorageID().getNameForLogs(), url);
+
+        return nested_for_write;
+    }
+
+    const String url;
     StoragePtr nested;
     TableFunctionPtr table_function;
+
+    mutable std::mutex nested_for_write_mutex;
+    mutable StoragePtr nested_for_write;
 };
 
 }
@@ -236,53 +315,12 @@ StoragePtr DatabaseURL::getTableImpl(const String & name, ContextPtr context_, b
     if (!checkFileURLExists(url, context_, throw_on_error))
         return {};
 
-    auto ast_function_ptr = makeASTFunction("url", make_intrusive<ASTLiteral>(url));
-
-    /// The table is referenced in the query by an identifier (`db.table`), which cannot be
-    /// rewritten into a `urlCluster(...)` table function call for sending to other replicas.
-    /// Disable the parallel-replicas auto-conversion to cluster storages: otherwise the `url`
-    /// table function would create `StorageURLCluster`, whose `updateQueryToSendIfNeeded`
-    /// requires a table function in the query and throws a logical error for identifiers.
-    ContextMutablePtr context_copy = Context::createCopy(context_);
-    context_copy->setSetting("parallel_replicas_for_cluster_engines", Field(false));
-
-    auto table_function = TableFunctionFactory::instance().get(ast_function_ptr, context_copy);
-    if (!table_function)
+    auto delegate = makeURLTableDelegate(url, name, context_, /* is_insert_query */ false);
+    if (!delegate.storage)
         return nullptr;
 
-    /// The `url` table function throws if a table cannot be created from the URL (for example, the
-    /// resource is unreachable). Such errors are not swallowed as "table does not exist" even from
-    /// `tryGetTable`, because they are more informative. The tables are intentionally not cached:
-    /// the remote data (and the inferred schema) can change between queries.
-    ///
-    /// The table is referenced by an identifier and governed by the grants on this database and
-    /// the source access, so the `CREATE TEMPORARY TABLE` privilege required for a table function
-    /// call written in a query does not apply here.
-    ///
-    /// SELECT requires the READ source grant and INSERT requires WRITE, but at resolution time the
-    /// database cannot know which operation the table is being resolved for, and the delegated
-    /// table functions accept either alone (`INSERT INTO FUNCTION file(...)` needs only
-    /// `WRITE ON FILE`). Require either of the two here — the check also gates the schema
-    /// inference the table function performs on the external resource — and let the
-    /// operation-specific entry points of the proxy enforce the exact one: `read` re-checks READ,
-    /// and `write` / `checkInsertIsAllowed` / `truncate` check WRITE. A user with no source grant
-    /// at all gets the READ denial, the error of the more common operation.
-    if (!table_function->isSourceAccessGranted(context_copy, /* is_insert_query */ true))
-        table_function->checkSourceAccess(context_copy, /* is_insert_query */ false);
-
-    auto storage = table_function->execute(
-        ast_function_ptr,
-        context_copy,
-        name,
-        /* cached_columns_ */ {},
-        /* use_global_context */ false,
-        /* is_insert_query */ false,
-        /* check_create_temporary_table */ false,
-        /* check_source_access */ false);
-    if (!storage)
-        return nullptr;
-
-    return std::make_shared<StorageURLDatabaseTable>(StorageID(getDatabaseName(), name), std::move(storage), std::move(table_function));
+    return std::make_shared<StorageURLDatabaseTable>(
+        StorageID(getDatabaseName(), name), url, std::move(delegate.storage), std::move(delegate.table_function));
 }
 
 bool DatabaseURL::isTableExist(const String & name, ContextPtr context_) const

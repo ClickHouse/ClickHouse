@@ -1,8 +1,0 @@
---- INSERT with only the write source grant must work
-1
-2
---- SELECT with only the write source grant must still require the read source grant
-grant READ ON FILE
---- SELECT works after granting the read source grant
-1
-2

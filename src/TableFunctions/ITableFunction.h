@@ -106,9 +106,6 @@ public:
     /// Check that the user has the required source access (e.g. READ ON MYSQL, WRITE ON S3).
     void checkSourceAccess(ContextPtr context, bool is_insert_query) const;
 
-    /// The same check as `checkSourceAccess`, but returns false instead of throwing.
-    bool isSourceAccessGranted(ContextPtr context, bool is_insert_query) const;
-
     /// The URI of the function for permission checking. Can be an empty string if not applicable.
     /// For example, for url('https://foo.bar') the URI would be 'https://foo.bar'.
     virtual const String & getFunctionURI() const
