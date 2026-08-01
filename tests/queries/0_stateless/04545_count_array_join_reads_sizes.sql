@@ -136,4 +136,121 @@ SELECT count() > 0 FROM (EXPLAIN PLAN actions = 1 SELECT count() FROM t_count_aj
 DROP TABLE t_count_aj_dist;
 DROP TABLE t_count_aj_shard;
 
+SELECT 'A Merge table declares its own column list, so a child may hold a different type for the same column name. supportsOptimizationToSubcolumns() is the AND over children and a MergeTree child satisfies it whatever its types are, so the rewrite must check the children.';
+DROP TABLE IF EXISTS t_caj_mh_good;
+DROP TABLE IF EXISTS t_caj_mh_bad;
+DROP TABLE IF EXISTS t_caj_mh;
+CREATE TABLE t_caj_mh_good (arr Array(UInt64)) ENGINE = MergeTree ORDER BY tuple();
+-- A String holding '[4,5,6]' has length 7 as a string and 3 as an array, so reading the child's own
+-- type instead of the declared one gives a different count().
+CREATE TABLE t_caj_mh_bad (arr String) ENGINE = MergeTree ORDER BY tuple();
+INSERT INTO t_caj_mh_good VALUES ([1, 2]), ([]), ([3]);
+INSERT INTO t_caj_mh_bad VALUES ('[4,5,6]');
+CREATE TABLE t_caj_mh (arr Array(UInt64)) ENGINE = Merge(currentDatabase(), '^t_caj_mh_(good|bad)$');
+SELECT count() FROM t_caj_mh ARRAY JOIN arr;
+SELECT count() = 0 FROM (EXPLAIN PLAN actions = 1 SELECT count() FROM t_caj_mh ARRAY JOIN arr) WHERE explain ILIKE '%arr.size0%';
+SELECT count() = 0 FROM (EXPLAIN PLAN actions = 1 SELECT count() FROM t_caj_mh ARRAY JOIN arr) WHERE explain ILIKE '%sum(length%';
+-- Assert the ARRAY JOIN survives, not just that arr.size0 is absent: a pass that dropped the ARRAY
+-- JOIN and let FunctionToSubcolumnsPass decline would still satisfy a size0-only check.
+SELECT count() > 0 FROM (EXPLAIN PLAN actions = 1 SELECT count() FROM t_caj_mh ARRAY JOIN arr) WHERE explain ILIKE '%ARRAY JOIN%';
+-- LEFT ARRAY JOIN and a Map column reach the same guard, which sits above both the isLeft() branch
+-- and any type-specific handling.
+SELECT count() FROM t_caj_mh LEFT ARRAY JOIN arr;
+DROP TABLE IF EXISTS t_caj_mm_good;
+DROP TABLE IF EXISTS t_caj_mm_bad;
+DROP TABLE IF EXISTS t_caj_mm;
+CREATE TABLE t_caj_mm_good (m Map(String, UInt64)) ENGINE = MergeTree ORDER BY tuple();
+CREATE TABLE t_caj_mm_bad (m Map(String, String)) ENGINE = MergeTree ORDER BY tuple();
+INSERT INTO t_caj_mm_good VALUES (map('a', 1, 'b', 2)), (map());
+INSERT INTO t_caj_mm_bad VALUES (map('c', '3', 'd', '4', 'e', '5'));
+CREATE TABLE t_caj_mm (m Map(String, UInt64)) ENGINE = Merge(currentDatabase(), '^t_caj_mm_(good|bad)$');
+SELECT count() FROM t_caj_mm ARRAY JOIN m;
+SELECT count() > 0 FROM (EXPLAIN PLAN actions = 1 SELECT count() FROM t_caj_mm ARRAY JOIN m) WHERE explain ILIKE '%ARRAY JOIN%';
+
+SELECT 'A Merge table whose children all declare the analyzed type is safe, so the rewrite must still fire there: keying on the engine instead of on the actual types would silently drop the optimization.';
+DROP TABLE IF EXISTS t_caj_mo_a;
+DROP TABLE IF EXISTS t_caj_mo_b;
+DROP TABLE IF EXISTS t_caj_mo;
+DROP TABLE IF EXISTS t_caj_mo_one;
+CREATE TABLE t_caj_mo_a (arr Array(UInt64)) ENGINE = MergeTree ORDER BY tuple();
+CREATE TABLE t_caj_mo_b (arr Array(UInt64)) ENGINE = MergeTree ORDER BY tuple();
+INSERT INTO t_caj_mo_a VALUES ([1, 2]), ([]);
+INSERT INTO t_caj_mo_b VALUES ([3, 4, 5]);
+CREATE TABLE t_caj_mo (arr Array(UInt64)) ENGINE = Merge(currentDatabase(), '^t_caj_mo_(a|b)$');
+SELECT count() FROM t_caj_mo ARRAY JOIN arr;
+SELECT count() > 0 FROM (EXPLAIN PLAN actions = 1 SELECT count() FROM t_caj_mo ARRAY JOIN arr) WHERE explain ILIKE '%arr.size0%';
+SELECT count() = 0 FROM (EXPLAIN PLAN actions = 1 SELECT count() FROM t_caj_mo ARRAY JOIN arr) WHERE explain ILIKE '%ARRAY JOIN%';
+-- A single matched child is the degenerate case where inverting the per-child predicate would be
+-- invisible in the two-child table above.
+CREATE TABLE t_caj_mo_one (arr Array(UInt64)) ENGINE = Merge(currentDatabase(), '^t_caj_mo_a$');
+SELECT count() FROM t_caj_mo_one ARRAY JOIN arr;
+SELECT count() > 0 FROM (EXPLAIN PLAN actions = 1 SELECT count() FROM t_caj_mo_one ARRAY JOIN arr) WHERE explain ILIKE '%arr.size0%';
+SELECT count() = 0 FROM (EXPLAIN PLAN actions = 1 SELECT count() FROM t_caj_mo_one ARRAY JOIN arr) WHERE explain ILIKE '%ARRAY JOIN%';
+
+SELECT 'The per-child check inspects direct children only, so a Merge whose child is itself a Merge declines whether or not the grandchildren match: the inner level re-plans the already-transformed query and cannot restore the removed ARRAY JOIN.';
+DROP TABLE IF EXISTS t_caj_mni_good;
+DROP TABLE IF EXISTS t_caj_mni_bad;
+DROP TABLE IF EXISTS t_caj_mni;
+DROP TABLE IF EXISTS t_caj_mno;
+CREATE TABLE t_caj_mni_good (arr Array(UInt64)) ENGINE = MergeTree ORDER BY tuple();
+CREATE TABLE t_caj_mni_bad (arr String) ENGINE = MergeTree ORDER BY tuple();
+INSERT INTO t_caj_mni_good VALUES ([1, 2]), ([3]);
+INSERT INTO t_caj_mni_bad VALUES ('[7,8,9]');
+CREATE TABLE t_caj_mni (arr Array(UInt64)) ENGINE = Merge(currentDatabase(), '^t_caj_mni_(good|bad)$');
+-- The outer regexp must match ONLY the inner Merge, otherwise the grandchildren become direct
+-- children and this stops testing the nested case.
+CREATE TABLE t_caj_mno (arr Array(UInt64)) ENGINE = Merge(currentDatabase(), '^t_caj_mni$');
+SELECT count() FROM t_caj_mno ARRAY JOIN arr;
+SELECT count() = 0 FROM (EXPLAIN PLAN actions = 1 SELECT count() FROM t_caj_mno ARRAY JOIN arr) WHERE explain ILIKE '%arr.size0%';
+SELECT count() > 0 FROM (EXPLAIN PLAN actions = 1 SELECT count() FROM t_caj_mno ARRAY JOIN arr) WHERE explain ILIKE '%ARRAY JOIN%';
+-- A nested Merge whose every leaf DOES match the analyzed type also declines. That costs the
+-- optimization and is deliberate: descending would need re-entrancy and cycle handling, while
+-- declining is monotone. This row pins the cost so adding recursion later flips exactly one row.
+DROP TABLE IF EXISTS t_caj_mnh_a;
+DROP TABLE IF EXISTS t_caj_mnh_b;
+DROP TABLE IF EXISTS t_caj_mnh_i;
+DROP TABLE IF EXISTS t_caj_mnh_o;
+CREATE TABLE t_caj_mnh_a (arr Array(UInt64)) ENGINE = MergeTree ORDER BY tuple();
+CREATE TABLE t_caj_mnh_b (arr Array(UInt64)) ENGINE = MergeTree ORDER BY tuple();
+INSERT INTO t_caj_mnh_a VALUES ([1, 2]);
+INSERT INTO t_caj_mnh_b VALUES ([3, 4, 5]);
+CREATE TABLE t_caj_mnh_i (arr Array(UInt64)) ENGINE = Merge(currentDatabase(), '^t_caj_mnh_(a|b)$');
+CREATE TABLE t_caj_mnh_o (arr Array(UInt64)) ENGINE = Merge(currentDatabase(), '^t_caj_mnh_i$');
+SELECT count() FROM t_caj_mnh_o ARRAY JOIN arr;
+SELECT count() = 0 FROM (EXPLAIN PLAN actions = 1 SELECT count() FROM t_caj_mnh_o ARRAY JOIN arr) WHERE explain ILIKE '%arr.size0%';
+SELECT count() > 0 FROM (EXPLAIN PLAN actions = 1 SELECT count() FROM t_caj_mnh_o ARRAY JOIN arr) WHERE explain ILIKE '%ARRAY JOIN%';
+
+SELECT 'Alias forwards both supportsOptimizationToSubcolumns() and the read, so the per-child check must see the storage that executes rather than the wrapper.';
+DROP TABLE IF EXISTS t_caj_alias_bad;
+DROP TABLE IF EXISTS t_caj_alias_good;
+CREATE TABLE t_caj_alias_bad ENGINE = Alias(currentDatabase(), 't_caj_mh');
+SELECT count() FROM t_caj_alias_bad ARRAY JOIN arr;
+SELECT count() = 0 FROM (EXPLAIN PLAN actions = 1 SELECT count() FROM t_caj_alias_bad ARRAY JOIN arr) WHERE explain ILIKE '%arr.size0%';
+SELECT count() > 0 FROM (EXPLAIN PLAN actions = 1 SELECT count() FROM t_caj_alias_bad ARRAY JOIN arr) WHERE explain ILIKE '%ARRAY JOIN%';
+-- Resolving the wrapper must not turn into a blanket decline on every wrapper.
+CREATE TABLE t_caj_alias_good ENGINE = Alias(currentDatabase(), 't_caj_mo');
+SELECT count() FROM t_caj_alias_good ARRAY JOIN arr;
+SELECT count() > 0 FROM (EXPLAIN PLAN actions = 1 SELECT count() FROM t_caj_alias_good ARRAY JOIN arr) WHERE explain ILIKE '%arr.size0%';
+SELECT count() = 0 FROM (EXPLAIN PLAN actions = 1 SELECT count() FROM t_caj_alias_good ARRAY JOIN arr) WHERE explain ILIKE '%ARRAY JOIN%';
+DROP TABLE t_caj_alias_good;
+DROP TABLE t_caj_alias_bad;
+DROP TABLE t_caj_mnh_o;
+DROP TABLE t_caj_mnh_i;
+DROP TABLE t_caj_mnh_b;
+DROP TABLE t_caj_mnh_a;
+DROP TABLE t_caj_mno;
+DROP TABLE t_caj_mni;
+DROP TABLE t_caj_mni_bad;
+DROP TABLE t_caj_mni_good;
+DROP TABLE t_caj_mo_one;
+DROP TABLE t_caj_mo;
+DROP TABLE t_caj_mo_b;
+DROP TABLE t_caj_mo_a;
+DROP TABLE t_caj_mm;
+DROP TABLE t_caj_mm_bad;
+DROP TABLE t_caj_mm_good;
+DROP TABLE t_caj_mh;
+DROP TABLE t_caj_mh_bad;
+DROP TABLE t_caj_mh_good;
+
 DROP TABLE t_count_aj;

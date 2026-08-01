@@ -17,6 +17,9 @@
 #include <Interpreters/Context.h>
 
 #include <Storages/IStorage.h>
+#include <Storages/StorageAlias.h>
+#include <Storages/StorageMerge.h>
+#include <Storages/StorageProxy.h>
 
 #include <Poco/String.h>
 
@@ -124,10 +127,63 @@ public:
         if (!getArrayJoinDataType(physical_column->getColumnType()))
             return;
 
+        /// The checks below establish that the analyzed declared type is the type the read will
+        /// execute against; dropping the ARRAY JOIN also drops its type check, so anything less is a
+        /// wrong result. Buffer, View and MaterializedView remain uncovered here: they diverge on
+        /// master already for a bare sum(length(arr)), tracked in <ISSUE_URL_PLACEHOLDER>.
+
         /// A storage that opts out of subcolumn optimization may execute the read against a different
-        /// schema than the one analyzed here, so dropping the ARRAY JOIN would also drop its type check.
+        /// schema than the one analyzed here.
         if (!table_node->getStorage()->supportsOptimizationToSubcolumns())
             return;
+
+        /// Transparent wrappers forward both the capability predicate and the read, so the Merge check
+        /// below must see the storage that actually executes.
+        auto resolved_storage = table_node->getStorage();
+        size_t wrapper_hops = 0;
+        for (; wrapper_hops < 4; ++wrapper_hops)
+        {
+            StoragePtr next;
+            if (const auto * alias = typeid_cast<const StorageAlias *>(resolved_storage.get()))
+                next = alias->tryGetTargetTable();
+            else if (const auto * proxy = dynamic_cast<const StorageProxy *>(resolved_storage.get()))
+                next = proxy->getNested();
+            else
+                break;
+            if (!next)
+                return;
+            resolved_storage = std::move(next);
+        }
+        if (wrapper_hops == 4)
+            return;
+
+        /// supportsOptimizationToSubcolumns() on a Merge is the AND over its children, and a MergeTree
+        /// child satisfies it whatever its column types are, so it is blind to type heterogeneity. A
+        /// Merge declares its own column list, which need not equal any child's.
+        if (const auto * storage_merge = typeid_cast<const StorageMerge *>(resolved_storage.get()))
+        {
+            const auto & analyzed_type = physical_column->getColumnType();
+            const auto & column_name = physical_column->getColumnName();
+            auto context = getContext();
+            /// hasChildTable stops at the first match, so the predicate means "this child is not
+            /// provably type-identical" and the whole expression means "some child is unsafe".
+            if (storage_merge->hasChildTable([&](const StoragePtr & child)
+                {
+                    /// Direct children only, so a nested Merge -- or a wrapper around one -- could hide
+                    /// a mismatched grandchild. Decline rather than descend.
+                    if (typeid_cast<const StorageMerge *>(child.get())
+                        || typeid_cast<const StorageAlias *>(child.get())
+                        || dynamic_cast<const StorageProxy *>(child.get()))
+                        return true;
+                    auto child_metadata = child->getInMemoryMetadataPtr(context, false);
+                    if (!child_metadata)
+                        return true;
+                    auto child_column = child_metadata->getColumns().tryGetColumn(
+                        GetColumnsOptions(GetColumnsOptions::All).withSubcolumns(), column_name);
+                    return !child_column || !child_column->type->equals(*analyzed_type);
+                }))
+                return;
+        }
 
         /// Build length(<physical array/map column>). The subsequent FunctionToSubcolumnsPass folds this
         /// into the lightweight <column>.size0 subcolumn so only offsets are read from storage.

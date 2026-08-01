@@ -51,3 +51,32 @@ A storage that opts out of subcolumn optimization may read a different schema th
 1
 1
 1
+A Merge table declares its own column list, so a child may hold a different type for the same column name. supportsOptimizationToSubcolumns() is the AND over children and a MergeTree child satisfies it whatever its types are, so the rewrite must check the children.
+6
+1
+1
+1
+7
+5
+1
+A Merge table whose children all declare the analyzed type is safe, so the rewrite must still fire there: keying on the engine instead of on the actual types would silently drop the optimization.
+5
+1
+1
+2
+1
+1
+The per-child check inspects direct children only, so a Merge whose child is itself a Merge declines whether or not the grandchildren match: the inner level re-plans the already-transformed query and cannot restore the removed ARRAY JOIN.
+6
+1
+1
+5
+1
+1
+Alias forwards both supportsOptimizationToSubcolumns() and the read, so the per-child check must see the storage that executes rather than the wrapper.
+6
+1
+1
+5
+1
+1
