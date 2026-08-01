@@ -1744,13 +1744,18 @@ protected:
     /// The same for unloadPrimaryKeysAndClearCachesOfOutdatedParts.
     std::mutex unload_primary_key_mutex;
 
+    /// `alter_effective_settings`, when non-null, is the MergeTree settings the table WILL have
+    /// after the operation (used only by `checkAlterIsPossible`, which runs before the live
+    /// settings are updated). When null the live `getSettings()` is used. See the block in
+    /// `checkProperties` validating `enable_block_number_column` / `enable_block_offset_column`.
     void checkProperties(
         const StorageInMemoryMetadata & new_metadata,
         const StorageInMemoryMetadata & old_metadata,
         bool attach,
         bool allow_empty_sorting_key,
         bool allow_nullable_key_,
-        ContextPtr local_context) const;
+        ContextPtr local_context,
+        const MergeTreeSettings * alter_effective_settings = nullptr) const;
 
     /// Runs the same metadata validation as `setProperties` but without publishing
     /// `new_metadata`. Lets `alter()` validate against freshly changed settings before

@@ -2,22 +2,15 @@
 
 #include <atomic>
 #include <filesystem>
-#include <fcntl.h>
-#include <sys/file.h>
-#include <sys/stat.h>
-#include <unistd.h>
 #include <Disks/IO/AsynchronousBoundedReadBuffer.h>
 #include <Disks/IO/ReadBufferFromRemoteFSGather.h>
 #include <Disks/IO/createReadBufferFromFileBase.h>
-#include <IO/ReadBufferFromFile.h>
 #include <IO/ReadBufferFromFileDecorator.h>
 #include <IO/WriteBufferFromFile.h>
 #include <IO/WriteBufferFromFileDecorator.h>
-#include <IO/WriteBufferFromString.h>
 #include <IO/copyData.h>
 #include <Interpreters/BlobStorageLog.h>
 #include <Interpreters/Context.h>
-#include <base/scope_guard.h>
 #include <Common/BlobStorageLogWriter.h>
 #include <Common/ObjectStorageKeyGenerator.h>
 #include <Common/StackTrace.h>
@@ -45,72 +38,7 @@ namespace ErrorCodes
     extern const int CANNOT_RMDIR;
     extern const int READONLY;
     extern const int FAULT_INJECTED;
-    extern const int FILE_ALREADY_EXISTS;
-    extern const int CANNOT_OPEN_FILE;
-    extern const int CANNOT_LINK;
-    extern const int CANNOT_STAT;
-    extern const int STALE_VERSION;
-    extern const int SYSTEM_ERROR;
     extern const int PATH_ACCESS_DENIED;
-}
-
-namespace
-{
-
-String makeETag(const struct stat & file_stat)
-{
-#if defined(OS_DARWIN)
-    const auto mtim_sec = file_stat.st_mtimespec.tv_sec;
-    const auto mtim_nsec = file_stat.st_mtimespec.tv_nsec;
-#else
-    const auto mtim_sec = file_stat.st_mtim.tv_sec;
-    const auto mtim_nsec = file_stat.st_mtim.tv_nsec;
-#endif
-    return fmt::format(
-        "{}.{:09}_{}_{}",
-        static_cast<Int64>(mtim_sec),
-        static_cast<Int64>(mtim_nsec),
-        static_cast<Int64>(file_stat.st_ino),
-        static_cast<Int64>(file_stat.st_size));
-}
-
-ObjectMetadata makeObjectMetadata(const struct stat & file_stat)
-{
-    ObjectMetadata object_metadata;
-    object_metadata.size_bytes = file_stat.st_size;
-    object_metadata.etag = makeETag(file_stat);
-    object_metadata.last_modified = Poco::Timestamp::fromEpochTime(file_stat.st_mtime);
-    return object_metadata;
-}
-
-/// The concurrent-disappearance class for a best-effort local listing: an entry
-/// removed mid-stat (ENOENT) or whose parent path component was concurrently
-/// replaced by a non-directory (ENOTDIR). Mirrors libc++'s own `__is_dne_error`.
-/// Every other error (EACCES, EIO, ...) is a real failure and must propagate.
-bool isVanishedEntryError(const std::error_code & error)
-{
-    return error == std::errc::no_such_file_or_directory || error == std::errc::not_a_directory;
-}
-
-/// Best-effort metadata stat for a path that has ALREADY been validated against
-/// the key prefix. Uses the non-throwing `error_code` overloads and tolerates the
-/// concurrent-disappearance class (see `isVanishedEntryError`), returning an empty
-/// optional for a vanished entry. Every other error is propagated.
-std::optional<ObjectMetadata> tryStatResolvedPath(const std::string & resolved_path)
-{
-    struct stat file_stat{};
-    if (0 != ::stat(resolved_path.c_str(), &file_stat))
-    {
-        std::error_code error(errno, std::generic_category());
-        if (isVanishedEntryError(error))
-            return {};
-        throw fs::filesystem_error("Got unexpected error while getting file metadata", resolved_path, error);
-    }
-
-    return makeObjectMetadata(file_stat);
-}
-
-
 }
 
 LocalObjectStorage::LocalObjectStorage(LocalObjectStorageSettings settings_)
@@ -326,124 +254,6 @@ private:
     BlobStorageLogWriterPtr blob_log;
 };
 
-void publishConditionally(const String & temp_path, const String & target_path, const std::optional<String> & if_match_etag)
-{
-    if (!if_match_etag.has_value())
-    {
-        if (0 == ::link(temp_path.c_str(), target_path.c_str()))
-            return;
-
-        if (errno == EEXIST)
-            throw Exception(
-                ErrorCodes::FILE_ALREADY_EXISTS,
-                "Object {} already exists, PreconditionFailed for If-None-Match",
-                target_path);
-
-        ErrnoException::throwFromPath(ErrorCodes::CANNOT_LINK, target_path, "Cannot link {} to {}", temp_path, target_path);
-    }
-
-    const String parent_path = fs::path(target_path).parent_path();
-    int dir_fd = ::open(parent_path.c_str(), O_RDONLY | O_DIRECTORY | O_CLOEXEC);
-    if (dir_fd < 0)
-        ErrnoException::throwFromPath(ErrorCodes::CANNOT_OPEN_FILE, parent_path, "Cannot open directory {}", parent_path);
-
-    SCOPE_EXIT({ [[maybe_unused]] int err = ::close(dir_fd); });
-
-    if (0 != ::flock(dir_fd, LOCK_EX))
-        ErrnoException::throwFromPath(ErrorCodes::SYSTEM_ERROR, parent_path, "Cannot lock directory {}", parent_path);
-
-    struct stat file_stat{};
-    if (0 != ::stat(target_path.c_str(), &file_stat))
-    {
-        if (errno == ENOENT)
-            throw Exception(
-                ErrorCodes::STALE_VERSION,
-                "Object {} does not exist, PreconditionFailed for If-Match: {}",
-                target_path, *if_match_etag);
-
-        ErrnoException::throwFromPath(ErrorCodes::CANNOT_STAT, target_path, "Cannot stat file {}", target_path);
-    }
-
-    if (auto etag = makeETag(file_stat); etag != *if_match_etag)
-        throw Exception(
-            ErrorCodes::STALE_VERSION,
-            "Object {} was modified concurrently (etag {}, expected {}), PreconditionFailed for If-Match",
-            target_path, etag, *if_match_etag);
-
-    if (0 != ::rename(temp_path.c_str(), target_path.c_str()))
-        ErrnoException::throwFromPath(ErrorCodes::SYSTEM_ERROR, target_path, "Cannot rename {} to {}", temp_path, target_path);
-}
-
-class WriteBufferToConditionallyPublishedFile final : public WriteBufferFromFileDecorator
-{
-public:
-    WriteBufferToConditionallyPublishedFile(
-        const String & target_path_,
-        const String & temp_path_,
-        size_t buf_size,
-        std::optional<String> if_match_etag_,
-        const String & bucket_,
-        BlobStorageLogWriterPtr blob_log_)
-        : WriteBufferFromFileDecorator(std::make_unique<WriteBufferFromFile>(temp_path_, buf_size, O_WRONLY | O_CREAT | O_EXCL))
-        , target_path(target_path_)
-        , temp_path(temp_path_)
-        , if_match_etag(std::move(if_match_etag_))
-        , bucket(bucket_)
-        , blob_log(std::move(blob_log_))
-    {
-    }
-
-    ~WriteBufferToConditionallyPublishedFile() override
-    {
-        removeTemporaryFile();
-    }
-
-    std::string getFileName() const override { return target_path; }
-
-private:
-    void finalizeImpl() override
-    {
-        WriteBufferFromFileDecorator::finalizeImpl();
-
-        const size_t data_size = count();
-        publishConditionally(temp_path, target_path, if_match_etag);
-        removeTemporaryFile();
-
-        if (blob_log)
-        {
-            blob_log->addEvent(
-                BlobStorageLogElement::EventType::Upload,
-                /* bucket */ bucket,
-                /* remote_path */ target_path,
-                /* local_path */ {},
-                /* data_size */ data_size,
-                /* elapsed_microseconds */ 0,
-                /* error_code */ 0,
-                /* error_message */ {});
-        }
-    }
-
-    void cancelImpl() noexcept override
-    {
-        WriteBufferFromFileDecorator::cancelImpl();
-        removeTemporaryFile();
-    }
-
-    void removeTemporaryFile() noexcept
-    {
-        if (std::exchange(temporary_file_removed, true))
-            return;
-        [[maybe_unused]] int err = ::unlink(temp_path.c_str());
-    }
-
-    const String target_path;
-    const String temp_path;
-    const std::optional<String> if_match_etag;
-    const String bucket;
-    BlobStorageLogWriterPtr blob_log;
-    bool temporary_file_removed = false;
-};
-
 }
 
 std::unique_ptr<ReadBufferFromFileBase> LocalObjectStorage::readObject( /// NOLINT
@@ -476,7 +286,7 @@ std::unique_ptr<WriteBufferFromFileBase> LocalObjectStorage::writeObject( /// NO
     WriteMode mode,
     std::optional<ObjectAttributes> /* attributes */,
     size_t buf_size,
-    const WriteSettings & write_settings)
+    const WriteSettings & /* write_settings */)
 {
     throwIfReadonly();
 
@@ -493,36 +303,6 @@ std::unique_ptr<WriteBufferFromFileBase> LocalObjectStorage::writeObject( /// NO
     auto blob_storage_log = BlobStorageLogWriter::create(settings.disk_name);
     if (blob_storage_log)
         blob_storage_log->local_path = object.local_path;
-
-    const auto & if_none_match = write_settings.object_storage_write_if_none_match;
-    const auto & if_match = write_settings.object_storage_write_if_match;
-
-    if (!if_none_match.empty() && !if_match.empty())
-        throw Exception(ErrorCodes::BAD_ARGUMENTS, "If-None-Match and If-Match cannot be used together for object {}", object.remote_path);
-
-    if (!if_none_match.empty() || !if_match.empty())
-    {
-        if (!if_none_match.empty() && if_none_match != "*")
-            throw Exception(
-                ErrorCodes::BAD_ARGUMENTS,
-                "Local object storage supports only `*` for If-None-Match, got `{}`",
-                if_none_match);
-
-        std::optional<String> if_match_etag;
-        if (!if_match.empty())
-            if_match_etag = if_match;
-
-        auto target_path = fs::path(object.remote_path);
-        auto temp_path = target_path.parent_path() / fmt::format(".tmp_{}_{}", target_path.filename().string(), getRandomASCIIString(8));
-
-        return std::make_unique<WriteBufferToConditionallyPublishedFile>(
-            object.remote_path,
-            temp_path,
-            buf_size,
-            std::move(if_match_etag),
-            settings.key_prefix,
-            std::move(blob_storage_log));
-    }
 
     return std::make_unique<WriteBufferFromFileWithLogging>(
         resolved_path,
@@ -621,43 +401,50 @@ void LocalObjectStorage::removeObjectsIfExist(const StoredObjects & objects)
         removeObjectIfExists(object);
 }
 
-std::optional<ObjectMetadata> LocalObjectStorage::tryGetObjectMetadata(const std::string & path, bool) const
+namespace
 {
-    LOG_TEST(log, "Getting metadata for path: {}", path);
+/// The concurrent-disappearance class for a best-effort local listing: an entry
+/// removed mid-stat (ENOENT) or whose parent path component was concurrently
+/// replaced by a non-directory (ENOTDIR). Mirrors libc++'s own `__is_dne_error`.
+/// Every other error (EACCES, EIO, ...) is a real failure and must propagate.
+bool isVanishedEntryError(const std::error_code & error)
+{
+    return error == std::errc::no_such_file_or_directory || error == std::errc::not_a_directory;
+}
 
-    struct stat file_stat{};
-    if (0 != ::stat(path.c_str(), &file_stat))
+/// Best-effort metadata stat for a path that has ALREADY been validated against
+/// the key prefix. Uses the non-throwing `error_code` overloads and tolerates the
+/// concurrent-disappearance class (see `isVanishedEntryError`), returning an empty
+/// optional for a vanished entry. Every other error is propagated.
+std::optional<ObjectMetadata> tryStatResolvedPath(const std::string & resolved_path)
+{
+    ObjectMetadata object_metadata;
+
+    std::error_code error;
+    auto time = fs::last_write_time(resolved_path, error);
+    if (error)
     {
-        std::error_code error(errno, std::generic_category());
         if (isVanishedEntryError(error))
             return {};
-        throw fs::filesystem_error("Got unexpected error while getting file metadata", path, error);
+        throw fs::filesystem_error("Got unexpected error while getting last write time", resolved_path, error);
     }
 
-    return makeObjectMetadata(file_stat);
+    object_metadata.size_bytes = fs::file_size(resolved_path, error);
+    if (error)
+    {
+        /// The entry may vanish between the two stat calls (concurrent removal),
+        /// or a parent path component may be concurrently replaced by a file.
+        if (isVanishedEntryError(error))
+            return {};
+        throw fs::filesystem_error("Got unexpected error while getting file size", resolved_path, error);
+    }
+
+    object_metadata.etag = std::to_string(std::chrono::duration_cast<std::chrono::nanoseconds>(time.time_since_epoch()).count());
+    object_metadata.last_modified = Poco::Timestamp::fromEpochTime(
+        std::chrono::duration_cast<std::chrono::seconds>(time.time_since_epoch()).count());
+    return object_metadata;
 }
-
-SmallObjectDataWithMetadata LocalObjectStorage::readSmallObjectAndGetObjectMetadata( /// NOLINT
-    const StoredObject & object,
-    const ReadSettings &,
-    size_t max_size_bytes,
-    std::optional<size_t>) const
-{
-    ReadBufferFromFile in(object.remote_path, std::clamp<size_t>(max_size_bytes, 1, DBMS_DEFAULT_BUFFER_SIZE));
-
-    struct stat file_stat{};
-    if (0 != ::fstat(in.getFD(), &file_stat))
-        ErrnoException::throwFromPath(ErrorCodes::CANNOT_STAT, object.remote_path, "Cannot stat file {}", object.remote_path);
-
-    SmallObjectDataWithMetadata result;
-    WriteBufferFromString out(result.data);
-    copyDataMaxBytes(in, out, max_size_bytes);
-    out.finalize();
-
-    result.metadata = makeObjectMetadata(file_stat);
-    return result;
 }
-
 
 ObjectMetadata LocalObjectStorage::getObjectMetadata(const std::string & path, bool) const
 {
@@ -674,6 +461,13 @@ ObjectMetadata LocalObjectStorage::getObjectMetadata(const std::string & path, b
     return object_metadata;
 }
 
+std::optional<ObjectMetadata> LocalObjectStorage::tryGetObjectMetadata(const std::string & path, bool) const
+{
+    auto resolved_path = resolvePathRelativelyToKeyPrefix(path);
+    LOG_TEST(log, "Getting metadata for path: {}", resolved_path);
+    return tryStatResolvedPath(resolved_path);
+}
+
 void LocalObjectStorage::listObjects(const std::string & path, RelativePathsWithMetadata & children, size_t/* max_keys */) const
 {
     /// A path with an embedded NUL is malformed: libc truncates every syscall
@@ -683,7 +477,7 @@ void LocalObjectStorage::listObjects(const std::string & path, RelativePathsWith
     /// unbounded loop for a directory that holds only subdirectories). A
     /// `readdir` entry name never contains a NUL, so this single up-front check
     /// guarantees no path derived during traversal can reintroduce one.
-    if (path.find('\0') != std::string::npos)
+    if (path.contains('\0'))
         throw fs::filesystem_error(
             "Path contains an embedded NUL byte", path,
             std::make_error_code(std::errc::invalid_argument));
