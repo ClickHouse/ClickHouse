@@ -105,12 +105,13 @@ def test_print_sql_stacktraces_against_live_server():
 
 
 def test_get_stacktraces_tolerates_repeated_client_options():
-    # A setting passed via --client-option is also copied into
-    # CLICKHOUSE_CLIENT_OPT at startup, so get_additional_client_options returns
-    # it twice.  add_effective_settings adds --allow_repeated_settings for the
-    # duration of a test and remove_settings_from_env drops it again, so at
-    # hung-check time the collector must supply the flag itself or
-    # clickhouse-client exits 36 with "cannot be specified more than once".
+    # A setting passed via `--client-option` is also copied into
+    # `CLICKHOUSE_CLIENT_OPT` at startup, so `get_additional_client_options`
+    # returns it twice.  `add_effective_settings` adds
+    # `--allow_repeated_settings` while a test runs and
+    # `remove_settings_from_env` drops it again, so the collector must supply
+    # the flag itself or `clickhouse-client` exits 36 with
+    # `cannot be specified more than once`.
     ct = _load_clickhouse_test()
     args = _make_args()
     args.client_option = [
