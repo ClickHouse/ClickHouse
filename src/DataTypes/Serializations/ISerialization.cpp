@@ -732,6 +732,18 @@ bool ISerialization::isMetadataStream(const DB::ISerialization::SubstreamPath & 
         || path[path.size() - 1].type == SubstreamType::MapBucketsInfo;
 }
 
+bool ISerialization::isSingleValuePerPartStream(const DB::ISerialization::SubstreamPath & path)
+{
+    /// The whole path is scanned rather than only its last element, because the codebook substream is terminal
+    /// only when the column itself is enumerated; when the subcolumn is read on its own, the path of its stream
+    /// is `ProductQuantizationCodebook` followed by the `Regular` substream of the underlying `FixedString`.
+    for (const auto & elem : path)
+        if (elem.type == SubstreamType::ProductQuantizationCodebook)
+            return true;
+
+    return false;
+}
+
 bool ISerialization::hasPrefix(const DB::ISerialization::SubstreamPath & path, bool use_specialized_prefixes_and_suffixes_substreams)
 {
     if (path.empty())
