@@ -611,36 +611,54 @@ def get_pull_request(number: int, repo: str) -> Optional[dict]:
     return json.loads(output)
 
 
-def revert_branches(revert_branch: str) -> List[str]:
-    """The branch names a revert of the same pull request can live on.
+def revert_branches(number: int) -> List[str]:
+    """The branch names a revert of pull request #`number` can live on.
 
     `revert-<pr>` is what this job and `.github/workflows/revert_broken_prs.yml`
     push. The "Revert" button on GitHub names the branch after the head branch
     it reverts as well, `revert-<pr>-<head branch>`, so a revert a human started
     by hand has to be matched by prefix, not by equality.
     """
-    return [revert_branch, f"{revert_branch}-*"]
+    branch = f"{REVERT_BRANCH_PREFIX}{int(number)}"
+    return [branch, f"{branch}-*"]
 
 
-def already_handled(merge_commit: str, revert_branch: str, repo: str) -> str:
-    """Why this merge has already been dealt with, or "" if it has not.
+def search_pull_requests(repo: str, search: str, fields: str) -> List[dict]:
+    """The pull requests a GitHub search finds, in any state. The search is
+    where a revert on a branch this job did not name is found at all; what it
+    matched is never trusted, always filtered by the caller."""
+    return json.loads(
+        GH.get_output_with_retries(
+            f"gh pr list --repo {shlex.quote(repo)} --state all "
+            f"--search {shlex.quote(search)} --json {fields}"
+        ).strip()
+        or "[]"
+    )
 
-    Three independent checks, from the most immediate to the most delayed. The
-    revert is already on master: `git revert` records the reverted sha in the
-    message, so history is authoritative and has no indexing lag. The revert
-    branch is already pushed: an in-flight revert, possibly by the workflow in
-    `.github/workflows/revert_broken_prs.yml`, possibly by a human. A revert
-    pull request exists in any state: covers a merged revert whose branch was
-    deleted afterwards, and one that is still open and waiting for its checks.
+
+def already_handled(merge_commit: str, number: int, repo: str) -> str:
+    """Why pull request #`number` has already been dealt with, or "" if it has
+    not.
+
+    Four independent checks, from the most immediate to the most delayed. The
+    revert is already on `master`: `git revert` records the reverted sha in the
+    message, so history is authoritative and has no indexing lag. A revert
+    branch is already pushed: an in-flight revert, by the workflow in
+    `.github/workflows/revert_broken_prs.yml`, by this job, or by a human. A
+    pull request exists on such a branch: covers a merged revert whose branch
+    was deleted afterwards, and one that is still open and waiting for its
+    checks. And a pull request carrying the `Reverts <repo>#<pr>` marker, which
+    is what the "Revert" button writes into the body and what this job writes
+    as well: that one is found whatever its branch is called.
     """
     if Shell.get_output(
         f"git log origin/{BASE_BRANCH} --fixed-strings "
         f"--grep={shlex.quote('This reverts commit ' + merge_commit)} --format=%H"
     ).strip():
         return f"the revert of {merge_commit} is already on {BASE_BRANCH}"
-    patterns = " ".join(
-        shlex.quote("refs/heads/" + name) for name in revert_branches(revert_branch)
-    )
+
+    branches = revert_branches(number)
+    patterns = " ".join(shlex.quote("refs/heads/" + name) for name in branches)
     # `<sha>\trefs/heads/<branch>` per matching ref, nothing at all when none
     # matches, which is not an error.
     pushed = [
@@ -654,29 +672,39 @@ def already_handled(merge_commit: str, revert_branch: str, repo: str) -> str:
         return (
             f"a revert branch already exists on the remote: {' '.join(sorted(pushed))}"
         )
+
     # `head:` in a GitHub search matches a prefix of the branch name and stops
     # at no boundary -- `head:revert-11` finds `revert-112345` -- so what comes
-    # back is filtered here against the names a revert of *this* pull request
-    # can have. Searching is what finds the pull request whose branch is
-    # `revert-<pr>-<head branch>`; `--head` alone would only match it exactly.
-    found = json.loads(
-        GH.get_output_with_retries(
-            f"gh pr list --repo {shlex.quote(repo)} --state all "
-            f"--search {shlex.quote('head:' + revert_branch)} "
-            "--json number,headRefName"
-        ).strip()
-        or "[]"
-    )
-    existing = sorted(
-        str(pull_request["number"])
-        for pull_request in found
-        if pull_request["headRefName"] == revert_branch
-        or pull_request["headRefName"].startswith(f"{revert_branch}-")
-    )
-    if existing:
+    # back is filtered against the names a revert of *this* pull request can
+    # have. The revert of #1123456 must not stand down the revert of #112345.
+    branch = branches[0]
+    from_branch = [
+        pull_request
+        for pull_request in search_pull_requests(
+            repo, f"head:{branch}", "number,headRefName"
+        )
+        if pull_request["headRefName"] == branch
+        or pull_request["headRefName"].startswith(f"{branch}-")
+    ]
+    if from_branch:
         return (
-            f"a revert pull request already exists for {revert_branch}: "
-            f"{' '.join(existing)}"
+            f"a revert pull request already exists for {branch}: "
+            f"{' '.join(sorted(str(p['number']) for p in from_branch))}"
+        )
+
+    # The number has to end where the marker does: `Reverts <repo>#1123456` is
+    # the revert of another pull request, not of #112345.
+    marker = f"Reverts {repo}#{int(number)}"
+    written = re.compile(f"{re.escape(marker)}(?![0-9])")
+    marked = [
+        pull_request
+        for pull_request in search_pull_requests(repo, f'"{marker}"', "number,body")
+        if written.search(pull_request.get("body") or "")
+    ]
+    if marked:
+        return (
+            f"a pull request reverting #{number} already exists: "
+            f"{' '.join(sorted(str(p['number']) for p in marked))}"
         )
     return ""
 
@@ -1108,8 +1136,7 @@ def act(investigation: Investigation, repo: str, now: datetime) -> None:
         )
         return
 
-    branch = f"{REVERT_BRANCH_PREFIX}{number}"
-    handled = already_handled(merge_commit, branch, repo)
+    handled = already_handled(merge_commit, number, repo)
     if handled:
         investigation.action = (
             Action.ALREADY_REVERTED
@@ -1303,9 +1330,7 @@ def dry_run_action(investigation: Investigation, repo: str, now: datetime) -> No
                 f"the history of {BASE_BRANCH}"
             )
         else:
-            guard = already_handled(
-                merge_commit, f"{REVERT_BRANCH_PREFIX}{number}", repo
-            )
+            guard = already_handled(merge_commit, number, repo)
     if guard:
         investigation.action = Action.SKIPPED_GUARD
         investigation.note(f"Would not revert: {guard}.")

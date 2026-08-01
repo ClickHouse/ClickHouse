@@ -338,12 +338,22 @@ def _ls_remote(*branches):
     return "".join(f"{'c' * 40}\trefs/heads/{branch}\n" for branch in branches)
 
 
-def _handled(monkeypatch, ls_remote="", pull_requests="[]"):
+def _handled(monkeypatch, ls_remote="", by_branch=(), by_marker=()):
+    """`already_handled` for #112345, with the remote and the two GitHub
+    searches -- by branch name and by the `Reverts ...` marker -- answered as
+    the caller says."""
     monkeypatch.setattr(job.Shell, "get_output", _shell({"ls-remote": ls_remote}))
     monkeypatch.setattr(
-        job.GH, "get_output_with_retries", lambda *a, **k: pull_requests
+        job.GH,
+        "get_output_with_retries",
+        _shell(
+            {
+                "head:": json.dumps(list(by_branch)),
+                "Reverts": json.dumps(list(by_marker)),
+            }
+        ),
     )
-    return job.already_handled("b" * 40, "revert-112345", "ClickHouse/ClickHouse")
+    return job.already_handled("b" * 40, 112345, "ClickHouse/ClickHouse")
 
 
 def test_a_revert_already_on_master_stops_a_second_one(monkeypatch):
@@ -352,7 +362,7 @@ def test_a_revert_already_on_master_stops_a_second_one(monkeypatch):
         job.GH, "get_output_with_retries", _unexpected("listed pull requests")
     )
     assert "already on master" in job.already_handled(
-        "b" * 40, "revert-112345", "ClickHouse/ClickHouse"
+        "b" * 40, 112345, "ClickHouse/ClickHouse"
     )
 
 
@@ -366,7 +376,7 @@ def test_a_pushed_revert_branch_stops_a_second_one(monkeypatch):
         job.GH, "get_output_with_retries", _unexpected("listed pull requests")
     )
     assert "already exists on the remote" in job.already_handled(
-        "b" * 40, "revert-112345", "ClickHouse/ClickHouse"
+        "b" * 40, 112345, "ClickHouse/ClickHouse"
     )
 
 
@@ -381,32 +391,46 @@ def test_a_revert_branch_pushed_by_the_github_button_stops_a_second_one(monkeypa
 
 def test_a_merged_revert_whose_branch_was_deleted_stops_a_second_one(monkeypatch):
     handled = _handled(
-        monkeypatch,
-        pull_requests=json.dumps([{"number": 9876, "headRefName": "revert-112345"}]),
+        monkeypatch, by_branch=[{"number": 9876, "headRefName": "revert-112345"}]
     )
     assert "already exists for revert-112345: 9876" in handled
 
 
 def test_an_open_revert_pull_request_stops_a_second_one(monkeypatch):
-    """A revert somebody opened by hand and left waiting for its checks: the
-    branch is gone from neither the remote nor the search, but nothing has been
-    merged yet, so the history says nothing."""
+    """A revert somebody opened by hand and left waiting for its checks: its
+    branch is deleted from the remote by nobody yet, but nothing has been merged
+    either, so the history says nothing."""
     handled = _handled(
         monkeypatch,
-        pull_requests=json.dumps(
-            [{"number": 9876, "headRefName": "revert-112345-add-a-new-setting"}]
-        ),
+        by_branch=[{"number": 9876, "headRefName": "revert-112345-add-a-new-setting"}],
     )
     assert "already exists for revert-112345: 9876" in handled
 
 
-def test_a_revert_of_another_pull_request_does_not_stop_this_one(monkeypatch):
-    """`head:` in a GitHub search matches a prefix and stops at no boundary, so
-    the revert of #1123456 comes back when the revert of #112345 is searched
-    for. It must not be taken for one."""
+def test_a_revert_on_a_branch_of_any_name_stops_a_second_one(monkeypatch):
+    """`Reverts <repo>#<pr>` is what the `Revert` button writes into the body
+    and what this job writes as well, so a revert is found however its branch
+    was named."""
     handled = _handled(
         monkeypatch,
-        pull_requests=json.dumps([{"number": 9876, "headRefName": "revert-1123456"}]),
+        by_marker=[
+            {
+                "number": 9876,
+                "body": "Reverts ClickHouse/ClickHouse#112345\n\nBroke master.",
+            }
+        ],
+    )
+    assert "a pull request reverting #112345 already exists: 9876" in handled
+
+
+def test_a_revert_of_another_pull_request_does_not_stop_this_one(monkeypatch):
+    """A GitHub search matches a prefix and stops at no boundary, so the revert
+    of #1123456 comes back when the revert of #112345 is searched for. It must
+    not be taken for one."""
+    handled = _handled(
+        monkeypatch,
+        by_branch=[{"number": 9876, "headRefName": "revert-1123456"}],
+        by_marker=[{"number": 9877, "body": "Reverts ClickHouse/ClickHouse#1123456"}],
     )
     assert handled == ""
 
