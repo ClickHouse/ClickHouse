@@ -2,6 +2,7 @@
 #include <AggregateFunctions/IAggregateFunction.h>
 #include <Core/Block.h>
 #include <Core/Field.h>
+#include <Core/ProtocolDefines.h>
 #include <DataTypes/IDataType.h>
 #include <IO/Operators.h>
 #include <IO/ReadHelpers.h>
@@ -22,6 +23,7 @@ namespace DB
 namespace ErrorCodes
 {
     extern const int INCORRECT_DATA;
+    extern const int SUPPORT_IS_DISABLED;
 }
 
 static ITransformingStep::Traits getTraits(bool preserves_sorting)
@@ -321,6 +323,15 @@ deserializeWindowFunctions(ReadBuffer & in, const Block & input_header)
 
 void WindowStep::serialize(Serialization & ctx) const
 {
+    /// `WindowStep` is only registered under `QueryPlanStepRegistry` since query-plan serialization
+    /// version 4; an older worker does not know the "Window" step name at all and would throw
+    /// `UNKNOWN_IDENTIFIER` on it, or worse, misparse the stream if it ever did partially recognize the
+    /// name. Fail closed here rather than write bytes an older peer cannot understand.
+    if (ctx.version < DBMS_MIN_QUERY_PLAN_SERIALIZATION_VERSION_WITH_WINDOW_STEP)
+        throw Exception(ErrorCodes::SUPPORT_IS_DISABLED,
+            "make_distributed_plan: serializing a WindowStep requires query plan serialization "
+            "version >= {}; all nodes must run the same version", DBMS_MIN_QUERY_PLAN_SERIALIZATION_VERSION_WITH_WINDOW_STEP);
+
     UInt8 flags = 0;
     if (streams_fan_out)
         flags |= 1;
@@ -338,6 +349,13 @@ void WindowStep::serialize(Serialization & ctx) const
 
 QueryPlanStepPtr WindowStep::deserialize(Deserialization & ctx)
 {
+    /// Mirrors the guard in `serialize`: a "Window" step never legitimately arrives from a stream
+    /// written below this version, since a peer that old cannot have written one (see `serialize`).
+    if (ctx.version < DBMS_MIN_QUERY_PLAN_SERIALIZATION_VERSION_WITH_WINDOW_STEP)
+        throw Exception(ErrorCodes::SUPPORT_IS_DISABLED,
+            "make_distributed_plan: deserializing a WindowStep requires query plan serialization "
+            "version >= {}; all nodes must run the same version", DBMS_MIN_QUERY_PLAN_SERIALIZATION_VERSION_WITH_WINDOW_STEP);
+
     if (ctx.input_headers.size() != 1)
         throw Exception(ErrorCodes::INCORRECT_DATA, "WindowStep must have one input stream");
 
