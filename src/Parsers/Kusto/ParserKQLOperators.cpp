@@ -317,14 +317,14 @@ String KQLOperators::genHaystackOpExpr(
     String needle;
     String raw_needle; /// needle without wildcards for position-based fallback
     bool needle_is_literal = false;
-    if ((token_pos)->type == TokenType::StringLiteral || token_pos->type == TokenType::QuotedIdentifier)
+    if (token_pos->type == TokenType::StringLiteral || token_pos->type == TokenType::QuotedIdentifier)
     {
         raw_needle = "'" + IParserKQLFunction::escapeSingleQuotes(String(token_pos->begin + 1, token_pos->end - 1)) + "'";
         needle = "'" + left_wildcards + left_space + String(token_pos->begin + 1, token_pos->end - 1)
             + right_space + right_wildcards + "'";
         needle_is_literal = true;
     }
-    else if ((token_pos)->type == TokenType::BareWord)
+    else if (token_pos->type == TokenType::BareWord)
     {
         auto tmp_arg = IParserKQLFunction::getExpression(token_pos);
         raw_needle = tmp_arg;
