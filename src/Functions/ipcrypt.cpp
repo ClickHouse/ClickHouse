@@ -354,7 +354,7 @@ private:
 
 REGISTER_FUNCTION(IPCrypt)
 {
-    FunctionDocumentation::IntroducedIn introduced_in = {26, 2};
+    FunctionDocumentation::IntroducedIn introduced_in = {26, 8};
     FunctionDocumentation::Category category = FunctionDocumentation::Category::IPAddress;
 
     /// ipcryptEncrypt
