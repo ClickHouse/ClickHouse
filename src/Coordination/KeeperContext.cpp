@@ -78,6 +78,7 @@ KeeperContext::KeeperContext(bool standalone_keeper_, CoordinationSettingsPtr co
         KeeperFeatureFlag::PERSISTENT_WATCHES,
         KeeperFeatureFlag::TRY_REMOVE,
         KeeperFeatureFlag::LIST_WITH_STAT_AND_DATA,
+        KeeperFeatureFlag::MAX_REQUEST_SIZE,
     };
 
     for (const auto feature_flag : enabled_by_default_feature_flags)
@@ -104,7 +105,6 @@ void KeeperContext::initialize(const Poco::Util::AbstractConfiguration & config,
 
     digest_enabled = config.getBool("keeper_server.digest_enabled", false);
     digest_enabled_on_commit = config.getBool("keeper_server.digest_enabled_on_commit", false);
-    ignore_system_path_on_startup = config.getBool("keeper_server.ignore_system_path_on_startup", false);
 
     initializeFeatureFlags(config);
     initializeDisks(config);
@@ -190,11 +190,6 @@ KeeperContext::Phase KeeperContext::getServerState() const
 void KeeperContext::setServerState(KeeperContext::Phase server_state_)
 {
     server_state = server_state_;
-}
-
-bool KeeperContext::ignoreSystemPathOnStartup() const
-{
-    return ignore_system_path_on_startup;
 }
 
 bool KeeperContext::digestEnabled() const
