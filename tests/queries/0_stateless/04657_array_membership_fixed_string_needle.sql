@@ -140,12 +140,23 @@ CREATE TABLE t_map_val    (id UInt64, m Map(UInt8, String)) ENGINE = Memory;
 CREATE TABLE t_map_val_lc (id UInt64, m Map(UInt8, LowCardinality(String))) ENGINE = Memory;
 INSERT INTO t_map_val    VALUES (0, {0:'V0'}), (1, {1:'V0\0'}), (2, {2:'X'});
 INSERT INTO t_map_val_lc VALUES (0, {0:'V0'}), (1, {1:'V0\0'}), (2, {2:'X'});
-SELECT 'mapContainsKey',                   groupArray(id), (SELECT groupArray(id) FROM t_map        WHERE arrayExists(x -> x = toFixedString('V0', 3), mapKeys(m)))   FROM t_map        WHERE mapContainsKey(m, toFixedString('V0', 3));
-SELECT 'mapContainsKey LowCardinality',    groupArray(id), (SELECT groupArray(id) FROM t_map_lc     WHERE arrayExists(x -> x = toFixedString('V0', 3), mapKeys(m)))   FROM t_map_lc     WHERE mapContainsKey(m, toFixedString('V0', 3));
+-- The rewrite is pinned on rather than left at the default: the test runner randomizes
+-- `optimize_functions_to_subcolumns`, so without the pin these two rows take the same adapter path
+-- as the `no-subcolumns` rows below on roughly half of all runs and the four rows collapse to two.
+SELECT 'mapContainsKey',                   groupArray(id), (SELECT groupArray(id) FROM t_map        WHERE arrayExists(x -> x = toFixedString('V0', 3), mapKeys(m)))   FROM t_map        WHERE mapContainsKey(m, toFixedString('V0', 3)) SETTINGS optimize_functions_to_subcolumns = 1;
+SELECT 'mapContainsKey LowCardinality',    groupArray(id), (SELECT groupArray(id) FROM t_map_lc     WHERE arrayExists(x -> x = toFixedString('V0', 3), mapKeys(m)))   FROM t_map_lc     WHERE mapContainsKey(m, toFixedString('V0', 3)) SETTINGS optimize_functions_to_subcolumns = 1;
 SELECT 'mapContainsKey no-subcolumns',                groupArray(id), (SELECT groupArray(id) FROM t_map    WHERE arrayExists(x -> x = toFixedString('V0', 3), mapKeys(m)))   FROM t_map    WHERE mapContainsKey(m, toFixedString('V0', 3)) SETTINGS optimize_functions_to_subcolumns = 0;
 SELECT 'mapContainsKey LowCardinality no-subcolumns', groupArray(id), (SELECT groupArray(id) FROM t_map_lc WHERE arrayExists(x -> x = toFixedString('V0', 3), mapKeys(m)))   FROM t_map_lc WHERE mapContainsKey(m, toFixedString('V0', 3)) SETTINGS optimize_functions_to_subcolumns = 0;
 SELECT 'mapContainsValue',                 groupArray(id), (SELECT groupArray(id) FROM t_map_val    WHERE arrayExists(x -> x = toFixedString('V0', 3), mapValues(m))) FROM t_map_val    WHERE mapContainsValue(m, toFixedString('V0', 3));
 SELECT 'mapContainsValue LowCardinality',  groupArray(id), (SELECT groupArray(id) FROM t_map_val_lc WHERE arrayExists(x -> x = toFixedString('V0', 3), mapValues(m))) FROM t_map_val_lc WHERE mapContainsValue(m, toFixedString('V0', 3));
+-- The four key rows above only assert two distinct paths if the rewrite really is on at 1 and off at
+-- 0, which is what these rows measure: 1 means the plan holds `has` over the `m.keys` subcolumn, 0
+-- means it still holds `mapContainsKey` over the Map column. `enable_analyzer` is pinned on the OUTER
+-- query because `EXPLAIN QUERY TREE` needs the analyzer, and a subquery may not change that setting.
+SELECT 'rewrite fires at 1',                  countIf(explain LIKE '%function_name: has%'), countIf(explain LIKE '%column_name: m.keys%'), countIf(explain LIKE '%function_name: mapContainsKey%') FROM (EXPLAIN QUERY TREE SELECT mapContainsKey(m, toFixedString('V0', 3)) FROM t_map    SETTINGS optimize_functions_to_subcolumns = 1) SETTINGS enable_analyzer = 1;
+SELECT 'rewrite declines at 0',               countIf(explain LIKE '%function_name: has%'), countIf(explain LIKE '%column_name: m.keys%'), countIf(explain LIKE '%function_name: mapContainsKey%') FROM (EXPLAIN QUERY TREE SELECT mapContainsKey(m, toFixedString('V0', 3)) FROM t_map    SETTINGS optimize_functions_to_subcolumns = 0) SETTINGS enable_analyzer = 1;
+SELECT 'rewrite fires at 1 LowCardinality',   countIf(explain LIKE '%function_name: has%'), countIf(explain LIKE '%column_name: m.keys%'), countIf(explain LIKE '%function_name: mapContainsKey%') FROM (EXPLAIN QUERY TREE SELECT mapContainsKey(m, toFixedString('V0', 3)) FROM t_map_lc SETTINGS optimize_functions_to_subcolumns = 1) SETTINGS enable_analyzer = 1;
+SELECT 'rewrite declines at 0 LowCardinality', countIf(explain LIKE '%function_name: has%'), countIf(explain LIKE '%column_name: m.keys%'), countIf(explain LIKE '%function_name: mapContainsKey%') FROM (EXPLAIN QUERY TREE SELECT mapContainsKey(m, toFixedString('V0', 3)) FROM t_map_lc SETTINGS optimize_functions_to_subcolumns = 0) SETTINGS enable_analyzer = 1;
 
 SELECT '-- the rewrite of arrayExists to has must preserve results';
 SELECT 'FixedString needle', (SELECT groupArray(id) FROM t_str WHERE arrayExists(x -> x = toFixedString('V0', 3), v) SETTINGS optimize_rewrite_array_exists_to_has = 1)
@@ -164,6 +175,10 @@ SELECT 'FixedString(4) elements',           groupArray(id), (SELECT groupArray(i
 SELECT 'LowCardinality(FixedString(3))',    groupArray(id), (SELECT groupArray(id) FROM t_lc_fs3 WHERE arrayExists(x -> x = toFixedString('V0', 3), v)) FROM t_lc_fs3 WHERE has(v, toFixedString('V0', 3));
 -- A needle wider than a FixedString element used to throw TOO_LARGE_STRING_SIZE here.
 SELECT 'wider needle on LowCardinality(FixedString(3))', groupArray(id), (SELECT groupArray(id) FROM t_lc_fs3 WHERE arrayExists(x -> x = toFixedString('V0', 5), v)) FROM t_lc_fs3 WHERE has(v, toFixedString('V0', 5));
+-- Control, not coverage of the fix: this is the one wrapper and needle combination that both takes
+-- the LowCardinality dictionary shortcut and passes through the Nullable peel. Measured identical on
+-- master, because the shortcut casts the Nullable(FixedString(3)) needle down losslessly anyway.
+SELECT 'nullable needle on LowCardinality(FixedString(3))', groupArray(id), (SELECT groupArray(id) FROM t_lc_fs3 WHERE arrayExists(x -> x = CAST(toFixedString('V0', 3) AS Nullable(FixedString(3))), v)) FROM t_lc_fs3 WHERE has(v, CAST(toFixedString('V0', 3) AS Nullable(FixedString(3))));
 SELECT 'longer non-NUL String needle',      has(v, materialize('V0abc')) FROM t_fs4 WHERE id = 0;
 SELECT 'NULL needle',                       groupArray(id) FROM t_lc_null WHERE has(v, NULL);
 

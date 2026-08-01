@@ -48,6 +48,10 @@ mapContainsKey no-subcolumns	[0,1]	[0,1]
 mapContainsKey LowCardinality no-subcolumns	[0,1]	[0,1]
 mapContainsValue	[0,1]	[0,1]
 mapContainsValue LowCardinality	[0,1]	[0,1]
+rewrite fires at 1	1	1	0
+rewrite declines at 0	0	0	1
+rewrite fires at 1 LowCardinality	1	1	0
+rewrite declines at 0 LowCardinality	0	0	1
 -- the rewrite of arrayExists to has must preserve results
 FixedString needle	1
 String needle	1
@@ -57,6 +61,7 @@ String needle on LowCardinality	[0]	[0]
 FixedString(4) elements	[0]	[0]
 LowCardinality(FixedString(3))	[0]	[0]
 wider needle on LowCardinality(FixedString(3))	[0]	[0]
+nullable needle on LowCardinality(FixedString(3))	[0]	[0]
 longer non-NUL String needle	0
 NULL needle	[]
 -- boundary sizes, including needles that cross the 16 byte comparison window
