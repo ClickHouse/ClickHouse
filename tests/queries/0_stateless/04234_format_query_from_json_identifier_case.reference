@@ -1,0 +1,5 @@
+select a from t
+SELECT Foo FROM t
+SELECT foo FROM t
+select MyCol from MyTable
+SELECT a FROM t
