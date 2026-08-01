@@ -181,6 +181,31 @@ SELECT 'FixedString(4) elements',           groupArray(id), (SELECT groupArray(i
 SELECT 'LowCardinality(FixedString(3))',    groupArray(id), (SELECT groupArray(id) FROM t_lc_fs3 WHERE arrayExists(x -> x = toFixedString('V0', 3), v)) FROM t_lc_fs3 WHERE has(v, toFixedString('V0', 3));
 -- A needle wider than a FixedString element used to throw TOO_LARGE_STRING_SIZE here.
 SELECT 'wider needle on LowCardinality(FixedString(3))', groupArray(id), (SELECT groupArray(id) FROM t_lc_fs3 WHERE arrayExists(x -> x = toFixedString('V0', 5), v)) FROM t_lc_fs3 WHERE has(v, toFixedString('V0', 5));
+-- A plain `String` needle against a `LowCardinality(FixedString(N))` element. The needle is padded up
+-- to N by the cast the dictionary lookup performs, which is exact while it FITS, so a needle of at
+-- most N bytes still denotes one value and the shortcut stays correct. A LONGER one does not: the
+-- cast would throw, so it must decline and be answered by the fallback instead.
+DROP TABLE IF EXISTS t_fs3_wide;
+CREATE TABLE t_fs3_wide (id UInt64, v Array(FixedString(3))) ENGINE = Memory;
+INSERT INTO t_fs3_wide VALUES (0, ['V0']), (1, ['X']);
+SELECT 'String needle shorter than the element',     groupArray(id), (SELECT groupArray(id) FROM t_lc_fs3 WHERE arrayExists(x -> x = 'V0', v)      SETTINGS optimize_rewrite_array_exists_to_has = 0) FROM t_lc_fs3 WHERE has(v, 'V0');
+SELECT 'String needle exactly the element width',    groupArray(id), (SELECT groupArray(id) FROM t_lc_fs3 WHERE arrayExists(x -> x = 'V0\0', v)    SETTINGS optimize_rewrite_array_exists_to_has = 0) FROM t_lc_fs3 WHERE has(v, 'V0\0');
+-- The wider needle declines and is answered by the fallback. Its answer disagrees with the inline `=`
+-- oracle, which is a SEPARATE pre-existing defect and not this PR's contract: `=` pads a plain
+-- `String` needle too, while every membership path truncates it to the element width. Measured
+-- identical on master for a NON-LowCardinality `Array(FixedString(3))` (`[]` against the oracle's
+-- `[0]`), so it is neither introduced nor widened here. Asserted at the LowCardinality answer so a
+-- future fix has a failing line pointing at itself, with the plain-array control beside it.
+SELECT 'String needle wider than the element',       groupArray(id), (SELECT groupArray(id) FROM t_fs3_wide WHERE has(v, 'V0\0\0')) FROM t_lc_fs3 WHERE has(v, 'V0\0\0');
+SELECT 'String needle indexOf exactly the width',    groupArray(id), (SELECT groupArray(id) FROM t_lc_fs3 WHERE arrayExists(x -> x = 'V0\0', v)    SETTINGS optimize_rewrite_array_exists_to_has = 0) FROM t_lc_fs3 WHERE indexOf(v, 'V0\0') > 0;
+SELECT 'String needle countEqual exactly the width', groupArray(id), (SELECT groupArray(id) FROM t_lc_fs3 WHERE arrayExists(x -> x = 'V0\0', v)    SETTINGS optimize_rewrite_array_exists_to_has = 0) FROM t_lc_fs3 WHERE countEqual(v, 'V0\0') > 0;
+-- The Map adapter keeps the wrapper, so a Map value reaches the same guard with the same needle.
+DROP TABLE IF EXISTS t_map_val_lc_fs3;
+CREATE TABLE t_map_val_lc_fs3 (id UInt64, m Map(UInt8, LowCardinality(FixedString(3)))) ENGINE = Memory;
+INSERT INTO t_map_val_lc_fs3 VALUES (0, {0:'V0'}), (1, {1:'X'});
+SELECT 'String needle mapContainsValue exactly the width', groupArray(id), (SELECT groupArray(id) FROM t_map_val_lc_fs3 WHERE arrayExists(x -> x = 'V0\0', mapValues(m)) SETTINGS optimize_rewrite_array_exists_to_has = 0) FROM t_map_val_lc_fs3 WHERE mapContainsValue(m, 'V0\0');
+DROP TABLE t_map_val_lc_fs3;
+DROP TABLE t_fs3_wide;
 -- Control, not coverage of the fix: this wrapper and needle combination is answered by the
 -- LowCardinality dictionary shortcut, which returns a column before executeArrayImpl is entered, so
 -- it BYPASSES the Nullable peel. Measured identical on master, because the shortcut casts the
@@ -229,12 +254,14 @@ SELECT 'longer non-NUL String needle',      has(v, materialize('V0abc')) FROM t_
 -- `Nothing` is not the element type, so the shortcut is refused one line later by
 -- needleMapsToSingleDictionaryValue and never reaches the nullability test.
 SELECT 'NULL needle',                       groupArray(id) FROM t_lc_null WHERE has(v, NULL);
--- Must-not-regress, and the row that actually exercises the guard's nullability test: a TYPED NULL
--- passes the allow-list, and on a NULLABLE dictionary index 0 genuinely IS the NULL slot, so the
--- guard must NOT decline and the shortcut must keep answering. `has` must find the NULL element and
--- not the default-valued one. The oracle is `isNull` rather than `x = NULL` because equals(NULL,
--- NULL) is NULL, so an `= NULL` lambda answers [] for every array; `isNull` is a separate
--- implementation of the same membership question and cannot be rewritten into `has`.
+-- Must-not-regress: a typed NULL needle on a NULLABLE dictionary must keep finding the NULL element
+-- and must not match the default-valued row. These rows assert that RESULT only. They deliberately
+-- do not discriminate which implementation produced it: whether the dictionary shortcut answers or
+-- declines and `executeNothing` answers instead is not observable from SQL -- no profile event or
+-- plan text exposes the shortcut, and both paths return these same rows. The oracle is `isNull`
+-- rather than `x = NULL` because equals(NULL, NULL) is NULL, so an `= NULL` lambda answers [] for
+-- every array; `isNull` is a separate implementation of the same membership question and cannot be
+-- rewritten into `has`.
 DROP TABLE IF EXISTS t_lc_null_def;
 DROP TABLE IF EXISTS t_lc_nfs3_def;
 CREATE TABLE t_lc_null_def  (id UInt64, v Array(LowCardinality(Nullable(String))))         ENGINE = Memory;
@@ -297,6 +324,41 @@ SELECT 'has -1 on UInt8',  groupArray(id), (SELECT groupArray(id) FROM t_u8 WHER
 SELECT 'has 255 on UInt8', groupArray(id), (SELECT groupArray(id) FROM t_u8 WHERE arrayExists(x -> x = 255, v)) FROM t_u8_lc WHERE has(v, 255);
 DROP TABLE t_u8_lc;
 DROP TABLE t_u8;
+
+-- A needle of a DIFFERENT type than the element is admitted exactly when converting it into the
+-- element type preserves its value, which is a stronger question than "are the types equal". Both
+-- directions matter: a needle that converts exactly must keep being answered by the dictionary
+-- shortcut, and one that does not must decline.
+DROP TABLE IF EXISTS t_i64_exact_lc;
+DROP TABLE IF EXISTS t_i64_exact;
+CREATE TABLE t_i64_exact_lc (id UInt64, v Array(LowCardinality(Int64))) ENGINE = Memory;
+CREATE TABLE t_i64_exact    (id UInt64, v Array(Int64))                 ENGINE = Memory;
+-- 9007199254740993 is the first integer a Float64 cannot hold: it rounds to ...992, which the array
+-- does NOT contain, so the needle must not match. Row 1 holds ...992 itself, which it must match.
+INSERT INTO t_i64_exact_lc VALUES (0, [9007199254740993]), (1, [9007199254740992]);
+INSERT INTO t_i64_exact    VALUES (0, [9007199254740993]), (1, [9007199254740992]);
+SELECT 'Float64 needle exactly representable', groupArray(id), (SELECT groupArray(id) FROM t_i64_exact WHERE arrayExists(x -> x = 9007199254740992.0, v) SETTINGS optimize_rewrite_array_exists_to_has = 0) FROM t_i64_exact_lc WHERE has(v, 9007199254740992.0);
+SELECT 'Float64 needle indexOf',               groupArray(id), (SELECT groupArray(id) FROM t_i64_exact WHERE arrayExists(x -> x = 9007199254740992.0, v) SETTINGS optimize_rewrite_array_exists_to_has = 0) FROM t_i64_exact_lc WHERE indexOf(v, 9007199254740992.0) > 0;
+SELECT 'Float64 needle countEqual',            groupArray(id), (SELECT groupArray(id) FROM t_i64_exact WHERE arrayExists(x -> x = 9007199254740992.0, v) SETTINGS optimize_rewrite_array_exists_to_has = 0) FROM t_i64_exact_lc WHERE countEqual(v, 9007199254740992.0) > 0;
+DROP TABLE t_i64_exact_lc;
+DROP TABLE t_i64_exact;
+
+-- The same question for a temporal pair, where a single cast cannot report the loss: casting a
+-- non-midnight DateTime to Date truncates the time of day and SUCCEEDS, so only converting back
+-- separates it from an exact midnight. The midnight needle must match; the non-midnight one must not,
+-- because no Date value equals it.
+DROP TABLE IF EXISTS t_date_lc;
+DROP TABLE IF EXISTS t_date;
+CREATE TABLE t_date_lc (id UInt64, v Array(LowCardinality(Date))) ENGINE = Memory;
+CREATE TABLE t_date    (id UInt64, v Array(Date))                 ENGINE = Memory;
+INSERT INTO t_date_lc VALUES (0, [toDate('1970-01-02')]), (1, [toDate('1970-01-10')]);
+INSERT INTO t_date    VALUES (0, [toDate('1970-01-02')]), (1, [toDate('1970-01-10')]);
+SELECT 'DateTime needle at midnight',      groupArray(id), (SELECT groupArray(id) FROM t_date WHERE arrayExists(x -> x = toDateTime('1970-01-02 00:00:00', 'UTC'), v) SETTINGS optimize_rewrite_array_exists_to_has = 0) FROM t_date_lc WHERE has(v, toDateTime('1970-01-02 00:00:00', 'UTC'));
+SELECT 'DateTime needle not at midnight',  groupArray(id), (SELECT groupArray(id) FROM t_date WHERE arrayExists(x -> x = toDateTime('1970-01-02 01:00:00', 'UTC'), v) SETTINGS optimize_rewrite_array_exists_to_has = 0) FROM t_date_lc WHERE has(v, toDateTime('1970-01-02 01:00:00', 'UTC'));
+SELECT 'DateTime needle midnight indexOf', groupArray(id), (SELECT groupArray(id) FROM t_date WHERE arrayExists(x -> x = toDateTime('1970-01-02 00:00:00', 'UTC'), v) SETTINGS optimize_rewrite_array_exists_to_has = 0) FROM t_date_lc WHERE indexOf(v, toDateTime('1970-01-02 00:00:00', 'UTC')) > 0;
+SELECT 'DateTime needle midnight count',   groupArray(id), (SELECT groupArray(id) FROM t_date WHERE arrayExists(x -> x = toDateTime('1970-01-02 00:00:00', 'UTC'), v) SETTINGS optimize_rewrite_array_exists_to_has = 0) FROM t_date_lc WHERE countEqual(v, toDateTime('1970-01-02 00:00:00', 'UTC')) > 0;
+DROP TABLE t_date_lc;
+DROP TABLE t_date;
 
 DROP TABLE t_str;
 DROP TABLE t_lc;

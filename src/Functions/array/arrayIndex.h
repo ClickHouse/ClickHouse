@@ -879,16 +879,55 @@ private:
      * Tips and tricks tried can be found at https://github.com/ClickHouse/ClickHouse/pull/12550 .
      */
 
+    /** Does casting [needle] into [element_type] preserve its value exactly?
+      *
+      * The dictionary lookup casts the needle down to the element type and then matches by bytes, so a
+      * cast that changes the value makes the lookup ask about a value the needle does not denote. The
+      * test is a ROUND TRIP rather than a single cast, because a one-way cast cannot report that it
+      * lost anything: casting a non-midnight `DateTime` to `Date` truncates the time of day and
+      * succeeds, so only converting back and comparing distinguishes it from an exact midnight.
+      */
+    static bool castPreservesNeedleValue(
+        const ColumnPtr & needle_column, const DataTypePtr & needle_type, const DataTypePtr & element_type)
+    {
+        try
+        {
+            /// The down-cast is the very one `dictionaryIndexForConstant` performs, so it must be the
+            /// same `castColumn`; the way back only has to report loss, so it may reject with a NULL.
+            const auto narrowed = castColumn({needle_column, needle_type, ""}, element_type);
+            if (narrowed->empty() || narrowed->isNullAt(0))
+                return false;
+
+            const auto restored
+                = castColumnAccurateOrNull({narrowed, element_type, ""}, makeNullable(needle_type));
+            if (restored->empty() || restored->isNullAt(0))
+                return false;
+
+            return accurateEquals((*restored)[0], (*needle_column)[0]);
+        }
+        catch (const Exception &) /// Ok: a needle the cast rejects cannot denote an element value.
+        {
+            return false;
+        }
+    }
+
     /** The LowCardinality fast path resolves the needle to ONE dictionary index and then compares
       * indices, so it is sound only when the needle identifies exactly one element value AND the
       * dictionary's lookup, which is by BYTE identity, coincides with that type's equality.
       *
-      * This is an allow-list rather than a lossiness check on the cast, because for a same-type
-      * needle the cast is the identity yet byte identity still is not equality: floats have
-      * `+0.0 == -0.0` with different bytes and `NaN != NaN` with equal bytes, so a `Float64` needle
-      * both misses rows a `0.0` needle must match and invents a `NaN` match.
+      * The string-family clauses are an allow-list on the TYPES because their equality is
+      * width-sensitive in a way a value round trip does not see. Everything else is decided by
+      * [castPreservesNeedleValue] on the actual constant. A FLOAT ELEMENT is refused outright: byte
+      * identity is not equality there even for a same-type needle, since `+0.0 == -0.0` with
+      * different bytes and `NaN != NaN` with equal bytes, so the dictionary both misses rows a `0.0`
+      * needle must match and invents a `NaN` match. A float NEEDLE against a non-float element is
+      * fine as long as it converts exactly.
       */
-    static bool needleMapsToSingleDictionaryValue(const DataTypePtr & element_type, const DataTypePtr & needle_type)
+    static bool needleMapsToSingleDictionaryValue(
+        const DataTypePtr & element_type,
+        const DataTypePtr & needle_type,
+        std::optional<size_t> needle_constant_size,
+        const ColumnPtr & needle_column)
     {
         const auto element = removeNullable(recursiveRemoveLowCardinality(element_type));
         const auto needle = removeNullable(recursiveRemoveLowCardinality(needle_type));
@@ -896,9 +935,9 @@ private:
         const WhichDataType which_element(element);
         const WhichDataType which_needle(needle);
 
-        /// Byte identity is not equality for floats, and a wider type family may round the needle
-        /// onto a different value than it holds (`has(Array(LowCardinality(Int64)), 1.5)`).
-        if (which_element.isFloat() || which_needle.isFloat())
+        /// See the float paragraph above: the dictionary is looked up by bytes, so a float ELEMENT
+        /// cannot be matched by an equality-correct lookup at all.
+        if (which_element.isFloat())
             return false;
 
         /// A `FixedString` needle is zero-padded to the element width, so it stays one value only
@@ -909,12 +948,26 @@ private:
                 && assert_cast<const DataTypeFixedString &>(*element).getN()
                     >= assert_cast<const DataTypeFixedString &>(*needle).getN();
 
-        /// Same reasoning in the other direction: a `String` needle longer than the element width
-        /// still compares equal when the excess is NUL, which a plain dictionary lookup misses.
         if (which_element.isFixedString())
-            return which_needle.isFixedString();
+        {
+            /// A `String` needle is padded up to the element width by the cast the dictionary lookup
+            /// performs, which is exact while it fits, so it still denotes one value. A needle LONGER
+            /// than the element width does not: the cast would throw, and its equivalence class can
+            /// hold values the element type cannot store.
+            const size_t element_n = assert_cast<const DataTypeFixedString &>(*element).getN();
+            return needle_constant_size.has_value() && *needle_constant_size <= element_n;
+        }
 
-        return element->equals(*needle);
+        if (element->equals(*needle))
+            return true;
+
+        /// Mirror what the lookup does with the operands before casting: `recursiveRemoveLowCardinality`
+        /// on the column, then peel `Nullable`, so the column handed to the cast matches [needle].
+        ColumnPtr value = recursiveRemoveLowCardinality(needle_column);
+        if (const auto * value_nullable = checkAndGetColumn<ColumnNullable>(value.get()))
+            value = value_nullable->getNestedColumnPtr();
+
+        return castPreservesNeedleValue(value, needle, element);
     }
 
     static ColumnPtr executeArrayLowCardinality(const ColumnsWithTypeAndName & arguments)
@@ -953,7 +1006,26 @@ private:
         if (right_const->isNullAt(0) && !isNullableOrLowCardinalityNullable(array_type.getNestedType()))
             return nullptr;
 
-        if (!needleMapsToSingleDictionaryValue(array_type.getNestedType(), arguments[1].type))
+        /// The needle's own byte length, which decides whether a `String` needle fits a `FixedString`
+        /// element. `getDataAt` returns `sizeAt` for a `ColumnString` (no terminator) and `N` for a
+        /// `ColumnFixedString`, so it is the real length either way; it is unavailable for a NULL,
+        /// where it throws, and for a column that does not store contiguous bytes.
+        std::optional<size_t> needle_constant_size;
+        if (!right_const->isNullAt(0))
+        {
+            const IColumn * needle_data = &right_const->getDataColumn();
+            if (const auto * needle_nullable = checkAndGetColumn<ColumnNullable>(needle_data))
+                needle_data = &needle_nullable->getNestedColumn();
+
+            if (checkAndGetColumn<ColumnString>(needle_data) || checkAndGetColumn<ColumnFixedString>(needle_data))
+                needle_constant_size = needle_data->getDataAt(0).size();
+        }
+
+        if (!needleMapsToSingleDictionaryValue(
+                array_type.getNestedType(),
+                arguments[1].type,
+                needle_constant_size,
+                right_const->getDataColumnPtr()))
             return nullptr;
 
         UInt64 index = 0;
