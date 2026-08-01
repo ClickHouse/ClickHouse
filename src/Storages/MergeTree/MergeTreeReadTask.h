@@ -110,6 +110,11 @@ struct MergeTreeReadTaskInfo
     MergedPartOffsetsPtr merged_part_offsets;
     /// Prewhere steps that should be applied to execute on-fly mutations for part.
     PrewhereExprSteps mutation_steps;
+    /// Whether `mutation_steps` contains steps produced from the mutations snapshot (on-fly
+    /// mutations). Distinguishes them from the step applying a materialized lightweight-delete
+    /// mask, which also lives in `mutation_steps` but is committed part data (see
+    /// appliesMutationsBeforePrewhere).
+    bool has_on_fly_mutation_steps = false;
     /// Patches that should be applied for part.
     PatchPartsForReader patch_parts;
     /// Column names to read during PREWHERE and WHERE

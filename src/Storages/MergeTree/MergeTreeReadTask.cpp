@@ -509,10 +509,16 @@ bool MergeTreeReadTask::appliesMutationsBeforePrewhere() const
     if (!info->patch_parts.empty())
         return true;
 
+    /// Only the steps that actually made it into `mutation_steps` count: a pending mutation whose
+    /// commands touch none of the columns this query reads is filtered out entirely (see
+    /// `AlterConversions::filterMutationCommands`), so it rewrites nothing this query observes and
+    /// must not disable the cache. `hasMutations()` would be too broad here.
+    if (info->has_on_fly_mutation_steps)
+        return true;
+
     /// An unmaterialized lightweight delete is applied from the mutations snapshot at read time and
     /// therefore does vary between queries, so it stays disqualifying.
-    return info->alter_conversions
-        && (info->alter_conversions->hasMutations() || info->alter_conversions->hasLightweightDelete());
+    return info->alter_conversions && info->alter_conversions->hasLightweightDelete();
 }
 
 }

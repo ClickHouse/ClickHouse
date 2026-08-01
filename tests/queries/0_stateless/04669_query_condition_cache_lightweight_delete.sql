@@ -75,3 +75,49 @@ SELECT count() FROM t_qcc_lwd;
 SELECT count() FROM t_qcc_lwd WHERE v < 10;
 
 DROP TABLE t_qcc_lwd;
+
+-- A pending on-fly mutation that touches none of the columns the query reads is filtered out of
+-- the read chain entirely (`AlterConversions::filterMutationCommands`), rewrites nothing the query
+-- observes, and therefore must not disable the cache write. The entry it writes is consumable by
+-- an `apply_mutations_on_fly = 0` query (the read path skips the cache while a data mutation is
+-- pending, so the `= 0` side is the one that can actually hit).
+
+SELECT '--- a pending mutation on an unread column must not disable the cache';
+
+DROP TABLE IF EXISTS t_qcc_lwd_pending;
+
+CREATE TABLE t_qcc_lwd_pending (id UInt64, v UInt64, w UInt64)
+ENGINE = MergeTree ORDER BY id
+SETTINGS index_granularity = 8192, min_bytes_for_wide_part = 0, auto_statistics_types = '';
+
+INSERT INTO t_qcc_lwd_pending SELECT number, number, number FROM numbers(1000000);
+
+DELETE FROM t_qcc_lwd_pending WHERE id = 0 SETTINGS mutations_sync = 2;
+
+SYSTEM STOP MERGES t_qcc_lwd_pending;
+ALTER TABLE t_qcc_lwd_pending UPDATE w = 0 WHERE id = 1 SETTINGS mutations_sync = 0;
+
+SYSTEM DROP QUERY CONDITION CACHE;
+
+-- The prime reads only `v`, so the pending `UPDATE` of `w` is irrelevant to it and the write must
+-- still happen; the reuse with `apply_mutations_on_fly = 0` must consume it and prune.
+SELECT count() FROM t_qcc_lwd_pending WHERE v = 123456789
+SETTINGS apply_mutations_on_fly = 1, log_comment = '04669_lwd_pending_prime';
+SELECT count() FROM t_qcc_lwd_pending WHERE v = 123456789
+SETTINGS apply_mutations_on_fly = 0, log_comment = '04669_lwd_pending_reuse';
+
+SYSTEM FLUSH LOGS query_log;
+
+SELECT '--- pending-mutation prime reads everything, reuse prunes';
+SELECT
+    log_comment,
+    ProfileEvents['QueryConditionCacheHits'] > 0,
+    toInt32(ProfileEvents['SelectedMarks']) < toInt32(ProfileEvents['SelectedMarksTotal'])
+FROM system.query_log
+WHERE event_date >= yesterday() AND event_time >= now() - 600
+    AND type = 'QueryFinish'
+    AND current_database = currentDatabase()
+    AND log_comment IN ('04669_lwd_pending_prime', '04669_lwd_pending_reuse')
+ORDER BY event_time_microseconds;
+
+DROP TABLE t_qcc_lwd_pending;
