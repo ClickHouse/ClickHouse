@@ -134,7 +134,8 @@ MergeTreeIndexConditionText::MergeTreeIndexConditionText(
     bool has_positions_)
     : WithContext(context_)
     , header(index_sample_block)
-    , tokenizer(tokenizer_)
+    , owned_tokenizer(tokenizer_ && tokenizer_->isStateful() ? std::shared_ptr<const ITokenizer>(tokenizer_->clone()) : nullptr)
+    , tokenizer(owned_tokenizer ? owned_tokenizer.get() : tokenizer_)
     , preprocessor(preprocessor_)
     , has_preprocessor(preprocessor && preprocessor->hasActions())
     , postprocessor(postprocessor_)
@@ -994,6 +995,9 @@ bool MergeTreeIndexConditionText::traverseFunctionNode(
     }
     if (function_name == "equals")
     {
+        if (!value_data_type.isStringOrFixedString())
+            return false;
+
         /// Special case: Don't use the index if the needle is empty.
         /// - Reason 1: The index doesn't index empty values (regardless of the tokenizer). So this needle
         ///   is invalid.
@@ -1230,6 +1234,8 @@ bool MergeTreeIndexConditionText::traverseFunctionNode(
     }
     if (function_name == "startsWith" && tokenizer->supportsStringLike())
     {
+        if (!value_data_type.isStringOrFixedString())
+            return false;
         auto tokens = substringToTokens(value_field, true, false);
         out.function = RPNElement::FUNCTION_EQUALS;
         out.text_search_queries.emplace_back(std::make_shared<TextSearchQuery>(function_name, TextSearchMode::All, direct_read_mode, std::move(tokens)));
@@ -1237,6 +1243,8 @@ bool MergeTreeIndexConditionText::traverseFunctionNode(
     }
     if (function_name == "endsWith" && tokenizer->supportsStringLike())
     {
+        if (!value_data_type.isStringOrFixedString())
+            return false;
         auto tokens = substringToTokens(value_field, false, true);
         out.function = RPNElement::FUNCTION_EQUALS;
         out.text_search_queries.emplace_back(std::make_shared<TextSearchQuery>(function_name, TextSearchMode::All, direct_read_mode, std::move(tokens)));
