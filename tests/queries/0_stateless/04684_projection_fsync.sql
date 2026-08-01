@@ -96,6 +96,49 @@ CHECK TABLE t_proj SETTINGS check_query_single_value_result = 1;
 DROP TABLE t_proj;
 DROP TABLE t_plain;
 
+-- The same directory-sync guarantee on `Packed` storage, where the whole projection is a single
+-- `data.packed` archive written only when the part's transaction is precommitted. The directory
+-- fsync has to happen after that, so cover both storage types.
+CREATE TABLE t_packed (id UInt64, key String, v UInt64,
+                       PROJECTION pr (SELECT key, sum(v) GROUP BY key))
+ENGINE = MergeTree ORDER BY id
+SETTINGS fsync_after_insert = 1, fsync_part_directory = 1,
+         min_bytes_for_full_part_storage = 1000000000,
+         max_bytes_to_merge_at_max_space_in_pool = 1;
+
+CREATE TABLE t_packed_plain (id UInt64, key String, v UInt64)
+ENGINE = MergeTree ORDER BY id
+SETTINGS fsync_after_insert = 1, fsync_part_directory = 1,
+         min_bytes_for_full_part_storage = 1000000000,
+         max_bytes_to_merge_at_max_space_in_pool = 1;
+
+INSERT INTO t_packed SELECT number, concat('k', toString(number % 7)), number FROM numbers(5000);
+INSERT INTO t_packed_plain SELECT number, concat('k', toString(number % 7)), number FROM numbers(5000);
+
+SYSTEM FLUSH LOGS query_log;
+
+SELECT 'packed insert projection adds directory syncs',
+    (SELECT max(ProfileEvents['DirectorySync']) FROM system.query_log
+     WHERE current_database = currentDatabase() AND query_kind = 'Insert'
+       AND query NOT LIKE '%query_log%' AND query LIKE '%t\_packed %' AND type = 'QueryFinish')
+    >
+    (SELECT max(ProfileEvents['DirectorySync']) FROM system.query_log
+     WHERE current_database = currentDatabase() AND query_kind = 'Insert'
+       AND query NOT LIKE '%query_log%' AND query LIKE '%t\_packed\_plain%' AND type = 'QueryFinish');
+
+SYSTEM FLUSH LOGS part_log;
+
+-- Guards the assertion above: on `Full` storage the projection files are individually synced, so
+-- confirm the fixture really produced a `Packed` part.
+SELECT 'packed storage type', any(part_storage_type) FROM system.part_log
+WHERE database = currentDatabase() AND table = 't_packed' AND event_type = 'NewPart';
+
+SELECT 'packed check';
+CHECK TABLE t_packed SETTINGS check_query_single_value_result = 1;
+
+DROP TABLE t_packed;
+DROP TABLE t_packed_plain;
+
 -- `MATERIALIZE PROJECTION` (mutation) path. Its fsyncs run on the IO thread pool and are not
 -- attributed to the `ALTER` in `system.query_log`, but the mutation is a part-level operation, so
 -- they ARE attributed to the resulting part in `system.part_log`. The same threshold reasoning as

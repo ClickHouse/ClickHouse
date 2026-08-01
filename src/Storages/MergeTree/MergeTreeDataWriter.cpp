@@ -447,10 +447,22 @@ void MergeTreeTemporaryPart::finalize()
     part->getDataPartStorage().setPreferredFileOrder(file_order_hint);
 
     part->getDataPartStorage().precommitTransaction();
+
+    /// Syncing the part directory persists the `<projection>.proj` entry but not the entries inside
+    /// it, so each projection directory needs an fsync of its own or the projection can come back
+    /// empty after a power loss. It happens here rather than where the projection is written because
+    /// `Packed` storage creates `data.packed` in precommitTransaction below, so a sync taken any
+    /// earlier would run before the archive exists.
+    const bool fsync_projection_directory
+        = (*part->storage.getSettings())[MergeTreeSetting::fsync_part_directory];
+
     for (const auto & [_, projection] : part->getProjectionParts())
     {
         projection->getDataPartStorage().setPreferredFileOrder(file_order_hint);
         projection->getDataPartStorage().precommitTransaction();
+
+        if (fsync_projection_directory)
+            { SyncGuardPtr projection_sync_guard = projection->getDataPartStorage().getDirectorySyncGuard(); }
     }
 
     /// If any minmax column is a virtual, the writer aggregated placeholder values for it. Drop the
@@ -1172,14 +1184,6 @@ MergeTreeTemporaryPartPtr MergeTreeDataWriter::writeProjectionPartImpl(
     new_data_part->setColumns(columns, infos, metadata_snapshot->getMetadataVersion());
 
     projection_part_storage->createDirectories();
-
-    /// Destroyed on return, after every file below has been created, so the fsync sees a complete
-    /// directory. Syncing the parent part directory only persists the `<projection>.proj` entry
-    /// itself, not the entries inside it, so without this the projection can come back empty after
-    /// a power loss even though all of its files were fsynced. Mirrors writeTempPartImpl.
-    SyncGuardPtr projection_sync_guard;
-    if ((*data_settings)[MergeTreeSetting::fsync_part_directory])
-        projection_sync_guard = projection_part_storage->getDirectorySyncGuard();
 
     /// If we need to calculate some columns to sort.
     if (metadata_snapshot->hasSortingKey() || metadata_snapshot->hasSecondaryIndices())
