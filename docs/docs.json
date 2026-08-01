@@ -35,6 +35,9 @@
   "integrations": {
     "clarity": {
       "projectId": "xgummrwgj9"
+    },
+    "gtm": {
+      "tagId": "GTM-WTNTDT7W"
     }
   },
   "interaction": {
@@ -123,7 +126,8 @@
               {
                 "item": "Ecosystem",
                 "pages": [
-                  "integrations/home"
+                  "integrations/home",
+                  "integrations/data-catalogs"
                 ]
               },
               {

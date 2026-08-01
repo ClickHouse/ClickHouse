@@ -1,6 +1,8 @@
 #include <Common/QueryFuzzer.h>
 
 #include <Core/UUID.h>
+#include <Common/DateLUT.h>
+
 #include <DataTypes/DataTypeAggregateFunction.h>
 #include <DataTypes/DataTypeArray.h>
 #include <DataTypes/DataTypeDateTime.h>
@@ -2977,7 +2979,7 @@ DataTypePtr QueryFuzzer::getRandomType()
 
     /// Geo types are custom-named Array aliases with no TypeIndex of their own,
     /// so they are appended after the TypeIndex vector in a unified selection.
-    static constexpr const char * geo_type_names[] = {"Point", "Ring", "LineString", "MultiLineString", "Polygon", "MultiPolygon"};
+    static constexpr const char * geo_type_names[] = {"Point", "MultiPoint", "Ring", "LineString", "MultiLineString", "Polygon", "MultiPolygon"};
     static constexpr size_t n_geo = std::size(geo_type_names);
     const size_t pick = fuzz_rand() % (random_types.size() + n_geo);
     if (pick >= random_types.size())
@@ -3009,7 +3011,13 @@ DataTypePtr QueryFuzzer::getRandomType()
             return std::make_shared<DataTypeVariant>(elements);
         }
         case TypeIndex::Array: return std::make_shared<DataTypeArray>(getRandomType());
-        case TypeIndex::Map: return std::make_shared<DataTypeMap>(getRandomType(), getRandomType());
+        case TypeIndex::Map: {
+            auto key_type = getRandomType();
+            /// `DataTypeMap`'s constructor rejects a `Nullable`/`LowCardinality(Nullable)` key.
+            if (!DataTypeMap::isValidKeyType(key_type))
+                key_type = std::make_shared<DataTypeString>();
+            return std::make_shared<DataTypeMap>(key_type, getRandomType());
+        }
         case TypeIndex::LowCardinality: {
             auto inner = getRandomType();
             if (!inner->canBeInsideLowCardinality())
@@ -3887,6 +3895,13 @@ void QueryFuzzer::extractPredicates(const ASTPtr & node, ASTs & predicates, cons
     {
         if (func->name == op && func->arguments)
         {
+            /// A degenerate call such as `and()` has nothing to flatten, so it contributes one
+            /// opaque leaf instead of nothing, keeping the extraction non-empty
+            if (func->arguments->children.empty())
+            {
+                predicates.emplace_back(node);
+                return;
+            }
             /// Recursively extract predicates from children
             for (const auto & entry : func->arguments->children)
             {
@@ -3912,11 +3927,14 @@ ASTPtr QueryFuzzer::permutePredicateClause(const ASTPtr & predicate, const int n
     {
         if (func->name == "and" || func->name == "or" || func->name == "xor")
         {
+            /// Nothing to permute in a degenerate call such as `and()`
+            if (!func->arguments || func->arguments->children.empty())
+                return tryNegateNextPredicate(predicate, negProb);
+
             ASTs predicates;
 
             /// Extract all predicates under the current logical operator
             extractPredicates(predicate, predicates, func->name, negProb);
-            chassert(!predicates.empty());
             /// Shuffle them
             std::shuffle(predicates.begin(), predicates.end(), fuzz_rand);
             for (auto & entry : predicates)
@@ -5187,7 +5205,7 @@ void QueryFuzzer::fuzz(ASTPtr & ast)
             Map cursor;
             const size_t num_partitions = fuzz_rand() % 2 + 1;
             /// Distinct partition ids: a flat leaf and a nested object under the same
-            /// key would collide in buildCursorTree when the cursor is formatted.
+            /// key would collide in buildCursorTree.
             const size_t base = fuzz_rand() % cursor_partition_ids.size();
             for (size_t i = 0; i < num_partitions; ++i)
             {
@@ -5228,19 +5246,19 @@ void QueryFuzzer::fuzz(ASTPtr & ast)
             {
                 /// Toggle between bare STREAM and STREAM CURSOR, or regenerate the cursor
                 auto & stream = table_expr->stream_settings->as<ASTStreamSettings &>();
-                if (stream.settings.cursor_tree.has_value() && fuzz_rand() % 2 == 0)
-                    stream.settings.cursor_tree.reset();
+                if (stream.cursor && fuzz_rand() % 2 == 0)
+                    stream.cursor.reset();
                 else
-                    stream.settings.cursor_tree = make_random_cursor();
+                    stream.cursor = buildCursorTree(make_random_cursor());
             }
         }
         else if (table_expr->database_and_table_name && fuzz_rand() % 200 == 0)
         {
             /// Add STREAM [CURSOR {...}]. A bare STREAM read tails new data until
             /// max_execution_time, so keep the probability low.
-            ASTStreamSettings::StreamSettings new_stream_settings;
+            ASTStreamSettings new_stream_settings;
             if (fuzz_rand() % 2 == 0)
-                new_stream_settings.cursor_tree = make_random_cursor();
+                new_stream_settings.cursor = buildCursorTree(make_random_cursor());
             auto stream_node = make_intrusive<ASTStreamSettings>(std::move(new_stream_settings));
             table_expr->stream_settings = stream_node;
             table_expr->children.push_back(stream_node);
@@ -6872,7 +6890,8 @@ void QueryFuzzer::fuzz(ASTPtr & ast)
             if (system_query->fake_time_for_view.has_value())
                 system_query->fake_time_for_view.reset();
             else
-                system_query->fake_time_for_view = static_cast<Int64>(fuzz_rand() % 2000000000LL);
+                system_query->fake_time_for_view
+                    = DateLUT::instance().timeToString(static_cast<time_t>(fuzz_rand() % 2000000000LL));
         }
         /// Toggle CLEAR FILESYSTEM CACHE between clearing all, by name, and by name+key+offset
         if (system_query->type == Type::CLEAR_FILESYSTEM_CACHE && fuzz_rand() % 5 == 0)
