@@ -35,7 +35,28 @@ set(OPENSSL_MODULESDIR "/usr/local/lib/ossl-modules" CACHE PATH "Set the default
 
 add_definitions(-DOPENSSL_NO_KTLS -DOPENSSLDIR="${OPENSSLDIR}" -DENGINESDIR="${OPENSSL_ENGINESDIR}" -DMODULESDIR="${OPENSSL_MODULESDIR}" -DOPENSSL_USE_NODELETE -DOPENSSL_PIC)
 
-if(ARCH_AMD64)
+# Not every architecture has a build description here: generating one means running OpenSSL's
+# `Configure` for that target and transcribing the result, and some targets - WebAssembly, for one
+# - have no assembler at all. `OPENSSL_NO_ASM` builds the portable C implementations instead.
+#
+# An architecture this file does not know about turns it on by itself. Without that, neither
+# `PLATFORM_DIRECTORY` nor a single one of the AES/BN/SHA/... cores below is set, and the build
+# gets all the way to the final link before failing on undefined `OPENSSL_cleanse` and friends.
+option(OPENSSL_NO_ASM "Build OpenSSL from the portable C sources instead of the hand-written assembly" OFF)
+
+if(NOT (ARCH_AMD64 OR ARCH_AARCH64 OR ARCH_PPC64LE OR ARCH_S390X OR ARCH_RISCV64 OR ARCH_LOONGARCH64))
+    message(STATUS "OpenSSL: no assembly for ${CMAKE_SYSTEM_PROCESSOR}, building the portable C sources")
+    set(OPENSSL_NO_ASM ON)
+endif()
+
+if(OPENSSL_NO_ASM)
+    set(PLATFORM_DIRECTORY generic)
+    if(CMAKE_CXX_BYTE_ORDER STREQUAL "BIG_ENDIAN")
+        add_definitions(-DB_ENDIAN)
+    else()
+        add_definitions(-DL_ENDIAN)
+    endif()
+elseif(ARCH_AMD64)
     if(OS_DARWIN)
         set(PLATFORM_DIRECTORY darwin_x86_64)
         add_definitions(-DL_ENDIAN)
@@ -1085,7 +1106,23 @@ set(CRYPTO_SRC ${CRYPTO_SRC}
 )
 
 
-if(ARCH_AMD64)
+if(OPENSSL_NO_ASM)
+    # The C implementations of everything the assembly would otherwise provide. This is the same
+    # set as the Darwin arms below, which are also no-asm builds.
+    set(CRYPTO_SRC ${CRYPTO_SRC}
+        ${OPENSSL_SOURCE_DIR}/crypto/aes/aes_cbc.c
+        ${OPENSSL_SOURCE_DIR}/crypto/aes/aes_core.c
+        ${OPENSSL_SOURCE_DIR}/crypto/bn/bn_asm.c
+        ${OPENSSL_SOURCE_DIR}/crypto/camellia/camellia.c
+        ${OPENSSL_SOURCE_DIR}/crypto/camellia/cmll_cbc.c
+        ${OPENSSL_SOURCE_DIR}/crypto/chacha/chacha_enc.c
+        ${OPENSSL_SOURCE_DIR}/crypto/mem_clr.c
+        ${OPENSSL_SOURCE_DIR}/crypto/rc4/rc4_enc.c
+        ${OPENSSL_SOURCE_DIR}/crypto/rc4/rc4_skey.c
+        ${OPENSSL_SOURCE_DIR}/crypto/sha/keccak1600.c
+        ${OPENSSL_SOURCE_DIR}/crypto/whrlpool/wp_block.c
+    )
+elseif(ARCH_AMD64)
     if (OS_DARWIN)
         set(CRYPTO_SRC ${CRYPTO_SRC}
             ${OPENSSL_SOURCE_DIR}/crypto/aes/aes_cbc.c
