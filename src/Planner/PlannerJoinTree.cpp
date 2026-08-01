@@ -759,7 +759,8 @@ void updatePrewhereOutputsIfNeeded(SelectQueryInfo & table_expression_query_info
 std::optional<FilterDAGInfo> buildRowPolicyFilterIfNeeded(const StoragePtr & storage,
     SelectQueryInfo & table_expression_query_info,
     PlannerContextPtr & planner_context,
-    std::set<std::string> & used_row_policies)
+    std::set<std::string> & used_row_policies,
+    NameSet required_names_without_filter = {})
 {
     const auto & query_context = planner_context->getQueryContext();
 
@@ -775,7 +776,11 @@ std::optional<FilterDAGInfo> buildRowPolicyFilterIfNeeded(const StoragePtr & sto
         used_row_policies.emplace(std::move(name));
     }
 
-    return buildFilterInfo(row_policy_filter->expression, table_expression_query_info.table_expression, planner_context);
+    return buildFilterInfo(
+        row_policy_filter->expression,
+        table_expression_query_info.table_expression,
+        planner_context,
+        std::move(required_names_without_filter));
 }
 
 std::optional<FilterDAGInfo> buildCustomKeyFilterIfNeeded(const StoragePtr & storage,
@@ -1715,8 +1720,30 @@ JoinTreeQueryPlan buildQueryPlanForTableExpression(TableExpressionNodePtr table_
 
                 updatePrewhereOutputsIfNeeded(table_expression_query_info, table_expression_data.getColumnNames(), storage_snapshot);
 
-                auto row_policy_filter_info
-                    = buildRowPolicyFilterIfNeeded(storage, table_expression_query_info, planner_context, used_row_policies);
+                /// The row-level filter runs inside the reading step and must keep any column a later
+                /// additional_table_filters step (applied on top) still needs, else that column is dropped
+                /// from the block (#111077). Mirror the columns_needed_by_other_filters pre-collect used for
+                /// PREWHERE above.
+                NameSet row_policy_required_names;
+                if (table_expression_query_info.additional_filter_ast)
+                {
+                    if (auto additional_filters_info_temp
+                        = buildAdditionalFiltersIfNeeded(table_expression_query_info, prewhere_info, planner_context))
+                    {
+                        for (const auto * input : additional_filters_info_temp->actions.getInputs())
+                            row_policy_required_names.insert(input->result_name);
+                    }
+                    /// buildFilterInfo treats an empty set as "keep all table columns", so seed it with the
+                    /// columns the query already needs before adding the additional-filter columns.
+                    if (!row_policy_required_names.empty())
+                    {
+                        const auto & current_column_names = table_expression_data.getColumnNames();
+                        row_policy_required_names.insert(current_column_names.begin(), current_column_names.end());
+                    }
+                }
+
+                auto row_policy_filter_info = buildRowPolicyFilterIfNeeded(
+                    storage, table_expression_query_info, planner_context, used_row_policies, std::move(row_policy_required_names));
                 if (row_policy_filter_info)
                 {
                     table_expression_data.setRowLevelFilterActions(row_policy_filter_info->actions.clone());
