@@ -62,6 +62,14 @@ void ASTFunction::setNoEmptyArgs(bool value)
     }
 }
 
+void ASTFunction::setQueryParameterName(ASTPtr identifier)
+{
+    chassert(name.empty());
+    chassert(identifier && identifier->as<ASTIdentifier>() && identifier->as<ASTIdentifier>()->isParam());
+    query_parameter_name = std::move(identifier);
+    children.insert(children.begin(), query_parameter_name);
+}
+
 
 void ASTFunction::appendColumnNameImpl(WriteBuffer & ostr) const
 {
@@ -78,7 +86,10 @@ void ASTFunction::appendColumnNameImpl(WriteBuffer & ostr) const
         return;
     }
 
-    writeString(name, ostr);
+    if (query_parameter_name)
+        query_parameter_name->appendColumnName(ostr);
+    else
+        writeString(name, ostr);
 
     if (parameters)
     {
@@ -135,6 +146,7 @@ void ASTFunction::writeJSON(WriteBuffer & out) const
 {
     JSONObjectWriter w(out, "Function");
     w.writeString("name", name);
+    w.writeChild("query_parameter_name", query_parameter_name);
     w.writeChild("arguments", arguments);
     w.writeChild("parameters", parameters);
     if (!window_name.empty())
@@ -182,7 +194,19 @@ void ASTFunction::readJSON(const Poco::JSON::Object & json)
 {
     JSONObjectReader r(json);
     name = r.getString("name");
-    if (name.empty())
+
+    query_parameter_name = r.readChildOfType<ASTIdentifier>("query_parameter_name");
+    if (query_parameter_name)
+    {
+        if (!name.empty())
+            throw Exception(ErrorCodes::BAD_ARGUMENTS,
+                "ASTFunction cannot have both a concrete 'name' and 'query_parameter_name' during AST JSON deserialization");
+        if (!query_parameter_name->as<ASTIdentifier>()->isParam())
+            throw Exception(ErrorCodes::BAD_ARGUMENTS,
+                "ASTFunction 'query_parameter_name' must contain an Identifier query parameter during AST JSON deserialization");
+        children.push_back(query_parameter_name);
+    }
+    else if (name.empty())
         throw Exception(ErrorCodes::BAD_ARGUMENTS, "Empty 'name' for ASTFunction");
 
     setIsOperator(r.getBool("is_operator"));
@@ -297,6 +321,11 @@ ASTPtr ASTFunction::clone() const
     auto res = make_intrusive<ASTFunction>(*this);
     res->children.clear();
 
+    if (query_parameter_name)
+    {
+        res->query_parameter_name = query_parameter_name->clone();
+        res->children.push_back(res->query_parameter_name);
+    }
     if (arguments) { res->arguments = arguments->clone(); res->children.push_back(res->arguments); }
     if (parameters) { res->parameters = parameters->clone(); res->children.push_back(res->parameters); }
 
@@ -472,7 +501,9 @@ void ASTFunction::formatImplWithoutAlias(WriteBuffer & ostr, const FormatSetting
     {
         std::string nl_or_nothing = settings.one_line ? "" : "\n";
         std::string indent_str = settings.one_line ? "" : std::string(4u * frame.indent, ' ');
-        if (!name.empty())
+        if (query_parameter_name)
+            query_parameter_name->format(ostr, settings, state, frame);
+        else if (!name.empty())
             ostr << backQuoteIfNeed(name);
         ostr << "(";
         ostr << nl_or_nothing;
@@ -935,7 +966,9 @@ void ASTFunction::formatImplWithoutAlias(WriteBuffer & ostr, const FormatSetting
     }
 
     /// Empty names are used rarely, to format queries with an extra pair of parentheses for external databases.
-    if (!name.empty())
+    if (query_parameter_name)
+        query_parameter_name->format(ostr, settings, state, nested_dont_need_parens);
+    else if (!name.empty())
         ostr << backQuoteIfNeed(name);
 
     if (parameters)

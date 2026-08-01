@@ -518,17 +518,23 @@ namespace
     /// This wrapper is needed to highlight function names differently.
     class ParserFunctionName : public IParserBase
     {
+    public:
+        explicit ParserFunctionName(bool allow_query_parameter_ = false)
+            : allow_query_parameter(allow_query_parameter_)
+        {
+        }
+
     protected:
         const char * getName() const override { return "function name"; }
         bool parseImpl(Pos & pos, ASTPtr & node, Expected & expected) override
         {
-            ParserCompoundIdentifier parser(false, true, Highlight::function);
+            ParserCompoundIdentifier parser(allow_query_parameter, true, Highlight::function);
             if (!parser.parse(pos, node, expected))
                 return false;
 
             /// Function names containing query parameters (for example, `{x:Identifier}(...)`)
-            /// are not supported.
-            if (node->as<ASTIdentifier>()->isParam())
+            /// are supported only by the dedicated table-expression parser.
+            if (node->as<ASTIdentifier>()->isParam() && !allow_query_parameter)
             {
                 node = nullptr;
                 return false;
@@ -536,6 +542,9 @@ namespace
 
             return true;
         }
+
+    private:
+        bool allow_query_parameter;
     };
 }
 
@@ -1131,8 +1140,19 @@ public:
 class FunctionLayer : public Layer
 {
 public:
-    explicit FunctionLayer(String function_name_, bool allow_function_parameters_ = true, bool is_compound_name_ = false, bool is_operator_ = false)
-        : function_name(function_name_), allow_function_parameters(allow_function_parameters_), is_compound_name(is_compound_name_), is_operator(is_operator_) {}
+    explicit FunctionLayer(
+        String function_name_,
+        bool allow_function_parameters_ = true,
+        bool is_compound_name_ = false,
+        bool is_operator_ = false,
+        ASTPtr query_parameter_name_ = {})
+        : function_name(function_name_)
+        , query_parameter_name(std::move(query_parameter_name_))
+        , allow_function_parameters(allow_function_parameters_)
+        , is_compound_name(is_compound_name_)
+        , is_operator(is_operator_)
+    {
+    }
 
     bool parse(IParser::Pos & pos, Expected & expected, Action & action) override
     {
@@ -1275,6 +1295,8 @@ public:
             auto function_node = makeASTFunction(function_name, std::move(elements));
             function_node->setIsCompoundName(is_compound_name);
             function_node->setIsOperator(is_operator);
+            if (query_parameter_name)
+                function_node->setQueryParameterName(std::move(query_parameter_name));
 
             if (parameters)
             {
@@ -1334,6 +1356,7 @@ private:
     const char * contents_end{};
 
     String function_name;
+    ASTPtr query_parameter_name;
     ASTPtr parameters;
 
     bool allow_function_parameters;
@@ -3123,6 +3146,19 @@ static std::unique_ptr<Layer> getFunctionLayer(ASTPtr identifier, bool is_table_
     /// OVERLAY(x PLACING y FROM a)
     /// OVERLAY(x PLACING y FROM a FOR b)
 
+    const auto * identifier_node = identifier->as<ASTIdentifier>();
+    chassert(identifier_node);
+    if (identifier_node->isParam())
+    {
+        chassert(is_table_function);
+        return std::make_unique<FunctionLayer>(
+            "",
+            allow_function_parameters_,
+            identifier_node->compound(),
+            /*is_operator_=*/ false,
+            std::move(identifier));
+    }
+
     String function_name = getIdentifierName(identifier);
     chassert(!function_name.empty());
     String function_name_lowercase = Poco::toLower(function_name);
@@ -3278,7 +3314,7 @@ bool ParserFunction::parseImpl(Pos & pos, ASTPtr & node, Expected & expected)
 {
     ASTPtr identifier;
 
-    if (ParserFunctionName().parse(pos, identifier, expected)
+    if (ParserFunctionName(allow_query_parameter_name).parse(pos, identifier, expected)
         && ParserToken(TokenType::OpeningRoundBracket).ignore(pos, expected))
     {
         auto start = getFunctionLayer(identifier, is_table_function, /*is_first_identifier=*/true, allow_function_parameters);

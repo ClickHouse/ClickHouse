@@ -39,6 +39,10 @@ public:
     ASTFunction() = default;
 
     String name;
+    /// An unresolved function name containing one or more `Identifier` query parameters.
+    /// It is accepted only for a function-like table expression and removed by
+    /// `ReplaceQueryParameterVisitor` before query analysis.
+    ASTPtr query_parameter_name;
     ASTPtr arguments;
     /// parameters - for parametric aggregate function. Example: quantile(0.9)(x) - what in first parens are 'parameters'.
     ASTPtr parameters;
@@ -112,6 +116,8 @@ public:
     /// This is used for parameterized view, to identify if name is 'db.view'
     bool isCompoundName() const { return flags<ASTFunctionFlags>().is_compound_name; }
     void setIsCompoundName(bool value) { flags<ASTFunctionFlags>().is_compound_name = value; }
+
+    void setQueryParameterName(ASTPtr identifier);
 
     bool hasSecretParts() const override;
 

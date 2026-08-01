@@ -8,6 +8,7 @@
 #include <Interpreters/ReplaceQueryParameterVisitor.h>
 #include <Interpreters/addTypeConversionToAST.h>
 #include <Parsers/ASTCreateQuery.h>
+#include <Parsers/ASTFunction.h>
 #include <Parsers/ASTIdentifier.h>
 #include <Parsers/ASTLiteral.h>
 #include <Parsers/ASTQueryParameter.h>
@@ -48,6 +49,15 @@ void ReplaceQueryParameterVisitor::visit(ASTPtr & ast)
         visitQueryParameter(ast);
     else if (ast->as<ASTIdentifier>() || ast->as<ASTTableIdentifier>())
         visitIdentifier(ast);
+    else if (auto * function = ast->as<ASTFunction>(); function && function->query_parameter_name)
+    {
+        visit(function->query_parameter_name);
+        const auto & resolved_name = function->query_parameter_name->as<ASTIdentifier &>();
+        function->name = resolved_name.name();
+        function->setIsCompoundName(resolved_name.compound());
+        function->reset(function->query_parameter_name);
+        visitChildren(ast);
+    }
     else if (auto * set_query = ast->as<ASTSetQuery>())
         visitSetQuery(*set_query);
     else
