@@ -394,6 +394,8 @@ Field coerceNumericToDate32Field(const T & value, const DateLUTImpl & time_zone,
     }
 
     /// Above the extended day-number domain: treat as a unix timestamp.
+    /// `> N-1` is the CAST transform's `from >= DATE_LUT_MAX_EXTEND_DAY_NUM` boundary, not an
+    /// off-by-one: the two agree for every integer source, and no fractional float reaches here.
     if (accurate::greaterOp(value, DATE32_DAY_NUM_MAX_FIELD - 1))
     {
         if (throw_mode && accurate::greaterOp(value, DATE32_MAX_TIMESTAMP_FIELD))
