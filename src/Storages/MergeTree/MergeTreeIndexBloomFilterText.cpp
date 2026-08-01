@@ -349,6 +349,9 @@ bool tokenizerClampsTokensToBufferEnd(const ITokenizer & tokenizer)
         case ITokenizer::Type::SplitByString:
         case ITokenizer::Type::Array:
         case ITokenizer::Type::AsciiCJK:
+#if USE_MECAB
+        case ITokenizer::Type::Japanese:
+#endif
             return true;
             /// No `default:` to make the compiler warn if not all enum values are handled.
     }
