@@ -1192,7 +1192,7 @@
     "source": "/changelogs/26.1"
   },
   {
-    "destination": "/resources/changelogs/oss/2026#262",
+    "destination": "/resources/changelogs/cloud/release-notes/26_02",
     "source": "/changelogs/26.2"
   },
   {
@@ -1200,7 +1200,7 @@
     "source": "/changelogs/26.3"
   },
   {
-    "destination": "/resources/changelogs/oss/2026#264",
+    "destination": "/resources/changelogs/cloud/release-notes/26_4",
     "source": "/changelogs/26.4"
   },
   {
