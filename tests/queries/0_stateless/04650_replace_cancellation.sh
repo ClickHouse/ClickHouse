@@ -88,11 +88,16 @@ run "many rows" \
 # 4. Many folds, each provably too small to reach a throttled checkpoint, so the three unconditional
 #    per-call checks are the only thing that can stop this query - and the only cover for the bulk-copy
 #    fast paths, which return without entering any loop. Each fold's cost is building the matcher, charged
-#    as the pattern's byte count: 130000 bytes is about 8100 units against a 65536-unit budget.
+#    as the pattern's byte count: 32500 bytes is about 2000 units against a 65536-unit budget.
 #    Sizing the folds by their MATCH count instead lets the in-loop check fire, which is what an earlier
 #    version got wrong. The folds go in one array rather than a '+' chain: a chain nests one node per
 #    fold and formatting it recurses, which overruns the stack allowance a TSan build gives a query thread.
-FOLDS=$(python3 -c "print('arraySum([' + ', '.join(\"length(replaceRegexpAll('zzz%d', repeat('[a-z0-9]{1,2}', 10000), 'x'))\" % i for i in range(60)) + '])')")
+#    One fold is the smallest amount of work this can interrupt, because the budget is only consulted
+#    between folds, so the reported time comes out a multiple of a single fold's cost. Many cheap folds
+#    rather than few expensive ones keep that step well inside the deadline: at a pattern of 10000 one
+#    fold cost about a whole deadline on a thread-sanitizer build, leaving the case no room under the
+#    bound. Total pattern bytes are unchanged, so the unfixed side is bounded by nothing as before.
+FOLDS=$(python3 -c "print('arraySum([' + ', '.join(\"length(replaceRegexpAll('zzz%d', repeat('[a-z0-9]{1,2}', 2500), 'x'))\" % i for i in range(240)) + '])')")
 run "many folds" "SELECT $FOLDS FORMAT Null" throw "" fold
 
 # 5. One match per iteration with a replacement much larger than the match: the whole cost is in the
@@ -114,8 +119,12 @@ run "regexp fallback to literal" \
     "SELECT length(replaceRegexpAll(materialize(repeat(repeat('ab', 1000000), 60)), 'ab', 'YZYZYZYZYZYZYZYZYZYZYZYZYZYZYZYZ')) FROM numbers(1) FORMAT Null"
 
 # 7. The same work reached directly through replaceAll rather than through that shortcut.
-run "replaceAll" \
-    "SELECT length(replaceAll(repeat(repeat('ab', 1000000), 300), 'ab', 'YZ')) FORMAT Null" throw "" fold
+#    Split across independent folds like case 5, and for the same two reasons: building one 600MB constant
+#    is not interruptible by this fix and cost about a whole deadline on a thread-sanitizer build, which
+#    left the case no room under the bound, and one value that large also doubled what the query needs
+#    against the test memory profile. Each fold gets its own value so none of them is shared.
+SPLIT_ALL=$(python3 -c "print('arraySum([' + ', '.join(\"length(replaceAll(repeat(repeat('%s', 1000000), 30), '%s', 'YZ'))\" % (p, p) for p in ['ab','cd','ef','gh','ij','kl','mn','op','qr','st']) + '])')")
+run "replaceAll" "SELECT $SPLIT_ALL FORMAT Null" throw "" fold
 
 # 8. Empty haystacks with a different pattern per row: nothing is scanned or written, so all the work is
 #    building one matcher per row. The needle must vary, otherwise the matcher is built once outside the
@@ -124,9 +133,10 @@ run "per-row matcher setup" \
     "SELECT sum(length(replaceRegexpAll(materialize(''), toString(number)||'[0-9]{1,3}(a|b|c)+x?', 'y'))) FROM numbers(1000000) SETTINGS max_block_size = 1000000"
 
 # 9. A one-byte needle and replacement on the per-row entry point. It has to be a fold: in the pipeline
-#    the executor's own between-block check bounds the query whatever the function does.
-run "one-byte in place" \
-    "SELECT length(replaceAll(repeat(repeat('ab', 1000000), 300), 'b', 'c')) FORMAT Null" throw "" fold
+#    the executor's own between-block check bounds the query whatever the function does. Split for the
+#    same reasons as case 7, with a needle that is one byte of each fold's own value.
+SPLIT_ONE=$(python3 -c "print('arraySum([' + ', '.join(\"length(replaceAll(repeat(repeat('%s', 1000000), 30), '%s', '%s'))\" % (h, h[1], r) for (h, r) in [('ab','c'),('cd','e'),('ef','g'),('gh','i'),('ij','k'),('kl','m'),('mn','o'),('op','q'),('qr','s'),('st','u')]) + '])')")
+run "one-byte in place" "SELECT $SPLIT_ONE FORMAT Null" throw "" fold
 
 # 10. Many capture references against an empty capture group: every match executes the whole list while
 #     producing no output, so one checkpoint per match is not enough. The group must be empty and the
