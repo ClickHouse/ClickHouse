@@ -10,6 +10,7 @@
 #include <Common/logger_useful.h>
 #include <Common/Base64.h>
 #include <Common/quoteString.h>
+#include <Common/StringUtils.h>
 #include <Common/UnorderedMapWithMemoryTracking.h>
 #include <Common/VectorWithMemoryTracking.h>
 #include <Poco/RegularExpression.h>
@@ -72,6 +73,7 @@ enum class FrontMessageType : Int32
     EXECUTE = 'E',
     COPY_DATA = 'd',
     COPY_COMPLETION = 'c',
+    COPY_FAILURE = 'f',
 };
 
 enum class MessageType : Int32
@@ -155,6 +157,7 @@ enum class ColumnType : Int32
     FLOAT8 = 701,
     VARCHAR = 1043,
     DATE = 1082,
+    TIMESTAMP = 1114,
     NUMERIC = 1700,
     UUID = 2950,
 };
@@ -164,8 +167,11 @@ class ColumnTypeSpec
 public:
     ColumnType type;
     Int16 len;
+    /// PostgreSQL type modifier (`atttypmod`), sent verbatim in `RowDescription`. -1 means "no modifier";
+    /// for `numeric` it carries the precision and scale (see `convertDataTypeToPostgresColumnTypeSpec`).
+    Int32 type_modifier;
 
-    ColumnTypeSpec(ColumnType type_, Int16 len_) : type(type_), len(len_) {}
+    ColumnTypeSpec(ColumnType type_, Int16 len_, Int32 type_modifier_ = -1) : type(type_), len(len_), type_modifier(type_modifier_) {}
 };
 
 ColumnTypeSpec convertDataTypeToPostgresColumnTypeSpec(const DataTypePtr & data_type);
@@ -1042,7 +1048,7 @@ public:
         writeBinaryBigEndian(static_cast<Int16>(0), out);
         writeBinaryBigEndian(static_cast<Int32>(type_spec.type), out);
         writeBinaryBigEndian(type_spec.len, out);
-        writeBinaryBigEndian(static_cast<Int32>(-1), out);
+        writeBinaryBigEndian(type_spec.type_modifier, out);
         writeBinaryBigEndian(static_cast<Int16>(format_code), out);
     }
 
@@ -1265,6 +1271,38 @@ public:
     }
 };
 
+/// Sent by the client to abort an in-progress `COPY FROM STDIN` (libpq emits it when the local data
+/// source errors out or the copy is cancelled). The body is a human-readable failure reason.
+class CopyFail : FrontMessage
+{
+public:
+    String message;
+
+    void deserialize(ReadBuffer & in) override
+    {
+        Int32 sz = 0;
+        readBinaryBigEndian(sz, in);
+        if (sz < static_cast<Int32>(sizeof(Int32)))
+            throw Exception(ErrorCodes::UNKNOWN_PACKET_FROM_CLIENT,
+                            "Wrong message length {} in CopyFail, it must be at least 4", sz);
+        message.reserve(sz - sizeof(Int32));
+        for (size_t i = 0; i < sz - sizeof(Int32); ++i)
+        {
+            char byte = 0;
+            readBinary(byte, in);
+            message.push_back(byte);
+        }
+        /// The reason is a null-terminated string; drop the trailing NUL if present.
+        if (!message.empty() && message.back() == '\0')
+            message.pop_back();
+    }
+
+    MessageType getMessageType() const override
+    {
+        return MessageType::COPY_FAIL;
+    }
+};
+
 class CopyOutData : public BackendMessage
 {
     VectorWithMemoryTracking<char> data;
@@ -1359,14 +1397,15 @@ public:
         ALTER_TABLE = 14,
         TRUNCATE = 15,
         USE = 16,
-        SET = 17
+        SET = 17,
+        ROLLBACK = 18
     };
 private:
-    String enum_to_string[18] =
+    String enum_to_string[19] =
     {
         "BEGIN", "COMMIT", "INSERT", "DELETE", "UPDATE", "SELECT", "MOVE", "FETCH", "COPY", "PREPARE",
         "CREATE TABLE", "CREATE DATABASE", "DROP TABLE", "DROP DATABASE", "ALTER TABLE",
-        "TRUNCATE", "USE", "SET"
+        "TRUNCATE", "USE", "SET", "ROLLBACK"
     };
 
     String value;
@@ -1417,7 +1456,12 @@ public:
         return MessageType::COMMAND_COMPLETE;
     }
 
-    // Extract and normalize prefix: skip leading spaces, collapse multiple spaces to one, convert to uppercase on the fly
+    // Extract and normalize prefix: skip leading spaces, collapse multiple spaces to one, convert to uppercase on the fly.
+    // Only ASCII is classified and case-folded. The text is matched against ASCII keywords, while the query carries
+    // arbitrary user bytes - a `SET application_name` value, a string literal - so the locale-dependent `std::isspace` /
+    // `std::toupper` must not see it: they are undefined for a negative `char` (any byte >= 0x80 on a signed-`char`
+    // build) and would otherwise make the classification depend on the process locale. Non-ASCII bytes are copied
+    // through unchanged, which is what keyword matching needs.
     static String extractNormalizedPrefix(const String & query, size_t max_len)
     {
         String prefix;
@@ -1427,7 +1471,8 @@ public:
 
         for (size_t i = 0; i < query.size() && prefix.size() < max_len; ++i)
         {
-            if (std::isspace(query[i]))
+            const char c = query[i];
+            if (isWhitespaceASCII(c))
             {
                 if (!prev_was_space)
                 {
@@ -1437,7 +1482,7 @@ public:
             }
             else
             {
-                prefix.push_back(static_cast<char>(std::toupper(query[i])));
+                prefix.push_back(isAlphaASCII(c) ? toUpperIfAlphaASCII(c) : c);
                 prev_was_space = false;
             }
         }
@@ -1456,7 +1501,11 @@ public:
             {"ALTER TABLE", Command::ALTER_TABLE},
             {"TRUNCATE", Command::TRUNCATE},
             {"BEGIN", Command::BEGIN},
+            {"START TRANSACTION", Command::BEGIN},
             {"COMMIT", Command::COMMIT},
+            {"END", Command::COMMIT},
+            {"ROLLBACK", Command::ROLLBACK},
+            {"ABORT", Command::ROLLBACK},
             {"INSERT", Command::INSERT},
             {"DELETE", Command::DELETE},
             {"UPDATE", Command::UPDATE},
