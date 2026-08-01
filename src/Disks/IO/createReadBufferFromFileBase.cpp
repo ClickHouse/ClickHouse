@@ -8,6 +8,8 @@
 #include <Disks/IO/ThreadPoolReader.h>
 #include <Disks/IO/getThreadPoolReader.h>
 #include <IO/AsynchronousReader.h>
+#include <IO/ReadMethod.h>
+#include <IO/preadNoWait.h>
 #include <Common/ProfileEvents.h>
 #include <Common/logger_useful.h>
 #include <Common/ErrnoException.h>
@@ -83,7 +85,16 @@ std::unique_ptr<ReadBufferFromFileBase> createReadBufferFromFileBase(
     {
         std::unique_ptr<ReadBufferFromFileBase> res;
 
-        if (settings.local_fs_settings.method == LocalFSReadMethod::read)
+        bool direct_io = false;
+#if defined(OS_LINUX) || defined(OS_FREEBSD)
+        direct_io = (actual_flags & O_DIRECT) != 0;
+#endif
+
+        /// 'pread_threadpool' is not usable on every system, and 'pread' is used instead - see `resolveLocalFSReadMethod`.
+        const LocalFSReadMethod method
+            = resolveLocalFSReadMethod(settings.local_fs_settings.method, getPreadNoWaitSupport().supported, direct_io);
+
+        if (method == LocalFSReadMethod::read)
         {
             res = std::make_unique<ReadBufferFromFile>(
                 filename,
@@ -94,7 +105,7 @@ std::unique_ptr<ReadBufferFromFileBase> createReadBufferFromFileBase(
                 file_size,
                 settings.local_throttler);
         }
-        else if (settings.local_fs_settings.method == LocalFSReadMethod::pread || settings.local_fs_settings.method == LocalFSReadMethod::mmap)
+        else if (method == LocalFSReadMethod::pread || method == LocalFSReadMethod::mmap)
         {
             res = std::make_unique<ReadBufferFromFilePReadWithDescriptorsCache>(
                 filename,
@@ -105,7 +116,7 @@ std::unique_ptr<ReadBufferFromFileBase> createReadBufferFromFileBase(
                 file_size,
                 settings.local_throttler);
         }
-        else if (settings.local_fs_settings.method == LocalFSReadMethod::io_uring)
+        else if (method == LocalFSReadMethod::io_uring)
         {
 #if USE_LIBURING
             auto & reader = getIOUringReaderOrThrow();
@@ -124,7 +135,7 @@ std::unique_ptr<ReadBufferFromFileBase> createReadBufferFromFileBase(
             throw Exception(ErrorCodes::UNSUPPORTED_METHOD, "Read method io_uring is only supported in Linux");
 #endif
         }
-        else if (settings.local_fs_settings.method == LocalFSReadMethod::pread_fake_async)
+        else if (method == LocalFSReadMethod::pread_fake_async)
         {
             auto & reader = getThreadPoolReader(FilesystemReaderType::SYNCHRONOUS_LOCAL_FS_READER);
             res = std::make_unique<AsynchronousReadBufferFromFileWithDescriptorsCache>(
@@ -139,7 +150,7 @@ std::unique_ptr<ReadBufferFromFileBase> createReadBufferFromFileBase(
                 settings.local_throttler,
                 get_prefetches_log());
         }
-        else if (settings.local_fs_settings.method == LocalFSReadMethod::pread_threadpool)
+        else if (method == LocalFSReadMethod::pread_threadpool)
         {
             auto & reader = getThreadPoolReader(FilesystemReaderType::ASYNCHRONOUS_LOCAL_FS_READER);
             res = std::make_unique<AsynchronousReadBufferFromFileWithDescriptorsCache>(

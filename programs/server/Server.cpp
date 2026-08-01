@@ -76,6 +76,7 @@
 #include <IO/ReadBufferFromFile.h>
 #include <IO/SharedThreadPools.h>
 #include <IO/S3/Credentials.h>
+#include <IO/preadNoWait.h>
 #include <Interpreters/CancellationChecker.h>
 #include <Interpreters/ServerAsynchronousMetrics.h>
 #include <Interpreters/DDLWorker.h>
@@ -840,6 +841,17 @@ void sanityChecks(Server & server, const ServerSettings & server_settings)
             Context::WarningType::SERVER_LOGGING_LEVEL_TEST,
             PreformattedMessage::create(
                 "Server logging level is set to 'test' and performance is degraded. This cannot be used in production."));
+
+    if (const auto & pread_no_wait_support = getPreadNoWaitSupport(); !pread_no_wait_support.supported)
+        server.context()->addOrUpdateWarningMessage(
+            Context::WarningType::PREAD_NO_WAIT_UNAVAILABLE,
+            PreformattedMessage::create(
+                "This system cannot check whether data is in the page cache without waiting for the disk, because {}. "
+                "The 'pread_threadpool' value of the `local_filesystem_read_method` setting relies on that check to read "
+                "the data that is already in the page cache without handing the read off to a thread pool, "
+                "so reads from local disks are performed as if the setting was 'pread'.",
+                pread_no_wait_support.unsupported_reason));
+
 #if defined(OS_LINUX)
     try
     {
