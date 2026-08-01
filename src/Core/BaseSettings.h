@@ -35,6 +35,8 @@ struct BaseSettingsHelpers
 {
     /// Error handling
     [[noreturn]] static void throwSettingNotFound(std::string_view name);
+    [[noreturn]] static void throwValuelessSettingIsNotBool(std::string_view name, std::string_view type);
+    [[noreturn]] static void throwValuelessSettingIsNotBool(std::string_view name);
     static void warningSettingNotFound(std::string_view name);
     static void flushWarnings();
 
@@ -209,6 +211,14 @@ public:
 
     /// Apply multiple setting changes
     void applyChanges(const SettingsChanges & changes);
+
+    /// Reject `SET name` with no value unless `name` is a Bool setting. Every path that applies or
+    /// validates a `SettingChange` has to call this, not only `applyChange`: `Context` applies
+    /// query-level changes through `Context::setSetting`, which takes a name and a value and cannot
+    /// see how the change was written, and its constraint check converts the value first, which
+    /// would report the type error as `BAD_GET` from the wrong layer.
+    void checkShorthandChange(const SettingChange & change) const;
+    void checkShorthandChanges(const SettingsChanges & changes) const;
 
     /// Resets all the settings to their default values
     void resetToDefault();
@@ -431,8 +441,28 @@ SettingsChanges BaseSettings<TTraits>::changes() const
 }
 
 template <typename TTraits>
+void BaseSettings<TTraits>::checkShorthandChange(const SettingChange & change) const
+{
+    /// `SET name` without a value means `SET name = true`, which only makes sense for a Bool
+    /// setting. This is where the settings schema is known, so this is where it is checked.
+    if (!change.shorthand)
+        return;
+
+    if (std::string_view type = getTypeName(change.name); type != "Bool")
+        BaseSettingsHelpers::throwValuelessSettingIsNotBool(change.name, type);
+}
+
+template <typename TTraits>
+void BaseSettings<TTraits>::checkShorthandChanges(const SettingsChanges & changes) const
+{
+    for (const auto & change : changes)
+        checkShorthandChange(change);
+}
+
+template <typename TTraits>
 void BaseSettings<TTraits>::applyChange(const SettingChange & change)
 {
+    checkShorthandChange(change);
     set(change.name, change.value);
 }
 
