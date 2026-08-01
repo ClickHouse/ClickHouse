@@ -30,6 +30,7 @@ SET
     make_distributed_plan = 1,
     enable_parallel_replicas = 0,
     enable_join_runtime_filters = 1,
+    join_runtime_filter_min_probe_rows = 0,
     distributed_plan_default_shuffle_join_bucket_count=3,
     distributed_plan_default_reader_bucket_count=3,
     distributed_plan_force_exchange_kind='Streaming',
