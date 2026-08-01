@@ -90,6 +90,9 @@ def get_gh_api(
     timeout = kwargs.pop("timeout", 30)
     while try_cnt < retries:
         try_cnt += 1
+        # Transport errors (connection reset, read timeout) are transient by nature,
+        # so they get the growing backoff below. A response status may override this.
+        retryable_backoff = True
         try:
             response = requests.get(url, timeout=timeout, **kwargs)
             response.raise_for_status()
@@ -111,12 +114,35 @@ def get_gh_api(
                 token_is_set = True
                 try_cnt = 0
                 continue
+            # Only statuses that are transient by definition get the longer window.
+            # Deliberately not extended to 4xx: telling a transient 403 (GitHub's
+            # secondary rate limit, or abuse detection) from a terminal one requires
+            # matching a response body, and the predicate above provably misses both
+            # of those messages, so widening this would change how they are retried.
+            retryable_backoff = (
+                e.response.status_code >= 500 or e.response.status_code == 429
+            )
         except Exception as e:
             exc = e
 
         if try_cnt < retries:
-            logger.info("Exception '%s' while getting, retry %i", exc, try_cnt)
-            time.sleep(sleep)
+            # Multiply the caller's `sleep`, never a literal: pr_info.py passes
+            # RETRY_SLEEP = 0 to keep PR info lookups sleepless, and a hardcoded base
+            # would inject minutes of sleep into callers that asked for none.
+            sleep_time = (
+                min(sleep * (2 ** (try_cnt - 1)), DOWNLOAD_RETRY_MAX_BACKOFF)
+                if retryable_backoff
+                else sleep
+            )
+            logger.warning(
+                "Exception '%s' while getting %s, attempt %i of %i, retrying in %i seconds",
+                exc,
+                url,
+                try_cnt,
+                retries,
+                sleep_time,
+            )
+            time.sleep(sleep_time)
 
     raise APIException(f"Unable to request data from GH API: {url}") from exc
 
