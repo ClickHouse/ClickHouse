@@ -15,9 +15,10 @@ std::vector<Document> CreateHandler::handle(const std::vector<OpMessageSection> 
 
     executor->execute(fmt::format("CREATE DATABASE IF NOT EXISTS {}", backQuoteIfNeed(collection.database)));
 
-    /// A collection created explicitly has no documents to infer a schema from, so it keeps
-    /// whole documents in a single `JSON` column. A collection created implicitly by `insert`
-    /// gets a column per field of the first inserted document instead.
+    /// A collection created explicitly has no documents to infer a schema from, so it starts as
+    /// a single `JSON` column. The first `insert` replaces that placeholder with a column per
+    /// field of the inserted document, which is what a collection created implicitly by an
+    /// `insert` gets right away.
     executor->execute(fmt::format(
         "CREATE TABLE IF NOT EXISTS {} (json JSON) ENGINE = MergeTree ORDER BY tuple()", collection.getQualifiedName()));
 

@@ -138,6 +138,20 @@ std::vector<InsertHandler::DocumentField> inferSchema(const rapidjson::Value & f
     return fields;
 }
 
+/** Tells whether the collection is the placeholder table that `createCollection` leaves behind: a
+  * single `JSON` column named `json`, because an explicitly created collection has no document to
+  * infer a schema from. The first `insert` gives it the schema of the inserted document.
+  */
+bool isPlaceholderCollection(const CollectionRef & collection, std::shared_ptr<QueryExecutor> executor)
+{
+    auto answer = executor->execute(fmt::format(
+        "SELECT count() = 1 AND countIf(name = 'json' AND type = 'JSON') = 1 FROM system.columns "
+        "WHERE database = {} AND table = {} FORMAT TSV",
+        quoteString(collection.database),
+        quoteString(collection.collection)));
+    return answer.starts_with('1');
+}
+
 }
 
 void InsertHandler::createDatabase(const CollectionRef & collection, std::shared_ptr<QueryExecutor> executor)
@@ -154,6 +168,45 @@ void InsertHandler::createTable(
             "Can not create the collection '{}.{}': the first inserted document has no fields that map onto columns",
             collection.database,
             collection.collection);
+
+    if (isPlaceholderCollection(collection, executor))
+    {
+        /// The placeholder is given the schema of the first inserted document, so that a
+        /// collection created explicitly ends up with the same columns as one created by the
+        /// insert itself. The columns are altered rather than the table recreated: an `ALTER`
+        /// of an empty table only rewrites the metadata, while a `DROP` would throw away a
+        /// table that the user may have created for something else.
+        auto count = executor->execute(fmt::format("SELECT count() FROM {} FORMAT TSV", collection.getQualifiedName()));
+        if (!count.starts_with('0'))
+            throw Exception(
+                ErrorCodes::BAD_ARGUMENTS,
+                "The collection '{}.{}' keeps whole documents in a single 'json' column and is not empty, so a document cannot be "
+                "inserted into it as a row of columns",
+                collection.database,
+                collection.collection);
+
+        WriteBufferFromOwnString alter_query;
+        alter_query << "ALTER TABLE " << collection.getQualifiedName() << " ";
+        bool json_column_is_a_field = false;
+        for (size_t i = 0; i < fields.size(); ++i)
+        {
+            if (i != 0)
+                alter_query << ", ";
+            /// A document whose own field is named `json` keeps the column and only changes its type.
+            if (fields[i].full_name == "json")
+            {
+                json_column_is_a_field = true;
+                alter_query << "MODIFY COLUMN `json` " << fields[i].type;
+            }
+            else
+                alter_query << "ADD COLUMN " << backQuoteIfNeed(fields[i].full_name) << " " << fields[i].type;
+        }
+        if (!json_column_is_a_field)
+            alter_query << ", DROP COLUMN `json`";
+
+        executor->execute(alter_query.str());
+        return;
+    }
 
     WriteBufferFromOwnString query;
     query << "CREATE TABLE IF NOT EXISTS " << collection.getQualifiedName() << " (";
