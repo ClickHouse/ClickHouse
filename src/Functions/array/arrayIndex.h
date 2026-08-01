@@ -893,19 +893,14 @@ private:
      * Tips and tricks tried can be found at https://github.com/ClickHouse/ClickHouse/pull/12550 .
      */
 
-    /** Does casting [needle] into [element_type] preserve its value exactly?
+    /** Is [code] a way for the probe's own cast to DECLINE, rather than a fault of the probe?
       *
-      * The dictionary lookup casts the needle down to the element type and then matches by bytes, so a
-      * cast that changes the value makes the lookup ask about a value the needle does not denote. The
-      * test is a ROUND TRIP rather than a single cast, because a one-way cast cannot report that it
-      * lost anything: casting a non-midnight `DateTime` to `Date` truncates the time of day and
-      * succeeds, so only converting back and comparing distinguishes it from an exact midnight.
-      */
-    /** Is [code] a way for the probe's own cast to say "this value does not convert"?
-      *
-      * Only these may be read as an answer about the VALUE. Anything else -- a memory limit, a
+      * Only these may be read as the cast refusing its input. Anything else -- a memory limit, a
       * logical error, a cancellation -- is a failure of the probe itself and must propagate, or the
       * guard would silently decline on an unrelated fault and hide it.
+      *
+      * A decline alone does not say WHICH question was answered, the one about this value or the one
+      * about the type pair; see [classifyNeedleCast] for how the two are separated.
       *
       * Each entry was raised by an actual `CAST` of a plausible needle: `TOO_LARGE_STRING_SIZE` by
       * `String -> FixedString` that does not fit, `CANNOT_PARSE_TEXT`/`_NUMBER` by a
@@ -916,7 +911,7 @@ private:
       * `VALUE_IS_OUT_OF_RANGE_OF_DATA_TYPE`/`NOT_IMPLEMENTED` by the accurate cast back and by pairs
       * that have no conversion at all.
       */
-    static bool isNeedleConversionRefusal(int code)
+    static bool isNeedleCastDecline(int code)
     {
         return code == ErrorCodes::CANNOT_CONVERT_TYPE
             || code == ErrorCodes::CANNOT_PARSE_BOOL
@@ -935,33 +930,108 @@ private:
             || code == ErrorCodes::VALUE_IS_OUT_OF_RANGE_OF_DATA_TYPE;
     }
 
-    static bool castPreservesNeedleValue(
-        const ColumnPtr & needle_column, const DataTypePtr & needle_type, const DataTypePtr & element_type)
+    /** Does casting [needle_column] into [element_type] and back preserve its value exactly?
+      *
+      * The dictionary lookup casts the needle down to the element type and then matches by bytes, so a
+      * cast that changes the value makes the lookup ask about a value the needle does not denote. The
+      * test is a ROUND TRIP rather than a single cast, because a one-way cast cannot report that it
+      * lost anything: casting a non-midnight `DateTime` to `Date` truncates the time of day and
+      * succeeds, so only converting back and comparing distinguishes it from an exact midnight.
+      *
+      * [declined] separates the two ways of not preserving the value: the trip either COMPLETED and
+      * came back with something else, or the cast REFUSED to run (it threw a decline, or the accurate
+      * way back answered NULL). Only the refusal is ambiguous about what it is a fact about.
+      */
+    static bool roundTripPreservesNeedleValue(
+        const ColumnPtr & needle_column,
+        const DataTypePtr & needle_type,
+        const DataTypePtr & element_type,
+        bool & declined)
     {
+        declined = false;
         try
         {
             /// The down-cast is the very one `dictionaryIndexForConstant` performs, so it must be the
             /// same `castColumn`; the way back only has to report loss, so it may reject with a NULL.
             const auto narrowed = castColumn({needle_column, needle_type, ""}, element_type);
             if (narrowed->empty() || narrowed->isNullAt(0))
+            {
+                declined = true;
                 return false;
+            }
 
             const auto restored
                 = castColumnAccurateOrNull({narrowed, element_type, ""}, makeNullable(needle_type));
             if (restored->empty() || restored->isNullAt(0))
+            {
+                declined = true;
                 return false;
+            }
 
             return accurateEquals((*restored)[0], (*needle_column)[0]);
         }
         catch (const Exception & e)
         {
-            /// Ok: a needle the cast REFUSES cannot denote an element value. Any other failure is
-            /// the probe's own, not an answer about the value, so let it propagate.
-            if (!isNeedleConversionRefusal(e.code()))
+            /// A declining cast still has to be told apart from a fault of the probe itself, which is
+            /// not an answer to anything and must reach the caller.
+            if (!isNeedleCastDecline(e.code()))
                 throw;
 
+            declined = true;
             return false;
         }
+    }
+
+    /** What the needle's round trip through the element type established.
+      *
+      * [ValueLost] is a fact about the VALUE: the pair does convert, and this particular value does
+      * not survive the trip, so no element of the element type equals the needle. [NotConvertible] is
+      * a fact about the type PAIR: the cast has no implementation for it, so the probe never got as
+      * far as asking about the value and knows nothing about it.
+      */
+    enum class NeedleCastOutcome : uint8_t
+    {
+        Preserved,
+        ValueLost,
+        NotConvertible,
+    };
+
+    /** Ask the type question before the value question.
+      *
+      * A cast declining its input means "this value is outside the image of the element type" only
+      * while that cast could have accepted some OTHER value of the same type. When it declines the
+      * needle type's own DEFAULT value just as flatly, the decline belongs to the pair -- `IPv4 ->
+      * UInt8` has no implementation at all -- and says nothing about this needle.
+      *
+      * The probe is structural rather than a list of error codes because the codes conflate the two
+      * facts: `FunctionsConversion` raises `CANNOT_CONVERT_TYPE` both for an unsupported pair and for
+      * a genuine value refusal such as `nan -> Int64`, so no membership test can separate them.
+      *
+      * It costs a second round trip, and only for a needle that already failed the first one; a needle
+      * that converts exactly -- the common case -- never reaches it.
+      */
+    static NeedleCastOutcome classifyNeedleCast(
+        const ColumnPtr & needle_column, const DataTypePtr & needle_type, const DataTypePtr & element_type)
+    {
+        bool declined = false;
+        if (roundTripPreservesNeedleValue(needle_column, needle_type, element_type, declined))
+            return NeedleCastOutcome::Preserved;
+
+        /// The trip ran and came back with a different value: the pair converts, this value does not.
+        if (!declined)
+            return NeedleCastOutcome::ValueLost;
+
+        auto probe = needle_type->createColumn();
+        probe->insertDefault();
+
+        bool default_declined = false;
+        roundTripPreservesNeedleValue(std::move(probe), needle_type, element_type, default_declined);
+
+        /// A cast that takes the default value but not this one is answering about the value. One that
+        /// refuses both is refusing the pair. The default's own round trip may well not PRESERVE its
+        /// value (`Date -> DateTime` and back is exact, `DateTime(0) -> Date` and back is too, but a
+        /// lossy pair need not be), which is why only the decline is read, never the preservation.
+        return default_declined ? NeedleCastOutcome::NotConvertible : NeedleCastOutcome::ValueLost;
     }
 
     /** Why the dictionary shortcut may not be taken for a given needle.
@@ -986,7 +1056,7 @@ private:
       *
       * The string-family clauses are an allow-list on the TYPES because their equality is
       * width-sensitive in a way a value round trip does not see. Everything else is decided by
-      * [castPreservesNeedleValue] on the actual constant. A FLOAT ELEMENT is refused outright: byte
+      * [classifyNeedleCast] on the actual constant. A FLOAT ELEMENT is refused outright: byte
       * identity is not equality there even for a same-type needle, since `+0.0 == -0.0` with
       * different bytes and `NaN != NaN` with equal bytes, so the dictionary both misses rows a `0.0`
       * needle must match and invents a `NaN` match. A float NEEDLE against a non-float element is
@@ -1041,14 +1111,24 @@ private:
         if (const auto * value_nullable = checkAndGetColumn<ColumnNullable>(value.get()))
             value = value_nullable->getNestedColumnPtr();
 
-        /// The round trip failing is a fact about the VALUE, not about the lookup: the needle is not
-        /// in the image of the element type, so no element of that type equals it and the answer is
-        /// "no match" for every row. Reporting it as a shape decline instead would send the pair to
-        /// `executeIntegral`, which compares raw physical numbers and would match a `Date` day number
-        /// against an equal `DateTime` epoch second.
-        return castPreservesNeedleValue(value, needle, element)
-            ? DictionaryShortcut::Admit
-            : DictionaryShortcut::NoElementCanEqual;
+        /// A round trip that runs and loses the value is a fact about the VALUE, not about the lookup:
+        /// the needle is not in the image of the element type, so no element of that type equals it and
+        /// the answer is "no match" for every row. Reporting that as a shape decline instead would send
+        /// the pair to `executeIntegral`, which compares raw physical numbers and would match a `Date`
+        /// day number against an equal `DateTime` epoch second.
+        ///
+        /// A pair the cast cannot convert AT ALL establishes neither: the general path still compares
+        /// the two through their common supertype, which is how `getReturnType` admitted the query, so
+        /// the value must be computed rather than declared absent.
+        switch (classifyNeedleCast(value, needle, element))
+        {
+            case NeedleCastOutcome::Preserved:
+                return DictionaryShortcut::Admit;
+            case NeedleCastOutcome::ValueLost:
+                return DictionaryShortcut::NoElementCanEqual;
+            case NeedleCastOutcome::NotConvertible:
+                return DictionaryShortcut::Shape;
+        }
     }
 
     static ColumnPtr executeArrayLowCardinality(const ColumnsWithTypeAndName & arguments)

@@ -325,6 +325,42 @@ SELECT 'has 255 on UInt8', groupArray(id), (SELECT groupArray(id) FROM t_u8 WHER
 DROP TABLE t_u8_lc;
 DROP TABLE t_u8;
 
+-- The same question at every unsigned width, each against its own `=` oracle, so the widest element
+-- is evidenced here rather than inferred from a width-independent argument. The plain array is shown
+-- for the maximum needle only: for `-1` at 32 and 64 bits it answers [0] against an oracle of [],
+-- which is the raw-comparison defect of the non-LowCardinality path also noted for `Int64` max below,
+-- pre-existing and out of scope here, so pinning it would fix a wrong answer in place.
+DROP TABLE IF EXISTS t_u16_lc;
+DROP TABLE IF EXISTS t_u16;
+DROP TABLE IF EXISTS t_u32_lc;
+DROP TABLE IF EXISTS t_u32;
+DROP TABLE IF EXISTS t_u64_lc;
+DROP TABLE IF EXISTS t_u64;
+CREATE TABLE t_u16_lc (id UInt64, v Array(LowCardinality(UInt16))) ENGINE = Memory;
+CREATE TABLE t_u16    (id UInt64, v Array(UInt16))                ENGINE = Memory;
+CREATE TABLE t_u32_lc (id UInt64, v Array(LowCardinality(UInt32))) ENGINE = Memory;
+CREATE TABLE t_u32    (id UInt64, v Array(UInt32))                ENGINE = Memory;
+CREATE TABLE t_u64_lc (id UInt64, v Array(LowCardinality(UInt64))) ENGINE = Memory;
+CREATE TABLE t_u64    (id UInt64, v Array(UInt64))                ENGINE = Memory;
+INSERT INTO t_u16_lc VALUES (0, [0, 65535, 65534]);
+INSERT INTO t_u16    VALUES (0, [0, 65535, 65534]);
+INSERT INTO t_u32_lc VALUES (0, [0, 4294967295, 4294967294]);
+INSERT INTO t_u32    VALUES (0, [0, 4294967295, 4294967294]);
+INSERT INTO t_u64_lc VALUES (0, [0, 18446744073709551615, 18446744073709551614]);
+INSERT INTO t_u64    VALUES (0, [0, 18446744073709551615, 18446744073709551614]);
+SELECT 'has -1 on UInt16',  groupArray(id), (SELECT groupArray(id) FROM t_u16 WHERE arrayExists(x -> x = -1, v)) FROM t_u16_lc WHERE has(v, -1);
+SELECT 'has -1 on UInt32',  groupArray(id), (SELECT groupArray(id) FROM t_u32 WHERE arrayExists(x -> x = -1, v)) FROM t_u32_lc WHERE has(v, -1);
+SELECT 'has -1 on UInt64',  groupArray(id), (SELECT groupArray(id) FROM t_u64 WHERE arrayExists(x -> x = -1, v)) FROM t_u64_lc WHERE has(v, -1);
+SELECT 'has max on UInt16', groupArray(id), (SELECT groupArray(id) FROM t_u16 WHERE arrayExists(x -> x = 65535, v)),               (SELECT groupArray(id) FROM t_u16 WHERE has(v, 65535)) FROM t_u16_lc WHERE has(v, 65535);
+SELECT 'has max on UInt32', groupArray(id), (SELECT groupArray(id) FROM t_u32 WHERE arrayExists(x -> x = 4294967295, v)),          (SELECT groupArray(id) FROM t_u32 WHERE has(v, 4294967295)) FROM t_u32_lc WHERE has(v, 4294967295);
+SELECT 'has max on UInt64', groupArray(id), (SELECT groupArray(id) FROM t_u64 WHERE arrayExists(x -> x = 18446744073709551615, v)), (SELECT groupArray(id) FROM t_u64 WHERE has(v, 18446744073709551615)) FROM t_u64_lc WHERE has(v, 18446744073709551615);
+DROP TABLE t_u16_lc;
+DROP TABLE t_u16;
+DROP TABLE t_u32_lc;
+DROP TABLE t_u32;
+DROP TABLE t_u64_lc;
+DROP TABLE t_u64;
+
 -- A needle of a DIFFERENT type than the element is admitted exactly when converting it into the
 -- element type preserves its value, which is a stronger question than "are the types equal". Both
 -- directions matter: a needle that converts exactly must keep being answered by the dictionary
@@ -409,6 +445,51 @@ SELECT 'nan needle indexOf', groupArray(id), (SELECT groupArray(id) FROM t_nan_l
 SELECT 'nan needle count',   groupArray(id), (SELECT groupArray(id) FROM t_nan_lc WHERE arrayExists(x -> x = nan, v)) FROM t_nan_lc WHERE countEqual(v, nan) > 0;
 DROP TABLE t_nan_lc;
 DROP TABLE t_nan;
+
+-- The opposite kind of conversion failure: a type PAIR the cast has no implementation for, which the
+-- `nan` rows above must not be confused with. `IPv4` and `UInt8` have a common supertype, so the query
+-- is accepted and the general path compares them correctly, but neither direction has a direct cast --
+-- so a guard that reads any refusal as "no element can equal the needle" answers 0 where `=` answers 1.
+-- The `nan`/`inf` rows above are the control that the value case still zero-fills.
+DROP TABLE IF EXISTS t_ip_lc;
+DROP TABLE IF EXISTS t_ip;
+DROP TABLE IF EXISTS t_ipu32_lc;
+DROP TABLE IF EXISTS t_ipu32;
+CREATE TABLE t_ip_lc    (id UInt64, v Array(LowCardinality(IPv4)))   ENGINE = Memory;
+CREATE TABLE t_ip       (id UInt64, v Array(IPv4))                   ENGINE = Memory;
+CREATE TABLE t_ipu32_lc (id UInt64, v Array(LowCardinality(UInt32))) ENGINE = Memory;
+CREATE TABLE t_ipu32    (id UInt64, v Array(UInt32))                 ENGINE = Memory;
+INSERT INTO t_ip_lc    VALUES (0, [toIPv4('0.0.0.1')]);
+INSERT INTO t_ip       VALUES (0, [toIPv4('0.0.0.1')]);
+INSERT INTO t_ipu32_lc VALUES (0, [1]);
+INSERT INTO t_ipu32    VALUES (0, [1]);
+SELECT 'IPv4 element, UInt8 needle',         groupArray(id), (SELECT groupArray(id) FROM t_ip WHERE arrayExists(x -> x = 1::UInt8, v)), (SELECT groupArray(id) FROM t_ip WHERE has(v, 1::UInt8)) FROM t_ip_lc WHERE has(v, 1::UInt8);
+SELECT 'IPv4 element, UInt8 needle indexOf', groupArray(id), (SELECT groupArray(id) FROM t_ip WHERE arrayExists(x -> x = 1::UInt8, v)) FROM t_ip_lc WHERE indexOf(v, 1::UInt8) > 0;
+SELECT 'IPv4 element, UInt8 needle count',   groupArray(id), (SELECT groupArray(id) FROM t_ip WHERE arrayExists(x -> x = 1::UInt8, v)) FROM t_ip_lc WHERE countEqual(v, 1::UInt8) > 0;
+-- The negative control in the same pair: the fix must restore the general comparison, not match always.
+SELECT 'IPv4 element, non-matching needle',  groupArray(id), (SELECT groupArray(id) FROM t_ip WHERE arrayExists(x -> x = 2::UInt8, v)), (SELECT groupArray(id) FROM t_ip WHERE has(v, 2::UInt8)) FROM t_ip_lc WHERE has(v, 2::UInt8);
+-- The mirrored direction fails the same way for a different reason: `UInt32 -> IPv4` has a plain cast
+-- but no ACCURATE one, so the round trip's way back answers NULL rather than throwing. Both must be
+-- read as facts about the pair.
+SELECT 'UInt32 element, IPv4 needle',         groupArray(id), (SELECT groupArray(id) FROM t_ipu32 WHERE arrayExists(x -> x = toIPv4('0.0.0.1'), v)), (SELECT groupArray(id) FROM t_ipu32 WHERE has(v, toIPv4('0.0.0.1'))) FROM t_ipu32_lc WHERE has(v, toIPv4('0.0.0.1'));
+SELECT 'UInt32 element, IPv4 needle indexOf', groupArray(id), (SELECT groupArray(id) FROM t_ipu32 WHERE arrayExists(x -> x = toIPv4('0.0.0.1'), v)) FROM t_ipu32_lc WHERE indexOf(v, toIPv4('0.0.0.1')) > 0;
+SELECT 'UInt32 element, IPv4 needle count',   groupArray(id), (SELECT groupArray(id) FROM t_ipu32 WHERE arrayExists(x -> x = toIPv4('0.0.0.1'), v)) FROM t_ipu32_lc WHERE countEqual(v, toIPv4('0.0.0.1')) > 0;
+SELECT 'UInt32 element, non-matching IPv4',   groupArray(id), (SELECT groupArray(id) FROM t_ipu32 WHERE arrayExists(x -> x = toIPv4('0.0.0.2'), v)), (SELECT groupArray(id) FROM t_ipu32 WHERE has(v, toIPv4('0.0.0.2'))) FROM t_ipu32_lc WHERE has(v, toIPv4('0.0.0.2'));
+-- Both Map spellings of the same pair.
+DROP TABLE IF EXISTS t_ip_map_val;
+DROP TABLE IF EXISTS t_ip_map_key;
+CREATE TABLE t_ip_map_val (id UInt64, m Map(UInt8, LowCardinality(IPv4))) ENGINE = Memory;
+CREATE TABLE t_ip_map_key (id UInt64, m Map(LowCardinality(IPv4), UInt8)) ENGINE = Memory;
+INSERT INTO t_ip_map_val VALUES (0, map(1, toIPv4('0.0.0.1')));
+INSERT INTO t_ip_map_key VALUES (0, map(toIPv4('0.0.0.1'), 1));
+SELECT 'mapContainsValue IPv4 element', groupArray(id), (SELECT groupArray(id) FROM t_ip_map_val WHERE arrayExists(x -> x = 1::UInt8, mapValues(m))) FROM t_ip_map_val WHERE mapContainsValue(m, 1::UInt8);
+SELECT 'mapContainsKey IPv4 element',   groupArray(id), (SELECT groupArray(id) FROM t_ip_map_key WHERE arrayExists(x -> x = 1::UInt8, mapKeys(m))) FROM t_ip_map_key WHERE mapContainsKey(m, 1::UInt8) SETTINGS optimize_functions_to_subcolumns = 0;
+DROP TABLE t_ip_map_val;
+DROP TABLE t_ip_map_key;
+DROP TABLE t_ip_lc;
+DROP TABLE t_ip;
+DROP TABLE t_ipu32_lc;
+DROP TABLE t_ipu32;
 
 SELECT '-- a LowCardinality wrapper on the NEEDLE must not change the answer';
 -- The type side of the guard normalises the needle through `recursiveRemoveLowCardinality`, but the
