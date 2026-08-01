@@ -30,6 +30,15 @@ static ReadFromMergeTree * findReadingStep(const QueryPlan::Node & node)
         if (reading->isParallelReadingEnabled())
             return nullptr;
 
+        /// A reading already claimed by the independent-partitions optimization (for DISTINCT,
+        /// LIMIT BY or aggregation) outputs one port per partition, while reading by layers outputs
+        /// one port per primary-key range. Both are contracts about which rows go to which output
+        /// port, consumed positionally by the steps above, so a single read can satisfy only one of
+        /// them: partitions generally do not form primary-key ranges, and there is no repartitioning
+        /// step between the two consumers that could convert one port layout into the other.
+        if (reading->willOutputEachPartitionThroughSeparatePort())
+            return nullptr;
+
         return reading;
     }
 
