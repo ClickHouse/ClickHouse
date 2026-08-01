@@ -3694,8 +3694,11 @@ BlockIO InterpreterCreateQuery::fillTableIfNeeded(const ASTCreateQuery & create,
         else if (!create.insert_format.empty())
         {
             insert->format = create.insert_format;
-            insert->data = create.insert_data;
-            insert->end = create.insert_data_end;
+            if (create.insert_data && create.insert_data_end && create.insert_data <= create.insert_data_end)
+            {
+                insert->data = create.insert_data;
+                insert->end = create.insert_data_end;
+            }
         }
         else if (create.select)
         {
@@ -3711,7 +3714,10 @@ BlockIO InterpreterCreateQuery::fillTableIfNeeded(const ASTCreateQuery & create,
             /* async_isnert */ false);
         /// The caller authorized `INSERT` on `published_table_name` before the populate.
         interpreter.setSkipTargetInsertAccessCheck(target_is_temporary);
-        return interpreter.execute();
+        auto result = interpreter.execute();
+        if (!insert->select)
+            result.insert_query = insert;
+        return result;
     }
 
     /// If the query is a CREATE TABLE .. CLONE AS ..., attach all partitions of the source table to the newly created table.

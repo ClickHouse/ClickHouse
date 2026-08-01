@@ -6,6 +6,8 @@
 #include <Processors/ProcessorsProfileLogInfo.h>
 #include <QueryPipeline/QueryPipeline.h>
 #include <IO/Progress.h>
+#include <Parsers/IAST_fwd.h>
+#include <Processors/IProcessor.h>
 
 
 namespace DB
@@ -36,7 +38,8 @@ struct BlockIO
     /// Needed for internal queries.
     /// Each level calls executeQuery and adds its process list entry.
     VectorWithMemoryTracking<std::shared_ptr<ProcessListEntry>> process_list_entries;
-
+    /// The ASTInsertQuery actually executed, when it differs from the top-level parsed query (e.g. CREATE ... AS/AND INSERT).
+    ASTPtr insert_query;
     QueryPipeline pipeline;
 
     /// The finalize_query_pipeline function is called once to flush the pipeline progress and reset it.

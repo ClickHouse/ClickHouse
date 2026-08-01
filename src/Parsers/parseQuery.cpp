@@ -15,6 +15,7 @@
 #include <IO/WriteBufferFromString.h>
 #include <IO/Operators.h>
 #include <algorithm>
+#include <Parsers/ASTCreateQuery.h>
 
 
 namespace DB
@@ -424,9 +425,17 @@ const char * getInsertData(const ASTPtr & ast)
 {
     if (const ASTInsertQuery * insert = getInsertAST(ast))
         return insert->data;
+    if (const ASTCreateQuery * create = ast->as<ASTCreateQuery>())
+        return create->insert_data;
     return nullptr;
 }
 
+const char * getCreateInsertDataEnd(const ASTPtr & ast)
+{
+    if (const ASTCreateQuery * create = ast->as<ASTCreateQuery>())
+        return create->insert_data_end;
+    return nullptr;
+}
 
 ASTPtr tryParseQuery(
     IParser & parser,
@@ -522,7 +531,8 @@ ASTPtr tryParseQuery(
     IParser::Pos set_lookahead(token_iterator);
     const bool committed_to_set = parser.consumesRawText() && isCommittedToSetQuery(set_lookahead);
     const bool consumes_raw_text = parser.consumesRawText() && !committed_to_set;
-    if (consumes_raw_text || !ParserKeyword(Keyword::INSERT_INTO).ignore(lookahead))
+    if (consumes_raw_text || !ParserKeyword(Keyword::INSERT_INTO).ignore(lookahead)
+        && !ParserKeyword(Keyword::CREATE).ignore(lookahead))
     {
         while (lookahead->type != TokenType::Semicolon && lookahead->type != TokenType::EndOfStream)
         {
@@ -575,7 +585,9 @@ ASTPtr tryParseQuery(
     /// in any format and not necessary be lexical correct, so we can't perform
     /// most of the checks.
     if (res && getInsertData(res))
+    {
         return res;
+    }
 
     // More granular checks for queries other than INSERT w/inline data.
     /// Lexical error, unless the parser read the raw text itself and only used the tokens
