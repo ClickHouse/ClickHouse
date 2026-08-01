@@ -204,6 +204,39 @@ m	Map(Int64, Nullable(Int64))
 {1:1,2:1}
 m	Map(Int64, Nullable(Int64))					
 {-1:1,-2:1}
+group 13c: a signed literal is not widened even when its value is not negative
+x	Nullable(String)					
+-0
+18446744073709551615
+x	Nullable(String)					
++1
+18446744073709551615
+c	Nullable(String)					
+[-0]
+[18446744073709551615]
+m	Nullable(String)					
+{-0:1}
+{18446744073709551615:1}
+m	Nullable(String)					
+{\'a\':-0}
+{\'a\':18446744073709551615}
+c	Nullable(String)					
+(-0,1)
+(18446744073709551615,1)
+x	Nullable(UInt64)					
+0
+18446744073709551615
+c	Array(Nullable(UInt64))					
+[1]
+[18446744073709551615]
+x	Nullable(String)					
+-1
+18446744073709551615
+x	Nullable(Float64)					
+-0
+18446744073709552000
+x	Nullable(Int64)					
+0
 group 14: one column\'s marking does not leak into another column
 x	Nullable(Int64)					
 y	Nullable(UInt64)					
@@ -254,3 +287,8 @@ group 11 round trip: TSKV output for a negative map key reads back
 m	Nullable(String)					
 {-1:1}
 {18446744073709551615:1}
+group 13c round trip: TSKV output for a negative zero reads back
+1
+x	Nullable(String)					
+-0
+18446744073709551615

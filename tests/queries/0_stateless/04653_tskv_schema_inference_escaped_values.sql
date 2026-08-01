@@ -309,6 +309,46 @@ SELECT * FROM format(TSKV, unhex('6D3D7B313A312C323A317D0A'));
 DESC format(TSKV, unhex('6D3D7B2D313A312C2D323A317D0A'));
 SELECT * FROM format(TSKV, unhex('6D3D7B2D313A312C2D323A317D0A'));
 
+-- 13c. What decides whether an integer literal can be read back as UInt64 is the sign it is WRITTEN
+-- with, not the value it parses to. A signed zero parses to a value that is not negative, and an
+-- explicit plus is accepted by the inference parser but not by the deserializer that reads the value,
+-- so both used to look unsigned to the merge and be widened, and then the row could not be read.
+SELECT 'group 13c: a signed literal is not widened even when its value is not negative';
+-- x=-0 / x=18446744073709551615 - the value is zero, so a value-based test misses the sign
+DESC format(TSKV, unhex('783D2D300A783D31383434363734343037333730393535313631350A'));
+SELECT * FROM format(TSKV, unhex('783D2D300A783D31383434363734343037333730393535313631350A'));
+-- x=+1 / x=18446744073709551615 - readIntTextUnsafe stops before a '+', so the value path cannot read it
+DESC format(TSKV, unhex('783D2B310A783D31383434363734343037333730393535313631350A'));
+SELECT * FROM format(TSKV, unhex('783D2B310A783D31383434363734343037333730393535313631350A'));
+-- c=[-0] / c=[18446744073709551615]
+DESC format(TSKV, unhex('633D5B2D305D0A633D5B31383434363734343037333730393535313631355D0A'));
+SELECT * FROM format(TSKV, unhex('633D5B2D305D0A633D5B31383434363734343037333730393535313631355D0A'));
+-- m={-0:1} / m={18446744073709551615:1}
+DESC format(TSKV, unhex('6D3D7B2D303A317D0A6D3D7B31383434363734343037333730393535313631353A317D0A'));
+SELECT * FROM format(TSKV, unhex('6D3D7B2D303A317D0A6D3D7B31383434363734343037333730393535313631353A317D0A'));
+-- m={'a':-0} / m={'a':18446744073709551615}
+DESC format(TSKV, unhex('6D3D7B2761273A2D307D0A6D3D7B2761273A31383434363734343037333730393535313631357D0A'));
+SELECT * FROM format(TSKV, unhex('6D3D7B2761273A2D307D0A6D3D7B2761273A31383434363734343037333730393535313631357D0A'));
+-- c=(-0,1) / c=(18446744073709551615,1)
+DESC format(TSKV, unhex('633D282D302C31290A633D2831383434363734343037333730393535313631352C31290A'));
+SELECT * FROM format(TSKV, unhex('633D282D302C31290A633D2831383434363734343037333730393535313631352C31290A'));
+-- Controls that must keep widening, because their literals carry no sign:
+-- x=0 / x=18446744073709551615
+DESC format(TSKV, unhex('783D300A783D31383434363734343037333730393535313631350A'));
+SELECT * FROM format(TSKV, unhex('783D300A783D31383434363734343037333730393535313631350A'));
+-- c=[1] / c=[18446744073709551615]
+DESC format(TSKV, unhex('633D5B315D0A633D5B31383434363734343037333730393535313631355D0A'));
+SELECT * FROM format(TSKV, unhex('633D5B315D0A633D5B31383434363734343037333730393535313631355D0A'));
+-- x=-1 / x=18446744073709551615 - a plainly negative literal must still decline
+DESC format(TSKV, unhex('783D2D310A783D31383434363734343037333730393535313631350A'));
+SELECT * FROM format(TSKV, unhex('783D2D310A783D31383434363734343037333730393535313631350A'));
+-- x=-0.0 / x=18446744073709551615 - a signed zero written as a float is a Float64, which reads back
+DESC format(TSKV, unhex('783D2D302E300A783D31383434363734343037333730393535313631350A'));
+SELECT * FROM format(TSKV, unhex('783D2D302E300A783D31383434363734343037333730393535313631350A'));
+-- x=-0 alone - with nothing to merge with, the sign only has to survive the read
+DESC format(TSKV, unhex('783D2D300A'));
+SELECT * FROM format(TSKV, unhex('783D2D300A'));
+
 -- 14. The marking is keyed on the type object address, and one column's dropped type object can be
 -- freed while another column is still being inferred. If the address is then reused, the marking is
 -- read as belonging to whatever type landed there, so an unrelated column declines a widening it
@@ -364,3 +404,11 @@ SELECT 'group 11 round trip: TSKV output for a negative map key reads back';
 SELECT formatRow('TSKV', map(-1, 1) AS m) = 'm={-1:1}\n';
 DESC format(TSKV, ((SELECT formatRow('TSKV', map(-1, 1) AS m)) || (SELECT formatRow('TSKV', map(18446744073709551615, 1) AS m))));
 SELECT * FROM format(TSKV, ((SELECT formatRow('TSKV', map(-1, 1) AS m)) || (SELECT formatRow('TSKV', map(18446744073709551615, 1) AS m))));
+
+-- The same for a signed zero, which is likewise what the writer emits rather than a hand-written shape:
+-- a negative Float64 zero is written without its fractional part, so the field reads back as the integer
+-- literal -0. Group 13c is therefore not a hand-crafted-input-only concern either.
+SELECT 'group 13c round trip: TSKV output for a negative zero reads back';
+SELECT formatRow('TSKV', -0.0::Float64 AS x) = 'x=-0\n';
+DESC format(TSKV, ((SELECT formatRow('TSKV', -0.0::Float64 AS x)) || (SELECT formatRow('TSKV', 18446744073709551615::UInt64 AS x))));
+SELECT * FROM format(TSKV, ((SELECT formatRow('TSKV', -0.0::Float64 AS x)) || (SELECT formatRow('TSKV', 18446744073709551615::UInt64 AS x))));

@@ -22,11 +22,15 @@ struct JSONInferenceInfo
     /// It's used in types transformation to change such numbers back to string if needed.
     std::unordered_set<const IDataType *> numbers_parsed_from_json_strings;
 
-    /// Record that `type` was inferred from a negative number, which is what tells Int64 apart from
-    /// UInt64 when determining a common type. Use these accessors rather than touching the set: the
+    /// Record that `type` was inferred from a literal that an unsigned type cannot read back, which is
+    /// what tells Int64 apart from UInt64 when determining a common type. Where the literal's own text
+    /// is available the recorded property is that it carries an explicit sign, because the sign is what
+    /// the integer parsers refuse for an unsigned target: `-0` and `+1` are as unreadable as `-1`,
+    /// although their value is not negative. A caller that only has the parsed value, like the JSON
+    /// parser, records a negative value instead. Use these accessors rather than touching the set: the
     /// identity is the type's address, so a recorded type has to be kept alive for as long as the
     /// record is. Otherwise a later allocation can reuse the address of a freed type and be read as
-    /// negative, which silently declines a correct widening.
+    /// marked, which silently declines a correct widening.
     void markNegativeInteger(const DataTypePtr & type)
     {
         /// Retain the owner only when this identity is new: re-marking an already recorded one, which
@@ -55,8 +59,8 @@ struct JSONInferenceInfo
     bool allow_merging_named_tuples = false;
 
 private:
-    /// Integer types that were inferred from negative numbers, keyed on the type object address, plus
-    /// the owning pointers that keep those addresses from being reused. See markNegativeInteger.
+    /// Integer types an unsigned type cannot read back, keyed on the type object address, plus the
+    /// owning pointers that keep those addresses from being reused. See markNegativeInteger.
     /// TODO: check it not only in JSON formats.
     std::unordered_set<const IDataType *> negative_integers;
     std::vector<DataTypePtr> provenance_keepalive;
@@ -79,8 +83,8 @@ bool canBeInsideNullableBySchemaSettings(const DataTypePtr & type, const FormatS
 DataTypePtr tryInferDataTypeForSingleField(ReadBuffer & buf, const FormatSettings & settings);
 DataTypePtr tryInferDataTypeForSingleField(std::string_view field, const FormatSettings & settings);
 
-/// The same as above, but records inference provenance in json_info (currently: which Int64 was
-/// inferred from a negative literal), so that types transformation can tell Int64 and UInt64 apart.
+/// The same as above, but records inference provenance in json_info (currently: which Int64 came from
+/// a signed literal), so that types transformation can tell Int64 and UInt64 apart.
 DataTypePtr tryInferDataTypeForSingleField(std::string_view field, const FormatSettings & settings, JSONInferenceInfo * json_info);
 
 /// The same as tryInferDataTypeForSingleField, but for JSON values.
@@ -118,7 +122,7 @@ DataTypePtr tryInferJSONNumberFromString(std::string_view field, const FormatSet
 void transformInferredTypesIfNeeded(DataTypePtr & first, DataTypePtr & second, const FormatSettings & settings);
 
 /// The same as above, but uses the inference provenance recorded in json_info (currently: which Int64
-/// was inferred from a negative literal, so that a negative Int64 is not widened to UInt64).
+/// came from a signed literal, so that such an Int64 is not widened to UInt64).
 void transformInferredTypesIfNeeded(DataTypePtr & first, DataTypePtr & second, const FormatSettings & settings, JSONInferenceInfo * json_info);
 
 /// True if merging these two types could perform the one widening whose correctness depends on

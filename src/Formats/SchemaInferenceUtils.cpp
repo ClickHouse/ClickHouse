@@ -1059,11 +1059,23 @@ namespace
     /// type inference has always reported there, and the deserializers accept the same text.
     DataTypePtr tryInferNumberFromEmptyField(const FormatSettings & settings)
     {
-        /// The integer parsers read no sign either, so the type is never a negative integer and is not
-        /// registered in json_info->negative_integers.
+        /// An empty span carries no sign either, so the type is never registered as one an unsigned type
+        /// cannot read back.
         if (settings.try_infer_integers)
             return std::make_shared<DataTypeInt64>();
         return std::make_shared<DataTypeFloat64>();
+    }
+
+    /// True when the integer literal carries an explicit sign. The integer parsers read a sign only as
+    /// the first character, so an arm that consumed a whole span read its sign here or nowhere.
+    /// The written sign, not the parsed value, is what decides whether the same text can be read back
+    /// as an unsigned type: `readIntTextImpl` refuses a '-' for an unsigned target, and
+    /// `readIntTextUnsafe`, which the escaped text deserializer uses, reads no '+' at all and stops
+    /// before it. A signed zero and an explicitly positive literal are therefore as unreadable as a
+    /// negative one, even though their value is not negative.
+    bool hasExplicitSign(std::string_view span)
+    {
+        return !span.empty() && (span.front() == '-' || span.front() == '+');
     }
 
     /// True when the span is written like a float rather than like an integer. Only reached after the
@@ -1102,7 +1114,7 @@ namespace
             if (tryReadIntText(tmp_int, int_buf) && int_buf.eof())
             {
                 auto type = std::make_shared<DataTypeInt64>();
-                if (json_info && tmp_int < 0)
+                if (json_info && hasExplicitSign(span))
                     json_info->markNegativeInteger(type);
                 return type;
             }
@@ -1191,7 +1203,7 @@ namespace
             if (tryReadIntText(tmp_int, buf) && buf.eof())
             {
                 auto type = std::make_shared<DataTypeInt64>();
-                if (json_inference_info && tmp_int < 0)
+                if (json_inference_info && hasExplicitSign(field))
                     json_inference_info->markNegativeInteger(type);
                 return type;
             }
@@ -1554,7 +1566,7 @@ bool isSignDependentIntegerWidening(const DataTypePtr & first, const DataTypePtr
         return false;
 
     /// Widening Int64 to UInt64 is the only transformation whose correctness depends on whether the
-    /// Int64 was inferred from a negative literal, which is recorded as inference provenance. Report
+    /// Int64 came from a signed literal, which is recorded as inference provenance. Report
     /// the pairs that transformIntegers can actually reach, so that a caller with no provenance
     /// available can decline exactly those.
     ///

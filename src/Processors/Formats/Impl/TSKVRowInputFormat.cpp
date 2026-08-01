@@ -300,7 +300,8 @@ void TSKVSchemaReader::transformTypesIfNeeded(DataTypePtr & type, DataTypePtr & 
 void TSKVSchemaReader::transformTypesFromDifferentFilesIfNeeded(DataTypePtr & type, DataTypePtr & new_type)
 {
     /// Per-file provenance died with the per-file reader (union mode merges through a fresh stateless
-    /// reader), so a negative Int64 from one file is indistinguishable from a non-negative one here.
+    /// reader), so an Int64 from a signed literal in one file is indistinguishable from an unsigned one
+    /// here.
     /// Without it, sign-dependent widening cannot be proven safe, so decline it and let the caller
     /// report the mismatch instead of inferring a type whose read then fails.
     if (isSignDependentIntegerWidening(type, new_type))

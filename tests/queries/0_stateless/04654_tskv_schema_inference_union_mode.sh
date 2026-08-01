@@ -119,4 +119,16 @@ verdict "set $TEMPLATE_SETTINGS; select * from format(Template, unhex('2D310A310
 verdict "set $TEMPLATE_SETTINGS; desc format(Template, unhex('310A320A31383434363734343037333730393535313631350A'));"
 verdict "set $TEMPLATE_SETTINGS; select * from format(Template, unhex('310A320A31383434363734343037333730393535313631350A'));"
 
+# A signed zero is the same hazard with a value that is not negative, so it pins that the recorded
+# property is the written sign. Both file orders, then the same shape with an unsigned literal.
+# -0 / 18446744073709551615
+verdict "set $TEMPLATE_SETTINGS; desc format(Template, unhex('2D300A31383434363734343037333730393535313631350A'));"
+verdict "set $TEMPLATE_SETTINGS; select * from format(Template, unhex('2D300A31383434363734343037333730393535313631350A'));"
+# 18446744073709551615 / -0 - the opposite order must agree
+verdict "set $TEMPLATE_SETTINGS; desc format(Template, unhex('31383434363734343037333730393535313631350A2D300A'));"
+verdict "set $TEMPLATE_SETTINGS; select * from format(Template, unhex('31383434363734343037333730393535313631350A2D300A'));"
+# 1 / 18446744073709551615 - no sign, so the widening must still happen
+verdict "set $TEMPLATE_SETTINGS; desc format(Template, unhex('310A31383434363734343037333730393535313631350A'));"
+verdict "set $TEMPLATE_SETTINGS; select * from format(Template, unhex('310A31383434363734343037333730393535313631350A'));"
+
 rm -rf "$DIR"

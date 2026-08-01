@@ -70,7 +70,7 @@ private:
 
     bool first_row = true;
 
-    /// Records inference provenance (which Int64 came from a negative literal) for the types
+    /// Records inference provenance (which Int64 came from a signed literal) for the types
     /// transformation. Its lifetime must span the whole readSchema() call, because
     /// transformTypesIfNeeded runs later, from chooseResultColumnType.
     JSONInferenceInfo inference_info;
