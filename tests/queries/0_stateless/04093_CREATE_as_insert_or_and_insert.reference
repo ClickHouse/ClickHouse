@@ -17,3 +17,10 @@
 1	a
 2	b
 3	c
+100	fmt_test
+1	alpha
+2	beta
+1	csv_row1
+2	csv_row2
+1	new_row
+10	existing

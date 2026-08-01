@@ -53,3 +53,35 @@ DROP TABLE IF EXISTS t10;
 CREATE TABLE t10 (a UInt32, b String) ENGINE = MergeTree ORDER BY a
     AS INSERT FORMAT Values (100, 'fmt_test');
 
+SELECT a, b FROM t10 ORDER BY a;
+DROP TABLE t10;
+
+SET format_csv_delimiter = ';';
+
+DROP TABLE IF EXISTS t_fmt1;
+CREATE TABLE t_fmt1 (a UInt32, b String) ENGINE = MergeTree ORDER BY a
+    AS INSERT FORMAT JSONEachRow {"a":1,"b":"alpha"}
+{"a":2,"b":"beta"};
+
+SELECT a, b FROM t_fmt1 ORDER BY a;
+DROP TABLE t_fmt1;
+
+
+DROP TABLE IF EXISTS t_fmt2;
+CREATE TABLE IF NOT EXISTS t_fmt2 (a UInt32, b String) ENGINE = MergeTree ORDER BY a
+    AND INSERT FORMAT CSV 1;"csv_row1"
+2;"csv_row2";
+
+SELECT a, b FROM t_fmt2 ORDER BY a;
+DROP TABLE t_fmt2;
+
+
+DROP TABLE IF EXISTS t_fmt3;
+CREATE TABLE t_fmt3 (a UInt32, b String) ENGINE = MergeTree ORDER BY a;
+INSERT INTO t_fmt3 VALUES (10, 'existing');
+
+CREATE TABLE IF NOT EXISTS t_fmt3 (a UInt32, b String) ENGINE = MergeTree ORDER BY a
+    AND INSERT FORMAT JSONEachRow {"a":1,"b":"new_row"};
+
+SELECT a, b FROM t_fmt3 ORDER BY a;
+DROP TABLE t_fmt3;

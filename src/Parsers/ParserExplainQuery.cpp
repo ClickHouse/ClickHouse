@@ -63,7 +63,7 @@ bool ParserExplainQuery::parseImpl(Pos & pos, ASTPtr & node, Expected & expected
             pos = begin;
     }
 
-    ParserCreateTableQuery create_p;
+    ParserCreateTableQuery create_p(end);
     ParserSelectWithUnionQuery select_p;
     ParserInsertQuery insert_p(end, allow_settings_after_format_in_insert);
     ParserSystemQuery system_p;

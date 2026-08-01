@@ -2477,15 +2477,18 @@ BlockIO InterpreterCreateQuery::fillTableIfNeeded(const ASTCreateQuery & create)
         else if (!create.insert_format.empty())
         {
             insert->format = create.insert_format;
-            insert->data = create.insert_data;
-            insert->end = create.insert_data_end;
+            if (create.insert_data && create.insert_data_end && create.insert_data <= create.insert_data_end)
+            {
+                insert->data = create.insert_data;
+                insert->end = create.insert_data_end;
+            }
         }
         else if (create.select)
         {
             insert->select = create.select->clone();
         }
 
-        return InterpreterInsertQuery(
+        auto result = InterpreterInsertQuery(
                    insert,
                    getContext(),
                    getContext()->getSettingsRef()[Setting::insert_allow_materialized_columns],
@@ -2493,6 +2496,10 @@ BlockIO InterpreterCreateQuery::fillTableIfNeeded(const ASTCreateQuery & create)
                    /* no_destination */ false,
                    /* async_isnert */ false)
             .execute();
+        /// Only the data-driven (non-select) case builds a pushing pipeline that TCPHandler needs to see as a real ASTInsertQuery.
+        if (!insert->select)
+            result.insert_query = insert;
+        return result;
     }
 
     /// If the query is a CREATE TABLE .. CLONE AS ..., attach all partitions of the source table to the newly created table.

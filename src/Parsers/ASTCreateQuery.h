@@ -121,6 +121,8 @@ public:
     String as_table;
     String attach_from_path;
     String insert_format;
+
+    /// Data for AS/AND INSERT
     const char * insert_data = nullptr;
     const char * insert_data_end = nullptr;
 

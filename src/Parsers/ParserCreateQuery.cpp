@@ -743,7 +743,8 @@ static bool parseInsertPayload(
     ASTPtr & insert_select,
     String & insert_format,
     const char *& insert_data,
-    const char *& insert_data_end)
+    const char *& insert_data_end,
+    const char * end)
 {
     ParserSelectWithUnionQuery select_p;
 
@@ -753,12 +754,10 @@ static bool parseInsertPayload(
     if (ParserKeyword{Keyword::VALUES}.ignore(pos, expected))
     {
         insert_format = "Values";
-        if (pos->type != TokenType::Semicolon)
+        if (pos->type != TokenType::Semicolon && pos->type != TokenType::EndOfStream)
         {
             insert_data = pos->begin;
-            while (pos->type != TokenType::Semicolon && pos->type != TokenType::EndOfStream)
-                ++pos;
-            insert_data_end = pos->begin;
+            insert_data_end = insert_data ? end : nullptr;
         }
         return true;
     }
@@ -770,13 +769,28 @@ static bool parseInsertPayload(
         if (!format_name_p.parse(pos, format_name_ast, expected))
             return false;
         insert_format = getIdentifierName(format_name_ast);
-        if (pos->type != TokenType::Semicolon && pos->type != TokenType::EndOfStream)
-        {
-            insert_data = pos->begin;
-            while (pos->type != TokenType::Semicolon && pos->type != TokenType::EndOfStream)
-                ++pos;
-            insert_data_end = pos->begin;
-        }
+
+        const char * data = nullptr;
+        IParser::Pos last_token = pos;
+        --last_token;
+        data = last_token->end;
+
+        if (data < end && *data == ';')
+            throw Exception(ErrorCodes::SYNTAX_ERROR,
+                "You have excessive ';' symbol before data for CREATE ... AS/AND INSERT.\n"
+                "Note that there is no ';' just after format name, "
+                "you need to put at least one whitespace symbol before the data.");
+
+        while (data < end && (*data == ' ' || *data == '\t' || *data == '\f'))
+            ++data;
+        if (data < end && *data == '\r')
+            ++data;
+        if (data < end && *data == '\n')
+            ++data;
+
+        insert_data = data != end ? data : nullptr;
+        insert_data_end = data ? end : nullptr;
+
         return true;
     }
 
@@ -978,13 +992,13 @@ bool ParserCreateTableQuery::parseImpl(Pos & pos, ASTPtr & node, Expected & expe
         if (!is_create_empty && !is_clone_as && if_not_exists && ParserKeyword{Keyword::AND_INSERT}.ignore(pos, expected))
         {
             is_and_insert = true;
-            if (!parseInsertPayload(pos, expected, insert_select, insert_format, insert_data, insert_data_end))
+            if (!parseInsertPayload(pos, expected, insert_select, insert_format, insert_data, insert_data_end, end))
                 return false;
         }
         else if (!is_create_empty && !is_clone_as && ParserKeyword{Keyword::AS_INSERT}.ignore(pos, expected))
         {
             is_as_insert = true;
-            if (!parseInsertPayload(pos, expected, insert_select, insert_format, insert_data, insert_data_end))
+            if (!parseInsertPayload(pos, expected, insert_select, insert_format, insert_data, insert_data_end, end))
                 return false;
         }
         else
@@ -1031,13 +1045,13 @@ bool ParserCreateTableQuery::parseImpl(Pos & pos, ASTPtr & node, Expected & expe
         if (!is_create_empty && !is_clone_as && if_not_exists && ParserKeyword{Keyword::AND_INSERT}.ignore(pos, expected))
         {
             is_and_insert = true;
-            if (!parseInsertPayload(pos, expected, insert_select, insert_format, insert_data, insert_data_end))
+            if (!parseInsertPayload(pos, expected, insert_select, insert_format, insert_data, insert_data_end, end))
                 return false;
         }
         else if (!is_create_empty && !is_clone_as && ParserKeyword{Keyword::AS_INSERT}.ignore(pos, expected))
         {
             is_as_insert = true;
-            if (!parseInsertPayload(pos, expected, insert_select, insert_format, insert_data, insert_data_end))
+            if (!parseInsertPayload(pos, expected, insert_select, insert_format, insert_data, insert_data_end, end))
                 return false;
         }
         else
@@ -2107,7 +2121,7 @@ bool ParserCreateDictionaryQuery::parseImpl(IParser::Pos & pos, ASTPtr & node, E
 
 bool ParserCreateQuery::parseImpl(Pos & pos, ASTPtr & node, Expected & expected)
 {
-    ParserCreateTableQuery table_p;
+    ParserCreateTableQuery table_p(end);
     ParserCreateDatabaseQuery database_p;
     ParserCreateViewQuery view_p;
     ParserCreateDictionaryQuery dictionary_p;

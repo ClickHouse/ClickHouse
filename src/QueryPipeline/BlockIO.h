@@ -5,6 +5,7 @@
 #include <Interpreters/QueryMetadataCache.h>
 #include <QueryPipeline/QueryPipeline.h>
 #include <IO/Progress.h>
+#include <Parsers/IAST_fwd.h>
 #include <Processors/IProcessor.h>
 
 
@@ -46,6 +47,9 @@ struct BlockIO
     /// The cache is *not* owned by Context to prevent reference cycles; Context only holds a weak reference to it for
     /// access during query execution.
     QueryMetadataCachePtr query_metadata_cache;
+
+    /// The ASTInsertQuery actually executed, when it differs from the top-level parsed query (e.g. CREATE ... AS/AND INSERT).
+    ASTPtr insert_query;
 
     QueryPipeline pipeline;
 

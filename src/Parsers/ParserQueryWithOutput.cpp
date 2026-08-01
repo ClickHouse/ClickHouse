@@ -51,7 +51,7 @@ bool ParserQueryWithOutput::parseImpl(Pos & pos, ASTPtr & node, Expected & expec
     ParserDescribeTableQuery describe_table_p;
     ParserDescribeCacheQuery describe_cache_p;
     ParserShowProcesslistQuery show_processlist_p;
-    ParserCreateQuery create_p;
+    ParserCreateQuery create_p(end);
     ParserAlterQuery alter_p;
     ParserRenameQuery rename_p;
     ParserDropQuery drop_p;
