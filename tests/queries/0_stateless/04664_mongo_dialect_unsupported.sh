@@ -6,6 +6,9 @@
 # Each query runs on its own rather than in a `.sql` file with `-- { clientError ... }` hints: a
 # comment is part of the query text in the Mongo dialect, so an annotation would change the query
 # it annotates.
+#
+# The arguments MongoDB itself rejects are taken from the integration suite of FerretDB, which
+# compares itself against a real MongoDB server for each of them.
 
 CUR_DIR=$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)
 # shellcheck source=../shell_config.sh
@@ -13,8 +16,8 @@ CUR_DIR=$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)
 
 ${CLICKHOUSE_CLIENT} --query "
     DROP TABLE IF EXISTS docs;
-    CREATE TABLE docs (id Int32, name String, tags Array(String)) ENGINE = Memory;
-    INSERT INTO docs VALUES (1, 'alpha', ['red']);
+    CREATE TABLE docs (id Int32, name String, other String, tags Array(String)) ENGINE = Memory;
+    INSERT INTO docs VALUES (1, 'alpha', '', ['red']);
 "
 
 # Prints the error of a query without the parenthesised error name and the stack trace, so that the
@@ -33,6 +36,14 @@ run 'db.docs.find({"id" : {"$mod" : [2]}});'
 run 'db.docs.find({"id" : {"$exists" : 1}});'
 run 'db.docs.find({"id" : {}});'
 
+echo '-- arguments MongoDB rejects'
+run 'db.docs.find({"$or" : []});'
+run 'db.docs.find({"$and" : []});'
+run 'db.docs.find({"id" : {"$mod" : [0, 1]}});'
+run 'db.docs.find({"id" : {"$bitsAllSet" : [1.2]}});'
+run 'db.docs.find({"id" : {"$bitsAllSet" : [64]}});'
+run 'db.docs.find({"id" : {"$bitsAllSet" : "123"}});'
+
 echo '-- aggregation stages'
 run 'db.docs.aggregate([{"$facet" : {"a" : []}}]);'
 run 'db.docs.aggregate([{"$out" : "other"}]);'
@@ -41,6 +52,11 @@ run 'db.docs.aggregate([{"$replaceWith" : "$tags"}]);'
 run 'db.docs.aggregate([{"$unwind" : "tags"}]);'
 run 'db.docs.aggregate([{"$unset" : []}]);'
 run 'db.docs.aggregate([{"$sample" : {"n" : 2}}]);'
+run 'db.docs.aggregate([{"$limit" : 0}]);'
+run 'db.docs.aggregate([{"$limit" : -1}]);'
+run 'db.docs.aggregate([{"$limit" : 2.5}]);'
+run 'db.docs.aggregate([{"$skip" : -1}]);'
+run 'db.docs.aggregate([{"$limit" : "5"}]);'
 run 'db.docs.aggregate([{"$group" : {"c" : {"$sum" : 1}}}]);'
 run 'db.docs.aggregate([{"$sort" : {"id" : 2}}]);'
 
@@ -59,6 +75,10 @@ run 'db.docs.updateMany({"id" : 1}, {"$bit" : {"id" : {"and" : 1}}});'
 run 'db.docs.updateMany({"id" : 1}, {"id" : 2});'
 run 'db.docs.updateMany({"id" : 1}, {});'
 run 'db.docs.updateMany({"id" : 1}, {"$pop" : {"tags" : 2}});'
+run 'db.docs.updateMany({"id" : 1}, {"$rename" : {"name" : "name"}});'
+run 'db.docs.updateMany({"id" : 1}, {"$rename" : {"name" : ""}});'
+run 'db.docs.updateMany({"id" : 1}, {"$set" : {"id" : 1}, "$inc" : {"id" : 1}});'
+run 'db.docs.updateMany({"id" : 1}, {"$rename" : {"name" : "other"}, "$unset" : {"other" : ""}});'
 
 echo '-- the server is still healthy'
 ${CLICKHOUSE_CLIENT} --dialect mongo --max_threads 1 --query 'db.docs.find({"id" : 1});'

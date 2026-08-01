@@ -1,6 +1,7 @@
 #include <Parsers/Mongo/ParserMongoUpdateQuery.h>
 
 #include <string_view>
+#include <unordered_set>
 
 #include <rapidjson/document.h>
 
@@ -104,7 +105,12 @@ void parseUpdateOperator(std::string_view name, const rapidjson::Value & argumen
             /// the field reads as.
             if (!it->value.IsString())
                 throw Exception(ErrorCodes::BAD_ARGUMENTS, "The new name of '$rename' must be a string");
-            assignments.push_back(makeAssignment(std::string(stringView(it->value)), field()));
+            std::string renamed(stringView(it->value));
+            if (renamed.empty() || column.empty())
+                throw Exception(ErrorCodes::BAD_ARGUMENTS, "The source and the target field of '$rename' must be named");
+            if (renamed == column)
+                throw Exception(ErrorCodes::BAD_ARGUMENTS, "The source and the target field of '$rename' must differ");
+            assignments.push_back(makeAssignment(renamed, field()));
             assignments.push_back(makeAssignment(column, makeDefaultValue(column)));
         }
         else if (name == "$push" || name == "$addToSet")
@@ -185,6 +191,19 @@ ASTPtr parseMongoUpdateStatement(const rapidjson::Value & update)
                 ErrorCodes::NOT_IMPLEMENTED,
                 "Replacing a whole document is not supported; the update statement must hold update operators");
         parseUpdateOperator(name, it->value, assignments);
+    }
+
+    /** Two operators of the same statement that write the same field are a conflict in Mongo, and
+      * a mutation can only assign a column once, so the field is named here rather than leaving
+      * the generic complaint of `ALTER TABLE ... UPDATE` to explain it.
+      */
+    std::unordered_set<std::string> written;
+    for (const auto & assignment : assignments)
+    {
+        const auto & column = assignment->as<const ASTAssignment &>().column_name;
+        if (!written.insert(column).second)
+            throw Exception(
+                ErrorCodes::BAD_ARGUMENTS, "The update statement writes the field '{}' more than once", column);
     }
 
     auto expression_list = make_intrusive<ASTExpressionList>();

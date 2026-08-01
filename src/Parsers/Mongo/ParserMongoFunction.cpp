@@ -15,6 +15,7 @@
 #include <Parsers/Mongo/Utils.h>
 #include <Parsers/ASTExpressionList.h>
 
+#include <cmath>
 #include <string_view>
 #include <unordered_map>
 
@@ -136,6 +137,8 @@ ASTPtr parseFieldOperator(
         auto remainder = tryParseMongoConstant(argument[1]);
         if (!divisor || !remainder)
             throw Exception(ErrorCodes::BAD_ARGUMENTS, "The divisor and the remainder of '$mod' must be constants");
+        if (argument[0].IsNumber() && argument[0].GetDouble() == 0)
+            throw Exception(ErrorCodes::BAD_ARGUMENTS, "The divisor of '$mod' must not be zero");
         return makeASTFunction("equals", makeASTFunction("modulo", identifier(), divisor), remainder);
     }
 
@@ -151,6 +154,10 @@ ASTPtr parseFieldOperator(
     {
         if (!argument.IsArray())
             throw Exception(ErrorCodes::BAD_ARGUMENTS, "The argument of '$all' must be an array");
+        /// `$all` of nothing matches no document at all, while `hasAll` of an empty array holds for
+        /// every one of them.
+        if (argument.Empty())
+            return make_intrusive<ASTLiteral>(Field(UInt64(0)));
         auto array = makeASTFunction("array");
         for (const auto & element : argument.GetArray())
         {
@@ -190,9 +197,12 @@ ASTPtr parseFieldOperator(
         {
             for (const auto & position : argument.GetArray())
             {
-                if (!position.IsUint64() || position.GetUint64() >= 64)
-                    throw Exception(ErrorCodes::BAD_ARGUMENTS, "A bit position of '{}' must be a number below 64", name);
-                mask |= UInt64(1) << position.GetUint64();
+                /// A driver may send a whole number as a double, which names the same bit.
+                if (!position.IsNumber() || position.GetDouble() < 0 || position.GetDouble() >= 64
+                    || position.GetDouble() != std::floor(position.GetDouble()))
+                    throw Exception(
+                        ErrorCodes::BAD_ARGUMENTS, "A bit position of '{}' must be a whole number between 0 and 63", name);
+                mask |= UInt64(1) << static_cast<UInt64>(position.GetDouble());
             }
         }
         else if (argument.IsUint64())
@@ -314,6 +324,9 @@ bool IMongoLogicalFunction::parseImpl(ASTPtr & node)
     {
         return false;
     }
+
+    if (data.Empty())
+        throw Exception(ErrorCodes::BAD_ARGUMENTS, "'{}' must be a non empty array of filters", getFunctionName());
 
     std::vector<ASTPtr> child_trees;
     for (unsigned int i = 0; i < data.Size(); ++i)

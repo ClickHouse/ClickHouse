@@ -6,6 +6,13 @@ Code: 36. DB::Exception: The argument of '$in' must be an array
 Code: 36. DB::Exception: The argument of '$mod' must be an array of a divisor and a remainder
 Code: 36. DB::Exception: The argument of '$exists' must be a boolean
 Code: 62. DB::Exception: Cannot parse the Mongo query
+-- arguments MongoDB rejects
+Code: 36. DB::Exception: '$or' must be a non empty array of filters
+Code: 36. DB::Exception: '$and' must be a non empty array of filters
+Code: 36. DB::Exception: The divisor of '$mod' must not be zero
+Code: 36. DB::Exception: A bit position of '$bitsAllSet' must be a whole number between 0 and 63
+Code: 36. DB::Exception: A bit position of '$bitsAllSet' must be a whole number between 0 and 63
+Code: 36. DB::Exception: The argument of '$bitsAllSet' must be a bit mask or an array of bit positions
 -- aggregation stages
 Code: 48. DB::Exception: The aggregation stage '$facet' is not supported
 Code: 48. DB::Exception: The aggregation stage '$out' is not supported
@@ -14,6 +21,11 @@ Code: 48. DB::Exception: Only a document is supported as the new root of '$repla
 Code: 36. DB::Exception: The path of '$unwind' must start with '$'
 Code: 36. DB::Exception: '$unset' must name at least one field
 Code: 36. DB::Exception: '$sample' must have a 'size' field
+Code: 36. DB::Exception: The argument of '$limit' must be a positive number
+Code: 36. DB::Exception: The argument of '$limit' must be a positive number
+Code: 36. DB::Exception: The argument of '$limit' must be a whole number
+Code: 36. DB::Exception: The argument of '$skip' must be a non negative number
+Code: 36. DB::Exception: The argument of '$limit' must be a whole number
 Code: 36. DB::Exception: The '$group' stage must have an '_id'
 Code: 48. DB::Exception: The direction of '$sort' on 'id' must be 1 or -1
 -- expression operators
@@ -30,5 +42,9 @@ Code: 48. DB::Exception: The update operator '$bit' is not supported
 Code: 48. DB::Exception: Replacing a whole document is not supported; the update statement must hold update operators
 Code: 36. DB::Exception: An update statement must be a non empty document of update operators
 Code: 36. DB::Exception: The argument of '$pop' must be 1 or -1
+Code: 36. DB::Exception: The source and the target field of '$rename' must differ
+Code: 36. DB::Exception: The source and the target field of '$rename' must be named
+Code: 36. DB::Exception: The update statement writes the field 'id' more than once
+Code: 36. DB::Exception: The update statement writes the field 'other' more than once
 -- the server is still healthy
-1	alpha	['red']
+1	alpha		['red']

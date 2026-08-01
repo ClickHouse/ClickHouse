@@ -1,5 +1,7 @@
 #include <Parsers/Mongo/ParserMongoAggregateQuery.h>
 
+#include <cmath>
+#include <limits>
 #include <string_view>
 
 #include <Core/Field.h>
@@ -204,11 +206,21 @@ const rapidjson::Value & requireStageMember(const rapidjson::Value & stage, cons
     return it->value;
 }
 
-UInt64 parseNonNegativeInteger(const rapidjson::Value & value, std::string_view stage)
+/// A count of documents: `$limit`, `$skip` and the size of `$sample`. A driver may send a whole
+/// number as a double, and Extended JSON in its relaxed form does so as well.
+UInt64 parseCount(const rapidjson::Value & value, std::string_view stage, bool positive)
 {
-    if (!value.IsInt64() || value.GetInt64() < 0)
-        throw Exception(ErrorCodes::BAD_ARGUMENTS, "The argument of '{}' must be a non negative integer", stage);
-    return static_cast<UInt64>(value.GetInt64());
+    if (!value.IsNumber() || value.GetDouble() != std::floor(value.GetDouble()))
+        throw Exception(ErrorCodes::BAD_ARGUMENTS, "The argument of '{}' must be a whole number", stage);
+
+    const double count = value.GetDouble();
+    if (count < (positive ? 1 : 0))
+        throw Exception(
+            ErrorCodes::BAD_ARGUMENTS, "The argument of '{}' must be a {} number", stage, positive ? "positive" : "non negative");
+    if (count > double(std::numeric_limits<Int64>::max()))
+        throw Exception(ErrorCodes::BAD_ARGUMENTS, "The argument of '{}' is too large", stage);
+
+    return static_cast<UInt64>(count);
 }
 
 ASTPtr translatePipeline(const rapidjson::Value & pipeline, ASTPtr source, const std::shared_ptr<QueryMetadata> & metadata);
@@ -463,7 +475,7 @@ void translateSample(SelectChain & chain, const rapidjson::Value & stage)
     order_by->children.push_back(std::move(element));
 
     chain.order_by = std::move(order_by);
-    chain.limit = makeLiteral(Field(parseNonNegativeInteger(size, "$sample")));
+    chain.limit = makeLiteral(Field(parseCount(size, "$sample", /* positive = */ false)));
 }
 
 void translateUnwind(SelectChain & chain, const rapidjson::Value & stage)
@@ -643,7 +655,7 @@ ASTPtr translatePipeline(const rapidjson::Value & pipeline, ASTPtr source, const
         {
             if (chain.limit)
                 chain.wrap();
-            chain.limit = makeLiteral(Field(parseNonNegativeInteger(member.value, name)));
+            chain.limit = makeLiteral(Field(parseCount(member.value, name, /* positive = */ true)));
         }
         else if (name == "$skip")
         {
@@ -651,7 +663,7 @@ ASTPtr translatePipeline(const rapidjson::Value & pipeline, ASTPtr source, const
             /// which is not what `LIMIT ... OFFSET ...` does.
             if (chain.limit || chain.offset)
                 chain.wrap();
-            chain.offset = makeLiteral(Field(parseNonNegativeInteger(member.value, name)));
+            chain.offset = makeLiteral(Field(parseCount(member.value, name, /* positive = */ false)));
         }
         else
             throw Exception(ErrorCodes::NOT_IMPLEMENTED, "The aggregation stage '{}' is not supported", name);
