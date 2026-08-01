@@ -34,6 +34,14 @@ MAX_FAILS_BEFORE_DROP = 5
 # flakiness coverage instead of a truncated run. See FLAKY_CHECK_TIME_LIMIT for the hard
 # time guarantee that backstops this.
 MAX_FLAKY_CHECK_MODULES = 10
+# Per-archive bound for the post-run log/config archiving, in seconds. Archiving sits
+# between result collection and the only result dump, so an archive that never returns
+# costs the whole report: one shard spent ~80 minutes in `tar` and published an empty
+# job-level ERROR while its five siblings uploaded 600-1300 test rows each. Those healthy
+# siblings ran 4491-5747s end to end against the 5h (18000s) job budget, so 30 minutes is
+# far more archiving time than any observed shard needs while leaving ample budget for the
+# upload. Exceeding it costs the tarball, never the results.
+ARCHIVE_TIMEOUT_SEC = 1800
 OOM_IN_DMESG_TEST_NAME = "OOM in dmesg"
 ncpu = Utils.cpu_count()
 mem_gb = round(Utils.physical_memory() // (1024**3), 1)
@@ -639,15 +647,23 @@ def main():
     is_llvm_coverage = False
     llvm_profdata_cmd = None
 
-    # Set on_error_hook to collect logs on hard timeout
+    # Set on_error_hook to collect logs on hard timeout.
+    # The archive is built under a temporary name and renamed in only when tar
+    # succeeded: the hook writes to the same logs.tar.gz the normal path produces,
+    # and the upload only checks that the file exists. Without the rename a tar cut
+    # short by the hook timeout would publish a truncated archive as the logs, and
+    # would also overwrite a complete archive the normal path had already written.
+    # Failures stay non-fatal (the trailing rm keeps the exit status zero).
     Result.from_fs(info.job_name).set_on_error_hook(
         """
 dmesg -T >./ci/tmp/dmesg.log
 sudo chown -R $(id -u):$(id -g) ./tests/integration
-tar -czf ./ci/tmp/logs.tar.gz \
+tar -czf ./ci/tmp/logs.tar.gz.tmp \
   ./tests/integration/test_*/_instances*/ \
   ./ci/tmp/*.log \
-  ./ci/tmp/*.jsonl || :
+  ./ci/tmp/*.jsonl \
+  && mv ./ci/tmp/logs.tar.gz.tmp ./ci/tmp/logs.tar.gz \
+  || rm -f ./ci/tmp/logs.tar.gz.tmp
 """
     ).set_files(
         [
@@ -1215,6 +1231,18 @@ tar -czf ./ci/tmp/logs.tar.gz \
                 if any(not r.is_ok() for r in bt_test_results):
                     break
 
+    # Checkpoint the collected results into the existing RUNNING result before any
+    # post-processing, so a job script that dies later still leaves them on disk for
+    # the runner to publish. Updates the RUNNING result rather than building a fresh
+    # one: `Result.create_from` takes no `ext`, so it would drop the on_error_hook set
+    # above and the run url. No status is assigned - the runner's KILLED patch keeps
+    # the children and decides the status, and every status decision below still runs
+    # on a normal job. `set_results` dumps by itself, `_pre_run` created the file.
+    # This does not cover the whole runner process being cancelled: nothing local is
+    # left to upload the checkpoint then.
+    if not info.is_local_run:
+        Result.from_fs(info.job_name).set_results(test_results)
+
     # Collect logs before re-run
     attached_files = []
     if not info.is_local_run:
@@ -1238,12 +1266,23 @@ tar -czf ./ci/tmp/logs.tar.gz \
                     failed_tests_files.append(str(log_file))
 
         if failed_suits:
-            attached_files.append(
-                Utils.compress_files_gz(failed_tests_files, f"{temp_path}/logs.tar.gz")
-            )
-            attached_files.append(
-                Utils.compress_files_gz(config_files, f"{temp_path}/configs.tar.gz")
-            )
+            # Attach only archives that were actually produced: a bounded archive
+            # that overran returns None, and losing a tarball is preferable to
+            # losing the report that the archiving delays.
+            for archive in (
+                Utils.compress_files_gz(
+                    failed_tests_files,
+                    f"{temp_path}/logs.tar.gz",
+                    timeout=ARCHIVE_TIMEOUT_SEC,
+                ),
+                Utils.compress_files_gz(
+                    config_files,
+                    f"{temp_path}/configs.tar.gz",
+                    timeout=ARCHIVE_TIMEOUT_SEC,
+                ),
+            ):
+                if archive:
+                    attached_files.append(archive)
             if Path("./ci/tmp/docker-in-docker.log").exists():
                 attached_files.append("./ci/tmp/docker-in-docker.log")
 

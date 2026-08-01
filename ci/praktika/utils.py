@@ -280,10 +280,17 @@ class Shell:
         return not failed
 
     @classmethod
-    def _check_timeout(cls, timeout, process) -> None:
+    def _check_timeout(cls, timeout, process, finished) -> None:
         if not timeout:
             return
-        time.sleep(timeout)
+        # Wake as soon as this attempt's child is reaped rather than sleeping the
+        # timeout out: in a long-lived process a blind sleep fires after the
+        # command already finished and killpg's a possibly PID-recycled group.
+        if finished.wait(timeout):
+            return
+        # Backstop for the race between the wait expiring and the child exiting.
+        if process.poll() is not None:
+            return
         print(
             f"WARNING: Timeout exceeded [{timeout}], sending SIGTERM to process group [{process.pid}]"
         )
@@ -350,6 +357,10 @@ class Shell:
                     print(f"Retrying in {delay}s...")
                 time.sleep(delay)
 
+            # One Event per attempt. A single Event hoisted out of the loop would
+            # already be set once attempt 1 was reaped, so every later attempt
+            # would run with no timeout enforcement at all.
+            finished = Event()
             try:
                 with open(log_file, "w") as log_fp:
                     proc = subprocess.Popen(
@@ -368,7 +379,9 @@ class Shell:
 
                     # Start the timeout thread if specified
                     if timeout:
-                        t = Thread(target=cls._check_timeout, args=(timeout, proc))
+                        t = Thread(
+                            target=cls._check_timeout, args=(timeout, proc, finished)
+                        )
                         t.daemon = True
                         t.start()
 
@@ -447,6 +460,10 @@ class Shell:
                         raise
                     else:
                         return 1  # Return non-zero for failure
+            finally:
+                # This attempt is over: cancel its watchdog so it cannot signal a
+                # process group we no longer wait on (and that may be recycled).
+                finished.set()
 
         if verbose:
             print(
@@ -820,21 +837,45 @@ openssl pkeyutl -encrypt -pubin -inkey {key_path} -in {aes_key_path} -out {aes_k
         return f"{path}.enc"
 
     @classmethod
-    def compress_files_gz(cls, files, archive_name):
+    def compress_files_gz(cls, files, archive_name, timeout=None):
+        """Archive `files` into `archive_name`, optionally bounded by `timeout`.
+
+        Returns the archive path on success and None on failure, so a caller can
+        attach the archive only when it was actually produced. Failures are
+        reported by return value rather than raised: an archive is best-effort
+        evidence, and an exception here would skip the caller's result upload.
+
+        The archive is built under a temporary name and renamed into place only on
+        success. `tar` killed by the timeout leaves a valid-looking truncated
+        archive behind, and the upload path only checks that the file exists, so
+        without the rename a partial archive would be published as the logs.
+        """
         files = [
             os.path.relpath(file) if os.path.isabs(file) else file for file in files
         ]
         for file in files:
             assert Path(file).exists(), f"Path does not exist [{file}]"
 
+        tmp_archive = f"{archive_name}.tmp"
         with tempfile.NamedTemporaryFile() as f:
             f.write("\n".join(files).encode())
             f.flush()
-            Shell.check(
-                f"tar -cf - -T {f.name} | gzip > {archive_name}",
+            # Direct `tar -czf`, not `tar -cf - | gzip`: the pipe reports only
+            # gzip's status (Shell.run does not set pipefail), so a tar that fails
+            # part-way - a test instance directory vanishing mid-job - exits 0 and
+            # would be renamed into place as complete.
+            ok = Shell.check(
+                f"tar -czf {tmp_archive} -T {f.name}",
                 verbose=True,
-                strict=True,
+                timeout=timeout,
             )
+
+        if not ok:
+            print(f"WARNING: failed to compress files into [{archive_name}]")
+            Path(tmp_archive).unlink(missing_ok=True)
+            return None
+
+        os.replace(tmp_archive, archive_name)
         return archive_name
 
     @classmethod
