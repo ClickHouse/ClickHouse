@@ -17,6 +17,9 @@
 # no-object-storage/-shared/-replicated: relies on the local on-disk file layout.
 # no-random-merge-tree-settings: pins `escape_index_filenames` and `packed_skip_index_max_bytes`,
 # which are exactly the settings the collision depends on.
+#
+# The table opts out of `add_minmax_index_for_numeric_columns`: `A_both_indices_present` counts the
+# indices the table owns, which an implicit minmax index on a numeric column would inflate.
 
 CUR_DIR=$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)
 CLICKHOUSE_CLIENT_SERVER_LOGS_LEVEL=none
@@ -47,7 +50,7 @@ make_corrupted_part () {
     )
     ENGINE = MergeTree ORDER BY k
     SETTINGS min_bytes_for_wide_part = 0, min_rows_for_wide_part = 0,
-             index_granularity = 100, replace_long_file_name_to_hash = 0,
+             index_granularity = 100, replace_long_file_name_to_hash = 0, add_minmax_index_for_numeric_columns = 0,
              escape_index_filenames = 0, packed_skip_index_max_bytes = 0,
              columns_and_secondary_indices_sizes_lazy_calculation = 0,
              allow_experimental_text_index_phrase_search = 1"
