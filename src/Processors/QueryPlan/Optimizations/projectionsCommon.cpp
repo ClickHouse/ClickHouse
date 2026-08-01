@@ -316,19 +316,25 @@ size_t filterPartsByProjection(
 }
 
 /// A late-added column's DEFAULT/MATERIALIZED default is fillable from the projection part only if
-/// every column-or-subcolumn its expression references is both physically stored in the part and
-/// still a current projection column (subcolumns resolve from a stored current base, e.g. `n.x`);
-/// otherwise, e.g. an orphaned-but-stored alias source after the alias was re-pointed off it, the
-/// read is unresolvable and must route to the parent. Immediate dependencies only, not transitively.
+/// every column-or-subcolumn its expression references can itself be resolved there: either stored
+/// by the part and still a current projection column (subcolumns resolve from a stored current base,
+/// e.g. `n.x`), virtual, or filled from its own default in turn (a chain of late-added defaults).
+/// Otherwise, e.g. an orphaned-but-stored alias source after the alias was re-pointed off it, the
+/// read is unresolvable and must route to the parent. Mirrors the reader's recursive resolution in
+/// MergeTreeBlockReadUtils::injectRequiredColumnsRecursively.
 static bool projectionPartCanFillDefault(
     const IMergeTreeDataPart & projection_part,
     const ProjectionDescription & projection,
     const ColumnsDescription & parent_table_columns,
-    const String & column_name)
+    const String & column_name,
+    NameSet & being_resolved)
 {
+    /// A cycle cannot be filled; a repeated visit is already accounted for by its first one.
+    if (!being_resolved.emplace(column_name).second)
+        return false;
+
     /// A subcolumn has no default of its own: it is extracted from the evaluated default of its
-    /// column in storage, so resolve the default through the base name (as the reader does in
-    /// MergeTreeBlockReadUtils::injectRequiredColumnsRecursively).
+    /// column in storage, so resolve the default through the base name.
     auto column_default = parent_table_columns.getDefault(column_name);
     if (!column_default)
     {
@@ -351,10 +357,25 @@ static bool projectionPartCanFillDefault(
              && projection_columns.hasColumnOrSubcolumn(GetColumnsOptions::AllPhysical, identifier))
             || projection.metadata->virtuals.has(identifier))
             continue;
-        return false;
+
+        /// Not stored: still fillable if it is a current projection column with a fillable default
+        /// of its own, which the reader synthesizes recursively.
+        if (!projection_columns.hasColumnOrSubcolumn(GetColumnsOptions::AllPhysical, identifier)
+            || !projectionPartCanFillDefault(projection_part, projection, parent_table_columns, identifier, being_resolved))
+            return false;
     }
 
     return true;
+}
+
+static bool projectionPartCanFillDefault(
+    const IMergeTreeDataPart & projection_part,
+    const ProjectionDescription & projection,
+    const ColumnsDescription & parent_table_columns,
+    const String & column_name)
+{
+    NameSet being_resolved;
+    return projectionPartCanFillDefault(projection_part, projection, parent_table_columns, column_name, being_resolved);
 }
 
 /// The projection's column set is re-derived from its query at every table load, so it can drift

@@ -394,6 +394,78 @@ WHERE database = currentDatabase() AND table = 't_proj_arrsize_default_dep'
 
 DROP TABLE t_proj_arrsize_default_dep;
 
+-- a CHAIN of late-added defaults is fillable: the reader synthesizes a missing dependency from its
+-- own default in turn, so `d DEFAULT e + 1` over `e DEFAULT 42` is evaluable on the projection part
+-- and the projection must stay usable (a non-recursive fillability check declines it and needlessly
+-- rebuilds, which is a silent loss of projection use with unchanged query results)
+DROP TABLE IF EXISTS t_proj_chain_default_dep;
+
+CREATE TABLE t_proj_chain_default_dep
+(
+    a UInt64,
+    PROJECTION p (SELECT * ORDER BY a)
+)
+ENGINE = MergeTree ORDER BY a;
+
+INSERT INTO t_proj_chain_default_dep VALUES (1);
+
+ALTER TABLE t_proj_chain_default_dep ADD COLUMN e UInt64 DEFAULT 42;
+ALTER TABLE t_proj_chain_default_dep ADD COLUMN d UInt64 DEFAULT e + 1;
+
+SELECT 'chain-dep read', a, d FROM t_proj_chain_default_dep ORDER BY a;
+
+SELECT 'chain-dep force projection', a, d FROM t_proj_chain_default_dep ORDER BY a
+SETTINGS optimize_use_projections = 1, force_optimize_projection = 1;
+
+INSERT INTO t_proj_chain_default_dep (a) VALUES (2);
+
+OPTIMIZE TABLE t_proj_chain_default_dep FINAL;
+
+SELECT 'chain-dep force projection after merge', a, d FROM t_proj_chain_default_dep ORDER BY a
+SETTINGS optimize_use_projections = 1, force_optimize_projection = 1;
+
+SYSTEM FLUSH LOGS part_log;
+
+SELECT 'chain-dep merged not rebuilt',
+       sum(ProfileEvents['MergedProjections']) > 0, sum(ProfileEvents['RebuiltProjections'])
+FROM system.part_log
+WHERE database = currentDatabase() AND table = 't_proj_chain_default_dep'
+  AND event_type = 'MergeParts';
+
+DROP TABLE t_proj_chain_default_dep;
+
+-- must-not-act counterpart: a chain that bottoms out in a column the projection part does NOT store
+-- is still unfillable, so the read routes to the parent and the merge rebuilds
+DROP TABLE IF EXISTS t_proj_chain_unfillable_dep;
+
+CREATE TABLE t_proj_chain_unfillable_dep
+(
+    a UInt64,
+    b UInt64,
+    f UInt64,
+    c UInt64 ALIAS b + 1,
+    PROJECTION p (SELECT a, c ORDER BY a)
+)
+ENGINE = MergeTree ORDER BY a;
+
+INSERT INTO t_proj_chain_unfillable_dep (a, b, f) VALUES (1, 100, 5);
+
+ALTER TABLE t_proj_chain_unfillable_dep ADD COLUMN e UInt64 DEFAULT f * 2;
+ALTER TABLE t_proj_chain_unfillable_dep ADD COLUMN d UInt64 DEFAULT e + 1;
+ALTER TABLE t_proj_chain_unfillable_dep MODIFY COLUMN c UInt64 ALIAS d + 1;
+
+-- c = d + 1 = (f * 2 + 1) + 1 = 12, served from the parent
+SELECT 'chain-unfillable read after drift', a, c FROM t_proj_chain_unfillable_dep ORDER BY a;
+
+SELECT a, c FROM t_proj_chain_unfillable_dep ORDER BY a
+SETTINGS optimize_use_projections = 1, force_optimize_projection = 1; -- { serverError PROJECTION_NOT_USED }
+
+OPTIMIZE TABLE t_proj_chain_unfillable_dep FINAL;
+
+SELECT 'chain-unfillable read after merge', a, c FROM t_proj_chain_unfillable_dep ORDER BY a;
+
+DROP TABLE t_proj_chain_unfillable_dep;
+
 -- aggregate projection drift: the state column name embeds the expanded alias
 -- (`sum(plus(b, 1))`), so re-pointing the alias leaves the part without the state column the
 -- metadata now expects (`sum(plus(d, 1))`); the parent never stores aggregate states, so the

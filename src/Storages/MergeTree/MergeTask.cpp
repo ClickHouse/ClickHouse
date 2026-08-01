@@ -1290,37 +1290,52 @@ void MergeTask::ExecuteAndFinalizeHorizontalPart::prepareProjectionsToMergeAndRe
         bool projection_part_default_unfillable = false;
 
         /// A late-added column is only mergeable from the projection part if its DEFAULT/MATERIALIZED
-        /// expression can be evaluated there, i.e. every column-or-subcolumn it references is a current
-        /// projection column the part stores (subcolumns resolve from a stored current base). A
-        /// dependency the part physically stores but that the metadata no longer lists (e.g. its alias
-        /// source after the alias was re-pointed off it) is unresolvable when rebuilding from the
-        /// projection part, so it must count as drift like a never-stored one. Keep this in lockstep
-        /// with projectionPartCanFillDefault (the read path in projectionsCommon.cpp).
+        /// expression can be evaluated there: every column-or-subcolumn it references must be a current
+        /// projection column the part stores (subcolumns resolve from a stored current base), or virtual,
+        /// or fillable from its own default in turn. A dependency the part physically stores but that the
+        /// metadata no longer lists (e.g. its alias source after the alias was re-pointed off it) is
+        /// unresolvable when rebuilding from the projection part, so it must count as drift like a
+        /// never-stored one. Keep this in lockstep with projectionPartCanFillDefault (the read path in
+        /// projectionsCommon.cpp).
         const auto & projection_metadata_columns = projection.metadata->getColumns();
         auto projection_part_can_fill_default = [&](const IMergeTreeDataPart & projection_part, const String & column_name)
         {
-            /// A subcolumn has no default of its own: resolve it through its column in storage.
-            auto column_default = parent_table_columns.getDefault(column_name);
-            if (!column_default)
+            auto can_fill = [&](const String & name, NameSet & being_resolved, auto & self) -> bool
             {
-                auto column_in_storage = parent_table_columns.tryGetColumnOrSubcolumn(GetColumnsOptions::AllPhysical, column_name);
-                if (column_in_storage && column_in_storage->isSubcolumn())
-                    column_default = parent_table_columns.getDefault(column_in_storage->getNameInStorage());
-            }
-
-            if (!column_default || !column_default->expression)
-                return true;
-
-            IdentifierNameSet identifiers;
-            column_default->expression->collectIdentifierNames(identifiers);
-            for (const auto & identifier : identifiers)
-            {
-                if ((!projection_part.tryGetColumn(identifier)
-                     || !projection_metadata_columns.hasColumnOrSubcolumn(GetColumnsOptions::AllPhysical, identifier))
-                    && !projection.metadata->virtuals.has(identifier))
+                /// A cycle cannot be filled; a repeated visit is accounted for by its first one.
+                if (!being_resolved.emplace(name).second)
                     return false;
-            }
-            return true;
+
+                /// A subcolumn has no default of its own: resolve it through its column in storage.
+                auto column_default = parent_table_columns.getDefault(name);
+                if (!column_default)
+                {
+                    auto column_in_storage = parent_table_columns.tryGetColumnOrSubcolumn(GetColumnsOptions::AllPhysical, name);
+                    if (column_in_storage && column_in_storage->isSubcolumn())
+                        column_default = parent_table_columns.getDefault(column_in_storage->getNameInStorage());
+                }
+
+                if (!column_default || !column_default->expression)
+                    return true;
+
+                IdentifierNameSet identifiers;
+                column_default->expression->collectIdentifierNames(identifiers);
+                for (const auto & identifier : identifiers)
+                {
+                    if ((projection_part.tryGetColumn(identifier)
+                         && projection_metadata_columns.hasColumnOrSubcolumn(GetColumnsOptions::AllPhysical, identifier))
+                        || projection.metadata->virtuals.has(identifier))
+                        continue;
+
+                    if (!projection_metadata_columns.hasColumnOrSubcolumn(GetColumnsOptions::AllPhysical, identifier)
+                        || !self(identifier, being_resolved, self))
+                        return false;
+                }
+                return true;
+            };
+
+            NameSet being_resolved;
+            return can_fill(column_name, being_resolved, can_fill);
         };
 
         MergeTreeData::DataPartsVector projection_parts;
