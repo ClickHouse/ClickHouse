@@ -318,7 +318,7 @@ std::shared_ptr<TableNode> IdentifierResolver::tryResolveTableIdentifier(const I
     /// (`checkAccessRights` in `PlannerJoinTree`), which also closes the resolution race.
     if (!is_temporary_table)
     {
-        if (const auto * facade = DatabaseOverlay::asReadonlyFacade(DatabaseCatalog::instance().tryGetDatabase(storage_id.getDatabaseName()).get()))
+        if (const auto facade = DatabaseOverlay::tryGetReadonlyFacade(storage_id.getDatabaseName()))
             facade->checkSourceTableAccess(storage_id.getTableName(), context, AccessType::SHOW_TABLES);
     }
 

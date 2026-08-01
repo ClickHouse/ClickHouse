@@ -159,6 +159,13 @@ public:
     /// Accepts a null pointer for convenience of callers holding a `tryGetDatabase` result.
     static const DatabaseOverlay * asReadonlyFacade(const IDatabase * database);
 
+    /// Resolves `database_name` in the catalog and returns it as a read-only `Overlay` facade, or
+    /// nullptr when the name is empty (an unqualified name with no current database), unknown, or
+    /// not a facade. Every call site that has a written database name uses this instead of
+    /// resolving the name itself: an empty name must not reach the catalog, which asserts on it,
+    /// and the returned pointer owns the database, so it stays alive while the caller uses it.
+    static std::shared_ptr<const DatabaseOverlay> tryGetReadonlyFacade(const String & written_database_name);
+
     /// Fail-closed source-side visibility check for `EXISTS`-style queries through the facade:
     /// returns true only when `table_name` resolves to a source table (the first listed source
     /// database whose metadata contains the name) AND `access_to_check` is granted on that source

@@ -205,7 +205,7 @@ StoragePtr InterpreterInsertQuery::getTable(ASTInsertQuery & query)
     /// so users holding only column-level `INSERT` grants are not over-denied here; the
     /// column-level `INSERT` on both the facade and the source is still verified against the
     /// loaded storage afterwards, which also closes the resolution race.
-    if (const auto * facade = DatabaseOverlay::asReadonlyFacade(DatabaseCatalog::instance().tryGetDatabase(query.table_id.database_name).get()))
+    if (const auto facade = DatabaseOverlay::tryGetReadonlyFacade(query.table_id.database_name))
         facade->checkSourceTableAccess(query.table_id.table_name, current_context, AccessType::SHOW_TABLES);
 
     return DatabaseCatalog::instance().getTable(query.table_id, current_context);

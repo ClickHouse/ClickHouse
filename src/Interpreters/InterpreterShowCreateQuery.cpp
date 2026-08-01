@@ -101,8 +101,7 @@ QueryPipeline InterpreterShowCreateQuery::executeImpl()
         {
             if (!table_id.hasDatabase())
                 return;
-            if (const auto * facade
-                = DatabaseOverlay::asReadonlyFacade(DatabaseCatalog::instance().tryGetDatabase(table_id.database_name).get()))
+            if (const auto facade = DatabaseOverlay::tryGetReadonlyFacade(table_id.database_name))
                 facade->checkSourceTableAccess(
                     table_id.table_name, getContext(), is_dictionary ? AccessType::SHOW_DICTIONARIES : AccessType::SHOW_COLUMNS);
         };

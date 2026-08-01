@@ -59,7 +59,7 @@ QueryPipeline InterpreterExistsQuery::executeImpl()
             /// matches the behaviour of `EXISTS DICTIONARY <name>` and what the documentation promises.
             const auto access = getContext()->getAccess();
             const StorageID dictionary_id{database, table};
-            const auto * facade = DatabaseOverlay::asReadonlyFacade(DatabaseCatalog::instance().tryGetDatabase(database).get());
+            const auto facade = DatabaseOverlay::tryGetReadonlyFacade(database);
             bool dictionary_only_user = !access->isGranted(AccessType::SHOW_TABLES, database, table)
                 && access->isGranted(AccessType::SHOW_DICTIONARIES, database, table);
             if (dictionary_only_user && facade)
@@ -141,8 +141,7 @@ QueryPipeline InterpreterExistsQuery::executeImpl()
             /// catalog, even an existence probe — could throw the source's own error before the
             /// grant is proven, turning the facade into an oracle for hidden broken sources.
             bool source_visible = true;
-            if (const auto * facade
-                = DatabaseOverlay::asReadonlyFacade(DatabaseCatalog::instance().tryGetDatabase(database).get()))
+            if (const auto facade = DatabaseOverlay::tryGetReadonlyFacade(database))
                 source_visible = facade->isSourceTableVisibleNoLoad(exists_query->getTable(), getContext(), AccessType::SHOW_TABLES);
 
             if (source_visible)
@@ -179,8 +178,7 @@ QueryPipeline InterpreterExistsQuery::executeImpl()
         /// existence probe — could throw the source's own error before the grant is proven, turning
         /// the facade into an oracle for hidden broken sources.
         bool source_visible = true;
-        if (const auto * facade
-            = DatabaseOverlay::asReadonlyFacade(DatabaseCatalog::instance().tryGetDatabase(database).get()))
+        if (const auto facade = DatabaseOverlay::tryGetReadonlyFacade(database))
             source_visible = facade->isSourceTableVisibleNoLoad(dictionary, getContext(), AccessType::SHOW_DICTIONARIES);
 
         if (source_visible)

@@ -77,6 +77,20 @@ const DatabaseOverlay * DatabaseOverlay::asReadonlyFacade(const IDatabase * data
     return (overlay && overlay->readonly) ? overlay : nullptr;
 }
 
+std::shared_ptr<const DatabaseOverlay> DatabaseOverlay::tryGetReadonlyFacade(const String & written_database_name)
+{
+    /// A written name can be unqualified, and the current database of the context can be unset
+    /// (a bare `Context` outside a session, as in the unit tests), so an empty name reaches here
+    /// and must answer "not a facade" instead of tripping the catalog's non-empty assertion.
+    if (written_database_name.empty())
+        return nullptr;
+    auto database = DatabaseCatalog::instance().tryGetDatabase(written_database_name);
+    if (!asReadonlyFacade(database.get()))
+        return nullptr;
+    /// Keeps the database alive for as long as the caller holds the facade.
+    return std::static_pointer_cast<const DatabaseOverlay>(std::move(database));
+}
+
 bool DatabaseOverlay::isSourceTableVisibleNoLoad(const String & table_name, ContextPtr context_, AccessType access_to_check) const
 {
     for (const auto & db : resolveDatabases())
@@ -134,9 +148,7 @@ void DatabaseOverlay::checkSourceTableAccess(const String & table_name, ContextP
 
 void DatabaseOverlay::checkSourceTableAccessIfFacade(const StorageID & table_id, ContextPtr context_, AccessType access_to_check)
 {
-    if (!table_id.hasDatabase())
-        return;
-    if (const auto * facade = asReadonlyFacade(DatabaseCatalog::instance().tryGetDatabase(table_id.database_name).get()))
+    if (const auto facade = tryGetReadonlyFacade(table_id.database_name))
         facade->checkSourceTableAccess(table_id.table_name, context_, access_to_check);
 }
 

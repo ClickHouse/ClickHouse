@@ -772,8 +772,7 @@ InterpreterCreateQuery::TableProperties InterpreterCreateQuery::getTableProperti
     if (!create.as_table.empty() && mode <= LoadingStrictnessLevel::SECONDARY_CREATE)
     {
         String as_database_name = getContext()->resolveDatabase(create.as_database);
-        if (const auto * facade
-            = DatabaseOverlay::asReadonlyFacade(DatabaseCatalog::instance().tryGetDatabase(as_database_name).get()))
+        if (const auto facade = DatabaseOverlay::tryGetReadonlyFacade(as_database_name))
             facade->checkSourceTableAccess(create.as_table, getContext(), AccessType::SHOW_COLUMNS);
     }
 
@@ -3047,8 +3046,8 @@ AccessRightsElements InterpreterCreateQuery::getRequiredAccess() const
                 /// grant. So creating it must prove `SELECT` and `INSERT` on the source table
                 /// too, exactly as a direct `INSERT INTO`/`SELECT FROM` the facade name would:
                 /// the facade must not widen access. Fail-closed the same way as `DESCRIBE`.
-                if (const auto * facade = DatabaseOverlay::asReadonlyFacade(
-                        DatabaseCatalog::instance().tryGetDatabase(getContext()->resolveDatabase(target_id.database_name)).get()))
+                if (const auto facade
+                    = DatabaseOverlay::tryGetReadonlyFacade(getContext()->resolveDatabase(target_id.database_name)))
                 {
                     facade->checkSourceTableAccess(target_id.table_name, getContext(), AccessType::SELECT);
                     facade->checkSourceTableAccess(target_id.table_name, getContext(), AccessType::INSERT);

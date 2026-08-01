@@ -116,7 +116,7 @@ Chunk getChunkFromCheckResult(const String & database, const String & table, con
 /// closes the resolution race.
 StoragePtr resolveTableToCheck(const StorageID & table_id, const ContextPtr & context)
 {
-    if (const auto * facade = DatabaseOverlay::asReadonlyFacade(DatabaseCatalog::instance().tryGetDatabase(table_id.database_name).get()))
+    if (const auto facade = DatabaseOverlay::tryGetReadonlyFacade(table_id.database_name))
         facade->checkSourceTableAccess(table_id.table_name, context, AccessType::SHOW_TABLES);
     return DatabaseCatalog::instance().getTable(table_id, context);
 }

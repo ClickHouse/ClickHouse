@@ -2993,8 +2993,7 @@ StoragePtr Context::executeTableFunction(const ASTPtr & table_expression, const 
     /// name, a missing name, and a hidden broken source stay indistinguishable. The precise
     /// `SELECT` grant on the resolved source view is checked below, after the load.
     bool parameterized_view_source_visible = true;
-    if (const auto * facade
-        = DatabaseOverlay::asReadonlyFacade(DatabaseCatalog::instance().tryGetDatabase(database_name).get()))
+    if (const auto facade = DatabaseOverlay::tryGetReadonlyFacade(database_name))
         parameterized_view_source_visible
             = facade->isSourceTableVisibleNoLoad(table_name, getQueryContext(), AccessType::SHOW_TABLES);
 
@@ -3287,8 +3286,7 @@ StoragePtr Context::buildParameterizedViewStorage(const String & database_name, 
     /// facade the lookup below loads the underlying source view, so without `SHOW_TABLES` on
     /// the source name the view is treated as missing — a denied name, a missing name, and a
     /// hidden broken source stay indistinguishable.
-    if (const auto * facade
-        = DatabaseOverlay::asReadonlyFacade(DatabaseCatalog::instance().tryGetDatabase(database_name).get()))
+    if (const auto facade = DatabaseOverlay::tryGetReadonlyFacade(database_name))
         if (!facade->isSourceTableVisibleNoLoad(table_name, getQueryContext(), AccessType::SHOW_TABLES))
             return nullptr;
 

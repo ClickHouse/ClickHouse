@@ -70,7 +70,7 @@ QueryPipelineBuilder InterpreterWatchQuery::buildQueryPipeline()
     /// grant on the source (see the identical precheck in `JoinedTables::getLeftTableStorage`).
     /// The column-level `SELECT` on both the facade and the source is still checked below
     /// against the loaded storage, which also closes the resolution race.
-    if (const auto * facade = DatabaseOverlay::asReadonlyFacade(DatabaseCatalog::instance().tryGetDatabase(table_id.database_name).get()))
+    if (const auto facade = DatabaseOverlay::tryGetReadonlyFacade(table_id.database_name))
         facade->checkSourceTableAccess(table_id.table_name, getContext(), AccessType::SHOW_TABLES);
 
     /// Get storage

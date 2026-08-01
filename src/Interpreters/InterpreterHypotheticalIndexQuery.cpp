@@ -51,7 +51,7 @@ BlockIO InterpreterHypotheticalIndexQuery::execute()
     /// source table, because loading can surface a hidden source's own error to a user with no
     /// grant on the source (see the identical precheck in `JoinedTables::getLeftTableStorage`).
     /// The column-level `SELECT` on both the facade and the source is still checked below.
-    if (const auto * facade = DatabaseOverlay::asReadonlyFacade(DatabaseCatalog::instance().tryGetDatabase(table_id.database_name).get()))
+    if (const auto facade = DatabaseOverlay::tryGetReadonlyFacade(table_id.database_name))
         facade->checkSourceTableAccess(table_id.table_name, context, AccessType::SHOW_TABLES);
 
     auto table = DatabaseCatalog::instance().getTable(table_id, context);

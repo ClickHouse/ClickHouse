@@ -1605,7 +1605,7 @@ static BlockIO executeQueryImpl(
                 /// and for a source backed by a remote catalog the resolution itself can surface
                 /// the hidden source's own connection error (see the identical precheck in
                 /// `InterpreterInsertQuery::getTable`).
-                if (const auto * facade = DatabaseOverlay::asReadonlyFacade(DatabaseCatalog::instance().tryGetDatabase(insert_query->table_id.database_name).get()))
+                if (const auto facade = DatabaseOverlay::tryGetReadonlyFacade(insert_query->table_id.database_name))
                     facade->checkSourceTableAccess(insert_query->table_id.table_name, context, AccessType::SHOW_TABLES);
 
                 insert_table = DatabaseCatalog::instance().tryGetTable(insert_query->table_id, context);

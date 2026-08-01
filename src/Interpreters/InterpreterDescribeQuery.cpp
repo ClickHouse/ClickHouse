@@ -194,8 +194,7 @@ void InterpreterDescribeQuery::fillColumnsFromTableFunction(const ASTTableExpres
         /// missing name, and a hidden broken source stay indistinguishable.
         bool source_visible = true;
         if (!table_name.empty())
-            if (const auto * facade
-                = DatabaseOverlay::asReadonlyFacade(DatabaseCatalog::instance().tryGetDatabase(database_name).get()))
+            if (const auto facade = DatabaseOverlay::tryGetReadonlyFacade(database_name))
                 source_visible = facade->isSourceTableVisibleNoLoad(table_name, current_context, AccessType::SHOW_COLUMNS);
 
         StoragePtr table;
@@ -282,8 +281,7 @@ void InterpreterDescribeQuery::fillColumnsFromTable(const ASTTableExpression & t
     /// without the source-side grant could observe the source's error and use the facade as an
     /// oracle for hidden broken sources.
     if (table_id.hasDatabase())
-        if (const auto * facade
-            = DatabaseOverlay::asReadonlyFacade(DatabaseCatalog::instance().tryGetDatabase(table_id.database_name).get()))
+        if (const auto facade = DatabaseOverlay::tryGetReadonlyFacade(table_id.database_name))
             facade->checkSourceTableAccess(table_id.table_name, query_context, AccessType::SHOW_COLUMNS);
 
     auto table = DatabaseCatalog::instance().getTable(table_id, query_context);
