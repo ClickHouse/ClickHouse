@@ -12,11 +12,10 @@
 #include <Storages/ObjectStorageQueue/AzureQueue_fwd.h>
 #include <Storages/ObjectStorageQueue/S3Queue_fwd.h>
 #include <Storages/RabbitMQ/RabbitMQ_fwd.h>
-#include <Poco/Exception.h>
-#include <Poco/URI.h>
 #include <Common/FieldVisitorHash.h>
 #include <Common/FieldVisitorToString.h>
 #include <Common/SipHash.h>
+#include <Common/maskURIPassword.h>
 #include <Common/quoteString.h>
 
 static constexpr std::string_view format_avro_schema_registry_url = "format_avro_schema_registry_url";
@@ -27,21 +26,6 @@ namespace DB
 namespace ErrorCodes
 {
     extern const int BAD_ARGUMENTS;
-}
-
-namespace
-{
-std::optional<Poco::URI> tryParseURI(const String & uri)
-{
-    try
-    {
-        return Poco::URI (uri);
-    }
-    catch (const Poco::SyntaxException &)
-    {
-        return std::nullopt;
-    }
-}
 }
 
 class FieldVisitorToSetting : public StaticVisitor<String>
@@ -95,6 +79,7 @@ void ASTSetQuery::updateTreeHashImpl(SipHash & hash_state, bool /*ignore_aliases
     {
         hash_state.update(change.name.size());
         hash_state.update(change.name);
+        hash_state.update(change.shorthand);
         applyVisitor(FieldVisitorHash(hash_state), change.value);
     }
 }
@@ -115,6 +100,12 @@ void ASTSetQuery::formatImpl(WriteBuffer & ostr, const FormatSettings & format, 
 
         formatSettingName(change.name, ostr);
 
+        /// The valueless form has to survive a format/parse round trip: written back as
+        /// `name = true` it would be accepted for a setting of any type, which is exactly what the
+        /// shorthand check exists to prevent. The value is Bool `true` and never secret.
+        if (change.shorthand)
+            continue;
+
         auto format_if_secret = [&]() -> bool
         {
             CustomType custom;
@@ -127,14 +118,9 @@ void ASTSetQuery::formatImpl(WriteBuffer & ostr, const FormatSettings & format, 
             if (change.name == format_avro_schema_registry_url)
             {
                 auto uri_string = change.value.safeGet<String>();
-                const auto maybe_uri = tryParseURI(uri_string);
-                if (!maybe_uri || maybe_uri->getUserInfo().empty())
+                if (!maskURIPassword(&uri_string))
                     return false;
 
-                const auto & user_info = maybe_uri->getUserInfo();
-                const auto user_name = user_info.substr(0, user_info.find(':'));
-                const auto new_user_info = user_name + ":[HIDDEN]";
-                uri_string.replace(uri_string.find(user_info),user_info.size(), new_user_info);
                 ostr << " = '" << uri_string << "'";
                 return true;
             }
@@ -366,8 +352,9 @@ bool ASTSetQuery::hasSecretParts() const
 
         if (change.name == format_avro_schema_registry_url)
         {
-            const auto maybe_uri = tryParseURI(change.value.safeGet<String>());
-            if (maybe_uri && !maybe_uri->getUserInfo().empty())
+            /// Secret only if there is actually a password embedded in it.
+            String uri_string = change.value.safeGet<String>();
+            if (maskURIPassword(&uri_string))
                 return true;
         }
     }
