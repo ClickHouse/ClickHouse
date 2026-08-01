@@ -23,11 +23,15 @@ $CLICKHOUSE_CLIENT --query_id "$QUERY_ID" --max_execution_time 0 -q "
     FROM numbers(200000) FORMAT Null SETTINGS max_block_size = 200000, max_threads = 1
 " &>/dev/null &
 
-# Wait for the query to reach the process list, bounded by wall clock rather than an iteration count.
+# Readiness waits for the query to have been running rather than merely being visible: `ProcessList`
+# makes it visible before the executor is attached, and `addPipelineExecutor` raises a pending
+# cancellation itself, so a kill winning that race would return promptly even unfixed. `max(elapsed)`
+# over an empty set is 0, so this is false both while the query is absent and while it is only
+# pending. Bounded by wall clock rather than an iteration count.
 running=0
-deadline=$((SECONDS + 30))
+deadline=$((SECONDS + 60))
 while [ "$SECONDS" -lt "$deadline" ]; do
-    if [ "$($CLICKHOUSE_CLIENT -q "SELECT count() FROM system.processes WHERE query_id = '$QUERY_ID'")" == "1" ]; then
+    if [ "$($CLICKHOUSE_CLIENT -q "SELECT max(elapsed) > 1 FROM system.processes WHERE query_id = '$QUERY_ID'")" == "1" ]; then
         running=1
         break
     fi
@@ -37,7 +41,7 @@ done
 # Without this the test could pass blind: a KILL that matches nothing is a silent no-op that returns
 # immediately, so the latency bound below would report success having killed no query at all.
 if [ "$running" != "1" ]; then
-    echo "query never reached system.processes"
+    echo "query never reached the row loop"
     wait || true
     exit 0
 fi
