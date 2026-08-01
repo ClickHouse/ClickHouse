@@ -447,6 +447,9 @@ struct ToDateTimeTransformSigned
 
     static NO_SANITIZE_UNDEFINED ToType execute(const FromType & from, const DateLUTImpl &)
     {
+        /// Only the negative guard is needed: dispatch restricts FromType to Int8/Int16/Int32, whose
+        /// maxima are all below MAX_DATETIME_TIMESTAMP, so a positive source cannot overflow DateTime.
+        /// (The Time sibling does need an upper guard - MAX_TIME_TIMESTAMP is below Int32::max.)
         if (from < 0)
         {
             if constexpr (date_time_overflow_behavior == FormatSettings::DateTimeOverflowBehavior::Throw)
