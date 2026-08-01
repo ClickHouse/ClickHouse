@@ -21,10 +21,11 @@ ${CLICKHOUSE_CLIENT} --query "
 "
 
 # Prints the error of a query without the parenthesised error name and the stack trace, so that the
-# message itself is what the reference records.
+# message itself is what the reference records. The `DB::Exception: ` prefix is dropped as well,
+# because the test runner rejects the word `Exception` in the standard output of a test.
 run() {
     ${CLICKHOUSE_CLIENT} --dialect mongo --query "$1" 2>&1 >/dev/null \
-        | head -1 | sed -e 's/^Received exception.*//' -e 's/ (version .*//' -e 's/\. ([A-Z_]*)$//'
+        | head -1 | sed -e 's/^Received exception.*//' -e 's/ (version .*//' -e 's/\. ([A-Z_]*)$//' -e 's/DB::Exception: //'
 }
 
 echo '-- filter operators'
