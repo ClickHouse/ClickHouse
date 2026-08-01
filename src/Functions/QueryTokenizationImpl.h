@@ -67,6 +67,9 @@ public:
     {
         if (context)
         {
+            /// Some callers have no process-list entry, so the cancellation check must stay a no-op there.
+            query_status = context->getProcessListElementSafe();
+
             const auto & settings = context->getSettingsRef();
             parser_settings.max_parser_depth = settings[Setting::max_parser_depth];
             parser_settings.max_parser_backtracks = settings[Setting::max_parser_backtracks];
@@ -108,6 +111,8 @@ public:
 
         for (size_t i = 0; i < input_rows_count; ++i)
         {
+            checkQueryCancellation(query_status, name);
+
             std::string_view query = col_query.getDataAt(i);
 
             Impl::processRow(query, data_begin, data_end, data_type, total, parser_settings);
@@ -125,6 +130,7 @@ public:
 
 private:
     QueryTokenizationSettings parser_settings;
+    QueryStatusPtr query_status;
 };
 
 }

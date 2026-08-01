@@ -7,7 +7,6 @@
 #include <Functions/FunctionHelpers.h>
 #include <IO/WriteBufferFromString.h>
 #include <Interpreters/Context.h>
-#include <Interpreters/ProcessList.h>
 #include <Parsers/IAST.h>
 #include <Parsers/ParserQuery.h>
 #include <Parsers/parseQuery.h>
@@ -26,7 +25,6 @@ namespace Setting
 namespace ErrorCodes
 {
     extern const int ILLEGAL_COLUMN;
-    extern const int TIMEOUT_EXCEEDED;
 }
 
 namespace
@@ -118,7 +116,7 @@ private:
         {
             /// Outside the `try` below on purpose: for ErrorHandling::Null that handler swallows every
             /// exception into a NULL and continues, which would turn cancellation into wrong results.
-            checkCancellation();
+            checkQueryCancellation(query_status, name);
 
             const char * begin = reinterpret_cast<const char *>(&data[prev_offset]);
             const char * end = begin + offsets[i] - prev_offset;
@@ -168,15 +166,6 @@ private:
         }
 
         res_data.resize(res_data_size);
-    }
-
-    /// Cancellation is only polled between pipeline tasks, so an unbounded per-row loop must poll it too.
-    /// `checkTimeLimit` throws for `KILL QUERY` and the `throw` overflow mode and returns false for
-    /// `break`; a scalar has no meaningful partial result, so `break` is a hard stop here as well.
-    void checkCancellation() const
-    {
-        if (query_status && !query_status->checkTimeLimit())
-            throw Exception(ErrorCodes::TIMEOUT_EXCEEDED, "Timeout exceeded: elapsed time limit reached in function {}", name);
     }
 
     String name;

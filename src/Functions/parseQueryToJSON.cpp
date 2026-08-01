@@ -2,9 +2,9 @@
 #include <Core/Settings.h>
 #include <DataTypes/DataTypeString.h>
 #include <Functions/FunctionFactory.h>
+#include <Functions/FunctionHelpers.h>
 #include <Functions/IFunction.h>
 #include <Interpreters/Context.h>
-#include <Interpreters/ProcessList.h>
 #include <Parsers/ASTToJSON.h>
 #include <Parsers/IAST.h>
 #include <Parsers/ParserQuery.h>
@@ -27,7 +27,6 @@ namespace Setting
 namespace ErrorCodes
 {
     extern const int ILLEGAL_TYPE_OF_ARGUMENT;
-    extern const int TIMEOUT_EXCEEDED;
 }
 
 namespace
@@ -80,7 +79,7 @@ public:
 
         for (size_t i = 0; i < input_rows_count; ++i)
         {
-            checkCancellation();
+            checkQueryCancellation(query_status, name);
 
             auto sql = col->getDataAt(i);
 
@@ -101,15 +100,6 @@ public:
     }
 
 private:
-    /// Cancellation is only polled between pipeline tasks, so an unbounded per-row loop must poll it too.
-    /// `checkTimeLimit` throws for `KILL QUERY` and the `throw` overflow mode and returns false for
-    /// `break`; a scalar has no meaningful partial result, so `break` is a hard stop here as well.
-    void checkCancellation() const
-    {
-        if (query_status && !query_status->checkTimeLimit())
-            throw Exception(ErrorCodes::TIMEOUT_EXCEEDED, "Timeout exceeded: elapsed time limit reached in function {}", name);
-    }
-
     QueryStatusPtr query_status;
     size_t max_query_size;
     size_t max_parser_depth;

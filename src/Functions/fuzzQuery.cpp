@@ -6,7 +6,6 @@
 #include <Functions/FunctionHelpers.h>
 #include <IO/WriteBufferFromString.h>
 #include <Interpreters/Context.h>
-#include <Interpreters/ProcessList.h>
 #include <Interpreters/executeQuery.h>
 #include <Parsers/IAST.h>
 #include <Parsers/ParserQuery.h>
@@ -27,7 +26,6 @@ namespace ErrorCodes
 {
     extern const int ILLEGAL_COLUMN;
     extern const int SUPPORT_IS_DISABLED;
-    extern const int TIMEOUT_EXCEEDED;
 }
 
 namespace
@@ -97,7 +95,7 @@ public:
 
             for (size_t i = 0; i < input_rows_count; ++i)
             {
-                checkCancellation();
+                checkQueryCancellation(query_status, name);
 
                 ASTPtr fuzzed_ast = ast->clone();
                 {
@@ -126,7 +124,7 @@ private:
         size_t prev_offset = 0;
         for (size_t i = 0; i < input_rows_count; ++i)
         {
-            checkCancellation();
+            checkQueryCancellation(query_status, name);
 
             const char * begin = reinterpret_cast<const char *>(&data[prev_offset]);
             const char * end = reinterpret_cast<const char *>(&data[offsets[i]]);
@@ -145,15 +143,6 @@ private:
             col_res.insertData(buf.str().data(), buf.str().size());
             prev_offset = offsets[i];
         }
-    }
-
-    /// Cancellation is only polled between pipeline tasks, so an unbounded per-row loop must poll it too.
-    /// `checkTimeLimit` throws for `KILL QUERY` and the `throw` overflow mode and returns false for
-    /// `break`; a scalar has no meaningful partial result, so `break` is a hard stop here as well.
-    void checkCancellation() const
-    {
-        if (query_status && !query_status->checkTimeLimit())
-            throw Exception(ErrorCodes::TIMEOUT_EXCEEDED, "Timeout exceeded: elapsed time limit reached in function {}", name);
     }
 
     QueryStatusPtr query_status;

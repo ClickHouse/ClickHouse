@@ -20,6 +20,17 @@ namespace ErrorCodes
 
 class IFunction;
 
+class QueryStatus;
+using QueryStatusPtr = std::shared_ptr<QueryStatus>;
+
+/// Cancellation is only polled between pipeline tasks, so a function whose `executeImpl` does unbounded
+/// per-row work must poll it inside that loop too. Otherwise a whole block is one uninterruptible unit
+/// which outlives `max_execution_time` and `KILL QUERY`.
+/// `QueryStatus::checkTimeLimit` throws for `KILL QUERY` and for the `throw` overflow mode and returns
+/// false for `break`; a scalar has no meaningful partial result, so `break` is a hard stop here as well.
+/// `query_status` is empty for callers that have no process-list entry, where the check stays a no-op.
+void checkQueryCancellation(const QueryStatusPtr & query_status, std::string_view function_name);
+
 /// Methods, that helps dispatching over real column types.
 
 template <typename Type>

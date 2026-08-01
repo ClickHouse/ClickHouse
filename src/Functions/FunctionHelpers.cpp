@@ -8,6 +8,7 @@
 #include <DataTypes/DataTypeNullable.h>
 #include <Functions/FunctionHelpers.h>
 #include <Functions/IFunction.h>
+#include <Interpreters/ProcessList.h>
 
 
 namespace DB
@@ -20,6 +21,13 @@ extern const int LOGICAL_ERROR;
 extern const int NUMBER_OF_ARGUMENTS_DOESNT_MATCH;
 extern const int SIZES_OF_ARRAYS_DONT_MATCH;
 extern const int ILLEGAL_TYPE_OF_ARGUMENT;
+extern const int TIMEOUT_EXCEEDED;
+}
+
+void checkQueryCancellation(const QueryStatusPtr & query_status, std::string_view function_name)
+{
+    if (query_status && !query_status->checkTimeLimit())
+        throw Exception(ErrorCodes::TIMEOUT_EXCEEDED, "Timeout exceeded: elapsed time limit reached in function {}", function_name);
 }
 
 const ColumnConst * checkAndGetColumnConstStringOrFixedString(const IColumn * column)
