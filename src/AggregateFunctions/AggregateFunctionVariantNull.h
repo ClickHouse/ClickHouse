@@ -1,12 +1,8 @@
 #pragma once
 
 #include <AggregateFunctions/IAggregateFunction.h>
-#include <Columns/ColumnNullable.h>
 #include <Columns/ColumnVariant.h>
-#include <DataTypes/DataTypeNullable.h>
 #include <DataTypes/DataTypeVariant.h>
-#include <IO/ReadHelpers.h>
-#include <IO/WriteHelpers.h>
 #include <Common/PODArray.h>
 #include <Common/assert_cast.h>
 
@@ -31,72 +27,27 @@ namespace DB
   * Unlike the "Null" combinator, the argument columns are forwarded to the nested function unchanged (it was
   * resolved over the Variant argument types and expects the genuine Variant columns); only the rows are filtered.
   *
-  * The result type mirrors the "Null" combinator rules: when the nested function does not return its default
-  * value for an empty set (`returns_default_when_only_null` is false) and its result type can be wrapped in
-  * Nullable, the result becomes Nullable and an all-NULL group yields NULL (`result_is_nullable`), which requires
-  * a "was there a value" flag in front of the nested state, serialized before it. Otherwise the wrapper adds no
-  * flag: its state layout and serialization are exactly the nested function's. In particular the result of a
-  * function whose result type is the Variant itself (`any`, `argMin`, ...) needs no Nullable wrapping, because a
-  * Variant represents NULL on its own: an all-NULL group produces the empty nested state, whose result is the
-  * default value of the Variant, i.e. NULL.
+  * Also unlike the "Null" combinator, the result type, the state layout and the serialization are exactly the
+  * nested function's: an all-NULL group produces the empty nested state and returns the nested function's result
+  * for an empty set, without a Nullable promotion of the result and without a "was there a value" flag in front
+  * of the nested state. A function that accepts a Variant natively already accepted it before this wrapper
+  * existed, with exactly the nested result type and state representation, and both are persisted: promoting the
+  * result to Nullable would change the type of `AggregateFunction(f, Variant(...))` columns read by materialized
+  * views, and a flag byte would make aggregate states written by an older server unreadable after an upgrade
+  * (and vice versa on a downgrade). For a function whose result type is the Variant itself (`any`, `argMin`, ...)
+  * nothing is lost: a Variant represents NULL on its own, so an all-NULL group reports NULL anyway.
   *
   * The wrapper is applied by AggregateFunctionFactory at the point where a function is resolved over argument
   * types that contain a Variant (unless the function declares AggregateFunctionProperties::skips_variant_nulls,
   * i.e. implements the contract itself, like `count`, or is a window function, which must handle its argument
   * types itself -- see AggregateFunctionFactory::getImpl).
   */
-template <bool result_is_nullable>
-class AggregateFunctionVariantNull final
-    : public IAggregateFunctionHelper<AggregateFunctionVariantNull<result_is_nullable>>
+class AggregateFunctionVariantNull final : public IAggregateFunctionHelper<AggregateFunctionVariantNull>
 {
 private:
     AggregateFunctionPtr nested_function;
-    size_t prefix_size;
     /// Which argument positions are Variant and therefore checked for NULL values.
     absl::InlinedVector<char, 8> is_variant_argument;
-
-    /** In addition to the data of the nested aggregate function, we keep a flag indicating
-      * whether there was at least one row with a non-NULL value accumulated.
-      * If there were none, the function returns NULL.
-      *
-      * We use prefix_size bytes for the flag to satisfy the alignment requirement of the nested state.
-      */
-
-    AggregateDataPtr nestedPlace(AggregateDataPtr __restrict place) const noexcept
-    {
-        if constexpr (result_is_nullable)
-            return place + prefix_size;
-        else
-            return place;
-    }
-
-    ConstAggregateDataPtr nestedPlace(ConstAggregateDataPtr __restrict place) const noexcept
-    {
-        if constexpr (result_is_nullable)
-            return place + prefix_size;
-        else
-            return place;
-    }
-
-    static void initFlag(AggregateDataPtr __restrict place) noexcept
-    {
-        if constexpr (result_is_nullable)
-            place[0] = 0;
-    }
-
-    static void setFlag(AggregateDataPtr __restrict place) noexcept
-    {
-        if constexpr (result_is_nullable)
-            place[0] = 1;
-    }
-
-    static bool getFlag(ConstAggregateDataPtr __restrict place) noexcept
-    {
-        if constexpr (result_is_nullable)
-            return place[0];
-        else
-            return true;
-    }
 
     bool isAnyVariantArgumentNullAt(const IColumn ** columns, size_t row_num) const
     {
@@ -109,22 +60,12 @@ private:
 
 public:
     AggregateFunctionVariantNull(AggregateFunctionPtr nested_function_, const DataTypes & arguments, const Array & params)
-        : IAggregateFunctionHelper<AggregateFunctionVariantNull<result_is_nullable>>(
-            arguments, params, createResultType(nested_function_))
+        : IAggregateFunctionHelper<AggregateFunctionVariantNull>(arguments, params, nested_function_->getResultType())
         , nested_function{nested_function_}
-        , prefix_size(result_is_nullable ? nested_function->alignOfData() : 0)
     {
         is_variant_argument.resize(arguments.size());
         for (size_t i = 0; i < arguments.size(); ++i)
             is_variant_argument[i] = isVariant(arguments[i]);
-    }
-
-    static DataTypePtr createResultType(const AggregateFunctionPtr & nested_function_)
-    {
-        if constexpr (result_is_nullable)
-            return makeNullable(nested_function_->getResultType());
-        else
-            return nested_function_->getResultType();
     }
 
     String getName() const override
@@ -143,8 +84,7 @@ public:
         auto nested_function_for_merging_final = nested_function->getAggregateFunctionForMergingFinal();
         /// Create a new wrapper for merging final states if the nested function has a different implementation.
         if (nested_function_for_merging_final.get() != nested_function.get())
-            return std::make_shared<AggregateFunctionVariantNull<result_is_nullable>>(
-                nested_function_for_merging_final, argument_types, parameters);
+            return std::make_shared<AggregateFunctionVariantNull>(nested_function_for_merging_final, argument_types, parameters);
         return IAggregateFunction::getAggregateFunctionForMergingFinal();
     }
 
@@ -165,28 +105,22 @@ public:
         auto rhs_nested = rhs.getNestedFunction();
         chassert(rhs_nested != nullptr);
 
-        if constexpr (result_is_nullable)
-            if (getFlag(rhs_place))
-                setFlag(place);
-
-        const size_t rhs_prefix_size = result_is_nullable ? rhs_nested->alignOfData() : 0;
-        nested_function->mergeStateFromDifferentVariant(nestedPlace(place), *rhs_nested, rhs_place + rhs_prefix_size, arena);
+        nested_function->mergeStateFromDifferentVariant(place, *rhs_nested, rhs_place, arena);
     }
 
     void create(AggregateDataPtr __restrict place) const override
     {
-        initFlag(place);
-        nested_function->create(nestedPlace(place));
+        nested_function->create(place);
     }
 
     void destroy(AggregateDataPtr __restrict place) const noexcept override
     {
-        nested_function->destroy(nestedPlace(place));
+        nested_function->destroy(place);
     }
 
     void destroyUpToState(AggregateDataPtr __restrict place) const noexcept override
     {
-        nested_function->destroyUpToState(nestedPlace(place));
+        nested_function->destroyUpToState(place);
     }
 
     bool hasTrivialDestructor() const override
@@ -196,7 +130,7 @@ public:
 
     size_t sizeOfData() const override
     {
-        return prefix_size + nested_function->sizeOfData();
+        return nested_function->sizeOfData();
     }
 
     size_t alignOfData() const override
@@ -209,8 +143,7 @@ public:
         if (isAnyVariantArgumentNullAt(columns, row_num))
             return;
 
-        setFlag(place);
-        nested_function->add(nestedPlace(place), columns, row_num, arena);
+        nested_function->add(place, columns, row_num, arena);
     }
 
     void addManyDefaults(
@@ -237,7 +170,6 @@ public:
         /// The local discriminators are indexed by the row number, and NULL_DISCRIMINATOR is the same in the
         /// local and the global order, so the Variant's null map does not have to be materialized per argument.
         PaddedPODArray<UInt8> null_map(row_end, 0);
-        bool has_non_null = false;
         for (size_t i = 0; i < is_variant_argument.size(); ++i)
         {
             if (!is_variant_argument[i])
@@ -246,21 +178,8 @@ public:
             for (size_t row = row_begin; row < row_end; ++row)
                 null_map[row] |= (discriminators[row] == ColumnVariant::NULL_DISCRIMINATOR);
         }
-        for (size_t row = row_begin; row < row_end; ++row)
-        {
-            if (!null_map[row])
-            {
-                has_non_null = true;
-                break;
-            }
-        }
 
-        if (!has_non_null)
-            return;
-
-        setFlag(place);
-        nested_function->addBatchSinglePlaceNotNull(
-            row_begin, row_end, nestedPlace(place), columns, null_map.data(), arena, if_argument_pos);
+        nested_function->addBatchSinglePlaceNotNull(row_begin, row_end, place, columns, null_map.data(), arena, if_argument_pos);
     }
 
     bool isAbleToParallelizeMerge() const override { return nested_function->isAbleToParallelizeMerge(); }
@@ -269,20 +188,12 @@ public:
 
     void parallelizeMergePrepare(AggregateDataPtrs & places, ThreadPool & thread_pool, std::atomic<bool> & is_cancelled) const override
     {
-        AggregateDataPtrs nested_places(places.begin(), places.end());
-        for (auto & nested_place : nested_places)
-            nested_place = nestedPlace(nested_place);
-
-        nested_function->parallelizeMergePrepare(nested_places, thread_pool, is_cancelled);
+        nested_function->parallelizeMergePrepare(places, thread_pool, is_cancelled);
     }
 
     void mergeImpl(AggregateDataPtr __restrict place, ConstAggregateDataPtr rhs, Arena * arena) const override
     {
-        if constexpr (result_is_nullable)
-            if (getFlag(rhs))
-                setFlag(place);
-
-        nested_function->merge(nestedPlace(place), nestedPlace(rhs), arena);
+        nested_function->merge(place, rhs, arena);
     }
 
     void mergeImpl(
@@ -292,101 +203,34 @@ public:
         std::atomic<bool> & is_cancelled,
         Arena * arena) const override
     {
-        if constexpr (result_is_nullable)
-            if (getFlag(rhs))
-                setFlag(place);
-
-        nested_function->merge(nestedPlace(place), nestedPlace(rhs), thread_pool, is_cancelled, arena);
+        nested_function->merge(place, rhs, thread_pool, is_cancelled, arena);
     }
 
     void parallelizeMergeMulti(
         AggregateDataPtrs & places, ThreadPool & thread_pool, std::atomic<bool> & is_cancelled, Arena * arena) const override
     {
-        if constexpr (result_is_nullable)
-            for (size_t i = 1; i < places.size(); ++i)
-                if (getFlag(places[i]))
-                {
-                    setFlag(places[0]);
-                    break;
-                }
-
-        AggregateDataPtrs nested_places(places.size());
-        for (size_t i = 0; i < places.size(); ++i)
-            nested_places[i] = nestedPlace(places[i]);
-
-        nested_function->parallelizeMergeMulti(nested_places, thread_pool, is_cancelled, arena);
+        nested_function->parallelizeMergeMulti(places, thread_pool, is_cancelled, arena);
     }
 
     void serialize(ConstAggregateDataPtr __restrict place, WriteBuffer & buf, std::optional<size_t> version) const override
     {
-        if constexpr (result_is_nullable)
-        {
-            bool flag = getFlag(place);
-            writeBinary(flag, buf);
-            if (flag)
-                nested_function->serialize(nestedPlace(place), buf, version);
-        }
-        else
-        {
-            /// Without the flag, the state representation is exactly the nested function's.
-            nested_function->serialize(nestedPlace(place), buf, version);
-        }
+        /// The state representation is exactly the nested function's.
+        nested_function->serialize(place, buf, version);
     }
 
     void deserialize(AggregateDataPtr __restrict place, ReadBuffer & buf, std::optional<size_t> version, Arena * arena) const override
     {
-        if constexpr (result_is_nullable)
-        {
-            bool flag = false;
-            readBinary(flag, buf);
-            if (flag)
-            {
-                setFlag(place);
-                nested_function->deserialize(nestedPlace(place), buf, version, arena);
-            }
-        }
-        else
-        {
-            nested_function->deserialize(nestedPlace(place), buf, version, arena);
-        }
-    }
-
-    template <bool merge>
-    void insertResultIntoImpl(AggregateDataPtr __restrict place, IColumn & to, Arena * arena) const
-    {
-        if constexpr (result_is_nullable)
-        {
-            ColumnNullable & to_concrete = assert_cast<ColumnNullable &>(to);
-            if (getFlag(place))
-            {
-                if constexpr (merge)
-                    nested_function->insertMergeResultInto(nestedPlace(place), to_concrete.getNestedColumn(), arena);
-                else
-                    nested_function->insertResultInto(nestedPlace(place), to_concrete.getNestedColumn(), arena);
-                to_concrete.getNullMapData().push_back(false);
-            }
-            else
-            {
-                to_concrete.insertDefault();
-            }
-        }
-        else
-        {
-            if constexpr (merge)
-                nested_function->insertMergeResultInto(nestedPlace(place), to, arena);
-            else
-                nested_function->insertResultInto(nestedPlace(place), to, arena);
-        }
+        nested_function->deserialize(place, buf, version, arena);
     }
 
     void insertResultInto(AggregateDataPtr __restrict place, IColumn & to, Arena * arena) const override
     {
-        insertResultIntoImpl<false>(place, to, arena);
+        nested_function->insertResultInto(place, to, arena);
     }
 
     void insertMergeResultInto(AggregateDataPtr __restrict place, IColumn & to, Arena * arena) const override
     {
-        insertResultIntoImpl<true>(place, to, arena);
+        nested_function->insertMergeResultInto(place, to, arena);
     }
 
     bool allocatesMemoryInArena() const override
@@ -432,7 +276,7 @@ public:
         size_t limit,
         ContextPtr context) const override
     {
-        nested_function->predictValues(nestedPlace(place), to, arguments, offset, limit, context);
+        nested_function->predictValues(place, to, arguments, offset, limit, context);
     }
 };
 

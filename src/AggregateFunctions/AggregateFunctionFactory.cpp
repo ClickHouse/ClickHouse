@@ -626,18 +626,15 @@ AggregateFunctionPtr AggregateFunctionFactory::getImpl(
         if (!out_properties.is_window_function && !out_properties.skips_variant_nulls
             && std::any_of(argument_types.begin(), argument_types.end(), [](const auto & type) { return isVariant(type); }))
         {
-            /// The same result-type rule as the "Null" combinator: NULL for an all-NULL group when the function
-            /// does not return its default value for an empty set and the result type can hold a NULL. A result
-            /// type that is the Variant itself (`any`, `argMin`, ...) cannot be inside Nullable and needs no
-            /// wrapping: an all-NULL group produces the empty nested state, whose result is the default value of
-            /// the Variant, i.e. NULL. Without the flag the wrapper's state representation is exactly the nested
-            /// function's.
-            bool return_type_is_nullable = !out_properties.returns_default_when_only_null
-                && function->getResultType()->canBeInsideNullable();
-            if (return_type_is_nullable)
-                function = std::make_shared<AggregateFunctionVariantNull<true>>(function, argument_types, parameters);
-            else
-                function = std::make_shared<AggregateFunctionVariantNull<false>>(function, argument_types, parameters);
+            /// Unlike the "Null" combinator, the wrapper never promotes the result type to Nullable and adds no
+            /// "was there a value" flag to the state: a function that accepts a Variant natively already accepted
+            /// it before this wrapper existed, with exactly the nested result type and state representation, and
+            /// both are persisted (in AggregateFunction(f, Variant(...)) columns and in the schemas of the
+            /// materialized views reading them), so changing either would break an upgrade. An all-NULL group
+            /// produces the empty nested state and returns the nested function's result for an empty set; a
+            /// result type that is the Variant itself (`any`, `argMin`, ...) still reports NULL, because a
+            /// Variant represents NULL on its own.
+            function = std::make_shared<AggregateFunctionVariantNull>(function, argument_types, parameters);
         }
 
         /// Invariant: For any aggregation function IAggregateFunction::getParameters() should return exactly

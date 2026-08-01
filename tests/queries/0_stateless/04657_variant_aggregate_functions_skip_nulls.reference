@@ -2,8 +2,8 @@ any	1	2	2
 groupArray	[1,'a',2]
 groupUniqArray	[1,2,'a']
 topK	[1,2,'a']
-groupConcat	1,a,2	Nullable(String)
-groupConcat all-NULL	\N
+groupConcat	1,a,2	String
+groupConcat all-NULL		0
 uniq	3	3	3	3
 argMin/argMax	1	2
 all-NULL	\N	[]	0

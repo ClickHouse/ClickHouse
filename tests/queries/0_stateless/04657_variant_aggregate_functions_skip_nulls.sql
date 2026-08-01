@@ -19,10 +19,11 @@ SELECT 'groupArray', groupArray(v) FROM t_variant_skip_nulls;
 SELECT 'groupUniqArray', arraySort(x -> toString(x), groupUniqArray(v)) FROM t_variant_skip_nulls;
 SELECT 'topK', arraySort(x -> toString(x), topK(10)(v)) FROM t_variant_skip_nulls;
 
--- groupConcat concatenates only the non-NULL rows; an all-NULL group yields NULL (the result is Nullable, like
--- groupConcat over a Nullable argument).
+-- groupConcat concatenates only the non-NULL rows. The result type stays the nested function's (String, not
+-- Nullable(String)): the wrapper never changes the result type or the state layout of a natively-resolved
+-- function, because both predate it and are persisted. An all-NULL group returns the empty-set result.
 SELECT 'groupConcat', groupConcat(',')(v), toTypeName(groupConcat(v)) FROM t_variant_skip_nulls;
-SELECT 'groupConcat all-NULL', groupConcat(v) FROM t_variant_skip_nulls WHERE isNull(v);
+SELECT 'groupConcat all-NULL', groupConcat(v), length(groupConcat(v)) FROM t_variant_skip_nulls WHERE isNull(v);
 
 -- The uniq family does not count NULL as a distinct value, matching countDistinct (see 04652).
 SELECT 'uniq', uniq(v), uniqExact(v), uniqCombined(v), uniqUpTo(10)(v) FROM t_variant_skip_nulls;
