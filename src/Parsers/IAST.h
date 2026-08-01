@@ -12,6 +12,7 @@
 
 #include <atomic>
 #include <set>
+#include <string_view>
 
 class SipHash;
 
@@ -136,9 +137,14 @@ public:
     virtual String tryGetAlias() const { return String(); }
 
     /** Set the alias. */
-    virtual void setAlias(const String & /*to*/)
+    virtual void setAlias(const String & to)
     {
-        throw Exception(ErrorCodes::LOGICAL_ERROR, "Can't set alias of {} of {}", getColumnName(), getID());
+        /// Deliberately not `getColumnName()` and `getID()`. Both are virtual, and this throw is
+        /// the only thing that names them in the parser - so it alone keeps an override of each
+        /// alive in every one of the ~150 AST classes, which a build of the parser on its own
+        /// pays for. `formatForErrorMessage` is on the formatting path, which is needed anyway,
+        /// and shows the offending node rather than just its kind.
+        throw Exception(ErrorCodes::LOGICAL_ERROR, "Can't set alias '{}' of {}", to, formatForErrorMessage());
     }
 
     /** Get the text that identifies this element. */
@@ -516,5 +522,19 @@ private:
     friend void intrusive_ptr_add_ref(const IAST * p) noexcept;
     friend void intrusive_ptr_release(const IAST * p) noexcept;
 };
+
+/** The SQL text of `ast`, for the few places where the parser has to keep a fragment of the query
+  * as a string rather than as a subtree: the type in `CAST(x, 'T')` and in
+  * `defaultValueOfTypeName('T')`, the settings in `viewExplain('<kind>', '<settings>', ...)`.
+  *
+  * This is the formatted node. It is the canonical spelling - the one that ends up in table
+  * metadata and in `SHOW CREATE TABLE` - so it cannot be replaced by the text the user wrote, which
+  * carries their line breaks and comments into places that then have to store them.
+  *
+  * `source_text` is that query text, and it is what a `CLICKHOUSE_PARSER_NO_FORMATTING` build uses,
+  * having no formatter to ask. The two differ only in whitespace, and both parse back to the same
+  * thing.
+  */
+String astText(const IAST & ast, std::string_view source_text);
 
 }

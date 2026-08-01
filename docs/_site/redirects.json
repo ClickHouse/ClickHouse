@@ -54294,5 +54294,37 @@
   {
     "destination": "/integrations/clickpipes/networking/azure-privatelink",
     "source": "/integrations/clickpipes/azure-privatelink"
+  },
+  {
+    "destination": "/clickstack/demo-days/2026/2026-06-18",
+    "source": "/use-cases/observability/clickstack/demo-days/2026/2026-06-18"
+  },
+  {
+    "destination": "/clickstack/demo-days/2026/2026-06-26",
+    "source": "/use-cases/observability/clickstack/demo-days/2026/2026-06-26"
+  },
+  {
+    "destination": "/clickstack/demo-days/2026/2026-07-02",
+    "source": "/use-cases/observability/clickstack/demo-days/2026/2026-07-02"
+  },
+  {
+    "destination": "/clickstack/demo-days/2026/2026-07-10",
+    "source": "/use-cases/observability/clickstack/demo-days/2026/2026-07-10"
+  },
+  {
+    "destination": "/integrations/connectors/data-ingestion/community-integrations/estuary-native",
+    "source": "/integrations/estuary/native"
+  },
+  {
+    "destination": "/integrations/connectors/data-ingestion/s3-tigris",
+    "source": "/integrations/tigris"
+  },
+  {
+    "destination": "/products/bring-your-own-cloud/reference/security-shared-responsibility",
+    "source": "/cloud/reference/byoc/reference/security-shared-responsibility"
+  },
+  {
+    "destination": "/products/cloud/guides/security/cloud-access-management/migrating-rbac-custom-roles",
+    "source": "/cloud/guides/security/migrating-rbac-custom-roles"
   }
 ]

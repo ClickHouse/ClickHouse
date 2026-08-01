@@ -46,8 +46,26 @@ struct Dictionary
     void reset();
     bool isInitialized() const;
     double getAverageValueSize() const;
+    /// Memory owned by the decoded dictionary (the decompression buffer, string offsets, and the
+    /// decoded `col`), excluding `data` which only points into one of those or into prefetcher memory.
+    size_t allocatedBytes() const;
     void index(const ColumnUInt32 & indexes_col, IColumn & out);
     void decode(parq::Encoding::type encoding, const PageDecoderInfo & info, size_t num_values, std::span<const char> data_, const IDataType & raw_decoded_type);
+
+    /// Upper bound on `allocatedBytes()` after `decode()` with the given arguments, computed from the
+    /// page header *before* decoding anything. Lets a memory-bounded caller (the dictionary-filter
+    /// pruning path in `Reader::decodeDictionaryPage`) reject an oversized dictionary before `decode()`
+    /// transiently materializes it, so the pruning path never overshoots its budget even momentarily.
+    /// `page_payload_size` is the size of the payload `decode()` will see, i.e. the size of the `data_`
+    /// span: the *decompressed* page size for a compressed column chunk, the on-disk page size for an
+    /// `UNCOMPRESSED` one. It must never be the compressed size of a compressed page: those bytes live
+    /// in the prefetch buffer and are accounted separately by the caller, so charging them here would
+    /// double-count them. `codec` is the column chunk's compression codec, which decides whether the
+    /// payload is materialized in `decompressed_buf` at all (see `Reader::decodeDictionaryPageImpl`).
+    /// Must be kept in sync with `decode()`.
+    static size_t decodedFootprintUpperBound(
+        parq::CompressionCodec::type codec, parq::Encoding::type encoding, const PageDecoderInfo & info,
+        size_t num_values, size_t page_payload_size, const IDataType & raw_decoded_type);
 };
 
 struct PageDecoder
