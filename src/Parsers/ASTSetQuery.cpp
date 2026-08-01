@@ -117,8 +117,10 @@ void ASTSetQuery::formatImpl(WriteBuffer & ostr, const FormatSettings & format, 
 
             if (change.name == format_avro_schema_registry_url)
             {
-                auto uri_string = change.value.safeGet<String>();
-                if (!maskURIPassword(&uri_string))
+                /// Matches `hasSecretParts`: a non-String value cannot embed a URI password, and the
+                /// AST JSON path can carry any `Field` type here.
+                String uri_string;
+                if (!change.value.tryGet<String>(uri_string) || !maskURIPassword(&uri_string))
                     return false;
 
                 ostr << " = '" << uri_string << "'";
@@ -308,16 +310,12 @@ void ASTSetQuery::readJSON(const Poco::JSON::Object & json)
             if (!value_obj)
                 throw Exception(ErrorCodes::BAD_ARGUMENTS, "Missing 'value' object at index {} in 'changes' array during AST JSON deserialization", i);
             change.value = JSONObjectReader::readFieldFromObject(*value_obj);
-            /// The parser only ever pairs the flag with Bool `true`, and both `formatImpl` and
-            /// `hasSecretParts` skip the value of a valueless setting on that basis. Reject any other
-            /// pairing here so a crafted payload cannot hide a real value (a secret one, in
-            /// particular) from formatting and from the query log behind the flag.
-            if (change.shorthand && change.value != Field(true))
-                throw Exception(
-                    ErrorCodes::BAD_ARGUMENTS,
-                    "Setting '{}' is marked as valueless but its value is not `true` "
-                    "during AST JSON deserialization",
-                    change.name);
+            /// A payload may pair the flag with a value the parser would never produce. That is not
+            /// rejected here: deserialization runs before `executeQueryImpl` has an AST to mask with,
+            /// so throwing would send the raw JSON text - the value included - down the unmasked
+            /// `wipeSensitiveDataAndCutToLength` logging path. The value is kept instead, so
+            /// `hasSecretParts` can still see it and `formatImpl` can still hide it, and
+            /// `checkShorthandChange` then rejects the setting itself once logging is safe.
             changes.push_back(std::move(change));
         }
     }
@@ -353,12 +351,6 @@ bool ASTSetQuery::hasSecretParts() const
 {
     for (const auto & change : changes)
     {
-        /// A valueless setting carries Bool `true` and can never be secret, but this runs before any
-        /// settings validation (`executeQueryImpl` masks the query for logging first), so reading the
-        /// value as a String below would report `BAD_GET` instead of the intended `TYPE_MISMATCH`.
-        if (change.shorthand)
-            continue;
-
         CustomType custom;
         if (change.value.tryGet<CustomType>(custom) && custom.isSecret())
             return true;
@@ -377,9 +369,13 @@ bool ASTSetQuery::hasSecretParts() const
 
         if (change.name == format_avro_schema_registry_url)
         {
-            /// Secret only if there is actually a password embedded in it.
-            String uri_string = change.value.safeGet<String>();
-            if (maskURIPassword(&uri_string))
+            /// Secret only if there is actually a password embedded in it. The value need not be a
+            /// String: a valueless `SETTINGS format_avro_schema_registry_url` carries Bool `true`,
+            /// and the AST JSON path can carry any `Field` type. This runs before any settings
+            /// validation - `executeQueryImpl` masks the query for logging first - so demanding a
+            /// String here would report `BAD_GET` instead of the setting's own `TYPE_MISMATCH`.
+            String uri_string;
+            if (change.value.tryGet<String>(uri_string) && maskURIPassword(&uri_string))
                 return true;
         }
     }

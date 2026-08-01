@@ -29,9 +29,14 @@ $CLICKHOUSE_CLIENT --dialect clickhouse_json --allow_experimental_json_ast_diale
 JSON_BOOL=$($CLICKHOUSE_CLIENT -q "SELECT parseQueryToJSON(\$\$SELECT 1 SETTINGS optimize_move_to_prewhere\$\$)")
 $CLICKHOUSE_CLIENT --dialect clickhouse_json --allow_experimental_json_ast_dialect 1 -q "$JSON_BOOL"
 
-# The flag is only ever paired with `true`. A payload pairing it with a real value is rejected, so it
-# cannot be used to hide that value from formatting and from the query log.
-$CLICKHOUSE_CLIENT -q "SELECT formatQueryFromJSON(replaceAll(parseQueryToJSON(\$\$SELECT 1 SETTINGS format_avro_schema_registry_url = 'http://user:pass@localhost'\$\$), '{\"name\":\"format_avro_schema_registry_url\"', '{\"name\":\"format_avro_schema_registry_url\",\"shorthand\":true'))" 2>&1 | grep -o "BAD_ARGUMENTS" | head -n 1
+# A payload may pair the flag with a value the parser would never produce. Deserialization must not
+# reject it: that runs before `executeQueryImpl` has an AST to mask with, so the raw JSON text -
+# the value included - would go down the unmasked logging path. The value is kept, so the query is
+# rejected by the setting's own check, and the value stays hidden when the query is formatted.
+CRAFTED="replaceAll(parseQueryToJSON(\$\$SELECT 1 SETTINGS format_avro_schema_registry_url = 'http://user:pass@localhost'\$\$), '{\"name\":\"format_avro_schema_registry_url\"', '{\"name\":\"format_avro_schema_registry_url\",\"shorthand\":true')"
+$CLICKHOUSE_CLIENT -q "SELECT formatQueryFromJSON($CRAFTED)"
+CRAFTED_JSON=$($CLICKHOUSE_CLIENT -q "SELECT $CRAFTED")
+$CLICKHOUSE_CLIENT --dialect clickhouse_json --allow_experimental_json_ast_dialect 1 -q "$CRAFTED_JSON" 2>&1 | grep -o "TYPE_MISMATCH" | head -n 1
 
 # 2. `ASTSetQuery::hasSecretParts` read the value of `format_avro_schema_registry_url` as a String.
 # `executeQueryImpl` masks the query for logging before any settings validation runs, so a valueless
@@ -40,5 +45,7 @@ $CLICKHOUSE_CLIENT -q "SELECT formatQueryFromJSON(replaceAll(parseQueryToJSON(\$
 $CLICKHOUSE_CLIENT -q "SELECT * FROM (SELECT 1 SETTINGS format_avro_schema_registry_url)" 2>&1 | grep -o "TYPE_MISMATCH" | head -n 1
 $CLICKHOUSE_CLIENT -q "SELECT 1 SETTINGS format_avro_schema_registry_url" 2>&1 | grep -o "TYPE_MISMATCH" | head -n 1
 
-# A setting that really carries a secret is still detected and formatted through the masking path.
+# A setting that really carries a secret is still detected and formatted through the masking path,
+# and a value of a type that cannot embed a URI password is not read as a String either.
 $CLICKHOUSE_CLIENT -q "SELECT formatQuerySingleLine(\$\$SELECT 1 SETTINGS format_avro_schema_registry_url = 'http://user:pass@localhost'\$\$)"
+$CLICKHOUSE_CLIENT -q "SELECT formatQueryFromJSON(replaceAll(parseQueryToJSON(\$\$SELECT 1 SETTINGS format_avro_schema_registry_url = 'x'\$\$), '{\"field_type\":\"String\",\"value\":\"x\"}', '{\"field_type\":\"UInt64\",\"value\":1}'))"
