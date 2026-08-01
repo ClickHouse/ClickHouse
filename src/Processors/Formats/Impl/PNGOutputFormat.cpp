@@ -12,6 +12,11 @@
 namespace DB
 {
 
+namespace ErrorCodes
+{
+    extern const int BAD_ARGUMENTS;
+}
+
 namespace
 {
 constexpr auto FORMAT_NAME = "PNG";
@@ -32,9 +37,22 @@ StringWithMemoryTracking encodePNG(const PNGSerializer & serializer)
 
 PNGOutputFormat::PNGOutputFormat(WriteBuffer & out_, SharedHeader header_, const FormatSettings & settings_)
     : IOutputFormat(header_, out_)
-    , format_settings(settings_)
+    , terminal_mode(parseImageTerminalMode(settings_.image.terminal_mode, settings_.is_writing_to_terminal))
     , serializer(std::make_unique<PNGSerializer>(*header_, settings_))
 {
+    if (!serializer->isAnimated())
+        return;
+
+    if (terminal_mode == ImageTerminalMode::Sixel)
+        throw Exception(ErrorCodes::BAD_ARGUMENTS,
+            "The Sixel protocol cannot display an animation, but the result has a 't' column, which makes "
+            "the PNG format produce one. Remove the 't' column, or choose another value of "
+            "'output_format_image_terminal_mode'.");
+
+    serializer->setFrameCallback([this](const UInt8 * pixels, UInt16 delay_num, UInt16 delay_den)
+    {
+        writeFrame(pixels, delay_num, delay_den);
+    });
 }
 
 void PNGOutputFormat::consume(Chunk chunk)
@@ -49,11 +67,57 @@ void PNGOutputFormat::consume(Chunk chunk)
         serializer->writeRow(i);
 }
 
+void PNGOutputFormat::writeFrame(const UInt8 * pixels, UInt16 delay_num, UInt16 delay_den)
+{
+    if (!animation_writer)
+    {
+        /// The terminal protocols carry the whole datastream as a single payload, so it has to be encoded
+        /// into memory; without them the frames are appended to the output as they are produced.
+        WriteBuffer * target = &out;
+        if (terminal_mode != ImageTerminalMode::None)
+        {
+            animation_buffer_out = std::make_unique<WriteBufferFromStringWithMemoryTracking>(animation_buffer);
+            target = animation_buffer_out.get();
+        }
+
+        animation_writer = std::make_unique<PNGWriter>(
+            *target, serializer->getWidth(), serializer->getHeight(), serializer->getChannels());
+        /// 0 plays means the animation loops forever.
+        animation_writer->writeAnimationHeader(serializer->getDeclaredFrameCount(), /* num_plays = */ 0);
+    }
+
+    animation_writer->writeFrame(reinterpret_cast<const unsigned char *>(pixels), delay_num, delay_den);
+}
+
 void PNGOutputFormat::finalizeImpl()
 {
-    const auto mode = parseImageTerminalMode(format_settings.image.terminal_mode, format_settings.is_writing_to_terminal);
+    if (serializer->isAnimated())
+    {
+        /// Hands over the frames that have not been written out yet, through the frame callback.
+        serializer->finalizeFrames();
 
-    switch (mode)
+        animation_writer->writeEnd();
+        animation_writer->finalize();
+
+        switch (terminal_mode)
+        {
+            case ImageTerminalMode::None:
+                break; /// Already written to `out`.
+            case ImageTerminalMode::ITerm:
+                animation_buffer_out->finalize();
+                writeImageITerm(out, animation_buffer);
+                break;
+            case ImageTerminalMode::Kitty:
+                animation_buffer_out->finalize();
+                writeImageKitty(out, animation_buffer);
+                break;
+            case ImageTerminalMode::Sixel:
+                break; /// Rejected in the constructor: Sixel has no animation.
+        }
+        return;
+    }
+
+    switch (terminal_mode)
     {
         case ImageTerminalMode::None:
         {
@@ -78,8 +142,12 @@ void PNGOutputFormat::resetFormatterImpl()
 {
     /// Reusable output paths (e.g. `MessageQueueSink`) finalize one image and then reuse this
     /// formatter for the next message. Clear the accumulated pixels and the implicit coordinate
-    /// cursor so the next image starts from scratch instead of carrying over stale state.
+    /// cursor so the next image starts from scratch instead of carrying over stale state, and drop the
+    /// animation datastream so the next one starts with its own header.
     (*serializer).reset();
+    animation_writer.reset();
+    animation_buffer_out.reset();
+    animation_buffer.clear();
 }
 
 void registerOutputFormatPNG(FormatFactory & factory);
@@ -168,6 +236,56 @@ FORMAT PNG
 SETTINGS output_format_image_width = 512, output_format_image_height = 512;
 ```
 
+## Animation {#animation}
+
+If the result has a `t` column of an integer type, the format produces an animated PNG (`APNG`) instead of a
+still image. Records are grouped into frames by the value of `t`, which is the relative time offset of the
+frame. Every frame is an independent image: the canvas is empty at the start of each frame, and in the
+implicit coordinate mode the cursor restarts from the top-left corner. The `t` column can be combined with
+either coordinate mode.
+
+The unit of `t` is given by
+[`output_format_image_time_multiplier_seconds`](/reference/settings/formats/output-format#output_format_image_time_multiplier_seconds)
+and
+[`output_format_image_time_divisor_seconds`](/reference/settings/formats/output-format#output_format_image_time_divisor_seconds):
+one unit of `t` is `output_format_image_time_multiplier_seconds / output_format_image_time_divisor_seconds`
+seconds. With the default values (`1` and `60`) one unit of `t` is 1/60 of a second.
+
+A frame is displayed until the next frame begins, so its duration is the difference between two consecutive
+values of `t`. The last frame is displayed for as long as the frame before it. The animation loops forever.
+
+```sql
+SELECT
+    number % 60 AS t,
+    toInt32(intDiv(number, 60) % 64) AS x,
+    toInt32((number * 7) % 64) AS y,
+    toUInt8(255) AS v
+FROM numbers(60 * 64)
+INTO OUTFILE 'animation.png'
+FORMAT PNG
+SETTINGS output_format_image_width = 64, output_format_image_height = 64;
+```
+
+### Streaming the frames {#streaming-animation}
+
+By default all frames are collected in memory and written out at the end of the query, which keeps one image
+buffer per distinct value of `t` and lets `t` arrive in any order.
+
+The setting
+[`output_format_image_streaming_animation`](/reference/settings/formats/output-format#output_format_image_streaming_animation)
+writes each frame out as soon as the next value of `t` is seen. Only one image buffer is kept in memory, and
+frames reach the output while the query is still running, so a viewer can display them as they are produced.
+In exchange:
+
+- `t` must be non-decreasing; the query throws an exception otherwise. Add `ORDER BY t` if needed.
+- The number of frames is not known when the header has to be written, so the `acTL` chunk declares an upper
+  bound instead of the exact count. Browsers play such a file, but decoders that trust the declared count
+  (for example, `Pillow` and some command-line `APNG` tools) report an error after the last real frame.
+
+Because an inline terminal image protocol carries the whole datastream as a single payload, the frames cannot
+reach the terminal early and this setting only affects how much memory is used there. The `sixel` protocol
+cannot represent an animation at all and rejects a result with a `t` column.
+
 ## Displaying images in the terminal {#terminal-mode}
 
 By default, the `PNG` format writes the raw image bytes. The setting
@@ -191,11 +309,14 @@ SETTINGS output_format_image_width = 10, output_format_image_height = 10, output
 
 ## Format settings {#format-settings}
 
-| Setting                              | Description                                  | Default    |
-|--------------------------------------|----------------------------------------------|------------|
-| `output_format_image_width`          | Width of the output image in pixels.         | `1024`     |
-| `output_format_image_height`         | Height of the output image in pixels.        | `1024`     |
-| `output_format_image_terminal_mode`  | Inline terminal image protocol (see above).  | `` (empty) |
+| Setting                                        | Description                                                     | Default    |
+|------------------------------------------------|-----------------------------------------------------------------|------------|
+| `output_format_image_width`                    | Width of the output image in pixels.                            | `1024`     |
+| `output_format_image_height`                   | Height of the output image in pixels.                           | `1024`     |
+| `output_format_image_terminal_mode`            | Inline terminal image protocol (see above).                     | `` (empty) |
+| `output_format_image_time_multiplier_seconds`  | Numerator of the time unit of the `t` column, in seconds.       | `1`        |
+| `output_format_image_time_divisor_seconds`     | Denominator of the time unit of the `t` column, in seconds.     | `60`       |
+| `output_format_image_streaming_animation`      | Write each frame as soon as `t` advances (see above).           | `0`        |
 )DOCS_MD"});
 }
 

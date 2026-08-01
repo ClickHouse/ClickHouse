@@ -80,6 +80,56 @@ FORMAT PNG
 SETTINGS output_format_image_width = 512, output_format_image_height = 512;
 ```
 
+## Animation {#animation}
+
+If the result has a `t` column of an integer type, the format produces an animated PNG (`APNG`) instead of a
+still image. Records are grouped into frames by the value of `t`, which is the relative time offset of the
+frame. Every frame is an independent image: the canvas is empty at the start of each frame, and in the
+implicit coordinate mode the cursor restarts from the top-left corner. The `t` column can be combined with
+either coordinate mode.
+
+The unit of `t` is given by
+[`output_format_image_time_multiplier_seconds`](/operations/settings/formats#output_format_image_time_multiplier_seconds)
+and
+[`output_format_image_time_divisor_seconds`](/operations/settings/formats#output_format_image_time_divisor_seconds):
+one unit of `t` is `output_format_image_time_multiplier_seconds / output_format_image_time_divisor_seconds`
+seconds. With the default values (`1` and `60`) one unit of `t` is 1/60 of a second.
+
+A frame is displayed until the next frame begins, so its duration is the difference between two consecutive
+values of `t`. The last frame is displayed for as long as the frame before it. The animation loops forever.
+
+```sql
+SELECT
+    number % 60 AS t,
+    toInt32(intDiv(number, 60) % 64) AS x,
+    toInt32((number * 7) % 64) AS y,
+    toUInt8(255) AS v
+FROM numbers(60 * 64)
+INTO OUTFILE 'animation.png'
+FORMAT PNG
+SETTINGS output_format_image_width = 64, output_format_image_height = 64;
+```
+
+### Streaming the frames {#streaming-animation}
+
+By default all frames are collected in memory and written out at the end of the query, which keeps one image
+buffer per distinct value of `t` and lets `t` arrive in any order.
+
+The setting
+[`output_format_image_streaming_animation`](/operations/settings/formats#output_format_image_streaming_animation)
+writes each frame out as soon as the next value of `t` is seen. Only one image buffer is kept in memory, and
+frames reach the output while the query is still running, so a viewer can display them as they are produced.
+In exchange:
+
+- `t` must be non-decreasing; the query throws an exception otherwise. Add `ORDER BY t` if needed.
+- The number of frames is not known when the header has to be written, so the `acTL` chunk declares an upper
+  bound instead of the exact count. Browsers play such a file, but decoders that trust the declared count
+  (for example, `Pillow` and some command-line `APNG` tools) report an error after the last real frame.
+
+Because an inline terminal image protocol carries the whole datastream as a single payload, the frames cannot
+reach the terminal early and this setting only affects how much memory is used there. The `sixel` protocol
+cannot represent an animation at all and rejects a result with a `t` column.
+
 ## Displaying images in the terminal {#terminal-mode}
 
 By default, the `PNG` format writes the raw image bytes. The setting
@@ -103,8 +153,11 @@ SETTINGS output_format_image_width = 10, output_format_image_height = 10, output
 
 ## Format settings {#format-settings}
 
-| Setting                              | Description                                  | Default    |
-|--------------------------------------|----------------------------------------------|------------|
-| `output_format_image_width`          | Width of the output image in pixels.         | `1024`     |
-| `output_format_image_height`         | Height of the output image in pixels.        | `1024`     |
-| `output_format_image_terminal_mode`  | Inline terminal image protocol (see above).  | `` (empty) |
+| Setting                                        | Description                                                 | Default    |
+|------------------------------------------------|-------------------------------------------------------------|------------|
+| `output_format_image_width`                    | Width of the output image in pixels.                        | `1024`     |
+| `output_format_image_height`                   | Height of the output image in pixels.                       | `1024`     |
+| `output_format_image_terminal_mode`            | Inline terminal image protocol (see above).                 | `` (empty) |
+| `output_format_image_time_multiplier_seconds`  | Numerator of the time unit of the `t` column, in seconds.   | `1`        |
+| `output_format_image_time_divisor_seconds`     | Denominator of the time unit of the `t` column, in seconds. | `60`       |
+| `output_format_image_streaming_animation`      | Write each frame as soon as `t` advances (see above).       | `0`        |

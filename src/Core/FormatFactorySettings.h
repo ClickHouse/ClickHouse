@@ -1624,6 +1624,29 @@ Possible values:
 
 Default value: `` (empty).
 )", 0) \
+    DECLARE(UInt64, output_format_image_time_multiplier_seconds, 1, R"(
+The numerator of the time unit of the `t` column, in seconds, for image output formats such as `PNG`.
+
+The presence of a `t` column makes the format produce an animation, in which `t` is the relative time offset
+of the frame. One unit of `t` corresponds to `output_format_image_time_multiplier_seconds / output_format_image_time_divisor_seconds` seconds.
+With the default values (`1` and `60`), one unit of `t` is 1/60 of a second.
+
+Default value: 1.
+)", 0) \
+    DECLARE(UInt64, output_format_image_time_divisor_seconds, 60, R"(
+The denominator of the time unit of the `t` column, in seconds, for image output formats such as `PNG`.
+
+See [`output_format_image_time_multiplier_seconds`](#output_format_image_time_multiplier_seconds).
+
+Default value: 60.
+)", 0) \
+    DECLARE(Bool, output_format_image_streaming_animation, false, R"(
+For image output formats such as `PNG`, write each frame of an animation as soon as the next value of the `t` column is seen, instead of buffering all the frames in memory until the end of the query.
+
+Only one frame is kept in memory, and the frames reach the output while the query is still running. In exchange, the values of `t` must be non-decreasing, otherwise the query throws an exception, and the number of frames is not known when the header of the animation has to be written, so the declared frame count is an upper bound rather than the exact value. Browsers play such a file, but decoders that trust the declared count report an error after the last real frame.
+
+Default value: `false`.
+)", 0) \
     DECLARE(UInt64, input_format_max_block_size_bytes, 0, R"(
 Limits the size of the blocks formed during data parsing in input formats in bytes. Used in row based input formats when block is formed on ClickHouse side.
 0 means no limit in bytes.

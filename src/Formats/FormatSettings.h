@@ -595,6 +595,9 @@ struct FormatSettings
         UInt64 width = 1024;
         UInt64 height = 1024;
         String terminal_mode;
+        UInt64 time_multiplier_seconds = 1;
+        UInt64 time_divisor_seconds = 60;
+        bool streaming_animation = false;
     } image{};
 
     struct

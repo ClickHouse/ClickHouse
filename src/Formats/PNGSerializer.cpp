@@ -2,12 +2,16 @@
 
 #include <cstring>
 #include <algorithm>
+#include <limits>
+#include <map>
+#include <numeric>
 #include <optional>
 
 #include <Columns/ColumnNullable.h>
 #include <DataTypes/IDataType.h>
 #include <DataTypes/DataTypeNullable.h>
 #include <DataTypes/DataTypeLowCardinality.h>
+#include <Formats/PNGWriter.h>
 #include <Common/Exception.h>
 #include <Common/PODArray.h>
 #include <Common/assert_cast.h>
@@ -28,6 +32,10 @@ namespace ErrorCodes
 
 namespace
 {
+    /// Both parts of the `fcTL` frame delay are 16-bit, which bounds the time scale settings and the
+    /// longest delay a single frame can express.
+    constexpr UInt64 MAX_DELAY_PART = std::numeric_limits<UInt16>::max();
+
     /// How to interpret a value column when converting it to an 8-bit pixel component.
     /// Determined once from the column type, so the per-row path does not re-dispatch on the data type.
     enum class ValueKind : uint8_t
@@ -138,14 +146,20 @@ class PNGSerializer::Impl
 public:
     Impl(const Block & header, const FormatSettings & format_settings);
 
+    bool isAnimated() const { return animated; }
+    void setFrameCallback(FrameCallback callback) { frame_callback = std::move(callback); }
+
     void setColumns(const ColumnPtr * columns, size_t num_columns);
     void writeRow(size_t row_num);
+    void finalizeFrames();
     void reset();
+
+    UInt32 getDeclaredFrameCount() const;
 
     size_t getWidth() const { return width; }
     size_t getHeight() const { return height; }
     size_t getChannels() const { return channels; }
-    const UInt8 * getPixels() const { return pixels.data(); }
+    const UInt8 * getPixels() const { return single_frame.pixels.data(); }
 
 private:
     enum class Mode : uint8_t
@@ -156,10 +170,24 @@ private:
         Binary,
     };
 
+    /// One image of the result: the pixels plus the position of the implicit coordinate cursor within it.
+    /// Every frame of an animation is filled independently, so the cursor belongs to the frame and not to
+    /// the serializer.
+    struct Frame
+    {
+        /// The image buffer can be large (its size is controlled by user settings), so it uses a
+        /// `PODArray` backed by the ClickHouse allocator. This way its memory is accounted by the
+        /// memory tracker and respects the per-query memory limits.
+        PaddedPODArray<UInt8> pixels;
+        size_t implicit_x = 0;
+        size_t implicit_y = 0;
+    };
+
     size_t width = 0;
     size_t height = 0;
     Mode mode = Mode::RGB;
     size_t channels = 0;
+    size_t frame_bytes = 0;
 
     /// Column indices in the input header. nullopt if absent.
     std::optional<size_t> x_idx;
@@ -169,13 +197,32 @@ private:
     std::optional<size_t> b_idx;
     std::optional<size_t> a_idx;
     std::optional<size_t> v_idx;
+    std::optional<size_t> t_idx;
 
     bool explicit_coords = false;
     bool x_nullable = false;
     bool y_nullable = false;
-    /// Current pixel position in implicit (scanline) coordinate mode, advanced incrementally per row.
-    size_t implicit_x = 0;
-    size_t implicit_y = 0;
+
+    /// Animation state. `animated` is set by the presence of the `t` column.
+    bool animated = false;
+    bool t_nullable = false;
+    bool streaming_animation = false;
+    UInt64 time_multiplier = 1;
+    UInt64 time_divisor = 60;
+
+    /// The still image, or, in the streaming animated mode, the frame currently being filled.
+    Frame single_frame;
+    /// All frames of the animation in the buffered mode, ordered by `t`.
+    std::map<Int64, Frame> buffered_frames;
+    /// The frame the current row is written into.
+    Frame * active_frame = nullptr;
+
+    /// The value of `t` of the frame being filled, and the length of the last frame handed over, which the
+    /// final frame reuses because there is no following `t` to derive its duration from.
+    std::optional<Int64> current_time;
+    std::optional<UInt64> last_delay_units;
+
+    FrameCallback frame_callback;
 
     /// How to extract one pixel component, precomputed once from the column types so that
     /// the per-row path does not re-dispatch on the data type. One entry per output channel,
@@ -188,13 +235,13 @@ private:
     };
     std::vector<ChannelExtractor> channel_extractors;
 
-    /// The image buffer can be large (its size is controlled by user settings), so it uses a
-    /// `PODArray` backed by the ClickHouse allocator. This way its memory is accounted by the
-    /// memory tracker and respects the per-query memory limits.
-    PaddedPODArray<UInt8> pixels;
     std::vector<ColumnPtr> src_columns;
 
     void writePixel(size_t x, size_t y, const UInt8 * components);
+    void switchFrame(size_t row_num);
+    void emitFrame(const Frame & frame, UInt64 delay_units);
+    void clearFrame(Frame & frame) const;
+    std::pair<UInt16, UInt16> delayFromUnits(UInt64 units) const;
 };
 
 PNGSerializer::Impl::Impl(const Block & header, const FormatSettings & format_settings)
@@ -247,10 +294,12 @@ PNGSerializer::Impl::Impl(const Block & header, const FormatSettings & format_se
             assign_unique(a_idx, "a");
         else if (key == "v")
             assign_unique(v_idx, "v");
+        else if (key == "t")
+            assign_unique(t_idx, "t");
         else
             throw Exception(ErrorCodes::BAD_ARGUMENTS,
                 "Column '{}' is not recognized by the PNG format. "
-                "Expected one of: x, y, r, g, b, a, v (case-insensitive)", col.name);
+                "Expected one of: x, y, r, g, b, a, v, t (case-insensitive)", col.name);
     }
 
     const bool has_x = x_idx.has_value();
@@ -328,6 +377,31 @@ PNGSerializer::Impl::Impl(const Block & header, const FormatSettings & format_se
         y_nullable = isNullableType(y_type);
     }
 
+    animated = t_idx.has_value();
+    if (animated)
+    {
+        const auto & t_type = *header.getByPosition(*t_idx).type;
+        if (!isAllowedCoordinateType(t_type))
+            throw Exception(ErrorCodes::BAD_ARGUMENTS,
+                "Column 't' must have an integer type, got '{}'", t_type.getName());
+        t_nullable = isNullableType(t_type);
+
+        streaming_animation = format_settings.image.streaming_animation;
+
+        /// The time scale ends up in the two 16-bit parts of the `fcTL` frame delay, so both settings have
+        /// to fit there for any delay to be representable at all.
+        time_multiplier = format_settings.image.time_multiplier_seconds;
+        time_divisor = format_settings.image.time_divisor_seconds;
+        if (time_multiplier == 0 || time_multiplier > MAX_DELAY_PART)
+            throw Exception(ErrorCodes::BAD_ARGUMENTS,
+                "'output_format_image_time_multiplier_seconds' must be between 1 and {}, got {}",
+                MAX_DELAY_PART, time_multiplier);
+        if (time_divisor == 0 || time_divisor > MAX_DELAY_PART)
+            throw Exception(ErrorCodes::BAD_ARGUMENTS,
+                "'output_format_image_time_divisor_seconds' must be between 1 and {}, got {}",
+                MAX_DELAY_PART, time_divisor);
+    }
+
     /// Precompute the per-channel extraction plan once, in the order the channels are written.
     /// `Bool` is backed by `UInt8`, so the kind must be forced for binary mode rather than inferred from the type.
     auto add_channel = [&](size_t idx, ValueKind kind)
@@ -349,14 +423,21 @@ PNGSerializer::Impl::Impl(const Block & header, const FormatSettings & format_se
     if (mode == Mode::Binary)
         add_channel(*v_idx, ValueKind::Bool);
 
-    /// Allocate the image buffer. For RGBA this leaves the image transparent;
-    /// for RGB / grayscale / binary this leaves it black.
-    size_t total_bytes = 0;
-    if (common::mulOverflow(width, height, total_bytes) || common::mulOverflow(total_bytes, channels, total_bytes))
+    /// Size of one image. For RGBA an empty buffer is transparent;
+    /// for RGB / grayscale / binary it is black.
+    frame_bytes = 0;
+    if (common::mulOverflow(width, height, frame_bytes) || common::mulOverflow(frame_bytes, channels, frame_bytes))
         throw Exception(ErrorCodes::BAD_ARGUMENTS,
             "Image dimensions {}x{} with {} channel(s) overflow the maximum buffer size",
             width, height, channels);
-    pixels.resize_fill(total_bytes, 0);
+
+    /// In the buffered animated mode the frames are allocated as their values of `t` are encountered;
+    /// otherwise there is exactly one image to fill.
+    if (!animated || streaming_animation)
+    {
+        single_frame.pixels.resize_fill(frame_bytes, 0);
+        active_frame = &single_frame;
+    }
 }
 
 void PNGSerializer::Impl::setColumns(const ColumnPtr * columns, size_t num_columns)
@@ -372,12 +453,115 @@ void PNGSerializer::Impl::setColumns(const ColumnPtr * columns, size_t num_colum
 
 void PNGSerializer::Impl::writePixel(size_t x, size_t y, const UInt8 * components)
 {
-    UInt8 * ptr = pixels.data() + (y * width + x) * channels;
+    UInt8 * ptr = active_frame->pixels.data() + (y * width + x) * channels;
     std::memcpy(ptr, components, channels);
+}
+
+void PNGSerializer::Impl::clearFrame(Frame & frame) const
+{
+    std::fill(frame.pixels.begin(), frame.pixels.end(), UInt8(0));
+    frame.implicit_x = 0;
+    frame.implicit_y = 0;
+}
+
+std::pair<UInt16, UInt16> PNGSerializer::Impl::delayFromUnits(UInt64 units) const
+{
+    /// The frame is displayed for `units * multiplier / divisor` seconds, which `fcTL` stores as the
+    /// fraction `delay_num / delay_den`.
+    UInt64 num = 0;
+    if (common::mulOverflow(units, time_multiplier, num))
+        num = std::numeric_limits<UInt64>::max();
+    UInt64 den = time_divisor;
+
+    if (const UInt64 common_divisor = std::gcd(num, den); common_divisor > 1)
+    {
+        num /= common_divisor;
+        den /= common_divisor;
+    }
+
+    /// Both parts are 16-bit, so a numerator that does not fit is scaled down together with the
+    /// denominator, which keeps the ratio. Once the denominator cannot absorb the scaling any more the
+    /// delay is longer than any that `fcTL` can express, and it is clamped to the longest one, in the same
+    /// spirit as the clamping applied to out-of-range pixel values.
+    if (num > MAX_DELAY_PART)
+    {
+        const UInt64 factor = (num + MAX_DELAY_PART - 1) / MAX_DELAY_PART;
+        if (den >= factor)
+        {
+            num /= factor;
+            den /= factor;
+        }
+        else
+        {
+            num = MAX_DELAY_PART;
+            den = 1;
+        }
+    }
+
+    return {static_cast<UInt16>(num), static_cast<UInt16>(den)};
+}
+
+void PNGSerializer::Impl::emitFrame(const Frame & frame, UInt64 delay_units)
+{
+    if (!frame_callback)
+        throw Exception(ErrorCodes::LOGICAL_ERROR, "No frame callback is installed on the PNG serializer");
+
+    last_delay_units = delay_units;
+    const auto [delay_num, delay_den] = delayFromUnits(delay_units);
+    frame_callback(frame.pixels.data(), delay_num, delay_den);
+}
+
+void PNGSerializer::Impl::switchFrame(size_t row_num)
+{
+    const IColumn * t_col = src_columns[*t_idx].get();
+    if (t_nullable)
+    {
+        const auto & nullable = assert_cast<const ColumnNullable &>(*t_col);
+        if (nullable.isNullAt(row_num))
+            throw Exception(ErrorCodes::BAD_ARGUMENTS,
+                "Column 't' of the PNG format must not contain NULL, because it determines "
+                "which frame of the animation a record belongs to");
+        t_col = &nullable.getNestedColumn();
+    }
+    const Int64 time = t_col->getInt(row_num);
+
+    if (current_time.has_value() && time == *current_time)
+        return;
+
+    if (streaming_animation)
+    {
+        if (current_time.has_value())
+        {
+            if (time < *current_time)
+                throw Exception(ErrorCodes::BAD_ARGUMENTS,
+                    "The 't' column of the PNG format must be non-decreasing when "
+                    "'output_format_image_streaming_animation' is enabled, because every frame is written out "
+                    "as soon as the next value of 't' is seen, but {} follows {}. "
+                    "Add 'ORDER BY t' to the query, or set 'output_format_image_streaming_animation = 0' "
+                    "to buffer all frames in memory instead.",
+                    time, *current_time);
+
+            /// Unsigned subtraction of two ordered values cannot overflow, unlike the signed one.
+            emitFrame(single_frame, static_cast<UInt64>(time) - static_cast<UInt64>(*current_time));
+            clearFrame(single_frame);
+        }
+    }
+    else
+    {
+        auto [it, inserted] = buffered_frames.try_emplace(time);
+        if (inserted)
+            it->second.pixels.resize_fill(frame_bytes, 0);
+        active_frame = &it->second;
+    }
+
+    current_time = time;
 }
 
 void PNGSerializer::Impl::writeRow(size_t row_num)
 {
+    if (animated)
+        switchFrame(row_num);
+
     UInt8 components[4] = {0, 0, 0, 255};
 
     for (size_t channel = 0; channel < channel_extractors.size(); ++channel)
@@ -421,30 +605,84 @@ void PNGSerializer::Impl::writeRow(size_t row_num)
     }
     else
     {
-        /// The image is filled in scanline order; advance x and y incrementally.
-        if (implicit_y >= height)
+        /// The image is filled in scanline order; advance x and y incrementally. Each frame of an animation
+        /// is a separate image, so the cursor belongs to the frame and restarts for every value of `t`.
+        if (active_frame->implicit_y >= height)
+        {
+            if (animated)
+                throw Exception(ErrorCodes::TOO_MANY_ROWS,
+                    "The frame at t = {} has more rows than the {}x{} PNG image can hold ({} pixels). "
+                    "Use explicit 'x' and 'y' coordinate columns, or increase "
+                    "'output_format_image_width'/'output_format_image_height'.",
+                    *current_time, width, height, width * height);
+
             throw Exception(ErrorCodes::TOO_MANY_ROWS,
                 "The result has more rows than the {}x{} PNG image can hold ({} pixels). "
                 "Use explicit 'x' and 'y' coordinate columns, or increase "
                 "'output_format_image_width'/'output_format_image_height'.",
                 width, height, width * height);
+        }
 
-        writePixel(implicit_x, implicit_y, components);
+        writePixel(active_frame->implicit_x, active_frame->implicit_y, components);
 
-        if (++implicit_x == width)
+        if (++active_frame->implicit_x == width)
         {
-            implicit_x = 0;
-            ++implicit_y;
+            active_frame->implicit_x = 0;
+            ++active_frame->implicit_y;
         }
     }
 }
 
+void PNGSerializer::Impl::finalizeFrames()
+{
+    if (!animated)
+        throw Exception(ErrorCodes::LOGICAL_ERROR, "The PNG result is not an animation");
+
+    if (streaming_animation)
+    {
+        /// The frame being filled is the last one, and there is no following value of `t` to derive its
+        /// duration from, so it is displayed for as long as the previous frame was. If the result turned out
+        /// to be empty, this hands over the untouched empty image, so that the animation still has a frame.
+        emitFrame(single_frame, last_delay_units.value_or(1));
+        return;
+    }
+
+    /// An animation must have at least one frame, so an empty result becomes a single empty image.
+    if (buffered_frames.empty())
+        buffered_frames[0].pixels.resize_fill(frame_bytes, 0);
+
+    for (auto it = buffered_frames.begin(); it != buffered_frames.end(); ++it)
+    {
+        const auto next_frame = std::next(it);
+        /// Every frame is displayed until the next one begins; the last one reuses the previous duration.
+        const UInt64 delay_units = next_frame != buffered_frames.end()
+            ? static_cast<UInt64>(next_frame->first) - static_cast<UInt64>(it->first)
+            : last_delay_units.value_or(1);
+        emitFrame(it->second, delay_units);
+    }
+}
+
+UInt32 PNGSerializer::Impl::getDeclaredFrameCount() const
+{
+    /// In the streaming mode the frames are written out before the result has been read to the end, so the
+    /// real count is not known when `acTL` has to be written and an upper bound is declared instead.
+    if (streaming_animation)
+        return PNGWriter::MAX_DECLARED_FRAMES;
+
+    return buffered_frames.empty() ? 1 : static_cast<UInt32>(buffered_frames.size());
+}
+
 void PNGSerializer::Impl::reset()
 {
-    std::fill(pixels.begin(), pixels.end(), UInt8(0));
+    clearFrame(single_frame);
+    buffered_frames.clear();
     src_columns.clear();
-    implicit_x = 0;
-    implicit_y = 0;
+    current_time.reset();
+    last_delay_units.reset();
+    if (!animated || streaming_animation)
+        active_frame = &single_frame;
+    else
+        active_frame = nullptr;
 }
 
 PNGSerializer::PNGSerializer(const Block & header, const FormatSettings & settings)
@@ -453,6 +691,16 @@ PNGSerializer::PNGSerializer(const Block & header, const FormatSettings & settin
 }
 
 PNGSerializer::~PNGSerializer() = default;
+
+bool PNGSerializer::isAnimated() const
+{
+    return impl->isAnimated();
+}
+
+void PNGSerializer::setFrameCallback(FrameCallback callback)
+{
+    impl->setFrameCallback(std::move(callback));
+}
 
 void PNGSerializer::setColumns(const ColumnPtr * columns, size_t num_columns)
 {
@@ -464,9 +712,19 @@ void PNGSerializer::writeRow(size_t row_num)
     impl->writeRow(row_num);
 }
 
+void PNGSerializer::finalizeFrames()
+{
+    impl->finalizeFrames();
+}
+
 void PNGSerializer::reset()
 {
     (*impl).reset();
+}
+
+UInt32 PNGSerializer::getDeclaredFrameCount() const
+{
+    return impl->getDeclaredFrameCount();
 }
 
 size_t PNGSerializer::getWidth() const

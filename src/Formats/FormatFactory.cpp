@@ -410,6 +410,9 @@ FormatSettings getFormatSettings(const ContextPtr & context, const Settings & se
     format_settings.image.width = settings[Setting::output_format_image_width];
     format_settings.image.height = settings[Setting::output_format_image_height];
     format_settings.image.terminal_mode = settings[Setting::output_format_image_terminal_mode];
+    format_settings.image.time_multiplier_seconds = settings[Setting::output_format_image_time_multiplier_seconds];
+    format_settings.image.time_divisor_seconds = settings[Setting::output_format_image_time_divisor_seconds];
+    format_settings.image.streaming_animation = settings[Setting::output_format_image_streaming_animation];
     format_settings.client_protocol_version = context->getClientProtocolVersion();
     format_settings.allow_special_bool_values_inside_variant = settings[Setting::allow_special_bool_values_inside_variant];
     format_settings.max_block_size_bytes = settings[Setting::input_format_max_block_size_bytes];
