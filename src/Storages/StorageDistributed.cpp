@@ -2688,6 +2688,12 @@ If `db` and `table` are omitted, `system.one` is used.
 
 The remaining arguments are `user` (default: `default`), `password` (default: empty) and a `sharding_key` expression.
 
+The settings of the created storage, such as `skip_unavailable_shards`, are specified after the engine definition:
+`ENGINE = Remote('127.0.0.1', system, one) SETTINGS skip_unavailable_shards = 1`.
+Note that the `remote` and `remoteSecure` table functions accept the `SETTINGS` clause among their arguments instead,
+`remote('127.0.0.1', system.one, SETTINGS skip_unavailable_shards = 1)`, because a table function has nowhere else to put it;
+the engines do not accept that form.
+
 The target may also be a table function, e.g. `Remote('127.0.0.1', numbers(10))`. Such a table is read-only: there is no remote table to insert into, so `INSERT` is rejected with a `NOT_IMPLEMENTED` error.
 )DOCS_MD";
 
@@ -2699,7 +2705,7 @@ The target may also be a table function, e.g. `Remote('127.0.0.1', numbers(10))`
         .description = common_description + R"DOCS_MD(
 `Remote` connects over the plain TCP port (`tcp_port`, `9000` by default) when the port is omitted.
 )DOCS_MD",
-        .syntax = "ENGINE = Remote(addresses_expr[, db, table, user[, password], sharding_key])",
+        .syntax = "ENGINE = Remote(addresses_expr[, db, table, user[, password], sharding_key]) [SETTINGS name = value, ...]",
         .related = {"Distributed"}});
 
     factory.registerStorage("RemoteSecure", [create](const StorageFactory::Arguments & args)
@@ -2710,7 +2716,7 @@ The target may also be a table function, e.g. `Remote('127.0.0.1', numbers(10))`
         .description = common_description + R"DOCS_MD(
 `RemoteSecure` connects over a secure TLS connection using the secure TCP port (`tcp_port_secure`, `9440` by default) when the port is omitted.
 )DOCS_MD",
-        .syntax = "ENGINE = RemoteSecure(addresses_expr[, db, table, user[, password], sharding_key])",
+        .syntax = "ENGINE = RemoteSecure(addresses_expr[, db, table, user[, password], sharding_key]) [SETTINGS name = value, ...]",
         .related = {"Distributed"}});
 }
 
