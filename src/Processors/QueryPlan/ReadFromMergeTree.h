@@ -361,6 +361,7 @@ public:
     /// Returns true if the optimization is applicable (and applies it then).
     bool requestOutputEachPartitionThroughSeparatePortForAggregation();
     bool requestOutputEachPartitionThroughSeparatePortForLimitBy();
+    void requestOutputEachPartitionThroughSeparatePortForDistinct();
 
     bool willOutputEachPartitionThroughSeparatePort() const { return output_each_partition_through_separate_port; }
 
@@ -388,6 +389,15 @@ public:
     /// Meanwhile, the ParallelReadingExtension originally in ReadFromMergeTree might be clear.
     void clearParallelReadingExtension();
     std::shared_ptr<ParallelReadingExtension> getParallelReadingExtension();
+
+    /// Announce an empty read set to the parallel-replicas coordinator (what initializePipeline() sends
+    /// when there are no ranges). Callable from the projection optimizer when it replaces this step and
+    /// initializePipeline() will not run. No-op unless this is the initiator local plan; returns whether
+    /// an announcement was sent.
+    bool announceEmptyReadRangesToCoordinatorIfInitiator();
+
+    bool isParallelReplicasLocalPlanForInitiator() const;
+    bool isParallelReplicasLocalPlanForFollower() const;
 
     /// Mark a (non-executed) read as a parallel-replicas read purely so that serialization records it.
     /// No callbacks are attached: the read is only serialized on the initiator and shipped to replicas,
@@ -622,11 +632,13 @@ private:
 
     void logPredicateStatistics(const AnalysisResult & result) const;
 
+    /// Cost heuristic for per-partition (independent) processing, shared by GROUP BY and DISTINCT.
+    enum class ProcessorKind : uint8_t { Aggregation, Distinct };
+    bool isPartitionIndependentProcessingProfitable(ProcessorKind kind) const;
+
     int getSortDirection() const;
     void updateSortDescription();
 
-    bool isParallelReplicasLocalPlanForInitiator() const;
-    bool isParallelReplicasLocalPlanForFollower() const;
     bool supportsSkipIndexesOnDataRead() const;
 
     mutable AnalysisResultPtr analyzed_result_ptr;
