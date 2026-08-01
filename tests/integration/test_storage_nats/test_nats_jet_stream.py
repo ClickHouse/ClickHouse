@@ -1122,10 +1122,10 @@ def _restart_nats(nats_cluster):
     # reaches the same way. Keeping the restart out of that window is what the wait is for.
     #
     # The wait deliberately does not publish anything. A pull request is parked as soon as the
-    # subscription is created, so `num_waiting` confirms the precondition on its own, whereas
-    # publishing makes the broker answer the parked request, and answering it is what ends up closing
-    # the subscription and scheduling the re-subscribe the restart must not race. This changes WHEN
-    # the broker is restarted, not what is asserted.
+    # subscription is created, so `num_waiting` establishes the precondition without perturbing the
+    # request, whereas publishing to check the same thing was measured to be followed by a
+    # re-subscribe, which is what the restart then raced. This changes WHEN the broker is restarted,
+    # not what is asserted.
     _wait_for_parked_pull_request()
 
     nats_helpers.kill_nats(nats_cluster)
@@ -1195,10 +1195,19 @@ def test_nats_jet_stream_settles_after_one_broker_restart(nats_cluster):
     total_expected = 10
     _publish_and_expect("test_subject", range(0, 10), total_expected)
 
+    recovery_anchor = nats_helpers.log_line_count(instance)
     _restart_nats(nats_cluster)
 
     total_expected += 10
     _publish_and_expect("test_subject", range(100, 110), total_expected)
+
+    # Positive control for the zero-count assertions below and in the healthy-consumer test: the
+    # restart above must have recovered through this exact line, so if the production message ever
+    # changes those assertions start failing here instead of silently passing on a literal nothing
+    # emits any more.
+    assert nats_helpers.count_in_log_after(instance, RESUBSCRIBE_LOG_LINE, recovery_anchor) > 0, (
+        "consuming resumed without recovering through {!r}, so a zero count proves nothing".format(
+            RESUBSCRIBE_LOG_LINE))
 
     # A closure queued while the broker was still coming up can arrive shortly after consuming
     # resumed, so let that pass before measuring. What is asserted is that recovery then STAYS
