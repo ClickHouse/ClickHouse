@@ -554,6 +554,12 @@ public:
     CancellationCode sendCancelToQuery(const String & current_query_id, const String & current_user);
     CancellationCode sendCancelToQuery(QueryStatusPtr elem);
 
+    /// The same, but for a caller that knows the query id without knowing which user runs the query.
+    /// It is for protocols where the credential presented for cancellation is not a user identity: a
+    /// PostgreSQL cancel request arrives on its own connection that never authenticates, and carries the
+    /// secret key that makes up the query id instead.
+    CancellationCode sendCancelToQueryOfAnyUser(const String & current_query_id);
+
     void killAllQueries();
 };
 

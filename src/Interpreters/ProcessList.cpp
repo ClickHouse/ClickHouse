@@ -813,6 +813,23 @@ CancellationCode ProcessList::sendCancelToQuery(QueryStatusPtr elem)
 }
 
 
+CancellationCode ProcessList::sendCancelToQueryOfAnyUser(const String & current_query_id)
+{
+    String current_user;
+
+    {
+        LockAndBlocker lock(mutex);
+        auto query_user = queries_to_user.find(current_query_id);
+        if (query_user == queries_to_user.end())
+            return CancellationCode::NotFound;
+        current_user = query_user->second;
+    }
+
+    /// The query may have finished in the meantime, which `sendCancelToQuery` reports as `NotFound`.
+    return sendCancelToQuery(current_query_id, current_user);
+}
+
+
 void ProcessList::killAllQueries()
 {
     std::vector<QueryStatusPtr> cancelled_processes;

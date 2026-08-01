@@ -67,6 +67,8 @@ private:
     bool ssl_enabled = false;
     bool secure_required = false;
     Int32 connection_id = 0;
+    /// Unguessable, fixed for the lifetime of the connection, and sent to the client in `BackendKeyData`:
+    /// a cancel request presenting it is honoured without authentication. See the constructor.
     Int32 secret_key = 0;
 
     bool is_query_in_progress = false;
@@ -94,6 +96,10 @@ private:
     void sendParameterStatusData(PostgreSQLProtocol::Messaging::StartupMessage & start_up_message);
 
     void cancelRequest();
+
+    /// The query id every statement of this connection runs under, which a cancel request resolves to.
+    String currentQueryId() const;
+    static String queryIdFor(Int32 connection_id_, Int32 secret_key_);
 
     std::unique_ptr<PostgreSQLProtocol::Messaging::StartupMessage> receiveStartupMessage(int payload_size);
 
