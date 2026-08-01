@@ -215,7 +215,7 @@ def _post_dm(user_id: str, user_email: str, s3_path: str, text: str) -> None:
         print(f"chat.postMessage error: {e}")
 
 
-def format_event_text(event, pr_status, indent=""):
+def format_event_text(event, pr_status, indent="", include_related_prs: bool = True):
     """Format event text with optional indentation for linked events."""
     # PR status emoji
     pr_status_emoji = ":pr_open:" if pr_status == "open" else ":pr_merged:"
@@ -228,13 +228,12 @@ def format_event_text(event, pr_status, indent=""):
     has_failures = False
     if hasattr(event, "result") and event.result and event.result.get("results"):
         has_failures = any(
-            (r.get("status") or "").lower() in ["failure", "error", "fail"]
+            r.get("status") in ["failure", "error"]
             for r in event.result.get("results", [])
         )
 
     # CI status emoji based on event.ci_status
-    ci_status_lower = (event.ci_status or "").lower()
-    if ci_status_lower in ("pending", "running"):
+    if event.ci_status in ["pending", "running"]:
         ci_running_status_emoji = ":job_running:"
     else:
         if not is_cancelled:
@@ -242,9 +241,9 @@ def format_event_text(event, pr_status, indent=""):
         else:
             ci_running_status_emoji = ":job_cancelled:"
 
-    if ci_status_lower in ("success", "ok"):
+    if event.ci_status == "success":
         ci_status_emoji = ":success_sign:"
-    elif ci_status_lower in ("pending", "running"):
+    elif event.ci_status in ["pending", "running"]:
         ci_status_emoji = ":failure_sign:" if has_failures else ":job_running:"
     else:
         ci_status_emoji = ":failure_sign:"
@@ -294,20 +293,20 @@ def format_event_text(event, pr_status, indent=""):
         total_cnt = 0
 
         for r in event.result.get("results", []):
-            status = (r.get("status") or "").lower()
+            status = r.get("status", "")
             total_cnt += 1
 
-            if status in ("failure", "fail"):
+            if status == "failure":
                 fail_cnt += 1
             elif status == "error":
                 error_cnt += 1
             elif status == "dropped":
                 dropped_cnt += 1
-            elif status in ("success", "ok"):
+            elif status == "success":
                 success_cnt += 1
             elif status == "skipped":
                 skipped_cnt += 1
-            elif status in ("pending", "running"):
+            elif status in ["pending", "running"]:
                 running_cnt += 1
 
         # Build compact one-line summary
@@ -332,6 +331,35 @@ def format_event_text(event, pr_status, indent=""):
         elif report_url_text:
             event_text += f"\n{indent}{report_url_text}"
 
+        # Add related PRs if available (only for parent events)
+        if include_related_prs and not indent:
+            related_prs = event.ext.get("related_prs", [])
+            if related_prs:
+                event_text += "\n\n*Related PRs:*"
+                for pr_num in related_prs:
+                    pr_info = {}
+                    if hasattr(event, "result") and event.result:
+                        result_ext = event.result.get("ext", {})
+                        related_pr_info = result_ext.get("related_pr_info", {})
+                        pr_info = related_pr_info.get(pr_num, {})
+
+                    pr_title = pr_info.get("pr_title", "")
+                    pr_change_url = pr_info.get("change_url", "")
+                    pr_report_url = pr_info.get("report_url", "")
+
+                    if pr_change_url:
+                        pr_link_text = f"<{pr_change_url}|#{pr_num}>"
+                    else:
+                        pr_link_text = f"#{pr_num}"
+
+                    pr_line = f"\n  • {pr_link_text}"
+                    if pr_title:
+                        pr_line += f" - {pr_title}"
+                    if pr_report_url:
+                        pr_line += f" (<{pr_report_url}|report>)"
+
+                    event_text += pr_line
+
     return event_text
 
 
@@ -341,7 +369,7 @@ def _format_notification_text(event, notify_type: str) -> str:
     ext = getattr(event, "ext", {}) or {}
     pr_status = (ext.get("pr_status") or "").lower()
 
-    base = format_event_text(event, pr_status, indent="")
+    base = format_event_text(event, pr_status, indent="", include_related_prs=False)
 
     failed_names = []
     result = getattr(event, "result", None)
@@ -356,7 +384,7 @@ def _format_notification_text(event, notify_type: str) -> str:
         if not isinstance(r, dict):
             continue
         status = (r.get("status") or "").lower()
-        if status not in ("failure", "error", "fail"):
+        if status not in ("failure", "error"):
             continue
         name = r.get("name") or ""
         if name:
@@ -799,21 +827,6 @@ def lambda_handler(event, context):
 
             # Add user_id to subscription list (supports multiple Slack users per email)
             if subscriptions_s3_path:
-                # Remove user from previous subscription if switching emails
-                prev_email = FeedSubscription.find_user_subscription(
-                    user_id, s3_path=subscriptions_s3_path
-                )
-                if prev_email and prev_email != user_email:
-                    FeedSubscription.remove_user_id(
-                        user_email=prev_email,
-                        user_id=user_id,
-                        s3_path=subscriptions_s3_path,
-                    )
-                    SUBSCRIPTION_CACHE.pop(prev_email, None)
-                    print(
-                        f"Removed user {user_id} from previous subscription: {prev_email}"
-                    )
-
                 subscription = FeedSubscription.add_user_id(
                     user_email=user_email,
                     user_id=user_id,
@@ -954,7 +967,7 @@ def lambda_handler(event, context):
                 and newest_event.result.get("results")
             ):
                 newest_has_failures = any(
-                    (r.get("status") or "").lower() in ["failure", "error", "fail"]
+                    r.get("status") in ["failure", "error"]
                     for r in newest_event.result.get("results", [])
                 )
 

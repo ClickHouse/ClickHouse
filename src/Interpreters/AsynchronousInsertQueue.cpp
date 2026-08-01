@@ -401,7 +401,7 @@ void AsynchronousInsertQueue::preprocessInsertQuery(const ASTPtr & query, const 
     auto sample_block = InterpreterInsertQuery::getSampleBlock(
         insert_query,
         table,
-        table->getInMemoryMetadataPtr(query_context, false),
+        table->getInMemoryMetadataPtr(),
         query_context,
         /* no_destination */false,
         insert_context->getSettingsRef()[Setting::insert_allow_materialized_columns]);
@@ -479,7 +479,7 @@ AsynchronousInsertQueue::pushQueryWithInlinedData(ASTPtr query, ContextPtr query
         {
             /// Concat read buffer with already extracted from insert
             /// query data and with the rest data from insert query.
-            ConcatReadBuffer::Buffers buffers;
+            std::vector<std::unique_ptr<ReadBuffer>> buffers;
             buffers.emplace_back(std::make_unique<ReadBufferFromOwnString>(bytes));
             buffers.emplace_back(std::move(read_buf));
 
@@ -571,7 +571,9 @@ AsynchronousInsertQueue::PushResult AsynchronousInsertQueue::pushDataChunk(ASTPt
         data->entries.emplace_back(entry);
         progress_future = entry->getFuture();
 
-        LOG_TRACE(log, "Have {} pending inserts in shard {} with total {} bytes of data for the async insert queries '{}'",
+        LOG_TRACE(log, "Have {} pending inserts in shard {} with total {} bytes of data",
+            data->entries.size(), size_t(shard_num), data->size_in_bytes);
+        LOG_TEST(log, "Have {} pending inserts in shard {} with total {} bytes of data for the async insert queries '{}'",
             data->entries.size(), size_t(shard_num), data->size_in_bytes, fmt::join(getInsertQueryIds(*data), ", "));
 
         bool has_enough_bytes = data->size_in_bytes >= (*key.settings)[Setting::async_insert_max_data_size];
@@ -1006,7 +1008,8 @@ try
     else
         query_scope = QueryScope::create(insert_context);
 
-    LOG_DEBUG(log, "Processing batch insert for the async inserts '{}'", fmt::join(getInsertQueryIds(*data), ", "));
+    LOG_TRACE(log, "Processing batch insert of {} async inserts with {} bytes of data", data->entries.size(), data->size_in_bytes);
+    LOG_TEST(log, "Processing batch insert for the async inserts '{}'", fmt::join(getInsertQueryIds(*data), ", "));
 
     String query_for_logging = serializeQuery(*key.query, insert_context->getSettingsRef()[Setting::log_queries_cut_to_length]);
     UInt64 normalized_query_hash = normalizedQueryHash(query_for_logging, false);
@@ -1051,12 +1054,13 @@ try
 
     auto add_entry_to_asynchronous_insert_log = [&, query_by_format = NameToNameMap{}](
         const InsertData::EntryPtr & entry,
-        const String & parsing_exception,
+        const String & exception,
         size_t num_rows,
-        size_t num_bytes) mutable
+        size_t num_bytes,
+        bool is_flush_error = false) mutable
     {
         /// Track per-entry stats for reporting back to clients on success.
-        if (parsing_exception.empty())
+        if (exception.empty())
             per_entry_progress_results[entry.get()] = ResultProgress{num_rows, num_bytes};
 
         if (!async_insert_log)
@@ -1071,7 +1075,7 @@ try
         elem.query_id = entry->query_id;
         elem.bytes = num_bytes;
         elem.rows = num_rows;
-        elem.exception = parsing_exception;
+        elem.exception = exception;
         elem.data_kind = entry->chunk.getDataKind();
         elem.timeout_milliseconds = data->timeout_ms.count();
         elem.flush_query_id = insert_query_id;
@@ -1093,10 +1097,12 @@ try
         else
             elem.query_for_logging = get_query_by_format(entry->format);
 
-        /// If there was a parsing error,
-        /// the entry won't be flushed anyway,
-        /// so add the log element immediately.
-        if (!elem.exception.empty())
+        if (is_flush_error)
+        {
+            /// Per-entry conversion failure at flush: log immediately as `FlushError` with a real `flush_time`.
+            appendElementsToLogSafe(*async_insert_log, {std::move(elem)}, std::chrono::system_clock::now(), exception);
+        }
+        else if (!elem.exception.empty())
         {
             elem.status = AsynchronousInsertLogElement::ParsingError;
             async_insert_log->add(std::move(elem));
@@ -1121,12 +1127,6 @@ try
         pipeline = interpreter->execute().pipeline;
         chassert(pipeline.pushing());
 
-        /// Propagate the process list element to the pipeline so that the executor enables
-        /// per-processor profiling (otherwise elapsed_us and *_wait_elapsed_us stay zero in
-        /// system.processors_profile_log for async insert flushes). The normal query path does
-        /// this in executeQuery, but the flush builds and runs the pipeline directly.
-        pipeline.setProcessListElement(insert_context->getProcessListElement());
-
         query_log_elem = logQueryStart(
             query_start_time,
             insert_context,
@@ -1147,7 +1147,7 @@ try
         if (async_insert_log)
         {
             for (const auto & entry : data->entries)
-                add_entry_to_asynchronous_insert_log(entry, /*parsing_exception=*/ "", /*num_rows=*/ 0, entry->chunk.byteSize());
+                add_entry_to_asynchronous_insert_log(entry, /*exception=*/ "", /*num_rows=*/ 0, entry->chunk.byteSize());
 
             auto exception = getCurrentExceptionMessage(false);
             auto flush_time = std::chrono::system_clock::now();
@@ -1348,13 +1348,27 @@ Chunk AsynchronousInsertQueue::processPreprocessedEntries(
         Block block_to_insert = *block;
         if (block_to_insert.rows() == 0)
         {
-            add_to_async_insert_log(entry, /*parsing_exception=*/ "", block_to_insert.rows(), block_to_insert.bytes());
+            add_to_async_insert_log(entry, /*exception=*/ "", block_to_insert.rows(), block_to_insert.bytes());
             entry->resetChunk();
             continue;
         }
 
-        if (!isCompatibleHeader(block_to_insert, header))
-            convertBlockToHeader(block_to_insert, header, context_);
+        try
+        {
+            if (!isCompatibleHeader(block_to_insert, header))
+                convertBlockToHeader(block_to_insert, header, context_);
+        }
+        catch (...)
+        {
+            /// Per-entry isolation: log as `FlushError` (not `ParsingError`) with a real
+            /// `flush_time`, via the `is_flush_error` path in `add_to_async_insert_log`.
+            const auto exception_msg = getCurrentExceptionMessage(/*with_stacktrace=*/ false);
+            LOG_ERROR(logger, "Failed conversion for insert query id {}. {}", entry->query_id, exception_msg);
+            add_to_async_insert_log(entry, exception_msg, /*num_rows=*/ 0, block->bytes(), /*is_flush_error=*/ true);
+            entry->finish(std::current_exception());
+            entry->resetChunk();
+            continue;
+        }
 
         auto columns = block_to_insert.getColumns();
         for (size_t i = 0, s = columns.size(); i < s; ++i)
@@ -1364,7 +1378,7 @@ Chunk AsynchronousInsertQueue::processPreprocessedEntries(
 
         deduplication_info->setUserToken(entry->async_dedup_token, block_to_insert.rows());
 
-        add_to_async_insert_log(entry, /*parsing_exception=*/ "", block_to_insert.rows(), block_to_insert.bytes());
+        add_to_async_insert_log(entry, /*exception=*/ "", block_to_insert.rows(), block_to_insert.bytes());
         entry->resetChunk();
     }
 

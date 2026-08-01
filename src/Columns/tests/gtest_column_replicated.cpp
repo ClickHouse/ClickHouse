@@ -6,7 +6,7 @@
 
 using namespace DB;
 
-static MutableColumnPtr createNestedColumn(const VectorWithMemoryTracking<String> & values)
+MutableColumnPtr createNestedColumn(const std::vector<String> & values)
 {
     MutableColumnPtr nested_column = ColumnString::create();
     for (const auto & value : values)
@@ -14,7 +14,7 @@ static MutableColumnPtr createNestedColumn(const VectorWithMemoryTracking<String
     return nested_column;
 }
 
-static ColumnReplicated::MutablePtr createColumn(const VectorWithMemoryTracking<String> & values, const VectorWithMemoryTracking<size_t> & indexes)
+ColumnReplicated::MutablePtr createColumn(const std::vector<String> & values, const std::vector<size_t> & indexes)
 {
     MutableColumnPtr nested_column = createNestedColumn(values);
     MutableColumnPtr indexes_column = ColumnUInt8::create();
@@ -24,7 +24,7 @@ static ColumnReplicated::MutablePtr createColumn(const VectorWithMemoryTracking<
     return ColumnReplicated::create(std::move(nested_column), std::move(indexes_column));
 }
 
-static void checkColumn(const ColumnReplicated & column, const VectorWithMemoryTracking<String> & expected_values, const VectorWithMemoryTracking<size_t> & expected_indexes)
+void checkColumn(const ColumnReplicated & column, const std::vector<String> & expected_values, const std::vector<size_t> & expected_indexes)
 {
     const auto & nested_column = column.getNestedColumn();
     ASSERT_EQ(nested_column->size(), expected_values.size());
@@ -37,7 +37,7 @@ static void checkColumn(const ColumnReplicated & column, const VectorWithMemoryT
         ASSERT_EQ((*indexes)[i], Field(expected_indexes[i]));
 }
 
-static void checkColumn(const IColumn & column, const VectorWithMemoryTracking<String> & expected_values, const VectorWithMemoryTracking<size_t> & expected_indexes)
+void checkColumn(const IColumn & column, const std::vector<String> & expected_values, const std::vector<size_t> & expected_indexes)
 {
     checkColumn(assert_cast<const ColumnReplicated &>(column), expected_values, expected_indexes);
 }

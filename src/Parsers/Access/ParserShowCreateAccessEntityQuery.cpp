@@ -7,6 +7,7 @@
 #include <Parsers/parseIdentifierOrStringLiteral.h>
 #include <Parsers/parseDatabaseAndTableName.h>
 #include <base/range.h>
+#include <cassert>
 
 
 namespace DB
@@ -64,8 +65,8 @@ bool ParserShowCreateAccessEntityQuery::parseImpl(Pos & pos, ASTPtr & node, Expe
     if (!ParserKeyword{Keyword::SHOW_CREATE}.ignore(pos, expected))
         return false;
 
-    AccessEntityType type = {};
-    bool plural = false;
+    AccessEntityType type;
+    bool plural;
     if (!parseEntityType(pos, expected, type, plural))
         return false;
 

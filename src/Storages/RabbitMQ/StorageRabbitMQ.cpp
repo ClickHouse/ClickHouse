@@ -1,6 +1,5 @@
 #include <Core/BackgroundSchedulePool.h>
 #include <Core/Settings.h>
-#include <DataTypes/DataTypeLowCardinality.h>
 #include <DataTypes/DataTypeNullable.h>
 #include <DataTypes/DataTypeString.h>
 #include <DataTypes/DataTypesNumber.h>
@@ -198,8 +197,8 @@ StorageRabbitMQ::StorageRabbitMQ(
     StorageInMemoryMetadata storage_metadata;
     storage_metadata.setColumns(columns_);
     storage_metadata.setComment(comment);
-    storage_metadata.setVirtuals(createVirtuals((*rabbitmq_settings)[RabbitMQSetting::rabbitmq_handle_error_mode]));
     setInMemoryMetadata(storage_metadata);
+    setVirtuals(createVirtuals((*rabbitmq_settings)[RabbitMQSetting::rabbitmq_handle_error_mode]));
 
     rabbitmq_context = addSettings(getContext());
     rabbitmq_context->makeQueryContext();
@@ -261,18 +260,18 @@ VirtualColumnsDescription StorageRabbitMQ::createVirtuals(StreamingHandleErrorMo
 {
     VirtualColumnsDescription desc;
 
-    desc.addEphemeral("_exchange_name", std::make_shared<DataTypeString>(), "", VirtualsMaterializationPlace::Reader);
-    desc.addEphemeral("_channel_id", std::make_shared<DataTypeString>(), "", VirtualsMaterializationPlace::Reader);
-    desc.addEphemeral("_delivery_tag", std::make_shared<DataTypeUInt64>(), "", VirtualsMaterializationPlace::Reader);
-    desc.addEphemeral("_redelivered", std::make_shared<DataTypeUInt8>(), "", VirtualsMaterializationPlace::Reader);
-    desc.addEphemeral("_message_id", std::make_shared<DataTypeString>(), "", VirtualsMaterializationPlace::Reader);
-    desc.addEphemeral("_timestamp", std::make_shared<DataTypeUInt64>(), "", VirtualsMaterializationPlace::Reader);
-    desc.addEphemeral("_table", std::make_shared<DataTypeLowCardinality>(std::make_shared<DataTypeString>()), "", VirtualsMaterializationPlace::Reader);
+    desc.addEphemeral("_exchange_name", std::make_shared<DataTypeString>(), "");
+    desc.addEphemeral("_channel_id", std::make_shared<DataTypeString>(), "");
+    desc.addEphemeral("_delivery_tag", std::make_shared<DataTypeUInt64>(), "");
+    desc.addEphemeral("_redelivered", std::make_shared<DataTypeUInt8>(), "");
+    desc.addEphemeral("_message_id", std::make_shared<DataTypeString>(), "");
+    desc.addEphemeral("_timestamp", std::make_shared<DataTypeUInt64>(), "");
+
 
     if (handle_error_mode == StreamingHandleErrorMode::STREAM)
     {
-        desc.addEphemeral("_raw_message", std::make_shared<DataTypeNullable>(std::make_shared<DataTypeString>()), "", VirtualsMaterializationPlace::Reader);
-        desc.addEphemeral("_error", std::make_shared<DataTypeNullable>(std::make_shared<DataTypeString>()), "", VirtualsMaterializationPlace::Reader);
+        desc.addEphemeral("_raw_message", std::make_shared<DataTypeNullable>(std::make_shared<DataTypeString>()), "");
+        desc.addEphemeral("_error", std::make_shared<DataTypeNullable>(std::make_shared<DataTypeString>()), "");
     }
 
     return desc;
@@ -293,7 +292,7 @@ Names StorageRabbitMQ::parseSettings(String settings_list)
 
 AMQP::ExchangeType StorageRabbitMQ::defineExchangeType(String exchange_type_)
 {
-    AMQP::ExchangeType type = {};
+    AMQP::ExchangeType type;
     if (exchange_type_ != ExchangeType::DEFAULT)
     {
         if (exchange_type_ == ExchangeType::FANOUT)              type = AMQP::ExchangeType::fanout;
@@ -509,7 +508,7 @@ void StorageRabbitMQ::bindExchange(AMQP::TcpChannel & rabbit_channel)
     /// 2. `autodelete` (auto delete in case of queue bindings are dropped).
 
     std::string error;
-    int error_code = 0;
+    int error_code;
     rabbit_channel.declareExchange(exchange_name, exchange_type, AMQP::durable)
     .onError([&](const char * message)
     {
@@ -991,7 +990,7 @@ void StorageRabbitMQ::cleanupRabbitMQ() const
     for (const auto & queue : queues)
     {
         /// AMQP::ifunused is needed, because it is possible to share queues between multiple tables and dropping
-        /// one of them should not affect others.
+        /// on of them should not affect others.
         /// AMQP::ifempty is not used on purpose.
 
         rabbit_channel->removeQueue(queue, AMQP::ifunused)
@@ -1151,7 +1150,7 @@ bool StorageRabbitMQ::tryStreamToViews()
     if (!table)
         throw Exception(ErrorCodes::LOGICAL_ERROR, "Engine table {} doesn't exist.", table_id.getNameForLogs());
 
-    auto storage_snapshot = getStorageSnapshot(getInMemoryMetadataPtr(getContext(), false), getContext());
+    auto storage_snapshot = getStorageSnapshot(getInMemoryMetadataPtr(), getContext());
     auto block_size = getMaxBlockSize();
 
     // Create a stream for each consumer and join them in a union stream
@@ -1323,7 +1322,6 @@ bool StorageRabbitMQ::tryStreamToViews()
 }
 
 
-void registerStorageRabbitMQ(StorageFactory & factory);
 void registerStorageRabbitMQ(StorageFactory & factory)
 {
     auto creator_fn = [](const StorageFactory::Arguments & args)

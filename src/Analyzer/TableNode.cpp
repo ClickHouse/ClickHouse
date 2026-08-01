@@ -11,9 +11,6 @@
 #include <Storages/IStorage.h>
 #include <Storages/StorageDummy.h>
 #include <Storages/StorageMemory.h>
-#include <Storages/StorageView.h>
-
-#include <Parsers/IAST.h>
 
 #include <Interpreters/Context.h>
 #include <Interpreters/DatabaseCatalog.h>
@@ -40,19 +37,6 @@ MaterializedCTEPtr extractCTE(StoragePtr storage)
     return storage_memory->getMaterializedCTE();
 }
 
-/// Each call to a parameterized view with a different set of argument values produces a fresh
-/// `StorageView` that carries the substituted inner query but shares the original `StorageID`.
-/// Return that substituted query so callers can distinguish such storages by content.
-ASTPtr getParameterizedViewInnerQuery(const StoragePtr & storage)
-{
-    if (!storage)
-        return nullptr;
-    auto * view = storage->as<StorageView>();
-    if (!view || !view->isParameterizedView())
-        return nullptr;
-    return view->getInMemoryMetadataPtr(nullptr, false)->getSelectQuery().inner_query;
-}
-
 }
 
 TableNode::TableNode(StoragePtr storage_, StorageID storage_id_, TableLockHolder storage_lock_, StorageSnapshotPtr storage_snapshot_)
@@ -73,7 +57,7 @@ TableNode::TableNode(StoragePtr storage_, const ContextPtr & context)
     : TableNode(
           storage_,
           storage_->lockForShare(context->getInitialQueryId(), context->getSettingsRef()[Setting::lock_acquire_timeout]),
-          storage_->getStorageSnapshot(storage_->getInMemoryMetadataPtr(context, false), context))
+          storage_->getStorageSnapshot(storage_->getInMemoryMetadataPtr(), context))
 {
 }
 
@@ -106,7 +90,7 @@ void TableNode::updateStorage(StoragePtr storage_value, const ContextPtr & conte
     storage = std::move(storage_value);
     storage_id = storage->getStorageID();
     storage_lock = storage->lockForShare(context->getInitialQueryId(), context->getSettingsRef()[Setting::lock_acquire_timeout]);
-    storage_snapshot = storage->getStorageSnapshot(storage->getInMemoryMetadataPtr(context, false), context);
+    storage_snapshot = storage->getStorageSnapshot(storage->getInMemoryMetadataPtr(), context);
 }
 
 void TableNode::dumpTreeImpl(WriteBuffer & buffer, FormatState & format_state, size_t indent) const
@@ -137,24 +121,9 @@ void TableNode::dumpTreeImpl(WriteBuffer & buffer, FormatState & format_state, s
 bool TableNode::isEqualImpl(const IQueryTreeNode & rhs, CompareOptions) const
 {
     const auto & rhs_typed = assert_cast<const TableNode &>(rhs);
-    if (storage_id != rhs_typed.storage_id
-        || table_expression_modifiers != rhs_typed.table_expression_modifiers
-        || temporary_table_name != rhs_typed.temporary_table_name)
-        return false;
-
-    /// Parameterized views: two calls with different argument values share the same `StorageID` but
-    /// hold different substituted queries. Compare the substituted queries so downstream passes that
-    /// key off the tree hash (e.g. `PreparedSets` in `CollectSets`) do not collapse them.
-    auto lhs_inner = getParameterizedViewInnerQuery(storage);
-    auto rhs_inner = getParameterizedViewInnerQuery(rhs_typed.storage);
-    if (lhs_inner || rhs_inner)
-    {
-        if (!lhs_inner || !rhs_inner)
-            return false;
-        return lhs_inner->getTreeHash(/*ignore_aliases=*/false) == rhs_inner->getTreeHash(/*ignore_aliases=*/false);
-    }
-
-    return true;
+    return storage_id == rhs_typed.storage_id
+        && table_expression_modifiers == rhs_typed.table_expression_modifiers
+        && temporary_table_name == rhs_typed.temporary_table_name;
 }
 
 void TableNode::updateTreeHashImpl(HashState & state, CompareOptions) const
@@ -176,11 +145,6 @@ void TableNode::updateTreeHashImpl(HashState & state, CompareOptions) const
 
     if (table_expression_modifiers)
         table_expression_modifiers->updateTreeHash(state);
-
-    /// See note in `isEqualImpl`: parameterized-view calls reuse the same `StorageID`, so we mix in
-    /// the substituted inner query to keep distinct argument values hashing to distinct values.
-    if (auto inner_query = getParameterizedViewInnerQuery(storage))
-        inner_query->updateTreeHash(state, /*ignore_aliases=*/false);
 }
 
 QueryTreeNodePtr TableNode::cloneImpl() const

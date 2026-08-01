@@ -26,6 +26,8 @@ namespace ProfileEvents
     struct Counter : public std::atomic<Count>
     {
         using std::atomic<Count>::atomic;
+        /// When we should send it to system.trace_log
+        bool should_trace = false;
     };
     class Counters;
 
@@ -66,13 +68,9 @@ namespace ProfileEvents
         std::unique_ptr<Counter[]> counters_holder;
         /// Used to propagate increments
         std::atomic<Counters *> parent = {};
+        std::atomic_bool trace_all_profile_events = false;
         Counter prev_cpu_wait_microseconds = 0;
         Counter prev_cpu_virtual_time_microseconds = 0;
-
-        /// Lazily allocated on first setTraceProfileEvent()
-        std::atomic<std::atomic_bool *> should_trace_array = nullptr;
-        std::unique_ptr<std::atomic_bool[]> should_trace_holder;
-        std::atomic_bool trace_all_profile_events = false;
 
     public:
 
@@ -159,7 +157,11 @@ namespace ProfileEvents
             trace_all_profile_events.store(true, std::memory_order_relaxed);
         }
 
-        void setTraceProfileEvent(ProfileEvents::Event event);
+        void setTraceProfileEvent(ProfileEvents::Event event)
+        {
+            counters[event].should_trace = true;
+        }
+
         void setTraceProfileEvents(const String & events_list);
 
         /// Set all counters to zero

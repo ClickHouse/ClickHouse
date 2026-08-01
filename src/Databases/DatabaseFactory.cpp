@@ -34,7 +34,7 @@ namespace ErrorCodes
     extern const int LOGICAL_ERROR;
 }
 
-static void cckMetadataPathForOrdinary(const ASTCreateQuery & create, const String & metadata_path)
+void cckMetadataPathForOrdinary(const ASTCreateQuery & create, const String & metadata_path)
 {
     auto default_db_disk = Context::getGlobalContextInstance()->getDatabaseDisk();
 
@@ -135,14 +135,6 @@ DatabaseFactory & DatabaseFactory::instance()
 {
     static DatabaseFactory db_fact;
     return db_fact;
-}
-
-bool DatabaseFactory::isDatabaseExternal(const String & engine_name) const
-{
-    auto it = database_engines.find(engine_name);
-    if (it == database_engines.end())
-        return false;
-    return it->second.features.is_external;
 }
 
 DatabasePtr DatabaseFactory::getImpl(const ASTCreateQuery & create, const String & metadata_path, ContextPtr context, LoadingStrictnessLevel mode)

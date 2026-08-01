@@ -19,19 +19,12 @@
 #include <Parsers/DumpASTNode.h>
 #include <Parsers/ASTExplainQuery.h>
 #include <Parsers/ASTFunction.h>
-#include <Parsers/ASTIdentifier.h>
 #include <Parsers/ASTSelectQuery.h>
 #include <Parsers/ASTSelectWithUnionQuery.h>
 #include <Parsers/ASTSetQuery.h>
-#include <Parsers/ASTSubquery.h>
-#include <Parsers/ASTTablesInSelectQuery.h>
-#include <Parsers/FunctionParameterValuesVisitor.h>
 #include <Parsers/FunctionSecretArgumentsFinder.h>
 
-#include <Access/Common/SQLSecurityDefs.h>
-#include <Interpreters/DatabaseCatalog.h>
 #include <Storages/StorageView.h>
-#include <TableFunctions/TableFunctionFactory.h>
 #include <Processors/QueryPlan/QueryPlan.h>
 #include <Processors/QueryPlan/Optimizations/QueryPlanOptimizationSettings.h>
 #include <Processors/QueryPlan/BuildQueryPipelineSettings.h>
@@ -67,132 +60,6 @@ namespace ErrorCodes
 
 namespace
 {
-    /// Walk the AST and expand parameterized view "table function" calls into their inlined,
-    /// parameter-substituted subqueries, so `EXPLAIN SYNTAX` shows the resolved query.
-    ///
-    /// In the analyzer path, without this expansion the query tree would show the unexpanded
-    /// table function call. In the legacy path, `ExplainAnalyzedSyntaxMatcher` covers the FROM
-    /// table expression via `StorageView::replaceWithSubquery`, which only rewrites the first
-    /// table expression and leaves JOIN sides untouched; this visitor is complementary, expanding
-    /// parameterized views that appear on the right side of a JOIN as well.
-    struct ExpandParameterizedViewsMatcher
-    {
-        struct Data : public WithContext
-        {
-            explicit Data(ContextPtr context_) : WithContext(context_) {}
-        };
-
-        static bool needChildVisit(ASTPtr &, ASTPtr &)
-        {
-            return true;
-        }
-
-        static void visit(ASTPtr & ast, Data & data)
-        {
-            if (auto * select = ast->as<ASTSelectQuery>())
-                expandTables(*select, data);
-        }
-
-        /// Iterate all table expressions in the SELECT (FROM and JOINs) and expand
-        /// any that are parameterized view calls.
-        static void expandTables(ASTSelectQuery & select, const Data & data)
-        {
-            if (!select.tables() || select.tables()->children.empty())
-                return;
-
-            for (auto & child : select.tables()->children)
-            {
-                auto * table_element = child->as<ASTTablesInSelectQueryElement>();
-                if (!table_element || !table_element->table_expression)
-                    continue;
-
-                auto * table_expr = table_element->table_expression->as<ASTTableExpression>();
-                if (!table_expr || !table_expr->table_function)
-                    continue;
-
-                tryExpandTableExpression(*table_expr, data);
-            }
-        }
-
-        /// If the table expression is a parameterized view call, replace it with
-        /// the parameter-substituted inner query as a subquery.
-        static void tryExpandTableExpression(ASTTableExpression & table_expr, const Data & data)
-        {
-            const auto * func = table_expr.table_function->as<ASTFunction>();
-            if (!func)
-                return;
-
-            /// FINAL and SAMPLE are valid on a parameterized view at execution time, but
-            /// rewriting the view call into a subquery here would attach them to the
-            /// subquery, where they are rejected with `UNSUPPORTED_METHOD`. Leave the
-            /// original call intact so `EXPLAIN SYNTAX` matches what execution accepts.
-            if (table_expr.final || table_expr.sample_size || table_expr.sample_offset)
-                return;
-
-            auto query_context = data.getContext()->getQueryContext();
-
-            /// A registered table function (e.g. `numbers`) takes precedence over a view with
-            /// the same name, matching `QueryAnalyzer::resolveTableFunction`. Without this check
-            /// a user view shadowing a built-in table function would be expanded here while
-            /// regular execution would still resolve the built-in.
-            if (TableFunctionFactory::instance().isTableFunctionName(func->name))
-                return;
-
-            String database_name = query_context->getCurrentDatabase();
-            String table_name = func->name;
-            if (func->isCompoundName())
-            {
-                std::vector<std::string> parts;
-                splitInto<'.'>(parts, func->name);
-                if (parts.size() != 2)
-                    return;
-                database_name = parts[0];
-                table_name = parts[1];
-            }
-
-            auto storage = DatabaseCatalog::instance().tryGetTable({database_name, table_name}, query_context);
-            if (!storage)
-                return;
-
-            const auto * storage_view = storage->as<StorageView>();
-            if (!storage_view || !storage_view->isParameterizedView())
-                return;
-
-            auto metadata = storage->getInMemoryMetadataPtr(query_context, false);
-
-            /// For views created with `SQL SECURITY DEFINER` or `NONE`, execution resolves the
-            /// inner tables via `StorageView::getSQLSecurityOverriddenContext`. Inlining the view
-            /// here would instead re-analyze the inner query under the invoker's context, so
-            /// `EXPLAIN SYNTAX` would fail for users that can query the view but not its inner
-            /// tables. Leave the original parameterized call intact in that case.
-            if (metadata->sql_security_type && metadata->sql_security_type != SQLSecurityType::INVOKER)
-                return;
-
-            auto view_query = metadata->getSelectQuery().inner_query->clone();
-            NameToNameMap parameter_values = analyzeFunctionParamValues(table_expr.table_function, query_context);
-            StorageView::replaceQueryParametersIfParameterizedView(view_query, parameter_values);
-
-            /// Replace the table function with a subquery in-place on this table expression,
-            /// rather than using `StorageView::replaceWithSubquery` which only handles the
-            /// first table expression in the SELECT. Preserve the explicit alias from the
-            /// original table function (e.g. `... FROM my_pv(n=1) AS t`) so identifiers in
-            /// the outer query keep resolving; otherwise fall back to the view's table name
-            /// so the rendered `EXPLAIN SYNTAX` keeps referring to the view.
-            String alias = table_expr.table_function->tryGetAlias();
-            if (alias.empty())
-                alias = table_name;
-
-            table_expr.table_function = nullptr;
-            table_expr.subquery = make_intrusive<ASTSubquery>(std::move(view_query));
-            table_expr.subquery->setAlias(alias);
-
-            table_expr.children.clear();
-            table_expr.children.push_back(table_expr.subquery);
-        }
-    };
-
-    using ExpandParameterizedViewsVisitor = InDepthNodeVisitor<ExpandParameterizedViewsMatcher, true>;
-
     struct ExplainAnalyzedSyntaxMatcher
     {
         struct Data : public WithContext
@@ -227,43 +94,69 @@ namespace
 
     using ExplainAnalyzedSyntaxVisitor = InDepthNodeVisitor<ExplainAnalyzedSyntaxMatcher, true>;
 
-    class TableFunctionSecretsVisitor : public InDepthQueryTreeVisitor<TableFunctionSecretsVisitor>
+    /// Recursively hide every constant inside a secret argument, preserving the expression structure
+    /// (e.g. an `encrypt` key built as `leftPad('...', 16, '*')`). Constants already masked by
+    /// `resolveFunction` are left untouched so their mask ids survive; the rest are hidden here for the
+    /// dump-only path where the analysis passes did not run (`run_passes = 0`).
+    void maskConstantsInSubtree(QueryTreeNodePtr & node)
+    {
+        if (auto * constant = node->as<ConstantNode>())
+        {
+            if (!constant->isMasked())
+                constant->setMaskId();
+            return;
+        }
+        for (auto & child : node->getChildren())
+            if (child)
+                maskConstantsInSubtree(child);
+    }
+
+    class SecretArgumentsDumpVisitor : public InDepthQueryTreeVisitor<SecretArgumentsDumpVisitor>
     {
         friend class InDepthQueryTreeVisitor;
-        bool needChildVisit(VisitQueryTreeNodeType & parent [[maybe_unused]], VisitQueryTreeNodeType & child [[maybe_unused]])
+        static bool needChildVisit(VisitQueryTreeNodeType &, VisitQueryTreeNodeType &)
         {
-            QueryTreeNodeType type = parent->getNodeType();
-            return type == QueryTreeNodeType::QUERY || type == QueryTreeNodeType::JOIN || type == QueryTreeNodeType::TABLE_FUNCTION;
+            /// A secret-bearing function can hide under any carrier (a `UNION`, a scalar subquery, an
+            /// expression list), so descend everywhere; `visitImpl` selects the ones to mask.
+            return true;
         }
 
         void visitImpl(VisitQueryTreeNodeType & query_tree_node)
         {
-            auto * table_function_node_ptr = query_tree_node->as<TableFunctionNode>();
-            if (!table_function_node_ptr)
-                return;
-
-            if (FunctionSecretArgumentsFinder::Result secret_arguments = TableFunctionSecretArgumentsFinderTreeNode(*table_function_node_ptr).getResult(); secret_arguments.count)
+            if (auto * table_function_node = query_tree_node->as<TableFunctionNode>())
             {
-                auto & argument_nodes = table_function_node_ptr->getArguments().getNodes();
+                auto secret_arguments = TableFunctionSecretArgumentsFinderTreeNode(*table_function_node).getResult();
+                if (!secret_arguments.hasSecrets())
+                    return;
 
-                for (size_t n = secret_arguments.start; n < secret_arguments.start + secret_arguments.count; ++n)
-                {
-                    ConstantNode * constant_node = nullptr;
-                    if (secret_arguments.are_named)
+                /// A table-function secret value that is not a constant (an identifier or a constant
+                /// expression, e.g. a computed url) is hidden whole: the whole argument is the
+                /// credential carrier, and a tree dump cannot represent partial masking. Fail closed.
+                forEachSecretArgumentNode(
+                    table_function_node->getArguments().getNodes(),
+                    secret_arguments,
+                    [](size_t, QueryTreeNodePtr & node)
                     {
-                        auto * function_node = argument_nodes[n]->as<FunctionNode>();
-                        if (function_node && function_node->getArguments().getNodes().size() >= 2)
-                            constant_node = function_node->getArguments().getNodes().at(1)->as<ConstantNode>();
-                    }
+                        if (auto * constant = node->as<ConstantNode>())
+                            constant->setMaskId();
+                        else
+                            node = std::make_shared<ConstantNode>(Field("[HIDDEN]"));
+                    });
+            }
+            else if (auto * function_node = query_tree_node->as<FunctionNode>())
+            {
+                auto secret_arguments = FunctionSecretArgumentsFinderTreeNode(*function_node).getResult();
+                if (!secret_arguments.hasSecrets())
+                    return;
 
-                    if (!constant_node)
-                    {
-                        constant_node = argument_nodes[n]->as<ConstantNode>();
-                    }
-
-                    if (constant_node)
-                        constant_node->setMaskId();
-                }
+                /// An ordinary secret function (`encrypt`/`decrypt`/`HMAC`, ...) is not masked by
+                /// `resolveFunction` when the dump runs with the analysis passes disabled. Its secret
+                /// is carried in constants (a literal key or one built by an expression), so hide every
+                /// constant inside the secret argument, keeping the structure visible.
+                forEachSecretArgumentNode(
+                    function_node->getArguments().getNodes(),
+                    secret_arguments,
+                    [](size_t, QueryTreeNodePtr & node) { maskConstantsInSubtree(node); });
             }
         }
     };
@@ -424,8 +317,6 @@ struct QueryPipelineSettings
             {"header", query_pipeline_options.header},
             {"graph", graph},
             {"compact", compact},
-            {"distributed", query_pipeline_options.distributed},
-            {"compact_repeated_processor_chains", query_pipeline_options.compact_repeated_processor_chains},
     };
 
     std::unordered_map<std::string, std::reference_wrapper<Int64>> integer_settings;
@@ -563,12 +454,6 @@ bool explainQueryTree(
     auto query_tree = buildQueryTree(explained_query, query_context);
     bool need_newline = false;
 
-    if (!query_context->getSettingsRef()[Setting::format_display_secrets_in_show_and_select])
-    {
-        TableFunctionSecretsVisitor visitor;
-        visitor.visit(query_tree);
-    }
-
     if (settings.run_passes)
     {
         auto query_tree_pass_manager = QueryTreePassManager(query_context);
@@ -583,6 +468,15 @@ bool explainQueryTree(
         }
 
         query_tree_pass_manager.run(query_tree, pass_index);
+    }
+
+    /// Mask secrets only after the passes: the masked tree is used solely for the dump below, so
+    /// redaction (which may replace a non-constant secret value with a hidden constant) can never
+    /// change how the query is analyzed. With run_passes = 0 the tree is dumped without analysis.
+    if (!query_context->getSettingsRef()[Setting::format_display_secrets_in_show_and_select])
+    {
+        SecretArgumentsDumpVisitor visitor;
+        visitor.visit(query_tree);
     }
 
     if (settings.dump_tree)
@@ -655,11 +549,6 @@ QueryPipeline InterpreterExplainQuery::executeImpl()
         case ASTExplainQuery::AnalyzedSyntax:
         {
             auto settings = checkAndGetSettings<QuerySyntaxSettings>(ast.getSettings());
-
-            /// Inline any parameterized view calls with their parameter-substituted inner queries,
-            /// so EXPLAIN SYNTAX shows what the view actually expands to.
-            ExpandParameterizedViewsMatcher::Data expand_views_data(query_context);
-            ExpandParameterizedViewsVisitor(expand_views_data).visit(query);
 
             if (query_context->getSettingsRef()[Setting::allow_experimental_analyzer])
             {
@@ -785,9 +674,6 @@ QueryPipeline InterpreterExplainQuery::executeImpl()
 
                 if (settings.graph)
                 {
-                    if (settings.query_pipeline_options.distributed)
-                        throw Exception(ErrorCodes::NOT_IMPLEMENTED, "Option 'distributed' is not supported with option 'graph'");
-
                     /// Pipe holds QueryPlan, should not go out-of-scope
                     QueryPlanResourceHolder resources;
                     auto pipe = QueryPipelineBuilder::getPipe(std::move(*pipeline), resources);
@@ -860,7 +746,7 @@ QueryPipeline InterpreterExplainQuery::executeImpl()
                 throw Exception(ErrorCodes::INCORRECT_QUERY, "EXPLAIN TABLE OVERRIDE is not supported for the {}() table function", table_function->name);
             }
             auto storage = query_context->getQueryContext()->executeTableFunction(ast.getTableFunction());
-            StorageInMemoryMetadata metadata_snapshot = *storage->getInMemoryMetadataPtr(query_context, false);
+            auto metadata_snapshot = storage->getInMemoryMetadata();
             TableOverrideAnalyzer::Result override_info;
             TableOverrideAnalyzer override_analyzer(ast.getTableOverride());
             override_analyzer.analyze(metadata_snapshot, override_info);
@@ -897,7 +783,6 @@ QueryPipeline InterpreterExplainQuery::executeImpl()
     return QueryPipeline(std::make_shared<SourceFromSingleChunk>(std::make_shared<const Block>(sample_block.cloneWithColumns(std::move(res_columns)))));
 }
 
-void registerInterpreterExplainQuery(InterpreterFactory & factory);
 void registerInterpreterExplainQuery(InterpreterFactory & factory)
 {
     auto create_fn = [](const InterpreterFactory::Arguments & args)

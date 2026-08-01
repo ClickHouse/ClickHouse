@@ -83,7 +83,6 @@ static DictionaryPtr createRangeHashedDictionary(const std::string & full_name,
     return result;
 }
 
-void registerDictionaryRangeHashed(DictionaryFactory & factory);
 void registerDictionaryRangeHashed(DictionaryFactory & factory)
 {
     auto create_layout_simple = [=](const std::string & full_name,

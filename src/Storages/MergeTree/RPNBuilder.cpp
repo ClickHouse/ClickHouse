@@ -87,7 +87,7 @@ bool tryAppendConstantFunctionColumnName(
     bool use_analyzer,
     bool legacy)
 {
-    const auto * column_const = node.column.get();
+    const auto * column_const = typeid_cast<const ColumnConst *>(node.column.get());
     if (!column_const)
         return false;
 
@@ -117,9 +117,7 @@ bool tryAppendConstantFunctionColumnName(
         outputs.reserve(captured_columns.size());
         for (size_t i = 0; i < captured_columns.size(); ++i)
         {
-            const auto & captured = captured_columns[i];
-            auto captured_column_const = assert_cast<const ColumnConst &>(*captured.column).getPtr();
-            const auto & captured_node = captured_columns_dag.addColumn(std::move(captured_column_const), captured.type, captured.name);
+            const auto & captured_node = captured_columns_dag.addColumn(captured_columns[i]);
             const auto & alias_node = captured_columns_dag.addAlias(captured_node, capture.captured_names[i]);
             outputs.push_back(&alias_node);
         }
@@ -148,7 +146,7 @@ void appendColumnNameWithoutAlias(const ActionsDAG::Node & node, WriteBuffer & o
 
             /// If it was created from ASTLiteral, then result_name can be an alias.
             /// We need to convert value back to string here.
-            const auto * column_const = node.column.get();
+            const auto * column_const = typeid_cast<const ColumnConst *>(node.column.get());
             if (column_const && !use_analyzer)
                 writeString(applyVisitor(FieldVisitorToString(), column_const->getField()), out);
             else
@@ -250,14 +248,14 @@ RPNBuilderTreeNode::RPNBuilderTreeNode(const ActionsDAG::Node * dag_node_, RPNBu
     : dag_node(dag_node_)
     , tree_context(tree_context_)
 {
-    chassert(dag_node);
+    assert(dag_node);
 }
 
 RPNBuilderTreeNode::RPNBuilderTreeNode(const IAST * ast_node_, RPNBuilderTreeContext & tree_context_)
     : ast_node(ast_node_)
     , tree_context(tree_context_)
 {
-    chassert(ast_node);
+    assert(ast_node);
 }
 
 std::string RPNBuilderTreeNode::getColumnName() const
@@ -309,7 +307,7 @@ bool RPNBuilderTreeNode::isConstant() const
     }
 
     const auto * node_without_alias = getNodeWithoutAlias(dag_node);
-    return node_without_alias->column != nullptr;
+    return node_without_alias->column && isColumnConst(*node_without_alias->column);
 }
 
 bool RPNBuilderTreeNode::isNullable() const
@@ -412,9 +410,9 @@ bool RPNBuilderTreeNode::tryGetConstant(Field & output_value, DataTypePtr & outp
     {
         const auto * node_without_alias = getNodeWithoutAlias(dag_node);
 
-        if (node_without_alias->column)
+        if (node_without_alias->column && isColumnConst(*node_without_alias->column))
         {
-            output_value = node_without_alias->column->getField();
+            output_value = (*node_without_alias->column)[0];
             output_type = node_without_alias->result_type;
 
             if (!output_value.isNull())
@@ -435,7 +433,11 @@ FutureSetPtr tryGetSetFromDAGNode(const ActionsDAG::Node * dag_node)
     if (!dag_node->column)
         return {};
 
-    if (const auto * column_set = typeid_cast<const ColumnSet *>(&dag_node->column->getDataColumn()))
+    const IColumn * column = dag_node->column.get();
+    if (const auto * column_const = typeid_cast<const ColumnConst *>(column))
+        column = &column_const->getDataColumn();
+
+    if (const auto * column_set = typeid_cast<const ColumnSet *>(column))
         return column_set->getData();
 
     return {};

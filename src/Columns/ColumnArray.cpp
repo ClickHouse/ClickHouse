@@ -170,7 +170,7 @@ void ColumnArray::getValueNameImpl(WriteBufferFromOwnString & name_buf, size_t n
 
 std::string_view ColumnArray::getDataAt(size_t n) const
 {
-    chassert(n < size());
+    assert(n < size());
 
     /** Returns the range of memory that covers all elements of the array.
       * Works for arrays of fixed length values.
@@ -275,7 +275,7 @@ std::optional<size_t> ColumnArray::getSerializedValueSize(size_t n, const IColum
 
 void ColumnArray::deserializeAndInsertFromArena(ReadBuffer & in, const IColumn::SerializationSettings * settings)
 {
-    size_t array_size = 0;
+    size_t array_size;
     readBinaryLittleEndian<size_t>(array_size, in);
 
     for (size_t i = 0; i < array_size; ++i)
@@ -286,7 +286,7 @@ void ColumnArray::deserializeAndInsertFromArena(ReadBuffer & in, const IColumn::
 
 void ColumnArray::skipSerializedInArena(ReadBuffer & in) const
 {
-    size_t array_size = 0;
+    size_t array_size;
     readBinaryLittleEndian<size_t>(array_size, in);
 
     for (size_t i = 0; i < array_size; ++i)
@@ -308,7 +308,12 @@ void ColumnArray::updateHashWithValueRange(size_t begin, size_t end, SipHash & h
     size_t nested_begin = offsetAt(begin);
     size_t nested_end = offsetAt(end);
     getData().updateHashWithValueRange(nested_begin, nested_end, hash);
-    hash.update(reinterpret_cast<const char *>(&getOffsets()[begin]), (end - begin) * sizeof(getOffsets()[0]));
+    /// Relative offsets so equal data hashes equally regardless of position (insert deduplication).
+    for (size_t i = begin; i < end; ++i)
+    {
+        UInt64 relative_offset = getOffsets()[i] - nested_begin;
+        hash.update(relative_offset);
+    }
 }
 
 WeakHash32 ColumnArray::getWeakHash32() const
@@ -439,7 +444,7 @@ int ColumnArray::compareAtImpl(size_t n, size_t m, const IColumn & rhs_, int nan
     size_t min_size = std::min(lhs_size, rhs_size);
     for (size_t i = 0; i < min_size; ++i)
     {
-        int res = 0;
+        int res;
         if (collator)
             res = getData().compareAtWithCollation(offsetAt(n) + i, rhs.offsetAt(m) + i, *rhs.data.get(), nan_direction_hint, *collator);
         else
@@ -517,10 +522,10 @@ size_t ColumnArray::capacity() const
     return getOffsets().capacity();
 }
 
-void ColumnArray::prepareForSquashing(const VectorWithMemoryTracking<ColumnPtr> & source_columns, size_t factor)
+void ColumnArray::prepareForSquashing(const Columns & source_columns, size_t factor)
 {
     size_t new_size = size();
-    VectorWithMemoryTracking<ColumnPtr> source_data_columns;
+    Columns source_data_columns;
     source_data_columns.reserve(source_columns.size());
     for (const auto & source_column : source_columns)
     {
@@ -1222,7 +1227,7 @@ ColumnPtr ColumnArray::index(const IColumn & indexes, size_t limit) const
 template <typename T>
 ColumnPtr ColumnArray::indexImpl(const PaddedPODArray<T> & indexes, size_t limit) const
 {
-    chassert(limit <= indexes.size());
+    assert(limit <= indexes.size());
     if (limit == 0)
         return ColumnArray::create(data->cloneEmpty());
 
@@ -1655,9 +1660,9 @@ size_t ColumnArray::getNumberOfDimensions() const
     return 1 + nested_array->getNumberOfDimensions();   /// Every modern C++ compiler optimizes tail recursion.
 }
 
-void ColumnArray::chooseDynamicStructureForMerge(const VectorWithMemoryTracking<ColumnPtr> & source_columns, std::optional<size_t> max_dynamic_subcolumns)
+void ColumnArray::chooseDynamicStructureForMerge(const Columns & source_columns, std::optional<size_t> max_dynamic_subcolumns)
 {
-    VectorWithMemoryTracking<ColumnPtr> nested_source_columns;
+    Columns nested_source_columns;
     nested_source_columns.reserve(source_columns.size());
     for (const auto & source_column : source_columns)
         nested_source_columns.push_back(assert_cast<const ColumnArray &>(*source_column).getDataPtr());
@@ -1670,25 +1675,12 @@ void ColumnArray::takeExactDynamicStructureFrom(const IColumn & source)
     data->takeExactDynamicStructureFrom(assert_cast<const ColumnArray &>(source).getData());
 }
 
-void ColumnArray::takeOrCalculateStatisticsFrom(const VectorWithMemoryTracking<ColumnPtr> & source_columns)
+void ColumnArray::takeOrCalculateStatisticsFrom(const Columns & source_columns)
 {
-    VectorWithMemoryTracking<ColumnPtr> nested_source_columns;
+    Columns nested_source_columns;
     nested_source_columns.reserve(source_columns.size());
     for (const auto & source_column : source_columns)
-    {
-        if (!source_column)
-            throw Exception(ErrorCodes::LOGICAL_ERROR, "Source column is invalid");
-
-        const auto * array_column = typeid_cast<const ColumnArray *>(source_column.get());
-        if (!array_column)
-            throw Exception(ErrorCodes::LOGICAL_ERROR, "Source column is not Array, but {}", source_column->getName());
-
-        nested_source_columns.push_back(array_column->getDataPtr());
-    }
-
-    if (!data)
-        throw Exception(ErrorCodes::LOGICAL_ERROR, "Data column is invalid");
-
+        nested_source_columns.push_back(assert_cast<const ColumnArray &>(*source_column).getDataPtr());
     data->takeOrCalculateStatisticsFrom(nested_source_columns);
 }
 

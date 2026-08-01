@@ -28,35 +28,33 @@ CoordinationMode validateAndGet(uint8_t candidate)
 }
 }
 
-void ParallelReadRequest::serialize(WriteBuffer & out, UInt64 initiator_pr_protocol_version, UInt64 initiator_tcp_protocol_version) const
+void ParallelReadRequest::serialize(WriteBuffer & out, UInt64 initiator_protocol_version) const
 {
     /// Previously we didn't maintain backward compatibility and every change was breaking.
     /// Particularly, we had an equality check for the version. To work around that code
     /// in previous server versions we now have to lie to them about the version.
-    const UInt64 version = initiator_tcp_protocol_version >= DBMS_MIN_REVISION_WITH_VERSIONED_PARALLEL_REPLICAS_PROTOCOL
+    const UInt64 version = initiator_protocol_version >= DBMS_MIN_REVISION_WITH_VERSIONED_PARALLEL_REPLICAS_PROTOCOL
         ? DBMS_PARALLEL_REPLICAS_PROTOCOL_VERSION
         : DBMS_MIN_SUPPORTED_PARALLEL_REPLICAS_PROTOCOL_VERSION;
     writeIntBinary(version, out);
 
     writeIntBinary(mode, out);
     writeIntBinary(replica_num, out);
-    writeIntBinary(min_marks_per_request, out);
-    description.serialize(out, initiator_pr_protocol_version);
-    if (initiator_pr_protocol_version >= DBMS_PARALLEL_REPLICAS_MIN_VERSION_WITH_STREAM_ID)
-        writeStringBinary(stream_id, out);
+    writeIntBinary(min_number_of_marks, out);
+    description.serialize(out, initiator_protocol_version);
 }
+
 
 String ParallelReadRequest::describe() const
 {
-    String result
-        = fmt::format("replica_num {}, stream {}, min_num_of_marks {}, ", replica_num, stream_id, min_marks_per_request);
+    String result = fmt::format("replica_num {}, min_num_of_marks {}, ", replica_num, min_number_of_marks);
     result += description.describe();
     return result;
 }
 
-ParallelReadRequest ParallelReadRequest::deserialize(ReadBuffer & in, UInt64 replica_pr_protocol_version)
+ParallelReadRequest ParallelReadRequest::deserialize(ReadBuffer & in, UInt64 replica_protocol_version)
 {
-    UInt64 version = 0;
+    UInt64 version;
     readIntBinary(version, in);
     if (version < DBMS_MIN_SUPPORTED_PARALLEL_REPLICAS_PROTOCOL_VERSION)
         throw Exception(
@@ -65,39 +63,42 @@ ParallelReadRequest ParallelReadRequest::deserialize(ReadBuffer & in, UInt64 rep
             version,
             DBMS_MIN_SUPPORTED_PARALLEL_REPLICAS_PROTOCOL_VERSION);
 
-    CoordinationMode mode = {};
-    size_t replica_num = 0;
-    size_t min_marks_per_request = 0;
+    CoordinationMode mode;
+    size_t replica_num;
+    size_t min_number_of_marks;
     RangesInDataPartsDescription description;
 
-    uint8_t mode_candidate = 0;
+    uint8_t mode_candidate;
     readIntBinary(mode_candidate, in);
     mode = validateAndGet(mode_candidate);
     readIntBinary(replica_num, in);
-    readIntBinary(min_marks_per_request, in);
-    description.deserialize(in, replica_pr_protocol_version);
+    readIntBinary(min_number_of_marks, in);
+    description.deserialize(in, replica_protocol_version);
 
-    String stream_id;
-    if (replica_pr_protocol_version >= DBMS_PARALLEL_REPLICAS_MIN_VERSION_WITH_STREAM_ID)
-        readStringBinary(stream_id, in);
-    return ParallelReadRequest(mode, replica_num, min_marks_per_request, std::move(description), std::move(stream_id));
+    return ParallelReadRequest(mode, replica_num, min_number_of_marks, std::move(description));
 }
 
-void ParallelReadResponse::serialize(WriteBuffer & out, UInt64 replica_pr_protocol_version, UInt64 replica_tcp_protocol_version) const
+void ParallelReadRequest::merge(ParallelReadRequest & other)
+{
+    assert(mode == other.mode);
+    assert(replica_num == other.replica_num);
+    assert(min_number_of_marks == other.min_number_of_marks);
+    description.merge(other.description);
+}
+
+void ParallelReadResponse::serialize(WriteBuffer & out, UInt64 replica_protocol_version) const
 {
     /// Previously we didn't maintain backward compatibility and every change was breaking.
     /// Particularly, we had an equality check for the version. To work around that code
     /// in previous server versions we now have to lie to them about the version.
-    UInt64 version = replica_tcp_protocol_version >= DBMS_MIN_REVISION_WITH_VERSIONED_PARALLEL_REPLICAS_PROTOCOL
+    UInt64 version = replica_protocol_version >= DBMS_MIN_REVISION_WITH_VERSIONED_PARALLEL_REPLICAS_PROTOCOL
         ? DBMS_PARALLEL_REPLICAS_PROTOCOL_VERSION
         : DBMS_MIN_SUPPORTED_PARALLEL_REPLICAS_PROTOCOL_VERSION;
     /// Must be the first
     writeIntBinary(version, out);
 
     writeBoolText(finish, out);
-    description.serialize(out, replica_pr_protocol_version);
-    if (replica_pr_protocol_version >= DBMS_PARALLEL_REPLICAS_MIN_VERSION_WITH_STREAM_ID)
-        writeStringBinary(stream_id, out);
+    description.serialize(out, replica_protocol_version);
 }
 
 String ParallelReadResponse::describe() const
@@ -105,9 +106,9 @@ String ParallelReadResponse::describe() const
     return fmt::format("{}. Finish: {}", description.describe(), finish);
 }
 
-void ParallelReadResponse::deserialize(ReadBuffer & in, UInt64 replica_pr_protocol_version)
+void ParallelReadResponse::deserialize(ReadBuffer & in, UInt64 replica_protocol_version)
 {
-    UInt64 version = 0;
+    UInt64 version;
     readIntBinary(version, in);
     if (version < DBMS_MIN_SUPPORTED_PARALLEL_REPLICAS_PROTOCOL_VERSION)
         throw Exception(
@@ -117,32 +118,25 @@ void ParallelReadResponse::deserialize(ReadBuffer & in, UInt64 replica_pr_protoc
             DBMS_MIN_SUPPORTED_PARALLEL_REPLICAS_PROTOCOL_VERSION);
 
     readBoolText(finish, in);
-    description.deserialize(in, replica_pr_protocol_version);
-    if (replica_pr_protocol_version >= DBMS_PARALLEL_REPLICAS_MIN_VERSION_WITH_STREAM_ID)
-        readStringBinary(stream_id, in);
+    description.deserialize(in, replica_protocol_version);
 }
 
 
-void InitialAllRangesAnnouncement::serialize(
-    WriteBuffer & out, UInt64 initiator_pr_protocol_version, UInt64 initiator_tcp_protocol_version) const
+void InitialAllRangesAnnouncement::serialize(WriteBuffer & out, UInt64 initiator_protocol_version) const
 {
     /// Previously we didn't maintain backward compatibility and every change was breaking.
     /// Particularly, we had an equality check for the version. To work around that code
     /// in previous server versions we now have to lie to them about the version.
-    UInt64 version = initiator_tcp_protocol_version >= DBMS_MIN_REVISION_WITH_VERSIONED_PARALLEL_REPLICAS_PROTOCOL
+    UInt64 version = initiator_protocol_version >= DBMS_MIN_REVISION_WITH_VERSIONED_PARALLEL_REPLICAS_PROTOCOL
         ? DBMS_PARALLEL_REPLICAS_PROTOCOL_VERSION
         : DBMS_MIN_SUPPORTED_PARALLEL_REPLICAS_PROTOCOL_VERSION;
     writeIntBinary(version, out);
 
     writeIntBinary(mode, out);
-    description.serialize(out, initiator_pr_protocol_version);
+    description.serialize(out, initiator_protocol_version);
     writeIntBinary(replica_num, out);
-    if (initiator_pr_protocol_version >= DBMS_PARALLEL_REPLICAS_MIN_VERSION_WITH_MARK_SEGMENT_SIZE_FIELD)
+    if (initiator_protocol_version >= DBMS_PARALLEL_REPLICAS_MIN_VERSION_WITH_MARK_SEGMENT_SIZE_FIELD)
         writeIntBinary(mark_segment_size, out);
-    if (initiator_pr_protocol_version >= DBMS_PARALLEL_REPLICAS_MIN_VERSION_WITH_MIN_MARKS_PER_TASK)
-        writeIntBinary(min_marks_per_request, out);
-    if (initiator_pr_protocol_version >= DBMS_PARALLEL_REPLICAS_MIN_VERSION_WITH_STREAM_ID)
-        writeStringBinary(stream_id, out);
 }
 
 
@@ -151,9 +145,9 @@ String InitialAllRangesAnnouncement::describe()
     return fmt::format("replica {}, mode {}, {}", replica_num, mode, description.describe());
 }
 
-InitialAllRangesAnnouncement InitialAllRangesAnnouncement::deserialize(ReadBuffer & in, UInt64 replica_pr_protocol_version)
+InitialAllRangesAnnouncement InitialAllRangesAnnouncement::deserialize(ReadBuffer & in, UInt64 replica_protocol_version)
 {
-    UInt64 version = 0;
+    UInt64 version;
     readIntBinary(version, in);
     if (version < DBMS_MIN_SUPPORTED_PARALLEL_REPLICAS_PROTOCOL_VERSION)
         throw Exception(
@@ -162,28 +156,21 @@ InitialAllRangesAnnouncement InitialAllRangesAnnouncement::deserialize(ReadBuffe
             version,
             DBMS_MIN_SUPPORTED_PARALLEL_REPLICAS_PROTOCOL_VERSION);
 
-    CoordinationMode mode = {};
+    CoordinationMode mode;
     RangesInDataPartsDescription description;
-    size_t replica_num = 0;
+    size_t replica_num;
 
-    uint8_t mode_candidate = 0;
+    uint8_t mode_candidate;
     readIntBinary(mode_candidate, in);
     mode = validateAndGet(mode_candidate);
-    description.deserialize(in, replica_pr_protocol_version);
+    description.deserialize(in, replica_protocol_version);
     readIntBinary(replica_num, in);
 
     size_t mark_segment_size = 128;
-    if (replica_pr_protocol_version >= DBMS_PARALLEL_REPLICAS_MIN_VERSION_WITH_MARK_SEGMENT_SIZE_FIELD)
+    if (replica_protocol_version >= DBMS_PARALLEL_REPLICAS_MIN_VERSION_WITH_MARK_SEGMENT_SIZE_FIELD)
         readIntBinary(mark_segment_size, in);
 
-    size_t min_marks_per_request = 0;
-    if (replica_pr_protocol_version >= DBMS_PARALLEL_REPLICAS_MIN_VERSION_WITH_MIN_MARKS_PER_TASK)
-        readIntBinary(min_marks_per_request, in);
-
-    String stream_id;
-    if (replica_pr_protocol_version >= DBMS_PARALLEL_REPLICAS_MIN_VERSION_WITH_STREAM_ID)
-        readStringBinary(stream_id, in);
-    return InitialAllRangesAnnouncement{mode, description, replica_num, mark_segment_size, min_marks_per_request, std::move(stream_id)};
+    return InitialAllRangesAnnouncement{mode, description, replica_num, mark_segment_size};
 }
 
 }

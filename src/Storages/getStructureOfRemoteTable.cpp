@@ -37,7 +37,7 @@ namespace ErrorCodes
 }
 
 
-static ColumnsDescription getStructureOfRemoteTableInShard(
+ColumnsDescription getStructureOfRemoteTableInShard(
     const Cluster & cluster,
     const Cluster::ShardInfo & shard_info,
     const StorageID & table_id,
@@ -64,7 +64,7 @@ static ColumnsDescription getStructureOfRemoteTableInShard(
         {
             context->checkAccess(AccessType::SHOW_COLUMNS, table_id);
             auto storage_ptr = DatabaseCatalog::instance().getTable(table_id, context);
-            return storage_ptr->getInMemoryMetadataPtr(context, false)->getColumns();
+            return storage_ptr->getInMemoryMetadataPtr()->getColumns();
         }
 
         /// Request for a table description
@@ -156,12 +156,7 @@ ColumnsDescription getStructureOfRemoteTable(
         if (shard_info.isLocal())
         {
             const auto & res = getStructureOfRemoteTableInShard(cluster, shard_info, table_id, context, table_func_ptr);
-
-            /// Columns may be empty due to a race with concurrent DDL (e.g. REPLACE TABLE or lazy storage initialization).
-            /// In that case, fall through to try remote shards.
-            if (res.empty())
-                break;
-
+            chassert(!res.empty());
             return res;
         }
     }

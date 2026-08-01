@@ -95,7 +95,7 @@ StoragePtr TableFunctionTimeSeriesTarget<target_kind>::executeImpl(
 template <ViewTarget::Kind target_kind>
 ColumnsDescription TableFunctionTimeSeriesTarget<target_kind>::getActualTableStructure(ContextPtr context, bool /* is_insert_query */) const
 {
-    return getTargetTable(context)->getInMemoryMetadataPtr(context, false)->columns;
+    return getTargetTable(context)->getInMemoryMetadataPtr()->columns;
 }
 
 template <ViewTarget::Kind target_kind>
@@ -105,39 +105,32 @@ const char * TableFunctionTimeSeriesTarget<target_kind>::getStorageEngineName() 
 }
 
 
-void registerTableFunctionTimeSeries(TableFunctionFactory & factory);
 void registerTableFunctionTimeSeries(TableFunctionFactory & factory)
 {
-    factory.registerFunction<TableFunctionTimeSeriesTarget<ViewTarget::Samples>>(
+    factory.registerFunction<TableFunctionTimeSeriesTarget<ViewTarget::Data>>(
         {
-            .description=R"(Provides direct access to the 'samples' target table for a specified TimeSeries table.)",
-            .examples{{"timeSeriesSamples", "SELECT * from timeSeriesSamples('mydb', 'time_series_table');", ""}},
+            .description=R"(Provides direct access to the 'data' target table for a specified TimeSeries table.)",
+            .examples{{"timeSeriesData", "SELECT * from timeSeriesData('mydb', 'time_series_table');", ""}},
             .category = FunctionDocumentation::Category::TableFunction
         });
-
-    factory.registerAlias("timeSeriesData", "timeSeriesSamples");
-
     factory.registerFunction<TableFunctionTimeSeriesTarget<ViewTarget::Tags>>(
         {
             .description=R"(Provides direct access to the 'tags' target table for a specified TimeSeries table.)",
             .examples{{"timeSeriesTags", "SELECT * from timeSeriesTags('mydb', 'time_series_table');", ""}},
             .category = FunctionDocumentation::Category::TableFunction
         });
-
     factory.registerFunction<TableFunctionTimeSeriesTarget<ViewTarget::Metrics>>(
         {
             .description=R"(Provides direct access to the 'metrics' target table for a specified TimeSeries table.)",
             .examples{{"timeSeriesMetrics", "SELECT * from timeSeriesMetrics('mydb', 'time_series_table');", ""}},
             .category = FunctionDocumentation::Category::TableFunction
         });
-
     factory.registerFunction<TableFunctionTimeSeriesSelector>(
         {
             .description=R"(Reads time series from a specified TimeSeries table.)",
             .examples{{"timeSeriesSelector", "SELECT * from timeSeriesSelector('mydb', 'time_series_table', 'http_requests{job=\"prometheus\"}', now() - INTERVAL 10 MINUTES, now());", ""}},
             .category = FunctionDocumentation::Category::TableFunction
         });
-
     factory.registerFunction<TableFunctionPrometheusQuery</* range = */ false>>(
         {
             .description=R"(Evaluates a prometheus query using data from a specified TimeSeries table.)",

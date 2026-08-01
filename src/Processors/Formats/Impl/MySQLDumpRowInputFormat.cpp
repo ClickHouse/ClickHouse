@@ -249,7 +249,7 @@ static NamesAndTypesList getColumnsList(const ASTExpressionList * columns_defini
     return columns_name_and_type;
 }
 
-static void readUnquotedColumnName(String & name, ReadBuffer & in)
+void readUnquotedColumnName(String & name, ReadBuffer & in)
 {
     name.clear();
     while (!in.eof())
@@ -265,7 +265,7 @@ static void readUnquotedColumnName(String & name, ReadBuffer & in)
 
 /// Try to read column names from a list in INSERT query.
 /// Like '(x, `column name`, z)'
-static void tryReadColumnNames(ReadBuffer & in, std::vector<String> * column_names)
+void tryReadColumnNames(ReadBuffer & in, std::vector<String> * column_names)
 {
     skipWhitespaceIfAny(in);
     /// Check that we have the list of columns.
@@ -556,7 +556,6 @@ void MySQLDumpSchemaReader::transformTypesIfNeeded(DB::DataTypePtr & type, DB::D
     transformInferredTypesIfNeeded(type, new_type, format_settings);
 }
 
-void registerInputFormatMySQLDump(FormatFactory & factory);
 void registerInputFormatMySQLDump(FormatFactory & factory)
 {
     factory.registerInputFormat("MySQLDump", [](
@@ -569,7 +568,6 @@ void registerInputFormatMySQLDump(FormatFactory & factory)
     });
 }
 
-void registerMySQLSchemaReader(FormatFactory & factory);
 void registerMySQLSchemaReader(FormatFactory & factory)
 {
     factory.registerSchemaReader("MySQLDump", [](ReadBuffer & buf, const FormatSettings & settings)

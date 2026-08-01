@@ -199,7 +199,6 @@ void VerticalRowOutputFormat::writeSpecialRow(const Columns & columns, size_t ro
         writeField(*columns[i], *serializations[i], row_num);
 }
 
-void registerOutputFormatVertical(FormatFactory & factory);
 void registerOutputFormatVertical(FormatFactory & factory)
 {
     factory.registerOutputFormat("Vertical", [](

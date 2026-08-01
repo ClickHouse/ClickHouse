@@ -2,7 +2,6 @@
 
 #include <Common/OpenTelemetryTraceContext.h>
 #include <Common/OpenTelemetryTracingContext.h>
-#include <Common/ZooKeeper/IKeeper.h>
 #include <Common/ZooKeeper/ZooKeeperConstants.h>
 #include <Common/ZooKeeper/KeeperSpans.h>
 #include <Common/StaticString.h>
@@ -64,12 +63,11 @@ struct ZooKeeperRequest : virtual Request
 
     std::chrono::steady_clock::time_point create_ts = {};
 
-    std::shared_ptr<OpenTelemetry::TracingContext> tracing_context;
+    std::optional<OpenTelemetry::TracingContext> tracing_context;
     DB::ZooKeeperOpentelemetrySpans spans;
 
     ZooKeeperRequest() = default;
     ZooKeeperRequest(const ZooKeeperRequest &) = default;
-    ZooKeeperRequest(ZooKeeperRequest &&) = default;
 
     virtual OpNum getOpNum() const = 0;
     virtual int32_t tryGetOpNum() const { return static_cast<int32_t>(getOpNum()); }
@@ -133,7 +131,7 @@ struct ZooKeeperReconfigRequest final : ZooKeeperRequest
     String joining;
     String leaving;
     String new_members;
-    int64_t version{}; // kazoo sends a 64bit integer in this request
+    int64_t version; // kazoo sends a 64bit integer in this request
 
     String getPath() const override { return keeper_config_path; }
     OpNum getOpNum() const override { return OpNum::Reconfig; }
@@ -822,10 +820,10 @@ struct ZooKeeperMultiReadResponse final : public ZooKeeperMultiResponse
 /// and never send to client.
 struct ZooKeeperSessionIDRequest final : ZooKeeperRequest
 {
-    int64_t internal_id{};
-    int64_t session_timeout_ms{};
+    int64_t internal_id;
+    int64_t session_timeout_ms;
     /// Who requested this session
-    int32_t server_id{};
+    int32_t server_id;
 
     Coordination::OpNum getOpNum() const override { return OpNum::SessionID; }
     String getPath() const override { return {}; }
@@ -841,10 +839,10 @@ struct ZooKeeperSessionIDRequest final : ZooKeeperRequest
 /// and never send to client.
 struct ZooKeeperSessionIDResponse final : ZooKeeperResponse
 {
-    int64_t internal_id{};
-    int64_t session_id{};
+    int64_t internal_id;
+    int64_t session_id;
     /// Who requested this session
-    int32_t server_id{};
+    int32_t server_id;
 
     void readImpl(ReadBuffer & in) override;
 
@@ -854,32 +852,6 @@ struct ZooKeeperSessionIDResponse final : ZooKeeperResponse
     Coordination::OpNum getOpNum() const override { return OpNum::SessionID; }
 };
 
-struct ZooKeeperListRecursiveRequest final : ListRecursiveRequest, ZooKeeperRequest
-{
-    ZooKeeperListRecursiveRequest() = default;
-    explicit ZooKeeperListRecursiveRequest(const ListRecursiveRequest & base) : ListRecursiveRequest(base) {}
-
-    OpNum getOpNum() const override { return OpNum::ListRecursive; }
-    void writeImpl(WriteBuffer & out) const override;
-    void readImpl(ReadBuffer & in) override;
-    std::string toStringImpl(bool short_format) const override;
-    size_t sizeImpl() const override;
-
-    ZooKeeperResponsePtr makeResponse() const override;
-    bool isReadRequest() const override { return true; }
-
-    size_t bytesSize() const override { return ListRecursiveRequest::bytesSize() + sizeof(xid); }
-};
-
-struct ZooKeeperListRecursiveResponse : ListRecursiveResponse, ZooKeeperResponse
-{
-    void readImpl(ReadBuffer & in) override;
-    void writeImpl(WriteBuffer & out) const override;
-    size_t sizeImpl() const override;
-    OpNum getOpNum() const override { return OpNum::ListRecursive; }
-
-    size_t bytesSize() const override { return ListRecursiveResponse::bytesSize() + sizeof(xid) + sizeof(zxid); }
-};
 class ZooKeeperRequestFactory final : private boost::noncopyable
 {
 

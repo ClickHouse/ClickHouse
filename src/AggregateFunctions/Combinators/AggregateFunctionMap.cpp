@@ -179,7 +179,7 @@ public:
                 key = assert_cast<const ColumnVector<KeyType> &>(key_column).getData()[offset + i];
             }
 
-            AggregateDataPtr nested_place = nullptr;
+            AggregateDataPtr nested_place;
             auto it = merged_maps.find(key);
 
             if (it == merged_maps.end())
@@ -206,7 +206,7 @@ public:
         {
             const auto & it = merged_maps.find(elem.first);
 
-            AggregateDataPtr nested_place = nullptr;
+            AggregateDataPtr nested_place;
             if (it == merged_maps.end())
             {
                 // elem.second cannot be copied since this it will be destroyed after merging,
@@ -270,13 +270,13 @@ public:
     void deserialize(AggregateDataPtr __restrict place, ReadBuffer & buf, std::optional<size_t> /* version */, Arena * arena) const override
     {
         auto & merged_maps = this->data(place).merged_maps;
-        UInt64 size = 0;
+        UInt64 size;
 
         readVarUInt(size, buf);
         for (UInt64 i = 0; i < size; ++i)
         {
-            KeyType key{};
-            AggregateDataPtr nested_place = nullptr;
+            KeyType key;
+            AggregateDataPtr nested_place;
 
             this->data(place).readKey(key, buf);
             nested_place = arena->alignedAlloc(nested_func->sizeOfData(), nested_func->alignOfData());
@@ -461,7 +461,6 @@ public:
 
 }
 
-void registerAggregateFunctionCombinatorMap(AggregateFunctionCombinatorFactory & factory);
 void registerAggregateFunctionCombinatorMap(AggregateFunctionCombinatorFactory & factory)
 {
     factory.registerCombinator(std::make_shared<AggregateFunctionCombinatorMap>());

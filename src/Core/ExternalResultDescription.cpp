@@ -1,5 +1,4 @@
 #include <Core/ExternalResultDescription.h>
-#include <Columns/ColumnConst.h>
 #include <DataTypes/DataTypeDate.h>
 #include <DataTypes/DataTypeDateTime.h>
 #include <DataTypes/DataTypeDateTime64.h>

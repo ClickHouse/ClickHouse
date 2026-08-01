@@ -20,8 +20,8 @@
 #include <DataTypes/DataTypeString.h>
 #include <DataTypes/DataTypesNumber.h>
 #include <IO/AsyncReadCounters.h>
-#include <Interpreters/MergeTreeTransaction/VersionMetadata.h>
 #include <Interpreters/ProfileEventsExt.h>
+#include <Interpreters/TransactionVersionMetadata.h>
 #include <base/getFQDNOrHostName.h>
 #include <Common/ClickHouseRevision.h>
 #include <Common/DateLUTImpl.h>
@@ -64,7 +64,7 @@ ColumnsDescription QueryLogElement::getColumnsDescription()
     return ColumnsDescription
     {
         {"hostname", low_cardinality_string, "Hostname of the server executing the query."},
-        {"type", std::move(query_status_datatype), "Type of an event that occurred when executing the query. Values: `QueryStart` — successful start of query execution, `QueryFinish` — successful end of query execution, `ExceptionBeforeStart` — exception before the start of query execution, `ExceptionWhileProcessing` — exception during the query execution."},
+        {"type", std::move(query_status_datatype), "Type of an event that occurred when executing the query."},
         {"event_date", std::make_shared<DataTypeDate>(), "Query starting date."},
         {"event_time", std::make_shared<DataTypeDateTime>(), "Query starting time."},
         {"event_time_microseconds", std::make_shared<DataTypeDateTime64>(6), "Query starting time with microseconds precision."},
@@ -96,12 +96,12 @@ ColumnsDescription QueryLogElement::getColumnsDescription()
         {"stack_trace", std::make_shared<DataTypeString>(), "Stack trace. An empty string, if the query was completed successfully."},
 
         {"is_initial_query", std::make_shared<DataTypeUInt8>(), "Query type. Possible values: 1 — query was initiated by the client, 0 — query was initiated by another query as part of distributed query execution."},
-        {"connection_address", DataTypeFactory::instance().get("IPv6"), "The client IP address from which the connection was made. When connected through a proxy, this will be the address of the proxy."},
-        {"connection_port", std::make_shared<DataTypeUInt16>(), "The client port from which the connection was made. When connected through a proxy, this will be the port of the proxy."},
+        {"connection_address", DataTypeFactory::instance().get("IPv6"), "The client IP address from which connection was made."},
+        {"connection_port", std::make_shared<DataTypeUInt16>(), "The client port from which connection was made."},
         {"user", low_cardinality_string, "Name of the user who initiated the current query."},
         {"query_id", std::make_shared<DataTypeString>(), "ID of the query."},
-        {"address", DataTypeFactory::instance().get("IPv6"), "IP address that was used to make the query. When connected through a proxy and `auth_use_forwarded_address` is set, this will be the address of the client instead of the proxy."},
-        {"port", std::make_shared<DataTypeUInt16>(), "The client port that was used to make the query. When connected through a proxy and `auth_use_forwarded_address` is set, this will be the port of the client instead of the proxy."},
+        {"address", DataTypeFactory::instance().get("IPv6"), "IP address that was used to make the query."},
+        {"port", std::make_shared<DataTypeUInt16>(), "The client port that was used to make the query."},
         {"initial_user", low_cardinality_string, "Name of the user who ran the initial query (for distributed query execution)."},
         {"initial_query_id", std::make_shared<DataTypeString>(), "ID of the initial query (for distributed query execution)."},
         {"initial_address", DataTypeFactory::instance().get("IPv6"), "IP address that the parent query was launched from."},
@@ -114,7 +114,6 @@ ColumnsDescription QueryLogElement::getColumnsDescription()
         {"os_user", low_cardinality_string, "Operating system username who runs clickhouse-client."},
         {"client_hostname", low_cardinality_string, "Hostname of the client machine where the clickhouse-client or another TCP client is run."},
         {"client_name", low_cardinality_string, "The clickhouse-client or another TCP client name."},
-        {"client_agent", low_cardinality_string, "The AI coding agent that invoked the client (e.g. `claude-code`, `cursor`), detected from environment variables. Empty if no agent was detected."},
         {"client_revision", std::make_shared<DataTypeUInt32>(), "Revision of the clickhouse-client or another TCP client."},
         {"client_version_major", std::make_shared<DataTypeUInt32>(), "Major version of the clickhouse-client or another TCP client."},
         {"client_version_minor", std::make_shared<DataTypeUInt32>(), "Minor version of the clickhouse-client or another TCP client."},
@@ -372,7 +371,6 @@ void QueryLogElement::appendClientInfo(const ClientInfo & client_info, MutableCo
     typeid_cast<ColumnLowCardinality &>(*columns[i++]).insertData(client_info.os_user.data(), client_info.os_user.size());
     typeid_cast<ColumnLowCardinality &>(*columns[i++]).insertData(client_info.client_hostname.data(), client_info.client_hostname.size());
     typeid_cast<ColumnLowCardinality &>(*columns[i++]).insertData(client_info.client_name.data(), client_info.client_name.size());
-    typeid_cast<ColumnLowCardinality &>(*columns[i++]).insertData(client_info.client_agent.data(), client_info.client_agent.size());
     typeid_cast<ColumnUInt32 &>(*columns[i++]).getData().push_back(client_info.client_tcp_protocol_version);
     typeid_cast<ColumnUInt32 &>(*columns[i++]).getData().push_back(static_cast<UInt32>(client_info.client_version_major));
     typeid_cast<ColumnUInt32 &>(*columns[i++]).getData().push_back(static_cast<UInt32>(client_info.client_version_minor));

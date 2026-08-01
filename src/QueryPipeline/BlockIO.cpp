@@ -32,7 +32,7 @@ void BlockIO::reset()
     /// TODO Do we need also reset callbacks? In which order?
 }
 
-BlockIO & BlockIO::operator= (BlockIO && rhs) /// NOLINT(hicpp-noexcept-move,performance-noexcept-move-constructor)
+BlockIO & BlockIO::operator= (BlockIO && rhs) noexcept
 {
     if (this == &rhs)
         return *this;

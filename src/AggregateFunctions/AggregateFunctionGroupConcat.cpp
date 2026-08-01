@@ -1,5 +1,4 @@
 #include <AggregateFunctions/AggregateFunctionGroupConcat.h>
-#include <DataTypes/DataTypeString.h>
 #include <Columns/ColumnString.h>
 #include <Interpreters/castColumn.h>
 
@@ -173,15 +172,6 @@ void GroupConcatImpl<has_limit>::deserialize(AggregateDataPtr __restrict place, 
     UInt64 temp_size = 0;
     readVarUInt(temp_size, buf);
 
-    /// Prevent the allocator's "Too large size passed to allocator" `LOGICAL_ERROR`.
-    static constexpr UInt64 max_data_size = UInt64{1} << 48;
-    if (temp_size > max_data_size)
-        throw Exception(
-            ErrorCodes::BAD_ARGUMENTS,
-            "Invalid groupConcat state: data size {} is too large (maximum: {})",
-            temp_size,
-            max_data_size);
-
     cur_data.checkAndUpdateSize(temp_size, arena);
 
     buf.readStrict(cur_data.data, temp_size);
@@ -232,7 +222,7 @@ bool GroupConcatImpl<has_limit>::allocatesMemoryInArena() const { return true; }
 
 // Implementation of add, merge, serialize, deserialize, insertResultInto, etc. remains unchanged.
 
-static AggregateFunctionPtr createAggregateFunctionGroupConcat(
+AggregateFunctionPtr createAggregateFunctionGroupConcat(
     const std::string & name, const DataTypes & argument_types, const Array & parameters, const Settings *)
 {
     assertUnary(name, argument_types);
@@ -273,7 +263,6 @@ static AggregateFunctionPtr createAggregateFunctionGroupConcat(
     return std::make_shared<GroupConcatImpl</* has_limit= */ false>>(argument_types[0], parameters, limit, delimiter);
 }
 
-void registerAggregateFunctionGroupConcat(AggregateFunctionFactory & factory);
 void registerAggregateFunctionGroupConcat(AggregateFunctionFactory & factory)
 {
     AggregateFunctionProperties properties = { .returns_default_when_only_null = false, .is_order_dependent = true };
@@ -343,13 +332,7 @@ John, Jane
     FunctionDocumentation documentation_groupConcat = {description_groupConcat, syntax_groupConcat, arguments_groupConcat, parameters_groupConcat, returned_value_groupConcat, examples_groupConcat, introduced_in_groupConcat, category_groupConcat};
 
     factory.registerFunction("groupConcat", { createAggregateFunctionGroupConcat, documentation_groupConcat, properties });
-    /// Register every alias from `getNameAndAliases` (index 0 is the canonical name).
-    /// `string_agg` is the PostgreSQL/SQL-standard alias; its argument order matches `groupConcat(expr, sep)`.
-    /// The alias names must also be present in `getNameAndAliases` so the analyzer rewrites
-    /// the 2-argument form into the parameterized form (see `QueryTreeBuilder::setSecondArgumentAsParameter`).
-    const auto & aliases = GroupConcatImpl<false>::getNameAndAliases();
-    for (size_t i = 1; i < aliases.size(); ++i)
-        factory.registerAlias(aliases.at(i), aliases.at(0), AggregateFunctionFactory::Case::Insensitive);
+    factory.registerAlias(GroupConcatImpl<false>::getNameAndAliases().at(1), GroupConcatImpl<false>::getNameAndAliases().at(0), AggregateFunctionFactory::Case::Insensitive);
 }
 
 }

@@ -102,7 +102,6 @@ QueryPlanStepPtr ReadFromTableStep::clone() const
     return std::make_unique<ReadFromTableStep>(getOutputHeader(), table_name, table_expression_modifiers, use_parallel_replicas);
 }
 
-void registerReadFromTableStep(QueryPlanStepRegistry & registry);
 void registerReadFromTableStep(QueryPlanStepRegistry & registry)
 {
     registry.registerStep("ReadFromTable", &ReadFromTableStep::deserialize);

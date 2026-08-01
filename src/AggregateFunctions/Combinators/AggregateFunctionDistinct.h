@@ -3,6 +3,7 @@
 #include <AggregateFunctions/IAggregateFunction.h>
 #include <AggregateFunctions/Combinators/AggregateFunctionNull.h>
 #include <AggregateFunctions/KeyHolderHelpers.h>
+#include <DataTypes/DataTypeArray.h>
 #include <IO/ReadHelpersArena.h>
 #include <Common/HashTable/HashMap.h>
 #include <Common/HashTable/HashSet.h>
@@ -24,15 +25,12 @@ struct AggregateFunctionDistinctSingleNumericData
     /// history will hold all values added so far
     Set history;
 
+    /// Returns true if the value did not exist in the history before
     bool add(const IColumn ** __restrict columns, size_t /* columns_num */, size_t row_num, Arena *)
     {
-        return add(*columns[0], row_num);
-    }
-
-    bool add(const IColumn & column, size_t row_num)
-    {
-        const auto & vec = assert_cast<const ColumnVector<T> &>(column).getData();
-        return history.insert(vec[row_num]).second;
+        const auto & vec = assert_cast<const ColumnVector<T> &>(*columns[0]).getData();
+        const T value = vec[row_num];
+        return history.insert(value).second;
     }
 
     /// Pass the new values from rhs to the nested function via argument_columns
@@ -76,7 +74,7 @@ struct AggregateFunctionDistinctGenericData
 
     void deserialize(ReadBuffer & buf, Arena * arena)
     {
-        size_t size = 0;
+        size_t size;
         readVarUInt(size, buf);
         for (size_t i = 0; i < size; ++i)
             history.insert(readStringBinaryInto(*arena, buf));
@@ -89,8 +87,8 @@ struct AggregateFunctionDistinctSingleGenericData : public AggregateFunctionDist
     bool add(const IColumn ** columns, size_t /* columns_num */, size_t row_num, Arena * arena)
     {
         auto key_holder = getKeyHolder<is_plain_column>(*columns[0], row_num, *arena);
-        Set::LookupResult it = nullptr;
-        bool inserted = false;
+        Set::LookupResult it;
+        bool inserted;
         history.emplace(key_holder, it, inserted);
 
         return inserted;
@@ -101,8 +99,8 @@ struct AggregateFunctionDistinctSingleGenericData : public AggregateFunctionDist
         for (const auto & elem : rhs.history)
         {
             const auto & value = elem.getValue();
-            Set::LookupResult it = nullptr;
-            bool inserted = false;
+            Set::LookupResult it;
+            bool inserted;
             history.emplace(ArenaKeyHolder{value, *arena}, it, inserted);
 
             if (inserted)
@@ -124,8 +122,8 @@ struct AggregateFunctionDistinctMultipleGenericData : public AggregateFunctionDi
             value = std::string_view{cur_ref.data() - value.size(), value.size() + cur_ref.size()};
         }
 
-        Set::LookupResult it = nullptr;
-        bool inserted = false;
+        Set::LookupResult it;
+        bool inserted;
         history.emplace(SerializedKeyHolder{value, *arena}, it, inserted);
 
         return inserted;
@@ -138,8 +136,8 @@ struct AggregateFunctionDistinctMultipleGenericData : public AggregateFunctionDi
             const auto & value = elem.getValue();
             if (!history.contains(value))
             {
-                Set::LookupResult it = nullptr;
-                bool inserted = false;
+                Set::LookupResult it;
+                bool inserted;
                 history.emplace(ArenaKeyHolder{value, *arena}, it, inserted);
                 ReadBufferFromString in(it->getValue());
                 /// Multiple columns are serialized one by one
@@ -193,7 +191,7 @@ private:
         for (size_t i = 0; i < argument_columns.size(); ++i)
             arguments_raw[i] = argument_columns[i].get();
 
-        chassert(!argument_columns.empty());
+        assert(!argument_columns.empty());
         addToNested(0, argument_columns[0]->size(), place, arguments_raw.data(), arena);
     }
 
@@ -212,56 +210,6 @@ public:
         bool added = this->data(place).add(columns, arguments_num, row_num, arena);
         if (added)
             addToNested(row_num, row_num + 1, place, columns, arena);
-    }
-
-    void addBatchSinglePlace(
-        size_t row_begin, size_t row_end,
-        AggregateDataPtr __restrict place,
-        const IColumn ** __restrict columns,
-        Arena * arena,
-        ssize_t if_argument_pos) const override
-    {
-        auto & data = this->data(place);
-
-        /// Detect whether Data provides the single-column `add(IColumn &, row)` overload.
-        constexpr bool is_single_numeric = requires(Data & d, const IColumn & c, size_t r)
-        {
-            { d.add(c, r) } -> std::same_as<bool>;
-        };
-
-        if (if_argument_pos >= 0)
-        {
-            const auto & flags = assert_cast<const ColumnUInt8 &>(*columns[if_argument_pos]).getData();
-            if constexpr (is_single_numeric)
-            {
-                const IColumn & column = *columns[0];
-                for (size_t row = row_begin; row < row_end; ++row)
-                    if (flags[row] && data.add(column, row))
-                        addToNested(row, row + 1, place, columns, arena);
-            }
-            else
-            {
-                for (size_t row = row_begin; row < row_end; ++row)
-                    if (flags[row] && data.add(columns, arguments_num, row, arena))
-                        addToNested(row, row + 1, place, columns, arena);
-            }
-        }
-        else
-        {
-            if constexpr (is_single_numeric)
-            {
-                const IColumn & column = *columns[0];
-                for (size_t row = row_begin; row < row_end; ++row)
-                    if (data.add(column, row))
-                        addToNested(row, row + 1, place, columns, arena);
-            }
-            else
-            {
-                for (size_t row = row_begin; row < row_end; ++row)
-                    if (data.add(columns, arguments_num, row, arena))
-                        addToNested(row, row + 1, place, columns, arena);
-            }
-        }
     }
 
     void merge(AggregateDataPtr __restrict place, ConstAggregateDataPtr rhs, Arena * arena) const override
@@ -352,22 +300,6 @@ public:
     size_t getDefaultVersion() const override
     {
         return nested_func->getDefaultVersion();
-    }
-
-    bool canMergeStateFromDifferentVariant(const IAggregateFunction & rhs) const override
-    {
-        /// Distinct state contains a history of unique values and can be merged across
-        /// variants without reading the nested function state from rhs
-        return this->haveSameDefinition(rhs);
-    }
-
-    void mergeStateFromDifferentVariant(
-        AggregateDataPtr __restrict place,
-        const IAggregateFunction & /*rhs*/,
-        ConstAggregateDataPtr rhs_place,
-        Arena * arena) const override
-    {
-        merge(place, rhs_place, arena);
     }
 
     AggregateFunctionPtr getNestedFunction() const override { return nested_func; }

@@ -15,7 +15,6 @@
 #include <DataTypes/Serializations/SerializationNullable.h>
 #include <DataTypes/DataTypeString.h>
 #include <DataTypes/DataTypeNullable.h>
-#include <DataTypes/DataTypeTuple.h>
 
 
 namespace DB
@@ -378,23 +377,8 @@ bool CSVFormatReader::readField(
         /// commas, which might be also used as delimiters. However,
         /// they do not contain empty unquoted fields, so this check
         /// works for tuples as well.
-        ///
-        /// Exception: `Nullable(Tuple())` with zero elements serializes to
-        /// an empty field in CSV, so an empty value is its only valid
-        /// representation. Let it fall through to normal deserialization
-        /// instead of inserting NULL as the default.
-        bool is_nullable_empty_tuple = false;
-        if (type->isNullable())
-        {
-            if (const auto * tuple_type = typeid_cast<const DataTypeTuple *>(removeNullable(type).get()))
-                is_nullable_empty_tuple = tuple_type->getElements().empty();
-        }
-
-        if (!is_nullable_empty_tuple)
-        {
-            column.insertDefault();
-            return false;
-        }
+        column.insertDefault();
+        return false;
     }
 
     if (format_settings.csv.use_default_on_bad_values)
@@ -448,11 +432,7 @@ bool CSVFormatReader::readFieldOrDefault(DB::IColumn & column, const DB::DataTyp
 void CSVFormatReader::skipPrefixBeforeHeader()
 {
     for (size_t i = 0; i != format_settings.csv.skip_first_lines; ++i)
-    {
-        if (buf->eof())
-            break;
         readRow();
-    }
 }
 
 void CSVFormatReader::setReadBuffer(ReadBuffer & in_)
@@ -514,7 +494,6 @@ std::optional<DataTypes> CSVSchemaReader::readRowAndGetDataTypesImpl()
 }
 
 
-void registerInputFormatCSV(FormatFactory & factory);
 void registerInputFormatCSV(FormatFactory & factory)
 {
     auto register_func = [&](const String & format_name, bool with_names, bool with_types)
@@ -604,7 +583,6 @@ std::pair<bool, size_t> fileSegmentationEngineCSVImpl(ReadBuffer & in, DB::Memor
     return {loadAtPosition(in, memory, pos), number_of_rows};
 }
 
-void registerFileSegmentationEngineCSV(FormatFactory & factory);
 void registerFileSegmentationEngineCSV(FormatFactory & factory)
 {
     auto register_func = [&](const String & format_name, bool, bool)
@@ -623,7 +601,6 @@ void registerFileSegmentationEngineCSV(FormatFactory & factory)
     markFormatWithNamesAndTypesSupportsSamplingColumns("CSV", factory);
 }
 
-void registerCSVSchemaReader(FormatFactory & factory);
 void registerCSVSchemaReader(FormatFactory & factory)
 {
     auto register_func = [&](const String & format_name, bool with_names, bool with_types)
@@ -632,14 +609,16 @@ void registerCSVSchemaReader(FormatFactory & factory)
         {
             return std::make_shared<CSVSchemaReader>(buf, with_names, with_types, settings);
         });
-        factory.registerAdditionalInfoForSchemaCacheGetter(format_name, [with_names](const FormatSettings & settings)
+        if (!with_types)
         {
-            String result = getAdditionalFormatInfoByEscapingRule(settings, FormatSettings::EscapingRule::CSV);
-            result += fmt::format(", skip_first_lines={}", settings.csv.skip_first_lines);
-            if (!with_names)
-                result += fmt::format(", column_names_for_schema_inference={}, try_detect_header={}", settings.column_names_for_schema_inference, settings.csv.try_detect_header);
-            return result;
-        });
+            factory.registerAdditionalInfoForSchemaCacheGetter(format_name, [with_names](const FormatSettings & settings)
+            {
+                String result = getAdditionalFormatInfoByEscapingRule(settings, FormatSettings::EscapingRule::CSV);
+                if (!with_names)
+                    result += fmt::format(", column_names_for_schema_inference={}, try_detect_header={}, skip_first_lines={}", settings.column_names_for_schema_inference, settings.csv.try_detect_header, settings.csv.skip_first_lines);
+                return result;
+            });
+        }
     };
 
     registerWithNamesAndTypes("CSV", register_func);

@@ -391,7 +391,6 @@ AggregateFunctionPtr createAggregateFunctionAnyLast(
 
 }
 
-void registerAggregateFunctionsAny(AggregateFunctionFactory & factory);
 void registerAggregateFunctionsAny(AggregateFunctionFactory & factory)
 {
     /// any documentation

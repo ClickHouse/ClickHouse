@@ -15,7 +15,7 @@ namespace DB
 /// Transform that builds text indexes and periodically flushes their segments
 /// into temporary storage, when amount of accumulated data reaches some threshold.
 /// Used for materialization of text indexes.
-class BuildTextIndexTransform final : public ISimpleTransform
+class BuildTextIndexTransform : public ISimpleTransform
 {
 public:
     BuildTextIndexTransform(
@@ -74,6 +74,7 @@ public:
     MergeTextIndexesTask(
         std::vector<TextIndexSegment> segments,
         MergeTreeMutableDataPartPtr new_data_part_,
+        size_t num_rows_,
         MergeTreeIndexPtr index_ptr_,
         std::shared_ptr<MergedPartOffsets> merged_part_offsets_,
         const MergeTreeReaderSettings & reader_settings_,
@@ -107,6 +108,7 @@ private:
 
     std::vector<TextIndexSegment> segments;
     MergeTreeMutableDataPartPtr new_data_part;
+    size_t num_rows;
     MergeTreeIndexPtr index_ptr;
     MergeTreeIndexTextParams params;
 

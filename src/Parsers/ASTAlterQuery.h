@@ -179,7 +179,7 @@ public:
     IAST * rename_to = nullptr;
 
     /// For MODIFY REFRESH
-    IAST * refresh = nullptr;
+    ASTPtr refresh;
 
     bool detach = false;        /// true for DETACH PARTITION
 
@@ -199,7 +199,7 @@ public:
 
     bool first = false;         /// option for ADD_COLUMN, MODIFY_COLUMN
 
-    DataDestinationType move_destination_type{}; /// option for MOVE PART/PARTITION
+    DataDestinationType move_destination_type; /// option for MOVE PART/PARTITION
 
     String move_destination_name;             /// option for MOVE PART/PARTITION
 
@@ -223,7 +223,7 @@ public:
     String to_table;
 
     String snapshot_name;
-    IAST * snapshot_desc{};
+    IAST * snapshot_desc;
 
     /// For EXECUTE command (e.g. expire_snapshots)
     String execute_command_name;

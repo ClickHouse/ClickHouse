@@ -27,7 +27,7 @@ namespace
 {
 
 /// Get the current time. (It is a constant, it is evaluated once for the entire query.)
-class ExecutableFunctionNow final : public IExecutableFunction
+class ExecutableFunctionNow : public IExecutableFunction
 {
 public:
     explicit ExecutableFunctionNow(time_t time_) : time_value(time_) {}
@@ -45,7 +45,7 @@ private:
     time_t time_value;
 };
 
-class FunctionBaseNow final : public IFunctionBase
+class FunctionBaseNow : public IFunctionBase
 {
 public:
     explicit FunctionBaseNow(time_t time_, DataTypes argument_types_, DataTypePtr return_type_)
@@ -84,7 +84,7 @@ private:
     DataTypePtr return_type;
 };
 
-class NowOverloadResolver final : public IFunctionOverloadResolver
+class NowOverloadResolver : public IFunctionOverloadResolver
 {
 public:
     static constexpr auto name = "now";

@@ -10,7 +10,6 @@ NullWriteBuffer NullOutputFormat::empty_buffer;
 
 NullOutputFormat::NullOutputFormat(SharedHeader header) : IOutputFormat(header, empty_buffer) {}
 
-void registerOutputFormatNull(FormatFactory & factory);
 void registerOutputFormatNull(FormatFactory & factory)
 {
     factory.registerOutputFormat("Null", [](

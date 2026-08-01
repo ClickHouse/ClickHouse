@@ -115,7 +115,7 @@ bool HTTPServerRequest::checkPeerConnected() const
 {
     try
     {
-        char b = 0;
+        char b;
         if (!socket->receiveBytes(&b, 1, MSG_DONTWAIT | MSG_PEEK))
             return false;
     }
@@ -158,7 +158,7 @@ X509Certificate HTTPServerRequest::peerCertificate() const
 
 void HTTPServerRequest::readRequest(ReadBuffer & in)
 {
-    char ch = 0;
+    char ch;
     std::string method;
     std::string uri;
     std::string version;

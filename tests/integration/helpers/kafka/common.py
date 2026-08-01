@@ -110,20 +110,10 @@ def existing_kafka_topic(admin_client, topic_name, max_retries=50):
         kafka_delete_topic(admin_client, topic_name, max_retries)
 
 
-def get_admin_client(kafka_cluster, retries=15):
-    # Broker may not be reachable yet; retry like get_kafka_producer() instead of
-    # raising NoBrokersAvailable on the first attempt.
-    errors = []
-    for _ in range(retries):
-        try:
-            return KafkaAdminClient(
-                bootstrap_servers="localhost:{}".format(kafka_cluster.kafka_port)
-            )
-        except kafka.errors.NoBrokersAvailable as e:
-            errors += [str(e)]
-            time.sleep(1)
-
-    raise Exception("Admin client connection not established, {}".format(errors))
+def get_admin_client(kafka_cluster):
+    return KafkaAdminClient(
+        bootstrap_servers="localhost:{}".format(kafka_cluster.kafka_port)
+    )
 
 
 def kafka_produce(kafka_cluster, topic, messages, timestamp=None, retries=15):

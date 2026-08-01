@@ -97,7 +97,6 @@ void JSONEachRowRowOutputFormat::resetFormatterImpl()
     ostr = RowOutputFormatWithExceptionHandlerAdaptor::getWriteBufferPtr();
 }
 
-void registerOutputFormatJSONEachRow(FormatFactory & factory);
 void registerOutputFormatJSONEachRow(FormatFactory & factory)
 {
     auto register_function = [&](const String & format, bool serialize_as_strings, bool pretty_json)

@@ -83,7 +83,6 @@ private:
     BuffersWriter writer;
 };
 
-void registerInputFormatBuffers(FormatFactory & factory);
 void registerInputFormatBuffers(FormatFactory & factory)
 {
     factory.registerInputFormat(
@@ -92,7 +91,6 @@ void registerInputFormatBuffers(FormatFactory & factory)
         { return std::make_shared<BuffersInputFormat>(buf, std::make_shared<const Block>(sample), settings); });
 }
 
-void registerOutputFormatBuffers(FormatFactory & factory);
 void registerOutputFormatBuffers(FormatFactory & factory)
 {
     factory.registerOutputFormat(

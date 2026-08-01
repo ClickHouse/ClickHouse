@@ -48,7 +48,6 @@ size_t RawBLOBRowInputFormat::countRows(size_t)
     return 1;
 }
 
-void registerInputFormatRawBLOB(FormatFactory & factory);
 void registerInputFormatRawBLOB(FormatFactory & factory)
 {
     factory.registerInputFormat("RawBLOB", [](
@@ -61,7 +60,6 @@ void registerInputFormatRawBLOB(FormatFactory & factory)
     });
 }
 
-void registerRawBLOBSchemaReader(FormatFactory & factory);
 void registerRawBLOBSchemaReader(FormatFactory & factory)
 {
     factory.registerExternalSchemaReader("RawBLOB", [](

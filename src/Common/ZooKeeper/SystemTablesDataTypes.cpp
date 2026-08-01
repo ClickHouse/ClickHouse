@@ -80,7 +80,6 @@ DB::DataTypePtr SystemTablesDataTypes::operationEnum()
             {"RemoveRecursive",     static_cast<Int16>(OpNum::RemoveRecursive)},
             {"CheckStat",           static_cast<Int16>(OpNum::CheckStat)},
             {"FilteredListWithStatsAndData", static_cast<Int16>(OpNum::FilteredListWithStatsAndData)},
-            {"ListRecursive",               static_cast<Int16>(OpNum::ListRecursive)},
         });
     return result;
 }

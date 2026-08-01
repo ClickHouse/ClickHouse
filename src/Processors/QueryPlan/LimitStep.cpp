@@ -1,5 +1,4 @@
 #include <Processors/QueryPlan/LimitStep.h>
-#include <Processors/QueryPlan/QueryPlanFormat.h>
 #include <Processors/QueryPlan/QueryPlanStepRegistry.h>
 #include <Processors/QueryPlan/Serialization.h>
 #include <QueryPipeline/QueryPipelineBuilder.h>
@@ -105,14 +104,14 @@ void LimitStep::serialize(Serialization & ctx) const
 
 QueryPlanStepPtr LimitStep::deserialize(Deserialization & ctx)
 {
-    UInt8 flags = 0;
+    UInt8 flags;
     readIntBinary(flags, ctx.in);
 
     bool always_read_till_end = bool(flags & 1);
     bool with_ties = bool(flags & 2);
 
-    UInt64 limit = 0;
-    UInt64 offset = 0;
+    UInt64 limit;
+    UInt64 offset;
 
     readVarUInt(limit, ctx.in);
     readVarUInt(offset, ctx.in);
@@ -124,7 +123,6 @@ QueryPlanStepPtr LimitStep::deserialize(Deserialization & ctx)
     return std::make_unique<LimitStep>(ctx.input_headers.front(), limit, offset, always_read_till_end, with_ties, std::move(description));
 }
 
-void registerLimitStep(QueryPlanStepRegistry & registry);
 void registerLimitStep(QueryPlanStepRegistry & registry)
 {
     registry.registerStep("Limit", LimitStep::deserialize);

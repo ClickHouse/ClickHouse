@@ -3,6 +3,7 @@
 #include <Interpreters/SystemLog.h>
 #include <Interpreters/ClientInfo.h>
 #include <Access/Common/AuthenticationType.h>
+#include <Core/NamesAndTypes.h>
 #include <Core/NamesAndAliases.h>
 #include <Columns/IColumn_fwd.h>
 #include <Storages/ColumnsDescription.h>

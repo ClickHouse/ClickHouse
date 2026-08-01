@@ -105,7 +105,6 @@ enum RuleType
 };
 
 const String & ruleTypeStr(RuleType rule_type);
-std::string buildTaggedRegex(std::string regexp_str);
 
 struct Retention
 {
@@ -150,6 +149,8 @@ struct Params
     Graphite::Patterns patterns_tagged;
     void updateHash(SipHash & hash) const;
 };
+
+bool operator==(const Params & a, const Params & b);
 
 using RollupRule = std::pair<const RetentionPattern *, const AggregationPattern *>;
 
