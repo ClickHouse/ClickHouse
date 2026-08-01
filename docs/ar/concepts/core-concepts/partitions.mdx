@@ -44,16 +44,16 @@ PARTITION BY toStartOfMonth(date);
   ### البنية على القرص
 </div>
 
-عند إدراج مجموعة من الصفوف في الجدول، لا ينشئ ClickHouse جزء بيانات واحدًا يحتوي على جميع الصفوف المُدرجة (على [الأقل](/ar/reference/settings/session-settings#max_insert_block_size))، كما هو موضح [هنا](/ar/concepts/core-concepts/parts)، بل ينشئ جزء بيانات جديدًا لكل قيمة فريدة لمفتاح القسم بين الصفوف المُدرجة:
+عند إدراج مجموعة من الصفوف في الجدول، لا ينشئ ClickHouse جزء بيانات واحدًا يحتوي على جميع الصفوف المُدرجة (على [الأقل](/ar/reference/settings/session-settings#max_insert_block_size))، كما هو موضح [هنا](/ar/concepts/core-concepts/parts)، بل ينشئ جزء بيانات جديدًا لكل قيمة فريدة لمفتاح التقسيم بين الصفوف المُدرجة:
 
 <Image img="/images/managing-data/core-concepts/partitions.webp" size="lg" alt="معالجة INSERT" />
 
 <br />
 
-يقوم ClickHouse server أولًا بتقسيم الصفوف في مثال الإدراج، الذي يتضمن 4 صفوف كما هو موضح في المخطط أعلاه، وفقًا لقيمة مفتاح القسم `toStartOfMonth(date)`.
+يقوم ClickHouse server أولًا بتقسيم الصفوف في مثال الإدراج، الذي يتضمن 4 صفوف كما هو موضح في المخطط أعلاه، وفقًا لقيمة مفتاح التقسيم `toStartOfMonth(date)`.
 ثم تُعالَج الصفوف، لكل قسم تم تحديده، [كالمعتاد](/ar/concepts/core-concepts/parts) من خلال تنفيذ عدة خطوات متسلسلة (① الفرز، ② التقسيم إلى أعمدة، ③ الضغط، ④ الكتابة إلى القرص).
 
-لاحظ أنه عند تمكين التقسيم، ينشئ ClickHouse تلقائيًا [فهارس MinMax](https://github.com/ClickHouse/ClickHouse/blob/dacc8ebb0dac5bbfce5a7541e7fc70f26f7d5065/src/Storages/MergeTree/IMergeTreeDataPart.h#L341) لكل جزء بيانات. وهي ببساطة ملفات لكل عمود في الجدول مستخدم في تعبير مفتاح القسم، وتحتوي على القيمتين الصغرى والكبرى لذلك العمود داخل جزء البيانات.
+لاحظ أنه عند تمكين التقسيم، ينشئ ClickHouse تلقائيًا [فهارس MinMax](https://github.com/ClickHouse/ClickHouse/blob/dacc8ebb0dac5bbfce5a7541e7fc70f26f7d5065/src/Storages/MergeTree/IMergeTreeDataPart.h#L341) لكل جزء بيانات. وهي ببساطة ملفات لكل عمود في الجدول مستخدم في تعبير مفتاح التقسيم، وتحتوي على القيمتين الصغرى والكبرى لذلك العمود داخل جزء البيانات.
 
 <div id="per-partition-merges">
   ### عمليات الدمج داخل كل قسم
@@ -61,7 +61,7 @@ PARTITION BY toStartOfMonth(date);
 
 عند تمكين التقسيم، لا يَدمج ClickHouse [أجزاء البيانات](/ar/concepts/core-concepts/merges) إلا داخل القسم نفسه، وليس عبر الأقسام. نوضّح ذلك في مثال الجدول أعلاه:
 
-<Image img="/images/managing-data/core-concepts/merges_with_partitions.webp" size="lg" alt="عمليات دمج الأجزاء" />
+<Image img="/images/managing-data/core-concepts/merges_with_partitions.webp" size="lg" alt="PART MERGES" />
 
 <br />
 

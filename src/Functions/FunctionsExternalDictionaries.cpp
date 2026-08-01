@@ -1275,6 +1275,42 @@ R"(
         factory.registerFunction<FunctionDictGetHierarchy>(documentation);
     }
 
+    /// dictGetRoot
+    {
+        FunctionDocumentation::Description description =
+R"(
+Returns the topmost ancestor (the root) of a key in a [hierarchical dictionary](/docs/sql-reference/statements/create/dictionary/layouts/hierarchical#hierarchical-dictionaries).
+
+This is a convenient equivalent of taking the last element of the array returned by [dictGetHierarchy](#dictGetHierarchy), i.e. `dictGetHierarchy(dict_name, key)[-1]`.
+
+If the key is itself a top-level node of the hierarchy, the key is returned. If the key is absent from the dictionary, `0` is returned.
+)";
+        FunctionDocumentation::Syntax syntax = "dictGetRoot(dict_name, key)";
+        FunctionDocumentation::Arguments arguments = {
+            {"dict_name", "Name of the dictionary.", {"String"}},
+            {"key", "Key value.", {"UInt64"}}
+        };
+        FunctionDocumentation::ReturnedValue returned_value = {"Returns the topmost ancestor (the root) for the key.", {"UInt64"}};
+        FunctionDocumentation::Examples examples = {
+            {"Get the root for a key",
+R"(
+CREATE TABLE hierarchy_source (id UInt64, parent_id UInt64, name String) ENGINE = Memory;
+INSERT INTO hierarchy_source VALUES (0, 0, 'Root'), (1, 0, 'Level 1 - Node 1'), (2, 1, 'Level 2 - Node 2'), (3, 1, 'Level 2 - Node 3'), (4, 2, 'Level 3 - Node 4'), (5, 2, 'Level 3 - Node 5'), (6, 3, 'Level 3 - Node 6');
+CREATE DICTIONARY hierarchical_dictionary (id UInt64, parent_id UInt64 HIERARCHICAL, name String) PRIMARY KEY id SOURCE(CLICKHOUSE(TABLE 'hierarchy_source' DB currentDatabase())) LAYOUT(HASHED()) LIFETIME(MIN 300 MAX 600);
+SELECT dictGetRoot('hierarchical_dictionary', 5)
+)",
+R"(
+┌─dictGetRoot(⋯ionary', 5)─┐
+│                        1 │
+└──────────────────────────┘
+)"}
+        };
+        FunctionDocumentation::IntroducedIn introduced_in = {26, 7};
+        FunctionDocumentation documentation{description, syntax, arguments, {}, returned_value, examples, introduced_in, category_dictionary};
+
+        factory.registerFunction<FunctionDictGetRoot>(documentation);
+    }
+
     /// dictIsIn
     {
         FunctionDocumentation::Description description_dictIsIn =
