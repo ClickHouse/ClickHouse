@@ -1137,9 +1137,12 @@ def _restart_nats(nats_cluster, attempts = 4):
     # still lands with no subscribe line in between, so the attempt proceeds and the consumption
     # assertion fails, which is what the pristine-master arm confirms.
     for attempt in range(attempts):
+        # Anchored before the wait rather than after it: `num_waiting` can be satisfied by the
+        # previous request while a re-subscribe is already under way, and a window opened only after
+        # the wait returns would not contain that subscribe line at all.
+        anchor = nats_helpers.log_line_count(instance)
         _wait_for_parked_pull_request()
 
-        anchor = nats_helpers.log_line_count(instance)
         nats_helpers.kill_nats(nats_cluster)
         time.sleep(4)
         resubscribed = nats_helpers.count_in_log_after(instance, SUBSCRIBED_LOG_LINE, anchor)
