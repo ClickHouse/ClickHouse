@@ -27,12 +27,13 @@ String absoluteOffsets(const std::vector<UInt64> & offsets)
 }
 
 /// Read `limit` offsets into `offsets_column`, the way `MergeTreeIndexGranuleSet::deserializeBinary` does.
-void readOffsets(ColumnPtr & offsets_column, const String & data, size_t limit)
+/// `data` is a reference so that a temporary passed by the caller outlives the non-owning `in`.
+void readOffsets(ColumnPtr & offsets_column, const String & data, size_t limit, bool position_independent_encoding = false)
 {
     ReadBufferFromString in(data);
     ISerialization::DeserializeBinaryBulkSettings settings;
     settings.getter = [&in](const ISerialization::SubstreamPath &) -> ReadBuffer * { return &in; };
-    settings.position_independent_encoding = false;
+    settings.position_independent_encoding = position_independent_encoding;
     SerializationArray::deserializeOffsetsBinaryBulk(offsets_column, limit, settings, nullptr);
 }
 
@@ -103,11 +104,7 @@ TEST(SerializationArrayOffsets, AcceptsNonDecreasingAcrossRangeBoundary)
 TEST(SerializationArrayOffsets, SizesEncodingIsMonotonicByConstruction)
 {
     auto offsets_column = emptyOffsets();
-    ReadBufferFromString in(absoluteOffsets({2, 1, 3}));
-    ISerialization::DeserializeBinaryBulkSettings settings;
-    settings.getter = [&in](const ISerialization::SubstreamPath &) -> ReadBuffer * { return &in; };
-    settings.position_independent_encoding = true;
-    SerializationArray::deserializeOffsetsBinaryBulk(offsets_column, 3, settings, nullptr);
+    readOffsets(offsets_column, absoluteOffsets({2, 1, 3}), 3, /*position_independent_encoding=*/true);
     ASSERT_EQ(offsetValues(offsets_column), (ColumnArray::Offsets{2, 3, 6}));
 }
 
