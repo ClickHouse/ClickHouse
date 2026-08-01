@@ -133,7 +133,7 @@ public:
         const Block & sample_block_,
         mysqlxx::PoolWithFailoverPtr pool_,
         const std::string & query_str_,
-        const StreamSettings & mysql_input_stream_settings_
+        const MySQLStreamSettings & mysql_input_stream_settings_
     );
 
     ReadFromMySQLStep(const ReadFromMySQLStep &) = default;
@@ -151,7 +151,7 @@ public:
 private:
     mysqlxx::PoolWithFailoverPtr pool;
     String query_str;
-    const StreamSettings mysql_input_stream_settings;
+    const MySQLStreamSettings mysql_input_stream_settings;
 };
 
 }

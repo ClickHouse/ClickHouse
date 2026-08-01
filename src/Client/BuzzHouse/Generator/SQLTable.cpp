@@ -1743,7 +1743,7 @@ String StatementGenerator::addTableColumn(
         if (t.hasPostgreSQLPeer())
         {
             /// Datetime must have 6 digits precision
-            this->next_type_mask &= ~(set_any_datetime_precision);
+            this->next_type_mask &= ~set_any_datetime_precision;
         }
     }
     if ((t.isSQLiteEngine() && (t.isDeterministic() || rg.nextSmallNumber() < 8)) || t.hasSQLitePeer())
@@ -1766,7 +1766,7 @@ String StatementGenerator::addTableColumn(
     if (t.hasDatabasePeer())
     {
         /// ClickHouse's UUID sorting order is different from other databases
-        this->next_type_mask &= ~(allow_uuid);
+        this->next_type_mask &= ~allow_uuid;
     }
     addTableColumnInternal(rg, t, modify, is_pk, special, col, cd);
 

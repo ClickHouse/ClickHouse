@@ -346,7 +346,7 @@ std::map<String, UInt64> DatabaseMySQL::fetchTablesWithModificationTime(ContextP
              " WHERE TABLE_SCHEMA = " << quote << database_name_in_mysql;
 
     std::map<String, UInt64> tables_with_modification_time;
-    StreamSettings mysql_input_stream_settings(local_context->getSettingsRef());
+    MySQLStreamSettings mysql_input_stream_settings(local_context->getSettingsRef());
     auto result = std::make_unique<MySQLSource>(mysql_pool.get(), query.str(), tables_status_sample_block, mysql_input_stream_settings);
     QueryPipeline pipeline(std::move(result));
 

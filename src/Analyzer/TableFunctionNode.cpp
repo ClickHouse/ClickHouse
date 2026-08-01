@@ -121,6 +121,7 @@ void TableFunctionNode::updateTreeHashImpl(HashState & state, CompareOptions) co
     {
         state.update(change.name.size());
         state.update(change.name);
+        state.update(change.shorthand);
 
         const auto & value_dump = change.value.dump();
         state.update(value_dump.size());
