@@ -91,6 +91,8 @@ It is designed to publish almost real production data for usage in benchmarks. T
 
 The table function is a repeating, effectively infinite source: it trains on the result of the inner query and then re-executes that query to generate obfuscated rows, advancing the seed on every pass. Always bound the output with an outer `LIMIT` (as in the example below); otherwise the query runs until cancelled.
 
+The set of supported column types is the one the `clickhouse obfuscator` tool implements: the native-width integers (`Int8`/`Int16`/`Int32`/`Int64` and their unsigned counterparts, including `Bool`), `Float32`, `Float64`, `Date`, `DateTime`, `String`, `FixedString`, `UUID`, and `Array` and `Nullable` wrappers around any of those. Every other type - including `Date32`, `DateTime64`, `Decimal`, `Enum`, `IPv4`, `IPv6`, `Tuple`, `Map`, `LowCardinality`, and the wide integers `Int128`/`UInt128`/`Int256`/`UInt256` - is rejected with a `NOT_IMPLEMENTED` exception instead of being passed through unobfuscated. Project such columns away or cast them to a supported type before obfuscating.
+
 See also the `clickhouse obfuscator` tool, which implements the same algorithm over files.
 )",
             .examples{{"obfuscate", "SELECT * FROM obfuscate(SELECT number, toString(number) FROM numbers(10000)) LIMIT 10", ""}},
