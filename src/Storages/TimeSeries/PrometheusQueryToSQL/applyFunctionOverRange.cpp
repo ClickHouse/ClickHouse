@@ -178,6 +178,19 @@ SQLQueryPiece applyFunctionOverRange(
 
     checkArgumentTypes(function_name, arguments, context);
 
+    return applyAggregateFunctionOverRange(
+        node, impl_info->ch_function_name, impl_info->drop_metric_name, std::move(arguments[0]), {}, context);
+}
+
+
+SQLQueryPiece applyAggregateFunctionOverRange(
+    const Node * node,
+    std::string_view ch_function_name,
+    bool drop_metric_name,
+    SQLQueryPiece && argument_,
+    std::vector<ASTPtr> extra_aggregate_params,
+    ConverterContext & context)
+{
     auto node_range = context.node_range_getter.get(node);
     if (node_range.empty())
         return SQLQueryPiece{node, ResultType::INSTANT_VECTOR, StoreMethod::EMPTY};
@@ -187,7 +200,7 @@ SQLQueryPiece applyFunctionOverRange(
     auto step = node_range.step;
     auto window = node_range.window;
 
-    auto argument = std::move(arguments[0]);
+    auto argument = std::move(argument_);
 
     SQLQueryPiece res = argument;
     res.node = node;
@@ -302,12 +315,18 @@ SQLQueryPiece applyFunctionOverRange(
         builder.select_list.push_back(make_intrusive<ASTIdentifier>(ColumnNames::Group));
 
     /// <aggregate_function>(<timestamps>, <values>) AS values
-    builder.select_list.push_back(addParametersToAggregateFunction(
-        makeASTFunction(impl_info->ch_function_name, std::move(timestamps), std::move(values)),
+    auto aggregate_function = addParametersToAggregateFunction(
+        makeASTFunction(ch_function_name, std::move(timestamps), std::move(values)),
         timeSeriesTimestampToAST(start_time, context.timestamp_data_type),
         timeSeriesTimestampToAST(end_time, context.timestamp_data_type),
         timeSeriesDurationToAST(step, context.timestamp_data_type),
-        timeSeriesDurationToAST(window, context.timestamp_data_type)));
+        timeSeriesDurationToAST(window, context.timestamp_data_type));
+
+    /// Append any extra scalar parameters after the (start, end, step, window) parameters.
+    for (auto & extra_param : extra_aggregate_params)
+        aggregate_function->parameters->children.push_back(std::move(extra_param));
+
+    builder.select_list.push_back(std::move(aggregate_function));
 
     builder.select_list.back()->setAlias(ColumnNames::Values);
 
@@ -326,7 +345,7 @@ SQLQueryPiece applyFunctionOverRange(
     res.end_time = end_time;
     res.step = step;
 
-    if (has_group && impl_info->drop_metric_name)
+    if (has_group && drop_metric_name)
         res = dropMetricName(std::move(res), context);
 
     return res;

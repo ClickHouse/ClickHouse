@@ -2,6 +2,7 @@
 
 #include <Common/Exception.h>
 #include <Storages/TimeSeries/PrometheusQueryToSQL/applyDateTimeFunction.h>
+#include <Storages/TimeSeries/PrometheusQueryToSQL/applyFunctionDoubleExponentialSmoothing.h>
 #include <Storages/TimeSeries/PrometheusQueryToSQL/applyFunctionOverRange.h>
 #include <Storages/TimeSeries/PrometheusQueryToSQL/applyFunctionScalar.h>
 #include <Storages/TimeSeries/PrometheusQueryToSQL/applyFunctionVector.h>
@@ -48,6 +49,9 @@ SQLQueryPiece applyFunction(const PQT::Function * function_node, std::vector<SQL
 
     if (isFunctionOverRange(function_name))
         return applyFunctionOverRange(function_node, std::move(arguments), context);
+
+    if (isDoubleExponentialSmoothing(function_name))
+        return applyDoubleExponentialSmoothing(function_node, std::move(arguments), context);
 
     if (isHistogramQuantile(function_name))
         return applyHistogramQuantile(function_node, std::move(arguments), context);

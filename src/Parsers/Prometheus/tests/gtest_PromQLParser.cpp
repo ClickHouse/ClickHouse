@@ -858,6 +858,19 @@ PrometheusQueryTree(INSTANT_VECTOR):
         Scalar(600)
 )");
 
+    EXPECT_EQ(parse("double_exponential_smoothing(demo_memory_usage_bytes[20m], 0.5, 0.3)"), R"(
+double_exponential_smoothing(demo_memory_usage_bytes[1200], 0.5, 0.3)
+
+PrometheusQueryTree(INSTANT_VECTOR):
+    Function(double_exponential_smoothing):
+        RangeSelector:
+            range: 1200
+            InstantSelector:
+                __name__ EQ 'demo_memory_usage_bytes'
+        Scalar(0.5)
+        Scalar(0.3)
+)");
+
     EXPECT_EQ(parse("time()"), R"(
 time()
 
