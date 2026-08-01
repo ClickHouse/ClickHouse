@@ -168,6 +168,16 @@ bool patternHasGlobstarSegment(const std::string & pattern)
     return false;
 }
 
+/// One entry of the traversal-pruning set: the lexical directory path that first claimed this
+/// (canonical directory, remaining pattern) frame, and how many matches that frame emitted. A
+/// later frame pruned against it would have emitted exactly the same ones, so both fields are
+/// needed to tell whether pruning hid a genuine second name for a file.
+struct VisitedFrame
+{
+    std::string lexical_dir;
+    size_t matches;
+};
+
 /// Recursive directory listing with matched paths as a result.
 /// Have the same method in StorageHDFS.
 void listFilesWithRegexpMatchingImpl(
@@ -178,9 +188,10 @@ void listFilesWithRegexpMatchingImpl(
     std::unordered_set<std::string> & matched_paths,
     bool recursive,
     size_t depth,
-    std::unordered_map<std::string, std::string> & visited_frames,
+    std::unordered_map<std::string, VisitedFrame> & visited_frames,
     bool deduplicate_by_canonical_path,
-    bool & collapsed_a_match)
+    bool & collapsed_a_match,
+    size_t * claiming_frame_matches)
 {
     if (depth > MAX_LIST_FILES_RECURSION_DEPTH)
         throw Exception(ErrorCodes::TOO_DEEP_RECURSION,
@@ -234,6 +245,8 @@ void listFilesWithRegexpMatchingImpl(
         {
             total_bytes_to_read += bytes;
             result.push_back(path);
+            if (claiming_frame_matches)
+                ++*claiming_frame_matches;
         }
         else
         {
@@ -358,19 +371,26 @@ void listFilesWithRegexpMatchingImpl(
         /// `\0` cannot occur in a path or a pattern, so it is an unambiguous separator.
         const std::string frame_key = prefix_canonical.string() + '\0' + suffix_with_globs;
         const std::string lexical_dir = fs::path(prefix_without_globs).lexically_normal().string();
-        const auto [claimed, is_new] = visited_frames.emplace(frame_key, lexical_dir);
+        const auto [claimed, is_new] = visited_frames.emplace(frame_key, VisitedFrame{lexical_dir, 0});
         if (!is_new)
         {
             /// Pruning happens before any match is emitted, so a pruned frame can never reach
-            /// `add_matched_path` to report that two paths named one file. Report it here instead,
-            /// but only when this frame arrived by a DIFFERENT lexical directory path than the one
-            /// that claimed the frame: that is a second name for the same place, which the
-            /// read-only guard on writes has to see. Re-entering under the SAME lexical path is a
-            /// globstar re-application at one directory, not a second name, and stays writable.
-            if (claimed->second != lexical_dir)
+            /// `add_matched_path` to report that two paths named one file. Report it here instead.
+            /// Two conditions, because both are needed. The frame must have arrived by a DIFFERENT
+            /// lexical directory path than the one that claimed it: that is a second name for the
+            /// same place, whereas re-entering under the SAME path is a globstar re-applying at one
+            /// directory and stays writable. And the claiming frame must actually have matched
+            /// something, because this frame would have emitted exactly what that one emitted, so
+            /// an aliased directory holding no matching file collapses nothing and a write through
+            /// it must stay allowed.
+            if (claimed->second.lexical_dir != lexical_dir && claimed->second.matches > 0)
                 collapsed_a_match = true;
             return; /// This directory has already been walked with this remaining pattern.
         }
+        /// Count what this frame's subtree emits, so a later frame pruned against it knows
+        /// whether it would have named the same files again. The matches mostly come from
+        /// descendants, not from this invocation, which is why the counter is inherited below.
+        claiming_frame_matches = &claimed->second.matches;
     }
 
     const bool looking_for_directory = next_slash_after_glob_pos != std::string::npos;
@@ -383,7 +403,8 @@ void listFilesWithRegexpMatchingImpl(
     if (current_glob == "/**" && looking_for_directory)
         listFilesWithRegexpMatchingImpl(prefix_without_globs + "/", suffix_with_globs.substr(next_slash_after_glob_pos),
                                         total_bytes_to_read, result, matched_paths, false, depth + 1,
-                                        visited_frames, deduplicate_by_canonical_path, collapsed_a_match);
+                                        visited_frames, deduplicate_by_canonical_path, collapsed_a_match,
+                                        claiming_frame_matches);
 
     const fs::directory_iterator end;
     std::error_code ec;
@@ -444,12 +465,14 @@ void listFilesWithRegexpMatchingImpl(
                 listFilesWithRegexpMatchingImpl(fs::path(full_path).append(it->path().string()) / "",
                                                 descent_pattern,
                                                 total_bytes_to_read, result, matched_paths, recursive, depth + 1, visited_frames,
-                                                deduplicate_by_canonical_path, collapsed_a_match);
+                                                deduplicate_by_canonical_path, collapsed_a_match,
+                                                claiming_frame_matches);
             }
             else if (looking_for_directory && re2::RE2::FullMatch(file_name, matcher))
                 listFilesWithRegexpMatchingImpl(fs::path(full_path) / "", suffix_with_globs.substr(next_slash_after_glob_pos),
                                                 total_bytes_to_read, result, matched_paths, false, depth + 1, visited_frames,
-                                                deduplicate_by_canonical_path, collapsed_a_match);
+                                                deduplicate_by_canonical_path, collapsed_a_match,
+                                                claiming_frame_matches);
         }
     }
 }
@@ -478,7 +501,7 @@ std::vector<std::string> listFilesWithRegexpMatching(
         /// brace-expansion alternatives independent. Only frames whose remaining pattern still has
         /// a whole-segment `**` are recorded, i.e. those that can still recurse without bound (see
         /// `patternHasGlobstarSegment` inside `listFilesWithRegexpMatchingImpl`).
-        std::unordered_map<std::string, std::string> visited_frames;
+        std::unordered_map<std::string, VisitedFrame> visited_frames;
 
         /// Deduplicate by canonical path only for a `**` expansion, where the recursive descent
         /// can re-enter one directory under many aliases and would otherwise report a file once
@@ -490,7 +513,8 @@ std::vector<std::string> listFilesWithRegexpMatching(
         const bool deduplicate_by_canonical_path = patternHasGlobstarSegment(for_match_expanded);
 
         listFilesWithRegexpMatchingImpl("/", for_match_expanded, total_bytes_to_read, result, matched_paths, false, 0,
-                                        visited_frames, deduplicate_by_canonical_path, collapsed_a_match);
+                                        visited_frames, deduplicate_by_canonical_path, collapsed_a_match,
+                                        /*claiming_frame_matches=*/ nullptr);
     }
 
     return result;

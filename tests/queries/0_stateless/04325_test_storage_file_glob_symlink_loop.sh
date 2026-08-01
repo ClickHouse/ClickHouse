@@ -81,10 +81,11 @@ ln -s .. "$TEST_DIR_ABS/preast/root/a/back"
 # `find("**") != npos` over the expanded pattern would falsely classify this as
 # recursive; the correct detector mirrors the per-segment recursion test in
 # `listFilesWithRegexpMatchingImpl` (a path component must equal exactly `**`).
-# TWO such directories are what makes the assertion observable: the file is reported once
-# through `a1/back` and once through `a2/back`, so the expected count is two, as it is
-# without this change. One directory would give one under every key. Substring detection
-# of `**` and unconditional canonical deduplication would each report one instead.
+# TWO such directories are what makes the assertion observable. Both paths are returned,
+# `a1/back/file.txt` and `a2/back/file.txt`, so the expected count is two and the expected
+# `via` values are `a1` and `a2`, exactly as without this change. One directory would give
+# one path under every key and show nothing. Substring detection of `**` and unconditional
+# canonical deduplication would each return one path instead.
 mkdir -p "$TEST_DIR_ABS/adj/root/a1" "$TEST_DIR_ABS/adj/root/a2"
 printf "row1\n" > "$TEST_DIR_ABS/adj/root/file.txt"
 ln -s .. "$TEST_DIR_ABS/adj/root/a1/back"
@@ -229,6 +230,15 @@ ln -s target "$TEST_DIR_ABS/aliaswrite/root/aliasB"
 # syntax rather than on an actual collapse would wrongly refuse.
 mkdir -p "$TEST_DIR_ABS/onematch"
 printf "row1\n" > "$TEST_DIR_ABS/onematch/only.txt"
+
+# An aliased directory holding no matching file: `emptyalias/root/only.tsv` is the only
+# match, beside an empty directory reachable as itself and as `alias`. The walk prunes the
+# aliased frame, but that frame would have matched nothing, so nothing was collapsed and
+# the write must stay ALLOWED. A guard that treated any pruned alias as a collapse would
+# refuse it, which no other scenario here would notice.
+mkdir -p "$TEST_DIR_ABS/emptyalias/root/empty"
+printf "row1\n" > "$TEST_DIR_ABS/emptyalias/root/only.tsv"
+ln -s empty "$TEST_DIR_ABS/emptyalias/root/alias"
 
 trap 'rm -rf "$TEST_DIR_ABS"' EXIT
 
@@ -385,6 +395,13 @@ echo "single-match-glob-insert-is-allowed"
 $CLICKHOUSE_CLIENT --query "INSERT INTO TABLE FUNCTION file('$TEST_DIR_NAME/onematch/*.txt', 'TSV', 'val String') VALUES ('written')" </dev/null 2>&1 \
     | grep -qF "readonly mode because of globs" && echo "unexpectedly refused"
 $CLICKHOUSE_CLIENT --query "SELECT count() FROM file('$TEST_DIR_NAME/onematch/only.txt', 'TSV', 'val String')"
+
+# Pruning an aliased frame that matched nothing is not a collapse, so this write is allowed
+# too. The row count afterwards shows it landed.
+echo "empty-alias-insert-is-allowed"
+$CLICKHOUSE_CLIENT --query "INSERT INTO TABLE FUNCTION file('$TEST_DIR_NAME/emptyalias/root/**/only.tsv', 'TSV', 'val String') VALUES ('written')" </dev/null 2>&1 \
+    | grep -qF "readonly mode because of globs" && echo "unexpectedly refused"
+$CLICKHOUSE_CLIENT --query "SELECT count() FROM file('$TEST_DIR_NAME/emptyalias/root/only.tsv', 'TSV', 'val String')"
 
 # Server alive afterwards.
 $CLICKHOUSE_CLIENT --query "SELECT 'alive'"

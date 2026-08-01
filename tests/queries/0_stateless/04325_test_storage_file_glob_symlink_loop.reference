@@ -48,4 +48,6 @@ refused
 1
 single-match-glob-insert-is-allowed
 2
+empty-alias-insert-is-allowed
+2
 alive
