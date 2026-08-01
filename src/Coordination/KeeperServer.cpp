@@ -48,6 +48,7 @@
 #include <chrono>
 #include <mutex>
 #include <string>
+#include <unordered_map>
 #include <unordered_set>
 
 #pragma clang diagnostic ignored "-Wdeprecated-declarations"
@@ -448,6 +449,47 @@ KeeperServer::RespondingCounts KeeperServer::KeeperRaftServer::getRespondingCoun
     }
 
     return counts;
+}
+
+void KeeperServer::KeeperRaftServer::applyPeerHealthToMembers(
+    std::vector<KeeperClusterMemberInfo> & members, uint64_t self_log_idx)
+{
+    auto params = get_current_params();
+    const uint64_t expiry_us
+        = static_cast<uint64_t>(params.heart_beat_interval_) * raft_server::raft_limits_.response_limit_ * 1000;
+    /// Prefer coordination settings: raft params may not always reflect the configured gap.
+    const uint64_t stale_gap = keeper_context
+        ? static_cast<uint64_t>(keeper_context->getCoordinationSettings()[CoordinationSetting::stale_log_gap])
+        : static_cast<uint64_t>(params.stale_log_gap_);
+
+    std::unordered_map<int32_t, nuraft::raft_server::peer_info> peer_infos;
+    for (const auto & peer : get_peer_info_all())
+        peer_infos.emplace(peer.id_, peer);
+
+    for (auto & info : members)
+    {
+        if (info.is_self)
+        {
+            info.is_alive = true;
+            info.is_synced = true;
+            continue;
+        }
+
+        if (auto it = peer_infos.find(info.server_id); it != peer_infos.end())
+        {
+            const auto & peer = it->second;
+            info.is_alive = peer.last_succ_resp_us_ <= expiry_us;
+            info.is_synced = self_log_idx <= peer.last_log_idx_ + stale_gap;
+            info.peer_last_log_index = peer.last_log_idx_;
+            info.last_succ_resp_ms = peer.last_succ_resp_us_ / 1000;
+        }
+        else
+        {
+            /// Configured member with no peer_info yet — treat as unreachable.
+            info.is_alive = false;
+            info.is_synced = false;
+        }
+    }
 }
 
 void KeeperServer::loadLatestConfig()
@@ -1522,6 +1564,10 @@ std::vector<KeeperClusterMemberInfo> KeeperServer::getClusterMembersInfo() const
             info.last_log_index = self_log_idx;
         result.push_back(std::move(info));
     }
+
+    if (raft_instance->is_leader())
+        raft_instance->applyPeerHealthToMembers(result, self_log_idx);
+
     return result;
 }
 
