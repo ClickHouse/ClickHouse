@@ -14,6 +14,18 @@ from praktika.result import Result
 from praktika.settings import Settings
 from praktika.utils import Shell
 
+# `out` and `err` are API- or user-controlled and unbounded, while the fields identifying the
+# failure (command, exit code, attempt count) are short. Cap the unbounded ones so a caller
+# that bounds the whole message, or a log reader, still sees the cause.
+_GH_DIAGNOSTIC_FIELD_LIMIT = 300
+
+
+def _elide(text, limit=_GH_DIAGNOSTIC_FIELD_LIMIT):
+    """`text` capped at `limit`, with an explicit marker so a reader can tell it was cut."""
+    if len(text) <= limit:
+        return text
+    return f"{text[:limit]}...(+{len(text) - limit} chars elided)"
+
 
 class GH:
 
@@ -244,9 +256,11 @@ class GH:
             delay = min(2 ** (retry_count + 1), 60)
             time.sleep(delay)
 
+        # Field order matters: a caller may bound this message (it can reach a public report
+        # page), so the fields naming the cause come before the API-controlled output.
         message = (
             f"Failed to execute gh command [{command}] exit_code:[{ret_code}] "
-            f"out:[{out}] err:[{err}] after [{retry_count}] attempts"
+            f"after [{retry_count}] attempts err:[{_elide(err)}] out:[{_elide(out)}]"
         )
         print(f"ERROR: {message}")
         if strict:

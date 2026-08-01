@@ -63,9 +63,21 @@ def fetch_settings_history_patch(repo_name, pr_number, path=SETTINGS_HISTORY_FIL
     return patch
 
 
+_FETCH_ERROR_MESSAGE_LIMIT = 500
+# Elide the middle, not an end: a structured diagnostic front-loads its cause (see
+# `GH.get_output_with_retries`), but this bound applies to any exception, so keep a tail
+# window too rather than betting the cause is never last.
+_FETCH_ERROR_MESSAGE_TAIL = 80
+
+
 def settings_history_fetch_error_message(exc):
     """Bound the failure reason: the style check prints it on a public report page."""
-    return " ".join(str(exc).split())[:500]
+    message = " ".join(str(exc).split())
+    if len(message) <= _FETCH_ERROR_MESSAGE_LIMIT:
+        return message
+    marker = f"...(elided, full message {len(message)} chars)..."
+    head = _FETCH_ERROR_MESSAGE_LIMIT - len(marker) - _FETCH_ERROR_MESSAGE_TAIL
+    return message[:head] + marker + message[-_FETCH_ERROR_MESSAGE_TAIL :]
 
 
 def parse_settings_history_changes(patch, file_lines):

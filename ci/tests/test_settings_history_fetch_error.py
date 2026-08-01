@@ -15,6 +15,7 @@ The real helper runs against a fake `gh` on `PATH` so the actual subprocess and
 retry code is exercised; only `time.sleep` is neutralized.
 """
 
+import ast
 import os
 import stat
 import sys
@@ -42,12 +43,15 @@ _PATCH = '@@ -1,2 +1,3 @@\n+    {"some_setting", false, true, "reason"},\n'
 
 @pytest.fixture
 def fake_gh(tmp_path, monkeypatch):
-    """Install a fake `gh` on PATH; returns an installer plus an invocation counter.
+    """Install a fake `gh` on PATH; returns an installer, an invocation counter and the argv.
 
     The counter is what distinguishes "retried" from "gave up": asserting only the
-    final message cannot tell those apart.
+    final message cannot tell those apart. The recorded argv is what pins the command
+    actually issued: a fake that ignores its arguments constrains nothing, so pointing
+    the fetch at the wrong PR or the wrong file would otherwise stay green.
     """
     counter = tmp_path / "invocations"
+    argv_log = tmp_path / "argv"
     patch_file = tmp_path / "patch.diff"
     patch_file.write_text(_PATCH)
 
@@ -56,6 +60,7 @@ def fake_gh(tmp_path, monkeypatch):
         script.write_text(
             "#!/bin/bash\n"
             f'echo x >> "{counter}"\n'
+            f'printf "%s\\n" "$*" >> "{argv_log}"\n'
             f"{body}\n"
             f"exit {exit_code}\n"
         )
@@ -68,7 +73,12 @@ def fake_gh(tmp_path, monkeypatch):
     def invocations():
         return len(counter.read_text().splitlines()) if counter.exists() else 0
 
+    def argv():
+        """The argument line of the last `gh` invocation."""
+        return argv_log.read_text().splitlines()[-1] if argv_log.exists() else ""
+
     install.invocations = invocations
+    install.argv = argv
     install.emit_patch = f'cat "{patch_file}"'
     return install
 
@@ -170,6 +180,19 @@ def test_real_patch_succeeds_unretried(fake_gh):
     assert fake_gh.invocations() == 1
 
 
+def test_the_issued_command_targets_the_right_pr_and_file(fake_gh):
+    """Assert the recorded argv, not the message: the fetch could name the wrong PR or the
+    wrong file and every message-only assertion would still pass."""
+    fake_gh(fake_gh.emit_patch, 0)
+    _fetch()
+    argv = fake_gh.argv()
+    assert f"repos/{_REPO}/pulls/{_PR}/files" in argv
+    assert "--paginate" in argv
+    # Without the `select` the parser would be handed every changed file's patch.
+    assert f'select(.filename == "{SETTINGS_HISTORY_FILE}")' in argv
+    assert ".patch" in argv
+
+
 def test_unresolvable_pr_number_is_reported_without_calling_gh(fake_gh):
     fake_gh(fake_gh.emit_patch, 0)
     with pytest.raises(RuntimeError) as excinfo:
@@ -229,6 +252,8 @@ def test_hook_uses_the_linked_pr_number_in_the_merge_queue(fake_gh):
     info = _FakeInfo(pr_number=0, is_merge_queue_event=True, linked_pr_number=_PR)
     store_settings_history_changes(info)
     assert "settings_history_fetch_error" not in info.kv
+    # The linked number has to reach the command, not merely pass the guard.
+    assert f"/pulls/{_PR}/files" in fake_gh.argv()
 
 
 def test_hook_reports_an_unresolvable_pr_number(fake_gh):
@@ -249,6 +274,91 @@ def test_stored_message_is_a_bounded_single_line():
     assert len(message) == 500
 
 
+def test_bounding_keeps_a_cause_that_sits_at_the_end():
+    """Pin the property, not the length: asserting only `len == 500` is satisfied by
+    head-, tail- and middle-truncation alike, so it cannot tell a bound that keeps the
+    cause from one that discards it."""
+    message = settings_history_fetch_error_message(
+        RuntimeError("out:[" + "x" * 900 + "] err:[gh: Server Error (HTTP 502)]")
+    )
+    assert len(message) <= 500
+    assert "502" in message
+    # The elision is visible, so a reader is never shown a silently shortened message.
+    assert "elided" in message
+
+
+def test_large_stdout_with_a_failing_gh_still_names_the_cause(fake_gh):
+    """The reachable carrier item 1 was about: `gh api --paginate` streams each page, so a
+    5xx on a later page exits non-zero with an earlier page's patch already on stdout. The
+    bounded message must still name the 5xx, the exit code and the attempt count."""
+    fake_gh(
+        f"{fake_gh.emit_patch}\n"
+        + "\n".join(f'echo \'+    {{"setting_{i:03d}", false, true, "reason"}},\'' for i in range(20))
+        + '\necho "gh: Server Error (HTTP 502)" >&2',
+        1,
+    )
+    info = _FakeInfo()
+    store_settings_history_changes(info)
+    stored = info.kv["settings_history_fetch_error"]
+    assert len(stored) <= 500
+    assert "502" in stored
+    assert "exit_code:[1]" in stored
+    assert f"after [{Settings.MAX_RETRIES_GH}] attempts" in stored
+    report = _style_check_report(info.kv)
+    assert "502" in report
+    assert "no data recorded" not in report
+
+
+# --- the production entrypoint is wired to the helper ------------------------
+
+
+_HOOK_PATH = os.path.join(
+    os.path.dirname(__file__),
+    "../jobs/scripts/workflow_hooks/store_data.py",
+)
+
+
+def _guarded_call_conditions(function_name):
+    """The `if` tests guarding every call to `function_name` under the `__main__` block.
+
+    The module is read, not imported: importing it would run the whole hook. Parsed rather
+    than grepped so a mention in a comment or a docstring cannot satisfy the assertion.
+    """
+    with open(_HOOK_PATH, "r", encoding="utf-8") as f:
+        tree = ast.parse(f.read())
+    main_blocks = [
+        node
+        for node in tree.body
+        if isinstance(node, ast.If) and "__main__" in ast.unparse(node.test)
+    ]
+    assert len(main_blocks) == 1, "expected exactly one `if __name__ == '__main__':` block"
+    conditions = []
+    for node in ast.walk(main_blocks[0]):
+        if not isinstance(node, ast.If):
+            continue
+        for inner in ast.walk(node):
+            if (
+                isinstance(inner, ast.Call)
+                and isinstance(inner.func, ast.Name)
+                and inner.func.id == function_name
+            ):
+                conditions.append(ast.unparse(node.test))
+    return conditions
+
+
+def test_main_calls_the_hook_when_the_settings_history_file_changed():
+    """Nothing else pins the production wiring: every other cell calls the helpers directly,
+    so deleting the call from `__main__` would leave the whole file green."""
+    conditions = _guarded_call_conditions("store_settings_history_changes")
+    assert conditions, "__main__ does not call store_settings_history_changes"
+    assert any(
+        "SETTINGS_HISTORY_FILE in changed_files" in condition for condition in conditions
+    ), f"the call is not guarded by the changed-file condition: {conditions}"
+    assert any(
+        "is_merge_queue_event" in condition for condition in conditions
+    ), f"the call does not run in the merge queue: {conditions}"
+
+
 # --- the shared helper's default must not change for its 14 other callers ----
 
 
@@ -265,3 +375,21 @@ def test_get_output_with_retries_strict_reports_exit_code_and_stderr(fake_gh):
     message = str(excinfo.value)
     assert "exit_code:[7]" in message
     assert "502" in message
+
+
+def test_the_diagnostic_front_loads_the_cause_and_bounds_each_field(fake_gh):
+    """The helper's own guarantee, independent of any caller's bounding: `gh api --paginate`
+    streams each page, so a 5xx on a later page exits non-zero with an earlier page already
+    on stdout. All 15 call sites print this message and only one of them bounds it, so the
+    cause has to come before the API-controlled output and each field has to be capped."""
+    fake_gh(
+        'head -c 5000 /dev/zero | tr "\\0" "x"\necho "gh: Server Error (HTTP 502)" >&2', 1
+    )
+    with pytest.raises(RuntimeError) as excinfo:
+        GH.get_output_with_retries("gh api fake", strict=True)
+    message = str(excinfo.value)
+    assert "502" in message[:300], "the cause is not front-loaded"
+    assert message.index("err:[") < message.index("out:[")
+    # One huge response must not bury the rest of the diagnostic in a log.
+    assert len(message) < 1500, f"diagnostic is unbounded ({len(message)} chars)"
+    assert "elided" in message
