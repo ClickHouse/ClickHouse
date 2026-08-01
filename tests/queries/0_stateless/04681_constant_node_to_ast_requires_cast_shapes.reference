@@ -11,11 +11,15 @@ SELECT _CAST([1, 2, NULL], \'Array(Nullable(UInt8))\') AS `[1, 2, NULL]`
 FROM system.one AS __table1
 SELECT _CAST([[1], [2, 3]], \'Array(Array(UInt8))\') AS `[[1], [2, 3]]`
 FROM system.one AS __table1
+SELECT _CAST([\'a\', \'b\'], \'Array(String)\') AS `[\'a\', \'b\']`
+FROM system.one AS __table1
+SELECT toLowCardinality(rand()) IN _CAST([1, 2, 3], \'Array(UInt8)\') AS `in(toLowCardinality(rand()), [1, 2, 3])`
+FROM system.one AS __table1
 SELECT _CAST([1, 2], \'Array(Int64)\') AS `CAST([1, 2], \'Array(Int64)\')`
 FROM system.one AS __table1
 SELECT _CAST([1], \'Array(Nullable(UInt8))\') AS `CAST([1], \'Array(Nullable(UInt8))\')`
 FROM system.one AS __table1
--- Tuple: an IN set stays bare, a bare tuple constant is wrapped
+-- Tuple: a bare IN set stays bare, a folded one and a bare tuple are wrapped
 SELECT (rand(), rand()) IN ((1, 2), (3, 4)) AS `in((rand(), rand()), ((1, 2), (3, 4)))`
 FROM system.one AS __table1
 SELECT rand() IN _CAST((1, 2, 3), \'Tuple(UInt8, UInt8, UInt8)\') AS `in(rand(), (1, 2, 3))`
@@ -37,11 +41,19 @@ SELECT _CAST(1, \'Nullable(Int64)\') AS `CAST(1, \'Nullable(Int64)\')`
 FROM system.one AS __table1
 SELECT _CAST(1, \'Nullable(UInt8)\') AS `CAST(1, \'Nullable(UInt8)\')`
 FROM system.one AS __table1
--- shapes the fast path must NOT claim: they keep taking the value-inference path
-SELECT toLowCardinality(rand()) IN _CAST([1, 2, 3], \'Array(UInt8)\') AS `in(toLowCardinality(rand()), [1, 2, 3])`
+-- bare literals answered false: these witness an over-broad result-type test
+SELECT 1 AS `1`
 FROM system.one AS __table1
+SELECT -1 AS `-1`
+FROM system.one AS __table1
+SELECT \'str\' AS `\'str\'`
+FROM system.one AS __table1
+SELECT true AS true
+FROM system.one AS __table1
+-- an IN set that is neither Array nor folded: returns before the predicate
 SELECT toString(rand()) IN (\'a\', \'b\') AS `in(toString(rand()), (\'a\', \'b\'))`
 FROM system.one AS __table1
+-- folded constants: ConstantNode.cpp:257 short-circuits before the predicate
 SELECT _CAST(\'a\', \'LowCardinality(String)\') AS `CAST(\'a\', \'LowCardinality(String)\')`
 FROM system.one AS __table1
 SELECT _CAST(1, \'LowCardinality(Nullable(UInt8))\') AS `CAST(1, \'LowCardinality(Nullable(UInt8))\')`
@@ -53,15 +65,7 @@ SELECT _CAST(_CAST(1, \'UInt64\'), \'Variant(String, UInt64)\') AS `CAST(CAST(1,
 FROM system.one AS __table1
 SELECT _CAST([1, 2], \'Dynamic\') AS `CAST([1, 2], \'Dynamic\')`
 FROM system.one AS __table1
-SELECT 1 AS `1`
-FROM system.one AS __table1
-SELECT -1 AS `-1`
-FROM system.one AS __table1
 SELECT _CAST(1, \'Int8\') AS `CAST(1, \'Int8\')`
-FROM system.one AS __table1
-SELECT \'str\' AS `\'str\'`
-FROM system.one AS __table1
-SELECT true AS true
 FROM system.one AS __table1
 SELECT _CAST(\'2020-01-01\', \'Date\') AS `toDate(\'2020-01-01\')`
 FROM system.one AS __table1
