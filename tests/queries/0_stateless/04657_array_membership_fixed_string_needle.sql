@@ -175,11 +175,33 @@ SELECT 'FixedString(4) elements',           groupArray(id), (SELECT groupArray(i
 SELECT 'LowCardinality(FixedString(3))',    groupArray(id), (SELECT groupArray(id) FROM t_lc_fs3 WHERE arrayExists(x -> x = toFixedString('V0', 3), v)) FROM t_lc_fs3 WHERE has(v, toFixedString('V0', 3));
 -- A needle wider than a FixedString element used to throw TOO_LARGE_STRING_SIZE here.
 SELECT 'wider needle on LowCardinality(FixedString(3))', groupArray(id), (SELECT groupArray(id) FROM t_lc_fs3 WHERE arrayExists(x -> x = toFixedString('V0', 5), v)) FROM t_lc_fs3 WHERE has(v, toFixedString('V0', 5));
--- Control, not coverage of the fix: this is the one wrapper and needle combination that both takes
--- the LowCardinality dictionary shortcut and passes through the Nullable peel. Measured identical on
--- master, because the shortcut casts the Nullable(FixedString(3)) needle down losslessly anyway.
+-- Control, not coverage of the fix: this wrapper and needle combination is answered by the
+-- LowCardinality dictionary shortcut, which returns a column before executeArrayImpl is entered, so
+-- it BYPASSES the Nullable peel. Measured identical on master, because the shortcut casts the
+-- Nullable(FixedString(3)) needle down losslessly anyway.
 SELECT 'nullable needle on LowCardinality(FixedString(3))', groupArray(id), (SELECT groupArray(id) FROM t_lc_fs3 WHERE arrayExists(x -> x = CAST(toFixedString('V0', 3) AS Nullable(FixedString(3))), v)) FROM t_lc_fs3 WHERE has(v, CAST(toFixedString('V0', 3) AS Nullable(FixedString(3))));
+-- The NULL payload of the same shape. The dictionary shortcut resolves a NULL needle to index 0,
+-- which is the NULL slot only for a nullable dictionary; on a non-nullable one index 0 is the type's
+-- default value, so the needle used to match every row holding that default.
+DROP TABLE IF EXISTS t_lc_fs3_def;
+DROP TABLE IF EXISTS t_fs3_def;
+DROP TABLE IF EXISTS t_lc_s_def;
+DROP TABLE IF EXISTS t_s_def;
+CREATE TABLE t_lc_fs3_def (id UInt64, v Array(LowCardinality(FixedString(3)))) ENGINE = Memory;
+CREATE TABLE t_fs3_def    (id UInt64, v Array(FixedString(3)))                 ENGINE = Memory;
+CREATE TABLE t_lc_s_def   (id UInt64, v Array(LowCardinality(String)))         ENGINE = Memory;
+CREATE TABLE t_s_def      (id UInt64, v Array(String))                         ENGINE = Memory;
+INSERT INTO t_lc_fs3_def VALUES (0, [toFixedString('', 3)]), (1, ['V0']);
+INSERT INTO t_fs3_def    VALUES (0, [toFixedString('', 3)]), (1, ['V0']);
+INSERT INTO t_lc_s_def   VALUES (0, ['']), (1, ['V0']);
+INSERT INTO t_s_def      VALUES (0, ['']), (1, ['V0']);
+SELECT 'NULL needle on LowCardinality(FixedString(3))', groupArray(id), (SELECT groupArray(id) FROM t_lc_fs3_def WHERE arrayExists(x -> assumeNotNull(x = CAST(NULL AS Nullable(FixedString(3)))), v)) FROM t_lc_fs3_def WHERE has(v, CAST(NULL AS Nullable(FixedString(3))));
+SELECT 'NULL needle on FixedString(3)',                groupArray(id) FROM t_fs3_def   WHERE has(v, CAST(NULL AS Nullable(FixedString(3))));
+SELECT 'NULL needle on LowCardinality(String)',        groupArray(id), (SELECT groupArray(id) FROM t_lc_s_def   WHERE arrayExists(x -> assumeNotNull(x = CAST(NULL AS Nullable(String))), v))            FROM t_lc_s_def   WHERE has(v, CAST(NULL AS Nullable(String)));
+SELECT 'NULL needle on String',                       groupArray(id) FROM t_s_def      WHERE has(v, CAST(NULL AS Nullable(String)));
 SELECT 'longer non-NUL String needle',      has(v, materialize('V0abc')) FROM t_fs4 WHERE id = 0;
+-- Must-not-regress: on a NULLABLE dictionary index 0 genuinely IS the NULL slot, so the guard above
+-- must NOT decline here and the shortcut must keep answering.
 SELECT 'NULL needle',                       groupArray(id) FROM t_lc_null WHERE has(v, NULL);
 
 SELECT '-- boundary sizes, including needles that cross the 16 byte comparison window';

@@ -946,6 +946,13 @@ private:
         const auto & array_type  = assert_cast<const DataTypeArray &>(*arguments[0].type);
         const auto target_type = recursiveRemoveLowCardinality(array_type.getNestedType());
 
+        /// `dictionaryIndexForConstant` answers a NULL needle with index 0, which is the NULL slot
+        /// only for a nullable dictionary; for a non-nullable one index 0 is the type's DEFAULT
+        /// value (`ColumnUnique::getDefaultValueIndex`), so a NULL needle would match every row
+        /// holding that default. Let such a needle fall through: `executeNothing` answers it.
+        if (right_const->isNullAt(0) && !isNullableOrLowCardinalityNullable(array_type.getNestedType()))
+            return nullptr;
+
         if (!needleMapsToSingleDictionaryValue(array_type.getNestedType(), arguments[1].type))
             return nullptr;
 

@@ -62,6 +62,10 @@ FixedString(4) elements	[0]	[0]
 LowCardinality(FixedString(3))	[0]	[0]
 wider needle on LowCardinality(FixedString(3))	[0]	[0]
 nullable needle on LowCardinality(FixedString(3))	[0]	[0]
+NULL needle on LowCardinality(FixedString(3))	[]	[]
+NULL needle on FixedString(3)	[]
+NULL needle on LowCardinality(String)	[]	[]
+NULL needle on String	[]
 longer non-NUL String needle	0
 NULL needle	[]
 -- boundary sizes, including needles that cross the 16 byte comparison window
