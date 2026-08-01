@@ -771,6 +771,134 @@ SELECT 'Q33 packed one-sided Nullable NOT has result',
     (SELECT count() FROM q33 WHERE NOT has([(10, 0), (50000, 0), (NULL, NULL)], kt)) = (SELECT count() FROM q33o WHERE NOT has([(10, 0), (50000, 0), (NULL, NULL)], kt));
 SELECT 'Q33 packed one-sided Nullable NOT has keeps pruning', count() > 0 FROM (EXPLAIN indexes = 1 SELECT count() FROM q33 WHERE NOT has([(10, 0), (50000, 0), (NULL, NULL)], kt)) WHERE explain ILIKE '%Parts: 1/3%';
 
+-- The unpacked decline above is driven by an actual source NULL, not by the `Nullable` TYPE: the harm is
+-- that stripping the wrapper reads the nested column, whose value at a NULL row is the type default. A
+-- `Nullable`-typed element carrying no NULL has no such row, so the per-scalar conversion is
+-- value-preserving and the atom stays exact. Declining on the type alone would lose this pruning, so this
+-- cell is what keeps the `U33` decline value-sensitive rather than a blanket type rule. Reuses the `u33`
+-- shape, including its all-default row.
+SELECT 'V33 unpacked NULL-free Nullable has result',
+    (SELECT count() FROM u33 WHERE has([(CAST(10, 'Nullable(UInt32)'), CAST(0, 'Nullable(UInt32)'))], (a, b))) = (SELECT count() FROM u33o WHERE has([(CAST(10, 'Nullable(UInt32)'), CAST(0, 'Nullable(UInt32)'))], (a, b)));
+SELECT 'V33 unpacked NULL-free Nullable has keeps pruning', count() > 0 FROM (EXPLAIN indexes = 1 SELECT count() FROM u33 WHERE has([(CAST(10, 'Nullable(UInt32)'), CAST(0, 'Nullable(UInt32)'))], (a, b))) WHERE explain ILIKE '%Parts: 1/4%';
+SELECT 'V33 unpacked NULL-free Nullable NOT has result',
+    (SELECT count() FROM u33 WHERE NOT has([(CAST(10, 'Nullable(UInt32)'), CAST(0, 'Nullable(UInt32)'))], (a, b))) = (SELECT count() FROM u33o WHERE NOT has([(CAST(10, 'Nullable(UInt32)'), CAST(0, 'Nullable(UInt32)'))], (a, b)));
+-- The NULL that forfeits exactness need not be in the first row or the first position: the check is over
+-- the whole constant. A NULL appearing only in a LATER row still declines.
+SELECT 'V33 unpacked NULL in a later row declines', count() > 0 FROM (EXPLAIN indexes = 1 SELECT count() FROM u33 WHERE has([(CAST(10, 'Nullable(UInt32)'), CAST(0, 'Nullable(UInt32)')), (CAST(50000, 'Nullable(UInt32)'), CAST(NULL, 'Nullable(UInt32)'))], (a, b))) WHERE explain ILIKE '%Parts: 4/4%';
+SELECT 'V33 unpacked NULL in a later row result',
+    (SELECT count() FROM u33 WHERE has([(CAST(10, 'Nullable(UInt32)'), CAST(0, 'Nullable(UInt32)')), (CAST(50000, 'Nullable(UInt32)'), CAST(NULL, 'Nullable(UInt32)'))], (a, b))) = (SELECT count() FROM u33o WHERE has([(CAST(10, 'Nullable(UInt32)'), CAST(0, 'Nullable(UInt32)')), (CAST(50000, 'Nullable(UInt32)'), CAST(NULL, 'Nullable(UInt32)'))], (a, b)));
+-- `LowCardinality` has to be seen through as well, in both directions: its dictionary can hold an
+-- unreferenced NULL slot, so the decision is made on the materialized values. Without that branch the
+-- no-NULL case would fail closed and lose this pruning.
+SET allow_suspicious_low_cardinality_types = 1;
+SELECT 'V33 unpacked LC(Nullable) NULL-free keeps pruning', count() > 0 FROM (EXPLAIN indexes = 1 SELECT count() FROM u33 WHERE has([(CAST(10, 'LowCardinality(Nullable(UInt32))'), CAST(0, 'LowCardinality(Nullable(UInt32))'))], (a, b))) WHERE explain ILIKE '%Parts: 1/4%';
+SELECT 'V33 unpacked LC(Nullable) with NULL declines', count() > 0 FROM (EXPLAIN indexes = 1 SELECT count() FROM u33 WHERE has([(CAST(10, 'LowCardinality(Nullable(UInt32))'), CAST(0, 'LowCardinality(Nullable(UInt32))')), (NULL, NULL)], (a, b))) WHERE explain ILIKE '%Parts: 4/4%';
+SELECT 'V33 unpacked LC(Nullable) with NULL result',
+    (SELECT count() FROM u33 WHERE has([(CAST(10, 'LowCardinality(Nullable(UInt32))'), CAST(0, 'LowCardinality(Nullable(UInt32))')), (NULL, NULL)], (a, b))) = (SELECT count() FROM u33o WHERE has([(CAST(10, 'LowCardinality(Nullable(UInt32))'), CAST(0, 'LowCardinality(Nullable(UInt32))')), (NULL, NULL)], (a, b)));
+SET allow_suspicious_low_cardinality_types = 0;
+
+-- Tuple field names are only mapped by the preparation cast when BOTH sides declare them explicitly:
+-- `createTupleWrapper` takes its name-matching branch under `from_type->hasExplicitNames() &&
+-- to_type->hasExplicitNames()` and otherwise converts POSITIONALLY. Measured on the cast itself:
+--     accurateCastOrNull(CAST(tuple(1), 'Tuple(d UInt8)'), 'Tuple(c UInt8)') = (0)   both explicit
+--     accurateCastOrNull(CAST(tuple(1), 'Tuple(d UInt8)'), 'Tuple(UInt8)')   = (1)   one-sided
+--     accurateCastOrNull(CAST(tuple(1), 'Tuple(UInt8)'),   'Tuple(c UInt8)') = (1)   one-sided
+-- So a one-sided-explicit pair preserves equality in both directions and must keep pruning, while a
+-- both-explicit differing pair must still decline. Both directions of the one-sided case are covered.
+SELECT 'W33 packed unnamed key vs named element result',
+    (SELECT count() FROM q33 WHERE has([CAST((10, 0), 'Tuple(c UInt32, d UInt32)')], kt)) = (SELECT count() FROM q33o WHERE has([CAST((10, 0), 'Tuple(c UInt32, d UInt32)')], kt));
+SELECT 'W33 packed unnamed key vs named element keeps pruning', count() > 0 FROM (EXPLAIN indexes = 1 SELECT count() FROM q33 WHERE has([CAST((10, 0), 'Tuple(c UInt32, d UInt32)')], kt)) WHERE explain ILIKE '%Parts: 1/3%';
+
+DROP TABLE IF EXISTS w33; DROP TABLE IF EXISTS w33o;
+CREATE TABLE w33 (kt Tuple(x UInt32, y UInt32)) ENGINE = MergeTree ORDER BY kt SETTINGS index_granularity = 1, add_minmax_index_for_numeric_columns = 0;
+CREATE TABLE w33o (kt Tuple(x UInt32, y UInt32)) ENGINE = Memory;
+INSERT INTO w33 VALUES ((10, 0));
+INSERT INTO w33 VALUES ((50000, 0));
+INSERT INTO w33 VALUES ((0, 0));
+INSERT INTO w33o VALUES ((10, 0)), ((50000, 0)), ((0, 0));
+SELECT 'W33 packed named key vs unnamed element result',
+    (SELECT count() FROM w33 WHERE has([(toUInt32(10), toUInt32(0))], kt)) = (SELECT count() FROM w33o WHERE has([(toUInt32(10), toUInt32(0))], kt));
+SELECT 'W33 packed named key vs unnamed element keeps pruning', count() > 0 FROM (EXPLAIN indexes = 1 SELECT count() FROM w33 WHERE has([(toUInt32(10), toUInt32(0))], kt)) WHERE explain ILIKE '%Parts: 1/3%';
+-- The both-explicit differing pair the tolerance must NOT admit: the cast zeroes the values, so treating
+-- the atom as exact prunes the real all-default part and drops a row (master answers this one wrongly).
+SELECT 'W33 packed both-explicit differing names result',
+    (SELECT count() FROM w33 WHERE has([CAST((10, 0), 'Tuple(c UInt32, d UInt32)')], kt)) = (SELECT count() FROM w33o WHERE has([CAST((10, 0), 'Tuple(c UInt32, d UInt32)')], kt));
+SELECT 'W33 packed both-explicit differing names declines', count() > 0 FROM (EXPLAIN indexes = 1 SELECT count() FROM w33 WHERE has([CAST((10, 0), 'Tuple(c UInt32, d UInt32)')], kt)) WHERE explain ILIKE '%Parts: 3/3%';
+-- ... and the both-explicit AGREEING pair still prunes, so the guard is name-sensitive rather than a
+-- decline of every named key.
+SELECT 'W33 packed both-explicit same names keeps pruning', count() > 0 FROM (EXPLAIN indexes = 1 SELECT count() FROM w33 WHERE has([CAST((10, 0), 'Tuple(x UInt32, y UInt32)')], kt)) WHERE explain ILIKE '%Parts: 1/3%';
+
+-- A NESTED named tuple, in the unpacked shape, where the per-scalar cast IS the one being name-mapped.
+-- Differing explicit names zero the value and must decline; a one-sided pair is positional and prunes.
+DROP TABLE IF EXISTS y33; DROP TABLE IF EXISTS y33o;
+CREATE TABLE y33 (a Tuple(c UInt32), b UInt32) ENGINE = MergeTree ORDER BY (a, b) SETTINGS index_granularity = 1, add_minmax_index_for_numeric_columns = 0;
+CREATE TABLE y33o (a Tuple(c UInt32), b UInt32) ENGINE = Memory;
+INSERT INTO y33 VALUES (tuple(10), 0);
+INSERT INTO y33 VALUES (tuple(50000), 0);
+INSERT INTO y33 VALUES (tuple(0), 0);
+INSERT INTO y33o VALUES (tuple(10), 0);
+INSERT INTO y33o VALUES (tuple(50000), 0);
+INSERT INTO y33o VALUES (tuple(0), 0);
+SELECT 'Y33 unpacked nested differing names result',
+    (SELECT count() FROM y33 WHERE has([(CAST(tuple(10), 'Tuple(d UInt32)'), toUInt32(0))], (a, b))) = (SELECT count() FROM y33o WHERE has([(CAST(tuple(10), 'Tuple(d UInt32)'), toUInt32(0))], (a, b)));
+SELECT 'Y33 unpacked nested differing names declines', count() > 0 FROM (EXPLAIN indexes = 1 SELECT count() FROM y33 WHERE has([(CAST(tuple(10), 'Tuple(d UInt32)'), toUInt32(0))], (a, b))) WHERE explain ILIKE '%Parts: 3/3%';
+SELECT 'Y33 unpacked nested one-sided names result',
+    (SELECT count() FROM y33 WHERE has([(tuple(toUInt32(10)), toUInt32(0))], (a, b))) = (SELECT count() FROM y33o WHERE has([(tuple(toUInt32(10)), toUInt32(0))], (a, b)));
+SELECT 'Y33 unpacked nested one-sided names keeps pruning', count() > 0 FROM (EXPLAIN indexes = 1 SELECT count() FROM y33 WHERE has([(tuple(toUInt32(10)), toUInt32(0))], (a, b))) WHERE explain ILIKE '%Parts: 1/3%';
+
+-- A nested container BETWEEN the packed root and a one-sided `Nullable` wrapper. The element type is
+-- `Tuple(Array(Nullable(UInt16)), UInt8)` against a `Tuple(Array(UInt32), UInt32)` key, so the wrapper
+-- sits one container deeper than the tuple root - deeper than the whole-composite cast's null
+-- aggregation reaches, since that lives in `createTupleWrapper` and is top-level only, while
+-- `createArrayWrapper` rebuilds the array with its original offsets and leaves a nullable data column
+-- nested. So the tolerance has no mechanism behind it here and the container arms decline.
+--
+-- Declining is also what keeps the query working at all: this pair never converts, it FAILS. The cast's
+-- target validation walks `Tuple` elements and rejects a nested type that cannot be inside `Nullable`
+-- (`validateNestedTypesForAccurateCastOrNull`; `canBeInsideNullable` is false for both `Array` and
+-- `Map`), so admitting the pair reached `castColumnAccurateOrNull` and failed the whole query with
+-- `ILLEGAL_TYPE_OF_ARGUMENT` - measured identically on master, i.e. pre-existing. Now the atom is left
+-- unused and the answer matches the oracle. Same for a `Map` in the same position.
+DROP TABLE IF EXISTS z33; DROP TABLE IF EXISTS z33o;
+CREATE TABLE z33 (kt Tuple(Array(UInt32), UInt32)) ENGINE = MergeTree ORDER BY kt SETTINGS index_granularity = 1, add_minmax_index_for_numeric_columns = 0;
+CREATE TABLE z33o (kt Tuple(Array(UInt32), UInt32)) ENGINE = Memory;
+INSERT INTO z33 VALUES (([10], 0));
+INSERT INTO z33 VALUES (([50000], 0));
+INSERT INTO z33 VALUES (([0], 0));
+INSERT INTO z33o VALUES (([10], 0)), (([50000], 0)), (([0], 0));
+SELECT 'Z33 nested Array under packed root element type', toTypeName([([10], 0), ([50000], 0), ([NULL], 0)]);
+SELECT 'Z33 nested Array under packed root has result',
+    (SELECT count() FROM z33 WHERE has([([10], 0), ([50000], 0), ([NULL], 0)], kt)) = (SELECT count() FROM z33o WHERE has([([10], 0), ([50000], 0), ([NULL], 0)], kt));
+SELECT 'Z33 nested Array under packed root NOT has result',
+    (SELECT count() FROM z33 WHERE NOT has([([10], 0), ([50000], 0), ([NULL], 0)], kt)) = (SELECT count() FROM z33o WHERE NOT has([([10], 0), ([50000], 0), ([NULL], 0)], kt));
+DROP TABLE IF EXISTS z34; DROP TABLE IF EXISTS z34o;
+CREATE TABLE z34 (kt Tuple(Map(UInt32, UInt32), UInt32)) ENGINE = MergeTree ORDER BY kt SETTINGS index_granularity = 1, add_minmax_index_for_numeric_columns = 0;
+CREATE TABLE z34o (kt Tuple(Map(UInt32, UInt32), UInt32)) ENGINE = Memory;
+INSERT INTO z34 VALUES ((map(1, 10), 0));
+INSERT INTO z34 VALUES ((map(1, 50000), 0));
+INSERT INTO z34 VALUES ((map(1, 0), 0));
+INSERT INTO z34o VALUES ((map(1, 10), 0)), ((map(1, 50000), 0)), ((map(1, 0), 0));
+SELECT 'Z34 nested Map under packed root element type', toTypeName([(map(1, 10), 0), (map(1, 50000), 0), (map(1, NULL), 0)]);
+SELECT 'Z34 nested Map under packed root NOT has result',
+    (SELECT count() FROM z34 WHERE NOT has([(map(1, 10), 0), (map(1, 50000), 0), (map(1, NULL), 0)], kt)) = (SELECT count() FROM z34o WHERE NOT has([(map(1, 10), 0), (map(1, 50000), 0), (map(1, NULL), 0)], kt));
+-- The same one-sided wrapper on the KEY side instead, nested under the same `Array`. This one is exact
+-- either way - the element casts safely into the key type, so the plain `castColumn` path runs and no
+-- `accurateOrNull` validation is involved - but it shares the declining container arm, so it loses
+-- pruning as the price of the two cells above. It answers correctly, and this cell records the cost so a
+-- future narrowing or widening of that arm is measured rather than assumed.
+DROP TABLE IF EXISTS z35; DROP TABLE IF EXISTS z35o;
+CREATE TABLE z35 (kt Tuple(Array(Nullable(UInt32)), UInt32)) ENGINE = MergeTree ORDER BY kt SETTINGS index_granularity = 1, add_minmax_index_for_numeric_columns = 0, allow_nullable_key = 1;
+CREATE TABLE z35o (kt Tuple(Array(Nullable(UInt32)), UInt32)) ENGINE = Memory;
+INSERT INTO z35 VALUES (([10], 0));
+INSERT INTO z35 VALUES (([50000], 0));
+INSERT INTO z35 VALUES (([0], 0));
+INSERT INTO z35o VALUES (([10], 0)), (([50000], 0)), (([0], 0));
+SELECT 'Z35 key-side nested Nullable has result',
+    (SELECT count() FROM z35 WHERE has([(CAST([10], 'Array(UInt8)'), toUInt8(0))], kt)) = (SELECT count() FROM z35o WHERE has([(CAST([10], 'Array(UInt8)'), toUInt8(0))], kt));
+SELECT 'Z35 key-side nested Nullable has declines', count() > 0 FROM (EXPLAIN indexes = 1 SELECT count() FROM z35 WHERE has([(CAST([10], 'Array(UInt8)'), toUInt8(0))], kt)) WHERE explain ILIKE '%Parts: 3/3%';
+SELECT 'Z35 key-side nested Nullable NOT has result',
+    (SELECT count() FROM z35 WHERE NOT has([(CAST([10], 'Array(UInt8)'), toUInt8(0))], kt)) = (SELECT count() FROM z35o WHERE NOT has([(CAST([10], 'Array(UInt8)'), toUInt8(0))], kt));
+
 -- Native widths collapse in a Field, signedness does not, and the 128/256-bit tags do not either:
 -- this is exactly the boundary the composite identity rule has to draw.
 SELECT 'Field width u8 vs u64', has([tuple(toUInt8(1))], tuple(toUInt64(1)));

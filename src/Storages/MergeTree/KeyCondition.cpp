@@ -36,9 +36,12 @@
 #include <DataTypes/DataTypeMap.h>
 #include <DataTypes/DataTypeTuple.h>
 #include <Columns/ColumnArray.h>
+#include <Columns/ColumnMap.h>
+#include <Columns/ColumnNullable.h>
 #include <Columns/ColumnSet.h>
 #include <Columns/ColumnConst.h>
 #include <Columns/ColumnTuple.h>
+#include <Columns/ColumnsCommon.h>
 #include <Core/Settings.h>
 #include <Interpreters/convertFieldToType.h>
 #include <Interpreters/Set.h>
@@ -2683,11 +2686,11 @@ void KeyCondition::analyzeKeyExpressionForSetIndex(const RPNBuilderTreeNode & ar
 /// A plain `Nullable` node is left out of the signature, because
 /// `setIndexTypesHaveSameFieldRepresentation` admits a nested `Nullable` against its plain counterpart
 /// and `DataTypeNullable::forEachChild` visits the wrapper's nested type as an extra node, so a
-/// one-sided wrapper would otherwise make the two signatures differ in LENGTH. Since that helper takes
-/// `one_sided_nullable_is_enough`, only its PACKED caller can still deliver a one-sided wrapper here, so
-/// the parity concern is packed-only - but the omission has to stay for that caller. It cannot weaken
-/// the `equals` arm either: there both trees are `equals`-equal and carry `Nullable` at identical
-/// positions, so the same nodes are dropped from both. A CUSTOM-NAMED `Nullable` is still noted.
+/// one-sided wrapper would otherwise make the two signatures differ in LENGTH. Both callers of that
+/// helper can deliver a one-sided wrapper (the packed one always, the unpacked one when the constant
+/// holds no NULL), so the omission has to stay. It cannot weaken the `equals` arm either: there both
+/// trees are `equals`-equal and carry `Nullable` at identical positions, so the same nodes are dropped
+/// from both. A CUSTOM-NAMED `Nullable` is still noted.
 static bool setIndexTypesAgreeOnCustomNames(const IDataType & left, const IDataType & right)
 {
     auto custom_name_signature = [](const IDataType & type)
@@ -2775,12 +2778,20 @@ static bool setIndexTypesHaveSameFieldRepresentation(
     /// NAME: casting `Tuple(a, b)` to `Tuple(b, a)` REORDERS the values (`(1,2)` -> `(2,1)`) and
     /// casting to an unrelated `Tuple(c, d)` ZEROES them (`(1,2)` -> `(0,0)`). A name-differing pair is
     /// therefore not equality-preserving in the preparation direction.
+    ///
+    /// That name mapping only happens when BOTH sides carry explicit names: `createTupleWrapper` takes
+    /// its name-matching branch under `from_type->hasExplicitNames() && to_type->hasExplicitNames()`
+    /// (`FunctionsConversion.cpp`) and otherwise converts POSITIONALLY. So a pair where only one side
+    /// is named is cast positionally, exactly like two unnamed tuples, and runtime `has` ignores names
+    /// either way - comparing the placeholder names `"1"`, `"2"`, ... against real ones would decline a
+    /// sound atom. Compare names only when both sides would actually be mapped by them.
     if (left_which.isTuple() && right_which.isTuple())
     {
         const auto & left_tuple = assert_cast<const DataTypeTuple &>(left);
         const auto & right_tuple = assert_cast<const DataTypeTuple &>(right);
 
-        if (left_tuple.getElementNames() != right_tuple.getElementNames())
+        if (left_tuple.hasExplicitNames() && right_tuple.hasExplicitNames()
+            && left_tuple.getElementNames() != right_tuple.getElementNames())
             return false;
 
         const auto & left_elements = left_tuple.getElements();
@@ -2795,11 +2806,25 @@ static bool setIndexTypesHaveSameFieldRepresentation(
         return true;
     }
 
+    /// The one-sided tolerance is cleared when descending into an `Array` or a `Map`, so it reaches only
+    /// through `Tuple` nodes. The packed caller's justification is that the WHOLE composite is cast by
+    /// `castColumnAccurateOrNull`, whose null aggregation lives in `createTupleWrapper` and is top-level
+    /// only - `createArrayWrapper` converts the array's data column and rebuilds it with the original
+    /// offsets, so a nullable data column stays nested and the outer null map bit is never set. Below a
+    /// container the tolerance therefore has no mechanism behind it.
+    ///
+    /// Declining these shapes is also what stops such a pair from reaching that cast at all, which
+    /// matters because the cast REFUSES it rather than converting it: the target validation walks `Tuple`
+    /// elements and rejects a nested type that cannot be inside `Nullable`
+    /// (`validateNestedTypesForAccurateCastOrNull`; `canBeInsideNullable` is false for both `Array` and
+    /// `Map`), so a `Tuple(Array(UInt32), UInt32)` key against a `Tuple(Array(Nullable(UInt16)), UInt8)`
+    /// element used to fail the whole query with `ILLEGAL_TYPE_OF_ARGUMENT`. Declining leaves the atom
+    /// unused and the query answers correctly instead.
     if (left_which.isArray() && right_which.isArray())
         return setIndexTypesHaveSameFieldRepresentation(
             *assert_cast<const DataTypeArray &>(left).getNestedType(),
             *assert_cast<const DataTypeArray &>(right).getNestedType(),
-            one_sided_nullable_is_enough);
+            /*one_sided_nullable_is_enough=*/false);
 
     /// A `Map` is a `Array(Tuple(key, value))` underneath, so recursing into that one nested type
     /// covers both halves without needing the container's own accessors.
@@ -2807,7 +2832,7 @@ static bool setIndexTypesHaveSameFieldRepresentation(
         return setIndexTypesHaveSameFieldRepresentation(
             *assert_cast<const DataTypeMap &>(left).getNestedType(),
             *assert_cast<const DataTypeMap &>(right).getNestedType(),
-            one_sided_nullable_is_enough);
+            /*one_sided_nullable_is_enough=*/false);
 
     /// A `Nullable` wrapper is not represented in a `Field` at all: a non-NULL value carries the same
     /// variant as its plain counterpart (`has([tuple(CAST(10, 'Nullable(UInt16)'))], tuple(toUInt32(10)))`
@@ -2817,19 +2842,22 @@ static bool setIndexTypesHaveSameFieldRepresentation(
     ///
     /// A wrapper present on only ONE side is a different question, and the answer depends on the shape
     /// the CALLER is deciding, so `one_sided_nullable_is_enough` selects it:
-    /// - PACKED (`setIndexConversionPreservesEquality`'s composite arm): safe. There the WHOLE composite
-    ///   is cast by `castColumnAccurateOrNull`, which maps a NULL element to a NULL whole composite, and
-    ///   the caller's filter then drops that set row entirely. Measured: a plain `Tuple(UInt32, UInt32)`
-    ///   key against `[(10, 0), (50000, 0), (NULL, NULL)]` reports a `2-element set` (the NULL-bearing
-    ///   row is gone) and agrees with an `ENGINE = Memory` oracle for both `has` and `NOT has`.
-    /// - UNPACKED (`compositeHasArgumentsHaveSameType`): NOT safe. `tryPrepareSetColumnsForIndex` splits
-    ///   the composite into scalars BEFORE any conversion, so no whole-composite cast ever runs. Each
-    ///   scalar then takes the nullable branch, which strips `Nullable` and replaces the column with the
-    ///   NESTED one; that column holds the type default at a source-NULL row, so the per-scalar
-    ///   `castColumnAccurateOrNull` produces no NULL there and the row survives the filter. A
-    ///   `(NULL, NULL)` element therefore enters the pruning set as `(0, 0)`, which runtime `has` does
-    ///   NOT match (`Types::Null` matches nothing), so claiming exactness prunes the real `(0, 0)` part
-    ///   and drops a row. Require the wrapper on both sides there.
+    /// - PACKED (`setIndexConversionPreservesEquality`'s composite arm): safe, but only while the wrapper
+    ///   is reachable from the root through `Tuple` nodes. There the WHOLE composite is cast by
+    ///   `castColumnAccurateOrNull`, which maps a NULL element to a NULL whole composite, and the caller's
+    ///   filter then drops that set row entirely. Measured: a plain `Tuple(UInt32, UInt32)` key against
+    ///   `[(10, 0), (50000, 0), (NULL, NULL)]` reports a `2-element set` (the NULL-bearing row is gone)
+    ///   and agrees with an `ENGINE = Memory` oracle for both `has` and `NOT has`. Below an `Array` or a
+    ///   `Map` that aggregation does not reach, so the container arms above clear the flag.
+    /// - UNPACKED (`compositeHasArgumentsHaveSameType`): safe only when the constant holds no NULL.
+    ///   `tryPrepareSetColumnsForIndex` splits the composite into scalars BEFORE any conversion, so no
+    ///   whole-composite cast ever runs. Each scalar then takes the nullable branch, which strips
+    ///   `Nullable` and replaces the column with the NESTED one; that column holds the type default at a
+    ///   source-NULL row, so the per-scalar `castColumnAccurateOrNull` produces no NULL there and the row
+    ///   survives the filter. A `(NULL, NULL)` element therefore enters the pruning set as `(0, 0)`,
+    ///   which runtime `has` does NOT match (`Types::Null` matches nothing), so claiming exactness prunes
+    ///   the real `(0, 0)` part and drops a row. That needs an actual source NULL though, so the caller
+    ///   passes true only after `setIndexConstantHasNoNulls` confirms there is none.
     if (left_which.isNullable() && right_which.isNullable())
         return setIndexTypesHaveSameFieldRepresentation(
             *assert_cast<const DataTypeNullable &>(left).getNestedType(),
@@ -2900,7 +2928,9 @@ static bool setIndexConversionPreservesEquality(
 
     /// `one_sided_nullable_is_enough = true`: this is the PACKED shape, where the whole composite is cast
     /// by `castColumnAccurateOrNull` below, so a NULL element nulls the entire tuple and the caller's
-    /// filter drops that set row. See the `Nullable` arm of that helper.
+    /// filter drops that set row. The helper narrows this to wrappers reachable through `Tuple` nodes
+    /// only, because that cast's null aggregation does not reach inside an `Array` or a `Map`. See the
+    /// `Nullable` and container arms of that helper.
     if (composite_field_identity_is_enough
         && setIndexTypesHaveSameFieldRepresentation(*key, *set, /*one_sided_nullable_is_enough=*/true)
         && setIndexTypeTreeHasStableChildOrder(*key) && setIndexTypesAgreeOnCustomNames(*key, *set))
@@ -3190,6 +3220,56 @@ bool KeyCondition::tryPrepareSetIndexForIn(
     return true;
 }
 
+/// Whether `column` is known to contain no NULL anywhere inside it, including nested in a container.
+/// Returns false when that cannot be established, so every caller fails closed on an unrecognized
+/// column layout rather than assuming NULL-freedom.
+///
+/// Used by the UNPACKED composite shape, whose hazard is not the `Nullable` TYPE but an actual source
+/// NULL: that shape strips `Nullable` and substitutes the nested column, which holds the type default
+/// at a source-NULL row, so such a row silently enters the pruning set as a real value. With no NULL
+/// present there is no such row and the per-scalar conversion is value-preserving.
+static bool setIndexConstantHasNoNulls(const IColumn & column)
+{
+    if (const auto * column_const = typeid_cast<const ColumnConst *>(&column))
+        return setIndexConstantHasNoNulls(column_const->getDataColumn());
+
+    if (const auto * column_nullable = typeid_cast<const ColumnNullable *>(&column))
+    {
+        const NullMap & null_map = column_nullable->getNullMapData();
+        if (memoryIsZero(null_map.data(), 0, null_map.size()))
+            return setIndexConstantHasNoNulls(column_nullable->getNestedColumn());
+        return false;
+    }
+
+    if (const auto * column_tuple = typeid_cast<const ColumnTuple *>(&column))
+    {
+        for (size_t i = 0; i < column_tuple->tupleSize(); ++i)
+            if (!setIndexConstantHasNoNulls(column_tuple->getColumn(i)))
+                return false;
+        return true;
+    }
+
+    if (const auto * column_array = typeid_cast<const ColumnArray *>(&column))
+        return setIndexConstantHasNoNulls(column_array->getData());
+
+    if (const auto * column_map = typeid_cast<const ColumnMap *>(&column))
+        return setIndexConstantHasNoNulls(column_map->getNestedColumn());
+
+    if (const auto * column_low_cardinality = typeid_cast<const ColumnLowCardinality *>(&column))
+    {
+        /// The dictionary can hold an unreferenced NULL slot, so inspect the materialized values.
+        if (!column_low_cardinality->nestedIsNullable())
+            return true;
+        return setIndexConstantHasNoNulls(*column_low_cardinality->convertToFullColumn());
+    }
+
+    /// A `Variant`/`Dynamic` column can carry a NULL discriminator, and any other layout is unknown.
+    /// Both fail closed.
+    if (column.canBeInsideNullable() || column.isNullable())
+        return true;
+    return false;
+}
+
 /// `has` never casts the key at runtime: `FunctionArrayIndex::executeConst` compares `Field`s with
 /// `accurateEquals`, and `FieldVisitorAccurateEquals` has no `Tuple`/`Array` arm, so a composite array
 /// element is compared as ONE `Field` whose nested values must match by exact `Field` type (which
@@ -3221,7 +3301,10 @@ bool KeyCondition::tryPrepareSetIndexForIn(
 /// the tuple and `tryPrepareSetColumnsForIndex`'s filter drops that set row; the unpacked shape converts
 /// each scalar separately after stripping `Nullable`, so a source NULL becomes the nested column's type
 /// default and survives (a `(NULL, NULL)` element would enter the pruning set as the all-default tuple,
-/// which runtime `has` does not match). Only the packed branch therefore tolerates it.
+/// which runtime `has` does not match). The packed branch therefore tolerates it wherever the
+/// whole-composite cast's null aggregation reaches - through `Tuple` nodes, but not inside an `Array` or
+/// a `Map` - while the unpacked branch tolerates it only when the constant carries no NULL at all: the
+/// harm needs an actual source NULL, so a NULL-free `Nullable`-typed element is still exact and prunes.
 ///
 /// A transforming key expression is declined outright, in both shapes below: `data_types` always holds
 /// the type of the KEY column, which is the left expression's own type only when the key expression
@@ -3233,7 +3316,8 @@ static bool compositeHasArgumentsHaveSameType(
     const std::vector<std::optional<DeterministicKeyTransformDag>> & set_transforming_dags,
     const DataTypes & data_types,
     size_t key_args_count,
-    const DataTypePtr & array_element_type)
+    const DataTypePtr & array_element_type,
+    const IColumn & array_elements)
 {
     auto normalize = [](const DataTypePtr & type) { return removeNullable(recursiveRemoveLowCardinality(type)); };
 
@@ -3286,9 +3370,10 @@ static bool compositeHasArgumentsHaveSameType(
 
         /// `left_type` was just synthesized with the unnamed ctor, so its outer names are the
         /// placeholders `"1"`, `"2"`, ... and it never carries a custom name. Comparing those against
-        /// the element's real outer attributes would decline every named or custom-named element
-        /// (`has([CAST((1, 1), 'Tuple(c UInt8, d UInt8)')], (a, b))`, and likewise a `Point`), losing
-        /// sound pruning. Unlike the packed branch, no outer tuple cast ever runs on this path:
+        /// the element's real outer CUSTOM NAME would decline every custom-named element (a `Point`),
+        /// losing sound pruning; the outer element NAMES are already handled by the helper, which
+        /// compares names only when both sides declare them explicitly. Unlike the packed branch, no
+        /// outer tuple cast ever runs on this path:
         /// `tryPrepareSetColumnsForIndex` unpacks the element positionally first (`ColumnTuple::
         /// getColumns` / `DataTypeTuple::getElements`, no name lookup), so only per-scalar casts follow,
         /// and runtime `has` compares `Field`s, which carry no names either. Rebuild the element's OUTER
@@ -3301,6 +3386,15 @@ static bool compositeHasArgumentsHaveSameType(
             right_type = std::make_shared<DataTypeTuple>(element_tuple->getElements());
         /// Any other element shape (an `Array`/`Map`, or a tuple of a different arity) cannot match a
         /// synthesized tuple anyway, so it is left to decline against `element_type` unchanged.
+
+        /// The hazard this shape has to avoid is a source NULL, not the `Nullable` type: the per-scalar
+        /// conversion strips `Nullable` and substitutes the nested column, which holds the type default
+        /// at a source-NULL row, so that row enters the pruning set as a real value the runtime never
+        /// matches. A constant with no NULL anywhere has no such row, so the conversion is
+        /// value-preserving and the wrapper can be recursed through after all - declining on the type
+        /// alone would lose sound pruning for every NULL-free `Nullable`-typed element. The inspection
+        /// fails closed, so an unrecognized column layout keeps the type-only decline.
+        one_sided_nullable_is_enough = setIndexConstantHasNoNulls(array_elements);
     }
 
     return (left_type->equals(*right_type)
@@ -3362,7 +3456,7 @@ bool KeyCondition::tryPrepareSetIndexForHas(
     DataTypes set_types = {array_nested_type};
 
     if (!compositeHasArgumentsHaveSameType(
-            indexes_mapping, set_transforming_dags, data_types, key_args_count, array_nested_type))
+            indexes_mapping, set_transforming_dags, data_types, key_args_count, array_nested_type, *array_elements))
         return false;
 
     /// `composite_field_identity_is_enough = true`: `has` casts nothing at runtime, so a composite pair

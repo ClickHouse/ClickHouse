@@ -154,6 +154,33 @@ U33 unpacked nested-Nullable NOT has declines	1
 Q33 packed one-sided Nullable has result	1
 Q33 packed one-sided Nullable NOT has result	1
 Q33 packed one-sided Nullable NOT has keeps pruning	1
+V33 unpacked NULL-free Nullable has result	1
+V33 unpacked NULL-free Nullable has keeps pruning	1
+V33 unpacked NULL-free Nullable NOT has result	1
+V33 unpacked NULL in a later row declines	1
+V33 unpacked NULL in a later row result	1
+V33 unpacked LC(Nullable) NULL-free keeps pruning	1
+V33 unpacked LC(Nullable) with NULL declines	1
+V33 unpacked LC(Nullable) with NULL result	1
+W33 packed unnamed key vs named element result	1
+W33 packed unnamed key vs named element keeps pruning	1
+W33 packed named key vs unnamed element result	1
+W33 packed named key vs unnamed element keeps pruning	1
+W33 packed both-explicit differing names result	1
+W33 packed both-explicit differing names declines	1
+W33 packed both-explicit same names keeps pruning	1
+Y33 unpacked nested differing names result	1
+Y33 unpacked nested differing names declines	1
+Y33 unpacked nested one-sided names result	1
+Y33 unpacked nested one-sided names keeps pruning	1
+Z33 nested Array under packed root element type	Array(Tuple(Array(Nullable(UInt16)), UInt8))
+Z33 nested Array under packed root has result	1
+Z33 nested Array under packed root NOT has result	1
+Z34 nested Map under packed root element type	Array(Tuple(Map(UInt8, Nullable(UInt16)), UInt8))
+Z34 nested Map under packed root NOT has result	1
+Z35 key-side nested Nullable has result	1
+Z35 key-side nested Nullable has declines	1
+Z35 key-side nested Nullable NOT has result	1
 Field width u8 vs u64	1
 Field width i8 vs i64	1
 Field signedness i32 vs u32	0
