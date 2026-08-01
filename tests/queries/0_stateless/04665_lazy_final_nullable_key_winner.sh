@@ -9,7 +9,8 @@
 # itself satisfy the filter (flag = 0 carries the highest version): propagating the
 # pre-FINAL filter or not then yields the same winner set, so only null handling can
 # differ here. Each key is spread over two parts so the parts intersect and the lazy
-# branch is really used, which the last two cells assert.
+# branch is really used, which the two 'lazy FINAL executes' cells assert for the
+# Nullable(UInt64) and LowCardinality(Nullable(String)) shapes.
 
 CURDIR=$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)
 # shellcheck source=../shell_config.sh
@@ -100,10 +101,10 @@ $CLICKHOUSE_CLIENT $settings -q "
     INSERT INTO t_null_f64 SELECT NULL, 1, 1;
     INSERT INTO t_null_f64 SELECT NULL, 0, 2;
 
-    -- 7. control: a plain Float64 key holding nan, correct before the fix. A nan key sorts
-    -- like a NULL one but is not one, so this pins that the fix keys on nullability itself:
-    -- gating the optimization off for every key type that needs careful ordering would also
-    -- turn this working case off.
+    -- 7. control: a plain Float64 key holding nan, correct before the fix and unchanged by it.
+    -- A nan key sorts like a NULL one but is not one, so this cell documents that a non-nullable
+    -- float key needs no special handling. It cannot detect an over-generalized predicate: with no
+    -- top-level Nullable in the key, no null map is built and no key is skipped either way.
     CREATE TABLE t_plain_f64 (k Float64, flag UInt8, version UInt64)
     ENGINE = ReplacingMergeTree(version) ORDER BY k
     SETTINGS index_granularity = 1;
@@ -124,8 +125,9 @@ $CLICKHOUSE_CLIENT $settings -q "
     INSERT INTO t_null_absent SELECT 7, 1, 1;
     INSERT INTO t_null_absent SELECT 7, 0, 2;
 
-    -- 9. control: Array(Nullable(UInt64)). A NULL nested inside a container is correct
-    -- before the fix, so this pins that the fix did not over-generalize into containers.
+    -- 9. control: Array(Nullable(UInt64)). A NULL nested inside a container is correct before
+    -- the fix and stays correct after it, because the winner set only ever builds a null map
+    -- from a top-level Nullable key, so this cell pins that a container key is left alone.
     CREATE TABLE t_arr_null (k Array(Nullable(UInt64)), flag UInt8, version UInt64)
     ENGINE = ReplacingMergeTree(version) ORDER BY k
     SETTINGS index_granularity = 1, allow_nullable_key = 1;
