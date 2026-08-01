@@ -2006,22 +2006,6 @@ std::optional<CompressionCodecPtr> IMergeTreeDataPart::tryGetColumnCompressionCo
     return CompressionCodecFactory::instance().get(codec_it->second, column.getTypeInStorage(), default_codec);
 }
 
-CompressionCodecPtr IMergeTreeDataPart::getColumnCompressionCodec(const NameAndTypePair & column) const
-{
-    if (auto codec = tryGetColumnCompressionCodecFromFile(column))
-        return *codec;
-
-    auto metadata_snapshot = storage.getInMemoryMetadataPtr(storage.getContext(), false);
-    const auto & storage_columns = metadata_snapshot->getColumns();
-    if (const auto column_description = storage_columns.tryGetColumnOrSubcolumnDescription(GetColumnsOptions::AllPhysical, column.name))
-    {
-        if (column_description->codec)
-            return CompressionCodecFactory::instance().get(column_description->codec, column_description->type, default_codec);
-    }
-
-    return default_codec;
-}
-
 String IMergeTreeDataPart::getColumnCompressionCodecDescription(const NameAndTypePair & column) const
 {
     if (auto codec = tryGetColumnCompressionCodecFromFile(column))

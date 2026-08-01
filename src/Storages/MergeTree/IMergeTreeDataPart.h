@@ -125,7 +125,9 @@ public:
     ColumnSize getSubcolumnSize(const String & /*subcolumn_name*/) const;
 
     virtual std::optional<time_t> getColumnModificationTime(const String & column_name) const = 0;
-    virtual CompressionCodecPtr getColumnCompressionCodec(const NameAndTypePair & column) const;
+
+    /// Exact compression codec of the column's data streams in this part, as persisted by the writer
+    /// in `column_compression_codecs.txt`. Empty for parts written before that file existed.
     String getColumnCompressionCodecDescription(const NameAndTypePair & column) const;
 
     /// NOTE: Returns zeros if secondary indexes are not found in checksums.
@@ -820,9 +822,10 @@ protected:
     void initializeIndexGranularityInfo(const MergeTreeSettings & storage_settings);
 
     virtual void doCheckConsistency(bool require_part_metadata) const;
-    std::optional<CompressionCodecPtr> tryGetColumnCompressionCodecFromFile(const NameAndTypePair & column) const;
 
 private:
+    std::optional<CompressionCodecPtr> tryGetColumnCompressionCodecFromFile(const NameAndTypePair & column) const;
+
     String mutable_name;
     mutable std::atomic<MergeTreeDataPartState> state{MergeTreeDataPartState::Temporary};
 
