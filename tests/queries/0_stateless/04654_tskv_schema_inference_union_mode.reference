@@ -20,3 +20,9 @@ TYPE_MISMATCH
 TYPE_MISMATCH
 TYPE_MISMATCH
 TYPE_MISMATCH
+6. column shapes that differ without a sign hazard are still merged
+Variant(Array(Nullable(Int64)), Tuple(Nullable(Int64), Nullable(String)))
+Variant(Array(Nullable(Int64)), Tuple(Nullable(Int64), Nullable(String)))
+Variant(Array(Nullable(Int64)), String)
+Variant(Array(Nullable(Int64)), String)
+TYPE_MISMATCH

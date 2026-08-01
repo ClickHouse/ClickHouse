@@ -124,6 +124,8 @@ public:
 private:
     void transformTypesIfNeeded(DataTypePtr & type, DataTypePtr & new_type) override;
 
+    void carryOverProvenanceOnEqualTypes(const DataTypePtr & dropped, const DataTypePtr & retained) override;
+
     PeekableReadBuffer buf;
     const ParsedTemplateFormatString format;
     const ParsedTemplateFormatString row_format;

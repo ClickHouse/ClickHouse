@@ -163,14 +163,15 @@ SELECT * FROM format(TSKV, unhex('783D2D310A783D312E350A'));
 DESC format(TSKV, unhex('783D2D310A783D2D320A'));
 SELECT * FROM format(TSKV, unhex('783D2D310A783D2D320A'));
 
--- 10. PRE-EXISTING, unchanged by this PR and asserted only so a later change cannot move it unnoticed:
--- a negative and a UInt64-range value inside the SAME container in ONE row still infer an unsigned
--- element type, because the element merge inside a container does not carry the provenance. Both rows
--- below behave identically on master.
-SELECT 'group 10: intra-container merge is unchanged (pre-existing)';
+-- 10. A negative and a UInt64-range value inside the SAME container in ONE row. On master both rows
+-- inferred an unsigned element type, and the array row then failed to read its own bytes, because the
+-- element merge could not see which element came from a negative literal. Passing the provenance into
+-- that merge (the same argument group 12's post-transform collapse needs) fixes the array row; the
+-- tuple row keeps every element type, so it never needed the provenance and is unchanged.
+SELECT 'group 10: an intra-container merge sees the negative marking';
 -- c=[-1,18446744073709551615]
 DESC format(TSKV, unhex('633D5B2D312C31383434363734343037333730393535313631355D0A'));
-SELECT * FROM format(TSKV, unhex('633D5B2D312C31383434363734343037333730393535313631355D0A')); -- { serverError CANNOT_READ_ARRAY_FROM_TEXT }
+SELECT * FROM format(TSKV, unhex('633D5B2D312C31383434363734343037333730393535313631355D0A'));
 -- c=(-1,18446744073709551615)
 DESC format(TSKV, unhex('633D282D312C3138343436373434303733373039353531363135290A'));
 SELECT * FROM format(TSKV, unhex('633D282D312C3138343436373434303733373039353531363135290A'));
@@ -250,6 +251,19 @@ SELECT * FROM format(TSKV, unhex('783D2D310A783D312E350A'));
 -- x=-1 / x=-2
 DESC format(TSKV, unhex('783D2D310A783D2D320A'));
 SELECT * FROM format(TSKV, unhex('783D2D310A783D2D320A'));
+-- An array whose elements are not all the same type reaches a second, later collapse: the element
+-- types are transformed first, and only then, if the transformation made them equal, is the last
+-- element's object kept. A NULL element is what gets the array there, because replacing the Nothing
+-- is what makes the rest equal. Both element orders, then a control with no negative element.
+-- c=[NULL,-1,1] / c=[18446744073709551615]
+DESC format(TSKV, unhex('633D5B4E554C4C2C2D312C315D0A633D5B31383434363734343037333730393535313631355D0A'));
+SELECT * FROM format(TSKV, unhex('633D5B4E554C4C2C2D312C315D0A633D5B31383434363734343037333730393535313631355D0A'));
+-- c=[NULL,1,-1] / c=[18446744073709551615]
+DESC format(TSKV, unhex('633D5B4E554C4C2C312C2D315D0A633D5B31383434363734343037333730393535313631355D0A'));
+SELECT * FROM format(TSKV, unhex('633D5B4E554C4C2C312C2D315D0A633D5B31383434363734343037333730393535313631355D0A'));
+-- c=[NULL,1,2] / c=[18446744073709551615] - no negative element, so the widening must still happen
+DESC format(TSKV, unhex('633D5B4E554C4C2C312C325D0A633D5B31383434363734343037333730393535313631355D0A'));
+SELECT * FROM format(TSKV, unhex('633D5B4E554C4C2C312C325D0A633D5B31383434363734343037333730393535313631355D0A'));
 
 -- 13. A map with several equal key types, or several equal value types, keeps only the last one and
 -- discards the rest, so a negative marking recorded on a discarded object was lost, exactly like the
@@ -272,6 +286,36 @@ SELECT * FROM format(TSKV, unhex('6D3D7B313A312C323A317D0A6D3D7B3138343436373434
 -- m={'a':1,'b':1} / m={'a':18446744073709551615} - the same for values
 DESC format(TSKV, unhex('6D3D7B2761273A312C2762273A317D0A6D3D7B2761273A31383434363734343037333730393535313631357D0A'));
 SELECT * FROM format(TSKV, unhex('6D3D7B2761273A312C2762273A317D0A6D3D7B2761273A31383434363734343037333730393535313631357D0A'));
+
+-- 14. The marking is keyed on the type object address, and one column's dropped type object can be
+-- freed while another column is still being inferred. If the address is then reused, the marking is
+-- read as belonging to whatever type landed there, so an unrelated column declines a widening it
+-- should perform. That makes the answer depend on the row order, which is what these rows assert:
+-- both orders must give the same type for y, so neither is a carrier once the address is kept alive.
+SELECT 'group 14: one column''s marking does not leak into another column';
+-- x=1 / x=-1 / y=1 / y=18446744073709551615 - y has no negative value, so it must still widen
+DESC format(TSKV, unhex('783D310A783D2D310A793D310A793D31383434363734343037333730393535313631350A'));
+SELECT * FROM format(TSKV, unhex('783D310A783D2D310A793D310A793D31383434363734343037333730393535313631350A'));
+-- x=-1 / x=1 / y=1 / y=18446744073709551615 - the opposite order must agree about y
+DESC format(TSKV, unhex('783D2D310A783D310A793D310A793D31383434363734343037333730393535313631350A'));
+SELECT * FROM format(TSKV, unhex('783D2D310A783D310A793D310A793D31383434363734343037333730393535313631350A'));
+-- x=1 / x=-1 / y=-1 / y=18446744073709551615 - y IS negative here, so it must still decline
+DESC format(TSKV, unhex('783D310A783D2D310A793D2D310A793D31383434363734343037333730393535313631350A'));
+SELECT * FROM format(TSKV, unhex('783D310A783D2D310A793D2D310A793D31383434363734343037333730393535313631350A'));
+
+-- 15. The same inference code serves the other formats that read fields by an escaping rule and keep
+-- a provenance set, so they get the same collapse and the same order-independence. CustomSeparated is
+-- asserted here; Regexp and Template reach the identical code path through their own escaping rules.
+SELECT 'group 15: a sibling escaped-rule format is order-independent too';
+-- 1 / -1 / 18446744073709551615
+DESC format(CustomSeparated, unhex('310A2D310A31383434363734343037333730393535313631350A'));
+SELECT * FROM format(CustomSeparated, unhex('310A2D310A31383434363734343037333730393535313631350A'));
+-- -1 / 1 / 18446744073709551615 - the opposite order must agree
+DESC format(CustomSeparated, unhex('2D310A310A31383434363734343037333730393535313631350A'));
+SELECT * FROM format(CustomSeparated, unhex('2D310A310A31383434363734343037333730393535313631350A'));
+-- 1 / 2 / 18446744073709551615 - no negative value, so the widening must still happen
+DESC format(CustomSeparated, unhex('310A320A31383434363734343037333730393535313631350A'));
+SELECT * FROM format(CustomSeparated, unhex('310A320A31383434363734343037333730393535313631350A'));
 
 -- The round trip through the writer, asserted without hand-written bytes: what TSKV emits for a
 -- negative map key must infer a type that reads back. This is the reason group 11 is not a

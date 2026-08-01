@@ -21,6 +21,10 @@ printf 'x=1\n' > "$DIR/pos.tskv"
 printf 'x=18446744073709551615\n' > "$DIR/big.tskv"
 printf 'x=1.5\n' > "$DIR/float.tskv"
 printf 'x=\\N\nx=18446744073709551615\n' > "$DIR/nullbig.tskv"
+printf 'x=[1]\n' > "$DIR/arr.tskv"
+printf "x=(1,'a')\n" > "$DIR/tup.tskv"
+printf 'x=abc\n' > "$DIR/str.tskv"
+printf 'x=[-1]\n' > "$DIR/negarr.tskv"
 
 # Report either the inferred type or the error name, never both: the error message text also contains a
 # type name, and it carries the temporary file path, which is not reproducible.
@@ -66,5 +70,21 @@ verdict "set schema_inference_mode='union', schema_inference_make_columns_nullab
 verdict "set schema_inference_mode='union', schema_inference_make_columns_nullable=2; select * from file('$DIR/{nullbig,neg}.tskv', TSKV) order by tuple(*);"
 # The same shape without a negative value is refused identically, as it is on master.
 verdict "set schema_inference_mode='union', schema_inference_make_columns_nullable=2; desc file('$DIR/{pos,nullbig}.tskv', TSKV);"
+
+# Declining the merge is only correct where the sign of an integer is actually at stake. Column shapes
+# that simply differ are unified into a Variant when that is enabled, and the separate-file answer must
+# be the same as the single-file one, which is why each pair below is asserted both ways.
+echo "6. column shapes that differ without a sign hazard are still merged"
+verdict "set schema_inference_mode='union', input_format_try_infer_variants=1; desc file('$DIR/{arr,tup}.tskv', TSKV);"
+verdict "set input_format_try_infer_variants=1; desc format(TSKV, \$\$x=[1]
+x=(1,'a')
+\$\$);"
+verdict "set schema_inference_mode='union', input_format_try_infer_variants=1; desc file('$DIR/{arr,str}.tskv', TSKV);"
+verdict "set input_format_try_infer_variants=1; desc format(TSKV, \$\$x=[1]
+x=abc
+\$\$);"
+# Differing shapes that DO put an Int64 against a UInt64 still have the sign hazard, so they are still
+# declined: the narrowing above must not let this pair through.
+verdict "set schema_inference_mode='union', input_format_try_infer_variants=1; desc file('$DIR/{negarr,big}.tskv', TSKV);"
 
 rm -rf "$DIR"

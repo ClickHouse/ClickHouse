@@ -274,7 +274,7 @@ namespace
         {
             if (WhichDataType(type).isInt64())
             {
-                bool is_negative = json_info && json_info->negative_integers.contains(type.get());
+                bool is_negative = json_info && json_info->isNegativeInteger(type.get());
                 have_negative_integers |= is_negative;
                 if (!is_negative)
                     type = std::make_shared<DataTypeUInt64>();
@@ -959,14 +959,24 @@ namespace
             transformInferredTypesIfNeededImpl<is_json>(nested_types_copy, settings_copy, json_info);
 
             if (checkIfTypesAreEqual(nested_types_copy))
+            {
+                /// The transformation can make unequal element types equal, for example by replacing a
+                /// Nothing element, so this collapse also drops every element object but the last one.
+                for (size_t i = 0; i + 1 < nested_types_copy.size(); ++i)
+                    carryOverInferenceProvenance(nested_types_copy[i], nested_types_copy.back(), json_info);
                 return std::make_shared<DataTypeArray>(nested_types_copy.back());
+            }
             return std::make_shared<DataTypeTuple>(nested_types);
         }
         else
         {
-            transformInferredTypesIfNeededImpl<is_json>(nested_types, settings);
+            transformInferredTypesIfNeededImpl<is_json>(nested_types, settings, json_info);
             if (checkIfTypesAreEqual(nested_types))
+            {
+                for (size_t i = 0; i + 1 < nested_types.size(); ++i)
+                    carryOverInferenceProvenance(nested_types[i], nested_types.back(), json_info);
                 return std::make_shared<DataTypeArray>(nested_types.back());
+            }
 
             /// We couldn't determine common type for array element.
             return nullptr;
@@ -1051,7 +1061,7 @@ namespace
                 {
                     auto type = std::make_shared<DataTypeInt64>();
                     if (json_info && tmp_int < 0)
-                        json_info->negative_integers.insert(type.get());
+                        json_info->markNegativeInteger(type);
                     return type;
                 }
 
@@ -1079,7 +1089,7 @@ namespace
             {
                 auto type = std::make_shared<DataTypeInt64>();
                 if (json_info && tmp_int < 0)
-                    json_info->negative_integers.insert(type.get());
+                    json_info->markNegativeInteger(type);
                 return type;
             }
             peekable_buf.rollbackToCheckpoint(/* drop= */ true);
@@ -1110,7 +1120,7 @@ namespace
             {
                 auto type = std::make_shared<DataTypeInt64>();
                 if (json_inference_info && tmp_int < 0)
-                    json_inference_info->negative_integers.insert(type.get());
+                    json_inference_info->markNegativeInteger(type);
                 return type;
             }
 
@@ -1356,10 +1366,6 @@ namespace
         if (!DataTypeMap::isValidKeyType(key_type))
             return nullptr;
 
-        /// removeNullable returns the nested object, which is a different object than the one the
-        /// provenance was recorded on, so carry it over again (a no-op when nothing was unwrapped).
-        carryOverInferenceProvenance(key_types.back(), key_type, json_info);
-
         return std::make_shared<DataTypeMap>(key_type, value_types.back());
     }
 
@@ -1489,11 +1495,20 @@ bool isSignDependentIntegerWidening(const DataTypePtr & first, const DataTypePtr
 
     const auto first_indexes = collect(first);
     const auto second_indexes = collect(second);
-    /// Shapes that still do not line up cannot be checked position by position. With no provenance
-    /// available either, report the pair so the caller declines the merge: refusing at inference time
-    /// is preferable to inferring a type whose read then fails.
+    /// Shapes that do not line up positionally are instead checked for the widening being present at
+    /// all: it needs an Int64 on one side and a UInt64 on the other. Anything else is a shape
+    /// difference this function has no opinion about, and reporting it would decline merges that have
+    /// nothing to do with the sign of an integer.
     if (first_indexes.size() != second_indexes.size())
-        return true;
+    {
+        auto contains = [](const std::vector<TypeIndex> & indexes, TypeIndex what)
+        {
+            return std::find(indexes.begin(), indexes.end(), what) != indexes.end();
+        };
+
+        return (contains(first_indexes, TypeIndex::Int64) && contains(second_indexes, TypeIndex::UInt64))
+            || (contains(first_indexes, TypeIndex::UInt64) && contains(second_indexes, TypeIndex::Int64));
+    }
 
     for (size_t i = 0; i != first_indexes.size(); ++i)
     {
@@ -1513,11 +1528,13 @@ void carryOverInferenceProvenance(const DataTypePtr & from, const DataTypePtr & 
     if (!json_info || !from || !to || from.get() == to.get() || !from->equals(*to))
         return;
 
-    if (json_info->negative_integers.contains(from.get()))
-        json_info->negative_integers.insert(to.get());
+    if (json_info->isNegativeInteger(from.get()))
+        json_info->markNegativeInteger(to);
 
-    /// The two types are equal, so forEachChild visits structurally identical children in the same
-    /// order; collect and pair them up.
+    /// The two types are equal, so their children line up: forEachChild visits them in the same order
+    /// for every container type inference produces (Array, Nullable, LowCardinality, Map, Tuple, and
+    /// Variant, whose constructor sorts its variants by name). Object is not one of them, and it is the
+    /// one type whose enumeration order is not fixed by equality, so do not rely on this for Object.
     std::vector<const IDataType *> from_children;
     std::vector<const IDataType *> to_children;
     from->forEachChild([&](const IDataType & child) { from_children.push_back(&child); });
@@ -1527,8 +1544,9 @@ void carryOverInferenceProvenance(const DataTypePtr & from, const DataTypePtr & 
 
     for (size_t i = 0; i != from_children.size(); ++i)
     {
-        if (json_info->negative_integers.contains(from_children[i]))
-            json_info->negative_integers.insert(to_children[i]);
+        /// A child is owned by `to`, so retaining `to` keeps the child's address alive with it.
+        if (json_info->isNegativeInteger(from_children[i]))
+            json_info->markNegativeIntegerWithin(to_children[i], to);
     }
 }
 

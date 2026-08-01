@@ -99,8 +99,9 @@ x	Nullable(Float64)
 x	Nullable(Int64)					
 -1
 -2
-group 10: intra-container merge is unchanged (pre-existing)
-c	Array(Nullable(UInt64))					
+group 10: an intra-container merge sees the negative marking
+c	Nullable(String)					
+[-1,18446744073709551615]
 c	Tuple(Nullable(Int64), Nullable(UInt64))					
 (-1,18446744073709551615)
 group 11: a negative map key is not widened to UInt64
@@ -167,6 +168,15 @@ x	Nullable(Float64)
 x	Nullable(Int64)					
 -1
 -2
+c	Nullable(String)					
+[NULL,-1,1]
+[18446744073709551615]
+c	Nullable(String)					
+[NULL,1,-1]
+[18446744073709551615]
+c	Array(Nullable(UInt64))					
+[NULL,1,2]
+[18446744073709551615]
 group 13: the negative marking survives the map key and value collapse
 m	Nullable(String)					
 {-1:1,1:1}
@@ -183,6 +193,38 @@ m	Map(UInt64, Nullable(Int64))
 m	Map(String, Nullable(UInt64))					
 {'a':1,'b':1}
 {'a':18446744073709551615}
+group 14: one column\'s marking does not leak into another column
+x	Nullable(Int64)					
+y	Nullable(UInt64)					
+1	\N
+-1	\N
+\N	1
+\N	18446744073709551615
+x	Nullable(Int64)					
+y	Nullable(UInt64)					
+-1	\N
+1	\N
+\N	1
+\N	18446744073709551615
+x	Nullable(Int64)					
+y	Nullable(String)					
+1	\N
+-1	\N
+\N	-1
+\N	18446744073709551615
+group 15: a sibling escaped-rule format is order-independent too
+c1	Nullable(String)					
+1
+-1
+18446744073709551615
+c1	Nullable(String)					
+-1
+1
+18446744073709551615
+c1	Nullable(UInt64)					
+1
+2
+18446744073709551615
 group 11 round trip: TSKV output for a negative map key reads back
 1
 m	Nullable(String)					
