@@ -228,9 +228,12 @@ $CLICKHOUSE_CLIENT $settings -q "
 
 # `set_rows` is the row count of the winner-selection `Set` that this fix builds, logged by
 # `LazyFinalKeyAnalysisTransform` immediately after it ran primary-key index analysis with that
-# set. It reads 2 only when the NULL key was inserted and 1 when it was dropped, so it observes
-# the fixed value directly. No cell above can: a failed set-index preparation degrades to an
-# unknown condition that selects every mark, so results stay correct and only this field moves.
+# set. It reads 2 only when the NULL key was inserted and 1 when it was dropped, so it is the
+# only cell that observes the fixed value directly rather than by comparing the optimization
+# against itself. It pins the set's CONTENTS, not that index analysis consumed the set: the set
+# is filled by a separate `CreatingSetStep` beforehand, so `set_rows` is unchanged if
+# consumption breaks. That property is pinned by `03990_lazy_final_index_analysis.sh`, which
+# asserts exact selected marks.
 echo -n 'lazy FINAL set holds the NULL key '
 $CLICKHOUSE_CLIENT $settings -q "
     SELECT k FROM t_null_u64 FINAL PREWHERE flag = 0
