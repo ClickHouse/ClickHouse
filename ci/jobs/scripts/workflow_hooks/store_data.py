@@ -24,6 +24,50 @@ def _settings_history_entry_signature(entry_body):
     return re.sub(r',\s*"(?:[^"\\]|\\.)*"\s*\},?\s*$', "", entry_body).strip()
 
 
+SETTINGS_HISTORY_FILE = "src/Core/SettingsChangesHistory.cpp"
+
+
+def fetch_settings_history_patch(repo_name, pr_number, path=SETTINGS_HISTORY_FILE):
+    """Return the unified diff of `path` for `pr_number`, or raise naming the actual cause.
+
+    CI containers have no .git history, so the patch comes from the GitHub API. The style
+    check reports whichever message this raises, so the three failure modes must stay
+    distinguishable: a failed command, a `null` patch, and an empty result."""
+    if pr_number <= 0:
+        raise RuntimeError(
+            "could not resolve the PR number for the settings-history diff"
+        )
+    # `.patch` is the unified diff for just this file (hunks only, no file header).
+    # strict=True so a command failure is not laundered into an empty result, which the
+    # checks below would then mislabel as the large-diff case.
+    patch = GH.get_output_with_retries(
+        f"gh api repos/{repo_name}/pulls/{pr_number}/files --paginate "
+        f"--jq '.[] | select(.filename == \"{path}\") | .patch'",
+        verbose=True,
+        strict=True,
+    )
+    if patch.strip() == "null":
+        # GitHub omits the per-file patch for very large diffs; the `.patch` field is then
+        # null, which `jq -r` prints as the literal string "null".
+        raise RuntimeError(
+            f"no patch returned for changed file {path} "
+            "(GitHub omits the patch for very large diffs)"
+        )
+    if patch.strip() == "":
+        # rc=0 with no output: the jq `select` matched nothing, i.e. the API's file list does
+        # not contain this file even though changed_files says it changed.
+        raise RuntimeError(
+            f"{path} is in changed_files but absent from the GitHub API file list for "
+            f"PR {pr_number}"
+        )
+    return patch
+
+
+def settings_history_fetch_error_message(exc):
+    """Bound the failure reason: the style check prints it on a public report page."""
+    return " ".join(str(exc).split())[:500]
+
+
 def parse_settings_history_changes(patch, file_lines):
     """Given the unified diff of src/Core/SettingsChangesHistory.cpp and the lines of the file
     at HEAD, return a list of {"namespace", "name"} for settings whose recorded value changed or
@@ -78,6 +122,30 @@ def parse_settings_history_changes(patch, file_lines):
     return result
 
 
+def store_settings_history_changes(info, path=SETTINGS_HISTORY_FILE):
+    """Record what the settings-history style check needs: the added setting entries, or
+    else why they could not be determined.
+
+    Fail-close: the check refuses to pass without one of the two keys. Never raises - that
+    would break the changed_files storage other merge-queue jobs depend on."""
+    try:
+        # In a merge-queue run PR_NUMBER is 0; the queue entry is built for exactly one PR,
+        # so use its linked PR number (same as GH.get_changed_files).
+        pr_number = info.pr_number
+        if pr_number <= 0 and info.is_merge_queue_event:
+            pr_number = info.linked_pr_number
+        patch = fetch_settings_history_patch(info.repo_name, pr_number, path)
+        with open(path, "r", encoding="utf-8", errors="ignore") as f:
+            file_lines = f.read().splitlines()
+        changed_settings = parse_settings_history_changes(patch, file_lines)
+        info.store_kv_data("settings_history_changed_settings", changed_settings)
+        print(f"Stored settings-history changed settings: {changed_settings}")
+    except Exception as e:
+        message = settings_history_fetch_error_message(e)
+        print(f"WARNING: failed to compute settings-history changed settings: {message}")
+        info.store_kv_data("settings_history_fetch_error", message)
+
+
 if __name__ == "__main__":
     info = Info()
 
@@ -97,50 +165,11 @@ if __name__ == "__main__":
     # recorded under the current version block. Only the setting names are stored (never the
     # raw diff) to keep the pipeline `data` output small and free of user-authored free text
     # (see the note further below about the GH Actions runner dropping outputs that match a
-    # secret pattern). Best-effort: a failure here must not break the hook that stores
-    # changed_files; the style check simply skips when nothing is stored.
-    settings_history_file = "src/Core/SettingsChangesHistory.cpp"
+    # secret pattern).
     if (
         info.pr_number or info.is_merge_queue_event
-    ) and settings_history_file in changed_files:
-        # Fail-close: when this file changed, the settings-history style check MUST be able to
-        # validate it. If the diff cannot be fetched, record the error so the style check fails
-        # rather than silently passing. Do not raise here: that would break the changed_files
-        # storage other merge-queue jobs depend on; the error is surfaced by the style check.
-        try:
-            # CI containers have no .git history, so fetch the file's patch via the GitHub
-            # API rather than `git diff`. In a merge-queue run PR_NUMBER is 0; the queue
-            # entry is built for exactly one PR, so use its linked PR number (same as
-            # GH.get_changed_files).
-            pr_number = info.pr_number
-            if pr_number <= 0 and info.is_merge_queue_event:
-                pr_number = info.linked_pr_number
-            if pr_number <= 0:
-                raise RuntimeError(
-                    "could not resolve the PR number for the settings-history diff"
-                )
-            # `.patch` is the unified diff for just this file (hunks only, no file header).
-            patch = Shell.get_output(
-                f"gh api repos/{info.repo_name}/pulls/{pr_number}/files --paginate "
-                f"--jq '.[] | select(.filename == \"{settings_history_file}\") | .patch'",
-                verbose=True,
-            )
-            if patch.strip() in ("", "null"):
-                # The file is in changed_files but no usable patch came back. GitHub omits the
-                # per-file patch for very large diffs; the `.patch` field is then null, which
-                # `jq -r` prints as the literal string "null". We cannot determine the changed
-                # settings, so fail closed instead of assuming there is nothing to check.
-                raise RuntimeError(
-                    f"no patch returned for changed file {settings_history_file} "
-                    "(GitHub omits the patch for very large diffs)"
-                )
-            with open(settings_history_file, "r", encoding="utf-8", errors="ignore") as f:
-                file_lines = f.read().splitlines()
-            changed_settings = parse_settings_history_changes(patch, file_lines)
-            info.store_kv_data("settings_history_changed_settings", changed_settings)
-            print(f"Stored settings-history changed settings: {changed_settings}")
-        except Exception as e:
-            print(f"WARNING: failed to compute settings-history changed settings: {e}")
+    ) and SETTINGS_HISTORY_FILE in changed_files:
+        store_settings_history_changes(info)
 
     # hack to get build digest
     some_build_job = copy.deepcopy(JobConfigs.build_jobs[0])
