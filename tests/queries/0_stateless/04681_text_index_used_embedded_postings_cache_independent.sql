@@ -15,6 +15,10 @@ SET enable_analyzer = 1;
 -- The warm arm needs the server-global tokens cache: a `compatibility` setting below 26.7 restores
 -- this to false, which swaps it for a per-query local cache and removes the cross-query hit.
 SET use_text_index_tokens_cache = 1;
+-- One part per INSERT: the tokens-cache key embeds the part path, so a background merge landing
+-- between the cold and the warm query would change the key and turn the warm arm's asserted cache
+-- hit into a miss.
+SET max_insert_threads = 1;
 
 DROP TABLE IF EXISTS tab;
 
@@ -78,7 +82,10 @@ ENGINE = MergeTree ORDER BY id;
 INSERT INTO tab_dead SELECT number, 'aaa' FROM numbers(3);
 INSERT INTO tab_dead SELECT 1000 + number, 'bbb' FROM numbers(3);
 -- One part, so the per-part counter is pinned and the assertion below can be an exact count.
-OPTIMIZE TABLE tab_dead FINAL;
+-- `optimize_throw_if_noop` makes a refused merge a loud error instead of silently leaving two
+-- parts, which would make the assertion below read 2 -- the same value an unguarded implementation
+-- produces, so the cell would stop discriminating.
+OPTIMIZE TABLE tab_dead FINAL SETTINGS optimize_throw_if_noop = 1;
 
 -- Both tokens must really be embedded, otherwise the counter cannot fire at all and the assertion
 -- below would pass for the wrong reason.
