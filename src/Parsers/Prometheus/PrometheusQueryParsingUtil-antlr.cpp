@@ -82,6 +82,16 @@ namespace
                 pos = convertLineAndPositionInLine(line, position_in_line);
 
             setError(msg, pos);
+
+            /// Abort on the first error: only the first error is reported, and once it is set the
+            /// parse always fails, so any further lexing and parsing is wasted work. Without the
+            /// bail-out, the lexer recovers from an unrecognized character by skipping it and
+            /// calling this listener again for the next one, and every call converts the error
+            /// position by scanning the query from its start - quadratic in the query length
+            /// (e.g. a query padded with a megabyte of NUL bytes used to keep a thread busy for
+            /// tens of minutes, uncancellable because it happens during analysis).
+            /// `tryParseQuery` catches this exception.
+            throw antlr4::ParseCancellationException(msg);
         }
 
         /// ANTLR4's lexer returns the position of an error as a line number and a position in that line;
@@ -902,7 +912,19 @@ bool PrometheusQueryParsingUtil::tryParseQuery([[maybe_unused]] std::string_view
 
     antlr4_grammars::PromQLParser::ExpressionContext * expression = nullptr;
     if (!error_listener.hasError())
-        expression = promql_parser.expression();
+    {
+        try
+        {
+            expression = promql_parser.expression();
+        }
+        catch (const antlr4::ParseCancellationException &)
+        {
+            /// Thrown by `ErrorListener::syntaxError` to abort lexing and parsing
+            /// on the first error; the error itself is recorded in the listener.
+            chassert(error_listener.hasError());
+            expression = nullptr;
+        }
+    }
 
     if (!expression)
         error_listener.setError("Couldn't get an expression after parsing promql query", 0);
