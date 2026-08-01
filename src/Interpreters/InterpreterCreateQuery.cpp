@@ -818,8 +818,15 @@ InterpreterCreateQuery::TableProperties InterpreterCreateQuery::getTableProperti
         properties.constraints = getConstraintsDescription(create.columns_list->constraints, properties.columns, getContext());
 
         /// Do not let a `CHECK` constraint that can never be evaluated (it contains a subquery) into the metadata.
-        /// Only for a fresh `CREATE`: an already existing table must keep loading even if its metadata has one.
-        if (mode <= LoadingStrictnessLevel::CREATE)
+        /// Only for a fresh definition: an already existing table must keep loading even if its metadata has one.
+        /// A full-definition `ATTACH TABLE t (...) ENGINE = ...` (with or without `FROM '/path/'`) is CREATE-like
+        /// user input that also runs under `LoadingStrictnessLevel::ATTACH`, so it counts as fresh too. Definitions
+        /// read back from metadata stored on this server (short `ATTACH TABLE t`, `ATTACH DATABASE`, server restart)
+        /// are marked with `attach_short_syntax` or use `FORCE_ATTACH`/`FORCE_RESTORE`, and `SECONDARY_CREATE`
+        /// (DDL replay in `Replicated` databases, `RESTORE`) was already validated on the initiator.
+        const bool is_fresh_definition = mode <= LoadingStrictnessLevel::CREATE
+            || (mode == LoadingStrictnessLevel::ATTACH && !create.attach_short_syntax);
+        if (is_fresh_definition)
             ConstraintsDescription::validateNoSubqueries(properties.constraints.getConstraints(), getContext());
     }
     else if (!create.as_table.empty())

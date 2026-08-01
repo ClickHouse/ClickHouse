@@ -37,5 +37,7 @@ INSERT INTO ddl_in_set VALUES (1);
 INSERT INTO ddl_in_set VALUES (2); -- { serverError VIOLATED_CONSTRAINT }
 SELECT count() FROM ddl_in_set;
 
--- Metadata written before this validation existed keeps loading: the check does not run on `ATTACH`,
--- only the compilation of the constraint expression rejects it (on the first insert into such a table).
+-- Metadata written before this validation existed keeps loading: the check does not run for the short
+-- `ATTACH TABLE t` form (or on server startup), only the compilation of the constraint expression rejects
+-- it, on the first insert into such a table. A full-definition `ATTACH TABLE t (...) ENGINE = ...` is fresh
+-- user input and is rejected -- see `04665_attach_full_definition_check_constraint_subquery`.
