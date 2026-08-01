@@ -268,6 +268,28 @@ GROUP BY toString(x) WITH TOTALS
 ORDER BY c WITH FILL FROM 1 TO 8 INTERPOLATE (k AS k)
 SETTINGS optimize_injective_functions_in_group_by = 0;
 
+SELECT '-- a window function referencing the eliminated key from inside LIMIT BY or INTERPOLATE: both are';
+SELECT '-- rewritten clauses, but the rewrite stops at a window function, so the key must be kept wrapped';
+SELECT '-- (the firing assertions below read 0 for these two). Each row carries its own label because the';
+SELECT '-- ON and OFF arms are complementary: an unlabelled pair would let a row lost by one and a row';
+SELECT '-- gained by the other cancel out in the line diff.';
+SELECT 'limit by window on', toString(x) AS k, count() AS c FROM (SELECT arrayJoin([0, 1, 2]) AS x)
+GROUP BY CUBE(toString(x)) ORDER BY k, c
+LIMIT 1 BY first_value(toString(x)) OVER (PARTITION BY toString(x));
+SELECT 'limit by window off', toString(x) AS k, count() AS c FROM (SELECT arrayJoin([0, 1, 2]) AS x)
+GROUP BY CUBE(toString(x)) ORDER BY k, c
+LIMIT 1 BY first_value(toString(x)) OVER (PARTITION BY toString(x))
+SETTINGS optimize_injective_functions_in_group_by = 0;
+SELECT 'interpolate window on' AS lbl, toString(x) AS k, count() AS c FROM (SELECT arrayJoin([0, 1, 1, 2, 2, 2]) AS x)
+GROUP BY CUBE(toString(x))
+ORDER BY c WITH FILL FROM 1 TO 8
+INTERPOLATE (lbl AS lbl, k AS last_value(toString(x)) OVER (PARTITION BY toString(x)));
+SELECT 'interpolate window off' AS lbl, toString(x) AS k, count() AS c FROM (SELECT arrayJoin([0, 1, 1, 2, 2, 2]) AS x)
+GROUP BY CUBE(toString(x))
+ORDER BY c WITH FILL FROM 1 TO 8
+INTERPOLATE (lbl AS lbl, k AS last_value(toString(x)) OVER (PARTITION BY toString(x)))
+SETTINGS optimize_injective_functions_in_group_by = 0;
+
 SELECT '-- HAVING over the eliminated key. The predicate is evaluated after aggregation, so it must see';
 SELECT '-- the corrected value: HAVING k = '''' selects the subtotal row, and HAVING k = ''0'' must not.';
 SELECT '-- Each is paired with its optimization-disabled oracle. Every row carries its own label: the';
@@ -477,6 +499,42 @@ SELECT 'constant key declined, GROUPING SETS', countIf(explain LIKE '%toString%'
     FROM (EXPLAIN QUERY TREE run_passes = 1
           SELECT toString(number) AS k, count() AS c FROM numbers(3)
           GROUP BY GROUPING SETS ((toString(number), toUInt8(7)), ()))));
+
+SELECT '-- a window-bound key in LIMIT BY / INTERPOLATE reads 0 (declined), while a sibling with the SAME';
+SELECT '-- clause but no window function still reads 1, so the decline is targeted at the window and has';
+SELECT '-- not disabled the optimization for those two clauses.';
+SELECT 'limit by window declined', countIf(explain LIKE '%toString%' AND rn > gb AND rn < nxt) = 0 FROM (
+    SELECT explain, rn, gb, min(if(rn > gb AND match(explain, '^  [A-Z]'), rn, 999999)) OVER () AS nxt FROM (
+    SELECT explain, rowNumberInAllBlocks() AS rn,
+           min(if(explain LIKE '  GROUP BY%', rowNumberInAllBlocks(), 999999)) OVER () AS gb
+    FROM (EXPLAIN QUERY TREE run_passes = 1
+          SELECT toString(x) AS k, count() AS c FROM (SELECT arrayJoin([0, 1, 2]) AS x)
+          GROUP BY CUBE(toString(x)) ORDER BY k, c
+          LIMIT 1 BY first_value(toString(x)) OVER (PARTITION BY toString(x)))));
+SELECT 'limit by no-window sibling fires', countIf(explain LIKE '%toString%' AND rn > gb AND rn < nxt) = 0 FROM (
+    SELECT explain, rn, gb, min(if(rn > gb AND match(explain, '^  [A-Z]'), rn, 999999)) OVER () AS nxt FROM (
+    SELECT explain, rowNumberInAllBlocks() AS rn,
+           min(if(explain LIKE '  GROUP BY%', rowNumberInAllBlocks(), 999999)) OVER () AS gb
+    FROM (EXPLAIN QUERY TREE run_passes = 1
+          SELECT toString(x) AS k, count() AS c FROM (SELECT arrayJoin([0, 1, 2]) AS x)
+          GROUP BY CUBE(toString(x)) ORDER BY k, c LIMIT 1 BY k)));
+SELECT 'interpolate window declined', countIf(explain LIKE '%toString%' AND rn > gb AND rn < nxt) = 0 FROM (
+    SELECT explain, rn, gb, min(if(rn > gb AND match(explain, '^  [A-Z]'), rn, 999999)) OVER () AS nxt FROM (
+    SELECT explain, rowNumberInAllBlocks() AS rn,
+           min(if(explain LIKE '  GROUP BY%', rowNumberInAllBlocks(), 999999)) OVER () AS gb
+    FROM (EXPLAIN QUERY TREE run_passes = 1
+          SELECT toString(x) AS k, count() AS c FROM (SELECT arrayJoin([0, 1, 1, 2, 2, 2]) AS x)
+          GROUP BY CUBE(toString(x))
+          ORDER BY c WITH FILL FROM 1 TO 8
+          INTERPOLATE (k AS last_value(toString(x)) OVER (PARTITION BY toString(x))))));
+SELECT 'interpolate no-window sibling fires', countIf(explain LIKE '%toString%' AND rn > gb AND rn < nxt) = 0 FROM (
+    SELECT explain, rn, gb, min(if(rn > gb AND match(explain, '^  [A-Z]'), rn, 999999)) OVER () AS nxt FROM (
+    SELECT explain, rowNumberInAllBlocks() AS rn,
+           min(if(explain LIKE '  GROUP BY%', rowNumberInAllBlocks(), 999999)) OVER () AS gb
+    FROM (EXPLAIN QUERY TREE run_passes = 1
+          SELECT toString(x) AS k, count() AS c FROM (SELECT arrayJoin([0, 1, 1, 2, 2, 2]) AS x)
+          GROUP BY CUBE(toString(x))
+          ORDER BY c WITH FILL FROM 1 TO 8 INTERPOLATE (k AS k))));
 
 SELECT '-- the LowCardinality key reads 0 (declined by the type-preservation gate) while the same shape';
 SELECT '-- over a plain String column reads 1, so the gate is targeted at the type that `if` narrows.';

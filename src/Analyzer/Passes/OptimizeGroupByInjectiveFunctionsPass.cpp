@@ -447,6 +447,11 @@ private:
     /// True if the key is referenced from a post-aggregation position that neither correction mechanism
     /// rewrites: inside a window function, anywhere in QUALIFY, or in a named WINDOW clause. Such an
     /// occurrence would still compute f(column-default), so the key is kept wrapped. See #110715.
+    ///
+    /// Must scan EVERY carrier buildAndApplyCorrections rewrites (projection, ORDER BY, HAVING, LIMIT BY,
+    /// INTERPOLATE) plus QUALIFY and WINDOW, which have no rewrite at all. A carrier missing here is a
+    /// wrong-results hole: rewriteOutputExpression stops at a window function, so the occurrence is
+    /// neither declined nor corrected. Keep the two lists in step, using the same accessors.
     static bool reachesPostAggregationWindowOrQualify(const QueryTreeNodePtr & key, QueryNode & query)
     {
         if (query.getProjectionNode() && containsKeyUnderWindow(query.getProjectionNode(), key))
@@ -454,6 +459,10 @@ private:
         if (query.hasOrderBy() && containsKeyUnderWindow(query.getOrderByNode(), key))
             return true;
         if (query.hasHaving() && containsKeyUnderWindow(query.getHaving(), key))
+            return true;
+        if (query.hasLimitBy() && containsKeyUnderWindow(query.getLimitByNode(), key))
+            return true;
+        if (query.hasInterpolate() && containsKeyUnderWindow(query.getInterpolate(), key))
             return true;
         if (query.hasQualify() && subtreeContains(query.getQualify(), key))
             return true;

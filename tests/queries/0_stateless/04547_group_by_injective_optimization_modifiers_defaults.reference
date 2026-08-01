@@ -307,6 +307,33 @@ k	LowCardinality(String)
 2	7
 
 	6
+-- a window function referencing the eliminated key from inside LIMIT BY or INTERPOLATE: both are
+-- rewritten clauses, but the rewrite stops at a window function, so the key must be kept wrapped
+-- (the firing assertions below read 0 for these two). Each row carries its own label because the
+-- ON and OFF arms are complementary: an unlabelled pair would let a row lost by one and a row
+-- gained by the other cancel out in the line diff.
+limit by window on		3
+limit by window on	0	1
+limit by window on	1	1
+limit by window on	2	1
+limit by window off		3
+limit by window off	0	1
+limit by window off	1	1
+limit by window off	2	1
+interpolate window on	0	1
+interpolate window on	1	2
+interpolate window on	2	3
+interpolate window on	2	4
+interpolate window on		5
+interpolate window on		6
+interpolate window on		7
+interpolate window off	0	1
+interpolate window off	1	2
+interpolate window off	2	3
+interpolate window off	2	4
+interpolate window off		5
+interpolate window off		6
+interpolate window off		7
 -- HAVING over the eliminated key. The predicate is evaluated after aggregation, so it must see
 -- the corrected value: HAVING k = \'\' selects the subtotal row, and HAVING k = \'0\' must not.
 -- Each is paired with its optimization-disabled oracle. Every row carries its own label: the
@@ -394,6 +421,13 @@ HAVING off	0
 constant key declined	0
 non-constant sibling fires	1
 constant key declined, GROUPING SETS	0
+-- a window-bound key in LIMIT BY / INTERPOLATE reads 0 (declined), while a sibling with the SAME
+-- clause but no window function still reads 1, so the decline is targeted at the window and has
+-- not disabled the optimization for those two clauses.
+limit by window declined	0
+limit by no-window sibling fires	1
+interpolate window declined	0
+interpolate no-window sibling fires	1
 -- the LowCardinality key reads 0 (declined by the type-preservation gate) while the same shape
 -- over a plain String column reads 1, so the gate is targeted at the type that `if` narrows.
 lc key declined	0
