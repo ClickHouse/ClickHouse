@@ -18,6 +18,7 @@ INSERT INTO test SELECT number%30, (number+10)%30, number%50 FROM numbers(100, 1
 
 SET query_plan_join_swap_table = 0;
 SET enable_join_runtime_filters = 1;
+SET join_runtime_filter_min_probe_rows = 0;
 
 SELECT '-------------------------';
 
