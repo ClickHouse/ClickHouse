@@ -108,29 +108,33 @@ SELECT 'group 9: type merge';
 DESC format(TSV, '0.0\n0.5');
 DESC format(TSV, '0.5\n1.5');
 
--- 10. Exponent forms deliberately keep inferring String in the TSV family. Do not remove this group:
--- schema inference accepts exponent values whose exponent has no digits, such as `0.5e+`, that the value
--- parser's precise float reader rejects, so admitting them here would turn a wrong type into a hard parse
--- error.
-SELECT 'group 10: exponent forms stay String in TSV';
+-- 10. A leading zero no longer forces exponent forms to String. Inference now validates the number it
+-- delimited with the same parser the value reader uses, so a malformed exponent such as `0.5e+` is
+-- declined by inference itself and a valid one such as `0e5` is admitted. The leading-zero check
+-- therefore covers integers only, and TSV agrees with CSV throughout this group.
+SELECT 'group 10: valid exponent forms infer Float64 in TSV, as in CSV';
 DESC format(TSV, '0e5') SETTINGS input_format_try_infer_exponent_floats = 1;
 DESC format(TSV, '0E5') SETTINGS input_format_try_infer_exponent_floats = 1;
 DESC format(TSV, '0e-5') SETTINGS input_format_try_infer_exponent_floats = 1;
 DESC format(TSV, '0.5e10') SETTINGS input_format_try_infer_exponent_floats = 1;
+SELECT 'group 10: and they read back as numbers';
+SELECT * FROM format(TSV, '0e5') SETTINGS input_format_try_infer_exponent_floats = 1;
+SELECT * FROM format(TSV, '0.5e10') SETTINGS input_format_try_infer_exponent_floats = 1;
+SELECT 'group 10: malformed exponent forms stay String, now via inference itself';
 DESC format(TSV, '0.5e+') SETTINGS input_format_try_infer_exponent_floats = 1;
 DESC format(TSV, '0e+') SETTINGS input_format_try_infer_exponent_floats = 1;
 DESC format(TSV, '0.5e-') SETTINGS input_format_try_infer_exponent_floats = 1;
-SELECT 'group 10: the malformed exponent is readable only because it stays String';
+SELECT 'group 10: so they still read back verbatim';
 SELECT * FROM format(TSV, '0.5e+') SETTINGS input_format_try_infer_exponent_floats = 1;
 SELECT * FROM format(TSV, '0e+') SETTINGS input_format_try_infer_exponent_floats = 1;
 SELECT * FROM format(TSV, '0.5e-') SETTINGS input_format_try_infer_exponent_floats = 1;
 SELECT d, dynamicType(d) FROM format(TSV, 'd Dynamic', '0.5e+') SETTINGS input_format_try_infer_exponent_floats = 1;
 SELECT d, dynamicType(d) FROM format(TSV, 'd Dynamic', '0e+') SETTINGS input_format_try_infer_exponent_floats = 1;
-SELECT 'group 10: the CSV divergence that deliberately remains';
+SELECT 'group 10: CSV agrees with TSV, and the malformed form is readable in both';
 DESC format(CSV, '0e5') SETTINGS input_format_try_infer_exponent_floats = 1;
 DESC format(CSV, '0.5e10') SETTINGS input_format_try_infer_exponent_floats = 1;
 DESC format(CSV, '0.5e+') SETTINGS input_format_try_infer_exponent_floats = 1;
-SELECT * FROM format(CSV, '0.5e+') SETTINGS input_format_try_infer_exponent_floats = 1; -- { serverError CANNOT_PARSE_NUMBER }
+SELECT * FROM format(CSV, '0.5e+') SETTINGS input_format_try_infer_exponent_floats = 1;
 
 -- 11. The integer part of the check is derived from the inferred type, so it follows
 -- input_format_try_infer_integers: with integer inference disabled, inference yields Float64, the value
