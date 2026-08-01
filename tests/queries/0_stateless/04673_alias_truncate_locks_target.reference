@@ -1,7 +1,7 @@
 truncate blocked by reader	1
 truncate after reader	1
-rows after truncate two aliases	0
-rows after truncate aliases with target	0
+lazy target is a proxy	1
+truncate lazy proxied MergeTree blocked	0
 rows after truncate	0
 direct	1
 through alias	1

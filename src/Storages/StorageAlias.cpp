@@ -1,6 +1,7 @@
 #include <Storages/StorageAlias.h>
 #include <Storages/MergeTree/MergeTreeData.h>
 #include <Storages/StorageFactory.h>
+#include <Storages/StorageProxy.h>
 #include <Storages/checkAndGetLiteralArgument.h>
 #include <Interpreters/DatabaseCatalog.h>
 #include <Interpreters/Context.h>
@@ -273,13 +274,25 @@ void StorageAlias::truncate(
 {
     auto target_storage = getTargetTable(TargetAccess{local_context, AccessType::TRUNCATE});
 
+    /// A database with `lazy_load_tables = 1` hands out a StorageProxy, which is not MergeTreeData,
+    /// so decide the exemption below on the storage the proxy wraps. Only the decision uses this
+    /// pointer; truncate still goes through target_storage so the proxy materializes and forwards.
+    StoragePtr unwrapped = target_storage;
+    while (const auto * proxy = dynamic_cast<const StorageProxy *>(unwrapped.get()))
+    {
+        auto nested = proxy->getNested();
+        if (!nested || nested == unwrapped)
+            break;
+        unwrapped = nested;
+    }
+
     /// The interpreter locked the alias, but the data belongs to the target and readers lock the
     /// target (see read() above), so without this the target's data can be destroyed under them.
     /// MergeTree is exempt, as InterpreterDropQuery puts it: "We don't need any lock for
     /// ReplicatedMergeTree and for simple MergeTree" -- they synchronize truncation themselves and
     /// this lock is extremely heavyweight. On that path forward the alias's own holder, because
     /// StorageReplicatedMergeTree::truncate releases it to keep the truncate asynchronous.
-    if (std::dynamic_pointer_cast<MergeTreeData>(target_storage))
+    if (std::dynamic_pointer_cast<MergeTreeData>(unwrapped))
     {
         auto target_metadata = target_storage->getInMemoryMetadataPtr(local_context, false);
         target_storage->truncate(query, target_metadata, local_context, table_lock_holder);

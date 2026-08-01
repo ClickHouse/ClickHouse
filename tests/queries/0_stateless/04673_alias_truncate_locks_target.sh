@@ -15,10 +15,7 @@ CURDIR=$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)
 
 $CLICKHOUSE_CLIENT -q "
     DROP TABLE IF EXISTS rdb_alias;
-    DROP TABLE IF EXISTS tt_alias_1;
-    DROP TABLE IF EXISTS tt_alias_2;
     DROP TABLE IF EXISTS rdb_buf;
-    DROP TABLE IF EXISTS tt_rdb;
     DROP TABLE IF EXISTS rdb;
 
     CREATE TABLE rdb (k UInt64, v String) ENGINE = EmbeddedRocksDB PRIMARY KEY k;
@@ -47,9 +44,12 @@ $CLICKHOUSE_CLIENT --query_id="$READER_ID" -q "
     SELECT sum(sleepEachRow(0.2)) FROM (SELECT k FROM rdb LIMIT 25) SETTINGS max_block_size = 1, max_threads = 1
 " > /dev/null &
 
-# Wait for the reader to actually be running, so the lock is really held when we truncate.
+# Wait until the reader has actually started scanning, so the target's share lock is really held.
+# read_rows > 0 rather than mere presence in system.processes: the ProcessList entry is published
+# before the interpreter is built, hence before any table lock is taken, so presence alone can be
+# true while the lock does not exist yet.
 for _ in {1..200}; do
-    [[ $($CLICKHOUSE_CLIENT -q "SELECT count() FROM system.processes WHERE query_id = '$READER_ID'") -gt 0 ]] && break
+    [[ $($CLICKHOUSE_CLIENT -q "SELECT count() FROM system.processes WHERE query_id = '$READER_ID' AND read_rows > 0") -gt 0 ]] && break
     sleep 0.05
 done
 
@@ -60,37 +60,56 @@ wait
 $CLICKHOUSE_CLIENT -q "TRUNCATE TABLE rdb_alias SETTINGS lock_acquire_timeout = 3" \
     && echo -e "truncate after reader\t1"
 
-# TRUNCATE TABLES ... LIKE truncates every matched table concurrently on a thread pool, sharing one
-# query context, so several tasks can want the same target lock at once: two aliases over one target,
-# or an alias next to the target itself. A separate set of tables keeps the pattern off rdb_buf,
-# because Buffer is matched by the loop but does not implement TRUNCATE.
+# MergeTree stays exempt from that lock, and the exemption is decided on the storage the catalog
+# entry really wraps: with lazy_load_tables the catalog hands out a StorageProxy, which is not
+# MergeTreeData, so testing the raw pointer would take the lock and hold it across the whole
+# truncate. Here the same reader contention must NOT block the truncate.
+LAZY_DB="${CLICKHOUSE_DATABASE}_lazy"
 $CLICKHOUSE_CLIENT -q "
-    CREATE TABLE tt_rdb (k UInt64, v String) ENGINE = EmbeddedRocksDB PRIMARY KEY k;
-    CREATE TABLE tt_alias_1 ENGINE = Alias($CLICKHOUSE_DATABASE, 'tt_rdb');
-    CREATE TABLE tt_alias_2 ENGINE = Alias($CLICKHOUSE_DATABASE, 'tt_rdb');
-    INSERT INTO tt_rdb SELECT number, repeat('x', 200) FROM numbers(1000);
+    DROP DATABASE IF EXISTS $LAZY_DB SYNC;
+    CREATE DATABASE $LAZY_DB ENGINE = Atomic SETTINGS lazy_load_tables = 1;
+    CREATE TABLE $LAZY_DB.mt (k UInt64) ENGINE = MergeTree ORDER BY k SETTINGS index_granularity = 1;
+    INSERT INTO $LAZY_DB.mt SELECT number FROM numbers(100);
 "
-$CLICKHOUSE_CLIENT -q "TRUNCATE TABLES FROM $CLICKHOUSE_DATABASE LIKE 'tt\_alias%'"
-$CLICKHOUSE_CLIENT -q "SELECT 'rows after truncate two aliases', count() FROM tt_rdb"
+# Reload so the table is unloaded again and the catalog really returns the proxy, not the table.
+$CLICKHOUSE_CLIENT -q "DETACH DATABASE $LAZY_DB SYNC"
+$CLICKHOUSE_CLIENT -q "ATTACH DATABASE $LAZY_DB"
+$CLICKHOUSE_CLIENT -q "CREATE TABLE $LAZY_DB.mt_alias ENGINE = Alias($LAZY_DB, 'mt')"
+$CLICKHOUSE_CLIENT -q "SELECT 'lazy target is a proxy', engine = 'TableProxy' FROM system.tables WHERE database = '$LAZY_DB' AND name = 'mt'"
 
-$CLICKHOUSE_CLIENT -q "INSERT INTO tt_rdb SELECT number, repeat('x', 200) FROM numbers(1000)"
-$CLICKHOUSE_CLIENT -q "TRUNCATE TABLES FROM $CLICKHOUSE_DATABASE LIKE 'tt\_%'"
-$CLICKHOUSE_CLIENT -q "SELECT 'rows after truncate aliases with target', count() FROM tt_rdb"
+LAZY_READER_ID="lazy_reader_$CLICKHOUSE_DATABASE"
+$CLICKHOUSE_CLIENT --query_id="$LAZY_READER_ID" -q "
+    SELECT sum(sleepEachRow(0.2)) FROM $LAZY_DB.mt SETTINGS max_block_size = 1, max_threads = 1
+" > /dev/null 2>&1 &
+
+for _ in {1..200}; do
+    [[ $($CLICKHOUSE_CLIENT -q "SELECT count() FROM system.processes WHERE query_id = '$LAZY_READER_ID' AND read_rows > 0") -gt 0 ]] && break
+    sleep 0.05
+done
+
+$CLICKHOUSE_CLIENT -q "TRUNCATE TABLE $LAZY_DB.mt_alias SETTINGS lock_acquire_timeout = 3" 2>&1 \
+    | grep -c -m1 "DEADLOCK_AVOIDED" | sed 's/^/truncate lazy proxied MergeTree blocked\t/'
+kill %1 2>/dev/null
+wait 2>/dev/null
+$CLICKHOUSE_CLIENT -q "DROP DATABASE IF EXISTS $LAZY_DB SYNC"
+
+# TRUNCATE TABLES ... LIKE, which can want the same target lock from several pool tasks at once,
+# is covered by 04674_alias_truncate_tables_like_overlap: forcing that overlap needs a server-global
+# failpoint, so it lives in its own no-parallel test and this one stays parallel-safe.
 
 # The target is still usable through every route, so neither the storage nor its handle was lost.
+# INSERT ... SELECT rather than INSERT ... VALUES: the runner redirects only stdout and stderr, so
+# the client inherits the runner's stdin and a VALUES insert blocks on it until the test times out.
 $CLICKHOUSE_CLIENT -q "
     TRUNCATE TABLE rdb_alias;
     SELECT 'rows after truncate', count() FROM rdb;
-    INSERT INTO rdb VALUES (1, 'a');
+    INSERT INTO rdb SELECT 1, 'a';
     SELECT 'direct', count() FROM rdb;
     SELECT 'through alias', count() FROM rdb_alias;
 "
 
 $CLICKHOUSE_CLIENT -q "
     DROP TABLE rdb_alias;
-    DROP TABLE tt_alias_1;
-    DROP TABLE tt_alias_2;
     DROP TABLE rdb_buf;
-    DROP TABLE tt_rdb;
     DROP TABLE rdb;
 "
