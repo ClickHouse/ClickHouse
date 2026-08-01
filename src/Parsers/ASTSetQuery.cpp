@@ -93,6 +93,17 @@ void ASTSetQuery::updateTreeHashImpl(SipHash & hash_state, bool /*ignore_aliases
         hash_state.update(setting_name.size());
         hash_state.update(setting_name);
     }
+
+    /// Query parameter bindings (`SET param_x = '1'`) are a third payload of this node that
+    /// `formatImpl` renders, so they must be hashed as well - otherwise two nodes that format
+    /// differently would compare equal, which breaks the tree-hash contract.
+    for (const auto & [name, value] : query_parameters)
+    {
+        hash_state.update(name.size());
+        hash_state.update(name);
+        hash_state.update(value.size());
+        hash_state.update(value);
+    }
 }
 
 void ASTSetQuery::formatImpl(WriteBuffer & ostr, const FormatSettings & format, FormatState &, FormatStateStacked state) const
