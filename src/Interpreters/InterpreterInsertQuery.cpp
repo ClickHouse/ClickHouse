@@ -26,6 +26,7 @@
 #include <Interpreters/InsertDependenciesBuilder.h>
 #include <Parsers/ASTFunction.h>
 #include <Parsers/ASTInsertQuery.h>
+#include <Parsers/ASTSetQuery.h>
 #include <Parsers/ASTSelectQuery.h>
 #include <Parsers/ASTSelectWithUnionQuery.h>
 #include <Parsers/ASTTablesInSelectQuery.h>
@@ -116,6 +117,43 @@ namespace ErrorCodes
     extern const int QUERY_IS_PROHIBITED;
     extern const int TOO_LARGE_DISTRIBUTED_DEPTH;
     extern const int EMPTY_LIST_OF_COLUMNS_PASSED;
+}
+
+namespace
+{
+
+bool isParallelDistributedInsertSelectExplicitlyEnabled(const ASTPtr & settings_ast)
+{
+    if (!settings_ast)
+        return false;
+
+    const auto & set_query = settings_ast->as<ASTSetQuery &>();
+
+    for (const auto & change : set_query.changes)
+    {
+        if (change.name != "parallel_distributed_insert_select")
+            continue;
+
+        const auto type = change.value.getType();
+        if (type == Field::Types::UInt64)
+            return change.value.safeGet<UInt64>() != 0;
+        if (type == Field::Types::Int64)
+            return change.value.safeGet<Int64>() > 0;
+        if (type == Field::Types::Bool)
+            return change.value.safeGet<bool>();
+
+        /// Fail-close for unexpected representations of this numeric setting.
+        return true;
+    }
+
+    /// `name = DEFAULT` still explicitly requests this setting and may resolve to an enabled value.
+    for (const auto & default_setting : set_query.default_settings)
+        if (default_setting == "parallel_distributed_insert_select")
+            return true;
+
+    return false;
+}
+
 }
 
 InterpreterInsertQuery::InterpreterInsertQuery(
@@ -1071,11 +1109,14 @@ BlockIO InterpreterInsertQuery::execute()
                 "INSERT ... RETURNING is not supported with async_insert=1");
         }
 
-        if (query.select && settings[Setting::parallel_distributed_insert_select])
+        if (query.select
+            && settings[Setting::parallel_distributed_insert_select]
+            && (isParallelDistributedInsertSelectExplicitlyEnabled(query.settings_ast)
+                || isParallelDistributedInsertSelectExplicitlyEnabled(query.source_select_settings_runtime_ast)))
         {
             throw Exception(
                 ErrorCodes::NOT_IMPLEMENTED,
-                "INSERT ... RETURNING is not supported with parallel_distributed_insert_select=1");
+                "INSERT ... RETURNING is not supported with explicitly enabled parallel_distributed_insert_select");
         }
     }
 
