@@ -63,6 +63,15 @@ class ClickHouseService:
         try:
             Utils.add_to_PATH(temp_dir)
 
+            # This context manager is entered once per job and starts a single
+            # server on fixed shared ports. Clear any clickhouse-server leaked
+            # by a previous CI job on this reused runner before anything else:
+            # its held ports would make our start fail, and while it is alive it
+            # can write into `run_path` - which we are about to delete and
+            # recreate - or keep mutating deleted-open files there
+            # (see kill_leftover_server_processes).
+            kill_leftover_server_processes()
+
             # Download binary if absent; CI release artifacts extract the
             # binary without the executable bit, so chmod afterwards.
             clickhouse_bin = Path(temp_dir) / "clickhouse"
@@ -106,13 +115,6 @@ class ClickHouseService:
             # removed above, so the extra 4+ GB the extraction needs does not
             # compete with data we are about to delete anyway.
             Shell.run(f"{clickhouse_bin} --version", verbose=True, strict=True)
-
-            # This context manager is entered once per job and starts a single
-            # server on fixed shared ports. Right before that first start, clear
-            # any clickhouse-server leaked by a previous CI job on this reused
-            # runner; otherwise its held ports make this start fail
-            # (see kill_leftover_server_processes).
-            kill_leftover_server_processes()
 
             argv = [
                 str(Path(temp_dir) / "clickhouse-server"),
