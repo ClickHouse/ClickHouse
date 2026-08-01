@@ -535,7 +535,13 @@ DataTypePtr QueryFuzzer::getRandomType()
             return std::make_shared<DataTypeVariant>(elements);
         }
         case TypeIndex::Array: return std::make_shared<DataTypeArray>(getRandomType());
-        case TypeIndex::Map: return std::make_shared<DataTypeMap>(getRandomType(), getRandomType());
+        case TypeIndex::Map: {
+            auto key_type = getRandomType();
+            /// `DataTypeMap`'s constructor rejects a `Nullable`/`LowCardinality(Nullable)` key.
+            if (!DataTypeMap::isValidKeyType(key_type))
+                key_type = std::make_shared<DataTypeString>();
+            return std::make_shared<DataTypeMap>(key_type, getRandomType());
+        }
         case TypeIndex::LowCardinality: {
             auto inner = getRandomType();
             if (!inner->canBeInsideLowCardinality())
