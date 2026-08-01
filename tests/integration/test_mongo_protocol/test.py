@@ -305,6 +305,17 @@ def test_create_collection(started_cluster):
     db.create_collection("explicit")
     assert "explicit" in db.list_collection_names()
 
+    # A collection created explicitly has no document to infer a schema from, so it is empty and
+    # the first insert gives it the columns of the inserted document, exactly like a collection
+    # created by that insert.
+    assert [doc for doc in db["explicit"].find({})] == []
+
+    db["explicit"].insert_many([{"a": 1, "b": "x"}, {"a": 2, "b": "y"}])
+    found = sorted((doc for doc in db["explicit"].find({})), key=lambda x: x["a"])
+    assert found == [{"a": 1, "b": "x"}, {"a": 2, "b": "y"}]
+
+    assert [doc for doc in db["explicit"].find({"a": 2})] == [{"a": 2, "b": "y"}]
+
     db.drop_collection("explicit")
     assert "explicit" not in db.list_collection_names()
 
@@ -477,8 +488,10 @@ def test_unknown_operator_is_an_error(started_cluster):
     collection.drop()
     collection.insert_many([{"id": 1}, {"id": 2}])
 
+    # `$typo` is not an operator at all, so it stays unsupported however much of the Mongo
+    # surface is implemented, unlike the `$in` and `$mod` this test used before.
     with pytest.raises(pymongo.errors.PyMongoError):
-        [doc for doc in collection.find({"id": {"$mod": [2, 0]}})]
+        [doc for doc in collection.find({"id": {"$typo": 1}})]
 
     # The server is still healthy after the rejected query.
     assert [doc["id"] for doc in collection.find({"id": 1})] == [1]
@@ -646,6 +659,29 @@ def test_update_operators(started_cluster):
 
     with pytest.raises(pymongo.errors.PyMongoError):
         collection.update_many({"id": 1}, {"$bit": {"age": {"and": 1}}})
+
+
+def test_update_by_a_nested_field(started_cluster):
+    """The filter of an `update` names a nested field the same way the filter of a `find` does:
+    either as a subdocument or as a dotted path."""
+    client = make_client()
+    collection = client["db"]["nested_update"]
+
+    collection.drop()
+    collection.insert_many(
+        [
+            {"id": 1, "profile": {"name": "alpha"}, "flag": 0},
+            {"id": 2, "profile": {"name": "beta"}, "flag": 0},
+        ]
+    )
+
+    assert [doc["id"] for doc in collection.find({"profile": {"name": "alpha"}})] == [1]
+
+    collection.update_many({"profile": {"name": "alpha"}}, {"$set": {"flag": 1}})
+    assert wait_for(lambda: sorted(doc["flag"] for doc in collection.find({})) == [0, 1])
+
+    collection.update_many({"profile.name": "beta"}, {"$set": {"flag": 2}})
+    assert wait_for(lambda: sorted(doc["flag"] for doc in collection.find({})) == [1, 2])
 
 
 def test_heterogeneous_array_insert(started_cluster):
