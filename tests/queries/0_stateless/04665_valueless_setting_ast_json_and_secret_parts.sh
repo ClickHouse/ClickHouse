@@ -42,9 +42,14 @@ CRAFTED_JSON=$($CLICKHOUSE_CLIENT -q "SELECT $CRAFTED FORMAT TSVRaw")
 QUERY_ID="04665_crafted_$CLICKHOUSE_DATABASE"
 ${CLICKHOUSE_CURL} -sS "${CLICKHOUSE_URL}&dialect=clickhouse_json&allow_experimental_json_ast_dialect=1&log_queries=1&query_id=$QUERY_ID" \
     --data-binary "$CRAFTED_JSON" 2>&1 | grep -o "TYPE_MISMATCH" | head -n 1
-$CLICKHOUSE_CLIENT -q "SYSTEM FLUSH LOGS query_log"
-$CLICKHOUSE_CLIENT -q "SELECT query, position(query, 'pass') = 0 AS no_password FROM system.query_log
-    WHERE query_id = '$QUERY_ID' AND type = 'ExceptionBeforeStart'"
+for _ in {1..60}; do
+    $CLICKHOUSE_CLIENT -q "SYSTEM FLUSH LOGS query_log"
+    LOGGED=$($CLICKHOUSE_CLIENT -q "SELECT query, position(query, 'pass') = 0 AS no_password FROM system.query_log
+        WHERE current_database = currentDatabase() AND query_id = '$QUERY_ID' AND type = 'ExceptionBeforeStart'")
+    [ -n "$LOGGED" ] && break
+    sleep 0.5
+done
+echo "$LOGGED"
 
 # 2. `ASTSetQuery::hasSecretParts` read the value of `format_avro_schema_registry_url` as a String.
 # `executeQueryImpl` masks the query for logging before any settings validation runs, so a valueless
