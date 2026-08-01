@@ -144,7 +144,6 @@ using namespace DB;
 ManifestFileContent::ManifestFileContent(
     const AvroForIcebergDeserializer & manifest_file_deserializer,
     const String & manifest_file_name,
-    Int32 format_version_,
     const String & common_path,
     IcebergSchemaProcessor & schema_processor,
     Int64 inherited_sequence_number,
@@ -163,6 +162,11 @@ ManifestFileContent::ManifestFileContent(
         std::nullopt,
         std::nullopt);
 
+    /// The manifest file's own format version governs how it is parsed. A v2 table may
+    /// still reference v1 manifests produced before an external upgrade from v1 to v2,
+    /// and those must remain readable (the Iceberg spec assigns them sequence_number = 0).
+    const Int32 manifest_format_version = static_cast<Int32>(manifest_file_deserializer.getFormatVersionFromManifestFileMetadata());
+
     for (const auto & column_name : {f_status, f_data_file})
     {
         if (!manifest_file_deserializer.hasPath(column_name))
@@ -170,7 +174,7 @@ ManifestFileContent::ManifestFileContent(
                 DB::ErrorCodes::ICEBERG_SPECIFICATION_VIOLATION, "Required columns are not found in manifest file: {}", column_name);
     }
 
-    if (format_version_ > 1 && !manifest_file_deserializer.hasPath(f_sequence_number))
+    if (manifest_format_version > 1 && !manifest_file_deserializer.hasPath(f_sequence_number))
         throw Exception(
             ErrorCodes::ICEBERG_SPECIFICATION_VIOLATION, "Required columns are not found in manifest file: {}", f_sequence_number);
 
@@ -239,7 +243,7 @@ ManifestFileContent::ManifestFileContent(
             i,
             std::nullopt);
         FileContentType content_type = FileContentType::DATA;
-        if (format_version_ > 1)
+        if (manifest_format_version > 1)
             content_type = FileContentType(manifest_file_deserializer.getValueFromRowByName(i, c_data_file_content, TypeIndex::Int32).safeGet<UInt64>());
         const auto status = ManifestEntryStatus(manifest_file_deserializer.getValueFromRowByName(i, f_status, TypeIndex::Int32).safeGet<UInt64>());
 
@@ -391,7 +395,7 @@ ManifestFileContent::ManifestFileContent(
         String file_format
             = manifest_file_deserializer.getValueFromRowByName(i, c_data_file_file_format, TypeIndex::String).safeGet<String>();
 
-        if (format_version_ > 1)
+        if (manifest_format_version > 1)
         {
             switch (status)
             {

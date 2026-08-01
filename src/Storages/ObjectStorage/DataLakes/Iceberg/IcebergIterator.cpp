@@ -126,7 +126,11 @@ std::optional<ManifestFileEntry> SingleThreadIcebergKeysIterator::next()
     {
         if (!current_manifest_file_content)
         {
-            if (persistent_components.format_version > 1 && data_snapshot->manifest_list_entries[manifest_file_index].content_type != manifest_file_content_type)
+            /// The content type of every manifest list entry is derived from the manifest list's own
+            /// format version (v1 entries are always `DATA`), so the table-level cached
+            /// `format_version` - which can be stale after an external v1 -> v2 upgrade - must not
+            /// gate this check.
+            if (data_snapshot->manifest_list_entries[manifest_file_index].content_type != manifest_file_content_type)
             {
                 ++manifest_file_index;
                 continue;

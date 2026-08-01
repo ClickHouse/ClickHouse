@@ -51,6 +51,13 @@ public:
 
     std::optional<std::string> tryGetAvroMetadataValue(std::string metadata_key) const;
 
+    /// Returns the Iceberg format version of this manifest list / manifest file. Reads it
+    /// from the file's own Avro metadata (the "format-version" key) when present. Older
+    /// ClickHouse versions wrote both manifest lists and manifest files without that key,
+    /// so we fall back to inspecting the schema: the `sequence_number` field appears in v2
+    /// manifest lists and v2 manifest entries but not in their v1 counterparts.
+    Int64 getFormatVersionFromManifestFileMetadata() const;
+
     String getContent(size_t row_number) const;
     String getMetadataContent() const;
 };
