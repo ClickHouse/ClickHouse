@@ -1,7 +1,7 @@
 #include <Functions/IFunction.h>
 #include <Functions/FunctionFactory.h>
 #include <Functions/FunctionHelpers.h>
-#include <AggregateFunctions/IAggregateFunction.h>
+#include <Functions/checkAggregateStateCanBeFinalized.h>
 #include <DataTypes/DataTypeAggregateFunction.h>
 #include <Columns/ColumnAggregateFunction.h>
 #include <Common/typeid_cast.h>
@@ -65,17 +65,7 @@ public:
             throw Exception(ErrorCodes::ILLEGAL_COLUMN, "Illegal column {} of first argument of function {}",
                     arguments.at(0).column->getName(), getName());
 
-        /// The column can hold states of a *different* aggregate function that shares the same state
-        /// representation (e.g. 'quantileState' vs 'quantilesState', combined via UNION or arrayReduce)
-        /// but finalizes to a different type than declared. Report that rather than failing downstream.
-        const auto & actual_result_type = column_aggregate_function->getAggregateFunction()->getResultType();
-        if (!actual_result_type->equals(*result_type))
-            throw Exception(ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT,
-                "Cannot finalize state of function '{}': the column holds a state finalizing to {}, "
-                "but the declared result type of '{}' is {}. This happens when states of different "
-                "aggregate functions that share a state representation are combined.",
-                column_aggregate_function->getAggregateFunction()->getName(),
-                actual_result_type->getName(), getName(), result_type->getName());
+        checkAggregateStateCanBeFinalized(*column_aggregate_function, result_type, getName());
 
         /// Column is copied here, because there is no guarantee that we own it.
         auto mut_column = IColumn::mutate(std::move(column));
