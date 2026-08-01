@@ -37,6 +37,7 @@
 #include <DataTypes/DataTypeTuple.h>
 #include <Columns/ColumnArray.h>
 #include <Columns/ColumnMap.h>
+#include <Columns/ColumnNothing.h>
 #include <Columns/ColumnNullable.h>
 #include <Columns/ColumnSet.h>
 #include <Columns/ColumnConst.h>
@@ -2732,40 +2733,29 @@ static bool setIndexTypeTreeHasStableChildOrder(const IDataType & type)
     return stable;
 }
 
-/// Whether two types are compared identically by a `Field`-level equality, which is the notion a
-/// composite `has` actually uses: `FieldVisitorAccurateEquals` has no `Tuple`/`Array`/`Map` arm, so a
-/// composite element is compared as ONE `Field` through `Field::operator==`, which first rejects a
-/// differing `Field::Types::Which` (`Field.cpp`) and otherwise recurses with the same operator.
-/// `Field::TypeToEnum` (`Field.h`) maps every NATIVE integer width to a single variant per signedness
-/// (`UInt8/16/32/64` -> `Types::UInt64`, `Int8/16/32/64` -> `Types::Int64`) while `UInt128`/`UInt256`/
-/// `Int128`/`Int256` each keep their own. So two composites are indistinguishable to the runtime when
-/// they agree everywhere except in the width of a native integer.
+/// Whether two types are compared identically by a `Field`-level equality, the notion a composite `has`
+/// actually uses: `FieldVisitorAccurateEquals` has no `Tuple`/`Array`/`Map` arm, so a composite element
+/// is compared as ONE `Field` and `Field::operator==` rejects a differing `Field::Types::Which` outright
+/// (`Field.cpp`). `Field::TypeToEnum` (`Field.h`) collapses every NATIVE integer width into one variant
+/// per signedness while `UInt128`/`UInt256`/`Int128`/`Int256` each keep their own, so two composites are
+/// indistinguishable to the runtime exactly when they agree everywhere except in a native integer width.
 ///
 /// ⛔ This tolerance is deliberately NARROWER than the cross-type case of
-/// `setIndexConversionPreservesEquality` above, and the two must not be unified. A scalar element is
-/// governed by the PREPARATION cast, whose `accurate::convertNumeric` path nulls instead of truncating
-/// for any integer pair, so native-vs-128-bit is exact there. A composite element is governed by
-/// `Field` identity instead, which keeps the 128/256-bit tags distinct - so the runtime does NOT match
-/// a native against a wide integer even though the cast would be lossless:
+/// `setIndexConversionPreservesEquality` above, and the two must not be unified. A scalar is governed by
+/// the PREPARATION cast (`accurate::convertNumeric` nulls instead of truncating, so native-vs-128-bit is
+/// exact); a composite is governed by `Field` identity, which keeps the wide tags distinct:
 ///     has([toUInt64(5)],        toUInt128(5))         = 1   scalar,    native vs 128-bit
 ///     has([tuple(toUInt64(5))], tuple(toUInt128(5)))  = 0   composite, native vs 128-bit
 ///     has([toUInt8(5)],         toUInt64(5))          = 1   scalar,    native width-only
 ///     has([tuple(toUInt8(5))],  tuple(toUInt64(5)))   = 1   composite, native width-only
-/// Admitting native-vs-wide here would claim exactness for a pair the runtime never matches.
 ///
-/// Signedness is likewise not collapsed (`has([(toInt16(5),toUInt8(0))], (toInt32(5),toInt32(0)))` is
-/// 0, while the same-signedness pair is 1), and `Decimal`/`DateTime64`/`Time64` are excluded even
-/// though they all share the `Types::Decimal64` tag and DO match at runtime
-/// (`has([tuple(CAST('…00.123' AS DateTime64(3)))], tuple(CAST('…00.123' AS DateTime64(6))))` is 1):
-/// there the preparation cast silently TRUNCATES rather than nulling
-/// (`accurateCastOrNull(DateTime64(6) '…00.123456', 'DateTime64(3)')` = `…00.123`), which is the
-/// unsound conversion this check exists to reject. They keep going through the `equals` branch, which
-/// already answers them correctly - it compares a decimal's scale, so `Decimal(10, 2)` vs
-/// `Decimal(18, 2)` is admitted (runtime 1) and `Decimal(10, 2)` vs `Decimal(20, 2)` declines
-/// (runtime 0).
+/// Signedness is likewise not collapsed (`has([(toInt16(5),toUInt8(0))], (toInt32(5),toInt32(0)))` is 0,
+/// the same-signedness pair 1). `Decimal`/`DateTime64`/`Time64` share the `Types::Decimal64` tag and DO
+/// match at runtime, but are still excluded here and left to the `equals` branch (which compares a
+/// decimal's scale): their preparation cast silently TRUNCATES rather than nulling
+/// (`accurateCastOrNull(DateTime64(6) '…00.123456', 'DateTime64(3)')` = `…00.123`).
 ///
-/// `one_sided_nullable_is_enough` selects how strict the `Nullable` arm is, because the safety of a
-/// one-sided wrapper depends on the CALLER's shape; see that arm for the two cases.
+/// `one_sided_nullable_is_enough` selects how strict the `Nullable` arm is; see that arm.
 static bool setIndexTypesHaveSameFieldRepresentation(
     const IDataType & left, const IDataType & right, bool one_sided_nullable_is_enough)
 {
@@ -2887,34 +2877,27 @@ static bool setIndexTypesHaveSameFieldRepresentation(
 }
 
 /// Index preparation casts the set values INTO the key type, while runtime membership casts the key
-/// INTO the set type (`Set::execute`; `FunctionArrayIndex::executeConst` compares with
-/// `accurateEquals` for `has`). An atom may only be used as an exact image of the predicate when
-/// both directions preserve equality, so both conversions must be checked, not just one.
-///
+/// INTO the set type (`Set::execute`; `FunctionArrayIndex::executeConst` compares with `accurateEquals`
+/// for `has`). An atom is an exact image of the predicate only when BOTH directions preserve equality.
 /// Two cases are proven exact:
-/// - `equals`-equal types that also agree on custom names. `castColumn` returns the argument
-///   unchanged for an `equals`-equal pair (`castColumn.cpp`), and where a cast does run it is
-///   between representations the type system declares interchangeable, so neither direction can
-///   change a value. Comparing canonical names instead would reject the very common case of a key
-///   that declares a time zone against a set element that does not;
-/// - two plain integers: an accurate cast takes the strict `accurate::convertNumeric` path exactly
-///   when the source is int/uint/float (`can_apply_accurate_cast`), and that path yields NULL
-///   instead of truncating, so neither direction can merge or lose a value.
+/// - `equals`-equal types that also agree on custom names: `castColumn` returns the argument unchanged
+///   for such a pair (`castColumn.cpp`), and where a cast does run it is between representations the type
+///   system declares interchangeable. Comparing canonical names instead would reject the very common case
+///   of a key that declares a time zone against a set element that does not;
+/// - two plain integers: an accurate cast takes the strict `accurate::convertNumeric` path
+///   (`can_apply_accurate_cast`), which yields NULL instead of truncating.
 ///
-/// Everything else fails closed. Floats are excluded from the cross-type case because the strictness
-/// argument does not extend to values whose equality differs between the two engines that have to
-/// agree (signed zeros, NaN payloads).
+/// Everything else fails closed, floats included: that strictness argument does not extend to values
+/// whose equality differs between the two engines that have to agree (signed zeros, NaN payloads).
 ///
-/// A cross-type COMPOSITE pair reaches this check whenever the key column is a packed `Tuple`/`Array`,
-/// because then `tryPrepareSetColumnsForIndex`'s unpack loop does not run and this scalar-shaped check
-/// receives the whole composite. Whether such a pair is exact depends on the CALLER, so
-/// `composite_field_identity_is_enough` selects the tolerance:
-/// - `IN` passes false. `Set::execute` casts the KEY into the set type with `castColumnAccurate`, not
-///   `castColumnAccurateOrNull`, so a narrowing composite THROWS `CANNOT_CONVERT_TYPE` at runtime
-///   rather than producing a NULL. Only the identity case is exact there.
-/// - `has` passes true. It casts nothing at runtime - `FunctionArrayIndex::executeConst` compares
-///   `Field`s with `accurateEquals` - so the pair only has to be indistinguishable to that comparison,
-///   which is what `setIndexTypesHaveSameFieldRepresentation` decides.
+/// A cross-type COMPOSITE pair reaches this scalar-shaped check when the key column is a packed
+/// `Tuple`/`Array`, i.e. when `tryPrepareSetColumnsForIndex`'s unpack loop does not run. Whether it is
+/// exact depends on the CALLER, so `composite_field_identity_is_enough` selects the tolerance:
+/// - `IN` passes false: `Set::execute` casts the KEY with `castColumnAccurate`, not
+///   `castColumnAccurateOrNull`, so a narrowing composite THROWS `CANNOT_CONVERT_TYPE` instead of
+///   producing a NULL. Only the identity case is exact there.
+/// - `has` passes true: it casts nothing at runtime, so the pair only has to be indistinguishable to
+///   `accurateEquals`, which is what `setIndexTypesHaveSameFieldRepresentation` decides.
 static bool setIndexConversionPreservesEquality(
     const DataTypePtr & key_type, const DataTypePtr & set_element_type, bool composite_field_identity_is_enough)
 {
@@ -2927,10 +2910,8 @@ static bool setIndexConversionPreservesEquality(
         return true;
 
     /// `one_sided_nullable_is_enough = true`: this is the PACKED shape, where the whole composite is cast
-    /// by `castColumnAccurateOrNull` below, so a NULL element nulls the entire tuple and the caller's
-    /// filter drops that set row. The helper narrows this to wrappers reachable through `Tuple` nodes
-    /// only, because that cast's null aggregation does not reach inside an `Array` or a `Map`. See the
-    /// `Nullable` and container arms of that helper.
+    /// by `castColumnAccurateOrNull` below. See the helper's `Nullable` arm for why that makes a
+    /// one-sided wrapper safe here, and its container arms for why the tolerance stops at an `Array`/`Map`.
     if (composite_field_identity_is_enough
         && setIndexTypesHaveSameFieldRepresentation(*key, *set, /*one_sided_nullable_is_enough=*/true)
         && setIndexTypeTreeHasStableChildOrder(*key) && setIndexTypesAgreeOnCustomNames(*key, *set))
@@ -3263,11 +3244,21 @@ static bool setIndexConstantHasNoNulls(const IColumn & column)
         return setIndexConstantHasNoNulls(*column_low_cardinality->convertToFullColumn());
     }
 
-    /// A `Variant`/`Dynamic` column can carry a NULL discriminator, and any other layout is unknown.
-    /// Both fail closed.
-    if (column.canBeInsideNullable() || column.isNullable())
-        return true;
-    return false;
+    /// A `Nothing` column is the all-NULL case, so it must fail closed even though it reports
+    /// `canBeInsideNullable`.
+    if (typeid_cast<const ColumnNothing *>(&column))
+        return false;
+
+    /// What is left are the ordinary scalar leaves (`ColumnVector`, `ColumnString`,
+    /// `ColumnFixedString`, `ColumnDecimal`, `ColumnTuple`, `ColumnObject`, `ColumnQBit`), which report
+    /// `canBeInsideNullable` and hold no NULL of their own: a NULL would have to live in a wrapping
+    /// `ColumnNullable`, which is consumed above. Everything else (`Variant`/`Dynamic`, which carry a
+    /// NULL discriminator inline, and any unrecognized layout) falls through and fails closed.
+    ///
+    /// Nullability is deliberately NOT accepted as evidence here: `isNullable()` forwards through
+    /// wrappers (`ColumnSparse`, `ColumnReplicated`, `ColumnConst`), so treating it as NULL-freedom
+    /// would be the inverse of this function's contract.
+    return column.canBeInsideNullable();
 }
 
 /// `has` never casts the key at runtime: `FunctionArrayIndex::executeConst` compares `Field`s with

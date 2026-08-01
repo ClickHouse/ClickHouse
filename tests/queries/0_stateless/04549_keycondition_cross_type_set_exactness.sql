@@ -782,6 +782,11 @@ SELECT 'V33 unpacked NULL-free Nullable has result',
 SELECT 'V33 unpacked NULL-free Nullable has keeps pruning', count() > 0 FROM (EXPLAIN indexes = 1 SELECT count() FROM u33 WHERE has([(CAST(10, 'Nullable(UInt32)'), CAST(0, 'Nullable(UInt32)'))], (a, b))) WHERE explain ILIKE '%Parts: 1/4%';
 SELECT 'V33 unpacked NULL-free Nullable NOT has result',
     (SELECT count() FROM u33 WHERE NOT has([(CAST(10, 'Nullable(UInt32)'), CAST(0, 'Nullable(UInt32)'))], (a, b))) = (SELECT count() FROM u33o WHERE NOT has([(CAST(10, 'Nullable(UInt32)'), CAST(0, 'Nullable(UInt32)'))], (a, b)));
+-- The NEGATIVE direction has to be asserted separately: a relaxed atom keeps positive pruning while
+-- losing all negative pruning, because `can_be_false` is forced true for any relaxed element. A control
+-- that only checks the `has` direction therefore stays green through a regression that silently kills
+-- `NOT has` pruning.
+SELECT 'V33 unpacked NULL-free Nullable NOT has keeps pruning', count() > 0 FROM (EXPLAIN indexes = 1 SELECT count() FROM u33 WHERE NOT has([(CAST(10, 'Nullable(UInt32)'), CAST(0, 'Nullable(UInt32)'))], (a, b))) WHERE explain ILIKE '%Parts: 3/4%';
 -- The NULL that forfeits exactness need not be in the first row or the first position: the check is over
 -- the whole constant. A NULL appearing only in a LATER row still declines.
 SELECT 'V33 unpacked NULL in a later row declines', count() > 0 FROM (EXPLAIN indexes = 1 SELECT count() FROM u33 WHERE has([(CAST(10, 'Nullable(UInt32)'), CAST(0, 'Nullable(UInt32)')), (CAST(50000, 'Nullable(UInt32)'), CAST(NULL, 'Nullable(UInt32)'))], (a, b))) WHERE explain ILIKE '%Parts: 4/4%';
@@ -808,6 +813,9 @@ SET allow_suspicious_low_cardinality_types = 0;
 SELECT 'W33 packed unnamed key vs named element result',
     (SELECT count() FROM q33 WHERE has([CAST((10, 0), 'Tuple(c UInt32, d UInt32)')], kt)) = (SELECT count() FROM q33o WHERE has([CAST((10, 0), 'Tuple(c UInt32, d UInt32)')], kt));
 SELECT 'W33 packed unnamed key vs named element keeps pruning', count() > 0 FROM (EXPLAIN indexes = 1 SELECT count() FROM q33 WHERE has([CAST((10, 0), 'Tuple(c UInt32, d UInt32)')], kt)) WHERE explain ILIKE '%Parts: 1/3%';
+SELECT 'W33 packed unnamed key vs named element NOT has result',
+    (SELECT count() FROM q33 WHERE NOT has([CAST((10, 0), 'Tuple(c UInt32, d UInt32)')], kt)) = (SELECT count() FROM q33o WHERE NOT has([CAST((10, 0), 'Tuple(c UInt32, d UInt32)')], kt));
+SELECT 'W33 packed unnamed key vs named element NOT has keeps pruning', count() > 0 FROM (EXPLAIN indexes = 1 SELECT count() FROM q33 WHERE NOT has([CAST((10, 0), 'Tuple(c UInt32, d UInt32)')], kt)) WHERE explain ILIKE '%Parts: 2/3%';
 
 DROP TABLE IF EXISTS w33; DROP TABLE IF EXISTS w33o;
 CREATE TABLE w33 (kt Tuple(x UInt32, y UInt32)) ENGINE = MergeTree ORDER BY kt SETTINGS index_granularity = 1, add_minmax_index_for_numeric_columns = 0;
@@ -819,6 +827,9 @@ INSERT INTO w33o VALUES ((10, 0)), ((50000, 0)), ((0, 0));
 SELECT 'W33 packed named key vs unnamed element result',
     (SELECT count() FROM w33 WHERE has([(toUInt32(10), toUInt32(0))], kt)) = (SELECT count() FROM w33o WHERE has([(toUInt32(10), toUInt32(0))], kt));
 SELECT 'W33 packed named key vs unnamed element keeps pruning', count() > 0 FROM (EXPLAIN indexes = 1 SELECT count() FROM w33 WHERE has([(toUInt32(10), toUInt32(0))], kt)) WHERE explain ILIKE '%Parts: 1/3%';
+SELECT 'W33 packed named key vs unnamed element NOT has result',
+    (SELECT count() FROM w33 WHERE NOT has([(toUInt32(10), toUInt32(0))], kt)) = (SELECT count() FROM w33o WHERE NOT has([(toUInt32(10), toUInt32(0))], kt));
+SELECT 'W33 packed named key vs unnamed element NOT has keeps pruning', count() > 0 FROM (EXPLAIN indexes = 1 SELECT count() FROM w33 WHERE NOT has([(toUInt32(10), toUInt32(0))], kt)) WHERE explain ILIKE '%Parts: 2/3%';
 -- The both-explicit differing pair the tolerance must NOT admit: the cast zeroes the values, so treating
 -- the atom as exact prunes the real all-default part and drops a row (master answers this one wrongly).
 SELECT 'W33 packed both-explicit differing names result',
@@ -845,6 +856,9 @@ SELECT 'Y33 unpacked nested differing names declines', count() > 0 FROM (EXPLAIN
 SELECT 'Y33 unpacked nested one-sided names result',
     (SELECT count() FROM y33 WHERE has([(tuple(toUInt32(10)), toUInt32(0))], (a, b))) = (SELECT count() FROM y33o WHERE has([(tuple(toUInt32(10)), toUInt32(0))], (a, b)));
 SELECT 'Y33 unpacked nested one-sided names keeps pruning', count() > 0 FROM (EXPLAIN indexes = 1 SELECT count() FROM y33 WHERE has([(tuple(toUInt32(10)), toUInt32(0))], (a, b))) WHERE explain ILIKE '%Parts: 1/3%';
+SELECT 'Y33 unpacked nested one-sided names NOT has result',
+    (SELECT count() FROM y33 WHERE NOT has([(tuple(toUInt32(10)), toUInt32(0))], (a, b))) = (SELECT count() FROM y33o WHERE NOT has([(tuple(toUInt32(10)), toUInt32(0))], (a, b)));
+SELECT 'Y33 unpacked nested one-sided names NOT has keeps pruning', count() > 0 FROM (EXPLAIN indexes = 1 SELECT count() FROM y33 WHERE NOT has([(tuple(toUInt32(10)), toUInt32(0))], (a, b))) WHERE explain ILIKE '%Parts: 2/3%';
 
 -- A nested container BETWEEN the packed root and a one-sided `Nullable` wrapper. The element type is
 -- `Tuple(Array(Nullable(UInt16)), UInt8)` against a `Tuple(Array(UInt32), UInt32)` key, so the wrapper
