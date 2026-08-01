@@ -4739,6 +4739,187 @@ def test_attach_fails_closed_when_publication_row_filter_added(started_cluster):
     pg_manager.drop_materialized_db(mat_db)
 
 
+# A PostgreSQL table without a primary key and without a replica identity index cannot be materialized:
+# the initial snapshot of that table fails, so the database engine creates its publication and its
+# replication slot but never creates a single nested table. That is the "never yet synchronized" state the
+# two tests below restart in.
+postgres_table_template_without_primary_key = """
+    CREATE TABLE IF NOT EXISTS "{}" (
+    key Integer NOT NULL, value Integer)
+    """
+
+
+def wait_for_replication_slot(cursor, expected_count=1):
+    for _ in range(60):
+        cursor.execute(
+            "SELECT slot_name FROM pg_replication_slots WHERE database = 'postgres_database'"
+        )
+        slots = [row[0] for row in cursor.fetchall()]
+        if len(slots) == expected_count:
+            return slots
+        time.sleep(1)
+    raise AssertionError(f"expected {expected_count} replication slot(s), got {slots}")
+
+
+def test_attach_bootstraps_when_publication_survives_a_never_synchronized_run(
+    started_cluster,
+):
+    # On attach a surviving publication without its replication slot normally fails closed: there is no
+    # position to resume from, and re-snapshotting into already-populated nested tables would silently leave
+    # the replica stale. That reasoning only applies once a previous run actually materialized data. If the
+    # first synchronization was interrupted after the publication was created but before the replication
+    # slot was (here: the slot is dropped while the server is down, and the only table could not be
+    # materialized at all because it had no primary key), there are no nested tables on disk, nothing can be
+    # made stale, and the initial snapshot through the surviving publication is the correct - and only -
+    # way forward. Failing closed there would strand the database in a retry loop forever.
+    table = "never_synchronized_table"
+    mat_db = "never_synchronized_database"
+    pg_manager.create_postgres_table(
+        table, template=postgres_table_template_without_primary_key
+    )
+    cursor = pg_manager.get_db_cursor()
+    cursor.execute(f"INSERT INTO {table} SELECT i, i FROM generate_series(0, 29) AS i")
+
+    pg_manager.create_materialized_db(
+        ip=started_cluster.postgres_ip,
+        port=started_cluster.postgres_port,
+        materialized_database=mat_db,
+        settings=[
+            f"materialized_postgresql_tables_list = '{table}'",
+            "materialized_postgresql_backoff_min_ms = 100",
+            "materialized_postgresql_backoff_max_ms = 100",
+        ],
+    )
+
+    # The publication and the slot exist, but the table was never materialized.
+    slots = wait_for_replication_slot(cursor)
+    cursor.execute(
+        "SELECT pubname FROM pg_publication WHERE pubname LIKE '%\\_ch\\_publication'"
+    )
+    publications = [row[0] for row in cursor.fetchall()]
+    assert len(publications) == 1, f"expected exactly one publication, got {publications}"
+    assert 0 == int(instance.query(f"EXISTS TABLE {mat_db}.{table}"))
+
+    # Interrupt that first synchronization: while the server is down the slot disappears (the publication
+    # survives), and the table gets the primary key it was missing, so the restart can finally snapshot it.
+    instance.stop_clickhouse()
+    cursor.execute(f"SELECT pg_drop_replication_slot('{slots[0]}')")
+    cursor.execute(f"ALTER TABLE {table} ADD PRIMARY KEY (key)")
+    cursor.execute(f"INSERT INTO {table} SELECT i, i FROM generate_series(30, 49) AS i")
+    instance.start_clickhouse()
+
+    # The attach must bootstrap instead of failing closed: a fresh slot is created behind the surviving
+    # publication and the initial snapshot materializes every row.
+    check_tables_are_synchronized(instance, table, materialized_database=mat_db)
+    assert 50 == int(instance.query(f"SELECT count() FROM {mat_db}.{table}"))
+    wait_for_replication_slot(cursor)
+
+    # And the bootstrapped replica keeps streaming.
+    cursor.execute(f"INSERT INTO {table} SELECT i, i FROM generate_series(50, 59) AS i")
+    check_tables_are_synchronized(instance, table, materialized_database=mat_db)
+    assert 60 == int(instance.query(f"SELECT count() FROM {mat_db}.{table}"))
+
+    pg_manager.drop_materialized_db(mat_db)
+
+
+def test_legacy_identity_not_adopted_when_nothing_was_replicated_yet(started_cluster):
+    # The legacy replication identity is adopted on attach so that an upgraded deployment keeps using the
+    # slot and publication it already has, instead of re-snapshotting into its populated nested tables. A
+    # database whose first synchronization was interrupted before it materialized a single table has no
+    # such data: its on-disk table set is empty, so the exact-table-set ownership proof has no evidence to
+    # work with and would reject every real legacy publication as foreign, blocking the upgrade forever.
+    # Adoption is therefore skipped in that state and the initial synchronization runs under the current
+    # identity, creating its own publication, slot and snapshot from scratch.
+    table = "legacy_never_synchronized_table"
+    mat_db = "legacy_never_synchronized_database"
+    pg_manager.create_postgres_table(
+        table, template=postgres_table_template_without_primary_key
+    )
+    cursor = pg_manager.get_db_cursor()
+    cursor.execute(f"INSERT INTO {table} SELECT i, i FROM generate_series(0, 29) AS i")
+
+    pg_manager.create_materialized_db(
+        ip=started_cluster.postgres_ip,
+        port=started_cluster.postgres_port,
+        materialized_database=mat_db,
+        settings=[
+            f"materialized_postgresql_tables_list = '{table}'",
+            "materialized_postgresql_backoff_min_ms = 100",
+            "materialized_postgresql_backoff_max_ms = 100",
+            "materialized_postgresql_use_unique_replication_consumer_identifier = 1",
+        ],
+    )
+    salted_slots = wait_for_replication_slot(cursor)
+    assert 0 == int(instance.query(f"EXISTS TABLE {mat_db}.{table}"))
+
+    # Reconstruct the PostgreSQL-side state of a deployment created before the unique replication consumer
+    # identifier became salted with the server UUID, whose first synchronization was interrupted: pre-salt
+    # slot and publication, no nested table on disk. The pre-salt slot name is the bare ClickHouse database
+    # UUID, and the pre-salt publication name ignores the unique-identifier setting.
+    db_uuid = instance.query(
+        f"SELECT uuid FROM system.databases WHERE name = '{mat_db}'"
+    ).strip()
+    presalt_slot = db_uuid.lower().replace("-", "_")
+    presalt_publication = "postgres_database_ch_publication"
+
+    instance.stop_clickhouse()
+    for slot in salted_slots:
+        cursor.execute(f"SELECT pg_drop_replication_slot('{slot}')")
+    cursor.execute(
+        "SELECT pubname FROM pg_publication WHERE pubname LIKE '%\\_ch\\_publication'"
+    )
+    for publication in [row[0] for row in cursor.fetchall()]:
+        cursor.execute(f'DROP PUBLICATION "{publication}"')
+    cursor.execute(
+        f"SELECT pg_create_logical_replication_slot('{presalt_slot}', 'pgoutput')"
+    )
+    cursor.execute(
+        f'CREATE PUBLICATION "{presalt_publication}" FOR TABLE ONLY "{table}"'
+    )
+    cursor.execute(f"ALTER TABLE {table} ADD PRIMARY KEY (key)")
+    cursor.execute(f"INSERT INTO {table} SELECT i, i FROM generate_series(30, 49) AS i")
+    instance.start_clickhouse()
+
+    # The attach must not try to adopt the pre-salt identity, and must not fail closed either: it runs its
+    # initial synchronization under the salted identity and materializes every row.
+    assert_logs_contain_with_retry(
+        instance,
+        "this database has not replicated any table yet",
+        retry_count=60,
+        sleep_time=1,
+    )
+    check_tables_are_synchronized(instance, table, materialized_database=mat_db)
+    assert 50 == int(instance.query(f"SELECT count() FROM {mat_db}.{table}"))
+
+    # A salted slot and a salted publication of its own were created, while the pre-salt objects of the
+    # interrupted run were left untouched for the operator.
+    slots = wait_for_replication_slot(cursor, expected_count=2)
+    assert presalt_slot in slots
+    salted_slot = [slot for slot in slots if slot != presalt_slot][0]
+    cursor.execute("SELECT pubname FROM pg_publication")
+    publications = [row[0] for row in cursor.fetchall()]
+    assert presalt_publication in publications
+    assert len(publications) == 2, f"expected two publications, got {publications}"
+
+    # And the replica keeps streaming through its own identity.
+    cursor.execute(f"INSERT INTO {table} SELECT i, i FROM generate_series(50, 59) AS i")
+    check_tables_are_synchronized(instance, table, materialized_database=mat_db)
+    assert 60 == int(instance.query(f"SELECT count() FROM {mat_db}.{table}"))
+
+    # Dropping the database removes only its own objects; clean up the leftovers of the interrupted run
+    # explicitly (a leftover replication slot would also block dropping the PostgreSQL database).
+    pg_manager.drop_materialized_db(mat_db)
+    for _ in range(30):
+        cursor.execute(
+            f"SELECT count(*) FROM pg_replication_slots WHERE slot_name = '{salted_slot}'"
+        )
+        if 0 == int(cursor.fetchall()[0][0]):
+            break
+        time.sleep(1)
+    cursor.execute(f"SELECT pg_drop_replication_slot('{presalt_slot}')")
+    cursor.execute(f'DROP PUBLICATION "{presalt_publication}"')
+
+
 if __name__ == "__main__":
     cluster.start()
     input("Cluster created, press any key to destroy...")

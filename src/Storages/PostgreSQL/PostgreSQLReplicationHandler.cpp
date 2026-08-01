@@ -642,6 +642,11 @@ void PostgreSQLReplicationHandler::assertInitialized() const
 /// sync and reload a snapshot into the already-existing nested tables (duplicating data on disk). In that
 /// case the attach fails closed with an exception instead of silently re-snapshotting a populated replica
 /// or hijacking another engine's replication slot.
+///
+/// Both renames are skipped entirely for a database engine whose previous run did not materialize a single
+/// nested table (see the never-yet-synchronized check below): there is no data to preserve, no on-disk table
+/// set to prove ownership with, and resuming from an adopted slot would never create the missing nested
+/// tables.
 void PostgreSQLReplicationHandler::adoptLegacyReplicationIdentityIfNeeded(pqxx::nontransaction & tx)
 {
     if (!is_attach)
@@ -653,6 +658,36 @@ void PostgreSQLReplicationHandler::adoptLegacyReplicationIdentityIfNeeded(pqxx::
     /// the adoption idempotent: once adopted, the slot names compare equal.
     if (replication_slot == legacy_replication_slot && publication_name == legacy_publication_name)
         return;
+
+    /// A database engine that has not materialized a single nested table yet has nothing to adopt a legacy
+    /// identity for, and must not try. The previous run may have been interrupted in its very first
+    /// synchronization, after it had already created the legacy slot and publication but before the first
+    /// loadFromSnapshot() call created a nested table. In that state:
+    ///  - There is no data on disk to protect: the reason to keep the legacy identity is to avoid reloading
+    ///    a snapshot into already-populated nested tables, and there are none.
+    ///  - The ownership proof below has no evidence to work with: for a whole-schema database the expected
+    ///    set of replicated tables is exactly this (empty) on-disk set, so every real legacy publication
+    ///    would be rejected as foreign and the attach would fail closed forever.
+    ///  - Adopting would be wrong even if the proof passed: the attach path resumes from the existing slot
+    ///    without an initial snapshot (see startSynchronization()), so the nested tables that were never
+    ///    created would never appear, and every retry would fail on their absence.
+    /// Skip the adoption instead and let the initial synchronization run under the current identity, which
+    /// creates its own publication, slot and snapshot from scratch. The legacy objects of the interrupted
+    /// run are left behind for the operator - they hold no data of this replica, but a leftover replication
+    /// slot retains WAL in PostgreSQL, so name them in the log.
+    if (is_materialized_postgresql_database
+        && (!tables_replicated_by_previous_run || tables_replicated_by_previous_run->empty()))
+    {
+        LOG_INFO(
+            log,
+            "Not adopting the legacy replication identity (replication slot {}, publication {}): this database "
+            "has not replicated any table yet, so there is no data to preserve and the initial synchronization "
+            "will run under the current identity (replication slot {}, publication {}). Drop the legacy objects "
+            "on the PostgreSQL side if the previous run left them behind",
+            legacy_replication_slot, doubleQuoteString(legacy_publication_name),
+            replication_slot, doubleQuoteString(publication_name));
+        return;
+    }
 
     auto slot_exists = [&](const String & name)
     {
@@ -954,7 +989,11 @@ void PostgreSQLReplicationHandler::startSynchronization(bool throw_on_error)
     ///     rows whose last replicated version is already greater than 1 (ReplacingMergeTree keeps the higher
     ///     version), silently leaving the replica stale while a fresh slot is created. A user-managed slot
     ///     is excluded: a missing user-managed slot is a configuration error reported below with its own
-    ///     message, and that path never re-snapshots.
+    ///     message, and that path never re-snapshots. The never-yet-synchronized state is exempted for the
+    ///     same reason as case 3: a database engine that has not materialized a single nested table yet -
+    ///     for example the server stopped after createPublicationIfNeeded() created the publication but
+    ///     before createReplicationSlot() created the slot - has nothing that a snapshot could make stale,
+    ///     and its initial synchronization must be allowed to run through the surviving publication.
     ///
     ///  3. Both the slot and the publication are gone while this replica already holds data from a previous
     ///     run (a database engine's nested tables exist on disk, or - for the single-table engine - the
@@ -993,6 +1032,15 @@ void PostgreSQLReplicationHandler::startSynchronization(bool throw_on_error)
         const bool slot_exists = isReplicationSlotExist(tx, slot_lsn, /* temporary */false);
         const bool publication_exists = isPublicationExist(tx);
 
+        /// This replica already holds data from a previous run if the database engine kept nested tables on
+        /// disk, or - for the single-table engine, which has no such set - if the table exists in metadata at
+        /// all (a MaterializedPostgreSQL table is only left in metadata once its initial sync has succeeded,
+        /// so an attach implies a completed previous run). A database engine that has not created a single
+        /// nested table yet has nothing to be made stale and is allowed to run its initial snapshot.
+        const bool has_previously_replicated_data
+            = !is_materialized_postgresql_database
+            || (tables_replicated_by_previous_run && !tables_replicated_by_previous_run->empty());
+
         if (slot_exists && !publication_exists)
             throw Exception(
                 ErrorCodes::POSTGRESQL_REPLICATION_INTERNAL_ERROR,
@@ -1009,7 +1057,7 @@ void PostgreSQLReplicationHandler::startSynchronization(bool throw_on_error)
                 "without a server restart or a manual re-attach.",
                 replication_slot, doubleQuoteString(publication_name));
 
-        if (!user_managed_slot && !slot_exists && publication_exists)
+        if (!user_managed_slot && !slot_exists && publication_exists && has_previously_replicated_data)
             throw Exception(
                 ErrorCodes::POSTGRESQL_REPLICATION_INTERNAL_ERROR,
                 "Cannot start MaterializedPostgreSQL replication on attach: publication {} exists, but "
@@ -1024,15 +1072,6 @@ void PostgreSQLReplicationHandler::startSynchronization(bool throw_on_error)
                 "retrying and replication starts automatically once the conflict is resolved, without a "
                 "server restart or a manual re-attach.",
                 doubleQuoteString(publication_name), replication_slot);
-
-        /// This replica already holds data from a previous run if the database engine kept nested tables on
-        /// disk, or - for the single-table engine, which has no such set - if the table exists in metadata at
-        /// all (a MaterializedPostgreSQL table is only left in metadata once its initial sync has succeeded,
-        /// so an attach implies a completed previous run). A database engine that has not created a single
-        /// nested table yet has nothing to be made stale and is allowed to run its initial snapshot.
-        const bool has_previously_replicated_data
-            = !is_materialized_postgresql_database
-            || (tables_replicated_by_previous_run && !tables_replicated_by_previous_run->empty());
 
         if (!user_managed_slot && !slot_exists && !publication_exists && has_previously_replicated_data)
             throw Exception(
