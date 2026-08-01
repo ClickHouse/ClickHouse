@@ -1198,8 +1198,10 @@ def test_secret_masking_constant_expression():
 
 def query_from_log(query_id, event_type="QueryFinish"):
     node.query("SYSTEM FLUSH LOGS query_log")
+    # TSVRaw: the default TSV output escapes quotes, which would break the
+    # `key = '[HIDDEN]'` substring assertions below.
     return node.query(
-        f"SELECT query FROM system.query_log WHERE query_id = '{query_id}' AND type = '{event_type}'"
+        f"SELECT query FROM system.query_log WHERE query_id = '{query_id}' AND type = '{event_type}' FORMAT TSVRaw"
     )
 
 
@@ -1230,24 +1232,24 @@ def test_secret_masking_constant_key():
     # The engine form passes the raw argument ASTs to the configuration parser, so there the
     # constant-expression key authenticates - and must be masked in both the CREATE query log
     # entry and SHOW CREATE TABLE.
-    node.query("DROP TABLE IF EXISTS bq_engine_concat_key")
+    node.query("DROP TABLE IF EXISTS bq_engine_expr_key")
     create_query_id = "bigquery-masking-concat-key-create"
     node.query(
-        f"CREATE TABLE bq_engine_concat_key ENGINE = BigQuery('{PROJECT}', '{DATASET}', 'test_paging', "
+        f"CREATE TABLE bq_engine_expr_key ENGINE = BigQuery('{PROJECT}', '{DATASET}', 'test_paging', "
         f"{key_expr} = '{ACCESS_TOKEN}', base_url = '{BASE_URL}')",
         query_id=create_query_id,
     )
-    create = node.query("SHOW CREATE TABLE bq_engine_concat_key")
+    create = node.query("SHOW CREATE TABLE bq_engine_expr_key")
     assert ACCESS_TOKEN not in create
     assert "concat" not in create
     assert "[HIDDEN]" in create
-    assert node.query("SELECT count() FROM bq_engine_concat_key") == "10\n"
+    assert node.query("SELECT count() FROM bq_engine_expr_key") == "10\n"
     logged = query_from_log(create_query_id)
     assert logged != ""
     assert ACCESS_TOKEN not in logged
     assert "concat" not in logged
     assert "[HIDDEN]" in logged
-    node.query("DROP TABLE bq_engine_concat_key")
+    node.query("DROP TABLE bq_engine_expr_key")
 
 
 def test_secret_masking_fails_closed_on_invalid_arguments():
