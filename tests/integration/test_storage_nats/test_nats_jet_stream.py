@@ -1097,7 +1097,8 @@ def _publish_and_expect(subject, keys, total_expected):
 
 def _wait_for_parked_pull_request(consumer_name = "test_consumer", time_limit_sec = 60):
     # Waits until the consumer has a pull request parked server side. `num_waiting` counts exactly
-    # those, so this reads the precondition off the broker instead of inferring it.
+    # those, so this reads the precondition off the broker rather than inferring it, and unlike
+    # consuming a message it does not terminate the fetch it is checking for.
     deadline = time.monotonic() + time_limit_sec
     num_waiting = 0
     while time.monotonic() < deadline:
@@ -1110,33 +1111,26 @@ def _wait_for_parked_pull_request(consumer_name = "test_consumer", time_limit_se
         "no pull request is parked for consumer {}: num_waiting is {}".format(consumer_name, num_waiting))
 
 
-def _restart_nats(nats_cluster, probe_key, total_expected):
-    # Confirm the subscription is actually live, then restart the broker. Returns the new expected
-    # key count, including the probe message.
+def _restart_nats(nats_cluster):
+    # Confirms a pull request is parked server side, then restarts the broker.
     #
-    # This fix recovers a subscription that the NATS client has closed, which happens when the
-    # server answers our outstanding pull request while shutting down. A broker that has just come
-    # back can still refuse a pull request while it restores its streams, so recovery can fire more
-    # than once, several seconds after the connection is back. If a restart lands within
-    # milliseconds of one of those fresh subscriptions, the server goes down before that request is
-    # parked, never answers it, and the client is left holding a subscription it has no status for -
-    # the residual this fix deliberately does not cover (a hard kill or a network partition has the
-    # same shape). Keeping each restart out of that residual is what the two waits below are for.
-    # This changes WHEN the broker is restarted, not what is asserted.
-    total_expected += 1
-    _publish_and_expect("test_subject", [probe_key], total_expected)
-
-    # Consuming the probe proves a pull request was parked, but recovery is asynchronous: one queued
-    # while the broker was restoring its streams can re-subscribe right after, leaving a fresh
-    # subscription whose request is not parked yet. Reading `num_waiting` immediately before the kill
-    # asserts the precondition still holds at that instant, whatever happened in between.
+    # This fix recovers a subscription that the NATS client has closed, which happens when the server
+    # answers our outstanding pull request while shutting down. A restart landing in the milliseconds
+    # between a re-subscribe and its request being parked instead leaves the client holding a
+    # subscription it has no status for, so nothing reports it as closed and it never consumes again -
+    # the residual this fix deliberately does not cover, which a hard kill or a network partition
+    # reaches the same way. Keeping the restart out of that window is what the wait is for.
+    #
+    # The wait deliberately does not consume a message. A pull request is parked as soon as the
+    # subscription is created, so `num_waiting` confirms the precondition on its own, whereas
+    # delivering a message exhausts the request and makes the client close the subscription, which
+    # schedules exactly the re-subscribe the restart must not race. This changes WHEN the broker is
+    # restarted, not what is asserted.
     _wait_for_parked_pull_request()
 
     nats_helpers.kill_nats(nats_cluster)
     time.sleep(4)
     nats_helpers.revive_nats(nats_cluster)
-
-    return total_expected
 
 
 def test_nats_jet_stream_resumes_consuming_after_broker_restart(nats_cluster):
@@ -1149,7 +1143,7 @@ def test_nats_jet_stream_resumes_consuming_after_broker_restart(nats_cluster):
     total_expected = 10
     _publish_and_expect("test_subject", range(0, 10), total_expected)
 
-    total_expected = _restart_nats(nats_cluster, 90, total_expected)
+    _restart_nats(nats_cluster)
 
     total_expected += 10
     _publish_and_expect("test_subject", range(100, 110), total_expected)
@@ -1164,7 +1158,7 @@ def test_nats_jet_stream_resumes_consuming_after_two_broker_restarts(nats_cluste
 
     for round_index in range(2):
         first_key = 100 + round_index * 100
-        total_expected = _restart_nats(nats_cluster, first_key - 10, total_expected)
+        _restart_nats(nats_cluster)
 
         total_expected += 10
         _publish_and_expect("test_subject", range(first_key, first_key + 10), total_expected)
@@ -1201,7 +1195,7 @@ def test_nats_jet_stream_settles_after_one_broker_restart(nats_cluster):
     total_expected = 10
     _publish_and_expect("test_subject", range(0, 10), total_expected)
 
-    total_expected = _restart_nats(nats_cluster, 90, total_expected)
+    _restart_nats(nats_cluster)
 
     total_expected += 10
     _publish_and_expect("test_subject", range(100, 110), total_expected)
