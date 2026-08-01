@@ -96,6 +96,9 @@ private:
     std::unordered_map<const InputPort *, uint64_t> input_port_to_index;
     HashSet<uint64_t> wait_input_ports_numbers;
 
+    /// Ids of the buckets already pushed, to check that none of them is pushed twice.
+    std::unordered_set<Int32> pushed_buckets;
+
     /// Add chunk read from input to chunks_map, overflow_chunks or single_level_chunks according to it's chunk info.
     void addChunk(Chunk chunk, size_t input);
     /// Drop the out of order buckets reported by an input which has finished, they cannot arrive anymore.

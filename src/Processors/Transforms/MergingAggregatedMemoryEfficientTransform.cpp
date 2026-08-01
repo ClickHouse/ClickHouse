@@ -57,6 +57,10 @@ void GroupingAggregatedTransform::pushData(Chunks chunks, Int32 bucket, bool is_
     if (!is_overflows)
         info->out_of_order_buckets = getDelayedBucketsBefore(bucket);
 
+    /// Pushing the same bucket twice means it is merged twice and the same keys are returned twice.
+    /// This is the failure mode of a producer which sends buckets out of order without reporting them as delayed.
+    chassert(bucket < 0 || pushed_buckets.insert(bucket).second, fmt::format("Bucket {} is pushed twice", bucket));
+
     Chunk chunk;
     chunk.getChunkInfos().add(std::move(info));
     output.push(std::move(chunk));
