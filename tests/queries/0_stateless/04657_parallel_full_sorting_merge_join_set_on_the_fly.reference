@@ -1,0 +1,7 @@
+analyzer set_and_scatter_combined	1	1	1
+analyzer deadlock_shape	1
+analyzer filtered_inner	1
+analyzer set_overflow	1
+legacy set_and_scatter_combined	1	1	1
+legacy deadlock_shape	1
+legacy filtered_inner	1
