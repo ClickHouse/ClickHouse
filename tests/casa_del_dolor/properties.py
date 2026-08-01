@@ -1853,11 +1853,11 @@ keeper_settings = {
         "max_requests_append_bytes_size": threshold_generator(
             0.2, 0.2, 0, 10 * 1024 * 1024
         ),
-        "max_requests_append_size": threshold_generator(0.2, 0.2, 0, 200),
+        "max_requests_append_size": threshold_generator(0.2, 0.2, 1, 200),
         "max_requests_batch_bytes_size": threshold_generator(
             0.2, 0.2, 0, 10 * 1024 * 1024
         ),
-        "max_requests_batch_size": threshold_generator(0.2, 0.2, 0, 100),
+        "max_requests_batch_size": threshold_generator(0.2, 0.2, 1, 100),
         "max_requests_quick_batch_size": threshold_generator(0.2, 0.2, 0, 200),
         "max_response_queue_bytes_size": threshold_generator(
             0.2, 0.2, 0, 100 * 1024 * 1024

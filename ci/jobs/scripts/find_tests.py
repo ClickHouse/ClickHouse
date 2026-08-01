@@ -119,12 +119,20 @@ class Targeting:
         Fixtures carry their owning test's five-digit prefix by convention, so
         the prefix narrows the candidates to the `NNNNN_*` tests at the suite
         root (a handful of files, never the whole suite). Among those, prefer the
-        ones whose body actually references the fixture by name; fall back to all
-        prefix siblings when the reference is constructed dynamically and cannot
-        be found textually. Return an empty list when the file has no numeric
-        prefix or no test with that prefix exists — there is then genuinely
-        nothing to rerun, and emitting a pattern that matches no test would make
-        `clickhouse-test` exit 1 (the failure mode `PR #104097` fixed).
+        ones whose body references the fixture's literal filename. When none
+        does, retry with the extensionless stem, since format schemas are
+        conventionally referenced without the extension
+        (`format_schema = 'NNNNN_foo:Message'` for `format_schemas/NNNNN_foo.proto`).
+        The stem is strictly a fallback: a short or cross-extension stem
+        (`03250.proto` → `03250`, or `03036_archive1.tar` next to a test that
+        reads `03036_archive1.zip`) would otherwise pull unrelated prefix
+        siblings into mappings the literal filename already resolves precisely.
+        Fall back to all prefix siblings when neither matches — the reference is
+        then constructed dynamically and cannot be found textually. Return an
+        empty list when the file has no numeric prefix or no test with that
+        prefix exists — there is then genuinely nothing to rerun, and emitting a
+        pattern that matches no test would make `clickhouse-test` exit 1 (the
+        failure mode `PR #104097` fixed).
         """
         match = re.match(r"(\d{5})", os.path.basename(fpath))
         if match is None:
@@ -138,14 +146,20 @@ class Targeting:
         if not candidates:
             return []
         fname = os.path.basename(fpath)
-        referencing = []
+        stem = os.path.splitext(fname)[0]
+        by_fname = []
+        by_stem = []
         for base_name, test_file in candidates.items():
             try:
                 with test_file.open("r", encoding="utf-8", errors="ignore") as f:
-                    if fname in f.read():
-                        referencing.append(base_name)
+                    body = f.read()
             except OSError:
                 continue
+            if fname in body:
+                by_fname.append(base_name)
+            elif stem in body:
+                by_stem.append(base_name)
+        referencing = by_fname or by_stem
         return sorted(referencing) if referencing else sorted(candidates)
 
     @staticmethod
