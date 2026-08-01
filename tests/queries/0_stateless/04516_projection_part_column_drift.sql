@@ -149,6 +149,22 @@ OPTIMIZE TABLE t_proj_mat_default_drift FINAL;
 
 SELECT 'mat-drift read after merge', a, c FROM t_proj_mat_default_drift ORDER BY a;
 
+-- a plain read would also be correct if the projection had merely been dropped, so pin that it was
+-- rebuilt: it is usable again, materializes the current column set, and no stale part was merged
+SELECT 'mat-drift forced after merge', a, c FROM t_proj_mat_default_drift ORDER BY a
+SETTINGS optimize_use_projections = 1, force_optimize_projection = 1;
+
+SELECT 'mat-drift part columns after merge', name, column FROM system.projection_parts_columns
+WHERE database = currentDatabase() AND table = 't_proj_mat_default_drift' AND active ORDER BY name, column;
+
+SYSTEM FLUSH LOGS part_log;
+
+SELECT 'mat-drift rebuilt not merged',
+       sum(ProfileEvents['MergedProjections']), sum(ProfileEvents['RebuiltProjections']) > 0
+FROM system.part_log
+WHERE database = currentDatabase() AND table = 't_proj_mat_default_drift'
+  AND event_type = 'MergeParts';
+
 DROP TABLE t_proj_mat_default_drift;
 
 -- orphaned-but-stored dependency (sibling of #111076): the late-added `d DEFAULT b * 10` references
@@ -364,6 +380,20 @@ SETTINGS optimize_use_projections = 1, force_optimize_projection = 1; -- { serve
 OPTIMIZE TABLE t_proj_subcol_unfillable_dep FINAL;
 
 SELECT 'subcol-unfillable read after merge', a, c FROM t_proj_subcol_unfillable_dep ORDER BY a;
+
+SELECT 'subcol-unfillable forced after merge', a, c FROM t_proj_subcol_unfillable_dep ORDER BY a
+SETTINGS optimize_use_projections = 1, force_optimize_projection = 1;
+
+SELECT 'subcol-unfillable part columns after merge', name, column FROM system.projection_parts_columns
+WHERE database = currentDatabase() AND table = 't_proj_subcol_unfillable_dep' AND active ORDER BY name, column;
+
+SYSTEM FLUSH LOGS part_log;
+
+SELECT 'subcol-unfillable rebuilt not merged',
+       sum(ProfileEvents['MergedProjections']), sum(ProfileEvents['RebuiltProjections']) > 0
+FROM system.part_log
+WHERE database = currentDatabase() AND table = 't_proj_subcol_unfillable_dep'
+  AND event_type = 'MergeParts';
 
 DROP TABLE t_proj_subcol_unfillable_dep;
 
@@ -596,6 +626,20 @@ SETTINGS optimize_use_projections = 1, force_optimize_projection = 1; -- { serve
 OPTIMIZE TABLE t_proj_chain_unfillable_dep FINAL;
 
 SELECT 'chain-unfillable read after merge', a, c FROM t_proj_chain_unfillable_dep ORDER BY a;
+
+SELECT 'chain-unfillable forced after merge', a, c FROM t_proj_chain_unfillable_dep ORDER BY a
+SETTINGS optimize_use_projections = 1, force_optimize_projection = 1;
+
+SELECT 'chain-unfillable part columns after merge', name, column FROM system.projection_parts_columns
+WHERE database = currentDatabase() AND table = 't_proj_chain_unfillable_dep' AND active ORDER BY name, column;
+
+SYSTEM FLUSH LOGS part_log;
+
+SELECT 'chain-unfillable rebuilt not merged',
+       sum(ProfileEvents['MergedProjections']), sum(ProfileEvents['RebuiltProjections']) > 0
+FROM system.part_log
+WHERE database = currentDatabase() AND table = 't_proj_chain_unfillable_dep'
+  AND event_type = 'MergeParts';
 
 DROP TABLE t_proj_chain_unfillable_dep;
 

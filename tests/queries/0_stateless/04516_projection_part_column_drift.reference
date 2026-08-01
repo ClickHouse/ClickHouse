@@ -17,6 +17,10 @@ default-drift part columns after merge	p	a
 default-drift part columns after merge	p	d
 mat-drift read after drift	1	71
 mat-drift read after merge	1	71
+mat-drift forced after merge	1	71
+mat-drift part columns after merge	p	a
+mat-drift part columns after merge	p	d
+mat-drift rebuilt not merged	0	1
 orphaned-dep read after drift	1	1001
 orphaned-dep read after merge	1	1001
 1	1001
@@ -42,6 +46,10 @@ subcol-dep force projection after merge	2	301
 subcol-dep merged not rebuilt	1	0
 subcol-unfillable read after drift	1	8
 subcol-unfillable read after merge	1	8
+subcol-unfillable forced after merge	1	8
+subcol-unfillable part columns after merge	p	a
+subcol-unfillable part columns after merge	p	g
+subcol-unfillable rebuilt not merged	0	1
 arrsize-dep read after drift	1	4
 arrsize-dep force projection	1	4
 arrsize-dep read after merge	1	4
@@ -67,6 +75,10 @@ lambda-shadow-dep force projection after merge	2	2
 lambda-shadow-dep merged not rebuilt	1	0
 chain-unfillable read after drift	1	12
 chain-unfillable read after merge	1	12
+chain-unfillable forced after merge	1	12
+chain-unfillable part columns after merge	p	a
+chain-unfillable part columns after merge	p	d
+chain-unfillable rebuilt not merged	0	1
 agg read after drift	1	501
 agg read after merge	1	501
 agg read after merge	2	601
