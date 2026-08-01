@@ -63,6 +63,7 @@ rm -rf "$WORK/db"
 # `trySchedule` failure after the count has already underflowed, which happens in roughly a
 # quarter of iterations, so 30 of them make a miss very unlikely.
 completed=0
+injected=0
 for _ in {1..30}
 do
     # The budget is only ever spent on a real hang, so it is sized for margin: a completing
@@ -75,6 +76,14 @@ do
     rc=$?
 
     rm -rf "$WORK/db"
+
+    # `fault injected` is the injector's own reason, and no other reason produces it, so this is
+    # the only evidence that it fired here. `CANNOT_SCHEDULE_TASK` is not: five other reasons
+    # raise it, and the branch below already tolerates it.
+    if grep -q "fault injected" "$WORK/err.txt"
+    then
+        injected=$((injected + 1))
+    fi
 
     # 124 is `timeout`'s own status, i.e. the write never returned. A CANNOT_SCHEDULE_TASK is the
     # correct outcome of an allocation that genuinely failed; the shell truncates its 439 to 183,
@@ -99,6 +108,15 @@ done
 if [ "$completed" -eq 0 ]
 then
     echo "NO INJECTED ITERATION COMPLETED completed=$completed"
+    exit 1
+fi
+
+# The defect needs a schedule that actually failed, so a run where the injector never fired asserts
+# nothing either. Both floors hold together: the draw happens per schedule attempt, so roughly half
+# the iterations complete and a third of them see a failure.
+if [ "$injected" -eq 0 ]
+then
+    echo "INJECTOR NEVER FIRED injected=$injected"
     exit 1
 fi
 
