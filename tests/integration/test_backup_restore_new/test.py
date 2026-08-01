@@ -5,6 +5,7 @@ import random
 import re
 import sys
 import uuid
+from pathlib import PurePosixPath
 from typing import Dict
 from datetime import datetime
 
@@ -752,47 +753,60 @@ def test_backup_to_not_yet_existing_backup_area():
     # flushed does not survive a power loss. Only an integration test can set this up, because
     # backups.allowed_path is a server config setting, and in CI it always points somewhere existing.
     #
-    # The load-bearing assertion is the DIFFERENCE between two backups to the same area: the first
-    # has to create deep_backups/a/b/c, the second finds it there. Comparing two backups is what
-    # makes this independent of how many directories the backup contents themselves need, which
-    # randomized merge-tree settings vary.
+    # The load-bearing assertion is that two backups to the same area fsync the SAME number of
+    # directories: the first has to create deep_backups/a/b/c, the second finds it there, and how
+    # much already exists must not change what gets fsynced. Existence is not proof of durability,
+    # so the writer walks the area's ancestors to the filesystem root either way. Comparing two
+    # backups is what makes this independent of how many directories the backup contents themselves
+    # need, which randomized merge-tree settings vary. The second assertion below pins that the
+    # equal counts are the full chain rather than a collapse to zero.
     #
     # The concurrent variant - two backups racing to create a shared intermediate directory, which
-    # is what motivated syncing the created chain instead of trusting existence - is NOT covered
+    # is what motivated syncing the ancestors instead of trusting existence - is NOT covered
     # here, and this sequential pair must not be read as covering it: a sequential pair passes even
     # under the buggy logic that synced only from "the first directory that exists" downwards.
     # Pinning the race needs a failpoint between the writer ctor's boundary sampling and its first
     # create_directories, which does not exist.
     create_and_fill_table(n=10)
 
+    # Must match the second backups.allowed_path entry in configs/backups_disk.xml.
+    AREA = "/var/lib/clickhouse/deep_backups/a/b/c"
+
     # A previous run leaves the chain behind - the writer removes directories it created only when
-    # the backup fails - which would collapse the difference to zero. Start from the state the
-    # assertion is about.
+    # the backup fails - so the "creates it" arm would not create anything. Start from the state the
+    # assertions are about.
     instance.exec_in_container(
         ["bash", "-c", "rm -rf /var/lib/clickhouse/deep_backups"], user="root"
     )
 
     def backup_to(subdir, query_id, fsync=1):
         instance.query(
-            f"BACKUP TABLE test.table TO File('/var/lib/clickhouse/deep_backups/a/b/c/{subdir}')"
+            f"BACKUP TABLE test.table TO File('{AREA}/{subdir}')"
             f" SETTINGS fsync_backup_files = {fsync}",
             query_id=query_id,
         )
         return get_events_for_query(query_id)
 
-    # b1 has to create deep_backups, a, b and c under the pre-existing /var/lib/clickhouse. The ctor
-    # records the created chain plus the existing boundary it stopped at - /var/lib/clickhouse,
-    # deep_backups, a, b, c - and /var/lib as the best-effort level above the area: six. b2 finds the
-    # area present, so its boundary is the area itself: that one directory plus
-    # /var/lib/clickhouse/deep_backups/a/b as the best-effort level: two. The directories inside the
-    # destination are the same for both and cancel, leaving 6 - 2.
+    # b1 has to create deep_backups, a, b and c under the pre-existing /var/lib/clickhouse; b2 finds
+    # them. Both fsync the area itself, the ancestors the chain needed, and every level above them up
+    # to /, so both counts are the same chain plus the identical destination contents. Before the
+    # ancestor walk the writer stopped one level above whatever already existed, so b1 fsynced four
+    # directories more than b2 - that gap was the defect.
     first = backup_to("b1", "backup_deep_first")
     second = backup_to("b2", "backup_deep_second")
 
-    created_chain_syncs = first["DirectorySync"] - second["DirectorySync"]
-    assert created_chain_syncs == 4, (
-        f"expected the created backup area chain to add 4 directory fsyncs, got"
-        f" {created_chain_syncs} (b1={first['DirectorySync']}, b2={second['DirectorySync']})"
+    assert first["DirectorySync"] == second["DirectorySync"], (
+        f"a backup that creates the area and one that finds it must fsync the same directories,"
+        f" got b1={first['DirectorySync']}, b2={second['DirectorySync']}"
+    )
+
+    # ... and the equal counts must be the whole chain, not both collapsing to nothing. Derived from
+    # the configured path rather than hard-coded, so it stays right if the area moves: the area plus
+    # each of its ancestors, up to and including /.
+    chain_len = len(PurePosixPath(AREA).parents) + 1
+    assert second["DirectorySync"] >= chain_len, (
+        f"expected at least the {chain_len} directories of {AREA} and its ancestors to be fsynced,"
+        f" got {second['DirectorySync']}"
     )
 
     # Control: the opt-out must issue no fsyncs of either kind, so the counts above are attributable
@@ -805,9 +819,7 @@ def test_backup_to_not_yet_existing_backup_area():
 
     # A backup written into a freshly created area must also be restorable, not merely counted.
     instance.query("DROP TABLE test.table")
-    instance.query(
-        "RESTORE TABLE test.table FROM File('/var/lib/clickhouse/deep_backups/a/b/c/b1')"
-    )
+    instance.query(f"RESTORE TABLE test.table FROM File('{AREA}/b1')")
     assert instance.query("SELECT count(), sum(x) FROM test.table") == "10\t45\n"
     instance.query("DROP TABLE test.table")
 

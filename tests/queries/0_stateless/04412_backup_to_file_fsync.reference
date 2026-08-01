@@ -1,6 +1,6 @@
 file_default every_file_synced=	1	, dir_sync>0=	1
 file every_file_synced=	1	, dir_sync>0=	1
-file_archive every_file_synced=	1	, dir_sync=2=	1
+file_archive every_file_synced=	1	, dir_sync=area+ancestors=	1
 disk every_file_synced=	1	, dir_sync>0=	1
 disk_archive every_file_synced=	1	, dir_sync=1=	1
 nested dir_sync - flat dir_sync = 2:	1

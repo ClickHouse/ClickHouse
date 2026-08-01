@@ -36,21 +36,25 @@ $CLICKHOUSE_CLIENT "${client_opts[@]}" -m -q "
 #
 # The directory oracle is exact for an archive, because an archive is a single file written directly
 # into the backup area, which makes that area the only directory whose entry changes. For a File
-# destination that is 2: the backup area and the directory holding it, whose entry has to be durable
-# too. For a Disk destination it is 1, the disk root - a disk has no configured parent to walk into.
-# These are absolute anchors: they fail at a smaller count if the backup area is not synced, and at a
-# larger one if the walk runs past its boundary towards the filesystem root. The plain destinations
-# keep a "> 0" assertion because their exact count follows the part layout, which the randomized
-# merge-tree settings change; the two assertions further below pin their counts relative to these.
-# $5 = expected DirectorySync for an archive
+# destination that is the backup area plus each of its ancestors: an ancestor that already exists is
+# not necessarily durable, since a concurrent backup may have created it without having fsynced its
+# own parent yet, so the writer walks all of them. That count depends on where the data directory
+# lives, so it is derived below rather than hard-coded. For a Disk destination it is 1, the disk root
+# - a disk has no configured parent to walk into.
+# These are absolute anchors: they fail at a smaller count if the backup area or one of its ancestors
+# is not synced, and at a larger one if the walk runs past the area towards the leaves. The plain
+# destinations keep a "> 0" assertion because their exact count follows the part layout, which the
+# randomized merge-tree settings change; the two assertions further below pin their counts relative
+# to these.
+# $5 = expected DirectorySync for an archive, $6 = label for it (defaults to the value itself)
 check_backup() {
-    local label="$1" dest="$2" kind="$3" extra="$4" archive_dirs="${5:-}"
+    local label="$1" dest="$2" kind="$3" extra="$4" archive_dirs="${5:-}" archive_label="${6:-${5:-}}"
     local qid="${CLICKHOUSE_TEST_UNIQUE_NAME}_${label}"
     local expected="num_entries + 1" dirs="q.ProfileEvents['DirectorySync'] > 0" dirs_label="dir_sync>0="
     if [ "$kind" = archive ]; then
         expected="1"
         dirs="q.ProfileEvents['DirectorySync'] = $archive_dirs"
-        dirs_label="dir_sync=$archive_dirs="
+        dirs_label="dir_sync=$archive_label="
     fi
     $CLICKHOUSE_CLIENT --format Null "${client_opts[@]}" --query_id "$qid" \
         -q "BACKUP TABLE t TO $dest ${extra:+SETTINGS $extra}"
@@ -62,11 +66,19 @@ check_backup() {
     "
 }
 
+# The File archive count is the backup area plus each of its ancestors, so derive it from where the
+# area actually is instead of hard-coding a depth. config.xml configures backups.allowed_path as the
+# relative "backups", which is resolved against the server's data directory.
+data_dir=$($CLICKHOUSE_CLIENT "${client_opts[@]}" -q "SELECT path FROM system.disks WHERE name = 'default'")
+allowed_path="${data_dir%/}/backups"
+# One fsync per component of an absolute path, i.e. the area itself plus each ancestor up to '/'.
+file_archive_dirs=$(( $(printf '%s' "$allowed_path" | tr -cd '/' | wc -c) + 1 ))
+
 # Every File/Disk destination must fsync every written file and the containing directories.
 # The "file_default" case omits the setting to verify the default is fsync-on.
 check_backup "file_default"  "File('${CLICKHOUSE_TEST_UNIQUE_NAME}_file_def')"     plain   ""
 check_backup "file"          "File('${CLICKHOUSE_TEST_UNIQUE_NAME}_file')"         plain   "fsync_backup_files = 1"
-check_backup "file_archive"  "File('${CLICKHOUSE_TEST_UNIQUE_NAME}_file.zip')"     archive "fsync_backup_files = 1" 2
+check_backup "file_archive"  "File('${CLICKHOUSE_TEST_UNIQUE_NAME}_file.zip')"     archive "fsync_backup_files = 1" "$file_archive_dirs" "area+ancestors"
 check_backup "disk"          "Disk('backups', '${CLICKHOUSE_TEST_UNIQUE_NAME}_disk')"     plain   "fsync_backup_files = 1"
 check_backup "disk_archive"  "Disk('backups', '${CLICKHOUSE_TEST_UNIQUE_NAME}_disk.zip')" archive "fsync_backup_files = 1" 1
 
@@ -91,6 +103,7 @@ echo -e "nested dir_sync - flat dir_sync = 2:\t$(( $(dir_sync_of "$qid_nested") 
 # An ancestor that already exists is not necessarily durable: a concurrent backup may have created
 # it without having fsynced its parent yet. Two backups sharing one intermediate directory must
 # therefore fsync the same number of directories - the second must not stop at the shared ancestor.
+# This holds by construction now that the walk does not sample what already exists.
 qid_shared1="${CLICKHOUSE_TEST_UNIQUE_NAME}_shared1"
 qid_shared2="${CLICKHOUSE_TEST_UNIQUE_NAME}_shared2"
 for i in 1 2; do

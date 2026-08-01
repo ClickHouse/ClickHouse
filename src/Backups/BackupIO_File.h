@@ -6,6 +6,7 @@
 #include <filesystem>
 #include <mutex>
 #include <set>
+#include <vector>
 
 
 namespace DB
@@ -69,10 +70,11 @@ private:
     std::mutex dirs_to_sync_mutex;
     std::set<std::filesystem::path> dirs_to_sync TSA_GUARDED_BY(dirs_to_sync_mutex);
 
-    /// The directory holding the backup area, fsynced last so that the area's own entry is durable.
-    /// Outside the configured area, hence best-effort: a failure is logged, not thrown. Set by the
-    /// constructor and read only by `syncDirectoriesToDisk`, so it needs no locking.
-    std::filesystem::path best_effort_dir_to_sync;
+    /// The ancestors of the backup area, deepest-first, fsynced last so that the area's own entry and
+    /// every entry above it is durable. Outside the configured area, hence best-effort: a failure at
+    /// one level is logged, not thrown, and does not skip the levels above it. Set by the constructor
+    /// and read only by `syncDirectoriesToDisk`, so it needs no locking.
+    std::vector<std::filesystem::path> best_effort_dirs_to_sync;
 };
 
 }

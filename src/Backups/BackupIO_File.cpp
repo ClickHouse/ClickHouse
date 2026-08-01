@@ -85,18 +85,18 @@ BackupWriterFile::BackupWriterFile(
     /// `backups.allowed_path` comes from the configuration, so the backup may have to create it and
     /// some of its ancestors, whose entries are durable only once the directory holding them is
     /// fsynced. Record that chain: from the allowed path up to the deepest ancestor that already
-    /// exists, and one level beyond it. That last level is what persists the entry of the deepest
-    /// directory the chain creates, and it is also needed when the deepest existing directory was
-    /// itself created by a concurrent backup that has not yet fsynced its own parent - existence is
-    /// not proof of durability. Sampled here, before anything is written.
+    /// exists, and then every level above it. Existence is not proof of durability - a concurrent
+    /// backup may have created any part of the chain without yet fsyncing it - so the levels above the
+    /// boundary cannot be trusted either. Sampled here, before anything is written.
     ///
-    /// This also bounds the parent walk in `syncFileToDisk`: every backup file is below the allowed
+    /// The boundary bounds the parent walk in `syncFileToDisk`: every backup file is below the allowed
     /// path, so the walk always reaches an already recorded directory and never leaves the
     /// configured backup area. Bounding it matters because fsyncing a directory has to open it with
     /// `O_DIRECTORY`, which needs read permission, while writing a backup only needs its ancestors
-    /// to be searchable, so an unbounded walk could fail a backup that works today. The one extra
-    /// level is for that reason best-effort: it is dropped if it cannot be opened, since a directory
-    /// nobody asked ClickHouse to write in must not turn a working backup into an error.
+    /// to be searchable, so an unbounded walk could fail a backup that works today. The levels above
+    /// the configured area are for that reason best-effort: one that cannot be opened is logged and
+    /// skipped, since a directory nobody asked ClickHouse to write in must not turn a working backup
+    /// into an error.
     auto allowed_path = fs::path{allowed_path_}.lexically_normal();
 
     std::error_code ec;
@@ -112,8 +112,19 @@ BackupWriterFile::BackupWriterFile(
             break;
     }
 
+    /// Everything above the boundary, all the way to the filesystem root: a concurrent backup may have
+    /// created any number of levels of the chain without yet fsyncing their parents, so stopping one
+    /// level above the boundary would leave the entries of the levels above that unflushed. Uses the
+    /// fixed-point test rather than `has_relative_path` because this walk does reach the root.
     if (boundary.has_relative_path())
-        best_effort_dir_to_sync = boundary.parent_path();
+    {
+        for (auto dir = boundary.parent_path();; dir = dir.parent_path())
+        {
+            best_effort_dirs_to_sync.push_back(dir);
+            if (dir.parent_path() == dir)
+                break; /// reached the filesystem root
+        }
+    }
 }
 
 bool BackupWriterFile::fileExists(const String & file_name)
@@ -245,22 +256,23 @@ void BackupWriterFile::syncDirectoriesToDisk()
     for (auto it = dirs.rbegin(); it != dirs.rend(); ++it)
         fsyncBackupDirectory(*it);
 
-    /// The directory holding the backup area, so that the area's own entry is persisted too. It is
-    /// outside what the configuration asked ClickHouse to write in, so a failure here (typically a
-    /// search-only directory that cannot be opened for fsync) is logged and ignored rather than
-    /// failing an otherwise complete backup.
-    if (!best_effort_dir_to_sync.empty())
+    /// The ancestors of the backup area, so that its own entry and every entry above it is persisted
+    /// too. They are outside what the configuration asked ClickHouse to write in, so each is attempted
+    /// independently: a failure at one level (typically a search-only directory that cannot be opened
+    /// for fsync) is logged rather than failing an otherwise complete backup, and must not skip the
+    /// levels above it, whose entries still matter.
+    for (const auto & dir : best_effort_dirs_to_sync)
     {
         try
         {
-            fsyncBackupDirectory(best_effort_dir_to_sync);
+            fsyncBackupDirectory(dir);
         }
         catch (...)
         {
             LOG_WARNING(
                 log,
                 "Could not fsync {}, which contains the backup area: {}",
-                best_effort_dir_to_sync.string(),
+                dir.string(),
                 getCurrentExceptionMessage(/* with_stacktrace = */ false));
         }
     }
