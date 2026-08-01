@@ -677,6 +677,11 @@ bool optimizeLazyMaterialization2(QueryPlan::Node & root, QueryPlan & query_plan
         main_plan.addStep(std::move(new_sorting_step));
     }
 
+    /// The replacement plan must produce the header `root` produces. Capture it here, before the
+    /// next line: `LimitStep::updateOutputHeader` mirrors its input header, so `updateInputHeader`
+    /// overwrites it with the main branch header, and `root.step` is moved away right after.
+    auto expected_header = root.step->getOutputHeader();
+
     limit_step->updateInputHeader(main_plan.getCurrentHeader());
     main_plan.addStep(std::move(root.step));
 
@@ -737,7 +742,7 @@ bool optimizeLazyMaterialization2(QueryPlan::Node & root, QueryPlan & query_plan
         result_plan.addStep(std::make_unique<ExpressionStep>(result_plan.getCurrentHeader(), std::move(dag)));
     }
 
-    query_plan.replaceNodeWithPlan(&root, std::move(result_plan));
+    query_plan.replaceNodeWithPlan(&root, std::move(result_plan), std::move(expected_header));
 
     return true;
 }

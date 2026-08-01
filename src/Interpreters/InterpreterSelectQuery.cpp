@@ -2324,7 +2324,10 @@ void InterpreterSelectQuery::executeImpl(QueryPlan & query_plan, std::optional<P
                 executeLimitBy(query_plan);
             }
 
-            executeWithFill(query_plan);
+            /// WITH FILL / INTERPOLATE must run only on the finalizing node (to_stage == Complete),
+            /// over the merged stream, not per shard - otherwise fill rows are duplicated after the merge.
+            if (options.to_stage == QueryProcessingStage::Complete)
+                executeWithFill(query_plan);
 
             /// If we have 'WITH TIES', we need execute limit before projection,
             /// because in that case columns from 'ORDER BY' are used.
@@ -3045,7 +3048,12 @@ void InterpreterSelectQuery::executeAggregation(
     else
         group_by_info = nullptr;
 
-    if (!group_by_info && settings[Setting::force_aggregation_in_order])
+    /// `getSortDescriptionFromGroupBy` calls `getColumnName` on every GROUP BY child, but with
+    /// GROUPING SETS those children are `ExpressionList` nodes, so in-order aggregation cannot apply.
+    const bool force_aggregation_in_order
+        = !group_by_info && settings[Setting::force_aggregation_in_order] && !query_analyzer->useGroupingSetKey();
+
+    if (force_aggregation_in_order)
     {
         group_by_sort_description = getSortDescriptionFromGroupBy(getSelectQuery());
         sort_description_for_merging = group_by_sort_description;
@@ -3076,7 +3084,7 @@ void InterpreterSelectQuery::executeAggregation(
         std::move(group_by_sort_description),
         should_produce_results_in_order_of_bucket_number,
         settings[Setting::enable_memory_bound_merging_of_aggregation_results],
-        !group_by_info && settings[Setting::force_aggregation_in_order],
+        force_aggregation_in_order,
         settings[Setting::enable_sharding_aggregator]);
     query_plan.addStep(std::move(aggregating_step));
 }
@@ -3367,11 +3375,21 @@ void InterpreterSelectQuery::executeDistinct(QueryPlan & query_plan, bool before
         /// If after this stage of DISTINCT,
         /// (1) ORDER BY is not executed
         /// (2) there is no LIMIT BY (todo: we can check if DISTINCT and LIMIT BY expressions are match)
+        /// (3) there is a non-zero LIMIT (a bare OFFSET without a LIMIT still populates limit_offset, but
+        ///     limit_length + limit_offset would then bound the head by the offset alone and drop the tail
+        ///     that OFFSET must return)
+        /// (4) LIMIT is not negative (a negative LIMIT takes rows from the tail, so it cannot bound
+        ///     the number of distinct rows collected from the head)
+        /// (5) LIMIT/OFFSET is not fractional (a fraction of the total row count is only resolved after
+        ///     all rows are read, so it cannot bound the number of distinct rows either)
         /// then you can get no more than limit_length + limit_offset of different rows.
         if ((!query.orderBy() || !before_order) && !query.limitBy())
         {
             const LimitInfo lim_info = getLimitLengthAndOffset(query, context);
-            if (lim_info.limit_length <= std::numeric_limits<UInt64>::max() - lim_info.limit_offset)
+            if (lim_info.limit_length != 0
+                && !lim_info.is_limit_length_negative
+                && lim_info.fractional_limit == 0 && lim_info.fractional_offset == 0
+                && lim_info.limit_length <= std::numeric_limits<UInt64>::max() - lim_info.limit_offset)
                 limit_for_distinct = lim_info.limit_length + lim_info.limit_offset;
         }
 
