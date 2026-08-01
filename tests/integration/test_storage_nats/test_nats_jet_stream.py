@@ -1121,11 +1121,11 @@ def _restart_nats(nats_cluster):
     # the residual this fix deliberately does not cover, which a hard kill or a network partition
     # reaches the same way. Keeping the restart out of that window is what the wait is for.
     #
-    # The wait deliberately does not consume a message. A pull request is parked as soon as the
+    # The wait deliberately does not publish anything. A pull request is parked as soon as the
     # subscription is created, so `num_waiting` confirms the precondition on its own, whereas
-    # delivering a message exhausts the request and makes the client close the subscription, which
-    # schedules exactly the re-subscribe the restart must not race. This changes WHEN the broker is
-    # restarted, not what is asserted.
+    # publishing makes the broker answer the parked request, and answering it is what ends up closing
+    # the subscription and scheduling the re-subscribe the restart must not race. This changes WHEN
+    # the broker is restarted, not what is asserted.
     _wait_for_parked_pull_request()
 
     nats_helpers.kill_nats(nats_cluster)
