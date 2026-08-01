@@ -139,11 +139,8 @@ struct SnapshotDeserializationResult
 /// This representation of snapshot has to be serialized into NuRaft
 /// buffer and sent over network or saved to file.
 ///
-/// Tricky to use correctly:
-///  * During the constructor call, storage contents must not change, and up_to_log_idx_ must match
-///    the storage's commit idx. In keeper server, this means that nuraft's commit_lock_ must be held.
-///  * NuRaft guarantees that at most one snapshotting operation can be in progress (create_snapshot
-///    is not called again until when_done callback is called).
+/// During the constructor call, storage contents must not change, and up_to_log_idx_ must match
+/// the storage's commit idx. In keeper server, this means that nuraft's commit_lock_ must be held.
 struct KeeperStorageSnapshot
 {
 public:

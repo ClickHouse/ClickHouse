@@ -483,7 +483,7 @@ private:
 public:
     void clear()
     {
-        clearStaleNodes();
+        chassert(outstanding.empty());
         map.clear();
         for (auto itr = list.begin(); itr != list.end(); ++itr)
             arena.free(const_cast<char *>(itr->key.data()), itr->key.size());

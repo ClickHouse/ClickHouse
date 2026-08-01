@@ -117,6 +117,8 @@ protected:
         return Chunk(std::move(res_columns), rows_count);
     }
 
+    void onFinish() override { view.reset(); }
+
 private:
     std::unique_ptr<KeeperNodesReadView> view;
     const std::vector<UInt8> columns_mask;
