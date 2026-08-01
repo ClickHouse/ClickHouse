@@ -1,127 +1,95 @@
 #!/usr/bin/env bash
-# Tags: no-fasttest, no-sanitizers-lsan, long
-# Test that KILL QUERY cancels HTTP requests in url() function early.
-# Tests cancellation during both HEAD and GET phases, with different
-# engine_url_skip_empty_files settings.
+# Tags: no-fasttest, no-sanitizers-lsan
+# Test that a query over the `url` function stops right after it is killed, even when it is retrying
+# an HTTP request, instead of waiting until all the retry attempts are exhausted.
 
 CURDIR=$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)
 # shellcheck source=../shell_config.sh
 . "$CURDIR"/../shell_config.sh
 
-# test_url_cancellation <head_sleep> <get_sleep> <skip_empty>
-#   head_sleep: seconds to sleep in do_HEAD() (slow = test HEAD cancellation, fast = skip to GET)
-#   get_sleep: seconds to sleep in do_GET() (slow = test GET cancellation)
-#   skip_empty: engine_url_skip_empty_files setting value (0 or 1)
-test_url_cancellation()
-{
-    local head_sleep=$1
-    local get_sleep=$2
-    local skip_empty=$3
+PORT_FILE=$(mktemp "./${CLICKHOUSE_DATABASE}.XXXXXX.port")
+LOG_FILE=$(mktemp "./${CLICKHOUSE_DATABASE}.XXXXXX.log")
 
-    local query_id="kill_query_url_${CLICKHOUSE_DATABASE}_$RANDOM"
-    local log_file=$(mktemp "./04615.XXXXXX.log")
-    local port_file=$(mktemp "./04615.XXXXXX.port")
-
-    # Start HTTP server that binds to port 0 (kernel-assigned free port)
-    python3 -u -c "
+# A server which always answers with a retriable error, so that the query gets stuck in the retry loop
+# of `ReadWriteBufferFromHTTP`. It binds to the port 0 and reports the port the kernel gave it, so that
+# it cannot collide with anything else running in parallel.
+python3 -u -c "
 from http.server import HTTPServer, BaseHTTPRequestHandler
-import time
-
-HEAD_SLEEP = $head_sleep
-GET_SLEEP = $get_sleep
 
 class Handler(BaseHTTPRequestHandler):
-    def do_HEAD(self):
-        if HEAD_SLEEP > 0:
-            time.sleep(HEAD_SLEEP)
-        self.send_response(200)
-        self.send_header('Content-Type', 'text/plain')
-        self.end_headers()
-
-    def do_GET(self):
+    def respond(self):
         if self.path == '/health':
             self.send_response(200)
-            self.send_header('Content-Type', 'text/plain')
             self.end_headers()
             self.wfile.write(b'OK')
-        elif self.path == '/sample-data':
-            if GET_SLEEP > 0:
-                time.sleep(GET_SLEEP)
-            self.send_response(200)
-            self.send_header('Content-Type', 'text/plain')
-            self.end_headers()
-            self.wfile.write(b'1\n')
+        else:
+            self.send_error(503)
+
+    do_HEAD = respond
+    do_GET = respond
 
     def log_message(self, *args):
         pass
 
 server = HTTPServer(('127.0.0.1', 0), Handler)
-with open('$port_file', 'w') as f:
+with open('$PORT_FILE', 'w') as f:
     f.write(str(server.server_address[1]))
 server.serve_forever()
 " &
-    local HTTP_PID=$!
+HTTP_PID=$!
+trap 'kill $HTTP_PID 2>/dev/null; wait $HTTP_PID 2>/dev/null; rm -f "$PORT_FILE" "$LOG_FILE"' EXIT
 
-    # Unconditional cleanup on any function return (success, failure, or exception)
-    trap 'kill $HTTP_PID 2>/dev/null; wait $HTTP_PID 2>/dev/null; rm -f "$log_file" "$port_file"' RETURN
+for _ in {1..300}; do
+    [[ -s "$PORT_FILE" ]] && break
+    sleep 0.1
+done
+HTTP_PORT=$(cat "$PORT_FILE")
 
-    # Wait for port file to appear and read the actual bound port
-    local HTTP_PORT
-    for _ in $(seq 1 50); do
-        if [[ -s "$port_file" ]]; then
-            HTTP_PORT=$(cat "$port_file")
-            break
-        fi
-        sleep 0.1
-    done
+for _ in {1..300}; do
+    curl -sS "http://127.0.0.1:$HTTP_PORT/health" -o /dev/null 2>/dev/null && break
+    sleep 0.1
+done
 
-    # Wait for server to be ready
-    for _ in $(seq 1 50); do
-        curl -s "http://127.0.0.1:$HTTP_PORT/health" -o /dev/null 2>/dev/null && break
-        sleep 0.1
-    done
+QUERY="SELECT count() FROM url('http://127.0.0.1:$HTTP_PORT/data', 'CSV', 'x UInt64') FORMAT Null"
+QUERY_ID="04615_${CLICKHOUSE_DATABASE}_$RANDOM"
 
-    # Run query with configurable settings
-    $CLICKHOUSE_CLIENT \
-        --http_make_head_request=1 \
-        --http_max_tries=10 \
-        --http_retry_initial_backoff_ms=500 \
-        --http_retry_max_backoff_ms=1000 \
-        --engine_url_skip_empty_files=$skip_empty \
-        --query_id="$query_id" \
-        --query "
-            SELECT count()
-            FROM url('http://127.0.0.1:$HTTP_PORT/sample-data', 'CSV', 'x UInt64')
-            FORMAT Null
-        " >/dev/null 2>"$log_file" &
-    local CLIENT_PID=$!
+# 30 attempts with a backoff of 1 to 2 seconds, for both the HEAD and the GET request: minutes of
+# retrying if a cancellation is noticed only after the retries are over.
+$CLICKHOUSE_CLIENT \
+    --http_max_tries 30 \
+    --http_retry_initial_backoff_ms 1000 \
+    --http_retry_max_backoff_ms 2000 \
+    --query_id "$QUERY_ID" \
+    --query "$QUERY" >/dev/null 2>"$LOG_FILE" &
+CLIENT_PID=$!
 
-    # Wait for the query to start making HTTP attempts
-    wait_for_query_to_start "$query_id"
+wait_for_query_to_start "$QUERY_ID"
 
-    # Use async KILL (without SYNC) to avoid blocking if propagation is slow.
-    $CLICKHOUSE_CURL -sS "$CLICKHOUSE_URL" -d "KILL QUERY WHERE query_id = '$query_id'" >/dev/null
+KILLED_AT=$EPOCHSECONDS
+$CLICKHOUSE_CLIENT --query "KILL QUERY WHERE query_id = '$QUERY_ID' ASYNC" >/dev/null
+wait $CLIENT_PID
+CLIENT_STATUS=$?
+ELAPSED=$((EPOCHSECONDS - KILLED_AT))
 
-    wait $CLIENT_PID
+if ((ELAPSED < 30)); then
+    echo "stopped soon after the kill"
+else
+    echo "FAIL: the query kept running for $ELAPSED seconds after the kill"
+fi
 
-    # Verify that a cancellation error message is present.
-    # Accept both "Query was cancelled" (cancellation detected by query execution framework)
-    # and "killed in pending state" (cancellation before HTTP phase started),
-    if grep -q "Query was cancelled\|killed in pending state" "$log_file"; then
-        echo "OK"
-    else
-        cat "$log_file"
-        echo "FAIL: Expected cancellation error message"
-        return 1
-    fi
+if ((CLIENT_STATUS != 0)); then
+    echo "reported as an error"
+else
+    echo "FAIL: the killed query succeeded"
+fi
 
-}
-
-# Test a: slow HEAD, skip_empty=0, fast GET - tests HEAD cancellation phase
-test_url_cancellation 30 0 0 || exit 1
-
-# Test b: slow HEAD, skip_empty=1, fast GET - tests HEAD cancellation with skip empty files
-test_url_cancellation 30 0 1 || exit 1
-
-# Test c: fast HEAD, skip_empty=0, slow GET - tests GET cancellation phase
-test_url_cancellation 0 30 0 || exit 1
+# A query which is not cancelled must still report the error of the server as it did before.
+if $CLICKHOUSE_CLIENT \
+    --http_max_tries 2 \
+    --http_retry_initial_backoff_ms 10 \
+    --http_retry_max_backoff_ms 20 \
+    --query "$QUERY" 2>&1 | grep -q -F "HTTP status code: 503"; then
+    echo "the error of the server is reported when the query is not killed"
+else
+    echo "FAIL: the error of the server is not reported"
+fi

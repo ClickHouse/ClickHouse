@@ -416,33 +416,16 @@ StorageURLSource::StorageURLSource(
                 headers,
                 glob_url,
                 current_uri_options.size() == 1,
-                [this]() { return isCancelled(); });
-
-            /// getFirstAvailableURIAndReadBuffer makes HTTP request in ReadWriteBufferFromHTTP.
-            /// In case of cancellation we should immediately return with false.
-            if (isCancelled())
-                return false;
+                cancellation);
 
             /// If file is empty and engine_url_skip_empty_files=1, skip it and go to the next file.
         }
         while (getContext()->getSettingsRef()[Setting::engine_url_skip_empty_files] && uri_and_buf.second->eof());
-        /// Check for cancellation because eof makes HTTP request in buffer.
-        if (isCancelled())
-            return false;
 
         curr_uri = uri_and_buf.first;
         current_file_last_modified = uri_and_buf.second->tryGetLastModificationTime();
-        /// Check for cancellation because tryGetLastModificationTime makes HTTP request in buffer.
-        if (isCancelled())
-            return false;
-
         read_buf = std::move(uri_and_buf.second);
         current_file_size = tryGetFileSizeFromReadBuffer(*read_buf);
-        /// Check for cancellation because tryGetFileSizeFromReadBuffer makes HTTP request in buffer.
-        if (isCancelled())
-            return false;
-
-        /// TODO: both tryGetLastModificationTime and tryGetFileSizeFromReadBuffer issue a HEAD request - use one getFileInfo call instead.
 
         if (auto file_progress_callback = getContext()->getFileProgressCallback())
             file_progress_callback(FileProgress(0, current_file_size.value_or(0)));
@@ -582,7 +565,7 @@ Chunk StorageURLSource::generate()
         }
 
         if (input_format && getContext()->getSettingsRef()[Setting::use_cache_for_count_from_files]
-            && (!format_filter_info || !format_filter_info->hasFilter()) && !isCancelled())
+            && (!format_filter_info || !format_filter_info->hasFilter()))
             addNumRowsToCache(curr_uri.toString(), total_rows_in_file);
 
         (*pipeline).reset();
@@ -597,6 +580,20 @@ Chunk StorageURLSource::generate()
 
 void StorageURLSource::onFinish() { parser_shared_resources->finishStream(); }
 
+void StorageURLSource::cancel(CancelReason reason) noexcept
+{
+    /// Stop retrying the HTTP requests when the query is being torn down - killed by the user, timed
+    /// out, or failed elsewhere - and wake up the backoff between the attempts, so that the read stops
+    /// as soon as it is cancelled instead of when the whole backoff has expired.
+    /// A consumer which simply has enough data (CancelReason::PartialResult, or the read limits with
+    /// the `break` overflow mode) must not interrupt a read that can still succeed and be used.
+    if (reason == CancelReason::CancelledByUser || reason == CancelReason::CancelledByTimeout
+        || reason == CancelReason::Exception)
+        cancellation->cancel();
+
+    ISource::cancel(reason);
+}
+
 std::pair<Poco::URI, std::unique_ptr<ReadWriteBufferFromHTTP>> StorageURLSource::getFirstAvailableURIAndReadBuffer(
     std::vector<String>::const_iterator & option,
     const std::vector<String>::const_iterator & end,
@@ -609,7 +606,7 @@ std::pair<Poco::URI, std::unique_ptr<ReadWriteBufferFromHTTP>> StorageURLSource:
     const HTTPHeaderEntries & headers,
     bool glob_url,
     bool delay_initialization,
-    ReadWriteBufferFromHTTP::CheckCancelled check_cancelled)
+    ReadWriteBufferFromHTTP::CancellationPtr cancellation)
 {
     String first_exception_message;
     ReadSettings read_settings = context_->getReadSettings();
@@ -618,6 +615,9 @@ std::pair<Poco::URI, std::unique_ptr<ReadWriteBufferFromHTTP>> StorageURLSource:
     std::pair<Poco::URI, std::unique_ptr<ReadWriteBufferFromHTTP>> last_skipped_empty_res;
     for (; option != end; ++option)
     {
+        /// Do not go on probing the failover options if the query has been killed meanwhile.
+        CurrentThread::checkIfNotCancelled();
+
         bool skip_url_not_found_error = glob_url && read_settings.http_settings.skip_not_found_url_for_globs && option == std::prev(end);
         auto request_uri = Poco::URI(*option, context_->getSettingsRef()[Setting::enable_url_encoding]);
 
@@ -643,7 +643,7 @@ std::pair<Poco::URI, std::unique_ptr<ReadWriteBufferFromHTTP>> StorageURLSource:
                            .withSkipNotFound(skip_url_not_found_error)
                            .withHeaders(headers)
                            .withDelayInit(delay_initialization)
-                           .withCancellationCheck(check_cancelled)
+                           .withCancellation(cancellation)
                            .create(credentials);
 
             if (context_->getSettingsRef()[Setting::engine_url_skip_empty_files] && res->eof() && option != std::prev(end))

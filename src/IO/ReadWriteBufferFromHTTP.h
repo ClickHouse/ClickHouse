@@ -24,7 +24,9 @@
 #include <Common/RemoteHostFilter.h>
 #include <Common/config_version.h>
 
+#include <condition_variable>
 #include <filesystem>
+#include <mutex>
 
 namespace DB
 {
@@ -45,7 +47,39 @@ public:
     using OutStreamCallback = std::function<void(std::ostream &)>;
     using NextCallback = std::function<void(size_t)>;
     using RedirectCallback = std::function<void(const Poco::URI &, const Poco::URI &)>;
-    using CheckCancelled = std::function<bool()>;
+
+    /** A one-shot flag which the code that reads from the buffer sets when it does not need the data
+      * anymore, for example when the query pipeline it reads for is being torn down. The buffer only
+      * uses it to stop retrying: unlike a predicate it can be waited on, which makes the backoff
+      * between the retry attempts interruptible, so a cancellation does not have to be waited out.
+      */
+    class Cancellation
+    {
+    public:
+        /// Called from a cancellation handler, which is not allowed to throw.
+        void cancel() noexcept
+        {
+            {
+                std::lock_guard lock(mutex);
+                cancelled = true;
+            }
+            changed.notify_all();
+        }
+
+        /// Returns true if the read has been cancelled, either already or before the time has passed.
+        bool waitForCancellation(std::chrono::milliseconds duration)
+        {
+            std::unique_lock lock(mutex);
+            return changed.wait_for(lock, duration, [this] { return cancelled; });
+        }
+
+    private:
+        std::mutex mutex;
+        std::condition_variable changed;
+        bool cancelled = false;
+    };
+
+    using CancellationPtr = std::shared_ptr<Cancellation>;
 
     const Poco::URI & getCurrentURI() const { return current_uri; }
 
@@ -112,14 +146,18 @@ private:
 
     LoggerPtr log;
 
-    /// Optional callback to check whether the reader (for example, the query pipeline) has been cancelled.
-    CheckCancelled cancellation_check;
+    /// Set by the code that reads from this buffer when it does not need the data anymore. Retrying an
+    /// HTTP request stops as soon as it is set, see doWithRetries.
+    CancellationPtr cancellation;
 
     bool withPartialContent() const;
 
     void prepareRequest(Poco::Net::HTTPRequest & request, std::optional<HTTPRange> range) const;
 
     void doWithRetries(std::function<void()> && callable, std::function<void()> on_retry = nullptr, bool mute_logging = false) const;
+
+    /// Waits before the next retry attempt. Returns true if the read has been cancelled while waiting.
+    bool waitBeforeRetry(size_t milliseconds) const;
 
     CallResult  callImpl(
         Poco::Net::HTTPResponse & response,
@@ -164,7 +202,7 @@ private:
         size_t max_redirects_,
         bool enable_url_encoding_,
         OutStreamCallback out_stream_callback_,
-        CheckCancelled cancellation_check_,
+        CancellationPtr cancellation_,
         bool use_external_buffer_,
         bool http_skip_not_found_url_,
         HTTPHeaderEntries http_header_entries_,
@@ -227,7 +265,7 @@ class BuilderRWBufferFromHTTP
     bool use_external_buffer = false;
     bool http_skip_not_found_url = false;
     HTTPHeaderEntries http_header_entries{};
-    ReadWriteBufferFromHTTP::CheckCancelled cancellation_check;
+    ReadWriteBufferFromHTTP::CancellationPtr cancellation;
     bool delay_initialization = true;
 
 public:
@@ -255,7 +293,7 @@ public:
     setterMember(withOutCallback, out_stream_callback)
     setterMember(withRedirectCallback, redirect_callback)
     setterMember(withHeaders, http_header_entries)
-    setterMember(withCancellationCheck, cancellation_check)
+    setterMember(withCancellation, cancellation)
     setterMember(withExternalBuf, use_external_buffer)
     setterMember(withDelayInit, delay_initialization)
     setterMember(withSkipNotFound, http_skip_not_found_url)

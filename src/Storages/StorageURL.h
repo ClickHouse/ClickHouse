@@ -247,6 +247,8 @@ public:
 
     void onFinish() override;
 
+    void cancel(CancelReason reason) noexcept override;
+
     static void setCredentials(Poco::Net::HTTPBasicCredentials & credentials, const Poco::URI & request_uri);
 
     static std::pair<Poco::URI, std::unique_ptr<ReadWriteBufferFromHTTP>> getFirstAvailableURIAndReadBuffer(
@@ -261,7 +263,7 @@ public:
         const HTTPHeaderEntries & headers,
         bool glob_url,
         bool delay_initialization,
-        ReadWriteBufferFromHTTP::CheckCancelled check_cancelled = nullptr);
+        ReadWriteBufferFromHTTP::CancellationPtr cancellation = nullptr);
 
 private:
     void addNumRowsToCache(const String & uri, size_t num_rows);
@@ -291,6 +293,9 @@ private:
     NamesAndTypesList hive_partition_columns_to_read_from_file_path;
 
     Poco::Net::HTTPBasicCredentials credentials;
+
+    /// Tells the buffers created by this source to stop retrying HTTP requests, see cancel.
+    ReadWriteBufferFromHTTP::CancellationPtr cancellation = std::make_shared<ReadWriteBufferFromHTTP::Cancellation>();
 
     Map http_response_headers;
     bool http_response_headers_initialized = false;

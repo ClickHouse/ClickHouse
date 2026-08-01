@@ -2,6 +2,7 @@
 
 #include <IO/HTTPCommon.h>
 #include <IO/WriteHelpers.h>
+#include <Common/CurrentThread.h>
 #include <Common/NetException.h>
 #include <Poco/Net/NetException.h>
 #include <Common/ProxyConfigurationResolverProvider.h>
@@ -184,7 +185,7 @@ ReadWriteBufferFromHTTP::ReadWriteBufferFromHTTP(
     size_t max_redirects_,
     bool enable_url_encoding_,
     OutStreamCallback out_stream_callback_,
-    CheckCancelled cancellation_check_,
+    CancellationPtr cancellation_,
     bool use_external_buffer_,
     bool http_skip_not_found_url_,
     HTTPHeaderEntries http_header_entries_,
@@ -211,7 +212,7 @@ ReadWriteBufferFromHTTP::ReadWriteBufferFromHTTP(
     , http_header_entries {std::move(http_header_entries_)}
     , file_info(file_info_)
     , log(getLogger("ReadWriteBufferFromHTTP"))
-    , cancellation_check(std::move(cancellation_check_))
+    , cancellation(std::move(cancellation_))
 {
     current_uri = initial_uri;
 
@@ -315,12 +316,6 @@ void ReadWriteBufferFromHTTP::doWithRetries(std::function<void()> && callable,
 
     for (size_t attempt = 1; attempt <= read_settings.http_settings.max_tries; ++attempt)
     {
-        /// Check cancellation since the second attempt to let the original HTTP errors propagate correctly on the first attempt.
-        if (attempt > 1 && cancellation_check && cancellation_check())
-            /// Don't throw exception, use break instead. Later in calling code (for example in StorageURLSource)
-            /// we make cancellation checks to know that doWithRetries was exited by break on cancellation.
-            break;
-
         [[maybe_unused]] bool last_attempt = attempt + 1 > read_settings.http_settings.max_tries;
 
         String error_message;
@@ -395,10 +390,46 @@ void ReadWriteBufferFromHTTP::doWithRetries(std::function<void()> && callable,
                          attempt + 1, read_settings.http_settings.max_tries,
                          milliseconds_to_wait, read_settings.http_settings.retry_max_backoff_ms);
 
-            sleepForMilliseconds(milliseconds_to_wait);
+            const bool cancelled = waitBeforeRetry(milliseconds_to_wait);
             milliseconds_to_wait = std::min(milliseconds_to_wait * 2, read_settings.http_settings.retry_max_backoff_ms);
+
+            /// One exit for all the attempts: a killed or timed out query is reported as a cancellation
+            /// instead of the network error we happen to have at hand, the same way as it is done for S3.
+            CurrentThread::checkIfNotCancelled();
+
+            if (cancelled)
+            {
+                /// The read was cancelled for another reason: the pipeline is being torn down, because
+                /// something else in the query has already failed. There is nothing to gain from the
+                /// remaining attempts, so report the error of the last one - it is the only reason we
+                /// have, and it is what the caller would get after the attempts were exhausted anyway.
+                /// Do not leave this loop silently: the callers rely on getting either their data or an
+                /// exception, and treat a normal return as a success.
+                if (!mute_logging)
+                    LOG_DEBUG(log,
+                              "Stopped retrying the request to '{}'{} at try {}/{}, because the read was cancelled. "
+                              "Error: '{}'.",
+                              initial_uri.toString(), current_uri.toString() == initial_uri.toString() ? String() : fmt::format(" redirect to '{}'", current_uri.toString()),
+                              attempt, read_settings.http_settings.max_tries,
+                              error_message);
+
+                std::rethrow_exception(exception);
+            }
         }
     }
+}
+
+
+bool ReadWriteBufferFromHTTP::waitBeforeRetry(size_t milliseconds) const
+{
+    /// Without a cancellation there is nothing that could wake us up, so we can only sleep it out.
+    if (!cancellation)
+    {
+        sleepForMilliseconds(milliseconds);
+        return false;
+    }
+
+    return cancellation->waitForCancellation(std::chrono::milliseconds(milliseconds));
 }
 
 
@@ -581,7 +612,7 @@ size_t ReadWriteBufferFromHTTP::readBigAt(char * to, size_t n, size_t offset, co
             bytes_copied = 0;
         });
 
-    chassert(total_bytes_copied == initial_n || is_canceled || (cancellation_check && cancellation_check()));
+    chassert(total_bytes_copied == initial_n || is_canceled);
     return total_bytes_copied;
 }
 
@@ -842,7 +873,7 @@ ReadWriteBufferFromHTTPPtr BuilderRWBufferFromHTTP::create(const Poco::Net::HTTP
         max_redirects,
         enable_url_encoding,
         out_stream_callback,
-        cancellation_check,
+        cancellation,
         use_external_buffer,
         http_skip_not_found_url,
         http_header_entries,
