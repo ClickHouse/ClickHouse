@@ -46,7 +46,7 @@ SELECT number, [number, number + 1] AS arr, number IN (arr), number NOT IN (arr)
 -- The old analyzer resolves `x IN ident` as `x IN (SELECT * FROM ident)` unless `ident` is an alias of
 -- the same `SELECT` (`MarkTableIdentifiersVisitor`, which runs before source columns are collected).
 -- A bare column of the `FROM` subquery on the right of `IN` therefore still names a table there and the
--- row-wise rewrite is never reached, while the new analyzer resolves the same shape as a column.
+-- row-wise rewrite is never reached, while the analyzer resolves the same shape as a column.
 SELECT number, number IN (arr), number NOT IN (arr), (number + 2) IN (arr), (number + 2) NOT IN (arr) FROM (SELECT number, [number, number + 1] AS arr FROM numbers(3)) ORDER BY number; -- { serverError UNKNOWN_TABLE }
 SELECT number, number % 3 GLOBAL IN (number % 2, 1), number % 3 GLOBAL NOT IN (number % 2, 1) FROM numbers(6) ORDER BY number;
 SELECT number, (number % 2, number % 3) IN ((number % 3, number % 2), (1, 1)), (number % 2, number % 3) NOT IN ((number % 3, number % 2), (1, 1)) FROM numbers(6) ORDER BY number;
