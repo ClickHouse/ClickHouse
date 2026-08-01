@@ -24,7 +24,7 @@
 #include <Storages/StatisticsDescription.h>
 #include <Parsers/ASTFunction.h>
 #include <Parsers/ExpressionElementParsers.h>
-#include <Parsers/parseIdentifierOrStringLiteral.h>
+#include <Interpreters/parseIdentifiersOrStringLiteralsWithSettings.h>
 #include <Parsers/parseQuery.h>
 #include <Parsers/ASTIdentifier.h>
 #include <Core/Settings.h>
