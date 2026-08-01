@@ -118,7 +118,7 @@ public:
         bool sync,
         ContextPtr context);
 
-    /// For mutation: MATERIALIZE PROJECTION. `sync` fsyncs the produced projection part
+    /// For mutation: `MATERIALIZE PROJECTION`. `sync` fsyncs the produced projection part
     /// (from the mutation/merge `need_sync` decision).
     static MergeTreeTemporaryPartPtr writeTempProjectionPart(
         const MergeTreeData & data,

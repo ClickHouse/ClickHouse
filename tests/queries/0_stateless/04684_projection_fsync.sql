@@ -8,6 +8,13 @@
 -- (`fsync_after_insert`) and the merge (`OPTIMIZE`, gated by the `*_to_fsync_after_merge`
 -- thresholds) paths. `max_bytes_to_merge_at_max_space_in_pool = 1` disables background merges so
 -- the only merger is the `OPTIMIZE FINAL` whose fsyncs are attributed to it.
+--
+-- The merge thresholds are deliberately set ABOVE the projection part size and BELOW the parent
+-- part size: the aggregate projection holds one row per `key`, so the projection sub-merge sees
+-- far fewer rows than the parent. With a threshold small enough for the projection to clear it on
+-- its own, the sub-merge decides to sync by itself and the assertion cannot observe whether the
+-- parent's decision is propagated. `min_compressed_bytes_to_fsync_after_merge = 0` disables the
+-- byte arm for the same reason (`needSyncPart` is an OR of the two arms).
 
 DROP TABLE IF EXISTS t_proj;
 DROP TABLE IF EXISTS t_plain;
@@ -16,14 +23,14 @@ CREATE TABLE t_proj (id UInt64, key String, v UInt64,
                      PROJECTION pr (SELECT key, sum(v) GROUP BY key))
 ENGINE = MergeTree ORDER BY id
 SETTINGS fsync_after_insert = 1, fsync_part_directory = 1,
-         min_rows_to_fsync_after_merge = 1, min_compressed_bytes_to_fsync_after_merge = 1,
+         min_rows_to_fsync_after_merge = 1000, min_compressed_bytes_to_fsync_after_merge = 0,
          min_bytes_for_wide_part = 0, min_rows_for_wide_part = 0,
          max_bytes_to_merge_at_max_space_in_pool = 1;
 
 CREATE TABLE t_plain (id UInt64, key String, v UInt64)
 ENGINE = MergeTree ORDER BY id
 SETTINGS fsync_after_insert = 1, fsync_part_directory = 1,
-         min_rows_to_fsync_after_merge = 1, min_compressed_bytes_to_fsync_after_merge = 1,
+         min_rows_to_fsync_after_merge = 1000, min_compressed_bytes_to_fsync_after_merge = 0,
          min_bytes_for_wide_part = 0, min_rows_for_wide_part = 0,
          max_bytes_to_merge_at_max_space_in_pool = 1;
 
