@@ -215,7 +215,7 @@ public:
     /// Check the status of these tables instead of the main table when establishing the connection.
     /// Used when the query reads through a table that is not replicated itself (a `Merge` table),
     /// whose own status says nothing about the freshness of the data the query reads.
-    void setTablesToCheck(std::vector<QualifiedTableName> tables_to_check_) { tables_to_check = std::move(tables_to_check_); }
+    void setTablesToCheck(std::vector<QualifiedTableName> tables_to_check_) { tables_to_check = std::move(tables_to_check_); } // STYLE_CHECK_ALLOW_STD_CONTAINERS
 
     void setLogger(LoggerPtr logger) { log = logger; }
 
@@ -339,7 +339,7 @@ private:
 
     PoolMode pool_mode = PoolMode::GET_MANY;
     StorageID main_table = StorageID::createEmpty();
-    std::vector<QualifiedTableName> tables_to_check;
+    std::vector<QualifiedTableName> tables_to_check; // STYLE_CHECK_ALLOW_STD_CONTAINERS
 
     LoggerPtr log = getLogger("RemoteQueryExecutor");
 

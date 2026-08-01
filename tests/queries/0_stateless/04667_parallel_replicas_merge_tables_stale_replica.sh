@@ -29,14 +29,14 @@ $CLICKHOUSE_CLIENT --query "
 
 PR_SETTINGS="enable_analyzer = 1, enable_parallel_replicas = 1, max_parallel_replicas = 3, cluster_for_parallel_replicas = 'test_cluster_one_shard_three_replicas_localhost', parallel_replicas_local_plan = 1, automatic_parallel_replicas_mode = 0, parallel_replicas_allow_merge_tables = 1, max_replica_delay_for_distributed_queries = 1, fallback_to_stale_replicas_for_distributed_queries = 0"
 
-# Whether any query was sent to the replicas.
+# Whether any replica was admitted to coordinated reading.
 function replicas_used()
 {
     $CLICKHOUSE_CLIENT --query "SYSTEM FLUSH LOGS query_log"
     $CLICKHOUSE_CLIENT --query "
-        SELECT count() > 0
+        SELECT ProfileEvents['ParallelReplicasAvailableCount'] > 0
         FROM system.query_log
-        WHERE initial_query_id = '$1' AND NOT is_initial_query AND type = 'QueryStart'"
+        WHERE current_database = currentDatabase() AND query_id = '$1' AND type = 'QueryFinish'"
 }
 
 for source in "t_pr_merge_stale" "merge(currentDatabase(), '^t_pr_merge_stale_')"
