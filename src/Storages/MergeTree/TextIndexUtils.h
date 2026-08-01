@@ -116,8 +116,6 @@ private:
     void readDictionaryBlock(size_t source_num);
     /// Throws CORRUPTED_DATA if the sorted row ids do not fit into the rows of the part; no-op without merged part offsets.
     void checkRowIdsInPart(std::span<const UInt32> row_ids, size_t part_index) const;
-    /// Checks and adjusts all row ids in place; no-op without merged part offsets.
-    void adjustPartOffsets(std::span<UInt32> row_ids, size_t part_index) const;
 
     /// One source's posting list metadata for the current token; postings are decoded lazily on flush.
     struct TokenSource
@@ -128,6 +126,10 @@ private:
 
     /// Cursor over the sorted (remapped) row ids of one source, one decoded segment at a time.
     struct PostingsMergeCursor;
+
+    /// Checks and adjusts in place the just decoded row ids of the cursor; no-op without merged part offsets.
+    /// Row ids of the rows dropped by the merge are removed.
+    void adjustPartOffsets(PostingsMergeCursor & cursor);
 
     /// A merge queue that streams the row ids of several postings cursors in the globally sorted order.
     class PostingsMergeQueue;
@@ -148,6 +150,8 @@ private:
 
     TokenPostingsInfo flushRawPostings(MergeTreeIndexWriterStream & postings_stream, size_t total_cardinality);
     TokenPostingsInfo flushEncodedPostings(MergeTreeIndexWriterStream & postings_stream, size_t total_cardinality);
+    /// Used if the merge may drop rows; the resulting posting list may be empty.
+    TokenPostingsInfo flushPostingsWithDrops(MergeTreeIndexWriterStream & postings_stream, size_t total_cardinality);
 
     void flushPostingList();
     void flushDictionaryBlock();
@@ -186,6 +190,11 @@ private:
     /// Merges the postings cursors of the current token; drained by every mergePostings call.
     std::unique_ptr<PostingsMergeQueue> postings_queue;
     std::unique_ptr<PositionsMerge> positions_merge;
+
+    /// Number of the current token's row ids that belong to rows dropped by the merge.
+    size_t num_dropped_row_ids = 0;
+    /// Merged row ids of the current token buffered until its posting list format is known, if the merge may drop rows.
+    PaddedPODArray<UInt32> buffered_row_ids;
 
     /// Sparse index accumulated for the task. Flushed only once in the end of the task.
     MutableColumnPtr sparse_index_tokens;

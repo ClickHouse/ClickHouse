@@ -311,6 +311,15 @@ private:
         /// Current merge may or may not reduce number of rows. It's not known until the horizontal stage is finished.
         bool merge_may_reduce_rows{false};
 
+        /// The merge may drop source rows, but never changes values of the surviving rows
+        /// or their relative order within one part. In this case projections with the
+        /// `_parent_part_offset` column and text indexes can be merged instead of being
+        /// rebuilt, with `MergedPartOffsets` recording the dropped rows.
+        bool merge_only_drops_rows{false};
+
+        /// Text indexes are rebuilt for the resulting part instead of being merged.
+        bool rebuild_text_indexes{false};
+
         // will throw an exception if merge was cancelled in any way.
         void checkOperationIsNotCanceled() const;
         bool isCancelled() const;
@@ -622,6 +631,7 @@ private:
     static void addMergingColumn(GlobalRuntimeContextPtr global_ctx, const String & name, const DataTypePtr & type);
     static bool hasLightweightDelete(const FutureMergedMutatedPartPtr & future_part);
     static bool isVerticalLightweightDelete(const GlobalRuntimeContext & global_ctx);
+    static bool needRebuildTextIndexes(const GlobalRuntimeContext & global_ctx);
     static bool canVerticalTTLDelete(const GlobalRuntimeContext & global_ctx);
     static bool isVerticalTTLDelete(const GlobalRuntimeContext & global_ctx, const ExecuteAndFinalizeHorizontalPartRuntimeContext & ctx);
     static void addSkipIndexesExpressionSteps(QueryPlan & plan, const IndicesDescription & indices_description, const GlobalRuntimeContextPtr & global_ctx);

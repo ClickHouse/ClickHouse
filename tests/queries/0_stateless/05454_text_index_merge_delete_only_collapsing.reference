@@ -1,0 +1,13 @@
+collapsing: counts after merge
+2000
+2000
+collapsing: cancelled and surviving rows
+1
+0
+collapsing: text indexes merged, not rebuilt
+1	0
+versioned collapsing: counts after merge
+2000
+2000
+versioned collapsing: text indexes merged, not rebuilt
+1	0

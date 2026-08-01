@@ -1,0 +1,23 @@
+token of replaced rows only
+0
+tokens of surviving rows
+7500
+2500
+7500
+exact rows after remapping
+6666	alpha row6666 evergreen
+6668	fresh row6668
+text indexes merged, not rebuilt
+1	0
+with disabled setting
+0
+7500
+2500
+text indexes rebuilt with disabled setting
+0	1
+after cleanup merge
+500
+0
+777
+text indexes merged in cleanup merge
+1	0

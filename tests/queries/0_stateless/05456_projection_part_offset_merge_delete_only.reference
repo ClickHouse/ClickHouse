@@ -1,0 +1,24 @@
+ReplacingMergeTree
+10000
+10000
+10000
+query through projection
+600	4201
+601	4207
+projections merged, not rebuilt
+1	0
+lightweight delete
+15000
+15000
+15000
+1	0
+TTL DELETE
+6666
+6666
+6666
+1	0
+OPTIMIZE DEDUPLICATE BY columns not covered by the projection
+3000
+3000
+3000
+1	0

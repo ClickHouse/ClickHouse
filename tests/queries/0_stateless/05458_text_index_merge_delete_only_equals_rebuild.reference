@@ -1,0 +1,26 @@
+rows	30000	30000
+tokens and formats
+1
+row ids and positions
+1
+dropped tokens
+0
+cardinalities match the data
+all	30000	1
+few	20	1
+fresh	6666	1
+newest	3334	1
+row1	1	1
+row2	1	1
+tail	20000	1
+thin	100	1
+phrase search
+6666
+20000
+merged, not rebuilt
+t_text_merged	1	0
+t_text_rebuilt	0	1
+lightweight deletes
+33068	33068
+1
+0

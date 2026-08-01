@@ -1,0 +1,13 @@
+all rows are dropped by the merge
+0
+0
+0
+1
+one source part is fully dropped
+1000
+0
+1000
+1000
+1000
+incorrect sign values are detected during the merge
+2

@@ -1,0 +1,33 @@
+lightweight delete, horizontal merge
+8000
+4000
+4000
+0
+1
+1	0	Horizontal
+lightweight delete, vertical merge
+8000
+4000
+0
+1
+1	0	Vertical
+lightweight delete on a part without materialized index falls back to rebuild
+8000
+4000
+4000
+0	1
+TTL DELETE
+4000
+4000
+0
+1
+1	0
+column TTL falls back to rebuild
+4000
+4000
+0	1
+OPTIMIZE DEDUPLICATE
+3000
+3000
+1
+1	0

@@ -629,6 +629,8 @@
     M(GatheredColumns, "Number of columns gathered during the vertical stage of merges.", ValueType::Number) \
     M(MergedProjections, "Number of projections merged (not rebuilt) during MergeTree merges.", ValueType::Number) \
     M(RebuiltProjections, "Number of projections rebuilt from scratch during MergeTree merges.", ValueType::Number) \
+    M(MergedTextIndexes, "Number of text indexes merged (not rebuilt) during MergeTree merges.", ValueType::Number) \
+    M(RebuiltTextIndexes, "Number of text indexes rebuilt from scratch during MergeTree merges.", ValueType::Number) \
     M(MergedUncompressedBytes, "Uncompressed bytes (for columns as they stored in memory) that was read for background merges. This is the number before merge.", ValueType::Bytes) \
     M(MergeWrittenRows, "Number of rows written during the merge.", ValueType::Number) \
     M(MergeTotalMilliseconds, "Total time spent for background merges", ValueType::Milliseconds) \

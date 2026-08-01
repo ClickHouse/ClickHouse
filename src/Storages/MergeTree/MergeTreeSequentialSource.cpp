@@ -72,6 +72,7 @@ public:
         StorageSnapshotPtr storage_snapshot_,
         MergeTreeReadTaskInfoPtr read_task_info_,
         std::optional<MarkRanges> mark_ranges_,
+        std::shared_ptr<std::atomic<size_t>> filtered_rows_count_,
         bool read_with_direct_io_,
         bool allow_remote_fs_prefetch);
 
@@ -103,6 +104,10 @@ private:
     MergeTreeReadersChain readers_chain;
     PatchJoinCachePtr patch_join_cache;
 
+    /// Counter of rows filtered out by this source (rows of a projection part
+    /// whose parent rows were dropped by the merge).
+    std::shared_ptr<std::atomic<size_t>> filtered_rows_count;
+
     /// Should read using direct IO
     bool read_with_direct_io;
 
@@ -123,6 +128,7 @@ MergeTreeSequentialSource::MergeTreeSequentialSource(
     StorageSnapshotPtr storage_snapshot_,
     MergeTreeReadTaskInfoPtr read_task_info_,
     std::optional<MarkRanges> mark_ranges_,
+    std::shared_ptr<std::atomic<size_t>> filtered_rows_count_,
     bool read_with_direct_io_,
     bool allow_remote_fs_prefetch)
     : ISource(std::move(result_header))
@@ -131,6 +137,7 @@ MergeTreeSequentialSource::MergeTreeSequentialSource(
     , read_task_info(std::move(read_task_info_))
     , mark_ranges(std::move(mark_ranges_).value_or(MarkRanges{MarkRange(0, read_task_info->data_part_info->getMarksCount())}))
     , mark_cache(storage.getContext()->getMarkCache())
+    , filtered_rows_count(std::move(filtered_rows_count_))
     , read_with_direct_io(read_with_direct_io_)
 {
     const auto data_part = read_task_info->data_part_info->getDataPart();
@@ -292,6 +299,12 @@ try
     const auto & result_header = getPort().getHeader();
     const auto & reader_header = readers_chain.getSampleBlock();
 
+    size_t num_result_rows = read_result.num_rows;
+
+    /// Rows of a projection part whose parent rows were dropped by the merge are filtered out.
+    /// Empty filter means that all rows survive.
+    IColumn::Filter parent_rows_filter;
+
     Columns result_columns;
     result_columns.reserve(result_header.columns());
 
@@ -311,7 +324,31 @@ try
             /// when it is shared. Mutating a shared column in place is a copy-on-write violation.
             auto mutable_column = IColumn::mutate(result_column->convertToFullColumnIfSparse());
             auto & offset_data = assert_cast<ColumnUInt64 &>(*mutable_column).getData();
-            if (read_task_info->merged_part_offsets->isMappingEnabled())
+            if (read_task_info->merged_part_offsets->isMappingWithDrops())
+            {
+                size_t num_filtered = 0;
+                parent_rows_filter.assign(offset_data.size(), static_cast<UInt8>(1));
+
+                for (size_t row = 0; row < offset_data.size(); ++row)
+                {
+                    auto new_offset = read_task_info->merged_part_offsets->tryGetNewOffset(read_task_info->part_index_in_query, offset_data[row]);
+                    if (new_offset)
+                    {
+                        offset_data[row] = *new_offset;
+                    }
+                    else
+                    {
+                        parent_rows_filter[row] = 0;
+                        ++num_filtered;
+                    }
+                }
+
+                if (num_filtered == 0)
+                    parent_rows_filter.clear();
+                else
+                    num_result_rows -= num_filtered;
+            }
+            else if (read_task_info->merged_part_offsets->isMappingEnabled())
             {
                 for (auto & offset : offset_data)
                     offset = (*read_task_info->merged_part_offsets)[read_task_info->part_index_in_query, offset];
@@ -331,7 +368,18 @@ try
         result_column = std::move(mutable_column);
     }
 
-    auto result = Chunk(std::move(result_columns), read_result.num_rows);
+    if (!parent_rows_filter.empty())
+    {
+        for (auto & result_column : result_columns)
+            result_column = result_column->filter(parent_rows_filter, num_result_rows);
+
+        if (filtered_rows_count)
+            *filtered_rows_count += read_result.num_rows - num_result_rows;
+    }
+
+    /// NOTE: this chunk may have zero rows if all rows were filtered out,
+    /// but it must be returned anyway because an empty chunk finishes the source.
+    auto result = Chunk(std::move(result_columns), num_result_rows);
     /// Part level is useful for next step for merging non-merge tree table
     bool add_part_level = storage.merging_params.mode != MergeTreeData::MergingParams::Ordinary;
 
@@ -432,6 +480,7 @@ Pipe createMergeTreeSequentialSource(
         storage_snapshot,
         std::move(info),
         std::move(mark_ranges),
+        filtered_rows_count,
         read_with_direct_io,
         allow_remote_fs_prefetch);
 

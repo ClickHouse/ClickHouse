@@ -250,10 +250,8 @@ static PostingsSerialization createPostingsSerialization(const IMergeTreeIndex &
     return PostingsSerialization(std::move(codec_copy), text_index.getParams().serialization_version);
 }
 
-static ALWAYS_INLINE UInt32 adjustPartOffset(const MergedPartOffsets & merged_part_offsets, size_t part_index, UInt32 row_id)
+static ALWAYS_INLINE UInt32 checkMergedRowId(UInt64 new_offset)
 {
-    UInt64 new_offset = merged_part_offsets[part_index, row_id];
-
     if (new_offset > std::numeric_limits<UInt32>::max())
     {
         throw Exception(ErrorCodes::SUPPORT_IS_DISABLED,
@@ -264,6 +262,11 @@ static ALWAYS_INLINE UInt32 adjustPartOffset(const MergedPartOffsets & merged_pa
     return static_cast<UInt32>(new_offset);
 }
 
+static ALWAYS_INLINE UInt32 adjustPartOffset(const MergedPartOffsets & merged_part_offsets, size_t part_index, UInt32 row_id)
+{
+    return checkMergedRowId(merged_part_offsets[part_index, row_id]);
+}
+
 struct MergeTextIndexesTask::PostingsMergeCursor
 {
     const TokenSource * source = nullptr;
@@ -272,6 +275,9 @@ struct MergeTextIndexesTask::PostingsMergeCursor
     size_t pos = 0;
     /// Next entry of info.offsets to decode.
     size_t next_segment = 0;
+    /// Number of the source's row ids decoded so far, including the ones of rows dropped by the merge.
+    /// It is the rank of the next decoded row id in the source posting list.
+    size_t num_decoded = 0;
     /// Decoded and remapped row ids of the current segment, or the embedded postings.
     PaddedPODArray<UInt32> row_ids;
 
@@ -372,7 +378,12 @@ public:
 
     /// Opens the positions of the current token's sources.
     void start();
-    /// Appends the next `count` position lists of the source.
+    /// Whether the positions of the current token are merged.
+    bool isActive() const { return encoder.has_value(); }
+    /// Marks the position list with the given rank in the source as belonging to a row dropped by the merge.
+    /// Ranks of a source are added in increasing order, before the position lists around them are appended.
+    void addDroppedRank(size_t source_idx, size_t rank);
+    /// Appends the next `count` position lists of the source, skipping the ones of dropped rows.
     void append(size_t source_idx, size_t count);
     /// Writes the merged position lists; every source must be consumed.
     void finish(TokenPostingsInfo & token_info);
@@ -387,6 +398,9 @@ private:
         /// Decoded block of `next_rank`, split by `offsets`.
         PaddedPODArray<UInt32> offsets;
         PaddedPODArray<UInt32> positions;
+        /// Ranks of the position lists of rows dropped by the merge, and the next one to skip.
+        PaddedPODArray<UInt32> dropped_ranks;
+        size_t next_dropped = 0;
     };
 
     MergeTextIndexesTask & task;
@@ -408,6 +422,8 @@ void MergeTextIndexesTask::PositionsMerge::start()
         auto & reader = readers[i];
         reader.in = nullptr;
         reader.next_rank = 0;
+        reader.dropped_ranks.clear();
+        reader.next_dropped = 0;
 
         const auto & info = sources[i].info;
         if (info.cardinality == 0)
@@ -431,6 +447,13 @@ void MergeTextIndexesTask::PositionsMerge::start()
     }
 }
 
+void MergeTextIndexesTask::PositionsMerge::addDroppedRank(size_t source_idx, size_t rank)
+{
+    auto & reader = readers[source_idx];
+    chassert(reader.dropped_ranks.empty() || reader.dropped_ranks.back() < rank);
+    reader.dropped_ranks.push_back(static_cast<UInt32>(rank));
+}
+
 void MergeTextIndexesTask::PositionsMerge::append(size_t source_idx, size_t count)
 {
     constexpr size_t block_docs = TextIndexBlockedPositionsCodec::BLOCK_DOCS;
@@ -440,8 +463,13 @@ void MergeTextIndexesTask::PositionsMerge::append(size_t source_idx, size_t coun
         throw Exception(ErrorCodes::CORRUPTED_DATA,
             "Corrupt text index positions: more posting documents than position lists ({})", reader.directory.num_docs);
 
-    for (; count > 0; --count, ++reader.next_rank)
+    for (; count > 0; ++reader.next_rank)
     {
+        /// The position lists of dropped rows are skipped, so the check above does not cover them.
+        if (reader.next_rank >= reader.directory.num_docs)
+            throw Exception(ErrorCodes::CORRUPTED_DATA,
+                "Corrupt text index positions: more posting documents than position lists ({})", reader.directory.num_docs);
+
         const size_t local_rank = reader.next_rank % block_docs;
 
         /// Blocks follow the directory back to back, so the stream is at the next block.
@@ -458,8 +486,16 @@ void MergeTextIndexesTask::PositionsMerge::append(size_t source_idx, size_t coun
                 *reader.in, reader.directory, block_idx, block_ranks, reader.offsets, reader.positions, scratch);
         }
 
+        /// The row of this position list was dropped by the merge.
+        if (reader.next_dropped < reader.dropped_ranks.size() && reader.dropped_ranks[reader.next_dropped] == reader.next_rank)
+        {
+            ++reader.next_dropped;
+            continue;
+        }
+
         const UInt32 begin = reader.offsets[local_rank];
         encoder->addDocument(std::span<const UInt32>(reader.positions.data() + begin, reader.offsets[local_rank + 1] - begin));
+        --count;
     }
 }
 
@@ -470,9 +506,12 @@ void MergeTextIndexesTask::PositionsMerge::finish(TokenPostingsInfo & token_info
 
     for (const auto & reader : readers)
     {
-        if (reader.in && reader.next_rank != reader.directory.num_docs)
+        /// The position lists of rows dropped after the last merged one are not read.
+        size_t num_docs_consumed = reader.next_rank + (reader.dropped_ranks.size() - reader.next_dropped);
+
+        if (reader.in && num_docs_consumed != reader.directory.num_docs)
             throw Exception(ErrorCodes::CORRUPTED_DATA,
-                "Corrupt text index positions: {} posting documents but {} position lists", reader.next_rank, reader.directory.num_docs);
+                "Corrupt text index positions: {} posting documents but {} position lists", num_docs_consumed, reader.directory.num_docs);
     }
 
     if (encoder->numDocuments() == 0)
@@ -622,15 +661,43 @@ void MergeTextIndexesTask::checkRowIdsInPart(std::span<const UInt32> row_ids, si
     }
 }
 
-void MergeTextIndexesTask::adjustPartOffsets(std::span<UInt32> row_ids, size_t part_index) const
+void MergeTextIndexesTask::adjustPartOffsets(PostingsMergeCursor & cursor)
 {
+    auto & row_ids = cursor.row_ids;
+    size_t first_rank = cursor.num_decoded;
+    cursor.num_decoded += row_ids.size();
+
     if (!merged_part_offsets)
         return;
 
+    size_t part_index = segments[cursor.source->source_num].part_index;
     checkRowIdsInPart(row_ids, part_index);
 
-    for (UInt32 & row_id : row_ids)
-        row_id = adjustPartOffset(*merged_part_offsets, part_index, row_id);
+    if (!merged_part_offsets->isMappingWithDrops())
+    {
+        for (UInt32 & row_id : row_ids)
+            row_id = adjustPartOffset(*merged_part_offsets, part_index, row_id);
+        return;
+    }
+
+    /// Row ids of the rows dropped by the merge are removed together with their position lists.
+    size_t num_kept = 0;
+    for (size_t i = 0; i < row_ids.size(); ++i)
+    {
+        auto new_offset = merged_part_offsets->tryGetNewOffset(part_index, row_ids[i]);
+
+        if (!new_offset)
+        {
+            if (positions_merge->isActive())
+                positions_merge->addDroppedRank(cursor.source_idx, first_rank + i);
+            continue;
+        }
+
+        row_ids[num_kept++] = checkMergedRowId(*new_offset);
+    }
+
+    num_dropped_row_ids += row_ids.size() - num_kept;
+    row_ids.resize(num_kept);
 }
 
 void MergeTextIndexesTask::initPostingsCursor(PostingsMergeCursor & cursor, const TokenSource & source)
@@ -639,6 +706,7 @@ void MergeTextIndexesTask::initPostingsCursor(PostingsMergeCursor & cursor, cons
     cursor.source = &source;
     cursor.source_idx = static_cast<size_t>(&source - current_token_sources.data());
     cursor.next_segment = 0;
+    cursor.num_decoded = 0;
     cursor.pos = 0;
     cursor.row_ids.clear();
 
@@ -646,16 +714,19 @@ void MergeTextIndexesTask::initPostingsCursor(PostingsMergeCursor & cursor, cons
 
     if (info.embedded_postings.empty())
     {
-        if (!advancePostingsCursor(cursor))
+        if (info.offsets.empty())
         {
             throw Exception(ErrorCodes::CORRUPTED_DATA,
                 "Corrupted data in text index: token with {} row ids has no posting list segments", info.cardinality);
         }
+
+        /// If all rows of the source were dropped by the merge, the cursor stays invalid.
+        advancePostingsCursor(cursor);
         return;
     }
 
     cursor.row_ids.assign(info.embedded_postings.begin(), info.embedded_postings.end());
-    adjustPartOffsets(cursor.row_ids, segments[source.source_num].part_index);
+    adjustPartOffsets(cursor);
     cursor.next_segment = info.offsets.size();
     cursor.pos = 0;
 }
@@ -671,20 +742,28 @@ void MergeTextIndexesTask::readPostingsSegment(const TokenSource & source, size_
 bool MergeTextIndexesTask::advancePostingsCursor(PostingsMergeCursor & cursor)
 {
     const auto & source = *cursor.source;
-    if (cursor.next_segment == source.info.offsets.size())
-        return false;
 
-    cursor.row_ids.clear();
-    readPostingsSegment(source, cursor.next_segment, cursor.row_ids);
-    adjustPartOffsets(cursor.row_ids, segments[source.source_num].part_index);
+    /// A segment loses all its row ids if all its rows were dropped by the merge, then the next one is decoded.
+    while (cursor.next_segment != source.info.offsets.size())
+    {
+        cursor.row_ids.clear();
+        readPostingsSegment(source, cursor.next_segment, cursor.row_ids);
 
-    ++cursor.next_segment;
-    cursor.pos = 0;
+        /// Deserialization rejects an empty segment and a segment outside its row range; the order inside is not verified.
+        chassert(!cursor.row_ids.empty());
+        adjustPartOffsets(cursor);
 
-    /// Deserialization rejects an empty segment and a segment outside its row range; the order inside is not verified.
-    chassert(!cursor.row_ids.empty());
-    chassert(std::is_sorted(cursor.row_ids.begin(), cursor.row_ids.end()));
-    return true;
+        ++cursor.next_segment;
+        cursor.pos = 0;
+
+        if (!cursor.row_ids.empty())
+        {
+            chassert(std::is_sorted(cursor.row_ids.begin(), cursor.row_ids.end()));
+            return true;
+        }
+    }
+
+    return false;
 }
 
 MergeTextIndexesTask::PostingsMergeQueue::Window MergeTextIndexesTask::PostingsMergeQueue::selectWindow() const
@@ -904,7 +983,10 @@ void MergeTextIndexesTask::PostingsMergeQueue::push(const TokenSource & source)
     chassert(active_cursors.size() < cursors.size());
     auto & cursor = cursors[active_cursors.size()];
     task.initPostingsCursor(cursor, source);
-    active_cursors.push_back(&cursor);
+
+    /// All rows of the source may be dropped by the merge.
+    if (cursor.isValid())
+        active_cursors.push_back(&cursor);
 }
 
 template <typename Sink>
@@ -953,24 +1035,45 @@ void MergeTextIndexesTask::mergePostings(Sink && sink)
 {
     chassert(!postings_queue->isValid());
 
+    const bool has_positions = params.enable_positions && std::ranges::any_of(current_token_sources,
+        [](const auto & source) { return source.info.header & PostingsSerialization::Flags::HasPositions; });
+
+    /// Positions are started first, because the cursors record the position lists of dropped rows as they decode postings.
+    if (has_positions)
+        positions_merge->start();
+
     for (const auto & source : current_token_sources)
     {
         if (source.info.cardinality != 0)
             postings_queue->push(source);
     }
 
-    const bool has_positions = params.enable_positions && std::ranges::any_of(current_token_sources,
-        [](const auto & source) { return source.info.header & PostingsSerialization::Flags::HasPositions; });
-
-    if (has_positions)
-        positions_merge->start();
-
     postings_queue->merge(sink, has_positions ? positions_merge.get() : nullptr);
+}
+
+/// Fills the info of a posting list with at most MAX_CARDINALITY_FOR_RAW_POSTINGS row ids, which are stored without a codec.
+static void serializeRawPostingList(std::span<const UInt32> row_ids, MergeTreeIndexWriterStream & postings_stream, TokenPostingsInfo & token_info)
+{
+    using enum PostingsSerialization::Flags;
+    token_info.cardinality = static_cast<UInt32>(row_ids.size());
+
+    /// Embedded postings are serialized into the dictionary block by flushDictionaryBlock.
+    if (row_ids.size() <= MAX_CARDINALITY_FOR_EMBEDDED_POSTINGS)
+    {
+        token_info.header = RawPostings | EmbeddedPostings;
+        token_info.embedded_postings.assign(row_ids.begin(), row_ids.end());
+    }
+    else
+    {
+        token_info.header = RawPostings | SingleBlock;
+        token_info.offsets.emplace_back(postings_stream.plain_hashing.count());
+        token_info.ranges.emplace_back(row_ids.front(), row_ids.back());
+        TextIndexSerialization::serializeRawPostings(row_ids, postings_stream.plain_hashing);
+    }
 }
 
 TokenPostingsInfo MergeTextIndexesTask::flushRawPostings(MergeTreeIndexWriterStream & postings_stream, size_t total_cardinality)
 {
-    using enum PostingsSerialization::Flags;
     TokenPostingsInfo token_info;
 
     /// Raw postings are fewer than the encoder granularity, so the queue passes all of them in one chunk.
@@ -983,21 +1086,7 @@ TokenPostingsInfo MergeTextIndexesTask::flushRawPostings(MergeTreeIndexWriterStr
                 row_ids.size(), token_info.cardinality);
         }
 
-        token_info.cardinality = static_cast<UInt32>(row_ids.size());
-
-        /// Embedded postings are serialized into the dictionary block by flushDictionaryBlock.
-        if (row_ids.size() <= MAX_CARDINALITY_FOR_EMBEDDED_POSTINGS)
-        {
-            token_info.header = RawPostings | EmbeddedPostings;
-            token_info.embedded_postings.assign(row_ids.begin(), row_ids.end());
-        }
-        else
-        {
-            token_info.header = RawPostings | SingleBlock;
-            token_info.offsets.emplace_back(postings_stream.plain_hashing.count());
-            token_info.ranges.emplace_back(row_ids.front(), row_ids.back());
-            TextIndexSerialization::serializeRawPostings(row_ids, postings_stream.plain_hashing);
-        }
+        serializeRawPostingList(row_ids, postings_stream, token_info);
     });
 
     /// Sources own disjoint row sets, so the merged cardinality must equal the sum of source cardinalities.
@@ -1035,6 +1124,59 @@ TokenPostingsInfo MergeTextIndexesTask::flushEncodedPostings(MergeTreeIndexWrite
     return token_info;
 }
 
+TokenPostingsInfo MergeTextIndexesTask::flushPostingsWithDrops(MergeTreeIndexWriterStream & postings_stream, size_t total_cardinality)
+{
+    /// The format of a posting list depends on its cardinality, which is known only after the row ids of the dropped rows are removed.
+    /// The row ids are buffered until there are more of them than raw postings may hold.
+    const auto * codec = postings_serialization.getPostingListCodec();
+    decltype(codec->createEncoder(params.posting_list_block_size)) encoder;
+    buffered_row_ids.clear();
+
+    mergePostings([&](std::span<const UInt32> row_ids)
+    {
+        if (!encoder && buffered_row_ids.size() + row_ids.size() <= MAX_CARDINALITY_FOR_RAW_POSTINGS)
+        {
+            buffered_row_ids.insert(row_ids.begin(), row_ids.end());
+            return;
+        }
+
+        if (!encoder)
+        {
+            encoder = codec->createEncoder(params.posting_list_block_size);
+
+            /// The buffered row ids are chunks followed by another one, so their number is a multiple of the append granularity.
+            if (!buffered_row_ids.empty())
+                encoder->append(std::span<const UInt32>(buffered_row_ids.data(), buffered_row_ids.size()));
+            buffered_row_ids.clear();
+        }
+
+        encoder->append(row_ids);
+    });
+
+    /// Sources own disjoint row sets, so the merged cardinality must equal the sum of source cardinalities without the dropped row ids.
+    size_t cardinality = encoder ? encoder->cardinality() : buffered_row_ids.size();
+    if (cardinality + num_dropped_row_ids != total_cardinality)
+    {
+        throw Exception(ErrorCodes::INCORRECT_DATA,
+            "Merged posting list has {} row ids and {} row ids of dropped rows while source posting lists have {} in total",
+            cardinality, num_dropped_row_ids, total_cardinality);
+    }
+
+    TokenPostingsInfo token_info;
+
+    if (encoder)
+    {
+        token_info.cardinality = static_cast<UInt32>(cardinality);
+        encoder->finalize(postings_stream.plain_hashing, token_info);
+    }
+    else if (!buffered_row_ids.empty())
+    {
+        serializeRawPostingList(std::span<const UInt32>(buffered_row_ids.data(), buffered_row_ids.size()), postings_stream, token_info);
+    }
+
+    return token_info;
+}
+
 void MergeTextIndexesTask::flushPostingList()
 {
     chassert(!current_token_sources.empty());
@@ -1047,15 +1189,26 @@ void MergeTextIndexesTask::flushPostingList()
     for (const auto & source : current_token_sources)
         total_cardinality += source.info.cardinality;
 
-    if (total_cardinality <= MAX_CARDINALITY_FOR_RAW_POSTINGS)
+    num_dropped_row_ids = 0;
+
+    if (merged_part_offsets && merged_part_offsets->isMappingWithDrops())
+        token_info = flushPostingsWithDrops(*postings_stream, total_cardinality);
+    else if (total_cardinality <= MAX_CARDINALITY_FOR_RAW_POSTINGS)
         token_info = flushRawPostings(*postings_stream, total_cardinality);
     else
         token_info = flushEncodedPostings(*postings_stream, total_cardinality);
 
     positions_merge->finish(token_info);
+    current_token_sources.clear();
+
+    /// A token whose row ids all belong to rows dropped by the merge is omitted from the dictionary.
+    if (token_info.cardinality == 0 && num_dropped_row_ids != 0)
+    {
+        output_tokens->popBack(1);
+        return;
+    }
 
     output_infos.push_back(token_info);
-    current_token_sources.clear();
 }
 
 void MergeTextIndexesTask::flushDictionaryBlock()
