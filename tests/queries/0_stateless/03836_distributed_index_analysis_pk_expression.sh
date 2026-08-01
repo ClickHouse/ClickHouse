@@ -25,8 +25,11 @@ $CLICKHOUSE_CLIENT -nm -q "
       -- auto_statistics_types='': otherwise the auto column statistics (materialized on INSERT by default) add a statistics.packed file that inflates part sizes and perturbs the distributed index analysis counters.
       auto_statistics_types='';
   system stop merges test_pk_expr;
-  insert into test_pk_expr select toDateTime64('2024-01-01 00:00:00', 9) + number, number from numbers(1e6)
-    settings max_block_size=10000, min_insert_block_size_rows=10000, max_insert_threads=1;
+  -- 100 parts of 1000 rows; the step of 10 seconds keeps each part spanning multiple hours,
+  -- so the probe minute below still selects exactly one part (as with 10000 rows of step 1),
+  -- while the insert writes 10 times less data (it has to fit the flaky-check time limit under sanitizers).
+  insert into test_pk_expr select toDateTime64('2024-01-01 00:00:00', 9) + (number * 10), number from numbers(1e5)
+    settings max_block_size=1000, min_insert_block_size_rows=1000, max_insert_threads=1;
   select count() from system.parts where database = currentDatabase() and table = 'test_pk_expr' and active;
 "
 
