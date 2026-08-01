@@ -1874,3 +1874,153 @@ def test_attach_partition_from_undone_when_lease_goes_stale_mid_rename(started_c
                 node1.query(f"DROP TABLE IF EXISTS {name} SYNC")
             except Exception:
                 pass
+
+
+SHARED_UUID_ATTACH_DETACHED_BATCH = "12345678-abcd-abcd-abcd-12345678ab19"
+
+
+def test_attach_partition_from_detached_undone_when_lease_goes_stale_mid_rename(started_cluster):
+    """
+    Regression for the per-rename fence in `ATTACH PARTITION` from the detached namespace
+    (`StorageMergeTree::attachPartition`): it used to publish every loaded part through its own
+    transaction, committing it immediately, with the epoch fence checked once per part. A lease
+    lost after the first part committed left the command partially applied: the earlier parts
+    stayed visible (and their detached sources consumed) even though the command returned an
+    exception to the client.
+
+    The command now stages the whole batch in a single transaction and publishes it through
+    `Transaction::renameParts` with the fence armed, so the
+    `merge_tree_leader_election_stale_lease_mid_batch_rename` failpoint (which rejects the batch
+    right after its first part was published) must leave the table AND the detached namespace
+    exactly as they were.
+    """
+    ensure_node_up(node1)
+    failpoint = "merge_tree_leader_election_stale_lease_mid_batch_rename"
+    table = "test_attach_detached_batch_fence"
+    try:
+        node1.query(
+            f"""
+            CREATE TABLE {table} UUID '{SHARED_UUID_ATTACH_DETACHED_BATCH}' (x UInt64)
+            ENGINE = MergeTree PARTITION BY x % 2 ORDER BY x
+            SETTINGS {TABLE_SETTINGS}
+            """
+        )
+        wait_for_leader([node1], table_name=table)
+
+        # Two parts in partition 1, then detach them: the ATTACH below is a batch of two.
+        node1.query(f"INSERT INTO {table} VALUES (11)")
+        node1.query(f"INSERT INTO {table} VALUES (13)")
+        node1.query(f"ALTER TABLE {table} DETACH PARTITION 1")
+        assert int(node1.query(f"SELECT count() FROM {table} WHERE x > 0").strip()) == 0
+
+        def detached_names():
+            return sorted(
+                node1.query(
+                    f"SELECT name FROM system.detached_parts"
+                    f" WHERE database = currentDatabase() AND table = '{table}'"
+                )
+                .strip()
+                .splitlines()
+            )
+
+        detached_before = detached_names()
+        assert len(detached_before) == 2
+
+        node1.query(f"SYSTEM ENABLE FAILPOINT {failpoint}")
+        try:
+            with pytest.raises(Exception, match="middle of publishing a batch"):
+                node1.query(f"ALTER TABLE {table} ATTACH PARTITION 1")
+            # `WHERE x > 0` excludes the `x = 0` probe rows inserted by `wait_for_leader`.
+            assert int(node1.query(f"SELECT count() FROM {table} WHERE x > 0").strip()) == 0, (
+                "ATTACH PARTITION was rejected but part of the batch still took effect"
+            )
+            assert detached_names() == detached_before, (
+                "A rejected ATTACH PARTITION consumed part of the detached namespace"
+            )
+        finally:
+            node1.query(f"SYSTEM DISABLE FAILPOINT {failpoint}")
+
+        # The decisive check: reload the part set from shared storage. A part of the aborted
+        # command left under its persistent name would be picked up here.
+        node1.query(f"DETACH TABLE {table}")
+        node1.query(f"ATTACH TABLE {table}")
+        wait_for_leader([node1], table_name=table)
+        assert int(node1.query(f"SELECT count() FROM {table} WHERE x > 0").strip()) == 0, (
+            "A part of the aborted ATTACH PARTITION was left on shared storage"
+        )
+
+        # With the failpoint cleared the same command succeeds and publishes the whole batch.
+        node1.query(f"ALTER TABLE {table} ATTACH PARTITION 1")
+        assert int(node1.query(f"SELECT count() FROM {table} WHERE x > 0").strip()) == 2
+        assert detached_names() == []
+    finally:
+        try:
+            node1.query(f"SYSTEM DISABLE FAILPOINT {failpoint}")
+        except Exception:
+            pass
+        try:
+            node1.query(f"DROP TABLE IF EXISTS {table} SYNC")
+        except Exception:
+            pass
+
+
+SHARED_UUID_MID_CLEANUP = "12345678-abcd-abcd-abcd-12345678ab20"
+
+
+def test_cleanup_stops_when_lease_goes_stale_mid_removal(started_cluster):
+    """
+    Regression for the per-part freshness re-check in the filesystem cleanup
+    (`clearPartsFromFilesystemImplMaybeInParallel`): the lease used to be checked once before
+    handing the whole batch to the removal loops, so a lease that expired after the first few
+    deletions let the stale leader keep deleting the tail of the batch from shared storage.
+
+    The `merge_tree_leader_election_stale_lease_mid_cleanup` failpoint simulates the lease going
+    stale right after the first part of the batch was removed: the removal must stop there and
+    the remaining parts must be rolled back to the `Outdated` state (left to the current leader)
+    instead of being deleted.
+    """
+    ensure_node_up(node1)
+    failpoint = "merge_tree_leader_election_stale_lease_mid_cleanup"
+    table = "test_mid_cleanup_fence"
+    try:
+        node1.query(
+            f"""
+            CREATE TABLE {table} UUID '{SHARED_UUID_MID_CLEANUP}' (x UInt64)
+            ENGINE = MergeTree PARTITION BY x % 2 ORDER BY x
+            SETTINGS {TABLE_SETTINGS}, merge_tree_clear_old_parts_interval_seconds = 60
+            """
+        )
+        wait_for_leader([node1], table_name=table)
+
+        # Two parts in partition 1: `DROP PARTITION` marks both for immediate removal, so the
+        # synchronous post-DDL cleanup gets a batch of two.
+        node1.query(f"INSERT INTO {table} VALUES (11)")
+        node1.query(f"INSERT INTO {table} VALUES (13)")
+
+        node1.query(f"SYSTEM ENABLE FAILPOINT {failpoint}")
+        try:
+            # The DDL succeeds — the cleanup after it is best-effort — but its synchronous
+            # cleanup must stop after the first removal and roll the rest back to Outdated.
+            node1.query(f"ALTER TABLE {table} DROP PARTITION 1")
+            assert int(node1.query(f"SELECT count() FROM {table} WHERE x > 0").strip()) == 0
+
+            assert node1.contains_in_log(
+                "Simulated leadership loss in the middle of removing a batch of old parts"
+            ), "The per-part freshness re-check never fired inside the removal batch"
+            assert node1.contains_in_log(
+                f"{SHARED_UUID_MID_CLEANUP}.*Failed to remove all parts, all count 2, removed 1"
+            ), "The removal batch was not stopped after the first part"
+        finally:
+            node1.query(f"SYSTEM DISABLE FAILPOINT {failpoint}")
+
+        # With the failpoint cleared the rolled-back parts are removed by a later pass.
+        assert int(node1.query(f"SELECT count() FROM {table} WHERE x > 0").strip()) == 0
+    finally:
+        try:
+            node1.query(f"SYSTEM DISABLE FAILPOINT {failpoint}")
+        except Exception:
+            pass
+        try:
+            node1.query(f"DROP TABLE IF EXISTS {table} SYNC")
+        except Exception:
+            pass
