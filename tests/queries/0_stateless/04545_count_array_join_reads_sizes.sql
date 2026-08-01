@@ -31,9 +31,9 @@ SELECT 'Correctness: count() must be unchanged and equal to sum(length(arr)) / s
 SELECT count() FROM t_count_aj ARRAY JOIN arr AS value;
 SELECT count() = (SELECT sum(length(arr)) FROM t_count_aj) FROM t_count_aj ARRAY JOIN arr AS value;
 SELECT count() = (SELECT sum(if(empty(arr), 1, length(arr))) FROM t_count_aj) FROM t_count_aj LEFT ARRAY JOIN arr AS value;
-SELECT count() = (SELECT sum(length(narr)) FROM t_count_aj) FROM t_count_aj ARRAY JOIN narr;
-SELECT count() = (SELECT sum(length(lcarr)) FROM t_count_aj) FROM t_count_aj ARRAY JOIN lcarr;
-SELECT count() = (SELECT sum(length(m)) FROM t_count_aj) FROM t_count_aj ARRAY JOIN m;
+SELECT (SELECT count() FROM t_count_aj ARRAY JOIN narr) = (SELECT sum(length(narr)) FROM t_count_aj);
+SELECT (SELECT count() FROM t_count_aj ARRAY JOIN lcarr) = (SELECT sum(length(lcarr)) FROM t_count_aj);
+SELECT (SELECT count() FROM t_count_aj ARRAY JOIN m) = (SELECT sum(length(m)) FROM t_count_aj);
 -- count(*) and count(1) are also plain row counts.
 SELECT count(*) = (SELECT sum(length(arr)) FROM t_count_aj) FROM t_count_aj ARRAY JOIN arr AS value;
 SELECT count(1) = (SELECT sum(length(arr)) FROM t_count_aj) FROM t_count_aj ARRAY JOIN arr AS value;
@@ -77,10 +77,9 @@ SELECT count() > 0 FROM (EXPLAIN PLAN actions = 1 SELECT count() FROM t_count_aj
 SELECT (SELECT count() FROM (SELECT id, count() FROM t_count_aj ARRAY JOIN arr AS value GROUP BY id)) = (SELECT count() FROM (SELECT id, count() FROM t_count_aj ARRAY JOIN arr AS value GROUP BY id) SETTINGS optimize_functions_to_subcolumns = 0);
 SELECT count() > 0 FROM (EXPLAIN PLAN actions = 1 SELECT id, count() FROM t_count_aj ARRAY JOIN arr AS value GROUP BY id) WHERE explain ILIKE '%ARRAY JOIN%';
 
--- With the setting disabled, the optimization must not fire (backward compatible). Assert the ARRAY
--- JOIN survives and no sum() replaced the count(), not merely that arr.size0 is absent: this pass and
--- the downstream subcolumn pass read the same setting, so a size0-only check would still pass if this
--- pass ignored it and only the subcolumn folding declined.
+-- With the setting disabled the optimization must not fire. The ARRAY JOIN and the absence of sum()
+-- are the discriminating assertions: this pass and the downstream subcolumn pass read the same
+-- setting, so arr.size0 alone cannot tell which of the two declined.
 SELECT count() = 0 FROM (EXPLAIN PLAN actions = 1 SELECT count() FROM t_count_aj ARRAY JOIN arr AS value SETTINGS optimize_functions_to_subcolumns = 0) WHERE explain ILIKE '%arr.size0%';
 SELECT count() > 0 FROM (EXPLAIN PLAN actions = 1 SELECT count() FROM t_count_aj ARRAY JOIN arr AS value SETTINGS optimize_functions_to_subcolumns = 0) WHERE explain ILIKE '%ARRAY JOIN%';
 SELECT count() = 0 FROM (EXPLAIN PLAN actions = 1 SELECT count() FROM t_count_aj ARRAY JOIN arr AS value SETTINGS optimize_functions_to_subcolumns = 0) WHERE explain ILIKE '%sum(length%';
@@ -130,10 +129,9 @@ SELECT count() = 0 FROM (EXPLAIN PLAN actions = 1 SELECT count() FROM t_count_aj
 -- Pin prefer_localhost_replica: with the remote path the initiator plan is a bare ReadFromRemote, so
 -- the ARRAY JOIN step is only observable in the local-replica plan.
 SELECT count() > 0 FROM (EXPLAIN PLAN actions = 1 SELECT count() FROM t_count_aj_dist ARRAY JOIN arr SETTINGS prefer_localhost_replica = 1) WHERE explain ILIKE '%ARRAY JOIN%';
--- A shard does not recover the optimization: a secondary query runs only the first four passes
--- (QueryTreePassManager::runOnlyResolve) and this pass is the sixth, so a distributed query reads the
--- whole array. Declining is still correct: the initiator's declared type is not the shard's.
--- This row pins the LOCAL path over the same underlying table, which does optimize.
+-- A secondary query runs only the resolve passes, so a shard does not recover the optimization; the
+-- initiator declines because its declared type is not the shard's. This row pins the LOCAL path over
+-- the same underlying table, which does optimize.
 SELECT count() > 0 FROM (EXPLAIN PLAN actions = 1 SELECT count() FROM t_count_aj_shard ARRAY JOIN arr) WHERE explain ILIKE '%arr.size0%';
 DROP TABLE t_count_aj_dist;
 DROP TABLE t_count_aj_shard;
@@ -386,5 +384,19 @@ SELECT count() = 0 FROM (EXPLAIN PLAN actions = 1 SELECT count() FROM t_caj_fina
 DROP TABLE t_caj_final;
 DROP TABLE t_caj_pk;
 DROP TABLE t_caj_skipidx;
+
+SELECT 'The rewrite reads only the offsets, so a byte budget the whole-array read exceeds is enough for the optimized query and not for the unoptimized one.';
+DROP TABLE IF EXISTS t_caj_bytes;
+CREATE TABLE t_caj_bytes (arr Array(UInt64)) ENGINE = MergeTree ORDER BY tuple();
+INSERT INTO t_caj_bytes SELECT range(50) FROM numbers(20000);
+-- Measured on this fixture: 160000 bytes optimized against 8160000 unoptimized, so the budget below
+-- has a 6x margin on one side and 8x on the other.
+SELECT count() FROM t_caj_bytes ARRAY JOIN arr SETTINGS max_bytes_to_read = 1000000;
+-- The expected TOO_MANY_BYTES below is logged at <Error>, which the runner treats as a failure.
+-- Scoped, as this file already does for its expected Buffer warning.
+SET send_logs_level = 'fatal';
+SELECT count() FROM t_caj_bytes ARRAY JOIN arr SETTINGS max_bytes_to_read = 1000000, optimize_functions_to_subcolumns = 0; -- { serverError TOO_MANY_BYTES }
+SET send_logs_level = 'warning';
+DROP TABLE t_caj_bytes;
 
 DROP TABLE t_count_aj;

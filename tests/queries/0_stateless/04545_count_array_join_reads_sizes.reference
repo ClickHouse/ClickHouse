@@ -123,3 +123,5 @@ The rewrite drops the ARRAY JOIN before knowing whether FunctionToSubcolumnsPass
 1
 1
 1
+The rewrite reads only the offsets, so a byte budget the whole-array read exceeds is enough for the optimized query and not for the unoptimized one.
+1000000
