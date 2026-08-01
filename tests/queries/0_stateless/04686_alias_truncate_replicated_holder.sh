@@ -14,8 +14,6 @@ CURDIR=$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)
 # shellcheck source=../shell_config.sh
 . "$CURDIR"/../shell_config.sh
 
-ZK_PATH="/clickhouse/tables/$CLICKHOUSE_DATABASE/rmt"
-
 # Unconditional: a failure between STOP and START would otherwise leave the queue stopped for
 # whatever runs next against this server.
 cleanup() {
@@ -28,7 +26,7 @@ $CLICKHOUSE_CLIENT -q "
     DROP TABLE IF EXISTS rmt_alias;
     DROP TABLE IF EXISTS rmt;
 
-    CREATE TABLE rmt (k UInt64) ENGINE = ReplicatedMergeTree('$ZK_PATH', 'r1') ORDER BY k;
+    CREATE TABLE rmt (k UInt64) ENGINE = ReplicatedMergeTree('/clickhouse/tables/$CLICKHOUSE_TEST_ZOOKEEPER_PREFIX/rmt', 'r1') ORDER BY k;
     INSERT INTO rmt SELECT number FROM numbers(100);
     CREATE TABLE rmt_alias ENGINE = Alias($CLICKHOUSE_DATABASE, 'rmt');
 "
