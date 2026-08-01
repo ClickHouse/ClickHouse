@@ -32,6 +32,11 @@ void TableFunctionRemote::parseArguments(const ASTPtr & ast_function, ContextPtr
     remote_table_id = std::move(parsed.remote_table_id);
     sharding_key = std::move(parsed.sharding_key);
     remote_table_function_ptr = std::move(parsed.remote_table_function_ptr);
+    settings_changes = std::move(parsed.settings_changes);
+
+    /// Validate the settings early, so that a misspelled setting is reported during parsing
+    /// rather than at the first read from the storage.
+    DistributedSettings{}.applyChanges(settings_changes);
 }
 
 StoragePtr TableFunctionRemote::executeImpl(const ASTPtr & /*ast_function*/, ContextPtr context, const std::string & table_name, ColumnsDescription cached_columns, bool is_insert_query) const
@@ -58,6 +63,9 @@ StoragePtr TableFunctionRemote::executeImpl(const ASTPtr & /*ast_function*/, Con
     else if (has_local_shard)
         context->checkAccess(AccessType::INSERT, remote_table_id);
 
+    DistributedSettings distributed_settings;
+    distributed_settings.applyChanges(settings_changes);
+
     StoragePtr res = std::make_shared<StorageDistributed>(
             StorageID(getDatabaseName(), table_name),
             cached_columns,
@@ -70,7 +78,7 @@ StoragePtr TableFunctionRemote::executeImpl(const ASTPtr & /*ast_function*/, Con
             sharding_key,
             String{},
             String{},
-            DistributedSettings{},
+            distributed_settings,
             LoadingStrictnessLevel::CREATE,
             cluster,
             remote_table_function_ptr,
@@ -110,12 +118,12 @@ Both functions can be used in `SELECT` and `INSERT` queries when the target is a
 ## Syntax {#syntax}
 
 ```sql
-remote(addresses_expr, [db, table, user [, password], sharding_key])
-remote(addresses_expr, [db.table, user [, password], sharding_key])
-remote(named_collection[, option=value [,..]])
-remoteSecure(addresses_expr, [db, table, user [, password], sharding_key])
-remoteSecure(addresses_expr, [db.table, user [, password], sharding_key])
-remoteSecure(named_collection[, option=value [,..]])
+remote(addresses_expr, [db, table, user [, password], sharding_key][, SETTINGS name = value, ...])
+remote(addresses_expr, [db.table, user [, password], sharding_key][, SETTINGS name = value, ...])
+remote(named_collection[, option=value [,..]][, SETTINGS name = value, ...])
+remoteSecure(addresses_expr, [db, table, user [, password], sharding_key][, SETTINGS name = value, ...])
+remoteSecure(addresses_expr, [db.table, user [, password], sharding_key][, SETTINGS name = value, ...])
+remoteSecure(named_collection[, option=value [,..]][, SETTINGS name = value, ...])
 ```
 
 ## Parameters {#parameters}
@@ -128,6 +136,7 @@ remoteSecure(named_collection[, option=value [,..]])
 | `user`         | User name. If not specified, `default` is used. Type: [String](/reference/data-types/string).                                                                                                                                                                                                                                                         |
 | `password`     | User password. If not specified, an empty password is used. Type: [String](/reference/data-types/string).                                                                                                                                                                                                                                             |
 | `sharding_key` | Sharding key to support distributing data across nodes. For example: `insert into remote('127.0.0.1:9000,127.0.0.2', db, table, 'default', rand())`. Type: [UInt32](/reference/data-types/int-uint).                                                                                                                                                 |
+| `SETTINGS name = value, ...` | Settings of the Distributed table created by the function, for example `skip_unavailable_shards`. Optional. A setting specified in the query has priority over it. |
 
 Arguments also can be passed using [named collections](/concepts/features/configuration/server-config/named-collections).
 
@@ -284,10 +293,10 @@ All available clusters are listed in the [system.clusters](/reference/system-tab
 ## Syntax {#syntax}
 
 ```sql
-cluster(['cluster_name', db.table, sharding_key])
-cluster(['cluster_name', db, table, sharding_key])
-clusterAllReplicas(['cluster_name', db.table, sharding_key])
-clusterAllReplicas(['cluster_name', db, table, sharding_key])
+cluster(['cluster_name', db.table, sharding_key][, SETTINGS name = value, ...])
+cluster(['cluster_name', db, table, sharding_key][, SETTINGS name = value, ...])
+clusterAllReplicas(['cluster_name', db.table, sharding_key][, SETTINGS name = value, ...])
+clusterAllReplicas(['cluster_name', db, table, sharding_key][, SETTINGS name = value, ...])
 ```
 ## Arguments {#arguments}
 
@@ -296,6 +305,7 @@ clusterAllReplicas(['cluster_name', db, table, sharding_key])
 | `cluster_name`              | Name of a cluster that is used to build a set of addresses and connection parameters to remote and local servers, set `default` if not specified. |
 | `db.table` or `db`, `table` | Name of a database and a table.                                                                                                                   |
 | `sharding_key`              | A sharding key. Optional. Needs to be specified if the cluster has more than one shard.                                                           |
+| `SETTINGS name = value, ...` | Settings of the Distributed table created by the function, for example `skip_unavailable_shards`. Optional. A setting specified in the query has priority over it. |
 
 ## Returned value {#returned_value}
 
