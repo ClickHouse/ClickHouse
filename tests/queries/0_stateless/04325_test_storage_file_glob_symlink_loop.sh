@@ -240,6 +240,16 @@ mkdir -p "$TEST_DIR_ABS/emptyalias/root/empty"
 printf "row1\n" > "$TEST_DIR_ABS/emptyalias/root/only.tsv"
 ln -s empty "$TEST_DIR_ABS/emptyalias/root/alias"
 
+# The same two aliases, but the matching file sits one level BELOW the aliased directory:
+# `nestedalias/root/target/inner/f.txt`, with `aliasA` and `aliasB` both naming `target`.
+# The pruned frame is the one at `target`, while the match is emitted by its descendant, so
+# a match has to count towards every frame the walk is inside and not only the innermost
+# one. Without that, this write is allowed and appends to the target.
+mkdir -p "$TEST_DIR_ABS/nestedalias/root/target/inner"
+printf "row1\n" > "$TEST_DIR_ABS/nestedalias/root/target/inner/f.txt"
+ln -s target "$TEST_DIR_ABS/nestedalias/root/aliasA"
+ln -s target "$TEST_DIR_ABS/nestedalias/root/aliasB"
+
 trap 'rm -rf "$TEST_DIR_ABS"' EXIT
 
 # Ancestor-loop symlink: `loop/dir1/dir2/loop_to_root` points back at `loop/dir1`,
@@ -294,10 +304,9 @@ $CLICKHOUSE_CLIENT --query "SELECT count() FROM file('$TEST_DIR_NAME/mutual/**/*
 echo "pre-asterisk-ancestor-seed"
 $CLICKHOUSE_CLIENT --query "SELECT count() FROM file('$TEST_DIR_NAME/preast/root/*/**/*.txt', 'TSV', 'val String')"
 
-# Finite glob with adjacent asterisks: must return 1 (the file reached via the
-# legitimate `a/back` symlink path). The pattern has no `**` path segment, so the
-# cycle guard must stay inactive. A naive substring detector would falsely treat
-# `a**` as recursive, activate the guard, and drop the match.
+# The expected answer is two rows: the file is reported through `a1/back` and through
+# `a2/back`, with `via` values `a1` and `a2`. One row would mean the guard activated on
+# this finite expansion, or that deduplication collapsed the two names.
 echo "finite-glob-with-adjacent-asterisks"
 $CLICKHOUSE_CLIENT --query "SELECT count() FROM file('$TEST_DIR_NAME/adj/root/a**/back/*.txt', 'TSV', 'val String')"
 $CLICKHOUSE_CLIENT --query "SELECT splitByChar('/', _path)[-3] AS via FROM file('$TEST_DIR_NAME/adj/root/a**/back/*.txt', 'TSV', 'val String') ORDER BY via"
@@ -402,6 +411,14 @@ echo "empty-alias-insert-is-allowed"
 $CLICKHOUSE_CLIENT --query "INSERT INTO TABLE FUNCTION file('$TEST_DIR_NAME/emptyalias/root/**/only.tsv', 'TSV', 'val String') VALUES ('written')" </dev/null 2>&1 \
     | grep -qF "readonly mode because of globs" && echo "unexpectedly refused"
 $CLICKHOUSE_CLIENT --query "SELECT count() FROM file('$TEST_DIR_NAME/emptyalias/root/only.tsv', 'TSV', 'val String')"
+
+# The refusal must also hold when the match is emitted below the aliased directory rather
+# than inside it, which is the case a per-frame count reaching only the innermost frame
+# misses. The row count afterwards shows the write did not land.
+echo "nested-alias-insert-stays-readonly"
+$CLICKHOUSE_CLIENT --query "INSERT INTO TABLE FUNCTION file('$TEST_DIR_NAME/nestedalias/root/**/f.txt', 'TSV', 'val String') VALUES ('written')" </dev/null 2>&1 \
+    | grep -qF "readonly mode because of globs" && echo "refused"
+$CLICKHOUSE_CLIENT --query "SELECT count() FROM file('$TEST_DIR_NAME/nestedalias/root/target/inner/f.txt', 'TSV', 'val String')"
 
 # Server alive afterwards.
 $CLICKHOUSE_CLIENT --query "SELECT 'alive'"
