@@ -372,7 +372,7 @@ struct ToDateTransformFromSecondsOrDays
         if constexpr (std::numeric_limits<FromType>::max() > DATE_LUT_MAX_DAY_NUM)
             if (from > DATE_LUT_MAX_DAY_NUM) [[unlikely]]
                 /// Clamp before narrowing: static_cast<time_t>(from) would wrap/truncate for an unsigned
-                /// or wide source above INT64_MAX, so the min() no longer clamps to the maximum timestamp.
+                /// or wide source above INT64_MAX, so the `min` no longer clamps to the maximum timestamp.
                 return static_cast<UInt16>(time_zone.toDayNum(saturateToRange(from, 0, MAX_DATETIME_TIMESTAMP)));
 
         return static_cast<UInt16>(from);
