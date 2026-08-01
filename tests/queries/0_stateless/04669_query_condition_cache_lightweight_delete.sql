@@ -15,9 +15,13 @@ SET use_query_condition_cache = 1;
 
 DROP TABLE IF EXISTS t_qcc_lwd;
 
+-- auto_statistics_types = '': randomized auto statistics would prune the whole part for the
+-- never-matching predicates below (`Part ... pruned by statistics`), so nothing would be read,
+-- nothing would be written to the query condition cache, and the granule accounting would be
+-- vacuous.
 CREATE TABLE t_qcc_lwd (id UInt64, v UInt64)
 ENGINE = MergeTree ORDER BY id
-SETTINGS index_granularity = 8192, min_bytes_for_wide_part = 0;
+SETTINGS index_granularity = 8192, min_bytes_for_wide_part = 0, auto_statistics_types = '';
 
 INSERT INTO t_qcc_lwd SELECT number, number FROM numbers(1000000);
 
