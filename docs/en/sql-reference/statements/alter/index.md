@@ -84,11 +84,11 @@ Approaches that avoid the race:
 - Combine independent metadata operations into a **single** multi-clause `ALTER` when the grammar allows it (for example multiple `ADD INDEX` clauses).
 - Serialize `ALTER` statements and retry on code 517. For mutation entries specifically, wait for the previous entry to leave the unassigned state (see [`system.mutations`](/operations/system-tables/mutations) and [`mutations_sync`](/operations/settings/settings.md/#mutations_sync)).
 
-### Combining `MATERIALIZE INDEX` with other clauses {#combining-materialize-index-clauses}
+### Combining `MATERIALIZE INDEX` clauses {#combining-materialize-index-clauses}
 
-Multiple `MATERIALIZE INDEX` clauses in one `ALTER` **can** succeed when the indexes already exist and are known to the planner (covered by `tests/queries/0_stateless/02911_add_index_and_materialize_index.sql`). A failure mode reported under issue `#104306` is steeper: combining **`ADD INDEX` and `MATERIALIZE INDEX` for that same new index in one statement**, or materializing an index that is not yet visible to the planner, can fail (for example code 36 / unknown index).
+Multiple `MATERIALIZE INDEX` clauses in one `ALTER` are valid in the common case. In particular, packing several `ADD INDEX` clauses together with `MATERIALIZE INDEX` for those same new indexes in a single statement is supported (see `tests/queries/0_stateless/02911_add_index_and_materialize_index.sql`).
 
-When you hit that case, split the work: run `ADD INDEX` (and wait until the metadata alter is applied) before `MATERIALIZE INDEX`, or use one `MATERIALIZE INDEX` per statement and wait with `mutations_sync` if you need ordered assignment.
+A narrower failure mode reported under issue `#104306` is different: a multi-clause statement that **only** runs several `MATERIALIZE INDEX` clauses against already-existing indexes can fail with a parse/planning error (for example code 36 / unknown index for a later clause). If you hit that case, issue one `MATERIALIZE INDEX` per statement and wait between them with `mutations_sync` when order matters.
 
 ## Related content {#related-content}
 
