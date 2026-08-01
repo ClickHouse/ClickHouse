@@ -85,12 +85,22 @@ CREATE HANDLER h04305_ins_get URL '/test_04305/ins_get' METHODS (GET) AS INSERT 
 CREATE HANDLER h04305_ins_put URL '/test_04305/ins_put' METHODS (PUT) AS INSERT INTO no_such_db.no_such_table SELECT 1;
 SELECT name, methods FROM system.handlers WHERE name = 'h04305_ins_put';
 DROP HANDLER h04305_ins_put;
--- Mixing read-only and mutating methods is fine as long as at least one mutating method is present.
-CREATE HANDLER h04305_ins_mix URL '/test_04305/ins_mix' METHODS (GET, DELETE) AS INSERT INTO no_such_db.no_such_table SELECT 1;
+-- A handler reading the request body (an INSERT query, or a query using `_request_body`) must not allow any
+-- read-only method: a safe method can never carry a body, and a declared GET is also served for HEAD.
+CREATE HANDLER h04305_ins_mix URL '/test_04305/ins_mix' METHODS (GET, DELETE) AS INSERT INTO no_such_db.no_such_table SELECT 1; -- { serverError BAD_ARGUMENTS }
+CREATE HANDLER h04305_body_mix URL '/test_04305/body_mix' METHODS (GET, POST) AS SELECT {_request_body:String}; -- { serverError BAD_ARGUMENTS }
+-- Mixing several body-carrying methods is fine.
+CREATE HANDLER h04305_ins_mix URL '/test_04305/ins_mix' METHODS (POST, DELETE) AS INSERT INTO no_such_db.no_such_table SELECT 1;
 SELECT name, methods FROM system.handlers WHERE name = 'h04305_ins_mix';
 -- ALTER that would leave a mutating handler with only read-only methods is rejected.
 ALTER HANDLER h04305_ins_mix METHODS (GET); -- { serverError BAD_ARGUMENTS }
+-- The same for an ALTER that adds a read-only method to a body-reading handler.
+ALTER HANDLER h04305_ins_mix METHODS (GET, POST); -- { serverError BAD_ARGUMENTS }
 DROP HANDLER h04305_ins_mix;
+-- Mixing read-only and mutating methods is fine for a mutating query that does not read the request body.
+CREATE HANDLER h04305_ddl_mix URL '/test_04305/ddl_mix' METHODS (GET, DELETE) AS TRUNCATE TABLE no_such_db.no_such_table;
+SELECT name, methods FROM system.handlers WHERE name = 'h04305_ddl_mix';
+DROP HANDLER h04305_ddl_mix;
 -- ALTER that turns a read-only handler's query into a mutating one, without a mutating method, is rejected.
 CREATE HANDLER h04305_ro URL '/test_04305/ro' AS SELECT 1;
 ALTER HANDLER h04305_ro AS INSERT INTO no_such_db.no_such_table SELECT 1; -- { serverError BAD_ARGUMENTS }

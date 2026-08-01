@@ -176,16 +176,18 @@ SQLDefinedHandlerPtr makeSQLDefinedHandler(const ASTCreateHandlerQuery & create)
 
     /// A handler whose query reads the HTTP request body can never receive one over a safe method:
     /// the HTTP layer gives a non-chunked `GET` an empty body stream (see `HTTPServerRequest`), so the
-    /// query would silently bind an empty body instead of ever reading or rejecting the request. The
-    /// body-carrying methods are exactly the mutating ones (`POST`, `PUT`, `DELETE`), so reject such
-    /// a handler here with a clear error instead of silently creating one with broken invocations.
+    /// query would silently bind an empty body instead of ever reading or rejecting the request. And a
+    /// declared `GET` is also served for `HEAD` (see `HTTPHandlerFactory`), so allowing safe methods
+    /// alongside body-carrying ones would keep those silent invocations reachable. The body-carrying
+    /// methods are exactly the mutating ones (`POST`, `PUT`, `DELETE`), so require *every* allowed
+    /// method to be one of them, and reject the handler with a clear error otherwise.
     if (handler->consumes_request_body
-        && std::none_of(handler->methods.begin(), handler->methods.end(), isMutatingHTTPMethod))
+        && !std::all_of(handler->methods.begin(), handler->methods.end(), isMutatingHTTPMethod))
     {
         throw Exception(ErrorCodes::BAD_ARGUMENTS,
             "Handler `{}` reads the HTTP request body (an INSERT query or the `_request_body` parameter), "
-            "but none of its allowed HTTP methods ({}) carries a request body. "
-            "Add a body-carrying method (POST, PUT, or DELETE) to the METHODS clause.",
+            "but not all of its allowed HTTP methods ({}) carry a request body. "
+            "List only body-carrying methods (POST, PUT, or DELETE) in the METHODS clause.",
             create.handler_name, fmt::join(handler->methods, ", "));
     }
 
