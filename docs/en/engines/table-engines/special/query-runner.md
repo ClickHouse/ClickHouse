@@ -49,8 +49,11 @@ The column `query` is mandatory, and the other columns are optional.
 | `cluster` | `''` | Name of the cluster to send the queries to. If empty, the queries are executed locally. |
 | `shard` | `'1'` | 1-based index of the cluster's shard to send the queries to, or `'random'` to pick a random shard per query, or `'all'` to run each query on every shard. Requires the `cluster` setting. |
 | `mode` | `'asynchronous'` | In the `synchronous` mode, INSERT returns after all queries of the inserted batch have finished. In the `asynchronous` mode, INSERT returns as soon as the queries are queued. |
-| `threads` | `4` | Number of background threads executing the queries. |
-| `max_queue_size` | `1000` | Maximum number of queued queries. When the queue is full, newly inserted queries are discarded, and an error is logged. |
+| `scheduler` | `'threads'` | With `'threads'`, the queries run on a thread pool. With `'fibers'`, the queries run on [Silk](https://github.com/ClickHouse/silk) fibers — see [Fibers](#fibers). |
+| `threads` | `4` | Number of background threads executing the queries. Threads only. |
+| `max_concurrent_remote_queries` | `1000` | Maximum number of concurrently executing queries, `0` means unlimited. When it is exceeded, newly inserted queries are discarded, and an error is logged. Fibers only. |
+| `max_concurrent_remote_queries_per_replica` | `100` | Maximum number of queries executing concurrently on each replica. It is the size of the connection pool of each replica. |
+| `max_queue_size` | `1000` | Maximum number of queued queries. When the queue is full, newly inserted queries are discarded, and an error is logged. Threads only. |
 
 ## Details {#details}
 
@@ -58,7 +61,9 @@ The table allows only INSERT queries.
 The queries are executed in the "fire and forget" mode: in case of an exception, there are no retries,
 and the results of SELECT queries are discarded (the only way to keep results is `INSERT SELECT`).
 The success of each query can be checked in the `system.query_log` table, where queries initiated by
-this engine are marked with `is_internal = 1` on the initiating server.
+this engine are marked with `is_internal = 1` on the initiating server. The number of queries submitted
+and not yet finished is reported by the `QueryRunnerPendingQueries` metric in
+[`system.metrics`](/operations/system-tables/metrics).
 
 The queued queries are kept in memory and do not survive a server restart. On server shutdown
 (or `DROP`/`DETACH` of the table), the queries that have not started yet are discarded. Of the
@@ -100,6 +105,23 @@ with `is_internal = 1`.
 Because the engine discards query results, it always runs the dispatched queries with
 `discard_query_data = 1`, so the result data of SELECT queries is not transferred over the network
 (this overrides any `discard_query_data` value set in the `settings` column).
+
+### Fibers {#fibers}
+
+In the cluster mode, dispatching a query mostly means waiting for the remote server, so occupying an
+operating-system thread for the lifetime of each query limits concurrency unnecessarily. With
+`scheduler = 'fibers'`, the engine runs each query on a lightweight
+[Silk](https://github.com/ClickHouse/silk) fiber instead: up to `max_concurrent_remote_queries` queries
+can be in flight at once (`0` means unlimited, throttled only by the per-replica connection pools), and
+queries inserted beyond that are discarded, like with a full queue in the thread pool.
+
+The `'fibers'` scheduler requires the cluster mode, a build with silk, and the experimental silk runtime
+enabled on the server (the `allow_experimental_silk_runtime` server setting); otherwise both `CREATE` and
+`ATTACH` of the table fail with an error. In particular, a table created with `scheduler = 'fibers'` does
+not load after a server restart if the server no longer enables the silk runtime.
+
+The fiber stack size can be changed with the `silk.fiber_stack_size` server configuration key
+(in bytes; the default of 320 KiB leaves enough room for OpenSSL handshakes).
 
 ## Waiting for queries to finish {#waiting-for-queries-to-finish}
 

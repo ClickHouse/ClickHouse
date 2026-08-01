@@ -307,6 +307,10 @@ IMPLEMENT_SETTING_ENUM(QueryRunnerMode, ErrorCodes::BAD_ARGUMENTS,
     {{"synchronous", QueryRunnerMode::SYNCHRONOUS},
      {"asynchronous", QueryRunnerMode::ASYNCHRONOUS}})
 
+IMPLEMENT_SETTING_ENUM(QueryRunnerScheduler, ErrorCodes::BAD_ARGUMENTS,
+    {{"fibers", QueryRunnerScheduler::FIBERS},
+     {"threads", QueryRunnerScheduler::THREADS}})
+
 IMPLEMENT_SETTING_ENUM(ExternalCommandStderrReaction, ErrorCodes::BAD_ARGUMENTS,
     {{"none", ExternalCommandStderrReaction::NONE},
      {"log", ExternalCommandStderrReaction::LOG},
