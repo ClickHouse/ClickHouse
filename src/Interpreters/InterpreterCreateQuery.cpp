@@ -2488,14 +2488,15 @@ BlockIO InterpreterCreateQuery::fillTableIfNeeded(const ASTCreateQuery & create)
             insert->select = create.select->clone();
         }
 
-        auto result = InterpreterInsertQuery(
-                   insert,
-                   getContext(),
-                   getContext()->getSettingsRef()[Setting::insert_allow_materialized_columns],
-                   /* no_squash */ false,
-                   /* no_destination */ false,
-                   /* async_isnert */ false)
-            .execute();
+        InterpreterInsertQuery interpreter(
+            insert,
+            getContext(),
+            getContext()->getSettingsRef()[Setting::insert_allow_materialized_columns],
+            /* no_squash */ false,
+            /* no_destination */ false,
+            /* async_isnert */ false);
+        interpreter.setSkipTargetInsertAccessCheck(skip_target_insert_access_check);
+        auto result = interpreter.execute();
         /// Only the data-driven (non-select) case builds a pushing pipeline that TCPHandler needs to see as a real ASTInsertQuery.
         if (!insert->select)
             result.insert_query = insert;

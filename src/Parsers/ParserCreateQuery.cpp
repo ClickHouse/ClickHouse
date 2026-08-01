@@ -841,6 +841,7 @@ bool ParserCreateTableQuery::parseImpl(Pos & pos, ASTPtr & node, Expected & expe
     const char * insert_data_end = nullptr;
     bool is_and_insert = false;
     bool is_as_insert = false;
+    ASTPtr sql_security;
 
     String cluster_str;
     bool attach = false;
