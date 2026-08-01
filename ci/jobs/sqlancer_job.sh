@@ -22,6 +22,17 @@ CLICKHOUSE_BIN="$TMP_PATH/clickhouse"
 # where the normalization matches `Utils.normalize_string` in `ci/praktika/utils.py`.
 # `JOB_NAME` is not propagated into the docker container, so read it from the
 # serialized environment file that Praktika writes before invoking the job.
+#
+# The result's `name` field must also be the raw `JOB_NAME`, not a literal:
+# `Result.update_sub_result` merges the job result into the workflow report by
+# NAME, so a name that does not equal the workflow node's name is silently
+# dropped and the node keeps its pre-run status.
+JOB_NAME_RAW=$(python3 -c '
+import sys
+sys.path.insert(0, ".")
+from ci.praktika._environment import _Environment
+print(_Environment.get().JOB_NAME)
+')
 NORMALIZED_JOB_NAME=$(python3 -c '
 import sys
 sys.path.insert(0, ".")
@@ -103,7 +114,7 @@ write_result() {
     local job_duration=$(( $(date +%s) - JOB_START_TIME ))
 
     printf '{\n' > $RESULT_FILE
-    printf '  "name": "SQLancer",\n' >> $RESULT_FILE
+    printf '  "name": "%s",\n' "$(json_escape "$JOB_NAME_RAW")" >> $RESULT_FILE
     printf '  "status": "%s",\n' "$status" >> $RESULT_FILE
     printf '  "start_time": %d,\n' "$JOB_START_TIME" >> $RESULT_FILE
     printf '  "duration": %d,\n' "$job_duration" >> $RESULT_FILE
@@ -111,6 +122,14 @@ write_result() {
     printf '  "files": [%s],\n' "$files_json" >> $RESULT_FILE
     printf '  "info": "%s"\n' "$escaped_overall_info" >> $RESULT_FILE
     printf '}\n' >> $RESULT_FILE
+
+    # Exit non-zero when the job did not pass. `runner.py` derives the step
+    # result from this process' exit status (`res = run_code == 0`), not from
+    # the result file, so a recorded FAIL that exits 0 leaves the GitHub Actions
+    # step green. This mirrors `Result.complete_job`, which every praktika-native
+    # job goes through. Placed last so the result file is complete and every
+    # artifact is attached before the exit.
+    [ "$status" = "OK" ] || exit 1
 }
 
 # Initialize variables used by the trap handler

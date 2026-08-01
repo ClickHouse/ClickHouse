@@ -33,6 +33,17 @@ CLICKHOUSE_BIN="$TMP_PATH/clickhouse"
 # and drop every oracle result and attached log - the job's real FAIL/OK status
 # was written to a file Praktika never reads. `JOB_NAME` is not propagated into
 # the docker container, so read it from the serialized environment Praktika dumps.
+#
+# The result's `name` field must be that same raw `JOB_NAME`, not a literal:
+# `Result.update_sub_result` merges the job result into the workflow report by
+# NAME, so a name that does not equal the workflow node's name is silently
+# dropped and the node keeps its pre-run status.
+JOB_NAME_RAW=$(python3 -c '
+import sys
+sys.path.insert(0, ".")
+from ci.praktika._environment import _Environment
+print(_Environment.get().JOB_NAME)
+')
 NORMALIZED_JOB_NAME=$(python3 -c '
 import sys
 sys.path.insert(0, ".")
@@ -43,6 +54,13 @@ print(Utils.normalize_string(_Environment.get().JOB_NAME))
 RESULT_FILE="$TMP_PATH/result_${NORMALIZED_JOB_NAME}.json"
 
 mkdir -p "$OUTPUT_PATH"
+
+# Properly JSON-escape a string using python3, outputting only the inner
+# content (without surrounding quotes) so callers can embed it in "...".
+# Mirrors the helper in `sqlancer_job.sh`.
+json_escape() {
+    printf '%s' "$1" | python3 -c 'import json,sys; print(json.dumps(sys.stdin.read())[1:-1], end="")'
+}
 
 if [[ -f "$CLICKHOUSE_BIN" ]]; then
     echo "$CLICKHOUSE_BIN exists"
@@ -109,7 +127,10 @@ ORACLES=( "WHERE" "NoREC" "QUERY_PARTITIONING" "FUZZING" )
 
 TEST_RESULTS=()
 ATTACHED_FILES_ARRAY=()
-OVERALL_STATUS=success
+# Praktika's Result.Status uses uppercase tokens (OK / FAIL / ERROR); any other
+# value is not recognized by `Result._update_status`, which then does not count
+# this job as failed when rolling the workflow status up.
+OVERALL_STATUS=OK
 
 for ORACLE in "${ORACLES[@]}"; do
     echo "=== Oracle: $ORACLE ==="
@@ -119,7 +140,7 @@ for ORACLE in "${ORACLES[@]}"; do
 
     if [[ $(wget -q -T 1 -O- 'http://localhost:8123/' 2>/dev/null) != 'Ok.' ]]; then
         TEST_RESULTS+=("${ORACLE},ERROR,Server is not responding")
-        OVERALL_STATUS="failure"
+        OVERALL_STATUS="FAIL"
         continue
     fi
 
@@ -156,7 +177,7 @@ for ORACLE in "${ORACLES[@]}"; do
             info="${info}; ${cleaned}"
         fi
         TEST_RESULTS+=("${ORACLE},FAIL,${info}")
-        OVERALL_STATUS="failure"
+        OVERALL_STATUS="FAIL"
     fi
 done
 
@@ -169,7 +190,7 @@ ATTACHED_FILES_ARRAY+=("$OUTPUT_PATH/clickhouse-server.log" "$OUTPUT_PATH/clickh
 # "Check the *-cur.log" hint points here). Only on failure, and gzip-compressed,
 # to avoid uploading a large log on clean runs.
 SQLANCER_PP_LOG_DIR="/sqlancer-pp/logs"
-if [[ "$OVERALL_STATUS" != "success" && -d "$SQLANCER_PP_LOG_DIR" ]]; then
+if [[ "$OVERALL_STATUS" != "OK" && -d "$SQLANCER_PP_LOG_DIR" ]]; then
     reproducer_archive="$OUTPUT_PATH/sqlancer_pp_reproducer_logs.tar.gz"
     if tar -C "$(dirname "$SQLANCER_PP_LOG_DIR")" -czf "$reproducer_archive" "$(basename "$SQLANCER_PP_LOG_DIR")"; then
         ATTACHED_FILES_ARRAY+=("$reproducer_archive")
@@ -178,7 +199,7 @@ fi
 
 {
     printf '{\n'
-    printf '  "name": "SQLancerPP",\n'
+    printf '  "name": "%s",\n' "$(json_escape "$JOB_NAME_RAW")"
     printf '  "status": "%s",\n' "$OVERALL_STATUS"
     printf '  "start_time": %d,\n' "$JOB_START_TIME"
     printf '  "duration": %d,\n' "$(( $(date +%s) - JOB_START_TIME ))"
@@ -220,3 +241,11 @@ for _ in $(seq 1 60); do
         break
     fi
 done
+
+# Exit non-zero when the job did not pass. `runner.py` derives the step result
+# from this process' exit status (`res = run_code == 0`), not from the result
+# file, so a recorded FAIL that exits 0 leaves the GitHub Actions step green.
+# This mirrors `Result.complete_job`, which every praktika-native job goes
+# through. Placed last so the result file is written and the server is torn down
+# before the exit.
+[[ "$OVERALL_STATUS" == "OK" ]] || exit 1
