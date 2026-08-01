@@ -1,13 +1,10 @@
+#include <algorithm>
+#include <Common/StringUtils.h>
 #include <Access/Common/QuotaDefs.h>
 #include <Common/Exception.h>
 #include <IO/ReadHelpers.h>
 #include <IO/WriteHelpers.h>
 #include <base/range.h>
-
-#include <boost/algorithm/string/case_conv.hpp>
-#include <boost/algorithm/string/classification.hpp>
-#include <boost/algorithm/string/replace.hpp>
-#include <boost/algorithm/string/split.hpp>
 
 
 namespace DB
@@ -51,9 +48,9 @@ const QuotaTypeInfo & QuotaTypeInfo::get(QuotaType type)
     static constexpr auto make_info = [](const char * raw_name_, String current_usage_description_, String max_allowed_usage_description_, UInt64 output_denominator_)
     {
         String init_name = raw_name_;
-        boost::to_lower(init_name);
+        toLowerASCII(init_name);
         String init_keyword = raw_name_;
-        boost::replace_all(init_keyword, "_", " ");
+        std::replace(init_keyword.begin(), init_keyword.end(), '_', ' ');
         bool init_output_as_float = (output_denominator_ != 1);
         return QuotaTypeInfo
         {
@@ -204,11 +201,19 @@ const QuotaKeyTypeInfo & QuotaKeyTypeInfo::get(QuotaKeyType type)
     static constexpr auto make_info = [](const char * raw_name_)
     {
         String init_name = raw_name_;
-        boost::to_lower(init_name);
+        toLowerASCII(init_name);
         std::vector<QuotaKeyType> init_base_types;
-        String replaced = boost::algorithm::replace_all_copy(init_name, "_or_", "|");
+        /// The name of a composite key type is its parts joined with "_or_".
         Strings tokens;
-        boost::algorithm::split(tokens, replaced, boost::is_any_of("|"));
+        for (size_t begin = 0; begin <= init_name.length();)
+        {
+            size_t end = init_name.find("_or_", begin);
+            size_t token_end = (end == String::npos) ? init_name.length() : end;
+            tokens.emplace_back(init_name.substr(begin, token_end - begin));
+            if (end == String::npos)
+                break;
+            begin = end + 4;
+        }
         if (tokens.size() > 1)
         {
             for (const auto & token : tokens)
