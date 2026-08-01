@@ -4,8 +4,14 @@
 #include <IO/WriteHelpers.h>
 #include <Interpreters/ClientInfo.h>
 #include <Common/Exception.h>
+#include <Common/logger_useful.h>
+#include <Poco/AutoPtr.h>
 #include <Poco/Net/SocketAddress.h>
+#include <Poco/StreamChannel.h>
+#include <fmt/format.h>
 #include <gtest/gtest.h>
+
+#include <sstream>
 
 using namespace DB;
 
@@ -72,6 +78,28 @@ String makeFullClientInfoWire(ClientInfo::QueryKind query_kind, const String & a
     buf.finalize();
     return buf.str();
 }
+
+class LoggerStateGuard final
+{
+public:
+    explicit LoggerStateGuard(const LoggerPtr & logger_)
+        : logger(logger_)
+        , channel(logger_->getChannel(), true)
+        , level(logger_->getLevel())
+    {
+    }
+
+    ~LoggerStateGuard()
+    {
+        logger->setChannel(channel.get());
+        logger->setLevel(level);
+    }
+
+private:
+    LoggerPtr logger;
+    Poco::AutoPtr<Poco::Channel> channel;
+    int level;
+};
 
 }
 
@@ -217,6 +245,98 @@ TEST(ClientInfoRead, ValidNumericAddressRoundTripsSecondaryQuery)
         ReadBufferFromOwnString in(makeFullClientInfoWire(ClientInfo::QueryKind::SECONDARY_QUERY, good));
         ASSERT_NO_THROW(info.read(in, DBMS_TCP_PROTOCOL_VERSION)) << "address: " << good;
         EXPECT_EQ(info.initial_address->toString(), good);
+    }
+}
+
+/// Numeric IPv4 and IPv6 addresses, with or without numeric ports, must be accepted. For a
+/// comma-separated `X-Forwarded-For` chain, the last proxy-appended element is used after trimming.
+TEST(ClientInfoForwardedFor, ParsesNumericAddresses)
+{
+    const auto check_address = [](const String & value, const String & expected_host, UInt16 expected_port)
+    {
+        ClientInfo info;
+        info.forwarded_for = value;
+
+        const auto address = info.getLastForwardedFor();
+        ASSERT_TRUE(address) << "address: " << value;
+        EXPECT_EQ(address->host().toString(), expected_host) << "address: " << value;
+        EXPECT_EQ(address->port(), expected_port) << "address: " << value;
+    };
+
+    check_address("123.124.125.126", "123.124.125.126", 0);
+    check_address("123.124.125.126:80", "123.124.125.126", 80);
+    check_address("2001:db8::1", "2001:db8::1", 0);
+    check_address("[2001:db8::1]:443", "2001:db8::1", 443);
+    check_address("not-used.example," + String(2, ' ') + "203.0.113.7:65535" + String(2, ' '), "203.0.113.7", 65535);
+}
+
+/// Hostnames and malformed endpoints must be rejected without resolver calls. Empty input and an empty
+/// last chain element are also rejected, and `getLastForwardedForHost` returns an empty string.
+TEST(ClientInfoForwardedFor, RejectsNonNumericAndMalformedAddresses)
+{
+    for (const String & bad : {
+        "localhost",
+        "localhost:80",
+        "attacker.example:443",
+        "127.0.0.1:http",
+        "[not-an-ip]:80",
+        "[2001:db8::1]",
+        "127.0.0.1:65536",
+        "127.0.0.1:"})
+    {
+        ClientInfo info;
+        info.forwarded_for = bad;
+
+        std::optional<Poco::Net::SocketAddress> address;
+        EXPECT_NO_THROW(address = info.getLastForwardedFor()) << "address: " << bad;
+        EXPECT_FALSE(address) << "address: " << bad;
+    }
+
+    ClientInfo trailing_whitespace;
+    trailing_whitespace.forwarded_for = "127.0.0.1," + String(3, ' ');
+    EXPECT_FALSE(trailing_whitespace.getLastForwardedFor());
+
+    ClientInfo empty;
+    EXPECT_FALSE(empty.getLastForwardedFor());
+
+    ClientInfo hostname;
+    hostname.forwarded_for = "localhost";
+    EXPECT_EQ(hostname.getLastForwardedForHost(), "");
+}
+
+    /// Successful and rejected results are reused while `forwarded_for` is unchanged,
+    /// including by copies sharing the cache, so repeated access logs an invalid value once.
+TEST(ClientInfoForwardedFor, LogsEachRejectedAddressOnlyOnce)
+{
+    std::ostringstream log_output; // STYLE_CHECK_ALLOW_STD_STRING_STREAM
+    auto stream_channel = Poco::AutoPtr<Poco::StreamChannel>(new Poco::StreamChannel(log_output));
+    auto log = getLogger("ClientInfo");
+    LoggerStateGuard logger_state_guard(log);
+    log->setChannel(stream_channel.get());
+    log->setLevel("debug");
+
+    ClientInfo info;
+    info.forwarded_for = "attacker.example";
+    EXPECT_FALSE(info.getLastForwardedFor());
+    EXPECT_EQ(info.getLastForwardedForHost(), "");
+    EXPECT_FALSE(info.getLastForwardedFor());
+
+    /// Copies initially share the cached result. Changing `forwarded_for` on a copy causes its next lookup
+    /// to install a new cache entry without affecting the entry used by the original object.
+    ClientInfo copied_info = info;
+    EXPECT_FALSE(copied_info.getLastForwardedFor());
+    copied_info.forwarded_for = "second-attacker.example";
+    EXPECT_FALSE(copied_info.getLastForwardedFor());
+    EXPECT_EQ(copied_info.getLastForwardedForHost(), "");
+    EXPECT_FALSE(info.getLastForwardedFor());
+
+    const String log_text = log_output.str();
+    for (const String & rejected : {"attacker.example", "second-attacker.example"})
+    {
+        const String message = fmt::format("Invalid address in `X-Forwarded-For` HTTP header: '{}'", rejected);
+        const auto first_position = log_text.find(message);
+        ASSERT_NE(first_position, std::string::npos);
+        EXPECT_EQ(log_text.find(message, first_position + message.size()), std::string::npos);
     }
 }
 
