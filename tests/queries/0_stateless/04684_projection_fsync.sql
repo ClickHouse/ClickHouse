@@ -77,19 +77,38 @@ CHECK TABLE t_proj SETTINGS check_query_single_value_result = 1;
 DROP TABLE t_proj;
 DROP TABLE t_plain;
 
--- `MATERIALIZE PROJECTION` (mutation) path: its fsyncs run on the IO thread pool and are not
--- attributed to the `ALTER` in `system.query_log`, so a fsync delta is not observable here.
--- Instead exercise the mutation entry point end to end and check the projection is readable.
+-- `MATERIALIZE PROJECTION` (mutation) path. Its fsyncs run on the IO thread pool and are not
+-- attributed to the `ALTER` in `system.query_log`, but the mutation is a part-level operation, so
+-- they ARE attributed to the resulting part in `system.part_log`. The same threshold reasoning as
+-- above applies: the rebuilt projection is far smaller than the parent, so the threshold must sit
+-- between them for the mutation's own sync decision to be the only thing that can sync it.
+--
+-- The comparison is against the SAME table's plain row-rewriting mutation rather than against a
+-- projection-less table: an `ALTER ... UPDATE` that rewrites every row touches a different set of
+-- files than a projection materialization, so only a before/after on one table is meaningful.
 CREATE TABLE t_mat (id UInt64, key String, v UInt64)
 ENGINE = MergeTree ORDER BY id
 SETTINGS fsync_after_insert = 1, fsync_part_directory = 1,
-         min_rows_to_fsync_after_merge = 1, min_compressed_bytes_to_fsync_after_merge = 1,
+         min_rows_to_fsync_after_merge = 1000, min_compressed_bytes_to_fsync_after_merge = 0,
          min_bytes_for_wide_part = 0, min_rows_for_wide_part = 0,
          max_bytes_to_merge_at_max_space_in_pool = 1;
 
 INSERT INTO t_mat SELECT number, concat('k', toString(number % 7)), number FROM numbers(10000);
 ALTER TABLE t_mat ADD PROJECTION pr (SELECT key, sum(v) GROUP BY key);
 ALTER TABLE t_mat MATERIALIZE PROJECTION pr SETTINGS mutations_sync = 2;
+
+-- Row-rewriting mutation: rebuilds the projection through the same temp-projection write path.
+ALTER TABLE t_mat UPDATE v = v + 1 WHERE 1 SETTINGS mutations_sync = 2;
+
+SYSTEM FLUSH LOGS part_log;
+
+-- Every mutation that produced a part must have fsynced at least one projection file on top of
+-- the parent's own files. The parent part is Wide with 3 columns, so its own syncs are bounded;
+-- requiring strictly more than that bound proves projection files were synced too.
+SELECT 'mutation syncs projection files',
+    min(ProfileEvents['FileSync']) > 6
+FROM system.part_log
+WHERE database = currentDatabase() AND table = 't_mat' AND event_type = 'MutatePart';
 
 SELECT 'materialize rows', count() FROM t_mat;
 SELECT sum(v) FROM t_mat GROUP BY key ORDER BY key SETTINGS force_optimize_projection = 1 FORMAT Null;
