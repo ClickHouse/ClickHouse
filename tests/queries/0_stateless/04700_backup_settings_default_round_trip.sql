@@ -46,12 +46,17 @@ SELECT formatQuerySingleLine(formatQuerySingleLine($$RESTORE TABLE t FROM Disk('
 SELECT formatQuerySingleLine(formatQuerySingleLine($$BACKUP TABLE t TO Disk('d', 'b') SETTINGS backup_uuid = DEFAULT$$)) = formatQuerySingleLine($$BACKUP TABLE t TO Disk('d', 'b') SETTINGS backup_uuid = DEFAULT$$) AS stable;
 SELECT formatQuerySingleLine(formatQuerySingleLine($$RESTORE TABLE t FROM Disk('d', 'b') SETTINGS restore_uuid = DEFAULT$$)) = formatQuerySingleLine($$RESTORE TABLE t FROM Disk('d', 'b') SETTINGS restore_uuid = DEFAULT$$) AS stable;
 
--- The sub-settings have their own AST fields, so their DEFAULT form clears the field instead.
+-- The sub-settings have their own AST fields, so a DEFAULT reaching their branch clears the field. Only
+-- `cluster_host_ids` reaches it from a lone item: `base_backup` accepts a bare identifier as a backup name
+-- (`Memory` is one), so `base_backup = DEFAULT` names a backup called DEFAULT and is left as written.
 SELECT formatQuerySingleLine($$BACKUP TABLE t TO Disk('d', 'b') SETTINGS base_backup = DEFAULT$$);
 SELECT formatQuerySingleLine($$BACKUP TABLE t TO Disk('d', 'b') SETTINGS cluster_host_ids = DEFAULT$$);
 SELECT formatQuerySingleLine($$BACKUP TABLE t TO Disk('d', 'b') SETTINGS foo = DEFAULT, cluster_host_ids = [['h']], cluster_host_ids = DEFAULT$$);
+-- A repeated key does reach the `base_backup` branch, and then the field is cleared.
+SELECT formatQuerySingleLine($$BACKUP TABLE t TO Disk('d', 'b') SETTINGS base_backup = Disk('d', 'b0'), base_backup = DEFAULT$$);
 
--- A resolved backup-specific DEFAULT may be dropped on the first format; the requirement is idempotence.
+-- A backup-specific DEFAULT is reprinted as written; it is the resolved `changes` entry that the Backups
+-- layer drops, and this query has none. Formatting it must be idempotent either way.
 SELECT formatQuerySingleLine(formatQuerySingleLine($$BACKUP TABLE t TO Disk('d', 'b') SETTINGS structure_only = DEFAULT$$)) = formatQuerySingleLine($$BACKUP TABLE t TO Disk('d', 'b') SETTINGS structure_only = DEFAULT$$) AS stable;
 
 -- Controls. These forms do not involve `= DEFAULT` and must behave exactly as before: a query parameter is

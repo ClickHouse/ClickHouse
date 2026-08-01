@@ -1,3 +1,6 @@
+#include <Backups/BackupSettings.h>
+#include <Backups/SettingsFieldOptionalUUID.h>
+#include <Core/UUID.h>
 #include <Parsers/ASTBackupQuery.h>
 #include <Parsers/ASTCreateQuery.h>
 #include <Parsers/ASTIdentifier.h>
@@ -1111,5 +1114,82 @@ TEST(RemoveSettingsFromQuery, StripsBlockFormingOverrides)
         const String formatted = ast->formatWithSecretsOneLine();
         EXPECT_NE(String::npos, formatted.find("max_threads")) << "dropped a non-safety setting: " << formatted;
         EXPECT_EQ(String::npos, formatted.find("min_insert_block_size_rows")) << "kept a block-forming setting: " << formatted;
+    }
+}
+
+/// The two rebuilds of a BACKUP/RESTORE SETTINGS clause are not reachable from a stateless test, hence
+/// these are unit tests: `rewriteSettingsWithoutOnCluster` runs only via
+/// `ASTBackupQuery::getRewrittenASTWithoutOnCluster`, whose reachable callers are `DDLTask.cpp` and
+/// `removeOnClusterClauseIfNeeded.cpp` (whose predicate list excludes `ASTBackupQuery`), and
+/// `copySettingsToQuery` runs only from `BackupsWorker` on the non-internal ON CLUSTER path. Stateless
+/// configs offer a single-host cluster only; `BACKUP ON CLUSTER` lives in integration tests.
+TEST(BackupSettingsDefault, OnClusterRebuildsCarryDefaultedNames)
+{
+    /// The rewrite injects `internal`, `async` and `host_id`, so those must be gone from BOTH carriers:
+    /// a surviving `name = DEFAULT` would reset the injected value on the receiving host.
+    {
+        const String query = "BACKUP TABLE t ON CLUSTER 'c' TO Disk('d', 'b') "
+                             "SETTINGS foo = DEFAULT, async = DEFAULT";
+        ParserQuery parser(query.data() + query.size());
+        ASTPtr ast = parseQuery(parser, query, "", 0, 0, 0);
+        ASSERT_NE(nullptr, ast) << "query: " << query;
+
+        auto * backup_query = ast->as<ASTBackupQuery>();
+        ASSERT_NE(nullptr, backup_query) << "expected a BACKUP query";
+        /// Sanity: both names really are in `default_settings` before the rewrite.
+        ASSERT_NE(nullptr, backup_query->settings);
+        const auto & parsed = backup_query->settings->as<const ASTSetQuery &>();
+        ASSERT_EQ(2u, parsed.default_settings.size()) << "query: " << query;
+
+        ASTPtr rewritten = backup_query->getRewrittenASTWithoutOnCluster({.default_database = "d", .host_id = "h"});
+        ASSERT_NE(nullptr, rewritten);
+        auto * rewritten_backup = rewritten->as<ASTBackupQuery>();
+        ASSERT_NE(nullptr, rewritten_backup);
+        ASSERT_NE(nullptr, rewritten_backup->settings);
+        const auto & rebuilt = rewritten_backup->settings->as<const ASTSetQuery &>();
+
+        const auto has_default = [&](std::string_view name)
+        { return std::ranges::find(rebuilt.default_settings, name) != rebuilt.default_settings.end(); };
+
+        EXPECT_TRUE(has_default("foo")) << "dropped an unrelated `name = DEFAULT` item";
+        EXPECT_FALSE(has_default("async")) << "kept `async = DEFAULT`, which would reset the injected value";
+        EXPECT_FALSE(has_default("internal")) << "kept `internal = DEFAULT`";
+        EXPECT_FALSE(has_default("host_id")) << "kept `host_id = DEFAULT`";
+
+        const auto * async_change = rebuilt.changes.tryGet("async");
+        ASSERT_NE(nullptr, async_change) << "the rewrite did not inject `async`";
+        EXPECT_TRUE(async_change->safeGet<bool>());
+        const auto * host_id_change = rebuilt.changes.tryGet("host_id");
+        ASSERT_NE(nullptr, host_id_change) << "the rewrite did not inject `host_id`";
+        EXPECT_EQ("h", host_id_change->safeGet<String>());
+    }
+
+    /// `copySettingsToQuery` emits resolved effective state, so only a CORE `name = DEFAULT` may ride
+    /// along. A backup-specific one must not: `backup_uuid` is empty at parse time, generated later by
+    /// BackupsWorker, and emitted as a change here - a surviving `backup_uuid = DEFAULT` would drop it.
+    {
+        const String query = "BACKUP TABLE t TO Disk('d', 'b') "
+                             "SETTINGS max_execution_time = DEFAULT, backup_uuid = DEFAULT";
+        ParserQuery parser(query.data() + query.size());
+        ASTPtr ast = parseQuery(parser, query, "", 0, 0, 0);
+        ASSERT_NE(nullptr, ast) << "query: " << query;
+
+        auto * backup_query = ast->as<ASTBackupQuery>();
+        ASSERT_NE(nullptr, backup_query) << "expected a BACKUP query";
+
+        BackupSettings settings = BackupSettings::fromBackupQuery(*backup_query);
+        const UUID assigned_uuid = UUIDHelpers::generateV4();
+        settings.backup_uuid = assigned_uuid;
+
+        settings.copySettingsToQuery(*backup_query);
+
+        ASSERT_NE(nullptr, backup_query->settings);
+        const auto & rebuilt = backup_query->settings->as<const ASTSetQuery &>();
+        EXPECT_EQ((std::vector<String>{"max_execution_time"}), rebuilt.default_settings)
+            << "a backup-specific `name = DEFAULT` rode along, or the core one was dropped";
+        const auto * uuid_change = rebuilt.changes.tryGet("backup_uuid");
+        ASSERT_NE(nullptr, uuid_change) << "the generated backup_uuid was not emitted";
+        EXPECT_EQ(assigned_uuid, SettingFieldOptionalUUID{*uuid_change}.value)
+            << "the generated backup_uuid was discarded";
     }
 }

@@ -1,0 +1,21 @@
+BACKUP_CREATED
+-- RESTORE: a restore-specific reset must be delivered, not merely accepted.
+RESTORED
+1	0
+RESTORED
+0	10
+RESTORED
+0	10
+-- Alias pairs address one field, so defaulting either spelling must drop the other's override.
+BACKUP_CREATED
+BACKUP_CREATED
+BACKUP_CREATED
+BACKUP_CREATED
+1	STANDARD_IA
+1	STANDARD_IA
+0	
+0	
+RESTORED
+RESTORED
+1	1
+0	0

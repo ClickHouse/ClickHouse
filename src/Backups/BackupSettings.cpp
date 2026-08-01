@@ -7,6 +7,8 @@
 #include <Parsers/ASTLiteral.h>
 #include <Backups/SettingsFieldOptionalUUID.h>
 
+#include <algorithm>
+
 
 namespace DB
 {
@@ -60,16 +62,16 @@ namespace
     }
 
     /// The canonical names of the backup-specific settings. `LIST_OF_BACKUP_SETTINGS` alone is not the full
-    /// set: the three names below are fields of `BackupSettings` handled by their own branches in
+    /// set: the two names below are fields of `BackupSettings` handled by their own branches in
     /// `fromBackupQuery` and deliberately kept out of the macro, so a macro-only classifier would call them
-    /// core settings and try to reset them on the query context instead.
+    /// core settings and try to reset them on the query context instead. The `s3_storage_class_name` alias
+    /// needs no entry: `canonicalBackupSettingName` maps it onto the listed `s3_storage_class`.
     constexpr std::string_view BACKUP_SPECIFIC_SETTING_NAMES[] = {
 #define BACKUP_SETTING_NAME(TYPE, NAME) #NAME,
         LIST_OF_BACKUP_SETTINGS(BACKUP_SETTING_NAME)
 #undef BACKUP_SETTING_NAME
         "compression_level",
         "data_file_name_prefix_length",
-        "s3_storage_class",
     };
 
     SettingsWithDefaultsResolved resolveBackupSettings(const ASTBackupQuery & query)
