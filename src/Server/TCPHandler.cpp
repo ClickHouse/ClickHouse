@@ -3398,12 +3398,21 @@ bool TCPHandler::connectionLimitReached()
 
 Poco::Net::SocketAddress TCPHandler::getClientAddress(const ClientInfo & client_info)
 {
-    /// Extract the last entry from comma separated list of forwarded_for addresses.
-    /// Only the last proxy can be trusted (if any).
+    const bool use_forwarded_address = server.config().getBool("auth_use_forwarded_address", false);
+    if (!use_forwarded_address || client_info.forwarded_for.empty())
+        return socket().peerAddress();
+
+    /// Extract the last entry from the comma-separated list. Only the last proxy can be trusted (if any).
     auto forwarded_address = client_info.getLastForwardedFor();
-    if (forwarded_address && server.config().getBool("auth_use_forwarded_address", false))
-        return *forwarded_address;
-    return socket().peerAddress();
+
+    /// With `auth_use_forwarded_address` enabled, consider an invalid address an error
+    /// instead of silently authenticating with the proxy's address.
+    if (!forwarded_address)
+        throw Exception(
+            ErrorCodes::INCORRECT_DATA,
+            "Invalid forwarded client address: expected an IP literal with an optional numeric port");
+
+    return *forwarded_address;
 }
 
 }

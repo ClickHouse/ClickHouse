@@ -159,7 +159,8 @@ private:
         const ProjectionDescription & projection,
         CompressionCodecPtr compression_codec,
         MergeTreeIndices indices,
-        bool merge_is_needed);
+        bool merge_is_needed,
+        bool try_adaptive_codec);
 
     MergeTreeData & data;
     LoggerPtr log;
