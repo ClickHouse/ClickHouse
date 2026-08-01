@@ -72,7 +72,6 @@
             <allow_experimental_join_right_table_sorting>1</allow_experimental_join_right_table_sorting>
             <allow_experimental_json_lazy_type_hints>1</allow_experimental_json_lazy_type_hints>
             <allow_experimental_kafka_offsets_storage_in_keeper>1</allow_experimental_kafka_offsets_storage_in_keeper>
-            <allow_experimental_kusto_dialect>1</allow_experimental_kusto_dialect>
             <allow_experimental_materialized_postgresql_table>1</allow_experimental_materialized_postgresql_table>
             <allow_experimental_nlp_functions>1</allow_experimental_nlp_functions>
             <allow_experimental_object_storage_queue_hive_partitioning>1</allow_experimental_object_storage_queue_hive_partitioning>

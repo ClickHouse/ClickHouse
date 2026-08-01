@@ -171,17 +171,6 @@ bool Client::processWithASTFuzzer(std::string_view full_query)
         return true;
     }
 
-    // Kusto is not a subject for fuzzing (yet)
-    if (client_context->getSettingsRef()[Setting::dialect] == DB::Dialect::kusto)
-    {
-        return true;
-    }
-    if (auto * q = orig_ast->as<ASTSetQuery>())
-    {
-        if (auto * set_dialect = q->changes.tryGet("dialect"); set_dialect && set_dialect->safeGet<String>() == "kusto")
-            return true;
-    }
-
     // Don't repeat:
     // - INSERT -- Because the tables may grow too big.
     // - CREATE -- Because first we run the unmodified query, it will succeed,

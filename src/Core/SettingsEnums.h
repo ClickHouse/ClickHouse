@@ -319,7 +319,6 @@ DECLARE_SETTING_ENUM_WITH_RENAME(ORCCompression, FormatSettings::ORCCompression)
 enum class Dialect : uint8_t
 {
     clickhouse,
-    kusto,
     prql,
     promql,
     polyglot,

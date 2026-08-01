@@ -113,7 +113,6 @@ struct FormatSettings
 
     enum class IntervalOutputFormat : uint8_t
     {
-        Kusto,
         Numeric
     };
 
