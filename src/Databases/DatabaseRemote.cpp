@@ -342,6 +342,18 @@ ColumnsDescription DatabaseRemote::fetchTableStructure(const String & table_name
                             backQuoteIfNeed(table_name));
                 }
             }
+            else if (local_database->isTableExist(table_name, local_context))
+            {
+                /// The name does exist on the local shard, but the caller cannot see it. Reporting it
+                /// as missing is not enough: falling through to the same-shard remote replicas below
+                /// would resolve the very table that `SHOW TABLES` and `EXISTS TABLE` hide (the
+                /// `only_table` branch of `fetchTablesList` stops at the local shard in exactly the
+                /// same situation), so a caller holding rights only on the proxy database could
+                /// `DESCRIBE`, `SHOW CREATE` or even `SELECT` a hidden local table through another
+                /// replica of its shard. The fallback exists for a table the local replica genuinely
+                /// lacks, not for a table it is not allowed to expose.
+                return {};
+            }
         }
 
         /// The local replica does not have the database or the table (or the structure of its local

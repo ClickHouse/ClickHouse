@@ -227,3 +227,40 @@ def test_host_filter_understands_ipv6_addresses(started_cluster):
     # A plain host name keeps working.
     node4.query("CREATE DATABASE allowed ENGINE = Remote('node2', 'default')")
     node4.query("DROP DATABASE allowed")
+
+
+def test_hidden_local_table_is_not_served_by_a_remote_replica(started_cluster):
+    # The remote-replica fallback must not become a way around the visibility rule of the local shard.
+    # `db.t` exists on node1 (the local replica of the shard) and on node2 (its remote replica), and
+    # the caller has rights on the proxy database only, so the name is hidden. It must stay hidden for
+    # resolution as well: the fallback exists for a table the local replica genuinely lacks, not for a
+    # table it is not allowed to expose.
+    for node in (node1, node2):
+        node.query("CREATE DATABASE hidden_src")
+        node.query("CREATE TABLE hidden_src.t (x UInt64) ENGINE = MergeTree ORDER BY x")
+        node.query("INSERT INTO hidden_src.t VALUES (1)")
+
+    node1.query(
+        "CREATE DATABASE hidden_proxy ENGINE = Remote('node1|node2', 'hidden_src', 'default', '')"
+    )
+    node1.query("CREATE USER hidden_user IDENTIFIED WITH no_password")
+    node1.query("GRANT SHOW, SELECT, INSERT ON hidden_proxy.* TO hidden_user")
+
+    assert node1.query("SHOW TABLES FROM hidden_proxy", user="hidden_user") == ""
+    assert node1.query("EXISTS TABLE hidden_proxy.t", user="hidden_user") == "0\n"
+    for query in (
+        "DESCRIBE TABLE hidden_proxy.t",
+        "SHOW CREATE TABLE hidden_proxy.t",
+        "SELECT * FROM hidden_proxy.t",
+        "INSERT INTO hidden_proxy.t VALUES (2)",
+    ):
+        assert "UNKNOWN_TABLE" in node1.query_and_get_error(query, user="hidden_user")
+
+    # The owner of the underlying tables still sees and reads them.
+    assert node1.query("SHOW TABLES FROM hidden_proxy") == "t\n"
+    assert node1.query("SELECT sum(x) FROM hidden_proxy.t") == "1\n"
+
+    node1.query("DROP USER hidden_user")
+    node1.query("DROP DATABASE hidden_proxy")
+    for node in (node1, node2):
+        node.query("DROP DATABASE hidden_src")

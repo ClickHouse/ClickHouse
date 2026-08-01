@@ -20,19 +20,27 @@ ${CLICKHOUSE_CLIENT} --query "
     CREATE DATABASE ${REMOTE_DB} ENGINE = Remote('127.0.0.1', '${CLICKHOUSE_DATABASE}', 'default', '');
 "
 
+# Both loops are sent as a single batch of statements each: starting a client per query dominated the
+# runtime of this test and made it exceed the time limit of a sanitizer build.
+REPLACE_QUERIES=""
+DESCRIBE_QUERIES=""
+for _ in {1..30}
+do
+    REPLACE_QUERIES+="CREATE OR REPLACE TABLE ${CLICKHOUSE_DATABASE}.t (id UInt64) ENGINE = MergeTree ORDER BY id; "
+    DESCRIBE_QUERIES+="DESCRIBE TABLE ${REMOTE_DB}.t FORMAT Null; "
+done
+
 function replace_thread()
 {
-    for _ in {1..50}
-    do
-        ${CLICKHOUSE_CLIENT} --query "CREATE OR REPLACE TABLE ${CLICKHOUSE_DATABASE}.t (id UInt64) ENGINE = MergeTree ORDER BY id"
-    done
+    ${CLICKHOUSE_CLIENT} --query "${REPLACE_QUERIES}"
 }
 
 function describe_thread()
 {
-    for _ in {1..50}
+    # A transient `NO_REMOTE_SHARD_AVAILABLE` aborts the rest of the batch, so send a few of them.
+    for _ in {1..3}
     do
-        ${CLICKHOUSE_CLIENT} --query "DESCRIBE TABLE ${REMOTE_DB}.t FORMAT Null" 2>&1
+        ${CLICKHOUSE_CLIENT} --query "${DESCRIBE_QUERIES}" 2>&1
     done
 }
 
