@@ -225,6 +225,19 @@ c1	Nullable(UInt64)
 1
 2
 18446744073709551615
+group 15b: Regexp is order-independent too
+c1	Nullable(String)					
+1
+-1
+18446744073709551615
+c1	Nullable(String)					
+-1
+1
+18446744073709551615
+c1	Nullable(UInt64)					
+1
+2
+18446744073709551615
 group 11 round trip: TSKV output for a negative map key reads back
 1
 m	Nullable(String)					

@@ -6,6 +6,9 @@
 # sign-dependent Int64 to UInt64 widening cannot be proven safe, so it is declined and the caller
 # reports the type mismatch instead of inferring a type whose read then fails. Needs real files, which
 # is why this is a shell test and not part of 04653.
+#
+# The Template section at the end is here for the same reason: the Template INPUT format takes its row
+# format only as a file path, so it needs a schema file that a .sql test cannot write.
 
 CURDIR=$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)
 # shellcheck source=../shell_config.sh
@@ -25,6 +28,7 @@ printf 'x=[1]\n' > "$DIR/arr.tskv"
 printf "x=(1,'a')\n" > "$DIR/tup.tskv"
 printf 'x=abc\n' > "$DIR/str.tskv"
 printf 'x=[-1]\n' > "$DIR/negarr.tskv"
+printf 'x=[18446744073709551615]\n' > "$DIR/bigarr.tskv"
 
 # Report either the inferred type or the error name, never both: the error message text also contains a
 # type name, and it carries the temporary file path, which is not reproducible.
@@ -83,8 +87,36 @@ verdict "set schema_inference_mode='union', input_format_try_infer_variants=1; d
 verdict "set input_format_try_infer_variants=1; desc format(TSKV, \$\$x=[1]
 x=abc
 \$\$);"
-# Differing shapes that DO put an Int64 against a UInt64 still have the sign hazard, so they are still
-# declined: the narrowing above must not let this pair through.
+# An Int64 and a UInt64 in non-corresponding positions are never paired by the transformation either,
+# because it stops descending where the container kinds diverge. So there is no widening to decline and
+# this pair merges like the two above, again agreeing with the single-file answer.
 verdict "set schema_inference_mode='union', input_format_try_infer_variants=1; desc file('$DIR/{negarr,big}.tskv', TSKV);"
+verdict "set input_format_try_infer_variants=1; desc format(TSKV, \$\$x=[-1]
+x=18446744073709551615
+\$\$);"
+# The same two integers at the SAME position are paired, so that pair keeps the sign hazard and is
+# still declined: the narrowing above must not let it through.
+verdict "set schema_inference_mode='union', input_format_try_infer_variants=1; desc file('$DIR/{negarr,bigarr}.tskv', TSKV);"
+
+# Template is the last escaped-rule reader with its own override and its own provenance set. Its input
+# format takes the row format only as a file path, so unlike the CustomSeparated and Regexp cases in
+# 04653 it needs a schema file. Reading the values back is the point: without the fix DESC proposes an
+# unsigned type and the read of the negative row then hard-errors.
+# An absolute format_schema is accepted because these run through clickhouse-local, so the file lives in
+# this test's own directory: nothing shared, and it is removed with the rest at the end.
+ROW_FORMAT=$(pwd)/$DIR/row_format
+echo -e "\${c1:Escaped}" > "$ROW_FORMAT"
+TEMPLATE_SETTINGS="format_template_row='$ROW_FORMAT', format_template_rows_between_delimiter=''"
+
+echo "7. Template, the remaining escaped-rule reader, is order-independent too"
+# 1 / -1 / 18446744073709551615
+verdict "set $TEMPLATE_SETTINGS; desc format(Template, unhex('310A2D310A31383434363734343037333730393535313631350A'));"
+verdict "set $TEMPLATE_SETTINGS; select * from format(Template, unhex('310A2D310A31383434363734343037333730393535313631350A'));"
+# -1 / 1 / 18446744073709551615 - the opposite order must agree
+verdict "set $TEMPLATE_SETTINGS; desc format(Template, unhex('2D310A310A31383434363734343037333730393535313631350A'));"
+verdict "set $TEMPLATE_SETTINGS; select * from format(Template, unhex('2D310A310A31383434363734343037333730393535313631350A'));"
+# 1 / 2 / 18446744073709551615 - no negative value, so the widening must still happen
+verdict "set $TEMPLATE_SETTINGS; desc format(Template, unhex('310A320A31383434363734343037333730393535313631350A'));"
+verdict "set $TEMPLATE_SETTINGS; select * from format(Template, unhex('310A320A31383434363734343037333730393535313631350A'));"
 
 rm -rf "$DIR"

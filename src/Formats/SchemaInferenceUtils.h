@@ -29,16 +29,19 @@ struct JSONInferenceInfo
     /// negative, which silently declines a correct widening.
     void markNegativeInteger(const DataTypePtr & type)
     {
-        negative_integers.insert(type.get());
-        provenance_keepalive.push_back(type);
+        /// Retain the owner only when this identity is new: re-marking an already recorded one, which
+        /// is what carrying provenance over a collapse does to the surviving object, has nothing left
+        /// to keep alive and retaining it again would grow with the number of collapsed elements.
+        if (negative_integers.insert(type.get()).second)
+            provenance_keepalive.push_back(type);
     }
 
     /// The same for a type reached through `owner`, whose subtree it belongs to. Retaining the owner
     /// keeps the whole subtree alive, because every container type owns its nested types.
     void markNegativeIntegerWithin(const IDataType * type, const DataTypePtr & owner)
     {
-        negative_integers.insert(type);
-        provenance_keepalive.push_back(owner);
+        if (negative_integers.insert(type).second)
+            provenance_keepalive.push_back(owner);
     }
 
     bool isNegativeInteger(const IDataType * type) const { return negative_integers.contains(type); }

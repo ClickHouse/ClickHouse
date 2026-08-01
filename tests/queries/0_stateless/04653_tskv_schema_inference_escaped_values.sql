@@ -304,8 +304,12 @@ DESC format(TSKV, unhex('783D310A783D2D310A793D2D310A793D31383434363734343037333
 SELECT * FROM format(TSKV, unhex('783D310A783D2D310A793D2D310A793D31383434363734343037333730393535313631350A'));
 
 -- 15. The same inference code serves the other formats that read fields by an escaping rule and keep
--- a provenance set, so they get the same collapse and the same order-independence. CustomSeparated is
--- asserted here; Regexp and Template reach the identical code path through their own escaping rules.
+-- a provenance set, so they get the same collapse and the same order-independence. Each one carries its
+-- own reader override and its own provenance set, so each is asserted separately here. Template is the
+-- one that cannot be: its input format takes the row format only as a file path
+-- (TemplateRowInputFormat.cpp reads template_settings.row_format; the inline
+-- format_template_row_format setting is read by the output format alone), so it needs a schema file and
+-- lives in 04654, which is a shell test and can write one.
 SELECT 'group 15: a sibling escaped-rule format is order-independent too';
 -- 1 / -1 / 18446744073709551615
 DESC format(CustomSeparated, unhex('310A2D310A31383434363734343037333730393535313631350A'));
@@ -316,6 +320,20 @@ SELECT * FROM format(CustomSeparated, unhex('2D310A310A3138343436373434303733373
 -- 1 / 2 / 18446744073709551615 - no negative value, so the widening must still happen
 DESC format(CustomSeparated, unhex('310A320A31383434363734343037333730393535313631350A'));
 SELECT * FROM format(CustomSeparated, unhex('310A320A31383434363734343037333730393535313631350A'));
+
+-- The same three inputs through Regexp, whose escaping rule is a separate setting and whose reader
+-- keeps its own provenance set. The settings are per statement so the other groups are unaffected.
+-- Reading the values back is the point: without the fix the negative row silently reads as 0.
+SELECT 'group 15b: Regexp is order-independent too';
+-- 1 / -1 / 18446744073709551615
+DESC format(Regexp, unhex('310A2D310A31383434363734343037333730393535313631350A')) SETTINGS format_regexp = '^(.+)$', format_regexp_escaping_rule = 'Escaped';
+SELECT * FROM format(Regexp, unhex('310A2D310A31383434363734343037333730393535313631350A')) SETTINGS format_regexp = '^(.+)$', format_regexp_escaping_rule = 'Escaped';
+-- -1 / 1 / 18446744073709551615 - the opposite order must agree
+DESC format(Regexp, unhex('2D310A310A31383434363734343037333730393535313631350A')) SETTINGS format_regexp = '^(.+)$', format_regexp_escaping_rule = 'Escaped';
+SELECT * FROM format(Regexp, unhex('2D310A310A31383434363734343037333730393535313631350A')) SETTINGS format_regexp = '^(.+)$', format_regexp_escaping_rule = 'Escaped';
+-- 1 / 2 / 18446744073709551615 - no negative value, so the widening must still happen
+DESC format(Regexp, unhex('310A320A31383434363734343037333730393535313631350A')) SETTINGS format_regexp = '^(.+)$', format_regexp_escaping_rule = 'Escaped';
+SELECT * FROM format(Regexp, unhex('310A320A31383434363734343037333730393535313631350A')) SETTINGS format_regexp = '^(.+)$', format_regexp_escaping_rule = 'Escaped';
 
 -- The round trip through the writer, asserted without hand-written bytes: what TSKV emits for a
 -- negative map key must infer a type that reads back. This is the reason group 11 is not a

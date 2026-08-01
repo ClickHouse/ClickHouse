@@ -1476,49 +1476,70 @@ bool isSignDependentIntegerWidening(const DataTypePtr & first, const DataTypePtr
 
     /// Widening Int64 to UInt64 is the only transformation whose correctness depends on whether the
     /// Int64 was inferred from a negative literal, which is recorded as inference provenance. Report
-    /// it wherever the pair puts an Int64 against a UInt64, at the top level or nested at the same
-    /// position, so that a caller with no provenance available can decline it.
-    /// Nullable wrappers are ignored, because transformTypesRecursively peels them at every level
-    /// before comparing the nested types: the merge this guards proceeds through asymmetric
-    /// nullability, so comparing the wrapped shapes would miss the widening it is meant to catch.
-    auto collect = [](const DataTypePtr & type)
+    /// the pairs that transformIntegers can actually reach, so that a caller with no provenance
+    /// available can decline exactly those.
+    ///
+    /// The pairing must follow transformTypesRecursively, which is what would run the widening: it
+    /// peels Nullable at every level, and descends into a container only when BOTH sides are the same
+    /// container kind, with matching element counts and names for Tuple. Once the shapes diverge it
+    /// stops descending and never pairs the nested integers at all, so there is no widening below that
+    /// point to decline; reporting one there would refuse merges that have nothing to do with the sign
+    /// of an integer (with variant inference enabled such a pair becomes a Variant of both shapes).
+    auto paired = [](const DataTypePtr & lhs, const DataTypePtr & rhs, const auto & self) -> bool
     {
-        const auto & unwrapped = removeNullable(type);
-        std::vector<TypeIndex> indexes{unwrapped->getTypeId()};
-        unwrapped->forEachChild([&](const IDataType & child)
+        /// transformTypesRecursively peels Nullable on either side before comparing, so the merge this
+        /// guards proceeds through asymmetric nullability: comparing the wrapped shapes would miss the
+        /// widening it exists to catch.
+        const auto & left = removeNullable(lhs);
+        const auto & right = removeNullable(rhs);
+
+        const TypeIndex left_id = left->getTypeId();
+        const TypeIndex right_id = right->getTypeId();
+
+        if ((left_id == TypeIndex::Int64 && right_id == TypeIndex::UInt64)
+            || (left_id == TypeIndex::UInt64 && right_id == TypeIndex::Int64))
+            return true;
+
+        /// Different container kinds: the transformation stops here, so nothing below is ever paired.
+        if (left_id != right_id)
+            return false;
+
+        if (const auto * left_array = typeid_cast<const DataTypeArray *>(left.get()))
         {
-            if (child.getTypeId() != TypeIndex::Nullable)
-                indexes.push_back(child.getTypeId());
-        });
-        return indexes;
+            const auto * right_array = typeid_cast<const DataTypeArray *>(right.get());
+            return self(left_array->getNestedType(), right_array->getNestedType(), self);
+        }
+
+        if (const auto * left_map = typeid_cast<const DataTypeMap *>(left.get()))
+        {
+            const auto * right_map = typeid_cast<const DataTypeMap *>(right.get());
+            return self(left_map->getKeyType(), right_map->getKeyType(), self)
+                || self(left_map->getValueType(), right_map->getValueType(), self);
+        }
+
+        if (const auto * left_tuple = typeid_cast<const DataTypeTuple *>(left.get()))
+        {
+            const auto * right_tuple = typeid_cast<const DataTypeTuple *>(right.get());
+            const auto & left_elements = left_tuple->getElements();
+            const auto & right_elements = right_tuple->getElements();
+            /// transformTypesRecursively transforms tuple elements only when the sizes and the element
+            /// names of all tuples are equal, so anything else is never paired either.
+            if (left_elements.size() != right_elements.size()
+                || left_tuple->getElementNames() != right_tuple->getElementNames())
+                return false;
+
+            for (size_t i = 0; i != left_elements.size(); ++i)
+            {
+                if (self(left_elements[i], right_elements[i], self))
+                    return true;
+            }
+            return false;
+        }
+
+        return false;
     };
 
-    const auto first_indexes = collect(first);
-    const auto second_indexes = collect(second);
-    /// Shapes that do not line up positionally are instead checked for the widening being present at
-    /// all: it needs an Int64 on one side and a UInt64 on the other. Anything else is a shape
-    /// difference this function has no opinion about, and reporting it would decline merges that have
-    /// nothing to do with the sign of an integer.
-    if (first_indexes.size() != second_indexes.size())
-    {
-        auto contains = [](const std::vector<TypeIndex> & indexes, TypeIndex what)
-        {
-            return std::find(indexes.begin(), indexes.end(), what) != indexes.end();
-        };
-
-        return (contains(first_indexes, TypeIndex::Int64) && contains(second_indexes, TypeIndex::UInt64))
-            || (contains(first_indexes, TypeIndex::UInt64) && contains(second_indexes, TypeIndex::Int64));
-    }
-
-    for (size_t i = 0; i != first_indexes.size(); ++i)
-    {
-        const bool int_vs_uint = first_indexes[i] == TypeIndex::Int64 && second_indexes[i] == TypeIndex::UInt64;
-        const bool uint_vs_int = first_indexes[i] == TypeIndex::UInt64 && second_indexes[i] == TypeIndex::Int64;
-        if (int_vs_uint || uint_vs_int)
-            return true;
-    }
-
-    return false;
+    return paired(first, second, paired);
 }
 
 void carryOverInferenceProvenance(const DataTypePtr & from, const DataTypePtr & to, JSONInferenceInfo * json_info)

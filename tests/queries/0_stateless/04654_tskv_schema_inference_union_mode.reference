@@ -25,4 +25,19 @@ Variant(Array(Nullable(Int64)), Tuple(Nullable(Int64), Nullable(String)))
 Variant(Array(Nullable(Int64)), Tuple(Nullable(Int64), Nullable(String)))
 Variant(Array(Nullable(Int64)), String)
 Variant(Array(Nullable(Int64)), String)
+Variant(Array(Nullable(Int64)), UInt64)
+Variant(Array(Nullable(Int64)), UInt64)
 TYPE_MISMATCH
+7. Template, the remaining escaped-rule reader, is order-independent too
+Nullable(String)
+1
+-1
+18446744073709551615
+Nullable(String)
+-1
+1
+18446744073709551615
+Nullable(UInt64)
+1
+2
+18446744073709551615
