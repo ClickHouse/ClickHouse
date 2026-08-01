@@ -75,16 +75,20 @@ You can specify how long (in seconds) to wait for inactive replicas to execute a
 For all `ALTER` queries, if `alter_sync = 2` and some replicas are not active for more than the time, specified in the `replication_wait_for_inactive_replica_timeout` setting, then an exception `UNFINISHED` is thrown.
 :::
 
-### Concurrent mutations on one table {#concurrent-mutations-on-one-table}
+### Concurrent `ALTER` assignment on one table {#concurrent-alter-assignment-on-one-table}
 
-Submitting several separate mutation `ALTER` statements against the same table in quick succession can fail with `CANNOT_ASSIGN_ALTER` (code 517) while an earlier mutation is still being assigned. Approaches that avoid the race:
+On replicated tables, submitting several separate `ALTER` statements against the same table in quick succession can fail with `CANNOT_ASSIGN_ALTER` (code 517) while an earlier alter is still being assigned. The server message is typically along the lines of "Probably too many alters executing concurrently". This is a **general concurrent metadata-`ALTER` / mutation assignment** condition — it is not limited to mutation-only statements. Ordinary concurrent metadata alters (`ADD` / `DROP` / `MODIFY`, and similar) can raise the same retryable code (see for example the retry path covered by `tests/queries/0_stateless/03518_alter_logical_race.sh`).
+
+Approaches that avoid the race:
 
 - Combine independent metadata operations into a **single** multi-clause `ALTER` when the grammar allows it (for example multiple `ADD INDEX` clauses).
-- Serialize mutation statements and wait for the previous entry to leave the unassigned state (see [`system.mutations`](/operations/system-tables/mutations) and [`mutations_sync`](/operations/settings/settings.md/#mutations_sync)).
+- Serialize `ALTER` statements and retry on code 517. For mutation entries specifically, wait for the previous entry to leave the unassigned state (see [`system.mutations`](/operations/system-tables/mutations) and [`mutations_sync`](/operations/settings/settings.md/#mutations_sync)).
 
-### Combining `MATERIALIZE INDEX` clauses {#combining-materialize-index-clauses}
+### Combining `MATERIALIZE INDEX` with other clauses {#combining-materialize-index-clauses}
 
-Unlike packing several `ADD INDEX` clauses into one statement, putting multiple `MATERIALIZE INDEX` clauses in a single `ALTER` can fail with a parse/planning error (for example code 36 / unknown index). Prefer one `MATERIALIZE INDEX` per statement when you hit that failure mode; wait between statements with `mutations_sync` if you need them ordered.
+Multiple `MATERIALIZE INDEX` clauses in one `ALTER` **can** succeed when the indexes already exist and are known to the planner (covered by `tests/queries/0_stateless/02911_add_index_and_materialize_index.sql`). A failure mode reported under issue `#104306` is steeper: combining **`ADD INDEX` and `MATERIALIZE INDEX` for that same new index in one statement**, or materializing an index that is not yet visible to the planner, can fail (for example code 36 / unknown index).
+
+When you hit that case, split the work: run `ADD INDEX` (and wait until the metadata alter is applied) before `MATERIALIZE INDEX`, or use one `MATERIALIZE INDEX` per statement and wait with `mutations_sync` if you need ordered assignment.
 
 ## Related content {#related-content}
 
