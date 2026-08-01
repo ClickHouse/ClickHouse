@@ -6,6 +6,8 @@
 
 #include <Common/FieldVisitorConvertToNumber.h>
 
+#include <Poco/String.h>
+
 #include <fmt/format.h>
 
 #include <functional>
@@ -461,6 +463,109 @@ const std::map<String, Entry> & scalarFunctions()
         result.emplace("bin", rename("kqlBin", 2, 2));
         result.emplace("bin_at", rename("kqlBinAt", 3, 3));
 
+        /// ---- Binary ------------------------------------------------------------------
+        result.emplace("binary_and", rename("bitAnd", 2, 2));
+        result.emplace("binary_or", rename("bitOr", 2, 2));
+        result.emplace("binary_xor", rename("bitXor", 2, 2));
+        result.emplace("binary_not", rename("bitNot", 1, 1));
+        result.emplace("bitset_count_ones", rename("bitCount", 1, 1));
+        /// Kusto reduces the shift amount modulo 64; ClickHouse does not.
+        const auto shift = [](std::string_view target)
+        {
+            return Entry{
+                2,
+                2,
+                [name = String(target)](const ASTs & a) -> ASTPtr
+                {
+                    /// Kusto shifts by `n % 64` and answers null for a negative n, where
+                    /// ClickHouse would raise.
+                    return makeASTFunction(
+                        "if",
+                        makeASTFunction("less", a[1], litI(0)),
+                        makeASTFunction("CAST", lit(Field()), litS("Nullable(Int64)")),
+                        makeASTFunction(name, a[0], makeASTFunction("modulo", a[1], litI(64))));
+                }};
+        };
+        result.emplace("binary_shift_left", shift("bitShiftLeft"));
+        result.emplace("binary_shift_right", shift("bitShiftRight"));
+
+        /// ---- More mathematics ----------------------------------------------------------
+        result.emplace("acos", rename("acos", 1, 1));
+        result.emplace("asin", rename("asin", 1, 1));
+        result.emplace("atan", rename("atan", 1, 1));
+        result.emplace("atan2", rename("atan2", 2, 2));
+        result.emplace("cos", rename("cos", 1, 1));
+        result.emplace("sin", rename("sin", 1, 1));
+        result.emplace("tan", rename("tan", 1, 1));
+        result.emplace("degrees", rename("degrees", 1, 1));
+        result.emplace("radians", rename("radians", 1, 1));
+        result.emplace("pi", rename("pi", 0, 0));
+        result.emplace("gamma", rename("tgamma", 1, 1));
+        result.emplace("loggamma", rename("lgamma", 1, 1));
+        result.emplace("erf", rename("erf", 1, 1));
+        result.emplace("erfc", rename("erfc", 1, 1));
+        result.emplace("cot", Entry{1, 1, [](const ASTs & a) -> ASTPtr { return makeASTFunction("divide", litI(1), makeASTFunction("tan", a[0])); }});
+
+        /// ---- More strings --------------------------------------------------------------
+        result.emplace(
+            "tohex",
+            Entry{
+                1,
+                2,
+                [](const ASTs & arguments) -> ASTPtr
+                {
+                    /// `hex()` pads to whole bytes and upper-cases; Kusto does neither, and a
+                    /// negative value keeps its two's complement at the width of its type.
+                    ASTPtr digits = makeASTFunction(
+                        "lower", makeASTFunction("hex", makeASTFunction("toInt64", arguments[0])));
+                    ASTPtr trimmed = makeASTFunction(
+                        "if",
+                        makeASTFunction("equals", arguments[0], litI(0)),
+                        litS("0"),
+                        makeASTFunction("replaceRegexpOne", digits, litS("^0+"), litS("")));
+                    if (arguments.size() == 1)
+                        return trimmed;
+                    /// `minLength` left-pads, and is ignored when the value is already longer.
+                    ASTPtr width = makeASTFunction("least", arguments[1], litI(16));
+                    return makeASTFunction(
+                        "if",
+                        makeASTFunction("greaterOrEquals", makeASTFunction("length", trimmed->clone()), width->clone()),
+                        trimmed,
+                        makeASTFunction("leftPad", trimmed->clone(), width, litS("0")));
+                }});
+        result.emplace("hash_sha1", rename("SHA1", 1, 1));
+        result.emplace("new_guid", rename("generateUUIDv4", 0, 0));
+        result.emplace("url_encode", rename("encodeURLComponent", 1, 1));
+        result.emplace("isutf8", Entry{1, 1, [](const ASTs & a) -> ASTPtr { return makeASTFunction("isValidUTF8", asString(a[0])); }});
+        result.emplace(
+            "isascii",
+            Entry{
+                1,
+                1,
+                [](const ASTs & a) -> ASTPtr
+                {
+                    /// True when every byte is below 0x80, which for a UTF-8 string means the
+                    /// byte length and the character length agree.
+                    return makeASTFunction(
+                        "equals", makeASTFunction("length", asString(a[0])), makeASTFunction("lengthUTF8", asString(a[0])));
+                }});
+        result.emplace(
+            "strcmp",
+            Entry{
+                2,
+                2,
+                [](const ASTs & a) -> ASTPtr
+                {
+                    /// -1, 0 or 1 by ordinal comparison.
+                    return makeASTFunction(
+                        "multiIf",
+                        makeASTFunction("less", asString(a[0]), asString(a[1])),
+                        litI(-1),
+                        makeASTFunction("greater", asString(a[0]), asString(a[1])),
+                        litI(1),
+                        litI(0));
+                }});
+
         /// ---- Dates and times --------------------------------------------------------
         /// `now([offset])` and the `startof*`/`endof*` family all take an optional offset.
         result.emplace(
@@ -534,10 +639,133 @@ const std::map<String, Entry> & scalarFunctions()
                 1,
                 [](const ASTs & a) -> ASTPtr
                 {
-                    /// Kusto counts from Sunday = 0; ClickHouse's `toDayOfWeek` counts from
-                    /// Monday = 1.
-                    return makeASTFunction("modulo", makeASTFunction("toDayOfWeek", a[0]), litI(7));
+                    /// Kusto returns the *timespan* since the preceding Sunday, so a Monday
+                    /// is `1.00:00:00` and not `1`. ClickHouse's `toDayOfWeek` counts from
+                    /// Monday = 1, hence the modulo.
+                    return makeASTFunction(
+                        "toIntervalDay", makeASTFunction("modulo", makeASTFunction("toDayOfWeek", a[0]), litI(7)));
                 }});
+        /// `datetime_add(period, amount, datetime)` and `datetime_part(part, datetime)` name
+        /// the unit with a string literal, so the right ClickHouse function is chosen here
+        /// rather than dispatched on at runtime.
+        result.emplace(
+            "datetime_add",
+            Entry{
+                3,
+                3,
+                [](const ASTs & arguments) -> ASTPtr
+                {
+                    static const std::map<String, String> periods{
+                        {"year", "addYears"},         {"quarter", "addQuarters"},
+                        {"month", "addMonths"},       {"week", "addWeeks"},
+                        {"day", "addDays"},           {"hour", "addHours"},
+                        {"minute", "addMinutes"},     {"second", "addSeconds"},
+                        {"millisecond", "addMilliseconds"}, {"microsecond", "addMicroseconds"},
+                        {"nanosecond", "addNanoseconds"},
+                    };
+                    const auto * period = arguments[0]->as<ASTLiteral>();
+                    if (!period || period->value.getType() != Field::Types::String)
+                        return nullptr;
+                    auto it = periods.find(Poco::toLower(period->value.safeGet<String>()));
+                    if (it == periods.end())
+                        return nullptr;
+                    return makeASTFunction(it->second, arguments[2], arguments[1]);
+                }});
+        result.emplace(
+            "datetime_part",
+            Entry{
+                2,
+                2,
+                [](const ASTs & arguments) -> ASTPtr
+                {
+                    static const std::map<String, String> parts{
+                        {"year", "toYear"},           {"quarter", "toQuarter"},
+                        {"month", "toMonth"},         {"week_of_year", "toISOWeek"},
+                        {"weekofyear", "toISOWeek"},  {"day", "toDayOfMonth"},
+                        {"dayofyear", "toDayOfYear"}, {"hour", "toHour"},
+                        {"minute", "toMinute"},       {"second", "toSecond"},
+                    };
+                    /// The sub-second parts are cumulative rather than disjoint: for
+                    /// `.7654321` Kusto answers 765, 765432 and 765432100.
+                    static const std::map<String, Int64> fractions{
+                        {"millisecond", 1000}, {"microsecond", 1000000}, {"nanosecond", 1000000000},
+                    };
+
+                    const auto * part = arguments[0]->as<ASTLiteral>();
+                    if (!part || part->value.getType() != Field::Types::String)
+                        return nullptr;
+                    const String name = Poco::toLower(part->value.safeGet<String>());
+
+                    if (auto it = parts.find(name); it != parts.end())
+                        return makeASTFunction(it->second, arguments[1]);
+
+                    if (auto it = fractions.find(name); it != fractions.end())
+                        return makeASTFunction(
+                            "modulo",
+                            makeASTFunction(
+                                "intDiv",
+                                makeASTFunction(
+                                    "toUnixTimestamp64Nano",
+                                    makeASTFunction("toDateTime64", arguments[1], makeASTFunction("toUInt8", litI(9)))),
+                                litI(1000000000 / it->second)),
+                            litI(it->second));
+
+                    return nullptr;
+                }});
+        result.emplace(
+            "datetime_utc_to_local",
+            Entry{2, 2, [](const ASTs & a) -> ASTPtr { return makeASTFunction("toTimezone", a[0], asString(a[1])); }});
+        result.emplace(
+            "datetime_local_to_utc",
+            Entry{
+                2,
+                2,
+                [](const ASTs & a) -> ASTPtr
+                {
+                    /// The input names a wall-clock time in `timezone`; reading it back in
+                    /// that zone and rendering as UTC is the inverse of `toTimezone`.
+                    return makeASTFunction(
+                        "toDateTime64",
+                        makeASTFunction("toString", makeASTFunction("toTimezone", a[0], asString(a[1]))),
+                        litI(7),
+                        litS("UTC"));
+                }});
+        result.emplace(
+            "make_timespan",
+            Entry{
+                2,
+                4,
+                [](const ASTs & arguments) -> ASTPtr
+                {
+                    /// `make_timespan(h, m)`, `(h, m, s)` or `(d, h, m, s)`.
+                    ASTs parts(arguments.begin(), arguments.end());
+                    ASTPtr days = parts.size() == 4 ? parts[0] : litI(0);
+                    const size_t base = parts.size() == 4 ? 1 : 0;
+                    ASTPtr seconds = parts.size() >= base + 3 ? parts[base + 2] : litI(0);
+                    ASTPtr total = makeASTFunction(
+                        "plus",
+                        makeASTFunction(
+                            "plus",
+                            makeASTFunction("multiply", days, litI(86400)),
+                            makeASTFunction("multiply", parts[base], litI(3600))),
+                        makeASTFunction("plus", makeASTFunction("multiply", parts[base + 1], litI(60)), seconds));
+                    return makeASTFunction("toIntervalNanosecond", makeASTFunction("multiply", total, litI(1000000000)));
+                }});
+        result.emplace(
+            "unixtime_microseconds_todatetime",
+            Entry{
+                1,
+                1,
+                [](const ASTs & a) -> ASTPtr
+                { return makeASTFunction("toDateTime64", makeASTFunction("divide", a[0], litI(1000000)), litI(7), litS("UTC")); }});
+        result.emplace(
+            "unixtime_nanoseconds_todatetime",
+            Entry{
+                1,
+                1,
+                [](const ASTs & a) -> ASTPtr
+                { return makeASTFunction("toDateTime64", makeASTFunction("divide", a[0], litI(1000000000)), litI(7), litS("UTC")); }});
+        result.emplace("week_of_year", Entry{1, 1, [](const ASTs & a) -> ASTPtr { return makeASTFunction("toISOWeek", a[0]); }});
         result.emplace(
             "unixtime_seconds_todatetime",
             Entry{1, 1, [](const ASTs & a) -> ASTPtr { return makeASTFunction("toDateTime64", a[0], litI(7), litS("UTC")); }});
@@ -575,6 +803,362 @@ const std::map<String, Entry> & scalarFunctions()
                     auto function = makeASTFunction("makeDateTime64");
                     function->arguments->children = {parts[0], parts[1], parts[2], parts[3], parts[4], parts[5], litI(0), litI(7), litS("UTC")};
                     return ASTPtr(function);
+                }});
+
+        /// ---- IPv4 / IPv6 -----------------------------------------------------------
+        ///
+        /// A Kusto IPv4 string may carry its own prefix (`192.168.1.1/24`), and where one
+        /// does the low bits are *masked away* rather than ignored. Comparisons combine the
+        /// prefixes of both operands with any explicit one and use the narrowest.
+
+        /// The address part, without any `/suffix`.
+        const auto ip_address = [](const ASTPtr & text)
+        { return makeASTFunction("arrayElement", makeASTFunction("splitByChar", litS("/"), asString(text)), litI(1)); };
+
+        /// The prefix a string carries, or 32 when it carries none.
+        const auto ip_prefix = [](const ASTPtr & text)
+        {
+            ASTPtr parts = makeASTFunction("splitByChar", litS("/"), asString(text));
+            return makeASTFunction(
+                "if",
+                makeASTFunction("greater", makeASTFunction("length", parts->clone()), litI(1)),
+                makeASTFunction("toInt64OrNull", makeASTFunction("arrayElement", parts, litI(2))),
+                litI(32));
+        };
+
+        /// `value` with everything below the top `prefix` bits cleared.
+        const auto ip_mask = [](const ASTPtr & value, const ASTPtr & prefix)
+        {
+            ASTPtr all_ones = litI(0xFFFFFFFF);
+            ASTPtr mask = makeASTFunction(
+                "bitAnd",
+                makeASTFunction("bitShiftLeft", all_ones->clone(), makeASTFunction("minus", litI(32), prefix)),
+                all_ones);
+            return makeASTFunction("bitAnd", value, mask);
+        };
+
+        result.emplace(
+            "ipv4_netmask_suffix", Entry{1, 1, [ip_prefix](const ASTs & a) -> ASTPtr { return ip_prefix(a[0]); }});
+
+        result.emplace(
+            "parse_ipv4",
+            Entry{
+                1,
+                1,
+                [ip_address, ip_prefix, ip_mask](const ASTs & a) -> ASTPtr
+                {
+                    ASTPtr value = makeASTFunction("toInt64OrNull", makeASTFunction("toString", makeASTFunction("IPv4StringToNumOrNull", ip_address(a[0]))));
+                    return ip_mask(value, ip_prefix(a[0]));
+                }});
+        result.emplace(
+            "parse_ipv4_mask",
+            Entry{
+                2,
+                2,
+                [ip_address, ip_mask](const ASTs & a) -> ASTPtr
+                {
+                    ASTPtr value = makeASTFunction("toInt64OrNull", makeASTFunction("toString", makeASTFunction("IPv4StringToNumOrNull", ip_address(a[0]))));
+                    return ip_mask(value, a[1]);
+                }});
+
+        /// `format_ipv4` renders the dotted quad; `format_ipv4_mask` appends `/prefix`.
+        /// Both answer the empty string rather than null when the input does not parse.
+        const auto format_ipv4 = [ip_address, ip_prefix, ip_mask](bool with_suffix)
+        {
+            return Entry{
+                1,
+                2,
+                [ip_address, ip_prefix, ip_mask, with_suffix](const ASTs & a) -> ASTPtr
+                {
+                    ASTPtr embedded = ip_prefix(a[0]);
+                    ASTPtr requested = a.size() == 2 ? a[1] : litI(32);
+                    ASTPtr prefix = makeASTFunction("least", embedded, requested);
+                    ASTPtr value = makeASTFunction(
+                        "toInt64OrNull", makeASTFunction("toString", makeASTFunction("IPv4StringToNumOrNull", ip_address(a[0]))));
+                    ASTPtr text = makeASTFunction(
+                        "IPv4NumToString", makeASTFunction("toUInt32", ip_mask(value, prefix->clone())));
+                    if (with_suffix)
+                        text = makeASTFunction("concat", text, litS("/"), makeASTFunction("toString", prefix->clone()));
+                    /// A negative or out-of-range prefix is a failure, and so is a bad address.
+                    return makeASTFunction(
+                        "if",
+                        makeASTFunction(
+                            "or",
+                            makeASTFunction("isNull", makeASTFunction("IPv4StringToNumOrNull", ip_address(a[0]))),
+                            makeASTFunction(
+                                "or",
+                                makeASTFunction("less", prefix->clone(), litI(0)),
+                                makeASTFunction("greater", prefix, litI(32)))),
+                        litS(""),
+                        text);
+                }};
+        };
+        result.emplace("format_ipv4", format_ipv4(false));
+        result.emplace("format_ipv4_mask", format_ipv4(true));
+
+        /// The narrowest of both operands' prefixes and any explicit one.
+        const auto ipv4_common = [ip_address, ip_prefix, ip_mask](const ASTs & a, bool as_sign)
+        {
+            ASTPtr prefix = makeASTFunction("least", ip_prefix(a[0]), ip_prefix(a[1]));
+            if (a.size() == 3)
+                prefix = makeASTFunction("least", prefix, a[2]);
+
+            const auto value = [&](const ASTPtr & text)
+            {
+                return makeASTFunction(
+                    "toInt64OrNull", makeASTFunction("toString", makeASTFunction("IPv4StringToNumOrNull", ip_address(text))));
+            };
+            ASTPtr left = ip_mask(value(a[0]), prefix->clone());
+            ASTPtr right = ip_mask(value(a[1]), prefix);
+            if (!as_sign)
+                return ASTPtr(makeASTFunction("equals", left, right));
+            return ASTPtr(makeASTFunction(
+                "multiIf",
+                makeASTFunction("less", left->clone(), right->clone()),
+                litI(-1),
+                makeASTFunction("greater", left, right),
+                litI(1),
+                litI(0)));
+        };
+        result.emplace("ipv4_is_match", Entry{2, 3, [ipv4_common](const ASTs & a) { return ipv4_common(a, false); }});
+        result.emplace("ipv4_compare", Entry{2, 3, [ipv4_common](const ASTs & a) { return ipv4_common(a, true); }});
+
+        /// `isIPAddressInRange` insists on a `/prefix`, while Kusto accepts a bare address
+        /// meaning `/32`.
+        const auto in_range = [](const ASTPtr & address, const ASTPtr & range)
+        {
+            ASTPtr cidr = makeASTFunction(
+                "if",
+                makeASTFunction("greater", makeASTFunction("positionUTF8", asString(range), litS("/")), litI(0)),
+                asString(range),
+                makeASTFunction("concat", asString(range), litS("/32")));
+            return makeASTFunction("isIPAddressInRange", asString(address), cidr);
+        };
+        const auto in_range_v6 = [](const ASTPtr & address, const ASTPtr & range)
+        {
+            ASTPtr cidr = makeASTFunction(
+                "if",
+                makeASTFunction("greater", makeASTFunction("positionUTF8", asString(range), litS("/")), litI(0)),
+                asString(range),
+                makeASTFunction("concat", asString(range), litS("/128")));
+            return makeASTFunction("isIPAddressInRange", asString(address), cidr);
+        };
+
+        result.emplace(
+            "ipv4_is_in_range",
+            Entry{2, 2, [ip_address, in_range](const ASTs & a) -> ASTPtr { return in_range(ip_address(a[0]), a[1]); }});
+        result.emplace(
+            "ipv6_is_in_range",
+            Entry{2, 2, [in_range_v6](const ASTs & a) -> ASTPtr { return in_range_v6(a[0], a[1]); }});
+
+        /// `..._is_in_any_range` takes either several range arguments or one array of them.
+        /// Only the variadic string form is accepted here; the `dynamic` form needs the
+        /// object mapping this dialect does not have.
+        const auto in_any_range = [](auto range_test)
+        {
+            return [range_test](const ASTs & arguments) -> ASTPtr
+            {
+                ASTPtr combined;
+                for (size_t i = 1; i < arguments.size(); ++i)
+                {
+                    ASTPtr one = range_test(arguments[0]->clone(), arguments[i]);
+                    combined = combined ? ASTPtr(makeASTFunction("or", combined, one)) : one;
+                }
+                return combined;
+            };
+        };
+        result.emplace(
+            "ipv4_is_in_any_range",
+            Entry{2, VARIADIC, in_any_range([ip_address, in_range](const ASTPtr & ip, const ASTPtr & r) { return in_range(ip_address(ip), r); })});
+        result.emplace(
+            "ipv6_is_in_any_range",
+            Entry{2, VARIADIC, in_any_range([in_range_v6](const ASTPtr & ip, const ASTPtr & r) { return in_range_v6(ip, r); })});
+
+        result.emplace(
+            "ipv4_is_private",
+            Entry{
+                1,
+                1,
+                [ip_address, in_range](const ASTs & a) -> ASTPtr
+                {
+                    /// RFC 1918 only -- Kusto does not count loopback as private.
+                    ASTPtr address = ip_address(a[0]);
+                    ASTPtr result_expr;
+                    for (const auto * range : {"10.0.0.0/8", "172.16.0.0/12", "192.168.0.0/16"})
+                    {
+                        ASTPtr one = in_range(address->clone(), litS(range));
+                        result_expr = result_expr ? ASTPtr(makeASTFunction("or", result_expr, one)) : one;
+                    }
+                    return result_expr;
+                }});
+
+        /// IPv6 comparison works on the 16-byte form, which also lets an IPv4 string be
+        /// compared against an IPv6 one, as Kusto allows.
+        const auto ipv6_common = [](const ASTs & a, bool as_sign) -> ASTPtr
+        {
+            const auto value = [](const ASTPtr & text)
+            {
+                ASTPtr address
+                    = makeASTFunction("arrayElement", makeASTFunction("splitByChar", litS("/"), asString(text)), litI(1));
+                return makeASTFunction("toIPv6OrNull", address);
+            };
+            ASTPtr left = value(a[0]);
+            ASTPtr right = value(a[1]);
+            if (!as_sign)
+                return makeASTFunction("equals", left, right);
+            return makeASTFunction(
+                "multiIf",
+                makeASTFunction("less", left->clone(), right->clone()),
+                litI(-1),
+                makeASTFunction("greater", left, right),
+                litI(1),
+                litI(0));
+        };
+        result.emplace("ipv6_is_match", Entry{2, 2, [ipv6_common](const ASTs & a) { return ipv6_common(a, false); }});
+        result.emplace("ipv6_compare", Entry{2, 2, [ipv6_common](const ASTs & a) { return ipv6_common(a, true); }});
+
+        /// ---- Geospatial (the point-based subset) --------------------------------------
+        ///
+        /// Every `geo_*` function takes longitude before latitude. ClickHouse is not
+        /// consistent about that -- `geohashEncode` is lon-first but `geoToH3` is lat-first --
+        /// so the order is spelled out at each call rather than assumed.
+        ///
+        /// Distances use a sphere of radius 6371010 m, which is the value that reproduces the
+        /// figure in Microsoft's own `geo_distance_2points` example exactly. ClickHouse's
+        /// `greatCircleDistance` is a fast approximation on a different radius and lands
+        /// about 600 m out over 1500 km, so the haversine is written out here instead.
+        const auto haversine = [](const ASTPtr & lon1, const ASTPtr & lat1, const ASTPtr & lon2, const ASTPtr & lat2)
+        {
+            const auto half_sine_squared = [](const ASTPtr & degrees)
+            {
+                ASTPtr half = makeASTFunction("divide", makeASTFunction("radians", degrees), litI(2));
+                return makeASTFunction("pow", makeASTFunction("sin", half), litI(2));
+            };
+            ASTPtr a = makeASTFunction(
+                "plus",
+                half_sine_squared(makeASTFunction("minus", lat2->clone(), lat1->clone())),
+                makeASTFunction(
+                    "multiply",
+                    makeASTFunction(
+                        "multiply",
+                        makeASTFunction("cos", makeASTFunction("radians", lat1->clone())),
+                        makeASTFunction("cos", makeASTFunction("radians", lat2->clone()))),
+                    half_sine_squared(makeASTFunction("minus", lon2->clone(), lon1->clone()))));
+            return makeASTFunction(
+                "multiply", litI(2 * 6371010), makeASTFunction("asin", makeASTFunction("sqrt", a)));
+        };
+
+        result.emplace(
+            "geo_distance_2points",
+            Entry{4, 5, [haversine](const ASTs & a) -> ASTPtr { return haversine(a[0], a[1], a[2], a[3]); }});
+        result.emplace(
+            "geo_point_in_circle",
+            Entry{
+                5,
+                5,
+                [haversine](const ASTs & a) -> ASTPtr
+                { return makeASTFunction("lessOrEquals", haversine(a[0], a[1], a[2], a[3]), a[4]); }});
+        result.emplace(
+            "geo_point_to_geohash",
+            Entry{
+                2,
+                3,
+                [](const ASTs & a) -> ASTPtr
+                {
+                    /// `geohashEncode` is longitude-first, like Kusto. Default accuracy is 5.
+                    return makeASTFunction(
+                        "geohashEncode",
+                        makeASTFunction("toFloat64", a[0]),
+                        makeASTFunction("toFloat64", a[1]),
+                        makeASTFunction("toUInt8", a.size() == 3 ? a[2] : litI(5)));
+                }});
+        result.emplace(
+            "geo_point_to_h3cell",
+            Entry{
+                2,
+                3,
+                [](const ASTs & a) -> ASTPtr
+                {
+                    /// `geoToH3` takes LATITUDE first, the opposite of Kusto. Kusto returns
+                    /// the cell as a hexadecimal token string, not a number. Default is 6.
+                    ASTPtr resolution = makeASTFunction("toUInt8", a.size() == 3 ? a[2] : litI(6));
+                    return makeASTFunction(
+                        "h3ToString",
+                        makeASTFunction(
+                            "geoToH3",
+                            makeASTFunction("toFloat64", a[1]),
+                            makeASTFunction("toFloat64", a[0]),
+                            resolution));
+                }});
+        result.emplace(
+            "geo_h3cell_level",
+            Entry{
+                1,
+                1,
+                [](const ASTs & a) -> ASTPtr
+                { return makeASTFunction("h3GetResolution", makeASTFunction("stringToH3", asString(a[0]))); }});
+        result.emplace(
+            "geo_h3cell_parent",
+            Entry{
+                1,
+                2,
+                [](const ASTs & a) -> ASTPtr
+                {
+                    /// Without a resolution the immediate parent is meant.
+                    ASTPtr cell = makeASTFunction("stringToH3", asString(a[0]));
+                    ASTPtr level = makeASTFunction(
+                        "toUInt8",
+                        a.size() == 2
+                            ? a[1]
+                            : ASTPtr(makeASTFunction("minus", makeASTFunction("h3GetResolution", cell->clone()), litI(1))));
+                    return makeASTFunction("h3ToString", makeASTFunction("h3ToParent", cell, level));
+                }});
+        result.emplace(
+            "geo_h3cell_children",
+            Entry{
+                1,
+                2,
+                [](const ASTs & a) -> ASTPtr
+                {
+                    ASTPtr cell = makeASTFunction("stringToH3", asString(a[0]));
+                    ASTPtr level = makeASTFunction(
+                        "toUInt8",
+                        a.size() == 2
+                            ? a[1]
+                            : ASTPtr(makeASTFunction("plus", makeASTFunction("h3GetResolution", cell->clone()), litI(1))));
+                    return makeASTFunction(
+                        "arrayMap",
+                        makeASTFunction(
+                            "lambda",
+                            makeASTFunction("tuple", make_intrusive<ASTIdentifier>("kql_cell")),
+                            makeASTFunction("h3ToString", make_intrusive<ASTIdentifier>("kql_cell"))),
+                        makeASTFunction("h3ToChildren", cell, level));
+                }});
+        result.emplace(
+            "geo_h3cell_neighbors",
+            Entry{
+                1,
+                1,
+                [](const ASTs & a) -> ASTPtr
+                {
+                    /// Kusto returns the immediate neighbours and excludes the cell itself,
+                    /// which `h3kRing` includes.
+                    ASTPtr cell = makeASTFunction("stringToH3", asString(a[0]));
+                    ASTPtr ring = makeASTFunction("h3kRing", cell->clone(), makeASTFunction("toUInt16", litI(1)));
+                    ASTPtr without_self = makeASTFunction(
+                        "arrayFilter",
+                        makeASTFunction(
+                            "lambda",
+                            makeASTFunction("tuple", make_intrusive<ASTIdentifier>("kql_cell")),
+                            makeASTFunction("notEquals", make_intrusive<ASTIdentifier>("kql_cell"), cell)),
+                        ring);
+                    return makeASTFunction(
+                        "arrayMap",
+                        makeASTFunction(
+                            "lambda",
+                            makeASTFunction("tuple", make_intrusive<ASTIdentifier>("kql_cell")),
+                            makeASTFunction("h3ToString", make_intrusive<ASTIdentifier>("kql_cell"))),
+                        without_self);
                 }});
 
         /// ---- Dynamic (arrays) -------------------------------------------------------
@@ -782,40 +1366,32 @@ static const std::set<String> & unsupportedKQLFunctions()
 {
     static const std::set<String> names{
         "array_rotate_left", "array_rotate_right", "array_shift_left", "array_shift_right",
-        "array_sort_asc",    "array_sort_desc",    "bag_has_key",      "bag_keys",
-        "bag_merge",         "bag_pack",           "bag_pack_columns", "bag_remove_keys",
-        "bag_set_key",       "bag_unpack",         "base64_decode_toarray",
-        "binary_all_and",    "binary_all_or",      "binary_all_xor",   "buildschema",
-        "column_ifexists",   "current_cluster_endpoint", "current_database",
+        "array_sort_asc", "array_sort_desc", "bag_has_key", "bag_keys", "bag_merge", "bag_pack",
+        "bag_pack_columns", "bag_remove_keys", "bag_set_key", "bag_unpack",
+        "base64_decode_toarray", "binary_all_and", "binary_all_or", "binary_all_xor",
+        "buildschema", "column_ifexists", "current_cluster_endpoint", "current_database",
         "current_principal", "current_principal_details", "current_principal_is_member_of",
-        "cursor_after",      "cursor_before_or_at", "cursor_current", "datatable",
-        "dcount_hll",        "dynamic_to_json",    "estimate_data_size", "extent_id",
-        "extent_tags",       "externaldata",       "extract_all",      "format_bytes",     "format_datetime",     "format_ipv4",
-        "format_ipv4_mask",  "format_timespan",    "geo_distance_2points",
-        "geo_geohash_to_central_point", "geo_point_in_circle", "geo_point_in_polygon",
-        "geo_point_to_geohash", "geo_point_to_s2cell", "has_any_index", "hll_merge",
-        "ingestion_time",    "ipv4_compare",       "ipv4_is_in_range", "ipv4_is_in_any_range",
-        "ipv4_is_match",     "ipv4_is_private",    "ipv4_netmask_suffix", "ipv6_compare",
-        "ipv6_is_match",     "make_bag",           "make_bag_if",      "materialize",
-        "pack",              "pack_all",                 "pack_dictionary",
-        "parse_command_line", "parse_csv",         "parse_ipv4",       "parse_ipv4_mask",
-        "parse_ipv6",        "parse_ipv6_mask",    "parse_json",       "parse_path",
-        "parse_url",         "parse_urlquery",     "parse_user_agent", "parse_version",
-        "parse_xml",         "percentile_array",   "percentiles",      "percentiles_array",
-        "percentilesw",      "percentilesw_array", "percentilew",      "punycode_from_string",
-        "punycode_to_string", "range",              "repeat",           "replace",
-        "translate",             "row_cumsum",       "row_number",
-        "row_rank_dense",    "row_rank_min",       "row_window_session", "series_abs",
-        "series_acos",       "series_add",         "series_decompose", "series_decompose_anomalies",
+        "cursor_after", "cursor_before_or_at", "cursor_current", "datatable", "dcount_hll",
+        "dynamic_to_json", "estimate_data_size", "extent_id", "extent_tags", "externaldata",
+        "extract_all", "format_bytes", "format_datetime", "format_timespan",
+        "geo_geohash_to_central_point", "geo_h3cell_to_central_point", "geo_point_in_polygon",
+        "geo_point_to_s2cell", "geo_s2cell_to_central_point", "has_any_index", "hll_merge",
+        "ingestion_time", "make_bag", "make_bag_if", "materialize", "pack", "pack_all",
+        "pack_dictionary", "parse_command_line", "parse_csv", "parse_ipv6", "parse_ipv6_mask",
+        "parse_json", "parse_path", "parse_url", "parse_urlquery", "parse_user_agent",
+        "parse_version", "parse_xml", "percentile_array", "percentiles", "percentiles_array",
+        "percentilesw", "percentilesw_array", "percentilew", "punycode_from_string",
+        "punycode_to_string", "range", "repeat", "replace", "row_cumsum", "row_number",
+        "row_rank_dense", "row_rank_min", "row_window_session", "series_abs", "series_acos",
+        "series_add", "series_decompose", "series_decompose_anomalies",
         "series_decompose_forecast", "series_divide", "series_equals", "series_fft",
         "series_fill_backward", "series_fill_const", "series_fill_forward", "series_fill_linear",
-        "series_fir",        "series_fit_2lines",  "series_fit_line",  "series_greater",
-        "series_iir",        "series_less",        "series_multiply",  "series_not_equals",
-        "series_outliers",   "series_pearson_correlation", "series_periods_detect",
-        "series_periods_validate", "series_seasonal", "series_stats", "series_stats_dynamic",
-        "series_subtract",   "series_sum",           "todynamic",         "toscalar",           "treepath",
-        "unixtime_microseconds_todatetime", "unixtime_nanoseconds_todatetime",
-        "zip",
+        "series_fir", "series_fit_2lines", "series_fit_line", "series_greater", "series_iir",
+        "series_less", "series_multiply", "series_not_equals", "series_outliers",
+        "series_pearson_correlation", "series_periods_detect", "series_periods_validate",
+        "series_seasonal", "series_stats", "series_stats_dynamic", "series_subtract", "series_sum",
+        "todynamic", "toscalar", "translate", "treepath", "unixtime_microseconds_todatetime",
+        "unixtime_nanoseconds_todatetime", "zip",
     };
     return names;
 }

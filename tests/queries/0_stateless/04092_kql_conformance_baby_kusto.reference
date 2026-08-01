@@ -184,8 +184,8 @@ nan
 3
 nan
 -- BuiltIns_DayOfWeek --
-0
-1
+00:00:00
+1.00:00:00
 -- BuiltIns_DayOfMonth --
 14
 \N

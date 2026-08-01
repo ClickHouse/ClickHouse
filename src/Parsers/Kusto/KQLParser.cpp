@@ -1208,7 +1208,8 @@ bool producesBoolean(const ASTPtr & node)
         "equals", "notEquals", "less", "lessOrEquals", "greater", "greaterOrEquals",
         "and", "or", "not", "in", "notIn", "match", "startsWith", "endsWith",
         /// The KQL predicates that are documented as returning `bool`.
-        "isNull", "isNotNull", "isNaN", "isInfinite", "isFinite", "has", "empty", "notEmpty"};
+        "isNull", "isNotNull", "isNaN", "isInfinite", "isFinite", "has", "empty", "notEmpty",
+        "isIPAddressInRange", "isValidUTF8"};
     return boolean_functions.contains(function->name);
 }
 }

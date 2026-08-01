@@ -91,7 +91,7 @@ Measured against Microsoft's own indexes
 | | Kusto documents | supported here |
 |---|---|---|
 | Tabular operators | 52 | 20 |
-| Scalar and aggregate functions | 307 | 123 |
+| Scalar and aggregate functions | 307 | 162 |
 | User-defined functions | yes | yes |
 
 The supported operators are the ones Microsoft's own *Learn common operators* tutorial teaches,
@@ -106,10 +106,14 @@ Rejected with a parse error, rather than mistranslated:
   `top-nested`, `make-series`, `sample`, `serialize`, `partition`, `range` as an operator.
 - Functions: the `series_*` family, `bag_*` / `pack_*`, `parse_url`, `parse_csv`,
   `parse_json`, `todynamic`, `toscalar`, `format_timespan`, `format_datetime`, `extract_all`,
-  `range`, the `percentiles*` family, the `row_*` window functions, and the `ipv4_*` /
-  `ipv6_*` family. (`format_datetime` and `extract_all` are rejected rather than
-  approximated: Kusto's `yyyy-MM-dd` format specifiers are not ClickHouse's, and Kusto's
-  `extract_all` returns one array per capture group.)
+  `range`, the `percentiles*` family and the `row_*` window functions.
+  (`format_datetime` and `extract_all` are rejected rather than approximated: Kusto's
+  `yyyy-MM-dd` format specifiers are not ClickHouse's, and Kusto's `extract_all` returns one
+  array per capture group.)
+- The geospatial functions that take or return GeoJSON — every `geo_*_to_central_point`, and
+  everything operating on polygons and lines. The point, geohash and H3 functions that work in
+  plain longitude/latitude *are* supported. `geo_point_to_s2cell` is not: ClickHouse has no
+  S2 token form.
 - `dynamic` **objects** (`dynamic({"a": 1})`), member access (`x.y`) and lookup by key
   (`x['k']`). Only `dynamic` arrays are mapped, onto ClickHouse `Array`.
 - Cross-cluster and cross-database references such as `cluster(...)` and `database(...)`.
@@ -139,6 +143,13 @@ Rejected with a parse error, rather than mistranslated:
   all columns and pads with nulls; ClickHouse's `UNION ALL` does not.
 - **String operators are matching functions, not `LIKE` patterns.** `contains '50%'` looks
   for a literal per cent sign.
+- **`geo_*` takes longitude before latitude**, as Kusto does. Distances are computed on a
+  sphere of radius 6371010 m, the value that reproduces Kusto's own documented results
+  exactly; ClickHouse's `greatCircleDistance` uses a different radius and a faster
+  approximation, and lands about 600 m out over 1500 km.
+- **`dayofweek()` returns a timespan**, not a number: a Monday is `1.00:00:00`.
+- **`tohex()` renders a negative value at 64-bit width.** Kusto renders it at the width of the
+  argument's own type, which is not visible while parsing.
 - **Datetimes are real `DateTime64` values**, so they print the ClickHouse way
   (`2017-01-01 00:00:00`) rather than Kusto's `2017-01-01T00:00:00.0000000`. The previous
   implementation produced a formatted *string*, which looked like Kusto but did not compare

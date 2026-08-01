@@ -38,7 +38,8 @@ print bag_keys(dynamic([1]));                         -- { clientError SYNTAX_ER
 print parse_url('http://host/p');                     -- { clientError SYNTAX_ERROR }
 print parse_csv('a,b');                               -- { clientError SYNTAX_ERROR }
 print toscalar(1);                                    -- { clientError SYNTAX_ERROR }
-print ipv4_is_match('1.2.3.4', '1.2.3.0/24');         -- { clientError SYNTAX_ERROR }
+print geo_point_in_polygon(1, 1, dynamic({}));        -- { clientError SYNTAX_ERROR } GeoJSON needs dynamic objects
+print geo_s2cell_to_central_point('88d9b');           -- { clientError SYNTAX_ERROR } returns a GeoJSON object
 print format_timespan(1d, 'hh:mm');                   -- { clientError SYNTAX_ERROR }
 
 -- Wrong number of arguments is reported at parse time, not at execution.
