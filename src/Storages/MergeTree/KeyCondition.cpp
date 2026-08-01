@@ -2683,9 +2683,11 @@ void KeyCondition::analyzeKeyExpressionForSetIndex(const RPNBuilderTreeNode & ar
 /// A plain `Nullable` node is left out of the signature, because
 /// `setIndexTypesHaveSameFieldRepresentation` admits a nested `Nullable` against its plain counterpart
 /// and `DataTypeNullable::forEachChild` visits the wrapper's nested type as an extra node, so a
-/// one-sided wrapper would otherwise make the two signatures differ in LENGTH. That cannot weaken the
-/// `equals` arm: there both trees are `equals`-equal and carry `Nullable` at identical positions, so
-/// the same nodes are dropped from both. A CUSTOM-NAMED `Nullable` is still noted.
+/// one-sided wrapper would otherwise make the two signatures differ in LENGTH. Since that helper takes
+/// `one_sided_nullable_is_enough`, only its PACKED caller can still deliver a one-sided wrapper here, so
+/// the parity concern is packed-only - but the omission has to stay for that caller. It cannot weaken
+/// the `equals` arm either: there both trees are `equals`-equal and carry `Nullable` at identical
+/// positions, so the same nodes are dropped from both. A CUSTOM-NAMED `Nullable` is still noted.
 static bool setIndexTypesAgreeOnCustomNames(const IDataType & left, const IDataType & right)
 {
     auto custom_name_signature = [](const IDataType & type)
@@ -2758,7 +2760,11 @@ static bool setIndexTypeTreeHasStableChildOrder(const IDataType & type)
 /// already answers them correctly - it compares a decimal's scale, so `Decimal(10, 2)` vs
 /// `Decimal(18, 2)` is admitted (runtime 1) and `Decimal(10, 2)` vs `Decimal(20, 2)` declines
 /// (runtime 0).
-static bool setIndexTypesHaveSameFieldRepresentation(const IDataType & left, const IDataType & right)
+///
+/// `one_sided_nullable_is_enough` selects how strict the `Nullable` arm is, because the safety of a
+/// one-sided wrapper depends on the CALLER's shape; see that arm for the two cases.
+static bool setIndexTypesHaveSameFieldRepresentation(
+    const IDataType & left, const IDataType & right, bool one_sided_nullable_is_enough)
 {
     const WhichDataType left_which(left);
     const WhichDataType right_which(right);
@@ -2783,7 +2789,8 @@ static bool setIndexTypesHaveSameFieldRepresentation(const IDataType & left, con
             return false;
 
         for (size_t i = 0; i < left_elements.size(); ++i)
-            if (!setIndexTypesHaveSameFieldRepresentation(*left_elements[i], *right_elements[i]))
+            if (!setIndexTypesHaveSameFieldRepresentation(
+                    *left_elements[i], *right_elements[i], one_sided_nullable_is_enough))
                 return false;
         return true;
     }
@@ -2791,27 +2798,53 @@ static bool setIndexTypesHaveSameFieldRepresentation(const IDataType & left, con
     if (left_which.isArray() && right_which.isArray())
         return setIndexTypesHaveSameFieldRepresentation(
             *assert_cast<const DataTypeArray &>(left).getNestedType(),
-            *assert_cast<const DataTypeArray &>(right).getNestedType());
+            *assert_cast<const DataTypeArray &>(right).getNestedType(),
+            one_sided_nullable_is_enough);
 
     /// A `Map` is a `Array(Tuple(key, value))` underneath, so recursing into that one nested type
     /// covers both halves without needing the container's own accessors.
     if (left_which.isMap() && right_which.isMap())
         return setIndexTypesHaveSameFieldRepresentation(
             *assert_cast<const DataTypeMap &>(left).getNestedType(),
-            *assert_cast<const DataTypeMap &>(right).getNestedType());
+            *assert_cast<const DataTypeMap &>(right).getNestedType(),
+            one_sided_nullable_is_enough);
 
     /// A `Nullable` wrapper is not represented in a `Field` at all: a non-NULL value carries the same
     /// variant as its plain counterpart (`has([tuple(CAST(10, 'Nullable(UInt16)'))], tuple(toUInt32(10)))`
-    /// is 1), and a NULL carries `Types::Null`, which matches no plain value either way. The preparation
-    /// direction is safe too - `accurateCastOrNull` maps a NULL element to a NULL WHOLE composite, which
-    /// the caller then filters out. So recurse through it on either side; the wrapper is intentionally
-    /// not required to be present on both.
-    if (left_which.isNullable())
+    /// is 1), and a NULL carries `Types::Null`, which matches no plain value either way. So when the
+    /// wrapper is present on BOTH sides it can always be recursed through - the runtime comparison
+    /// cannot see it.
+    ///
+    /// A wrapper present on only ONE side is a different question, and the answer depends on the shape
+    /// the CALLER is deciding, so `one_sided_nullable_is_enough` selects it:
+    /// - PACKED (`setIndexConversionPreservesEquality`'s composite arm): safe. There the WHOLE composite
+    ///   is cast by `castColumnAccurateOrNull`, which maps a NULL element to a NULL whole composite, and
+    ///   the caller's filter then drops that set row entirely. Measured: a plain `Tuple(UInt32, UInt32)`
+    ///   key against `[(10, 0), (50000, 0), (NULL, NULL)]` reports a `2-element set` (the NULL-bearing
+    ///   row is gone) and agrees with an `ENGINE = Memory` oracle for both `has` and `NOT has`.
+    /// - UNPACKED (`compositeHasArgumentsHaveSameType`): NOT safe. `tryPrepareSetColumnsForIndex` splits
+    ///   the composite into scalars BEFORE any conversion, so no whole-composite cast ever runs. Each
+    ///   scalar then takes the nullable branch, which strips `Nullable` and replaces the column with the
+    ///   NESTED one; that column holds the type default at a source-NULL row, so the per-scalar
+    ///   `castColumnAccurateOrNull` produces no NULL there and the row survives the filter. A
+    ///   `(NULL, NULL)` element therefore enters the pruning set as `(0, 0)`, which runtime `has` does
+    ///   NOT match (`Types::Null` matches nothing), so claiming exactness prunes the real `(0, 0)` part
+    ///   and drops a row. Require the wrapper on both sides there.
+    if (left_which.isNullable() && right_which.isNullable())
         return setIndexTypesHaveSameFieldRepresentation(
-            *assert_cast<const DataTypeNullable &>(left).getNestedType(), right);
-    if (right_which.isNullable())
+            *assert_cast<const DataTypeNullable &>(left).getNestedType(),
+            *assert_cast<const DataTypeNullable &>(right).getNestedType(),
+            one_sided_nullable_is_enough);
+    if (left_which.isNullable() || right_which.isNullable())
+    {
+        if (!one_sided_nullable_is_enough)
+            return false;
+        if (left_which.isNullable())
+            return setIndexTypesHaveSameFieldRepresentation(
+                *assert_cast<const DataTypeNullable &>(left).getNestedType(), right, one_sided_nullable_is_enough);
         return setIndexTypesHaveSameFieldRepresentation(
-            left, *assert_cast<const DataTypeNullable &>(right).getNestedType());
+            left, *assert_cast<const DataTypeNullable &>(right).getNestedType(), one_sided_nullable_is_enough);
+    }
 
     /// Native integer widths collapse into one `Field` variant per signedness, so they are
     /// interchangeable. Everything wider keeps its own variant and is left to `equals`.
@@ -2865,7 +2898,11 @@ static bool setIndexConversionPreservesEquality(
     if (key->equals(*set) && setIndexTypeTreeHasStableChildOrder(*key) && setIndexTypesAgreeOnCustomNames(*key, *set))
         return true;
 
-    if (composite_field_identity_is_enough && setIndexTypesHaveSameFieldRepresentation(*key, *set)
+    /// `one_sided_nullable_is_enough = true`: this is the PACKED shape, where the whole composite is cast
+    /// by `castColumnAccurateOrNull` below, so a NULL element nulls the entire tuple and the caller's
+    /// filter drops that set row. See the `Nullable` arm of that helper.
+    if (composite_field_identity_is_enough
+        && setIndexTypesHaveSameFieldRepresentation(*key, *set, /*one_sided_nullable_is_enough=*/true)
         && setIndexTypeTreeHasStableChildOrder(*key) && setIndexTypesAgreeOnCustomNames(*key, *set))
         return true;
 
@@ -3179,6 +3216,13 @@ bool KeyCondition::tryPrepareSetIndexForIn(
 /// its left type, so those two outer attributes are placeholders there and must not discriminate; see
 /// the comment at that branch. Every NESTED attribute is compared in both shapes.
 ///
+/// A nested `Nullable` present on only ONE side is likewise decided per shape, because the conversion
+/// that has to preserve it differs: the packed shape casts the WHOLE composite, so a NULL element nulls
+/// the tuple and `tryPrepareSetColumnsForIndex`'s filter drops that set row; the unpacked shape converts
+/// each scalar separately after stripping `Nullable`, so a source NULL becomes the nested column's type
+/// default and survives (a `(NULL, NULL)` element would enter the pruning set as the all-default tuple,
+/// which runtime `has` does not match). Only the packed branch therefore tolerates it.
+///
 /// A transforming key expression is declined outright, in both shapes below: `data_types` always holds
 /// the type of the KEY column, which is the left expression's own type only when the key expression
 /// does not transform it (`analyzeKeyExpressionForSetIndex` records the type of the transformed key in
@@ -3208,8 +3252,15 @@ static bool compositeHasArgumentsHaveSameType(
     /// What the two type comparisons below are run against. It is `element_type` itself except on the
     /// unpacked branch, where the outer tuple attributes of the two sides are not comparable; see there.
     DataTypePtr right_type = element_type;
+    /// Whether a `Nullable` wrapper present on only ONE side may be recursed through. This function
+    /// serves BOTH composite shapes, and the answer differs between them: the packed one casts the whole
+    /// composite (a NULL element nulls the tuple and is filtered out), while the unpacked one converts
+    /// per scalar and loses a source NULL's null map. Set per branch below; see the `Nullable` arm of
+    /// `setIndexTypesHaveSameFieldRepresentation`.
+    bool one_sided_nullable_is_enough = false;
     if (key_args_count == 1)
     {
+        one_sided_nullable_is_enough = true;
         /// A single composite argument (a packed tuple/array column): `data_types` holds that one key
         /// column's type directly.
         if (set_transforming_dags.size() != 1)
@@ -3253,7 +3304,7 @@ static bool compositeHasArgumentsHaveSameType(
     }
 
     return (left_type->equals(*right_type)
-            || setIndexTypesHaveSameFieldRepresentation(*left_type, *right_type))
+            || setIndexTypesHaveSameFieldRepresentation(*left_type, *right_type, one_sided_nullable_is_enough))
         && setIndexTypeTreeHasStableChildOrder(*left_type)
         && setIndexTypesAgreeOnCustomNames(*left_type, *right_type);
 }

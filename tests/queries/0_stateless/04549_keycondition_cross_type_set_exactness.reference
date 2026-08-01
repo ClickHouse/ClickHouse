@@ -148,9 +148,12 @@ N33 packed nested-Nullable has keeps pruning	1
 N33 packed nested-Nullable NOT has result	1
 N33 packed nested-Nullable NOT has keeps pruning	1
 U33 unpacked nested-Nullable has result	1
-U33 unpacked nested-Nullable has keeps pruning	1
+U33 unpacked nested-Nullable has declines	1
 U33 unpacked nested-Nullable NOT has result	1
-U33 unpacked nested-Nullable NOT has keeps pruning	1
+U33 unpacked nested-Nullable NOT has declines	1
+Q33 packed one-sided Nullable has result	1
+Q33 packed one-sided Nullable NOT has result	1
+Q33 packed one-sided Nullable NOT has keeps pruning	1
 Field width u8 vs u64	1
 Field width i8 vs i64	1
 Field signedness i32 vs u32	0
@@ -203,7 +206,7 @@ packed named key matching outer name	1
 --- composite IN over a narrowing element: pruning is withdrawn, matching the oracle ---
 D1 widening direction	1
 D1 scalar narrowing at default settings	1
---- integer composites: pruning is withdrawn for both callers, results stay correct ---
+--- integer composites: pruning is withdrawn for IN, results stay correct ---
 grid P UInt8/UInt8	1	1
 grid P UInt8/UInt16	1	1
 grid P UInt8/UInt32	1	1

@@ -137,6 +137,11 @@ SELECT count()
 FROM test_has_idx_tuple_two_cols
 WHERE has([(10, 0), (50000, 0)], (k1, k2));
 
+-- The unpacked composite shape declines a nested `Nullable` present on only one side, so no atom is
+-- built here. That per-scalar conversion strips the wrapper and reads the nested column, whose value at
+-- a source-NULL row is the type default, so `(NULL, NULL)` would enter the pruning set as `(0, 0)` -
+-- which runtime `has` does not match, so claiming exactness prunes the real `(0, 0)` key under negation.
+-- Results are unaffected either way; only the pruning is withdrawn.
 EXPLAIN indexes = 1
 SELECT count()
 FROM test_has_idx_tuple_two_cols

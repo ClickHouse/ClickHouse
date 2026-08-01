@@ -684,7 +684,10 @@ SELECT 'T33 packed tuple has result',
 SELECT 'T33 packed tuple has keeps pruning', count() > 0 FROM (EXPLAIN indexes = 1 SELECT count() FROM t33 WHERE has([(10, 0), (50000, 0)], kt)) WHERE explain ILIKE '%element set%';
 SELECT 'T33 packed tuple NOT has result',
     (SELECT count() FROM t33 WHERE NOT has([(10, 0), (50000, 0)], kt)) = (SELECT count() FROM t33o WHERE NOT has([(10, 0), (50000, 0)], kt));
-SELECT 'T33 packed tuple NOT has keeps pruning', count() > 0 FROM (EXPLAIN indexes = 1 SELECT count() FROM t33 WHERE NOT has([(10, 0), (50000, 0)], kt)) WHERE explain ILIKE '%element set%';
+-- Assert the part reduction, not the atom's own text: a RELAXED atom still prints `element set` while
+-- `can_be_false` is forced true before the negation, so negative pruning is off - which the text cannot
+-- distinguish from the exact outcome this cell exists to pin. `Parts:` is format-independent.
+SELECT 'T33 packed tuple NOT has keeps pruning', count() > 0 FROM (EXPLAIN indexes = 1 SELECT count() FROM t33 WHERE NOT has([(10, 0), (50000, 0)], kt)) WHERE explain ILIKE '%Parts: 1/3%';
 -- The `IN` side of the SAME pair: it must still decline, otherwise the runtime cast throws.
 SELECT 'T33 packed tuple IN declines', count() = 0 FROM (EXPLAIN indexes = 1 SELECT count() FROM t33 WHERE kt IN (SELECT (toUInt16(10), toUInt8(0)))) WHERE explain ILIKE '%element set%';
 SELECT 'T33 packed tuple IN result',
@@ -704,7 +707,8 @@ SELECT 'A33 array key has result',
 SELECT 'A33 array key has keeps pruning', count() > 0 FROM (EXPLAIN indexes = 1 SELECT count() FROM a33 WHERE has([[10, 11], [50000, 50001]], ak)) WHERE explain ILIKE '%element set%';
 SELECT 'A33 array key NOT has result',
     (SELECT count() FROM a33 WHERE NOT has([[10, 11], [50000, 50001]], ak)) = (SELECT count() FROM a33o WHERE NOT has([[10, 11], [50000, 50001]], ak));
-SELECT 'A33 array key NOT has keeps pruning', count() > 0 FROM (EXPLAIN indexes = 1 SELECT count() FROM a33 WHERE NOT has([[10, 11], [50000, 50001]], ak)) WHERE explain ILIKE '%element set%';
+-- Same `Parts:` idiom as the T33 cell above, and for the same reason.
+SELECT 'A33 array key NOT has keeps pruning', count() > 0 FROM (EXPLAIN indexes = 1 SELECT count() FROM a33 WHERE NOT has([[10, 11], [50000, 50001]], ak)) WHERE explain ILIKE '%Parts: 1/3%';
 
 -- A nested `Nullable` on ONE side only. It is not represented in a `Field` at all (a non-NULL value
 -- carries the same variant as its plain counterpart, a NULL carries `Types::Null` and matches nothing),
@@ -733,13 +737,39 @@ CREATE TABLE u33o (a UInt32, b UInt32) ENGINE = Memory;
 INSERT INTO u33 VALUES (10, 0);
 INSERT INTO u33 VALUES (50000, 0);
 INSERT INTO u33 VALUES (7, 7);
-INSERT INTO u33o VALUES (10, 0), (50000, 0), (7, 7);
+-- The all-default tuple. It is the value a dropped source NULL turns into on this path, so it is the
+-- only row that can witness the unpacked shape admitting a one-sided `Nullable`: the per-scalar
+-- conversion strips the wrapper and reads the nested column, whose value at a NULL row is the type
+-- default, so `(NULL, NULL)` would enter the pruning set as `(0, 0)` and prune this very part.
+INSERT INTO u33 VALUES (0, 0);
+INSERT INTO u33o VALUES (10, 0), (50000, 0), (7, 7), (0, 0);
 SELECT 'U33 unpacked nested-Nullable has result',
     (SELECT count() FROM u33 WHERE has([(10, 0), (50000, 0), (NULL, NULL)], (a, b))) = (SELECT count() FROM u33o WHERE has([(10, 0), (50000, 0), (NULL, NULL)], (a, b)));
-SELECT 'U33 unpacked nested-Nullable has keeps pruning', count() > 0 FROM (EXPLAIN indexes = 1 SELECT count() FROM u33 WHERE has([(10, 0), (50000, 0), (NULL, NULL)], (a, b))) WHERE explain ILIKE '%element set%';
+-- The unpacked shape must DECLINE a one-sided nested `Nullable`, so all four single-row parts are read.
+-- `Parts:` is asserted rather than the atom's own text because a RELAXED atom still prints that text
+-- while its `can_be_false` is forced true, which cannot be told apart from the exact outcome.
+SELECT 'U33 unpacked nested-Nullable has declines', count() > 0 FROM (EXPLAIN indexes = 1 SELECT count() FROM u33 WHERE has([(10, 0), (50000, 0), (NULL, NULL)], (a, b))) WHERE explain ILIKE '%Parts: 4/4%';
 SELECT 'U33 unpacked nested-Nullable NOT has result',
     (SELECT count() FROM u33 WHERE NOT has([(10, 0), (50000, 0), (NULL, NULL)], (a, b))) = (SELECT count() FROM u33o WHERE NOT has([(10, 0), (50000, 0), (NULL, NULL)], (a, b)));
-SELECT 'U33 unpacked nested-Nullable NOT has keeps pruning', count() > 0 FROM (EXPLAIN indexes = 1 SELECT count() FROM u33 WHERE NOT has([(10, 0), (50000, 0), (NULL, NULL)], (a, b))) WHERE explain ILIKE '%element set%';
+SELECT 'U33 unpacked nested-Nullable NOT has declines', count() > 0 FROM (EXPLAIN indexes = 1 SELECT count() FROM u33 WHERE NOT has([(10, 0), (50000, 0), (NULL, NULL)], (a, b))) WHERE explain ILIKE '%Parts: 4/4%';
+
+-- The PACKED counterpart of the same one-sided shape, which is where the tolerance IS sound: the whole
+-- composite is cast by `castColumnAccurateOrNull`, so the `(NULL, NULL)` element nulls the entire tuple
+-- and `tryPrepareSetColumnsForIndex` filters that set row out (the plan below reports a `2-element set`
+-- for a 3-element literal). The atom therefore stays exact and keeps pruning, including under negation.
+-- This pair of shapes is what makes the per-caller gating load-bearing rather than a blanket decline.
+DROP TABLE IF EXISTS q33; DROP TABLE IF EXISTS q33o;
+CREATE TABLE q33 (kt Tuple(UInt32, UInt32)) ENGINE = MergeTree ORDER BY kt SETTINGS index_granularity = 1, add_minmax_index_for_numeric_columns = 0;
+CREATE TABLE q33o (kt Tuple(UInt32, UInt32)) ENGINE = Memory;
+INSERT INTO q33 VALUES ((10, 0));
+INSERT INTO q33 VALUES ((50000, 0));
+INSERT INTO q33 VALUES ((0, 0));
+INSERT INTO q33o VALUES ((10, 0)), ((50000, 0)), ((0, 0));
+SELECT 'Q33 packed one-sided Nullable has result',
+    (SELECT count() FROM q33 WHERE has([(10, 0), (50000, 0), (NULL, NULL)], kt)) = (SELECT count() FROM q33o WHERE has([(10, 0), (50000, 0), (NULL, NULL)], kt));
+SELECT 'Q33 packed one-sided Nullable NOT has result',
+    (SELECT count() FROM q33 WHERE NOT has([(10, 0), (50000, 0), (NULL, NULL)], kt)) = (SELECT count() FROM q33o WHERE NOT has([(10, 0), (50000, 0), (NULL, NULL)], kt));
+SELECT 'Q33 packed one-sided Nullable NOT has keeps pruning', count() > 0 FROM (EXPLAIN indexes = 1 SELECT count() FROM q33 WHERE NOT has([(10, 0), (50000, 0), (NULL, NULL)], kt)) WHERE explain ILIKE '%Parts: 1/3%';
 
 -- Native widths collapse in a Field, signedness does not, and the 128/256-bit tags do not either:
 -- this is exactly the boundary the composite identity rule has to draw.
@@ -996,7 +1026,7 @@ INSERT INTO s1o VALUES (257), (1);
 SELECT 'D1 scalar narrowing at default settings',
     (SELECT count() FROM s1 WHERE k IN (SELECT toUInt8(1))) = (SELECT count() FROM s1o WHERE k IN (SELECT toUInt8(1)));
 
-SELECT '--- integer composites: pruning is withdrawn for both callers, results stay correct ---';
+SELECT '--- integer composites: pruning is withdrawn for IN, results stay correct ---';
 
 -- 8x8 packed integer composites, plain and Nullable. Generated; do not thin.
 DROP TABLE IF EXISTS c_gc_uint8; DROP TABLE IF EXISTS o_gc_uint8;
