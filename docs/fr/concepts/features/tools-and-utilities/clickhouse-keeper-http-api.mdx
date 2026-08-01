@@ -80,7 +80,7 @@ Réponse en cas de succès (HTTP 200) :
   ### API des commandes
 </div>
 
-* **Chemin**: `/api/v1/commands/{command}`
+* **Chemin**: `/api/v1/commands`
 * **Méthodes**: GET, POST
 * **Description**: Exécute des commandes Four-Letter Word ou des commandes de la CLI ClickHouse Keeper Client
 
@@ -93,10 +93,10 @@ Exemples :
 
 ```bash
 # Four-Letter Word command
-curl http://localhost:9182/api/v1/commands/stat
+curl "http://localhost:9182/api/v1/commands?command=stat"
 
 # ZooKeeper CLI command
-curl "http://localhost:9182/api/v1/commands/ls?command=ls%20'/'&cwd=/"
+curl "http://localhost:9182/api/v1/commands?command=ls%20'/'&cwd=/"
 ```
 
 <div id="storage-api">

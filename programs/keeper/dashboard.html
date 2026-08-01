@@ -1504,6 +1504,8 @@
 
     /// Inverse of parseKeeperArg / formatKeeperNodeName for one CLI argument.
     /// Converts mixed bare tokens, `\ `/`\\` escapes, and quoted segments into a real znode path.
+    /// Quoted segments follow readQuotedStringWithSQLStyle / readDoubleQuotedStringWithSQLStyle
+    /// (parseComplexEscapeSequence + SQL-style doubled quotes).
     /// An unclosed quote is accepted (content kept): tab completion may leave a partial
     /// quoted prefix such as /'semi; and must keep refining on the next Tab, matching
     /// keeper-client's unescapePath / open-quote completion contract.
@@ -1516,11 +1518,61 @@
         const advance = () => { i += 1; };
         /// Consume one character and return it.
         const takeChar = () => arg[i++];
-        /// Consume a `\` escape pair and return the escaped character.
-        const takeEscapedChar = () => {
+        /// Consume a bare-mode `\` escape pair and return the escaped character.
+        const takeBareEscapedChar = () => {
             const escaped = arg[i + 1];
             i += 2;
             return escaped;
+        };
+        const isHexDigit = (c) => (c >= "0" && c <= "9") || (c >= "A" && c <= "F") || (c >= "a" && c <= "f");
+        const isControlASCII = (c) => c.charCodeAt(0) <= 31;
+        /// Same mapping as DB::parseEscapeSequence.
+        const parseEscapeSequenceChar = (c) => {
+            switch (c) {
+                case "a": return "\x07";
+                case "b": return "\b";
+                case "e": return "\x1B";
+                case "f": return "\f";
+                case "n": return "\n";
+                case "r": return "\r";
+                case "t": return "\t";
+                case "v": return "\v";
+                case "0": return "\0";
+                default: return c;
+            }
+        };
+        /// Same rules as DB::parseComplexEscapeSequence (cursor on `\`).
+        /// Incomplete sequences are decoded leniently so open-quote tab completion can continue.
+        const takeQuotedEscape = () => {
+            advance(); /// consume '\'
+            if (atEnd())
+                return "\\";
+            const char_after_backslash = takeChar();
+            if (char_after_backslash === "x") {
+                if (hasNext() && isHexDigit(peek()) && isHexDigit(peek(1))) {
+                    const hex = takeChar() + takeChar();
+                    return String.fromCharCode(parseInt(hex, 16));
+                }
+                /// Incomplete \xHH — keep as literal \x (plus any following chars consumed later).
+                return "\\x";
+            }
+            if (char_after_backslash === "N") {
+                /// \N → empty string (NULL marker), same as parseComplexEscapeSequence.
+                return "";
+            }
+            const decoded_char = parseEscapeSequenceChar(char_after_backslash);
+            /// For LIKE / regexp convenience, keep the backslash for non-special chars
+            /// (e.g. '\%' → '\%'), matching parseComplexEscapeSequence.
+            if (decoded_char !== "\\"
+                && decoded_char !== "'"
+                && decoded_char !== "\""
+                && decoded_char !== "`"
+                && decoded_char !== "/"
+                && decoded_char !== "="
+                && !isControlASCII(decoded_char)) {
+                return "\\" + decoded_char;
+            }
+            return decoded_char;
         };
 
         while (!atEnd()) {
@@ -1531,12 +1583,21 @@
             if (ch === "'" || ch === '"') {
                 const quote = takeChar();
                 while (!atEnd()) {
-                    if (peek() === "\\" && hasNext()) {
-                        result += takeEscapedChar();
+                    if (peek() === "\\") {
+                        if (!hasNext()) {
+                            result += takeChar();
+                            break;
+                        }
+                        result += takeQuotedEscape();
                         continue;
                     }
                     if (peek() === quote) {
                         advance();
+                        /// SQL-style quoting: '' inside '...' / "" inside "..." → one quote char.
+                        if (!atEnd() && peek() === quote) {
+                            result += takeChar();
+                            continue;
+                        }
                         break;
                     }
                     result += takeChar();
@@ -1552,7 +1613,7 @@
                 }
                 const next = peek(1);
                 if (next === " " || next === "\\") {
-                    result += takeEscapedChar();
+                    result += takeBareEscapedChar();
                     continue;
                 }
                 /// \<other> → keep backslash as-is (same as parseKeeperArg).

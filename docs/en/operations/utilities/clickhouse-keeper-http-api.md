@@ -67,12 +67,12 @@ Success response (HTTP 200):
 
 ### Commands API {#commands-api}
 
-- **Path**: `/api/v1/commands` or `/api/v1/commands/{command}`
+- **Path**: `/api/v1/commands`
 - **Methods**: GET, POST
-- **Description**: Lists registered Keeper Client CLI commands, or executes Four-Letter Word commands / Keeper Client CLI commands
+- **Description**: Lists registered command names (Keeper Client CLI commands and Four-Letter Word commands), or executes Four-Letter Word commands / Keeper Client CLI commands. The command to run is taken from the `command` query parameter (path segments after `/api/v1/commands` are not used).
 
 Query parameters:
-- `list` - When present (for example `?list`), returns the names of registered Keeper Client CLI commands as JSON. The embedded dashboard uses this to populate command completion. No command is executed.
+- `list` - When present (for example `?list`), returns the names of registered Keeper Client CLI commands and Four-Letter Word commands as JSON. The embedded dashboard uses this to populate command completion. No command is executed.
 - `command` - The command to execute (required unless `list` is set)
 - `cwd` - Current working directory for path-based commands (default: `/`)
 
@@ -86,11 +86,11 @@ curl "http://localhost:9182/api/v1/commands?list"
 Response:
 ```json
 {
-  "commands": ["ls", "get", "create", "cd", "..."]
+  "commands": ["ls", "get", "create", "cd", "ruok", "mntr", "..."]
 }
 ```
 
-`commands` is an array of registered Keeper Client CLI command names (not Four-Letter Word commands).
+`commands` is an array of registered Keeper Client CLI command names and Four-Letter Word command names.
 
 #### Execute command {#execute-command}
 
@@ -107,10 +107,10 @@ Response (CLI commands):
 Examples:
 ```bash
 # Four-Letter Word command
-curl http://localhost:9182/api/v1/commands/stat
+curl "http://localhost:9182/api/v1/commands?command=stat"
 
 # ZooKeeper CLI command
-curl "http://localhost:9182/api/v1/commands/ls?command=ls%20'/'&cwd=/"
+curl "http://localhost:9182/api/v1/commands?command=ls%20'/'&cwd=/"
 
 # Change directory and read returned cwd
 curl "http://localhost:9182/api/v1/commands?command=cd%20/clickhouse&cwd=/"

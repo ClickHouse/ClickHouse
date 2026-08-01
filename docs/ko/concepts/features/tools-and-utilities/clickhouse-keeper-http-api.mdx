@@ -80,7 +80,7 @@ HTTP API를 활성화하려면 `keeper_server` 구성에 `http_control` 섹션�
   ### Commands API
 </div>
 
-* **경로**: `/api/v1/commands/{command}`
+* **경로**: `/api/v1/commands`
 * **메서드**: GET, POST
 * **설명**: Four-Letter Word 명령 또는 ClickHouse Keeper Client CLI 명령을 실행합니다
 
@@ -93,10 +93,10 @@ HTTP API를 활성화하려면 `keeper_server` 구성에 `http_control` 섹션�
 
 ```bash
 # Four-Letter Word 명령어
-curl http://localhost:9182/api/v1/commands/stat
+curl "http://localhost:9182/api/v1/commands?command=stat"
 
 # ZooKeeper CLI 명령어
-curl "http://localhost:9182/api/v1/commands/ls?command=ls%20'/'&cwd=/"
+curl "http://localhost:9182/api/v1/commands?command=ls%20'/'&cwd=/"
 ```
 
 <div id="storage-api">

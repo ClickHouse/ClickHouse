@@ -80,7 +80,7 @@ ClickHouse Keeper предоставляет HTTP API и встроенную в
   ### API команд
 </div>
 
-* **Путь**: `/api/v1/commands/{command}`
+* **Путь**: `/api/v1/commands`
 * **Методы**: GET, POST
 * **Описание**: Выполняет команды Four-Letter Word или команды CLI-клиента ClickHouse Keeper
 
@@ -93,10 +93,10 @@ ClickHouse Keeper предоставляет HTTP API и встроенную в
 
 ```bash
 # Команда Four-Letter Word
-curl http://localhost:9182/api/v1/commands/stat
+curl "http://localhost:9182/api/v1/commands?command=stat"
 
 # Команда ZooKeeper CLI
-curl "http://localhost:9182/api/v1/commands/ls?command=ls%20'/'&cwd=/"
+curl "http://localhost:9182/api/v1/commands?command=ls%20'/'&cwd=/"
 ```
 
 <div id="storage-api">

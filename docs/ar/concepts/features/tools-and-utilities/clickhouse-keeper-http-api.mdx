@@ -80,7 +80,7 @@ doc_type: 'reference'
   ### واجهة برمجة تطبيقات الأوامر
 </div>
 
-* **المسار**: `/api/v1/commands/{command}`
+* **المسار**: `/api/v1/commands`
 * **الطرق**: GET, POST
 * **الوصف**: ينفّذ أوامر Four-Letter Word أو أوامر CLI الخاصة بعميل ClickHouse Keeper
 
@@ -93,10 +93,10 @@ doc_type: 'reference'
 
 ```bash
 # Four-Letter Word command
-curl http://localhost:9182/api/v1/commands/stat
+curl "http://localhost:9182/api/v1/commands?command=stat"
 
 # ZooKeeper CLI command
-curl "http://localhost:9182/api/v1/commands/ls?command=ls%20'/'&cwd=/"
+curl "http://localhost:9182/api/v1/commands?command=ls%20'/'&cwd=/"
 ```
 
 <div id="storage-api">

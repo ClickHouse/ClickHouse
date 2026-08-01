@@ -80,7 +80,7 @@ ClickHouse Keeper 提供 HTTP API 和内置 Web 仪表板，用于监控、健�
   ### 命令 API
 </div>
 
-* **路径**: `/api/v1/commands/{command}`
+* **路径**: `/api/v1/commands`
 * **方法**: GET, POST
 * **描述**: 执行 Four-Letter Word 命令或 ClickHouse Keeper Client CLI 命令
 
@@ -93,10 +93,10 @@ ClickHouse Keeper 提供 HTTP API 和内置 Web 仪表板，用于监控、健�
 
 ```bash
 # 四字命令
-curl http://localhost:9182/api/v1/commands/stat
+curl "http://localhost:9182/api/v1/commands?command=stat"
 
 # ZooKeeper CLI 命令
-curl "http://localhost:9182/api/v1/commands/ls?command=ls%20'/'&cwd=/"
+curl "http://localhost:9182/api/v1/commands?command=ls%20'/'&cwd=/"
 ```
 
 <div id="storage-api">
