@@ -282,7 +282,7 @@ bool DatatypeDecimal::convertImpl(String & out, IParser::Pos & pos)
 
     /// NULL expr returns NULL not exception
     static const re2::RE2 expr("^[0-9]+e[+-]?[0-9]+");
-    assert(expr.ok());
+    chassert(expr.ok());
     bool is_string = std::any_of(arg.begin(), arg.end(), ::isalpha) && Poco::toUpper(arg) != "NULL" && !(re2::RE2::FullMatch(arg, expr));
     if (is_string)
         throw Exception(ErrorCodes::BAD_ARGUMENTS, "Failed to parse String as decimal Literal: {}", fn_name);

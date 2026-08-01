@@ -1,0 +1,85 @@
+---
+slug: /use-cases/observability/clickstack/sdks
+description: 'SDKs de linguagem para ClickStack - A stack de observabilidade do ClickHouse'
+title: 'SDKs de linguagem'
+doc_type: 'guide'
+keywords: ['SDKs do ClickStack', 'SDKs de linguagem do ClickStack', 'SDKs do OpenTelemetry para ClickStack', 'SDKs de instrumentação de aplicações
+', 'SDKs de coleta de telemetria']
+---
+
+Os dados normalmente são enviados ao ClickStack por meio do **Collector do OpenTelemetry (OTel)**, seja diretamente dos SDKs de linguagem ou por um Collector intermediário do OpenTelemetry atuando como agente, por exemplo, coletando métricas e logs da infraestrutura.
+
+Os SDKs de linguagem são responsáveis por coletar telemetria de dentro da sua aplicação — principalmente **traces** e **logs** — e exportar esses dados para o Collector do OpenTelemetry, por meio do endpoint OTLP, que faz a ingestão no ClickHouse.
+
+Em ambientes baseados em navegador, os SDKs também podem ser responsáveis por coletar **dados de sessão**, incluindo eventos da UI, cliques e navegação, permitindo assim a reprodução das sessões dos usuários.
+
+<div id="how-it-works">
+  ## Como funciona
+</div>
+
+1. Sua aplicação usa um SDK do ClickStack (por exemplo, Node.js, Python, Go). Esses SDKs são baseados nos SDKs do OpenTelemetry, com recursos adicionais e melhorias de usabilidade.
+2. O SDK coleta e exporta traces e logs via OTLP (HTTP ou gRPC).
+3. O coletor do OpenTelemetry recebe a telemetria e a grava no ClickHouse por meio dos exporters configurados.
+
+<div id="supported-languages">
+  ## Linguagens compatíveis
+</div>
+
+<Info>
+  **Compatibilidade com OpenTelemetry**
+
+  Embora o ClickStack ofereça SDKs de linguagem próprios para diversas linguagens, com telemetria aprimorada e funcionalidades extras, você também pode usar os SDKs do OpenTelemetry já existentes sem problemas.
+</Info>
+
+<br />
+
+| Idioma       | Descrição                                                           | Link                                                         |
+| ------------ | ------------------------------------------------------------------- | ------------------------------------------------------------ |
+| AWS Lambda   | Instrumente suas funções AWS Lambda                                 | [Documentação](/pt-BR/clickstack/ingesting-data/sdks/aws-lambda)   |
+| Browser      | SDK JavaScript para aplicações baseadas em navegador                | [Documentação](/pt-BR/clickstack/ingesting-data/sdks/browser)      |
+| Elixir       | Aplicações Elixir                                                   | [Documentação](/pt-BR/clickstack/ingesting-data/sdks/elixir)       |
+| Go           | Aplicações Go e microsserviços                                      | [Documentação](/pt-BR/clickstack/ingesting-data/sdks/golang)       |
+| Java         | Aplicações Java                                                     | [Documentação](/pt-BR/clickstack/ingesting-data/sdks/java)         |
+| NestJS       | Aplicações NestJS                                                   | [Documentação](/pt-BR/clickstack/ingesting-data/sdks/nestjs)       |
+| Next.js      | Aplicações Next.js                                                  | [Documentação](/pt-BR/clickstack/ingesting-data/sdks/nextjs)       |
+| Node.js      | Ambiente de execução JavaScript para aplicações do lado do servidor | [Documentação](/pt-BR/clickstack/ingesting-data/sdks/nodejs)       |
+| Deno         | Aplicações Deno                                                     | [Documentação](/pt-BR/clickstack/ingesting-data/sdks/deno)         |
+| Python       | Aplicações Python e serviços web                                    | [Documentação](/pt-BR/clickstack/ingesting-data/sdks/python)       |
+| React Native | Aplicações móveis React Native                                      | [Documentação](/pt-BR/clickstack/ingesting-data/sdks/react-native) |
+| Ruby         | Aplicações Ruby on Rails e serviços web                             | [Documentação](/pt-BR/clickstack/ingesting-data/sdks/ruby)         |
+
+<div id="securing-api-key">
+  ## Proteção com API key
+</div>
+
+<Info>
+  **Não é necessário para o Managed ClickStack**
+
+  A API key não é necessária no Managed ClickStack.
+</Info>
+
+Para enviar dados ao ClickStack por meio do OTel collector, os SDKs precisarão especificar uma API key de ingestão. Isso pode ser definido usando uma função `init` no SDK ou a variável de ambiente `OTEL_EXPORTER_OTLP_HEADERS`:
+
+```shell
+OTEL_EXPORTER_OTLP_HEADERS='authorization=<YOUR_INGESTION_API_KEY>'
+```
+
+Esta API key é gerada pelo aplicativo ClickStack UI (HyperDX) e fica disponível no app em `Team Settings → API Keys`.
+
+Para a maioria dos [SDKs de linguagem](/pt-BR/clickstack/ingesting-data/sdks/index) e bibliotecas de telemetria compatíveis com OpenTelemetry, basta definir a variável de ambiente `OTEL_EXPORTER_OTLP_ENDPOINT` na sua aplicação ou especificá-la durante a inicialização do SDK:
+
+```shell
+export OTEL_EXPORTER_OTLP_ENDPOINT=http://localhost:4318
+```
+
+<div id="kubernetes-integration">
+  ## Integração com Kubernetes
+</div>
+
+Todos os SDKs oferecem suporte à correlação automática com metadados do Kubernetes (nome do pod, espaço de nomes etc.) quando executados em um ambiente Kubernetes. Isso permite:
+
+* Visualizar métricas do Kubernetes para pods e nós associados aos seus serviços
+* Correlacionar logs e traces da aplicação com métricas de infraestrutura
+* Acompanhar o uso de recursos e o desempenho em todo o cluster Kubernetes
+
+Para habilitar esse recurso, configure o OpenTelemetry Collector para encaminhar tags de recursos para os pods. Consulte o [guia de integração com Kubernetes](/pt-BR/clickstack/integration-examples/kubernetes#forwarding-resouce-tags-to-pods) para ver instruções detalhadas de configuração.

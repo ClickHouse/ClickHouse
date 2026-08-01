@@ -551,7 +551,7 @@ AuthenticationData AuthenticationData::fromAST(const ASTAuthenticationData & que
 
         String value = checkAndGetLiteralArgument<String>(args[0], "password");
 
-        AuthenticationType current_type;
+        AuthenticationType current_type = {};
 
         if (query.type)
             current_type = *query.type;

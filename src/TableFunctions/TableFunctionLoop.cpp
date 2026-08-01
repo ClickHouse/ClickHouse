@@ -101,19 +101,24 @@ namespace DB
         if (inner_table_function_ast)
         {
             auto inner_table_function = TableFunctionFactory::instance().get(inner_table_function_ast, context);
-            return inner_table_function->getActualTableStructure(context, is_insert_query);
+            /// Enforce the inner function's source access (as execute() does), not the raw structure.
+            return inner_table_function->getActualTableStructureWithAccess(context, is_insert_query);
         }
 
         String database_name = loop_database_name;
         if (database_name.empty())
             database_name = context->getCurrentDatabase();
 
+        /// Reading the schema requires SHOW COLUMNS, same as a direct DESCRIBE of the table.
+        context->checkAccess(AccessType::SHOW_COLUMNS, database_name, loop_table_name);
+
         auto database = DatabaseCatalog::instance().getDatabase(database_name);
         auto storage = database->tryGetTable(loop_table_name, context);
         if (!storage)
             throw Exception(ErrorCodes::UNKNOWN_TABLE, "Table '{}' not found in database '{}'", loop_table_name, database_name);
 
-        return storage->getInMemoryMetadataPtr(context, false)->getColumns();
+        auto metadata_snapshot = storage->getInMemoryMetadataPtr(context, false);
+        return metadata_snapshot->getColumns();
     }
 
     StoragePtr TableFunctionLoop::executeImpl(
@@ -159,17 +164,61 @@ namespace DB
     void registerTableFunctionLoop(TableFunctionFactory & factory)
     {
         factory.registerFunction<TableFunctionLoop>(
-                {
-                    .description=R"(The table function can be used to continuously output query results in an infinite loop.)",
-                    .examples{{"loop", "SELECT * FROM loop((numbers(3)) LIMIT 7", "0"
-                                "1"
-                                "2"
-                                "0"
-                                "1"
-                                "2"
-                                "0"}},
-                    .category = FunctionDocumentation::Category::TableFunction
-                });
+                {.description = R"DOCS_MD(
+## Syntax {#syntax}
+
+```sql
+SELECT ... FROM loop(database, table);
+SELECT ... FROM loop(database.table);
+SELECT ... FROM loop(table);
+SELECT ... FROM loop(other_table_function(...));
+```
+
+## Arguments {#arguments}
+
+| Argument                    | Description                                                                                                          |
+|-----------------------------|----------------------------------------------------------------------------------------------------------------------|
+| `database`                  | database name.                                                                                                       |
+| `table`                     | table name.                                                                                                          |
+| `other_table_function(...)` | other table function. Example: `SELECT * FROM loop(numbers(10));` `other_table_function(...)` here is `numbers(10)`. |
+
+## Returned values {#returned_values}
+
+Infinite loop to return query results.
+
+## Examples {#examples}
+
+Selecting data from ClickHouse:
+
+```sql
+SELECT * FROM loop(test_database, test_table);
+SELECT * FROM loop(test_database.test_table);
+SELECT * FROM loop(test_table);
+```
+
+Or using other table functions:
+
+```sql
+SELECT * FROM loop(numbers(3)) LIMIT 7;
+   ┌─number─┐
+1. │      0 │
+2. │      1 │
+3. │      2 │
+   └────────┘
+   ┌─number─┐
+4. │      0 │
+5. │      1 │
+6. │      2 │
+   └────────┘
+   ┌─number─┐
+7. │      0 │
+   └────────┘
+``` 
+```sql
+SELECT * FROM loop(mysql('localhost:3306', 'test', 'test', 'user', 'password'));
+...
+```
+)DOCS_MD", .category = FunctionDocumentation::Category::TableFunction});
     }
 
 }

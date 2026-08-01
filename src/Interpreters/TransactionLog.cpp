@@ -42,12 +42,13 @@ try
     if (!system_log)
         return;
 
-    TransactionsInfoLogElement elem;
-    elem.type = type;
-    elem.tid = tid;
-    elem.csn = csn;
-    elem.fillCommonFields(nullptr);
-    system_log->add(std::move(elem));
+    system_log->add([&](TransactionsInfoLogElement & element)
+    {
+        element.type = type;
+        element.tid = tid;
+        element.csn = csn;
+        element.fillCommonFields(nullptr);
+    });
 }
 catch (...)
 {
@@ -98,7 +99,7 @@ UInt64 TransactionLog::deserializeCSN(const String & csn_node_name)
 {
     ReadBufferFromString buf{csn_node_name};
     assertString("csn-", buf);
-    UInt64 res;
+    UInt64 res = 0;
     readText(res, buf);
     assertEOF(buf);
     return res;

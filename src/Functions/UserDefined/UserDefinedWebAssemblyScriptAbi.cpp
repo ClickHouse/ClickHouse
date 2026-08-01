@@ -14,6 +14,7 @@
 #include <Common/Exception.h>
 #include <Common/ElapsedTimeProfileEventIncrement.h>
 #include <Common/ProfileEvents.h>
+#include <Common/VectorWithMemoryTracking.h>
 #include <Common/logger_useful.h>
 
 #include <base/scope_guard.h>
@@ -55,7 +56,7 @@ size_t convertUTF8ToUTF16LE(std::string_view utf8, uint8_t * out)
 
     while (i < n)
     {
-        uint32_t cp;
+        uint32_t cp = 0;
         uint8_t b = data[i];
 
         if (b < 0x80)
@@ -404,9 +405,9 @@ public:
         MutableColumnPtr result_column = result_type->createColumn();
 
         size_t num_columns = block.columns();
-        std::vector<WasmVal> wasm_args(num_columns);
+        VectorWithMemoryTracking<WasmVal> wasm_args(num_columns);
 
-        std::vector<WasmPtr> pinned_args;
+        VectorWithMemoryTracking<WasmPtr> pinned_args;
 
         auto * result_string_column = typeid_cast<ColumnString *>(result_column.get());
 

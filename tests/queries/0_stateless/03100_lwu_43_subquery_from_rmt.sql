@@ -31,5 +31,12 @@ WHERE key IN (SELECT key FROM keys);
 
 SELECT key, value FROM lightweight_test ORDER BY key;
 
+-- Self-referencing IN subquery
+UPDATE lightweight_test
+SET value = 'UPDATED-2'
+WHERE key IN (SELECT key FROM lightweight_test WHERE value = 'UPDATED-1');
+
+SELECT key, value FROM lightweight_test ORDER BY key;
+
 DROP TABLE IF EXISTS lightweight_test SYNC;
 DROP TABLE IF EXISTS keys SYNC;

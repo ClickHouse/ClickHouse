@@ -1,0 +1,29 @@
+---
+description: 'timeSeriesData 返回表引擎为 TimeSeries 的表 `db_name.time_series_table`
+  所使用的[数据](/reference/engines/table-engines/integrations/time-series#samples-table)表。'
+sidebarTitle: 'timeSeriesData'
+slug: /sql-reference/table-functions/timeSeriesData
+title: 'timeSeriesData'
+doc_type: 'reference'
+---
+
+`timeSeriesData(db_name.time_series_table)` - 返回表引擎为 [TimeSeries](/zh/reference/engines/table-engines/integrations/time-series) 的表 `db_name.time_series_table`
+所使用的[数据](/zh/reference/engines/table-engines/integrations/time-series#samples-table)表：
+
+```sql
+CREATE TABLE db_name.time_series_table ENGINE=TimeSeries DATA data_table
+```
+
+如果 *data* 表是 inner 表，该函数也同样适用：
+
+```sql
+CREATE TABLE db_name.time_series_table ENGINE=TimeSeries DATA INNER UUID '01234567-89ab-cdef-0123-456789abcdef'
+```
+
+以下查询是等价的：
+
+```sql
+SELECT * FROM timeSeriesData(db_name.time_series_table);
+SELECT * FROM timeSeriesData('db_name.time_series_table');
+SELECT * FROM timeSeriesData('db_name', 'time_series_table');
+```

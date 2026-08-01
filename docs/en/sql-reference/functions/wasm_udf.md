@@ -225,7 +225,8 @@ RETURNS return_type
 - `DETERMINISTIC`: Declares the function as deterministic — always returns the same output for the same input. When specified, ClickHouse may constant-fold calls where all arguments are constants: the function is evaluated once at query analysis time and the result is reused for every row.
 - `SHA256_HASH`: Expected module hash for verification (auto-filled if omitted), can be used to ensure the correct WASM module loaded across different replicas.
 - `SETTINGS`: Per-function settings
-    - `serialization_format` String — Serialization format for ABI requires it. Default: `MsgPack`.
+    - `serialization_format` String — Serialization format for ABI requires it. Supported values: `MsgPack`, `JSONEachRow`, `CSV`, `TSV`, `TSVRaw`, `RowBinary`, and `Buffers`. Default: `MsgPack`. Block-based formats such as `Buffers` must return a single column whose type match the declared function signature.
+    - `webassembly_udf_enable_fuel` Bool — Enables finite fuel budgeting for the function. Default: `true`. When `false`, the query-level setting `webassembly_udf_max_fuel` is ignored for this function. Disabling fuel limits may improve performance when using the `wasmtime` engine. However, for untrusted or buggy guest code, it can increase the risk of runaway execution.
 
 ## ABIs Versions
 
@@ -392,7 +393,7 @@ The following host functions may be imported and used by modules:
 
 The following query-level settings control WebAssembly UDF execution:
 
-- `webassembly_udf_max_fuel` — Fuel limit per WebAssembly UDF instance execution. Each WebAssembly instruction consumes some amount of fuel. Set to 0 for no limit.
+- `webassembly_udf_max_fuel` — Fuel limit per WebAssembly UDF instance execution. Each WebAssembly instruction consumes some amount of fuel. The value is scaled by 1024 before being passed to the runtime, so `webassembly_udf_max_fuel = 1` corresponds to approximately 1024 fuel units. Set to 0 for no finite limit. Applies only to functions whose per-function setting `webassembly_udf_enable_fuel` is true, which is the default.
 
 - `webassembly_udf_max_memory` — Memory limit in bytes per WebAssembly UDF instance.
 

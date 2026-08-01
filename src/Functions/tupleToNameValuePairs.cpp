@@ -123,7 +123,7 @@ public:
             offsets->insertValue(current_offset);
         }
 
-        std::vector<ColumnPtr> tuple_columns = { std::move(keys_column), std::move(values_column) };
+        Columns tuple_columns = { std::move(keys_column), std::move(values_column) };
         auto tuple_column = ColumnTuple::create(std::move(tuple_columns));
         return ColumnArray::create(std::move(tuple_column), std::move(offsets));
     }
