@@ -495,10 +495,7 @@ ASTPtr QueryNode::toASTImpl(const ConvertToASTOptions & options) const
             with_element_ast->children.push_back(with_element_ast->subquery);
             with_element_ast->is_materialized = with_query_node ? with_query_node->isMaterialized() : with_union_node->isMaterialized();
 
-            /// A CTE spells the column alias list as `WITH name(col1, ...) AS (subquery)`, which the
-            /// builder stores in the same place as the subquery spelling, so restore it the same way.
-            /// ASTWithElement keeps this member out of `children`, both in the parser and in `clone`,
-            /// so do not push it there either.
+            /// Restore the CTE column alias list, e.g. `WITH t(x) AS (SELECT 1)`; `aliases` is deliberately kept out of `children`.
             const auto & cte_column_aliases = getColumnAliasesToRestore(with_node);
             if (!cte_column_aliases.empty())
             {

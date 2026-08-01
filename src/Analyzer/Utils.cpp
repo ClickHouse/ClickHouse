@@ -474,6 +474,19 @@ static ASTPtr convertIntoTableExpressionAST(
     if (node_type == QueryTreeNodeType::QUERY || node_type == QueryTreeNodeType::UNION)
     {
         result_table_expression->subquery = result_table_expression->children.back();
+
+        /// Restore the subquery column alias list, e.g. `(SELECT 1) AS t(x)`.
+        const auto & column_aliases = getColumnAliasesToRestore(table_expression_node);
+        if (!column_aliases.empty())
+        {
+            auto column_aliases_ast = make_intrusive<ASTExpressionList>();
+            column_aliases_ast->children.reserve(column_aliases.size());
+            for (const auto & column_alias : column_aliases)
+                column_aliases_ast->children.push_back(make_intrusive<ASTIdentifier>(column_alias));
+
+            result_table_expression->column_aliases = std::move(column_aliases_ast);
+            result_table_expression->children.push_back(result_table_expression->column_aliases);
+        }
     }
     else if (node_type == QueryTreeNodeType::TABLE || node_type == QueryTreeNodeType::IDENTIFIER)
     {
@@ -496,21 +509,6 @@ static ASTPtr convertIntoTableExpressionAST(
         throw Exception(ErrorCodes::LOGICAL_ERROR,
             "Expected identifier, table, query, union or table function. Actual {}",
             table_expression_node->formatASTForErrorMessage());
-    }
-
-    if (node_type == QueryTreeNodeType::QUERY || node_type == QueryTreeNodeType::UNION)
-    {
-        const auto & column_aliases = getColumnAliasesToRestore(table_expression_node);
-        if (!column_aliases.empty())
-        {
-            auto column_aliases_ast = make_intrusive<ASTExpressionList>();
-            column_aliases_ast->children.reserve(column_aliases.size());
-            for (const auto & column_alias : column_aliases)
-                column_aliases_ast->children.push_back(make_intrusive<ASTIdentifier>(column_alias));
-
-            result_table_expression->column_aliases = std::move(column_aliases_ast);
-            result_table_expression->children.push_back(result_table_expression->column_aliases);
-        }
     }
 
     if (table_expression_modifiers)
