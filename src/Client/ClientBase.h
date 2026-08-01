@@ -24,7 +24,6 @@
 
 #include <atomic>
 #include <iostream>
-#include <limits>
 #include <optional>
 #include <string_view>
 #include <string>
@@ -297,6 +296,10 @@ private:
     void initOutputFormat(const Block & block, ASTPtr parsed_query);
     void initLogsOutputStream();
 
+    /// Arm an output sink with the pair of predicates that keep it responsive to Ctrl+C, see
+    /// WriteBufferFromFileDescriptor::setCancellationHook.
+    void armResponsiveOutput(WriteBufferFromFileDescriptor & buf);
+
     String getPrompt() const;
 
     void resetOutput();
@@ -331,7 +334,7 @@ protected:
         /// by default stop after the first interrupt signal.
         void start(Int32 signals_before_stop = 1)
         {
-            state.store(signals_before_stop);
+            state.store(pack(signals_before_stop, 0));
         }
 
         /// Disarm the handler: the query is no longer in flight.
@@ -346,8 +349,12 @@ protected:
 
         /// Return true if the query was stopped.
         /// Query was stopped if it received at least "signals_before_stop" interrupt signals.
-        /// A disarmed handler also reports the query as stopped: NOT_RUNNING is negative.
-        bool cancelled() const { return state.load() <= 0; }
+        /// A disarmed handler also reports the query as stopped.
+        bool cancelled() const
+        {
+            const Int64 current = state.load();
+            return current == NOT_RUNNING || receivedSignals(current) >= signalsBeforeStop(current);
+        }
 
         /// Return true only for a genuine Ctrl+C on an in-flight query: the handler is armed and
         /// it has received enough interrupt signals. This is what the output cancellation hooks
@@ -359,11 +366,27 @@ protected:
         bool cancelledWhileRunning() const
         {
             const Int64 current = state.load();
-            return current != NOT_RUNNING && current <= 0;
+            return current != NOT_RUNNING && receivedSignals(current) >= signalsBeforeStop(current);
+        }
+
+        /// Return true as soon as an in-flight query has received at least one interrupt signal,
+        /// even when it is not cancelled yet because more signals are expected
+        /// (`partial_result_on_first_cancel`). This is what tells a blocked `open()` or `write()` on
+        /// a stuck output sink to give up: control has to return to receiveResult() for the first
+        /// Ctrl+C to be turned into the stage-one `Cancel` sent to the server, otherwise that
+        /// setting would silently do nothing on exactly the paths this handling is about. Only the
+        /// *discarding* of already buffered bytes waits for cancelledWhileRunning(), so a sink that
+        /// still accepts data keeps receiving the partial result.
+        bool interruptedWhileRunning() const
+        {
+            const Int64 current = state.load();
+            return current != NOT_RUNNING && receivedSignals(current) > 0;
         }
 
         /// Account for one interrupt signal. Called from a signal handler, hence only lock-free
-        /// atomic operations. A disarmed handler is left alone and reports the query as stopped.
+        /// atomic operations. Returns true when the query has already been cancelled by earlier
+        /// signals (the caller then makes the client exit abruptly); a disarmed handler is left
+        /// alone and also reports the query as stopped.
         bool tryStop()
         {
             Int64 current = state.load();
@@ -371,8 +394,11 @@ protected:
             {
                 if (current == NOT_RUNNING)
                     return true;
-                if (state.compare_exchange_weak(current, current - 1))
-                    return current <= 0;
+                const Int64 received = receivedSignals(current);
+                if (received >= signalsBeforeStop(current))
+                    return true;
+                if (state.compare_exchange_weak(current, pack(signalsBeforeStop(current), received + 1)))
+                    return false;
             }
         }
 
@@ -380,13 +406,24 @@ protected:
         Int32 cancelled_status() const
         {
             const Int64 current = state.load();
-            return current == NOT_RUNNING ? 0 : static_cast<Int32>(current);
+            return current == NOT_RUNNING ? 0 : static_cast<Int32>(signalsBeforeStop(current) - receivedSignals(current));
         }
 
     private:
-        /// The state of a disarmed handler. Distinct from every armed value, which is a signal
-        /// count that starts at `signals_before_stop` and is decremented by each interrupt signal.
-        static constexpr Int64 NOT_RUNNING = std::numeric_limits<Int64>::min();
+        /// The state of a disarmed handler. Distinct from every armed value, whose high half is the
+        /// (positive) number of signals needed to stop the query.
+        static constexpr Int64 NOT_RUNNING = -1;
+
+        /// An armed state packs how many interrupt signals stop the query and how many have been
+        /// received so far into a single atomic, so that a concurrent reader (the parallel
+        /// formatting collector) always observes one coherent state and can never mistake a handler
+        /// being stopped for a cancellation, which would discard already-produced output.
+        static constexpr Int64 pack(Int64 signals_before_stop, Int64 received_signals)
+        {
+            return (signals_before_stop << 32) | received_signals;
+        }
+        static constexpr Int64 signalsBeforeStop(Int64 packed) { return packed >> 32; }
+        static constexpr Int64 receivedSignals(Int64 packed) { return packed & 0xFFFFFFFF; }
 
         std::atomic<Int64> state = NOT_RUNNING;
         static_assert(std::atomic<Int64>::is_always_lock_free);

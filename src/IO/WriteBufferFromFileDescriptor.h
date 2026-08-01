@@ -57,7 +57,15 @@ public:
     /// a way that cannot sleep indefinitely in a single write() (see nextImpl). This is used by
     /// the client to abort the output of a result set promptly on Ctrl+C even while a write to a
     /// slow sink (e.g. a slow terminal) would otherwise block. Passing an empty hook removes it.
-    void setCancellationHook(std::function<bool()> cancellation_hook_);
+    ///
+    /// The optional second callback separates "give up on a sink that is not draining" from
+    /// "discard the output": while it returns true, the responsive path stops waiting for a sink
+    /// with no room and returns instead of sleeping until the sink accepts the data, but data is
+    /// still written as long as the sink takes it. The client uses it for the first Ctrl+C of a
+    /// `partial_result_on_first_cancel` query, which must break out of a stuck write without
+    /// discarding the partial result that follows. When it is empty, the cancellation hook alone
+    /// governs both, which is the behavior of a query that stops on the first signal.
+    void setCancellationHook(std::function<bool()> cancellation_hook_, std::function<bool()> interruption_hook_ = {});
 
     /// Best-effort direct write of a small out-of-band message (e.g. an interactive diagnostic
     /// printed while cancelling a query), bypassing both the internal buffer and the cancellation
@@ -97,6 +105,11 @@ protected:
 
     /// See setCancellationHook.
     std::function<bool()> cancellation_hook;
+    std::function<bool()> interruption_hook;
+
+    /// Whether the responsive path should stop waiting for a sink that has no room. Falls back to
+    /// the cancellation hook when no separate interruption hook is installed.
+    bool interrupted() const { return interruption_hook ? interruption_hook() : cancellation_hook(); }
 
     /// Classifies the sink (cancellation_fd_can_block, cancellation_fd_is_socket) and opens the
     /// private non-blocking descriptor for a terminal (nonblocking_write_fd). Done once per

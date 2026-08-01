@@ -46,9 +46,11 @@ namespace ErrorCodes
 }
 
 
-void WriteBufferFromFileDescriptor::setCancellationHook(std::function<bool()> cancellation_hook_)
+void WriteBufferFromFileDescriptor::setCancellationHook(
+    std::function<bool()> cancellation_hook_, std::function<bool()> interruption_hook_)
 {
     cancellation_hook = std::move(cancellation_hook_);
+    interruption_hook = std::move(interruption_hook_);
 
     if (cancellation_hook)
         initializeResponsiveWriteState();
@@ -161,7 +163,9 @@ void WriteBufferFromFileDescriptor::nextImpl()
     /// interrupting signal can be delivered to another thread and thus not interrupt this write()
     /// at all. Wait for the descriptor to become writable in small steps, checking for cancellation
     /// in between, issue writes that cannot sleep indefinitely, and discard the rest of the buffer
-    /// once cancellation is requested. A terminal is written through a private non-blocking
+    /// once cancellation is requested - or, on the first interrupt signal of a query that stops
+    /// only on a later one, as soon as the sink turns out to have no room at all (see below).
+    /// A terminal is written through a private non-blocking
     /// descriptor of the same sink (see setCancellationHook), so the write fails with EAGAIN
     /// instead of sleeping when the terminal stops draining.
     const int write_fd = (responsive_writes && nonblocking_write_fd >= 0) ? nonblocking_write_fd : fd;
@@ -188,7 +192,16 @@ void WriteBufferFromFileDescriptor::nextImpl()
 
             /// Timed out or interrupted by a signal - the descriptor is not writable yet.
             if (poll_res <= 0)
+            {
+                /// The sink has no room and an interrupt signal has already arrived, so stop waiting
+                /// for a sink that may never drain and give the caller back control - it is the only
+                /// way the first Ctrl+C of a `partial_result_on_first_cancel` query can reach the
+                /// server. A sink that does accept data is never abandoned here, so output is only
+                /// dropped where it could not be delivered anyway.
+                if (interrupted())
+                    return;
                 continue;
+            }
 
             /// After poll() reports the descriptor is writable, writing at most PIPE_BUF bytes is
             /// guaranteed not to block on a pipe, so a blocking write bounded this way stays
@@ -220,7 +233,11 @@ void WriteBufferFromFileDescriptor::nextImpl()
         /// Treat it like a poll() timeout: wait for writability again, checking the cancellation
         /// hook in between.
         if (responsive_writes && -1 == res && (errno == EAGAIN || errno == EWOULDBLOCK))
+        {
+            if (interrupted())
+                return;
             continue;
+        }
 
         /// A write()/send() returning 0 for the non-empty request here is always an error - unlike
         /// -1, it is not how an interruption is reported, so it does not need an errno check (which

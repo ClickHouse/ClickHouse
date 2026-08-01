@@ -898,7 +898,8 @@ void ClientBase::onProfileInfo(const ProfileInfo & profile_info)
 namespace
 {
 
-/// Open the `INTO OUTFILE` target in a way that a `Ctrl+C` can interrupt.
+/// Open a client output sink (the `INTO OUTFILE` target, an explicit `--server_logs_file`) in a way
+/// that a `Ctrl+C` can interrupt.
 ///
 /// A blocking special file - most notably a FIFO opened for writing while no reader is attached -
 /// parks `open(O_WRONLY)` until a reader appears. Doing that inside the `WriteBufferFromFile`
@@ -908,12 +909,14 @@ namespace
 /// Instead, open with `O_NONBLOCK`: for a reader-less FIFO that fails immediately with `ENXIO`,
 /// which lets us wait for the sink in an interruptible loop rather than inside the kernel. The
 /// waiting semantics of a blocking `open` are preserved (a FIFO target still waits for its reader),
-/// only now the wait is abandoned as soon as the query is cancelled. For every other target -
+/// only now the wait is abandoned as soon as the query is interrupted - already on the first signal,
+/// even with `partial_result_on_first_cancel`: there is no partial result to deliver into a sink
+/// that could not be opened. For every other target -
 /// including a regular file - the very first `open` succeeds and the loop is not entered at all.
 ///
 /// `O_NONBLOCK` is cleared afterwards so that writes keep their usual semantics;
 /// `WriteBufferFromFileDescriptor::setCancellationHook` arranges responsive writes on its own.
-int openOutfileCancellable(const String & file_name, int flags, const std::function<bool()> & is_cancelled)
+int openFileCancellable(const String & file_name, int flags, const std::function<bool()> & is_interrupted)
 {
     while (true)
     {
@@ -940,7 +943,7 @@ int openOutfileCancellable(const String & file_name, int flags, const std::funct
                     file_name);
             }
 
-            if (is_cancelled())
+            if (is_interrupted())
                 throw Exception(
                     ErrorCodes::QUERY_WAS_CANCELLED,
                     "Query was cancelled while waiting for {} to be opened for writing",
@@ -968,6 +971,21 @@ int openOutfileCancellable(const String & file_name, int flags, const std::funct
     }
 }
 
+}
+
+
+void ClientBase::armResponsiveOutput(WriteBufferFromFileDescriptor & buf)
+{
+    /// Two predicates, both keyed on the interrupt handler being armed for an in-flight query, so
+    /// that a handler merely stopped during teardown is never mistaken for a cancellation (which
+    /// would discard already-produced output, see resetOutput):
+    /// - already-buffered bytes are discarded only once the query is genuinely cancelled;
+    /// - a write that finds the sink with no room gives up as soon as the first interrupt signal
+    ///   arrives, so that even with `partial_result_on_first_cancel` a stuck sink cannot keep the
+    ///   client from reacting to the first Ctrl+C.
+    buf.setCancellationHook(
+        [this]() { return query_interrupt_handler.cancelledWhileRunning(); },
+        [this]() { return query_interrupt_handler.interruptedWhileRunning(); });
 }
 
 
@@ -1005,8 +1023,7 @@ try
             /// the interrupt handler is stopped during teardown, cancelled() becomes unconditionally
             /// true, so without the guard the final flush in resetOutput() would discard
             /// already-produced output on an exception path (where the query was never cancelled).
-            pager_cmd->in.setCancellationHook(
-                [this]() { return query_interrupt_handler.cancelledWhileRunning(); });
+            armResponsiveOutput(pager_cmd->in);
         }
         else
         {
@@ -1082,9 +1099,9 @@ try
 
                 /// Acquire the descriptor before handing it over to `WriteBufferFromFile`, so that a
                 /// sink whose `open()` blocks (a reader-less FIFO) does not park the client where no
-                /// cancellation hook exists yet. See `openOutfileCancellable`.
-                int out_file_fd = openOutfileCancellable(
-                    out_file, flags, [this]() { return query_interrupt_handler.cancelledWhileRunning(); });
+                /// cancellation hook exists yet. See `openFileCancellable`.
+                int out_file_fd = openFileCancellable(
+                    out_file, flags, [this]() { return query_interrupt_handler.interruptedWhileRunning(); });
 
                 /// The constructor below takes ownership and resets `out_file_fd` to -1; this only
                 /// covers the case when it throws before doing so.
@@ -1106,9 +1123,7 @@ try
                 /// as non-blocking), so nothing is dropped and the complete file is preserved. The
                 /// `cancelledWhileRunning()` guard keeps the final flush in `resetOutput()` from discarding
                 /// already-produced output on an exception path, where the query was never cancelled.
-                out_file_write_buf->setCancellationHook(
-                    [this]()
-                    { return query_interrupt_handler.cancelledWhileRunning(); });
+                armResponsiveOutput(*out_file_write_buf);
 
                 out_file_buf = wrapWriteBufferWithCompressionMethod(
                     std::move(out_file_write_buf),
@@ -1131,9 +1146,7 @@ try
                     /// guard the final flush in resetOutput() would discard already-produced output
                     /// on an exception path (where the query was never cancelled).
                     auto stdout_buf = std::make_shared<WriteBufferFromFileDescriptor>(stdout_fd);
-                    stdout_buf->setCancellationHook(
-                        [this]()
-                        { return query_interrupt_handler.cancelledWhileRunning(); });
+                    armResponsiveOutput(*stdout_buf);
 
                     /// Keep a handle so resetOutput() can re-point the hook before finalizing it.
                     select_into_file_and_stdout_buf = stdout_buf;
@@ -1301,8 +1314,7 @@ void ClientBase::initLogsOutputStream()
         /// An explicit --server_logs_file=<path> (a dedicated buffer) is armed here as well, so a
         /// non-regular sink such as a FIFO stays interruptible.
         if (server_logs_file != "-" && logs_out_terminal_buf)
-            logs_out_terminal_buf->setCancellationHook(
-                [this]() { return query_interrupt_handler.cancelledWhileRunning(); });
+            armResponsiveOutput(*logs_out_terminal_buf);
     }
 }
 
@@ -1848,8 +1860,7 @@ void ClientBase::processOrdinaryQuery(String query, ASTPtr parsed_query)
             /// reading the hook is joined) would discard already-produced output on an exception path
             /// where the query was never cancelled. It is finally cleared in resetOutput() after that
             /// collector has been joined, so the hook is never mutated while that thread reads it.
-            std_out->setCancellationHook(
-                [this]() { return query_interrupt_handler.cancelledWhileRunning(); });
+            armResponsiveOutput(*std_out);
 
             /// The progress indication renders to the terminal through `tty_buf`, so those writes
             /// must stay responsive to cancellation as well: on a terminal that stopped draining,
@@ -1860,8 +1871,7 @@ void ClientBase::processOrdinaryQuery(String query, ASTPtr parsed_query)
             /// hook shares std_out's lifetime discipline: re-pointed and finally cleared in
             /// resetOutput().
             if (tty_buf)
-                tty_buf->setCancellationHook(
-                    [this]() { return query_interrupt_handler.cancelledWhileRunning(); });
+                armResponsiveOutput(*tty_buf);
 
             /// Allow cancellation during query analysis (e.g. scalar subqueries).
             /// For TCP connections this is handled by receivePacketsExpectCancel;
@@ -2357,16 +2367,14 @@ void ClientBase::resetOutput()
     /// predicate on a captured `!cancelled()` instead would go permanently inert if the signal arrived
     /// just before the capture (the handler's cancelled() flips, but the local `cancelled` flag is only
     /// set by cancelQuery inside receiveResult, which no longer runs once we are in this teardown).
-    auto teardown_cancellation_hook = [this]
-    { return query_interrupt_handler.cancelledWhileRunning(); };
     if (std_out)
-        std_out->setCancellationHook(teardown_cancellation_hook);
+        armResponsiveOutput(*std_out);
     /// tty_buf carries the same per-query hook (installed alongside std_out's), and the teardown
     /// flushes below still clear the progress indication through it (std_out_wrapper->finalize()
     /// triggers the progress-clearing flush callback installed in initOutputFormat), so re-point
     /// it the same way.
     if (tty_buf)
-        tty_buf->setCancellationHook(teardown_cancellation_hook);
+        armResponsiveOutput(*tty_buf);
     /// The per-query pager and `INTO OUTFILE ... AND STDOUT` stdout buffers carry the same
     /// handler-based hook (installed in initOutputFormat), and are finalized by the teardown
     /// flushes below (std_out_wrapper->finalize() and out_file_buf->finalize() respectively).
@@ -2374,9 +2382,9 @@ void ClientBase::resetOutput()
     /// the query was not genuinely cancelled) finalizing them would discard already-produced
     /// output. They are destroyed in this function, so they need no clearing afterwards.
     if (pager_cmd)
-        pager_cmd->in.setCancellationHook(teardown_cancellation_hook);
+        armResponsiveOutput(pager_cmd->in);
     if (select_into_file_and_stdout_buf)
-        select_into_file_and_stdout_buf->setCancellationHook(teardown_cancellation_hook);
+        armResponsiveOutput(*select_into_file_and_stdout_buf);
     SCOPE_EXIT({
         if (std_out)
             std_out->setCancellationHook({});
@@ -2581,14 +2589,12 @@ void ClientBase::processInsertQuery(String query, ASTPtr parsed_query)
     /// lifetime discipline as in processOrdinaryQuery: it goes inert once query_interrupt_handler is
     /// stopped and is finally cleared by the next resetOutput().
     if (std_out)
-        std_out->setCancellationHook(
-            [this]() { return query_interrupt_handler.cancelledWhileRunning(); });
+        armResponsiveOutput(*std_out);
 
     /// Progress for an INSERT (e.g. reading an INFILE) is rendered through `tty_buf` as well -
     /// keep it responsive to cancellation, for the same reason as in processOrdinaryQuery.
     if (tty_buf)
-        tty_buf->setCancellationHook(
-            [this]() { return query_interrupt_handler.cancelledWhileRunning(); });
+        armResponsiveOutput(*tty_buf);
 
     /// `query` may have been rewritten from JSON to SQL above; pin the transport dialect to match
     /// before sending so the server parses it the same way the client did.
