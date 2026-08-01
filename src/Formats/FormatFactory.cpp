@@ -162,6 +162,7 @@ FormatSettings getFormatSettings(const ContextPtr & context, const Settings & se
     format_settings.date_time_input_format = settings[Setting::date_time_input_format];
     format_settings.date_time_output_format = settings[Setting::date_time_output_format];
     format_settings.date_time_64_output_format_cut_trailing_zeros_align_to_groups_of_thousands = settings[Setting::date_time_64_output_format_cut_trailing_zeros_align_to_groups_of_thousands];
+    format_settings.read_datetime_number_as_raw_value = settings[Setting::input_format_read_datetime_number_as_raw_value];
     format_settings.interval_output_format = settings[Setting::interval_output_format];
     format_settings.input_format_ipv4_default_on_conversion_error = settings[Setting::input_format_ipv4_default_on_conversion_error];
     format_settings.input_format_ipv6_default_on_conversion_error = settings[Setting::input_format_ipv6_default_on_conversion_error];
@@ -222,6 +223,7 @@ FormatSettings getFormatSettings(const ContextPtr & context, const Settings & se
     format_settings.parquet.preserve_order = settings[Setting::input_format_parquet_preserve_order];
     format_settings.parquet.filter_push_down = settings[Setting::input_format_parquet_filter_push_down];
     format_settings.parquet.bloom_filter_push_down = settings[Setting::input_format_parquet_bloom_filter_push_down];
+    format_settings.parquet.dictionary_filter_push_down = settings[Setting::input_format_parquet_dictionary_filter_push_down];
     format_settings.parquet.page_filter_push_down = settings[Setting::input_format_parquet_page_filter_push_down];
     format_settings.parquet.use_offset_index = settings[Setting::input_format_parquet_use_offset_index];
 
