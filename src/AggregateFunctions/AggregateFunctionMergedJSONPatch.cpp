@@ -19,6 +19,7 @@
 #include <Common/FieldBinaryEncoding.h>
 #include <Common/VectorWithMemoryTracking.h>
 #include <Core/Field.h>
+#include <Core/CompareHelper.h>
 
 #include <algorithm>
 #include <memory>
@@ -114,26 +115,12 @@ struct KeyFixed
 
     bool less(const KeyFixed & other) const
     {
-        // For floating-point types, NaN must sort to the end (same as ORDER BY DESC).
-        // This matches IColumn::compareAt(..., nan_direction_hint = -1) semantics.
+        // For floating-point types, use nan_direction_hint = -1 to treat NaN as the minimum value
+        // (same as argMax / IColumn::compareAt semantics): finite sort keys always beat NaN.
         if constexpr (std::is_floating_point_v<ValueType>)
-        {
-            // Both NaN: not less (maintain stable order)
-            if (std::isnan(value) && std::isnan(other.value))
-                return false;
-            // Only lhs is NaN: not less (NaN sorts to the end)
-            if (std::isnan(value))
-                return false;
-            // Only rhs is NaN: less (rhs sorts to the end)
-            if (std::isnan(other.value))
-                return true;
-            // Neither is NaN: standard comparison
-            return value < other.value;
-        }
+            return FloatCompareHelper<ValueType>::less(value, other.value, -1);
         else
-        {
             return value < other.value;
-        }
     }
 
     void serialize(WriteBuffer & buffer) const { writeBinary(value, buffer); }
@@ -166,7 +153,19 @@ struct KeyGeneric
 
     void set(const IColumn & column, size_t row) { column.get(row, value); }
 
-    bool less(const KeyGeneric & other) const { return value < other.value; }
+    bool less(const KeyGeneric & other) const
+    {
+        // Field::operator< uses nan_direction_hint = 1 (NaN is maximum), but we need NaN to be
+        // the minimum (same as argMax / IColumn::compareAt semantics) so finite keys always win.
+        // For Float64 fields, use FloatCompareHelper with nan_direction_hint = -1 explicitly.
+        if (value.getType() == Field::Types::Float64)
+        {
+            const double a = value.safeGet<Float64>();
+            const double b = other.value.safeGet<Float64>();
+            return FloatCompareHelper<Float64>::less(a, b, -1);
+        }
+        return value < other.value;
+    }
 
     void serialize(WriteBuffer & buffer) const { encodeField(value, buffer); }
 
