@@ -5,6 +5,7 @@ rows	10000
 check
 1
 packed insert projection adds directory syncs	1
+packed insert projection adds exactly one file sync	1
 packed storage type	Packed
 packed check
 1

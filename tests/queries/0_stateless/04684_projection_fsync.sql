@@ -126,9 +126,23 @@ SELECT 'packed insert projection adds directory syncs',
      WHERE current_database = currentDatabase() AND query_kind = 'Insert'
        AND query NOT LIKE '%query_log%' AND query LIKE '%t\_packed\_plain%' AND type = 'QueryFinish');
 
+-- The directory assertion above cannot observe the archive's own fsync: on `Packed` storage a
+-- projection file sync only sets `FinalizePlan::need_sync`, and `data.packed` is synced later just
+-- when that flag is set. Dropping the projection's `sync` argument while keeping the directory
+-- guard would therefore still pass. A `Packed` part has exactly one file to sync, so the delta is
+-- exactly one.
+SELECT 'packed insert projection adds exactly one file sync',
+    (SELECT max(ProfileEvents['FileSync']) FROM system.query_log
+     WHERE current_database = currentDatabase() AND query_kind = 'Insert'
+       AND query NOT LIKE '%query_log%' AND query LIKE '%t\_packed %' AND type = 'QueryFinish')
+    -
+    (SELECT max(ProfileEvents['FileSync']) FROM system.query_log
+     WHERE current_database = currentDatabase() AND query_kind = 'Insert'
+       AND query NOT LIKE '%query_log%' AND query LIKE '%t\_packed\_plain%' AND type = 'QueryFinish');
+
 SYSTEM FLUSH LOGS part_log;
 
--- Guards the assertion above: on `Full` storage the projection files are individually synced, so
+-- Guards the assertions above: on `Full` storage the projection files are individually synced, so
 -- confirm the fixture really produced a `Packed` part.
 SELECT 'packed storage type', any(part_storage_type) FROM system.part_log
 WHERE database = currentDatabase() AND table = 't_packed' AND event_type = 'NewPart';
