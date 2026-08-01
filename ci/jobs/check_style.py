@@ -600,6 +600,18 @@ def check_settings_changes_history():
     success or a non-empty error string on failure (consumed by Result.from_commands_run).
     Pure text parsing - no C++ syntax analysis.
 
+    A change that touches no C++ source at all besides SettingsChangesHistory.cpp cannot have
+    changed any setting's compiled default, so it is a historical correction - fixing what a past
+    release recorded - not a default change made now, and it is allowed (the check skips).
+    Requiring it under the current version block would tell `compatibility` the value changed
+    again in this release. The gate deliberately keys off any src/ source file rather than the
+    declaration files alone: a default can come from a constant defined elsewhere (for example
+    `DEFAULT_INSERT_BLOCK_SIZE` or `DBMS_DEFAULT_LOCK_ACQUIRE_TIMEOUT_SEC` in src/Core/Defines.h),
+    and a narrower gate would let such a change be recorded in an older block unnoticed. Build
+    definitions are treated the same way: defaults also switch on compile definitions such as
+    `CLICKHOUSE_CLOUD` and `ENABLE_DISTRIBUTED_CACHE`, which come from CMake files and config
+    templates, so changes to CMakeLists.txt / *.cmake / *.h.in also enforce the rule.
+
     Fail-close: if the file changed but the hook could not fetch the diff (e.g. in the merge
     queue), fail rather than silently pass - a green here would defeat the purpose."""
     path = "src/Core/SettingsChangesHistory.cpp"
@@ -615,6 +627,30 @@ def check_settings_changes_history():
         )
     if path not in changed_files:
         # The history file was not changed in this run - nothing to validate.
+        return ""
+
+    # A change that touches no default-bearing source besides this file cannot have changed any
+    # setting's compiled default, so it is a historical correction (fixing what a past release
+    # recorded), not a default change made now - it must not be forced into the current version
+    # block. Enforce the current-block rule as soon as any other source file changed: defaults
+    # are not only written in the declaration files, they can come from constants defined
+    # anywhere (for example src/Core/Defines.h). Build definitions count as sources too:
+    # defaults switch on compile definitions such as `CLICKHOUSE_CLOUD` and
+    # `ENABLE_DISTRIBUTED_CACHE`, which are driven by CMake files and config templates
+    # (CMakeLists.txt, *.cmake, src/Common/config.h.in), so anything narrower would leave a
+    # silent hole. The price is over-strictness for a change that corrects an old entry and
+    # edits unrelated code in the same commit - the message below says how to proceed.
+    def is_default_bearing_source(f):
+        if f == path:
+            return False
+        if f.startswith("src/") and f.endswith((".h", ".cpp", ".inc")):
+            return True
+        return f.rsplit("/", 1)[-1] == "CMakeLists.txt" or f.endswith(
+            (".cmake", ".cmake.in", ".h.in", ".hpp.in")
+        )
+
+    other_sources_changed = any(is_default_bearing_source(f) for f in changed_files)
+    if not other_sources_changed:
         return ""
 
     fetch_error = kv.get("settings_history_fetch_error")
@@ -672,7 +708,9 @@ def check_settings_changes_history():
             f"These settings were added or value-changed in {path} but are not recorded under "
             f"the current version ('{current_version}') block of SettingsChangesHistory.cpp. Add "
             f"an entry for each under the '{current_version}' block (older blocks may keep their "
-            f"entries for backports):\n" + "\n".join(sorted(set(violations)))
+            f"entries for backports). If this is a correction of what an older release recorded "
+            f"and not a default change made here, split it into a change that touches only "
+            f"{path}:\n" + "\n".join(sorted(set(violations)))
         )
     return ""
 
