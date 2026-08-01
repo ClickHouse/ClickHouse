@@ -63,15 +63,17 @@ void extractJoinConditions(const QueryTreeNodePtr & node, QueryTreeNodes & equi_
 /// state. `randConstant` draws a new value whenever its function base is built, so a node that
 /// deserializes the plan draws a different one. The `filesystem*` family reads the disks of the node it
 /// runs on, and `getClientHTTPHeader` reads the current request's headers, which its own documentation
-/// says are non-empty only on the initiator. Aliases and letter case resolve to these canonical names
-/// first.
+/// says are non-empty only on the initiator. `showCertificate` reports no determinism predicate at all,
+/// and it falls back to the certificate of the node that runs it when the client did not send one.
+/// Aliases and letter case resolve to these canonical names first.
 bool isNodeLocalFunction(const String & function_name)
 {
     return function_name == "queryID" || function_name == "FQDN" || function_name == "getServerPort"
         || function_name == "transactionID" || function_name == "transactionLatestSnapshot"
         || function_name == "transactionOldestSnapshot" || function_name == "randConstant"
         || function_name == "filesystemCapacity" || function_name == "filesystemAvailable"
-        || function_name == "filesystemUnreserved" || function_name == "getClientHTTPHeader";
+        || function_name == "filesystemUnreserved" || function_name == "getClientHTTPHeader"
+        || function_name == "showCertificate";
 }
 
 /// A condition may become a join key only if its value is stable within one query, because in the key

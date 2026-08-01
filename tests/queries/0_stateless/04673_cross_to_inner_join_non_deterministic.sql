@@ -204,8 +204,20 @@ SELECT '-- getMacro() is no longer rewritten';
 SELECT count() = 0 FROM (
     EXPLAIN QUERY TREE run_passes = 1
     SELECT count() FROM remote('127.0.0.1', currentDatabase(), l) AS l2, r
-    WHERE concat(toString(l2.a), getMacro(materialize('shard')))
-        = concat(toString(r.a), getMacro(materialize('shard')))
+    WHERE concat(toString(l2.a), getMacro('shard'))
+        = concat(toString(r.a), getMacro('shard'))
+    SETTINGS cross_to_inner_join_rewrite = 1
+) WHERE explain ILIKE '%kind: INNER%';
+
+-- showCertificate() reports no determinism predicate at all, so only the name list can refuse it. It
+-- never returns a constant column, so unlike the rows above it is not folded on a single-node query and
+-- needs no remote() vehicle.
+SELECT '-- showCertificate() is no longer rewritten';
+SELECT count() = 0 FROM (
+    EXPLAIN QUERY TREE run_passes = 1
+    SELECT count() FROM l, r
+    WHERE concat(toString(l.a), showCertificate()['version'])
+        = concat(toString(r.a), showCertificate()['version'])
     SETTINGS cross_to_inner_join_rewrite = 1
 ) WHERE explain ILIKE '%kind: INNER%';
 

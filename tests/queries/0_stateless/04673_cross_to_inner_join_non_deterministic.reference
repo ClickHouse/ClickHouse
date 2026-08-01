@@ -44,6 +44,8 @@
 1
 -- getMacro() is no longer rewritten
 1
+-- showCertificate() is no longer rewritten
+1
 -- a deterministic remote() predicate is still rewritten
 1
 -- getServerPort() is no longer rewritten
