@@ -241,11 +241,11 @@ private:
     LoggerPtr log = getLogger("ReadPipeline");
 
     /// Experimental `ReaderExecutor` path (gated by `use_reader_executor`).
-    /// Returns nullptr when the setting is off, the source variant is not yet
-    /// supported, or any stage the minimal executor can't handle (caches,
-    /// decryption, distributed cache) is configured — so the caller falls back
-    /// to the legacy matryoshka pipeline. When it returns a buffer, `build` must
-    /// NOT apply the `wrap*` stages.
+    /// Returns nullptr when the setting is off, the source variant is not
+    /// supported, or a stage the executor can't handle (the page cache, the
+    /// distributed cache, or async prefetch) is configured — so the caller falls
+    /// back to the legacy matryoshka pipeline. When it returns a buffer, `build`
+    /// must NOT apply the `wrap*` stages.
     std::unique_ptr<ReadBufferFromFileBase> tryBuildReaderExecutor() const;
 
     /// Whether the memory (page) cache stage will actually be applied. It is requested via
