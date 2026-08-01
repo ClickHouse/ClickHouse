@@ -118,6 +118,12 @@ CREATE TABLE filtered_orders (customer String, amount UInt64) ENGINE = MergeTree
 WITH 100 AS lo, 300 AS hi INSERT INTO filtered_orders FROM orders |> WHERE amount >= lo |> WHERE amount < hi |> SELECT customer, amount;
 FROM filtered_orders ORDER BY customer, amount;
 
+SELECT '-- Without enable_global_with_statement, an INSERT-scoped WITH does not reach the pipe stages, same as a hand-written nested subquery';
+SET enable_global_with_statement = 0;
+WITH 100 AS lo INSERT INTO filtered_orders FROM orders |> WHERE amount >= lo |> SELECT customer, amount; -- { serverError UNKNOWN_IDENTIFIER }
+WITH 100 AS lo INSERT INTO filtered_orders SELECT customer, amount FROM (SELECT * FROM orders WHERE amount >= lo); -- { serverError UNKNOWN_IDENTIFIER }
+SET enable_global_with_statement = 1;
+
 SELECT '-- The ORDER BY operator supports the full clause syntax: ORDER BY ALL, WITH FILL, INTERPOLATE';
 FROM orders |> SELECT customer, amount |> ORDER BY ALL;
 FROM orders |> SELECT customer |> DISTINCT |> ORDER BY ALL DESC;

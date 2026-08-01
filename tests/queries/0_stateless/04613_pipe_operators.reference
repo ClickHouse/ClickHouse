@@ -108,6 +108,7 @@ charlie	300
 -- An INSERT-scoped WITH stays visible in the pipe operators
 alice	100
 alice	250
+-- Without enable_global_with_statement, an INSERT-scoped WITH does not reach the pipe stages, same as a hand-written nested subquery
 -- The ORDER BY operator supports the full clause syntax: ORDER BY ALL, WITH FILL, INTERPOLATE
 alice	100
 alice	250

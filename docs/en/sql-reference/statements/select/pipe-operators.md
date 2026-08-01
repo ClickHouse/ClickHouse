@@ -173,6 +173,7 @@ The parentheses around an operand are optional for a single query, but they are 
 ## Notes {#notes}
 
 - The `WITH` clause of the query stays visible in all following pipe operators, both for scalar aliases and for CTEs: `WITH 10 AS threshold FROM t |> WHERE x < threshold`.
+- In `INSERT ... SELECT`, a `WITH` clause written before `INSERT` is attached to the outermost generated `SELECT`, and it reaches the inner pipe stages during interpretation via the `enable_global_with_statement` setting (enabled by default) — the same way it reaches a hand-written nested subquery. If that setting is disabled, aliases and CTEs from an `INSERT`-scoped `WITH` are not visible inside the pipe stages, exactly as they are not visible inside a hand-written subquery.
 - Pipe operators bind to the whole query before them, including set operations: in `SELECT 1 UNION ALL SELECT 2 |> AGGREGATE count()`, the aggregation is applied to the result of the `UNION ALL`. To continue a query with `UNION` after a pipe operator, use the `|> UNION` operator or parentheses.
 - Pipe operators can be used everywhere a `SELECT` query is expected: in subqueries, in `INSERT ... SELECT` (including the form `INSERT INTO t FROM src |> ...`), in `CREATE VIEW`, in the `view` table function, and so on.
 - The renaming of columns in place is not provided as a separate operator; use `|> SELECT * EXCEPT (old_name), old_name AS new_name` or the `SET` and `DROP` operators.
