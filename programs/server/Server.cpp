@@ -891,7 +891,7 @@ void sanityChecks(Server & server, const ServerSettings & server_settings)
     try
     {
         const char * filename = "/sys/kernel/mm/transparent_hugepage/enabled";
-        if (readLine(filename).find("[always]") != std::string::npos)
+        if (readLine(filename).contains("[always]"))
             server.context()->addOrUpdateWarningMessage(
                 Context::WarningType::LINUX_TRANSPARENT_HUGEPAGES_SET_TO_ALWAYS,
                 PreformattedMessage::create("Linux transparent hugepages are set to \"always\". Check {}", String(filename)));
@@ -1299,14 +1299,6 @@ try
     if (server_settings[ServerSetting::remap_executable])
     {
         LOG_DEBUG(log, "Will remap executable in memory.");
-        /// remapExecutable rewrites the whole code segment in place; any other thread executing code during
-        /// the window faults (and the signal handler's code is unmapped too, so it dies silently). The async
-        /// logging threads poll rather than block, so join them for the duration and restart afterwards.
-        stopAsyncLoggingThreads();
-        /// Restart the async logging threads even if remapExecutable throws. Otherwise the logger would stay
-        /// stopped, and the exception unwinding through Server::main would be logged into a queue that no
-        /// consumer thread is draining, silently losing the startup exception and any queued diagnostics.
-        SCOPE_EXIT_SAFE(startAsyncLoggingThreads());
         size_t size = remapExecutable();
         LOG_DEBUG(log, "The code ({}) in memory has been successfully remapped.", ReadableSize(size));
     }
