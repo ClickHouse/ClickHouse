@@ -85,6 +85,11 @@ SHOW CREATE QUOTA ${QUOTA}_h;
 CREATE QUOTA ${QUOTA}_x FOR INTERVAL 1 hour MAX queries = 0x1.8p1;
 SHOW CREATE QUOTA ${QUOTA}_x;
 
+-- A hexadecimal mantissa that fits into the range only after a negative exponent shifts its lowest
+-- digits away keeps its exact value too (0x200000000000010000000000000000000p-76 is 2^53 + 1).
+CREATE QUOTA ${QUOTA}_w FOR INTERVAL 1 hour MAX queries = 0x200000000000010000000000000000000p-76;
+SHOW CREATE QUOTA ${QUOTA}_w;
+
 -- An exponent form whose mantissa fits into the range only after the exponent is applied keeps its
 -- exact value: the digits that a negative exponent shifts away are discarded before the value is
 -- computed (184467440737095516150e-1 is exactly the maximum, while its 21-digit mantissa is not).

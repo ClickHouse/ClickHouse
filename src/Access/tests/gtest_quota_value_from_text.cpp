@@ -68,6 +68,12 @@ TEST(QuotaValueFromText, Unscaled)
     EXPECT_EQ(scale("0x1.8p1", 1), exact(3));
     EXPECT_EQ(scale("0x1.8p0", 1).integral, false);
     EXPECT_EQ(scale("0x1p64", 1), does_not_fit);
+    /// A wide hexadecimal mantissa that fits into the range only after a negative exponent shifts
+    /// its lowest digits away: those digits are zero, so they are discarded before the value is
+    /// computed instead of overflowing it (0x200000000000010000000000000000000p-76 is 2^53 + 1).
+    EXPECT_EQ(scale("0x200000000000010000000000000000000p-76", 1), exact(9007199254740993));
+    EXPECT_EQ(scale("0x2000000000000100000000000000000000p-80", 1), exact(9007199254740993));
+    EXPECT_EQ(scale("0x200000000000010000000000000000000p-77", 1), exact(4503599627370496, /* integral= */ false));
     /// Not a numeric form the analysis understands.
     EXPECT_EQ(scale("inf", 1), unrecognized);
     EXPECT_EQ(scale("nan", 1), unrecognized);
@@ -98,6 +104,8 @@ TEST(QuotaValueFromText, Scaled)
     EXPECT_EQ(scale("0x1.8p0", nanoseconds), exact(1500000000));
     EXPECT_EQ(scale("0x3p-31", nanoseconds), exact(1, /* integral= */ false));
     EXPECT_EQ(scale("0x1p64", nanoseconds), does_not_fit);
+    /// A wide hexadecimal mantissa is scaled exactly as well (0x30000000000000000p-64 is 3).
+    EXPECT_EQ(scale("0x30000000000000000p-64", nanoseconds), exact(3000000000));
     /// The exponent form of the value at the top of the range: its mantissa does not fit on its own.
     EXPECT_EQ(scale("184467440737095516150e-10", nanoseconds), exact(18446744073709551615ULL));
 }

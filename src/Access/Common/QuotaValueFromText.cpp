@@ -143,20 +143,23 @@ std::optional<QuotaValue> exactScaledValueOfNumericLiteral(const NumericLiteralP
     Int64 shift = parts.exponent + static_cast<Int64>(multiplier_zeros)
         - static_cast<Int64>(fractional_part.size()) * (parts.is_hex ? 4 : 1);
 
-    /// A negative decimal shift truncates the lowest digits away in the end; dropping them before the
+    /// A negative shift truncates the lowest digits away in the end; dropping them before the
     /// accumulation keeps a value that fits exact instead of overflowing the accumulation, both for
     /// digits below the scale (18446744073.7095516155 scaled by 10^9 is QuotaValue max and a half)
     /// and for a mantissa that only fits after the shift (184467440737095516150e-1 is QuotaValue max).
-    if (!parts.is_hex && shift < 0)
+    /// A hexadecimal digit is dropped only when it is zero, and only when the shift covers all of its
+    /// four bits: the multiplication by the remaining factor 5^n of the multiplier below happens
+    /// before the truncation, so truncating a nonzero digit early would not give the same value.
+    const Int64 digit_shift = parts.is_hex ? 4 : 1;
+    for (std::string_view * digits : {&fractional_part, &integer_part})
     {
-        for (std::string_view * digits : {&fractional_part, &integer_part})
+        while (shift <= -digit_shift && !digits->empty() && (!parts.is_hex || digits->back() == '0'))
         {
-            size_t dropped = std::min(static_cast<size_t>(-shift), digits->size());
-            digits->remove_suffix(dropped);
-            shift += static_cast<Int64>(dropped);
-            if (shift == 0)
-                break;
+            digits->remove_suffix(1);
+            shift += digit_shift;
         }
+        if (!digits->empty())
+            break;
     }
 
     /// The accumulation is done in a wider type, because the hexadecimal multiplication below needs
