@@ -159,41 +159,56 @@ DROP TABLE t_packed_plain;
 -- above applies: the rebuilt projection is far smaller than the parent, so the threshold must sit
 -- between them for the mutation's own sync decision to be the only thing that can sync it.
 --
--- The comparison is against the SAME table's plain row-rewriting mutation rather than against a
--- projection-less table: an `ALTER ... UPDATE` that rewrites every row touches a different set of
--- files than a projection materialization, so only a before/after on one table is meaningful.
---
--- The bound below counts files, so nothing unrelated may add any. Statistics do: implicit
--- statistics put one more file in the mutated part, which is enough to satisfy the bound without
--- any projection file being synced. Both settings that produce them are randomized in CI
--- (`materialize_statistics_on_insert` to true in 95% of runs), so both must be pinned here.
-SET materialize_statistics_on_insert = 0;
-
+-- The reading is a DELTA against an identical projection-less table running the same mutation,
+-- never an absolute file count: the number of files a part contains depends on the serialization
+-- layout, and CI randomizes that (`serialization_info_version = 'basic'` drops `serialization.json`,
+-- `string_serialization_version = 'single_stream'` drops the `key.size.*` pair), so any absolute
+-- bound reads differently per run. The two tables share every setting, so a layout change moves
+-- both readings and cancels out.
 CREATE TABLE t_mat (id UInt64, key String, v UInt64)
 ENGINE = MergeTree ORDER BY id
 SETTINGS fsync_after_insert = 1, fsync_part_directory = 1,
          min_rows_to_fsync_after_merge = 1000, min_compressed_bytes_to_fsync_after_merge = 0,
          min_bytes_for_wide_part = 0, min_rows_for_wide_part = 0,
          min_bytes_for_full_part_storage = 0,
-         auto_statistics_types = '',
+         max_bytes_to_merge_at_max_space_in_pool = 1;
+
+CREATE TABLE t_mat_plain (id UInt64, key String, v UInt64)
+ENGINE = MergeTree ORDER BY id
+SETTINGS fsync_after_insert = 1, fsync_part_directory = 1,
+         min_rows_to_fsync_after_merge = 1000, min_compressed_bytes_to_fsync_after_merge = 0,
+         min_bytes_for_wide_part = 0, min_rows_for_wide_part = 0,
+         min_bytes_for_full_part_storage = 0,
          max_bytes_to_merge_at_max_space_in_pool = 1;
 
 INSERT INTO t_mat SELECT number, concat('k', toString(number % 7)), number FROM numbers(10000);
+INSERT INTO t_mat_plain SELECT number, concat('k', toString(number % 7)), number FROM numbers(10000);
 ALTER TABLE t_mat ADD PROJECTION pr (SELECT key, sum(v) GROUP BY key);
 ALTER TABLE t_mat MATERIALIZE PROJECTION pr SETTINGS mutations_sync = 2;
 
+-- The compared mutations must sit at the same position in their part's mutation chain: a mutation's
+-- sync count depends on that position, not only on the files it writes (measured on a table with no
+-- projection at all, the same `UPDATE` syncs 7 files as the first mutation and 9 as the second). This
+-- no-op mutation matches the materialization above so the compared pair is the second on both sides.
+ALTER TABLE t_mat_plain UPDATE v = v WHERE 1 SETTINGS mutations_sync = 2;
+
 -- Row-rewriting mutation: rebuilds the projection through the same temp-projection write path.
 ALTER TABLE t_mat UPDATE v = v + 1 WHERE 1 SETTINGS mutations_sync = 2;
+ALTER TABLE t_mat_plain UPDATE v = v + 1 WHERE 1 SETTINGS mutations_sync = 2;
 
 SYSTEM FLUSH LOGS part_log;
 
--- Every mutation that produced a part must have fsynced at least one projection file on top of
--- the parent's own files. The parent part is Wide with 3 columns, so its own syncs are bounded;
--- requiring strictly more than that bound proves projection files were synced too.
+-- The projection rebuild the mutation performs must fsync the projection on top of everything the
+-- identical projection-less mutation already syncs. The delta is one per rebuilt projection and
+-- does not track how many files the projection holds (measured: unchanged when the projection grows
+-- from 14 files to 24). Asserting the exact value means a missing sync and a stray extra one both
+-- redden.
 SELECT 'mutation syncs projection files',
-    min(ProfileEvents['FileSync']) > 6
-FROM system.part_log
-WHERE database = currentDatabase() AND table = 't_mat' AND event_type = 'MutatePart';
+    (SELECT argMax(ProfileEvents['FileSync'], event_time_microseconds) FROM system.part_log
+     WHERE database = currentDatabase() AND table = 't_mat' AND event_type = 'MutatePart')
+    -
+    (SELECT argMax(ProfileEvents['FileSync'], event_time_microseconds) FROM system.part_log
+     WHERE database = currentDatabase() AND table = 't_mat_plain' AND event_type = 'MutatePart');
 
 SELECT 'materialize rows', count() FROM t_mat;
 SELECT sum(v) FROM t_mat GROUP BY key ORDER BY key SETTINGS force_optimize_projection = 1 FORMAT Null;
@@ -201,3 +216,4 @@ SELECT 'materialize check';
 CHECK TABLE t_mat SETTINGS check_query_single_value_result = 1;
 
 DROP TABLE t_mat;
+DROP TABLE t_mat_plain;
