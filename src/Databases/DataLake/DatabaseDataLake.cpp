@@ -1,3 +1,5 @@
+#include "config.h"
+
 #include <algorithm>
 #include <array>
 #include <memory>
@@ -104,6 +106,7 @@ namespace Setting
     extern const SettingsString cluster_for_parallel_replicas;
     extern const SettingsBool database_datalake_require_metadata_access;
     extern const SettingsBool s3_allow_server_credentials_in_user_queries;
+    extern const SettingsBool show_data_lake_catalogs_in_system_tables;
 
 }
 
@@ -133,6 +136,7 @@ namespace FailPoints
     extern const char lightweight_show_tables[];
     extern const char datalake_try_get_table_return_nullptr[];
     extern const char datalake_try_get_table_throw[];
+    extern const char datalake_get_tables_throw[];
 }
 
 namespace
@@ -388,7 +392,12 @@ std::shared_ptr<DataLake::ICatalog> DatabaseDataLake::getCatalog() const
                 ErrorCodes::ACCESS_DENIED,
                 "DataLakeCatalog database is inaccessible: its catalog uses server-managed credentials that are "
                 "restricted for user queries and could not be resolved when the database was loaded from metadata. "
+#if CLICKHOUSE_CLOUD
+                "Recreate the database with explicit catalog credentials (for a Glue catalog, an IAM role via "
+                "aws_role_arn = '...'; for a BigLake catalog, a Google ADC triple). Reason: {}",
+#else
                 "Provide explicit credentials, or enable `s3_allow_server_credentials_in_user_queries`. Reason: {}",
+#endif
                 catalog_unavailable_reason);
     }
     return catalog_impl;
@@ -966,17 +975,36 @@ DatabaseTablesIteratorPtr DatabaseDataLake::getTablesIteratorImpl(
     bool keep_unresolved_tables) const
 {
     Tables tables;
-    DB::Names iceberg_tables;
+    DataLake::CatalogTables catalog_tables;
 
     /// Do not throw here, because this might be, for example, a query to system.tables.
     /// It must not fail on case of some datalake error.
     try
     {
-        iceberg_tables = getCatalog()->getTables(toCatalogTableNameFilter(tables_filter));
+        fiu_do_on(FailPoints::datalake_get_tables_throw,
+        {
+            throw Exception(ErrorCodes::DATALAKE_DATABASE_ERROR, "Injected catalog listing failure");
+        });
+
+        catalog_tables = getCatalog()->getTables(toCatalogTableNameFilter(tables_filter));
     }
     catch (...)
     {
+        if (context_->getSettingsRef()[Setting::show_data_lake_catalogs_in_system_tables])
+            throw;
         tryLogCurrentException(__PRETTY_FUNCTION__);
+    }
+
+    /// Skip tables ClickHouse cannot read (Delta/raw files in mixed catalogs like Glue/Unity)
+    /// and apply the name filter once, matching getLightweightTablesIterator (SHOW TABLES).
+    DB::Names iceberg_tables;
+    for (const auto & catalog_table : catalog_tables)
+    {
+        if (!catalog_table.is_readable)
+            continue;
+        if (filter_by_table_name && !filter_by_table_name(catalog_table.name))
+            continue;
+        iceberg_tables.push_back(catalog_table.name);
     }
 
     auto & pool = Context::getGlobalContextInstance()->getIcebergCatalogThreadpool();
@@ -985,9 +1013,6 @@ DatabaseTablesIteratorPtr DatabaseDataLake::getTablesIteratorImpl(
     std::vector<std::future<StoragePtr>> futures;
     for (const auto & table_name : iceberg_tables)
     {
-        if (filter_by_table_name && !filter_by_table_name(table_name))
-            continue;
-
         try
         {
             promises.emplace_back(std::make_shared<std::promise<StoragePtr>>());
@@ -1093,30 +1118,41 @@ std::vector<LightWeightTableDetails> DatabaseDataLake::getLightweightTablesItera
 }
 
 std::vector<LightWeightTableDetails> DatabaseDataLake::getLightweightTablesIteratorWithHint(
-    ContextPtr /*context_*/,
+    ContextPtr context_,
     const FilterByNameFunction & filter_by_table_name,
     bool /*skip_not_loaded*/,
     const TablesFilter & tables_filter) const
 {
-    DB::Names iceberg_tables;
+    DataLake::CatalogTables catalog_tables;
     std::vector<LightWeightTableDetails> result;
 
     /// Do not throw here, because this might be, for example, a query to system.tables.
     /// It must not fail on case of some datalake error.
     try
     {
-        iceberg_tables = getCatalog()->getTables(toCatalogTableNameFilter(tables_filter));
+        fiu_do_on(FailPoints::datalake_get_tables_throw,
+        {
+            throw Exception(ErrorCodes::DATALAKE_DATABASE_ERROR, "Injected catalog listing failure");
+        });
+
+        catalog_tables = getCatalog()->getTables(toCatalogTableNameFilter(tables_filter));
     }
     catch (...)
     {
+        if (context_->getSettingsRef()[Setting::show_data_lake_catalogs_in_system_tables])
+            throw;
         tryLogCurrentException(__PRETTY_FUNCTION__);
     }
 
-    for (const auto & table_name : iceberg_tables)
+    for (const auto & catalog_table : catalog_tables)
     {
-        if (filter_by_table_name && !filter_by_table_name(table_name))
+        /// Skip tables ClickHouse cannot read, so SHOW TABLES stays consistent with the
+        /// full getTablesIterator path without a per-table metadata fetch.
+        if (!catalog_table.is_readable)
             continue;
-        result.emplace_back(table_name);
+        if (filter_by_table_name && !filter_by_table_name(catalog_table.name))
+            continue;
+        result.emplace_back(catalog_table.name);
     }
 
     return result;
@@ -1131,10 +1167,15 @@ VectorWithMemoryTracking<String> DatabaseDataLake::getAllTableNames(ContextPtr /
     /// must not fail even when the catalog is temporarily unreachable.
     try
     {
-        Names tables = getCatalog()->getTables();
+        DataLake::CatalogTables tables = getCatalog()->getTables();
         result.reserve(tables.size());
         for (auto & table : tables)
-            result.push_back(std::move(table));
+        {
+            /// Only suggest tables ClickHouse can actually read.
+            if (!table.is_readable)
+                continue;
+            result.push_back(std::move(table.name));
+        }
     }
     catch (...)
     {
@@ -1561,9 +1602,13 @@ The following settings are supported:
 | `vended_credentials`    | Boolean indicating whether to use vended credentials from the catalog (supports AWS S3 and Azure ADLS Gen2) |
 | `aws_access_key_id`     | AWS access key ID for S3/Glue access (if not using vended credentials)                  |
 | `aws_secret_access_key` | AWS secret access key for S3/Glue access (if not using vended credentials)              |
+| `aws_role_arn`          | ARN of the IAM role to assume for AWS/Glue access. When set, ClickHouse uses AWS STS `AssumeRole` with base credentials from `aws_access_key_id` and `aws_secret_access_key` when both are provided, or from the default AWS credential chain otherwise (the role must trust the identity the server runs under). |
+| `aws_role_session_name` | Session name used for the AWS STS `AssumeRole` call. Optional; defaults to `ClickHouseSession`. |
+| `aws_external_id`       | External ID passed to AWS STS `AssumeRole`, matching the `sts:ExternalId` condition on the role's trust policy. Use this when the role is owned by a third party, such as ClickHouse Cloud. |
 | `region`                | AWS region for the service (e.g., `us-east-1`)                                          |
 | `dlf_access_key_id`     | Access key ID for DLF access                                                            |
 | `dlf_access_key_secret` | Access key Secret for DLF access                                                        |
+| `force_add_bucket`      | When constructing object-storage URLs from the catalog-provided table location and `storage_endpoint`, prepend the bucket/container name even if the endpoint already contains it. Default: `false`. Set to `true` for catalogs that hand back paths without the bucket and require it to be added at the URL-construction step (Polaris-style paths). |
 
 ## Examples {#examples}
 

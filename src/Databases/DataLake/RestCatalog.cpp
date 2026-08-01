@@ -751,8 +751,12 @@ AccessToken BigLakeCatalog::retrieveGoogleCloudAccessToken() const
             DB::ErrorCodes::ACCESS_DENIED,
             "BigLake catalog access from user queries is not allowed to mint a token from the server's GCP "
             "metadata service. Provide an explicit Google ADC triple (google_adc_client_id, "
-            "google_adc_client_secret, google_adc_refresh_token), or enable the setting "
-            "`s3_allow_server_credentials_in_user_queries`.");
+            "google_adc_client_secret, google_adc_refresh_token)"
+#if CLICKHOUSE_CLOUD
+            ".");
+#else
+            ", or enable the setting `s3_allow_server_credentials_in_user_queries`.");
+#endif
 
     /// GCP metadata service (works inside GCP infrastructure)
     /// https://cloud.google.com/compute/docs/metadata/overview
@@ -915,7 +919,7 @@ bool RestCatalog::empty() const
     return !found_table;
 }
 
-DB::Names RestCatalog::getTables() const
+CatalogTables RestCatalog::getTables() const
 {
     auto & pool = getContext()->getIcebergCatalogThreadpool();
     DB::Names tables;
@@ -946,7 +950,12 @@ DB::Names RestCatalog::getTables() const
         runner.waitForAllToFinishAndRethrowFirstError();
     }
 
-    return tables;
+    /// A REST catalog is Iceberg-only, so every listed table is readable.
+    CatalogTables result;
+    result.reserve(tables.size());
+    for (auto & name : tables)
+        result.push_back(CatalogTable{.name = std::move(name)});
+    return result;
 }
 
 RestCatalog::Namespaces RestCatalog::getNamespaces() const
@@ -962,9 +971,15 @@ RestCatalog::Namespaces RestCatalog::getNamespaces() const
     return namespaces;
 }
 
-DB::Names RestCatalog::listTablesInNamespaceDirect(const std::string & namespace_name) const
+CatalogTables RestCatalog::listTablesInNamespaceDirect(const std::string & namespace_name) const
 {
-    return listTablesInNamespace(namespace_name);
+    /// A REST catalog is Iceberg-only, so every listed table is readable.
+    CatalogTables result;
+    auto names = listTablesInNamespace(namespace_name);
+    result.reserve(names.size());
+    for (auto & name : names)
+        result.push_back(CatalogTable{.name = std::move(name)});
+    return result;
 }
 
 void RestCatalog::getNamespacesRecursive(
@@ -1297,10 +1312,14 @@ bool RestCatalog::tryGetTableMetadata(
     {
         return getTableMetadataImpl(namespace_name, table_name, result);
     }
-    catch (const DB::Exception & ex)
+    catch (const DB::HTTPException & ex)
     {
-        LOG_DEBUG(log, "tryGetTableMetadata response: {}", ex.what());
-        return false;
+        if (ex.getHTTPStatus() == Poco::Net::HTTPResponse::HTTPStatus::HTTP_NOT_FOUND)
+        {
+            LOG_DEBUG(log, "Table {}.{} does not exist: {}", namespace_name, table_name, ex.displayText());
+            return false;
+        }
+        throw;
     }
 }
 

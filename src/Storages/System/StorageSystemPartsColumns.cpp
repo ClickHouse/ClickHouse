@@ -75,6 +75,7 @@ StorageSystemPartsColumns::StorageSystemPartsColumns(const StorageID & table_id_
         {"estimates.max",                              std::make_shared<DataTypeNullable>(std::make_shared<DataTypeString>()), "Estimated maximum value of the column."},
         {"estimates.cardinality",                      std::make_shared<DataTypeNullable>(std::make_shared<DataTypeUInt64>()), "Estimated cardinality of the column."},
         {"estimates.null_count",                       std::make_shared<DataTypeNullable>(std::make_shared<DataTypeUInt64>()), "Estimated number of NULL values in the column."},
+        {"estimates.default_count",                    std::make_shared<DataTypeNullable>(std::make_shared<DataTypeUInt64>()), "Estimated number of rows equal to the column's storage default value (NULL for Nullable columns, 0 / '' / [] / ... for non-Nullable). NULL when no basic statistic is available."},
         {"compression_codec",                          std::make_shared<DataTypeString>(), "Compression codec used by the column data stream in the data part. "
             "The value is empty for legacy parts without exact codec metadata."},
         {"serialization_kind",                         std::make_shared<DataTypeString>(), "Kind of serialization of a column"},
@@ -332,6 +333,15 @@ void StorageSystemPartsColumns::processNextStorage(
                 auto estimate_it = find_estimate(column.name);
                 if (estimate_it != estimates->end() && estimate_it->second.estimated_null_count.has_value())
                     columns[res_index++]->insert(estimate_it->second.estimated_null_count.value());
+                else
+                    columns[res_index++]->insertDefault();
+            }
+
+            if (columns_mask[src_index++])
+            {
+                auto estimate_it = find_estimate(column.name);
+                if (estimate_it != estimates->end() && estimate_it->second.estimated_default_count.has_value())
+                    columns[res_index++]->insert(estimate_it->second.estimated_default_count.value());
                 else
                     columns[res_index++]->insertDefault();
             }

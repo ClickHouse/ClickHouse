@@ -17,46 +17,34 @@ import { Image } from "/snippets/pt-BR/components/Image.jsx";
 Os ClickPipes do Kafka podem ser implantados e gerenciados manualmente pela UI do ClickPipes, bem como programaticamente usando [OpenAPI](/pt-BR/integrations/clickpipes/programmatic-access/openapi) e [Terraform](/pt-BR/integrations/clickpipes/programmatic-access/terraform).
 
 <Steps>
-  <Step>
-    ## Vá para `Data Sources`
-
+  <Step title="Acesse Data Sources" id="1-load-sql-console">
     Selecione o botão `Data Sources` no menu à esquerda e clique em &quot;Set up a ClickPipe&quot;.
 
     <Image img="/images/integrations/data-ingestion/clickpipes/cp_step0.webp" alt="Selecionar importações" size="md" />
   </Step>
 
-  <Step>
-    ## Selecione uma fonte de dados
-
+  <Step title="Selecione uma fonte de dados" id="2-select-data-source">
     Selecione a fonte de dados do Kafka na lista.
 
     <Image img="/images/integrations/data-ingestion/clickpipes/cp_step1.webp" alt="Selecione o tipo de fonte de dados" size="md" />
   </Step>
 
-  <Step>
-    ## Configure a fonte de dados
-
+  <Step title="Configure a fonte de dados" id="3-configure-data-source">
     Preencha o formulário informando um nome para o seu ClickPipe, uma descrição (opcional), suas credenciais e outros detalhes de conexão.
 
     <Image img="/images/integrations/data-ingestion/clickpipes/cp_step2.webp" alt="Preencha os detalhes da conexão" size="md" />
   </Step>
 
-  <Step>
-    ## Configure um registro de esquemas (opcional)
-
+  <Step title="Configure um registro de esquemas (opcional)" id="4-configure-your-schema-registry">
     Um esquema válido é obrigatório para tópicos Avro e Protobuf. Consulte [Registros de esquemas](/pt-BR/integrations/clickpipes/kafka/schema-registries) para mais detalhes sobre como configurar um registro de esquemas.
   </Step>
 
-  <Step>
-    ## Configure um endpoint privado reverso (opcional)
-
+  <Step title="Configure um endpoint privado reverso (opcional)" id="5-configure-reverse-private-endpoint">
     Configure um endpoint privado reverso para permitir que o ClickPipes se conecte ao seu cluster do Kafka usando o AWS PrivateLink.
     Consulte nossa [documentação do AWS PrivateLink](/pt-BR/integrations/clickpipes/aws-privatelink) para mais informações.
   </Step>
 
-  <Step>
-    ## Configure o túnel SSH (opcional)
-
+  <Step title="Configure o túnel SSH (opcional)" id="6-configure-ssh-tunneling">
     Você pode usar um túnel SSH se o seu broker Kafka não estiver acessível publicamente. Em vez de se conectar diretamente, o ClickPipes estabelece uma conexão SSH com um host bastion (um servidor na sua rede que é acessível publicamente) e então encaminha o tráfego por ele até o seu broker Kafka na rede privada.
 
     1. Ative a opção &quot;SSH Tunnel&quot;.
@@ -75,17 +63,13 @@ Os ClickPipes do Kafka podem ser implantados e gerenciados manualmente pela UI d
     </Note>
   </Step>
 
-  <Step>
-    ## Selecione seu tópico
-
+  <Step title="Selecione seu tópico" id="7-select-your-topic">
     Selecione seu tópico, e a UI exibirá um documento de exemplo desse tópico.
 
     <Image img="/images/integrations/data-ingestion/clickpipes/cp_step3.webp" alt="Selecione seu tópico" size="md" />
   </Step>
 
-  <Step>
-    ## Configure sua tabela de destino
-
+  <Step title="Configure sua tabela de destino" id="8-configure-your-destination-table">
     Na próxima etapa, você pode escolher se deseja fazer a ingestão de dados em uma nova tabela do ClickHouse ou reutilizar uma já existente. Siga as instruções na tela para modificar o nome da tabela, o esquema e as configurações. Você pode ver uma prévia em tempo real das alterações na tabela de amostra na parte superior.
 
     <Image img="/images/integrations/data-ingestion/clickpipes/cp_step4a.webp" alt="Defina a tabela, o esquema e as configurações" size="md" />
@@ -95,9 +79,7 @@ Os ClickPipes do Kafka podem ser implantados e gerenciados manualmente pela UI d
     <Image img="/images/integrations/data-ingestion/clickpipes/cp_table_settings.webp" alt="Defina controles avançados" size="md" />
   </Step>
 
-  <Step>
-    ## Configurar permissões
-
+  <Step title="Configurar permissões" id="9-configure-permissions">
     O ClickPipes criará um usuário dedicado para gravar dados na tabela de destino. Você pode selecionar uma função para esse usuário interno usando uma função personalizada ou uma das funções predefinidas:
 
     * `Full access`: com acesso total ao cluster. Isso pode ser útil se você usar uma visão materializada ou um Dicionário com a tabela de destino.
@@ -106,9 +88,7 @@ Os ClickPipes do Kafka podem ser implantados e gerenciados manualmente pela UI d
     <Image img="/images/integrations/data-ingestion/clickpipes/cp_step5.webp" alt="Permissões" size="md" />
   </Step>
 
-  <Step>
-    ## Configuração completa
-
+  <Step title="Configuração completa" id="10-complete-setup">
     Ao clicar em &quot;Create ClickPipe&quot;, o ClickPipe será criado e executado. Ele passará a aparecer na seção Data Sources.
 
     <Image img="/images/integrations/data-ingestion/clickpipes/cp_overview.webp" alt="Ver Overview" size="md" />

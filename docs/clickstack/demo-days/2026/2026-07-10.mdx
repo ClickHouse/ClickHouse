@@ -1,0 +1,108 @@
+---
+slug: /use-cases/observability/clickstack/demo-days/2026/2026-07-10
+title: 'Demo days - 2026-07-10'
+sidebarTitle: '2026-07-10'
+description: 'ClickStack demo days for 2026-07-10'
+doc_type: 'guide'
+keywords: ['ClickStack', 'Demo days']
+---
+
+## Text index fix for Map column disjunction filters {#text-index-fix-for-map-column-disjunction-filters}
+
+*Demo by [@knudtty](https://github.com/knudtty)*
+
+<Frame>
+<iframe src="https://www.youtube.com/embed/i7SOQ5uSfm8" title="YouTube video player" frameborder="0" allow="accelerometer; autoplay; clipboard-write; encrypted-media; gyroscope; picture-in-picture; web-share" referrerpolicy="strict-origin-when-cross-origin" allowfullscreen></iframe>
+</Frame>
+
+Aaron found this one while helping debug a report that queries against a Map column attribute were unexpectedly slow. The person had already worked around it themselves by adding a materialized column and a bloom filter, which shouldn't have been necessary given the optimizations already in place for map attributes.
+
+It turned out that filtering on multiple possible values for a map attribute used the `hasAny` function - effectively an array disjunction check. For example, matching log attributes like a user ID against a list of values. This wasn't triggering the text index on ClickHouse versions below 26.5. The fix rewrites that disjunction as a set of OR'd equality checks wrapped in parentheses, which correctly activates the index. Aaron confirmed via `EXPLAIN` that the rewritten query now hits the skip index as expected.
+
+Most users are already on 26.5 or later, but for those who aren't there yet, so this keeps those queries fast in the meantime.
+
+**Related PRs:** [#2643](https://github.com/hyperdxio/hyperdx/pull/2643) feat: rework getAllKeyValues and add filters populated from text indices
+
+## Profiling data in ClickCannon {#profiling-data-in-clickcannon}
+
+*Demo by [@SpencerTorres](https://github.com/SpencerTorres)*
+
+<Frame>
+<iframe src="https://www.youtube.com/embed/Fo1XCHsA3rU" title="YouTube video player" frameborder="0" allow="accelerometer; autoplay; clipboard-write; encrypted-media; gyroscope; picture-in-picture; web-share" referrerpolicy="strict-origin-when-cross-origin" allowfullscreen></iframe>
+</Frame>
+
+We [blogged about ClickCannon recently](https://clickhouse.com/blog/building-clickcannon-a-tool-for-benchmark-clickhouse), the tool for generating synthetic data and benchmarking ClickHouse. Spencer has now added a profiling signal alongside the existing logs, metrics, and traces support. You can generate profiling data with a configurable stack depth, either simulating it on the fly or reading it from disk, and ingest it the same way as the other signals: point ClickCannon at a profiles table and it starts generating rows.
+
+The profile payloads turned out to be considerably larger than the other signals, so tuning how many keys get added per sample, and checking throughput against instance size, is still ongoing work. Being able to generate this data at volume means the team can start optimizing the schema and get a reference point for it, which ties into the broader effort to support profiling data, and its visualization, across ClickStack. Spencer also took a first look at rendering profile frames in the ClickStack log viewer.
+
+## Bar charts {#bar-charts}
+
+*Demo by [@pulpdrew](https://github.com/pulpdrew)*
+
+<Frame>
+<iframe src="https://www.youtube.com/embed/JIQJpGMh5tk" title="YouTube video player" frameborder="0" allow="accelerometer; autoplay; clipboard-write; encrypted-media; gyroscope; picture-in-picture; web-share" referrerpolicy="strict-origin-when-cross-origin" allowfullscreen></iframe>
+</Frame>
+
+Bar charts are here, inspired by a PR that had been raised months ago and gone stale during a rebase. They're now supported everywhere charts show up in ClickStack: dashboards, the MCP dashboard builder, and beyond. Since bar charts now cover the same ground line charts used to for point-in-time comparisons, line charts have been renamed time series to make the distinction clearer.
+
+Bar charts support a series limit, so you can control how many bars show up when you have a high-cardinality group by, and a custom order by, so you can sort by whatever metric matters most instead of the default ordering.
+
+**Related PRs:** [#2606](https://github.com/hyperdxio/hyperdx/pull/2606) feat: Add categorical bar chart display type, [#2618](https://github.com/hyperdxio/hyperdx/pull/2618) feat: Allow custom order by on categorical (pie/bar) charts
+
+## Community contributions {#community-contributions}
+
+*Demo by [@vinzee](https://github.com/vinzee) and [@zoov-xavier](https://github.com/zoov-xavier)*
+
+<Frame>
+<iframe src="https://www.youtube.com/embed/f4xNJS6tcmY" title="YouTube video player" frameborder="0" allow="accelerometer; autoplay; clipboard-write; encrypted-media; gyroscope; picture-in-picture; web-share" referrerpolicy="strict-origin-when-cross-origin" allowfullscreen></iframe>
+</Frame>
+
+A couple of nice community contributions came in through PR review this week. From [@vinzee](https://github.com/vinzee): a syntax reference button next to the Lucene/SQL toggle in the search bar, giving users quick, in-app examples of the query syntax and options available to them without needing to leave the page.
+
+From [@zoov-xavier](https://github.com/zoov-xavier): filter pills can now take manually entered values. Previously you could only pick from a dropdown of sampled values, which meant you couldn't filter on a value that hadn't loaded into that sample yet. Now you can just type the value you want and hit enter.
+
+**Related PRs:** [#2381](https://github.com/hyperdxio/hyperdx/pull/2381) Add query syntax reference to search input, [#2471](https://github.com/hyperdxio/hyperdx/pull/2471) feat(search): allow free-text values when editing a filter pill
+
+## Alert annotations on charts {#alert-annotations-on-charts}
+
+*Demo by [@teeohhem](https://github.com/teeohhem)*
+
+<Frame>
+<iframe src="https://www.youtube.com/embed/NmEYBvtjpAQ" title="YouTube video player" frameborder="0" allow="accelerometer; autoplay; clipboard-write; encrypted-media; gyroscope; picture-in-picture; web-share" referrerpolicy="strict-origin-when-cross-origin" allowfullscreen></iframe>
+</Frame>
+
+This came from a customer request to see annotations on their charts when alerts fire. There's a new show alert annotations toggle, off by default, that marks exactly when an alert fired and when it resolved directly on the chart. If an alert was in a firing state outside the currently visible time range, a marker appears at the left edge of the chart to flag that it was already active before the window began, and annotations update live as alerts fire and resolve.
+
+Tom built this with a reusable annotation pattern, so adding new annotation types later, like releases or Kubernetes events, should be straightforward to layer on top of the same approach.
+
+**Related PRs:** [#2605](https://github.com/hyperdxio/hyperdx/pull/2605) feat(dashboards): alert firing/recovery annotations on tile charts, [#2616](https://github.com/hyperdxio/hyperdx/pull/2616) fix(dashboards): improve alert annotation visibility on tile charts
+
+## Event patterns, tile polish, and line series actions {#event-patterns-tile-polish-and-line-series-actions}
+
+*Demo by [@brandon-pereira](https://github.com/brandon-pereira)*
+
+<Frame>
+<iframe src="https://www.youtube.com/embed/Nwo_nt5VZL4" title="YouTube video player" frameborder="0" allow="accelerometer; autoplay; clipboard-write; encrypted-media; gyroscope; picture-in-picture; web-share" referrerpolicy="strict-origin-when-cross-origin" allowfullscreen></iframe>
+</Frame>
+
+Event patterns are now an official, first-class dashboard tile type. You can create a pattern tile and pass in a `WHERE` clause or pattern expression, for example filtering on service name or severity text, to surface recurring patterns at a glance.
+
+Brandon also shipped better text wrapping for visualizations on small tiles, so long titles now wrap across lines with an ellipsis instead of clipping oddly, and cleaner presentation of tile action buttons: on small tiles they collapse into a context menu using a CSS container query, then reappear directly on the tile once it's resized larger. There's also a fix for a case where closing a tile's display settings without saving could silently discard your changes; it now properly warns before losing edits.
+
+Finally, in response to user feedback, you can now click a line series to copy its value or focus on just that line, in addition to the existing search action. Brandon is also partway through an upgrade to Recharts v3, aimed at fixing tooltip clipping in tables with a lot of groups.
+
+**Related PRs:** [#2604](https://github.com/hyperdxio/hyperdx/pull/2604) feat: add event patterns as a first-class dashboard tile type, [#2596](https://github.com/hyperdxio/hyperdx/pull/2596) fix(charts): use multi-line ellipsis for dashboard tile titles, [#2597](https://github.com/hyperdxio/hyperdx/pull/2597) fix: track display/heatmap settings as dirty for unsaved changes modal, [#2611](https://github.com/hyperdxio/hyperdx/pull/2611) feat(charts): per-series drill-down actions, new-tab drill-in, and search-synced focus
+
+## Dashboard and service map styling {#dashboard-and-service-map-styling}
+
+*Demo by [@elizabetdev](https://github.com/elizabetdev)*
+
+<Frame>
+<iframe src="https://www.youtube.com/embed/yzgjzU8RIz0" title="YouTube video player" frameborder="0" allow="accelerometer; autoplay; clipboard-write; encrypted-media; gyroscope; picture-in-picture; web-share" referrerpolicy="strict-origin-when-cross-origin" allowfullscreen></iframe>
+</Frame>
+
+A round of usability-focused styling improvements, small individually but adding up to a noticeably cleaner experience. On dashboards, editable tiles had inconsistent header coloring in light mode, some gray, some white, which is now consistent with a clean separator line under the header. Hover-only tile actions were also repositioned to avoid overlapping titles on small, responsive cards, and charts now support resetting zoom.
+
+The service map got a similar pass: controls are now color-mode aware, staying light in light mode and dark in dark mode instead of always defaulting to black, legends more clearly label latency, error rate, and throughput, and you can click a service to focus on it, then click again to clear the focus and return to the full view.
+
+**Related PRs:** [#2592](https://github.com/hyperdxio/hyperdx/pull/2592) Polish dashboard tile styling and header layout, [#2601](https://github.com/hyperdxio/hyperdx/pull/2601) feat(service-map): metric color toggle and popover polish
