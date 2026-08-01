@@ -53,7 +53,7 @@ FROM system.one AS __table1
 -- an IN set that is neither Array nor folded: returns before the predicate
 SELECT toString(rand()) IN (\'a\', \'b\') AS `in(toString(rand()), (\'a\', \'b\'))`
 FROM system.one AS __table1
--- folded constants: ConstantNode.cpp:257 short-circuits before the predicate
+-- folded constants: the source-expression check short-circuits before the predicate
 SELECT _CAST(\'a\', \'LowCardinality(String)\') AS `CAST(\'a\', \'LowCardinality(String)\')`
 FROM system.one AS __table1
 SELECT _CAST(1, \'LowCardinality(Nullable(UInt8))\') AS `CAST(1, \'LowCardinality(Nullable(UInt8))\')`
