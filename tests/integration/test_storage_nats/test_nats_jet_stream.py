@@ -1256,9 +1256,8 @@ def test_nats_jet_stream_settles_after_one_broker_restart(nats_cluster):
 
 
 def test_nats_jet_stream_resumes_consuming_multiple_subjects_after_broker_restart(nats_cluster):
-    # One subscription per subject, and teardown is per consumer, so recovery must wait until the
-    # client has closed all of them: firing on the first closed one drains a live sibling, which
-    # takes the conn -> sub lock the client's own pull renewal takes as sub -> conn.
+    # One pull subscription per subject, and both have to resume: recovery keys on any of them
+    # being closed and then re-subscribes the consumer as a whole.
     _setup_restart_table("test_subject,right_insert1", "test_consumer")
 
     total_expected = 10
@@ -1266,8 +1265,8 @@ def test_nats_jet_stream_resumes_consuming_multiple_subjects_after_broker_restar
 
     _restart_nats(nats_cluster)
 
-    # Consuming has to resume on both subjects, so recovery cannot simply give up when the
-    # subscriptions do not all report closed at the same instant.
+    # Both subjects are asserted separately, so recovering only the one that reported closed would
+    # leave the other silent and fail here.
     total_expected += 10
     _publish_and_expect("test_subject", range(100, 110), total_expected)
 
