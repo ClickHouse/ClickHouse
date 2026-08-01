@@ -389,6 +389,15 @@ public:
     void clearParallelReadingExtension();
     std::shared_ptr<ParallelReadingExtension> getParallelReadingExtension();
 
+    /// Announce an empty read set to the parallel-replicas coordinator (what initializePipeline() sends
+    /// when there are no ranges). Callable from the projection optimizer when it replaces this step and
+    /// initializePipeline() will not run. No-op unless this is the initiator local plan; returns whether
+    /// an announcement was sent.
+    bool announceEmptyReadRangesToCoordinatorIfInitiator();
+
+    bool isParallelReplicasLocalPlanForInitiator() const;
+    bool isParallelReplicasLocalPlanForFollower() const;
+
     /// Mark a (non-executed) read as a parallel-replicas read purely so that serialization records it.
     /// No callbacks are attached: the read is only serialized on the initiator and shipped to replicas,
     /// where deserialize rebuilds it in parallel-reading mode and resolves the callbacks from the context.
@@ -635,8 +644,6 @@ private:
     int getSortDirection() const;
     void updateSortDescription();
 
-    bool isParallelReplicasLocalPlanForInitiator() const;
-    bool isParallelReplicasLocalPlanForFollower() const;
     bool supportsSkipIndexesOnDataRead() const;
 
     mutable AnalysisResultPtr analyzed_result_ptr;
