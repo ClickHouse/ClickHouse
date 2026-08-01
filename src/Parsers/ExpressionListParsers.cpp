@@ -37,7 +37,6 @@
 #include <Parsers/CommonParsers.h>
 #include <Parsers/ExpressionOperatorPrettyLookup.h>
 
-#include <AggregateFunctions/AggregateFunctionFactory.h>
 #include <fmt/core.h>
 
 using namespace std::literals;
@@ -960,14 +959,14 @@ static void highlightRegexps(const ASTPtr & node, Expected & expected, size_t de
     if (!expected.literal_token_map)
         return;
 
-    auto it = expected.literal_token_map->find(literal);
-    if (it == expected.literal_token_map->end())
+    const auto * token_info = expected.literal_token_map->find(literal);
+    if (!token_info)
         return;
 
     chassert(is_like || is_regexp);
     expected.highlight({
-       .begin = it->second.begin,
-       .end = it->second.end,
+       .begin = token_info->begin,
+       .end = token_info->end,
        .highlight = is_like ? Highlight::string_like : Highlight::string_regexp});
 }
 
@@ -1520,7 +1519,7 @@ public:
         /// expr AS type
         if (state == 0)
         {
-            ASTPtr type_node;
+            std::optional<String> type_text;
 
             if (as_keyword_parser.ignore(pos, expected))
             {
@@ -1528,7 +1527,7 @@ public:
 
                 if (ParserIdentifier().parse(pos, alias, expected) &&
                     as_keyword_parser.ignore(pos, expected) &&
-                    ParserDataType().parse(pos, type_node, expected) &&
+                    (type_text = parseDataTypeAsText(pos, expected)) &&
                     ParserToken(TokenType::ClosingRoundBracket).ignore(pos, expected))
                 {
                     if (!insertAlias(alias))
@@ -1537,7 +1536,7 @@ public:
                     if (!mergeElement())
                         return false;
 
-                    elements = {createFunctionCast(elements[0], type_node)};
+                    elements = {createFunctionCast(elements[0], std::move(*type_text))};
                     finished = true;
                     return true;
                 }
@@ -1560,13 +1559,13 @@ public:
 
                 pos = old_pos;
 
-                if (ParserDataType().parse(pos, type_node, expected) &&
+                if ((type_text = parseDataTypeAsText(pos, expected)) &&
                     ParserToken(TokenType::ClosingRoundBracket).ignore(pos, expected))
                 {
                     if (!mergeElement())
                         return false;
 
-                    elements = {createFunctionCast(elements[0], type_node)};
+                    elements = {createFunctionCast(elements[0], std::move(*type_text))};
                     finished = true;
                     return true;
                 }
@@ -4063,11 +4062,11 @@ Action ParserExpressionImpl::tryParseOperator(Layers & layers, IParser::Pos & po
 
     if (op.type == OperatorType::Cast)
     {
-        ASTPtr type_ast;
-        if (!ParserDataType().parse(pos, type_ast, expected))
+        std::optional<String> type_text = parseDataTypeAsText(pos, expected);
+        if (!type_text)
             return Action::NONE;
 
-        layers.back()->pushOperand(make_intrusive<ASTLiteral>(type_ast->formatWithSecretsOneLine()));
+        layers.back()->pushOperand(make_intrusive<ASTLiteral>(std::move(*type_text)));
         return Action::OPERATOR;
     }
 
