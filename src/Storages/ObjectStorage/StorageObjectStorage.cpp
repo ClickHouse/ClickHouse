@@ -782,6 +782,16 @@ void StorageObjectStorage::truncate(
     object_storage->removeObjectsIfExist(objects);
 }
 
+void StorageObjectStorage::prepareForDrop(ContextPtr query_context)
+{
+    auto context_for_drop = Context::createCopy(Context::getGlobalContextInstance());
+    context_for_drop->makeQueryContext();
+    context_for_drop->setSettings(query_context->getSettingsCopy());
+
+    std::lock_guard lock(drop_context_mutex);
+    drop_context = std::move(context_for_drop);
+}
+
 void StorageObjectStorage::drop()
 {
     if (catalog)
@@ -789,8 +799,20 @@ void StorageObjectStorage::drop()
         const auto [namespace_name, table_name] = DataLake::parseTableName(storage_id.getTableName());
         catalog->dropTable(namespace_name, table_name);
     }
-    /// We cannot use query context here, because drop is executed in the background.
-    configuration->drop(Context::getGlobalContextInstance());
+
+    ContextPtr context_for_drop;
+    {
+        std::lock_guard lock(drop_context_mutex);
+        context_for_drop = drop_context;
+    }
+
+    if (!context_for_drop)
+    {
+        LOG_DEBUG(log, "Skipping data removal on drop: the table was not dropped by a DROP TABLE query");
+        return;
+    }
+
+    configuration->drop(context_for_drop);
 }
 
 std::unique_ptr<ReadBufferIterator> StorageObjectStorage::createReadBufferIterator(
