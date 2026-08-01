@@ -163,6 +163,17 @@ static QueryTreeNodePtr createNotWrapper(QueryTreeNodePtr node)
     return not_fn;
 }
 
+static bool isNegativeInFunctionName(std::string_view function_name)
+{
+    return function_name == "notIn" || function_name == "globalNotIn" || function_name == "notNullIn" || function_name == "globalNotNullIn";
+}
+
+static bool inFunctionComparesNulls(std::string_view function_name)
+{
+    return function_name == "nullIn" || function_name == "globalNullIn" || function_name == "notNullIn"
+        || function_name == "globalNotNullIn";
+}
+
 static QueryTreeNodePtr makeTupleHasNoNullElementsPredicate(const QueryTreeNodePtr & tuple_value, size_t tuple_size)
 {
     QueryTreeNodePtr result;
@@ -350,14 +361,14 @@ ProjectionNames QueryAnalyzer::buildHasExpression(
     QueryTreeNodePtr array_arg,
     QueryTreeNodePtr element_arg,
     bool is_not_in,
-    bool transform_null_in,
+    bool compare_nulls,
     const ProjectionNames & arguments_projection_names,
     const ProjectionNames & parameters_projection_names,
     IdentifierResolveScope & scope)
 {
     auto proj = calculateFunctionProjectionName(node, parameters_projection_names, arguments_projection_names);
 
-    if (!transform_null_in)
+    if (!compare_nulls)
     {
         QueryTreeNodePtr result_node = makeNullSafeHas(array_arg, element_arg, scope);
         if (is_not_in)
@@ -1462,9 +1473,8 @@ ProjectionNames QueryAnalyzer::resolveFunction(QueryTreeNodePtr & node, Identifi
             /// argument, flatten it with arrayJoin so its elements become the set elements.
             flattenArraySubqueryOnRightOfIn(in_second_argument, in_first_argument, scope.context);
 
-            const bool is_not_in = (function_name == "notIn" || function_name == "globalNotIn" ||
-                                    function_name == "notNullIn" || function_name == "globalNotNullIn");
-            const bool transform_null_in = scope.context->getSettingsRef()[Setting::transform_null_in];
+            const bool is_not_in = isNegativeInFunctionName(function_name);
+            const bool compare_nulls = inFunctionComparesNulls(function_name);
             auto & fn_args = function_node.getArguments().getNodes();
 
             /// A lambda on the left of IN has no result type until `getLambdaArgumentTypes` rejects it
@@ -1496,8 +1506,15 @@ ProjectionNames QueryAnalyzer::resolveFunction(QueryTreeNodePtr & node, Identifi
                         const size_t lhs_depth = lhs_array_type ? lhs_array_type->getNumberOfDimensions() : 0;
 
                         if (rhs_array_type->getNumberOfDimensions() == lhs_depth + 1)
-                            return buildHasExpression(node, in_second_argument, in_first_argument, is_not_in, transform_null_in,
-                                arguments_projection_names, parameters_projection_names, scope);
+                            return buildHasExpression(
+                                node,
+                                in_second_argument,
+                                in_first_argument,
+                                is_not_in,
+                                compare_nulls,
+                                arguments_projection_names,
+                                parameters_projection_names,
+                                scope);
                     }
 
                     const bool left_is_tuple = isTuple(removeNullable(in_first_argument->getResultType()));
@@ -1540,8 +1557,15 @@ ProjectionNames QueryAnalyzer::resolveFunction(QueryTreeNodePtr & node, Identifi
 
                 /// Case 1: array(..) or any function returning Array type -> rewrite to has()
                 if (is_array_type && !left_argument_is_lambda)
-                    return buildHasExpression(node, fn_args[1], fn_args[0], is_not_in, transform_null_in,
-                        arguments_projection_names, parameters_projection_names, scope);
+                    return buildHasExpression(
+                        node,
+                        fn_args[1],
+                        fn_args[0],
+                        is_not_in,
+                        compare_nulls,
+                        arguments_projection_names,
+                        parameters_projection_names,
+                        scope);
 
                 /// Case 2: tuple(..) -> convert to array, then rewrite to has()
                 if (is_tuple_type && !left_argument_is_lambda)
@@ -1564,9 +1588,9 @@ ProjectionNames QueryAnalyzer::resolveFunction(QueryTreeNodePtr & node, Identifi
                     const bool left_is_null = isNullConstant(in_first_argument);
 
                     /// Preserve NULL result for NULL IN (tuple) when NULLs are not compared.
-                    /// With transform_null_in enabled, fall through to the regular has() rewrite
+                    /// When NULLs are compared, fall through to the regular `has` rewrite
                     /// so tuple-valued RHS expressions are expanded before NULL matching.
-                    if (left_is_null && !transform_null_in)
+                    if (left_is_null && !compare_nulls)
                     {
                         auto proj = calculateFunctionProjectionName(node, parameters_projection_names, arguments_projection_names);
                         node = std::make_shared<ConstantNode>(Field{},
@@ -1574,7 +1598,7 @@ ProjectionNames QueryAnalyzer::resolveFunction(QueryTreeNodePtr & node, Identifi
                         return ProjectionNames{proj};
                     }
 
-                    if (left_is_null && transform_null_in && std::any_of(tuple_args.begin(), tuple_args.end(), isNullConstant))
+                    if (left_is_null && compare_nulls && std::any_of(tuple_args.begin(), tuple_args.end(), isNullConstant))
                     {
                         auto proj = calculateFunctionProjectionName(node, parameters_projection_names, arguments_projection_names);
                         node = std::make_shared<ConstantNode>(is_not_in ? Field{0u} : Field{1u}, std::make_shared<DataTypeUInt8>());
@@ -1583,8 +1607,15 @@ ProjectionNames QueryAnalyzer::resolveFunction(QueryTreeNodePtr & node, Identifi
 
                     /// convert tuple to array and rewrite to has()
                     QueryTreeNodePtr array_arg = convertTupleToArray(tuple_args, in_first_argument, scope, expand_single_tuple_value);
-                    return buildHasExpression(node, array_arg, in_first_argument, is_not_in, transform_null_in,
-                        arguments_projection_names, parameters_projection_names, scope);
+                    return buildHasExpression(
+                        node,
+                        array_arg,
+                        in_first_argument,
+                        is_not_in,
+                        compare_nulls,
+                        arguments_projection_names,
+                        parameters_projection_names,
+                        scope);
                 }
 
                 /// Case 3: scalar-returning function -> rewrite to a row-wise comparison.
@@ -1592,7 +1623,7 @@ ProjectionNames QueryAnalyzer::resolveFunction(QueryTreeNodePtr & node, Identifi
                 {
                     auto proj = calculateFunctionProjectionName(node, parameters_projection_names, arguments_projection_names);
 
-                    if (transform_null_in)
+                    if (compare_nulls)
                     {
                         auto comparison_fn = std::make_shared<FunctionNode>(is_not_in ? "isDistinctFrom" : "isNotDistinctFrom");
                         comparison_fn->getArguments().getNodes() = {fn_args[0], fn_args[1]};
