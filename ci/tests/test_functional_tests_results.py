@@ -258,10 +258,9 @@ def test_bugfix_validation_signal_kill_is_inconclusive_not_a_reproduction(tmp_pa
     for r in result.results:
         assert r.has_label(Result.Label.XFAIL), r.name
 
-    # Inconclusive, not a reproduction: the inverter took its per-row ERROR
-    # guard rather than calling `set_success`, so the leaf was not flipped to OK
-    # the way a FAIL row would be. The wrong-GREEN this pins is the aggregate
-    # never becoming OK, whichever non-ok status it carries.
+    # Inconclusive, not a reproduction: the inverter took its per-row ERROR guard
+    # rather than `set_success`, so the leaf was not flipped to OK the way a FAIL
+    # row would be. Pinned as "never OK", whichever non-ok status it carries.
     assert result.status != Result.Status.OK
     assert result.status == Result.Status.FAIL
     assert _named(result, KILLED_BY_SIGNAL_RESULT_NAME)[0].status == Result.Status.ERROR
