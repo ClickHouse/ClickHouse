@@ -4,6 +4,7 @@
 #include <Parsers/Kusto/KQLLexer.h>
 
 #include <map>
+#include <set>
 #include <vector>
 
 
@@ -36,10 +37,37 @@ public:
     const char * getEndPosition() const;
 
 private:
+    /** A `let`-bound function: `let f = (x: long, n: long = 2) { x * n }`.
+      *
+      * The body is kept as a token range rather than a parsed tree, because a KQL function is
+      * a *calculation*, not a value: it is re-evaluated at every call site, and its parameters
+      * have to resolve to that call's arguments. Re-parsing the same tokens under a scope
+      * where the parameter names are bound is exactly that, and it reuses the substitution
+      * that plain scalar `let`s already go through.
+      */
+    struct FunctionParameter
+    {
+        String name;
+        /// A tabular parameter, declared `T: (col: type, ...)` or `T: (*)`, takes a table
+        /// rather than a value. Kusto requires these to come first.
+        bool is_tabular = false;
+        /// Null when the parameter is required.
+        ASTPtr default_value;
+    };
+
+    struct FunctionDefinition
+    {
+        std::vector<FunctionParameter> parameters;
+        /// Token indices: the first token of the body, and the closing '}'.
+        size_t body_begin = 0;
+        size_t body_end = 0;
+    };
+
     struct Scope
     {
         std::map<String, ASTPtr> scalars;
         std::map<String, KQLTabularExpressionPtr> tabulars;
+        std::map<String, FunctionDefinition> functions;
     };
 
     /// Raises the recursion depth for its lifetime and rejects input that nests too deep.
@@ -69,6 +97,16 @@ private:
 
     /// Statements.
     void parseLetStatement();
+    /// True when what follows a `let name =` is `( parameters ) {`, which no other form is.
+    bool atFunctionDefinition() const;
+    void parseFunctionDefinition(const String & name);
+
+    /// Calls. Which one applies is decided by where the name appears: a scalar expression
+    /// position evaluates the body as an expression, a source position as a pipeline.
+    ASTPtr callScalarFunction(const String & name, const KQLToken & call_token);
+    KQLTabularExpressionPtr callTabularFunction(const String & name, const KQLToken & call_token);
+    /// Reads the argument list and returns the scope the body should be parsed under.
+    Scope bindArguments(const String & name, const FunctionDefinition & definition, const KQLToken & call_token);
 
     /// Tabular level.
     KQLTabularExpressionPtr parseTabularExpression();
@@ -130,6 +168,8 @@ private:
     size_t depth = 0;
     const size_t max_depth;
     Scope scope;
+    /// Guards against a function that calls itself; Kusto has no recursion either.
+    std::set<String> functions_in_progress;
 };
 
 }

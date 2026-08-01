@@ -264,6 +264,285 @@ KQLTabularExpressionPtr KQLParser::parseQuery()
     return result;
 }
 
+/// `let f = (x: long) { ... }` and `let v = view () { ... }`. The shape that identifies a
+/// function is a parenthesized list followed by `{`: `let x = (1 + 2)` and
+/// `let T = (Events | take 1)` both end at the `)`.
+bool KQLParser::atFunctionDefinition() const
+{
+    size_t probe = index;
+    if (probe < tokens.size() && tokens[probe].type == KQLTokenType::BareWord
+        && Poco::toLower(String(tokens[probe].text())) == "view")
+        ++probe;
+
+    if (probe >= tokens.size() || tokens[probe].type != KQLTokenType::OpeningRoundBracket)
+        return false;
+
+    int nesting = 1;
+    ++probe;
+    while (probe < tokens.size() && nesting > 0)
+    {
+        const KQLTokenType type = tokens[probe].type;
+        if (type == KQLTokenType::OpeningRoundBracket)
+            ++nesting;
+        else if (type == KQLTokenType::ClosingRoundBracket)
+            --nesting;
+        else if (type == KQLTokenType::EndOfStream || type == KQLTokenType::Error)
+            return false;
+        ++probe;
+    }
+
+    return probe < tokens.size() && tokens[probe].type == KQLTokenType::OpeningCurlyBrace;
+}
+
+void KQLParser::parseFunctionDefinition(const String & name)
+{
+    /// `view` marks a parameterless function that `union *` would pick up. Nothing here
+    /// resolves wildcards, so the keyword is accepted and carries no further meaning.
+    consumeKeyword("view");
+
+    FunctionDefinition definition;
+    expect(KQLTokenType::OpeningRoundBracket);
+
+    bool seen_scalar = false;
+    bool seen_default = false;
+    if (!at(KQLTokenType::ClosingRoundBracket))
+    {
+        do
+        {
+            FunctionParameter parameter;
+            const KQLToken & parameter_token = current();
+            parameter.name = expectIdentifierName();
+            expect(KQLTokenType::Colon);
+
+            if (at(KQLTokenType::OpeningRoundBracket))
+            {
+                /// A tabular parameter: `T: (*)` accepts any schema, `T: (a: long, ...)`
+                /// names the columns the body may use. Neither shape constrains anything
+                /// here, so the declaration is consumed and only its arity remembered.
+                parameter.is_tabular = true;
+                int nesting = 1;
+                ++index;
+                while (nesting > 0)
+                {
+                    if (at(KQLTokenType::EndOfStream) || at(KQLTokenType::Error))
+                        fail("unterminated tabular parameter declaration");
+                    if (at(KQLTokenType::OpeningRoundBracket))
+                        ++nesting;
+                    else if (at(KQLTokenType::ClosingRoundBracket))
+                        --nesting;
+                    ++index;
+                }
+            }
+            else
+            {
+                const KQLToken & type_token = current();
+                const String type = Poco::toLower(String(expectIdentifierName()));
+                if (!kqlTypeToClickHouseType().contains(type))
+                    failAt(type_token, fmt::format("'{}' is not a KQL scalar type", type));
+                seen_scalar = true;
+
+                /// A default must be a literal, and defaulted parameters come last.
+                if (consume(KQLTokenType::Equals))
+                {
+                    parameter.default_value = parseExpression();
+                    seen_default = true;
+                }
+                else if (seen_default)
+                {
+                    failAt(
+                        parameter_token,
+                        fmt::format("parameter '{}' has no default but follows one that does", parameter.name));
+                }
+            }
+
+            if (parameter.is_tabular && seen_scalar)
+                failAt(parameter_token, "tabular parameters must come before scalar parameters");
+
+            for (const auto & existing : definition.parameters)
+                if (existing.name == parameter.name)
+                    failAt(parameter_token, fmt::format("parameter '{}' is declared twice", parameter.name));
+
+            definition.parameters.push_back(std::move(parameter));
+        } while (consume(KQLTokenType::Comma));
+    }
+    expect(KQLTokenType::ClosingRoundBracket);
+
+    expect(KQLTokenType::OpeningCurlyBrace);
+    definition.body_begin = index;
+
+    /// Record the body as a token range and skip past it; it is parsed at each call.
+    int nesting = 1;
+    while (nesting > 0)
+    {
+        if (at(KQLTokenType::EndOfStream) || at(KQLTokenType::Error))
+            fail("unterminated function body");
+        if (at(KQLTokenType::OpeningCurlyBrace))
+            ++nesting;
+        else if (at(KQLTokenType::ClosingCurlyBrace))
+            --nesting;
+        if (nesting > 0)
+            ++index;
+    }
+    definition.body_end = index;
+    expect(KQLTokenType::ClosingCurlyBrace);
+
+    if (definition.body_end == definition.body_begin)
+        fail("a function body cannot be empty");
+
+    scope.functions[name] = std::move(definition);
+}
+
+KQLParser::Scope KQLParser::bindArguments(const String & name, const FunctionDefinition & definition, const KQLToken & call_token)
+{
+    const size_t count = definition.parameters.size();
+    std::vector<ASTPtr> scalar_arguments(count);
+    std::vector<KQLTabularExpressionPtr> tabular_arguments(count);
+    std::vector<bool> supplied(count, false);
+
+    /// A zero-argument function may be called without parentheses.
+    if (consume(KQLTokenType::OpeningRoundBracket))
+    {
+        size_t position = 0;
+        if (!at(KQLTokenType::ClosingRoundBracket))
+        {
+            do
+            {
+                size_t target = position;
+
+                /// `f(c = 7)` names its argument. `==` is a comparison, so only a single
+                /// `=` after a bare word marks this form.
+                if (at(KQLTokenType::BareWord) && lookahead().type == KQLTokenType::Equals)
+                {
+                    const KQLToken & argument_token = current();
+                    const String argument_name(current().text());
+                    index += 2;
+
+                    const auto it = std::find_if(
+                        definition.parameters.begin(),
+                        definition.parameters.end(),
+                        [&](const FunctionParameter & p) { return p.name == argument_name; });
+                    if (it == definition.parameters.end())
+                        failAt(argument_token, fmt::format("'{}' has no parameter named '{}'", name, argument_name));
+                    target = static_cast<size_t>(it - definition.parameters.begin());
+                }
+                else if (position >= count)
+                {
+                    failAt(call_token, fmt::format("'{}' takes {} argument(s), and got more", name, count));
+                }
+
+                if (supplied[target])
+                    failAt(call_token, fmt::format("argument '{}' of '{}' is given twice", definition.parameters[target].name, name));
+
+                if (definition.parameters[target].is_tabular)
+                {
+                    if (at(KQLTokenType::OpeningRoundBracket))
+                        tabular_arguments[target] = parseParenthesizedTabularExpression();
+                    else
+                        tabular_arguments[target] = parseTabularExpression();
+                }
+                else
+                {
+                    scalar_arguments[target] = parseExpression();
+                }
+
+                supplied[target] = true;
+                position = target + 1;
+            } while (consume(KQLTokenType::Comma));
+        }
+        expect(KQLTokenType::ClosingRoundBracket);
+    }
+
+    /// The body sees the enclosing bindings too, with its parameters on top.
+    Scope inner = scope;
+    for (size_t i = 0; i < count; ++i)
+    {
+        const FunctionParameter & parameter = definition.parameters[i];
+        if (!supplied[i])
+        {
+            if (!parameter.default_value)
+                failAt(call_token, fmt::format("'{}' needs an argument for '{}'", name, parameter.name));
+            scalar_arguments[i] = parameter.default_value;
+        }
+
+        /// A parameter shadows anything of the same name outside.
+        inner.scalars.erase(parameter.name);
+        inner.tabulars.erase(parameter.name);
+        inner.functions.erase(parameter.name);
+
+        if (parameter.is_tabular)
+            inner.tabulars[parameter.name] = tabular_arguments[i];
+        else
+            inner.scalars[parameter.name] = scalar_arguments[i];
+    }
+
+    return inner;
+}
+
+ASTPtr KQLParser::callScalarFunction(const String & name, const KQLToken & call_token)
+{
+    DepthGuard guard(*this, "function call");
+
+    const FunctionDefinition definition = scope.functions.at(name);
+    Scope inner = bindArguments(name, definition, call_token);
+
+    if (!functions_in_progress.insert(name).second)
+        failAt(call_token, fmt::format("'{}' calls itself, and KQL has no recursion", name));
+
+    const size_t saved_index = index;
+    Scope saved_scope = std::move(scope);
+    scope = std::move(inner);
+    index = definition.body_begin;
+
+    /// A body is any number of `let` statements followed by one expression.
+    while (atKeyword("let"))
+    {
+        parseLetStatement();
+        if (!consume(KQLTokenType::Semicolon))
+            fail("expected ';' after a 'let' statement in a function body");
+    }
+    ASTPtr result = parseExpression();
+
+    if (index != definition.body_end)
+        fail(fmt::format("unexpected text at the end of the body of '{}'", name));
+
+    scope = std::move(saved_scope);
+    index = saved_index;
+    functions_in_progress.erase(name);
+    return result;
+}
+
+KQLTabularExpressionPtr KQLParser::callTabularFunction(const String & name, const KQLToken & call_token)
+{
+    DepthGuard guard(*this, "function call");
+
+    const FunctionDefinition definition = scope.functions.at(name);
+    Scope inner = bindArguments(name, definition, call_token);
+
+    if (!functions_in_progress.insert(name).second)
+        failAt(call_token, fmt::format("'{}' calls itself, and KQL has no recursion", name));
+
+    const size_t saved_index = index;
+    Scope saved_scope = std::move(scope);
+    scope = std::move(inner);
+    index = definition.body_begin;
+
+    while (atKeyword("let"))
+    {
+        parseLetStatement();
+        if (!consume(KQLTokenType::Semicolon))
+            fail("expected ';' after a 'let' statement in a function body");
+    }
+    KQLTabularExpressionPtr result = parseTabularExpression();
+
+    if (index != definition.body_end)
+        fail(fmt::format("unexpected text at the end of the body of '{}'", name));
+
+    scope = std::move(saved_scope);
+    index = saved_index;
+    functions_in_progress.erase(name);
+    return result;
+}
+
 void KQLParser::parseLetStatement()
 {
     expectKeyword("let");
@@ -271,8 +550,14 @@ void KQLParser::parseLetStatement()
     const String name = expectIdentifierName();
     expect(KQLTokenType::Equals);
 
-    if (scope.scalars.contains(name) || scope.tabulars.contains(name))
+    if (scope.scalars.contains(name) || scope.tabulars.contains(name) || scope.functions.contains(name))
         failAt(name_token, fmt::format("'{}' is already defined in this query", name));
+
+    if (atFunctionDefinition())
+    {
+        parseFunctionDefinition(name);
+        return;
+    }
 
     /// A `let` may bind either a scalar or a whole tabular expression. Only a parenthesized
     /// form or something that starts a pipeline can be tabular; everything else is scalar.
@@ -381,6 +666,14 @@ KQLSourcePtr KQLParser::parseSource()
     /// A bare name: either a `let`-bound tabular expression or a table.
     const KQLToken & name_token = current();
     const String name = expectIdentifierName();
+
+    if (scope.functions.contains(name))
+    {
+        auto source = std::make_shared<KQLSource>();
+        source->kind = KQLSourceKind::Subquery;
+        source->inputs.push_back(callTabularFunction(name, name_token));
+        return source;
+    }
 
     if (auto it = scope.tabulars.find(name); it != scope.tabulars.end())
     {
@@ -1200,6 +1493,13 @@ ASTPtr KQLParser::parsePrimary()
         ASTPtr value = parseDynamicLiteral();
         expect(KQLTokenType::ClosingRoundBracket);
         return value;
+    }
+
+    if (scope.functions.contains(word))
+    {
+        const KQLToken & call_token = current();
+        ++index;
+        return callScalarFunction(word, call_token);
     }
 
     /// `typeof(long)` names a type. It appears as the optional last argument of `extract`,

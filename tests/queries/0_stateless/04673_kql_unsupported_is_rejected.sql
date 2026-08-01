@@ -68,6 +68,19 @@ datatable (a:long, b:long) [1, 2, 3];                 -- { clientError SYNTAX_ER
 let x = 1;                                            -- { clientError SYNTAX_ERROR } a query needs a tabular expression
 let x = 1; let x = 2; print x;                        -- { clientError SYNTAX_ERROR } duplicate binding
 
+-- Malformed function definitions and calls.
+let f = (x:long) { f(x) }; print f(1);                -- { clientError SYNTAX_ERROR } no recursion
+let f = (x:long) { x }; print f();                    -- { clientError SYNTAX_ERROR } missing argument
+let f = (x:long) { x }; print f(1, 2);                -- { clientError SYNTAX_ERROR } too many arguments
+let f = (x:long) { x }; print f(y = 1);               -- { clientError SYNTAX_ERROR } no such parameter
+let f = (x:long, x:long) { x }; print f(1, 2);        -- { clientError SYNTAX_ERROR } duplicate parameter
+let f = (a:long = 1, b:long) { a }; print f(1, 2);    -- { clientError SYNTAX_ERROR } default before required
+let f = (a:long, T:(*)) { a }; print f(1, 2);         -- { clientError SYNTAX_ERROR } tabular must come first
+let f = (x:nosuchtype) { x }; print f(1);             -- { clientError SYNTAX_ERROR }
+let f = (x:long) { }; print f(1);                     -- { clientError SYNTAX_ERROR } empty body
+let f = (x:long) { x x }; print f(1);                 -- { clientError SYNTAX_ERROR } trailing text in body
+let f = (x:long) { g(x) }; let g = (x:long) { f(x) }; print f(1);  -- { clientError SYNTAX_ERROR } mutual recursion
+
 -- A name that is not a Kusto function at all is passed to ClickHouse, so an unknown one is
 -- reported by the analyzer rather than by the parser. See 04674 for the point of that.
 print totally_made_up_function(1);                    -- { serverError UNKNOWN_FUNCTION }

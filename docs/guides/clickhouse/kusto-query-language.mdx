@@ -39,8 +39,25 @@ If a query parses, its result is meant to match Kusto's.
 `contains`, `startswith`, `endswith`, `has`, `hasprefix`, `hassuffix`, their `_cs`
 (case-sensitive) and `!` (negated) forms, `has_any`, `has_all`, and `matches regex`.
 
-**Statements**: `let`, binding either a scalar or a whole tabular expression. Bindings are
-scoped to the query that declares them.
+**Statements**: `let`, binding a scalar, a whole tabular expression, or a **function**:
+
+```sql
+let MultiplyByN = (val: long, n: long = 2) { val * n };
+let RecentErrors = (since: timespan) { Logs | where Level == 'Error' and Timestamp > ago(since) };
+
+RecentErrors(1h) | summarize Count = count() by Component
+```
+
+Functions take scalar parameters with optional literal defaults, and tabular parameters
+declared `T: (*)` or `T: (col: type, ...)` which must come first. Arguments may be passed by
+name in any order (`f(c = 7, a = 12)`). A body is any number of `let` statements followed by
+one expression, and it can see the bindings that enclose it. A parameterless function may be
+called with or without parentheses. `view ()` is accepted and, since nothing here resolves
+`union *` wildcards, means the same as `()`. Recursion is rejected, as it is in Kusto.
+
+A `let` binds only for the statement that follows it, because one KQL statement is one
+ClickHouse query — that is also what keeps a binding from leaking into a concurrent query. A
+name two statements both need has to be bound twice.
 
 **Literals**: strings (including verbatim `@'...'`), numbers, `datetime(...)`, `guid(...)`,
 timespans such as `1d` / `2.5h` / `500ms`, and `dynamic([...])` arrays.
@@ -75,6 +92,7 @@ Measured against Microsoft's own indexes
 |---|---|---|
 | Tabular operators | 52 | 20 |
 | Scalar and aggregate functions | 307 | 123 |
+| User-defined functions | yes | yes |
 
 The supported operators are the ones Microsoft's own *Learn common operators* tutorial teaches,
 plus `datatable`, `range`, `print`, `union` and `join` — enough for the shape of query that
@@ -96,8 +114,6 @@ Rejected with a parse error, rather than mistranslated:
   (`x['k']`). Only `dynamic` arrays are mapped, onto ClickHouse `Array`.
 - Cross-cluster and cross-database references such as `cluster(...)` and `database(...)`.
 - Query and `join` hints (`hint.strategy`, `hint.shufflekey`, ...).
-- **User-defined functions**: `let f = (x: long) { x * 2 }`. `let` binds a scalar or a whole
-  tabular expression, but not a lambda with parameters.
 - Operator options: `mv-expand ... to typeof(T)` / `limit N` / `bagexpansion`, `summarize`
   hints, `union kind=` / `withsource=` / `isfuzzy=`, `join hint.*`.
 - The `evaluate` plugin mechanism entirely, and with it `bag_unpack`, `pivot`, `narrow`,
