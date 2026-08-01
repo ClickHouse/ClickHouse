@@ -47,7 +47,6 @@
 #include <Parsers/ParserQuery.h>
 #include <Parsers/queryNormalization.h>
 #include <Common/quoteString.h>
-#include <Common/StringUtils.h>
 #include <Parsers/toOneLineQuery.h>
 #include <Parsers/Kusto/ParserKQLStatement.h>
 #include <Parsers/PRQL/ParserPRQLQuery.h>
