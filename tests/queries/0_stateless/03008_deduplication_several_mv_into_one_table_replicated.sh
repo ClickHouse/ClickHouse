@@ -64,12 +64,16 @@ for insert_method in "InsertSelect" "InsertValues"; do
                             # assertion looked at still exist. Re-run only the diagnostics for
                             # that phase, against that surviving state.
                             FAILED_PHASE=$(sed -n 's/.*DEDUP_ASSERT_FAILED phase=\([a-z]*\).*/\1/p' "$CASE_STDERR" | head -n 1)
+                            # Forwarded before the rerun, not after: if the per-test deadline
+                            # expires while the diagnostics are in flight, the harness is killed
+                            # and the EXIT trap deletes CASE_STDERR, so a later cat would lose
+                            # the assertion error that names the failing case and phase.
+                            cat "$CASE_STDERR" >&2
                             if [ -n "$FAILED_PHASE" ]; then
                                 $CLICKHOUSE_CLIENT --max_insert_block_size 1 -mq "
                                     $(python3 "$CURDIR"/03008_deduplication.python several_mv_into_one_table "${CASE_ARGS[@]}" --emit-debug-only "$FAILED_PHASE")
                                 "
                             fi
-                            cat "$CASE_STDERR" >&2
                             echo FAIL
                         fi
                     done

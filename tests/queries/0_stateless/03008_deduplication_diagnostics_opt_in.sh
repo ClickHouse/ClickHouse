@@ -168,6 +168,53 @@ STUB
         # failed assertion left behind.
         echo "$name $phase failure rerun mutating $( [ -f "$W/sql.2" ] && { grep -ciE 'DROP |CREATE |INSERT |throwIf' "$W/sql.2" || true; } || echo NA )"
         echo "$name $phase failure marker forwarded $(grep -c 'DEDUP_ASSERT_FAILED' "$W/fwd")"
+
+        # The same block again, but interrupted while the diagnostics rerun is in flight. The
+        # harness SIGTERMs the whole process group when the per-test deadline expires, and the
+        # driver's EXIT trap then deletes CASE_STDERR, so an assertion error that has not been
+        # forwarded yet is lost: the reader gets a timeout naming neither the case nor the phase.
+        # Forwarding it before the rerun is what keeps that from being a regression against the
+        # pre-PR behaviour, where the client wrote to the real stderr directly.
+        #
+        # Deterministic, not timing-dependent: the stub announces that the rerun has started and
+        # waits, so the signal always lands inside the rerun. Its own directory, so the rows above
+        # keep reading the returning stub's counters and payloads unchanged.
+        I="$W/i"
+        mkdir -p "$I"
+        cat > "$I/client_block" <<STUB
+#!/usr/bin/env bash
+D="\$(dirname "\$0")"
+n=\$(cat "\$D/n" 2>/dev/null || echo 0); n=\$((n+1)); echo "\$n" > "\$D/n"
+if [ "\$n" = 1 ]; then
+  echo "Code: 395. DB::Exception: DEDUP_ASSERT_FAILED phase=$phase table=t: while executing" >&2
+  exit 395
+fi
+: > "\$D/rerun_started"
+# Bounded, and released by the driver below the moment the signal has been sent: an
+# unbounded wait would leave one spinning process per row behind on every run.
+i=0
+while [ ! -f "\$D/go" ] && [ \$i -lt 600 ]; do sleep 0.05; i=\$((i+1)); done
+exit 0
+STUB
+        chmod +x "$I/client_block"
+        {
+          echo "CLICKHOUSE_CLIENT='$I/client_block'"
+          # The driver's own capture and cleanup, which is what makes an unforwarded error
+          # unrecoverable once the shell is signalled.
+          echo "CASE_STDERR=\$(mktemp -p '$I' 03008_dedup_stderr_XXXXXX)"
+          echo "trap 'rm -f \"\$CASE_STDERR\"' EXIT"
+          echo "CURDIR='$CURDIR'"
+          echo "CASE_ARGS=(${REPLAY_ARGS[*]})"
+          sed 's/^                        //' "$W/block.sh"
+        } > "$I/run.sh"
+        bash "$I/run.sh" > /dev/null 2> "$I/fwd_int" &
+        int_pid=$!
+        i=0
+        while [ ! -f "$I/rerun_started" ] && [ "$i" -lt 200 ]; do sleep 0.05; i=$((i+1)); done
+        kill -TERM "$int_pid" 2>/dev/null
+        : > "$I/go"
+        wait "$int_pid" 2>/dev/null
+        echo "$name $phase interrupted rerun forwards marker $(grep -c 'DEDUP_ASSERT_FAILED' "$I/fwd_int")"
         rm -rf "$W"
     done
 done
