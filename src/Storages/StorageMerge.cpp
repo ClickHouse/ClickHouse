@@ -552,6 +552,22 @@ ReadFromMerge::ReadFromMerge(
 {
 }
 
+/// Optimization settings for a child plan of a `Merge` table.
+///
+/// Parallel replicas must stay disabled here. A child plan is built and optimized while the
+/// *outer* plan is already being executed (`ReadFromMerge` materializes its children lazily),
+/// so by this point the outer plan has decided its own parallel-replicas strategy and
+/// `addStepsToBuildSets` has already moved the source plan out of every `FutureSetFromSubquery`.
+/// Distributing the child read from here ships a fragment that (a) silently loses the filters
+/// pushed down into it, and (b) may reference such a consumed set, which then fails to
+/// serialize with `Cannot serialize FutureSetFromSubquery with no query plan`.
+static QueryPlanOptimizationSettings getChildPlanOptimizationSettings(const ContextPtr & context)
+{
+    QueryPlanOptimizationSettings optimization_settings(context);
+    optimization_settings.enable_parallel_replicas = false;
+    return optimization_settings;
+}
+
 void ReadFromMerge::addFilter(FilterDAGInfo filter)
 {
     output_header = std::make_shared<const Block>(FilterTransform::transformHeader(
@@ -577,7 +593,7 @@ void ReadFromMerge::addFilter(FilterDAGInfo filter)
             child.plan.addStep(std::move(filter_step));
 
             /// Push down this newly added filter if possible
-            child.plan.optimize(QueryPlanOptimizationSettings(context));
+            child.plan.optimize(getChildPlanOptimizationSettings(context));
         }
     }
 
@@ -718,6 +734,11 @@ std::vector<ReadFromMerge::ChildPlan> ReadFromMerge::createChildrenPlans(SelectQ
         try
         {
             auto modified_context = Context::createCopy(context);
+            /// See `getChildPlanOptimizationSettings`: a child plan must never be distributed.
+            /// The setting is cleared in the context as well, because the parallel-replicas
+            /// conversion re-checks `canUseParallelReplicasOnInitiator` against the context
+            /// captured by the reading step, not only the optimization settings.
+            modified_context->setSetting("enable_parallel_replicas", Field(0));
 
             size_t current_need_streams = tables_count >= num_streams ? 1 : (num_streams / tables_count);
             size_t current_streams = std::min(current_need_streams, remaining_streams);
@@ -947,7 +968,7 @@ std::vector<ReadFromMerge::ChildPlan> ReadFromMerge::createChildrenPlans(SelectQ
                     child.plan.addStep(std::move(filter_step));
                 }
 
-                child.plan.optimize(QueryPlanOptimizationSettings(modified_context));
+                child.plan.optimize(getChildPlanOptimizationSettings(modified_context));
             }
 
             res.emplace_back(std::move(child));
