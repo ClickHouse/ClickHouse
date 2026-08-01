@@ -4108,7 +4108,11 @@ void ReadFromMergeTree::initializePipeline(QueryPipelineBuilder & pipeline, [[ma
             stripped_snapshot_data->mutations_snapshot = snapshot_data->mutations_snapshot;
         }
 
-        storage_snapshot->data = std::move(stripped_snapshot_data);
+        /// Rebind to a private snapshot clone instead of mutating `storage_snapshot->data` in place:
+        /// the snapshot is shared across clones of this step (see `clone`), and a direct join rebuilds
+        /// its lookup pipeline repeatedly, so an in-place replace could destroy a `SnapshotData` still
+        /// read by an overlapping build.
+        storage_snapshot = storage_snapshot->clone(std::move(stripped_snapshot_data));
     }
 
     /// Check if we should apply row policy and prewhere after FINAL instead of during reading
