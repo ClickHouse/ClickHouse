@@ -1,35 +1,14 @@
 #!/usr/bin/env bash
 # Tags: no-fasttest
-# Tag no-fasttest: needs a local HTTP listener and the url() table function
+# Tag no-fasttest: needs a local HTTP listener and the url table function
 
 CURDIR=$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)
 # shellcheck source=../shell_config.sh
 . "$CURDIR"/../shell_config.sh
 
-# StorageURLSource::getFirstAvailableURIAndReadBuffer walks the |-separated url() options and
-# returns the first one that opens. Its catch(...) used to treat a cancellation exception as an
-# ordinary endpoint failure: it kept only the message text, tried every remaining option, and
-# finally remapped the whole thing to NETWORK_ERROR. So a cancelled multi-option read reported a
-# network error rather than the cancellation, and issued one further read per remaining option.
-#
-# The dead listener accepts every connection and never answers, so each attempt ends in a receive
-# timeout. max_execution_time fires while attempt 1 is still reading (it is shorter than
-# http_receive_timeout), which is the phase where both halves are observable.
-#
-# http_max_tries = 1 makes the request count a per-OPTION counter: ReadWriteBufferFromHTTP treats
-# attempt 1 as the last attempt, so it rethrows immediately instead of retrying and sleeping. This
-# test therefore asserts that no further OPTION is attempted; it does not bound the retries within
-# one option.
-# http_make_head_request = 0 pins a request count that a HEAD probe would otherwise share. It
-# defaults to true and the stress runner randomizes it. Against these listeners the counts happen to
-# be the same either way, because a dead listener never completes the HEAD either; the pin keeps the
-# counts exact if a future fixture answers some of the options.
-# parallel_replicas_for_cluster_engines = 0 keeps the read on the initiator. With parallel replicas
-# url() is served by StorageURLCluster, the reads happen in secondary queries, and the initiator's
-# system.query_log row never reports the counter at all.
-# send_logs_level = 'fatal' suppresses the per-option tryLogCurrentException that the failover loop
-# has always emitted at Error level: shell_config.sh forwards server logs at warning, so otherwise
-# every skipped option writes a stack trace to the client's stderr and the runner fails the test.
+# A cancelled multi-option url read must report the cancellation itself instead of remapping it to
+# NETWORK_ERROR, and must not attempt the remaining options. The dead listener accepts every
+# connection and never answers, so every attempt there ends in a receive timeout.
 
 DEAD_PORT=$(python3 -c "
 import socket
@@ -46,7 +25,12 @@ print(s.getsockname()[1])
 s.close()
 ")
 
-# Accepts every connection and never writes a response: every attempt ends in a receive timeout.
+ACCEPTS="${CLICKHOUSE_TMP}/${CLICKHOUSE_TEST_UNIQUE_NAME}.accepts"
+STDERR="${CLICKHOUSE_TMP}/${CLICKHOUSE_TEST_UNIQUE_NAME}.stderr"
+: > "$ACCEPTS"
+
+# Accepts every connection and never writes a response, and appends one unbuffered byte per accept
+# so the shell can observe which option is in flight instead of guessing from a wall clock.
 python3 -c "
 import socket
 srv = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
@@ -54,9 +38,11 @@ srv.setsockopt(socket.SOL_SOCKET, socket.SO_REUSEADDR, 1)
 srv.bind(('127.0.0.1', $DEAD_PORT))
 srv.listen(128)
 accepted = []
-while True:
-    conn, _ = srv.accept()
-    accepted.append(conn)  # hold the connection open and never answer
+with open('$ACCEPTS', 'ab', buffering=0) as marker:
+    while True:
+        conn, _ = srv.accept()
+        accepted.append(conn)  # hold the connection open and never answer
+        marker.write(b'.')
 " &
 DEAD_PID=$!
 
@@ -81,7 +67,7 @@ while True:
 " &
 LIVE_PID=$!
 
-trap 'kill $DEAD_PID $LIVE_PID 2>/dev/null ||:; wait $DEAD_PID $LIVE_PID 2>/dev/null ||:' EXIT
+trap 'kill $DEAD_PID $LIVE_PID 2>/dev/null ||:; wait $DEAD_PID $LIVE_PID 2>/dev/null ||:; rm -f "$ACCEPTS" "$STDERR"' EXIT
 
 wait_for_port()
 {
@@ -103,6 +89,34 @@ s.close()
 wait_for_port "$DEAD_PORT"
 wait_for_port "$LIVE_PORT"
 
+# The port probes above are accepted by the dead listener too, so counts are always taken relative to
+# a baseline read just before the query rather than from an absolute total.
+accepts()
+{
+    stat -c %s "$ACCEPTS" 2>/dev/null || echo 0
+}
+
+wait_for_accepts()
+{
+    for _ in $(seq 1 600); do
+        [ "$(accepts)" -ge "$1" ] && return 0
+        sleep 0.1
+    done
+    echo "Timeout waiting for $1 accepts on the dead listener"
+    exit 1
+}
+
+kill_and_wait()
+{
+    ${CLICKHOUSE_CLIENT} --query "KILL QUERY WHERE query_id = '$1'" > /dev/null
+    for _ in $(seq 1 600); do
+        [ "$(${CLICKHOUSE_CLIENT} --query "SELECT count() FROM system.processes WHERE query_id = '$1'")" = "0" ] && return 0
+        sleep 0.1
+    done
+    echo "Timeout waiting for query $1 to be cancelled"
+    exit 1
+}
+
 # How many HTTP requests the finished query actually sent, and what it reported.
 outcome()
 {
@@ -117,6 +131,10 @@ outcome()
         WHERE current_database = currentDatabase() AND query_id = '$1' AND type != 'QueryStart'
         ORDER BY event_time_microseconds DESC LIMIT 1"
 }
+
+# Every SETTINGS pin below is measured load-bearing: http_max_tries turns the request count into a
+# per-option counter, send_logs_level suppresses the failover loop's own Error logging, and
+# parallel_replicas_for_cluster_engines keeps the read on the initiator. http_make_head_request is a guard.
 
 # A cancelled two-option read must report the cancellation, not NETWORK_ERROR, and must not attempt
 # the second option. Without the fix: NETWORK_ERROR with both options attempted.
@@ -141,19 +159,23 @@ ${CLICKHOUSE_CLIENT} --query_id "$QUERY_ID_THREE" --query "
 " 2>&1 | grep -c -m1 'All uri' | sed 's/^0$/reported as a cancellation/;s/^1$/reported as an unreachable endpoint/'
 outcome "$QUERY_ID_THREE"
 
-# Cancellation observed while the LAST option is in flight. Here the loop has no further option to
-# skip, so only reporting the cancellation from the handler itself can keep the code: a check placed
-# at the top of the failover loop is never reached again and the remap below still wins. The window
-# is chosen so the cancellation lands during the second option rather than the first
-# (max_execution_time exceeds one receive timeout but not two).
-echo "--- cancelled while the last option is in flight ---"
+# The last option has no successor, so only reporting the cancellation from the handler itself can
+# keep the code: a check at the top of the failover loop is never reached again. The kill is fired
+# once the dead listener has accepted twice, so option 2 is in flight by observation, not by timing.
+echo "--- KILL QUERY while the last option is in flight ---"
 QUERY_ID_LAST="04674_last_${CLICKHOUSE_DATABASE}"
+BEFORE_LAST=$(accepts)
 ${CLICKHOUSE_CLIENT} --query_id "$QUERY_ID_LAST" --query "
     SELECT * FROM url('http://127.0.0.1:$DEAD_PORT/a|http://127.0.0.1:$DEAD_PORT/b', 'TSV', 's String')
-    SETTINGS max_execution_time = 3, http_receive_timeout = 2, http_max_tries = 1,
+    SETTINGS max_execution_time = 0, http_receive_timeout = 10, http_max_tries = 1,
              http_make_head_request = 0, parallel_replicas_for_cluster_engines = 0,
              send_logs_level = 'fatal'
-" 2>&1 | grep -c -m1 'All uri' | sed 's/^0$/reported as a cancellation/;s/^1$/reported as an unreachable endpoint/'
+" > "$STDERR" 2>&1 &
+CLIENT_PID=$!
+wait_for_accepts $((BEFORE_LAST + 2))
+kill_and_wait "$QUERY_ID_LAST"
+wait "$CLIENT_PID" ||:
+grep -c -m1 'All uri' "$STDERR" | sed 's/^0$/reported as a cancellation/;s/^1$/reported as an unreachable endpoint/'
 outcome "$QUERY_ID_LAST"
 
 # Must not regress: with no cancellation, all options genuinely down still reports the aggregate

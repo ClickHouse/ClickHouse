@@ -4,9 +4,9 @@ code TIMEOUT_EXCEEDED, options attempted: 1
 --- cancelled, three options ---
 reported as a cancellation
 code TIMEOUT_EXCEEDED, options attempted: 1
---- cancelled while the last option is in flight ---
+--- KILL QUERY while the last option is in flight ---
 reported as a cancellation
-code TIMEOUT_EXCEEDED, options attempted: 2
+code QUERY_WAS_CANCELLED, options attempted: 2
 --- not cancelled, all options down ---
 All uri (2) options are unreachable
 code NETWORK_ERROR, options attempted: 2
