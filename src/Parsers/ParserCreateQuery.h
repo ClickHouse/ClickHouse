@@ -649,6 +649,13 @@ protected:
   */
 class ParserCreateTableQuery : public IParserBase
 {
+public:
+    ParserCreateTableQuery() = default;
+    explicit ParserCreateTableQuery(const char * end_) : end(end_) {}
+
+private:
+    const char * end = nullptr;
+
 protected:
     const char * getName() const override { return "CREATE TABLE or ATTACH TABLE query"; }
     bool parseImpl(Pos & pos, ASTPtr & node, Expected & expected) override;
@@ -734,6 +741,11 @@ class ParserCreateQuery : public IParserBase
 {
 public:
     std::map<String, Documentation> getDocumentation() const override;
+    ParserCreateQuery() = default;
+    explicit ParserCreateQuery(const char * end_) : end(end_) {}
+
+private:
+    const char * end = nullptr;
 
 protected:
     const char * getName() const override { return "CREATE TABLE or ATTACH TABLE query"; }
