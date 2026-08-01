@@ -1,12 +1,10 @@
 #include <algorithm>
 #include <memory>
 #include <stack>
-#include <unordered_map>
 
 #include <Common/CurrentThread.h>
 #include <Common/JSONBuilder.h>
 #include <Common/logger_useful.h>
-#include <Common/typeid_cast.h>
 
 #include <IO/Operators.h>
 #include <IO/WriteBuffer.h>
@@ -14,9 +12,7 @@
 #include <Interpreters/Context.h>
 
 #include <Processors/ConcatProcessor.h>
-#include <Processors/IProcessor.h>
 #include <Processors/QueryPlan/BuildQueryPipelineSettings.h>
-#include <Processors/QueryPlan/CommonSubplanReferenceStep.h>
 #include <Processors/QueryPlan/ExchangeLookup.h>
 #include <Processors/QueryPlan/ExpressionStep.h>
 #include <Processors/QueryPlan/FilterStep.h>
@@ -29,7 +25,6 @@
 #include <Processors/QueryPlan/ReadFromMergeTree.h>
 #include <Processors/QueryPlan/ReadFromPreparedSource.h>
 #include <Processors/QueryPlan/QueryPlanVisitor.h>
-#include <Processors/QueryPlan/AnalyzePlanStats.h>
 #include <Processors/Sources/DelayedSource.h>
 #include <Processors/Sources/ReadFromDistributedPlanSource.h>
 
@@ -262,10 +257,6 @@ QueryPipelineBuilderPtr QueryPlan::buildQueryPipeline(
             if (limit_max_threads && max_threads)
                 last_pipeline->limitMaxThreads(max_threads);
 
-            for (const auto & processor : last_pipeline->getProcessors())
-                if (!processor->getQueryPlanStep())
-                    processor->setQueryPlanStep(frame.node->step.get());
-
             stack.pop();
         }
         else
@@ -401,8 +392,7 @@ static void explainStep(
     IQueryPlanStep & step,
     IQueryPlanStep::FormatSettings & settings,
     const ExplainPlanOptions & options,
-    size_t max_description_length,
-    const AnalyzeStepsStats * steps_to_stats = nullptr)
+    size_t max_description_length)
 {
 
     settings.out << settings.header_prefix << step.getName();
@@ -518,9 +508,6 @@ static void explainStep(
 
     if (options.distributed)
         step.describeDistributedPlan(settings, options);
-
-    if (steps_to_stats)
-        steps_to_stats->printStepStats(&step, settings.out, prefix, options.processors_profile);
 }
 
 std::string debugExplainStep(IQueryPlanStep & step)
@@ -607,33 +594,10 @@ void QueryPlan::explainPlan(
     const ExplainPlanOptions & options,
     size_t offset,
     size_t max_description_length,
-    const PrettyNamesPerPlan * precomputed_pretty_names,
     const std::string & parent_tree_prefix,
-    bool is_last_child_plan,
-    AnalyzeStepsStats * steps_to_stats) const
+    bool is_last_child_plan) const
 {
     checkInitialized();
-
-    PrettyNames empty_pretty_names;
-
-    /// Pretty rendering uses per-plan scoped name maps (see PrettyNamesPerPlan). Callers that must build
-    /// names before the plan is consumed (EXPLAIN ANALYZE) pass a prebuilt registry; otherwise build it
-    /// here for this plan's whole subtree, so self-contained renders such as distributed child plans
-    /// (ReadFromRemote::describeDistributedPlan) don't fall back to empty names.
-    PrettyNamesPerPlan local_pretty_names;
-    if (options.pretty && !precomputed_pretty_names)
-    {
-        local_pretty_names = QueryPlanFormat::buildPrettyNamesPerPlan(*this);
-        precomputed_pretty_names = &local_pretty_names;
-    }
-
-    /// Pick the map scoped to this exact plan; child and distributed plans look up their own entry.
-    const PrettyNames * plan_pretty_names = nullptr;
-    if (precomputed_pretty_names)
-    {
-        if (auto it = precomputed_pretty_names->names.find(this); it != precomputed_pretty_names->names.end())
-            plan_pretty_names = &it->second;
-    }
 
     IQueryPlanStep::FormatSettings settings{
         .out = buffer,
@@ -642,18 +606,23 @@ void QueryPlan::explainPlan(
         .write_header = options.header,
         .compact = options.compact,
         .pretty = options.pretty,
-        .pretty_names = plan_pretty_names ? plan_pretty_names->pretty_names : empty_pretty_names.pretty_names,
-        .runtime_filter_names = plan_pretty_names ? plan_pretty_names->runtime_filter_names : empty_pretty_names.runtime_filter_names
+        .pretty_names = {},
+        .runtime_filter_names = {}
     };
 
     auto skip_expressions = [&](Node * node) -> Node * {
-        if (steps_to_stats)
-            return node;
-
-        while (options.actions && settings.compact && node->step->getName() == "Expression" && !node->children.empty())
+        while (settings.compact && node->step->getName() == "Expression" && !node->children.empty())
             node = node->children[0];
         return node;
     };
+
+    if (options.pretty)
+    {
+        std::unordered_map<FutureSet::Hash, String, PreparedSets::Hashing> subquery_set_names;
+        QueryPlanFormat::buildPrettyNamesMap(*this, settings.pretty_names, settings.runtime_filter_names, subquery_set_names);
+        for (const auto & [hash, name] : subquery_set_names)
+            settings.pretty_names[PreparedSets::toString(hash, {})] = PrettyColumnName(name);
+    }
 
     std::deque<ExplainPlan::Frame> stack;
 
@@ -681,7 +650,7 @@ void QueryPlan::explainPlan(
             else
                 buildIndentOffset(stack, settings, offset);
 
-            explainStep(*frame.node->step, settings, options, max_description_length, steps_to_stats);
+            explainStep(*frame.node->step, settings, options, max_description_length);
             frame.is_description_printed = true;
         }
 
@@ -720,7 +689,7 @@ void QueryPlan::explainPlan(
             {
                 bool is_last_plan = (plan_idx + 1 == child_plans.size());
                 child_plan->explainPlan(buffer, options, offset + stack.size(),
-                                        max_description_length, precomputed_pretty_names, base_prefix, is_last_plan, steps_to_stats);
+                                        max_description_length, base_prefix, is_last_plan);
                 ++plan_idx;
             }
 
@@ -1132,35 +1101,6 @@ QueryPlan QueryPlan::extractSubplan(Node * subplan_root)
 
 void QueryPlan::cloneInplace(Node * node_to_replace, Node * subplan_root)
 {
-    cloneSubplanAndReplace(node_to_replace, subplan_root, nodes);
-}
-
-QueryPlan QueryPlan::clone() const
-{
-    QueryPlan result;
-    result.nodes.emplace_back(Node{ .step = {}, .children = {} });
-    auto * current_subplan_copy_root = &result.nodes.back();
-
-    result.cloneInplace(current_subplan_copy_root, root);
-    result.root = current_subplan_copy_root;
-
-    return result;
-}
-
-QueryPlan QueryPlan::cloneSubtree(Node * subplan_root)
-{
-    QueryPlan result;
-    result.nodes.emplace_back(Node{ .step = {}, .children = {} });
-    auto * subplan_copy_root = &result.nodes.back();
-
-    result.cloneInplace(subplan_copy_root, subplan_root);
-    result.root = subplan_copy_root;
-
-    return result;
-}
-
-void QueryPlan::cloneSubplanAndReplace(Node * node_to_replace, Node * subplan_root, Nodes & nodes)
-{
     if (!subplan_root)
         throw Exception(ErrorCodes::LOGICAL_ERROR, "Cannot clone subplan in place because subplan root is null");
 
@@ -1171,9 +1111,6 @@ void QueryPlan::cloneSubplanAndReplace(Node * node_to_replace, Node * subplan_ro
         std::vector<Node *> children = {};
     };
 
-    std::unordered_map<const Node *, Node *> original_to_clone;
-    std::vector<CommonSubplanReferenceStep *> cloned_references;
-
     std::vector<Frame> nodes_to_process{ Frame{ .node = subplan_root, .clone = node_to_replace } };
 
     while (!nodes_to_process.empty())
@@ -1183,11 +1120,6 @@ void QueryPlan::cloneSubplanAndReplace(Node * node_to_replace, Node * subplan_ro
         {
             frame.clone->step = frame.node->step->clone();
             frame.clone->children = std::move(frame.children);
-
-            original_to_clone[frame.node] = frame.clone;
-            if (auto * subplan_reference = typeid_cast<CommonSubplanReferenceStep *>(frame.clone->step.get()))
-                cloned_references.push_back(subplan_reference);
-
             nodes_to_process.pop_back();
         }
         else
@@ -1204,18 +1136,56 @@ void QueryPlan::cloneSubplanAndReplace(Node * node_to_replace, Node * subplan_ro
             nodes_to_process.push_back(Frame{ .node = child, .clone = child_clone });
         }
     }
+}
 
-    /// A cloned CommonSubplanReferenceStep must reference the clone of its subplan root whenever the root
-    /// belongs to the cloned subplan. Keeping the original pointer would tie the two plans together:
-    /// the in-memory buffer optimization rewrites the *referenced* node's step
-    /// (see useMemoryBufferForCommonSubplanResult), so optimizing one plan would mutate the other one,
-    /// and the consumer would end up in a different pipeline than its producer.
-    /// A reference to a node outside of the cloned subplan is left as is.
-    for (auto * subplan_reference : cloned_references)
+QueryPlan QueryPlan::clone() const
+{
+    QueryPlan result;
+    result.nodes.emplace_back(Node{ .step = {}, .children = {} });
+    auto * current_subplan_copy_root = &result.nodes.back();
+
+    result.cloneInplace(current_subplan_copy_root, root);
+    result.root = current_subplan_copy_root;
+
+    return result;
+}
+
+void QueryPlan::cloneSubplanAndReplace(Node * node_to_replace, Node * subplan_root, Nodes & nodes)
+{
+    if (!subplan_root)
+        throw Exception(ErrorCodes::LOGICAL_ERROR, "Cannot clone subplan in place because subplan root is null");
+
+    struct Frame
     {
-        auto it = original_to_clone.find(subplan_reference->getSubplanReferenceRoot());
-        if (it != original_to_clone.end())
-            subplan_reference->setSubplanReferenceRoot(it->second);
+        Node * node;
+        Node * clone;
+        std::vector<Node *> children = {};
+    };
+
+    std::vector<Frame> nodes_to_process{ Frame{ .node = subplan_root, .clone = node_to_replace } };
+
+    while (!nodes_to_process.empty())
+    {
+        auto & frame = nodes_to_process.back();
+        if (frame.children.size() == frame.node->children.size())
+        {
+            frame.clone->step = frame.node->step->clone();
+            frame.clone->children = std::move(frame.children);
+            nodes_to_process.pop_back();
+        }
+        else
+        {
+            size_t next_child = frame.children.size();
+            auto * child = frame.node->children[next_child];
+
+            nodes.emplace_back(Node{ .step = {} });
+            nodes.back().children.reserve(child->children.size());
+            auto * child_clone = &nodes.back();
+
+            frame.children.push_back(child_clone);
+
+            nodes_to_process.push_back(Frame{ .node = child, .clone = child_clone });
+        }
     }
 }
 

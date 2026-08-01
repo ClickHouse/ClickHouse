@@ -490,12 +490,6 @@ public:
             Name::name, arguments, function_json_value_return_type_allow_nullable);
     }
 
-    DataTypePtr getReturnTypeForDefaultImplementationForDynamic(const DataTypes & arguments) const override
-    {
-        return Impl<DummyJSONParser, DefaultJSONStringSerializer<DummyJSONParser::Element>>::getReturnTypeForDynamic(
-            arguments, function_json_value_return_type_allow_nullable);
-    }
-
     ColumnPtr executeImpl(const ColumnsWithTypeAndName & arguments, const DataTypePtr & result_type, size_t input_rows_count) const override
     {
         /// Choose JSONParser.
@@ -549,14 +543,6 @@ public:
 
         if (FunctionSQLJSONHelpers::isMultiPathType(arguments[1].type))
             return FunctionSQLJSONHelpers::buildReturnType(arguments[1].type, std::make_shared<DataTypeUInt8>());
-
-        return std::make_shared<DataTypeUInt8>();
-    }
-
-    static DataTypePtr getReturnTypeForDynamic(const DataTypes & arguments, bool)
-    {
-        if (arguments.size() >= 2 && FunctionSQLJSONHelpers::isMultiPathType(arguments[1]))
-            return FunctionSQLJSONHelpers::buildReturnType(arguments[1], std::make_shared<DataTypeUInt8>());
 
         return std::make_shared<DataTypeUInt8>();
     }
@@ -625,19 +611,6 @@ public:
         {
             DataTypePtr string_type = std::make_shared<DataTypeString>();
             return std::make_shared<DataTypeNullable>(string_type);
-        }
-
-        return std::make_shared<DataTypeString>();
-    }
-
-    static DataTypePtr getReturnTypeForDynamic(const DataTypes & arguments, bool function_json_value_return_type_allow_nullable)
-    {
-        if (arguments.size() >= 2 && FunctionSQLJSONHelpers::isMultiPathType(arguments[1]))
-        {
-            DataTypePtr leaf_type = std::make_shared<DataTypeString>();
-            if (function_json_value_return_type_allow_nullable)
-                leaf_type = makeNullable(leaf_type);
-            return FunctionSQLJSONHelpers::buildReturnType(arguments[1], leaf_type);
         }
 
         return std::make_shared<DataTypeString>();
@@ -726,14 +699,6 @@ public:
 
         if (FunctionSQLJSONHelpers::isMultiPathType(arguments[1].type))
             return FunctionSQLJSONHelpers::buildReturnType(arguments[1].type, std::make_shared<DataTypeString>());
-
-        return std::make_shared<DataTypeString>();
-    }
-
-    static DataTypePtr getReturnTypeForDynamic(const DataTypes & arguments, bool)
-    {
-        if (arguments.size() >= 2 && FunctionSQLJSONHelpers::isMultiPathType(arguments[1]))
-            return FunctionSQLJSONHelpers::buildReturnType(arguments[1], std::make_shared<DataTypeString>());
 
         return std::make_shared<DataTypeString>();
     }

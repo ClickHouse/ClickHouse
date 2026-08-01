@@ -112,13 +112,6 @@ bool ColumnMap::isDefaultAt(size_t n) const
     return nested->isDefaultAt(n);
 }
 
-UInt64 ColumnMap::getNumberOfDefaultRows() const
-{
-    /// One vcall, served by `ColumnArray::getNumberOfDefaultRows`. The IColumnHelper
-    /// default would call `isDefaultAt` per row.
-    return nested->getNumberOfDefaultRows();
-}
-
 std::string_view ColumnMap::getDataAt(size_t) const
 {
     throw Exception(ErrorCodes::NOT_IMPLEMENTED, "Method getDataAt is not supported for {}", getName());
@@ -472,18 +465,18 @@ void ColumnMap::takeExactDynamicStructureFrom(const IColumn & source)
     nested->takeExactDynamicStructureFrom(*source_map.getNestedColumnPtr());
 }
 
-ColumnMap::Statistics ColumnMap::calculateStatisticsForRange(size_t start, size_t end) const
+ColumnMap::StatisticsPtr ColumnMap::calculateStatisticsForRange(size_t start, size_t end) const
 {
     const auto & offsets = getNestedColumn().getOffsets();
     size_t total_maps_size = offsets[ssize_t(end) - 1] - offsets[ssize_t(start) - 1];
-    return Statistics(start == end ? 0 : static_cast<Float64>(total_maps_size) / static_cast<Float64>(end - start), end - start);
+    return std::make_shared<Statistics>(start == end ? 0 : static_cast<Float64>(total_maps_size) / static_cast<Float64>(end - start), end - start);
 }
 
 ColumnMap::StatisticsPtr ColumnMap::getOrCalculateStatistics() const
 {
     if (statistics)
         return statistics;
-    return std::make_shared<Statistics>(calculateStatisticsForRange(0, size()));
+    return calculateStatisticsForRange(0, size());
 }
 
 void ColumnMap::takeOrCalculateStatisticsFrom(const VectorWithMemoryTracking<ColumnPtr> & source_columns)

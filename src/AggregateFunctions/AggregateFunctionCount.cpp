@@ -79,7 +79,7 @@ public:
             AggregateFunctionFactory::instance().get(getName(), NullsAction::EMPTY, {}, {}, properties), DataTypes{}, Array{});
     }
 
-    void mergeImpl(AggregateDataPtr __restrict place, ConstAggregateDataPtr rhs, Arena *) const override
+    void merge(AggregateDataPtr __restrict place, ConstAggregateDataPtr rhs, Arena *) const override
     {
         data(place).count += data(rhs).count;
     }

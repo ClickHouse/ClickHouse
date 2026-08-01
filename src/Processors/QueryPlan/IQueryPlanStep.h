@@ -171,18 +171,6 @@ public:
     /// Returns true if the step can remove any columns from the output using removeUnusedColumns.
     virtual bool canRemoveColumnsFromOutput() const;
 
-    /// Different Steps have different stages of execution.
-    /// For example JoinStep has build and probe stages.
-    /// The group tag is used in EXPLAIN ANALYZE in order to track
-    /// correctly the time that a step spent doing work in a stage.
-    /// Each step knows its stages (see AggregatingStage,
-    /// JoinStage, SortingStage etc.). When adding new steps with stages
-    /// In order for EXPLAIN ANALYZE to track all the time for every step
-    /// redefine the methods below when adding a new step with several stages
-    /// Follow the pattern of classes with multi stage execution that already implements these methods
-    virtual std::vector<size_t> getStepGroups() const { return {0}; }
-    virtual String getStepGroupName(size_t) const { return {}; }
-
 protected:
     virtual void updateOutputHeader() = 0;
 

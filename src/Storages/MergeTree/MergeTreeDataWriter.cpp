@@ -31,6 +31,8 @@
 #include <Common/ElapsedTimeProfileEventIncrement.h>
 #include <Common/Exception.h>
 #include <Common/HashTable/HashMap.h>
+#include <Common/Jemalloc.h>
+#include <Common/JemallocMergeTreeArena.h>
 #include <Common/OpenTelemetryTraceContext.h>
 #include <Common/intExp.h>
 #include <Common/logger_useful.h>
@@ -96,7 +98,6 @@ namespace MergeTreeSetting
     extern const MergeTreeSettingsUInt64 min_free_disk_bytes_to_perform_insert;
     extern const MergeTreeSettingsFloat min_free_disk_ratio_to_perform_insert;
     extern const MergeTreeSettingsBool optimize_row_order;
-    extern const MergeTreeSettingsBool compute_exact_num_defaults_for_sparse_columns;
     extern const MergeTreeSettingsFloat ratio_of_defaults_for_sparse_serialization;
     extern const MergeTreeSettingsMergeTreeSerializationInfoVersion serialization_info_version;
     extern const MergeTreeSettingsMergeTreeStringSerializationVersion string_serialization_version;
@@ -405,14 +406,7 @@ MergeTreeIndices collectSkipIndicesToMaterialize(
         if (is_virtual_column_index(index))
             continue;
 
-        auto index_ptr = MergeTreeIndexFactory::instance().get(metadata_snapshot, index, merge_tree_settings);
-
-        /// Inert indices (a removed index type kept only for attach compatibility) hold no data and
-        /// cannot be materialized. Skip them so inserts into an attached legacy table do not throw.
-        if (index_ptr->isInert())
-            continue;
-
-        indices.emplace_back(std::move(index_ptr));
+        indices.emplace_back(MergeTreeIndexFactory::instance().get(metadata_snapshot, index, merge_tree_settings));
     }
 
     return indices;
@@ -483,8 +477,13 @@ void MergeTreeTemporaryPart::prewarmCaches()
 }
 
 BlocksWithPartition MergeTreeDataWriter::splitBlockIntoParts(
-    Block && block, size_t max_parts, const StorageMetadataPtr & metadata_snapshot, ContextPtr context)
+    Block && block, size_t max_parts, const StorageMetadataPtr & metadata_snapshot, ContextPtr context, IColumn::Selector * out_selector)
 {
+    /// out_selector is left empty when the block is not split (a single resulting partition);
+    /// the caller then knows every row belongs to the only partition.
+    if (out_selector)
+        out_selector->clear();
+
     BlocksWithPartition result;
     if (block.empty() || !block.rows())
     {
@@ -553,6 +552,10 @@ BlocksWithPartition MergeTreeDataWriter::splitBlockIntoParts(
 
     for (auto & item : result)
         item.partition_id = item.partition.getID(metadata_snapshot->getPartitionKey().sample_block);
+
+    /// Hand the row -> partition-index mapping to the caller (deduplication uses it).
+    if (out_selector)
+        *out_selector = std::move(selector);
 
     return result;
 }
@@ -864,7 +867,13 @@ MergeTreeTemporaryPartPtr MergeTreeDataWriter::writeTempPartImpl(
         reservation = data.reserveSpacePreferringTTLRules(metadata_snapshot, expected_size, move_ttl_infos, time(nullptr), 0, true);
     }
 
-    VolumePtr data_part_volume = createVolumeFromReservation(reservation, volume);
+    /// The `SingleDiskVolume` is stored on the part and lives for its whole lifetime, so build it in
+    /// the dedicated arena (`build()` below self-scopes; the tail metadata is re-homed further down).
+    VolumePtr data_part_volume;
+    {
+        ScopedJemallocThreadArena mergetree_arena_scope(JemallocMergeTreeArena::getArenaIndex());
+        data_part_volume = createVolumeFromReservation(reservation, volume);
+    }
 
     auto new_data_part = data.getDataPartBuilder(part_name, data_part_volume, part_dir, getReadSettings())
         .withPartFormat(data.choosePartFormat(expected_size, block.rows(), new_part_level, /*projection =*/nullptr))
@@ -881,7 +890,6 @@ MergeTreeTemporaryPartPtr MergeTreeDataWriter::writeTempPartImpl(
     {
         static_cast<double>((*data_settings)[MergeTreeSetting::ratio_of_defaults_for_sparse_serialization]),
         true,
-        (*data_settings)[MergeTreeSetting::compute_exact_num_defaults_for_sparse_columns],
         (*data_settings)[MergeTreeSetting::serialization_info_version],
         (*data_settings)[MergeTreeSetting::string_serialization_version],
         (*data_settings)[MergeTreeSetting::nullable_serialization_version],
@@ -946,6 +954,11 @@ MergeTreeTemporaryPartPtr MergeTreeDataWriter::writeTempPartImpl(
         updateTTL(context, ttl_entry, new_data_part->ttl_infos, new_data_part->ttl_infos.recompression_ttl[ttl_entry.result_column], block, false);
 
     new_data_part->ttl_infos.update(move_ttl_infos);
+
+    /// partition / ttl_infos / minmax (and patch source parts) are built above outside any
+    /// dedicated-arena scope, so they were allocated in the default arenas. Re-home them into the
+    /// dedicated arena, matching the merge / mutation / load paths.
+    new_data_part->moveMetadataToDedicatedArena();
 
     /// Pass empty TTL infos so that `RECOMPRESS` codecs are not selected at insert time;
     /// recompression should happen during merges, not on the initial write path.
@@ -1072,7 +1085,6 @@ MergeTreeTemporaryPartPtr MergeTreeDataWriter::writeProjectionPartImpl(
     {
         static_cast<double>((*data_settings)[MergeTreeSetting::ratio_of_defaults_for_sparse_serialization]),
         true,
-        (*data_settings)[MergeTreeSetting::compute_exact_num_defaults_for_sparse_columns],
         (*data_settings)[MergeTreeSetting::serialization_info_version],
         (*data_settings)[MergeTreeSetting::string_serialization_version],
         (*data_settings)[MergeTreeSetting::nullable_serialization_version],
