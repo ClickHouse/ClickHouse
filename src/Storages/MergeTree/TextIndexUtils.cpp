@@ -477,7 +477,7 @@ void MergeTextIndexesTask::flushDictionaryBlock()
     output_infos.clear();
 }
 
-bool MergeTextIndexesTask::isNewToken(const SortCursor & cursor) const
+bool MergeTextIndexesTask::isNewToken(const TokenSortCursor & cursor) const
 {
     const auto & input_str = assert_cast<const ColumnString &>(*inputs[cursor->order].tokens);
     const auto & output_str = assert_cast<const ColumnString &>(*output_tokens);
@@ -516,7 +516,7 @@ bool MergeTextIndexesTask::executeStep()
 
     do
     {
-        SortCursor current = queue.current();
+        TokenSortCursor current = queue.current();
 
         if (isNewToken(current))
         {
