@@ -896,6 +896,14 @@ if (TARGET ch_rust::delta_kernel_rs)
     target_link_libraries(dbms PRIVATE ch_rust::delta_kernel_rs)
 endif ()
 
+if (TARGET ch_rust::vortex)
+    # Link at the end of the dependencies list for the same reason as delta_kernel_rs above:
+    # the crate bundles its own copy of zstd, and our contrib must win at link time.
+    target_include_directories(dbms PRIVATE $<TARGET_PROPERTY:ch_rust::vortex,INTERFACE_INCLUDE_DIRECTORIES>)
+    target_link_libraries(clickhouse_common_io PRIVATE ch_rust::vortex)
+    target_link_libraries(dbms PRIVATE ch_rust::vortex)
+endif ()
+
 if (TARGET ch_contrib::sha3iuf)
     target_link_libraries(dbms PUBLIC ch_contrib::sha3iuf)
 endif()

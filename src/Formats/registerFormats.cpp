@@ -70,6 +70,8 @@ void registerInputFormatParquet(FormatFactory & factory);
 void registerOutputFormatParquet(FormatFactory & factory);
 void registerInputFormatArrow(FormatFactory & factory);
 void registerOutputFormatArrow(FormatFactory & factory);
+void registerInputFormatVortex(FormatFactory & factory);
+void registerOutputFormatVortex(FormatFactory & factory);
 void registerInputFormatAvro(FormatFactory & factory);
 void registerOutputFormatAvro(FormatFactory & factory);
 void registerInputFormatRawBLOB(FormatFactory & factory);
@@ -120,6 +122,7 @@ void registerNonTrivialPrefixAndSuffixCheckerJSONAsString(FormatFactory & factor
 void registerNonTrivialPrefixAndSuffixCheckerJSONAsObject(FormatFactory & factory);
 
 void registerArrowSchemaReader(FormatFactory & factory);
+void registerVortexSchemaReader(FormatFactory & factory);
 void registerParquetSchemaReader(FormatFactory & factory);
 void registerORCSchemaReader(FormatFactory & factory);
 void registerTSVSchemaReader(FormatFactory & factory);
@@ -235,6 +238,8 @@ void registerFormats()
     registerOutputFormatAvro(factory);
     registerInputFormatArrow(factory);
     registerOutputFormatArrow(factory);
+    registerInputFormatVortex(factory);
+    registerOutputFormatVortex(factory);
     registerInputFormatNpy(factory);
     registerOutputFormatNpy(factory);
 
@@ -276,6 +281,7 @@ void registerFormats()
     registerNonTrivialPrefixAndSuffixCheckerJSONAsObject(factory);
 
     registerArrowSchemaReader(factory);
+    registerVortexSchemaReader(factory);
     registerParquetSchemaReader(factory);
     registerORCSchemaReader(factory);
     registerTSVSchemaReader(factory);

@@ -1,0 +1,15 @@
+[package]
+edition = "2021"
+name = "_ch_rust_vortex"
+version = "0.1.0"
+
+[dependencies]
+# The arrow version must match the one used by the `vortex` crate, so that Arrow data can be
+# passed between this crate and `vortex` without conversion.
+arrow-array = "58.4.0"
+arrow-schema = "58.4.0"
+futures = "0.3"
+vortex = { version = "0.83.0", default-features = false, features = ["files", "zstd"] }
+
+[lib]
+crate-type = ["staticlib"]

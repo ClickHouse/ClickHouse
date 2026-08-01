@@ -1,0 +1,46 @@
+Round trip:
+0	0	\N	[]	(0,'0')	0	2020-01-01	2020-01-01 01:02:03.123456	0	0	1	0\0
+1	1	1	[0]	(1,'1')	0.125	2020-01-02	2020-01-01 01:02:04.123456	1	0.14285714285714285	0	1\0
+2	2	\N	[0,1]	(2,'2')	0.25	2020-01-03	2020-01-01 01:02:05.123456	2	0.2857142857142857	1	2\0
+3	3	3	[0,1,2]	(3,'3')	0.375	2020-01-04	2020-01-01 01:02:06.123456	0	0.42857142857142855	0	3\0
+4	4	\N	[]	(4,'4')	0.5	2020-01-05	2020-01-01 01:02:07.123456	1	0.5714285714285714	1	4\0
+5	5	5	[0]	(5,'5')	0.625	2020-01-06	2020-01-01 01:02:08.123456	2	0.7142857142857143	0	5\0
+6	6	\N	[0,1]	(6,'6')	0.75	2020-01-07	2020-01-01 01:02:09.123456	0	0.8571428571428571	1	6\0
+7	7	7	[0,1,2]	(7,'7')	0.875	2020-01-08	2020-01-01 01:02:10.123456	1	1	0	7\0
+8	8	\N	[]	(8,'8')	1	2020-01-09	2020-01-01 01:02:11.123456	2	1.1428571428571428	1	8\0
+9	9	9	[0]	(9,'9')	1.125	2020-01-10	2020-01-01 01:02:12.123456	0	1.2857142857142858	0	9\0
+Schema inference:
+n	UInt64					
+s	String					
+nullable	Nullable(UInt64)					
+arr	Array(UInt8)					
+t	Tuple(\n    `1` UInt64,\n    `2` String)					
+dec	Decimal(18, 3)					
+d	Date32					
+dt	DateTime64(6, \'UTC\')					
+lc	String					
+f	Float64					
+b	UInt8					
+fs	String					
+Count from metadata:
+10
+Projection:
+1	1
+8	8
+Reading a subset of columns with an explicit schema and a missing column:
+0	
+1	
+2	
+Constant column and count without columns:
+42
+42
+Empty file:
+0
+n	UInt64					
+s	String					
+Larger data with compressible patterns survives the round trip:
+100000	4999950000	100000	10	0
+Magic bytes:
+VTXF
+Truncated file produces an error:
+INCORRECT_DATA

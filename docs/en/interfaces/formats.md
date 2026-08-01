@@ -113,6 +113,7 @@ The supported formats are:
 | [Arrow](./formats/Arrow/Arrow.md)                                                                          | ✔   | ✔     |
 | [ArrowStream](./formats/Arrow/ArrowStream.md)                                                              | ✔   | ✔     |
 | [ORC](./formats/ORC.md)                                                                                    | ✔   | ✔     |
+| [Vortex](./formats/Vortex.md)                                                                              | ✔   | ✔     |
 | [One](./formats/One.md)                                                                                    | ✔   | ✗     |
 | [Npy](./formats/Npy.md)                                                                                    | ✔   | ✔     |
 | [RowBinary](./formats/RowBinary/RowBinary.md)                                                              | ✔   | ✔     |
