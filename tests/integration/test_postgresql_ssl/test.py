@@ -785,3 +785,31 @@ def test_certificate_path_outside_user_files_is_rejected(started_cluster):
         error = node.query_and_get_error("SELECT dictGetUInt32(dict_bad_path, 'value', toUInt64(1))")
         node.query("DROP DICTIONARY dict_bad_path")
     assert "PATH_ACCESS_DENIED" in error
+
+
+def test_relative_certificate_path_survives_restart(started_cluster):
+    # A relative certificate path stored in the metadata of a persistent object must
+    # keep resolving against `user_files` after a restart. The `user_files` boundary
+    # check is skipped when replaying persisted metadata, but the resolution of the
+    # relative path is not: otherwise libpq would resolve the stored literal against
+    # the working directory of the server and the definition would stop working.
+    node.query("DROP TABLE IF EXISTS pg_relative_path SYNC")
+    node.query(
+        f"""
+        CREATE TABLE pg_relative_path (key Int32, value Int32)
+        ENGINE = PostgreSQL(pg_ssl, sslmode='verify-full', sslrootcert='{CA_CERT_NAME}')
+        """
+    )
+    assert node.query("SELECT count() FROM pg_relative_path").strip() == "10"
+
+    node.query("DROP DATABASE IF EXISTS pg_relative_path_db")
+    node.query(f"CREATE DATABASE pg_relative_path_db ENGINE = PostgreSQL(pg_ssl_db, sslmode='verify-full', sslrootcert='{CA_CERT_NAME}')")
+    assert node.query("SELECT count() FROM pg_relative_path_db.test_table").strip() == "10"
+
+    node.restart_clickhouse()
+
+    assert node.query("SELECT count() FROM pg_relative_path").strip() == "10"
+    assert node.query("SELECT count() FROM pg_relative_path_db.test_table").strip() == "10"
+
+    node.query("DROP TABLE pg_relative_path SYNC")
+    node.query("DROP DATABASE pg_relative_path_db")

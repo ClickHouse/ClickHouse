@@ -627,7 +627,7 @@ void registerDatabaseMaterializedPostgreSQL(DatabaseFactory & factory)
             /// settings are merged in below, and the merged result is validated once, with the
             /// replay exemption applied uniformly to both the named collection and the SETTINGS clause.
             configuration = StoragePostgreSQL::processNamedCollectionResult(
-                *named_collection, /*storage_settings=*/ nullptr, args.context, /*require_table=*/ false, /*validate_ssl_certificate_paths=*/ false);
+                *named_collection, /*storage_settings=*/ nullptr, args.context, /*require_table=*/ false, /*enforce_ssl_certificate_path_boundary=*/ false);
         }
         else
         {
@@ -710,12 +710,13 @@ void registerDatabaseMaterializedPostgreSQL(DatabaseFactory & factory)
         if (ssl_settings[MaterializedPostgreSQLSetting::materialized_postgresql_ssl_key].isChanged())
             configuration.ssl_key = ssl_settings[MaterializedPostgreSQLSetting::materialized_postgresql_ssl_key];
 
-        /// The SETTINGS clause could have introduced certificate paths on top of the already
-        /// validated named collection, so validate the merged result. Skipped for an internal
-        /// metadata replay for the same reason as the host filter above: a stored definition
-        /// must keep loading even if `user_files_path` changed since it was created.
-        if (!is_internal_metadata_replay)
-            StoragePostgreSQL::validateSSLCertificatePaths(configuration, args.context);
+        /// The SETTINGS clause could have introduced certificate paths on top of the named
+        /// collection, so validate the merged result. The `user_files` boundary check is skipped
+        /// for an internal metadata replay for the same reason as the host filter above: a stored
+        /// definition must keep loading even if `user_files_path` changed since it was created.
+        /// Relative paths are resolved against `user_files_path` in both cases, so the stored
+        /// definition keeps the meaning it had at CREATE time.
+        StoragePostgreSQL::validateSSLCertificatePaths(configuration, args.context, /*enforce_user_files_boundary=*/ !is_internal_metadata_replay);
 
         auto connection_info = postgres::formatConnectionString(
             configuration.database,

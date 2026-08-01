@@ -80,23 +80,26 @@ public:
     /// `storage_settings` may be nullptr for callers that do not honor the `PostgreSQLSettings`
     /// (e.g. the `MaterializedPostgreSQL` engines): the setting names are then rejected in named
     /// collections instead of being accepted and silently ignored.
-    /// `validate_ssl_certificate_paths` must be false when the caller either revalidates the final
-    /// configuration itself (the `MaterializedPostgreSQL` engines merge the `materialized_postgresql_ssl_*`
-    /// settings in first) or replays previously persisted metadata, where a stored definition must
-    /// keep loading even if `user_files_path` changed since it was created (see
-    /// `validateSSLCertificatePaths`); only the caller can tell a replay from fresh DDL.
-    static Configuration getConfiguration(ASTs engine_args, ContextPtr context, PostgreSQLSettings * storage_settings, const StorageID * table_id = nullptr, bool validate_ssl_certificate_paths = true);
+    /// `enforce_ssl_certificate_path_boundary` must be false when the caller either revalidates the
+    /// final configuration itself (the `MaterializedPostgreSQL` engines merge the
+    /// `materialized_postgresql_ssl_*` settings in first) or replays previously persisted metadata,
+    /// where a stored definition must keep loading even if `user_files_path` changed since it was
+    /// created (see `validateSSLCertificatePaths`); only the caller can tell a replay from fresh DDL.
+    static Configuration getConfiguration(ASTs engine_args, ContextPtr context, PostgreSQLSettings * storage_settings, const StorageID * table_id = nullptr, bool enforce_ssl_certificate_path_boundary = true);
 
-    static Configuration processNamedCollectionResult(const NamedCollection & named_collection, PostgreSQLSettings * storage_settings, ContextPtr context_, bool require_table = true, bool validate_ssl_certificate_paths = true);
+    static Configuration processNamedCollectionResult(const NamedCollection & named_collection, PostgreSQLSettings * storage_settings, ContextPtr context_, bool require_table = true, bool enforce_ssl_certificate_path_boundary = true);
 
     /// TLS/SSL certificate and key paths accepted from SQL (table functions, engines, DDL-created
     /// dictionaries) must reside inside `user_files_path`: the files are opened by the server process
     /// with its own privileges, so an unrestricted path would let any user who can define a PostgreSQL
     /// source make the server open arbitrary local certificate and key files. Resolves relative paths
     /// against `user_files_path` (in place) and throws `PATH_ACCESS_DENIED` for paths outside of it.
-    /// Not applied to dictionaries defined in server configuration files, which are trusted, and in
-    /// clickhouse-local, which runs with the privileges of the user who started it.
-    static void validateSSLCertificatePaths(Configuration & configuration, const ContextPtr & context);
+    /// `enforce_user_files_boundary` disables only the latter, for callers replaying persisted
+    /// metadata: relative paths are still resolved against `user_files_path`, so a stored definition
+    /// keeps the meaning it had at CREATE time. Not applied to dictionaries defined in server
+    /// configuration files, which are trusted, and in clickhouse-local, which runs with the
+    /// privileges of the user who started it.
+    static void validateSSLCertificatePaths(Configuration & configuration, const ContextPtr & context, bool enforce_user_files_boundary = true);
 
     static ColumnsDescription getTableStructureFromData(
         const postgres::PoolWithFailoverPtr & pool_,

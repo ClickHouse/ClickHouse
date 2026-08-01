@@ -648,7 +648,7 @@ void registerStorageMaterializedPostgreSQL(StorageFactory & factory)
         /// settings are merged in below, and the merged result is validated once, with the
         /// replay exemption applied uniformly to both the named collection and the SETTINGS clause.
         auto configuration = StoragePostgreSQL::getConfiguration(
-            args.engine_args, args.getContext(), /*storage_settings=*/ nullptr, /*table_id=*/ nullptr, /*validate_ssl_certificate_paths=*/ false);
+            args.engine_args, args.getContext(), /*storage_settings=*/ nullptr, /*table_id=*/ nullptr, /*enforce_ssl_certificate_path_boundary=*/ false);
 
         /// A named collection may specify the endpoint as `addresses_expr`, which fills only
         /// `configuration.addresses` and leaves `host` / `port` empty, while the connection string
@@ -699,14 +699,16 @@ void registerStorageMaterializedPostgreSQL(StorageFactory & factory)
         if (ssl_settings[MaterializedPostgreSQLSetting::materialized_postgresql_ssl_key].isChanged())
             configuration.ssl_key = ssl_settings[MaterializedPostgreSQLSetting::materialized_postgresql_ssl_key];
 
-        /// The SETTINGS clause could have introduced certificate paths on top of the already
-        /// validated named collection, so validate the merged result. Skipped when replaying
-        /// previously persisted metadata, for the same reason as the address validation above:
-        /// a stored definition must keep loading even if `user_files_path` changed since it was
-        /// created. A user ATTACH with a full table definition is a fresh definition, not a
-        /// replay, and stays fail-closed.
-        if (!isLoadingFromExistingMetadata(args.mode) && !args.query.attach_short_syntax)
-            StoragePostgreSQL::validateSSLCertificatePaths(configuration, args.getContext());
+        /// The SETTINGS clause could have introduced certificate paths on top of the named
+        /// collection, so validate the merged result. The `user_files` boundary check is skipped
+        /// when replaying previously persisted metadata, for the same reason as the address
+        /// validation above: a stored definition must keep loading even if `user_files_path`
+        /// changed since it was created. Relative paths are resolved against `user_files_path` in
+        /// both cases, so the stored definition keeps the meaning it had at CREATE time. A user
+        /// ATTACH with a full table definition is a fresh definition, not a replay, and stays
+        /// fail-closed.
+        const bool enforce_ssl_certificate_path_boundary = !isLoadingFromExistingMetadata(args.mode) && !args.query.attach_short_syntax;
+        StoragePostgreSQL::validateSSLCertificatePaths(configuration, args.getContext(), enforce_ssl_certificate_path_boundary);
 
         auto connection_info = postgres::formatConnectionString(
             configuration.database,

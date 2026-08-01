@@ -603,7 +603,7 @@ SinkToStoragePtr StoragePostgreSQL::write(
     return std::make_shared<PostgreSQLSink>(metadata_snapshot, pool->get(), remote_table_or_query.getTableName(), remote_table_schema, on_conflict);
 }
 
-void StoragePostgreSQL::validateSSLCertificatePaths(Configuration & configuration, const ContextPtr & context)
+void StoragePostgreSQL::validateSSLCertificatePaths(Configuration & configuration, const ContextPtr & context, bool enforce_user_files_boundary)
 {
     /// clickhouse-local runs with the privileges of the user who started it, there is no file boundary to enforce.
     if (context->getApplicationType() == Context::ApplicationType::LOCAL)
@@ -618,9 +618,15 @@ void StoragePostgreSQL::validateSSLCertificatePaths(Configuration & configuratio
             return;
 
         /// libpq would resolve a relative path against the working directory of the server process,
-        /// which the user cannot rely on; resolve it against `user_files_path` instead.
+        /// which the user cannot rely on; resolve it against `user_files_path` instead. This is done
+        /// unconditionally, also when the boundary check below is skipped for a metadata replay: the
+        /// metadata keeps the original relative literal, so a persisted definition must resolve it
+        /// the same way after a restart as it did at CREATE time.
         if (fs::path(path).is_relative())
             path = (fs::path(user_files_path) / path).lexically_normal().string();
+
+        if (!enforce_user_files_boundary)
+            return;
 
         if (!fileOrSymlinkPathStartsWith(path, user_files_path))
             throw Exception(ErrorCodes::PATH_ACCESS_DENIED,
@@ -636,7 +642,7 @@ void StoragePostgreSQL::validateSSLCertificatePaths(Configuration & configuratio
     validate_path(configuration.ssl_key, "sslkey");
 }
 
-StoragePostgreSQL::Configuration StoragePostgreSQL::processNamedCollectionResult(const NamedCollection & named_collection, PostgreSQLSettings * storage_settings, ContextPtr context_, bool require_table, bool validate_ssl_certificate_paths)
+StoragePostgreSQL::Configuration StoragePostgreSQL::processNamedCollectionResult(const NamedCollection & named_collection, PostgreSQLSettings * storage_settings, ContextPtr context_, bool require_table, bool enforce_ssl_certificate_path_boundary)
 {
     StoragePostgreSQL::Configuration configuration;
     ValidateKeysMultiset<ExternalDatabaseEqualKeysSet> required_arguments = {"user", "username", "password", "database", "db"};
@@ -690,8 +696,7 @@ StoragePostgreSQL::Configuration StoragePostgreSQL::processNamedCollectionResult
     configuration.ssl_cert = named_collection.getOrDefault<String>("sslcert", "");
     configuration.ssl_key = named_collection.getOrDefault<String>("sslkey", "");
 
-    if (validate_ssl_certificate_paths)
-        validateSSLCertificatePaths(configuration, context_);
+    validateSSLCertificatePaths(configuration, context_, enforce_ssl_certificate_path_boundary);
 
     if (storage_settings)
         storage_settings->loadFromNamedCollection(named_collection);
@@ -699,12 +704,12 @@ StoragePostgreSQL::Configuration StoragePostgreSQL::processNamedCollectionResult
     return configuration;
 }
 
-StoragePostgreSQL::Configuration StoragePostgreSQL::getConfiguration(ASTs engine_args, ContextPtr context, PostgreSQLSettings * storage_settings, const StorageID * table_id, bool validate_ssl_certificate_paths)
+StoragePostgreSQL::Configuration StoragePostgreSQL::getConfiguration(ASTs engine_args, ContextPtr context, PostgreSQLSettings * storage_settings, const StorageID * table_id, bool enforce_ssl_certificate_path_boundary)
 {
     StoragePostgreSQL::Configuration configuration;
     if (auto named_collection = tryGetNamedCollectionWithOverrides(engine_args, context, true, nullptr, table_id))
     {
-        configuration = StoragePostgreSQL::processNamedCollectionResult(*named_collection, storage_settings, context, /*require_table=*/ true, validate_ssl_certificate_paths);
+        configuration = StoragePostgreSQL::processNamedCollectionResult(*named_collection, storage_settings, context, /*require_table=*/ true, enforce_ssl_certificate_path_boundary);
     }
     else
     {
@@ -768,14 +773,16 @@ void registerStoragePostgreSQL(StorageFactory & factory)
         PostgreSQLSettings postgresql_settings;
         postgresql_settings.loadFromQueryContext(*args.getLocalContext());
 
-        /// Skip the certificate-path validation when replaying previously persisted metadata
+        /// Skip the `user_files` boundary check when replaying previously persisted metadata
         /// (server startup, and DETACH / ATTACH with the short syntax, which re-reads the stored
         /// definition): a definition that was valid at CREATE time must keep loading even if
-        /// `user_files_path` changed since it was created. A user ATTACH with a full table
-        /// definition is a fresh definition, not a replay, and stays fail-closed. This mirrors
-        /// the `MaterializedPostgreSQL` engine registration below in this repository.
-        const bool validate_ssl_certificate_paths = !isLoadingFromExistingMetadata(args.mode) && !args.query.attach_short_syntax;
-        auto configuration = StoragePostgreSQL::getConfiguration(args.engine_args, args.getLocalContext(), &postgresql_settings, &args.table_id, validate_ssl_certificate_paths);
+        /// `user_files_path` changed since it was created. Relative paths are still resolved
+        /// against `user_files_path`, so the stored definition keeps its original meaning. A user
+        /// ATTACH with a full table definition is a fresh definition, not a replay, and stays
+        /// fail-closed. This mirrors the `MaterializedPostgreSQL` engine registration below in
+        /// this repository.
+        const bool enforce_ssl_certificate_path_boundary = !isLoadingFromExistingMetadata(args.mode) && !args.query.attach_short_syntax;
+        auto configuration = StoragePostgreSQL::getConfiguration(args.engine_args, args.getLocalContext(), &postgresql_settings, &args.table_id, enforce_ssl_certificate_path_boundary);
 
         if (args.storage_def)
             postgresql_settings.loadFromQuery(*args.storage_def);

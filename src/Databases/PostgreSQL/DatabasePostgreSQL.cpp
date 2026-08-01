@@ -541,7 +541,7 @@ void registerDatabasePostgreSQL(DatabaseFactory & factory)
         {
             configuration = StoragePostgreSQL::processNamedCollectionResult(
                 *named_collection, &postgresql_settings, args.context, /*require_table=*/ false,
-                /*validate_ssl_certificate_paths=*/ !is_internal_metadata_replay);
+                /*enforce_ssl_certificate_path_boundary=*/ !is_internal_metadata_replay);
             use_table_cache = named_collection->getOrDefault<UInt64>("use_table_cache", 0);
         }
         else
