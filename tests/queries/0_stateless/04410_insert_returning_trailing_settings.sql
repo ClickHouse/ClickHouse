@@ -15,7 +15,7 @@ INSERT INTO t_ret_settings_src VALUES (1), (2), (3);
 SELECT 'select returning trailing settings';
 INSERT INTO t_ret_settings SELECT id FROM t_ret_settings_src
 RETURNING (SELECT count() FROM t_ret_settings)
-SETTINGS parallel_distributed_insert_select = 1;
+SETTINGS max_threads = 1;
 
 SELECT 'rows after insert';
 SELECT id FROM t_ret_settings ORDER BY id;
@@ -171,6 +171,16 @@ TRUNCATE TABLE t_ret_settings;
 INSERT INTO t_ret_settings SELECT 1
 RETURNING (SELECT count() FROM t_ret_settings)
 SETTINGS use_query_cache = 1; -- { serverError NOT_IMPLEMENTED }
+
+SELECT count() FROM t_ret_settings;
+
+-- Source-side distributed-insert-select optimization setting is rejected with RETURNING
+-- instead of being accepted and silently ignored.
+SELECT 'source parallel distributed insert-select setting is rejected';
+TRUNCATE TABLE t_ret_settings;
+INSERT INTO t_ret_settings SELECT 1
+RETURNING (SELECT count() FROM t_ret_settings)
+SETTINGS parallel_distributed_insert_select = 1; -- { serverError NOT_IMPLEMENTED }
 
 SELECT count() FROM t_ret_settings;
 

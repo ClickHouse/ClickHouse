@@ -1070,6 +1070,13 @@ BlockIO InterpreterInsertQuery::execute()
                 ErrorCodes::NOT_IMPLEMENTED,
                 "INSERT ... RETURNING is not supported with async_insert=1");
         }
+
+        if (query.select && settings[Setting::parallel_distributed_insert_select])
+        {
+            throw Exception(
+                ErrorCodes::NOT_IMPLEMENTED,
+                "INSERT ... RETURNING is not supported with parallel_distributed_insert_select=1");
+        }
     }
 
     if (query.select)

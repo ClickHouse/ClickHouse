@@ -7,13 +7,19 @@
 #include <Parsers/ASTFunction.h>
 #include <Parsers/ASTLiteral.h>
 #include <Parsers/ASTExpressionList.h>
+#include <Parsers/ASTQueryWithOutput.h>
+#include <Parsers/ASTSelectIntersectExceptQuery.h>
+#include <Parsers/ASTSelectQuery.h>
 #include <Parsers/ASTSelectWithUnionQuery.h>
 #include <Parsers/ASTSetQuery.h>
+#include <Parsers/ASTSubquery.h>
+#include <Parsers/InsertQuerySettingsPushDownVisitor.h>
 #include <Common/quoteString.h>
 #include <IO/WriteHelpers.h>
 #include <IO/Operators.h>
 #include <Parsers/ASTJSONHelpers.h>
 #include <Parsers/ASTJSONReadHelpers.h>
+#include <unordered_map>
 
 
 namespace DB
@@ -23,6 +29,146 @@ namespace ErrorCodes
 {
     extern const int INVALID_USAGE_OF_INPUT;
     extern const int BAD_ARGUMENTS;
+}
+
+namespace
+{
+
+void mergeSettingsAstWithOverride(ASTPtr & target_ast, const ASTPtr & source_ast)
+{
+    if (!source_ast)
+        return;
+
+    if (!target_ast)
+    {
+        target_ast = source_ast->clone();
+        return;
+    }
+
+    auto & source_settings = source_ast->as<ASTSetQuery &>();
+    auto & target_settings = target_ast->as<ASTSetQuery &>();
+
+    std::unordered_map<String, size_t> target_change_positions;
+    target_change_positions.reserve(target_settings.changes.size());
+    for (size_t i = 0; i < target_settings.changes.size(); ++i)
+        target_change_positions[target_settings.changes[i].name] = i;
+
+    std::unordered_map<String, size_t> target_default_positions;
+    target_default_positions.reserve(target_settings.default_settings.size());
+    for (size_t i = 0; i < target_settings.default_settings.size(); ++i)
+        target_default_positions[target_settings.default_settings[i]] = i;
+
+    auto eraseDefault = [&](const String & name)
+    {
+        auto it = target_default_positions.find(name);
+        if (it == target_default_positions.end())
+            return;
+
+        target_settings.default_settings.erase(target_settings.default_settings.begin() + it->second);
+        target_default_positions.clear();
+        for (size_t i = 0; i < target_settings.default_settings.size(); ++i)
+            target_default_positions[target_settings.default_settings[i]] = i;
+    };
+
+    auto eraseChange = [&](const String & name)
+    {
+        auto it = target_change_positions.find(name);
+        if (it == target_change_positions.end())
+            return;
+
+        target_settings.changes.erase(target_settings.changes.begin() + it->second);
+        target_change_positions.clear();
+        for (size_t i = 0; i < target_settings.changes.size(); ++i)
+            target_change_positions[target_settings.changes[i].name] = i;
+    };
+
+    for (const auto & change : source_settings.changes)
+    {
+        eraseDefault(change.name);
+        if (auto it = target_change_positions.find(change.name); it != target_change_positions.end())
+            target_settings.changes[it->second] = change;
+        else
+        {
+            target_settings.changes.push_back(change);
+            target_change_positions[change.name] = target_settings.changes.size() - 1;
+        }
+    }
+
+    for (const auto & default_setting : source_settings.default_settings)
+    {
+        eraseChange(default_setting);
+        if (target_default_positions.contains(default_setting))
+            continue;
+
+        target_settings.default_settings.push_back(default_setting);
+        target_default_positions[default_setting] = target_settings.default_settings.size() - 1;
+    }
+}
+
+void collectTopLevelSourceSettings(const ASTPtr & select, ASTPtr & target_settings_ast)
+{
+    auto collect_top_level_impl = [&](auto && self, const ASTPtr & current, bool allow_subquery_unwrap) -> void
+    {
+        if (!current)
+            return;
+
+        if (const auto * select_with_union = current->as<ASTSelectWithUnionQuery>())
+        {
+            if (!select_with_union->list_of_selects)
+                return;
+
+            /// Match standalone SELECT precedence:
+            /// set-op-level SETTINGS apply first, then the last first-order arm overrides duplicates.
+            mergeSettingsAstWithOverride(target_settings_ast, select_with_union->settings_ast);
+            const auto & children = select_with_union->list_of_selects->children;
+            if (!children.empty())
+                self(self, children.back(), true);
+            return;
+        }
+
+        if (const auto * intersect_except = current->as<ASTSelectIntersectExceptQuery>())
+        {
+            mergeSettingsAstWithOverride(target_settings_ast, intersect_except->settings());
+            auto children = intersect_except->getListOfSelects();
+            if (!children.empty())
+                self(self, children.back(), true);
+            return;
+        }
+
+        if (allow_subquery_unwrap)
+        {
+            if (const auto * subquery = current->as<ASTSubquery>())
+            {
+                self(self, subquery->children.empty() ? ASTPtr{} : subquery->children.front(), false);
+                return;
+            }
+        }
+
+        if (const auto * query_with_output = dynamic_cast<const ASTQueryWithOutput *>(current.get()))
+            mergeSettingsAstWithOverride(target_settings_ast, query_with_output->settings_ast);
+
+        if (const auto * select_query = current->as<ASTSelectQuery>())
+            mergeSettingsAstWithOverride(target_settings_ast, select_query->settings());
+    };
+
+    collect_top_level_impl(collect_top_level_impl, select, true);
+}
+
+void rebuildInsertReturningSourceSettings(ASTInsertQuery & query)
+{
+    if (!query.returning_select || !query.select)
+        return;
+
+    query.source_select_settings_runtime_ast = query.source_select_settings_ast ? query.source_select_settings_ast->clone() : ASTPtr{};
+    InsertQuerySettingsPushDownVisitor::Data visitor_data{query.source_select_settings_runtime_ast};
+    InsertQuerySettingsPushDownVisitor(visitor_data).visit(query.select);
+
+    ASTPtr source_top_level_settings_ast;
+    collectTopLevelSourceSettings(query.select, source_top_level_settings_ast);
+    mergeSettingsAstWithOverride(source_top_level_settings_ast, query.source_select_settings_ast);
+    query.source_select_settings_global_ast = source_top_level_settings_ast;
+}
+
 }
 
 String ASTInsertQuery::getDatabase() const
@@ -214,6 +360,14 @@ void ASTInsertQuery::readJSON(const Poco::JSON::Object & json)
     if (source_select_settings_ast && !returning_select)
         throw Exception(ErrorCodes::BAD_ARGUMENTS,
             "'source_select_settings_ast' is only valid together with 'returning_select' during AST JSON deserialization");
+    if (source_select_settings_ast && !select)
+        throw Exception(ErrorCodes::BAD_ARGUMENTS,
+            "'source_select_settings_ast' is only valid for INSERT ... SELECT ... RETURNING during AST JSON deserialization");
+
+    /// `source_select_settings_runtime_ast` / `source_select_settings_global_ast` are parser-derived
+    /// execution carriers and are intentionally not serialized. Rebuild them so `clickhouse_json`
+    /// execution preserves source-only semantics and fail-close checks.
+    rebuildInsertReturningSourceSettings(*this);
 
     /// The parser produces exactly one destination form: `INSERT INTO FUNCTION f(...)` (table_function)
     /// or `INSERT INTO [db.]t` (the `database`/`table` identifiers; `table_id` is the normalized
