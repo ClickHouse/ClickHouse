@@ -14,6 +14,10 @@ SET join_algorithm = 'hash';
 -- getJoinLocked reject every LEFT or FULL join against the engine with its own
 -- "needs the same join_use_nulls setting" error, upstream of the guard under test.
 SET join_use_nulls = 0;
+-- enable_parallel_replicas is load-bearing: with parallel replicas the Join engine is read as a
+-- plain source and sent to the replicas as a temporary table, so getJoinLocked is not called at
+-- all and none of its rejections apply, neither the new one nor the pre-existing ones.
+SET enable_parallel_replicas = 0;
 
 DROP TABLE IF EXISTS t1;
 DROP TABLE IF EXISTS sj_all_left;
