@@ -5,6 +5,7 @@
 #include <DataTypes/IDataType.h>
 #include <Interpreters/Context_fwd.h>
 #include <Parsers/IAST_fwd.h>
+#include <Storages/VirtualColumnsDescription.h>
 
 namespace DB
 {
@@ -40,29 +41,37 @@ struct KeyDescription
     /// Types from sample block ordered in columns order.
     DataTypes data_types;
 
-    /// Additional key column added by storage type. Never changes after
-    /// initialization with non empty value. Doesn't stored in definition_ast,
+    /// Additional key columns added by storage type. Never change after
+    /// initialization with non empty value. Not stored in definition_ast,
     /// but added to expression_list_ast and all its derivatives.
-    std::optional<String> additional_column;
+    NamesAndTypesList additional_columns;
 
     /// ID of this specific order by key, make sense for engines which allow to change sorting key
     /// for example Iceberg.
     std::optional<Int32> sort_order_id;
 
-    /// Parse key structure from key definition. Requires all columns, available
-    /// in storage.
+    /// Parse key structure from key definition. Requires all columns available
+    /// in storage. Can contain additional columns defined by storage type (like
+    /// Version column in VersionedCollapsingMergeTree) or virtual columns
+    /// (like `_block_number` for MergeTreeQueue).
     static KeyDescription getKeyFromAST(
         const ASTPtr & definition_ast,
         const ColumnsDescription & columns,
-        ContextPtr context);
+        const VirtualColumnsDescription & virtuals,
+        const ContextPtr & context,
+        const NamesAndTypesList & additional_columns = {});
 
-    /// Sorting key can contain additional column defined by storage type (like
-    /// Version column in VersionedCollapsingMergeTree).
-    static KeyDescription getSortingKeyFromAST(
+    /// Build a primary key description from an explicit PRIMARY KEY. The PRIMARY KEY names a
+    /// prefix of the sorting key but cannot express per-column directions (`DESC`); the physical
+    /// order of the named columns is defined by ORDER BY, so the directions are inherited from the
+    /// sorting key. An implicitly defined primary key is built from the ORDER BY AST itself and
+    /// carries the directions naturally.
+    static KeyDescription getPrimaryKeyFromAST(
         const ASTPtr & definition_ast,
+        const KeyDescription & sorting_key,
         const ColumnsDescription & columns,
-        ContextPtr context,
-        const std::optional<String> & additional_column);
+        const VirtualColumnsDescription & virtuals,
+        const ContextPtr & context);
 
     /// Build an empty key description. It's different from the default constructor with some
     /// additional initializations.
@@ -72,14 +81,16 @@ struct KeyDescription
     /// changes in constant fields. Just wrapper for static methods.
     void recalculateWithNewColumns(
         const ColumnsDescription & new_columns,
-        ContextPtr context);
+        const VirtualColumnsDescription & virtuals,
+        const ContextPtr & context);
 
     /// Recalculate all expressions and fields for key with new ast without
     /// changes in constant fields. Just wrapper for static methods.
     void recalculateWithNewAST(
         const ASTPtr & new_ast,
         const ColumnsDescription & columns,
-        ContextPtr context);
+        const VirtualColumnsDescription & virtuals,
+        const ContextPtr & context);
 
     ASTPtr getOriginalExpressionList() const;
 
@@ -94,7 +105,12 @@ struct KeyDescription
     static bool moduloToModuloLegacyRecursive(ASTPtr node_expr);
 
     /// Parse description from string
-    static KeyDescription parse(const String & str, const ColumnsDescription & columns, ContextPtr context, bool allow_order);
+    static KeyDescription parse(
+        const String & str,
+        const ColumnsDescription & columns,
+        const VirtualColumnsDescription & virtuals,
+        const ContextPtr & context,
+        bool allow_order);
 };
 
 }

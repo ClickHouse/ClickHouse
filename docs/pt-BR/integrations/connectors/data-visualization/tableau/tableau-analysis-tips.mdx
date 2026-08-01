@@ -1,0 +1,70 @@
+---
+sidebarTitle: 'Dicas de análise'
+slug: /integrations/tableau/analysis-tips
+keywords: ['clickhouse', 'tableau', 'online', 'mysql', 'conectar', 'integrar', 'ui']
+description: 'Dicas de análise no Tableau ao usar o conector oficial do ClickHouse.'
+title: 'Dicas de análise'
+doc_type: 'guide'
+integration:
+  - support_level: 'core'
+  - category: 'data_visualization'
+---
+
+<div id="median-and-percentile-functions">
+  ## Funções MEDIAN() e PERCENTILE()
+</div>
+
+* No modo Live, as funções MEDIAN() e PERCENTILE() (a partir da versão 0.1.3 do conector) usam a [função quantile()() do ClickHouse](/pt-BR/reference/functions/aggregate-functions/quantile), o que acelera significativamente o cálculo, mas usa amostragem. Se você quiser obter resultados de cálculo exatos, use as funções `MEDIAN_EXACT()` e `PERCENTILE_EXACT()` (baseadas em [quantileExact()()](/pt-BR/reference/functions/aggregate-functions/quantileExact)).
+* No modo Extract, você não pode usar MEDIAN&#95;EXACT() e PERCENTILE&#95;EXACT() porque MEDIAN() e PERCENTILE() são sempre precisas (e lentas).
+
+<div id="additional-functions-for-calculated-fields-in-live-mode">
+  ## Funções adicionais para campos calculados no modo Live
+</div>
+
+O ClickHouse tem um grande número de funções que podem ser usadas na análise de dados — muito mais do que o Tableau oferece. Para facilitar o uso, adicionamos novas funções que podem ser usadas no modo Live ao criar Campos Calculados. Infelizmente, não é possível adicionar descrições a essas funções na interface do Tableau, então vamos descrevê-las aqui mesmo.
+
+* **[`-If` Combinador de agregação](/pt-BR/reference/functions/aggregate-functions/combinators#-if)** *(adicionado na v0.2.3)* - permite aplicar filtros no nível da linha diretamente no cálculo de agregação. As funções `SUM_IF(), AVG_IF(), COUNT_IF(), MIN_IF() & MAX_IF()` foram adicionadas.
+* **`BAR([my_int], [min_val_int], [max_val_int], [bar_string_length_int])`** *(adicionado na v0.2.1)* — Esqueça os gráficos de barras sem graça! Use a função `BAR()` em vez disso (equivalente a [`bar()`](/pt-BR/reference/functions/regular-functions/other-functions#bar) no ClickHouse). Por exemplo, este campo calculado retorna barras elegantes como String:
+  ```text
+  BAR([my_int], [min_val_int], [max_val_int], [bar_string_length_int]) + "  " + FORMAT_READABLE_QUANTITY([my_int])
+  ```
+  ```text
+  == BAR() ==
+  ██████████████████▊  327.06 million
+  █████  88.02 million
+  ███████████████  259.37 million
+  ```
+* **`COUNTD_UNIQ([my_field])`** *(adicionado na v0.2.0)* — Calcula o número aproximado de valores distintos do argumento. Equivalente a [uniq()](/pt-BR/reference/functions/aggregate-functions/uniq). Muito mais rápida que `COUNTD()`.
+* **`DATE_BIN('day', 10, [my_datetime_or_date])`** *(adicionado na v0.2.1)* — equivalente à [`toStartOfInterval()`](/pt-BR/reference/functions/regular-functions/date-time-functions#toStartOfInterval) no ClickHouse. Arredonda um Date ou Date &amp; Time para baixo até o intervalo especificado, por exemplo:
+  ```text
+   == my_datetime_or_date == | == DATE_BIN('day', 10, [my_datetime_or_date]) ==
+      28.07.2004 06:54:50    |              21.07.2004 00:00:00
+      17.07.2004 14:01:56    |              11.07.2004 00:00:00
+      14.07.2004 07:43:00    |              11.07.2004 00:00:00
+  ```
+* **`FORMAT_READABLE_QUANTITY([my_integer])`** *(adicionado na v0.2.1)* — Retorna um número arredondado com um sufixo (mil, milhão, bilhão etc.) em formato de string. É útil para facilitar a leitura de números grandes. Equivalente a [`formatReadableQuantity()`](/pt-BR/reference/functions/regular-functions/other-functions#formatReadableQuantity).
+* **`FORMAT_READABLE_TIMEDELTA([my_integer_timedelta_sec], [optional_max_unit])`** *(adicionado na v0.2.1)* — Aceita o intervalo de tempo em segundos. Retorna um intervalo de tempo com (ano, mês, dia, hora, minuto, segundo) como string. `optional_max_unit` é a maior unidade a ser exibida. Valores aceitos: `seconds`, `minutes`, `hours`, `days`, `months`, `years`. Equivalente a [`formatReadableTimeDelta()`](/pt-BR/reference/functions/regular-functions/other-functions#formatReadableTimeDelta).
+* **`GET_SETTING([my_setting_name])`** *(adicionado na v0.2.1)* — Retorna o valor atual de uma configuração personalizada. Equivale a [`getSetting()`](/pt-BR/reference/functions/regular-functions/other-functions#getSetting).
+* **`HEX([my_string])`** *(adicionado na v0.2.1)* — Retorna uma string com a representação hexadecimal do argumento. Equivalente a [`hex()`](/pt-BR/reference/functions/regular-functions/encoding-functions#hex).
+* **`KURTOSIS([my_number])`** — Calcula a curtose amostral de uma sequência. É equivalente a [`kurtSamp()`](/pt-BR/reference/functions/aggregate-functions/kurtSamp).
+* **`KURTOSISP([my_number])`** — Calcula a curtose de uma sequência. Equivale a [`kurtPop()`](/pt-BR/reference/functions/aggregate-functions/kurtPop).
+* **`MEDIAN_EXACT([my_number])`** *(adicionado na v0.1.3)* — Calcula com exatidão a mediana de uma sequência de dados numéricos. Equivalente a [`quantileExact(0.5)(...)`](/pt-BR/reference/functions/aggregate-functions/quantileExact).
+* **`MOD([my_number_1], [my_number_2])`** — Calcula o resto da divisão. Se os argumentos forem números de ponto flutuante, serão convertidos previamente em inteiros, descartando a parte decimal. Equivalente a [`modulo()`](/pt-BR/reference/functions/regular-functions/arithmetic-functions#modulo).
+* **`PERCENTILE_EXACT([my_number], [level_float])`** *(adicionada na v0.1.3)* — Calcula exatamente o percentil de uma sequência de dados numéricos. O nível recomendado está no intervalo [0.01, 0.99]. Equivalente a [`quantileExact()()`](/pt-BR/reference/functions/aggregate-functions/quantileExact).
+* **`PROPER([my_string])`** *(adicionado na v0.2.5)* - Converte uma cadeia de texto para que a primeira letra de cada palavra fique em maiúscula e as letras restantes fiquem em minúsculas. Espaços e caracteres não alfanuméricos, como sinais de pontuação, também funcionam como separadores. Por exemplo:
+  ```text
+  PROPER("PRODUCT name") => "Product Name"
+  ```
+  ```text
+  PROPER("darcy-mae") => "Darcy-Mae"
+  ```
+* **`RAND()`** *(adicionado na v0.2.1)* — retorna um número inteiro (UInt32), por exemplo `3446222955`. É equivalente a [`rand()`](/pt-BR/reference/functions/regular-functions/random-functions#rand).
+* **`RANDOM()`** *(adicionado na v0.2.1)* — função não oficial do Tableau [`RANDOM()`](https://kb.tableau.com/articles/issue/random-function-produces-inconsistent-results), que retorna um valor de ponto flutuante entre 0 e 1.
+* **`RAND_CONSTANT([optional_field])`** *(adicionado na v0.2.1)* — Produz uma coluna constante com um valor aleatório. É como um Fixed LOD com `{RAND()}`, mas mais rápido. Equivalente a [`randConstant()`](/pt-BR/reference/functions/regular-functions/random-functions#randConstant).
+* **`REAL([my_number])`** — Converte o campo em float (Float64). Detalhes [`aqui`](/pt-BR/reference/data-types/decimal#operations-and-result-type).
+* **`SHA256([my_string])`** *(adicionado na v0.2.1)* — Calcula o hash SHA-256 de uma string e retorna o conjunto de bytes resultante como uma string (FixedString). É conveniente usá-la com a função `HEX()`, por exemplo, `HEX(SHA256([my_string]))`. Equivalente a [`SHA256()`](/pt-BR/reference/functions/regular-functions/hash-functions#SHA256).
+* **`SKEWNESS([my_number])`** — Calcula a assimetria amostral de uma sequência. É equivalente a [`skewSamp()`](/pt-BR/reference/functions/aggregate-functions/skewSamp).
+* **`SKEWNESSP([my_number])`** — Calcula a assimetria de uma sequência. É equivalente a [`skewPop()`](/pt-BR/reference/functions/aggregate-functions/skewPop).
+* **`TO_TYPE_NAME([field])`** *(adicionado na v0.2.1)* — Retorna uma string com o nome do tipo no ClickHouse do argumento informado. Equivalente a [`toTypeName()`](/pt-BR/reference/functions/regular-functions/other-functions#toTypeName).
+* **`TRUNC([my_float])`** — É igual à função `FLOOR([my_float])`. Equivalente a [`trunc()`](/pt-BR/reference/functions/regular-functions/rounding-functions#trunc).
+* **`UNHEX([my_string])`** *(adicionado na v0.2.1)* — Executa a operação inversa de `HEX()`. Equivalente a [`unhex()`](/pt-BR/reference/functions/regular-functions/encoding-functions#unhex).

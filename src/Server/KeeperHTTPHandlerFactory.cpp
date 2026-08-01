@@ -10,7 +10,6 @@
 #include <IO/Operators.h>
 #include <Server/HTTP/WriteBufferFromHTTPServerResponse.h>
 #include <Server/HTTPHandlerFactory.h>
-#include <Server/HTTPHandlerRequestFilter.h>
 #include <Server/IServer.h>
 #include <Poco/JSON/JSON.h>
 #include <Poco/JSON/Object.h>
@@ -18,9 +17,11 @@
 #include <Poco/Net/HTTPRequestHandlerFactory.h>
 #include <Poco/Net/HTTPServerRequest.h>
 #include <Poco/Net/HTTPServerResponse.h>
+#include <Poco/Util/LayeredConfiguration.h>
 
 #include <Server/KeeperDashboardRequestHandler.h>
 #include <Server/KeeperHTTPStorageHandler.h>
+#include <Server/KeeperJemallocHandler.h>
 #include <Server/KeeperNotFoundHandler.h>
 #include <Common/ZooKeeper/ZooKeeperConstants.h>
 #include <Common/ZooKeeper/KeeperClientCLI/KeeperClient.h>
@@ -58,14 +59,24 @@ std::unique_ptr<HTTPRequestHandler> KeeperHTTPRequestHandlerFactory::createReque
     return nullptr;
 }
 
-void addDashboardHandlersToFactory(
+static void addDashboardHandlersToFactory(
     KeeperHTTPRequestHandlerFactory & factory, std::shared_ptr<KeeperDispatcher> keeper_dispatcher)
 {
     auto dashboard_ui_creator = []() -> std::unique_ptr<KeeperDashboardWebUIRequestHandler>
     { return std::make_unique<KeeperDashboardWebUIRequestHandler>(); };
 
+    auto dashboard_path_filter = [](const String & path)
+    {
+        return [path](const auto & request)
+        {
+            const auto & uri = request.getURI();
+            return uri == path
+                || (uri.size() > path.size() && uri.starts_with(path) && uri[path.size()] == '?');
+        };
+    };
+
     auto dashboard_handler = std::make_shared<HandlingRuleHTTPHandlerFactory<KeeperDashboardWebUIRequestHandler>>(dashboard_ui_creator);
-    dashboard_handler->attachStrictPath("/dashboard");
+    dashboard_handler->addFilter(dashboard_path_filter("/dashboard"));
     dashboard_handler->allowGetAndHeadRequest();
     factory.addPathToHints("/dashboard");
     factory.addHandler(dashboard_handler);
@@ -75,12 +86,12 @@ void addDashboardHandlersToFactory(
 
     auto dashboard_content_handler
         = std::make_shared<HandlingRuleHTTPHandlerFactory<KeeperDashboardContentRequestHandler>>(dashboard_content_creator);
-    dashboard_content_handler->attachStrictPath("/dashboard/content");
+    dashboard_content_handler->addFilter(dashboard_path_filter("/dashboard/content"));
     dashboard_content_handler->allowGetAndHeadRequest();
     factory.addHandler(dashboard_content_handler);
 }
 
-void addReadinessHandlerToFactory(
+static void addReadinessHandlerToFactory(
     KeeperHTTPRequestHandlerFactory & factory,
     std::shared_ptr<KeeperDispatcher> keeper_dispatcher,
     const Poco::Util::AbstractConfiguration & config)
@@ -94,7 +105,7 @@ void addReadinessHandlerToFactory(
     factory.addHandler(readiness_handler);
 }
 
-void addCommandsHandlersToFactory(
+static void addCommandsHandlersToFactory(
     KeeperHTTPRequestHandlerFactory & factory,
     std::shared_ptr<KeeperDispatcher> keeper_dispatcher,
     std::shared_ptr<KeeperHTTPClient> keeper_client)
@@ -110,7 +121,40 @@ void addCommandsHandlersToFactory(
     factory.addHandler(commands_handler);
 }
 
-void addStorageHandlersToFactory(
+template <typename H>
+static void addStrictHandler(KeeperHTTPRequestHandlerFactory & factory, const std::string & path)
+{
+    auto handler = std::make_shared<HandlingRuleHTTPHandlerFactory<H>>(
+        [] { return std::make_unique<H>(); });
+    handler->addFilter([path](const auto & request)
+    {
+        const auto & uri = request.getURI();
+        return uri == path
+            || (uri.size() > path.size() && uri.starts_with(path) && uri[path.size()] == '?');
+    });
+    handler->allowGetAndHeadRequest();
+    factory.addHandler(handler);
+}
+
+static void addJemallocHandlersToFactory(KeeperHTTPRequestHandlerFactory & factory)
+{
+    addStrictHandler<KeeperJemallocWebUIHandler>(factory, "/jemalloc");
+    factory.addPathToHints("/jemalloc");
+
+    addStrictHandler<KeeperJemallocRedirectHandler>(factory, "/jemalloc/");
+
+#if USE_JEMALLOC
+    addStrictHandler<KeeperJemallocProfileHandler>(factory, "/jemalloc/profile");
+    addStrictHandler<KeeperJemallocStatsHandler>(factory, "/jemalloc/stats");
+    addStrictHandler<KeeperJemallocStatusHandler>(factory, "/jemalloc/status");
+#else
+    addStrictHandler<KeeperJemallocNotAvailableHandler>(factory, "/jemalloc/profile");
+    addStrictHandler<KeeperJemallocNotAvailableHandler>(factory, "/jemalloc/stats");
+    addStrictHandler<KeeperJemallocNotAvailableHandler>(factory, "/jemalloc/status");
+#endif
+}
+
+static void addStorageHandlersToFactory(
     KeeperHTTPRequestHandlerFactory & factory,
     std::shared_ptr<KeeperDispatcher> keeper_dispatcher,
     std::shared_ptr<KeeperHTTPClient> keeper_client)
@@ -126,7 +170,7 @@ void addStorageHandlersToFactory(
     factory.addHandler(storage_handler);
 }
 
-std::shared_ptr<KeeperHTTPClient> createKeeperClient(
+static std::shared_ptr<KeeperHTTPClient> createKeeperClient(
     const IServer & server,
     std::shared_ptr<KeeperDispatcher> keeper_dispatcher)
 {
@@ -149,7 +193,7 @@ std::shared_ptr<KeeperHTTPClient> createKeeperClient(
     return std::make_shared<KeeperHTTPClient>(std::move(client_factory));
 }
 
-void addDefaultHandlersToFactory(
+static void addDefaultHandlersToFactory(
     KeeperHTTPRequestHandlerFactory & factory,
     const IServer & server,
     std::shared_ptr<KeeperDispatcher> keeper_dispatcher,
@@ -161,6 +205,7 @@ void addDefaultHandlersToFactory(
     addDashboardHandlersToFactory(factory, keeper_dispatcher);
     addCommandsHandlersToFactory(factory, keeper_dispatcher, keeper_client);
     addStorageHandlersToFactory(factory, keeper_dispatcher, keeper_client);
+    addJemallocHandlersToFactory(factory);
 }
 
 static auto createHandlersFactoryFromConfig(
@@ -203,6 +248,8 @@ static auto createHandlersFactoryFromConfig(
                 addCommandsHandlersToFactory(*main_handler_factory, keeper_dispatcher, keeper_client);
             else if (handler_type == "storage")
                 addStorageHandlersToFactory(*main_handler_factory, keeper_dispatcher, keeper_client);
+            else if (handler_type == "jemalloc")
+                addJemallocHandlersToFactory(*main_handler_factory);
             else
                 throw Exception(
                     ErrorCodes::INVALID_CONFIG_PARAMETER,

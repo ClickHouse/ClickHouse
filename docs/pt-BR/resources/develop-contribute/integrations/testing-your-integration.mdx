@@ -1,0 +1,63 @@
+---
+slug: /integrations/integration-development/testing-your-integration
+sidebarTitle: 'Testando sua integração'
+title: 'Testando sua integração do ClickHouse'
+description: 'Matriz de validação básica para integrações no ClickHouse Cloud e em implantações open source auto-hospedadas.'
+keywords: ['partner', 'integration', 'testing', 'validation', 'example datasets', 'ClickHouse Cloud', 'open source']
+doc_type: 'guide'
+---
+
+Valide sua integração em ambos os modos de implantação do ClickHouse e em conjuntos de dados que coloquem à prova o sistema de tipos do ClickHouse em escala relevante antes de enviá-la para revisão. Esta página define o que significa &quot;testado&quot; no nível básico. A validação formal é um processo separado para parceiros que avançam para níveis mais altos de parceria.
+
+Consulte [Criando integrações](/pt-BR/resources/develop-contribute/integrations/building-integrations) para ver os fluxos de ingestão e consumo, e [Documentando sua integração](/pt-BR/resources/develop-contribute/integrations/documenting-your-integration) para saber como publicar seus resultados.
+
+<div id="test-matrix">
+  ## Matriz de testes
+</div>
+
+Cubra ambos os modos de implantação. A maioria dos clientes usa um ou outro, e o comportamento varia em alguns pontos (autenticação, rede e recursos disponíveis).
+
+* **ClickHouse Cloud:** cadastre-se para uma [avaliação gratuita](https://clickhouse.com/cloud). Não é necessário cartão de crédito para o tier Development
+* **auto-hospedado (código aberto):** use a versão stable mais recente nas [releases do GitHub](https://github.com/ClickHouse/ClickHouse/releases). O [guia de instalação](/pt-BR/get-started/setup/install) é a forma mais rápida de ter uma instância local com Docker
+
+Teste em ambos e documente eventuais lacunas de recursos na sua página de integração.
+
+<div id="what-to-test">
+  ## O que testar
+</div>
+
+**Correção funcional.** Exercite todos os caminhos de código que sua integração expõe: ingestão, consultas, descoberta de esquema, tratamento de erros e reconexão. Se o seu produto expõe SQL a usuários finais, confirme que as consultas geradas pela sua UI completam o ciclo de ida e volta sem problemas.
+
+**Cobertura do sistema de tipos.** O ClickHouse oferece suporte a arrays, tuplas, maps, JSON, Nested, LowCardinality, variantes de Decimal, Date e DateTime, UUID, IPv4 e IPv6, enums e tipos de função de agregação. As integrações frequentemente apresentam problemas com arrays aninhados, tuplas profundamente aninhadas e colunas JSON. Sua biblioteca cliente e UI devem lidar bem com isso e, no mínimo, falhar com um erro compreensível, em vez de truncar silenciosamente ou renderizar de forma incorreta.
+
+**Escala.** Teste com tamanhos de conjuntos de resultados e volumes de linhas que seus clientes realmente usarão. Em BI voltado ao usuário final, isso geralmente significa tabelas com centenas de milhões a bilhões de linhas e conjuntos de resultados que vão de agregações simples a dezenas de milhares de linhas. Leituras sem limites (`SELECT *`) devem falhar de forma previsível ou ser paginadas, não travar.
+
+**Autenticação.** Valide pelo menos uma conexão com TLS habilitado. Se você expõe configuração de autenticação, teste todos os modos que documenta (nome de usuário e senha sobre TLS, mTLS, certificado SSL de cliente).
+
+**Ciclo de vida da conexão.** Confirme um comportamento adequado em quedas de conexão, reinicializações do servidor e consultas lentas. Muitos escalonamentos acabam sendo causados pelo tratamento da conexão, e não pela semântica da consulta.
+
+<div id="recommended-example-datasets">
+  ## Conjuntos de dados de exemplo recomendados
+</div>
+
+O conjunto completo pode ser encontrado na seção [**Conjuntos de dados de exemplo**](/pt-BR/get-started/sample-datasets/index). Os quatro conjuntos de dados a seguir cobrem a maioria das necessidades de testes de integração:
+
+* **[Eventos do GitHub](/pt-BR/get-started/sample-datasets/github-events):** 3,1B linhas com payloads de eventos aninhados. Ideal para arrays, tuplas e tipos aninhados
+* **[Dados de táxi de NYC](/pt-BR/get-started/sample-datasets/nyc-taxi):** bilhões de linhas com um esquema bem conhecido. Adequado para testes de throughput e do caminho de leitura
+* **[Stack Overflow](/pt-BR/get-started/sample-datasets/stackoverflow):** dados relacionais em várias tabelas para cenários de BI com uso intensivo de JOIN
+* **[Hacker News](/pt-BR/get-started/sample-datasets/hacker-news):** 28M linhas, rápido de carregar, útil para iteração
+
+Para validação em escala extrema, use **[WikiStat](/pt-BR/get-started/sample-datasets/wikistat)** (~0,5 trilhão de registros).
+
+<div id="what-to-capture-from-your-testing">
+  ## O que registrar nos seus testes
+</div>
+
+Ao enviar sua integração para revisão, compartilhe:
+
+* As versões do ClickHouse testadas (Cloud e código aberto)
+* Conjuntos de dados e escala aproximada (linhas, tamanho em disco)
+* Tipos que sua integração processa e tipos que ela não processa (isso se torna a seção **Limites conhecidos** da sua documentação)
+* Características de desempenho que valem a pena destacar, como limiares no conjunto de resultados em que o comportamento muda
+
+Um breve relatório de testes economiza ciclos de revisão. Um parágrafo e uma tabela bastam.

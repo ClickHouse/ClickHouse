@@ -3,9 +3,7 @@
 #include <Functions/FunctionFactory.h>
 #include <Functions/FunctionHelpers.h>
 #include <Functions/StringHelpers.h>
-#include <DataTypes/DataTypeString.h>
 #include <Columns/ColumnString.h>
-#include <Columns/ColumnFixedString.h>
 #include <Common/TLDListsHolder.h>
 
 namespace DB
@@ -32,7 +30,7 @@ struct FirstSignificantSubdomainCustomLookup
 };
 
 template <typename Extractor, typename Name>
-class FunctionCutToFirstSignificantSubdomainCustomImpl : public IFunction
+class FunctionCutToFirstSignificantSubdomainCustomImpl final : public IFunction
 {
 public:
     static constexpr auto name = Name::name;
@@ -91,8 +89,8 @@ public:
         size_t res_offset = 0;
 
         /// Matched part.
-        Pos start;
-        size_t length;
+        Pos start = nullptr;
+        size_t length = 0;
 
         for (size_t i = 0; i < input_rows_count; ++i)
         {

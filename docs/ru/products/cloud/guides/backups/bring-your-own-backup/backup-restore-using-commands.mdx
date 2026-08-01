@@ -1,0 +1,224 @@
+---
+sidebarTitle: 'Создание резервной копии или восстановление с помощью команд'
+slug: /cloud/manage/backups/backup-restore-via-commands
+title: Создание резервной копии или восстановление из резервной копии с помощью команд
+description: 'Страница с описанием того, как создать резервную копию или восстановить ее с помощью команд, используя собственный бакет'
+doc_type: 'guide'
+keywords: ['резервные копии', 'аварийное восстановление', 'защита данных', 'восстановление', 'возможности облака']
+---
+
+Вы можете использовать команды `BACKUP` и `RESTORE`, чтобы экспортировать резервные копии в соответствующие бакеты хранилища,
+а также создавать резервные копии и восстанавливать их [через интерфейс](/ru/products/cloud/guides/backups/bring-your-own-backup/backup-restore-from-ui).
+В этом руководстве приведены команды для всех трех CSP.
+
+<div id="requirements">
+  ## Требования
+</div>
+
+Для экспорта/восстановления резервных копий в собственный бакет хранилища облачного провайдера вам понадобятся следующие данные:
+
+<Tabs>
+  <Tab title="AWS">
+    1. Конечная точка AWS S3 в формате: `s3://<bucket_name>.s3.amazonaws.com/<optional_directory>`
+       Например: `s3://testchbackups.s3.amazonaws.com/`
+       Где:
+       * `testchbackups` — имя S3 бакета, в который экспортируются резервные копии.
+       * `backups` — необязательный подкаталог.
+    2. Ключ доступа AWS и секрет. Также поддерживается аутентификация на основе AWS Role, которую можно использовать вместо ключа доступа AWS и секрета, как описано в разделе выше.
+
+    <br />
+  </Tab>
+
+  <Tab title="GCP">
+    1. Конечная точка GCS в формате: `https://storage.googleapis.com/<bucket_name>/`
+    2. Ключ доступа HMAC и секрет HMAC.
+
+    <br />
+  </Tab>
+
+  <Tab title="Azure">
+    1. Строка подключения к хранилищу Azure.
+    2. Имя контейнера Azure в учетной записи хранения.
+    3. Blob-объект Azure в контейнере.
+
+    <br />
+  </Tab>
+</Tabs>
+
+<div id="backup_restore_db">
+  ## Резервное копирование / восстановление конкретной БД
+</div>
+
+Ниже показано резервное копирование и восстановление *одной* базы данных.
+См. [сводку команд резервного копирования](/ru/concepts/features/backup-restore/overview#command-summary) с командами полного резервного копирования и восстановления.
+
+<div id="aws-s3-bucket">
+  ### AWS S3
+</div>
+
+<Tabs>
+  <Tab title="РЕЗЕРВНОЕ КОПИРОВАНИЕ">
+    ```sql
+    BACKUP DATABASE test_backups 
+    TO S3(
+      'https://testchbackups.s3.amazonaws.com/<uuid>',
+      '<key id>',
+      '<key secret>'
+    )
+    ```
+
+    Где `uuid` — уникальный идентификатор, используемый для различения наборов резервных копий.
+
+    <Note>
+      Для каждой новой резервной копии в этом подкаталоге нужно использовать другой uuid, иначе возникнет ошибка `BACKUP_ALREADY_EXISTS`.
+      Например, если вы создаёте ежедневные резервные копии, каждый день нужно использовать новый uuid.
+    </Note>
+  </Tab>
+
+  <Tab title="ВОССТАНОВЛЕНИЕ">
+    ```sql
+    RESTORE DATABASE test_backups
+    FROM S3(
+      'https://testchbackups.s3.amazonaws.com/<uuid>',
+      '<key id>',
+      '<key secret>'
+    )
+    ```
+  </Tab>
+</Tabs>
+
+<div id="google-cloud-storage">
+  ### Google Cloud Storage (GCS)
+</div>
+
+<Tabs>
+  <Tab title="РЕЗЕРВНОЕ КОПИРОВАНИЕ">
+    ```sql
+    BACKUP DATABASE test_backups 
+    TO S3(
+      'https://storage.googleapis.com/<bucket>/<uuid>',
+      '<hmac-key>',
+      '<hmac-secret>'
+    )
+    ```
+
+    Где `uuid` — уникальный идентификатор, используемый для обозначения резервной копии.
+
+    <Note>
+      Для каждой новой резервной копии в этом подкаталоге нужно использовать другой uuid, иначе вы получите ошибку `BACKUP_ALREADY_EXISTS`.
+      Например, если вы создаёте резервные копии ежедневно, нужно использовать новый uuid каждый день.
+    </Note>
+  </Tab>
+
+  <Tab title="ВОССТАНОВЛЕНИЕ">
+    ```sql
+    RESTORE DATABASE test_backups
+    FROM S3(
+      'https://storage.googleapis.com/<bucket>/<uuid>',
+      '<hmac-key>',
+      '<hmac-secret>'
+    )
+    ```
+  </Tab>
+</Tabs>
+
+<div id="azure-blob-storage">
+  ### Azure Blob Storage
+</div>
+
+<Tabs>
+  <Tab title="РЕЗЕРВНОЕ КОПИРОВАНИЕ">
+    ```sql
+    BACKUP DATABASE test_backups 
+    TO AzureBlobStorage(
+      '<AzureBlobStorage endpoint connection string>',
+      '<container>',
+      '<blob>/<>'
+    )
+    ```
+
+    Где `uuid` — уникальный идентификатор, используемый для обозначения резервной копии.
+
+    <Note>
+      Для каждой новой резервной копии в этом подкаталоге необходимо использовать другой uuid, иначе возникнет ошибка `BACKUP_ALREADY_EXISTS`.
+      Например, если вы создаёте ежедневные резервные копии, вам нужно использовать новый uuid каждый день.
+    </Note>
+  </Tab>
+
+  <Tab title="ВОССТАНОВЛЕНИЕ">
+    ```sql
+    RESTORE DATABASE test_backups
+    FROM AzureBlobStorage(
+      '<AzureBlobStorage endpoint connection string>',
+      '<container>',
+      '<blob>/<uuid>'
+    )
+    ```
+  </Tab>
+</Tabs>
+
+<div id="backup_restore_entire_service">
+  ## Резервное копирование / восстановление всего сервиса
+</div>
+
+Чтобы создать резервную копию всего сервиса, используйте приведенные ниже команды.
+Эта резервная копия будет содержать все пользовательские и системные данные созданных сущностей, профилей настроек, политик строк, квот и функций.
+Ниже приведены примеры для AWS S3.
+Эти команды также можно использовать для GCS и Azure Blob Storage, применяя описанный выше синтаксис.
+
+<Tabs>
+  <Tab title="РЕЗЕРВНОЕ КОПИРОВАНИЕ">
+    ```sql
+    BACKUP 
+        TABLE system.users,
+        TABLE system.roles,
+        TABLE system.settings_profiles,
+        TABLE system.row_policies,
+        TABLE system.quotas,
+        TABLE system.functions,
+        ALL EXCEPT DATABASES INFORMATION_SCHEMA, information_schema, system
+    TO S3(
+        'https://testchbackups.s3.amazonaws.com/<uuid>',
+        '<key id>',
+        '<key secret>'
+    )
+    ```
+
+    где `uuid` — уникальный идентификатор резервной копии.
+  </Tab>
+
+  <Tab title="ВОССТАНОВЛЕНИЕ">
+    ```sql
+    RESTORE ALL EXCEPT TABLES system.users, system.roles
+    FROM S3(
+        'https://testchbackups.s3.amazonaws.com/<uuid>',
+        '<key id>',
+        '<key secret>'
+    )
+    ```
+  </Tab>
+</Tabs>
+
+<div id="backups-faq">
+  ## FAQ
+</div>
+
+<Accordion title="Что происходит с резервными копиями в моем облачном объектном хранилище? ClickHouse удаляет их со временем?">
+  Мы даем возможность экспортировать резервные копии в ваш бакет, однако после записи не очищаем и не удаляем их. Вы сами управляете жизненным циклом резервных копий в своем бакете: удаляете, архивируете или при необходимости переносите их в более дешевое хранилище, чтобы снизить общую стоимость.
+</Accordion>
+
+<Accordion title="Что произойдет с процессом восстановления, если я перемещу часть существующих резервных копий в другое место?">
+  Если какие-либо резервные копии будут перемещены в другое место, команду восстановления нужно будет обновить, чтобы она указывала на новое место хранения резервных копий.
+</Accordion>
+
+<Accordion title="Что будет, если я изменю учетные данные для доступа к объектному хранилищу?">
+  Вам потребуется обновить измененные учетные данные в интерфейсе, чтобы резервные копии снова начали успешно создаваться.
+</Accordion>
+
+<Accordion title="Что будет, если я изменю место экспорта внешних резервных копий?">
+  Вам потребуется обновить новое местоположение в интерфейсе, и резервные копии начнут создаваться в новом месте. Старые резервные копии останутся в исходном месте.
+</Accordion>
+
+<Accordion title="Как отключить внешние резервные копии для сервиса, в котором они включены?">
+  Чтобы отключить внешние резервные копии для сервиса, перейдите на экран настроек сервиса и нажмите Change external backup. На следующем экране нажмите Remove setup, чтобы отключить внешние резервные копии для этого сервиса.
+</Accordion>

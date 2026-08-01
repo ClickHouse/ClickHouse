@@ -35,17 +35,16 @@ ASTPtr timeSeriesTimestampToAST(DateTime64 timestamp, const DataTypePtr & timest
         if (scale == 0)
             return timeSeriesTimestampASTCast(make_intrusive<ASTLiteral>(timestamp.value), timestamp_data_type);
 
+        /// Wrap with `toDecimal128` so the literal is parsed as a decimal number first and only then
+        /// converted to `DateTime64`. This avoids two pitfalls of string-to-`DateTime64` parsing:
+        ///   1. Small numbers (e.g. "1000") would otherwise be parsed as a year by basic mode.
+        ///   2. Numeric timestamp strings are not accepted by `cast_string_to_date_time_mode = best_effort`.
+        /// `Decimal128` is used (rather than `Decimal64`) because `Decimal64`'s precision of 18
+        /// digits is not enough for `DateTime64(9)` past 2001-09-09 (raw value > 10^18).
         String str = toString(timestamp, scale);
-        if (0 <= timestamp.value && timestamp.value < DecimalUtils::scaleMultiplier<Decimal64>(scale + 4))
-        {
-            /// For timestamps between 0 and 9999 we need to use expression toDateTime64(toDecimal64('timestamp', <scale>), <scale>)
-            /// because otherwise it can be considered as a year (i.e. for example "1000" can be parsed as "year 1000" instead of
-            /// "1000 seconds after January 1, 1970").
-            /// TODO: Find a more elegant solution.
-            return timeSeriesTimestampASTCast(makeASTFunction("toDecimal64", make_intrusive<ASTLiteral>(std::move(str)), make_intrusive<ASTLiteral>(scale)), timestamp_data_type);
-        }
-
-        return timeSeriesTimestampASTCast(make_intrusive<ASTLiteral>(std::move(str)), timestamp_data_type);
+        return timeSeriesTimestampASTCast(
+            makeASTFunction("toDecimal128", make_intrusive<ASTLiteral>(std::move(str)), make_intrusive<ASTLiteral>(scale)),
+            timestamp_data_type);
     }
     else if (isDecimal(timestamp_data_type))
     {

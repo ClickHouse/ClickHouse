@@ -393,7 +393,8 @@ def test_leader_election_after_rolling_membership_change(started_cluster):
     # Give the election time to complete before checking for the new leader.
     time.sleep(2)
 
-    keeper_utils.wait_nodes(cluster, [leader, node4, node5, node6])
+    for n in [leader, node4, node5, node6]:
+        keeper_utils.wait_until_connected(cluster, n, timeout=60.0)
 
 
 

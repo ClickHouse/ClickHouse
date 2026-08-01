@@ -1,4 +1,5 @@
 #include <Storages/System/StorageSystemRemoteDataPaths.h>
+#include <Storages/System/SystemTableSourceRegistry.h>
 #include <Columns/ColumnArray.h>
 #include <Columns/ColumnString.h>
 #include <Columns/ColumnsNumber.h>
@@ -9,8 +10,8 @@
 #include <DataTypes/DataTypesNumber.h>
 #include <Disks/IDisk.h>
 #include <Disks/DiskObjectStorage/MetadataStorages/IMetadataStorage.h>
-#include <Interpreters/Cache/FileCache.h>
-#include <Interpreters/Cache/FileCacheFactory.h>
+#include <Interpreters/FileCache/FileCache.h>
+#include <Interpreters/FileCache/FileCacheFactory.h>
 #include <Interpreters/Context.h>
 #include <Interpreters/ProcessList.h>
 #include <Processors/ISource.h>
@@ -36,7 +37,7 @@ namespace ErrorCodes
 }
 
 
-class SystemRemoteDataPathsSource : public ISource
+class SystemRemoteDataPathsSource final : public ISource
 {
 public:
     SystemRemoteDataPathsSource(
@@ -174,8 +175,8 @@ StorageSystemRemoteDataPaths::StorageSystemRemoteDataPaths(const StorageID & tab
         {"common_prefix_for_blobs", std::make_shared<DataTypeString>(), "Common prefix for blobs in object storage."},
         {"cache_paths", std::make_shared<DataTypeArray>(std::make_shared<DataTypeString>()), "Cache files for corresponding blob."},
     }));
+    storage_metadata.setVirtuals(createVirtuals());
     setInMemoryMetadata(storage_metadata);
-    setVirtuals(createVirtuals());
 }
 
 VirtualColumnsDescription StorageSystemRemoteDataPaths::createVirtuals()
@@ -197,7 +198,7 @@ void StorageSystemRemoteDataPaths::readImpl(
     const size_t /*num_streams*/)
 {
     storage_snapshot->check(column_names);
-    auto header = storage_snapshot->metadata->getSampleBlockWithVirtuals(storage_snapshot->virtual_columns->getSampleBlock(VirtualsKind::All, VirtualsMaterializationPlace::Reader).getNamesAndTypesList());
+    auto header = storage_snapshot->metadata->getSampleBlockWithVirtuals(VirtualsKind::All, VirtualsMaterializationPlace::Reader);
     auto read_step = std::make_unique<ReadFromSystemRemoteDataPaths>(
         context->getDisksMap(),
         column_names,
@@ -444,3 +445,6 @@ Chunk SystemRemoteDataPathsSource::generate()
 }
 
 }
+
+/// Register the source file of this system table for `system.documentation`.
+namespace DB { REGISTER_SYSTEM_TABLE_SOURCE(StorageSystemRemoteDataPaths) }

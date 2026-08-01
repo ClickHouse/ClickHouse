@@ -2,6 +2,7 @@
 #include <Storages/MergeTree/LoadedMergeTreeDataPartInfoForReader.h>
 #include <Storages/MergeTree/MergeTreeBlockReadUtils.h>
 #include <Storages/MergeTree/MergeTreeData.h>
+#include <Storages/MergeTree/MergeTreeSettings.h>
 #include <Storages/MergeTree/IMergeTreeDataPartInfoForReader.h>
 #include <Storages/MergeTree/MergeTreeRangeReader.h>
 #include <Storages/MergeTree/MergeTreeDataSelectExecutor.h>
@@ -26,6 +27,11 @@
 namespace DB
 {
 
+namespace MergeTreeSetting
+{
+    extern const MergeTreeSettingsBool share_nested_offsets;
+}
+
 namespace ErrorCodes
 {
     extern const int LOGICAL_ERROR;
@@ -45,10 +51,10 @@ bool hasMaterializedTextIndex(
     const IMergeTreeDataPartInfoForReader & data_part_info_for_reader,
     const String & virtual_column_name)
 {
-    if (!storage_snapshot->virtual_columns)
+    if (storage_snapshot->metadata->virtuals.empty())
         return false;
 
-    const auto * virtual_column = storage_snapshot->virtual_columns->tryGetDescription(virtual_column_name, VirtualsKind::All, VirtualsMaterializationPlace::Reader);
+    const auto * virtual_column = storage_snapshot->metadata->virtuals.tryGetDescription(virtual_column_name, VirtualsKind::All, VirtualsMaterializationPlace::Reader);
     if (!virtual_column)
         return false;
 
@@ -102,17 +108,27 @@ bool injectRequiredColumnsRecursively(
 
         auto column_in_part = data_part_info_for_reader.getColumns().tryGetByName(column_name_in_part);
 
+        bool share_nested = true;
+        if (const auto * merge_tree = dynamic_cast<const MergeTreeData *>(&storage_snapshot->storage))
+            share_nested = (*merge_tree->getSettings())[MergeTreeSetting::share_nested_offsets];
+
         if (column_in_part
             /// If the column was dropped by a pending mutation that hasn't been applied yet,
             /// the data in this part is stale. Treat it as missing so that the default value is used.
             /// This can happen if the column was dropped and then re-added with the same name.
-            && !(alter_conversions && alter_conversions->isColumnDropped(column_name_in_part)))
+            && !(alter_conversions && alter_conversions->isColumnDropped(column_name_in_part, share_nested)))
         {
             if (!column_in_storage->isSubcolumn() || column_in_part->type->tryGetSubcolumnType(column_in_storage->getSubcolumnName()))
             {
                 add_column(column_name);
                 return true;
             }
+
+            /// Parent is present but the part's (older) type lacks the requested subcolumn (metadata-only
+            /// `ALTER MODIFY COLUMN T -> Nullable(T)`). Read the parent so it can be converted and the
+            /// subcolumn extracted from it, instead of being filled from the storage-type default.
+            add_column(column_in_storage->getNameInStorage());
+            return true;
         }
         else if (isTextIndexVirtualColumn(column_name_in_part) && hasMaterializedTextIndex(storage_snapshot, data_part_info_for_reader, column_name_in_part))
         {
@@ -124,7 +140,14 @@ bool injectRequiredColumnsRecursively(
 
     /// Column doesn't have default value and don't exist in part
     /// don't need to add to required set.
-    const auto column_default = storage_snapshot->getDefault(column_name);
+    auto column_default = storage_snapshot->getDefault(column_name);
+
+    /// A subcolumn does not have its own default expression: it is extracted from the evaluated
+    /// default of the column in storage (see IMergeTreeReader::evaluateMissingDefaults),
+    /// so the columns required by that expression must be read as well.
+    if (!column_default && column_in_storage && column_in_storage->isSubcolumn())
+        column_default = storage_snapshot->getDefault(column_in_storage->getNameInStorage());
+
     ASTPtr default_expression = column_default.has_value() ? column_default->expression : nullptr;
     if (!default_expression)
         return false;
@@ -360,6 +383,7 @@ PrewhereExprStepPtr createLightweightDeleteStep(bool remove_filter_column)
         .remove_filter_column = remove_filter_column,
         .need_filter = true,
         .perform_alter_conversions = true,
+        .columns_overwritten_by_chain = {},
         .mutation_version = std::nullopt,
     };
 
@@ -526,7 +550,8 @@ MergeTreeReadTaskColumns getReadTaskColumns(
             index_read_tasks,
             actions_settings,
             reader_settings.enable_multiple_prewhere_read_steps,
-            reader_settings.force_short_circuit_execution);
+            reader_settings.force_short_circuit_execution,
+            &storage_snapshot->metadata->getColumns());
 
         for (const auto & step : prewhere_actions.steps)
             add_step(*step);

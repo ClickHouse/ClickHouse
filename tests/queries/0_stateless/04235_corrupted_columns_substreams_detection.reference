@@ -1,0 +1,19 @@
+Data before corruption:
+10	45	20
+Data after attach with corrupted file:
+10	45	20
+CHECK TABLE result:
+1
+Data after partition reattach:
+10	45	20
+JSON data before corruption:
+1	1
+2	2
+JSON data after attach with corrupted file:
+1	1
+2	2
+JSON CHECK TABLE result:
+1
+JSON data after partition reattach:
+1	1
+2	2

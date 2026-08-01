@@ -102,7 +102,6 @@ SELECT c0 FROM file(currentDatabase() || '_04019.buf', 'Buffers', 'c0 Nullable(T
 SELECT 'Parquet';
 INSERT INTO TABLE FUNCTION file(currentDatabase() || '_04019.parquet', 'Parquet', 'c0 Nullable(Tuple())') SELECT c0 FROM test_nullable_empty_tuple; -- { serverError BAD_ARGUMENTS }
 
--- TODO: Does not work for Arrow, ArrowStream, and ORC but should
 SELECT 'Arrow';
 INSERT INTO TABLE FUNCTION file(currentDatabase() || '_04019.arrow', 'Arrow', 'c0 Nullable(Tuple())') SELECT c0 FROM test_nullable_empty_tuple;
 SELECT c0 FROM file(currentDatabase() || '_04019.arrow', 'Arrow', 'c0 Nullable(Tuple())');

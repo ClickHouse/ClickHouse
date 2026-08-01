@@ -1,5 +1,6 @@
 #include <Storages/MergeTree/MergePlainMergeTreeTask.h>
 #include <Common/CurrentThread.h>
+#include <Common/ThreadGroupSwitcher.h>
 
 #include <Storages/MergeTree/MergeTreeData.h>
 #include <Storages/StorageMergeTree.h>
@@ -10,6 +11,7 @@
 #include <Common/ProfileEvents.h>
 #include <Common/ThreadFuzzer.h>
 #include <Common/ZooKeeper/ZooKeeperCommon.h>
+#include <Common/ThreadStatus.h>
 #include <Interpreters/Context.h>
 
 
@@ -152,6 +154,7 @@ void MergePlainMergeTreeTask::prepare()
 void MergePlainMergeTreeTask::finish()
 {
     new_part = merge_task->getFuture().get();
+    new_part->getDataPartStorage().commitTransaction();
 
     MergeTreeData::Transaction transaction(storage, txn.get());
     storage.merger_mutator.renameMergedTemporaryPart(new_part, future_part->parts, txn, transaction);
