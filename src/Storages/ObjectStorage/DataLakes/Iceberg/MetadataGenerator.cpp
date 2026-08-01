@@ -448,7 +448,7 @@ void MetadataGenerator::generateDropColumnMetadata(const String & column_name)
 
 void MetadataGenerator::generateAddColumnMetadata(const String & column_name, DataTypePtr type)
 {
-    if (!type->isNullable())
+    if (!type->isNullable() && !type->isLowCardinalityNullable())
         throw Exception(ErrorCodes::BAD_ARGUMENTS, "Iceberg spec doesn't allow to add non-nullable columns");
     auto current_schema_id = metadata_object->getValue<Int32>(Iceberg::f_current_schema_id);
     metadata_object->set(Iceberg::f_current_schema_id, current_schema_id + 1);
@@ -482,7 +482,9 @@ void MetadataGenerator::generateAddColumnMetadata(const String & column_name, Da
     /// last-column-id must record so every added child gets a globally unique id.
     Int32 new_field_id = last_column_id + 1;
     Int32 iter = new_field_id;
-    auto new_type = Iceberg::getIcebergType(type, iter);
+    auto low_cardinality_field_ids = Iceberg::getLowCardinalityFieldIds(metadata_object);
+    auto new_type = Iceberg::getIcebergType(type, iter, new_field_id, low_cardinality_field_ids);
+    Iceberg::setLowCardinalityFieldIds(metadata_object, low_cardinality_field_ids);
     metadata_object->set(Iceberg::f_last_column_id, iter);
 
     Poco::JSON::Object::Ptr new_field = new Poco::JSON::Object;
@@ -517,7 +519,6 @@ void MetadataGenerator::generateModifyColumnMetadata(const String & column_name,
     current_schema = deepCopy(current_schema);
     auto last_column_id = metadata_object->getValue<Int32>(Iceberg::f_last_column_id);
 
-    auto new_type = Iceberg::getIcebergType(type, last_column_id);
     auto schema_fields = current_schema->getArray(Iceberg::f_fields);
 
     bool found = false;
@@ -526,15 +527,21 @@ void MetadataGenerator::generateModifyColumnMetadata(const String & column_name,
         auto current_field = schema_fields->getObject(i);
         if (current_field->getValue<String>(Iceberg::f_name) == column_name)
         {
+            Int32 field_id = current_field->getValue<Int32>(Iceberg::f_id);
+            auto low_cardinality_field_ids = Iceberg::getLowCardinalityFieldIds(metadata_object);
+            low_cardinality_field_ids.erase(field_id);
+            auto new_type = Iceberg::getIcebergType(type, last_column_id, field_id, low_cardinality_field_ids);
+
             if (!checkValidSchemaEvolution(current_field->get(Iceberg::f_type), new_type.first))
                 throw Exception(ErrorCodes::BAD_ARGUMENTS, "Iceberg spec doesn't allow schema evolution to type {}", type->getPrettyName());
 
             auto old_type = deepCopy(current_field);
             current_field->set(Iceberg::f_type, new_type.first);
-            if (!current_field->getValue<bool>(Iceberg::f_required) && !type->isNullable())
+            if (!current_field->getValue<bool>(Iceberg::f_required) && !type->isNullable() && !type->isLowCardinalityNullable())
                 throw Exception(ErrorCodes::BAD_ARGUMENTS, "Iceberg spec doesn't allow change type from nullable to non-nullable {}", type->getPrettyName());
 
             current_field->set(Iceberg::f_required, new_type.second);
+            Iceberg::setLowCardinalityFieldIds(metadata_object, low_cardinality_field_ids);
             found = true;
             break;
         }

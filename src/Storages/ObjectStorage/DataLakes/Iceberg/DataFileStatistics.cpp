@@ -1,6 +1,7 @@
 #include <Storages/ObjectStorage/DataLakes/Iceberg/DataFileStatistics.h>
 
 #include <Storages/ObjectStorage/DataLakes/Iceberg/Constant.h>
+#include <Columns/ColumnLowCardinality.h>
 #include <Columns/ColumnNullable.h>
 #include <Columns/IColumn.h>
 
@@ -53,6 +54,12 @@ void DataFileStatistics::update(const Chunk & chunk)
         {
             for (UInt8 v : nullable_col->getNullMapData())
                 null_counts[i] += v;
+        }
+        else if (const auto * low_cardinality_col = checkAndGetColumn<ColumnLowCardinality>(col.get());
+                 low_cardinality_col && low_cardinality_col->nestedIsNullable())
+        {
+            for (size_t row = 0; row < low_cardinality_col->size(); ++row)
+                null_counts[i] += low_cardinality_col->isNullAt(row);
         }
         ranges[i] = uniteRanges(ranges[i], getExtremeRangeFromColumn(col));
     }

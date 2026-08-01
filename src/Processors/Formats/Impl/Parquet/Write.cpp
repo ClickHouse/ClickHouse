@@ -12,7 +12,9 @@
 #include <DataTypes/DataTypeObject.h>
 #include <Columns/MaskOperations.h>
 #include <Columns/ColumnFixedString.h>
+#include <Columns/ColumnLowCardinality.h>
 #include <Columns/ColumnString.h>
+#include <Columns/ColumnsNumber.h>
 #include <Columns/ColumnArray.h>
 #include <Columns/ColumnDecimal.h>
 #include <Columns/ColumnTuple.h>
@@ -737,6 +739,60 @@ void encodeRepDefLevelsRLE(const UInt8 * data, size_t size, UInt8 max_level, POD
     out.resize(offset + prefix_size + len);
 }
 
+struct DictionaryIndexes
+{
+    const UInt8 * u8 = nullptr;
+    const UInt16 * u16 = nullptr;
+    const UInt32 * u32 = nullptr;
+    const UInt64 * u64 = nullptr;
+
+    explicit DictionaryIndexes(const IColumn & column)
+    {
+        if (const auto * c8 = checkAndGetColumn<ColumnUInt8>(&column))
+            u8 = c8->getData().data();
+        else if (const auto * c16 = checkAndGetColumn<ColumnUInt16>(&column))
+            u16 = c16->getData().data();
+        else if (const auto * c32 = checkAndGetColumn<ColumnUInt32>(&column))
+            u32 = c32->getData().data();
+        else if (const auto * c64 = checkAndGetColumn<ColumnUInt64>(&column))
+            u64 = c64->getData().data();
+        else
+            throw Exception(ErrorCodes::LOGICAL_ERROR, "Unexpected LowCardinality index column: {}", column.getName());
+    }
+
+    ALWAYS_INLINE size_t operator[](size_t i) const
+    {
+        if (u8)
+            return u8[i];
+        if (u16)
+            return u16[i];
+        if (u32)
+            return u32[i];
+        return static_cast<size_t>(u64[i]);
+    }
+};
+
+void encodeDictionaryIndexesRLE(
+    const DictionaryIndexes & indexes, size_t offset, size_t count, int bit_width, PODArray<char> & out)
+{
+    using arrow::util::RleBitPackedEncoder;
+
+    size_t out_offset = out.size();
+    auto max_rle_size = RleBitPackedEncoder::MaxBufferSize(bit_width, static_cast<int>(count))
+        + RleBitPackedEncoder::MinBufferSize(bit_width);
+
+    out.resize(out_offset + 1 + max_rle_size);
+    out[out_offset] = static_cast<char>(bit_width);
+
+    RleBitPackedEncoder encoder(
+        reinterpret_cast<uint8_t *>(out.data() + out_offset + 1), static_cast<int>(max_rle_size), bit_width);
+    for (size_t i = 0; i < count; ++i)
+        encoder.Put(indexes[offset + i]);
+    encoder.Flush();
+
+    out.resize(out_offset + 1 + encoder.len());
+}
+
 void addToEncodingsUsed(ColumnChunkWriteState & s, parq::Encoding::type e)
 {
     if (!std::count(s.column_chunk.meta_data.encodings.begin(), s.column_chunk.meta_data.encodings.end(), e))
@@ -861,7 +917,13 @@ template <typename ParquetDType, typename Converter>
 void writeColumnImpl(
     ColumnChunkWriteState & s, const WriteOptions & options, WriteBuffer & out, Converter && converter)
 {
-    size_t num_values = s.max_def > 0 ? s.def.size() : s.primitive_column->size();
+    std::optional<DictionaryIndexes> reused_dictionary_indexes;
+    if (s.dictionary_indexes)
+        reused_dictionary_indexes.emplace(*s.dictionary_indexes);
+    const bool reuse_dictionary = reused_dictionary_indexes.has_value();
+
+    size_t num_rows = reuse_dictionary ? s.dictionary_indexes->size() : s.primitive_column->size();
+    size_t num_values = s.max_def > 0 ? s.def.size() : num_rows;
     auto encoding = options.encoding;
 
     typename Converter::Statistics page_statistics;
@@ -898,14 +960,21 @@ void writeColumnImpl(
         s.column_chunk.meta_data.size_statistics.__set_definition_level_histogram(std::vector<Int64>(s.max_def + 1));
 
     /// Could use an arena here (by passing a custom MemoryPool), to reuse memory across pages.
-    /// Alternatively, we could avoid using arrow's dictionary encoding code and leverage
-    /// ColumnLowCardinality instead. It would work basically the same way as what this function
-    /// currently does: add values to the ColumnRowCardinality (instead of `encoder`) in batches,
-    /// checking dictionary size after each batch. That might be faster.
     auto encoder = parquet::MakeTypedEncoder<ParquetDType>(
         // ignored if using dictionary
         static_cast<parquet::Encoding::type>(encoding),
-        use_dictionary, fixed_string_descr ? &*fixed_string_descr : nullptr);
+        use_dictionary && !reuse_dictionary, fixed_string_descr ? &*fixed_string_descr : nullptr);
+
+    const typename ParquetDType::c_type * dictionary_values = nullptr;
+    size_t dictionary_size = 0;
+    int dictionary_bit_width = 0;
+    std::vector<UInt64> dictionary_hashes;
+    if (reuse_dictionary)
+    {
+        dictionary_size = s.primitive_column->size();
+        dictionary_values = converter.getBatch(0, dictionary_size);
+        dictionary_bit_width = dictionary_size <= 1 ? 0 : bitScanReverse(dictionary_size - 1) + 1;
+    }
 
     struct PageData
     {
@@ -913,18 +982,43 @@ void writeColumnImpl(
         PODArray<char> data;
         size_t first_row_index = 0;
     };
-    std::vector<PageData> dict_encoded_pages; // can't write them out until we have full dictionary
+    std::vector<PageData> dict_encoded_pages;
 
     /// Reused across pages to reduce number of allocations and improve locality.
     PODArray<char> encoded;
     PODArray<char> compressed_maybe;
 
+/// With XXH_INLINE_ALL (from contrib/xxHash) every XXH function is marked as unused,
+/// so any actual use triggers this warning.
+#pragma clang diagnostic push
+#pragma clang diagnostic ignored "-Wused-but-marked-unused"
+    auto hash_value = [&](const typename ParquetDType::c_type & value) -> UInt64
+    {
+        constexpr UInt64 seed = 0;
+        if constexpr (std::is_same_v<ParquetDType, parquet::FLBAType>)
+            return XXH_INLINE_XXH64(value.ptr, converter.fixedStringSize(), seed);
+        else if constexpr (std::is_same_v<ParquetDType, parquet::ByteArrayType>)
+            return XXH_INLINE_XXH64(value.ptr, value.len, seed);
+        else
+        {
+            static_assert(sizeof(value) <= 12, "unexpected non-primitive type");
+            return XXH_INLINE_XXH64(reinterpret_cast<const void *>(&value), sizeof(value), seed);
+        }
+    };
+#pragma clang diagnostic pop
+
     /// Hash set to deduplicate the values before calculating bloom filter size.
-    /// Possible future optimization: if using dictionary encoding, take already-deduplicated values
-    /// from the dictionary instead.
     std::optional<HashSet<UInt64, TrivialHash>> hashes_for_bloom_filter;
     if (options.write_bloom_filter)
+    {
         hashes_for_bloom_filter.emplace(); // allocates memory for initial size
+        if (reuse_dictionary)
+        {
+            dictionary_hashes.resize(dictionary_size);
+            for (size_t i = 0; i < dictionary_size; ++i)
+                dictionary_hashes[i] = hash_value(dictionary_values[i]);
+        }
+    }
 
     /// Start of current page.
     size_t def_offset = 0; // index in def and rep
@@ -958,11 +1052,18 @@ void writeColumnImpl(
                 ++s.column_chunk.meta_data.size_statistics.definition_level_histogram[s.def[i]];
         }
 
-        std::shared_ptr<parquet::Buffer> values = encoder->FlushValues(); // resets it for next page
+        if (reuse_dictionary)
+        {
+            encodeDictionaryIndexesRLE(*reused_dictionary_indexes, data_offset, data_count, dictionary_bit_width, encoded);
+        }
+        else
+        {
+            std::shared_ptr<parquet::Buffer> values = encoder->FlushValues(); // resets it for next page
 
-        encoded.resize(encoded.size() + values->size());
-        memcpy(encoded.data() + encoded.size() - values->size(), values->data(), values->size());
-        values.reset();
+            encoded.resize(encoded.size() + values->size());
+            memcpy(encoded.data() + encoded.size() - values->size(), values->data(), values->size());
+            values.reset();
+        }
 
         if (encoded.size() > INT32_MAX)
             throw Exception(ErrorCodes::CANNOT_COMPRESS, "Uncompressed page is too big: {}", encoded.size());
@@ -1019,7 +1120,7 @@ void writeColumnImpl(
         total_statistics.merge(page_statistics);
         page_statistics.clear();
 
-        if (use_dictionary)
+        if (use_dictionary && !reuse_dictionary)
         {
             dict_encoded_pages.push_back({.header = std::move(header), .data = {}, .first_row_index = row_idx});
             std::swap(dict_encoded_pages.back().data, compressed);
@@ -1035,11 +1136,29 @@ void writeColumnImpl(
 
     auto flush_dict = [&] -> bool
     {
-        auto * dict_encoder = dynamic_cast<parquet::DictEncoder<ParquetDType> *>(encoder.get());
-        int dict_size = dict_encoder->dict_encoded_size();
+        int num_entries = 0;
+        if (reuse_dictionary)
+        {
+            auto dictionary_page_encoder = parquet::MakeTypedEncoder<ParquetDType>(
+                parquet::Encoding::PLAIN, /* use_dictionary */ false, fixed_string_descr ? &*fixed_string_descr : nullptr);
+            dictionary_page_encoder->Put(dictionary_values, static_cast<int>(dictionary_size));
+            std::shared_ptr<parquet::Buffer> values = dictionary_page_encoder->FlushValues();
 
-        encoded.resize(static_cast<size_t>(dict_size));
-        dict_encoder->WriteDict(reinterpret_cast<uint8_t *>(encoded.data()));
+            encoded.resize(static_cast<size_t>(values->size()));
+            memcpy(encoded.data(), values->data(), values->size());
+            num_entries = static_cast<int>(dictionary_size);
+        }
+        else
+        {
+            auto * dict_encoder = dynamic_cast<parquet::DictEncoder<ParquetDType> *>(encoder.get());
+            encoded.resize(static_cast<size_t>(dict_encoder->dict_encoded_size()));
+            dict_encoder->WriteDict(reinterpret_cast<uint8_t *>(encoded.data()));
+            num_entries = dict_encoder->num_entries();
+        }
+
+        if (encoded.size() > INT32_MAX)
+            throw Exception(ErrorCodes::CANNOT_COMPRESS, "Uncompressed dictionary page is too big: {}", encoded.size());
+        int dict_size = static_cast<int>(encoded.size());
 
         auto & compressed = compress(encoded, compressed_maybe, s.compression, s.compression_level);
 
@@ -1051,7 +1170,7 @@ void writeColumnImpl(
         header.__set_uncompressed_page_size(dict_size);
         header.__set_compressed_page_size(static_cast<int>(compressed.size()));
         header.__isset.dictionary_page_header = true;
-        header.dictionary_page_header.__set_num_values(dict_encoder->num_entries());
+        header.dictionary_page_header.__set_num_values(num_entries);
         header.dictionary_page_header.__set_encoding(parq::Encoding::PLAIN);
 
         if (options.write_checksums)
@@ -1076,6 +1195,9 @@ void writeColumnImpl(
         int dict_size = dict_encoder->dict_encoded_size();
         return static_cast<size_t>(dict_size) >= options.max_dictionary_size;
     };
+
+    if (reuse_dictionary)
+        flush_dict();
 
     while (def_offset < num_values)
     {
@@ -1103,53 +1225,54 @@ void writeColumnImpl(
                 }
             }
 
-            /// Encode the data (but not the levels yet), so that we can estimate its encoded size.
-            const typename ParquetDType::c_type * converted = converter.getBatch(next_data_offset, data_count);
+            if (reuse_dictionary)
+            {
+                const auto & indexes = *reused_dictionary_indexes;
 
-            if (options.write_page_statistics || options.write_column_chunk_statistics)
+                if (options.write_page_statistics || options.write_column_chunk_statistics)
+                    for (size_t i = 0; i < data_count; ++i)
+                        page_statistics.add(dictionary_values[indexes[next_data_offset + i]]);
+
+                if (hashes_for_bloom_filter.has_value())
+                    for (size_t i = 0; i < data_count; ++i)
+                        hashes_for_bloom_filter->insert(dictionary_hashes[indexes[next_data_offset + i]]);
+
+                if constexpr (std::is_same_v<ParquetDType, parquet::ByteArrayType>)
+                    for (size_t i = 0; i < data_count; ++i)
+                        s.column_chunk.meta_data.size_statistics.unencoded_byte_array_data_bytes
+                            += dictionary_values[indexes[next_data_offset + i]].len;
+            }
+            else
+            {
+                const typename ParquetDType::c_type * converted = converter.getBatch(next_data_offset, data_count);
+
+                if (options.write_page_statistics || options.write_column_chunk_statistics)
 /// Workaround for clang bug: https://github.com/llvm/llvm-project/issues/63630
 #ifdef MEMORY_SANITIZER
 #pragma clang loop vectorize(disable)
 #endif
-                for (size_t i = 0; i < data_count; ++i)
-                    page_statistics.add(converted[i]);
+                    for (size_t i = 0; i < data_count; ++i)
+                        page_statistics.add(converted[i]);
 
-            if (hashes_for_bloom_filter.has_value())
-            {
-/// With XXH_INLINE_ALL (from contrib/xxHash) every XXH function is marked as unused,
-/// so any actual use triggers this warning.
-#pragma clang diagnostic push
-#pragma clang diagnostic ignored "-Wused-but-marked-unused"
-                for (size_t i = 0; i < data_count; ++i)
+                if (hashes_for_bloom_filter.has_value())
                 {
-                    UInt64 h = 0;
-                    constexpr UInt64 seed = 0;
-                    if constexpr (std::is_same_v<ParquetDType, parquet::FLBAType>)
-                        h = XXH_INLINE_XXH64(converted[i].ptr, converter.fixedStringSize(), seed);
-                    else if constexpr (std::is_same_v<ParquetDType, parquet::ByteArrayType>)
-                        h = XXH_INLINE_XXH64(converted[i].ptr, converted[i].len, seed);
-                    else
-                    {
-                        static_assert(sizeof(converted[i]) <= 12, "unexpected non-primitive type");
-                        h = XXH_INLINE_XXH64(reinterpret_cast<const void*>(&converted[i]), sizeof(converted[i]), seed);
-                    }
-                    hashes_for_bloom_filter->insert(h);
+                    for (size_t i = 0; i < data_count; ++i)
+                        hashes_for_bloom_filter->insert(hash_value(converted[i]));
                 }
-#pragma clang diagnostic pop
-            }
 
-            if constexpr (std::is_same_v<ParquetDType, parquet::ByteArrayType>)
-            {
-                for (size_t i = 0; i < data_count; ++i)
-                    s.column_chunk.meta_data.size_statistics.unencoded_byte_array_data_bytes += converted[i].len;
-            }
+                if constexpr (std::is_same_v<ParquetDType, parquet::ByteArrayType>)
+                {
+                    for (size_t i = 0; i < data_count; ++i)
+                        s.column_chunk.meta_data.size_statistics.unencoded_byte_array_data_bytes += converted[i].len;
+                }
 
-            encoder->Put(converted, static_cast<int>(data_count));
+                encoder->Put(converted, static_cast<int>(data_count));
+            }
 
             next_def_offset += def_count;
             next_data_offset += data_count;
 
-            if (use_dictionary && is_dict_too_big())
+            if (use_dictionary && !reuse_dictionary && is_dict_too_big())
             {
                 /// Fallback to non-dictionary encoding.
                 ///
@@ -1182,8 +1305,11 @@ void writeColumnImpl(
                 break;
             }
 
-            if (next_def_offset == num_values ||
-                static_cast<size_t>(encoder->EstimatedDataEncodedSize()) >= options.data_page_size)
+            size_t estimated_page_size = reuse_dictionary
+                ? (next_data_offset - data_offset) * std::max(dictionary_bit_width, 1) / 8
+                : static_cast<size_t>(encoder->EstimatedDataEncodedSize());
+
+            if (next_def_offset == num_values || estimated_page_size >= options.data_page_size)
             {
                 flush_page(next_def_offset - def_offset, next_data_offset - data_offset);
                 break;
@@ -1191,10 +1317,10 @@ void writeColumnImpl(
         }
     }
 
-    if (use_dictionary)
+    if (use_dictionary && !reuse_dictionary)
         flush_dict();
 
-    chassert(data_offset == s.primitive_column->size());
+    chassert(data_offset == num_rows);
 
     if (options.write_column_chunk_statistics)
     {
@@ -1236,7 +1362,17 @@ void writeColumnChunkBody(
     s.column_chunk.meta_data.__set_total_uncompressed_size(0);
     s.column_chunk.meta_data.__set_data_page_offset(-1);
 
-    s.primitive_column = s.primitive_column->convertToFullColumnIfLowCardinality();
+    if (const auto * low_cardinality = checkAndGetColumn<ColumnLowCardinality>(s.primitive_column.get()))
+    {
+        const auto & dictionary = low_cardinality->getDictionary().getNestedColumn();
+        if (options.use_dictionary_encoding && !s.is_bool && dictionary->byteSize() < options.max_dictionary_size)
+        {
+            s.dictionary_indexes = low_cardinality->getIndexesPtr();
+            s.primitive_column = dictionary;
+        }
+        else
+            s.primitive_column = s.primitive_column->convertToFullColumnIfLowCardinality();
+    }
 
     switch (s.primitive_column->getDataType())
     {
@@ -1608,6 +1744,8 @@ size_t ColumnChunkWriteState::allocatedBytes() const
     size_t r = def.allocated_bytes() + rep.allocated_bytes();
     if (primitive_column)
         r += primitive_column->allocatedBytes();
+    if (dictionary_indexes)
+        r += dictionary_indexes->allocatedBytes();
     return r;
 }
 

@@ -10,6 +10,7 @@
 #include <Core/Range.h>
 #include <Core/Settings.h>
 #include <Core/TypeId.h>
+#include <DataTypes/DataTypeLowCardinality.h>
 #include <DataTypes/DataTypeNullable.h>
 #include <DataTypes/DataTypeString.h>
 #include <DataTypes/DataTypesNumber.h>
@@ -121,6 +122,8 @@ bool canDumpIcebergStats(const Field & field, DataTypePtr type)
 {
     switch (type->getTypeId())
     {
+        case TypeIndex::LowCardinality:
+            return canDumpIcebergStats(field, removeLowCardinality(type));
         case TypeIndex::Nullable:
         {
             if (field.isNull())
@@ -167,6 +170,8 @@ std::vector<uint8_t> dumpFieldToBytes(const Field & field, DataTypePtr type)
 {
     switch (type->getTypeId())
     {
+        case TypeIndex::LowCardinality:
+            return dumpFieldToBytes(field, removeLowCardinality(type));
         case TypeIndex::Nullable:
             return dumpFieldToBytes(field, assert_cast<const DataTypeNullable *>(type.get())->getNestedType());
         case TypeIndex::Int32:

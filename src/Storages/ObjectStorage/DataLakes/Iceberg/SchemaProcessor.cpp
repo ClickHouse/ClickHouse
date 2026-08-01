@@ -27,6 +27,7 @@
 #include <DataTypes/DataTypeFactory.h>
 #include <DataTypes/DataTypeFixedString.h>
 #include <DataTypes/DataTypeMap.h>
+#include <DataTypes/DataTypeLowCardinality.h>
 #include <DataTypes/DataTypeNullable.h>
 #include <DataTypes/DataTypeString.h>
 #include <DataTypes/DataTypeTuple.h>
@@ -422,6 +423,9 @@ void IcebergSchemaProcessor::addIcebergTableSchema(Poco::JSON::Object::Ptr schem
     }
     else
     {
+        active_low_cardinality_field_ids
+            = &low_cardinality_field_ids_by_schema_id.emplace(schema_id, low_cardinality_field_ids).first->second;
+        scope_guard low_cardinality_guard([&] { TSA_SUPPRESS_WARNING_FOR_WRITE(active_low_cardinality_field_ids) = nullptr; });
         auto fields = schema_ptr->get(f_fields).extract<Poco::JSON::Array::Ptr>();
         /// A field name is required per the Iceberg spec, and an empty column name is not representable in ClickHouse.
         for (size_t i = 0; i != fields->size(); ++i)
@@ -620,6 +624,42 @@ IcebergSchemaProcessor::getComplexTypeFromObject(const Poco::JSON::Object::Ptr &
     throw Exception(ErrorCodes::BAD_ARGUMENTS, "Unknown Iceberg type: {}", type_name);
 }
 
+void IcebergSchemaProcessor::setLowCardinalityFieldIds(std::set<Int32> field_ids)
+{
+    std::lock_guard lock(mutex);
+    low_cardinality_field_ids = std::move(field_ids);
+}
+
+DataTypePtr IcebergSchemaProcessor::wrapLowCardinalityIfNeeded(
+    const Poco::JSON::Object::Ptr & field, const String & type_key, DataTypePtr type) const
+{
+    const auto * active = TSA_SUPPRESS_WARNING_FOR_READ(active_low_cardinality_field_ids);
+    if (!active)
+        return type;
+
+    const auto & field_ids = *active;
+    if (field_ids.empty() || !type->canBeInsideLowCardinality())
+        return type;
+
+    const char * id_key = nullptr;
+    if (type_key == f_type)
+        id_key = f_id;
+    else if (type_key == f_element)
+        id_key = f_element_id;
+    else if (type_key == f_key)
+        id_key = f_key_id;
+    else if (type_key == f_value)
+        id_key = f_value_id;
+
+    if (!id_key || !field->has(id_key))
+        return type;
+
+    if (!field_ids.contains(field->getValue<Int32>(id_key)))
+        return type;
+
+    return std::make_shared<DataTypeLowCardinality>(type);
+}
+
 DataTypePtr IcebergSchemaProcessor::getFieldType(
     const Poco::JSON::Object::Ptr & field, const String & type_key, bool required, String & current_full_name, bool is_subfield_of_root)
 {
@@ -631,7 +671,9 @@ DataTypePtr IcebergSchemaProcessor::getFieldType(
     {
         const String & type_name = type.extract<String>();
         auto data_type = getSimpleType(type_name, allow_geo_parser);
-        return required || !data_type->canBeInsideNullable() ? data_type : makeNullable(data_type);
+        if (!required && data_type->canBeInsideNullable())
+            data_type = makeNullable(data_type);
+        return wrapLowCardinalityIfNeeded(field, type_key, data_type);
     }
 
     throw Exception(ErrorCodes::BAD_ARGUMENTS, "Unexpected 'type' field: {}", type.toString());
@@ -671,6 +713,17 @@ std::shared_ptr<ActionsDAG> IcebergSchemaProcessor::getSchemaTransformationDag(
     auto old_schema_fields = old_schema->get(f_fields).extract<Poco::JSON::Array::Ptr>();
     std::shared_ptr<ActionsDAG> dag = std::make_shared<ActionsDAG>();
     auto & outputs = dag->getOutputs();
+
+    auto activate_low_cardinality_field_ids = [&](Int32 schema_id)
+    {
+        const auto & ids_by_schema_id = TSA_SUPPRESS_WARNING_FOR_READ(low_cardinality_field_ids_by_schema_id);
+        auto it = ids_by_schema_id.find(schema_id);
+        TSA_SUPPRESS_WARNING_FOR_WRITE(active_low_cardinality_field_ids)
+            = it == ids_by_schema_id.end() ? nullptr : &it->second;
+    };
+    scope_guard low_cardinality_guard([&] { TSA_SUPPRESS_WARNING_FOR_WRITE(active_low_cardinality_field_ids) = nullptr; });
+
+    activate_low_cardinality_field_ids(old_id);
     for (size_t i = 0; i != old_schema_fields->size(); ++i)
     {
         auto field = old_schema_fields->getObject(static_cast<UInt32>(i));
@@ -680,6 +733,7 @@ std::shared_ptr<ActionsDAG> IcebergSchemaProcessor::getSchemaTransformationDag(
         old_schema_entries[id] = {field, &dag->addInput(name, getFieldType(field, f_type, required))};
     }
     auto new_schema_fields = new_schema->get(f_fields).extract<Poco::JSON::Array::Ptr>();
+    activate_low_cardinality_field_ids(new_id);
     for (size_t i = 0; i != new_schema_fields->size(); ++i)
     {
         auto field = new_schema_fields->getObject(static_cast<UInt32>(i));
@@ -705,7 +759,9 @@ std::shared_ptr<ActionsDAG> IcebergSchemaProcessor::getSchemaTransformationDag(
                         old_id,
                         new_id);
                 }
+                activate_low_cardinality_field_ids(old_id);
                 auto old_type = getFieldType(old_json, "type", required);
+                activate_low_cardinality_field_ids(new_id);
                 auto transform = std::make_shared<EvolutionFunctionStruct>(DataTypes{type}, DataTypes{old_type}, old_json, field);
                 old_node = &dag->addFunction(transform, std::vector<const Node *>{old_node}, name);
 
@@ -745,7 +801,7 @@ std::shared_ptr<ActionsDAG> IcebergSchemaProcessor::getSchemaTransformationDag(
         }
         else
         {
-            if (!type->isNullable() && !field->isObject(f_type))
+            if (!type->isNullable() && !type->isLowCardinalityNullable() && !field->isObject(f_type))
             {
                 throw Exception(
                     ErrorCodes::ICEBERG_SPECIFICATION_VIOLATION,

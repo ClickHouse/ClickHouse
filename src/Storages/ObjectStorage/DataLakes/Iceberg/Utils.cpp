@@ -10,6 +10,7 @@
 #include <DataTypes/DataTypeArray.h>
 #include <DataTypes/DataTypeCustom.h>
 #include <DataTypes/DataTypeDateTime64.h>
+#include <DataTypes/DataTypeLowCardinality.h>
 #include <DataTypes/DataTypeMap.h>
 #include <DataTypes/DataTypeNullable.h>
 #include <DataTypes/DataTypesDecimal.h>
@@ -49,7 +50,10 @@
 #include <Processors/Formats/Impl/AvroRowInputFormat.h>
 #include <Storages/ObjectStorage/DataLakes/Iceberg/Utils.h>
 #include <Storages/ObjectStorage/DataLakes/Iceberg/Constant.h>
+#include <IO/ReadBufferFromString.h>
 #include <IO/ReadHelpers.h>
+#include <IO/WriteBufferFromString.h>
+#include <IO/WriteHelpers.h>
 #include <filesystem>
 #include <regex>
 
@@ -557,8 +561,53 @@ Poco::JSON::Object::Ptr getMetadataJSONObject(
     return json.extract<Poco::JSON::Object::Ptr>();
 }
 
+LowCardinalityFieldIds getLowCardinalityFieldIds(Poco::JSON::Object::Ptr metadata_object)
+{
+    LowCardinalityFieldIds result;
+    if (!metadata_object->has(Iceberg::f_properties))
+        return result;
+
+    auto properties = metadata_object->getObject(Iceberg::f_properties);
+    if (!properties || !properties->has(Iceberg::f_low_cardinality_field_ids))
+        return result;
+
+    const String serialized_field_ids = properties->getValue<String>(Iceberg::f_low_cardinality_field_ids);
+    ReadBufferFromString buf(serialized_field_ids);
+    while (!buf.eof())
+    {
+        Int32 field_id;
+        readIntText(field_id, buf);
+        result.insert(field_id);
+        if (!buf.eof())
+            assertChar(',', buf);
+    }
+    return result;
+}
+
+void setLowCardinalityFieldIds(Poco::JSON::Object::Ptr metadata_object, const LowCardinalityFieldIds & field_ids)
+{
+    if (field_ids.empty())
+    {
+        if (metadata_object->has(Iceberg::f_properties))
+            metadata_object->getObject(Iceberg::f_properties)->remove(Iceberg::f_low_cardinality_field_ids);
+        return;
+    }
+
+    if (!metadata_object->has(Iceberg::f_properties))
+        metadata_object->set(Iceberg::f_properties, Poco::JSON::Object::Ptr(new Poco::JSON::Object));
+
+    WriteBufferFromOwnString buf;
+    for (auto it = field_ids.begin(); it != field_ids.end(); ++it)
+    {
+        if (it != field_ids.begin())
+            writeChar(',', buf);
+        writeIntText(*it, buf);
+    }
+    metadata_object->getObject(Iceberg::f_properties)->set(Iceberg::f_low_cardinality_field_ids, buf.str());
+}
+
 /// Returns type and required
-std::pair<Poco::Dynamic::Var, bool> getIcebergType(DataTypePtr type, Int32 & iter)
+std::pair<Poco::Dynamic::Var, bool> getIcebergType(DataTypePtr type, Int32 & iter, Int32 field_id, LowCardinalityFieldIds & low_cardinality_field_ids)
 {
     switch (type->getTypeId())
     {
@@ -600,7 +649,7 @@ std::pair<Poco::Dynamic::Var, bool> getIcebergType(DataTypePtr type, Int32 & ite
                 field->set(Iceberg::f_name, type_tuple->getNameByPosition(iter_names));
                 /// Recurse on the element itself: `getNormalizedType` would rename a nested
                 /// tuple's elements to "1", "2", ... (`DataTypeTuple::getNormalizedType`).
-                auto child_type = getIcebergType(element, iter);
+                auto child_type = getIcebergType(element, iter, static_cast<Int32>(iter_fields), low_cardinality_field_ids);
                 field->set(Iceberg::f_required, child_type.second);
                 field->set(Iceberg::f_type, child_type.first);
                 fields->add(field);
@@ -614,9 +663,10 @@ std::pair<Poco::Dynamic::Var, bool> getIcebergType(DataTypePtr type, Int32 & ite
             auto type_array = std::static_pointer_cast<const DataTypeArray>(type);
             Poco::JSON::Object::Ptr field = new Poco::JSON::Object;
 
+            Int32 element_id = ++iter;
             field->set(Iceberg::f_type, "list");
-            field->set(Iceberg::f_element_id, ++iter);
-            auto child_type = getIcebergType(type_array->getNestedType(), iter);
+            field->set(Iceberg::f_element_id, element_id);
+            auto child_type = getIcebergType(type_array->getNestedType(), iter, element_id, low_cardinality_field_ids);
             field->set(Iceberg::f_required, false);
             field->set(Iceberg::f_element, child_type.first);
             field->set(Iceberg::f_element_required, child_type.second);
@@ -627,12 +677,14 @@ std::pair<Poco::Dynamic::Var, bool> getIcebergType(DataTypePtr type, Int32 & ite
             auto type_map = std::static_pointer_cast<const DataTypeMap>(type);
             Poco::JSON::Object::Ptr field = new Poco::JSON::Object;
 
+            Int32 key_id = ++iter;
+            Int32 value_id = ++iter;
             field->set(Iceberg::f_type, "map");
-            field->set(Iceberg::f_key_id, ++iter);
-            field->set(Iceberg::f_value_id, ++iter);
+            field->set(Iceberg::f_key_id, key_id);
+            field->set(Iceberg::f_value_id, value_id);
 
-            field->set(Iceberg::f_key, getIcebergType(type_map->getKeyType(), iter).first);
-            auto value_type = getIcebergType(type_map->getValueType(), iter);
+            field->set(Iceberg::f_key, getIcebergType(type_map->getKeyType(), iter, key_id, low_cardinality_field_ids).first);
+            auto value_type = getIcebergType(type_map->getValueType(), iter, value_id, low_cardinality_field_ids);
             field->set(Iceberg::f_value, value_type.first);
             field->set(Iceberg::f_value_required, value_type.second);
             return {field, true};
@@ -640,7 +692,13 @@ std::pair<Poco::Dynamic::Var, bool> getIcebergType(DataTypePtr type, Int32 & ite
         case TypeIndex::Nullable:
         {
             auto type_nullable = std::static_pointer_cast<const DataTypeNullable>(type);
-            return {getIcebergType(type_nullable->getNestedType(), iter).first, false};
+            return {getIcebergType(type_nullable->getNestedType(), iter, field_id, low_cardinality_field_ids).first, false};
+        }
+        case TypeIndex::LowCardinality:
+        {
+            auto type_low_cardinality = std::static_pointer_cast<const DataTypeLowCardinality>(type);
+            low_cardinality_field_ids.insert(field_id);
+            return getIcebergType(type_low_cardinality->getDictionaryType(), iter, field_id, low_cardinality_field_ids);
         }
         case TypeIndex::Variant:
         {
@@ -1034,17 +1092,19 @@ std::pair<Poco::JSON::Object::Ptr, String> createEmptyMetadataFile(
     /// column count) so a later ADD COLUMN does not reuse a nested field id.
     Int32 iter = static_cast<Int32>(columns.size());
     Int32 iter_for_initial_columns = 0;
+    LowCardinalityFieldIds low_cardinality_field_ids;
     for (const auto & column : columns)
     {
         Poco::JSON::Object::Ptr field = new Poco::JSON::Object;
         field->set(Iceberg::f_id, ++iter_for_initial_columns);
         field->set(Iceberg::f_name, column.name);
-        auto type = getIcebergType(column.type, iter);
+        auto type = getIcebergType(column.type, iter, iter_for_initial_columns, low_cardinality_field_ids);
         field->set(Iceberg::f_required, type.second);
         field->set(Iceberg::f_type, type.first);
         column_name_to_source_id[column.name] = iter_for_initial_columns;
         schema_fields->add(field);
     }
+    setLowCardinalityFieldIds(new_metadata_file_content, low_cardinality_field_ids);
     new_metadata_file_content->set(Iceberg::f_last_column_id, iter);
     schema_representation->set(Iceberg::f_fields, schema_fields);
     Poco::JSON::Array::Ptr schema_array = new Poco::JSON::Array;
