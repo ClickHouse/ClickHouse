@@ -1,3 +1,4 @@
+#include <Common/StringUtils.h>
 #include <IO/ReadHelpers.h>
 #include <Access/Common/QuotaValueFromText.h>
 #include <Access/IAccessStorage.h>
@@ -14,10 +15,6 @@
 #include <Parsers/parseIntervalKind.h>
 #include <base/arithmeticOverflow.h>
 #include <base/range.h>
-#include <boost/algorithm/string/case_conv.hpp>
-#include <boost/algorithm/string/join.hpp>
-#include <boost/algorithm/string/replace.hpp>
-#include <boost/algorithm/string/trim.hpp>
 #include <Common/FieldVisitorConvertToNumber.h>
 
 #include <cmath>
@@ -63,9 +60,15 @@ namespace
             if (!parseIdentifiersOrStringLiterals(pos, expected, names))
                 return false;
 
-            String name = boost::algorithm::join(names, "_or_");
-            boost::to_lower(name);
-            boost::replace_all(name, " ", "_");
+            String name;
+            for (const auto & part : names)
+            {
+                if (!name.empty())
+                    name += "_or_";
+                name += part;
+            }
+            toLowerASCII(name);
+            std::replace(name.begin(), name.end(), ' ', '_');
 
             for (auto kt : collections::range(QuotaKeyType::MAX))
             {
@@ -155,7 +158,7 @@ namespace
         if (f.getType() == Field::Types::String)
             /// Parse with overflow checking so that a quoted out-of-range value (e.g. MAX queries = '1e20' or
             /// '18446744073709551616') throws instead of silently wrapping around before the range checks below.
-            return static_cast<T>(parseWithSizeSuffix<QuotaValue, ReadIntTextCheckOverflow::CHECK_OVERFLOW>(boost::algorithm::trim_copy(f.safeGet<std::string>())));
+            return static_cast<T>(parseWithSizeSuffix<QuotaValue, ReadIntTextCheckOverflow::CHECK_OVERFLOW>(trim(f.safeGet<std::string>(), isWhitespaceASCII)));
         return applyVisitor(FieldVisitorConvertToNumber<T>(), f);
     }
 
