@@ -8747,16 +8747,20 @@ std::optional<std::set<String>> MergeTreeData::getPartitionIdsPrunedByPredicate(
     if (!query_context->getSettingsRef()[Setting::use_partition_pruning])
         return std::nullopt;
 
-    auto columns = metadata_snapshot->getColumns().getAllPhysical();
+    /// Every column the mutation predicate may legally reference must be known here, otherwise
+    /// this analysis throws on a predicate the mutation itself accepts. `getAll` adds the
+    /// `ALIAS` and `EPHEMERAL` columns on top of the physical ones; the virtual columns
+    /// (e.g. `_part`, `_partition_id`) are available during mutation execution too.
+    /// A column that is not part of the partition key simply makes the expression opaque to
+    /// `PartitionPruner`, which then keeps the partition - it does not have to be readable here.
+    auto columns = metadata_snapshot->getColumns().getAll();
 
-    /// The predicate may reference virtual columns (e.g. `_part` or `_partition_id`).
-    /// They are available during mutation execution, so they must be known to this analysis too.
-    NameSet physical_column_names;
+    NameSet column_names;
     for (const auto & column : columns)
-        physical_column_names.insert(column.name);
+        column_names.insert(column.name);
     for (const auto & column : metadata_snapshot->virtuals)
     {
-        if (!physical_column_names.contains(column.name))
+        if (!column_names.contains(column.name))
             columns.emplace_back(column.name, column.type);
     }
 

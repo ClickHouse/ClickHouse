@@ -7,3 +7,7 @@ replicated, virtual column in predicate
 2024-02-01	2	200
 replicated, subquery in predicate
 2024-02-01	2	201
+replicated, ALIAS column in predicate
+2024-02-01	2	202
+replicated, MATERIALIZED column in predicate
+2024-02-01	2	203

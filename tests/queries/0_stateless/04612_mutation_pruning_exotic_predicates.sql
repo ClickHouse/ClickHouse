@@ -30,7 +30,7 @@ SELECT 'replicated, virtual column in predicate';
 
 DROP TABLE IF EXISTS t_mutation_pruning_exotic_r;
 
-CREATE TABLE t_mutation_pruning_exotic_r (d Date, x UInt32, y UInt32)
+CREATE TABLE t_mutation_pruning_exotic_r (d Date, x UInt32, y UInt32, a UInt32 ALIAS y + 1, m UInt32 MATERIALIZED y * 2)
 ENGINE = ReplicatedMergeTree('/clickhouse/tables/{database}/t_mutation_pruning_exotic_r', 'r1')
 PARTITION BY toYYYYMM(d) ORDER BY x;
 
@@ -43,6 +43,17 @@ SELECT * FROM t_mutation_pruning_exotic_r ORDER BY d;
 SELECT 'replicated, subquery in predicate';
 SET allow_nondeterministic_mutations = 1;
 ALTER TABLE t_mutation_pruning_exotic_r UPDATE y = y + 1 WHERE x IN (SELECT number + 2 FROM numbers(1));
+SELECT * FROM t_mutation_pruning_exotic_r ORDER BY d;
+
+-- An ALIAS column is not physically present, so the pruning analysis has to know it anyway:
+-- it is not part of the partition key, so the predicate is simply opaque to the pruner and
+-- every partition is mutated.
+SELECT 'replicated, ALIAS column in predicate';
+ALTER TABLE t_mutation_pruning_exotic_r UPDATE y = y + 1 WHERE a = 202;
+SELECT * FROM t_mutation_pruning_exotic_r ORDER BY d;
+
+SELECT 'replicated, MATERIALIZED column in predicate';
+ALTER TABLE t_mutation_pruning_exotic_r UPDATE y = y + 1 WHERE m = 404;
 SELECT * FROM t_mutation_pruning_exotic_r ORDER BY d;
 
 DROP TABLE t_mutation_pruning_exotic_r;
