@@ -168,6 +168,21 @@ width Tuple(UInt64,UInt64)/Tuple(UInt128,UInt128) has	1
 --- named tuples: the cast maps fields by name, so the pair must decline ---
 named tuple result	1
 named tuple declines	0
+--- the same names over an UNPACKED tuple expression: only the OUTER layer stops discriminating ---
+unpacked named tuple has keeps pruning	1
+unpacked named tuple has	1
+unpacked named tuple NOT has keeps pruning	1
+unpacked named tuple NOT has	1
+unpacked Point has keeps atom	1
+unpacked Point has	1
+unpacked nested name differs declines	0
+unpacked nested name differs	1
+unpacked nested name matches keeps pruning	1
+unpacked nested name matches	1
+packed named key differing outer name declines	0
+packed named key differing outer name	1
+packed named key matching outer name keeps atom	1
+packed named key matching outer name	1
 --- composite IN over a narrowing element: pruning is withdrawn, matching the oracle ---
 D1 widening direction	1
 D1 scalar narrowing at default settings	1

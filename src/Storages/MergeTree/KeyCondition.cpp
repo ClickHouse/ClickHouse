@@ -3129,6 +3129,11 @@ bool KeyCondition::tryPrepareSetIndexForIn(
 /// either case: `Bool` is `equals`-equal to `UInt8` and matches at runtime, but its cast wrapper clamps
 /// every nonzero value to 1, so the preparation direction is not injective.
 ///
+/// The OUTER tuple names and custom name are compared only in the packed shape below, where the left
+/// type is a real key column and the whole composite is cast by name. The unpacked shape synthesizes
+/// its left type, so those two outer attributes are placeholders there and must not discriminate; see
+/// the comment at that branch. Every NESTED attribute is compared in both shapes.
+///
 /// A transforming key expression is declined outright, in both shapes below: `data_types` always holds
 /// the type of the KEY column, which is the left expression's own type only when the key expression
 /// does not transform it (`analyzeKeyExpressionForSetIndex` records the type of the transformed key in
@@ -3155,6 +3160,9 @@ static bool compositeHasArgumentsHaveSameType(
             return false;
 
     DataTypePtr left_type;
+    /// What the two type comparisons below are run against. It is `element_type` itself except on the
+    /// unpacked branch, where the outer tuple attributes of the two sides are not comparable; see there.
+    DataTypePtr right_type = element_type;
     if (key_args_count == 1)
     {
         /// A single composite argument (a packed tuple/array column): `data_types` holds that one key
@@ -3179,12 +3187,30 @@ static bool compositeHasArgumentsHaveSameType(
             if (!element)
                 return false;
         left_type = std::make_shared<DataTypeTuple>(elements);
+
+        /// `left_type` was just synthesized with the unnamed ctor, so its outer names are the
+        /// placeholders `"1"`, `"2"`, ... and it never carries a custom name. Comparing those against
+        /// the element's real outer attributes would decline every named or custom-named element
+        /// (`has([CAST((1, 1), 'Tuple(c UInt8, d UInt8)')], (a, b))`, and likewise a `Point`), losing
+        /// sound pruning. Unlike the packed branch, no outer tuple cast ever runs on this path:
+        /// `tryPrepareSetColumnsForIndex` unpacks the element positionally first (`ColumnTuple::
+        /// getColumns` / `DataTypeTuple::getElements`, no name lookup), so only per-scalar casts follow,
+        /// and runtime `has` compares `Field`s, which carry no names either. Rebuild the element's OUTER
+        /// layer with the same unnamed ctor so both sides agree there, leaving every nested element -
+        /// including a nested named tuple - untouched: a nested name difference still declines, because
+        /// there the per-scalar cast IS name-mapped and zeroes the value
+        /// (`accurateCastOrNull(CAST(tuple(1), 'Tuple(d UInt8)'), 'Tuple(c UInt8)')` = `(0)`).
+        if (const auto * element_tuple = typeid_cast<const DataTypeTuple *>(element_type.get());
+            element_tuple && element_tuple->getElements().size() == key_args_count)
+            right_type = std::make_shared<DataTypeTuple>(element_tuple->getElements());
+        /// Any other element shape (an `Array`/`Map`, or a tuple of a different arity) cannot match a
+        /// synthesized tuple anyway, so it is left to decline against `element_type` unchanged.
     }
 
-    return (left_type->equals(*element_type)
-            || setIndexTypesHaveSameFieldRepresentation(*left_type, *element_type))
+    return (left_type->equals(*right_type)
+            || setIndexTypesHaveSameFieldRepresentation(*left_type, *right_type))
         && setIndexTypeTreeHasStableChildOrder(*left_type)
-        && setIndexTypesAgreeOnCustomNames(*left_type, *element_type);
+        && setIndexTypesAgreeOnCustomNames(*left_type, *right_type);
 }
 
 bool KeyCondition::tryPrepareSetIndexForHas(

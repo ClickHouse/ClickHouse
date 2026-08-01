@@ -839,6 +839,79 @@ SELECT 'named tuple result',
     (SELECT count() FROM nt WHERE kt NOT IN (SELECT CAST((1, 1), 'Tuple(c UInt8, d UInt8)'))) = (SELECT count() FROM nto WHERE kt NOT IN (SELECT CAST((1, 1), 'Tuple(c UInt8, d UInt8)')));
 SELECT 'named tuple declines', count() > 0 FROM (EXPLAIN indexes = 1 SELECT count() FROM nt WHERE kt NOT IN (SELECT CAST((1, 1), 'Tuple(c UInt8, d UInt8)'))) WHERE explain ILIKE '%element set%';
 
+SELECT '--- the same names over an UNPACKED tuple expression: only the OUTER layer stops discriminating ---';
+
+-- The mirror image of the packed cells above. There the whole composite is cast by name, so a name
+-- difference is genuinely not equality-preserving. Here the left type is SYNTHESIZED with the unnamed
+-- `DataTypeTuple` ctor, so its outer names are the placeholders `1`, `2` and no outer tuple cast ever
+-- runs (`tryPrepareSetColumnsForIndex` unpacks positionally first). Comparing the placeholders against
+-- the element's real outer names declined every named element and lost sound pruning.
+DROP TABLE IF EXISTS unt; DROP TABLE IF EXISTS unto;
+CREATE TABLE unt (a UInt8, b UInt8) ENGINE = MergeTree ORDER BY (a, b) PARTITION BY (a, b) SETTINGS index_granularity = 1, add_minmax_index_for_numeric_columns = 0;
+CREATE TABLE unto (a UInt8, b UInt8) ENGINE = Memory;
+INSERT INTO unt VALUES (1, 1);
+INSERT INTO unt VALUES (2, 2);
+INSERT INTO unto VALUES (1, 1), (2, 2);
+-- Assert the partition reduction rather than only the atom's presence: a relaxed atom still prints
+-- `element set` but stops pruning under the negation, so only the part count separates exact from
+-- relaxed. `Parts:` is format-independent, so the `explain_query_plan_default` pin at the top suffices.
+SELECT 'unpacked named tuple has keeps pruning', count() > 0 FROM (EXPLAIN indexes = 1 SELECT count() FROM unt WHERE has([CAST((1, 1), 'Tuple(c UInt8, d UInt8)')], (a, b))) WHERE explain ILIKE '%Parts: 1/2%';
+SELECT 'unpacked named tuple has',
+    (SELECT count() FROM unt WHERE has([CAST((1, 1), 'Tuple(c UInt8, d UInt8)')], (a, b))) = (SELECT count() FROM unto WHERE has([CAST((1, 1), 'Tuple(c UInt8, d UInt8)')], (a, b)));
+-- The negated direction is the one that would over-prune if the atom were wrongly exact, so pin it too.
+SELECT 'unpacked named tuple NOT has keeps pruning', count() > 0 FROM (EXPLAIN indexes = 1 SELECT count() FROM unt WHERE NOT has([CAST((1, 1), 'Tuple(c UInt8, d UInt8)')], (a, b))) WHERE explain ILIKE '%Parts: 1/2%';
+SELECT 'unpacked named tuple NOT has',
+    (SELECT count() FROM unt WHERE NOT has([CAST((1, 1), 'Tuple(c UInt8, d UInt8)')], (a, b))) = (SELECT count() FROM unto WHERE NOT has([CAST((1, 1), 'Tuple(c UInt8, d UInt8)')], (a, b)));
+-- An outer CUSTOM name is reachable on this branch too: `Point` is a custom-named `Tuple(Float64,
+-- Float64)`, so it hit the same over-decline. A float column cannot be a partition key, so this
+-- fixture pins the atom's presence instead of a partition reduction.
+DROP TABLE IF EXISTS upt; DROP TABLE IF EXISTS upto;
+CREATE TABLE upt (a Float64, b Float64) ENGINE = MergeTree ORDER BY (a, b) SETTINGS index_granularity = 1, add_minmax_index_for_numeric_columns = 0;
+CREATE TABLE upto (a Float64, b Float64) ENGINE = Memory;
+INSERT INTO upt SELECT toFloat64(number), toFloat64(number) FROM numbers(3);
+INSERT INTO upto SELECT toFloat64(number), toFloat64(number) FROM numbers(3);
+SELECT 'unpacked Point has keeps atom', count() > 0 FROM (EXPLAIN indexes = 1 SELECT count() FROM upt WHERE has([CAST((1.0, 1.0), 'Point')], (a, b))) WHERE explain ILIKE '%element set%';
+SELECT 'unpacked Point has',
+    (SELECT count() FROM upt WHERE has([CAST((1.0, 1.0), 'Point')], (a, b))) = (SELECT count() FROM upto WHERE has([CAST((1.0, 1.0), 'Point')], (a, b)));
+DROP TABLE upt; DROP TABLE upto;
+
+-- The scope guard. Only the OUTER layer stopped discriminating: a NESTED name difference must still
+-- decline, because there the per-scalar cast IS name-mapped and zeroes the value
+-- (`accurateCastOrNull(CAST(tuple(1), 'Tuple(d UInt8)'), 'Tuple(c UInt8)')` = `(0)`). The matching
+-- nested name is the partner cell: it is what the relaxation is allowed to admit.
+DROP TABLE IF EXISTS unn; DROP TABLE IF EXISTS unno;
+CREATE TABLE unn (a Tuple(c UInt8), b UInt8) ENGINE = MergeTree ORDER BY (a, b) PARTITION BY (a, b) SETTINGS index_granularity = 1, add_minmax_index_for_numeric_columns = 0;
+CREATE TABLE unno (a Tuple(c UInt8), b UInt8) ENGINE = Memory;
+INSERT INTO unn VALUES (tuple(1), 1);
+INSERT INTO unn VALUES (tuple(2), 2);
+INSERT INTO unno VALUES (tuple(1), 1), (tuple(2), 2);
+SELECT 'unpacked nested name differs declines', count() > 0 FROM (EXPLAIN indexes = 1 SELECT count() FROM unn WHERE has([CAST((tuple(1), 1), 'Tuple(x Tuple(d UInt8), y UInt8)')], (a, b))) WHERE explain ILIKE '%element set%';
+SELECT 'unpacked nested name differs',
+    (SELECT count() FROM unn WHERE has([CAST((tuple(1), 1), 'Tuple(x Tuple(d UInt8), y UInt8)')], (a, b))) = (SELECT count() FROM unno WHERE has([CAST((tuple(1), 1), 'Tuple(x Tuple(d UInt8), y UInt8)')], (a, b)));
+SELECT 'unpacked nested name matches keeps pruning', count() > 0 FROM (EXPLAIN indexes = 1 SELECT count() FROM unn WHERE has([CAST((tuple(1), 1), 'Tuple(x Tuple(c UInt8), y UInt8)')], (a, b))) WHERE explain ILIKE '%Parts: 1/2%';
+SELECT 'unpacked nested name matches',
+    (SELECT count() FROM unn WHERE has([CAST((tuple(1), 1), 'Tuple(x Tuple(c UInt8), y UInt8)')], (a, b))) = (SELECT count() FROM unno WHERE has([CAST((tuple(1), 1), 'Tuple(x Tuple(c UInt8), y UInt8)')], (a, b)));
+DROP TABLE unn; DROP TABLE unno;
+DROP TABLE unt; DROP TABLE unto;
+
+-- The branch guard. `has()` over a PACKED tuple key takes the other branch of the same function,
+-- where the left type is a REAL key column with real names and the whole composite IS cast by name, so
+-- the outer names must keep discriminating there. The two cells below bracket that branch: a differing
+-- outer name declines, a matching one keeps pruning. Widening the relaxation to this branch collapses
+-- the pair.
+DROP TABLE IF EXISTS pkn; DROP TABLE IF EXISTS pkno;
+CREATE TABLE pkn (kt Tuple(a UInt8)) ENGINE = MergeTree ORDER BY kt SETTINGS index_granularity = 1, add_minmax_index_for_numeric_columns = 0;
+CREATE TABLE pkno (kt Tuple(a UInt8)) ENGINE = Memory;
+INSERT INTO pkn SELECT tuple(toUInt8(number)) FROM numbers(3);
+INSERT INTO pkno SELECT tuple(toUInt8(number)) FROM numbers(3);
+SELECT 'packed named key differing outer name declines', count() > 0 FROM (EXPLAIN indexes = 1 SELECT count() FROM pkn WHERE has([CAST(tuple(1), 'Tuple(c UInt8)')], kt)) WHERE explain ILIKE '%element set%';
+SELECT 'packed named key differing outer name',
+    (SELECT count() FROM pkn WHERE has([CAST(tuple(1), 'Tuple(c UInt8)')], kt)) = (SELECT count() FROM pkno WHERE has([CAST(tuple(1), 'Tuple(c UInt8)')], kt));
+SELECT 'packed named key matching outer name keeps atom', count() > 0 FROM (EXPLAIN indexes = 1 SELECT count() FROM pkn WHERE has([CAST(tuple(1), 'Tuple(a UInt8)')], kt)) WHERE explain ILIKE '%element set%';
+SELECT 'packed named key matching outer name',
+    (SELECT count() FROM pkn WHERE has([CAST(tuple(1), 'Tuple(a UInt8)')], kt)) = (SELECT count() FROM pkno WHERE has([CAST(tuple(1), 'Tuple(a UInt8)')], kt));
+DROP TABLE pkn; DROP TABLE pkno;
+
 SELECT '--- composite IN over a narrowing element: pruning is withdrawn, matching the oracle ---';
 
 -- Pre-existing behaviour recorded for completeness: on a narrowing composite pair the runtime cast
