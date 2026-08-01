@@ -306,9 +306,10 @@ struct ToTimeImpl
 
     static Int32 execute(Int64 dt64, const DateLUTImpl & time_zone)
     {
-        /// Compute local seconds-of-day using timezone offset (aligned with DateTime64 -> Time64)
+        /// Compute local seconds-of-day using timezone offset (aligned with DateTime64 -> Time64).
+        /// Reduce modulo 86400 before adding the offset so the sum cannot overflow for extreme dt64 (e.g. INT64_MIN).
         Int64 offset = time_zone.timezoneOffset(dt64);
-        Int64 local_seconds = (dt64 + offset) % 86400;
+        Int64 local_seconds = (dt64 % 86400 + offset) % 86400;
         if (local_seconds < 0)
             local_seconds += 86400;
 
@@ -2289,40 +2290,44 @@ struct ConvertImpl
                 if (arguments.size() > 2 && !arguments[2].column.get()->getDataAt(i).empty())
                     time_zone = &DateLUT::instance(arguments[2].column.get()->getDataAt(i));
 
+                // accurateCastOrNull keeps the representability gate: is the rescaled value in range?
                 if constexpr (std::is_same_v<Additions, AccurateOrNullConvertStrategyAdditions>)
                 {
                     ToFieldType result;
-                    bool convert_result = false;
-
-                    convert_result = tryConvertDecimals<FromDataType, ToDataType>(vec_from[i], col_from->getScale(), col_to->getScale(), result);
-
-                    if (convert_result)
-                        vec_to[i] = result;
-                    else
+                    if (!tryConvertDecimals<FromDataType, ToDataType>(vec_from[i], col_from->getScale(), col_to->getScale(), result))
                     {
                         vec_to[i] = static_cast<ToFieldType>(0);
                         (*vec_null_map_to)[i] = true;
+                        continue;
                     }
                 }
-                else
+
+                auto from_scale_mult = DecimalUtils::scaleMultiplier<Time64>(col_from->getScale());
+                auto to_scale_mult = DecimalUtils::scaleMultiplier<Time64>(col_to->getScale());
+
+                /// Split and localize at the SOURCE scale, where the sub-second fraction is intact. Rescaling
+                /// to the target scale first can truncate a negative fraction across the second boundary, so
+                /// timezoneOffset() would read the offset of the next second instead of the floor second.
+                auto utc_seconds = vec_from[i] / from_scale_mult;
+                auto fraction = vec_from[i] % from_scale_mult;
+                if (fraction < 0)
                 {
-                    vec_to[i] = convertDecimals<FromDataType, ToDataType>(vec_from[i], col_from->getScale(), col_to->getScale());
+                    utc_seconds -= 1;
+                    fraction += from_scale_mult;
                 }
-
-                auto scale_mult = DecimalUtils::scaleMultiplier<Time64>(col_to->getScale());
-
-                // Get the UTC seconds (the integer part) from the input value
-                auto utc_seconds = vec_to[i] / scale_mult;
-                auto fraction = vec_to[i] % scale_mult;
-
-                /// Compute local seconds-of-day using timezone offset (aligned with other toTime/toTime64 conversions)
-                Int64 offset = time_zone->timezoneOffset(utc_seconds);
-                Int64 local_seconds = (static_cast<Int64>(utc_seconds) + offset) % 86400;
+                Int64 offset = time_zone->timezoneOffset(static_cast<Int64>(utc_seconds));
+                /// Reduce modulo 86400 before adding the offset: the sum overflows Int64 for extreme
+                /// inputs such as INT64_MIN, and reducing first leaves the seconds-of-day unchanged.
+                Int64 local_seconds = (static_cast<Int64>(utc_seconds) % 86400 + offset) % 86400;
                 if (local_seconds < 0)
                     local_seconds += 86400;
 
-                // Reassemble the result
-                vec_to[i] = local_seconds * scale_mult + fraction;
+                /// Reduce/expand the non-negative fraction to the target scale (truncating a positive value floors).
+                Int64 fraction_i = static_cast<Int64>(fraction);
+                Int64 fraction_to = col_to->getScale() >= col_from->getScale()
+                    ? fraction_i * (to_scale_mult / from_scale_mult)
+                    : fraction_i / (from_scale_mult / to_scale_mult);
+                vec_to[i] = local_seconds * to_scale_mult + fraction_to;
             }
 
             if constexpr (std::is_same_v<Additions, AccurateOrNullConvertStrategyAdditions>)
@@ -4315,10 +4320,10 @@ struct ToDateMonotonicity
              && ((left.isNull() || left.safeGet<UInt64>() <= max_day_num) && (right.isNull() || right.safeGet<UInt64>() > max_day_num)))
             || ((left.getType() == Field::Types::Int64 || left.isNull()) && (right.getType() == Field::Types::Int64 || right.isNull())
                 && ((left.isNull() || left.safeGet<Int64>() <= static_cast<Int64>(max_day_num)) && (right.isNull() || right.safeGet<Int64>() > static_cast<Int64>(max_day_num))))
-            || ((
+            || (
                 (left.getType() == Field::Types::Float64 || left.isNull())
                 && (right.getType() == Field::Types::Float64 || right.isNull())
-                && ((left.isNull() || left.safeGet<Float64>() <= static_cast<Float64>(max_day_num)) && (right.isNull() || right.safeGet<Float64>() > static_cast<Float64>(max_day_num)))))
+                && ((left.isNull() || left.safeGet<Float64>() <= static_cast<Float64>(max_day_num)) && (right.isNull() || right.safeGet<Float64>() > static_cast<Float64>(max_day_num))))
             || !isNativeNumber(type))
         {
             return {};
