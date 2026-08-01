@@ -27,6 +27,11 @@ SETUP="SET output_format_parquet_parallel_encoding = 1;
        SET max_block_size = 1;
        SET function_sleep_max_microseconds_per_block = 100000000;"
 
+# Options after an empty `--` bypass the unrecognized-option check and unknown keys are dropped
+# silently, so a typo or a rename would leave the injector off with exit status 0. One spelling,
+# shared with the loop below and asserted live, is what keeps that failure loud.
+INJECT="--cannot_allocate_thread_fault_injection_probability=0.05"
+
 # Positive control: with nothing injected the same write must complete, take the parallel encoder
 # path, and leave readable multi-row-group data. Without it a run that never reached the encoder
 # would be indistinguishable from a successful write.
@@ -45,9 +50,19 @@ then
     exit 1
 fi
 
+# `changed` is what separates an explicitly set value from the default, so this asserts the exact
+# spelling the loop passes really reaches the injector rather than being ignored.
+${CLICKHOUSE_LOCAL} --path "$WORK/db" -q "
+    SELECT countIf(toFloat64(value) > 0 AND changed)
+    FROM system.server_settings
+    WHERE name = 'cannot_allocate_thread_fault_injection_probability';
+" -- "$INJECT"
+rm -rf "$WORK/db"
+
 # `timeout` is the oracle: completion is asserted, the hang is never asserted. A hit needs a
 # `trySchedule` failure after the count has already underflowed, which happens in roughly a
 # quarter of iterations, so 30 of them make a miss very unlikely.
+completed=0
 for _ in {1..30}
 do
     # The budget is only ever spent on a real hang, so it is sized for margin: a completing
@@ -56,7 +71,7 @@ do
         $SETUP
         SYSTEM START THREAD FUZZER;
         $WRITE
-    " -- --cannot_allocate_thread_fault_injection_probability=0.05 >/dev/null 2>"$WORK/err.txt"
+    " -- "$INJECT" >/dev/null 2>"$WORK/err.txt"
     rc=$?
 
     rm -rf "$WORK/db"
@@ -68,12 +83,23 @@ do
     then
         echo "HUNG"
         exit 1
-    elif [ "$rc" -ne 0 ] && ! grep -q "CANNOT_SCHEDULE_TASK" "$WORK/err.txt"
+    elif [ "$rc" -eq 0 ]
+    then
+        completed=$((completed + 1))
+    elif ! grep -q "CANNOT_SCHEDULE_TASK" "$WORK/err.txt"
     then
         echo "UNEXPECTED rc=$rc"
         cat "$WORK/err.txt"
         exit 1
     fi
 done
+
+# The hang needs a write that gets past its first schedule, so a run where every iteration failed
+# early would assert nothing. Roughly two thirds of them complete, so one is a safe floor.
+if [ "$completed" -eq 0 ]
+then
+    echo "NO INJECTED ITERATION COMPLETED completed=$completed"
+    exit 1
+fi
 
 echo "OK"
