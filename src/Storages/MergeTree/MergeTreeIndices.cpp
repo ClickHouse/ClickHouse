@@ -149,11 +149,8 @@ bool isRepresentationPreservingConversion(const IDataType * from, const IDataTyp
             continue;
         }
 
-        /// LowCardinality keeps its own framing (a dictionary plus indexes) whatever the dictionary
-        /// type is, and forwards value bytes to the dictionary type's own serialization, so a
-        /// dictionary-side conversion that is representation-preserving leaves every byte alone.
-        /// Pairwise like the wrappers above: adding or dropping the wrapper changes the framing
-        /// itself, which is a real difference no allow-list entry may wave through.
+        /// Pairwise, like the wrappers above: the framing (a dictionary plus indexes) belongs to the
+        /// wrapper, so adding or dropping it is a difference no allow-list entry can cover.
         const auto * low_cardinality_from = typeid_cast<const DataTypeLowCardinality *>(from);
         const auto * low_cardinality_to = typeid_cast<const DataTypeLowCardinality *>(to);
         if (low_cardinality_from && low_cardinality_to)
