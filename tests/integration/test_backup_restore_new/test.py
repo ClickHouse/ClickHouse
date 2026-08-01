@@ -756,10 +756,8 @@ def test_backup_to_not_yet_existing_backup_area():
     # The load-bearing assertion is that two backups to the same area fsync the SAME number of
     # directories: the first has to create deep_backups/a/b/c, the second finds it there, and how
     # much already exists must not change what gets fsynced. Existence is not proof of durability,
-    # so the writer walks the area's ancestors to the filesystem root either way. Comparing two
-    # backups is what makes this independent of how many directories the backup contents themselves
-    # need, which randomized merge-tree settings vary. The second assertion below pins that the
-    # equal counts are the full chain rather than a collapse to zero.
+    # so the writer walks the area's ancestors to the filesystem root either way. The second
+    # assertion pins that the equal counts are the whole chain rather than a collapse to zero.
     #
     # The concurrent variant - two backups racing to create a shared intermediate directory, which
     # is what motivated syncing the ancestors instead of trusting existence - is NOT covered
@@ -779,19 +777,21 @@ def test_backup_to_not_yet_existing_backup_area():
         ["bash", "-c", "rm -rf /var/lib/clickhouse/deep_backups"], user="root"
     )
 
-    def backup_to(subdir, query_id, fsync=1):
+    # The counted pair goes to an archive on purpose: an archive is one file written directly into
+    # the area, so the fsynced set is exactly the chain. A directory destination also fsyncs one
+    # directory per part file, and randomized merge-tree settings vary how many.
+    def backup_to(subdir, query_id, fsync=1, archive=True):
+        dest = f"{AREA}/{subdir}.zip" if archive else f"{AREA}/{subdir}"
         instance.query(
-            f"BACKUP TABLE test.table TO File('{AREA}/{subdir}')"
+            f"BACKUP TABLE test.table TO File('{dest}')"
             f" SETTINGS fsync_backup_files = {fsync}",
             query_id=query_id,
         )
         return get_events_for_query(query_id)
 
-    # b1 has to create deep_backups, a, b and c under the pre-existing /var/lib/clickhouse; b2 finds
-    # them. Both fsync the area itself, the ancestors the chain needed, and every level above them up
-    # to /, so both counts are the same chain plus the identical destination contents. Before the
-    # ancestor walk the writer stopped one level above whatever already existed, so b1 fsynced four
-    # directories more than b2 - that gap was the defect.
+    # b1 creates deep_backups/a/b/c under the pre-existing /var/lib/clickhouse; b2 finds it. Both
+    # fsync the area and every level above it up to /. Before the ancestor walk the writer stopped one
+    # level above whatever already existed, so b1 fsynced four directories more - that was the bug.
     first = backup_to("b1", "backup_deep_first")
     second = backup_to("b2", "backup_deep_second")
 
@@ -800,18 +800,19 @@ def test_backup_to_not_yet_existing_backup_area():
         f" got b1={first['DirectorySync']}, b2={second['DirectorySync']}"
     )
 
-    # ... and the equal counts must be the whole chain, not both collapsing to nothing. Derived from
-    # the configured path rather than hard-coded, so it stays right if the area moves: the area plus
-    # each of its ancestors, up to and including /.
+    # ... and the equal counts must be the whole chain. Exact, not a floor: on an archive destination
+    # the fsynced set is only the chain, so this pins both that it reaches / and that the walk does
+    # not run past the area. Derived from the configured path rather than hard-coded.
     chain_len = len(PurePosixPath(AREA).parents) + 1
-    assert second["DirectorySync"] >= chain_len, (
-        f"expected at least the {chain_len} directories of {AREA} and its ancestors to be fsynced,"
+    assert second["DirectorySync"] == chain_len, (
+        f"expected exactly the {chain_len} directories of {AREA} and its ancestors to be fsynced,"
         f" got {second['DirectorySync']}"
     )
 
     # Control: the opt-out must issue no fsyncs of either kind, so the counts above are attributable
-    # to fsync_backup_files rather than to something ambient.
-    third = backup_to("b3", "backup_deep_off", fsync=0)
+    # to fsync_backup_files rather than to something ambient. Kept on a directory destination, the
+    # shape every other case in this module uses; zero is shape-independent.
+    third = backup_to("b3", "backup_deep_off", fsync=0, archive=False)
     assert (third.get("FileSync", 0), third.get("DirectorySync", 0)) == (0, 0), (
         f"fsync_backup_files = 0 still synced {third.get('FileSync', 0)} files"
         f" / {third.get('DirectorySync', 0)} directories"
@@ -819,7 +820,7 @@ def test_backup_to_not_yet_existing_backup_area():
 
     # A backup written into a freshly created area must also be restorable, not merely counted.
     instance.query("DROP TABLE test.table")
-    instance.query(f"RESTORE TABLE test.table FROM File('{AREA}/b1')")
+    instance.query(f"RESTORE TABLE test.table FROM File('{AREA}/b1.zip')")
     assert instance.query("SELECT count(), sum(x) FROM test.table") == "10\t45\n"
     instance.query("DROP TABLE test.table")
 
