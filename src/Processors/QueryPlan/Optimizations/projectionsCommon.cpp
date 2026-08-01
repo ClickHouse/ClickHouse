@@ -379,11 +379,8 @@ static bool projectionPartCanFillDefault(
         if (!parent_table_columns.hasColumnOrSubcolumn(GetColumnsOptions::All, identifier))
             continue;
 
-        /// Missing from the projection part. Being a current projection column is not enough: if the
-        /// parent part still stores it, the projection part is merely stale for it (case (3)) and the
-        /// reader would synthesize a type default here while the parent path reads the real values,
-        /// so the two paths disagree. Only a late-add the parent part lacks too (case (4)) fills
-        /// identically, and then only if its own default is fillable in turn.
+        /// Fillable only as a late-add (case (4)): a dependency the parent part still stores is
+        /// case (3) drift, and filling it here would not match the parent read path.
         if (parent_part.tryGetColumn(identifier)
             || !projection_columns.hasColumnOrSubcolumn(GetColumnsOptions::AllPhysical, identifier)
             || !projectionPartCanFillDefault(

@@ -1343,10 +1343,8 @@ void MergeTask::ExecuteAndFinalizeHorizontalPart::prepareProjectionsToMergeAndRe
                     if (!parent_table_columns.hasColumnOrSubcolumn(GetColumnsOptions::All, identifier))
                         continue;
 
-                    /// A current projection column the parent part still stores is case (3): the
-                    /// projection part is stale for it, so filling it from its type default would
-                    /// diverge from the parent data. Only a late-add missing from both parts fills
-                    /// identically, and then only if its own default is fillable in turn.
+                    /// Fillable only as a late-add: a dependency the parent part still stores is
+                    /// drift, and filling it here would not match the parent read path.
                     if (parent_part.tryGetColumn(identifier)
                         || !projection_metadata_columns.hasColumnOrSubcolumn(GetColumnsOptions::AllPhysical, identifier)
                         || !self(identifier, resolving, known_fillable, self))
