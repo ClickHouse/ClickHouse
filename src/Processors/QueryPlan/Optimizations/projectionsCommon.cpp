@@ -317,13 +317,9 @@ size_t filterPartsByProjection(
     return filtered_parts;
 }
 
-/// A late-added column's DEFAULT/MATERIALIZED default is fillable from the projection part only if
-/// every column-or-subcolumn its expression references can itself be resolved there: either stored
-/// by the part and still a current projection column (subcolumns resolve from a stored current base,
-/// e.g. `n.x`), virtual, or filled from its own default in turn (a chain of late-added defaults).
-/// Otherwise, e.g. an orphaned-but-stored alias source after the alias was re-pointed off it, the
-/// read is unresolvable and must route to the parent. Mirrors the reader's recursive resolution in
-/// MergeTreeBlockReadUtils::injectRequiredColumnsRecursively.
+/// Whether `column_name`'s default can be evaluated on the projection part: every column or
+/// subcolumn it references must be stored there and still current, virtual, or fillable in turn.
+/// Kept in lockstep with `injectRequiredColumnsRecursively`, which resolves the same way.
 static bool projectionPartCanFillDefault(
     const IMergeTreeDataPart & projection_part,
     const ProjectionDescription & projection,

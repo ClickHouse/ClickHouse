@@ -1291,14 +1291,8 @@ void MergeTask::ExecuteAndFinalizeHorizontalPart::prepareProjectionsToMergeAndRe
         /// throws instead of yielding a stale-but-valid part, so it must rebuild in every mode.
         bool projection_part_default_unfillable = false;
 
-        /// A late-added column is only mergeable from the projection part if its DEFAULT/MATERIALIZED
-        /// expression can be evaluated there: every column-or-subcolumn it references must be a current
-        /// projection column the part stores (subcolumns resolve from a stored current base), or virtual,
-        /// or fillable from its own default in turn. A dependency the part physically stores but that the
-        /// metadata no longer lists (e.g. its alias source after the alias was re-pointed off it) is
-        /// unresolvable when rebuilding from the projection part, so it must count as drift like a
-        /// never-stored one. Keep this in lockstep with projectionPartCanFillDefault (the read path in
-        /// projectionsCommon.cpp).
+        /// Whether the column's default can be evaluated on the projection part. Must stay in lockstep
+        /// with `projectionPartCanFillDefault` in `projectionsCommon.cpp`, the same rule on the read path.
         const auto & projection_metadata_columns = projection.metadata->getColumns();
         auto projection_part_can_fill_default = [&](const IMergeTreeDataPart & projection_part, const String & column_name)
         {
