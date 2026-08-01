@@ -75,6 +75,17 @@ You can specify how long (in seconds) to wait for inactive replicas to execute a
 For all `ALTER` queries, if `alter_sync = 2` and some replicas are not active for more than the time, specified in the `replication_wait_for_inactive_replica_timeout` setting, then an exception `UNFINISHED` is thrown.
 :::
 
+### Concurrent mutations on one table {#concurrent-mutations-on-one-table}
+
+Submitting several separate mutation `ALTER` statements against the same table in quick succession can fail with `CANNOT_ASSIGN_ALTER` (code 517) while an earlier mutation is still being assigned. Approaches that avoid the race:
+
+- Combine independent metadata operations into a **single** multi-clause `ALTER` when the grammar allows it (for example multiple `ADD INDEX` clauses).
+- Serialize mutation statements and wait for the previous entry to leave the unassigned state (see [`system.mutations`](/operations/system-tables/mutations) and [`mutations_sync`](/operations/settings/settings.md/#mutations_sync)).
+
+### Combining `MATERIALIZE INDEX` clauses {#combining-materialize-index-clauses}
+
+Unlike packing several `ADD INDEX` clauses into one statement, putting multiple `MATERIALIZE INDEX` clauses in a single `ALTER` can fail with a parse/planning error (for example code 36 / unknown index). Prefer one `MATERIALIZE INDEX` per statement when you hit that failure mode; wait between statements with `mutations_sync` if you need them ordered.
+
 ## Related content {#related-content}
 
 - Blog: [Handling Updates and Deletes in ClickHouse](https://clickhouse.com/blog/handling-updates-and-deletes-in-clickhouse)
