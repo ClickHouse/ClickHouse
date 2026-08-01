@@ -4,9 +4,10 @@ Tests for `parse_settings_history_changes` in
 `settings_changes_history` style check with the settings a change adds to
 `src/Core/SettingsChangesHistory.cpp`.
 
-The parser reports new records, value changes (including an in-place edit of an existing entry)
-and removed records, but not reason-only edits or records moved between blocks. Whether such a
-change must sit under the current version
+The parser reports new records, value changes (including an in-place edit of an existing entry),
+removed records and records moved to another version or namespace block; only reason-only edits
+of an entry that stays in its block are ignored. Whether such a change must sit under the current
+version
 block is decided by the style check, not the parser: it enforces the rule as soon as any other
 C++ source file changed, so an edit that touches only SettingsChangesHistory.cpp - a historical
 correction - is allowed there. The parser therefore reports in-place value edits; the source-file
@@ -118,9 +119,11 @@ def test_removal_namespace_comes_from_the_enclosing_block():
     ]
 
 
-def test_entry_moved_between_blocks_is_ignored():
-    # The same record moved to another block: the recorded values did not change, so neither
-    # side of the diff is reported.
+def test_entry_moved_to_an_older_version_block_is_reported():
+    # "Move instead of delete": the record is re-added verbatim under an older version block.
+    # The newest recorded value is unchanged, so 03999_stateless_settings_history still passes,
+    # but `compatibility` would attribute the default flip to the wrong release - so the parser
+    # must report it once and let the style check demand it under the current version block.
     patch = (
         "@@ -1,4 +1,3 @@\n"
         " {\n"
@@ -129,6 +132,40 @@ def test_entry_moved_between_blocks_is_ignored():
         "@@ -9,3 +8,4 @@\n"
         " {\n"
         '+            {"old_setting", 0, 1000, "Fixed record"},\n'
+        " });\n"
+    )
+    assert parse_settings_history_changes(patch, FILE_LINES) == [
+        {"namespace": "Session", "name": "old_setting"}
+    ]
+
+
+def test_entry_moved_between_namespaces_is_reported():
+    # The same version, but the record hops from the session history to the MergeTree history.
+    patch = (
+        "@@ -1,4 +1,3 @@\n"
+        " {\n"
+        '-            {"shared_name", 0, 1, "Moved"},\n'
+        " });\n"
+        "@@ -5,3 +4,4 @@\n"
+        " {\n"
+        '+            {"shared_name", 0, 1, "Moved"},\n'
+        " });\n"
+    )
+    assert parse_settings_history_changes(patch, FILE_LINES) == [
+        {"namespace": "MergeTree", "name": "shared_name"},
+        {"namespace": "Session", "name": "shared_name"},
+    ]
+
+
+def test_entry_reordered_inside_the_same_block_is_ignored():
+    # Both sides sit in the same block, so nothing about what the history records changed.
+    patch = (
+        "@@ -1,4 +1,4 @@\n"
+        " addSettingsChanges(settings_changes_history, \"26.8\",\n"
+        " {\n"
+        '-            {"brand_new_setting", false, true, "New setting"},\n'
+        '             {"another_setting", 0, 1, "Untouched"},\n'
+        '+            {"brand_new_setting", false, true, "New setting"},\n'
         " });\n"
     )
     assert parse_settings_history_changes(patch, FILE_LINES) == []

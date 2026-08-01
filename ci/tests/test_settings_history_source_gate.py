@@ -130,5 +130,39 @@ def test_deleting_the_last_record_is_not_an_escape_hatch(monkeypatch):
     assert _run(monkeypatch, _kv([HISTORY], changed)) == ""
 
 
+def test_moving_a_record_to_an_older_block_is_not_an_escape_hatch(monkeypatch):
+    # The "move instead of delete" variant: the record is re-added verbatim under an older
+    # version block. Nothing about the newest recorded value changes, so
+    # 03999_stateless_settings_history passes, but `compatibility` would attribute the default
+    # flip to the wrong release. The parser reports the setting once and the style check demands
+    # it under the current version block.
+    entry = '            {"no_such_setting_at_all", 0, 1, "Recorded here now"},'
+    file_lines = [
+        '        addSettingsChanges(settings_changes_history, "26.8",',
+        "        {",
+        "        });",
+        '        addSettingsChanges(settings_changes_history, "26.7",',
+        "        {",
+        entry,
+        "        });",
+    ]
+    patch = (
+        "@@ -1,4 +1,3 @@\n"
+        ' addSettingsChanges(settings_changes_history, "26.8",\n'
+        " {\n"
+        f"-{entry}\n"
+        " });\n"
+        "@@ -5,3 +4,4 @@\n"
+        ' addSettingsChanges(settings_changes_history, "26.7",\n'
+        " {\n"
+        f"+{entry}\n"
+        " });\n"
+    )
+    changed = parse_settings_history_changes(patch, file_lines)
+    assert changed == [{"namespace": "Session", "name": "no_such_setting_at_all"}]
+    kv = _kv([HISTORY, "src/Core/Settings.cpp"], changed)
+    assert "no_such_setting_at_all" in _run(monkeypatch, kv)
+
+
 def test_no_history_change_at_all_is_skipped(monkeypatch):
     assert _run(monkeypatch, _kv(["src/Core/Settings.cpp"], [])) == ""

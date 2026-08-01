@@ -9,7 +9,7 @@ from ci.praktika.info import Info
 from ci.praktika.utils import Shell
 
 _SETTINGS_HISTORY_ENTRY_RE = re.compile(r'^\s*\{\s*"([A-Za-z0-9_]+)"')
-_SETTINGS_HISTORY_BLOCK_RE = re.compile(r'addSettingsChanges\(\s*(\w+)\s*,\s*"[\d.]+"')
+_SETTINGS_HISTORY_BLOCK_RE = re.compile(r'addSettingsChanges\(\s*(\w+)\s*,\s*"([\d.]+)"')
 _SETTINGS_HISTORY_HUNK_RE = re.compile(r"^@@ -\d+(?:,\d+)? \+(\d+)(?:,\d+)? @@")
 _SETTINGS_HISTORY_NAMESPACES = {
     "settings_changes_history": "Session",
@@ -24,14 +24,31 @@ def _settings_history_entry_signature(entry_body):
     return re.sub(r',\s*"(?:[^"\\]|\\.)*"\s*\},?\s*$', "", entry_body).strip()
 
 
+def _settings_history_block_at(file_lines, lineno):
+    """The (namespace, version) of the `addSettingsChanges` block that physically contains the
+    given new-file line number, or (None, None) when the line is outside any known block."""
+    for i in range(min(lineno, len(file_lines)) - 1, -1, -1):
+        mb = _SETTINGS_HISTORY_BLOCK_RE.search(file_lines[i])
+        if mb:
+            return _SETTINGS_HISTORY_NAMESPACES.get(mb.group(1)), mb.group(2)
+    return None, None
+
+
 def parse_settings_history_changes(patch, file_lines):
     """Given the unified diff of src/Core/SettingsChangesHistory.cpp and the lines of the file
     at HEAD, return a list of {"namespace", "name"} for settings whose recorded history this
     change touches: entries that were added, entries whose value was edited in place, and
-    entries that were REMOVED. Reason-only edits and moves (an added or removed entry whose
-    value-signature appears on the other side of the diff) are ignored. The namespace comes
-    from the block that physically contains the line (new-file line number), not from global
-    name presence - names can exist in both histories.
+    entries that were REMOVED. Only reason-only edits are ignored - an added and a removed
+    entry whose value-signature matches AND that sit in the SAME version block of the same
+    namespace, so nothing about what the history records actually changed. The namespace and
+    version come from the block that physically contains the line (new-file line number), not
+    from global name presence - names can exist in both histories.
+
+    Matching on the block, not on the value signature alone, is what closes the "move instead
+    of delete" variant of the escape hatch: re-adding an unchanged entry under an OLDER block
+    keeps the newest recorded value intact, so 03999_stateless_settings_history still passes,
+    while `compatibility` starts attributing the default flip to the wrong release. Such a move
+    is reported once, and the caller then requires the setting under the current version block.
 
     Removals are reported because dropping a record is just another way of changing what the
     history says. Without that, deleting the newest record for a setting would be a silent
@@ -49,8 +66,6 @@ def parse_settings_history_changes(patch, file_lines):
     what keeps a phantom record deletable."""
     added = []  # (new_line_number, name, signature)
     removed = []  # (new_line_number, name, signature)
-    added_signatures = set()
-    removed_signatures = set()
     new_lineno = None
     for line in patch.splitlines():
         hunk = _SETTINGS_HISTORY_HUNK_RE.match(line)
@@ -64,39 +79,45 @@ def parse_settings_history_changes(patch, file_lines):
             if m:
                 signature = _settings_history_entry_signature(line[1:])
                 added.append((new_lineno, m.group(1), signature))
-                added_signatures.add(signature)
             new_lineno += 1
         elif line.startswith("-") and not line.startswith("---"):
             m = _SETTINGS_HISTORY_ENTRY_RE.match(line[1:])
             if m:
                 signature = _settings_history_entry_signature(line[1:])
-                # The removal position in the new file is inside the same block the entry was
-                # in, so the new-file line number resolves its namespace just as for an added
-                # line - removing entries does not move the surrounding block headers.
-                removed.append((new_lineno, m.group(1), signature))
-                removed_signatures.add(signature)
+                # A removed line sat just BEFORE the new-file line the diff is at, so resolve
+                # its block from the preceding line; otherwise removing the last entry of a
+                # block whose successor header follows immediately would be attributed to the
+                # next block. Removing entries does not move the surrounding block headers.
+                removed.append((new_lineno - 1, m.group(1), signature))
             # A removed line does not advance the new-file line counter.
         else:
             new_lineno += 1
 
+    def with_blocks(entries):
+        """(namespace, version, name, signature) for every entry that resolves to a block."""
+        resolved = []
+        for lineno, name, signature in entries:
+            namespace, version = _settings_history_block_at(file_lines, lineno)
+            if namespace:
+                resolved.append((namespace, version, name, signature))
+        return resolved
+
+    added = with_blocks(added)
+    removed = with_blocks(removed)
+    # The key includes the block: a matching pair inside one block is a reason-only edit, while
+    # the same pair spread over two blocks is a move of the record to another release.
+    added_keys = {(ns, ver, sig) for ns, ver, _, sig in added}
+    removed_keys = {(ns, ver, sig) for ns, ver, _, sig in removed}
+
     result = []
     seen = set()
-    for entries, other_signatures in (
-        (added, removed_signatures),
-        (removed, added_signatures),
-    ):
-        for lineno, name, signature in entries:
-            if signature in other_signatures:
-                # A reason-only edit of an existing entry, or an entry moved between blocks:
-                # the recorded values themselves did not change.
+    for entries, other_keys in ((added, removed_keys), (removed, added_keys)):
+        for namespace, version, name, signature in entries:
+            if (namespace, version, signature) in other_keys:
+                # A reason-only edit of an existing entry: the recorded values did not change
+                # and the record stayed in the block it was already in.
                 continue
-            namespace = None
-            for i in range(min(lineno, len(file_lines)) - 1, -1, -1):
-                mb = _SETTINGS_HISTORY_BLOCK_RE.search(file_lines[i])
-                if mb:
-                    namespace = _SETTINGS_HISTORY_NAMESPACES.get(mb.group(1))
-                    break
-            if namespace and (namespace, name) not in seen:
+            if (namespace, name) not in seen:
                 seen.add((namespace, name))
                 result.append({"namespace": namespace, "name": name})
     return result

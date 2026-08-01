@@ -589,7 +589,8 @@ def check_compose_images(files) -> str:
 
 
 def check_settings_changes_history():
-    """Every setting added, value-changed or removed in src/Core/SettingsChangesHistory.cpp by
+    """Every setting added, value-changed, removed or moved to another block in
+    src/Core/SettingsChangesHistory.cpp by
     this change must be recorded under the CURRENT version block (in addition to any older block
     used for backports), so the settings history stays consistent with the release version
     (together with the 03999_stateless_settings_history functional test, which checks that
@@ -600,7 +601,9 @@ def check_settings_changes_history():
     of the original change instead of recording the revert, and both guards would stay green
     while `compatibility` would hand out the wrong value for the release that shipped the other
     default. Deleting a phantom record stays possible - see the gate below, it is a change that
-    touches this file alone.
+    touches this file alone. Moves count for the same reason: re-adding an unchanged record under
+    an older block leaves the newest recorded value intact, so the functional test passes while
+    `compatibility` attributes the default flip to the wrong release.
 
     Runs only when that file changed; the list of changed setting names is provided by the
     store_data.py workflow hook (which parses the PR / merge-queue diff). Returns "" on
@@ -713,7 +716,8 @@ def check_settings_changes_history():
 
     if violations:
         return (
-            f"These settings were added, value-changed or removed in {path} but are not recorded "
+            f"These settings were added, value-changed, removed or moved to another block in "
+            f"{path} but are not recorded "
             f"under the current version ('{current_version}') block of "
             f"SettingsChangesHistory.cpp. Add "
             f"an entry for each under the '{current_version}' block (older blocks may keep their "
