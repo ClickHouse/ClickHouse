@@ -1,0 +1,423 @@
+X-A	X-B	X-C
+QUERY id: 0
+  PROJECTION COLUMNS
+    a String
+    b String
+    c String
+  PROJECTION
+    LIST id: 1, nodes: 3
+      FUNCTION id: 2, function_name: arrayJoin, function_type: ordinary, result_type: String
+        ARGUMENTS
+          LIST id: 3, nodes: 1
+            FUNCTION id: 4, function_name: arrayFilter, function_type: ordinary, result_type: Array(String)
+              ARGUMENTS
+                LIST id: 5, nodes: 2
+                  LAMBDA id: 6
+                    ARGUMENTS id: 7
+                      ARGUMENT id: 0, name: __array_join_filter_x, type: String
+                    EXPRESSION 
+                      FUNCTION id: 8, function_name: equals, function_type: ordinary, result_type: UInt8
+                        ARGUMENTS
+                          LIST id: 9, nodes: 2
+                            COLUMN id: 10, column_name: __array_join_filter_x, result_type: String, source_id: 7
+                            CONSTANT id: 11, constant_value: \'X-A\', constant_value_type: String
+                  COLUMN id: 12, column_name: A, result_type: Array(String), source_id: 13
+      FUNCTION id: 14, function_name: arrayJoin, function_type: ordinary, result_type: String
+        ARGUMENTS
+          LIST id: 15, nodes: 1
+            FUNCTION id: 16, function_name: arrayFilter, function_type: ordinary, result_type: Array(String)
+              ARGUMENTS
+                LIST id: 17, nodes: 2
+                  LAMBDA id: 18
+                    ARGUMENTS id: 19
+                      ARGUMENT id: 0, name: __array_join_filter_x, type: String
+                    EXPRESSION 
+                      FUNCTION id: 20, function_name: equals, function_type: ordinary, result_type: UInt8
+                        ARGUMENTS
+                          LIST id: 21, nodes: 2
+                            COLUMN id: 22, column_name: __array_join_filter_x, result_type: String, source_id: 19
+                            CONSTANT id: 23, constant_value: \'X-B\', constant_value_type: String
+                  COLUMN id: 24, column_name: B, result_type: Array(String), source_id: 13
+      FUNCTION id: 25, function_name: arrayJoin, function_type: ordinary, result_type: String
+        ARGUMENTS
+          LIST id: 26, nodes: 1
+            FUNCTION id: 27, function_name: arrayFilter, function_type: ordinary, result_type: Array(String)
+              ARGUMENTS
+                LIST id: 28, nodes: 2
+                  LAMBDA id: 29
+                    ARGUMENTS id: 30
+                      ARGUMENT id: 0, name: __array_join_filter_x, type: String
+                    EXPRESSION 
+                      FUNCTION id: 31, function_name: equals, function_type: ordinary, result_type: UInt8
+                        ARGUMENTS
+                          LIST id: 32, nodes: 2
+                            COLUMN id: 33, column_name: __array_join_filter_x, result_type: String, source_id: 30
+                            CONSTANT id: 34, constant_value: \'X-C\', constant_value_type: String
+                  COLUMN id: 35, column_name: C, result_type: Array(String), source_id: 13
+  JOIN TREE
+    TABLE id: 13, alias: __table1, table_name: default.t_aj_filter
+0
+QUERY id: 0
+  PROJECTION COLUMNS
+    a String
+  PROJECTION
+    LIST id: 1, nodes: 1
+      FUNCTION id: 2, function_name: arrayJoin, function_type: ordinary, result_type: String
+        ARGUMENTS
+          LIST id: 3, nodes: 1
+            COLUMN id: 4, column_name: A, result_type: Array(String), source_id: 5
+  JOIN TREE
+    TABLE id: 5, alias: __table1, table_name: default.t_aj_filter
+  WHERE
+    FUNCTION id: 6, function_name: equals, function_type: ordinary, result_type: UInt8
+      ARGUMENTS
+        LIST id: 7, nodes: 2
+          FUNCTION id: 8, function_name: arrayJoin, function_type: ordinary, result_type: String
+            ARGUMENTS
+              LIST id: 9, nodes: 1
+                COLUMN id: 4, column_name: A, result_type: Array(String), source_id: 5
+          CONSTANT id: 10, constant_value: \'X-A\', constant_value_type: String
+X-A	1
+QUERY id: 0
+  PROJECTION COLUMNS
+    a String
+  PROJECTION
+    LIST id: 1, nodes: 1
+      FUNCTION id: 2, function_name: arrayJoin, function_type: ordinary, result_type: String
+        ARGUMENTS
+          LIST id: 3, nodes: 1
+            FUNCTION id: 4, function_name: arrayFilter, function_type: ordinary, result_type: Array(String)
+              ARGUMENTS
+                LIST id: 5, nodes: 2
+                  LAMBDA id: 6
+                    ARGUMENTS id: 7
+                      ARGUMENT id: 0, name: __array_join_filter_x, type: String
+                    EXPRESSION 
+                      FUNCTION id: 8, function_name: equals, function_type: ordinary, result_type: UInt8
+                        ARGUMENTS
+                          LIST id: 9, nodes: 2
+                            COLUMN id: 10, column_name: __array_join_filter_x, result_type: String, source_id: 7
+                            FUNCTION id: 11, function_name: toString, function_type: ordinary, result_type: String
+                              ARGUMENTS
+                                LIST id: 12, nodes: 1
+                                  COLUMN id: 13, column_name: id, result_type: Int32, source_id: 14
+                  COLUMN id: 15, column_name: A, result_type: Array(String), source_id: 14
+  JOIN TREE
+    TABLE id: 14, alias: __table1, table_name: default.t_aj_filter
+QUERY id: 0
+  PROJECTION COLUMNS
+    a String
+  PROJECTION
+    LIST id: 1, nodes: 1
+      FUNCTION id: 2, function_name: arrayJoin, function_type: ordinary, result_type: String
+        ARGUMENTS
+          LIST id: 3, nodes: 1
+            FUNCTION id: 4, function_name: arrayFilter, function_type: ordinary, result_type: Array(String)
+              ARGUMENTS
+                LIST id: 5, nodes: 2
+                  LAMBDA id: 6
+                    ARGUMENTS id: 7
+                      ARGUMENT id: 0, name: __array_join_filter_x, type: String
+                    EXPRESSION 
+                      FUNCTION id: 8, function_name: and, function_type: ordinary, result_type: UInt8
+                        ARGUMENTS
+                          LIST id: 9, nodes: 2
+                            FUNCTION id: 10, function_name: equals, function_type: ordinary, result_type: UInt8
+                              ARGUMENTS
+                                LIST id: 11, nodes: 2
+                                  COLUMN id: 12, column_name: __array_join_filter_x, result_type: String, source_id: 7
+                                  CONSTANT id: 13, constant_value: \'X-A\', constant_value_type: String
+                            FUNCTION id: 14, function_name: notEquals, function_type: ordinary, result_type: UInt8
+                              ARGUMENTS
+                                LIST id: 15, nodes: 2
+                                  COLUMN id: 12, column_name: __array_join_filter_x, result_type: String, source_id: 7
+                                  CONSTANT id: 16, constant_value: \'P\', constant_value_type: String
+                  COLUMN id: 17, column_name: A, result_type: Array(String), source_id: 18
+  JOIN TREE
+    TABLE id: 18, alias: __table1, table_name: default.t_aj_filter
+1	0	1
+X-A
+QUERY id: 0
+  PROJECTION COLUMNS
+    a String
+  PROJECTION
+    LIST id: 1, nodes: 1
+      FUNCTION id: 2, function_name: arrayJoin, function_type: ordinary, result_type: String
+        ARGUMENTS
+          LIST id: 3, nodes: 1
+            FUNCTION id: 4, function_name: arrayFilter, function_type: ordinary, result_type: Array(String)
+              ARGUMENTS
+                LIST id: 5, nodes: 2
+                  LAMBDA id: 6
+                    ARGUMENTS id: 7
+                      ARGUMENT id: 0, name: __array_join_filter_x, type: String
+                    EXPRESSION 
+                      FUNCTION id: 8, function_name: equals, function_type: ordinary, result_type: UInt8
+                        ARGUMENTS
+                          LIST id: 9, nodes: 2
+                            COLUMN id: 10, column_name: __array_join_filter_x, result_type: String, source_id: 7
+                            CONSTANT id: 11, constant_value: \'X-A\', constant_value_type: String
+                  COLUMN id: 12, column_name: A, result_type: Array(String), source_id: 13
+  JOIN TREE
+    TABLE id: 13, alias: __table1, table_name: default.t_aj_filter
+1	0
+X-A
+QUERY id: 0
+  PROJECTION COLUMNS
+    a String
+  PROJECTION
+    LIST id: 1, nodes: 1
+      COLUMN id: 2, column_name: __array_join_exp_1, result_type: String, source_id: 3
+  JOIN TREE
+    ARRAY_JOIN id: 3, is_left: 0
+      TABLE EXPRESSION
+        TABLE id: 4, alias: __table2, table_name: default.t_aj_filter
+      JOIN EXPRESSIONS
+        LIST id: 5, nodes: 1
+          COLUMN id: 6, alias: __array_join_exp_1, column_name: __array_join_exp_1, result_type: String, source_id: 3
+            EXPRESSION
+              FUNCTION id: 7, function_name: arrayFilter, function_type: ordinary, result_type: Array(String)
+                ARGUMENTS
+                  LIST id: 8, nodes: 2
+                    LAMBDA id: 9
+                      ARGUMENTS id: 10
+                        ARGUMENT id: 0, name: __array_join_filter_x, type: String
+                      EXPRESSION 
+                        FUNCTION id: 11, function_name: equals, function_type: ordinary, result_type: UInt8
+                          ARGUMENTS
+                            LIST id: 12, nodes: 2
+                              COLUMN id: 13, column_name: __array_join_filter_x, result_type: String, source_id: 10
+                              CONSTANT id: 14, constant_value: \'X-A\', constant_value_type: String
+                    COLUMN id: 15, column_name: A, result_type: Array(String), source_id: 4
+2
+QUERY id: 0
+  PROJECTION COLUMNS
+    1 UInt8
+  PROJECTION
+    LIST id: 1, nodes: 1
+      CONSTANT id: 2, constant_value: UInt64_1, constant_value_type: UInt8
+  JOIN TREE
+    TABLE id: 3, alias: __table1, table_name: system.one
+  WHERE
+    FUNCTION id: 4, function_name: equals, function_type: ordinary, result_type: UInt8
+      ARGUMENTS
+        LIST id: 5, nodes: 2
+          FUNCTION id: 6, function_name: arrayJoin, function_type: ordinary, result_type: String
+            ARGUMENTS
+              LIST id: 7, nodes: 1
+                FUNCTION id: 8, function_name: arrayFilter, function_type: ordinary, result_type: Array(String)
+                  ARGUMENTS
+                    LIST id: 9, nodes: 2
+                      LAMBDA id: 10
+                        ARGUMENTS id: 11
+                          ARGUMENT id: 0, name: __array_join_filter_x, type: String
+                        EXPRESSION 
+                          FUNCTION id: 12, function_name: equals, function_type: ordinary, result_type: UInt8
+                            ARGUMENTS
+                              LIST id: 13, nodes: 2
+                                COLUMN id: 14, column_name: __array_join_filter_x, result_type: String, source_id: 11
+                                CONSTANT id: 15, constant_value: \'X\', constant_value_type: String
+                      CONSTANT id: 16, constant_value: Array_[\'X\', \'Y\'], constant_value_type: Array(String)
+          CONSTANT id: 17, constant_value: \'X\', constant_value_type: String
+QUERY id: 0
+  PROJECTION COLUMNS
+    a String
+    b String
+  PROJECTION
+    LIST id: 1, nodes: 2
+      FUNCTION id: 2, function_name: arrayJoin, function_type: ordinary, result_type: String
+        ARGUMENTS
+          LIST id: 3, nodes: 1
+            COLUMN id: 4, column_name: A, result_type: Array(String), source_id: 5
+      FUNCTION id: 6, function_name: arrayJoin, function_type: ordinary, result_type: String
+        ARGUMENTS
+          LIST id: 7, nodes: 1
+            COLUMN id: 8, column_name: B, result_type: Array(String), source_id: 5
+  JOIN TREE
+    TABLE id: 5, alias: __table1, table_name: default.t_aj_filter
+  WHERE
+    FUNCTION id: 9, function_name: equals, function_type: ordinary, result_type: UInt8
+      ARGUMENTS
+        LIST id: 10, nodes: 2
+          FUNCTION id: 11, function_name: arrayJoin, function_type: ordinary, result_type: String
+            ARGUMENTS
+              LIST id: 12, nodes: 1
+                COLUMN id: 4, column_name: A, result_type: Array(String), source_id: 5
+          FUNCTION id: 13, function_name: arrayJoin, function_type: ordinary, result_type: String
+            ARGUMENTS
+              LIST id: 14, nodes: 1
+                COLUMN id: 8, column_name: B, result_type: Array(String), source_id: 5
+QUERY id: 0
+  PROJECTION COLUMNS
+    a String
+    b String
+  PROJECTION
+    LIST id: 1, nodes: 2
+      FUNCTION id: 2, function_name: arrayJoin, function_type: ordinary, result_type: String
+        ARGUMENTS
+          LIST id: 3, nodes: 1
+            COLUMN id: 4, column_name: A, result_type: Array(String), source_id: 5
+      FUNCTION id: 6, function_name: arrayJoin, function_type: ordinary, result_type: String
+        ARGUMENTS
+          LIST id: 7, nodes: 1
+            COLUMN id: 8, column_name: B, result_type: Array(String), source_id: 5
+  JOIN TREE
+    TABLE id: 5, alias: __table1, table_name: default.t_aj_filter
+  WHERE
+    FUNCTION id: 9, function_name: or, function_type: ordinary, result_type: UInt8
+      ARGUMENTS
+        LIST id: 10, nodes: 2
+          FUNCTION id: 11, function_name: equals, function_type: ordinary, result_type: UInt8
+            ARGUMENTS
+              LIST id: 12, nodes: 2
+                FUNCTION id: 13, function_name: arrayJoin, function_type: ordinary, result_type: String
+                  ARGUMENTS
+                    LIST id: 14, nodes: 1
+                      COLUMN id: 4, column_name: A, result_type: Array(String), source_id: 5
+                CONSTANT id: 15, constant_value: \'X-A\', constant_value_type: String
+          FUNCTION id: 16, function_name: equals, function_type: ordinary, result_type: UInt8
+            ARGUMENTS
+              LIST id: 17, nodes: 2
+                FUNCTION id: 18, function_name: arrayJoin, function_type: ordinary, result_type: String
+                  ARGUMENTS
+                    LIST id: 19, nodes: 1
+                      COLUMN id: 8, column_name: B, result_type: Array(String), source_id: 5
+                CONSTANT id: 20, constant_value: \'X-B\', constant_value_type: String
+QUERY id: 0
+  PROJECTION COLUMNS
+    a String
+  PROJECTION
+    LIST id: 1, nodes: 1
+      FUNCTION id: 2, function_name: arrayJoin, function_type: ordinary, result_type: String
+        ARGUMENTS
+          LIST id: 3, nodes: 1
+            FUNCTION id: 4, function_name: arrayFilter, function_type: ordinary, result_type: Array(String)
+              ARGUMENTS
+                LIST id: 5, nodes: 2
+                  LAMBDA id: 6
+                    ARGUMENTS id: 7
+                      ARGUMENT id: 0, name: __array_join_filter_x, type: String
+                    EXPRESSION 
+                      FUNCTION id: 8, function_name: equals, function_type: ordinary, result_type: UInt8
+                        ARGUMENTS
+                          LIST id: 9, nodes: 2
+                            COLUMN id: 10, column_name: __array_join_filter_x, result_type: String, source_id: 7
+                            CONSTANT id: 11, constant_value: \'X-A\', constant_value_type: String
+                  COLUMN id: 12, column_name: A, result_type: Array(String), source_id: 13
+  JOIN TREE
+    TABLE id: 13, alias: __table1, table_name: default.t_aj_filter
+  WHERE
+    FUNCTION id: 14, function_name: greaterOrEquals, function_type: ordinary, result_type: UInt8
+      ARGUMENTS
+        LIST id: 15, nodes: 2
+          FUNCTION id: 16, function_name: rand, function_type: ordinary, result_type: UInt32
+          CONSTANT id: 17, constant_value: UInt64_0, constant_value_type: UInt8
+QUERY id: 0
+  PROJECTION COLUMNS
+    a String
+  PROJECTION
+    LIST id: 1, nodes: 1
+      FUNCTION id: 2, function_name: arrayJoin, function_type: ordinary, result_type: String
+        ARGUMENTS
+          LIST id: 3, nodes: 1
+            COLUMN id: 4, column_name: A, result_type: Array(String), source_id: 5
+  JOIN TREE
+    TABLE id: 5, alias: __table1, table_name: default.t_aj_filter
+  WHERE
+    FUNCTION id: 6, function_name: in, function_type: ordinary, result_type: UInt8
+      ARGUMENTS
+        LIST id: 7, nodes: 2
+          FUNCTION id: 8, function_name: arrayJoin, function_type: ordinary, result_type: String
+            ARGUMENTS
+              LIST id: 9, nodes: 1
+                COLUMN id: 4, column_name: A, result_type: Array(String), source_id: 5
+          QUERY id: 10, is_subquery: 1
+            PROJECTION COLUMNS
+              \'X-A\' String
+            PROJECTION
+              LIST id: 11, nodes: 1
+                CONSTANT id: 12, constant_value: \'X-A\', constant_value_type: String
+            JOIN TREE
+              TABLE id: 13, alias: __table1, table_name: system.one
+0	1
+QUERY id: 0
+  PROJECTION COLUMNS
+    a String
+  PROJECTION
+    LIST id: 1, nodes: 1
+      COLUMN id: 2, column_name: __array_join_exp_1, result_type: String, source_id: 3
+  JOIN TREE
+    ARRAY_JOIN id: 3, is_left: 1
+      TABLE EXPRESSION
+        TABLE id: 4, alias: __table2, table_name: default.t_aj_filter
+      JOIN EXPRESSIONS
+        LIST id: 5, nodes: 1
+          COLUMN id: 6, alias: __array_join_exp_1, column_name: __array_join_exp_1, result_type: String, source_id: 3
+            EXPRESSION
+              COLUMN id: 7, column_name: A, result_type: Array(String), source_id: 4
+  WHERE
+    FUNCTION id: 8, function_name: equals, function_type: ordinary, result_type: UInt8
+      ARGUMENTS
+        LIST id: 9, nodes: 2
+          COLUMN id: 10, column_name: __array_join_exp_1, result_type: String, source_id: 3
+          CONSTANT id: 11, constant_value: \'X-A\', constant_value_type: String
+QUERY id: 0
+  PROJECTION COLUMNS
+    a String
+    b String
+  PROJECTION
+    LIST id: 1, nodes: 2
+      COLUMN id: 2, column_name: __array_join_exp_1, result_type: String, source_id: 3
+      COLUMN id: 4, column_name: __array_join_exp_2, result_type: String, source_id: 3
+  JOIN TREE
+    ARRAY_JOIN id: 3, is_left: 0
+      TABLE EXPRESSION
+        TABLE id: 5, alias: __table2, table_name: default.t_aj_filter
+      JOIN EXPRESSIONS
+        LIST id: 6, nodes: 2
+          COLUMN id: 7, alias: __array_join_exp_1, column_name: __array_join_exp_1, result_type: String, source_id: 3
+            EXPRESSION
+              COLUMN id: 8, column_name: A, result_type: Array(String), source_id: 5
+          COLUMN id: 9, alias: __array_join_exp_2, column_name: __array_join_exp_2, result_type: String, source_id: 3
+            EXPRESSION
+              COLUMN id: 10, column_name: B, result_type: Array(String), source_id: 5
+  WHERE
+    FUNCTION id: 11, function_name: equals, function_type: ordinary, result_type: UInt8
+      ARGUMENTS
+        LIST id: 12, nodes: 2
+          COLUMN id: 13, column_name: __array_join_exp_1, result_type: String, source_id: 3
+          CONSTANT id: 14, constant_value: \'X-A\', constant_value_type: String
+QUERY id: 0
+  PROJECTION COLUMNS
+    a String
+  PROJECTION
+    LIST id: 1, nodes: 1
+      FUNCTION id: 2, function_name: arrayJoin, function_type: ordinary, result_type: String
+        ARGUMENTS
+          LIST id: 3, nodes: 1
+            FUNCTION id: 4, function_name: arrayFilter, function_type: ordinary, result_type: Array(String)
+              ARGUMENTS
+                LIST id: 5, nodes: 2
+                  LAMBDA id: 6
+                    ARGUMENTS id: 7
+                      ARGUMENT id: 0, name: __array_join_filter_x, type: String
+                    EXPRESSION 
+                      FUNCTION id: 8, function_name: equals, function_type: ordinary, result_type: UInt8
+                        ARGUMENTS
+                          LIST id: 9, nodes: 2
+                            COLUMN id: 10, column_name: __array_join_filter_x, result_type: String, source_id: 7
+                            CONSTANT id: 11, constant_value: \'X-A\', constant_value_type: String
+                  FUNCTION id: 12, function_name: arrayFilter, function_type: ordinary, result_type: Array(String)
+                    ARGUMENTS
+                      LIST id: 13, nodes: 2
+                        LAMBDA id: 14
+                          ARGUMENTS id: 15
+                            ARGUMENT id: 0, name: x, type: String
+                          EXPRESSION 
+                            FUNCTION id: 16, function_name: notEmpty, function_type: ordinary, result_type: UInt8
+                              ARGUMENTS
+                                LIST id: 17, nodes: 1
+                                  COLUMN id: 18, column_name: x, result_type: String, source_id: 15
+                        COLUMN id: 19, column_name: A, result_type: Array(String), source_id: 20
+  JOIN TREE
+    TABLE id: 20, alias: __table1, table_name: default.t_aj_filter

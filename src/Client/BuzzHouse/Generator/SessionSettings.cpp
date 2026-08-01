@@ -421,6 +421,7 @@ std::unordered_map<String, CHSetting> performanceSettings
        {"optimize_respect_aliases", trueOrFalseSetting},
        {"optimize_rewrite_aggregate_function_with_if", trueOrFalseSetting},
        {"optimize_rewrite_array_exists_to_has", trueOrFalseSetting},
+       {"optimize_rewrite_array_join_filter_to_array_filter", trueOrFalseSetting},
        {"optimize_rewrite_has_to_in", trueOrFalseSetting},
        {"optimize_rewrite_like_perfect_affix", trueOrFalseSetting},
        {"optimize_rewrite_regexp_functions", trueOrFalseSetting},

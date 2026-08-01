@@ -5994,6 +5994,15 @@ Supported only with the analyzer (`enable_analyzer = 1`).
     DECLARE(Bool, optimize_rewrite_array_exists_to_has, true, R"(
 Rewrite arrayExists() functions to has() when logically equivalent. For example, arrayExists(x -> x = 1, arr) can be rewritten to has(arr, 1)
 )", 0) \
+    DECLARE(Bool, optimize_rewrite_array_join_filter_to_array_filter, true, R"(
+Rewrite WHERE predicates on columns produced by `arrayJoin` / `ARRAY JOIN` into `arrayFilter` applied before expansion.
+For example, `SELECT arrayJoin(arr) AS x FROM t WHERE x = 1` can be rewritten to
+`SELECT arrayJoin(arrayFilter(x -> x = 1, arr)) AS x FROM t`.
+
+:::note
+Supported only with the analyzer (`enable_analyzer = 1`).
+:::
+)", 0) \
     DECLARE(Bool, optimize_rewrite_has_to_in, true, R"(
 Rewrite `has` functions to `IN` when the first argument is a constant array. For example, `has([1, 2, 3], x)` can be rewritten to `x IN [1, 2, 3]` for better performance with constant arrays
 )", 0) \
