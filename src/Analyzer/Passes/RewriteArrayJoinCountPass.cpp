@@ -18,8 +18,13 @@
 
 #include <Storages/IStorage.h>
 #include <Storages/StorageAlias.h>
+#include <Storages/StorageBuffer.h>
+#include <Storages/StorageMaterializedView.h>
 #include <Storages/StorageMerge.h>
 #include <Storages/StorageProxy.h>
+#include <Storages/StorageView.h>
+
+#include <Access/ContextAccess.h>
 
 #include <Poco/String.h>
 
@@ -52,6 +57,17 @@ bool isPlainRowCount(const FunctionNode & function_node)
             return false;
     }
     return true;
+}
+
+/// These storages declare their own column list and can serve the read from a differently typed
+/// destination, target table or inner query, so the analyzed declared type is not the type the read
+/// executes against. `typeid_cast` (exact type) and not `isView()`, which StorageMaterializedView
+/// also answers true to and StorageProxy forwards, so it would widen the set unpredictably.
+bool readsAgainstAnotherSchema(const IStorage * storage)
+{
+    return typeid_cast<const StorageBuffer *>(storage)
+        || typeid_cast<const StorageView *>(storage)
+        || typeid_cast<const StorageMaterializedView *>(storage);
 }
 
 class RewriteArrayJoinCountVisitor : public InDepthQueryTreeVisitorWithContext<RewriteArrayJoinCountVisitor>
@@ -129,19 +145,21 @@ public:
 
         /// The checks below establish that the analyzed declared type is the type the read will
         /// execute against; dropping the ARRAY JOIN also drops its type check, so anything less is a
-        /// wrong result. Buffer, View and MaterializedView remain uncovered here: they diverge on
-        /// master already for a bare sum(length(arr)), tracked in <ISSUE_URL_PLACEHOLDER>.
+        /// wrong result.
 
         /// A storage that opts out of subcolumn optimization may execute the read against a different
         /// schema than the one analyzed here.
         if (!table_node->getStorage()->supportsOptimizationToSubcolumns())
             return;
 
-        /// Transparent wrappers forward both the capability predicate and the read, so the Merge check
+        /// Transparent wrappers forward both the capability predicate and the read, so the checks
         /// below must see the storage that actually executes.
+        /// Bounds the nesting this pass follows, so a wrapper cycle cannot spin here; declining past
+        /// the bound only costs the optimization.
+        static constexpr size_t max_wrapper_hops = 4;
         auto resolved_storage = table_node->getStorage();
         size_t wrapper_hops = 0;
-        for (; wrapper_hops < 4; ++wrapper_hops)
+        for (; wrapper_hops < max_wrapper_hops; ++wrapper_hops)
         {
             StoragePtr next;
             if (const auto * alias = typeid_cast<const StorageAlias *>(resolved_storage.get()))
@@ -154,7 +172,14 @@ public:
                 return;
             resolved_storage = std::move(next);
         }
-        if (wrapper_hops == 4)
+        if (wrapper_hops == max_wrapper_hops)
+            return;
+
+        /// Buffer, View and MaterializedView satisfy the capability check above by forwarding it to
+        /// their destination/target, and none of them is a wrapper the loop unwraps, so the read can
+        /// execute against a schema this analysis never saw. The ARRAY JOIN we would remove is what
+        /// type-checks it, so decline.
+        if (readsAgainstAnotherSchema(resolved_storage.get()))
             return;
 
         /// supportsOptimizationToSubcolumns() on a Merge is the AND over its children, and a MergeTree
@@ -165,15 +190,31 @@ public:
             const auto & analyzed_type = physical_column->getColumnType();
             const auto & column_name = physical_column->getColumnName();
             auto context = getContext();
+            auto access = context->getAccess();
+            /// NOTE: this validates the child set as it is NOW, while execution re-enumerates children
+            /// independently in ReadFromMerge::getSelectedTables, with no snapshot or lock spanning
+            /// both. A matching child appearing in between is read after the query has already become
+            /// sum(...size0). canMoveConditionsToPrewhere accepts the same race in-tree, but note the
+            /// consequence differs: there the optimized query fails, whereas here a child lacking the
+            /// subcolumn gets a substituted default and the count is silently wrong.
             /// hasChildTable stops at the first match, so the predicate means "this child is not
             /// provably type-identical" and the whole expression means "some child is unsafe".
             if (storage_merge->hasChildTable([&](const StoragePtr & child)
                 {
                     /// Direct children only, so a nested Merge -- or a wrapper around one -- could hide
-                    /// a mismatched grandchild. Decline rather than descend.
+                    /// a mismatched grandchild. A child that can read a differently typed table is
+                    /// declined for the same reason as at the top level. Decline rather than descend.
                     if (typeid_cast<const StorageMerge *>(child.get())
                         || typeid_cast<const StorageAlias *>(child.get())
-                        || dynamic_cast<const StorageProxy *>(child.get()))
+                        || dynamic_cast<const StorageProxy *>(child.get())
+                        || readsAgainstAnotherSchema(child.get()))
+                        return true;
+                    /// This traversal is unfiltered while execution reads only children the user may
+                    /// SELECT, so an inaccessible child's type would otherwise steer the plan. Fail
+                    /// closed instead of comparing a type the reader cannot see. A column-level-only
+                    /// grant declines too, which costs the optimization and never correctness.
+                    auto child_id = child->getStorageID();
+                    if (!access->isGranted(AccessType::SELECT, child_id.database_name, child_id.table_name))
                         return true;
                     auto child_metadata = child->getInMemoryMetadataPtr(context, false);
                     if (!child_metadata)
@@ -186,7 +227,9 @@ public:
         }
 
         /// Build length(<physical array/map column>). The subsequent FunctionToSubcolumnsPass folds this
-        /// into the lightweight <column>.size0 subcolumn so only offsets are read from storage.
+        /// into the lightweight <column>.size0 subcolumn so only offsets are read from storage. That
+        /// fold has its own exclusions (an index column, and FINAL), so on those shapes the ARRAY JOIN
+        /// is removed while the whole column is still read: correct, just not cheaper.
         auto length_function = std::make_shared<FunctionNode>("length");
         length_function->getArguments().getNodes().push_back(join_alias_column->getExpression());
         resolveOrdinaryFunctionNodeByName(*length_function, "length", getContext());

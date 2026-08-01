@@ -80,3 +80,40 @@ Alias forwards both supportsOptimizationToSubcolumns() and the read, so the per-
 5
 1
 1
+Buffer, View and MaterializedView satisfy the subcolumn-capability check by forwarding it to their destination, target or inner query, and none of them is a wrapper the resolution loop unwraps, so the read can execute against a schema this analysis never saw. The rewrite must decline on all three and stay equal to the optimization-off result.
+1
+1
+1
+1
+3
+1
+1
+1
+1
+1
+3
+1
+1
+1
+1
+1
+3
+1
+The per-child check must decline the same three storages, otherwise a Buffer or MaterializedView child whose declared type matches is admitted and the Merge path inherits the identical exposure.
+1
+1
+1
+The rewrite drops the ARRAY JOIN before knowing whether FunctionToSubcolumnsPass will fold length() into .size0, and that fold skips index columns and returns early under FINAL. The count stays correct on those shapes, but the whole column is still read: these rows pin that, so relaxing either exclusion flips exactly them.
+30
+1
+1
+1
+1
+30
+1
+1
+1
+19
+1
+1
+1

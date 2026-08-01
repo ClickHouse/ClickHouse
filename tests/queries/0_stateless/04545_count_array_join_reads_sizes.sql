@@ -253,4 +253,116 @@ DROP TABLE t_caj_mh;
 DROP TABLE t_caj_mh_bad;
 DROP TABLE t_caj_mh_good;
 
+SELECT 'Buffer, View and MaterializedView satisfy the subcolumn-capability check by forwarding it to their destination, target or inner query, and none of them is a wrapper the resolution loop unwraps, so the read can execute against a schema this analysis never saw. The rewrite must decline on all three and stay equal to the optimization-off result.';
+DROP TABLE IF EXISTS t_caj_bd_bad;
+DROP TABLE IF EXISTS t_caj_buf_bad;
+DROP TABLE IF EXISTS t_caj_bd_ok;
+DROP TABLE IF EXISTS t_caj_buf_ok;
+-- The mismatched Buffer below makes the server log "Destination table ... has different type of
+-- column arr" per read, which the test runner treats as a failure. Scoped to this section, as
+-- 00158_buffer_and_nonexistent_table.sql does for its own expected Buffer warning.
+SET send_logs_level = 'fatal';
+-- The destination declares arr String while the Buffer declares Array(UInt64). Reading the
+-- destination's own type gives a different count(), and dropping the ARRAY JOIN drops the type check
+-- that would have caught it.
+CREATE TABLE t_caj_bd_bad (arr String) ENGINE = MergeTree ORDER BY tuple();
+INSERT INTO t_caj_bd_bad VALUES ('[4,5,6]');
+CREATE TABLE t_caj_buf_bad (arr Array(UInt64)) ENGINE = Buffer(currentDatabase(), 't_caj_bd_bad', 1, 1000, 1000, 10, 100, 10000, 1000000);
+SELECT count() = (SELECT count() FROM t_caj_buf_bad ARRAY JOIN arr SETTINGS optimize_functions_to_subcolumns = 0) FROM t_caj_buf_bad ARRAY JOIN arr;
+-- Assert the ARRAY JOIN survives, not merely that arr.size0 is absent: a pass that dropped the ARRAY
+-- JOIN and let FunctionToSubcolumnsPass decline would still satisfy a size0-only check.
+SELECT count() > 0 FROM (EXPLAIN PLAN actions = 1 SELECT count() FROM t_caj_buf_bad ARRAY JOIN arr) WHERE explain ILIKE '%ARRAY JOIN%';
+SELECT count() = 0 FROM (EXPLAIN PLAN actions = 1 SELECT count() FROM t_caj_buf_bad ARRAY JOIN arr) WHERE explain ILIKE '%arr.size0%';
+SELECT count() = 0 FROM (EXPLAIN PLAN actions = 1 SELECT count() FROM t_caj_buf_bad ARRAY JOIN arr) WHERE explain ILIKE '%sum(length%';
+-- Must not regress: the decline costs the optimization but never the answer, so a Buffer whose
+-- destination declares the analyzed type still counts correctly.
+CREATE TABLE t_caj_bd_ok (arr Array(UInt64)) ENGINE = MergeTree ORDER BY tuple();
+INSERT INTO t_caj_bd_ok VALUES ([1, 2]), ([]), ([3]);
+CREATE TABLE t_caj_buf_ok (arr Array(UInt64)) ENGINE = Buffer(currentDatabase(), 't_caj_bd_ok', 1, 1000, 1000, 10, 100, 10000, 1000000);
+SELECT count() FROM t_caj_buf_ok ARRAY JOIN arr;
+SELECT count() = (SELECT count() FROM t_caj_buf_ok ARRAY JOIN arr SETTINGS optimize_functions_to_subcolumns = 0) FROM t_caj_buf_ok ARRAY JOIN arr;
+
+DROP TABLE IF EXISTS t_caj_vw_bad;
+DROP TABLE IF EXISTS t_caj_vw_ok;
+-- The view declares arr Array(UInt64) over an inner query returning String.
+CREATE VIEW t_caj_vw_bad (arr Array(UInt64)) AS SELECT arr FROM t_caj_bd_bad;
+SELECT count() = (SELECT count() FROM t_caj_vw_bad ARRAY JOIN arr SETTINGS optimize_functions_to_subcolumns = 0) FROM t_caj_vw_bad ARRAY JOIN arr;
+SELECT count() > 0 FROM (EXPLAIN PLAN actions = 1 SELECT count() FROM t_caj_vw_bad ARRAY JOIN arr) WHERE explain ILIKE '%ARRAY JOIN%';
+SELECT count() = 0 FROM (EXPLAIN PLAN actions = 1 SELECT count() FROM t_caj_vw_bad ARRAY JOIN arr) WHERE explain ILIKE '%arr.size0%';
+SELECT count() = 0 FROM (EXPLAIN PLAN actions = 1 SELECT count() FROM t_caj_vw_bad ARRAY JOIN arr) WHERE explain ILIKE '%sum(length%';
+CREATE VIEW t_caj_vw_ok AS SELECT arr FROM t_caj_bd_ok;
+SELECT count() FROM t_caj_vw_ok ARRAY JOIN arr;
+SELECT count() = (SELECT count() FROM t_caj_vw_ok ARRAY JOIN arr SETTINGS optimize_functions_to_subcolumns = 0) FROM t_caj_vw_ok ARRAY JOIN arr;
+
+DROP TABLE IF EXISTS t_caj_mvt_bad;
+DROP TABLE IF EXISTS t_caj_mv_bad;
+DROP TABLE IF EXISTS t_caj_mvt_ok;
+DROP TABLE IF EXISTS t_caj_mv_ok;
+-- The declared column list follows TO <table>, and here it disagrees with the target.
+CREATE TABLE t_caj_mvt_bad (arr String) ENGINE = MergeTree ORDER BY tuple();
+INSERT INTO t_caj_mvt_bad VALUES ('[4,5,6]');
+CREATE MATERIALIZED VIEW t_caj_mv_bad TO t_caj_mvt_bad (arr Array(UInt64)) AS SELECT arr FROM t_caj_bd_ok;
+SELECT count() = (SELECT count() FROM t_caj_mv_bad ARRAY JOIN arr SETTINGS optimize_functions_to_subcolumns = 0) FROM t_caj_mv_bad ARRAY JOIN arr;
+SELECT count() > 0 FROM (EXPLAIN PLAN actions = 1 SELECT count() FROM t_caj_mv_bad ARRAY JOIN arr) WHERE explain ILIKE '%ARRAY JOIN%';
+SELECT count() = 0 FROM (EXPLAIN PLAN actions = 1 SELECT count() FROM t_caj_mv_bad ARRAY JOIN arr) WHERE explain ILIKE '%arr.size0%';
+SELECT count() = 0 FROM (EXPLAIN PLAN actions = 1 SELECT count() FROM t_caj_mv_bad ARRAY JOIN arr) WHERE explain ILIKE '%sum(length%';
+CREATE TABLE t_caj_mvt_ok (arr Array(UInt64)) ENGINE = MergeTree ORDER BY tuple();
+INSERT INTO t_caj_mvt_ok VALUES ([1, 2]), ([]), ([3]);
+CREATE MATERIALIZED VIEW t_caj_mv_ok TO t_caj_mvt_ok (arr Array(UInt64)) AS SELECT arr FROM t_caj_bd_ok;
+SELECT count() FROM t_caj_mv_ok ARRAY JOIN arr;
+SELECT count() = (SELECT count() FROM t_caj_mv_ok ARRAY JOIN arr SETTINGS optimize_functions_to_subcolumns = 0) FROM t_caj_mv_ok ARRAY JOIN arr;
+
+SELECT 'The per-child check must decline the same three storages, otherwise a Buffer or MaterializedView child whose declared type matches is admitted and the Merge path inherits the identical exposure.';
+DROP TABLE IF EXISTS t_caj_mbuf;
+-- The child is a Buffer declaring the analyzed type, so only the engine-based decline stops it.
+CREATE TABLE t_caj_mbuf (arr Array(UInt64)) ENGINE = Merge(currentDatabase(), '^t_caj_buf_ok$');
+SELECT count() = (SELECT count() FROM t_caj_mbuf ARRAY JOIN arr SETTINGS optimize_functions_to_subcolumns = 0) FROM t_caj_mbuf ARRAY JOIN arr;
+SELECT count() > 0 FROM (EXPLAIN PLAN actions = 1 SELECT count() FROM t_caj_mbuf ARRAY JOIN arr) WHERE explain ILIKE '%ARRAY JOIN%';
+SELECT count() = 0 FROM (EXPLAIN PLAN actions = 1 SELECT count() FROM t_caj_mbuf ARRAY JOIN arr) WHERE explain ILIKE '%arr.size0%';
+DROP TABLE t_caj_mbuf;
+DROP TABLE t_caj_mv_ok;
+DROP TABLE t_caj_mvt_ok;
+DROP TABLE t_caj_mv_bad;
+DROP TABLE t_caj_mvt_bad;
+DROP TABLE t_caj_vw_ok;
+DROP TABLE t_caj_vw_bad;
+DROP TABLE t_caj_buf_ok;
+DROP TABLE t_caj_bd_ok;
+DROP TABLE t_caj_buf_bad;
+DROP TABLE t_caj_bd_bad;
+-- The mismatched Buffer is gone, so restore the default log level for the rest of the file.
+SET send_logs_level = 'warning';
+
+SELECT 'The rewrite drops the ARRAY JOIN before knowing whether FunctionToSubcolumnsPass will fold length() into .size0, and that fold skips index columns and returns early under FINAL. The count stays correct on those shapes, but the whole column is still read: these rows pin that, so relaxing either exclusion flips exactly them.';
+DROP TABLE IF EXISTS t_caj_skipidx;
+DROP TABLE IF EXISTS t_caj_pk;
+DROP TABLE IF EXISTS t_caj_final;
+CREATE TABLE t_caj_skipidx (id UInt64, arr Array(UInt64), INDEX ix_arr arr TYPE bloom_filter GRANULARITY 1)
+ENGINE = MergeTree ORDER BY id;
+INSERT INTO t_caj_skipidx SELECT number, range(number % 4) FROM numbers(20);
+SELECT count() FROM t_caj_skipidx ARRAY JOIN arr;
+SELECT count() = (SELECT count() FROM t_caj_skipidx ARRAY JOIN arr SETTINGS optimize_functions_to_subcolumns = 0) FROM t_caj_skipidx ARRAY JOIN arr;
+-- The ARRAY JOIN is gone (this pass fired) but the fold did not happen, so no arr.size0 appears.
+SELECT count() = 0 FROM (EXPLAIN PLAN actions = 1 SELECT count() FROM t_caj_skipidx ARRAY JOIN arr) WHERE explain ILIKE '%ARRAY JOIN%';
+SELECT count() > 0 FROM (EXPLAIN PLAN actions = 1 SELECT count() FROM t_caj_skipidx ARRAY JOIN arr) WHERE explain ILIKE '%sum(length%';
+SELECT count() = 0 FROM (EXPLAIN PLAN actions = 1 SELECT count() FROM t_caj_skipidx ARRAY JOIN arr) WHERE explain ILIKE '%arr.size0%';
+-- The primary key reaches the same exclusion.
+CREATE TABLE t_caj_pk (arr Array(UInt64)) ENGINE = MergeTree ORDER BY arr;
+INSERT INTO t_caj_pk SELECT range(number % 4) FROM numbers(20);
+SELECT count() FROM t_caj_pk ARRAY JOIN arr;
+SELECT count() = (SELECT count() FROM t_caj_pk ARRAY JOIN arr SETTINGS optimize_functions_to_subcolumns = 0) FROM t_caj_pk ARRAY JOIN arr;
+SELECT count() > 0 FROM (EXPLAIN PLAN actions = 1 SELECT count() FROM t_caj_pk ARRAY JOIN arr) WHERE explain ILIKE '%sum(length%';
+SELECT count() = 0 FROM (EXPLAIN PLAN actions = 1 SELECT count() FROM t_caj_pk ARRAY JOIN arr) WHERE explain ILIKE '%arr.size0%';
+-- FINAL: the fold returns early, and the count must still match the deduplicated rows.
+CREATE TABLE t_caj_final (id UInt64, arr Array(UInt64)) ENGINE = ReplacingMergeTree ORDER BY id;
+INSERT INTO t_caj_final SELECT number, range(number % 4) FROM numbers(20);
+INSERT INTO t_caj_final SELECT number, range(number % 3) FROM numbers(20);
+SELECT count() FROM t_caj_final FINAL ARRAY JOIN arr;
+SELECT count() = (SELECT count() FROM t_caj_final FINAL ARRAY JOIN arr SETTINGS optimize_functions_to_subcolumns = 0) FROM t_caj_final FINAL ARRAY JOIN arr;
+SELECT count() > 0 FROM (EXPLAIN PLAN actions = 1 SELECT count() FROM t_caj_final FINAL ARRAY JOIN arr) WHERE explain ILIKE '%sum(length%';
+SELECT count() = 0 FROM (EXPLAIN PLAN actions = 1 SELECT count() FROM t_caj_final FINAL ARRAY JOIN arr) WHERE explain ILIKE '%arr.size0%';
+DROP TABLE t_caj_final;
+DROP TABLE t_caj_pk;
+DROP TABLE t_caj_skipidx;
+
 DROP TABLE t_count_aj;
