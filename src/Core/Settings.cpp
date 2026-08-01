@@ -2595,7 +2595,7 @@ is added so the join order optimizer can consider direct (A JOIN C) plans.
 )", BETA) \
     \
     DECLARE(Bool, query_plan_join_shard_by_pk_ranges, false, R"(
-Apply sharding for JOIN if join keys contain a prefix of PRIMARY KEY for both tables. Supported for hash, parallel_hash and full_sorting_merge algorithms. Usually does not speed up queries but may lower memory consumption.
+Apply sharding for JOIN if join keys contain a prefix of PRIMARY KEY for both tables. Supported for hash, parallel_hash, full_sorting_merge and parallel_full_sorting_merge algorithms. Usually does not speed up queries but may lower memory consumption.
 )", 0) \
     \
     DECLARE(Bool, query_plan_display_internal_aliases, false, R"(
@@ -3588,6 +3588,13 @@ Specifies which [JOIN](/reference/statements/select/join) algorithm is used.
 
 Several algorithms can be specified, and an available one would be chosen for a particular query based on kind/strictness and table engine.
 
+Most algorithms affect a query only when they are the one selected for it. Some, however, change planning merely by being listed — even as a lower-priority fallback that is not ultimately selected — because the decision is made before the algorithm is picked. There are two such effects:
+
+- Join-key type inference becomes stricter (a merge join cannot join keys of different types, for example `String` and `Nullable(String)`). This can change the result types of `USING` columns, and can make a join into a `Join`-engine table fail with `TYPE_MISMATCH`. Triggered by `full_sorting_merge` and `parallel_full_sorting_merge`.
+- `ORDER BY ... LIMIT` on the preserved side of a join gets an explicit sort instead of a read in primary-key order, because the join is assumed to break the ordered read (a merge join inserts its own pre-join sort; a partial merge join re-sorts the left blocks; a join that can produce delayed blocks does not propagate the ordered read either). The result is the same, the plan is less efficient. Triggered by `full_sorting_merge`, `parallel_full_sorting_merge`, `partial_merge`, `prefer_partial_merge`, `grace_hash` and `auto`, and also by a non-zero `max_bytes_before_external_join` / `max_bytes_ratio_before_external_join`.
+
+Both apply even when the query eventually runs with `hash` or another algorithm. If this is undesirable, do not list the algorithms above in `join_algorithm` for the affected queries.
+
 Possible values:
 
 - grace_hash
@@ -3634,6 +3641,18 @@ Possible values:
 - full_sorting_merge
 
  [Sort-merge algorithm](https://en.wikipedia.org/wiki/Sort-merge_join) with full sorting of joined tables before joining.
+
+- parallel_full_sorting_merge
+
+ Same as `full_sorting_merge`, but hash-compatible equality joins are sharded by the hash of the join keys into independent per-shard merge joins that run in parallel (up to `max_threads`), instead of a single merge join. This keeps the low, streaming memory usage of a merge join while using all threads, and the result is not ordered.
+
+ Hash-sharding by the join keys is applied only to plain equality joins on key types whose hash agrees with the merge-join comparison, and only when neither side is already sorted. It is skipped in these cases:
+
+ - `ASOF` joins, and floating-point / `JSON` / `Object` / `Dynamic` key types: their hashes are not consistent with the merge-join comparison, so equal keys could land in different shards.
+ - Sides that are already sorted (a MergeTree read in order, or any pre-sorted input): an order-preserving scatter into the per-shard merges can deadlock the pipeline. The in-order read and its `read_in_order_use_virtual_row` optimization are kept instead.
+ - While the initiator builds a distributed plan (`make_distributed_plan`), because the scattered sort is not serializable for remote execution. The local single-fragment plan and the per-worker fragments re-optimize with that setting disabled, so they can still be sharded.
+
+ Skipping it disables only this rewrite, not parallelism in general: the join runs as a single `full_sorting_merge`, and MergeTree sides read in order can still be sharded at the source by primary-key ranges (which order by the same comparison the join uses, so equal keys stay together) when `query_plan_join_shard_by_pk_ranges` is enabled.
 
 - prefer_partial_merge
 
@@ -4470,7 +4489,9 @@ Disabled by default.
     DECLARE(Bool, s3_allow_server_credentials_in_user_queries, false, R"(
 Allow S3 access that originates from user SQL to use server-managed credentials.
 
-When disabled (the default), the `s3`/`s3Cluster` table functions, the `S3`/`S3Queue` engines, S3 named collections, dynamic `disk(type=s3, ...)` definitions, `BACKUP`/`RESTORE TO S3`, DataLake table-data reads, and `DataLakeCatalog` databases (Glue, BigLake) may not resolve credentials from the environment, instance metadata (IMDS), IRSA, ECS, instance profile, SSO, AWS config/credentials files, `role_arn`-based STS assume-role, or the GCP OAuth metadata service. A request that asks for one of those server-managed sources (for example `use_environment_credentials = 1`, a `role_arn`, or `http_client = gcp_oauth`) without supplying usable explicit credentials is rejected with `ACCESS_DENIED`. A request that asks for none of them is sent unsigned (anonymous), the same as if `NOSIGN` had been given.
+When disabled (the default), the `s3`/`s3Cluster` table functions, the `S3`/`S3Queue` engines, S3 named collections, dynamic `disk(type=s3, ...)` definitions, `BACKUP`/`RESTORE TO S3`, DataLake table-data reads, and `DataLakeCatalog` databases (Glue, BigLake) may not resolve credentials from the environment, instance metadata (IMDS), IRSA, ECS, instance profile, SSO, AWS config/credentials files, or the GCP OAuth metadata service. A request that asks for one of those server-managed sources (for example `use_environment_credentials = 1` or `http_client = gcp_oauth`) without supplying usable explicit credentials is rejected with `ACCESS_DENIED`. A request that asks for none of them is sent unsigned (anonymous), the same as if `NOSIGN` had been given.
+
+`role_arn`-based STS assume-role (`extra_credentials(role_arn = '...')`) stays allowed even when this setting is disabled: the target role must explicitly trust the identity the server runs under, and only the assumed role's credentials ever sign the query's S3 requests, so the server's own credentials are not exposed to the query. This is the documented way to grant ClickHouse Cloud access to a private bucket. The role is assumed with the query's own base keys when the query supplies a complete pair; otherwise the STS AssumeRole call is signed by the server's ambient identity. Static keys from the server `<s3>`/endpoint config or from a named collection are never used as the STS base for a query-supplied role, and a `role_arn` configured in the server `<s3>` config is not applied to user queries at all. Dynamic `disk(type=s3, role_arn=...)` definitions remain covered by the restriction.
 
 Whether a credential-less request asks for environment credentials is decided by `use_environment_credentials`. Named collections default it to `0`, so a collection that only specifies a URL reads anonymously. The `s3`/`s3Cluster` table functions and `S3`/`S3Queue` engines use the built-in default (`1`) unless the server `<s3>` config sets it otherwise; set `<s3><use_environment_credentials>0</use_environment_credentials></s3>` to make their credential-less reads anonymous by default too (otherwise such a request is refused and must use `NOSIGN`). Disks defined in the server configuration are unaffected and keep using environment credentials by default; user-created dynamic `disk(type = s3, ...)` definitions are covered by the restriction (see above) and are rejected when they rely on default/environment credentials.
 
@@ -5935,6 +5956,16 @@ Possible values:
 - 0 - Disabled
 - 1 - Enabled
 )", 0) \
+    DECLARE(Bool, use_query_condition_cache_for_top_k, false, R"(
+Enable the [query condition cache](/operations/query-condition-cache) for queries that use the `ORDER BY <column> LIMIT n` (TopK) optimization (dynamic filtering or skip-index based). When disabled, such reads neither consult nor populate the cache.
+
+Such queries can drop granules during execution depending on the running threshold, so their cache entries are partitioned by the TopK plan parameters and by the set of parts read. This setting is disabled by default while the soundness of these cache entries is being established; it has no effect unless `use_query_condition_cache` is also enabled.
+
+Possible values:
+
+- 0 - Disabled
+- 1 - Enabled
+)", 0) \
     DECLARE(Bool, enable_shared_storage_snapshot_in_query, true, R"(
 If enabled, all subqueries within a single query will share the same StorageSnapshot for each table.
 This ensures a consistent view of the data across the entire query, even if the same table is accessed multiple times.
@@ -6089,8 +6120,19 @@ Force the use of optimization when it is applicable, but heuristics decided not 
     DECLARE(Bool, allow_limit_by_partitions_independently, true, R"(
 Enable independent `LIMIT BY` evaluation per partition on separate threads when the partition expression is a deterministic function of the `LIMIT BY` columns.
 )", 0) \
+    DECLARE(Bool, allow_distinct_partitions_independently, true, R"(
+Enable independent `DISTINCT` evaluation per partition on separate threads when the partition expression is a deterministic function of the `DISTINCT` columns, skipping the cross-stream merge. Beneficial when the number of partitions is close to the number of cores and partitions have roughly the same size; otherwise a cost heuristic skips it, see [max_number_of_partitions_for_independent_distinct](#max_number_of_partitions_for_independent_distinct) and [force_distinct_partitions_independently](#force_distinct_partitions_independently). Not applied with `FINAL` or parallel replicas.
+
+Not applied when [max_rows_in_distinct](#max_rows_in_distinct) or [max_bytes_in_distinct](#max_bytes_in_distinct) is set: those limits are enforced by the single `DISTINCT` transform that sees the whole merged result, so the cross-stream merge is kept to preserve their global meaning.
+)", 0) \
+    DECLARE(Bool, force_distinct_partitions_independently, false, R"(
+Force independent `DISTINCT` evaluation per partition when it is applicable, but the cost heuristic decided not to use it. Only bypasses the cost heuristic of [allow_distinct_partitions_independently](#allow_distinct_partitions_independently); the remaining conditions still apply.
+)", 0) \
     DECLARE(UInt64, max_number_of_partitions_for_independent_aggregation, 128, R"(
-Maximal number of partitions in table to apply optimization
+Maximal number of partitions in table to apply independent aggregation per partition. Part of the cost heuristic of [allow_aggregate_partitions_independently](#allow_aggregate_partitions_independently).
+)", 0) \
+    DECLARE(UInt64, max_number_of_partitions_for_independent_distinct, 128, R"(
+Maximal number of partitions in table to apply independent `DISTINCT` per partition. Part of the cost heuristic of [allow_distinct_partitions_independently](#allow_distinct_partitions_independently).
 )", 0) \
     DECLARE(Float, min_hit_rate_to_use_consecutive_keys_optimization, 0.5, R"(
 Minimal hit rate of a cache which is used for consecutive keys optimization in aggregation to keep it enabled
@@ -7871,7 +7913,7 @@ Cloud default value: `1`.
 Allow the analyzer.
 )", IMPORTANT, enable_analyzer) \
     DECLARE(Bool, analyzer_compatibility_join_using_top_level_identifier, false, R"(
-Force to resolve identifier in JOIN USING from projection (for example, in `SELECT a + 1 AS b FROM t1 JOIN t2 USING (b)` join will be performed by `t1.a + 1 = t2.b`, rather then `t1.b = t2.b`).
+Force to resolve identifier in JOIN USING from projection (for example, in `SELECT a + 1 AS b FROM t1 JOIN t2 USING (b)` join will be performed by `t1.a + 1 = t2.b`, rather then `t1.b = t2.b`). Aliases defined on subexpressions inside the SELECT list are also considered (for example, in `SELECT uniqExact(a + 1 AS b) FROM t1 JOIN t2 USING (b)` the join is performed by `t1.a + 1 = t2.b`). When the matching alias is defined on a subexpression inside the SELECT list rather than as a top-level alias, parallel replicas are disabled for the query. For queries sent to remote servers (`Distributed` tables, the `remote` table function), such a query is rejected with an exception only when the identifier cannot be resolved on the remote server at all; if the alias shadows a real column of the left table, the remote server joins by that column instead, so the results may differ from local execution.
 )", 0) \
     DECLARE(Bool, analyzer_compatibility_allow_compound_identifiers_in_unflatten_nested, true, R"(
 Allow to add compound identifiers to nested. This is a compatibility setting because it changes the query result. When disabled, `SELECT a.b.c FROM table ARRAY JOIN a` does not work, and `SELECT a FROM table` does not include `a.b.c` column into `Nested a` result.
@@ -8503,6 +8545,14 @@ Method to compress `.metadata.json` file.
 )", EXPERIMENTAL) \
     DECLARE(Bool, make_distributed_plan, false, R"(
 Make distributed query plan.
+
+Enabling it automatically adjusts settings that control features not supported by distributed query plans yet:
+- `enable_parallel_replicas = 0` and `automatic_parallel_replicas_mode = 0` — the distributed plan does its own work distribution;
+- `rewrite_in_to_join = 1` — rewrites `IN (subquery)` to a `JOIN` so that it can be distributed (only when `allow_experimental_correlated_subqueries` is enabled);
+- `correlated_subqueries_use_in_memory_buffer = 0`;
+- `use_skip_indexes_on_data_read = 0`;
+- `compile_expressions = 0`;
+- `query_plan_direct_read_from_text_index = 0`.
 )", EXPERIMENTAL) \
     DECLARE(Bool, distributed_plan_execute_locally, false, R"(
 Run all tasks of a distributed query plan locally. Useful for testing and debugging.
@@ -9167,6 +9217,16 @@ SettingsChanges Settings::changes() const
 void Settings::applyChanges(const SettingsChanges & changes)
 {
     impl->applyChanges(changes);
+}
+
+void Settings::checkShorthandChange(const SettingChange & change) const
+{
+    impl->checkShorthandChange(change);
+}
+
+void Settings::checkShorthandChanges(const SettingsChanges & changes) const
+{
+    impl->checkShorthandChanges(changes);
 }
 
 VectorWithMemoryTracking<std::string_view> Settings::getAllRegisteredNames() const

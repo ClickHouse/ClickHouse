@@ -10,7 +10,8 @@ from .result import Result, ResultInfo, _ResultS3
 from .runtime import RunConfig
 from .s3 import S3
 from .settings import Settings
-from .usage import ComputeUsage, StorageUsage
+from .host_metrics import HostMetricsCollector
+from .usage import ComputeUsage, PipelineUtilization, StorageUsage
 from .utils import Utils
 
 
@@ -36,9 +37,7 @@ class GitCommit:
                 for commit in json_data
             ]
         except Exception as e:
-            print(
-                f"ERROR: Failed to deserialize commit's data [{json_data}], ex: [{e}]"
-            )
+            print(f"ERROR: Failed to deserialize commit's data [{json_data}], ex: [{e}]")
 
         return commits
 
@@ -52,14 +51,10 @@ class GitCommit:
         commits = cls.pull_from_s3()
         for commit in commits:
             if sha == commit.sha:
-                print(
-                    f"INFO: Sha already present in commits data [{sha}] - skip data update"
-                )
+                print(f"INFO: Sha already present in commits data [{sha}] - skip data update")
                 return
         commits.append(GitCommit(sha=sha, message=env.COMMIT_MESSAGE))
-        commits = commits[
-            -20:
-        ]  # limit maximum number of commits from the past to show in the report
+        commits = commits[-20:]  # limit maximum number of commits from the past to show in the report
         cls.push_to_s3(commits)
         return
 
@@ -86,9 +81,7 @@ class GitCommit:
         local_path = Path(cls.file_name())
         file_name = local_path.name
         s3_path = f"{cls.get_s3_path()}/{file_name}"
-        if not S3.copy_file_from_s3(
-            s3_path=s3_path, local_path=local_path, no_strict=True
-        ):
+        if not S3.copy_file_from_s3(s3_path=s3_path, local_path=local_path, no_strict=True):
             print(f"WARNING: failed to cp file [{s3_path}] from s3")
             return []
         return cls.from_json(local_path)
@@ -100,9 +93,7 @@ class GitCommit:
         local_path = Path(cls.file_name())
         file_name = local_path.name
         s3_path = f"{cls.get_s3_path()}/{file_name}"
-        if not S3.copy_file_to_s3(
-            s3_path=s3_path, local_path=local_path, text=True, no_strict=True
-        ):
+        if not S3.copy_file_to_s3(s3_path=s3_path, local_path=local_path, text=True, no_strict=True):
             print(f"WARNING: failed to cp file [{local_path}] to s3")
 
     @classmethod
@@ -132,31 +123,15 @@ class HtmlRunnerHooks:
             else:
                 result = Result.create_new(job.name, Result.Status.PENDING)
             results.append(result)
-        summary_result = Result.create_new(
-            _workflow.name, Result.Status.RUNNING, results=results
-        )
+        summary_result = Result.create_new(_workflow.name, Result.Status.RUNNING, results=results)
         summary_result.start_time = Utils.timestamp()
         info = Info()
         report_url_current_sha = info.get_report_url(latest=False)
-        summary_result.add_ext_key_value("pr_title", info.pr_title).add_ext_key_value(
-            "git_branch", info.git_branch
-        ).add_ext_key_value("report_url", report_url_current_sha).add_ext_key_value(
+        summary_result.add_ext_key_value("pr_title", info.pr_title).add_ext_key_value("git_branch", info.git_branch).add_ext_key_value("report_url", report_url_current_sha).add_ext_key_value(
             "commit_sha", env.SHA
-        ).add_ext_key_value(
-            "commit_message", env.COMMIT_MESSAGE
-        ).add_ext_key_value(
-            "repo_name", env.REPOSITORY
-        ).add_ext_key_value(
-            "pr_number", env.PR_NUMBER
-        ).add_ext_key_value(
+        ).add_ext_key_value("commit_message", env.COMMIT_MESSAGE).add_ext_key_value("repo_name", env.REPOSITORY).add_ext_key_value("pr_number", env.PR_NUMBER).add_ext_key_value(
             "run_url", env.RUN_URL
-        ).add_ext_key_value(
-            "change_url", env.CHANGE_URL
-        ).add_ext_key_value(
-            "workflow_name", env.WORKFLOW_NAME
-        ).add_ext_key_value(
-            "base_branch", env.BASE_BRANCH
-        )
+        ).add_ext_key_value("change_url", env.CHANGE_URL).add_ext_key_value("workflow_name", env.WORKFLOW_NAME).add_ext_key_value("base_branch", env.BASE_BRANCH)
 
         summary_result.dump()
         # Use version 0 for initial workflow report creation (destructive reset)
@@ -200,12 +175,7 @@ class HtmlRunnerHooks:
                     )
                 results.append(result)
             if results:
-                assert (
-                    _ResultS3.update_workflow_results(
-                        _workflow.name, new_sub_results=results
-                    )
-                    is None
-                ), "Workflow status supposed to remain 'running'"
+                assert _ResultS3.update_workflow_results(_workflow.name, new_sub_results=results) is None, "Workflow status supposed to remain 'running'"
 
     @classmethod
     def pre_run(cls, _workflow, _job):
@@ -234,12 +204,17 @@ class HtmlRunnerHooks:
         _ResultS3.upload_result_files_to_s3(result).dump()
         storage_usage = None
         if StorageUsage.exist():
-            StorageUsage.add_uploaded(
-                result.file_name()
-            )  # add Result file beforehand to upload actual storage usage data
+            StorageUsage.add_uploaded(result.file_name())  # add Result file beforehand to upload actual storage usage data
             print("Storage usage data found - add to Result")
             storage_usage = StorageUsage.from_fs()
             result.ext["storage_usage"] = storage_usage
+        # Accumulate the whole-pipeline utilization KPI from this job's host
+        # metrics, but only for jobs substantial enough to be worth right-sizing.
+        pipeline_utilization = None
+        job_metrics = result.ext.get("metrics")
+        if job_metrics and HostMetricsCollector.qualifies(job_metrics):
+            pipeline_utilization = PipelineUtilization.from_job_metrics(job_metrics)
+
         report_messages = env.REPORT_MESSAGES
         _ResultS3.append_report_messages(result, report_messages)
         _ResultS3.copy_result_to_s3(result)
@@ -247,9 +222,7 @@ class HtmlRunnerHooks:
         new_sub_results = [result]
 
         if not result.is_ok() and not result.do_not_block_pipeline_on_failure():
-            print(
-                "Current job failed - find dependee jobs in the workflow and set their statuses to dropped"
-            )
+            print("Current job failed - find dependee jobs in the workflow and set their statuses to dropped")
             workflow_config_parsed = WorkflowConfigParser(_workflow).parse()
 
             dependees = set()
@@ -258,28 +231,21 @@ class HtmlRunnerHooks:
                 for dependee_job in workflow_config_parsed.workflow_yaml_config.jobs:
                     if dependee_job.run_unless_cancelled:
                         continue
-                    if (
-                        job_name in dependee_job.needs
-                        and dependee_job.name not in dependees
-                    ):
+                    if job_name in dependee_job.needs and dependee_job.name not in dependees:
                         dependees.add(dependee_job.name)
                         add_dependees(dependee_job.name)
 
             add_dependees(_job.name)
 
             for dependee in dependees:
-                print(
-                    f"NOTE: Set job [{dependee}] status to [{Result.Status.DROPPED}] due to current failure"
-                )
+                print(f"NOTE: Set job [{dependee}] status to [{Result.Status.DROPPED}] due to current failure")
                 dropped_result = Result(
                     name=dependee,
                     status=Result.Status.DROPPED,
                     start_time=Utils.timestamp(),
                     duration=0,
                 )
-                dropped_result.add_note(
-                    ResultInfo.DROPPED_DUE_TO_PREVIOUS_FAILURE + f" [{_job.name}]"
-                )
+                dropped_result.add_note(ResultInfo.DROPPED_DUE_TO_PREVIOUS_FAILURE + f" [{_job.name}]")
                 new_sub_results.append(dropped_result)
 
         updated_status = _ResultS3.update_workflow_results(
@@ -291,6 +257,7 @@ class HtmlRunnerHooks:
                 duration=result.duration,
                 job_name=_job.name,
             ),
+            pipeline_utilization=pipeline_utilization,
             report_messages=report_messages,
         )
         return updated_status
