@@ -4,6 +4,7 @@ WHERE name = 'grace_hash_join_initial_buckets';
 
 SET enable_parallel_replicas = 0;
 SET query_plan_join_swap_table = 0;
+SET collect_hash_table_stats_during_joins = 0;
 SET join_algorithm = 'grace_hash';
 SET grace_hash_join_max_buckets = 64;
 SET max_bytes_in_join = 0;
