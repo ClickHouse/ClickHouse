@@ -42,6 +42,15 @@
         <user>nats_user</user>
         <password>nats_password</password>
     </nats>
+    <!-- Read by `MecabDictionaryManager` (prefix `tokenizer.japanese`). The dictionary is loaded
+         lazily on the first call of `tokens` with the Japanese tokenizer, so an unreachable
+         location here does not affect startup - it only has to be accepted by the validator. -->
+    <tokenizer>
+        <japanese>
+            <dictionary_location>file:///var/lib/clickhouse/user_files/unused_dic.tar.gz</dictionary_location>
+            <dictionary_sha>7477c765961bc60186bb517665194d6ee0d484071d3d06182de78f6d3da553f5</dictionary_sha>
+        </japanese>
+    </tokenizer>
     <azure>
         <use_native_copy>true</use_native_copy>
     </azure>

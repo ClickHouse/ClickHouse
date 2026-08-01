@@ -2203,6 +2203,7 @@ void ServerSettings::checkUnknownSettings(const Poco::Util::AbstractConfiguratio
         "workload_classifiers",
         "top_level_domains_lists",
         "url_scheme_mappers",
+        "tokenizer",
         "dashboards",
         "acme",
         "ai",
