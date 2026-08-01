@@ -152,6 +152,50 @@ echo -e "truncate chained alias blocked\t$(echo "$chain_err" | grep -c -m1 "DEAD
 kill %1 2>/dev/null
 wait 2>/dev/null
 
+# Which storage the lock is taken ON, not merely whether one is taken. A reader of a lazy table locks
+# the catalog entry and StorageProxy::read forwards without locking the nested storage, so a lock on
+# the resolved leaf would not exclude this reader. No cell above can tell the two apart.
+LAZY_RDB_DB="${CLICKHOUSE_DATABASE}_lazy_rdb"
+$CLICKHOUSE_CLIENT -q "
+    DROP DATABASE IF EXISTS $LAZY_RDB_DB SYNC;
+    CREATE DATABASE $LAZY_RDB_DB ENGINE = Atomic SETTINGS lazy_load_tables = 1;
+    CREATE TABLE $LAZY_RDB_DB.rdb (k UInt64, v String) ENGINE = EmbeddedRocksDB PRIMARY KEY k;
+    INSERT INTO $LAZY_RDB_DB.rdb SELECT number, repeat('x', 200) FROM numbers(300000);
+    CREATE TABLE $LAZY_RDB_DB.rdb_alias ENGINE = Alias($LAZY_RDB_DB, 'rdb');
+"
+$CLICKHOUSE_CLIENT -q "DETACH DATABASE $LAZY_RDB_DB SYNC"
+$CLICKHOUSE_CLIENT -q "ATTACH DATABASE $LAZY_RDB_DB"
+$CLICKHOUSE_CLIENT -q "SELECT 'lazy rocksdb target is a proxy', engine = 'TableProxy' FROM system.tables WHERE database = '$LAZY_RDB_DB' AND name = 'rdb'"
+
+LAZY_RDB_READER_ID="lazy_rdb_reader_$CLICKHOUSE_DATABASE"
+$CLICKHOUSE_CLIENT --query_id="$LAZY_RDB_READER_ID" -q "
+    SELECT sum(sleepEachRow(0.2)) FROM (SELECT k FROM $LAZY_RDB_DB.rdb LIMIT 25) SETTINGS max_block_size = 1, max_threads = 1
+" > /dev/null &
+
+# Asserted, not assumed, for the same reason as every cell above: without a reader actually holding
+# the share lock the assertion below would measure an uncontended truncate.
+lazy_rdb_reader_started=0
+for _ in {1..200}; do
+    if [[ $($CLICKHOUSE_CLIENT -q "SELECT count() FROM system.processes WHERE query_id = '$LAZY_RDB_READER_ID' AND read_rows > 0") -gt 0 ]]; then
+        lazy_rdb_reader_started=1
+        break
+    fi
+    sleep 0.05
+done
+echo -e "lazy rocksdb reader started\t$lazy_rdb_reader_started"
+
+lazy_rdb_err=$($CLICKHOUSE_CLIENT -q "TRUNCATE TABLE $LAZY_RDB_DB.rdb_alias SETTINGS lock_acquire_timeout = 3" 2>&1)
+echo -e "truncate lazy proxied rocksdb blocked\t$(echo "$lazy_rdb_err" | grep -c -m1 "DEADLOCK_AVOIDED")"
+kill %1 2>/dev/null
+wait 2>/dev/null
+
+# And it still succeeds once that reader is gone, so the row above is a real block and not a
+# permanently unavailable lock.
+$CLICKHOUSE_CLIENT -q "TRUNCATE TABLE $LAZY_RDB_DB.rdb_alias SETTINGS lock_acquire_timeout = 3" \
+    && echo -e "truncate lazy proxied rocksdb after reader\t1"
+
+$CLICKHOUSE_CLIENT -q "DROP DATABASE IF EXISTS $LAZY_RDB_DB SYNC"
+
 $CLICKHOUSE_CLIENT -q "DROP DATABASE IF EXISTS $LAZY_DB SYNC"
 
 # TRUNCATE TABLES ... LIKE, which can want the same target lock from several pool tasks at once,

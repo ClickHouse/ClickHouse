@@ -9,6 +9,10 @@ chained alias is still a proxy	1
 chain reader started	1
 truncate chained alias succeeded	1
 truncate chained alias blocked	0
+lazy rocksdb target is a proxy	1
+lazy rocksdb reader started	1
+truncate lazy proxied rocksdb blocked	1
+truncate lazy proxied rocksdb after reader	1
 rows after truncate	0
 direct	1
 through alias	1
