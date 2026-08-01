@@ -1,5 +1,4 @@
 -- Tags: no-fasttest
-set input_format_orc_use_fast_decoder = 1;
 
 set input_format_orc_dictionary_as_low_cardinality = 1;
 insert into function file(concat(currentDatabase(), '_03241_data1_without_dict.orc'))

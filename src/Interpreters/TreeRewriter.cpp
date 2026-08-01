@@ -665,6 +665,7 @@ bool tryJoinOnConst(TableJoin & analyzed_join, const ASTPtr & on_expression, Con
 
     if (auto eval_const_res = tryEvaluateConstCondition(on_expression, context))
     {
+        analyzed_join.setJoinExpressionValue(eval_const_res.value());
         if (eval_const_res.value())
         {
             /// JOIN ON 1 == 1
@@ -701,7 +702,7 @@ void resolveNaturalJoin(ASTTableJoin & table_join, const TablesWithColumns & tab
     for (const auto & col : tables[0].columns)
     {
         /// Skip sub-columns (e.g. name.size) — NATURAL JOIN only matches top-level columns.
-        if (col.name.find('.') != std::string::npos)
+        if (col.name.contains('.'))
             continue;
         if (right_col_names.contains(col.name) && seen.insert(col.name).second)
             using_list->children.push_back(make_intrusive<ASTIdentifier>(col.name));

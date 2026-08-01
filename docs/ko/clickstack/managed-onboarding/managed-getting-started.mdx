@@ -30,21 +30,15 @@ import CreateIngestionUser from '/snippets/ko/clickstack/_create_ingestion_user.
 * 기존 collector가 없고 아래의 새 collector 경로를 따르려는 경우 **Docker**.
 
 <Steps>
-  <Step>
-    ## 자격 증명 준비
-
+  <Step title="자격 증명 준비" id="gather-credentials">
     <GatherCredentials />
   </Step>
 
-  <Step>
-    ## 수집용 사용자 생성
-
+  <Step title="수집용 사용자 생성" id="create-ingestion-user">
     <CreateIngestionUser />
   </Step>
 
-  <Step>
-    ## Collector 배포
-
+  <Step title="Collector 배포" id="deploy-collector">
     상황에 맞는 옵션을 선택하십시오.
 
     <Info>
@@ -102,7 +96,7 @@ import CreateIngestionUser from '/snippets/ko/clickstack/_create_ingestion_user.
           자체 배포판을 사용하는 경우 해당 배포판에 ClickHouse exporter가 포함되어 있는지 확인하십시오. upstream [contrib image](https://github.com/open-telemetry/opentelemetry-collector-contrib)에는 이미 포함되어 있습니다.
         </Info>
 
-        아래는 ClickStack UI에서 예상하는 receivers, processors, pipelines와 함께 ClickHouse exporter를 사용하는 예시 구성입니다. 이 구성은 세션 리플레이(`rrweb`) 라우팅 경로를 포함해 ClickStack 배포판의 동작과 일치합니다. 위에서 생성한 `hyperdx_ingest` 사용자의 자격 증명으로 `<clickhouse_cloud_endpoint>` 및 `<your_password_here>`를 바꾸십시오.
+        아래는 ClickStack UI에서 예상하는 receivers, processors, pipelines와 함께 ClickHouse exporter를 사용하는 예시 구성입니다. 이 구성은 세션 리플레이(`rrweb`) 라우팅 경로를 포함해 ClickStack 배포판의 동작과 일치합니다. 위에서 생성한 `hyperdx_ingest` 사용자의 자격 증명으로 `<clickhouse_cloud_endpoint>` 및 `<your_password_here>`를 바꾸십시오:
 
         ```yaml
         receivers:
@@ -199,9 +193,7 @@ import CreateIngestionUser from '/snippets/ko/clickstack/_create_ingestion_user.
     </Tabs>
   </Step>
 
-  <Step>
-    ## 애플리케이션 클론 및 실행
-
+  <Step title="애플리케이션 클론 및 실행" id="clone-and-run-the-application">
     리포지토리를 클론하고, 의존성을 설치한 다음, `.env` 파일을 생성합니다:
 
     ```bash
@@ -224,9 +216,7 @@ import CreateIngestionUser from '/snippets/ko/clickstack/_create_ingestion_user.
     이 시점에서 애플리케이션은 실행 중이지만 아직 계측되지 않은 상태입니다. ClickStack에는 데이터가 표시되지 않습니다. 텔레메트리를 기다리는 중입니다. 이것이 「이전」 상태입니다.
   </Step>
 
-  <Step>
-    ## 애플리케이션을 collector에 연결
-
+  <Step title="애플리케이션을 collector에 연결" id="connect-the-application">
     애플리케이션이 위에서 배포한 collector에 연결하려면 2개의 값이 필요합니다:
 
     * `OTEL_EXPORTER_OTLP_ENDPOINT`: collector가 노출하는 OTLP endpoint입니다(일반적으로 HTTPS를 통한 OTLP에는 포트 `4318`을 사용합니다).
@@ -243,9 +233,7 @@ import CreateIngestionUser from '/snippets/ko/clickstack/_create_ingestion_user.
     SDK는 세 가지 신호인 트레이스, 메트릭, 로그 모두의 인증 헤더를 설정하기 위해 `OTEL_EXPORTER_OTLP_HEADERS`를 사용합니다. collector가 로컬에서 실행되고 인증을 강제하지 않는 경우 값은 비워 둘 수 있지만(`OTEL_EXPORTER_OTLP_HEADERS=authorization=`), 이 변수 자체는 반드시 포함되어야 합니다. 설정되어 있지 않거나 완전히 비어 있으면 SDK가 초기화 자체를 건너뜁니다. 마지막으로, TLS 없이 collector를 실행할 때는 올바른 HTTP protocol을 사용해야 합니다(예: `http://localhost:4318`).
   </Step>
 
-  <Step>
-    ## 애플리케이션 계측
-
+  <Step title="애플리케이션 계측" id="instrument-the-application">
     계측은 세 부분으로 구성됩니다. SDK를 설치하고, 실행 명령을 변경하고, 브라우저 SDK를 활성화합니다. 이 과정에서는 애플리케이션의 비즈니스 로직이 변경되지 않습니다.
 
     ### SDK 설치
@@ -298,9 +286,7 @@ import CreateIngestionUser from '/snippets/ko/clickstack/_create_ingestion_user.
     </Warning>
   </Step>
 
-  <Step>
-    ## 트래픽 생성
-
+  <Step title="트래픽 생성" id="generate-traffic">
     새 실행 명령과 새로 빌드한 브라우저 번들이 반영되도록 애플리케이션을 다시 시작하세요:
 
     ```bash
@@ -311,9 +297,7 @@ import CreateIngestionUser from '/snippets/ko/clickstack/_create_ingestion_user.
     Vite가 업데이트된 번들을 제공하도록 브라우저 탭을 새로 고친 다음, 앱을 몇 차례 새로 고치고, 연도를 바꿔 보고, 스토리를 클릭해 들어가 트래픽을 생성하세요. 각 상호작용은 로그, 메트릭, 트레이스 및 세션 리플레이 이벤트를 collector를 통해 ClickStack으로 전송합니다.
   </Step>
 
-  <Step>
-    ## ClickStack를 실행하고 텔레메트리 데이터를 살펴보십시오
-
+  <Step title="ClickStack를 실행하고 텔레메트리 데이터를 살펴보십시오" id="launch-clickstack">
     [ClickHouse Cloud 콘솔](https://console.clickhouse.cloud)에서 서비스를 열고 왼쪽 메뉴에서 **ClickStack**을 선택한 다음 **수집 시작**을 선택합니다.
 
     <Image img="/images/use-cases/observability/clickstack-cloud-first-time.webp" size="lg" alt="ClickStack 실행" border />
@@ -353,11 +337,11 @@ import CreateIngestionUser from '/snippets/ko/clickstack/_create_ingestion_user.
 </Steps>
 
 <div id="further-reading">
-  ## 추가로 읽어보기
+  ## 추가 읽을거리
 </div>
 
 * [Kubernetes 모니터링](/ko/clickstack/managed-onboarding/monitoring-kubernetes): 클러스터에서 로그, 인프라 메트릭, Kubernetes 이벤트를 수집합니다.
-* [AWS CloudWatch 로그 모니터링](/ko/clickstack/managed-onboarding/monitoring-aws-cloudwatch-logs): OpenTelemetry CloudWatch 수신기를 통해 CloudWatch 로그를 전달합니다.
-* [Managed ClickStack 튜닝](/ko/clickstack/managed-onboarding/tuning-clickstack-schema): 쿼리 성능과 스토리지 효율성을 높일 수 있도록 스키마를 조정합니다.
-* [collector 보안 강화](/ko/clickstack/ingesting-data/collector#securing-the-collector): OTLP 엔드포인트에 TLS를 적용하고 최소 권한의 수집 사용자를 구성합니다.
-* [프로덕션 전환](/ko/clickstack/managing/production): 프로덕션 전환 시 권장 사항을 확인합니다.
+* [AWS CloudWatch 로그 모니터링](/ko/clickstack/managed-onboarding/monitoring-aws-cloudwatch-logs): OpenTelemetry CloudWatch receiver를 통해 CloudWatch 로그를 전달합니다.
+* [Managed ClickStack 튜닝](/ko/clickstack/managed-onboarding/tuning-clickstack-schema): 쿼리 성능과 스토리지 효율성을 높이도록 스키마를 조정합니다.
+* [collector 보안 설정](/ko/clickstack/ingesting-data/collector#securing-the-collector): OTLP endpoint에 TLS를 적용하고 최소 권한 수집 사용자를 구성합니다.
+* [프로덕션 환경으로 전환](/ko/clickstack/managing/production): 프로덕션 환경으로 전환할 때의 권장 사항을 확인합니다.

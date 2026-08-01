@@ -1289,8 +1289,8 @@ std::unique_ptr<S3::Client> ClientFactory::create( // NOLINT
 
     // we need to force environment credentials if explicit credentials are empty and we have role_arn
     // this is a crutch because we know that we have environment credentials on our Cloud.
-    // Never do this for user-facing requests: it would re-enable the server's environment credentials
-    // that getCredentialsProvider is about to refuse.
+    // For user-facing requests (forbid_implicit_credentials) the same is done by getCredentialsProvider
+    // itself, which allows the role_arn STS base while refusing the other server-managed sources.
     if (!credentials_configuration.forbid_implicit_credentials)
         credentials_configuration.use_environment_credentials =
             credentials_configuration.use_environment_credentials || (credentials.IsEmpty() && !credentials_configuration.role_arn.empty());

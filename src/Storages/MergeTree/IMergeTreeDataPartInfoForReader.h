@@ -84,6 +84,8 @@ public:
     /// The part's own stored column carrying this id (id-carrying pair, part's on-disk type).
     virtual std::optional<NameAndTypePair> tryGetColumn(const ColumnId & column_id) const = 0;
 
+    virtual bool isSystemColumnInvalidated(const String & column_name) const = 0;
+
     virtual String getColumnNameWithMinimumCompressedSize(const NamesAndTypesList & available_columns) const = 0;
 
     virtual const MergeTreeDataPartChecksums & getChecksums() const = 0;

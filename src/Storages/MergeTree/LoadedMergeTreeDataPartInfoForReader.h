@@ -59,6 +59,8 @@ public:
     std::optional<size_t> getColumnPosition(const ColumnId & column_id) const override { return data_part->getColumnPosition(column_id); }
     std::optional<NameAndTypePair> tryGetColumn(const ColumnId & column_id) const override { return data_part->tryGetColumn(column_id); }
 
+    bool isSystemColumnInvalidated(const String & column_name) const override { return data_part->isSystemColumnInvalidated(column_name); }
+
     AlterConversionsPtr getAlterConversions() const override { return alter_conversions; }
 
     String getColumnNameWithMinimumCompressedSize(const NamesAndTypesList & available_columns) const override
