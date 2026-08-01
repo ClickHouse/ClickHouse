@@ -1987,7 +1987,8 @@ def test_cleanup_stops_when_lease_goes_stale_mid_removal(started_cluster):
             f"""
             CREATE TABLE {table} UUID '{SHARED_UUID_MID_CLEANUP}' (x UInt64)
             ENGINE = MergeTree PARTITION BY x % 2 ORDER BY x
-            SETTINGS {TABLE_SETTINGS}, merge_tree_clear_old_parts_interval_seconds = 60
+            SETTINGS {TABLE_SETTINGS}, old_parts_lifetime = 0,
+                merge_tree_clear_old_parts_interval_seconds = 60
             """
         )
         wait_for_leader([node1], table_name=table)
