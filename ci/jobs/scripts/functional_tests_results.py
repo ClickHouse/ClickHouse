@@ -244,18 +244,17 @@ class FTResultsProcessor:
             and s.failed == 0
             and s.unknown == 0
         ):
-            # The exit code does not identify the sender, so report the run as
-            # inconclusive rather than claim a dead server nothing observed. Gate
-            # on the counters: `NOT_FAILED` rows are invisible to `is_failure()`.
-            state = Result.Status.ERROR
+            # Gate on the counters: `NOT_FAILED` rows are invisible to
+            # `is_failure()`. ERROR goes on the leaf only, where the bugfix
+            # inverter reads it - an ERROR aggregate disables coverage collection.
+            state = Result.Status.FAIL
             test_results.append(
                 Result(
                     KILLED_BY_SIGNAL_RESULT_NAME,
                     Result.Status.ERROR,
                     info=f"The test command exited with {runner_exit_code} (killed by "
                     "signal) and no test was reported as failed, so the cause could "
-                    "not be attributed. A server crash is reported separately by the "
-                    "`Check errors` stage where that stage runs.",
+                    "not be attributed. Check the server log for a crash.",
                 )
             )
         elif runner_exit_code in ABORTED_RUN_EXIT_CODES:

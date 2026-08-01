@@ -15,6 +15,8 @@ import os
 import signal
 import sys
 
+import pytest
+
 # Repo root so `ci.*` resolves; the `ci` dir so the bare `from praktika...`
 # import inside `functional_tests_results` resolves the same way it does when
 # the praktika job runner imports it.
@@ -175,37 +177,43 @@ def test_bugfix_validation_single_crash_counts_as_reproduction(tmp_path):
     assert _named(result, "Server died")[0].status == Result.Status.OK
 
 
-def test_signal_killed_with_no_failures_is_not_labelled_server_died(tmp_path):
+@pytest.mark.parametrize(
+    "runner_exit_code",
+    [
+        128 + signal.SIGTERM,
+        128 + signal.SIGKILL,
+        -signal.SIGTERM,
+        -signal.SIGKILL,
+    ],
+    ids=["143", "137", "-15", "-9"],
+)
+def test_signal_killed_with_no_failures_is_not_labelled_server_died(
+    tmp_path, runner_exit_code
+):
     """The exit code proves only that the run was killed, so with nothing
-    reported as failed the leaf must not claim the server died."""
-    result = _process(tmp_path, _NO_FAILURES, 128 + signal.SIGTERM)
+    reported as failed the leaf must not claim the server died. All four
+    encodings are covered: a shell reports the signal as `128 + N`, while
+    `Popen.returncode` reports the wrapper bash dying from one as `-N`."""
+    assert runner_exit_code in KILLED_BY_SIGNAL_EXIT_CODES
+
+    result = _process(tmp_path, _NO_FAILURES, runner_exit_code)
 
     assert not _named(result, "Server died")
 
     leaves = _named(result, KILLED_BY_SIGNAL_RESULT_NAME)
     assert len(leaves) == 1
     assert leaves[0].status == Result.Status.ERROR
-    assert result.status == Result.Status.ERROR
+    assert str(runner_exit_code) in leaves[0].info
+
+    # The aggregate stays FAIL: `is_failure()` excludes ERROR, so an ERROR
+    # aggregate would flip the pipeline status and disable coverage collection.
+    assert result.status == Result.Status.FAIL
 
     # The `clickhouse-test` fallback leaf fires only when `state` is still OK.
     assert not _named(result, "clickhouse-test")
 
     # The aggregate keeps the counters that made the old label contradictory.
     assert result.info == "Failed: 0, Passed: 3, Skipped: 0"
-
-
-def test_signal_killed_negative_exit_code_form(tmp_path):
-    """`Popen.returncode` reports the wrapper bash dying from a signal as `-N`.
-    Neither the runner's nor the server's fate is established there either, so
-    the leaf name must not vary by encoding."""
-    result = _process(tmp_path, _NO_FAILURES, -signal.SIGTERM)
-
-    assert not _named(result, "Server died")
-    leaves = _named(result, KILLED_BY_SIGNAL_RESULT_NAME)
-    assert len(leaves) == 1
-    assert leaves[0].status == Result.Status.ERROR
-    assert str(-signal.SIGTERM) in leaves[0].info
-    assert result.status == Result.Status.ERROR
 
 
 def test_signal_killed_with_a_failure_keeps_server_died(tmp_path):
@@ -250,10 +258,12 @@ def test_bugfix_validation_signal_kill_is_inconclusive_not_a_reproduction(tmp_pa
     for r in result.results:
         assert r.has_label(Result.Label.XFAIL), r.name
 
-    # Inconclusive, not a reproduction: the inverter left the aggregate at
-    # ERROR instead of calling `set_success`, and did not flip the leaf to OK
-    # the way it flips a FAIL row.
-    assert result.status == Result.Status.ERROR
+    # Inconclusive, not a reproduction: the inverter took its per-row ERROR
+    # guard rather than calling `set_success`, so the leaf was not flipped to OK
+    # the way a FAIL row would be. The wrong-GREEN this pins is the aggregate
+    # never becoming OK, whichever non-ok status it carries.
+    assert result.status != Result.Status.OK
+    assert result.status == Result.Status.FAIL
     assert _named(result, KILLED_BY_SIGNAL_RESULT_NAME)[0].status == Result.Status.ERROR
 
 
