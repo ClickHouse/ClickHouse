@@ -300,6 +300,20 @@ void ReplicatedMergeTreeSink::consume(Chunk & chunk)
     size_t total_streams = 0;
     bool support_parallel_write = false;
 
+    if (deduplication_info && deduplicate && !deduplication_info->isDisabled())
+    {
+        /// A killed or timed-out insert should be noticed before the O(N) prewarm hash pass,
+        /// not only at the much later Keeper interaction; same interrupt point as in `MergeTreeSink`.
+        if (auto process_list_element = context->getProcessListElement())
+            process_list_element->checkTimeLimit();
+
+        /// Warm the data hashes once here so the per-partition infos from filterToPartition below
+        /// reuse the cached token hash instead of rehashing a token that spans several partitions.
+        /// Time it under DuplicationElapsedMicroseconds like the per-partition dedup below.
+        ProfileEventTimeIncrement<Microseconds> duplication_elapsed(ProfileEvents::DuplicationElapsedMicroseconds);
+        deduplication_info->prewarmDataHashes();
+    }
+
     for (size_t part_index = 0; part_index < part_blocks.size(); ++part_index)
     {
         auto & current_block = part_blocks[part_index];
@@ -311,7 +325,7 @@ void ReplicatedMergeTreeSink::consume(Chunk & chunk)
 
         /// Keep only the tokens whose own rows landed in this partition, so a coalesced async
         /// insert does not register a token in partitions it never wrote to.
-        auto current_deduplication_info = deduplication_info->filterToPartition(partition_selector, part_index);
+        auto current_deduplication_info = deduplication_info->filterToPartition(partition_selector, part_index, deduplicate);
 
         {
             ProfileEventTimeIncrement<Microseconds> duplication_elapsed(ProfileEvents::DuplicationElapsedMicroseconds);
@@ -437,6 +451,7 @@ void ReplicatedMergeTreeSink::finishDelayed(const ZooKeeperWithFaultInjectionPtr
             while (true)
             {
                 partition.temp_part->finalize();
+                partition.temp_part->part->getDataPartStorage().commitTransaction();
                 auto deduplication_hashes = partition.deduplication_info->getDeduplicationHashes(partition.block_with_partition.partition_id, deduplicate);
                 auto deduplication_blocks_ids = getDeduplicationBlockIds(deduplication_hashes);
 

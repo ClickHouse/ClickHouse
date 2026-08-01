@@ -1,0 +1,274 @@
+---
+date: 2025-01-29
+title: 如何从损坏的 Keeper 快照中恢复
+tags: ['故障排查']
+keywords: ['Keeper', '损坏的快照']
+description: '本文介绍如何从损坏的 Keeper 快照中恢复：包括问题的表现形式、什么是快照及其位置，以及可能的恢复策略。'
+---
+
+损坏或异常的 ClickHouse Keeper 快照可能导致严重的系统不稳定，例如元数据不一致、表进入只读状态、资源耗尽或备份失败。本文涵盖：
+
+* [什么是快照以及在哪里可以找到它们](#overview)
+* [问题会如何表现](#symptoms)
+* [可能的恢复策略](#recovery-strategies) 及其各自的含义
+
+<div id="overview">
+  ## Keeper 快照概述
+</div>
+
+<div id="what-is-snapshot">
+  ### 什么是快照？
+</div>
+
+快照是 Keeper 在某一特定时间点内部数据的序列化状态 (例如有关集群、表协调路径和配置的元数据) 。快照对于重新同步集群中的 Keeper 节点、在发生故障时恢复元数据，以及依赖已知正常 Keeper 状态的启动或重启过程都至关重要。
+
+<div id="where-to-find-snapshots">
+  ### 在哪里可以找到快照？
+</div>
+
+快照以文件形式存储在 Keeper 节点的本地文件系统中。默认情况下，它们位于 `/var/lib/clickhouse/coordination/snapshots/`；如果你在 `keeper_server.xml` 文件中通过 `snapshot_storage_path` 指定了自定义路径，则会存储在那里。快照名称按递增编号命名 (例如 `snapshot.23`) ，编号越大表示快照越新。
+
+对于多节点集群，每个 Keeper 节点都有各自的快照目录。
+
+<Note>
+  各节点上的快照保持一致性对于恢复至关重要。
+</Note>
+
+<div id="symptoms">
+  ## Keeper 损坏快照的关键症状和表现
+</div>
+
+下表列出了一些 Keeper 快照损坏的常见症状和表现：
+
+| **类别**      | **问题类型**  | **需要关注的现象**                              |
+| ----------- | --------- | ---------------------------------------- |
+| **运行问题**    | 只读模式      | 表意外切换为只读模式                               |
+|             | 查询失败      | 持续出现带有 `Coordination::Exception` 错误的查询失败 |
+| **元数据损坏**   | 过期元数据     | 已删除的表未反映出来；由于陈旧元数据导致操作失败                 |
+| **资源过载**    | 系统资源耗尽    | Keeper 节点占用过多 CPU、内存或磁盘空间；可能导致停机         |
+|             | 磁盘已满      | 在创建快照期间磁盘已满                              |
+| **备份与恢复**   | 备份失败      | 由于 Keeper 元数据缺失或不一致，备份失败                 |
+| **快照创建/传输** | Keeper 崩溃 | Keeper 在快照创建过程中崩溃 (查找 `"SEGFAULT"` 错误)   |
+|             | 快照传输损坏    | 快照在副本之间传输时发生损坏                           |
+|             | 竞态条件      | 日志合并整理期间发生竞态条件——后台 commit 线程访问已删除的日志     |
+|             | 网络同步      | 网络问题导致快照无法从 leader 同步到跟随者                |
+
+**日志指示：**
+
+在诊断快照损坏之前，请检查 **Keeper 日志** 中是否存在特定错误模式：
+
+| **日志类型**         | **需要关注的内容**                                                                                                                                                                                                                                                                                             |
+| ---------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| **快照损坏错误**       | • `Aborting because of failure to load from latest snapshot with index`<br />• `Failure to load from latest snapshot with index {}: {}. Manual intervention is necessary for recovery`<br />• `Failed to preprocess stored log at index {}, aborting to avoid inconsistent state`<br />• 启动期间快照序列化/加载失败 |
+| **其他 Keeper 问题** | • `Coordination::Exception`<br />• `Zookeeper::Session Timeout`<br />• 同步或选举问题<br />• 日志合并整理中的竞态条件                                                                                                                                                                                                      |
+
+<div id="recovery-strategies">
+  ## 从损坏的 Keeper 快照中恢复
+</div>
+
+在操作任何文件之前，务必始终：
+
+1. 停止所有 Keeper 节点，防止进一步损坏
+2. 将整个协调目录复制到安全位置，备份所有内容
+3. 验证集群的 quorum，确保至少有一个节点保存了完好的数据
+
+***
+
+<div id="restore-from-existing-backup">
+  ### 1. 从现有备份中恢复
+</div>
+
+如果出现以下情况，应按此流程操作：
+
+* Keeper 元数据或快照损坏，导致当前数据无法恢复。
+* 存在一个 Keeper 状态已知正常的备份。
+
+按照以下步骤从现有备份中恢复：
+
+1. 找到最新的备份，并验证其元数据一致性。
+2. 关闭 ClickHouse 和 Keeper 服务。
+3. 用备份目录中的快照和日志替换损坏的快照和日志。
+4. 重启 Keeper 集群，并验证元数据同步是否正常。
+
+<Tip>
+  **定期备份**
+
+  如果备份已过期，你可能会丢失最近的元数据变更。因此，我们建议定期备份。
+</Tip>
+
+***
+
+<div id="rollback-to-older-snapshot">
+  ### 2. 回滚到较早的快照
+</div>
+
+在以下情况下，应按此流程操作：
+
+* 最近的快照已损坏，但较早的快照仍可使用。
+* 增量日志完好，可用于一致性恢复。
+
+按以下步骤回滚到较早的快照：
+
+1. 从 Keeper 目录中找到并选择一个有效的较早快照 (例如 `snapshot.19`) 。
+2. 删除较新的快照和日志。
+3. 重启 Keeper，使其重放日志以重建元数据状态。
+
+<Warning>
+  **元数据不同步风险**
+
+  如果快照和日志缺失或不完整，可能会导致元数据不同步。
+</Warning>
+
+***
+
+<div id="restore-metadata-with-system-restore-replica">
+  ### 3. 使用 `SYSTEM RESTORE REPLICA` 恢复元数据
+</div>
+
+在以下情况下，应遵循此流程：
+
+* Keeper 元数据丢失或损坏，但表数据仍存在于磁盘上
+* 由于缺少 ZooKeeper/Keeper 元数据，表已切换为只读模式
+* 你需要根据本地可用的数据分区片段在 Keeper 中重建元数据
+
+按照以下步骤恢复元数据：
+
+1. 验证表数据是否存在于本地的 clickHouse-server 数据路径中，该路径由 config 中的 `<path>` 配置项指定。 (默认为 `/var/lib/clickhouse/data/`) 
+
+2. 对于每个受影响的表，执行：
+
+```sql
+SYSTEM RESTART REPLICA [db.]table_name;
+SYSTEM RESTORE REPLICA [db.]table_name;
+```
+
+3. 进行数据库级恢复时 (如果使用 Replicated 数据库引擎) ：
+
+```sql
+SYSTEM RESTORE DATABASE REPLICA db_name;
+```
+
+4. 等待同步完成：
+
+```sql
+SYSTEM SYNC REPLICA [db.]table_name;
+```
+
+5. 通过检查 `system.replicas` 中的 `is_readonly = 0` 并监控 `system.detached_parts`，验证恢复是否成功
+
+<Info>
+  **工作原理**
+
+  `SYSTEM RESTORE REPLICA` 会先分离所有现有 parts，在 Keeper 中重建元数据 (就像这是一个新的空表一样) ，然后再重新附加所有 parts。这样可以避免通过网络重新下载数据。
+</Info>
+
+<Warning>
+  **前置条件**
+
+  只有在本地数据分区片段完好的情况下，此方法才有效。如果数据也已损坏，请改用策略 #5 (重建集群) 。
+</Warning>
+
+***
+
+<div id="drop-and-recreate-replica-metadata">
+  ### 4. 在 Keeper 中删除并重建副本元数据
+</div>
+
+在以下情况下，建议按此流程处理：
+
+* 错误仅发生在集群中的某一个副本上，且该副本在 Keeper 中的元数据已损坏或不一致
+* 你遇到类似 &quot;Part XXXXX intersects previous part YYYYY&quot; 的错误
+* 你需要在保留本地数据的同时，彻底重置某个副本在 Keeper 中的元数据
+
+按照以下步骤删除并重建元数据：
+
+1. 在受影响的副本上，对该表执行 detach：
+
+```sql
+DETACH TABLE [db.]table_name;
+```
+
+2. 从 Keeper 中删除该副本的元数据 (可在任意副本上执行) ：
+
+```sql
+SYSTEM DROP REPLICA 'replica_name' FROM ZKPATH '/clickhouse/tables/{shard}/table_name';
+```
+
+要找到正确的 ZooKeeper 路径：
+
+```sql
+SELECT zookeeper_path, replica_name FROM system.replicas WHERE table = 'table_name';
+```
+
+3. 重新附加该表 (将以只读模式附加) ：
+
+```sql
+ATTACH TABLE [db.]table_name;
+```
+
+4. 恢复副本元数据：
+
+```sql
+SYSTEM RESTORE REPLICA [db.]table_name;
+```
+
+5. 与其他副本同步：
+
+```sql
+SYSTEM SYNC REPLICA [db.]table_name;
+```
+
+6. 恢复后检查所有副本上的 `system.detached_parts`
+
+<Warning>
+  **在所有受影响的副本上执行**
+
+  如果损坏影响了多个副本，请在每个副本上依次重复这些步骤。
+</Warning>
+
+<Tip>
+  **适用于整个数据库**
+
+  如果使用的是 Replicated 数据库，也可以改用 `SYSTEM DROP REPLICA ... FROM DATABASE db_name`。
+</Tip>
+
+**替代方案：使用 force&#95;restore&#95;data 标志**
+
+如需在服务器启动时自动恢复所有复制表：
+
+1. 停止 ClickHouse server
+2. 创建恢复标志：
+
+```bash
+sudo -u clickhouse touch /var/lib/clickhouse/flags/force_restore_data
+```
+
+3. 启动 ClickHouse server
+4. 服务器会自动删除该标志，并恢复所有复制表
+5. 监控日志，查看恢复进度
+
+当多个表需要同时恢复时，这种方法很有用。
+
+***
+
+<div id="rebuild-keeper-cluster">
+  ### 5. 重建 Keeper 集群
+</div>
+
+在以下情况下，应按此流程操作：
+
+* 没有可用于恢复的有效快照、日志或备份。
+* 需要重建整个 Keeper 集群及其元数据。
+
+按照以下步骤重建 Keeper 集群：
+
+1. 完全停止 ClickHouse 和 Keeper 集群。
+2. 清理快照和日志目录，以重置每个 Keeper 节点。
+3. 将一个 Keeper 节点初始化为 leader，然后逐步添加其他节点。
+4. 如果外部记录中有可用信息，请重新导入元数据。
+
+<Warning>
+  **耗时较长的流程**
+
+  此流程非常耗时，并且存在长时间中断的风险。需要重建全部数据。
+</Warning>
