@@ -116,7 +116,7 @@ def get_git_info() -> tuple[str, list[str], str, str, str, int]:
         ).strip()
         if merge_base:
             raw = Shell.get_output(
-                f"gh api 'repos/ClickHouse/ClickHouse/commits?sha={merge_base}&per_page=100' -q '.[].sha'",
+                f"gh api 'repos/ClickHouse/ClickHouse/commits?sha={merge_base}&per_page=30' -q '.[].sha'",
                 verbose=True,
             )
             master_track_commits = raw.splitlines()
@@ -190,7 +190,6 @@ if __name__ == "__main__":
         name="Generate LLVM Coverage Report",
         command=["bash ci/jobs/scripts/merge_llvm_coverage.sh"],
     )
-
     # Compress and attach the full HTML report archive + files to the generate result.
     # Keeping files/assets inside the same sub-Result ensures upload_result_files_to_s3
     # computes common_root = llvm_coverage_html_report/, so relative links stay intact.
@@ -221,7 +220,7 @@ if __name__ == "__main__":
         b_branch_hit = b_branch_total = c_branch_hit = c_branch_total = 0
 
         if _diff_ran:
-            # Baseline coverage from the primary master run.
+            # Baseline coverage for the current branch (from the merged report)
             (b_line_cov, b_line_hit, b_line_total), \
             (b_function_cov, b_func_hit, b_func_total), \
             (b_branch_cov, b_branch_hit, b_branch_total) = get_lcov_summary(
@@ -336,15 +335,35 @@ if __name__ == "__main__":
             _changed_lines_covered = print_res.ext.get("changed_lines_covered", 0)
             _changed_lines_cov = print_res.ext.get("changed_lines_cov", 0.0)
 
+            _lbc_lines = print_res.ext.get("lbc_lines", 0)
+            _lbc_fns = print_res.ext.get("lbc_fns", 0)
+
             # Only write coverage_comment.json (and thus post a GitHub comment) when
-            # the diff HTML report was generated (i.e. C/C++ source files changed).
-            # Tests-only PRs never reach this job at all - the coverage family is
-            # auto-skipped for them (see filter_job.py) since the compiled binary,
-            # and therefore coverage, cannot have moved.
-            _has_coverage_data = _diff_ran
+            # there is something coverage-related to report: either the diff HTML report
+            # was generated (C++ source files changed) or LBC was detected (tests removed).
+            # Pure non-C++ PRs (scripts, Docker, configs) produce neither and should not
+            # generate a comment.
+            _has_coverage_data = _diff_ran or _lbc_lines > 0 or _lbc_fns > 0
             if not _has_coverage_data:
-                print("No coverage-relevant changes detected (no C/C++ source changes) — skipping coverage comment.")
+                print("No C/C++ source files changed and no lost baseline coverage — skipping coverage comment.")
             else:
+                # When _diff_ran is False but LBC was found (test-only removal), fetch
+                # the global percentages from the .info files that were downloaded during
+                # the diff script run for LBC comparison.
+                _base_info = f"{TEMP_DIR}/base_llvm_coverage.info"
+                _curr_info = f"{TEMP_DIR}/llvm_coverage.info"
+                if not _diff_ran and Path(_base_info).exists() and Path(_curr_info).exists():
+                    try:
+                        (b_line_cov, b_line_hit, b_line_total), \
+                        (b_function_cov, b_func_hit, b_func_total), \
+                        (b_branch_cov, b_branch_hit, b_branch_total) = get_lcov_summary(_base_info)
+                        (c_line_cov, c_line_hit, c_line_total), \
+                        (c_function_cov, c_func_hit, c_func_total), \
+                        (c_branch_cov, c_branch_hit, c_branch_total) = get_lcov_summary(_curr_info)
+                        delta = c_line_cov - b_line_cov
+                    except Exception as e:
+                        print(f"Warning: could not compute global coverage percentages: {e}")
+
                 _comment_data = {
                     # GitHub comment fields
                     "b_line_cov": b_line_cov,
@@ -370,10 +389,7 @@ if __name__ == "__main__":
                     "changed_lines_covered": _changed_lines_covered,
                     "changed_lines_cov": _changed_lines_cov,
                     "diff_url": _diff_url if _diff_ran else "",
-                    # The uncovered-code log is produced only when print_uncovered_code.py
-                    # actually ran (i.e. C/C++ source files changed). For tests-only PRs
-                    # the log doesn't exist on S3, so don't surface a 404 link.
-                    "uncovered_code_url": uncovered_code_url if _diff_inputs_exist else "",
+                    "uncovered_code_url": uncovered_code_url,
                     # CIDB fields
                     "check_start_time": datetime.now(timezone.utc).strftime(
                         "%Y-%m-%d %H:%M:%S"

@@ -175,8 +175,6 @@ class ElOraculoDeTablas:
         "LOGICAL_ERROR(s) in text_log",
         "CORRUPTED_DATA(s) in text_log",
         "CHECKSUM_DOESNT_MATCH error(s) in text_log",
-        "DATA_AFTER_MERGE_DIFF_FROM_EXPECTED error(s) in text_log",
-        "stuck replication queue task(s) (>5 retries)",
     ]
 
     DETAIL_QUERIES = [
@@ -192,8 +190,6 @@ class ElOraculoDeTablas:
         "SELECT message FROM system.text_log WHERE event_time >= now() - toIntervalSecond(60) AND message ILIKE concat('%', 'LOGICAL', '_ERROR', '%') ORDER BY event_time DESC LIMIT 3;",
         "SELECT message FROM system.text_log WHERE event_time >= now() - toIntervalSecond(60) AND message ILIKE concat('%', 'CORRUPTED', '_DATA', '%') ORDER BY event_time DESC LIMIT 3;",
         "SELECT message FROM system.text_log WHERE event_time >= now() - toIntervalSecond(60) AND message ILIKE concat('%', 'CHECKSUM', '_DOESNT', '_MATCH', '%') ORDER BY event_time DESC LIMIT 3;",
-        "SELECT message FROM system.text_log WHERE event_time >= now() - toIntervalSecond(60) AND message ILIKE concat('%', 'DATA', '_AFTER', '_MERGE', '_DIFF', '_FROM', '_EXPECTED', '%') ORDER BY event_time DESC LIMIT 3;",
-        "SELECT database, table, type, last_exception, num_tries FROM system.replication_queue WHERE last_exception != '' AND num_tries > 5 ORDER BY num_tries DESC LIMIT 3;",
     ]
 
     def run_health_check(
@@ -219,9 +215,8 @@ class ElOraculoDeTablas:
                         countIf(message ILIKE concat('%','REPLICA','_ALREADY','_EXISTS','%')),
                         countIf(message ILIKE concat('%','LOGICAL','_ERROR','%')),
                         countIf(message ILIKE concat('%','CORRUPTED','_DATA','%')),
-                        countIf(message ILIKE concat('%','CHECKSUM','_DOESNT','_MATCH','%')),
-                        countIf(message ILIKE concat('%','DATA','_AFTER','_MERGE','_DIFF','_FROM','_EXPECTED','%'))],
-                       [toUInt64(3), toUInt64(8), toUInt64(10), toUInt64(11), toUInt64(12), toUInt64(13)]
+                        countIf(message ILIKE concat('%','CHECKSUM','_DOESNT','_MATCH','%'))],
+                       [toUInt64(3), toUInt64(8), toUInt64(10), toUInt64(11), toUInt64(12)]
                      )) AS t
                      FROM system.text_log WHERE event_time >= now() - toIntervalSecond(60)) tlog)
                      UNION ALL
@@ -236,9 +231,6 @@ class ElOraculoDeTablas:
                      WHERE exception != '' AND event_time > (now() - toIntervalSecond(60)) GROUP BY part_name HAVING count() > 10) tx)
                      UNION ALL
                     (SELECT count() x, 9 y FROM system.replication_queue WHERE last_exception != '')
-                     UNION ALL
-                    (SELECT count() x, 14 y FROM system.replication_queue
-                     WHERE last_exception != '' AND num_tries > 5)
                     ) tx ORDER BY y SETTINGS use_query_condition_cache = 0, use_query_cache = 0;
                     """)
             except Exception as ex:

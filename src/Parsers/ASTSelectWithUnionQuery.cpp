@@ -3,38 +3,10 @@
 #include <Parsers/SelectUnionMode.h>
 #include <IO/Operators.h>
 #include <Parsers/ASTSelectQuery.h>
-#include <Parsers/QueryParameterVisitor.h>
 
 
 namespace DB
 {
-
-namespace
-{
-
-/// `as<ASTSelectQuery>()` is an exact typeid check, so a derived or nested child of
-/// `list_of_selects` (interpreter passes substitute both) would be skipped and its query
-/// parameters lost. The last branch is the general answer; the first two only keep the memo.
-
-bool childHasQueryParameters(const ASTPtr & child)
-{
-    if (const auto * select_node = child->as<ASTSelectQuery>())
-        return select_node->hasQueryParameters();
-    if (const auto * union_node = child->as<ASTSelectWithUnionQuery>())
-        return union_node->hasQueryParameters();
-    return !analyzeReceiveQueryParams(child).empty();
-}
-
-NameToNameMap childQueryParameters(const ASTPtr & child)
-{
-    if (const auto * select_node = child->as<ASTSelectQuery>())
-        return select_node->getQueryParameters();
-    if (const auto * union_node = child->as<ASTSelectWithUnionQuery>())
-        return union_node->getQueryParameters();
-    return analyzeReceiveQueryParamsWithType(child);
-}
-
-}
 
 ASTPtr ASTSelectWithUnionQuery::clone() const
 {
@@ -170,10 +142,13 @@ bool ASTSelectWithUnionQuery::hasQueryParameters() const
     {
         for (const auto & child : list_of_selects->children)
         {
-            if (childHasQueryParameters(child))
+            if (auto * select_node = child->as<ASTSelectQuery>())
             {
-                has_query_parameters = true;
-                return has_query_parameters.value();
+                if (select_node->hasQueryParameters())
+                {
+                    has_query_parameters = true;
+                    return has_query_parameters.value();
+                }
             }
         }
         has_query_parameters = false;
@@ -191,8 +166,14 @@ NameToNameMap ASTSelectWithUnionQuery::getQueryParameters() const
 
     for (const auto & child : list_of_selects->children)
     {
-        NameToNameMap child_params = childQueryParameters(child);
-        query_params.insert(child_params.begin(), child_params.end());
+        if (auto * select_node = child->as<ASTSelectQuery>())
+        {
+            if (select_node->hasQueryParameters())
+            {
+                NameToNameMap select_node_param = select_node->getQueryParameters();
+                query_params.insert(select_node_param.begin(), select_node_param.end());
+            }
+        }
     }
 
     return query_params;

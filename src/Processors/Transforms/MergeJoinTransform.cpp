@@ -1,4 +1,5 @@
 #include <algorithm>
+#include <cassert>
 #include <cstddef>
 #include <limits>
 #include <memory>
@@ -11,7 +12,6 @@
 
 #include <Columns/ColumnNullable.h>
 #include <Columns/IColumn.h>
-#include <Columns/findEqualRangeEndAssumeSorted.h>
 #include <Core/SortCursor.h>
 #include <Core/SortDescription.h>
 #include <Columns/ColumnSparse.h>
@@ -119,57 +119,67 @@ int ALWAYS_INLINE totallyCompare(FullMergeJoinCursor & lhs, FullMergeJoinCursor 
     return 0;
 }
 
-ColumnPtr indexColumn(const ColumnPtr & column, const DataTypePtr & type, const PaddedPODArray<UInt64> & indices)
+ColumnPtr indexColumn(const ColumnPtr & column, const PaddedPODArray<UInt64> & indices)
 {
     auto new_col = column->cloneEmpty();
     new_col->reserve(indices.size());
     for (size_t idx : indices)
     {
-        /// Rows where a default should be inserted have index == size. Fill them through the
-        /// data type: types whose default is not all-zero (e.g. Enum, whose default is the
-        /// first member) must not get a raw zero. Every non-joined-row fill in this file goes
-        /// through the data type for the same reason.
+        /// rows where default value should be inserted have index == size
         if (idx < column->size())
             new_col->insertFrom(*column, idx);
         else
-            type->insertDefaultInto(*new_col);
+            new_col->insertDefault();
     }
     return new_col;
 }
 
-Columns indexColumns(const Columns & columns, const DataTypes & types, const PaddedPODArray<UInt64> & indices)
+Columns indexColumns(const Columns & columns, const PaddedPODArray<UInt64> & indices)
 {
     Columns new_columns;
     new_columns.reserve(columns.size());
-    for (size_t i = 0; i < columns.size(); ++i)
-        new_columns.emplace_back(indexColumn(columns[i], types[i], indices));
+    for (const auto & column : columns)
+    {
+        new_columns.emplace_back(indexColumn(column, indices));
+    }
     return new_columns;
+}
+
+bool ALWAYS_INLINE sameNext(const FullMergeJoinCursor & impl)
+{
+    if (impl.isLast())
+        return false;
+
+    size_t pos = impl.getRow();
+    for (size_t i = 0; i < impl.sort_columns.size(); ++i)
+    {
+        const auto * nm = getNullMapData(impl.null_maps[i]);
+        if (nm && ((*nm)[pos] != (*nm)[pos + 1]))
+            return false;
+
+        if (nm && (*nm)[pos])
+            continue;
+
+        const auto & col = *impl.sort_columns[i];
+        if (auto cmp = col.compareAt(pos, pos + 1, col, 1); cmp != 0)
+            return false;
+    }
+    return true;
 }
 
 size_t ALWAYS_INLINE nextDistinct(FullMergeJoinCursor & impl)
 {
-    chassert(impl.isValid());
-    const size_t start_pos = impl.getRow();
-    size_t run_end = impl.rows;
-
-    /// Find the end of the run of rows that share the same (multi-column) key, starting at start_pos.
-    for (size_t i = 0; i < impl.sort_columns.size(); ++i)
+    assert(impl.isValid());
+    size_t start_pos = impl.getRow();
+    while (sameNext(impl))
     {
-        const auto * nm = getNullMapData(impl.null_maps[i]);
-        const bool ref_is_null = nm && (*nm)[start_pos] != 0;
-
-        if (nm)
-            run_end = findEqualRangeEndAssumeSorted(start_pos, run_end, 16, [&](size_t row) { return ((*nm)[row] != 0) == ref_is_null; });
-
-        if (!ref_is_null)
-            run_end = impl.sort_columns[i]->getEqualRangeEndAssumeSorted(start_pos, run_end, 1);
-
-        if (run_end <= start_pos + 1)
-            break;
+        impl.next();
     }
+    impl.next();
 
-    impl.pos = run_end;
-    return run_end - start_pos;
+    if (impl.isValid())
+        return impl.getRow() - start_pos;
+    return impl.rows - start_pos;
 }
 
 ColumnPtr replicateRow(const IColumn & column, size_t num)
@@ -197,7 +207,7 @@ void copyColumnsResized(const TColumns & cols, size_t start, size_t size, Chunk 
         else
         {
             /// cut column
-            chassert(start + size <= col->size());
+            assert(start + size <= col->size());
             result_chunk.addColumn(col->cut(start, size));
         }
     }
@@ -220,7 +230,7 @@ Chunk getRowFromChunk(const Chunk & chunk, size_t pos)
 
 void inline addRange(PaddedPODArray<UInt64> & values, UInt64 start, UInt64 end)
 {
-    chassert(end > start);
+    assert(end > start);
     for (UInt64 i = start; i < end; ++i)
         values.push_back(i);
 }
@@ -465,7 +475,7 @@ void MergeJoinAlgorithm::setAsofInequality(ASOFJoinInequality asof_inequality_)
 void MergeJoinAlgorithm::logElapsed(double seconds)
 {
     LOG_TRACE(log,
-        "Finished pocessing in {:.3f} seconds"
+        "Finished pocessing in {} seconds"
         ", left: {} blocks, {} rows; right: {} blocks, {} rows"
         ", max blocks loaded to memory: {}",
         seconds, stat.num_blocks[0], stat.num_rows[0], stat.num_blocks[1], stat.num_rows[1],
@@ -534,7 +544,7 @@ struct AllJoinImpl
         size_t rpos = std::numeric_limits<size_t>::max();
         size_t lpos = std::numeric_limits<size_t>::max();
         int cmp = 0;
-        chassert(left_cursor.isValid() && right_cursor.isValid());
+        assert(left_cursor.isValid() && right_cursor.isValid());
         while (left_cursor.isValid() && right_cursor.isValid())
         {
             lpos = left_cursor.getRow();
@@ -559,7 +569,7 @@ struct AllJoinImpl
                 }
                 else
                 {
-                    chassert(state == nullptr);
+                    assert(state == nullptr);
                     state = std::make_unique<AllJoinState>(left_cursor, lpos, right_cursor, rpos);
                     state->addRange(0, left_cursor.getCurrent().clone(), lpos, lnum);
                     state->addRange(1, right_cursor.getCurrent().clone(), rpos, rnum);
@@ -623,20 +633,6 @@ MutableColumns MergeJoinAlgorithm::getEmptyResultColumns() const
     return result_cols;
 }
 
-DataTypes MergeJoinAlgorithm::getOutputTypes() const
-{
-    /// Types of the columns produced by getEmptyResultColumns(): left header columns
-    /// followed by right header columns. Used to fill non-joined rows with the proper
-    /// type default (e.g. the first Enum member) instead of a raw zero.
-    DataTypes types;
-    for (size_t i = 0; i < 2; ++i)
-    {
-        const auto & header_types = input_headers[i]->getDataTypes();
-        types.insert(types.end(), header_types.begin(), header_types.end());
-    }
-    return types;
-}
-
 Columns MergeJoinAlgorithm::getEmptyResultColumns(size_t pos) const
 {
     MutableColumns mutable_cols;
@@ -657,7 +653,7 @@ std::optional<MergeJoinAlgorithm::Status> MergeJoinAlgorithm::handleAllJoinState
 
     if (all_join_state)
     {
-        chassert(cursors.size() == 2);
+        assert(cursors.size() == 2);
         /// Accumulate blocks with same key in all_join_state
         for (size_t i = 0; i < 2; ++i)
         {
@@ -721,7 +717,6 @@ std::optional<MergeJoinAlgorithm::Status> MergeJoinAlgorithm::handleAsofJoinStat
     const auto & left_columns = left_cursor.getCurrent().getColumns();
 
     MutableColumns result_cols = getEmptyResultColumns();
-    const auto output_types = getOutputTypes();
 
     while (left_cursor.isValid() && asof_join_state.hasMatch(left_cursor, asof_inequality))
     {
@@ -741,8 +736,7 @@ std::optional<MergeJoinAlgorithm::Status> MergeJoinAlgorithm::handleAsofJoinStat
         for (const auto & col : left_columns)
             result_cols[i++]->insertFrom(*col, left_cursor.getRow());
         for (; i < result_cols.size(); ++i)
-            /// Type-aware default (Enum -> first member) rather than a raw zero.
-            output_types[i]->insertDefaultInto(*result_cols[i]);
+            result_cols[i]->insertDefault();
         chassert(i == result_cols.size());
 
         left_cursor.next();
@@ -761,14 +755,11 @@ MergeJoinAlgorithm::Status MergeJoinAlgorithm::allJoin()
     PaddedPODArray<UInt64> idx_map[2];
 
     dispatchKind<AllJoinImpl>(kind, cursors[0], cursors[1], max_block_size, idx_map[0], idx_map[1], all_join_state, null_direction_hint);
-    chassert(idx_map[0].size() == idx_map[1].size());
+    assert(idx_map[0].size() == idx_map[1].size());
 
     Chunk result;
 
-    const auto & left_types = input_headers[0]->getDataTypes();
-    const auto & right_types = input_headers[1]->getDataTypes();
-
-    Columns rcols = indexColumns(cursors[1].getCurrent().getColumns(), right_types, idx_map[1]);
+    Columns rcols = indexColumns(cursors[1].getCurrent().getColumns(), idx_map[1]);
     Columns lcols;
     if (!left_to_right_key_remap.empty())
     {
@@ -792,7 +783,7 @@ MergeJoinAlgorithm::Status MergeJoinAlgorithm::allJoin()
                     if (auto it = left_to_right_key_remap.find(col_idx); it != left_to_right_key_remap.end())
                         new_col->insertFrom(*rcols[it->second], i);
                     else
-                        left_types[col_idx]->insertDefaultInto(*new_col);
+                        new_col->insertDefault();
                 }
             }
             lcols.push_back(std::move(new_col));
@@ -800,7 +791,7 @@ MergeJoinAlgorithm::Status MergeJoinAlgorithm::allJoin()
     }
     else
     {
-        lcols = indexColumns(cursors[0].getCurrent().getColumns(), left_types, idx_map[0]);
+        lcols = indexColumns(cursors[0].getCurrent().getColumns(), idx_map[0]);
     }
 
     for (auto & col : lcols)
@@ -825,7 +816,7 @@ struct AnyJoinImpl
                      AnyJoinState & any_join_state,
                      int null_direction_hint)
     {
-        chassert(enabled);
+        assert(enabled);
 
         size_t num_rows = isLeft(kind) ? left_cursor.rowsLeft() :
                           isRight(kind) ? right_cursor.rowsLeft() :
@@ -839,7 +830,7 @@ struct AnyJoinImpl
 
         size_t rpos = std::numeric_limits<size_t>::max();
         size_t lpos = std::numeric_limits<size_t>::max();
-        chassert(left_cursor.isValid() && right_cursor.isValid());
+        assert(left_cursor.isValid() && right_cursor.isValid());
         int cmp = 0;
         while (left_cursor.isValid() && right_cursor.isValid())
         {
@@ -966,7 +957,7 @@ MergeJoinAlgorithm::Status MergeJoinAlgorithm::anyJoin()
 
     dispatchKind<AnyJoinImpl>(kind, cursors[0], cursors[1], idx_map[0], idx_map[1], any_join_state, null_direction_hint);
 
-    chassert(idx_map[0].empty() || idx_map[1].empty() || idx_map[0].size() == idx_map[1].size());
+    assert(idx_map[0].empty() || idx_map[1].empty() || idx_map[0].size() == idx_map[1].size());
     size_t num_result_rows = std::max(idx_map[0].size(), idx_map[1].size());
 
     /// build result block from indices
@@ -976,11 +967,9 @@ MergeJoinAlgorithm::Status MergeJoinAlgorithm::anyJoin()
         /// empty map means identity mapping
         if (!idx_map[source_num].empty())
         {
-            const auto & source_types = input_headers[source_num]->getDataTypes();
-            const auto & source_columns = cursors[source_num].getCurrent().getColumns();
-            for (size_t i = 0; i < source_columns.size(); ++i)
+            for (const auto & col : cursors[source_num].getCurrent().getColumns())
             {
-                result.addColumn(indexColumn(source_columns[i], source_types[i], idx_map[source_num]));
+                result.addColumn(indexColumn(col, idx_map[source_num]));
             }
         }
         else
@@ -1009,7 +998,6 @@ MergeJoinAlgorithm::Status MergeJoinAlgorithm::asofJoin()
     const auto & right_columns = right_cursor.getCurrent().getColumns();
 
     MutableColumns result_cols = getEmptyResultColumns();
-    const auto output_types = getOutputTypes();
 
     while (left_cursor.isValid() && right_cursor.isValid())
     {
@@ -1084,7 +1072,7 @@ MergeJoinAlgorithm::Status MergeJoinAlgorithm::asofJoin()
                         for (const auto & col : left_columns)
                             result_cols[i++]->insertFrom(*col, lpos);
                         for (; i < result_cols.size(); ++i)
-                            output_types[i]->insertDefaultInto(*result_cols[i]);
+                            result_cols[i]->insertDefault();
                         chassert(i == result_cols.size());
                     }
                 }
@@ -1121,7 +1109,7 @@ MergeJoinAlgorithm::Status MergeJoinAlgorithm::asofJoin()
                 for (const auto & col : left_columns)
                     result_cols[i++]->insertRangeFrom(*col, lpos, num);
                 for (; i < result_cols.size(); ++i)
-                    output_types[i]->insertManyDefaultsInto(*result_cols[i], num);
+                    result_cols[i]->insertManyDefaults(num);
                 chassert(i == result_cols.size());
             }
         }
@@ -1141,56 +1129,27 @@ MergeJoinAlgorithm::Status MergeJoinAlgorithm::asofJoin()
 Chunk MergeJoinAlgorithm::createBlockWithDefaults(size_t source_num, size_t start, size_t num_rows) const
 {
     ColumnRawPtrs cols;
-    /// Parallel to `cols`: used to fill non-joined rows through the data type (see indexColumn).
-    DataTypes types;
     const auto & columns_left = source_num == 0 ? cursors[0].getCurrent().getColumns() : getEmptyResultColumns(0);
     const auto & columns_right = source_num == 1 ? cursors[1].getCurrent().getColumns() : getEmptyResultColumns(1);
-    const auto & types_left = input_headers[0]->getDataTypes();
-    const auto & types_right = input_headers[1]->getDataTypes();
 
     for (size_t i = 0; i < columns_left.size(); ++i)
     {
         if (auto it = left_to_right_key_remap.find(i); source_num == 0 || it == left_to_right_key_remap.end())
         {
             cols.push_back(columns_left[i].get());
-            types.push_back(types_left[i]);
         }
         else
         {
             cols.push_back(columns_right[it->second].get());
-            types.push_back(types_right[it->second]);
         }
     }
 
-    for (size_t i = 0; i < columns_right.size(); ++i)
+    for (const auto & col : columns_right)
     {
-        cols.push_back(columns_right[i].get());
-        types.push_back(types_right[i]);
+        cols.push_back(col.get());
     }
-
     Chunk result_chunk;
-    for (size_t i = 0; i < cols.size(); ++i)
-    {
-        const auto & col = cols[i];
-        if (col->empty())
-        {
-            /// add defaults (through the data type, not cloneResized which would zero-fill)
-            auto default_col = col->cloneEmpty();
-            types[i]->insertManyDefaultsInto(*default_col, num_rows);
-            result_chunk.addColumn(std::move(default_col));
-        }
-        else if (col->size() == 1)
-        {
-            /// copy same row n times
-            result_chunk.addColumn(replicateRow(*col, num_rows));
-        }
-        else
-        {
-            /// cut column
-            chassert(start + num_rows <= col->size());
-            result_chunk.addColumn(col->cut(start, num_rows));
-        }
-    }
+    copyColumnsResized(cols, start, num_rows, result_chunk);
     return result_chunk;
 }
 
