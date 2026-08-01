@@ -28,6 +28,20 @@ TEST(StackTraceCollapseNames, HidesStdFunctionPlumbing)
     EXPECT_EQ(StackTrace::collapseDemangledNames(function_h, std_function_trampoline), "?");
     EXPECT_EQ(StackTrace::collapseDemangledNames(function_h, "std::__1::__function::__value_func<void ()>::operator()() const"), "?");
     EXPECT_EQ(StackTrace::collapseDemangledNames(function_h, "std::__1::function<void ()>::operator()() const"), "?");
+    EXPECT_EQ(StackTrace::collapseDemangledNames(function_h, "std::__1::function<void (std::__1::vector<int>)>::function(std::__1::function<void (std::__1::vector<int>)> const&)"), "?");
+    EXPECT_EQ(StackTrace::collapseDemangledNames(function_h, "std::__1::function<void ()>::~function()"), "?");
+}
+
+/// Only the type erasure of `std::function` is noise. Its other members do work of their own, so a frame
+/// of one of them names the code that is actually running and must keep its name.
+TEST(StackTraceCollapseNames, KeepsOrdinaryStdFunctionMembers)
+{
+    EXPECT_EQ(StackTrace::collapseDemangledNames(function_h, "std::__1::function<void ()>::swap(std::__1::function<void ()>&)"),
+              "std::function<void ()>::swap(std::function<void ()>&)");
+    EXPECT_EQ(StackTrace::collapseDemangledNames(function_h, "std::__1::function<void ()>::target_type() const"),
+              "std::function<void ()>::target_type() const");
+    EXPECT_EQ(StackTrace::collapseDemangledNames(function_h, "std::__1::function<void ()>::operator bool() const"),
+              "std::function<void ()>::operator bool() const");
 }
 
 /// The file of a frame is the source line the faulting instruction maps to, and an ordinary function can

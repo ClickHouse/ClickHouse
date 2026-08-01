@@ -617,12 +617,44 @@ constexpr std::pair<std::string_view, std::string_view> replacements[]
 /// a `std::function` trampoline from a direct use, so they keep their names.
 constexpr std::string_view std_function_plumbing[] = {
     "std::__function::",  /// `__func`, `__value_func`, `__alloc_func`, `__policy_func`, `__policy_invoker`
-    "std::function<",     /// `std::function::operator()` and its constructors
 };
+
+/// The members of `std::function` itself that carry the noise: the type-erasing call operator, and the
+/// constructors and the destructor, which copy, move and destroy the captured callable. Every other
+/// member (`swap`, `target`, `target_type`, `operator bool`, ...) does work of its own and is a normal
+/// frame, so it keeps its name.
+constexpr std::string_view std_function_noisy_members[] = {"operator()", "function(", "~function("};
 
 static bool isStdFunctionPlumbing(const String & symbol_name)
 {
-    return std::ranges::any_of(std_function_plumbing, [&](std::string_view prefix) { return symbol_name.starts_with(prefix); });
+    if (std::ranges::any_of(std_function_plumbing, [&](std::string_view prefix) { return symbol_name.starts_with(prefix); }))
+        return true;
+
+    constexpr std::string_view std_function = "std::function<";
+    if (!symbol_name.starts_with(std_function))
+        return false;
+
+    /// Skip the template argument list to reach the member name: the signature of the callable can nest
+    /// its own `<` and `>`, so the closing bracket is the one that brings the depth back to zero.
+    size_t depth = 1;
+    size_t pos = std_function.size();
+    for (; pos < symbol_name.size() && depth != 0; ++pos)
+    {
+        if (symbol_name[pos] == '<')
+            ++depth;
+        else if (symbol_name[pos] == '>')
+            --depth;
+    }
+    if (depth != 0)
+        return false;
+
+    std::string_view member{symbol_name};
+    member.remove_prefix(pos);
+    if (!member.starts_with("::"))
+        return false;
+    member.remove_prefix(2);
+
+    return std::ranges::any_of(std_function_noisy_members, [&](std::string_view noisy) { return member.starts_with(noisy); });
 }
 
 // Hide the name of `std::function` plumbing frames (the `__func`/`__value_func`/`__policy_func`
