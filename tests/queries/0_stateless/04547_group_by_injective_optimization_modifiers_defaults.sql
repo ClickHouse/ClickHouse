@@ -55,6 +55,35 @@ GROUP BY toFixedString(toString(number), 4) WITH TOTALS ORDER BY s;
 SELECT toLowCardinality(toString(number)) AS s, count() AS c FROM numbers(3)
 GROUP BY toLowCardinality(toString(number)) WITH TOTALS ORDER BY s;
 
+SELECT '-- the same FixedString wrapper under CUBE, where the correction does run: the () level must be';
+SELECT '-- four NUL bytes (00000000 in hex), not toFixedString(''0'', 4) = 30000000. hex() makes the';
+SELECT '-- difference visible, which a raw FixedString column would not.';
+SELECT hex(toFixedString(toString(number), 4)) AS h, count() AS c FROM numbers(3)
+GROUP BY CUBE(toFixedString(toString(number), 4))
+ORDER BY grouping(toFixedString(toString(number), 4)) DESC, h;
+SELECT hex(toFixedString(toString(number), 4)) AS h, count() AS c FROM numbers(3)
+GROUP BY CUBE(toFixedString(toString(number), 4))
+ORDER BY grouping(toFixedString(toString(number), 4)) DESC, h
+SETTINGS optimize_injective_functions_in_group_by = 0;
+
+SELECT '-- a LowCardinality-typed key under CUBE: `if` can never return LowCardinality, so the';
+SELECT '-- correcting conditional would narrow the declared type. Such a key is declined (the firing';
+SELECT '-- assertion below reads 0) and the result stays unoptimized but correct. Without the decline';
+SELECT '-- the enclosing length()/hex() is handed the narrowed type and the query fails to analyze.';
+DROP TABLE IF EXISTS t_04547_lc;
+CREATE TABLE t_04547_lc (lc LowCardinality(String)) ENGINE = Memory;
+INSERT INTO t_04547_lc VALUES ('ab'), ('cd');
+SELECT 'lc cube on', reverse(lc) AS k, length(k) AS o, count() AS c FROM t_04547_lc
+GROUP BY CUBE(reverse(lc)) ORDER BY k, c;
+SELECT 'lc cube off', reverse(lc) AS k, length(k) AS o, count() AS c FROM t_04547_lc
+GROUP BY CUBE(reverse(lc)) ORDER BY k, c
+SETTINGS optimize_injective_functions_in_group_by = 0;
+SELECT '-- and the declared type must not depend on the setting (both arms report LowCardinality(String))';
+DESC (SELECT reverse(lc) AS k FROM t_04547_lc GROUP BY CUBE(reverse(lc)))
+SETTINGS optimize_injective_functions_in_group_by = 1;
+DESC (SELECT reverse(lc) AS k FROM t_04547_lc GROUP BY CUBE(reverse(lc)))
+SETTINGS optimize_injective_functions_in_group_by = 0;
+
 SELECT '-- negative guard (CASE B): user groups by the argument and projects f(argument);';
 SELECT '-- here the correct totals value IS toString(0) = 0 and must be unchanged';
 SELECT toString(number) AS s, count() AS c FROM numbers(3)
@@ -448,3 +477,51 @@ SELECT 'constant key declined, GROUPING SETS', countIf(explain LIKE '%toString%'
     FROM (EXPLAIN QUERY TREE run_passes = 1
           SELECT toString(number) AS k, count() AS c FROM numbers(3)
           GROUP BY GROUPING SETS ((toString(number), toUInt8(7)), ()))));
+
+SELECT '-- the LowCardinality key reads 0 (declined by the type-preservation gate) while the same shape';
+SELECT '-- over a plain String column reads 1, so the gate is targeted at the type that `if` narrows.';
+SELECT 'lc key declined', countIf(explain LIKE '%reverse%' AND rn > gb AND rn < nxt) = 0 FROM (
+    SELECT explain, rn, gb, min(if(rn > gb AND match(explain, '^  [A-Z]'), rn, 999999)) OVER () AS nxt FROM (
+    SELECT explain, rowNumberInAllBlocks() AS rn,
+           min(if(explain LIKE '  GROUP BY%', rowNumberInAllBlocks(), 999999)) OVER () AS gb
+    FROM (EXPLAIN QUERY TREE run_passes = 1
+          SELECT reverse(lc) AS k, count() AS c FROM t_04547_lc GROUP BY CUBE(reverse(lc)))));
+SELECT 'non-lc sibling fires', countIf(explain LIKE '%reverse%' AND rn > gb AND rn < nxt) = 0 FROM (
+    SELECT explain, rn, gb, min(if(rn > gb AND match(explain, '^  [A-Z]'), rn, 999999)) OVER () AS nxt FROM (
+    SELECT explain, rowNumberInAllBlocks() AS rn,
+           min(if(explain LIKE '  GROUP BY%', rowNumberInAllBlocks(), 999999)) OVER () AS gb
+    FROM (EXPLAIN QUERY TREE run_passes = 1
+          SELECT reverse(s) AS k, count() AS c FROM (SELECT toString(number) AS s FROM numbers(3))
+          GROUP BY CUBE(reverse(s)))));
+SELECT '-- and the FixedString wrapper under CUBE fires, so its subtotal really comes from the correction';
+SELECT 'fixed string cube fires', countIf(explain LIKE '%toFixedString%' AND rn > gb AND rn < nxt) = 0 FROM (
+    SELECT explain, rn, gb, min(if(rn > gb AND match(explain, '^  [A-Z]'), rn, 999999)) OVER () AS nxt FROM (
+    SELECT explain, rowNumberInAllBlocks() AS rn,
+           min(if(explain LIKE '  GROUP BY%', rowNumberInAllBlocks(), 999999)) OVER () AS gb
+    FROM (EXPLAIN QUERY TREE run_passes = 1
+          SELECT hex(toFixedString(toString(number), 4)) AS h, count() AS c FROM numbers(3)
+          GROUP BY CUBE(toFixedString(toString(number), 4)))));
+
+SELECT '-- every firing assertion above inherits force_grouping_standard_compatibility = 1 from the';
+SELECT '-- file-level SET, but the grouping conditional compares against a different constant on the other';
+SELECT '-- branch. This pair covers it: a silent decline there would still produce correct results, so the';
+SELECT '-- reference diff alone cannot catch it.';
+SELECT 'compatibility 0 fires', countIf(explain LIKE '%toString%' AND rn > gb AND rn < nxt) = 0 FROM (
+    SELECT explain, rn, gb, min(if(rn > gb AND match(explain, '^  [A-Z]'), rn, 999999)) OVER () AS nxt FROM (
+    SELECT explain, rowNumberInAllBlocks() AS rn,
+           min(if(explain LIKE '  GROUP BY%', rowNumberInAllBlocks(), 999999)) OVER () AS gb
+    FROM (EXPLAIN QUERY TREE run_passes = 1
+          SELECT toString(number) AS k, count() AS c FROM numbers(3)
+          GROUP BY GROUPING SETS ((toString(number)), ())
+          SETTINGS force_grouping_standard_compatibility = 0)));
+SELECT 'compatibility 0 off', countIf(explain LIKE '%toString%' AND rn > gb AND rn < nxt) = 0 FROM (
+    SELECT explain, rn, gb, min(if(rn > gb AND match(explain, '^  [A-Z]'), rn, 999999)) OVER () AS nxt FROM (
+    SELECT explain, rowNumberInAllBlocks() AS rn,
+           min(if(explain LIKE '  GROUP BY%', rowNumberInAllBlocks(), 999999)) OVER () AS gb
+    FROM (EXPLAIN QUERY TREE run_passes = 1
+          SELECT toString(number) AS k, count() AS c FROM numbers(3)
+          GROUP BY GROUPING SETS ((toString(number)), ())
+          SETTINGS force_grouping_standard_compatibility = 0,
+                   optimize_injective_functions_in_group_by = 0)));
+
+DROP TABLE t_04547_lc;

@@ -60,6 +60,30 @@
 2	1
 
 	3
+-- the same FixedString wrapper under CUBE, where the correction does run: the () level must be
+-- four NUL bytes (00000000 in hex), not toFixedString(\'0\', 4) = 30000000. hex() makes the
+-- difference visible, which a raw FixedString column would not.
+00000000	3
+30000000	1
+31000000	1
+32000000	1
+00000000	3
+30000000	1
+31000000	1
+32000000	1
+-- a LowCardinality-typed key under CUBE: `if` can never return LowCardinality, so the
+-- correcting conditional would narrow the declared type. Such a key is declined (the firing
+-- assertion below reads 0) and the result stays unoptimized but correct. Without the decline
+-- the enclosing length()/hex() is handed the narrowed type and the query fails to analyze.
+lc cube on		0	2
+lc cube on	ba	2	1
+lc cube on	dc	2	1
+lc cube off		0	2
+lc cube off	ba	2	1
+lc cube off	dc	2	1
+-- and the declared type must not depend on the setting (both arms report LowCardinality(String))
+k	LowCardinality(String)					
+k	LowCardinality(String)					
 -- negative guard (CASE B): user groups by the argument and projects f(argument);
 -- here the correct totals value IS toString(0) = 0 and must be unchanged
 0	1
@@ -370,3 +394,15 @@ HAVING off	0
 constant key declined	0
 non-constant sibling fires	1
 constant key declined, GROUPING SETS	0
+-- the LowCardinality key reads 0 (declined by the type-preservation gate) while the same shape
+-- over a plain String column reads 1, so the gate is targeted at the type that `if` narrows.
+lc key declined	0
+non-lc sibling fires	1
+-- and the FixedString wrapper under CUBE fires, so its subtotal really comes from the correction
+fixed string cube fires	1
+-- every firing assertion above inherits force_grouping_standard_compatibility = 1 from the
+-- file-level SET, but the grouping conditional compares against a different constant on the other
+-- branch. This pair covers it: a silent decline there would still produce correct results, so the
+-- reference diff alone cannot catch it.
+compatibility 0 fires	1
+compatibility 0 off	0

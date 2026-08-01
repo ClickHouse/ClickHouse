@@ -301,6 +301,13 @@ private:
                 if (reachesPostAggregationWindowOrQualify(key, query))
                     continue;
 
+                /// The correction replaces the key's output occurrences with a conditional, so a conditional
+                /// whose result type differs from the key's would change the declared column type and break
+                /// any enclosing function already resolved against the original type. Must be checked here,
+                /// before the unwrap below is committed.
+                if (!groupingConditionalPreservesType(key))
+                    continue;
+
                 eliminated.push_back({key, leaf});
                 chosen_leaves.emplace_back(leaf, key);
                 key = leaf; /// Perform the unwrap in place, preserving key position within the set.
@@ -453,6 +460,28 @@ private:
         if (query.hasWindow() && subtreeContains(query.getWindowNode(), key))
             return true;
         return false;
+    }
+
+    /// True if the conditional that would replace this key keeps the key's result type. `if` narrows some
+    /// types: it cannot return LowCardinality at all, because FunctionIf reports
+    /// canBeExecutedOnLowCardinalityDictionary() = false and the re-wrap in
+    /// IFunctionOverloadResolver::getReturnType is gated on it.
+    ///
+    /// Only the condition-independent part is built: the first argument's value cannot affect the return
+    /// type (FunctionIf::getReturnTypeImpl only type-checks it as UInt8), so a placeholder is sound and
+    /// avoids duplicating the grouping-resolver construction.
+    bool groupingConditionalPreservesType(const QueryTreeNodePtr & original_key)
+    {
+        auto result_type = original_key->getResultType();
+
+        auto condition = std::make_shared<ConstantNode>(Field(UInt64(1)), std::make_shared<DataTypeUInt8>());
+        auto default_const = std::make_shared<ConstantNode>(result_type->getDefault(), result_type);
+
+        auto if_node = std::make_shared<FunctionNode>("if");
+        if_node->getArguments().getNodes() = {std::move(condition), original_key->clone(), std::move(default_const)};
+        resolveOrdinaryFunctionNodeByName(*if_node, "if", getContext());
+
+        return if_node->getResultType()->equals(*result_type);
     }
 
     /// if(equals(groupingForKind(__grouping_set, unwrapped_key), present_value), original_key, default)
