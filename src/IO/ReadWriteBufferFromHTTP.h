@@ -45,6 +45,7 @@ public:
     using OutStreamCallback = std::function<void(std::ostream &)>;
     using NextCallback = std::function<void(size_t)>;
     using RedirectCallback = std::function<void(const Poco::URI &, const Poco::URI &)>;
+    using CheckCancelled = std::function<bool()>;
 
     const Poco::URI & getCurrentURI() const { return current_uri; }
 
@@ -111,6 +112,9 @@ private:
 
     LoggerPtr log;
 
+    /// Optional callback to check whether the reader (for example, the query pipeline) has been cancelled.
+    CheckCancelled cancellation_check;
+
     bool withPartialContent() const;
 
     void prepareRequest(Poco::Net::HTTPRequest & request, std::optional<HTTPRange> range) const;
@@ -160,6 +164,7 @@ private:
         size_t max_redirects_,
         bool enable_url_encoding_,
         OutStreamCallback out_stream_callback_,
+        CheckCancelled cancellation_check_,
         bool use_external_buffer_,
         bool http_skip_not_found_url_,
         HTTPHeaderEntries http_header_entries_,
@@ -222,6 +227,7 @@ class BuilderRWBufferFromHTTP
     bool use_external_buffer = false;
     bool http_skip_not_found_url = false;
     HTTPHeaderEntries http_header_entries{};
+    ReadWriteBufferFromHTTP::CheckCancelled cancellation_check;
     bool delay_initialization = true;
 
 public:
@@ -249,6 +255,7 @@ public:
     setterMember(withOutCallback, out_stream_callback)
     setterMember(withRedirectCallback, redirect_callback)
     setterMember(withHeaders, http_header_entries)
+    setterMember(withCancellationCheck, cancellation_check)
     setterMember(withExternalBuf, use_external_buffer)
     setterMember(withDelayInit, delay_initialization)
     setterMember(withSkipNotFound, http_skip_not_found_url)
