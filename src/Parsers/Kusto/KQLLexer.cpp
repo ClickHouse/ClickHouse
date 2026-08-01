@@ -583,7 +583,12 @@ KQLToken KQLLexer::lexString(const char * token_begin, char quote, bool verbatim
                     break;
                 }
                 default:
-                    return makeError(token_begin, "unknown escape sequence in a string literal");
+                    /// Kusto asks for a verbatim string (`@'...'`) around a regex, but plain
+                    /// strings carrying `\w` or `\d` are common. Keep the backslash rather
+                    /// than rejecting, so the regex reaches the engine intact.
+                    value += '\\';
+                    value += escaped;
+                    break;
             }
             continue;
         }

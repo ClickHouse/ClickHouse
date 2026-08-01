@@ -45,8 +45,24 @@ scoped to the query that declares them.
 **Literals**: strings (including verbatim `@'...'`), numbers, `datetime(...)`, `guid(...)`,
 timespans such as `1d` / `2.5h` / `500ms`, and `dynamic([...])` arrays.
 
-Around 120 scalar and aggregate functions are translated. An unrecognized name is a parse
-error that names the function.
+Around 130 scalar and aggregate functions are translated.
+
+**ClickHouse functions** are reachable too. A name the KQL registry does not know is passed
+through to ClickHouse under the spelling you wrote, so a query can use anything the server
+offers:
+
+```sql
+SET dialect = 'kusto';
+
+StormEvents
+| extend Bucket = toStartOfHour(StartTime), Fingerprint = cityHash64(EventType)
+| summarize Events = count() by Bucket
+```
+
+The exception is names Kusto itself defines but this dialect does not implement: those are
+rejected rather than passed through, so a Kusto name can never quietly mean something else.
+`range` is the clearest case — `range(1, 3, 1)` is `[1, 2, 3]` in Kusto and `[1, 2]` in
+ClickHouse, so writing it in KQL is an error rather than a wrong answer.
 
 ## What is not supported
 
@@ -54,8 +70,12 @@ Rejected with a parse error, rather than mistranslated:
 
 - Operators: `search`, `parse`, `mv-apply`, `lookup`, `evaluate`, `invoke`, `facet`,
   `top-nested`, `make-series`, `sample`, `serialize`, `partition`, `range` as an operator.
-- The `series_*` family, `bag_*` / `pack_*`, `parse_url`, `parse_csv`, `parse_json`,
-  `toscalar`, `format_timespan`, and the `ipv4_*` / `ipv6_*` family.
+- Functions: the `series_*` family, `bag_*` / `pack_*`, `parse_url`, `parse_csv`,
+  `parse_json`, `todynamic`, `toscalar`, `format_timespan`, `format_datetime`, `extract_all`,
+  `range`, the `percentiles*` family, the `row_*` window functions, and the `ipv4_*` /
+  `ipv6_*` family. (`format_datetime` and `extract_all` are rejected rather than
+  approximated: Kusto's `yyyy-MM-dd` format specifiers are not ClickHouse's, and Kusto's
+  `extract_all` returns one array per capture group.)
 - `dynamic` **objects** (`dynamic({"a": 1})`), member access (`x.y`) and lookup by key
   (`x['k']`). Only `dynamic` arrays are mapped, onto ClickHouse `Array`.
 - Cross-cluster and cross-database references such as `cluster(...)` and `database(...)`.
@@ -78,6 +98,12 @@ Rejected with a parse error, rather than mistranslated:
   all columns and pads with nulls; ClickHouse's `UNION ALL` does not.
 - **String operators are matching functions, not `LIKE` patterns.** `contains '50%'` looks
   for a literal per cent sign.
+- **Datetimes are real `DateTime64` values**, so they print the ClickHouse way
+  (`2017-01-01 00:00:00`) rather than Kusto's `2017-01-01T00:00:00.0000000`. The previous
+  implementation produced a formatted *string*, which looked like Kusto but did not compare
+  or sort as a datetime.
+- **ClickHouse's parametric aggregates** (`quantileExact(0.5)(x)`) have no KQL spelling.
+  Use a named alternative such as `medianExact(x)`.
 
 ## Reporting a problem
 

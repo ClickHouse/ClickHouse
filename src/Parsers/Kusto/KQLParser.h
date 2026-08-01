@@ -112,6 +112,9 @@ private:
     ASTPtr parsePrimary();
     ASTPtr parseFunctionCall(const String & name);
     ASTPtr parseDynamicLiteral();
+    /// `bool(true)`, `int(1)`, `real(nan)`, `time(1d)`, ... - Kusto's typed literal forms.
+    /// Returns nullptr when `name` is not one of them.
+    ASTPtr tryParseTypedLiteral(const String & name);
     ASTPtr parseParenthesizedOrInList();
 
     /// The word operators (`contains`, `has`, `in`, `between`, ...) that sit at comparison level.

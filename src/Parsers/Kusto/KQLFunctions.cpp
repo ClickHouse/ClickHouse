@@ -145,8 +145,6 @@ const std::map<String, Entry> & scalarFunctions()
         result.emplace("toupper", rename("upperUTF8", 1, 1));
         result.emplace("tolower", rename("lowerUTF8", 1, 1));
         result.emplace("reverse", rename("reverseUTF8", 1, 1));
-        result.emplace("trim_start", rename("trimLeft", 1, 1));
-        result.emplace("trim_end", rename("trimRight", 1, 1));
         result.emplace("url_encode_component", rename("encodeURLComponent", 1, 1));
         result.emplace("url_decode", rename("decodeURLComponent", 1, 1));
         result.emplace("base64_encode_tostring", rename("base64Encode", 1, 1));
@@ -205,12 +203,23 @@ const std::map<String, Entry> & scalarFunctions()
             "indexof",
             Entry{
                 2,
-                2,
-                [](const ASTs & a) -> ASTPtr
+                3,
+                [](const ASTs & arguments) -> ASTPtr
                 {
                     /// Kusto reports a 0-based offset, or -1 when absent; `position` is
-                    /// 1-based and reports 0.
-                    return makeASTFunction("minus", makeASTFunction("positionUTF8", asString(a[0]), asString(a[1])), litI(1));
+                    /// 1-based and reports 0. The optional third argument is where to start,
+                    /// also 0-based.
+                    auto position = makeASTFunction("positionUTF8", asString(arguments[0]), asString(arguments[1]));
+                    if (arguments.size() == 3)
+                        /// `positionUTF8` wants an unsigned start offset, and a literal
+                        /// small enough to infer as Int16 would not do.
+                        position = makeASTFunction(
+                            "positionUTF8",
+                            asString(arguments[0]),
+                            asString(arguments[1]),
+                            makeASTFunction(
+                                "toUInt64", makeASTFunction("plus", makeASTFunction("greatest", arguments[2], litI(0)), litI(1))));
+                    return makeASTFunction("minus", position, litI(1));
                 }});
         result.emplace(
             "split",
@@ -221,7 +230,11 @@ const std::map<String, Entry> & scalarFunctions()
                 {
                     /// Note the operand order: KQL is `split(source, delimiter)` and
                     /// ClickHouse is `splitByString(delimiter, source)`.
-                    ASTPtr parts = makeASTFunction("splitByString", asString(arguments[1]), asString(arguments[0]));
+                    ASTPtr parts = makeASTFunction(
+                        "if",
+                        makeASTFunction("equals", asString(arguments[1]), litS("")),
+                        makeASTFunction("array", asString(arguments[0])),
+                        makeASTFunction("splitByString", asString(arguments[1]), asString(arguments[0])));
                     if (arguments.size() == 2)
                         return parts;
                     /// The optional third argument selects one part, 0-based.
@@ -261,16 +274,33 @@ const std::map<String, Entry> & scalarFunctions()
             "countof",
             Entry{
                 2,
-                2,
-                [](const ASTs & a) -> ASTPtr { return makeASTFunction("countSubstrings", asString(a[0]), asString(a[1])); }});
+                3,
+                [](const ASTs & arguments) -> ASTPtr
+                {
+                    /// The optional `kind` is 'normal' (a plain substring) or 'regex'.
+                    bool regex = false;
+                    if (arguments.size() == 3)
+                    {
+                        const auto * kind = arguments[2]->as<ASTLiteral>();
+                        if (!kind || kind->value.getType() != Field::Types::String)
+                            return nullptr;
+                        const String text = kind->value.safeGet<String>();
+                        if (text == "regex")
+                            regex = true;
+                        else if (text != "normal")
+                            return nullptr;
+                    }
+                    return makeASTFunction(
+                        regex ? "countMatches" : "countSubstrings", asString(arguments[0]), asString(arguments[1]));
+                }});
         result.emplace(
             "extract",
             Entry{
                 3,
-                3,
+                4,
                 [](const ASTs & arguments) -> ASTPtr
                 {
-                    /// `extract(regex, captureGroup, text)`. Group 0 is the whole match, so
+                    /// `extract(regex, captureGroup, text [, typeof(T)])`. Group 0 is the whole match, so
                     /// `extractGroups` (which starts at group 1) needs the index as written.
                     const auto * group = arguments[1]->as<ASTLiteral>();
                     if (!group || !isInt64OrUInt64FieldType(group->value.getType()))
@@ -278,48 +308,104 @@ const std::map<String, Entry> & scalarFunctions()
                     const Int64 index = applyVisitor(FieldVisitorConvertToNumber<Int64>(), group->value);
                     if (index < 0)
                         return nullptr;
+                    ASTPtr captured;
                     if (index == 0)
-                        return makeASTFunction(
+                        captured = makeASTFunction(
                             "arrayElement",
                             makeASTFunction(
                                 "extractGroups",
                                 asString(arguments[2]),
                                 makeASTFunction("concat", litS("("), asString(arguments[0]), litS(")"))),
                             litI(1));
-                    return makeASTFunction(
-                        "arrayElement",
-                        makeASTFunction("extractGroups", asString(arguments[2]), asString(arguments[0])),
-                        litI(index));
+                    else
+                        captured = makeASTFunction(
+                            "arrayElement",
+                            makeASTFunction("extractGroups", asString(arguments[2]), asString(arguments[0])),
+                            litI(index));
+
+                    if (arguments.size() == 3)
+                        return captured;
+
+                    /// The optional last argument is `typeof(T)`, which the parser has already
+                    /// turned into the ClickHouse type name.
+                    const auto * type = arguments[3]->as<ASTLiteral>();
+                    if (!type || type->value.getType() != Field::Types::String)
+                        return nullptr;
+                    return makeASTFunction("accurateCastOrNull", captured, arguments[3]);
                 }});
-        result.emplace(
-            "extract_all",
-            Entry{
+        /// `trim(regex, text)` strips a leading and a trailing match; `trim_start` and
+        /// `trim_end` strip only one end. The pattern is anchored at runtime with `concat`,
+        /// so a user-supplied regex stays data rather than becoming part of the syntax.
+        const auto trimmer = [](bool leading, bool trailing)
+        {
+            return Entry{
                 2,
                 2,
-                [](const ASTs & a) -> ASTPtr { return makeASTFunction("extractAll", asString(a[1]), asString(a[0])); }});
-        result.emplace(
-            "trim",
-            Entry{
-                2,
-                2,
-                [](const ASTs & arguments) -> ASTPtr
+                [leading, trailing](const ASTs & arguments) -> ASTPtr
                 {
-                    /// `trim(regex, text)` strips a leading and a trailing match. The pattern
-                    /// is anchored at runtime with `concat`, so a user-supplied regex stays
-                    /// data rather than becoming part of a larger expression's syntax.
-                    ASTPtr leading = makeASTFunction("concat", litS("^("), asString(arguments[0]), litS(")"));
-                    ASTPtr trailing = makeASTFunction("concat", litS("("), asString(arguments[0]), litS(")$"));
-                    return makeASTFunction(
-                        "replaceRegexpOne",
-                        makeASTFunction("replaceRegexpOne", asString(arguments[1]), leading, litS("")),
-                        trailing,
-                        litS(""));
-                }});
+                    ASTPtr text = asString(arguments[1]);
+                    if (leading)
+                        text = makeASTFunction(
+                            "replaceRegexpOne",
+                            text,
+                            makeASTFunction("concat", litS("^("), asString(arguments[0]), litS(")")),
+                            litS(""));
+                    if (trailing)
+                        text = makeASTFunction(
+                            "replaceRegexpOne",
+                            text,
+                            makeASTFunction("concat", litS("("), asString(arguments[0]), litS(")$")),
+                            litS(""));
+                    return text;
+                }};
+        };
+        result.emplace("trim_start", trimmer(true, false));
+        result.emplace("trim_end", trimmer(false, true));
+        result.emplace("trim", trimmer(true, true));
+
+        /// The string operators also written as calls: `endswith(a, b)` beside `a endswith b`.
+        /// Kusto documents only the operator form, but it costs nothing to accept both, and
+        /// the previous implementation accepted the call form.
+        for (const auto * op : {"contains", "contains_cs", "startswith", "startswith_cs", "endswith",
+                                "endswith_cs", "has", "has_cs", "hasprefix", "hasprefix_cs",
+                                "hassuffix", "hassuffix_cs"})
+        {
+            result.emplace(
+                op,
+                Entry{
+                    2,
+                    2,
+                    [name = String(op)](const ASTs & arguments) -> ASTPtr
+                    {
+                        String ignored;
+                        return buildKQLStringOperator(name, arguments[0], arguments[1], ignored);
+                    }});
+        }
 
         /// ---- Casts ------------------------------------------------------------------
         /// Kusto's `to*` functions yield null on failure rather than raising.
-        result.emplace("toint", rename("toInt32OrNull", 1, 1));
-        result.emplace("tolong", rename("toInt64OrNull", 1, 1));
+        /// Kusto reads a `0x` prefix as hexadecimal, which the plain converters do not.
+        const auto to_integer = [](std::string_view target)
+        {
+            return Entry{
+                1,
+                1,
+                [name = String(target)](const ASTs & arguments) -> ASTPtr
+                {
+                    ASTPtr text = asString(arguments[0]);
+                    ASTPtr hex_digits = makeASTFunction("substring", text, litI(3));
+                    ASTPtr from_hex = makeASTFunction(
+                        "reinterpretAsUInt64",
+                        makeASTFunction("reverse", makeASTFunction("unhex", makeASTFunction("lpad", hex_digits, litI(16), litS("0")))));
+                    return makeASTFunction(
+                        "if",
+                        makeASTFunction("startsWith", makeASTFunction("lowerUTF8", text), litS("0x")),
+                        makeASTFunction("accurateCastOrNull", from_hex, litS(name)),
+                        makeASTFunction("accurateCastOrNull", text, litS(name)));
+                }};
+        };
+        result.emplace("toint", to_integer("Nullable(Int32)"));
+        result.emplace("tolong", to_integer("Nullable(Int64)"));
         result.emplace("todouble", rename("toFloat64OrNull", 1, 1));
         result.emplace("toreal", rename("toFloat64OrNull", 1, 1));
         result.emplace(
@@ -332,6 +418,9 @@ const std::map<String, Entry> & scalarFunctions()
         result.emplace("toguid", rename("toUUIDOrNull", 1, 1));
         result.emplace("tostring", Entry{1, 1, [](const ASTs & a) -> ASTPtr { return asString(a[0]); }});
         result.emplace(
+            "toboolean",
+            Entry{1, 1, [](const ASTs & a) -> ASTPtr { return makeASTFunction("accurateCastOrNull", a[0], litS("Bool")); }});
+        result.emplace(
             "tobool",
             Entry{1, 1, [](const ASTs & a) -> ASTPtr { return makeASTFunction("accurateCastOrNull", a[0], litS("Bool")); }});
         result.emplace("todatetime", Entry{1, 1, [](const ASTs & a) -> ASTPtr { return toDateTime(a[0]); }});
@@ -339,7 +428,20 @@ const std::map<String, Entry> & scalarFunctions()
         /// ---- Maths ------------------------------------------------------------------
         result.emplace("abs", rename("abs", 1, 1));
         result.emplace("ceiling", rename("ceil", 1, 1));
-        result.emplace("floor", rename("floor", 1, 2));
+        result.emplace(
+            "floor",
+            Entry{
+                1,
+                2,
+                [](const ASTs & arguments) -> ASTPtr
+                {
+                    /// With a second argument Kusto's `floor` is an alias for `bin`, which
+                    /// rounds down to a multiple - not ClickHouse's `floor(x, precision)`,
+                    /// which rounds to a number of decimal places.
+                    if (arguments.size() == 1)
+                        return makeASTFunction("floor", arguments[0]);
+                    return makeASTFunction("kqlBin", arguments[0], arguments[1]);
+                }});
         result.emplace("exp", rename("exp", 1, 1));
         result.emplace("exp2", rename("exp2", 1, 1));
         result.emplace("exp10", rename("exp10", 1, 1));
@@ -357,18 +459,67 @@ const std::map<String, Entry> & scalarFunctions()
         result.emplace("max_of", rename("greatest", 2, VARIADIC));
         result.emplace("min_of", rename("least", 2, VARIADIC));
         result.emplace("bin", rename("kqlBin", 2, 2));
-        result.emplace("floor_of", rename("kqlBin", 2, 2));
         result.emplace("bin_at", rename("kqlBinAt", 3, 3));
 
         /// ---- Dates and times --------------------------------------------------------
-        result.emplace("now", Entry{0, 0, [](const ASTs &) -> ASTPtr { return makeASTFunction("now64", litI(7), litS("UTC")); }});
+        /// `now([offset])` and the `startof*`/`endof*` family all take an optional offset.
+        result.emplace(
+            "now",
+            Entry{
+                0,
+                1,
+                [](const ASTs & arguments) -> ASTPtr
+                {
+                    ASTPtr now = makeASTFunction("now64", litI(7), litS("UTC"));
+                    return arguments.empty() ? now : ASTPtr(makeASTFunction("plus", now, arguments[0]));
+                }});
         result.emplace(
             "ago",
             Entry{1, 1, [](const ASTs & a) -> ASTPtr { return makeASTFunction("minus", makeASTFunction("now64", litI(7), litS("UTC")), a[0]); }});
-        result.emplace("startofday", Entry{1, 1, [](const ASTs & a) -> ASTPtr { return makeASTFunction("toStartOfDay", a[0]); }});
-        result.emplace("startofmonth", Entry{1, 1, [](const ASTs & a) -> ASTPtr { return makeASTFunction("toStartOfMonth", a[0]); }});
-        result.emplace("startofyear", Entry{1, 1, [](const ASTs & a) -> ASTPtr { return makeASTFunction("toStartOfYear", a[0]); }});
-        result.emplace("startofweek", Entry{1, 1, [](const ASTs & a) -> ASTPtr { return makeASTFunction("toStartOfWeek", a[0], litI(0)); }});
+        /// `startofday(t, -1)` means the start of the day *before* `t`; the offset counts
+        /// whole periods, so it is applied before truncating.
+        const auto start_of = [](std::string_view truncate, std::string_view unit)
+        {
+            return Entry{
+                1,
+                2,
+                [name = String(truncate), interval = String(unit)](const ASTs & arguments) -> ASTPtr
+                {
+                    ASTPtr moment = arguments[0];
+                    if (arguments.size() == 2)
+                        moment = makeASTFunction("plus", moment, makeASTFunction(interval, arguments[1]));
+                    if (name == "toStartOfWeek")
+                        return makeASTFunction(name, moment, litI(0));
+                    return makeASTFunction(name, moment);
+                }};
+        };
+        result.emplace("startofday", start_of("toStartOfDay", "toIntervalDay"));
+        result.emplace("startofweek", start_of("toStartOfWeek", "toIntervalWeek"));
+        result.emplace("startofmonth", start_of("toStartOfMonth", "toIntervalMonth"));
+        result.emplace("startofyear", start_of("toStartOfYear", "toIntervalYear"));
+
+        /// `endofday(t)` is the last tick of the period, which Kusto renders as
+        /// `...T23:59:59.9999999`.
+        const auto end_of = [](std::string_view truncate, std::string_view unit)
+        {
+            return Entry{
+                1,
+                2,
+                [name = String(truncate), interval = String(unit)](const ASTs & arguments) -> ASTPtr
+                {
+                    ASTPtr moment = arguments[0];
+                    if (arguments.size() == 2)
+                        moment = makeASTFunction("plus", moment, makeASTFunction(interval, arguments[1]));
+                    ASTPtr start = name == "toStartOfWeek" ? ASTPtr(makeASTFunction(name, moment, litI(0)))
+                                                           : ASTPtr(makeASTFunction(name, moment));
+                    ASTPtr next = makeASTFunction("plus", start, makeASTFunction(interval, litI(1)));
+                    return makeASTFunction("minus", next, makeASTFunction("toIntervalNanosecond", litI(100)));
+                }};
+        };
+        result.emplace("endofday", end_of("toStartOfDay", "toIntervalDay"));
+        result.emplace("endofweek", end_of("toStartOfWeek", "toIntervalWeek"));
+        result.emplace("endofmonth", end_of("toStartOfMonth", "toIntervalMonth"));
+        result.emplace("endofyear", end_of("toStartOfYear", "toIntervalYear"));
         result.emplace("getyear", Entry{1, 1, [](const ASTs & a) -> ASTPtr { return makeASTFunction("toYear", a[0]); }});
         result.emplace("getmonth", Entry{1, 1, [](const ASTs & a) -> ASTPtr { return makeASTFunction("toMonth", a[0]); }});
         result.emplace("monthofyear", Entry{1, 1, [](const ASTs & a) -> ASTPtr { return makeASTFunction("toMonth", a[0]); }});
@@ -411,9 +562,6 @@ const std::map<String, Entry> & scalarFunctions()
                         return nullptr;
                     return makeASTFunction("dateDiff", arguments[0], arguments[2], arguments[1]);
                 }});
-        result.emplace(
-            "format_datetime",
-            Entry{2, 2, [](const ASTs & a) -> ASTPtr { return makeASTFunction("formatDateTime", a[0], asString(a[1])); }});
         result.emplace(
             "make_datetime",
             Entry{
@@ -459,10 +607,42 @@ const std::map<String, Entry> & scalarFunctions()
                 3,
                 [](const ASTs & a) -> ASTPtr
                 {
-                    /// KQL takes 0-based inclusive bounds; `arraySlice` takes a 1-based
-                    /// offset and a length.
-                    ASTPtr length = makeASTFunction("greatest", makeASTFunction("minus", makeASTFunction("plus", a[2], litI(1)), a[1]), litI(0));
-                    return makeASTFunction("arraySlice", a[0], makeASTFunction("plus", a[1], litI(1)), length);
+                    /// KQL takes 0-based inclusive bounds, either of which may count back
+                    /// from the end. `arraySlice` takes a 1-based offset and a length, so
+                    /// both bounds are normalised first.
+                    const auto normalise = [&](const ASTPtr & bound)
+                    {
+                        return makeASTFunction(
+                            "if",
+                            makeASTFunction("less", bound, litI(0)),
+                            makeASTFunction("plus", makeASTFunction("length", a[0]), bound->clone()),
+                            bound->clone());
+                    };
+                    ASTPtr first = normalise(a[1]);
+                    ASTPtr last = normalise(a[2]);
+                    ASTPtr length = makeASTFunction(
+                        "greatest", makeASTFunction("plus", makeASTFunction("minus", last, first->clone()), litI(1)), litI(0));
+                    return makeASTFunction("arraySlice", a[0], makeASTFunction("plus", first->clone(), litI(1)), length);
+                }});
+        result.emplace("pack_array", rename("array", 1, VARIADIC));
+        result.emplace("set_intersect", rename("arrayIntersect", 2, VARIADIC));
+        result.emplace(
+            "set_difference",
+            Entry{
+                2,
+                VARIADIC,
+                [](const ASTs & arguments) -> ASTPtr
+                {
+                    /// Everything in the first array that is in none of the others.
+                    ASTPtr excluded = arguments[1];
+                    for (size_t i = 2; i < arguments.size(); ++i)
+                        excluded = makeASTFunction("arrayConcat", excluded, arguments[i]);
+
+                    auto lambda = makeASTFunction(
+                        "lambda",
+                        makeASTFunction("tuple", make_intrusive<ASTIdentifier>("kql_element")),
+                        makeASTFunction("not", makeASTFunction("has", excluded, make_intrusive<ASTIdentifier>("kql_element"))));
+                    return makeASTFunction("arrayDistinct", makeASTFunction("arrayFilter", lambda, arguments[0]));
                 }});
         result.emplace(
             "set_has_element",
@@ -598,7 +778,53 @@ ASTPtr buildKQLStringOperator(const String & op, const ASTPtr & haystack, const 
     return nullptr;
 }
 
-ASTPtr translateKQLFunction(const String & name, const ASTs & arguments, String & error)
+static const std::set<String> & unsupportedKQLFunctions()
+{
+    static const std::set<String> names{
+        "array_rotate_left", "array_rotate_right", "array_shift_left", "array_shift_right",
+        "array_sort_asc",    "array_sort_desc",    "bag_has_key",      "bag_keys",
+        "bag_merge",         "bag_pack",           "bag_pack_columns", "bag_remove_keys",
+        "bag_set_key",       "bag_unpack",         "base64_decode_toarray",
+        "binary_all_and",    "binary_all_or",      "binary_all_xor",   "buildschema",
+        "column_ifexists",   "current_cluster_endpoint", "current_database",
+        "current_principal", "current_principal_details", "current_principal_is_member_of",
+        "cursor_after",      "cursor_before_or_at", "cursor_current", "datatable",
+        "dcount_hll",        "dynamic_to_json",    "estimate_data_size", "extent_id",
+        "extent_tags",       "externaldata",       "extract_all",      "format_bytes",     "format_datetime",     "format_ipv4",
+        "format_ipv4_mask",  "format_timespan",    "geo_distance_2points",
+        "geo_geohash_to_central_point", "geo_point_in_circle", "geo_point_in_polygon",
+        "geo_point_to_geohash", "geo_point_to_s2cell", "has_any_index", "hll_merge",
+        "ingestion_time",    "ipv4_compare",       "ipv4_is_in_range", "ipv4_is_in_any_range",
+        "ipv4_is_match",     "ipv4_is_private",    "ipv4_netmask_suffix", "ipv6_compare",
+        "ipv6_is_match",     "make_bag",           "make_bag_if",      "materialize",
+        "pack",              "pack_all",                 "pack_dictionary",
+        "parse_command_line", "parse_csv",         "parse_ipv4",       "parse_ipv4_mask",
+        "parse_ipv6",        "parse_ipv6_mask",    "parse_json",       "parse_path",
+        "parse_url",         "parse_urlquery",     "parse_user_agent", "parse_version",
+        "parse_xml",         "percentile_array",   "percentiles",      "percentiles_array",
+        "percentilesw",      "percentilesw_array", "percentilew",      "punycode_from_string",
+        "punycode_to_string", "range",             "row_cumsum",       "row_number",
+        "row_rank_dense",    "row_rank_min",       "row_window_session", "series_abs",
+        "series_acos",       "series_add",         "series_decompose", "series_decompose_anomalies",
+        "series_decompose_forecast", "series_divide", "series_equals", "series_fft",
+        "series_fill_backward", "series_fill_const", "series_fill_forward", "series_fill_linear",
+        "series_fir",        "series_fit_2lines",  "series_fit_line",  "series_greater",
+        "series_iir",        "series_less",        "series_multiply",  "series_not_equals",
+        "series_outliers",   "series_pearson_correlation", "series_periods_detect",
+        "series_periods_validate", "series_seasonal", "series_stats", "series_stats_dynamic",
+        "series_subtract",   "series_sum",           "todynamic",         "toscalar",           "treepath",
+        "unixtime_microseconds_todatetime", "unixtime_nanoseconds_todatetime",
+        "zip",
+    };
+    return names;
+}
+
+bool isUnsupportedKQLFunction(const String & name)
+{
+    return unsupportedKQLFunctions().contains(name);
+}
+
+ASTPtr translateKQLFunction(const String & name, const String & original_name, const ASTs & arguments, String & error)
 {
     const auto * entry = [&]() -> const Entry *
     {
@@ -611,8 +837,19 @@ ASTPtr translateKQLFunction(const String & name, const ASTs & arguments, String 
 
     if (!entry)
     {
-        error = fmt::format("'{}' is not a supported KQL function", name);
-        return nullptr;
+        if (isUnsupportedKQLFunction(name))
+        {
+            error = fmt::format("'{}' is not supported by the KQL dialect", name);
+            return nullptr;
+        }
+
+        /// Not a Kusto name at all, so treat it as a ClickHouse function. This is the escape
+        /// hatch that lets a KQL query reach the rest of ClickHouse; the name keeps the
+        /// user's spelling, because ClickHouse function names are case-sensitive. An
+        /// unknown name is reported by the analyzer, which also suggests near misses.
+        auto function = makeASTFunction(original_name);
+        function->arguments->children = arguments;
+        return function;
     }
 
     if (arguments.size() < entry->min_arguments || arguments.size() > entry->max_arguments)

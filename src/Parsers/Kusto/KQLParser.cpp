@@ -22,6 +22,7 @@ namespace ErrorCodes
 {
 extern const int SYNTAX_ERROR;
 extern const int TOO_DEEP_RECURSION;
+extern const int BAD_ARGUMENTS;
 }
 
 namespace
@@ -874,6 +875,15 @@ KQLNamedExpression KQLParser::parseNamedExpression()
 {
     KQLNamedExpression named;
 
+    /// `project *` selects every column. A wildcard is only itself - it cannot be named or
+    /// take part in an expression - so it is recognized here rather than in `parsePrimary`.
+    if (at(KQLTokenType::Asterisk))
+    {
+        ++index;
+        named.expression = make_intrusive<ASTAsterisk>();
+        return named;
+    }
+
     /// `Name = expression`, distinguished from the comparison `a == b` by the single '='.
     const bool has_alias = (at(KQLTokenType::BareWord) && lookahead().type == KQLTokenType::Equals)
         || (at(KQLTokenType::OpeningSquareBracket) && lookahead().type == KQLTokenType::StringLiteral
@@ -901,8 +911,11 @@ bool producesBoolean(const ASTPtr & node)
         return false;
 
     static const std::set<String> boolean_functions{
+        /// Comparison and the connectives.
         "equals", "notEquals", "less", "lessOrEquals", "greater", "greaterOrEquals",
-        "and", "or", "not", "in", "notIn", "match", "startsWith", "endsWith"};
+        "and", "or", "not", "in", "notIn", "match", "startsWith", "endsWith",
+        /// The KQL predicates that are documented as returning `bool`.
+        "isNull", "isNotNull", "isNaN", "isInfinite", "isFinite", "has", "empty", "notEmpty"};
     return boolean_functions.contains(function->name);
 }
 }
@@ -1047,7 +1060,14 @@ ASTPtr KQLParser::parsePostfix(ASTPtr operand)
             if (const auto * literal = subscript->as<ASTLiteral>(); literal && literal->value.getType() == Field::Types::String)
                 failAt(bracket, "indexing a dynamic object by key is not supported");
 
-            operand = makeASTFunction("arrayElement", operand, makeASTFunction("plus", subscript, makeLiteral(static_cast<Int64>(1))));
+            operand = makeASTFunction(
+                "arrayElement",
+                operand,
+                makeASTFunction(
+                    "if",
+                    makeASTFunction("less", subscript, makeLiteral(static_cast<Int64>(0))),
+                    subscript->clone(),
+                    makeASTFunction("plus", subscript->clone(), makeLiteral(static_cast<Int64>(1)))));
             continue;
         }
 
@@ -1151,10 +1171,6 @@ ASTPtr KQLParser::parsePrimary()
             fail("expected a quoted column name");
         }
 
-        case KQLTokenType::Asterisk:
-            ++index;
-            return make_intrusive<ASTAsterisk>();
-
         case KQLTokenType::BareWord:
             break;
 
@@ -1186,8 +1202,25 @@ ASTPtr KQLParser::parsePrimary()
         return value;
     }
 
+    /// `typeof(long)` names a type. It appears as the optional last argument of `extract`,
+    /// and is passed on as the ClickHouse type name.
+    if (lowered == "typeof" && lookahead().type == KQLTokenType::OpeningRoundBracket)
+    {
+        index += 2;
+        const KQLToken & type_token = current();
+        const String kql_type = Poco::toLower(String(expectIdentifierName()));
+        auto type = kqlTypeToClickHouseType().find(kql_type);
+        if (type == kqlTypeToClickHouseType().end())
+            failAt(type_token, fmt::format("'{}' is not a KQL scalar type", kql_type));
+        expect(KQLTokenType::ClosingRoundBracket);
+        return makeLiteral(type->second);
+    }
+
     if (lookahead().type == KQLTokenType::OpeningRoundBracket)
     {
+        if (ASTPtr typed = tryParseTypedLiteral(lowered))
+            return typed;
+
         ++index;
         return parseFunctionCall(lowered);
     }
@@ -1234,6 +1267,240 @@ ASTPtr KQLParser::parseDynamicLiteral()
     return parseExpression();
 }
 
+namespace
+{
+/// `[-][d.]hh:mm:ss[.fffffff]` - the way Kusto writes a timespan as a string.
+std::optional<Int64> parseTimespanText(std::string_view text)
+{
+    bool negative = false;
+    if (!text.empty() && (text.front() == '-' || text.front() == '+'))
+    {
+        negative = text.front() == '-';
+        text.remove_prefix(1);
+    }
+
+    std::vector<std::string_view> parts;
+    size_t start = 0;
+    for (size_t i = 0; i <= text.size(); ++i)
+    {
+        if (i == text.size() || text[i] == ':')
+        {
+            parts.push_back(text.substr(start, i - start));
+            start = i + 1;
+        }
+    }
+    if (parts.size() != 3 && parts.size() != 1)
+        return {};
+
+    const auto to_number = [](std::string_view part, Int64 & out)
+    {
+        if (part.empty() || part.size() > 18)
+            return false;
+        out = 0;
+        for (const char c : part)
+        {
+            if (c < '0' || c > '9')
+                return false;
+            out = out * 10 + (c - '0');
+        }
+        return true;
+    };
+
+    Int64 days = 0;
+    Int64 hours = 0;
+    Int64 minutes = 0;
+    Int64 seconds = 0;
+    Int64 ticks = 0;
+
+    /// The first part may carry a leading `d.`, and the last a trailing `.fffffff`.
+    std::string_view head = parts.front();
+    if (const size_t dot = head.find('.'); dot != std::string_view::npos)
+    {
+        if (!to_number(head.substr(0, dot), days))
+            return {};
+        head = head.substr(dot + 1);
+    }
+
+    if (parts.size() == 1)
+    {
+        /// `time('2')` is not a thing; a bare component must have come with `d.`.
+        if (days == 0)
+            return {};
+        if (!head.empty() && !to_number(head, hours))
+            return {};
+    }
+    else
+    {
+        if (!to_number(head, hours))
+            return {};
+        if (!to_number(parts[1], minutes))
+            return {};
+
+        std::string_view tail = parts[2];
+        if (const size_t dot = tail.find('.'); dot != std::string_view::npos)
+        {
+            std::string fraction(tail.substr(dot + 1));
+            if (fraction.size() > 7)
+                fraction.resize(7);
+            fraction.resize(7, '0');
+            if (!to_number(fraction, ticks))
+                return {};
+            tail = tail.substr(0, dot);
+        }
+        if (!to_number(tail, seconds))
+            return {};
+    }
+
+    const Int64 total = ((days * 24 + hours) * 60 + minutes) * 60 + seconds;
+    const Int64 result = total * 10'000'000 + ticks;
+    return negative ? -result : result;
+}
+}
+
+ASTPtr KQLParser::tryParseTypedLiteral(const String & name)
+{
+    enum class Kind : uint8_t { Boolean, Integer, Real, Decimal, Timespan, Text };
+
+    static const std::map<String, Kind> kinds{
+        {"bool", Kind::Boolean},   {"boolean", Kind::Boolean}, {"int", Kind::Integer},
+        {"long", Kind::Integer},   {"real", Kind::Real},       {"double", Kind::Real},
+        {"decimal", Kind::Decimal}, {"timespan", Kind::Timespan}, {"time", Kind::Timespan},
+        {"totimespan", Kind::Timespan},
+        {"string", Kind::Text},
+    };
+
+    auto it = kinds.find(name);
+    if (it == kinds.end())
+        return nullptr;
+    const Kind kind = it->second;
+
+    const KQLToken & name_token = current();
+    const size_t saved_index = index;
+    index += 2; /// The name and the '('.
+
+    /// A typed literal takes a literal, not an expression: Kusto rejects `int('4')`.
+    const auto bad = [&](const String & what) -> ASTPtr
+    {
+        const size_t offset = name_token.begin >= query_begin ? static_cast<size_t>(name_token.begin - query_begin) : 0;
+        throw Exception(
+            ErrorCodes::BAD_ARGUMENTS, "KQL literal {}(...) at position {} {}", name, offset + 1, what);
+    };
+
+    bool negative = false;
+    if (at(KQLTokenType::Minus))
+    {
+        negative = true;
+        ++index;
+    }
+    else if (at(KQLTokenType::Plus))
+    {
+        ++index;
+    }
+
+    ASTPtr value;
+    const KQLToken & token = current();
+
+    if (token.type == KQLTokenType::BareWord)
+    {
+        const String word = Poco::toLower(String(token.text()));
+        if (word == "null")
+        {
+            ++index;
+            static const std::map<Kind, const char *> null_types{
+                {Kind::Boolean, "Nullable(Bool)"},       {Kind::Integer, "Nullable(Int64)"},
+                {Kind::Real, "Nullable(Float64)"},       {Kind::Decimal, "Nullable(Decimal128(20))"},
+                {Kind::Timespan, "Nullable(Int64)"},     {Kind::Text, "Nullable(String)"},
+            };
+            value = makeASTFunction("CAST", makeLiteral(Field()), makeLiteral(String(null_types.at(kind))));
+        }
+        else if (kind == Kind::Boolean && (word == "true" || word == "false"))
+        {
+            ++index;
+            value = makeLiteral(word == "true");
+        }
+        else if (kind == Kind::Real && (word == "nan" || word == "inf" || word == "infinity"))
+        {
+            ++index;
+            const double magnitude = word == "nan" ? std::numeric_limits<double>::quiet_NaN()
+                                                   : std::numeric_limits<double>::infinity();
+            value = makeLiteral(negative && word != "nan" ? -magnitude : magnitude);
+            negative = false;
+        }
+        else
+        {
+            index = saved_index;
+            return bad("expects a literal");
+        }
+    }
+    else if (token.type == KQLTokenType::Number)
+    {
+        if (kind == Kind::Decimal)
+        {
+            /// Keep the digits the user wrote; a Float64 round-trip would not be exact.
+            String digits(token.text());
+            ++index;
+            value = makeLiteral(negative ? "-" + digits : digits);
+            negative = false;
+        }
+        else
+        {
+            value = parsePrimary();
+        }
+    }
+    else if (token.type == KQLTokenType::Timespan && kind == Kind::Timespan)
+    {
+        value = parsePrimary();
+    }
+    else if (token.type == KQLTokenType::StringLiteral)
+    {
+        if (kind == Kind::Text)
+        {
+            value = parsePrimary();
+        }
+        else if (kind == Kind::Timespan)
+        {
+            const auto ticks = parseTimespanText(token.inner);
+            if (!ticks)
+                return bad("could not read the timespan");
+            ++index;
+            value = makeASTFunction("toIntervalNanosecond", makeLiteral(*ticks * 100));
+        }
+        else
+        {
+            /// `int('4')` is an error in Kusto: the constructor is not a cast.
+            return bad("does not accept a string; use a cast such as toint()");
+        }
+    }
+    else
+    {
+        return bad("expects a literal");
+    }
+
+    if (!consume(KQLTokenType::ClosingRoundBracket))
+        return bad("is missing its closing parenthesis");
+
+    if (negative)
+        value = makeASTFunction("negate", value);
+
+    /// Give the value the type the constructor names, so `int(1)` and `long(1)` differ.
+    switch (kind)
+    {
+        case Kind::Boolean:
+            return makeASTFunction("accurateCastOrNull", value, makeLiteral(String("Bool")));
+        case Kind::Integer:
+            return name == "int" ? ASTPtr(makeASTFunction("accurateCastOrNull", value, makeLiteral(String("Int32"))))
+                                 : ASTPtr(makeASTFunction("accurateCastOrNull", value, makeLiteral(String("Int64"))));
+        case Kind::Real:
+            return makeASTFunction("accurateCastOrNull", value, makeLiteral(String("Float64")));
+        case Kind::Decimal:
+            return makeASTFunction("accurateCastOrNull", value, makeLiteral(String("Decimal128(20)")));
+        case Kind::Timespan:
+        case Kind::Text:
+            return value;
+    }
+    return value;
+}
+
 ASTPtr KQLParser::parseFunctionCall(const String & name)
 {
     DepthGuard guard(*this, "function call");
@@ -1252,7 +1519,7 @@ ASTPtr KQLParser::parseFunctionCall(const String & name)
     expect(KQLTokenType::ClosingRoundBracket);
 
     String error;
-    ASTPtr result = translateKQLFunction(name, arguments, error);
+    ASTPtr result = translateKQLFunction(name, String(name_token.text()), arguments, error);
     if (!result)
         failAt(name_token, error);
 

@@ -13,12 +13,26 @@ namespace DB
   * nullptr and puts a message in `error` - an unknown function is an ordinary parse
   * outcome here, not an exception, so the caller can attach the source position.
   *
-  * A function is either in this registry and translated correctly, or it is rejected by
-  * name. There is deliberately no pass-through for unrecognized names: the previous
-  * implementation registered 28 functions whose bodies did nothing, which leaked the raw
-  * KQL name into the generated SQL and surfaced much later as "Function ... does not exist".
+  * A name resolves in one of three ways, in this order:
+  *
+  *  1. It is in the registry, and is translated with the semantics Kusto documents.
+  *  2. It is a Kusto name this dialect does not implement (`isUnsupportedKQLFunction`), and
+  *     is rejected. A Kusto name must never quietly mean something else.
+  *  3. Otherwise it is taken to be a ClickHouse function, so a KQL query can reach the rest
+  *     of ClickHouse. An unknown name is then reported by the analyzer, which also suggests
+  *     near misses.
+  *
+  * `name` is the call lower-cased; `original_name` is the spelling the user wrote, which is
+  * what case 3 passes on, because ClickHouse function names are case-sensitive.
   */
-ASTPtr translateKQLFunction(const String & name, const ASTs & arguments, String & error);
+ASTPtr translateKQLFunction(const String & name, const String & original_name, const ASTs & arguments, String & error);
+
+/// Kusto function names this dialect does not implement.
+///
+/// These are rejected rather than passed through, because a Kusto name must never quietly
+/// mean something else: ClickHouse also has a `range`, and `range(1, 3, 1)` is `[1, 2]` here
+/// and `[1, 2, 3]` in Kusto.
+bool isUnsupportedKQLFunction(const String & name);
 
 /// Whether `name` is a KQL aggregate function, i.e. legal in `summarize` but not elsewhere.
 bool isKQLAggregateFunction(const String & name);

@@ -40,7 +40,6 @@ print parse_csv('a,b');                               -- { clientError SYNTAX_ER
 print toscalar(1);                                    -- { clientError SYNTAX_ERROR }
 print ipv4_is_match('1.2.3.4', '1.2.3.0/24');         -- { clientError SYNTAX_ERROR }
 print format_timespan(1d, 'hh:mm');                   -- { clientError SYNTAX_ERROR }
-print totally_made_up_function(1);                    -- { clientError SYNTAX_ERROR }
 
 -- Wrong number of arguments is reported at parse time, not at execution.
 print strlen();                                       -- { clientError SYNTAX_ERROR }
@@ -68,5 +67,9 @@ datatable (a:nosuchtype) [1];                         -- { clientError SYNTAX_ER
 datatable (a:long, b:long) [1, 2, 3];                 -- { clientError SYNTAX_ERROR } not a whole number of rows
 let x = 1;                                            -- { clientError SYNTAX_ERROR } a query needs a tabular expression
 let x = 1; let x = 2; print x;                        -- { clientError SYNTAX_ERROR } duplicate binding
+
+-- A name that is not a Kusto function at all is passed to ClickHouse, so an unknown one is
+-- reported by the analyzer rather than by the parser. See 04674 for the point of that.
+print totally_made_up_function(1);                    -- { serverError UNKNOWN_FUNCTION }
 
 SET dialect = 'clickhouse';
