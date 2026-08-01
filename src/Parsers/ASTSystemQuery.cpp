@@ -251,9 +251,6 @@ void ASTSystemQuery::formatImpl(WriteBuffer & ostr, const FormatSettings & setti
         {
             print_keyword(" FROM DATABASE ");
             print_identifier(getDatabase());
-
-            if (with_tables)
-                print_keyword(" WITH TABLES");
         }
         else if ((type == Type::DROP_REPLICA || type == Type::DROP_DATABASE_REPLICA) && !is_drop_whole_replica)
         {
@@ -271,6 +268,10 @@ void ASTSystemQuery::formatImpl(WriteBuffer & ostr, const FormatSettings & setti
         /// `WITH TABLES` (only parsed for `DROP DATABASE REPLICA`) must be emitted, otherwise it is
         /// lost on a format -> parse round-trip: the folded `with_tables` flag would then differ
         /// between the original and the re-parsed AST and break the tree-hash consistency check.
+        /// It is emitted here rather than inside the `FROM DATABASE` branch above because
+        /// `parseDropReplica` gates the clause on its `database` *mode* argument, not on a parsed
+        /// database name — so `SYSTEM DROP DATABASE REPLICA 'r' FROM ZKPATH '/p' WITH TABLES` also
+        /// sets the flag while leaving `database` unset.
         if (with_tables)
             print_keyword(" WITH TABLES");
     };

@@ -5,8 +5,6 @@
 #include <Common/SipHash.h>
 #include <IO/Operators.h>
 
-#include <algorithm>
-
 namespace DB
 {
 void ASTDatabaseOrNone::formatImpl(WriteBuffer & ostr, const FormatSettings &, FormatState &, FormatStateStacked) const
@@ -22,7 +20,7 @@ void ASTDatabaseOrNone::formatImpl(WriteBuffer & ostr, const FormatSettings &, F
     /// "no default database"). That is wrong on replay (e.g. `SHOW CREATE USER`) and breaks the
     /// format -> parse round-trip that the debug-build AST-consistency check requires now that
     /// `updateTreeHashImpl` folds `database_name`.
-    if (std::ranges::equal(database_name, toStringView(Keyword::NONE), equalsCaseInsensitive))
+    if (equalsCaseInsensitive(database_name, toStringView(Keyword::NONE)))
         ostr << backQuote(database_name);
     else
         ostr << backQuoteIfNeed(database_name);

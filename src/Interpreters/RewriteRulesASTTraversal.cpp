@@ -6,7 +6,7 @@
 #include <Parsers/ASTSubquery.h>
 #include <Parsers/ASTCreateRewriteRuleQuery.h>
 #include <Parsers/ASTAlterRewriteRuleQuery.h>
-#include <Parsers/parseIdentifierOrStringLiteral.h>
+#include <Interpreters/parseIdentifiersOrStringLiteralsWithSettings.h>
 #include <Interpreters/ClientInfo.h>
 #include <Common/StringUtils.h>
 #include <Core/Settings.h>
