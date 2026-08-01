@@ -17,6 +17,9 @@
 #include <silk/fibers/future.h>
 #include <silk/util/init.h>
 
+#include <base/errnoToString.h>
+
+#include <cerrno>
 #include <sys/socket.h>
 
 #if USE_SSL
@@ -120,8 +123,17 @@ void spawnConnection(int fd, const FrontendContext * ctx)
         delete future;    /// The handler already finished; clean up now.
 }
 
+/// Errors that persist until some resource is released. Retrying them without a pause busy-spins a scheduler thread.
+bool isResourceExhaustion(int err)
+{
+    return err == EMFILE || err == ENFILE || err == ENOMEM || err == ENOBUFS;
+}
+
 int acceptLoop(AcceptParams * params) noexcept
 {
+    /// Pause before retrying `accept` after a resource-exhaustion error, so the listener does not busy-spin.
+    static constexpr UInt64 resource_backoff_ms = 100;
+
     while (!params->stopped->load(std::memory_order_relaxed))
     {
         uint64_t client_fd = 0;
@@ -130,6 +142,16 @@ int acceptLoop(AcceptParams * params) noexcept
         {
             if (params->stopped->load(std::memory_order_relaxed))
                 break;
+            if (isResourceExhaustion(r))
+            {
+                LOG_WARNING(
+                    params->ctx->log,
+                    "Cannot accept a connection: {}. Pausing the listener for {} ms.",
+                    errnoToString(r),
+                    resource_backoff_ms);
+                silk::FiberScheduler::sleep(resource_backoff_ms * 1'000'000);
+                continue;
+            }
             /// Transient error (e.g. the peer aborted before accept): keep listening.
             continue;
         }
