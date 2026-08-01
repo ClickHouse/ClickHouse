@@ -417,3 +417,6 @@
 [submodule "contrib/libucontext"]
 	path = contrib/libucontext
 	url = https://github.com/kaniini/libucontext
+[submodule "contrib/MeCab"]
+	path = contrib/MeCab
+	url = https://github.com/taku910/mecab
