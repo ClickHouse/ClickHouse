@@ -1,3 +1,4 @@
+#include <Parsers/ASTIdentifier_fwd.h>
 #include <Parsers/CommonParsers.h>
 #include <Parsers/ExpressionElementParsers.h>
 #include <Parsers/ExpressionListParsers.h>
@@ -68,7 +69,7 @@ bool ParserTableExpression::parseImpl(Pos & pos, ASTPtr & node, Expected & expec
                 ParserAlias alias_parser(allow_alias_without_as_keyword);
                 ASTPtr alias_node;
                 if (alias_parser.parse(pos, alias_node, expected))
-                    res->subquery->setAlias(alias_node->getColumnName());
+                    res->subquery->setAlias(getIdentifierName(alias_node));
             }
             else
             {
