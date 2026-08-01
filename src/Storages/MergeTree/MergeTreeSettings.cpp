@@ -2438,7 +2438,7 @@ void MergeTreeSettingsImpl::loadFromQuery(ASTStorage & storage_def, ContextPtr c
             auto changes = storage_def.settings->changes;
             MergeTreeSettings::resolveDiskSetting(changes, context, is_loading_from_existing_metadata, for_system_database);
 
-            for (const auto & [name, value] : changes)
+            for (const auto & [name, value, _] : changes)
             {
                 if (name == "disk")
                 {

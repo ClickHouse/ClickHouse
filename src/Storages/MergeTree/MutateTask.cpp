@@ -3089,6 +3089,10 @@ private:
 
     void finalize()
     {
+        /// Files the writer produced for the mutated columns (populated below); kept out of the
+        /// stale-file removal loop even if flagged for removal.
+        NameSet written_files;
+
         if (ctx->mutating_executor)
         {
             ctx->mutating_executor.reset();
@@ -3097,6 +3101,11 @@ private:
             auto out_mut = static_pointer_cast<MergedColumnOnlyOutputStream>(ctx->out);
             out_mut->finalizeIndexGranularity();
             auto changed_checksums = out_mut->fillChecksums(ctx->new_data_part, ctx->new_data_part->checksums);
+
+            /// Record every stream the writer just produced for the mutated columns.
+            for (const auto & [file_name, _] : changed_checksums.files)
+                written_files.insert(file_name);
+
             ctx->new_data_part->checksums.add(std::move(changed_checksums));
 
             /// Add checksums of projection parts that were rebuilt during this mutation.
@@ -3143,6 +3152,13 @@ private:
 
         for (const auto & [rename_from, rename_to] : ctx->files_to_rename)
         {
+            /// A stream the writer rewrote for the new column type must survive: stale-file
+            /// accounting (`collectFilesForRenames`) can flag it for removal because its state-less
+            /// stream enumeration does not see data-dependent substreams (e.g. `variant_discr` of a
+            /// column that became Dynamic/JSON in this mutation).
+            if (written_files.contains(rename_from))
+                continue;
+
             if (rename_to.empty() && ctx->new_data_part->checksums.files.contains(rename_from))
             {
                 ctx->new_data_part->checksums.files.erase(rename_from);
