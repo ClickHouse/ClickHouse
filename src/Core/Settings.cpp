@@ -2798,8 +2798,7 @@ HTTP send timeout (in seconds).
 
 Possible values:
 
-- Any positive integer.
-- Positive integer only. `0` is **not** treated as an infinite timeout and can cause connection setup failures (POSIX socket timeouts require a positive interval).
+- Any positive integer (seconds). `0` is **not** an infinite timeout and can cause connection setup failures (POSIX socket timeouts require a positive interval).
 
 :::note
 It's applicable only to the default profile. A server reboot is required for the changes to take effect.
@@ -2810,8 +2809,7 @@ HTTP receive timeout (in seconds).
 
 Possible values:
 
-- Any positive integer.
-- Positive integer only. `0` is **not** treated as an infinite timeout and can cause connection setup failures (POSIX socket timeouts require a positive interval).
+- Any positive integer (seconds). `0` is **not** an infinite timeout and can cause connection setup failures (POSIX socket timeouts require a positive interval).
 )", 0) \
     DECLARE(UInt64, http_max_uri_size, 1048576, R"(
 Sets the maximum URI length of an HTTP request.
