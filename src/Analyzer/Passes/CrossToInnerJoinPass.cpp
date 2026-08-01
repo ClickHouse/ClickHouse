@@ -60,12 +60,13 @@ void extractJoinConditions(const QueryTreeNodePtr & node, QueryTreeNodes & equi_
 /// the two sides of the key can be built by different nodes. Most such functions report
 /// `isServerConstant()` and are refused by that check; these do not, so they are listed by name.
 /// (`transactionLatestSnapshot` and `transactionOldestSnapshot` are in the same class but throw unless
-/// `allow_experimental_transactions` is set.) Aliases and letter case resolve to these canonical names
-/// first.
+/// `allow_experimental_transactions` is set.) `randConstant` draws a new value whenever its function
+/// base is built, so a node that deserializes the plan draws a different one. Aliases and letter case
+/// resolve to these canonical names first.
 bool isNodeLocalFunction(const String & function_name)
 {
     return function_name == "queryID" || function_name == "FQDN" || function_name == "getServerPort"
-        || function_name == "transactionID";
+        || function_name == "transactionID" || function_name == "randConstant";
 }
 
 /// A condition may become a join key only if its value is stable within one query, because in the key

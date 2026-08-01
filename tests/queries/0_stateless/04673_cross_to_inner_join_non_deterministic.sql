@@ -153,6 +153,16 @@ SELECT count() = 0 FROM (
     SETTINGS cross_to_inner_join_rewrite = 1
 ) WHERE explain ILIKE '%kind: INNER%';
 
+-- randConstant() is stable within one node's query but is drawn again wherever its function base is
+-- built, so it belongs to the same class as queryID() below. The argument is what keeps it a live node:
+-- with no argument it is constant-folded before this pass runs.
+SELECT '-- randConstant() is no longer rewritten';
+SELECT count() = 0 FROM (
+    EXPLAIN QUERY TREE run_passes = 1
+    SELECT count() FROM l, r WHERE randConstant(l.a) % 16 = r.a
+    SETTINGS cross_to_inner_join_rewrite = 1
+) WHERE explain ILIKE '%kind: INNER%';
+
 -- Server constants (hostName, shardNum, uptime, ... reporting isServerConstant()) are read per
 -- executing node, so they belong to the same class as queryID() above. On a single-node query they are
 -- constant-folded away, which is why each row below joins a remote() table expression: that sets the

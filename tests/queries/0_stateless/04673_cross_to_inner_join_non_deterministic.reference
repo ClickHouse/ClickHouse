@@ -34,6 +34,8 @@
 1
 -- nowInBlock() is no longer rewritten
 1
+-- randConstant() is no longer rewritten
+1
 -- hostName() is no longer rewritten
 1
 -- shardNum() is no longer rewritten
