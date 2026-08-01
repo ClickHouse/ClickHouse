@@ -8,7 +8,6 @@ namespace DB
 
 struct Settings;
 
-void registerAggregateFunctionNothing(AggregateFunctionFactory & factory);
 void registerAggregateFunctionNothing(AggregateFunctionFactory & factory)
 {
     factory.registerFunction(NameAggregateFunctionNothing::name, {

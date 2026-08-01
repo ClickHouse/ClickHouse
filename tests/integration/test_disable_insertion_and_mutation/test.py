@@ -1,7 +1,9 @@
+import time
 import uuid
 
 import pytest
 
+from helpers.client import QueryRuntimeException
 from helpers.cluster import ClickHouseCluster
 from helpers.config_cluster import minio_secret_key
 

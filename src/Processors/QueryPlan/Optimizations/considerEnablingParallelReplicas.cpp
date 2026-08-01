@@ -249,25 +249,18 @@ void considerEnablingParallelReplicas(
     // However, currently only relatively simple plans are supported (no JOINs, CreatingSets from subqueries, UNIONs, etc.),
     // since all these steps obviously don't support statistics collection, `supportsDataflowStatisticsCollection` is handy to check if the plan is simple enough.
     bool plan_is_simple_enough = true;
-    String unsupported_steps;
     traverseQueryPlan(
         stack,
         root,
         [&](auto & frame_node)
         {
-            const bool step_is_supported = frame_node.step->supportsDataflowStatisticsCollection()
+            plan_is_simple_enough &= frame_node.step->supportsDataflowStatisticsCollection()
                 || typeid_cast<const DelayedCreatingSetsStep *>(frame_node.step.get())
                 || typeid_cast<const CreatingSetsStep *>(frame_node.step.get());
-            if (!step_is_supported)
-                unsupported_steps += (unsupported_steps.empty() ? "" : ", ") + frame_node.step->getUniqID();
-            plan_is_simple_enough &= step_is_supported;
         });
     if (!plan_is_simple_enough)
     {
-        LOG_DEBUG(
-            getLogger("optimizeTree"),
-            "Some steps in the plan don't support dataflow statistics collection. Skipping optimization. Unsupported steps: {}",
-            unsupported_steps);
+        LOG_DEBUG(getLogger("optimizeTree"), "Some steps in the plan don't support dataflow statistics collection. Skipping optimization");
         return;
     }
 
@@ -363,8 +356,7 @@ void considerEnablingParallelReplicas(
                 ReadFromMergeTree * local_replica_plan_reading_step = findReadingStep(*final_node_in_replica_plan);
                 if (!local_replica_plan_reading_step)
                     throw Exception(ErrorCodes::LOGICAL_ERROR, "Cannot find ReadFromMergeTree step in local parallel replicas plan");
-                /// The step may already carry an analysis (planner runs index analysis on it when
-                /// parallel_replicas_min_number_of_rows_per_replica > 0); overwrite it to reuse the single-replica one.
+                chassert(local_replica_plan_reading_step->getAnalyzedResult() == nullptr);
                 local_replica_plan_reading_step->setAnalyzedResult(analysis);
                 moveSetsFromLocalPlanToReplicasPlan(query_plan, *plan_with_parallel_replicas);
                 query_plan.replaceNodeWithPlan(query_plan.getRootNode(), std::move(*plan_with_parallel_replicas));

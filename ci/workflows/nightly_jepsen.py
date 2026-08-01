@@ -7,6 +7,7 @@ from ci.defs.defs import (
     ArtifactConfigs,
     ArtifactNames,
     BuildTypes,
+    RunnerLabels,
 )
 from ci.defs.job_configs import JobConfigs
 

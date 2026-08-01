@@ -1,4 +1,3 @@
-#include <Columns/ColumnConst.h>
 #include <Columns/IColumn.h>
 #include <Functions/IFunction.h>
 #include <Functions/FunctionFactory.h>
@@ -12,7 +11,7 @@ namespace
 {
 
 /// Returns name of IColumn instance.
-class FunctionToColumnTypeName final : public IFunction
+class FunctionToColumnTypeName : public IFunction
 {
 public:
     static constexpr auto name = "toColumnTypeName";

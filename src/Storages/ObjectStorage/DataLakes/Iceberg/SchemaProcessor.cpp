@@ -1,3 +1,4 @@
+#include <algorithm>
 #include <memory>
 #include <optional>
 #include <unordered_map>
@@ -12,11 +13,11 @@
 #include <IO/ReadBufferFromString.h>
 #include <Common/Exception.h>
 #include <Common/logger_useful.h>
-#include <Columns/ColumnConst.h>
 #include <Columns/IColumn.h>
 #include <Functions/IFunction.h>
 #include <base/types.h>
 #include <Common/SharedLockGuard.h>
+#include <Common/StringUtils.h>
 #include <base/scope_guard.h>
 
 #include <DataTypes/DataTypeArray.h>
@@ -45,7 +46,6 @@ namespace ErrorCodes
 {
 extern const int LOGICAL_ERROR;
 extern const int BAD_ARGUMENTS;
-extern const int ICEBERG_SPECIFICATION_VIOLATION;
 }
 
 
@@ -118,6 +118,128 @@ bool equals(const T & first, const T & second)
 
 bool schemasAreIdentical(const Poco::JSON::Object & first, const Poco::JSON::Object & second, const std::unordered_map<String, String> & type_mapping);
 
+/// Canonicalize spacing in an Iceberg primitive type string by removing ASCII whitespace that is
+/// only optional formatting around the delimiters '(', ')', '[', ']', ',' (and at the string edges).
+/// Whitespace embedded inside a token (e.g. between the digits of "decimal(2 0,0)") is preserved so
+/// that malformed spellings remain malformed and are still rejected by the parser.
+String canonicalizeTypeSpacing(const String & s)
+{
+    auto is_delimiter = [](char c) { return c == '(' || c == ')' || c == '[' || c == ']' || c == ','; };
+    String result;
+    result.reserve(s.size());
+    for (size_t i = 0; i < s.size(); ++i)
+    {
+        if (!isWhitespaceASCII(s[i]))
+        {
+            result.push_back(s[i]);
+            continue;
+        }
+        const char prev = result.empty() ? '\0' : result.back();
+        size_t j = i + 1;
+        while (j < s.size() && isWhitespaceASCII(s[j]))
+            ++j;
+        const char next = j < s.size() ? s[j] : '\0';
+        /// Drop whitespace only when it is next to a delimiter or at the start/end of the string;
+        /// keep it when it sits between two token characters.
+        const bool drop = prev == '\0' || next == '\0' || is_delimiter(prev) || is_delimiter(next);
+        if (!drop)
+            result.push_back(s[i]);
+    }
+    return result;
+}
+
+/// Compare two Iceberg type descriptors for the same field. A type is either a primitive
+/// string ("long", "decimal(20, 0)", ...) or a nested object ("struct" with a fields array,
+/// or "list" / "map" wrappers whose element/key/value members are themselves types).
+/// Primitive type strings are whitespace-insensitive per the Iceberg spec, so recurse into
+/// list/map members instead of comparing the wrapper object textually.
+bool typesAreStructurallyIdentical(
+    const Poco::Dynamic::Var & first_in, const Poco::Dynamic::Var & second_in, const std::unordered_map<String, String> & type_mapping)
+{
+    Poco::Dynamic::Var first = first_in;
+    Poco::Dynamic::Var second = second_in;
+
+    /// Apply configured type aliases (e.g. geography -> binary) to string types.
+    /// Canonicalize spacing before the alias prefix match so leading/trailing whitespace does not
+    /// defeat it: " geography(C,A)" must map to the same alias as "geography(C, A)". Otherwise the
+    /// same schema-id serialized with one spelling that skips aliasing and another that maps to
+    /// "binary" would compare unequal and be wrongly rejected.
+    if (first.isString())
+    {
+        const String canon = canonicalizeTypeSpacing(first.toString());
+        first = canon;
+        for (const auto & [prefix, mapped] : type_mapping)
+            if (canon.starts_with(prefix))
+            {
+                first = mapped;
+                break;
+            }
+    }
+    if (second.isString())
+    {
+        const String canon = canonicalizeTypeSpacing(second.toString());
+        second = canon;
+        for (const auto & [prefix, mapped] : type_mapping)
+            if (canon.starts_with(prefix))
+            {
+                second = mapped;
+                break;
+            }
+    }
+
+    /// Primitive type strings: e.g. both "decimal(20,0)" and "decimal(20, 0)" denote the same
+    /// type. Different writers emit different spacing, so ignore ASCII whitespace.
+    if (first.isString() && second.isString())
+        return canonicalizeTypeSpacing(first.toString()) == canonicalizeTypeSpacing(second.toString());
+
+    const bool both_objects
+        = first.type() == typeid(Poco::JSON::Object::Ptr) && second.type() == typeid(Poco::JSON::Object::Ptr);
+    if (both_objects)
+    {
+        const auto & first_obj = first.extract<Poco::JSON::Object::Ptr>();
+        const auto & second_obj = second.extract<Poco::JSON::Object::Ptr>();
+
+        /// struct: compare nested field list recursively.
+        if (first_obj->isArray(f_fields) || second_obj->isArray(f_fields))
+            return schemasAreIdentical(*first_obj, *second_obj, type_mapping);
+
+        /// list / map wrappers: same member set, with the nested type members (element / key /
+        /// value) compared recursively so their primitive strings are whitespace-insensitive too,
+        /// and the remaining scalar members (ids, required flags) compared textually.
+        auto names_first = first_obj->getNames();
+        auto names_second = second_obj->getNames();
+        std::sort(names_first.begin(), names_first.end());
+        std::sort(names_second.begin(), names_second.end());
+        if (names_first != names_second)
+            return false;
+        for (const auto & name : names_first)
+        {
+            if (name == f_element || name == f_key || name == f_value)
+            {
+                if (!typesAreStructurallyIdentical(first_obj->get(name), second_obj->get(name), type_mapping))
+                    return false;
+            }
+            else
+            {
+                Poco::JSON::Object wrapper_first;
+                wrapper_first.set(name, first_obj->get(name));
+                Poco::JSON::Object wrapper_second;
+                wrapper_second.set(name, second_obj->get(name));
+                if (!equals(wrapper_first, wrapper_second))
+                    return false;
+            }
+        }
+        return true;
+    }
+
+    /// Mismatched shapes (string vs object) or scalar values: compare textually.
+    Poco::JSON::Object wrapper_first;
+    wrapper_first.set(f_type, first);
+    Poco::JSON::Object wrapper_second;
+    wrapper_second.set(f_type, second);
+    return equals(wrapper_first, wrapper_second);
+}
+
 bool schemaFieldsAreStructurallyIdentical(const Poco::JSON::Object & first, const Poco::JSON::Object & second, const std::unordered_map<String, String> & type_mapping)
 {
     static constexpr const char * structural_keys[] = {f_id, f_name, f_required, f_type};
@@ -130,37 +252,17 @@ bool schemaFieldsAreStructurallyIdentical(const Poco::JSON::Object & first, cons
         if (!first_has)
             continue;
 
-        if (key == f_type && first.isObject(key) && second.isObject(key))
+        if (key == f_type)
         {
-            const auto first_type = first.getObject(key);
-            const auto second_type = second.getObject(key);
-            if (first_type->isArray(f_fields) || second_type->isArray(f_fields))
-            {
-                if (!schemasAreIdentical(*first_type, *second_type, type_mapping))
-                    return false;
-                continue;
-            }
-        }
-
-        auto key_first = first.get(key);
-        auto key_second = second.get(key);
-        if (key == f_type && key_first.isString())
-        {
-            for (const auto & [prefix, mapped] : type_mapping)
-                if (key_first.toString().starts_with(prefix))
-                    key_first = mapped;
-        }
-        if (key == f_type && key_second.isString())
-        {
-            for (const auto & [prefix, mapped] : type_mapping)
-                if (key_second.toString().starts_with(prefix))
-                    key_second = mapped;
+            if (!typesAreStructurallyIdentical(first.get(key), second.get(key), type_mapping))
+                return false;
+            continue;
         }
 
         Poco::JSON::Object wrapper_first;
-        wrapper_first.set(key, key_first);
+        wrapper_first.set(key, first.get(key));
         Poco::JSON::Object wrapper_second;
-        wrapper_second.set(key, key_second);
+        wrapper_second.set(key, second.get(key));
         if (!equals(wrapper_first, wrapper_second))
             return false;
     }
@@ -188,13 +290,17 @@ bool schemasAreIdentical(const Poco::JSON::Object & first, const Poco::JSON::Obj
 std::pair<size_t, size_t> parseDecimal(const String & type_name)
 {
     DB::ReadBufferFromString buf(std::string_view(type_name.begin() + 8, type_name.end() - 1));
-    size_t precision = 0;
-    size_t scale = 0;
+    size_t precision;
+    size_t scale;
     readIntText(precision, buf);
     skipWhitespaceIfAny(buf);
     assertChar(',', buf);
     skipWhitespaceIfAny(buf);
-    tryReadIntText(scale, buf);
+    /// readIntText (not tryReadIntText) so a missing scale ("decimal(20,)") is rejected instead of
+    /// silently read as 0. assertEOF then rejects trailing garbage (e.g. "decimal(20,0 0)", whose
+    /// inner whitespace survives canonicalization), mirroring the fixed[N] handling.
+    readIntText(scale, buf);
+    assertEOF(buf);
     return {precision, scale};
 }
 
@@ -226,12 +332,7 @@ void IcebergSchemaProcessor::addIcebergTableSchema(Poco::JSON::Object::Ptr schem
             type_mapping[f_geography] = f_binary;
             type_mapping[f_geometry] = f_binary;
         }
-        /// A schema-id is immutable per the Iceberg spec: re-binding it to different fields is malformed metadata.
-        if (!schemasAreIdentical(*iceberg_table_schemas_by_ids.at(schema_id), *schema_ptr, type_mapping))
-            throw Exception(
-                ErrorCodes::ICEBERG_SPECIFICATION_VIOLATION,
-                "Iceberg schema with schema-id {} is bound to two different schemas across metadata versions",
-                schema_id);
+        chassert(schemasAreIdentical(*iceberg_table_schemas_by_ids.at(schema_id), *schema_ptr, type_mapping));
     }
     else
     {
@@ -299,8 +400,13 @@ NamesAndTypesList IcebergSchemaProcessor::tryGetFieldsCharacteristics(Int32 sche
     return fields;
 }
 
-DataTypePtr IcebergSchemaProcessor::getSimpleType(const String & type_name, bool allow_geo_parser)
+DataTypePtr IcebergSchemaProcessor::getSimpleType(const String & type_name_arg, bool allow_geo_parser)
 {
+    /// Parameterized primitive type strings (decimal(P, S), fixed[N], geography(...)) can be
+    /// serialized with different inner whitespace across metadata files. Canonicalize by removing
+    /// ASCII whitespace so parsing accepts every spelling the whitespace-insensitive comparison does.
+    const String type_name = canonicalizeTypeSpacing(type_name_arg);
+
     if (type_name == f_boolean)
         return DataTypeFactory::instance().get("Bool");
     if (type_name == f_int)
@@ -340,8 +446,11 @@ DataTypePtr IcebergSchemaProcessor::getSimpleType(const String & type_name, bool
     if (type_name.starts_with("fixed[") && type_name.ends_with(']'))
     {
         ReadBufferFromString buf(std::string_view(type_name.begin() + 6, type_name.end() - 1));
-        size_t n = 0;
+        size_t n;
         readIntText(n, buf);
+        /// Reject trailing garbage such as embedded whitespace ("fixed[1 6]"): the canonicalized
+        /// form of a valid spelling has no characters left after the size.
+        assertEOF(buf);
         return std::make_shared<DataTypeFixedString>(n);
     }
 
@@ -437,8 +546,13 @@ DataTypePtr IcebergSchemaProcessor::getFieldType(
 * decimal(P, S) -> decimal(P', S) where P' > P
 * This function checks if `old_type` and `new_type` satisfy to one of these conditions.
 **/
-bool IcebergSchemaProcessor::allowPrimitiveTypeConversion(const String & old_type, const String & new_type)
+bool IcebergSchemaProcessor::allowPrimitiveTypeConversion(const String & old_type_arg, const String & new_type_arg)
 {
+    /// Match the whitespace-insensitive rules of the comparison and the parser: a whitespace-only
+    /// difference in a parameterized type string denotes the identical type.
+    const String old_type = canonicalizeTypeSpacing(old_type_arg);
+    const String new_type = canonicalizeTypeSpacing(new_type_arg);
+
     bool allowed_type_conversion = (old_type == new_type);
     allowed_type_conversion |= (old_type == f_int) && (new_type == f_long);
     allowed_type_conversion |= (old_type == f_float) && (new_type == f_double);
@@ -485,7 +599,7 @@ std::shared_ptr<ActionsDAG> IcebergSchemaProcessor::getSchemaTransformationDag(
                     || field->getObject(f_type)->getValue<std::string>(f_type) == "map"))
             {
                 auto old_type = getFieldType(old_json, "type", required);
-                auto transform = std::make_shared<EvolutionFunctionStruct>(DataTypes{type}, DataTypes{old_type}, old_json, field);
+                auto transform = std::make_shared<EvolutionFunctionStruct>(std::vector{type}, std::vector{old_type}, old_json, field);
                 old_node = &dag->addFunction(transform, std::vector<const Node *>{old_node}, name);
 
                 outputs.push_back(old_node);
@@ -505,7 +619,10 @@ std::shared_ptr<ActionsDAG> IcebergSchemaProcessor::getSchemaTransformationDag(
                 String new_type = field->getValue<String>(f_type);
 
                 const ActionsDAG::Node * node = old_node;
-                if (old_type == new_type)
+                /// Parameterized primitive types (decimal, geography, ...) can be serialized with
+                /// different spacing across metadata files, so compare ignoring ASCII whitespace:
+                /// a whitespace-only difference is the same type and needs only a rename, not a cast.
+                if (canonicalizeTypeSpacing(old_type) == canonicalizeTypeSpacing(new_type))
                 {
                     if (old_json->getValue<String>(f_name) != name)
                     {
@@ -532,8 +649,8 @@ std::shared_ptr<ActionsDAG> IcebergSchemaProcessor::getSchemaTransformationDag(
                     old_id,
                     new_id);
             }
-            auto default_type_column = type->createColumnConstWithDefaultValue(0);
-            const auto & constant = dag->addColumn(std::move(default_type_column), type, name);
+            ColumnPtr default_type_column = type->createColumnConstWithDefaultValue(0);
+            const auto & constant = dag->addColumn({default_type_column, type, name});
             outputs.push_back(&constant);
         }
     }

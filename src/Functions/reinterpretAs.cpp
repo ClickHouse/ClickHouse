@@ -39,7 +39,7 @@ namespace
  * 3. Types that can be interpreted as numeric (Integers, Float, Date, DateTime, UUID) into FixedString,
  * String, and types that can be interpreted as numeric (Integers, Float, Date, DateTime, UUID).
  */
-class FunctionReinterpret final : public IFunction
+class FunctionReinterpret : public IFunction
 {
 public:
     static constexpr auto name = "reinterpret";
@@ -160,30 +160,7 @@ public:
             }
             else if constexpr (std::is_same_v<FromType, ToType>)
             {
-                if constexpr (IsDataTypeDecimal<ToType>)
-                {
-                    /// Same physical type, but the requested scale may differ from the source scale
-                    /// (e.g. reinterpret(Decimal(38, 33), 'Decimal128(2)') keys on the same TypeIndex).
-                    /// reinterpret relabels the scale without touching the raw values, so a verbatim
-                    /// return would leave the column's scale diverging from result_type. Rebuild the
-                    /// column with result_type's scale when they differ.
-                    const auto & col_from = assert_cast<const typename ToType::ColumnType &>(*arguments[0].column);
-                    const auto & to_data_type = static_cast<const ToType &>(*result_type);
-                    if (col_from.getScale() == to_data_type.getScale())
-                    {
-                        result = arguments[0].column;
-                    }
-                    else
-                    {
-                        auto col_to = numericColumnCreateHelper<ToType>(to_data_type);
-                        col_to->getData().assign(col_from.getData());
-                        result = std::move(col_to);
-                    }
-                }
-                else
-                {
-                    result = arguments[0].column;
-                }
+                result = arguments[0].column;
 
                 return true;
             }
@@ -447,7 +424,7 @@ private:
 };
 
 template <typename ToDataType, typename Name>
-class FunctionReinterpretAs final : public IFunction
+class FunctionReinterpretAs : public IFunction
 {
 public:
     static constexpr auto name = Name::name;
@@ -485,7 +462,7 @@ public:
         else
             data_type = std::make_shared<ToDataType>();
 
-        ColumnPtr type_name_column = DataTypeString().createColumnConst(1, data_type->getName());
+        auto type_name_column = DataTypeString().createColumnConst(1, data_type->getName());
         ColumnWithTypeAndName type_column(type_name_column, std::make_shared<DataTypeString>(), "");
 
         ColumnsWithTypeAndName arguments_with_type

@@ -15,7 +15,7 @@ struct RangesInDataParts;
 struct StorageInMemoryMetadata;
 using StorageMetadataPtr = std::shared_ptr<const StorageInMemoryMetadata>;
 
-class LazyReadReplacingFinalSource final : public IProcessor
+class LazyReadReplacingFinalSource : public IProcessor
 {
 public:
     LazyReadReplacingFinalSource(

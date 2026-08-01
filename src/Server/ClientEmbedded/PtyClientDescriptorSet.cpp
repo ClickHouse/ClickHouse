@@ -65,7 +65,7 @@ PtyClientDescriptorSet::PtyClientDescriptorSet(const String & term_name_, int wi
     fd_sink.open(pty_slave.get(), boost::iostreams::never_close_handle);
 
     // disable signals from tty
-    struct termios tios{};
+    struct termios tios;
     if (tcgetattr(pty_slave.get(), &tios) == -1)
     {
         throw ErrnoException(ErrorCodes::SYSTEM_ERROR, "Cannot get termios from tty via tcgetattr");

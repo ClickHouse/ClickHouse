@@ -31,11 +31,9 @@
 #include <Storages/PartitionCommands.h>
 #include <Storages/ExecuteCommands.h>
 #include <Storages/StorageKeeperMap.h>
-#include <Storages/ColumnsDescription.h>
 #include <Storages/IStorage.h>
 #include <Storages/MergeTree/MergeTreeData.h>
 #include <Storages/MergeTree/MergeTreeSettings.h>
-#include <Storages/MergeTree/MergeTreeVirtualColumns.h>
 
 #include <Functions/UserDefined/UserDefinedSQLFunctionFactory.h>
 #include <Functions/UserDefined/UserDefinedSQLFunctionVisitor.h>
@@ -58,10 +56,7 @@ namespace Setting
     extern const SettingsSeconds lock_acquire_timeout;
     extern const SettingsAlterUpdateMode alter_update_mode;
     extern const SettingsBool enable_lightweight_update;
-    extern const SettingsBool validate_mutation_query;
     extern const SettingsTimezone session_timezone;
-    extern const SettingsUInt64 max_parser_depth;
-    extern const SettingsUInt64 max_parser_backtracks;
 }
 
 namespace ServerSetting
@@ -73,7 +68,7 @@ namespace ErrorCodes
 {
     extern const int LOGICAL_ERROR;
     extern const int NOT_IMPLEMENTED;
-    extern const int TABLE_IS_PERMANENTLY_READ_ONLY;
+    extern const int TABLE_IS_READ_ONLY;
     extern const int BAD_ARGUMENTS;
     extern const int UNKNOWN_TABLE;
     extern const int UNKNOWN_DATABASE;
@@ -127,12 +122,7 @@ CommandSegments parseAlterCommandSegments(const ASTAlterQuery & alter, const Sto
         {
             segments_holder.take<PartitionCommands>().push_back(std::move(partition_command.value()));
         }
-        else if (auto mutation_command = MutationCommand::parse(
-                     *command_ast,
-                     /* parse_alter_commands = */ false,
-                     /* with_pure_metadata_commands = */ false,
-                     settings[Setting::max_parser_depth],
-                     settings[Setting::max_parser_backtracks]))
+        else if (auto mutation_command = MutationCommand::parse(*command_ast))
         {
             if (mutation_command->type == MutationCommand::UPDATE || mutation_command->type == MutationCommand::DELETE)
             {
@@ -141,12 +131,7 @@ CommandSegments parseAlterCommandSegments(const ASTAlterQuery & alter, const Sto
                 if (rewritten_command_ast)
                 {
                     auto * new_alter_command = rewritten_command_ast->as<ASTAlterCommand>();
-                    mutation_command = MutationCommand::parse(
-                        *new_alter_command,
-                        /* parse_alter_commands = */ false,
-                        /* with_pure_metadata_commands = */ false,
-                        settings[Setting::max_parser_depth],
-                        settings[Setting::max_parser_backtracks]);
+                    mutation_command = MutationCommand::parse(*new_alter_command);
                     if (!mutation_command)
                         throw Exception(ErrorCodes::LOGICAL_ERROR,
                             "Alter command '{}' is rewritten to invalid command '{}'",
@@ -160,23 +145,17 @@ CommandSegments parseAlterCommandSegments(const ASTAlterQuery & alter, const Sto
             const auto & session_tz = settings[Setting::session_timezone].value;
             if (!session_tz.empty())
             {
-                auto source_alter = mutation_command->ast();
-                auto metadata_snapshot = table->getInMemoryMetadataPtr(context, true);
+                const auto & source_ast = *mutation_command->ast->as<ASTAlterCommand>();
                 auto tz_rewritten_ast = rewriteDateTimeLiteralsWithTimezone(
-                    *source_alter, metadata_snapshot->columns, session_tz);
+                    source_ast, table->getInMemoryMetadataPtr(context, true)->columns, session_tz);
                 if (tz_rewritten_ast)
                 {
                     auto * tz_alter_command = tz_rewritten_ast->as<ASTAlterCommand>();
-                    mutation_command = MutationCommand::parse(
-                        *tz_alter_command,
-                        /* parse_alter_commands = */ false,
-                        /* with_pure_metadata_commands = */ false,
-                        settings[Setting::max_parser_depth],
-                        settings[Setting::max_parser_backtracks]);
+                    mutation_command = MutationCommand::parse(*tz_alter_command);
                     if (!mutation_command)
                         throw Exception(ErrorCodes::LOGICAL_ERROR,
                             "Alter command '{}' is rewritten to invalid command '{}'",
-                            source_alter->formatForErrorMessage(), tz_rewritten_ast->formatForErrorMessage());
+                            source_ast.formatForErrorMessage(), tz_rewritten_ast->formatForErrorMessage());
                 }
             }
 
@@ -331,17 +310,8 @@ BlockIO runCommandSegments(CommandSegments & segments, const StoragePtr & table,
             {
                 auto metadata_snapshot = table->getInMemoryMetadataPtr(context, true);
                 table->checkMutationIsPossible(*mutation_commands, settings);
-                /// Replicated-storage non-determinism check must always run, even when
-                /// `validate_mutation_query=0` — bypassing it would let nondeterministic mutations
-                /// diverge replicas.  The heavier query-shape validation that constructs a full
-                /// `MutationsInterpreter` is gated by the setting, since invalid mutations may
-                /// reference not-yet-existing objects when the user opts out of validation.
-                MutationsInterpreter::validateNonDeterministicMutationsForStorage(table, *mutation_commands, context);
-                if (settings[Setting::validate_mutation_query])
-                {
-                    MutationsInterpreter::Settings mutation_settings(false);
-                    MutationsInterpreter(table, metadata_snapshot, *mutation_commands, context, mutation_settings).validate();
-                }
+                MutationsInterpreter::Settings mutation_settings(false);
+                MutationsInterpreter(table, metadata_snapshot, *mutation_commands, context, mutation_settings).validate();
                 table->mutate(*mutation_commands, context);
             }
         }
@@ -424,11 +394,11 @@ BlockIO InterpreterAlterQuery::executeToTable(const ASTAlterQuery & alter)
             throw Exception(ErrorCodes::BAD_ARGUMENTS, "Mutations with ON CLUSTER are not allowed for KeeperMap tables");
 
         DDLQueryOnClusterParams params;
-        params.access_to_check = getRequiredAccess(table);
+        params.access_to_check = getRequiredAccess();
         return executeDDLQueryOnCluster(query_ptr, getContext(), params);
     }
 
-    getContext()->checkAccess(getRequiredAccess(table));
+    getContext()->checkAccess(getRequiredAccess());
 
     if (!table_id)
         throw Exception(ErrorCodes::UNKNOWN_DATABASE, "Database {} does not exist", backQuoteIfNeed(alter.getDatabase()));
@@ -453,7 +423,7 @@ BlockIO InterpreterAlterQuery::executeToTable(const ASTAlterQuery & alter)
 
     checkStorageSupportsTransactionsIfNeeded(table, getContext());
     if (table->isStaticStorage())
-        throw Exception(ErrorCodes::TABLE_IS_PERMANENTLY_READ_ONLY, "Table is read-only");
+        throw Exception(ErrorCodes::TABLE_IS_READ_ONLY, "Table is read-only");
 
 #if CLICKHOUSE_CLOUD
     if (alter.isUnlockSnapshot())
@@ -492,8 +462,8 @@ BlockIO InterpreterAlterQuery::executeToTable(const ASTAlterQuery & alter)
 BlockIO InterpreterAlterQuery::executeToDatabase(const ASTAlterQuery & alter)
 {
     BlockIO res;
-    /// ALTER DATABASE has no table and no UPDATE commands, so the `_row_exists` marker check never applies.
-    getContext()->checkAccess(getRequiredAccess(nullptr));
+    getContext()->checkAccess(getRequiredAccess());
+    DatabasePtr database = DatabaseCatalog::instance().getDatabase(alter.getDatabase());
     AlterCommands alter_commands;
 
     for (const auto & child : alter.command_list->children)
@@ -508,18 +478,14 @@ BlockIO InterpreterAlterQuery::executeToDatabase(const ASTAlterQuery & alter)
     if (!alter.cluster.empty())
     {
         DDLQueryOnClusterParams params;
-        params.access_to_check = getRequiredAccess(nullptr);
+        params.access_to_check = getRequiredAccess();
         return executeDDLQueryOnCluster(query_ptr, getContext(), params);
     }
-
-    auto ddl_guard = (!alter.no_ddl_lock ? DatabaseCatalog::instance().getDDLGuard(alter.getDatabase(), "", nullptr) : nullptr);
-    DatabasePtr database = DatabaseCatalog::instance().getDatabase(alter.getDatabase());
 
 #if CLICKHOUSE_CLOUD
     bool managed_by_shared_catalog = SharedDatabaseCatalog::initialized() && SharedDatabaseCatalog::isDatabaseEngineSupported(database->getEngineName());
     if (managed_by_shared_catalog && !getContext()->getClientInfo().is_shared_catalog_internal)
     {
-        ddl_guard.reset();
         return SharedDatabaseCatalog::instance().tryExecuteDDLQuery(query_ptr, getContext());
     }
 #endif
@@ -555,65 +521,35 @@ BlockIO InterpreterAlterQuery::executeToDatabase(const ASTAlterQuery & alter)
     return res;
 }
 
-bool InterpreterAlterQuery::isRowExistsLightweightDeleteMarker(const StoragePtr & storage, const ContextPtr & context_)
-{
-    /// `_row_exists` is the hidden lightweight-delete marker only on storages that register it as a
-    /// virtual column (the MergeTree family). Testing merely for the absence of a physical `_row_exists`
-    /// column is too broad: on e.g. a `Memory` table `_row_exists` is not the marker, yet has no
-    /// physical column either, so a user could `ADD COLUMN _row_exists, UPDATE _row_exists = 0` and edit
-    /// a real physical column with only `ALTER DELETE`. `isVirtualColumn` is true only when `_row_exists`
-    /// is a registered virtual and not shadowed by a real column, which precisely identifies the marker.
-    /// A null storage (non-local ON CLUSTER target) fails closed -> treated as a regular column.
-    if (!storage)
-        return false;
-    const auto metadata_snapshot = storage->getInMemoryMetadataPtr(context_, false);
-    return metadata_snapshot->isVirtualColumn(RowExistsColumn::name);
-}
-
-AccessRightsElements InterpreterAlterQuery::getRequiredAccess(const StoragePtr & storage) const
+AccessRightsElements InterpreterAlterQuery::getRequiredAccess() const
 {
     AccessRightsElements required_access;
     const auto & alter = query_ptr->as<ASTAlterQuery &>();
-    const bool row_exists_is_marker = isRowExistsLightweightDeleteMarker(storage, getContext());
     for (const auto & child : alter.command_list->children)
-        required_access.append_range(
-            getRequiredAccessForCommand(child->as<ASTAlterCommand&>(), alter.getDatabase(), alter.getTable(), row_exists_is_marker));
+        required_access.append_range(getRequiredAccessForCommand(child->as<ASTAlterCommand&>(), alter.getDatabase(), alter.getTable()));
 
     return required_access;
 }
 
-AccessRightsElements InterpreterAlterQuery::getRequiredAccessForCommand(
-    const ASTAlterCommand & command, const String & database, const String & table, bool row_exists_is_lightweight_marker)
+AccessRightsElements InterpreterAlterQuery::getRequiredAccessForCommand(const ASTAlterCommand & command, const String & database, const String & table)
 {
     AccessRightsElements required_access;
 
     auto column_name = [&]() -> String { return getIdentifierName(command.column); };
     auto column_name_from_col_decl = [&]() -> std::string_view { return command.col_decl->as<ASTColumnDeclaration &>().name; };
+    auto column_names_from_update_assignments = [&]() -> std::vector<std::string_view>
+    {
+        std::vector<std::string_view> column_names;
+        for (const ASTPtr & assignment_ast : command.update_assignments->children)
+            column_names.emplace_back(assignment_ast->as<const ASTAssignment &>().column_name);
+        return column_names;
+    };
 
     switch (command.type)
     {
         case ASTAlterCommand::UPDATE:
         {
-            /// Setting the `_row_exists` lightweight-delete marker to 0 is a delete, not an update:
-            /// `DELETE FROM` rewrites to `ALTER ... UPDATE _row_exists = 0`. Govern that exact form by
-            /// ALTER DELETE so `DELETE FROM` needs only the documented ALTER DELETE privilege. Any other
-            /// assignment - including `_row_exists = <expr>` that resurrects/edits the deletion mask -
-            /// stays a real update requiring ALTER UPDATE. The shortcut applies only when `_row_exists`
-            /// is the hidden virtual marker (not an ordinary physical column on some other engine).
-            std::vector<std::string_view> updated_columns;
-            bool deletes_via_row_exists = false;
-            for (const ASTPtr & assignment_ast : command.update_assignments->children)
-            {
-                const auto & assignment = assignment_ast->as<const ASTAssignment &>();
-                if (row_exists_is_lightweight_marker && isLightweightDeleteAssignment(assignment))
-                    deletes_via_row_exists = true;
-                else
-                    updated_columns.emplace_back(assignment.column_name);
-            }
-            if (!updated_columns.empty())
-                required_access.emplace_back(AccessType::ALTER_UPDATE, database, table, updated_columns);
-            if (deletes_via_row_exists)
-                required_access.emplace_back(AccessType::ALTER_DELETE, database, table);
+            required_access.emplace_back(AccessType::ALTER_UPDATE, database, table, column_names_from_update_assignments());
             break;
         }
         case ASTAlterCommand::ADD_COLUMN:
@@ -706,11 +642,6 @@ AccessRightsElements InterpreterAlterQuery::getRequiredAccessForCommand(
         case ASTAlterCommand::DROP_CONSTRAINT:
         {
             required_access.emplace_back(AccessType::ALTER_DROP_CONSTRAINT, database, table);
-            break;
-        }
-        case ASTAlterCommand::MODIFY_CONSTRAINT:
-        {
-            required_access.emplace_back(AccessType::ALTER_MODIFY_CONSTRAINT, database, table);
             break;
         }
         case ASTAlterCommand::ADD_PROJECTION:
@@ -906,7 +837,6 @@ void InterpreterAlterQuery::extendQueryLogElemImpl(QueryLogElement & elem, const
     }
 }
 
-void registerInterpreterAlterQuery(InterpreterFactory & factory);
 void registerInterpreterAlterQuery(InterpreterFactory & factory)
 {
     auto create_fn = [] (const InterpreterFactory::Arguments & args)

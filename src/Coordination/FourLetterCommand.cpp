@@ -333,12 +333,14 @@ String MonitorCommand::run()
     print(ret, "latest_snapshot_size", state_machine.getLatestSnapshotSize());
 
 #if defined(OS_LINUX) || defined(OS_DARWIN)
-    print(ret, "open_file_descriptor_count", getCurrentProcessFDCount());
-    auto max_file_descriptor_count = getMaxFileDescriptorCount();
-    if (max_file_descriptor_count.has_value())
-        print(ret, "max_file_descriptor_count", *max_file_descriptor_count);
-    else
-        print(ret, "max_file_descriptor_count", -1);
+    /// An undetermined value is reported as the textual `-1`, as ZooKeeper does.
+    /// It must not go through the `uint64_t` overload of `print`: `-1` would wrap around
+    /// to 2^64 - 1, which is indistinguishable from an unlimited `RLIMIT_NOFILE` (`RLIM_INFINITY`).
+    const Int64 open_file_descriptor_count = getCurrentProcessFDCount();
+    print(ret, "open_file_descriptor_count", toString(open_file_descriptor_count));
+
+    const auto max_file_descriptor_count = getMaxFileDescriptorCount();
+    print(ret, "max_file_descriptor_count", max_file_descriptor_count.has_value() ? toString(*max_file_descriptor_count) : String("-1"));
 #endif
 
     if (keeper_info.is_leader)
@@ -656,7 +658,7 @@ String YieldLeadershipCommand::run()
 
 #if USE_JEMALLOC
 
-static void printToString(void * output, const char * data)
+void printToString(void * output, const char * data)
 {
     std::string * output_data = reinterpret_cast<std::string *>(output);
     *output_data += std::string(data);
@@ -702,7 +704,7 @@ String ProfileEventsCommand::run()
 
     for (auto i : ProfileEvents::keeper_profile_events)
     {
-        const auto counter = ProfileEvents::global_counters[i];
+        const auto counter = ProfileEvents::global_counters[i].load(std::memory_order_relaxed);
         std::string metric_name{ProfileEvents::getName(static_cast<ProfileEvents::Event>(i))};
         std::string metric_doc{ProfileEvents::getDocumentation(static_cast<ProfileEvents::Event>(i))};
         append(metric_name, counter, metric_doc);

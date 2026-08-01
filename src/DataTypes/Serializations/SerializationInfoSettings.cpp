@@ -11,7 +11,6 @@ namespace DB
 SerializationInfoSettings::SerializationInfoSettings(
     double ratio_of_defaults_for_sparse_,
     bool choose_kind_,
-    bool compute_exact_num_defaults_,
     MergeTreeSerializationInfoVersion version_,
     MergeTreeStringSerializationVersion string_serialization_version_,
     MergeTreeNullableSerializationVersion nullable_serialization_version_,
@@ -19,7 +18,6 @@ SerializationInfoSettings::SerializationInfoSettings(
     bool propagate_types_serialization_versions_to_nested_types_)
     : ratio_of_defaults_for_sparse(ratio_of_defaults_for_sparse_)
     , choose_kind(choose_kind_)
-    , compute_exact_num_defaults(compute_exact_num_defaults_)
     , version(version_)
     , string_serialization_version(string_serialization_version_)
     , nullable_serialization_version(nullable_serialization_version_)
@@ -70,7 +68,6 @@ void SerializationInfoSettings::updateHash(SipHash & hash) const
 {
     hash.update(ratio_of_defaults_for_sparse);
     hash.update(choose_kind);
-    hash.update(compute_exact_num_defaults);
     hash.update(static_cast<int>(version));
     hash.update(static_cast<int>(string_serialization_version));
     hash.update(static_cast<int>(nullable_serialization_version));

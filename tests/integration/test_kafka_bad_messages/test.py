@@ -1,10 +1,4 @@
-import logging
-import time
-
-from kafka import KafkaAdminClient
-import pytest
-
-from helpers.cluster import ClickHouseCluster
+from helpers.kafka.common_direct import *
 import helpers.kafka.common as k
 
 cluster = ClickHouseCluster(__file__)
@@ -294,7 +288,7 @@ def test_bad_messages_to_mv(kafka_cluster, max_retries=20):
     k.kafka_create_topic(admin_client, "tomv")
 
     instance.query(
-        """
+        f"""
         DROP TABLE IF EXISTS kafka_materialized;
         DROP TABLE IF EXISTS kafka_consumer;
         DROP TABLE IF EXISTS kafka1;
