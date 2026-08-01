@@ -62,6 +62,19 @@ SELECT 'insert projection adds file syncs',
      WHERE current_database = currentDatabase() AND query_kind = 'Insert'
        AND query NOT LIKE '%query_log%' AND query LIKE '%t\_plain%' AND type = 'QueryFinish');
 
+-- Syncing the files inside `<projection>.proj` does not make the directory's own entries durable,
+-- so the projection directory must be fsynced too. `DirectorySync` counts directory fsyncs only
+-- (`LocalDirectorySyncGuard` is its sole source), so the projection table must report strictly
+-- more of them than the identical plain table, which fsyncs only its own part directories.
+SELECT 'insert projection adds directory syncs',
+    (SELECT max(ProfileEvents['DirectorySync']) FROM system.query_log
+     WHERE current_database = currentDatabase() AND query_kind = 'Insert'
+       AND query NOT LIKE '%query_log%' AND query LIKE '%t\_proj%' AND type = 'QueryFinish')
+    >
+    (SELECT max(ProfileEvents['DirectorySync']) FROM system.query_log
+     WHERE current_database = currentDatabase() AND query_kind = 'Insert'
+       AND query NOT LIKE '%query_log%' AND query LIKE '%t\_plain%' AND type = 'QueryFinish');
+
 -- The projection merge must fsync strictly more files than the identical plain merge.
 SELECT 'merge projection adds file syncs',
     (SELECT ProfileEvents['FileSync'] FROM system.query_log

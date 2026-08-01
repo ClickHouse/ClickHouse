@@ -1,4 +1,5 @@
 insert projection adds file syncs	1
+insert projection adds directory syncs	1
 merge projection adds file syncs	1
 rows	10000
 check

@@ -1173,6 +1173,14 @@ MergeTreeTemporaryPartPtr MergeTreeDataWriter::writeProjectionPartImpl(
 
     projection_part_storage->createDirectories();
 
+    /// Destroyed on return, after every file below has been created, so the fsync sees a complete
+    /// directory. Syncing the parent part directory only persists the `<projection>.proj` entry
+    /// itself, not the entries inside it, so without this the projection can come back empty after
+    /// a power loss even though all of its files were fsynced. Mirrors writeTempPartImpl.
+    SyncGuardPtr projection_sync_guard;
+    if ((*data_settings)[MergeTreeSetting::fsync_part_directory])
+        projection_sync_guard = projection_part_storage->getDirectorySyncGuard();
+
     /// If we need to calculate some columns to sort.
     if (metadata_snapshot->hasSortingKey() || metadata_snapshot->hasSecondaryIndices())
     {
