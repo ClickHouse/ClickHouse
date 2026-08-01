@@ -130,8 +130,10 @@ SELECT count() = 0 FROM (EXPLAIN PLAN actions = 1 SELECT count() FROM t_count_aj
 -- Pin prefer_localhost_replica: with the remote path the initiator plan is a bare ReadFromRemote, so
 -- the ARRAY JOIN step is only observable in the local-replica plan.
 SELECT count() > 0 FROM (EXPLAIN PLAN actions = 1 SELECT count() FROM t_count_aj_dist ARRAY JOIN arr SETTINGS prefer_localhost_replica = 1) WHERE explain ILIKE '%ARRAY JOIN%';
--- Declining at the initiator costs nothing: the shard re-analyzes the untouched query and rewrites it
--- there, where the declared type is the one actually read.
+-- A shard does not recover the optimization: a secondary query runs only the first four passes
+-- (QueryTreePassManager::runOnlyResolve) and this pass is the sixth, so a distributed query reads the
+-- whole array. Declining is still correct: the initiator's declared type is not the shard's.
+-- This row pins the LOCAL path over the same underlying table, which does optimize.
 SELECT count() > 0 FROM (EXPLAIN PLAN actions = 1 SELECT count() FROM t_count_aj_shard ARRAY JOIN arr) WHERE explain ILIKE '%arr.size0%';
 DROP TABLE t_count_aj_dist;
 DROP TABLE t_count_aj_shard;
@@ -232,6 +234,26 @@ CREATE TABLE t_caj_alias_good ENGINE = Alias(currentDatabase(), 't_caj_mo');
 SELECT count() FROM t_caj_alias_good ARRAY JOIN arr;
 SELECT count() > 0 FROM (EXPLAIN PLAN actions = 1 SELECT count() FROM t_caj_alias_good ARRAY JOIN arr) WHERE explain ILIKE '%arr.size0%';
 SELECT count() = 0 FROM (EXPLAIN PLAN actions = 1 SELECT count() FROM t_caj_alias_good ARRAY JOIN arr) WHERE explain ILIKE '%ARRAY JOIN%';
+
+SELECT 'A table function proxy appends a conversion after reading a differently structured nested storage, so its declared columns are deliberately allowed to differ from the ones the read executes against. Resolving through it must therefore check the resolved declared type, not just decline the known wrapper engines.';
+DROP TABLE IF EXISTS t_caj_tfp_bad;
+DROP TABLE IF EXISTS t_caj_tfp_ok;
+-- The proxy declares arr Array(UInt64) over a nested `values` storage whose arr is a String, so
+-- arr.size0 does not exist where the read executes and the conversion is what reconciles the two.
+CREATE TABLE t_caj_tfp_bad (arr Array(UInt64)) AS values('arr String', '[4,5,6]');
+-- Both arms are scalar subqueries so the outer projection stays a plain count(). Written as
+-- `count() = (SELECT ...) FROM ... ARRAY JOIN` the projection is equals(), which this pass declines
+-- outright, so such a row is green whether or not the rewrite fired.
+SELECT (SELECT count() FROM t_caj_tfp_bad ARRAY JOIN arr) = (SELECT count() FROM t_caj_tfp_bad ARRAY JOIN arr SETTINGS optimize_functions_to_subcolumns = 0);
+SELECT count() > 0 FROM (EXPLAIN PLAN actions = 1 SELECT count() FROM t_caj_tfp_bad ARRAY JOIN arr) WHERE explain ILIKE '%ARRAY JOIN%';
+SELECT count() = 0 FROM (EXPLAIN PLAN actions = 1 SELECT count() FROM t_caj_tfp_bad ARRAY JOIN arr) WHERE explain ILIKE '%arr.size0%';
+SELECT count() = 0 FROM (EXPLAIN PLAN actions = 1 SELECT count() FROM t_caj_tfp_bad ARRAY JOIN arr) WHERE explain ILIKE '%sum(length%';
+-- Must not regress: the decline costs the optimization but never the answer, so the same construct
+-- with a matching declared type still counts correctly. Whether it also optimizes is not asserted.
+CREATE TABLE t_caj_tfp_ok (arr Array(UInt64)) AS values('arr Array(UInt64)', [1, 2]);
+SELECT (SELECT count() FROM t_caj_tfp_ok ARRAY JOIN arr) = (SELECT count() FROM t_caj_tfp_ok ARRAY JOIN arr SETTINGS optimize_functions_to_subcolumns = 0);
+DROP TABLE t_caj_tfp_ok;
+DROP TABLE t_caj_tfp_bad;
 DROP TABLE t_caj_alias_good;
 DROP TABLE t_caj_alias_bad;
 DROP TABLE t_caj_mnh_o;

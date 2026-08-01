@@ -80,6 +80,12 @@ Alias forwards both supportsOptimizationToSubcolumns() and the read, so the per-
 5
 1
 1
+A table function proxy appends a conversion after reading a differently structured nested storage, so its declared columns are deliberately allowed to differ from the ones the read executes against. Resolving through it must therefore check the resolved declared type, not just decline the known wrapper engines.
+1
+1
+1
+1
+1
 Buffer, View and MaterializedView satisfy the subcolumn-capability check by forwarding it to their destination, target or inner query, and none of them is a wrapper the resolution loop unwraps, so the read can execute against a schema this analysis never saw. The rewrite must decline on all three and stay equal to the optimization-off result.
 1
 1
