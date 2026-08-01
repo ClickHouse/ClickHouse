@@ -26,9 +26,7 @@ Los roles básicos de la Consola SQL pueden asignarse a usuarios con permisos Se
 Para crear un rol personalizado para un usuario de la Consola SQL y asignarle un rol general, ejecuta los siguientes comandos. La dirección de correo electrónico debe coincidir con la dirección de correo electrónico del usuario en la consola.
 
 <Steps>
-  <Step>
-    #### Crear `database_developer` y otorgar permisos
-
+  <Step title={<>Crear <code>database_developer</code> y otorgar permisos</>} id="create-role-grant-permissions">
     Crea el rol `database_developer` y otórgale permisos `SHOW`, `CREATE`, `ALTER` y `DELETE`.
 
     ```sql
@@ -40,9 +38,7 @@ Para crear un rol personalizado para un usuario de la Consola SQL y asignarle un
     ```
   </Step>
 
-  <Step>
-    #### Crear el rol de usuario de la Consola SQL
-
+  <Step title="Crear el rol de usuario de la Consola SQL" id="create-sql-console-user-role">
     Crea un rol para el usuario de la Consola SQL my.user@domain.com y asígnale el rol database&#95;developer.
 
     ```sql
@@ -51,9 +47,7 @@ Para crear un rol personalizado para un usuario de la Consola SQL y asignarle un
     ```
   </Step>
 
-  <Step>
-    #### El usuario recibe el nuevo rol cuando usa la Consola SQL
-
+  <Step title="El usuario recibe el nuevo rol cuando usa la Consola SQL" id="use-assigned-new-role">
     Al usuario se le asignará el rol asociado a su dirección de correo electrónico cada vez que use la Consola SQL.
   </Step>
 </Steps>
@@ -98,9 +92,9 @@ Para obtener una guía detallada con ejemplos, consulta [Cómo conectarse a Clic
 
 Configure lo siguiente en los servicios y las bases de datos mediante la sentencia SQL [GRANT](/es/reference/statements/grant).
 
-| Role    | Description                                                                |
-| :------ | :------------------------------------------------------------------------- |
-| Default | Acceso administrativo completo a los servicios                             |
+| Role    | Description                                                                   |
+| :------ | :---------------------------------------------------------------------------- |
+| Default | Acceso administrativo completo a los servicios                                |
 | Custom  | Configure mediante la sentencia SQL [`GRANT`](/es/reference/statements/grant) |
 
 * Los roles de base de datos son aditivos. Esto significa que, si un usuario es miembro de dos roles, tendrá el nivel de acceso más alto concedido por cualquiera de ellos. No pierde acceso al añadir roles.
@@ -137,9 +131,7 @@ Puede usar un generador de hash SHA256 o una función como `hashlib` en Python p
 El siguiente proceso puede utilizarse para generar un listado completo de acceso en la consola SQL y en las bases de datos de su organización.
 
 <Steps>
-  <Step>
-    #### Obtener una lista de todos los permisos de la base de datos
-
+  <Step title="Obtener una lista de todos los permisos de la base de datos" id="get-a-list-of-all-database-grants">
     Ejecute las siguientes consultas para obtener una lista de todos los permisos de la base de datos.
 
     ```sql
@@ -165,12 +157,10 @@ El siguiente proceso puede utilizarse para generar un listado completo de acceso
     ```
   </Step>
 
-  <Step>
-    #### Asociar la lista de permisos a los usuarios de Console con acceso a la consola SQL
+  <Step title="Asociar la lista de permisos a los usuarios de la consola con acceso a la consola SQL" id="associate-grant-list-to-console-users-with-access-to-sql-console">
+    Asocie esta lista con los usuarios de la consola que tienen acceso a la consola SQL.
 
-    Asocie esta lista con los usuarios de Console que tienen acceso a la consola SQL.
-
-    a. Vaya a Console.
+    a. Vaya a la consola.
 
     b. Seleccione el servicio correspondiente.
 

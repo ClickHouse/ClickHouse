@@ -103,39 +103,38 @@ namespace
         }
     }
 
-    template<typename Node>
-    void writeNode(const Node & node, SnapshotVersion version, WriteBuffer & out)
+    void writeNode(std::string_view data, const KeeperNodeStats & stats, SnapshotVersion version, WriteBuffer & out)
     {
-        writeBinary(node.getData(), out);
+        writeBinary(data, out);
 
         /// Serialize ACL
         if (version >= SnapshotVersion::V7)
-            writeBinary(node.acl_id, out);
+            writeBinary(stats.acl_id, out);
         else
-            writeBinary(static_cast<uint64_t>(node.acl_id), out);
+            writeBinary(static_cast<uint64_t>(stats.acl_id), out);
         /// Write is_sequential for backwards compatibility
         if (version < SnapshotVersion::V6)
             writeBinary(false, out);
 
         /// Serialize stat
-        writeBinary(node.stats.czxid, out);
-        writeBinary(node.stats.mzxid, out);
-        writeBinary(node.stats.ctime(), out);
-        writeBinary(node.stats.mtime, out);
-        writeBinary(node.stats.version, out);
-        writeBinary(node.stats.cversion, out);
-        writeBinary(node.stats.aversion, out);
-        writeBinary(node.stats.ephemeralOwner(), out);
+        writeBinary(stats.czxid, out);
+        writeBinary(stats.mzxid, out);
+        writeBinary(stats.getCTime(), out);
+        writeBinary(stats.mtime, out);
+        writeBinary(stats.version, out);
+        writeBinary(stats.cversion, out);
+        writeBinary(stats.aversion, out);
+        writeBinary(stats.getEphemeralOwner(), out);
         if (version < SnapshotVersion::V6)
-            writeBinary(static_cast<int32_t>(node.stats.data_size), out);
-        writeBinary(node.numChildren(), out);
-        writeBinary(node.stats.pzxid, out);
+            writeBinary(static_cast<int32_t>(stats.data_size), out);
+        writeBinary(stats.getNumChildren(), out);
+        writeBinary(stats.pzxid, out);
 
         if (version >= SnapshotVersion::V7)
-            writeBinary(node.stats.seqNum(), out);
+            writeBinary(stats.getSeqNum(), out);
         else
         {
-            auto seq_num = node.stats.seqNum();
+            auto seq_num = stats.getSeqNum();
             if (seq_num < std::numeric_limits<int32_t>::min() || seq_num > std::numeric_limits<int32_t>::max())
                 throw Exception(ErrorCodes::KEEPER_EXCEPTION,
                     "Sequential node counter {} overflows int32, upgrade to snapshot version >= V7", seq_num);
@@ -143,140 +142,16 @@ namespace
         }
 
         if (version >= SnapshotVersion::V4 && version <= SnapshotVersion::V5)
-            writeBinary(node.sizeInBytes(), out);
-
-        if (version >= SnapshotVersion::V8)
         {
-            writeBinary(node.stats.isTTL(), out);
-            if (node.stats.isTTL())
-                writeBinary(node.stats.ttl(), out);
-        }
-    }
-
-    template<typename Node>
-    void readNode(Node & node, ReadBuffer & in, SnapshotVersion version, ACLMap & acl_map, bool cleanup_acl)
-    {
-        readVarUInt(node.stats.data_size, in);
-        if (node.stats.data_size != 0)
-        {
-            node.data = std::unique_ptr<char[]>(new char[node.stats.data_size]);
-            in.readStrict(node.data.get(), node.stats.data_size);
-        }
-
-        bool add_usage = true;
-        if (version >= SnapshotVersion::V7)
-        {
-            readBinary(node.acl_id, in);
-
-            if (cleanup_acl)
-                node.acl_id = 0;
-        }
-        else if (version >= SnapshotVersion::V1)
-        {
-            /// V1-V6 stored acl_id as uint64_t
-            uint64_t acl_id_64 = 0;
-            readBinary(acl_id_64, in);
-
-            /// Some strange ACL ID during deserialization from ZooKeeper
-            if (acl_id_64 == std::numeric_limits<uint64_t>::max())
-                acl_id_64 = 0;
-
-            chassert(acl_id_64 <= std::numeric_limits<ACLId>::max());
-            node.acl_id = static_cast<ACLId>(acl_id_64);
-
-            if (cleanup_acl)
-                node.acl_id = 0;
-        }
-        else if (version == SnapshotVersion::V0)
-        {
-            /// Deserialize ACL
-            size_t acls_size = 0;
-            readBinary(acls_size, in);
-            Coordination::ACLs acls;
-            for (size_t i = 0; i < acls_size; ++i)
-            {
-                Coordination::ACL acl;
-                readBinary(acl.permissions, in);
-                readBinary(acl.scheme, in);
-                readBinary(acl.id, in);
-                acls.push_back(acl);
-            }
-
-            if (!cleanup_acl)
-            {
-                node.acl_id = acl_map.convertACLs(acls);
-                add_usage = false;
-            }
-        }
-
-        if (add_usage)
-            acl_map.addUsage(node.acl_id);
-
-        if (version < SnapshotVersion::V6)
-        {
-            bool is_sequential = false;
-            readBinary(is_sequential, in);
-        }
-
-        /// Deserialize stat
-        readBinary(node.stats.czxid, in);
-        readBinary(node.stats.mzxid, in);
-        int64_t ctime = 0;
-        readBinary(ctime, in);
-        node.stats.setCtime(ctime);
-        readBinary(node.stats.mtime, in);
-        readBinary(node.stats.version, in);
-        readBinary(node.stats.cversion, in);
-        readBinary(node.stats.aversion, in);
-        int64_t ephemeral_owner = 0;
-        readBinary(ephemeral_owner, in);
-        if (ephemeral_owner == std::numeric_limits<int64_t>::min())
-            node.stats.setContainer();
-        else if (ephemeral_owner != 0)
-            node.stats.setEphemeralOwner(ephemeral_owner);
-
-        if (version < SnapshotVersion::V6)
-        {
-            int32_t data_length = 0;
-            readBinary(data_length, in);
-        }
-        int32_t num_children = 0;
-        readBinary(num_children, in);
-        node.setNumChildren(num_children);
-
-        readBinary(node.stats.pzxid, in);
-
-        if (version >= SnapshotVersion::V7)
-        {
-            int64_t seq_num = 0;
-            readBinary(seq_num, in);
-            if (!node.stats.isEphemeral())
-                node.stats.setSeqNum(seq_num);
-        }
-        else
-        {
-            int32_t seq_num = 0;
-            readBinary(seq_num, in);
-            if (!node.stats.isEphemeral())
-                node.stats.setSeqNum(seq_num);
-        }
-
-        if (version >= SnapshotVersion::V4 && version <= SnapshotVersion::V5)
-        {
-            uint64_t size_bytes = 0;
-            readBinary(size_bytes, in);
+            size_t approx_size_in_memory = sizeof(KeeperNodeStats) + stats.data_size + stats.getNumChildren() * 20;
+            writeBinary(approx_size_in_memory, out);
         }
 
         if (version >= SnapshotVersion::V8)
         {
-            bool has_ttl = false;
-            readBinary(has_ttl, in);
-            if (has_ttl)
-            {
-                int64_t ttl_ms = 0;
-                readBinary(ttl_ms, in);
-                node.stats.setTTL(ttl_ms);
-            }
+            writeBinary(stats.isTTL(), out);
+            if (stats.isTTL())
+                writeBinary(stats.getTTL(), out);
         }
     }
 
@@ -363,40 +238,28 @@ void KeeperStorageSnapshot::serialize(const KeeperStorageSnapshot & snapshot, Wr
     }
 
     /// Serialize data tree
-    writeBinary(snapshot.snapshot_container_size - keeper_context->getSystemNodesWithData().size(), out);
-    size_t counter = 0;
-    for (auto it = snapshot.begin; counter < snapshot.snapshot_container_size; ++counter)
+    writeBinary(snapshot.node_stream->node_count - keeper_context->getSystemNodesWithData().size(), out);
+    std::string_view node_path;
+    std::string_view node_data;
+    KeeperNodeStats node_stats;
+    size_t nodes_seen = 0;
+    while (snapshot.node_stream->next(node_path, node_data, node_stats))
     {
-        const auto & path = it->key;
-
+        ++nodes_seen;
         // write only the root system path because of digest
-        if (Coordination::matchPath(path, keeper_system_path) == Coordination::PathMatchResult::IS_CHILD)
-        {
-            if (counter == snapshot.snapshot_container_size - 1)
-                break;
-
-            ++it;
+        if (Coordination::matchPath(node_path, keeper_system_path) == Coordination::PathMatchResult::IS_CHILD)
             continue;
-        }
-
-        const auto & node = it->value;
 
         /// (This is guaranteed because KeeperStorageSnapshot constructor is called with nuraft's
         ///  commit_lock_ held, and therefore storage can't change between when we get storage->zxid
-        ///  and when we call storage->enableSnapshotMode().)
-        if (node.stats.mzxid > snapshot.zxid)
-            throw Exception(ErrorCodes::LOGICAL_ERROR, "Trying to serialize node with mzxid {}, but last snapshot index {}", node.stats.mzxid, snapshot.zxid);
+        ///  and when we call storage->beginWritingSnapshot().)
+        if (node_stats.mzxid > snapshot.zxid)
+            throw Exception(ErrorCodes::LOGICAL_ERROR, "Trying to serialize node with mzxid {}, but last snapshot index {}", node_stats.mzxid, snapshot.zxid);
 
-        writeBinary(path, out);
-        writeNode(node, snapshot.version, out);
-
-        /// Last iteration: check and exit here without iterator increment. Otherwise
-        /// false positive race condition on list end is possible.
-        if (counter == snapshot.snapshot_container_size - 1)
-            break;
-
-        ++it;
+        writeBinary(node_path, out);
+        writeNode(node_data, node_stats, snapshot.version, out);
     }
+    chassert(nodes_seen == snapshot.node_stream->node_count);
 
     /// Session must be saved in a sorted order,
     /// otherwise snapshots will be different
@@ -434,279 +297,6 @@ void KeeperStorageSnapshot::serialize(const KeeperStorageSnapshot & snapshot, Wr
     }
 }
 
-void KeeperStorageSnapshot::deserialize(
-    SnapshotDeserializationResult & deserialization_result,
-    ReadBuffer & in,
-    KeeperContextPtr keeper_context,
-    bool load_full_storage) TSA_NO_THREAD_SAFETY_ANALYSIS
-{
-    uint8_t version = 0;
-    readBinary(version, in);
-    SnapshotVersion current_version = static_cast<SnapshotVersion>(version);
-    if (current_version > MAX_SUPPORTED_SNAPSHOT_VERSION)
-        throw Exception(ErrorCodes::UNKNOWN_FORMAT_VERSION, "Unsupported snapshot version {}", version);
-
-    deserialization_result.snapshot_meta = deserializeSnapshotMetadata(in);
-    KeeperStorage & storage = *deserialization_result.storage;
-
-    bool recalculate_digest = keeper_context->digestEnabled();
-    if (version >= SnapshotVersion::V5)
-    {
-        readBinary(storage.zxid, in);
-        uint8_t digest_version = 0;
-        readBinary(digest_version, in);
-        if (digest_version != static_cast<uint8_t>(KeeperDigestVersion::NO_DIGEST))
-        {
-            uint64_t nodes_digest = 0;
-            readBinary(nodes_digest, in);
-            if (digest_version == static_cast<uint8_t>(KEEPER_CURRENT_DIGEST_VERSION))
-            {
-                storage.nodes_digest = nodes_digest;
-                recalculate_digest = false;
-            }
-        }
-
-        storage.old_snapshot_zxid = 0;
-    }
-    else
-    {
-        storage.zxid = deserialization_result.snapshot_meta->get_last_log_idx();
-        storage.old_snapshot_zxid = storage.zxid;
-    }
-
-    int64_t session_id = 0;
-    readBinary(session_id, in);
-
-    storage.session_id_counter = session_id;
-
-    /// Before V1 we serialized ACL without acl_map
-    if (current_version >= SnapshotVersion::V1)
-    {
-        size_t acls_map_size = 0;
-
-        readBinary(acls_map_size, in);
-        size_t current_map_size = 0;
-        while (current_map_size < acls_map_size)
-        {
-            ACLId acl_id = 0;
-            if (current_version >= SnapshotVersion::V7)
-            {
-                readBinary(acl_id, in);
-            }
-            else
-            {
-                /// V1-V6 stored acl_id as uint64_t (8 bytes)
-                uint64_t acl_id_64 = 0;
-                readBinary(acl_id_64, in);
-                chassert(acl_id_64 <= std::numeric_limits<ACLId>::max());
-                acl_id = static_cast<ACLId>(acl_id_64);
-            }
-
-            size_t acls_size = 0;
-            readBinary(acls_size, in);
-            Coordination::ACLs acls;
-            for (size_t i = 0; i < acls_size; ++i)
-            {
-                Coordination::ACL acl;
-                readBinary(acl.permissions, in);
-                readBinary(acl.scheme, in);
-                readBinary(acl.id, in);
-                acls.push_back(acl);
-            }
-
-            if (!keeper_context->shouldBlockACL())
-                storage.acl_map.addMapping(acl_id, acls);
-            current_map_size++;
-        }
-    }
-
-    size_t snapshot_container_size = 0;
-    readBinary(snapshot_container_size, in);
-    storage.container.reserve(snapshot_container_size);
-
-    if (recalculate_digest)
-        storage.nodes_digest = 0;
-
-    for (size_t nodes_read = 0; nodes_read < snapshot_container_size; ++nodes_read)
-    {
-        size_t path_size = 0;
-        readVarUInt(path_size, in);
-        chassert(path_size != 0);
-        auto path_data = storage.container.allocateKey(path_size);
-        in.readStrict(path_data.get(), path_size);
-        std::string_view path{path_data.get(), path_size};
-
-        typename KeeperStorage::Node node{};
-        readNode(node, in, current_version, storage.acl_map, keeper_context->shouldBlockACL());
-
-        if (!load_full_storage)
-        {
-            deserialization_result.paths.push_back(std::string{path});
-            continue;
-        }
-
-        using enum Coordination::PathMatchResult;
-        auto match_result = Coordination::matchPath(path, keeper_system_path);
-
-        const auto get_error_msg = [&]
-        {
-            return fmt::format("Cannot read node on path {} from a snapshot because it is used as a system node", path);
-        };
-
-        if (match_result == IS_CHILD)
-        {
-            if (keeper_context->ignoreSystemPathOnStartup() || keeper_context->getServerState() != KeeperContext::Phase::INIT)
-            {
-                LOG_ERROR(getLogger("KeeperSnapshotManager"), "{}. Ignoring it", get_error_msg());
-                continue;
-            }
-            throw Exception(
-                ErrorCodes::LOGICAL_ERROR,
-                "{}. Ignoring it can lead to data loss. "
-                "If you still want to ignore it, you can set 'keeper_server.ignore_system_path_on_startup' to true",
-                get_error_msg());
-        }
-        if (match_result == EXACT)
-        {
-            if (!node.empty())
-            {
-                if (keeper_context->ignoreSystemPathOnStartup() || keeper_context->getServerState() != KeeperContext::Phase::INIT)
-                {
-                    LOG_ERROR(getLogger("KeeperSnapshotManager"), "{}. Ignoring it", get_error_msg());
-                    node = typename KeeperStorage::Node{};
-                }
-                else
-                    throw Exception(
-                        ErrorCodes::LOGICAL_ERROR,
-                        "{}. Ignoring it can lead to data loss. "
-                        "If you still want to ignore it, you can set 'keeper_server.ignore_system_path_on_startup' to true",
-                        get_error_msg());
-            }
-        }
-
-        auto ephemeral_owner = node.stats.ephemeralOwner();
-        if (!node.stats.isEphemeral() && node.numChildren() > 0)
-            node.getChildren().reserve(node.numChildren());
-
-        if (node.stats.isContainer())
-        {
-            storage.container_paths.insert(std::string{path});
-            storage.committed_container_nodes.fetch_add(1);
-        }
-        else if (node.stats.isEphemeral())
-        {
-            storage.committed_ephemerals[ephemeral_owner].insert(std::string{path});
-            ++storage.committed_ephemeral_nodes;
-        }
-
-        if (recalculate_digest)
-            storage.nodes_digest += node.getDigest(path);
-
-        if (node.stats.isTTL())
-        {
-            storage.ttl_paths.insert(std::string{path});
-            storage.committed_ttl_nodes.fetch_add(1);
-        }
-
-        storage.container.insertOrReplace(std::move(path_data), path_size, std::move(node));
-    }
-
-    /// The snapshot's ACL map may contain ACLs that are not referenced by any node, e.g. ACLs
-    /// that were referenced only by uncommitted nodes.
-    storage.acl_map.removeUnusedACLs();
-
-    {
-        LOG_TRACE(getLogger("KeeperSnapshotManager"), "Building structure for children nodes");
-
-        for (const auto & itr : storage.container)
-        {
-            if (itr.key != "/")
-            {
-                auto parent_path = Coordination::parentNodePath(itr.key);
-                storage.container.updateValue(
-                    parent_path, [path = itr.key](typename KeeperStorage::Node & value) { value.addChild(Coordination::getBaseNodeName(path)); });
-            }
-        }
-
-        for (const auto & itr : storage.container)
-        {
-            if (itr.key != "/")
-            {
-                if (itr.value.numChildren() != static_cast<int32_t>(itr.value.getChildren().size()))
-                {
-#ifdef NDEBUG
-                    /// TODO (alesapin) remove this, it should be always CORRUPTED_DATA.
-                    LOG_ERROR(
-                        getLogger("KeeperSnapshotManager"),
-                        "Children counter in stat.numChildren {}"
-                        " is different from actual children size {} for node {}",
-                        itr.value.numChildren(),
-                        itr.value.getChildren().size(),
-                        itr.key);
-#else
-                    throw Exception(
-                        ErrorCodes::LOGICAL_ERROR,
-                        "Children counter in stat.numChildren {}"
-                        " is different from actual children size {} for node {}",
-                        itr.value.numChildren(),
-                        itr.value.getChildren().size(),
-                        itr.key);
-#endif
-                }
-            }
-        }
-    }
-
-    size_t active_sessions_size = 0;
-    readBinary(active_sessions_size, in);
-
-    size_t current_session_size = 0;
-    while (current_session_size < active_sessions_size)
-    {
-        int64_t active_session_id = 0;
-        int64_t timeout = 0;
-        readBinary(active_session_id, in);
-        readBinary(timeout, in);
-        storage.addSessionID(active_session_id, timeout);
-
-        if (current_version >= SnapshotVersion::V1)
-        {
-            size_t session_auths_size = 0;
-            readBinary(session_auths_size, in);
-
-            typename KeeperStorage::AuthIDs ids;
-            size_t session_auth_counter = 0;
-            while (session_auth_counter < session_auths_size)
-            {
-                String scheme;
-                String id;
-                readBinary(scheme, in);
-                readBinary(id, in);
-                ids.emplace_back(typename KeeperStorage::AuthID{scheme, id});
-
-                session_auth_counter++;
-            }
-            if (!ids.empty())
-                storage.committed_session_and_auth[active_session_id] = ids;
-        }
-        current_session_size++;
-    }
-
-    /// Optional cluster config
-    ClusterConfigPtr cluster_config = nullptr;
-    if (!in.eof())
-    {
-        size_t data_size = 0;
-        readVarUInt(data_size, in);
-        auto buffer = nuraft::buffer::alloc(data_size);
-        in.readStrict(reinterpret_cast<char *>(buffer->data_begin()), data_size);
-        buffer->pos(0);
-        deserialization_result.cluster_config = ClusterConfig::deserialize(*buffer);
-    }
-
-    storage.updateStats();
-}
-
 KeeperStorageSnapshot::KeeperStorageSnapshot(KeeperStorage * storage_, uint64_t up_to_log_idx_, const ClusterConfigPtr & cluster_config_, SnapshotVersion version_)
     : storage(storage_)
     , version(version_)
@@ -716,11 +306,8 @@ KeeperStorageSnapshot::KeeperStorageSnapshot(KeeperStorage * storage_, uint64_t 
     , zxid(storage->zxid)
     , nodes_digest(storage->nodes_digest)
 {
-    auto [size, ver] = storage->container.snapshotSizeWithVersion();
-    snapshot_container_size = size;
-    storage->enableSnapshotMode(ver);
-    scope_guard snapshot_mode_guard([&] { storage->disableSnapshotMode(); });
-    begin = storage->getSnapshotIteratorBegin();
+    node_stream = storage->nodes_storage->beginWritingSnapshot();
+    scope_guard snapshot_mode_guard([&] { storage->nodes_storage->finishWritingSnapshot(std::move(node_stream)); });
     session_and_timeout = storage->getActiveSessions();
     acl_map = storage->acl_map.getMapping();
     session_and_auth = storage->committed_session_and_auth;
@@ -737,11 +324,8 @@ KeeperStorageSnapshot::KeeperStorageSnapshot(
     , zxid(storage->zxid)
     , nodes_digest(storage->nodes_digest)
 {
-    auto [size, ver] = storage->container.snapshotSizeWithVersion();
-    snapshot_container_size = size;
-    storage->enableSnapshotMode(ver);
-    scope_guard snapshot_mode_guard([&] { storage->disableSnapshotMode(); });
-    begin = storage->getSnapshotIteratorBegin();
+    node_stream = storage->nodes_storage->beginWritingSnapshot();
+    scope_guard snapshot_mode_guard([&] { storage->nodes_storage->finishWritingSnapshot(std::move(node_stream)); });
     session_and_timeout = storage->getActiveSessions();
     acl_map = storage->acl_map.getMapping();
     session_and_auth = storage->committed_session_and_auth;
@@ -750,7 +334,8 @@ KeeperStorageSnapshot::KeeperStorageSnapshot(
 
 KeeperStorageSnapshot::~KeeperStorageSnapshot()
 {
-    storage->disableSnapshotMode();
+    if (node_stream)
+        storage->nodes_storage->finishWritingSnapshot(std::move(node_stream));
 }
 
 SnapshotFileInfoPtr
@@ -783,13 +368,9 @@ KeeperSnapshotManager::makeManagedSnapshotFileInfo(std::string path, DiskPtr dis
 KeeperSnapshotManager::KeeperSnapshotManager(
     size_t snapshots_to_keep_,
     const KeeperContextPtr & keeper_context_,
-    bool compress_snapshots_zstd_,
-    const std::string & superdigest_,
-    size_t storage_tick_time_)
+    bool compress_snapshots_zstd_)
     : snapshots_to_keep(snapshots_to_keep_)
     , compress_snapshots_zstd(compress_snapshots_zstd_)
-    , superdigest(superdigest_)
-    , storage_tick_time(storage_tick_time_)
     , keeper_context(keeper_context_)
 {
     std::unordered_set<DiskPtr> read_disks;
@@ -1143,52 +724,39 @@ bool KeeperSnapshotManager::isZstdCompressed(nuraft::ptr<nuraft::buffer> buffer)
     return memcmp(magic_from_buffer, ZSTD_COMPRESSED_MAGIC, 4) == 0;
 }
 
-SnapshotDeserializationResult KeeperSnapshotManager::deserializeSnapshotFromBuffer(nuraft::ptr<nuraft::buffer> buffer, bool load_full_storage) const
+std::unique_ptr<KeeperSnapshotReader> KeeperSnapshotManager::makeSnapshotReader(nuraft::ptr<nuraft::buffer> buffer) const
 {
     bool is_zstd_compressed = isZstdCompressed(buffer);
 
-    std::unique_ptr<ReadBufferFromNuraftBuffer> reader = std::make_unique<ReadBufferFromNuraftBuffer>(buffer);
-    std::unique_ptr<ReadBuffer> compressed_reader;
+    std::unique_ptr<ReadBuffer> in = std::make_unique<ReadBufferFromNuraftBuffer>(buffer);
 
     if (is_zstd_compressed)
-        compressed_reader = wrapReadBufferWithCompressionMethod(std::move(reader), CompressionMethod::Zstd);
+        in = wrapReadBufferWithCompressionMethod(std::move(in), CompressionMethod::Zstd);
     else
-        compressed_reader = std::make_unique<CompressedReadBuffer>(*reader);
+        in = std::make_unique<CompressedReadBuffer>(std::move(in));
+
+    return std::make_unique<KeeperSnapshotReader>(std::move(in), keeper_context);
+}
+
+SnapshotDeserializationResult KeeperSnapshotManager::deserializeSnapshotFromBuffer(nuraft::ptr<nuraft::buffer> buffer, KeeperStorage & storage) const
+{
+    auto reader = makeSnapshotReader(buffer);
+    storage.loadFromSnapshot(*reader);
 
     SnapshotDeserializationResult result;
-    result.storage = std::make_unique<KeeperStorage>(storage_tick_time, superdigest, keeper_context, /* initialize_system_nodes */ false);
-    KeeperStorageSnapshot::deserialize(result, *compressed_reader, keeper_context, load_full_storage);
-    if (load_full_storage)
-        result.storage->initializeSystemNodes();
+    result.snapshot_meta = reader->snapshot_meta;
+    result.cluster_config = reader->cluster_config;
     return result;
 }
 
 SnapshotMetadataPtr KeeperSnapshotManager::deserializeSnapshotMetadataFromBuffer(nuraft::ptr<nuraft::buffer> buffer) const
 {
-    /// `nuraft::buffer::pos(0)` resets the cursor. This method must leave the
-    /// buffer at offset `0` on success and on throw.
-    SCOPE_EXIT({ buffer->pos(0); });
-
-    bool is_zstd_compressed = isZstdCompressed(buffer);
-
-    std::unique_ptr<ReadBufferFromNuraftBuffer> reader = std::make_unique<ReadBufferFromNuraftBuffer>(buffer);
-    std::unique_ptr<ReadBuffer> compressed_reader;
-
-    if (is_zstd_compressed)
-        compressed_reader = wrapReadBufferWithCompressionMethod(std::move(reader), CompressionMethod::Zstd);
-    else
-        compressed_reader = std::make_unique<CompressedReadBuffer>(*reader);
-
-    uint8_t version = 0;
-    readBinary(version, *compressed_reader);
-    SnapshotVersion current_version = static_cast<SnapshotVersion>(version);
-    if (current_version > MAX_SUPPORTED_SNAPSHOT_VERSION)
-        throw Exception(ErrorCodes::UNKNOWN_FORMAT_VERSION, "Unsupported snapshot version {}", version);
-
-    return deserializeSnapshotMetadata(*compressed_reader);
+    auto reader = makeSnapshotReader(buffer);
+    reader->readMetadata();
+    return reader->snapshot_meta;
 }
 
-SnapshotDeserializationResult KeeperSnapshotManager::restoreFromLatestSnapshot()
+SnapshotDeserializationResult KeeperSnapshotManager::restoreFromLatestSnapshot(KeeperStorage & storage)
 {
     if (existing_snapshots.empty())
         return {};
@@ -1196,7 +764,7 @@ SnapshotDeserializationResult KeeperSnapshotManager::restoreFromLatestSnapshot()
     auto buffer = deserializeLatestSnapshotBufferFromDisk();
     if (!buffer)
         return {};
-    return deserializeSnapshotFromBuffer(buffer);
+    return deserializeSnapshotFromBuffer(buffer, storage);
 }
 
 DiskPtr KeeperSnapshotManager::getDisk() const
@@ -1561,6 +1129,307 @@ SnapshotFileInfoPtr KeeperSnapshotManager::getSnapshotPin(uint64_t log_idx) cons
     if (it == existing_snapshots.end())
         return nullptr;
     return it->second;
+}
+
+KeeperSnapshotReader::KeeperSnapshotReader(std::unique_ptr<ReadBuffer> in_, KeeperContextPtr keeper_context_)
+    : keeper_context(keeper_context_), in(std::move(in_)) {}
+
+void KeeperSnapshotReader::readMetadata()
+{
+    uint8_t version = 0;
+    readBinary(version, *in);
+    if (version > static_cast<uint8_t>(MAX_SUPPORTED_SNAPSHOT_VERSION))
+        throw Exception(ErrorCodes::UNKNOWN_FORMAT_VERSION, "Unsupported snapshot version {}", version);
+    current_version = static_cast<SnapshotVersion>(version);
+
+    snapshot_meta = deserializeSnapshotMetadata(*in);
+
+    if (version >= SnapshotVersion::V5)
+    {
+        readBinary(commit_zxid, *in);
+        uint8_t digest_version = 0;
+        readBinary(digest_version, *in);
+        if (digest_version != static_cast<uint8_t>(KeeperDigestVersion::NO_DIGEST))
+        {
+            readBinary(nodes_digest, *in);
+            if (digest_version != static_cast<uint8_t>(KEEPER_CURRENT_DIGEST_VERSION))
+                nodes_digest = 0;
+        }
+    }
+    else
+    {
+        commit_zxid = snapshot_meta->get_last_log_idx();
+        old_snapshot_zxid = commit_zxid;
+    }
+
+    readBinary(session_id_counter, *in);
+}
+
+void KeeperSnapshotReader::readACLMapAndNodeCount()
+{
+    /// Before V1 we serialized ACL without acl_map
+    if (current_version >= SnapshotVersion::V1)
+    {
+        size_t acls_map_size = 0;
+
+        readBinary(acls_map_size, *in);
+        size_t current_map_size = 0;
+        while (current_map_size < acls_map_size)
+        {
+            ACLId acl_id = 0;
+            if (current_version >= SnapshotVersion::V7)
+            {
+                readBinary(acl_id, *in);
+            }
+            else
+            {
+                /// V1-V6 stored acl_id as uint64_t (8 bytes)
+                uint64_t acl_id_64 = 0;
+                readBinary(acl_id_64, *in);
+                chassert(acl_id_64 <= std::numeric_limits<ACLId>::max());
+                acl_id = static_cast<ACLId>(acl_id_64);
+            }
+
+            size_t acls_size = 0;
+            readBinary(acls_size, *in);
+            Coordination::ACLs acls;
+            for (size_t i = 0; i < acls_size; ++i)
+            {
+                Coordination::ACL acl;
+                readBinary(acl.permissions, *in);
+                readBinary(acl.scheme, *in);
+                readBinary(acl.id, *in);
+                acls.push_back(acl);
+            }
+
+            if (!keeper_context->shouldBlockACL())
+                acl_map.addMapping(acl_id, acls);
+            current_map_size++;
+        }
+    }
+
+    readBinary(node_count, *in);
+}
+
+std::vector<std::unique_ptr<KeeperSnapshotReader::Stream>> KeeperSnapshotReader::createStreams(size_t n)
+{
+    /// TODO: Chunked snapshots that can be read from multiple threads.
+    chassert(n == 1);
+    std::vector<std::unique_ptr<Stream>> streams;
+    streams.push_back(std::unique_ptr<Stream>(new Stream(*this)));
+    return streams;
+}
+
+bool KeeperSnapshotReader::Stream::readNodePathSize(size_t & out_path_size)
+{
+    if (nodes_read >= parent.node_count)
+        return false;
+
+    ++nodes_read;
+    readVarUInt(out_path_size, *in);
+    chassert(out_path_size != 0);
+    return true;
+}
+
+void KeeperSnapshotReader::Stream::readNodePathAndDataSize(char * out_path, size_t path_size, size_t & out_data_size)
+{
+    in->readStrict(out_path, path_size);
+    readVarUInt(out_data_size, *in);
+
+    if (out_data_size > static_cast<size_t>(INT32_MAX))
+        throw Exception(ErrorCodes::LOGICAL_ERROR, "Node data size in snapshot is too big: {}", out_data_size);
+}
+
+void KeeperSnapshotReader::Stream::readNodeDataAndStats(std::string_view path, char * out_data, size_t data_size, KeeperNodeStats & out_stats)
+{
+    bool cleanup_acl = parent.keeper_context->shouldBlockACL();
+    SnapshotVersion version = parent.current_version;
+
+    in->readStrict(out_data, data_size);
+
+    bool add_usage = true;
+    if (version >= SnapshotVersion::V7)
+    {
+        readBinary(out_stats.acl_id, *in);
+    }
+    else if (version >= SnapshotVersion::V1)
+    {
+        /// V1-V6 stored acl_id as uint64_t
+        uint64_t acl_id_64 = 0;
+        readBinary(acl_id_64, *in);
+
+        /// Some strange ACL ID during deserialization from ZooKeeper
+        if (acl_id_64 == std::numeric_limits<uint64_t>::max())
+            acl_id_64 = 0;
+
+        chassert(acl_id_64 <= std::numeric_limits<ACLId>::max());
+        out_stats.acl_id = static_cast<ACLId>(acl_id_64);
+    }
+    else if (version == SnapshotVersion::V0)
+    {
+        /// Deserialize ACL
+        size_t acls_size = 0;
+        readBinary(acls_size, *in);
+        Coordination::ACLs acls;
+        for (size_t i = 0; i < acls_size; ++i)
+        {
+            Coordination::ACL acl;
+            readBinary(acl.permissions, *in);
+            readBinary(acl.scheme, *in);
+            readBinary(acl.id, *in);
+            acls.push_back(acl);
+        }
+
+        add_usage = false; // convertACLs increments usage counter
+        if (!cleanup_acl)
+            out_stats.acl_id = parent.acl_map.convertACLs(acls);
+    }
+
+    if (cleanup_acl)
+        out_stats.acl_id = 0;
+    else if (add_usage)
+        parent.acl_map.addUsage(out_stats.acl_id);
+
+    if (version < SnapshotVersion::V6)
+    {
+        bool is_sequential = false;
+        readBinary(is_sequential, *in);
+    }
+
+    /// Deserialize stat
+    /// (Reset flags and children count first, in case the caller reuses `out_stats` across nodes.)
+    out_stats.ctime_and_flags = 0;
+    out_stats.num_children = 0;
+    out_stats.data_size = static_cast<uint32_t>(data_size);
+    readBinary(out_stats.czxid, *in);
+    readBinary(out_stats.mzxid, *in);
+    int64_t ctime = 0;
+    readBinary(ctime, *in);
+    out_stats.setCTime(ctime);
+    readBinary(out_stats.mtime, *in);
+    readBinary(out_stats.version, *in);
+    readBinary(out_stats.cversion, *in);
+    readBinary(out_stats.aversion, *in);
+    int64_t ephemeral_owner = 0;
+    readBinary(ephemeral_owner, *in);
+
+    if (version < SnapshotVersion::V6)
+    {
+        int32_t data_length = 0;
+        readBinary(data_length, *in);
+    }
+    int32_t num_children = 0;
+    readBinary(num_children, *in);
+
+    if (ephemeral_owner == KeeperNodeStats::CONTAINER_EPHEMERAL_OWNER)
+        out_stats.makeContainer();
+    else if (ephemeral_owner != 0)
+        out_stats.makeEphemeral(ephemeral_owner);
+
+    readBinary(out_stats.pzxid, *in);
+
+    if (version >= SnapshotVersion::V7)
+    {
+        int64_t seq_num = 0;
+        readBinary(seq_num, *in);
+        if (!out_stats.isEphemeral())
+            out_stats.setSeqNum(seq_num);
+    }
+    else
+    {
+        int32_t seq_num = 0;
+        readBinary(seq_num, *in);
+        if (!out_stats.isEphemeral())
+            out_stats.setSeqNum(seq_num);
+    }
+
+    if (version >= SnapshotVersion::V4 && version <= SnapshotVersion::V5)
+    {
+        uint64_t size_bytes = 0;
+        readBinary(size_bytes, *in);
+    }
+
+    if (version >= SnapshotVersion::V8)
+    {
+        bool has_ttl = false;
+        readBinary(has_ttl, *in);
+        if (has_ttl)
+        {
+            int64_t ttl_ms = 0;
+            readBinary(ttl_ms, *in);
+            out_stats.makeTTL(ttl_ms);
+        }
+    }
+
+    if (!out_stats.isEphemeral() && !out_stats.isTTL())
+        out_stats.setNumChildren(num_children);
+
+    /// Refuse to load system nodes from snapshot.
+    auto match_result = Coordination::matchPath(path, keeper_system_path);
+    if (match_result == Coordination::PathMatchResult::IS_CHILD)
+        throw Exception(ErrorCodes::LOGICAL_ERROR, "Snapshot contains system node: {}", path);
+    if (match_result == Coordination::PathMatchResult::EXACT &&
+        (out_stats.data_size != 0 || out_stats.mzxid != 0))
+        throw Exception(
+            ErrorCodes::LOGICAL_ERROR,
+            "Snapshot contains system root node {} with unexpected data ({} bytes) or stats (mzxid={})",
+            path, out_stats.data_size, out_stats.mzxid);
+}
+
+void KeeperSnapshotReader::finishStreams(std::vector<std::unique_ptr<Stream>> /*streams*/)
+{
+    /// The snapshot's ACL map may contain ACLs that are not referenced by any node, e.g. ACLs
+    /// that were referenced only by uncommitted nodes.
+    acl_map.removeUnusedACLs();
+}
+
+void KeeperSnapshotReader::readSessionsAndClusterConfig(KeeperStorage & storage)
+{
+    size_t active_sessions_size = 0;
+    readBinary(active_sessions_size, *in);
+
+    size_t current_session_size = 0;
+    while (current_session_size < active_sessions_size)
+    {
+        int64_t active_session_id = 0;
+        int64_t timeout = 0;
+        readBinary(active_session_id, *in);
+        readBinary(timeout, *in);
+        storage.addSessionID(active_session_id, timeout);
+
+        if (current_version >= SnapshotVersion::V1)
+        {
+            size_t session_auths_size = 0;
+            readBinary(session_auths_size, *in);
+
+            typename KeeperStorage::AuthIDs ids;
+            size_t session_auth_counter = 0;
+            while (session_auth_counter < session_auths_size)
+            {
+                String scheme;
+                String id;
+                readBinary(scheme, *in);
+                readBinary(id, *in);
+                ids.emplace_back(typename KeeperStorage::AuthID{scheme, id});
+
+                session_auth_counter++;
+            }
+            if (!ids.empty())
+                storage.committed_session_and_auth[active_session_id] = ids;
+        }
+        current_session_size++;
+    }
+
+    /// Optional cluster config
+    if (!in->eof())
+    {
+        size_t data_size = 0;
+        readVarUInt(data_size, *in);
+        auto buffer = nuraft::buffer::alloc(data_size);
+        in->readStrict(reinterpret_cast<char *>(buffer->data_begin()), data_size);
+        buffer->pos(0);
+        cluster_config = ClusterConfig::deserialize(*buffer);
+    }
 }
 
 }

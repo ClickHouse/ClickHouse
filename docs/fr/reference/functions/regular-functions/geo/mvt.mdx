@@ -35,8 +35,8 @@ pour `MVTEncodeGeom` et `ST_AsMVT` pour `MVTEncode`.
 </div>
 
 Projette une géométrie donnée en coordonnées géographiques (longitude/latitude) dans l’espace pixel local de la
-tuile slippy-map identifiée par `zoom`, `tile_x` et `tile_y`, la découpe à la tuile, l’aligne sur la grille
-de pixels entiers et renvoie la géométrie en espace de la tuile.
+tuile slippy-map identifiée par `zoom`, `tile_x` et `tile_y`, l’aligne sur la grille de pixels entiers, la découpe à la tuile
+et renvoie la géométrie en espace de la tuile.
 
 La projection est Web Mercator sur toute la plage de coordonnées `UInt32`. Les coordonnées renvoyées ont leur origine dans
 le coin supérieur gauche de la tuile, avec l’axe des y orienté vers le bas, conformément à la convention de coordonnées du format Mapbox Vector
@@ -46,6 +46,10 @@ Tile, de sorte que le résultat peut être transmis directement à `MVTEncode`. 
 Lorsque `clip` est activé (par défaut), la géométrie est découpée selon la tuile étendue de `buffer` pixels (la plage
 `[-buffer, extent + buffer]` sur chaque axe) ; une géométrie située entièrement à l’extérieur devient `NULL`. Il s’agit de l’équivalent de
 PostGIS `ST_AsMVTGeom`.
+
+Les coordonnées des polygones sont bornées à une fenêtre `2^30` avant validation — soit exactement l’étendue en pixels du monde entier à
+`zoom` 18 et `extent` 4096 — ; ainsi, pour des tuiles réalistes, la géométrie est validée mais jamais découpée, et cette borne n’affecte
+que les géométries placées à des valeurs extrêmes de `zoom` ou de `extent`.
 
 Le type de géométrie de sortie dépend de l’entrée : un `Point` renvoie un `Point` ; un `LineString` ou `MultiLineString` renvoie un
 `MultiLineString` ; un `Ring`, `Polygon` ou `MultiPolygon` renvoie un `MultiPolygon` (le découpage peut scinder une géométrie en
@@ -64,8 +68,8 @@ MVTEncodeGeom(geometry, zoom, tile_x, tile_y[, extent[, buffer[, clip]]])
 * `tile_x` — Indice de colonne de tuile, dans la plage `[0, 2^zoom - 1]`. [`UInt32`](/fr/reference/data-types/int-uint).
 * `tile_y` — Indice de ligne de tuile, dans la plage `[0, 2^zoom - 1]`. [`UInt32`](/fr/reference/data-types/int-uint).
 * `extent` — Étendue facultative de la tuile, en pixels par côté, dans la plage `[1, 2147483647]`. La valeur par défaut est `4096`, la valeur par défaut de Mapbox Vector Tile. [`UInt32`](/fr/reference/data-types/int-uint).
-* `buffer` — buffer de découpe facultatif, en pixels, dans la plage `[0, 2147483647]`. La valeur par défaut est `1`. [`UInt32`](/fr/reference/data-types/int-uint).
-* `clip` — Indicateur facultatif ; lorsqu’il est différent de zéro (valeur par défaut), la géométrie est découpée selon la tuile plus le buffer. [`UInt8`](/fr/reference/data-types/int-uint).
+* `buffer` — tampon de découpe facultatif, en pixels, dans la plage `[0, 2147483647]`. La valeur par défaut est `1`. [`UInt32`](/fr/reference/data-types/int-uint).
+* `clip` — Indicateur facultatif ; lorsqu’il est différent de zéro (valeur par défaut), la géométrie est découpée selon la tuile plus le tampon de découpe. [`UInt8`](/fr/reference/data-types/int-uint).
 
 **Valeur renvoyée**
 
@@ -326,21 +330,3 @@ pour les grandes tables, étendez la sous-requête interne comme indiqué dans [
 </div>
 
 * La projection Web Mercator limite la latitude à `±85.05112878°` et ne prend pas en charge les entrées qui traversent l&#39;antiméridien.
-
-* **Le découpage des polygones ne garantit pas une sortie MVT valide.** Le découpage corrige l&#39;orientation et la fermeture des anneaux, mais pas les auto-intersections. Un anneau auto-intersectant (&quot;nœud papillon&quot;) n&#39;est donc pas corrigé : selon la façon dont il intersecte la tuile, il est soit émis tel quel (et reste invalide), soit supprimé et remplacé par `NULL`. Par exemple, un nœud papillon entièrement situé dans la tuile est supprimé, tandis que les mêmes quatre sommets, ordonnés en anneau simple, sont conservés :
-
-```sql
--- self-intersecting ring -> dropped (NULL)
-SELECT MVTEncodeGeom([[(40.0, 40.0), (50.0, 50.0), (50.0, 40.0), (40.0, 50.0), (40.0, 40.0)]]::Polygon, 2, 2, 1) IS NULL;  -- 1
--- simple ring, same four corners -> kept
-SELECT MVTEncodeGeom([[(40.0, 40.0), (50.0, 40.0), (50.0, 50.0), (40.0, 50.0), (40.0, 40.0)]]::Polygon, 2, 2, 1) IS NULL;  -- 0
-```
-
-* **La géométrie est découpée avant d’être arrondie sur la grille de pixels entiers.** PostGIS aligne d’abord la géométrie sur la grille de pixels entiers, puis la découpe ; `MVTEncodeGeom`, lui, découpe d’abord (sur les coordonnées projetées en virgule flottante), puis arrondit. Près du bord d’une tuile, cela peut éliminer une coordonnée qui, sinon, aurait été arrondie sur le pixel de bord. Par exemple, avec `buffer = 0`, un point juste à l’est du bord de la tuile est découpé, même s’il serait arrondi au pixel de bord `4096` qu’une approche fondée sur un arrondi préalable conserverait :
-
-```sql
--- floating-point x ~= 4096.23 is just past the east edge (extent = 4096) -> clipped
-SELECT MVTEncodeGeom((90.005, 30.0)::Point, 2, 2, 1, 4096, 0) IS NULL;          -- 1
--- the same point projected without clipping rounds onto the edge pixel:
-SELECT MVTEncodeGeom((90.005, 30.0)::Point, 2, 2, 1, 4096, 0, false);           -- (4096,2664)
-```
