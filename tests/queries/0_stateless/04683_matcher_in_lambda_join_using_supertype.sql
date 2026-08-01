@@ -99,10 +99,30 @@ FROM (EXPLAIN QUERY TREE run_passes = 1
     SETTINGS analyzer_compatibility_join_using_top_level_identifier = 1);
 
 -- 9. The rollback now descends into lambda bodies for every writer of the replacement map, so cover
--- the other channels too: join_use_nulls, an empty map, a lambda argument, and a lambda subquery.
+-- the other channels too: the nullability writer, an empty map, a lambda argument, and a lambda
+-- subquery. The nullability cases need a NON-PRESERVED side, so the lambda body reads a column the
+-- join actually widens: under LEFT JOIN both `a` and `v` come from the preserved left table and stay
+-- non-Nullable, which is why the supertype carrier below is the only thing a LEFT shape can assert.
 SELECT 'join_use_nulls with USING';
 SELECT count() FROM r1 LEFT JOIN r2 USING (a)
 PREWHERE ((arrayMap(z -> tuple(* EXCEPT w), [1])[1]).2) != 0 SETTINGS join_use_nulls = 1;
+-- RIGHT/FULL make the LEFT table's `v` the non-preserved one, so the map really carries a
+-- Nullable(Int16) entry for it. Assert the resolved type, not just the row count: the lambda body
+-- must converge on the direct form's Int16 after the rollback, and print 1 twice.
+SELECT 'join_use_nulls widens the lambda body, right', countIf(explain LIKE '%column_name: v, result_type: Int16%')
+FROM (EXPLAIN QUERY TREE run_passes = 1
+    SELECT count() FROM r1 RIGHT JOIN r2 USING (a)
+    PREWHERE (arrayMap(z -> v, [1])[1]) != 0 SETTINGS join_use_nulls = 1);
+SELECT 'join_use_nulls widens the lambda body, right direct oracle', countIf(explain LIKE '%column_name: v, result_type: Int16%')
+FROM (EXPLAIN QUERY TREE run_passes = 1
+    SELECT count() FROM r1 RIGHT JOIN r2 USING (a)
+    PREWHERE v != 0 SETTINGS join_use_nulls = 1);
+SELECT 'join_use_nulls widens the lambda body, right value';
+SELECT count() FROM r1 RIGHT JOIN r2 USING (a)
+PREWHERE (arrayMap(z -> v, [1])[1]) != 0 SETTINGS join_use_nulls = 1;
+SELECT 'join_use_nulls widens the lambda body, full value';
+SELECT count() FROM r1 FULL JOIN r2 USING (a)
+PREWHERE (arrayMap(z -> v, [1])[1]) != 0 SETTINGS join_use_nulls = 1;
 SELECT 'join_use_nulls with ON, bare column';
 SELECT count() FROM r1 LEFT JOIN r2 ON r1.a = r2.a
 PREWHERE (arrayMap(z -> v, [1])[1]) != 0 SETTINGS join_use_nulls = 1;

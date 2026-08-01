@@ -42,6 +42,12 @@ Array(Tuple(UInt64, Int16))
 top level identifier compatibility	1
 join_use_nulls with USING
 1
+join_use_nulls widens the lambda body, right	1
+join_use_nulls widens the lambda body, right direct oracle	1
+join_use_nulls widens the lambda body, right value
+1
+join_use_nulls widens the lambda body, full value
+1
 join_use_nulls with ON, bare column
 1
 lambda argument is not replaced
