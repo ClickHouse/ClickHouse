@@ -3,11 +3,10 @@
 #include <Parsers/IAST_fwd.h>
 #include <boost/noncopyable.hpp>
 #include <Compression/CompressionInfo.h>
-#include <Common/VectorWithMemoryTracking.h>
 #include <base/types.h>
 
 #include <memory>
-#include <optional>
+#include <vector>
 
 class SipHash;
 
@@ -50,10 +49,6 @@ public:
     /// Decompress bytes from compressed source to dest. Dest should preallocate memory;
     UInt32 decompress(const char * source, UInt32 source_size, char * dest) const;
 
-    /// Exact compressed payload size (no header) for the given input. std::nullopt if this codec cannot determine its output size cheaply.
-    /// Same value as doCompressData  would return, computed without actually compressing.
-    virtual std::optional<UInt32> tryGetCompressedSize(const char * /*source*/, UInt32 /*source_size*/) const { return std::nullopt; }
-
     /// Report decompression errors as CANNOT_DECOMPRESS, not CORRUPTED_DATA
     void setExternalDataFlag() { decompression_error_code = ErrorCodes::CANNOT_DECOMPRESS; }
 
@@ -75,12 +70,6 @@ public:
     /// Read size of decompressed block from compressed source
     UInt32 readDecompressedBlockSize(const char * source) const;
 
-    /// Does the codec need to know the vector (Array) dimension before compression?
-    virtual bool needsVectorDimensionUpfront() const { return false; }
-
-    /// Setting dimension is useful for vector codecs (only SZ3 codec at the moment).
-    virtual void setAndCheckVectorDimension(size_t /*dimension*/);
-
     /// Read method byte from compressed source
     static uint8_t readMethod(const char * source);
 
@@ -98,8 +87,6 @@ public:
 
     /// If the codec's purpose is to calculate deltas between consecutive values.
     virtual bool isDeltaCompression() const { return false; }
-
-    virtual bool isLossyCompression() const { return false; }
 
     /// It is a codec available only for evaluation purposes and not meant to be used in production.
     /// It will not be allowed to use unless the user will turn off the safety switch.
@@ -135,6 +122,6 @@ private:
 };
 
 using CompressionCodecPtr = std::shared_ptr<ICompressionCodec>;
-using Codecs = VectorWithMemoryTracking<CompressionCodecPtr>;
+using Codecs = std::vector<CompressionCodecPtr>;
 
 }

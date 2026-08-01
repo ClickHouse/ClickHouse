@@ -1,5 +1,4 @@
 #include <Core/ExternalResultDescription.h>
-#include <Columns/ColumnConst.h>
 #include <DataTypes/DataTypeDate.h>
 #include <DataTypes/DataTypeDateTime.h>
 #include <DataTypes/DataTypeDateTime64.h>
@@ -52,19 +51,6 @@ void ExternalResultDescription::init(const Block & sample_block_)
             continue;
         }
 
-        /// All the other geometric types (including the umbrella `Geometry` type) are read from a
-        /// WKB representation, see `vtGeometry` in `MySQLSource`.
-        if (dynamic_cast<const DataTypeLineStringName *>(type->getCustomName())
-            || dynamic_cast<const DataTypeMultiLineStringName *>(type->getCustomName())
-            || dynamic_cast<const DataTypeRingName *>(type->getCustomName())
-            || dynamic_cast<const DataTypePolygonName *>(type->getCustomName())
-            || dynamic_cast<const DataTypeMultiPolygonName *>(type->getCustomName())
-            || dynamic_cast<const DataTypeGeometryName *>(type->getCustomName()))
-        {
-            types.emplace_back(ValueType::vtGeometry, is_nullable);
-            continue;
-        }
-
         WhichDataType which(type);
 
         if (which.isUInt8())
@@ -83,8 +69,6 @@ void ExternalResultDescription::init(const Block & sample_block_)
             types.emplace_back(ValueType::vtInt32, is_nullable);
         else if (which.isInt64())
             types.emplace_back(ValueType::vtInt64, is_nullable);
-        else if (which.isInt256())
-            types.emplace_back(ValueType::vtInt256, is_nullable);
         else if (which.isFloat32())
             types.emplace_back(ValueType::vtFloat32, is_nullable);
         else if (which.isFloat64())

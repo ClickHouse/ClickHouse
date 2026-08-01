@@ -54,14 +54,14 @@ namespace DataLake
 {
 using namespace DataLake::Paimon;
 
-static String md5(const String & input)
+String md5(const String & input)
 {
     Poco::MD5Engine md5;
     md5.update(input);
     return DB::base64Encode(String(reinterpret_cast<const char *>(md5.digest().data()), md5.digestLength()));
 }
 
-static String bytesToHex(const String & bytes)
+String bytesToHex(const String & bytes)
 {
     const char hex_digits[] = "0123456789abcdef";
     DB::WriteBufferFromOwnString hex_str;
@@ -440,40 +440,13 @@ bool PaimonRestCatalog::empty() const
     return tables.empty();
 }
 
-CatalogTables PaimonRestCatalog::getTables() const
+DB::Names PaimonRestCatalog::getTables() const
 {
     DB::Strings databases;
     DB::Names tables;
     auto list_tables = [this, &tables](const String & database_name) { forEachTables(database_name, tables, {}); };
     forEachDatabase(databases, {}, list_tables);
-
-    /// A Paimon REST catalog lists only Paimon tables, so every listed table is readable.
-    CatalogTables result;
-    result.reserve(tables.size());
-    for (auto & name : tables)
-        result.push_back(CatalogTable{.name = std::move(name)});
-    return result;
-}
-
-DataLake::ICatalog::Namespaces PaimonRestCatalog::getNamespaces() const
-{
-    /// Paimon REST databases are flat — they cannot contain nested namespaces.
-    DB::Strings databases;
-    forEachDatabase(databases, {}, {});
-    return databases;
-}
-
-CatalogTables PaimonRestCatalog::listTablesInNamespaceDirect(const std::string & namespace_name) const
-{
-    DB::Names tables;
-    forEachTables(namespace_name, tables, {});
-
-    /// A Paimon REST catalog lists only Paimon tables, so every listed table is readable.
-    CatalogTables result;
-    result.reserve(tables.size());
-    for (auto & name : tables)
-        result.push_back(CatalogTable{.name = std::move(name)});
-    return result;
+    return tables;
 }
 
 bool PaimonRestCatalog::existsTable(const String & database_name, const String & table_name) const

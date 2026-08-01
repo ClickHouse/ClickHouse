@@ -250,7 +250,7 @@ struct DeltaLakeMetadataImpl
         RelativePathWithMetadata object_info(metadata_file_path);
         auto buf = createReadBuffer(object_info, object_storage, context, log);
 
-        char c = 0;
+        char c;
         String sum_json;
         while (!buf->eof())
         {
@@ -461,6 +461,13 @@ struct DeltaLakeMetadataImpl
      * We need to check only `add` column, `remove` column does not have intersections with `add` column.
      *  ...
      */
+    #define THROW_ARROW_NOT_OK(status)                                    \
+        do                                                                \
+        {                                                                 \
+            if (const ::arrow::Status & _s = (status); !_s.ok())          \
+                throw Exception(ErrorCodes::BAD_ARGUMENTS, "Arrow error: {}", _s.ToString()); \
+        } while (false)
+
     size_t getCheckpointIfExists(
         std::set<String> & result,
         NamesAndTypesList & file_schema,
@@ -497,8 +504,7 @@ struct DeltaLakeMetadataImpl
 
         auto open_file_res = parquet::arrow::OpenFile(
             asArrowFile(*buf, format_settings, is_stopped, "Parquet", PARQUET_MAGIC_BYTES), ArrowMemoryPool::instance());
-        if (!open_file_res.ok())
-            throwFromArrowStatus(open_file_res.status(), ErrorCodes::BAD_ARGUMENTS, "Failed to open Parquet checkpoint file");
+        THROW_ARROW_NOT_OK(open_file_res.status());
         auto reader = *std::move(open_file_res);
 
         ArrowColumnToCHColumn column_reader(
@@ -513,8 +519,7 @@ struct DeltaLakeMetadataImpl
             /* case_insensitive_column_matching */false);
 
         std::shared_ptr<arrow::Table> table;
-        if (auto read_status = reader->ReadTable(&table); !read_status.ok())
-            throwFromArrowStatus(read_status, ErrorCodes::BAD_ARGUMENTS, "Failed to read Parquet checkpoint file");
+        THROW_ARROW_NOT_OK(reader->ReadTable(&table));
 
         Chunk chunk = column_reader.arrowTableToCHChunk(table, reader->parquet_reader()->metadata()->num_rows(), reader->parquet_reader()->metadata()->key_value_metadata());
         auto res_block = header.cloneWithColumns(chunk.detachColumns());
@@ -709,8 +714,8 @@ DataTypePtr DeltaLakeMetadata::getSimpleTypeByName(const String & type_name)
     if (type_name.starts_with("decimal(") && type_name.ends_with(')'))
     {
         ReadBufferFromString buf(std::string_view(type_name.begin() + 8, type_name.end() - 1));
-        size_t precision = 0;
-        size_t scale = 0;
+        size_t precision;
+        size_t scale;
         readIntText(precision, buf);
         skipWhitespaceIfAny(buf);
         assertChar(',', buf);

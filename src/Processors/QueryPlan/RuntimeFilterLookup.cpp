@@ -1,6 +1,5 @@
 #include <Processors/QueryPlan/RuntimeFilterLookup.h>
 #include <DataTypes/DataTypesNumber.h>
-#include <DataTypes/DataTypeLowCardinality.h>
 #include <Functions/FunctionFactory.h>
 #include <Columns/ColumnConst.h>
 #include <Columns/ColumnsCommon.h>
@@ -8,11 +7,6 @@
 #include <Common/SharedMutex.h>
 #include <Common/typeid_cast.h>
 #include <Common/logger_useful.h>
-#include <Common/ProfileEvents.h>
-#include <algorithm>
-#include <cmath>
-#include <optional>
-#include <vector>
 
 namespace ProfileEvents
 {
@@ -86,7 +80,7 @@ void IRuntimeFilter::finishInsert()
 ColumnPtr IRuntimeFilter::find(const ColumnWithTypeAndName & values) const
 {
     if (!inserts_are_finished)
-        throw Exception(ErrorCodes::LOGICAL_ERROR, "Trying to lookup values in runtime filter before building it was finished");
+        throw Exception(ErrorCodes::LOGICAL_ERROR, "Trying to lookup values in runtime filter before builiding it was finished");
 
     const size_t rows_in_block = values.column->size();
     if (shouldSkip(rows_in_block))
@@ -110,89 +104,6 @@ static void mergeBloomFilters(BloomFilter & destination, const BloomFilter & sou
 }
 
 static constexpr UInt64 BLOOM_FILTER_SEED = 42;
-static constexpr size_t HASH_BATCH_SIZE = 1024;
-/// Max size up to which the bloom filter grows before the false positive rate starts degrading.
-static constexpr UInt64 MAX_STATS_SIZED_BLOOM_FILTER_BYTES = 4 * 1024 * 1024;
-/// At 3 hash functions achieves a 12.5% false positive rate
-static constexpr Float64 RUNTIME_BLOOM_FILTER_TARGET_FILL_RATE = 0.5;
-
-namespace
-{
-void hashFixedSizeColumn(
-    const char * raw_data,
-    size_t value_size,
-    size_t row_count,
-    UInt64 seed,
-    BloomFilterHashPair * out_hashes)
-{
-    const char * position = raw_data;
-    for (size_t row = 0; row < row_count; ++row)
-    {
-        out_hashes[row] = BloomFilter::computeHashPair(position, value_size, seed);
-        position += value_size;
-    }
-}
-
-template <typename ProcessBatch>
-void forEachColumnHashBatch(const IColumn & column, UInt64 seed, ProcessBatch && process_batch)
-{
-    const size_t row_count = column.size();
-    if (row_count == 0)
-        return;
-
-    std::vector<BloomFilterHashPair> hash_pairs(std::min(HASH_BATCH_SIZE, row_count));
-
-    if (!isColumnConst(column) && column.isFixedAndContiguous())
-    {
-        const size_t value_size = column.sizeOfValueIfFixed();
-        const std::string_view raw_data = column.getRawData();
-
-        chassert(value_size == 0 || raw_data.size() / value_size >= row_count);
-
-        size_t start_row = 0;
-        while (start_row < row_count)
-        {
-            const size_t batch_size = std::min(hash_pairs.size(), row_count - start_row);
-            const char * batch_data = raw_data.data() + start_row * value_size;
-            hashFixedSizeColumn(batch_data, value_size, batch_size, seed, hash_pairs.data());
-            process_batch(hash_pairs.data(), batch_size, start_row);
-            start_row += batch_size;
-        }
-        return;
-    }
-
-    size_t start_row = 0;
-    while (start_row < row_count)
-    {
-        const size_t batch_size = std::min(hash_pairs.size(), row_count - start_row);
-        for (size_t index = 0; index < batch_size; ++index)
-        {
-            const auto value = column.getDataAt(start_row + index);
-            hash_pairs[index] = BloomFilter::computeHashPair(value.data(), value.size(), seed);
-        }
-        process_batch(hash_pairs.data(), batch_size, start_row);
-        start_row += batch_size;
-    }
-}
-
-/// Grow the bloom filter bytes to hold `distinct_keys` keys at the target fill rate using
-/// `hash_functions` hash functions: filter_bits = -hash_functions * distinct_keys / ln(1 - fill_rate)
-/// The formula is built on the following logic:
-/// - distinct_keys * hash_functions: total bit-inserts into the filter
-/// - filter_bits: the size of the filter in bits (what we solve for)
-/// - 1/filter_bits: probability that one bit-insert sets a given bit
-/// - (1 - 1/filter_bits)^(distinct_keys * hash_functions): probability that a given bit is not set after all inserts
-/// - e^(-distinct_keys * hash_functions / filter_bits) is used to approximate the above probability
-/// - 1 - e^(-distinct_keys * hash_functions / filter_bits): expected fraction of bits that end up set (= fill_rate)
-/// For more infomation check: https://www.eecs.harvard.edu/~michaelm/postscripts/im2005b.pdf
-UInt64 growBloomFilterBytes(UInt64 distinct_keys, UInt64 hash_functions, UInt64 default_bloom_filter_bytes, Float64 max_ratio_of_set_bits)
-{
-    const Float64 target_fill_rate = std::min(RUNTIME_BLOOM_FILTER_TARGET_FILL_RATE, max_ratio_of_set_bits);
-    const double ideal_bloom_filter_bytes = std::ceil(-static_cast<double>(hash_functions) * static_cast<double>(distinct_keys) / std::log1p(-target_fill_rate) / 8.0);
-    const double clamped_bloom_filter_bytes = std::clamp(ideal_bloom_filter_bytes, 0.0, static_cast<double>(MAX_STATS_SIZED_BLOOM_FILTER_BYTES));
-    return std::max(static_cast<UInt64>(clamped_bloom_filter_bytes), default_bloom_filter_bytes);
-}
-}
 
 void ExactContainsRuntimeFilter::merge(const IRuntimeFilter * source)
 {
@@ -234,12 +145,9 @@ void ExactNotContainsRuntimeFilter::merge(const IRuntimeFilter * source)
 
 bool ApproximateRuntimeFilter::isDataTypeSupported(const DataTypePtr & data_type)
 {
-    /// Runtime BloomFilter hashing uses byte representation from either fixed contiguous column storage or getDataAt().
-    /// LowCardinality reports a contiguous representation unconditionally, but its getDataAt() delegates to the
-    /// dictionary column; for LowCardinality(Nullable(...)) that is ColumnNullable::getDataAt(), which throws on a NULL.
-    /// Strip LowCardinality and test the inner type so LC(Nullable(...)) falls back to the exact (NULL-safe) Set path,
-    /// exactly like a plain Nullable(...) key already does.
-    return removeLowCardinality(data_type)->isValueUnambiguouslyRepresentedInContiguousMemoryRegion();
+    /// Current BloomFilter implementation relies on IColumn::getDataAt method that returns a string_view of contiguous
+    /// memory chunk containing the value
+    return data_type->isValueUnambiguouslyRepresentedInContiguousMemoryRegion();
 }
 
 ApproximateRuntimeFilter::ApproximateRuntimeFilter(
@@ -250,12 +158,10 @@ ApproximateRuntimeFilter::ApproximateRuntimeFilter(
     UInt64 bytes_limit_,
     UInt64 exact_values_limit_,
     UInt64 bloom_filter_hash_functions_,
-    Float64 max_ratio_of_set_bits_in_bloom_filter_,
-    std::optional<UInt64> distinct_keys_hint_)
+    Float64 max_ratio_of_set_bits_in_bloom_filter_)
     : RuntimeFilterBase(filters_to_merge_, filter_column_target_type_, pass_ratio_threshold_for_disabling_, blocks_to_skip_before_reenabling_, bytes_limit_, exact_values_limit_)
     , bloom_filter_hash_functions(bloom_filter_hash_functions_)
     , max_ratio_of_set_bits_in_bloom_filter(max_ratio_of_set_bits_in_bloom_filter_)
-    , distinct_keys_hint(distinct_keys_hint_)
     , bloom_filter(nullptr)
 {}
 
@@ -375,11 +281,14 @@ ColumnPtr ApproximateRuntimeFilter::findImpl(const ColumnWithTypeAndName & value
         dst_data.resize(values.column->size());
 
         size_t found_count = 0;
-        forEachColumnHashBatch(*values.column, bloom_filter->getSeed(),
-            [&](const BloomFilterHashPair * hash_pairs, size_t count, size_t start_row)
-            {
-                found_count += bloom_filter->findHashPairs(hash_pairs, count, dst_data.data() + start_row);
-            });
+        for (size_t row = 0; row < values.column->size(); ++row)
+        {
+            /// TODO: optimize: consider replacing hash calculation with vectorized version
+            const auto & value = values.column->getDataAt(row);
+            const bool found = bloom_filter->find(value.data(), value.size());
+            found_count += found ? 1 : 0;
+            dst_data[row] = found;
+        }
         updateStats(values.column->size(), found_count);
 
         return dst;
@@ -392,11 +301,13 @@ ColumnPtr ApproximateRuntimeFilter::findImpl(const ColumnWithTypeAndName & value
 
 void ApproximateRuntimeFilter::insertIntoBloomFilter(ColumnPtr values)
 {
-    forEachColumnHashBatch(*values, bloom_filter->getSeed(),
-        [&](const BloomFilterHashPair * hash_pairs, size_t count, size_t /* start_row */)
-        {
-            bloom_filter->addHashPairs(hash_pairs, count);
-        });
+    const size_t num_rows = values->size();
+    for (size_t row = 0; row < num_rows; ++row)
+    {
+        /// TODO: make this efficient: compute hashes in vectorized manner
+        auto value = values->getDataAt(row);
+        bloom_filter->add(value.data(), value.size());
+    }
 }
 
 void ApproximateRuntimeFilter::switchToBloomFilter()
@@ -404,11 +315,7 @@ void ApproximateRuntimeFilter::switchToBloomFilter()
     if (bloom_filter)
         return;
 
-    UInt64 bloom_filter_bytes = getBytesLimit();
-    if (distinct_keys_hint)
-        bloom_filter_bytes = growBloomFilterBytes(*distinct_keys_hint, bloom_filter_hash_functions, getBytesLimit(), max_ratio_of_set_bits_in_bloom_filter);
-
-    bloom_filter = std::make_unique<BloomFilter>(bloom_filter_bytes, bloom_filter_hash_functions, BLOOM_FILTER_SEED);
+    bloom_filter = std::make_unique<BloomFilter>(getBytesLimit(), bloom_filter_hash_functions, BLOOM_FILTER_SEED);
     insertIntoBloomFilter(getValuesColumn());
 
     releaseExactValues();
@@ -426,58 +333,23 @@ void ApproximateRuntimeFilter::checkBloomFilterWorthiness()
         setFullyDisabled();
 }
 
-SharedFixedHashTableRuntimeFilter::SharedFixedHashTableRuntimeFilter(
-    const DataTypePtr & filter_column_target_type_,
-    Float64 pass_ratio_threshold_for_disabling_,
-    UInt64 blocks_to_skip_before_reenabling_,
-    ProbeFn probe_fn_)
-    : IRuntimeFilter(
-        /*filters_to_merge_=*/0,
-        filter_column_target_type_,
-        pass_ratio_threshold_for_disabling_,
-        blocks_to_skip_before_reenabling_)
-    , probe_fn(std::move(probe_fn_))
-{
-    /// Build was already done elsewhere; nothing left to insert.
-    inserts_are_finished = true;
-}
-
-ColumnPtr SharedFixedHashTableRuntimeFilter::findImpl(const ColumnWithTypeAndName & values) const
-{
-    chassert(inserts_are_finished);
-    auto result = probe_fn(values);
-    updateStats(values.column->size(), countPassedStats(result));
-    return result;
-}
-
 class RuntimeFilterLookup : public IRuntimeFilterLookup
 {
 public:
-    void add(const String & key, const String & display_name, UniqueRuntimeFilterPtr runtime_filter) override
+    void add(const String & name, UniqueRuntimeFilterPtr runtime_filter) override
     {
         std::lock_guard g(rw_lock);
-        auto & filter = filters_by_name[key];
+        auto & filter = filters_by_name[name];
         if (!filter)
         {
             ProfileEvents::increment(ProfileEvents::RuntimeFiltersCreated);
             filter.reset(runtime_filter.release());   /// Save new filter
-            /// Record the readable structural name once (the map is keyed by the opaque rendezvous key).
-            display_names.emplace(key, display_name);
         }
         else
         {
             filter->merge(runtime_filter.get());    /// Add all new keys to a existing filter
         }
         filter->finishInsert();
-    }
-
-    void replace(const String & name, UniqueRuntimeFilterPtr runtime_filter) override
-    {
-        std::lock_guard g(rw_lock);
-        auto & filter = filters_by_name[name];
-        if (!filter)
-            ProfileEvents::increment(ProfileEvents::RuntimeFiltersCreated);
-        filter.reset(runtime_filter.release());
     }
 
     RuntimeFilterConstPtr find(const String & name) const override
@@ -493,24 +365,18 @@ public:
     void logStats() const override
     {
         SharedLockGuard g(rw_lock);
-        for (const auto & [filter_key, filter] : filters_by_name)
+        for (const auto & [filter_name, filter] : filters_by_name)
         {
             const auto & stats = filter->getStats();
-            /// `filter_key` is the opaque random rendezvous key; prefer the readable structural name.
-            auto name_it = display_names.find(filter_key);
-            const String & name = (name_it != display_names.end() && !name_it->second.empty()) ? name_it->second : filter_key;
             LOG_TRACE(getLogger("RuntimeFilter"),
                 "Stats for '{}': rows skipped {}, rows checked {}, rows passed {}, blocks skipped {}, blocks processed {}",
-                name, stats.rows_skipped.load(), stats.rows_checked.load(), stats.rows_passed.load(), stats.blocks_skipped.load(), stats.blocks_processed.load());
+                filter_name, stats.rows_skipped.load(), stats.rows_checked.load(), stats.rows_passed.load(), stats.blocks_skipped.load(), stats.blocks_processed.load());
         }
     }
 
 private:
     mutable SharedMutex rw_lock;
     std::unordered_map<String, SharedRuntimeFilterPtr> filters_by_name TSA_GUARDED_BY(rw_lock);
-    /// Readable structural name per rendezvous key, for logging. Kept under the same lock and
-    /// preserved across `replace` (the replacement keeps the original registration's name).
-    std::unordered_map<String, String> display_names TSA_GUARDED_BY(rw_lock);
 };
 
 RuntimeFilterLookupPtr createRuntimeFilterLookup()
