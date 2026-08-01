@@ -2237,7 +2237,7 @@ void ClientBase::processInsertQuery(String query, ASTPtr parsed_query)
     const ASTInsertQuery * parsed_insert_query = parsed_query->as<ASTInsertQuery>();
     /// Process create query with and/as INSERT.
     const ASTCreateQuery * parsed_create_query = parsed_query->as<ASTCreateQuery>();
-    
+
     const char * inline_data_begin = parsed_insert_query ? parsed_insert_query->data
                                                          : (parsed_create_query ? parsed_create_query->insert_data : nullptr);
 
@@ -3378,7 +3378,7 @@ bool ClientBase::executeMultiQuery(const String & all_queries_text)
                     insert_query_without_data_length = insert->data - query_to_execute.data();
                 }
                 else if (const auto * create = parsed_query->as<ASTCreateQuery>();
-                        create && create->insert_data && (create->has_as_insert || create->has_and_insert))
+                         create && create->insert_data && (create->has_as_insert || create->has_and_insert))
                 {
                     insert_query_without_data_length = create->insert_data - query_to_execute.data();
                 }
