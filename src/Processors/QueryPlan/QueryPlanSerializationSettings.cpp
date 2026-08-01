@@ -256,6 +256,7 @@ static JoinSettingsConsumption getJoinSettingsConsumption(
                 /// getMinRequiredVersion on why such a step is never serialized anyway).
                 break;
             case JoinAlgorithm::FULL_SORTING_MERGE:
+            case JoinAlgorithm::PARALLEL_FULL_SORTING_MERGE:
                 /// `FullSortingMergeJoin` or nothing, and it consumes neither setting.
                 break;
         }

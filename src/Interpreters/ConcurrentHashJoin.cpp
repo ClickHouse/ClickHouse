@@ -382,7 +382,36 @@ bool ConcurrentHashJoin::addBlockToJoin(const Block & right_block_, bool check_l
     }
 
     if (check_limits && table_join->sizeLimits().hasLimits())
+    {
+        /// Concurrent inserts compare the half-of-`max_bytes_in_join` compression trigger against a
+        /// global counter that compensates only their own slot's unpublished delta, so one wave of
+        /// inserts on different slots can jump the logical join from below the trigger straight over
+        /// the full limit with no slot compressing: each saw only its own delta. Before failing the
+        /// global check, give compression the same last chance `SpillingHashJoin` gives it before
+        /// spilling: one forced pass over all slots. One pass is enough - it also arms insert-time
+        /// compaction, so the blocks added later are compacted on insertion and a repeat pass could
+        /// not shrink the build side any further (the same one-shot rationale as
+        /// SpillingHashJoin::tryCompressStoredBlocksBeforeSwitch).
+        if (table_join->enableJoinInMemoryCompression()
+            && !table_join->sizeLimits().softCheck(post_join_total_rows, post_join_total_bytes))
+        {
+            {
+                /// The lock is taken even when the pass has already run: a thread that skipped a
+                /// pass still in progress would re-read the pre-compression totals below and fail
+                /// although the build side is about to shrink. Waiting orders the re-read after
+                /// the pass.
+                std::lock_guard lock(size_limit_compression_mutex);
+                if (!size_limit_compression_attempted)
+                {
+                    size_limit_compression_attempted = true;
+                    compressStoredBlocks();
+                }
+            }
+            post_join_total_rows = global_total_rows.load(std::memory_order_relaxed);
+            post_join_total_bytes = global_total_bytes.load(std::memory_order_relaxed);
+        }
         return table_join->sizeLimits().check(post_join_total_rows, post_join_total_bytes, "JOIN", ErrorCodes::SET_SIZE_LIMIT_EXCEEDED);
+    }
     return true;
 }
 

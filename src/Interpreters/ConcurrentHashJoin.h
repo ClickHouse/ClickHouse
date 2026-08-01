@@ -143,6 +143,11 @@ private:
     std::atomic<size_t> global_total_rows{0};
     std::atomic<size_t> global_total_bytes{0};
 
+    /// One-shot latch for the last-chance compression pass that runs when the global
+    /// `max_bytes_in_join` check is about to fail (see addBlockToJoin).
+    std::mutex size_limit_compression_mutex;
+    bool size_limit_compression_attempted = false; /// Guarded by size_limit_compression_mutex.
+
     /// Shared query-memory baseline for the `max_memory_usage` compression trigger, so it fires on the
     /// logical join's growth instead of per slot. The first slot to insert publishes the earliest baseline
     /// (an explicit "unset" marker rather than 0: query memory usage can legitimately be 0 at join start,
