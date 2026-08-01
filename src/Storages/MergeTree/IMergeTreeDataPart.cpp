@@ -352,26 +352,15 @@ Names IMergeTreeDataPart::MinMaxIndex::getProbablyWrittenFiles(const IMergeTreeD
     const auto data_settings = part.storage.getSettings();
     const auto & data_part_storage = part.getDataPartStorage();
 
-    auto to_file_names = [&](const NamesAndTypesList & minmax_columns)
-    {
-        return minmax_columns.getNames()
-            | std::views::transform([&](const auto & column_name) { return "minmax_" + getFileColumnName(column_name, data_settings, data_part_storage) + ".idx"; })
-            | std::ranges::to<Names>();
-    };
+    /// The hyperrectangle may hold more columns than the current setting prescribes (a wider index that
+    /// has not been re-materialized yet), so clamp to what `store` actually writes: its leading prefix.
+    auto minmax_columns = MergeTreeData::getMinMaxColumns(partition_key, data_settings);
+    if (minmax_columns.size() > hyperrectangle.size())
+        minmax_columns.resize(hyperrectangle.size());
 
-    {
-        auto minmax_columns = MergeTreeData::getMinMaxColumns(partition_key, data_settings, MergeTreePartMinMaxIndexColumns::PARTITION_KEY_ONLY);
-        if (hyperrectangle.size() == minmax_columns.size())
-            return to_file_names(minmax_columns);
-    }
-
-    {
-        auto minmax_columns = MergeTreeData::getMinMaxColumns(partition_key, data_settings, MergeTreePartMinMaxIndexColumns::WITH_BLOCK_NUMBER_OFFSET);
-        if (hyperrectangle.size() == minmax_columns.size())
-            return to_file_names(minmax_columns);
-    }
-
-    throw Exception(ErrorCodes::LOGICAL_ERROR, "Part level Min-Max index was constructed from unexpected columns set.");
+    return minmax_columns.getNames()
+        | std::views::transform([&](const auto & column_name) { return "minmax_" + getFileColumnName(column_name, data_settings, data_part_storage) + ".idx"; })
+        | std::ranges::to<Names>();
 }
 
 String IMergeTreeDataPart::MinMaxIndex::getFileColumnName(const String & column_name, const MergeTreeSettingsPtr & storage_settings_, const IDataPartStorage & data_part_storage)
