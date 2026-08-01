@@ -181,6 +181,8 @@ FUNCTION options {
     | 'stdvar_over_time'
     | 'last_over_time'
     | 'present_over_time'
+    | 'first_over_time'
+    | 'mad_over_time'
     | 'acos'
     | 'acosh'
     | 'asin'
