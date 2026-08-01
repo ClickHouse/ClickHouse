@@ -351,11 +351,15 @@ std::shared_ptr<IObjectIterator> StorageObjectStorageSource::createFileIterator(
     /// so losing the source index would make `WebObjectStorage::readObject` treat all shards as failover
     /// for that path and silently miss rows. Always use `GlobIterator` for web listings, which preserves
     /// the source index.
+    /// Expand to exact keys only for the same shape the legacy parser expands: exactly one
+    /// enum group and nothing else. `KeysIterator` checks every generated key and throws on a
+    /// missing one when `ignore_non_existent_file = 0`, while `GlobIterator` lists and simply
+    /// skips absent alternatives. Expanding a multi-enum pattern such as `file{a,b}{1,2}.csv`
+    /// here would make it fail on the first absent cartesian-product member instead of
+    /// returning the keys that do exist, as the legacy listing path does.
     bool can_expand = !match_web_paths_only
         && use_glob_ast
-        && glob_string->hasEnums()
-        && !glob_string->hasRanges()
-        && !glob_string->hasQuestionOrAsterisk()
+        && glob_string->hasExactlyOneEnum()
         && glob_string->cardinality() <= max_expansion;
 
     if (!can_expand && !match_web_paths_only && !use_glob_ast && has_globs)
