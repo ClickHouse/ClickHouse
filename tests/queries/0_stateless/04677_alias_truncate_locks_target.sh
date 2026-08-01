@@ -77,8 +77,11 @@ $CLICKHOUSE_CLIENT -q "
     CREATE DATABASE $LAZY_DB ENGINE = Atomic SETTINGS lazy_load_tables = 1;
     CREATE TABLE $LAZY_DB.mt (k UInt64) ENGINE = MergeTree ORDER BY k SETTINGS index_granularity = 1;
     INSERT INTO $LAZY_DB.mt SELECT number FROM numbers(100);
+    CREATE TABLE $LAZY_DB.mt_a1 ENGINE = Alias($LAZY_DB, 'mt');
 "
-# Reload so the table is unloaded again and the catalog really returns the proxy, not the table.
+# Reload so the tables are unloaded again and the catalog really returns proxies, not the storages.
+# mt_a1 is created before this reload on purpose, so the alias-chain cell at the end of the file gets
+# an alias that is itself behind a proxy.
 $CLICKHOUSE_CLIENT -q "DETACH DATABASE $LAZY_DB SYNC"
 $CLICKHOUSE_CLIENT -q "ATTACH DATABASE $LAZY_DB"
 $CLICKHOUSE_CLIENT -q "CREATE TABLE $LAZY_DB.mt_alias ENGINE = Alias($LAZY_DB, 'mt')"
@@ -114,6 +117,41 @@ echo -e "truncate lazy proxied MergeTree succeeded\t$((lazy_rc == 0 ? 1 : 0))"
 echo -e "truncate lazy proxied MergeTree blocked\t$(echo "$lazy_err" | grep -c -m1 "DEADLOCK_AVOIDED")"
 kill %1 2>/dev/null
 wait 2>/dev/null
+
+# The same exemption has to survive a chain of BOTH link kinds. mt_a1 was created before the reload
+# above, so the catalog hands it out as an unloaded proxy too, and an unloaded proxy reports its name
+# as "TableProxy" -- which is why the constructor's "cannot refer to another Alias" guard let mt_a2
+# be created on top of it. Resolving only proxy links stops at the alias inside, never sees the
+# MergeTree leaf, and takes the target lock: both a new block on a chain that took no target lock at
+# all before, and a lock this code would hand to a callee that releases it as its own.
+$CLICKHOUSE_CLIENT -q "INSERT INTO $LAZY_DB.mt SELECT number FROM numbers(100)"
+$CLICKHOUSE_CLIENT -q "SELECT 'chained alias is still a proxy', engine = 'TableProxy' FROM system.tables WHERE database = '$LAZY_DB' AND name = 'mt_a1'"
+$CLICKHOUSE_CLIENT -q "CREATE TABLE $LAZY_DB.mt_a2 ENGINE = Alias($LAZY_DB, 'mt_a1')"
+
+CHAIN_READER_ID="chain_reader_$CLICKHOUSE_DATABASE"
+$CLICKHOUSE_CLIENT --query_id="$CHAIN_READER_ID" -q "
+    SELECT sum(sleepEachRow(0.2)) FROM $LAZY_DB.mt_a1 SETTINGS max_block_size = 1, max_threads = 1
+" > /dev/null &
+
+# Asserted for the same reason as the lazy cell above: this cell's headline assertion is that the
+# truncate is NOT blocked, which a reader that never started would also satisfy.
+chain_reader_started=0
+for _ in {1..200}; do
+    if [[ $($CLICKHOUSE_CLIENT -q "SELECT count() FROM system.processes WHERE query_id = '$CHAIN_READER_ID' AND read_rows > 0") -gt 0 ]]; then
+        chain_reader_started=1
+        break
+    fi
+    sleep 0.05
+done
+echo -e "chain reader started\t$chain_reader_started"
+
+chain_err=$($CLICKHOUSE_CLIENT -q "TRUNCATE TABLE $LAZY_DB.mt_a2 SETTINGS lock_acquire_timeout = 3" 2>&1)
+chain_rc=$?
+echo -e "truncate chained alias succeeded\t$((chain_rc == 0 ? 1 : 0))"
+echo -e "truncate chained alias blocked\t$(echo "$chain_err" | grep -c -m1 "DEADLOCK_AVOIDED")"
+kill %1 2>/dev/null
+wait 2>/dev/null
+
 $CLICKHOUSE_CLIENT -q "DROP DATABASE IF EXISTS $LAZY_DB SYNC"
 
 # TRUNCATE TABLES ... LIKE, which can want the same target lock from several pool tasks at once,

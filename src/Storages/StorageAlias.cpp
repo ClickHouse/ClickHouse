@@ -21,6 +21,8 @@
 #include <Common/Exception.h>
 #include <Common/FailPoint.h>
 
+#include <unordered_set>
+
 
 namespace DB
 {
@@ -280,16 +282,28 @@ void StorageAlias::truncate(
 {
     auto target_storage = getTargetTable(TargetAccess{local_context, AccessType::TRUNCATE});
 
-    /// A database with `lazy_load_tables = 1` hands out a StorageProxy, which is not MergeTreeData,
-    /// so decide the exemption below on the storage the proxy wraps. Only the decision uses this
-    /// pointer; truncate still goes through target_storage so the proxy materializes and forwards.
+    /// Resolve the storage the exemption below is decided on, following BOTH link kinds: a database
+    /// with `lazy_load_tables = 1` hands out a StorageProxy, and while that proxy is unloaded its
+    /// getName() is "TableProxy", so the constructor's "cannot refer to another Alias" guard lets an
+    /// alias chain through it. `visited` bounds the walk: no cycle is reachable today, because the
+    /// catalog's dependency graph rejects one, but that check lives far from here and a walk trusting
+    /// it would hang rather than fail. A cycle falls through to the non-exempt branch, which is safe.
+    /// Only the DECISION uses this pointer. The lock below is deliberately taken on target_storage,
+    /// the catalog entry readers lock (see read() above), and truncate also goes through it so the
+    /// proxy materializes and forwards.
     StoragePtr unwrapped = target_storage;
-    while (const auto * proxy = dynamic_cast<const StorageProxy *>(unwrapped.get()))
+    std::unordered_set<const IStorage *> visited{unwrapped.get()};
+    while (true)
     {
-        auto nested = proxy->getNested();
-        if (!nested || nested == unwrapped)
+        StoragePtr next;
+        if (const auto * proxy = dynamic_cast<const StorageProxy *>(unwrapped.get()))
+            next = proxy->getNested();
+        else if (const auto * alias = dynamic_cast<const StorageAlias *>(unwrapped.get()))
+            next = alias->tryGetTargetTable();
+
+        if (!next || !visited.insert(next.get()).second)
             break;
-        unwrapped = nested;
+        unwrapped = next;
     }
 
     /// The interpreter locked the alias, but the data belongs to the target and readers lock the

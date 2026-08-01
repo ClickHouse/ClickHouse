@@ -5,6 +5,10 @@ lazy target is a proxy	1
 lazy reader started	1
 truncate lazy proxied MergeTree succeeded	1
 truncate lazy proxied MergeTree blocked	0
+chained alias is still a proxy	1
+chain reader started	1
+truncate chained alias succeeded	1
+truncate chained alias blocked	0
 rows after truncate	0
 direct	1
 through alias	1
