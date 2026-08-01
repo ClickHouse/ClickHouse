@@ -116,6 +116,66 @@ TEST(MySQLPoolEntryName, TLSCredentialFieldsAreFramed)
     EXPECT_NE(with_tls("<ssl_ca>x</ssl_ca>"), with_tls("<ssl_ca_pem>x</ssl_ca_pem>"));
 }
 
+/// The password decides as whom the pool authenticates, exactly like the TLS credentials.
+TEST(MySQLPoolEntryName, PasswordIsPartOfTheKey)
+{
+    const auto with_password = [](const std::string & password)
+    {
+        return entryName(
+            "<c><source><share_connection>1</share_connection><host>h</host><port>3306</port><user>u</user><db>d</db>"
+            "<password>" + password + "</password></source></c>");
+    };
+
+    EXPECT_NE(with_password("first"), with_password("second"));
+    /// The password itself never appears in the key: it is folded into the hash of the credentials.
+    EXPECT_EQ(with_password("secret").find("secret"), std::string::npos);
+}
+
+/// The per-connection settings that `Pool::Pool` reads change how the pooled connections behave, so
+/// a source that asks for different values must not inherit the pool of whichever source came first.
+TEST(MySQLPoolEntryName, ConnectionSettingsArePartOfTheKey)
+{
+    const auto with_settings = [](const std::string & settings)
+    {
+        return entryName(
+            "<c><source><share_connection>1</share_connection><host>h</host><port>3306</port><user>u</user><db>d</db>"
+            + settings + "</source></c>");
+    };
+
+    EXPECT_NE(with_settings("<connect_timeout>1</connect_timeout>"), with_settings("<connect_timeout>2</connect_timeout>"));
+    EXPECT_NE(with_settings("<rw_timeout>1</rw_timeout>"), with_settings("<rw_timeout>2</rw_timeout>"));
+    EXPECT_NE(with_settings("<enable_local_infile>1</enable_local_infile>"), with_settings("<enable_local_infile>0</enable_local_infile>"));
+    EXPECT_NE(with_settings("<opt_reconnect>1</opt_reconnect>"), with_settings("<opt_reconnect>0</opt_reconnect>"));
+    EXPECT_NE(with_settings("<background_reconnect>1</background_reconnect>"), with_settings(""));
+
+    /// The same settings resolved for a replica: the timeouts are read at the replica level only, the
+    /// rest falls back to the parent configuration.
+    const auto with_replica_settings = [](const std::string & settings)
+    {
+        return entryName(
+            "<c><source><share_connection>1</share_connection><host>h</host><port>3306</port><user>u</user><db>d</db>"
+            "<replica><priority>1</priority>" + settings + "</replica></source></c>");
+    };
+
+    EXPECT_NE(with_replica_settings("<rw_timeout>1</rw_timeout>"), with_replica_settings("<rw_timeout>2</rw_timeout>"));
+    EXPECT_NE(with_replica_settings("<opt_reconnect>1</opt_reconnect>"), with_replica_settings("<opt_reconnect>0</opt_reconnect>"));
+}
+
+/// The priority orders the replicas inside the pool.
+TEST(MySQLPoolEntryName, ReplicaPriorityIsPartOfTheKey)
+{
+    const auto with_priorities = [](const std::string & first, const std::string & second)
+    {
+        return entryName(
+            "<c><source><share_connection>1</share_connection><host>h</host><port>3306</port><user>u</user><db>d</db>"
+            "<replica><priority>" + first + "</priority><host>a</host></replica>"
+            "<replica><priority>" + second + "</priority><host>b</host></replica>"
+            "</source></c>");
+    };
+
+    EXPECT_NE(with_priorities("1", "2"), with_priorities("2", "1"));
+}
+
 /// A single physical pool cannot have two different sizes or wait semantics.
 TEST(MySQLPoolEntryName, PoolSettingsArePartOfTheKey)
 {
