@@ -3,10 +3,12 @@
 # no-parallel: uses a PAUSEABLE_ONCE failpoint, which fires exactly once globally; a concurrent
 #   test could steal the pause and make this test hang.
 #
-# Regression test: with `keeper_map_strict_mode = 1`, a `DELETE` on a `KeeperMap` table must not fall
-# back to unversioned per-key removals when the version-checked `multi` request fails. The fallback
-# would delete rows based on a stale snapshot and still report the mutation as successful, breaking
-# the documented guarantee that a strict-mode delete succeeds only if it is executed atomically.
+# Regression test for the documented guarantee that a `DELETE` with `keeper_map_strict_mode = 1`
+# succeeds only if it is executed atomically. Two ways it used to be broken:
+#   - a failed version-checked `multi` request fell back to unversioned per-key removals, deleting rows
+#     based on a stale snapshot and still reporting the mutation as successful;
+#   - each block was committed on its own, so a conflict in a later block left the earlier blocks
+#     deleted by a mutation that then failed.
 
 CUR_DIR=$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)
 # shellcheck source=../shell_config.sh
@@ -69,3 +71,33 @@ start_paused_delete
 $CLICKHOUSE_KEEPER_CLIENT -q "rm '$data_path/$node_for_key_1'"
 $CLICKHOUSE_CLIENT -q "INSERT INTO $table VALUES (2, 222)"
 resume_and_report
+
+echo "-- a multi-block strict delete is one atomic request"
+# `max_block_size = 100` over 200 matched rows gives more than one block. Committing the blocks one by
+# one cannot be atomic - a conflict in a later block would leave the earlier blocks deleted - so the
+# whole strict-mode delete has to go into a single `multi` request.
+$CLICKHOUSE_CLIENT -q "TRUNCATE TABLE $table"
+$CLICKHOUSE_CLIENT -q "INSERT INTO $table SELECT number, number FROM numbers(200)"
+
+query_id="04661_${CLICKHOUSE_DATABASE}_multi_block"
+$CLICKHOUSE_CLIENT --keeper_map_strict_mode 1 --max_block_size 100 --query_id "$query_id" \
+    -q "ALTER TABLE $table DELETE WHERE 1"
+$CLICKHOUSE_CLIENT -q "SELECT count() FROM $table"
+$CLICKHOUSE_CLIENT -q "SYSTEM FLUSH LOGS query_log"
+$CLICKHOUSE_CLIENT -q "
+SELECT ProfileEvents['ZooKeeperMultiWrite']
+FROM system.query_log
+WHERE current_database = currentDatabase() AND query_id = '$query_id' AND type = 'QueryFinish'"
+
+echo "-- a non-strict delete stays block by block"
+$CLICKHOUSE_CLIENT -q "INSERT INTO $table SELECT number, number FROM numbers(200)"
+
+query_id="04661_${CLICKHOUSE_DATABASE}_multi_block_non_strict"
+$CLICKHOUSE_CLIENT --max_block_size 100 --query_id "$query_id" \
+    -q "ALTER TABLE $table DELETE WHERE 1"
+$CLICKHOUSE_CLIENT -q "SELECT count() FROM $table"
+$CLICKHOUSE_CLIENT -q "SYSTEM FLUSH LOGS query_log"
+$CLICKHOUSE_CLIENT -q "
+SELECT ProfileEvents['ZooKeeperMultiWrite'] > 1
+FROM system.query_log
+WHERE current_database = currentDatabase() AND query_id = '$query_id' AND type = 'QueryFinish'"
