@@ -61,6 +61,14 @@ DESC format(LineAsString, 'Hello\nWorld')
 
 A table for reading or writing data in a file.
 
+## Limitations with `user_files_policy` {#user-files-policy-limitations}
+
+When the [`user_files_policy`](/reference/settings/server-settings/settings/user) server setting is configured, user files are accessed through the disk configured in that policy instead of a local directory. In that mode the following are not supported and throw an exception:
+
+- archive syntax (`file('archive.zip :: data.csv')`);
+- [partitioned writes](#partitioned-write-to-multiple-tsv-files) with `INSERT ... PARTITION BY`;
+- the [`rename_files_after_processing`](/reference/settings/session-settings/other#rename_files_after_processing) setting, unless the policy's disk is a plain local filesystem disk.
+
 ## Examples for Writing to a File {#examples-for-writing-to-a-file}
 
 ### Write to a TSV file {#write-to-a-tsv-file}

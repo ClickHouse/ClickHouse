@@ -1525,8 +1525,15 @@ Storage policy for user files directory. When set, user files reside on the disk
 The policy must have exactly one volume containing exactly one disk. If set, this takes precedence over `user_files_path`.
 
 :::note
-Remote (non-plain-local) disks are supported only by the features that access user files through the disk interface, such as the [file()](/sql-reference/table-functions/file) table function, the `File` table engine, and dictionary sources with the `FILE` type defined via DDL.
+Remote (non-plain-local) disks are supported only by the features that access user files through the disk interface: reading and writing whole files with the [file()](/sql-reference/table-functions/file) table function and the `File` table engine, and dictionary sources with the `FILE` type defined via DDL.
+
 Features that require a local filesystem path — for example the [filesystem()](/sql-reference/table-functions/filesystem) table function, `ATTACH ... FROM`, the `FileLog` engine, and `catboostEvaluate` — still require the policy's disk to be a plain local disk and throw an exception otherwise.
+
+The following `file()` and `File` modes are not supported with `user_files_policy` at all, on any disk type, and throw an exception:
+- archive syntax (`file('archive.zip :: data.csv')`);
+- `INSERT ... PARTITION BY` into `file()` and partitioned writes with the `File` engine.
+
+The `rename_files_after_processing` setting additionally requires the policy's disk to be a plain local disk.
 :::
 
 **Example**
