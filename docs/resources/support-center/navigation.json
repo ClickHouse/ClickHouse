@@ -66,7 +66,6 @@
             "resources/support-center/knowledge-base/configuration-settings/alter-user-settings-exception",
             "resources/support-center/knowledge-base/configuration-settings/change-the-prompt-in-clickhouse-client",
             "resources/support-center/knowledge-base/configuration-settings/configure-a-user-setting",
-            "resources/support-center/knowledge-base/configuration-settings/configure-cap-ipc-lock-and-cap-sys-nice-in-docker",
             "resources/support-center/knowledge-base/configuration-settings/ignoring-incorrect-settings",
             "resources/support-center/knowledge-base/configuration-settings/maximum-number-of-tables-and-databases"
           ]

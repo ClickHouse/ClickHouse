@@ -817,7 +817,8 @@ std::optional<FilterDAGInfo> buildRowPolicyFilterIfNeeded(const StoragePtr & sto
     const StorageID & as_written_id,
     SelectQueryInfo & table_expression_query_info,
     PlannerContextPtr & planner_context,
-    std::set<std::string> & used_row_policies)
+    std::set<std::string> & used_row_policies,
+    NameSet required_names_without_filter = {})
 {
     const auto & query_context = planner_context->getQueryContext();
 
@@ -833,7 +834,11 @@ std::optional<FilterDAGInfo> buildRowPolicyFilterIfNeeded(const StoragePtr & sto
         used_row_policies.emplace(std::move(name));
     }
 
-    return buildFilterInfo(row_policy_filter->expression, table_expression_query_info.table_expression, planner_context);
+    return buildFilterInfo(
+        row_policy_filter->expression,
+        table_expression_query_info.table_expression,
+        planner_context,
+        std::move(required_names_without_filter));
 }
 
 std::optional<FilterDAGInfo> buildCustomKeyFilterIfNeeded(const StoragePtr & storage,
@@ -1438,7 +1443,7 @@ bool allowParallelReplicasForJoinTree(const QueryTreeNodePtr & join_tree_node, c
     if (!join_node)
         return true;
 
-    const auto & left_table_expr = join_node->getLeftTableExpression();
+    const auto & left_table_expr = join_node->getLeftTableExpressionNode();
     const auto * left_table = typeid_cast<const TableNode *>(left_table_expr.get());
     if (left_table && left_table->getStorage()->isView())
         return false;
@@ -1470,7 +1475,7 @@ bool allowParallelReplicasForJoinTree(const QueryTreeNodePtr & join_tree_node, c
             && left_table_expr->getNodeType() != QueryTreeNodeType::TABLE_FUNCTION)
             return false;
 
-        const auto & right_table_expr = join_node->getRightTableExpression();
+        const auto & right_table_expr = join_node->getRightTableExpressionNode();
         const auto * right_table = right_table_expr->as<TableNode>();
         const auto * right_table_function = right_table_expr->as<TableFunctionNode>();
         if (!right_table && !right_table_function)
@@ -1492,7 +1497,7 @@ bool allowParallelReplicasForJoinTree(const QueryTreeNodePtr & join_tree_node, c
     return false;
 }
 
-JoinTreeQueryPlan buildQueryPlanForTableExpression(QueryTreeNodePtr table_expression,
+JoinTreeQueryPlan buildQueryPlanForTableExpression(TableExpressionNodePtr table_expression,
     const QueryTreeNodePtr & parent_join_tree,
     const SelectQueryInfo & select_query_info,
     const SelectQueryOptions & select_query_options,
@@ -1774,8 +1779,35 @@ JoinTreeQueryPlan buildQueryPlanForTableExpression(QueryTreeNodePtr table_expres
 
                 updatePrewhereOutputsIfNeeded(table_expression_query_info, table_expression_data.getColumnNames(), storage_snapshot);
 
-                auto row_policy_filter_info
-                    = buildRowPolicyFilterIfNeeded(storage, table_node ? table_node->getStorageID() : storage->getStorageID(), table_expression_query_info, planner_context, used_row_policies);
+                /// The row-level filter runs inside the reading step and must keep any column a later
+                /// additional_table_filters step (applied on top) still needs, else that column is dropped
+                /// from the block (#111077). Mirror the columns_needed_by_other_filters pre-collect used for
+                /// PREWHERE above.
+                NameSet row_policy_required_names;
+                if (table_expression_query_info.additional_filter_ast)
+                {
+                    if (auto additional_filters_info_temp
+                        = buildAdditionalFiltersIfNeeded(table_expression_query_info, prewhere_info, planner_context))
+                    {
+                        for (const auto * input : additional_filters_info_temp->actions.getInputs())
+                            row_policy_required_names.insert(input->result_name);
+                    }
+                    /// buildFilterInfo treats an empty set as "keep all table columns", so seed it with the
+                    /// columns the query already needs before adding the additional-filter columns.
+                    if (!row_policy_required_names.empty())
+                    {
+                        const auto & current_column_names = table_expression_data.getColumnNames();
+                        row_policy_required_names.insert(current_column_names.begin(), current_column_names.end());
+                    }
+                }
+
+                auto row_policy_filter_info = buildRowPolicyFilterIfNeeded(
+                    storage,
+                    table_node ? table_node->getStorageID() : storage->getStorageID(),
+                    table_expression_query_info,
+                    planner_context,
+                    used_row_policies,
+                    std::move(row_policy_required_names));
                 if (row_policy_filter_info)
                 {
                     table_expression_data.setRowLevelFilterActions(row_policy_filter_info->actions.clone());
@@ -2491,7 +2523,7 @@ JoinTreeQueryPlan buildQueryPlanForJoinNode(
         && right_join_tree_query_plan.stage == QueryProcessingStage::FetchColumns
         && right_join_tree_query_plan.useful_sets.empty();
     if (allow_storage_join)
-        prepared_join = tryGetStorageInTableJoin(join_node.getRightTableExpression(), planner_context);
+        prepared_join = tryGetStorageInTableJoin(join_node.getRightTableExpressionNode(), planner_context);
     if (prepared_join)
     {
         bool use_nulls = settings[Setting::join_use_nulls] && isLeftOrFull(join_node.getKind());
@@ -2616,7 +2648,7 @@ JoinTreeQueryPlan buildJoinTreeQueryPlan(const QueryTreeNodePtr & query_node,
     const ColumnIdentifierSet & outer_scope_columns,
     PlannerContextPtr & planner_context)
 {
-    const QueryTreeNodePtr & join_tree_node = query_node->as<QueryNode &>().getJoinTree();
+    const QueryTreeNodePtr & join_tree_node = query_node->as<QueryNode &>().getJoinTreeNode();
     auto table_expressions_stack = buildTableExpressionsStack(join_tree_node);
     size_t table_expressions_stack_size = table_expressions_stack.size();
     bool is_single_table_expression = table_expressions_stack_size == 1;
@@ -2680,7 +2712,7 @@ JoinTreeQueryPlan buildJoinTreeQueryPlan(const QueryTreeNodePtr & query_node,
             /// Each replica would then independently read the full distributed table, resulting in duplicate data.
             if (join_kind == JoinKind::Right)
             {
-                const auto & right_expression_data = planner_context->getTableExpressionDataOrThrow(join_node.getRightTableExpression());
+                const auto & right_expression_data = planner_context->getTableExpressionDataOrThrow(join_node.getRightTableExpressionNode());
                 is_right_join_with_remote_table = right_expression_data.isRemote();
             }
 
