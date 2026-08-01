@@ -129,6 +129,42 @@ public:
             for (size_t i = 0; i < rhs.filled; ++i)
                 add(rhs.timestamps[i], rhs.values[i]);
         }
+
+        void serialize(WriteBuffer & buf) const
+        {
+            writeBinaryLittleEndian(filled, buf);
+            for (size_t i = 0; i < filled; ++i)
+                writeBinaryLittleEndian(timestamps[i], buf);
+            for (size_t i = 0; i < filled; ++i)
+                writeBinaryLittleEndian(values[i], buf);
+        }
+
+        void deserialize(ReadBuffer & buf)
+        {
+            readBinaryLittleEndian(filled, buf);
+            if (filled > 2)
+                throw Exception(ErrorCodes::INCORRECT_DATA, "Cannot deserialize data with more than 2 samples in a bucket");
+
+            for (size_t i = 0; i < filled; ++i)
+                readBinaryLittleEndian(timestamps[i], buf);
+            for (size_t i = 0; i < filled; ++i)
+                readBinaryLittleEndian(values[i], buf);
+
+            if (filled == 2 && timestamps[1] >= timestamps[0])
+                throw Exception(ErrorCodes::INCORRECT_DATA,
+                    "Timestamps must be in strictly descending order, but got {} after {}",
+                    static_cast<Int64>(timestamps[1]), static_cast<Int64>(timestamps[0]));
+        }
+
+        template <typename RangeType>
+        void checkTimestampsInRange(const RangeType & range) const
+        {
+            for (size_t i = 0; i < filled; ++i)
+                if (!range.contains(timestamps[i]))
+                    throw Exception(ErrorCodes::INCORRECT_DATA,
+                        "Cannot deserialize data: timestamp {} is outside its bucket's range",
+                        static_cast<Int64>(timestamps[i]));
+        }
     };
 
     explicit AggregateFunctionLast2Samples(const DataTypes & argument_types_)
@@ -271,27 +307,15 @@ public:
     {
     }
 
-    void merge(AggregateDataPtr __restrict place, ConstAggregateDataPtr rhs, Arena *) const override
+    void mergeImpl(AggregateDataPtr __restrict place, ConstAggregateDataPtr rhs, Arena *) const override
     {
         data(place).merge(data(rhs));
     }
 
     void serialize(ConstAggregateDataPtr __restrict place, WriteBuffer & buf, std::optional<size_t> /* version */) const override
     {
-        const Data & data = this->data(place);
-
         writeBinaryLittleEndian(FORMAT_VERSION, buf);
-        writeBinaryLittleEndian(data.filled, buf);
-
-        for (size_t i = 0; i < data.filled; ++i)
-        {
-            writeBinaryLittleEndian(data.timestamps[i], buf);
-        }
-
-        for (size_t i = 0; i < data.filled; ++i)
-        {
-            writeBinaryLittleEndian(data.values[i], buf);
-        }
+        data(place).serialize(buf);
     }
 
     void deserialize(AggregateDataPtr __restrict place, ReadBuffer & buf, std::optional<size_t> /* version */, Arena *) const override
@@ -305,29 +329,7 @@ public:
                 "Cannot deserialize data with different format version, expected {}, got {}",
                 FORMAT_VERSION, format_version);
 
-        Data & data = this->data(place);
-        readBinaryLittleEndian(data.filled, buf);
-
-        if (data.filled > 2)
-            throw Exception(
-                ErrorCodes::INCORRECT_DATA,
-                "Cannot deserialize data with different bucket count, expected 2, got {}",
-                data.filled);
-
-        for (size_t i = 0; i < data.filled; ++i)
-        {
-            readBinaryLittleEndian(data.timestamps[i], buf);
-            if (i > 0 && data.timestamps[i] > data.timestamps[i - 1])
-                throw Exception(
-                    ErrorCodes::INCORRECT_DATA,
-                    "Timestamps must be in descending order, but got {} after {}",
-                    static_cast<Int64>(data.timestamps[i]), static_cast<Int64>(data.timestamps[i - 1]));
-        }
-
-        for (size_t i = 0; i < data.filled; ++i)
-        {
-            readBinaryLittleEndian(data.values[i], buf);
-        }
+        data(place).deserialize(buf);
     }
 
     void insertResultInto(AggregateDataPtr __restrict place, IColumn & to, Arena *) const override

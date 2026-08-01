@@ -1,0 +1,65 @@
+---
+title: 'الخدمات الخاضعة للفوترة في AWS'
+slug: /cloud/reference/byoc/billable-aws-services
+sidebarTitle: 'الخدمات الخاضعة للفوترة في AWS'
+keywords: ['BYOC', 'Bring Your Own Cloud', 'AWS', 'الفوترة', 'التكلفة', 'EKS', 'EC2', 'S3', 'بوابة NAT', 'PrivateLink']
+description: 'خدمات AWS التي يوفّرها ClickHouse BYOC، والمصنّفة على أنها إلزامية أو اختيارية، مع ملاحظات توضّح أيّها يُحتسب ضمن فاتورة AWS الخاصة بك'
+doc_type: 'reference'
+---
+
+يوفّر ClickHouse BYOC مستوى بيانات مستقل ومتكامل داخل حساب AWS الخاص بك. تسرد هذه الصفحة جميع خدمات AWS التي يستخدمها هذا النشر، وتُصنّف كل خدمة على أنها إلزامية أو اختيارية، وتوضّح أيّها يُحتسب ضمن فاتورة AWS الخاصة بك.
+
+<Note>
+  تقوم AWS بفوترة تكاليف البنية التحتية مباشرةً على حسابك، وهي مستقلة عن اشتراكك في ClickHouse Cloud.
+</Note>
+
+<div id="mandatory-services">
+  ## الخدمات الإلزامية
+</div>
+
+تُوفَّر هذه الخدمات في كل عملية نشر BYOC.
+
+| الخدمة                                                                         | الغرض                                                                                                                                                                                    | خاضعة للفوترة؟                          |
+| ------------------------------------------------------------------------------ | ---------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- | --------------------------------------- |
+| **Amazon EKS**                                                                 | مستوى تحكم Kubernetes مُدار يشغّل مستوى بيانات ClickHouse.                                                                                                                               | نعم — لكل ساعة تشغيل للعنقود            |
+| **Amazon EC2** (worker instances via EKS managed node groups)                  | موارد الحوسبة لكبسولات خادم ClickHouse، وClickHouse Keeper، والإضافات الخاصة بالمنصة. تُستخدم افتراضيًا عائلات مثيلات محسّنة للذاكرة.                                                    | نعم — لكل ساعة مثيل                     |
+| **Amazon EBS** (gp3 volumes)                                                   | تخزين محلي لنظام تشغيل العقدة، وصور الحاويات، وسجلات خادم ClickHouse.                                                                                                                    | نعم — لكل GB-شهر + IOPS/throughput      |
+| **Amazon S3**                                                                  | التخزين الأساسي لجداول ClickHouse، والنسخ الاحتياطية، وبيانات القياس عن بُعد الخاصة بالمنصة. تفرض سياسات الـ bucket إعدادات `BucketOwnerEnforced`، وحظر الوصول العام، وSSE.              | نعم — التخزين + الطلبات + نقل البيانات  |
+| **Amazon VPC** (VPC, subnets, route tables, security groups, internet gateway) | عزل الشبكة لمستوى البيانات. ثلاث شبكات فرعية خاصة وثلاث شبكات فرعية عامة عبر مناطق التوافر.                                                                                              | لا — موارد VPC نفسها مجانية             |
+| **NAT Gateway + Elastic IP** (one per AZ)                                      | حركة الإنترنت الصادرة من الشبكات الفرعية الخاصة (اتصال مستوى التحكم، وسحب الصور، وبيانات القياس عن بُعد).                                                                                | نعم — لكل ساعة + معالجة البيانات        |
+| **VPC Endpoint for S3** (gateway endpoint)                                     | وصول خاص إلى S3 من دون المرور عبر NAT.                                                                                                                                                   | لا — gateway endpoints مجانية           |
+| **Elastic Load Balancing (NLB)**                                               | حركة المرور الواردة من العملاء إلى خدمات ClickHouse. يُنشئه AWS Load Balancer Controller داخل الـ cluster. الافتراضي: داخلي.                                                             | نعم — لكل LCU-ساعة + البيانات المُعالجة |
+| **AWS IAM** (roles, policies, OIDC provider, Pod Identity associations)        | وصول عبر الحسابات إلى ClickHouse Cloud، وIRSA لوحدات التحكم داخل الـ cluster (cert-manager, external-dns, load-balancer-controller, cluster-autoscaler, EBS CSI driver, state-exporter). | لا                                      |
+| **Amazon CloudWatch Logs**                                                     | سجلات مستوى التحكم في EKS ‏(api, audit, authenticator, controllerManager, scheduler).                                                                                                    | نعم — الاستيعاب + التخزين               |
+
+<div id="optional-services">
+  ## الخدمات الاختيارية
+</div>
+
+لا يتم توفير هذه الخدمات إلا عند تمكين الميزة المقابلة.
+
+| الخدمة                                     | مفعّلة عند                                                                 | قابلة للفوترة؟                                                                         |
+| ------------------------------------------ | -------------------------------------------------------------------------- | -------------------------------------------------------------------------------------- |
+| **AWS PrivateLink** (VPC Endpoint Service) | تُفعِّل اتصال PrivateLink لحركة مرور العميل بدلًا من NLB أو بالإضافة إليه. | نعم — لكل ساعة لكل VPC endpoint + البيانات المُعالجة                                   |
+| **VPC Peering Connection**                 | تطلب إعداد ربط نظير بين BYOC VPC وVPC أخرى ضمن حسابك.                      | لا بالنسبة إلى الاتصال نفسه. نقل البيانات عبر مناطق التوفّر وعبر المناطق خاضع للفوترة. |
+
+<div id="data-transfer-charges">
+  ## رسوم نقل البيانات
+</div>
+
+حتى عندما تكون الموارد الفردية مجانية، تظل رسوم نقل البيانات في AWS سارية:
+
+* **حركة المرور بين مناطق التوافر (Cross-AZ)** بين عقد EKS وعبر النسخ المتماثلة في عمليات النشر متعددة مناطق التوافر.
+* **حركة البيانات الصادرة إلى الإنترنت** عبر NAT Gateway، لنبضات مستوى التحكم، وبيانات القياس عن بُعد، وسحب الصور.
+* **حركة البيانات الصادرة إلى مستوى التحكم في ClickHouse Cloud** عبر الطبقة التراكبية المشفرة (Tailscale).
+* **حركة البيانات الصادرة إلى شبكات العملاء** عبر NLB أو نقطة نهاية PrivateLink.
+
+راجع [تسعير نقل البيانات في AWS](https://aws.amazon.com/ec2/pricing/on-demand/#Data_Transfer) للاطلاع على الأسعار الحالية.
+
+<div id="related">
+  ## مواضيع ذات صلة
+</div>
+
+* [بنية BYOC](/ar/products/bring-your-own-cloud/overview/architecture) — المكوّنات التي ينشرها ClickHouse Cloud في حسابك
+* [أمان شبكة BYOC](/ar/products/bring-your-own-cloud/reference/network-security) — كيفية اتصال مستوى البيانات بـ ClickHouse Cloud
+* [صلاحيات BYOC](/ar/products/bring-your-own-cloud/reference/privilege) — أدوار IAM التي تُنشأ أثناء إعداد BYOC

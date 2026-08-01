@@ -12,10 +12,6 @@
 #include <Common/VectorWithMemoryTracking.h>
 #include <base/unaligned.h>
 
-#ifdef __SSE4_1__
-    #include <smmintrin.h>
-#endif
-
 /** Search for a substring in a string by Volnitsky's algorithm
   * http://volnitsky.com/project/str_search/
   *
@@ -383,7 +379,7 @@ protected:
     size_t needle_size;
     const UInt8 * needle_end = needle + needle_size;
     /// For how long we move, if the n-gram from haystack is not found in the hash table.
-    size_t step = needle_size - sizeof(VolnitskyTraits::Ngram) + 1;
+    const size_t step = needle_size - sizeof(VolnitskyTraits::Ngram) + 1;
 
     /** max needle length is 255, max distinct ngrams for case-sensitive is (255 - 1), case-insensitive is 4 * (255 - 1)
       *  storage of 64K ngrams (n = 2, 128 KB) should be large enough for both cases */
@@ -392,6 +388,23 @@ protected:
     bool fallback; /// Do we need to use the fallback algorithm.
 
     FallbackSearcher fallback_searcher;
+
+    /// Whether search() bypasses Volnitsky's n-gram hash and uses the fallback searcher directly.
+    /// Case-sensitive search uses StringZilla `sz_find`, which beats the hash on every SIMD target (x86 SSE+
+    /// and ARM NEON). Case-insensitive uses a cache searcher that only beats the hash with the AVX2 kernel;
+    /// on ARM NEON and SSE-only the hash wins for selective needles, so it is kept there. AVX2 availability
+    /// is what matters, independent of multitarget dispatch (which is off at non-v3 baselines).
+#if USE_MULTITARGET_CODE || defined(__SSE4_1__) || (defined(__aarch64__) && defined(__ARM_NEON))
+    static constexpr bool case_sensitive_can_bypass = true;
+#else
+    static constexpr bool case_sensitive_can_bypass = false;
+#endif
+#if defined(__AVX2__)
+    static constexpr bool case_insensitive_can_bypass = true;
+#else
+    static constexpr bool case_insensitive_can_bypass = false;
+#endif
+    static constexpr bool use_fallback_searcher = CaseSensitive ? case_sensitive_can_bypass : case_insensitive_can_bypass;
 
 public:
     /** haystack_size_hint - the expected total size of the haystack for `search` calls. Optional (zero means unspecified).
@@ -404,27 +417,30 @@ public:
         , fallback{VolnitskyTraits::isFallbackNeedle(needle_size, haystack_size_hint)}
         , fallback_searcher{needle, needle_size}
     {
-        if (fallback || fallback_searcher.getForceFallback())
-            return;
-
-        hash = std::make_unique<VolnitskyTraits::Offset[]>(VolnitskyTraits::hash_size);
-
-        auto callback = [this](const VolnitskyTraits::Ngram ngram, const int offset) { return this->putNGramBase(ngram, offset); };
-        /// ssize_t is used here because unsigned can't be used with condition like `i >= 0`, unsigned always >= 0
-        /// And also adding from the end guarantees that we will find first occurrence because we will lookup bigger offsets first.
-        for (auto i = static_cast<ssize_t>(needle_size - sizeof(VolnitskyTraits::Ngram)); i >= 0; --i)
+        if constexpr (!use_fallback_searcher)
         {
-            bool ok = VolnitskyTraits::putNGram<CaseSensitive, ASCII>(needle + i, static_cast<int>(i + 1), needle, needle_size, callback);
-
-            /** `putNGramUTF8CaseInsensitive` does not work if characters with lower and upper cases
-              * are represented by different number of bytes or code points.
-              * So, use fallback if error occurred.
-              */
-            if (!ok)
-            {
-                fallback_searcher.setForceFallback(true);
-                hash = nullptr;
+            if (fallback)
                 return;
+
+            hash = std::make_unique<VolnitskyTraits::Offset[]>(VolnitskyTraits::hash_size);
+
+            auto callback = [this](const VolnitskyTraits::Ngram ngram, const int offset) { return this->putNGramBase(ngram, offset); };
+            /// ssize_t is used here because unsigned can't be used with condition like `i >= 0`, unsigned always >= 0
+            /// And also adding from the end guarantees that we will find first occurrence because we will lookup bigger offsets first.
+            for (auto i = static_cast<ssize_t>(needle_size - sizeof(VolnitskyTraits::Ngram)); i >= 0; --i)
+            {
+                bool ok = VolnitskyTraits::putNGram<CaseSensitive, ASCII>(needle + i, static_cast<int>(i + 1), needle, needle_size, callback);
+
+                /** `putNGramUTF8CaseInsensitive` does not work if characters with lower and upper cases
+                  * are represented by different number of bytes or code points.
+                  * So, use fallback if error occurred.
+                  */
+                if (!ok)
+                {
+                    fallback = true;
+                    hash = nullptr;
+                    return;
+                }
             }
         }
     }
@@ -438,31 +454,32 @@ public:
 
         const auto * haystack_end = haystack + haystack_size;
 
-#ifdef __SSE4_1__
-        return fallback_searcher.search(haystack, haystack_end);
-#endif
-
-        if (fallback || haystack_size <= needle_size || fallback_searcher.getForceFallback())
+        if constexpr (use_fallback_searcher)
             return fallback_searcher.search(haystack, haystack_end);
-
-        /// Let's "apply" the needle to the haystack and compare the n-gram from the end of the needle.
-        const auto * pos = haystack + needle_size - sizeof(VolnitskyTraits::Ngram);
-        for (; pos <= haystack_end - needle_size; pos += step)
+        else
         {
-            /// We look at all the cells of the hash table that can correspond to the n-gram from haystack.
-            for (size_t cell_num = VolnitskyTraits::toNGram(pos) % VolnitskyTraits::hash_size; hash[cell_num];
-                 cell_num = (cell_num + 1) % VolnitskyTraits::hash_size)
+            if (fallback || haystack_size <= needle_size)
+                return fallback_searcher.search(haystack, haystack_end);
+
+            /// Let's "apply" the needle to the haystack and compare the n-gram from the end of the needle.
+            const auto * pos = haystack + needle_size - sizeof(VolnitskyTraits::Ngram);
+            for (; pos <= haystack_end - needle_size; pos += step)
             {
-                /// When found - compare bytewise, using the offset from the hash table.
-                const auto * res = pos - (hash[cell_num] - 1);
+                /// We look at all the cells of the hash table that can correspond to the n-gram from haystack.
+                for (size_t cell_num = VolnitskyTraits::toNGram(pos) % VolnitskyTraits::hash_size; hash[cell_num];
+                     cell_num = (cell_num + 1) % VolnitskyTraits::hash_size)
+                {
+                    /// When found - compare bytewise, using the offset from the hash table.
+                    const auto * res = pos - (hash[cell_num] - 1);
 
-                /// pointer in the code is always padded array so we can use pagesafe semantics
-                if (fallback_searcher.compare(haystack, haystack_end, res))
-                    return res;
+                    /// pointer in the code is always padded array so we can use pagesafe semantics
+                    if (fallback_searcher.compare(haystack, haystack_end, res))
+                        return res;
+                }
             }
-        }
 
-        return fallback_searcher.search(pos - step + 1, haystack_end);
+            return fallback_searcher.search(pos - step + 1, haystack_end);
+        }
     }
 
     const char * search(const char * haystack, size_t haystack_size) const
@@ -755,13 +772,13 @@ public:
 };
 
 
-using Volnitsky = VolnitskyBase<true, true, ASCIICaseSensitiveStringSearcher>;
-using VolnitskyUTF8 = VolnitskyBase<true, false, UTF8CaseSensitiveStringSearcher>;
+using Volnitsky = VolnitskyBase<true, true, CaseSensitiveStringSearcher>;
+using VolnitskyUTF8 = VolnitskyBase<true, false, CaseSensitiveStringSearcher>;
 using VolnitskyCaseInsensitive = VolnitskyBase<false, true, ASCIICaseInsensitiveStringSearcher>; /// ignores non-ASCII bytes
 using VolnitskyCaseInsensitiveUTF8 = VolnitskyBase<false, false, UTF8CaseInsensitiveStringSearcher>;
 
-using MultiVolnitsky = MultiVolnitskyBase<true, true, ASCIICaseSensitiveStringSearcher>;
-using MultiVolnitskyUTF8 = MultiVolnitskyBase<true, false, UTF8CaseSensitiveStringSearcher>;
+using MultiVolnitsky = MultiVolnitskyBase<true, true, CaseSensitiveStringSearcher>;
+using MultiVolnitskyUTF8 = MultiVolnitskyBase<true, false, CaseSensitiveStringSearcher>;
 using MultiVolnitskyCaseInsensitive = MultiVolnitskyBase<false, true, ASCIICaseInsensitiveStringSearcher>;
 using MultiVolnitskyCaseInsensitiveUTF8 = MultiVolnitskyBase<false, false, UTF8CaseInsensitiveStringSearcher>;
 

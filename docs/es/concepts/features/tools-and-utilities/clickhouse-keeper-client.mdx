@@ -1,0 +1,113 @@
+---
+description: 'Documentación de la utilidad cliente de ClickHouse Keeper'
+sidebarTitle: 'clickhouse-keeper-client'
+slug: /operations/utilities/clickhouse-keeper-client
+title: 'utilidad clickhouse-keeper-client'
+doc_type: 'reference'
+---
+
+Una aplicación cliente para interactuar con ClickHouse Keeper mediante su protocolo nativo.
+
+<div id="clickhouse-keeper-client">
+  ## Opciones
+</div>
+
+* `-q QUERY`, `--query=QUERY` — Consulta que se ejecutará. Si no se pasa este parámetro, `clickhouse-keeper-client` se iniciará en modo interactivo.
+* `-h HOST`, `--host=HOST` — Host del servidor. Valor predeterminado: `localhost`.
+* `-p N`, `--port=N` — Puerto del servidor. Valor predeterminado: 9181
+* `-c FILE_PATH`, `--config-file=FILE_PATH` — Establece la ruta del archivo de configuración para obtener la cadena de conexión. Valor predeterminado: `config.xml`.
+* `--password=PASSWORD` — Contraseña para la autenticación. También puede establecerse mediante la variable de entorno `CLICKHOUSE_KEEPER_PASSWORD` o en el archivo de configuración XML, en `<zookeeper><password>`.
+* `--identity=IDENTITY` — Identidad para el esquema de autenticación `digest`. También puede establecerse mediante la variable de entorno `CLICKHOUSE_KEEPER_IDENTITY` o en el archivo de configuración XML, en `<zookeeper><identity>`.
+* `--connection-timeout=TIMEOUT` — Establece el tiempo de espera de la conexión en segundos. Valor predeterminado: 10s.
+* `--session-timeout=TIMEOUT` — Establece el tiempo de espera de la sesión en segundos. Valor predeterminado: 10s.
+* `--operation-timeout=TIMEOUT` — Establece el tiempo de espera de la operación en segundos. Valor predeterminado: 10s.
+* `--history-file=FILE_PATH` — Establece la ruta del archivo de historial. Valor predeterminado: `~/.keeper-client-history`.
+* `--log-level=LEVEL` — Establece el nivel de registro. Valor predeterminado: `information`.
+* `--no-confirmation` — Si se establece, no requerirá confirmación para varios comandos. Valor predeterminado: `false` para el modo interactivo y `true` para la consulta
+* `--help` — Muestra el mensaje de ayuda.
+
+<div id="clickhouse-keeper-client-env">
+  ## Variables de entorno
+</div>
+
+* `CLICKHOUSE_KEEPER_PASSWORD` — Se usa como contraseña predeterminada si no se proporciona `--password` en la línea de comandos.
+* `CLICKHOUSE_KEEPER_IDENTITY` — Se usa como identidad predeterminada si no se proporciona `--identity` en la línea de comandos.
+
+<div id="clickhouse-keeper-client-auth">
+  ## Autenticación
+</div>
+
+Al conectarse a un servidor de Keeper que requiere autenticación, la contraseña se determina según el siguiente orden de prioridad (se usa la primera coincidencia):
+
+1. Argumento de línea de comandos `--password`
+2. Variable de entorno `CLICKHOUSE_KEEPER_PASSWORD`
+3. `<zookeeper><password>` en el archivo de configuración XML especificado por `--config-file`
+
+La misma prioridad se aplica a `--identity` / `CLICKHOUSE_KEEPER_IDENTITY` / `<zookeeper><identity>`.
+
+Archivo de configuración XML de ejemplo con opciones de autenticación:
+
+```xml
+<clickhouse>
+    <zookeeper>
+        <password>secret</password>
+        <node index="1">
+            <host>localhost</host>
+            <port>9181</port>
+        </node>
+    </zookeeper>
+</clickhouse>
+```
+
+<div id="clickhouse-keeper-client-example">
+  ## Ejemplo
+</div>
+
+```bash
+./clickhouse-keeper-client -h localhost -p 9181 --connection-timeout 30 --session-timeout 30 --operation-timeout 30
+Connected to ZooKeeper at [::1]:9181 with session_id 137
+/ :) ls
+keeper foo bar
+/ :) cd 'keeper'
+/keeper :) ls
+api_version
+/keeper :) cd 'api_version'
+/keeper/api_version :) ls
+
+/keeper/api_version :) cd 'xyz'
+Path /keeper/api_version/xyz does not exist
+/keeper/api_version :) cd ../../
+/ :) ls
+keeper foo bar
+/ :) get 'keeper/api_version'
+2
+```
+
+<div id="clickhouse-keeper-client-commands">
+  ## Comandos
+</div>
+
+* `ls '[path]' [watch_id]` -- Enumera los nodos de la ruta indicada (por defecto: cwd). Opcionalmente, establece un watch de hijos identificado por `watch_id`
+* `cd '[path]'` -- Cambia la ruta de trabajo (por defecto `.`)
+* `cp '<src>' '<dest>'`  -- Copia el nodo &#39;src&#39; en la ruta &#39;dest&#39;
+* `cpr '<src>' '<dest>'`  -- Copia el subárbol del nodo &#39;src&#39; en la ruta &#39;dest&#39;
+* `mv '<src>' '<dest>'`  -- Mueve el nodo &#39;src&#39; a la ruta &#39;dest&#39;
+* `mvr '<src>' '<dest>'`  -- Mueve el subárbol del nodo &#39;src&#39; a la ruta &#39;dest&#39;
+* `exists '<path>' [watch_id]` -- Devuelve `1` si el nodo existe y `0` en caso contrario. Opcionalmente, establece un watch identificado por `watch_id`
+* `set '<path>' <value> [version]` -- Actualiza el valor del nodo. Solo lo actualiza si la versión coincide (por defecto: -1)
+* `create '<path>' <value> [mode]` -- Crea un nodo nuevo con el valor especificado
+* `touch '<path>'` -- Crea un nodo nuevo con una cadena vacía como valor. No genera una excepción si el nodo ya existe
+* `get '<path>' [watch_id]` -- Devuelve el valor del nodo. Opcionalmente, establece un watch de datos identificado por `watch_id`
+* `watch <watch_id> [timeout_seconds]` -- Espera el evento de watch identificado por `watch_id` e imprime el tipo de evento y la ruta. Si se especifica `timeout_seconds`, devuelve un error tras el tiempo de espera indicado
+* `rm '<path>' [version]` -- Elimina el nodo solo si la versión coincide (por defecto: -1)
+* `rmr '<path>' [limit]` -- Elimina recursivamente la ruta si el tamaño del subárbol es menor que el límite. Requiere confirmación (límite por defecto = 100)
+* `flwc <command>` -- Ejecuta un comando de cuatro letras
+* `help` -- Imprime este mensaje
+* `get_direct_children_number '[path]'` -- Obtiene el número de nodos hijos directos bajo una ruta específica
+* `get_all_children_number '[path]'` -- Obtiene el número total de nodos hijos bajo una ruta específica
+* `get_stat '[path]'` -- Devuelve el stat del nodo (por defecto `.`)
+* `find_super_nodes <threshold> '[path]'` -- Encuentra nodos con un número de hijos superior a un determinado umbral para la ruta indicada (por defecto `.`)
+* `delete_stale_backups` -- Elimina los nodos de ClickHouse usados para copias de seguridad que ahora están inactivos
+* `find_big_family [path] [n]` -- Devuelve los n nodos principales con la familia más grande del subárbol (ruta por defecto = `.` y n = 10)
+* `sync '<path>'` -- Sincroniza el nodo entre procesos y el leader
+* `reconfig <add|remove|set> "<arg>" [version]` -- Reconfigura el cluster de Keeper. Consulta /docs/en/guides/sre/keeper/clickhouse-keeper#reconfiguration

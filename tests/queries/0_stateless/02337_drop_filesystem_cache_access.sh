@@ -1,5 +1,5 @@
 #!/usr/bin/env bash
-# Tags: no-parallel
+# Tags: no-parallel, no-distributed-cache
 
 CLICKHOUSE_CLIENT_SERVER_LOGS_LEVEL=none
 

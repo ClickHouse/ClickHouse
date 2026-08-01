@@ -84,7 +84,7 @@ private:
         /// Otherwise we need to call writeColumnChunkBody().
         DataTypePtr column_type;
         std::string column_name;
-        std::vector<ColumnPtr> column_pieces;
+        Columns column_pieces;
 
         Parquet::ColumnChunkWriteState state;
 
@@ -115,6 +115,8 @@ private:
     size_t staging_bytes = 0;
 
     Parquet::WriteOptions options;
+    /// Filled in by the ctor and read-only afterwards, so the encoder threads can share it.
+    Parquet::IcebergOptionality iceberg_optionality;
     Parquet::SchemaElements schema;
     Parquet::FileWriteState file_state;
     size_t base_offset = 0; // initial out.count(), just for assert

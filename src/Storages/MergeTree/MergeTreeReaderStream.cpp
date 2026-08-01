@@ -120,7 +120,7 @@ void MergeTreeReaderStream::init()
                 return pipeline.build();
             },
             uncompressed_cache,
-            settings.allow_different_codecs);
+            /* allow_different_codecs */ true);
 
         if (profile_callback)
             buffer->setProfileCallback(profile_callback, clock_type);
@@ -135,7 +135,7 @@ void MergeTreeReaderStream::init()
     else
     {
         auto buffer = std::make_unique<CompressedReadBufferFromFile>(
-            build_read_buffer(), settings.allow_different_codecs);
+            build_read_buffer(), /* allow_different_codecs */ true);
 
         if (profile_callback)
             buffer->setProfileCallback(profile_callback, clock_type);
@@ -324,6 +324,13 @@ size_t MergeTreeReaderStreamSingleColumn::getRightOffset(size_t right_mark)
     /// But during deserialization we read both parts before the data, so we can't use the marks and need to always return the
     /// whole file size.
     if (settings.is_metadata_file)
+        return file_size;
+
+    /// Special case for a stream that holds a single value for the whole part (the product quantization codebook).
+    /// The value is written after the data of all granules, so every granule's mark points at its start and no mark
+    /// delimits its end. In particular, when the value spans several compressed blocks, the final mark points into
+    /// the middle of it, and bounding the read by that mark truncates the value (`CANNOT_READ_ALL_DATA`).
+    if (settings.is_single_value_per_part)
         return file_size;
 
     /// This is a good scenario. The compressed block is finished within the right mark,

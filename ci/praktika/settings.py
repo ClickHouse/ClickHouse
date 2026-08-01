@@ -62,16 +62,31 @@ class _Settings:
     ENVIRONMENT_VAR_FILE: str = f"{TEMP_DIR}/environment.json"
     RUN_LOG: str = f"{TEMP_DIR}/job.log"
 
-    USE_CUSTOM_GH_AUTH: bool = False
+    ######################################
+    #      Host metrics (CPU/RAM)        #
+    ######################################
+    # Sample whole-VM CPU and RAM usage in the background while a job runs and
+    # store a decimated timeline in Result.ext["metrics"] (rendered in json.html).
+    HOST_METRICS_ENABLED: bool = True
+    # Reporting/window interval: one aggregated point (avg + peak) is emitted per
+    # window, so the timeline stays ~1 point/sec regardless of the fine cadence.
+    HOST_METRICS_SAMPLE_INTERVAL_SEC: float = 1.0
+    # Fine sampling cadence: /proc is read this often within each reporting window
+    # so short bursts are captured as the window's peak instead of being averaged
+    # away. Must be <= the reporting interval.
+    HOST_METRICS_FINE_INTERVAL_SEC: float = 0.25
+    # Upper bound on points kept per series after min/max decimation, so the
+    # payload injected into the Result stays small regardless of job duration.
+    HOST_METRICS_MAX_POINTS: int = 400
+    HOST_METRICS_FILE: str = f"{TEMP_DIR}/host_metrics.jsonl"
+    # Filesystem whose used% is tracked as the "disk" series. Defaults to the
+    # working directory, i.e. the disk the job actually writes to.
+    HOST_METRICS_DISK_PATH: str = "."
+
     SECRET_GH_APP_ID: str = ""
     SECRET_GH_APP_PEM_KEY: str = ""
     SECRET_GH_APP_INSTALLATION_ID: str = ""
     SECRET_GH_APP_REGION: str = ""
-    # When set, GHAuth mints the GitHub token by invoking this AWS Lambda
-    # instead of reading the App PEM/id/installation secrets directly. The
-    # lambda returns a scoped installation token whose permissions are
-    # fixed by the lambda itself (see tests/ci/mint_token_*_lambda in
-    # clickhouse-private). Takes precedence over SECRET_GH_APP_* when set.
     GH_AUTH_LAMBDA_NAME: str = ""
     GH_AUTH_LAMBDA_REGION: str = ""
 
@@ -179,7 +194,6 @@ _USER_DEFINED_SETTINGS = [
     "KEEPER_STRESS_METRICS_DB_NAME",
     "KEEPER_STRESS_METRICS_TABLE_NAME",
     "CI_DB_INSERT_TIMEOUT_SEC",
-    "USE_CUSTOM_GH_AUTH",
     "SECRET_GH_APP_ID",
     "SECRET_GH_APP_PEM_KEY",
     "SECRET_GH_APP_INSTALLATION_ID",
@@ -196,6 +210,12 @@ _USER_DEFINED_SETTINGS = [
     "CI_DB_READ_USER",
     "CI_DB_READ_URL",
     "TEST_FAILURE_PATTERNS",
+    "HOST_METRICS_ENABLED",
+    "HOST_METRICS_SAMPLE_INTERVAL_SEC",
+    "HOST_METRICS_FINE_INTERVAL_SEC",
+    "HOST_METRICS_MAX_POINTS",
+    "HOST_METRICS_FILE",
+    "HOST_METRICS_DISK_PATH",
 ]
 
 
@@ -223,7 +243,7 @@ def _get_settings() -> _Settings:
                 value = getattr(foo, setting)
                 res.__setattr__(setting, value)
                 # print(f"- read user defined setting [{setting} = {value}]")
-            except Exception as e:
+            except Exception:
                 # print(f"Exception while read user settings: {e}")
                 pass
 

@@ -196,6 +196,17 @@ bool ColumnArray::isDefaultAt(size_t n) const
     return offsets_data[n] == offsets_data[static_cast<ssize_t>(n) - 1];
 }
 
+UInt64 ColumnArray::getNumberOfDefaultRows() const
+{
+    /// Avoid the per-row cross-TU call to `isDefaultAt` of the IColumnHelper default;
+    /// inline the offsets comparison so the loop vectorises.
+    const auto & offsets_data = getOffsets();
+    const size_t num_rows = offsets_data.size();
+    UInt64 result = 0;
+    for (size_t i = 0; i < num_rows; ++i)
+        result += static_cast<UInt64>(offsets_data[i] == offsets_data[static_cast<ssize_t>(i) - 1]);
+    return result;
+}
 
 void ColumnArray::insertData(const char * pos, size_t length)
 {
@@ -307,7 +318,12 @@ void ColumnArray::updateHashWithValueRange(size_t begin, size_t end, SipHash & h
     size_t nested_begin = offsetAt(begin);
     size_t nested_end = offsetAt(end);
     getData().updateHashWithValueRange(nested_begin, nested_end, hash);
-    hash.update(reinterpret_cast<const char *>(&getOffsets()[begin]), (end - begin) * sizeof(getOffsets()[0]));
+    /// Relative offsets so equal data hashes equally regardless of position (insert deduplication).
+    for (size_t i = begin; i < end; ++i)
+    {
+        UInt64 relative_offset = getOffsets()[i] - nested_begin;
+        hash.update(relative_offset);
+    }
 }
 
 void ColumnArray::computeHashInto(size_t row_begin, size_t row_end, UInt32 * hash_out, bool initial) const
