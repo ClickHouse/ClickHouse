@@ -20,12 +20,9 @@ DROP USER IF EXISTS ${USER_NAME};
 CREATE USER ${USER_NAME} IDENTIFIED WITH plaintext_password BY 'pgpass';
 GRANT SELECT ON ${CLICKHOUSE_DATABASE}.* TO ${USER_NAME};
 
--- The emulated pg_namespace, pg_class and pg_attribute are views over these system tables, and a view is
--- expanded in the context of the user that reads it.
-GRANT SELECT ON system.databases TO ${USER_NAME};
-GRANT SELECT ON system.tables TO ${USER_NAME};
-GRANT SELECT ON system.columns TO ${USER_NAME};
-GRANT SELECT ON system.one TO ${USER_NAME};
+-- The emulated pg_namespace, pg_class and pg_attribute are views over the system tables (databases,
+-- tables, columns, one), and a view is expanded in the context of the user that reads it.
+GRANT SELECT ON system.* TO ${USER_NAME};
 
 CREATE TABLE self_source
 (
