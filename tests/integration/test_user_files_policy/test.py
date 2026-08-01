@@ -1087,3 +1087,56 @@ def test_local_parquet_metadata_cache():
         "ORDER BY log_comment"
     )
     assert counters.strip() == "0\t1\n1\t0", counters
+
+
+@pytest.mark.parametrize("node", [node_local, node_s3], ids=["local", "s3"])
+def test_archive_syntax_rejected(node):
+    """Archive syntax (`archive.zip :: data.csv`) is not routed through `IDisk`, so it is
+    rejected up front for every `user_files_policy` disk — including a plain local one, where
+    a silent fall-through would read host-local paths instead of the configured disk.
+
+    The restriction is documented in the `user_files_policy` setting description and on the
+    `file` table function / `File` engine docs pages; this test pins the contract."""
+    err = node.query_and_get_error(
+        "SELECT * FROM file('archive.zip :: data.csv', 'CSV', 'x UInt64')"
+    )
+    assert "Archive syntax is not supported with user_files_policy" in err, err
+
+    err_engine = node.query_and_get_error(
+        "CREATE TABLE archive_engine (x UInt64) ENGINE = File(CSV, 'archive.zip :: data.csv')"
+    )
+    assert "Archive syntax is not supported with user_files_policy" in err_engine, err_engine
+
+
+def test_rename_files_after_processing_rejected_on_non_plain_local():
+    """`rename_files_after_processing` renames through local filesystem APIs, so on a
+    non-plain-local `user_files_policy` disk it would target the metadata path instead of the
+    configured backend (and the failure is swallowed in the renamer's destructor). It must be
+    rejected up front, while a plain local policy disk keeps working."""
+    node_s3.query(
+        "INSERT INTO FUNCTION file('rename_reject.csv', 'CSV', 'x UInt64') SELECT 1 "
+        "SETTINGS engine_file_truncate_on_insert = 1"
+    )
+    err = node_s3.query_and_get_error(
+        "SELECT * FROM file('rename_reject.csv', 'CSV', 'x UInt64') "
+        "SETTINGS rename_files_after_processing = 'processed_%a'"
+    )
+    assert "`rename_files_after_processing` is not supported" in err, err
+
+    # A plain local policy disk must not be over-rejected: the read succeeds and the file is
+    # renamed on the disk.
+    node_local.query(
+        "INSERT INTO FUNCTION file('rename_ok.csv', 'CSV', 'x UInt64') SELECT 1 "
+        "SETTINGS engine_file_truncate_on_insert = 1"
+    )
+    result = node_local.query(
+        "SELECT * FROM file('rename_ok.csv', 'CSV', 'x UInt64') "
+        "SETTINGS rename_files_after_processing = 'processed_%a'"
+    )
+    assert result.strip() == "1", result
+    assert (
+        node_local.query(
+            "SELECT count() FROM file('processed_rename_ok.csv', 'CSV', 'x UInt64')"
+        ).strip()
+        == "1"
+    )
