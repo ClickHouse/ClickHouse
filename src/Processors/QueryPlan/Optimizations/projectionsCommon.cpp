@@ -318,11 +318,13 @@ size_t filterPartsByProjection(
     return filtered_parts;
 }
 
-/// Whether `column_name`'s default can be evaluated on the projection part: every column or
-/// subcolumn it references must be stored there and still current, virtual, or fillable in turn.
+/// Whether `column_name`'s default can be evaluated on the projection part with the same result as
+/// on the parent: every column or subcolumn it references must be stored there and still current,
+/// virtual, or itself a late-add (missing from the parent part too) that is fillable in turn.
 /// Kept in lockstep with `injectRequiredColumnsRecursively`, which resolves the same way.
 static bool projectionPartCanFillDefault(
     const IMergeTreeDataPart & projection_part,
+    const IMergeTreeDataPart & parent_part,
     const ProjectionDescription & projection,
     const ColumnsDescription & parent_table_columns,
     const String & column_name,
@@ -377,11 +379,15 @@ static bool projectionPartCanFillDefault(
         if (!parent_table_columns.hasColumnOrSubcolumn(GetColumnsOptions::All, identifier))
             continue;
 
-        /// Not stored: still fillable if it is a current projection column with a fillable default
-        /// of its own, which the reader synthesizes recursively.
-        if (!projection_columns.hasColumnOrSubcolumn(GetColumnsOptions::AllPhysical, identifier)
+        /// Missing from the projection part. Being a current projection column is not enough: if the
+        /// parent part still stores it, the projection part is merely stale for it (case (3)) and the
+        /// reader would synthesize a type default here while the parent path reads the real values,
+        /// so the two paths disagree. Only a late-add the parent part lacks too (case (4)) fills
+        /// identically, and then only if its own default is fillable in turn.
+        if (parent_part.tryGetColumn(identifier)
+            || !projection_columns.hasColumnOrSubcolumn(GetColumnsOptions::AllPhysical, identifier)
             || !projectionPartCanFillDefault(
-                projection_part, projection, parent_table_columns, identifier, resolving, known_fillable))
+                projection_part, parent_part, projection, parent_table_columns, identifier, resolving, known_fillable))
             return false;
     }
 
@@ -391,6 +397,7 @@ static bool projectionPartCanFillDefault(
 
 static bool projectionPartCanFillDefault(
     const IMergeTreeDataPart & projection_part,
+    const IMergeTreeDataPart & parent_part,
     const ProjectionDescription & projection,
     const ColumnsDescription & parent_table_columns,
     const String & column_name)
@@ -398,7 +405,7 @@ static bool projectionPartCanFillDefault(
     NameSet resolving;
     NameSet known_fillable;
     return projectionPartCanFillDefault(
-        projection_part, projection, parent_table_columns, column_name, resolving, known_fillable);
+        projection_part, parent_part, projection, parent_table_columns, column_name, resolving, known_fillable);
 }
 
 /// The projection's column set is re-derived from its query at every table load, so it can drift
@@ -444,7 +451,7 @@ static bool projectionPartHasRequiredColumns(
 
         /// (4) Late-added table column, missing from both parts. Usable only if its default can be
         /// filled from the projection part; otherwise it is drift, read from the parent.
-        if (!projectionPartCanFillDefault(projection_part, projection, parent_table_columns, name))
+        if (!projectionPartCanFillDefault(projection_part, parent_part, projection, parent_table_columns, name))
             return false;
     }
 

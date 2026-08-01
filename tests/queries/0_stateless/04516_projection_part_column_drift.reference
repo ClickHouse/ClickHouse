@@ -73,3 +73,17 @@ agg read after merge	2	601
 1	501
 2	601
 virtual via projection	1	100	1
+parent-stored-dep read after drift	1	71
+parent-stored-dep read after drift	2	91
+parent-stored-dep read after merge	1	71
+parent-stored-dep read after merge	2	91
+parent-stored-dep forced after merge	1	71
+parent-stored-dep forced after merge	2	91
+parent-stored-dep rebuilt not merged	0	1
+ignore-parent-stored-dep part columns after merge	p	a
+ignore-parent-stored-dep part columns after merge	p	d
+ignore-parent-stored-dep part columns after merge	p	x
+ignore-parent-stored-dep parent path	1	71
+ignore-parent-stored-dep parent path	2	91
+ignore-parent-stored-dep forced after merge	1	71
+ignore-parent-stored-dep forced after merge	2	91

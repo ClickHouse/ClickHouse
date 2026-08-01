@@ -653,3 +653,98 @@ SELECT 'virtual via projection', a, b, _part != '' FROM t_proj_virtual WHERE b =
 SETTINGS optimize_use_projections = 1, force_optimize_projection = 1;
 
 DROP TABLE t_proj_virtual;
+
+-- a dependency that is a CURRENT projection column but which the PARENT part still stores is drift
+-- (case (3)), not a late-add (case (4)): the projection part lacks it, so evaluating the default there
+-- would substitute a type default while the parent path reads the real values, and the two paths
+-- disagree. Here `d DEFAULT x * 10` becomes required through the alias `c`, while a sibling alias `e`
+-- makes `x` a current projection column; the stale part stores neither `d` nor `x`, but the parent
+-- stores `x`, so the projection must not be used and the merge must rebuild.
+DROP TABLE IF EXISTS t_proj_parent_stored_dep_drift;
+
+CREATE TABLE t_proj_parent_stored_dep_drift
+(
+    a UInt64,
+    x UInt64,
+    c UInt64 ALIAS a + 1,
+    e UInt64 ALIAS a + 2,
+    PROJECTION p (SELECT a, c, e ORDER BY a)
+)
+ENGINE = MergeTree ORDER BY a;
+
+SYSTEM STOP MERGES t_proj_parent_stored_dep_drift;
+
+-- both aliases resolve to `a`, so the projection part materializes {a} only
+INSERT INTO t_proj_parent_stored_dep_drift (a, x) VALUES (1, 7);
+INSERT INTO t_proj_parent_stored_dep_drift (a, x) VALUES (2, 9);
+
+ALTER TABLE t_proj_parent_stored_dep_drift ADD COLUMN d UInt64 DEFAULT x * 10;
+ALTER TABLE t_proj_parent_stored_dep_drift MODIFY COLUMN c UInt64 ALIAS d + 1;
+ALTER TABLE t_proj_parent_stored_dep_drift MODIFY COLUMN e UInt64 ALIAS x + 2;
+
+-- served from the parent: c = d + 1 = x * 10 + 1 = 71 / 91 (not 1 from a default-filled x)
+SELECT 'parent-stored-dep read after drift', a, c FROM t_proj_parent_stored_dep_drift ORDER BY a;
+
+SELECT a, c FROM t_proj_parent_stored_dep_drift ORDER BY a
+SETTINGS optimize_use_projections = 1, force_optimize_projection = 1; -- { serverError PROJECTION_NOT_USED }
+
+-- the merge must rebuild from the parent instead of baking the default-filled `x` into the part
+SYSTEM START MERGES t_proj_parent_stored_dep_drift;
+OPTIMIZE TABLE t_proj_parent_stored_dep_drift FINAL;
+
+SELECT 'parent-stored-dep read after merge', a, c FROM t_proj_parent_stored_dep_drift ORDER BY a;
+
+SELECT 'parent-stored-dep forced after merge', a, c FROM t_proj_parent_stored_dep_drift ORDER BY a
+SETTINGS optimize_use_projections = 1, force_optimize_projection = 1;
+
+SYSTEM FLUSH LOGS part_log;
+
+SELECT 'parent-stored-dep rebuilt not merged',
+       sum(ProfileEvents['MergedProjections']), sum(ProfileEvents['RebuiltProjections']) > 0
+FROM system.part_log
+WHERE database = currentDatabase() AND table = 't_proj_parent_stored_dep_drift'
+  AND event_type = 'MergeParts';
+
+DROP TABLE t_proj_parent_stored_dep_drift;
+
+-- the merge-side counterpart of the case above, which is what pins the merge copy of the rule.
+-- Under the default mode the read-side check already routes such a query to the parent, so the
+-- merged part's contents are not observable; under 'ignore' the stale part IS merged and read, so a
+-- merge that treats the parent-stored `x` as fillable bakes a default-filled `x` into the projection
+-- part and every later projection read returns `c = 1` instead of `x * 10 + 1`.
+DROP TABLE IF EXISTS t_proj_ignore_parent_stored_dep_drift;
+
+CREATE TABLE t_proj_ignore_parent_stored_dep_drift
+(
+    a UInt64,
+    x UInt64,
+    c UInt64 ALIAS a + 1,
+    e UInt64 ALIAS a + 2,
+    PROJECTION p (SELECT a, c, e ORDER BY a)
+)
+ENGINE = MergeTree ORDER BY a SETTINGS deduplicate_merge_projection_mode = 'ignore';
+
+SYSTEM STOP MERGES t_proj_ignore_parent_stored_dep_drift;
+
+INSERT INTO t_proj_ignore_parent_stored_dep_drift (a, x) VALUES (1, 7);
+INSERT INTO t_proj_ignore_parent_stored_dep_drift (a, x) VALUES (2, 9);
+
+ALTER TABLE t_proj_ignore_parent_stored_dep_drift ADD COLUMN d UInt64 DEFAULT x * 10;
+ALTER TABLE t_proj_ignore_parent_stored_dep_drift MODIFY COLUMN c UInt64 ALIAS d + 1;
+ALTER TABLE t_proj_ignore_parent_stored_dep_drift MODIFY COLUMN e UInt64 ALIAS x + 2;
+
+SYSTEM START MERGES t_proj_ignore_parent_stored_dep_drift;
+OPTIMIZE TABLE t_proj_ignore_parent_stored_dep_drift FINAL;
+
+-- the projection was rebuilt, so it materializes the current column set including `x`
+SELECT 'ignore-parent-stored-dep part columns after merge', name, column FROM system.projection_parts_columns
+WHERE database = currentDatabase() AND table = 't_proj_ignore_parent_stored_dep_drift' AND active ORDER BY name, column;
+
+-- both paths agree: c = d + 1 = x * 10 + 1 (a stale merge would answer 1 from the projection)
+SELECT 'ignore-parent-stored-dep parent path', a, c FROM t_proj_ignore_parent_stored_dep_drift ORDER BY a
+SETTINGS optimize_use_projections = 0;
+
+SELECT 'ignore-parent-stored-dep forced after merge', a, c FROM t_proj_ignore_parent_stored_dep_drift ORDER BY a
+SETTINGS optimize_use_projections = 1, force_optimize_projection = 1;
+
+DROP TABLE t_proj_ignore_parent_stored_dep_drift;

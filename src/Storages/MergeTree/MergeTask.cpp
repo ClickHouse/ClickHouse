@@ -1295,7 +1295,9 @@ void MergeTask::ExecuteAndFinalizeHorizontalPart::prepareProjectionsToMergeAndRe
         /// Whether the column's default can be evaluated on the projection part. Must stay in lockstep
         /// with `projectionPartCanFillDefault` in `projectionsCommon.cpp`, the same rule on the read path.
         const auto & projection_metadata_columns = projection.metadata->getColumns();
-        auto projection_part_can_fill_default = [&](const IMergeTreeDataPart & projection_part, const String & column_name)
+        auto projection_part_can_fill_default = [&](const IMergeTreeDataPart & projection_part,
+                                                   const IMergeTreeDataPart & parent_part,
+                                                   const String & column_name)
         {
             auto can_fill = [&](const String & name, NameSet & resolving, NameSet & known_fillable, auto & self) -> bool
             {
@@ -1341,7 +1343,12 @@ void MergeTask::ExecuteAndFinalizeHorizontalPart::prepareProjectionsToMergeAndRe
                     if (!parent_table_columns.hasColumnOrSubcolumn(GetColumnsOptions::All, identifier))
                         continue;
 
-                    if (!projection_metadata_columns.hasColumnOrSubcolumn(GetColumnsOptions::AllPhysical, identifier)
+                    /// A current projection column the parent part still stores is case (3): the
+                    /// projection part is stale for it, so filling it from its type default would
+                    /// diverge from the parent data. Only a late-add missing from both parts fills
+                    /// identically, and then only if its own default is fillable in turn.
+                    if (parent_part.tryGetColumn(identifier)
+                        || !projection_metadata_columns.hasColumnOrSubcolumn(GetColumnsOptions::AllPhysical, identifier)
                         || !self(identifier, resolving, known_fillable, self))
                         return false;
                 }
@@ -1374,7 +1381,7 @@ void MergeTask::ExecuteAndFinalizeHorizontalPart::prepareProjectionsToMergeAndRe
                     /// Merging the stale part fills this column from its default, so an unfillable one
                     /// throws instead. Do not stop at a tolerable miss above: the column it hides may
                     /// be the unfillable one that has to rebuild even under IGNORE.
-                    if (!projection_part_can_fill_default(*it->second, column.name))
+                    if (!projection_part_can_fill_default(*it->second, *part, column.name))
                     {
                         projection_part_misses_column = true;
                         projection_part_default_unfillable = true;
