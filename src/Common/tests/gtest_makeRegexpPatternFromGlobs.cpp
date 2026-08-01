@@ -776,6 +776,20 @@ TEST(Common, GlobASTMatchStateSpaceLimit)
     EXPECT_FALSE(wide.matches(std::string(71, 'a')));
 }
 
+TEST(Common, GlobASTMatchDeepRecursionGuard)
+{
+    /// A long run of `*` stays far below the memo-table cap against a short candidate
+    /// (the state space is candidate length x expressions), but every asterisk expression
+    /// adds one recursion frame on the zero-consumption branch of matchesImpl. The matcher
+    /// must fail with an exception (stack guard) instead of exhausting the thread stack.
+    GlobAST::GlobString deep(std::string(400000, '*'));
+    EXPECT_THROW(deep.matches("abc"), DB::Exception);
+
+    /// The matcher must stay usable on the same thread after the guard fired.
+    GlobAST::GlobString simple("a*c");
+    EXPECT_TRUE(simple.matches("abc"));
+}
+
 /// Differential fuzzer: the AST matcher (use_glob_ast_parser = 1) must agree with the
 /// legacy regex matcher (makeRegexpPatternFromGlobs + re2::RE2::FullMatch) on every
 /// (pattern, candidate) pair. Patterns and candidates are drawn from a small alphabet

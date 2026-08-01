@@ -1,4 +1,5 @@
 #include <Common/parseGlobs.h>
+#include <Common/checkStackSize.h>
 #include <Common/re2.h>
 #include <Common/UTF8Helpers.h>
 
@@ -479,6 +480,11 @@ bool GlobString::matches(std::string_view candidate) const
 
 bool GlobString::matchesImpl(std::string_view candidate, size_t pos, size_t expr_idx, std::vector<int8_t> & memo) const
 {
+    /// The memo table bounds the heap, but every backtracking expression (an asterisk, an
+    /// enum, a non-padded range) still adds one recursion frame, so a pattern made of many
+    /// such expressions can exhaust the thread stack. Turn that into an exception.
+    checkStackSize();
+
     const size_t cols = expressions.size() + 1;
     const size_t initial_pos = pos;
     const size_t initial_expr_idx = expr_idx;
