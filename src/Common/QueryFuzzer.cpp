@@ -4227,13 +4227,13 @@ void QueryFuzzer::fuzzExpressionList(ASTExpressionList & expr_list)
                         new_child = makeASTFunction("if", cond, other, child);
                 }
             }
-            else if (fuzz_rand() % 500 == 0)
+            else if (fuzz_rand() % 1500 == 0)
             {
                 /// Wrap child in an introspection function accepting any argument type,
                 /// forcing serialization or type walks of the whole expression.
                 new_child = makeASTFunction(pickRandomly(fuzz_rand, any_type_wrappers), child);
             }
-            else if (fuzz_rand() % 800 == 0 && current_ast_depth < 80)
+            else if (fuzz_rand() % 1000 == 0 && current_ast_depth < 80)
             {
                 /// Build multiIf(cond1, e1[, cond2, e2], else): a CASE WHEN expression
                 auto multiif_func = make_intrusive<ASTFunction>();
@@ -4261,7 +4261,7 @@ void QueryFuzzer::fuzzExpressionList(ASTExpressionList & expr_list)
                     new_child = multiif_func;
                 }
             }
-            else if (fuzz_rand() % 800 == 0)
+            else if (fuzz_rand() % 1500 == 0)
             {
                 /// Reference a virtual column of whatever the query reads from.
                 new_child = makeFuzzedVirtualColumn();
