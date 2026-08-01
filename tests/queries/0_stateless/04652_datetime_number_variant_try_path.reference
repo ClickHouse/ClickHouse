@@ -1,0 +1,10 @@
+-- default: Variant try-path reads an unquoted number as a Unix timestamp in seconds
+2023-12-23 20:37:33.035
+2023-12-23 20:37:33.035
+2023-12-23 20:37:33
+2023-12-23 20:37:33
+-- compatibility: Variant try-path reads a bare integer as the raw value (ticks for DateTime64)
+2023-12-23 20:37:33.035
+2023-12-23 20:37:33.035
+2023-12-23 20:37:33
+2023-12-23 20:37:33

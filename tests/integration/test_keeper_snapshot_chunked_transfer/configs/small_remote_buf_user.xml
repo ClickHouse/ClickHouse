@@ -1,0 +1,7 @@
+<clickhouse>
+<profiles>
+    <default>
+        <max_read_buffer_size_remote_fs>1024</max_read_buffer_size_remote_fs>
+    </default>
+</profiles>
+</clickhouse>
