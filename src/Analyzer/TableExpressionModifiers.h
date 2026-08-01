@@ -2,7 +2,8 @@
 
 #include <Parsers/ASTSampleRatio.h>
 
-#include <Core/Streaming/CursorTree_fwd.h>
+#include <Core/Streaming/CursorTree.h>
+#include <Core/Streaming/Settings.h>
 
 namespace DB
 {
@@ -18,12 +19,6 @@ class TableExpressionModifiers
 {
 public:
     using Rational = ASTSampleRatio::Rational;
-
-    struct StreamSettings
-    {
-        /// Null means "no cursor" (read from the beginning of the table).
-        CursorTreeNodePtr cursor_tree;
-    };
 
     TableExpressionModifiers() = default;
     TableExpressionModifiers(bool has_final_,
@@ -102,17 +97,6 @@ private:
 
 void serializeRational(TableExpressionModifiers::Rational val, WriteBuffer & out);
 TableExpressionModifiers::Rational deserializeRational(ReadBuffer & in);
-
-inline bool operator==(const TableExpressionModifiers::StreamSettings & lhs, const TableExpressionModifiers::StreamSettings & rhs)
-{
-    if ((lhs.cursor_tree == nullptr) != (rhs.cursor_tree == nullptr))
-        return false;
-
-    if (lhs.cursor_tree == nullptr)
-        return true;
-
-    return cursorTreeToMap(lhs.cursor_tree) == cursorTreeToMap(rhs.cursor_tree);
-}
 
 inline bool operator==(const TableExpressionModifiers & lhs, const TableExpressionModifiers & rhs)
 {
