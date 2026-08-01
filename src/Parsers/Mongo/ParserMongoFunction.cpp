@@ -10,6 +10,7 @@
 
 #include <Parsers/ASTAssignment.h>
 #include <Parsers/Mongo/MongoConstants.h>
+#include <Parsers/Mongo/ParserMongoAggregateExpression.h>
 #include <Parsers/Mongo/ParserMongoQuery.h>
 #include <Parsers/Mongo/Utils.h>
 #include <Parsers/ASTExpressionList.h>
@@ -115,6 +116,104 @@ ASTPtr parseFieldOperator(
         return makeASTFunction("not", negated);
     }
 
+    if (name == "$exists")
+    {
+        if (!argument.IsBool())
+            throw Exception(ErrorCodes::BAD_ARGUMENTS, "The argument of '$exists' must be a boolean");
+        /** A ClickHouse table has a fixed set of columns, so a field either is a column of it or
+          * the query does not resolve at all. What a document can still leave out is the value, and
+          * that is a `NULL`: a field is present when the column is not null, which for a column
+          * that is not `Nullable` is always.
+          */
+        return makeASTFunction(argument.GetBool() ? "isNotNull" : "isNull", make_intrusive<ASTIdentifier>(field));
+    }
+
+    if (name == "$mod")
+    {
+        if (!argument.IsArray() || argument.Size() != 2)
+            throw Exception(ErrorCodes::BAD_ARGUMENTS, "The argument of '$mod' must be an array of a divisor and a remainder");
+        auto divisor = tryParseMongoConstant(argument[0]);
+        auto remainder = tryParseMongoConstant(argument[1]);
+        if (!divisor || !remainder)
+            throw Exception(ErrorCodes::BAD_ARGUMENTS, "The divisor and the remainder of '$mod' must be constants");
+        return makeASTFunction("equals", makeASTFunction("modulo", identifier(), divisor), remainder);
+    }
+
+    if (name == "$size")
+    {
+        auto size = tryParseMongoConstant(argument);
+        if (!size)
+            throw Exception(ErrorCodes::BAD_ARGUMENTS, "The argument of '$size' must be a number");
+        return makeASTFunction("equals", makeASTFunction("length", identifier()), size);
+    }
+
+    if (name == "$all")
+    {
+        if (!argument.IsArray())
+            throw Exception(ErrorCodes::BAD_ARGUMENTS, "The argument of '$all' must be an array");
+        auto array = makeASTFunction("array");
+        for (const auto & element : argument.GetArray())
+        {
+            auto constant = tryParseMongoConstant(element);
+            if (!constant)
+                throw Exception(ErrorCodes::NOT_IMPLEMENTED, "Only constants are supported in the array of '$all'");
+            array->arguments->children.push_back(std::move(constant));
+        }
+        return makeASTFunction("hasAll", identifier(), array);
+    }
+
+    if (name == "$elemMatch")
+    {
+        if (!argument.IsObject() || argument.MemberCount() == 0)
+            throw Exception(ErrorCodes::BAD_ARGUMENTS, "The argument of '$elemMatch' must be a non empty document");
+        if (!stringView(argument.MemberBegin()->name).starts_with("$"))
+            throw Exception(
+                ErrorCodes::NOT_IMPLEMENTED, "'$elemMatch' is only supported on an array of values, not on an array of documents");
+
+        /// The element of the array is bound to a lambda parameter, and the operators of the
+        /// document become the predicate applied to it.
+        static constexpr auto element_name = "__mongo_element";
+        ASTPtr predicate;
+        if (!MongoIdentityFunction(copyValue(argument, metadata->getAllocator()), metadata, element_name).parseImpl(predicate))
+            throw Exception(ErrorCodes::BAD_ARGUMENTS, "Cannot translate the argument of '$elemMatch'");
+
+        auto parameters = makeASTFunction("tuple", make_intrusive<ASTIdentifier>(element_name));
+        auto lambda = makeASTFunction("lambda", std::move(parameters), std::move(predicate));
+        return makeASTFunction("arrayExists", std::move(lambda), identifier());
+    }
+
+    if (name.starts_with("$bits"))
+    {
+        /// The mask is a number, or the list of the bit positions that make it up.
+        UInt64 mask = 0;
+        if (argument.IsArray())
+        {
+            for (const auto & position : argument.GetArray())
+            {
+                if (!position.IsUint64() || position.GetUint64() >= 64)
+                    throw Exception(ErrorCodes::BAD_ARGUMENTS, "A bit position of '{}' must be a number below 64", name);
+                mask |= UInt64(1) << position.GetUint64();
+            }
+        }
+        else if (argument.IsUint64())
+            mask = argument.GetUint64();
+        else
+            throw Exception(ErrorCodes::BAD_ARGUMENTS, "The argument of '{}' must be a bit mask or an array of bit positions", name);
+
+        auto masked = makeASTFunction("bitAnd", identifier(), make_intrusive<ASTLiteral>(Field(mask)));
+        auto mask_literal = make_intrusive<ASTLiteral>(Field(mask));
+        auto zero = make_intrusive<ASTLiteral>(Field(UInt64(0)));
+
+        if (name == "$bitsAllSet")
+            return makeASTFunction("equals", masked, mask_literal);
+        if (name == "$bitsAnySet")
+            return makeASTFunction("notEquals", masked, zero);
+        if (name == "$bitsAllClear")
+            return makeASTFunction("equals", masked, zero);
+        if (name == "$bitsAnyClear")
+            return makeASTFunction("notEquals", masked, mask_literal);
+    }
+
     throw Exception(ErrorCodes::NOT_IMPLEMENTED, "The filter operator '{}' is not supported", name);
 }
 
@@ -202,6 +301,12 @@ bool MongoLiteralFunction::parseImpl(ASTPtr & node)
     return false;
 }
 
+
+bool MongoExprFunction::parseImpl(ASTPtr & node)
+{
+    node = parseMongoAggregateExpression(data);
+    return true;
+}
 
 bool IMongoLogicalFunction::parseImpl(ASTPtr & node)
 {
@@ -328,57 +433,6 @@ bool MongoArithmeticFunctionElement::parseImpl(ASTPtr & node)
     return false;
 }
 
-bool MongoSetFunction::parseImpl(ASTPtr & node)
-{
-    if (!data.IsObject())
-        return false;
-
-    auto expression_list = make_intrusive<ASTExpressionList>();
-    node = expression_list;
-
-    for (auto it = data.MemberBegin(); it != data.MemberEnd(); ++it)
-    {
-        auto assignment_ast = make_intrusive<ASTAssignment>();
-        assignment_ast->column_name = it->name.GetString();
-        ASTPtr assigment_expr;
-        auto parser = createParser(copyValue(it->value, metadata->getAllocator()), metadata, "$arithmetic_function_element");
-        if (!parser->parseImpl(assigment_expr))
-            return false;
-        assignment_ast->children.push_back(assigment_expr);
-        expression_list->children.push_back(assignment_ast);
-    }
-
-    return true;
-}
-
-bool MongoIncrementFunction::parseImpl(ASTPtr & node)
-{
-    if (!data.IsObject())
-        return false;
-
-    auto expression_list = make_intrusive<ASTExpressionList>();
-    node = expression_list;
-
-    /// `{"$inc": {"age": 1}}` increments the column `age` by the literal `1`: the member name
-    /// is the column and the member value is the amount to add.
-    for (auto it = data.MemberBegin(); it != data.MemberEnd(); ++it)
-    {
-        auto assignment_ast = make_intrusive<ASTAssignment>();
-        assignment_ast->column_name = it->name.GetString();
-
-        ASTPtr value_expression;
-        if (!MongoArithmeticFunctionElement(copyValue(it->value, metadata->getAllocator()), metadata, "").parseImpl(value_expression))
-            return false;
-
-        auto column_identifier = make_intrusive<ASTIdentifier>(assignment_ast->column_name);
-        auto increment = makeASTFunction("plus", column_identifier, value_expression);
-
-        assignment_ast->children.push_back(increment);
-        expression_list->children.push_back(assignment_ast);
-    }
-
-    return true;
-}
 
 }
 

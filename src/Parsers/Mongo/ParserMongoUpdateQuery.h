@@ -13,6 +13,11 @@ namespace DB
 namespace Mongo
 {
 
+/** Translates the update statement of an `update`, a document of update operators such as
+  * `{"$set": {"a": 1}, "$inc": {"b": 2}}`, into the assignments of an `ALTER TABLE ... UPDATE`.
+  */
+ASTPtr parseMongoUpdateStatement(const rapidjson::Value & update);
+
 class ParserMongoUpdateQuery : public IMongoParser
 {
 public:

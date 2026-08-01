@@ -31,6 +31,17 @@ server_port = 27017
 OP_MSG = 2013
 
 
+def wait_for(condition, timeout=60):
+    """An update is a mutation, which is asynchronous, so the new value is awaited rather than
+    read straight back."""
+    deadline = time.monotonic() + timeout
+    while time.monotonic() < deadline:
+        if condition():
+            return True
+        time.sleep(1)
+    return condition()
+
+
 @pytest.fixture(scope="module")
 def started_cluster():
     try:
@@ -526,6 +537,115 @@ def test_aggregate(started_cluster):
 
     # The server is still healthy after the rejected pipeline.
     assert list(collection.aggregate([{"$match": {"id": 1}}, {"$count": "c"}])) == [{"c": 1}]
+
+
+def test_distinct(started_cluster):
+    """`distinct` is a `$group` on the field, and it takes a filter like a `find` does."""
+    client = make_client()
+    collection = client["db"]["distinct_values"]
+
+    collection.drop()
+    collection.insert_many(
+        [{"id": 1, "city": "berlin"}, {"id": 2, "city": "berlin"}, {"id": 3, "city": "paris"}]
+    )
+
+    assert sorted(collection.distinct("city")) == ["berlin", "paris"]
+    assert sorted(collection.distinct("city", {"id": {"$gte": 3}})) == ["paris"]
+    assert sorted(collection.distinct("id")) == [1, 2, 3]
+
+
+def test_server_commands(started_cluster):
+    """The commands a driver or a shell sends without touching a collection. They have to answer,
+    because a client that cannot ping or read the version of the server does not get as far as a
+    query."""
+    client = make_client()
+    database = client["db"]
+
+    assert database.command("ping")["ok"] == 1
+    assert database.command("buildInfo")["version"]
+    assert len(database.command("buildInfo")["versionArray"]) == 4
+    assert database.command("connectionStatus")["ok"] == 1
+
+    # There are no server side cursors: the whole result is returned in the first batch.
+    killed = database.command("killCursors", "any_collection", cursors=[])
+    assert killed["cursorsKilled"] == []
+    assert killed["ok"] == 1
+    assert database.command("endSessions", [])["ok"] == 1
+
+
+def test_drop_database(started_cluster):
+    """A `dropDatabase` of a database that does not exist is a success in Mongo, so it stays one
+    here as well."""
+    client = make_client()
+    client["dropped_db"]["users"].insert_one({"id": 1})
+    assert "dropped_db" in client.list_database_names()
+
+    assert client["dropped_db"].command("dropDatabase")["ok"] == 1
+    assert "dropped_db" not in client.list_database_names()
+    assert client["dropped_db"].command("dropDatabase")["ok"] == 1
+
+
+def test_unwind_and_the_other_stages(started_cluster):
+    """`$unwind` is an `ARRAY JOIN`, which drops a document whose array is empty unless the stage
+    asks to keep it."""
+    client = make_client()
+    collection = client["db"]["unwound"]
+
+    collection.drop()
+    collection.insert_many([{"id": 1, "tags": ["red", "green"]}, {"id": 2, "tags": []}])
+
+    assert [(d["id"], d["tags"]) for d in collection.aggregate([{"$unwind": "$tags"}, {"$sort": {"id": 1, "tags": 1}}])] == [
+        (1, "green"),
+        (1, "red"),
+    ]
+    assert [
+        (d["id"], d["tags"])
+        for d in collection.aggregate(
+            [{"$unwind": {"path": "$tags", "preserveNullAndEmptyArrays": True}}, {"$sort": {"id": 1, "tags": 1}}]
+        )
+    ] == [(1, "green"), (1, "red"), (2, "")]
+    assert [
+        d["position"]
+        for d in collection.aggregate(
+            [{"$unwind": {"path": "$tags", "includeArrayIndex": "position"}}, {"$sort": {"position": 1}}]
+        )
+    ] == [0, 1]
+
+    assert list(collection.aggregate([{"$unwind": "$tags"}, {"$sortByCount": "$tags"}])) == [
+        {"_id": "green", "count": 1},
+        {"_id": "red", "count": 1},
+    ]
+    assert list(collection.aggregate([{"$match": {"id": 1}}, {"$unset": "tags"}])) == [{"id": 1}]
+    assert list(collection.aggregate([{"$sample": {"size": 1}}, {"$count": "c"}])) == [{"c": 1}]
+
+
+def test_update_operators(started_cluster):
+    """The update operators all become the assignments of one `ALTER TABLE ... UPDATE`, so a
+    statement that both sets and increments is a single mutation."""
+    client = make_client()
+    collection = client["db"]["updated"]
+
+    collection.drop()
+    collection.insert_many([{"id": 1, "name": "alpha", "age": 30, "tags": ["red"]}])
+
+    collection.update_many({"id": 1}, {"$set": {"name": "beta"}, "$inc": {"age": 5}})
+    assert wait_for(lambda: collection.find_one({"id": 1})["age"] == 35)
+    assert collection.find_one({"id": 1})["name"] == "beta"
+
+    collection.update_many({"id": 1}, {"$mul": {"age": 2}})
+    assert wait_for(lambda: collection.find_one({"id": 1})["age"] == 70)
+
+    collection.update_many({"id": 1}, {"$push": {"tags": "green"}})
+    assert wait_for(lambda: collection.find_one({"id": 1})["tags"] == ["red", "green"])
+
+    collection.update_many({"id": 1}, {"$addToSet": {"tags": "green"}})
+    assert collection.find_one({"id": 1})["tags"] == ["red", "green"]
+
+    collection.update_many({"id": 1}, {"$pull": {"tags": "red"}})
+    assert wait_for(lambda: collection.find_one({"id": 1})["tags"] == ["green"])
+
+    with pytest.raises(pymongo.errors.PyMongoError):
+        collection.update_many({"id": 1}, {"$bit": {"age": {"and": 1}}})
 
 
 def test_heterogeneous_array_insert(started_cluster):

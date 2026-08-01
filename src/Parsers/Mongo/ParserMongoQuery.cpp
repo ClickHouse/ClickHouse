@@ -74,6 +74,10 @@ createParser(rapidjson::Value data_, std::shared_ptr<QueryMetadata> metadata_, c
     {
         return std::make_shared<MongoNorFunction>(std::move(data_), metadata_, edge_name_);
     }
+    if (edge_name_ == "$expr")
+    {
+        return std::make_shared<MongoExprFunction>(std::move(data_), metadata_, edge_name_);
+    }
     if (edge_name_ == "$add")
     {
         return std::make_shared<MongoSumFunction>(std::move(data_), metadata_, edge_name_);
@@ -97,14 +101,6 @@ createParser(rapidjson::Value data_, std::shared_ptr<QueryMetadata> metadata_, c
     if (edge_name_ == "$arithmetic_function_element")
     {
         return std::make_shared<MongoArithmeticFunctionElement>(std::move(data_), metadata_, edge_name_);
-    }
-    if (edge_name_ == "$set")
-    {
-        return std::make_shared<MongoSetFunction>(std::move(data_), metadata_, edge_name_);
-    }
-    if (edge_name_ == "$inc")
-    {
-        return std::make_shared<MongoIncrementFunction>(std::move(data_), metadata_, edge_name_);
     }
     if (!literal_as_default)
     {

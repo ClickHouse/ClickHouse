@@ -98,6 +98,22 @@ public:
     }
 };
 
+/** `{"$expr": <aggregation expression>}` uses the aggregation expression language as a filter,
+  * which is how a filter compares two fields of the same document to each other.
+  */
+class MongoExprFunction : public IMongoFunction
+{
+public:
+    std::string getFunctionName() const override { return "$expr"; }
+
+    explicit MongoExprFunction(rapidjson::Value array_elements_, std::shared_ptr<QueryMetadata> metadata_, const std::string & edge_name_)
+        : IMongoFunction(std::move(array_elements_), metadata_, edge_name_)
+    {
+    }
+
+    bool parseImpl(ASTPtr & node) override;
+};
+
 class MongoNorFunction : public IMongoLogicalFunction
 {
 public:
@@ -194,31 +210,6 @@ public:
     }
 
     bool parseImpl(ASTPtr & node) override;
-};
-
-class MongoSetFunction : public IMongoFunction
-{
-public:
-    std::string getFunctionName() const override { return "$set"; }
-    bool parseImpl(ASTPtr & node) override;
-
-    explicit MongoSetFunction(rapidjson::Value array_elements_, std::shared_ptr<QueryMetadata> metadata_, const std::string & edge_name_)
-        : IMongoFunction(std::move(array_elements_), metadata_, edge_name_)
-    {
-    }
-};
-
-class MongoIncrementFunction : public IMongoFunction
-{
-public:
-    std::string getFunctionName() const override { return "$inc"; }
-    bool parseImpl(ASTPtr & node) override;
-
-    explicit MongoIncrementFunction(
-        rapidjson::Value array_elements_, std::shared_ptr<QueryMetadata> metadata_, const std::string & edge_name_)
-        : IMongoFunction(std::move(array_elements_), metadata_, edge_name_)
-    {
-    }
 };
 
 }

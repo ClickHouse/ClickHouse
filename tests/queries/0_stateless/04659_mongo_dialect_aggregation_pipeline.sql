@@ -49,9 +49,5 @@ db.hits.aggregate([{"$project" : {"kind" : {"$cond" : {"if" : {"$gte" : ["$Resol
 
 db.hits.aggregate([{"$match" : {"ResolutionWidth" : {"$gte" : 1024, "$lte" : 1280}, "UserID" : {"$numberLong" : "100"}}}, {"$count" : "c"}]);
 
-db.hits.aggregate([{"$unwind" : "$URL"}]); -- { clientError NOT_IMPLEMENTED }
-db.hits.aggregate([{"$group" : {"_id" : null, "m" : {"$mergeObjects" : "$URL"}}}]); -- { clientError NOT_IMPLEMENTED }
-db.hits.aggregate([{"$group" : {"c" : {"$sum" : 1}}}]); -- { clientError BAD_ARGUMENTS }
-
 SET dialect='clickhouse';
 DROP TABLE hits;

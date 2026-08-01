@@ -1,6 +1,7 @@
 #include <Parsers/Mongo/ParserMongoFilter.h>
 
 #include <memory>
+#include <string_view>
 
 #include <Parsers/ASTQueryParameter.h>
 #include <Parsers/ASTFunction.h>
@@ -20,6 +21,10 @@ bool ParserMongoFilter::parseImpl(ASTPtr & node)
     std::vector<ASTPtr> child_trees;
     for (auto it = data.MemberBegin(); it != data.MemberEnd(); ++it)
     {
+        /// `$comment` documents the query for the profiler and holds no condition.
+        if (std::string_view(it->name.GetString(), it->name.GetStringLength()) == "$comment")
+            continue;
+
         auto parser = createParser(copyValue(it->value, metadata->getAllocator()), metadata, it->name.GetString());
         ASTPtr child_node;
         if (!parser->parseImpl(child_node))

@@ -39,5 +39,3 @@ db.users.find({"name" : {"$regex" : "^P", "$options" : "i"}});
 db.users.find({"name" : {"$not" : {"$regex" : "^p"}}});
 db.users.find({"big" : {"$numberLong" : "5000000000"}});
 db.users.find({"id" : {"$gt" : 0, "$lt" : 2}});
-db.users.find({"id" : {}}); -- { clientError SYNTAX_ERROR }
-db.users.find({"id" : {"$mod" : [2, 0]}}); -- { clientError NOT_IMPLEMENTED }

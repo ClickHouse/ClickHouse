@@ -77,18 +77,23 @@ std::vector<Document> UpdateHandler::handle(const std::vector<OpMessageSection> 
 
         auto parser = Mongo::ParserMongoQuery(10000, 10000, 10000);
         auto ast = Mongo::parseMongoQuery(
-            parser, mongo_dialect_query.data(), mongo_dialect_query.data() + mongo_dialect_query.size(), "", 10000, 10000, 10000);
+            parser,
+            mongo_dialect_query.data(),
+            mongo_dialect_query.data() + mongo_dialect_query.size(),
+            "",
+            10000,
+            10000,
+            10000,
+            collection.database);
 
-        /// The Mongo dialect parses `updateMany` into a single `ALTER TABLE` command, which is not
-        /// a statement on its own, so the statement around it is built here.
-        String alter_command;
+        String alter_query;
         {
-            WriteBufferFromString buffer(alter_command);
+            WriteBufferFromString buffer(alter_query);
             auto settings = IAST::FormatSettings(true, IdentifierQuotingRule::WhenNecessary, IdentifierQuotingStyle::Backticks);
             ast->format(buffer, settings);
         }
 
-        executor->execute(fmt::format("ALTER TABLE {} {}", collection.getQualifiedName(), alter_command));
+        executor->execute(alter_query);
     }
 
     bson_t * bson_doc = bson_new();

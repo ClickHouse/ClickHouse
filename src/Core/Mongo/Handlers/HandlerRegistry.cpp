@@ -7,6 +7,8 @@ HandlerRegitstry::HandlerRegitstry()
 {
     registerFindHandler(this);
     registerAggregateHandler(this);
+    registerDistinctHandler(this);
+    registerServerCommandsHandler(this);
     registerInsertHandler(this);
     registerIsMasterHandler(this);
     registerDropHandler(this);

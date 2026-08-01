@@ -56,9 +56,9 @@ Collections with the same name in different MongoDB databases are different Clic
 
 ### Supported commands {#supported-commands}
 
-`insert`, `find`, `aggregate`, `count`, `update`, `delete`, `create`, `drop`, `createIndexes`, `listDatabases`, `listCollections`, `isMaster` and `saslStart`.
+`insert`, `find`, `aggregate`, `distinct`, `count`, `update`, `delete`, `create`, `drop`, `dropDatabase`, `createIndexes`, `listDatabases`, `listCollections`, `isMaster`, `buildInfo`, `ping`, `connectionStatus`, `killCursors`, `endSessions` and `saslStart`.
 
-A `find` supports a filter, a projection, `limit` and `sort`. A projection may compute `$add`, `$sub`, `$mul` and `$div`, and an `update` supports `$set` and `$inc`.
+A `find` supports a filter, a projection, `limit` and `sort`. A projection may compute `$add`, `$sub`, `$mul` and `$div`.
 
 #### Filters {#filters}
 
@@ -68,6 +68,11 @@ A filter - of a `find`, a `delete`, an `update` or a `$match` stage - supports:
 - the set membership tests `$in` and `$nin`;
 - the connectives `$and`, `$or`, `$nor` and `$not`;
 - `$regex` with the options `i`, `m`, `s` and `x`, which is matched as a regular expression rather than as a `LIKE` pattern;
+- `$expr`, which uses the aggregation expression language and so can compare two fields of the same document;
+- `$mod`, and the bitwise `$bitsAllSet`, `$bitsAnySet`, `$bitsAllClear` and `$bitsAnyClear`, whose mask is a number or the list of the bit positions that make it up;
+- on an array, `$size`, `$all` and `$elemMatch`;
+- `$exists`, which asks whether the field holds a value: the columns of a table are fixed, so what a document can leave out is the value, and `{"$exists": false}` is a `NULL`;
+- `$comment`, which carries no condition;
 - the Extended JSON wrappers `$numberInt`, `$numberLong`, `$numberDouble`, `$numberDecimal`, `$oid` and `$date`, which the drivers send for the types JSON cannot represent.
 
 Several operators on the same field all have to hold, so a range is written the way MongoDB writes it:
@@ -78,7 +83,7 @@ Several operators on the same field all have to hold, so a range is written the 
 
 #### Aggregation pipelines {#aggregation-pipelines}
 
-An `aggregate` translates its pipeline into a chain of `SELECT`s: each stage fills a clause of the query being built, and a stage that needs a clause already filled continues on top of a subquery. The stages `$match`, `$group`, `$project`, `$set` (`$addFields`), `$sort`, `$skip`, `$limit`, `$count` and `$unionWith` are supported.
+An `aggregate` translates its pipeline into a chain of `SELECT`s: each stage fills a clause of the query being built, and a stage that needs a clause already filled continues on top of a subquery. The stages `$match`, `$group`, `$project`, `$set` (`$addFields`), `$unset`, `$sort`, `$sortByCount`, `$skip`, `$limit`, `$sample`, `$count`, `$unwind`, `$replaceRoot` (`$replaceWith`) and `$unionWith` are supported.
 
 ```javascript
 db.hits.aggregate([
@@ -89,9 +94,24 @@ db.hits.aggregate([
 ])
 ```
 
-`$group` supports the accumulators `$sum`, `$avg`, `$min`, `$max`, `$first`, `$last`, `$push`, `$addToSet`, `$count`, `$stdDevPop` and `$stdDevSamp`. A `_id` of `null` aggregates the whole stream into one document, and a `_id` that is a document groups by each of its fields, which become the `_id.<field>` columns of the result.
+`$group` supports the accumulators `$sum`, `$avg`, `$min`, `$max`, `$first`, `$last`, `$firstN`, `$lastN`, `$push`, `$addToSet`, `$count`, `$stdDevPop` and `$stdDevSamp`. A `_id` of `null` aggregates the whole stream into one document, and a `_id` that is a document groups by each of its fields, which become the `_id.<field>` columns of the result.
 
-Inside a stage, an expression may use `$literal`, the arithmetic `$add`, `$subtract`, `$multiply`, `$divide`, `$mod`, `$pow`, `$abs`, `$ceil`, `$floor`, `$round`, `$sqrt`, `$exp`, `$ln` and `$log10`, the comparisons and connectives listed above in their expression form, the conditionals `$cond`, `$switch` and `$ifNull`, the conversions `$toString`, `$toInt`, `$toLong`, `$toDouble`, `$toDecimal`, `$toBool` and `$toDate`, the string operators `$concat`, `$strLenBytes`, `$strLenCP`, `$toUpper`, `$toLower`, `$split`, `$substrBytes`, `$substrCP`, `$regexMatch` and `$regexFind`, the array operators `$size`, `$first`, `$last`, `$arrayElemAt`, `$in` and `$reverseArray`, and the date parts `$year`, `$month`, `$dayOfMonth`, `$dayOfWeek`, `$dayOfYear`, `$week`, `$hour`, `$minute`, `$second`, `$millisecond` and `$dateTrunc`.
+`$unwind` is an `ARRAY JOIN`, so it drops a document whose array is empty unless `preserveNullAndEmptyArrays` asks to keep it, and `includeArrayIndex` adds the position of the element counted from zero.
+
+Inside a stage, an expression may use:
+
+| Category | Operators |
+|----------|-----------|
+| Arithmetic | `$add`, `$subtract`, `$multiply`, `$divide`, `$mod`, `$pow`, `$abs`, `$ceil`, `$floor`, `$round`, `$trunc`, `$sqrt`, `$exp`, `$ln`, `$log`, `$log10`, `$rand` |
+| String | `$concat`, `$strLenBytes`, `$strLenCP`, `$toUpper`, `$toLower`, `$split`, `$substr`, `$substrBytes`, `$substrCP`, `$indexOfBytes`, `$indexOfCP`, `$trim`, `$ltrim`, `$rtrim`, `$replaceOne`, `$replaceAll`, `$regexMatch`, `$regexFind` |
+| Array | `$size`, `$first`, `$last`, `$arrayElemAt`, `$indexOfArray`, `$in`, `$slice`, `$range`, `$reverseArray`, `$concatArrays`, `$map`, `$filter` |
+| Set | `$setUnion`, `$setIntersection`, `$setDifference`, `$setEquals`, `$anyElementTrue`, `$allElementsTrue` |
+| Date | `$year`, `$month`, `$dayOfMonth`, `$dayOfWeek`, `$isoDayOfWeek`, `$dayOfYear`, `$week`, `$isoWeek`, `$isoWeekYear`, `$hour`, `$minute`, `$second`, `$millisecond`, `$dateTrunc`, `$dateAdd`, `$dateSubtract`, `$dateDiff`, `$dateToString`, `$dateFromString` |
+| Conditional | `$cond`, `$switch`, `$ifNull` |
+| Comparison and boolean | `$eq`, `$ne`, `$lt`, `$lte`, `$gt`, `$gte`, `$cmp`, `$and`, `$or`, `$not` |
+| Type conversion | `$toString`, `$toInt`, `$toLong`, `$toDouble`, `$toDecimal`, `$toBool`, `$toDate`, `$literal` |
+
+`$map` and `$filter` bind their element to the variable named by `as`, which defaults to `$$this`. `$$NOW` is the current time; the other system variables are not supported.
 
 A `$regexFind` becomes the `match`, `idx` and `captures` fields of its result document, following the same mapping of a nested field onto an `a.b` column as everywhere else:
 
@@ -119,7 +139,9 @@ A collection created explicitly with `createCollection` has no document to infer
 - The number of documents affected by `update` and `delete` is always reported as `0`.
 - Cursors are not implemented, so the whole result of a `find` or an `aggregate` is returned in the first batch.
 - A projection lists exactly the fields it names: `_id` is not added to it implicitly, because a ClickHouse table has no implicit `_id` column.
-- `$lookup`, `$unwind`, `$facet` and the other pipeline stages not listed above are not supported, and neither are transactions, change streams and the `OP_COMPRESSED` message.
+- An `update` supports `$set`, `$unset`, `$inc`, `$mul`, `$min`, `$max`, `$rename`, `$currentDate`, `$push`, `$addToSet`, `$pop`, `$pull` and `$pullAll`. A row always has a value for every column, so `$unset` - and the field a `$rename` leaves behind - writes the default of the column type, which is the value an insert that leaves the field out writes.
+- `$lookup`, `$facet`, `$out`, `$merge` and the other pipeline stages not listed above are not supported, and neither are transactions, change streams and the `OP_COMPRESSED` message.
+- A `$replaceRoot` takes a document as its new root; a field path there would name a column rather than a subdocument.
 - Database and collection names must consist of letters, digits, `_` and `-`.
 
 ## MongoDB dialect {#mongodb-dialect}

@@ -101,6 +101,7 @@ public:
     ASTPtr order_by;
     ASTPtr limit;
     ASTPtr offset;
+    ASTPtr array_join;
 
     /// True when nothing but a `WHERE` has been collected, so a stage that produces the list of
     /// columns can be folded into the select being built.
@@ -121,6 +122,7 @@ public:
         order_by = nullptr;
         limit = nullptr;
         offset = nullptr;
+        array_join = nullptr;
     }
 
     /// Appends the documents of another pipeline to the stream, for `$unionWith`.
@@ -161,6 +163,16 @@ public:
 
         auto tables = make_intrusive<ASTTablesInSelectQuery>();
         tables->children.push_back(std::move(element));
+
+        if (array_join)
+        {
+            /// An `ARRAY JOIN` is an element of its own, following the table it applies to.
+            auto array_join_element = make_intrusive<ASTTablesInSelectQueryElement>();
+            array_join_element->array_join = array_join->clone();
+            array_join_element->children.push_back(array_join_element->array_join);
+            tables->children.push_back(std::move(array_join_element));
+        }
+
         select->setExpression(ASTSelectQuery::Expression::TABLES, std::move(tables));
 
         if (where)
@@ -180,6 +192,17 @@ public:
 private:
     ASTPtr source;
 };
+
+/// A required member of the document of a stage.
+const rapidjson::Value & requireStageMember(const rapidjson::Value & stage, const char * name, std::string_view stage_name)
+{
+    if (!stage.IsObject())
+        throw Exception(ErrorCodes::BAD_ARGUMENTS, "The argument of '{}' must be a document", stage_name);
+    auto it = stage.FindMember(name);
+    if (it == stage.MemberEnd())
+        throw Exception(ErrorCodes::BAD_ARGUMENTS, "'{}' must have a '{}' field", stage_name, name);
+    return it->value;
+}
 
 UInt64 parseNonNegativeInteger(const rapidjson::Value & value, std::string_view stage)
 {
@@ -369,6 +392,183 @@ void translateCount(SelectChain & chain, const rapidjson::Value & stage)
     chain.select_list = std::move(select_list);
 }
 
+void translateUnset(SelectChain & chain, const rapidjson::Value & stage)
+{
+    std::vector<std::string> removed;
+    if (stage.IsString())
+        removed.emplace_back(stringView(stage));
+    else if (stage.IsArray())
+    {
+        for (const auto & name : stage.GetArray())
+        {
+            if (!name.IsString())
+                throw Exception(ErrorCodes::BAD_ARGUMENTS, "The argument of '$unset' must name fields");
+            removed.emplace_back(stringView(name));
+        }
+    }
+    else
+        throw Exception(ErrorCodes::BAD_ARGUMENTS, "The argument of '$unset' must be a field name or an array of them");
+
+    if (removed.empty())
+        throw Exception(ErrorCodes::BAD_ARGUMENTS, "'$unset' must name at least one field");
+
+    if (!chain.onlyFiltered())
+        chain.wrap();
+
+    auto select_list = make_intrusive<ASTExpressionList>();
+    select_list->children.push_back(makeAsterisk(removed));
+    chain.select_list = std::move(select_list);
+}
+
+void translateSortByCount(SelectChain & chain, const rapidjson::Value & stage)
+{
+    /// `$sortByCount` is a `$group` on the expression followed by a descending `$sort` on the size
+    /// of each group.
+    if (!chain.onlyFiltered())
+        chain.wrap();
+
+    auto key = parseMongoAggregateExpression(stage);
+
+    auto select_list = make_intrusive<ASTExpressionList>();
+    select_list->children.push_back(withAlias(key->clone(), "_id"));
+    select_list->children.push_back(withAlias(makeASTFunction("count"), "count"));
+    chain.select_list = std::move(select_list);
+
+    auto group_by = make_intrusive<ASTExpressionList>();
+    group_by->children.push_back(std::move(key));
+    chain.group_by = std::move(group_by);
+
+    auto element = make_intrusive<ASTOrderByElement>();
+    element->children.push_back(make_intrusive<ASTIdentifier>("count"));
+    element->direction = -1;
+    element->nulls_direction = -1;
+    auto order_by = make_intrusive<ASTExpressionList>();
+    order_by->children.push_back(std::move(element));
+    chain.order_by = std::move(order_by);
+}
+
+void translateSample(SelectChain & chain, const rapidjson::Value & stage)
+{
+    const auto & size = requireStageMember(stage, "size", "$sample");
+
+    if (chain.order_by || chain.limit || chain.offset)
+        chain.wrap();
+
+    /// Mongo picks the documents at random, which is a sort on a random value.
+    auto element = make_intrusive<ASTOrderByElement>();
+    element->children.push_back(makeASTFunction("rand"));
+    element->direction = 1;
+    element->nulls_direction = 1;
+    auto order_by = make_intrusive<ASTExpressionList>();
+    order_by->children.push_back(std::move(element));
+
+    chain.order_by = std::move(order_by);
+    chain.limit = makeLiteral(Field(parseNonNegativeInteger(size, "$sample")));
+}
+
+void translateUnwind(SelectChain & chain, const rapidjson::Value & stage)
+{
+    std::string path;
+    bool preserve_empty = false;
+    std::string index_name;
+
+    if (stage.IsString())
+        path = stringView(stage);
+    else if (stage.IsObject())
+    {
+        const auto & path_value = requireStageMember(stage, "path", "$unwind");
+        if (!path_value.IsString())
+            throw Exception(ErrorCodes::BAD_ARGUMENTS, "The 'path' of '$unwind' must be a field path");
+        path = stringView(path_value);
+
+        if (auto it = stage.FindMember("preserveNullAndEmptyArrays"); it != stage.MemberEnd())
+            preserve_empty = it->value.IsBool() && it->value.GetBool();
+        if (auto it = stage.FindMember("includeArrayIndex"); it != stage.MemberEnd() && !it->value.IsNull())
+        {
+            if (!it->value.IsString())
+                throw Exception(ErrorCodes::BAD_ARGUMENTS, "The 'includeArrayIndex' of '$unwind' must be a field name");
+            index_name = stringView(it->value);
+        }
+    }
+    else
+        throw Exception(ErrorCodes::BAD_ARGUMENTS, "The argument of '$unwind' must be a field path or a document");
+
+    if (!path.starts_with("$"))
+        throw Exception(ErrorCodes::BAD_ARGUMENTS, "The path of '$unwind' must start with '$'");
+    path = path.substr(1);
+
+    /** An `ARRAY JOIN` applies to the rows the select reads, so everything collected so far has to
+      * be below it - including a `WHERE`, which in the pipeline filters the documents before they
+      * are unwound and afterwards would see the element in place of the array.
+      */
+    if (chain.where || !chain.onlyFiltered() || chain.array_join)
+        chain.wrap();
+
+    auto expressions = make_intrusive<ASTExpressionList>();
+    expressions->children.push_back(make_intrusive<ASTIdentifier>(path));
+
+    if (!index_name.empty())
+    {
+        /// A second array of the same length is joined element by element with the first one.
+        /// `arrayEnumerate` counts from one and Mongo's index from zero.
+        auto parameters = makeASTFunction("tuple", make_intrusive<ASTIdentifier>("__mongo_index"));
+        auto body = makeASTFunction("minus", make_intrusive<ASTIdentifier>("__mongo_index"), makeLiteral(Field(UInt64(1))));
+        auto indexes = makeASTFunction(
+            "arrayMap",
+            makeASTFunction("lambda", std::move(parameters), std::move(body)),
+            makeASTFunction("arrayEnumerate", make_intrusive<ASTIdentifier>(path)));
+        expressions->children.push_back(withAlias(std::move(indexes), index_name));
+    }
+
+    auto unwind = make_intrusive<ASTArrayJoin>();
+    /// Mongo drops a document whose array is empty or missing unless it is asked to keep it, which
+    /// is exactly the difference between an inner and a left `ARRAY JOIN`.
+    unwind->kind = preserve_empty ? ASTArrayJoin::Kind::Left : ASTArrayJoin::Kind::Inner;
+    unwind->expression_list = expressions;
+    unwind->children.push_back(std::move(expressions));
+
+    chain.array_join = std::move(unwind);
+
+    if (!index_name.empty())
+    {
+        /// A `*` does not expand to the columns an `ARRAY JOIN` introduces, so the index has to be
+        /// named in the list of the select that produces it.
+        auto select_list = make_intrusive<ASTExpressionList>();
+        select_list->children.push_back(makeAsterisk({}));
+        select_list->children.push_back(make_intrusive<ASTIdentifier>(index_name));
+        chain.select_list = std::move(select_list);
+    }
+
+    /** The stages that follow see documents in which the field is one element of the array, so the
+      * unwinding is closed off into a subquery of its own. Referring to the field by name in the
+      * same select would otherwise be ambiguous between the array and the element.
+      */
+    chain.wrap();
+}
+
+void translateReplaceRoot(SelectChain & chain, const rapidjson::Value & new_root, std::string_view stage_name)
+{
+    if (!new_root.IsObject() || new_root.MemberCount() == 0)
+        throw Exception(
+            ErrorCodes::NOT_IMPLEMENTED,
+            "Only a document is supported as the new root of '{}', because a field path names a column rather than a subdocument",
+            stage_name);
+    if (stringView(new_root.MemberBegin()->name).starts_with("$"))
+        throw Exception(ErrorCodes::NOT_IMPLEMENTED, "Only a document is supported as the new root of '{}'", stage_name);
+
+    std::vector<MongoProjectedField> fields;
+    for (auto it = new_root.MemberBegin(); it != new_root.MemberEnd(); ++it)
+        expandMongoProjectedField(std::string(stringView(it->name)), it->value, fields);
+
+    if (!chain.onlyFiltered())
+        chain.wrap();
+
+    auto select_list = make_intrusive<ASTExpressionList>();
+    for (auto & field : fields)
+        select_list->children.push_back(withAlias(field.expression, field.name));
+    chain.select_list = std::move(select_list);
+}
+
 void translateUnionWith(SelectChain & chain, const rapidjson::Value & stage, const std::shared_ptr<QueryMetadata> & metadata)
 {
     std::string collection;
@@ -425,6 +625,18 @@ ASTPtr translatePipeline(const rapidjson::Value & pipeline, ASTPtr source, const
             translateSort(chain, member.value);
         else if (name == "$count")
             translateCount(chain, member.value);
+        else if (name == "$unset")
+            translateUnset(chain, member.value);
+        else if (name == "$sortByCount")
+            translateSortByCount(chain, member.value);
+        else if (name == "$sample")
+            translateSample(chain, member.value);
+        else if (name == "$unwind")
+            translateUnwind(chain, member.value);
+        else if (name == "$replaceRoot")
+            translateReplaceRoot(chain, requireStageMember(member.value, "newRoot", name), name);
+        else if (name == "$replaceWith")
+            translateReplaceRoot(chain, member.value, name);
         else if (name == "$unionWith")
             translateUnionWith(chain, member.value, metadata);
         else if (name == "$limit")

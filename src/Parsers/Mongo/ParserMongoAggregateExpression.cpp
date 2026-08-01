@@ -2,8 +2,10 @@
 
 #include <string_view>
 #include <unordered_map>
+#include <unordered_set>
 
 #include <Core/Field.h>
+#include <Parsers/ASTExpressionList.h>
 #include <Parsers/ASTFunction.h>
 #include <Parsers/ASTIdentifier.h>
 #include <Parsers/ASTLiteral.h>
@@ -80,25 +82,30 @@ const std::unordered_map<std::string_view, std::string> direct_functions = {
     {"$toBool", "toBool"},
     {"$strLenBytes", "length"},
     {"$strLenCP", "lengthUTF8"},
-    {"$toUpper", "upperUTF8"},
-    {"$toLower", "lowerUTF8"},
+    {"$toUpper", "upper"},
+    {"$toLower", "lower"},
     {"$abs", "abs"},
     {"$ceil", "ceil"},
     {"$floor", "floor"},
     {"$round", "round"},
+    {"$trunc", "trunc"},
     {"$sqrt", "sqrt"},
     {"$exp", "exp"},
     {"$ln", "log"},
     {"$log10", "log10"},
     {"$size", "length"},
     {"$reverseArray", "reverse"},
+    {"$concatArrays", "arrayConcat"},
+    {"$setIntersection", "arrayIntersect"},
+    {"$range", "range"},
     {"$not", "not"},
     {"$year", "toYear"},
     {"$month", "toMonth"},
     {"$dayOfMonth", "toDayOfMonth"},
-    {"$dayOfWeek", "toDayOfWeek"},
     {"$dayOfYear", "toDayOfYear"},
     {"$week", "toWeek"},
+    {"$isoWeek", "toISOWeek"},
+    {"$isoWeekYear", "toISOYear"},
     {"$hour", "toHour"},
     {"$minute", "toMinute"},
     {"$second", "toSecond"},
@@ -134,6 +141,50 @@ const rapidjson::Value & requireMember(const rapidjson::Value & value, const cha
     if (it == value.MemberEnd())
         throw Exception(ErrorCodes::BAD_ARGUMENTS, "'{}' must have a '{}' field", operator_name, name);
     return it->value;
+}
+
+/// `x -> <body>`, the shape a ClickHouse higher order function takes.
+ASTPtr makeLambda(const std::string & parameter, ASTPtr body)
+{
+    auto parameters = makeASTFunction("tuple", make_intrusive<ASTIdentifier>(parameter));
+    return makeASTFunction("lambda", std::move(parameters), std::move(body));
+}
+
+/// The name a `$map` or a `$filter` binds its element to. Mongo writes it as `$$<name>` and
+/// defaults it to `this`; the lambda parameter is given the same name, so that referring to the
+/// variable inside the body resolves to it and shadows a column of that name exactly as in Mongo.
+std::string parseVariableName(const rapidjson::Value & argument, const char * default_name)
+{
+    auto it = argument.FindMember("as");
+    if (it == argument.MemberEnd())
+        return default_name;
+    if (!it->value.IsString())
+        throw Exception(ErrorCodes::BAD_ARGUMENTS, "The 'as' of a higher order operator must be a string");
+    return std::string(stringView(it->value));
+}
+
+/// The interval a date unit of `$dateAdd` and `$dateSubtract` adds up.
+std::string dateIntervalFunction(const rapidjson::Value & unit, std::string_view operator_name)
+{
+    if (!unit.IsString())
+        throw Exception(ErrorCodes::BAD_ARGUMENTS, "The 'unit' of '{}' must be a string", operator_name);
+
+    static const std::unordered_map<std::string_view, std::string> intervals = {
+        {"year", "toIntervalYear"},
+        {"quarter", "toIntervalQuarter"},
+        {"month", "toIntervalMonth"},
+        {"week", "toIntervalWeek"},
+        {"day", "toIntervalDay"},
+        {"hour", "toIntervalHour"},
+        {"minute", "toIntervalMinute"},
+        {"second", "toIntervalSecond"},
+        {"millisecond", "toIntervalMillisecond"},
+    };
+
+    auto it = intervals.find(stringView(unit));
+    if (it == intervals.end())
+        throw Exception(ErrorCodes::NOT_IMPLEMENTED, "The unit '{}' of '{}' is not supported", stringView(unit), operator_name);
+    return it->second;
 }
 
 /// The regular expression of `$regexFind` and `$regexMatch`: a bare pattern string, or the
@@ -277,6 +328,167 @@ ASTPtr parseOperator(std::string_view name, const rapidjson::Value & argument)
         return makeASTFunction("match", input, makeLiteral(Field(pattern)));
     }
 
+    if (name == "$rand")
+        return makeASTFunction("randCanonical");
+
+    if (name == "$dayOfWeek" || name == "$isoDayOfWeek")
+    {
+        auto arguments = parseArguments(argument);
+        requireArgumentCount(name, arguments, 1);
+        /// `$dayOfWeek` numbers the days from Sunday as 1, `$isoDayOfWeek` from Monday as 1; those
+        /// are the modes 3 and 0 of `toDayOfWeek`.
+        return makeASTFunction("toDayOfWeek", arguments[0], makeLiteral(Field(UInt64(name == "$dayOfWeek" ? 3 : 0))));
+    }
+
+    if (name == "$log")
+    {
+        auto arguments = parseArguments(argument);
+        requireArgumentCount(name, arguments, 2);
+        return makeASTFunction("divide", makeASTFunction("log", arguments[0]), makeASTFunction("log", arguments[1]));
+    }
+
+    if (name == "$cmp")
+    {
+        auto arguments = parseArguments(argument);
+        requireArgumentCount(name, arguments, 2);
+        return makeASTFunction(
+            "multiIf",
+            makeASTFunction("less", arguments[0], arguments[1]),
+            makeLiteral(Field(Int64(-1))),
+            makeASTFunction("greater", arguments[0]->clone(), arguments[1]->clone()),
+            makeLiteral(Field(Int64(1))),
+            makeLiteral(Field(Int64(0))));
+    }
+
+    if (name == "$indexOfBytes" || name == "$indexOfCP" || name == "$indexOfArray")
+    {
+        auto arguments = parseArguments(argument);
+        if (arguments.size() != 2)
+            throw Exception(ErrorCodes::NOT_IMPLEMENTED, "Only the two argument form of '{}' is supported", name);
+        /// Both count from zero and answer -1 when there is no match, while the ClickHouse
+        /// functions count from one and answer 0.
+        const char * function = name == "$indexOfBytes" ? "position" : (name == "$indexOfCP" ? "positionUTF8" : "indexOf");
+        return makeASTFunction("minus", makeFunction(function, std::move(arguments)), makeLiteral(Field(UInt64(1))));
+    }
+
+    if (name == "$trim" || name == "$ltrim" || name == "$rtrim")
+    {
+        if (argument.FindMember("chars") != argument.MemberEnd())
+            throw Exception(ErrorCodes::NOT_IMPLEMENTED, "The 'chars' of '{}' is not supported", name);
+        auto input = parseMongoAggregateExpression(requireMember(argument, "input", name));
+        const char * function = name == "$trim" ? "trimBoth" : (name == "$ltrim" ? "trimLeft" : "trimRight");
+        return makeASTFunction(function, std::move(input));
+    }
+
+    if (name == "$replaceOne" || name == "$replaceAll")
+    {
+        auto input = parseMongoAggregateExpression(requireMember(argument, "input", name));
+        auto find = parseMongoAggregateExpression(requireMember(argument, "find", name));
+        auto replacement = parseMongoAggregateExpression(requireMember(argument, "replacement", name));
+        return makeASTFunction(name == "$replaceOne" ? "replaceOne" : "replaceAll", input, find, replacement);
+    }
+
+    if (name == "$slice")
+    {
+        auto arguments = parseArguments(argument);
+        if (arguments.size() == 2)
+        {
+            /// A negative count takes the elements at the end of the array.
+            auto positive = makeASTFunction("greaterOrEquals", arguments[1], makeLiteral(Field(UInt64(0))));
+            auto offset = makeASTFunction("if", positive, makeLiteral(Field(UInt64(1))), arguments[1]->clone());
+            return makeASTFunction("arraySlice", arguments[0], offset, makeASTFunction("abs", arguments[1]->clone()));
+        }
+        if (arguments.size() == 3)
+        {
+            /// Mongo counts the position from zero, ClickHouse from one, and a negative position
+            /// counts from the end in both.
+            auto positive = makeASTFunction("greaterOrEquals", arguments[1], makeLiteral(Field(UInt64(0))));
+            auto offset = makeASTFunction(
+                "if", positive, makeASTFunction("plus", arguments[1]->clone(), makeLiteral(Field(UInt64(1)))), arguments[1]->clone());
+            return makeASTFunction("arraySlice", arguments[0], offset, arguments[2]);
+        }
+        throw Exception(ErrorCodes::BAD_ARGUMENTS, "'$slice' takes two or three arguments, got {}", arguments.size());
+    }
+
+    if (name == "$setUnion")
+        return makeASTFunction("arrayDistinct", makeFunction("arrayConcat", parseArguments(argument)));
+
+    if (name == "$setDifference")
+    {
+        auto arguments = parseArguments(argument);
+        requireArgumentCount(name, arguments, 2);
+        auto element = make_intrusive<ASTIdentifier>("__mongo_element");
+        auto body = makeASTFunction("not", makeASTFunction("has", arguments[1], element));
+        return makeASTFunction("arrayFilter", makeLambda("__mongo_element", std::move(body)), arguments[0]);
+    }
+
+    if (name == "$setEquals")
+    {
+        auto arguments = parseArguments(argument);
+        requireArgumentCount(name, arguments, 2);
+        auto sorted = [](ASTPtr array) { return makeASTFunction("arraySort", makeASTFunction("arrayDistinct", std::move(array))); };
+        return makeASTFunction("equals", sorted(arguments[0]), sorted(arguments[1]));
+    }
+
+    if (name == "$anyElementTrue" || name == "$allElementsTrue")
+    {
+        auto arguments = parseArguments(argument);
+        requireArgumentCount(name, arguments, 1);
+        auto body = makeASTFunction("toBool", make_intrusive<ASTIdentifier>("__mongo_element"));
+        return makeASTFunction(
+            name == "$anyElementTrue" ? "arrayExists" : "arrayAll", makeLambda("__mongo_element", std::move(body)), arguments[0]);
+    }
+
+    if (name == "$map" || name == "$filter")
+    {
+        auto input = parseMongoAggregateExpression(requireMember(argument, "input", name));
+        auto variable = parseVariableName(argument, "this");
+        auto body = parseMongoAggregateExpression(requireMember(argument, name == "$map" ? "in" : "cond", name));
+        auto mapped = makeASTFunction(
+            name == "$map" ? "arrayMap" : "arrayFilter", makeLambda(variable, std::move(body)), std::move(input));
+        if (auto limit_it = argument.FindMember("limit"); limit_it != argument.MemberEnd() && name == "$filter")
+            return makeASTFunction(
+                "arraySlice", std::move(mapped), makeLiteral(Field(UInt64(1))), parseMongoAggregateExpression(limit_it->value));
+        return mapped;
+    }
+
+    if (name == "$dateToString")
+    {
+        auto date = parseMongoAggregateExpression(requireMember(argument, "date", name));
+        auto format = parseMongoAggregateExpression(requireMember(argument, "format", name));
+        if (auto timezone_it = argument.FindMember("timezone"); timezone_it != argument.MemberEnd())
+            return makeASTFunction("formatDateTime", date, format, parseMongoAggregateExpression(timezone_it->value));
+        return makeASTFunction("formatDateTime", date, format);
+    }
+
+    if (name == "$dateFromString")
+    {
+        auto text = parseMongoAggregateExpression(requireMember(argument, "dateString", name));
+        if (auto format_it = argument.FindMember("format"); format_it != argument.MemberEnd())
+            return makeASTFunction("parseDateTime", text, parseMongoAggregateExpression(format_it->value));
+        return makeASTFunction("parseDateTime64BestEffort", text, makeLiteral(Field(UInt64(3))), makeLiteral(Field(String("UTC"))));
+    }
+
+    if (name == "$dateAdd" || name == "$dateSubtract")
+    {
+        auto start = parseMongoAggregateExpression(requireMember(argument, "startDate", name));
+        auto amount = parseMongoAggregateExpression(requireMember(argument, "amount", name));
+        auto interval = makeASTFunction(dateIntervalFunction(requireMember(argument, "unit", name), name), std::move(amount));
+        return makeASTFunction(name == "$dateAdd" ? "plus" : "minus", std::move(start), std::move(interval));
+    }
+
+    if (name == "$dateDiff")
+    {
+        const auto & unit = requireMember(argument, "unit", name);
+        if (!unit.IsString())
+            throw Exception(ErrorCodes::BAD_ARGUMENTS, "The 'unit' of '$dateDiff' must be a string");
+        return makeASTFunction(
+            "dateDiff",
+            makeLiteral(Field(String(stringView(unit)))),
+            parseMongoAggregateExpression(requireMember(argument, "startDate", name)),
+            parseMongoAggregateExpression(requireMember(argument, "endDate", name)));
+    }
+
     if (name == "$regexFind" || name == "$regexFindAll")
         throw Exception(
             ErrorCodes::NOT_IMPLEMENTED,
@@ -295,7 +507,21 @@ ASTPtr parseMongoAggregateExpression(const rapidjson::Value & value)
     {
         auto text = stringView(value);
         if (text.starts_with("$$"))
-            throw Exception(ErrorCodes::NOT_IMPLEMENTED, "The aggregation variable '{}' is not supported", text);
+        {
+            auto variable = text.substr(2);
+            if (variable == "NOW")
+                return makeASTFunction("now64", makeLiteral(Field(UInt64(3))));
+
+            /// A system variable stands for something the translation has no counterpart for - the
+            /// document being processed, the pruning decision of `$redact`, the current cluster
+            /// time. A user variable, which only `$map` and `$filter` can bind, names the lambda
+            /// parameter of the same name.
+            static const std::unordered_set<std::string_view> system_variables = {
+                "ROOT", "CURRENT", "REMOVE", "DESCEND", "PRUNE", "KEEP", "CLUSTER_TIME", "SEARCH_META", "USER_ROLES"};
+            if (variable.empty() || system_variables.contains(variable))
+                throw Exception(ErrorCodes::NOT_IMPLEMENTED, "The aggregation system variable '{}' is not supported", text);
+            return make_intrusive<ASTIdentifier>(String(variable));
+        }
         if (text.starts_with("$"))
         {
             /// A field path names the column of the same name, dots included: the dialect maps a
@@ -361,6 +587,20 @@ ASTPtr parseMongoAccumulator(const rapidjson::Value & value)
 
     if (name == "$count")
         return makeASTFunction("count");
+
+    if (name == "$firstN" || name == "$lastN")
+    {
+        /// `groupArray(N)(x)` keeps the first N values of the group and `groupArrayLast(N)(x)` the
+        /// last ones; the count is a parameter of the aggregate function rather than an argument.
+        auto input = parseMongoAggregateExpression(requireMember(member.value, "input", name));
+        auto count = parseMongoAggregateExpression(requireMember(member.value, "n", name));
+        auto function = makeASTFunction(name == "$firstN" ? "groupArray" : "groupArrayLast", std::move(input));
+        auto parameters = make_intrusive<ASTExpressionList>();
+        parameters->children.push_back(std::move(count));
+        function->parameters = parameters;
+        function->children.push_back(std::move(parameters));
+        return function;
+    }
 
     if (name == "$sum")
     {
