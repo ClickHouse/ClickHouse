@@ -1,5 +1,6 @@
 #include <Formats/BuffersWriter.h>
 #include <Columns/ColumnSparse.h>
+#include <Columns/ColumnReplicated.h>
 #include <Core/ProtocolDefines.h>
 #include <DataTypes/Serializations/SerializationInfoSettings.h>
 #include <Formats/NativeWriter.h>
@@ -49,9 +50,10 @@ void BuffersWriter::write(const Block & block)
         /// Buffers carries no per-column serialization kind on the wire, so the column must be dense
         /// before it reaches the type-level serializer (NativeWriter::writeData only strips Const and
         /// compressed wrappers). A ColumnSparse/ColumnReplicated from the pipeline would otherwise
-        /// fail the typeid_cast inside the dense serializer. This mirrors the densification
-        /// NativeWriter::getSerializationAndColumn does for the below-threshold path.
-        ColumnPtr dense_column = recursiveRemoveSparse(column.column->convertToFullColumnIfReplicated());
+        /// fail the typeid_cast inside the dense serializer. recursiveRemoveReplicated (not just the
+        /// top-level convertToFullColumnIfReplicated) also strips a replicated child of a tuple. This
+        /// mirrors the densification NativeWriter::getSerializationAndColumn does for the no-marker path.
+        ColumnPtr dense_column = recursiveRemoveSparse(recursiveRemoveReplicated(column.column));
 
         WriteBufferFromOwnString buffer;
 
