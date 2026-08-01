@@ -71,6 +71,15 @@ class ClickHouseProc:
         self.run_path0 = f"{temp_dir}/run_r0"
         self.run_path1 = f"{temp_dir}/run_r1"
         self.run_path2 = f"{temp_dir}/run_r2"
+        # Directory the job runs `clickhouse-test` from, if it wants cores of
+        # crashed client processes collected. A client started by a `.sh` test
+        # inherits this directory unless the test changes directory itself, and a
+        # relative `kernel.core_pattern` (the one CI runners use) writes the core
+        # into the dumping process's cwd, so this is where a client core lands.
+        # Jobs differ - `functional_tests.py` runs from the repository root while
+        # `fast_test.py` prefixes `cd {temp_dir}` - so the job declares it instead
+        # of it being guessed here.
+        self.client_core_path = None
         self.log_dir = f"{temp_dir}/var/log/clickhouse-server"
         self.pid_file = f"{self.ch_config_dir}/clickhouse-server.pid"
         self.config_file = f"{self.ch_config_dir}/config.xml"
@@ -832,9 +841,37 @@ clickhouse-client --query "SELECT count() FROM test.visits"
         return res
 
     def _collect_core_dumps(self) -> List[str]:
+        # Server cores land in `run_r*` because each server is started with
+        # `cwd=run_path` (see `start`) and is not a daemon, so
+        # `BaseDaemon`'s `chdir` into a `core_path` directory is skipped. Setting
+        # `--daemon` or a `core_path` would move them into `run_rN/cores/` and this
+        # glob would stop finding them.
         result = []
+        # One AES key for the whole job. Artifacts are uploaded under their
+        # basename alone, so a key per directory would emit several different
+        # `aes.key.rsa` files that overwrite each other in the report, leaving the
+        # cores of every directory but the last one undecryptable.
+        aes_key_path = f"{temp_dir}/aes.key"
         for run_dir in sorted(p_temp_dir.glob("run_r*")):
-            result.extend(ClickHouseService.collect_cores(run_dir))
+            result.extend(
+                ClickHouseService.collect_cores(
+                    run_dir,
+                    aes_key_path=aes_key_path,
+                    # `core.<comm>.<pid>` collides across replicas running the
+                    # same thread; keep the basenames distinct.
+                    name_prefix=f"{Path(run_dir).name}.",
+                )
+            )
+        # `Path.glob` yields nothing for a missing directory, so a declared path
+        # that does not exist needs no separate guard.
+        if self.client_core_path:
+            result.extend(
+                ClickHouseService.collect_cores(
+                    self.client_core_path,
+                    aes_key_path=aes_key_path,
+                    name_prefix="client.",
+                )
+            )
         return result
 
     @staticmethod

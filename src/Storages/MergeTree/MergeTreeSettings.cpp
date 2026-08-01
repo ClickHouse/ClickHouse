@@ -1714,9 +1714,26 @@ To provide a safeguard against accidentally creating tables with very low
 `index_granularity_bytes`.
 )", 1024) \
     DECLARE(Bool, use_const_adaptive_granularity, false, R"(
-Always use constant granularity for whole part. It allows to compress in
-memory values of index granularity. It can be useful in extremely large
-workloads with thin tables.
+Non-const adaptive granularity (the default, `index_granularity_bytes` is not `0`) keeps
+granules at a constant size in bytes, so their row count varies: for every
+written block, rows per granule is `index_granularity_bytes` divided by the
+average size of a row in that block, capped at `index_granularity`. Because it differs
+from granule to granule, the row count of every granule in the part has to be kept in
+memory, 8 bytes each, which on large tables adds up to tens of gigabytes.
+
+Enabling constant adaptive granularity (this setting) keeps granules at a constant number of rows instead,
+so their size in bytes varies. The number is computed once from the average size of a
+row in the part being written, and a part stores that single value
+instead of one value per granule. Because all granules contain the same number of rows,
+no additional row count per granule needs to be stored.
+
+The amount of memory currently spent on these values is reported by the
+`TotalIndexGranularityBytesInMemory` metric in `system.asynchronous_metrics`,
+and per part in `system.parts.index_granularity_bytes_in_memory`.
+
+The setting is applied only to parts written after it was changed. Use
+[ALTER TABLE ... REWRITE PARTS](/sql-reference/statements/alter/partition#rewrite-parts)
+to apply it to existing parts. `Compact` parts always use adaptive granularity.
 )", 0) \
     DECLARE(Bool, enable_index_granularity_compression, true, R"(
 Compress in memory values of index granularity if it is possible
@@ -2115,6 +2132,14 @@ Possible values:
 Enables commit-order projections that store `_block_number` and `_block_offset` virtual columns, preserving original insertion order through merges.
 Requires `enable_block_number_column` and `enable_block_offset_column` to be enabled.
 )", EXPERIMENTAL) \
+    DECLARE(Bool, allow_experimental_adaptive_codec_selection, false, R"(
+When enabled, merges and mutations choose a codec per block for columns that use the default codec (no `CODEC` clause, or `CODEC(Default)`).
+The candidates are the table's default codec (see the `default_compression_codec` setting), `NONE`, and specialized codecs suited to the column type.
+Only integer-like types are currently adaptive.
+The smallest output wins. Compression is therefore never worse than the default, and incompressible blocks are stored raw.
+A column whose default codec includes encryption (e.g. `AES_128_GCM_SIV`) is never selected adaptively, so encryption is always applied.
+Per-block codecs are reported by the [`mergeTreeCodecBlockCounts`](/sql-reference/table-functions/mergeTreeCodecBlockCounts) table function.
+)", EXPERIMENTAL) \
     DECLARE(Bool, notify_newest_block_number, false, R"(
 Notify newest block number to SharedJoin or SharedSet. Only in ClickHouse Cloud.
 )", EXPERIMENTAL) \
@@ -2401,7 +2426,7 @@ void MergeTreeSettingsImpl::loadFromQuery(ASTStorage & storage_def, ContextPtr c
             auto changes = storage_def.settings->changes;
             MergeTreeSettings::resolveDiskSetting(changes, context, is_loading_from_existing_metadata, for_system_database);
 
-            for (const auto & [name, value] : changes)
+            for (const auto & [name, value, _] : changes)
             {
                 if (name == "disk")
                 {
