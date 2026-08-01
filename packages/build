@@ -142,6 +142,27 @@ keep_destination_inode () {
     return 1
 }
 
+# The path a chain of symlinks finally points at. Every hop is followed, and a relative hop is
+# resolved against the directory of the link it was read from, so that a destination pointing
+# at another symlink keeps every level of the indirection instead of only the first one.
+resolve_symlink_chain () {
+    path="$1"
+    hops=0
+    while [ -L "$path" ]; do
+        hops=$((hops + 1))
+        if [ "$hops" -gt 40 ]; then
+            echo "Too many levels of symbolic links at $1" >&2
+            return 1
+        fi
+        target=$(readlink -- "$path")
+        case "$target" in
+            /*) path="$target" ;;
+            *) path="$(dirname -- "$path")/$target" ;;
+        esac
+    done
+    echo "$path"
+}
+
 for filepath in `find $SCRIPTPATH/.. -type f -or -type l | grep -v "\.\./install/"`; do
     destpath=${filepath##$SCRIPTPATH/..}
     mkdir -p $(dirname "$destpath")
@@ -152,12 +173,9 @@ for filepath in `find $SCRIPTPATH/.. -type f -or -type l | grep -v "\.\./install
         # the packaged file, which would install a binary non-executable. Rename the packaged
         # file to where the link points instead, so that the link keeps its indirection and the
         # installed file gets the mode, the ownership and the label every installed file has.
-        linktarget=$(readlink -- "$destpath")
-        # A relative link is resolved against the directory the link itself is in.
-        case "$linktarget" in
-            /*) ;;
-            *) linktarget="$(dirname -- "$destpath")/$linktarget" ;;
-        esac
+        # The whole chain is followed: a link pointing at another link has to keep both, the
+        # way writing through the destination did, so only the final referent is created.
+        linktarget=$(resolve_symlink_chain "$destpath")
         mkdir -p "$(dirname -- "$linktarget")"
         mv -f "$filepath" "$linktarget"
         chown -h root:root "$linktarget"

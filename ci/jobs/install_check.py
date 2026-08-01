@@ -228,6 +228,30 @@ done
 [ -s /shared/config.xml ]
 [ "$(stat -c %a /shared/config.xml)" = "$mode" ]
 [ "$(stat -c %U:%G /shared/config.xml)" = "root:root" ]""",
+        f"Install tgz over a chain of dangling symlinks in {image}": r"""#!/bin/bash -ex
+# A destination symlink may point at another symlink, and writing through the destination
+# followed the whole chain, so the installer has to create only the final referent and keep
+# every level of the indirection, not just the first one. The hops here are relative, so that
+# a hop resolved against the wrong directory is caught as well.
+mkdir -p /etc/clickhouse-client /shared /real
+ln -s ../../shared/config.xml /etc/clickhouse-client/config.xml
+ln -s ../real/config.xml /shared/config.xml
+for pkg in /packages/clickhouse-client*tgz; do
+    package=${pkg%-*}
+    package=${package##*/}
+    tar xf "$pkg"
+    mode=$(stat -c %a "/$package/etc/clickhouse-client/config.xml")
+    umask 077
+    "/$package/install/doinst.sh"
+done
+[ -L /etc/clickhouse-client/config.xml ]
+[ "$(readlink /etc/clickhouse-client/config.xml)" = "../../shared/config.xml" ]
+[ -L /shared/config.xml ]
+[ "$(readlink /shared/config.xml)" = "../real/config.xml" ]
+[ -f /real/config.xml ] && [ ! -L /real/config.xml ]
+[ -s /real/config.xml ]
+[ "$(stat -c %a /real/config.xml)" = "$mode" ]
+[ "$(stat -c %U:%G /real/config.xml)" = "root:root" ]""",
     }
     return test_install(image, tests)
 
