@@ -110,10 +110,13 @@ Expression ((Project names + Projection))
         ReadFromMergeTree (default.test_has_idx_tuple_col)
         Indexes:
           PrimaryKey
-            Condition: true
+            Keys:
+              key_tuple
+            Condition: (key_tuple in 2-element set)
             Parts: 1/1
-            Granules: 100/100
-          Ranges: 1
+            Granules: 3/100
+            Search Algorithm: generic exclusion search
+          Ranges: 2
 DROP TABLE IF EXISTS test_has_idx_tuple_col_nullable_elements;
 CREATE TABLE test_has_idx_tuple_col_nullable_elements
 (
@@ -144,10 +147,13 @@ Expression ((Project names + Projection))
         ReadFromMergeTree (default.test_has_idx_tuple_col_nullable_elements)
         Indexes:
           PrimaryKey
-            Condition: true
+            Keys:
+              key_tuple
+            Condition: (key_tuple in 5-element set)
             Parts: 1/1
-            Granules: 100/100
-          Ranges: 1
+            Granules: 2/100
+            Search Algorithm: generic exclusion search
+          Ranges: 2
 DROP TABLE IF EXISTS test_has_idx_array_col;
 CREATE TABLE test_has_idx_array_col
 (
@@ -174,10 +180,13 @@ Expression ((Project names + Projection))
         ReadFromMergeTree (default.test_has_idx_array_col)
         Indexes:
           PrimaryKey
-            Condition: true
+            Keys:
+              arr_key
+            Condition: (arr_key in 2-element set)
             Parts: 1/1
-            Granules: 100/100
-          Ranges: 1
+            Granules: 3/100
+            Search Algorithm: generic exclusion search
+          Ranges: 2
 DROP TABLE IF EXISTS test_has_idx_tuple_two_cols;
 CREATE TABLE test_has_idx_tuple_two_cols
 (
@@ -223,10 +232,14 @@ Expression ((Project names + Projection))
         ReadFromMergeTree (default.test_has_idx_tuple_two_cols)
         Indexes:
           PrimaryKey
-            Condition: true
+            Keys:
+              k1
+              k2
+            Condition: ((k1, k2) in 3-element set)
             Parts: 1/1
-            Granules: 100/100
-          Ranges: 1
+            Granules: 3/100
+            Search Algorithm: generic exclusion search
+          Ranges: 2
 DROP TABLE IF EXISTS test_has_idx_lowcard;
 CREATE TABLE test_has_idx_lowcard
 (

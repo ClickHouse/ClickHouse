@@ -132,18 +132,35 @@ CV-has packed Tuple(Int64,UInt8)	1
 CG-has (UInt64,UInt8)/(Decimal64(1),UInt8)	1
 CN6-in (Decimal(20,4),UInt8)/(Decimal(10,2),UInt8)	1
 N6-in scalar Decimal(20,4)/Decimal(10,2)	1
---- composite cross-type: pruning is withdrawn for a PACKED composite key (the 03733 shapes) ---
+--- composite cross-type over a PACKED composite key: admitted for has(), declined for IN ---
 T33 packed tuple has result	1
-T33 packed tuple has declines	0
+T33 packed tuple has keeps pruning	1
+T33 packed tuple NOT has result	1
+T33 packed tuple NOT has keeps pruning	1
+T33 packed tuple IN declines	1
 T33 packed tuple IN result	1
 A33 array key has result	1
-A33 array key has declines	0
+A33 array key has keeps pruning	1
+A33 array key NOT has result	1
+A33 array key NOT has keeps pruning	1
+N33 packed nested-Nullable has result	1
+N33 packed nested-Nullable has keeps pruning	1
+N33 packed nested-Nullable NOT has result	1
+N33 packed nested-Nullable NOT has keeps pruning	1
+U33 unpacked nested-Nullable has result	1
+U33 unpacked nested-Nullable has keeps pruning	1
+U33 unpacked nested-Nullable NOT has result	1
+U33 unpacked nested-Nullable NOT has keeps pruning	1
 Field width u8 vs u64	1
 Field width i8 vs i64	1
 Field signedness i32 vs u32	0
 Field width u64 vs u128	0
 Field width u128 vs u256	0
 Field scalar u64 vs u128	1
+T33 packed signedness declines	1
+T33 packed signedness result	1
+T33 packed 128-bit declines	1
+T33 packed 128-bit result	1
 --- composite has() over TWO key columns: the one shape where the composite rule decides ---
 W2C width-only has keeps pruning	1
 W2C width-only has	1

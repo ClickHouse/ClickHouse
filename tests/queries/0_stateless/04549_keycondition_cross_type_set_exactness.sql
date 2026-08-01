@@ -662,7 +662,7 @@ SELECT 'CN6-in (Decimal(20,4),UInt8)/(Decimal(10,2),UInt8)',
 SELECT 'N6-in scalar Decimal(20,4)/Decimal(10,2)',
     (SELECT count() FROM c_cn6 WHERE a IN (SELECT CAST('1.00', 'Decimal(10,2)'))) = (SELECT count() FROM o_cn6 WHERE a IN (SELECT CAST('1.00', 'Decimal(10,2)')));
 
-SELECT '--- composite cross-type: pruning is withdrawn for a PACKED composite key (the 03733 shapes) ---';
+SELECT '--- composite cross-type over a PACKED composite key: admitted for has(), declined for IN ---';
 
 DROP TABLE IF EXISTS t33; DROP TABLE IF EXISTS t33o;
 CREATE TABLE t33 (kt Tuple(UInt32, UInt32)) ENGINE = MergeTree ORDER BY kt SETTINGS index_granularity = 1, add_minmax_index_for_numeric_columns = 0;
@@ -671,16 +671,22 @@ INSERT INTO t33 VALUES ((10, 0));
 INSERT INTO t33 VALUES ((50000, 0));
 INSERT INTO t33 VALUES ((7, 7));
 INSERT INTO t33o VALUES ((10, 0)), ((50000, 0)), ((7, 7));
--- The literal's element type is `Tuple(UInt16, UInt8)` against a `Tuple(UInt32, UInt32)` key, so the
--- two differ only in the width of native integers and the runtime `has` compares them identically.
--- Pruning is nevertheless withdrawn, and by the OTHER rule: with a PACKED composite key column the
--- unpack loop in `tryPrepareSetColumnsForIndex` does not run, so the per-column check receives the
--- whole `Tuple`/`Array` pair, and it is exact only for an `equals`-equal or plain-integer pair - a
--- composite runtime cast can throw where the preparation cast merely returns NULL. The result cell
--- above is what keeps this honest: the answer still matches the oracle, only the optimization is lost.
+-- With a PACKED composite key column the unpack loop in `tryPrepareSetColumnsForIndex` does not run,
+-- so the per-column check receives the whole `Tuple`/`Array` pair. Whether such a pair is exact depends
+-- on the CALLER, and these cells pin both halves of that asymmetry on ONE pair of types
+-- (`Tuple(UInt16, UInt8)` literal against a `Tuple(UInt32, UInt32)` key, i.e. width-only):
+--   `has` casts nothing at runtime and compares `Field`s, which collapse native integer widths, so the
+--   atom is exact and must KEEP pruning;
+--   `IN` casts the KEY into the set type with `castColumnAccurate`, which THROWS on a narrowing
+--   composite instead of nulling, so the same pair must still be declined there.
 SELECT 'T33 packed tuple has result',
     (SELECT count() FROM t33 WHERE has([(10, 0), (50000, 0)], kt)) = (SELECT count() FROM t33o WHERE has([(10, 0), (50000, 0)], kt));
-SELECT 'T33 packed tuple has declines', count() > 0 FROM (EXPLAIN indexes = 1 SELECT count() FROM t33 WHERE has([(10, 0), (50000, 0)], kt)) WHERE explain ILIKE '%element set%';
+SELECT 'T33 packed tuple has keeps pruning', count() > 0 FROM (EXPLAIN indexes = 1 SELECT count() FROM t33 WHERE has([(10, 0), (50000, 0)], kt)) WHERE explain ILIKE '%element set%';
+SELECT 'T33 packed tuple NOT has result',
+    (SELECT count() FROM t33 WHERE NOT has([(10, 0), (50000, 0)], kt)) = (SELECT count() FROM t33o WHERE NOT has([(10, 0), (50000, 0)], kt));
+SELECT 'T33 packed tuple NOT has keeps pruning', count() > 0 FROM (EXPLAIN indexes = 1 SELECT count() FROM t33 WHERE NOT has([(10, 0), (50000, 0)], kt)) WHERE explain ILIKE '%element set%';
+-- The `IN` side of the SAME pair: it must still decline, otherwise the runtime cast throws.
+SELECT 'T33 packed tuple IN declines', count() = 0 FROM (EXPLAIN indexes = 1 SELECT count() FROM t33 WHERE kt IN (SELECT (toUInt16(10), toUInt8(0)))) WHERE explain ILIKE '%element set%';
 SELECT 'T33 packed tuple IN result',
     (SELECT count() FROM t33 WHERE kt IN (SELECT (toUInt16(10), toUInt8(0)))) = (SELECT count() FROM t33o WHERE kt IN (SELECT (toUInt16(10), toUInt8(0))));
 
@@ -692,10 +698,48 @@ INSERT INTO a33 VALUES ([50000, 50001]);
 INSERT INTO a33 VALUES ([7, 7]);
 INSERT INTO a33o VALUES ([10, 11]), ([50000, 50001]), ([7, 7]);
 -- Same width-only shape one container deeper (`Array(Array(UInt16))` literal against an `Array(UInt32)`
--- key), and the same packed-key rule applies, so pruning is withdrawn here too.
+-- key), so the same per-caller rule applies and `has` keeps pruning here too.
 SELECT 'A33 array key has result',
     (SELECT count() FROM a33 WHERE has([[10, 11], [50000, 50001]], ak)) = (SELECT count() FROM a33o WHERE has([[10, 11], [50000, 50001]], ak));
-SELECT 'A33 array key has declines', count() > 0 FROM (EXPLAIN indexes = 1 SELECT count() FROM a33 WHERE has([[10, 11], [50000, 50001]], ak)) WHERE explain ILIKE '%element set%';
+SELECT 'A33 array key has keeps pruning', count() > 0 FROM (EXPLAIN indexes = 1 SELECT count() FROM a33 WHERE has([[10, 11], [50000, 50001]], ak)) WHERE explain ILIKE '%element set%';
+SELECT 'A33 array key NOT has result',
+    (SELECT count() FROM a33 WHERE NOT has([[10, 11], [50000, 50001]], ak)) = (SELECT count() FROM a33o WHERE NOT has([[10, 11], [50000, 50001]], ak));
+SELECT 'A33 array key NOT has keeps pruning', count() > 0 FROM (EXPLAIN indexes = 1 SELECT count() FROM a33 WHERE NOT has([[10, 11], [50000, 50001]], ak)) WHERE explain ILIKE '%element set%';
+
+-- A nested `Nullable` on ONE side only. It is not represented in a `Field` at all (a non-NULL value
+-- carries the same variant as its plain counterpart, a NULL carries `Types::Null` and matches nothing),
+-- and the preparation cast maps a NULL element to a NULL WHOLE composite, which the caller filters out.
+-- Two shapes, because they are fixed by different code: the PACKED one goes through the per-column
+-- check on the whole composite, the UNPACKED one through the composite identity rule.
+DROP TABLE IF EXISTS n33; DROP TABLE IF EXISTS n33o;
+CREATE TABLE n33 (kt Tuple(Nullable(UInt32), Nullable(UInt32))) ENGINE = MergeTree ORDER BY kt SETTINGS index_granularity = 1, allow_nullable_key = 1, add_minmax_index_for_numeric_columns = 0;
+CREATE TABLE n33o (kt Tuple(Nullable(UInt32), Nullable(UInt32))) ENGINE = Memory;
+INSERT INTO n33 SELECT tuple(CAST(10, 'Nullable(UInt32)'), CAST(0, 'Nullable(UInt32)'));
+INSERT INTO n33 SELECT tuple(CAST(50000, 'Nullable(UInt32)'), CAST(0, 'Nullable(UInt32)'));
+INSERT INTO n33 SELECT tuple(CAST(7, 'Nullable(UInt32)'), CAST(7, 'Nullable(UInt32)'));
+INSERT INTO n33o SELECT tuple(CAST(10, 'Nullable(UInt32)'), CAST(0, 'Nullable(UInt32)'));
+INSERT INTO n33o SELECT tuple(CAST(50000, 'Nullable(UInt32)'), CAST(0, 'Nullable(UInt32)'));
+INSERT INTO n33o SELECT tuple(CAST(7, 'Nullable(UInt32)'), CAST(7, 'Nullable(UInt32)'));
+SELECT 'N33 packed nested-Nullable has result',
+    (SELECT count() FROM n33 WHERE has([(10, 0), (50000, 0), (0, NULL), (NULL, 10)], kt)) = (SELECT count() FROM n33o WHERE has([(10, 0), (50000, 0), (0, NULL), (NULL, 10)], kt));
+SELECT 'N33 packed nested-Nullable has keeps pruning', count() > 0 FROM (EXPLAIN indexes = 1 SELECT count() FROM n33 WHERE has([(10, 0), (50000, 0), (0, NULL), (NULL, 10)], kt)) WHERE explain ILIKE '%element set%';
+SELECT 'N33 packed nested-Nullable NOT has result',
+    (SELECT count() FROM n33 WHERE NOT has([(10, 0), (50000, 0), (0, NULL), (NULL, 10)], kt)) = (SELECT count() FROM n33o WHERE NOT has([(10, 0), (50000, 0), (0, NULL), (NULL, 10)], kt));
+SELECT 'N33 packed nested-Nullable NOT has keeps pruning', count() > 0 FROM (EXPLAIN indexes = 1 SELECT count() FROM n33 WHERE NOT has([(10, 0), (50000, 0), (0, NULL), (NULL, 10)], kt)) WHERE explain ILIKE '%element set%';
+
+DROP TABLE IF EXISTS u33; DROP TABLE IF EXISTS u33o;
+CREATE TABLE u33 (a UInt32, b UInt32) ENGINE = MergeTree ORDER BY (a, b) SETTINGS index_granularity = 1, add_minmax_index_for_numeric_columns = 0;
+CREATE TABLE u33o (a UInt32, b UInt32) ENGINE = Memory;
+INSERT INTO u33 VALUES (10, 0);
+INSERT INTO u33 VALUES (50000, 0);
+INSERT INTO u33 VALUES (7, 7);
+INSERT INTO u33o VALUES (10, 0), (50000, 0), (7, 7);
+SELECT 'U33 unpacked nested-Nullable has result',
+    (SELECT count() FROM u33 WHERE has([(10, 0), (50000, 0), (NULL, NULL)], (a, b))) = (SELECT count() FROM u33o WHERE has([(10, 0), (50000, 0), (NULL, NULL)], (a, b)));
+SELECT 'U33 unpacked nested-Nullable has keeps pruning', count() > 0 FROM (EXPLAIN indexes = 1 SELECT count() FROM u33 WHERE has([(10, 0), (50000, 0), (NULL, NULL)], (a, b))) WHERE explain ILIKE '%element set%';
+SELECT 'U33 unpacked nested-Nullable NOT has result',
+    (SELECT count() FROM u33 WHERE NOT has([(10, 0), (50000, 0), (NULL, NULL)], (a, b))) = (SELECT count() FROM u33o WHERE NOT has([(10, 0), (50000, 0), (NULL, NULL)], (a, b)));
+SELECT 'U33 unpacked nested-Nullable NOT has keeps pruning', count() > 0 FROM (EXPLAIN indexes = 1 SELECT count() FROM u33 WHERE NOT has([(10, 0), (50000, 0), (NULL, NULL)], (a, b))) WHERE explain ILIKE '%element set%';
 
 -- Native widths collapse in a Field, signedness does not, and the 128/256-bit tags do not either:
 -- this is exactly the boundary the composite identity rule has to draw.
@@ -708,12 +752,23 @@ SELECT 'Field width u128 vs u256', has([tuple(toUInt128(1))], tuple(toUInt256(1)
 -- native-vs-128-bit DOES match there. The two rows below are the asymmetry that forbids unifying them.
 SELECT 'Field scalar u64 vs u128', has([toUInt64(1)], toUInt128(1));
 
+-- The boundary of the has()-only composite tolerance, asserted over the PACKED key that reaches it (the
+-- cells further down assert the same boundary on the UNPACKED shape, which a different gate decides).
+-- Each pair below is one the runtime `has` does NOT match, so admitting it would claim exactness for a
+-- pair whose answer differs, and each must therefore still decline.
+SELECT 'T33 packed signedness declines', count() = 0 FROM (EXPLAIN indexes = 1 SELECT count() FROM t33 WHERE has([tuple(toInt16(10), toInt16(0))], kt)) WHERE explain ILIKE '%element set%';
+SELECT 'T33 packed signedness result',
+    (SELECT count() FROM t33 WHERE has([tuple(toInt16(10), toInt16(0))], kt)) = (SELECT count() FROM t33o WHERE has([tuple(toInt16(10), toInt16(0))], kt));
+SELECT 'T33 packed 128-bit declines', count() = 0 FROM (EXPLAIN indexes = 1 SELECT count() FROM t33 WHERE has([tuple(toUInt128(10), toUInt128(0))], kt)) WHERE explain ILIKE '%element set%';
+SELECT 'T33 packed 128-bit result',
+    (SELECT count() FROM t33 WHERE has([tuple(toUInt128(10), toUInt128(0))], kt)) = (SELECT count() FROM t33o WHERE has([tuple(toUInt128(10), toUInt128(0))], kt));
+
 SELECT '--- composite has() over TWO key columns: the one shape where the composite rule decides ---';
 
 -- With a two-column key the per-column checks see the UNPACKED scalars and admit any integer pair, so
 -- the composite rule is the deciding gate here and these cells are what pin it. (With a PACKED tuple or
--- array key the per-column check sees the whole composite instead and rejects a width-only pair before
--- this rule is consulted - see the residual noted in the PR description.)
+-- array key the per-column check sees the whole composite instead; for `has` it applies the same
+-- `Field`-identity tolerance, so the two shapes agree - see the T33/A33 cells above.)
 DROP TABLE IF EXISTS w2c; DROP TABLE IF EXISTS o2c;
 CREATE TABLE w2c (a UInt32, b UInt32) ENGINE = MergeTree ORDER BY (a, b) SETTINGS index_granularity = 1, add_minmax_index_for_numeric_columns = 0;
 CREATE TABLE o2c (a UInt32, b UInt32) ENGINE = Memory;

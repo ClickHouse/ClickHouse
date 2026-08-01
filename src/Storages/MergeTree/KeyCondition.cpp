@@ -2679,13 +2679,26 @@ void KeyCondition::analyzeKeyExpressionForSetIndex(const RPNBuilderTreeNode & ar
 /// signatures directly comparable. `Object` is excluded by the caller because its `equals` matches
 /// `typed_paths` by lookup while its `forEachChild` iterates an unordered map, so for that one type
 /// the walk order is not guaranteed to correspond.
+///
+/// A plain `Nullable` node is left out of the signature, because
+/// `setIndexTypesHaveSameFieldRepresentation` admits a nested `Nullable` against its plain counterpart
+/// and `DataTypeNullable::forEachChild` visits the wrapper's nested type as an extra node, so a
+/// one-sided wrapper would otherwise make the two signatures differ in LENGTH. That cannot weaken the
+/// `equals` arm: there both trees are `equals`-equal and carry `Nullable` at identical positions, so
+/// the same nodes are dropped from both. A CUSTOM-NAMED `Nullable` is still noted.
 static bool setIndexTypesAgreeOnCustomNames(const IDataType & left, const IDataType & right)
 {
     auto custom_name_signature = [](const IDataType & type)
     {
         Strings out;
         /// An empty entry for "no custom name" so a custom name can never alias a plain type's name.
-        auto note = [&](const IDataType & nested) { out.push_back(nested.hasCustomName() ? nested.getName() : String{}); };
+        auto note = [&](const IDataType & nested)
+        {
+            if (nested.hasCustomName())
+                out.push_back(nested.getName());
+            else if (!WhichDataType(nested).isNullable())
+                out.emplace_back();
+        };
         note(type);
         type.forEachChild(note);
         return out;
@@ -2787,6 +2800,19 @@ static bool setIndexTypesHaveSameFieldRepresentation(const IDataType & left, con
             *assert_cast<const DataTypeMap &>(left).getNestedType(),
             *assert_cast<const DataTypeMap &>(right).getNestedType());
 
+    /// A `Nullable` wrapper is not represented in a `Field` at all: a non-NULL value carries the same
+    /// variant as its plain counterpart (`has([tuple(CAST(10, 'Nullable(UInt16)'))], tuple(toUInt32(10)))`
+    /// is 1), and a NULL carries `Types::Null`, which matches no plain value either way. The preparation
+    /// direction is safe too - `accurateCastOrNull` maps a NULL element to a NULL WHOLE composite, which
+    /// the caller then filters out. So recurse through it on either side; the wrapper is intentionally
+    /// not required to be present on both.
+    if (left_which.isNullable())
+        return setIndexTypesHaveSameFieldRepresentation(
+            *assert_cast<const DataTypeNullable &>(left).getNestedType(), right);
+    if (right_which.isNullable())
+        return setIndexTypesHaveSameFieldRepresentation(
+            left, *assert_cast<const DataTypeNullable &>(right).getNestedType());
+
     /// Native integer widths collapse into one `Field` variant per signedness, so they are
     /// interchangeable. Everything wider keeps its own variant and is left to `equals`.
     if (left_which.isNativeUInt() && right_which.isNativeUInt())
@@ -2816,9 +2842,20 @@ static bool setIndexTypesHaveSameFieldRepresentation(const IDataType & left, con
 ///
 /// Everything else fails closed. Floats are excluded from the cross-type case because the strictness
 /// argument does not extend to values whose equality differs between the two engines that have to
-/// agree (signed zeros, NaN payloads). A cross-type composite is exact only under the identity case,
-/// because the composite runtime cast can throw where the preparation cast merely returns NULL.
-static bool setIndexConversionPreservesEquality(const DataTypePtr & key_type, const DataTypePtr & set_element_type)
+/// agree (signed zeros, NaN payloads).
+///
+/// A cross-type COMPOSITE pair reaches this check whenever the key column is a packed `Tuple`/`Array`,
+/// because then `tryPrepareSetColumnsForIndex`'s unpack loop does not run and this scalar-shaped check
+/// receives the whole composite. Whether such a pair is exact depends on the CALLER, so
+/// `composite_field_identity_is_enough` selects the tolerance:
+/// - `IN` passes false. `Set::execute` casts the KEY into the set type with `castColumnAccurate`, not
+///   `castColumnAccurateOrNull`, so a narrowing composite THROWS `CANNOT_CONVERT_TYPE` at runtime
+///   rather than producing a NULL. Only the identity case is exact there.
+/// - `has` passes true. It casts nothing at runtime - `FunctionArrayIndex::executeConst` compares
+///   `Field`s with `accurateEquals` - so the pair only has to be indistinguishable to that comparison,
+///   which is what `setIndexTypesHaveSameFieldRepresentation` decides.
+static bool setIndexConversionPreservesEquality(
+    const DataTypePtr & key_type, const DataTypePtr & set_element_type, bool composite_field_identity_is_enough)
 {
     /// Apply both unwrappings here rather than relying on the caller: `LowCardinality` also has to be
     /// stripped from nested types, otherwise an identical composite type compares unequal.
@@ -2826,6 +2863,10 @@ static bool setIndexConversionPreservesEquality(const DataTypePtr & key_type, co
     const auto set = removeNullable(recursiveRemoveLowCardinality(set_element_type));
 
     if (key->equals(*set) && setIndexTypeTreeHasStableChildOrder(*key) && setIndexTypesAgreeOnCustomNames(*key, *set))
+        return true;
+
+    if (composite_field_identity_is_enough && setIndexTypesHaveSameFieldRepresentation(*key, *set)
+        && setIndexTypeTreeHasStableChildOrder(*key) && setIndexTypesAgreeOnCustomNames(*key, *set))
         return true;
 
     const WhichDataType key_which(key);
@@ -2845,7 +2886,8 @@ static bool tryPrepareSetColumnsForIndex(
     const std::vector<std::optional<DeterministicKeyTransformDag>> & set_transforming_dags,
     const DataTypes & data_types,
     const std::vector<MergeTreeSetIndex::KeyTuplePositionMapping> & indexes_mapping,
-    size_t args_count)
+    size_t args_count,
+    bool composite_field_identity_is_enough)
 {
     Columns new_columns;
     DataTypes new_types;
@@ -2917,14 +2959,15 @@ static bool tryPrepareSetColumnsForIndex(
             /// element against the type the conversion actually targeted; when no conversion ran, the
             /// target is null and there is nothing to check.
             if (pre_transform_conversion_target
-                && !setIndexConversionPreservesEquality(pre_transform_conversion_target, set_element_type))
+                && !setIndexConversionPreservesEquality(
+                    pre_transform_conversion_target, set_element_type, composite_field_identity_is_enough))
                 return false;
 
             set_column = transformed_set_column;
             set_element_type = transformed_set_type;
         }
 
-        if (!setIndexConversionPreservesEquality(key_column_type, set_element_type))
+        if (!setIndexConversionPreservesEquality(key_column_type, set_element_type, composite_field_identity_is_enough))
             return false;
 
         if (canBeSafelyCast(set_element_type, key_column_type))
@@ -3076,8 +3119,10 @@ bool KeyCondition::tryPrepareSetIndexForIn(
         }
     }
 
+    /// `composite_field_identity_is_enough = false`: `Set::execute` casts the key into the set type with
+    /// `castColumnAccurate`, so a narrowing composite throws at runtime instead of nulling.
     if (!tryPrepareSetColumnsForIndex(
-            set_columns, set_types, set_transforming_dags, data_types, indexes_mapping, left_args_count))
+            set_columns, set_types, set_transforming_dags, data_types, indexes_mapping, left_args_count, false))
         return false;
 
     out.set_index = std::make_shared<MergeTreeSetIndex>(set_columns, std::move(indexes_mapping));
@@ -3269,8 +3314,10 @@ bool KeyCondition::tryPrepareSetIndexForHas(
             indexes_mapping, set_transforming_dags, data_types, key_args_count, array_nested_type))
         return false;
 
+    /// `composite_field_identity_is_enough = true`: `has` casts nothing at runtime, so a composite pair
+    /// only has to be indistinguishable to the `Field` comparison. No cast exists to throw.
     if (!tryPrepareSetColumnsForIndex(
-            set_columns, set_types, set_transforming_dags, data_types, indexes_mapping, key_args_count))
+            set_columns, set_types, set_transforming_dags, data_types, indexes_mapping, key_args_count, true))
         return false;
 
     out.set_index = std::make_shared<MergeTreeSetIndex>(set_columns, std::move(indexes_mapping));
