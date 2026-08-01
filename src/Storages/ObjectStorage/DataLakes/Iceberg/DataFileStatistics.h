@@ -39,7 +39,7 @@ private:
     std::vector<Int64> field_ids;
     std::vector<Int64> column_sizes;
     std::vector<Int64> null_counts;
-    std::vector<Range> ranges;
+    Ranges ranges;
 };
 
 using DataFileStatisticsPtr = std::shared_ptr<DataFileStatistics>;

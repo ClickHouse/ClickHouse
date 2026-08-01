@@ -1,0 +1,10 @@
+OK native==library | Arrow
+x	['y','z']	('t',0)
+x	['y','z']	('t',1)
+x	['y','z']	('t',2)
+x	['y','z']	('t',3)
+OK native==library | ArrowStream
+x	['y','z']	('t',0)
+x	['y','z']	('t',1)
+x	['y','z']	('t',2)
+x	['y','z']	('t',3)

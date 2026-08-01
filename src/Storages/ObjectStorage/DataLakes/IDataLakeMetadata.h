@@ -32,6 +32,7 @@ namespace ErrorCodes
 extern const int UNSUPPORTED_METHOD;
 }
 
+class BackgroundJobsAssignee;
 class SinkToStorage;
 using SinkToStoragePtr = std::shared_ptr<SinkToStorage>;
 class StorageObjectStorageConfiguration;
@@ -157,7 +158,11 @@ public:
 
     virtual void addDeleteTransformers(ObjectInfoPtr, QueryPipelineBuilder &, const std::optional<FormatSettings> &, FormatParserSharedResourcesPtr, ContextPtr) const { }
     virtual void checkAlterIsPossible(const AlterCommands & /*commands*/) { throwNotImplemented("alter"); }
-    virtual void alter(const AlterCommands & /*params*/, ContextPtr /*context*/) { throwNotImplemented("alter"); }
+    virtual void alter(
+        const AlterCommands & /*params*/,
+        ContextPtr /*context*/,
+        const StorageID & /*storage_id*/,
+        std::shared_ptr<DataLake::ICatalog> /*catalog*/) { throwNotImplemented("alter"); }
 
     virtual Pipe executeCommand(
         const String & command_name,
@@ -172,6 +177,13 @@ public:
     }
 
     virtual void drop(ContextPtr) { }
+
+    virtual ObjectStorageType getObjectStorageType() const { return ObjectStorageType::None; }
+
+    virtual bool scheduleDataProcessingJob(BackgroundJobsAssignee & /*assignee*/, StorageObjectStorage & /*storage_object_storage*/) { return false; }
+    virtual void finishAllBackgroundJobs() {}
+    virtual Int32 getBiasBackoffSeconds() const { return 0; }
+    virtual bool isBackgroundExecutable() const { return false; }
 
 protected:
     virtual ObjectIterator

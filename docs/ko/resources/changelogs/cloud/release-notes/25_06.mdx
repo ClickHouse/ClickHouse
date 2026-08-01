@@ -1,0 +1,408 @@
+---
+slug: /changelogs/25.6
+title: 'Cloud용 v25.6 변경 로그'
+description: 'v25.6 빠른 릴리스 변경 로그'
+keywords: ['변경 로그', '클라우드']
+sidebarTitle: '25.6'
+doc_type: 'changelog'
+---
+
+<div id="backward-incompatible-change">
+  ## 하위 호환되지 않는 변경 사항
+</div>
+
+* 이제 `geoToH3()` 함수는 입력을 (lat, lon,res) 순서로 받습니다(기하 함수의 표준 순서). 기존 결과 순서인 (lon, lat,res)를 유지하려면 `geotoh3_lon_lat_input_order = true` 설정을 지정할 수 있습니다. [#78852](https://github.com/ClickHouse/ClickHouse/pull/78852) ([Pratima Patel](https://github.com/pratimapatel2008)).
+* `full_text` 타입 인덱스의 이름이 `gin`으로 변경되었습니다. 이는 PostgreSQL 및 다른 데이터베이스에서 더 익숙하게 쓰이는 용어를 따른 것입니다. 기존 `full_text` 타입 인덱스는 계속 로드할 수 있지만, 검색에 사용하려고 하면 예외를 발생시키며 `gin` 인덱스를 대신 사용하도록 안내합니다. [#79024](https://github.com/ClickHouse/ClickHouse/pull/79024) ([Robert Schulze](https://github.com/rschu1ze)).
+* 파일 시스템 캐시의 동적 크기 조정을 허용하는 파일 시스템 캐시 설정 `allow_dynamic_cache_resize`가 추가되었습니다. 기본값은 `false`입니다. 이유: 특정 환경(ClickHouse Cloud)에서는 모든 스케일링 이벤트가 프로세스 재시작을 통해 발생하므로, 동작을 더 세밀하게 제어하고 안전장치로 활용하기 위해 이 기능이 명시적으로 비활성화되도록 할 필요가 있습니다. 이 PR이 하위 호환되지 않는 변경 사항으로 표시된 이유는, 이전 버전에서는 별도 설정 없이 동적 캐시 크기 조정이 기본적으로 동작했기 때문입니다. [#79148](https://github.com/ClickHouse/ClickHouse/pull/79148) ([Kseniia Sumarokova](https://github.com/kssenii)).
+* 기존 인덱스 타입 `annoy` 및 `usearch`에 대한 지원이 제거되었습니다. 둘 다 오랫동안 스텁 상태였으므로, 이러한 기존 인덱스를 사용하려는 모든 시도는 어차피 오류를 반환했습니다. 아직 `annoy` 및 `usearch` 인덱스가 남아 있다면 삭제하십시오. [#79802](https://github.com/ClickHouse/ClickHouse/pull/79802) ([Robert Schulze](https://github.com/rschu1ze)).
+  #* `format_alter_commands_with_parentheses` 서버 설정을 제거합니다. 이 설정은 24.2에서 도입되었으며 기본적으로 비활성화되어 있었습니다. 25.2부터는 기본적으로 활성화되었습니다. 새 포맷을 지원하지 않는 LTS 버전이 더 이상 없으므로 이 설정을 제거할 수 있습니다. [#79970](https://github.com/ClickHouse/ClickHouse/pull/79970) ([János Benjamin Antal](https://github.com/antaljanosbenjamin)).
+  #* Minor: `backup_threads` 및 `restore_threads` 서버 설정이 0이 아닌 값만 갖도록 강제합니다. [#80224](https://github.com/ClickHouse/ClickHouse/pull/80224) ([Raúl Marín](https://github.com/Algunenano)).
+* `String`에 대한 `bitNot()`가 null 종료 문자열을 반환하도록 수정했습니다. [#80791](https://github.com/ClickHouse/ClickHouse/pull/80791) ([Azat Khuzhin](https://github.com/azat)).
+
+<div id="new-feature">
+  ## 새 기능
+</div>
+
+* MergeTree `SETTINGS`에 새 옵션을 추가하여, `CREATE` 쿼리에서 해당 컬럼의 압축 코덱을 명시적으로 정의하지 않은 경우 기본 압축 코덱을 지정할 수 있도록 했습니다. 이로써 [#42005](https://github.com/ClickHouse/ClickHouse/issues/42005)가 해결되었습니다. [#66394](https://github.com/ClickHouse/ClickHouse/pull/66394) ([gvoelfin](https://github.com/gvoelfin)).
+* https://github.com/ClickHouse/ClickHouse/pull/71943의 후속 작업입니다. 이 PR에서는 `Time`/`Time64` 데이터 타입을 구현합니다. 새로운 데이터 타입인 Time (HHH:MM:SS) 및 Time64 (HHH:MM:SS.`<fractional>`)와 몇 가지 기본 CAST 함수, 그리고 다른 데이터 타입과 상호작용하는 함수를 구현했습니다. 또한 CAST 함수에 `toTime` 함수가 필요하므로, 기존 함수 이름 `toTime`을 `toTimeWithFixedDate`로 변경했습니다. [#75735](https://github.com/ClickHouse/ClickHouse/pull/75735) ([Yarik Briukhovetskyi](https://github.com/yariks5s)).
+* `WHERE` 절의 `EXISTS` 표현식 인수로 상관 서브쿼리를 지원합니다. [#72459](https://github.com/ClickHouse/ClickHouse/issues/72459)를 해결합니다. [#76078](https://github.com/ClickHouse/ClickHouse/pull/76078) ([Dmitry Novik](https://github.com/novikd)).
+* Merge 테이블 엔진에 쓸 수 있도록 허용합니다. [#77484](https://github.com/ClickHouse/ClickHouse/pull/77484) ([Anton Ivashkin](https://github.com/ianton-ru)).
+* 복제된 MergeTree 테이블용 분산 `INSERT SELECT`는 이제 병렬 레플리카를 효율적으로 활용해, 각 노드에서 서로 다른 데이터를 선택하고 독립적으로 삽입함으로써 `INSERT`를 병렬화합니다. [#78041](https://github.com/ClickHouse/ClickHouse/pull/78041) ([Igor Nikonov](https://github.com/devcrafter)).
+* 맵 값에 대한 필터링을 위한 `mapContainsValuesLike`/`mapContainsValues`/`mapExtractValuesLike` 함수를 추가하고, bloomfilter 기반 인덱스도 이를 지원하도록 했습니다. [#78171](https://github.com/ClickHouse/ClickHouse/pull/78171) ([UnamedRus](https://github.com/UnamedRus)).
+* `system.iceberg_history` 테이블이 추가되었습니다. [#78244](https://github.com/ClickHouse/ClickHouse/pull/78244) ([Smita Kulkarni](https://github.com/SmitaRKulkarni)).
+* 워크로드에 쿼리 슬롯 스케줄링이 추가되었습니다. 자세한 내용은 https://clickhouse.com/docs/operations/workload-scheduling#query&#95;scheduling을 참조하십시오. [#78415](https://github.com/ClickHouse/ClickHouse/pull/78415) ([Sergei Trifonov](https://github.com/serxa)).
+* `getServerSetting` 및 `getMergeTreeSetting` 함수를 추가합니다. https://github.com/clickhouse/clickhouse/issues/78318를 해결합니다. [#78439](https://github.com/ClickHouse/ClickHouse/pull/78439) ([NamNguyenHoai](https://github.com/NamHoaiNguyen)).
+* 설정 제약 조건에서 금지된 값을 지원합니다. [#78499](https://github.com/ClickHouse/ClickHouse/pull/78499) ([Bharat Nallan](https://github.com/bharatnc)).
+* `version-hint.text` 파일을 활용할 수 있도록 새 `iceberg_enable_version_hint` 설정을 추가했습니다. [#78594](https://github.com/ClickHouse/ClickHouse/pull/78594) ([Arnaud Briche](https://github.com/arnaudbriche)).
+* 데이터베이스에서 `LIKE` 키워드로 필터링하여 특정 테이블을 TRUNCATE할 수 있습니다. [#78597](https://github.com/ClickHouse/ClickHouse/pull/78597) ([Yarik Briukhovetskyi](https://github.com/yariks5s)).
+* `clickhouse-local`(및 축약 별칭인 `ch`)은 이제 처리할 입력 데이터가 있으면 암시적 `FROM table`을 사용합니다. 이로써 [#65023](https://github.com/ClickHouse/ClickHouse/issues/65023)가 해결되었습니다. 또한 `--input-format`을 지정하지 않았고 일반 파일을 처리하는 경우 `clickhouse-local`에서 포맷을 자동 추론하도록 활성화했습니다. [#79085](https://github.com/ClickHouse/ClickHouse/pull/79085) ([Alexey Milovidov](https://github.com/alexey-milovidov)).
+* [`icebergHash`](https://iceberg.apache.org/spec/#appendix-b-32-bit-hash-requirements) 및 [`icebergBucketTransform`](https://iceberg.apache.org/spec/#bucket-transform-details) 함수가 추가되었습니다. [`bucket transfom`](https://iceberg.apache.org/spec/#partitioning)으로 파티셔닝된 `Iceberg` 테이블에서 데이터 파일 프루닝을 지원합니다. [#79262](https://github.com/ClickHouse/ClickHouse/pull/79262) ([Daniil Ivanik](https://github.com/divanik)).
+* Coalescing Merge Tree 지원이 추가되었습니다. 이로써 [#78869](https://github.com/ClickHouse/ClickHouse/issues/78869)가 종료되었습니다. [#79344](https://github.com/ClickHouse/ClickHouse/pull/79344) ([Konstantin Vedernikov](https://github.com/scanhex12)).
+* `stringBytesUniq` 및 `stringBytesEntropy` 함수를 추가하여 무작위이거나 암호화되었을 가능성이 있는 데이터를 검색할 수 있습니다. [#79350](https://github.com/ClickHouse/ClickHouse/pull/79350) ([Sachin Kumar Singh](https://github.com/sachinkumarsingh092)).
+* MergeTree 계열 테이블에서 `_part_starting_offset` 가상 컬럼을 지원합니다. 이 컬럼은 현재 파트 목록을 기준으로 쿼리 시점에 계산되는, 앞선 모든 파트의 누적 행 수를 나타냅니다. 이 누적 값은 쿼리 실행 전반에 걸쳐 유지되며, 파트 프루닝 이후에도 유효하게 유지됩니다. 이러한 동작을 지원하도록 관련 내부 로직도 리팩터링되었습니다. [#79417](https://github.com/ClickHouse/ClickHouse/pull/79417) ([Amos Bird](https://github.com/amosbird)).
+* 단일 쿼리 내의 모든 서브쿼리에서 동일한 스토리지 스냅샷을 공유할 수 있도록 `enable_shared_storage_snapshot_in_query` 설정이 추가되었습니다. 이를 통해 쿼리 안에서 동일한 테이블이 여러 번 참조되더라도 항상 같은 스냅샷을 기준으로 일관된 읽기가 보장됩니다. [#79471](https://github.com/ClickHouse/ClickHouse/pull/79471) ([Amos Bird](https://github.com/amosbird)).
+* CH JSON 컬럼을 Parquet에 쓰고, Parquet JSON 컬럼을 CH JSON 컬럼으로 직접 읽을 수 있도록 지원합니다. [#79649](https://github.com/ClickHouse/ClickHouse/pull/79649) ([Nihal Z. Miaji](https://github.com/nihalzp)).
+* [`chdig`](https://github.com/azat/chdig/)를 ClickHouse의 일부로 포함해 제공합니다 - ClickHouse용 TUI 인터페이스(`top`과 유사). [#79666](https://github.com/ClickHouse/ClickHouse/pull/79666) ([Azat Khuzhin](https://github.com/azat)).
+* `pointInPolygon`에 대한 `MultiPolygon` 지원을 추가했습니다. [#79773](https://github.com/ClickHouse/ClickHouse/pull/79773) ([Nihal Z. Miaji](https://github.com/nihalzp)).
+* Geo Parquet 지원이 추가되었습니다. 이로써 [#75317](https://github.com/ClickHouse/ClickHouse/issues/75317) 문제가 해결되었습니다. [#79777](https://github.com/ClickHouse/ClickHouse/pull/79777) ([Konstantin Vedernikov](https://github.com/scanhex12)).
+* 로컬 파일 시스템에 마운트된 Delta 테이블을 `deltaLakeLocal` 테이블 함수로 쿼리할 수 있는 지원이 추가되었습니다. [#79781](https://github.com/ClickHouse/ClickHouse/pull/79781) ([roykim98](https://github.com/roykim98)).
+* base32 인코딩 및 디코딩 기능이 추가되었습니다. [#79809](https://github.com/ClickHouse/ClickHouse/pull/79809) ([Joanna Hulboj](https://github.com/jh0x)).
+* ClickHouse 벡터 검색이 이제 프리필터링과 포스트필터링을 모두 지원하며, 더욱 세밀한 제어를 위해 관련 설정도 제공합니다. (이슈 [#78161](https://github.com/ClickHouse/ClickHouse/issues/78161)). [#79854](https://github.com/ClickHouse/ClickHouse/pull/79854) ([Shankar Iyer](https://github.com/shankar-iyer)).
+* WKB 포맷을 읽는 함수를 지원합니다. 이로써 [#43941](https://github.com/ClickHouse/ClickHouse/issues/43941)가 부분적으로 해결됩니다. [#80139](https://github.com/ClickHouse/ClickHouse/pull/80139) ([Konstantin Vedernikov](https://github.com/scanhex12)).
+* String을 cast하여 DateTime으로 변환할 때 파싱 모드를 선택할 수 있는 새로운 설정 `cast_string_to_date_time_mode`를 추가했습니다. [#80210](https://github.com/ClickHouse/ClickHouse/pull/80210) ([Pavel Kruglov](https://github.com/Avogar)).
+* `Bech32` 및 `Bech32m` 인코딩/디코딩 함수를 추가했습니다(이슈 [#40381](https://github.com/ClickHouse/ClickHouse/issues/40381)). [#80239](https://github.com/ClickHouse/ClickHouse/pull/80239) ([George Larionov](https://github.com/glarik)).
+* Atomic 및 Ordinary DB 엔진에서 테이블 메타데이터 파일을 저장할 디스크를 지정하는 `disk` 설정을 지원합니다. [#80546](https://github.com/ClickHouse/ClickHouse/pull/80546) ([Tuan Pham Anh](https://github.com/tuanpach)).
+* MergeTree 파트를 풀어 비교하는 함수를 지원합니다. [#80573](https://github.com/ClickHouse/ClickHouse/pull/80573) ([Mikhail Artemenko](https://github.com/Michicosun)).
+* 시계열 데이터 작업의 일부 시나리오를 더 빠르게 처리하기 위한 `timeSeries*` 도우미 함수: - 지정된 시작 타임스탬프, 종료 타임스탬프 및 간격에 맞춰 데이터를 시간 그리드로 재샘플링 - PromQL과 유사한 `delta`, `rate`, `idelta`, `irate`를 계산. [#80590](https://github.com/ClickHouse/ClickHouse/pull/80590) ([Alexander Gololobov](https://github.com/davenger)).
+* 쿼리 대상으로 선택된 파트를, 해당 파트가 위치한 디스크를 기준으로 필터링할 수 있습니다. [#80650](https://github.com/ClickHouse/ClickHouse/pull/80650) ([tanner-bruce](https://github.com/tanner-bruce)).
+* 내장 웹 도구 목록을 보여주는 랜딩 페이지를 추가했습니다. 브라우저와 유사한 user agent로 요청하면 이 페이지가 열립니다. [#81129](https://github.com/ClickHouse/ClickHouse/pull/81129) ([Alexey Milovidov](https://github.com/alexey-milovidov)).
+* `arrayFirst`, `arrayFirstIndex`, `arrayLast` 및 `arrayLastIndex`에서 `NULL` 값을 필터링할 수 있습니다. [#81113](https://github.com/ClickHouse/ClickHouse/issues/81113)을 수정했습니다. [#81197](https://github.com/ClickHouse/ClickHouse/pull/81197) ([Lennard Eijsackers](https://github.com/Blokje5)).
+
+<div id="experimental-feature">
+  ## 실험 기능
+</div>
+
+* Iceberg datalake용 Hive metastore 카탈로그. [#77677](https://github.com/ClickHouse/ClickHouse/pull/77677) ([Konstantin Vedernikov](https://github.com/scanhex12)).
+* 명시적 매개변수는 key-value 쌍 형태로 지원됩니다. 현재 지원되는 매개변수는 필수 `tokenizer` 1개와 선택적 `max_rows_per_postings_list`, `ngram_size` 2개입니다. [#80262](https://github.com/ClickHouse/ClickHouse/pull/80262) ([Elmi Ahmadov](https://github.com/ahmadov)).
+* 실험적 `gin` 유형 인덱스의 이름이 `text`로 변경되었습니다. 기존 `gin` 유형 인덱스는 계속 로드할 수 있지만, 검색에 사용하려고 하면 예외가 발생하며 대신 `text` 인덱스를 사용하라는 안내가 표시됩니다. [#80855](https://github.com/ClickHouse/ClickHouse/pull/80855) ([Robert Schulze](https://github.com/rschu1ze)).
+
+<div id="performance-improvement">
+  ## 성능 개선
+</div>
+
+* 여러 그래뉼에 걸쳐 표현식을 한 번에 평가해 보조 인덱스의 속도를 높입니다. [#64109](https://github.com/ClickHouse/ClickHouse/pull/64109) ([Alexey Milovidov](https://github.com/alexey-milovidov)).
+* 오른쪽 테이블의 크기가 임계값보다 작을 때 `hash` 알고리즘으로 폴백하도록 하는 임계값(`parallel_hash_join_threshold` 설정으로 제어됨)이 도입되었습니다. [#76185](https://github.com/ClickHouse/ClickHouse/pull/76185) ([Nikita Taranov](https://github.com/nickitat)).
+* 기존 `Pipe::resize` 구현은 `Resize` 또는 `StrictResize` 노드 하나를 파이프라인 토폴로지에 삽입해 생성하며, 이 노드는 모든 입력 스트림(상류 노드)을 통합된 출력 스트림 집합(하류 노드)에 연결하는 중앙 허브 역할을 합니다. 이러한 설계는 파이프라인 그래프를 실행하는 동안 ` ExecutingGraph::Node::status_mutex`에서 경합을 유발하며, 특히 코어 수가 많은 환경에서 더욱 두드러집니다. 파이프라인이 수십 또는 수백 개의 스트림으로 확장되면 이러한 경합으로 인해 다음과 같은 문제가 발생합니다:. [#77562](https://github.com/ClickHouse/ClickHouse/pull/77562) ([Zhiguo Zhou](https://github.com/ZhiguoZh)).
+* `INSERT`를 병렬로 수행할 수 있게 하여 `S3Queue`/`AzureQueue`의 성능을 개선했습니다(`parallel_inserts=true` 큐 설정으로 활성화할 수 있습니다). 이전에는 `S3Queue`/`AzureQueue`가 파이프라인의 첫 단계(다운로드, 파싱)만 병렬로 처리할 수 있었고, `INSERT`는 단일 스레드로만 수행되었습니다. 또한 `INSERT`는 거의 항상 병목 지점이었습니다. 이제는 `processing_threads_num`에 거의 선형적으로 비례해 확장됩니다. [#77671](https://github.com/ClickHouse/ClickHouse/pull/77671) ([Azat Khuzhin](https://github.com/azat)).
+* 개별 서브컬럼을 읽을 수 있도록 각 substream의 마크를 저장하는 방식으로 compact part 포맷이 변경되었습니다. 기존 compact 포맷은 계속 읽기에서 지원되며, 쓰기에서는 MergeTree setting `write_marks_for_substreams_in_compact_parts`를 사용해 활성화할 수 있습니다. 이 변경은 compact parts의 저장 형식을 바꾸므로, 더 안전한 업그레이드를 위해 기본적으로 비활성화되어 있습니다. 다음 릴리스 중 하나에서는 기본적으로 활성화될 예정입니다. [#77940](https://github.com/ClickHouse/ClickHouse/pull/77940) ([Pavel Kruglov](https://github.com/Avogar)).
+* 새로운 설정`use_skip_indexes_in_final_exact_mode`이 도입되었습니다. `ReplacingMergeTree` 테이블에 대한 쿼리에 `FINAL` 절이 있으면, 스킵 인덱스를 기준으로 테이블 범위만 읽을 경우 잘못된 결과가 나올 수 있습니다. 이 설정을 사용하면 스킵 인덱스가 반환한 프라이머리 키 범위와 겹치는 더 최신 파트를 스캔하여 올바른 결과를 반환하도록 할 수 있습니다. 비활성화하려면 0, 활성화하려면 1로 설정합니다. [#78350](https://github.com/ClickHouse/ClickHouse/pull/78350) ([Shankar Iyer](https://github.com/shankar-iyer)).
+* 이제 병렬 레플리카가 활성화된 상태에서는 읽기용 작업 크기를 결정할 때 레플리카 수를 사용합니다. 이를 통해 읽어야 할 데이터 양이 그리 크지 않을 때 레플리카 간 작업이 더 균등하게 분배됩니다. [#78695](https://github.com/ClickHouse/ClickHouse/pull/78695) ([Nikita Taranov](https://github.com/nickitat)).
+* 분산 집계의 최종 단계에서 `uniqExact` 상태를 병렬로 병합할 수 있도록 허용합니다. [#78703](https://github.com/ClickHouse/ClickHouse/pull/78703) ([Nikita Taranov](https://github.com/nickitat)).
+* 키를 사용하는 집계에서 `uniqExact` 상태를 병렬로 병합할 때 발생할 수 있는 성능 저하를 수정했습니다. [#78724](https://github.com/ClickHouse/ClickHouse/pull/78724) ([Nikita Taranov](https://github.com/nickitat)).
+  #* `DELETE FROM ... WHERE 1` 쿼리를 `TRUNCATE`로 대체했습니다. (되돌렸습니다). [#78739](https://github.com/ClickHouse/ClickHouse/pull/78739) ([Konstantin Vedernikov](https://github.com/scanhex12)).
+* Azure Storage에 대한 List Blobs API 호출 수를 줄였습니다. [#78860](https://github.com/ClickHouse/ClickHouse/pull/78860) ([Julia Kartseva](https://github.com/jkartseva)).
+* 가능한 경우 필터 쿼리 계획 단계의 등가 조건을 `JOIN` 조건에 병합하여, 이를 해시 테이블 키로 사용할 수 있도록 했습니다. [#78877](https://github.com/ClickHouse/ClickHouse/pull/78877) ([Dmitry Novik](https://github.com/novikd)).
+* 정규식 대신 `extractKeyValuePairs`를 사용해 hive 경로 파싱 성능을 개선했습니다. [#79067](https://github.com/ClickHouse/ClickHouse/pull/79067) ([Arthur Passos](https://github.com/arthurpassos)).
+* 병렬 레플리카를 사용할 때 분산 `INSERT SELECT`의 성능을 개선했습니다. [#79441](https://github.com/ClickHouse/ClickHouse/pull/79441) ([Azat Khuzhin](https://github.com/azat)).
+* 서브컬럼이 포함된 조건을 `PREWHERE`로 이동할 수 있도록 합니다. [#79489](https://github.com/ClickHouse/ClickHouse/pull/79489) ([Pavel Kruglov](https://github.com/Avogar)).
+* 모든 블룸 필터 타입의 성능이 개선되었습니다. [#79800](https://github.com/ClickHouse/ClickHouse/pull/79800) ([Delyan Kratunov](https://github.com/dkratunov)).
+* `LogSeriesLimiter`가 생성될 때마다 정리 작업을 수행하지 않도록 하여, 높은 동시성 환경에서 잠금 경합과 성능 저하를 방지합니다. [#79864](https://github.com/ClickHouse/ClickHouse/pull/79864) ([filimonov](https://github.com/filimonov)).
+* 기본적으로 `compile_expressions`(일반 표현식 조각을 위한 JIT 컴파일러)를 활성화합니다. 이로써 [#51264](https://github.com/ClickHouse/ClickHouse/issues/51264), [#56386](https://github.com/ClickHouse/ClickHouse/issues/56386), [#66486](https://github.com/ClickHouse/ClickHouse/issues/66486)가 해결됩니다. [#79907](https://github.com/ClickHouse/ClickHouse/pull/79907) ([Alexey Milovidov](https://github.com/alexey-milovidov)).
+* 단순한 count 최적화로 쿼리 속도를 높입니다. [#79945](https://github.com/ClickHouse/ClickHouse/pull/79945) ([Raúl Marín](https://github.com/Algunenano)).
+* 한쪽 집합이 비어 있을 때 `UniqExactSet::merge`에 빠른 경로를 추가했습니다. 또한 이제 LHS 집합이 2단계이고 RHS가 단일 단계인 경우, RHS를 2단계로 변환하지 않습니다. [#79971](https://github.com/ClickHouse/ClickHouse/pull/79971) ([Nikita Taranov](https://github.com/nickitat)).
+* `convertDecimalsImpl`에 `__attribute__((always_inline))`를 추가했습니다. [#79999](https://github.com/ClickHouse/ClickHouse/pull/79999) ([Konstantin Bogdanov](https://github.com/thevar1able)).
+* 기본적으로 `input_format_parquet_bloom_filter_push_down`을 true로 설정합니다. 또한 설정 변경 이력의 오류를 수정합니다. [#80058](https://github.com/ClickHouse/ClickHouse/pull/80058) ([Alexey Milovidov](https://github.com/alexey-milovidov)).
+  #* 기본적으로 로깅을 비동기로 수행합니다. `<logger>` 아래에서 `<async>false</async>`로 설정하면 이를 비활성화할 수 있습니다. [#80125](https://github.com/ClickHouse/ClickHouse/pull/80125) ([Raúl Marín](https://github.com/Algunenano)).
+* 2단계 해시 테이블 사용 시 메모리 재사용 효율을 높이고 페이지 폴트를 줄였습니다. [#80245](https://github.com/ClickHouse/ClickHouse/pull/80245) ([Jiebin Sun](https://github.com/jiebinn)).
+* QueryConditionCache의 불필요한 갱신을 방지하고 잠금 경합을 줄입니다. [#80247](https://github.com/ClickHouse/ClickHouse/pull/80247) ([Jiebin Sun](https://github.com/jiebinn)).
+* 병렬 해시 조인에 유용할 수 있는 `concatenateBlocks`의 소규모 최적화입니다. [#80328](https://github.com/ClickHouse/ClickHouse/pull/80328) ([李扬](https://github.com/taiyang-li)).
+* 프라이머리 키(primary key) 범위에서 mark 범위를 선택할 때, 프라이머리 키가 함수로 감싸인 경우에는 이진 검색을 사용할 수 없습니다. 이 PR에서는 이 제한을 개선했습니다. 이제 프라이머리 키가 항상 단조적인 함수 체인으로 감싸져 있거나, RPN에 항상 true로 평가되는 요소가 포함된 경우에도 이진 검색을 적용할 수 있습니다. 이 PR은 [#45536](https://github.com/ClickHouse/ClickHouse/issues/45536)을 해결합니다. [#80597](https://github.com/ClickHouse/ClickHouse/pull/80597) ([zoomxi](https://github.com/zoomxi)).
+* Kafka engine의 종료 속도를 개선했습니다(여러 Kafka 테이블이 있을 때 발생하던 추가 3초 지연을 제거). [#80796](https://github.com/ClickHouse/ClickHouse/pull/80796) ([Azat Khuzhin](https://github.com/azat)).
+* async insert의 메모리 사용량을 줄이고 삽입 쿼리 성능을 개선했습니다. [#80972](https://github.com/ClickHouse/ClickHouse/pull/80972) ([Raúl Marín](https://github.com/Algunenano)).
+* 로그 테이블이 비활성화된 경우 processors 프로파일링을 수행하지 않습니다. [#81256](https://github.com/ClickHouse/ClickHouse/pull/81256) ([Raúl Marín](https://github.com/Algunenano)).
+* `toFixedString`에서 source가 요청된 값과 정확히 일치할 때 속도를 향상했습니다. [#81257](https://github.com/ClickHouse/ClickHouse/pull/81257) ([Raúl Marín](https://github.com/Algunenano)).
+* 사용자에게 제한이 없을 경우 quota 값을 처리하지 않도록 했습니다. [#81549](https://github.com/ClickHouse/ClickHouse/pull/81549) ([Raúl Marín](https://github.com/Algunenano)).
+* 작업 간 파일을 계속 열린 상태로 유지할 수 있도록 ProcfsMetricsProvider를 thread&#95;local로 설정했습니다. [#81576](https://github.com/ClickHouse/ClickHouse/pull/81576) ([Raúl Marín](https://github.com/Algunenano)).
+* 메모리 추적의 성능 회귀를 수정했습니다. [#81694](https://github.com/ClickHouse/ClickHouse/pull/81694) ([Michael Kolupaev](https://github.com/al13n321)).
+
+<div id="improvement">
+  ## 개선 사항
+</div>
+
+#* `clickhouse-local`은 `--path` 명령줄 인수를 지정하면 재시작 후에도 데이터베이스를 유지합니다. 이 변경으로 [#50647](https://github.com/ClickHouse/ClickHouse/issues/50647)이 해결됩니다. 이 변경으로 [#49947](https://github.com/ClickHouse/ClickHouse/issues/49947)도 해결됩니다. [#71722](https://github.com/ClickHouse/ClickHouse/pull/71722) ([Alexey Milovidov](https://github.com/alexey-milovidov)).
+
+* `EXPLAIN SYNTAX`는 이제 새로운 분석기를 사용합니다. 쿼리 트리에서 생성된 추상 구문 트리(AST)를 반환합니다. 쿼리 트리를 AST로 변환하기 전에 실행할 패스 수를 제어하는 `query_tree_passes` 옵션이 추가되었습니다. [#74536](https://github.com/ClickHouse/ClickHouse/pull/74536) ([Vladimir Cherkasov](https://github.com/vdimir)).
+  #* 이제 기본적으로 파일 시스템 캐시에서 SLRU 캐시 정책을 사용합니다. [#75072](https://github.com/ClickHouse/ClickHouse/pull/75072) ([Kseniia Sumarokova](https://github.com/kssenii)).
+* 뷰에 푸시하는 로직을 리팩터링했습니다. [#77309](https://github.com/ClickHouse/ClickHouse/pull/77309) ([Sema Checherinda](https://github.com/CheSema)).
+* 객체 스토리지 클러스터 테이블 함수(예: `s3Cluster`)는 이제 캐시 로컬리티를 개선하기 위해 읽을 파일을 일관성 해시를 기반으로 레플리카에 할당합니다. [#77326](https://github.com/ClickHouse/ClickHouse/pull/77326) ([Andrej Hoos](https://github.com/adikus)).
+* `AuthenticationRequired` 오류 발생 후 S3 자격 증명을 갱신합니다. [#77353](https://github.com/ClickHouse/ClickHouse/pull/77353) ([Vitaly Baranov](https://github.com/vitlibar)).
+* 빌더를 사용해 일부 HTTP 버퍼에 프록시 구성을 내장합니다. [#77693](https://github.com/ClickHouse/ClickHouse/pull/77693) ([Arthur Passos](https://github.com/arthurpassos)).
+* `system.asynchronous_metrics`에 딕셔너리 메트릭이 추가되었습니다. - `DictionaryMaxUpdateDelay` - 딕셔너리 업데이트의 최대 지연 시간(초)입니다. - `DictionaryTotalFailedUpdates` - 모든 딕셔너리에서 마지막 성공적인 로딩 이후 발생한 오류 수입니다. [#78175](https://github.com/ClickHouse/ClickHouse/pull/78175) ([Vlad](https://github.com/codeworse)).
+* 오른쪽 인수가 0이면 NULL을 반환하는 `divideOrNull`,`moduloOrNull`, `intDivOrNull`,`positiveModuloOrNull` 함수를 추가했습니다. [#78276](https://github.com/ClickHouse/ClickHouse/pull/78276) ([kevinyhzou](https://github.com/KevinyhZou)).
+* `isIPAddressInRange` 함수를 String, IPv4, IPv6, Nullable(String), Nullable(IPv4), Nullable(IPv6) 데이터 타입을 지원하도록 확장했습니다. [#78364](https://github.com/ClickHouse/ClickHouse/pull/78364) ([YjyJeff](https://github.com/YjyJeff)).
+* PostgreSQL 엔진 연결 풀 설정을 동적으로 변경합니다. [#78414](https://github.com/ClickHouse/ClickHouse/pull/78414) ([Samay Sharma](https://github.com/samay-sharma)).
+* 일반 프로젝션에서 `_part_offset`을 지정할 수 있게 했습니다. 이는 프로젝션 인덱스를 구축하기 위한 첫 단계입니다. [#58224](https://github.com/ClickHouse/ClickHouse/issues/58224)와 함께 사용할 수 있으며, https://github.com/ClickHouse/ClickHouse/pull/63207을 개선하는 데 도움이 될 수 있습니다. [#78429](https://github.com/ClickHouse/ClickHouse/pull/78429) ([Amos Bird](https://github.com/amosbird)).
+* 분산 쿼리의 샤딩 키 최적화를 개선했습니다. [#78452](https://github.com/ClickHouse/ClickHouse/pull/78452) ([fhw12345](https://github.com/fhw12345)).
+* `system.named_collections`에 새 컬럼(`create_query` 및 `source`)을 추가했습니다. [#78179](https://github.com/ClickHouse/ClickHouse/issues/78179)를 종료합니다. [#78582](https://github.com/ClickHouse/ClickHouse/pull/78582) ([MikhailBurdukov](https://github.com/MikhailBurdukov)).
+* 시스템 테이블(system table) `system.query_condition_cache`에 필드 `condition`이 추가되었습니다. 이 필드에는 쿼리 조건 캐시에서 키로 사용되는 해시를 계산하는 데 쓰이는 평문 조건이 저장됩니다. [#78671](https://github.com/ClickHouse/ClickHouse/pull/78671) ([Robert Schulze](https://github.com/rschu1ze)).
+* ClickHouse Keeper를 사용해 StorageKafka2에 Kafka 리밸런스와 유사한 로직을 구현했습니다. 각 레플리카는 두 가지 유형의 파티션 잠금, 즉 영구 잠금과 임시 잠금을 지원합니다. 레플리카는 가능한 한 오랫동안 영구 잠금을 유지하려고 하며, 어느 시점에서든 해당 레플리카의 영구 잠금 수는 `all_topic_partitions / active_replicas_count`를 초과하지 않습니다(여기서 `all_topic_partitions`는 전체 파티션 수이고 `active_replicas_count`는 활성 레플리카 수입니다). 이를 초과하면 레플리카는 일부 파티션을 해제합니다. 일부 파티션은 레플리카가 임시로 보유합니다. 다른 레플리카도 일부 파티션을 영구 잠금으로 확보할 수 있도록, 레플리카의 임시 잠금 최대 개수는 동적으로 변경됩니다. 임시 잠금을 업데이트할 때 레플리카는 이를 모두 해제한 뒤 일부를 다시 획득하려고 시도합니다. [#78726](https://github.com/ClickHouse/ClickHouse/pull/78726) ([Daria Fomina](https://github.com/sinfillo)).
+* `Kafka` 테이블 엔진에 SASL 구성 및 자격 증명을 위한 테이블 설정이 추가되었습니다. 이제 설정 파일이나 이름이 지정된 컬렉션을 사용하지 않고도 `CREATE TABLE` 문에서 직접 Kafka 및 Kafka 호환 시스템의 SASL 기반 인증을 구성할 수 있습니다. [#78810](https://github.com/ClickHouse/ClickHouse/pull/78810) ([Christoph Wurm](https://github.com/cwurm)).
+* 손상된 테이블을 보관하기 위해 생성되었을 가능성이 있는 데이터베이스에 대한 경고를 추가합니다. [#78841](https://github.com/ClickHouse/ClickHouse/pull/78841) ([János Benjamin Antal](https://github.com/antaljanosbenjamin)).
+* 이제 `BFloat16` 컬럼에 벡터 유사성 인덱스를 생성할 수 있습니다. [#78850](https://github.com/ClickHouse/ClickHouse/pull/78850) ([Robert Schulze](https://github.com/rschu1ze)).
+* best-effort DateTime64 파싱 시 소수점 이하를 포함한 Unix timestamp를 지원합니다. [#78908](https://github.com/ClickHouse/ClickHouse/pull/78908) ([Pavel Kruglov](https://github.com/Avogar)).
+* 스토리지 DeltaLake delta-kernel 구현에서 columnMappingMode.name 관련 수정을 적용하고, 스키마 진화 테스트를 추가했습니다. [#78921](https://github.com/ClickHouse/ClickHouse/pull/78921) ([Kseniia Sumarokova](https://github.com/kssenii)).
+* 값 변환을 개선해 Values 형식에서 Variant 컬럼에 삽입할 때의 동작을 개선했습니다. [#78923](https://github.com/ClickHouse/ClickHouse/pull/78923) ([Pavel Kruglov](https://github.com/Avogar)).
+* `S3Queue` 엔진에 `_time` 가상 컬럼을 추가했습니다. [#78926](https://github.com/ClickHouse/ClickHouse/pull/78926) ([Anton Ivashkin](https://github.com/ianton-ru)).
+* `tokens` 함수가 추가 &quot;토크나이저&quot; 인수와 토크나이저별 추가 인수를 받을 수 있도록 확장되었습니다. [#79001](https://github.com/ClickHouse/ClickHouse/pull/79001) ([Elmi Ahmadov](https://github.com/ahmadov)).
+* `SHOW CLUSTER` 문은 이제 인수의 매크로(있는 경우)를 확장합니다. [#79006](https://github.com/ClickHouse/ClickHouse/pull/79006) ([arf42](https://github.com/arf42)).
+* 해시 함수는 이제 배열, 튜플, 맵 내의 `NULL`을 지원합니다. (이슈 [#48365](https://github.com/ClickHouse/ClickHouse/issues/48365) 및 [#48623](https://github.com/ClickHouse/ClickHouse/issues/48623)). [#79008](https://github.com/ClickHouse/ClickHouse/pull/79008) ([Michael Kolupaev](https://github.com/al13n321)).
+* 읽기 전용 MergeTree 테이블에서 갱신을 지원합니다. [#79033](https://github.com/ClickHouse/ClickHouse/pull/79033) ([Alexey Milovidov](https://github.com/alexey-milovidov)).
+  #* cctz를 2025a로 업데이트했습니다. [#79043](https://github.com/ClickHouse/ClickHouse/pull/79043) ([Raúl Marín](https://github.com/Algunenano)).
+* CPU 과부하 시 연결 종료를 제어하는 설정을 핫 리로드할 수 있게 했습니다. [#79052](https://github.com/ClickHouse/ClickHouse/pull/79052) ([Alexey Katsman](https://github.com/alexkats)).
+* 사용성이 향상됩니다. [#79066](https://github.com/ClickHouse/ClickHouse/pull/79066) ([Alexey Milovidov](https://github.com/alexey-milovidov)).
+* 기본적으로 쿼리 조건 캐시를 활성화합니다. [#79080](https://github.com/ClickHouse/ClickHouse/pull/79080) ([Alexey Milovidov](https://github.com/alexey-milovidov)).
+  #* Web UI에서 탭 닫기를 실행 취소할 수 있도록 합니다. 이로써 [#71284](https://github.com/ClickHouse/ClickHouse/issues/71284)가 해결됩니다. [#79084](https://github.com/ClickHouse/ClickHouse/pull/79084) ([Alexey Milovidov](https://github.com/alexey-milovidov)).
+* `recoverLostReplica` 수행 중 설정을 https://github.com/ClickHouse/ClickHouse/pull/78637에서와 동일하게 제거합니다. [#79113](https://github.com/ClickHouse/ClickHouse/pull/79113) ([Nikita Mikhaylov](https://github.com/nikitamikhaylov)).
+* Parquet 인덱스 프루닝에 대한 ProfileEvents로 `ParquetReadRowGroups` 및 `ParquetPrunedRowGroups`를 추가했습니다. [#79180](https://github.com/ClickHouse/ClickHouse/pull/79180) ([flynn](https://github.com/ucasfl)).
+* Azure blob storage의 일반 디스크에서 `system.tables`에 보고되는 데이터 경로에 컨테이너 접두사를 추가해, 보고 형식을 S3 및 GCP와 일관되게 맞췄습니다. [#79241](https://github.com/ClickHouse/ClickHouse/pull/79241) ([Julia Kartseva](https://github.com/jkartseva)).
+* 클러스터에서 데이터베이스 변경을 지원합니다. [#79242](https://github.com/ClickHouse/ClickHouse/pull/79242) ([Tuan Pham Anh](https://github.com/tuanpach)).
+* QueryMetricLog의 통계 수집에서 누락된 실행을 명시적으로 건너뜁니다. 그렇지 않으면 로그가 현재 시각을 따라잡는 데 오랜 시간이 걸립니다. [#79257](https://github.com/ClickHouse/ClickHouse/pull/79257) ([Mikhail Artemenko](https://github.com/Michicosun)).
+* 경량한 삭제를 즉시 적용할 수 있는 기능이 추가되었습니다(설정 `lightweight_deletes_sync = 0`, `apply_mutations_on_fly = 1` 사용 시). [#79281](https://github.com/ClickHouse/ClickHouse/pull/79281) ([Anton Popov](https://github.com/CurtizJ)).
+* 모든 행을 삭제해야 하는 파트의 `ALTER ... DELETE` 뮤테이션을 최적화했습니다. 이제 이런 경우에는 뮤테이션을 실행하지 않고 원본 파트 대신 빈 파트를 생성합니다. [#79307](https://github.com/ClickHouse/ClickHouse/pull/79307) ([Anton Popov](https://github.com/CurtizJ)).
+* `CHColumnToArrowColumn`에 대한 소규모 최적화 몇 가지. [#79308](https://github.com/ClickHouse/ClickHouse/pull/79308) ([Bharat Nallan](https://github.com/bharatnc)).
+* 설정 `allow_archive_path_syntax`이 실수로 실험적 기능으로 표시되었습니다. 실험적 설정이 기본적으로 활성화되는 일을 방지하는 테스트를 추가했습니다. [#79320](https://github.com/ClickHouse/ClickHouse/pull/79320) ([Alexey Milovidov](https://github.com/alexey-milovidov)).
+* 페이지 캐시 설정을 쿼리별로 조정할 수 있도록 했습니다. 이는 더 빠른 실험과 높은 처리량, 낮은 지연 시간이 필요한 쿼리의 미세 조정을 위해 필요합니다. [#79337](https://github.com/ClickHouse/ClickHouse/pull/79337) ([Alexey Milovidov](https://github.com/alexey-milovidov)).
+* 대부분의 64비트 해시와 유사해 보이는 숫자에 대해서는 Pretty 형식에서 숫자 팁을 출력하지 않습니다. 이로써 [#79334](https://github.com/ClickHouse/ClickHouse/issues/79334)가 해결되었습니다. [#79338](https://github.com/ClickHouse/ClickHouse/pull/79338) ([Alexey Milovidov](https://github.com/alexey-milovidov)).
+* Pretty 형식의 데이터가 터미널에 표시될 때 이후 블록의 컬럼 너비가 동일하면, 커서를 위로 이동해 이전 블록에 이어 붙여 표시할 수 있습니다. 이로써 [#79333](https://github.com/ClickHouse/ClickHouse/issues/79333)가 해결됩니다. 이 기능은 새로운 설정 `output_format_pretty_glue_chunks`로 제어됩니다. [#79339](https://github.com/ClickHouse/ClickHouse/pull/79339) ([Alexey Milovidov](https://github.com/alexey-milovidov)).
+* 고급 대시보드의 그래프 색상은 해당 쿼리의 hash 값을 바탕으로 결정됩니다. 이렇게 하면 대시보드를 스크롤할 때 그래프를 더 쉽게 기억하고 찾을 수 있습니다. [#79341](https://github.com/ClickHouse/ClickHouse/pull/79341) ([Alexey Milovidov](https://github.com/alexey-milovidov)).
+* 비동기 메트릭 `FilesystemCacheCapacity`를 추가했습니다. 이 메트릭은 `cache` 가상 파일 시스템의 총 용량을 나타내며, 전역 인프라 모니터링에 유용합니다. [#79348](https://github.com/ClickHouse/ClickHouse/pull/79348) ([Alexey Milovidov](https://github.com/alexey-milovidov)).
+* system.parts 접근을 최적화했습니다(요청이 있을 때만 컬럼/인덱스 크기를 읽음). [#79352](https://github.com/ClickHouse/ClickHouse/pull/79352) ([Azat Khuzhin](https://github.com/azat)).
+* 쿼리 `'SHOW CLUSTER <name>'`에 대해 모든 필드 대신 중요한 필드만 선택합니다. [#79368](https://github.com/ClickHouse/ClickHouse/pull/79368) ([Tuan Pham Anh](https://github.com/tuanpach)).
+* `DatabaseCatalog`의 스토리지 설정을 지정할 수 있게 했습니다. [#79407](https://github.com/ClickHouse/ClickHouse/pull/79407) ([Kseniia Sumarokova](https://github.com/kssenii)).
+* delta kernel에서 로컬 스토리지를 지원합니다. [#79416](https://github.com/ClickHouse/ClickHouse/pull/79416) ([Kseniia Sumarokova](https://github.com/kssenii)).
+* delta-kernel-rs를 활성화하는 쿼리 수준 설정 `allow_experimental_delta_kernel_rs`를 추가했습니다. [#79418](https://github.com/ClickHouse/ClickHouse/pull/79418) ([Kseniia Sumarokova](https://github.com/kssenii)).
+* Azure/S3 blob storage에서 blob 목록을 가져오는 과정에서 발생할 수 있는 무한 루프를 수정했습니다. [#79425](https://github.com/ClickHouse/ClickHouse/pull/79425) ([Alexander Gololobov](https://github.com/davenger)).
+* 이제 ClickHouse는 쿼리 매개변수로 `param_<name>`(언더스코어)뿐 아니라 `param-<name>`(대시)도 허용합니다. 이로써 [#63093](https://github.com/ClickHouse/ClickHouse/issues/63093)가 해결되었습니다. [#79429](https://github.com/ClickHouse/ClickHouse/pull/79429) ([Engel Danila](https://github.com/aaaengel)).
+  #* 파일 시스템 캐시 설정 `max_size_ratio_to_total_space`를 추가했습니다. [#79460](https://github.com/ClickHouse/ClickHouse/pull/79460) ([Kseniia Sumarokova](https://github.com/kssenii)).
+* checksum이 활성화된 상태에서 로컬에서 원격 S3로 데이터를 복사할 때 적용되는 대역폭 할인에 대한 상세 경고 메시지. [#79464](https://github.com/ClickHouse/ClickHouse/pull/79464) ([VicoWu](https://github.com/VicoWu)).
+* `clickhouse-benchmark`의 `reconnect` 옵션을 다시 구성해, 재연결 시 0, 1 또는 N 값을 받도록 했습니다. [#79465](https://github.com/ClickHouse/ClickHouse/pull/79465) ([Sachin Kumar Singh](https://github.com/sachinkumarsingh092)).
+* 입력 형식에서 생성되는 블록의 크기를 바이트 단위로 제한하는 `input_format_max_block_size_bytes` 설정이 추가되었습니다. 이 설정은 행에 큰 값이 포함된 경우 데이터 가져오기 중 메모리 사용량이 과도하게 증가하는 것을 방지하는 데 도움이 될 수 있습니다. [#79495](https://github.com/ClickHouse/ClickHouse/pull/79495) ([Pavel Kruglov](https://github.com/Avogar)).
+* sparseGrams의 속도와 메모리 사용량이 개선되었습니다. [#79517](https://github.com/ClickHouse/ClickHouse/pull/79517) ([Konstantin Vedernikov](https://github.com/scanhex12)).
+* 가능한 경우 Compact part에 삽입할 때 block을 추가로 복사하지 않도록 합니다. [#79536](https://github.com/ClickHouse/ClickHouse/pull/79536) ([Pavel Kruglov](https://github.com/Avogar)).
+* 기본값으로 `DeltaLake` storage의 delta-kernel 구현을 활성화합니다. [#79541](https://github.com/ClickHouse/ClickHouse/pull/79541) ([Kseniia Sumarokova](https://github.com/kssenii)).
+* URL에서 읽는 과정에 여러 차례의 리디렉션이 포함된 경우, `enable_url_encoding` 설정이 리디렉션 체인의 모든 단계에 올바르게 적용됩니다. [#79563](https://github.com/ClickHouse/ClickHouse/pull/79563) ([Shankar Iyer](https://github.com/shankar-iyer)).
+* 서로 다른 `plain&#95;rewritable` 디스크에 있는 테이블 간 `ALTER TABLE ... MOVE|REPLACE PARTITION`을 허용합니다. [#79566](https://github.com/ClickHouse/ClickHouse/pull/79566) ([Julia Kartseva](https://github.com/jkartseva)).
+* `WHERE` 절에서 스칼라 상관 서브쿼리를 지원합니다. [#6697](https://github.com/ClickHouse/ClickHouse/issues/6697)을 해결합니다. [#79600](https://github.com/ClickHouse/ClickHouse/pull/79600) ([Dmitry Novik](https://github.com/novikd)).
+* 이전에는 `input_format_parquet_max_block_size = 0`일 때 ClickHouse가 멈췄습니다. 이제 이 동작은 수정되었습니다. 이로써 [#79394](https://github.com/ClickHouse/ClickHouse/issues/79394)가 해결되었습니다. [#79601](https://github.com/ClickHouse/ClickHouse/pull/79601) ([abashkeev](https://github.com/abashkeev)).
+* startup&#95;scripts에 `throw_on_error` 설정이 추가되었습니다. `throw_on_error`가 true이면 모든 쿼리가 성공적으로 완료되어야만 서버가 시작됩니다. 기본적으로 `throw_on_error`는 false로 설정되어 있으며, 이전 동작이 유지됩니다. [#79732](https://github.com/ClickHouse/ClickHouse/pull/79732) ([Aleksandr Musorin](https://github.com/AVMusorin)).
+* 참조 벡터가 `Array(BFloat16)` 유형인 경우에도 이제 벡터 유사도 인덱스가 사용됩니다. [#79745](https://github.com/ClickHouse/ClickHouse/pull/79745) ([Shankar Iyer](https://github.com/shankar-iyer)).
+* `system.error_log` 테이블에 `last_error_message`, `last_error_trace`, `query_id`를 추가했습니다. 관련 티켓 [#75816](https://github.com/ClickHouse/ClickHouse/issues/75816). [#79836](https://github.com/ClickHouse/ClickHouse/pull/79836) ([Andrei Tinikov](https://github.com/Dolso)).
+  #* 충돌 보고서 전송이 기본적으로 활성화됩니다. 이 기능은 server의 설정 파일에서 비활성화할 수 있습니다. [#79838](https://github.com/ClickHouse/ClickHouse/pull/79838) ([Alexey Milovidov](https://github.com/alexey-milovidov)).
+* 시스템 테이블(system table) `system.functions`에 이제 각 함수가 처음 도입된 ClickHouse 버전이 표시됩니다. [#79839](https://github.com/ClickHouse/ClickHouse/pull/79839) ([Robert Schulze](https://github.com/rschu1ze)).
+* `access_control_improvements.enable_user_name_access_type` 설정이 추가되었습니다. 이 설정을 사용하면 https://github.com/ClickHouse/ClickHouse/pull/72246 에서 도입된 사용자/역할에 대한 세분화된 권한 부여를 활성화하거나 비활성화할 수 있습니다. 25.1보다 이전 버전의 레플리카가 포함된 cluster를 사용 중인 경우 이 설정을 끄는 것이 좋을 수 있습니다. [#79842](https://github.com/ClickHouse/ClickHouse/pull/79842) ([pufit](https://github.com/pufit)).
+* `ASTSelectWithUnionQuery::clone()` 메서드를 올바르게 구현하여 이제 `is_normalized` 필드도 고려합니다. 이는 [#77569](https://github.com/ClickHouse/ClickHouse/issues/77569)에 도움이 될 수 있습니다. [#79909](https://github.com/ClickHouse/ClickHouse/pull/79909) ([Nikita Mikhaylov](https://github.com/nikitamikhaylov)).
+* 단순한 경우 프로젝션 목록에서 상관 서브쿼리를 지원합니다. [#79925](https://github.com/ClickHouse/ClickHouse/pull/79925) ([Dmitry Novik](https://github.com/novikd)).
+* `EXCEPT` 연산자가 포함된 일부 쿼리에서 일관되지 않던 포맷을 수정했습니다. `EXCEPT` 연산자의 왼쪽 항이 `*`로 끝나면 포맷된 쿼리에서 괄호가 사라져, 이후 `EXCEPT` 수정자가 적용된 `*`로 구문 분석됩니다. 이러한 쿼리는 퍼저로 발견된 것이며, 실제 사용 중에 발견될 가능성은 낮습니다. 이로써 [#79950](https://github.com/ClickHouse/ClickHouse/issues/79950)이 해결되었습니다. [#79952](https://github.com/ClickHouse/ClickHouse/pull/79952) ([Alexey Milovidov](https://github.com/alexey-milovidov)).
+* 모든 유형의 `http_handlers`에 `http_response_headers`를 추가할 수 있도록 했습니다. [#79975](https://github.com/ClickHouse/ClickHouse/pull/79975) ([Andrey Zvonov](https://github.com/zvonand)).
+* Variant 역직렬화 순서 캐시를 사용해 JSON 타입 파싱을 소폭 개선했습니다. [#79984](https://github.com/ClickHouse/ClickHouse/pull/79984) ([Pavel Kruglov](https://github.com/Avogar)).
+* 적용 가능한 경우 `GLOBAL [NOT] IN` 프레디케이트를 `PREWHERE` 절로 이동할 수 있게 했습니다. [#79996](https://github.com/ClickHouse/ClickHouse/pull/79996) ([Eduard Karacharov](https://github.com/korowa)).
+* 설정 `s3_slow_all_threads_after_network_error`이 추가되었습니다. [#80035](https://github.com/ClickHouse/ClickHouse/pull/80035) ([Vitaly Baranov](https://github.com/vitlibar)).
+* 머지 대상으로 선택된 파트의 로깅 수준이 잘못 설정되어 있었습니다(Information). [#80061](https://github.com/ClickHouse/ClickHouse/issues/80061)을 닫습니다. [#80062](https://github.com/ClickHouse/ClickHouse/pull/80062) ([Alexey Milovidov](https://github.com/alexey-milovidov)).
+* 함수 reverse가 Tuple 데이터 타입을 지원합니다. [#80053](https://github.com/ClickHouse/ClickHouse/issues/80053)를 해결합니다. [#80083](https://github.com/ClickHouse/ClickHouse/pull/80083) ([flynn](https://github.com/ucasfl)).
+* `enble_url_encoding` 설정의 기본값이 이제 `False`로 변경되었습니다. [#80088](https://github.com/ClickHouse/ClickHouse/pull/80088) ([Shankar Iyer](https://github.com/shankar-iyer)).
+* 이 작은 패치는 [#75817](https://github.com/ClickHouse/ClickHouse/issues/75817)을 해결합니다. 이제 `system.zookeeper` 테이블에서 `auxiliary_zookeepers` 데이터를 가져올 수 있습니다. [#80146](https://github.com/ClickHouse/ClickHouse/pull/80146) ([Nikolay Govorov](https://github.com/mrdimidium)).
+* 벡터 유사도 인덱스를 사용하는 벡터 검색이 이제 베타로 제공됩니다(이전에는 실험적 기능이었습니다). [#80164](https://github.com/ClickHouse/ClickHouse/pull/80164) ([Robert Schulze](https://github.com/rschu1ze)).
+* 서버의 TCP 소켓 관련 비동기 메트릭을 추가합니다. 이를 통해 관측성이 향상됩니다. [#80187](https://github.com/ClickHouse/ClickHouse/issues/80187)을 해결합니다. [#80188](https://github.com/ClickHouse/ClickHouse/pull/80188) ([Alexey Milovidov](https://github.com/alexey-milovidov)).
+* 함수 `tokens`에서 이제 `string`을 토크나이저로 지원합니다. [#80195](https://github.com/ClickHouse/ClickHouse/pull/80195) ([Robert Schulze](https://github.com/rschu1ze)).
+* 병렬 레플리카: 모든 읽기 작업이 이미 다른 레플리카에 할당된 경우, 사용되지 않는 느린 레플리카를 기다리지 않도록 했습니다. [#80199](https://github.com/ClickHouse/ClickHouse/pull/80199) ([Igor Nikonov](https://github.com/devcrafter)).
+* `simpleAggregateFunction`에서 `anylast_respect_nulls` 및 `any_respect_nulls` 지원이 추가되었습니다. [#80219](https://github.com/ClickHouse/ClickHouse/pull/80219) ([Diskein](https://github.com/Diskein)).
+* 복제된 데이터베이스에서 불필요한 `adjustCreateQueryForBackup()` 호출을 제거합니다. [#80282](https://github.com/ClickHouse/ClickHouse/pull/80282) ([Vitaly Baranov](https://github.com/vitlibar)).
+  #* `clickhouse-local`에서 등호 없이도 추가 옵션(`--` 뒤에 오는 `-- --config.value='abc'` 등)을 허용합니다. [#80292](https://github.com/ClickHouse/ClickHouse/issues/80292)를 해결합니다. [#80293](https://github.com/ClickHouse/ClickHouse/pull/80293) ([Alexey Milovidov](https://github.com/alexey-milovidov)).
+* `SHOW ... LIKE` 쿼리에서 메타문자를 강조 표시합니다. 이로써 [#80275](https://github.com/ClickHouse/ClickHouse/issues/80275)가 해결됩니다. [#80297](https://github.com/ClickHouse/ClickHouse/pull/80297) ([Alexey Milovidov](https://github.com/alexey-milovidov)).
+  #* `clickhouse-local`에서 SQL UDF가 영구적으로 유지되도록 합니다. 이전에 생성한 함수는 시작 시 로드됩니다. 이로써 [#80085](https://github.com/ClickHouse/ClickHouse/issues/80085)가 해결됩니다. [#80300](https://github.com/ClickHouse/ClickHouse/pull/80300) ([Alexey Milovidov](https://github.com/alexey-milovidov)).
+* `Time`/`Time64` 비교를 지원합니다. [#80327](https://github.com/ClickHouse/ClickHouse/pull/80327) ([Yarik Briukhovetskyi](https://github.com/yariks5s)).
+* 예비 DISTINCT 단계에 대한 EXPLAIN 계획 설명을 수정했습니다. [#80330](https://github.com/ClickHouse/ClickHouse/pull/80330) ([UnamedRus](https://github.com/UnamedRus)).
+* ODBC/JDBC에서 명명된 컬렉션을 사용할 수 있게 했습니다. [#80334](https://github.com/ClickHouse/ClickHouse/pull/80334) ([Andrey Zvonov](https://github.com/zvonand)).
+* 다중 PROJECTION 필터링 지원을 활성화하여 파트 수준 필터링에 둘 이상의 PROJECTION을 사용할 수 있게 했습니다. 이로써 [#55525](https://github.com/ClickHouse/ClickHouse/issues/55525)를 해결했습니다. 이는 [#78429](https://github.com/ClickHouse/ClickHouse/issues/78429)에 이은, PROJECTION 인덱스 구현의 두 번째 단계입니다. [#80343](https://github.com/ClickHouse/ClickHouse/pull/80343) ([Amos Bird](https://github.com/amosbird)).
+* readonly 및 손상된 디스크 수에 대한 메트릭입니다. DiskLocalCheckThread가 시작되면 이를 나타내는 로그를 기록합니다. [#80391](https://github.com/ClickHouse/ClickHouse/pull/80391) ([VicoWu](https://github.com/VicoWu)).
+* 프로젝션이 포함된 `s3_plain_rewritable` 스토리지 지원을 구현했습니다. 이전 버전에서는 프로젝션을 참조하는 S3 메타데이터 객체가 이동될 때 업데이트되지 않았습니다. [#70258](https://github.com/ClickHouse/ClickHouse/issues/70258)을 해결했습니다. [#80393](https://github.com/ClickHouse/ClickHouse/pull/80393) ([Sav](https://github.com/sberss)).
+* 병렬 레플리카는 별도의 연결 타임아웃을 사용합니다. `parallel_replicas_connect_timeout_ms` 설정을 참조하십시오. 이전에는 `connect_timeout_with_failover_ms`/`connect_timeout_with_failover_secure_ms` 설정이 병렬 레플리카 쿼리의 연결 타임아웃 값으로 사용되었으며, 기본값은 1초였습니다. [#80421](https://github.com/ClickHouse/ClickHouse/pull/80421) ([Igor Nikonov](https://github.com/devcrafter)).
+* `SYSTEM UNFREEZE` 명령은 readonly 및 write-once 디스크에서 파트를 찾으려고 하지 않습니다. 이로써 [#80430](https://github.com/ClickHouse/ClickHouse/issues/80430)이 해결되었습니다. [#80432](https://github.com/ClickHouse/ClickHouse/pull/80432) ([Alexey Milovidov](https://github.com/alexey-milovidov)).
+* 병합된 파트 관련 메시지의 로그 레벨을 INFO에서 TRACE로 변경했습니다. [#80476](https://github.com/ClickHouse/ClickHouse/pull/80476) ([Hans Krutzer](https://github.com/hkrutzer)).
+* Native 형식에서 Dynamic 및 JSON용 평탄화 직렬화를 구현하여, Dynamic의 shared variant나 JSON의 shared data 같은 특수 구조 없이도 Dynamic 및 JSON 데이터를 직렬화/역직렬화할 수 있습니다. 이 직렬화는 `output_format_native_use_flattened_dynamic_and_json_serialization`을 설정하여 활성화할 수 있습니다. 이 직렬화는 서로 다른 언어로 작성된 클라이언트에서 TCP 프로토콜의 Dynamic 및 JSON 지원을 더 쉽게 구현하는 데 사용할 수 있습니다. [#80499](https://github.com/ClickHouse/ClickHouse/pull/80499) ([Pavel Kruglov](https://github.com/Avogar)).
+* Iceberg 테이블의 파티션 프루닝 기본 동작이 변경되었습니다. [#80583](https://github.com/ClickHouse/ClickHouse/pull/80583) ([Melvyn Peignon](https://github.com/melvynator)).
+* 인덱스 검색 알고리즘의 관측성을 위해 새로운 ProfileEvents 2개(`IndexBinarySearchAlgorithm` 및 `IndexGenericExclusionSearchAlgorithm`)를 추가했습니다. [#80679](https://github.com/ClickHouse/ClickHouse/pull/80679) ([Pablo Marcos](https://github.com/pamarcos)).
+* 오래된 커널에서 `MADV_POPULATE_WRITE`를 지원하지 않아도 logs에 경고를 출력하지 않도록 변경했습니다(로그 오염 방지 목적). [#80704](https://github.com/ClickHouse/ClickHouse/pull/80704) ([Robert Schulze](https://github.com/rschu1ze)).
+* TTL에서 Date32 및 DateTime64 지원이 추가되었습니다. [#80710](https://github.com/ClickHouse/ClickHouse/pull/80710) ([Andrey Zvonov](https://github.com/zvonand)).
+* `max_merge_delayed_streams_for_parallel_write`에 대한 호환성 값을 조정합니다. [#80760](https://github.com/ClickHouse/ClickHouse/pull/80760) ([Azat Khuzhin](https://github.com/azat)).
+* 충돌 문제를 수정했습니다: 소멸자에서 임시 파일을 삭제하려는 과정에서 예외가 발생하면(임시 파일은 디스크에 임시 데이터를 스필하는 데 사용됨) 프로그램이 종료될 수 있습니다. [#80776](https://github.com/ClickHouse/ClickHouse/pull/80776) ([Alexey Milovidov](https://github.com/alexey-milovidov)).
+* `SYSTEM SYNC REPLICA`에 `IF EXISTS` 수정자를 추가했습니다. [#80810](https://github.com/ClickHouse/ClickHouse/pull/80810) ([Raúl Marín](https://github.com/Algunenano)).
+* &quot;Having zero bytes, but read range is not finished...&quot;에 대한 예외 메시지를 보강하고, system.filesystem&#95;cache&#39;에 finished&#95;download&#95;time 컬럼을 추가합니다. [#80849](https://github.com/ClickHouse/ClickHouse/pull/80849) ([Kseniia Sumarokova](https://github.com/kssenii)).
+* 이전에는 세그먼트 ID를 디스크의 `.gin_sid` 파일을 읽고 쓰면서 즉시 업데이트했기 때문에, 전문 검색 인덱스에서 `packed` 스토리지가 지원되지 않았습니다. `packed` 스토리지에서는 커밋되지 않은 파일에서 값을 읽을 수 없어, 이로 인해 문제가 발생했습니다. [#80852](https://github.com/ClickHouse/ClickHouse/pull/80852) ([Elmi Ahmadov](https://github.com/ahmadov)).
+* `indexes = 1`과 함께 `EXPLAIN`을 사용하면 출력에 검색 알고리즘 섹션이 추가됩니다. &quot;이진 검색&quot; 또는 &quot;일반 제외 검색&quot; 중 하나가 표시됩니다. [#80881](https://github.com/ClickHouse/ClickHouse/pull/80881) ([Pablo Marcos](https://github.com/pamarcos)).
+* 2024년 초에는 새로운 분석기가 기본적으로 활성화되어 있지 않았기 때문에 MySQL 핸들러의 `prefer_column_name_to_alias`가 True로 하드코딩되어 있었습니다. 이제는 하드코딩이 해제되었습니다. [#80916](https://github.com/ClickHouse/ClickHouse/pull/80916) ([Yarik Briukhovetskyi](https://github.com/yariks5s)).
+* 이제 `system.iceberg_history`에서 glue 또는 iceberg rest와 같은 catalog의 데이터베이스 이력을 확인할 수 있습니다. 또한 일관성을 위해 `system.iceberg_history`의 `table_name` 및 `database_name` 컬럼 이름을 각각 `table` 및 `database`로 변경했습니다. [#80975](https://github.com/ClickHouse/ClickHouse/pull/80975) ([alesapin](https://github.com/alesapin)).
+* `merge` 테이블 함수에서 읽기 전용 모드를 허용해, 이를 사용할 때 `CREATE TEMPORARY TABLE` 권한이 필요하지 않게 했습니다. [#80981](https://github.com/ClickHouse/ClickHouse/pull/80981) ([Miсhael Stetsyuk](https://github.com/mstetsyuk)).
+* 인메모리 캐시에 대한 내부 검사가 개선되었습니다(불완전한 `system.asynchronouse_metrics` 대신 `system.metrics`에서 캐시 정보를 노출). `dashboard.html`에 인메모리 캐시 크기(바이트 단위)를 추가했습니다. `VectorSimilarityIndexCacheSize`/`IcebergMetadataFilesCacheSize`는 `VectorSimilarityIndexCacheBytes`/`IcebergMetadataFilesCacheBytes`로 이름이 변경되었습니다. [#81023](https://github.com/ClickHouse/ClickHouse/pull/81023) ([Azat Khuzhin](https://github.com/azat)).
+* system.rocksdb를 읽을 때 RocksDB 테이블을 포함할 수 없는 엔진을 사용하는 데이터베이스는 무시합니다. [#81083](https://github.com/ClickHouse/ClickHouse/pull/81083) ([Pervakov Grigorii](https://github.com/GrigoryPervakov)).
+* `clickhouse-local` 설정 파일에서 `filesystem_caches` 및 `named_collections`를 사용할 수 있도록 허용합니다. [#81105](https://github.com/ClickHouse/ClickHouse/pull/81105) ([Alexey Milovidov](https://github.com/alexey-milovidov)).
+* `INSERT` 쿼리에서 `PARTITION BY` 하이라이트를 수정했습니다. 이전 버전에서는 `PARTITION BY`가 키워드로 하이라이트되지 않았습니다. [#81106](https://github.com/ClickHouse/ClickHouse/pull/81106) ([Alexey Milovidov](https://github.com/alexey-milovidov)).
+  #* Web UI의 소규모 개선 2가지: `CREATE`, `INSERT`처럼 출력이 없는 쿼리를 올바르게 처리합니다(최근까지는 이러한 쿼리에서 스피너가 무한히 표시되었습니다); - 테이블을 더블클릭하면 맨 위로 스크롤합니다. [#81131](https://github.com/ClickHouse/ClickHouse/pull/81131) ([Alexey Milovidov](https://github.com/alexey-milovidov)).
+  #* `c-ares`를 `v1.34.5`로 업데이트했습니다. [#81159](https://github.com/ClickHouse/ClickHouse/pull/81159) ([Konstantin Bogdanov](https://github.com/thevar1able)).
+  #* CVE-2025-5025 및 CVE-2025-4947에 대응하기 위해 curl을 8.14로 업그레이드했습니다. [#81171](https://github.com/ClickHouse/ClickHouse/pull/81171) ([larryluogit](https://github.com/larryluogit)).
+  #* 다음 항목에 대응하기 위해 libarchive를 3.7.9로 업그레이드했습니다: CVE-2024-20696 CVE-2025-25724 CVE-2024-48958 CVE-2024-57970 CVE-2025-1632 CVE-2024-48957 CVE-2024-48615. [#81174](https://github.com/ClickHouse/ClickHouse/pull/81174) ([larryluogit](https://github.com/larryluogit)).
+  #* libxml2를 2.14.3으로 업그레이드했습니다. [#81187](https://github.com/ClickHouse/ClickHouse/pull/81187) ([larryluogit](https://github.com/larryluogit)).
+* `MemoryResidentWithoutPageCache`는 사용자 공간 페이지 캐시를 제외한 서버 프로세스의 물리 메모리 사용량을 바이트 단위로 나타냅니다. 이 값은 사용자 공간 페이지 캐시를 사용할 때 실제 메모리 사용량을 더 정확하게 보여줍니다. 사용자 공간 페이지 캐시가 비활성화되면 이 값은 MemoryResident와 동일합니다. [#81233](https://github.com/ClickHouse/ClickHouse/pull/81233) ([Jayme Bird](https://github.com/jaymebrd)).
+* 클라이언트, 로컬 서버, Keeper 클라이언트 및 disks 앱에서 수동으로 로그에 기록한 예외를 이미 기록된 것으로 표시하여 중복 기록되지 않도록 했습니다. [#81271](https://github.com/ClickHouse/ClickHouse/pull/81271) ([Miсhael Stetsyuk](https://github.com/mstetsyuk)).
+* 설정 `use_skip_indexes_if_final`와 `use_skip_indexes_if_final_exact_mode`의 기본값이 이제 `True`로 설정됩니다. 이제 `FINAL` 절이 있는 쿼리는 스킵 인덱스(적용 가능한 경우)를 사용해 후보 그래뉼을 선별하고, 일치하는 기본 키(primary key) 범위에 해당하는 추가 그래뉼도 읽습니다. 이전처럼 근사치이거나 부정확한 결과가 필요하다면, 충분히 검토한 후 `use_skip_indexes_if_final_exact_mode`를 FALSE로 설정할 수 있습니다. [#81331](https://github.com/ClickHouse/ClickHouse/pull/81331) ([Shankar Iyer](https://github.com/shankar-iyer)).
+  #* web UI에 여러 쿼리가 있을 때는 커서가 위치한 쿼리를 실행합니다. [#80977](https://github.com/ClickHouse/ClickHouse/issues/80977)의 후속 작업입니다. [#81354](https://github.com/ClickHouse/ClickHouse/pull/81354) ([Alexey Milovidov](https://github.com/alexey-milovidov)).
+* 이 PR은 변환 함수의 단조성 검사에서 `is_strict` 구현과 관련된 문제를 해결합니다. 현재 `toFloat64(UInt32)` 및 `toDate(UInt8)`와 같은 일부 변환 함수는 true를 반환해야 함에도 is&#95;strict를 잘못 false로 반환합니다. [#81359](https://github.com/ClickHouse/ClickHouse/pull/81359) ([zoomxi](https://github.com/zoomxi)).
+  #* 저널이 있는 파일 시스템에서는 `mkdir`이 파일 시스템의 저널에 기록되며, 이 내용은 디스크에 영구 저장됩니다. 디스크가 느린 경우 이 작업에 오랜 시간이 걸릴 수 있습니다. 따라서 이를 reserve lock 범위 밖으로 옮기는 것이 타당합니다. [#81371](https://github.com/ClickHouse/ClickHouse/pull/81371) ([Kseniia Sumarokova](https://github.com/kssenii)).
+* `KeyCondition`이 연속 범위와 일치하는지 확인할 때 키가 비엄격 함수 체인으로 감싸져 있으면, `Constraint::POINT`를 `Constraint::RANGE`로 변환해야 할 수 있습니다. 예를 들어 `toDate(event_time) = '2025-06-03'`는 `event_time`에 대해 [&#39;2025-06-03 00:00:00&#39;, &#39;2025-06-04 00:00:00&#39;) 범위를 뜻합니다. 이 PR은 이 동작을 수정합니다. [#81400](https://github.com/ClickHouse/ClickHouse/pull/81400) ([zoomxi](https://github.com/zoomxi)).
+  #* `postgres` 16.9를 사용합니다. [#81437](https://github.com/ClickHouse/ClickHouse/pull/81437) ([Konstantin Bogdanov](https://github.com/thevar1able)).
+  #* `openssl` 3.2.4를 사용합니다. [#81438](https://github.com/ClickHouse/ClickHouse/pull/81438) ([Konstantin Bogdanov](https://github.com/thevar1able)).
+  #* `abseil-cpp` 2025-01-27을 사용합니다. [#81440](https://github.com/ClickHouse/ClickHouse/pull/81440) ([Konstantin Bogdanov](https://github.com/thevar1able)).
+  #* `mongo-c-driver` 1.30.4를 사용합니다. [#81449](https://github.com/ClickHouse/ClickHouse/pull/81449) ([Konstantin Bogdanov](https://github.com/thevar1able)).
+  #* `krb5` 1.21.3-final을 사용합니다. [#81453](https://github.com/ClickHouse/ClickHouse/pull/81453) ([Konstantin Bogdanov](https://github.com/thevar1able)).
+  #* `orc` 2.1.2를 사용합니다. [#81455](https://github.com/ClickHouse/ClickHouse/pull/81455) ([Konstantin Bogdanov](https://github.com/thevar1able)).
+  #* `clickhouse-local`에 `--database` 인수 지원을 추가했습니다. 이전에 생성한 데이터베이스로 전환할 수 있습니다. 이로써 [#44115](https://github.com/ClickHouse/ClickHouse/issues/44115)가 해결됩니다. [#81465](https://github.com/ClickHouse/ClickHouse/pull/81465) ([Alexey Milovidov](https://github.com/alexey-milovidov)).
+  #* `--host` 또는 `--port`가 지정되면 `clickhouse`/`ch` 별칭은 `clickhouse-local` 대신 `clickhouse-client`를 호출합니다. [#79422](https://github.com/ClickHouse/ClickHouse/issues/79422)의 후속 작업입니다. [#65252](https://github.com/ClickHouse/ClickHouse/issues/65252)를 해결합니다. [#81509](https://github.com/ClickHouse/ClickHouse/pull/81509) ([Alexey Milovidov](https://github.com/alexey-milovidov)).
+* 이제 Keeper 응답 시간 분포 데이터가 있으므로 히스토그램 버킷을 조정할 수 있습니다. [#81516](https://github.com/ClickHouse/ClickHouse/pull/81516) ([Miсhael Stetsyuk](https://github.com/mstetsyuk)).
+* 쿼리가 처음 읽힐 때까지 Iceberg manifest 파일 읽기를 미룹니다. [#81619](https://github.com/ClickHouse/ClickHouse/pull/81619) ([Daniil Ivanik](https://github.com/divanik)).
+  #* `grpc` 1.73.0을 사용합니다. [#81629](https://github.com/ClickHouse/ClickHouse/pull/81629) ([Konstantin Bogdanov](https://github.com/thevar1able)).
+  #* `delta-kernel-rs` v0.12.1을 사용합니다. [#81707](https://github.com/ClickHouse/ClickHouse/pull/81707) ([Konstantin Bogdanov](https://github.com/thevar1able)).
+* 프로파일 이벤트 `PageCacheReadBytes`를 추가했습니다. [#81742](https://github.com/ClickHouse/ClickHouse/pull/81742) ([Kseniia Sumarokova](https://github.com/kssenii)).
+
+<div id="bug-fix-user-visible-misbehavior-in-an-official-stable-release">
+  ## 버그 수정(공식 안정 릴리스에서 사용자에게 보이는 오작동)
+</div>
+
+* `SELECT EXCEPT` 쿼리를 사용하는 매개변수화된 뷰를 수정했습니다. [#49447](https://github.com/ClickHouse/ClickHouse/issues/49447)를 닫습니다. [#57380](https://github.com/ClickHouse/ClickHouse/pull/57380) ([Nikolay Degterinsky](https://github.com/evillique)).
+* 분석기: join에서 컬럼 타입 승격 후 컬럼 프로젝션의 이름을 수정합니다. [#63345](https://github.com/ClickHouse/ClickHouse/issues/63345)를 해결합니다. [#63519](https://github.com/ClickHouse/ClickHouse/pull/63519) ([Dmitry Novik](https://github.com/novikd)).
+* materialized view가 너무 늦게 시작될 수 있습니다. 예를 들어 해당 view로 스트리밍하는 Kafka 테이블보다 나중에 시작될 수 있습니다. [#72123](https://github.com/ClickHouse/ClickHouse/pull/72123) ([Ilya Golshtein](https://github.com/ilejn)).
+* analyzer&#95;compatibility&#95;join&#95;using&#95;top&#95;level&#95;identifier가 활성화된 상태에서 컬럼 이름이 충돌하는 경우 발생하던 논리 오류를 수정했습니다. [#75676](https://github.com/ClickHouse/ClickHouse/pull/75676) ([Vladimir Cherkasov](https://github.com/vdimir)).
+* 여러 비동기(`alter_sync = 0`) `RENAME COLUMN` 및 `ADD COLUMN` 쿼리 이후 `MergeTree` 테이블을 읽는 중 드물게 발생하던 비정상 종료를 수정했습니다. [#76346](https://github.com/ClickHouse/ClickHouse/pull/76346) ([Anton Popov](https://github.com/CurtizJ)).
+* 분석기가 활성화된 상태에서 `VIEW` 생성 중 `SELECT` 쿼리 재작성을 수정합니다. [#75956](https://github.com/ClickHouse/ClickHouse/issues/75956)를 해결합니다. [#76356](https://github.com/ClickHouse/ClickHouse/pull/76356) ([Dmitry Novik](https://github.com/novikd)).
+* `allow_push_predicate_ast_for_distributed_subqueries`가 활성화된 경우 푸시다운된 프레디케이트에서 CTE가 올바르게 사용되지 않던 문제를 수정했습니다. [#75647](https://github.com/ClickHouse/ClickHouse/issues/75647)을 수정했습니다. [#79672](https://github.com/ClickHouse/ClickHouse/issues/79672)을 수정했습니다. [#77316](https://github.com/ClickHouse/ClickHouse/pull/77316) ([Dmitry Novik](https://github.com/novikd)).
+* server에서(`apply_settings_from_server`를 통해) `async_insert`가 적용되도록 수정했습니다(이전에는 클라이언트에서 `Unknown packet 11 from server` 오류가 발생했습니다). [#77578](https://github.com/ClickHouse/ClickHouse/pull/77578) ([Azat Khuzhin](https://github.com/azat)).
+* 새로 추가된 레플리카에서 복제된 데이터베이스의 갱신 가능 구체화 뷰가 작동하지 않던 문제를 수정했습니다. [#77774](https://github.com/ClickHouse/ClickHouse/pull/77774) ([Michael Kolupaev](https://github.com/al13n321)).
+* 갱신 가능 구체화 뷰로 인해 백업이 실패하던 문제를 수정했습니다. [#77893](https://github.com/ClickHouse/ClickHouse/pull/77893) ([Michael Kolupaev](https://github.com/al13n321)).
+* `transform`에서 기존에 발생하던 논리 오류를 수정했습니다. [#78247](https://github.com/ClickHouse/ClickHouse/pull/78247) ([Yarik Briukhovetskyi](https://github.com/yariks5s)).
+* 지정한 레플리카가 존재하지 않아도 `SYSTEM SYNC REPLICA LIGHTWEIGHT 'foo'`가 성공으로 보고되던 문제를 수정했습니다. 이제 이 명령은 동기화를 시도하기 전에 Keeper에서 해당 레플리카의 존재 여부를 올바르게 확인합니다. [#78405](https://github.com/ClickHouse/ClickHouse/pull/78405) ([Jayme Bird](https://github.com/jaymebrd)).
+* 분석기 사용 시 보조 인덱스가 적용되지 않던 일부 경우를 수정했습니다. [#65607](https://github.com/ClickHouse/ClickHouse/issues/65607), [#69373](https://github.com/ClickHouse/ClickHouse/issues/69373) 수정. [#78485](https://github.com/ClickHouse/ClickHouse/pull/78485) ([Nikolai Kochetov](https://github.com/KochetovNicolai)).
+* 압축이 활성화된 HTTP protocol에서 프로파일 이벤트(`NetworkSendElapsedMicroseconds`/`NetworkSendBytes`)를 덤프할 때 발생하던 문제를 수정했습니다(오류는 버퍼 크기, 일반적으로 약 1MiB를 넘지 않아야 합니다). [#78516](https://github.com/ClickHouse/ClickHouse/pull/78516) ([Azat Khuzhin](https://github.com/azat)).
+  #* &#96;&#96;&#96;sql CREATE TABLE t0 ( key Int32, value Int32 ) ENGINE=MergeTree() PRIMARY KEY key PARTITION BY key % 2;. [#78593](https://github.com/ClickHouse/ClickHouse/pull/78593) ([Vlad](https://github.com/codeworse)).
+* `JOIN ... USING`에 `ALIAS` 컬럼이 포함된 경우 분석기가 `LOGICAL_ERROR`를 발생시키던 문제를 수정해, 적절한 오류를 반환하도록 했습니다. [#78618](https://github.com/ClickHouse/ClickHouse/pull/78618) ([Yakov Olkhovskiy](https://github.com/yakov-olkhovskiy)).
+* 분석기 수정: SELECT에 위치 인수가 포함된 경우 `CREATE VIEW ... ON CLUSTER`가 실패하는 문제를 수정했습니다. [#78663](https://github.com/ClickHouse/ClickHouse/pull/78663) ([Yakov Olkhovskiy](https://github.com/yakov-olkhovskiy)).
+* 스키마 추론을 사용하는 테이블 함수에 `INSERT SELECT`를 수행할 때 `SELECT`에 스칼라 서브쿼리가 있으면 발생하던 `Block structure mismatch` 오류를 수정했습니다. [#78677](https://github.com/ClickHouse/ClickHouse/pull/78677) ([Pervakov Grigorii](https://github.com/GrigoryPervakov)).
+* 분석기 수정: `prefer_global_in_and_join=1`일 때 SELECT 쿼리의 분산 테이블에서 `in` 함수가 `globalIn`으로 대체되어야 합니다. [#78749](https://github.com/ClickHouse/ClickHouse/pull/78749) ([Yakov Olkhovskiy](https://github.com/yakov-olkhovskiy)).
+* `MongoDB` 엔진 테이블 또는 `mongodb` 테이블 함수에서 읽는 여러 유형의 `SELECT` 쿼리를 수정했습니다. 여기에는 `WHERE` 절에서 상수 값이 암시적으로 변환되는 쿼리(예: `WHERE datetime = '2025-03-10 00:00:00'`)와 `LIMIT` 및 `GROUP BY`가 포함된 쿼리가 포함됩니다. 이전에는 이러한 쿼리가 잘못된 결과를 반환할 수 있었습니다. [#78777](https://github.com/ClickHouse/ClickHouse/pull/78777) ([Anton Popov](https://github.com/CurtizJ)).
+* 서로 다른 JSON 타입 간 변환을 수정했습니다. 이제 `String`으로 변환한 뒤 다시 변환하는 단순 CAST를 통해 수행됩니다. 효율은 다소 떨어지지만 100% 정확합니다. [#78807](https://github.com/ClickHouse/ClickHouse/pull/78807) ([Pavel Kruglov](https://github.com/Avogar)).
+* Dynamic type을 인터벌로 변환할 때 발생하던 논리 오류를 수정했습니다. [#78813](https://github.com/ClickHouse/ClickHouse/pull/78813) ([Pavel Kruglov](https://github.com/Avogar)).
+* JSON 파싱 오류 발생 시 컬럼 롤백 문제를 수정했습니다. [#78836](https://github.com/ClickHouse/ClickHouse/pull/78836) ([Pavel Kruglov](https://github.com/Avogar)).
+* 상수 alias 컬럼을 사용해 JOIN할 때 발생하는 &#39;bad cast&#39; 오류를 수정했습니다. [#78848](https://github.com/ClickHouse/ClickHouse/pull/78848) ([Vladimir Cherkasov](https://github.com/vdimir)).
+* materialized view와 대상 테이블 간에 타입이 다른 컬럼에는 `PREWHERE`를 허용하지 않습니다. [#78889](https://github.com/ClickHouse/ClickHouse/pull/78889) ([Pavel Kruglov](https://github.com/Avogar)).
+* Variant 컬럼의 잘못된 바이너리 데이터를 파싱하는 과정에서 발생하던 논리 오류를 수정했습니다. [#78982](https://github.com/ClickHouse/ClickHouse/pull/78982) ([Pavel Kruglov](https://github.com/Avogar)).
+* Parquet 배치 크기가 0으로 설정된 경우 예외가 발생하도록 했습니다. 이전에는 `output_format_parquet_batch_size = 0`일 때 ClickHouse가 멈췄지만, 이제 이 동작이 수정되었습니다. [#78991](https://github.com/ClickHouse/ClickHouse/pull/78991) ([daryawessely](https://github.com/daryawessely)).
+* compact 파트에서 basic 포맷 사용 시 Variant 판별자의 역직렬화 문제를 수정했습니다. 이 변경은 https://github.com/ClickHouse/ClickHouse/pull/55518에서 도입되었습니다. [#79000](https://github.com/ClickHouse/ClickHouse/pull/79000) ([Pavel Kruglov](https://github.com/Avogar)).
+* `complex_key_ssd_cache` 유형의 사전은 이제 `block_size` 및 `write_buffer_size` 매개변수에 0 이하의 값을 허용하지 않습니다(이슈 [#78314](https://github.com/ClickHouse/ClickHouse/issues/78314)). [#79028](https://github.com/ClickHouse/ClickHouse/pull/79028) ([Elmi Ahmadov](https://github.com/ahmadov)).
+* SummingMergeTree에서 집계되지 않은 컬럼에 `Field`를 사용하지 마십시오. SummingMergeTree에서 사용하는 Dynamic/Variant 타입에서 예상치 못한 오류가 발생할 수 있습니다. [#79051](https://github.com/ClickHouse/ClickHouse/pull/79051) ([Pavel Kruglov](https://github.com/Avogar)).
+* 분석기에서 분산 대상 테이블을 사용하고 헤더가 다른 materialized view에서 읽을 때 발생하던 문제를 수정했습니다. [#79059](https://github.com/ClickHouse/ClickHouse/pull/79059) ([Pavel Kruglov](https://github.com/Avogar)).
+* `ON CLUSTER` 쿼리의 `CONSTRAINT` 섹션에서 `currentDatabase` 함수가 사용될 때, 아주 특정한 상황에서 발생하던 충돌을 수정했습니다. [#78100](https://github.com/ClickHouse/ClickHouse/issues/78100)을 종료합니다. [#79070](https://github.com/ClickHouse/ClickHouse/pull/79070) ([pufit](https://github.com/pufit)).
+* 배치 삽입이 수행된 테이블(table)에서 `arrayUnion()`이 여분의(잘못된) 값을 반환하던 버그를 수정했습니다. [#75057](https://github.com/ClickHouse/ClickHouse/issues/75057)를 해결했습니다. [#79079](https://github.com/ClickHouse/ClickHouse/pull/79079) ([Peter Nguyen](https://github.com/petern48)).
+  #* `OpenSSLInitializer`의 segfault를 수정했습니다. [#79092](https://github.com/ClickHouse/ClickHouse/issues/79092)를 해결했습니다. [#79097](https://github.com/ClickHouse/ClickHouse/pull/79097) ([Konstantin Bogdanov](https://github.com/thevar1able)).
+* 서버 간 쿼리에서 외부 역할이 전달되지 않던 문제를 수정했습니다. [#79099](https://github.com/ClickHouse/ClickHouse/pull/79099) ([Andrey Zvonov](https://github.com/zvonand)).
+* S3 ListObject에 항상 prefix를 지정합니다. [#79114](https://github.com/ClickHouse/ClickHouse/pull/79114) ([Azat Khuzhin](https://github.com/azat)).
+* `arrayUnion()`이 배치 삽입이 수행된 테이블에서 추가적인 잘못된 값을 반환하던 버그를 수정합니다. [#79157](https://github.com/ClickHouse/ClickHouse/issues/79157)를 수정합니다. [#79158](https://github.com/ClickHouse/ClickHouse/pull/79158) ([Peter Nguyen](https://github.com/petern48)).
+* filter pushdown 이후 발생하던 논리 오류 수정. [#79164](https://github.com/ClickHouse/ClickHouse/pull/79164) ([Pervakov Grigorii](https://github.com/GrigoryPervakov)).
+* SingleValueDataGeneric에서는 Field 대신 IColumn을 사용하십시오. 이렇게 하면 `Dynamic/Variant/JSON` 타입에서 `argMax`와 같은 일부 집계 함수가 잘못된 값을 반환하던 문제가 해결됩니다. [#79166](https://github.com/ClickHouse/ClickHouse/pull/79166) ([Pavel Kruglov](https://github.com/Avogar)).
+* HTTP 기반 엔드포인트와 함께 사용할 때의 DeltaLake 테이블 엔진의 delta-kernel 구현을 수정하고, NOSIGN 문제를 수정했습니다. [#78124](https://github.com/ClickHouse/ClickHouse/issues/78124)를 해결합니다. [#79203](https://github.com/ClickHouse/ClickHouse/pull/79203) ([Kseniia Sumarokova](https://github.com/kssenii)).
+* Keeper 수정: 실패한 multi 요청 시 watch가 트리거되지 않도록 수정했습니다. [#79247](https://github.com/ClickHouse/ClickHouse/pull/79247) ([Antonio Andelic](https://github.com/antonio2368)).
+* `IN`에서 Dynamic 및 JSON 타입 사용을 금지합니다. 현재 `IN` 구현에서는 이로 인해 잘못된 결과가 발생할 수 있습니다. `IN`에서 이러한 타입을 제대로 지원하는 것은 복잡하므로, 향후 지원될 수 있습니다. [#79282](https://github.com/ClickHouse/ClickHouse/pull/79282) ([Pavel Kruglov](https://github.com/Avogar)).
+* JSON 타입 파싱 중 중복 경로 검사 문제를 수정했습니다. [#79317](https://github.com/ClickHouse/ClickHouse/pull/79317) ([Pavel Kruglov](https://github.com/Avogar)).
+* SecureStreamSocket 연결 문제를 해결했습니다. [#79383](https://github.com/ClickHouse/ClickHouse/pull/79383) ([Konstantin Bogdanov](https://github.com/thevar1able)).
+* 데이터가 포함된 plain&#95;rewritable 디스크의 로딩 문제를 수정했습니다. [#79439](https://github.com/ClickHouse/ClickHouse/pull/79439) ([Julia Kartseva](https://github.com/jkartseva)).
+* MergeTree의 Wide 파트에서 동적 서브컬럼 디스커버리 과정 중 발생하던 크래시를 수정했습니다. [#79466](https://github.com/ClickHouse/ClickHouse/pull/79466) ([Pavel Kruglov](https://github.com/Avogar)).
+* 초기 CREATE 쿼리에서만 테이블 이름 길이를 검증합니다. 하위 호환성 문제를 피하기 위해 후속 CREATE에서는 이를 검증하지 않습니다. [#79488](https://github.com/ClickHouse/ClickHouse/pull/79488) ([Miсhael Stetsyuk](https://github.com/mstetsyuk)).
+* 희소 컬럼이 있는 테이블에서 일부 경우 `Block structure mismatch` 오류가 발생하던 문제를 수정했습니다. [#79491](https://github.com/ClickHouse/ClickHouse/pull/79491) ([Anton Popov](https://github.com/CurtizJ)).
+* `Logical Error: Can't set alias of * of Asterisk on alias`가 발생하던 두 가지 경우를 수정했습니다. [#79505](https://github.com/ClickHouse/ClickHouse/pull/79505) ([Raúl Marín](https://github.com/Algunenano)).
+* Azure blob storage에서 use&#95;native&#95;copy 및 allow&#95;azure&#95;native&#95;copy 설정이 적용되도록 수정하고, 자격 증명이 일치할 때만 네이티브 복사를 사용하도록 업데이트하여 [#78964](https://github.com/ClickHouse/ClickHouse/issues/78964)를 해결했습니다. [#79561](https://github.com/ClickHouse/ClickHouse/pull/79561) ([Smita Kulkarni](https://github.com/SmitaRKulkarni)).
+* Atomic 데이터베이스 이름 변경 시 잘못된 경로를 사용하는 문제를 수정했습니다. [#79569](https://github.com/ClickHouse/ClickHouse/pull/79569) ([Tuan Pham Anh](https://github.com/tuanpach)).
+* JSON 컬럼과 다른 컬럼을 함께 사용하는 ORDER BY를 수정했습니다. [#79591](https://github.com/ClickHouse/ClickHouse/pull/79591) ([Pavel Kruglov](https://github.com/Avogar)).
+* 원격에서 읽을 때 `use_hedged_requests`와 `allow_experimental_parallel_reading_from_replicas`가 모두 비활성화되어 있으면 결과가 중복되던 문제를 수정했습니다. [#79599](https://github.com/ClickHouse/ClickHouse/pull/79599) ([Eduard Karacharov](https://github.com/korowa)).
+* Unity Catalog 사용 시 delta-kernel 구현에서 발생하던 충돌을 수정했습니다. [#79677](https://github.com/ClickHouse/ClickHouse/pull/79677) ([Kseniia Sumarokova](https://github.com/kssenii)).
+* 자동 디스커버리 클러스터의 매크로가 올바르게 해석되도록 수정했습니다. [#79696](https://github.com/ClickHouse/ClickHouse/pull/79696) ([Anton Ivashkin](https://github.com/ianton-ru)).
+* 이 컬럼이 연관되는지 확인하는 과정에서 발생하던, 컬럼의 출처 범위를 알 수 없는 경우와 관련된 논리 오류를 수정했습니다. [#78183](https://github.com/ClickHouse/ClickHouse/issues/78183)을 수정했습니다. [#79451](https://github.com/ClickHouse/ClickHouse/issues/79451)을 수정했습니다. [#79727](https://github.com/ClickHouse/ClickHouse/pull/79727) ([Dmitry Novik](https://github.com/novikd)).
+* ColumnConst와 분석기를 사용할 때 grouping sets에서 발생하던 잘못된 결과 문제를 수정했습니다. [#79743](https://github.com/ClickHouse/ClickHouse/pull/79743) ([Andrey Zvonov](https://github.com/zvonand)).
+* 로컬 레플리카가 오래된 상태에서 분산 테이블을 읽을 때 로컬 세그먼트 결과가 중복되던 문제를 수정했습니다. [#79761](https://github.com/ClickHouse/ClickHouse/pull/79761) ([Eduard Karacharov](https://github.com/korowa)).
+* 잘못 설정된 `page_cache_limits`를 적절히 처리합니다. [#79805](https://github.com/ClickHouse/ClickHouse/pull/79805) ([Bharat Nallan](https://github.com/bharatnc)).
+* 가변 길이 Formatter(예: `%W`, 즉 요일 `Monday` `Tuesday` 등) 다음에 복합 Formatter(여러 구성 요소를 한 번에 출력하는 Formatter, 예: `%D`, 즉 미국식 날짜 `05/04/25`)가 오는 경우 SQL 함수 `formatDateTime`의 결과를 수정합니다. [#79835](https://github.com/ClickHouse/ClickHouse/pull/79835) ([Robert Schulze](https://github.com/rschu1ze)).
+* IcebergS3는 count 최적화를 지원하지만 IcebergS3Cluster는 지원하지 않습니다. 따라서 클러스터 모드에서 반환되는 count() 결과는 레플리카 수의 배수로 나타날 수 있습니다. [#79844](https://github.com/ClickHouse/ClickHouse/pull/79844) ([wxybear](https://github.com/wxybear)).
+* 음수 부호 비트가 설정된 NaN의 정렬 순서를 수정했습니다. [#79847](https://github.com/ClickHouse/ClickHouse/pull/79847) ([Pervakov Grigorii](https://github.com/GrigoryPervakov)).
+* 이제 `GROUP BY ALL`은 `GROUPING` 부분을 반영하지 않습니다. [#79915](https://github.com/ClickHouse/ClickHouse/pull/79915) ([Yarik Briukhovetskyi](https://github.com/yariks5s)).
+* 프로젝션 전까지 쿼리 실행에 사용되는 컬럼이 없는 경우 lazy materialization에서 발생하던 `AMBIGUOUS_COLUMN_NAME` 오류를 수정했습니다. 예시: SELECT * FROM t ORDER BY rand() LIMIT 5. [#79926](https://github.com/ClickHouse/ClickHouse/pull/79926) ([Igor Nikonov](https://github.com/devcrafter)).
+* 용량이 소진되지 않았는데도 과도한 오류 값이 발생하던 `TopK` / `TopKWeighted` 함수의 잘못된 상태 병합 처리를 수정했습니다. [#79939](https://github.com/ClickHouse/ClickHouse/pull/79939) ([Joel Höner](https://github.com/athre0z)).
+* 쿼리 `CREATE DATABASE datalake ENGINE = DataLakeCatalog(\'http://catalog:8181\', \'admin\', \'password\')`에 포함된 비밀번호를 숨깁니다. [#79941](https://github.com/ClickHouse/ClickHouse/pull/79941) ([Han Fei](https://github.com/hanfei1991)).
+* `JOIN USING`에서 별칭을 지정할 수 있도록 했습니다. 컬럼 이름이 변경된 경우(예: &#96;ARRAY JOIN&#96;으로 인해) 이 별칭을 지정하십시오. [#73707](https://github.com/ClickHouse/ClickHouse/issues/73707)을 수정했습니다. [#79942](https://github.com/ClickHouse/ClickHouse/pull/79942) ([Nikolai Kochetov](https://github.com/KochetovNicolai)).
+* `azure_blob_storage` 객체 스토리지에서 `readonly` 설정이 적용되도록 수정했습니다. [#79954](https://github.com/ClickHouse/ClickHouse/pull/79954) ([Julia Kartseva](https://github.com/jkartseva)).
+* 백슬래시로 이스케이프한 문자가 포함된 `match(column, '^…')`를 사용할 때 발생하던 잘못된 쿼리 결과와 메모리 부족으로 인한 충돌을 수정했습니다. [#79969](https://github.com/ClickHouse/ClickHouse/pull/79969) ([filimonov](https://github.com/filimonov)).
+* 데이터 레이크에서 hive 파티셔닝을 비활성화하여 https://github.com/issues/assigned?issue=ClickHouse%7CClickHouse%7C79937 문제를 부분적으로 해결합니다. [#80005](https://github.com/ClickHouse/ClickHouse/pull/80005) ([Daniil Ivanik](https://github.com/divanik)).
+* 람다 표현식이 포함된 스킵 인덱스가 적용되지 않던 문제를 수정했습니다. 인덱스 정의의 상위 수준 함수가 쿼리의 함수와 정확히 일치하는 경우를 올바르게 처리하도록 수정했습니다. [#80025](https://github.com/ClickHouse/ClickHouse/pull/80025) ([Nikolai Kochetov](https://github.com/KochetovNicolai)).
+* UNION이 포함된 materialized view가 새 레플리카에서도 올바르게 작동할 수 있도록 합니다. [#80037](https://github.com/ClickHouse/ClickHouse/pull/80037) ([Samay Sharma](https://github.com/samay-sharma)).
+* 복제 로그의 ATTACH&#95;PART 명령을 실행하는 레플리카에서 part를 ATTACH할 때 메타데이터 버전을 수정했습니다. [#80038](https://github.com/ClickHouse/ClickHouse/pull/80038) ([Aleksei Filatov](https://github.com/aalexfvk)).
+* SQL 함수 `parseDateTime`의 포맷 지정자 `%e`가 이제 한 자릿수 일자(예: `3`)를 인식합니다. 이전에는 공백 패딩(예: ` 3`)이 필요했습니다. 이에 따라 동작이 MySQL과 호환됩니다. 이전 동작을 유지하려면 setting `parsedatetime_e_requires_space_padding = 1`을 설정하십시오. (이슈 [#78243](https://github.com/ClickHouse/ClickHouse/issues/78243)). [#80057](https://github.com/ClickHouse/ClickHouse/pull/80057) ([Robert Schulze](https://github.com/rschu1ze)).
+* 실행형 사용자 정의 함수(eUDF) 이름은 다른 함수들과 달리 `system.query_log` 테이블의 `used_functions` 컬럼에 추가되지 않습니다. 이 PR에서는 요청에 eUDF가 사용된 경우 eUDF 이름도 추가되도록 구현했습니다. [#80073](https://github.com/ClickHouse/ClickHouse/pull/80073) ([Kyamran](https://github.com/nibblerenush)).
+  #* ClickHouse 로그의 `Cannot find 'kernel' in '[...]/memory.stat'` 경고를 수정합니다(이슈 [#77410](https://github.com/ClickHouse/ClickHouse/issues/77410)). [#80129](https://github.com/ClickHouse/ClickHouse/pull/80129) ([Robert Schulze](https://github.com/rschu1ze)).
+* Arrow 형식에서 LowCardinality(FixedString) 관련 논리 오류를 수정했습니다. [#80156](https://github.com/ClickHouse/ClickHouse/pull/80156) ([Pavel Kruglov](https://github.com/Avogar)).
+* Merge 엔진에서 서브컬럼을 읽는 문제를 수정했습니다. [#80158](https://github.com/ClickHouse/ClickHouse/pull/80158) ([Pavel Kruglov](https://github.com/Avogar)).
+* `KeyCondition`에서 숫자 타입 간 비교 버그를 수정했습니다. [#80207](https://github.com/ClickHouse/ClickHouse/pull/80207) ([Yarik Briukhovetskyi](https://github.com/yariks5s)).
+* 프로젝션이 있는 테이블에 lazy materialization이 적용된 경우 발생하는 AMBIGUOUS&#95;COLUMN&#95;NAME 문제를 수정했습니다. [#80251](https://github.com/ClickHouse/ClickHouse/pull/80251) ([Igor Nikonov](https://github.com/devcrafter)).
+* 암시적 프로젝션을 사용할 때 LIKE &#39;ab&#95;c%&#39;와 같은 문자열 prefix filter의 잘못된 count 최적화를 수정했습니다. 이로써 [#80250](https://github.com/ClickHouse/ClickHouse/issues/80250)이 해결됩니다. [#80261](https://github.com/ClickHouse/ClickHouse/pull/80261) ([Amos Bird](https://github.com/amosbird)).
+* MongoDB 문서에서 중첩된 숫자 필드가 String으로 잘못 직렬화되던 문제를 수정했습니다. MongoDB 문서의 최대 깊이 제한을 제거했습니다. [#80289](https://github.com/ClickHouse/ClickHouse/pull/80289) ([Kirill Nikiforov](https://github.com/allmazz)).
+* 복제된 데이터베이스에서 RMT에 대한 메타데이터 검사 기준을 완화합니다. [#80296](https://github.com/ClickHouse/ClickHouse/issues/80296)를 해결합니다. [#80298](https://github.com/ClickHouse/ClickHouse/pull/80298) ([Nikolay Degterinsky](https://github.com/evillique)).
+* PostgreSQL 저장소용 DateTime 및 DateTime64의 텍스트 표현을 수정했습니다. [#80301](https://github.com/ClickHouse/ClickHouse/pull/80301) ([Yakov Olkhovskiy](https://github.com/yakov-olkhovskiy)).
+* `StripeLog` 테이블에서 시간대가 지정된 `DateTime`을 허용합니다. 이로써 [#44120](https://github.com/ClickHouse/ClickHouse/issues/44120)이 해결되었습니다. [#80304](https://github.com/ClickHouse/ClickHouse/pull/80304) ([Alexey Milovidov](https://github.com/alexey-milovidov)).
+* 쿼리 계획 단계에서 행 수가 변경되는 경우, 비결정적 함수가 포함된 프레디케이트의 filter-push-down을 비활성화합니다. [#40273](https://github.com/ClickHouse/ClickHouse/issues/40273)를 수정했습니다. [#80329](https://github.com/ClickHouse/ClickHouse/pull/80329) ([Nikolai Kochetov](https://github.com/KochetovNicolai)).
+* 서브컬럼이 있는 프로젝션에서 발생할 수 있는 논리 오류와 비정상 종료 문제를 수정했습니다. [#80333](https://github.com/ClickHouse/ClickHouse/pull/80333) ([Pavel Kruglov](https://github.com/Avogar)).
+* `ON` 표현식이 단순한 동등 조건이 아닌 경우, 논리적 JOIN sep에서의 filter-push-down 최적화로 인해 발생하는 `NOT_FOUND_COLUMN_IN_BLOCK` 오류를 수정합니다. [#79647](https://github.com/ClickHouse/ClickHouse/issues/79647) 수정. [#77848](https://github.com/ClickHouse/ClickHouse/issues/77848) 수정. [#80360](https://github.com/ClickHouse/ClickHouse/pull/80360) ([Nikolai Kochetov](https://github.com/KochetovNicolai)).
+* 파티션된 테이블에서 역순으로 정렬된 키를 읽을 때 잘못된 결과가 나오던 문제를 수정했습니다. 이 변경으로 [#79987](https://github.com/ClickHouse/ClickHouse/issues/79987)이 해결됩니다. [#80448](https://github.com/ClickHouse/ClickHouse/pull/80448) ([Amos Bird](https://github.com/amosbird)).
+* 널 허용 키를 사용하고 optimize&#95;read&#95;in&#95;order가 활성화된 테이블의 잘못된 정렬 문제가 수정되었습니다. [#80515](https://github.com/ClickHouse/ClickHouse/pull/80515) ([Pervakov Grigorii](https://github.com/GrigoryPervakov)).
+* SYSTEM STOP REPLICATED VIEW로 뷰를 일시 중지한 경우 갱신 가능 구체화 뷰를 DROP할 때 작업이 멈추는 문제를 수정했습니다. [#80543](https://github.com/ClickHouse/ClickHouse/pull/80543) ([Michael Kolupaev](https://github.com/al13n321)).
+* 분산 쿼리에서 상수 tuple 사용 시 발생하던 &#39;컬럼을 찾을 수 없음&#39; 문제를 수정했습니다. [#80596](https://github.com/ClickHouse/ClickHouse/pull/80596) ([Yakov Olkhovskiy](https://github.com/yakov-olkhovskiy)).
+* `join_use_nulls` 사용 시 분산 테이블에서 `shardNum` 함수를 수정했습니다. [#80612](https://github.com/ClickHouse/ClickHouse/pull/80612) ([János Benjamin Antal](https://github.com/antaljanosbenjamin)).
+* Merge 엔진에서 테이블 부분 집합에만 존재하는 컬럼을 읽을 때 잘못된 결과가 반환되던 문제를 수정했습니다. [#80643](https://github.com/ClickHouse/ClickHouse/pull/80643) ([Pavel Kruglov](https://github.com/Avogar)).
+* iceberg&#95;history 테이블의 타임스탬프가 이제 정확해졌습니다. [#80711](https://github.com/ClickHouse/ClickHouse/pull/80711) ([Melvyn Peignon](https://github.com/melvynator)).
+* 객체 스토리지 테이블 함수에서 요소가 하나뿐인 enum 글롭 패턴 처리 문제를 수정했습니다. [#80716](https://github.com/ClickHouse/ClickHouse/pull/80716) ([Konstantin Bogdanov](https://github.com/thevar1able)).
+* 논리 오류를 일으키던 Tuple(Dynamic) 및 String 비교 함수의 잘못된 결과 타입 문제를 수정했습니다. [#80728](https://github.com/ClickHouse/ClickHouse/pull/80728) ([Pavel Kruglov](https://github.com/Avogar)).
+* Unity Catalog에 누락되어 있던 지원 데이터 타입 `timestamp_ntz`를 추가했습니다. [#79535](https://github.com/ClickHouse/ClickHouse/issues/79535), [#79875](https://github.com/ClickHouse/ClickHouse/issues/79875)를 수정했습니다. [#80740](https://github.com/ClickHouse/ClickHouse/pull/80740) ([alesapin](https://github.com/alesapin)).
+* `IN cte`가 포함된 분산 쿼리에서 발생하는 `THERE_IS_NO_COLUMN` 오류를 수정했습니다. [#75032](https://github.com/ClickHouse/ClickHouse/issues/75032)을 수정합니다. [#80757](https://github.com/ClickHouse/ClickHouse/pull/80757) ([Nikolai Kochetov](https://github.com/KochetovNicolai)).
+* 외부 `ORDER BY`에서 파일 수가 과도하게 많아지는 문제(과도한 메모리 사용량으로 이어짐)를 수정했습니다. [#80777](https://github.com/ClickHouse/ClickHouse/pull/80777) ([Azat Khuzhin](https://github.com/azat)).
+  #* 이 PR로 [#80742](https://github.com/ClickHouse/ClickHouse/issues/80742)가 해결될 수 있습니다. [#80783](https://github.com/ClickHouse/ClickHouse/pull/80783) ([zoomxi](https://github.com/zoomxi)).
+  #* get&#95;member&#95;id()가 NULL에서 std::string을 생성해 발생하던 Kafka 충돌을 수정했습니다(아마도 broker 연결이 실패한 경우에만 발생하던 문제였습니다). [#80793](https://github.com/ClickHouse/ClickHouse/pull/80793) ([Azat Khuzhin](https://github.com/azat)).
+* Kafka engine를 종료하기 전에 consumer가 정상적으로 종료될 때까지 기다리도록 수정했습니다(종료 후에도 활성 상태인 consumer는 다양한 디버그 assertion을 유발할 수 있으며, 테이블이 삭제되거나 분리된 후에도 백그라운드에서 broker로부터 데이터를 읽을 수 있습니다). [#80795](https://github.com/ClickHouse/ClickHouse/pull/80795) ([Azat Khuzhin](https://github.com/azat)).
+* `predicate-push-down` 최적화로 인해 발생하는 `NOT_FOUND_COLUMN_IN_BLOCK` 문제를 수정합니다. [#80443](https://github.com/ClickHouse/ClickHouse/issues/80443)를 해결합니다. [#80834](https://github.com/ClickHouse/ClickHouse/pull/80834) ([Nikolai Kochetov](https://github.com/KochetovNicolai)).
+* `USING`을 사용하는 `JOIN`에서 테이블 함수의 별표(*) 매처를 해석하는 과정에서 발생하던 논리 오류를 수정했습니다. [#80894](https://github.com/ClickHouse/ClickHouse/pull/80894) ([Vladimir Cherkasov](https://github.com/vdimir)).
+* Iceberg metadata files cache의 메모리 사용량 계산을 수정했습니다. [#80904](https://github.com/ClickHouse/ClickHouse/pull/80904) ([Azat Khuzhin](https://github.com/azat)).
+* 널 허용 파티션 키에서 발생하는 잘못된 파티셔닝 문제를 수정했습니다. [#80913](https://github.com/ClickHouse/ClickHouse/pull/80913) ([Pervakov Grigorii](https://github.com/GrigoryPervakov)).
+* 원본 테이블이 initiator에 존재하지 않을 때, 푸시다운된 프레디케이트(`allow_push_predicate_ast_for_distributed_subqueries=1`)가 적용된 분산 쿼리에서 발생하는 `Table does not exist` 오류를 수정했습니다. [#77281](https://github.com/ClickHouse/ClickHouse/issues/77281)를 해결합니다. [#80915](https://github.com/ClickHouse/ClickHouse/pull/80915) ([Nikolai Kochetov](https://github.com/KochetovNicolai)).
+* 명명된 윈도우를 사용하는 중첩 함수의 논리 오류를 수정했습니다. [#80926](https://github.com/ClickHouse/ClickHouse/pull/80926) ([Pervakov Grigorii](https://github.com/GrigoryPervakov)).
+* 널 허용 및 부동소수점 컬럼의 extremes 처리를 수정했습니다. [#80970](https://github.com/ClickHouse/ClickHouse/pull/80970) ([Pervakov Grigorii](https://github.com/GrigoryPervakov)).
+* system.tables를 쿼리할 때 발생할 수 있는 크래시를 수정했습니다(메모리 부족 상황에서 발생했을 가능성이 높습니다). [#80976](https://github.com/ClickHouse/ClickHouse/pull/80976) ([Azat Khuzhin](https://github.com/azat)).
+* 파일 확장자로부터 압축 형식이 추론되는 파일에서 `TRUNCATE` 수행 시 원자적 이름 변경 문제를 수정했습니다. [#80979](https://github.com/ClickHouse/ClickHouse/pull/80979) ([Pablo Marcos](https://github.com/pamarcos)).
+  #* ErrorCodes::getName을 수정했습니다. [#81032](https://github.com/ClickHouse/ClickHouse/pull/81032) ([RinChanNOW](https://github.com/RinChanNOWWW)).
+* 사용자에게 모든 테이블에 대한 권한이 없을 때 Unity Catalog에서 테이블 목록을 볼 수 없던 버그를 수정했습니다. 이제 모든 테이블이 올바르게 나열되며, 접근이 제한된 테이블을 읽으려고 하면 예외가 발생합니다. [#81044](https://github.com/ClickHouse/ClickHouse/pull/81044) ([alesapin](https://github.com/alesapin)).
+* 이제 ClickHouse는 `SHOW TABLES` 쿼리에서 데이터 레이크 카탈로그의 오류와 예상치 못한 응답을 무시합니다. [#79725](https://github.com/ClickHouse/ClickHouse/issues/79725)를 수정했습니다. [#81046](https://github.com/ClickHouse/ClickHouse/pull/81046) ([alesapin](https://github.com/alesapin)).
+* `JSONExtract` 및 `JSON` 유형 파싱 시 정수 값에서 `DateTime64`를 파싱하던 문제를 수정했습니다. [#81050](https://github.com/ClickHouse/ClickHouse/pull/81050) ([Pavel Kruglov](https://github.com/Avogar)).
+* 스키마 추론 캐시에 `date_time_input_format` 설정이 반영되도록 수정했습니다. [#81052](https://github.com/ClickHouse/ClickHouse/pull/81052) ([Pavel Kruglov](https://github.com/Avogar)).
+* 쿼리가 시작된 후 컬럼이 전송되기 전에 테이블이 삭제된 경우 `INSERT` 시 발생하던 크래시를 수정했습니다. [#81053](https://github.com/ClickHouse/ClickHouse/pull/81053) ([Azat Khuzhin](https://github.com/azat)).
+* quantileDeterministic의 초기화되지 않은 값 사용 문제를 수정했습니다. [#81062](https://github.com/ClickHouse/ClickHouse/pull/81062) ([Azat Khuzhin](https://github.com/azat)).
+* metadatastoragefromdisk 디스크 트랜잭션에서 하드링크 수 관리 문제를 수정했습니다. 테스트도 추가했습니다. [#81066](https://github.com/ClickHouse/ClickHouse/pull/81066) ([Sema Checherinda](https://github.com/CheSema)).
+* 사용자 정의 함수(UDF) 이름은 다른 함수와 달리 `system.query_log` 테이블에 추가되지 않습니다. 이 PR은 요청에서 UDF가 사용된 경우 UDF 이름이 두 컬럼 `used_executable_user_defined_functions` 또는 `used_sql_user_defined_functions` 중 하나에 추가되도록 구현합니다. [#81101](https://github.com/ClickHouse/ClickHouse/pull/81101) ([Kyamran](https://github.com/nibblerenush)).
+* 텍스트 형식(`JSON`, `Values`, ...)을 사용하고 `Enum` 필드가 생략된 경우, HTTP protocol을 통한 삽입 시 발생하던 `Too large size ... passed to allocator` 오류 및 크래시 가능성을 수정했습니다. [#81145](https://github.com/ClickHouse/ClickHouse/pull/81145) ([Anton Popov](https://github.com/CurtizJ)).
+* non-MT MV로 푸시된 INSERT block의 희소 컬럼에서 발생하던 LOGICAL&#95;ERROR를 수정했습니다. [#81161](https://github.com/ClickHouse/ClickHouse/pull/81161) ([Azat Khuzhin](https://github.com/azat)).
+* 교차 복제 환경에서 `distributed_product_mode_local=local`일 때 발생하는 `Unknown table expression identifier` 문제를 수정했습니다. [#81162](https://github.com/ClickHouse/ClickHouse/pull/81162) ([Nikolai Kochetov](https://github.com/KochetovNicolai)).
+* 필터링 후 Parquet 파일의 행 수가 잘못 캐싱되던 문제를 수정했습니다. [#81184](https://github.com/ClickHouse/ClickHouse/pull/81184) ([Michael Kolupaev](https://github.com/al13n321)).
+* 상대 캐시 경로를 사용할 때 fs 캐시 `max_size_to_total_space` 설정이 올바르게 동작하지 않던 문제를 수정했습니다. [#81237](https://github.com/ClickHouse/ClickHouse/pull/81237) ([Kseniia Sumarokova](https://github.com/kssenii)).
+* Parquet 포맷으로 const 튜플 또는 맵을 출력할 때 clickhouse-local이 충돌하는 문제를 수정했습니다. [#81249](https://github.com/ClickHouse/ClickHouse/pull/81249) ([Michael Kolupaev](https://github.com/al13n321)).
+* 네트워크를 통해 전달된 배열 오프셋을 검증합니다. [#81269](https://github.com/ClickHouse/ClickHouse/pull/81269) ([Azat Khuzhin](https://github.com/azat)).
+* 빈 테이블을 조인하고 윈도우 함수를 사용하는 쿼리에서 발생하는 일부 예외적인 경우를 수정했습니다. 이 버그로 인해 병렬 스트림 수가 폭증해 OOM이 발생할 수 있습니다. [#81299](https://github.com/ClickHouse/ClickHouse/pull/81299) ([Alexander Gololobov](https://github.com/davenger)).
+* 데이터 레이크 Cluster 함수(`deltaLakeCluster`, `icebergCluster` 등) 수정 사항: (1) 이전 분석기를 사용해 `Cluster` 함수를 사용할 때 `DataLakeConfiguration`에서 발생할 수 있는 segfault 문제 수정, (2) 중복되는 데이터 레이크 메타데이터 업데이트 제거(불필요한 추가 객체 스토리지 요청), (3) 포맷을 명시적으로 지정하지 않았을 때 객체 스토리지에서 중복 목록 조회가 발생하던 문제 수정(이는 비클러스터 데이터 레이크 엔진에는 이미 적용되어 있었음). [#81300](https://github.com/ClickHouse/ClickHouse/pull/81300) ([Kseniia Sumarokova](https://github.com/kssenii)).
+* 손실된 Keeper 메타데이터를 복구할 수 있도록 `force_restore_data` 플래그를 수정했습니다. [#81324](https://github.com/ClickHouse/ClickHouse/pull/81324) ([Raúl Marín](https://github.com/Algunenano)).
+* delta-kernel의 region 오류를 수정했습니다. [#79914](https://github.com/ClickHouse/ClickHouse/issues/79914) 관련 수정입니다. [#81353](https://github.com/ClickHouse/ClickHouse/pull/81353) ([Kseniia Sumarokova](https://github.com/kssenii)).
+* divideOrNull의 잘못된 JIT를 비활성화합니다. [#81370](https://github.com/ClickHouse/ClickHouse/pull/81370) ([Raúl Marín](https://github.com/Algunenano)).
+* MergeTree 테이블의 파티션 컬럼 이름이 길 때 발생하던 삽입 오류를 수정했습니다. [#81390](https://github.com/ClickHouse/ClickHouse/pull/81390) ([hy123q](https://github.com/haoyangqian)).
+* 여러 manifest 파일의 내용을 메모리에 저장하지 않도록 수정했습니다. [#81470](https://github.com/ClickHouse/ClickHouse/pull/81470) ([Daniil Ivanik](https://github.com/divanik)).
+* 백그라운드 풀(`background_.*pool_size`)을 종료하는 동안 발생할 수 있는 크래시를 수정했습니다. [#81473](https://github.com/ClickHouse/ClickHouse/pull/81473) ([Azat Khuzhin](https://github.com/azat)).
+* `URL` 엔진을 사용하는 테이블에 쓸 때 발생하던 `Npy` 포맷의 범위를 벗어난 읽기 문제를 수정했습니다. 이로써 [#81356](https://github.com/ClickHouse/ClickHouse/issues/81356)가 해결되었습니다. [#81502](https://github.com/ClickHouse/ClickHouse/pull/81502) ([Alexey Milovidov](https://github.com/alexey-milovidov)).
+* Web UI에 `NaN%`가 표시되는 경우가 있습니다(전형적인 JavaScript 문제). [#81507](https://github.com/ClickHouse/ClickHouse/pull/81507) ([Alexey Milovidov](https://github.com/alexey-milovidov)).
+* `database_replicated_enforce_synchronous_settings=1`일 때 `DatabaseReplicated` 문제를 수정했습니다. [#81564](https://github.com/ClickHouse/ClickHouse/pull/81564) ([Azat Khuzhin](https://github.com/azat)).
+* LowCardinality(Nullable(...)) 타입의 정렬 순서를 바로잡았습니다. [#81583](https://github.com/ClickHouse/ClickHouse/pull/81583) ([Pervakov Grigorii](https://github.com/GrigoryPervakov)).
+* 요청을 소켓에서 끝까지 읽지 못한 경우 서버가 HTTP 연결을 유지해서는 안 됩니다. [#81595](https://github.com/ClickHouse/ClickHouse/pull/81595) ([Sema Checherinda](https://github.com/CheSema)).
+* 스칼라 상관 서브쿼리가 프로젝션 표현식의 널 허용 결과를 반환하도록 했습니다. 상관 서브쿼리가 빈 결과 집합을 반환하는 경우를 수정했습니다. [#81632](https://github.com/ClickHouse/ClickHouse/pull/81632) ([Dmitry Novik](https://github.com/novikd)).
+* `ReplicatedMergeTree`에 `ATTACH`할 때 발생하는 `Unexpected relative path for a deduplicated part` 문제를 수정했습니다. [#81647](https://github.com/ClickHouse/ClickHouse/pull/81647) ([Azat Khuzhin](https://github.com/azat)).
+* 쿼리 설정 `use_iceberg_partition_pruning`은 전역 Context를 사용하고 쿼리 Context를 사용하지 않기 때문에 Iceberg 스토리지에는 적용되지 않습니다. 기본값이 true이므로 심각한 문제는 아닙니다. 이 PR로 수정할 수 있습니다. [#81673](https://github.com/ClickHouse/ClickHouse/pull/81673) ([Han Fei](https://github.com/hanfei1991)).
+* MergeTree 설정 `merge_max_block_size`가 0이 아닌지 확인하는 유효성 검사를 추가했습니다. [#81693](https://github.com/ClickHouse/ClickHouse/pull/81693) ([Bharat Nallan](https://github.com/bharatnc)).
+* `DROP VIEW ` 쿼리가 멈추는 `clickhouse-local` 문제를 수정했습니다. [#81705](https://github.com/ClickHouse/ClickHouse/pull/81705) ([Bharat Nallan](https://github.com/bharatnc)).
+* 일부 경우 발생하던 StorageRedis join 문제를 수정했습니다. [#81736](https://github.com/ClickHouse/ClickHouse/pull/81736) ([Pervakov Grigorii](https://github.com/GrigoryPervakov)).
+* 빈 `USING ()`와 기존 분석기가 활성화된 상태에서 발생하던 `ConcurrentHashJoin` 충돌 문제를 수정했습니다. [#81754](https://github.com/ClickHouse/ClickHouse/pull/81754) ([Nikita Taranov](https://github.com/nickitat)).
+* Keeper 수정: 로그에 잘못된 항목이 있으면 새 로그의 커밋을 차단합니다. 이전에는 리더가 일부 로그를 잘못 적용한 경우, 팔로워가 digest 불일치를 감지하고 중단하더라도 새 로그를 계속 커밋했습니다. [#81780](https://github.com/ClickHouse/ClickHouse/pull/81780) ([Antonio Andelic](https://github.com/antonio2368)).

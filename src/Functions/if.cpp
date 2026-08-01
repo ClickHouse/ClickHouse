@@ -41,6 +41,7 @@ namespace DB
 namespace Setting
 {
     extern const SettingsBool use_variant_as_common_type;
+    extern const SettingsBool allow_lossy_numeric_supertype;
 }
 
 namespace ErrorCodes
@@ -279,13 +280,20 @@ public:
     static constexpr auto name = "if";
     static FunctionPtr create(ContextPtr context)
     {
-        return std::make_shared<FunctionIf>(context->getSettingsRef()[Setting::use_variant_as_common_type]);
+        const auto & settings = context->getSettingsRef();
+        return std::make_shared<FunctionIf>(
+            settings[Setting::use_variant_as_common_type], settings[Setting::allow_lossy_numeric_supertype]);
     }
 
-    explicit FunctionIf(bool use_variant_when_no_common_type_ = false) : FunctionIfBase(), use_variant_when_no_common_type(use_variant_when_no_common_type_) {}
+    explicit FunctionIf(bool use_variant_when_no_common_type_ = false, bool allow_lossy_numeric_supertype_ = false)
+        : FunctionIfBase()
+        , use_variant_when_no_common_type(use_variant_when_no_common_type_)
+        , allow_lossy_numeric_supertype(allow_lossy_numeric_supertype_)
+    {}
 
 private:
     bool use_variant_when_no_common_type = false;
+    bool allow_lossy_numeric_supertype = false;
 
     template <typename T0, typename T1>
     static UInt32 decimalScale(const ColumnsWithTypeAndName & arguments [[maybe_unused]])
@@ -1013,13 +1021,13 @@ private:
             {
                 data_column = const_nullable_arg->getNestedColumnPtr();
                 if (!data_column->empty())
-                    cond_is_null = const_nullable_arg->getNullMapData()[0];
+                    cond_is_null = cond_is_null || const_nullable_arg->getNullMapData()[0];
             }
 
-            if (!data_column->empty())
+            if (!cond_is_null && !data_column->empty())
             {
-                cond_is_true = !cond_is_null && checkAndGetColumn<ColumnUInt8>(*data_column).getBool(0);
-                cond_is_false = !cond_is_null && !cond_is_true;
+                cond_is_true = checkAndGetColumn<ColumnUInt8>(*data_column).getBool(0);
+                cond_is_false = !cond_is_true;
             }
         }
 
@@ -1317,7 +1325,9 @@ private:
         /// Check if condition is const or null to not create full mask from it.
         if ((isColumnConst(*arguments[0].column) || arguments[0].column->onlyNull()) && !arguments[0].column->empty())
         {
-            bool value = arguments[0].column->getBool(0);
+            /// `onlyNull` columns (e.g. `Const(Nullable(Nothing))`) are treated as the false branch:
+            /// `getBool` would throw on the dummy nested column, but `if(NULL, then, else)` returns `else`.
+            const bool value = !arguments[0].column->onlyNull() && arguments[0].column->getBool(0);
             executeColumnIfNeeded(arguments[1], !value);
             executeColumnIfNeeded(arguments[2], value);
             return;
@@ -1366,9 +1376,9 @@ public:
         }
 
         if (use_variant_when_no_common_type)
-            return getLeastSupertypeOrVariant(DataTypes{arguments[1], arguments[2]});
+            return getLeastSupertypeOrVariant(DataTypes{arguments[1], arguments[2]}, allow_lossy_numeric_supertype);
 
-        return getLeastSupertype(DataTypes{arguments[1], arguments[2]});
+        return getLeastSupertype(DataTypes{arguments[1], arguments[2]}, allow_lossy_numeric_supertype);
     }
 
     ColumnPtr executeImpl(const ColumnsWithTypeAndName & args, const DataTypePtr & result_type, size_t input_rows_count) const override
@@ -1517,7 +1527,7 @@ Performs conditional branching.
 - If the condition `cond` evaluates to a non-zero value, the function returns the result of the expression `then`.
 - If `cond` evaluates to zero or NULL, the result of the `else` expression is returned.
 
-The setting [`short_circuit_function_evaluation`](/operations/settings/settings#short_circuit_function_evaluation) controls whether short-circuit evaluation is used.
+The setting [`short_circuit_function_evaluation`](/reference/settings/session-settings/short-circuit-function-evaluation#short_circuit_function_evaluation) controls whether short-circuit evaluation is used.
 
 If enabled, the `then` expression is evaluated only on rows where `cond` is true and the `else` expression where `cond` is false.
 
@@ -1553,9 +1563,9 @@ SELECT if(1, 2 + 2, 2 + 6) AS res;
     factory.registerFunction<FunctionIf>(documentation, FunctionFactory::Case::Insensitive);
 }
 
-FunctionOverloadResolverPtr createInternalFunctionIfOverloadResolver(bool use_variant_as_common_type)
+FunctionOverloadResolverPtr createInternalFunctionIfOverloadResolver(bool use_variant_as_common_type, bool allow_lossy_numeric_supertype)
 {
-    return std::make_unique<FunctionToOverloadResolverAdaptor>(std::make_shared<FunctionIf>(use_variant_as_common_type));
+    return std::make_unique<FunctionToOverloadResolverAdaptor>(std::make_shared<FunctionIf>(use_variant_as_common_type, allow_lossy_numeric_supertype));
 }
 
 }
