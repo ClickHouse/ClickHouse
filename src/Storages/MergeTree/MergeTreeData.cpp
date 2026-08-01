@@ -8765,6 +8765,13 @@ std::optional<std::set<String>> MergeTreeData::getPartitionIdsPrunedByPredicate(
     }
 
     auto predicate_clone = predicate->clone();
+
+    /// The predicate comes from a serialized mutation command that was re-parsed, so its set
+    /// operations (`UNION`/`INTERSECT`/`EXCEPT`) are not normalized yet and the analyzer would
+    /// reject them with "UNION mode UNION_DEFAULT must be normalized". Normalize them exactly as
+    /// the mutation execution path does in `getPartitionAndPredicateExpressionForMutationCommand`.
+    normalizeSetOperations(predicate_clone, query_context);
+
     TreeRewriter tree_rewriter(query_context);
     auto syntax_result = tree_rewriter.analyze(predicate_clone, columns);
     auto actions_dag = ExpressionAnalyzer(predicate_clone, syntax_result, query_context).getActionsDAG(false);

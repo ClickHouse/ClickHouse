@@ -11,3 +11,8 @@ replicated, ALIAS column in predicate
 2024-02-01	2	202
 replicated, MATERIALIZED column in predicate
 2024-02-01	2	203
+replicated, set operations in predicate
+2024-02-01	2	204
+2024-02-01	2	205
+2024-02-01	2	206
+2024-02-01	2	206

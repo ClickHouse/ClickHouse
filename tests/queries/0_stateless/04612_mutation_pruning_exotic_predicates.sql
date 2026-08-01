@@ -56,4 +56,21 @@ SELECT 'replicated, MATERIALIZED column in predicate';
 ALTER TABLE t_mutation_pruning_exotic_r UPDATE y = y + 1 WHERE m = 404;
 SELECT * FROM t_mutation_pruning_exotic_r ORDER BY d;
 
+-- The mutation predicate is stored as text and re-parsed, which resets the set operation nodes to
+-- their un-normalized form. The pruning analysis has to normalize them exactly like the mutation
+-- execution path, otherwise these mutations fail with "UNION mode UNION_DEFAULT must be normalized".
+SELECT 'replicated, set operations in predicate';
+ALTER TABLE t_mutation_pruning_exotic_r UPDATE y = y + 1 WHERE x IN ((SELECT 2) UNION DISTINCT (SELECT 3));
+SELECT * FROM t_mutation_pruning_exotic_r ORDER BY d;
+
+ALTER TABLE t_mutation_pruning_exotic_r UPDATE y = y + 1 WHERE x IN ((SELECT 2) EXCEPT (SELECT 3));
+SELECT * FROM t_mutation_pruning_exotic_r ORDER BY d;
+
+ALTER TABLE t_mutation_pruning_exotic_r UPDATE y = y + 1 WHERE x IN ((SELECT 2) INTERSECT (SELECT 2));
+SELECT * FROM t_mutation_pruning_exotic_r ORDER BY d;
+
+-- The same, but over the partition key expression, so the pruner does look at the predicate.
+ALTER TABLE t_mutation_pruning_exotic_r DELETE WHERE toYYYYMM(d) IN ((SELECT 202401) UNION DISTINCT (SELECT 202403));
+SELECT * FROM t_mutation_pruning_exotic_r ORDER BY d;
+
 DROP TABLE t_mutation_pruning_exotic_r;
