@@ -76,6 +76,17 @@ class ClickHouseService:
                 if not link_path.exists():
                     Utils.link(clickhouse_bin, link_path)
 
+            # The build artifacts are self-extracting: the first invocation
+            # decompresses the real ELF in place. An unstripped release build
+            # expands to over 4 GB, which on its own can outlast the pid-file
+            # wait in `_wait_ready`, so the server gets killed mid-extraction
+            # before it ever runs and the job fails with `Failed to get PID`.
+            # Extract synchronously here - the same thing the install stage in
+            # `functional_tests.py` does - so that wait covers server startup
+            # only. Decompression is a no-op once the binary is extracted, so
+            # this is cheap on repeat starts within a job.
+            Shell.run(f"{clickhouse_bin} --version", verbose=True, strict=True)
+
             # Run config hooks in order, passing the config and data dirs so a
             # hook can build paths into either. Typically the first is
             # `install_base`, then per-job tune-ups that customize it.
@@ -205,14 +216,36 @@ class ClickHouseService:
         raise RuntimeError(f"Server not ready after {attempts * delay}s")
 
     @staticmethod
-    def collect_cores(directory) -> list:
+    def collect_cores(directory, aes_key_path=None, name_prefix="") -> list:
+        """Compress and encrypt up to three `core.*` files from a single directory.
+
+        Artifacts are uploaded under their basename alone
+        (`S3.copy_file_to_s3` appends `Path(local_path).name`), so a caller that
+        collects from more than one directory must keep both the AES key and the
+        core names unique across those directories or the later upload silently
+        overwrites the earlier one:
+
+        `aes_key_path` overrides the default per-directory key location. Pass one
+        shared path for all directories of a job: `Utils.encrypt` only generates a
+        key when `<aes_key_path>.rsa` is absent, so every core is then wrapped with
+        the same key and a single `aes.key.rsa` is emitted. Without it each
+        directory gets its own key under the same basename, and the surviving
+        upload cannot decrypt the other directory's cores.
+
+        `name_prefix` disambiguates core basenames, which are `core.<comm>.<pid>`
+        and thus collide across replicas running the same thread.
+        """
         key_path = f"{repo_dir}/ci/defs/public.pem"
         assert Path(key_path).exists(), f"RSA public key not found: {key_path}"
-        aes_key_path = str(Path(directory) / "aes.key")
+        if aes_key_path is None:
+            aes_key_path = str(Path(directory) / "aes.key")
+        aes_key_path = str(aes_key_path)
         encrypted = []
         for core in sorted(Path(directory).glob("core.*"))[:3]:
             if not core.name.endswith(".zst") and not core.name.endswith(".enc"):
-                zst_path = Utils.compress_zst(core)
+                zst_path = Utils.compress_zst(
+                    core, dest_path=str(core.parent / f"{name_prefix}{core.name}.zst")
+                )
                 encrypted.append(Utils.encrypt(str(zst_path), key_path, aes_key_path))
         if encrypted and Path(f"{aes_key_path}.rsa").exists():
             encrypted.append(f"{aes_key_path}.rsa")
