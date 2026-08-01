@@ -31,7 +31,8 @@
 0	1
 1	1
 2	1
--- ROLLUP ... WITH TOTALS: subtotal rows via grouping conditional, grand total via totals port
+-- ROLLUP ... WITH TOTALS: every row here comes from the grouping conditional, including the
+-- grand total (plain WITH TOTALS is declined outright, so the deleted mechanism never ran)
 	3
 0	1
 1	1
@@ -87,7 +88,8 @@
 -- DISTRIBUTED plain WITH TOTALS. A shard receives the query as TEXT, so any correction recorded
 -- beside the query tree cannot reach it; the shard would re-analyze GROUP BY <bare column> and
 -- project f(default). Pinned on both prefer_localhost_replica values (the runner randomizes it)
--- and both serialize_query_plan values (the distributed plan job sets it suite-wide).
+-- and with serialize_query_plan = 0, so the distributed plan job (which sets it suite-wide) takes
+-- the same serialize-as-text path these assertions describe.
 0	1
 1	1
 2	1
@@ -261,9 +263,8 @@
 2	5
 	6
 	7
--- INTERPOLATE under plain WITH TOTALS: the totals-port overwrite is a whole-column projection
--- overwrite and cannot reach the INTERPOLATE clause, so the key stays wrapped there (correct but
--- unoptimized). Result must still match the optimization-disabled arm.
+-- INTERPOLATE under plain WITH TOTALS: the key stays wrapped because plain WITH TOTALS is
+-- declined outright (correct but unoptimized). Result must still match the disabled arm.
 0	1
 1	2
 2	3
@@ -282,6 +283,60 @@
 2	7
 
 	6
+-- HAVING over the eliminated key. The predicate is evaluated after aggregation, so it must see
+-- the corrected value: HAVING k = \'\' selects the subtotal row, and HAVING k = \'0\' must not.
+-- Each is paired with its optimization-disabled oracle. Every row carries its own label: the
+-- two CUBE cells are complementary, so an unlabelled pair would let a row lost by one and a row
+-- gained by the other cancel out in the line diff.
+cube-empty		3
+cube-empty off		3
+cube-zero	0	1
+cube-zero off	0	1
+-- same through the expression rather than the alias, under ROLLUP
+rollup-expr		3
+rollup-expr off		3
+-- and under GROUPING SETS
+grouping-sets		3
+grouping-sets off		3
+-- a CONSTANT GROUP BY key makes the whole query decline. The planner drops such a key when the
+-- query has aggregates, and whether it does so also depends on initiator-vs-shard flags this
+-- pass cannot read, so the key count the grouping conditional is built from would be too large
+-- and the conditional would mis-decide present-vs-absent. Declining matches master, which skips
+-- the whole modifier family. Each shape is paired with its optimization-disabled oracle.
+	3
+0	1
+1	1
+2	1
+	3
+0	1
+1	1
+2	1
+	3
+0	1
+1	1
+2	1
+	3
+0	1
+1	1
+2	1
+-- GROUPING SETS takes a different pruning branch in the planner, so cover it too: once with the
+-- constant beside the injective key, and once as the only key of its own set.
+	3
+0	1
+1	1
+2	1
+	3
+0	1
+1	1
+2	1
+	3
+0	1
+1	1
+2	1
+	3
+0	1
+1	1
+2	1
 -- per-modifier firing assertion: 1 means the unwrap actually happened (no injective function is
 -- left in the GROUP BY section of the analyzed tree). Without this the assertions above would
 -- also pass if the optimization silently declined for every modifier.
@@ -307,3 +362,11 @@ LIMIT BY	1
 LIMIT BY off	0
 INTERPOLATE	1
 INTERPOLATE off	0
+HAVING	1
+HAVING off	0
+-- the constant-key decline is targeted: the shape with a constant key reads 0 (declined) while a
+-- sibling with the SAME predicate whose second key is a non-constant function still reads 1, so
+-- the decline has not silently disabled the whole modifier family.
+constant key declined	0
+non-constant sibling fires	1
+constant key declined, GROUPING SETS	0

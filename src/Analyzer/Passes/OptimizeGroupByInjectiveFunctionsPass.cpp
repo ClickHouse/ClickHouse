@@ -205,7 +205,7 @@ private:
     {
         /// A grouping conditional corrects every row of a grouping-set modifier because a __grouping_set
         /// column exists on each of them. Plain WITH TOTALS has no such column, and no correction expressed
-        /// outside the query tree survives conversion to AST, so its keys stay wrapped. See declineWithTotals.
+        /// outside the query tree survives conversion to AST, so its keys stay wrapped: return below.
         const bool has_grouping_set_column = query.isGroupByWithCube() || query.isGroupByWithRollup()
             || query.isGroupByWithGroupingSets();
 
@@ -227,7 +227,16 @@ private:
         QueryTreeNodePtrWithHashSet all_keys;
         for (const auto * set : sets)
             for (const auto & key : *set)
+            {
+                /// The planner drops a constant key when the query has aggregates, and whether it does so
+                /// also depends on flags this pass cannot see (initiator vs shard). The grouping conditional
+                /// is built from a key count taken here, so a key that execution removes would make that
+                /// count too large and the conditional would mis-decide present-vs-absent. Keep everything
+                /// wrapped instead. See PlannerExpressionAnalysis.cpp, check_constants_for_group_by_key.
+                if (key->as<ConstantNode>())
+                    return;
                 all_keys.insert(key);
+            }
 
         std::vector<EliminatedKey> eliminated;
         /// Leaves already claimed, with the original key each came from. A later key may reuse a claimed

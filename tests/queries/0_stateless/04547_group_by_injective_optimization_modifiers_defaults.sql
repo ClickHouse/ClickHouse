@@ -35,7 +35,8 @@ SELECT toString(number) AS s, count() AS c FROM numbers(3)
 GROUP BY CUBE(toString(number))
 ORDER BY grouping(toString(number)) DESC, s;
 
-SELECT '-- ROLLUP ... WITH TOTALS: subtotal rows via grouping conditional, grand total via totals port';
+SELECT '-- ROLLUP ... WITH TOTALS: every row here comes from the grouping conditional, including the';
+SELECT '-- grand total (plain WITH TOTALS is declined outright, so the deleted mechanism never ran)';
 SELECT toString(number) AS s, count() AS c FROM numbers(3)
 GROUP BY ROLLUP(toString(number)) WITH TOTALS
 ORDER BY grouping(toString(number)) DESC, s;
@@ -88,7 +89,8 @@ SETTINGS optimize_injective_functions_in_group_by = 0;
 SELECT '-- DISTRIBUTED plain WITH TOTALS. A shard receives the query as TEXT, so any correction recorded';
 SELECT '-- beside the query tree cannot reach it; the shard would re-analyze GROUP BY <bare column> and';
 SELECT '-- project f(default). Pinned on both prefer_localhost_replica values (the runner randomizes it)';
-SELECT '-- and both serialize_query_plan values (the distributed plan job sets it suite-wide).';
+SELECT '-- and with serialize_query_plan = 0, so the distributed plan job (which sets it suite-wide) takes';
+SELECT '-- the same serialize-as-text path these assertions describe.';
 SELECT toString(number) AS s, count() AS c FROM remote('127.0.0.1', numbers(3))
 GROUP BY toString(number) WITH TOTALS ORDER BY s
 SETTINGS prefer_localhost_replica = 0, serialize_query_plan = 0;
@@ -227,15 +229,70 @@ GROUP BY ROLLUP(toString(x))
 ORDER BY c WITH FILL FROM 1 TO 8 INTERPOLATE (k AS k)
 SETTINGS optimize_injective_functions_in_group_by = 0;
 
-SELECT '-- INTERPOLATE under plain WITH TOTALS: the totals-port overwrite is a whole-column projection';
-SELECT '-- overwrite and cannot reach the INTERPOLATE clause, so the key stays wrapped there (correct but';
-SELECT '-- unoptimized). Result must still match the optimization-disabled arm.';
+SELECT '-- INTERPOLATE under plain WITH TOTALS: the key stays wrapped because plain WITH TOTALS is';
+SELECT '-- declined outright (correct but unoptimized). Result must still match the disabled arm.';
 SELECT toString(x) AS k, count() AS c FROM (SELECT arrayJoin([0, 1, 1, 2, 2, 2]) AS x)
 GROUP BY toString(x) WITH TOTALS
 ORDER BY c WITH FILL FROM 1 TO 8 INTERPOLATE (k AS k);
 SELECT toString(x) AS k, count() AS c FROM (SELECT arrayJoin([0, 1, 1, 2, 2, 2]) AS x)
 GROUP BY toString(x) WITH TOTALS
 ORDER BY c WITH FILL FROM 1 TO 8 INTERPOLATE (k AS k)
+SETTINGS optimize_injective_functions_in_group_by = 0;
+
+SELECT '-- HAVING over the eliminated key. The predicate is evaluated after aggregation, so it must see';
+SELECT '-- the corrected value: HAVING k = '''' selects the subtotal row, and HAVING k = ''0'' must not.';
+SELECT '-- Each is paired with its optimization-disabled oracle. Every row carries its own label: the';
+SELECT '-- two CUBE cells are complementary, so an unlabelled pair would let a row lost by one and a row';
+SELECT '-- gained by the other cancel out in the line diff.';
+SELECT 'cube-empty', toString(number) AS k, count() AS c FROM numbers(3)
+GROUP BY CUBE(toString(number)) HAVING k = '' ORDER BY k, c;
+SELECT 'cube-empty off', toString(number) AS k, count() AS c FROM numbers(3)
+GROUP BY CUBE(toString(number)) HAVING k = '' ORDER BY k, c
+SETTINGS optimize_injective_functions_in_group_by = 0;
+SELECT 'cube-zero', toString(number) AS k, count() AS c FROM numbers(3)
+GROUP BY CUBE(toString(number)) HAVING k = '0' ORDER BY k, c;
+SELECT 'cube-zero off', toString(number) AS k, count() AS c FROM numbers(3)
+GROUP BY CUBE(toString(number)) HAVING k = '0' ORDER BY k, c
+SETTINGS optimize_injective_functions_in_group_by = 0;
+SELECT '-- same through the expression rather than the alias, under ROLLUP';
+SELECT 'rollup-expr', toString(number) AS k, count() AS c FROM numbers(3)
+GROUP BY ROLLUP(toString(number)) HAVING toString(number) = '' ORDER BY k, c;
+SELECT 'rollup-expr off', toString(number) AS k, count() AS c FROM numbers(3)
+GROUP BY ROLLUP(toString(number)) HAVING toString(number) = '' ORDER BY k, c
+SETTINGS optimize_injective_functions_in_group_by = 0;
+SELECT '-- and under GROUPING SETS';
+SELECT 'grouping-sets', toString(number) AS k, count() AS c FROM numbers(3)
+GROUP BY GROUPING SETS ((toString(number)), ()) HAVING k = '' ORDER BY k, c;
+SELECT 'grouping-sets off', toString(number) AS k, count() AS c FROM numbers(3)
+GROUP BY GROUPING SETS ((toString(number)), ()) HAVING k = '' ORDER BY k, c
+SETTINGS optimize_injective_functions_in_group_by = 0;
+
+SELECT '-- a CONSTANT GROUP BY key makes the whole query decline. The planner drops such a key when the';
+SELECT '-- query has aggregates, and whether it does so also depends on initiator-vs-shard flags this';
+SELECT '-- pass cannot read, so the key count the grouping conditional is built from would be too large';
+SELECT '-- and the conditional would mis-decide present-vs-absent. Declining matches master, which skips';
+SELECT '-- the whole modifier family. Each shape is paired with its optimization-disabled oracle.';
+SELECT toString(number) AS k, count() AS c FROM numbers(3)
+GROUP BY CUBE(toString(number), toUInt8(7)) ORDER BY k, c;
+SELECT toString(number) AS k, count() AS c FROM numbers(3)
+GROUP BY CUBE(toString(number), toUInt8(7)) ORDER BY k, c
+SETTINGS optimize_injective_functions_in_group_by = 0;
+SELECT toString(number) AS k, count() AS c FROM numbers(3)
+GROUP BY ROLLUP(toString(number), toUInt8(7)) ORDER BY k, c;
+SELECT toString(number) AS k, count() AS c FROM numbers(3)
+GROUP BY ROLLUP(toString(number), toUInt8(7)) ORDER BY k, c
+SETTINGS optimize_injective_functions_in_group_by = 0;
+SELECT '-- GROUPING SETS takes a different pruning branch in the planner, so cover it too: once with the';
+SELECT '-- constant beside the injective key, and once as the only key of its own set.';
+SELECT toString(number) AS k, count() AS c FROM numbers(3)
+GROUP BY GROUPING SETS ((toString(number), toUInt8(7)), ()) ORDER BY k, c;
+SELECT toString(number) AS k, count() AS c FROM numbers(3)
+GROUP BY GROUPING SETS ((toString(number), toUInt8(7)), ()) ORDER BY k, c
+SETTINGS optimize_injective_functions_in_group_by = 0;
+SELECT toString(number) AS k, count() AS c FROM numbers(3)
+GROUP BY GROUPING SETS ((toString(number)), (toUInt8(7))) ORDER BY k, c;
+SELECT toString(number) AS k, count() AS c FROM numbers(3)
+GROUP BY GROUPING SETS ((toString(number)), (toUInt8(7))) ORDER BY k, c
 SETTINGS optimize_injective_functions_in_group_by = 0;
 
 SELECT '-- per-modifier firing assertion: 1 means the unwrap actually happened (no injective function is';
@@ -325,14 +382,14 @@ SELECT 'LIMIT BY', countIf(explain LIKE '%toString%' AND rn > gb AND rn < nxt) =
            min(if(explain LIKE '  GROUP BY%', rowNumberInAllBlocks(), 999999)) OVER () AS gb
     FROM (EXPLAIN QUERY TREE run_passes = 1
           SELECT toString(x) AS k, count() AS c FROM (SELECT arrayJoin([0, 1, 1, 2, 2, 2]) AS x)
-          GROUP BY CUBE(toString(x)))));
+          GROUP BY CUBE(toString(x)) ORDER BY k, c LIMIT 1 BY k)));
 SELECT 'LIMIT BY off', countIf(explain LIKE '%toString%' AND rn > gb AND rn < nxt) = 0 FROM (
     SELECT explain, rn, gb, min(if(rn > gb AND match(explain, '^  [A-Z]'), rn, 999999)) OVER () AS nxt FROM (
     SELECT explain, rowNumberInAllBlocks() AS rn,
            min(if(explain LIKE '  GROUP BY%', rowNumberInAllBlocks(), 999999)) OVER () AS gb
     FROM (EXPLAIN QUERY TREE run_passes = 1
           SELECT toString(x) AS k, count() AS c FROM (SELECT arrayJoin([0, 1, 1, 2, 2, 2]) AS x)
-          GROUP BY CUBE(toString(x))
+          GROUP BY CUBE(toString(x)) ORDER BY k, c LIMIT 1 BY k
           SETTINGS optimize_injective_functions_in_group_by = 0)));
 SELECT 'INTERPOLATE', countIf(explain LIKE '%toString%' AND rn > gb AND rn < nxt) = 0 FROM (
     SELECT explain, rn, gb, min(if(rn > gb AND match(explain, '^  [A-Z]'), rn, 999999)) OVER () AS nxt FROM (
@@ -351,3 +408,43 @@ SELECT 'INTERPOLATE off', countIf(explain LIKE '%toString%' AND rn > gb AND rn <
           GROUP BY CUBE(toString(x))
           ORDER BY c WITH FILL FROM 1 TO 8 INTERPOLATE (k AS k)
           SETTINGS optimize_injective_functions_in_group_by = 0)));
+SELECT 'HAVING', countIf(explain LIKE '%toString%' AND rn > gb AND rn < nxt) = 0 FROM (
+    SELECT explain, rn, gb, min(if(rn > gb AND match(explain, '^  [A-Z]'), rn, 999999)) OVER () AS nxt FROM (
+    SELECT explain, rowNumberInAllBlocks() AS rn,
+           min(if(explain LIKE '  GROUP BY%', rowNumberInAllBlocks(), 999999)) OVER () AS gb
+    FROM (EXPLAIN QUERY TREE run_passes = 1
+          SELECT toString(number) AS k, count() AS c FROM numbers(3)
+          GROUP BY CUBE(toString(number)) HAVING k = '')));
+SELECT 'HAVING off', countIf(explain LIKE '%toString%' AND rn > gb AND rn < nxt) = 0 FROM (
+    SELECT explain, rn, gb, min(if(rn > gb AND match(explain, '^  [A-Z]'), rn, 999999)) OVER () AS nxt FROM (
+    SELECT explain, rowNumberInAllBlocks() AS rn,
+           min(if(explain LIKE '  GROUP BY%', rowNumberInAllBlocks(), 999999)) OVER () AS gb
+    FROM (EXPLAIN QUERY TREE run_passes = 1
+          SELECT toString(number) AS k, count() AS c FROM numbers(3)
+          GROUP BY CUBE(toString(number)) HAVING k = ''
+          SETTINGS optimize_injective_functions_in_group_by = 0)));
+
+SELECT '-- the constant-key decline is targeted: the shape with a constant key reads 0 (declined) while a';
+SELECT '-- sibling with the SAME predicate whose second key is a non-constant function still reads 1, so';
+SELECT '-- the decline has not silently disabled the whole modifier family.';
+SELECT 'constant key declined', countIf(explain LIKE '%toString%' AND rn > gb AND rn < nxt) = 0 FROM (
+    SELECT explain, rn, gb, min(if(rn > gb AND match(explain, '^  [A-Z]'), rn, 999999)) OVER () AS nxt FROM (
+    SELECT explain, rowNumberInAllBlocks() AS rn,
+           min(if(explain LIKE '  GROUP BY%', rowNumberInAllBlocks(), 999999)) OVER () AS gb
+    FROM (EXPLAIN QUERY TREE run_passes = 1
+          SELECT toString(number) AS k, count() AS c FROM numbers(3)
+          GROUP BY CUBE(toString(number), toUInt8(7)))));
+SELECT 'non-constant sibling fires', countIf(explain LIKE '%toString%' AND rn > gb AND rn < nxt) = 0 FROM (
+    SELECT explain, rn, gb, min(if(rn > gb AND match(explain, '^  [A-Z]'), rn, 999999)) OVER () AS nxt FROM (
+    SELECT explain, rowNumberInAllBlocks() AS rn,
+           min(if(explain LIKE '  GROUP BY%', rowNumberInAllBlocks(), 999999)) OVER () AS gb
+    FROM (EXPLAIN QUERY TREE run_passes = 1
+          SELECT toString(number) AS k, count() AS c FROM numbers(3)
+          GROUP BY CUBE(toString(number), toUInt8(number)))));
+SELECT 'constant key declined, GROUPING SETS', countIf(explain LIKE '%toString%' AND rn > gb AND rn < nxt) = 0 FROM (
+    SELECT explain, rn, gb, min(if(rn > gb AND match(explain, '^  [A-Z]'), rn, 999999)) OVER () AS nxt FROM (
+    SELECT explain, rowNumberInAllBlocks() AS rn,
+           min(if(explain LIKE '  GROUP BY%', rowNumberInAllBlocks(), 999999)) OVER () AS gb
+    FROM (EXPLAIN QUERY TREE run_passes = 1
+          SELECT toString(number) AS k, count() AS c FROM numbers(3)
+          GROUP BY GROUPING SETS ((toString(number), toUInt8(7)), ()))));
