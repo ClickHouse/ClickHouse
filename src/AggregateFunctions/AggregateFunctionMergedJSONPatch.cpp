@@ -89,14 +89,15 @@ namespace ErrorCodes
 
 /// Sort key types: concrete uniform structs, stored inline, no virtual dispatch.
 
-/// Helper to unwrap ColumnNullable if present; otherwise returns the column as-is.
+/// Helper to unwrap ColumnNullable if present; otherwise returns the input column.
 /// This is needed because columns can be wrapped in ColumnNullable at runtime even if
 /// the DataType wasn't detected as Nullable at factory construction time.
-static const IColumn & unwrapNullable(const IColumn & column)
+/// Returns a pointer to avoid dangling reference issues with temporaries.
+static const IColumn * unwrapNullable(const IColumn & column)
 {
     if (const auto * nullable = typeid_cast<const ColumnNullable *>(&column))
-        return nullable->getNestedColumn();
-    return column;
+        return &nullable->getNestedColumn();
+    return &column;
 }
 
 /// Fixed-width numeric and date/time types: (U)Int*, Float*, Decimal*, Date, DateTime, DateTime64
@@ -107,11 +108,33 @@ struct KeyFixed
 
     void set(const IColumn & column, size_t row)
     {
-        const auto & unwrapped = unwrapNullable(column);
-        value = assert_cast<const ColumnVectorOrDecimal<ValueType> &>(unwrapped).getData()[row];
+        const auto * unwrapped = unwrapNullable(column);
+        value = assert_cast<const ColumnVectorOrDecimal<ValueType> &>(*unwrapped).getData()[row];
     }
 
-    bool less(const KeyFixed & other) const { return value < other.value; }
+    bool less(const KeyFixed & other) const
+    {
+        // For floating-point types, NaN must sort to the end (same as ORDER BY DESC).
+        // This matches IColumn::compareAt(..., nan_direction_hint = -1) semantics.
+        if constexpr (std::is_floating_point_v<ValueType>)
+        {
+            // Both NaN: not less (maintain stable order)
+            if (std::isnan(value) && std::isnan(other.value))
+                return false;
+            // Only lhs is NaN: not less (NaN sorts to the end)
+            if (std::isnan(value))
+                return false;
+            // Only rhs is NaN: less (rhs sorts to the end)
+            if (std::isnan(other.value))
+                return true;
+            // Neither is NaN: standard comparison
+            return value < other.value;
+        }
+        else
+        {
+            return value < other.value;
+        }
+    }
 
     void serialize(WriteBuffer & buffer) const { writeBinary(value, buffer); }
 
@@ -125,8 +148,8 @@ struct KeyString
 
     void set(const IColumn & column, size_t row)
     {
-        const auto & unwrapped = unwrapNullable(column);
-        value = unwrapped.getDataAt(row);
+        const auto * unwrapped = unwrapNullable(column);
+        value = unwrapped->getDataAt(row);
     }
 
     bool less(const KeyString & other) const { return value < other.value; }

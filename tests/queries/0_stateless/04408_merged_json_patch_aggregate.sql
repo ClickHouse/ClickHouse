@@ -469,4 +469,25 @@ FROM
     SELECT '{"a":2}'::JSON, toDateTime64('2020-01-02 00:00:00', 3)
 );
 
+-- Float64 sort keys with NaN must sort NaN to the end (not let it override finite versions).
+-- Regression test: NaN should never override a finite version; it sorts to the end.
+SELECT toJSONString(mergedJSONPatch(patch, version))
+FROM
+(
+    SELECT '{"a":1}'::JSON AS patch, 1.0::Float64 AS version
+    UNION ALL
+    SELECT '{"a":2}'::JSON, nan::Float64
+);
+
+-- Nullable(Float64) sort keys with NaN must also sort NaN to the end.
+SELECT toJSONString(mergedJSONPatch(patch, version))
+FROM
+(
+    SELECT '{"a":1}'::JSON AS patch, 1.0::Nullable(Float64) AS version
+    UNION ALL
+    SELECT '{"a":2}'::JSON, nan::Nullable(Float64)
+);
+
+
+
 DROP TABLE t_bad_sort_keys;
