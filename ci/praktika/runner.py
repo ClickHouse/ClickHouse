@@ -497,6 +497,11 @@ class Runner:
                 result = Result.from_fs(job.name)
                 if host_metrics:
                     result.add_ext_key_value("metrics", host_metrics)
+                    # Flag over/under-utilized runners, but not for skipped jobs -
+                    # they did no real work, so their metrics are meaningless.
+                    if not result.is_skipped():
+                        for label, hint in HostMetricsCollector.classify(host_metrics):
+                            result.set_label(label, hint=hint)
                 if exit_code != 0:
                     if not result.is_completed():
                         if process.timeout_exceeded:
