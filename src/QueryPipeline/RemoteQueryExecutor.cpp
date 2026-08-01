@@ -961,10 +961,30 @@ void RemoteQueryExecutor::finish()
             /// executor as finished. Otherwise a RemoteSource whose output is closed before it sends
             /// its query (e.g. an empty-build ANY INNER JOIN that short-circuits the probe side) keeps
             /// re-entering its drain path via prepare()/work() and spins forever, because isFinished()
-            /// never becomes true. On Linux the async startup path always sends the query before this
-            /// point, so only the synchronous (non-Linux) send path is affected.
+            /// never becomes true.
             if (!sent_query)
             {
+                /// `sent_query` being false does not mean the replica is idle: on the asynchronous
+                /// startup path the sending fiber may be suspended inside `sendQueryUnlocked` - while
+                /// establishing the connection, or between the query write and the `sent_query = true`
+                /// that follows it - so the replica may already be executing the query. `tryCancel`
+                /// resolves that ambiguity: `read_context->cancel()` completes an in-flight send and
+                /// stops the fiber, after which `sent_query` tells the truth, and a `Cancel` packet is
+                /// sent to a replica that did receive the query.
+                ///
+                /// Marking the executor finished without doing this hides the connection from the
+                /// destructor - `isQueryPending` becomes false, so `connections->disconnect()` is
+                /// skipped - and the replica is left waiting on a socket nobody reads until
+                /// `receive_timeout` expires (300 seconds by default), holding the table locks of its
+                /// query for that long, which is enough to block a concurrent `DROP TABLE`.
+                tryCancel("Cancelling query because the result is no longer needed");
+
+                /// A replica that received the query still has undelivered packets on its connection,
+                /// so it must not go back to the pool in this out-of-sync state (see #93018) - the same
+                /// reasoning as in the branch below.
+                if (connections && sent_query)
+                    connections->disconnect();
+
                 finished = true;
             }
             else if (was_cancelled && !finished && connections && !draining && !drain_requested)
