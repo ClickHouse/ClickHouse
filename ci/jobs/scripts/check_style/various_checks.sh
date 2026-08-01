@@ -203,10 +203,12 @@ find $ROOT_PATH/tests/queries -iname '*.sql' -or -iname '*.sh' -or -iname '*.py'
 # Known exceptions where the command is not actually executed:
 # - 04307, 04339, 04350: the SYSTEM DROP text appears only inside SQL string literals passed to
 #   parseQueryToJSON/formatQueryFromJSON for AST round-trip and validation testing; nothing is executed.
+# - 04665: likewise, the SYSTEM DROP text is only passed to formatQuerySingleLine to check that
+#   `WITH TABLES` survives a format -> parse round-trip; nothing is executed.
 tests_with_system_drop=( $(
     find $ROOT_PATH/tests/queries -iname '*.sql' -or -iname '*.sh' -or -iname '*.py' -or -iname '*.j2' |
         xargs grep -liP 'system\s+drop' |
-        grep -vP '04307_ast_json_roundtrip_lossless|04339_ast_json_review_followup_hardening|04350_ast_json_parser_impossible_field_combinations' |
+        grep -vP '04307_ast_json_roundtrip_lossless|04339_ast_json_review_followup_hardening|04350_ast_json_parser_impossible_field_combinations|04665_system_drop_db_replica_with_tables_roundtrip' |
         sort -u
 ) )
 for test_case in "${tests_with_system_drop[@]}"; do
