@@ -1182,6 +1182,9 @@ void RemoteQueryExecutor::cancel()
 
 void RemoteQueryExecutor::cancelUnlocked()
 {
+    /// Terminal for this executor when cancellation never reaches `finish()` (e.g. `RemoteSource::onCancel`).
+    flushDeferredProgress();
+
     {
         LockAndBlocker lock(external_tables_mutex);
 
