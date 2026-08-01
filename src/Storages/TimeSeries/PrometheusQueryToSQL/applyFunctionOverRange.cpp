@@ -99,8 +99,19 @@ namespace
                  /* drop_metric_name = */ true,
              }},
 
+            {"changes",
+             {
+                 "timeSeriesChangesToGrid",
+                 /* drop_metric_name = */ true,
+             }},
+
+            {"resets",
+             {
+                 "timeSeriesResetsToGrid",
+                 /* drop_metric_name = */ true,
+             }},
+
             /// TODO:
-            /// resets
             /// predict_linear
             /// avg_over_time
             /// min_over_time
