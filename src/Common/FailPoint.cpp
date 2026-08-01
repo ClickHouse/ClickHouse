@@ -74,8 +74,10 @@ static struct InitFiu
     ONCE(distributed_cache_fail_request_in_the_middle_of_request) \
     ONCE(object_storage_queue_fail_commit_once) \
     ONCE(object_storage_queue_fail_commit_after_success) \
+    ONCE(object_storage_queue_skip_one_file_in_batch) \
     ONCE(object_storage_queue_cancel_in_generate) \
     ONCE(object_storage_queue_sleep_in_generate) \
+    ONCE(object_storage_queue_fail_tags_fetch) \
     ONCE(distributed_cache_fail_continue_request) \
     ONCE(distributed_cache_fail_continue_read_request) \
     ONCE(distributed_cache_fail_choose_server) \
@@ -86,6 +88,9 @@ static struct InitFiu
     ONCE(distributed_cache_server_fail_show_streaming) \
     REGULAR(distributed_cache_fail_request_in_the_middle_of_request_always) \
     REGULAR(distributed_cache_cancel_query_in_response_wait) \
+    REGULAR(distributed_cache_assume_gap_buffered_on_seek) \
+    REGULAR(distributed_cache_simulate_undrained_leftovers) \
+    REGULAR(distributed_cache_wait_gap_buffered_on_seek) \
     REGULAR(file_cache_stall_free_space_ratio_keeping_thread) \
     PAUSEABLE(file_cache_pause_before_do_eviction) \
     REGULAR(file_cache_simulate_evicting_segment) \
@@ -100,6 +105,7 @@ static struct InitFiu
     REGULAR(write_through_cache_fail) \
     REGULAR(object_storage_queue_fail_commit) \
     REGULAR(object_storage_queue_fail_after_insert) \
+    REGULAR(object_storage_queue_fail_delete) \
     REGULAR(object_storage_queue_fail_startup) \
     REGULAR(smt_dont_merge_first_part) \
     REGULAR(smt_mutate_only_second_part) \
@@ -230,6 +236,7 @@ static struct InitFiu
     ONCE(parallel_replicas_reading_response_timeout) \
     ONCE(prepared_sets_build_ordered_set_inplace_fail) \
     REGULAR(parallel_replicas_force_local_replica_inactive) \
+    REGULAR(parallel_replicas_skip_aggregate_projection_on_follower) \
     ONCE(parallel_replicas_insert_select_drop_active_replica) \
     ONCE(database_iceberg_gcs) \
     REGULAR(rmt_delay_execute_drop_range) \
@@ -244,6 +251,7 @@ static struct InitFiu
     PAUSEABLE(truncate_database_tables_pause) \
     REGULAR(datalake_try_get_table_return_nullptr) \
     REGULAR(datalake_try_get_table_throw) \
+    REGULAR(datalake_get_tables_throw) \
     REGULAR(datalake_simulate_missing_table_state) \
     PAUSEABLE_ONCE(drop_database_before_exclusive_ddl_lock) \
     PAUSEABLE_ONCE(create_or_replace_before_rename) \
@@ -262,6 +270,7 @@ static struct InitFiu
     PAUSEABLE_ONCE(iceberg_compaction_merge_pause_in_step) \
     REGULAR(tcp_handler_fail_connection_setup) \
     REGULAR(distributed_plan_status_check_reenqueue_fault) \
+    REGULAR(distributed_plan_record_failure_while_starting_tasks) \
     ONCE(zk_send_thread_request_window_throw) \
     ONCE(zk_send_thread_operations_insert_throw) \
     REGULAR(replicated_database_status_finished_node_missing) \
@@ -347,8 +356,24 @@ void FailPointInjection::enableFailPoint(const String & fail_point_name)
     throw Exception(ErrorCodes::BAD_ARGUMENTS, "Cannot find fail point {}", fail_point_name);
 }
 
+static bool isRegisteredFailPoint(const String & fail_point_name)
+{
+#define M(NAME)                              \
+    if (fail_point_name == FailPoints::NAME) \
+        return true;
+    APPLY_FOR_FAILPOINTS(M, M, M, M)
+#undef M
+
+    return false;
+}
+
 void FailPointInjection::disableFailPoint(const String & fail_point_name)
 {
+    /// Registration is deliberately the only check: disabling a registered fail point that is
+    /// not currently enabled must stay a silent no-op, because callers do idempotent cleanup.
+    if (!isRegisteredFailPoint(fail_point_name))
+        throw Exception(ErrorCodes::BAD_ARGUMENTS, "Cannot find fail point {}", fail_point_name);
+
     std::lock_guard lock(mu);
     if (auto iter = fail_point_wait_channels.find(fail_point_name); iter != fail_point_wait_channels.end())
     {
@@ -364,6 +389,11 @@ void FailPointInjection::disableFailPoint(const String & fail_point_name)
 
 void FailPointInjection::notifyFailPoint(const String & fail_point_name)
 {
+    /// Reported separately from the missing channel below, so a typo is not described as a
+    /// registered fail point that nothing is waiting on.
+    if (!isRegisteredFailPoint(fail_point_name))
+        throw Exception(ErrorCodes::BAD_ARGUMENTS, "Cannot find fail point {}", fail_point_name);
+
     std::lock_guard lock(mu);
     if (auto iter = fail_point_wait_channels.find(fail_point_name); iter != fail_point_wait_channels.end())
     {
@@ -399,6 +429,12 @@ void FailPointInjection::notifyPauseAndWaitForResume(const String & fail_point_n
 
 void FailPointInjection::waitForPause(const String & fail_point_name)
 {
+    /// A mistyped name would otherwise return at once and silently drop the synchronisation the
+    /// caller asked for, turning a deterministic test into a race. A registered fail point with no
+    /// channel still returns, because it is simply not paused.
+    if (!isRegisteredFailPoint(fail_point_name))
+        throw Exception(ErrorCodes::BAD_ARGUMENTS, "Cannot find fail point {}", fail_point_name);
+
     std::unique_lock lock(mu);
     auto iter = fail_point_wait_channels.find(fail_point_name);
     if (iter == fail_point_wait_channels.end())
@@ -414,6 +450,10 @@ void FailPointInjection::waitForPause(const String & fail_point_name)
 
 void FailPointInjection::waitForResume(const String & fail_point_name)
 {
+    /// Same as `waitForPause`: an unknown name must not look like an already finished wait.
+    if (!isRegisteredFailPoint(fail_point_name))
+        throw Exception(ErrorCodes::BAD_ARGUMENTS, "Cannot find fail point {}", fail_point_name);
+
     std::unique_lock lock(mu);
     auto iter = fail_point_wait_channels.find(fail_point_name);
     if (iter == fail_point_wait_channels.end())
