@@ -1078,6 +1078,13 @@ public:
     /// That allows to schedule them for deletion a bit later
     size_t clearPartsFromFilesystemAndRollbackIfError(const DataPartsVector & parts_to_delete, const String & parts_type);
 
+    /// Whether destructive background cleanup (removing outdated parts from the filesystem, ...)
+    /// is currently allowed. Always true here; `StorageMergeTree` overrides it under
+    /// `leader_election` with a leadership-lease freshness check. Removal loops re-check it
+    /// before each part so that a lease that goes stale in the middle of a batch stops the
+    /// deletion instead of letting a stale leader destroy data the new leader still serves.
+    virtual bool canRunDestructiveCleanup() const { return true; }
+
     /// Delete all directories which names begin with "tmp"
     /// Must be called with locked lockForShare() because it's using relative_data_path.
     size_t clearOldTemporaryDirectories(size_t custom_directories_lifetime_seconds, const NameSet & valid_prefixes = {"tmp_", "tmp-fetch_"});

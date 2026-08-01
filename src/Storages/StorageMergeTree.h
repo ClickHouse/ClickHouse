@@ -460,7 +460,7 @@ private:
     /// heartbeat can delay the loss callback past the freshness threshold while another
     /// node legitimately takes over. `isLeader()` includes that freshness check, so the
     /// cleanup iteration re-checks it to fail closed even when the stop callback is delayed.
-    bool canRunDestructiveCleanup() const;
+    bool canRunDestructiveCleanup() const override;
 
     friend class MergeTreeSink;
     friend class MergeTreeSinkPatch;

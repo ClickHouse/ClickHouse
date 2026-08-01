@@ -429,6 +429,11 @@ namespace FailPoints
     /// name and the fence rejects the rest, so the undo of the already published renames is
     /// exercised.
     extern const char merge_tree_leader_election_stale_lease_mid_batch_rename[];
+
+    /// Deterministically simulates a leadership lease that goes stale in the MIDDLE of removing
+    /// a batch of outdated parts from the filesystem: the first part is removed and the per-part
+    /// freshness re-check rejects the rest, so they are rolled back to the Outdated state.
+    extern const char merge_tree_leader_election_stale_lease_mid_cleanup[];
 }
 
 static String getPartNameFromAST(const ASTPtr & partition)
@@ -4292,13 +4297,43 @@ void MergeTreeData::clearPartsFromFilesystemImplMaybeInParallel(const DataPartsV
 
     const auto settings = getSettings();
 
-    auto remove_single_thread = [this, &parts_to_remove, part_names_succeed]()
+    /// Removing a batch can take long (each removal on a remote disk is a network round-trip),
+    /// so under `leader_election` the lease can go stale in the middle of it. Re-check freshness
+    /// before each removal: a stale leader must not keep deleting parts the new leader still
+    /// serves. Parts whose removal is rejected here are reported as failed, and the caller
+    /// (`clearPartsFromFilesystemAndRollbackIfError`) rolls them back to the Outdated state so a
+    /// later pass — as the leader — can retry. For every engine without `leader_election` the
+    /// check is a no-op returning true. `removed_in_this_call` gates the test hook so that the
+    /// simulated staleness fires only after the first part of the batch was actually removed.
+    auto removed_in_this_call = std::make_shared<std::atomic<size_t>>(0);
+    const bool is_leader_election = (*settings)[MergeTreeSetting::leader_election];
+    auto assert_cleanup_still_allowed = [this, removed_in_this_call, is_leader_election]()
+    {
+        /// The failpoint is global, but must only fire for the table under test.
+        if (is_leader_election && removed_in_this_call->load(std::memory_order_relaxed) > 0)
+        {
+            fiu_do_on(FailPoints::merge_tree_leader_election_stale_lease_mid_cleanup,
+            {
+                throw Exception(ErrorCodes::TABLE_IS_READ_ONLY,
+                    "Simulated leadership loss in the middle of removing a batch of old parts (leader_election)");
+            });
+        }
+
+        if (!canRunDestructiveCleanup())
+            throw Exception(ErrorCodes::TABLE_IS_READ_ONLY,
+                "The leadership lease went stale in the middle of removing a batch of old parts; "
+                "the remaining parts are left to the current leader (leader_election)");
+    };
+
+    auto remove_single_thread = [this, &parts_to_remove, part_names_succeed, &assert_cleanup_still_allowed, removed_in_this_call]()
     {
         LOG_DEBUG(
             log, "Removing {} parts from filesystem (serially): Parts: [{}]", parts_to_remove.size(), fmt::join(parts_to_remove, ", "));
         for (const DataPartPtr & part : parts_to_remove)
         {
+            assert_cleanup_still_allowed();
             asMutableDeletingPart(part)->remove();
+            removed_in_this_call->fetch_add(1, std::memory_order_relaxed);
             if (part_names_succeed)
                 part_names_succeed->insert(part->name);
         }
@@ -4347,9 +4382,11 @@ void MergeTreeData::clearPartsFromFilesystemImplMaybeInParallel(const DataPartsV
             /// Passing by reference here is safe:
             /// part is part of parts_to_remove which outlives runner
             /// part_names_mutex is created before runner and outlives it
-            runner.enqueueAndKeepTrack([&part, &part_names_mutex, part_names_succeed, thread_group = CurrentThread::getGroup()]
+            runner.enqueueAndKeepTrack([&part, &part_names_mutex, part_names_succeed, &assert_cleanup_still_allowed, removed_in_this_call, thread_group = CurrentThread::getGroup()]
             {
+                assert_cleanup_still_allowed();
                 asMutableDeletingPart(part)->remove();
+                removed_in_this_call->fetch_add(1, std::memory_order_relaxed);
                 if (part_names_succeed)
                 {
                     std::lock_guard lock(part_names_mutex);
@@ -4431,19 +4468,21 @@ void MergeTreeData::clearPartsFromFilesystemImplMaybeInParallel(const DataPartsV
 
     ThreadPoolCallbackRunnerLocal<void> runner(getPartsCleaningThreadPool().get(), ThreadName::MERGETREE_PARTS_CLEANUP);
 
-    auto schedule_parts_removal = [this, &runner, &part_names_mutex, part_names_succeed](
+    auto schedule_parts_removal = [this, &runner, &part_names_mutex, part_names_succeed, &assert_cleanup_still_allowed, removed_in_this_call](
         const MergeTreePartInfo & range, DataPartsVector && parts_in_range)
     {
         /// Below, range should be captured by copy to avoid use-after-scope on exception from pool
         /// part_names_mutex is fine since it's created before runner and outlives it
         runner.enqueueAndKeepTrack(
-            [this, range, &part_names_mutex, part_names_succeed, batch = std::move(parts_in_range)]
+            [this, range, &part_names_mutex, part_names_succeed, &assert_cleanup_still_allowed, removed_in_this_call, batch = std::move(parts_in_range)]
         {
             LOG_TRACE(log, "Removing {} parts in blocks range {}", batch.size(), range.getPartNameForLogs());
 
             for (const auto & part : batch)
             {
+                assert_cleanup_still_allowed();
                 asMutableDeletingPart(part)->remove();
+                removed_in_this_call->fetch_add(1, std::memory_order_relaxed);
                 if (part_names_succeed)
                 {
                     std::lock_guard lock(part_names_mutex);
