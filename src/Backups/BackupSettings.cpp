@@ -48,13 +48,42 @@ namespace ErrorCodes
     M(OptionalUUID, backup_uuid) \
     /// M(Int64, compression_level)
 
+namespace
+{
+    /// `s3_storage_class_name` addresses the `s3_storage_class` field (see `fromBackupQuery`), so the two
+    /// spellings must resolve as one setting: defaulting either has to drop a change written as the other.
+    std::string_view canonicalBackupSettingName(std::string_view name)
+    {
+        if (name == "s3_storage_class_name")
+            return "s3_storage_class";
+        return name;
+    }
+
+    /// The canonical names of the backup-specific settings. `LIST_OF_BACKUP_SETTINGS` alone is not the full
+    /// set: the three names below are fields of `BackupSettings` handled by their own branches in
+    /// `fromBackupQuery` and deliberately kept out of the macro, so a macro-only classifier would call them
+    /// core settings and try to reset them on the query context instead.
+    constexpr std::string_view BACKUP_SPECIFIC_SETTING_NAMES[] = {
+#define BACKUP_SETTING_NAME(TYPE, NAME) #NAME,
+        LIST_OF_BACKUP_SETTINGS(BACKUP_SETTING_NAME)
+#undef BACKUP_SETTING_NAME
+        "compression_level",
+        "data_file_name_prefix_length",
+        "s3_storage_class",
+    };
+
+    SettingsWithDefaultsResolved resolveBackupSettings(const ASTBackupQuery & query)
+    {
+        return resolveDefaultedSettings(query, BACKUP_SPECIFIC_SETTING_NAMES, canonicalBackupSettingName);
+    }
+}
+
 BackupSettings BackupSettings::fromBackupQuery(const ASTBackupQuery & query)
 {
     BackupSettings res;
 
-    if (query.settings)
     {
-        const auto & settings = query.settings->as<const ASTSetQuery &>().changes;
+        const auto & settings = resolveBackupSettings(query).changes;
         for (const auto & setting : settings)
         {
             if (setting.name == "compression_level")
@@ -92,50 +121,21 @@ BackupSettings BackupSettings::fromBackupQuery(const ASTBackupQuery & query)
 
 bool BackupSettings::isAsync(const ASTBackupQuery & query)
 {
+    /// This runs before `fromBackupQuery` (BackupsWorker decides where to run the operation first), so it
+    /// resolves `async = DEFAULT` on its own. One name, so no classification is needed.
     if (query.settings)
     {
-        const auto * field = query.settings->as<const ASTSetQuery &>().changes.tryGet("async");
-        if (field)
-            return field->safeGet<bool>();
+        const auto & settings = query.settings->as<const ASTSetQuery &>();
+        if (std::ranges::find(settings.default_settings, "async") == settings.default_settings.end())
+            if (const auto * field = settings.changes.tryGet("async"))
+                return field->safeGet<bool>();
     }
     return false; /// `async` is false by default.
 }
 
-SettingsChanges BackupSettings::extractCoreSettingsFromQuery(const ASTBackupQuery & query)
+CoreSettingsFromQuery BackupSettings::extractCoreSettingsFromQuery(const ASTBackupQuery & query)
 {
-    SettingsChanges core;
-
-    if (!query.settings)
-        return core;
-
-    const auto & settings = query.settings->as<const ASTSetQuery &>().changes;
-    for (const auto & setting : settings)
-    {
-        /// These two are handled specially in `fromBackupQuery` and are not
-        /// part of `LIST_OF_BACKUP_SETTINGS`, so list them explicitly.
-        if (setting.name == "compression_level")
-            continue;
-        if (setting.name == "data_file_name_prefix_length")
-            continue;
-        /// Alias for `s3_storage_class`, handled specially in `fromBackupQuery` and not part of
-        /// `LIST_OF_BACKUP_SETTINGS`, so it would otherwise be treated as a core setting. See issue #68551.
-        if (setting.name == "s3_storage_class_name")
-            continue;
-
-        bool is_backup_specific = false;
-
-#define CHECK_BACKUP_SETTING_NAME(TYPE, NAME) \
-        if (setting.name == #NAME) \
-            is_backup_specific = true;
-
-        LIST_OF_BACKUP_SETTINGS(CHECK_BACKUP_SETTING_NAME)
-#undef CHECK_BACKUP_SETTING_NAME
-
-        if (!is_backup_specific)
-            core.emplace_back(setting);
-    }
-
-    return core;
+    return extractCoreSettings(query, BACKUP_SPECIFIC_SETTING_NAMES, canonicalBackupSettingName);
 }
 
 void BackupSettings::copySettingsToQuery(ASTBackupQuery & query) const
@@ -155,7 +155,16 @@ void BackupSettings::copySettingsToQuery(ASTBackupQuery & query) const
     /// Copy the core settings to the query too.
     query_settings->changes.insert(query_settings->changes.end(), core_settings.begin(), core_settings.end());
 
-    if (query_settings->changes.empty())
+    /// Carry over only the CORE `name = DEFAULT` items, which describe an intent the rebuild above cannot
+    /// express (a reset on the receiving host's query context) and which `core_settings` does not hold.
+    /// A backup-specific one must NOT ride along: this rebuild emits resolved effective state, so a
+    /// defaulted name may by now name real state and re-resolving it would discard that. `backup_uuid` is
+    /// the concrete case - it is empty while the query is parsed, then generated by BackupsWorker and
+    /// emitted above as a change, and a surviving `backup_uuid = DEFAULT` would drop it again on every
+    /// host.
+    query_settings->default_settings = extractCoreSettingsFromQuery(query).default_names;
+
+    if (query_settings->changes.empty() && query_settings->default_settings.empty())
         query_settings = nullptr;
 
     query.settings = query_settings;

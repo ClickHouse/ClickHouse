@@ -7,6 +7,7 @@
 #include <Parsers/ASTPartition.h>
 #include <Parsers/ASTSetQuery.h>
 #include <Parsers/ASTSnapshotQuery.h>
+#include <Parsers/stripQuerySettings.h>
 #include <base/EnumReflection.h>
 #include <Common/Exception.h>
 #include <Common/assert_cast.h>
@@ -184,24 +185,23 @@ namespace
 
     ASTPtr rewriteSettingsWithoutOnCluster(ASTPtr settings, const WithoutOnClusterASTRewriteParams & params)
     {
-        SettingsChanges changes;
-        if (settings)
-            changes = assert_cast<ASTSetQuery *>(settings.get())->changes;
-
-        std::erase_if(
-            changes,
-            [](const SettingChange & change)
-            {
-                const String & name = change.name;
-                return (name == "internal") || (name == "async") || (name == "host_id");
-            });
-
-        changes.emplace_back("internal", true);
-        changes.emplace_back("async", true);
-        changes.emplace_back("host_id", params.host_id);
-
         auto out_settings = make_intrusive<ASTSetQuery>();
-        out_settings->changes = std::move(changes);
+        if (settings)
+        {
+            const auto & original = *assert_cast<ASTSetQuery *>(settings.get());
+            out_settings->changes = original.changes;
+            out_settings->default_settings = original.default_settings;
+        }
+
+        /// The three values injected below describe this rewrite, so they win over whatever the query
+        /// carried - in either carrier, or a surviving `name = DEFAULT` would reset one of them.
+        static constexpr std::string_view names_to_strip[] = {"internal", "async", "host_id"};
+        stripNamesFromSetQuery(*out_settings, names_to_strip);
+
+        out_settings->changes.emplace_back("internal", true);
+        out_settings->changes.emplace_back("async", true);
+        out_settings->changes.emplace_back("host_id", params.host_id);
+
         out_settings->is_standalone = false;
         return out_settings;
     }
