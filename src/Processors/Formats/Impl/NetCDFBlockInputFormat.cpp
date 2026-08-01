@@ -759,11 +759,26 @@ For example, a file with the dimensions `time`, `lat`, `lon` and the variables `
 `lat(lat)`, `lon(lon)` and `temperature(time, lat, lon)` is read as a table with the columns `time`,
 `lat`, `lon`, `temperature` and `time * lat * lon` rows, where the coordinate columns repeat.
 
+The order of the dimensions in a row follows the order they have in the variables, so a variable
+that uses all of them is read sequentially. The rows enumerate the last dimension first, which is
+the order in which a NetCDF file stores its data.
+
 The classic format has no string type. A `char` variable is read as a String column whose length is
 the last dimension of the variable, so `char station_name(station, name_length)` is read as one
 string per station. The trailing zero bytes that pad a shorter string are removed.
 
-Attributes of the file and of the variables are not part of the table.
+The last dimension of a `char` variable is taken as the length of the strings only when nothing else
+in the file needs it as a dimension of the row space: it has no variable of its own, it is not the
+unlimited dimension, and it is used nowhere but as the last dimension of a `char` variable. This is
+the same condition that the `concat_characters` option of `xarray` documents. Otherwise, as in
+`char station(station)`, the dimension stays in the row space and the variable is read as one
+character per row.
+
+Attributes of the file and of the variables are not part of the table, with the exception of
+`_FillValue` and `missing_value`, which are used by the setting
+`input_format_netcdf_fill_value_as_null`. In particular, the `scale_factor` and `add_offset`
+attributes of the CF conventions are not applied: a packed variable is read as the integers that
+are stored in the file.
 
 ## Data types matching {#data_types-matching}
 
@@ -781,8 +796,18 @@ Attributes of the file and of the variables are not part of the table.
 | `double`                    | [Float64](/sql-reference/data-types/float.md)           | `double`                    |
 | `char`                      | [String](/sql-reference/data-types/string.md)           | `char`                      |
 |                             | [FixedString](/sql-reference/data-types/fixedstring.md) | `char`                      |
+|                             | [Enum8](/sql-reference/data-types/enum.md)              | `byte`                      |
+|                             | [Enum16](/sql-reference/data-types/enum.md)             | `short`                     |
+|                             | [Date](/sql-reference/data-types/date.md)               | `ushort`                    |
+|                             | [Date32](/sql-reference/data-types/date32.md)           | `int`                       |
+|                             | [DateTime](/sql-reference/data-types/datetime.md)       | `uint`                      |
+|                             | [DateTime64](/sql-reference/data-types/datetime64.md)   | `int64`                     |
 
 The types `ubyte`, `ushort`, `uint`, `int64` and `uint64` exist only in CDF-5.
+
+A column with dates or times is written as the number that is stored in it, together with the
+`units` attribute of the CF conventions that says what that number means, such as
+`days since 1970-01-01`. On reading, such a variable is a plain number again.
 
 ## Example usage {#example-usage}
 
@@ -804,17 +829,35 @@ Writing a table to a file:
 SELECT * FROM measurements INTO OUTFILE 'measurements.nc' FORMAT NetCDF
 ```
 
-On output every column becomes a one-dimensional variable over a single dimension named `row`, so a
-file written by ClickHouse is read back with the same structure.
+On output every column becomes a one-dimensional variable over a single dimension named `row`, and
+a String column additionally gets a dimension that holds the length of the longest string in it, so
+a file written by ClickHouse is read back with the same structure.
+
+A string shorter than its dimension is padded with zero bytes, as the format prescribes, so a
+String or FixedString value that itself ends in a zero byte cannot be stored: it would be read back
+without its trailing zero bytes by every implementation of the format. Writing such a value throws
+an exception instead of corrupting it.
+
+The version of the format is chosen automatically: CDF-5 when a column needs one of the types that
+only CDF-5 has, or when a number that the header of a CDF-2 file writes as a 32-bit value - the
+length of a dimension or the size of a variable - does not fit into it, and CDF-2 otherwise.
+
+A [Nullable](/sql-reference/data-types/nullable.md) column is written with the `_FillValue`
+attribute, which is the way the format marks missing data. The value of the attribute is the
+default fill value of the type of the netCDF library, or, when the data of the column contains that
+value, another value that the data does not contain, so that a value of the column is never read
+back as a `NULL`. Read the file back with `input_format_netcdf_fill_value_as_null` to get the
+`NULL`s again. A `NULL` in a String column is written as an empty string, because the format has no
+way to mark a missing string.
 
 ## Format settings {#format-settings}
 
 | Setting                                                                                                                     | Description                                                                                     | Default |
 |-----------------------------------------------------------------------------------------------------------------------------|-------------------------------------------------------------------------------------------------|---------|
 | [`input_format_netcdf_fill_value_as_null`](/operations/settings/settings-formats#input_format_netcdf_fill_value_as_null)     | Read the values equal to the `_FillValue` or `missing_value` attribute of a variable as `NULL`. | `false` |
-| [`input_format_netcdf_add_dimension_columns`](/operations/settings/settings-formats#input_format_netcdf_add_dimension_columns) | Add a column with the index along every dimension that has no variable of the same name.        | `false` |
+| [`input_format_netcdf_add_dimension_columns`](/operations/settings/settings-formats#input_format_netcdf_add_dimension_columns) | Add a column with the index along every dimension that has no coordinate variable.              | `false` |
 )DOCS_MD",
-        .introduced_in = {26, 7},
+        .introduced_in = {26, 8},
         .related = {"Npy", "Parquet"}});
 }
 
