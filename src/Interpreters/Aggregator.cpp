@@ -256,6 +256,17 @@ size_t compressedSampleSize(size_t sample_bytes, size_t compressed_bytes)
 
 Aggregator::CompressedStateSizeEstimate Aggregator::estimateSizeOfCompressedState(AggregatedDataVariants & result, ssize_t bucket) const
 {
+    /// `NativeWriter` serializes the states through the `SerializationAggregateFunction` of the output
+    /// header's `DataTypeAggregateFunction` (see `prepareOutputBlockColumns`), which passes the type's
+    /// version to `IAggregateFunction::serialize`. Resolve the same versions here, so that states with
+    /// an explicit older version - e.g. `AggregateFunction(0, sumMap, ...)` on the merge path, where
+    /// `aggregate_state_types` preserves the input header's type - are measured in the format that is
+    /// actually sent, not in the default one.
+    std::vector<std::optional<size_t>> state_versions(params.aggregates_size);
+    for (size_t j = 0; j < params.aggregates_size; ++j)
+        if (const auto * state_type = typeid_cast<const DataTypeAggregateFunction *>(aggregate_state_types[j].get()))
+            state_versions[j] = state_type->getVersion();
+
     auto estimate_size_of_compressed_state = [&](auto & table)
     {
         CompressedStateSizeEstimate res;
@@ -278,8 +289,9 @@ Aggregator::CompressedStateSizeEstimate Aggregator::estimateSizeOfCompressedStat
                     chassert(place);
                     if (it++ % period == 0)
                     {
-                        is_simple_count ? writeVarUInt(getInlineCountState(place), compressed_buf)
-                                        : aggregate_functions[j]->serialize(place + offsets_of_aggregate_states[j], compressed_buf);
+                        is_simple_count
+                            ? writeVarUInt(getInlineCountState(place), compressed_buf)
+                            : aggregate_functions[j]->serialize(place + offsets_of_aggregate_states[j], compressed_buf, state_versions[j]);
                     }
                     /// A hundred samples should be enough to get a good estimate.
                     return it < 100 * period;
@@ -312,8 +324,9 @@ Aggregator::CompressedStateSizeEstimate Aggregator::estimateSizeOfCompressedStat
         {
             NullWriteBuffer null_buf;
             CompressedWriteBuffer compressed_buf(null_buf);
-            is_simple_count ? writeVarUInt(getCountState(result.without_key), compressed_buf)
-                            : aggregate_functions[j]->serialize(result.without_key + offsets_of_aggregate_states[j], compressed_buf);
+            is_simple_count
+                ? writeVarUInt(getCountState(result.without_key), compressed_buf)
+                : aggregate_functions[j]->serialize(result.without_key + offsets_of_aggregate_states[j], compressed_buf, state_versions[j]);
             compressed_buf.finalize();
             res.bytes += compressed_buf.count();
             res.sample_bytes += compressed_buf.count();

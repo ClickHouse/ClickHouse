@@ -1,0 +1,189 @@
+#include <gtest/gtest.h>
+
+#include <AggregateFunctions/AggregateFunctionFactory.h>
+#include <AggregateFunctions/IAggregateFunction.h>
+#include <Columns/ColumnAggregateFunction.h>
+#include <Core/Block.h>
+#include <Core/Field.h>
+#include <DataTypes/DataTypeAggregateFunction.h>
+#include <DataTypes/DataTypeArray.h>
+#include <DataTypes/DataTypesDecimal.h>
+#include <DataTypes/DataTypesNumber.h>
+#include <IO/WriteBufferFromString.h>
+#include <Interpreters/Aggregator.h>
+#include <Common/assert_cast.h>
+#include <Common/tests/gtest_global_register.h>
+
+using namespace DB;
+
+namespace
+{
+
+/// `Aggregator::estimateSizeOfCompressedState` must serialize the sampled states with the version of the
+/// output header's `DataTypeAggregateFunction` - the version `NativeWriter` uses when the states are
+/// actually sent - and not with the function's default version. The difference is observable on the merge
+/// path, where `aggregate_state_types` preserves the input header's type: a `AggregateFunction(0, sumMap,
+/// Array(UInt8), Array(Decimal(9, 2)))` column keeps version 0 on the wire (4-byte `Decimal32` values),
+/// while the default version 1 promotes every value to a 16-byte `Decimal128`.
+
+Aggregator::Params makeMergeParams(const Names & keys, const AggregateDescriptions & aggregates)
+{
+    Aggregator::Params params(
+        keys,
+        aggregates,
+        /*overflow_row_=*/false,
+        /*max_rows_to_group_by_=*/0,
+        OverflowMode::THROW,
+        /*group_by_two_level_threshold_=*/0,
+        /*group_by_two_level_threshold_bytes_=*/0,
+        /*max_bytes_before_external_group_by_=*/0,
+        /*empty_result_for_aggregation_by_empty_set_=*/false,
+        /*tmp_data_scope_=*/nullptr,
+        /*max_threads_=*/1,
+        /*min_free_disk_space_=*/0,
+        /*compile_aggregate_expressions_=*/false,
+        /*min_count_to_compile_aggregate_expression_=*/0,
+        /*max_block_size_=*/65536,
+        /*enable_prefetch_=*/false,
+        /*only_merge_=*/true,
+        /*optimize_group_by_constant_keys_=*/true,
+        /*min_hit_rate_to_use_consecutive_keys_optimization_=*/0.5,
+        StatsCollectingParams{},
+        /*enable_producing_buckets_out_of_order_in_aggregation_=*/false,
+        /*serialize_string_with_zero_byte_=*/false,
+        /*enable_parallel_single_level_merge_=*/false);
+    return params;
+}
+
+size_t serializedStateSize(const IAggregateFunction & function, ConstAggregateDataPtr place, std::optional<size_t> version)
+{
+    WriteBufferFromOwnString buf;
+    function.serialize(place, buf, version);
+    buf.finalize();
+    return buf.str().size();
+}
+
+struct VersionedStatesFixture
+{
+    AggregateFunctionPtr function;
+    DataTypePtr state_type_v0;
+    /// One state per row; each state's map holds several `Decimal32` values.
+    MutableColumnPtr states;
+    size_t rows;
+
+    explicit VersionedStatesFixture(size_t rows_) : rows(rows_)
+    {
+        DataTypes argument_types
+            = {std::make_shared<DataTypeArray>(std::make_shared<DataTypeUInt8>()),
+               std::make_shared<DataTypeArray>(std::make_shared<DataTypeDecimal<Decimal32>>(9, 2))};
+        AggregateFunctionProperties properties;
+        function = AggregateFunctionFactory::instance().get("sumMap", NullsAction::EMPTY, argument_types, {}, properties);
+        state_type_v0 = std::make_shared<DataTypeAggregateFunction>(function, argument_types, Array{}, /*version=*/0);
+
+        states = state_type_v0->createColumn();
+        auto & column = assert_cast<ColumnAggregateFunction &>(*states);
+
+        auto map_keys = argument_types[0]->createColumn();
+        auto map_values = argument_types[1]->createColumn();
+        for (size_t row = 0; row < rows; ++row)
+        {
+            Array keys_array;
+            Array values_array;
+            for (size_t entry = 0; entry < 5; ++entry)
+            {
+                keys_array.emplace_back(UInt64(row * 5 + entry));
+                values_array.emplace_back(DecimalField<Decimal32>(Decimal32(static_cast<Int32>(1000 + row * 100 + entry)), 2));
+            }
+            map_keys->insert(keys_array);
+            map_values->insert(values_array);
+        }
+
+        const IColumn * arguments[2] = {map_keys.get(), map_values.get()};
+        for (size_t row = 0; row < rows; ++row)
+        {
+            column.insertDefault();
+            function->add(column.getData()[row], arguments, row, &column.createOrGetArena());
+        }
+    }
+
+    size_t totalSerializedSize(std::optional<size_t> version) const
+    {
+        const auto & column = assert_cast<const ColumnAggregateFunction &>(*states);
+        size_t total = 0;
+        for (size_t row = 0; row < rows; ++row)
+            total += serializedStateSize(*function, column.getData()[row], version);
+        return total;
+    }
+};
+
+}
+
+TEST(AggregatorStateSizeEstimate, MergePathUsesExplicitStateVersion)
+{
+    tryRegisterAggregateFunctions();
+
+    VersionedStatesFixture fixture(/*rows_=*/3);
+
+    const size_t expected_v0_bytes = fixture.totalSerializedSize(0);
+    const size_t default_version_bytes = fixture.totalSerializedSize(std::nullopt);
+    /// The regression is only observable while the versions serialize differently.
+    ASSERT_GT(default_version_bytes, expected_v0_bytes);
+
+    AggregateDescription description;
+    description.function = fixture.function;
+    description.column_name = "st";
+
+    Block header;
+    header.insert({std::make_shared<DataTypeUInt8>()->createColumn(), std::make_shared<DataTypeUInt8>(), "k"});
+    header.insert({fixture.state_type_v0->createColumn(), fixture.state_type_v0, "st"});
+
+    Aggregator aggregator(header, makeMergeParams({"k"}, {description}));
+
+    auto key_column = ColumnUInt8::create();
+    for (size_t row = 0; row < fixture.rows; ++row)
+        key_column->insert(UInt64(row));
+
+    auto variants = std::make_shared<AggregatedDataVariants>();
+    bool no_more_keys = false;
+    std::atomic<bool> is_cancelled{false};
+    Columns columns = {std::move(key_column), fixture.states->getPtr()};
+    aggregator.mergeOnBlock(columns, fixture.rows, /*is_overflows=*/false, *variants, no_more_keys, is_cancelled);
+
+    /// Every key is distinct, so each merged state equals its input state, and with three states the
+    /// sampling period is 1: the sample is exactly the version-0 serialization of all the states.
+    const auto estimate = aggregator.estimateSizeOfCompressedState(*variants, /*bucket=*/-1);
+    EXPECT_EQ(estimate.sample_bytes, expected_v0_bytes);
+    EXPECT_EQ(estimate.bytes, expected_v0_bytes);
+}
+
+TEST(AggregatorStateSizeEstimate, WithoutKeyUsesExplicitStateVersion)
+{
+    tryRegisterAggregateFunctions();
+
+    VersionedStatesFixture fixture(/*rows_=*/2);
+
+    AggregateDescription description;
+    description.function = fixture.function;
+    description.column_name = "st";
+
+    Block header;
+    header.insert({fixture.state_type_v0->createColumn(), fixture.state_type_v0, "st"});
+
+    Aggregator aggregator(header, makeMergeParams({}, {description}));
+
+    auto variants = std::make_shared<AggregatedDataVariants>();
+    bool no_more_keys = false;
+    std::atomic<bool> is_cancelled{false};
+    Columns columns = {fixture.states->getPtr()};
+    aggregator.mergeOnBlock(columns, fixture.rows, /*is_overflows=*/false, *variants, no_more_keys, is_cancelled);
+
+    ASSERT_NE(variants->without_key, nullptr);
+    /// The single aggregate function's state offset is 0.
+    const size_t expected_v0_bytes = serializedStateSize(*fixture.function, variants->without_key, 0);
+    const size_t default_version_bytes = serializedStateSize(*fixture.function, variants->without_key, std::nullopt);
+    ASSERT_GT(default_version_bytes, expected_v0_bytes);
+
+    const auto estimate = aggregator.estimateSizeOfCompressedState(*variants, /*bucket=*/-1);
+    EXPECT_EQ(estimate.sample_bytes, expected_v0_bytes);
+    EXPECT_EQ(estimate.bytes, expected_v0_bytes);
+}
