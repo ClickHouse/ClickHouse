@@ -568,6 +568,9 @@ static ReturnType deserializeTextImpl(IColumn & column, ReadBuffer & istr, Reade
 
     IColumn & nested_column = column_array.getData();
 
+    /// Rolling back to the recorded size (instead of popping the elements this loop counted)
+    /// also drops rows a failing nested reader appended before it threw or returned false.
+    const size_t initial_nested_size = nested_column.size();
     size_t size = 0;
 
     bool has_braces = false;
@@ -592,8 +595,8 @@ static ReturnType deserializeTextImpl(IColumn & column, ReadBuffer & istr, Reade
 
     auto on_error_no_throw = [&]()
     {
-        if (size)
-            nested_column.popBack(size);
+        if (nested_column.size() > initial_nested_size)
+            nested_column.popBack(nested_column.size() - initial_nested_size);
         return ReturnType(false);
     };
 
@@ -652,8 +655,8 @@ static ReturnType deserializeTextImpl(IColumn & column, ReadBuffer & istr, Reade
     }
     catch (...)
     {
-        if (size)
-            nested_column.popBack(size);
+        if (nested_column.size() > initial_nested_size)
+            nested_column.popBack(nested_column.size() - initial_nested_size);
         if constexpr (throw_exception)
             throw;
         /// Other errors (e.g. MEMORY_LIMIT_EXCEEDED) must propagate, not be reported as a failed parse.
