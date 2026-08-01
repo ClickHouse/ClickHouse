@@ -3535,7 +3535,13 @@ void analyzeVariantColumnarValue(
         size_t begin = resolved_row == 0 ? 0 : moffsets[resolved_row - 1];
         size_t end = moffsets[resolved_row];
         const auto & nested_data = map_column.getNestedData();
-        const auto & keys_column = assert_cast<const ColumnString &>(nested_data.getColumn(0));
+        /// The analysis pass runs before the encoder, so it must reject unsupported key types itself
+        /// instead of relying on the `emitVariantColumnarMapChildren` guard: in release builds
+        /// `assert_cast` degrades to `static_cast` and would reinterpret e.g. a `ColumnUInt64` as a
+        /// `ColumnString`.
+        const auto * keys_column = typeid_cast<const ColumnString *>(&nested_data.getColumn(0));
+        if (!keys_column)
+            throw Exception(ErrorCodes::NOT_IMPLEMENTED, "Only `Map(String, T)` can be written as `Parquet` `VARIANT`");
         const auto & values_column = nested_data.getColumn(1);
         if (node)
         {
@@ -3544,7 +3550,7 @@ void analyzeVariantColumnarValue(
         }
         for (size_t i = begin; i != end; ++i)
             analyzeVariantColumnarObjectChild(
-                String(keys_column.getDataAt(i)), values_column, map_type->getValueType(), i,
+                String(keys_column->getDataAt(i)), values_column, map_type->getValueType(), i,
                 resolved_from_dynamic, context, depth, node, keys);
         return;
     }
