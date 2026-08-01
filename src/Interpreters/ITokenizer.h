@@ -1,5 +1,7 @@
 #pragma once
 
+#include "config.h"
+
 #include <Common/assert_cast.h>
 #include <Common/StringUtils.h>
 #include <Columns/IColumn_fwd.h>
@@ -32,6 +34,9 @@ public:
         Array,
         SparseGrams,
         AsciiCJK,
+#if USE_MECAB
+        Japanese,
+#endif
     };
 
     ITokenizer() = delete;
@@ -40,13 +45,11 @@ public:
 
     Type getType() const { return type; }
 
+    /// Mutable state across calls: callers must clone per thread rather than share.
+    virtual bool isStateful() const { return false; }
+
     virtual ~ITokenizer() = default;
     virtual std::unique_ptr<ITokenizer> clone() const = 0;
-
-    /// True if the tokenizer keeps mutable iteration state across calls (e.g. sparseGrams),
-    /// so a single instance is not safe to use from multiple threads concurrently. Consumers
-    /// that may tokenize in parallel must use a private clone() per thread. See tokens.cpp.
-    virtual bool isStateful() const { return false; }
 
     /// Returns a formatted description of the tokenizer with arguments.
     virtual String getDescription() const = 0;
@@ -441,6 +444,10 @@ struct AsciiCJKTokenizer final : public ITokenizerHelper<AsciiCJKTokenizer>
     bool supportsStringLike() const override { return true; }
 };
 
+/// The Japanese (MeCab) tokenizer is declared in its own header (`JapaneseTokenizer.h`) so that this
+/// widely-included header does not pull in `<mecab.h>`. `forEachToken` dispatches it via the base
+/// `nextInString` (see `Type::Japanese` below), so the concrete type is not needed here.
+
 namespace detail
 {
 
@@ -509,6 +516,13 @@ void forEachToken(const ITokenizer & tokenizer, const char * __restrict data, si
             detail::forEachTokenImpl(ascii_cjk_tokenizer, data, length, callback);
             return;
         }
+#if USE_MECAB
+        case ITokenizer::Type::Japanese:
+            /// Dispatch through the base virtual `nextInString` so this header needn't see the
+            /// MeCab-dependent `JapaneseTokenizer` definition.
+            detail::forEachTokenImpl(tokenizer, data, length, callback);
+            return;
+#endif
     }
 }
 

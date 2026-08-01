@@ -647,6 +647,8 @@ bool MergeTreeConditionBloomFilterText::traverseTreeEquals(
     }
     if (function_name == "notEquals")
     {
+        if (!value_data_type.isStringOrFixedString())
+            return false;
         out.key_column = *key_index;
         out.function = RPNElement::FUNCTION_NOT_EQUALS;
         out.bloom_filter = std::make_unique<BloomFilter>(params);
@@ -656,6 +658,8 @@ bool MergeTreeConditionBloomFilterText::traverseTreeEquals(
     }
     if (function_name == "equals")
     {
+        if (!value_data_type.isStringOrFixedString())
+            return false;
         out.key_column = *key_index;
         out.function = RPNElement::FUNCTION_EQUALS;
         out.bloom_filter = std::make_unique<BloomFilter>(params);
@@ -683,6 +687,8 @@ bool MergeTreeConditionBloomFilterText::traverseTreeEquals(
     }
     if (function_name == "startsWith")
     {
+        if (!value_data_type.isStringOrFixedString())
+            return false;
         out.key_column = *key_index;
         out.function = RPNElement::FUNCTION_EQUALS;
         out.bloom_filter = std::make_unique<BloomFilter>(params);
@@ -692,6 +698,8 @@ bool MergeTreeConditionBloomFilterText::traverseTreeEquals(
     }
     if (function_name == "endsWith")
     {
+        if (!value_data_type.isStringOrFixedString())
+            return false;
         out.key_column = *key_index;
         out.function = RPNElement::FUNCTION_EQUALS;
         out.bloom_filter = std::make_unique<BloomFilter>(params);

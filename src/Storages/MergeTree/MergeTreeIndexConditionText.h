@@ -98,7 +98,7 @@ public:
         MergeTreeIndexTextPostprocessorPtr postprocessor_,
         bool has_positions_);
 
-    ~MergeTreeIndexConditionText() override;
+    ~MergeTreeIndexConditionText() override = default;
     static bool isSupportedFunction(const String & function_name);
     TextIndexDirectReadMode getDirectReadMode(const String & function_name) const;
 
@@ -194,11 +194,9 @@ private:
     static bool requiresReadingAllTokens(const RPNElement & element);
 
     Block header;
-    /// A stateful tokenizer (e.g. sparseGrams) is cloned per condition: conditions are built
-    /// per-partition in parallel when use_constant_folding_in_index_analysis is on, so sharing
-    /// the index's single tokenizer instance would race on its mutable iterator state. Empty for
-    /// stateless tokenizers, which stay shared via the raw pointer below.
-    std::unique_ptr<ITokenizer> owned_tokenizer;
+    /// A private clone of the index tokenizer when it is stateful, so concurrent conditions do not
+    /// share mutable parsing state; null otherwise.
+    std::shared_ptr<const ITokenizer> owned_tokenizer;
     TokenizerPtr tokenizer;
     RPN rpn;
     PreparedSetsPtr prepared_sets;
