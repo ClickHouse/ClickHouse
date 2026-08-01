@@ -5,6 +5,7 @@
 #include <Parsers/ASTIdentifier_fwd.h>
 #include <Parsers/ASTLiteral.h>
 #include <Parsers/ASTFunction.h>
+#include <Parsers/ASTSetQuery.h>
 #include <Interpreters/evaluateConstantExpression.h>
 #include <Interpreters/Cluster.h>
 #include <Interpreters/Context.h>
@@ -33,7 +34,7 @@ namespace ErrorCodes
 
 
 ParsedRemoteFunctionArguments parseRemoteFunctionArguments(
-    ASTs & args,
+    ASTs & all_args,
     ContextPtr context,
     const std::string & name,
     bool is_cluster_function,
@@ -45,6 +46,32 @@ ParsedRemoteFunctionArguments parseRemoteFunctionArguments(
     ClusterPtr & cluster = result.cluster;
     ASTPtr & sharding_key = result.sharding_key;
     ASTPtr & remote_table_function_ptr = result.remote_table_function_ptr;
+
+    /// A SETTINGS clause is parsed as an ASTSetQuery argument, e.g.
+    /// clusterAllReplicas('default', system.query_log, SETTINGS skip_unavailable_shards = 1).
+    /// Extract such arguments into `result.settings_changes` and parse the rest positionally.
+    /// The SETTINGS clause is intentionally left in the AST, so the definition of a table
+    /// created over the function (CREATE TABLE ... AS remote(...)) survives SHOW CREATE TABLE
+    /// and server restarts. The remaining arguments are processed through a copy that is
+    /// written back before returning, because parsing normalizes some of them in place
+    /// (e.g. evaluates constant expressions into literals) and callers persist that.
+    ASTs args;
+    std::vector<size_t> positional_arg_indexes;
+    args.reserve(all_args.size());
+    positional_arg_indexes.reserve(all_args.size());
+    for (size_t i = 0; i < all_args.size(); ++i)
+    {
+        if (const auto * settings_ast = all_args[i]->as<ASTSetQuery>())
+        {
+            result.settings_changes.insert(
+                result.settings_changes.end(), settings_ast->changes.begin(), settings_ast->changes.end());
+        }
+        else
+        {
+            args.push_back(all_args[i]);
+            positional_arg_indexes.push_back(i);
+        }
+    }
 
     String cluster_name;
     String cluster_description;
@@ -357,6 +384,9 @@ ParsedRemoteFunctionArguments parseRemoteFunctionArguments(
 
     result.remote_table_id.database_name = database;
     result.remote_table_id.table_name = table;
+
+    for (size_t i = 0; i < args.size(); ++i)
+        all_args[positional_arg_indexes[i]] = args[i];
 
     return result;
 }
