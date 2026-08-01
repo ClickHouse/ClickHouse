@@ -615,53 +615,43 @@ Field convertFieldToTypeImpl(const Field & src, const IDataType & type, const ID
         /// A temporal type is integer-backed, so the coerce helpers reject a non-integral float when exact.
         const bool exact = strict || !convert_inexact_floats;
 
+        /// The four numeric->temporal branches below share one rule for the default ignore mode, because
+        /// they serve two callers with opposite needs (see convertFieldToType.h):
+        ///  - exact target: return the canonical storage value. An out-of-STORAGE value becomes Null, which
+        ///    convertFieldToTypeOrThrow turns into ARGUMENT_OUT_OF_BOUND, so DROP/OPTIMIZE PARTITION no-ops
+        ///    instead of matching a clamped partition id. An in-storage value is returned verbatim: the
+        ///    serializers are plain SerializationNumber, so a partition outside the visible range can exist
+        ///    and must stay addressable.
+        ///  - value materialization: clamp like CAST, via the coerce helpers.
+        /// In saturate/throw modes both callers coerce overflow-awarely, consistent with numeric CAST.
+        const bool ignore_exact_target = overflow_ignore && exact;
+
         if (which_type.isDate() && isNumericFieldForTemporalCoercion(src))
         {
-            /// In saturate/throw modes coerce overflow-awarely (day-number vs unix-timestamp interpretation),
-            /// consistent with numeric CAST/toDate. In the default ignore mode keep the legacy storage-range
-            /// check (Date is UInt16 under the hood): an out-of-range value becomes Null, which the
-            /// DROP/OPTIMIZE PARTITION path (convertFieldToTypeOrThrow, always ignore) turns into a clean
-            /// ARGUMENT_OUT_OF_BOUND rather than silently reinterpreting/clamping a bogus partition id.
-            if (overflow_ignore)
+            if (ignore_exact_target)
                 return convertNumericType<UInt16>(src, type, strict, convert_inexact_floats);
             return coerceNumericFieldToDateOrDate32(src, /*is_date32=*/false, format_settings.date_time_overflow_behavior, exact);
         }
 
         if (which_type.isDateTime() && isNumericFieldForTemporalCoercion(src))
         {
-            /// DateTime is UInt32 seconds since the epoch (canonical Field is UInt64). Respect
-            /// date_time_overflow_behavior so the VALUES/INSERT path matches numeric CAST/toDateTime
-            /// instead of storing a wrapped value.
+            if (ignore_exact_target)
+                return convertNumericType<UInt32>(src, type, strict, convert_inexact_floats);
             return coerceNumericFieldToDateTimeOrTime(
                 src, 0, MAX_DATETIME_TIMESTAMP_FIELD, format_settings.date_time_overflow_behavior, "DateTime", exact);
         }
 
         if (which_type.isTime() && isNumericFieldForTemporalCoercion(src))
         {
-            /// Time is backed by Int32 (canonical Field is Int64). In saturate/throw modes coerce
-            /// overflow-awarely against the visible Time range, consistent with numeric CAST/toTime. In the
-            /// default ignore mode first route through convertNumericType<Int32>: a value outside Int32
-            /// storage becomes Null so the DROP/OPTIMIZE PARTITION path raises ARGUMENT_OUT_OF_BOUND
-            /// (STID 3993-36c1) instead of truncating; the in-storage value is then clamped to the visible range.
-            if (overflow_ignore)
-            {
-                Field time_field = convertNumericType<Int32>(src, type, strict, convert_inexact_floats);
-                if (time_field.isNull())
-                    return time_field;
-                return coerceNumericFieldToDateTimeOrTime(
-                    time_field, -MAX_TIME_TIMESTAMP_FIELD, MAX_TIME_TIMESTAMP_FIELD, format_settings.date_time_overflow_behavior, "Time", exact);
-            }
+            if (ignore_exact_target)
+                return convertNumericType<Int32>(src, type, strict, convert_inexact_floats);
             return coerceNumericFieldToDateTimeOrTime(
                 src, -MAX_TIME_TIMESTAMP_FIELD, MAX_TIME_TIMESTAMP_FIELD, format_settings.date_time_overflow_behavior, "Time", exact);
         }
 
         if (which_type.isDate32() && isNumericFieldForTemporalCoercion(src))
         {
-            /// Date32 is Int32 day-number under the hood. In saturate/throw modes coerce overflow-awarely,
-            /// consistent with numeric CAST/toDate32. In the default ignore mode keep the legacy storage-range
-            /// check via convertNumericType<Int32> so an out-of-Int32 value becomes Null (ARGUMENT_OUT_OF_BOUND
-            /// in the partition path) instead of being narrowed to a bogus day number by the serializer.
-            if (overflow_ignore)
+            if (ignore_exact_target)
                 return convertNumericType<Int32>(src, type, strict, convert_inexact_floats);
             return coerceNumericFieldToDateOrDate32(src, /*is_date32=*/true, format_settings.date_time_overflow_behavior, exact);
         }

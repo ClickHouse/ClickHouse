@@ -558,11 +558,11 @@ struct ToTimeTransformSigned
     {
         /// Honour the overflow setting for narrow signed sources too: the previous raw store ignored it,
         /// so an out-of-range Int32 stayed verbatim while the 64-bit path clamped or threw. The
-        /// numeric_limits guards keep the range comparison out for Int8/Int16, whose values always fit.
-        if constexpr (date_time_overflow_behavior == FormatSettings::DateTimeOverflowBehavior::Throw)
-            if constexpr (std::numeric_limits<FromType>::max() > MAX_TIME_TIMESTAMP)
-                if (from < (-1 * MAX_TIME_TIMESTAMP) || from > MAX_TIME_TIMESTAMP) [[unlikely]]
-                    throw Exception(ErrorCodes::VALUE_IS_OUT_OF_RANGE_OF_DATA_TYPE, "Timestamp value {} is out of bounds of type Time", from);
+        /// numeric_limits guard keeps the range comparison out for Int8/Int16, whose values always fit.
+        if constexpr (date_time_overflow_behavior == FormatSettings::DateTimeOverflowBehavior::Throw
+            && std::numeric_limits<FromType>::max() > MAX_TIME_TIMESTAMP)
+            if (from < (-1 * MAX_TIME_TIMESTAMP) || from > MAX_TIME_TIMESTAMP) [[unlikely]]
+                throw Exception(ErrorCodes::VALUE_IS_OUT_OF_RANGE_OF_DATA_TYPE, "Timestamp value {} is out of bounds of type Time", from);
         return static_cast<ToType>(saturateToRange(from, -MAX_TIME_TIMESTAMP, MAX_TIME_TIMESTAMP));
     }
 };
@@ -2126,15 +2126,16 @@ struct ConvertImpl
                 return DateTimeTransformImpl<FromDataType, ToDataType, ToTimeTransformSigned<typename FromDataType::FieldType, Int32, date_time_overflow_behavior>, false>::template execute<Additions>(
                     arguments, result_type, input_rows_count);
         }
-        /// Unsigned sources to DateTime/Time. UInt32/UInt128/UInt256 must be routed here too (not just
-        /// UInt64): otherwise they fall through to convertNumericGeneral, which ignores
-        /// date_time_overflow_behavior and truncates (e.g. UInt32 4000000 -> Time keeps 4000000 instead
-        /// of clamping/throwing at 3599999). UInt8/UInt16 always fit both targets and stay on the generic path.
+        /// Unsigned sources to DateTime/Time. UInt128/UInt256 must be routed here too (not just UInt64):
+        /// otherwise they fall through to convertNumericGeneral, which ignores date_time_overflow_behavior
+        /// and truncates instead of clamping/throwing. UInt32 needs it only for Time (4000000 would stay
+        /// verbatim instead of clamping at 3599999); for DateTime it cannot overflow, since UInt32::max
+        /// equals MAX_DATETIME_TIMESTAMP. UInt8/UInt16 always fit both targets and stay on the generic path.
         else if constexpr ((
-                std::is_same_v<FromDataType, DataTypeUInt32>
-                || std::is_same_v<FromDataType, DataTypeUInt64>
+                std::is_same_v<FromDataType, DataTypeUInt64>
                 || std::is_same_v<FromDataType, DataTypeUInt128>
-                || std::is_same_v<FromDataType, DataTypeUInt256>)
+                || std::is_same_v<FromDataType, DataTypeUInt256>
+                || (std::is_same_v<FromDataType, DataTypeUInt32> && std::is_same_v<ToDataType, DataTypeTime>))
             && (std::is_same_v<ToDataType, DataTypeDateTime> || std::is_same_v<ToDataType, DataTypeTime>))
         {
             if constexpr (std::is_same_v<ToDataType, DataTypeDateTime>)

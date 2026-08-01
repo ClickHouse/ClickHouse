@@ -300,3 +300,92 @@ INSERT INTO t_val_ex VALUES (0.1);
 SELECT toString(d) FROM t_val_ex;
 SELECT toString(CAST(0.1 AS DateTime));
 DROP TABLE t_val_ex;
+
+-- In the default ignore mode the four numeric->temporal branches serve two callers with opposite
+-- needs, so they key on the exact-target flag: an exact target (DROP/OPTIMIZE PARTITION, strict IN,
+-- KeyCondition, sharding key) gets the canonical storage value, while value materialization clamps
+-- like CAST. Both halves are asserted below for each of the four targets.
+SELECT '-- exact target: a literal outside the storage type raises, so DROP PARTITION cannot drop the wrong partition';
+SET date_time_overflow_behavior = 'ignore';
+DROP TABLE IF EXISTS t_exact_dt;
+CREATE TABLE t_exact_dt (k DateTime, v UInt8) ENGINE = MergeTree PARTITION BY k ORDER BY tuple();
+INSERT INTO t_exact_dt SELECT toDateTime(100), 1;
+INSERT INTO t_exact_dt SELECT toDateTime(4294967295), 2;
+-- 99999999999 is outside UInt32, so no DateTime partition can hold it: raise instead of clamping to 4294967295.
+ALTER TABLE t_exact_dt DROP PARTITION 99999999999; -- { serverError ARGUMENT_OUT_OF_BOUND }
+OPTIMIZE TABLE t_exact_dt PARTITION 99999999999; -- { serverError ARGUMENT_OUT_OF_BOUND }
+SELECT arraySort(groupArray(toUInt32(k))) FROM t_exact_dt;
+-- the largest storable value still addresses its own partition
+ALTER TABLE t_exact_dt DROP PARTITION 4294967295;
+SELECT arraySort(groupArray(toUInt32(k))) FROM t_exact_dt;
+DROP TABLE t_exact_dt;
+
+DROP TABLE IF EXISTS t_exact_date;
+CREATE TABLE t_exact_date (k Date, v UInt8) ENGINE = MergeTree PARTITION BY k ORDER BY tuple();
+INSERT INTO t_exact_date SELECT toDate(19), 1;
+INSERT INTO t_exact_date SELECT toDate(65535), 2;
+ALTER TABLE t_exact_date DROP PARTITION 99999999999; -- { serverError ARGUMENT_OUT_OF_BOUND }
+SELECT arraySort(groupArray(toUInt16(k))) FROM t_exact_date;
+DROP TABLE t_exact_date;
+
+DROP TABLE IF EXISTS t_exact_date32;
+CREATE TABLE t_exact_date32 (k Date32, v UInt8) ENGINE = MergeTree PARTITION BY k ORDER BY tuple();
+INSERT INTO t_exact_date32 SELECT toDate32(19), 1;
+INSERT INTO t_exact_date32 SELECT toDate32(120000), 2;
+ALTER TABLE t_exact_date32 DROP PARTITION 999999999999; -- { serverError ARGUMENT_OUT_OF_BOUND }
+SELECT arraySort(groupArray(toInt32(k))) FROM t_exact_date32;
+DROP TABLE t_exact_date32;
+
+SELECT '-- exact target: a literal inside the storage type but outside the visible range stays addressable';
+-- Time is backed by Int32 with a plain SerializationNumber, so 4000000 (inside Int32, outside the
+-- visible Time range) can really be stored. Clamping the literal to 3599999 would drop the wrong
+-- partition; rejecting it would leave its own partition undroppable. Both are asserted.
+DROP TABLE IF EXISTS t_exact_time;
+CREATE TABLE t_exact_time (k Time, v UInt8) ENGINE = MergeTree PARTITION BY k ORDER BY tuple();
+INSERT INTO t_exact_time SELECT toTime(100), 1;
+INSERT INTO t_exact_time SELECT toTime(3599999), 2;
+ALTER TABLE t_exact_time DROP PARTITION 4000000;
+SELECT arraySort(groupArray(toInt32(k))) FROM t_exact_time;
+-- outside Int32 storage: still raises
+ALTER TABLE t_exact_time DROP PARTITION 99999999999; -- { serverError ARGUMENT_OUT_OF_BOUND }
+SELECT arraySort(groupArray(toInt32(k))) FROM t_exact_time;
+DROP TABLE t_exact_time;
+
+DROP TABLE IF EXISTS t_exact_time_own;
+CREATE TABLE t_exact_time_own (k Time, v UInt8) ENGINE = MergeTree PARTITION BY k ORDER BY tuple();
+INSERT INTO t_exact_time_own SELECT toTime(100), 1;
+INSERT INTO t_exact_time_own VALUES (4000000, 2);
+SELECT arraySort(groupArray(toInt32(k))) FROM t_exact_time_own;
+ALTER TABLE t_exact_time_own DROP PARTITION 4000000;
+SELECT arraySort(groupArray(toInt32(k))) FROM t_exact_time_own;
+DROP TABLE t_exact_time_own;
+
+SELECT '-- exact target: strict IN must not match an out-of-range literal against a boundary row';
+SELECT toDateTime(4294967295) IN (99999999999), toTime(3599999) IN (4000000), toDate(65535) IN (99999999999), toDate32(120000) IN (999999999999);
+SELECT toDateTime(4294967295) IN (4294967295), toTime(3599999) IN (3599999), toDate(65535) IN (65535), toDate32(120000) IN (120000);
+
+SELECT '-- value materialization: an out-of-range literal clamps exactly like CAST';
+SELECT toInt32(c), toInt32(CAST(99999999999 AS Time)) FROM values('c Time', 99999999999);
+SELECT toString(c), toString(CAST(99999999999 AS Date)) FROM values('c Date', 99999999999);
+SELECT toString(c), toString(CAST(999999999999 AS Date32)) FROM values('c Date32', 999999999999);
+SELECT toString(c), toString(CAST(99999999999 AS DateTime)) FROM values('c DateTime', 99999999999);
+SELECT toInt32(c), toInt32(CAST(-9000000000000000000 AS Time)) FROM values('c Time', -9000000000000000000);
+SELECT toInt32(c), toInt32(CAST(4000000 AS Time)) FROM values('c Time', 4000000);
+
+SELECT '-- value materialization: wide-integer and float sources clamp like CAST too';
+SELECT toString(c), toString(CAST(toUInt128(99999999999) AS Date)) FROM values('c Date', toUInt128(99999999999));
+SELECT toString(c), toString(CAST(toUInt256(99999999999) AS Date)) FROM values('c Date', toUInt256(99999999999));
+SELECT toString(c), toString(CAST(toInt128(999999999999) AS Date32)) FROM values('c Date32', toInt128(999999999999));
+SELECT toString(c), toString(CAST(toInt256(999999999999) AS Date32)) FROM values('c Date32', toInt256(999999999999));
+SELECT toInt32(c), toInt32(CAST(toUInt128(99999999999) AS Time)) FROM values('c Time', toUInt128(99999999999));
+SELECT toString(c), toString(CAST(toUInt128(99999999999) AS DateTime)) FROM values('c DateTime', toUInt128(99999999999));
+SELECT toString(c), toString(CAST(1e30 AS Date)) FROM values('c Date', 1e30);
+SELECT toInt32(c), toInt32(CAST(nan AS Time)) FROM values('c Time', nan);
+SELECT toString(c), toString(CAST(inf AS DateTime)) FROM values('c DateTime', inf);
+
+SELECT '-- UInt32 keeps clamping into Time; the UInt32 -> DateTime cast is unaffected (UInt32::max is the DateTime maximum)';
+SELECT toInt32(CAST(toUInt32(4000000) AS Time)), toInt32(CAST(toUInt32(4294967295) AS Time));
+SELECT toString(CAST(toUInt32(4294967295) AS DateTime)), toString(CAST(toUInt32(4000000) AS DateTime));
+SELECT toInt32(CAST(c AS Time)), toString(CAST(c AS DateTime)) FROM (SELECT toUInt32(4294967295) AS c);
+SELECT toInt32(CAST(toNullable(toUInt32(4000000)) AS Nullable(Time)));
+SELECT toString(CAST(toUInt64(18446744073709551615) AS DateTime)), toString(CAST(toUInt128(18446744073709551615) + 1 AS DateTime));
