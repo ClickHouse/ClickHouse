@@ -83,6 +83,8 @@ void ASTInsertQuery::writeJSON(WriteBuffer & out) const
     w.writeChild("partition_by", partition_by);
     w.writeChild("settings_ast", settings_ast);
     w.writeChild("select", select);
+    w.writeChild("returning_select", returning_select);
+    w.writeChild("source_select_settings_ast", source_select_settings_ast);
     w.writeChild("infile", infile);
     w.writeChild("compression", compression);
 }
@@ -162,6 +164,20 @@ void ASTInsertQuery::readJSON(const Poco::JSON::Object & json)
         children.push_back(select);
     }
 
+    child = r.readChildOfType<ASTSelectWithUnionQuery>("returning_select");
+    if (child)
+    {
+        returning_select = child;
+        children.push_back(returning_select);
+    }
+
+    child = r.readChildOfType<ASTSetQuery>("source_select_settings_ast");
+    if (child)
+    {
+        source_select_settings_ast = child;
+        children.push_back(source_select_settings_ast);
+    }
+
     /// `FROM INFILE`/`COMPRESSION` are both string `ASTLiteral`s in the SQL grammar, and
     /// `COMPRESSION` is only valid when `INFILE` is present. `formatImpl`, `ClientBase`,
     /// `AsynchronousInsertQueue` and `getReadBufferFromASTInsertQuery` later downcast these
@@ -194,6 +210,10 @@ void ASTInsertQuery::readJSON(const Poco::JSON::Object & json)
     if (partition_by && !table_function)
         throw Exception(ErrorCodes::BAD_ARGUMENTS,
             "'partition_by' is only valid for INSERT INTO FUNCTION (requires 'table_function') during AST JSON deserialization");
+
+    if (source_select_settings_ast && !returning_select)
+        throw Exception(ErrorCodes::BAD_ARGUMENTS,
+            "'source_select_settings_ast' is only valid together with 'returning_select' during AST JSON deserialization");
 
     /// The parser produces exactly one destination form: `INSERT INTO FUNCTION f(...)` (table_function)
     /// or `INSERT INTO [db.]t` (the `database`/`table` identifiers; `table_id` is the normalized
