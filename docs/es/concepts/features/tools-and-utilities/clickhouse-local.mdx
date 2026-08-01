@@ -206,7 +206,7 @@ $ clickhouse-local --copy < data.json > data.csv
   ## Uso
 </div>
 
-De forma predeterminada, `clickhouse-local` tiene acceso a los datos de un servidor de ClickHouse en el mismo host y no depende de la configuración del servidor. También permite cargar la configuración del servidor mediante el argumento `--config-file`. Para los datos temporales, se crea por defecto un directorio temporal de datos único.
+De forma predeterminada, `clickhouse-local` tiene acceso a los datos de un servidor ClickHouse en el mismo host y no depende de la configuración del servidor. También permite cargar la configuración del servidor mediante el argumento `--config-file`. Para los datos temporales, se crea por defecto un directorio temporal de datos único.
 
 Uso básico (Linux):
 
@@ -239,7 +239,9 @@ Argumentos:
 * `--echo [ <bool> ]` — imprime cada consulta antes de ejecutarla. Acepta un valor booleano opcional. Está habilitado de forma predeterminada en modo interactivo y deshabilitado en modo por lotes. Nota: dado que `--echo` ahora acepta un valor opcional, una consulta posicional colocada inmediatamente después de un `--echo` sin valor se interpreta como su valor; use `--echo --query "..."`, `--echo -q "..."`, `--echo=false` o redirija `stdin` en su lugar.
 * `--echo-formatted [ <bool> ]` — da formato a las consultas mostradas por `echo`. Acepta un valor booleano opcional. Está habilitado de forma predeterminada en modo interactivo y deshabilitado en modo por lotes.
 * `--echo-query-id [ <bool> ]` — imprime el `query_id` antes de la ejecución. Acepta un valor booleano opcional. Está habilitado de forma predeterminada en modo interactivo y deshabilitado en modo por lotes.
+* `--echo-query-separator <string>` — imprime este separador antes de la consulta mostrada por `echo` ya formateada (requiere `--echo-formatted`), lo que facilita distinguir la consulta escrita de su eco reformateado. Vacío de forma predeterminada (deshabilitado).
 * `--highlight`, `--hilite` `<bool>` — alterna el resaltado de sintaxis del prompt de comandos y de las consultas mostradas por `echo`. Está habilitado de forma predeterminada. El resaltado se aplica solo cuando se escribe en un terminal.
+* `--hints <bool>` — muestra sugerencias de autocompletado mientras escribe (texto &quot;fantasma&quot; en línea) para la sugerencia coincidente más adecuada cuando el cursor está al final de la entrada. Navegue por las sugerencias con Arriba/Abajo (o Ctrl-Arriba/Ctrl-Abajo); acepte la sugerencia en línea con Tab o Flecha derecha; `Enter` acepta una sugerencia solo después de que se haya seleccionado explícitamente una y, en caso contrario, ejecuta la consulta; `Tab` también abre la lista clásica de autocompletado. Requiere `--highlight` (las sugerencias necesitan color) y el mecanismo de sugerencias (por lo que `--disable_suggestion` también las desactiva). Está habilitado de forma predeterminada.
 * `--verbose` — muestra más detalles sobre la ejecución de la consulta.
 * `--logger.console` — registrar en la consola.
 * `--logger.log` — nombre del archivo de registro.
@@ -371,6 +373,36 @@ Read 186 rows, 4.15 KiB in 0.035 sec., 5302 rows/sec., 118.34 KiB/sec.
 ├──────────┼──────────┤
 ...
 ```
+
+<div id="starting-listeners">
+  ## Inicio de listeners TCP y HTTP
+</div>
+
+`clickhouse-local` puede convertirse en un servidor ligero que acepta conexiones TCP (protocolo nativo) y HTTP. Esto resulta útil si desea permitir que otras herramientas o aplicaciones de ClickHouse accedan a las bases de datos y tablas de una instancia de `clickhouse-local` en ejecución. Tenga en cuenta que cada conexión entrante obtiene su propia sesión: las tablas temporales y la configuración a nivel de sesión de `clickhouse-local` en modo interactivo no son visibles para las conexiones externas.
+
+Use `SYSTEM START LISTEN` para abrir un listener y `SYSTEM STOP LISTEN` para cerrarlo:
+
+```bash
+clickhouse-local \
+    --listen_host 127.0.0.1 \
+    --tcp_port 9000 \
+    --http_port 8123 \
+    --query "
+        SYSTEM START LISTEN TCP;
+        SYSTEM START LISTEN HTTP;
+        SELECT * FROM url('http://127.0.0.1:8123/?query=SELECT+42', LineAsString);
+        SYSTEM STOP LISTEN TCP;
+        SYSTEM STOP LISTEN HTTP;
+    "
+```
+
+Las opciones `--listen_host`, `--tcp_port` y `--http_port` configuran la dirección de enlace y los puertos. Los puertos predeterminados son `9000` para TCP y `8123` para HTTP.
+
+<Warning>
+  **Seguridad**
+
+  De forma predeterminada, `clickhouse-local` se ejecuta con la configuración de usuarios temporales, por lo que cualquier puerto de escucha que abra no requiere autenticación. Vincúlelo a una dirección de loopback (`127.0.0.1` o `::1`), a menos que haya configurado explícitamente usuarios y access control haciendo que la opción `users_config` apunte a un archivo `users.xml` personalizado (por ejemplo, mediante `--config-file`). Escuchar en una dirección que no sea de loopback sin authentication expone los datos de la instancia local a cualquiera que pueda acceder al puerto elegido.
+</Warning>
 
 <div id="related-content-1">
   ## Contenido relacionado

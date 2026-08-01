@@ -1,0 +1,58 @@
+{
+  "groups": [
+    {
+      "group": "Cloud",
+      "pages": [
+        "ja/resources/changelogs/cloud/2026",
+        {
+          "group": "アーカイブ",
+          "pages": [
+            "ja/resources/changelogs/cloud/archive/2025",
+            "ja/resources/changelogs/cloud/archive/2024",
+            "ja/resources/changelogs/cloud/archive/2023",
+            "ja/resources/changelogs/cloud/archive/2022"
+          ]
+        },
+        "ja/resources/changelogs/cloud/release-status",
+        {
+          "group": "Cloudデータベースのリリース変更履歴",
+          "pages": [
+            "ja/resources/changelogs/cloud/release-notes/26_02",
+            "ja/resources/changelogs/cloud/release-notes/25_12",
+            "ja/resources/changelogs/cloud/release-notes/25_10",
+            "ja/resources/changelogs/cloud/release-notes/25_08",
+            "ja/resources/changelogs/cloud/release-notes/25_06",
+            "ja/resources/changelogs/cloud/release-notes/25_04",
+            "ja/resources/changelogs/cloud/release-notes/24_12",
+            "ja/resources/changelogs/cloud/release-notes/24_10",
+            "ja/resources/changelogs/cloud/release-notes/24_08",
+            "ja/resources/changelogs/cloud/release-notes/24_06",
+            "ja/resources/changelogs/cloud/release-notes/24_05",
+            "ja/resources/changelogs/cloud/release-notes/24_02"
+          ],
+          "root": "ja/resources/changelogs/cloud/release-notes-index"
+        }
+      ],
+      "root": "ja/resources/changelogs/cloud/index"
+    },
+    {
+      "group": "セルフマネージド",
+      "pages": [
+        "ja/resources/changelogs/oss/2026",
+        "ja/resources/changelogs/oss/2025",
+        "ja/resources/changelogs/oss/2024",
+        "ja/resources/changelogs/oss/2023",
+        "ja/resources/changelogs/oss/2022",
+        "ja/resources/changelogs/oss/2021",
+        "ja/resources/changelogs/oss/2020",
+        "ja/resources/changelogs/oss/2019",
+        "ja/resources/changelogs/oss/2018",
+        "ja/resources/changelogs/oss/2017",
+        "ja/resources/changelogs/security-changelog"
+      ]
+    }
+  ],
+  "icon": "/images/icons/icon-changelogs.svg",
+  "item": "変更履歴",
+  "root": "ja/resources/changelogs/cloud/2026"
+}
