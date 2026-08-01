@@ -1,0 +1,92 @@
+---
+slug: /use-cases/observability/clickstack/demo-days/2026/2026-07-17
+title: 'Demo days - 2026-07-17'
+sidebarTitle: '2026-07-17'
+description: 'ClickStack demo days for 2026-07-17'
+doc_type: 'guide'
+keywords: ['ClickStack', 'Demo days']
+---
+
+## Chart tooltip improvements {#chart-tooltip-improvements}
+
+*Demo by [@brandon-pereira](https://github.com/brandon-pereira)*
+
+<iframe width="768" height="432" src="https://www.youtube.com/embed/EsnGp9RPSKM" title="YouTube video player" frameborder="0" allow="accelerometer; autoplay; clipboard-write; encrypted-media; gyroscope; picture-in-picture; web-share" referrerpolicy="strict-origin-when-cross-origin" allowfullscreen></iframe>
+
+Chart tooltips in ClickStack got a big usability upgrade. Clicking on a chart now pins the tooltip in place instead of it disappearing when you move your mouse away, so you can actually read through the data. The pinned tooltip shows every value in the series, and if there are a lot of them, you can scroll through the list instead of having it get cut off.
+
+You can also copy values straight out of the tooltip now, which came directly from customer feedback. Previously customers could see the data they wanted but had no way to grab it, and now clicking a value puts it on your clipboard.
+
+The whole thing runs on a Recharts upgrade that renders tooltips through a portal instead of inside the chart's own container. That matters most on dashboards with lots of charts packed close together, since tooltips no longer get squeezed or clipped by their neighbors.
+
+**Related PRs:** [#2642](https://github.com/hyperdxio/hyperdx/pull/2642) feat(charts): pin chart tooltip on click with inline drill-down actions
+
+## Running MCP evals from a PR {#running-mcp-evals-from-a-pr}
+
+*Demo by [@brandon-pereira](https://github.com/brandon-pereira)*
+
+<iframe width="768" height="432" src="https://www.youtube.com/embed/YcDm1Mnw-Qc" title="YouTube video player" frameborder="0" allow="accelerometer; autoplay; clipboard-write; encrypted-media; gyroscope; picture-in-picture; web-share" referrerpolicy="strict-origin-when-cross-origin" allowfullscreen></iframe>
+
+The team can now run MCP evals directly from a GitHub PR instead of only locally, so anyone can see how a code change affects MCP quality before it merges. This is the first version of the setup, wiring the eval pipeline into CI so it runs automatically and reports a combined score back on the PR.
+
+For more background on how the ClickStack MCP evals framework works, check out the blog post [benchmarking the ClickStack MCP server with HDX evals](https://clickhouse.com/blog/benchmarking-the-clickstack-mcp-server-with-hdx-evals).
+
+**Related PRs:** [#2628](https://github.com/hyperdxio/hyperdx/pull/2628) feat(evals): M1 CI skeleton — run MCP evals end to end in GitHub Actions
+
+## Metrics support in the MCP server {#metrics-support-in-the-mcp-server}
+
+*Demo by [@karl-power](https://github.com/karl-power)*
+
+<iframe width="768" height="432" src="https://www.youtube.com/embed/GqJWQN3P86c" title="YouTube video player" frameborder="0" allow="accelerometer; autoplay; clipboard-write; encrypted-media; gyroscope; picture-in-picture; web-share" referrerpolicy="strict-origin-when-cross-origin" allowfullscreen></iframe>
+
+The MCP server now understands metrics, not just logs and traces, and there's a matching eval framework to measure how well it uses them. This adds generators for the five metric types ClickStack supports (gauge, sum, histogram, exponential histogram, and summary), plus new eval scenarios that specifically require metrics to solve, like a JVM memory leak that's essentially unsolvable from logs and traces alone.
+
+Early results show the metrics-aware MCP server clearing these scenarios noticeably faster than the standard SQL-only MCP server, mostly by needing fewer tool calls to reach the answer. There's still tuning to do (some scenarios trip up the LLM's pattern matching against different notations for the same metric), but the direction is clear: giving the agent direct metrics access unlocks investigations that were previously out of reach.
+
+**Related PRs:** [#2645](https://github.com/hyperdxio/hyperdx/pull/2645) feat(evals): support metric types and seeding
+
+## Source picker improvements {#source-picker-improvements}
+
+*Demo by [@elizabetdev](https://github.com/elizabetdev)*
+
+<iframe width="768" height="432" src="https://www.youtube.com/embed/XTQygZSMUTs" title="YouTube video player" frameborder="0" allow="accelerometer; autoplay; clipboard-write; encrypted-media; gyroscope; picture-in-picture; web-share" referrerpolicy="strict-origin-when-cross-origin" allowfullscreen></iframe>
+
+Selecting the right source used to be a scroll-and-guess exercise. In instances with long source lists, once you opened the dropdown there was no visual cue for which source was actually selected. This update adds a checkmark next to the currently selected source, mirroring the existing multi-select pattern, so you always know at a glance which one is active before you start querying.
+
+Small change, but it removes a moment of "wait, which one am I looking at?" that adds up over a workday.
+
+**Related PRs:** [#2651](https://github.com/hyperdxio/hyperdx/pull/2651) feat(app): clarify selected source in source picker
+
+## Chart builder to SQL conversion {#chart-builder-to-sql-conversion}
+
+*Demo by [@pulpdrew](https://github.com/pulpdrew)*
+
+<iframe width="768" height="432" src="https://www.youtube.com/embed/IBNdi1rgiTc" title="YouTube video player" frameborder="0" allow="accelerometer; autoplay; clipboard-write; encrypted-media; gyroscope; picture-in-picture; web-share" referrerpolicy="strict-origin-when-cross-origin" allowfullscreen></iframe>
+
+Switching from the visual Query Builder to raw SQL mode used to mean starting over. If you'd built up a query with filters and group-bys in the builder and then hit something the builder couldn't express, moving to SQL mode dropped you into an empty editor.
+
+Now, switching to SQL mode runs your builder query through the same pipeline that renders the chart, so you land in SQL mode with the equivalent query already written out using the proper macros, not hardcoded values. The reverse conversion (SQL back to Builder) isn't there yet, but it's on the roadmap.
+
+**Related PRs:** [#2634](https://github.com/hyperdxio/hyperdx/pull/2634) feat: Auto-convert builder charts to Raw SQL, [#2666](https://github.com/hyperdxio/hyperdx/pull/2666) fix(charts): Keep selected source when switching from builder to SQL mode
+
+## New filter fetching mechanism {#new-filter-fetching-mechanism}
+
+*Demo by [@knudtty](https://github.com/knudtty)*
+
+<iframe width="768" height="432" src="https://www.youtube.com/embed/z31cAIJA3B4" title="YouTube video player" frameborder="0" allow="accelerometer; autoplay; clipboard-write; encrypted-media; gyroscope; picture-in-picture; web-share" referrerpolicy="strict-origin-when-cross-origin" allowfullscreen></iframe>
+
+Fetching the list of available filter values got a smarter routing layer. Instead of one fixed strategy, the new system looks at what's available in the schema, in particular whether text indexes exist, and picks the most efficient way to build the filter list.
+
+When text indexes are available, ClickStack queries them directly instead of falling back to rollup tables, which also means fewer rollups to maintain and less risk of the memory pressure some customers have hit with the old approach. This does require ClickHouse 26.3, so anyone not yet on that version will keep using the existing rollup-based approach until they upgrade, at which point it kicks in automatically.
+
+**Related PRs:** [#2643](https://github.com/hyperdxio/hyperdx/pull/2643) feat: rework getAllKeyValues and add filters populated from text indices
+
+## Improved RUM dashboard {#improved-rum-dashboard}
+
+*Demo by [@teeohhem](https://github.com/teeohhem)*
+
+<iframe width="768" height="432" src="https://www.youtube.com/embed/roNhRzLvXro" title="YouTube video player" frameborder="0" allow="accelerometer; autoplay; clipboard-write; encrypted-media; gyroscope; picture-in-picture; web-share" referrerpolicy="strict-origin-when-cross-origin" allowfullscreen></iframe>
+
+The Browser RUM dashboard now has color coding, backed by a markdown legend explaining what the colors mean (with room to make that legend even clearer down the line). Number tiles for things like sessions with errors are now color-coded based on configurable thresholds, so problem areas jump out visually instead of blending into a wall of neutral numbers.
+
+**Related PRs:** [#2671](https://github.com/hyperdxio/hyperdx/pull/2671) feat(dashboards): color-code Browser RUM web vitals, page-load & error tiles

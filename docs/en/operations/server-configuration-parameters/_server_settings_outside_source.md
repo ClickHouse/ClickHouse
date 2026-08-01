@@ -1522,7 +1522,7 @@ The default server configuration file `config.xml` contains the following settin
     <reserved_size_rows>8192</reserved_size_rows>
     <buffer_size_rows_flush_threshold>524288</buffer_size_rows_flush_threshold>
     <flush_on_crash>false</flush_on_crash>
-    <symbolize>false</symbolize>
+    <symbolize>true</symbolize>
 </trace_log>
 ```
 
@@ -1585,6 +1585,34 @@ The default server configuration file `config.xml` contains the following settin
     <buffer_size_rows_flush_threshold>512</buffer_size_rows_flush_threshold>
     <flush_on_crash>false</flush_on_crash>
 </crash_log>
+```
+
+## create_union_system_log_tables {#create_union_system_log_tables}
+
+Requests the creation of `all_...` tables next to the system log tables (`system.all_query_log` for `system.query_log`, `system.all_text_log` for `system.text_log`, and so on). Such a table is a union of the corresponding log table, its rotated versions (`query_log_0`, `query_log_1`, ...) and/or the same tables across all replicas of a cluster, and allows querying them all at once without remembering constructs like `clusterAllReplicas(default, merge(system, '^query_log'))`.
+
+The section is optional. If it is present, at least one of the following settings has to be specified:
+
+| Setting                | Description                                                                                                                                     |
+|------------------------|-------------------------------------------------------------------------------------------------------------------------------------------------|
+| `merge_rotated_tables` | If `true`, the `all_...` table selects from the log table and its rotated versions with the `merge` table function.                            |
+| `cluster`              | If specified, the `all_...` table selects from all replicas of this cluster with the `clusterAllReplicas` table function (with `SETTINGS skip_unavailable_shards = 1`, so that unavailable replicas do not fail the queries). |
+
+If both settings are specified, the table is a union of the rotated tables across all replicas of the cluster.
+
+The option applies to all system log tables; it does not allow for a different configuration for different system logs. The tables are created in the same database as the system log tables at the first flush of each log and are automatically recreated when the structure of the log table changes (on rotation). They have no state, so it is safe to drop them at any time. The creation is supported only for the `Atomic`, `Replicated` and `Shared` database engines.
+
+:::note
+When the `cluster` setting is used, the table definition references the cluster, and the cluster has to exist for the table to be loaded. If you remove the cluster from the configuration, also drop the `all_...` tables (they will be recreated according to the new configuration at the next flush).
+:::
+
+**Example**
+
+```xml
+<create_union_system_log_tables>
+    <merge_rotated_tables>true</merge_rotated_tables>
+    <cluster>default</cluster>
+</create_union_system_log_tables>
 ```
 
 ## custom_cached_disks_base_directory {#custom_cached_disks_base_directory}
