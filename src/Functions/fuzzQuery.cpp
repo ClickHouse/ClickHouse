@@ -6,6 +6,7 @@
 #include <Functions/FunctionHelpers.h>
 #include <IO/WriteBufferFromString.h>
 #include <Interpreters/Context.h>
+#include <Interpreters/ProcessList.h>
 #include <Interpreters/executeQuery.h>
 #include <Parsers/IAST.h>
 #include <Parsers/ParserQuery.h>
@@ -26,6 +27,7 @@ namespace ErrorCodes
 {
     extern const int ILLEGAL_COLUMN;
     extern const int SUPPORT_IS_DISABLED;
+    extern const int TIMEOUT_EXCEEDED;
 }
 
 namespace
@@ -42,6 +44,9 @@ public:
             throw Exception(
                 ErrorCodes::SUPPORT_IS_DISABLED,
                 "Function `fuzzQuery` is disabled. Set `allow_fuzz_query_functions` to 1 to enable it");
+
+        /// Some callers have no process-list entry, so the cancellation check must stay a no-op there.
+        query_status = context->getProcessListElementSafe();
 
         const Settings & settings = context->getSettingsRef();
         max_query_size = settings[Setting::max_query_size];
@@ -92,6 +97,8 @@ public:
 
             for (size_t i = 0; i < input_rows_count; ++i)
             {
+                checkCancellation();
+
                 ASTPtr fuzzed_ast = ast->clone();
                 {
                     auto [fuzzer, lock] = getGlobalASTFuzzer();
@@ -119,6 +126,8 @@ private:
         size_t prev_offset = 0;
         for (size_t i = 0; i < input_rows_count; ++i)
         {
+            checkCancellation();
+
             const char * begin = reinterpret_cast<const char *>(&data[prev_offset]);
             const char * end = reinterpret_cast<const char *>(&data[offsets[i]]);
 
@@ -138,6 +147,16 @@ private:
         }
     }
 
+    /// Cancellation is only polled between pipeline tasks, so an unbounded per-row loop must poll it too.
+    /// `checkTimeLimit` throws for `KILL QUERY` and the `throw` overflow mode and returns false for
+    /// `break`; a scalar has no meaningful partial result, so `break` is a hard stop here as well.
+    void checkCancellation() const
+    {
+        if (query_status && !query_status->checkTimeLimit())
+            throw Exception(ErrorCodes::TIMEOUT_EXCEEDED, "Timeout exceeded: elapsed time limit reached in function {}", name);
+    }
+
+    QueryStatusPtr query_status;
     size_t max_query_size;
     size_t max_parser_depth;
     size_t max_parser_backtracks;

@@ -4,6 +4,7 @@
 #include <Functions/FunctionFactory.h>
 #include <Functions/IFunction.h>
 #include <Interpreters/Context.h>
+#include <Interpreters/ProcessList.h>
 #include <Parsers/ASTToJSON.h>
 #include <Parsers/IAST.h>
 #include <Parsers/ParserQuery.h>
@@ -26,6 +27,7 @@ namespace Setting
 namespace ErrorCodes
 {
     extern const int ILLEGAL_TYPE_OF_ARGUMENT;
+    extern const int TIMEOUT_EXCEEDED;
 }
 
 namespace
@@ -43,6 +45,9 @@ public:
 
     explicit FunctionParseQueryToJSON(ContextPtr context)
     {
+        /// Some callers have no process-list entry, so the cancellation check must stay a no-op there.
+        query_status = context->getProcessListElementSafe();
+
         const Settings & settings = context->getSettingsRef();
         max_query_size = settings[Setting::max_query_size];
         max_parser_depth = settings[Setting::max_parser_depth];
@@ -75,6 +80,8 @@ public:
 
         for (size_t i = 0; i < input_rows_count; ++i)
         {
+            checkCancellation();
+
             auto sql = col->getDataAt(i);
 
             ParserQuery parser(sql.data() + sql.size(), allow_settings_after_format_in_insert, implicit_select);
@@ -94,6 +101,16 @@ public:
     }
 
 private:
+    /// Cancellation is only polled between pipeline tasks, so an unbounded per-row loop must poll it too.
+    /// `checkTimeLimit` throws for `KILL QUERY` and the `throw` overflow mode and returns false for
+    /// `break`; a scalar has no meaningful partial result, so `break` is a hard stop here as well.
+    void checkCancellation() const
+    {
+        if (query_status && !query_status->checkTimeLimit())
+            throw Exception(ErrorCodes::TIMEOUT_EXCEEDED, "Timeout exceeded: elapsed time limit reached in function {}", name);
+    }
+
+    QueryStatusPtr query_status;
     size_t max_query_size;
     size_t max_parser_depth;
     size_t max_parser_backtracks;
