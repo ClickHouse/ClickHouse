@@ -9,16 +9,22 @@ SET query_plan_enable_optimizations = 0;
 DROP TABLE IF EXISTS l;
 DROP TABLE IF EXISTS r;
 DROP TABLE IF EXISTS m;
+DROP TABLE IF EXISTS w;
 DROP DICTIONARY IF EXISTS dict;
 DROP TABLE IF EXISTS dsrc;
 
 CREATE TABLE l (a UInt64, b UInt64) ENGINE = Log;
 CREATE TABLE r (a UInt64, b UInt64) ENGINE = Log;
 CREATE TABLE m (a UInt64) ENGINE = Log;
+-- A separate table for the rows that need a Dynamic or Variant column: Log supports neither.
+CREATE TABLE w (a UInt64, rate Float64, d Dynamic, v Variant(Float64, String)) ENGINE = MergeTree ORDER BY a;
 
 INSERT INTO l SELECT number % 16, number % 4 FROM numbers(500);
 INSERT INTO r SELECT number % 16, number % 4 FROM numbers(500);
 INSERT INTO m SELECT number % 4 FROM numbers(40);
+INSERT INTO w SELECT number % 16, 0.1,
+    (number / 100.)::Float64::Dynamic, (number / 100.)::Float64::Variant(Float64, String)
+FROM numbers(200);
 
 CREATE TABLE dsrc (k UInt64, v UInt64) ENGINE = Log;
 INSERT INTO dsrc SELECT number, number % 16 FROM numbers(64);
@@ -223,8 +229,78 @@ SELECT count() = 0 FROM (
     SETTINGS cross_to_inner_join_rewrite = 1
 ) WHERE explain ILIKE '%kind: INNER%';
 
+-- The filesystem* family reads the disks of the node that runs it, so it belongs to the same class
+-- again. Unlike the server constants above it is not folded away on a single node, because a
+-- non-constant argument sends it down a folding path whose default result is "not a constant". The
+-- argument must therefore stay non-constant: filesystemCapacity('default') IS folded and such a row
+-- would read the same on master.
+SELECT '-- filesystemCapacity() is no longer rewritten';
+SELECT count() = 0 FROM (
+    EXPLAIN QUERY TREE run_passes = 1
+    SELECT count() FROM l, r WHERE l.a + filesystemCapacity(materialize('default')) = r.a
+    SETTINGS cross_to_inner_join_rewrite = 1
+) WHERE explain ILIKE '%kind: INNER%';
+
+SELECT '-- filesystemAvailable() is no longer rewritten';
+SELECT count() = 0 FROM (
+    EXPLAIN QUERY TREE run_passes = 1
+    SELECT count() FROM l, r WHERE l.a + filesystemAvailable(materialize('default')) = r.a
+    SETTINGS cross_to_inner_join_rewrite = 1
+) WHERE explain ILIKE '%kind: INNER%';
+
+SELECT '-- filesystemUnreserved() is no longer rewritten';
+SELECT count() = 0 FROM (
+    EXPLAIN QUERY TREE run_passes = 1
+    SELECT count() FROM l, r WHERE l.a + filesystemUnreserved(materialize('default')) = r.a
+    SETTINGS cross_to_inner_join_rewrite = 1
+) WHERE explain ILIKE '%kind: INNER%';
+
+-- getClientHTTPHeader() reads the headers of the request being served, which its own documentation
+-- says are non-empty only on the initiator of a distributed query. The argument must be non-constant
+-- for the same reason as the filesystem* rows above.
+SELECT '-- getClientHTTPHeader() is no longer rewritten';
+SELECT count() = 0 FROM (
+    EXPLAIN QUERY TREE run_passes = 1
+    SELECT count() FROM l, r
+    WHERE concat(toString(l.a), getClientHTTPHeader(materialize('X-Test')))
+        = concat(toString(r.a), getClientHTTPHeader(materialize('X-Test')))
+    SETTINGS cross_to_inner_join_rewrite = 1, allow_get_client_http_header = 1
+) WHERE explain ILIKE '%kind: INNER%';
+
+-- financialNetPresentValueExtended() also reports isDeterministic() = false, but it is stable within
+-- one node's query and every node computes the same value, so it must stay eligible. Over a Dynamic or
+-- a Variant argument it is additionally wrapped in an adaptor that declines constant folding, which is
+-- the shape a guard written as "not deterministic and not foldable" would wrongly reject.
+SELECT '-- financialNetPresentValueExtended() over a Dynamic argument is still rewritten';
+SELECT count() > 0 FROM (
+    EXPLAIN QUERY TREE run_passes = 1
+    SELECT count() FROM w, r
+    WHERE w.a + toUInt64(financialNetPresentValueExtended(w.d, [100, 200]::Array(Float64),
+        ['2020-01-01', '2021-01-01']::Array(Date))) = r.a
+    SETTINGS cross_to_inner_join_rewrite = 1
+) WHERE explain ILIKE '%kind: INNER%';
+
+SELECT '-- financialNetPresentValueExtended() over a Variant argument is still rewritten';
+SELECT count() > 0 FROM (
+    EXPLAIN QUERY TREE run_passes = 1
+    SELECT count() FROM w, r
+    WHERE w.a + toUInt64(financialNetPresentValueExtended(w.v, [100, 200]::Array(Float64),
+        ['2020-01-01', '2021-01-01']::Array(Date))) = r.a
+    SETTINGS cross_to_inner_join_rewrite = 1
+) WHERE explain ILIKE '%kind: INNER%';
+
+SELECT '-- financialNetPresentValueExtended() over an ordinary column is still rewritten';
+SELECT count() > 0 FROM (
+    EXPLAIN QUERY TREE run_passes = 1
+    SELECT count() FROM w, r
+    WHERE w.a + toUInt64(financialNetPresentValueExtended(w.rate, [100, 200]::Array(Float64),
+        ['2020-01-01', '2021-01-01']::Array(Date))) = r.a
+    SETTINGS cross_to_inner_join_rewrite = 1
+) WHERE explain ILIKE '%kind: INNER%';
+
 DROP DICTIONARY dict;
 DROP TABLE dsrc;
 DROP TABLE l;
 DROP TABLE r;
 DROP TABLE m;
+DROP TABLE w;

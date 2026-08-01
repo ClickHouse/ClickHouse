@@ -14,6 +14,8 @@
 #include <Common/UnorderedSetWithMemoryTracking.h>
 #include <Common/VectorWithMemoryTracking.h>
 
+#include <optional>
+
 namespace DB
 {
 
@@ -110,6 +112,11 @@ public:
     FunctionOverloadResolverPtr get(const String & function_name, ContextPtr context);
     /// Returns nullptr if the function is not registered. Useful for non-throwing rewrite-candidate checks.
     FunctionOverloadResolverPtr tryGet(const String & function_name, ContextPtr context);
+
+    /// The `DETERMINISTIC` declaration of a registered function, or nullopt if the name is not a
+    /// WebAssembly UDF. Lets a caller tell a UDF the user declared non-deterministic apart from a
+    /// builtin that reports the same thing, without a context to build a resolver with.
+    std::optional<bool> isDeclaredDeterministic(const String & function_name) const;
 
     /// Returns true if function was removed
     bool dropIfExists(const String & function_name);

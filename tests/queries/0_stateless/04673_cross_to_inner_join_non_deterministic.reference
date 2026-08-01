@@ -48,3 +48,17 @@
 1
 -- transactionID() is no longer rewritten
 1
+-- filesystemCapacity() is no longer rewritten
+1
+-- filesystemAvailable() is no longer rewritten
+1
+-- filesystemUnreserved() is no longer rewritten
+1
+-- getClientHTTPHeader() is no longer rewritten
+1
+-- financialNetPresentValueExtended() over a Dynamic argument is still rewritten
+1
+-- financialNetPresentValueExtended() over a Variant argument is still rewritten
+1
+-- financialNetPresentValueExtended() over an ordinary column is still rewritten
+1

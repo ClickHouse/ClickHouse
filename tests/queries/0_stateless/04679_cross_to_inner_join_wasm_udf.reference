@@ -1,0 +1,4 @@
+-- a non-deterministic WebAssembly UDF is no longer rewritten
+1
+-- a DETERMINISTIC WebAssembly UDF is still rewritten
+1

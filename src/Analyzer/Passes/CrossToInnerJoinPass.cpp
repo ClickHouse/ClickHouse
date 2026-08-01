@@ -10,6 +10,7 @@
 #include <Analyzer/Utils.h>
 
 #include <Functions/logical.h>
+#include <Functions/UserDefined/UserDefinedWebAssembly.h>
 
 #include <Core/Settings.h>
 
@@ -61,12 +62,28 @@ void extractJoinConditions(const QueryTreeNodePtr & node, QueryTreeNodes & equi_
 /// `isServerConstant()` and are refused by that check; these do not, so they are listed by name.
 /// (`transactionLatestSnapshot` and `transactionOldestSnapshot` are in the same class but throw unless
 /// `allow_experimental_transactions` is set.) `randConstant` draws a new value whenever its function
-/// base is built, so a node that deserializes the plan draws a different one. Aliases and letter case
-/// resolve to these canonical names first.
+/// base is built, so a node that deserializes the plan draws a different one. The `filesystem*` family
+/// reads the disks of the node it runs on, and `getClientHTTPHeader` reads the current request's
+/// headers, which its own documentation says are non-empty only on the initiator. Aliases and letter
+/// case resolve to these canonical names first.
 bool isNodeLocalFunction(const String & function_name)
 {
     return function_name == "queryID" || function_name == "FQDN" || function_name == "getServerPort"
-        || function_name == "transactionID" || function_name == "randConstant";
+        || function_name == "transactionID" || function_name == "randConstant"
+        || function_name == "filesystemCapacity" || function_name == "filesystemAvailable"
+        || function_name == "filesystemUnreserved" || function_name == "getClientHTTPHeader";
+}
+
+/// A WebAssembly UDF declared without `DETERMINISTIC` may return a different value for the same input,
+/// and unlike the names above it cannot be listed because its name is chosen by the user. It is not
+/// caught by any of the checks above either: it reports `isDeterministicInScopeOfQuery()` and refuses
+/// the constant folding that hides the other non-deterministic builtins from this pass, so it reaches
+/// here as an ordinary function node. Asking the factory keeps the refusal to WebAssembly UDFs, where
+/// `isDeterministic()` is the user's own declaration; builtins that report the same thing while being
+/// stable within a query, `dictGet` among them, stay eligible.
+bool isNonDeterministicWebAssemblyFunction(const String & function_name)
+{
+    return !UserDefinedWebAssemblyFunctionFactory::instance().isDeclaredDeterministic(function_name).value_or(true);
 }
 
 /// A condition may become a join key only if its value is stable within one query, because in the key
@@ -96,7 +113,8 @@ bool canMoveToJoinExpression(const QueryTreeNodePtr & node)
                 || function_base->isServerConstant())
                 return false;
 
-            if (isNodeLocalFunction(function_node->getFunctionName()))
+            const auto & function_name = function_node->getFunctionName();
+            if (isNodeLocalFunction(function_name) || isNonDeterministicWebAssemblyFunction(function_name))
                 return false;
         }
 

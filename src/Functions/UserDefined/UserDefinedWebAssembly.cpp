@@ -694,6 +694,15 @@ bool UserDefinedWebAssemblyFunctionFactory::has(const String & function_name) co
     return registry.contains(function_name);
 }
 
+std::optional<bool> UserDefinedWebAssemblyFunctionFactory::isDeclaredDeterministic(const String & function_name) const
+{
+    std::shared_lock lock(registry_mutex);
+    auto it = registry.find(function_name);
+    if (it == registry.end() || !it->second.function)
+        return {};
+    return it->second.function->getIsDeterministic();
+}
+
 FunctionOverloadResolverPtr UserDefinedWebAssemblyFunctionFactory::get(const String & function_name, ContextPtr context)
 {
     std::shared_ptr<UserDefinedWebAssemblyFunction> wasm_func = nullptr;
