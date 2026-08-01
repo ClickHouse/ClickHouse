@@ -405,7 +405,6 @@ static void splitAndModifyMutationCommands(
                 {
                     .type = MutationCommand::Type::READ_COLUMN,
                     .column_name = rename_to,
-                    .read_for_internal_compact_mutation = true,
                 });
 
                 /// Not needed for compact parts (not executed), added here only to produce correct
@@ -517,7 +516,7 @@ static void splitAndModifyMutationCommands(
                 }
 
                 for_interpreter.emplace_back(
-                    MutationCommand{.type = MutationCommand::Type::READ_COLUMN, .column_name = column.name, .data_type = column.type, .read_for_internal_compact_mutation = true});
+                    MutationCommand{.type = MutationCommand::Type::READ_COLUMN, .column_name = column.name, .data_type = column.type});
             }
             else if (dropped_columns.contains(column.name))
             {
@@ -548,7 +547,6 @@ static void splitAndModifyMutationCommands(
                     .type = MutationCommand::Type::READ_COLUMN,
                     .column_name = column_name,
                     .data_type = std::move(data_type),
-                    .read_for_internal_compact_mutation = true,
                 }
             );
         }
