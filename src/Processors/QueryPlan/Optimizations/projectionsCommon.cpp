@@ -3,6 +3,7 @@
 
 #include <Columns/ColumnConst.h>
 #include <Common/assert_cast.h>
+#include <Common/scope_guard_safe.h>
 #include <Processors/QueryPlan/ExpressionStep.h>
 #include <Processors/QueryPlan/FilterStep.h>
 #include <Processors/QueryPlan/ReadFromMergeTree.h>
@@ -327,11 +328,18 @@ static bool projectionPartCanFillDefault(
     const ProjectionDescription & projection,
     const ColumnsDescription & parent_table_columns,
     const String & column_name,
-    NameSet & being_resolved)
+    NameSet & resolving,
+    NameSet & known_fillable)
 {
-    /// A cycle cannot be filled; a repeated visit is already accounted for by its first one.
-    if (!being_resolved.emplace(column_name).second)
+    if (known_fillable.contains(column_name))
+        return true;
+
+    /// Only a name already on the current resolution path is a cycle. It must be erased on the way
+    /// out, otherwise two branches of a default that share a dependency (`d DEFAULT e + f` with both
+    /// `e` and `f` reading `g`) would report the second branch as a cycle.
+    if (!resolving.emplace(column_name).second)
         return false;
+    SCOPE_EXIT({ resolving.erase(column_name); });
 
     /// A subcolumn has no default of its own: it is extracted from the evaluated default of its
     /// column in storage, so resolve the default through the base name.
@@ -344,7 +352,10 @@ static bool projectionPartCanFillDefault(
     }
 
     if (!column_default || !column_default->expression)
+    {
+        known_fillable.insert(column_name);
         return true;
+    }
 
     const auto & projection_columns = projection.metadata->getColumns();
 
@@ -358,13 +369,20 @@ static bool projectionPartCanFillDefault(
             || projection.metadata->virtuals.has(identifier))
             continue;
 
+        /// Not a column of the table at all, e.g. a formal parameter of a lambda in the expression.
+        /// It is bound during evaluation and is not a dependency to resolve against the part.
+        if (!parent_table_columns.hasColumnOrSubcolumn(GetColumnsOptions::All, identifier))
+            continue;
+
         /// Not stored: still fillable if it is a current projection column with a fillable default
         /// of its own, which the reader synthesizes recursively.
         if (!projection_columns.hasColumnOrSubcolumn(GetColumnsOptions::AllPhysical, identifier)
-            || !projectionPartCanFillDefault(projection_part, projection, parent_table_columns, identifier, being_resolved))
+            || !projectionPartCanFillDefault(
+                projection_part, projection, parent_table_columns, identifier, resolving, known_fillable))
             return false;
     }
 
+    known_fillable.insert(column_name);
     return true;
 }
 
@@ -374,8 +392,10 @@ static bool projectionPartCanFillDefault(
     const ColumnsDescription & parent_table_columns,
     const String & column_name)
 {
-    NameSet being_resolved;
-    return projectionPartCanFillDefault(projection_part, projection, parent_table_columns, column_name, being_resolved);
+    NameSet resolving;
+    NameSet known_fillable;
+    return projectionPartCanFillDefault(
+        projection_part, projection, parent_table_columns, column_name, resolving, known_fillable);
 }
 
 /// The projection's column set is re-derived from its query at every table load, so it can drift

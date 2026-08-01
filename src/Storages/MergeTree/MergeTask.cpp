@@ -9,6 +9,7 @@
 #include <memory>
 #include <fmt/format.h>
 
+#include <Common/scope_guard_safe.h>
 #include <Compression/CompressedWriteBuffer.h>
 #include <Core/Settings.h>
 #include <Core/ServerSettings.h>
@@ -1300,11 +1301,17 @@ void MergeTask::ExecuteAndFinalizeHorizontalPart::prepareProjectionsToMergeAndRe
         const auto & projection_metadata_columns = projection.metadata->getColumns();
         auto projection_part_can_fill_default = [&](const IMergeTreeDataPart & projection_part, const String & column_name)
         {
-            auto can_fill = [&](const String & name, NameSet & being_resolved, auto & self) -> bool
+            auto can_fill = [&](const String & name, NameSet & resolving, NameSet & known_fillable, auto & self) -> bool
             {
-                /// A cycle cannot be filled; a repeated visit is accounted for by its first one.
-                if (!being_resolved.emplace(name).second)
+                if (known_fillable.contains(name))
+                    return true;
+
+                /// Only a name already on the current resolution path is a cycle, and it must be erased
+                /// on the way out: otherwise two branches sharing a dependency (`d DEFAULT e + f` with
+                /// both reading `g`) would report the second branch as a cycle.
+                if (!resolving.emplace(name).second)
                     return false;
+                SCOPE_EXIT({ resolving.erase(name); });
 
                 /// A subcolumn has no default of its own: resolve it through its column in storage.
                 auto column_default = parent_table_columns.getDefault(name);
@@ -1316,7 +1323,10 @@ void MergeTask::ExecuteAndFinalizeHorizontalPart::prepareProjectionsToMergeAndRe
                 }
 
                 if (!column_default || !column_default->expression)
+                {
+                    known_fillable.insert(name);
                     return true;
+                }
 
                 IdentifierNameSet identifiers;
                 column_default->expression->collectIdentifierNames(identifiers);
@@ -1327,15 +1337,23 @@ void MergeTask::ExecuteAndFinalizeHorizontalPart::prepareProjectionsToMergeAndRe
                         || projection.metadata->virtuals.has(identifier))
                         continue;
 
+                    /// Not a table column at all, e.g. a formal parameter of a lambda in the expression:
+                    /// bound during evaluation, not a dependency to resolve against the part.
+                    if (!parent_table_columns.hasColumnOrSubcolumn(GetColumnsOptions::All, identifier))
+                        continue;
+
                     if (!projection_metadata_columns.hasColumnOrSubcolumn(GetColumnsOptions::AllPhysical, identifier)
-                        || !self(identifier, being_resolved, self))
+                        || !self(identifier, resolving, known_fillable, self))
                         return false;
                 }
+
+                known_fillable.insert(name);
                 return true;
             };
 
-            NameSet being_resolved;
-            return can_fill(column_name, being_resolved, can_fill);
+            NameSet resolving;
+            NameSet known_fillable;
+            return can_fill(column_name, resolving, known_fillable, can_fill);
         };
 
         MergeTreeData::DataPartsVector projection_parts;

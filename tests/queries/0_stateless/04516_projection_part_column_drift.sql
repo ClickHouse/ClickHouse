@@ -434,6 +434,52 @@ WHERE database = currentDatabase() AND table = 't_proj_chain_default_dep'
 
 DROP TABLE t_proj_chain_default_dep;
 
+-- two branches of one default sharing a dependency (`d -> {e, f} -> g`): resolving the first branch
+-- must not leave `g` marked as in-progress, or the second branch is misread as a cycle and the
+-- projection is needlessly abandoned
+DROP TABLE IF EXISTS t_proj_shared_default_dep;
+
+CREATE TABLE t_proj_shared_default_dep
+(
+    a UInt64,
+    PROJECTION p (SELECT * ORDER BY a)
+)
+ENGINE = MergeTree ORDER BY a;
+
+INSERT INTO t_proj_shared_default_dep VALUES (1);
+
+ALTER TABLE t_proj_shared_default_dep ADD COLUMN g UInt64 DEFAULT 42;
+ALTER TABLE t_proj_shared_default_dep ADD COLUMN e UInt64 DEFAULT g + 1;
+ALTER TABLE t_proj_shared_default_dep ADD COLUMN f UInt64 DEFAULT g + 2;
+ALTER TABLE t_proj_shared_default_dep ADD COLUMN d UInt64 DEFAULT e + f;
+
+-- d = (g + 1) + (g + 2) = 87
+SELECT 'shared-dep force projection', a, d FROM t_proj_shared_default_dep ORDER BY a
+SETTINGS optimize_use_projections = 1, force_optimize_projection = 1;
+
+DROP TABLE t_proj_shared_default_dep;
+
+-- a lambda's formal parameter is bound during evaluation and is not a column of the table, so it
+-- must not be treated as an unresolvable dependency
+DROP TABLE IF EXISTS t_proj_lambda_default_dep;
+
+CREATE TABLE t_proj_lambda_default_dep
+(
+    a UInt64,
+    arr Array(UInt64),
+    PROJECTION p (SELECT * ORDER BY a)
+)
+ENGINE = MergeTree ORDER BY a;
+
+INSERT INTO t_proj_lambda_default_dep VALUES (1, [1, 2, 3]);
+
+ALTER TABLE t_proj_lambda_default_dep ADD COLUMN d Array(UInt64) DEFAULT arrayMap(x -> x + 1, arr);
+
+SELECT 'lambda-dep force projection', a, d FROM t_proj_lambda_default_dep ORDER BY a
+SETTINGS optimize_use_projections = 1, force_optimize_projection = 1;
+
+DROP TABLE t_proj_lambda_default_dep;
+
 -- must-not-act counterpart: a chain that bottoms out in a column the projection part does NOT store
 -- is still unfillable, so the read routes to the parent and the merge rebuilds
 DROP TABLE IF EXISTS t_proj_chain_unfillable_dep;
