@@ -5705,6 +5705,14 @@ bool StorageReplicatedMergeTree::fetchPart(
             replaced_parts = checkPartChecksumsAndCommit(transaction, part, /*hardlinked_files*/ {}, /*replace_zero_copy_lock*/ true);
             part_committed = true;
 
+            /// The fetched part is visible to the merge selector from here on, so a dependent
+            /// scheduled merge must become selectable now, whether or not the rest of this function
+            /// succeeds. The quorum updates below talk to Keeper and can throw; the retry then finds
+            /// the part already committed and retires the queue entry via `checkExistingPart`
+            /// without reaching this point again, so a wakeup placed after them would be skipped and
+            /// the next merge in a chain would wait for the selector's backoff timer.
+            merge_selecting_task->schedule();
+
             fiu_do_on(FailPoints::rmt_fetch_throw_after_commit_before_part_log,
             {
                 throw Exception(ErrorCodes::FAULT_INJECTED, "Injected failure after fetch commit before part_log");
@@ -5733,8 +5741,6 @@ bool StorageReplicatedMergeTree::fetchPart(
                         updateQuorum(quorum_part, true);
                 }
             }
-
-            merge_selecting_task->schedule();
 
             for (const auto & replaced_part : replaced_parts)
             {
