@@ -14,6 +14,7 @@
 #include <Functions/IFunction.h>
 #include <Functions/FunctionsMiscellaneous.h>
 #include <Interpreters/ExpressionAnalyzer.h>
+#include <Interpreters/castColumn.h>
 #include <Interpreters/ExpressionActions.h>
 #include <Interpreters/TreeRewriter.h>
 #include <Interpreters/InDepthNodeVisitor.h>
@@ -574,11 +575,13 @@ std::vector<size_t> getSelectorValueArguments(const String & function_name, size
 ///
 /// A *selector* function - `if`, `multiIf`, `coalesce`, `ifNull` - is the exception to the second condition:
 /// its result is always one of its value arguments, so a non-constant control argument can only choose
-/// *which* of their domains the result comes from, never introduce a payload none of them can hold. So when
-/// every value argument has the same type as the result (which rules out a conversion to a common
-/// supertype), the union of their probed domains is propagated after all, and valid TTLs such as
+/// *which* of their domains the result comes from, never introduce a payload none of them can hold. The union
+/// of the value arguments' domains is therefore propagated after all, and valid TTLs such as
 /// `toDateTime(if(cond, CAST(n, 'Dynamic'), CAST(m, 'Dynamic')))` over `n`, `m UInt32` and
-/// `toDateTime(if(cond, CAST(1, 'Dynamic'), CAST(2, 'Dynamic')))` are accepted.
+/// `toDateTime(if(cond, CAST(1, 'Dynamic'), CAST(2, 'Dynamic')))` are accepted. A selector converts every
+/// value argument to its result type, so a branch whose own type differs from it - including a branch that is
+/// no carrier at all, like `m` in `if(cond, CAST(n, 'Dynamic'), m)` with `m UInt32` - contributes the payloads
+/// that conversion produces from its values, which is what the branch domains are converted to below.
 ///
 /// Higher-order functions cannot be executed here at all, so their result normally falls back to the static
 /// enumeration too. `arrayMap` is the exception: its result is exactly the array of the values its lambda
@@ -895,15 +898,13 @@ std::vector<ColumnPtr> checkActionsDAGForAggregateFunctions(
                 /// with the static enumeration for the parents in that case.
                 ///
                 /// A *selector* function is the exception: its result is always one of its value arguments,
-                /// unchanged, so whatever its non-constant control arguments choose at execution time, the
-                /// result stays inside the union of the value arguments' domains. As long as every value
-                /// argument has the same type as the result (so the selector cannot convert the branches to
-                /// a common supertype whose payloads are in neither branch's domain - `Dynamic(UInt32)` and
-                /// `Dynamic(Int32)` branches would produce `Dynamic(Int64)` rows), that union - deduplicated
-                /// by fingerprint - is propagated instead of the static enumeration:
+                /// converted to the result type, so whatever its non-constant control arguments choose at
+                /// execution time, the result stays inside the union of the converted value domains. That
+                /// union - deduplicated by fingerprint - is propagated instead of the static enumeration:
                 /// `if(cond, CAST(n, 'Dynamic'), CAST(m, 'Dynamic'))` with `n`, `m UInt32` can only ever
-                /// hold the `UInt32` payload, whichever branch `cond` takes, and
-                /// `if(cond, CAST(1, 'Dynamic'), CAST(2, 'Dynamic'))` only the `UInt8` one. A branch whose
+                /// hold the `UInt32` payload, whichever branch `cond` takes,
+                /// `if(cond, CAST(1, 'Dynamic'), CAST(2, 'Dynamic'))` only the `UInt8` one, and
+                /// `if(cond, CAST(n, 'Dynamic'), m)` with `m UInt32` only numeric ones. A branch whose
                 /// domain does contain a state (e.g. `CAST(state, 'Dynamic')`) keeps its state candidate in
                 /// the union, so an unsupported parent consumer is still rejected by its probes.
                 if (result_in_scope && !non_suspect_args_are_constant)
@@ -912,14 +913,46 @@ std::vector<ColumnPtr> checkActionsDAGForAggregateFunctions(
                     const auto value_arguments = getSelectorValueArguments(node->function_base->getName(), node->children.size());
                     if (!value_arguments.empty())
                     {
+                        /// The domain of one value branch, expressed in the result type of the selector.
+                        /// The branch's own domain is its candidate list, or the representative values of its
+                        /// static type when it carries no suspect payload itself; each value is then converted
+                        /// to the result type exactly like the selector does at execution time. `{}` means the
+                        /// domain could not be proven - e.g. a conversion that infers the payload out of a
+                        /// string is value-dependent, so it says nothing about the runtime payloads.
+                        auto branch_domain = [&](const ActionsDAG::Node * value_argument) -> std::vector<ColumnPtr>
+                        {
+                            const auto & branch_candidates = candidates_of(value_argument);
+                            if (value_argument->result_type->equals(*node->result_type))
+                                return branch_candidates;
+
+                            if (castMayInferPayloadFromString(value_argument->result_type, node->result_type))
+                                return {};
+
+                            std::vector<ColumnPtr> converted;
+                            try
+                            {
+                                const auto & branch_values = branch_candidates.empty()
+                                    ? makeRepresentativeColumns(value_argument->result_type, expression_kind)
+                                    : branch_candidates;
+                                for (const auto & value : branch_values)
+                                    converted.push_back(
+                                        castColumn({value, value_argument->result_type, value_argument->result_name},
+                                                   node->result_type)->convertToFullColumnIfConst());
+                            }
+                            catch (...) /// Ok: any failure here only means we cannot narrow the domain.
+                            {
+                                return {};
+                            }
+                            return converted;
+                        };
+
                         selector_domain_is_proven = true;
                         std::vector<ColumnPtr> union_candidates;
                         std::unordered_set<UInt64> union_fingerprints;
                         for (size_t index : value_arguments)
                         {
-                            const auto * value_argument = node->children[index];
-                            const auto & value_candidates = candidates_of(value_argument);
-                            if (value_candidates.empty() || !value_argument->result_type->equals(*node->result_type))
+                            const auto value_candidates = branch_domain(node->children[index]);
+                            if (value_candidates.empty())
                             {
                                 selector_domain_is_proven = false;
                                 break;
