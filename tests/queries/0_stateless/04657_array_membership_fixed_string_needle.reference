@@ -55,6 +55,8 @@ rewrite declines at 0 LowCardinality	0	0	1
 -- the rewrite of arrayExists to has must preserve results
 FixedString needle	1
 String needle	1
+rewrite fires for a FixedString needle	1	0
+rewrite declines at 0	0	1
 -- must not regress: a String needle stays exact, FixedString elements keep working
 String needle on String	[0]	[0]
 String needle on LowCardinality	[0]	[0]
@@ -66,8 +68,17 @@ NULL needle on LowCardinality(FixedString(3))	[]	[]
 NULL needle on FixedString(3)	[]
 NULL needle on LowCardinality(String)	[]	[]
 NULL needle on String	[]
+NULL needle indexOf on LowCardinality(FixedString(3))	[]	[]
+NULL needle countEqual on LowCardinality(FixedString(3))	[]	[]
+NULL needle indexOf on LowCardinality(String)	[]	[]
+NULL needle countEqual on LowCardinality(String)	[]	[]
+NULL needle mapContainsValue LowCardinality	[]	[]
+NULL needle mapContainsKey LowCardinality no-subcolumns	[]	[]
 longer non-NUL String needle	0
 NULL needle	[]
+typed NULL needle on LowCardinality(Nullable(String))	[0]	[0]
+typed NULL needle on LowCardinality(Nullable(FixedString(3)))	[0]	[0]
+typed NULL needle position on LowCardinality(Nullable(String))	[0]	[0]
 -- boundary sizes, including needles that cross the 16 byte comparison window
 empty value	[0]	[0]
 one byte	[1,2]	[1,2]

@@ -163,6 +163,12 @@ SELECT 'FixedString needle', (SELECT groupArray(id) FROM t_str WHERE arrayExists
                           = (SELECT groupArray(id) FROM t_str WHERE arrayExists(x -> x = toFixedString('V0', 3), v) SETTINGS optimize_rewrite_array_exists_to_has = 0);
 SELECT 'String needle',      (SELECT groupArray(id) FROM t_str WHERE arrayExists(x -> x = 'V0', v) SETTINGS optimize_rewrite_array_exists_to_has = 1)
                           = (SELECT groupArray(id) FROM t_str WHERE arrayExists(x -> x = 'V0', v) SETTINGS optimize_rewrite_array_exists_to_has = 0);
+-- The two rows above only compare two DIFFERENT plans if the rewrite really fires at 1, and it has
+-- six silent decline gates; a cross String/FixedString pair passes the last of them only because
+-- `tryGetLeastSupertype(String, FixedString)` is `String`. Nothing else pins that, so without these
+-- two rows a declined rewrite would leave both sides byte-identical and read 1 for the wrong reason.
+SELECT 'rewrite fires for a FixedString needle', countIf(explain LIKE '%function_name: has%'), countIf(explain LIKE '%function_name: arrayExists%') FROM (EXPLAIN QUERY TREE SELECT arrayExists(x -> x = toFixedString('V0', 3), v) FROM t_str SETTINGS optimize_rewrite_array_exists_to_has = 1) SETTINGS enable_analyzer = 1;
+SELECT 'rewrite declines at 0',                  countIf(explain LIKE '%function_name: has%'), countIf(explain LIKE '%function_name: arrayExists%') FROM (EXPLAIN QUERY TREE SELECT arrayExists(x -> x = toFixedString('V0', 3), v) FROM t_str SETTINGS optimize_rewrite_array_exists_to_has = 0) SETTINGS enable_analyzer = 1;
 
 SELECT '-- must not regress: a String needle stays exact, FixedString elements keep working';
 CREATE TABLE t_fs4    (id UInt64, v Array(FixedString(4))) ENGINE = Memory;
@@ -196,13 +202,48 @@ INSERT INTO t_fs3_def    VALUES (0, [toFixedString('', 3)]), (1, ['V0']);
 INSERT INTO t_lc_s_def   VALUES (0, ['']), (1, ['V0']);
 INSERT INTO t_s_def      VALUES (0, ['']), (1, ['V0']);
 SELECT 'NULL needle on LowCardinality(FixedString(3))', groupArray(id), (SELECT groupArray(id) FROM t_lc_fs3_def WHERE arrayExists(x -> assumeNotNull(x = CAST(NULL AS Nullable(FixedString(3)))), v)) FROM t_lc_fs3_def WHERE has(v, CAST(NULL AS Nullable(FixedString(3))));
+-- Control, not coverage: a non-LowCardinality element type never enters the shortcut at all.
 SELECT 'NULL needle on FixedString(3)',                groupArray(id) FROM t_fs3_def   WHERE has(v, CAST(NULL AS Nullable(FixedString(3))));
 SELECT 'NULL needle on LowCardinality(String)',        groupArray(id), (SELECT groupArray(id) FROM t_lc_s_def   WHERE arrayExists(x -> assumeNotNull(x = CAST(NULL AS Nullable(String))), v))            FROM t_lc_s_def   WHERE has(v, CAST(NULL AS Nullable(String)));
+-- Control, not coverage: same reason as the FixedString(3) control above.
 SELECT 'NULL needle on String',                       groupArray(id) FROM t_s_def      WHERE has(v, CAST(NULL AS Nullable(String)));
+-- The shortcut is shared by every action except `indexOfAssumeSorted`, so a boolean is the weakest
+-- of the three answers it can give: a position and a count over the default-valued rows say more.
+SELECT 'NULL needle indexOf on LowCardinality(FixedString(3))',    groupArray(id), (SELECT groupArray(id) FROM t_lc_fs3_def WHERE arrayExists(x -> assumeNotNull(x = CAST(NULL AS Nullable(FixedString(3)))), v)) FROM t_lc_fs3_def WHERE indexOf(v, CAST(NULL AS Nullable(FixedString(3)))) > 0;
+SELECT 'NULL needle countEqual on LowCardinality(FixedString(3))', groupArray(id), (SELECT groupArray(id) FROM t_lc_fs3_def WHERE arrayExists(x -> assumeNotNull(x = CAST(NULL AS Nullable(FixedString(3)))), v)) FROM t_lc_fs3_def WHERE countEqual(v, CAST(NULL AS Nullable(FixedString(3)))) > 0;
+SELECT 'NULL needle indexOf on LowCardinality(String)',            groupArray(id), (SELECT groupArray(id) FROM t_lc_s_def   WHERE arrayExists(x -> assumeNotNull(x = CAST(NULL AS Nullable(String))), v))            FROM t_lc_s_def   WHERE indexOf(v, CAST(NULL AS Nullable(String))) > 0;
+SELECT 'NULL needle countEqual on LowCardinality(String)',         groupArray(id), (SELECT groupArray(id) FROM t_lc_s_def   WHERE arrayExists(x -> assumeNotNull(x = CAST(NULL AS Nullable(String))), v))            FROM t_lc_s_def   WHERE countEqual(v, CAST(NULL AS Nullable(String))) > 0;
+-- The Map entry points reach the same shortcut through the Map-to-array adapter, which builds
+-- `Array(LowCardinality(String))` and so keeps the wrapper. `mapContainsKey` needs the subcolumn
+-- rewrite off to get there, exactly as the key rows above.
+DROP TABLE IF EXISTS t_map_val_lc_def;
+DROP TABLE IF EXISTS t_map_lc_def;
+CREATE TABLE t_map_val_lc_def (id UInt64, m Map(UInt8, LowCardinality(String))) ENGINE = Memory;
+CREATE TABLE t_map_lc_def     (id UInt64, m Map(LowCardinality(String), UInt8)) ENGINE = Memory;
+INSERT INTO t_map_val_lc_def VALUES (0, {0:''}), (1, {1:'V0'});
+INSERT INTO t_map_lc_def     VALUES (0, {'':1}), (1, {'V0':1});
+SELECT 'NULL needle mapContainsValue LowCardinality',              groupArray(id), (SELECT groupArray(id) FROM t_map_val_lc_def WHERE arrayExists(x -> assumeNotNull(x = CAST(NULL AS Nullable(String))), mapValues(m))) FROM t_map_val_lc_def WHERE mapContainsValue(m, CAST(NULL AS Nullable(String)));
+SELECT 'NULL needle mapContainsKey LowCardinality no-subcolumns',  groupArray(id), (SELECT groupArray(id) FROM t_map_lc_def     WHERE arrayExists(x -> assumeNotNull(x = CAST(NULL AS Nullable(String))), mapKeys(m)))   FROM t_map_lc_def     WHERE mapContainsKey(m, CAST(NULL AS Nullable(String))) SETTINGS optimize_functions_to_subcolumns = 0;
 SELECT 'longer non-NUL String needle',      has(v, materialize('V0abc')) FROM t_fs4 WHERE id = 0;
--- Must-not-regress: on a NULLABLE dictionary index 0 genuinely IS the NULL slot, so the guard above
--- must NOT decline here and the shortcut must keep answering.
+-- Control for the ALLOW-LIST, not for the guard: a bare NULL is typed Nullable(Nothing), and
+-- `Nothing` is not the element type, so the shortcut is refused one line later by
+-- needleMapsToSingleDictionaryValue and never reaches the nullability test.
 SELECT 'NULL needle',                       groupArray(id) FROM t_lc_null WHERE has(v, NULL);
+-- Must-not-regress, and the row that actually exercises the guard's nullability test: a TYPED NULL
+-- passes the allow-list, and on a NULLABLE dictionary index 0 genuinely IS the NULL slot, so the
+-- guard must NOT decline and the shortcut must keep answering. `has` must find the NULL element and
+-- not the default-valued one. The oracle is `isNull` rather than `x = NULL` because equals(NULL,
+-- NULL) is NULL, so an `= NULL` lambda answers [] for every array; `isNull` is a separate
+-- implementation of the same membership question and cannot be rewritten into `has`.
+DROP TABLE IF EXISTS t_lc_null_def;
+DROP TABLE IF EXISTS t_lc_nfs3_def;
+CREATE TABLE t_lc_null_def  (id UInt64, v Array(LowCardinality(Nullable(String))))         ENGINE = Memory;
+CREATE TABLE t_lc_nfs3_def  (id UInt64, v Array(LowCardinality(Nullable(FixedString(3))))) ENGINE = Memory;
+INSERT INTO t_lc_null_def  VALUES (0, [NULL]), (1, ['']), (2, ['V0']);
+INSERT INTO t_lc_nfs3_def  VALUES (0, [NULL]), (1, [toFixedString('', 3)]), (2, ['V0']);
+SELECT 'typed NULL needle on LowCardinality(Nullable(String))',            groupArray(id), (SELECT groupArray(id) FROM t_lc_null_def WHERE arrayExists(x -> isNull(x), v)) FROM t_lc_null_def WHERE has(v, CAST(NULL AS Nullable(String)));
+SELECT 'typed NULL needle on LowCardinality(Nullable(FixedString(3)))',    groupArray(id), (SELECT groupArray(id) FROM t_lc_nfs3_def WHERE arrayExists(x -> isNull(x), v)) FROM t_lc_nfs3_def WHERE has(v, CAST(NULL AS Nullable(FixedString(3))));
+SELECT 'typed NULL needle position on LowCardinality(Nullable(String))',   groupArray(id), (SELECT groupArray(id) FROM t_lc_null_def WHERE arrayExists(x -> isNull(x), v)) FROM t_lc_null_def WHERE indexOf(v, CAST(NULL AS Nullable(String))) > 0;
 
 SELECT '-- boundary sizes, including needles that cross the 16 byte comparison window';
 DROP TABLE IF EXISTS t_edge;
@@ -273,3 +314,7 @@ DROP TABLE t_f64_lc;
 DROP TABLE t_f64;
 DROP TABLE t_i64_lc;
 DROP TABLE t_f32_lc;
+DROP TABLE t_map_val_lc_def;
+DROP TABLE t_map_lc_def;
+DROP TABLE t_lc_null_def;
+DROP TABLE t_lc_nfs3_def;
