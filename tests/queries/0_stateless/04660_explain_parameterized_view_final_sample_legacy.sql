@@ -14,6 +14,10 @@ INSERT INTO t_04660 VALUES (1, 'a'), (2, 'b');
 CREATE VIEW pv_04660 AS SELECT k, v FROM t_04660 WHERE k = {p:UInt64};
 
 SET enable_analyzer = 0;
+-- The expanded view body below is formatted from the analyzed query. When the test harness randomizes
+-- `query_plan_optimize_prewhere` off, the move-to-prewhere rewrite happens on the AST instead of on the
+-- query plan, so the body's `WHERE` is printed as `PREWHERE`. Disable that rewrite for a stable dump.
+SET optimize_move_to_prewhere = 0;
 
 SELECT '-- real legacy SELECTs with FINAL / SAMPLE are valid';
 SELECT * FROM pv_04660(p = 1) FINAL;
