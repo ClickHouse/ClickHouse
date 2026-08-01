@@ -57,9 +57,10 @@ def test_iceberg_history_missing_optional_summary_metrics(
         "(x Int)",
         format_version,
     )
-    # Two `append` snapshots. They must stay `append`: `tryGetAppendUpdate` skips or
-    # rejects the other operation types, so the compaction below would never reach the
-    # summary read this test is about.
+    # Two `append` snapshots. `getHistory` parses every summary regardless of operation,
+    # so `append` is required not to reach the parse but to avoid an unrelated rejection
+    # after it: `tryGetAppendUpdate` skips `delete` and position-delete-only `overwrite`
+    # and throws on `replace` and any other `overwrite`.
     instance.query(f"INSERT INTO {table_name} VALUES (1);")
     instance.query(f"INSERT INTO {table_name} VALUES (2);")
 
