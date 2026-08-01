@@ -476,22 +476,123 @@ std::vector<FileBucketInfoPtr> computeBucketsByCount(size_t target_count, size_t
     return result;
 }
 
+/// Maps every leaf's raw dotted `path_in_schema` to the logical dotted name the native Parquet
+/// reader gives it. Mirrors `SchemaConverter`'s naming: an element contributes a name component
+/// only outside List / Map wrapper levels, so `a.list.element.x` (an `Array(Tuple(x ...))`
+/// element) becomes `a.x`, `a.list.element` (a plain array leaf) becomes `a`, and the Map
+/// `key_value` wrapper is dropped (`m.key_value.value` -> `m.value`). Returns false on a
+/// malformed schema tree; the caller then falls back to raw-path matching.
+bool collectLogicalPaths(
+    const std::vector<parquet::format::SchemaElement> & schema,
+    size_t & idx,
+    const String & raw_prefix,
+    const String & logical_prefix,
+    bool append_name,
+    std::unordered_map<String, String> & out)
+{
+    if (idx >= schema.size())
+        return false;
+    const parquet::format::SchemaElement & elem = schema[idx];
+    ++idx;
+
+    String raw = raw_prefix.empty() ? elem.name : raw_prefix + "." + elem.name;
+    String logical = logical_prefix;
+    if (append_name)
+        logical = logical.empty() ? elem.name : logical + "." + elem.name;
+
+    const size_t num_children = elem.__isset.num_children ? static_cast<size_t>(elem.num_children) : 0;
+    if (num_children == 0)
+    {
+        out.emplace(std::move(raw), std::move(logical));
+        return true;
+    }
+
+    const bool is_list = elem.converted_type == parquet::format::ConvertedType::LIST || elem.logicalType.__isset.LIST;
+    const bool is_map = elem.converted_type == parquet::format::ConvertedType::MAP
+        || elem.converted_type == parquet::format::ConvertedType::MAP_KEY_VALUE || elem.logicalType.__isset.MAP;
+
+    if ((is_list || is_map) && num_children == 1 && idx < schema.size()
+        && schema[idx].repetition_type == parquet::format::FieldRepetitionType::REPEATED)
+    {
+        const parquet::format::SchemaElement & rep = schema[idx];
+        const size_t rep_children = rep.__isset.num_children ? static_cast<size_t>(rep.num_children) : 0;
+        if (is_map && rep_children == 2)
+        {
+            /// Map: the repeated `key_value` group is a wrapper; `key` / `value` keep their names
+            /// (the reader renames them at the output-tuple level, and the whole-map name `m` is
+            /// still a dotted prefix of both, so whole-map requests match either way).
+            ++idx;
+            String raw_rep = raw + "." + rep.name;
+            return collectLogicalPaths(schema, idx, raw_rep, logical, true, out)
+                && collectLogicalPaths(schema, idx, raw_rep, logical, true, out);
+        }
+        if (is_list)
+        {
+            if (rep_children == 1)
+            {
+                /// Three-level list: both the repeated wrapper (`list`) and the element under it
+                /// contribute no name component.
+                ++idx;
+                String raw_rep = raw + "." + rep.name;
+                return collectLogicalPaths(schema, idx, raw_rep, logical, false, out);
+            }
+            /// Two-level list (e.g. hudi): the repeated element itself is the wrapper level.
+            return collectLogicalPaths(schema, idx, raw, logical, false, out);
+        }
+        /// A MAP-annotated group without the expected key/value structure: fall through and treat
+        /// it as a plain group, like the reader does.
+    }
+
+    /// Plain group (tuple): every field contributes its name.
+    for (size_t i = 0; i < num_children; ++i)
+        if (!collectLogicalPaths(schema, idx, raw, logical, true, out))
+            return false;
+    return true;
+}
+
+/// Whether `requested` contains the logical name itself or any of its dotted prefixes — a
+/// requested prefix (the top-level name, or an inner tuple like `t.a`) reads every leaf below it.
+bool anyDottedPrefixRequested(const String & logical, const std::unordered_set<String> & requested)
+{
+    for (size_t pos = logical.find('.'); pos != String::npos; pos = logical.find('.', pos + 1))
+        if (requested.contains(logical.substr(0, pos)))
+            return true;
+    return requested.contains(logical);
+}
+
 /// Sum of the compressed sizes of the column chunks the query will actually read,
 /// across all row groups. Used to decide whether a single-file split is worth its
 /// per-source setup cost. An empty `requested_columns` set means "read everything"
 /// (be conservative and let the split proceed). Chunks with no metadata / no path
 /// are skipped.
 ///
-/// `requested_columns` holds the leaf names the reader actually reads: the full
+/// `requested_columns` holds the logical names the reader understands: the full
 /// dotted path (e.g. `t.x`) for a tuple element the reader addresses on its own, or
-/// a top-level name for a column read only as a whole (Arrays, Maps, whole Tuples,
-/// dynamic subcolumns). A chunk matches when its full dotted `path_in_schema` is
-/// requested or, failing that, when its top-level name is — so `sum(t.x)` counts
-/// only the `t.x` chunk while `sum(t)` counts every leaf under `t`. Matching only
-/// the top-level name would over-count narrow subcolumn reads and split them anyway,
-/// defeating the point of the size gate.
+/// a top-level name for a column read only as a whole (whole Arrays, Maps, Tuples,
+/// dynamic subcolumns). Raw footer paths keep List / Map wrapper segments the
+/// logical names drop (`a.list.element.x` is addressed as `a.x` when `a` is an
+/// `Array(Tuple(...))`), so each chunk's path is normalized through the same naming
+/// the reader uses (`collectLogicalPaths`) and matches when the logical name or any
+/// dotted prefix of it is requested — so `sum(a.x)` counts only the `a.x` leaf while
+/// `sum(t)` counts every leaf under `t`. Matching only the top-level name would
+/// over-count narrow subcolumn reads and split them anyway, defeating the point of
+/// the size gate. If the schema tree cannot be walked, matching conservatively falls
+/// back to the raw path and its top-level name.
 size_t projectedCompressedBytes(const parquet::format::FileMetaData & md, const std::unordered_set<String> & requested_columns)
 {
+    std::unordered_map<String, String> logical_paths;
+    if (!requested_columns.empty() && !md.schema.empty())
+    {
+        const size_t root_children
+            = md.schema.front().__isset.num_children ? static_cast<size_t>(md.schema.front().num_children) : 0;
+        size_t idx = 1;
+        bool ok = true;
+        for (size_t i = 0; ok && i < root_children; ++i)
+            ok = collectLogicalPaths(md.schema, idx, "", "", true, logical_paths);
+        if (!ok)
+            logical_paths.clear();
+    }
+
     size_t total = 0;
     for (const auto & rg : md.row_groups)
     {
@@ -513,7 +614,10 @@ size_t projectedCompressedBytes(const parquet::format::FileMetaData & md, const 
                         leaf_path += '.';
                         leaf_path += path[i];
                     }
-                    matched = requested_columns.contains(leaf_path);
+                    if (auto it = logical_paths.find(leaf_path); it != logical_paths.end())
+                        matched = anyDottedPrefixRequested(it->second, requested_columns);
+                    else
+                        matched = requested_columns.contains(leaf_path);
                 }
                 if (!matched)
                     continue;
