@@ -5,11 +5,13 @@
 #endif
 
 /// Whether plain `long` is a type of its own, distinct from every fixed-width integer type.
-/// On Darwin `Int64` is `long long`, and on 32-bit platforms (WebAssembly) `Int32` is `int`
+/// On Darwin and on WebAssembly `Int64` is `long long`, and on 32-bit platforms `Int32` is `int`
 /// while `long` is a separate 32-bit type. In both cases functions overloaded on the
 /// fixed-width types need an overload for `long` as well, or calls with a `long` argument
 /// become ambiguous.
-#if defined(OS_DARWIN) || !defined(__LP64__)
+/// `wasm64` has to be named explicitly: it is LP64, so `long` is 64 bits wide, but its `uint64_t`
+/// is still `unsigned long long`, which leaves `long` outside the fixed-width set anyway.
+#if defined(OS_DARWIN) || !defined(__LP64__) || defined(__wasm__)
 #    define LONG_IS_A_DISTINCT_TYPE 1
 #endif
 
@@ -19,6 +21,13 @@
 /// `unsigned int`, which is exactly `UInt32`, so it must not get an overload of its own there.
 #if defined(OS_DARWIN) || defined(__wasm__)
 #    define SIZE_T_IS_A_DISTINCT_TYPE 1
+#endif
+
+/// `size_t` is `unsigned long` or `unsigned int`, so a platform where it is distinct from every
+/// fixed-width type is one where `long` is too. Getting this wrong makes `itoa(size_t)` ambiguous
+/// rather than failing anywhere obvious, so state the implication where both are defined.
+#if defined(SIZE_T_IS_A_DISTINCT_TYPE) && !defined(LONG_IS_A_DISTINCT_TYPE)
+#    error "SIZE_T_IS_A_DISTINCT_TYPE implies LONG_IS_A_DISTINCT_TYPE"
 #endif
 
 #if !defined(likely)
