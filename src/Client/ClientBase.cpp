@@ -2515,7 +2515,7 @@ void ClientBase::sendDataFrom(ReadBuffer & buf, Block & sample, const ColumnsDes
         if (!insert->format.empty())
             current_format = insert->format;
     }
-    else if(const auto * createInsert = parsed_query->as<ASTCreateQuery>())
+    else if (const auto * createInsert = parsed_query->as<ASTCreateQuery>())
     {
         if (!createInsert->insert_format.empty())
             current_format = createInsert->insert_format;
@@ -3377,7 +3377,7 @@ bool ClientBase::executeMultiQuery(const String & all_queries_text)
                 {
                     insert_query_without_data_length = insert->data - query_to_execute.data();
                 }
-                else if(const auto * create = parsed_query->as<ASTCreateQuery>();
+                else if (const auto * create = parsed_query->as<ASTCreateQuery>();
                         create && create->insert_data && (create->has_as_insert || create->has_and_insert))
                 {
                     insert_query_without_data_length = create->insert_data - query_to_execute.data();

@@ -255,13 +255,6 @@ const char * getInsertData(const ASTPtr & ast)
     return nullptr;
 }
 
-const char * getCreateInsertDataEnd(const ASTPtr & ast)
-{
-    if (const ASTCreateQuery * create = ast->as<ASTCreateQuery>())
-        return create->insert_data_end;
-    return nullptr;
-}
-
 ASTPtr tryParseQuery(
     IParser & parser,
     const char * & _out_query_end, /* also query begin as input parameter */
