@@ -107,8 +107,11 @@ std::tuple<SerializationPtr, SerializationInfoPtr, ColumnPtr> NativeWriter::getS
     if (client_revision >= DBMS_MIN_REVISION_WITH_CUSTOM_SERIALIZATION)
     {
         ColumnPtr result_column = column.column;
+        /// Below the replicated-serialization revision a peer cannot decode a REPLICATED kind stack.
+        /// getSerializationInfo would still emit one for a lazily replicated tuple child (DataTypeTuple
+        /// appends REPLICATED per child), so densify recursively rather than only the top level.
         if (client_revision < DBMS_MIN_REVISION_WITH_REPLICATED_SERIALIZATION)
-            result_column = result_column->convertToFullColumnIfReplicated();
+            result_column = recursiveRemoveReplicated(result_column);
         if (client_revision < DBMS_MIN_REVISION_WITH_SPARSE_SERIALIZATION)
             result_column = recursiveRemoveSparse(result_column);
         if (client_revision < DBMS_MIN_REVISION_WITH_NULLABLE_SPARSE_SERIALIZATION)
