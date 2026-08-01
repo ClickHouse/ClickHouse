@@ -49,7 +49,7 @@ class HostMetricsCollector:
     _PSI_IO = "/proc/pressure/io"
 
     # Utilization label thresholds (see classify). Percentages unless noted.
-    _UNDER_MEM_PCT = 50.0  # peak RAM below this -> RAM over-provisioned
+    _UNDER_MEM_PCT = 40.0  # peak RAM below this -> RAM over-provisioned
     _UNDER_CPU_PCT = 20.0  # average CPU below this -> CPU over-provisioned
     _RAM_PRESSURE_PCT = 95.0  # peak RAM at/above this -> RAM under-provisioned
     _MEM_STALL_RATIO = 0.02  # mem full-stall / duration above this -> RAM pressure
