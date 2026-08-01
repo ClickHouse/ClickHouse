@@ -65,6 +65,17 @@ class FuzzerLogParser:
         self.stderr_log = stderr_log
         self.stack_trace_str = stack_trace_str
 
+    @staticmethod
+    def extract_format_string(line):
+        # Extract the format string content between quotes
+        # Example: "... <Fatal> : Format string: 'Unknown numeric column of type: {}'."
+        start_idx = line.find("Format string: ")
+        if start_idx == -1:
+            return ""
+        substring = line[start_idx + len("Format string: ") :]
+        # Remove quotes and trailing period
+        return substring.strip().rstrip(".").strip("'\"")
+
     def parse_failure(self):
         files = []
         is_logical_error = False
@@ -103,8 +114,11 @@ class FuzzerLogParser:
         ]
 
         error_output = None
+        matched_pattern = None
+        matched_log_file = None
         for name, flag_name, pattern in error_patterns:
             output = ""
+            file = None
             if self.stack_trace_str:
                 output = Shell.get_output(
                     f"echo '{self.stack_trace_str}' | rg --text -A 10 -o '{pattern}' | head -n10",
@@ -127,6 +141,8 @@ class FuzzerLogParser:
 
             if output:
                 error_output = output
+                matched_pattern = pattern
+                matched_log_file = file
                 if flag_name == "is_sanitizer_error":
                     is_sanitizer_error = True
                 elif flag_name == "is_logical_error":
@@ -155,17 +171,31 @@ class FuzzerLogParser:
         if marker_pos != -1:
             result_name = result_name[:marker_pos].rstrip().removesuffix(".")
         format_message = ""
-        for i, line in enumerate(error_lines):
+        for line in error_lines:
             if "Format string: " in line:
-                # Extract the format string content between quotes
-                # Example: "... <Fatal> : Format string: 'Unknown numeric column of type: {}'."
-                start_idx = line.find("Format string: ")
-                if start_idx != -1:
-                    substring = line[start_idx + len("Format string: ") :]
-                    # Remove quotes and trailing period
-                    substring = substring.strip().rstrip(".").strip("'\"")
-                    format_message = substring
+                format_message = self.extract_format_string(line)
                 break
+        if not format_message and is_logical_error:
+            # `abortOnFailedAssertion` logs the `Format string:` line right after the
+            # `Logical error:` line, but messages from other threads (together with
+            # their multi-line stack traces) may interleave between the two and push
+            # it out of the 10-line window captured above. Search for it separately,
+            # starting from the matched error line, so the failure name stays
+            # normalized regardless of log interleaving.
+            format_line = ""
+            if self.stack_trace_str:
+                format_line = Shell.get_output(
+                    f"echo '{self.stack_trace_str}' | rg --text -m1 'Format string: '"
+                )
+            elif matched_log_file:
+                match_position = Shell.get_output(
+                    f"rg --text -n -m1 '{matched_pattern}' {matched_log_file} | cut -d: -f1"
+                )
+                if match_position.isdigit():
+                    format_line = Shell.get_output(
+                        f"tail -n +{match_position} {matched_log_file} | rg --text -m1 'Format string: '"
+                    )
+            format_message = self.extract_format_string(format_line)
         is_check_failed = bool(
             error_lines and re.search(r"\w+Sanitizer: CHECK failed:", error_lines[0])
         )

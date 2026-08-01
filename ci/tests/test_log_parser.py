@@ -116,3 +116,54 @@ def test_parse_failure_logical_error_name_drops_dangling_stack_trace_marker(tmp_
     assert "(STID:" in result_name
     # The frames are still preserved in the separate stack-trace section of the info.
     assert "abortOnFailedAssertion" in info
+
+
+def test_parse_failure_logical_error_finds_format_string_despite_interleaving(
+    tmp_path,
+):
+    server_log = tmp_path / "clickhouse-server.err.log"
+
+    # A message from another thread (with its multi-line stack trace) lands between
+    # the `Logical error:` and `Format string:` fatal lines, pushing the format
+    # string out of the 10-line window around the match. The failure name must
+    # still be built from the format string (without the raw line's quotes).
+    interleaved_message = (
+        "2026.08.01 18:35:11.673118 [ 4327 ] {} <Error> TCPHandler: Code: 210. "
+        "DB::NetException: Connection reset by peer, while writing to socket. "
+        "(NETWORK_ERROR), Stack trace (when copying this message, always include "
+        "the lines below):\n"
+        "\n"
+        + "".join(
+            f"{i}. src/Server/TCPHandler.cpp:{i}: DB::someFunction() @ 0x{i:016x}\n"
+            for i in range(14)
+        )
+        + "\n"
+    )
+    server_log.write_text(
+        "2026.08.01 18:35:11.672071 [ 4353 ] {} <Fatal> : Logical error: "
+        "'Query context must be created after authentication'.\n"
+        + interleaved_message
+        + "2026.08.01 18:35:11.675219 [ 4353 ] {} <Fatal> : Format string: "
+        "'Query context must be created after authentication'.\n"
+        "2026.08.01 18:35:11.694220 [ 4353 ] {} <Fatal> : Stack trace (when "
+        "copying this message, always include the lines below):\n"
+        "\n"
+        "0. ./src/Common/Exception.cpp:66:5: DB::abortOnFailedAssertion() "
+        "@ 0x00000000139d383c\n"
+        "1. ./src/Interpreters/Session.cpp:690:15: "
+        "DB::Session::makeQueryContextImpl() @ 0x0000000018143638\n",
+        encoding="utf-8",
+    )
+
+    parser = FuzzerLogParser(
+        server_log=str(server_log),
+        stderr_log="",
+        fuzzer_log="",
+    )
+
+    result_name, info, files = parser.parse_failure()
+
+    assert result_name.startswith(
+        "Logical error: Query context must be created after authentication (STID:"
+    )
+    assert "'" not in result_name
