@@ -103,10 +103,12 @@ def _run(
     return calls["count"], sleeps, outcome, auth_seen
 
 
-# Row 1: the reported production failure. A persistent 504 must now span a
-# window long enough to ride out a short GitHub outage (was a fixed 4 x 3 s).
-def test_persistent_5xx_uses_exponential_backoff(monkeypatch):
-    attempts, sleeps, outcome, _ = _run(monkeypatch, [504])
+# Row 1: the reported production failure (504), plus the boundaries of the
+# `>= 500` contract. Each must span a window long enough to ride out a short
+# GitHub outage, where before every status shared one fixed 4 x 3 s window.
+@pytest.mark.parametrize("status", [500, 502, 503, 504, 599])
+def test_persistent_5xx_uses_exponential_backoff(monkeypatch, status):
+    attempts, sleeps, outcome, _ = _run(monkeypatch, [status])
 
     assert outcome == "APIException"
     assert attempts == bdh.DOWNLOAD_RETRIES_COUNT
@@ -181,9 +183,9 @@ def test_404_failover_unchanged(monkeypatch):
     assert sleeps == [3, 3, 3, 3]
 
 
-# Row 8: no 4xx changes at all. The secondary-rate-limit parameter is the guard
-# that keeps the backoff from being widened to every HTTPError: deciding whether
-# a 403 is transient would rest on a body match that misses these messages.
+# Row 8a: no 4xx changes at all, and no failover for any of them. Without a preset
+# token the failover guard is not short-circuited, so `auth_seen` observes whether
+# the 403 predicate stayed narrow: widening it would grant these a token and a reset.
 @pytest.mark.parametrize(
     "status,body",
     [
@@ -191,13 +193,22 @@ def test_404_failover_unchanged(monkeypatch):
         (422, b""),
         (403, SECONDARY_RATELIMIT_BODY),
         (403, b"You have triggered an abuse detection mechanism."),
-        (404, b""),
     ],
 )
-def test_4xx_budgets_unchanged(monkeypatch, status, body):
-    attempts, sleeps, outcome, _ = _run(
-        monkeypatch, [status], body=body, token_preset=True
-    )
+def test_4xx_budgets_unchanged_and_no_failover(monkeypatch, status, body):
+    attempts, sleeps, outcome, auth_seen = _run(monkeypatch, [status], body=body)
+
+    assert outcome == "APIException"
+    assert not any(auth_seen)
+    assert attempts == bdh.DOWNLOAD_RETRIES_COUNT
+    assert sleeps == [3, 3, 3, 3]
+    assert sum(sleeps) == 12
+
+
+# Row 8b: the 404 budget once the token is already set, so the failover cannot fire
+# a second time. Distinct from row 7, which owns the case where it does fire.
+def test_404_budget_unchanged_with_token(monkeypatch):
+    attempts, sleeps, outcome, _ = _run(monkeypatch, [404], token_preset=True)
 
     assert outcome == "APIException"
     assert attempts == bdh.DOWNLOAD_RETRIES_COUNT
