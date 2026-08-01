@@ -86,9 +86,9 @@ Approaches that avoid the race:
 
 ### Combining `MATERIALIZE INDEX` clauses {#combining-materialize-index-clauses}
 
-Multiple `MATERIALIZE INDEX` clauses in one `ALTER` are valid in the common case. In particular, packing several `ADD INDEX` clauses together with `MATERIALIZE INDEX` for those same new indexes in a single statement is supported (see `tests/queries/0_stateless/02911_add_index_and_materialize_index.sql`).
+Multiple `MATERIALIZE INDEX` clauses in one `ALTER` are supported. In particular, packing several `ADD INDEX` clauses together with `MATERIALIZE INDEX` for those same new indexes in a single statement works (see `tests/queries/0_stateless/02911_add_index_and_materialize_index.sql`). The multi-clause form also applies when materializing already-existing indexes: each clause is resolved against the current table metadata before the mutation is prepared.
 
-A narrower failure mode reported under issue `#104306` is different: a multi-clause statement that **only** runs several `MATERIALIZE INDEX` clauses against already-existing indexes can fail with a parse/planning error (for example code 36 / unknown index for a later clause). If you hit that case, issue one `MATERIALIZE INDEX` per statement and wait between them with `mutations_sync` when order matters.
+If you need ordered mutation apply, you can still issue one `MATERIALIZE INDEX` per statement and wait with [`mutations_sync`](/operations/settings/settings.md/#mutations_sync).
 
 ## Related content {#related-content}
 
