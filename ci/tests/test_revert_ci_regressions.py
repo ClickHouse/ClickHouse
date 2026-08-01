@@ -322,9 +322,32 @@ def test_pull_requests_that_must_not_be_reverted_automatically(overrides, expect
 # --- not reverting the same merge twice ---------------------------------------
 
 
+def _shell(answers):
+    """Answer a shell command with the value whose fragment occurs in it."""
+
+    def _run(command, *_args, **_kwargs):
+        for fragment, output in answers.items():
+            if fragment in command:
+                return output
+        return ""
+
+    return _run
+
+
+def _ls_remote(*branches):
+    return "".join(f"{'c' * 40}\trefs/heads/{branch}\n" for branch in branches)
+
+
+def _handled(monkeypatch, ls_remote="", pull_requests="[]"):
+    monkeypatch.setattr(job.Shell, "get_output", _shell({"ls-remote": ls_remote}))
+    monkeypatch.setattr(
+        job.GH, "get_output_with_retries", lambda *a, **k: pull_requests
+    )
+    return job.already_handled("b" * 40, "revert-112345", "ClickHouse/ClickHouse")
+
+
 def test_a_revert_already_on_master_stops_a_second_one(monkeypatch):
     monkeypatch.setattr(job.Shell, "get_output", lambda *a, **k: "deadbeef\n")
-    monkeypatch.setattr(job.Shell, "check", _unexpected("checked the remote branch"))
     monkeypatch.setattr(
         job.GH, "get_output_with_retries", _unexpected("listed pull requests")
     )
@@ -336,8 +359,9 @@ def test_a_revert_already_on_master_stops_a_second_one(monkeypatch):
 def test_a_pushed_revert_branch_stops_a_second_one(monkeypatch):
     """The branch is what `.github/workflows/revert_broken_prs.yml` pushes too,
     so an in-flight revert by either automation is seen with no indexing lag."""
-    monkeypatch.setattr(job.Shell, "get_output", lambda *a, **k: "")
-    monkeypatch.setattr(job.Shell, "check", lambda *a, **k: True)
+    monkeypatch.setattr(
+        job.Shell, "get_output", _shell({"ls-remote": _ls_remote("revert-112345")})
+    )
     monkeypatch.setattr(
         job.GH, "get_output_with_retries", _unexpected("listed pull requests")
     )
@@ -346,20 +370,49 @@ def test_a_pushed_revert_branch_stops_a_second_one(monkeypatch):
     )
 
 
-def test_a_merged_revert_whose_branch_was_deleted_stops_a_second_one(monkeypatch):
-    monkeypatch.setattr(job.Shell, "get_output", lambda *a, **k: "")
-    monkeypatch.setattr(job.Shell, "check", lambda *a, **k: False)
-    monkeypatch.setattr(job.GH, "get_output_with_retries", lambda *a, **k: "9876\n")
-    assert "already exists for revert-112345" in job.already_handled(
-        "b" * 40, "revert-112345", "ClickHouse/ClickHouse"
+def test_a_revert_branch_pushed_by_the_github_button_stops_a_second_one(monkeypatch):
+    """The `Revert` button names the branch `revert-<pr>-<head branch>`, so a
+    revert a human started by hand is matched by prefix, not by equality."""
+    handled = _handled(
+        monkeypatch, ls_remote=_ls_remote("revert-112345-add-a-new-setting")
     )
+    assert "revert-112345-add-a-new-setting" in handled
+
+
+def test_a_merged_revert_whose_branch_was_deleted_stops_a_second_one(monkeypatch):
+    handled = _handled(
+        monkeypatch,
+        pull_requests=json.dumps([{"number": 9876, "headRefName": "revert-112345"}]),
+    )
+    assert "already exists for revert-112345: 9876" in handled
+
+
+def test_an_open_revert_pull_request_stops_a_second_one(monkeypatch):
+    """A revert somebody opened by hand and left waiting for its checks: the
+    branch is gone from neither the remote nor the search, but nothing has been
+    merged yet, so the history says nothing."""
+    handled = _handled(
+        monkeypatch,
+        pull_requests=json.dumps(
+            [{"number": 9876, "headRefName": "revert-112345-add-a-new-setting"}]
+        ),
+    )
+    assert "already exists for revert-112345: 9876" in handled
+
+
+def test_a_revert_of_another_pull_request_does_not_stop_this_one(monkeypatch):
+    """`head:` in a GitHub search matches a prefix and stops at no boundary, so
+    the revert of #1123456 comes back when the revert of #112345 is searched
+    for. It must not be taken for one."""
+    handled = _handled(
+        monkeypatch,
+        pull_requests=json.dumps([{"number": 9876, "headRefName": "revert-1123456"}]),
+    )
+    assert handled == ""
 
 
 def test_an_unhandled_merge_is_revertable(monkeypatch):
-    monkeypatch.setattr(job.Shell, "get_output", lambda *a, **k: "")
-    monkeypatch.setattr(job.Shell, "check", lambda *a, **k: False)
-    monkeypatch.setattr(job.GH, "get_output_with_retries", lambda *a, **k: "")
-    assert job.already_handled("b" * 40, "revert-112345", "ClickHouse/ClickHouse") == ""
+    assert _handled(monkeypatch) == ""
 
 
 def _unexpected(what):
@@ -367,6 +420,96 @@ def _unexpected(what):
         raise AssertionError(f"the guard should have stopped before it {what}")
 
     return _fail
+
+
+# --- not reverting a failure somebody has already fixed -----------------------
+
+
+class FakeCIDB:
+    """The CI database, answering every query with the same rows."""
+
+    def __init__(self, rows):
+        self.rows = rows
+        self.queries = []
+
+    def query(self, query, *_args, **_kwargs):
+        self.queries.append(query)
+        return "".join(json.dumps(row) + "\n" for row in self.rows)
+
+
+def _runs(*failed, commits=None):
+    """One row per run, newest first, each on a commit of its own unless the
+    caller says otherwise."""
+    commits = commits or [f"{index:040x}" for index in range(len(failed))]
+    return [
+        {
+            "run_time": "2026-07-31 21:%02d:00" % (30 + index),
+            "commit_sha": commits[index],
+            "failed": int(value),
+        }
+        for index, value in enumerate(failed)
+    ]
+
+
+def test_a_failure_that_keeps_happening_is_reverted():
+    assert job.already_fixed(FakeCIDB(_runs(0, 1, 0)), make_failure()) == ""
+
+
+def test_a_failure_that_has_passed_ever_since_is_not_reverted():
+    """The usual way a broken master is repaired is a follow-up commit, not a
+    revert. Reverting then undoes a change nothing is wrong with any more."""
+    fixed = job.already_fixed(FakeCIDB(_runs(0, 0, 0)), make_failure())
+    assert "the failure is gone" in fixed
+    assert "3 runs" in fixed
+    assert "3 commits" in fixed
+
+
+def test_one_passing_commit_is_not_enough_to_call_a_failure_fixed():
+    """A failure that does not hit on every run would look fixed after any
+    single passing one."""
+    assert job.already_fixed(FakeCIDB(_runs(0)), make_failure()) == ""
+
+
+def test_one_commit_tested_twice_is_one_piece_of_evidence():
+    """A check is often re-run on the same commit. Two green runs of one commit
+    say no more about a fix than one does."""
+    green = _runs(0, 0, commits=["d" * 40, "d" * 40])
+    assert job.already_fixed(FakeCIDB(green), make_failure()) == ""
+
+
+def test_a_failure_nothing_has_run_since_is_reverted():
+    """No news is not good news: the failure is still the newest thing known
+    about this test in this check."""
+    assert job.already_fixed(FakeCIDB([]), make_failure()) == ""
+
+
+def test_the_later_runs_are_looked_up_for_the_same_test_in_the_same_check():
+    cidb = FakeCIDB(_runs(1))
+    job.already_fixed(cidb, make_failure())
+    query = cidb.queries[0]
+    assert "check_start_time > toDateTime('2026-07-31 21:12:40')" in query
+    # Aliasing the timestamp back to `check_start_time` would shadow the column
+    # the comparison above reads, and the query would not run at all.
+    assert "AS run_time" in query
+    assert "test_name = '04611_join_runtime_filters'" in query
+    assert "check_name = 'Stateless tests (amd_debug, parallel)'" in query
+    assert "head_ref = 'master'" in query
+    # A test that did not run says nothing about whether it still fails.
+    assert "test_status != 'SKIPPED'" in query
+
+
+def test_a_check_that_names_no_test_is_read_from_the_check_status():
+    cidb = FakeCIDB(_runs(1))
+    job.already_fixed(cidb, make_failure(test_name=""))
+    query = cidb.queries[0]
+    assert "toUInt8(check_status != 'success') AS failed" in query
+    assert "check_status IN ('success', 'failure', 'error')" in query
+
+
+def test_a_name_that_holds_a_quote_does_not_break_the_query():
+    cidb = FakeCIDB([])
+    job.already_fixed(cidb, make_failure(test_name="it's a test"))
+    assert "test_name = 'it\\'s a test'" in cidb.queries[0]
 
 
 # --- acting on a verdict ------------------------------------------------------

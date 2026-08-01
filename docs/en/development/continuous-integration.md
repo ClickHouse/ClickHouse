@@ -271,6 +271,7 @@ A group that failed more than twice is handed to an AI agent, which is given the
 
 Only an unambiguous answer leads to an action.
 When the agent reports a regression with high confidence, and the named pull request passes the safety checks (merged into `master` within the last three days, not a revert itself, not already reverted, and the revert applies cleanly), the job reverts it, merges the revert immediately without waiting for checks, and opens a draft pull request titled `Reapply "..."` that reintroduces the change.
+Nothing is reverted once the failure is gone: a failure stays in the observation window for a whole day after it stopped, so right before reverting the job asks the CI database again, and a failure whose every run on `master` since then has passed is recorded as already fixed and left alone.
 At most two pull requests are reverted per run.
 
 If your pull request was reverted:
@@ -291,3 +292,4 @@ ORDER BY investigation_time DESC;
 The job is implemented in `ci/jobs/revert_ci_regressions.py` and runs as part of the `Hourly` workflow.
 Running it with `--dry-run` investigates and evaluates every guard but changes nothing: no table, no rows, no branch, no pull request, no merge; the rows it would have written are printed instead.
 A separate workflow, `.github/workflows/revert_broken_prs.yml`, reverts merges that landed while their own CI was red; both use the same `revert-<pull request number>` branch name, so a pull request is never reverted twice.
+A revert started by hand counts too: the job stands down when the revert is already on `master`, when a branch named `revert-<pull request number>` or `revert-<pull request number>-<branch>` (what the `Revert` button on GitHub creates) exists, or when a pull request from such a branch is open or merged.

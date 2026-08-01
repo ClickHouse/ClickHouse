@@ -87,6 +87,18 @@ RUN_BUDGET_SEC = 45 * 60
 # offending pull request named in it, so the finding is not lost.
 MAX_CULPRIT_AGE_DAYS = 3
 
+# A failure is visible for a whole day after it stopped, so by the time it is
+# investigated somebody may already have fixed it -- with a follow-up commit
+# rather than with a revert, which is the usual way a broken master is repaired.
+# Reverting then undoes a change nothing is wrong with any more, and the revert
+# has to be reconciled with the fix that stayed. So the failure has to still be
+# there when the revert is about to happen: every run of it on `master` since it
+# was last seen has to have passed, on at least this many commits. One commit is
+# not enough -- a failure that does not hit on every run would look fixed after
+# any single passing one. Commits rather than runs: the same commit is often
+# tested more than once, and two runs of one commit are one piece of evidence.
+GREEN_COMMITS_TO_CONSIDER_FIXED = 2
+
 # Table in the CI database that records the investigations. It joins with
 # `checks`: `test_name`, `check_name`, `commit_shas`, `report_url` and
 # `offending_pull_request_number` all carry values from there.
@@ -148,6 +160,7 @@ class Action:
     REVERT_CONFLICT = "revert_conflict"
     REVERT_FAILED = "revert_failed"
     ALREADY_REVERTED = "already_reverted"
+    ALREADY_FIXED = "already_fixed"
     REVERT_IN_FLIGHT = "revert_in_flight"
     SKIPPED_GUARD = "skipped_guard"
     SKIPPED_LIMIT = "skipped_limit"
@@ -337,6 +350,88 @@ FORMAT JSONEachRow
 """
 
 
+def quote_sql_string(value: str) -> str:
+    """Quote a value for the CI database. The test and check names come out of
+    `checks` and go back into a query against it, so they are quoted rather than
+    interpolated: a name is free-form text and may hold a quote."""
+    return "'" + value.replace("\\", "\\\\").replace("'", "\\'") + "'"
+
+
+def runs_since_the_failure_query(failure: Failure, limit=20) -> str:
+    """Every run of this failure on `master` newer than its last occurrence,
+    newest first, each marked as failed or not.
+
+    The same two shapes as the query that picked the failure up. A test carries
+    the outcome in `test_status`, and a `SKIPPED` row is not an outcome at all --
+    a test that did not run says nothing about whether it still fails, so it is
+    left out rather than counted as a pass. A failure that no test carries is
+    read from `check_status` instead, and only a finished check counts: a
+    `pending` or `skipped` one has no outcome either.
+    """
+    master_runs = (
+        f"check_start_time > toDateTime({quote_sql_string(failure.last_failure_time)})\n"
+        f"      AND head_ref = '{BASE_BRANCH}'\n"
+        f"      AND startsWith(head_repo, 'ClickHouse/')\n"
+        f"      AND check_name = {quote_sql_string(failure.check_name)}"
+    )
+    if failure.test_name:
+        what = (
+            f"test_name = {quote_sql_string(failure.test_name)}\n"
+            "      AND test_status != 'SKIPPED'"
+        )
+        failed = "toUInt8(test_status LIKE 'F%' OR test_status LIKE 'E%') AS failed"
+    else:
+        what = (
+            "test_name = ''\n      AND check_status IN ('success', 'failure', 'error')"
+        )
+        failed = "toUInt8(check_status != 'success') AS failed"
+    # The timestamp is projected under a name of its own: aliasing it back to
+    # `check_start_time` would shadow the column the `WHERE` compares, and the
+    # query would fail on comparing a `String` with a `DateTime`.
+    return f"""\
+SELECT
+    toString(check_start_time) AS run_time,
+    commit_sha,
+    {failed}
+FROM {Settings.CI_DB_TABLE_NAME}
+WHERE {master_runs}
+      AND {what}
+ORDER BY check_start_time DESC
+LIMIT {int(limit)}
+FORMAT JSONEachRow
+"""
+
+
+def already_fixed(cidb: CIDB, failure: Failure) -> str:
+    """Why nothing has to be reverted for this failure because it is gone
+    already, or "" if it is still there.
+
+    Asked of the CI database rather than of the agent, and asked again right
+    before the revert rather than when the failure was picked up: a fix can be
+    merged while the run is investigating, and this is the last moment at which
+    the answer is still worth anything.
+    """
+    runs = parse_json_each_row(cidb.query(runs_since_the_failure_query(failure)))
+    # Nothing has run since. The failure is the newest thing known about this
+    # test in this check, so it stands.
+    if not runs:
+        return ""
+    if any(int(run["failed"]) for run in runs):
+        return ""
+    # Green, but not green enough to tell a fix from a failure that did not hit
+    # on this commit. The next investigation of this failure asks again.
+    commits = {run["commit_sha"] for run in runs}
+    if len(commits) < GREEN_COMMITS_TO_CONSIDER_FIXED:
+        return ""
+    return (
+        f"the failure is gone: every one of the {len(runs)} runs of it on "
+        f"{BASE_BRANCH} since {failure.last_failure_time} UTC passed, on "
+        f"{len(commits)} commits, the newest {runs[0]['commit_sha']} at "
+        f"{runs[0]['run_time']} UTC, so something merged in the meantime already "
+        f"fixed it"
+    )
+
+
 def recent_investigations_query(hours=FAILURE_WINDOW_HOURS) -> str:
     """When each failure was last investigated, and whether acting on it has
     already led to a revert within the window."""
@@ -516,6 +611,17 @@ def get_pull_request(number: int, repo: str) -> Optional[dict]:
     return json.loads(output)
 
 
+def revert_branches(revert_branch: str) -> List[str]:
+    """The branch names a revert of the same pull request can live on.
+
+    `revert-<pr>` is what this job and `.github/workflows/revert_broken_prs.yml`
+    push. The "Revert" button on GitHub names the branch after the head branch
+    it reverts as well, `revert-<pr>-<head branch>`, so a revert a human started
+    by hand has to be matched by prefix, not by equality.
+    """
+    return [revert_branch, f"{revert_branch}-*"]
+
+
 def already_handled(merge_commit: str, revert_branch: str, repo: str) -> str:
     """Why this merge has already been dealt with, or "" if it has not.
 
@@ -523,27 +629,54 @@ def already_handled(merge_commit: str, revert_branch: str, repo: str) -> str:
     revert is already on master: `git revert` records the reverted sha in the
     message, so history is authoritative and has no indexing lag. The revert
     branch is already pushed: an in-flight revert, possibly by the workflow in
-    `.github/workflows/revert_broken_prs.yml`. A revert pull request exists in
-    any state: covers a merged revert whose branch was deleted afterwards.
+    `.github/workflows/revert_broken_prs.yml`, possibly by a human. A revert
+    pull request exists in any state: covers a merged revert whose branch was
+    deleted afterwards, and one that is still open and waiting for its checks.
     """
     if Shell.get_output(
         f"git log origin/{BASE_BRANCH} --fixed-strings "
         f"--grep={shlex.quote('This reverts commit ' + merge_commit)} --format=%H"
     ).strip():
         return f"the revert of {merge_commit} is already on {BASE_BRANCH}"
-    if Shell.check(
-        f"git ls-remote --exit-code --heads origin "
-        f"{shlex.quote('refs/heads/' + revert_branch)}"
-    ):
-        return f"the revert branch {revert_branch} already exists on the remote"
-    existing = GH.get_output_with_retries(
-        f"gh pr list --repo {shlex.quote(repo)} --head {shlex.quote(revert_branch)} "
-        "--state all --json number --jq '.[].number'"
-    ).strip()
+    patterns = " ".join(
+        shlex.quote("refs/heads/" + name) for name in revert_branches(revert_branch)
+    )
+    # `<sha>\trefs/heads/<branch>` per matching ref, nothing at all when none
+    # matches, which is not an error.
+    pushed = [
+        line.split("refs/heads/", 1)[1]
+        for line in Shell.get_output(
+            f"git ls-remote --heads origin {patterns}"
+        ).splitlines()
+        if "refs/heads/" in line
+    ]
+    if pushed:
+        return (
+            f"a revert branch already exists on the remote: {' '.join(sorted(pushed))}"
+        )
+    # `head:` in a GitHub search matches a prefix of the branch name and stops
+    # at no boundary -- `head:revert-11` finds `revert-112345` -- so what comes
+    # back is filtered here against the names a revert of *this* pull request
+    # can have. Searching is what finds the pull request whose branch is
+    # `revert-<pr>-<head branch>`; `--head` alone would only match it exactly.
+    found = json.loads(
+        GH.get_output_with_retries(
+            f"gh pr list --repo {shlex.quote(repo)} --state all "
+            f"--search {shlex.quote('head:' + revert_branch)} "
+            "--json number,headRefName"
+        ).strip()
+        or "[]"
+    )
+    existing = sorted(
+        str(pull_request["number"])
+        for pull_request in found
+        if pull_request["headRefName"] == revert_branch
+        or pull_request["headRefName"].startswith(f"{revert_branch}-")
+    )
     if existing:
         return (
             f"a revert pull request already exists for {revert_branch}: "
-            f"{' '.join(existing.split())}"
+            f"{' '.join(existing)}"
         )
     return ""
 
@@ -606,13 +739,20 @@ How to investigate:
    or the report linked above. Your explanation has to name the mechanism -- which change makes which
    query, assertion or behaviour fail. A pull request merely being in the range is not an explanation,
    and neither is it touching a file with a similar name.
+5. Check that the failure is still there. A failure is visible here for a whole day after it stopped,
+   and a broken `{BASE_BRANCH}` is usually repaired with a follow-up commit rather than with a revert.
+   Query the newest `{BASE_BRANCH}` runs of this test in this check, and look at what was merged after
+   the failure appeared: if it passes on the newest commits, or a pull request fixing it is already
+   merged, the change is not what breaks `{BASE_BRANCH}` any more. Say which commit or pull request
+   fixed it, and do not answer with `high` confidence.
 
 Be honest about how sure you are. A `regression` verdict with `high` confidence makes CI revert the
 pull request and merge the revert immediately, without waiting for any checks. Use it only when all
 of this holds:
 - the failure is new -- the test or check passed consistently before it appeared;
 - the first failing commit is identified and the range narrows down to one pull request;
-- you can state the causal mechanism from the diff.
+- you can state the causal mechanism from the diff;
+- the failure is still happening, and neither a fix nor a revert for it is merged or in review.
 Otherwise answer with `medium` or `low` confidence, or with the `inconclusive` verdict. "I could not
 tell" is a useful answer that costs nothing; a wrong revert throws away somebody's work and breaks
 the branch a second time.
@@ -1233,6 +1373,15 @@ def run(results: List[Result], dry_run=False) -> None:
                 f"({investigation.confidence or 'no'} confidence)"
             )
             if not investigation.is_actionable():
+                continue
+            fixed = already_fixed(cidb, failure)
+            if fixed:
+                investigation.action = Action.ALREADY_FIXED
+                investigation.note(f"Not reverted: {fixed}.")
+                print(
+                    f"Not reverting #{investigation.offending_pull_request_number}: "
+                    f"{fixed}"
+                )
                 continue
             if reverts >= MAX_REVERTS_PER_RUN:
                 investigation.action = Action.SKIPPED_LIMIT
