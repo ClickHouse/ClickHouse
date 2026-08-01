@@ -64,14 +64,16 @@ SELECT toString(number) AS s, count() AS c FROM numbers(3)
 GROUP BY toString(number) WITH TOTALS ORDER BY s
 SETTINGS group_by_use_nulls = 1;
 
-SELECT '-- the optimization still fires: the aggregation key is the unwrapped column, not the function';
+SELECT '-- under plain WITH TOTALS the key stays wrapped: the grand-total row has no __grouping_set column,';
+SELECT '-- so the only possible correction lives outside the query tree and is lost when the tree is';
+SELECT '-- converted to an AST (a shard receives text; the planner subquery cache keys on that AST).';
 SELECT trimLeft(explain)
 FROM (EXPLAIN PLAN
       SELECT toString(number) AS s, count() FROM numbers(3)
       GROUP BY toString(number) WITH TOTALS)
 WHERE explain ILIKE '%Keys:%';
 
-SELECT '-- the optimization still fires when the key is also referenced in ORDER BY (totals row is not sorted)';
+SELECT '-- same with the key also referenced in ORDER BY';
 SELECT trimLeft(explain)
 FROM (EXPLAIN PLAN
       SELECT toString(number) AS s, count() FROM numbers(3)
@@ -82,6 +84,40 @@ SELECT '-- optimization on == off: same result with the optimization disabled';
 SELECT toString(number) AS s, count() AS c FROM numbers(3)
 GROUP BY toString(number) WITH TOTALS ORDER BY s
 SETTINGS optimize_injective_functions_in_group_by = 0;
+
+SELECT '-- DISTRIBUTED plain WITH TOTALS. A shard receives the query as TEXT, so any correction recorded';
+SELECT '-- beside the query tree cannot reach it; the shard would re-analyze GROUP BY <bare column> and';
+SELECT '-- project f(default). Pinned on both prefer_localhost_replica values (the runner randomizes it)';
+SELECT '-- and both serialize_query_plan values (the distributed plan job sets it suite-wide).';
+SELECT toString(number) AS s, count() AS c FROM remote('127.0.0.1', numbers(3))
+GROUP BY toString(number) WITH TOTALS ORDER BY s
+SETTINGS prefer_localhost_replica = 0, serialize_query_plan = 0;
+SELECT toString(number) AS s, count() AS c FROM remote('127.0.0.1', numbers(3))
+GROUP BY toString(number) WITH TOTALS ORDER BY s
+SETTINGS prefer_localhost_replica = 0, serialize_query_plan = 0, optimize_injective_functions_in_group_by = 0;
+SELECT toString(number) AS s, count() AS c FROM remote('127.0.0.1', numbers(3))
+GROUP BY toString(number) WITH TOTALS ORDER BY s
+SETTINGS prefer_localhost_replica = 1, serialize_query_plan = 0;
+SELECT toString(number) AS s, count() AS c FROM remote('127.0.0.1', numbers(3))
+GROUP BY toString(number) WITH TOTALS ORDER BY s
+SETTINGS prefer_localhost_replica = 1, serialize_query_plan = 0, optimize_injective_functions_in_group_by = 0;
+
+SELECT '-- the AST that a shard would receive must carry the aggregation key WRAPPED. This is the';
+SELECT '-- structural form of the assertion above: it reads the converted query, not the result, so it';
+SELECT '-- cannot be satisfied by a correction that only exists in the query tree.';
+SELECT countIf(explain LIKE '%GROUP BY%toString%') = 1
+FROM (EXPLAIN QUERY TREE run_passes = 1, dump_ast = 1
+      SELECT toString(number) AS s, count() AS c FROM numbers(3)
+      GROUP BY toString(number) WITH TOTALS);
+
+SELECT '-- planner subquery result cache. These two queries need DIFFERENT totals values ('''' vs ''0''),';
+SELECT '-- so if the key were unwrapped they would converge on one byte-identical AST and share a cache';
+SELECT '-- entry, and whichever ran first would poison the other. Run as separate statements so the';
+SELECT '-- second one probes an already-warm cache.';
+SELECT * FROM (SELECT toString(number) AS s, count() AS c FROM numbers(3) GROUP BY toString(number) WITH TOTALS)
+ORDER BY s SETTINGS query_cache_for_subqueries = 1, use_query_cache = 1;
+SELECT * FROM (SELECT toString(number) AS s, count() AS c FROM numbers(3) GROUP BY number WITH TOTALS)
+ORDER BY s SETTINGS query_cache_for_subqueries = 1, use_query_cache = 1;
 
 SELECT '-- collision across eliminations: two injective keys unwrapping to the same leaf must keep the';
 SELECT '-- full CUBE lattice (they must not be merged into one aggregation key)';
@@ -227,7 +263,9 @@ SELECT 'ROLLUP WITH TOTALS', countIf(explain LIKE '%toString%' AND rn > gb) = 0 
     FROM (EXPLAIN QUERY TREE run_passes = 1
           SELECT toString(number) AS k, count() AS c FROM numbers(3)
           GROUP BY ROLLUP(toString(number)) WITH TOTALS));
-SELECT 'WITH TOTALS', countIf(explain LIKE '%toString%' AND rn > gb) = 0 FROM (
+SELECT '-- plain WITH TOTALS reads 0: it is DECLINED on purpose (its correction cannot survive the';
+SELECT '-- conversion of the query tree to an AST). The grouping-set modifiers above still read 1.';
+SELECT 'WITH TOTALS declined', countIf(explain LIKE '%toString%' AND rn > gb) = 0 FROM (
     SELECT explain, rowNumberInAllBlocks() AS rn,
            min(if(explain LIKE '%GROUP BY%', rowNumberInAllBlocks(), 999999)) OVER () AS gb
     FROM (EXPLAIN QUERY TREE run_passes = 1
@@ -240,3 +278,76 @@ SELECT 'CUBE off', countIf(explain LIKE '%toString%' AND rn > gb) = 0 FROM (
     FROM (EXPLAIN QUERY TREE run_passes = 1
           SELECT toString(number) AS k, count() AS c FROM numbers(3) GROUP BY CUBE(toString(number))
           SETTINGS optimize_injective_functions_in_group_by = 0));
+
+SELECT '-- firing assertions for the four special-path shapes above, whose other assertions compare';
+SELECT '-- results against the optimization-disabled arm and would therefore also pass if the pass had';
+SELECT '-- silently declined for that shape. The window is the GROUP BY SECTION only (up to the next';
+SELECT '-- section header), because the correction deliberately puts toString back into ORDER BY /';
+SELECT '-- INTERPOLATE / the projection. Each is paired with its own off arm, which must read 0.';
+SELECT 'self-join', countIf(explain LIKE '%toString%' AND rn > gb AND rn < nxt) = 0
+       AND countIf(explain LIKE '%COLUMN%source_id%' AND rn > gb AND rn < nxt) = 2
+       AND uniqExact(if(explain LIKE '%COLUMN%source_id%' AND rn > gb AND rn < nxt,
+                        extract(explain, 'source_id: (\\d+)'), NULL)) = 2 FROM (
+    SELECT explain, rn, gb, min(if(rn > gb AND match(explain, '^  [A-Z]'), rn, 999999)) OVER () AS nxt FROM (
+    SELECT explain, rowNumberInAllBlocks() AS rn,
+           min(if(explain LIKE '  GROUP BY%', rowNumberInAllBlocks(), 999999)) OVER () AS gb
+    FROM (EXPLAIN QUERY TREE run_passes = 1
+          SELECT toString(l.number) AS a, toString(r.number) AS b, count() AS c
+          FROM numbers(2) AS l JOIN numbers(2) AS r ON l.number = r.number
+          GROUP BY CUBE(toString(l.number), toString(r.number)))));
+SELECT 'self-join off', countIf(explain LIKE '%toString%' AND rn > gb AND rn < nxt) = 0 FROM (
+    SELECT explain, rn, gb, min(if(rn > gb AND match(explain, '^  [A-Z]'), rn, 999999)) OVER () AS nxt FROM (
+    SELECT explain, rowNumberInAllBlocks() AS rn,
+           min(if(explain LIKE '  GROUP BY%', rowNumberInAllBlocks(), 999999)) OVER () AS gb
+    FROM (EXPLAIN QUERY TREE run_passes = 1
+          SELECT toString(l.number) AS a, toString(r.number) AS b, count() AS c
+          FROM numbers(2) AS l JOIN numbers(2) AS r ON l.number = r.number
+          GROUP BY CUBE(toString(l.number), toString(r.number))
+          SETTINGS optimize_injective_functions_in_group_by = 0)));
+SELECT 'user grouping()', countIf(explain LIKE '%toString%' AND rn > gb AND rn < nxt) = 0 FROM (
+    SELECT explain, rn, gb, min(if(rn > gb AND match(explain, '^  [A-Z]'), rn, 999999)) OVER () AS nxt FROM (
+    SELECT explain, rowNumberInAllBlocks() AS rn,
+           min(if(explain LIKE '  GROUP BY%', rowNumberInAllBlocks(), 999999)) OVER () AS gb
+    FROM (EXPLAIN QUERY TREE run_passes = 1
+          SELECT toString(number) AS k, grouping(toString(number)) AS g, count() AS c FROM numbers(3)
+          GROUP BY ROLLUP(toString(number)))));
+SELECT 'user grouping() off', countIf(explain LIKE '%toString%' AND rn > gb AND rn < nxt) = 0 FROM (
+    SELECT explain, rn, gb, min(if(rn > gb AND match(explain, '^  [A-Z]'), rn, 999999)) OVER () AS nxt FROM (
+    SELECT explain, rowNumberInAllBlocks() AS rn,
+           min(if(explain LIKE '  GROUP BY%', rowNumberInAllBlocks(), 999999)) OVER () AS gb
+    FROM (EXPLAIN QUERY TREE run_passes = 1
+          SELECT toString(number) AS k, grouping(toString(number)) AS g, count() AS c FROM numbers(3)
+          GROUP BY ROLLUP(toString(number))
+          SETTINGS optimize_injective_functions_in_group_by = 0)));
+SELECT 'LIMIT BY', countIf(explain LIKE '%toString%' AND rn > gb AND rn < nxt) = 0 FROM (
+    SELECT explain, rn, gb, min(if(rn > gb AND match(explain, '^  [A-Z]'), rn, 999999)) OVER () AS nxt FROM (
+    SELECT explain, rowNumberInAllBlocks() AS rn,
+           min(if(explain LIKE '  GROUP BY%', rowNumberInAllBlocks(), 999999)) OVER () AS gb
+    FROM (EXPLAIN QUERY TREE run_passes = 1
+          SELECT toString(x) AS k, count() AS c FROM (SELECT arrayJoin([0, 1, 1, 2, 2, 2]) AS x)
+          GROUP BY CUBE(toString(x)))));
+SELECT 'LIMIT BY off', countIf(explain LIKE '%toString%' AND rn > gb AND rn < nxt) = 0 FROM (
+    SELECT explain, rn, gb, min(if(rn > gb AND match(explain, '^  [A-Z]'), rn, 999999)) OVER () AS nxt FROM (
+    SELECT explain, rowNumberInAllBlocks() AS rn,
+           min(if(explain LIKE '  GROUP BY%', rowNumberInAllBlocks(), 999999)) OVER () AS gb
+    FROM (EXPLAIN QUERY TREE run_passes = 1
+          SELECT toString(x) AS k, count() AS c FROM (SELECT arrayJoin([0, 1, 1, 2, 2, 2]) AS x)
+          GROUP BY CUBE(toString(x))
+          SETTINGS optimize_injective_functions_in_group_by = 0)));
+SELECT 'INTERPOLATE', countIf(explain LIKE '%toString%' AND rn > gb AND rn < nxt) = 0 FROM (
+    SELECT explain, rn, gb, min(if(rn > gb AND match(explain, '^  [A-Z]'), rn, 999999)) OVER () AS nxt FROM (
+    SELECT explain, rowNumberInAllBlocks() AS rn,
+           min(if(explain LIKE '  GROUP BY%', rowNumberInAllBlocks(), 999999)) OVER () AS gb
+    FROM (EXPLAIN QUERY TREE run_passes = 1
+          SELECT toString(x) AS k, count() AS c FROM (SELECT arrayJoin([0, 1, 1, 2, 2, 2]) AS x)
+          GROUP BY CUBE(toString(x))
+          ORDER BY c WITH FILL FROM 1 TO 8 INTERPOLATE (k AS k))));
+SELECT 'INTERPOLATE off', countIf(explain LIKE '%toString%' AND rn > gb AND rn < nxt) = 0 FROM (
+    SELECT explain, rn, gb, min(if(rn > gb AND match(explain, '^  [A-Z]'), rn, 999999)) OVER () AS nxt FROM (
+    SELECT explain, rowNumberInAllBlocks() AS rn,
+           min(if(explain LIKE '  GROUP BY%', rowNumberInAllBlocks(), 999999)) OVER () AS gb
+    FROM (EXPLAIN QUERY TREE run_passes = 1
+          SELECT toString(x) AS k, count() AS c FROM (SELECT arrayJoin([0, 1, 1, 2, 2, 2]) AS x)
+          GROUP BY CUBE(toString(x))
+          ORDER BY c WITH FILL FROM 1 TO 8 INTERPOLATE (k AS k)
+          SETTINGS optimize_injective_functions_in_group_by = 0)));

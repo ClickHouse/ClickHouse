@@ -72,16 +72,60 @@
 2	1
 
 	3
--- the optimization still fires: the aggregation key is the unwrapped column, not the function
-│  Keys: number
--- the optimization still fires when the key is also referenced in ORDER BY (totals row is not sorted)
-│  Keys: number
+-- under plain WITH TOTALS the key stays wrapped: the grand-total row has no __grouping_set column,
+-- so the only possible correction lives outside the query tree and is lost when the tree is
+-- converted to an AST (a shard receives text; the planner subquery cache keys on that AST).
+│  Keys: toString(number)
+-- same with the key also referenced in ORDER BY
+│  Keys: toString(number)
 -- optimization on == off: same result with the optimization disabled
 0	1
 1	1
 2	1
 
 	3
+-- DISTRIBUTED plain WITH TOTALS. A shard receives the query as TEXT, so any correction recorded
+-- beside the query tree cannot reach it; the shard would re-analyze GROUP BY <bare column> and
+-- project f(default). Pinned on both prefer_localhost_replica values (the runner randomizes it)
+-- and both serialize_query_plan values (the distributed plan job sets it suite-wide).
+0	1
+1	1
+2	1
+
+	3
+0	1
+1	1
+2	1
+
+	3
+0	1
+1	1
+2	1
+
+	3
+0	1
+1	1
+2	1
+
+	3
+-- the AST that a shard would receive must carry the aggregation key WRAPPED. This is the
+-- structural form of the assertion above: it reads the converted query, not the result, so it
+-- cannot be satisfied by a correction that only exists in the query tree.
+1
+-- planner subquery result cache. These two queries need DIFFERENT totals values (\'\' vs \'0\'),
+-- so if the key were unwrapped they would converge on one byte-identical AST and share a cache
+-- entry, and whichever ran first would poison the other. Run as separate statements so the
+-- second one probes an already-warm cache.
+0	1
+1	1
+2	1
+
+	3
+0	1
+1	1
+2	1
+
+0	3
 -- collision across eliminations: two injective keys unwrapping to the same leaf must keep the
 -- full CUBE lattice (they must not be merged into one aggregation key)
 	0	2
@@ -245,6 +289,21 @@ CUBE	1
 ROLLUP	1
 GROUPING SETS	1
 ROLLUP WITH TOTALS	1
-WITH TOTALS	1
+-- plain WITH TOTALS reads 0: it is DECLINED on purpose (its correction cannot survive the
+-- conversion of the query tree to an AST). The grouping-set modifiers above still read 1.
+WITH TOTALS declined	0
 -- the same assertion reads 0 when the optimization is off, so it is not vacuous
 CUBE off	0
+-- firing assertions for the four special-path shapes above, whose other assertions compare
+-- results against the optimization-disabled arm and would therefore also pass if the pass had
+-- silently declined for that shape. The window is the GROUP BY SECTION only (up to the next
+-- section header), because the correction deliberately puts toString back into ORDER BY /
+-- INTERPOLATE / the projection. Each is paired with its own off arm, which must read 0.
+self-join	1
+self-join off	0
+user grouping()	1
+user grouping() off	0
+LIMIT BY	1
+LIMIT BY off	0
+INTERPOLATE	1
+INTERPOLATE off	0

@@ -203,14 +203,11 @@ private:
     /// the correct output-type default instead of f(default). See #110715.
     void optimizeWithModifier(QueryNode & query, bool allow_suspicious_types)
     {
-        /// Two orthogonal correction mechanisms, and `ROLLUP(...) WITH TOTALS` uses both: a grouping
-        /// conditional where a __grouping_set column exists on every row, and a totals-port column
-        /// overwrite for the grand-total row, which has no such column.
+        /// A grouping conditional corrects every row of a grouping-set modifier because a __grouping_set
+        /// column exists on each of them. Plain WITH TOTALS has no such column, and no correction expressed
+        /// outside the query tree survives conversion to AST, so its keys stay wrapped. See declineWithTotals.
         const bool has_grouping_set_column = query.isGroupByWithCube() || query.isGroupByWithRollup()
             || query.isGroupByWithGroupingSets();
-
-        if (query.isGroupByWithTotals())
-            optimizeWithTotals(query, allow_suspicious_types);
 
         if (!has_grouping_set_column)
             return;
@@ -396,128 +393,6 @@ private:
             rewriteOutputExpression(query.getLimitByNode(), replacements, unwrapped_keys);
         if (query.hasInterpolate())
             rewriteOutputExpression(query.getInterpolate(), replacements, unwrapped_keys);
-    }
-
-    /// Plain WITH TOTALS: the grand-total row carries no __grouping_set column, so it records which
-    /// projection positions are exactly f(g) and lets the planner overwrite those columns on the totals
-    /// stream. Only unwraps a key when a per-column overwrite is sufficient; otherwise the key is left
-    /// wrapped (correct but unoptimized). See #110715.
-    void optimizeWithTotals(QueryNode & query, bool allow_suspicious_types)
-    {
-        /// Only the pure WITH TOTALS case. When a grouping-set modifier is also present the grouping
-        /// conditional already corrects every row (including the grand total), so we must not unwrap here.
-        if (query.isGroupByWithCube() || query.isGroupByWithRollup() || query.isGroupByWithGroupingSets())
-            return;
-
-        auto & group_by = query.getGroupBy().getNodes();
-
-        /// Build the set of all keys to test leaf collisions (same guard as the grouping-set path).
-        QueryTreeNodePtrWithHashSet all_keys;
-        for (const auto & key : group_by)
-            all_keys.insert(key);
-
-        const auto & projection = query.getProjection().getNodes();
-
-        std::vector<size_t> eliminated_positions;
-
-        for (auto & key : group_by)
-        {
-            const auto * function_node = key->as<FunctionNode>();
-            if (!function_node)
-                continue;
-
-            auto leaves = collectUnwrappedLeaves(key, allow_suspicious_types);
-            if (leaves.size() != 1)
-                continue;
-
-            const auto & leaf = leaves.front();
-            if (leaf->isEqual(*key))
-                continue;
-
-            bool collides = false;
-            for (const auto & other : all_keys)
-            {
-                if (other.node->isEqual(*key))
-                    continue;
-                if (other.node->isEqual(*leaf))
-                {
-                    collides = true;
-                    break;
-                }
-            }
-            if (collides)
-                continue;
-
-            /// The correction is a whole-column overwrite on the totals row, so it is only valid if every
-            /// occurrence of f(g) in the output is a top-level projection column. Reject the key otherwise.
-            if (occursOnlyAsTopLevelProjection(key, query, projection))
-            {
-                for (size_t i = 0; i < projection.size(); ++i)
-                    if (projection[i]->isEqual(*key, {.compare_aliases = false}))
-                        eliminated_positions.push_back(i);
-
-                key = leaf; /// Unwrap in place, preserving key position.
-            }
-        }
-
-        if (eliminated_positions.empty())
-            return;
-
-        /// De-duplicate and order positions (a key may map to several identical projection columns).
-        std::sort(eliminated_positions.begin(), eliminated_positions.end());
-        eliminated_positions.erase(std::unique(eliminated_positions.begin(), eliminated_positions.end()), eliminated_positions.end());
-        query.setEliminatedTotalsDefaultPositions(std::move(eliminated_positions));
-    }
-
-    /// True if a whole-column overwrite on the totals row can fully correct f(g), i.e. it appears only as
-    /// whole top-level projection columns.
-    ///
-    /// ORDER BY is allowed: the totals row travels a separate stream that the Sorting step does not
-    /// reorder, so the overwrite survives it. HAVING, LIMIT BY, INTERPOLATE, QUALIFY and WINDOW are not:
-    /// each still evaluates f(g) somewhere the whole-column projection overwrite does not reach. See
-    /// #110715.
-    bool occursOnlyAsTopLevelProjection(
-        const QueryTreeNodePtr & key, QueryNode & query, const QueryTreeNodes & projection)
-    {
-        bool appears_as_top_level = false;
-        for (const auto & column : projection)
-        {
-            if (column->isEqual(*key, {.compare_aliases = false}))
-                appears_as_top_level = true;
-            else if (containsNested(column, key))
-                return false; /// nested inside a larger projection expression -> cannot whole-column fix
-        }
-
-        if (!appears_as_top_level)
-            return false; /// f(g) is not projected at all -> nothing to correct, leave the key wrapped
-
-        if (query.hasHaving() && subtreeContains(query.getHaving(), key))
-            return false;
-
-        /// LIMIT BY and INTERPOLATE evaluate f(g) post-aggregation too, and the totals-port overwrite is a
-        /// whole-column projection overwrite that does not reach either clause.
-        if (query.hasLimitBy() && subtreeContains(query.getLimitByNode(), key))
-            return false;
-
-        if (query.hasInterpolate() && subtreeContains(query.getInterpolate(), key))
-            return false;
-
-        /// Referenced from a window function, from QUALIFY, or from the WINDOW clause: those are evaluated
-        /// post-aggregation and still compute f(g) on the totals row, which the whole-column overwrite does
-        /// not reach. Keep the key wrapped in that case (correct but unoptimized).
-        if (reachesPostAggregationWindowOrQualify(key, query))
-            return false;
-
-        return true;
-    }
-
-    /// True if `key` occurs strictly BELOW `node` (i.e. as a proper descendant, not `node` itself).
-    static bool containsNested(const QueryTreeNodePtr & node, const QueryTreeNodePtr & key)
-    {
-        for (const auto & child : node->getChildren())
-            if (subtreeContains(child, key))
-                return true;
-        return false;
     }
 
     /// True if `key` occurs anywhere in the subtree rooted at `node` (inclusive), not descending into
