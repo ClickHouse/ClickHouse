@@ -197,6 +197,20 @@ size_t IAST::checkDepthImpl(size_t max_depth) const
     return res;
 }
 
+/** `CLICKHOUSE_PARSER_NO_FORMATTING` builds a parser that cannot turn an AST back into SQL.
+  *
+  * Formatting is a fifth of the standalone parser, and nothing in it can be left out piecemeal: it
+  * is one virtual function reached from every AST node, so the linker keeps all 116 implementations
+  * as long as a single call goes through that slot. Cutting the calls here cuts all of it - the
+  * formatters themselves, the secret masking they run afterwards, and everything only they use.
+  *
+  * Parsing itself does reach the formatter in a normal build, in the handful of places that have to
+  * keep a fragment of the query as a string - see `astText`, which is where that switches over to
+  * the query text. Everything else that formats does so to describe an AST node in an error
+  * message, and gets a placeholder here: an exception thrown by a build that only parses is either
+  * a syntax error, which quotes the query text rather than the AST, or a logical error, which comes
+  * with a stack trace.
+  */
 String IAST::formatWithPossiblyHidingSensitiveData(
     size_t max_length,
     bool one_line,
@@ -205,6 +219,10 @@ String IAST::formatWithPossiblyHidingSensitiveData(
     IdentifierQuotingRule identifier_quoting_rule,
     IdentifierQuotingStyle identifier_quoting_style) const
 {
+#if defined(CLICKHOUSE_PARSER_NO_FORMATTING)
+    UNUSED(max_length, one_line, show_secrets, print_pretty_type_names, identifier_quoting_rule, identifier_quoting_style);
+    return "<AST>";  /// Only ever reaches an error message - see above.
+#else
     WriteBufferFromOwnString buf;
     FormatSettings settings(one_line);
     settings.show_secrets = show_secrets;
@@ -213,6 +231,18 @@ String IAST::formatWithPossiblyHidingSensitiveData(
     settings.identifier_quoting_style = identifier_quoting_style;
     format(buf, settings);
     return wipeSensitiveDataAndCutToLength(buf.str(), max_length, !show_secrets);
+#endif
+}
+
+String astText(const IAST & ast, std::string_view source_text)
+{
+#if defined(CLICKHOUSE_PARSER_NO_FORMATTING)
+    UNUSED(ast);
+    return String(source_text);
+#else
+    UNUSED(source_text);
+    return ast.formatWithSecretsOneLine();
+#endif
 }
 
 String IAST::formatForLogging(size_t max_length) const
@@ -481,6 +511,32 @@ static bool decideParensEmission(const IAST & node, IAST::FormatStateStacked & f
     return true;
 }
 
+/// These four are the only calls through the `formatImpl` slot. See the comment on
+/// `formatWithPossiblyHidingSensitiveData` for why removing them removes the whole formatter.
+#if defined(CLICKHOUSE_PARSER_NO_FORMATTING)
+
+void IAST::format(WriteBuffer & ostr, const FormatSettings & settings) const
+{
+    UNUSED(ostr, settings);
+}
+
+void IAST::format(WriteBuffer & ostr, const FormatSettings & settings, FormatState & state, FormatStateStacked frame) const
+{
+    UNUSED(ostr, settings, state, frame);
+}
+
+void IAST::format(FormattingBuffer out) const
+{
+    UNUSED(out);
+}
+
+void IAST::formatImpl(WriteBuffer & ostr, const FormatSettings & settings, FormatState & state, FormatStateStacked frame) const
+{
+    UNUSED(ostr, settings, state, frame);
+}
+
+#else
+
 void IAST::format(WriteBuffer & ostr, const FormatSettings & settings) const
 {
     FormatState state;
@@ -519,6 +575,8 @@ void IAST::formatImpl(WriteBuffer & ostr, const FormatSettings & settings, Forma
 {
     formatImpl(FormattingBuffer{ostr, settings, state, std::move(frame)});
 }
+
+#endif
 
 void IAST::formatImpl(FormattingBuffer /*out*/) const
 {

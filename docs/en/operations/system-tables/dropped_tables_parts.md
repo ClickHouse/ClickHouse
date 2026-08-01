@@ -31,6 +31,7 @@ The schema of this table is the same as [system.parts](./parts.md)
     - `data_version` - optional value, incremented when a part is mutated (again, mutated data is always only written to a new part, since parts are immutable)
 - `uuid` ([UUID](/sql-reference/data-types/uuid)) — The UUID of data part.
 - `part_type` ([String](/sql-reference/data-types/string)) — The data part storing format. Possible values: `Wide` — each column is stored in a separate file, `Compact` — all columns are stored in one file. Data storing format is controlled by the `min_bytes_for_wide_part` and `min_rows_for_wide_part` settings of the MergeTree table.
+- `part_storage_type` ([String](/sql-reference/data-types/string)) — The type of `DataPartStorage`. Possible values: `Packed` - most part files are stored in a single archive (projections and a few service files such as `txn_version.txt` are written separately), `Full` - each file is stored separately.
 - `active` ([UInt8](/sql-reference/data-types/int-uint)) — Flag that indicates whether the data part is active. If a data part is active, it's used in a table. Otherwise, it's about to be deleted. Inactive data parts appear after merging and mutating operations.
 - `marks` ([UInt64](/sql-reference/data-types/int-uint)) — The number of marks. To get the approximate number of rows in a data part, multiply marks by the index granularity (usually 8192) (this hint does not work for adaptive granularity).
 - `rows` ([UInt64](/sql-reference/data-types/int-uint)) — The number of rows.
