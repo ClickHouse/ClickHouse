@@ -288,9 +288,17 @@ class Shell:
         # command already finished and killpg's a possibly PID-recycled group.
         if finished.wait(timeout):
             return
-        # Backstop for the race between the wait expiring and the child exiting.
-        if process.poll() is not None:
+        # Backstop for the race between the wait expiring and the attempt ending.
+        # Tests the whole process GROUP, not just the leader: when the shell exits
+        # but a background descendant still holds the inherited output pipes, the
+        # reader threads stay blocked, so `finished` is not set yet and the leader is
+        # already reaped - a leader-only test would return and enforce nothing.
+        try:
+            os.killpg(process.pid, 0)
+        except ProcessLookupError:
             return
+        except PermissionError:
+            pass  # the group exists but is not ours; fall through and try anyway
         print(
             f"WARNING: Timeout exceeded [{timeout}], sending SIGTERM to process group [{process.pid}]"
         )
@@ -836,46 +844,71 @@ openssl pkeyutl -encrypt -pubin -inkey {key_path} -in {aes_key_path} -out {aes_k
         Shell.run(f"openssl enc -aes-256-cbc -in {path} -out {path}.enc -pbkdf2 -pass file:{aes_key_path}")
         return f"{path}.enc"
 
+    # `tar` exit 1 is "some files differ", which includes a file appended to while
+    # being read. Every archive built here contains files the job is still writing
+    # (its own log, the docker log, live test instance directories), so 1 is the
+    # normal outcome and its archive is complete. Exit 2 and a signal death are not.
+    TAR_OK_RETURN_CODES = (0, 1)
+
     @classmethod
     def compress_files_gz(cls, files, archive_name, timeout=None):
         """Archive `files` into `archive_name`, optionally bounded by `timeout`.
 
         Returns the archive path on success and None on failure, so a caller can
-        attach the archive only when it was actually produced. Failures are
-        reported by return value rather than raised: an archive is best-effort
-        evidence, and an exception here would skip the caller's result upload.
+        attach the archive only when it was actually produced. Nothing here raises:
+        an exception would skip the caller's result upload, which is the outcome the
+        bound exists to prevent. Missing inputs are dropped with a warning, and a
+        failed publish returns None.
 
-        The archive is built under a temporary name and renamed into place only on
-        success. `tar` killed by the timeout leaves a valid-looking truncated
-        archive behind, and the upload path only checks that the file exists, so
-        without the rename a partial archive would be published as the logs.
+        The archive is built under a per-process temporary name and renamed into
+        place on success only. `tar` killed by the timeout leaves a large truncated
+        archive that the upload's existence check accepts, so writing the
+        destination directly would publish that truncation as the logs; and the two
+        callers that write the job's `logs.tar.gz` would then overwrite each other's
+        archive rather than just their own temporary file.
         """
         files = [
             os.path.relpath(file) if os.path.isabs(file) else file for file in files
         ]
+        # A declared path may never have been created: `Result.from_pytest_run`
+        # registers the pytest log and report files before running pytest, and a
+        # conftest import error leaves both absent.
+        present = [file for file in files if Path(file).exists()]
         for file in files:
-            assert Path(file).exists(), f"Path does not exist [{file}]"
+            if file not in present:
+                print(f"WARNING: not archiving non-existent path [{file}]")
+        if not present:
+            print(f"WARNING: nothing to archive into [{archive_name}]")
+            return None
 
-        tmp_archive = f"{archive_name}.tmp"
+        # Unique per writer: the temporary name is in the destination directory, so
+        # os.replace stays atomic, but two overlapping writers no longer share one
+        # file - which would let the loser keep writing into the published archive.
+        tmp_archive = f"{archive_name}.{os.getpid()}.tmp"
         with tempfile.NamedTemporaryFile() as f:
-            f.write("\n".join(files).encode())
+            f.write("\n".join(present).encode())
             f.flush()
             # Direct `tar -czf`, not `tar -cf - | gzip`: the pipe reports only
             # gzip's status (Shell.run does not set pipefail), so a tar that fails
             # part-way - a test instance directory vanishing mid-job - exits 0 and
             # would be renamed into place as complete.
-            ok = Shell.check(
-                f"tar -czf {tmp_archive} -T {f.name}",
+            rc = Shell.run(
+                f"tar --warning=no-file-changed -czf {tmp_archive} -T {f.name}",
                 verbose=True,
                 timeout=timeout,
             )
 
-        if not ok:
-            print(f"WARNING: failed to compress files into [{archive_name}]")
+        if rc not in cls.TAR_OK_RETURN_CODES:
+            print(f"WARNING: failed to archive into [{archive_name}], tar rc [{rc}]")
             Path(tmp_archive).unlink(missing_ok=True)
             return None
 
-        os.replace(tmp_archive, archive_name)
+        try:
+            os.replace(tmp_archive, archive_name)
+        except OSError as e:
+            print(f"WARNING: failed to publish archive [{archive_name}]: {e}")
+            Path(tmp_archive).unlink(missing_ok=True)
+            return None
         return archive_name
 
     @classmethod

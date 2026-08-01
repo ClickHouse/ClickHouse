@@ -35,12 +35,9 @@ MAX_FAILS_BEFORE_DROP = 5
 # time guarantee that backstops this.
 MAX_FLAKY_CHECK_MODULES = 10
 # Per-archive bound for the post-run log/config archiving, in seconds. Archiving sits
-# between result collection and the only result dump, so an archive that never returns
-# costs the whole report: one shard spent ~80 minutes in `tar` and published an empty
-# job-level ERROR while its five siblings uploaded 600-1300 test rows each. Those healthy
-# siblings ran 4491-5747s end to end against the 5h (18000s) job budget, so 30 minutes is
-# far more archiving time than any observed shard needs while leaving ample budget for the
-# upload. Exceeding it costs the tarball, never the results.
+# between result collection and the only result dump, so exceeding it must cost the
+# tarball rather than the report. Healthy shards run 4491-5747s against the 18000s job
+# budget, so 30 minutes is far more than any observed shard needs to archive.
 ARCHIVE_TIMEOUT_SEC = 1800
 OOM_IN_DMESG_TEST_NAME = "OOM in dmesg"
 ncpu = Utils.cpu_count()
@@ -648,22 +645,31 @@ def main():
     llvm_profdata_cmd = None
 
     # Set on_error_hook to collect logs on hard timeout.
-    # The archive is built under a temporary name and renamed in only when tar
-    # succeeded: the hook writes to the same logs.tar.gz the normal path produces,
-    # and the upload only checks that the file exists. Without the rename a tar cut
-    # short by the hook timeout would publish a truncated archive as the logs, and
-    # would also overwrite a complete archive the normal path had already written.
-    # Failures stay non-fatal (the trailing rm keeps the exit status zero).
+    # The archive is built under a temporary name unique to this shell and renamed in
+    # only when tar reported success: the hook writes the same logs.tar.gz the normal
+    # path produces, and the upload only checks that the file exists. Writing the
+    # destination directly would publish an archive cut short by the hook timeout, and
+    # would destroy a complete archive the normal path had already written.
+    # `tar` exit 1 is "some files differ" - normal here, since the archive contains
+    # logs still being appended to - so it is accepted; 2 and a signal death are not.
+    # The whole hook stays non-fatal (the trailing `:`).
     Result.from_fs(info.job_name).set_on_error_hook(
         """
 dmesg -T >./ci/tmp/dmesg.log
 sudo chown -R $(id -u):$(id -g) ./tests/integration
-tar -czf ./ci/tmp/logs.tar.gz.tmp \
+tmp_archive=./ci/tmp/logs.tar.gz.$$.tmp
+tar --warning=no-file-changed -czf "$tmp_archive" \
   ./tests/integration/test_*/_instances*/ \
   ./ci/tmp/*.log \
-  ./ci/tmp/*.jsonl \
-  && mv ./ci/tmp/logs.tar.gz.tmp ./ci/tmp/logs.tar.gz \
-  || rm -f ./ci/tmp/logs.tar.gz.tmp
+  ./ci/tmp/*.jsonl
+tar_rc=$?
+if [ "$tar_rc" -le 1 ]; then
+  mv "$tmp_archive" ./ci/tmp/logs.tar.gz
+else
+  echo "WARNING: on_error_hook archiving failed, tar rc [$tar_rc]"
+  rm -f "$tmp_archive"
+fi
+:
 """
     ).set_files(
         [

@@ -4,10 +4,8 @@ Tests for the interim result checkpoint in `ci/jobs/integration_test_job.py`.
 Background
 ----------
 `integration_test_job.main` collected every test result into `test_results` and dumped it
-only at the very end, with unbounded post-processing in between. When one shard hung for
-~80 minutes in the post-run `tar`, the pre-run `RUNNING` stub was still the only result on
-disk, so `Runner._get_result_object` published `ERROR` with no children while 502 per-test
-outcomes sat in the job log.
+only at the very end, with unbounded post-processing in between, so a job that died in
+that window published the pre-run `RUNNING` stub as an `ERROR` with no children.
 
 `main` now writes the collected results into that existing result file before any
 post-processing. Two properties are load-bearing and neither is obvious from the call:
@@ -49,23 +47,6 @@ _JOB_SCRIPT = os.path.abspath(
 # --- the checkpoint runs BEFORE the archiving it protects against ---------------------
 
 
-def _enclosing_statement(tree, node):
-    """The smallest top-level-body statement containing `node`.
-
-    Resolved by smallest span rather than `ast.walk` order, which yields outer nodes
-    first and would match the enclosing FunctionDef.
-    """
-    best = None
-    for candidate in ast.walk(tree):
-        if not hasattr(candidate, "lineno") or not hasattr(candidate, "end_lineno"):
-            continue
-        if candidate.lineno <= node.lineno and node.end_lineno <= candidate.end_lineno:
-            span = candidate.end_lineno - candidate.lineno
-            if best is None or span < best[0]:
-                best = (span, candidate)
-    return best[1] if best else None
-
-
 def _find_main(tree):
     for node in ast.walk(tree):
         if isinstance(node, ast.FunctionDef) and node.name == "main":
@@ -89,6 +70,75 @@ def _is_compress_call(node):
     return (
         isinstance(node.func, ast.Attribute) and node.func.attr == "compress_files_gz"
     )
+
+
+def _module_int_constants(tree):
+    """Module-level `NAME = <int literal>` assignments, by name."""
+    values = {}
+    for node in tree.body:
+        if not isinstance(node, ast.Assign):
+            continue
+        if not (
+            isinstance(node.value, ast.Constant) and isinstance(node.value.value, int)
+        ):
+            continue
+        for target in node.targets:
+            if isinstance(target, ast.Name):
+                values[target.id] = node.value.value
+    return values
+
+
+def _positive_timeout(call, constants):
+    """The `timeout` a call passes, resolved to a positive int, else None.
+
+    Asserting only that the keyword is present is not enough: `timeout=None` keeps the
+    keyword and disables the bound, which is the regression this is meant to catch.
+    """
+    keyword = next((kw for kw in call.keywords if kw.arg == "timeout"), None)
+    if keyword is None:
+        return None
+    value = keyword.value
+    if isinstance(value, ast.Constant):
+        resolved = value.value
+    elif isinstance(value, ast.Name):
+        resolved = constants.get(value.id)
+    else:
+        resolved = None
+    if isinstance(resolved, int) and not isinstance(resolved, bool) and resolved > 0:
+        return resolved
+    return None
+
+
+_STATUS_ASSIGNING_METHODS = ("set_status", "set_error", "set_failed", "set_success")
+
+
+def _status_assignments_in(node):
+    return sorted(
+        sub.func.attr
+        for sub in ast.walk(node)
+        if isinstance(sub, ast.Call)
+        and isinstance(sub.func, ast.Attribute)
+        and sub.func.attr in _STATUS_ASSIGNING_METHODS
+    )
+
+
+def _smallest_enclosing_statement(scope, node):
+    """The innermost statement of `scope` containing `node`.
+
+    Innermost rather than any enclosing one: a status call anywhere in main() would
+    match an outer statement, so only the statement that actually performs the
+    checkpoint can be inspected for one.
+    """
+    best = None
+    for statement in ast.walk(scope):
+        if not isinstance(statement, ast.stmt):
+            continue
+        if not any(sub is node for sub in ast.walk(statement)):
+            continue
+        span = statement.end_lineno - statement.lineno
+        if best is None or span < best[0]:
+            best = (span, statement)
+    return best[1] if best else None
 
 
 def test_checkpoint_precedes_the_archiving_in_main():
@@ -115,16 +165,19 @@ def test_checkpoint_precedes_the_archiving_in_main():
 
 
 def test_every_archiving_call_site_is_bounded():
-    """Every `compress_files_gz` call in main() must pass a timeout.
+    """Every `compress_files_gz` call in main() must pass a positive timeout.
 
     The bound is what keeps archiving from starving the result upload, and it is opt-in
     per call site (`timeout` defaults to None so other callers are unaffected), so an
     unbounded call site restores the defect for the archive it writes. The behavioural
     tests drive `compress_files_gz` directly and cannot see a call site that forgot it.
+    The VALUE is checked, not just the keyword: `timeout=None` keeps the keyword and
+    disables the bound.
     """
     with open(_JOB_SCRIPT, encoding="utf-8") as f:
         tree = ast.parse(f.read(), filename=_JOB_SCRIPT)
     main = _find_main(tree)
+    constants = _module_int_constants(tree)
 
     calls = [
         node
@@ -134,13 +187,11 @@ def test_every_archiving_call_site_is_bounded():
     assert calls, "main() contains no compress_files_gz call to check"
 
     unbounded = [
-        node.lineno
-        for node in calls
-        if not any(kw.arg == "timeout" for kw in node.keywords)
+        node.lineno for node in calls if _positive_timeout(node, constants) is None
     ]
     assert unbounded == [], (
-        f"compress_files_gz call sites without a timeout at lines {unbounded}: an "
-        "overrun there would again discard the collected results"
+        f"compress_files_gz call sites without a positive timeout at lines {unbounded}: "
+        "an overrun there would again discard the collected results"
     )
 
 
@@ -156,6 +207,7 @@ def test_the_on_error_hook_is_bounded():
     )
     with open(runner_path, encoding="utf-8") as f:
         tree = ast.parse(f.read(), filename=runner_path)
+    constants = _module_int_constants(tree)
 
     hook_calls = [
         node
@@ -171,13 +223,11 @@ def test_the_on_error_hook_is_bounded():
     assert hook_calls, "no Shell.check invocation of the on_error_hook found"
 
     unbounded = [
-        node.lineno
-        for node in hook_calls
-        if not any(kw.arg == "timeout" for kw in node.keywords)
+        node.lineno for node in hook_calls if _positive_timeout(node, constants) is None
     ]
     assert unbounded == [], (
-        f"the on_error_hook is invoked without a timeout at lines {unbounded}: it runs "
-        "before the result is uploaded, so an overrun costs the whole report"
+        f"the on_error_hook is invoked without a positive timeout at lines {unbounded}: "
+        "it runs before the result is uploaded, so an overrun costs the whole report"
     )
 
 
@@ -205,16 +255,25 @@ def test_the_on_error_hook_publishes_its_archive_by_rename():
     assert hooks, "no on_error_hook literal found in the job script"
 
     for hook in hooks:
-        assert "tar -czf ./ci/tmp/logs.tar.gz.tmp" in hook, (
+        assert '-czf "$tmp_archive"' in hook, (
             "the on_error_hook archives straight to its destination; a tar cut short by "
             f"the hook timeout would be published as the logs. Hook:\n{hook}"
         )
         assert (
-            "mv ./ci/tmp/logs.tar.gz.tmp ./ci/tmp/logs.tar.gz" in hook
+            "tmp_archive=./ci/tmp/logs.tar.gz.$$.tmp" in hook
+        ), f"the hook's temporary archive name is not unique per shell. Hook:\n{hook}"
+        assert (
+            'mv "$tmp_archive" ./ci/tmp/logs.tar.gz' in hook
         ), f"the on_error_hook never renames its temporary archive in. Hook:\n{hook}"
-        assert "rm -f ./ci/tmp/logs.tar.gz.tmp" in hook, (
-            "the on_error_hook leaves its temporary archive behind on failure. Hook:\n"
-            f"{hook}"
+        assert (
+            'rm -f "$tmp_archive"' in hook
+        ), f"the hook leaves its temporary archive behind on failure. Hook:\n{hook}"
+        # `tar` exit 1 is "some files differ", which the hook's own inputs (a job log
+        # still being appended to, live test instance directories) produce routinely.
+        # Rejecting it would discard a complete archive.
+        assert '"$tar_rc" -le 1' in hook, (
+            "the on_error_hook does not accept tar's benign exit 1, so it would discard "
+            f"a complete archive whenever an input was appended to. Hook:\n{hook}"
         )
 
 
@@ -238,6 +297,74 @@ def test_checkpoint_uses_the_existing_result_not_a_fresh_one():
             f"the checkpoint at line {node.lineno} calls "
             f"`{receiver.func.attr}` instead of `from_fs`; anything but from_fs "
             "discards ext, which holds the on_error_hook and the run url"
+        )
+
+
+def test_checkpoint_persists_the_collected_results():
+    """The checkpoint must pass the collected results, not some other expression.
+
+    `set_results([])` satisfies every structural property of the call while writing an
+    empty result list, which is precisely the empty report the change exists to prevent.
+    """
+    with open(_JOB_SCRIPT, encoding="utf-8") as f:
+        tree = ast.parse(f.read(), filename=_JOB_SCRIPT)
+    main = _find_main(tree)
+
+    calls = [
+        node
+        for node in ast.walk(main)
+        if isinstance(node, ast.Call) and _is_set_results_call(node)
+    ]
+    assert calls, "main() contains no set_results call"
+
+    for node in calls:
+        assert len(node.args) == 1, (
+            f"the checkpoint at line {node.lineno} passes {len(node.args)} positional "
+            "arguments; expected exactly the collected results"
+        )
+        argument = node.args[0]
+        assert isinstance(argument, ast.Name) and argument.id == "test_results", (
+            f"the checkpoint at line {node.lineno} passes "
+            f"{ast.dump(argument)} instead of the `test_results` collected so far; "
+            "anything else can persist an empty report"
+        )
+
+
+def test_checkpoint_assigns_no_status_at_the_call_site():
+    """The checkpoint statement must not assign a status.
+
+    Every status decision in main() runs after this point, so a status assigned here
+    would be published as final on a killed job. Asserted structurally because the
+    behavioural arm drives `Result` directly and cannot see main()'s own call.
+    """
+    with open(_JOB_SCRIPT, encoding="utf-8") as f:
+        tree = ast.parse(f.read(), filename=_JOB_SCRIPT)
+    main = _find_main(tree)
+
+    calls = [
+        node
+        for node in ast.walk(main)
+        if isinstance(node, ast.Call) and _is_set_results_call(node)
+    ]
+    assert calls, "main() contains no set_results call"
+
+    for node in calls:
+        # Anywhere in the same chain, e.g. `.set_results(x).set_status(OK)`.
+        chained = _status_assignments_in(node.func.value) + [
+            sub.func.attr
+            for sub in ast.walk(node)
+            if isinstance(sub, ast.Call)
+            and isinstance(sub.func, ast.Attribute)
+            and sub.func.attr in _STATUS_ASSIGNING_METHODS
+        ]
+        statement = _smallest_enclosing_statement(main, node)
+        assert statement is not None, f"no statement encloses line {node.lineno}"
+        on_statement = _status_assignments_in(statement)
+        assert chained == [] and on_statement == [], (
+            f"the checkpoint at line {node.lineno} assigns a status "
+            f"({sorted(set(chained + on_statement))}); it would pre-empt the "
+            "flaky downgrade, the dmesg OOM row, infrastructure-error clearing and the "
+            "bugfix-validation inversion, all of which run after this point"
         )
 
 
@@ -345,6 +472,8 @@ if __name__ == "__main__":
     test_the_on_error_hook_is_bounded()
     test_the_on_error_hook_publishes_its_archive_by_rename()
     test_checkpoint_uses_the_existing_result_not_a_fresh_one()
+    test_checkpoint_persists_the_collected_results()
+    test_checkpoint_assigns_no_status_at_the_call_site()
     for fn in (
         test_checkpoint_persists_the_children,
         test_checkpoint_assigns_no_status,
