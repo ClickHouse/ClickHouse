@@ -1,6 +1,8 @@
 #include <Storages/ColumnsDescription.h>
 #include <Storages/StorageInMemoryMetadata.h>
 
+#include <climits>
+
 #include <Access/AccessControl.h>
 #include <Access/User.h>
 
@@ -903,6 +905,25 @@ NameSet StorageInMemoryMetadata::getColumnsWithoutDefaultExpressions(const Names
     return names;
 }
 
+namespace
+{
+
+/// Unlike column data files, the on-disk file name of a skip index is never replaced by a hash
+/// (see the `replace_long_file_name_to_hash` and `max_file_name_length` `MergeTree` settings), so it
+/// is bounded only by what the filesystem accepts. A long column name - or even a short one that
+/// grows when escaped, e.g. a non-ASCII name, where every byte becomes three characters - would
+/// therefore give the implicit index a file name that cannot be created, and every `INSERT` into the
+/// table would fail with `File name too long`. Not creating such an implicit index is safe: it is
+/// only an optimization, and an explicit index with an equally long name still fails loudly.
+bool implicitIndexFileNameFits(const IndexDescription & index)
+{
+    /// Room for the suffixes appended to the base name, such as `.idx`, `.idx2`, `.mrk2`, `.cmrk2`.
+    static constexpr size_t suffix_reserve = 16;
+    return getIndexFileName(index.name, index.escape_filenames).size() + suffix_reserve <= NAME_MAX;
+}
+
+}
+
 void StorageInMemoryMetadata::addImplicitIndicesForColumn(const ColumnDescription & column, ContextPtr context)
 {
     // Ephemeral columns are excluded from implicit indices because they are not persisted;
@@ -939,6 +960,9 @@ void StorageInMemoryMetadata::addImplicitIndicesForColumn(const ColumnDescriptio
         if (!minmax_index_exists)
         {
             auto index = createImplicitMinMaxIndexDescription(column.name, columns, escape_index_filenames, context);
+            if (!implicitIndexFileNameFits(index))
+                return;
+
             bool valid_index = true;
             try
             {
