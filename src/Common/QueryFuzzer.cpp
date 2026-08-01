@@ -6736,13 +6736,11 @@ void QueryFuzzer::fuzz(ASTPtr & ast)
             hypo_index->if_exists = !hypo_index->if_exists;
         fuzz(hypo_index->children);
     }
-    else if (
-        typeid_cast<ASTDataType *>(ast.get()) || typeid_cast<ASTTupleDataType *>(ast.get())
-        || typeid_cast<ASTEnumDataType *>(ast.get()))
+    else if (dynamic_cast<ASTDataType *>(ast.get()))
     {
         /// Fuzz a data type only through the DataType layer: ParserDataType does not accept an expression, so
-        /// one injected into the argument list cannot be parsed back (#109706). The casts above match exactly,
-        /// so every ASTDataType subclass has to be named there.
+        /// one injected into the argument list cannot be parsed back (#109706). dynamic_cast, not typeid_cast:
+        /// this has to own every ASTDataType subclass, otherwise one falls through to the generic fuzzer.
         if (fuzz_rand() % 10 == 0)
         {
             if (const auto old_type = DataTypeFactory::instance().tryGet(ast))
