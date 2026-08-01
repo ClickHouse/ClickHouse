@@ -33,27 +33,39 @@ several_mv_into_one_table second emit probed settings 4
 several_mv_into_one_table second emit mutating 0
 insert_several_blocks_into_table first guards [!= 10 != 5 ]
 insert_several_blocks_into_table first tables [system.parts system.settings table_a_b table_when_b_even ]
+insert_several_blocks_into_table first projections [SELECT a, b FROM table_when_b_even SELECT a, b, count() SELECT count() FROM table_a_b) AS c_src SELECT count() FROM table_when_b_even) AS c_dst SELECT name, value SELECT table, name, rows, bytes_on_disk ]
 insert_several_blocks_into_table first threads [SET max_insert_threads=10]
+insert_several_blocks_into_table first emit probed settings 4
 insert_several_blocks_into_table first emit parses 1
 insert_several_blocks_into_table second guards [!= 10 != 20 ]
 insert_several_blocks_into_table second tables [system.parts system.settings table_a_b table_when_b_even ]
+insert_several_blocks_into_table second projections [SELECT a, b FROM table_when_b_even SELECT a, b, count() SELECT count() FROM table_a_b) AS c_src SELECT count() FROM table_when_b_even) AS c_dst SELECT name, value SELECT table, name, rows, bytes_on_disk ]
 insert_several_blocks_into_table second threads [SET max_insert_threads=10]
+insert_several_blocks_into_table second emit probed settings 4
 insert_several_blocks_into_table second emit parses 1
 mv_generates_several_blocks first guards [!= 5 != 9 ]
 mv_generates_several_blocks first tables [system.parts system.settings system.tables table_a_b table_when_b_even_and_joined ]
+mv_generates_several_blocks first projections [SELECT a_src, a_join, b FROM table_when_b_even_and_joined SELECT a_src, a_join, b, count() SELECT count() FROM table_a_b) AS c_src SELECT count() FROM table_when_b_even_and_joined) AS c_dst SELECT name, engine, create_table_query SELECT name, value SELECT table, name, rows, bytes_on_disk ]
 mv_generates_several_blocks first threads [SET max_insert_threads=10]
+mv_generates_several_blocks first emit probed settings 4
 mv_generates_several_blocks first emit parses 1
 mv_generates_several_blocks second guards [!= 10 != 18 ]
 mv_generates_several_blocks second tables [system.parts system.settings system.tables table_a_b table_when_b_even_and_joined ]
+mv_generates_several_blocks second projections [SELECT a_src, a_join, b FROM table_when_b_even_and_joined SELECT a_src, a_join, b, count() SELECT count() FROM table_a_b) AS c_src SELECT count() FROM table_when_b_even_and_joined) AS c_dst SELECT name, engine, create_table_query SELECT name, value SELECT table, name, rows, bytes_on_disk ]
 mv_generates_several_blocks second threads [SET max_insert_threads=10]
+mv_generates_several_blocks second emit probed settings 4
 mv_generates_several_blocks second emit parses 1
 several_mv_into_one_table first guards [!= 6 != 8 ]
 several_mv_into_one_table first tables [system.parts system.settings system.tables table_dst table_src ]
+several_mv_into_one_table first projections [SELECT a, b FROM table_dst SELECT a, b, count() SELECT count() FROM table_dst) AS c_dst SELECT count() FROM table_src) AS c_src SELECT name, engine, create_table_query SELECT name, value SELECT table, name, rows, bytes_on_disk ]
 several_mv_into_one_table first threads [SET max_insert_threads=10]
+several_mv_into_one_table first emit probed settings 4
 several_mv_into_one_table first emit parses 1
 several_mv_into_one_table second guards [!= 12 != 16 ]
 several_mv_into_one_table second tables [system.parts system.settings system.tables table_dst table_src ]
+several_mv_into_one_table second projections [SELECT a, b FROM table_dst SELECT a, b, count() SELECT count() FROM table_dst) AS c_dst SELECT count() FROM table_src) AS c_src SELECT name, engine, create_table_query SELECT name, value SELECT table, name, rows, bytes_on_disk ]
 several_mv_into_one_table second threads [SET max_insert_threads=10]
+several_mv_into_one_table second emit probed settings 4
 several_mv_into_one_table second emit parses 1
 03008_deduplication_insert_several_blocks_replicated parses [second]
 03008_deduplication_insert_several_blocks_replicated main debug-on-fail 0

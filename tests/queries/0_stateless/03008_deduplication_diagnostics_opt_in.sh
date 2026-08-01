@@ -15,7 +15,12 @@ ARGS_MIXED=(--insert-method InsertSelect --table-engine MergeTree --use-insert-t
       --single-thread False --deduplicate-src-table False --deduplicate-dst-table False
       --insert-unique-blocks True --get-logs false)
 
-SETTINGS_RE='max_insert_threads=1|update_insert_deduplication_token_in_dependent_materialized_views=1|deduplicate_blocks_in_dependent_materialized_views=1|max_block_size=1'
+# Each alternative carries its own terminating semicolon so a longer value cannot match as a
+# prefix: without it, "SET max_insert_threads=10;" matches the "max_insert_threads=1" branch
+# and a diagnostics run reporting a value the failing run never used would pass unnoticed.
+# One pattern per argument shape, since the two shapes apply different values.
+SETTINGS_RE_ST='SET max_insert_threads=1;|SET update_insert_deduplication_token_in_dependent_materialized_views=1;|SET deduplicate_blocks_in_dependent_materialized_views=1;|SET max_block_size=1;'
+SETTINGS_RE_MT='SET max_insert_threads=10;|SET update_insert_deduplication_token_in_dependent_materialized_views=1;|SET deduplicate_blocks_in_dependent_materialized_views=1;|SET max_block_size=1;'
 
 for sub in insert_several_blocks_into_table mv_generates_several_blocks several_mv_into_one_table; do
     main=$(python3 "$GEN" "$sub" "${ARGS[@]}")
@@ -33,7 +38,7 @@ for sub in insert_several_blocks_into_table mv_generates_several_blocks several_
         echo "$sub $phase emit DEBUG phase $(echo "$emit" | grep -c "DEBUG $phase")"
         # ... the settings the diagnostics report on are applied with the failing run's
         # values, not just some SET lines ...
-        echo "$sub $phase emit probed settings $(echo "$emit" | grep -oE "SET ($SETTINGS_RE)" | sort -u | wc -l)"
+        echo "$sub $phase emit probed settings $(echo "$emit" | grep -oE "$SETTINGS_RE_ST" | sort -u | wc -l)"
         # ... and it cannot destroy or re-create the state it is inspecting.
         echo "$sub $phase emit mutating $(echo "$emit" | grep -ciE 'DROP |CREATE |INSERT |throwIf')"
     done
@@ -48,8 +53,17 @@ for sub in insert_several_blocks_into_table mv_generates_several_blocks several_
         echo "$sub $phase guards [$(echo "$emit" | grep -oE '!= [0-9]+' | sort -u | tr '\n' ' ')]"
         # Every table the probes read, so a probe aimed at the wrong table shows up here.
         echo "$sub $phase tables [$(echo "$emit" | grep -oE 'FROM [a-z_.]+' | sort -u | sed 's/FROM //' | tr '\n' ' ')]"
+        # The payload each probe actually selects. Nothing else in the file depends on the
+        # projection lists, and CLICKHOUSE_FORMAT only parses the AST, so a thinned or
+        # unresolvable probe would otherwise pass CI and only fail when a case really fails.
+        echo "$sub $phase projections [$(echo "$emit" \
+            | grep -oE 'SELECT [A-Za-z_][A-Za-z_0-9, ()]*$' \
+            | sed 's/^ *//;s/ *$//' | sort -u | tr '\n' ' ')]"
         # The settings block carries the failing run's values, not fresh-session defaults.
         echo "$sub $phase threads [$(echo "$emit" | grep -oE 'SET max_insert_threads=[0-9]+')]"
+        # This shape's own expected values, so a setting mutated only on the many-threads
+        # branch cannot hide behind the single-thread shape's expectation.
+        echo "$sub $phase emit probed settings $(echo "$emit" | grep -oE "$SETTINGS_RE_MT" | sort -u | wc -l)"
         # On master the probes ran on the success path, so invalid SQL in them broke every
         # case immediately. They only run on failure now, so nothing else would notice.
         if printf '%s' "$emit" | $CLICKHOUSE_FORMAT --multiquery > /dev/null 2>&1; then
