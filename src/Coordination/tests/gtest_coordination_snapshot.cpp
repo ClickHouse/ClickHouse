@@ -316,8 +316,7 @@ createLocalObjectStorageDisk(const std::string & meta_path, const std::string & 
     DB::MetadataStoragePtr metadata_storage = std::make_shared<DB::MetadataStorageFromDisk>(
         meta_disk, "", obj_storage->createKeyGenerator(), /*persist_removal_queue_=*/false, /*removal_log_compaction_threshold_=*/static_cast<size_t>(0));
     Poco::AutoPtr<Poco::Util::MapConfiguration> config_ptr(new Poco::Util::MapConfiguration);
-    auto disk = std::make_shared<DB::DiskObjectStorage>(
-        "SnapshotDisk", cluster, metadata_storage, router, /*wrapped_disk=*/nullptr, *config_ptr, "", /*use_fake_transaction=*/true);
+    auto disk = std::make_shared<DB::DiskObjectStorage>("SnapshotDisk", cluster, metadata_storage, router, /*wrapped_disk=*/nullptr, *config_ptr, "");
     return {disk, obj_storage};
 }
 
