@@ -9,9 +9,11 @@ SET enable_parallel_replicas = 0;
 SET query_plan_merge_filter_into_join_condition = 1; -- CI may inject False
 
 CREATE TABLE kv (k UInt64, payload Int32) ENGINE = EmbeddedRocksDB PRIMARY KEY k;
+CREATE TABLE kv_nullable (k Nullable(UInt64), payload Int32) ENGINE = EmbeddedRocksDB PRIMARY KEY k;
 CREATE TABLE lk (k UInt64, payload Nullable(Int32)) ENGINE = Memory;
 
 INSERT INTO kv VALUES (1, 5), (2, 9);
+INSERT INTO kv_nullable VALUES (1, 5), (2, 9);
 INSERT INTO lk VALUES (1, 5), (2, 7);
 
 SELECT '-- the lookup algorithm is kept';
@@ -27,6 +29,16 @@ SELECT * FROM lk ALL INNER JOIN kv ON lk.k = kv.k WHERE lk.payload = kv.payload 
 SELECT '-- joining on the primary key alone is unaffected';
 SELECT extract(arrayStringConcat(groupArray(explain), '\n'), 'Algorithm: ([^\n]*)') AS algorithm
 FROM (EXPLAIN SELECT * FROM lk ALL INNER JOIN kv ON lk.k = kv.k);
+
+SELECT '-- joining on a nullable primary key alone is unaffected';
+SELECT extract(arrayStringConcat(groupArray(explain), '\n'), 'Algorithm: ([^\n]*)') AS algorithm
+FROM (EXPLAIN SELECT * FROM lk ALL INNER JOIN kv_nullable ON lk.k = kv_nullable.k);
+
+SELECT extract(arrayStringConcat(groupArray(explain), '\n'), 'Algorithm: ([^\n]*)') AS algorithm
+FROM (EXPLAIN SELECT * FROM lk ALL INNER JOIN kv_nullable ON 1 WHERE lk.k = kv_nullable.k);
+
+SELECT * FROM lk ALL INNER JOIN kv_nullable ON lk.k = kv_nullable.k ORDER BY ALL SETTINGS join_algorithm = 'direct';
+SELECT * FROM lk ALL INNER JOIN kv_nullable ON 1 WHERE lk.k = kv_nullable.k ORDER BY ALL SETTINGS join_algorithm = 'direct';
 
 SELECT '-- a join on no primary key falls back to a hash join';
 SELECT extract(arrayStringConcat(groupArray(explain), '\n'), 'Type: (\\w+)') AS join_kind

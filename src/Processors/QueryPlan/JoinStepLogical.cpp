@@ -766,7 +766,8 @@ static void predicateOperandsToCommonType(JoinActionRef & left_node, JoinActionR
 
     if (planning_context.is_storage_join)
     {
-        if (!right_type->equals(*removeNullableOrLowCardinalityNullable(common_type)))
+        if (!right_type->equals(*common_type)
+            && !right_type->equals(*removeNullableOrLowCardinalityNullable(common_type)))
             right_node = JoinActionRef::transform({right_node}, cast_transform);
     }
     else
