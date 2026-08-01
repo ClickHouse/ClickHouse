@@ -21,6 +21,7 @@
 #include <Functions/FunctionFactory.h>
 #include <Functions/UserDefined/UserDefinedExecutableFunctionFactory.h>
 #include <Functions/UserDefined/UserDefinedSQLFunctionFactory.h>
+#include <Functions/UserDefined/UserDefinedWebAssembly.h>
 #include <Parsers/ASTFunction.h>
 #include <Parsers/ASTIdentifier.h>
 #include <Parsers/ASTSubquery.h>
@@ -101,31 +102,57 @@ ASTPtr normalizeASTForQueryPlanCache(ASTPtr ast)
     return normalized_ast;
 }
 
-/// True if the AST tree, or the body of any SQL UDF it calls (recursively, following nested UDF
-/// calls with `visited_udfs` guarding against cycles), contains a subquery (a scalar `(SELECT
-/// ...)`, an `IN (SELECT ...)`, or a bare select node). SQL UDFs are inlined into a row-policy
-/// filter at read time (see `checkRowPolicyFilterExpression` in RowPolicy.cpp for the same descent
-/// pattern), so a subquery hidden inside a UDF body is just as invisible to the plan leaves and to
-/// the AST closure walked by `ASTDependencyCollector` as one written directly into the filter.
-/// Used to reject row-policy filters that read other tables that the cache cannot track or
-/// revalidate (see `getRowPolicyInfo`).
-bool astOrCalledUdfBodiesContainSubquery(const IAST & ast, std::unordered_set<String> & visited_udfs)
+/// A deserialized plan rebuilds every `ActionsDAG` function node through `FunctionFactory` alone
+/// (see `ActionsDAG::deserialize`), while the analyzer resolves executable and WebAssembly UDFs
+/// through their own factories first, before it ever looks into `FunctionFactory`. A cache hit on
+/// a plan that uses such a UDF would therefore throw `UNKNOWN_FUNCTION`, or - for an executable UDF
+/// declared in a configuration file, which unlike `CREATE FUNCTION` is not checked against the
+/// builtin names - silently call the shadowed builtin instead. Both factories take precedence over
+/// `FunctionFactory` during analysis, so this must be checked first, before the name is looked up
+/// there.
+bool isFunctionResolvedOutsideFunctionFactory(const String & name, const ContextPtr & context)
+{
+    return UserDefinedExecutableFunctionFactory::has(name, context)
+        || UserDefinedWebAssemblyFunctionFactory::instance().has(name); /// NOLINT(readability-static-accessed-through-instance)
+}
+
+/// What a row-policy filter AST, or the body of any SQL UDF it calls, contains that the plan cache
+/// cannot support. SQL UDFs are inlined into a row-policy filter at read time (see
+/// `checkRowPolicyFilterExpression` in RowPolicy.cpp for the same descent pattern), so whatever is
+/// hidden inside a UDF body is just as invisible to the plan leaves and to the AST closure walked
+/// by `ASTDependencyCollector` as if it were written directly into the filter.
+struct RowPolicyFilterContents
+{
+    /// A subquery (a scalar `(SELECT ...)`, an `IN (SELECT ...)`, or a bare select node): it reads
+    /// other tables that the cache can neither track nor revalidate.
+    bool has_subquery = false;
+    /// A call to an executable or WebAssembly UDF, which a deserialized plan cannot rebuild.
+    bool has_function_resolved_outside_function_factory = false;
+};
+
+/// Walks `ast` and, recursively, the bodies of the SQL UDFs it calls, with `visited_udfs` guarding
+/// against cycles.
+void collectRowPolicyFilterContents(
+    const IAST & ast,
+    const ContextPtr & context,
+    std::unordered_set<String> & visited_udfs,
+    RowPolicyFilterContents & contents)
 {
     if (ast.as<ASTSubquery>() || ast.as<ASTSelectQuery>() || ast.as<ASTSelectWithUnionQuery>())
-        return true;
+        contents.has_subquery = true;
 
     if (const auto * function = ast.as<ASTFunction>())
     {
+        if (isFunctionResolvedOutsideFunctionFactory(function->name, context))
+            contents.has_function_resolved_outside_function_factory = true;
+
         if (auto udf_body = UserDefinedSQLFunctionFactory::instance().tryGet(function->name);
-            udf_body && visited_udfs.insert(function->name).second
-                && astOrCalledUdfBodiesContainSubquery(*udf_body, visited_udfs))
-            return true;
+            udf_body && visited_udfs.insert(function->name).second)
+            collectRowPolicyFilterContents(*udf_body, context, visited_udfs, contents);
     }
 
     for (const auto & child : ast.children)
-        if (astOrCalledUdfBodiesContainSubquery(*child, visited_udfs))
-            return true;
-    return false;
+        collectRowPolicyFilterContents(*child, context, visited_udfs, contents);
 }
 
 struct RowPolicyInfo
@@ -136,9 +163,8 @@ struct RowPolicyInfo
     /// filter, even though the filter's own AST (the unexpanded call, e.g. `f(a)`) stays the same;
     /// without this, a cache hit could keep enforcing a stale, already-replaced filter body.
     IASTHash hash{};
-    /// True when that filter, or a UDF body it calls, contains a subquery, which makes the plan
-    /// uncacheable.
-    bool has_subquery = false;
+    /// What makes the plan uncacheable, if anything (see `RowPolicyFilterContents`).
+    RowPolicyFilterContents contents;
 };
 
 RowPolicyInfo getRowPolicyInfo(const ContextPtr & context, const String & database, const String & table)
@@ -148,11 +174,10 @@ RowPolicyInfo getRowPolicyInfo(const ContextPtr & context, const String & databa
     if (row_policy && !row_policy->isAlwaysTrue() && row_policy->expression)
     {
         std::unordered_set<String> visited_udfs;
-        info.has_subquery = astOrCalledUdfBodiesContainSubquery(*row_policy->expression, visited_udfs);
+        collectRowPolicyFilterContents(*row_policy->expression, context, visited_udfs, info.contents);
 
-        /// `visited_udfs` is the complete transitive set of called UDFs only when the traversal
-        /// above ran to completion, i.e. when it found no subquery; that is the only case where
-        /// the hash below is actually consulted (see the `has_subquery` checks at the call sites).
+        /// The walk above always runs to completion, so `visited_udfs` is the complete transitive
+        /// set of the SQL UDFs the filter calls.
         SipHash hash_state;
         row_policy->expression->updateTreeHash(hash_state, /*ignore_aliases=*/false);
         for (const auto & udf_name : visited_udfs)
@@ -253,9 +278,17 @@ bool fillDependency(QueryPlanCacheDependency & dep, const StoragePtr & storage, 
     /// escapes `query_plan_cache_allow_scalar_subqueries`, which is applied only to the user query
     /// AST. Refuse to cache these plans.
     const auto row_policy_info = getRowPolicyInfo(context, dep.database, dep.table);
-    if (row_policy_info.has_subquery)
+    if (row_policy_info.contents.has_subquery)
     {
         LOG_DEBUG(getLogger("QueryPlanCache"), "Not caching plan: row policy on {}.{} contains a subquery", dep.database, dep.table);
+        return false;
+    }
+    /// A row-policy filter is applied during planning, so a UDF it calls never appears in the
+    /// analyzed query tree checked by `queryTreeIsEligibleForPlanCache` - it has to be rejected here.
+    if (row_policy_info.contents.has_function_resolved_outside_function_factory)
+    {
+        LOG_DEBUG(getLogger("QueryPlanCache"),
+            "Not caching plan: row policy on {}.{} calls an executable or WebAssembly UDF", dep.database, dep.table);
         return false;
     }
     dep.row_policy_hash = row_policy_info.hash;
@@ -273,15 +306,16 @@ bool isFunctionUnsafeForPlanCache(const ASTFunction & function, const ContextPtr
     if (function.name == "arrayJoin")
         return false;
 
+    /// Checked before `FunctionFactory`, mirroring the resolution order of the analyzer.
+    if (isFunctionResolvedOutsideFunctionFactory(function.name, context))
+        return true;
+
     if (const auto func = FunctionFactory::instance().tryGet(function.name, context))
         return !func->isDeterministic();
 
     /// SQL-defined UDFs: determinism is unknown, assume the worst.
     if (UserDefinedSQLFunctionFactory::instance().tryGet(function.name))
         return true;
-
-    if (const auto udf_executable = UserDefinedExecutableFunctionFactory::tryGet(function.name, context))
-        return !udf_executable->isDeterministic();
 
     return false;
 }
@@ -573,6 +607,14 @@ bool queryTreeIsEligibleImpl(const IQueryTreeNode & node, const ContextPtr & con
             /// view body) using `arrayJoin` would be wrongly rejected, contradicting the cache contract.
             if (function_node->getFunctionName() != "arrayJoin")
             {
+                /// A function that `ActionsDAG::deserialize` cannot rebuild (an executable or a
+                /// WebAssembly UDF) makes a hit throw or, worse, call a shadowed builtin instead.
+                /// Mirrors `isFunctionUnsafeForPlanCache` on the AST side; the analyzed tree also
+                /// covers calls that the query text does not show, such as one inlined from the
+                /// body of a SQL UDF.
+                if (isFunctionResolvedOutsideFunctionFactory(function_node->getFunctionName(), context))
+                    return false;
+
                 const auto & function = function_node->getFunction();
                 /// An unresolved ordinary function after analysis is unexpected; refuse to cache.
                 if (!function || !function->isDeterministic())
@@ -706,11 +748,13 @@ bool validateQueryPlanCacheEntry(
         if (getMetadataVersionOrSchemaHash(metadata) != dep.metadata_version)
             return false;
 
-        /// A policy that changed to contain a subquery (or any other change) alters the hash and is
-        /// rejected here; the explicit `has_subquery` guard is defense in depth, mirroring the store
-        /// path in `fillDependency`.
+        /// A policy that changed to contain a subquery or a call to a UDF the plan cannot rebuild
+        /// (or that changed in any other way) alters the hash and is rejected here; the explicit
+        /// content guards are defense in depth, mirroring the store path in `fillDependency`.
         const auto row_policy_info = getRowPolicyInfo(context, dep.database, dep.table);
-        if (row_policy_info.has_subquery || row_policy_info.hash != dep.row_policy_hash)
+        if (row_policy_info.contents.has_subquery
+            || row_policy_info.contents.has_function_resolved_outside_function_factory
+            || row_policy_info.hash != dep.row_policy_hash)
             return false;
 
         /// Record the identity that was just proven, so that materialization can bind its leaf
