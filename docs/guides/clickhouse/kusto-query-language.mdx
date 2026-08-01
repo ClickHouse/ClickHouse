@@ -1,0 +1,86 @@
+---
+title: 'Kusto Query Language (KQL) in ClickHouse'
+description: 'What the experimental KQL dialect supports, and what it deliberately does not'
+keywords: ['KQL', 'Kusto', 'dialect']
+sidebarTitle: 'Kusto Query Language (KQL)'
+slug: /guides/kusto-query-language
+doc_type: 'guide'
+---
+
+ClickHouse can parse a subset of the [Kusto Query Language](https://learn.microsoft.com/en-us/kusto/query/)
+instead of SQL. The dialect is **experimental** and off by default:
+
+```sql
+SET allow_experimental_kusto_dialect = 1;
+SET dialect = 'kusto';
+
+StormEvents
+| where State == 'FLORIDA' and DamageProperty > 0
+| summarize Total = sum(DamageProperty) by EventType
+| top 5 by Total
+```
+
+`SET dialect = 'clickhouse'` switches back. `SET` is the one SQL statement recognized while
+the KQL dialect is active, so a session can always get out of it.
+
+## What is supported
+
+This is a deliberately small subset. A KQL construct is either translated with the semantics
+Kusto documents, or rejected by name with a parse error — nothing is approximated silently.
+If a query parses, its result is meant to match Kusto's.
+
+**Sources**: a table name, `print`, `datatable`, `range`, a parenthesized pipeline, and `union`.
+
+**Operators**: `where` / `filter`, `extend`, `project`, `project-away`, `project-keep`,
+`project-rename`, `summarize`, `sort by` / `order by`, `take` / `limit`, `top`, `distinct`,
+`count`, `mv-expand`, `join`, `union`, `as`, `render`.
+
+**Scalar operators**: `==`, `!=`, `<`, `<=`, `>`, `>=`, `=~`, `!~`, `in`, `in~`, `between`,
+`contains`, `startswith`, `endswith`, `has`, `hasprefix`, `hassuffix`, their `_cs`
+(case-sensitive) and `!` (negated) forms, `has_any`, `has_all`, and `matches regex`.
+
+**Statements**: `let`, binding either a scalar or a whole tabular expression. Bindings are
+scoped to the query that declares them.
+
+**Literals**: strings (including verbatim `@'...'`), numbers, `datetime(...)`, `guid(...)`,
+timespans such as `1d` / `2.5h` / `500ms`, and `dynamic([...])` arrays.
+
+Around 120 scalar and aggregate functions are translated. An unrecognized name is a parse
+error that names the function.
+
+## What is not supported
+
+Rejected with a parse error, rather than mistranslated:
+
+- Operators: `search`, `parse`, `mv-apply`, `lookup`, `evaluate`, `invoke`, `facet`,
+  `top-nested`, `make-series`, `sample`, `serialize`, `partition`, `range` as an operator.
+- The `series_*` family, `bag_*` / `pack_*`, `parse_url`, `parse_csv`, `parse_json`,
+  `toscalar`, `format_timespan`, and the `ipv4_*` / `ipv6_*` family.
+- `dynamic` **objects** (`dynamic({"a": 1})`), member access (`x.y`) and lookup by key
+  (`x['k']`). Only `dynamic` arrays are mapped, onto ClickHouse `Array`.
+- Cross-cluster and cross-database references such as `cluster(...)` and `database(...)`.
+- Query and `join` hints (`hint.strategy`, `hint.shufflekey`, ...).
+
+## Behaviour worth knowing
+
+- **Timespans are `Interval` values.** `1d` becomes `toIntervalNanosecond(86400000000000)`.
+  Set `interval_output_format = 'kusto'` to render them the Kusto way (`1.00:00:00`) rather
+  than as a number.
+- **Division follows Kusto**: `7 / 2` is `3`, because both operands are integers. This is
+  implemented by [`kqlDivide`](/reference/functions/regular-functions/arithmetic-functions#kqlDivide),
+  which decides from the argument types.
+- **Subtracting two datetimes gives a number of seconds**, where Kusto gives a timespan.
+  Adding or subtracting a timespan works as expected.
+- **`sort` defaults to descending**, unlike SQL, and puts nulls at the small end.
+- **`project-rename` moves the renamed column to the end** of the row. Kusto keeps its
+  original position; reproducing that would require knowing the schema while parsing.
+- **`union` requires the operands to have compatible schemas.** Kusto widens to the union of
+  all columns and pads with nulls; ClickHouse's `UNION ALL` does not.
+- **String operators are matching functions, not `LIKE` patterns.** `contains '50%'` looks
+  for a literal per cent sign.
+
+## Reporting a problem
+
+A query that parses but returns something Kusto would not is a bug — please report it with
+both results. A query that is rejected and that you need is a feature request; the rejection
+list above is the current boundary, not a permanent one.

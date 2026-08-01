@@ -2,6 +2,7 @@ include("${ClickHouse_SOURCE_DIR}/cmake/dbms_glob_sources.cmake")
 
 add_headers_and_sources(clickhouse_parsers .)
 add_headers_and_sources(clickhouse_parsers ./Access)
+add_headers_and_sources(clickhouse_parsers ./Kusto)
 add_headers_and_sources(clickhouse_parsers ./MySQL)
 add_headers_and_sources(clickhouse_parsers ./PRQL)
 add_headers_and_sources(clickhouse_parsers ./Polyglot)

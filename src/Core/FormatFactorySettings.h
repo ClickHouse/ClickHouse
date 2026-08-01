@@ -746,6 +746,10 @@ Allows choosing different output formats of the text representation of interval 
 
 Possible values:
 
+-   `kusto` - KQL-style output format.
+
+    ClickHouse outputs intervals in [KQL format](https://learn.microsoft.com/en-us/dotnet/standard/base-types/standard-timespan-format-strings#the-constant-c-format-specifier). For example, `toIntervalDay(2)` would be formatted as `2.00:00:00`. Please note that for interval types of varying length (ie. `IntervalMonth` and `IntervalYear`) the average number of seconds per interval is taken into account.
+
 -   `numeric` - Numeric output format.
 
     ClickHouse outputs intervals as their underlying numeric representation. For example, `toIntervalDay(2)` would be formatted as `2`.

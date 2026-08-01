@@ -27,6 +27,7 @@
 #include <Interpreters/InternalTextLogsQueue.h>
 #include <Parsers/ParserQuery.h>
 #include <Parsers/ASTFromJSON.h>
+#include <Parsers/Kusto/parseKQLQuery.h>
 #include <Parsers/PRQL/ParserPRQLQuery.h>
 #include <Parsers/Prometheus/ParserPrometheusQuery.h>
 
@@ -296,6 +297,17 @@ void LocalConnection::sendQuery(
                 parsed_query->checkDepth(state->json_ast_max_depth);
             if (state->json_ast_max_elements)
                 parsed_query->checkSize(state->json_ast_max_elements);
+        }
+        else if (dialect == Dialect::kusto)
+        {
+            const char * kql_pos = begin;
+            parsed_query = parseKQLQuery(
+                kql_pos,
+                end,
+                /*allow_multi_statements=*/false,
+                settings[Setting::max_query_size],
+                settings[Setting::max_parser_depth],
+                settings[Setting::max_parser_backtracks]);
         }
         else
         {

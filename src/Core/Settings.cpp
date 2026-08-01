@@ -115,6 +115,7 @@ Which dialect will be used to parse query.
 
 Supported values:
 - `clickhouse` (default) — standard ClickHouse SQL.
+- `kusto` — Kusto Query Language. Requires the experimental setting `allow_experimental_kusto_dialect`.
 - `prql` — PRQL. Requires the experimental setting `allow_experimental_prql_dialect`.
 - `polyglot` — transpiles SQL from other dialects (MySQL, PostgreSQL, etc.) into ClickHouse SQL. Requires the experimental setting `allow_experimental_polyglot_dialect`.
 - `promql` — PromQL (Prometheus Query Language) evaluated over a TimeSeries table, configured by the `promql_database`, `promql_table`, and `promql_evaluation_time` settings.
@@ -8439,6 +8440,9 @@ To change extracted subcolumn behavior, update `allow_nullable_tuple_in_extracte
     \
     DECLARE(Bool, allow_experimental_database_hms_catalog, false, R"(
 Allow experimental database engine DataLakeCatalog with catalog_type = 'hms'
+)", EXPERIMENTAL) \
+    DECLARE(Bool, allow_experimental_kusto_dialect, false, R"(
+Enable the Kusto Query Language (KQL) dialect - an alternative to SQL.
 )", EXPERIMENTAL) \
     DECLARE(Bool, allow_experimental_prql_dialect, false, R"(
 Enable PRQL - an alternative to SQL.

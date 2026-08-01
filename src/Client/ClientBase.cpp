@@ -64,6 +64,7 @@
 #include <Parsers/ASTIdentifier.h>
 #include <Parsers/ASTColumnDeclaration.h>
 #include <Parsers/ASTFunction.h>
+#include <Parsers/Kusto/parseKQLQuery.h>
 #include <Parsers/PRQL/ParserPRQLQuery.h>
 #include <Parsers/Polyglot/ParserPolyglotQuery.h>
 #include <Parsers/Prometheus/ParserPrometheusQuery.h>
@@ -643,6 +644,14 @@ ASTPtr ClientBase::parseQuery(const char *& pos, const char * end, const Setting
             }
             throw;
         }
+    }
+    else if (dialect == Dialect::kusto)
+    {
+        /// KQL is lexically a different language, so it does not go through the SQL
+        /// tokenizer at all. Any failure is thrown; the interactive path below already
+        /// reports a thrown exception the same way it reports a returned message.
+        res = parseKQLQuery(
+            pos, end, allow_multi_statements, max_length, settings[Setting::max_parser_depth], settings[Setting::max_parser_backtracks]);
     }
     else
     {

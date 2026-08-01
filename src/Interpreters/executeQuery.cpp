@@ -41,6 +41,7 @@
 #include <Parsers/ParserQuery.h>
 #include <Parsers/queryNormalization.h>
 #include <Parsers/toOneLineQuery.h>
+#include <Parsers/Kusto/parseKQLQuery.h>
 #include <Parsers/PRQL/ParserPRQLQuery.h>
 #include <Parsers/Polyglot/ParserPolyglotQuery.h>
 #include <Parsers/Prometheus/ParserPrometheusQuery.h>
@@ -140,6 +141,7 @@ namespace Setting
     extern const SettingsBool allow_experimental_analyzer;
     extern const SettingsBool allow_experimental_json_ast_dialect;
     extern const SettingsBool allow_experimental_polyglot_dialect;
+    extern const SettingsBool allow_experimental_kusto_dialect;
     extern const SettingsBool allow_experimental_prql_dialect;
     extern const SettingsBool allow_settings_after_format_in_insert;
     extern const SettingsBool ast_fuzzer_any_query;
@@ -1231,6 +1233,14 @@ static BlockIO executeQueryImpl(
             /// Do not parse Query
             /// Increment ProfileEvents::Query here because Interpreter is not created.
             ProfileEvents::increment(ProfileEvents::Query);
+        }
+        else if (settings[Setting::dialect] == Dialect::kusto && !internal)
+        {
+            if (!settings[Setting::allow_experimental_kusto_dialect])
+                throw Exception(ErrorCodes::SUPPORT_IS_DISABLED, "Support for the Kusto Query Language (KQL) is disabled (turn on setting 'allow_experimental_kusto_dialect')");
+            const char * kql_pos = begin;
+            out_ast = parseKQLQuery(
+                kql_pos, end, /*allow_multi_statements=*/false, max_query_size, settings[Setting::max_parser_depth], settings[Setting::max_parser_backtracks]);
         }
         else if (settings[Setting::dialect] == Dialect::prql && !internal)
         {

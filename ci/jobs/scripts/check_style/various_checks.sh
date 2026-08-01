@@ -152,6 +152,9 @@ FUNCTIONS_WITH_CONTEXT_EXCEPTIONS=(
     -e /getSetting.cpp
     -e /hasColumnInTable.cpp
     -e /initializeAggregation.cpp
+    # Overload resolvers for the KQL dialect: they only need the context to look up the
+    # function they delegate to, and that happens during analysis, not execution.
+    -e /Kusto/
     # Diagnostic helper, the file is disabled via `#if 0` in production builds;
     # `WithContext` is required so `trap('access context')` exercises runtime context access.
     -e /trap.cpp
