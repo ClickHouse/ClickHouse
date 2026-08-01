@@ -5,6 +5,7 @@
 #include <Columns/ColumnObject.h>
 #include <Columns/ColumnDecimal.h>
 #include <Columns/ColumnVector.h>
+#include <Columns/ColumnNullable.h>
 #include <DataTypes/DataTypeDynamic.h>
 #include <DataTypes/DataTypeNullable.h>
 #include <DataTypes/DataTypeObject.h>
@@ -88,6 +89,16 @@ namespace ErrorCodes
 
 /// Sort key types: concrete uniform structs, stored inline, no virtual dispatch.
 
+/// Helper to unwrap ColumnNullable if present; otherwise returns the column as-is.
+/// This is needed because columns can be wrapped in ColumnNullable at runtime even if
+/// the DataType wasn't detected as Nullable at factory construction time.
+static const IColumn & unwrapNullable(const IColumn & column)
+{
+    if (const auto * nullable = typeid_cast<const ColumnNullable *>(&column))
+        return nullable->getNestedColumn();
+    return column;
+}
+
 /// Fixed-width numeric and date/time types: (U)Int*, Float*, Decimal*, Date, DateTime, DateTime64
 template <typename ValueType>
 struct KeyFixed
@@ -96,7 +107,8 @@ struct KeyFixed
 
     void set(const IColumn & column, size_t row)
     {
-        value = assert_cast<const ColumnVectorOrDecimal<ValueType> &>(column).getData()[row];
+        const auto & unwrapped = unwrapNullable(column);
+        value = assert_cast<const ColumnVectorOrDecimal<ValueType> &>(unwrapped).getData()[row];
     }
 
     bool less(const KeyFixed & other) const { return value < other.value; }
@@ -113,7 +125,8 @@ struct KeyString
 
     void set(const IColumn & column, size_t row)
     {
-        value = column.getDataAt(row);
+        const auto & unwrapped = unwrapNullable(column);
+        value = unwrapped.getDataAt(row);
     }
 
     bool less(const KeyString & other) const { return value < other.value; }
