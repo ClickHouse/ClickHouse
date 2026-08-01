@@ -89,7 +89,13 @@ public:
         const auto & column_source = column_node->getColumnSourceOrNull();
         if (!column_source)
             return false;
-        return column_source->getNodeType() == QueryTreeNodeType::TABLE;
+        /// `TABLE_FUNCTION` is included because a parameterized view is resolved into a `TableFunctionNode`,
+        /// and `CollectTableExpressionData::isAliasColumn` in the planner treats it as an `ALIAS` column
+        /// carrier as well. Keeping the two in sync matters: the planner records only the selected `ALIAS`
+        /// name, so descending into the alias expression here would demand grants on columns the real
+        /// `SELECT` never requires.
+        auto column_source_type = column_source->getNodeType();
+        return column_source_type == QueryTreeNodeType::TABLE || column_source_type == QueryTreeNodeType::TABLE_FUNCTION;
     }
 
     bool needChildVisit(const QueryTreeNodePtr & parent_node, const QueryTreeNodePtr &) const

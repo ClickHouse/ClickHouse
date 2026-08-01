@@ -1,0 +1,9 @@
+-- Selecting only the granted ALIAS column 'a': EXPLAIN must match the plain SELECT
+SELECT a: OK
+EXPLAIN QUERY TREE a: OK
+EXPLAIN SYNTAX a: OK
+EXPLAIN AST optimize a: OK
+-- Selecting the non-granted column 'x': EXPLAIN must match the plain SELECT here too
+SELECT x: ACCESS_DENIED
+EXPLAIN QUERY TREE x: ACCESS_DENIED
+EXPLAIN SYNTAX x: ACCESS_DENIED
