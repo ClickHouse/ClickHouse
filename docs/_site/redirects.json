@@ -3696,7 +3696,7 @@
     "source": "/guides"
   },
   {
-    "destination": "/reference/functions/regular-functions/other-functions",
+    "destination": "/reference/functions/regular-functions/machine-learning-functions",
     "source": "/guides/apply_catboost_model"
   },
   {
@@ -3712,7 +3712,7 @@
     "source": "/guides/developer/alternative-query-languages"
   },
   {
-    "destination": "/reference/functions/regular-functions/other-functions",
+    "destination": "/reference/functions/regular-functions/machine-learning-functions",
     "source": "/guides/developer/apply-catboost-model"
   },
   {
