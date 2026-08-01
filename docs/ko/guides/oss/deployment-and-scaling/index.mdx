@@ -1,16 +1,44 @@
 ---
 slug: /deployment-guides/index
 title: '배포 가이드 개요'
-description: '배포 및 스케일링 섹션의 시작 페이지'
+description: '배포 및 스케일링 섹션의 랜딩 페이지'
 keywords: ['배포 가이드', '스케일링', '클러스터 배포', '복제', '장애 허용']
 doc_type: 'landing-page'
+mode: wide
 ---
 
 이 섹션에서는 다음 주제를 다룹니다:
 
-| 주제                                                                             |
-| ------------------------------------------------------------------------------ |
-| [소개](/ko/guides/oss/deployment-and-scaling/terminology)                           |
-| [스케일 아웃](/ko/guides/oss/deployment-and-scaling/examples/2-shards-1-replica)       |
-| [장애 허용을 위한 복제](/ko/guides/oss/deployment-and-scaling/examples/1-shard-2-replicas) |
-| [클러스터 배포](/ko/guides/oss/deployment-and-scaling/examples/2-shards-2-replicas)     |
+<CardGroup cols={2}>
+  <Card title="소개" icon="book-open" href="/ko/guides/oss/deployment-and-scaling/terminology">
+    ClickHouse 배포를 설명할 때 사용하는 용어를 소개합니다.
+  </Card>
+
+  <Card title="테이블 세그먼트 및 레플리카" icon="table-cells-large" href="/ko/guides/oss/deployment-and-scaling/shards">
+    테이블 세그먼트와 레플리카가 무엇이며 어디에 사용되는지 알아보세요.
+  </Card>
+
+  <Card title="데이터 리밸런싱" icon="scale-balanced" href="/ko/guides/oss/deployment-and-scaling/scaling-clusters">
+    클러스터를 스케일링할 때 데이터를 리밸런싱하는 방법을 설명합니다.
+  </Card>
+
+  <Card title="스토리지와 컴퓨트의 분리" icon="hard-drive" href="/ko/guides/oss/deployment-and-scaling/separation-storage-compute">
+    ClickHouse를 객체 스토리지와 함께 사용해 스토리지와 컴퓨트를 분리합니다.
+  </Card>
+
+  <Card title="클러스터 디스커버리" icon="magnifying-glass" href="/ko/guides/oss/deployment-and-scaling/cluster-discovery">
+    노드가 ClickHouse Keeper를 통해 자동으로 서로를 발견하고 등록하도록 합니다.
+  </Card>
+
+  <Card title="Keeper" icon="key" href="/ko/guides/oss/deployment-and-scaling/keeper/index">
+    복제와 분산 DDL을 위한 조정 시스템인 ClickHouse Keeper를 구성합니다.
+  </Card>
+
+  <Card title="모니터링" icon="chart-line" href="/ko/guides/oss/deployment-and-scaling/monitoring/monitoring">
+    ClickHouse를 모니터링하고 OpenTelemetry로 추적합니다.
+  </Card>
+
+  <Card title="예시" icon="server" href="/ko/guides/oss/deployment-and-scaling/examples/1-shard-2-replicas">
+    예시 배포: 장애 허용을 위한 복제, 수평 확장, 그리고 이를 결합한 클러스터 배포입니다.
+  </Card>
+</CardGroup>
