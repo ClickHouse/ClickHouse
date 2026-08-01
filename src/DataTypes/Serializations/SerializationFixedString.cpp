@@ -207,7 +207,11 @@ static inline bool tryRead(const SerializationFixedString & self, IColumn & colu
     size_t prev_size = data.size();
     try
     {
-        return reader(data) && SerializationFixedString::tryAlignStringLength(self.getN(), data, prev_size);
+        if (reader(data) && SerializationFixedString::tryAlignStringLength(self.getN(), data, prev_size))
+            return true;
+        /// A failed parse must leave the column byte-identical (reader may append partial bytes before returning false).
+        data.resize_assume_reserved(prev_size);
+        return false;
     }
     catch (...) // Ok: tryRead is a try-pattern
     {
