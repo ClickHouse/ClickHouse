@@ -524,6 +524,49 @@ WHERE database = currentDatabase() AND table = 't_proj_lambda_default_dep'
 
 DROP TABLE t_proj_lambda_default_dep;
 
+-- the formal's name may also be a table column the projection does not store: masking the formal
+-- is what keeps it from being read as a dependency on that column, which would decline the
+-- projection even though the default is evaluated from `arr` alone
+DROP TABLE IF EXISTS t_proj_lambda_shadow_default_dep;
+
+CREATE TABLE t_proj_lambda_shadow_default_dep
+(
+    a UInt64,
+    x UInt64,
+    arr Array(UInt64),
+    c UInt64 ALIAS a + 1,
+    PROJECTION p (SELECT a, arr, c ORDER BY a)
+)
+ENGINE = MergeTree ORDER BY a;
+
+SYSTEM STOP MERGES t_proj_lambda_shadow_default_dep;
+
+INSERT INTO t_proj_lambda_shadow_default_dep (a, x, arr) VALUES (1, 5, [1, 2, 3]);
+INSERT INTO t_proj_lambda_shadow_default_dep (a, x, arr) VALUES (2, 6, [10, 20]);
+
+ALTER TABLE t_proj_lambda_shadow_default_dep ADD COLUMN d Array(UInt64) DEFAULT arrayMap(x -> x + 1, arr);
+ALTER TABLE t_proj_lambda_shadow_default_dep MODIFY COLUMN c UInt64 ALIAS length(d);
+
+SELECT 'lambda-shadow-dep force projection', a, c FROM t_proj_lambda_shadow_default_dep ORDER BY a
+SETTINGS optimize_use_projections = 1, force_optimize_projection = 1;
+
+SYSTEM START MERGES t_proj_lambda_shadow_default_dep;
+
+OPTIMIZE TABLE t_proj_lambda_shadow_default_dep FINAL;
+
+SELECT 'lambda-shadow-dep force projection after merge', a, c FROM t_proj_lambda_shadow_default_dep ORDER BY a
+SETTINGS optimize_use_projections = 1, force_optimize_projection = 1;
+
+SYSTEM FLUSH LOGS part_log;
+
+SELECT 'lambda-shadow-dep merged not rebuilt',
+       sum(ProfileEvents['MergedProjections']) > 0, sum(ProfileEvents['RebuiltProjections'])
+FROM system.part_log
+WHERE database = currentDatabase() AND table = 't_proj_lambda_shadow_default_dep'
+  AND event_type = 'MergeParts';
+
+DROP TABLE t_proj_lambda_shadow_default_dep;
+
 -- must-not-act counterpart: a chain that bottoms out in a column the projection part does NOT store
 -- is still unfillable, so the read routes to the parent and the merge rebuilds
 DROP TABLE IF EXISTS t_proj_chain_unfillable_dep;

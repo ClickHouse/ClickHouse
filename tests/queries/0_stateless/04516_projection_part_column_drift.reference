@@ -60,6 +60,11 @@ lambda-dep force projection	1	[2,3,4]
 lambda-dep force projection after merge	1	[2,3,4]
 lambda-dep force projection after merge	2	[11,21]
 lambda-dep merged not rebuilt	1	0
+lambda-shadow-dep force projection	1	3
+lambda-shadow-dep force projection	2	2
+lambda-shadow-dep force projection after merge	1	3
+lambda-shadow-dep force projection after merge	2	2
+lambda-shadow-dep merged not rebuilt	1	0
 chain-unfillable read after drift	1	12
 chain-unfillable read after merge	1	12
 agg read after drift	1	501

@@ -16,6 +16,7 @@
 #include <Functions/FunctionsLogical.h>
 #include <Interpreters/InterpreterSelectQuery.h>
 #include <Interpreters/Context.h>
+#include <Interpreters/RequiredSourceColumnsVisitor.h>
 #include <Parsers/IAST.h>
 #include <Storages/ColumnsDescription.h>
 #include <Storages/StorageReplicatedMergeTree.h>
@@ -359,18 +360,20 @@ static bool projectionPartCanFillDefault(
 
     const auto & projection_columns = projection.metadata->getColumns();
 
-    IdentifierNameSet identifiers;
-    column_default->expression->collectIdentifierNames(identifiers);
+    /// Masks lambda formals, which are bound during evaluation and never read from a part. This is
+    /// how the reader collects the sources of a default it has to synthesize, so collecting raw
+    /// identifiers instead would report a formal as a dependency and decline a fillable default.
+    RequiredSourceColumnsVisitor::Data columns_context;
+    RequiredSourceColumnsVisitor(columns_context).visit(column_default->expression);
 
-    for (const auto & identifier : identifiers)
+    for (const auto & identifier : columns_context.requiredColumns())
     {
         if ((projection_part.tryGetColumn(identifier)
              && projection_columns.hasColumnOrSubcolumn(GetColumnsOptions::AllPhysical, identifier))
             || projection.metadata->virtuals.has(identifier))
             continue;
 
-        /// Not a column of the table at all, e.g. a formal parameter of a lambda in the expression.
-        /// It is bound during evaluation and is not a dependency to resolve against the part.
+        /// Not a column of the table at all: nothing to resolve against the part.
         if (!parent_table_columns.hasColumnOrSubcolumn(GetColumnsOptions::All, identifier))
             continue;
 

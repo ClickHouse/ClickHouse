@@ -22,6 +22,7 @@
 #include <Interpreters/ExpressionActions.h>
 #include <Interpreters/MergeTreeTransaction.h>
 #include <Interpreters/PreparedSets.h>
+#include <Interpreters/RequiredSourceColumnsVisitor.h>
 #include <Interpreters/createSubcolumnsExtractionActions.h>
 #include <Interpreters/parseIdentifiersOrStringLiteralsWithSettings.h>
 #include <Parsers/IAST.h>
@@ -1326,17 +1327,17 @@ void MergeTask::ExecuteAndFinalizeHorizontalPart::prepareProjectionsToMergeAndRe
                     return true;
                 }
 
-                IdentifierNameSet identifiers;
-                column_default->expression->collectIdentifierNames(identifiers);
-                for (const auto & identifier : identifiers)
+                /// Masks lambda formals, as the reader does when it synthesizes a default.
+                RequiredSourceColumnsVisitor::Data columns_context;
+                RequiredSourceColumnsVisitor(columns_context).visit(column_default->expression);
+                for (const auto & identifier : columns_context.requiredColumns())
                 {
                     if ((projection_part.tryGetColumn(identifier)
                          && projection_metadata_columns.hasColumnOrSubcolumn(GetColumnsOptions::AllPhysical, identifier))
                         || projection.metadata->virtuals.has(identifier))
                         continue;
 
-                    /// Not a table column at all, e.g. a formal parameter of a lambda in the expression:
-                    /// bound during evaluation, not a dependency to resolve against the part.
+                    /// Not a table column at all: nothing to resolve against the part.
                     if (!parent_table_columns.hasColumnOrSubcolumn(GetColumnsOptions::All, identifier))
                         continue;
 
