@@ -21,7 +21,17 @@ set allow_experimental_analyzer=1;
 set allow_experimental_parallel_reading_from_replicas=0;
 -- disable statistics-based part pruning to keep EXPLAIN output stable
 SET use_statistics_for_part_pruning = 0;
+-- Ignore "Cannot connect to {}. It will not participate in distributed index analysis"
+set send_logs_level='error';
 
 -- { echo }
 select count() from (select * from test_1m);
-explain indexes=1 select key from (select * from test_1m);
+-- The `Distributed:` block lists one row per replica of test_cluster_one_shard_two_replicas.
+-- 127.0.0.2 is not guaranteed to be up, and when it is down its row degenerates to an empty
+-- `Address:` with zero counters while the local replica absorbs its parts. Assert the
+-- aggregate `Parts:`/`Granules:` and the pushed-down `Condition:` instead.
+select * from (
+    explain indexes=1 select key from (select * from test_1m)
+) where explain not like '%Address:%'
+    and explain not like '%Parts send:%' and explain not like '%Parts received:%'
+    and explain not like '%Granules send:%' and explain not like '%Granules received:%';
