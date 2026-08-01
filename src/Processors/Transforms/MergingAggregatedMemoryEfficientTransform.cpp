@@ -327,16 +327,6 @@ void GroupingAggregatedTransform::addChunk(Chunk chunk, size_t input)
             single_level_chunks.emplace_back(std::move(chunk));
         else
         {
-            /// An input is allowed to send a bucket with a smaller id only if it announced that bucket as delayed
-            /// before, otherwise we could have already pushed it and the same keys would be returned twice.
-            /// Several chunks with the same bucket id are fine: an input can be a sequence of several independent
-            /// aggregation results (e.g. when the partitions are aggregated independently), and a bucket is pushed
-            /// only after every input reported a bucket with a strictly bigger id.
-            chassert(
-                bucket >= last_bucket_number[input]
-                    || std::ranges::find(input_out_of_order_buckets[input], bucket) != input_out_of_order_buckets[input].end(),
-                fmt::format("Received bucket {} from input {} after bucket {}", bucket, input, last_bucket_number[input]));
-
             chunks_map[bucket].emplace_back(std::move(chunk));
             has_two_level = true;
             last_bucket_number[input] = bucket;

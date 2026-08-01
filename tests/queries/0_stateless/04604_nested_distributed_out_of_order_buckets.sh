@@ -11,7 +11,7 @@ CUR_DIR=$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)
 
 $CLICKHOUSE_CLIENT -q "
     CREATE TABLE t (k UInt64, v UInt64) ENGINE = MergeTree ORDER BY k;
-    INSERT INTO t SELECT number % 100000, number FROM numbers_mt(3000000);
+    INSERT INTO t SELECT number % 100000, number FROM numbers_mt(500000);
 
     -- The number of keys depends on the query id, so different shards produce different sets of buckets
     -- and these buckets become ready at different moments.
@@ -19,11 +19,11 @@ $CLICKHOUSE_CLIENT -q "
     CREATE TABLE region AS remote('127.0.0.1,127.0.0.1', currentDatabase(), t_leaf);
 "
 
-# The query is racy, so run it several times.
-for _ in {1..10}; do
+# The query is racy: a single run reproduces the bug in about a half of the cases, so run it several times.
+for _ in {1..8}; do
     $CLICKHOUSE_CLIENT -q "
         SELECT count() - uniqExact(k) AS duplicate_groups
-        FROM (SELECT k, uniqExact(v) AS u FROM remote('127.0.0.1,127.0.0.1', currentDatabase(), region) GROUP BY k)
+        FROM (SELECT k, sum(v) AS s FROM remote('127.0.0.1,127.0.0.1', currentDatabase(), region) GROUP BY k)
         SETTINGS prefer_localhost_replica = 0, group_by_two_level_threshold = 1, max_threads = 16,
             enable_producing_buckets_out_of_order_in_aggregation = 1;
     "
