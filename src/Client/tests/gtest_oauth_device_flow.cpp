@@ -80,13 +80,6 @@ TEST(OAuthDeviceFlow, ParseDiscoveryDocumentRequiresDeviceEndpoint)
     EXPECT_FALSE(parseOAuthDiscoveryDocument("not-json").has_value());
 }
 
-TEST(OAuthDeviceFlow, Auth0StyleFallback)
-{
-    const auto endpoints = auth0StyleOAuthEndpoints("https://auth.clickhouse.cloud/");
-    EXPECT_EQ(endpoints.device_authorization_endpoint, "https://auth.clickhouse.cloud/oauth/device/code");
-    EXPECT_EQ(endpoints.token_endpoint, "https://auth.clickhouse.cloud/oauth/token");
-}
-
 TEST(OAuthDeviceFlow, ApplyOverrides)
 {
     OAuthDeviceFlowEndpoints base{
@@ -202,6 +195,26 @@ TEST(OAuthDeviceFlow, ConnectionFailureBackoff)
     EXPECT_EQ(nextPollingIntervalAfterConnectionFailure(40), 60);
     EXPECT_EQ(nextPollingIntervalAfterConnectionFailure(60), 60);
     EXPECT_EQ(nextPollingIntervalAfterConnectionFailure(0), 10);
+}
+
+TEST(OAuthDeviceFlow, ConsecutiveTransportFailuresAbortAfterMax)
+{
+    int count = 0;
+
+    for (int i = 1; i < max_consecutive_device_token_transport_failures; ++i)
+    {
+        EXPECT_FALSE(noteConsecutiveTransportFailure(count));
+        EXPECT_EQ(count, i);
+    }
+    EXPECT_TRUE(noteConsecutiveTransportFailure(count));
+    EXPECT_EQ(count, max_consecutive_device_token_transport_failures);
+}
+
+TEST(OAuthDeviceFlow, ConsecutiveTransportFailuresCleared)
+{
+    int count = 4;
+    clearConsecutiveTransportFailures(count);
+    EXPECT_EQ(count, 0);
 }
 
 TEST(OAuthDeviceFlow, EvaluateTokenPollAuthorizationPending)

@@ -144,15 +144,6 @@ std::optional<OAuthDeviceFlowEndpoints> parseOAuthDiscoveryDocument(const std::s
     }
 }
 
-OAuthDeviceFlowEndpoints auth0StyleOAuthEndpoints(const std::string & issuer)
-{
-    const std::string normalized = normalizeOAuthIssuerURL(issuer);
-    return {
-        normalized + "/oauth/device/code",
-        normalized + "/oauth/token",
-    };
-}
-
 OAuthDeviceFlowEndpoints applyOAuthEndpointOverrides(
     OAuthDeviceFlowEndpoints endpoints,
     const std::string & device_authorization_endpoint_override,
@@ -290,6 +281,17 @@ int nextPollingIntervalAfterConnectionFailure(int current_interval_seconds)
     return std::min(normalized * 2, max_interval_seconds);
 }
 
+bool noteConsecutiveTransportFailure(int & consecutive_count)
+{
+    ++consecutive_count;
+    return consecutive_count >= max_consecutive_device_token_transport_failures;
+}
+
+void clearConsecutiveTransportFailures(int & consecutive_count)
+{
+    consecutive_count = 0;
+}
+
 DeviceTokenPollDecision evaluateDeviceTokenPollFailure(
     const std::string & response_body,
     int http_status,
@@ -392,7 +394,7 @@ void validateOAuthEndpointOverridePair(
     {
         throw Exception(
             ErrorCodes::BAD_ARGUMENTS,
-            "Both --oauth-device-uri and --oauth-token-uri must be provided together, or omit both to use OIDC discovery / Auth0-style paths from --oauth-url");
+            "Both --oauth-device-uri and --oauth-token-uri must be provided together, or omit both to use OIDC discovery from --oauth-url");
     }
 }
 

@@ -27,6 +27,7 @@
 #include <cstdlib>
 #include <thread>
 #if defined(OS_DARWIN) || defined(OS_LINUX)
+#include <fcntl.h>
 #include <spawn.h>
 #include <sys/wait.h>
 #include <unistd.h>
@@ -193,16 +194,18 @@ void JWTProvider::ensureOAuthEndpointsResolved()
         }
     }
 
-    OAuthDeviceFlowEndpoints endpoints = discovered ? *discovered : auth0StyleOAuthEndpoints(oauth_url);
-    if (!discovered && !last_error.empty())
+    if (!discovered)
     {
-        /// Discovery failed; keep Auth0-compatible fallback for existing ClickHouse Cloud / Auth0 users.
-        error_stream << "Warning: OAuth discovery failed (" << last_error
-                      << "); falling back to Auth0-style endpoints under " << oauth_url << std::endl;
+        throw Exception(
+            ErrorCodes::BAD_ARGUMENTS,
+            "OAuth discovery failed for issuer '{}'{}. "
+            "Check --oauth-url, or set both --oauth-device-uri and --oauth-token-uri explicitly.",
+            oauth_url,
+            last_error.empty() ? "" : ": " + last_error);
     }
 
-    endpoints = applyOAuthEndpointOverrides(
-        std::move(endpoints),
+    OAuthDeviceFlowEndpoints endpoints = applyOAuthEndpointOverrides(
+        std::move(*discovered),
         oauth_device_authorization_endpoint_override,
         oauth_token_endpoint_override);
 
@@ -271,7 +274,27 @@ void JWTProvider::deviceCodeLogin()
     const std::string open_url = browserVerificationURL(verification_uri_complete, verification_uri);
     if (!verification_uri_complete.empty())
         tryPrintQRCode(verification_uri_complete, output_stream);
-    openURLInBrowser(open_url);
+    tryOpenURLInBrowser(open_url);
+
+    int consecutive_transport_failures = 0;
+
+    /// Cap consecutive transport failures so a hard network outage does not wait until
+    /// device-code expiry. `interval_seconds` must already be updated by the caller.
+    auto handle_transport_failure = [&](const std::string & failure_message)
+    {
+        if (noteConsecutiveTransportFailure(consecutive_transport_failures))
+        {
+            throw Exception(
+                ErrorCodes::NETWORK_ERROR,
+                "Token polling failed {} times consecutively (last error: {}). "
+                "Check network connectivity to the identity provider and try again.",
+                consecutive_transport_failures,
+                failure_message);
+        }
+
+        error_stream << "Warning: token polling failed (" << failure_message << "); retrying in "
+                     << interval_seconds << "s\n";
+    };
 
     while (Poco::Timestamp().epochTime() < expires_at_ts)
     {
@@ -316,14 +339,15 @@ void JWTProvider::deviceCodeLogin()
             switch (decision.action)
             {
                 case DeviceTokenPollAction::ContinuePending:
+                    clearConsecutiveTransportFailures(consecutive_transport_failures);
                     continue;
                 case DeviceTokenPollAction::ContinueSlowDown:
+                    clearConsecutiveTransportFailures(consecutive_transport_failures);
                     interval_seconds = decision.interval_seconds;
                     continue;
                 case DeviceTokenPollAction::ContinueTransientFailure:
                     interval_seconds = decision.interval_seconds;
-                    error_stream << "Warning: token polling failed (" << decision.message
-                                 << "); retrying in " << interval_seconds << "s\n";
+                    handle_transport_failure(decision.message);
                     continue;
                 case DeviceTokenPollAction::FailAccessDenied:
                     throw Exception(ErrorCodes::AUTHENTICATION_FAILED, "IdP login denied: {}", decision.message);
@@ -339,25 +363,22 @@ void JWTProvider::deviceCodeLogin()
         catch (const Exception & e)
         {
             if (e.code() == ErrorCodes::AUTHENTICATION_FAILED || e.code() == ErrorCodes::TIMEOUT_EXCEEDED
-                || e.code() == ErrorCodes::BAD_ARGUMENTS)
+                || e.code() == ErrorCodes::BAD_ARGUMENTS || e.code() == ErrorCodes::NETWORK_ERROR)
                 throw;
 
             /// RFC 8628 Section 3.5: on connection timeout/failure, reduce polling frequency and retry.
             interval_seconds = nextPollingIntervalAfterConnectionFailure(interval_seconds);
-            error_stream << "Warning: token polling failed (" << e.message()
-                         << "); retrying in " << interval_seconds << "s\n";
+            handle_transport_failure(e.message());
         }
         catch (const Poco::Exception & e)
         {
             interval_seconds = nextPollingIntervalAfterConnectionFailure(interval_seconds);
-            error_stream << "Warning: token polling failed (" << e.displayText()
-                         << "); retrying in " << interval_seconds << "s\n";
+            handle_transport_failure(e.displayText());
         }
         catch (...)
         {
             interval_seconds = nextPollingIntervalAfterConnectionFailure(interval_seconds);
-            error_stream << "Warning: token polling failed (" << getCurrentExceptionMessage(false)
-                         << "); retrying in " << interval_seconds << "s\n";
+            handle_transport_failure(getCurrentExceptionMessage(false));
         }
     }
 
@@ -436,7 +457,7 @@ std::unique_ptr<Poco::Net::HTTPSClientSession> JWTProvider::createHTTPSession(co
     throw Exception(ErrorCodes::SUPPORT_IS_DISABLED, "Built without SSL, ClickHouse cannot use JWT authentication without SSL support.");
 }
 
-void JWTProvider::openURLInBrowser(const std::string & url)
+void JWTProvider::tryOpenURLInBrowser(const std::string & url)
 {
     if (url.empty())
         return;

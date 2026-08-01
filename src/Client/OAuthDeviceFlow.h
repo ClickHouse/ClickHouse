@@ -44,10 +44,7 @@ std::optional<OAuthDeviceFlowEndpoints> parseOAuthDiscoveryDocument(const std::s
 /// Returns true when discovery metadata lists (or omits) support for the device_code grant.
 bool discoverySupportsDeviceCodeGrant(const std::string & json_body);
 
-/// Auth0-compatible endpoint layout used when discovery is unavailable.
-OAuthDeviceFlowEndpoints auth0StyleOAuthEndpoints(const std::string & issuer);
-
-/// Apply optional explicit endpoint overrides on top of discovered / fallback endpoints.
+/// Apply optional explicit endpoint overrides on top of discovered endpoints.
 OAuthDeviceFlowEndpoints applyOAuthEndpointOverrides(
     OAuthDeviceFlowEndpoints endpoints,
     const std::string & device_authorization_endpoint_override,
@@ -83,6 +80,18 @@ int normalizeDevicePollingInterval(int interval_seconds);
 
 /// RFC 8628 Section 3.5: on connection timeout/failure, double the interval (cap at 60s).
 int nextPollingIntervalAfterConnectionFailure(int current_interval_seconds);
+
+/// Abort device-code token polling after this many consecutive transport failures
+/// (connection errors / HTTP 5xx), instead of waiting until `expires_in`.
+inline constexpr int max_consecutive_device_token_transport_failures = 5;
+
+/// Record a transport/transient failure. Returns true when
+/// `max_consecutive_device_token_transport_failures` failures in a row have been seen
+/// and the caller should abort login.
+bool noteConsecutiveTransportFailure(int & consecutive_count);
+
+/// Clear the consecutive-transport-failure budget (e.g. after authorization_pending).
+void clearConsecutiveTransportFailures(int & consecutive_count);
 
 /// RFC 8628 Section 3.5: how the client should react to a non-success token poll response.
 enum class DeviceTokenPollAction

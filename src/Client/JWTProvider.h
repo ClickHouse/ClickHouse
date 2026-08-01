@@ -53,14 +53,14 @@ protected:
     void deviceCodeLogin();
     void refreshIdPAccessToken();
 
-    /// Resolve device + token endpoints via overrides, OIDC/OAuth discovery, or Auth0-style fallback.
+    /// Resolve device + token endpoints via explicit overrides or OIDC/OAuth discovery.
     void ensureOAuthEndpointsResolved();
 
     OAuthClientAuthMethod resolveClientAuthMethod() const;
     void applyClientAuthentication(Poco::Net::HTTPRequest & request, std::string & body) const;
 
     static std::unique_ptr<Poco::Net::HTTPSClientSession> createHTTPSession(const Poco::URI & uri);
-    static void openURLInBrowser(const std::string & url);
+    static void tryOpenURLInBrowser(const std::string & url);
     static void tryPrintQRCode(const std::string & url, std::ostream & out);
     static std::string httpGet(const Poco::URI & uri);
     void storeAccessTokenFromResponse(const Poco::JSON::Object::Ptr & token_object);
