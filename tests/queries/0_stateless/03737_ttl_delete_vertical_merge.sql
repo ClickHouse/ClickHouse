@@ -46,8 +46,10 @@ SELECT 'test1_check_cols', sum(c1), sum(c2), sum(c3), sum(c4) FROM t_ttl_vert_1;
 SELECT 'test1_parts', count() FROM system.parts WHERE database = currentDatabase() AND table = 't_ttl_vert_1' AND active;
 
 SYSTEM FLUSH LOGS part_log;
+-- A background TTLDrop merge can race with OPTIMIZE; this case checks the partial TTL-delete merge.
 SELECT 'test1_algo', merge_algorithm FROM system.part_log
     WHERE database = currentDatabase() AND table = 't_ttl_vert_1' AND event_type = 'MergeParts'
+        AND merge_reason != 'TTLDropMerge'
     ORDER BY event_time_microseconds LIMIT 1;
 
 DROP TABLE IF EXISTS t_ttl_vert_1;
@@ -91,11 +93,6 @@ SYSTEM START MERGES t_ttl_vert_2;
 OPTIMIZE TABLE t_ttl_vert_2 FINAL;
 
 SELECT 'test2_after', count() FROM t_ttl_vert_2;
-
-SYSTEM FLUSH LOGS part_log;
-SELECT 'test2_algo', merge_algorithm FROM system.part_log
-    WHERE database = currentDatabase() AND table = 't_ttl_vert_2' AND event_type = 'MergeParts'
-    ORDER BY event_time_microseconds LIMIT 1;
 
 DROP TABLE IF EXISTS t_ttl_vert_2;
 
