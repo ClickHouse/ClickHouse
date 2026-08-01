@@ -24,18 +24,22 @@ The watchdog is a prerequisite, not separate scope: bounding is what starts pass
 `timeout=` to short-lived commands inside long-lived processes, and `_check_timeout` slept
 the timeout out unconditionally before killpg'ing the group, so a command that finished
 immediately left a live watchdog aimed at a possibly PID-recycled group. It now waits on
-an `Event` set when the attempt's child is reaped, backstopped by a process-GROUP liveness
-test: a background descendant holding the output pipes keeps `finished` unset while the
+an `Event` set when the attempt's child is reaped, backstopped by process-GROUP liveness
+tests: a background descendant holding the output pipes keeps `finished` unset while the
 leader is already reaped, so a leader-only test would return without enforcing anything.
-The `Event` is per attempt, since one hoisted out of the retry loop is already set when
-attempt 2 begins waiting.
+All three liveness tests in `_check_timeout` - before the SIGTERM, in the grace loop and
+at the SIGKILL gate - ask about the group for that reason. The `Event` is per attempt,
+since one hoisted out of the retry loop is already set when attempt 2 begins waiting.
 
 `TeePopen._check_timeout` had the same blind sleep and was fixed by cfb2ac8ff0c244.
 """
 
+import contextlib
+import io
 import os
 import subprocess
 import sys
+import tempfile
 import threading
 import time
 from pathlib import Path
@@ -510,6 +514,92 @@ def test_timeout_is_enforced_when_a_background_descendant_holds_the_pipes():
     )
 
 
+def test_the_group_is_force_killed_when_a_descendant_ignores_sigterm():
+    """The SIGKILL escalation must fire for a descendant that ignores SIGTERM.
+
+    A different site from the arm above: that one pins the test taken BEFORE the SIGTERM,
+    this one the test at the SIGKILL gate. A descendant that ignores SIGTERM survives the
+    signal, so the gate is the only thing left that can stop it; asking `poll()` there
+    sees the already-reaped shell leader, skips the SIGKILL, and leaves `Shell.run`
+    blocked in its reader joins for the descendant's whole natural lifetime.
+
+    Master is equally unbounded here (measured: this command runs its full sleep on
+    master too), so this arm pins a hardening, not a regression fix.
+
+    The child's sleep must stay well above the grace loop's own 100s budget, or the arm
+    passes without the SIGKILL and proves nothing -- do not reduce it to fit a runtime
+    target. It is asserted alongside the SIGKILL log line, which is the direct evidence
+    that the escalation ran rather than the child simply exiting.
+    """
+    child_sleep = 200
+    ceiling = 130  # the loop's 100s budget plus one 5s interval, with margin
+    assert (
+        child_sleep > ceiling
+    ), "the child must outlive the ceiling or nothing is pinned"
+
+    output = io.StringIO()
+    start = time.monotonic()
+    with contextlib.redirect_stdout(output):
+        Shell.run(
+            f"trap '' TERM; sleep {child_sleep} &",
+            timeout=WATCHDOG_TIMEOUT,
+            verbose=False,
+        )
+    elapsed = time.monotonic() - start
+    captured = output.getvalue()
+
+    assert elapsed < ceiling, (
+        f"a SIGTERM-ignoring descendant kept the call running {elapsed:.1f}s against a "
+        f"{WATCHDOG_TIMEOUT}s bound (>= {ceiling}s): the SIGKILL gate asked about the "
+        "already-reaped process leader, so the escalation never ran"
+    )
+    assert "sending SIGKILL" in captured, (
+        "the call returned in time but the SIGKILL escalation never ran, so the "
+        f"descendant was not what ended it: {captured!r}"
+    )
+
+
+def test_a_descendant_gets_its_full_graceful_shutdown_window():
+    """The grace loop must not end early, or SIGTERM handlers are cut short.
+
+    The counterpart of the arm above, pinning the liveness test inside the grace loop
+    rather than at the SIGKILL gate. A descendant that handles SIGTERM and needs a few
+    seconds to shut down cleanly gets that time only while the loop keeps waiting; asking
+    `poll()` there sees the reaped shell leader, ends the loop on its first iteration and
+    escalates straight to SIGKILL, which kills the handler mid-cleanup.
+
+    That failure is invisible to a duration assertion -- it makes the call FASTER (1.0s
+    against this arm's 7.0s, measured) -- so the observable is the cleanup's own marker
+    file, and the absent SIGKILL corroborates that the graceful path was taken.
+    """
+    cleanup_seconds = 6
+    marker = Path(tempfile.mkdtemp()) / "cleanup-finished"
+    # A background descendant that inherits the pipes, handles SIGTERM, and needs
+    # `cleanup_seconds` to finish. `wait` keeps the subshell alive to receive the signal.
+    command = (
+        f"( trap 'sleep {cleanup_seconds}; touch {marker}; exit 0' TERM; "
+        f"  sleep {WATCHDOG_CHILD_SLEEP} & wait ) &"
+    )
+
+    output = io.StringIO()
+    with contextlib.redirect_stdout(output):
+        Shell.run(command, timeout=WATCHDOG_TIMEOUT, verbose=False)
+    # The call returns once the readers unblock; give a cut-short handler the same wall
+    # clock it would have needed, so the assertion cannot pass on timing alone.
+    time.sleep(cleanup_seconds + 4)
+    captured = output.getvalue()
+
+    assert marker.exists(), (
+        "the descendant's SIGTERM handler never finished: the grace loop asked about the "
+        "already-reaped process leader, ended on its first iteration and escalated to "
+        f"SIGKILL mid-cleanup. Captured: {captured!r}"
+    )
+    assert "sending SIGKILL" not in captured, (
+        "the group was force-killed even though the descendant shut down gracefully "
+        f"within the grace budget: {captured!r}"
+    )
+
+
 def test_fast_command_leaves_no_live_watchdog():
     """A command that finishes early must cancel its watchdog.
 
@@ -599,6 +689,8 @@ if __name__ == "__main__":
     for fn in (
         test_timeout_terminates_a_long_running_command,
         test_timeout_is_enforced_when_a_background_descendant_holds_the_pipes,
+        test_the_group_is_force_killed_when_a_descendant_ignores_sigterm,
+        test_a_descendant_gets_its_full_graceful_shutdown_window,
         test_fast_command_leaves_no_live_watchdog,
         test_every_retry_attempt_is_bounded,
     ):

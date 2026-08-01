@@ -34,10 +34,14 @@ MAX_FAILS_BEFORE_DROP = 5
 # flakiness coverage instead of a truncated run. See FLAKY_CHECK_TIME_LIMIT for the hard
 # time guarantee that backstops this.
 MAX_FLAKY_CHECK_MODULES = 10
-# Per-archive bound for the post-run log/config archiving, in seconds. Archiving sits
-# between result collection and the only result dump, so exceeding it must cost the
-# tarball rather than the report. Healthy shards run 4491-5747s against the 18000s job
-# budget, so 30 minutes is far more than any observed shard needs to archive.
+# Bound for the post-run log/config archiving, in seconds. Archiving sits between result
+# collection and the only result dump, so exceeding it must cost the tarball rather than
+# the report. Healthy shards run 4491-5747s against the 18000s job budget, so 30 minutes
+# is far more than any observed shard needs to archive.
+# Applied twice per archive - once to the `tar` write, and again to the `tar -tzf`
+# read-back that decides whether a non-zero exit still produced a usable archive - so one
+# call's worst case is twice this value. Immaterial: the read-back measures ~1.6s for a
+# 367MB archive, so even both call sites at 3600s stay far inside the job budget.
 ARCHIVE_TIMEOUT_SEC = 1800
 OOM_IN_DMESG_TEST_NAME = "OOM in dmesg"
 ncpu = Utils.cpu_count()

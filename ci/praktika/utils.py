@@ -288,17 +288,30 @@ class Shell:
         # command already finished and killpg's a possibly PID-recycled group.
         if finished.wait(timeout):
             return
+
+        # Every liveness test here is about the whole process GROUP, not the leader:
+        # when the shell exits but a background descendant still holds the inherited
+        # output pipes, the reader threads stay blocked, so `finished` is not set yet
+        # while the leader is already reaped. A leader-only test then reports "gone"
+        # and the enforcement it guards never happens - before the signal it returns
+        # without signalling at all, and after the signal it ends the grace period on
+        # its first iteration and skips the SIGKILL, leaving `Shell.run` blocked in
+        # its reader joins for the descendant's whole natural lifetime.
+        def group_alive():
+            try:
+                os.killpg(process.pid, 0)
+            except ProcessLookupError:
+                return False
+            except PermissionError:
+                # The group exists but is not ours. "Alive" is the fail-safe answer:
+                # signalling a group killpg will then reject costs nothing, while
+                # calling it dead silently stops enforcing the bound.
+                return True
+            return True
+
         # Backstop for the race between the wait expiring and the attempt ending.
-        # Tests the whole process GROUP, not just the leader: when the shell exits
-        # but a background descendant still holds the inherited output pipes, the
-        # reader threads stay blocked, so `finished` is not set yet and the leader is
-        # already reaped - a leader-only test would return and enforce nothing.
-        try:
-            os.killpg(process.pid, 0)
-        except ProcessLookupError:
+        if not group_alive():
             return
-        except PermissionError:
-            pass  # the group exists but is not ours; fall through and try anyway
         print(
             f"WARNING: Timeout exceeded [{timeout}], sending SIGTERM to process group [{process.pid}]"
         )
@@ -312,13 +325,13 @@ class Shell:
         wait_interval = 5
 
         # Wait for process to terminate
-        while process.poll() is None and time_wait < 100:
+        while group_alive() and time_wait < 100:
             print("Waiting for process to exit...")
             time.sleep(wait_interval)
             time_wait += wait_interval
 
         # Force kill if still running
-        if process.poll() is None:
+        if group_alive():
             print("WARNING: Process still running after SIGTERM, sending SIGKILL")
             try:
                 os.killpg(process.pid, signal.SIGKILL)
