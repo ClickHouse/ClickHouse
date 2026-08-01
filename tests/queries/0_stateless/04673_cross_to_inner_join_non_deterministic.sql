@@ -6,12 +6,12 @@ SET enable_analyzer = 1;
 -- CrossToInnerJoinPass.
 SET query_plan_enable_optimizations = 0;
 
-DROP TABLE IF EXISTS l;
-DROP TABLE IF EXISTS r;
-DROP TABLE IF EXISTS m;
-DROP TABLE IF EXISTS w;
-DROP DICTIONARY IF EXISTS dict;
-DROP TABLE IF EXISTS dsrc;
+DROP TABLE IF EXISTS l SETTINGS ignore_drop_queries_probability = 0;
+DROP TABLE IF EXISTS r SETTINGS ignore_drop_queries_probability = 0;
+DROP TABLE IF EXISTS m SETTINGS ignore_drop_queries_probability = 0;
+DROP TABLE IF EXISTS w SETTINGS ignore_drop_queries_probability = 0;
+DROP DICTIONARY IF EXISTS dict SETTINGS ignore_drop_queries_probability = 0;
+DROP TABLE IF EXISTS dsrc SETTINGS ignore_drop_queries_probability = 0;
 
 CREATE TABLE l (a UInt64, b UInt64) ENGINE = Log;
 CREATE TABLE r (a UInt64, b UInt64) ENGINE = Log;
@@ -198,6 +198,17 @@ SELECT count() = 0 FROM (
     SETTINGS cross_to_inner_join_rewrite = 1
 ) WHERE explain ILIKE '%kind: INNER%';
 
+-- getMacro() is the server constant that is documented to differ per node by design, so it is the
+-- clearest member of the class.
+SELECT '-- getMacro() is no longer rewritten';
+SELECT count() = 0 FROM (
+    EXPLAIN QUERY TREE run_passes = 1
+    SELECT count() FROM remote('127.0.0.1', currentDatabase(), l) AS l2, r
+    WHERE concat(toString(l2.a), getMacro(materialize('shard')))
+        = concat(toString(r.a), getMacro(materialize('shard')))
+    SETTINGS cross_to_inner_join_rewrite = 1
+) WHERE explain ILIKE '%kind: INNER%';
+
 -- A remote() join with a deterministic predicate must still be rewritten, so the three rows above fail
 -- for the server constant rather than merely for being distributed.
 SELECT '-- a deterministic remote() predicate is still rewritten';
@@ -219,13 +230,30 @@ SELECT count() = 0 FROM (
 ) WHERE explain ILIKE '%kind: INNER%';
 
 -- transactionID() is the same class again: it reads the executing node's current transaction in its
--- constructor. Its two sibling counters throw without allow_experimental_transactions, but this one
--- does not, so it is reachable and needs the name.
+-- constructor. Its two snapshot counters read a process-wide counter in theirs, so all three of the
+-- classes in FunctionsTransactionCounters.cpp need the name. The stateless test config enables
+-- transactions, so all three are reachable.
 SELECT '-- transactionID() is no longer rewritten';
 SELECT count() = 0 FROM (
     EXPLAIN QUERY TREE run_passes = 1
     SELECT count() FROM remote('127.0.0.1', currentDatabase(), l) AS l2, r
     WHERE l2.a + toUInt64(transactionID().1) = r.a
+    SETTINGS cross_to_inner_join_rewrite = 1
+) WHERE explain ILIKE '%kind: INNER%';
+
+SELECT '-- transactionLatestSnapshot() is no longer rewritten';
+SELECT count() = 0 FROM (
+    EXPLAIN QUERY TREE run_passes = 1
+    SELECT count() FROM remote('127.0.0.1', currentDatabase(), l) AS l2, r
+    WHERE l2.a + transactionLatestSnapshot() = r.a
+    SETTINGS cross_to_inner_join_rewrite = 1
+) WHERE explain ILIKE '%kind: INNER%';
+
+SELECT '-- transactionOldestSnapshot() is no longer rewritten';
+SELECT count() = 0 FROM (
+    EXPLAIN QUERY TREE run_passes = 1
+    SELECT count() FROM remote('127.0.0.1', currentDatabase(), l) AS l2, r
+    WHERE l2.a + transactionOldestSnapshot() = r.a
     SETTINGS cross_to_inner_join_rewrite = 1
 ) WHERE explain ILIKE '%kind: INNER%';
 
@@ -298,9 +326,9 @@ SELECT count() > 0 FROM (
     SETTINGS cross_to_inner_join_rewrite = 1
 ) WHERE explain ILIKE '%kind: INNER%';
 
-DROP DICTIONARY dict;
-DROP TABLE dsrc;
-DROP TABLE l;
-DROP TABLE r;
-DROP TABLE m;
-DROP TABLE w;
+DROP DICTIONARY dict SETTINGS ignore_drop_queries_probability = 0;
+DROP TABLE dsrc SETTINGS ignore_drop_queries_probability = 0;
+DROP TABLE l SETTINGS ignore_drop_queries_probability = 0;
+DROP TABLE r SETTINGS ignore_drop_queries_probability = 0;
+DROP TABLE m SETTINGS ignore_drop_queries_probability = 0;
+DROP TABLE w SETTINGS ignore_drop_queries_probability = 0;

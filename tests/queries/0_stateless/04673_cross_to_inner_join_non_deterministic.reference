@@ -42,11 +42,17 @@
 1
 -- uptime() is no longer rewritten
 1
+-- getMacro() is no longer rewritten
+1
 -- a deterministic remote() predicate is still rewritten
 1
 -- getServerPort() is no longer rewritten
 1
 -- transactionID() is no longer rewritten
+1
+-- transactionLatestSnapshot() is no longer rewritten
+1
+-- transactionOldestSnapshot() is no longer rewritten
 1
 -- filesystemCapacity() is no longer rewritten
 1

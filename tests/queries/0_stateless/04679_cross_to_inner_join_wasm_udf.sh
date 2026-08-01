@@ -30,8 +30,8 @@ ${CLICKHOUSE_CLIENT} --multiquery <<EOF
 SET enable_analyzer = 1;
 SET query_plan_enable_optimizations = 0;
 
-DROP TABLE IF EXISTS l;
-DROP TABLE IF EXISTS r;
+DROP TABLE IF EXISTS l SETTINGS ignore_drop_queries_probability = 0;
+DROP TABLE IF EXISTS r SETTINGS ignore_drop_queries_probability = 0;
 CREATE TABLE l (a UInt64) ENGINE = Log;
 CREATE TABLE r (a UInt64) ENGINE = Log;
 INSERT INTO l SELECT number % 16 FROM numbers(100);
@@ -58,8 +58,8 @@ SELECT count() > 0 FROM (
 
 DROP FUNCTION ${FN_ND};
 DROP FUNCTION ${FN_D};
-DROP TABLE l;
-DROP TABLE r;
+DROP TABLE l SETTINGS ignore_drop_queries_probability = 0;
+DROP TABLE r SETTINGS ignore_drop_queries_probability = 0;
 EOF
 
 ${CLICKHOUSE_CLIENT} -q "DELETE FROM system.webassembly_modules WHERE name = '${MODULE}'"

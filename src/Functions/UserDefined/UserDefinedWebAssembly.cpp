@@ -480,6 +480,13 @@ public:
     String getName() const override { return function_name; }
     bool isVariadic() const override { return false; }
     bool isDeterministic() const override { return user_defined_function->getIsDeterministic(); }
+
+    /// A UDF declared without `DETERMINISTIC` may return a different value for the same input even
+    /// within one query: the shipped `get_block_size` module returns a value that depends on how the
+    /// data is split into blocks. Such a value must not be hoisted, reordered or used as a key. The
+    /// executable-UDF sibling reports the same thing.
+    bool isDeterministicInScopeOfQuery() const override { return user_defined_function->getIsDeterministic(); }
+
     bool isSuitableForShortCircuitArgumentsExecution(const DataTypesWithConstInfo & /* arguments */) const override { return false; }
     size_t getNumberOfArguments() const override { return user_defined_function->getArguments().size(); }
 
@@ -692,15 +699,6 @@ bool UserDefinedWebAssemblyFunctionFactory::has(const String & function_name) co
 {
     std::shared_lock lock(registry_mutex);
     return registry.contains(function_name);
-}
-
-std::optional<bool> UserDefinedWebAssemblyFunctionFactory::isDeclaredDeterministic(const String & function_name) const
-{
-    std::shared_lock lock(registry_mutex);
-    auto it = registry.find(function_name);
-    if (it == registry.end() || !it->second.function)
-        return {};
-    return it->second.function->getIsDeterministic();
 }
 
 FunctionOverloadResolverPtr UserDefinedWebAssemblyFunctionFactory::get(const String & function_name, ContextPtr context)
