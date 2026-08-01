@@ -4,8 +4,6 @@
 #include <IO/WriteSettings.h>
 #include <Storages/Statistics/Statistics.h>
 
-#include <map>
-
 
 namespace DB
 {
@@ -66,18 +64,15 @@ public:
         const MergeTreeMutableDataPartPtr & new_part,
         const GatheredData & gathered_data,
         bool sync,
-        const NamesAndTypesList * total_columns_list = nullptr,
-        const std::map<String, String> * column_compression_codecs_override = nullptr);
+        const NamesAndTypesList * total_columns_list = nullptr);
 
     void finalizePart(
         const MergeTreeMutableDataPartPtr & new_part,
         const GatheredData & gathered_data,
         bool sync,
-        const NamesAndTypesList * total_columns_list = nullptr,
-        const std::map<String, String> * column_compression_codecs_override = nullptr);
+        const NamesAndTypesList * total_columns_list = nullptr);
 
     void finalizeIndexGranularity();
-    const std::map<String, String> & getColumnCompressionCodecs() const { return writer->getColumnCompressionCodecs(); }
 
 private:
     /** If `permutation` is given, it rearranges the values in the columns when writing.
@@ -89,8 +84,7 @@ private:
     WrittenFiles finalizePartOnDisk(
         const MergeTreeMutableDataPartPtr & new_part,
         MergeTreeData::DataPart::Checksums & checksums,
-        const GatheredData & gathered_data,
-        const std::map<String, String> * column_compression_codecs_override);
+        const GatheredData & gathered_data);
 
     NamesAndTypesList columns_list;
     size_t rows_count = 0;

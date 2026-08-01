@@ -126,10 +126,6 @@ public:
 
     virtual std::optional<time_t> getColumnModificationTime(const String & column_name) const = 0;
 
-    /// Exact compression codec of the column's data streams in this part, as persisted by the writer
-    /// in `column_compression_codecs.txt`. Empty for parts written before that file existed.
-    String getColumnCompressionCodecDescription(const NameAndTypePair & column) const;
-
     /// NOTE: Returns zeros if secondary indexes are not found in checksums.
     /// Otherwise return information about secondary index size on disk.
     IndexSize getSecondaryIndexSize(const String & secondary_index_name) const;
@@ -593,7 +589,6 @@ public:
     /// by default. Some columns may have their own compression codecs, but
     /// default will be stored in this file.
     static constexpr auto DEFAULT_COMPRESSION_CODEC_FILE_NAME = "default_compression_codec.txt";
-    static constexpr auto COLUMN_COMPRESSION_CODECS_FILE_NAME = "column_compression_codecs.txt";
 
     /// "delete-on-destroy.txt" is deprecated. It is no longer being created, only is removed.
     static constexpr auto DELETE_ON_DESTROY_MARKER_FILE_NAME_DEPRECATED = "delete-on-destroy.txt";
@@ -824,8 +819,6 @@ protected:
     virtual void doCheckConsistency(bool require_part_metadata) const;
 
 private:
-    std::optional<CompressionCodecPtr> tryGetColumnCompressionCodecFromFile(const NameAndTypePair & column) const;
-
     String mutable_name;
     mutable std::atomic<MergeTreeDataPartState> state{MergeTreeDataPartState::Temporary};
 
@@ -845,10 +838,6 @@ private:
     /// The same as above but after call of Nested::collect().
     /// It is used while reading from wide parts.
     std::shared_ptr<const ColumnsDescription> columns_description_with_collected_nested;
-
-    mutable std::mutex column_compression_codec_descriptions_mutex;
-    mutable bool column_compression_codec_descriptions_initialized = false;
-    mutable std::unordered_map<String, ASTPtr> column_compression_codec_descriptions;
 
     /// Small state of finalized statistics for suitable statistics types.
     /// Lazily initialized on a first access.

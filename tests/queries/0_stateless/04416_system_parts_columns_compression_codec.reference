@@ -1,4 +1,9 @@
-wide	s	['LZ4','ZSTD(3)']
-wide	t	['ZSTD(5)','ZSTD(5)']
-compact	s	['LZ4','ZSTD(3)']
-compact	t	['ZSTD(5)','ZSTD(5)']
+wide	d	Delta(2), LZ4HC(3)
+wide	p	LZ4
+wide	s	LZ4
+wide	t	ZSTD(5)
+compact	d	Delta(2), LZ4HC(3)
+compact	p	ZSTD(1)
+compact	s	ZSTD(1)
+compact	t	ZSTD(5)
+after_alter	s	ZSTD(3)

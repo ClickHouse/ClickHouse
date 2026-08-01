@@ -4,8 +4,6 @@
 #include <Storages/Statistics/Statistics.h>
 #include <Storages/MergeTree/ColumnsSubstreams.h>
 
-#include <map>
-
 namespace DB
 {
 
@@ -41,7 +39,6 @@ public:
 
     const Block & getColumnsSample() const { return writer->getColumnsSample(); }
     const ColumnsSubstreams & getColumnsSubstreams() const { return writer->getColumnsSubstreams(); }
-    const std::map<String, String> & getColumnCompressionCodecs() const { return writer->getColumnCompressionCodecs(); }
     void finish(bool sync);
     void cancel() noexcept override;
 };

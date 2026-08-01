@@ -3,6 +3,7 @@
 
 #include <Common/escapeForFileName.h>
 #include <Columns/ColumnString.h>
+#include <Compression/CompressionFactory.h>
 #include <DataTypes/DataTypeString.h>
 #include <DataTypes/DataTypesNumber.h>
 #include <DataTypes/DataTypeDateTime.h>
@@ -21,6 +22,33 @@
 
 namespace DB
 {
+
+namespace
+{
+
+/// The codec a part's column data was written with is not persisted per part, so report the codec
+/// the column resolves to now: its own `CODEC(...)` from the table metadata when it has one, and
+/// the part's default compression codec (which *is* persisted per part) otherwise. A part written
+/// before an `ALTER TABLE ... MODIFY COLUMN ... CODEC` and not yet rewritten by a merge or mutation
+/// still holds the previous codec on disk.
+String getColumnCompressionCodecDescription(
+    const IMergeTreeDataPart & part, const ColumnsDescription & storage_columns, const NameAndTypePair & column)
+{
+    if (!part.default_codec)
+        return {};
+
+    auto codec = part.default_codec;
+
+    const auto column_description = storage_columns.tryGetColumnDescription(
+        GetColumnsOptions(GetColumnsOptions::AllPhysical), column.getNameInStorage());
+
+    if (column_description && column_description->codec)
+        codec = CompressionCodecFactory::instance().get(column_description->codec, column_description->type, part.default_codec);
+
+    return codec->getCodecDesc()->formatForLogging();
+}
+
+}
 
 StorageSystemPartsColumns::StorageSystemPartsColumns(const StorageID & table_id_)
     : StorageSystemPartsBase(table_id_,
@@ -76,8 +104,9 @@ StorageSystemPartsColumns::StorageSystemPartsColumns(const StorageID & table_id_
         {"estimates.cardinality",                      std::make_shared<DataTypeNullable>(std::make_shared<DataTypeUInt64>()), "Estimated cardinality of the column."},
         {"estimates.null_count",                       std::make_shared<DataTypeNullable>(std::make_shared<DataTypeUInt64>()), "Estimated number of NULL values in the column."},
         {"estimates.default_count",                    std::make_shared<DataTypeNullable>(std::make_shared<DataTypeUInt64>()), "Estimated number of rows equal to the column's storage default value (NULL for Nullable columns, 0 / '' / [] / ... for non-Nullable). NULL when no basic statistic is available."},
-        {"compression_codec",                          std::make_shared<DataTypeString>(), "Compression codec used by the column data stream in the data part. "
-            "The value is empty for legacy parts without exact codec metadata."},
+        {"compression_codec",                          std::make_shared<DataTypeString>(), "Compression codec of the column: its own `CODEC(...)` if the column has one, "
+            "otherwise the default compression codec of this data part. Parts written before an `ALTER TABLE ... MODIFY COLUMN ... CODEC` "
+            "and not yet rewritten by a merge or mutation are still stored with the previous codec."},
         {"serialization_kind",                         std::make_shared<DataTypeString>(), "Kind of serialization of a column"},
         {"substreams",                                 std::make_shared<DataTypeArray>(std::make_shared<DataTypeString>()), "Names of substreams to which column is serialized"},
         {"filenames",                                  std::make_shared<DataTypeArray>(std::make_shared<DataTypeString>()), "Names of files for each substream of a column respectively"},
@@ -348,7 +377,7 @@ void StorageSystemPartsColumns::processNextStorage(
 
             auto serialization = part->getSerialization(column.name);
             if (columns_mask[src_index++])
-                columns[res_index++]->insert(part->getColumnCompressionCodecDescription(column));
+                columns[res_index++]->insert(getColumnCompressionCodecDescription(*part, part_metadata_snapshot->getColumns(), column));
             if (columns_mask[src_index++])
                 columns[res_index++]->insert(ISerialization::kindStackToString(serialization->getKindStack()));
 

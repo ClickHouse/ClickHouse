@@ -63,7 +63,7 @@ Each row describes one data part.
 - `estimates.cardinality` ([Nullable(UInt64)](/sql-reference/data-types/nullable)) — Estimated cardinality of the column.
 - `estimates.null_count` ([Nullable(UInt64)](/sql-reference/data-types/nullable)) — Estimated number of NULL values in the column.
 - `estimates.default_count` ([Nullable(UInt64)](/sql-reference/data-types/nullable)) — Estimated number of rows equal to the column's storage default value. NULL when no basic statistic is available.
-- `compression_codec` ([String](/sql-reference/data-types/string)) — Compression codec used by the column data stream in the data part, from exact per-part codec metadata when available. Empty for legacy parts without exact codec metadata.
+- `compression_codec` ([String](/sql-reference/data-types/string)) — Compression codec of the column: its own `CODEC(...)` if the column has one, otherwise the default compression codec of this data part. Note that the codec a part was actually written with is not stored per part, so parts written before an `ALTER TABLE ... MODIFY COLUMN ... CODEC` and not yet rewritten by a merge or mutation are still stored with the previous codec.
 - `serialization_kind` ([String](/sql-reference/data-types/string)) — Kind of serialization of a column
 - `substreams` ([Array(String)](/sql-reference/data-types/array)) — Names of substreams to which column is serialized
 - `filenames` ([Array(String)](/sql-reference/data-types/array)) — Names of files for each substream of a column respectively

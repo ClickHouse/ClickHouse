@@ -12,8 +12,6 @@
 #include <Storages/VirtualColumnsDescription.h>
 #include <Formats/MarkInCompressedFile.h>
 
-#include <map>
-
 
 namespace DB
 {
@@ -80,13 +78,11 @@ public:
     virtual const Block & getColumnsSample() const = 0;
 
     virtual const ColumnsSubstreams & getColumnsSubstreams() const = 0;
-    const std::map<String, String> & getColumnCompressionCodecs() const { return column_compression_codecs; }
 
 protected:
     SerializationPtr getSerialization(const String & column_name) const;
 
     ASTPtr getCodecDescOrDefault(const String & column_name, CompressionCodecPtr default_codec) const;
-    void addColumnCompressionCodec(const NameAndTypePair & column, const ASTPtr & codec_desc);
 
     IDataPartStorage & getDataPartStorage() { return *data_part_storage; }
 
@@ -107,7 +103,6 @@ protected:
     PlainMarksByName cached_marks;
     /// Index marks (for secondary indices) that will be saved to cache on finish.
     PlainMarksByName cached_index_marks;
-    std::map<String, String> column_compression_codecs;
 };
 
 using MergeTreeDataPartWriterPtr = std::unique_ptr<IMergeTreeDataPartWriter>;
