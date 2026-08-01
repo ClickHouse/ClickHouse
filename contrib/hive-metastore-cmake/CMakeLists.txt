@@ -1,7 +1,7 @@
-if (TARGET ch_contrib::hdfs)
+if (TARGET ch_contrib::hdfs AND TARGET ch_contrib::parquet)
     option(ENABLE_HIVE "Enable Hive" ${ENABLE_LIBRARIES})
 elseif(ENABLE_HIVE)
-    message (${RECONFIGURE_MESSAGE_LEVEL} "Cannot use Hive without HDFS")
+    message (${RECONFIGURE_MESSAGE_LEVEL} "Cannot use Hive without HDFS and Parquet")
 endif()
 
 if (NOT ENABLE_HIVE)
