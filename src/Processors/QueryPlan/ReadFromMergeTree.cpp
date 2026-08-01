@@ -3329,6 +3329,17 @@ bool ReadFromMergeTree::requestReadingInOrder(size_t prefix_size, int direction,
         /// `selected_marks <= selected_marks_pk`, gating on `selected_marks` as well only ever makes the
         /// guard fire less often, and it keeps read-in-order for skip-index-accelerated queries.
         ///
+        /// That argument holds only while `selected_marks` really is the final mark count. When
+        /// `initializePipeline` installs a `MergeTreeSkipIndexReader` — the `use_skip_indexes_on_data_read`
+        /// path, or the join-runtime-filter path — the ranges are pruned during the read and
+        /// `selected_marks` is just the pre-pruning upper bound (that is why the reader, not this step,
+        /// accounts the `SelectedMarks` profile event there). A query whose primary key prunes nothing but
+        /// whose read-time skip index or runtime filter trims the read to a few granules would then look
+        /// like a full scan here and lose read-in-order, which is exactly the regression the
+        /// `selected_marks` check above prevents for analysis-time skip indexes. So the guard is exempt
+        /// whenever read-time pruning may happen (`mayPruneRangesOnDataRead`); a mark count that is known
+        /// to be an upper bound cannot justify replacing a streaming read with a global sort.
+        ///
         /// Projection-backed reads are exempt (`readFromProjection`), and unlike the base-table case
         /// this is backed by measurement rather than by the argument above. `optimizeUseNormalProjection`
         /// picks a normal projection for a query whose `ORDER BY` it already satisfies, so the only
@@ -3350,6 +3361,7 @@ bool ReadFromMergeTree::requestReadingInOrder(size_t prefix_size, int direction,
         /// the guard would reach and reject those plans.
         if (read_streams > 1
             && !analysis_result.readFromProjection()
+            && !mayPruneRangesOnDataRead()
             && analysis_result.total_marks_pk > read_streams
             && static_cast<double>(analysis_result.selected_marks_pk)
                 > static_cast<double>(analysis_result.total_marks_pk) * max_ratio
@@ -4081,6 +4093,26 @@ bool ReadFromMergeTree::supportsSkipIndexesOnDataRead() const
         return false;
 
     return true;
+}
+
+bool ReadFromMergeTree::mayPruneRangesOnDataRead() const
+{
+    /// The `use_skip_indexes_on_data_read` path: the skip indexes that index analysis found useful
+    /// are deliberately not applied there, so `selected_marks` equals `selected_marks_pk` and the
+    /// actual pruning is done by the reader.
+    if (supportsSkipIndexesOnDataRead())
+        return true;
+
+    /// The join-runtime-filter path (`enable_join_runtime_filters_index_analysis`): a reader is
+    /// installed to prune left-side granules with the filter built by the build side, which is not
+    /// known during index analysis. The descriptors are registered by `tryAddJoinRuntimeFilter`,
+    /// which runs before `optimizeReadInOrder`, so this is already populated when the guard asks.
+    /// The remaining conditions of the reader-creation site (pending mutations, parallel replicas)
+    /// are intentionally not replicated: answering `true` too often only makes the guard fire less
+    /// often, which is always the safe direction for a performance heuristic.
+    return context->getSettingsRef()[Setting::use_skip_indexes_on_data_read]
+        && !query_info.isFinal()
+        && !join_runtime_filters_for_index_analysis.empty();
 }
 
 

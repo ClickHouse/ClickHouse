@@ -671,6 +671,12 @@ private:
 
     bool supportsSkipIndexesOnDataRead() const;
 
+    /// True when `initializePipeline` may install a `MergeTreeSkipIndexReader`, i.e. when range
+    /// pruning happens during the read itself and `AnalysisResult::selected_marks` is only the
+    /// pre-pruning mark count. Used by the read-in-order PK-selectivity guard, which must not
+    /// judge the size of the read from a count it knows to be an upper bound.
+    bool mayPruneRangesOnDataRead() const;
+
     mutable AnalysisResultPtr analyzed_result_ptr;
     VirtualFields shared_virtual_fields;
     IndexReadTasks index_read_tasks;
