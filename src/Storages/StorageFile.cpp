@@ -189,10 +189,10 @@ struct PruningState
     std::vector<VisitedFrame *> active_frames;
     /// Frames pruned because another frame reached the same place under a different lexical path.
     /// Whether that hid a real second name depends on how many matches the claiming frame ends up
-    /// with, so the answer is deferred until the walk is over and every count is final. The walk
-    /// is depth-first today, so a claiming frame is in fact complete before any sibling can
-    /// collide with it, and deferring changes no current answer; it is here so the verdict does
-    /// not silently depend on the order the walk happens to take.
+    /// with, so the answer is deferred until the walk is over and every count is final. Deciding
+    /// at the collision instead would read a count that is not yet final whenever the collision
+    /// comes from inside the claiming frame's own subtree, which is what an ancestor loop is: the
+    /// loop can re-enter the root before the root has matched anything.
     std::vector<const VisitedFrame *> pending_collisions;
 };
 

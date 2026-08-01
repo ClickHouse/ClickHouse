@@ -53,4 +53,9 @@ empty-alias-insert-is-allowed
 nested-alias-insert-stays-readonly
 refused
 1
+late-match-alias-insert-stays-readonly
+refused
+1
+1
+1
 alive

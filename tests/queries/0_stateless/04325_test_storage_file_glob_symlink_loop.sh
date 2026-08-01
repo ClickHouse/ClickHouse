@@ -250,6 +250,18 @@ printf "row1\n" > "$TEST_DIR_ABS/nestedalias/root/target/inner/f.txt"
 ln -s target "$TEST_DIR_ABS/nestedalias/root/aliasA"
 ln -s target "$TEST_DIR_ABS/nestedalias/root/aliasB"
 
+# A collision that happens BEFORE its claiming frame has found any match:
+# `latematch/root/aaa/back -> ..` loops back to the root, and the only matching file is
+# `latematch/root/mmm/zzz.txt`, under a name that sorts after `aaa`. So the loop re-enters
+# the root frame while that frame has matched nothing yet. The file still has two names
+# under `root/**/*.txt`, `root/mmm/zzz.txt` and `root/aaa/back/mmm/zzz.txt` (the finite
+# spellings `root/*/*.txt` and `root/*/*/*/*.txt` each return one of them), so the write
+# must be refused. Deciding at the collision instead of after the walk reads a match count
+# of zero here and allows it.
+mkdir -p "$TEST_DIR_ABS/latematch/root/aaa" "$TEST_DIR_ABS/latematch/root/mmm"
+printf "row1\n" > "$TEST_DIR_ABS/latematch/root/mmm/zzz.txt"
+ln -s .. "$TEST_DIR_ABS/latematch/root/aaa/back"
+
 trap 'rm -rf "$TEST_DIR_ABS"' EXIT
 
 # Ancestor-loop symlink: `loop/dir1/dir2/loop_to_root` points back at `loop/dir1`,
@@ -419,6 +431,16 @@ echo "nested-alias-insert-stays-readonly"
 $CLICKHOUSE_CLIENT --query "INSERT INTO TABLE FUNCTION file('$TEST_DIR_NAME/nestedalias/root/**/f.txt', 'TSV', 'val String') VALUES ('written')" </dev/null 2>&1 \
     | grep -qF "readonly mode because of globs" && echo "refused"
 $CLICKHOUSE_CLIENT --query "SELECT count() FROM file('$TEST_DIR_NAME/nestedalias/root/target/inner/f.txt', 'TSV', 'val String')"
+
+# The refusal must hold when the alias collides before the claiming frame has matched
+# anything, which is what deciding after the walk rather than at the collision is for. The
+# two finite spellings below show the two names the recursive pattern reaches.
+echo "late-match-alias-insert-stays-readonly"
+$CLICKHOUSE_CLIENT --query "INSERT INTO TABLE FUNCTION file('$TEST_DIR_NAME/latematch/root/**/*.txt', 'TSV', 'val String') VALUES ('written')" </dev/null 2>&1 \
+    | grep -qF "readonly mode because of globs" && echo "refused"
+$CLICKHOUSE_CLIENT --query "SELECT count() FROM file('$TEST_DIR_NAME/latematch/root/mmm/zzz.txt', 'TSV', 'val String')"
+$CLICKHOUSE_CLIENT --query "SELECT count() FROM file('$TEST_DIR_NAME/latematch/root/*/*.txt', 'TSV', 'val String')"
+$CLICKHOUSE_CLIENT --query "SELECT count() FROM file('$TEST_DIR_NAME/latematch/root/*/*/*/*.txt', 'TSV', 'val String')"
 
 # Server alive afterwards.
 $CLICKHOUSE_CLIENT --query "SELECT 'alive'"
