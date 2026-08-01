@@ -41,4 +41,18 @@ FROM (EXPLAIN pretty=0, description=0 SELECT count() FROM t_text_index_pr_plan_b
 SELECT countIf(explain LIKE '%ReadFromParallelReplicas%') > 0
 FROM (EXPLAIN pretty=0, description=0 SELECT sum(length(s)) FROM t_text_index_pr_plan_based WHERE s != '');
 
+-- A direct text-index read that is not eligible to be shipped anyway - here the right (build) side of a
+-- JOIN, which `collectReadsToDistribute` never follows - must not disable parallel replicas for the
+-- left side.
+DROP TABLE IF EXISTS t_plain_pr_plan_based;
+CREATE TABLE t_plain_pr_plan_based (n UInt64, s String) ENGINE = MergeTree ORDER BY tuple();
+INSERT INTO t_plain_pr_plan_based SELECT number, 'hello world ' || toString(number) FROM numbers(1000);
+
+SELECT countIf(explain LIKE '%ReadFromParallelReplicas%') > 0
+FROM (EXPLAIN pretty=0, description=0
+    SELECT sum(length(l.s)) FROM t_plain_pr_plan_based AS l
+    JOIN t_text_index_pr_plan_based AS r ON l.s = r.s
+    WHERE hasToken(r.s, 'hello'));
+
+DROP TABLE t_plain_pr_plan_based;
 DROP TABLE t_text_index_pr_plan_based;

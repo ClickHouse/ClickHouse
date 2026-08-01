@@ -1,3 +1,4 @@
+#include <algorithm>
 #include <memory>
 #include <Interpreters/ClusterProxy/executeQuery.h>
 #include <Processors/QueryPlan/AggregatingStep.h>
@@ -332,17 +333,16 @@ static bool planHasSubquerySet(const QueryPlan::Node * node)
 /// logical error `Column ... already added for reading` (e.g. when the same predicate appears in both
 /// PREWHERE and WHERE), and a remote replica cannot resolve the synthetic column against the table at
 /// all. The text-index rewrite runs earlier in the same optimization pass, so the tasks are already
-/// registered here; keep such a plan local, like the FINAL case above.
-static bool planHasTextIndexDirectRead(const QueryPlan::Node * node)
+/// registered by the time this runs.
+/// Only the reads that are actually eligible to be shipped matter: a direct text-index read that is not
+/// wrapped (the non-parallelized side of a JOIN, say) is never cloned or serialized and must not disable
+/// parallel replicas for the rest of the plan. When an eligible read does have one, keep the whole plan
+/// local, like the FINAL case above - dropping a single read out of the eligible set would leave a union
+/// with a mix of local and distributed branches, which is not supported.
+static bool isTextIndexDirectRead(const QueryPlan::Node * node)
 {
-    if (!node)
-        return false;
-    if (const auto * read = typeid_cast<const ReadFromMergeTree *>(node->step.get()); read && !read->getIndexReadTasks().empty())
-        return true;
-    for (const auto * child : node->children)
-        if (planHasTextIndexDirectRead(child))
-            return true;
-    return false;
+    const auto * read = typeid_cast<const ReadFromMergeTree *>(node->step.get());
+    return read && !read->getIndexReadTasks().empty();
 }
 
 /// Insertion phase: put a ParallelReplicasSplitStep directly above every eligible MergeTree read.
@@ -360,11 +360,13 @@ static void insertParallelReplicasSplit(QueryPlan & query_plan, QueryPlan::Nodes
     if (planHasSubquerySet(root))
         return;
 
-    if (planHasTextIndexDirectRead(root))
+    auto reads_to_distribute = collectReadsToDistribute(root);
+
+    if (std::any_of(reads_to_distribute.begin(), reads_to_distribute.end(), isTextIndexDirectRead))
         return;
 
     std::unordered_set<const QueryPlan::Node *> eligible;
-    for (auto * node : collectReadsToDistribute(root))
+    for (auto * node : reads_to_distribute)
         eligible.insert(node);
     if (eligible.empty())
         return;
