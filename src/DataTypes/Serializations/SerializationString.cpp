@@ -716,20 +716,24 @@ void SerializationString::serializeBinaryBulkWithSizeStream(
     const auto & offsets = column_string.getOffsets();
 
     /// The separate stream carries per-row sizes on disk (position independent, so a granule can be
-    /// read on its own) and the cumulative byte offsets as-is over the network - the same layout
-    /// Array uses for its offsets. Sending offsets skips the size conversion and lets the reader
-    /// preallocate the exact amount of memory. Over the network a whole block is always serialized
-    /// (offset == 0), so the offsets are written as-is without rebasing.
+    /// read on its own) and cumulative byte offsets over the network - the same layout Array uses for
+    /// its offsets. Sending offsets skips the size conversion and lets the reader preallocate the exact
+    /// amount of memory. The offsets are cumulative from the start of the serialized range, so they are
+    /// written as-is for a whole-block write (offset == 0, the usual native-protocol case) and rebased
+    /// for a sliced write (offset > 0, e.g. a nested column) to keep the stream self-contained.
     if (settings.position_independent_encoding)
     {
         serializeStringSizes(column, *size_stream, offset, limit);
     }
+    else if (offset == 0)
+    {
+        SerializationNumber<ColumnString::Offset>::serializeBinaryBulk(offsets, *size_stream, 0, limit);
+    }
     else
     {
-        /// The offsets are written as-is (not rebased), which is only correct when the whole block is
-        /// serialized; that is always the case over the network, and the reader relies on it too.
-        chassert(offset == 0);
-        SerializationNumber<ColumnString::Offset>::serializeBinaryBulk(offsets, *size_stream, offset, limit);
+        const IColumn::Offset base = offsets[offset - 1];
+        for (size_t i = offset; i < offset + limit; ++i)
+            writeBinaryLittleEndian(static_cast<UInt64>(offsets[i] - base), *size_stream);
     }
 
     settings.path.back() = Substream::Regular;
