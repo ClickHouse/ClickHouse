@@ -360,6 +360,85 @@ SELECT 'DateTime needle midnight count',   groupArray(id), (SELECT groupArray(id
 DROP TABLE t_date_lc;
 DROP TABLE t_date;
 
+-- A declined needle must not be answered by comparing RAW PHYSICAL NUMBERS. Date is stored as a day
+-- number and DateTime as epoch seconds, so day 1 and second 1 share a physical value while denoting
+-- different instants; the rows above use 3600 seconds, so they never collide and pass for a reason
+-- unrelated to the guard. These use the colliding values, where only an equality-correct answer is
+-- empty. The rows above stay as the non-collision control.
+DROP TABLE IF EXISTS t_coll_date_lc;
+DROP TABLE IF EXISTS t_coll_dt_lc;
+CREATE TABLE t_coll_date_lc (id UInt64, v Array(LowCardinality(Date)))            ENGINE = Memory;
+CREATE TABLE t_coll_dt_lc   (id UInt64, v Array(LowCardinality(DateTime('UTC')))) ENGINE = Memory;
+INSERT INTO t_coll_date_lc VALUES (0, [toDate('1970-01-02')]);
+INSERT INTO t_coll_dt_lc   VALUES (0, [toDateTime(1, 'UTC')]);
+SELECT 'Date day 1 vs DateTime second 1',         groupArray(id), (SELECT groupArray(id) FROM t_coll_date_lc WHERE arrayExists(x -> x = toDateTime(1, 'UTC'), v)) FROM t_coll_date_lc WHERE has(v, toDateTime(1, 'UTC'));
+SELECT 'Date day 1 vs DateTime second 1 indexOf', groupArray(id), (SELECT groupArray(id) FROM t_coll_date_lc WHERE arrayExists(x -> x = toDateTime(1, 'UTC'), v)) FROM t_coll_date_lc WHERE indexOf(v, toDateTime(1, 'UTC')) > 0;
+SELECT 'Date day 1 vs DateTime second 1 count',   groupArray(id), (SELECT groupArray(id) FROM t_coll_date_lc WHERE arrayExists(x -> x = toDateTime(1, 'UTC'), v)) FROM t_coll_date_lc WHERE countEqual(v, toDateTime(1, 'UTC')) > 0;
+SELECT 'DateTime second 1 vs Date day 1',         groupArray(id), (SELECT groupArray(id) FROM t_coll_dt_lc   WHERE arrayExists(x -> x = toDate('1970-01-02'), v)) FROM t_coll_dt_lc   WHERE has(v, toDate('1970-01-02'));
+SELECT 'DateTime second 1 vs Date day 1 indexOf', groupArray(id), (SELECT groupArray(id) FROM t_coll_dt_lc   WHERE arrayExists(x -> x = toDate('1970-01-02'), v)) FROM t_coll_dt_lc   WHERE indexOf(v, toDate('1970-01-02')) > 0;
+SELECT 'DateTime second 1 vs Date day 1 count',   groupArray(id), (SELECT groupArray(id) FROM t_coll_dt_lc   WHERE arrayExists(x -> x = toDate('1970-01-02'), v)) FROM t_coll_dt_lc   WHERE countEqual(v, toDate('1970-01-02')) > 0;
+DROP TABLE t_coll_date_lc;
+DROP TABLE t_coll_dt_lc;
+
+-- The numeric member of the same class: 2^63 as a Float64 is what the Int64 maximum ROUNDS to, so a
+-- raw comparison equates them while `=` does not. The ...993/...992 rows above must stay green.
+--
+-- Only the LowCardinality row is asserted against its oracle. The PLAIN array reaches the same raw
+-- integral comparison with no dictionary involved, so it answers [0] against an oracle of [] on
+-- master too; that is a separate pre-existing defect of the non-LowCardinality path, tracked apart
+-- from this change, and asserting the current answer here would pin a wrong result.
+DROP TABLE IF EXISTS t_coll_i64_lc;
+CREATE TABLE t_coll_i64_lc (id UInt64, v Array(LowCardinality(Int64))) ENGINE = Memory;
+INSERT INTO t_coll_i64_lc VALUES (0, [9223372036854775807]);
+SELECT 'Int64 max vs Float64 2^63', groupArray(id), (SELECT groupArray(id) FROM t_coll_i64_lc WHERE arrayExists(x -> x = 9223372036854775808.0::Float64, v)) FROM t_coll_i64_lc WHERE has(v, 9223372036854775808.0::Float64);
+DROP TABLE t_coll_i64_lc;
+
+-- A `nan`/`inf` needle against an integral element has no integral counterpart, so it matches nothing
+-- and must ANSWER that rather than propagate the conversion failure of the guard's own probe. The
+-- plain array has always answered 0; only the `LowCardinality` spelling raised `Code 70`, which is
+-- the same wrapper-changes-the-answer defect in its loudest form.
+DROP TABLE IF EXISTS t_nan_lc;
+DROP TABLE IF EXISTS t_nan;
+CREATE TABLE t_nan_lc (id UInt64, v Array(LowCardinality(Int8))) ENGINE = Memory;
+CREATE TABLE t_nan    (id UInt64, v Array(Int8))                 ENGINE = Memory;
+INSERT INTO t_nan_lc VALUES (0, [1]);
+INSERT INTO t_nan    VALUES (0, [1]);
+SELECT 'nan needle',         groupArray(id), (SELECT groupArray(id) FROM t_nan_lc WHERE arrayExists(x -> x = nan, v)), (SELECT groupArray(id) FROM t_nan WHERE has(v, nan)) FROM t_nan_lc WHERE has(v, nan);
+SELECT 'inf needle',         groupArray(id), (SELECT groupArray(id) FROM t_nan_lc WHERE arrayExists(x -> x = inf, v)), (SELECT groupArray(id) FROM t_nan WHERE has(v, inf)) FROM t_nan_lc WHERE has(v, inf);
+SELECT 'nan needle indexOf', groupArray(id), (SELECT groupArray(id) FROM t_nan_lc WHERE arrayExists(x -> x = nan, v)) FROM t_nan_lc WHERE indexOf(v, nan) > 0;
+SELECT 'nan needle count',   groupArray(id), (SELECT groupArray(id) FROM t_nan_lc WHERE arrayExists(x -> x = nan, v)) FROM t_nan_lc WHERE countEqual(v, nan) > 0;
+DROP TABLE t_nan_lc;
+DROP TABLE t_nan;
+
+SELECT '-- a LowCardinality wrapper on the NEEDLE must not change the answer';
+-- The type side of the guard normalises the needle through `recursiveRemoveLowCardinality`, but the
+-- byte-length read that decides whether a `String` needle fits a `FixedString` element must do the
+-- same, or the very same three bytes are admitted as a `String` and declined as a
+-- `LowCardinality(String)`. Both wrapper orders can arrive.
+DROP TABLE IF EXISTS t_needle_lc;
+CREATE TABLE t_needle_lc (id UInt64, v Array(LowCardinality(FixedString(3)))) ENGINE = Memory;
+INSERT INTO t_needle_lc VALUES (0, ['V0']);
+SELECT 'String exact width',               groupArray(id), (SELECT groupArray(id) FROM t_needle_lc WHERE arrayExists(x -> x = 'V0\0', v)) FROM t_needle_lc WHERE has(v, 'V0\0');
+SELECT 'LowCardinality(String)',           groupArray(id), (SELECT groupArray(id) FROM t_needle_lc WHERE arrayExists(x -> x = toLowCardinality('V0\0'), v)) FROM t_needle_lc WHERE has(v, toLowCardinality('V0\0'));
+SELECT 'LowCardinality(String) indexOf',   groupArray(id), (SELECT groupArray(id) FROM t_needle_lc WHERE arrayExists(x -> x = toLowCardinality('V0\0'), v)) FROM t_needle_lc WHERE indexOf(v, toLowCardinality('V0\0')) > 0;
+SELECT 'LowCardinality(String) count',     groupArray(id), (SELECT groupArray(id) FROM t_needle_lc WHERE arrayExists(x -> x = toLowCardinality('V0\0'), v)) FROM t_needle_lc WHERE countEqual(v, toLowCardinality('V0\0')) > 0;
+SELECT 'Nullable(String)',                 groupArray(id), (SELECT groupArray(id) FROM t_needle_lc WHERE arrayExists(x -> assumeNotNull(x = CAST('V0\0' AS Nullable(String))), v)) FROM t_needle_lc WHERE has(v, CAST('V0\0' AS Nullable(String)));
+SELECT 'LowCardinality(Nullable(String))', groupArray(id), (SELECT groupArray(id) FROM t_needle_lc WHERE arrayExists(x -> assumeNotNull(x = toLowCardinality(CAST('V0\0' AS Nullable(String)))), v)) FROM t_needle_lc WHERE has(v, toLowCardinality(CAST('V0\0' AS Nullable(String))));
+SELECT 'LowCardinality(String) shorter',   groupArray(id), (SELECT groupArray(id) FROM t_needle_lc WHERE arrayExists(x -> x = toLowCardinality('V0'), v)) FROM t_needle_lc WHERE has(v, toLowCardinality('V0'));
+DROP TABLE t_needle_lc;
+
+-- The same needle wrapper through both Map spellings.
+DROP TABLE IF EXISTS t_needle_map_val;
+DROP TABLE IF EXISTS t_needle_map_key;
+CREATE TABLE t_needle_map_val (id UInt64, m Map(UInt8, LowCardinality(FixedString(3)))) ENGINE = Memory;
+CREATE TABLE t_needle_map_key (id UInt64, m Map(LowCardinality(FixedString(3)), UInt8)) ENGINE = Memory;
+INSERT INTO t_needle_map_val VALUES (0, map(1, 'V0'));
+INSERT INTO t_needle_map_key VALUES (0, map('V0', 1));
+SELECT 'mapContainsValue LowCardinality needle', groupArray(id), (SELECT groupArray(id) FROM t_needle_map_val WHERE arrayExists(x -> x = toLowCardinality('V0\0'), mapValues(m))) FROM t_needle_map_val WHERE mapContainsValue(m, toLowCardinality('V0\0'));
+SELECT 'mapContainsKey LowCardinality needle',   groupArray(id), (SELECT groupArray(id) FROM t_needle_map_key WHERE arrayExists(x -> x = toLowCardinality('V0\0'), mapKeys(m))) FROM t_needle_map_key WHERE mapContainsKey(m, toLowCardinality('V0\0')) SETTINGS optimize_functions_to_subcolumns = 0;
+DROP TABLE t_needle_map_val;
+DROP TABLE t_needle_map_key;
+
 DROP TABLE t_str;
 DROP TABLE t_lc;
 DROP TABLE t_lc_null;

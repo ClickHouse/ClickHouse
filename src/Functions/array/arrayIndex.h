@@ -38,6 +38,20 @@ namespace ErrorCodes
     extern const int ILLEGAL_COLUMN;
     extern const int ILLEGAL_TYPE_OF_ARGUMENT;
     extern const int LOGICAL_ERROR;
+    extern const int CANNOT_CONVERT_TYPE;
+    extern const int CANNOT_PARSE_BOOL;
+    extern const int CANNOT_PARSE_DATE;
+    extern const int CANNOT_PARSE_DATETIME;
+    extern const int CANNOT_PARSE_IPV4;
+    extern const int CANNOT_PARSE_IPV6;
+    extern const int CANNOT_PARSE_NUMBER;
+    extern const int CANNOT_PARSE_TEXT;
+    extern const int CANNOT_PARSE_UUID;
+    extern const int DECIMAL_OVERFLOW;
+    extern const int NOT_IMPLEMENTED;
+    extern const int TOO_LARGE_STRING_SIZE;
+    extern const int UNKNOWN_ELEMENT_OF_ENUM;
+    extern const int VALUE_IS_OUT_OF_RANGE_OF_DATA_TYPE;
 }
 
 using NullMap = PaddedPODArray<UInt8>;
@@ -887,6 +901,40 @@ private:
       * lost anything: casting a non-midnight `DateTime` to `Date` truncates the time of day and
       * succeeds, so only converting back and comparing distinguishes it from an exact midnight.
       */
+    /** Is [code] a way for the probe's own cast to say "this value does not convert"?
+      *
+      * Only these may be read as an answer about the VALUE. Anything else -- a memory limit, a
+      * logical error, a cancellation -- is a failure of the probe itself and must propagate, or the
+      * guard would silently decline on an unrelated fault and hide it.
+      *
+      * Each entry was raised by an actual `CAST` of a plausible needle: `TOO_LARGE_STRING_SIZE` by
+      * `String -> FixedString` that does not fit, `CANNOT_PARSE_TEXT`/`_NUMBER` by a
+      * `String -> UInt8`/`Decimal`, the dated/UUID/IP/Bool ones by a `String` to each of those,
+      * `UNKNOWN_ELEMENT_OF_ENUM` by a `String -> Enum8`, `CANNOT_CONVERT_TYPE` by `nan -> Int64`,
+      * `DECIMAL_OVERFLOW` by an out-of-range `Float -> Decimal64`, `ILLEGAL_TYPE_OF_ARGUMENT` by a
+      * composite (`Array`, `Tuple`) needle against a scalar element, and
+      * `VALUE_IS_OUT_OF_RANGE_OF_DATA_TYPE`/`NOT_IMPLEMENTED` by the accurate cast back and by pairs
+      * that have no conversion at all.
+      */
+    static bool isNeedleConversionRefusal(int code)
+    {
+        return code == ErrorCodes::CANNOT_CONVERT_TYPE
+            || code == ErrorCodes::CANNOT_PARSE_BOOL
+            || code == ErrorCodes::CANNOT_PARSE_DATE
+            || code == ErrorCodes::CANNOT_PARSE_DATETIME
+            || code == ErrorCodes::CANNOT_PARSE_IPV4
+            || code == ErrorCodes::CANNOT_PARSE_IPV6
+            || code == ErrorCodes::CANNOT_PARSE_NUMBER
+            || code == ErrorCodes::CANNOT_PARSE_TEXT
+            || code == ErrorCodes::CANNOT_PARSE_UUID
+            || code == ErrorCodes::DECIMAL_OVERFLOW
+            || code == ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT
+            || code == ErrorCodes::NOT_IMPLEMENTED
+            || code == ErrorCodes::TOO_LARGE_STRING_SIZE
+            || code == ErrorCodes::UNKNOWN_ELEMENT_OF_ENUM
+            || code == ErrorCodes::VALUE_IS_OUT_OF_RANGE_OF_DATA_TYPE;
+    }
+
     static bool castPreservesNeedleValue(
         const ColumnPtr & needle_column, const DataTypePtr & needle_type, const DataTypePtr & element_type)
     {
@@ -905,11 +953,32 @@ private:
 
             return accurateEquals((*restored)[0], (*needle_column)[0]);
         }
-        catch (const Exception &) /// Ok: a needle the cast rejects cannot denote an element value.
+        catch (const Exception & e)
         {
+            /// Ok: a needle the cast REFUSES cannot denote an element value. Any other failure is
+            /// the probe's own, not an answer about the value, so let it propagate.
+            if (!isNeedleConversionRefusal(e.code()))
+                throw;
+
             return false;
         }
     }
+
+    /** Why the dictionary shortcut may not be taken for a given needle.
+      *
+      * The two reasons are NOT interchangeable. [Shape] says only "this lookup cannot answer it", so
+      * the value must be computed by the general path. [NoElementCanEqual] is a positive result about
+      * the VALUE: the needle lies outside the image of the element type, so no element can equal it
+      * and the answer is a zero-filled column. Collapsing the second into the first hands the value
+      * to `executeIntegral`, whose comparison is by RAW PHYSICAL NUMBER, and a `Date` day number then
+      * matches a `DateTime` epoch second that it does not equal.
+      */
+    enum class DictionaryShortcut : uint8_t
+    {
+        Admit,
+        Shape,
+        NoElementCanEqual,
+    };
 
     /** The LowCardinality fast path resolves the needle to ONE dictionary index and then compares
       * indices, so it is sound only when the needle identifies exactly one element value AND the
@@ -923,7 +992,7 @@ private:
       * needle must match and invents a `NaN` match. A float NEEDLE against a non-float element is
       * fine as long as it converts exactly.
       */
-    static bool needleMapsToSingleDictionaryValue(
+    static DictionaryShortcut needleMapsToSingleDictionaryValue(
         const DataTypePtr & element_type,
         const DataTypePtr & needle_type,
         std::optional<size_t> needle_constant_size,
@@ -936,17 +1005,20 @@ private:
         const WhichDataType which_needle(needle);
 
         /// See the float paragraph above: the dictionary is looked up by bytes, so a float ELEMENT
-        /// cannot be matched by an equality-correct lookup at all.
+        /// cannot be matched by an equality-correct lookup at all. This says nothing about the value,
+        /// so the general path must still compute it.
         if (which_element.isFloat())
-            return false;
+            return DictionaryShortcut::Shape;
 
         /// A `FixedString` needle is zero-padded to the element width, so it stays one value only
         /// while the element type is at least as wide; a `String` element can hold several members
         /// of the needle's equivalence class, of which the dictionary would find at most one.
         if (which_needle.isFixedString())
             return which_element.isFixedString()
-                && assert_cast<const DataTypeFixedString &>(*element).getN()
-                    >= assert_cast<const DataTypeFixedString &>(*needle).getN();
+                    && assert_cast<const DataTypeFixedString &>(*element).getN()
+                        >= assert_cast<const DataTypeFixedString &>(*needle).getN()
+                ? DictionaryShortcut::Admit
+                : DictionaryShortcut::Shape;
 
         if (which_element.isFixedString())
         {
@@ -955,11 +1027,13 @@ private:
             /// than the element width does not: the cast would throw, and its equivalence class can
             /// hold values the element type cannot store.
             const size_t element_n = assert_cast<const DataTypeFixedString &>(*element).getN();
-            return needle_constant_size.has_value() && *needle_constant_size <= element_n;
+            return needle_constant_size.has_value() && *needle_constant_size <= element_n
+                ? DictionaryShortcut::Admit
+                : DictionaryShortcut::Shape;
         }
 
         if (element->equals(*needle))
-            return true;
+            return DictionaryShortcut::Admit;
 
         /// Mirror what the lookup does with the operands before casting: `recursiveRemoveLowCardinality`
         /// on the column, then peel `Nullable`, so the column handed to the cast matches [needle].
@@ -967,7 +1041,14 @@ private:
         if (const auto * value_nullable = checkAndGetColumn<ColumnNullable>(value.get()))
             value = value_nullable->getNestedColumnPtr();
 
-        return castPreservesNeedleValue(value, needle, element);
+        /// The round trip failing is a fact about the VALUE, not about the lookup: the needle is not
+        /// in the image of the element type, so no element of that type equals it and the answer is
+        /// "no match" for every row. Reporting it as a shape decline instead would send the pair to
+        /// `executeIntegral`, which compares raw physical numbers and would match a `Date` day number
+        /// against an equal `DateTime` epoch second.
+        return castPreservesNeedleValue(value, needle, element)
+            ? DictionaryShortcut::Admit
+            : DictionaryShortcut::NoElementCanEqual;
     }
 
     static ColumnPtr executeArrayLowCardinality(const ColumnsWithTypeAndName & arguments)
@@ -1010,10 +1091,19 @@ private:
         /// element. `getDataAt` returns `sizeAt` for a `ColumnString` (no terminator) and `N` for a
         /// `ColumnFixedString`, so it is the real length either way; it is unavailable for a NULL,
         /// where it throws, and for a column that does not store contiguous bytes.
+        /// `useDefaultImplementationForLowCardinalityColumns` is false for this function, so the
+        /// needle keeps its own wrappers. Peel them the same way the TYPE side is normalized in
+        /// [needleMapsToSingleDictionaryValue], or the very same bytes would be admitted as a
+        /// `String` and declined as a `LowCardinality(String)`. The `isNullAt` guard stays FIRST
+        /// because `ColumnNullable::getDataAt` throws.
         std::optional<size_t> needle_constant_size;
         if (!right_const->isNullAt(0))
         {
-            const IColumn * needle_data = &right_const->getDataColumn();
+            /// `recursiveRemoveLowCardinality` resolves the single value through the dictionary and
+            /// preserves row order, so row 0 stays row 0. Peeling by hand via `getDictionary` would
+            /// NOT: dictionary position 0 is the type's default, not this constant's value.
+            ColumnPtr needle_holder = recursiveRemoveLowCardinality(right_const->getDataColumnPtr());
+            const IColumn * needle_data = needle_holder.get();
             if (const auto * needle_nullable = checkAndGetColumn<ColumnNullable>(needle_data))
                 needle_data = &needle_nullable->getNestedColumn();
 
@@ -1021,18 +1111,27 @@ private:
                 needle_constant_size = needle_data->getDataAt(0).size();
         }
 
-        if (!needleMapsToSingleDictionaryValue(
-                array_type.getNestedType(),
-                arguments[1].type,
-                needle_constant_size,
-                right_const->getDataColumnPtr()))
+        auto shortcut = needleMapsToSingleDictionaryValue(
+            array_type.getNestedType(), arguments[1].type, needle_constant_size, right_const->getDataColumnPtr());
+
+        /// A NULL needle carries no value, so the round trip inside the guard inspects the nested
+        /// column's arbitrary placeholder rather than the needle. Only the reached-here case is left
+        /// (a NULL needle on a NULLABLE dictionary), where index 0 IS the NULL slot and the lookup is
+        /// the right answer, so the verdict must never be read as "no element can equal it".
+        if (right_const->isNullAt(0) && shortcut == DictionaryShortcut::NoElementCanEqual)
+            shortcut = DictionaryShortcut::Admit;
+
+        if (shortcut == DictionaryShortcut::Shape)
             return nullptr;
 
         UInt64 index = 0;
         UInt64 left_size = arguments[0].column->size();
         ResultColumnPtr col_result = ResultColumnType::create();
 
-        if (!LowCardinalityExecutionHelpers::dictionaryIndexForConstant(
+        /// A needle outside the image of the element type equals no element, and the dictionary miss
+        /// says the same thing, so both answer every row with the action's "not found" value.
+        if (shortcut == DictionaryShortcut::NoElementCanEqual
+            || !LowCardinalityExecutionHelpers::dictionaryIndexForConstant(
                 *left_lc, right_const->getDataColumnPtr(), arguments[1].type, target_type, index))
         {
             col_result->getData().resize_fill(col_array->size());
