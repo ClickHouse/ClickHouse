@@ -793,11 +793,9 @@ SETTINGS optimize_use_projections = 1, force_optimize_projection = 1;
 
 DROP TABLE t_proj_ignore_parent_stored_dep_drift;
 
--- an ALIAS dependency is never fillable from a projection part, so the projection must not be used.
--- `d DEFAULT c + 1` depends on the alias `c`, and a projection stores only the physical columns its
--- query resolves to, so no projection part ever holds `c`. The reader resolves the missing `d`
--- against the projection's own column set, where `c` is absent, and throws UNKNOWN_IDENTIFIER
--- instead of falling back. Routing to the parent is the only correct answer here.
+-- a projection stores only the physical columns its query resolves to, so no projection part holds a
+-- selected ALIAS. A default depending on one (`d DEFAULT c + 1`) is never fillable there: the reader
+-- resolves it against the projection's own columns and throws UNKNOWN_IDENTIFIER.
 DROP TABLE IF EXISTS t_proj_alias_backed_dep;
 
 CREATE TABLE t_proj_alias_backed_dep
