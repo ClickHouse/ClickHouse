@@ -374,19 +374,18 @@ void MergeTreeDataPartWide::removeMarksFromCache(MarkCache * mark_cache) const
     if (!mark_cache)
         return;
 
-    const auto & serializations = getSerializations();
-    for (const auto & [column_name, serialization] : serializations)
+    /// Iterate the checksums instead of enumerating serialization streams: for columns with
+    /// a data-dependent set of substreams (`Dynamic`, `JSON`) enumerateStreams cannot see the
+    /// variant streams without a deserialization state, while the checksums list the mark
+    /// file of every stream actually present in the part.
+    auto mark_file_extension = index_granularity_info.mark_type.getFileExtension();
+    for (const auto & [file_name, _] : checksums.files)
     {
-        serialization->enumerateStreams([&](const auto & subpath)
-        {
-            auto stream_name = getStreamNameForColumn(column_name, subpath, DATA_FILE_EXTENSION, checksums, storage.getSettings());
-            if (!stream_name)
-                return;
+        if (!file_name.ends_with(mark_file_extension))
+            continue;
 
-            auto mark_path = index_granularity_info.getMarksFilePath(*stream_name);
-            auto key = MarkCache::hash(getDataPartStorage().getDiskName() + ":" + (fs::path(getRelativePathOfActivePart()) / mark_path).string());
-            mark_cache->remove(key);
-        });
+        auto key = MarkCache::hash(getDataPartStorage().getDiskName() + ":" + (fs::path(getRelativePathOfActivePart()) / file_name).string());
+        mark_cache->remove(key);
     }
 }
 
