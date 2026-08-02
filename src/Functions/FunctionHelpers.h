@@ -31,6 +31,27 @@ using QueryStatusPtr = std::shared_ptr<QueryStatus>;
 /// `query_status` is empty for callers that have no process-list entry, where the check stays a no-op.
 void checkQueryCancellation(const QueryStatusPtr & query_status, std::string_view function_name);
 
+/// Throttled form of the above, for loops whose per-row work can be as small as tens of nanoseconds.
+/// A poll costs a `clock_gettime` plus a `QueryStatus::cancel_mutex` acquisition (about 31 ns measured),
+/// so polling unconditionally per row makes `tokenizeQuery` over short inputs six times slower. Accumulate
+/// the bytes each row parses and poll only on crossing a stride, the way `geohashesInBox`, `arrayFold` and
+/// `Base58` throttle theirs. Count each row as at least one byte so a block of empty strings still polls.
+/// Worst-case latency between polls is the work of one stride: 64 KiB of SQL text, which parses in about
+/// 50 ms, or a single row when a row is larger than that. Both are far below the one-second granularity
+/// `max_execution_time` is expressed in.
+inline void checkQueryCancellationThrottled(
+    const QueryStatusPtr & query_status, std::string_view function_name, size_t bytes, size_t & bytes_since_check)
+{
+    static constexpr size_t bytes_between_cancellation_checks = 65536;
+
+    bytes_since_check += bytes ? bytes : 1;
+    if (bytes_since_check >= bytes_between_cancellation_checks)
+    {
+        bytes_since_check = 0;
+        checkQueryCancellation(query_status, function_name);
+    }
+}
+
 /// Methods, that helps dispatching over real column types.
 
 template <typename Type>

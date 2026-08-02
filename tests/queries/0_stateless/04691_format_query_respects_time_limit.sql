@@ -7,12 +7,12 @@
 --
 -- Note the assertion is on the ELAPSED TIME, not on the error: an unpatched server also raises
 -- TIMEOUT_EXCEEDED, just tens of seconds late, so `-- { serverError TIMEOUT_EXCEEDED }` alone would
--- pass without the fix. Case 6 is the load-bearing one and checks how late each case stopped.
+-- pass without the fix. Case 7 is the load-bearing one and checks how late each case stopped.
 --
 -- Every timed query pins `max_block_size` and `max_threads`, which the test runner otherwise
 -- randomizes: a small block lets an unpatched server finish its uninterruptible unit soon enough to
--- stay under case 6's threshold, silently disarming it. The pins are per query so that they cannot
--- leak into case 6's own read. Each timed query carries the `04691_timed` marker that case 6 counts.
+-- stay under case 7's threshold, silently disarming it. The pins are per query so that they cannot
+-- leak into case 7's own read. Each timed query carries a `04691_` marker that case 7 counts.
 
 SET max_execution_time = 1;
 SET allow_fuzz_query_functions = 1;
@@ -61,11 +61,26 @@ WITH parseQueryToJSON('SELECT 1 WHERE x=0' || repeat(' OR (y = 1)', 40)) AS json
 SELECT sum(length(formatQueryFromJSON(materialize(json)))) /* 04691_timed */
 FROM numbers(100000) FORMAT Null SETTINGS max_block_size = 200000, max_threads = 1; -- { serverError TIMEOUT_EXCEEDED }
 
--- 6. The real assertion: every case above stopped near its limit rather than running its block out.
+-- 6. `timeout_overflow_mode = 'break'` needs its own case. There `checkTimeLimit` returns false
+--    instead of throwing, and this fix turns that false into a hard stop, so the observable behaviour
+--    changes from "ran the block out, returned a result" to "stopped mid-block". The `throw`-mode
+--    cases above cannot exercise that return at all, and `timeout_overflow_mode` is not one of the
+--    settings the test runner randomizes, so nothing else would ever reach it. `04648` covers the
+--    identical decision for `geohashesInBox` the same way.
+--    A stopped aggregate emits no row rather than a partial sum, and this query succeeds in both
+--    directions, so the latency bound in case 7 is what discriminates: 69783 ms pre-fix, 1045 ms with
+--    it. The marker is separate because a successful query lands in `query_log` as `QueryFinish`.
+SELECT sum(length(formatQuery('SELECT ' || toString(number) || ' WHERE x=0' || repeat(' OR (y = 1)', 40)))) /* 04691_break */
+FROM numbers(200000) FORMAT Null
+SETTINGS max_block_size = 200000, max_threads = 1, timeout_overflow_mode = 'break';
+
+-- 7. The real assertion: every case above stopped near its limit rather than running its block out.
 --    Pre-fix they report 21000-90000 ms against a 1000 ms limit; with the fix they report ~1000 ms.
---    `count() = 9` keeps the assertion from going vacuous: countIf(...) = 0 over an empty result set is
---    trivially true, so a marker that stopped matching would silently disarm the whole test. The type
---    filter selects exactly the nine timed queries, all of which are expected to have raised.
+--    `count() = 10` keeps the assertion from going vacuous: countIf(...) = 0 over an empty result set is
+--    trivially true, so a marker that stopped matching would silently disarm the whole test.
+--    `type != 'QueryStart'` rather than `= 'ExceptionWhileProcessing'` because the break case above
+--    succeeds; `04648`'s duration check filters the same way. Both markers share the `04691_` prefix so
+--    one pattern counts all ten, and each query carries exactly one marker.
 --    max_execution_time = 0: the session limit above applies to the flush and to this unindexed
 --    query_log scan as well, and on a loaded sanitizer host either can exceed one second and time the
 --    oracle itself out. SYSTEM FLUSH LOGS takes no SETTINGS clause, hence the session-level SET.
@@ -74,20 +89,38 @@ FROM numbers(100000) FORMAT Null SETTINGS max_block_size = 200000, max_threads =
 SET max_execution_time = 0;
 SYSTEM FLUSH LOGS query_log;
 
-SELECT 'all bounded', count() = 9 AND countIf(query_duration_ms > 15000) = 0
+SELECT 'all bounded', count() = 10 AND countIf(query_duration_ms > 15000) = 0
 FROM system.query_log
 WHERE current_database = currentDatabase()
-  AND type = 'ExceptionWhileProcessing'
+  AND type != 'QueryStart'
   AND event_time > now() - INTERVAL 10 MINUTE
-  AND query LIKE '%04691\_timed%'
+  AND (query LIKE '%04691\_timed%' OR query LIKE '%04691\_break%')
 SETTINGS max_execution_time = 0, enable_parallel_replicas = 0;
 
--- 7. Results are unchanged when no limit is hit, including the OrNull NULL-on-parse-error contract.
+-- 8. Results are unchanged when no limit is hit, including the OrNull NULL-on-parse-error contract.
 SELECT formatQuery('select    a,b from  t') SETTINGS max_execution_time = 0;
 SELECT formatQuerySingleLine('select    a,b from  t') SETTINGS max_execution_time = 0;
 SELECT formatQueryOrNull('this is not a query') IS NULL SETTINGS max_execution_time = 0;
-SELECT length(parseQueryToJSON('SELECT 1')) > 0 SETTINGS max_execution_time = 0;
-SELECT length(highlightQuery('SELECT 1')) > 0 SETTINGS max_execution_time = 0;
-SELECT length(tokenizeQuery('SELECT 1')) > 0 SETTINGS max_execution_time = 0;
+
+-- 9. The liveness arm: a regression that made the check fire when it should not, or throw
+--    unconditionally, has to be caught somewhere, and everywhere else these functions appear
+--    TIMEOUT_EXCEEDED is the expected result. One call per polled row loop, no limit set.
+--    Each call has to actually REACH the check, and the check is throttled on accumulated input
+--    bytes, so a single short query never polls at all and would make this arm vacuous. These run
+--    enough rows in one block to cross the stride many times over, so a spurious throw shows up here.
+--    `fuzzQuery` is non-deterministic, so only the length is asserted.
+SELECT sum(length(formatQuery(materialize('SELECT 1')))) > 0 FROM numbers(100000)
+SETTINGS max_execution_time = 0, max_block_size = 200000;
+SELECT sum(length(parseQueryToJSON(materialize('SELECT 1')))) > 0 FROM numbers(100000)
+SETTINGS max_execution_time = 0, max_block_size = 200000;
+SELECT sum(length(highlightQuery(materialize('SELECT 1')))) > 0 FROM numbers(100000)
+SETTINGS max_execution_time = 0, max_block_size = 200000;
+SELECT sum(length(tokenizeQuery(materialize('SELECT 1')))) > 0 FROM numbers(100000)
+SETTINGS max_execution_time = 0, max_block_size = 200000;
+SELECT sum(length(fuzzQuery(materialize('SELECT 1')))) > 0 FROM numbers(100000)
+SETTINGS max_execution_time = 0, max_block_size = 200000;
+WITH parseQueryToJSON('SELECT 1') AS json
+SELECT sum(length(formatQueryFromJSON(materialize(json)))) > 0 FROM numbers(100000)
+SETTINGS max_execution_time = 0, max_block_size = 200000;
 
 SELECT 'ok';

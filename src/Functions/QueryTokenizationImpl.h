@@ -108,12 +108,13 @@ public:
         offsets.resize(input_rows_count);
 
         size_t total = 0;
+        size_t bytes_since_check = 0;
 
         for (size_t i = 0; i < input_rows_count; ++i)
         {
-            checkQueryCancellation(query_status, name);
-
             std::string_view query = col_query.getDataAt(i);
+
+            checkQueryCancellationThrottled(query_status, name, query.size(), bytes_since_check);
 
             Impl::processRow(query, data_begin, data_end, data_type, total, parser_settings);
 

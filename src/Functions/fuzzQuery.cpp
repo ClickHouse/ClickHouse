@@ -93,9 +93,12 @@ public:
             ParserQuery parser(end, false, implicit_select);
             ASTPtr ast = parseQuery(parser, begin, end, "fuzzQuery", max_query_size, max_parser_depth, max_parser_backtracks);
 
+            size_t bytes_since_check = 0;
             for (size_t i = 0; i < input_rows_count; ++i)
             {
-                checkQueryCancellation(query_status, name);
+                /// Every row fuzzes and re-formats the same parsed query, so each one costs the same
+                /// as parsing that text once.
+                checkQueryCancellationThrottled(query_status, name, data.size(), bytes_since_check);
 
                 ASTPtr fuzzed_ast = ast->clone();
                 {
@@ -122,9 +125,10 @@ private:
         size_t input_rows_count) const
     {
         size_t prev_offset = 0;
+        size_t bytes_since_check = 0;
         for (size_t i = 0; i < input_rows_count; ++i)
         {
-            checkQueryCancellation(query_status, name);
+            checkQueryCancellationThrottled(query_status, name, offsets[i] - prev_offset, bytes_since_check);
 
             const char * begin = reinterpret_cast<const char *>(&data[prev_offset]);
             const char * end = reinterpret_cast<const char *>(&data[offsets[i]]);

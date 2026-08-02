@@ -111,12 +111,13 @@ private:
 
         size_t prev_offset = 0;
         size_t res_data_size = 0;
+        size_t bytes_since_check = 0;
 
         for (size_t i = 0; i < input_rows_count; ++i)
         {
             /// Outside the `try` below on purpose: for ErrorHandling::Null that handler swallows every
             /// exception into a NULL and continues, which would turn cancellation into wrong results.
-            checkQueryCancellation(query_status, name);
+            checkQueryCancellationThrottled(query_status, name, offsets[i] - prev_offset, bytes_since_check);
 
             const char * begin = reinterpret_cast<const char *>(&data[prev_offset]);
             const char * end = begin + offsets[i] - prev_offset;

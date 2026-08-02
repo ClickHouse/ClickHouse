@@ -297,12 +297,13 @@ public:
 
         const auto * json_col = arguments[0].column.get();
         const auto * orig_col = arguments.size() > 1 ? arguments[1].column.get() : nullptr;
+        size_t bytes_since_check = 0;
 
         for (size_t i = 0; i < input_rows_count; ++i)
         {
-            checkQueryCancellation(query_status, name);
-
             auto json = String(json_col->getDataAt(i));
+
+            checkQueryCancellationThrottled(query_status, name, json.size(), bytes_since_check);
 
             /// Enforce `max_query_size` on the raw JSON before handing it to `Poco::JSON::Parser`,
             /// mirroring the `clickhouse_json` client/server entry points: a shallow document with a
