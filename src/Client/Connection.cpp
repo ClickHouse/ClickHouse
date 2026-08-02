@@ -1,4 +1,6 @@
+#include <algorithm>
 #include <cstddef>
+#include <iterator>
 #include <memory>
 #include <Poco/Net/NetException.h>
 #include <Core/Defines.h>
@@ -162,6 +164,15 @@ void Connection::connect(const ConnectionTimeouts & timeouts)
 
         auto addresses = DNSResolver::instance().resolveAddressList(host, port);
         const auto & connection_timeout = static_cast<bool>(secure) ? timeouts.secure_connection_timeout : timeouts.connection_timeout;
+
+        /// An address that is already known to accept connections goes first: the addresses are tried
+        /// one by one, and every unresponsive one in front of it costs a whole connection timeout.
+        if (preferred_address)
+        {
+            auto it = std::find(addresses.begin(), addresses.end(), *preferred_address);
+            if (it != addresses.end())
+                std::rotate(addresses.begin(), it, std::next(it));
+        }
 
         for (auto it = addresses.begin(); it != addresses.end();)
         {
@@ -1753,7 +1764,7 @@ void Connection::throwUnexpectedPacket(UInt64 packet_type, const char * expected
 
 ServerConnectionPtr Connection::createConnection(const ConnectionParameters & parameters, ContextPtr)
 {
-    return std::make_unique<Connection>(
+    auto connection = std::make_unique<Connection>(
         parameters.host,
         parameters.port,
         parameters.default_database,
@@ -1775,6 +1786,11 @@ ServerConnectionPtr Connection::createConnection(const ConnectionParameters & pa
         , parameters.jwt_provider
 #endif
         );
+
+    if (parameters.preferred_address)
+        connection->setPreferredAddress(*parameters.preferred_address);
+
+    return connection;
 }
 
 }

@@ -74,17 +74,30 @@ PortsProbeResult probePlainAndSecurePorts(
     /// The moment the first probe of the secure port connected: starts the plain preference window.
     std::optional<UInt64> secure_connected_at_us;
 
+    /// The probes are all created before this loop, so pointers into `probes` stay valid.
+    auto chosen = [](PortsProbeResult::Choice choice, const Probe & probe)
+    {
+        PortsProbeResult result;
+        result.choice = choice;
+        result.address = probe.address;
+        return result;
+    };
+
     while (true)
     {
-        bool plain_connected = false;
-        bool secure_connected = false;
+        const Probe * plain_connected = nullptr;
+        const Probe * secure_connected = nullptr;
         bool plain_pending = false;
         bool any_pending = false;
 
         for (const auto & probe : probes)
         {
             if (probe.connected)
-                (probe.to_secure_port ? secure_connected : plain_connected) = true;
+            {
+                const Probe *& connected = probe.to_secure_port ? secure_connected : plain_connected;
+                if (!connected)
+                    connected = &probe;
+            }
             if (probe.pending)
             {
                 any_pending = true;
@@ -94,12 +107,12 @@ PortsProbeResult probePlainAndSecurePorts(
         }
 
         if (plain_connected)
-            return PortsProbeResult{PortsProbeResult::Choice::PreferPlain, {}, false};
+            return chosen(PortsProbeResult::Choice::PreferPlain, *plain_connected);
 
         const UInt64 elapsed_us = watch.elapsedMicroseconds();
 
         if (secure_connected && (!plain_pending || elapsed_us >= *secure_connected_at_us + window_us))
-            return PortsProbeResult{PortsProbeResult::Choice::SecureOnly, {}, false};
+            return chosen(PortsProbeResult::Choice::SecureOnly, *secure_connected);
 
         if (!any_pending)
             break;
@@ -111,7 +124,7 @@ PortsProbeResult probePlainAndSecurePorts(
         if (elapsed_us >= deadline_us)
         {
             if (secure_connected)
-                return PortsProbeResult{PortsProbeResult::Choice::SecureOnly, {}, false};
+                return chosen(PortsProbeResult::Choice::SecureOnly, *secure_connected);
 
             for (auto & probe : probes)
             {

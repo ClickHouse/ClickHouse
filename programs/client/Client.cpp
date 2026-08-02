@@ -589,6 +589,10 @@ void Client::connect()
             std::vector<std::pair<UInt16, Protocol::Secure>> candidates;
             candidates.emplace_back(connection_parameters.port, connection_parameters.security);
 
+            /// The address that answered during the probing, if it took place: the host can resolve to
+            /// several addresses, and the connection has to start with the one that is known to answer.
+            std::optional<Poco::Net::SocketAddress> probed_address;
+
             const bool port_unspecified = !hosts_and_ports[attempted_address_index].port.has_value() && !config().has("port");
             const bool secure_unspecified = !hosts_and_ports[attempted_address_index].secure.has_value() && !config().has("secure")
                 && !config().has("no-secure") && !isCloudEndpoint(host.toUnderType());
@@ -622,6 +626,8 @@ void Client::connect()
                     throw;
                 }
 
+                probed_address = probe.address;
+
                 switch (probe.choice)
                 {
                     case PortsProbeResult::Choice::PreferPlain:
@@ -651,6 +657,12 @@ void Client::connect()
             {
                 connection_parameters.port = candidates[candidate_index].first;
                 connection_parameters.security = candidates[candidate_index].second;
+
+                /// Connect to the address that has answered during the probing, but only on the port it
+                /// has answered on: the fallback candidate (the secure port) was not probed successfully.
+                connection_parameters.preferred_address.reset();
+                if (probed_address && probed_address->port() == connection_parameters.port)
+                    connection_parameters.preferred_address = probed_address;
 
                 const bool secure_auto_detected = secure_unspecified && connection_parameters.security == Protocol::Secure::Enable;
 

@@ -29,9 +29,9 @@ UInt16 closedPort()
     return port;
 }
 
-PortsProbeResult probe(UInt16 plain_port, UInt16 secure_port)
+PortsProbeResult probe(UInt16 plain_port, UInt16 secure_port, const String & host = "127.0.0.1")
 {
-    return probePlainAndSecurePorts("127.0.0.1", "", plain_port, secure_port, probe_timeout, preference_window);
+    return probePlainAndSecurePorts(host, "", plain_port, secure_port, probe_timeout, preference_window);
 }
 
 }
@@ -41,7 +41,12 @@ TEST(PortsProbe, PreferPlainWhenBothListen)
 {
     auto plain = listenOnLoopback();
     auto secure = listenOnLoopback();
-    EXPECT_EQ(probe(plain.address().port(), secure.address().port()).choice, PortsProbeResult::Choice::PreferPlain);
+    auto result = probe(plain.address().port(), secure.address().port());
+    EXPECT_EQ(result.choice, PortsProbeResult::Choice::PreferPlain);
+    /// The address that answered is reported, so that the connection does not start over from the
+    /// first resolved address of the host.
+    ASSERT_TRUE(result.address.has_value());
+    EXPECT_EQ(result.address->toString(), plain.address().toString());
 }
 
 /// A plain-only server (the most common setup) is chosen even though the secure port refuses.
@@ -55,7 +60,21 @@ TEST(PortsProbe, PreferPlainWhenOnlyPlainListens)
 TEST(PortsProbe, SecureOnlyWhenPlainRefused)
 {
     auto secure = listenOnLoopback();
-    EXPECT_EQ(probe(closedPort(), secure.address().port()).choice, PortsProbeResult::Choice::SecureOnly);
+    auto result = probe(closedPort(), secure.address().port());
+    EXPECT_EQ(result.choice, PortsProbeResult::Choice::SecureOnly);
+    ASSERT_TRUE(result.address.has_value());
+    EXPECT_EQ(result.address->toString(), secure.address().toString());
+}
+
+/// A host can resolve to several addresses (`localhost` usually resolves to both `127.0.0.1` and `::1`),
+/// and only some of them answer. The address that did is the one to connect to.
+TEST(PortsProbe, ReportsTheAddressThatAnswered)
+{
+    auto plain = listenOnLoopback();
+    auto result = probe(plain.address().port(), closedPort(), "localhost");
+    ASSERT_EQ(result.choice, PortsProbeResult::Choice::PreferPlain);
+    ASSERT_TRUE(result.address.has_value());
+    EXPECT_EQ(result.address->toString(), plain.address().toString());
 }
 
 /// When nothing answers, the failure of every probed address is reported.

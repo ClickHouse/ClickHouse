@@ -1,7 +1,10 @@
 #pragma once
 
 #include <base/types.h>
+#include <Poco/Net/SocketAddress.h>
 #include <Poco/Timespan.h>
+
+#include <optional>
 
 namespace DB
 {
@@ -17,6 +20,12 @@ struct PortsProbeResult
     };
 
     Choice choice = Choice::Neither;
+
+    /// The address that answered on the chosen port. The host can resolve to several addresses, and only
+    /// some of them may be reachable, so the caller has to connect to this one instead of starting over
+    /// from the first resolved address: otherwise the connection waits out the timeout of every address
+    /// that the probe has already found unresponsive.
+    std::optional<Poco::Net::SocketAddress> address;
 
     /// A description of the per-address failures, for Choice::Neither.
     String failure_reason;

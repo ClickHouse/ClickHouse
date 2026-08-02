@@ -292,6 +292,81 @@ def test_automatic_choice_is_forgotten_after_a_failed_connection():
             unfirewall_plain_port("REJECT")
 
 
+def unresponsive_address():
+    """An address for the black hole below. It is in the same subnet as the client and differs from
+    the client's own address in as few of the lowest bits as possible: the resolver sorts the
+    addresses of a host by the longest prefix they share with the source address, so this one is
+    sorted in front of the address of the server, which is what the test needs. (If the server
+    happens to be even closer to the client, the black hole may end up last instead and the test
+    simply passes without exercising the ordering.)"""
+    octets = node_plain_only.ip_address.split(".")
+    last = int(octets[3])
+    taken = {node_plain_only.ip_address, node_both_ports.ip_address, ".".join(octets[:3] + ["1"])}
+    for flipped_bits in range(1, 256):
+        candidate_last = last ^ flipped_bits
+        candidate = ".".join(octets[:3] + [str(candidate_last)])
+        if candidate not in taken and candidate_last not in (0, 255):
+            return candidate
+    raise RuntimeError("Cannot find an address for the black hole")
+
+
+def blackhole_address(address, add):
+    """Silently drop everything the client sends to this address, so that connecting to it stalls
+    until the connection timeout instead of failing right away."""
+    node_plain_only.exec_in_container(
+        [
+            "iptables",
+            "--wait",
+            "-A" if add else "-D",
+            "OUTPUT",
+            "-d",
+            address,
+            "-j",
+            "DROP",
+        ],
+        user="root",
+    )
+
+
+def test_the_probed_address_is_used_for_the_connection():
+    # A host can resolve to several addresses, and the connection tries them one by one, so every
+    # unresponsive address in front of the list costs a whole connection timeout. The probing knows
+    # which address has answered, and the connection has to start with it: otherwise the automatic
+    # choice reintroduces exactly the timeout it is supposed to avoid.
+    #
+    # Here `multiaddress` resolves to a black hole first and to a healthy server second, and the
+    # connect timeout is raised to 60 seconds, so the query cannot possibly finish in time unless
+    # the address that answered during the probing is the one the client connects to.
+    blackhole = unresponsive_address()
+    blackhole_address(blackhole, add=True)
+    node_plain_only.exec_in_container(
+        [
+            "bash",
+            "-c",
+            f"printf '%s multiaddress\\n%s multiaddress\\n' {blackhole} {node_both_ports.ip_address} >> /etc/hosts",
+        ],
+        user="root",
+    )
+    try:
+        start = time.time()
+        output = node_plain_only.exec_in_container(
+            [
+                "bash",
+                "-c",
+                "clickhouse client --host multiaddress --accept-invalid-certificate"
+                " --connect_timeout 60 --query \"SELECT 'connected'\" 2>&1 || true",
+            ]
+        )
+        elapsed = time.time() - start
+        assert "connected" in output, output
+        assert elapsed < 30, f"Connecting took {elapsed} seconds: {output}"
+    finally:
+        node_plain_only.exec_in_container(
+            ["bash", "-c", "sed -i '/multiaddress/d' /etc/hosts"], user="root"
+        )
+        blackhole_address(blackhole, add=False)
+
+
 def test_explicit_port_is_not_upgraded():
     # With an explicit port or an explicit `no-secure` there is no automatic choice.
     firewall_plain_port("REJECT")

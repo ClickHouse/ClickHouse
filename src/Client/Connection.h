@@ -78,6 +78,13 @@ public:
 
     static ServerConnectionPtr createConnection(const ConnectionParameters & parameters, ContextPtr context);
 
+    /// Tell the connection which address of the host is already known to accept connections, so that it is
+    /// tried first. The host can resolve to several addresses and connecting to them is sequential, so an
+    /// unresponsive address in front of the list delays the connection by a whole connection timeout.
+    /// The address is only a preference: if it is gone by the time of the connection (or of a reconnect),
+    /// the remaining addresses are tried as usual.
+    void setPreferredAddress(const Poco::Net::SocketAddress & address) { preferred_address = address; }
+
     /// Set throttler of network traffic. One throttler could be used for multiple connections to limit total traffic.
     void setThrottler(const ThrottlerPtr & throttler_) override
     {
@@ -220,6 +227,9 @@ private:
     /// Address is resolved during the first connection (or the following reconnects)
     /// Use it only for logging purposes
     std::optional<Poco::Net::SocketAddress> current_resolved_address;
+
+    /// See setPreferredAddress.
+    std::optional<Poco::Net::SocketAddress> preferred_address;
 
     /// For messages in log and in exceptions.
     String description;
