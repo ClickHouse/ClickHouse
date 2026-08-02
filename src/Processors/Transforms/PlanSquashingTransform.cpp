@@ -12,42 +12,34 @@ namespace ErrorCodes
 }
 
 PlanSquashingTransform::PlanSquashingTransform(
-        SharedHeader header_, size_t min_block_size_rows, size_t min_block_size_bytes,
-        size_t max_block_size_rows, size_t max_block_size_bytes, bool squash_with_strict_limits)
-    : ExceptionKeepingTransform(header_, header_, false)
-    , squashing(header_, min_block_size_rows, min_block_size_bytes,
-                max_block_size_rows, max_block_size_bytes, squash_with_strict_limits)
+    SharedHeader header_, size_t min_block_size_rows, size_t min_block_size_bytes)
+    : IInflatingTransform(header_, header_)
+    , squashing(header_, min_block_size_rows, min_block_size_bytes)
 {
 }
 
-void PlanSquashingTransform::onConsume(Chunk chunk)
+void PlanSquashingTransform::consume(Chunk chunk)
 {
-    squashing.add(std::move(chunk));
+    squashed_chunk = squashing.add(std::move(chunk));
 }
 
-PlanSquashingTransform::GenerateResult PlanSquashingTransform::onGenerate()
+Chunk PlanSquashingTransform::generate()
 {
-    squashed_chunk = squashing.generate();
-
     if (!squashed_chunk)
-        throw Exception(ErrorCodes::LOGICAL_ERROR, "Can't generate chunk in PlanSquashingChunksTransform");
+        throw Exception(ErrorCodes::LOGICAL_ERROR, "Can't generate chunk in SimpleSquashingChunksTransform");
 
-    GenerateResult res;
-    res.chunk.swap(squashed_chunk);
-    res.is_done = !squashing.canGenerate();
-    return res;
+    Chunk result_chunk;
+    result_chunk.swap(squashed_chunk);
+    return result_chunk;
 }
 
 bool PlanSquashingTransform::canGenerate()
 {
-    return squashing.canGenerate();
+    return bool(squashed_chunk);
 }
 
-PlanSquashingTransform::GenerateResult PlanSquashingTransform::getRemaining()
+Chunk PlanSquashingTransform::getRemaining()
 {
-    GenerateResult res;
-    res.chunk = squashing.flush();
-    res.is_done = true;
-    return res;
+    return squashing.flush();
 }
 }

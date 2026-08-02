@@ -40,7 +40,7 @@ if __name__ == "__main__":
     results.append(
         Result.from_commands_run(
             name=testname,
-            command=["yarn check-markdown"],
+            command=[f"yarn check-markdown"],
             workdir="/opt/clickhouse-docs",
         )
     )
@@ -49,7 +49,7 @@ if __name__ == "__main__":
     results.append(
         Result.from_commands_run(
             name=testname,
-            command=["yarn generate-changelog"],
+            command=[f"yarn generate-changelog"],
             workdir="/opt/clickhouse-docs",
         )
     )
@@ -63,24 +63,22 @@ if __name__ == "__main__":
         )
     )
 
-    testname = "Generate system tables documentation"
-    results.append(
-        Result.from_commands_run(
-            name=testname,
-            command=[
-                f"python3 {os.getcwd()}/utils/generate-system-tables-docs"
-                f" --binary {temp_dir}clickhouse"
-                f" --docs-dir /opt/clickhouse-docs/docs/operations/system-tables/"
-            ],
-            workdir=os.getcwd(),
-        )
-    )
-
     testname = "Generate table of contents pages"
     results.append(
         Result.from_commands_run(
             name=testname,
-            command=["yarn autogenerate-table-of-contents"],
+            command=[f"yarn autogenerate-table-of-contents"],
+            workdir="/opt/clickhouse-docs",
+        )
+    )
+
+    testname = "Build docusaurus"
+    results.append(
+        Result.from_commands_run(
+            name=testname,
+            command=[
+                "export DOCUSAURUS_IGNORE_SSG_WARNINGS=true && yarn build-docs",
+            ],
             workdir="/opt/clickhouse-docs",
         )
     )

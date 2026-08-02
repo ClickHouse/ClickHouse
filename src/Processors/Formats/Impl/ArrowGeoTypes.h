@@ -1,5 +1,9 @@
 #pragma once
 
+#include <Columns/ColumnArray.h>
+#include <Columns/ColumnTuple.h>
+#include <Columns/ColumnsNumber.h>
+#include <Core/ColumnsWithTypeAndName.h>
 #include <Common/WKB.h>
 
 #include <Poco/Dynamic/Var.h>
@@ -25,14 +29,10 @@ enum class GeoEncoding : uint8_t
 enum class GeoType : uint8_t
 {
     Point,
-    MultiPoint,
     LineString,
     Polygon,
     MultiLineString,
-    MultiPolygon,
-    /// Mixed means the column has multiple or unknown geometry types.
-    /// It maps to the Geometry type (Variant of all geo types).
-    Mixed,
+    MultiPolygon
 };
 
 struct GeoColumnMetadata
@@ -52,6 +52,6 @@ DataTypePtr getGeoDataType(GeoType type);
 /// `col` must match getGeoDataType(type). Create it using getGeoDataType(type)->createColumn().
 void appendObjectToGeoColumn(const GeometricObject & object, GeoType type, IColumn & col);
 
-GeometricObject parseWKTFormat(ReadBuffer & in_buffer, bool precise_float_parsing);
+GeometricObject parseWKTFormat(ReadBuffer & in_buffer);
 
 }

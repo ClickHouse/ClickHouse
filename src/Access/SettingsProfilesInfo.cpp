@@ -3,7 +3,6 @@
 #include <Access/SettingsConstraintsAndProfileIDs.h>
 #include <base/removeDuplicates.h>
 #include <Common/Exception.h>
-#include <IO/WriteHelpers.h>
 
 
 namespace DB

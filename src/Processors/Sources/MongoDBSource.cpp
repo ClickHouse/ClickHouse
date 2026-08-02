@@ -16,7 +16,6 @@
 #include <Common/assert_cast.h>
 #include <Common/Exception.h>
 #include <Common/BSONCXXHelper.h>
-#include <Common/logger_useful.h>
 #include <base/range.h>
 
 namespace DB
@@ -86,7 +85,7 @@ void MongoDBSource::insertValue(IColumn & column, const size_t & idx, const Data
                 throw Exception(ErrorCodes::TYPE_MISMATCH, "Type mismatch, expected date, got {} for column {}",
                                 bsoncxx::to_string(value.type()), name);
 
-            assert_cast<ColumnUInt16 &>(column).insertValue(static_cast<UInt16>(DateLUT::instance().toDayNum(value.get_date().to_int64() / 1000)));
+            assert_cast<ColumnUInt16 &>(column).insertValue(DateLUT::instance().toDayNum(value.get_date().to_int64() / 1000).toUnderType());
             break;
         }
         case TypeIndex::Date32:
@@ -203,8 +202,6 @@ MongoDBSource::~MongoDBSource() = default;
 
 Chunk MongoDBSource::generate()
 {
-    LOG_TEST(getLogger("MongoDBSource"), "Generate a chunk");
-
     if (all_read)
         return {};
 
@@ -214,9 +211,6 @@ Chunk MongoDBSource::generate()
     size_t num_rows = 0;
     for (const auto & doc : cursor)
     {
-        if (isCancelled())
-            break;
-
         for (auto idx : collections::range(0, size))
         {
             auto & sample_column = sample_block.getByPosition(idx);
@@ -230,7 +224,7 @@ Chunk MongoDBSource::generate()
                     const auto & type_nullable = assert_cast<const DataTypeNullable &>(*sample_column.type);
 
                     insertValue(column_nullable.getNestedColumn(), idx, type_nullable.getNestedType(), sample_column.name, value);
-                    column_nullable.getNullMapData().emplace_back(false);
+                    column_nullable.getNullMapData().emplace_back(0);
                 }
                 else
                     insertValue(*columns[idx], idx, sample_column.type, sample_column.name, value);

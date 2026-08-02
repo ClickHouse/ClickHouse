@@ -1,11 +1,11 @@
+
 #include <Common/SipHash.h>
 #include <Common/checkStackSize.h>
-#include <Common/FieldVisitorDump.h>
 #include <Common/FieldVisitorToString.h>
 #include <Common/FieldVisitorHash.h>
+#include <Common/quoteString.h>
+#include <DataTypes/IDataType.h>
 #include <Parsers/ASTLiteral.h>
-#include <Parsers/ASTJSONHelpers.h>
-#include <Parsers/ASTJSONReadHelpers.h>
 #include <IO/WriteHelpers.h>
 #include <IO/WriteBufferFromString.h>
 #include <IO/Operators.h>
@@ -13,11 +13,6 @@
 
 namespace DB
 {
-
-namespace ErrorCodes
-{
-    extern const int BAD_ARGUMENTS;
-}
 
 void ASTLiteral::updateTreeHashImpl(SipHash & hash_state, bool ignore_aliases) const
 {
@@ -28,33 +23,9 @@ void ASTLiteral::updateTreeHashImpl(SipHash & hash_state, bool ignore_aliases) c
         ASTWithAlias::updateTreeHashImpl(hash_state, ignore_aliases);
 }
 
-void ASTLiteral::writeJSON(WriteBuffer & out) const
-{
-    JSONObjectWriter w(out, "Literal");
-    w.writeFieldValue("value", value);
-    w.writeAlias(*this);
-}
-
-void ASTLiteral::readJSON(const Poco::JSON::Object & json)
-{
-    JSONObjectReader r(json);
-    /// A `Literal` always requires an explicit `value` key (a NULL literal is written
-    /// with an explicit `value`), so reject input that omits it instead of silently
-    /// deserializing as a NULL literal, which the SQL parser cannot produce.
-    if (!r.has("value"))
-        throw Exception(ErrorCodes::BAD_ARGUMENTS, "Missing required 'value' key for Literal during AST JSON deserialization");
-    value = r.readField("value");
-    r.readAlias(*this);
-}
-
-String ASTLiteral::getID(char delim) const
-{
-    return "Literal" + (delim + applyVisitor(FieldVisitorDump(), value));
-}
-
 ASTPtr ASTLiteral::clone() const
 {
-    auto res = make_intrusive<ASTLiteral>(*this);
+    auto res = std::make_shared<ASTLiteral>(*this);
     res->unique_column_name = {};
     return res;
 }
@@ -96,7 +67,7 @@ String FieldVisitorToColumnName::operator() (const Tuple & x) const
 
 void ASTLiteral::appendColumnNameImpl(WriteBuffer & ostr) const
 {
-    if (getUseLegacyColumnNameOfTuple())
+    if (use_legacy_column_name_of_tuple)
     {
         appendColumnNameImplLegacy(ostr);
         return;
@@ -113,8 +84,8 @@ void ASTLiteral::appendColumnNameImpl(WriteBuffer & ostr) const
     {
         SipHash hash;
         applyVisitor(FieldVisitorHash(hash), value);
-        UInt64 low = 0;
-        UInt64 high = 0;
+        UInt64 low;
+        UInt64 high;
         hash.get128(low, high);
 
         writeCString(type == Field::Types::Array ? "__array_" : "__tuple_", ostr);
@@ -150,8 +121,8 @@ void ASTLiteral::appendColumnNameImplLegacy(WriteBuffer & ostr) const
     {
         SipHash hash;
         applyVisitor(FieldVisitorHash(hash), value);
-        UInt64 low = 0;
-        UInt64 high = 0;
+        UInt64 low;
+        UInt64 high;
         hash.get128(low, high);
 
         writeCString("__array_", ostr);
@@ -187,7 +158,9 @@ String FieldVisitorToStringPostgreSQL::operator() (const String & x) const
 
 void ASTLiteral::formatImplWithoutAlias(WriteBuffer & ostr, const FormatSettings & settings, IAST::FormatState &, IAST::FormatStateStacked) const
 {
-    if (settings.literal_escaping_style == LiteralEscapingStyle::Regular)
+    if (custom_type && isBool(custom_type) && isInt64OrUInt64FieldType(value.getType()))
+        ostr << applyVisitor(FieldVisitorToString(), Field(value.safeGet<UInt64>() != 0));
+    else if (settings.literal_escaping_style == LiteralEscapingStyle::Regular)
         ostr << applyVisitor(FieldVisitorToString(), value);
     else
         ostr << applyVisitor(FieldVisitorToStringPostgreSQL(), value);

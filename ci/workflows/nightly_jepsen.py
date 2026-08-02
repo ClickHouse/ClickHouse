@@ -7,12 +7,20 @@ from ci.defs.defs import (
     ArtifactConfigs,
     ArtifactNames,
     BuildTypes,
+    RunnerLabels,
 )
 from ci.defs.job_configs import JobConfigs
 
 binary_build_job = Job.Config.get_job(
     JobConfigs.build_jobs, f"Build ({BuildTypes.AMD_BINARY})"
 ).set_provides(ArtifactNames.CH_AMD_BINARY, reset=True)
+
+jepsen_keeper_job = Job.Config(
+    name="ClickHouse Keeper Jepsen",
+    runs_on=RunnerLabels.STYLE_CHECK_ARM,
+    command="cd ./tests/ci && python3 ci.py --run-from-praktika",
+    requires=[binary_build_job.name],
+)
 
 # TODO: add alert on workflow failure
 
@@ -22,12 +30,7 @@ workflow = Workflow.Config(
     branches=[BASE_BRANCH],
     jobs=[
         binary_build_job,
-        JobConfigs.jepsen_keeper,
-        # Serialize server Jepsen after keeper: both use the single shared
-        # jepsen_group autoscaling group and must not run concurrently. This is
-        # an ordering dependency only (not an artifact requirement), so express
-        # it here with run_after rather than in the job's `requires`.
-        JobConfigs.jepsen_server.set_run_after(JobConfigs.jepsen_keeper.name),
+        jepsen_keeper_job,
     ],
     artifacts=[
         *ArtifactConfigs.clickhouse_binaries,

@@ -3,6 +3,8 @@
 #include <thread>
 #include <utility>
 #include <vector>
+#include <iostream>
+#include <chrono>
 
 #include <Poco/Net/PollSet.h>
 #include <Poco/Net/SocketAddress.h>
@@ -14,31 +16,15 @@
 
 int mainEntryClickHouseServer(int argc, char ** argv);
 
-namespace
-{
+static std::string clickhouse("clickhouse-server");
+static std::vector<char *> args{clickhouse.data()};
+static std::future<int> main_app;
 
-std::string clickhouse("clickhouse-server");
-std::vector<char *> args{clickhouse.data()};
-std::future<int> main_app;
-
-std::string s_host("0.0.0.0");
-char * host = s_host.data();
-int64_t port = 9000;
+static std::string s_host("0.0.0.0");
+static char * host = s_host.data();
+static int64_t port = 9000;
 
 using namespace std::chrono_literals;
-
-bool isMerge(int argc, const char * const * argv)
-{
-    for (int i = 1; i < argc; ++i)
-    {
-        std::string_view arg{argv[i]};
-        if (std::string_view{arg.begin(), std::ranges::find(arg, '=')} == "-ignore_remaining_args")
-            break;
-        if (std::string_view{arg.begin(), std::ranges::find(arg, '=')} == "-merge")
-            return true;
-    }
-    return false;
-}
 
 void on_exit()
 {
@@ -46,18 +32,9 @@ void on_exit()
     main_app.wait();
 }
 
-}
-
-extern "C" int LLVMFuzzerInitialize(int * argc, char ***argv);
-extern "C" int LLVMFuzzerTestOneInput(const uint8_t * data, size_t size);
-
 extern "C"
 int LLVMFuzzerInitialize(int * argc, char ***argv)
 {
-        // If it's a merge coordinator don't initialize anything
-    if (isMerge(*argc, *argv))
-        return 0;
-
     for (int i = 1; i < *argc; ++i)
     {
         if ((*argv)[i][0] == '-')
@@ -106,7 +83,7 @@ int LLVMFuzzerTestOneInput(const uint8_t * data, size_t size)
         if (size == 0)
             return -1;
 
-        Poco::Net::SocketAddress address(host, static_cast<uint16_t>(port));
+        Poco::Net::SocketAddress address(host, port);
         Poco::Net::StreamSocket socket;
 
         socket.connectNB(address);
@@ -145,7 +122,6 @@ int LLVMFuzzerTestOneInput(const uint8_t * data, size_t size)
     }
     catch (...)
     {
-        // Ok
     }
 
     return 0;
