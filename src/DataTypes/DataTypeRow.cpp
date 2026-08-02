@@ -192,7 +192,40 @@ static DataTypePtr create(const ASTPtr & arguments)
 
 void registerDataTypeRow(DataTypeFactory & factory)
 {
-    factory.registerDataType("Row", create);
+    factory.registerDataType("Row", create, DataTypeFactory::Case::Sensitive, Documentation{
+            .description = R"DOCS_MD(
+`Row(name1 T1, name2 T2, ...)` is a named, ordered bundle of typed fields stored as a SINGLE physical column on disk -
+one length-prefixed binary record per row - in contrast to `Tuple`, which produces one physical column file per element.
+
+The intent is to bundle columns that are frequently read together, so that the storage layer pays one `open`/`seek` per
+granule instead of one per column. This helps low-latency, narrow `SELECT` workloads such as recent-logs or
+single-trace lookups; wide full scans are better left columnar.
+
+All fields must be named, and the names must be unique within the `Row`.
+
+A `Row` column is typically declared with a `MATERIALIZED` expression mirroring its field list, so it is populated
+automatically on insert while the source columns keep their own columnar storage:
+
+```sql
+CREATE TABLE logs
+(
+    ts        DateTime,
+    level     LowCardinality(String),
+    msg       String,
+    host      String,
+    combined  Row(level LowCardinality(String), msg String, host String)
+        MATERIALIZED (level, msg, host)
+)
+ENGINE = MergeTree ORDER BY ts;
+```
+
+When a query requests at least two of the wrapped columns, the query plan reads them from the single `combined` stream
+instead of one file per column. The setting `query_plan_use_row_wrappers` turns that rewrite off.
+)DOCS_MD",
+            .syntax = "Row(name1 T1, name2 T2, ...)",
+            .examples = {},
+            .related = {"Tuple"},
+        });
 }
 
 }

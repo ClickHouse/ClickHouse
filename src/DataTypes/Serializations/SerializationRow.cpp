@@ -74,7 +74,7 @@ void SerializationRow::serializeBinary(const Field & field, WriteBuffer & ostr, 
 
 void SerializationRow::deserializeBinary(Field & field, ReadBuffer & istr, const FormatSettings & settings) const
 {
-    UInt64 size;
+    UInt64 size = 0;
     readVarUInt(size, istr);
     String blob(size, '\0');
     istr.readStrict(blob.data(), size);
@@ -102,7 +102,7 @@ void SerializationRow::serializeBinary(const IColumn & column, size_t row_num, W
 
 void SerializationRow::deserializeBinary(IColumn & column, ReadBuffer & istr, const FormatSettings & settings) const
 {
-    UInt64 size;
+    UInt64 size = 0;
     readVarUInt(size, istr);
     String blob(size, '\0');
     istr.readStrict(blob.data(), size);
@@ -213,7 +213,7 @@ void SerializationRow::deserializeBinaryBulkWithMultipleStreams(
 
     for (size_t skipped = 0; skipped < rows_offset && !stream->eof(); ++skipped)
     {
-        UInt64 size;
+        UInt64 size = 0;
         readVarUInt(size, *stream);
         stream->ignore(size);
     }
@@ -222,7 +222,7 @@ void SerializationRow::deserializeBinaryBulkWithMultipleStreams(
     /// so the row_size prefix is read but unused here).
     for (size_t read = 0; read < limit && !stream->eof(); ++read)
     {
-        [[maybe_unused]] UInt64 size;
+        [[maybe_unused]] UInt64 size = 0;
         readVarUInt(size, *stream);
         readRowFields(tuple, field_serializations, format_settings, *stream);
     }
