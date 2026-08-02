@@ -249,10 +249,13 @@ run_packed_survivor_not_packed_case() {
     local tbl="t_pkw_${label}"
     local ref="${tbl}_ref"
 
+    # `default_compression_codec` is pinned because the byte comparison below needs both tables to
+    # compress identically, and the runner's own pin reaches a CREATE but not an ATTACH.
     local create_settings="min_bytes_for_wide_part = 0, min_rows_for_wide_part = 0,
              index_granularity = 100, replace_long_file_name_to_hash = 0,
              escape_index_filenames = 0, packed_skip_index_max_bytes = 1048576,
-             columns_and_secondary_indices_sizes_lazy_calculation = 0"
+             columns_and_secondary_indices_sizes_lazy_calculation = 0,
+             default_compression_codec = 'LZ4'"
 
     # The reference carries the same two SURVIVING indices and never had the dropped one, so after a
     # correct drop both archives must hold exactly the same members. Only the main table declares a
