@@ -10,13 +10,9 @@
 namespace DB
 {
 
-/// Align all timeouts to a grid to allow batching of timeout processing.
-/// Tasks may be cancelled slightly later than their exact timeout, but never before.
-static constexpr UInt64 CANCELLATION_GRID_MS = 100;
-
-/// Maximum allowed timeout is 1 year in milliseconds.
+/// Maximum allowed timeout is 1 year in microseconds.
 /// This prevents overflow in chrono calculations and ensures reasonable behavior.
-static constexpr Int64 MAX_TIMEOUT_MS = 365LL * 24 * 60 * 60 * 1000;
+static constexpr Int64 MAX_TIMEOUT_US = 365LL * 24 * 60 * 60 * 1000 * 1000;
 
 struct CancellationChecker::QueryToTrack
 {
@@ -80,27 +76,36 @@ void CancellationChecker::terminateThread()
     cond_var.notify_all();
 }
 
-bool CancellationChecker::appendTask(const QueryStatusPtr & query, const Int64 timeout, OverflowMode overflow_mode)
+UInt64 CancellationChecker::alignedDeadlineMs(UInt64 now_ns, UInt64 timeout_us)
 {
-    if (timeout <= 0) // Avoid cases when the timeout is less or equal zero
+    /// Round the exact deadline UP to whole milliseconds: truncating either operand would discard
+    /// up to 1 ms and place the deadline before `now + timeout_us`.
+    const UInt64 deadline_ms = (now_ns + timeout_us * 1000 + 999'999) / 1'000'000;
+    /// Round up to the next grid boundary to enable batching of timeout checks.
+    return ((deadline_ms + CANCELLATION_GRID_MS - 1) / CANCELLATION_GRID_MS) * CANCELLATION_GRID_MS;
+}
+
+bool CancellationChecker::appendTask(const QueryStatusPtr & query, const Int64 timeout_us, OverflowMode overflow_mode)
+{
+    /// The worker resolves deadlines at millisecond granularity, so a timeout below 1 ms cannot be
+    /// tracked here; such a query is bounded by the executor's own time-limit checks instead.
+    if (timeout_us < 1000)
     {
-        LOG_TEST(log, "Did not add the task because the timeout is 0, query_id: {}", query->getClientInfo().current_query_id);
+        LOG_TEST(log, "Did not add the task because the timeout is below 1 ms ({} us), query_id: {}", timeout_us, query->getClientInfo().current_query_id);
         return false;
     }
 
     /// Cap timeout to 1 year to prevent overflow in chrono calculations.
     /// std::condition_variable::wait_for converts milliseconds to nanoseconds internally
     /// (multiplying by 1,000,000), which overflows for values close to INT64_MAX.
-    const Int64 capped_timeout = std::min(timeout, MAX_TIMEOUT_MS);
+    const Int64 capped_timeout_us = std::min(timeout_us, MAX_TIMEOUT_US);
 
     std::unique_lock<std::mutex> lock(m);
-    LOG_TEST(log, "Added to set. query: {}, timeout: {} milliseconds", query->getInfo().query, capped_timeout);
-    const auto now = std::chrono::steady_clock::now();
-    const UInt64 now_ms = std::chrono::duration_cast<std::chrono::milliseconds>(now.time_since_epoch()).count();
-    /// Round up to the next grid boundary to enable batching of timeout checks.
-    /// This ensures tasks are never cancelled before their timeout, only slightly after.
-    const UInt64 end_time = ((now_ms + capped_timeout + CANCELLATION_GRID_MS - 1) / CANCELLATION_GRID_MS) * CANCELLATION_GRID_MS;
-    auto iter = query_set.emplace(query, capped_timeout, end_time, overflow_mode);
+    LOG_TEST(log, "Added to set. query: {}, timeout: {} microseconds", query->getInfo().query, capped_timeout_us);
+    const auto now_ns = std::chrono::duration_cast<std::chrono::nanoseconds>(
+        std::chrono::steady_clock::now().time_since_epoch()).count();
+    const UInt64 end_time = alignedDeadlineMs(now_ns, capped_timeout_us);
+    auto iter = query_set.emplace(query, capped_timeout_us / 1000, end_time, overflow_mode);
     if (iter == query_set.begin()) // Only notify if the new task is the earliest one
         cond_var.notify_all();
     return true;

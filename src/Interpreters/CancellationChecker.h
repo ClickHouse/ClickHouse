@@ -51,6 +51,10 @@ private:
     const LoggerPtr log;
 
 public:
+    /// Deadlines are aligned to this grid to allow batching of timeout processing.
+    /// Tasks may be cancelled slightly later than their exact timeout, but never before.
+    static constexpr UInt64 CANCELLATION_GRID_MS = 100;
+
     // Singleton instance retrieval
     static CancellationChecker & getInstance();
 
@@ -61,7 +65,9 @@ public:
     void terminateThread();
 
     // Method to add a new task to the multiset. Returns true if the task was added.
-    [[nodiscard]] bool appendTask(const QueryStatusPtr & query, Int64 timeout, OverflowMode overflow_mode);
+    /// The timeout is in microseconds: flooring it to milliseconds first would arm the deadline
+    /// before the timeout the setting names.
+    [[nodiscard]] bool appendTask(const QueryStatusPtr & query, Int64 timeout_us, OverflowMode overflow_mode);
 
     // Used when some task is done
     void appendDoneTasks(const QueryStatusPtr & query);
@@ -71,5 +77,9 @@ public:
 
     // The deadline the worker is currently sleeping toward, 0 when it is not. For tests.
     UInt64 getArmedDeadline();
+
+    /// Grid-aligned deadline, in whole milliseconds since the steady_clock epoch, for a task
+    /// started at `now_ns` with a timeout of `timeout_us`. Never earlier than the exact deadline.
+    static UInt64 alignedDeadlineMs(UInt64 now_ns, UInt64 timeout_us);
 };
 }
