@@ -251,12 +251,12 @@ ObjectStorageQueueMetadata::FileMetadataPtr ObjectStorageQueueMetadata::getFileM
                 table_metadata.loading_retries,
                 *metadata_ref_count,
                 use_persistent_processing_nodes,
-                foreign_processing_node_cache_ttl_seconds,
                 zookeeper_name,
                 bucketing_mode,
                 partitioning_mode,
                 filename_parser.get(),
-                log);
+                log,
+                foreign_processing_node_cache_ttl_seconds);
         case ObjectStorageQueueMode::UNORDERED:
             return std::make_shared<ObjectStorageQueueUnorderedFileMetadata>(
                 zookeeper_path,
@@ -265,9 +265,9 @@ ObjectStorageQueueMetadata::FileMetadataPtr ObjectStorageQueueMetadata::getFileM
                 table_metadata.loading_retries,
                 *metadata_ref_count,
                 use_persistent_processing_nodes,
-                foreign_processing_node_cache_ttl_seconds,
                 zookeeper_name,
-                log);
+                log,
+                foreign_processing_node_cache_ttl_seconds);
     }
 }
 
@@ -621,7 +621,6 @@ ObjectStorageQueueTableMetadata ObjectStorageQueueMetadata::syncWithKeeper(
                     table_metadata.loading_retries,
                     noop,
                     /* use_persistent_processing_nodes */false, /// Processing nodes will not be created.
-                    /* foreign_processing_node_cache_ttl_sec */0,
                     zookeeper_name,
                     table_metadata.getBucketingMode(),
                     table_metadata.getPartitioningMode(),

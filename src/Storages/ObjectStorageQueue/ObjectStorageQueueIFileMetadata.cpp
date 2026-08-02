@@ -167,8 +167,8 @@ ObjectStorageQueueIFileMetadata::ObjectStorageQueueIFileMetadata(
     size_t max_loading_retries_,
     std::atomic<size_t> & metadata_ref_count_,
     bool use_persistent_processing_nodes_,
-    time_t foreign_processing_node_cache_ttl_sec_,
-    LoggerPtr log_)
+    LoggerPtr log_,
+    time_t foreign_processing_node_cache_ttl_sec_)
     : path(path_)
     , zookeeper_name(zookeeper_name_)
     , node_name(getNodeName(path_))

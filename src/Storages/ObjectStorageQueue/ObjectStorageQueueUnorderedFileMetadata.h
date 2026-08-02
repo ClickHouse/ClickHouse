@@ -18,9 +18,10 @@ public:
         size_t max_loading_retries_,
         std::atomic<size_t> & metadata_ref_count_,
         bool use_persistent_processing_nodes_,
-        time_t foreign_processing_node_cache_ttl_sec_,
         const std::string & zookeeper_name_,
-        LoggerPtr log_);
+        LoggerPtr log_,
+        /// Zero (the default) means to always check keeper.
+        time_t foreign_processing_node_cache_ttl_sec_ = 0);
 
     static std::vector<std::string> getMetadataPaths() { return {"processed", "failed", "processing", "persistent_processing"}; }
 
