@@ -21,90 +21,26 @@ namespace DB::PrometheusQueryToSQL
 
 namespace
 {
-    /// Returns whether `node` is a scalar literal - a bare Scalar, or a unary +/- applied to one, since PromQL's
-    /// parser represents signed literals (e.g. `-1`, `+2`) as a UnaryOperator wrapping a Scalar rather than as a
-    /// Scalar node directly.
-    bool isScalarLiteral(const Node * node)
+    /// Returns the InstantSelector if `node` is a bare InstantSelector or an Offset node
+    /// directly wrapping a bare InstantSelector; returns nullptr for any other expression
+    /// (unary/binary operators, aggregations, functions, etc.), matching Prometheus 3.5.0
+    /// which only supports timestamp() on direct vector selectors.
+    const PQT::InstantSelector * peelToInstantSelector(const Node * node, const PQT::Offset *& offset_node)
     {
-        if (node->node_type == NodeType::Scalar)
-            return true;
-        if (node->node_type == NodeType::UnaryOperator)
+        if (node->node_type == NodeType::InstantSelector)
         {
-            const auto * unary_operator = static_cast<const PQT::UnaryOperator *>(node);
-            if ((unary_operator->operator_name == "+" || unary_operator->operator_name == "-")
-                && unary_operator->getArgument()->node_type == NodeType::Scalar)
-                return true;
+            return static_cast<const PQT::InstantSelector *>(node);
         }
-        return false;
-    }
-
-    /// Peels off AST shapes that don't change the identity of the underlying instant selector's samples - a
-    /// unary +/-, a binary operation against a scalar literal, an offset/@ modifier, or a nested timestamp() call
-    /// - to find the bare instant selector underneath, if any. Returns nullptr if `node` doesn't reduce to a bare
-    /// instant selector this way (e.g. it's an aggregation, a binary operation of two vectors, another function
-    /// call, etc.).
-    ///
-    /// If the peeled chain goes through offset/@ modifiers, `offset_nodes` collects those Offset nodes so the
-    /// caller can re-apply them in order (to restore their effect on the evaluation range and the result's grid
-    /// alignment) after computing the timestamp() result over the bare selector.
-    const PQT::InstantSelector * peelToInstantSelector(const Node * node, std::vector<const PQT::Offset *> & offset_nodes)
-    {
-        switch (node->node_type)
+        if (node->node_type == NodeType::Offset)
         {
-            case NodeType::InstantSelector:
-                return static_cast<const PQT::InstantSelector *>(node);
-
-            case NodeType::UnaryOperator:
+            const auto * offset = static_cast<const PQT::Offset *>(node);
+            if (offset->getExpression()->node_type == NodeType::InstantSelector)
             {
-                const auto * unary_operator = static_cast<const PQT::UnaryOperator *>(node);
-                if (unary_operator->operator_name != "+" && unary_operator->operator_name != "-")
-                    return nullptr;
-                return peelToInstantSelector(unary_operator->getArgument(), offset_nodes);
+                offset_node = offset;
+                return static_cast<const PQT::InstantSelector *>(offset->getExpression());
             }
-
-            case NodeType::BinaryOperator:
-            {
-                const auto * binary_operator = static_cast<const PQT::BinaryOperator *>(node);
-                const Node * left = binary_operator->getLeftArgument();
-                const Node * right = binary_operator->getRightArgument();
-                bool left_is_scalar_literal = isScalarLiteral(left);
-                bool right_is_scalar_literal = isScalarLiteral(right);
-                if (left_is_scalar_literal == right_is_scalar_literal)
-                    return nullptr; /// Need exactly one scalar literal operand.
-
-                /// Only operators that can't change which samples are present in the result may be peeled through:
-                /// - math operators (+, -, *, /, %, ^, atan2) against a scalar always preserve every sample.
-                /// - comparison operators (>, <, ==, ...) against a scalar only preserve every sample when the
-                ///   `bool` modifier is used - that makes them behave like math operators (replacing the value with
-                ///   0/1 without filtering). Without `bool` they filter out samples that don't match, so peeling
-                ///   through them would incorrectly keep the selector's raw timestamp for a filtered-out sample.
-                std::string_view operator_name = binary_operator->operator_name;
-                bool preserves_every_sample = isMathBinaryOperator(operator_name)
-                    || (isComparisonOperator(operator_name) && binary_operator->bool_modifier);
-                if (!preserves_every_sample)
-                    return nullptr;
-
-                return peelToInstantSelector(left_is_scalar_literal ? right : left, offset_nodes);
-            }
-
-            case NodeType::Function:
-            {
-                const auto * function = static_cast<const PQT::Function *>(node);
-                if (function->function_name != "timestamp" || function->getArguments().size() != 1)
-                    return nullptr;
-                return peelToInstantSelector(function->getArguments()[0], offset_nodes);
-            }
-
-            case NodeType::Offset:
-            {
-                const auto * offset = static_cast<const PQT::Offset *>(node);
-                offset_nodes.push_back(offset);
-                return peelToInstantSelector(offset->getExpression(), offset_nodes);
-            }
-
-            default:
-                return nullptr;
         }
+        return nullptr;
     }
 }
 
@@ -128,10 +64,10 @@ SQLQueryPiece applyFunctionTimestamp(
     /// `arguments[0]` is the already-converted SQL representation of the argument's *value*, built eagerly by
     /// Converter::visitNode() before applyFunction() gets called - that's not what we need here, because once an
     /// instant vector goes through an arbitrary operator or function its individual samples' original timestamps
-    /// aren't tracked through the conversion. So we independently re-walk the raw argument AST instead, to see
-    /// whether it reduces to a bare instant selector whose samples' timestamps we can read directly.
-    std::vector<const PQT::Offset *> offset_nodes;
-    const auto * instant_selector = peelToInstantSelector(function_node->getArguments().at(0), offset_nodes);
+    /// aren't tracked through the conversion. So we independently inspect the raw argument AST to check if it is
+    /// a bare instant selector (or direct offset/@ wrapper) whose samples' timestamps we can read directly.
+    const PQT::Offset * offset_node = nullptr;
+    const auto * instant_selector = peelToInstantSelector(function_node->getArguments().at(0), offset_node);
     if (!instant_selector)
         throw Exception(ErrorCodes::NOT_IMPLEMENTED, "Function {} is not implemented", function_node->function_name);
 
@@ -145,8 +81,8 @@ SQLQueryPiece applyFunctionTimestamp(
     auto instant_selector_text = instant_selector->toString(*context.promql_tree);
     auto range_selector = fromRangeSelector(instant_selector_text, instant_selector, context);
     auto res = applyFunctionOverRange(instant_selector, "timestamp", {std::move(range_selector)}, context);
-    for (auto it = offset_nodes.rbegin(); it != offset_nodes.rend(); ++it)
-        res = applyOffset(*it, std::move(res), context);
+    if (offset_node)
+        res = applyOffset(offset_node, std::move(res), context);
     res.node = function_node;
     return res;
 }
