@@ -1031,6 +1031,16 @@ void AggregatingStep::serializeSettings(QueryPlanSerializationSettings & setting
     /// unreadable by a peer that predates it. Leaving it out keeps the receiver at the default (the packed method),
     /// which is what the initiator asked for anyway, and a peer too old to know the name fails closed on an explicit
     /// `false` instead of silently aggregating with the other method.
+    ///
+    /// Failing closed is deliberate, and it is *not* made redundant by the two-level fence in
+    /// `MultiplexedConnections::sendQuery` / `HedgedConnections::sendQuery`. Those zero
+    /// `group_by_two_level_threshold` / `group_by_two_level_threshold_bytes` in the `Settings` sent alongside the
+    /// query, but a deserialized `AggregatingStep` takes both thresholds from the plan's own
+    /// `QueryPlanSerializationSettings` (see `deserialize` below), which were written here from the initiator's
+    /// unmodified `params`. So under `serialize_query_plan = 1` the fence does not reach the remote aggregation: a
+    /// peer that silently used the other method could still go two-level, and two-level bucket numbering differs
+    /// between the two methods, which corrupts memory-efficient distributed merging. The exception is the only safe
+    /// outcome for that combination.
     if (!params.enable_packed_string_keys
         && aggregationCanUsePackedStringKeys(*input_headers.front(), params.keys, grouping_sets_params))
         settings[QueryPlanSerializationSetting::enable_packed_string_keys_in_aggregation] = false;
