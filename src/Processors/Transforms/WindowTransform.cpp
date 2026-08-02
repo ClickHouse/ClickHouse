@@ -1079,6 +1079,7 @@ RowNumber WindowTransform::findPeerGroupEnd(const RowNumber & start, bool & need
 bool WindowTransform::advanceGroupBoundary(RowNumber & pointer, UInt64 & group_counter, Int64 target_group) const
 {
     chassert(target_group >= 1);
+    chassert(group_counter <= static_cast<UInt64>(std::numeric_limits<Int64>::max()));
 
     while (static_cast<Int64>(group_counter) < target_group)
     {
