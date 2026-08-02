@@ -238,6 +238,42 @@ TEST(ParserCreateQuery, MaskNATSTableEngineCredentials)
     EXPECT_NE(masked.find("nats_credentials = '[HIDDEN]'"), String::npos);
 }
 
+TEST(ParserCreateQuery, MaskNATSTableEngineURLPassword)
+{
+    /// A `nats_url` override can carry the credentials in its userinfo. Only the password is hidden,
+    /// keeping the rest of the url visible, the same way the `SETTINGS` clause form is masked.
+    const String query =
+        "CREATE TABLE test_nats (key UInt64) "
+        "ENGINE = NATS(nats1, nats_url = 'nats://plain_user:plain_password@example.com:4222')";
+
+    DB::ParserCreateQuery parser;
+    DB::ASTPtr ast = DB::parseQuery(parser, query, 0, 0, 0);
+
+    const String masked = ast->formatForLogging();
+
+    EXPECT_EQ(masked.find("plain_password"), String::npos);
+    EXPECT_NE(masked.find("nats://plain_user:[HIDDEN]@example.com:4222"), String::npos);
+}
+
+TEST(ParserCreateQuery, MaskNATSTableEngineNonLiteralArguments)
+{
+    /// A key or a `nats_url` value we cannot read as a plain literal is hidden whole (fail closed):
+    /// the key can name a secret setting, and the url pieces can embed the credentials.
+    const String query =
+        "CREATE TABLE test_nats (key UInt64) ENGINE = NATS(nats1, "
+        "concat('nats_', 'credentials') = 'plain_user_jwt_and_seed', "
+        "nats_url = concat('nats://plain_user:plain_password@', 'example.com:4222'))";
+
+    DB::ParserCreateQuery parser;
+    DB::ASTPtr ast = DB::parseQuery(parser, query, 0, 0, 0);
+
+    const String masked = ast->formatForLogging();
+
+    EXPECT_EQ(masked.find("plain_password"), String::npos);
+    EXPECT_EQ(masked.find("plain_user_jwt_and_seed"), String::npos);
+    EXPECT_NE(masked.find("nats1"), String::npos);
+}
+
 TEST_P(ParserTest, parseQuery)
 {
     const auto & parser = std::get<0>(GetParam());
