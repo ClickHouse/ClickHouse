@@ -899,27 +899,44 @@ def test_function_timestamp():
         [["[]", "1970-01-01 00:02:15.000", 120]],
     )
 
-    # Non-selector expressions (binary math, unary operators, nested function calls) are not direct vector selectors.
-    # Matching Prometheus 3.5.0 semantics, special sample-timestamp extraction is strictly limited to direct vector selectors
-    # (plus their direct offset/@ wrappers).
-    assert "NOT_IMPLEMENTED" in execute_query_in_clickhouse_sql(
-        "timestamp(test * 1)", 135, expect_error=True
+    # General instant vector expressions (binary math, unary operators, comparisons, nested timestamp() calls):
+    # In Prometheus 3.5.0, non-selector expressions are materialized at each query step evaluation timestamp T_eval,
+    # returning T_eval (135) for each present sample.
+    do_query_test(
+        "timestamp(test * 1)",
+        135,
+        '{"resultType": "vector", "result": [{"metric": {}, "value": [135, "135"]}]}',
+        [["[]", "1970-01-01 00:02:15.000", 135]],
     )
 
-    assert "NOT_IMPLEMENTED" in execute_query_in_clickhouse_sql(
-        "timestamp(-test)", 135, expect_error=True
+    do_query_test(
+        "timestamp(-test)",
+        135,
+        '{"resultType": "vector", "result": [{"metric": {}, "value": [135, "135"]}]}',
+        [["[]", "1970-01-01 00:02:15.000", 135]],
     )
 
-    assert "NOT_IMPLEMENTED" in execute_query_in_clickhouse_sql(
-        "timestamp(timestamp(test))", 135, expect_error=True
+    do_query_test(
+        "timestamp(timestamp(test))",
+        135,
+        '{"resultType": "vector", "result": [{"metric": {}, "value": [135, "135"]}]}',
+        [["[]", "1970-01-01 00:02:15.000", 135]],
     )
 
-    assert "NOT_IMPLEMENTED" in execute_query_in_clickhouse_sql(
-        "timestamp(test > bool 10)", 135, expect_error=True
+    do_query_test(
+        "timestamp(test > bool 10)",
+        135,
+        '{"resultType": "vector", "result": [{"metric": {}, "value": [135, "135"]}]}',
+        [["[]", "1970-01-01 00:02:15.000", 135]],
     )
 
-    assert "NOT_IMPLEMENTED" in execute_query_in_clickhouse_sql(
-        "timestamp(test > 10)", 135, expect_error=True
+    # A comparison without `bool` filters out non-matching samples (at t=135 test is 3, so test > 10 drops the sample),
+    # producing an empty result.
+    do_query_test(
+        "timestamp(test > 10)",
+        135,
+        '{"resultType": "vector", "result": []}',
+        [],
     )
 
     # Genuinely nested offset/@ modifiers - an inner selector with its own modifier, wrapped in an outer
