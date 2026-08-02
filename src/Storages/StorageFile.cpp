@@ -2364,6 +2364,15 @@ public:
         /// In case of formats with prefixes if file is not empty we have already written prefix.
         bool do_not_write_prefix = naked_buffer->size();
         const auto & settings = getContext()->getSettingsRef();
+
+        /// The size is re-checked here, per sink: `StorageFile::write` checks it once at query
+        /// start, and not at all when writing through a file descriptor or a partitioned path.
+        if (do_not_write_prefix
+            && !FormatFactory::instance().checkIfFormatSupportAppend(format_name, getContext(), format_settings))
+            throw Exception(
+                ErrorCodes::CANNOT_APPEND_TO_FILE,
+                "Data cannot be appended to {} because the {} format doesn't support appends",
+                use_table_fd ? "the given file descriptor" : ("file " + path), format_name);
         write_buf = wrapWriteBufferWithCompressionMethod(
             std::move(naked_buffer),
             compression_method,
@@ -2870,7 +2879,7 @@ $ echo -e "1,2\n3,4" | clickhouse-local -q "CREATE TABLE table (a Int64, b Int64
 
 - Multiple `SELECT` queries can be performed concurrently, but `INSERT` queries will wait each other.
 - Supported creating new file by `INSERT` query.
-- If file exists, `INSERT` would append new values in it.
+- If file exists, `INSERT` would append new values in it, but only for formats that support appending. Formats that do not support it, such as `Avro`, `Arrow`, `JSON`, `Npy`, `ORC` and `Parquet`, reject an `INSERT` into a non-empty file with `CANNOT_APPEND_TO_FILE`. For a plain file path, use the `engine_file_truncate_on_insert` or `engine_file_allow_create_multiple_files` settings listed below instead; neither applies when writing through a file descriptor, where the caller owns the descriptor.
 - Not supported:
   - `ALTER`
   - `SELECT ... SAMPLE`
