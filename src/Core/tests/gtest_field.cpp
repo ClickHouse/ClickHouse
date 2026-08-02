@@ -1,6 +1,8 @@
 #include <gtest/gtest.h>
 #include <Core/Field.h>
 
+#include <limits>
+
 using namespace DB;
 
 GTEST_TEST(Field, FromBool)
@@ -109,4 +111,66 @@ GTEST_TEST(Field, DeeplyNestedCopyAndDestroyDoesNotOverflowStack)
         Field src{obj};                   // Object lvalue -> copy
         ASSERT_EQ(src.getType(), Field::Types::Object);
     }
+}
+
+
+GTEST_TEST(Field, CompareFloat64)
+{
+    const Field one{Float64(1.0)};
+    const Field two{Float64(2.0)};
+    const Field one_again{Float64(1.0)};
+
+    ASSERT_TRUE(one < two);
+    ASSERT_FALSE(two < one);
+    ASSERT_FALSE(one < one_again);
+
+    ASSERT_TRUE(one <= two);
+    ASSERT_FALSE(two <= one);
+    ASSERT_TRUE(one <= one_again);
+
+    ASSERT_TRUE(two > one);
+    ASSERT_FALSE(one > two);
+    ASSERT_FALSE(one > one_again);
+
+    ASSERT_TRUE(two >= one);
+    ASSERT_FALSE(one >= two);
+    ASSERT_TRUE(one >= one_again);
+
+    ASSERT_TRUE(one == one_again);
+    ASSERT_FALSE(one == two);
+    ASSERT_TRUE(one != two);
+
+    /// The same for integers, to make sure the Float64 branch is not the odd one out.
+    ASSERT_FALSE(Field(Int64(2)) <= Field(Int64(1)));
+    ASSERT_FALSE(Field(Int64(1)) >= Field(Int64(2)));
+}
+
+
+GTEST_TEST(Field, CompareFloat64NaN)
+{
+    /// NaN is ordered after every number (nan_direction_hint == 1) and is equal to itself.
+    const Field nan{std::numeric_limits<Float64>::quiet_NaN()};
+    const Field nan_again{std::numeric_limits<Float64>::quiet_NaN()};
+    const Field inf{std::numeric_limits<Float64>::infinity()};
+    const Field one{Float64(1.0)};
+
+    ASSERT_TRUE(one < nan);
+    ASSERT_TRUE(inf < nan);
+    ASSERT_FALSE(nan < one);
+    ASSERT_FALSE(nan < nan_again);
+
+    ASSERT_TRUE(one <= nan);
+    ASSERT_FALSE(nan <= one);
+    ASSERT_TRUE(nan <= nan_again);
+
+    ASSERT_TRUE(nan > one);
+    ASSERT_FALSE(one > nan);
+    ASSERT_FALSE(nan > nan_again);
+
+    ASSERT_TRUE(nan >= one);
+    ASSERT_FALSE(one >= nan);
+    ASSERT_TRUE(nan >= nan_again);
+
+    ASSERT_TRUE(nan == nan_again);
+    ASSERT_FALSE(nan == one);
 }
