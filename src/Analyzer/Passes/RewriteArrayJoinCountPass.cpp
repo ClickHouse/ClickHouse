@@ -106,7 +106,7 @@ public:
             return;
 
         /// The join tree must be a single ARRAY JOIN directly over a table.
-        auto * array_join_node = query_node->getJoinTree()->as<ArrayJoinNode>();
+        auto * array_join_node = query_node->getJoinTreeNode()->as<ArrayJoinNode>();
         if (!array_join_node)
             return;
 
@@ -116,7 +116,7 @@ public:
         if (!array_join_node->isLeft() && settings[Setting::empty_result_for_aggregation_by_empty_set])
             return;
 
-        auto * table_node = array_join_node->getTableExpression()->as<TableNode>();
+        auto * table_node = array_join_node->getTableExpressionNode()->as<TableNode>();
         if (!table_node)
             return;
 
@@ -136,7 +136,7 @@ public:
         if (!physical_column || physical_column->hasExpression())
             return;
 
-        if (physical_column->getColumnSourceOrNull().get() != array_join_node->getTableExpression().get())
+        if (physical_column->getColumnSourceOrNull().get() != array_join_node->getTableExpressionNode().get())
             return;
 
         if (!getArrayJoinDataType(physical_column->getColumnType()))
@@ -263,7 +263,7 @@ public:
         projection_nodes[0] = std::move(new_projection_node);
 
         /// Drop the ARRAY JOIN: the row multiplication is now expressed by sum(length(...)).
-        query_node->getJoinTree() = array_join_node->getTableExpression();
+        query_node->getJoinTreeNode() = array_join_node->getTableExpressionNode();
     }
 };
 
