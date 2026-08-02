@@ -54,6 +54,27 @@ function try
         | grep -o -m1 'UNKNOWN_FUNCTION\|ACCESS_DENIED' || true
 }
 
+# `EXPLAIN SYNTAX` inlines a parameterized view into the explained query, so it must not reveal the
+# definition of the underlying source view without both grants. Report what the user gets: the
+# inlined definition (only legitimate with both grants), a denial, or the unexpanded call.
+function explain_syntax
+{
+    local user="$1"
+    local analyzer="$2"
+    local out
+    out=$(${CLICKHOUSE_CLIENT} --user "${user}" --enable_analyzer "${analyzer}" \
+        --query "EXPLAIN SYNTAX SELECT * FROM ${DB_OVL}.v(min = 2)" 2>&1)
+    if echo "${out}" | grep -q 'ACCESS_DENIED'; then
+        echo "ACCESS_DENIED"
+    elif echo "${out}" | grep -q 'UNKNOWN_FUNCTION'; then
+        echo "UNKNOWN_FUNCTION"
+    elif echo "${out}" | grep -q "${DB_SRC}"; then
+        echo "inlined"
+    else
+        echo "not inlined"
+    fi
+}
+
 for analyzer in 0 1
 do
     echo "=== enable_analyzer = ${analyzer} ==="
@@ -77,6 +98,12 @@ do
     echo "dual-grant user: DESCRIBE through the facade"
     ${CLICKHOUSE_CLIENT} --user "${USER_DUAL}" --enable_analyzer "${analyzer}" \
         --query "DESCRIBE TABLE ${DB_OVL}.v(min = 0)" | cut -f1,2
+
+    echo "EXPLAIN SYNTAX follows the same contract: only the dual-grant user sees the definition"
+    explain_syntax "${USER_OVL}" "${analyzer}"
+    explain_syntax "${USER_SRC}" "${analyzer}"
+    explain_syntax "${USER_PEEK}" "${analyzer}"
+    explain_syntax "${USER_DUAL}" "${analyzer}"
 done
 
 echo "=== row policies of the source view and of the facade are combined ==="

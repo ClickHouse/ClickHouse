@@ -30,7 +30,9 @@
 #include <Parsers/FunctionParameterValuesVisitor.h>
 #include <Parsers/FunctionSecretArgumentsFinder.h>
 
+#include <Access/Common/AccessFlags.h>
 #include <Access/Common/SQLSecurityDefs.h>
+#include <Databases/DatabaseOverlay.h>
 #include <Interpreters/DatabaseCatalog.h>
 #include <Storages/StorageView.h>
 #include <TableFunctions/TableFunctionFactory.h>
@@ -182,6 +184,15 @@ namespace
                 table_name = parts[1];
             }
 
+            /// Same fail-closed precheck as in `Context::buildParameterizedViewStorage`: through a
+            /// read-only `Overlay` facade the lookup below loads the underlying source view, so
+            /// without `SHOW_TABLES` on the source name the view must stay indistinguishable from
+            /// a missing one. Leave the call unexpanded instead of surfacing the source view or
+            /// its own error.
+            const auto facade = DatabaseOverlay::tryGetReadonlyFacade(database_name);
+            if (facade && !facade->isSourceTableVisibleNoLoad(table_name, query_context, AccessType::SHOW_TABLES))
+                return;
+
             auto storage = DatabaseCatalog::instance().tryGetTable({database_name, table_name}, query_context);
             if (!storage)
                 return;
@@ -189,6 +200,18 @@ namespace
             const auto * storage_view = storage->as<StorageView>();
             if (!storage_view || !storage_view->isParameterizedView())
                 return;
+
+            /// Through a read-only `Overlay` facade the view that actually runs is the underlying
+            /// source view, so `SELECT` is required on both the facade name and the source name
+            /// before the view definition is inlined into the explained query — the facade must
+            /// not widen access, and `EXPLAIN SYNTAX` already reveals the inlined definition.
+            const auto overlay_source_id
+                = DatabaseOverlay::getSourceTableIdForReadonlyFacade(StorageID{database_name, table_name}, storage);
+            if (overlay_source_id)
+            {
+                query_context->checkAccess(AccessType::SELECT, StorageID{database_name, table_name});
+                query_context->checkAccess(AccessType::SELECT, *overlay_source_id);
+            }
 
             auto metadata = storage->getInMemoryMetadataPtr(query_context, false);
 

@@ -14,6 +14,11 @@ dual-grant user: reads through the facade, the parameter applies
 dual-grant user: DESCRIBE through the facade
 id	UInt32
 s	String
+EXPLAIN SYNTAX follows the same contract: only the dual-grant user sees the definition
+UNKNOWN_FUNCTION
+ACCESS_DENIED
+ACCESS_DENIED
+inlined
 === enable_analyzer = 1 ===
 facade-only user: the view is indistinguishable from a missing one
 UNKNOWN_FUNCTION
@@ -30,6 +35,11 @@ dual-grant user: reads through the facade, the parameter applies
 dual-grant user: DESCRIBE through the facade
 id	UInt32
 s	String
+EXPLAIN SYNTAX follows the same contract: only the dual-grant user sees the definition
+not inlined
+ACCESS_DENIED
+ACCESS_DENIED
+inlined
 === row policies of the source view and of the facade are combined ===
 -- direct source read applies the source policy only (analyzer = 0)
 1	a
