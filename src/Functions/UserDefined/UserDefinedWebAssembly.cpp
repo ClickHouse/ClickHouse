@@ -656,7 +656,6 @@ UserDefinedWebAssemblyFunctionFactory::prepareFunction(ASTPtr create_function_qu
 
     const auto & internal_function_name
         = function_def.source_function_name.empty() ? function_def.function_name : function_def.source_function_name;
-
     std::shared_ptr<UserDefinedWebAssemblyFunction> wasm_func = UserDefinedWebAssemblyFunction::create(
         wasm_module,
         internal_function_name,
@@ -737,7 +736,6 @@ FunctionOverloadResolverPtr UserDefinedWebAssemblyFunctionFactory::tryGet(const 
     auto executable_function = std::make_shared<FunctionUserDefinedWasm>(function_name, std::move(wasm_func), std::move(context));
     return std::make_unique<FunctionToOverloadResolverAdaptor>(std::move(executable_function));
 }
-
 
 bool UserDefinedWebAssemblyFunctionFactory::dropIfExists(const String & function_name)
 {
@@ -893,6 +891,5 @@ WebAssembly::FuelMode WebAssemblyFunctionSettings::getFuelMode() const
 {
     return isFuelEnabled() ? WebAssembly::FuelMode::Enabled : WebAssembly::FuelMode::Disabled;
 }
-
 
 }

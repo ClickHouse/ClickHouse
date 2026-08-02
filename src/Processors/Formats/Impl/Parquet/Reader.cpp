@@ -355,6 +355,19 @@ void Reader::getHyperrectangleForRowGroup(const parq::RowGroup * meta, Hyperrect
     }
 }
 
+bool Reader::spatialBboxStatsHaveNoNulls(const parq::RowGroup & meta, size_t spatial_key_condition_idx) const
+{
+    for (size_t bbox_pc_idx : spatial_key_condition_bbox_col_indices.at(spatial_key_condition_idx))
+    {
+        if (bbox_pc_idx == SIZE_MAX)
+            return false;
+        const auto & stats = meta.columns.at(primitive_columns[bbox_pc_idx].column_idx).meta_data.statistics;
+        if (!stats.__isset.null_count || stats.null_count != 0)
+            return false;
+    }
+    return true;
+}
+
 void Reader::prefilterAndInitRowGroups(const std::optional<std::unordered_set<UInt64>> & row_groups_to_read)
 {
     extended_sample_block = *sample_block;
@@ -717,22 +730,7 @@ void Reader::prefilterAndInitRowGroups(const std::optional<std::unordered_set<UI
             bool prune_by_spatial = false;
             for (size_t sci = 0; sci < spatial_key_conditions.size(); ++sci)
             {
-                bool all_zero_nulls = true;
-                for (size_t bbox_pc_idx : spatial_key_condition_bbox_col_indices[sci])
-                {
-                    if (bbox_pc_idx == SIZE_MAX)
-                    {
-                        all_zero_nulls = false;
-                        break;
-                    }
-                    const auto & stats = meta->columns.at(primitive_columns[bbox_pc_idx].column_idx).meta_data.statistics;
-                    if (!stats.__isset.null_count || stats.null_count != 0)
-                    {
-                        all_zero_nulls = false;
-                        break;
-                    }
-                }
-                if (!all_zero_nulls)
+                if (!spatialBboxStatsHaveNoNulls(*meta, sci))
                     continue;
                 if (!spatial_key_conditions[sci]->checkInHyperrectangle(hyperrectangle, extended_sample_block_data_types).can_be_true)
                 {
@@ -800,7 +798,7 @@ void Reader::prefilterAndInitRowGroups(const std::optional<std::unordered_set<UI
 
             if (!output_info.is_primitive || !primitive_columns[output_info.primitive_start].decoder.allow_stats)
                 continue;
-            primitive_columns[output_info.primitive_start].column_index_conditions.push_back(key_condition.get());
+            primitive_columns[output_info.primitive_start].column_index_conditions.push_back({key_condition.get(), SIZE_MAX});
         }
     }
 
@@ -810,10 +808,10 @@ void Reader::prefilterAndInitRowGroups(const std::optional<std::unordered_set<UI
     /// primitive_columns directly by idx_in_output_block.
     if (options.format.parquet.page_filter_push_down && !spatial_key_conditions.empty())
     {
-        for (const auto & sc : spatial_key_conditions)
+        for (size_t sci = 0; sci < spatial_key_conditions.size(); ++sci)
         {
             const size_t prev_size = spatial_column_conditions.size();
-            sc->extractSingleColumnConditions(spatial_column_conditions, nullptr);
+            spatial_key_conditions[sci]->extractSingleColumnConditions(spatial_column_conditions, nullptr);
             for (size_t i = prev_size; i < spatial_column_conditions.size(); ++i)
             {
                 const auto & [idx_in_output_block, key_condition] = spatial_column_conditions[i];
@@ -823,7 +821,10 @@ void Reader::prefilterAndInitRowGroups(const std::optional<std::unordered_set<UI
                         continue;
                     if (!pc.decoder.allow_stats)
                         break;
-                    pc.column_index_conditions.push_back(key_condition.get());
+                    /// Remember which spatial predicate this single-column condition came from:
+                    /// it may only prune a page when all four of that predicate's bbox columns
+                    /// are known to be null-free (see `applyColumnIndex`).
+                    pc.column_index_conditions.push_back({key_condition.get(), sci});
                     break;
                 }
             }
@@ -1895,12 +1896,7 @@ void Reader::applyColumnIndex(ColumnChunk & column, const PrimitiveColumnInfo & 
             bool always_null = !column_index.null_pages.empty() && column_index.null_pages[page_idx];
             bool can_be_null = !column_index.__isset.null_counts || column_index.null_counts[page_idx] != 0;
 
-            if (column_info.is_spatial_bbox_column && can_be_null)
-            {
-                /// NULL bbox means unknown spatial extent. Leave range as whole universe so
-                /// this page is never pruned based on spatial predicates.
-            }
-            else if (nullable && always_null)
+            if (nullable && always_null)
             {
                 /// Single-point range containing either the default value or one of the infinities.
                 if (null_as_default)
@@ -1921,9 +1917,22 @@ void Reader::applyColumnIndex(ColumnChunk & column, const PrimitiveColumnInfo & 
             /// is enough to prune, so an unproductive later `checkInHyperrectangle` call is skipped.
             bool passes_filter = std::all_of(
                 column_info.column_index_conditions.begin(), column_info.column_index_conditions.end(),
-                [&](const KeyCondition * condition)
+                [&](const PrimitiveColumnInfo::ColumnIndexCondition & c)
                 {
-                    return condition->checkInHyperrectangle(hyperrectangle, extended_sample_block_data_types).can_be_true;
+                    /// A `covering.bbox` predicate may only prune when the full bbox is known for
+                    /// every row the page covers. A NULL bbox means unknown spatial extent, and
+                    /// min/max statistics describe the non-null values only, so the predicate can
+                    /// come out false while a NULL-bbox row still matches. Page boundaries are
+                    /// per column, so it is not enough that this column's page is null-free: a
+                    /// sibling bbox column may hold NULLs on the very rows this page covers.
+                    /// Require the same four-column guarantee the row-group path checks, plus
+                    /// this page's own null counts (which also fail closed when the column index
+                    /// omits `null_counts` or contradicts itself with an all-null page).
+                    if (c.spatial_key_condition_idx != SIZE_MAX
+                        && (can_be_null || always_null
+                            || !spatialBboxStatsHaveNoNulls(*row_group.meta, c.spatial_key_condition_idx)))
+                        return true;
+                    return c.condition->checkInHyperrectangle(hyperrectangle, extended_sample_block_data_types).can_be_true;
                 });
 
             if (!passes_filter)
@@ -1943,11 +1952,25 @@ void Reader::applyColumnIndex(ColumnChunk & column, const PrimitiveColumnInfo & 
     }
     catch (Exception & e)
     {
+        /// A `covering.bbox` column that only carries spatial conditions was injected for this
+        /// optimization alone: it is neither an output column nor part of the query's own filter.
+        /// Malformed page statistics for it must fail closed (no page pruning for this column)
+        /// rather than abort the read, matching `getHyperrectangleForRowGroup`. A bbox column the
+        /// query itself reads or filters on has non-spatial conditions too and keeps throwing.
+        const bool only_spatial_conditions = std::all_of(
+            column_info.column_index_conditions.begin(), column_info.column_index_conditions.end(),
+            [](const PrimitiveColumnInfo::ColumnIndexCondition & c) { return c.spatial_key_condition_idx != SIZE_MAX; });
+        if (column_info.is_spatial_bbox_column && only_spatial_conditions)
+        {
+            column.row_ranges_after_column_index.clear();
+            if (row_group.meta->num_rows > 0)
+                column.row_ranges_after_column_index.emplace_back(0, size_t(row_group.meta->num_rows));
+            return;
+        }
         e.addMessage("in column index; use input_format_parquet_page_filter_push_down=0 to ignore");
         throw;
     }
 }
-
 
 void Reader::adjustRangeFromIndexIfNeeded(Range & range, const PrimitiveColumnInfo & column_info, bool can_be_null) const
 {

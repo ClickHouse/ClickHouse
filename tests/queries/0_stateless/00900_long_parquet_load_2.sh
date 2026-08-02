@@ -43,6 +43,7 @@ EXCLUDE=(
     04512_geo_pruning_iceberg.parquet
     04514_geo_pruning_iceberg_geostats.parquet
     04515_geo_pruning_iceberg_malformed_bbox.parquet
+    04691_geo_page_pruning_null_bbox.parquet
     # Intentionally non-compliant files for testing DELTA_BINARY_PACKED padding tolerance.
     04045_delta_no_padding_3vals.parquet
     04045_delta_no_padding_5vals.parquet
