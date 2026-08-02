@@ -1,0 +1,51 @@
+-- throw: out-of-range numeric VALUES expression must raise
+-3599999
+3599999
+0
+4294967295
+-- saturate: out-of-range numeric VALUES expression must clamp to the boundary
+-3599999
+3599999
+0
+4294967295
+-- ignore: out-of-range numeric VALUES expression must clamp too, not store the raw value
+-3599999
+3599999
+0
+4294967295
+-- in-range numeric VALUES expression is unchanged in all modes
+-3600
+3600
+-- throw: out-of-range Date / Date32 VALUES expression must raise
+-- saturate: out-of-range Date / Date32 VALUES expression must clamp to the boundary
+2106-02-07
+1900-01-01
+2299-12-31
+-- ignore: out-of-range Date / Date32 VALUES expression must clamp too
+2106-02-07
+1900-01-01
+2299-12-31
+-- saturate: Float64 and wide-integer VALUES expressions clamp for every target
+2106-02-07	2299-12-31	2106-02-07 06:28:15	999:59:59
+2106-02-07	2299-12-31	2106-02-07 06:28:15	999:59:59
+-- VALUES coercion agrees with CAST across the Date day-number / timestamp boundary (saturate)
+VALUES	1970-01-01
+VALUES	1970-01-02
+VALUES	2106-02-07
+VALUES	2149-06-06
+CAST  	1970-01-01
+CAST  	1970-01-02
+CAST  	2106-02-07
+CAST  	2149-06-06
+-- VALUES coercion agrees with CAST for a fractional Date32 day number at the boundary (ignore)
+120528.5	VALUES	2299-12-30	CAST	2299-12-30
+120529.5	VALUES	2299-12-31	CAST	2299-12-31
+120530.5	VALUES	1970-01-02	CAST	1970-01-02
+-- VALUES coercion agrees with CAST for a fractional Date32 day number at the boundary (saturate)
+120528.5	VALUES	2299-12-30	CAST	2299-12-30
+120529.5	VALUES	2299-12-31	CAST	2299-12-31
+120530.5	VALUES	1970-01-02	CAST	1970-01-02
+-- values() table function agrees with CAST for the same fractional Date32 day numbers
+120528.5	VALUES	2299-12-30	CAST	2299-12-30
+120529.5	VALUES	2299-12-31	CAST	2299-12-31
+120530.5	VALUES	1970-01-02	CAST	1970-01-02
