@@ -5090,7 +5090,24 @@ void QueryAnalyzer::resolveArrayJoin(QueryTreeNodePtr & array_join_node, Identif
         if (!alias.empty())
             array_join_alias_names.names.insert(alias);
         else if (const auto * identifier_node = array_join_expression->as<IdentifierNode>())
-            array_join_alias_names.names.insert(identifier_node->getIdentifier().getFullName());
+        {
+            /// The name an unaliased identifier expression exposes is the name of the column it resolves to,
+            /// which drops the table qualifier: `ARRAY JOIN t.arr1` exposes `arr1`, and `ARRAY JOIN t.n.x` of a
+            /// `Nested` column exposes `n.x`. How many leading parts form the qualifier is only known after
+            /// resolution, so record every suffix of the identifier. The exposed name is guaranteed to be among
+            /// them, and the extra names can only make the check stricter, never let a collision slip through.
+            const auto & parts = identifier_node->getIdentifier().getParts();
+            for (size_t i = 0; i < parts.size(); ++i)
+            {
+                String suffix = parts[i];
+                for (size_t j = i + 1; j < parts.size(); ++j)
+                {
+                    suffix += '.';
+                    suffix += parts[j];
+                }
+                array_join_alias_names.names.insert(std::move(suffix));
+            }
+        }
         else
             array_join_alias_names.all_names_known = false;
     }

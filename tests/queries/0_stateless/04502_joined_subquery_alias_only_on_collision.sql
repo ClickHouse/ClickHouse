@@ -134,6 +134,21 @@ SELECT arr1 FROM arr_t, (SELECT 1 AS not_colliding) ARRAY JOIN COLUMNS('^arr'); 
 SELECT arr1 FROM arr_t, (SELECT 1 AS other) AS rhs ARRAY JOIN COLUMNS('^arr');
 SELECT arr1 FROM arr_t, (SELECT 1 AS other) ARRAY JOIN COLUMNS('^arr') SETTINGS joined_subquery_requires_alias = 0;
 
+-- An unaliased `ARRAY JOIN` expression that is a compound identifier exposes the name of the column it
+-- resolves to, without the table qualifier: `ARRAY JOIN t.arr1` binds the bare name `arr1`. The prepass
+-- records every suffix of the identifier, so the collision is seen no matter which leading parts turn out
+-- to be the qualifier.
+SELECT arr1 FROM arr_t AS t, (SELECT 1 AS arr1) ARRAY JOIN t.arr1; -- { serverError ALIAS_REQUIRED }
+
+-- With the subquery aliased its column stays reachable, so the query is accepted.
+SELECT arr1, rhs.arr1 FROM arr_t AS t, (SELECT 1 AS arr1) AS rhs ARRAY JOIN t.arr1;
+
+-- No collision with the name the qualified `ARRAY JOIN` expression binds: still allowed without an alias.
+SELECT arr1, other FROM arr_t AS t, (SELECT 1 AS other) ARRAY JOIN t.arr1;
+
+-- Disabling the setting keeps the pre-existing permissive behavior.
+SELECT arr1 FROM arr_t AS t, (SELECT 1 AS arr1) ARRAY JOIN t.arr1 SETTINGS joined_subquery_requires_alias = 0;
+
 -- A sibling table expression can itself be wrapped in an `ARRAY JOIN`. Such a sibling exposes the columns
 -- of its inner table expression plus the `ARRAY JOIN` output columns, and both sets are already resolved
 -- when the join is validated, so it does not force the conservative fallback. No name collides here
