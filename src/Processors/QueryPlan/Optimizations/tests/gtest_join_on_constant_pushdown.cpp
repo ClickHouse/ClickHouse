@@ -266,3 +266,27 @@ GTEST_TEST(JoinOnConstantPushdown, DuplicateCurrentSideNameDeclinesSubstitution)
         << "is erased from the ON clause, so the intended comparison is enforced nowhere. Filter DAG:\n"
         << filter->dag.dumpDAG();
 }
+
+/// A current-side name duplicated only in a ONE-SIDED conjunct must not veto the whole filter: the
+/// duplicate-name guard is a property of the conjunct being substituted. Vetoing on the combined
+/// predicate also discarded the one-sided pushdown master performs without any substitution.
+GTEST_TEST(JoinOnConstantPushdown, DuplicateNameOutsideSubstitutedConjunctStillPushesDown)
+{
+    tryRegisterFunctions();
+    JoinFixture fixture(
+        /* left_columns= */ {plainUInt32("y"), plainUInt32("x"), plainUInt32("x")},
+        /* right_columns= */ {constUInt32("r_lo", 50)},
+        /* right_index= */ 0,
+        /* left_index= */ 0);
+
+    auto filter = fixture.leftFilter();
+    ASSERT_TRUE(filter.has_value())
+        << "the left-only conjunct over the duplicated `x` is pushed down on master without any "
+        << "substitution, so a veto raised by its duplicate name is a regression";
+
+    /// `y >= 50` over probe values at header position 0. The duplicated `x` columns carry 95, above the
+    /// left-only conjunct's zero, so they accept every row and the observable is the substituted bound.
+    EXPECT_EQ(runFilter(*filter, *fixture.left_header, {40, 60}), (std::vector<UInt8>{0, 1}))
+        << "the substituted conjunct must still compare `y` against 50. Filter DAG:\n"
+        << filter->dag.dumpDAG();
+}

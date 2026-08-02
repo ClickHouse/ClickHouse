@@ -1726,12 +1726,16 @@ std::optional<ActionsDAG::ActionsForFilterPushDown> JoinStepLogical::getFilterAc
     /// Requiring both also leaves a condition belonging solely to the OPPOSITE side alone: substituting
     /// its constants would fold it into a tautology here and erase it from `ON`, so that side would
     /// lose a filter it should have got. Equality propagation does derive such conditions.
-    auto is_substitutable = [&](const JoinActionRef & condition)
+    auto substitutions_for = [&](const JoinActionRef & condition)
+        -> std::optional<std::unordered_map<const ActionsDAG::Node *, ColumnWithTypeAndName>>
     {
-        return opposite_header && references_both_relations(condition) && !wouldBecomeJoinKey(condition)
-            && !isUnsafeToEvaluateBelowJoin(condition)
-            && collectOppositeSideConstants(condition, expression_actions, *opposite_header, *stream_header, side).has_value();
+        if (!opposite_header || !references_both_relations(condition) || wouldBecomeJoinKey(condition)
+            || isUnsafeToEvaluateBelowJoin(condition))
+            return {};
+        return collectOppositeSideConstants(condition, expression_actions, *opposite_header, *stream_header, side);
     };
+
+    auto is_substitutable = [&](const JoinActionRef & condition) { return substitutions_for(condition).has_value(); };
 
     auto should_extract = [&](const JoinActionRef & condition)
     {
@@ -1742,7 +1746,16 @@ std::optional<ActionsDAG::ActionsForFilterPushDown> JoinStepLogical::getFilterAc
     if (conditions.empty())
         return {};
 
-    const bool has_substitutions = std::ranges::any_of(conditions, is_substitutable);
+    /// Accumulated per SUBSTITUTABLE conjunct, never over the combined predicate: the duplicate-name
+    /// veto is a property of the conjunct being substituted, so a one-sided conjunct AND-ed alongside
+    /// must not be able to trigger it and discard a filter this side would otherwise get.
+    std::unordered_map<const ActionsDAG::Node *, ColumnWithTypeAndName> originals;
+    for (const auto & extracted : conditions)
+    {
+        if (auto per_conjunct = substitutions_for(extracted))
+            originals.insert(per_conjunct->begin(), per_conjunct->end());
+    }
+    const bool has_substitutions = !originals.empty();
 
     auto condition = conditions.size() == 1
         ? toBoolIfNeeded(conditions.front())
@@ -1753,10 +1766,6 @@ std::optional<ActionsDAG::ActionsForFilterPushDown> JoinStepLogical::getFilterAc
     std::optional<ActionsDAG> substituted;
     if (has_substitutions)
     {
-        auto originals = collectOppositeSideConstants(condition, expression_actions, *opposite_header, *stream_header, side);
-        if (!originals)
-            return {};
-
         /// The WHOLE predicate is cloned in ONE call, so a column referenced by several conjuncts yields
         /// a single input in the clone; cloning conjuncts separately would produce one input per
         /// conjunct sharing a name, of which only the first is bound to the stream column.
@@ -1770,7 +1779,7 @@ std::optional<ActionsDAG::ActionsForFilterPushDown> JoinStepLogical::getFilterAc
         /// ORIGINAL was classified as opposite-side. Looking clone inputs up by name would reintroduce
         /// the name-versus-source-relation confusion `collectOppositeSideConstants` exists to avoid.
         std::unordered_map<const ActionsDAG::Node *, ColumnWithTypeAndName> substitutions;
-        for (const auto & [original, value] : *originals)
+        for (const auto & [original, value] : originals)
         {
             auto it = original_to_clone.find(original);
             if (it == original_to_clone.end())
