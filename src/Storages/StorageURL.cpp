@@ -585,10 +585,13 @@ void StorageURLSource::cancel(CancelReason reason) noexcept
     /// Stop retrying the HTTP requests when the query is being torn down - killed by the user, timed
     /// out, or failed elsewhere - and wake up the backoff between the attempts, so that the read stops
     /// as soon as it is cancelled instead of when the whole backoff has expired.
-    /// A consumer which simply has enough data (CancelReason::PartialResult, or the read limits with
-    /// the `break` overflow mode) must not interrupt a read that can still succeed and be used.
-    if (reason == CancelReason::CancelledByUser || reason == CancelReason::CancelledByTimeout
-        || reason == CancelReason::Exception)
+    /// A consumer which simply has enough data must not interrupt a read that can still succeed and be
+    /// used: CancelReason::PartialResult, and CancelReason::CancelledByTimeout, which despite its name
+    /// only ever comes from PipelineExecutor::checkTimeLimitSoft, that is from `max_execution_time` with
+    /// the `break` overflow mode - a query which is not killed and is expected to return what it has
+    /// read so far. A timeout with the `throw` overflow mode kills the query through
+    /// CancellationChecker and arrives here as CancelReason::CancelledByUser instead.
+    if (reason == CancelReason::CancelledByUser || reason == CancelReason::Exception)
         cancellation->cancel();
 
     ISource::cancel(reason);
