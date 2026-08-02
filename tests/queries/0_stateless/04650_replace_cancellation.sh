@@ -18,8 +18,7 @@ CURDIR=$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)
 #
 # Two quantities decide whether a case discriminates, and they pull against each other: the one step this
 # fix cannot interrupt must stay a small part of the deadline on the slowest build, while the total work
-# must outlast the deadline by a wide margin on the fastest one. A case whose work cannot be grown - the
-# cost is its own output, and the output is capped by the test memory profile - sets an earlier deadline
+# must outlast the deadline on the fastest one. A case whose work cannot be grown sets an earlier deadline
 # instead of a larger fixture, which moves the deadline into the work and buys the same margin.
 DEADLINE=1
 DEADLINE_MS=1000
@@ -90,9 +89,9 @@ run() {
 
 # 1. Constant folding: no pipeline exists while this runs, which is what the original hung-check reports
 #    showed. Split into many small folds rather than one large one, like cases 4, 7 and 9: the budget is
-#    only consulted between folds, so one fold's constant is the smallest step this can interrupt, and at
-#    200MB in a single fold that step alone was 81% of the deadline on a thread-sanitizer build. Total
-#    bytes are unchanged, so the work the unfixed side runs unbounded is the same.
+#    only consulted between folds, so one fold's constant is the smallest step this can interrupt, and a
+#    single 200MB fold left that step most of the deadline on a thread-sanitizer build. Total bytes are
+#    unchanged, so the work the unfixed side runs unbounded is the same.
 FOLD_REGEXP=$(python3 -c "print('arraySum([' + ', '.join(\"length(replaceRegexpAll(repeat('%04d', 250000), '[0-9]{1,3}', 'x'))\" % i for i in range(200)) + '])')")
 run "fold regexp" "SELECT $FOLD_REGEXP FORMAT Null" throw "" fold 0.4
 
@@ -270,13 +269,15 @@ fi
 #     so the query to check is the one running the call, not the one that defined it: a definition-time
 #     query would be the wrong deadline and, held alive, a permanent `CurrentMetrics::QueryNonInternal`
 #     leak. Asserted from both sides. The rows must arrive in one block, or the pipeline's own check bounds
-#     the INSERT whatever the function does.
+#     the INSERT whatever the function does. Every row must also be DISTINCT: a block of repeated haystacks
+#     can be answered with one evaluation and a copy per repeat, which stops the row count from buying work.
 ${CLICKHOUSE_CLIENT} --query "DROP TABLE IF EXISTS t_replace_stored SYNC"
 ${CLICKHOUSE_CLIENT} --query "
     CREATE TABLE t_replace_stored (k String) ENGINE = MergeTree
     PARTITION BY substring(replaceRegexpAll(k, '[0-9]((a|b)(c|d)|(e|f)(g|h))?', 'x'), 1, 1) ORDER BY tuple()"
 run "stored expression" \
-    "INSERT INTO t_replace_stored SELECT repeat('1', 1000000) FROM numbers(40) SETTINGS max_insert_block_size = 40, min_insert_block_size_rows = 40"
+    "INSERT INTO t_replace_stored SELECT repeat(concat(toString(number + 1000), '1'), 200000) FROM numbers(40) SETTINGS max_insert_block_size = 40, min_insert_block_size_rows = 40" \
+    throw "" "" 0.2
 ${CLICKHOUSE_CLIENT} --query "DROP TABLE t_replace_stored SYNC"
 
 #     The leak side: a retained QueryStatus keeps the `CurrentMetrics::QueryNonInternal` increment it owns,
