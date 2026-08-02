@@ -69,9 +69,9 @@ using ThrowIfQueryCanceledPredicate = std::function<void()>;
   * Use via CurrentThread::getGroup.
   *
   * A group either owns its accounting or borrows it. A borrowed group (`createForMaterializedView` /
-  * `createForFlushAsyncInsertQueue`) sets its `performance_counters` and `memory_tracker` to raw
-  * (non-owning) pointers into the parent query group, so materialized-view and async-insert work is
-  * accounted against the parent query.
+  * `createForFlushAsyncInsertQueue` / `createForExplainAnalyze`) sets its `performance_counters` and
+  * `memory_tracker` to raw (non-owning) pointers into the parent query group, so materialized-view,
+  * async-insert and `EXPLAIN ANALYZE` work is accounted against the parent query.
   *
   * Borrowing a raw pointer (rather than holding a `shared_ptr` to the parent) is deliberate: owning the
   * parent would keep the finished query's group - and its memory accounting - alive for as long as the
@@ -150,6 +150,7 @@ public:
 
     static ThreadGroupPtr createForMaterializedView(ContextPtr context);
     static ThreadGroupPtr createForFlushAsyncInsertQueue(ContextPtr context, ThreadGroupPtr parent);
+    static ThreadGroupPtr createForExplainAnalyze(ThreadGroupPtr parent);
 
     std::vector<UInt64> getInvolvedThreadIds() const;
     size_t getPeakThreadsUsage() const;

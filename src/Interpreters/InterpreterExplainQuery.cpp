@@ -1322,8 +1322,7 @@ QueryPipeline InterpreterExplainQuery::executeImpl()
             if (!outer_thread_group)
                 throw Exception(ErrorCodes::LOGICAL_ERROR, "EXPLAIN ANALYZE: current thread is not attached to a thread group");
 
-            auto analyze_thread_group = std::make_shared<ThreadGroup>(outer_thread_group);
-            analyze_thread_group->memory_tracker.setDescription("EXPLAIN ANALYZE");
+            auto analyze_thread_group = ThreadGroup::createForExplainAnalyze(outer_thread_group);
 
             watch.restart();
             {
