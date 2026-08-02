@@ -15,42 +15,61 @@ CURDIR=$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)
 # prologue is not interruptible by this fix and scales the other way on an optimized build.
 # A sanitizer or coverage build stretches both sides, so the bound scales; coverage never reaches
 # CXX_FLAGS and has to be read from its own `system.build_options` row.
+#
+# Two quantities decide whether a case discriminates, and they pull against each other: the one step this
+# fix cannot interrupt must stay a small part of the deadline on the slowest build, while the total work
+# must outlast the deadline by a wide margin on the fastest one. A case whose work cannot be grown - the
+# cost is its own output, and the output is capped by the test memory profile - sets an earlier deadline
+# instead of a larger fixture, which moves the deadline into the work and buys the same margin.
 DEADLINE=1
+DEADLINE_MS=1000
 SCALE=1
 [ -n "$(${CLICKHOUSE_CLIENT} --query "SELECT value FROM system.build_options WHERE name = 'CXX_FLAGS' AND value LIKE '%sanitize=%'")" ] && SCALE=2
 case "$(${CLICKHOUSE_CLIENT} --query "SELECT value FROM system.build_options WHERE name = 'WITH_COVERAGE'")" in ON|1) SCALE=2 ;; esac
 BOUND=$((SCALE * 2000))
+# How late the stop may be, as an absolute allowance on top of the deadline. A case that sets its own
+# earlier deadline keeps the same allowance, so at the shared deadline its bound is exactly $BOUND.
+ALLOWANCE=$((BOUND - DEADLINE_MS))
 
 # $1 = label, $2 = query, $3 = overflow mode (default "throw"), $4 = query id (default none),
-# $5 = "fold" if the call is constant-folded (no pipeline), empty for a pipeline case
+# $5 = "fold" if the call is constant-folded (no pipeline), empty for a pipeline case,
+# $6 = this case's own deadline in seconds (default $DEADLINE); its bound keeps the shared allowance
 #
 # Regexp compilation is pinned off for every case but the one that is about the compiled matcher: the
 # compiled-regexp cache is server-global with a compile threshold of 3, and this test runs up to 5 times,
 # so an earlier run's pattern would already be compiled and the query would finish inside the deadline.
 #
-# Two messages report the same enforced deadline and only one carries a number: `CancellationChecker`
-# can win the race against this function's own check, and its error then has no elapsed part to read.
-# For a folded call that is still this function's stop to make, since the fold runs during analysis and
-# there is no pipeline to cancel, so the wall clock is bounded instead - as cases 19 and 20 do. For a
-# pipeline case it is not: `addPipelineExecutor` throws on the killed flag before the executor is
-# registered, so the query can end without ever entering the function, and accepting it on wall time
-# would assert query-level cancellation instead of the in-function checkpoint. That is reported as
-# inconclusive rather than passed.
+# Two messages report the same enforced deadline and only one carries a number, and which one arrives is
+# what tells the two builds apart. A number means this function's own check ran: `checkTimeLimit` passes
+# `watch.elapsed()`, which is never zero, so its message always carries the elapsed part. No number means
+# nothing inside the function participated - the stop came from `addPipelineExecutor` or `throwIfKilled`,
+# both of which pass a literal zero. A folded call therefore cannot legitimately reach that state on a
+# fixed build: the checkpoint runs at entry, after materialization and inside every loop, so the deadline
+# would have to be crossed entirely before entry or entirely after the last fold, both of which are this
+# case's own sizing to fix. Cases 19 and 20 do bound wall time, but they assert something else: under
+# `break` the query succeeds, so latency is the only observable.
 run() {
-    local label="$1" query="$2" mode="${3:-throw}" query_id="${4:-}" shape="${5:-}"
-    local output rc start_ms elapsed_ms wall_ms
-    start_ms=$(date +%s%N)
+    local label="$1" query="$2" mode="${3:-throw}" query_id="${4:-}" shape="${5:-}" deadline="${6:-$DEADLINE}"
+    local output rc elapsed_ms reported_max_ms bound_ms
     # shellcheck disable=SC2086
-    output=$(timeout 600 ${CLICKHOUSE_CLIENT} --max_execution_time "$DEADLINE" --timeout_overflow_mode "$mode" \
+    output=$(timeout 600 ${CLICKHOUSE_CLIENT} --max_execution_time "$deadline" --timeout_overflow_mode "$mode" \
         --compile_regular_expressions 0 \
         ${query_id:+--query_id "$query_id"} \
         --query "$query" 2>&1)
     rc=$?
-    wall_ms=$(( ($(date +%s%N) - start_ms) / 1000000 ))
     elapsed_ms=$(printf '%s' "$output" | grep -oP 'elapsed \K[0-9]+(?=\.)' | head -1)
+    reported_max_ms=$(printf '%s' "$output" | grep -oP 'maximum: \K[0-9]+(?= ms)' | head -1)
+    bound_ms=$(printf '%.0f' "$(echo "$deadline" | awk '{print $1 * 1000}')")
+    # A fractional deadline is a Seconds setting and truncated to whole milliseconds, so what the server
+    # enforced is read back from its own message rather than assumed to be what was asked for.
+    if [ -n "$reported_max_ms" ] && [ "$reported_max_ms" != "$bound_ms" ]; then
+        echo "$label: DEADLINE NOT ENFORCED AS SET, asked ${bound_ms} ms and the server enforced ${reported_max_ms} ms"
+        return
+    fi
+    bound_ms=$((bound_ms + ALLOWANCE))
     # A verdict rather than the number itself keeps the reference stable across machine speeds.
     if [ -n "$elapsed_ms" ]; then
-        if [ "$elapsed_ms" -lt "$BOUND" ]; then
+        if [ "$elapsed_ms" -lt "$bound_ms" ]; then
             echo "$label: stopped within bound"
         else
             echo "$label: OVERSHOT ${elapsed_ms} ms"
@@ -63,21 +82,19 @@ run() {
         # Anything else - a memory limit, say - leaves the deadline untested either way.
         echo "$label: inconclusive, failed with code $(printf '%s' "$output" | grep -oP 'Code: \K[0-9]+' | head -1)"
     elif [ "$shape" = fold ]; then
-        # Wall clock covers the whole client call, not server time alone, hence case 19's allowance.
-        if [ "$wall_ms" -lt "$((BOUND * 2))" ]; then
-            echo "$label: stopped within bound"
-        else
-            echo "$label: OVERSHOT ${wall_ms} ms"
-        fi
+        echo "$label: stopped without reaching the in-function checkpoint"
     else
         echo "$label: cancelled before the pipeline started"
     fi
 }
 
 # 1. Constant folding: no pipeline exists while this runs, which is what the original hung-check reports
-#    showed.
-run "fold regexp" \
-    "SELECT length(replaceRegexpAll(repeat(repeat('1', 1000000), 200), '[0-9]{1,3}', 'x')) FORMAT Null" throw "" fold
+#    showed. Split into many small folds rather than one large one, like cases 4, 7 and 9: the budget is
+#    only consulted between folds, so one fold's constant is the smallest step this can interrupt, and at
+#    200MB in a single fold that step alone was 81% of the deadline on a thread-sanitizer build. Total
+#    bytes are unchanged, so the work the unfixed side runs unbounded is the same.
+FOLD_REGEXP=$(python3 -c "print('arraySum([' + ', '.join(\"length(replaceRegexpAll(repeat('%04d', 250000), '[0-9]{1,3}', 'x'))\" % i for i in range(200)) + '])')")
+run "fold regexp" "SELECT $FOLD_REGEXP FORMAT Null" throw "" fold 0.4
 
 # 2. The same work in the pipeline, which makes case 1 non-vacuous: the defect is the missing in-function
 #    checkpoint, not something specific to constant folding. All three arguments must be materialized -
@@ -104,7 +121,7 @@ run "many rows" \
 #    fold cost about a whole deadline on a thread-sanitizer build, leaving the case no room under the
 #    bound. Total pattern bytes are unchanged, so the unfixed side is bounded by nothing as before.
 FOLDS=$(python3 -c "print('arraySum([' + ', '.join(\"length(replaceRegexpAll('zzz%d', repeat('[a-z0-9]{1,2}', 2500), 'x'))\" % i for i in range(240)) + '])')")
-run "many folds" "SELECT $FOLDS FORMAT Null" throw "" fold
+run "many folds" "SELECT $FOLDS FORMAT Null" throw "" fold 0.4
 
 # 5. One match per iteration with a replacement much larger than the match: the whole cost is in the
 #    generated output, which accounting that looked only at the searched input would price at zero.
@@ -130,7 +147,7 @@ run "regexp fallback to literal" \
 #    left the case no room under the bound, and one value that large also doubled what the query needs
 #    against the test memory profile. Each fold gets its own value so none of them is shared.
 SPLIT_ALL=$(python3 -c "print('arraySum([' + ', '.join(\"length(replaceAll(repeat(repeat('%s', 1000000), 30), '%s', 'YZ'))\" % (p, p) for p in ['ab','cd','ef','gh','ij','kl','mn','op','qr','st']) + '])')")
-run "replaceAll" "SELECT $SPLIT_ALL FORMAT Null" throw "" fold
+run "replaceAll" "SELECT $SPLIT_ALL FORMAT Null" throw "" fold 0.4
 
 # 8. Empty haystacks with a different pattern per row: nothing is scanned or written, so all the work is
 #    building one matcher per row. The needle must vary, otherwise the matcher is built once outside the
@@ -142,7 +159,7 @@ run "per-row matcher setup" \
 #    the executor's own between-block check bounds the query whatever the function does. Split for the
 #    same reasons as case 7, with a needle that is one byte of each fold's own value.
 SPLIT_ONE=$(python3 -c "print('arraySum([' + ', '.join(\"length(replaceAll(repeat(repeat('%s', 1000000), 30), '%s', '%s'))\" % (h, h[1], r) for (h, r) in [('ab','c'),('cd','e'),('ef','g'),('gh','i'),('ij','k'),('kl','m'),('mn','o'),('op','q'),('qr','s'),('st','u')]) + '])')")
-run "one-byte in place" "SELECT $SPLIT_ONE FORMAT Null" throw "" fold
+run "one-byte in place" "SELECT $SPLIT_ONE FORMAT Null" throw "" fold 0.4
 
 # 10. Many capture references against an empty capture group: every match executes the whole list while
 #     producing no output, so one checkpoint per match is not enough. The group must be empty and the
@@ -152,8 +169,10 @@ run "instruction list" \
 
 # 11. A pattern that matches the empty string at every position: each iteration advances one byte, runs no
 #     instructions and writes nothing, which is why the budget counts iterations rather than bytes.
-run "empty matches" \
-    "SELECT length(replaceRegexpAll(repeat(repeat('a', 1000000), 20), '()', '')) FORMAT Null" throw "" fold
+#     Split like case 1, for the same reason: one 20MB fold is the smallest interruptible step, and that
+#     step alone was most of an earlier deadline on a thread-sanitizer build.
+EMPTY_MATCHES=$(python3 -c "print('arraySum([' + ', '.join(\"length(replaceRegexpAll(repeat('%04d', 250000), '()', ''))\" % i for i in range(20)) + '])')")
+run "empty matches" "SELECT $EMPTY_MATCHES FORMAT Null" throw "" fold 0.2
 
 # 12. A replacement of 200000 capture references parsed per row against a needle that never matches: the
 #     whole list is built before any processing loop runs. The haystack must not match, or the case
@@ -172,8 +191,12 @@ run "per-row replacement" \
 # 15. A SINGLE match whose instruction list is itself over budget, so charging the list only after the loop
 #     finished would leave one match uninterruptible. Case 10's list is short enough that the per-match
 #     charge alone fires.
+#     This case sets its own earlier deadline because its work cannot be grown: the cost is the generated
+#     output alone, and the output is already within 10% of the test memory profile. At the shared deadline
+#     the whole call takes about as long as the deadline itself on a fast build, so which side of it the
+#     query lands on is decided by noise. An earlier deadline lands inside the single match instead.
 run "one match, long instruction list" \
-    "SELECT length(replaceRegexpAll(repeat('a', 1000000), '(.*)', repeat('\\\\1', 2000))) FORMAT Null" throw "" fold
+    "SELECT length(replaceRegexpAll(repeat('a', 1000000), '(.*)', repeat('\\\\1', 2000))) FORMAT Null" throw "" fold 0.2
 
 # 16. The "replace first" specialization, which leaves the per-row loop at the first match - a different
 #     loop exit from "replace all". Empty haystacks with a per-row pattern make the matcher setup the whole
