@@ -72,6 +72,11 @@ class ClickHouseProc:
     # How many times `stop_server` takes out a server that the watchdog brought
     # back while the previous one was being stopped, before giving up on it.
     RESPAWN_STOP_ATTEMPTS = 3
+    # How long (seconds) a watchdog that outlived the server it was waiting on
+    # gets to exit before `stop_server` stops believing an empty pid file. Above
+    # the 15 seconds `start` budgets for a server to publish its pid, so a slow
+    # respawn is seen rather than raced with.
+    RESPAWN_GRACE_TIMEOUT = 30
     # How far up the process tree `stop_server` looks for the watchdogs above a
     # respawned server. `BaseDaemon::setupWatchdog` adds exactly one level, so
     # this is only a guard against walking an unexpectedly deep chain forever.
@@ -811,19 +816,24 @@ clickhouse-client --query "SELECT count() FROM test.visits"
         watchdog got another server up in the meantime.
         """
         pid = self._current_server_pid(pid_file) or startup_pid
+        # Snapshotted before anything is signalled: once the server is gone, the
+        # watchdog above it can no longer be found by walking up from the pid
+        # file, and it is the one thing that can still bring a server back after
+        # the teardown - see `_stop_respawned_server`.
+        watchdogs = self._server_watchdog_pids(pid)
         if force:
             # Use clickhouse stop --force when this issue is fixed
             # https://github.com/ClickHouse/ClickHouse/issues/99142
             self._signal_server(pid, signal.SIGTERM, "TERM")
             if self._wait_server_gone(pid, timeout=10):
                 self._reap_server_wrapper(proc)
-                self._stop_respawned_server(pid_file, run_path)
+                self._stop_respawned_server(pid_file, run_path, watchdogs)
                 return
         elif Shell.check(
             f"cd {run_path} && clickhouse stop --pid-path {Path(pid_file).parent} --max-tries 300 --do-not-kill >/dev/null",
             verbose=True,
         ):
-            self._stop_respawned_server(pid_file, run_path)
+            self._stop_respawned_server(pid_file, run_path, watchdogs)
             return
         print(
             f"Failed to stop ClickHouse process {pid} gracefully - send TRAP signal to generate core file"
@@ -846,7 +856,7 @@ clickhouse-client --query "SELECT count() FROM test.visits"
                     f"system tables in {run_path} will not be scraped"
                 )
         self._reap_server_wrapper(proc)
-        self._stop_respawned_server(pid_file, run_path)
+        self._stop_respawned_server(pid_file, run_path, watchdogs)
 
     @classmethod
     def _current_server_pid(cls, pid_file) -> int:
@@ -862,7 +872,7 @@ clickhouse-client --query "SELECT count() FROM test.visits"
         return pid if cls._server_process_alive(pid) else 0
 
     @classmethod
-    def _stop_respawned_server(cls, pid_file, run_path):
+    def _stop_respawned_server(cls, pid_file, run_path, watchdogs=()):
         """Take out a server that came back while the previous one was stopped.
 
         In `CLICKHOUSE_WATCHDOG_RESTART=1` mode the watchdog starts a fresh
@@ -877,12 +887,24 @@ clickhouse-client --query "SELECT count() FROM test.visits"
         win: the watchdog restarts it after every abnormal exit, so each
         `SIGKILL` would only trigger the next restart and the loop below would
         run out of attempts with yet another server alive and holding the lock.
+
+        An empty pid file is not on its own proof that nothing is coming back:
+        the replacement server publishes its pid only once it is up, and `start`
+        budgets 15 seconds for that, well past the wait for the wrapper above.
+        So while any of the `watchdogs` snapshotted before the teardown is still
+        alive, the decision is deferred for `RESPAWN_GRACE_TIMEOUT` - and a
+        watchdog that outlives even that is taken out, because from here on
+        nothing else would stop it from publishing another server.
         """
         for _ in range(cls.RESPAWN_STOP_ATTEMPTS):
             pid = cls._current_server_pid(pid_file)
             if not pid:
-                return
-            cls._stop_server_watchdogs(pid)
+                still_alive = cls._wait_watchdogs_settled(watchdogs, pid_file)
+                if not still_alive and not cls._current_server_pid(pid_file):
+                    return
+                cls._kill_watchdogs(still_alive)
+                continue
+            cls._kill_watchdogs(cls._server_watchdog_pids(pid))
             print(
                 f"ClickHouse process {pid} came up again after the teardown - send KILL signal"
             )
@@ -897,21 +919,54 @@ clickhouse-client --query "SELECT count() FROM test.visits"
             )
 
     @classmethod
-    def _stop_server_watchdogs(cls, pid) -> None:
-        """Kill the watchdog processes above the server `pid`, outermost first.
+    def _wait_watchdogs_settled(cls, watchdogs, pid_file) -> list:
+        """Wait out the window in which a watchdog can still publish a server.
+
+        Returns the watchdogs that are still alive - empty when they have all
+        exited, which is the only state in which an empty pid file proves that
+        no server is coming back. Returns as soon as a new server does appear,
+        leaving it to the caller to stop it.
+
+        Costs nothing on the normal teardown path: without
+        `CLICKHOUSE_WATCHDOG_RESTART=1` there is no watchdog to wait for, and
+        with it the watchdog exits within a moment of the server it was waiting
+        on, which is what the poll below sees.
+        """
+        deadline = time.time() + cls.RESPAWN_GRACE_TIMEOUT
+        while True:
+            still_alive = [
+                watchdog
+                for watchdog in watchdogs
+                if cls._server_process_alive(watchdog)
+            ]
+            if not still_alive or cls._current_server_pid(pid_file):
+                return still_alive
+            if time.time() >= deadline:
+                print(
+                    f"ClickHouse watchdog processes {still_alive} outlived the "
+                    f"server by {cls.RESPAWN_GRACE_TIMEOUT}s and can still bring "
+                    "one back"
+                )
+                return still_alive
+            Utils.sleep(1)
+
+    @classmethod
+    def _kill_watchdogs(cls, watchdogs) -> None:
+        """Kill the given watchdog processes, outermost first.
 
         `BaseDaemon::setupWatchdog` keeps the original process as the watchdog
         and forks the server below it, so the watchdog is the parent of the pid
         in the pid file and shares its `argv[0]`. Outermost first, so an inner
         watchdog cannot be restarted by an outer one while it is being killed.
 
-        Only called once a server has been seen coming back, so a watchdog is
-        never taken out on the normal teardown path, where it exits on its own
-        and gets to log the server's exit status.
+        Only called once a server has been seen coming back, or once a watchdog
+        has outlived its grace period, so a watchdog is never taken out on the
+        normal teardown path, where it exits on its own and gets to log the
+        server's exit status.
         """
-        for watchdog in cls._server_watchdog_pids(pid):
+        for watchdog in watchdogs:
             print(
-                f"ClickHouse watchdog process {watchdog} is bringing the server "
+                f"ClickHouse watchdog process {watchdog} can bring the server "
                 f"back - send KILL signal"
             )
             cls._signal_server(watchdog, signal.SIGKILL, "KILL")
