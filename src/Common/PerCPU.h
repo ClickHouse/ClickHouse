@@ -3,7 +3,7 @@
 #include <base/defines.h>
 #include <base/types.h>
 
-#if defined(OS_LINUX)
+#if defined(OS_LINUX) || (defined(OS_FREEBSD) && defined(__x86_64__))
 #include <sched.h>
 #endif
 
@@ -15,9 +15,19 @@ namespace PerCPU
 /// first `getNumCPUs()` shards are used at runtime (and only those get faulted in).
 constexpr UInt32 MAX_CPUS = 1024;
 
+/// Whether `getCurrentCPU` is implemented for this platform/arch; when false it always returns
+/// -1, and `getNumCPUs` reports one CPU so callers size a single shard instead of creating
+/// unreachable ones.
+constexpr bool HAS_GET_CURRENT_CPU =
+#if defined(OS_LINUX) || defined(OS_DARWIN) || (defined(OS_FREEBSD) && defined(__x86_64__))
+    true;
+#else
+    false;
+#endif
+
 /// Number of CPUs `getCurrentCPU` can route to, capped at `MAX_CPUS`. Cached on first call.
-/// `get_nprocs_conf()` on Linux, `sysconf(_SC_NPROCESSORS_ONLN)` on Darwin; 1 on platforms where
-/// `getCurrentCPU` is unimplemented (routing collapses to one shard there) or if unavailable.
+/// `get_nprocs_conf()` on Linux, `sysconf(_SC_NPROCESSORS_ONLN)` on Darwin and FreeBSD; 1 if
+/// `HAS_GET_CURRENT_CPU` is false or the count is unavailable.
 UInt32 getNumCPUs() noexcept;
 
 /// Current CPU id, or -1 if unavailable (callers must treat a negative value as "unknown" and
@@ -27,6 +37,14 @@ ALWAYS_INLINE inline Int32 getCurrentCPU()
 {
 #if defined(OS_LINUX)
     /// TLS read via glibc rseq on modern kernels (see glibc-compatibility/musl/sched_getcpu.c).
+    return sched_getcpu();
+#elif defined(OS_FREEBSD) && defined(__x86_64__)
+    /// libc ifunc resolving to RDPID/RDTSCP (the amd64 kernel maintains TSC_AUX = cpu id): a
+    /// register read, not a syscall. The syscall resolver is picked only when CPUID lacks
+    /// RDTSCP; every SSE4.2-capable CPU also has RDTSCP and ClickHouse refuses to start
+    /// without SSE4.2, so reaching it needs a hypervisor masking RDTSCP — slower, still
+    /// correct. Other FreeBSD arches have only the syscall flavor (sched_getcpu_gen), too
+    /// slow for per-CPU routing, so they stay on the -1 path.
     return sched_getcpu();
 #elif defined(OS_DARWIN) && defined(__aarch64__)
     /// macOS has no `sched_getcpu`. XNU exposes the current CPU number to userspace in the low 12
@@ -46,6 +64,7 @@ ALWAYS_INLINE inline Int32 getCurrentCPU()
     __asm__ volatile("sidt %0" : "=m"(idtr));
     return static_cast<Int32>(idtr.limit_and_base_low & 0xfff);
 #else
+    static_assert(!HAS_GET_CURRENT_CPU);
     return -1;
 #endif
 }

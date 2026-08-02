@@ -12,7 +12,7 @@
 extern "C" const ptrdiff_t __rseq_offset __attribute__((weak)); // NOLINT(bugprone-reserved-identifier,cert-dcl37-c,cert-dcl51-cpp)
 extern "C" const unsigned int __rseq_size __attribute__((weak)); // NOLINT(bugprone-reserved-identifier,cert-dcl37-c,cert-dcl51-cpp)
 #pragma clang diagnostic pop
-#elif defined(OS_DARWIN)
+#elif defined(OS_DARWIN) || defined(OS_FREEBSD)
 #include <unistd.h>
 #endif
 
@@ -25,13 +25,15 @@ UInt32 getNumCPUs() noexcept
 {
     static const UInt32 cached = []
     {
+        /// Per-CPU routing is impossible without the current CPU id: one shard, no matter how
+        /// many CPUs the machine has (e.g. FreeBSD on non-amd64).
+        if (!HAS_GET_CURRENT_CPU)
+            return UInt32{1};
 #if defined(OS_LINUX)
         const Int64 n = get_nprocs_conf();
-#elif defined(OS_DARWIN)
+#elif defined(OS_DARWIN) || defined(OS_FREEBSD)
         const Int64 n = ::sysconf(_SC_NPROCESSORS_ONLN);
 #else
-        /// `getCurrentCPU` is not implemented here, so per-CPU routing is impossible; report one
-        /// CPU so callers size a single shard instead of creating unreachable ones (e.g. FreeBSD).
         const Int64 n = 1;
 #endif
         if (n <= 0)
