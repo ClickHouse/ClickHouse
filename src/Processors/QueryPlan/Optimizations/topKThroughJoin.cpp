@@ -51,29 +51,43 @@ std::optional<JoinSemantics> getJoinSemanticsFromStep(IQueryPlanStep * step)
     return {};
 }
 
-/// Return `true` when the eventual physical join could have `hasDelayedBlocks()`,
-/// in which case `optimizeReadInOrder`'s second-pass traversal will not propagate
-/// read-in-order through the join (see `findReadingStep` in `optimizeReadInOrder.cpp`).
-/// Used to gate the deferral: if delayed blocks are possible the deferral would
-/// silently disable both `topKThroughJoin` and the second-pass through-join pass.
+/// Return `true` when the eventual physical join could have `hasDelayedBlocks()` that the
+/// second pass cannot get rid of, in which case `optimizeReadInOrder`'s second-pass traversal
+/// will not propagate read-in-order through the join (see `findReadingStep` in
+/// `optimizeReadInOrder.cpp`). Used to gate the deferral: if such delayed blocks are possible
+/// the deferral would silently disable both `topKThroughJoin` and the second-pass
+/// through-join pass.
 ///
-/// For a physical `JoinStep` we read `hasDelayedBlocks()` directly. For
-/// `JoinStepLogical` the algorithm is picked later from `JoinSettings::join_algorithms`,
-/// so we conservatively assume delayed blocks are possible when the configured settings
-/// allow `JoinAlgorithm::GRACE_HASH` / `JoinAlgorithm::AUTO` (`JoinSwitcher`), or when
-/// automatic spilling is configured via `max_bytes_*_before_external_join` (which can
-/// wrap the chosen hash join in `SpillingHashJoin`).
-bool joinMayHaveDelayedBlocks(const IQueryPlanStep & step)
+/// `allow_pinning_spilling_join` mirrors `query_plan_read_in_order_through_spilling_join`. When
+/// it is set, a join that reports delayed blocks only because it *might* spill
+/// (`SpillingHashJoin`, `canKeepLeftPipelineInOrder() == true`) is not a blocker: the second
+/// pass pins it in memory and it then keeps the left order. This is the steady state today,
+/// because `max_bytes_ratio_before_external_join` defaults to `0.5` and wraps every hash join
+/// in `SpillingHashJoin`.
+///
+/// For a physical `JoinStep` we read `hasDelayedBlocks()` / `canKeepLeftPipelineInOrder()`
+/// directly. For `JoinStepLogical` the algorithm is picked later from
+/// `JoinSettings::join_algorithms`, so we conservatively assume unavoidable delayed blocks are
+/// possible when the configured settings allow `JoinAlgorithm::GRACE_HASH` /
+/// `JoinAlgorithm::AUTO` (`JoinSwitcher`, and neither is pinnable), or - unless pinning is
+/// allowed - when automatic spilling is configured via `max_bytes_*_before_external_join`
+/// (which can wrap the chosen hash join in `SpillingHashJoin`).
+bool joinMayHaveDelayedBlocks(const IQueryPlanStep & step, bool allow_pinning_spilling_join)
 {
     if (const auto * physical = typeid_cast<const JoinStep *>(&step))
     {
         const auto & join_ptr = physical->getJoin();
-        return !join_ptr || join_ptr->hasDelayedBlocks();
+        if (!join_ptr)
+            return true;
+        if (!join_ptr->hasDelayedBlocks())
+            return false;
+        return !(allow_pinning_spilling_join && join_ptr->canKeepLeftPipelineInOrder());
     }
     if (const auto * logical = typeid_cast<const JoinStepLogical *>(&step))
     {
         const auto & js = logical->getJoinSettings();
-        if (js.max_bytes_before_external_join > 0 || js.max_bytes_ratio_before_external_join > 0.0)
+        if (!allow_pinning_spilling_join
+            && (js.max_bytes_before_external_join > 0 || js.max_bytes_ratio_before_external_join > 0.0))
             return true;
         return std::ranges::any_of(js.join_algorithms, [](JoinAlgorithm a)
         {
@@ -368,12 +382,15 @@ size_t tryTopKThroughJoin(QueryPlan::Node * parent_node, QueryPlan::Nodes & node
     /// off is the join side stable enough to commit to the deferral.
     ///
     /// We additionally require that the eventual physical join cannot have delayed blocks
-    /// (`Grace`/`SpillingHashJoin`, legacy `JoinSwitcher`). `optimizeReadInOrder`'s join
-    /// traversal also rejects those (`!join->hasDelayedBlocks()` in `findReadingStep`), so
-    /// deferring when a delayed-block algorithm is possible would silently disable both
-    /// optimizations whenever the planner picks one - which is the steady state today,
-    /// because `max_bytes_ratio_before_external_join` defaults to `0.5` and wraps every
-    /// hash join in `SpillingHashJoin`.
+    /// (`GraceHashJoin`, legacy `JoinSwitcher`). `optimizeReadInOrder`'s join traversal also
+    /// rejects those (`findReadingStep`), so deferring when such an algorithm is possible
+    /// would silently disable both optimizations whenever the planner picks one.
+    /// `SpillingHashJoin` is the exception: it reports delayed blocks only because it *might*
+    /// spill, and the second pass makes it keep the left order by pinning it in memory, so it
+    /// blocks the deferral only when `query_plan_read_in_order_through_spilling_join` forbids
+    /// that pinning. This matters for the steady state, because
+    /// `max_bytes_ratio_before_external_join` defaults to `0.5` and wraps every hash join in
+    /// `SpillingHashJoin`.
     ///
     /// Finally, the eventual physical join must keep the read-in-order chain intact on the
     /// preserved side. Two merge-join algorithms break it: `partial_merge` builds a
@@ -389,7 +406,7 @@ size_t tryTopKThroughJoin(QueryPlan::Node * parent_node, QueryPlan::Nodes & node
         && settings.join_swap_table.has_value() && !settings.join_swap_table.value()
         && join_kind == JoinKind::Left
         && (join_strictness == JoinStrictness::All || join_strictness == JoinStrictness::Any)
-        && !joinMayHaveDelayedBlocks(*join_node->step)
+        && !joinMayHaveDelayedBlocks(*join_node->step, settings.read_in_order_through_spilling_join)
         && !joinDefeatsReadInOrderThroughJoin(*join_node->step);
     if (second_pass_can_apply)
     {

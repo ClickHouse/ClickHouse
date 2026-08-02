@@ -6512,7 +6512,7 @@ Such a join can only promise to preserve the order of the left table if it never
 
 Set to `0` to keep the conservative behavior of never propagating reading in order through a join that may spill. Queries that rely on spilling to stay within the memory limit, and that would otherwise become eligible for the optimization, keep working as before.
 
-This setting controls only the propagation of reading in order through the join. It does not gate the separate `ORDER BY ... LIMIT` through `JOIN` optimization, which pushes a `Sort` and a `Limit` down to the preserved side of the join and never relies on the join preserving any order; that one applies to spill-capable joins regardless of this setting.
+The separate `ORDER BY ... LIMIT` through `JOIN` optimization, which pushes a `Sort` and a `Limit` down to the preserved side of the join, never relies on the join preserving any order and stays available for spill-capable joins regardless of this setting. It does, however, step aside for reading in order when reading in order is possible - so with this setting enabled, an `ORDER BY ... LIMIT` over a spill-capable join whose preserved side can stream rows in the requested order gets the read-in-order plan instead of a pushed-down `Sort` and `Limit`.
 )", 0) \
     DECLARE(Bool, query_plan_aggregation_in_order, true, R"(
 Toggles the aggregation in-order query-plan-level optimization.
