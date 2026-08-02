@@ -172,6 +172,15 @@ FROM (SELECT customer, amount FROM orders) AS o (name, total) |> WHERE total >= 
 SELECT '-- A CTE column alias list stays intact across pipe operators (requires the analyzer)';
 WITH t(a) AS (SELECT 1 AS x) FROM t |> SELECT a |> LIMIT 1;
 
+SELECT '-- Ordinary settings of the query before the first pipe operator keep working (requires the analyzer)';
+SELECT count() FROM numbers(10) SETTINGS max_rows_to_read = 5 |> LIMIT 1; -- { serverError TOO_MANY_ROWS }
+SELECT number FROM numbers(2) SETTINGS max_block_size = 1 |> ORDER BY number;
+
+SELECT '-- An analyzer setting before the first pipe operator becomes a subquery override, exactly as in the hand-written nested form (requires the analyzer)';
+SELECT number FROM numbers(1) SETTINGS enable_analyzer = 0 |> LIMIT 1; -- { serverError INCORRECT_QUERY }
+SELECT * FROM (SELECT number FROM numbers(1) SETTINGS enable_analyzer = 0) LIMIT 1; -- { serverError INCORRECT_QUERY }
+SELECT number FROM numbers(1) SETTINGS allow_experimental_analyzer = 0 |> LIMIT 1; -- { serverError INCORRECT_QUERY }
+
 SELECT '-- Errors';
 FROM orders |> FOO; -- { clientError SYNTAX_ERROR }
 FROM orders |>; -- { clientError SYNTAX_ERROR }

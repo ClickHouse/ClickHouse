@@ -155,4 +155,8 @@ alice
 charlie
 -- A CTE column alias list stays intact across pipe operators (requires the analyzer)
 1
+-- Ordinary settings of the query before the first pipe operator keep working (requires the analyzer)
+0
+1
+-- An analyzer setting before the first pipe operator becomes a subquery override, exactly as in the hand-written nested form (requires the analyzer)
 -- Errors
