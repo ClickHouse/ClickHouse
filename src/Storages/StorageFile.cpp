@@ -3753,6 +3753,14 @@ $ echo -e "1,2\n3,4" | clickhouse-local -q "CREATE TABLE table (a Int64, b Int64
   - Indices
   - Replication
 
+## Limitations with `user_files_policy` {#user-files-policy-limitations}
+
+When the [`user_files_policy`](/reference/settings/server-settings/settings/user) server setting is configured, user files are accessed through the disk configured in that policy instead of a local directory. In that mode the following are not supported and throw an exception:
+
+- archive syntax (`'archive.zip :: data.csv'`);
+- [partitioned writes](#partition-by) with `PARTITION BY`;
+- the [`rename_files_after_processing`](/reference/settings/session-settings/other#rename_files_after_processing) setting, unless the policy's disk is a plain local filesystem disk.
+
 ## PARTITION BY {#partition-by}
 
 `PARTITION BY` — Optional.  It is possible to create separate files by partitioning the data on a partition key. In most cases, you don't need a partition key, and if it is needed you generally don't need a partition key more granular than by month. Partitioning does not speed up queries (in contrast to the ORDER BY expression). You should never use too granular partitioning. Don't partition your data by client identifiers or names (instead, make client identifier or name the first column in the ORDER BY expression).
