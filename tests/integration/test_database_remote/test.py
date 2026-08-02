@@ -264,3 +264,75 @@ def test_hidden_local_table_is_not_served_by_a_remote_replica(started_cluster):
     node1.query("DROP DATABASE hidden_proxy")
     for node in (node1, node2):
         node.query("DROP DATABASE hidden_src")
+
+
+def test_hidden_table_of_a_nested_remote_database_is_not_served_by_a_remote_replica(
+    started_cluster,
+):
+    # The same rule has to survive one more level: the local shard of the outer proxy is itself a
+    # `Remote` database, which hides `t` from the caller. The outer proxy must not resolve that very
+    # table through the other replica of its shard under the stored engine credentials.
+    for node in (node1, node2):
+        node.query("CREATE DATABASE nested_hidden_src")
+        node.query(
+            "CREATE TABLE nested_hidden_src.t (x UInt64) ENGINE = MergeTree ORDER BY x"
+        )
+        node.query("INSERT INTO nested_hidden_src.t VALUES (1)")
+        node.query(
+            "CREATE DATABASE nested_hidden_inner ENGINE = Remote('127.0.0.1', 'nested_hidden_src', 'default', '')"
+        )
+
+    node1.query(
+        "CREATE DATABASE nested_hidden_outer ENGINE = Remote('node1|node2', 'nested_hidden_inner', 'default', '')"
+    )
+    node1.query("CREATE USER nested_hidden_user IDENTIFIED WITH no_password")
+    node1.query(
+        "GRANT SHOW, SELECT, INSERT ON nested_hidden_outer.* TO nested_hidden_user"
+    )
+
+    assert (
+        node1.query("SHOW TABLES FROM nested_hidden_outer", user="nested_hidden_user")
+        == ""
+    )
+    assert (
+        node1.query(
+            "EXISTS TABLE nested_hidden_outer.t", user="nested_hidden_user"
+        )
+        == "0\n"
+    )
+    for query in (
+        "DESCRIBE TABLE nested_hidden_outer.t",
+        "SHOW CREATE TABLE nested_hidden_outer.t",
+        "SELECT * FROM nested_hidden_outer.t",
+        "INSERT INTO nested_hidden_outer.t VALUES (2)",
+    ):
+        assert "UNKNOWN_TABLE" in node1.query_and_get_error(
+            query, user="nested_hidden_user"
+        )
+
+    # A caller that is allowed to see the innermost table still works through the whole chain,
+    # without any grants on the intermediate database.
+    node1.query(
+        "GRANT SHOW, SELECT ON nested_hidden_src.* TO nested_hidden_user"
+    )
+    assert (
+        node1.query("SHOW TABLES FROM nested_hidden_outer", user="nested_hidden_user")
+        == "t\n"
+    )
+    assert (
+        node1.query(
+            "EXISTS TABLE nested_hidden_outer.t", user="nested_hidden_user"
+        )
+        == "1\n"
+    )
+    assert (
+        node1.query(
+            "DESCRIBE TABLE nested_hidden_outer.t", user="nested_hidden_user"
+        ).startswith("x\tUInt64")
+    )
+
+    node1.query("DROP USER nested_hidden_user")
+    node1.query("DROP DATABASE nested_hidden_outer")
+    for node in (node1, node2):
+        node.query("DROP DATABASE nested_hidden_inner")
+        node.query("DROP DATABASE nested_hidden_src")

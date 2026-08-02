@@ -148,7 +148,17 @@ private:
     /// preferred, another shard is consulted only when it is unavailable), like the structure does in
     /// `getStructureOfRemoteTable`: the shards of a cluster normally serve the same set of tables, and
     /// asking every one of them would multiply the cost of every listing by the number of shards.
-    Strings fetchTablesList(ContextPtr local_context, const String * only_table = nullptr) const;
+    /// `ignore_visibility` (meaningful only together with `only_table`) answers from the local shard
+    /// regardless of whether the caller is allowed to see the table; see
+    /// `isTableExistIgnoringVisibility`.
+    Strings fetchTablesList(ContextPtr local_context, const String * only_table = nullptr, bool ignore_visibility = false) const;
+
+    /// Whether `remote_database.table_name` exists at all, ignoring whether the caller is allowed to
+    /// see it. Used by an outer `Remote` database whose local shard is this database: `isTableExist`
+    /// and `tryGetTable` answer "missing" both for a hidden and for a genuinely missing table, but
+    /// only the latter may be looked up on the other replicas of the shard — serving a hidden one
+    /// under the stored engine credentials would bypass the visibility rule of this database.
+    bool isTableExistIgnoringVisibility(const String & table_name, ContextPtr local_context) const;
 
     /// Infer the column structure of `remote_database.table_name`, from the local catalog for a local
     /// shard (without the name-hint machinery of `DatabaseCatalog::getTable`, which would recurse back

@@ -130,7 +130,7 @@ DatabasePtr DatabaseRemote::tryGetLocalDatabase() const
 }
 
 
-Strings DatabaseRemote::fetchTablesList(ContextPtr local_context, const String * only_table) const
+Strings DatabaseRemote::fetchTablesList(ContextPtr local_context, const String * only_table, bool ignore_visibility) const
 {
     auto sample_block = std::make_shared<const Block>(Block{
         {ColumnString::create(), std::make_shared<DataTypeString>(), "name"},
@@ -184,7 +184,8 @@ Strings DatabaseRemote::fetchTablesList(ContextPtr local_context, const String *
             /// which live under a different database name. Checking the name of the intermediate
             /// proxy on top of that would hide the tables the caller is in fact allowed to see (a
             /// chain `outer` -> `inner` -> `db` needs no grants on `inner`, only on `db`).
-            const bool underlying_listing_is_filtered_by_access = typeid_cast<const DatabaseRemote *>(local_database.get()) != nullptr;
+            const auto * underlying_remote = typeid_cast<const DatabaseRemote *>(local_database.get());
+            const bool underlying_listing_is_filtered_by_access = underlying_remote != nullptr;
             const auto access = local_context->getAccess();
 
             if (only_table)
@@ -193,10 +194,26 @@ Strings DatabaseRemote::fetchTablesList(ContextPtr local_context, const String *
                 /// can be described. A table invisible to the caller is reported as missing, like in
                 /// the listing below. When the local replica does not have the table, fall through to
                 /// the remote-replica fallback, mirroring `fetchTableStructure`.
-                if (local_database->isTableExist(*only_table, query_context))
+                ///
+                /// The name is resolved ignoring the caller's visibility first, so that a table hidden
+                /// from the caller can be told from a genuinely missing one: only the latter may fall
+                /// through to the same-shard remote replicas below, which would otherwise resolve —
+                /// under the stored engine credentials — exactly the table that this database hides.
+                /// `IDatabase::isTableExist` is already visibility-agnostic; a nested `Remote` database
+                /// filters its own answer, so it is asked explicitly.
+                const bool name_exists = underlying_remote
+                    ? underlying_remote->isTableExistIgnoringVisibility(*only_table, query_context)
+                    : local_database->isTableExist(*only_table, query_context);
+
+                if (name_exists)
                 {
-                    if (underlying_listing_is_filtered_by_access
-                        || access->isGranted(AccessType::SHOW_TABLES, remote_database, *only_table))
+                    if (ignore_visibility)
+                        return Strings{*only_table};
+
+                    if (underlying_remote)
+                        return underlying_remote->isTableExist(*only_table, query_context) ? Strings{*only_table} : Strings{};
+
+                    if (access->isGranted(AccessType::SHOW_TABLES, remote_database, *only_table))
                         return Strings{*only_table};
                     return {};
                 }
@@ -293,7 +310,8 @@ ColumnsDescription DatabaseRemote::fetchTableStructure(const String & table_name
             /// like in `fetchTablesList`. Reading and writing the data still requires the rights on
             /// every hop of the chain, because the query is really executed against the table of the
             /// intermediate database, as it is for a `Distributed` table over another one.
-            const bool local_database_is_remote = typeid_cast<const DatabaseRemote *>(local_database.get()) != nullptr;
+            const auto * underlying_remote = typeid_cast<const DatabaseRemote *>(local_database.get());
+            const bool local_database_is_remote = underlying_remote != nullptr;
 
             /// `IDatabase::tryGetTable` resolves the name regardless of the caller's grants, so the
             /// mere fact that the local table exists must not become observable here: without this
@@ -340,6 +358,16 @@ ColumnsDescription DatabaseRemote::fetchTableStructure(const String & table_name
                             "and there are no remote replicas to fall back to. Retry the query",
                             backQuoteIfNeed(remote_database),
                             backQuoteIfNeed(table_name));
+                }
+                else if (underlying_remote && underlying_remote->isTableExistIgnoringVisibility(table_name, local_context))
+                {
+                    /// A nested `Remote` database answers `tryGetTable` with `nullptr` both for a table
+                    /// that it hides from the caller and for a genuinely missing one, and only the
+                    /// latter may use the fallback below: otherwise the outer proxy would resolve —
+                    /// through another replica of the same shard, under the stored engine credentials —
+                    /// the very table that the intermediate database hides, while `SHOW TABLES` and
+                    /// `EXISTS TABLE` keep reporting it as missing (see the direct local table below).
+                    return {};
                 }
             }
             else if (local_database->isTableExist(table_name, local_context))
@@ -581,6 +609,12 @@ bool DatabaseRemote::isTableExist(const String & table_name, ContextPtr local_co
     /// invisible) table yields `false`; a transport/authentication failure is propagated as the
     /// real error (like `tryGetTable`) instead of being reported as "does not exist".
     return !fetchTablesList(local_context, &table_name).empty();
+}
+
+
+bool DatabaseRemote::isTableExistIgnoringVisibility(const String & table_name, ContextPtr local_context) const
+{
+    return !fetchTablesList(local_context, &table_name, /* ignore_visibility = */ true).empty();
 }
 
 
