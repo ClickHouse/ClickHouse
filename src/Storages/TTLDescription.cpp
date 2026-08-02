@@ -13,6 +13,7 @@
 #include <Core/Settings.h>
 #include <Functions/IFunction.h>
 #include <Functions/FunctionsMiscellaneous.h>
+#include <Functions/TypeMismatchStrictness.h>
 #include <Interpreters/ExpressionAnalyzer.h>
 #include <Interpreters/castColumn.h>
 #include <Interpreters/ExpressionActions.h>
@@ -43,7 +44,6 @@
 #include <Interpreters/FunctionNameNormalizer.h>
 #include <Parsers/ExpressionListParsers.h>
 #include <Parsers/parseQuery.h>
-#include <Common/CurrentThread.h>
 #include <Common/SipHash.h>
 
 #include <unordered_set>
@@ -56,8 +56,6 @@ namespace Setting
     extern const SettingsBool allow_experimental_codecs;
     extern const SettingsBool allow_suspicious_codecs;
     extern const SettingsBool allow_suspicious_ttl_expressions;
-    extern const SettingsBool variant_throw_on_type_mismatch;
-    extern const SettingsBool dynamic_throw_on_type_mismatch;
 }
 
 namespace ErrorCodes
@@ -994,54 +992,6 @@ std::vector<ColumnPtr> checkActionsDAGForAggregateFunctions(
     return {};
 }
 
-/// RAII guard setting `variant_throw_on_type_mismatch` / `dynamic_throw_on_type_mismatch` on the query
-/// context of the *current thread* - the only place the `Variant`/`Dynamic` function adaptors read them
-/// from - and restoring the previous values on scope exit. Note the DDL `context` cannot be used for this:
-/// on a server it has no query context, and the adaptors would not see settings changed on it.
-class MismatchSettingsGuard
-{
-public:
-    MismatchSettingsGuard(bool variant_throw, bool dynamic_throw)
-    {
-        if (CurrentThread::isInitialized())
-        {
-            if (auto thread_query_context = CurrentThread::tryGetQueryContext())
-                thread_context = std::const_pointer_cast<Context>(thread_query_context);
-        }
-
-        if (!thread_context)
-            return;
-
-        const auto & settings = thread_context->getSettingsRef();
-        if (settings[Setting::variant_throw_on_type_mismatch] != variant_throw)
-        {
-            old_variant_throw = settings[Setting::variant_throw_on_type_mismatch];
-            thread_context->setSetting("variant_throw_on_type_mismatch", Field(variant_throw));
-        }
-        if (settings[Setting::dynamic_throw_on_type_mismatch] != dynamic_throw)
-        {
-            old_dynamic_throw = settings[Setting::dynamic_throw_on_type_mismatch];
-            thread_context->setSetting("dynamic_throw_on_type_mismatch", Field(dynamic_throw));
-        }
-    }
-
-    ~MismatchSettingsGuard()
-    {
-        if (!thread_context)
-            return;
-
-        if (old_variant_throw)
-            thread_context->setSetting("variant_throw_on_type_mismatch", Field(*old_variant_throw));
-        if (old_dynamic_throw)
-            thread_context->setSetting("dynamic_throw_on_type_mismatch", Field(*old_dynamic_throw));
-    }
-
-private:
-    ContextMutablePtr thread_context;
-    std::optional<bool> old_variant_throw;
-    std::optional<bool> old_dynamic_throw;
-};
-
 void checkTTLExpressionForAggregateFunctions(const ExpressionActionsPtr & expression, std::string_view expression_kind)
 {
     /// The synthetic probe in `checkActionsDAGForAggregateFunctions` exercises consumers over `Variant`/`Dynamic`
@@ -1050,9 +1000,8 @@ void checkTTLExpressionForAggregateFunctions(const ExpressionActionsPtr & expres
     /// `variant_throw_on_type_mismatch` / `dynamic_throw_on_type_mismatch`, which the adaptors read from the
     /// query context of the current thread. But a stored TTL expression is later rebuilt and executed under
     /// several unrelated contexts: the *inserting* session in `MergeTreeDataWriter::updateTTL` (strict by
-    /// default), the background context during TTL merges (settings from the `background_profile` server
-    /// config, strict by default), and table loading on ATTACH/restart (no thread query context at all, so
-    /// the adaptors fall back to strict). The DDL-time verdict must therefore not depend on any one of them:
+    /// default) and the background context during TTL merges (settings from the `background_profile` server
+    /// config, strict by default). The DDL-time verdict must therefore not depend on any one of them:
     /// the probe always runs strict, which is the superset - an expression that survives the strict probe
     /// only ever gets *more* lenient at execution (a mismatch turns into NULL instead of an exception), so it
     /// is safe under every context, while anything rejected here would throw on the first
@@ -1061,7 +1010,7 @@ void checkTTLExpressionForAggregateFunctions(const ExpressionActionsPtr & expres
     /// (Conversion functions such as `toDateTime` handle `Variant`/`Dynamic` natively, ignore both settings
     /// and always throw on a stored type they cannot convert, so for them the probe's verdict is the same
     /// under any settings.)
-    MismatchSettingsGuard probe_guard(/*variant_throw=*/ true, /*dynamic_throw=*/ true);
+    TypeMismatchStrictnessOverride probe_strictness(/*throw_on_type_mismatch=*/ true);
 
     checkActionsDAGForAggregateFunctions(expression->getActionsDAG(), expression_kind);
 }
@@ -1176,11 +1125,18 @@ TTLDescription & TTLDescription::operator=(const TTLDescription & other)
     return * this;
 }
 
-static ExpressionAndSets buildExpressionAndSets(ASTPtr & ast, const NamesAndTypesList & columns, const ContextPtr & context)
+/// `required_source_columns`, when given, receives the columns of `columns` that the AST refers to. Note
+/// this is deliberately taken from the syntax analysis and not from the built expression: constant folding
+/// can prune a column out of the expression (`WHERE isNull(x)` over a non-`Nullable` `x` folds to `0`),
+/// while the stored AST still refers to it and every later rebuild of that AST needs it to be available.
+static ExpressionAndSets buildExpressionAndSets(
+    ASTPtr & ast, const NamesAndTypesList & columns, const ContextPtr & context, NamesAndTypesList * required_source_columns = nullptr)
 {
     ExpressionAndSets result;
     auto ttl_string = ast->formatWithSecretsOneLine();
     auto syntax_analyzer_result = TreeRewriter(context).analyze(ast, columns);
+    if (required_source_columns)
+        *required_source_columns = syntax_analyzer_result->required_source_columns;
     ExpressionAnalyzer analyzer(ast, syntax_analyzer_result, context);
     auto dag = analyzer.getActionsDAG(false);
 
@@ -1264,23 +1220,26 @@ TTLDescription TTLDescription::getTTLFromAST(
 
     checkExpressionDoesntContainSubqueries(*result.expression_ast);
 
+    const bool skip_validation = is_attach || context->getSettingsRef()[Setting::allow_suspicious_ttl_expressions];
+
     /// Building a TTL expression can itself consult `variant_throw_on_type_mismatch`: the `Variant`
     /// function adaptor throws in its constructor when none of the alternatives is compatible with the
-    /// consumer, and under a lenient setting resolves the result to constant NULL instead. Such a lenient
-    /// build must not slip through DDL validation regardless of the session (or even the background
-    /// profile) settings, because it produces a table that is broken no matter how TTL runs later: the
-    /// constant fold prunes the referenced column from the stored TTL column list, so every subsequent
-    /// rebuild of the TTL expression fails with "Missing columns", and the table cannot even be re-attached
-    /// on server restart (loading has no query context, so the adaptor defaults to strict and throws).
-    /// Hence the validation build always runs strict. The escape hatches stay intact: on ATTACH or with
-    /// `allow_suspicious_ttl_expressions` the build behaves exactly as the session dictates.
-    std::optional<MismatchSettingsGuard> build_guard;
-    if (!is_attach && !context->getSettingsRef()[Setting::allow_suspicious_ttl_expressions])
-        build_guard.emplace(/*variant_throw=*/ true, /*dynamic_throw=*/ true);
+    /// consumer, and under a lenient setting resolves the result to constant NULL instead. The stored
+    /// metadata must not depend on which of the two a particular caller happens to see, so the strictness
+    /// is pinned here rather than taken from the ambient context.
+    ///
+    /// A validated build runs strict: a lenient build produces a TTL whose result is a constant NULL and
+    /// which therefore does nothing useful, and letting it through would only postpone the failure to the
+    /// first strict rebuild (a default-settings INSERT, or a TTL merge under the background profile).
+    ///
+    /// A build that skips validation runs lenient, which is the superset: whatever a session managed to
+    /// create must load again. Loading is exactly the caller that has no query context at all, so it would
+    /// otherwise see the strict default and refuse to attach a table that was created leniently - i.e. the
+    /// server would not start.
+    TypeMismatchStrictnessOverride build_strictness(/*throw_on_type_mismatch=*/ !skip_validation);
 
     auto ttl_ast = result.expression_ast->clone();
-    auto expression = buildExpressionAndSets(ttl_ast, columns.getAllPhysical(), context).expression;
-    result.expression_columns = expression->getRequiredColumnsWithTypes();
+    auto expression = buildExpressionAndSets(ttl_ast, columns.getAllPhysical(), context, &result.expression_columns).expression;
 
     result.result_column = expression->getSampleBlock().safeGetByPosition(0).name;
 
@@ -1305,8 +1264,8 @@ TTLDescription TTLDescription::getTTLFromAST(
                 result.where_expression_ast = where_expr_ast->clone();
 
                 ASTPtr ast = where_expr_ast->clone();
-                where_expression = buildExpressionAndSets(ast, columns.getAllPhysical(), context).expression;
-                result.where_expression_columns = where_expression->getRequiredColumnsWithTypes();
+                where_expression
+                    = buildExpressionAndSets(ast, columns.getAllPhysical(), context, &result.where_expression_columns).expression;
                 result.where_result_column = where_expression->getSampleBlock().safeGetByPosition(0).name;
             }
         }
@@ -1338,7 +1297,7 @@ TTLDescription TTLDescription::getTTLFromAST(
                     throw Exception(ErrorCodes::BAD_TTL_EXPRESSION,
                     "Invalid expression for assignment of column {}. Should contain an aggregate function", assignment.column_name);
 
-                if (!is_attach && !context->getSettingsRef()[Setting::allow_suspicious_ttl_expressions])
+                if (!skip_validation)
                     checkTTLGroupBySetForAggregateFunctions(ass_expression, columns.getAllPhysical(), context);
 
                 ass_expression = addTypeConversionToAST(std::move(ass_expression), columns.getPhysical(assignment.column_name).type->getName());
@@ -1365,7 +1324,7 @@ TTLDescription TTLDescription::getTTLFromAST(
                 /// is executed later by TTLAggregationAlgorithm. When an aggregate returns an AggregateFunction
                 /// state itself (e.g. `any(ts)`), casting it to an incompatible target type (e.g. `DateTime`)
                 /// must be rejected here instead of failing during the TTL merge.
-                if (!is_attach && !context->getSettingsRef()[Setting::allow_suspicious_ttl_expressions])
+                if (!skip_validation)
                     checkTTLExpressionForAggregateFunctions(set_part.expression, /*expression_kind=*/ "GROUP BY SET ");
 
                 result.set_parts.emplace_back(set_part);
@@ -1388,9 +1347,9 @@ TTLDescription TTLDescription::getTTLFromAST(
         }
     }
 
-    checkTTLExpression(expression, result.result_column, is_attach || context->getSettingsRef()[Setting::allow_suspicious_ttl_expressions]);
+    checkTTLExpression(expression, result.result_column, skip_validation);
 
-    if (where_expression && !is_attach && !context->getSettingsRef()[Setting::allow_suspicious_ttl_expressions])
+    if (where_expression && !skip_validation)
         checkTTLExpressionForAggregateFunctions(where_expression, /*expression_kind=*/ "WHERE ");
 
     return result;
