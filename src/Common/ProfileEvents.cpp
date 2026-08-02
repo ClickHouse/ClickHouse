@@ -1627,7 +1627,7 @@ static_assert(std::is_trivially_default_constructible_v<Count>);
 alignas(DB::CH_CACHE_LINE_SIZE) static Count global_counters_storage[PerCPU::MAX_CPUS * per_cpu_stride];
 
 /// `cpus` starts at 0 (single-row layout); `ProfileEventsPerCPUInitializer` flips it to
-/// `PerCPU::getNumCPUs()` before any worker thread exists.
+/// `perCPUShardCount()` before any worker thread exists.
 constexpr Counters::Counters(Count * allocated_counters) noexcept
     : counters(allocated_counters)
     , parent(nullptr)
@@ -1636,10 +1636,19 @@ constexpr Counters::Counters(Count * allocated_counters) noexcept
 
 constinit Counters global_counters(global_counters_storage);
 
-/// Per-CPU width applied to newly-created `User`-level `Counters`. Set to `getNumCPUs()` during
-/// dynamic static init; `setUserPerCPUEnabled(false)` resets it to 0 to force the compact single-row
-/// layout. Read once per `User` ctor; the server sets it at startup before any user exists.
+/// Per-CPU width applied to newly-created `User`-level `Counters`. Set to `perCPUShardCount()`
+/// during dynamic static init; `setUserPerCPUEnabled(false)` resets it to 0 to force the compact
+/// single-row layout. Read once per `User` ctor; the server sets it at startup before any user exists.
 constinit std::atomic<uint32_t> user_counters_cpus = 0;
+
+/// Rows of a per-CPU layout: `getNumCPUs()` when routing can actually spread the load, 0 (the
+/// compact single-row layout) when there is a single route anyway — a single-CPU machine, or a
+/// platform without `PerCPU::getCurrentCPU` where every increment folds into row 0.
+static uint32_t perCPUShardCount()
+{
+    const uint32_t cpus = PerCPU::HAS_GET_CURRENT_CPU ? PerCPU::getNumCPUs() : 0;
+    return cpus > 1 ? cpus : 0;
+}
 
 /// Switches `global_counters` to per-CPU layout during dynamic static init. Only `cpus` is
 /// mutated — storage stays put, so both pre- and post-flip readers see a valid view of the same
@@ -1650,7 +1659,7 @@ struct ProfileEventsPerCPUInitializer
 {
     ProfileEventsPerCPUInitializer()
     {
-        const uint32_t cpus = PerCPU::getNumCPUs();
+        const uint32_t cpus = perCPUShardCount();
         global_counters.cpus.store(cpus, std::memory_order_relaxed);
         user_counters_cpus.store(cpus, std::memory_order_relaxed);
     }
@@ -1659,7 +1668,7 @@ static const ProfileEventsPerCPUInitializer profile_events_per_cpu_initializer;
 
 void setUserPerCPUEnabled(bool enabled)
 {
-    user_counters_cpus.store(enabled ? PerCPU::getNumCPUs() : 0, std::memory_order_relaxed);
+    user_counters_cpus.store(enabled ? perCPUShardCount() : 0, std::memory_order_relaxed);
 }
 
 const Event Counters::num_counters = END;
