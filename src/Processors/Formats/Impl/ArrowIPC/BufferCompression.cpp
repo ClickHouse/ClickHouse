@@ -9,6 +9,8 @@
 #include <algorithm>
 #include <cstring>
 
+/// For `ZSTD_findDecompressedSize`, which `zstd.h` exposes only to static linkers.
+#define ZSTD_STATIC_LINKING_ONLY
 #include <zstd.h>
 #include <lz4frame.h>
 
@@ -29,14 +31,9 @@ std::optional<UInt64> declaredFrameContentSize(CompressionCodec codec, const cha
 {
     if (codec == CompressionCodec::Zstd)
     {
-        /// ZSTD_decompressDCtx sums every concatenated frame while the header read below describes only
-        /// the first, so a size from it is comparable to the caller's prefix for a lone frame only.
-        const size_t frame_size = ZSTD_findFrameCompressedSize(src, size);
-        if (ZSTD_isError(frame_size))
-            throw Exception(ErrorCodes::INCORRECT_DATA, "Compressed Arrow IPC buffer is not a valid ZSTD frame");
-        if (frame_size != size)
-            return std::nullopt;
-        const UInt64 n = ZSTD_getFrameContentSize(src, size);
+        /// Sums every frame of the payload, as the decompression call does, so the result stays
+        /// comparable to the caller's prefix for concatenated and skippable-prefixed frames too.
+        const UInt64 n = ZSTD_findDecompressedSize(src, size);
         if (n == ZSTD_CONTENTSIZE_ERROR)
             throw Exception(ErrorCodes::INCORRECT_DATA, "Compressed Arrow IPC buffer is not a valid ZSTD frame");
         if (n == ZSTD_CONTENTSIZE_UNKNOWN)

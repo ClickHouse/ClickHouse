@@ -7,10 +7,11 @@
 #   - a payload that is not a parsable codec frame;
 #   - a prefix that disagrees with the size its own codec frame declares;
 #   - an accumulated body size the allocator would reject as an internal error (LOGICAL_ERROR).
-# A prefix that agrees with its frame on a large size is NOT corrupt: it stays a memory-limit
-# condition, which one case asserts. Neither is a ZSTD payload whose frame layout the per-buffer
-# header cannot describe (several concatenated frames, or a leading skippable frame), nor an empty
-# buffer whose frame honestly declares zero: those decompress correctly and must still be read.
+# A prefix that agrees with its frames on a large size is NOT corrupt: it stays a memory-limit
+# condition, which one case asserts. Neither is a ZSTD payload of several concatenated frames or one
+# behind a skippable frame, nor an empty buffer whose frame honestly declares zero: those decompress
+# correctly and must still be read. The same multi-frame shapes with a forged prefix must be
+# rejected, so the size the prefix is compared against covers the whole payload, not its first frame.
 
 CUR_DIR=$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)
 # shellcheck source=../shell_config.sh
@@ -335,6 +336,19 @@ open(f"{out}/zstd_empty_frame_forged_prefix.arrows", "wb").write(
 # comparison must accept the 0 it now compares rather than over-rejecting an empty buffer.
 open(f"{out}/zstd_empty_frame_honest_prefix.arrows", "wb").write(
     lone_empty_zstd_frame_buffer(ch_zstd, 0))
+
+# Cases 11 and 12: the same two payload shapes as cases 7 and 8, with a forged prefix. Every frame
+# of these payloads declares a size, so the sum of them is comparable to the prefix and the
+# disagreement must be rejected - reading only the first frame's header would not see it.
+for name, frames in (
+    ("zstd_multi_frame_forged_prefix",
+     lambda raw: zstd_frame(raw[:len(raw) // 2]) + zstd_frame(raw[len(raw) // 2:])),
+    ("zstd_skippable_prefix_forged_prefix",
+     lambda raw: struct.pack("<II", 0x184D2A50, 4) + b"\x00" * 4 + zstd_frame(raw)),
+):
+    d = repack_zstd(ch_zstd, zstd_spans[0], frames)
+    struct.pack_into("<q", d, zstd_spans[0][0] - 8, 100 * 1024 ** 3)
+    open(f"{out}/{name}.arrows", "wb").write(bytes(d))
 PYEOF
 
 check() {
@@ -354,8 +368,11 @@ check aggregate_too_large.arrows INCORRECT_DATA
 check zstd_prefix_mismatch.arrows INCORRECT_DATA
 check zstd_bad_frame.arrows INCORRECT_DATA
 # The rejection must come from the frame comparison, so match its message: a bare INCORRECT_DATA
-# would also pass if the allocator guard caught it instead, leaving the comparison untested.
+# would also pass if the allocator guard or the decompression call caught it instead, leaving the
+# comparison untested.
 check zstd_empty_frame_forged_prefix.arrows 'codec frame declares 0'
+check zstd_multi_frame_forged_prefix.arrows 'codec frame declares'
+check zstd_skippable_prefix_forged_prefix.arrows 'codec frame declares'
 # Not corrupt: a size the query cannot afford is a resource condition, not a data error.
 check consistent_large.arrows MEMORY_LIMIT_EXCEEDED
 

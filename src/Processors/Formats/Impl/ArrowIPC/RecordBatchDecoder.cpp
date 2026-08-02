@@ -1551,7 +1551,7 @@ void RecordBatchDecoder::prepareBuffers(const flatbuf::RecordBatch & batch, cons
                 ErrorCodes::INCORRECT_DATA,
                 "Arrow IPC compressed buffer declares {} uncompressed bytes but carries no payload", out_len);
 
-        /// When the payload's codec frame declares a size, it is a second copy of this prefix, so
+        /// When the payload's codec frames declare a size, it is a second copy of this prefix, so
         /// disagreement means the prefix is forged - assert it before allocating for it. The frame size
         /// is optional (upstream Arrow's LZ4 writer omits it) and file-controlled too, so this is a
         /// consistency check, never an allocation bound.
