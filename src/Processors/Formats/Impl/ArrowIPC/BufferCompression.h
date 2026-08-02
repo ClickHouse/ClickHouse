@@ -7,6 +7,7 @@
 #include <Common/PODArray.h>
 #include <Common/VectorWithMemoryTracking.h>
 #include <cstdint>
+#include <optional>
 #include <utility>
 #include <vector>
 
@@ -19,6 +20,11 @@ enum class CompressionCodec : UInt8
     Lz4Frame = 0,
     Zstd = 1,
 };
+
+/// Parses only the codec frame header of `src` and returns the uncompressed size the frame itself
+/// declares, or nullopt when it declares none (an optional field both codecs may omit).
+/// Throws INCORRECT_DATA when the codec cannot parse the header at all.
+std::optional<UInt64> declaredFrameContentSize(CompressionCodec codec, const char * src, size_t size);
 
 /// Compresses Arrow IPC buffers, reusing one codec context across all buffers (creating a fresh
 /// context per buffer — as a one-shot call would — dominates the cost when there are many buffers).

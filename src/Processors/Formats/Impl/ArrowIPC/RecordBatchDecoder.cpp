@@ -24,6 +24,7 @@
 #include <DataTypes/DataTypeMap.h>
 #include <DataTypes/IDataType.h>
 #include <Common/assert_cast.h>
+#include <Common/BitHelpers.h>
 #include <Common/FloatUtils.h>
 #include <Common/DateLUTImpl.h>
 #include <Core/UUID.h>
@@ -1485,6 +1486,17 @@ void RecordBatchDecoder::prepareBuffers(const flatbuf::RecordBatch & batch, cons
         throw Exception(
             ErrorCodes::INCORRECT_DATA, "Unsupported Arrow IPC compression type {}", static_cast<int>(compression_type));
 
+    /// `resize(n)` asks the allocator for a power-of-two-rounded byte count (PODArray.h:203), and the
+    /// allocator rejects a size at or above 2^63 as an internal error. Reject it as malformed input.
+    using Body = std::decay_t<decltype(decompressed_body)>;
+    auto checkBodySize = [](size_t n)
+    {
+        const size_t bytes = roundUpToPowerOfTwoOrZero(
+            PODArrayDetails::minimum_memory_for_elements(n, sizeof(Body::value_type), Body::pad_left, Body::pad_right));
+        if (bytes >= 0x8000000000000000ULL)
+            throw Exception(ErrorCodes::INCORRECT_DATA, "Arrow IPC decompressed body size {} is too large to allocate", n);
+    };
+
     /// First pass: lay out each buffer's decompressed slot (8-byte aligned) without touching the data,
     /// so the destination buffer can be allocated once and the buffers decompressed in parallel.
     struct Placement { size_t offset; size_t length; const char * src; size_t src_size; bool raw; };
@@ -1509,6 +1521,8 @@ void RecordBatchDecoder::prepareBuffers(const flatbuf::RecordBatch & batch, cons
         if (pos > std::numeric_limits<size_t>::max() - 7)
             throw Exception(ErrorCodes::INCORRECT_DATA, "Arrow IPC decompressed body size overflows");
         pos = (pos + 7) & ~size_t(7);
+        /// Check the aligned running total here, before the zero-length `continue` below can skip it.
+        checkBodySize(pos);
         if (length == 0)
         {
             placements[i] = {pos, 0, nullptr, 0, true};
@@ -1538,10 +1552,26 @@ void RecordBatchDecoder::prepareBuffers(const flatbuf::RecordBatch & batch, cons
             throw Exception(
                 ErrorCodes::INCORRECT_DATA,
                 "Arrow IPC compressed buffer declares {} uncompressed bytes but carries no payload", out_len);
+
+        /// The prefix and the payload's own codec frame are two copies of the same size, which
+        /// `Decompressor::decompress` already requires to agree - assert it before allocating instead.
+        /// The frame size is optional (upstream Arrow's LZ4 writer omits it) and file-controlled too,
+        /// so this is a consistency check, never an allocation bound.
+        if (uncompressed_length >= 0 && length > 8)
+        {
+            const auto frame_len = declaredFrameContentSize(codec, src + 8, static_cast<size_t>(length - 8));
+            if (frame_len.has_value() && *frame_len != out_len)
+                throw Exception(
+                    ErrorCodes::INCORRECT_DATA,
+                    "Arrow IPC compressed buffer declares {} uncompressed bytes but its {}-byte codec frame "
+                    "declares {}", out_len, length - 8, *frame_len);
+        }
+
         if (out_len > std::numeric_limits<size_t>::max() - pos)
             throw Exception(ErrorCodes::INCORRECT_DATA, "Arrow IPC decompressed body size overflows");
         placements[i] = {pos, out_len, src + 8, static_cast<size_t>(length - 8), uncompressed_length < 0};
         pos += out_len;
+        checkBodySize(pos);
     }
 
     decompressed_body.resize(pos);

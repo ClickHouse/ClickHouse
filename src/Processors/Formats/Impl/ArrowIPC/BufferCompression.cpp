@@ -25,6 +25,36 @@ namespace ErrorCodes
 namespace DB::ArrowIPC
 {
 
+std::optional<UInt64> declaredFrameContentSize(CompressionCodec codec, const char * src, size_t size)
+{
+    if (codec == CompressionCodec::Zstd)
+    {
+        const unsigned long long n = ZSTD_getFrameContentSize(src, size);
+        if (n == ZSTD_CONTENTSIZE_ERROR)
+            throw Exception(ErrorCodes::INCORRECT_DATA, "Compressed Arrow IPC buffer is not a valid ZSTD frame");
+        if (n == ZSTD_CONTENTSIZE_UNKNOWN)
+            return std::nullopt;
+        return n;
+    }
+
+    /// LZ4F_getFrameInfo consumes the header into the context, so the context must be fresh (it is
+    /// discarded here) and cannot be one that a later decompression pass reuses.
+    LZ4F_dctx * dctx = nullptr;
+    if (LZ4F_isError(LZ4F_createDecompressionContext(&dctx, LZ4F_getVersion())))
+        throw Exception(ErrorCodes::CANNOT_DECOMPRESS, "Cannot create LZ4 decompression context");
+    LZ4F_frameInfo_t info;
+    size_t consumed = size;
+    const size_t ret = LZ4F_getFrameInfo(dctx, &info, src, &consumed);
+    LZ4F_freeDecompressionContext(dctx);
+    if (LZ4F_isError(ret))
+        throw Exception(
+            ErrorCodes::INCORRECT_DATA, "Compressed Arrow IPC buffer is not a valid LZ4 frame: {}", LZ4F_getErrorName(ret));
+    /// contentSize is an optional frame field; 0 means the writer did not record it.
+    if (info.contentSize == 0)
+        return std::nullopt;
+    return info.contentSize;
+}
+
 Compressor::~Compressor()
 {
     if (zstd_ctx)
