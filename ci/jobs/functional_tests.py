@@ -25,6 +25,23 @@ temp_dir = f"{Utils.cwd()}/ci/tmp"
 # `set_memory_ratio` logic in `main`).
 SANITIZERS = ("asan", "tsan", "msan", "ubsan")
 
+# Full stacktrace dumps `clickhouse-test` writes on an abort (hung check,
+# server died, per-test timeout). Names must match `SQL_STACKTRACES_LOG` and
+# `C_STACKTRACES_LOG` in tests/clickhouse-test.
+STACKTRACE_LOGS = ("sql_stacktraces.log", "c_stacktraces.log")
+
+
+def collect_stacktrace_logs(cwd):
+    """Existing stacktrace dumps under `cwd`, for attaching to the job result.
+
+    `clickhouse-test` writes them relative to its own cwd, which is the repo
+    root for this job (the test command has no `cd`, unlike fast_test's). They
+    exist only after an abort, so a green run yields nothing.
+    """
+    return [
+        str(Path(cwd) / name) for name in STACKTRACE_LOGS if (Path(cwd) / name).exists()
+    ]
+
 
 def stateless_memory_limit(source):
     """Per-test cgroup memory limit (`clickhouse-test --memory-limit`) for a run
@@ -918,6 +935,11 @@ def main():
         stop_watch_ = Utils.Stopwatch()
         step_name = "Tests"
         print(step_name)
+        # `clickhouse-test` appends, and these paths are gitignored so
+        # `git clean -ffd` keeps them: a dump left by a previous job in this
+        # workspace would otherwise be attached to a green run.
+        for stale in collect_stacktrace_logs(Utils.cwd()):
+            Path(stale).unlink()
 
         ft_res_processor = FTResultsProcessor(wd=temp_dir)
 
@@ -1347,6 +1369,9 @@ def main():
         )
         if test_result and CH.extra_tests_results:
             test_result.extend_sub_results(CH.extra_tests_results)
+        # Attach the abort-time stacktrace dumps: they are outside the server
+        # log dir `prepare_logs` globs, and stdout keeps only a trimmed preview.
+        debug_files += collect_stacktrace_logs(Utils.cwd())
 
     # Decide whether to block the CI pipeline on test failures
     force_ok_exit = False

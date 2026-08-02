@@ -39,6 +39,12 @@ per site so reverting one site cannot be masked by another already-correct
 caller; and a dead or wedged socket stays bounded, silent-but-for-one-line,
 and raises nothing, which is the property that made removing the pre-check
 safe.
+
+They also pin the stateless job's upload wiring
+(``ci.jobs.functional_tests.collect_stacktrace_logs``): the dumps are written
+relative to the harness cwd, which is outside the server log directory that
+``prepare_logs`` globs, so a dump that is collected but not attached dies with
+the runner and the abort is still undiagnosable.
 """
 
 import argparse
@@ -49,12 +55,18 @@ import io
 import os
 import runpy
 import socket
+import sys
 import time
 from contextlib import redirect_stderr, redirect_stdout
 from pathlib import Path
 
 _REPO_ROOT = Path(__file__).resolve().parent.parent.parent
 _CLICKHOUSE_TEST = str(_REPO_ROOT / "tests" / "clickhouse-test")
+
+sys.path.insert(0, str(_REPO_ROOT))
+
+from ci.jobs import functional_tests
+from ci.jobs.functional_tests import STACKTRACE_LOGS, collect_stacktrace_logs
 
 
 def _load_clickhouse_test():
@@ -127,7 +139,10 @@ def _accepting_blackhole():
     thread = threading.Thread(target=_accept_loop, daemon=True)
     thread.start()
     try:
-        yield srv.getsockname()[1]
+        # Yield `accepted` too: a caller asserting only on elapsed time cannot
+        # tell a wedged socket from a fast failure, which would silently retest
+        # the connection-refused path instead of the timeout.
+        yield srv.getsockname()[1], accepted
     finally:
         srv.close()
         for conn in accepted:
@@ -161,7 +176,7 @@ def _chdir(path):
         os.chdir(previous)
 
 
-def _abort_site(function_name, marker):
+def _abort_site(function_name, marker, expected_test):
     """Compile the one `if` statement that forms an abort site, straight out
     of the real file.
 
@@ -169,6 +184,12 @@ def _abort_site(function_name, marker):
     makes AND their order, which a search for the call's name cannot: it
     would also match the same call in a sibling site, so reverting one site
     would still pass while the other covers for it.
+
+    `expected_test` is the site's `if` condition, unparsed. Selecting the most
+    deeply nested match is a structural property, but nesting alone cannot say
+    the winner is the intended statement: an equally nested sibling elsewhere in
+    the function would be selected silently, and the test would then keep
+    passing while covering a different site.
     """
     tree = ast.parse(Path(_CLICKHOUSE_TEST).read_text(encoding="utf-8"))
     function = next(
@@ -182,8 +203,16 @@ def _abort_site(function_name, marker):
         if isinstance(node, ast.If) and marker in ast.unparse(node)
     ]
     assert candidates, f"no `if` statement in {function_name} mentions {marker!r}"
-    # Innermost match: the outer `if args.hung_check:` also contains the marker.
-    site = min(candidates, key=lambda node: len(ast.unparse(node)))
+    # Innermost match: enclosing `if`s (`args.hung_check`, the status
+    # dispatch) also contain the marker. Keyed on indentation, not on source
+    # length -- length is only a proxy, and one added comment inside the
+    # intended block can make it exceed its own parent.
+    site = max(candidates, key=lambda node: node.col_offset)
+    assert ast.unparse(site.test) == expected_test, (
+        f"{function_name}: selected the `if` at line {site.lineno} testing "
+        f"{ast.unparse(site.test)!r}, expected {expected_test!r} -- the abort "
+        "site moved or another equally nested site now matches the marker"
+    )
     return compile(
         ast.fix_missing_locations(ast.Module(body=[site], type_ignores=[])),
         _CLICKHOUSE_TEST,
@@ -315,14 +344,21 @@ def test_sql_stacktraces_stays_bounded_on_a_wedged_socket(tmp_path):
     http_holder, dead_http_port = _closed_port()
     try:
         args.http_port = dead_http_port
-        with _accepting_blackhole() as wedged_tcp_port:
+        with _accepting_blackhole() as (wedged_tcp_port, accepted):
+            # Pin the host to match the fixture's IPv4-only bind: the client's
+            # own default resolution of `localhost` may prefer ::1.
             args.client = (
-                f"{args.client.split(' --port=')[0]} --port={wedged_tcp_port}"
+                f"{args.client.split(' --port=')[0]}"
+                f" --host=127.0.0.1 --port={wedged_tcp_port}"
             )
             result = _run_sql_dump(ct, args, tmp_path)
+            connections = len(accepted)
     finally:
         http_holder.close()
 
+    # Without this, a client that failed fast would leave the 30s bound
+    # asserted nowhere while the test still passed.
+    assert connections, "the client never connected, so no timeout was exercised"
     assert result["seconds"] < 120, result["seconds"]
     assert not result["artifact"].exists()
     assert "Traceback" not in result["stderr"], result["stderr"]
@@ -333,7 +369,8 @@ def test_hung_check_abort_dumps_sql_before_c_stacktraces():
     # per-test timeout handler already called both collectors, so a global
     # search would pass even with this site reverted.  Order matters -- the C
     # dump attaches a debugger, and on ASan builds it declines outright.
-    ct = _load_clickhouse_test()
+    # Called for its preconditions; this site's callees are all stubbed below.
+    _load_clickhouse_test()
     calls, namespace = _record_calls(
         ["print_sql_stacktraces", "print_c_stacktraces", "print"]
     )
@@ -342,7 +379,12 @@ def test_hung_check_abort_dumps_sql_before_c_stacktraces():
     namespace["args"].hung_check = True
     namespace["stop_testing"] = type("Event", (), {"set": lambda self: None})()
 
-    exec(_abort_site("do_run_tests", "Hung check failed"), namespace)
+    exec(
+        _abort_site(
+            "do_run_tests", "Hung check failed", "not check_server_liveness(args)"
+        ),
+        namespace,
+    )
 
     assert calls == ["print", "print_sql_stacktraces", "print_c_stacktraces"], calls
 
@@ -364,7 +406,14 @@ def test_server_died_abort_dumps_sql_before_c_stacktraces():
     namespace["stop_testing"] = type("Event", (), {"set": lambda self: None})()
 
     try:
-        exec(_abort_site("run_tests_array", "FailureReason.SERVER_DIED"), namespace)
+        exec(
+            _abort_site(
+                "run_tests_array",
+                "FailureReason.SERVER_DIED",
+                "test_result.reason == FailureReason.SERVER_DIED",
+            ),
+            namespace,
+        )
     except ct["StopTesting"]:
         pass  # the site ends by raising; the calls before it are the subject
 
@@ -384,6 +433,13 @@ def test_sql_stacktraces_writes_nothing_to_the_server_log(tmp_path):
     args = _make_args()
     log_dir = Path(_REPO_ROOT) / "ci" / "tmp" / "var" / "log" / "clickhouse-server"
     logs = sorted(log_dir.glob("clickhouse-server*.log")) if log_dir.is_dir() else []
+    # Assert rather than skip: an empty glob would make every assertion below
+    # a no-op, and this is the invariant that keeps a diagnostic from ever
+    # manufacturing a merge blocker. Name the path so a layout drift in
+    # ClickHouseService is diagnosable from the failure line alone.
+    assert (
+        logs
+    ), f"no clickhouse-server*.log under {log_dir} -- server log layout changed"
     before = {path: path.stat().st_size for path in logs}
 
     _run_sql_dump(ct, args, tmp_path)
@@ -394,3 +450,51 @@ def test_sql_stacktraces_writes_nothing_to_the_server_log(tmp_path):
             appended = handle.read()
         assert "<Fatal>" not in appended, appended[:2000]
         assert "Received signal" not in appended, appended[:2000]
+
+
+def test_stacktrace_log_names_match_clickhouse_test(tmp_path):
+    # The stateless job attaches the dumps by name, so a rename in
+    # clickhouse-test would silently stop them being uploaded.
+    ct = _load_clickhouse_test()
+    assert set(STACKTRACE_LOGS) == {
+        ct["SQL_STACKTRACES_LOG"],
+        ct["C_STACKTRACES_LOG"],
+    }, STACKTRACE_LOGS
+
+
+def test_collect_stacktrace_logs_finds_dumps_written_by_the_run(tmp_path):
+    # Pins the stateless job's upload wiring: the dumps land relative to the
+    # harness cwd, outside the server log dir `prepare_logs` globs, so they are
+    # attached only if this returns them.
+    ct = _load_clickhouse_test()
+    args = _make_args()
+    holder, dead_http_port = _closed_port()
+    try:
+        args.http_port = dead_http_port
+        result = _run_sql_dump(ct, args, tmp_path)
+    finally:
+        holder.close()
+
+    assert result["artifact"].exists(), result["stdout"]
+    assert collect_stacktrace_logs(tmp_path) == [str(result["artifact"])]
+
+
+def test_collect_stacktrace_logs_attaches_nothing_on_a_green_run(tmp_path):
+    # The dumps exist only after an abort, so a run that never aborted must
+    # attach nothing rather than an empty or missing path.
+    assert collect_stacktrace_logs(tmp_path) == []
+
+
+def test_stale_dumps_are_cleared_before_the_test_stage():
+    # A dump left by a previous job in the same workspace would be attached to a
+    # green run as if it had aborted: clickhouse-test appends, and the paths are
+    # gitignored so `git clean -ffd` in `Runner._pre_run` keeps them.
+    source = inspect.getsource(functional_tests.main)
+    stage, _, rest = source.partition("JobStages.TEST in stages")
+    assert rest, "the TEST stage guard moved"
+    clear, _, after_collect = rest.partition("JobStages.COLLECT_LOGS in stages")
+    assert after_collect, "the COLLECT_LOGS stage guard moved"
+    # Clearing must happen on TEST entry, before any dump this job writes, and
+    # so necessarily before the attach in COLLECT_LOGS.
+    assert "unlink()" in clear, clear[:2000]
+    assert "collect_stacktrace_logs" in clear, clear[:2000]
