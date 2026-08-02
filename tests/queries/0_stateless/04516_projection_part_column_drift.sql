@@ -792,3 +792,66 @@ SELECT 'ignore-parent-stored-dep forced after merge', a, c FROM t_proj_ignore_pa
 SETTINGS optimize_use_projections = 1, force_optimize_projection = 1;
 
 DROP TABLE t_proj_ignore_parent_stored_dep_drift;
+
+-- an ALIAS dependency is never fillable from a projection part, so the projection must not be used.
+-- `d DEFAULT c + 1` depends on the alias `c`, and a projection stores only the physical columns its
+-- query resolves to, so no projection part ever holds `c`. The reader resolves the missing `d`
+-- against the projection's own column set, where `c` is absent, and throws UNKNOWN_IDENTIFIER
+-- instead of falling back. Routing to the parent is the only correct answer here.
+DROP TABLE IF EXISTS t_proj_alias_backed_dep;
+
+CREATE TABLE t_proj_alias_backed_dep
+(
+    a UInt64,
+    b UInt64,
+    c UInt64 ALIAS b * 10,
+    e UInt64 ALIAS a + 1,
+    PROJECTION p (SELECT a, b, c, e ORDER BY a)
+)
+ENGINE = MergeTree ORDER BY a;
+
+SYSTEM STOP MERGES t_proj_alias_backed_dep;
+
+-- the alias `c` resolves to `b`, so the projection part materializes {a, b} and never `c` itself
+INSERT INTO t_proj_alias_backed_dep (a, b) VALUES (1, 7);
+
+SELECT 'alias-backed-dep part columns before drift', name, column FROM system.projection_parts_columns
+WHERE database = currentDatabase() AND table = 't_proj_alias_backed_dep' AND active ORDER BY name, column;
+
+ALTER TABLE t_proj_alias_backed_dep ADD COLUMN d UInt64 DEFAULT c + 1;
+ALTER TABLE t_proj_alias_backed_dep MODIFY COLUMN e UInt64 ALIAS d + 1;
+
+-- served from the parent: e = d + 1 = (b * 10 + 1) + 1 = 72
+SELECT 'alias-backed-dep read after drift', a, e FROM t_proj_alias_backed_dep ORDER BY a;
+
+SELECT a, e FROM t_proj_alias_backed_dep ORDER BY a
+SETTINGS optimize_use_projections = 1, force_optimize_projection = 1; -- { serverError PROJECTION_NOT_USED }
+
+-- `b` being requested alongside does not make `c` resolvable: the default is evaluated against the
+-- projection part's own columns, not the query's
+SELECT a, b, e FROM t_proj_alias_backed_dep ORDER BY a
+SETTINGS optimize_use_projections = 1, force_optimize_projection = 1; -- { serverError PROJECTION_NOT_USED }
+
+-- the merge rebuilds, so the rebuilt part materializes `d` (a merge of the stale part would bake in
+-- a default-filled `d`) and the projection becomes usable again
+SYSTEM START MERGES t_proj_alias_backed_dep;
+OPTIMIZE TABLE t_proj_alias_backed_dep FINAL;
+
+SELECT 'alias-backed-dep part columns after merge', name, column FROM system.projection_parts_columns
+WHERE database = currentDatabase() AND table = 't_proj_alias_backed_dep' AND active ORDER BY name, column;
+
+SELECT 'alias-backed-dep parent path after merge', a, e FROM t_proj_alias_backed_dep ORDER BY a
+SETTINGS optimize_use_projections = 0;
+
+SELECT 'alias-backed-dep forced after merge', a, e FROM t_proj_alias_backed_dep ORDER BY a
+SETTINGS optimize_use_projections = 1, force_optimize_projection = 1;
+
+SYSTEM FLUSH LOGS part_log;
+
+SELECT 'alias-backed-dep rebuilt not merged',
+       sum(ProfileEvents['MergedProjections']), sum(ProfileEvents['RebuiltProjections']) > 0
+FROM system.part_log
+WHERE database = currentDatabase() AND table = 't_proj_alias_backed_dep'
+  AND event_type = 'MergeParts';
+
+DROP TABLE t_proj_alias_backed_dep;

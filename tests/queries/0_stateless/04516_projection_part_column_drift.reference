@@ -99,3 +99,12 @@ ignore-parent-stored-dep parent path	1	71
 ignore-parent-stored-dep parent path	2	91
 ignore-parent-stored-dep forced after merge	1	71
 ignore-parent-stored-dep forced after merge	2	91
+alias-backed-dep part columns before drift	p	a
+alias-backed-dep part columns before drift	p	b
+alias-backed-dep read after drift	1	72
+alias-backed-dep part columns after merge	p	a
+alias-backed-dep part columns after merge	p	b
+alias-backed-dep part columns after merge	p	d
+alias-backed-dep parent path after merge	1	72
+alias-backed-dep forced after merge	1	72
+alias-backed-dep rebuilt not merged	0	1
