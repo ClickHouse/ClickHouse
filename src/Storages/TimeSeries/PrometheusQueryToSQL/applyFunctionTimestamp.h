@@ -12,14 +12,10 @@ bool isFunctionTimestamp(std::string_view function_name);
 /// Applies the PromQL function timestamp(): returns the timestamp (in seconds since epoch) of the sample
 /// selected for its argument at each point of the query's grid.
 ///
-/// Only a narrow set of argument shapes is supported: a bare instant selector, optionally wrapped in a unary
-/// +/-, a binary math operation (+, -, *, /, %, ^) against a scalar literal (a bare Scalar or a unary +/- over
-/// one), a `bool`-modified comparison operation against a scalar literal, an offset/@ modifier, and/or a nested
-/// timestamp() call - any combination of these that bottoms out at a bare instant selector. These are exactly
-/// the shapes for which the argument's samples keep the identity (and so the timestamp) of the underlying
-/// selector's samples; anything else (e.g. a comparison without `bool` - which filters out samples - binary
-/// operations of two vectors, aggregations, other functions) throws NOT_IMPLEMENTED, same as before this
-/// function existed.
+/// Supported argument shapes match Prometheus 3.5.0: a bare instant selector, optionally wrapped in a direct
+/// offset or @ modifier (e.g. `timestamp(some_metric)`, `timestamp(some_metric offset 1m)`, `timestamp(some_metric @ 120)`).
+/// Any other expression shape (vector-scalar arithmetic, unary operators, comparisons, nested timestamp() calls,
+/// aggregations, or binary vector operations) throws NOT_IMPLEMENTED.
 SQLQueryPiece applyFunctionTimestamp(const PQT::Function * function_node, std::vector<SQLQueryPiece> && arguments, ConverterContext & context);
 
 }
