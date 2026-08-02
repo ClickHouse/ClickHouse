@@ -93,11 +93,8 @@ def test_archive_overrun_is_bounded_and_not_fatal(tmp_path):
 def test_archive_overrun_leaves_no_partial_archive(tmp_path):
     """A timed-out archive must not leave anything at the destination.
 
-    `tar` killed by SIGTERM leaves a large truncated archive, and the upload
-    path only tests `Path(file).is_file()`, so a destination-writing implementation
-    publishes that truncation as the logs. Absence is asserted rather than validity:
-    `gzip -t` on such an archive is not a usable oracle here (it reports the truncation
-    on stderr, but the whole point is that nothing should be there to test).
+    Absence is asserted rather than validity: nothing should be there to test, so
+    `gzip -t` is not a usable oracle here.
     """
     src = _slow_tree(tmp_path)
     archive = tmp_path / "logs.tar.gz"
@@ -115,14 +112,9 @@ def test_archive_overrun_leaves_no_partial_archive(tmp_path):
 def test_the_archive_command_does_not_pipe_tar_into_gzip():
     """The archiving command must not hide tar's exit status behind a pipe.
 
-    `Shell.run` uses bash without `pipefail`, so `tar -cf - | gzip > out` reports only
-    gzip's status: a tar that fails part-way exits 0, which is why the previous
-    `strict=True` never caught a tar failure, and which would make the success-gated
-    rename publish a silently incomplete archive as the logs.
-
-    Asserted on the command as well as behaviourally, because the behavioural arms can
-    only show that the current form reports a failure - not that a future refactor back
-    to a pipe would stop reporting it.
+    Asserted on the command as well as behaviourally: the behavioural arms can only show
+    that the current form reports a failure, not that a refactor back to a pipe would
+    stop reporting it.
     """
     calls = []
 
@@ -156,11 +148,9 @@ def test_the_archive_command_does_not_pipe_tar_into_gzip():
 def test_archive_reports_tar_failure_and_publishes_nothing(tmp_path):
     """A tar that could not finish writing must be reported and publish nothing.
 
-    The counterpart of the arm above: the same non-zero exit, but this time the archive
-    is genuinely unusable, so the two together show that the outcome follows the
-    archive's state rather than the exit code. A write limit on the output is the
-    trigger, because it is what a real out-of-space archiving looks like and needs no
-    privileges - unlike an unreadable input, which root reads regardless.
+    The counterpart of the arm above: same non-zero exit, unusable archive, so the two
+    together show the outcome follows the archive's state, not the exit code. The write
+    limit is the trigger because an unreadable input would be read by root regardless.
     """
     src = _slow_tree(tmp_path)
     archive = tmp_path / "logs.tar.gz"
@@ -191,12 +181,9 @@ def test_archive_reports_tar_failure_and_publishes_nothing(tmp_path):
 def test_archive_failure_leaves_an_existing_archive_intact(tmp_path):
     """A failed attempt must not destroy an archive already at the destination.
 
-    Both archiving paths write the same `ci/tmp/logs.tar.gz`: the normal post-run path
-    and the on_error_hook, which runs afterwards on the reachable "archived fine, then
-    reported ERROR" ordering. Writing to the destination and truncating it on open, or
-    removing it before archiving, would replace a complete archive with nothing whenever
-    the second writer overran. Building under a temporary name keeps the failure
-    confined to that temporary file.
+    Both archiving paths write the same `ci/tmp/logs.tar.gz`, and the hook can run after
+    the normal path already published one, so a second writer that overran must not be
+    able to replace a complete archive with nothing.
     """
     existing = tmp_path / "logs.tar.gz"
     existing.write_bytes(b"previous complete archive")
@@ -214,14 +201,9 @@ def test_archive_failure_leaves_an_existing_archive_intact(tmp_path):
 def test_archive_publishes_a_member_appended_to_while_read(tmp_path):
     """`tar` exit 1 is benign and its archive must still be published.
 
-    A file appended to while tar reads it makes tar exit 1 ("some files differ") with a
-    complete archive. Every archive this helper builds for a CI job contains such files -
-    the job's own log, the docker log, live test instance directories - so treating 1 as
-    failure would discard a complete archive on essentially every failing shard, without
-    the timeout ever firing.
-
-    The appended-to member is pre-seeded large enough that tar spends measurable time
-    reading it, which is what makes the overlap with the writer reliable.
+    Every archive this helper builds contains a file the job is still writing, so
+    treating 1 as failure would discard a complete archive on nearly every failing shard.
+    The member is pre-seeded large so tar's read reliably overlaps the writer.
     """
     src = tmp_path / "src"
     src.mkdir()
@@ -261,15 +243,9 @@ def test_archive_publishes_a_member_appended_to_while_read(tmp_path):
 def test_archive_publishes_a_complete_archive_despite_a_failing_tar_exit(tmp_path):
     """A complete archive must be published even when `tar` exits non-zero.
 
-    `tar` reports failure for an input it cannot stat, yet archives every input that it
-    could and finishes the stream. Both archiving paths routinely hit that: the hook's
-    `_instances*` glob is unexpanded whenever the job errored before a cluster started,
-    and here an input vanishes between the existence filter and tar. Rejecting on the rc
-    alone therefore discards a complete archive without the timeout ever firing.
-
-    Needs no privileges, unlike the unreadable-input arm below, so it also covers the
-    failure direction on the root CI runner. Deterministic: the input is removed from
-    inside the mocked `Shell.run`, once, immediately before the real call.
+    An input vanishing between the existence filter and tar is reachable (the hook's
+    `_instances*` glob stays unexpanded when no cluster started), and needs no
+    privileges, so this arm also covers the failure direction on the root CI runner.
     """
     src = tmp_path / "src"
     src.mkdir()
@@ -316,10 +292,8 @@ def test_archive_publishes_a_complete_archive_despite_a_failing_tar_exit(tmp_pat
 def test_archive_skips_missing_inputs_without_raising(tmp_path):
     """A declared-but-absent input must be dropped, not raise.
 
-    `Result.from_pytest_run` registers the pytest log and report files before running
-    pytest, and a conftest import error or a usage error leaves both absent. Raising here
-    would skip the caller's result upload, which is exactly the outcome the bound exists
-    to prevent.
+    Reachable: `Result.from_pytest_run` registers the pytest log and report before
+    running pytest, and a conftest import error leaves both absent.
     """
     present = tmp_path / "present.txt"
     present.write_text("payload\n")
@@ -374,16 +348,34 @@ def test_archive_publish_failure_is_reported_not_raised(tmp_path):
     assert leftovers == [], f"the temporary archive was left behind: {leftovers}"
 
 
+def test_archive_cleanup_failure_is_reported_not_raised(tmp_path):
+    """A cleanup that cannot remove the temporary archive must not raise.
+
+    `unlink(missing_ok=True)` suppresses only `FileNotFoundError`, and an exception on
+    the failure path loses the caller's result upload just as an unbounded hang did.
+    """
+    src = tmp_path / "src"
+    src.mkdir()
+    (src / "a.txt").write_text("payload\n")
+    archive = tmp_path / "logs.tar.gz"
+    # The staged path already occupied by a directory: tar cannot write it, and the
+    # cleanup that follows cannot unlink it either.
+    staged = tmp_path / f"logs.tar.gz.{os.getpid()}.tmp"
+    staged.mkdir()
+    (staged / "occupant").write_text("in the way\n")
+
+    result = Utils.compress_files_gz([str(src)], str(archive), timeout=600)
+
+    assert result is None, f"a failed archive reported success ({result!r})"
+    assert not archive.exists(), "a failed archive was published at the destination"
+
+
 def test_the_temporary_archive_name_is_unique_per_writer(tmp_path):
     """Two writers must not stage into the same temporary file.
 
-    Both callers that write the job's `logs.tar.gz` stage next to it. Sharing one
-    temporary name introduces a corruption mode the destination-writing form did not
-    have: one writer's rename publishes the file while the other's open descriptor
-    follows the inode and keeps writing into the PUBLISHED archive.
-
-    Asserted by observing the staged name, because reproducing the overlap needs two
-    concurrent archiving processes racing on one path.
+    A shared name lets one writer's rename publish the file while the other's descriptor
+    follows the inode into the PUBLISHED archive. Asserted by observing the staged name,
+    because reproducing the overlap needs two processes racing on one path.
     """
     staged = []
 
@@ -495,11 +487,9 @@ def test_timeout_terminates_a_long_running_command():
 def test_timeout_is_enforced_when_a_background_descendant_holds_the_pipes():
     """The bound must hold when the shell exits but a descendant keeps the pipes open.
 
-    `Shell.run` joins the stdout/stderr readers before signalling that the attempt is
-    over, so a background descendant inheriting those pipes keeps the readers blocked and
-    `finished` unset while the shell leader is already reaped. A leader-only `poll()`
-    backstop sees the reaped leader and returns without signalling the group, leaving the
-    command entirely unbounded. Testing the process GROUP instead restores enforcement.
+    A background descendant inheriting the pipes keeps `finished` unset while the leader
+    is already reaped, so a leader-only `poll()` backstop returns without signalling and
+    leaves the command entirely unbounded. The GROUP test is what enforces the bound.
     """
     start = time.monotonic()
     Shell.run(
@@ -517,19 +507,9 @@ def test_timeout_is_enforced_when_a_background_descendant_holds_the_pipes():
 def test_the_group_is_force_killed_when_a_descendant_ignores_sigterm():
     """The SIGKILL escalation must fire for a descendant that ignores SIGTERM.
 
-    A different site from the arm above: that one pins the test taken BEFORE the SIGTERM,
-    this one the test at the SIGKILL gate. A descendant that ignores SIGTERM survives the
-    signal, so the gate is the only thing left that can stop it; asking `poll()` there
-    sees the already-reaped shell leader, skips the SIGKILL, and leaves `Shell.run`
-    blocked in its reader joins for the descendant's whole natural lifetime.
-
-    Master is equally unbounded here (measured: this command runs its full sleep on
-    master too), so this arm pins a hardening, not a regression fix.
-
-    The child's sleep must stay well above the grace loop's own 100s budget, or the arm
-    passes without the SIGKILL and proves nothing -- do not reduce it to fit a runtime
-    target. It is asserted alongside the SIGKILL log line, which is the direct evidence
-    that the escalation ran rather than the child simply exiting.
+    Pins the liveness test at the SIGKILL gate; the SIGKILL log line is the evidence it
+    ran. The child's sleep must stay well above the grace loop's own 100s budget or the
+    arm passes without the SIGKILL and proves nothing: do not reduce it.
     """
     child_sleep = 200
     ceiling = 130  # the loop's 100s budget plus one 5s interval, with margin
@@ -562,15 +542,9 @@ def test_the_group_is_force_killed_when_a_descendant_ignores_sigterm():
 def test_a_descendant_gets_its_full_graceful_shutdown_window():
     """The grace loop must not end early, or SIGTERM handlers are cut short.
 
-    The counterpart of the arm above, pinning the liveness test inside the grace loop
-    rather than at the SIGKILL gate. A descendant that handles SIGTERM and needs a few
-    seconds to shut down cleanly gets that time only while the loop keeps waiting; asking
-    `poll()` there sees the reaped shell leader, ends the loop on its first iteration and
-    escalates straight to SIGKILL, which kills the handler mid-cleanup.
-
-    That failure is invisible to a duration assertion -- it makes the call FASTER (1.0s
-    against this arm's 7.0s, measured) -- so the observable is the cleanup's own marker
-    file, and the absent SIGKILL corroborates that the graceful path was taken.
+    Pins the liveness test inside the grace loop. The failure makes the call FASTER, so a
+    duration assertion cannot see it: the observable is the cleanup's own marker file,
+    with the absent SIGKILL corroborating that the graceful path was taken.
     """
     cleanup_seconds = 6
     marker = Path(tempfile.mkdtemp()) / "cleanup-finished"
@@ -603,11 +577,9 @@ def test_a_descendant_gets_its_full_graceful_shutdown_window():
 def test_fast_command_leaves_no_live_watchdog():
     """A command that finishes early must cancel its watchdog.
 
-    Pre-fix the watchdog slept the full timeout regardless, so each such call left a
-    live thread that would later killpg a reaped (possibly PID-recycled) group. Two
-    calls are made because the leak is per-call and the count is the clearest signal.
-    The timeout is far longer than the settle deadline, so a pre-fix watchdog is still
-    sleeping when the assertion runs.
+    A leaked watchdog would later killpg a reaped, possibly PID-recycled group. Two calls
+    are made because the leak is per-call; the timeout is far longer than the settle
+    deadline so a pre-fix watchdog is still sleeping when the assertion runs.
     """
     before = set(_live_watchdog_threads())
 
@@ -624,11 +596,9 @@ def test_fast_command_leaves_no_live_watchdog():
 def test_every_retry_attempt_is_bounded():
     """With `retries=2` BOTH attempts must be bounded, not just the first.
 
-    This pins the per-attempt `Event`. A single Event created once per `Shell.run` call
-    would already be set when attempt 2's watchdog began waiting, so attempt 2 would run
-    to its natural duration with no enforcement -- silently restoring the unbounded hang
-    for every caller passing both `timeout` and `retries > 1`. Every other arm in this
-    file still passes in that case, so without this one the regression is invisible.
+    Pins the per-attempt `Event`: one hoisted out of the retry loop is already set when
+    attempt 2 begins waiting, restoring the unbounded hang for every caller passing both
+    `timeout` and `retries > 1`. Every other arm here still passes in that case.
     """
     retries = 2
     # Inter-attempt delay in Shell.run: 2s before the second attempt.

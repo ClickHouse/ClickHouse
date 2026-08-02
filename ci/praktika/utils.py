@@ -880,6 +880,15 @@ openssl pkeyutl -encrypt -pubin -inkey {key_path} -in {aes_key_path} -out {aes_k
             == 0
         )
 
+    @staticmethod
+    def _discard(path):
+        # Best-effort: an exception here would skip the caller's result upload, the very
+        # outcome the bound exists to prevent. `missing_ok` covers only a missing file.
+        try:
+            Path(path).unlink(missing_ok=True)
+        except OSError as e:
+            print(f"WARNING: failed to remove temporary archive [{path}]: {e}")
+
     @classmethod
     def compress_files_gz(cls, files, archive_name, timeout=None):
         """Archive `files` into `archive_name`, optionally bounded by `timeout`.
@@ -940,7 +949,7 @@ openssl pkeyutl -encrypt -pubin -inkey {key_path} -in {aes_key_path} -out {aes_k
                 print(
                     f"WARNING: failed to archive into [{archive_name}], tar rc [{rc}]"
                 )
-                Path(tmp_archive).unlink(missing_ok=True)
+                cls._discard(tmp_archive)
                 return None
             # Kept, but the rc is reported: it usually means an input was gone, so the
             # archive is complete yet covers fewer inputs than the caller asked for.
@@ -953,7 +962,7 @@ openssl pkeyutl -encrypt -pubin -inkey {key_path} -in {aes_key_path} -out {aes_k
             os.replace(tmp_archive, archive_name)
         except OSError as e:
             print(f"WARNING: failed to publish archive [{archive_name}]: {e}")
-            Path(tmp_archive).unlink(missing_ok=True)
+            cls._discard(tmp_archive)
             return None
         return archive_name
 
