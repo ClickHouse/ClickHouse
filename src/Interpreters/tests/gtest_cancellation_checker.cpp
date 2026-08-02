@@ -200,6 +200,11 @@ TEST(CancellationChecker, ProcessListPreservesFractionalTimeout)
     /// up both, so the state matches a real query rather than whatever other tests left behind.
     std::thread body([&]
     {
+        /// Declared before the group, because `insert` points the group's counters and memory tracker
+        /// into an entry of `user_to_queries` that is never erased: the group must be detached while
+        /// this is still alive.
+        ProcessList process_list;
+
         ThreadStatus thread_status;
         auto group_context = Context::createCopy(getContext().context);
         group_context->makeQueryContext();
@@ -217,8 +222,6 @@ TEST(CancellationChecker, ProcessListPreservesFractionalTimeout)
         for (int i = 0; i < 2000 && checker.getArmedDeadline() != 0; ++i)
             std::this_thread::sleep_for(std::chrono::milliseconds(1));
         ASSERT_EQ(checker.getArmedDeadline(), 0u);
-
-        ProcessList process_list;
 
         /// Pays the process-wide lazy initialization of the first insertion, which is far slower
         /// than the window below tolerates. The timeout must clear `appendTask`'s 1 ms guard to warm
