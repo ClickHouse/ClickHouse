@@ -1249,21 +1249,20 @@ def print_sql_stacktraces(args) -> None:
     Adds thread_name and query_id to the C-side picture, which is the
     only way to map a stuck thread to the query it was running.
 
-    Self-skips when the server is not answering queries — the SQL dump
-    would hit the same dead socket as the liveness check.  This keeps
-    callers honest: they can invoke this from any context (per-test
-    timeout, end-of-run hung-check) without first checking whether the
-    server still responds.
+    No availability pre-check: this query goes over native TCP, so an HTTP
+    liveness probe does not predict whether it can run.
+    `get_stacktraces_from_clickhouse` is bounded and never raises, so it is
+    its own liveness test, and callers can invoke this from any context.
     """
-    if not check_server_liveness(args, max_retries=1):
-        print("Skipping system.stack_trace query: server is unreachable.")
-        return
     print("\nCollecting stacktraces from system.stack_trace table:")
     bt = get_stacktraces_from_clickhouse(args)
     if bt:
         _append_stacktrace_log(SQL_STACKTRACES_LOG, bt)
         print(trim_for_log(bt, 100))
         print(f"(full system.stack_trace dump saved to {SQL_STACKTRACES_LOG})")
+    else:
+        # Distinguish "tried and got nothing" from "never tried".
+        print("Collected no stacks from system.stack_trace.")
 
 
 def get_server_pid():
@@ -4793,6 +4792,7 @@ def run_tests_array(
                 failures_total += 1
                 failures_chain += 1
                 if test_result.reason == FailureReason.SERVER_DIED:
+                    print_sql_stacktraces(args)
                     print_c_stacktraces(args)
                     stop_tests()
                     stop_testing.set()
@@ -5318,6 +5318,10 @@ def do_run_tests(
             if args.hung_check:
                 if not check_server_liveness(args):
                     print("Hung check failed: server is not responding")
+                    # SQL first: the liveness check that just failed only
+                    # proves HTTP is down, and this dump is the only source
+                    # of query_id per stuck thread.
+                    print_sql_stacktraces(args)
                     print_c_stacktraces(args)
                     stop_testing.set()
 
