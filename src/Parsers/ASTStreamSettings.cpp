@@ -110,7 +110,6 @@ void ASTStreamSettings::forEachPointerToChild(std::function<void(IAST **, boost:
         f(nullptr, &watermark->expression);
 }
 
-
 void ASTStreamSettings::writeJSON(WriteBuffer & out) const
 {
     JSONObjectWriter w(out, "StreamSettings");
