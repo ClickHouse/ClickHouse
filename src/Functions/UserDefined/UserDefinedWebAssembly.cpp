@@ -480,6 +480,11 @@ public:
     String getName() const override { return function_name; }
     bool isVariadic() const override { return false; }
     bool isDeterministic() const override { return user_defined_function->getIsDeterministic(); }
+
+    /// Without `DETERMINISTIC` the value may differ per block within one query, so it must not be
+    /// hoisted, reordered or used as a key. The executable-UDF sibling reports the same thing.
+    bool isDeterministicInScopeOfQuery() const override { return user_defined_function->getIsDeterministic(); }
+
     bool isSuitableForShortCircuitArgumentsExecution(const DataTypesWithConstInfo & /* arguments */) const override { return false; }
     size_t getNumberOfArguments() const override { return user_defined_function->getArguments().size(); }
 

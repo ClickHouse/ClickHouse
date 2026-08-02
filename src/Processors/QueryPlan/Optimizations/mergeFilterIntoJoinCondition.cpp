@@ -123,6 +123,72 @@ ExpressionSide getExpressionSide(
     return ExpressionSide::UNKNOWN;
 }
 
+/// Bound per executing node, or when the function object is built, rather than per query. These names
+/// report no flag that would refuse them, so the list is the only refusal. `getName` is canonical, so
+/// aliases and letter case resolve to it first.
+bool isNodeLocalFunction(const String & function_name)
+{
+    return function_name == "queryID" || function_name == "FQDN" || function_name == "getServerPort"
+        || function_name == "transactionID" || function_name == "randConstant"
+        || function_name == "getClientHTTPHeader" || function_name == "now" || function_name == "now64"
+        || function_name == "showCertificate";
+}
+
+/// Reports on the physical representation of its argument, not its value, and the JOIN removes two
+/// representations from the right side. Reports no flag, so the list is the only refusal.
+bool isRepresentationDependentFunction(const String & function_name)
+{
+    return function_name == "isConstant" || function_name == "toColumnTypeName" || function_name == "byteSize";
+}
+
+/// Reads a table whose lookup state is pinned per block, not per query, and reports no flag. Both
+/// spellings are listed because `getName` returns the effective one, which depends on `join_use_nulls`.
+bool isUnstableLookupFunction(const String & function_name)
+{
+    return function_name == "joinGet" || function_name == "joinGetOrNull";
+}
+
+/// Whether a subgraph yields the same value wherever in the plan it is evaluated, so that it may be
+/// promoted to a JOIN key while the conjunct above the join is replaced by a constant.
+///
+/// The predicate is `isDeterministicInScopeOfQuery`, not `isDeterministic`: `dictGet` and `today`
+/// report the latter as false yet hold one value per query, and refusing them would lose a correct
+/// optimization. `arrayJoin` is matched on node TYPE because `addArrayJoin` leaves `function_base`
+/// unset. A lambda body is not a child, so non-determinism inside one is not seen. The walk memoizes
+/// because an `ActionsDAG` reuses one node for a repeated subexpression.
+bool isSafeToUseAsJoinKey(const ActionsDAG::Node * node)
+{
+    std::unordered_set<const ActionsDAG::Node *> visited;
+    ActionsDAG::NodeRawConstPtrs nodes_to_process = { node };
+    while (!nodes_to_process.empty())
+    {
+        const auto * current = nodes_to_process.back();
+        nodes_to_process.pop_back();
+
+        if (!visited.insert(current).second)
+            continue;
+
+        if (current->type == ActionsDAG::ActionType::ARRAY_JOIN)
+            return false;
+
+        if (current->type == ActionsDAG::ActionType::FUNCTION
+            && (!current->function_base->isDeterministicInScopeOfQuery() || current->function_base->isStateful()
+                || current->function_base->isServerConstant()
+                || isNodeLocalFunction(current->function_base->getName())
+                || isRepresentationDependentFunction(current->function_base->getName())
+                || isUnstableLookupFunction(current->function_base->getName())))
+            return false;
+
+        for (const auto * child : current->children)
+        {
+            if (!visited.contains(child))
+                nodes_to_process.push_back(child);
+        }
+    }
+
+    return true;
+}
+
 using JoinConditionParts = std::vector<ActionsDAG>;
 
 const ActionsDAG::Node & createResultPredicate(
@@ -181,6 +247,15 @@ std::pair<JoinConditionParts, bool> extractActionsForJoinCondition(
 
             /// We can't push equality condition into JOIN if types are not equal.
             if (!lhs->result_type->equals(*rhs->result_type))
+            {
+                rejected_conjuncts.push_back(conjunct);
+                continue;
+            }
+
+            /// The extracted equality becomes a JOIN key and the conjunct above the join is replaced
+            /// by a constant, on the assumption that the key has already enforced it. That holds
+            /// only for an expression whose value does not depend on where it is evaluated.
+            if (!isSafeToUseAsJoinKey(lhs) || !isSafeToUseAsJoinKey(rhs))
             {
                 rejected_conjuncts.push_back(conjunct);
                 continue;
