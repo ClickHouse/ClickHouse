@@ -1435,7 +1435,25 @@ void DDLWorker::markReplicasActive(bool reinitialized)
         LOG_INFO(log, "Self host_id ({}) = {}", host_id, is_self_host);
         if (is_self_host)
         {
-            local_host_ids.emplace(host_id);
+            /// Claim the host only if it is still allowed to run ON CLUSTER DDL. A replica excluded
+            /// via skip_distributed_ddl must not be reclaimed even if its old znode still exists.
+            if (all_host_ids.contains(host_id))
+            {
+                local_host_ids.emplace(host_id);
+                continue;
+            }
+
+            /// Self but excluded: drop the active node we hold so we stop claiming the host on reload.
+            /// (On restart, active_node_holders was already cleared above.)
+            if (!reinitialized)
+            {
+                auto it = active_node_holders.find(host_id);
+                if (it != active_node_holders.end())
+                {
+                    it->second.second.reset();   /// removes the ephemeral node
+                    active_node_holders.erase(it);
+                }
+            }
             continue;
         }
 
@@ -1590,9 +1608,10 @@ NameSet DDLWorker::getAllHostIDsFromClusters() const
     for (const auto & it : context->getClusters())
     {
         auto cluster = it.second;
-        for (const auto & host_ids : cluster->getHostIDs())
-            for (const auto & host_id : host_ids)
-                host_id_set.emplace(host_id);
+        for (const auto & shard_addresses : cluster->getShardsAddresses())
+            for (const auto & address : shard_addresses)
+                if (!address.skip_distributed_ddl)
+                    host_id_set.emplace(address.toString());
     }
     return host_id_set;
 }

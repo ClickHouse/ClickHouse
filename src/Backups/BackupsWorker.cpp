@@ -93,6 +93,32 @@ namespace Stage = BackupCoordinationStage;
 
 namespace
 {
+    /// cluster_host_ids is a positional shard/replica map, so replicas excluded from ON CLUSTER DDL are
+    /// marked with kSkippedHost rather than dropped: this keeps the slot numbering intact while filterHostIDs
+    /// excludes them from the coordination wait-set, matching the dispatch set of executeDDLQueryOnCluster.
+    std::vector<Strings> getClusterHostIDsForCoordination(const Cluster & cluster)
+    {
+        auto host_ids = cluster.getHostIDs();
+        const auto & shards = cluster.getShardsAddresses();
+        for (size_t i = 0; i != shards.size() && i != host_ids.size(); ++i)
+            for (size_t j = 0; j != shards[i].size() && j != host_ids[i].size(); ++j)
+                if (shards[i][j].skip_distributed_ddl)
+                    host_ids[i][j] = BackupSettings::Util::kSkippedHost;
+        return host_ids;
+    }
+
+    /// Reject an all-skipped host set before opening the backup/restore engine. executeDDLQueryOnCluster
+    /// rejects it too, but only later, once the destination may already have been touched.
+    void throwIfAllReplicasSkipped(
+        const std::vector<Strings> & cluster_host_ids, size_t shard_num, size_t replica_num, std::string_view operation)
+    {
+        if (BackupSettings::Util::filterHostIDs(cluster_host_ids, shard_num, replica_num).empty())
+            throw Exception(
+                ErrorCodes::BAD_ARGUMENTS,
+                "No hosts to run {} ON CLUSTER: all selected replicas have skip_distributed_ddl set",
+                operation);
+    }
+
     bool isFinishedSuccessfully(BackupStatus status)
     {
         return (status == BackupStatus::BACKUP_CREATED) || (status == BackupStatus::RESTORED);
@@ -476,7 +502,9 @@ struct BackupsWorker::BackupStarter
         {
             backup_query->cluster = backup_context->getMacros()->expand(backup_query->cluster);
             cluster = backup_context->getCluster(backup_query->cluster);
-            backup_settings.cluster_host_ids = cluster->getHostIDs();
+            backup_settings.cluster_host_ids = getClusterHostIDsForCoordination(*cluster);
+            throwIfAllReplicasSkipped(
+                backup_settings.cluster_host_ids, backup_settings.shard_num, backup_settings.replica_num, "BACKUP");
         }
 
         /// Check access rights before opening the backup destination (e.g., S3).
@@ -964,7 +992,9 @@ struct BackupsWorker::RestoreStarter
         {
             restore_query->cluster = restore_context->getMacros()->expand(restore_query->cluster);
             cluster = restore_context->getCluster(restore_query->cluster);
-            restore_settings.cluster_host_ids = cluster->getHostIDs();
+            restore_settings.cluster_host_ids = getClusterHostIDsForCoordination(*cluster);
+            throwIfAllReplicasSkipped(
+                restore_settings.cluster_host_ids, restore_settings.shard_num, restore_settings.replica_num, "RESTORE");
         }
         restore_coordination = backups_worker.makeRestoreCoordination(on_cluster, restore_settings, restore_context);
         restore_coordination->startup();
@@ -1118,6 +1148,9 @@ void BackupsWorker::doRestore(
         auto addresses = cluster->filterAddressesByShardOrReplica(restore_settings.shard_num, restore_settings.replica_num);
         for (const auto * address : addresses)
         {
+            /// Skip replicas excluded from ON CLUSTER DDL: they never receive the restore query.
+            if (address->skip_distributed_ddl)
+                continue;
             restore_settings.host_id = address->toString();
             auto restore_elements = restore_query->elements;
             String addr_database = address->default_database.empty() ? current_database : address->default_database;

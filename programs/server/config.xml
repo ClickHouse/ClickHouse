@@ -1040,6 +1040,8 @@
                          distributed_query.streaming_exchange_port. -->
                     <!-- <stateless_worker_port>9009</stateless_worker_port> -->
                     <!-- <streaming_exchange_port>9223</streaming_exchange_port> -->
+                    <!-- Optional. Exclude this replica from ON CLUSTER DDL queries while still using it for Distributed table routing. Default: false. -->
+                    <!-- <skip_distributed_ddl>0</skip_distributed_ddl> -->
                 </replica>
             </shard>
         </default>

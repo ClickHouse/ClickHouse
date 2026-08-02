@@ -148,6 +148,10 @@ struct BackupSettings
 
     struct Util
     {
+        /// Marks a replica slot excluded from ON CLUSTER DDL, so filterHostIDs drops it from the
+        /// coordination wait-set. Differs from any real host id and from kInitiator (the empty string).
+        static inline const String kSkippedHost = "<skipped_host>";
+
         static std::vector<Strings> clusterHostIDsFromAST(const IAST & ast);
         static ASTPtr clusterHostIDsToAST(const std::vector<Strings> & cluster_host_ids);
         static std::pair<size_t, size_t> findShardNumAndReplicaNum(const std::vector<Strings> & cluster_host_ids, const String & host_id);

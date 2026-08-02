@@ -1,0 +1,21 @@
+<clickhouse>
+    <remote_servers>
+        <!-- One shard with node1 as a normal replica and node2 excluded from ON CLUSTER DDL.
+             node2 is up, but never receives ON CLUSTER queries (including BACKUP / RESTORE), so it
+             must also be excluded from the backup/restore coordination host set - otherwise the
+             initiator would wait for a host that never joins the coordination. -->
+        <backup_cluster>
+            <shard>
+                <replica>
+                    <host>node1</host>
+                    <port>9000</port>
+                </replica>
+                <replica>
+                    <host>node2</host>
+                    <port>9000</port>
+                    <skip_distributed_ddl>1</skip_distributed_ddl>
+                </replica>
+            </shard>
+        </backup_cluster>
+    </remote_servers>
+</clickhouse>
