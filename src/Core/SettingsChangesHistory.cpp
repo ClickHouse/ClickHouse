@@ -45,6 +45,7 @@ const VersionToSettingsChangesMap & getSettingsChangesHistory()
         {
             {"max_insert_threads", 1, 0, "Changed the default from 1 (no parallel execution) to auto (0), which resolves to the number of CPU cores available to the server, reduced under memory pressure via `max_insert_threads_min_free_memory_per_thread`. This parallelizes `INSERT SELECT` by default. Set to 1 to restore the previous single-threaded behavior."},
             {"unique_key_probe_implementation", "auto", "auto", "New setting: selects the UNIQUE KEY probe implementation (currently only the simple baseline exists)"},
+            {"use_query_condition_cache_for_top_k", false, false, "New setting to gate the query condition cache for `ORDER BY ... LIMIT n` (TopK) reads; disabled by default."},
             {"use_projection_index_in_read_pools", false, false, "New setting to drop mark ranges fully filtered out by a projection index before read tasks are created in MergeTree read pools."},
             {"allow_distinct_partitions_independently", false, true, "New setting to enable independent per-partition evaluation of `DISTINCT` when the partition expression is a deterministic function of the `DISTINCT` columns."},
             {"force_distinct_partitions_independently", false, false, "New setting to force independent per-partition evaluation of `DISTINCT` even when the cost heuristic would skip it."},
@@ -1335,6 +1336,7 @@ const VersionToSettingsChangesMap & getMergeTreeSettingsChangesHistory()
     {
         addSettingsChanges(merge_tree_settings_changes_history, "26.8",
         {
+            {"allow_experimental_adaptive_codec_selection", false, false, "New setting."},
             {"text_index_max_processed_tokens_before_flush", 100000000, 100000000, "New setting"},
             {"text_index_max_memory_usage_before_flush", std::numeric_limits<UInt64>::max(), 1073741824, "New setting. The previous value disables memory-based flushing to preserve pre-26.8 behavior"},
         });

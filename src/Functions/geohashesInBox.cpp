@@ -81,7 +81,12 @@ public:
         size_t input_rows_count) const
     {
         static constexpr size_t max_array_size = 10'000'000;
-        static constexpr UInt64 items_between_cancellation_checks = 1'000'000;
+        /// The span between two checkpoints is the work a cancelled query still has to finish, so it
+        /// is what the caller waits for. 100k items are ~1.2 MB of geohashes: tens of milliseconds
+        /// of work against a check that costs a clock read and an uncontended lock. A million items,
+        /// the first choice here, was over three seconds of uninterruptible work on a loaded
+        /// sanitizer build, which is not what "cancelled promptly" should mean.
+        static constexpr UInt64 items_between_cancellation_checks = 100'000;
 
         const auto * lon_min_const = typeid_cast<const ColumnConst *>(lon_min_column);
         const auto * lat_min_const = typeid_cast<const ColumnConst *>(lat_min_column);
