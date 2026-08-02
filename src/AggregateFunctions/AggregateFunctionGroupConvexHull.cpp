@@ -480,9 +480,9 @@ Empty geometries contribute no points. The result is a `Ring` representing the c
     FunctionDocumentation::Syntax syntax = "groupConvexHull(geometry)";
     FunctionDocumentation::Arguments arguments
         = {{"geometry",
-            "A geometry value (`Point`, `Ring`, `LineString`, `MultiLineString`, `Polygon`, `MultiPolygon`) or a `Geometry` value "
-            "containing one of these types.",
-            {"Point", "Ring", "LineString", "MultiLineString", "Polygon", "MultiPolygon", "Geometry"}}};
+            "A geometry value (`Point`, `MultiPoint`, `Ring`, `LineString`, `MultiLineString`, `Polygon`, `MultiPolygon`) or a "
+            "`Geometry` value containing one of these types.",
+            {"Point", "MultiPoint", "Ring", "LineString", "MultiLineString", "Polygon", "MultiPolygon", "Geometry"}}};
     FunctionDocumentation::ReturnedValue returned_value = {"Returns the convex hull as a Ring.", {"Ring"}};
     FunctionDocumentation::Examples examples
         = {{"Convex hull of points",
