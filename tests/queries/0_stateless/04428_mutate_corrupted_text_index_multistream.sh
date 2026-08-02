@@ -1,5 +1,5 @@
 #!/usr/bin/env bash
-# Tags: no-fasttest, no-replicated-database, no-shared-merge-tree, no-object-storage, no-random-merge-tree-settings
+# Tags: no-fasttest, no-replicated-database, no-shared-merge-tree, no-object-storage, no-random-merge-tree-settings, no-ordinary-database
 #
 # Regression for the multi-stream text-index case flagged on PR #109616 (issue #109595).
 # 04427 covers the corrupted-orphan repair (skp_idx_<name>.* on disk, no per-file entries
@@ -15,6 +15,9 @@
 # no-fasttest: local-disk part-file surgery (see 04402/04404/04426/04427).
 # no-object-storage/-shared/-replicated: relies on local on-disk file layout.
 # no-random-merge-tree-settings: depends on standalone (non-packed) index files.
+# no-ordinary-database: path F's fixture is built with `ATTACH ... UUID`, which needs an Atomic
+# database. CREATE now rejects a colliding pair, and ATTACH is the escape hatch the check leaves
+# open for tables that predate it - which is exactly what this fixture emulates.
 
 CUR_DIR=$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)
 CLICKHOUSE_CLIENT_SERVER_LOGS_LEVEL=none

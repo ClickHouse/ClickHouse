@@ -10666,6 +10666,10 @@ void MergeTreeData::checkSkipIndexFilenamesForCollision(
     const StorageInMemoryMetadata * old_metadata,
     const MergeTreeSettings * old_settings) const
 {
+    /// Nothing can collide, so do not pay for the metadata snapshots below.
+    if (metadata.secondary_indices.empty() && metadata.projections.empty())
+        return;
+
     /// Real index objects make `getSubstreams` the single source of truth for the on-disk layout, but a
     /// creator assumes its validator already ran, so every caller invokes this only after
     /// `setProperties`/`checkProperties`.
