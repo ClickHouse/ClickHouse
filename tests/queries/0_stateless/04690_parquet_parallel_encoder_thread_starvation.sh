@@ -1,7 +1,7 @@
 #!/usr/bin/env bash
 # Tags: no-fasttest, long
 # Tag no-fasttest: needs the Parquet output format, which the fast-test build omits.
-# Tag long: 30 serial writes, and the flaky check runs many copies of a test at once.
+# Tag long: many serial writes, and the flaky check runs many copies of a test at once.
 
 CURDIR=$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)
 # shellcheck source=../shell_config.sh
@@ -29,8 +29,8 @@ SETUP="SET output_format_parquet_parallel_encoding = 1;
 
 # Options after an empty `--` bypass the unrecognized-option check and unknown keys are dropped
 # silently, so a typo or a rename would leave the injector off with exit status 0. One spelling,
-# shared with the loop below and asserted live, is what keeps that failure loud.
-INJECT="--cannot_allocate_thread_fault_injection_probability=0.05"
+# shared by every invocation below and asserted live, is what keeps that failure loud.
+inject() { echo "--cannot_allocate_thread_fault_injection_probability=$1"; }
 
 # Positive control: with nothing injected the same write must complete, take the parallel encoder
 # path, and leave readable multi-row-group data. Without it a run that never reached the encoder
@@ -51,72 +51,76 @@ then
 fi
 
 # `changed` is what separates an explicitly set value from the default, so this asserts the exact
-# spelling the loop passes really reaches the injector rather than being ignored.
+# spelling really reaches the injector rather than being ignored.
 ${CLICKHOUSE_LOCAL} --path "$WORK/db" -q "
     SELECT countIf(toFloat64(value) > 0 AND changed)
     FROM system.server_settings
     WHERE name = 'cannot_allocate_thread_fault_injection_probability';
-" -- "$INJECT"
+" -- "$(inject 0.05)"
 rm -rf "$WORK/db"
 
-# `timeout` is the oracle: completion is asserted, the hang is never asserted. A hit needs a
-# `trySchedule` failure after the count has already underflowed, which happens in roughly a
-# quarter of iterations, so 30 of them make a miss very unlikely.
-completed=0
-injected=0
-for _ in {1..30}
-do
-    # The budget is only ever spent on a real hang, so it is sized for margin: a completing
-    # write stays under 2s even with 50 copies of this test running at once.
-    timeout 120 ${CLICKHOUSE_LOCAL} --path "$WORK/db" -q "
-        $SETUP
-        SYSTEM START THREAD FUZZER;
-        $WRITE
-    " -- "$INJECT" >/dev/null 2>"$WORK/err.txt"
-    rc=$?
-
-    rm -rf "$WORK/db"
-
-    # `fault injected` is the injector's own reason, and no other reason produces it, so this is
-    # the only evidence that it fired here. `CANNOT_SCHEDULE_TASK` is not: five other reasons
-    # raise it, and the branch below already tolerates it.
-    if grep -q "fault injected" "$WORK/err.txt"
-    then
-        injected=$((injected + 1))
-    fi
-
-    # 124 is `timeout`'s own status, i.e. the write never returned. A CANNOT_SCHEDULE_TASK is the
-    # correct outcome of an allocation that genuinely failed; the shell truncates its 439 to 183,
-    # so match on the message. Anything else is unexpected and must not pass silently.
-    if [ "$rc" -eq 124 ]
-    then
-        echo "HUNG"
-        exit 1
-    elif [ "$rc" -eq 0 ]
-    then
-        completed=$((completed + 1))
-    elif ! grep -q "CANNOT_SCHEDULE_TASK" "$WORK/err.txt"
-    then
-        echo "UNEXPECTED rc=$rc"
-        cat "$WORK/err.txt"
-        exit 1
-    fi
-done
-
-# The hang needs a write that gets past its first schedule, so a run where every iteration failed
-# early would assert nothing. Roughly two thirds of them complete, so one is a safe floor.
-if [ "$completed" -eq 0 ]
+# At probability 1 the very first thread the encoder asks for is refused, and only the injector
+# words a refusal this way, so this is a deterministic check that it is armed and drawing. It is
+# what proves the loop below injects at all; the loop itself cannot show this, because a refused
+# first thread is reported by an exception rather than by this text.
+timeout 120 ${CLICKHOUSE_LOCAL} --path "$WORK/db" -q "
+    $SETUP
+    SYSTEM START THREAD FUZZER;
+    $WRITE
+" -- "$(inject 1)" >/dev/null 2>"$WORK/err.txt"
+rm -rf "$WORK/db"
+if ! grep -q "fault injected" "$WORK/err.txt"
 then
-    echo "NO INJECTED ITERATION COMPLETED completed=$completed"
+    echo "INJECTOR NEVER FIRED"
+    cat "$WORK/err.txt"
     exit 1
 fi
 
-# The defect needs a schedule that actually failed, so a run where the injector never fired asserts
-# nothing either. Both floors hold together: the draw happens per schedule attempt, so roughly half
-# the iterations complete and a third of them see a failure.
-if [ "$injected" -eq 0 ]
+# `timeout` is the oracle: completion is asserted, the hang is never asserted. The hit rate is not
+# monotonic in the probability, because raising it also raises the chance of refusing the very
+# first thread and ending the write early, and the peak sits elsewhere on every platform. Hence a
+# ladder rather than one pinned value: repeated rungs where the peak was measured here, small ones
+# to keep something completing where threads drain more slowly.
+completed=0
+for p in 0.05 0.05 0.03 0.03 0.02 0.01 0.005 0.002
+do
+    for _ in {1..8}
+    do
+        # The budget is only ever spent on a real hang, so it is sized for margin: a completing
+        # write stays under 2s even with 50 copies of this test running at once.
+        timeout 120 ${CLICKHOUSE_LOCAL} --path "$WORK/db" -q "
+            $SETUP
+            SYSTEM START THREAD FUZZER;
+            $WRITE
+        " -- "$(inject $p)" >/dev/null 2>"$WORK/err.txt"
+        rc=$?
+
+        rm -rf "$WORK/db"
+
+        # 124 is `timeout`'s own status, i.e. the write never returned. A CANNOT_SCHEDULE_TASK is
+        # the correct outcome of an allocation that genuinely failed; the shell truncates its 439
+        # to 183, so match on the message. Anything else must not pass silently.
+        if [ "$rc" -eq 124 ]
+        then
+            echo "HUNG"
+            exit 1
+        elif [ "$rc" -eq 0 ]
+        then
+            completed=$((completed + 1))
+        elif ! grep -q "CANNOT_SCHEDULE_TASK" "$WORK/err.txt"
+        then
+            echo "UNEXPECTED rc=$rc"
+            cat "$WORK/err.txt"
+            exit 1
+        fi
+    done
+done
+
+# The hang needs a write that gets past its first schedule, so a run where every iteration was
+# refused early would assert nothing.
+if [ "$completed" -eq 0 ]
 then
-    echo "INJECTOR NEVER FIRED injected=$injected"
+    echo "NO INJECTED ITERATION COMPLETED completed=$completed"
     exit 1
 fi
 
