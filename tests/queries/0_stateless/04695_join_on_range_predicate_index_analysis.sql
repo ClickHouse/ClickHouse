@@ -379,10 +379,9 @@ SELECT count() = 1 FROM (
     SETTINGS join_algorithm = 'hash'
 ) WHERE explain ILIKE '%Join filter%';
 
--- The guard reads the property that means "can throw OR is expensive", so a deterministic but
--- expensive function is declined too. That is intended: below the join the predicate runs on the probe
--- rows, which outnumber the matched rows it would run on above. Declining leaves the pre-existing
--- keyless-ON behaviour, so the row is pinned as an answer on `hash` and an error elsewhere.
+-- A function is admitted only once its totality is established, so one that cannot throw but has not
+-- been reviewed is declined as well. That costs only the optimization, so the row is pinned as an
+-- answer on `hash` and the pre-existing keyless-ON error elsewhere.
 SELECT count()
 FROM (SELECT number AS d FROM numbers(2)) AS t
 JOIN (SELECT toUInt64(0) AS lo) AS b ON cityHash64(t.d) >= b.lo
@@ -392,6 +391,14 @@ SELECT count()
 FROM (SELECT number AS d FROM numbers(2)) AS t
 JOIN (SELECT toUInt64(0) AS lo) AS b ON cityHash64(t.d) >= b.lo
 SETTINGS join_algorithm = 'partial_merge'; -- { serverError INVALID_JOIN_ON_EXPRESSION }
+
+-- A function that raises on an out-of-range value must be declined even though it reports itself as
+-- not worth evaluating lazily, so that marker cannot stand in for throw-safety. Here the unparsable
+-- date sits on the row `t.k = b.k` rejects, and the query must keep answering rather than raising.
+SELECT count()
+FROM (SELECT number AS k, if(number = 0, 'not-a-date', '2025-01-01') AS s FROM numbers(2)) AS t
+JOIN (SELECT toUInt64(1) AS k, toDateTime64('2000-01-01 00:00:00', 3) AS lo) AS b
+ON t.k = b.k AND addDays(t.s, 1) >= b.lo;
 
 DROP TABLE t_04695;
 DROP TABLE t_04695_granules;

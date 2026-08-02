@@ -1541,6 +1541,39 @@ static bool wouldBecomeJoinKey(const JoinActionRef & condition)
     return (lhs.fromLeft() && rhs.fromRight()) || (lhs.fromRight() && rhs.fromLeft());
 }
 
+/// True only for functions established to return a value for every input of their argument types.
+/// An allowlist: no property in the codebase reports "can throw", so a name is admitted only after
+/// its totality has been checked against its implementation.
+static bool isTotalOverItsArgumentTypes(const IFunctionBase & function)
+{
+    /// Logical connectives only combine already-computed `UInt8`s, so they have no input to reject.
+    static const std::unordered_set<std::string_view> total_names = {
+        NameAnd::name, NameOr::name, NameNot::name, NameXor::name,
+    };
+    if (total_names.contains(function.getName()))
+        return true;
+
+    const auto & argument_types = function.getArgumentTypes();
+    auto stripped = [&](size_t i) { return removeNullable(removeLowCardinality(argument_types[i])); };
+
+    /// A calendar field of a whole day or second, which every value of these types has. Not
+    /// `DateTime64`, where rescaling ticks raises `Decimal math overflow`.
+    if (function.getName() == "toYYYYMM")
+        return argument_types.size() == 1
+            && (isDateOrDate32(stripped(0)) || isDateTime(stripped(0)));
+
+    static const std::unordered_set<std::string_view> comparison_names = {
+        NameEquals::name, NameNotEquals::name, NameLess::name,
+        NameGreater::name, NameLessOrEquals::name, NameGreaterOrEquals::name,
+    };
+    if (!comparison_names.contains(function.getName()))
+        return false;
+
+    /// A comparison converts only to reach a common type, so equal types are exactly the case that
+    /// cannot overflow. Mixed widths are declined: `Decimal256(0)` against `Decimal32(9)` raises.
+    return argument_types.size() == 2 && stripped(0)->equals(*stripped(1));
+}
+
 /// True when moving `condition` below the join could change the query's answer: every node in it must
 /// be of a kind known to be safe to relocate. The switch is exhaustive and deliberately has no
 /// `default`, so a new `ActionType` breaks this build rather than being silently admitted.
@@ -1569,14 +1602,9 @@ static bool isUnsafeToEvaluateBelowJoin(const JoinActionRef & condition)
                 if (!node->function_base || node->function_base->isStateful()
                     || !node->function_base->isDeterministicInScopeOfQuery())
                     return true;
-                /// Below the join the predicate also sees the rows a surviving key rejects, so a function
-                /// that can throw would raise on a row that never reaches the output. This is the same
-                /// predicate short-circuit evaluation uses to keep such arguments unevaluated.
-                DataTypesWithConstInfo argument_types;
-                argument_types.reserve(node->children.size());
-                for (const auto * child : node->children)
-                    argument_types.push_back({child->result_type, child->column != nullptr});
-                if (node->function_base->isSuitableForShortCircuitArgumentsExecution(argument_types))
+                /// Below the join the predicate also sees the rows a surviving key rejects, so a
+                /// function that raises on such a row turns an answer into an error.
+                if (!isTotalOverItsArgumentTypes(*node->function_base))
                     return true;
                 break;
             }
