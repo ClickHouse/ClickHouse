@@ -1,5 +1,7 @@
 #!/usr/bin/env bash
-# Tags: no-ordinary-database, no-fasttest, use-rocksdb
+# Tags: long, no-ordinary-database, no-fasttest, use-rocksdb
+# Tag long: the readers have to outlast the truncates that must wait for them, so the runtime is a
+# floor set by the assertions; on a sanitizer build it exceeds the flaky check's 180s soft cap
 # Tag no-ordinary-database: Sometimes cannot lock file most likely due to concurrent or adjacent tests, but we don't care how it works in Ordinary database
 # Tag no-fasttest: In fasttest, ENABLE_LIBRARIES=0, so rocksdb engine is not enabled by default
 
@@ -31,7 +33,10 @@ for _ in {1..3}; do
         $CLICKHOUSE_CLIENT -q "SELECT count() FROM rdb_buf SETTINGS max_threads = 1, max_block_size = 100" > /dev/null &
     done
     sleep 0.15
-    $CLICKHOUSE_CLIENT -q "TRUNCATE TABLE rdb_alias"
+    # The timeout is pinned rather than inherited: now that the truncate takes the target's lock it
+    # waits for these scans, and the CI config caps the wait at 60s, which a sanitizer build exceeds.
+    # The error would go to stderr and the runner fails any test that writes there.
+    $CLICKHOUSE_CLIENT -q "TRUNCATE TABLE rdb_alias SETTINGS lock_acquire_timeout = 300"
     wait
     $CLICKHOUSE_CLIENT -q "INSERT INTO rdb SELECT number, repeat('x', 200) FROM numbers(300000)"
 done
@@ -42,10 +47,13 @@ done
 READER_ID="reader_$CLICKHOUSE_DATABASE"
 # The reader must still hold the lock when the truncate below gives up, so its scan has to outlast the
 # handshake plus that truncate's own lock_acquire_timeout. It is killed rather than awaited, so a
-# window far longer than needed costs nothing.
+# window far longer than needed costs no wall-clock.
+# Killed by pid, never by job spec: the loop above already consumed nine job numbers, so "%1" would
+# name a reaped job, leave this reader alive, and the wait would then pay for it in full.
 $CLICKHOUSE_CLIENT --query_id="$READER_ID" -q "
     SELECT sum(sleepEachRow(0.2)) FROM (SELECT k FROM rdb LIMIT 150) SETTINGS max_block_size = 1, max_threads = 1
 " > /dev/null &
+reader_pid=$!
 
 # Wait until the reader has actually started scanning, so the target's share lock is really held.
 # read_rows > 0 rather than mere presence in system.processes: the ProcessList entry is published
@@ -65,8 +73,8 @@ echo -e "reader started\t$reader_started"
 
 $CLICKHOUSE_CLIENT -q "TRUNCATE TABLE rdb_alias SETTINGS lock_acquire_timeout = 3" 2>&1 \
     | grep -c -m1 "DEADLOCK_AVOIDED" | sed 's/^/truncate blocked by reader\t/'
-kill %1 2>/dev/null
-wait 2>/dev/null
+kill "$reader_pid" 2>/dev/null
+wait "$reader_pid" 2>/dev/null
 
 $CLICKHOUSE_CLIENT -q "TRUNCATE TABLE rdb_alias SETTINGS lock_acquire_timeout = 3" \
     && echo -e "truncate after reader\t1"
@@ -98,6 +106,7 @@ LAZY_READER_ID="lazy_reader_$CLICKHOUSE_DATABASE"
 $CLICKHOUSE_CLIENT --query_id="$LAZY_READER_ID" -q "
     SELECT sum(sleepEachRow(0.2)) FROM $LAZY_DB.mt SETTINGS max_block_size = 1, max_threads = 1
 " > /dev/null &
+lazy_reader_pid=$!
 
 # Asserted for the same reason as the first cell, and it matters more here: this cell's headline
 # assertion is that the truncate is NOT blocked, which a reader that never started would also
@@ -119,8 +128,8 @@ lazy_err=$($CLICKHOUSE_CLIENT -q "TRUNCATE TABLE $LAZY_DB.mt_alias SETTINGS lock
 lazy_rc=$?
 echo -e "truncate lazy proxied MergeTree succeeded\t$((lazy_rc == 0 ? 1 : 0))"
 echo -e "truncate lazy proxied MergeTree blocked\t$(echo "$lazy_err" | grep -c -m1 "DEADLOCK_AVOIDED")"
-kill %1 2>/dev/null
-wait 2>/dev/null
+kill "$lazy_reader_pid" 2>/dev/null
+wait "$lazy_reader_pid" 2>/dev/null
 
 # The same exemption has to survive a chain of BOTH link kinds. mt_a1 was created before the reload
 # above, so the catalog hands it out as an unloaded proxy too, and an unloaded proxy reports its name
@@ -136,6 +145,7 @@ CHAIN_READER_ID="chain_reader_$CLICKHOUSE_DATABASE"
 $CLICKHOUSE_CLIENT --query_id="$CHAIN_READER_ID" -q "
     SELECT sum(sleepEachRow(0.2)) FROM $LAZY_DB.mt_a1 SETTINGS max_block_size = 1, max_threads = 1
 " > /dev/null &
+chain_reader_pid=$!
 
 # Asserted for the same reason as the lazy cell above: this cell's headline assertion is that the
 # truncate is NOT blocked, which a reader that never started would also satisfy.
@@ -153,8 +163,8 @@ chain_err=$($CLICKHOUSE_CLIENT -q "TRUNCATE TABLE $LAZY_DB.mt_a2 SETTINGS lock_a
 chain_rc=$?
 echo -e "truncate chained alias succeeded\t$((chain_rc == 0 ? 1 : 0))"
 echo -e "truncate chained alias blocked\t$(echo "$chain_err" | grep -c -m1 "DEADLOCK_AVOIDED")"
-kill %1 2>/dev/null
-wait 2>/dev/null
+kill "$chain_reader_pid" 2>/dev/null
+wait "$chain_reader_pid" 2>/dev/null
 
 # Which storage the lock is taken ON, not merely whether one is taken. A reader of a lazy table locks
 # the catalog entry and StorageProxy::read forwards without locking the nested storage, so a lock on
@@ -177,6 +187,7 @@ LAZY_RDB_READER_ID="lazy_rdb_reader_$CLICKHOUSE_DATABASE"
 $CLICKHOUSE_CLIENT --query_id="$LAZY_RDB_READER_ID" -q "
     SELECT sum(sleepEachRow(0.2)) FROM (SELECT k FROM $LAZY_RDB_DB.rdb LIMIT 150) SETTINGS max_block_size = 1, max_threads = 1
 " > /dev/null &
+lazy_rdb_reader_pid=$!
 
 # Asserted, not assumed, for the same reason as every cell above: without a reader actually holding
 # the share lock the assertion below would measure an uncontended truncate.
@@ -192,8 +203,8 @@ echo -e "lazy rocksdb reader started\t$lazy_rdb_reader_started"
 
 lazy_rdb_err=$($CLICKHOUSE_CLIENT -q "TRUNCATE TABLE $LAZY_RDB_DB.rdb_alias SETTINGS lock_acquire_timeout = 3" 2>&1)
 echo -e "truncate lazy proxied rocksdb blocked\t$(echo "$lazy_rdb_err" | grep -c -m1 "DEADLOCK_AVOIDED")"
-kill %1 2>/dev/null
-wait 2>/dev/null
+kill "$lazy_rdb_reader_pid" 2>/dev/null
+wait "$lazy_rdb_reader_pid" 2>/dev/null
 
 # And it still succeeds once that reader is gone, so the row above is a real block and not a
 # permanently unavailable lock.
