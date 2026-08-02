@@ -3331,7 +3331,8 @@ bool ReadFromMergeTree::requestReadingInOrder(size_t prefix_size, int direction,
         ///
         /// That argument holds only while `selected_marks` really is the final mark count. When
         /// `initializePipeline` installs a `MergeTreeSkipIndexReader` — the `use_skip_indexes_on_data_read`
-        /// path, or the join-runtime-filter path — the ranges are pruned during the read and
+        /// path, the join-runtime-filter path, or a projection index registered for the read pools
+        /// (`use_projection_index_in_read_pools`) — the ranges are pruned during the read and
         /// `selected_marks` is just the pre-pruning upper bound (that is why the reader, not this step,
         /// accounts the `SelectedMarks` profile event there). A query whose primary key prunes nothing but
         /// whose read-time skip index or runtime filter trims the read to a few granules would then look
@@ -4101,6 +4102,17 @@ bool ReadFromMergeTree::mayPruneRangesOnDataRead() const
     /// are deliberately not applied there, so `selected_marks` equals `selected_marks_pk` and the
     /// actual pruning is done by the reader.
     if (supportsSkipIndexesOnDataRead())
+        return true;
+
+    /// The projection-index path (`use_projection_index_in_read_pools`): the read ranges are
+    /// registered by `filterPartsAndCollectProjectionCandidates` during `optimizeUseNormalProjections`,
+    /// which finishes before the traversal that runs `optimizeReadInOrder`, so this is already
+    /// populated when the guard asks. Index analysis applies only the *part*-level effect of that
+    /// projection (`filterPartsByProjection`); the mark ranges of the surviving parts are refined
+    /// later, at read time, by the `ProjectionIndexReadRangesRefiner` that the in-order read pools
+    /// install. So `selected_marks` is again only a pre-pruning upper bound here.
+    if (context->getSettingsRef()[Setting::use_projection_index_in_read_pools]
+        && !projection_index_read_desc.read_ranges.empty())
         return true;
 
     /// The join-runtime-filter path (`enable_join_runtime_filters_index_analysis`): a reader is

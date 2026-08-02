@@ -4193,9 +4193,10 @@ read-in-order regardless of this setting:
   faster nor slower for a selective one, while on the base-table plan over the same data it is 21%
   faster — which is the case this setting exists for;
 - reads where range pruning happens during the read rather than during index analysis, namely the
-  `use_skip_indexes_on_data_read` path and join runtime filter granule pruning: there the granule
-  counts available to the guard are only pre-pruning upper bounds, so they cannot tell a full scan
-  from a read that the reader will trim to a few granules;
+  `use_skip_indexes_on_data_read` path, join runtime filter granule pruning, and projection-index
+  range refinement (`use_projection_index_in_read_pools`): there the granule counts available to the
+  guard are only pre-pruning upper bounds, so they cannot tell a full scan from a read that the
+  reader will trim to a few granules;
 - `optimize_aggregation_in_order` and `optimize_distinct_in_order`: there read-in-order selects a
   different, memory-bound streaming algorithm rather than merely avoiding a sort;
 - reading with parallel replicas, to avoid coordination mismatches;
