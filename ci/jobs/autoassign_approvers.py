@@ -102,14 +102,21 @@ def fetch_approvers(
     pr_number: int, org_contributors: set = None
 ) -> Dict[str, Optional[datetime]]:
     """
-    Fetch the full, paginated review history of a PR and return its approvers from
-    org contributors, in chronological order of the first approval, mapped to the
-    time of their latest approval.
+    Fetch the full, paginated review history of a PR and return the org contributors
+    whose approval is still in effect, in chronological order of the first approval,
+    mapped to the time of their latest approval.
 
     The nested `reviews` field from `gh pr list` is capped at the first 100 review
     events, so on a long-lived PR a re-approval made after an unassignment, or an
     approver who joined later, would be invisible there - and the job would skip or
     miss them forever. This paginated per-PR fetch sees the complete history.
+
+    The whole review stream is collapsed per reviewer, and only reviewers whose
+    latest verdict is still `APPROVED` are returned: an approval that was later
+    replaced by `CHANGES_REQUESTED`, or dismissed, is not an approval any more, and
+    assigning its author would contradict the current state of the review.
+    `COMMENTED` reviews carry no verdict at all and are ignored, so a comment left
+    after an approval does not revoke it.
 
     Raises on failure: assigning is the consequential action, so a PR whose review
     history cannot be read is left alone instead of being assigned blindly.
@@ -117,14 +124,17 @@ def fetch_approvers(
     cmd = (
         "gh api repos/{owner}/{repo}/pulls/"
         f"{pr_number}"
-        "/reviews --paginate --jq '.[] | select(.state == \"APPROVED\") "
-        "| {login: .user.login, at: .submitted_at}'"
+        "/reviews --paginate --jq '.[] | select(.state != \"COMMENTED\" "
+        'and .state != "PENDING") '
+        "| {login: .user.login, state: .state, at: .submitted_at}'"
     )
     output = Shell.get_output_or_raise(cmd, verbose=True)
 
-    # Reviews come in chronological order, so the first key is the first approver,
-    # and the stored value ends up being the latest approval of each approver.
-    approvers: Dict[str, Optional[datetime]] = {}
+    # Reviews come in chronological order, so the stored state ends up being the
+    # latest verdict of each reviewer, and the stored timestamp - keyed in the order
+    # of the first approval - the time of their latest approval.
+    states: Dict[str, str] = {}
+    approved_at: Dict[str, Optional[datetime]] = {}
     for line in output.splitlines():
         line = line.strip()
         if not line:
@@ -135,7 +145,20 @@ def fetch_approvers(
             continue
         if org_contributors is not None and login not in org_contributors:
             continue
-        approvers[login] = parse_timestamp(review.get("at"))
+        state = review.get("state")
+        states[login] = state
+        if state == "APPROVED":
+            approved_at[login] = parse_timestamp(review.get("at"))
+
+    approvers: Dict[str, Optional[datetime]] = {}
+    for login, at in approved_at.items():
+        if states[login] != "APPROVED":
+            print(
+                f"  Skipping {login}: their latest review is {states[login]}, "
+                "their approval is not in effect any more"
+            )
+            continue
+        approvers[login] = at
 
     return approvers
 
