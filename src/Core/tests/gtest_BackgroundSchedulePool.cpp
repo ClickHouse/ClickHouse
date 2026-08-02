@@ -2,7 +2,9 @@
 #include <Core/BackgroundSchedulePoolTaskHolder.h>
 #include <gtest/gtest.h>
 #include <condition_variable>
+#include <limits>
 #include <mutex>
+#include <thread>
 
 using namespace DB;
 
@@ -280,4 +282,26 @@ TEST(BackgroundSchedulePool, ScheduleAfterTerminitePool)
 
     ASSERT_EQ(task->schedule(), false);
     ASSERT_EQ(delayed_task->scheduleAfter(1), false);
+}
+
+/// A huge delay must not wrap into a past deadline and fire immediately.
+TEST(BackgroundSchedulePool, ScheduleAfterHugeDelayDoesNotFire)
+{
+    auto pool = BackgroundSchedulePool::create(4, 4, 0, CurrentMetrics::end(), CurrentMetrics::end(), ThreadName::TEST_SCHEDULER);
+
+    std::atomic<size_t> executions = 0;
+    BackgroundSchedulePoolTaskHolder task;
+    task = pool->createTask(StorageID::createEmpty(), "huge_delay", [&] { ++executions; });
+    ASSERT_EQ(task->activate(), true);
+
+    /// Delays whose conversion to microseconds wraps (mod 2^64) or overflows a signed deadline.
+    for (size_t ms : {size_t(1) << 63, std::numeric_limits<size_t>::max(), std::numeric_limits<size_t>::max() / 1000 + 1})
+    {
+        ASSERT_EQ(task->scheduleAfter(ms), true);
+        std::this_thread::sleep_for(std::chrono::milliseconds(300));
+        ASSERT_EQ(executions.load(), 0u);
+    }
+
+    ASSERT_EQ(task->deactivate(), true);
+    pool->join();
 }
