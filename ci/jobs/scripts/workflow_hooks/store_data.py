@@ -64,9 +64,10 @@ def fetch_settings_history_patch(repo_name, pr_number, path=SETTINGS_HISTORY_FIL
 
 
 _FETCH_ERROR_MESSAGE_LIMIT = 500
-# Elide the middle, not an end: a structured diagnostic front-loads its cause (see
-# `GH.get_output_with_retries`), but this bound applies to any exception, so keep a tail
-# window too rather than betting the cause is never last.
+# Elide the middle, not the head: `GH.get_output_with_retries` front-loads the fields that
+# name the cause ahead of the API-controlled output, so it is the head window that preserves
+# the cause. The tail window is a cheap hedge for arbitrary exception texts; it is not a
+# guarantee for that helper's `err` field, which a large `out` can still push past the bound.
 _FETCH_ERROR_MESSAGE_TAIL = 80
 
 
@@ -174,10 +175,11 @@ if __name__ == "__main__":
     # For the settings-history style check (check_style.py): when
     # src/Core/SettingsChangesHistory.cpp changed in a PR or merge-queue run, record the
     # names of the setting entries this change ADDS so the style check can verify each is
-    # recorded under the current version block. Only the setting names are stored (never the
-    # raw diff) to keep the pipeline `data` output small and free of user-authored free text
-    # (see the note further below about the GH Actions runner dropping outputs that match a
-    # secret pattern).
+    # recorded under the current version block. The success key stores only those names, never
+    # the raw diff, to keep the pipeline `data` output small and free of user-authored free
+    # text (see the note further below about the GH Actions runner dropping outputs that match
+    # a secret pattern). The failure key stores a separately bounded diagnostic, which can
+    # include a capped slice of the `gh` output.
     if (
         info.pr_number or info.is_merge_queue_event
     ) and SETTINGS_HISTORY_FILE in changed_files:

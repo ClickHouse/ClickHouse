@@ -27,6 +27,7 @@ sys.path.insert(0, os.path.join(os.path.dirname(__file__), "../.."))
 sys.path.insert(0, os.path.join(os.path.dirname(__file__), ".."))
 
 import ci.praktika.gh as gh_mod
+from ci.jobs import check_style
 from ci.jobs.scripts.workflow_hooks.store_data import (
     SETTINGS_HISTORY_FILE,
     fetch_settings_history_patch,
@@ -39,6 +40,7 @@ from ci.praktika.settings import Settings
 _REPO = "ClickHouse/ClickHouse"
 _PR = 12345
 _PATCH = '@@ -1,2 +1,3 @@\n+    {"some_setting", false, true, "reason"},\n'
+_REPO_ROOT = os.path.abspath(os.path.join(os.path.dirname(__file__), "../.."))
 
 
 @pytest.fixture
@@ -102,7 +104,11 @@ class _FakeInfo:
 
 
 def _style_check_report(kv):
-    """check_style.py:609-616 verbatim, so the assertions pin what a reviewer sees."""
+    """A local copy of the reporting branch, used as a cheap oracle by the cells below.
+
+    It is only a copy: `test_the_real_style_check_reports_the_stored_cause` drives the real
+    `check_settings_changes_history` so a change to that branch cannot leave this file green.
+    """
     fetch_error = kv.get("settings_history_fetch_error")
     changed = kv.get("settings_history_changed_settings")
     if fetch_error or changed is None:
@@ -112,6 +118,22 @@ def _style_check_report(kv):
             f"Error: {fetch_error or 'no data recorded by the store_data.py workflow hook'}."
         )
     return ""
+
+
+class _FakeStyleInfo:
+    """Stand-in for `praktika.info.Info` as `check_style` uses it: called, then read.
+
+    Same shape as the one `test_settings_history_source_gate.py` installs.
+    """
+
+    def __init__(self, kv):
+        self._kv = kv
+
+    def __call__(self):
+        return self
+
+    def get_kv_data(self):
+        return self._kv
 
 
 # --- a command failure names the command failure, not the large-diff case ----
@@ -218,6 +240,30 @@ def test_hook_stores_the_cause_so_the_style_check_reports_it(fake_gh):
     assert "settings_history_fetch_error" in info.kv
     report = _style_check_report(info.kv)
     assert "Bad credentials" in report
+    assert "no data recorded" not in report
+
+
+def test_the_real_style_check_reports_the_stored_cause(fake_gh, monkeypatch):
+    """The end-to-end claim, pinned against the production consumer rather than a copy of it.
+
+    Every other cell here asserts through `_style_check_report`, so dropping the
+    `fetch_error` term from `check_style.check_settings_changes_history` would leave this
+    file green while the report went back to the generic fallback. The second changed file
+    is required: without a default-bearing source the check returns early by design.
+    """
+    fake_gh('echo "gh: Server Error (HTTP 502)" >&2', 1)
+    info = _FakeInfo()
+    store_settings_history_changes(info)
+
+    kv = {
+        "changed_files": [SETTINGS_HISTORY_FILE, "src/Core/Defines.h"],
+        "settings_history_fetch_error": info.kv["settings_history_fetch_error"],
+    }
+    monkeypatch.setattr(check_style, "Info", _FakeStyleInfo(kv))
+    monkeypatch.chdir(_REPO_ROOT)
+    report = check_style.check_settings_changes_history()
+
+    assert "502" in report
     assert "no data recorded" not in report
 
 
@@ -371,6 +417,10 @@ def test_get_output_with_retries_default_returns_empty_string(fake_gh):
     """Carrier for every existing caller: without `strict` a failure still yields ""."""
     fake_gh('echo "gh: Server Error (HTTP 502)" >&2', 1)
     assert GH.get_output_with_retries("gh api fake") == ""
+    # The retrying is half of the contract those callers depend on, and the return value
+    # cannot see it: a short circuit such as `if not strict: return ""` also yields "",
+    # having run nothing.
+    assert fake_gh.invocations() == Settings.MAX_RETRIES_GH
 
 
 def test_get_output_with_retries_strict_reports_exit_code_and_stderr(fake_gh):
