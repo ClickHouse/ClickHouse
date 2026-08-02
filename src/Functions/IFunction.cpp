@@ -829,12 +829,19 @@ FunctionBasePtr IFunctionOverloadResolver::build(const ColumnsWithTypeAndName & 
     {
         checkNumberOfArguments(arguments.size());
 
-        for (const auto & arg : arguments)
+        for (size_t i = 0; i != arguments.size(); ++i)
         {
-            if (isVariant(arg.type))
+            const auto & type = arguments[i].type;
+            if (isVariant(type))
             {
+                /// A custom-named `Variant` (e.g. `Geometry`) can be excluded separately, so a function
+                /// handles it directly and keeps the custom name, while ordinary `Variant` inputs still go
+                /// through the adaptor. Keep scanning: another argument may still need the adaptor.
+                if (type->hasCustomName() && !useDefaultImplementationForVariantWithCustomName(type))
+                    continue;
+
                 ColumnsWithTypeAndName args_copy = arguments;
-                base = std::make_shared<FunctionBaseVariantAdaptor>(shared_from_this(), std::move(args_copy));
+                base = std::make_shared<FunctionBaseVariantAdaptor>(shared_from_this(), std::move(args_copy), i);
                 break;
             }
         }
