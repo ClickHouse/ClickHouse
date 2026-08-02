@@ -12,6 +12,8 @@ h04305_b	my_proto	prefix	/test_04305/b/	['GET','POST']	query
 h04305_ins_put	['PUT']
 h04305_ins_mix	['POST','DELETE']
 h04305_ddl_mix	['GET','DELETE']
+h04305_ins_sel_mix	['GET','DELETE']
+h04305_ins_sel_mix	['GET','POST']
 h04305_c	regexp	/test_04305/c/(?P<id>[0-9]+)
 2
 h04305_post_a	['POST']

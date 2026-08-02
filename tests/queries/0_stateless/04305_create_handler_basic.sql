@@ -85,12 +85,13 @@ CREATE HANDLER h04305_ins_get URL '/test_04305/ins_get' METHODS (GET) AS INSERT 
 CREATE HANDLER h04305_ins_put URL '/test_04305/ins_put' METHODS (PUT) AS INSERT INTO no_such_db.no_such_table SELECT 1;
 SELECT name, methods FROM system.handlers WHERE name = 'h04305_ins_put';
 DROP HANDLER h04305_ins_put;
--- A handler reading the request body (an INSERT query, or a query using `_request_body`) must not allow any
--- read-only method: a safe method can never carry a body, and a declared GET is also served for HEAD.
-CREATE HANDLER h04305_ins_mix URL '/test_04305/ins_mix' METHODS (GET, DELETE) AS INSERT INTO no_such_db.no_such_table SELECT 1; -- { serverError BAD_ARGUMENTS }
+-- A handler reading the request body (an INSERT taking its data from the body, or a query using
+-- `_request_body`) must not allow any read-only method: a safe method can never carry a body, and a declared
+-- GET is also served for HEAD. An `INSERT ... SELECT ... FROM input(...)` reads the body as well.
+CREATE HANDLER h04305_ins_mix URL '/test_04305/ins_mix' METHODS (GET, DELETE) AS INSERT INTO no_such_db.no_such_table SELECT * FROM input('x String'); -- { serverError BAD_ARGUMENTS }
 CREATE HANDLER h04305_body_mix URL '/test_04305/body_mix' METHODS (GET, POST) AS SELECT {_request_body:String}; -- { serverError BAD_ARGUMENTS }
 -- Mixing several body-carrying methods is fine.
-CREATE HANDLER h04305_ins_mix URL '/test_04305/ins_mix' METHODS (POST, DELETE) AS INSERT INTO no_such_db.no_such_table SELECT 1;
+CREATE HANDLER h04305_ins_mix URL '/test_04305/ins_mix' METHODS (POST, DELETE) AS INSERT INTO no_such_db.no_such_table SELECT * FROM input('x String');
 SELECT name, methods FROM system.handlers WHERE name = 'h04305_ins_mix';
 -- ALTER that would leave a mutating handler with only read-only methods is rejected.
 ALTER HANDLER h04305_ins_mix METHODS (GET); -- { serverError BAD_ARGUMENTS }
@@ -101,6 +102,13 @@ DROP HANDLER h04305_ins_mix;
 CREATE HANDLER h04305_ddl_mix URL '/test_04305/ddl_mix' METHODS (GET, DELETE) AS TRUNCATE TABLE no_such_db.no_such_table;
 SELECT name, methods FROM system.handlers WHERE name = 'h04305_ddl_mix';
 DROP HANDLER h04305_ddl_mix;
+-- `INSERT ... SELECT` takes its data from the SELECT, not from the HTTP body, so it is not body-reading:
+-- it needs a mutating method, but it may also allow read-only ones.
+CREATE HANDLER h04305_ins_sel_mix URL '/test_04305/ins_sel_mix' METHODS (GET, DELETE) AS INSERT INTO no_such_db.no_such_table SELECT 1;
+SELECT name, methods FROM system.handlers WHERE name = 'h04305_ins_sel_mix';
+ALTER HANDLER h04305_ins_sel_mix METHODS (GET, POST);
+SELECT name, methods FROM system.handlers WHERE name = 'h04305_ins_sel_mix';
+DROP HANDLER h04305_ins_sel_mix;
 -- ALTER that turns a read-only handler's query into a mutating one, without a mutating method, is rejected.
 CREATE HANDLER h04305_ro URL '/test_04305/ro' AS SELECT 1;
 ALTER HANDLER h04305_ro AS INSERT INTO no_such_db.no_such_table SELECT 1; -- { serverError BAD_ARGUMENTS }

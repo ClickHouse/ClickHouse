@@ -2,6 +2,7 @@
 
 #include <Parsers/ASTCreateHandlerQuery.h>
 #include <Parsers/ASTCreateQuery.h>
+#include <Parsers/ASTInsertQuery.h>
 #include <Parsers/ASTWatchQuery.h>
 #include <Parsers/QueryParameterVisitor.h>
 
@@ -104,6 +105,27 @@ bool queryRequiresMutatingMethod(const IAST & query)
     return queryKindRequiresMutatingMethod(query.getQueryKind());
 }
 
+/// Whether the query itself reads the HTTP request body as its data.
+///
+/// A plain `INSERT` takes the body as the data to insert. `INSERT ... SELECT` does not: it gets its data from the
+/// `SELECT`, and `executeQuery` explicitly drops the request tail for it (see `executeQuery.cpp`, the
+/// `insert_query->tail.reset()` branch). The exception to that exception is the `input` table function: an
+/// `INSERT ... SELECT ... FROM input(...)` is fed from the request body, and `executeQuery` builds its source
+/// pipe from the tail before dropping it.
+bool queryConsumesRequestBody(const IAST & query)
+{
+    const auto * insert = query.as<ASTInsertQuery>();
+    if (!insert || insert->getQueryKind() != IAST::QueryKind::Insert)
+        return false;
+
+    if (!insert->select)
+        return true;
+
+    ASTPtr input_function;
+    insert->tryFindInputFunction(input_function);
+    return input_function != nullptr;
+}
+
 /// The HTTP methods that are allowed to run modifying queries (see `setReadOnlyIfHTTPMethodIdempotent`).
 bool isMutatingHTTPMethod(const String & method)
 {
@@ -169,9 +191,7 @@ SQLDefinedHandlerPtr makeSQLDefinedHandler(const ASTCreateHandlerQuery & create)
 
     /// An `INSERT` handler takes the request body as its data, and a query using `_request_body` reads the body
     /// explicitly. Only these handlers need `Content-Length` on a non-chunked request (see `SQLDefinedHandler`).
-    /// `INSERT ... SELECT` does not read the body, but keep the check conservative: guessing wrong in the other
-    /// direction would silently accept a truncated body.
-    handler->consumes_request_body = create.query->getQueryKind() == IAST::QueryKind::Insert
+    handler->consumes_request_body = queryConsumesRequestBody(*create.query)
         || handler->receive_params.contains("_request_body");
 
     /// A handler whose query reads the HTTP request body can never receive one over a safe method:
@@ -185,7 +205,8 @@ SQLDefinedHandlerPtr makeSQLDefinedHandler(const ASTCreateHandlerQuery & create)
         && !std::all_of(handler->methods.begin(), handler->methods.end(), isMutatingHTTPMethod))
     {
         throw Exception(ErrorCodes::BAD_ARGUMENTS,
-            "Handler `{}` reads the HTTP request body (an INSERT query or the `_request_body` parameter), "
+            "Handler `{}` reads the HTTP request body (an INSERT query taking its data from the body, "
+            "or the `_request_body` parameter), "
             "but not all of its allowed HTTP methods ({}) carry a request body. "
             "List only body-carrying methods (POST, PUT, or DELETE) in the METHODS clause.",
             create.handler_name, fmt::join(handler->methods, ", "));
