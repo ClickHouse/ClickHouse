@@ -1552,7 +1552,8 @@ static bool isTotallyOrderedByValue(const DataTypePtr & type)
     if (const auto * array = typeid_cast<const DataTypeArray *>(type.get()))
         return isTotallyOrderedByValue(array->getNestedType());
     if (const auto * tuple = typeid_cast<const DataTypeTuple *>(type.get()))
-        return std::ranges::all_of(tuple->getElements(), isTotallyOrderedByValue);
+        /// A zero-sized tuple would satisfy `all_of` vacuously, and comparing one is not implemented.
+        return !tuple->getElements().empty() && std::ranges::all_of(tuple->getElements(), isTotallyOrderedByValue);
     if (const auto * map = typeid_cast<const DataTypeMap *>(type.get()))
         return isTotallyOrderedByValue(map->getKeyType()) && isTotallyOrderedByValue(map->getValueType());
 
