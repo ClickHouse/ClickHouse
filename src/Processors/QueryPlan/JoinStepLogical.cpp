@@ -15,8 +15,11 @@
 #include <Core/Settings.h>
 
 #include <DataTypes/DataTypesNumber.h>
+#include <DataTypes/DataTypeArray.h>
 #include <DataTypes/DataTypeDynamic.h>
+#include <DataTypes/DataTypeMap.h>
 #include <DataTypes/DataTypeNullable.h>
+#include <DataTypes/DataTypeTuple.h>
 
 #include <Functions/FunctionFactory.h>
 #include <Functions/ComparisonNames.h>
@@ -1541,6 +1544,25 @@ static bool wouldBecomeJoinKey(const JoinActionRef & condition)
     return (lhs.fromLeft() && rhs.fromRight()) || (lhs.fromRight() && rhs.fromLeft());
 }
 
+/// True when every value of `type` shares one comparison order, so comparing two of them never has
+/// to find a supertype first. An allowlist over scalars: `Dynamic` and `Variant` compare whatever
+/// they contain, and a container is only as safe as its element type.
+static bool isTotallyOrderedByValue(const DataTypePtr & type)
+{
+    if (const auto * array = typeid_cast<const DataTypeArray *>(type.get()))
+        return isTotallyOrderedByValue(array->getNestedType());
+    if (const auto * tuple = typeid_cast<const DataTypeTuple *>(type.get()))
+        return std::ranges::all_of(tuple->getElements(), isTotallyOrderedByValue);
+    if (const auto * map = typeid_cast<const DataTypeMap *>(type.get()))
+        return isTotallyOrderedByValue(map->getKeyType()) && isTotallyOrderedByValue(map->getValueType());
+
+    const auto which = WhichDataType(type);
+    return which.isInt() || which.isUInt() || which.isFloat() || which.isEnum() || which.isDecimal()
+        || which.isStringOrFixedString() || which.isDateOrDate32() || which.isDateTime() || which.isDateTime64()
+        || which.isTime() || which.isTime64() || which.isUUID() || which.isIPv4() || which.isIPv6()
+        || which.isNothing() || which.isInterval();
+}
+
 /// True only for functions established to return a value for every input of their argument types.
 /// An allowlist: no property in the codebase reports "can throw", so a name is admitted only after
 /// its totality has been checked against its implementation.
@@ -1571,7 +1593,12 @@ static bool isTotalOverItsArgumentTypes(const IFunctionBase & function)
 
     /// A comparison converts only to reach a common type, so equal types are exactly the case that
     /// cannot overflow. Mixed widths are declined: `Decimal256(0)` against `Decimal32(9)` raises.
-    return argument_types.size() == 2 && stripped(0)->equals(*stripped(1));
+    if (argument_types.size() != 2 || !stripped(0)->equals(*stripped(1)))
+        return false;
+
+    /// Not sufficient alone: two equally-typed `Variant` columns can still meet at rows whose
+    /// contained types have no supertype, which raises `NO_COMMON_TYPE`.
+    return isTotallyOrderedByValue(stripped(0));
 }
 
 /// True when moving `condition` below the join could change the query's answer: every node in it must

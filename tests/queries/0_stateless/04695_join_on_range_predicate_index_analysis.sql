@@ -400,6 +400,13 @@ FROM (SELECT number AS k, if(number = 0, 'not-a-date', '2025-01-01') AS s FROM n
 JOIN (SELECT toUInt64(1) AS k, toDateTime64('2000-01-01 00:00:00', 3) AS lo) AS b
 ON t.k = b.k AND addDays(t.s, 1) >= b.lo;
 
+-- Equal argument types are not enough when the type compares what it CONTAINS: two `Variant`
+-- columns meet here at a row with no supertype, which raises rather than answering.
+SELECT count()
+FROM (SELECT number AS k, CAST(if(number = 1, toUInt64(1), 'bad'), 'Variant(UInt64, String)') AS v FROM numbers(2)) AS t
+JOIN (SELECT toUInt64(1) AS k, CAST(toUInt64(1), 'Variant(UInt64, String)') AS lo) AS b
+ON t.k = b.k AND t.v >= b.lo;
+
 DROP TABLE t_04695;
 DROP TABLE t_04695_granules;
 DROP TABLE t_04695_bounds;
