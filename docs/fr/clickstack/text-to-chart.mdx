@@ -61,23 +61,17 @@ Pour les déploiements open source, transmettez la clé sous forme de variable d
 </div>
 
 <Steps>
-  <Step>
-    ### Accéder à Chart Explorer
-
+  <Step title="Accéder à Chart Explorer" id="navigate-chart-explorer">
     Sélectionnez **Chart Explorer** dans le menu de gauche de HyperDX.
   </Step>
 
-  <Step>
-    ### Sélectionner une source de données
-
+  <Step title="Sélectionner une source de données" id="select-data-source">
     Choisissez la source de données que vous souhaitez visualiser — par exemple, **Logs**, **Traces** ou **Metrics**.
 
     <Image img="/images/clickstack/text-to-chart/chart-explorer.webp" alt="Chart explorer" />
   </Step>
 
-  <Step>
-    ### Saisir un prompt
-
+  <Step title="Saisir un prompt" id="enter-text-prompt">
     En haut de Chart Explorer, repérez le champ de saisie **Assistant IA**. Saisissez une description en langage naturel du graphique que vous souhaitez créer. Par exemple :
 
     * `Show error rates by service over the last 24 hours`
@@ -94,7 +88,7 @@ Pour les déploiements open source, transmettez la clé sous forme de variable d
   ## Essayer avec des données de démonstration
 </div>
 
-Pour essayer Text-to-Chart au plus vite, utilisez l&#39;[image Docker Local Mode](/fr/clickstack/deployment/local-mode-only) et le [jeu de données de démonstration distant](/fr/clickstack/example-datasets/remote-demo-data) :
+Pour essayer Text-to-Chart au plus vite, utilisez l&#39;[image Docker mode local](/fr/clickstack/deployment/local-mode-only) et le [jeu de données de démonstration distant](/fr/clickstack/example-datasets/remote-demo-data) :
 
 ```bash
 docker run -e ANTHROPIC_API_KEY='<YOUR_KEY>' -p 8080:8080 clickhouse/clickstack-local:latest
@@ -137,10 +131,10 @@ Les prompts peuvent référencer n’importe quelle colonne ou n’importe quel 
 * La précision du graphique dépend de la clarté du prompt et de la structure des données sous-jacentes. Si un graphique généré ne correspond pas aux attentes, essayez de reformuler le prompt ou d&#39;indiquer explicitement les noms de colonnes.
 
 <div id="further-reading">
-  ## Pour aller plus loin
+  ## Pour en savoir plus
 </div>
 
-* [Du texte aux graphiques : une façon plus rapide de visualiser avec ClickStack](https://clickhouse.com/blog/text-to-charts-faster-way-to-visualize-clickstack) — article de blog présentant cette fonctionnalité
-* [Tableaux de bord et visualisations](/fr/clickstack/features/dashboards/overview) — création manuelle de graphiques avec Chart Explorer
+* [Du texte aux graphiques : une façon plus rapide de visualiser avec ClickStack](https://clickhouse.com/blog/text-to-charts-faster-way-to-visualize-clickstack) — article de blog présentant la fonctionnalité
+* [Dashboards et visualisations](/fr/clickstack/features/dashboards/overview) — création manuelle de graphiques avec Chart Explorer
 * [Search](/fr/clickstack/features/search) — syntaxe de recherche en texte intégral et par propriété
 * [Configuration](/fr/clickstack/managing/config) — toutes les variables d’environnement de ClickStack

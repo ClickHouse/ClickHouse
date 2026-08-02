@@ -14,15 +14,19 @@
 #include <Core/DecimalComparison.h>
 #include <Core/callOnTypeIndex.h>
 #include <DataTypes/DataTypeDateTime64.h>
+#include <DataTypes/DataTypeTime64.h>
 #include <DataTypes/DataTypeEnum.h>
 #include <DataTypes/DataTypeFixedString.h>
+#include <DataTypes/DataTypeLowCardinality.h>
 #include <DataTypes/DataTypeNullable.h>
 #include <DataTypes/DataTypeString.h>
 #include <DataTypes/DataTypeTuple.h>
 #include <DataTypes/DataTypeUUID.h>
+#include <DataTypes/DataTypesDecimal.h>
 #include <DataTypes/DataTypesNumber.h>
 #include <DataTypes/NumberTraits.h>
 #include <DataTypes/getLeastSupertype.h>
+#include <Functions/ComparisonOrderDomain.h>
 #include <Functions/FunctionHelpers.h>
 #include <Functions/IFunctionAdaptors.h>
 #include <Functions/IsOperation.h>
@@ -751,6 +755,44 @@ public:
 private:
     const ComparisonParams params;
 
+    static ComparisonOrderDomain getComparisonOrderDomainForType(const DataTypePtr & type)
+    {
+        using Kind = ComparisonOrderDomain::Kind;
+
+        const auto nested_type = removeLowCardinality(type);
+        if (nested_type->isNullable())
+            return {};
+        /// All integer and float widths (`BFloat16` included) share one accurate numeric order
+        /// that never rounds the integer side; `Enum` compares by its underlying numeric value.
+        if (isInteger(nested_type) || isFloat(nested_type) || isEnum(nested_type))
+            return {.kind = Kind::Number};
+        if (isString(nested_type))
+            return {.kind = Kind::String};
+        if (isDateOrDate32(nested_type))
+            return {.kind = Kind::Date};
+        if (isDateTime(nested_type))
+            return {.kind = Kind::TimePoint, .scale = 0};
+        if (const auto * datetime64_type = typeid_cast<const DataTypeDateTime64 *>(nested_type.get()))
+            return {.kind = Kind::TimePoint, .scale = datetime64_type->getScale()};
+        /// Mixed `Time64` scales rescale and can throw `DECIMAL_OVERFLOW` (interval arithmetic can
+        /// leave values beyond the clamped range), so the scale keys the domain, like `TimePoint`.
+        if (WhichDataType(nested_type).isTime())
+            return {.kind = Kind::TimeOfDay, .scale = 0};
+        if (const auto * time64_type = typeid_cast<const DataTypeTime64 *>(nested_type.get()))
+            return {.kind = Kind::TimeOfDay, .scale = time64_type->getScale()};
+        /// Equal-scale decimals compare their underlying integers directly (regardless of width);
+        /// mixed scales rescale and can throw `DECIMAL_OVERFLOW`, so the scale keys the domain.
+        if (isDecimal(nested_type))
+            return {.kind = Kind::Decimal, .scale = getDecimalScale(*nested_type)};
+        /// Cross-width `FixedString` comparisons zero-pad into one shared byte order; `String`
+        /// stays separate, it distinguishes values that differ only in trailing zero bytes.
+        if (isFixedString(nested_type))
+            return {.kind = Kind::FixedString};
+        /// Remaining comparable types chain only with their equal type and its canonical order.
+        /// Three-valued comparisons (Nullable Tuple elements) never reach the pass at all.
+        return {.kind = Kind::ExactType, .exact_type = nested_type};
+    }
+
     template <typename T0, typename T1>
     ColumnPtr executeNumRightType(const ColumnVector<T0> * col_left, const IColumn * col_right_untyped) const
     {
@@ -1270,6 +1312,20 @@ public:
     }
 
     size_t getNumberOfArguments() const override { return 2; }
+
+    ComparisonOrderDomain getComparisonOrderDomain(const DataTypes & arguments) const override
+    {
+        if constexpr (is_null_safe_cmp_mode || IsOperation<Op>::not_equals)
+            return {};
+
+        if (arguments.size() != 2)
+            return {};
+
+        auto left_domain = getComparisonOrderDomainForType(arguments[0]);
+        if (!left_domain.isValid() || left_domain != getComparisonOrderDomainForType(arguments[1]))
+            return {};
+        return left_domain;
+    }
 
     bool isSuitableForShortCircuitArgumentsExecution(const DataTypesWithConstInfo & /*arguments*/) const override { return false; }
 

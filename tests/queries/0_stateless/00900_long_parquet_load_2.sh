@@ -37,6 +37,7 @@ EXCLUDE=(
     # GeoParquet files with Geometry (Variant) columns tested separately.
     03600_geoparquet_multi_geometry_empty_types.parquet
     03600_geoparquet_multi_geometry_explicit_types.parquet
+    04614_geoparquet_multipoint_mixed.parquet
     04059_geo_spatial_pruning.parquet
     04060_geo_page_pruning.parquet
     04512_geo_pruning_iceberg.parquet
