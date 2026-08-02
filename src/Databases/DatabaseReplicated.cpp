@@ -53,6 +53,7 @@
 #include <base/scope_guard.h>
 #include <Common/AsyncLoader.h>
 #include <Common/QueryScope.h>
+#include <Common/ErrorCodes.h>
 #include <Common/Exception.h>
 #include <Common/FailPoint.h>
 #include <Common/Macros.h>
@@ -1152,14 +1153,22 @@ ASTPtr DatabaseReplicated::tryGetCreateOrAttachTableQuery(const String & name, C
     return res;
 }
 
-void DatabaseReplicated::dumpTableMetadataDiffForOneTable(
+/// The exception code, not its message: parser messages embed the query text (unmasked metadata).
+static String describeCurrentExceptionForDumpOnly()
+{
+    const int code = getCurrentExceptionCode();
+    return fmt::format("error code {} ({})", code, ErrorCodes::getName(code));
+}
+
+void DatabaseReplicated::dumpTableRawMetadataDiffForOneTable(
     const String & table_name,
     const ContextPtr & local_context,
     const std::map<String, String> & table_name_to_metadata_in_zk) const
 {
     /// The digest sums over the in-memory `tables` map, while the caller iterates
-    /// `getAllTableNames`, which also lists not-yet-loaded tables. A table absent from `tables`
-    /// contributes nothing to the digest, so it can never be the diverging term.
+    /// `getAllTableNames`, which also lists not-yet-loaded tables. Sampled after `checkDigestValid`
+    /// released `mutex`, so a concurrent DDL can report `false` for the real culprit: `true` means
+    /// the table contributes a digest term, `false` does not exonerate it.
     const bool is_digest_carrier = isTableExist(table_name, local_context);
 
     auto zk_metadata_it = table_name_to_metadata_in_zk.find(table_name);
@@ -1199,30 +1208,52 @@ void DatabaseReplicated::dumpTableMetadataDiffForOneTable(
     catch (...)
     {
         LOG_ERROR(log, "Table {} (digest carrier: {}): cannot read local metadata: {}",
-            table_name, is_digest_carrier, getCurrentExceptionMessage(/*with_stacktrace=*/false));
+            table_name, is_digest_carrier, describeCurrentExceptionForDumpOnly());
     }
+}
 
-    /// Supplementary human-readable rendering. It can fail for one table (missing or malformed
-    /// metadata is itself a divergence being hunted), which must not hide the other tables.
+void DatabaseReplicated::dumpTableAstDiffForOneTable(
+    const String & table_name,
+    const ContextPtr & local_context,
+    const std::map<String, String> & table_name_to_metadata_in_zk) const
+{
+    const bool is_digest_carrier = isTableExist(table_name, local_context);
+
+    auto zk_metadata_it = table_name_to_metadata_in_zk.find(table_name);
+    const bool exists_in_zk = zk_metadata_it != table_name_to_metadata_in_zk.end();
+
+    /// Supplementary human-readable rendering; the raw-byte pass already carries the actionable
+    /// data. It can fail for one table (missing or malformed metadata is itself a divergence being
+    /// hunted), which must not hide the other tables, so parse without the aborting form check.
     ASTPtr local_ast_ptr;
     ASTPtr on_disk_ast_ptr;
     ASTPtr zk_ast_ptr;
     try
     {
         local_ast_ptr = tryGetCreateOrAttachTableQuery(table_name, local_context);
-        on_disk_ast_ptr = parseQueryFromMetadataOnDisk(table_name);
+        on_disk_ast_ptr = parseQueryFromMetadataOnDisk(table_name, /*unexpected_form_is_not_an_error=*/true);
+        if (!on_disk_ast_ptr)
+            LOG_ERROR(log, "Table {} (digest carrier: {}): local metadata is not in the expected form",
+                table_name, is_digest_carrier);
+
         if (exists_in_zk)
+        {
             zk_ast_ptr = parseQueryFromMetadataInZooKeeper(
                 getContext(),
                 /*database_name_=*/getDatabaseName(),
                 /*zookeeper_path_=*/zookeeper_path,
                 /*node_name=*/table_name,
-                /*query=*/zk_metadata_it->second);
+                /*query=*/zk_metadata_it->second,
+                /*unexpected_form_is_not_an_error=*/true);
+            if (!zk_ast_ptr)
+                LOG_ERROR(log, "Table {} (digest carrier: {}): coordinator metadata is not in the expected form",
+                    table_name, is_digest_carrier);
+        }
     }
     catch (...)
     {
         LOG_ERROR(log, "Table {} (digest carrier: {}): cannot render metadata as AST: {}",
-            table_name, is_digest_carrier, getCurrentExceptionMessage(/*with_stacktrace=*/false));
+            table_name, is_digest_carrier, describeCurrentExceptionForDumpOnly());
         return;
     }
 
@@ -1270,33 +1301,46 @@ void DatabaseReplicated::tryCompareLocalAndZooKeeperTablesAndDumpDiffForDebugOnl
 
         std::unordered_set<std::string> checked_tables;
 
+        /// Two passes, so that a table whose AST rendering fails does not cost the raw-byte report
+        /// of the tables after it: the raw-byte report is what names the diverging table.
         for (const auto & table_name : table_names_local)
         {
             checked_tables.insert(table_name);
-            dumpTableMetadataDiffForOneTable(table_name, local_context, table_name_to_metadata_in_zk);
+            dumpTableRawMetadataDiffForOneTable(table_name, local_context, table_name_to_metadata_in_zk);
         }
+
+        for (const auto & table_name : table_names_local)
+            dumpTableAstDiffForOneTable(table_name, local_context, table_name_to_metadata_in_zk);
 
         for (const auto & [table_name, table_metadata] : table_name_to_metadata_in_zk)
         {
             if (checked_tables.contains(table_name))
                 continue;
 
-            String zookeeper_query = "<unparseable>";
+            /// Name the table first: the rendering below is supplementary and may fail.
+            LOG_ERROR(log, "Table {} exists in ZK, but missing locally", table_name);
+
+            String failure_reason = "is not in the expected form";
+            ASTPtr zk_ast_ptr;
             try
             {
-                auto zk_ast_ptr = parseQueryFromMetadataInZooKeeper(
+                zk_ast_ptr = parseQueryFromMetadataInZooKeeper(
                     getContext(),
                     /*database_name_=*/getDatabaseName(),
                     /*zookeeper_path_=*/zookeeper_path,
                     /*node_name=*/table_name,
-                    table_metadata);
-                if (zk_ast_ptr)
-                    zookeeper_query = zk_ast_ptr->formatForLogging();
+                    table_metadata,
+                    /*unexpected_form_is_not_an_error=*/true);
             }
-            catch (...) // NOLINT(bugprone-empty-catch)
+            catch (...)
             {
+                failure_reason = describeCurrentExceptionForDumpOnly();
             }
-            LOG_ERROR(log, "Table {} exists in ZK, but missing locally: {}", table_name, zookeeper_query);
+
+            if (zk_ast_ptr)
+                LOG_ERROR(log, "Table {} coordinator metadata: {}", table_name, zk_ast_ptr->formatForLogging());
+            else
+                LOG_ERROR(log, "Table {} coordinator metadata cannot be rendered as AST: {}", table_name, failure_reason);
         }
     }
     catch (...)
@@ -2346,7 +2390,8 @@ std::map<String, String> DatabaseReplicated::getConsistentMetadataSnapshotImpl(
 }
 
 ASTPtr DatabaseReplicated::parseQueryFromMetadata(
-    ContextPtr context_, const String & database_name_, const String & table_name, const String & query, const String & description)
+    ContextPtr context_, const String & database_name_, const String & table_name, const String & query, const String & description,
+    bool unexpected_form_is_not_an_error)
 {
     ParserCreateQuery parser;
     auto ast = parseQuery(
@@ -2357,38 +2402,49 @@ ASTPtr DatabaseReplicated::parseQueryFromMetadata(
         context_->getSettingsRef()[Setting::max_parser_depth],
         context_->getSettingsRef()[Setting::max_parser_backtracks]);
 
-    auto & create = ast->as<ASTCreateQuery &>();
-    if (create.uuid == UUIDHelpers::Nil || create.getTable() != TABLE_WITH_UUID_NAME_PLACEHOLDER || create.database)
+    /// `as` returns nullptr rather than throwing, so a non-CREATE query is folded into the same
+    /// unexpected-form branch instead of reaching the reference cast below.
+    auto * create = ast->as<ASTCreateQuery>();
+    if (!create || create->uuid == UUIDHelpers::Nil || create->getTable() != TABLE_WITH_UUID_NAME_PLACEHOLDER || create->database)
+    {
+        /// The metadata dump passes @unexpected_form_is_not_an_error: it runs in builds where a
+        /// LOGICAL_ERROR aborts at construction, so it could not contain one, and it reports the
+        /// unexpected form itself. Every other caller is on a real execution path, where an
+        /// unexpected form is a genuine assertion failure.
+        if (unexpected_form_is_not_an_error)
+            return nullptr;
         throw Exception(ErrorCodes::LOGICAL_ERROR, "Got unexpected query from {}: {}", table_name, query);
+    }
 
-    create.setDatabase(database_name_);
-    create.setTable(table_name);
-    create.attach = false;
+    create->setDatabase(database_name_);
+    create->setTable(table_name);
+    create->attach = false;
 
     /// In both cases we need to set attach = true to avoid creating inner table(s) twice.
-    if (create.is_materialized_view_with_inner_table())
-        create.attach = true;
-    if (create.storage && create.storage->engine && (create.storage->engine->name == "TimeSeries"))
-        create.attach = true;
+    if (create->is_materialized_view_with_inner_table())
+        create->attach = true;
+    if (create->storage && create->storage->engine && (create->storage->engine->name == "TimeSeries"))
+        create->attach = true;
 
-    if (create.select && create.isView())
-        ApplyWithSubqueryVisitor(context_).visit(*create.select);
+    if (create->select && create->isView())
+        ApplyWithSubqueryVisitor(context_).visit(*create->select);
 
     return ast;
 }
 ASTPtr DatabaseReplicated::parseQueryFromMetadataInZooKeeper(
-    ContextPtr context_, const String & database_name_, const String & zookeeper_path_, const String & node_name, const String & query)
+    ContextPtr context_, const String & database_name_, const String & zookeeper_path_, const String & node_name, const String & query,
+    bool unexpected_form_is_not_an_error)
 {
     String description = fmt::format("in ZooKeeper {}/metadata/{}", zookeeper_path_, escapeForFileName(node_name));
-    return parseQueryFromMetadata(context_, database_name_, node_name, query, description);
+    return parseQueryFromMetadata(context_, database_name_, node_name, query, description, unexpected_form_is_not_an_error);
 }
-ASTPtr DatabaseReplicated::parseQueryFromMetadataOnDisk(const String & table_name) const
+ASTPtr DatabaseReplicated::parseQueryFromMetadataOnDisk(const String & table_name, bool unexpected_form_is_not_an_error) const
 {
     auto file_path = getObjectMetadataPath(table_name);
     String description = fmt::format("in metadata {}", file_path);
     auto db_disk = getDisk();
     String query = DB::readMetadataFile(db_disk, file_path);
-    return parseQueryFromMetadata(getContext(), getDatabaseName(), table_name, query, description);
+    return parseQueryFromMetadata(getContext(), getDatabaseName(), table_name, query, description, unexpected_form_is_not_an_error);
 }
 
 void DatabaseReplicated::dropReplica(

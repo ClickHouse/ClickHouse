@@ -1,3 +1,5 @@
+import re
+
 import pytest
 
 from helpers.cluster import ClickHouseCluster
@@ -58,10 +60,18 @@ def diverge_metadata_bytes_only(metadata_path):
     A trailing newline is the whole mutation: both spellings parse to the same AST, so an AST
     comparison reports them equal while the digest, which hashes the raw bytes, diverges. The
     node uses a local database disk, so the metadata is a plain file.
+
+    Returns the on-disk size AFTER the mutation, which pins every number the report must print.
     """
     node.exec_in_container(
         ["bash", "-c", f"printf '\\n' >> /var/lib/clickhouse/{metadata_path}"],
         user="root",
+    )
+    return int(
+        node.exec_in_container(
+            ["bash", "-c", f"stat -c %s /var/lib/clickhouse/{metadata_path}"],
+            user="root",
+        ).strip()
     )
 
 
@@ -86,10 +96,29 @@ def grep_table_report(db, table, tail):
     return node.grep_in_log(f"DatabaseReplicated ({db}): Table {table} (digest carrier: true): {tail}")
 
 
+def dump_lines(db):
+    """The dump's own per-table lines for this database, in the order they were logged."""
+    return [
+        line
+        for line in node.grep_in_log(f"DatabaseReplicated ({db}): Table ").splitlines()
+        if line.strip()
+    ]
+
+
+# Every field the report adds over the pre-existing AST-only dump. Asserting the whole payload,
+# not just the verdict, is what makes dropping any single field fail this test.
+DIFFERS_PAYLOAD = (
+    r"digest term (\d{1,20}), raw metadata DIFFERS from coordinator "
+    r"\(on disk (\d+) bytes, coordinator (\d+) bytes, first difference at byte (\d+), "
+    r"coordinator term (\d{1,20})\)"
+)
+MATCHES_PAYLOAD = r"digest term (\d{1,20}), raw metadata matches coordinator"
+
+
 def test_digest_mismatch_names_the_diverging_table(started_cluster):
     db = "digest_diagnostic_names_table"
     metadata_path = prepare_database(db)
-    diverge_metadata_bytes_only(f"{metadata_path}diverging.sql")
+    on_disk_size = diverge_metadata_bytes_only(f"{metadata_path}diverging.sql")
 
     force_digest_check(db)
 
@@ -97,10 +126,20 @@ def test_digest_mismatch_names_the_diverging_table(started_cluster):
         f"DatabaseReplicated ({db}): Digest of local metadata"
     ), "the forced digest check did not detect the divergence"
 
-    # The report must attribute the divergence to the table that carries it, and must not
-    # accuse the intact one.
-    assert grep_table_report(db, "diverging", "digest term").find("DIFFERS from coordinator") >= 0
-    assert grep_table_report(db, "intact", "digest term").find("matches coordinator") >= 0
+    # The report must attribute the divergence to the table that carries it, with every field it
+    # promises: both sizes, both digest terms, and where the bytes first differ. The mutation is
+    # exactly one appended byte, so all four numbers are determined.
+    differs = re.search(DIFFERS_PAYLOAD, grep_table_report(db, "diverging", "digest term"))
+    assert differs, "the diverging table's report is missing or has lost a reported field"
+    local_term, disk_bytes, coord_bytes, first_diff, coord_term = differs.groups()
+    assert int(disk_bytes) == on_disk_size
+    assert int(coord_bytes) == on_disk_size - 1
+    assert int(first_diff) == on_disk_size - 1
+    assert local_term != coord_term, "the two sides must hash differently, that is the divergence"
+
+    # ...and must not accuse the intact one.
+    matches = re.search(MATCHES_PAYLOAD, grep_table_report(db, "intact", "digest term"))
+    assert matches, "the intact table must still be reported, with its digest term"
 
     # The AST comparison cannot see this divergence at all, which is why the raw byte comparison
     # above is the load-bearing part of the report rather than a nicety.
@@ -135,10 +174,69 @@ def test_dump_survives_a_per_table_failure(started_cluster):
     force_digest_check(db)
 
     assert node.contains_in_log(f"DatabaseReplicated ({db}): Digest of local metadata")
-    # The unrenderable table is named with an explicit error state...
-    assert grep_table_report(db, "diverging", "cannot render metadata as AST")
+    # The unrenderable table is named with an explicit error state, reported as the error CODE:
+    # the parser's message embeds the metadata it failed on, and metadata is unmasked and can hold
+    # secrets. Scoped to the dump's own line - other subsystems log that metadata on their own
+    # error paths, which is outside this diff.
+    render_failure = grep_table_report(db, "diverging", "cannot render metadata as AST")
+    assert "SYNTAX_ERROR" in render_failure, render_failure
+    assert "this is not a CREATE query" not in render_failure, render_failure
+
     # ...and the dump still reached the table that comes after it.
     assert grep_table_report(db, "intact", "digest term").find("DIFFERS from coordinator") >= 0
+
+    # The byte report for EVERY table must precede the first rendering failure. Interleaving the
+    # two would mean a table whose rendering fails costs the byte report of every table after it,
+    # and the byte report is what names the diverging one.
+    lines = dump_lines(db)
+    first_failure = next(i for i, l in enumerate(lines) if "cannot render metadata as AST" in l)
+    reported_before = {l.split(" Table ")[1].split(" ")[0] for l in lines[:first_failure] if "digest term" in l}
+    assert reported_before >= {"diverging", "intact", "probe"}, sorted(reported_before)
+
+    node.start_clickhouse()
+    node.query(f"DROP DATABASE IF EXISTS {db} SYNC")
+
+
+def test_dump_survives_metadata_that_is_not_in_the_expected_form(started_cluster):
+    """Coordinator metadata that parses but is not in the form this database writes.
+
+    `parseQueryFromMetadata` answers that case with a LOGICAL_ERROR, which aborts at construction
+    in exactly the builds this dump runs in - so no catch inside the dump could contain it, and the
+    process would die on a DIFFERENT fatal signature, losing both the table names and the family's
+    own signature. The dump must therefore report the form itself and let the digest assertion be
+    the thing that fires.
+    """
+    db = "digest_diagnostic_unexpected_form"
+    metadata_path = prepare_database(db)
+
+    # Parses cleanly, but carries no UUID and a real table name instead of the placeholder.
+    node_path = f"/clickhouse/databases/{db}/metadata/diverging"
+    zk = cluster.get_kazoo_client("zoo1")
+    try:
+        original_metadata = zk.get(node_path)[0]
+        zk.set(node_path, b"CREATE TABLE diverging (n Int32) ENGINE = MergeTree ORDER BY n")
+    finally:
+        zk.stop()
+    diverge_metadata_bytes_only(f"{metadata_path}intact.sql")
+
+    force_digest_check(db)
+
+    # The abort must still be the digest assertion, not the parse assertion.
+    assert node.contains_in_log("Digest does not match")
+    assert not node.contains_in_log("Got unexpected query from")
+
+    assert grep_table_report(db, "diverging", "coordinator metadata is not in the expected form")
+    # ...and the byte report for the table after it survived.
+    assert grep_table_report(db, "intact", "digest term").find("DIFFERS from coordinator") >= 0
+
+    # Startup parses coordinator metadata through the same helper, on a real execution path where
+    # the unexpected form IS an assertion failure - so the node must be put back before restarting,
+    # or the server aborts again during startup and never comes up.
+    zk = cluster.get_kazoo_client("zoo1")
+    try:
+        zk.set(node_path, original_metadata)
+    finally:
+        zk.stop()
 
     node.start_clickhouse()
     node.query(f"DROP DATABASE IF EXISTS {db} SYNC")
