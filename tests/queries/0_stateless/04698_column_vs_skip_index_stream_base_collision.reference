@@ -20,3 +20,5 @@ projection-carry-legal	10	50
 1
 statistics-drop-legal	10	45
 1
+nested-multi-rename-legal	10	10	30
+t_carry_col	1

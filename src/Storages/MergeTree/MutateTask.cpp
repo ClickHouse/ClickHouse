@@ -1210,6 +1210,43 @@ static void registerCarriedSkipIndexBases(
     }
 }
 
+/// Claim the stream bases of the columns a some-columns mutation carries over (hardlink or copy)
+/// instead of rewriting. The writer only sees the updated columns, so a recalculated index landing
+/// on a carried column's base would otherwise share its marks file with nothing detecting it.
+static void registerCarriedColumnBases(
+    const StreamBaseManifestPtr & manifest,
+    const MergeTreeData::DataPartPtr & source_part,
+    const MergeTreeData::DataPartPtr & new_part,
+    const Block & updated_header,
+    const NameSet & files_to_skip,
+    const NameToNameVector & files_to_rename)
+{
+    if (!manifest || !isWidePart(source_part))
+        return;
+
+    for (const auto & column : new_part->getColumns())
+    {
+        if (updated_header.has(column.name))
+            continue;
+
+        for (const auto & [stream_name, _] : getStreamCounts(new_part, source_part->checksums, Names{column.name}))
+        {
+            const String data_file = stream_name + ".bin";
+            const bool renamed = std::any_of(
+                files_to_rename.begin(),
+                files_to_rename.end(),
+                [&data_file](const auto & pair) { return pair.first == data_file; });
+
+            /// A skipped or renamed file is not carried, so its base is free in the new part; the
+            /// rename site claims the destination with the typed knowledge this loop lacks.
+            if (files_to_skip.contains(data_file) || renamed)
+                continue;
+
+            manifest->registerStreamBase(stream_name, {StreamBaseManifest::Kind::Column, column.name});
+        }
+    }
+}
+
 /// Apply commands to source_part i.e. remove and rename some columns in
 /// source_part and return set of files, that have to be removed or renamed
 /// from filesystem and in-memory checksums. Ordered result is important,
@@ -4044,10 +4081,10 @@ bool MutateTask::prepare()
             {
                 if (rewritten_index_names.contains(index.name))
                     continue;
-                MutationHelpers::registerCarriedSkipIndexBases(
-                    ctx->stream_base_manifest,
-                    index_factory.get(ctx->metadata_snapshot, index, *ctx->data->getSettings()),
-                    ctx->source_part);
+                auto index_ptr = index_factory.get(ctx->metadata_snapshot, index, *ctx->data->getSettings());
+                if (index_ptr->isInert())
+                    continue;
+                MutationHelpers::registerCarriedSkipIndexBases(ctx->stream_base_manifest, index_ptr, ctx->source_part);
             }
         }
 
@@ -4074,6 +4111,14 @@ bool MutateTask::prepare()
             updated_columns_in_patches,
             ctx->mrk_extension,
             ctx->stream_base_manifest);
+
+        MutationHelpers::registerCarriedColumnBases(
+            ctx->stream_base_manifest,
+            ctx->source_part,
+            ctx->new_data_part,
+            ctx->updated_header,
+            ctx->files_to_skip,
+            ctx->files_to_rename);
 
         /// In case of replicated merge tree with zero copy replication
         /// Here Clickhouse has to follow the common procedure when deleting new part in temporary state

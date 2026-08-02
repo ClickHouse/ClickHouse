@@ -276,3 +276,35 @@ ALTER TABLE t_stats MODIFY COLUMN v UInt64;
 SELECT 'statistics-drop-legal', count(), sum(v) FROM t_stats;
 CHECK TABLE t_stats SETTINGS check_query_single_value_result = 1;
 DROP TABLE t_stats;
+
+-- Two columns of one Nested group legitimately share the array-sizes base, so that direction stays
+-- owned by the Wide writer's own columns-vs-columns check.
+CREATE TABLE t_nested_ok (k UInt64, nested Nested(a UInt32, b UInt32))
+ENGINE = MergeTree ORDER BY k
+SETTINGS min_bytes_for_wide_part = 0, min_rows_for_wide_part = 0;
+INSERT INTO t_nested_ok SELECT number, [1, 2], [3, 4] FROM numbers(10);
+ALTER TABLE t_nested_ok RENAME COLUMN nested.a TO nested.aa, RENAME COLUMN nested.b TO nested.bb;
+SELECT 'nested-multi-rename-legal', count(), sum(nested.aa[1]), sum(nested.bb[1]) FROM t_nested_ok;
+DROP TABLE t_nested_ok;
+
+-- The relaxation above must not free that shared base for an index to land on.
+CREATE TABLE t_nested_collide (k UInt64, `skp_idx_nested` Nested(a UInt32, b UInt32), s String,
+    INDEX `nested.size0`(s) TYPE set(100) GRANULARITY 1)
+ENGINE = MergeTree ORDER BY k
+SETTINGS min_bytes_for_wide_part = 0, min_rows_for_wide_part = 0, escape_index_filenames = 0;
+INSERT INTO t_nested_collide SELECT number, [1, 2], [3, 4], toString(number) FROM numbers(10); -- { serverError INCORRECT_FILE_NAME }
+DROP TABLE t_nested_collide;
+
+-- Materializing an index onto a column this mutation only carries: the writer claims the index, so
+-- the carried column must be claimed too or the two silently share one marks file.
+CREATE TABLE t_carry_col (k UInt64, `skp_idx_a` UInt64, s String)
+ENGINE = MergeTree ORDER BY k
+SETTINGS min_bytes_for_wide_part = 0, min_rows_for_wide_part = 0;
+INSERT INTO t_carry_col SELECT number, number, toString(number) FROM numbers(10);
+ALTER TABLE t_carry_col ADD INDEX a(s) TYPE set(100) GRANULARITY 1;
+ALTER TABLE t_carry_col MATERIALIZE INDEX a; -- { serverError UNFINISHED }
+SELECT 't_carry_col', countIf(latest_fail_reason LIKE '%INCORRECT_FILE_NAME%'
+    AND latest_fail_reason LIKE '%skip index `a`%'
+    AND latest_fail_reason LIKE '%column `skp_idx_a`%')
+FROM system.mutations WHERE database = currentDatabase() AND table = 't_carry_col';
+DROP TABLE t_carry_col;
