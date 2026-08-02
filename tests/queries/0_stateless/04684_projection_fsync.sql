@@ -189,6 +189,22 @@ SELECT 'packed merge projection adds directory syncs',
        AND query NOT LIKE '%query_log%' AND query LIKE '%t\_packed\_plain%' AND type = 'QueryFinish'
      ORDER BY event_time_microseconds DESC LIMIT 1);
 
+-- The directory guard above is independent of the archive's own sync, exactly as on the insert
+-- path: `data.packed` is written when the projection's transaction is committed and synced only if
+-- the sub-merge inherited the parent's sync decision. Dropping that propagation while keeping the
+-- guard would leave the assertion above green. A `Packed` projection is one archive, so the delta
+-- is exactly one.
+SELECT 'packed merge projection adds exactly one file sync',
+    (SELECT ProfileEvents['FileSync'] FROM system.query_log
+     WHERE current_database = currentDatabase() AND query_kind = 'Optimize'
+       AND query NOT LIKE '%query_log%' AND query LIKE '%t\_packed %' AND type = 'QueryFinish'
+     ORDER BY event_time_microseconds DESC LIMIT 1)
+    -
+    (SELECT ProfileEvents['FileSync'] FROM system.query_log
+     WHERE current_database = currentDatabase() AND query_kind = 'Optimize'
+       AND query NOT LIKE '%query_log%' AND query LIKE '%t\_packed\_plain%' AND type = 'QueryFinish'
+     ORDER BY event_time_microseconds DESC LIMIT 1);
+
 SYSTEM FLUSH LOGS part_log;
 
 -- Guards the assertion above: it only covers the `Packed` ordering if the merge really produced a
