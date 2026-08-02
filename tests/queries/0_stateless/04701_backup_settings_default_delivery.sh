@@ -17,6 +17,27 @@ insert into src select * from numbers(10);
 backup_name="Disk('backups', '${CLICKHOUSE_TEST_UNIQUE_NAME}')"
 uniq="${CLICKHOUSE_TEST_UNIQUE_NAME}"
 
+# Copied from 03032_async_backup_restore.sh: an async operation must not be left racing the DROPs below.
+function wait_status()
+{
+    local operation_id="$1"
+    local expected_status="$2"
+    local timeout=60
+    local start=$EPOCHSECONDS
+    while true; do
+        local current_status
+        current_status=$(${CLICKHOUSE_CLIENT} --query "SELECT status FROM system.backups WHERE id='${operation_id}'")
+        if [ "${current_status}" == "${expected_status}" ]; then
+            break
+        fi
+        if ((EPOCHSECONDS-start > timeout )); then
+            echo "Timeout while waiting for operation ${operation_id} to come to status ${expected_status}. The current status is ${current_status}."
+            exit 1
+        fi
+        sleep 0.1
+    done
+}
+
 ${CLICKHOUSE_CLIENT} --query "backup table src to $backup_name settings id='${uniq}_b0'" | grep -o "BACKUP_CREATED"
 
 echo "-- RESTORE: a restore-specific reset must be delivered, not merely accepted."
@@ -84,6 +105,22 @@ ${CLICKHOUSE_CLIENT} --query "
 select id like '%_r4' as is_control, settings['skip_unresolved_access_dependencies']
 from system.backups where id in ('${uniq}_r4', '${uniq}_r5') order by id
 "
+
+echo "-- \`async\` decides whether the client waits, so resetting it must change the returned status."
+
+# `BackupSettings::isAsync` resolves `async = DEFAULT` on its own (it runs before `fromBackupQuery`) and is
+# the sole input to InterpreterBackupQuery's decision whether to wait. Reset back to the default (false)
+# => the interpreter waits => the query itself reports the finished status.
+${CLICKHOUSE_CLIENT} --query "
+backup table src to Disk('backups', '${uniq}_s1')
+settings id='${uniq}_s1', async=1, async=DEFAULT;
+" | grep -o "BACKUP_CREATED"
+
+# Control proving that arm is not vacuous: with `async=1` alone the query returns without waiting.
+${CLICKHOUSE_CLIENT} --query "
+backup table src to Disk('backups', '${uniq}_s2') settings id='${uniq}_s2', async=1;
+" | grep -o "CREATING_BACKUP"
+wait_status "${uniq}_s2" "BACKUP_CREATED"
 
 ${CLICKHOUSE_CLIENT} -m --query "
 drop table r1; drop table r2; drop table r3; drop table r4; drop table r5; drop table src;

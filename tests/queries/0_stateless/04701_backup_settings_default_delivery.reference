@@ -19,3 +19,6 @@ RESTORED
 RESTORED
 1	1
 0	0
+-- `async` decides whether the client waits, so resetting it must change the returned status.
+BACKUP_CREATED
+CREATING_BACKUP
