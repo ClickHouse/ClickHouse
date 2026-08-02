@@ -43,7 +43,6 @@ public:
                 ErrorCodes::SUPPORT_IS_DISABLED,
                 "Function `fuzzQuery` is disabled. Set `allow_fuzz_query_functions` to 1 to enable it");
 
-        /// Some callers have no process-list entry, so the cancellation check must stay a no-op there.
         query_status = context->getProcessListElementSafe();
 
         const Settings & settings = context->getSettingsRef();

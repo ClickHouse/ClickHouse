@@ -252,7 +252,6 @@ public:
 
     explicit FunctionFormatQueryFromJSON(ContextPtr context)
     {
-        /// Some callers have no process-list entry, so the cancellation check must stay a no-op there.
         query_status = context->getProcessListElementSafe();
 
         const Settings & settings = context->getSettingsRef();
@@ -303,7 +302,9 @@ public:
         {
             auto json = String(json_col->getDataAt(i));
 
-            checkQueryCancellationThrottled(query_status, name, json.size(), bytes_since_check);
+            /// Both arguments are parsed per row, so both count toward the stride.
+            const size_t row_bytes = json.size() + (orig_col ? orig_col->getDataAt(i).size() : 0);
+            checkQueryCancellationThrottled(query_status, name, row_bytes, bytes_since_check);
 
             /// Enforce `max_query_size` on the raw JSON before handing it to `Poco::JSON::Parser`,
             /// mirroring the `clickhouse_json` client/server entry points: a shallow document with a

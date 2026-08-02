@@ -44,7 +44,6 @@ public:
 
     explicit FunctionParseQueryToJSON(ContextPtr context)
     {
-        /// Some callers have no process-list entry, so the cancellation check must stay a no-op there.
         query_status = context->getProcessListElementSafe();
 
         const Settings & settings = context->getSettingsRef();
