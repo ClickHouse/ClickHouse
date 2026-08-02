@@ -3,10 +3,10 @@ Regression coverage for the praktika result contract of the two SQLancer job
 scripts, `ci/jobs/sqlancer_job.sh` and `ci/jobs/sqlancer_pp_job.sh`.
 
 Both scripts hand-write their `result_<normalized_job_name>.json` in bash
-instead of going through `Result.complete_job`, so they have to satisfy three
-invariants by hand. All three were violated, and the combined effect was that a
-red SQLancer job reported green in the GitHub Actions conclusion and in the
-workflow report, with only CIDB recording the failure:
+instead of going through `Result.complete_job`, so they have to satisfy four
+invariants by hand. The first three were violated, and the combined effect was
+that a red SQLancer job reported green in the GitHub Actions conclusion and in
+the workflow report, with only CIDB recording the failure:
 
   - the result's `name` must equal the raw `JOB_NAME`, because
     `Result.update_sub_result` merges the job result into the workflow report by
@@ -22,20 +22,25 @@ workflow report, with only CIDB recording the failure:
     `sqlancer_pp_job.sh` emitted lowercase `success` / `failure`, which
     `Result._update_status` does not count as failed, so fixing only the name
     left that job green.
+  - every embedded string must be JSON-escaped, because `Result.from_fs`
+    re-raises `JSONDecodeError` and its caller in `runner.py` does not catch it,
+    so one unescaped backslash in a failure message discards the whole result.
 
 The status-token and merge assertions exercise `ci.praktika.result` directly;
 the exit-status assertions run the scripts' own shell text, extracted verbatim,
-so that reverting any of the three fixes in the scripts reddens this test. That
-includes the two regions that actually *produce* the values under test: the
-`JOB_NAME_RAW` lookup (so a hardcoded or empty name reddens) and
-`sqlancer_pp_job.sh`'s oracle loop (so a regression in the status token it
-assigns reddens).
+so that reverting any of the fixes in the scripts reddens this test. That
+includes the regions that actually *produce* the values under test: the
+`JOB_NAME_RAW` / `NORMALIZED_JOB_NAME` / `RESULT_FILE` block (so a hardcoded or
+empty name reddens, and so does writing to a file praktika does not read) and
+`sqlancer_pp_job.sh`'s oracle loop (so a regression in the status token or in the
+`info` it builds reddens).
 """
 
 import dataclasses
 import json
 import os
 import re
+import shlex
 import subprocess
 import sys
 
@@ -105,16 +110,41 @@ def _extract_compound(text, start_marker, end_line, path):
     raise AssertionError(f"no closing {end_line!r} for {start_marker!r} in {path}")
 
 
+def _extract_upto_prefix(text, start_marker, end_prefix, path):
+    """Lines from start_marker through the first later line starting with end_prefix.
+
+    Keyed on the text, never on line numbers. Unlike `_extract_compound` the last
+    line is a simple assignment rather than a compound-statement terminator.
+    """
+    lines = text.splitlines()
+    start = None
+    for i, line in enumerate(lines):
+        if line.startswith(start_marker):
+            start = i
+            break
+    assert start is not None, f"{start_marker!r} not found in {path}"
+    for j in range(start + 1, len(lines)):
+        if lines[j].startswith(end_prefix):
+            return "\n".join(lines[start : j + 1])
+    raise AssertionError(f"no {end_prefix!r} line after {start_marker!r} in {path}")
+
+
 def _extract_job_name_init(text, path):
-    """The script's own `JOB_NAME_RAW` / `NORMALIZED_JOB_NAME` lookup block.
+    """The script's `JOB_NAME_RAW`, `NORMALIZED_JOB_NAME` and `RESULT_FILE` block.
 
     Both scripts read `JOB_NAME` out of the serialized praktika environment with
     an inline `python3 -c`, because `JOB_NAME` is not propagated into the docker
     container. Extracting it verbatim is what makes a regression there (a
     hardcoded literal, or a lookup that degrades to an empty string) visible: an
     empty `name` no-ops `update_sub_result` exactly like a wrong one.
+
+    The range runs to `RESULT_FILE=` inclusive, so the harnesses also execute the
+    normalization that decides *which file* praktika reads. Stopping at the first
+    standalone `')` would leave that computation uncovered, and writing a plain
+    `result.json` is the original defect this contract exists to pin: praktika
+    then reports "Job killed or terminated, no Result provided".
     """
-    return _extract_compound(text, "JOB_NAME_RAW=$(python3 -c '", "')", path)
+    return _extract_upto_prefix(text, "JOB_NAME_RAW=$(python3 -c '", "RESULT_FILE=", path)
 
 
 def _write_environment_json(root, job_name, workflow_name="NightlySQLancer"):
@@ -295,11 +325,31 @@ def test_scripts_only_assign_valid_status_tokens(script):
 # ---------------------------------------------------------------------------
 
 
+def _read_emitted_result(tmp_path, proc, job_name):
+    """Parse the result file at the path the *script* computed, not a fixed one.
+
+    The harnesses run the script's own `RESULT_FILE=` assignment, so the path is
+    evidence: praktika reads `Result.file_name_static(JOB_NAME)` and nothing else.
+    Asserting the emitted path against it is what makes a regression in
+    `NORMALIZED_JOB_NAME` (a hardcoded literal, or an empty value collapsing the
+    name to `result_.json`) redden, rather than being re-derived in Python here.
+    """
+    emitted = re.findall(r"^RESULT_FILE_IS=(.*)$", proc.stdout, re.M)
+    assert len(emitted) == 1, f"expected one RESULT_FILE_IS line, got {emitted}"
+    path = emitted[0]
+    assert os.path.basename(path) == os.path.basename(
+        Result.file_name_static(job_name)
+    ), f"the script writes {path!r}, which is not the file praktika reads"
+    with open(path, encoding="utf-8") as f:
+        return json.load(f)
+
+
 def _run_sqlancer_write_result(tmp_path, overall_status, job_name=_SQLANCER_NODE):
     """Run `sqlancer_job.sh`'s real `write_result` (via its EXIT trap).
 
-    The `JOB_NAME_RAW` lookup is the script's own, so the emitted `name` comes
-    from the real `_Environment` read rather than from this test. Returns
+    The `JOB_NAME_RAW` lookup and the `RESULT_FILE` computation are the script's
+    own, so both the emitted `name` and the file it lands in come from the real
+    `_Environment` read rather than from this test. Returns
     (exit_code, parsed_result_json).
     """
     text = _read(_SQLANCER_JOB)
@@ -309,11 +359,11 @@ def _run_sqlancer_write_result(tmp_path, overall_status, job_name=_SQLANCER_NODE
             "set -exu",
             "set -o pipefail",
             f'TMP_PATH="{tmp_path}"',
-            f'RESULT_FILE="{tmp_path}/result_test.json"',
             f'OUTPUT_PATH="{tmp_path}/out"',
             'mkdir -p "$OUTPUT_PATH"',
             "JOB_START_TIME=$(date +%s)",
             _extract_job_name_init(text, _SQLANCER_JOB),
+            'printf "RESULT_FILE_IS=%s\\n" "$RESULT_FILE"',
             _extract_block(text, r"^json_escape\(\) \{$", _SQLANCER_JOB),
             _extract_block(text, r"^write_result\(\) \{$", _SQLANCER_JOB),
             "TEST_RESULTS=()",
@@ -337,8 +387,7 @@ def _run_sqlancer_write_result(tmp_path, overall_status, job_name=_SQLANCER_NODE
     proc = subprocess.run(
         ["bash", str(script)], capture_output=True, text=True, timeout=120, cwd=cwd
     )
-    with open(tmp_path / "result_test.json", encoding="utf-8") as f:
-        return proc.returncode, json.load(f)
+    return proc.returncode, _read_emitted_result(tmp_path, proc, job_name)
 
 
 def test_sqlancer_write_result_exits_nonzero_on_fail(tmp_path):
@@ -367,19 +416,27 @@ def test_sqlancer_write_result_emits_job_name_verbatim(tmp_path):
     assert " " in result["name"] and "(" in result["name"]
 
 
-def _run_sqlancer_pp_tail(tmp_path, overall_status, job_name=_SQLANCER_PP_NODE):
+def _run_sqlancer_pp_tail(
+    tmp_path, overall_status, job_name=_SQLANCER_PP_NODE, rows=None
+):
     """Run `sqlancer_pp_job.sh`'s real tail: the result-writing block to EOF.
 
     `sqlancer_pp_job.sh` has no EXIT trap, so its result JSON and its exit
     status both come from the tail of the script. Everything from the JSON
     block's opening brace to the end of the file is run verbatim, with the
     server-facing commands stubbed out. `OVERALL_STATUS` is supplied here;
-    `_run_sqlancer_pp_oracle_loop` covers the code that assigns it.
+    `_run_sqlancer_pp_oracle_loop` covers the code that assigns it. `rows`
+    overrides the `TEST_RESULTS` rows, so a caller can drive a raw `info` payload
+    through the script's own serialization.
     """
     text = _read(_SQLANCER_PP_JOB)
     lines = text.splitlines()
     tail = "\n".join(lines[lines.index("{") :])
     cwd = _make_praktika_tree(str(tmp_path / "cwd"), job_name)
+    if rows is None:
+        rows = ["NoREC,FAIL,exit=1; boom"]
+    # shlex.quote, not an f-string: a row may itself contain a double quote.
+    rows_literal = " ".join(shlex.quote(row) for row in rows)
 
     harness = "\n".join(
         [
@@ -387,12 +444,12 @@ def _run_sqlancer_pp_tail(tmp_path, overall_status, job_name=_SQLANCER_PP_NODE):
             f'TMP_PATH="{tmp_path}"',
             f'OUTPUT_PATH="{tmp_path}/out"',
             'mkdir -p "$OUTPUT_PATH"',
-            f'RESULT_FILE="{tmp_path}/result_test.json"',
             "JOB_START_TIME=$(date +%s)",
             _extract_job_name_init(text, _SQLANCER_PP_JOB),
+            'printf "RESULT_FILE_IS=%s\\n" "$RESULT_FILE"',
             _extract_block(text, r"^json_escape\(\) \{$", _SQLANCER_PP_JOB),
             f"OVERALL_STATUS={overall_status}",
-            'TEST_RESULTS=("NoREC,FAIL,exit=1; boom")',
+            f"TEST_RESULTS=({rows_literal})",
             "ATTACHED_FILES_ARRAY=()",
             # Stub the commands that would talk to a server or reap processes.
             "wget() { return 1; }",
@@ -406,8 +463,7 @@ def _run_sqlancer_pp_tail(tmp_path, overall_status, job_name=_SQLANCER_PP_NODE):
     proc = subprocess.run(
         ["bash", str(script)], capture_output=True, text=True, timeout=120, cwd=cwd
     )
-    with open(tmp_path / "result_test.json", encoding="utf-8") as f:
-        return proc.returncode, json.load(f)
+    return proc.returncode, _read_emitted_result(tmp_path, proc, job_name)
 
 
 def test_sqlancer_pp_exits_nonzero_on_fail(tmp_path):
@@ -468,6 +524,34 @@ def test_emitted_result_reaches_the_report(tmp_path, runner, node):
     assert workflow_status == Result.Status.FAIL
     assert node_status == Result.Status.FAIL
     assert node_duration is not None
+
+
+# A JSON metacharacter in a failure message must not corrupt the result file.
+# `Result.from_fs` re-raises `JSONDecodeError` (`Utils.MetaClasses.from_file`) and
+# the `Result.from_fs(job.name)` call in `runner.py` is outside its try/except, so
+# an unescaped `info` loses the whole result, not just that one message. All four
+# payloads occur verbatim in Java assertion text.
+_UNESCAPED_INFO_PAYLOADS = [
+    pytest.param(r"exit=1; AssertionError: pattern \d+ did not match", id="regex-escape"),
+    pytest.param(r"exit=1; AssertionError: SELECT \N FROM t", id="null-literal"),
+    pytest.param('exit=1; AssertionError: expected "x"', id="double-quote"),
+    pytest.param(r"exit=1; AssertionError: path C:\ ", id="trailing-backslash"),
+]
+
+
+@pytest.mark.parametrize("info", _UNESCAPED_INFO_PAYLOADS)
+def test_pp_info_is_json_escaped(tmp_path, info):
+    """The pp `info` goes through `json_escape`, so the result file stays parseable.
+
+    Driven through the script's own serialization block, and read back by the real
+    `Result.from_fs` rather than by `json.load`, so the assertion is that praktika
+    can consume what the script wrote.
+    """
+    _, emitted = _run_sqlancer_pp_tail(
+        tmp_path, "FAIL", rows=[f"NoREC,FAIL,{info}"]
+    )
+    assert emitted["results"][0]["info"] == info
+    assert emitted["status"] == Result.Status.FAIL
 
 
 def _run_sqlancer_pp_oracle_loop(tmp_path, java_exit=0, java_stdout="", server_up=True):
@@ -566,6 +650,26 @@ def test_pp_oracle_loop_assigns_statuses_that_reach_the_report(
             "workflow rollup"
         )
         assert node_status == Result.Status.FAIL
+
+
+def test_pp_assertion_message_survives_loop_and_serialization(tmp_path):
+    """Loop and tail together round-trip a failure message containing a quote.
+
+    The loop builds the `info`, the tail serializes it. Testing them separately
+    cannot see a double-escape: escaping the quote in *both* places yields valid
+    JSON that decodes to a corrupted message, so the escaping has to live in
+    exactly one of the two and only the pair pins that.
+    """
+    message = 'java.lang.AssertionError: expected "x" got y'
+    _, rows = _run_sqlancer_pp_oracle_loop(tmp_path / "loop", java_stdout=message)
+    assert len(rows) >= 1
+
+    _, emitted = _run_sqlancer_pp_tail(tmp_path / "tail", "FAIL", rows=rows)
+
+    infos = [r["info"] for r in emitted["results"]]
+    assert infos, "no result rows were serialized"
+    for info in infos:
+        assert message in info, f"the assertion message was mangled: {info!r}"
 
 
 def test_pp_failure_path_emits_a_status_that_fails_the_report(tmp_path):

@@ -23,10 +23,8 @@ CLICKHOUSE_BIN="$TMP_PATH/clickhouse"
 # `JOB_NAME` is not propagated into the docker container, so read it from the
 # serialized environment file that Praktika writes before invoking the job.
 #
-# The result's `name` field must also be the raw `JOB_NAME`, not a literal:
-# `Result.update_sub_result` merges the job result into the workflow report by
-# NAME, so a name that does not equal the workflow node's name is silently
-# dropped and the node keeps its pre-run status.
+# The `name` field must be the raw `JOB_NAME` too: `Result.update_sub_result`
+# merges by NAME, and a mismatch is dropped silently.
 JOB_NAME_RAW=$(python3 -c '
 import sys
 sys.path.insert(0, ".")
@@ -123,12 +121,8 @@ write_result() {
     printf '  "info": "%s"\n' "$escaped_overall_info" >> $RESULT_FILE
     printf '}\n' >> $RESULT_FILE
 
-    # Exit non-zero when the job did not pass. `runner.py` derives the step
-    # result from this process' exit status (`res = run_code == 0`), not from
-    # the result file, so a recorded FAIL that exits 0 leaves the GitHub Actions
-    # step green. This mirrors `Result.complete_job`, which every praktika-native
-    # job goes through. Placed last so the result file is complete and every
-    # artifact is attached before the exit.
+    # `runner.py` derives the step result from this process' exit status, not
+    # from the result file. Last, so the file is complete before the exit.
     [ "$status" = "OK" ] || exit 1
 }
 

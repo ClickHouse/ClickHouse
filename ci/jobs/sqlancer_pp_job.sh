@@ -34,10 +34,8 @@ CLICKHOUSE_BIN="$TMP_PATH/clickhouse"
 # was written to a file Praktika never reads. `JOB_NAME` is not propagated into
 # the docker container, so read it from the serialized environment Praktika dumps.
 #
-# The result's `name` field must be that same raw `JOB_NAME`, not a literal:
-# `Result.update_sub_result` merges the job result into the workflow report by
-# NAME, so a name that does not equal the workflow node's name is silently
-# dropped and the node keeps its pre-run status.
+# The `name` field must be that same raw `JOB_NAME`: `Result.update_sub_result`
+# merges by NAME, and a mismatch is dropped silently.
 JOB_NAME_RAW=$(python3 -c '
 import sys
 sys.path.insert(0, ".")
@@ -55,9 +53,8 @@ RESULT_FILE="$TMP_PATH/result_${NORMALIZED_JOB_NAME}.json"
 
 mkdir -p "$OUTPUT_PATH"
 
-# Properly JSON-escape a string using python3, outputting only the inner
-# content (without surrounding quotes) so callers can embed it in "...".
-# Mirrors the helper in `sqlancer_job.sh`.
+# JSON-escape a string, emitting the inner content only (no surrounding quotes)
+# so callers can embed it in "...". Mirrors the helper in `sqlancer_job.sh`.
 json_escape() {
     printf '%s' "$1" | python3 -c 'import json,sys; print(json.dumps(sys.stdin.read())[1:-1], end="")'
 }
@@ -127,9 +124,8 @@ ORACLES=( "WHERE" "NoREC" "QUERY_PARTITIONING" "FUZZING" )
 
 TEST_RESULTS=()
 ATTACHED_FILES_ARRAY=()
-# Praktika's Result.Status uses uppercase tokens (OK / FAIL / ERROR); any other
-# value is not recognized by `Result._update_status`, which then does not count
-# this job as failed when rolling the workflow status up.
+# `Result._update_status` only recognizes the uppercase `Result.Status` tokens;
+# any other value does not count this job as failed in the workflow rollup.
 OVERALL_STATUS=OK
 
 for ORACLE in "${ORACLES[@]}"; do
@@ -173,7 +169,9 @@ for ORACLE in "${ORACLES[@]}"; do
     else
         info="exit=${exit_code}"
         if [[ -n "$assertion_error" ]]; then
-            cleaned="$(printf '%s' "$assertion_error" | tr '\n' ' ' | sed 's/"/\\"/g' | cut -c1-500)"
+            # Flatten here: the row is read back with `read -r ... <<<`, which
+            # stops at the first newline. JSON escaping happens at serialization.
+            cleaned="$(printf '%s' "$assertion_error" | tr '\n' ' ' | cut -c1-500)"
             info="${info}; ${cleaned}"
         fi
         TEST_RESULTS+=("${ORACLE},FAIL,${info}")
@@ -208,7 +206,7 @@ fi
     for i in "${!TEST_RESULTS[@]}"; do
         IFS=',' read -r test_name status info <<< "${TEST_RESULTS[i]}"
         printf '    {"name": "%s", "status": "%s", "files": [], "info": "%s"}' \
-            "$test_name" "$status" "$info"
+            "$test_name" "$status" "$(json_escape "$info")"
         if [ "$i" -lt $((${#TEST_RESULTS[@]} - 1)) ]; then
             printf ',\n'
         else
@@ -242,10 +240,6 @@ for _ in $(seq 1 60); do
     fi
 done
 
-# Exit non-zero when the job did not pass. `runner.py` derives the step result
-# from this process' exit status (`res = run_code == 0`), not from the result
-# file, so a recorded FAIL that exits 0 leaves the GitHub Actions step green.
-# This mirrors `Result.complete_job`, which every praktika-native job goes
-# through. Placed last so the result file is written and the server is torn down
-# before the exit.
+# `runner.py` derives the step result from this process' exit status, not from
+# the result file. Last, so the file is written and the server torn down first.
 [[ "$OVERALL_STATUS" == "OK" ]] || exit 1
