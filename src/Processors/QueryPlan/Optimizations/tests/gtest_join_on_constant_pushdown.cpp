@@ -199,11 +199,8 @@ GTEST_TEST(JoinOnConstantPushdown, DistinctColumnNamesStillSubstitute)
         << "both conditions were pushed down, so the ON clause must be empty";
 }
 
-/// An opposite-side input's value must come from its OWN header occurrence. Two right columns share the
-/// name `x` and the predicate references the SECOND, but `Block::findByName` answers with one position
-/// per name, so resolving by name would enforce the FIRST one's bound and erase the intended one.
-/// Positional resolution is the shipped contract, so the substitution MUST fire here: declining it is a
-/// regression, not an accepted alternative.
+/// An opposite-side input's value must come from its OWN header occurrence: two right columns share the
+/// name `x` and the predicate references the SECOND. Resolution is positional, so this must substitute.
 GTEST_TEST(JoinOnConstantPushdown, DuplicateOppositeNameUsesItsOwnOccurrence)
 {
     tryRegisterFunctions();
