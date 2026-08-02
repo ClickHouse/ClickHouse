@@ -58,4 +58,16 @@ FROM
              allow_asynchronous_read_from_io_pool_for_merge_tree = 1
 );
 
+-- The source-presence assertions above hold for any positive stream count, so pin the central
+-- clamp's exact value too: doSettingsSanityCheckClamp must reduce the pathological setting to
+-- the same 256 * getNumberOfCPUCoresToUse() ceiling that max_threads gets. The core count is
+-- read from the still-visible `default` column (`auto(N)`) so the bound is host-independent;
+-- the only literal is the 256 multiplier from src/Core/SettingsQuirks.cpp (see 02994).
+SET max_streams_for_merge_tree_reading = 9223372036854775807;
+SELECT
+    toUInt64(value) = 256 * toUInt64(extract((SELECT default FROM system.settings WHERE name = 'max_threads'), 'auto\\(([0-9]+)\\)')) AS clamped_to_256x_cores,
+    toUInt64(value) < toUInt64(9223372036854775807) AS reduced_from_requested
+FROM system.settings
+WHERE name = 'max_streams_for_merge_tree_reading';
+
 DROP TABLE t_stream_max_streams_clamp;
