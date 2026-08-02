@@ -1309,6 +1309,16 @@ from other replicas.
 Possible values:
 - true, false
 )", 0) \
+    DECLARE(Bool, always_fetch_mutated_part, false, R"(
+If true, this replica never mutates parts and always downloads mutated parts
+from other replicas.
+
+At least one replica must have this setting disabled; otherwise mutations
+cannot finish.
+
+Possible values:
+- true, false
+)", 0) \
     DECLARE(UInt64, number_of_partitions_to_consider_for_merge, 10, R"(
 Only available in ClickHouse Cloud. Up to top N partitions which we will
 consider for merge. Partitions picked in a random weighted way where weight
