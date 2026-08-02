@@ -60,7 +60,11 @@ namespace
             case StoreMethod::CONST_SCALAR:
             case StoreMethod::SINGLE_SCALAR:
             case StoreMethod::SCALAR_GRID:
-                return fromFunctionTime(function_node, {}, context);
+            {
+                auto res = fromFunctionTime(function_node, {}, context);
+                res.type = ResultType::INSTANT_VECTOR;
+                return res;
+            }
 
             case StoreMethod::VECTOR_GRID:
             {
@@ -128,6 +132,14 @@ SQLQueryPiece applyFunctionTimestamp(
         throw Exception(ErrorCodes::CANNOT_EXECUTE_PROMQL_QUERY,
                         "Function 'timestamp' expects 1 argument, but was called with {} arguments",
                         arguments.size());
+    }
+
+    if (arguments[0].type != ResultType::INSTANT_VECTOR)
+    {
+        throw Exception(ErrorCodes::CANNOT_EXECUTE_PROMQL_QUERY,
+                        "Function 'timestamp' expects an argument of type {}, but expression {} has type {}",
+                        ResultType::INSTANT_VECTOR,
+                        getPromQLText(arguments[0], context), arguments[0].type);
     }
 
     const PQT::Offset * offset_node = nullptr;

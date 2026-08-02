@@ -939,6 +939,35 @@ def test_function_timestamp():
         [],
     )
 
+    # Scalar-backed instant vectors (e.g. vector(1)) retain INSTANT_VECTOR type contract when wrapped in timestamp(),
+    # allowing vector-only operators like abs() and scalar() to consume the result without type errors.
+    do_query_test(
+        "abs(timestamp(vector(1)))",
+        135,
+        '{"resultType": "vector", "result": [{"metric": {}, "value": [135, "135"]}]}',
+        [["[]", "1970-01-01 00:02:15.000", 135]],
+    )
+
+    do_query_test(
+        "scalar(timestamp(vector(1)))",
+        135,
+        '{"resultType": "scalar", "result": [135, "135"]}',
+        [["1970-01-01 00:02:15.000", 135]],
+    )
+
+    # Non-instant-vector arguments (bare scalar literals, range vectors) must be rejected up front with user-facing type errors.
+    do_query_test_expect_error(
+        "timestamp(1)",
+        135,
+        "Function 'timestamp' expects an argument of type instant vector",
+    )
+
+    do_query_test_expect_error(
+        "timestamp(test[5m])",
+        135,
+        "Function 'timestamp' expects an argument of type instant vector",
+    )
+
     # Genuinely nested offset/@ modifiers - an inner selector with its own modifier, wrapped in an outer
     # timestamp() call that itself has a modifier - are not valid PromQL syntax: the offset/@ modifier may only
     # attach directly to a selector or a subquery, never to a function call's result. Real Prometheus rejects
