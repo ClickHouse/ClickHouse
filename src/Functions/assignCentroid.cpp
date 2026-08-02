@@ -58,8 +58,8 @@ namespace
 /// 6 x 16 floats is 12 YMM registers on AVX2 (of 16) or 6 ZMM on AVX-512, leaving enough for the operands.
 /// Keeping the accumulators in REGISTERS is the entire point - an accumulator block that lives in L1 instead
 /// pays a load and a store per FMA and tops out around a quarter of FP peak no matter how well it is tiled.
-static constexpr size_t ROW_BLOCK = 6;
-static constexpr size_t COL_BLOCK = 16;
+constexpr size_t ROW_BLOCK = 6;
+constexpr size_t COL_BLOCK = 16;
 
 DECLARE_MULTITARGET_CODE(
 
@@ -113,10 +113,7 @@ void scoreTile(
     {
         for (size_t c0 = 0; c0 < width; c0 += COL_BLOCK)
         {
-            Float32 acc[ROW_BLOCK][COL_BLOCK];
-            for (size_t r = 0; r < ROW_BLOCK; ++r)
-                for (size_t c = 0; c < COL_BLOCK; ++c)
-                    acc[r][c] = 0.0f;
+            Float32 acc[ROW_BLOCK][COL_BLOCK] = {};
 
             for (size_t j = 0; j < dim; ++j)
             {
@@ -139,9 +136,7 @@ void scoreTile(
     {
         for (size_t c0 = 0; c0 < width; c0 += COL_BLOCK)
         {
-            Float32 acc[COL_BLOCK];
-            for (size_t c = 0; c < COL_BLOCK; ++c)
-                acc[c] = 0.0f;
+            Float32 acc[COL_BLOCK] = {};
 
             for (size_t j = 0; j < dim; ++j)
             {
