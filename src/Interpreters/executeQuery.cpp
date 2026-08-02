@@ -1327,13 +1327,23 @@ static std::unique_ptr<IInterpreter> tryInterpretWithQueryPlanCache(
     }
     catch (const Exception & e)
     {
-        /// Only swallow failures that mean "this plan cannot be cached but is still executable"
-        /// (a step type that does not implement serialization yet). The plan is still eligible -
-        /// semantically safe to execute through the logical-plan path below - it just could not
-        /// be stored, so execution continues rather than falling back.
+        /// Only "this plan cannot be stored" failures are recoverable (a step type that does not
+        /// implement serialization yet); anything else must propagate.
         if (e.code() != ErrorCodes::NOT_IMPLEMENTED && e.code() != ErrorCodes::INCORRECT_DATA)
             throw;
-        tryLogCurrentException("QueryPlanCache", "Failed to serialize plan for the cache");
+
+        /// The cacheable logical plan must not be executed either. It is built with ordinary
+        /// planner behaviors switched off - trivial count (`PlannerJoinTree.cpp`,
+        /// `is_trivial_count_applied`), moving filters to `PREWHERE`, direct-join logical lookups -
+        /// because those bake storage-specific decisions into a plan that is meant to be replayed
+        /// against other snapshots. Executing it for a query that produces no cache entry at all
+        /// would make that query permanently slower whenever `enable_query_plan_cache` is on, with
+        /// nothing gained. Fall back to the normal interpreter, which is the documented contract:
+        /// a query with an unsupported step executes normally and is simply not cached.
+        LOG_DEBUG(getLogger("QueryPlanCache"),
+            "Not caching plan: it contains a step that cannot be serialized, falling back to normal planning: {}",
+            e.message());
+        return nullptr;
     }
 
     /// Execute the logical plan by resolving storage reads against current snapshots -
