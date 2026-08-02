@@ -1,0 +1,71 @@
+-- an optional group that never participates --
+a[]c
+a[]c
+-- the group is in the branch of an alternation that was not taken --
+<a><a><a>
+<a>aa
+-- the replacement is nothing but the unmatched group --
+ac
+ac
+-- the same unmatched group substituted several times --
+ac
+-- matched and unmatched groups mixed, with literals in between --
+[a||b]c
+-- the whole match next to an unmatched group --
+a<b|>c
+-- five groups, none of which participate (the pattern from 04650) --
+[][][]
+-- nested optional groups --
+[||]y
+-- an empty haystack, and an empty match at the end of the string --
+[]
+ab[]
+[]a[]b[]
+-- a trailing group that matches only sometimes, over several rows --
+[a|]
+[a|b]
+[a|][a|b]
+b[a|]
+
+-- non-constant haystack (the vector path) --
+a[]c
+a[]c
+-- non-constant needle --
+a[]c
+a[]c
+-- non-constant replacement --
+a[]c
+a[]c
+-- non-constant haystack, needle and replacement --
+a[]c
+a[]c
+-- FixedString haystack (a constant FixedString is not accepted by the function) --
+a[]c
+a[]c
+-- forced through the re2 path --
+a[]c
+a[]c
+a[]c
+a[]c
+a[]c
+a[]c
+a[]c
+a[]c
+-- forced through the JIT path, which compiles after one use --
+a[]c
+a[]c
+a[]c
+a[]c
+a[]c
+a[]c
+a[]c
+a[]c
+-- and the same for replaceRegexpOne on both paths --
+a[]cb
+a[]cb
+a[]cb
+a[]cb
+a[]cb
+a[]cb
+a[]cb
+a[]cb

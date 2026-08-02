@@ -205,7 +205,11 @@ struct ReplaceRegexpImpl
                     else
                         replacement = instr.literal;
                     res_data.resize(res_data.size() + replacement.size());
-                    memcpy(&res_data[res_offset], replacement.data(), replacement.size());
+                    /// A capture group that did not participate in the match comes back from re2 as
+                    /// an empty piece with a null `data()`, and `memcpy` is declared `nonnull` even
+                    /// for a zero length. Guarded like the JIT path below.
+                    if (!replacement.empty())
+                        memcpy(&res_data[res_offset], replacement.data(), replacement.size());
                     res_offset += replacement.size();
                     units_since_charge += 1 + replacement.size() / ReplaceCancellationBudget::bytes_per_unit;
                     if (units_since_charge >= ReplaceCancellationBudget::units_per_instruction_charge)
