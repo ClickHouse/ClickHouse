@@ -22,6 +22,7 @@
 #include <Processors/QueryPlan/QueryPlan.h>
 #include <Processors/QueryPlan/ReadFromPreparedSource.h>
 #include <DataTypes/dataTypeToAST.h>
+#include <Parsers/ASTCreateQuery.h>
 #include <Parsers/ASTFunction.h>
 #include <Parsers/ASTDataType.h>
 #include <Parsers/ASTIdentifier.h>
@@ -880,9 +881,20 @@ void registerStorageMaterializedPostgreSQL(StorageFactory & factory)
             postgresql_replication_settings->loadFromQuery(*args.storage_def);
 
         if (args.mode <= LoadingStrictnessLevel::CREATE)
+        {
+            /// `{uuid}` in the coordination path is only safe when every replica ends up with the same
+            /// UUID, which is the case exactly when the DDL carries it: an ON CLUSTER query, a table
+            /// inside a `Replicated` database, or an explicit `UUID '...'` clause. Otherwise each server
+            /// generates its own UUID. Same rule as `TableZnodeInfo::resolve` applies to a
+            /// ReplicatedMergeTree path.
+            const bool is_on_cluster = args.getContext()->isDDLOrOnClusterInternal();
+            const bool is_replicated_database = is_on_cluster
+                && DatabaseCatalog::instance().getDatabase(args.table_id.database_name)->getEngineName() == "Replicated";
+            const bool allow_uuid_macro = is_on_cluster || is_replicated_database || args.query.has_uuid;
             validateMaterializedPostgreSQLCoordinationSettings(
                 *postgresql_replication_settings, args.getContext(), args.table_id.database_name, args.table_id.uuid,
-                configuration.database, configuration.table_or_query.getTableName());
+                configuration.database, configuration.table_or_query.getTableName(), allow_uuid_macro);
+        }
 
         /// For the table engine the user declares the column types explicitly, so this setting cannot
         /// affect anything (it would be a silent no-op). It is only meaningful for the database engine,
@@ -984,7 +996,7 @@ Engine used for the nested table that stores the replicated data. One of `Replac
 
 Keeper (or ZooKeeper) path used to coordinate the PostgreSQL replication slot across ClickHouse replicas. Default: empty (coordination disabled). Keeper must be configured on the server; a coordinated `CREATE TABLE` without it is rejected at `CREATE` time rather than left retrying in the background.
 
-The path supports the `{uuid}` and `{shard}` macros and **must resolve to the same value on every participating replica**, so a per-replica or per-server macro such as `{replica}` or `{server_uuid}` is rejected at `CREATE` time - put the per-replica part in [`materialized_postgresql_replica_name`](#materialized-postgresql-replica-name) instead. Coordination owns the shared slot and publication, so it cannot be combined with `materialized_postgresql_use_unique_replication_consumer_identifier` or with a user-managed `materialized_postgresql_replication_slot` / `materialized_postgresql_snapshot`.
+The path supports the `{shard}` macro and **must resolve to the same value on every participating replica**, so a per-replica or per-server macro such as `{replica}` or `{server_uuid}` is rejected at `CREATE` time - put the per-replica part in [`materialized_postgresql_replica_name`](#materialized-postgresql-replica-name) instead. The `{uuid}` macro is accepted only when the UUID is guaranteed to be identical on every replica - an `ON CLUSTER` query, a table inside a `Replicated` database, or an explicit `UUID '...'` clause - because a plain `CREATE` generates a different UUID on every server, which would leave the replicas on disjoint Keeper subtrees while still contending for the same PostgreSQL replication slot and publication. Coordination owns the shared slot and publication, so it cannot be combined with `materialized_postgresql_use_unique_replication_consumer_identifier` or with a user-managed `materialized_postgresql_replication_slot` / `materialized_postgresql_snapshot`.
 
 All engines sharing a keeper path must agree on the settings that determine the derived names of the nested table, the shared replication slot and the publication, and must replicate the same PostgreSQL source database and table; the first one publishes that identity under the keeper path and a disagreeing engine is rejected. In particular a `MaterializedPostgreSQL` **table** and a `MaterializedPostgreSQL` **database** can never share one keeper path, because they derive different slot and publication names even for the same source table.
 

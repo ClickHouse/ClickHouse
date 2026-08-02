@@ -50,8 +50,11 @@ namespace ErrorCodes
         "`materialized_postgresql_snapshot`, nor with a column-filtered `materialized_postgresql_tables_list` " \
         "(all replicas share one set of nested tables and must agree on the exact column projection). " \
         "It must resolve to the same value on every replica (it is both the coordination namespace and the " \
-        "root of the shared nested tables), so it supports the {uuid} and {shard} macros but the per-replica " \
-        "{replica} macro is rejected: put the per-replica part in `materialized_postgresql_replica_name`. " \
+        "root of the shared nested tables), so it supports the {shard} macro but the per-replica {replica} " \
+        "macro is rejected: put the per-replica part in `materialized_postgresql_replica_name`. The {uuid} " \
+        "macro is accepted only when the UUID is identical on every replica (an ON CLUSTER query, a table " \
+        "inside a Replicated database, or an explicit UUID clause), because a plain CREATE generates a " \
+        "different UUID on every server. " \
         "All replicas of one coordinated setup must agree on the naming-affecting settings " \
         "(`materialized_postgresql_table_engine`, `materialized_postgresql_schema`, " \
         "`materialized_postgresql_schema_list`, `materialized_postgresql_tables_list_with_schema`) " \

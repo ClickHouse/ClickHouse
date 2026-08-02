@@ -56,13 +56,19 @@ struct NestedTableEngineSpec
 /// engine); they are part of that check, because the names of the shared replication slot and
 /// publication are derived from them - a setup replicating a different source must not join the same
 /// keeper path even when every ClickHouse-side setting matches.
+/// `allow_uuid_macro` tells whether the `{uuid}` macro is known to expand to the same value on every
+/// replica - that is only true when the UUID is not generated independently per server: an
+/// `ON CLUSTER` (or `Replicated` database) DDL, or an explicit `UUID '...'` clause. When it is false,
+/// a coordinated keeper path that depends on `{uuid}` is rejected, because each replica would land on
+/// a disjoint Keeper subtree while still contending for the same PostgreSQL slot and publication.
 void validateMaterializedPostgreSQLCoordinationSettings(
     const MaterializedPostgreSQLSettings & settings,
     ContextPtr context,
     const String & clickhouse_database_name,
     const UUID & clickhouse_uuid,
     const String & postgres_database,
-    const String & postgres_table);
+    const String & postgres_table,
+    bool allow_uuid_macro);
 
 class PostgreSQLReplicationHandler : WithContext
 {

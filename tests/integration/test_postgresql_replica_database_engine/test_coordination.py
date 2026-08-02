@@ -887,6 +887,48 @@ def test_keeper_path_rejects_per_replica_macro(started_cluster):
     assert "test_per_replica_path" not in instance.query("SHOW DATABASES")
 
 
+def test_keeper_path_rejects_uuid_macro_for_a_plain_create(started_cluster):
+    # {uuid} expands to the UUID of the database being created. A plain CREATE DATABASE generates that UUID
+    # locally, so every replica gets a different one: the replicas would sit on disjoint Keeper subtrees while
+    # still contending for the same PostgreSQL replication slot and publication (their names are derived from
+    # the PostgreSQL source, not from the keeper path), each believing it is the only active worker. Reject it
+    # at CREATE time unless the UUID is carried by the DDL itself.
+    error = instance.query_and_get_error(
+        f"CREATE DATABASE test_uuid_path "
+        f"ENGINE = MaterializedPostgreSQL("
+        f"'{cluster.postgres_ip}:{cluster.postgres_port}', 'postgres_database', 'postgres', '{pg_pass}') "
+        f"SETTINGS materialized_postgresql_table_engine = 'ReplicatedReplacingMergeTree', "
+        f"materialized_postgresql_keeper_path = '/clickhouse/mat_pg/{{shard}}/{{uuid}}/test'"
+    )
+    assert "{uuid}" in error
+    # The rejected CREATE must not have left a database behind.
+    assert "test_uuid_path" not in instance.query("SHOW DATABASES")
+
+    # An explicit UUID clause makes the value part of the DDL, so it is identical on every replica that runs
+    # the same statement: {uuid} is accepted then, and the setup replicates normally.
+    pg_manager.create_postgres_table("uuid_path_table")
+    instance.query(
+        "INSERT INTO postgres_database.uuid_path_table SELECT number, number FROM numbers(50)"
+    )
+    try:
+        instance.query(
+            f"CREATE DATABASE test_uuid_path UUID '11111111-1111-1111-1111-111111111111' "
+            f"ENGINE = MaterializedPostgreSQL("
+            f"'{cluster.postgres_ip}:{cluster.postgres_port}', 'postgres_database', 'postgres', '{pg_pass}') "
+            f"SETTINGS materialized_postgresql_table_engine = 'ReplicatedReplacingMergeTree', "
+            f"materialized_postgresql_keeper_path = '/clickhouse/mat_pg/{{shard}}/{{uuid}}/uuid_path_test', "
+            f"materialized_postgresql_tables_list = 'uuid_path_table'"
+        )
+        check_tables_are_synchronized(
+            instance,
+            "uuid_path_table",
+            postgres_database="postgres_database",
+            materialized_database="test_uuid_path",
+        )
+    finally:
+        instance.query("DROP DATABASE IF EXISTS test_uuid_path SYNC")
+
+
 def test_keeper_path_rejects_per_server_macro(started_cluster):
     # The keeper path must also resolve to the same value on every server, so a per-server macro like
     # {server_uuid} is rejected for the same reason as {replica}: it would place each server on a disjoint

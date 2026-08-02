@@ -359,7 +359,8 @@ void validateMaterializedPostgreSQLCoordinationSettings(
     const String & clickhouse_database_name,
     const UUID & clickhouse_uuid,
     const String & postgres_database,
-    const String & postgres_table)
+    const String & postgres_table,
+    bool allow_uuid_macro)
 {
     const String engine = settings[MaterializedPostgreSQLSetting::materialized_postgresql_table_engine];
     const bool is_plain = engine == "ReplacingMergeTree";
@@ -424,9 +425,17 @@ void validateMaterializedPostgreSQLCoordinationSettings(
     /// catch every such case, expand the path twice with different injected values for the `replica`/`server_uuid`
     /// macros and reject if the two expansions differ. The injected map entries take precedence over both any
     /// config definition of those macros and the built-in special handling, and they propagate through any config
-    /// macro that expands to them. The shared macros ({shard}, {uuid}, {database} and any other config macro that
+    /// macro that expands to them. The shared macros ({shard}, {database} and any other config macro that
     /// is identical on every replica) are held constant across both expansions, so they never trigger a false
     /// rejection.
+    ///
+    /// {uuid} is a separate case. It expands to the UUID of the database (or single table) being created, which
+    /// every server generates independently unless the DDL carries the UUID with it - an ON CLUSTER / Replicated
+    /// database query, or an explicit `UUID '...'` clause (`allow_uuid_macro`). Without that guarantee it behaves
+    /// exactly like a per-server macro, so it gets the same probe and the same rejection. This matters even though
+    /// such replicas never share /leader or the nested tree: the shared replication slot and publication names are
+    /// derived from the PostgreSQL source, not from the keeper path, so the disjoint groups would still contend
+    /// for the same slot, each believing it has its own active worker, and WAL could be lost.
     const String raw_keeper_path = settings[MaterializedPostgreSQLSetting::materialized_postgresql_keeper_path];
     String expanded_keeper_path;
     String expanded_replica_name;
@@ -457,11 +466,13 @@ void validateMaterializedPostgreSQLCoordinationSettings(
         /// <keeper_path>/replicas/<name> anywhere (see `assertValidCoordinationReplicaName`).
         assertValidCoordinationReplicaName(expanded_replica_name);
 
-        auto expand_probe = [&](const String & per_replica_value) -> String
+        auto expand_probe = [&](const String & per_replica_value, bool vary_uuid) -> String
         {
             Macros::MacroMap macro_map = macros->getMacroMap();
             macro_map["replica"] = per_replica_value;
             macro_map["server_uuid"] = per_replica_value;
+            if (vary_uuid)
+                macro_map["uuid"] = per_replica_value;
             Macros probing_macros(macro_map);
 
             /// The strict pass above has already rejected unknown macros, so ignoring them here only
@@ -473,7 +484,7 @@ void validateMaterializedPostgreSQLCoordinationSettings(
             return probing_macros.expand(raw_keeper_path, info);
         };
 
-        if (expand_probe("__mpg_probe_a__") != expand_probe("__mpg_probe_b__"))
+        if (expand_probe("__mpg_probe_a__", /* vary_uuid */ false) != expand_probe("__mpg_probe_b__", /* vary_uuid */ false))
             throw Exception(ErrorCodes::BAD_ARGUMENTS,
                 "materialized_postgresql_keeper_path must resolve to the same path on every coordinated replica, "
                 "so it cannot depend on a per-replica or per-server macro such as {{replica}} or {{server_uuid}} "
@@ -481,6 +492,18 @@ void validateMaterializedPostgreSQLCoordinationSettings(
                 "disjoint Keeper subtree, breaking data sharing (the loser never receives data through ClickHouse "
                 "replication) while the replicas still contend for the same PostgreSQL slot and publication. Put "
                 "the per-replica part in materialized_postgresql_replica_name instead");
+
+        if (!allow_uuid_macro
+            && expand_probe("__mpg_probe_a__", /* vary_uuid */ true) != expand_probe("__mpg_probe_b__", /* vary_uuid */ true))
+            throw Exception(ErrorCodes::BAD_ARGUMENTS,
+                "materialized_postgresql_keeper_path must resolve to the same path on every coordinated replica, "
+                "so it cannot depend on the {{uuid}} macro here: this CREATE generates its own UUID, and every "
+                "other replica would generate a different one, placing each of them on a disjoint Keeper subtree "
+                "while they still contend for the same PostgreSQL replication slot and publication (their names "
+                "are derived from the PostgreSQL source, not from the keeper path), so each replica would believe "
+                "it is the only active worker and WAL could be lost. {{uuid}} is only accepted when the UUID is "
+                "guaranteed to be identical on every replica: an ON CLUSTER query, a table inside a Replicated "
+                "database, or an explicit UUID '...' clause in the CREATE query");
     }
 
     if (coordination_enabled && settings[MaterializedPostgreSQLSetting::materialized_postgresql_use_unique_replication_consumer_identifier])
