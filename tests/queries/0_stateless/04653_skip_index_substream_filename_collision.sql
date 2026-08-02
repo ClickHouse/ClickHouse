@@ -100,6 +100,15 @@ INSERT INTO t_collide SELECT number, number FROM numbers(50);
 SELECT count() FROM t_collide;
 DROP TABLE t_collide;
 
+-- Grandfathering applies to ALTER only: on CREATE there is no earlier definition, so every collision
+-- is introduced by the statement itself. A second CREATE of the same shape must still be rejected,
+-- not treated as inherited from the first one's failure.
+CREATE TABLE t_collide (k UInt64, s String, w UInt64,
+    INDEX a(s) TYPE text(tokenizer = ngrams(3)) GRANULARITY 1,
+    INDEX `a.dct` w TYPE set(100) GRANULARITY 1)
+ENGINE = MergeTree ORDER BY k
+SETTINGS escape_index_filenames = 0; -- { serverError BAD_ARGUMENTS }
+
 -- The collision check constructs real index objects, so it must run only after per-index validation:
 -- several creators read `index.arguments` with no null or size check. A malformed ADD INDEX must
 -- still fail with the validator's own error, not a crash and not BAD_ARGUMENTS.

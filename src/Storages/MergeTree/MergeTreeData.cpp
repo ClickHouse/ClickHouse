@@ -10455,9 +10455,10 @@ void MergeTreeData::checkColumnFilenamesForCollision(const ColumnsDescription & 
 namespace
 {
 
-/// Resolved base stream name -> the names of the indices that already claimed it. One entry per
-/// base claimed by more than one index, i.e. one entry per collision.
-using PreExistingIndexStreamOwners = std::unordered_map<String, NameSet>;
+/// Resolved base stream name -> owner index name -> the data files that owner already claimed there.
+/// One entry per base claimed by more than one index. The data file is part of the key because two
+/// indices resolving to the SAME data file both write it, which is what a merge collides on.
+using PreExistingIndexStreamOwners = std::unordered_map<String, std::unordered_map<String, NameSet>>;
 
 /// A projection's settings are an overlay on the table's.
 MergeTreeSettingsPtr getProjectionEffectiveSettings(
@@ -10471,9 +10472,9 @@ MergeTreeSettingsPtr getProjectionEffectiveSettings(
     return projection_settings;
 }
 
-/// Walks the resolved substream bases an index list claims. `on_stream(resolved, full_name, index)`
-/// returning false stops the walk. This is the single resolution shared by the collision check and
-/// the pre-existing-collision collector, so the two cannot disagree about a name.
+/// Walks the resolved substream bases an index list claims; `on_stream` returning false stops the
+/// walk. Shared by the collision check and the pre-existing collector so the two cannot disagree
+/// about a name.
 template <typename OnStream, typename OnSkippedIndex>
 void forEachIndexSubstreamBase(
     const StorageMetadataPtr & metadata_snapshot,
@@ -10488,10 +10489,9 @@ void forEachIndexSubstreamBase(
 
     for (const auto & index : indices)
     {
-        /// A creator can reject a description that attach-mode validation tolerated on purpose, so
-        /// construction failure is fatal exactly where a collision report is: on CREATE/ALTER the
-        /// creator's own error must surface, on ATTACH refusing to load the table would be worse
-        /// than losing the check for this one index.
+        /// Construction failure is fatal exactly where a collision report is: on CREATE/ALTER the
+        /// creator's own error must surface, on ATTACH losing the check for one index beats refusing
+        /// to load the table.
         MergeTreeIndexPtr index_ptr;
         try
         {
@@ -10516,47 +10516,47 @@ void forEachIndexSubstreamBase(
         for (const auto & substream : index_ptr->getSubstreams())
         {
             auto full_stream_name = file_name + substream.suffix;
+            /// Hash the base and append the extension, matching the writers: hashing the two together
+            /// would yield a different name than the files actually get.
             auto stream_name = replaceFileNameToHashIfNeeded(full_stream_name, settings, nullptr);
 
-            if (!on_stream(stream_name, full_stream_name, index))
+            if (!on_stream(stream_name, full_stream_name, substream.extension, index))
                 return;
         }
     }
 }
 
-/// Records every owner of every base claimed twice or more, resolving names exactly as the
-/// collision check does. Never throws and never logs: a pre-existing collision was already
-/// reported when the table was attached, and it must not be re-reported on every ALTER.
-PreExistingIndexStreamOwners collectPreExistingOwnersByBase(
+/// Records, per base claimed twice or more, which data file each owner claimed there, resolving
+/// names exactly as the collision check does. Never throws and never logs: a pre-existing collision
+/// was already reported when the table was attached, and it must not be re-reported on every ALTER.
+PreExistingIndexStreamOwners collectPreExistingStreamsByBase(
     const StorageMetadataPtr & metadata_snapshot,
     const IndicesDescription & indices,
     std::optional<bool> escape_filenames_override,
     const MergeTreeSettings & settings)
 {
-    std::unordered_map<String, NameSet> owners_by_base;
+    PreExistingIndexStreamOwners streams_by_base;
 
     forEachIndexSubstreamBase(
         metadata_snapshot, indices, escape_filenames_override, settings,
         /*rethrow_construction_errors=*/ false,
-        [&](const String & stream_name, const String &, const IndexDescription & index)
+        [&](const String & stream_name, const String &, const String & extension, const IndexDescription & index)
         {
-            owners_by_base[stream_name].insert(index.name);
+            streams_by_base[stream_name][index.name].insert(stream_name + extension);
             /// Never short-circuit: a table with two colliding bases must have both recorded, or
             /// the second would keep refusing every ALTER.
             return true;
         },
         [](const IndexDescription &, const Exception &) {});
 
-    std::erase_if(owners_by_base, [](const auto & entry) { return entry.second.size() < 2; });
-    return owners_by_base;
+    /// A base is contested only when two distinct indices claim it.
+    std::erase_if(streams_by_base, [](const auto & entry) { return entry.second.size() < 2; });
+    return streams_by_base;
 }
 
-/// One filename namespace: maps a resolved base stream name to (unresolved name, owner description).
-///
-/// Skip indices claim `skp_idx_<name>[<suffix>]` per substream, and each substream opens both a data
-/// file and a marks file from that base. Only the base is keyed: two indices can differ in their data
-/// extension yet still share one marks file, because the marks extension is a single writer-wide
-/// value.
+/// One filename namespace. Two keys live here and are deliberately different: a collision is keyed on
+/// the BASE (indices differing only in data extension still share one marks file, which is writer-wide),
+/// grandfathering additionally on the DATA file. Unifying them misses a collision or grandfathers one.
 class SkipIndexFilenameCollisionChecker
 {
 public:
@@ -10565,16 +10565,12 @@ public:
     {
     }
 
-    /// @escape_filenames_override is set for the table namespace, where it must come from the
-    /// candidate settings: `AlterCommands::apply` MODIFY_SETTING only records the change in
-    /// `settings_changes`, and `MergeTreeData::changeSettings` refreshes every description's cached
-    /// `escape_filenames` afterwards, so the descriptions still hold the pre-ALTER value here. It is
-    /// left unset for a projection, whose descriptions are the only source of truth: their escaping is
-    /// fixed at construction and `changeSettings` never revisits them.
+    /// @escape_filenames_override must come from the candidate settings for the table namespace (the
+    /// descriptions still cache the pre-ALTER value); it stays unset for a projection, whose
+    /// descriptions ARE the source of truth.
     ///
-    /// @pre_existing grandfathers the collisions an ALTER inherits: a pair is reported only when at
-    /// least one of its two claimants is new to that base, so a table that already holds a collision
-    /// stays alterable while an ALTER adding another claimant to the contested base is still refused.
+    /// @pre_existing suppresses a collision only while the contested base holds the same data files
+    /// written by the same owners as before this ALTER.
     void add(
         const StorageMetadataPtr & metadata_snapshot,
         const IndicesDescription & indices,
@@ -10583,15 +10579,19 @@ public:
     {
         forEachIndexSubstreamBase(
             metadata_snapshot, indices, escape_filenames_override, settings, throw_on_error,
-            [&](const String & stream_name, const String & full_stream_name, const IndexDescription & index)
+            [&](const String & stream_name, const String & full_stream_name, const String & extension, const IndexDescription & index)
             {
                 auto owner = fmt::format("Index '{}' of type '{}'", index.name, index.type);
 
-                auto [it, inserted] = stream_name_to_owner.emplace(stream_name, StreamOwner{full_stream_name, owner, index.name});
+                auto [it, inserted] = stream_name_to_owner.emplace(
+                    stream_name, StreamOwner{full_stream_name, owner, index.name, stream_name + extension});
                 if (inserted)
                     return true;
 
-                if (isGrandfathered(pre_existing, stream_name, index.name, it->second.index_name))
+                if (isGrandfathered(
+                        pre_existing, stream_name,
+                        index.name, stream_name + extension,
+                        it->second.index_name, it->second.data_file_name))
                     return true;
 
                 auto message = fmt::format(
@@ -10622,19 +10622,33 @@ private:
         String full_stream_name;
         String description;
         String index_name;
+        String data_file_name;
     };
 
+    /// True when BOTH colliding claimants already held, at this base, the very data file they claim
+    /// now. A one-sided test would accept or refuse depending on iteration order.
     static bool isGrandfathered(
         const PreExistingIndexStreamOwners * pre_existing,
         const String & stream_name,
         const String & index_name,
-        const String & other_index_name)
+        const String & data_file_name,
+        const String & other_index_name,
+        const String & other_data_file_name)
     {
         if (!pre_existing)
             return false;
 
-        auto it = pre_existing->find(stream_name);
-        return it != pre_existing->end() && it->second.contains(index_name) && it->second.contains(other_index_name);
+        auto base_it = pre_existing->find(stream_name);
+        if (base_it == pre_existing->end())
+            return false;
+
+        auto held_before = [&](const String & owner, const String & data_file)
+        {
+            auto owner_it = base_it->second.find(owner);
+            return owner_it != base_it->second.end() && owner_it->second.contains(data_file);
+        };
+
+        return held_before(index_name, data_file_name) && held_before(other_index_name, other_data_file_name);
     }
 
     const MergeTreeSettings & settings;
@@ -10652,12 +10666,9 @@ void MergeTreeData::checkSkipIndexFilenamesForCollision(
     const StorageInMemoryMetadata * old_metadata,
     const MergeTreeSettings * old_settings) const
 {
-    /// Constructing real index objects is what makes `getSubstreams` the single source of truth for
-    /// the on-disk layout, but a creator assumes its validator has already run (for example
-    /// `setIndexCreator` dereferences `index.arguments` unchecked). On CREATE/ALTER, where the
-    /// validator enforces, every caller therefore invokes this only after
-    /// `setProperties`/`checkProperties`. On ATTACH the validator is deliberately permissive, which is
-    /// why `add` tolerates a construction failure there.
+    /// Real index objects make `getSubstreams` the single source of truth for the on-disk layout, but a
+    /// creator assumes its validator already ran, so every caller invokes this only after
+    /// `setProperties`/`checkProperties`.
     auto metadata_snapshot = std::make_shared<const StorageInMemoryMetadata>(metadata);
 
     /// The pre-existing collisions are resolved from the metadata and settings the table has BEFORE
@@ -10668,7 +10679,7 @@ void MergeTreeData::checkSkipIndexFilenamesForCollision(
     if (old_metadata)
     {
         old_metadata_snapshot = std::make_shared<const StorageInMemoryMetadata>(*old_metadata);
-        pre_existing = collectPreExistingOwnersByBase(
+        pre_existing = collectPreExistingStreamsByBase(
             old_metadata_snapshot,
             old_metadata->secondary_indices,
             (*old_settings)[MergeTreeSetting::escape_index_filenames],
@@ -10695,7 +10706,7 @@ void MergeTreeData::checkSkipIndexFilenamesForCollision(
         {
             const auto & old_projection = old_metadata->projections.get(projection.name);
             if (old_projection.metadata)
-                projection_pre_existing = collectPreExistingOwnersByBase(
+                projection_pre_existing = collectPreExistingStreamsByBase(
                     old_projection.metadata,
                     old_projection.metadata->secondary_indices,
                     std::nullopt,

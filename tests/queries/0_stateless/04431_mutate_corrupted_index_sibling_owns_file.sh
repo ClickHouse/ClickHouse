@@ -1,5 +1,5 @@
 #!/usr/bin/env bash
-# Tags: no-fasttest, no-replicated-database, no-shared-merge-tree, no-object-storage, no-random-merge-tree-settings
+# Tags: no-fasttest, no-replicated-database, no-shared-merge-tree, no-object-storage, no-random-merge-tree-settings, no-ordinary-database
 #
 # Regression for the inverse of the collision covered by 04429: a sibling's file must not make a
 # CORRUPTED index look healthy.
@@ -17,6 +17,9 @@
 # no-object-storage/-shared/-replicated: relies on the local on-disk file layout.
 # no-random-merge-tree-settings: pins `escape_index_filenames` and `packed_skip_index_max_bytes`,
 # which are exactly the settings the collision depends on.
+# no-ordinary-database: the fixture is built with `ATTACH ... UUID`, which needs an Atomic database.
+# CREATE now rejects a colliding pair, and ATTACH is the escape hatch the check leaves open for
+# tables that predate it - which is exactly what this fixture emulates.
 
 CUR_DIR=$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)
 CLICKHOUSE_CLIENT_SERVER_LOGS_LEVEL=none
@@ -34,8 +37,13 @@ CLICKHOUSE_CLIENT_SERVER_LOGS_LEVEL=none
 make_corrupted_part () {
     local tbl="$1"
     ${CLICKHOUSE_CLIENT} -q "DROP TABLE IF EXISTS ${tbl} SYNC"
+    # ATTACH, not CREATE: this pair resolves to one base stream name, which CREATE rejects. The
+    # colliding name has to be declared here rather than introduced later, because the base a skip
+    # index writes comes from its name at write time. A fresh UUID keeps the test parallel-safe.
+    local uuid
+    uuid=$(${CLICKHOUSE_CLIENT} -q "SELECT generateUUIDv4()")
     ${CLICKHOUSE_CLIENT} -q "
-    CREATE TABLE ${tbl}
+    ATTACH TABLE ${tbl} UUID '${uuid}'
     (
         k UInt64,
         s String,
@@ -66,14 +74,21 @@ make_corrupted_part () {
     # healthy sibling's mark and corrupt the very index this test asserts stays intact.
     cp "${active}"skp_idx_a.pos.idx2 "${data_path}/saved_${tbl}/"
 
-    # DROP + re-ADD makes the active part carry no checksums entries for `a.pos`, then the saved
-    # files are re-injected on disk. Re-ADD without `MATERIALIZE INDEX` leaves it unmaterialized,
-    # which is the released-bug shape.
-    ${CLICKHOUSE_CLIENT} -q "ALTER TABLE ${tbl} DROP INDEX \`a.pos\` SETTINGS mutations_sync = 2"
-    ${CLICKHOUSE_CLIENT} -q "ALTER TABLE ${tbl} ADD INDEX \`a.pos\` w TYPE minmax GRANULARITY 1"
+    # `CLEAR INDEX` removes `a.pos`'s files while KEEPING it in metadata, which is exactly the
+    # declared-but-unmaterialized shape of the released bug. DROP + re-ADD cannot be used: the
+    # re-ADD would introduce the colliding name anew and be refused.
+    ${CLICKHOUSE_CLIENT} -q "ALTER TABLE ${tbl} CLEAR INDEX \`a.pos\` SETTINGS mutations_sync = 2"
 
     local corrupt
     corrupt=$(${CLICKHOUSE_CLIENT} -q "SELECT path FROM system.parts WHERE database = currentDatabase() AND table = '${tbl}' AND active ORDER BY name LIMIT 1")
+    # Fixture state before re-injection: the cleared index's own `.idx2` is gone from the part while
+    # the text index is still registered with readable data. The positional pair is deliberately not
+    # asserted here for the same reason `text_streams_on_disk` excludes it - this table loses it on
+    # any rewrite, before this test's corruption is introduced.
+    echo "${tbl}_cleared_data_absent:"
+    if [ -e "${corrupt}skp_idx_a.pos.idx2" ]; then echo 0; else echo 1; fi
+    echo "${tbl}_text_index_has_data:"
+    ${CLICKHOUSE_CLIENT} -q "SELECT count() FROM system.data_skipping_indices WHERE database = currentDatabase() AND table = '${tbl}' AND name = 'a' AND data_compressed_bytes > 0"
     cp "${data_path}/saved_${tbl}/skp_idx_a.pos.idx2" "${corrupt}"
 }
 

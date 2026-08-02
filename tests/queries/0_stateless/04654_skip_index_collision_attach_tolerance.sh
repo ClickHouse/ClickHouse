@@ -110,3 +110,82 @@ echo "${hashed_error}" | grep -c -m1 "BAD_ARGUMENTS"
 echo "${hashed_error}" | grep -c -m1 "collision in file name ${expected_hash}"
 # Anchored on the hint sentence: the bare setting name also appears in the echoed query text.
 echo "${hashed_error}" | grep -c -m1 "see setting 'replace_long_file_name_to_hash'"
+
+# A table that already holds a colliding pair must stay alterable - ATTACH tolerating it and then
+# freezing its schema would defeat the point - but only while the contested base keeps holding the
+# same data files written by the same owners. The arms below pin both halves of that boundary.
+attach_colliding () {
+    local tbl="$1" indices="$2"
+    local attach_uuid
+    attach_uuid=$(${CLICKHOUSE_CLIENT} -q "SELECT generateUUIDv4()")
+    ${CLICKHOUSE_CLIENT} -q "DROP TABLE IF EXISTS ${tbl} SYNC"
+    ${CLICKHOUSE_CLIENT} --send_logs_level=none -q "
+        ATTACH TABLE ${tbl} UUID '${attach_uuid}' (k UInt64, s String, w UInt64, ${indices})
+        ENGINE = MergeTree ORDER BY k
+        SETTINGS escape_index_filenames = 0, allow_experimental_text_index_phrase_search = 1"
+}
+
+text_and="INDEX a(s) TYPE text(tokenizer = ngrams(3), support_phrase_search = 1) GRANULARITY 1,"
+
+# 1. An ALTER that touches no index at all is accepted.
+attach_colliding t_alter_unrelated "${text_and} INDEX \`a.pos\` w TYPE minmax GRANULARITY 1"
+${CLICKHOUSE_CLIENT} -q "ALTER TABLE t_alter_unrelated ADD COLUMN zz UInt8" 2>&1 | grep -c "BAD_ARGUMENTS"
+
+# 2. An ADD INDEX introducing a collision on a DIFFERENT base is still refused, so grandfathering is
+# scoped to the contested base rather than being a table-wide bypass.
+${CLICKHOUSE_CLIENT} -q "ALTER TABLE t_alter_unrelated ADD INDEX \`a.pst\` w TYPE minmax GRANULARITY 1" 2>&1 \
+    | grep -c -m1 "BAD_ARGUMENTS"
+
+# 3. DROP INDEX of the colliding index still works: it is the repair path.
+${CLICKHOUSE_CLIENT} -q "ALTER TABLE t_alter_unrelated DROP INDEX \`a.pos\` SETTINGS mutations_sync = 2" 2>&1 \
+    | grep -c "BAD_ARGUMENTS"
+${CLICKHOUSE_CLIENT} -q "SELECT groupArray(name) FROM system.data_skipping_indices
+    WHERE database = currentDatabase() AND table = 't_alter_unrelated'"
+${CLICKHOUSE_CLIENT} -q "DROP TABLE t_alter_unrelated SYNC"
+
+# 4. CLEAR INDEX keeps the index in metadata, so the collision survives into the post-ALTER metadata
+# and this is accepted only because it is grandfathered.
+attach_colliding t_alter_clear "${text_and} INDEX \`a.pos\` w TYPE minmax GRANULARITY 1"
+${CLICKHOUSE_CLIENT} -q "ALTER TABLE t_alter_clear CLEAR INDEX a SETTINGS mutations_sync = 2" 2>&1 \
+    | grep -c "BAD_ARGUMENTS"
+${CLICKHOUSE_CLIENT} -q "DROP TABLE t_alter_clear SYNC"
+
+# 5. TWO pre-existing colliding bases on one table: both must be recorded, so the collector cannot
+# stop at the first collision it finds.
+attach_colliding t_alter_two "${text_and}
+    INDEX \`a.pos\` w TYPE minmax GRANULARITY 1,
+    INDEX \`a.pst\` w TYPE minmax GRANULARITY 1"
+${CLICKHOUSE_CLIENT} -q "ALTER TABLE t_alter_two ADD COLUMN zz UInt8" 2>&1 | grep -c "BAD_ARGUMENTS"
+${CLICKHOUSE_CLIENT} -q "DROP TABLE t_alter_two SYNC"
+
+# A projection is its own filename namespace, and grandfathering is per namespace for the same
+# reason. It is not asserted here: a projection's parser accepts no INDEX clause, so its only indices
+# are the implicit `auto_minmax_index_<column>` ones, which are minmax (a single `""` substream) over
+# distinct column names and therefore always resolve to distinct bases. No colliding projection can
+# be built, so an arm for it would pass without exercising anything.
+
+# 6. The same-name TYPE CHANGE on the contested base. The owner names are unchanged, but `minmax`
+# writes `.idx2` while `set` writes `.idx`, which is the data file the text index's positional
+# substream already writes - the shape that aborts a merge. It must be ONE statement: split in two,
+# the DROP completes first and the ADD is refused as an ordinary new claimant instead, which does not
+# exercise the grandfathering key at all.
+attach_colliding t_alter_retype "${text_and} INDEX \`a.pos\` w TYPE minmax GRANULARITY 1"
+${CLICKHOUSE_CLIENT} -q "
+    ALTER TABLE t_alter_retype DROP INDEX \`a.pos\`, ADD INDEX \`a.pos\` w TYPE set(100) GRANULARITY 1" 2>&1 \
+    | grep -c -m1 "BAD_ARGUMENTS"
+# On the very same table an unrelated ALTER must still succeed, else an arm that refuses everything
+# (because grandfathering never fires at all) would read as green.
+${CLICKHOUSE_CLIENT} -q "ALTER TABLE t_alter_retype ADD COLUMN zz UInt8" 2>&1 | grep -c "BAD_ARGUMENTS"
+${CLICKHOUSE_CLIENT} -q "DROP TABLE t_alter_retype SYNC"
+
+# Turning escaping off makes a previously clean pair collide. The pre-existing map is resolved with
+# the OLD setting, so this collision is new and still refused.
+${CLICKHOUSE_CLIENT} -q "DROP TABLE IF EXISTS t_alter_unescape SYNC"
+${CLICKHOUSE_CLIENT} -q "CREATE TABLE t_alter_unescape (k UInt64, s String, w UInt64,
+    INDEX a(s) TYPE text(tokenizer = ngrams(3), support_phrase_search = 1) GRANULARITY 1,
+    INDEX \`a.pos\` w TYPE minmax GRANULARITY 1)
+    ENGINE = MergeTree ORDER BY k
+    SETTINGS escape_index_filenames = 1, allow_experimental_text_index_phrase_search = 1"
+${CLICKHOUSE_CLIENT} -q "ALTER TABLE t_alter_unescape MODIFY SETTING escape_index_filenames = 0" 2>&1 \
+    | grep -c -m1 "BAD_ARGUMENTS"
+${CLICKHOUSE_CLIENT} -q "DROP TABLE t_alter_unescape SYNC"

@@ -223,15 +223,21 @@ run_sibling_owns_file_case () {
     local label="$1" sib="$2"
     local tbl="t_own_${label}"
 
-    local paths dp act
+    # The sibling is declared here rather than added later: the base a skip index writes comes from
+    # its name at write time, so the colliding name has to exist before the first INSERT. In the
+    # colliding arm that pair resolves to one base stream name, which CREATE rejects, hence ATTACH
+    # (a fresh UUID keeps the test parallel-safe).
+    local paths dp act uuid
+    uuid=$(${CLICKHOUSE_CLIENT} -q "SELECT generateUUIDv4()")
     paths=$(${CLICKHOUSE_CLIENT} -q "
     DROP TABLE IF EXISTS ${tbl} SYNC;
-    CREATE TABLE ${tbl}
+    ATTACH TABLE ${tbl} UUID '${uuid}'
     (
         k UInt64,
         s String,
         w UInt64,
-        INDEX a(s) TYPE text(tokenizer = ngrams(3), support_phrase_search = 1) GRANULARITY 1
+        INDEX a(s) TYPE text(tokenizer = ngrams(3), support_phrase_search = 1) GRANULARITY 1,
+        INDEX \`${sib}\` w TYPE minmax GRANULARITY 1
     )
     ENGINE = MergeTree ORDER BY k
     SETTINGS min_bytes_for_wide_part = 0, min_rows_for_wide_part = 0,
@@ -248,16 +254,18 @@ run_sibling_owns_file_case () {
     mkdir -p "${dp}/saved_${tbl}"
     cp "${act}"skp_idx_a.* "${dp}/saved_${tbl}/"
 
-    # Corrupt the text index while NO sibling exists, so nothing inherits a checksum entry for
-    # its files, then add the healthy sibling. Order matters: adding the sibling first would let
-    # it register a name the text index also addresses before the entries are stripped.
-    # The sibling must be materialized and registered, else its file is not in `checksums.txt`,
-    # the collision never arises, and the final `CHECK TABLE` passes for the wrong reason.
+    # `CLEAR INDEX a` strips the text index's files while keeping it declared, so the part carries no
+    # checksum entries for them - the same state DROP + re-ADD produced, without re-introducing the
+    # colliding name (which would be refused). It also removes candidates purely by filename, so it
+    # takes the mark file the sibling shares with the text index down with them. The sibling is then
+    # cleared and materialized to write that mark again: `MATERIALIZE INDEX` recalculates only an
+    # index the part no longer has, so clearing it first is what makes the materialization act.
+    # The sibling must end up registered with marks, else the collision never arises and the final
+    # `CHECK TABLE` passes for the wrong reason.
     local out cor f bn
     out=$(${CLICKHOUSE_CLIENT} -q "
-    ALTER TABLE ${tbl} DROP INDEX a SETTINGS mutations_sync = 2;
-    ALTER TABLE ${tbl} ADD INDEX a(s) TYPE text(tokenizer = ngrams(3), support_phrase_search = 1) GRANULARITY 1;
-    ALTER TABLE ${tbl} ADD INDEX \`${sib}\` w TYPE minmax GRANULARITY 1;
+    ALTER TABLE ${tbl} CLEAR INDEX a SETTINGS mutations_sync = 2;
+    ALTER TABLE ${tbl} CLEAR INDEX \`${sib}\` SETTINGS mutations_sync = 2;
     ALTER TABLE ${tbl} MATERIALIZE INDEX \`${sib}\` SETTINGS mutations_sync = 2;
     SELECT path FROM system.parts WHERE database = currentDatabase() AND table = '${tbl}' AND active LIMIT 1;
     SELECT count() FROM system.data_skipping_indices
@@ -265,6 +273,13 @@ run_sibling_owns_file_case () {
     SELECT count() > 0 FROM (EXPLAIN indexes = 1 SELECT count() FROM ${tbl} WHERE w = 42)
     WHERE explain ILIKE '%Granules: 1/5%'")
     cor=$(echo "${out}" | sed -n 1p)
+
+    # Fixture state after both statements completed: the text index's own unique data files are gone
+    # and its sibling still reports data.
+    echo "${label}_cleared_text_data_absent:"
+    if [ ! -e "${cor}skp_idx_a.idx" ] && [ ! -e "${cor}skp_idx_a.dct.idx" ]; then echo 1; else echo 0; fi
+    echo "${label}_sibling_has_data:"
+    ${CLICKHOUSE_CLIENT} -q "SELECT count() FROM system.data_skipping_indices WHERE database = currentDatabase() AND table = '${tbl}' AND name = '${sib}' AND data_compressed_bytes > 0"
 
     # Measured BEFORE reinjection, so it discriminates: only the colliding name makes the sibling
     # write the contested `skp_idx_a.pst.cmrk2` (0 for the control, 1 for the collision). After

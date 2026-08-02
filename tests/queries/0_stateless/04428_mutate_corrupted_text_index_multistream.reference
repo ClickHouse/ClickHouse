@@ -42,6 +42,10 @@ E_check_table:
 38
 E_rebuilt_index_prunes:
 1
+F_control_cleared_text_data_absent:
+1
+F_control_sibling_has_data:
+1
 F_control_sibling_owns_contested_name:
 0
 F_control_sibling_registered_and_prunes:
@@ -50,6 +54,10 @@ F_control_sibling_registered_and_prunes:
 F_control_text_orphans_removed:
 0
 F_control_check_table:
+1
+F_collide_cleared_text_data_absent:
+1
+F_collide_sibling_has_data:
 1
 F_collide_sibling_owns_contested_name:
 1

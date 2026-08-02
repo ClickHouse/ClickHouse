@@ -2160,14 +2160,12 @@ private:
     void checkColumnFilenamesForCollision(const StorageInMemoryMetadata & metadata, bool throw_on_error) const;
     void checkColumnFilenamesForCollision(const ColumnsDescription & columns, const MergeTreeSettings & settings, bool throw_on_error) const;
 
-    /// Validates that no two skip indices resolve to the same base stream name. With
-    /// `escape_index_filenames = 0` an index named `a.pos` claims `skp_idx_a.pos`, which is also what a
-    /// text index named `a` derives for its positional substream. Each projection is its own namespace
-    /// (its files live in `<name>.proj/`) and is validated separately.
+    /// Validates that no two skip indices resolve to the same base stream name: with
+    /// `escape_index_filenames = 0` an index named `a.pos` claims `skp_idx_a.pos`, the same base a text
+    /// index `a` derives for its positional substream. Each projection is its own namespace.
     ///
-    /// @old_metadata / @old_settings are passed only by `checkAlterIsPossible`, to grandfather the
-    /// collisions the ALTER inherits: a table that already holds one (ATTACH tolerates that by design)
-    /// must stay alterable, while an ALTER adding another claimant to a contested base is still refused.
+    /// @old_metadata / @old_settings, passed only by `checkAlterIsPossible`, grandfather an inherited
+    /// collision while the contested base keeps holding the same data files written by the same owners.
     void checkSkipIndexFilenamesForCollision(
         const StorageInMemoryMetadata & metadata,
         const MergeTreeSettings & settings,

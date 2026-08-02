@@ -1,3 +1,7 @@
+t_full_cleared_data_absent:
+1
+t_full_text_index_has_data:
+1
 A_corrupted_orphan_on_disk:
 1
 A_sibling_text_streams_before:
@@ -14,6 +18,10 @@ A_both_indices_present:
 2
 A_rows:
 500
+t_some_cleared_data_absent:
+1
+t_some_text_index_has_data:
+1
 B_corrupted_orphan_on_disk:
 1
 B_sibling_text_streams_before:
