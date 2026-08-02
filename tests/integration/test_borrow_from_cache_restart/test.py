@@ -199,6 +199,46 @@ def test_borrow_from_cache_no_symlink_for_lazy_loaded_table(started_cluster):
     node.query("DROP DATABASE lazy_borrow SYNC")
 
 
+def test_borrow_from_cache_log_family_writable_after_restart(started_cluster):
+    # Regression: the `memory` metadata of a `borrow_from_cache` disk does not survive a restart, so a
+    # reattached table has no directory on the disk any more. `MergeTree` recreates its directories
+    # when it is attached, but `Log` / `TinyLog` / `StripeLog` only repaired their file checker, so the
+    # first `INSERT` into a reattached log-family table failed with
+    # `DIRECTORY_DOESNT_EXIST: Cannot create file .../tmp_sizes.json: parent directory does not exist`.
+    # The table is legitimately empty after a restart, but it must be writable again.
+    #
+    # The log family can only reference a disk by name, and a custom DDL disk defined inline by
+    # another table is not yet registered when such a table is attached (the attach fails with
+    # `UNKNOWN_DISK`), so this uses the configuration-defined `borrowed_cfg` disk.
+    for table in ["borrowed_cfg_stripelog", "borrowed_cfg_log", "borrowed_cfg_mt"]:
+        node.query(f"DROP TABLE IF EXISTS {table} SYNC")
+    node.query(
+        "CREATE TABLE borrowed_cfg_stripelog (key UInt64) ENGINE = StripeLog SETTINGS disk = 'borrowed_cfg'"
+    )
+    node.query(
+        "CREATE TABLE borrowed_cfg_log (key UInt64) ENGINE = Log SETTINGS disk = 'borrowed_cfg'"
+    )
+    node.query(
+        "CREATE TABLE borrowed_cfg_mt (key UInt64) ENGINE = MergeTree ORDER BY key SETTINGS disk = 'borrowed_cfg'"
+    )
+    for table in ["borrowed_cfg_stripelog", "borrowed_cfg_log", "borrowed_cfg_mt"]:
+        node.query(f"INSERT INTO {table} VALUES (1), (2), (3)")
+        assert node.query(f"SELECT count() FROM {table}").strip() == "3"
+
+    node.restart_clickhouse()
+
+    for table in ["borrowed_cfg_stripelog", "borrowed_cfg_log", "borrowed_cfg_mt"]:
+        # The data lived only in the cache, so the reattached table is empty ...
+        assert node.query(f"SELECT count() FROM {table}").strip() == "0"
+        # ... but writes must work again.
+        node.query(f"INSERT INTO {table} VALUES (4), (5)")
+        assert node.query(f"SELECT count() FROM {table}").strip() == "2"
+
+    # Drop the tables before the destructive test below removes the disk's configuration file.
+    for table in ["borrowed_cfg_stripelog", "borrowed_cfg_log", "borrowed_cfg_mt"]:
+        node.query(f"DROP TABLE {table} SYNC")
+
+
 def test_borrow_from_cache_restart_with_absent_cache(started_cluster):
     # A `borrow_from_cache` table stores its data only in node-local cache segments, so its data
     # does not survive a restart. The named cache is registered by a *separate* disk, and on restart

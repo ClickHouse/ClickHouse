@@ -340,6 +340,13 @@ StorageStripeLog::StorageStripeLog(
     }
     else
     {
+        /// Not every disk keeps its metadata across restarts: with a non-persistent metadata type
+        /// (such as `memory`, used by the `borrow_from_cache` object storage) the table directory is
+        /// gone when the table is reattached, and the first write would fail with
+        /// `DIRECTORY_DOESNT_EXIST`. Recreate it, the same way the `MergeTree` family does on attach.
+        if (!disk->isReadOnly() && !disk->existsDirectory(table_path))
+            disk->createDirectories(table_path);
+
         try
         {
             file_checker.repair();
