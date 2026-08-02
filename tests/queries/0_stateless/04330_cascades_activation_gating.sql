@@ -97,15 +97,13 @@ SELECT '-- 11. Subquery WITH TOTALS under an outer top-N is rejected (fail-close
 SELECT k, s FROM (SELECT k, sum(x) AS s FROM t_gating GROUP BY k WITH TOTALS) ORDER BY s DESC LIMIT 3
 SETTINGS enable_cascades_optimizer = 1, make_distributed_plan = 1; -- { serverError SUPPORT_IS_DISABLED }
 
--- A `STREAM` read cannot be serialized into a fragment; rejected at planning time.
-SELECT '-- 12. A STREAM read is rejected (fail-close)';
-SELECT count() FROM t_gating STREAM
-SETTINGS enable_streaming_queries = 1, enable_cascades_optimizer = 1, make_distributed_plan = 1; -- { serverError SUPPORT_IS_DISABLED }
+-- The `STREAM` read rejection lives in `04670_cascades_streaming_queries_gating`: a test that
+-- uses `enable_streaming_queries` must carry `_streaming_queries_` in its name (style check).
 
 -- In-order aggregation relies on its input order, which the exchanges do not preserve: the
 -- in-order rewrite is skipped under `make_distributed_plan` (hash aggregation runs instead),
 -- and a planner-forced in-order aggregation is rejected up front on both planner paths.
-SELECT '-- 13. optimize_aggregation_in_order works via hash aggregation, force_ is rejected (fail-close)';
+SELECT '-- 12. optimize_aggregation_in_order works via hash aggregation, force_ is rejected (fail-close)';
 -- Distributed aggregation cannot enforce a global `max_rows_to_group_by`, so pin it to 0.
 SELECT k, sum(x) FROM t_gating GROUP BY k ORDER BY k
 SETTINGS optimize_aggregation_in_order = 1, make_distributed_plan = 1, enable_cascades_optimizer = 0,
@@ -117,7 +115,7 @@ SETTINGS force_aggregation_in_order = 1, make_distributed_plan = 1, enable_casca
 -- A plan that receives no exchanges (the read stays below the broadcast threshold) but carries
 -- a step without serialization support must run via the local fallback, not fail on the
 -- fragment serializability check.
-SELECT '-- 14. Exchange-free plan with a window falls back to local execution';
+SELECT '-- 13. Exchange-free plan with a window falls back to local execution';
 SELECT DISTINCT sum(x) OVER () FROM t_gating
 SETTINGS make_distributed_plan = 1, enable_cascades_optimizer = 0, distributed_plan_execute_locally = 1;
 

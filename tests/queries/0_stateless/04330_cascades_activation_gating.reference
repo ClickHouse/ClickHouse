@@ -34,12 +34,11 @@
 3
 4
 -- 11. Subquery WITH TOTALS under an outer top-N is rejected (fail-close)
--- 12. A STREAM read is rejected (fail-close)
--- 13. optimize_aggregation_in_order works via hash aggregation, force_ is rejected (fail-close)
+-- 12. optimize_aggregation_in_order works via hash aggregation, force_ is rejected (fail-close)
 0	99500
 1	99700
 2	99900
 3	100100
 4	100300
--- 14. Exchange-free plan with a window falls back to local execution
+-- 13. Exchange-free plan with a window falls back to local execution
 499500
