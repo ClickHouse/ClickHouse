@@ -2,9 +2,7 @@
 
 #include <Common/Exception.h>
 #include <Storages/TimeSeries/PrometheusQueryToSQL/ConverterContext.h>
-#include <Storages/TimeSeries/PrometheusQueryToSQL/applyComparisonOperator.h>
 #include <Storages/TimeSeries/PrometheusQueryToSQL/applyFunctionOverRange.h>
-#include <Storages/TimeSeries/PrometheusQueryToSQL/applyMathBinaryOperator.h>
 #include <Storages/TimeSeries/PrometheusQueryToSQL/applyOffset.h>
 #include <Storages/TimeSeries/PrometheusQueryToSQL/fromSelector.h>
 
