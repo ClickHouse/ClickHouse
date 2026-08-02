@@ -99,6 +99,15 @@ def test_file_is_retried_after_foreign_processing_node_disappears(started_cluste
     zk.create(f"{keeper_path}/processing/{conflict_node}", b"another processor")
 
     try:
+        # The configured TTL must be visible to operators.
+        assert (
+            node.query(
+                f"SELECT value FROM system.s3_queue_settings "
+                f"WHERE table = '{table_name}' AND name = 'foreign_processing_node_cache_ttl_seconds'"
+            ).strip()
+            == "5"
+        )
+
         create_mv(node, table_name, dst_table_name)
 
         def get_count():

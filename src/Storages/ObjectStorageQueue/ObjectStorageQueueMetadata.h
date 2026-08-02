@@ -196,6 +196,7 @@ public:
 
     bool usePersistentProcessingNode() const { return use_persistent_processing_nodes; }
     size_t getPersistentProcessingNodeTTLSeconds() const { return persistent_processing_node_ttl_seconds; }
+    time_t getForeignProcessingNodeCacheTTLSeconds() const { return foreign_processing_node_cache_ttl_seconds; }
 
 private:
     void cleanupThreadFunc();

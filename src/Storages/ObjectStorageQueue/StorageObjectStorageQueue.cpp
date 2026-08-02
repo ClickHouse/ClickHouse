@@ -1788,6 +1788,8 @@ ObjectStorageQueueSettings StorageObjectStorageQueue::getSettings() const
     settings[ObjectStorageQueueSetting::cleanup_interval_max_ms] = static_cast<UInt32>(cleanup_interval_ms.second);
     settings[ObjectStorageQueueSetting::persistent_processing_node_ttl_seconds] = static_cast<UInt32>(files_metadata->getPersistentProcessingNodeTTLSeconds());
     settings[ObjectStorageQueueSetting::use_persistent_processing_nodes] = files_metadata->usePersistentProcessingNode();
+    settings[ObjectStorageQueueSetting::foreign_processing_node_cache_ttl_seconds]
+        = static_cast<UInt64>(files_metadata->getForeignProcessingNodeCacheTTLSeconds());
     const auto & file_statuses_cache = files_metadata->getFileStatusesCache();
     settings[ObjectStorageQueueSetting::metadata_cache_size_bytes] = file_statuses_cache.maxSizeInBytes();
     settings[ObjectStorageQueueSetting::metadata_cache_size_elements] = file_statuses_cache.maxCount();
