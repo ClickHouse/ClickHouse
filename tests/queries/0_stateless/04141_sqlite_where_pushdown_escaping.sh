@@ -11,6 +11,7 @@ DB_PATH="${USER_FILES_PATH}/04141_sqlite_escaping_${CLICKHOUSE_DATABASE}.db"
 cleanup()
 {
     ${CLICKHOUSE_CLIENT} --query="DROP TABLE IF EXISTS test_04141_engine"
+    ${CLICKHOUSE_CLIENT} --query="DROP TABLE IF EXISTS test_04141_nul"
     rm -f "${DB_PATH}"
 }
 trap cleanup EXIT
@@ -26,6 +27,11 @@ conn.execute("INSERT INTO t VALUES (2, ?)", ("it's",))           # single quote
 conn.execute("INSERT INTO t VALUES (3, ?)", ("a\tb",))           # tab (0x09)
 conn.execute("INSERT INTO t VALUES (4, ?)", ("a\nb",))           # newline (0x0a)
 conn.execute("INSERT INTO t VALUES (5, ?)", ("back\\slash",))    # literal backslash
+# A separate table with a value that contains an actual NUL byte - a NUL cannot appear in a SQLite
+# string literal, so a predicate on it must be evaluated by ClickHouse and still match this row.
+conn.execute("CREATE TABLE t_nul (id INTEGER, val TEXT)")
+conn.execute("INSERT INTO t_nul VALUES (1, 'plain')")
+conn.execute("INSERT INTO t_nul VALUES (2, ?)", ("a\0b",))
 conn.commit()
 conn.close()
 EOF
@@ -74,6 +80,10 @@ ${CLICKHOUSE_CLIENT} --query="SELECT id, val FROM sqlite('${DB_PATH}', 't') WHER
 # down: ClickHouse evaluates it (no match here, no error) instead of silently returning wrong rows.
 echo "--- engine: NUL byte in predicate is evaluated by ClickHouse, not pushed down"
 ${CLICKHOUSE_CLIENT} --query="SELECT count() FROM test_04141_engine WHERE val = 'a\0b'"
+
+echo "--- engine: NUL byte in predicate still matches the row that contains it"
+${CLICKHOUSE_CLIENT} --query="CREATE TABLE test_04141_nul (id Int32, val String) ENGINE = SQLite('${DB_PATH}', 't_nul')"
+${CLICKHOUSE_CLIENT} --query="SELECT id, length(val) FROM test_04141_nul WHERE val = 'a\0b' ORDER BY id"
 
 echo "--- engine: NUL byte in predicate with strict pushdown is rejected"
 ${CLICKHOUSE_CLIENT} --query="SELECT count() FROM test_04141_engine WHERE val = 'a\0b' SETTINGS external_table_strict_query = 1" >/dev/null 2>&1 && echo "UNEXPECTED_SUCCESS" || echo "rejected"

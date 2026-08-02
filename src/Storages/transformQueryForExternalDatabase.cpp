@@ -604,6 +604,9 @@ void wrapSingleRowTupleSetsForIN(ASTPtr & node)
 {
     if (!node)
         return;
+    /// The AST comes from a user query, so its depth is unbounded - fail with `TOO_DEEP_RECURSION`
+    /// instead of exhausting the stack.
+    checkStackSize();
     if (auto * function = node->as<ASTFunction>())
         wrapSingleRowTupleSetForINNode(*function);
     for (auto & child : node->children)

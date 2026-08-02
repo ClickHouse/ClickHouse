@@ -26,5 +26,7 @@
 5	back\\slash
 --- engine: NUL byte in predicate is evaluated by ClickHouse, not pushed down
 0
+--- engine: NUL byte in predicate still matches the row that contains it
+2	3
 --- engine: NUL byte in predicate with strict pushdown is rejected
 rejected
