@@ -7,9 +7,11 @@
 -- `compatibility` resolves it: a change recorded under an alias of a setting belongs to that setting. The
 -- exception is a record written under an alias for the sole purpose of registering that alias: it is the history
 -- of the alias alone, because it neither introduces the setting it aliases nor changes its default.
-CREATE VIEW session_changes AS
+-- Every recorded change, with the name it is recorded under and the setting that name resolves to.
+CREATE VIEW session_records AS
 SELECT
-    if(s.alias_for != '', s.alias_for, ch.recorded_name) AS name,
+    ch.recorded_name AS recorded_name,
+    if(s.alias_for != '', s.alias_for, ch.recorded_name) AS setting,
     ch.version AS version,
     ch.previous_value AS previous_value,
     ch.new_value AS new_value,
@@ -24,12 +26,27 @@ FROM
         tupleElement(c, 'reason') AS reason
     FROM system.settings_changes WHERE type = 'Session'
 ) AS ch
-INNER JOIN system.settings AS s ON s.name = ch.recorded_name
-WHERE NOT (s.alias_for != '' AND ch.previous_value = ch.new_value AND match(ch.reason,
+INNER JOIN system.settings AS s ON s.name = ch.recorded_name;
+
+CREATE VIEW session_changes AS
+SELECT setting AS name, version, previous_value, new_value, reason
+FROM session_records
+WHERE NOT (recorded_name != setting AND previous_value = new_value AND match(reason,
     '(?i)\\b(?:add\\w*|new|introduc\\w*)\\b[^.]{0,20}\\balias\\b|(?:^|[.;]\\s+)(?:an?\\s+)?alias\\s+(?:for|of|to)\\b'));
 
--- A setting has a history section exactly when it has recorded changes, and never otherwise. The history of an
--- alias is the one recorded under the alias itself, which is the version in which the alias was added.
+-- The history of an alias is the history of that name as opposed to the history of the setting it resolves to:
+-- every record written under the alias itself, plus the records written under another name of the same setting
+-- that register this one as an alias — a record that changes nothing, names the alias, and says either that an
+-- alias is being added or that the setting is being renamed (which is how the file words keeping the old name).
+CREATE VIEW alias_registrations AS
+SELECT a.name AS name
+FROM system.settings AS a
+INNER JOIN session_records AS r ON r.setting = a.alias_for
+WHERE a.alias_for != '' AND r.recorded_name != a.name AND r.previous_value = r.new_value
+  AND match(r.reason, '(?i)alias|renam')
+  AND match(r.reason, '(?:^|[^0-9A-Za-z_])' || a.name || '(?:$|[^0-9A-Za-z_])');
+
+-- A setting has a history section exactly when it has recorded changes, and never otherwise.
 WITH
     changed AS (SELECT DISTINCT arrayJoin(tupleElement(changes, 'name')) AS name FROM system.settings_changes WHERE type = 'Session'),
     documented AS
@@ -37,6 +54,8 @@ WITH
         SELECT DISTINCT name FROM session_changes
         UNION DISTINCT
         SELECT name FROM changed WHERE name IN (SELECT name FROM system.settings WHERE alias_for != '')
+        UNION DISTINCT
+        SELECT DISTINCT name FROM alias_registrations
     )
 SELECT count() FROM system.documentation
 WHERE type = 'Setting' AND (name IN (SELECT name FROM documented)) != (position(description, '**History**') > 0);
@@ -124,4 +143,24 @@ FROM system.documentation WHERE type = 'Setting' AND name = 'max_insert_block_si
 SELECT position(description, '\n- **24.6** — the default value changed from `1` to `0`. Enable experimental text index') > 0
 FROM system.documentation WHERE type = 'Setting' AND name = 'enable_full_text_index';
 
+-- The history file is inconsistent about where the appearance of an alias is recorded, and an alias that is not
+-- recorded under its own name has a history all the same.
+-- The alias `async_insert_busy_timeout_ms` was registered by a record written under the canonical name
+-- `async_insert_busy_timeout_max_ms`, and it is the history of the alias — its appearance in 24.2.
+SELECT description FROM system.documentation WHERE type = 'Setting' AND name = 'async_insert_busy_timeout_ms';
+
+-- A setting that was renamed with its old name kept as an alias has, under the old name, both the history of that
+-- name from before the rename and the rename itself, which is recorded under the new name:
+-- `text_index_density_threshold` appeared in 26.6 and became an alias of
+-- `text_index_lazy_intersection_density_threshold` in 26.7.
+SELECT description FROM system.documentation WHERE type = 'Setting' AND name = 'text_index_density_threshold';
+
+-- The record that renames a setting does not claim to introduce the old name when that name is older than it:
+-- `evaluation_time` changed its default in 25.8 and became an alias of `promql_evaluation_time` in 25.9.
+SELECT position(description, '**Introduced in:**') = 0,
+       position(description, '\n- **25.9** — the default value remained `auto`. The setting was renamed.') > 0
+FROM system.documentation WHERE type = 'Setting' AND name = 'evaluation_time';
+
+DROP VIEW alias_registrations;
 DROP VIEW session_changes;
+DROP VIEW session_records;

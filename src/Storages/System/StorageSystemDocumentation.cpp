@@ -8,6 +8,7 @@
 #include <Common/Documentation.h>
 #include <Common/FunctionDocumentation.h>
 #include <Common/ProfileEvents.h>
+#include <Common/StringUtils.h>
 #include <Common/re2.h>
 #include <Compression/CompressionFactory.h>
 #include <Core/Field.h>
@@ -400,10 +401,42 @@ struct SettingsHistory
     /// history of that setting as much as one recorded under its canonical name. Without this, the history of a
     /// setting that was renamed would be cut at the rename.
     SettingsHistoryIndex by_setting;
-    /// Keyed by the recorded name as it is written in the history, which is what the history of an alias on its
-    /// own consists of — the version in which the alias was added.
-    SettingsHistoryIndex by_recorded_name;
+    /// Keyed by the name of an alias, and holding the history of that name as opposed to the history of the setting
+    /// it resolves to: every record written under the alias itself, plus the records written under another name of
+    /// the same setting that register this one as an alias. The second part is needed because the history file is
+    /// inconsistent about where aliasing is recorded — `async_insert_busy_timeout_ms` was registered as an alias by
+    /// a record written under the canonical `async_insert_busy_timeout_max_ms`, and a setting that is renamed with
+    /// its old name kept as an alias (`text_index_density_threshold`) has that rename recorded under the new name.
+    SettingsHistoryIndex by_alias;
 };
+
+/// Whether `reason` refers to `name` as a whole word. The reasons in the change history mention setting names bare
+/// as well as inside backticks or quotes, and one setting name is often a prefix of another
+/// (`async_insert_busy_timeout_ms` and `async_insert_busy_timeout_max_ms`), so a substring match would not do.
+bool reasonMentionsName(std::string_view reason, std::string_view name)
+{
+    for (size_t pos = reason.find(name); pos != std::string_view::npos; pos = reason.find(name, pos + 1))
+    {
+        const bool left_is_boundary = pos == 0 || !isWordCharASCII(reason[pos - 1]);
+        const bool right_is_boundary = pos + name.size() == reason.size() || !isWordCharASCII(reason[pos + name.size()]);
+        if (left_is_boundary && right_is_boundary)
+            return true;
+    }
+    return false;
+}
+
+/// Whether a record written under one name of a setting registers `alias` as another name of it: it leaves the
+/// default value as it was, it names the alias, and it says either that an alias is being added ("`x` is aliased to
+/// `y`") or that the setting is being renamed, which is how the file words keeping the old name as an alias
+/// ("Renamed from `text_index_density_threshold` (kept as an alias)", "The setting was renamed. The previous name
+/// is `allow_statistic_optimize`.").
+bool recordRegistersAliasNamed(const SettingsChangesHistory::SettingChange & change, std::string_view alias)
+{
+    static const re2::RE2 aliasing_or_renaming(R"((?i)alias|renam)");
+    return change.previous_value == change.new_value
+        && re2::RE2::PartialMatch(change.reason, aliasing_or_renaming)
+        && reasonMentionsName(change.reason, alias);
+}
 
 /// Whether the reason authored for a change in `SettingsChangesHistory.cpp` says that the record is there to
 /// register an alias of a setting: "Added an alias for setting `x`", "Add alias to x", "Added as an alias for 'x'",
@@ -421,8 +454,14 @@ bool reasonRegistersAnAlias(std::string_view reason)
 
 /// Inverts the change history — a map of version to the changes made in that version — into per-setting indices.
 template <typename SettingsCollection>
-SettingsHistory buildSettingsHistory(const VersionToSettingsChangesMap & history)
+SettingsHistory buildSettingsHistory(const SettingsCollection & settings, const VersionToSettingsChangesMap & history)
 {
+    /// The aliases of every setting of the collection, to attribute a record that registers an alias to that alias
+    /// even when the record is written under another name of the same setting.
+    std::unordered_map<std::string_view, std::vector<std::string_view>> aliases_by_setting;
+    for (const auto & alias : settings.getAllAliasNames())
+        aliases_by_setting[SettingsCollection::resolveName(alias)].push_back(alias);
+
     SettingsHistory result;
     /// The history is ordered by version, so every per-setting vector comes out ordered by version as well.
     for (const auto & [version, changes] : history)
@@ -431,9 +470,17 @@ SettingsHistory buildSettingsHistory(const VersionToSettingsChangesMap & history
         for (const auto & change : changes)
         {
             const SettingHistoryEntry entry{version_string, &change};
-            result.by_recorded_name[change.name].push_back(entry);
 
             const std::string_view canonical = SettingsCollection::resolveName(change.name);
+
+            /// A record written under an alias is history of that alias, and a record written under another name of
+            /// the same setting is too when it is what registered the alias.
+            if (canonical != change.name)
+                result.by_alias[change.name].push_back(entry);
+            if (const auto it = aliases_by_setting.find(canonical); it != aliases_by_setting.end())
+                for (const auto & alias : it->second)
+                    if (alias != change.name && recordRegistersAliasNamed(change, alias))
+                        result.by_alias[alias].push_back(entry);
 
             /// A record written under an alias for the sole purpose of registering that alias is the history of
             /// the alias and not of the setting it aliases: it neither introduces that setting nor changes its
@@ -640,7 +687,7 @@ void addSettingAliases(
         if (settings.getTier(alias) == SettingsTierType::OBSOLETE)
             continue;
         String description = "Alias of `" + String(SettingsCollection::resolveName(alias)) + "`.";
-        if (const auto * alias_history = findSettingHistory(history.by_recorded_name, alias))
+        if (const auto * alias_history = findSettingHistory(history.by_alias, alias))
             appendSettingHistory(description, *alias_history, /* documenting_an_alias = */ true);
         addRow(res_columns, type, String(alias), description, source);
     }
@@ -737,8 +784,8 @@ void StorageSystemDocumentation::fillData(MutableColumns & res_columns, ContextP
     addDocumented(res_columns, EntityType::DataSkippingIndex, MergeTreeIndexFactory::instance());
     addDocumented(res_columns, EntityType::DiskType, DiskFactory::instance());
 
-    const SettingsHistory settings_history = buildSettingsHistory<Settings>(getSettingsChangesHistory());
-    const SettingsHistory merge_tree_settings_history = buildSettingsHistory<MergeTreeSettings>(getMergeTreeSettingsChangesHistory());
+    const SettingsHistory settings_history = buildSettingsHistory(Settings{}, getSettingsChangesHistory());
+    const SettingsHistory merge_tree_settings_history = buildSettingsHistory(MergeTreeSettings{}, getMergeTreeSettingsChangesHistory());
     /// Server settings are not covered by the `compatibility` setting, so no history of their changes is recorded.
     const SettingsHistory server_settings_history;
 

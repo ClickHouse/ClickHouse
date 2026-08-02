@@ -14,3 +14,6 @@ Alias of `allow_experimental_analyzer`.\n\n**Introduced in:** v24.8\n\n**History
 Alias of `max_insert_block_size`.\n\n**Introduced in:** v26.1\n\n**History**\n\n- **26.1** — introduced with the default value `1048449`. An alias for max_insert_block_size.
 1	1
 1
+Alias of `async_insert_busy_timeout_max_ms`.\n\n**Introduced in:** v24.2\n\n**History**\n\n- **24.2** — introduced with the default value `200`. The minimum value of the asynchronous insert timeout in milliseconds; async_insert_busy_timeout_ms is aliased to async_insert_busy_timeout_max_ms
+Alias of `text_index_lazy_intersection_density_threshold`.\n\n**Introduced in:** v26.6\n\n**History**\n\n- **26.7** — the default value remained `0.2`. Renamed from `text_index_density_threshold` (kept as an alias); selects the posting list intersection algorithm in lazy posting list apply mode.\n- **26.6** — introduced with the default value `0.2`. New setting for lazy posting list density threshold
+1	1
