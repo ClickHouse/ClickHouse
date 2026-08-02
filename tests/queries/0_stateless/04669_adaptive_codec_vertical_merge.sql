@@ -14,6 +14,13 @@ SETTINGS min_bytes_for_wide_part = 0, allow_experimental_adaptive_codec_selectio
 INSERT INTO t_vert_adaptive SELECT toDateTime('2020-01-01'), number FROM numbers(100000);
 INSERT INTO t_vert_adaptive SELECT toDateTime('2020-01-01'), number FROM numbers(100000, 100000);
 OPTIMIZE TABLE t_vert_adaptive FINAL;
+SYSTEM FLUSH LOGS part_log;
+
+-- The merge actually used the vertical algorithm; otherwise `n` is written by the horizontal
+-- call site (MergeTask.cpp:1053) and the vertical writer at MergeTask.cpp:1985 stays untested.
+SELECT 'merge_algorithm', merge_algorithm FROM system.part_log
+WHERE database = currentDatabase() AND table = 't_vert_adaptive' AND event_type = 'MergeParts'
+ORDER BY event_time_microseconds DESC LIMIT 1;
 
 -- `n` is gathered vertically and is monotonic, so T64 wins on every block.
 SELECT 'vertical', max(mapContains(codec_block_counts, 'T64')), max(mapContains(codec_block_counts, 'NONE'))
