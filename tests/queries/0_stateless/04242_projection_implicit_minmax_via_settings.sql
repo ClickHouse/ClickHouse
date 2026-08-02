@@ -1,5 +1,7 @@
 -- Tags: no-parallel-replicas
 
+SET explain_query_plan_default = 'legacy';
+
 CREATE TABLE test_proj_minmax
 (
     a UInt32,

@@ -1,0 +1,866 @@
+---
+sidebarTitle: 'Tipos de dados'
+keywords: ['clickhouse', 'go', 'golang', 'tipos', 'tipos de dados', 'tipos complexos']
+description: 'Mapeamentos de tipos em Go e suporte a tipos complexos no clickhouse-go.'
+slug: /integrations/language-clients/go/data-types
+title: 'Tipos de dados'
+doc_type: 'referência'
+---
+
+<div id="type-conversions">
+  ## Conversões de tipo
+</div>
+
+O cliente busca ser o mais flexível possível quanto à aceitação de tipos de variáveis tanto para inserção quanto para o marshaling de respostas. Na maioria dos casos, existe um tipo equivalente em Golang para um tipo de coluna do ClickHouse, por exemplo, [UInt64](/pt-BR/reference/data-types/int-uint) para [uint64](https://pkg.go.dev/builtin#uint64). Esses mapeamentos lógicos devem ser sempre suportados. Você pode querer usar tipos de variáveis que possam ser inseridos em colunas ou usados para receber uma resposta, desde que a conversão da variável ou dos dados recebidos ocorra primeiro. O cliente busca suportar essas conversões de forma transparente, para que os usuários não precisem converter seus dados previamente para que correspondam exatamente aos tipos antes da inserção, além de oferecer marshaling flexível no momento da consulta. Essa conversão transparente não permite perda de precisão. Por exemplo, um uint32 não pode ser usado para receber dados de uma coluna UInt64. Por outro lado, uma string pode ser inserida em um campo datetime64, desde que atenda aos requisitos de formato.
+
+As conversões de tipo atualmente suportadas para tipos primitivos estão descritas [aqui](https://github.com/ClickHouse/clickhouse-go/blob/main/TYPES.md).
+
+Esse trabalho está em andamento e pode ser dividido entre inserção (`Append`/`AppendRow`) e leitura (via `Scan`). Se você precisar de suporte para uma conversão específica, abra uma issue.
+
+A interface padrão `database/sql` deve oferecer suporte aos mesmos tipos que a ClickHouse API. Há algumas exceções, principalmente para tipos complexos, documentadas nas seções abaixo. Assim como a ClickHouse API, o cliente busca ser o mais flexível possível quanto à aceitação de tipos de variáveis tanto para inserção quanto para o marshaling de respostas.
+
+<div id="complex-types">
+  ## Tipos complexos
+</div>
+
+<div id="datedatetime">
+  ### Date/DateTime
+</div>
+
+O cliente Go do ClickHouse oferece suporte aos tipos de data/data e hora `Date`, `Date32`, `DateTime` e `DateTime64`. Datas podem ser inseridas como string no formato `2006-01-02` ou usando os tipos nativos do Go `time.Time{}` ou `sql.NullTime`. `DateTime` também oferece suporte a esses tipos, mas exige que as strings sejam passadas no formato `2006-01-02 15:04:05`, com um deslocamento de fuso horário opcional, por exemplo `2006-01-02 15:04:05 +08:00`. `time.Time{}` e `sql.NullTime` também têm suporte na leitura, assim como qualquer implementação da interface `sql.Scanner`.
+
+O tratamento das informações de fuso horário depende do tipo do ClickHouse e de o valor estar sendo inserido ou lido:
+
+* **DateTime/DateTime64**
+  * No momento do **insert**, o valor é enviado ao ClickHouse no formato de timestamp Unix. Se nenhum fuso horário for informado, o cliente assumirá o fuso horário local do cliente. `time.Time{}` ou `sql.NullTime` serão convertidos para epoch de acordo com isso.
+  * No momento do **select**, o fuso horário da coluna será usado, se estiver definido, ao retornar um valor `time.Time`. Caso contrário, será usado o fuso horário do servidor.
+* **Date/Date32**
+  * No momento do **insert**, o fuso horário de qualquer data é considerado ao converter a data para um timestamp Unix; ou seja, ele será ajustado pelo fuso horário antes de ser armazenado como data, já que os tipos `Date` não têm localidade no ClickHouse. Se isso não for especificado em um valor de string, será usado o fuso horário local.
+  * No momento do **select**, as datas lidas em instâncias `time.Time{}` ou `sql.NullTime{}` serão retornadas sem informações de fuso horário.
+
+<div id="timetime64-types">
+  ### Tipos Time/Time64
+</div>
+
+Os tipos de coluna `Time` e `Time64` armazenam valores de hora do dia sem um componente de data. Ambos são mapeados para `time.Duration` do Go.
+
+* `Time` armazena a hora com precisão de segundos.
+* `Time64(precision)` oferece suporte à precisão de subsegundos (como `DateTime64`), em que a precisão vai de 0 a 9.
+
+```go
+if err = conn.Exec(ctx, `
+    CREATE TABLE example (
+        col1 Time,
+        col2 Time64(3)
+    ) Engine Memory
+`); err != nil {
+    return err
+}
+
+batch, err := conn.PrepareBatch(ctx, "INSERT INTO example")
+if err != nil {
+    return err
+}
+defer batch.Close()
+
+if err = batch.Append(
+    14*time.Hour+30*time.Minute+15*time.Second,
+    14*time.Hour+30*time.Minute+15*time.Second+500*time.Millisecond,
+); err != nil {
+    return err
+}
+if err = batch.Send(); err != nil {
+    return err
+}
+
+var col1, col2 time.Duration
+if err = conn.QueryRow(ctx, "SELECT * FROM example").Scan(&col1, &col2); err != nil {
+    return err
+}
+fmt.Printf("col1=%v, col2=%v\n", col1, col2)
+```
+
+<div id="array">
+  ### Array
+</div>
+
+Arrays devem ser inseridos como slices. As regras de tipagem dos elementos são as mesmas do [tipo primitivo](#type-conversions), ou seja, os elementos serão convertidos quando possível.
+
+Um ponteiro para um slice deve ser fornecido no momento do Scan.
+
+```go
+batch, err := conn.PrepareBatch(ctx, "INSERT INTO example")
+if err != nil {
+    return err
+}
+defer batch.Close()
+
+var i int64
+for i = 0; i < 10; i++ {
+    err := batch.Append(
+        []string{strconv.Itoa(int(i)), strconv.Itoa(int(i + 1)), strconv.Itoa(int(i + 2)), strconv.Itoa(int(i + 3))},
+        [][]int64{{i, i + 1}, {i + 2, i + 3}, {i + 4, i + 5}},
+    )
+    if err != nil {
+        return err
+    }
+}
+if err := batch.Send(); err != nil {
+    return err
+}
+var (
+    col1 []string
+    col2 [][]int64
+)
+rows, err := conn.Query(ctx, "SELECT * FROM example")
+if err != nil {
+    return err
+}
+for rows.Next() {
+    if err := rows.Scan(&col1, &col2); err != nil {
+        return err
+    }
+    fmt.Printf("row: col1=%v, col2=%v\n", col1, col2)
+}
+
+// NOTA: Não omita a verificação de rows.Err()
+if err := rows.Err(); err != nil {
+    return err
+}
+
+rows.Close()
+```
+
+[Exemplo completo](https://github.com/ClickHouse/clickhouse-go/blob/main/examples/clickhouse_api/array.go)
+
+<div id="map">
+  ### Map
+</div>
+
+Maps devem ser inseridos como maps em Go, com chaves e valores em conformidade com as regras de tipo definidas [anteriormente](#type-conversions).
+
+```go
+batch, err := conn.PrepareBatch(ctx, "INSERT INTO example")
+if err != nil {
+    return err
+}
+defer batch.Close()
+
+var i int64
+for i = 0; i < 10; i++ {
+    err := batch.Append(
+        map[string]uint64{strconv.Itoa(int(i)): uint64(i)},
+        map[string][]string{strconv.Itoa(int(i)): {strconv.Itoa(int(i)), strconv.Itoa(int(i + 1)), strconv.Itoa(int(i + 2)), strconv.Itoa(int(i + 3))}},
+        map[string]map[string]uint64{strconv.Itoa(int(i)): {strconv.Itoa(int(i)): uint64(i)}},
+    )
+    if err != nil {
+        return err
+    }
+}
+if err := batch.Send(); err != nil {
+    return err
+}
+var (
+    col1 map[string]uint64
+    col2 map[string][]string
+    col3 map[string]map[string]uint64
+)
+rows, err := conn.Query(ctx, "SELECT * FROM example")
+if err != nil {
+    return err
+}
+for rows.Next() {
+    if err := rows.Scan(&col1, &col2, &col3); err != nil {
+        return err
+    }
+    fmt.Printf("row: col1=%v, col2=%v, col3=%v\n", col1, col2, col3)
+}
+// NOTA: Não omita a verificação de rows.Err()
+if err := rows.Err(); err != nil {
+    return err
+}
+
+rows.Close()
+```
+
+[Exemplo completo](https://github.com/ClickHouse/clickhouse-go/blob/main/examples/clickhouse_api/map.go)
+
+<Note>
+  Ao usar a API `database/sql`, os valores de `Map` exigem tipagem estrita — você não pode usar `interface{}` como tipo de valor. Por exemplo, não é possível passar um `map[string]interface{}` para um campo `Map(String,String)`; em vez disso, é preciso usar um `map[string]string`. Já uma variável `interface{}` será sempre compatível e pode ser usada para estruturas mais complexas.
+
+  [Exemplo completo](https://github.com/ClickHouse/clickhouse-go/blob/main/examples/std/map.go)
+</Note>
+
+<div id="tuples">
+  ### Tuplas
+</div>
+
+As tuplas representam um grupo de colunas de tamanho arbitrário. As colunas podem ser explicitamente nomeadas ou ter apenas um tipo especificado, por exemplo.
+
+```sql
+//sem nome
+Col1 Tuple(String, Int64)
+
+//com nome
+Col2 Tuple(name String, id Int64, age uint8)
+```
+
+Entre essas abordagens, as tuplas nomeadas oferecem maior flexibilidade. Embora as tuplas sem nome precisem ser inseridas e lidas por meio de slices, as tuplas nomeadas também são compatíveis com maps.
+
+```go
+if err = conn.Exec(ctx, `
+    CREATE TABLE example (
+            Col1 Tuple(name String, age UInt8),
+            Col2 Tuple(String, UInt8),
+            Col3 Tuple(name String, id String)
+        )
+        Engine Memory
+    `); err != nil {
+    return err
+}
+
+defer func() {
+    conn.Exec(ctx, "DROP TABLE example")
+}()
+batch, err := conn.PrepareBatch(ctx, "INSERT INTO example")
+if err != nil {
+    return err
+}
+defer batch.Close()
+
+// tanto tuples nomeadas quanto não nomeadas podem ser adicionadas com slices. Observe que também podemos usar listas e maps fortemente tipados se todos os elementos forem do mesmo tipo
+if err = batch.Append([]interface{}{"Clicky McClickHouse", uint8(42)}, []interface{}{"Clicky McClickHouse Snr", uint8(78)}, []string{"Dale", "521211"}); err != nil {
+    return err
+}
+if err = batch.Append(map[string]interface{}{"name": "Clicky McClickHouse Jnr", "age": uint8(20)}, []interface{}{"Baby Clicky McClickHouse", uint8(1)}, map[string]string{"name": "Geoff", "id": "12123"}); err != nil {
+    return err
+}
+if err = batch.Send(); err != nil {
+    return err
+}
+var (
+    col1 map[string]interface{}
+    col2 []interface{}
+    col3 map[string]string
+)
+// tuples nomeadas podem ser recuperadas em um map ou em slices; as não nomeadas, apenas em slices
+if err = conn.QueryRow(ctx, "SELECT * FROM example").Scan(&col1, &col2, &col3); err != nil {
+    return err
+}
+fmt.Printf("row: col1=%v, col2=%v, col3=%v\n", col1, col2, col3)
+```
+
+[Exemplo completo](https://github.com/ClickHouse/clickhouse-go/blob/main/examples/clickhouse_api/tuple.go)
+
+Observação: slices tipados e maps são compatíveis, desde que as subcolunas na tupla nomeada sejam todas do mesmo tipo.
+
+<div id="nested">
+  ### Nested
+</div>
+
+Um campo Nested é equivalente a um Array de Tuples nomeadas. O uso depende de o usuário ter definido [flatten&#95;nested](/pt-BR/reference/settings/session-settings#flatten_nested) como 1 ou 0.
+
+Ao definir flatten&#95;nested como 0, as colunas Nested permanecem como um único array de tuplas. Isso permite usar slices de maps para inserção e recuperação, além de níveis arbitrários de aninhamento. A chave do map deve ser igual ao nome da coluna, como mostrado no exemplo abaixo.
+
+Observação: como os maps representam uma tupla, eles devem ser do tipo `map[string]interface{}`. No momento, os valores não são fortemente tipados.
+
+```go
+conn, err := GetNativeConnection(clickhouse.Settings{
+    "flatten_nested": 0,
+}, nil, nil)
+if err != nil {
+    return err
+}
+ctx := context.Background()
+defer func() {
+    conn.Exec(ctx, "DROP TABLE example")
+}()
+conn.Exec(context.Background(), "DROP TABLE IF EXISTS example")
+err = conn.Exec(ctx, `
+    CREATE TABLE example (
+        Col1 Nested(Col1_1 String, Col1_2 UInt8),
+        Col2 Nested(
+            Col2_1 UInt8,
+            Col2_2 Nested(
+                Col2_2_1 UInt8,
+                Col2_2_2 UInt8
+            )
+        )
+    ) Engine Memory
+`)
+if err != nil {
+    return err
+}
+
+batch, err := conn.PrepareBatch(ctx, "INSERT INTO example")
+if err != nil {
+    return err
+}
+defer batch.Close()
+
+var i int64
+for i = 0; i < 10; i++ {
+    err := batch.Append(
+        []map[string]interface{}{
+            {
+                "Col1_1": strconv.Itoa(int(i)),
+                "Col1_2": uint8(i),
+            },
+            {
+                "Col1_1": strconv.Itoa(int(i + 1)),
+                "Col1_2": uint8(i + 1),
+            },
+            {
+                "Col1_1": strconv.Itoa(int(i + 2)),
+                "Col1_2": uint8(i + 2),
+            },
+        },
+        []map[string]interface{}{
+            {
+                "Col2_2": []map[string]interface{}{
+                    {
+                        "Col2_2_1": uint8(i),
+                        "Col2_2_2": uint8(i + 1),
+                    },
+                },
+                "Col2_1": uint8(i),
+            },
+            {
+                "Col2_2": []map[string]interface{}{
+                    {
+                        "Col2_2_1": uint8(i + 2),
+                        "Col2_2_2": uint8(i + 3),
+                    },
+                },
+                "Col2_1": uint8(i + 1),
+            },
+        },
+    )
+    if err != nil {
+        return err
+    }
+}
+if err := batch.Send(); err != nil {
+    return err
+}
+var (
+    col1 []map[string]interface{}
+    col2 []map[string]interface{}
+)
+rows, err := conn.Query(ctx, "SELECT * FROM example")
+if err != nil {
+    return err
+}
+for rows.Next() {
+    if err := rows.Scan(&col1, &col2); err != nil {
+        return err
+    }
+    fmt.Printf("row: col1=%v, col2=%v\n", col1, col2)
+}
+// NOTA: Não omita a verificação de rows.Err()
+if err := rows.Err(); err != nil {
+    return err
+}
+
+rows.Close()
+```
+
+[Exemplo completo - `flatten_tested=0`](https://github.com/ClickHouse/clickhouse-go/blob/main/examples/clickhouse_api/nested.go#L28-L118)
+
+Se o valor padrão 1 for usado para `flatten_nested`, as colunas aninhadas serão achatadas em arrays separados. Isso exige o uso de slices aninhados para inserção e recuperação. Embora níveis arbitrários de aninhamento possam funcionar, isso não é oficialmente suportado.
+
+```go
+conn, err := GetNativeConnection(nil, nil, nil)
+if err != nil {
+    return err
+}
+ctx := context.Background()
+defer func() {
+    conn.Exec(ctx, "DROP TABLE example")
+}()
+conn.Exec(ctx, "DROP TABLE IF EXISTS example")
+err = conn.Exec(ctx, `
+    CREATE TABLE example (
+        Col1 Nested(Col1_1 String, Col1_2 UInt8),
+        Col2 Nested(
+            Col2_1 UInt8,
+            Col2_2 Nested(
+                Col2_2_1 UInt8,
+                Col2_2_2 UInt8
+            )
+        )
+    ) Engine Memory
+`)
+if err != nil {
+    return err
+}
+
+batch, err := conn.PrepareBatch(ctx, "INSERT INTO example")
+if err != nil {
+    return err
+}
+defer batch.Close()
+
+var i uint8
+for i = 0; i < 10; i++ {
+    col1_1_data := []string{strconv.Itoa(int(i)), strconv.Itoa(int(i + 1)), strconv.Itoa(int(i + 2))}
+    col1_2_data := []uint8{i, i + 1, i + 2}
+    col2_1_data := []uint8{i, i + 1, i + 2}
+    col2_2_data := [][][]interface{}{
+        {
+            {i, i + 1},
+        },
+        {
+            {i + 2, i + 3},
+        },
+        {
+            {i + 4, i + 5},
+        },
+    }
+    err := batch.Append(
+        col1_1_data,
+        col1_2_data,
+        col2_1_data,
+        col2_2_data,
+    )
+    if err != nil {
+        return err
+    }
+}
+if err := batch.Send(); err != nil {
+    return err
+}
+```
+
+[Exemplo completo - `flatten_nested=1`](https://github.com/ClickHouse/clickhouse-go/blob/main/examples/clickhouse_api/nested.go#L123-L180)
+
+Observação: as colunas Nested devem ter as mesmas dimensões. Por exemplo, no exemplo acima, `Col_2_2` e `Col_2_1` devem ter o mesmo número de elementos.
+
+Devido a uma interface mais direta e ao suporte oficial a aninhamento, recomendamos `flatten_nested=0`.
+
+<div id="geo-types">
+  ### Tipos Geo
+</div>
+
+O cliente é compatível com os tipos Geo Point, Ring, LineString, Polygon, MultiPolygon e MultiLineString. Esses tipos são representados em Go usando o pacote [github.com/paulmach/orb](https://github.com/paulmach/orb).
+
+```go
+if err = conn.Exec(ctx, `
+    CREATE TABLE example (
+            point Point,
+            ring Ring,
+            lineString LineString,
+            polygon Polygon,
+            mPolygon MultiPolygon,
+            mLineString MultiLineString
+        )
+        Engine Memory
+    `); err != nil {
+    return err
+}
+
+batch, err := conn.PrepareBatch(ctx, "INSERT INTO example")
+if err != nil {
+    return err
+}
+defer batch.Close()
+
+if err = batch.Append(
+    orb.Point{11, 22},
+    orb.Ring{
+        orb.Point{1, 2},
+        orb.Point{1, 2},
+    },
+    orb.LineString{
+        orb.Point{1, 2},
+        orb.Point{3, 4},
+        orb.Point{5, 6},
+    },
+    orb.Polygon{
+        orb.Ring{
+            orb.Point{1, 2},
+            orb.Point{12, 2},
+        },
+        orb.Ring{
+            orb.Point{11, 2},
+            orb.Point{1, 12},
+        },
+    },
+    orb.MultiPolygon{
+        orb.Polygon{
+            orb.Ring{
+                orb.Point{1, 2},
+                orb.Point{12, 2},
+            },
+            orb.Ring{
+                orb.Point{11, 2},
+                orb.Point{1, 12},
+            },
+        },
+        orb.Polygon{
+            orb.Ring{
+                orb.Point{1, 2},
+                orb.Point{12, 2},
+            },
+            orb.Ring{
+                orb.Point{11, 2},
+                orb.Point{1, 12},
+            },
+        },
+    },
+    orb.MultiLineString{
+        orb.LineString{
+            orb.Point{1, 2},
+            orb.Point{3, 4},
+        },
+        orb.LineString{
+            orb.Point{5, 6},
+            orb.Point{7, 8},
+        },
+    },
+); err != nil {
+    return err
+}
+
+if err = batch.Send(); err != nil {
+    return err
+}
+
+var (
+    point       orb.Point
+    ring        orb.Ring
+    lineString  orb.LineString
+    polygon     orb.Polygon
+    mPolygon    orb.MultiPolygon
+    mLineString orb.MultiLineString
+)
+
+if err = conn.QueryRow(ctx, "SELECT * FROM example").Scan(&point, &ring, &lineString, &polygon, &mPolygon, &mLineString); err != nil {
+    return err
+}
+fmt.Printf("point=%v, ring=%v, lineString=%v, polygon=%v, mPolygon=%v, mLineString=%v\n", point, ring, lineString, polygon, mPolygon, mLineString)
+```
+
+[Exemplo completo](https://github.com/ClickHouse/clickhouse-go/blob/main/examples/clickhouse_api/geo.go)
+
+<div id="uuid">
+  ### UUID
+</div>
+
+O tipo UUID é compatível com o pacote [github.com/google/uuid](https://github.com/google/uuid). Você também pode enviar e serializar um UUID como string ou qualquer tipo que implemente `sql.Scanner` ou `Stringify`.
+
+```go
+if err = conn.Exec(ctx, `
+    CREATE TABLE example (
+            col1 UUID,
+            col2 UUID
+        )
+        Engine Memory
+    `); err != nil {
+    return err
+}
+
+batch, err := conn.PrepareBatch(ctx, "INSERT INTO example")
+if err != nil {
+    return err
+}
+defer batch.Close()
+
+col1Data, _ := uuid.NewUUID()
+if err = batch.Append(
+    col1Data,
+    "603966d6-ed93-11ec-8ea0-0242ac120002",
+); err != nil {
+    return err
+}
+
+if err = batch.Send(); err != nil {
+    return err
+}
+
+var (
+    col1 uuid.UUID
+    col2 uuid.UUID
+)
+
+if err = conn.QueryRow(ctx, "SELECT * FROM example").Scan(&col1, &col2); err != nil {
+    return err
+}
+```
+
+[Exemplo completo](https://github.com/ClickHouse/clickhouse-go/blob/main/examples/clickhouse_api/uuid.go)
+
+<div id="decimal">
+  ### Decimal
+</div>
+
+Como o Go não tem um tipo Decimal nativo, recomendamos usar o pacote de terceiros [github.com/shopspring/decimal](https://github.com/shopspring/decimal) para trabalhar com tipos Decimal de forma nativa sem modificar suas consultas originais.
+
+<Note>
+  Você pode se sentir tentado a usar Float no lugar para evitar dependências de terceiros. No entanto, saiba que [os tipos Float no ClickHouse não são recomendados quando valores precisos são necessários](/pt-BR/reference/data-types/float).
+
+  Se ainda assim você optar por usar o tipo Float nativo do Go no lado do cliente, deverá converter explicitamente Decimal em Float usando a [função toFloat64()](/pt-BR/reference/functions/regular-functions/type-conversion-functions#toFloat64) ou [suas variantes](/pt-BR/reference/functions/regular-functions/type-conversion-functions#toFloat64OrZero) em suas consultas no ClickHouse. Saiba que essa conversão pode resultar em perda de precisão.
+</Note>
+
+```go
+if err = conn.Exec(ctx, `
+    CREATE TABLE example (
+        Col1 Decimal32(3),
+        Col2 Decimal(18,6),
+        Col3 Decimal(15,7),
+        Col4 Decimal128(8),
+        Col5 Decimal256(9)
+    ) Engine Memory
+    `); err != nil {
+    return err
+}
+
+batch, err := conn.PrepareBatch(ctx, "INSERT INTO example")
+if err != nil {
+    return err
+}
+defer batch.Close()
+
+if err = batch.Append(
+    decimal.New(25, 4),
+    decimal.New(30, 5),
+    decimal.New(35, 6),
+    decimal.New(135, 7),
+    decimal.New(256, 8),
+); err != nil {
+    return err
+}
+
+if err = batch.Send(); err != nil {
+    return err
+}
+
+var (
+    col1 decimal.Decimal
+    col2 decimal.Decimal
+    col3 decimal.Decimal
+    col4 decimal.Decimal
+    col5 decimal.Decimal
+)
+
+if err = conn.QueryRow(ctx, "SELECT * FROM example").Scan(&col1, &col2, &col3, &col4, &col5); err != nil {
+    return err
+}
+fmt.Printf("col1=%v, col2=%v, col3=%v, col4=%v, col5=%v\n", col1, col2, col3, col4, col5)
+```
+
+[Exemplo completo](https://github.com/ClickHouse/clickhouse-go/blob/main/examples/clickhouse_api/decimal.go)
+
+<div id="nullable">
+  ### Nullable
+</div>
+
+O valor Nil em Go representa um NULL no ClickHouse. Isso pode ser usado se um campo for declarado como Nullable. No momento do insert, Nil pode ser passado tanto para a versão normal quanto para a versão Nullable de uma coluna. No primeiro caso, o valor padrão do tipo será persistido, por exemplo, uma string vazia para string. Já na versão Nullable, um valor NULL será armazenado no ClickHouse.
+
+No momento da leitura, o usuário deve passar um ponteiro para um tipo que aceite nil, por exemplo, *string, para representar o valor nil de um campo Nullable. No exemplo abaixo, col1, que é um Nullable(String), recebe, portanto, um **string. Isso permite representar nil.
+
+```go
+if err = conn.Exec(ctx, `
+    CREATE TABLE example (
+            col1 Nullable(String),
+            col2 String,
+            col3 Nullable(Int8),
+            col4 Nullable(Int64)
+        )
+        Engine Memory
+    `); err != nil {
+    return err
+}
+
+batch, err := conn.PrepareBatch(ctx, "INSERT INTO example")
+if err != nil {
+    return err
+}
+defer batch.Close()
+
+if err = batch.Append(
+    nil,
+    nil,
+    nil,
+    sql.NullInt64{Int64: 0, Valid: false},
+); err != nil {
+    return err
+}
+
+if err = batch.Send(); err != nil {
+    return err
+}
+
+var (
+    col1 *string
+    col2 string
+    col3 *int8
+    col4 sql.NullInt64
+)
+
+if err = conn.QueryRow(ctx, "SELECT * FROM example").Scan(&col1, &col2, &col3, &col4); err != nil {
+    return err
+}
+```
+
+[Exemplo completo](https://github.com/ClickHouse/clickhouse-go/blob/main/examples/clickhouse_api/nullable.go)
+
+O cliente também oferece suporte aos tipos `sql.Null*`, por exemplo, `sql.NullInt64`. Eles são compatíveis com os tipos equivalentes no ClickHouse.
+
+<div id="big-ints">
+  ### Inteiros grandes
+</div>
+
+Tipos numéricos com mais de 64 bits são representados com o pacote nativo [big](https://pkg.go.dev/math/big) do Go.
+
+```go
+if err = conn.Exec(ctx, `
+    CREATE TABLE example (
+        Col1 Int128,
+        Col2 UInt128,
+        Col3 Array(Int128),
+        Col4 Int256,
+        Col5 Array(Int256),
+        Col6 UInt256,
+        Col7 Array(UInt256)
+    ) Engine Memory`); err != nil {
+    return err
+}
+
+batch, err := conn.PrepareBatch(ctx, "INSERT INTO example")
+if err != nil {
+    return err
+}
+defer batch.Close()
+
+col1Data, _ := new(big.Int).SetString("170141183460469231731687303715884105727", 10)
+col2Data := big.NewInt(128)
+col3Data := []*big.Int{
+    big.NewInt(-128),
+    big.NewInt(128128),
+    big.NewInt(128128128),
+}
+col4Data := big.NewInt(256)
+col5Data := []*big.Int{
+    big.NewInt(256),
+    big.NewInt(256256),
+    big.NewInt(256256256256),
+}
+col6Data := big.NewInt(256)
+col7Data := []*big.Int{
+    big.NewInt(256),
+    big.NewInt(256256),
+    big.NewInt(256256256256),
+}
+
+if err = batch.Append(col1Data, col2Data, col3Data, col4Data, col5Data, col6Data, col7Data); err != nil {
+    return err
+}
+
+if err = batch.Send(); err != nil {
+    return err
+}
+
+var (
+    col1 big.Int
+    col2 big.Int
+    col3 []*big.Int
+    col4 big.Int
+    col5 []*big.Int
+    col6 big.Int
+    col7 []*big.Int
+)
+
+if err = conn.QueryRow(ctx, "SELECT * FROM example").Scan(&col1, &col2, &col3, &col4, &col5, &col6, &col7); err != nil {
+    return err
+}
+fmt.Printf("col1=%v, col2=%v, col3=%v, col4=%v, col5=%v, col6=%v, col7=%v\n", col1, col2, col3, col4, col5, col6, col7)
+```
+
+[Exemplo completo](https://github.com/ClickHouse/clickhouse-go/blob/main/examples/clickhouse_api/big_int.go)
+
+<div id="bfloat16">
+  ### BFloat16
+</div>
+
+`BFloat16` é um tipo de ponto flutuante brain de 16 bits usado em cargas de trabalho de machine learning. Em Go, os valores `BFloat16` são inseridos e lidos como `float32`. As variantes Nullable usam `sql.NullFloat64`.
+
+```go
+if err := conn.Exec(ctx, `
+    CREATE TABLE example (
+        Col1 BFloat16,
+        Col2 Nullable(BFloat16)
+    ) Engine MergeTree() ORDER BY tuple()
+`); err != nil {
+    return err
+}
+
+batch, err := conn.PrepareBatch(ctx, "INSERT INTO example")
+if err != nil {
+    return err
+}
+batch.Append(float32(33.125), sql.NullFloat64{Float64: 34.25, Valid: true})
+if err := batch.Send(); err != nil {
+    return err
+}
+
+var col1 float32
+var col2 sql.NullFloat64
+if err := conn.QueryRow(ctx, "SELECT * FROM example").Scan(&col1, &col2); err != nil {
+    return err
+}
+fmt.Printf("Col1: %v, Col2: %v\n", col1, col2)
+```
+
+[Exemplo completo](https://github.com/ClickHouse/clickhouse-go/blob/main/examples/clickhouse_api/bfloat16.go)
+
+<div id="qbit">
+  ### QBit
+</div>
+
+`QBit` é um tipo de coluna experimental para armazenar embeddings vetoriais em formato bit-sliced, otimizado para busca por similaridade vetorial. Requer que a configuração `allow_experimental_qbit_type` esteja habilitada.
+
+Em Go, uma coluna `QBit(Float32, N)` é inserida e lida como `[]float32`, em que N é a dimensão do vetor.
+
+```go
+ctx = clickhouse.Context(ctx, clickhouse.WithSettings(clickhouse.Settings{
+    "allow_experimental_qbit_type": 1,
+}))
+
+if err := conn.Exec(ctx, `
+    CREATE TABLE example (
+        id   UInt32,
+        embedding QBit(Float32, 128)
+    ) Engine MergeTree() ORDER BY id
+`); err != nil {
+    return err
+}
+
+batch, err := conn.PrepareBatch(ctx, "INSERT INTO example")
+if err != nil {
+    return err
+}
+
+vector := make([]float32, 128)
+// preencher os valores do vetor...
+if err := batch.Append(uint32(1), vector); err != nil {
+    return err
+}
+if err := batch.Send(); err != nil {
+    return err
+}
+
+rows, err := conn.Query(ctx, "SELECT id, embedding FROM example")
+if err != nil {
+    return err
+}
+defer rows.Close()
+for rows.Next() {
+    var id uint32
+    var embedding []float32
+    rows.Scan(&id, &embedding)
+    fmt.Printf("ID: %d, Vector dim: %d\n", id, len(embedding))
+}
+```
+
+[Exemplo completo](https://github.com/ClickHouse/clickhouse-go/blob/main/examples/clickhouse_api/qbit.go)
