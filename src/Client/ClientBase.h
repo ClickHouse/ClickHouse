@@ -137,6 +137,13 @@ protected:
     }
 
     virtual void connect() = 0;
+
+    /// Make sure the connection is synchronized with the server after a failed query, reconnecting
+    /// if it is not. Unlike the check before every query, this one costs a round trip - it is the
+    /// only way to observe a connection that the server has already closed but whose close has not
+    /// been delivered yet.
+    void resynchronizeConnectionAfterError();
+
     virtual void processError(std::string_view query) const = 0;
     virtual String getName() const = 0;
 
@@ -491,6 +498,12 @@ protected:
     /// If the last query resulted in exception. `server_exception` or
     /// `client_exception` must be set.
     bool have_error = false;
+
+    /// A failed query can leave the protocol desynchronized: the server can throw before it reads
+    /// the block of external data of that query, and then close the connection. The close can
+    /// arrive with an arbitrary delay, so looking at the socket is not enough to notice it - the
+    /// connection has to be checked with a round trip before the next query of the same session.
+    bool connection_needs_resynchronization = false;
 
     std::list<ExternalTable> external_tables; /// External tables info.
     std::list<ExternalTable> external_scalars; /// External scalars info.

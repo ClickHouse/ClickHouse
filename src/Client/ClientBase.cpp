@@ -865,8 +865,17 @@ void ClientBase::onExtremes(Block & block, ASTPtr parsed_query)
 void ClientBase::onReceiveExceptionFromServer(std::unique_ptr<Exception> && e)
 {
     have_error = true;
+    connection_needs_resynchronization = true;
     server_exception = std::move(e);
     resetOutput();
+}
+
+
+void ClientBase::resynchronizeConnectionAfterError()
+{
+    connection_needs_resynchronization = false;
+    if (!connection->checkConnected(connection_parameters.timeouts))
+        connect();
 }
 
 
@@ -2776,10 +2785,13 @@ void ClientBase::processParsedSingleQuery(
         InterpreterSetQuery::applySettingsFromQuery(parsed_query, client_context);
         connection->setFormatSettings(getFormatSettings(client_context));
 
-        /// Deliberately without a round trip: this runs before every query, and the recovery paths
-        /// that need the connection to be synchronized with the server (after an exception) use
-        /// `checkConnected` instead.
-        if (!connection->checkConnectedWithoutRoundTrip())
+        /// Deliberately without a round trip: this runs before every query. The only case that needs
+        /// the stronger check is a session that continues after a failed query - the protocol can be
+        /// desynchronized then, and the server can be closing the connection without the client
+        /// having noticed it yet.
+        if (connection_needs_resynchronization)
+            resynchronizeConnectionAfterError();
+        else if (!connection->checkConnectedWithoutRoundTrip())
             connect();
 
         applySettingsFromServerIfNeeded(); // after connect() and applySettingsFromQuery()
@@ -3349,6 +3361,7 @@ bool ClientBase::executeMultiQuery(const String & all_queries_text)
                     // have been reported without throwing (see onReceiveExceptionFromServer()).
                     client_exception = std::make_unique<Exception>(getCurrentExceptionMessageAndPattern(print_stack_trace), getCurrentExceptionCode());
                     have_error = true;
+                    connection_needs_resynchronization = true;
                 }
 
                 // Check whether the error (or its absence) matches the test hints
@@ -3464,8 +3477,7 @@ bool ClientBase::executeMultiQuery(const String & all_queries_text)
                     have_error = false;
                     error_code = 0;
 
-                    if (!connection->checkConnected(connection_parameters.timeouts))
-                        connect();
+                    resynchronizeConnectionAfterError();
                 }
 
                 // For INSERTs with inline data: use the end of inline data as
@@ -4700,8 +4712,7 @@ void ClientBase::runInteractive()
             /// Client-side exception during query execution can result in the loss of
             /// sync in the connection protocol.
             /// So we reconnect and allow to enter the next query.
-            if (!connection->checkConnected(connection_parameters.timeouts))
-                connect();
+            resynchronizeConnectionAfterError();
         }
     }
     while (true);
