@@ -143,10 +143,14 @@ Rejected with a parse error, rather than mistranslated:
   all columns and pads with nulls; ClickHouse's `UNION ALL` does not.
 - **String operators are matching functions, not `LIKE` patterns.** `contains '50%'` looks
   for a literal per cent sign.
-- **`geo_*` takes longitude before latitude**, as Kusto does. Distances are computed on a
-  sphere of radius 6371010 m, the value that reproduces Kusto's own documented results
-  exactly; ClickHouse's `greatCircleDistance` uses a different radius and a faster
-  approximation, and lands about 600 m out over 1500 km.
+- **`geo_*` takes longitude before latitude**, as Kusto does. `geo_distance_2points` uses
+  ClickHouse's `greatCircleDistance`, a fast approximation that differs from Kusto in the
+  fourth significant figure — about 600 m over 1500 km — and `use_spheroid = true` selects
+  `geoDistance`, the ellipsoid formula, as it does in Kusto. Exact agreement is not a goal:
+  these functions are usually filtering rather than reporting. Note that a coordinate outside
+  [-180, 180] or [-90, 90] yields a meaningless number rather than the null Kusto returns:
+  neither ClickHouse function range-checks its arguments, and checking would cost eight
+  comparisons per row.
 - **`dayofweek()` returns a timespan**, not a number: a Monday is `1.00:00:00`.
 - **`tohex()` renders a negative value at 64-bit width.** Kusto renders it at the width of the
   argument's own type, which is not visible while parsing.

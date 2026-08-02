@@ -52,6 +52,21 @@ ASTPtr asString(const ASTPtr & argument)
     return makeASTFunction("ifNull", makeASTFunction("toString", argument), litS(""));
 }
 
+/// Distance in metres between two longitude/latitude pairs, on a sphere or on the WGS-84
+/// ellipsoid. `greatCircleDistance` is a fast approximation and disagrees with Kusto in the
+/// fourth significant figure -- Kusto uses an exact haversine on a sphere of radius
+/// 6371010 m -- which is the right trade for a function that usually filters rather than
+/// reports. Both ClickHouse functions want floats, so integer coordinates are widened.
+ASTPtr distance(const ASTs & arguments, bool spheroid)
+{
+    return makeASTFunction(
+        spheroid ? "geoDistance" : "greatCircleDistance",
+        makeASTFunction("toFloat64", arguments[0]),
+        makeASTFunction("toFloat64", arguments[1]),
+        makeASTFunction("toFloat64", arguments[2]),
+        makeASTFunction("toFloat64", arguments[3]));
+}
+
 /// The common case: the same call with a different name.
 Entry rename(std::string_view clickhouse_name, size_t min_arguments, size_t max_arguments)
 {
@@ -1023,41 +1038,31 @@ const std::map<String, Entry> & scalarFunctions()
         /// consistent about that -- `geohashEncode` is lon-first but `geoToH3` is lat-first --
         /// so the order is spelled out at each call rather than assumed.
         ///
-        /// Distances use a sphere of radius 6371010 m, which is the value that reproduces the
-        /// figure in Microsoft's own `geo_distance_2points` example exactly. ClickHouse's
-        /// `greatCircleDistance` is a fast approximation on a different radius and lands
-        /// about 600 m out over 1500 km, so the haversine is written out here instead.
-        const auto haversine = [](const ASTPtr & lon1, const ASTPtr & lat1, const ASTPtr & lon2, const ASTPtr & lat2)
-        {
-            const auto half_sine_squared = [](const ASTPtr & degrees)
-            {
-                ASTPtr half = makeASTFunction("divide", makeASTFunction("radians", degrees), litI(2));
-                return makeASTFunction("pow", makeASTFunction("sin", half), litI(2));
-            };
-            ASTPtr a = makeASTFunction(
-                "plus",
-                half_sine_squared(makeASTFunction("minus", lat2->clone(), lat1->clone())),
-                makeASTFunction(
-                    "multiply",
-                    makeASTFunction(
-                        "multiply",
-                        makeASTFunction("cos", makeASTFunction("radians", lat1->clone())),
-                        makeASTFunction("cos", makeASTFunction("radians", lat2->clone()))),
-                    half_sine_squared(makeASTFunction("minus", lon2->clone(), lon1->clone()))));
-            return makeASTFunction(
-                "multiply", litI(2 * 6371010), makeASTFunction("asin", makeASTFunction("sqrt", a)));
-        };
-
+        /// Kusto answers null for a coordinate outside its valid range. Neither ClickHouse
+        /// function checks, so an out-of-range coordinate gives a meaningless number instead.
+        /// Validating would cost eight comparisons on every row, which is the wrong trade for
+        /// the fast path.
         result.emplace(
             "geo_distance_2points",
-            Entry{4, 5, [haversine](const ASTs & a) -> ASTPtr { return haversine(a[0], a[1], a[2], a[3]); }});
+            Entry{
+                4,
+                5,
+                [](const ASTs & a) -> ASTPtr
+                {
+                    /// The optional last argument asks for the ellipsoid formula instead.
+                    bool spheroid = false;
+                    if (a.size() == 5)
+                    {
+                        const auto * flag = a[4]->as<ASTLiteral>();
+                        if (!flag || flag->value.getType() != Field::Types::Bool)
+                            return nullptr;
+                        spheroid = flag->value.safeGet<bool>();
+                    }
+                    return distance(a, spheroid);
+                }});
         result.emplace(
             "geo_point_in_circle",
-            Entry{
-                5,
-                5,
-                [haversine](const ASTs & a) -> ASTPtr
-                { return makeASTFunction("lessOrEquals", haversine(a[0], a[1], a[2], a[3]), a[4]); }});
+            Entry{5, 5, [](const ASTs & a) -> ASTPtr { return makeASTFunction("lessOrEquals", distance(a, false), a[4]); }});
         result.emplace(
             "geo_point_to_geohash",
             Entry{

@@ -72,7 +72,8 @@ true
 true
 false
 -- geospatial: longitude before latitude, distances in metres --
-1546754.351973809
+1547353.4142994815
+1545615.7905499663
 true
 false
 -- geohash and H3 cells are token strings --

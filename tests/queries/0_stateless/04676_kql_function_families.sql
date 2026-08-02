@@ -88,8 +88,10 @@ print ipv6_is_in_range('a5e::abcd', 'a5e::0/112');         // true
 print ipv6_is_in_range('a5e::abcd', '0:0:0:0:0:ffff:c0a8:ac/60');  // false
 
 print '-- geospatial: longitude before latitude, distances in metres --';
--- On a sphere of radius 6371010 m, which is what reproduces Kusto's own figure exactly.
-print geo_distance_2points(-122.407628, 47.578557, -118.275287, 34.019056);   // 1546754.35197381
+-- ClickHouse's fast approximation, so this is close to but not identical with the
+-- 1546754.35197381 Kusto prints. `use_spheroid` picks the ellipsoid formula instead.
+print geo_distance_2points(-122.407628, 47.578557, -118.275287, 34.019056);
+print geo_distance_2points(-122.407628, 47.578557, -118.275287, 34.019056, true);
 print geo_point_in_circle(-122.143564, 47.535677, -122.100896, 47.527351, 3500);  // true
 print geo_point_in_circle(-122.137575, 47.630683, -122.100896, 47.527351, 3500);  // false
 
