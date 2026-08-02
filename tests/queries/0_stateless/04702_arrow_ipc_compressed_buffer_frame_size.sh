@@ -8,9 +8,9 @@
 #   - a prefix that disagrees with the size its own codec frame declares;
 #   - an accumulated body size the allocator would reject as an internal error (LOGICAL_ERROR).
 # A prefix that agrees with its frame on a large size is NOT corrupt: it stays a memory-limit
-# condition, which the last case asserts. Neither is a ZSTD payload whose frame layout the
-# per-buffer header cannot describe (several concatenated frames, or a leading skippable frame):
-# those decompress correctly and must still be read, which the last two cases assert.
+# condition, which one case asserts. Neither is a ZSTD payload whose frame layout the per-buffer
+# header cannot describe (several concatenated frames, or a leading skippable frame), nor an empty
+# buffer whose frame honestly declares zero: those decompress correctly and must still be read.
 
 CUR_DIR=$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)
 # shellcheck source=../shell_config.sh
@@ -204,6 +204,72 @@ def zstd_frame(raw):
     """One ZSTD frame that pledges its content size, as ClickHouse's own writer emits."""
     return pa.Codec("zstd", compression_level=19).compress(raw, asbytes=True)
 
+
+def batch_meta(data):
+    """The RecordBatch message's body offset, body length and per-buffer (offset, length) field offsets."""
+    def u16(o):
+        return struct.unpack_from("<H", data, o)[0]
+
+    def u32(o):
+        return struct.unpack_from("<I", data, o)[0]
+
+    def i64(o):
+        return struct.unpack_from("<q", data, o)[0]
+
+    def field(table, idx):
+        vtable = table - struct.unpack_from("<i", data, table)[0]
+        pos = 4 + 2 * idx
+        if pos + 2 > u16(vtable):
+            return None
+        rel = u16(vtable + pos)
+        return None if rel == 0 else table + rel
+
+    pos = 0
+    while pos + 8 <= len(data):
+        if u32(pos) != 0xFFFFFFFF:
+            break
+        meta_len, = struct.unpack_from("<i", data, pos + 4)
+        if meta_len == 0:
+            break
+        meta = pos + 8
+        msg = meta + u32(meta)
+        body = (meta + meta_len + 7) & ~7
+        body_len_field = field(msg, 3)
+        body_len = i64(body_len_field) if body_len_field is not None else 0
+        if data[field(msg, 1)] == 3:  # Message.header_type == RecordBatch
+            header = field(msg, 2)
+            batch = header + u32(header)
+            buffers = field(batch, 2)
+            vec = buffers + u32(buffers)
+            entries = [(vec + 4 + 16 * k, vec + 12 + 16 * k) for k in range(u32(vec))]
+            return body, body_len, body_len_field, entries
+        pos = body + body_len
+    raise AssertionError("no RecordBatch message")
+
+
+def lone_empty_zstd_frame_buffer(data, prefix_value):
+    """Repoint a naturally-empty buffer at a new one whose payload is a LONE empty ZSTD frame.
+
+    The payload must be exactly one frame, otherwise the size gate sends it down the `nullopt` path
+    and the arm is vacuous - so it cannot be padded with a skippable frame the way `repack_zstd`
+    does. Instead the buffer is appended past the body and an existing zero-length buffer (a
+    non-nullable column's absent validity bitmap) is pointed at it, which leaves every other
+    buffer's offset untouched.
+    """
+    d = bytearray(data)
+    body, body_len, body_len_field, entries = batch_meta(d)
+    frame = pa.Codec("zstd", compression_level=1).compress(b"", asbytes=True)
+    # Not the skippable shape: an empty *real* frame keeps ZSTD's own magic.
+    assert frame[:4] == ZSTD_MAGIC, frame[:4].hex()
+    payload = struct.pack("<q", prefix_value) + frame
+    target = next(((o, l) for o, l in entries if struct.unpack_from("<q", d, l)[0] == 0), None)
+    assert target, "no zero-length buffer to repoint"
+    d[body + body_len:body + body_len] = payload + b"\x00" * (-len(payload) % 8)
+    struct.pack_into("<q", d, body_len_field, body_len + len(payload) + (-len(payload) % 8))
+    struct.pack_into("<q", d, target[0], body_len)
+    struct.pack_into("<q", d, target[1], len(payload))
+    return bytes(d)
+
 # Case 1: not a parsable frame. Clear the magic of the first buffer's payload.
 d = bytearray(arrow_lz4)
 d[arrow_offs[0] + 8:arrow_offs[0] + 12] = b"\x00\x00\x00\x00"
@@ -258,6 +324,17 @@ open(f"{out}/zstd_multi_frame.arrows", "wb").write(bytes(d))
 d = repack_zstd(ch_zstd, zstd_spans[0],
                 lambda raw: struct.pack("<II", 0x184D2A50, 4) + b"\x00" * 4 + zstd_frame(raw))
 open(f"{out}/zstd_skippable_prefix.arrows", "wb").write(bytes(d))
+
+# Case 9: a lone empty ZSTD frame truthfully declares 0, so a positive prefix disagrees with it and
+# must be rejected before it is allocated for. Zero is a content size here, not a "declares nothing"
+# marker - ZSTD signals that separately, with ZSTD_CONTENTSIZE_UNKNOWN.
+open(f"{out}/zstd_empty_frame_forged_prefix.arrows", "wb").write(
+    lone_empty_zstd_frame_buffer(ch_zstd, 100 * 1024 ** 3))
+
+# Case 10 (NOT corrupt): the same lone empty frame with the prefix it really describes. The
+# comparison must accept the 0 it now compares rather than over-rejecting an empty buffer.
+open(f"{out}/zstd_empty_frame_honest_prefix.arrows", "wb").write(
+    lone_empty_zstd_frame_buffer(ch_zstd, 0))
 PYEOF
 
 check() {
@@ -276,12 +353,17 @@ check prefix_mismatch.arrows INCORRECT_DATA
 check aggregate_too_large.arrows INCORRECT_DATA
 check zstd_prefix_mismatch.arrows INCORRECT_DATA
 check zstd_bad_frame.arrows INCORRECT_DATA
+# The rejection must come from the frame comparison, so match its message: a bare INCORRECT_DATA
+# would also pass if the allocator guard caught it instead, leaving the comparison untested.
+check zstd_empty_frame_forged_prefix.arrows 'codec frame declares 0'
 # Not corrupt: a size the query cannot afford is a resource condition, not a data error.
 check consistent_large.arrows MEMORY_LIMIT_EXCEEDED
 
 # Well-formed compressed files must be unaffected, from either writer and both codecs, including the
-# two ZSTD payload shapes whose leading frame header describes less than the whole payload.
-for f in wellformed_lz4 wellformed_zstd ch_lz4 ch_zstd zstd_multi_frame zstd_skippable_prefix; do
+# two ZSTD payload shapes whose leading frame header describes less than the whole payload, and an
+# empty buffer whose frame honestly declares the 0 the comparison now sees.
+for f in wellformed_lz4 wellformed_zstd ch_lz4 ch_zstd zstd_multi_frame zstd_skippable_prefix \
+         zstd_empty_frame_honest_prefix; do
     $CLICKHOUSE_LOCAL --query "
         SELECT count(), sum(i), uniqExact(s) FROM file('${TMP_DIR}/${f}.arrows', ArrowStream)"
 done
