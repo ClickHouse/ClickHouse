@@ -294,8 +294,10 @@ TEST(BackgroundSchedulePool, ScheduleAfterHugeDelayDoesNotFire)
     task = pool->createTask(StorageID::createEmpty(), "huge_delay", [&] { ++executions; });
     ASSERT_EQ(task->activate(), true);
 
-    /// Delays whose conversion to microseconds wraps (mod 2^64) or overflows a signed deadline.
-    for (size_t ms : {size_t(1) << 63, std::numeric_limits<size_t>::max(), std::numeric_limits<size_t>::max() / 1000 + 1})
+    /// The first value converts to microseconds losslessly, so it reaches the wait and overflows
+    /// there when it is widened to nanoseconds. The others already wrap (mod 2^64) during the
+    /// conversion, so they only ever exercise the deadline arithmetic.
+    for (size_t ms : {size_t(10000000000000), size_t(1) << 63, std::numeric_limits<size_t>::max(), std::numeric_limits<size_t>::max() / 1000 + 1})
     {
         ASSERT_EQ(task->scheduleAfter(ms), true);
         std::this_thread::sleep_for(std::chrono::milliseconds(300));
