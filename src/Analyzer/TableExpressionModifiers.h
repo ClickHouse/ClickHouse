@@ -102,48 +102,6 @@ private:
 void serializeRational(TableExpressionModifiers::Rational val, WriteBuffer & out);
 TableExpressionModifiers::Rational deserializeRational(ReadBuffer & in);
 
-/// Returns metadata extended according to table expression modifiers.
-StorageMetadataPtr extendMetadataWithModifiers(const StorageMetadataPtr & metadata, const TableExpressionModifiers & modifiers);
-
-inline bool operator==(const WatermarkSettings & lhs, const WatermarkSettings & rhs)
-{
-    if (lhs.column != rhs.column)
-        return false;
-
-    if (lhs.idle_timeout != rhs.idle_timeout)
-        return false;
-
-    if ((lhs.expression == nullptr) != (rhs.expression == nullptr))
-        return false;
-
-    return !lhs.expression || lhs.expression->getTreeHash(/*ignore_aliases=*/false) == rhs.expression->getTreeHash(/*ignore_aliases=*/false);
-}
-
-inline bool operator==(const StreamSettings & lhs, const StreamSettings & rhs)
-{
-    /// Compare cursors
-    {
-        if ((lhs.cursor == nullptr) != (rhs.cursor == nullptr))
-            return false;
-
-        if (lhs.cursor)
-            if (cursorTreeToMap(lhs.cursor) != cursorTreeToMap(rhs.cursor))
-                return false;
-    }
-
-    /// Compare watermarks
-    {
-        if ((lhs.watermark == nullptr) != (rhs.watermark == nullptr))
-            return false;
-
-        if (lhs.watermark)
-            if (*lhs.watermark != *rhs.watermark)
-                return false;
-    }
-
-    return true;
-}
-
 inline bool operator==(const TableExpressionModifiers & lhs, const TableExpressionModifiers & rhs)
 {
     return lhs.hasFinal() == rhs.hasFinal()
