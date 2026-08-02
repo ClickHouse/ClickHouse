@@ -87,4 +87,9 @@ homogeneous merge still folds to the offsets subcolumn
 and needs more than the cap without the fold
 and the plan still reads the offsets subcolumn
 1
+old analyzer rejects the subcolumn instead of returning a wrong value
+old analyzer still reads the converted parent
+6
+old analyzer keeps the implicit rewrite correct
+6
 view over a mistyped target is unaffected

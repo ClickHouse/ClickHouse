@@ -2,9 +2,8 @@
 -- returns for the row. `Buffer` and `StorageView` carry the same wrapper defect and are
 -- deliberately NOT covered here: each needs a different mechanism and ships separately.
 
--- The old analyzer never reaches this code path (it fails earlier with
--- `Missing columns: 'arr.size0'`), so pin the analyzer rather than letting `compatibility`
--- randomization flip the test into a path it cannot exercise.
+-- Pin the analyzer so `compatibility` randomization cannot flip the test into the old one, which
+-- rejects the subcolumn outright; the arms near the end of the file assert that rejection.
 SET enable_analyzer = 1;
 
 DROP TABLE IF EXISTS t_merge_sub_good;
@@ -449,6 +448,24 @@ SELECT 'and the plan still reads the offsets subcolumn';
 SELECT countIf(explain LIKE '%size0%')
 FROM (EXPLAIN QUERY TREE run_passes = 1 SELECT sum(length(arr)) FROM t_merge_sub_hom)
 SETTINGS optimize_functions_to_subcolumns = 1;
+
+-- The old analyzer cannot express the request at all: it resolves subcolumns against the child's
+-- own type, so a child that declares the parent differently has no `arr.size0` to read. That is
+-- why the `SET enable_analyzer = 1` above is a pin and not a preference.
+SELECT 'old analyzer rejects the subcolumn instead of returning a wrong value';
+SELECT sum(arr.size0) FROM t_merge_sub
+SETTINGS enable_analyzer = 0, optimize_functions_to_subcolumns = 0; -- { serverError UNKNOWN_IDENTIFIER }
+
+-- The parent itself still reads, so the rejection above is specific to the subcolumn name.
+SELECT 'old analyzer still reads the converted parent';
+SELECT sum(length(arr)) FROM t_merge_sub
+SETTINGS enable_analyzer = 0, optimize_functions_to_subcolumns = 0;
+
+-- And the implicit `length` -> `size0` rewrite does not reach the child there either, so the
+-- wrong-result contract this test guards has no old-analyzer counterpart to fix.
+SELECT 'old analyzer keeps the implicit rewrite correct';
+SELECT sum(length(arr)) FROM t_merge_sub
+SETTINGS enable_analyzer = 0, optimize_functions_to_subcolumns = 1;
 
 -- A View over a mistyped target raises UNKNOWN_IDENTIFIER for the hand-written subcolumn form
 -- both before and after this change: that carrier is handled separately.
