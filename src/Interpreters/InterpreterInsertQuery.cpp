@@ -1238,6 +1238,12 @@ BlockIO InterpreterInsertQuery::execute()
     if (!query.table_function && !skip_target_insert_access_check)
         context->checkAccess(AccessType::INSERT, query.table_id, query_sample_block.getNames());
 
+    /// Access the storage itself guards the write with (e.g. the source access of a table of a
+    /// `URL` database). It is also checked when the sink is created, but that happens in a
+    /// background flush for asynchronous inserts, so the check has to be repeated here.
+    if (!query.table_function)
+        table->checkInsertIsAllowed(context);
+
     if (!allow_materialized)
     {
         for (const auto & column : metadata_snapshot->getColumns())
