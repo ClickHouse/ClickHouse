@@ -12,6 +12,10 @@
 -- had ever been touched by a lightweight delete - a single deleted row was enough.
 
 SET use_query_condition_cache = 1;
+-- The query condition cache requires the analyzer, on both the write and the read side; without
+-- this the cache never functions in the old-analyzer CI configuration and the effectiveness
+-- assertions below cannot hold.
+SET enable_analyzer = 1;
 
 DROP TABLE IF EXISTS t_qcc_lwd;
 
