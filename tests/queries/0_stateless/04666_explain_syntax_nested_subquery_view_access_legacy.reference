@@ -1,0 +1,35 @@
+-- from_subquery: reader has SELECT on the view but not its base table
+SELECT: ACCESS_DENIED
+EXPLAIN SYNTAX: ACCESS_DENIED
+EXPLAIN AST optimize=1: ACCESS_DENIED
+-- from_subquery: full user has SELECT on the view and its base table
+SELECT: OK
+EXPLAIN SYNTAX: OK
+EXPLAIN AST optimize=1: OK
+-- in_subquery: reader has SELECT on the view but not its base table
+SELECT: ACCESS_DENIED
+EXPLAIN SYNTAX: ACCESS_DENIED
+EXPLAIN AST optimize=1: ACCESS_DENIED
+-- in_subquery: full user has SELECT on the view and its base table
+SELECT: OK
+EXPLAIN SYNTAX: OK
+EXPLAIN AST optimize=1: OK
+-- scalar_subquery: reader has SELECT on the view but not its base table
+SELECT: ACCESS_DENIED
+EXPLAIN SYNTAX: ACCESS_DENIED
+EXPLAIN AST optimize=1: ACCESS_DENIED
+-- scalar_subquery: full user has SELECT on the view and its base table
+SELECT: OK
+EXPLAIN SYNTAX: OK
+EXPLAIN AST optimize=1: OK
+-- no over-denial: the same reader may read a nested SQL SECURITY DEFINER view
+SELECT: OK
+EXPLAIN SYNTAX: OK
+-- a view read through a WITH table of the enclosing query is checked as well
+SELECT: ACCESS_DENIED
+EXPLAIN SYNTAX: ACCESS_DENIED
+-- column-level precision: the partial user may read base column 'y' but not 'z'
+SELECT y: OK
+EXPLAIN SYNTAX y: OK
+SELECT z: ACCESS_DENIED
+EXPLAIN SYNTAX z: ACCESS_DENIED

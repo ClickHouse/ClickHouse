@@ -378,8 +378,110 @@ namespace
             return main_view_access_check_performed;
         }
 
+        /// Whether this `SELECT` reads from a regular (non-parameterized) view directly, i.e. whether
+        /// `checkNonParameterizedViewBaseTableAccess` would have anything to check for it. Used to keep the
+        /// nested-subquery walk below from analyzing every subquery of every explained query.
+        static bool referencesNonParameterizedView(const ASTSelectQuery & select, const ContextPtr & context)
+        {
+            for (const auto * table_expression : getTableExpressions(select))
+            {
+                if (!table_expression || !table_expression->database_and_table_name)
+                    continue;
+
+                const auto * table_identifier = table_expression->database_and_table_name->as<ASTTableIdentifier>();
+                if (!table_identifier)
+                    continue;
+
+                /// A nested subquery is looked at before anything resolved it, so its table name may well not
+                /// name a table at all - a `WITH` table of the enclosing query, an unknown database, ... Only
+                /// a name that resolves to a view here is of interest; anything else is left to the query's
+                /// own analysis, which must keep reporting whatever it reported before.
+                auto storage_id = context->tryResolveStorageID(table_identifier->getTableId());
+                if (!storage_id)
+                    continue;
+
+                auto storage = DatabaseCatalog::instance().tryGetTable(storage_id, context);
+                const auto * view = storage ? typeid_cast<const StorageView *>(storage.get()) : nullptr;
+                if (view && !view->isParameterizedView())
+                    return true;
+            }
+            return false;
+        }
+
+        static void collectNestedSelectQueries(const ASTPtr & node, ASTs & nested_selects)
+        {
+            for (const auto & child : node->children)
+            {
+                if (child->as<ASTSelectQuery>())
+                    nested_selects.push_back(child);
+                collectNestedSelectQueries(child, nested_selects);
+            }
+        }
+
+        /// This visitor stops descending at an `ASTSelectQuery` (see `needChildVisit`), so the check above
+        /// only ever runs for the outermost `SELECT` of the explained query. A regular `SQL SECURITY INVOKER`
+        /// view read from a nested subquery - `WHERE x IN (SELECT ... FROM v)`, `FROM (SELECT ... FROM v)`,
+        /// a scalar subquery, ... - would therefore never get its base tables checked: the outer
+        /// `InterpreterSelectQuery::analyze` checks only `SELECT` on the view object, and the base-table
+        /// denial of a real query happens in `StorageView::readImpl`, which `EXPLAIN` never reaches. Run the
+        /// same check for every nested `SELECT` that reads from such a view, so `EXPLAIN SYNTAX` /
+        /// `EXPLAIN AST optimize = 1` are denied exactly where the real query is.
+        ///
+        /// Each nested `SELECT` is analyzed on a copy, so this analysis cannot alter the query being dumped;
+        /// nested view references are never expanded in the legacy path, and this does not expand them either.
+        /// A nested `SELECT` the analysis cannot resolve on its own (e.g. one referring to a `WITH` table of
+        /// the enclosing query) is left unchecked - as with an unresolvable view body, nothing is revealed,
+        /// because the dump only ever prints the user's own subquery text. An `ACCESS_DENIED` is propagated.
+        static void checkNestedSelectsViewBaseTableAccess(const ASTPtr & node, const ContextPtr & context)
+        {
+            ASTs nested_selects;
+            collectNestedSelectQueries(node, nested_selects);
+            if (nested_selects.empty())
+                return;
+
+            /// As in `checkAccessForExplainedSelect`: `joined_subquery_requires_alias` restricts how a query
+            /// may be written and is not an access rule, but a subquery lifted out of its enclosing query can
+            /// trip it. Relax it for these throwaway analyses only, so the check is not skipped.
+            ContextMutablePtr check_context;
+
+            for (const auto & nested_select_node : nested_selects)
+            {
+                const auto & nested_select = nested_select_node->as<const ASTSelectQuery &>();
+                if (!referencesNonParameterizedView(nested_select, context))
+                    continue;
+
+                if (!check_context)
+                {
+                    check_context = Context::createCopy(context);
+                    check_context->setSetting("joined_subquery_requires_alias", false);
+                }
+
+                ASTPtr nested_select_copy = nested_select_node->clone();
+                try
+                {
+                    InterpreterSelectQuery interpreter(
+                        nested_select_copy, check_context, SelectQueryOptions(QueryProcessingStage::FetchColumns).analyze().modify());
+
+                    checkNonParameterizedViewBaseTableAccess(
+                        nested_select_copy->as<const ASTSelectQuery &>(),
+                        check_context,
+                        interpreter.getQueryInfo(),
+                        interpreter.getRequiredColumns());
+                }
+                catch (const Exception & e)
+                {
+                    if (e.code() == ErrorCodes::ACCESS_DENIED)
+                        throw;
+                }
+            }
+        }
+
         static void visit(ASTSelectQuery & select, ASTPtr & node, Data & data)
         {
+            /// Check the views read from nested subqueries first, while the query is still exactly as the
+            /// user wrote it - before the analysis below rewrites the main table expression in place.
+            checkNestedSelectsViewBaseTableAccess(node, data.getContext());
+
             /// A parameterized view call carrying `FINAL` or `SAMPLE` must stay unexpanded, mirroring the
             /// skip in `ExpandParameterizedViewsMatcher`: those modifiers are valid on the view call at
             /// execution time, but attaching them to a subquery produces a form the executor rejects, so
