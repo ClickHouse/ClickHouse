@@ -46,7 +46,14 @@ cwd, which is outside the server log directory that ``prepare_logs`` globs, so
 they are uploaded only if the job attaches them by name -- collected but not
 attached, a dump dies with the runner and the abort is still undiagnosable.
 Both halves are asserted: what the collector returns, and that its result is
-attached inside the collect-logs stage to the list the result uploads.
+attached to the list the result uploads.
+
+The placement of the clear and of the attach is asserted too, because both are
+mode-dependent if bound to the wrong guard.  The attach must sit outside any
+stage-membership ``if``: per-test-coverage and local runs drop ``COLLECT_LOGS``
+entirely, so an attach inside that stage never runs for them.  The clear must
+sit outside the ``res`` guard: a setup failure skips the tests yet still reaches
+the attach, which would upload a previous job's dump as this run's.
 """
 
 import argparse
@@ -494,10 +501,11 @@ def test_stale_dumps_are_cleared_before_the_test_stage():
     source = inspect.getsource(functional_tests.main)
     stage, _, rest = source.partition("JobStages.TEST in stages")
     assert rest, "the TEST stage guard moved"
+    # The COLLECT_LOGS guard only bounds the span searched below; the attach
+    # itself now lives past it, at main()'s top level.
     clear, _, after_collect = rest.partition("JobStages.COLLECT_LOGS in stages")
     assert after_collect, "the COLLECT_LOGS stage guard moved"
-    # Clearing must happen on TEST entry, before any dump this job writes, and
-    # so necessarily before the attach in COLLECT_LOGS.
+    # Clearing must happen on TEST entry, before any dump this job writes.
     assert "unlink()" in clear, clear[:2000]
     assert "collect_stacktrace_logs" in clear, clear[:2000]
     # Presence alone lets the clear be relocated later in the stage, where it
@@ -506,6 +514,36 @@ def test_stale_dumps_are_cleared_before_the_test_stage():
         "the stale-dump clear must precede the first run_tests call, else the "
         "job deletes the dumps this run just wrote"
     )
+
+
+def test_the_stale_dump_clear_is_not_under_the_res_guard():
+    # Ordering and presence are not enough: `res` goes False on any setup
+    # failure (install, or any step of server start), and the attach is not
+    # under `res`. A clear guarded by `res` is therefore skipped exactly on the
+    # runs where a previous job's dump would still be attached, reporting an
+    # unrelated job's abort stacktrace as this run's.
+    main = _main_ast()
+    candidates = [
+        node
+        for node in ast.walk(main)
+        if isinstance(node, ast.If)
+        and "collect_stacktrace_logs" in ast.unparse(node)
+        and "unlink" in ast.unparse(node)
+    ]
+    assert candidates, (
+        "no `if` in main() guards the stale-dump clear -- it must be guarded by "
+        "stage membership, so that a resume at a later stage keeps the dump on "
+        "disk that it was resumed to collect"
+    )
+    # Innermost: any enclosing `if` also contains the clear's source, and the
+    # guard the clear actually runs under is the subject here.
+    condition = ast.unparse(max(candidates, key=lambda node: node.col_offset).test)
+    assert "res" not in condition.split(), (
+        f"the stale-dump clear is guarded by {condition!r}, which tests `res`: a "
+        "setup failure then skips the clear while still reaching the attach, so "
+        "a previous job's dump is uploaded as this run's"
+    )
+    assert "JobStages.TEST in stages" in condition, condition
 
 
 def _main_ast():
@@ -517,32 +555,70 @@ def _main_ast():
     )
 
 
+def _enclosing_statements(main, target):
+    """The statements of `main` that lexically contain `target`, outermost first.
+
+    Empty for a top-level statement of `main`.  `ast.walk` cannot answer this:
+    it flattens the tree, so it reports that a node exists but not under which
+    guards it runs -- which is the whole property here.
+    """
+    chain = []
+
+    def descend(node, ancestors):
+        for child in ast.iter_child_nodes(node):
+            if child is target:
+                chain.extend(ancestors)
+                return True
+            deeper = ancestors
+            if isinstance(child, ast.stmt):
+                deeper = ancestors + [child]
+            if descend(child, deeper):
+                return True
+        return False
+
+    descend(main, [])
+    return chain
+
+
 def test_stacktrace_dumps_reach_the_uploaded_result():
     # The tests above pin what `collect_stacktrace_logs` returns; this pins that
     # those paths are attached, which is the whole point -- a dump that is
     # collected but never attached dies with the runner.
     #
-    # Read as a tree, not as text: the property is positional, so a substring
+    # Read as a tree, not as text: the properties are positional, so a substring
     # search would keep passing with the attach moved after the result is built.
     main = _main_ast()
-    stages = [
-        node
-        for node in ast.walk(main)
-        if isinstance(node, ast.If)
-        and ast.unparse(node.test) == "JobStages.COLLECT_LOGS in stages"
-        and "Collect logs" in ast.unparse(node)
-    ]
-    assert len(stages) == 1, [node.lineno for node in stages]
     attaches = [
         node
-        for node in ast.walk(stages[0])
+        for node in ast.walk(main)
         if isinstance(node, ast.AugAssign)
         and ast.unparse(node.target) == "debug_files"
         and "collect_stacktrace_logs" in ast.unparse(node.value)
     ]
     assert attaches, (
-        "no `debug_files += collect_stacktrace_logs(...)` in the collect-logs "
-        "stage of main() -- the dumps are then collected but never attached"
+        "no `debug_files += collect_stacktrace_logs(...)` in main() -- the dumps "
+        "are then collected but never attached"
+    )
+
+    # Stage membership varies by mode: `is_per_test_coverage` and
+    # `info.is_local_run` both remove COLLECT_LOGS outright, so an attach inside
+    # that stage never runs for the 8 production per-test-coverage jobs. Asserted
+    # before the top-level check below so a stage-scoped attach names this reason.
+    enclosing = _enclosing_statements(main, attaches[0])
+    staged = [
+        node
+        for node in enclosing
+        if isinstance(node, ast.If) and "in stages" in ast.unparse(node.test)
+    ]
+    assert not staged, (
+        f"the attach is inside `if {ast.unparse(staged[0].test)}:` -- that stage "
+        "is removed entirely for per-test-coverage and local runs, so their "
+        "abort dumps are never uploaded"
+    )
+    assert not enclosing, (
+        "the attach is nested inside "
+        f"{ast.unparse(enclosing[-1]).splitlines()[0]!r} rather than being a "
+        "top-level statement of main(), so some runs skip it"
     )
 
     uploads = [

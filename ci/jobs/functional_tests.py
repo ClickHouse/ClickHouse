@@ -930,16 +930,18 @@ def main():
             results[-1].set_info(note)
         res = results[-1].is_ok()
 
+    # `clickhouse-test` appends and `git clean -ffd` keeps these gitignored
+    # paths. Outside the `res` guard below: a setup failure skips the tests but
+    # still reaches the attach, uploading a previous job's dump as this run's.
+    if JobStages.TEST in stages:
+        for stale in collect_stacktrace_logs(Utils.cwd()):
+            Path(stale).unlink()
+
     test_result = None
     if res and JobStages.TEST in stages:
         stop_watch_ = Utils.Stopwatch()
         step_name = "Tests"
         print(step_name)
-        # `clickhouse-test` appends, and these paths are gitignored so
-        # `git clean -ffd` keeps them: a dump left by a previous job in this
-        # workspace would otherwise be attached to a green run.
-        for stale in collect_stacktrace_logs(Utils.cwd()):
-            Path(stale).unlink()
 
         ft_res_processor = FTResultsProcessor(wd=temp_dir)
 
@@ -1369,9 +1371,6 @@ def main():
         )
         if test_result and CH.extra_tests_results:
             test_result.extend_sub_results(CH.extra_tests_results)
-        # Attach the abort-time stacktrace dumps: they are outside the server
-        # log dir `prepare_logs` globs, and stdout keeps only a trimmed preview.
-        debug_files += collect_stacktrace_logs(Utils.cwd())
 
     # Decide whether to block the CI pipeline on test failures
     force_ok_exit = False
@@ -1411,6 +1410,11 @@ def main():
 
     if test_result:
         test_result.sort()
+
+    # Attach the abort-time stacktrace dumps: they are outside the server log
+    # dir `prepare_logs` globs, and stdout keeps only a trimmed preview. Outside
+    # the COLLECT_LOGS stage, which per-test-coverage jobs remove entirely.
+    debug_files += collect_stacktrace_logs(Utils.cwd())
 
     R = Result.create_from(
         results=results,
