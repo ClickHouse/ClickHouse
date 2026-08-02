@@ -25,12 +25,9 @@ print(s.getsockname()[1])
 s.close()
 ")
 
-ACCEPTS="${CLICKHOUSE_TMP}/${CLICKHOUSE_TEST_UNIQUE_NAME}.accepts"
 STDERR="${CLICKHOUSE_TMP}/${CLICKHOUSE_TEST_UNIQUE_NAME}.stderr"
-: > "$ACCEPTS"
 
-# Accepts every connection and never writes a response, and appends one unbuffered byte per accept
-# so the shell can observe which option is in flight instead of guessing from a wall clock.
+# Accepts every connection and never writes a response, so every attempt there ends in a timeout.
 python3 -c "
 import socket
 srv = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
@@ -38,11 +35,9 @@ srv.setsockopt(socket.SOL_SOCKET, socket.SO_REUSEADDR, 1)
 srv.bind(('127.0.0.1', $DEAD_PORT))
 srv.listen(128)
 accepted = []
-with open('$ACCEPTS', 'ab', buffering=0) as marker:
-    while True:
-        conn, _ = srv.accept()
-        accepted.append(conn)  # hold the connection open and never answer
-        marker.write(b'.')
+while True:
+    conn, _ = srv.accept()
+    accepted.append(conn)  # hold the connection open and never answer
 " &
 DEAD_PID=$!
 
@@ -67,7 +62,7 @@ while True:
 " &
 LIVE_PID=$!
 
-trap 'kill $DEAD_PID $LIVE_PID 2>/dev/null ||:; wait $DEAD_PID $LIVE_PID 2>/dev/null ||:; rm -f "$ACCEPTS" "$STDERR"' EXIT
+trap 'kill $DEAD_PID $LIVE_PID 2>/dev/null ||:; wait $DEAD_PID $LIVE_PID 2>/dev/null ||:; rm -f "$STDERR"' EXIT
 
 wait_for_port()
 {
@@ -89,20 +84,22 @@ s.close()
 wait_for_port "$DEAD_PORT"
 wait_for_port "$LIVE_PORT"
 
-# The port probes above are accepted by the dead listener too, so counts are always taken relative to
-# a baseline read just before the query rather than from an absolute total.
-accepts()
-{
-    stat -c %s "$ACCEPTS" 2>/dev/null || echo 0
-}
-
-wait_for_accepts()
+# Counts the HTTP requests the still-running query itself has sent. The counter belongs to the
+# query's own thread group, so readiness probes, earlier groups and parallel copies cannot contribute.
+# A non-numeric reply only means "not observed yet", so it must not reach the arithmetic test below.
+wait_for_requests()
 {
     for _ in $(seq 1 600); do
-        [ "$(accepts)" -ge "$1" ] && return 0
+        SENT=$(${CLICKHOUSE_CLIENT} --query "
+            SELECT sum(ProfileEvents['ReadWriteBufferFromHTTPRequestsSent'])
+            FROM system.processes WHERE query_id = '$1'" 2>/dev/null)
+        case "$SENT" in
+            '' | *[!0-9]* ) ;;
+            * ) [ "$SENT" -ge "$2" ] && return 0 ;;
+        esac
         sleep 0.1
     done
-    echo "Timeout waiting for $1 accepts on the dead listener"
+    echo "Timeout waiting for $2 HTTP requests from query $1"
     exit 1
 }
 
@@ -161,10 +158,9 @@ outcome "$QUERY_ID_THREE"
 
 # The last option has no successor, so only reporting the cancellation from the handler itself can
 # keep the code: a check at the top of the failover loop is never reached again. The kill is fired
-# once the dead listener has accepted twice, so option 2 is in flight by observation, not by timing.
+# once the query's own request counter reaches 2, so option 2 is in flight by observation, not by timing.
 echo "--- KILL QUERY while the last option is in flight ---"
 QUERY_ID_LAST="04674_last_${CLICKHOUSE_DATABASE}"
-BEFORE_LAST=$(accepts)
 ${CLICKHOUSE_CLIENT} --query_id "$QUERY_ID_LAST" --query "
     SELECT * FROM url('http://127.0.0.1:$DEAD_PORT/a|http://127.0.0.1:$DEAD_PORT/b', 'TSV', 's String')
     SETTINGS max_execution_time = 0, http_receive_timeout = 10, http_max_tries = 1,
@@ -172,7 +168,7 @@ ${CLICKHOUSE_CLIENT} --query_id "$QUERY_ID_LAST" --query "
              send_logs_level = 'fatal'
 " > "$STDERR" 2>&1 &
 CLIENT_PID=$!
-wait_for_accepts $((BEFORE_LAST + 2))
+wait_for_requests "$QUERY_ID_LAST" 2
 kill_and_wait "$QUERY_ID_LAST"
 wait "$CLIENT_PID" ||:
 grep -c -m1 'All uri' "$STDERR" | sed 's/^0$/reported as a cancellation/;s/^1$/reported as an unreachable endpoint/'
