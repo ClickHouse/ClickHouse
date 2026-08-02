@@ -10,7 +10,7 @@ keywords: ['TTL']
   ## قواعد TTL والتحكم
 </div>
 
-سيُطبَّق TTL ***في نهاية الأمر***. ماذا يعني ذلك؟ يحدّد إعداد الجدول [`merge_with_ttl_timeout`](/ar/reference/engines/table-engines/mergetree-family/mergetree#merge_with_ttl_timeout) في `MergeTree` الحد الأدنى للتأخير بالثواني قبل تكرار عملية دمج مع delete TTL. القيمة الافتراضية هي 14400 ثانية (4 ساعات). لكن هذا ليس سوى الحد الأدنى للتأخير، وقد يستغرق الأمر وقتًا أطول قبل أن يتم تشغيل عملية الدمج الخاصة بـ delete TTL.
+سيُطبَّق TTL ***في نهاية الأمر***. ماذا يعني ذلك؟ يحدّد إعداد الجدول [`merge_with_ttl_timeout`](/ar/reference/settings/merge-tree-settings#merge_with_ttl_timeout) في `MergeTree` الحد الأدنى للتأخير بالثواني قبل تكرار عملية دمج مع delete TTL. القيمة الافتراضية هي 14400 ثانية (4 ساعات). لكن هذا ليس سوى الحد الأدنى للتأخير، وقد يستغرق الأمر وقتًا أطول قبل أن يتم تشغيل عملية الدمج الخاصة بـ delete TTL.
 
 يمكنك عرض جميع إعدادات TTL الحالية لديك (مثل `merge_with_ttl_timeout`) باستخدام هذا الاستعلام:
 
