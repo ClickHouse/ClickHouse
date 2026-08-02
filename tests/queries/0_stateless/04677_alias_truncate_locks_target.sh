@@ -32,6 +32,7 @@ $CLICKHOUSE_CLIENT -q "
 # after the truncate has queued must outwait that truncate, and the CI config caps a scan's wait at
 # 60s. The error would go to stderr and the runner fails any test that writes there.
 READ_SETTINGS="max_threads = 1, max_block_size = 100, lock_acquire_timeout = 300"
+seen_scans=""
 for i in {1..3}; do
     for j in {1..3}; do
         $CLICKHOUSE_CLIENT --query_id="scan_${i}_${j}_$CLICKHOUSE_DATABASE" \
@@ -40,12 +41,23 @@ for i in {1..3}; do
     # Waited for by outcome rather than by a fixed delay: a reader may only join the owning lock group
     # while no writer is queued, so a scan still starting when the truncate arrives queues behind it
     # instead of being one of the readers it must wait for.
+    # Accumulated across polls rather than read at one instant, and asserted: a scan that already
+    # finished has also reached the target, while a scan that never got there would leave the truncate
+    # uncontended and this cell would race nothing.
+    scans_reached=0
     for _ in {1..600}; do
-        [[ $($CLICKHOUSE_CLIENT -q "
-            SELECT count() FROM system.processes
-            WHERE query_id LIKE 'scan\_%\_$CLICKHOUSE_DATABASE' AND read_rows > 0") -ge 3 ]] && break
+        for id in $($CLICKHOUSE_CLIENT -q "
+            SELECT query_id FROM system.processes
+            WHERE query_id LIKE 'scan\_${i}\_%\_$CLICKHOUSE_DATABASE' AND read_rows > 0"); do
+            if [[ " $seen_scans " != *" $id "* ]]; then
+                seen_scans="$seen_scans $id"
+                scans_reached=$((scans_reached + 1))
+            fi
+        done
+        [[ $scans_reached -ge 3 ]] && break
         sleep 0.05
     done
+    echo -e "scans reached target\t$scans_reached"
     $CLICKHOUSE_CLIENT -q "TRUNCATE TABLE rdb_alias SETTINGS lock_acquire_timeout = 300"
     wait
     $CLICKHOUSE_CLIENT -q "INSERT INTO rdb SELECT number, repeat('x', 200) FROM numbers(300000)"
