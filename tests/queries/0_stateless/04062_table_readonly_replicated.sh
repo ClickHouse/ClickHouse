@@ -1,8 +1,11 @@
 #!/usr/bin/env bash
-# Tags: zookeeper, no-shared-merge-tree
+# Tags: zookeeper, no-shared-merge-tree, no-replicated-database
 # no-shared-merge-tree: the test checks that `table_readonly` is rejected specifically for
 # `ReplicatedMergeTree` (in its constructor); with the engine substituted by `SharedMergeTree`,
 # the `CREATE` succeeds and the subsequent queries fail with `TABLE_ALREADY_EXISTS`.
+# no-replicated-database: one assertion combines `ADD COLUMN` with `MODIFY SETTING` in a single
+# ALTER; a Replicated database rejects that in segment validation (InterpreterAlterQuery,
+# QUERY_IS_PROHIBITED) before the storage can return the expected `NOT_IMPLEMENTED`.
 
 CUR_DIR=$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)
 # shellcheck source=../shell_config.sh
