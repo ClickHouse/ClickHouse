@@ -1026,8 +1026,8 @@ RowNumber WindowTransform::findPeerGroupEnd(const RowNumber & start, bool & need
     for (RowNumber cur = start; cur.block < blocks_end_block; cur = RowNumber{cur.block + 1, 0})
     {
         const size_t block_rows = blockRowsNumber(cur);
-        const bool partition_end_in_block = partition_end.block == cur.block;
-        const size_t end_bound = partition_end_in_block ? partition_end.row : block_rows;
+        const bool partition_ends_in_block = partition_end.block == cur.block;
+        const size_t end_bound = partition_ends_in_block ? partition_end.row : block_rows;
 
         // `cur` is a valid row inside the partition, so the equal-range search has at least one row.
         chassert(cur.row < end_bound);
@@ -1045,7 +1045,7 @@ RowNumber WindowTransform::findPeerGroupEnd(const RowNumber & start, bool & need
         // in this block -- the precondition for both the partition-end and cross-block cases below.
         chassert(run_end == end_bound);
 
-        if (partition_end_in_block)
+        if (partition_ends_in_block)
             return partition_end;                   // the peer group reaches the partition end
 
         // The group extends to the end of `cur`'s block. It continues into the next block only if
