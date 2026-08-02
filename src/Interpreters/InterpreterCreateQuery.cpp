@@ -582,7 +582,12 @@ DataTypePtr InterpreterCreateQuery::getColumnType(
 }
 
 ColumnsDescription InterpreterCreateQuery::getColumnsDescription(
-    const ASTExpressionList & columns_ast, ContextPtr context_, LoadingStrictnessLevel mode, bool is_restore_from_backup, bool check_defaults_over_virtual_columns)
+    const ASTExpressionList & columns_ast,
+    ContextPtr context_,
+    LoadingStrictnessLevel mode,
+    bool is_restore_from_backup,
+    bool check_defaults_over_virtual_columns,
+    bool definition_is_fresh_user_input)
 {
     /// First, deduce implicit types.
 
@@ -637,8 +642,14 @@ ColumnsDescription InterpreterCreateQuery::getColumnsDescription(
     }
 
     bool skip_checks = LoadingStrictnessLevel::SECONDARY_CREATE <= mode;
-    bool sanity_check_compression_codecs = !skip_checks && !context_->getSettingsRef()[Setting::allow_suspicious_codecs];
-    bool allow_experimental_codecs = skip_checks || context_->getSettingsRef()[Setting::allow_experimental_codecs];
+    /// A full-definition `ATTACH TABLE t (...)` is fresh user input rather than a definition read back from
+    /// metadata stored on this server, so its column codecs have to pass the same experimental- and
+    /// suspicious-codec gates a `CREATE` passes: otherwise `ATTACH` is a way to introduce a codec the session
+    /// is not allowed to use. Only the codec gates are affected, so the checks that exist to keep an existing
+    /// table loadable (e.g. the aggregate-function version defaults) still behave as they do for `ATTACH`.
+    bool skip_codec_checks = skip_checks && !definition_is_fresh_user_input;
+    bool sanity_check_compression_codecs = !skip_codec_checks && !context_->getSettingsRef()[Setting::allow_suspicious_codecs];
+    bool allow_experimental_codecs = skip_codec_checks || context_->getSettingsRef()[Setting::allow_experimental_codecs];
 
     ColumnsDescription res;
     auto name_type_it = column_names_and_types.begin();
@@ -770,6 +781,12 @@ InterpreterCreateQuery::TableProperties InterpreterCreateQuery::getTableProperti
     TableProperties properties;
     TableLockHolder as_storage_lock;
 
+    /// A full-definition `ATTACH TABLE t UUID '...' (...)` is CREATE-like user input (a short `ATTACH TABLE t`
+    /// reading stored metadata is marked with `attach_short_syntax`), so the parts of the definition that are
+    /// gated for freshly introduced definitions — column and projection codecs — must pass the same checks as
+    /// `CREATE` instead of the metadata-load sanitization.
+    const bool is_full_definition_attach = mode == LoadingStrictnessLevel::ATTACH && !create.attach_short_syntax;
+
     if (create.columns_list)
     {
         if (create.as_table_function && (create.columns_list->indices || create.columns_list->constraints))
@@ -786,7 +803,12 @@ InterpreterCreateQuery::TableProperties InterpreterCreateQuery::getTableProperti
             const bool check_defaults_over_virtual_columns
                 = !(create.is_ordinary_view || create.is_materialized_view_with_external_target());
             properties.columns = getColumnsDescription(
-                *create.columns_list->columns, getContext(), mode, is_restore_from_backup, check_defaults_over_virtual_columns);
+                *create.columns_list->columns,
+                getContext(),
+                mode,
+                is_restore_from_backup,
+                check_defaults_over_virtual_columns,
+                /*definition_is_fresh_user_input=*/ is_full_definition_attach);
         }
 
         if (create.columns_list->indices)
@@ -810,13 +832,9 @@ InterpreterCreateQuery::TableProperties InterpreterCreateQuery::getTableProperti
 
         if (create.columns_list->projections)
         {
-            /// A full-definition `ATTACH TABLE t UUID '...' (...)` is CREATE-like user input (a short
-            /// `ATTACH TABLE t` reading stored metadata is marked with `attach_short_syntax`), so its
-            /// projections must pass the same allow-list and sanity checks as `CREATE` instead of the
-            /// metadata-load sanitization.
-            const auto projection_mode = (mode == LoadingStrictnessLevel::ATTACH && !create.attach_short_syntax)
-                ? LoadingStrictnessLevel::CREATE
-                : mode;
+            /// Projections of a full-definition `ATTACH` must pass the same allow-list and sanity checks as
+            /// `CREATE` instead of the metadata-load sanitization (see `is_full_definition_attach` above).
+            const auto projection_mode = is_full_definition_attach ? LoadingStrictnessLevel::CREATE : mode;
             for (const auto & projection_ast : create.columns_list->projections->children)
             {
                 auto projection = ProjectionDescription::getProjectionFromAST(projection_ast, properties.columns, nullptr, getContext(), projection_mode);

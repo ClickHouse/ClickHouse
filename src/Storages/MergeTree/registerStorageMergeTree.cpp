@@ -863,7 +863,10 @@ static StoragePtr create(const StorageFactory::Arguments & args)
         /// silently normalized. See `TTLDescription::getTTLFromAST`.
         bool is_metadata_load = LoadingStrictnessLevel::SECONDARY_CREATE <= args.mode && !is_full_definition_attach;
         bool allow_suspicious_ttl = is_metadata_load || local_settings[Setting::allow_suspicious_ttl_expressions];
-        bool allow_experimental_ttl_codecs = allow_suspicious_ttl || local_settings[Setting::allow_experimental_codecs];
+        /// The experimental-codec gate is tied to `allow_experimental_codecs` only:
+        /// `allow_suspicious_ttl_expressions` is an escape hatch for suspicious TTL *expressions* and must not
+        /// double as a way to use an experimental codec in `TTL ... RECOMPRESS`.
+        bool allow_experimental_ttl_codecs = is_metadata_load || local_settings[Setting::allow_experimental_codecs];
 
         if (args.storage_def->ttl_table)
         {

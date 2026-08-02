@@ -32,9 +32,7 @@ $CLICKHOUSE_CLIENT -q "SELECT count(), sum(x) FROM t_zxc_ttl_attach_full;"
 
 $CLICKHOUSE_CLIENT -q "DROP TABLE t_zxc_ttl_attach_full;"
 
-# The `allow_suspicious_ttl_expressions` escape hatch still admits the codec on a full-definition
-# ATTACH, the same way it does at CREATE.
+# `allow_suspicious_ttl_expressions` relaxes the TTL *expression* checks only: it is not a codec
+# escape hatch, so it does not admit an experimental codec on a full-definition ATTACH (nor at CREATE).
 UUID2=$($CLICKHOUSE_CLIENT -q "SELECT generateUUIDv4()")
-$CLICKHOUSE_CLIENT --allow_experimental_codecs 0 --allow_suspicious_ttl_expressions 1 --send_logs_level fatal -q "ATTACH TABLE t_zxc_ttl_attach_hatch UUID '${UUID2}' (d Date, x UInt64) ENGINE = MergeTree ORDER BY x TTL d + INTERVAL 1 DAY RECOMPRESS CODEC(ZXC);"
-$CLICKHOUSE_CLIENT -q "SELECT 'hatch ok';"
-$CLICKHOUSE_CLIENT -q "DROP TABLE t_zxc_ttl_attach_hatch;"
+$CLICKHOUSE_CLIENT --allow_experimental_codecs 0 --allow_suspicious_ttl_expressions 1 -q "ATTACH TABLE t_zxc_ttl_attach_hatch UUID '${UUID2}' (d Date, x UInt64) ENGINE = MergeTree ORDER BY x TTL d + INTERVAL 1 DAY RECOMPRESS CODEC(ZXC);" 2>&1 | grep -m 1 -o -F 'BAD_ARGUMENTS'
