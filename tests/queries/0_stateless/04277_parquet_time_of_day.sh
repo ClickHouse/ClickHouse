@@ -76,5 +76,33 @@ $CLICKHOUSE_LOCAL --session_timezone 'Asia/Shanghai' -q "
         FROM file('$DATA_FILE', 'Parquet', 't_ms Int64');
 "
 
+echo "=== Date / Date32 targets keep the legacy value ==="
+# `Date` and `Date32` are the remaining targets reachable through
+# `Reader::formOutputColumn`'s `castColumn` for a Parquet `TIME` column. They must keep
+# working and keep yielding `1970-01-01`, exactly as the pre-fix `DateTime64` decode did,
+# so that switching the decoded type to `Time64` is not backward-incompatible.
+$CLICKHOUSE_LOCAL --session_timezone 'Asia/Shanghai' -q "
+    SELECT 'Date' AS hint, toString(t_ms) AS v
+        FROM file('$DATA_FILE', 'Parquet', 't_ms Date');
+    SELECT 'Date32' AS hint, toString(t_ms) AS v
+        FROM file('$DATA_FILE', 'Parquet', 't_ms Date32');
+    SELECT 'Date (t_us)' AS hint, toString(t_us) AS v
+        FROM file('$DATA_FILE', 'Parquet', 't_us Date');
+    SELECT 'Date32 (t_us)' AS hint, toString(t_us) AS v
+        FROM file('$DATA_FILE', 'Parquet', 't_us Date32');
+"
+
+echo "=== Insert into Date / Date32 columns ==="
+$CLICKHOUSE_LOCAL --session_timezone 'Asia/Shanghai' -q "
+    CREATE OR REPLACE TABLE test_parquet_time_date (
+        d Date,
+        d32 Date32
+    ) ENGINE = Memory;
+
+    INSERT INTO test_parquet_time_date (d, d32)
+        SELECT t_ms, t_us FROM file('$DATA_FILE', 'Parquet');
+    SELECT * FROM test_parquet_time_date;
+"
+
 # Cleanup
 rm -f "$DATA_FILE"
