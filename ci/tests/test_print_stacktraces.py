@@ -41,10 +41,12 @@ and raises nothing, which is the property that made removing the pre-check
 safe.
 
 They also pin the stateless job's upload wiring
-(``ci.jobs.functional_tests.collect_stacktrace_logs``): the dumps are written
-relative to the harness cwd, which is outside the server log directory that
-``prepare_logs`` globs, so a dump that is collected but not attached dies with
-the runner and the abort is still undiagnosable.
+(``ci.jobs.functional_tests``): the dumps are written relative to the harness
+cwd, which is outside the server log directory that ``prepare_logs`` globs, so
+they are uploaded only if the job attaches them by name -- collected but not
+attached, a dump dies with the runner and the abort is still undiagnosable.
+Both halves are asserted: what the collector returns, and that its result is
+attached inside the collect-logs stage to the list the result uploads.
 """
 
 import argparse
@@ -498,3 +500,66 @@ def test_stale_dumps_are_cleared_before_the_test_stage():
     # so necessarily before the attach in COLLECT_LOGS.
     assert "unlink()" in clear, clear[:2000]
     assert "collect_stacktrace_logs" in clear, clear[:2000]
+    # Presence alone lets the clear be relocated later in the stage, where it
+    # deletes this run's own dumps instead of a previous job's.
+    assert clear.index("unlink()") < clear.index("run_tests("), (
+        "the stale-dump clear must precede the first run_tests call, else the "
+        "job deletes the dumps this run just wrote"
+    )
+
+
+def _main_ast():
+    tree = ast.parse(Path(functional_tests.__file__).read_text(encoding="utf-8"))
+    return next(
+        node
+        for node in ast.walk(tree)
+        if isinstance(node, ast.FunctionDef) and node.name == "main"
+    )
+
+
+def test_stacktrace_dumps_reach_the_uploaded_result():
+    # The tests above pin what `collect_stacktrace_logs` returns; this pins that
+    # those paths are attached, which is the whole point -- a dump that is
+    # collected but never attached dies with the runner.
+    #
+    # Read as a tree, not as text: the property is positional, so a substring
+    # search would keep passing with the attach moved after the result is built.
+    main = _main_ast()
+    stages = [
+        node
+        for node in ast.walk(main)
+        if isinstance(node, ast.If)
+        and ast.unparse(node.test) == "JobStages.COLLECT_LOGS in stages"
+        and "Collect logs" in ast.unparse(node)
+    ]
+    assert len(stages) == 1, [node.lineno for node in stages]
+    attaches = [
+        node
+        for node in ast.walk(stages[0])
+        if isinstance(node, ast.AugAssign)
+        and ast.unparse(node.target) == "debug_files"
+        and "collect_stacktrace_logs" in ast.unparse(node.value)
+    ]
+    assert attaches, (
+        "no `debug_files += collect_stacktrace_logs(...)` in the collect-logs "
+        "stage of main() -- the dumps are then collected but never attached"
+    )
+
+    uploads = [
+        node
+        for node in ast.walk(main)
+        if isinstance(node, ast.Call)
+        and ast.unparse(node.func) == "Result.create_from"
+        and any(
+            keyword.arg == "files" and "debug_files" in ast.unparse(keyword.value)
+            for keyword in node.keywords
+        )
+    ]
+    assert uploads, (
+        "no `Result.create_from(files=... debug_files ...)` in main() -- the "
+        "list the dumps are appended to is no longer the uploaded one"
+    )
+    assert attaches[0].lineno < uploads[0].lineno, (
+        f"the attach at line {attaches[0].lineno} runs after the result is "
+        f"built at line {uploads[0].lineno}, so the dumps are not uploaded"
+    )
