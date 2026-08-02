@@ -1,3 +1,8 @@
+-- Tags: no-old-analyzer
+--       no-old-analyzer: reading a column absent from one `Merge` child (the het section's
+--       `WHERE y != 0`) fills defaults only under the analyzer; the old one throws
+--       UNKNOWN_IDENTIFIER. The explicit `SETTINGS enable_analyzer = 0` lines still cover it.
+
 -- The transitive PREWHERE type-mismatch guards through local wrappers (Merge, MaterializedView,
 -- Buffer, Alias). The row-policy / Remote / lazy-proxy / subcolumn carriers live in
 -- 04652_nested_merge_prewhere_type_mismatch_2 - split so each half fits the flaky-check budget.
