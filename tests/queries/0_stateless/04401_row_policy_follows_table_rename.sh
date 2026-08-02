@@ -353,7 +353,9 @@ ${CLICKHOUSE_CLIENT} --query "CREATE ROW POLICY rmvp ON ${CLICKHOUSE_DATABASE}.r
 ${CLICKHOUSE_CLIENT} --query "CREATE MATERIALIZED VIEW ${CLICKHOUSE_DATABASE}.rmv REFRESH EVERY 1 YEAR TO ${CLICKHOUSE_DATABASE}.rmvt (id UInt64, dept String) AS SELECT 1 AS id, 'eng' AS dept UNION ALL SELECT 2, 'fin'"
 ${CLICKHOUSE_CLIENT} --query "SYSTEM WAIT VIEW ${CLICKHOUSE_DATABASE}.rmv"
 echo 'refreshed target really has both rows:'
-${CLICKHOUSE_CLIENT} --query "SELECT count() FROM ${CLICKHOUSE_DATABASE}.rmvt"
+# Read the count as metadata: `rmvp` targets ${USER}, so an admin-side data read of `rmvt` matches no
+# policy and errors under throw_on_unmatched_row_policies, which the CI config enables.
+${CLICKHOUSE_CLIENT} --query "SELECT total_rows FROM system.tables WHERE database = '${CLICKHOUSE_DATABASE}' AND name = 'rmvt'"
 echo 'after the first refresh (policy still filters -> eng only, not the fin row):'
 run_user "SELECT id FROM ${CLICKHOUSE_DATABASE}.rmvt ORDER BY id"
 ${CLICKHOUSE_CLIENT} --query "SELECT table FROM system.row_policies WHERE short_name = 'rmvp' AND database = '${CLICKHOUSE_DATABASE}'"
