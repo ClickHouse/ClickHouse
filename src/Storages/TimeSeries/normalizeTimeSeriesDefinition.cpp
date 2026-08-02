@@ -44,7 +44,9 @@ namespace TimeSeriesSetting
 {
     extern const TimeSeriesSettingsBool aggregate_min_time_and_max_time;
     extern const TimeSeriesSettingsASTFunction id_generator;
+    extern const TimeSeriesSettingsUInt64 samples_index_granularity;
     extern const TimeSeriesSettingsBool store_min_time_and_max_time;
+    extern const TimeSeriesSettingsUInt64 tags_index_granularity;
     extern const TimeSeriesSettingsMap tags_to_columns;
     extern const TimeSeriesSettingsBool use_all_tags_column_to_generate_id;
 }
@@ -710,6 +712,26 @@ namespace
     }
 
 
+    /// Adds a setting to the SETTINGS clause of an inner table's engine declaration.
+    /// An explicit value already set by the user is respected.
+    void setEngineSettingIfAbsent(ASTStorage & storage, std::string_view name, Field value)
+    {
+        if (storage.settings)
+        {
+            for (const auto & change : storage.settings->changes)
+                if (change.name == name)
+                    return;
+        }
+        else
+        {
+            auto settings_ast = make_intrusive<ASTSetQuery>();
+            settings_ast->is_standalone = false;
+            storage.set(storage.settings, settings_ast);
+        }
+
+        storage.settings->changes.push_back(SettingChange{String(name), std::move(value)});
+    }
+
     /// The TimeSeries `tags` inner table keeps the tag columns (and the `tags`/`all_tags` Maps) outside
     /// the sorting key, but they are functionally dependent on `id`, which is part of it: every group of
     /// rows that a background merge collapses together shares the same `id`, hence the same values of
@@ -722,21 +744,17 @@ namespace
         if (!storage.engine || !storage.engine->name.contains("Aggregating"))
             return;
 
-        if (storage.settings)
-        {
-            /// Respect an explicit value if the user already set it.
-            for (const auto & change : storage.settings->changes)
-                if (change.name == "allow_dimensions_outside_sorting_key")
-                    return;
-        }
-        else
-        {
-            auto settings_ast = make_intrusive<ASTSetQuery>();
-            settings_ast->is_standalone = false;
-            storage.set(storage.settings, settings_ast);
-        }
+        setEngineSettingIfAbsent(storage, "allow_dimensions_outside_sorting_key", Field(static_cast<UInt64>(1)));
+    }
 
-        storage.settings->changes.push_back(SettingChange{"allow_dimensions_outside_sorting_key", Field(static_cast<UInt64>(1))});
+    /// Sets `index_granularity` of an inner table's engine from the `samples_index_granularity`
+    /// or `tags_index_granularity` setting. Zero means the engine's default granularity.
+    void applyIndexGranularity(ASTStorage & storage, UInt64 index_granularity)
+    {
+        if (!index_granularity || !storage.engine)
+            return;
+
+        setEngineSettingIfAbsent(storage, "index_granularity", Field(index_granularity));
     }
 
     /// Makes the definition of the default engine for an inner table.
@@ -1078,10 +1096,19 @@ void normalizeTimeSeriesDefinition(ASTCreateQuery & create_query, const ContextP
                 if (!create_query.getTargetInnerEngine(kind))
                     create_query.setTargetInnerEngine(kind, generateInnerEngine(kind, settings));
 
+                if (kind == ViewTarget::Samples)
+                {
+                    if (auto * samples_engine = create_query.getTargetInnerEngine(kind))
+                        applyIndexGranularity(*samples_engine, settings[TimeSeriesSetting::samples_index_granularity]);
+                }
+
                 if (kind == ViewTarget::Tags)
                 {
                     if (auto * tags_engine = create_query.getTargetInnerEngine(kind))
+                    {
                         allowOffKeyDimensionsForAggregatingTagsEngine(*tags_engine);
+                        applyIndexGranularity(*tags_engine, settings[TimeSeriesSetting::tags_index_granularity]);
+                    }
                 }
             }
         }

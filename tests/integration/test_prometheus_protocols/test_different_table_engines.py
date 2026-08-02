@@ -314,6 +314,19 @@ def test_inner_engines():
     check()
 
 
+# Checks that the `samples_index_granularity` setting sets `index_granularity`
+# of the samples inner table.
+def test_samples_index_granularity():
+    node.query("CREATE TABLE prometheus ENGINE=TimeSeries SETTINGS samples_index_granularity = 32768")
+    check()
+
+    samples_table = node.query("SELECT _table FROM timeSeriesSamples(prometheus) LIMIT 1").strip()
+    engine_full = node.query(
+        f"SELECT engine_full FROM system.tables WHERE database = currentDatabase() AND name = '{samples_table}'"
+    )
+    assert "index_granularity = 32768" in engine_full
+
+
 # Checks that a TimeSeries table can be used to access pre-existing external tables
 # instead of its own inner tables.
 def test_external_tables():
