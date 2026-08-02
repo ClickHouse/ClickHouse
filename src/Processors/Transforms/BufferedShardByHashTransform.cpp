@@ -108,37 +108,50 @@ void BufferedShardByHashTransform::chargeColumnAndDescendants(
 {
     touched.push_back(&column);
     auto [it, is_new] = budget->shared_object_refcounts.try_emplace(&column);
-    ++it->second.refcount;
-    if (!is_new)
-        return; /// Already referenced by this or an earlier still-buffered charge; its subtree was already
-                /// registered (and billed) when it was first seen, so nothing more to add or to descend into.
+    /// The recursion below inserts into the same table, which can rehash it - that invalidates iterators, but
+    /// never references to the elements themselves, so this entry is held by reference across the descent.
+    auto & accounting = it->second;
+    ++accounting.refcount;
 
-    /// Genuinely new: nothing currently buffered accounts for this object yet. `allocatedBytes()` already
-    /// recursively sums every reachable subobject, so start from it and subtract whatever is registered - and
-    /// billed - separately below, leaving this node's own exclusive bytes (typically negligible wrapper/offset
-    /// overhead for a composite column). Recursing keeps registering subobjects regardless of whether each one
-    /// turns out to be new (billed via its own entry) or a duplicate (already billed elsewhere): either way its
-    /// bytes must not also be attributed to this node.
-    Int64 self_bytes = static_cast<Int64>(column.allocatedBytes());
+    /// The whole subtree is walked on every visit, whether or not this node is new. Bumping only this node's
+    /// refcount and stopping would leave its descendants referenced by just the *first* charge that reached
+    /// them, so releasing that charge would drop them to zero - forgetting their bytes, and their table entries,
+    /// while a later charge still keeps the very same buffers alive through this shared node. That is exactly
+    /// how a composite shared payload behaves: `ColumnConst::scatter` hands every shard the same `data` object,
+    /// and for a `ColumnConst(Array(String))` the bulk of the bytes lives in that payload's children, not in the
+    /// node the shards share. Bytes are still billed only on the first visit, so re-walking costs nothing but
+    /// the traversal.
+    ///
+    /// `allocatedBytes()` already recursively sums every reachable subobject, so a new node starts from it and
+    /// subtracts whatever is registered - and billed - separately below, leaving this node's own exclusive bytes
+    /// (typically negligible wrapper/offset overhead for a composite column). The subtraction applies to every
+    /// subobject regardless of whether it turns out to be new (billed via its own entry) or a duplicate (already
+    /// billed elsewhere): either way its bytes must not also be attributed to this node.
+    Int64 self_bytes = is_new ? static_cast<Int64>(column.allocatedBytes()) : 0;
     if (const auto * lc = typeid_cast<const ColumnLowCardinality *>(&column))
     {
         /// `forEachSubcolumn` skips a shared dictionary (the column does not own it), so it needs an explicit
         /// case; the index column is owned per shard and contributes nothing beyond what's already in
         /// `self_bytes`.
         const IColumn & dictionary = lc->getDictionary();
-        self_bytes -= static_cast<Int64>(dictionary.allocatedBytes());
+        if (is_new)
+            self_bytes -= static_cast<Int64>(dictionary.allocatedBytes());
         chargeColumnAndDescendants(dictionary, touched, total_bytes);
     }
     else
     {
         column.forEachSubcolumn([&](const auto & subcolumn)
         {
-            self_bytes -= static_cast<Int64>(subcolumn->allocatedBytes());
+            if (is_new)
+                self_bytes -= static_cast<Int64>(subcolumn->allocatedBytes());
             chargeColumnAndDescendants(*subcolumn, touched, total_bytes);
         });
     }
 
-    it->second.bytes = self_bytes;
+    if (!is_new)
+        return; /// Already billed when it was first seen; only the references had to be added.
+
+    accounting.bytes = self_bytes;
     total_bytes += self_bytes;
 }
 

@@ -7,6 +7,7 @@
 #include <utility>
 #include <vector>
 
+#include <Columns/ColumnArray.h>
 #include <Columns/ColumnConst.h>
 #include <Columns/ColumnLowCardinality.h>
 #include <Columns/ColumnString.h>
@@ -16,6 +17,7 @@
 #include <Core/Block.h>
 #include <Core/ColumnNumbers.h>
 #include <Core/ColumnWithTypeAndName.h>
+#include <DataTypes/DataTypeArray.h>
 #include <DataTypes/DataTypeLowCardinality.h>
 #include <DataTypes/DataTypeString.h>
 #include <DataTypes/DataTypeTuple.h>
@@ -985,6 +987,107 @@ TEST(BufferedShardByHashTransform, SharedPayloadAcrossSiblingScattersChargedOnce
     /// regression this guards: a per-scatter table would charge it once per scatter that holds it).
     EXPECT_GE(buffered, payload_bytes);
     EXPECT_LT(buffered, 2 * payload_bytes);
+}
+
+namespace
+{
+
+/// A one-row `Array(String)` holding `value_len` bytes of string data - a composite payload whose bytes live in
+/// the nested string column, not in the array node itself.
+ColumnPtr makeBigArrayOfStringColumn(size_t value_len)
+{
+    auto strings = ColumnString::create();
+    const std::string big_value(value_len, 'x');
+    strings->insertData(big_value.data(), big_value.size());
+
+    auto offsets = ColumnArray::ColumnOffsets::create();
+    offsets->insertValue(strings->size());
+
+    return ColumnArray::create(std::move(strings), std::move(offsets));
+}
+
+}
+
+/// A shared payload must stay charged with its WHOLE subtree for as long as any buffered chunk holds it, so the
+/// de-duplication walk has to descend through a column it has already registered, adding this chunk's reference
+/// to each descendant, instead of stopping at the shared node.
+///
+/// `ColumnConst::scatter` hands every shard chunk a fresh wrapper around the identical backing `data` object, and
+/// for a composite payload the bytes are in that object's children (`ColumnArray` exposes its offsets and nested
+/// data through `forEachSubcolumn`), not in the node the shards share. If only the shared node's refcount is
+/// bumped on the second and later visits, its children end up referenced by the FIRST shard chunk alone: as soon
+/// as that one chunk is consumed, their bytes are released and their table entries erased - although every other
+/// shard chunk still keeps the very same buffers alive through the shared payload. The counter then reports far
+/// less than is resident, and `aggregation_in_order_shuffle_max_buffered_bytes` admits read-ahead well past the
+/// cap on a query with a composite constant argument (`ColumnConst(Array(String))`,
+/// `ColumnConst(Tuple(LowCardinality(String)))`, ...).
+///
+/// This buffers one such block, has the downstream consume half of the parked shard chunks, and makes a sibling
+/// scatter register a small block, which reclaims the consumed chunks' charges. The payload is held by the shard
+/// chunks still parked, so it must still be charged in full afterwards.
+TEST(BufferedShardByHashTransform, CompositeConstPayloadStaysChargedWhileAnyShardChunkHoldsIt)
+{
+    const size_t num_shards = 8;
+    const size_t num_rows = 8000;
+    const size_t sibling_rows = 250; /// Small enough that what it adds cannot mask a lost payload.
+    const size_t value_len = 1 << 20;  /// A 1 MiB payload - dominates everything else buffered here.
+
+    ColumnPtr payload = makeBigArrayOfStringColumn(value_len);
+    const Int64 payload_bytes = static_cast<Int64>(payload->allocatedBytes());
+    ASSERT_GT(payload_bytes, static_cast<Int64>(value_len));
+
+    auto array_type = std::make_shared<DataTypeArray>(std::make_shared<DataTypeString>());
+    Block header_block{
+        ColumnWithTypeAndName(std::make_shared<DataTypeUInt64>(), "k"),
+        ColumnWithTypeAndName(array_type, "c"),
+    };
+    auto header = std::make_shared<const Block>(std::move(header_block));
+
+    Block sibling_header_block{
+        ColumnWithTypeAndName(std::make_shared<DataTypeUInt64>(), "k"),
+        ColumnWithTypeAndName(std::make_shared<DataTypeUInt64>(), "v"),
+    };
+    auto sibling_header = std::make_shared<const Block>(std::move(sibling_header_block));
+
+    /// A cap far above anything buffered here: what is under test is what the counter holds, not enforcement.
+    auto budget = std::make_shared<BufferedShardByHashBudget>();
+    const size_t max_buffered_bytes = 1ULL << 40;
+    auto scatter = makeConnectedScatter(header, num_shards, ColumnNumbers{0}, max_buffered_bytes, budget);
+    auto sibling = makeConnectedScatter(sibling_header, num_shards, ColumnNumbers{0}, max_buffered_bytes, budget);
+
+    ColumnPtr constant = ColumnConst::create(payload, num_rows);
+    scatter.source->push(Chunk(Columns{makeDistinctKeyColumn(num_rows), constant}, num_rows));
+    drive(scatter);
+
+    const Int64 bytes_while_all_parked = budget->total_buffered_bytes.load();
+    ASSERT_GE(bytes_while_all_parked, payload_bytes);
+
+    /// The downstream merges consume half of the parked shard chunks, which drops half of the references to the
+    /// shared payload - but not all of them.
+    size_t pulled = 0;
+    for (auto & sink : scatter.sinks)
+    {
+        if (pulled == num_shards / 2)
+            break;
+        if (sink->hasData())
+        {
+            sink->pull();
+            ++pulled;
+        }
+    }
+    ASSERT_EQ(pulled, num_shards / 2);
+
+    /// A sibling registering its own block reclaims the consumed chunks' charges across the whole stage.
+    sibling.source->push(
+        Chunk(Columns{makeDistinctKeyColumn(sibling_rows), makeUInt64ValueColumn(sibling_rows)}, sibling_rows));
+    ASSERT_FALSE(drive(sibling));
+
+    /// The payload is still held by the shard chunks parked in the other half of the ports, so all of it must
+    /// still be charged. Dropping the shared node's children with the first chunk released would leave the
+    /// counter with little more than the sibling's small block.
+    EXPECT_GE(budget->total_buffered_bytes.load(), payload_bytes);
+    /// ...and it is still charged exactly once, not once per chunk that reached it.
+    EXPECT_LT(budget->total_buffered_bytes.load(), 2 * payload_bytes);
 }
 
 namespace
