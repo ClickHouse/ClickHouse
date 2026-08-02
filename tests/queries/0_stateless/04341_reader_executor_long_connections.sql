@@ -51,7 +51,7 @@ SELECT
     ProfileEvents['ReaderExecutorLongConnectionOpened'] > 0,
     ProfileEvents['ReaderExecutorLongConnectionHits'] > 0,
     ProfileEvents['ReaderExecutorLongConnectionBytes'] > 0,
-    ProfileEvents['ReaderExecutorBytesFromSource'] >= ProfileEvents['ReaderExecutorRequestedBytes']
+    ProfileEvents['ReaderExecutorBytesFromSource'] >= ProfileEvents['ReaderExecutorDeliveredBytes']
 FROM system.query_log
 WHERE log_comment = '04341_long_conn_on' AND type = 'QueryFinish' AND current_database = currentDatabase()
 ORDER BY event_time_microseconds DESC LIMIT 1;
