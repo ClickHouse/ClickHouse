@@ -637,31 +637,41 @@ ColumnPtr FunctionArrayIntersect::execute(const UnpackedArrays & arrays, Mutable
 
             /// Whether this argument fills the map is the same for all of its elements, so the
             /// branch is lifted out of the loop over them - it is the hot path of the function.
+            /// Everything the loop needs is read into locals first: the loop must not go through
+            /// the captured references of this lambda on every element.
             auto process_elements = [&]<bool fill_map>()
             {
-                for (auto i : collections::range(prev_off[arg_num], off))
+                const ColumnType * column = columns[arg_num];
+                const NullMap * arg_null_map = arg.null_map;
+                const NullMap * arg_overflow_mask = arg.overflow_mask;
+                const size_t counter = arg_index;
+                const size_t begin = prev_off[arg_num];
+                const size_t end = off;
+                bool arg_has_nullable = false;
+
+                for (size_t i = begin; i < end; ++i)
                 {
-                    if (arg.null_map && (*arg.null_map)[i])
+                    if (arg_null_map && (*arg_null_map)[i])
                     {
-                        current_has_nullable = true;
+                        arg_has_nullable = true;
                         continue;
                     }
 
-                    if (arg.overflow_mask && (*arg.overflow_mask)[i] != 0)
+                    if (arg_overflow_mask && (*arg_overflow_mask)[i] != 0)
                         continue;
 
                     typename Map::mapped_type * value = nullptr;
 
                     if constexpr (is_numeric_column)
                     {
-                        value = findOrInsert<fill_map>(map, columns[arg_num]->getElement(i));
+                        value = findOrInsert<fill_map>(map, column->getElement(i));
                     }
                     else if constexpr (std::is_same_v<ColumnType, ColumnString> || std::is_same_v<ColumnType, ColumnFixedString>)
-                        value = findOrInsert<fill_map>(map, columns[arg_num]->getDataAt(i));
+                        value = findOrInsert<fill_map>(map, column->getDataAt(i));
                     else
                     {
                         const char * data = nullptr;
-                        value = findOrInsert<fill_map>(map, columns[arg_num]->serializeValueIntoArena(i, arena, data, nullptr));
+                        value = findOrInsert<fill_map>(map, column->serializeValueIntoArena(i, arena, data, nullptr));
                     }
 
                     /// Here we count the number of element appearances, but no more than once per array.
@@ -670,12 +680,15 @@ ColumnPtr FunctionArrayIntersect::execute(const UnpackedArrays & arrays, Mutable
                     /// means "present everywhere".
                     if constexpr (fill_map)
                     {
-                        if (*value == arg_index)
+                        if (*value == counter)
                             ++(*value);
                     }
-                    else if (value && *value == arg_index)
+                    else if (value && *value == counter)
                         ++(*value);
                 }
+
+                if (arg_has_nullable)
+                    current_has_nullable = true;
             };
 
             /// For the intersection only the first processed argument populates the map.
