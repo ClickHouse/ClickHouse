@@ -1,5 +1,10 @@
 #!/usr/bin/env bash
-# Tags: no-fasttest, no-replicated-database, no-shared-merge-tree, no-object-storage, no-random-merge-tree-settings
+# Tags: no-fasttest, no-replicated-database, no-shared-merge-tree, no-object-storage, no-random-merge-tree-settings, no-random-detach
+#
+# `no-random-detach`: `DETACH PARTITION` / `ATTACH PARTITION` re-attaches the part under a new
+# block number, so the empty leftover part the drop left behind is no longer covered by anything.
+# Reloading the table (a random `DETACH`/`ATTACH`, or a plain server restart) makes that leftover
+# part active again, and the `system.parts` assertion below then sees a second, empty active part.
 #
 # `no-fasttest`: local-disk part-file surgery is not reliably available on the Fast test macOS runner.
 # `no-object-storage` / `no-shared-merge-tree` / `no-replicated-database`: the fixture edits real
