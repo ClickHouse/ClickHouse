@@ -9,7 +9,10 @@ CUR_DIR=$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)
 DATA_FILE="${CLICKHOUSE_TMP}/${CLICKHOUSE_TEST_UNIQUE_NAME}_data.parquet"
 CORRUPT_FILE="${CLICKHOUSE_TMP}/${CLICKHOUSE_TEST_UNIQUE_NAME}_corrupt.parquet"
 LEGACY_FILE="${CLICKHOUSE_TMP}/${CLICKHOUSE_TEST_UNIQUE_NAME}_legacy.parquet"
-trap 'rm -f "${DATA_FILE}" "${CORRUPT_FILE}" "${LEGACY_FILE}"' EXIT
+PAGE_FILE="${CLICKHOUSE_TMP}/${CLICKHOUSE_TEST_UNIQUE_NAME}_pages.parquet"
+CORRUPT_PAGE_FILE="${CLICKHOUSE_TMP}/${CLICKHOUSE_TEST_UNIQUE_NAME}_corrupt_pages.parquet"
+LEGACY_PAGE_FILE="${CLICKHOUSE_TMP}/${CLICKHOUSE_TEST_UNIQUE_NAME}_legacy_pages.parquet"
+trap 'rm -f "${DATA_FILE}" "${CORRUPT_FILE}" "${LEGACY_FILE}" "${PAGE_FILE}" "${CORRUPT_PAGE_FILE}" "${LEGACY_PAGE_FILE}"' EXIT
 
 # Four row groups whose numeric ranges are disjoint but whose little-endian byte ranges are not
 # useful as numeric bounds. The last group also reaches the maximum value of each type.
@@ -36,8 +39,27 @@ ${CLICKHOUSE_LOCAL} --query="
     FORMAT Parquet
 " > "${DATA_FILE}"
 
+# One row group with 16 pages per wide-integer column. The final nullable page is all null.
+${CLICKHOUSE_LOCAL} --query="
+    SELECT
+        bitShiftLeft(toUInt128(1), 127) + toUInt128(number) AS u128,
+        bitShiftLeft(toUInt256(1), 255) + toUInt256(number) AS u256,
+        if(number >= 3840, NULL, u256)::Nullable(UInt256) AS u256_nullable,
+        number AS n
+    FROM numbers(4096)
+    SETTINGS
+        output_format_parquet_row_group_size = 100000,
+        output_format_parquet_data_page_size = 4096,
+        output_format_parquet_batch_size = 256,
+        output_format_parquet_max_dictionary_size = 0,
+        output_format_parquet_write_page_index = 1,
+        max_block_size = 1000000
+    FORMAT Parquet
+" > "${PAGE_FILE}"
+
 STRUCTURE="u128 UInt128, u256 UInt256, u128_nullable Nullable(UInt128), u256_nullable Nullable(UInt256), n UInt64"
 RAW_STRUCTURE="u128 FixedString(16), u256 FixedString(32), u128_nullable Nullable(FixedString(16)), u256_nullable Nullable(FixedString(32)), n UInt64"
+PAGE_STRUCTURE="u128 UInt128, u256 UInt256, u256_nullable Nullable(UInt256), n UInt64"
 
 echo "round trip and numeric boundary values"
 ${CLICKHOUSE_LOCAL} --multiquery --query="
@@ -69,6 +91,27 @@ profile_row_groups() {
     '
 }
 
+profile_pruned_pages() {
+    local query="$1"
+    local profile
+    if ! profile=$(${CLICKHOUSE_LOCAL} \
+            --input_format_parquet_filter_push_down=1 \
+            --input_format_parquet_page_filter_push_down=1 \
+            --input_format_parquet_bloom_filter_push_down=0 \
+            --input_format_parquet_use_offset_index=0 \
+            --optimize_move_to_prewhere=0 \
+            --use_cache_for_count_from_files=0 \
+            --print-profile-events \
+            --query="${query} FORMAT Null" 2>&1); then
+        echo "${profile}" >&2
+        return 1
+    fi
+    awk '
+        /ParquetPrunedPages:/ { pruned += $(NF-1) }
+        END { print "pruned=" pruned+0 }
+    ' <<< "${profile}"
+}
+
 echo "UInt128 numeric statistics prune three row groups"
 profile_row_groups "
     SELECT * FROM file('${DATA_FILE}', Parquet, '${STRUCTURE}')
@@ -96,9 +139,47 @@ profile_row_groups "
     SELECT * FROM file('${DATA_FILE}', Parquet, '${STRUCTURE}')
     WHERE u256_nullable = toUInt256(1)"
 
+echo "UInt128 numeric page statistics prune fifteen pages"
+${CLICKHOUSE_LOCAL} --query="
+    SELECT groupArray(n)
+    FROM file('${PAGE_FILE}', Parquet, '${PAGE_STRUCTURE}')
+    WHERE u128 = bitShiftLeft(toUInt128(1), 127) + toUInt128(2100)
+"
+profile_pruned_pages "
+    SELECT * FROM file('${PAGE_FILE}', Parquet, '${PAGE_STRUCTURE}')
+    WHERE u128 = bitShiftLeft(toUInt128(1), 127) + toUInt128(2100)"
+
+echo "UInt256 numeric page statistics prune fifteen pages"
+${CLICKHOUSE_LOCAL} --query="
+    SELECT groupArray(n)
+    FROM file('${PAGE_FILE}', Parquet, '${PAGE_STRUCTURE}')
+    WHERE u256 = bitShiftLeft(toUInt256(1), 255) + toUInt256(2100)
+"
+profile_pruned_pages "
+    SELECT * FROM file('${PAGE_FILE}', Parquet, '${PAGE_STRUCTURE}')
+    WHERE u256 = bitShiftLeft(toUInt256(1), 255) + toUInt256(2100)"
+
+echo "nullable UInt256 numeric page statistics include an all-null page"
+${CLICKHOUSE_LOCAL} --query="
+    SELECT groupArray(n)
+    FROM file('${PAGE_FILE}', Parquet, '${PAGE_STRUCTURE}')
+    WHERE u256_nullable = bitShiftLeft(toUInt256(1), 255) + toUInt256(300)
+"
+profile_pruned_pages "
+    SELECT * FROM file('${PAGE_FILE}', Parquet, '${PAGE_STRUCTURE}')
+    WHERE u256_nullable = bitShiftLeft(toUInt256(1), 255) + toUInt256(300)"
+
+echo "files without numeric page statistics retain legacy behavior"
+cp "${PAGE_FILE}" "${LEGACY_PAGE_FILE}"
+perl -0pi -e 's/clickhouse\.wide_integer_page_statistics/xlickhouse.wide_integer_page_statistics/g' "${LEGACY_PAGE_FILE}"
+profile_pruned_pages "
+    SELECT * FROM file('${LEGACY_PAGE_FILE}', Parquet, '${PAGE_STRUCTURE}')
+    WHERE u128 = bitShiftLeft(toUInt128(1), 127) + toUInt128(2100)"
+
 echo "files without numeric statistics retain legacy behavior"
 cp "${DATA_FILE}" "${LEGACY_FILE}"
 perl -0pi -e 's/clickhouse\.wide_integer_statistics/xlickhouse.wide_integer_statistics/g' "${LEGACY_FILE}"
+perl -0pi -e 's/clickhouse\.wide_integer_page_statistics/xlickhouse.wide_integer_page_statistics/g' "${LEGACY_FILE}"
 ${CLICKHOUSE_LOCAL} --query="
     SELECT count()
     FROM file('${LEGACY_FILE}', Parquet, '${STRUCTURE}')
@@ -118,6 +199,26 @@ if error=$(${CLICKHOUSE_LOCAL} --query="
 " 2>&1); then
     echo "unexpected success"
 elif grep -q 'Unsupported.*wide_integer_statistics.*version' <<< "${error}"; then
+    echo "rejected"
+else
+    echo "${error}"
+fi
+
+echo "malformed numeric page statistics are rejected"
+cp "${PAGE_FILE}" "${CORRUPT_PAGE_FILE}"
+perl -0pi -e 's/1;UInt128;/9;UInt128;/g' "${CORRUPT_PAGE_FILE}"
+if error=$(${CLICKHOUSE_LOCAL} \
+    --input_format_parquet_filter_push_down=0 \
+    --input_format_parquet_page_filter_push_down=1 \
+    --input_format_parquet_bloom_filter_push_down=0 \
+    --query="
+        SELECT *
+        FROM file('${CORRUPT_PAGE_FILE}', Parquet, '${PAGE_STRUCTURE}')
+        WHERE u128 = bitShiftLeft(toUInt128(1), 127) + toUInt128(2100)
+        FORMAT Null
+    " 2>&1); then
+    echo "unexpected success"
+elif grep -q 'Unsupported.*wide_integer_page_statistics.*version' <<< "${error}"; then
     echo "rejected"
 else
     echo "${error}"

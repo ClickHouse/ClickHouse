@@ -25,7 +25,7 @@
 #include <Storages/MergeTree/MergeTreeRangeReader.h>
 #include <Storages/MergeTree/MergeTreeSplitPrewhereIntoReadSteps.h>
 
-#include <array>
+#include <limits>
 #include <mutex>
 #include <lz4.h>
 #include <arrow/util/crc32.h>
@@ -48,17 +48,24 @@ namespace ProfileEvents
 {
     extern const Event ParquetRowsFilterExpression;
     extern const Event ParquetColumnsFilterExpression;
+    extern const Event ParquetPrunedPages;
 }
 
 namespace DB::Parquet
 {
 
 inline constexpr std::string_view WIDE_INTEGER_STATISTICS_KEY = "clickhouse.wide_integer_statistics";
+inline constexpr std::string_view WIDE_INTEGER_PAGE_STATISTICS_KEY = "clickhouse.wide_integer_page_statistics";
 
 using WideIntegerStatisticsType = PageDecoderInfo::WideIntegerStatisticsType;
+using WideIntegerStatistics = std::vector<std::optional<std::pair<Field, Field>>>;
 
-static std::optional<std::pair<Field, Field>> getWideIntegerStatistics(
-    const parq::ColumnMetaData & column_meta, WideIntegerStatisticsType expected_type)
+static std::optional<WideIntegerStatistics> parseWideIntegerStatistics(
+    const parq::ColumnMetaData & column_meta,
+    std::string_view metadata_key,
+    WideIntegerStatisticsType expected_type,
+    size_t num_ranges,
+    bool allow_empty_ranges)
 {
     if (expected_type == WideIntegerStatisticsType::None || !column_meta.__isset.key_value_metadata)
         return std::nullopt;
@@ -66,20 +73,22 @@ static std::optional<std::pair<Field, Field>> getWideIntegerStatistics(
     const parq::KeyValue * metadata = nullptr;
     for (const auto & key_value : column_meta.key_value_metadata)
     {
-        if (key_value.key != WIDE_INTEGER_STATISTICS_KEY)
+        if (key_value.key != metadata_key)
             continue;
         if (metadata)
-            throw Exception(ErrorCodes::INCORRECT_DATA, "Duplicate `{}` metadata", WIDE_INTEGER_STATISTICS_KEY);
+            throw Exception(ErrorCodes::INCORRECT_DATA, "Duplicate `{}` metadata", metadata_key);
         metadata = &key_value;
     }
 
     if (!metadata)
         return std::nullopt;
     if (!metadata->__isset.value)
-        throw Exception(ErrorCodes::INCORRECT_DATA, "Metadata `{}` has no value", WIDE_INTEGER_STATISTICS_KEY);
+        throw Exception(ErrorCodes::INCORRECT_DATA, "Metadata `{}` has no value", metadata_key);
+    if (num_ranges > (std::numeric_limits<size_t>::max() - 2) / 2)
+        throw Exception(ErrorCodes::INCORRECT_DATA, "Too many ranges in `{}` metadata", metadata_key);
 
     std::string_view value = metadata->value;
-    std::array<std::string_view, 4> fields;
+    std::vector<std::string_view> fields(num_ranges * 2 + 2);
     size_t begin = 0;
     for (size_t i = 0; i < fields.size(); ++i)
     {
@@ -87,12 +96,12 @@ static std::optional<std::pair<Field, Field>> getWideIntegerStatistics(
         if (i + 1 == fields.size())
         {
             if (end != std::string_view::npos)
-                throw Exception(ErrorCodes::INCORRECT_DATA, "Invalid `{}` metadata value", WIDE_INTEGER_STATISTICS_KEY);
+                throw Exception(ErrorCodes::INCORRECT_DATA, "Invalid `{}` metadata value", metadata_key);
             end = value.size();
         }
         else if (end == std::string_view::npos)
         {
-            throw Exception(ErrorCodes::INCORRECT_DATA, "Invalid `{}` metadata value", WIDE_INTEGER_STATISTICS_KEY);
+            throw Exception(ErrorCodes::INCORRECT_DATA, "Invalid `{}` metadata value", metadata_key);
         }
 
         fields[i] = value.substr(begin, end - begin);
@@ -103,27 +112,50 @@ static std::optional<std::pair<Field, Field>> getWideIntegerStatistics(
         throw Exception(
             ErrorCodes::INCORRECT_DATA,
             "Unsupported `{}` metadata version `{}`",
-            WIDE_INTEGER_STATISTICS_KEY,
+            metadata_key,
             fields[0]);
 
-    auto parse = [&]<typename T>(std::string_view expected_name) -> std::pair<Field, Field>
+    auto parse = [&]<typename T>(std::string_view expected_name) -> WideIntegerStatistics
     {
         if (fields[1] != expected_name)
             throw Exception(
                 ErrorCodes::INCORRECT_DATA,
                 "Metadata `{}` has type `{}`, expected `{}`",
-                WIDE_INTEGER_STATISTICS_KEY,
+                metadata_key,
                 fields[1],
                 expected_name);
 
-        T min = parseFromString<T>(fields[2]);
-        T max = parseFromString<T>(fields[3]);
-        if (min > max)
-            throw Exception(
-                ErrorCodes::INCORRECT_DATA,
-                "Metadata `{}` has minimum greater than maximum",
-                WIDE_INTEGER_STATISTICS_KEY);
-        return {Field(min), Field(max)};
+        WideIntegerStatistics result;
+        result.reserve(num_ranges);
+        for (size_t range_idx = 0; range_idx < num_ranges; ++range_idx)
+        {
+            std::string_view min_string = fields[range_idx * 2 + 2];
+            std::string_view max_string = fields[range_idx * 2 + 3];
+            if (min_string.empty() || max_string.empty())
+            {
+                if (allow_empty_ranges && min_string.empty() && max_string.empty())
+                {
+                    result.emplace_back(std::nullopt);
+                    continue;
+                }
+                throw Exception(
+                    ErrorCodes::INCORRECT_DATA,
+                    "Metadata `{}` has an incomplete range {}",
+                    metadata_key,
+                    range_idx);
+            }
+
+            T min = parseFromString<T>(min_string);
+            T max = parseFromString<T>(max_string);
+            if (min > max)
+                throw Exception(
+                    ErrorCodes::INCORRECT_DATA,
+                    "Metadata `{}` has minimum greater than maximum for range {}",
+                    metadata_key,
+                    range_idx);
+            result.emplace_back(std::pair<Field, Field>{Field(min), Field(max)});
+        }
+        return result;
     };
 
     switch (expected_type)
@@ -133,6 +165,39 @@ static std::optional<std::pair<Field, Field>> getWideIntegerStatistics(
         case WideIntegerStatisticsType::None: break;
     }
     throw Exception(ErrorCodes::LOGICAL_ERROR, "Unexpected wide integer statistics type");
+}
+
+static std::optional<std::pair<Field, Field>> getWideIntegerStatistics(
+    const parq::ColumnMetaData & column_meta, WideIntegerStatisticsType expected_type)
+{
+    auto statistics = parseWideIntegerStatistics(
+        column_meta, WIDE_INTEGER_STATISTICS_KEY, expected_type, 1, /*allow_empty_ranges=*/ false);
+    if (!statistics)
+        return std::nullopt;
+    return std::move(statistics->front());
+}
+
+static bool hasWideIntegerPageStatistics(
+    const parq::ColumnMetaData & column_meta, WideIntegerStatisticsType expected_type)
+{
+    if (expected_type == WideIntegerStatisticsType::None || !column_meta.__isset.key_value_metadata)
+        return false;
+
+    return std::any_of(
+        column_meta.key_value_metadata.begin(),
+        column_meta.key_value_metadata.end(),
+        [](const parq::KeyValue & key_value) { return key_value.key == WIDE_INTEGER_PAGE_STATISTICS_KEY; });
+}
+
+static std::optional<WideIntegerStatistics> getWideIntegerPageStatistics(
+    const parq::ColumnMetaData & column_meta, WideIntegerStatisticsType expected_type, size_t num_pages)
+{
+    return parseWideIntegerStatistics(
+        column_meta,
+        WIDE_INTEGER_PAGE_STATISTICS_KEY,
+        expected_type,
+        num_pages,
+        /*allow_empty_ranges=*/ true);
 }
 
 static Field getStatisticsDefault(const Reader::PrimitiveColumnInfo & column_info)
@@ -579,9 +644,24 @@ void Reader::prefilterAndInitRowGroups(const std::optional<std::unordered_set<UI
                 continue;
             const OutputColumnInfo & output_info = output_columns[output_idx.value()];
 
-            if (!output_info.is_primitive || !primitive_columns[output_info.primitive_start].decoder.allow_stats)
+            if (!output_info.is_primitive)
                 continue;
-            primitive_columns[output_info.primitive_start].column_index_condition = key_condition.get();
+
+            size_t primitive_idx = output_info.primitive_start;
+            PrimitiveColumnInfo & column_info = primitive_columns[primitive_idx];
+            bool has_usable_statistics = column_info.decoder.allow_stats
+                || std::any_of(
+                    row_groups.begin(),
+                    row_groups.end(),
+                    [&](const RowGroup & row_group)
+                    {
+                        return hasWideIntegerPageStatistics(
+                            row_group.columns.at(primitive_idx).meta->meta_data,
+                            column_info.decoder.wide_integer_statistics_type);
+                    });
+            if (!has_usable_statistics)
+                continue;
+            column_info.column_index_condition = key_condition.get();
         }
     }
 
@@ -817,7 +897,12 @@ void Reader::initializePrefetches()
             }
 
             /// Column index.
-            column.use_column_index = primitive_columns[column_idx].column_index_condition
+            const PrimitiveColumnInfo & column_info = primitive_columns[column_idx];
+            bool has_usable_statistics = column_info.decoder.allow_stats
+                || hasWideIntegerPageStatistics(
+                    column.meta->meta_data, column_info.decoder.wide_integer_statistics_type);
+            column.use_column_index = column_info.column_index_condition
+                && has_usable_statistics
                 && column.offset_index_prefetch
                 && column.meta->__isset.column_index_offset && column.meta->__isset.column_index_length;
             if (column.use_column_index)
@@ -1640,8 +1725,12 @@ void Reader::applyColumnIndex(ColumnChunk & column, const PrimitiveColumnInfo & 
             (column_index.__isset.null_counts && column_index.null_counts.size() != num_pages))
             throw Exception(ErrorCodes::INCORRECT_DATA, "Unexpected number of pages: {} null_pages, {} null_counts, {} min_values, {} max_values, {} pages in offset index", column_index.null_pages.size(), column_index.null_counts.size(), column_index.min_values.size(), column_index.max_values.size(), num_pages);
 
+        auto wide_integer_page_statistics = getWideIntegerPageStatistics(
+            column.meta->meta_data, column_info.decoder.wide_integer_statistics_type, num_pages);
+
         Hyperrectangle hyperrectangle(extended_sample_block.columns(), Range::createWholeUniverse());
         size_t prev_row_idx = 0; // start of the latest range of rows that pass filter
+        size_t num_pruned_pages = 0;
         for (size_t page_idx = 0; page_idx < num_pages; ++page_idx)
         {
             Range & range = hyperrectangle[column_info.idx_in_output_block];
@@ -1649,6 +1738,15 @@ void Reader::applyColumnIndex(ColumnChunk & column, const PrimitiveColumnInfo & 
 
             bool always_null = !column_index.null_pages.empty() && column_index.null_pages[page_idx];
             bool can_be_null = !column_index.__isset.null_counts || column_index.null_counts[page_idx] != 0;
+            const std::optional<std::pair<Field, Field>> * wide_integer_page_range
+                = wide_integer_page_statistics ? &wide_integer_page_statistics->at(page_idx) : nullptr;
+
+            if (wide_integer_page_range && always_null != !wide_integer_page_range->has_value())
+                throw Exception(
+                    ErrorCodes::INCORRECT_DATA,
+                    "Metadata `{}` disagrees with null_pages for page {}",
+                    WIDE_INTEGER_PAGE_STATISTICS_KEY,
+                    page_idx);
 
             if (nullable && always_null)
             {
@@ -1660,8 +1758,16 @@ void Reader::applyColumnIndex(ColumnChunk & column, const PrimitiveColumnInfo & 
             }
             else
             {
-                column_info.decoder.decodeField(column_index.min_values[page_idx], /*is_max=*/ false, range.left);
-                column_info.decoder.decodeField(column_index.max_values[page_idx], /*is_max=*/ true, range.right);
+                if (wide_integer_page_range && wide_integer_page_range->has_value())
+                {
+                    range.left = wide_integer_page_range->value().first;
+                    range.right = wide_integer_page_range->value().second;
+                }
+                else
+                {
+                    column_info.decoder.decodeField(column_index.min_values[page_idx], /*is_max=*/ false, range.left);
+                    column_info.decoder.decodeField(column_index.max_values[page_idx], /*is_max=*/ true, range.right);
+                }
 
                 adjustRangeFromIndexIfNeeded(range, column_info, can_be_null);
             }
@@ -1671,6 +1777,7 @@ void Reader::applyColumnIndex(ColumnChunk & column, const PrimitiveColumnInfo & 
 
             if (!passes_filter)
             {
+                ++num_pruned_pages;
                 size_t start_row = column.offset_index.page_locations[page_idx].first_row_index;
                 size_t end_row = page_idx + 1 < num_pages ? column.offset_index.page_locations[page_idx + 1].first_row_index : row_group.meta->num_rows;
                 chassert(end_row > start_row); // validated in decodeOffsetIndex
@@ -1682,6 +1789,8 @@ void Reader::applyColumnIndex(ColumnChunk & column, const PrimitiveColumnInfo & 
 
         if (size_t(row_group.meta->num_rows) > prev_row_idx)
             column.row_ranges_after_column_index.emplace_back(prev_row_idx, row_group.meta->num_rows);
+
+        ProfileEvents::increment(ProfileEvents::ParquetPrunedPages, num_pruned_pages);
     }
     catch (Exception & e)
     {

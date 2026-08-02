@@ -199,6 +199,7 @@ struct StatisticsFixedStringCopy
 };
 
 inline constexpr std::string_view WIDE_INTEGER_STATISTICS_KEY = "clickhouse.wide_integer_statistics";
+inline constexpr std::string_view WIDE_INTEGER_PAGE_STATISTICS_KEY = "clickhouse.wide_integer_page_statistics";
 
 /// Parquet orders an unannotated `FIXED_LEN_BYTE_ARRAY` lexicographically, while ClickHouse's
 /// legacy wide-integer payload is little-endian. Keep standards-compliant physical statistics and
@@ -217,7 +218,7 @@ struct StatisticsWideUnsignedInteger
     {
         physical.add(a);
 
-        T value;
+        T value {};
         memcpy(&value, a.ptr, sizeof(value));
         if (empty)
         {
@@ -268,6 +269,20 @@ struct StatisticsWideUnsignedInteger
 
         constexpr std::string_view type_name = std::is_same_v<T, UInt128> ? "UInt128" : "UInt256";
         return fmt::format("1;{};{};{}", type_name, DB::toString(min), DB::toString(max));
+    }
+
+    void appendWideIntegerPageStatisticsMetadata(String & metadata) const
+    {
+        constexpr std::string_view type_name = std::is_same_v<T, UInt128> ? "UInt128" : "UInt256";
+        if (metadata.empty())
+            metadata = fmt::format("1;{}", type_name);
+
+        metadata += ';';
+        if (!empty)
+            metadata += DB::toString(min);
+        metadata += ';';
+        if (!empty)
+            metadata += DB::toString(max);
     }
 };
 
@@ -939,6 +954,7 @@ void writeColumnImpl(
 
     typename Converter::Statistics page_statistics;
     typename Converter::Statistics total_statistics;
+    String wide_integer_page_statistics_metadata;
 
     bool use_dictionary = options.use_dictionary_encoding && !s.is_bool;
 
@@ -1087,6 +1103,9 @@ void writeColumnImpl(
                 s.indexes.column_index.null_counts.emplace_back(page_stats.null_count);
             }
             s.indexes.column_index.null_pages.push_back(all_null_page);
+
+            if constexpr (requires { page_statistics.appendWideIntegerPageStatisticsMetadata(wide_integer_page_statistics_metadata); })
+                page_statistics.appendWideIntegerPageStatisticsMetadata(wide_integer_page_statistics_metadata);
         }
 
         total_statistics.merge(page_statistics);
@@ -1236,6 +1255,7 @@ void writeColumnImpl(
                 use_dictionary = false;
 
                 s.indexes = {};
+                wide_integer_page_statistics_metadata.clear();
                 /// (no need to clear hashes_for_bloom_filter)
 
 #ifndef NDEBUG
@@ -1282,6 +1302,15 @@ void writeColumnImpl(
                 s.column_chunk.meta_data.__isset.key_value_metadata = true;
             }
         }
+    }
+
+    if (!wide_integer_page_statistics_metadata.empty())
+    {
+        parq::KeyValue key_value;
+        key_value.__set_key(String(WIDE_INTEGER_PAGE_STATISTICS_KEY));
+        key_value.__set_value(wide_integer_page_statistics_metadata);
+        s.column_chunk.meta_data.key_value_metadata.push_back(std::move(key_value));
+        s.column_chunk.meta_data.__isset.key_value_metadata = true;
     }
 
     /// Report which encodings we've used.

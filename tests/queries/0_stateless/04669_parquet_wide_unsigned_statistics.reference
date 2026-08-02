@@ -13,8 +13,21 @@ nullable UInt128 statistics
 all-null UInt256 row group and numeric statistics prune every row group
 0
 read=0 pruned=4
+UInt128 numeric page statistics prune fifteen pages
+[2100]
+pruned=15
+UInt256 numeric page statistics prune fifteen pages
+[2100]
+pruned=15
+nullable UInt256 numeric page statistics include an all-null page
+[300]
+pruned=15
+files without numeric page statistics retain legacy behavior
+pruned=0
 files without numeric statistics retain legacy behavior
 100
 read=4 pruned=0
 malformed numeric statistics are rejected
+rejected
+malformed numeric page statistics are rejected
 rejected

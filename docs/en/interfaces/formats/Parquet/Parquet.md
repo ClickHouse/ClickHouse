@@ -73,10 +73,13 @@ When writing Parquet file, data types that don't have a matching Parquet type ar
 
 For `UInt128` and `UInt256`, ClickHouse also writes versioned numeric minimum and maximum values to
 the `clickhouse.wide_integer_statistics` key in each non-empty column chunk's key-value metadata.
-The standard Parquet statistics remain ordered by the raw little-endian byte representation, as
-required for an unannotated `FIXED_LEN_BYTE_ARRAY`. ClickHouse uses the additional numeric bounds to
-skip row groups for predicates on columns explicitly read as `UInt128` or `UInt256`. Other Parquet
-clients and older ClickHouse versions ignore this metadata and continue to read the same payload.
+When the page index is enabled, the `clickhouse.wide_integer_page_statistics` key contains the same
+kind of bounds for every data page. Its value is `1;<type>;<page-0-min>;<page-0-max>;...`, with an
+empty minimum and maximum for an all-null page. The standard Parquet row-group and page statistics
+remain ordered by the raw little-endian byte representation, as required for an unannotated
+`FIXED_LEN_BYTE_ARRAY`. ClickHouse uses the additional numeric bounds to skip row groups and pages
+for predicates on columns explicitly read as `UInt128` or `UInt256`. Other Parquet clients and
+older ClickHouse versions ignore this metadata and continue to read the same payload.
 
 Arrays can be nested and can have a value of `Nullable` type as an argument. `Tuple` and `Map` types can also be nested.
 

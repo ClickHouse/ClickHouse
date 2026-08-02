@@ -168,8 +168,8 @@ struct PageDecoderInfo
     bool allow_stats = false;
 
     /// ClickHouse writes wide integers as little-endian `FIXED_LEN_BYTE_ARRAY`, whose numeric
-    /// order differs from the physical Parquet byte order. Numeric row-group bounds are therefore
-    /// stored separately in column-chunk key/value metadata.
+    /// order differs from the physical Parquet byte order. Numeric row-group and page bounds are
+    /// therefore stored separately in column-chunk key/value metadata.
     WideIntegerStatisticsType wide_integer_statistics_type = WideIntegerStatisticsType::None;
 
     /// True if we can decompress the whole page directly into IColumn's memory.
