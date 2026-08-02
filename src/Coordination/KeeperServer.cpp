@@ -25,6 +25,7 @@
 #include <libnuraft/peer.hxx>
 #include <libnuraft/raft_server.hxx>
 #include <libnuraft/snapshot_sync_ctx.hxx>
+#include <libnuraft/timer_task.hxx>
 #include <Poco/Util/AbstractConfiguration.h>
 #include <Poco/Util/Application.h>
 #include <Common/Exception.h>
@@ -692,6 +693,7 @@ void KeeperServer::launchRaftServer(const Poco::Util::AbstractConfiguration & co
     KeeperRaftServer::set_raft_limits(raft_limits);
 
     raft_instance->start_server(init_options.skip_initial_election_timeout_);
+    startLeaderUnavailablePolling(params.heart_beat_interval_);
 
     nuraft::ptr<nuraft::raft_server> cast_raft_server = raft_instance;
 
@@ -734,6 +736,8 @@ void KeeperServer::startup(const Poco::Util::AbstractConfiguration & config, boo
 void KeeperServer::shutdownRaftServer()
 {
     size_t timeout = keeper_context->getCoordinationSettings()[CoordinationSetting::shutdown_timeout].totalSeconds();
+
+    stopLeaderUnavailablePolling();
 
     if (!raft_instance)
     {
@@ -859,6 +863,71 @@ std::optional<uint64_t> KeeperServer::getLeaderUptime() const
         return {};
 
     return getNowMonotonicMs() - leader_since;
+}
+
+void KeeperServer::startLeaderUnavailablePolling(int32_t poll_interval_ms)
+{
+    nuraft::timer_task<void>::executor task_function = [this]
+    {
+        pollLeaderAvailability();
+    };
+
+    {
+        std::lock_guard lock(leader_unavailable_metrics_mutex);
+        leader_unavailable_poll_interval_ms = poll_interval_ms;
+        leader_unavailable_polling_task.emplace(nuraft::cs_new<nuraft::timer_task<void>>(task_function));
+    }
+
+    pollLeaderAvailability();
+}
+
+void KeeperServer::stopLeaderUnavailablePolling()
+{
+    nuraft::ptr<nuraft::delayed_task> polling_task;
+    {
+        std::lock_guard lock(leader_unavailable_metrics_mutex);
+        if (!leader_unavailable_polling_task)
+            return;
+
+        polling_task = *leader_unavailable_polling_task;
+        leader_unavailable_polling_task.reset();
+    }
+
+    if (asio_service)
+        asio_service->cancel(polling_task);
+}
+
+void KeeperServer::pollLeaderAvailability()
+{
+    std::lock_guard lock(leader_unavailable_metrics_mutex);
+    if (!leader_unavailable_polling_task)
+        return;
+
+    const UInt64 now_ms = getNowMonotonicMs();
+    if (!raft_instance->is_leader_alive())
+    {
+        if (leader_unavailable_since_ms == 0)
+            leader_unavailable_since_ms = now_ms;
+    }
+    else if (leader_unavailable_since_ms != 0)
+    {
+        if (raft_instance->is_leader())
+        {
+            sum_leader_unavailable_time_ms += now_ms - leader_unavailable_since_ms;
+            ++cnt_leader_unavailable_time;
+        }
+        leader_unavailable_since_ms = 0;
+    }
+
+    asio_service->schedule(*leader_unavailable_polling_task, leader_unavailable_poll_interval_ms);
+}
+
+void KeeperServer::resetLeaderUnavailableMetrics()
+{
+    std::lock_guard lock(leader_unavailable_metrics_mutex);
+    leader_unavailable_since_ms = 0;
+    sum_leader_unavailable_time_ms = 0;
+    cnt_leader_unavailable_time = 0;
 }
 
 nuraft::cb_func::ReturnCode KeeperServer::callbackFunc(nuraft::cb_func::Type type, nuraft::cb_func::Param * param)
@@ -1467,6 +1536,11 @@ Keeper4LWInfo KeeperServer::getPartiallyFilled4LWInfo() const
     if (result.is_leader)
     {
         result.leader_uptime_ms = getLeaderUptime();
+        {
+            std::lock_guard lock(leader_unavailable_metrics_mutex);
+            result.sum_leader_unavailable_time_ms = sum_leader_unavailable_time_ms;
+            result.cnt_leader_unavailable_time = cnt_leader_unavailable_time;
+        }
 
         auto counts = getRespondingCounts();
         result.learner_count = counts.learners;

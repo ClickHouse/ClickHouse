@@ -196,9 +196,13 @@ zk_approximate_data_size        723
 zk_open_file_descriptor_count   310
 zk_max_file_descriptor_count    10240
 zk_leader_uptime        1234
+zk_sum_leader_unavailable_time 1234
+zk_cnt_leader_unavailable_time 1
 zk_followers    0
 zk_synced_followers     0
 ```
+
+`zk_sum_leader_unavailable_time` and `zk_cnt_leader_unavailable_time` are cumulative leader-only metrics. Keeper samples NuRaft leader availability once per `heart_beat_interval_ms`, so each boundary can differ from the actual transition by up to one heartbeat interval and windows shorter than that interval can be missed. `srst` resets both values.
 
 - `srvr`: Lists full details for the server.
 

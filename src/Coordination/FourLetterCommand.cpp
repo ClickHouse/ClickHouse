@@ -348,6 +348,9 @@ String MonitorCommand::run()
         if (keeper_info.leader_uptime_ms)
             print(ret, "leader_uptime", *keeper_info.leader_uptime_ms);
 
+        print(ret, "sum_leader_unavailable_time", keeper_info.sum_leader_unavailable_time_ms);
+        print(ret, "cnt_leader_unavailable_time", keeper_info.cnt_leader_unavailable_time);
+
         print(ret, "learners", keeper_info.learner_count);
         print(ret, "followers", keeper_info.follower_count);
         print(ret, "synced_followers", keeper_info.synced_follower_count);
@@ -362,7 +365,7 @@ String StatResetCommand::run()
     if (!keeper_dispatcher.isServerActive())
         return SERVER_NOT_ACTIVE_MSG;
 
-    keeper_dispatcher.resetConnectionStats();
+    keeper_dispatcher.resetServerStats();
     return "Server stats reset.\n";
 }
 
