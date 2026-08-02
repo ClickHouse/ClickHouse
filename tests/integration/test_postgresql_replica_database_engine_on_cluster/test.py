@@ -261,6 +261,80 @@ def test_on_cluster_user_managed_slot_rejected(started_cluster):
     )
 
 
+def test_on_cluster_user_managed_slot_rejected_on_attach(started_cluster):
+    # The rejection above must not be bypassable through `ATTACH`. `ATTACH` is exempted only so that a
+    # deployment created before the check existed keeps starting up after an upgrade - that is, when a
+    # definition which was already validated is replayed: server startup, `RESTORE`, or a short-syntax
+    # `ATTACH` that reuses the stored definition. An `ATTACH ... ON CLUSTER` carrying a full engine
+    # definition is a fresh, never-validated definition, so it must be rejected exactly like `CREATE`:
+    # otherwise every replica would again share the one user-managed replication slot and all but one
+    # would fail to replicate.
+    table = "test_user_managed_slot_attach_table"
+    pg_manager.create_postgres_table(table)
+
+    slots_before = count_replication_slots()
+    publications_before = count_publications()
+
+    # A full-definition `ATTACH` requires an explicit UUID for an Atomic-like engine, which is exactly what
+    # makes it usable `ON CLUSTER`: every replica would attach the very same object definition.
+    database_uuid = "00000000-0000-0000-0000-000000110493"
+    error = node1.query_and_get_error(
+        f"""
+        ATTACH DATABASE test_rejected_attached_database UUID '{database_uuid}' ON CLUSTER test_cluster
+        ENGINE = MaterializedPostgreSQL(
+            '{started_cluster.postgres_ip}:{started_cluster.postgres_port}',
+            'postgres_database', 'postgres', '{pg_pass}')
+        SETTINGS materialized_postgresql_tables_list = '{table}',
+                 materialized_postgresql_backoff_min_ms = 100,
+                 materialized_postgresql_backoff_max_ms = 100,
+                 materialized_postgresql_replication_slot = 'user_managed_slot',
+                 materialized_postgresql_use_unique_replication_consumer_identifier = 1
+        """,
+        settings={"distributed_ddl_output_mode": "throw"},
+    )
+    assert "Cannot use a user-managed replication slot" in error
+
+    # The table engine constructs the same replication handler, so a full-definition `ATTACH TABLE` of it
+    # must be rejected the same way.
+    table_uuid = "00000000-0000-0000-0000-000000110494"
+    error = node1.query_and_get_error(
+        f"""
+        ATTACH TABLE default.test_rejected_attached_table UUID '{table_uuid}' ON CLUSTER test_cluster
+        (key Int64, value Int64)
+        ENGINE = MaterializedPostgreSQL(
+            '{started_cluster.postgres_ip}:{started_cluster.postgres_port}',
+            'postgres_database', '{table}', 'postgres', '{pg_pass}')
+        ORDER BY key
+        SETTINGS materialized_postgresql_backoff_min_ms = 100,
+                 materialized_postgresql_backoff_max_ms = 100,
+                 materialized_postgresql_replication_slot = 'user_managed_slot',
+                 materialized_postgresql_use_unique_replication_consumer_identifier = 1
+        """,
+        settings={"distributed_ddl_output_mode": "throw"},
+    )
+    assert "Cannot use a user-managed replication slot" in error
+
+    # Neither object was attached on either replica, and no slot or publication was created.
+    for node in (node1, node2):
+        assert "" == node.query(
+            "SELECT name FROM system.databases WHERE name = 'test_rejected_attached_database'"
+        ).strip()
+        assert "" == node.query(
+            "SELECT name FROM system.tables WHERE database = 'default' "
+            "AND name = 'test_rejected_attached_table'"
+        ).strip()
+    assert slots_before == count_replication_slots()
+    assert publications_before == count_publications()
+
+    # Defensive cleanup in case a replica ever persisted the rejected objects.
+    node1.query(
+        "DROP DATABASE IF EXISTS test_rejected_attached_database ON CLUSTER test_cluster SYNC"
+    )
+    node1.query(
+        "DROP TABLE IF EXISTS default.test_rejected_attached_table ON CLUSTER test_cluster SYNC"
+    )
+
+
 def test_upgrade_adopts_presalt_identity(started_cluster):
     # Before the `ON CLUSTER` fix, `materialized_postgresql_use_unique_replication_consumer_identifier`
     # derived the replication slot name from the bare ClickHouse object UUID, and the publication name

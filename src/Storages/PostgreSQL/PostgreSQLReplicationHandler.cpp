@@ -349,6 +349,20 @@ namespace
     }
 }
 
+bool isFreshEngineDefinition(LoadingStrictnessLevel mode, bool attach_short_syntax)
+{
+    /// A short-syntax `ATTACH` re-reads the definition that was stored when the object was created, so it
+    /// is a replay even though its strictness level is `ATTACH`; an `ATTACH` with a full engine definition
+    /// is a fresh definition, as it lets the user state settings that were never validated before.
+    if (mode == LoadingStrictnessLevel::ATTACH)
+        return !attach_short_syntax;
+
+    /// `SECONDARY_CREATE` (a `Replicated` database's internal query, or `RESTORE`), `FORCE_ATTACH` and
+    /// `FORCE_RESTORE` (server startup) all replay a definition that was validated on the initiator or when
+    /// the object was originally created.
+    return mode == LoadingStrictnessLevel::CREATE;
+}
+
 PostgreSQLReplicationHandler::PostgreSQLReplicationHandler(
     const String & postgres_database_,
     const String & postgres_table_,
@@ -357,6 +371,7 @@ PostgreSQLReplicationHandler::PostgreSQLReplicationHandler(
     const postgres::ConnectionInfo & connection_info_,
     ContextPtr context_,
     bool is_attach_,
+    bool is_fresh_definition_,
     const MaterializedPostgreSQLSettings & replication_settings,
     bool is_materialized_postgresql_database_)
     : WithContext(context_->getGlobalContext())
@@ -400,9 +415,12 @@ PostgreSQLReplicationHandler::PostgreSQLReplicationHandler(
     /// over one logical PostgreSQL replication slot (see https://github.com/ClickHouse/ClickHouse/issues/58726).
     /// The generated publication can be made per-server, but a user-managed slot cannot, so the two settings
     /// contradict each other: all but one replica would remain unable to replicate. Reject the combination
-    /// instead of silently leaving the deployment half-broken. Only on `CREATE`, not `ATTACH`, so that an
-    /// already-created single-server deployment that happens to set both keeps starting up after an upgrade.
-    if (!is_attach && user_managed_slot && use_unique_replication_consumer_identifier)
+    /// instead of silently leaving the deployment half-broken. Only for a freshly supplied definition - a
+    /// `CREATE`, or an `ATTACH` that carries a full engine definition - so that an already-created
+    /// single-server deployment that happens to set both keeps starting up after an upgrade (its metadata
+    /// is replayed on startup, and a short-syntax `ATTACH` reuses that same stored definition), while a new
+    /// `ON CLUSTER` deployment cannot slip the combination in through `ATTACH ... ON CLUSTER` either.
+    if (is_fresh_definition_ && user_managed_slot && use_unique_replication_consumer_identifier)
         throw Exception(
             ErrorCodes::BAD_ARGUMENTS,
             "Cannot use a user-managed replication slot (`materialized_postgresql_replication_slot`) together "
@@ -1023,9 +1041,22 @@ void PostgreSQLReplicationHandler::startSynchronization(bool throw_on_error)
     ///     them (pgoutput resolves the publication definition from a historic catalog snapshot at each
     ///     change's LSN - the same rule as case 1).
     ///
+    ///  6. The slot and the publication both survive, but this replica never finished its first
+    ///     synchronization: not a single nested table exists on disk (for example the first run created the
+    ///     publication and the slot and then failed while loading the initial snapshot). Resuming from the
+    ///     slot skips the initial snapshot, and the attach path below would then ask every
+    ///     StorageMaterializedPostgreSQL for a nested table that was never created, throwing UNKNOWN_TABLE
+    ///     and retrying forever. There is no local data to protect here, so instead of failing closed the
+    ///     leftover slot is dropped and the initial synchronization runs from scratch (see
+    ///     `bootstrap_after_never_synchronized_run` below): the fresh snapshot contains every row, so
+    ///     nothing is lost. A user-managed slot cannot be dropped and recreated by this engine, so that
+    ///     combination is refused with an explicit message instead.
+    ///
     /// Recreate the object for a clean rebuild in the re-snapshot cases: dropping it removes any surviving
     /// slot or publication, and the fresh snapshot repopulates every row into empty nested tables, so nothing
     /// is lost.
+    bool bootstrap_after_never_synchronized_run = false;
+
     if (is_attach)
     {
         String slot_lsn;
@@ -1087,6 +1118,34 @@ void PostgreSQLReplicationHandler::startSynchronization(bool throw_on_error)
                 "lost. Startup keeps retrying and replication starts automatically once the conflict is "
                 "resolved, without a server restart or a manual re-attach.",
                 replication_slot, doubleQuoteString(publication_name));
+
+        if (slot_exists && publication_exists && !has_previously_replicated_data)
+        {
+            if (user_managed_slot)
+                throw Exception(
+                    ErrorCodes::POSTGRESQL_REPLICATION_INTERNAL_ERROR,
+                    "Cannot start MaterializedPostgreSQL replication on attach: the user-managed replication "
+                    "slot {} and the publication {} both exist, but this replica never finished its first "
+                    "synchronization - not a single table has been materialized yet. Resuming from the "
+                    "existing slot would skip the initial snapshot and leave every table missing, and this "
+                    "engine may not drop and recreate a user-managed slot to run the initial snapshot itself. "
+                    "Recreate this object with a freshly created replication slot and the snapshot it exports "
+                    "(`materialized_postgresql_snapshot`), or drop the slot on the PostgreSQL side so that "
+                    "this engine can create its own.",
+                    replication_slot, doubleQuoteString(publication_name));
+
+            /// Nothing has been materialized yet, so there is no local data a fresh snapshot could make
+            /// stale: drop the leftover slot below and run the initial synchronization from scratch instead
+            /// of resuming from a position this replica never consumed anything from.
+            LOG_INFO(
+                log,
+                "Replication slot {} and publication {} exist, but no table has been materialized yet: the "
+                "previous run did not finish its initial synchronization. Dropping the leftover replication "
+                "slot and starting the initial synchronization from scratch.",
+                replication_slot, doubleQuoteString(publication_name));
+
+            bootstrap_after_never_synchronized_run = true;
+        }
 
         /// The existing publication is reused as-is on attach (createPublicationIfNeeded() below is a no-op
         /// when it exists), and the slot resumes from its confirmed_flush_lsn with WAL filtered through
@@ -1240,8 +1299,10 @@ void PostgreSQLReplicationHandler::startSynchronization(bool throw_on_error)
 
         initial_sync();
     }
-    /// Always drop replication slot if it is CREATE query and not ATTACH.
-    else if (!is_attach)
+    /// Always drop replication slot if it is CREATE query and not ATTACH. The same applies on attach when
+    /// the previous run left a slot behind without materializing a single table (case 6 above): there is
+    /// nothing to resume for, so the slot is recreated together with a fresh initial snapshot.
+    else if (!is_attach || bootstrap_after_never_synchronized_run)
     {
         if (!user_managed_slot)
             dropReplicationSlot(tx);

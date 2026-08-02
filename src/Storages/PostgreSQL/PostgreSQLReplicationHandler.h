@@ -1,6 +1,7 @@
 #pragma once
 
 #include <Storages/PostgreSQL/MaterializedPostgreSQLConsumer.h>
+#include <Databases/LoadingStrictnessLevel.h>
 #include <Databases/PostgreSQL/fetchPostgreSQLTableStructure.h>
 #include <Core/BackgroundSchedulePool.h>
 #include <Core/PostgreSQL/Utils.h>
@@ -17,6 +18,14 @@ struct MaterializedPostgreSQLSettings;
 class StorageMaterializedPostgreSQL;
 struct SettingChange;
 
+/// True when the engine definition comes from a query the user has just supplied - a `CREATE`, or an
+/// `ATTACH` that carries a full engine definition - as opposed to a replay of a definition that was
+/// already validated when the object was created: server startup, `RESTORE`, a `Replicated` database's
+/// secondary query, or a short-syntax `ATTACH` that reuses the stored definition. Only a fresh definition
+/// may be rejected for a setting combination that was previously accepted, so that an existing deployment
+/// keeps starting up after an upgrade while a new one fails closed.
+bool isFreshEngineDefinition(LoadingStrictnessLevel mode, bool attach_short_syntax);
+
 class PostgreSQLReplicationHandler : WithContext
 {
 friend class TemporaryReplicationSlot;
@@ -32,6 +41,7 @@ public:
             const postgres::ConnectionInfo & connection_info_,
             ContextPtr context_,
             bool is_attach_,
+            bool is_fresh_definition_,
             const MaterializedPostgreSQLSettings & replication_settings,
             bool is_materialized_postgresql_database_);
 

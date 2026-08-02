@@ -4822,6 +4822,65 @@ def test_attach_bootstraps_when_publication_survives_a_never_synchronized_run(
     pg_manager.drop_materialized_db(mat_db)
 
 
+def test_attach_bootstraps_when_slot_and_publication_survive_a_never_synchronized_run(
+    started_cluster,
+):
+    # The same never-synchronized state, but this time the interrupted first run leaves BOTH the
+    # publication and the replication slot behind - nothing was dropped on the PostgreSQL side, the run
+    # simply never materialized a table (here: the only table had no primary key, so it could not be
+    # snapshotted). An existing slot makes the attach path resume from its position instead of running the
+    # initial snapshot, and it then asks every storage for a nested table that was never created, throwing
+    # `UNKNOWN_TABLE` and retrying forever. There is no local data to protect in that state, so the attach
+    # must drop the leftover slot and bootstrap from scratch.
+    table = "never_synchronized_intact_table"
+    mat_db = "never_synchronized_intact_database"
+    pg_manager.create_postgres_table(
+        table, template=postgres_table_template_without_primary_key
+    )
+    cursor = pg_manager.get_db_cursor()
+    cursor.execute(f"INSERT INTO {table} SELECT i, i FROM generate_series(0, 29) AS i")
+
+    pg_manager.create_materialized_db(
+        ip=started_cluster.postgres_ip,
+        port=started_cluster.postgres_port,
+        materialized_database=mat_db,
+        settings=[
+            f"materialized_postgresql_tables_list = '{table}'",
+            "materialized_postgresql_backoff_min_ms = 100",
+            "materialized_postgresql_backoff_max_ms = 100",
+        ],
+    )
+
+    # The publication and the slot exist, but the table was never materialized.
+    wait_for_replication_slot(cursor)
+    cursor.execute(
+        "SELECT pubname FROM pg_publication WHERE pubname LIKE '%\\_ch\\_publication'"
+    )
+    publications = [row[0] for row in cursor.fetchall()]
+    assert len(publications) == 1, f"expected exactly one publication, got {publications}"
+    assert 0 == int(instance.query(f"EXISTS TABLE {mat_db}.{table}"))
+
+    # Restart with both PostgreSQL-side objects intact, after giving the table the primary key it was
+    # missing so that the initial snapshot can finally run.
+    instance.stop_clickhouse()
+    cursor.execute(f"ALTER TABLE {table} ADD PRIMARY KEY (key)")
+    cursor.execute(f"INSERT INTO {table} SELECT i, i FROM generate_series(30, 49) AS i")
+    instance.start_clickhouse()
+
+    # The attach must bootstrap: the leftover slot is dropped, a fresh one is created and the initial
+    # snapshot materializes every row - including the ones written while the server was down.
+    check_tables_are_synchronized(instance, table, materialized_database=mat_db)
+    assert 50 == int(instance.query(f"SELECT count() FROM {mat_db}.{table}"))
+    wait_for_replication_slot(cursor)
+
+    # And the bootstrapped replica keeps streaming.
+    cursor.execute(f"INSERT INTO {table} SELECT i, i FROM generate_series(50, 59) AS i")
+    check_tables_are_synchronized(instance, table, materialized_database=mat_db)
+    assert 60 == int(instance.query(f"SELECT count() FROM {mat_db}.{table}"))
+
+    pg_manager.drop_materialized_db(mat_db)
+
+
 def test_legacy_identity_not_adopted_when_nothing_was_replicated_yet(started_cluster):
     # The legacy replication identity is adopted on attach so that an upgraded deployment keeps using the
     # slot and publication it already has, instead of re-snapshotting into its populated nested tables. A

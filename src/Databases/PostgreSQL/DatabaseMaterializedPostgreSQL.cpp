@@ -67,12 +67,14 @@ DatabaseMaterializedPostgreSQL::DatabaseMaterializedPostgreSQL(
         const String & metadata_path_,
         UUID uuid_,
         bool is_attach_,
+        bool is_fresh_definition_,
         const String & database_name_,
         const String & postgres_database_name,
         const postgres::ConnectionInfo & connection_info_,
         std::unique_ptr<MaterializedPostgreSQLSettings> settings_)
     : DatabaseAtomic(database_name_, metadata_path_, uuid_, "DatabaseMaterializedPostgreSQL (" + database_name_ + ")", context_)
     , is_attach(is_attach_)
+    , is_fresh_definition(is_fresh_definition_)
     , remote_database_name(postgres_database_name)
     , connection_info(connection_info_)
     , settings(std::move(settings_))
@@ -114,6 +116,7 @@ void DatabaseMaterializedPostgreSQL::startSynchronization()
             connection_info,
             getContext(),
             is_attach,
+            is_fresh_definition,
             *settings,
             /* is_materialized_postgresql_database = */ true);
 
@@ -713,9 +716,13 @@ void registerDatabaseMaterializedPostgreSQL(DatabaseFactory & factory)
         /// only in the background `tryStartSynchronization` task, after the metadata has already been written;
         /// rejecting here — while `CREATE DATABASE` still runs synchronously and before any metadata is
         /// persisted (see InterpreterCreateQuery::createDatabase) — makes the query fail cleanly instead of
-        /// leaving a database that retries forever in the background. Only on `CREATE`, not `ATTACH`, so that
-        /// an already-created single-server deployment that happens to set both keeps starting after an upgrade.
-        if (!args.create_query.attach
+        /// leaving a database that retries forever in the background. Only for a freshly supplied definition
+        /// (see isFreshEngineDefinition()), so that an already-created single-server deployment that happens
+        /// to set both keeps starting after an upgrade, while `ATTACH DATABASE ... ON CLUSTER` with a full
+        /// engine definition cannot be used to slip the combination past this check.
+        const bool is_fresh_definition = isFreshEngineDefinition(args.mode, args.create_query.attach_short_syntax);
+
+        if (is_fresh_definition
             && !(*postgresql_replica_settings)[MaterializedPostgreSQLSetting::materialized_postgresql_replication_slot].value.empty()
             && (*postgresql_replica_settings)[MaterializedPostgreSQLSetting::materialized_postgresql_use_unique_replication_consumer_identifier])
             throw Exception(
@@ -730,7 +737,7 @@ void registerDatabaseMaterializedPostgreSQL(DatabaseFactory & factory)
                 "user-managed slot is intended.");
 
         return std::make_shared<DatabaseMaterializedPostgreSQL>(
-            args.context, args.metadata_path, args.uuid, args.create_query.attach,
+            args.context, args.metadata_path, args.uuid, args.create_query.attach, is_fresh_definition,
             args.database_name, configuration.database, connection_info,
             std::move(postgresql_replica_settings));
     };
@@ -959,7 +966,7 @@ This is also what makes a `MaterializedPostgreSQL` database work when it is crea
 
 Deployments that already used this setting before it became unique per server keep working after an upgrade: on attach, when the replication slot and publication exist under the previously generated names, they are adopted instead of creating new ones, so replication continues from the same position without reloading the initial snapshot.
 
-This setting cannot be combined with a user-managed `materialized_postgresql_replication_slot`: a user-managed slot has a single fixed name shared by every `ON CLUSTER` replica and cannot be made unique per server, so the two settings are contradictory and the combination is rejected on `CREATE`. Use one or the other.
+This setting cannot be combined with a user-managed `materialized_postgresql_replication_slot`: a user-managed slot has a single fixed name shared by every `ON CLUSTER` replica and cannot be made unique per server, so the two settings are contradictory and the combination is rejected on `CREATE`, as well as on an `ATTACH` that carries a full engine definition. Use one or the other. Only a replay of an already stored definition - a server restart, a `RESTORE`, or a short-syntax `ATTACH` - keeps accepting the combination, so that a deployment created before this validation existed still starts up.
 
 ### `materialized_postgresql_use_extended_date_and_time_types` {#materialized-postgresql-use-extended-date-and-time-types}
 

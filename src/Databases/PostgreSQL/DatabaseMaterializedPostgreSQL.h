@@ -33,6 +33,7 @@ public:
         const String & metadata_path_,
         UUID uuid_,
         bool is_attach_,
+        bool is_fresh_definition_,
         const String & database_name_,
         const String & postgres_database_name,
         const postgres::ConnectionInfo & connection_info,
@@ -90,6 +91,9 @@ private:
     String getFormattedTablesList(const String & except = {}) const;
 
     bool is_attach;
+    /// See isFreshEngineDefinition(): true when the engine definition comes from a `CREATE` or from an
+    /// `ATTACH` with a full definition, false when a validated definition is replayed.
+    bool is_fresh_definition;
     String remote_database_name;
     postgres::ConnectionInfo connection_info;
     std::unique_ptr<MaterializedPostgreSQLSettings> settings;
