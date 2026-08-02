@@ -642,6 +642,11 @@ void ASTArrayJoin::readJSON(const Poco::JSON::Object & json)
     if (!child)
         throw Exception(ErrorCodes::BAD_ARGUMENTS,
             "ASTArrayJoin is missing required 'expression_list' child during AST JSON deserialization");
+    /// This path bypasses `ParserArrayJoin`, which rejects an empty list, so check emptiness here too.
+    if (child->children.empty())
+        throw Exception(ErrorCodes::BAD_ARGUMENTS,
+            "ASTArrayJoin has an empty 'expression_list' child during AST JSON deserialization "
+            "(ARRAY JOIN requires at least one expression)");
     expression_list = child;
     children.push_back(expression_list);
 }
