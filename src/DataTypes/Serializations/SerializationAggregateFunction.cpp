@@ -262,6 +262,44 @@ void deserializeFromSingleArgumentTextArray(IColumn & column, ReadBuffer & istr,
     createStateFromValues(function, column, arg_columns, tmp_column->size());
 }
 
+/// Backward compatibility: released read the whole field of a `value` payload as a string and parsed it with
+/// the argument type's `deserializeTextCSV`, which strips a pair of surrounding CSV quotes. The unified path
+/// parses the field with the escaped or whole-text serialization instead, and those keep the quotes as part of
+/// the payload, so a quoted form released accepted is either rejected or read literally. Verified on released
+/// `26.7.1` with `aggregate_function_input_format = 'value'` in `TSVRaw` and `TabSeparated`: `'42'` for
+/// `AggregateFunction(any, UInt64)` inserted `42`, `'2020-01-01'` for a `Date` argument inserted the date, and
+/// `"abc"` for a `String` argument inserted `abc`. So when the whole field starts with a quote, keep parsing it
+/// exactly as released did. Note that the quote kinds are not interchangeable there, and the released
+/// resolution is reproduced for both: the CSV parse of a `String`-like argument treats only `"` as a quote, so
+/// `'abc'` stays the string `'abc'`, while for the other scalar types `readCSVSimple` strips `'` and `"` alike.
+/// The unquoted forms are unaffected and keep the unified parse.
+bool useLegacyQuotedValueParsing(const AggregateFunctionPtr & function, const FormatSettings & settings, ReadBuffer & istr)
+{
+    if (settings.aggregate_function_input_format != FormatSettings::AggregateFunctionInputFormat::Value)
+        return false;
+
+    if (function->getArgumentTypes().size() != 1)
+        return false;
+
+    return !istr.eof() && (*istr.position() == '\'' || *istr.position() == '"');
+}
+
+void deserializeFromSingleArgumentLegacyQuotedValue(
+    IColumn & column, const String & value, const FormatSettings & settings, const AggregateFunctionPtr & function)
+{
+    const auto & argument_types = function->getArgumentTypes();
+    chassert(argument_types.size() == 1);
+
+    const auto & value_type = argument_types[0];
+    const auto tmp_column = value_type->createColumn();
+    ReadBufferFromString buf(value);
+    /// The released implementation did not check that the CSV parse consumed the whole field, so neither do we.
+    value_type->getDefaultSerialization()->deserializeTextCSV(*tmp_column, buf, settings);
+
+    const IColumn * arg_columns[1] = {tmp_column.get()};
+    createStateFromValues(function, column, arg_columns, 1);
+}
+
 /// Backward compatibility for the `value` forms that released read as a whole string and parsed with the
 /// argument type's `deserializeTextCSV`: the string-wrapped JSON form `{"x": "\\N"}` (see the comment in
 /// `deserializeTextJSON`), the quoted `VALUES` form `('\\N')` (see the comment in `deserializeTextQuoted`)
@@ -462,6 +500,16 @@ void SerializationAggregateFunction::deserializeTextEscaped(IColumn & column, Re
         return;
     }
 
+    /// Backward compatibility, see `useLegacyQuotedValueParsing`. A quote cannot be the start of an escape
+    /// sequence, so the first character of the field can be inspected before the escaped read.
+    if (useLegacyQuotedValueParsing(function, settings, istr))
+    {
+        String s;
+        settings.tsv.crlf_end_of_line_input ? readEscapedStringCRLF(s, istr) : readEscapedString(s, istr);
+        deserializeFromSingleArgumentLegacyQuotedValue(column, s, settings, function);
+        return;
+    }
+
     auto method = DESERIALIZE_METHOD(deserializeTextEscaped);
     deserializeFromValues<method>(column, istr, settings, function);
 }
@@ -530,6 +578,17 @@ void SerializationAggregateFunction::deserializeWholeText(IColumn & column, Read
         deserializeFromSingleArgumentTextArray(column, istr, settings, function);
         if (!istr.eof())
             throwUnexpectedDataAfterParsedValue(column, istr, settings, "Array");
+        return;
+    }
+
+    /// Backward compatibility, see `useLegacyQuotedValueParsing`. This has to come before the `Nullable`
+    /// branch below: released parsed a quoted payload of a `Nullable` argument with the very same CSV parse,
+    /// so `'42'` for `AggregateFunction(any, Nullable(UInt64))` inserted `42`.
+    if (useLegacyQuotedValueParsing(function, settings, istr))
+    {
+        String s;
+        readStringUntilEOF(s, istr);
+        deserializeFromSingleArgumentLegacyQuotedValue(column, s, settings, function);
         return;
     }
 
