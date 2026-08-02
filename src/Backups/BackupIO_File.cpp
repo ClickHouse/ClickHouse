@@ -99,6 +99,11 @@ BackupWriterFile::BackupWriterFile(
     /// into an error.
     auto allowed_path = fs::path{allowed_path_}.lexically_normal();
 
+    /// `lexically_normal` keeps a trailing slash, while the ancestors derived from a file path never
+    /// have one, so the slashed spelling would never compare equal and both bounds below would miss.
+    if (!allowed_path.has_filename())
+        allowed_path = allowed_path.parent_path();
+
     std::error_code ec;
     auto boundary = allowed_path;
     while (boundary.has_relative_path() && !fs::is_directory(boundary, ec))
