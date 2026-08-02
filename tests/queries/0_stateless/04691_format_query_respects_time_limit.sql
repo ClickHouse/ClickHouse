@@ -123,4 +123,11 @@ WITH parseQueryToJSON('SELECT 1') AS json
 SELECT sum(length(formatQueryFromJSON(materialize(json)))) > 0 FROM numbers(100000)
 SETTINGS max_execution_time = 0, max_block_size = 200000;
 
+--    The two-argument form takes a separate branch, so without a line of its own nothing would redden
+--    if the check threw unconditionally there. Both arguments are small, so the stride is crossed by
+--    row count rather than by row size.
+WITH parseQueryToJSON('SELECT 1') AS json
+SELECT sum(length(formatQueryFromJSON(materialize(json), materialize('SELECT 1')))) > 0 FROM numbers(100000)
+SETTINGS max_execution_time = 0, max_block_size = 200000;
+
 SELECT 'ok';
