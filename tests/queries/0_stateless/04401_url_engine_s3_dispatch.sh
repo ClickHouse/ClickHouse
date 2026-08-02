@@ -1,8 +1,11 @@
 #!/usr/bin/env bash
-# Tags: no-fasttest
+# Tags: no-fasttest, no-replicated-database
 # no-fasttest: dispatches to the S3/Azure object-storage backends (not built in the fast-test image)
 # and relies on the `table_engines_require_grant` access-control improvement enabled for the
 # stateless test server.
+# no-replicated-database: on a replicated / shared-catalog database the DDL runs with no user, so the
+# in-storage access check the engine-denial assertions rely on is a no-op and they silently allow.
+# Blocked on https://github.com/ClickHouse/ClickHouse/issues/111561 - re-enable when fixed.
 
 CUR_DIR=$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)
 # shellcheck source=../shell_config.sh
