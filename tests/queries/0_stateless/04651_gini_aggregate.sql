@@ -76,6 +76,9 @@ SELECT toTypeName(giniIf(NULL, 1)), isNaN(giniIf(NULL, 1));
 SELECT toTypeName(result), isNaN(result) FROM (
     SELECT giniMerge(state) AS result FROM (SELECT giniState(NULL) AS state)
 );
+SELECT toTypeName(result), isNaN(result) FROM (
+    SELECT giniIfMerge(state) AS result FROM (SELECT giniIfState(NULL, NULL) AS state)
+);
 
 -- -State / -Merge round trip: split values into two states and merge.
 SELECT giniMerge(state) FROM (
