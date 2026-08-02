@@ -5611,6 +5611,15 @@ void MergeTreeData::checkMutationIsPossible(const MutationCommands & commands, c
             /// A column that has no explicit codec inherits the table's default codec, which can never be
             /// lossy (`CompressionCodecFactory::get` rejects a lossy codec when the column type is unknown),
             /// so only the explicit codec has to be examined.
+            ///
+            /// Dropping the dependent in the same `ALTER` needs no special handling here: `DROP PROJECTION`
+            /// and `DROP INDEX` are parsed as `AlterCommand`s, so they form their own command segment that
+            /// `InterpreterAlterQuery` executes in the order the commands were written. `ALTER TABLE t
+            /// DROP PROJECTION p, RECOMPRESS COLUMN c` therefore applies the metadata drop before this check
+            /// runs, and the dependent is already gone from the metadata read below. The opposite order
+            /// (`RECOMPRESS COLUMN c, DROP PROJECTION p`) really does recompress while the dependent is still
+            /// live — the two segments become two mutations, and a query in between would see the stale
+            /// projection — so it is rejected, and the message points at writing the drop first.
             const auto & column_desc = columns.get(command.column_name);
             if (column_desc.codec && codecResolvesToLossyCompression(column_desc.codec, column_desc.type))
             {
@@ -5621,8 +5630,9 @@ void MergeTreeData::checkMutationIsPossible(const MutationCommands & commands, c
                         throw Exception(ErrorCodes::SUPPORT_IS_DISABLED,
                             "Cannot RECOMPRESS COLUMN `{}` with the lossy codec {}: projection `{}` reads this column, "
                             "and it is not rebuilt by the recompression, so it would keep describing the values as they "
-                            "were before the recompression. Drop the projection, or rebuild it with "
-                            "ALTER TABLE ... MATERIALIZE PROJECTION after the recompression.",
+                            "were before the recompression. Drop the projection first (a DROP PROJECTION "
+                            "written before the RECOMPRESS COLUMN in the same ALTER works), or rebuild it "
+                            "with ALTER TABLE ... MATERIALIZE PROJECTION after the recompression.",
                             command.column_name, column_desc.codec->formatForErrorMessage(), projection.name);
                 }
 
@@ -5633,8 +5643,9 @@ void MergeTreeData::checkMutationIsPossible(const MutationCommands & commands, c
                         throw Exception(ErrorCodes::SUPPORT_IS_DISABLED,
                             "Cannot RECOMPRESS COLUMN `{}` with the lossy codec {}: index `{}` depends on this column, "
                             "and it is not rebuilt by the recompression, so it would keep describing the values as they "
-                            "were before the recompression and could skip granules that do match. Drop the index, or "
-                            "rebuild it with ALTER TABLE ... MATERIALIZE INDEX after the recompression.",
+                            "were before the recompression and could skip granules that do match. Drop the index "
+                            "first (a DROP INDEX written before the RECOMPRESS COLUMN in the same ALTER works), "
+                            "or rebuild it with ALTER TABLE ... MATERIALIZE INDEX after the recompression.",
                             command.column_name, column_desc.codec->formatForErrorMessage(), index.name);
                 }
             }
