@@ -87,8 +87,6 @@ SELECT s, lowCardinalityIndices(s) FROM test;
 │ ab │                        1 │
 │ ab │                        1 │
 │ df │                        3 │
-└────┴──────────────────────────┘
-┌─s──┬─lowCardinalityIndices(s)─┐
 │ ef │                        1 │
 │ cd │                        2 │
 │ ab │                        3 │

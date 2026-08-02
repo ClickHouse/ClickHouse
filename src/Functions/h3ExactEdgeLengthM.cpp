@@ -110,9 +110,9 @@ Returns the exact edge length of the unidirectional edge represented by the inpu
             "Get exact edge length in meters",
             "SELECT h3ExactEdgeLengthM(1310277011704381439) AS exactEdgeLengthM",
             R"(
-┌───exactEdgeLengthM─┐
-│ 195449.63163407316 │
-└────────────────────┘
+┌──exactEdgeLengthM─┐
+│ 195449.6316340728 │
+└───────────────────┘
             )"
         }
     };

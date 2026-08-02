@@ -91,7 +91,7 @@ SELECT quantileTDigestWeighted(number, 1) FROM numbers(10);
         )",
         R"(
 ┌─quantileTDigestWeighted(number, 1)─┐
-│                                4.5 │
+│                                  4 │
 └────────────────────────────────────┘
         )"
     }
@@ -138,9 +138,9 @@ quantilesTDigestWeighted(level1, level2, ...)(expr, weight)
 SELECT quantilesTDigestWeighted(0.25, 0.5, 0.75)(number, 1) FROM numbers(100);
         )",
         R"(
-┌─quantilesTDigestWeighted(0.25, 0.5, 0.75)(number, 1)──┐
-│ [24.75,49.5,74.25]                                    │
-└───────────────────────────────────────────────────────┘
+┌─quantilesTDigestWeighted(0.25, 0.5, 0.75)(number, 1)─┐
+│ [24,49,74]                                           │
+└──────────────────────────────────────────────────────┘
         )"
     }
     };

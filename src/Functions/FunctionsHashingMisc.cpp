@@ -39,7 +39,7 @@ This affects for example integer types of different size, named and unnamed `Tup
             "SELECT sipHash64(array('e','x','a'), 'mple', 10, toDateTime('2019-06-15 23:00:00')) AS SipHash, toTypeName(SipHash) AS type;",
             R"(
 ┌──────────────SipHash─┬─type───┐
-│ 11400366955626497465 │ UInt64 │
+│ 11348918044846389429 │ UInt64 │
 └──────────────────────┴────────┘
             )"
         }
@@ -64,7 +64,7 @@ Like [`sipHash64`](#sipHash64) but additionally takes an explicit key argument i
             "SELECT sipHash64Keyed((506097522914230528, 1084818905618843912), array('e','x','a'), 'mple', 10, toDateTime('2019-06-15 23:00:00')) AS SipHash, toTypeName(SipHash) AS type;",
             R"(
 ┌─────────────SipHash─┬─type───┐
-│ 8017656310194184311 │ UInt64 │
+│ 8194087499447867747 │ UInt64 │
 └─────────────────────┴────────┘
             )"
         }
@@ -213,7 +213,7 @@ This affects for example integer types of different size, named and unnamed `Tup
             "SELECT cityHash64(array('e','x','a'), 'mple', 10, toDateTime('2019-06-15 23:00:00')) AS CityHash, toTypeName(CityHash) AS type;",
             R"(
 ┌─────────────CityHash─┬─type───┐
-│ 12072650598913549138 │ UInt64 │
+│ 17177535963988450974 │ UInt64 │
 └──────────────────────┴────────┘
             )"
         },
@@ -237,9 +237,9 @@ INSERT INTO users VALUES
 SELECT groupBitXor(cityHash64(*)) FROM users;
             )",
             R"(
-┌─groupBitXor(⋯age, city))─┐
-│     11639977218258521182 │
-└──────────────────────────┘
+┌─groupBitXor(cityHash64(id, name, age, city))─┐
+│                         11639977218258521182 │
+└──────────────────────────────────────────────┘
             )"
         }
     };
@@ -270,9 +270,9 @@ This affects for example integer types of different size, named and unnamed `Tup
             "Usage example",
             "SELECT farmFingerprint64(array('e','x','a'), 'mple', 10, toDateTime('2019-06-15 23:00:00')) AS FarmFingerprint, toTypeName(FarmFingerprint) AS type;",
             R"(
-┌─────FarmFingerprint─┬─type───┐
-│ 5752020380710916328 │ UInt64 │
-└─────────────────────┴────────┘
+┌──────FarmFingerprint─┬─type───┐
+│ 16673609057812504858 │ UInt64 │
+└──────────────────────┴────────┘
             )"
         }
     };
@@ -303,9 +303,9 @@ This affects for example integer types of different size, named and unnamed `Tup
             "Usage example",
             "SELECT farmHash64(array('e','x','a'), 'mple', 10, toDateTime('2019-06-15 23:00:00')) AS FarmHash, toTypeName(FarmHash) AS type;",
             R"(
-┌─────────────FarmHash─┬─type───┐
-│ 18125596431186471178 │ UInt64 │
-└──────────────────────┴────────┘
+┌────────────FarmHash─┬─type───┐
+│ 2663412879246289891 │ UInt64 │
+└─────────────────────┴────────┘
             )"
         }
     };
@@ -334,7 +334,7 @@ SELECT metroHash64(array('e','x','a'), 'mple', 10, toDateTime('2019-06-15 23:00:
         )",
         R"(
 ┌────────────MetroHash─┬─type───┐
-│ 14235658766382344533 │ UInt64 │
+│ 16292826582821303855 │ UInt64 │
 └──────────────────────┴────────┘
         )"
     }
@@ -364,9 +364,9 @@ This hash function has two modes:
         "Usage example",
         "SELECT URLHash('https://www.clickhouse.com')",
         R"(
-┌─URLHash('htt⋯house.com')─┐
-│     13614512636072854701 │
-└──────────────────────────┘
+┌─URLHash('https://www.clickhouse.com')─┐
+│                  13614512636072854701 │
+└───────────────────────────────────────┘
         )"
     },
     {
@@ -376,14 +376,8 @@ SELECT URLHash('https://www.clickhouse.com/docs', 0);
 SELECT URLHash('https://www.clickhouse.com/docs', 1);
         )",
         R"(
--- hash of https://www.clickhouse.com
-┌─URLHash('htt⋯m/docs', 0)─┐
-│     13614512636072854701 │
-└──────────────────────────┘
--- hash of https://www.clickhouse.com/docs
-┌─URLHash('htt⋯m/docs', 1)─┐
-│     13167253331440520598 │
-└──────────────────────────┘
+13614512636072854701
+13167253331440520598
         )"
     }
     };
@@ -422,7 +416,7 @@ SELECT javaHash(toInt32(123));
         )",
         R"(
 ┌─javaHash(toInt32(123))─┐
-│               123      │
+│                    123 │
 └────────────────────────┘
         )"
      },
@@ -595,7 +589,7 @@ For `NULL`, the function returns `42`, matching Spark's seed behavior.
     FunctionDocumentation::Arguments xxh3_128_argument = {{"expr", "A list of expressions of any data type.", {"Any"}}};
     FunctionDocumentation::ReturnedValue xxh3_128_returned_value = {"Returns the computed 128-bit `xxh3` hash value", {"UInt128"}};
     FunctionDocumentation::Examples xxh3_128_example
-        = {{"Usage example", "SELECT hex(xxh3_128('ClickHouse'))", "3A038784C52804B4DBA43A038784C528"}};
+        = {{"Usage example", "SELECT hex(xxh3_128('ClickHouse'))", "14C27B7BEF95D36FECF5520CA2DAF030"}};
     FunctionDocumentation::Category xxh3_128_category = FunctionDocumentation::Category::Hash;
     FunctionDocumentation::IntroducedIn xxh3_128_introduced_in = {26, 2};
     FunctionDocumentation xxh3_128_documentation = {xxh3_128_description, xxh3_128_syntax, xxh3_128_argument, {}, xxh3_128_returned_value, xxh3_128_example, xxh3_128_introduced_in, xxh3_128_category};
@@ -634,7 +628,7 @@ For some data types calculated value of hash function may be the same for the sa
 SELECT HEX(halfMD5('abc', 'cde', 'fgh'));
         )",
         R"(
-┌─hex(halfMD5('abc', 'cde', 'fgh'))─┐
+┌─HEX(halfMD5('abc', 'cde', 'fgh'))─┐
 │ 2C9506B7374CFAF4                  │
 └───────────────────────────────────┘
         )"

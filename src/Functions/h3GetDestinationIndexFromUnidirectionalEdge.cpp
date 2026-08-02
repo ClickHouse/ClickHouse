@@ -114,10 +114,10 @@ Returns the destination hexagon index from the unidirectional edge [H3](#h3-inde
     FunctionDocumentation::Examples examples = {
         {
             "Get destination index from a unidirectional edge",
-            "SELECT h3GetDestinationIndexFromUnidirectionalEdge(1248204388774707197) AS destination",
+            "SELECT h3GetDestinationIndexFromUnidirectionalEdge(1248204388774707199) AS destination",
             R"(
 ┌────────destination─┐
-│ 599686043507097597 │
+│ 599686043507097599 │
 └────────────────────┘
             )"
         }

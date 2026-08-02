@@ -151,7 +151,7 @@ Set `allow_experimental_nlp_functions = 1` to enable it.
     };
     FunctionDocumentation::ReturnedValue returned_value = {"Returns array of synonyms for the given word.", {"Array(String)"}};
     FunctionDocumentation::Examples examples = {
-        {"Find synonyms", "SELECT synonyms('list', 'important')", "['important','big','critical','crucial']"}
+        {"Find synonyms", "SET allow_experimental_nlp_functions = 1;\nSELECT synonyms('en', 'important')", "['important','big','critical','crucial','essential']"}
     };
     FunctionDocumentation::IntroducedIn introduced_in = {21, 9};
     FunctionDocumentation::Category category = FunctionDocumentation::Category::NLP;

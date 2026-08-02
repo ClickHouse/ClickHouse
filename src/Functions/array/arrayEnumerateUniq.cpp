@@ -29,7 +29,7 @@ The function can take multiple arrays of the same size as arguments. In this cas
     };
     FunctionDocumentation::ReturnedValue returned_value = {"Returns an array where each element is the position among elements with the same value or tuple.", {"Array(T)"}};
     FunctionDocumentation::Examples examples = {
-        {"Basic usage", "SELECT arrayEnumerateUniq([10, 20, 10, 30]);", "[1, 1, 2, 1]"},
+        {"Basic usage", "SELECT arrayEnumerateUniq([10, 20, 10, 30]);", "[1,1,2,1]"},
         {"Multiple arrays", "SELECT arrayEnumerateUniq([1, 1, 1, 2, 2, 2], [1, 1, 2, 1, 1, 2]);", "[1,2,1,1,2,1]"},
         {"ARRAY JOIN aggregation",
          R"(

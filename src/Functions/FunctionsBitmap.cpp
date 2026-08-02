@@ -38,9 +38,9 @@ REGISTER_FUNCTION(Bitmap)
     FunctionDocumentation::ReturnedValue returned_value_bitmapToArray = {"Returns an array of unsigned integers contained in the bitmap", {"Array(UInt*)"}};
     FunctionDocumentation::Examples examples_bitmapToArray = {{"Usage example", "SELECT bitmapToArray(bitmapBuild([1, 2, 3, 4, 5])) AS res;",
         R"(
-┌─res─────────────┐
-│ [1, 2, 3, 4, 5] │
-└─────────────────┘
+┌─res─────────┐
+│ [1,2,3,4,5] │
+└─────────────┘
         )"}
     };
     FunctionDocumentation::IntroducedIn introduced_in_bitmapToArray = {20, 1};
@@ -60,9 +60,9 @@ REGISTER_FUNCTION(Bitmap)
     FunctionDocumentation::ReturnedValue returned_value_bitmapSubsetInRange = {"Returns a bitmap containing only the set bits in the specified range", {"AggregateFunction(groupBitmap, T)"}};
     FunctionDocumentation::Examples examples_bitmapSubsetInRange = {{"Usage example", "SELECT bitmapToArray(bitmapSubsetInRange(bitmapBuild([1, 2, 3, 4, 5]), 2, 5)) AS res;",
         R"(
-┌─res───────┐
-│ [2, 3, 4] │
-└───────────┘
+┌─res─────┐
+│ [2,3,4] │
+└─────────┘
     )"}
     };
     FunctionDocumentation::IntroducedIn introduced_in_bitmapSubsetInRange = {20, 1};
@@ -82,9 +82,9 @@ REGISTER_FUNCTION(Bitmap)
     FunctionDocumentation::ReturnedValue returned_value_bitmapSubsetLimit = {"Returns a bitmap containing at most `cardinality_limit` set bits, starting from `range_start`", {"AggregateFunction(groupBitmap, T)"}};
     FunctionDocumentation::Examples examples_bitmapSubsetLimit = {{"Usage example", "SELECT bitmapToArray(bitmapSubsetLimit(bitmapBuild([1, 5, 3, 2, 8]), 3, 2)) AS res;",
         R"(
-┌─res────┐
-│ [5, 3] │
-└────────┘
+┌─res───┐
+│ [5,3] │
+└───────┘
     )"}
     };
     FunctionDocumentation::IntroducedIn introduced_in_bitmapSubsetLimit = {20, 1};
@@ -104,9 +104,9 @@ REGISTER_FUNCTION(Bitmap)
     FunctionDocumentation::ReturnedValue returned_value_subBitmap = {"Returns a bitmap containing at most `limit` set bits, starting after skipping `offset` set bits in ascending order", {"AggregateFunction(groupBitmap, T)"}};
     FunctionDocumentation::Examples examples_subBitmap = {{"Usage example", "SELECT bitmapToArray(subBitmap(bitmapBuild([1, 2, 3, 4, 5]), 2, 2)) AS res;",
         R"(
-┌─res────┐
-│ [3, 4] │
-└────────┘
+┌─res───┐
+│ [3,4] │
+└───────┘
     )"}
     };
     FunctionDocumentation::IntroducedIn introduced_in_subBitmap = {21, 9};
@@ -130,9 +130,9 @@ Changes up to N bits in a bitmap by swapping specific bit values in `from_array`
     FunctionDocumentation::Examples examples_bitmapTransform =
         {{"Usage example", "SELECT bitmapToArray(bitmapTransform(bitmapBuild([1, 2, 3, 4, 5]), [2, 4], [20, 40])) AS res;",
         R"(
-┌─res───────────────┐
-│ [1, 3, 5, 20, 40] │
-└───────────────────┘
+┌─res───────────┐
+│ [1,3,5,20,40] │
+└───────────────┘
     )"}
     };
     FunctionDocumentation::IntroducedIn introduced_in_bitmapTransform = {20, 1};
@@ -316,9 +316,9 @@ Changes up to N bits in a bitmap by swapping specific bit values in `from_array`
     FunctionDocumentation::ReturnedValue returned_value_bitmapOr = {"Returns a bitmap containing set bits present in either input bitmap", {"AggregateFunction(groupBitmap, T)"}};
     FunctionDocumentation::Examples examples_bitmapOr = {{"Usage example", "SELECT bitmapToArray(bitmapOr(bitmapBuild([1, 2, 3]), bitmapBuild([3, 4, 5]))) AS res;",
         R"(
-┌─res─────────────┐
-│ [1, 2, 3, 4, 5] │
-└─────────────────┘
+┌─res─────────┐
+│ [1,2,3,4,5] │
+└─────────────┘
     )"}
     };
     FunctionDocumentation::IntroducedIn introduced_in_bitmapOr = {20, 1};
@@ -337,9 +337,9 @@ Changes up to N bits in a bitmap by swapping specific bit values in `from_array`
     FunctionDocumentation::ReturnedValue returned_value_bitmapXor = {"Returns a bitmap containing set bits present in either input bitmap, but not in both", {"AggregateFunction(groupBitmap, T)"}};
     FunctionDocumentation::Examples examples_bitmapXor = {{"Usage example", "SELECT bitmapToArray(bitmapXor(bitmapBuild([1, 2, 3]), bitmapBuild([3, 4, 5]))) AS res;",
         R"(
-┌─res──────────┐
-│ [1, 2, 4, 5] │
-└──────────────┘
+┌─res───────┐
+│ [1,2,4,5] │
+└───────────┘
     )"}
     };
     FunctionDocumentation::IntroducedIn introduced_in_bitmapXor = {20, 1};
@@ -358,9 +358,9 @@ Changes up to N bits in a bitmap by swapping specific bit values in `from_array`
     FunctionDocumentation::ReturnedValue returned_value_bitmapAndnot = {"Returns a bitmap containing set bits present in the first bitmap but not in the second", {"AggregateFunction(groupBitmap, T)"}};
     FunctionDocumentation::Examples examples_bitmapAndnot = {{"Usage example", "SELECT bitmapToArray(bitmapAndnot(bitmapBuild([1, 2, 3]), bitmapBuild([3, 4, 5]))) AS res;",
         R"(
-┌─res────┐
-│ [1, 2] │
-└────────┘
+┌─res───┐
+│ [1,2] │
+└───────┘
     )"}
     };
     FunctionDocumentation::IntroducedIn introduced_in_bitmapAndnot = {20, 1};
@@ -380,7 +380,7 @@ Changes up to N bits in a bitmap by swapping specific bit values in `from_array`
     FunctionDocumentation::Examples examples_bitmapHasAll = {{"Usage example", "SELECT bitmapHasAll(bitmapBuild([1, 2, 3]), bitmapBuild([2, 3])) AS res;",
         R"(
 ┌─res─┐
-│  1  │
+│   1 │
 └─────┘
     )"}
     };
@@ -401,7 +401,7 @@ Changes up to N bits in a bitmap by swapping specific bit values in `from_array`
     FunctionDocumentation::Examples examples_bitmapHasAny = {{"Usage example", "SELECT bitmapHasAny(bitmapBuild([1, 2, 3]), bitmapBuild([3, 4, 5])) AS res;",
         R"(
 ┌─res─┐
-│  1  │
+│   1 │
 └─────┘
     )"}
     };
@@ -422,7 +422,7 @@ Changes up to N bits in a bitmap by swapping specific bit values in `from_array`
     FunctionDocumentation::Examples examples_bitmapContains = {{"Usage example", "SELECT bitmapContains(bitmapBuild([1, 2, 3]), 2) AS res;",
         R"(
 ┌─res─┐
-│  1  │
+│   1 │
 └─────┘
     )"}
     };

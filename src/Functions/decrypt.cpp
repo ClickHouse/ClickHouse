@@ -45,14 +45,23 @@ This function decrypts an AES-encrypted binary string using the following modes:
         {
             "Correctly decrypting encrypted data",
             R"(
--- Re-using the table from the encrypt function example
+CREATE TABLE encryption_test
+(
+    `comment` String,
+    `secret` String
+)
+ENGINE = MergeTree
+ORDER BY tuple();
+
+INSERT INTO encryption_test VALUES
+('aes-256-ofb no IV', encrypt('aes-256-ofb', 'Secret', '12345678910121314151617181920212')),
+('aes-256-ofb no IV, different key', encrypt('aes-256-ofb', 'Secret', 'keykeykeykeykeykeykeykeykeykeyke')),
+('aes-256-ofb with IV', encrypt('aes-256-ofb', 'Secret', '12345678910121314151617181920212', 'iviviviviviviviv')),
+('aes-256-cbc no IV', encrypt('aes-256-cbc', 'Secret', '12345678910121314151617181920212'));
+
 SELECT comment, hex(secret) FROM encryption_test;
             )",
             R"(
-┌─comment──────────────┬─hex(secret)──────────────────────────────────┐
-│ aes-256-gcm          │ A8A3CCBC6426CFEEB60E4EAE03D3E94204C1B09E0254 │
-│ aes-256-gcm with AAD │ A8A3CCBC6426D9A1017A0A932322F1852260A4AD6837 │
-└──────────────────────┴──────────────────────────────────────────────┘
 ┌─comment──────────────────────────┬─hex(secret)──────────────────────┐
 │ aes-256-ofb no IV                │ B4972BDC4459                     │
 │ aes-256-ofb no IV, different key │ 2FF57C092DC9                     │
@@ -64,23 +73,14 @@ SELECT comment, hex(secret) FROM encryption_test;
         {
             "Incorrectly decrypting encrypted data",
             R"(
-SELECT comment, decrypt('aes-256-cfb128', secret, '12345678910121314151617181920212') AS plaintext FROM encryption_test
+SELECT comment, decrypt('aes-256-cfb8', secret, '12345678910121314151617181920212') AS plaintext FROM encryption_test
             )",
             R"(
--- Notice how only a portion of the data was properly decrypted, and the rest is gibberish since either `mode`, `key`, or `iv` were different upon encryption.
-┌─comment──────────────┬─plaintext──┐
-│ aes-256-gcm          │ OQ�E
-                             �t�7T�\���\�   │
-│ aes-256-gcm with AAD │ OQ�E
-                             �\��si����;�o�� │
-└──────────────────────┴────────────┘
-┌─comment──────────────────────────┬─plaintext─┐
-│ aes-256-ofb no IV                │ Secret    │
-│ aes-256-ofb no IV, different key │ �4�
-                                        �         │
-│ aes-256-ofb with IV              │ ���6�~        │
-│aes-256-cbc no IV                │ �2*4�h3c�4w��@
-└──────────────────────────────────┴───────────┘
+aes-256-ofb no IV	S��(�
+aes-256-ofb no IV, different key	�k�@M�
+aes-256-ofb with IV	�e�Y*
+aes-256-cbc no IV	�U.P��EY��s/�
+��
             )"
         }
     };

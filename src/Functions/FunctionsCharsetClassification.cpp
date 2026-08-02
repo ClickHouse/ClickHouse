@@ -162,7 +162,7 @@ Set `allow_experimental_nlp_functions = 1` to enable it.
     };
     FunctionDocumentation::ReturnedValue returned_value_charset = {"Returns a string containing the code of the detected character set", {"String"}};
     FunctionDocumentation::Examples examples_charset = {
-        {"Basic usage", "SELECT detectCharset('Ich bleibe für ein paar Tage.')", "WINDOWS-1252"}
+        {"Basic usage", "SET allow_experimental_nlp_functions = 1;\nSELECT detectCharset('Ich bleibe für ein paar Tage.')", "WINDOWS-1252"}
     };
     FunctionDocumentation::IntroducedIn introduced_in_charset = {22, 2};
     FunctionDocumentation::Category category_charset = FunctionDocumentation::Category::NLP;
@@ -185,7 +185,7 @@ Set `allow_experimental_nlp_functions = 1` to enable it.
     };
     FunctionDocumentation::ReturnedValue returned_value_unknown = {"Returns the 2-letter ISO code of the detected language. Other possible results: `un` = unknown, can not detect any language, `other` = the detected language does not have 2 letter code.", {"String"}};
     FunctionDocumentation::Examples examples_unknown = {
-        {"Basic usage", "SELECT detectLanguageUnknown('Ich bleibe für ein paar Tage.')", "de"}
+        {"Basic usage", "SET allow_experimental_nlp_functions = 1;\nSELECT detectLanguageUnknown('Ich bleibe für ein paar Tage.')", "de"}
     };
     FunctionDocumentation::IntroducedIn introduced_in_unknown = {22, 2};
     FunctionDocumentation::Category category_unknown = FunctionDocumentation::Category::NLP;

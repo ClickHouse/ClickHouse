@@ -104,12 +104,14 @@ Set `allow_experimental_nlp_functions = 1` to enable it.
     {
         "Russian sentiment analysis",
         R"(
+SET allow_experimental_nlp_functions = 1;
+
 SELECT
     detectTonality('Шарик - хороший пёс'),
     detectTonality('Шарик - пёс'),
     detectTonality('Шарик - плохой пёс')
         )",
-        "0.44445, 0, -0.3"
+        "0.44445	0	-0.3"
     }
     };
     FunctionDocumentation::IntroducedIn introduced_in = {22, 2};

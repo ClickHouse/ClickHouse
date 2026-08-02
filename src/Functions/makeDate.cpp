@@ -949,12 +949,12 @@ YYYYMMDDhhmmssToDateTime(YYYYMMDDhhmmss[, timezone])
     FunctionDocumentation::ReturnedValue returned_value_yyyymmddhhmmsstodatetime = {"Returns a `DateTime` value from the provided arguments", {"DateTime"}};
     FunctionDocumentation::Examples examples_yyyymmddhhmmsstodatetime = {
         {"Example", R"(
-SELECT YYYYMMDDToDateTime(20230911131415);
+SELECT YYYYMMDDhhmmssToDateTime(20230911131415);
         )",
         R"(
-┌──────YYYYMMDDhhmmssToDateTime(20230911131415)─┐
-│                           2023-09-11 13:14:15 │
-└───────────────────────────────────────────────┘
+┌─YYYYMMDDhhmmssToDateTime(20230911131415)─┐
+│                      2023-09-11 13:14:15 │
+└──────────────────────────────────────────┘
         )"}
     };
     FunctionDocumentation::IntroducedIn introduced_in_yyyymmddhhmmsstodatetime = {23, 9};

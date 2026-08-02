@@ -28,7 +28,7 @@ SELECT toYYYYMMDD(now(), 'US/Eastern')
         )",
         R"(
 ┌─toYYYYMMDD(now(), 'US/Eastern')─┐
-│                        20230302 │
+│                        20260802 │
 └─────────────────────────────────┘
         )"}
     };

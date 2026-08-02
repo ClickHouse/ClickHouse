@@ -1,0 +1,18 @@
+<clickhouse>
+    <!-- Configuration the documented examples assume, on top of the default server configuration
+         and the fragments in `programs/server/config.d`. See tests/docs_examples/runner.py. -->
+
+    <!-- `cutToFirstSignificantSubdomainCustom` and the other `*Custom*` URL functions take the name
+         of a top level domain list, and every example names `public_suffix_list`. The list itself
+         is copied next to the server from tests/config/top_level_domains. -->
+    <top_level_domains_lists>
+        <public_suffix_list>public_suffix_list.dat</public_suffix_list>
+    </top_level_domains_lists>
+
+    <!-- The `queryID`, `initialQueryID` and `initialQueryStartTime` examples read from three shards
+         at `127.0.0.{1..3}`, which all address this same server. The shipped configuration listens
+         on `127.0.0.1` only; listing the addresses here replaces that list, so repeat it. -->
+    <listen_host>127.0.0.1</listen_host>
+    <listen_host>127.0.0.2</listen_host>
+    <listen_host>127.0.0.3</listen_host>
+</clickhouse>

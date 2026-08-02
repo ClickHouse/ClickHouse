@@ -874,6 +874,9 @@ The result is the raw bytes of a single-layer tile, which can be returned direct
         {
             "Encode a clustered tile of points",
             R"(
+CREATE TABLE points (lon Float64, lat Float64) ENGINE = Memory;
+INSERT INTO points VALUES (13.37, 52.52), (13.38, 52.51), (13.37, 52.52);
+
 SELECT MVTEncode('points')(geom, tuple(cluster_count)::Tuple(cluster_count UInt64)) AS tile
 FROM
 (

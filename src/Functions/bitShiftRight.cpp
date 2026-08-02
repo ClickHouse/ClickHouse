@@ -169,9 +169,9 @@ On the contrary, a `String` value is extended with additional bytes, so no bits 
 SELECT 101 AS a, bin(a), bitShiftRight(a, 2) AS a_shifted, bin(a_shifted);
         )",
         R"(
-┌───a─┬─bin(101)─┬─a_shifted─┬─bin(bitShiftRight(101, 2))─┐
-│ 101 │ 01100101 │        25 │ 00011001                   │
-└─────┴──────────┴───────────┴────────────────────────────┘
+┌───a─┬─bin(a)───┬─a_shifted─┬─bin(a_shifted)─┐
+│ 101 │ 01100101 │        25 │ 00011001       │
+└─────┴──────────┴───────────┴────────────────┘
         )"},
         {"Usage example with hexadecimal encoding", R"(
 SELECT 'abc' AS a, hex(a), bitShiftLeft(a, 4) AS a_shifted, hex(a_shifted);

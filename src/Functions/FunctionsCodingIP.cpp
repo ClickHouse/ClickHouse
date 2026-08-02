@@ -1250,7 +1250,7 @@ SELECT MACNumToString(149809441867716) AS mac_address;
         )",
         R"(
 ┌─mac_address───────┐
-│ 88:00:11:22:33:44 │
+│ 88:40:3A:91:07:C4 │
 └───────────────────┘
         )"
     }
@@ -1445,7 +1445,7 @@ Interprets the input using big-endian byte ordering.
     FunctionDocumentation::Examples example_ipv4numtostring = {
     {
         "Usage example",
-        "IPv4NumToString(3232235521)",
+        "SELECT IPv4NumToString(3232235521)",
         "192.168.0.1"
     }
     };
@@ -1508,7 +1508,7 @@ If the IPv4 address has an invalid format, an exception is thrown.
     FunctionDocumentation::Examples examples_ipv4stringtonum = {
     {
         "Usage example",
-        "IPv4StringToNum('192.168.0.1')",
+        "SELECT IPv4StringToNum('192.168.0.1')",
         "3232235521"
     }
     };
@@ -1676,11 +1676,10 @@ HEX can be uppercase or lowercase.
     {
         "Basic example",
         R"(
-SELECT addr, cutIPv6(IPv6StringToNum(addr), 0, 0) FROM (SELECT ['notaddress', '127.0.0.1', '1111::ffff'] AS addr) ARRAY JOIN addr;
+SELECT addr, cutIPv6(IPv6StringToNum(addr), 0, 0) FROM (SELECT ['127.0.0.1', '1111::ffff'] AS addr) ARRAY JOIN addr;
         )",
         R"(
 ┌─addr───────┬─cutIPv6(IPv6StringToNum(addr), 0, 0)─┐
-│ notaddress │ ::                                   │
 │ 127.0.0.1  │ ::ffff:127.0.0.1                     │
 │ 1111::ffff │ 1111::ffff                           │
 └────────────┴──────────────────────────────────────┘
@@ -1742,7 +1741,7 @@ SELECT
         )",
         R"(
 ┌─valid───────┬─invalid─┐
-│ 2001:db8::1 │    ᴺᵁᴸᴸ │
+│ 2001:db8::1 │ ᴺᵁᴸᴸ    │
 └─────────────┴─────────┘
         )"
     }
