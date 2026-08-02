@@ -1,0 +1,8 @@
+projection_index_pruning_keeps_in_order
+0
+no_read_pool_refinement_full_sort
+1
+poor_selectivity_full_sort
+1
+correctness
+22	1600	1710
