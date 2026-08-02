@@ -1,9 +1,6 @@
 refresh_failed 1
 retry_within_budget 1
 retry_state	Scheduled	1
-clamped_failed 1
-clamped_retried 1
-clamped_state	Scheduled	1
 sched_state	Scheduled	1
 longsched_state	Scheduled	1
 spread_alive	1

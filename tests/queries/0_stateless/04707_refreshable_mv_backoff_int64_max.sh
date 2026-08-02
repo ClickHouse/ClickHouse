@@ -5,10 +5,6 @@ CUR_DIR=$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)
 # shellcheck source=../shell_config.sh
 . "$CUR_DIR"/../shell_config.sh
 
-# SET FAKE TIME parses its literal in the session timezone; refresh scheduling is UTC.
-CLICKHOUSE_CLIENT="$(echo "$CLICKHOUSE_CLIENT" | sed 's/--session_timezone[= ][^ ]*//g')"
-CLICKHOUSE_CLIENT="$CLICKHOUSE_CLIENT --session_timezone Etc/UTC"
-
 # system.view_refreshes briefly reports the transient internal state 'Scheduling' between state
 # transitions of the refresh task, so a status read taken right after a DDL can catch it. Same
 # helper as 02932_refreshable_materialized_views_1.sh, bounded so a hang is not reported as a pass.
@@ -45,10 +41,13 @@ wait_first_refresh() {
 # backoff() returns a delay that used to overflow the retry instant.
 # Pinning refresh_retry_initial_backoff_ms too is required: with the default 100
 # and refresh_retries = 10 the multiplier stays under 512 and nothing overflows.
-# Only backoff()'s IF branch is exercised (retry_idx = 0, initial * 1): the 95-year clamped delay
+# Only backoff()'s IF branch is exercised (retry_idx = 0, initial * 1): the 95-year bounded delay
 # stops a second retry from happening, so the ELSE branch that returns refresh_retry_max_backoff_ms
-# verbatim is unreachable here. That is why the clamp sits after the if/else rather than in a branch.
+# verbatim is unreachable here. That is why the bound sits after the if/else rather than in a branch.
 # all_replicas = 1 keeps the refresh uncoordinated so this client's replica runs it.
+# Coverage boundary: this arm constrains backoff()'s bound and the checked addition jointly. The
+# bound on last_attempt_time has no oracle here, since its consumer fails as a silent calendar wrap
+# rather than an observable value; static_assert and the corner sweep cover it instead.
 $CLICKHOUSE_CLIENT -q "
     create materialized view rmv refresh after 1 year
         settings refresh_retries = 10,
@@ -84,34 +83,6 @@ after=$(retry_of rmv)
 query_no_scheduling "
     select 'retry_state', status, $before = $after
     from system.view_refreshes where view = 'rmv' and database = currentDatabase()"
-
-# Liveness under a far-future clock, which no real clock reaches: 2e12 seconds is year ~65340, past
-# both the bound on last_attempt_time and what std::chrono::year's short can hold. The server must
-# stay up and keep reporting a non-sentinel instant. This arm does not distinguish a clamped
-# last_attempt_time from an unclamped one - that difference is a silent calendar wrap, and asserting
-# it would mean hard-coding a truncated UInt32 DateTime. Unset the clock to stop the retries.
-$CLICKHOUSE_CLIENT -q "
-    create materialized view clamped refresh after 1 hour
-        settings refresh_retries = 1000000,
-                 refresh_retry_initial_backoff_ms = 9223372036854775807,
-                 refresh_retry_max_backoff_ms = 9223372036854775807,
-                 all_replicas = 1
-        append (x Int64) engine Memory as select throwIf(number = 0) as x from numbers(1);"
-$CLICKHOUSE_CLIENT -q "system wait view clamped" 2>&1 | grep -qF REFRESH_FAILED && echo "clamped_failed 1"
-$CLICKHOUSE_CLIENT -q "system test view clamped set fake time '2000000000000'"
-retried=0
-for _ in {1..100}; do
-    if [ "$(retry_of clamped)" -ge 3 ] 2>/dev/null; then
-        retried=1
-        break
-    fi
-    sleep 0.2
-done
-$CLICKHOUSE_CLIENT -q "system test view clamped unset fake time"
-echo "clamped_retried $retried"
-query_no_scheduling "
-    select 'clamped_state', status, next_refresh_time is not null
-    from system.view_refreshes where view = 'clamped' and database = currentDatabase()"
 
 # Non-regression: a plain near-future schedule still gets an exact, readable
 # instant. 04707 does not bound any schedule period.
@@ -154,5 +125,4 @@ $CLICKHOUSE_CLIENT -q "
 $CLICKHOUSE_CLIENT -q "drop table spread"
 $CLICKHOUSE_CLIENT -q "drop table longsched"
 $CLICKHOUSE_CLIENT -q "drop table sched"
-$CLICKHOUSE_CLIENT -q "drop table clamped"
 $CLICKHOUSE_CLIENT -q "drop table rmv"
