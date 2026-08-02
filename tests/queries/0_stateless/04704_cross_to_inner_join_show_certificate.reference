@@ -1,0 +1,4 @@
+-- showCertificate() is no longer rewritten
+1
+-- a deterministic predicate is still rewritten
+1

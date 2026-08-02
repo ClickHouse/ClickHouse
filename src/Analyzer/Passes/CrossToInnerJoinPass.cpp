@@ -55,19 +55,9 @@ void extractJoinConditions(const QueryTreeNodePtr & node, QueryTreeNodes & equi_
     }
 }
 
-/// A value that is fixed per executing node rather than per query must not become part of a key: it is
-/// read when the function object is created, and a node that deserializes a plan creates its own, so
-/// the two sides of the key can be built by different nodes. Most such functions report
-/// `isServerConstant()` and are refused by that check; these do not, so they are listed by name.
-/// `transactionID` and the two transaction snapshot counters read the executing node's transaction
-/// state. `randConstant` draws a new value whenever its function base is built, so a node that
-/// deserializes the plan draws a different one. The `filesystem*` family reads the disks of the node it
-/// runs on, and `getClientHTTPHeader` reads the current request's headers, which its own documentation
-/// says are non-empty only on the initiator. `showCertificate` reports no determinism predicate at all,
-/// and it falls back to the certificate of the node that runs it when the client did not send one. The
-/// three address symbolizers resolve an address against the object files and the address space layout of
-/// the node that runs them, and they report no determinism predicate either.
-/// Aliases and letter case resolve to these canonical names first.
+/// Values local to the executing node that `isServerConstant` does not already refuse, whether captured
+/// when the function object is created or read per row. Two sides of a key built by different nodes can
+/// therefore disagree. These are canonical names: aliases and letter case resolve first.
 bool isNodeLocalFunction(const String & function_name)
 {
     return function_name == "queryID" || function_name == "FQDN" || function_name == "getServerPort"
@@ -79,11 +69,9 @@ bool isNodeLocalFunction(const String & function_name)
         || function_name == "addressToLine" || function_name == "addressToLineWithInlines";
 }
 
-/// A condition may become a join key only if its value is stable within one query, because in the key
-/// position it is evaluated per row of each joined side instead of once per row of the cross product.
-/// The predicate is `isDeterministicInScopeOfQuery` and not `isDeterministic`: `now()` and the like
-/// have a single value for the whole query, so using them as a key is sound. A server constant such as
-/// hostName() is refused for the same reason as the names below: it is stable per node, not per query.
+/// A condition may become a join key only if its value is stable within one query: in the key position it
+/// is evaluated per row of each joined side instead of once per row of the cross product. Hence
+/// `isDeterministicInScopeOfQuery` rather than `isDeterministic`, which would reject a sound `now()`.
 bool canMoveToJoinExpression(const QueryTreeNodePtr & node)
 {
     QueryTreeNodes nodes_to_visit = {node};

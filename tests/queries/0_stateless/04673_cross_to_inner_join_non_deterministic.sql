@@ -209,18 +209,6 @@ SELECT count() = 0 FROM (
     SETTINGS cross_to_inner_join_rewrite = 1
 ) WHERE explain ILIKE '%kind: INNER%';
 
--- showCertificate() reports no determinism predicate at all, so only the name list can refuse it. It
--- never returns a constant column, so unlike the rows above it is not folded on a single-node query and
--- needs no remote() vehicle.
-SELECT '-- showCertificate() is no longer rewritten';
-SELECT count() = 0 FROM (
-    EXPLAIN QUERY TREE run_passes = 1
-    SELECT count() FROM l, r
-    WHERE concat(toString(l.a), showCertificate()['version'])
-        = concat(toString(r.a), showCertificate()['version'])
-    SETTINGS cross_to_inner_join_rewrite = 1
-) WHERE explain ILIKE '%kind: INNER%';
-
 -- A remote() join with a deterministic predicate must still be rewritten, so the three rows above fail
 -- for the server constant rather than merely for being distributed.
 SELECT '-- a deterministic remote() predicate is still rewritten';
