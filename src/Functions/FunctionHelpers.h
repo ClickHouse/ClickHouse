@@ -23,22 +23,16 @@ class IFunction;
 class QueryStatus;
 using QueryStatusPtr = std::shared_ptr<QueryStatus>;
 
-/// Cancellation is only polled between pipeline tasks, so a function whose `executeImpl` does unbounded
-/// per-row work must poll it inside that loop too. Otherwise a whole block is one uninterruptible unit
-/// which outlives `max_execution_time` and `KILL QUERY`.
+/// Polls query cancellation from inside a per-row loop, which pipeline-level cancellation cannot reach.
 /// `QueryStatus::checkTimeLimit` throws for `KILL QUERY` and for the `throw` overflow mode and returns
 /// false for `break`; a scalar has no meaningful partial result, so `break` is a hard stop here as well.
 /// `query_status` is empty for callers that have no process-list entry, where the check stays a no-op.
 void checkQueryCancellation(const QueryStatusPtr & query_status, std::string_view function_name);
 
-/// Throttled form of the above, for loops whose per-row work can be as small as tens of nanoseconds.
-/// A poll costs a `clock_gettime` plus a `QueryStatus::cancel_mutex` acquisition (about 31 ns measured),
-/// so polling unconditionally per row makes `tokenizeQuery` over short inputs six times slower. Accumulate
-/// the bytes each row parses and poll only on crossing a stride, the way `geohashesInBox`, `arrayFold` and
-/// `Base58` throttle theirs. Count each row as at least one byte so a block of empty strings still polls.
-/// Worst-case latency between polls is the work of one stride: 64 KiB of SQL text, which parses in about
-/// 50 ms, or a single row when a row is larger than that. Both are far below the one-second granularity
-/// `max_execution_time` is expressed in.
+/// Throttled form of the above, for loops whose per-row work can be small enough that an unconditional
+/// poll dominates it. Accumulate the bytes each row parses and poll only on crossing a 64 KiB stride, so
+/// worst-case latency between polls is one stride's parsing, or one row when a row exceeds the stride.
+/// Each row counts as at least one byte, so a block of empty strings still polls.
 inline void checkQueryCancellationThrottled(
     const QueryStatusPtr & query_status, std::string_view function_name, size_t bytes, size_t & bytes_since_check)
 {
