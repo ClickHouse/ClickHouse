@@ -161,6 +161,7 @@ public:
         IAIProvider & provider,
         const String & model,
         UInt64 dimensions,
+        const String & function_name,
         const VectorWithMemoryTracking<std::string_view> & inputs,
         size_t max_batch_size,
         UInt64 max_retries,
@@ -172,8 +173,6 @@ public:
 protected:
     ContextPtr context;
     ContextPtr getContext() const { return context; }
-
-    virtual String functionName() const = 0;
 
     /// Function-specific parameters accepted in the trailing `Map(String, String)` argument, on top
     /// of `commonParams`. Each entry carries its own default (or is required). Default: none.

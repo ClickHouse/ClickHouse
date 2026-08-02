@@ -186,6 +186,7 @@ void tryMakeDistributedRead(QueryPlan::Node & node, QueryPlan::Nodes & nodes, co
 void optimizeExchanges(QueryPlan::Node & root);
 void materializeConstantsForSetOperationBranches(QueryPlan::Node & root, QueryPlan::Nodes & nodes);
 bool planHasUnsupportedDistributedStep(const QueryPlan::Node & root);
+bool planContainsLogicalExchange(const QueryPlan::Node & root);
 void checkDistributedReadSupported(const QueryPlan::Node & root);
 void validateDistributedPlanBucketCounts(const QueryPlanOptimizationSettings & optimization_settings);
 void applyParallelReplicas(QueryPlan & query_plan, QueryPlan::Nodes & nodes, const QueryPlanOptimizationSettings & optimization_settings);
@@ -302,6 +303,11 @@ void optimizeTreeSecondPass(
                         break;
                 }
             });
+
+        /// After the __applyFilter filters been fixed, do work to indicate index analysis again
+        if (optimization_settings.enable_join_runtime_filters_index_analysis)
+            traverseQueryPlan(stack, root,
+                [&](auto & frame_node) { registerLeftSideIndexAnalysisSecondPass(frame_node, optimization_settings); });
     }
 
     /// Run after runtime filter push-down so that chains of joins are detected correctly.
@@ -324,20 +330,25 @@ void optimizeTreeSecondPass(
             });
     }
 
+    /// Some plans are optimized more than once (e.g. StorageMerge child plans, set subplans). The
+    /// tryMakeDistributed* transforms are not idempotent - a second pass would wrap the same steps
+    /// into exchanges again - so run them only on a plan that has no exchanges yet.
+    const bool make_distributed_plan = optimization_settings.make_distributed_plan
+        && !planContainsLogicalExchange(root);
+
     /// WITH TOTALS / ROLLUP / CUBE / extremes produce extra streams the exchange protocol does not
     /// carry, so such plans cannot be distributed. make_distributed_plan is explicit, so fail rather
     /// than silently running single-node.
-    if (optimization_settings.make_distributed_plan && planHasUnsupportedDistributedStep(root))
+    if (make_distributed_plan && planHasUnsupportedDistributedStep(root))
         throw Exception(ErrorCodes::SUPPORT_IS_DISABLED,
             "make_distributed_plan does not support WITH TOTALS, ROLLUP, CUBE or extremes");
     /// Reject reads whose coordinator snapshot/part-order state a worker cannot reproduce.
-    if (optimization_settings.make_distributed_plan)
+    if (make_distributed_plan)
         checkDistributedReadSupported(root);
     /// Reject out-of-range bucket counts before any distributed optimization sizes exchange fan-outs or
     /// read-bucket vectors from them. The tryMakeDistributed* pass below uses the raw setting values.
-    if (optimization_settings.make_distributed_plan)
+    if (make_distributed_plan)
         validateDistributedPlanBucketCounts(optimization_settings);
-    const bool make_distributed_plan = optimization_settings.make_distributed_plan;
 
     traverseQueryPlan(stack, root,
         [&](auto &) {},
@@ -420,6 +431,9 @@ void optimizeTreeSecondPass(
 
             if (optimization_settings.limit_by_partitions_independently)
                 optimizeLimitByPerPartition(frame_node, nodes, optimization_settings);
+
+            if (optimization_settings.distinct_partitions_independently)
+                optimizeDistinctPerPartition(frame_node, nodes, optimization_settings);
 
             if (optimization_settings.read_in_order)
                 optimizeReadInOrder(frame_node, nodes, optimization_settings);
@@ -665,8 +679,26 @@ void optimizeTreeSecondPass(
     if (optimization_settings.optimize_aggregation_in_order_limit)
         optimizeLimitForAggregationInOrder(root);
 
+    /// Propagate stream disjointness so that DISTINCT / LIMIT BY / GROUP BY can skip merging streams.
+    applyStreamDisjointness(optimization_settings, root);
+
     if (optimization_settings.query_plan_join_shard_by_pk_ranges)
         optimizeJoinByShards(root);
+
+    /// Shard `parallel_full_sorting_merge` joins by the hash of the join keys. The `join_algorithm`
+    /// choice is the gate (this is a no-op unless a join uses that algorithm).
+    ///
+    /// Skipped while building a distributed plan (`make_distributed_plan`): `convertToScatteredFullSort`
+    /// gives the merge-join `SortingStep` a non-empty `partition_by_description`, which is not
+    /// serializable for remote execution (`SortingStep::isSerializable`), so `convertToDistributed`
+    /// would reject such a fragment. Today the pass already cannot fire here - a distributed plan keeps
+    /// its joins logical (`convertLogicalJoinToPhysical` returns early on `make_distributed_plan`), and
+    /// this pass only matches a physical `JoinStep` - so the join stays a single (serializable) merge
+    /// join and the physical join is built per fragment on the worker. The explicit guard documents and
+    /// preserves that invariant even if join physicalization is ever reordered. Local, single-fragment
+    /// distributed plans are re-optimized with `make_distributed_plan = false` and still get sharded.
+    if (!optimization_settings.make_distributed_plan)
+        optimizeParallelFullSortingMergeJoin(root, optimization_settings.max_threads);
 
     considerEnablingParallelReplicas(optimization_settings, root, query_plan);
 }

@@ -17,6 +17,7 @@
 #include <Common/quoteString.h>
 #include <Common/Exception.h>
 #include <Core/ColumnsWithTypeAndName.h>
+#include <Core/BaseSettings.h>
 #include <Core/Settings.h>
 #include <Interpreters/JoinUtils.h>
 #include <Formats/NativeWriter.h>
@@ -412,6 +413,14 @@ void registerStorageJoin(StorageFactory & factory)
         {
             for (const auto & setting : args.storage_def->settings->changes)
             {
+                /// These settings are read here rather than applied to a `BaseSettings`, so there is no
+                /// settings schema to check the value-less form `SETTINGS name` against - it stands for
+                /// `name = true` and is only meaningful for the Bool ones. Without this check
+                /// `SETTINGS max_rows_in_join` would silently become `max_rows_in_join = 1`.
+                if (setting.shorthand && setting.name != "join_use_nulls" && setting.name != "join_any_take_last_row"
+                    && setting.name != "any_join_distinct_right_table_keys" && setting.name != "persistent")
+                    BaseSettingsHelpers::throwValuelessSettingIsNotBool(setting.name);
+
                 if (setting.name == "join_use_nulls")
                     join_use_nulls = setting.value;
                 else if (setting.name == "max_rows_in_join")
@@ -588,23 +597,23 @@ When creating a table, the following settings are applied:
 
 #### `join_use_nulls` {#join_use_nulls}
 
-[join_use_nulls](/operations/settings/settings.md/#join_use_nulls)
+[join_use_nulls](/reference/settings/session-settings/join#join_use_nulls)
 
 #### `max_rows_in_join` {#max_rows_in_join}
 
-[max_rows_in_join](/operations/settings/settings#max_rows_in_join)
+[max_rows_in_join](/reference/settings/session-settings/max-rows#max_rows_in_join)
 
 #### `max_bytes_in_join` {#max_bytes_in_join}
 
-[max_bytes_in_join](/operations/settings/settings#max_bytes_in_join)
+[max_bytes_in_join](/reference/settings/session-settings/max-bytes#max_bytes_in_join)
 
 #### `join_overflow_mode` {#join_overflow_mode}
 
-[join_overflow_mode](/operations/settings/settings#join_overflow_mode)
+[join_overflow_mode](/reference/settings/session-settings/join#join_overflow_mode)
 
 #### `join_any_take_last_row` {#join_any_take_last_row}
 
-[join_any_take_last_row](/operations/settings/settings.md/#join_any_take_last_row)
+[join_any_take_last_row](/reference/settings/session-settings/join#join_any_take_last_row)
 #### `join_use_nulls` {#join_use_nulls-1}
 
 #### Persistent {#persistent}
@@ -622,7 +631,7 @@ Default value: `1`.
 
 The `Join`-engine tables can't be used in `GLOBAL JOIN` operations.
 
-The `Join`-engine allows to specify [join_use_nulls](/operations/settings/settings.md/#join_use_nulls) setting in the `CREATE TABLE` statement. [SELECT](/sql-reference/statements/select/index.md) query should have the same `join_use_nulls` value.
+The `Join`-engine allows to specify [join_use_nulls](/reference/settings/session-settings/join#join_use_nulls) setting in the `CREATE TABLE` statement. [SELECT](/reference/statements/select/index) query should have the same `join_use_nulls` value.
 
 ## Usage examples {#example}
 
@@ -692,13 +701,13 @@ namespace
 {
 
 template <typename T>
-const char * rawData(T & t)
+const char * rawData(const T & t)
 {
     return reinterpret_cast<const char *>(&t);
 }
 
 template <typename T>
-size_t rawSize(T &)
+size_t rawSize(const T &)
 {
     return sizeof(T);
 }

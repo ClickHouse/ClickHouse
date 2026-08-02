@@ -79,7 +79,7 @@ SELECT aiGenerate('Bonjour', map('credentials', 'other_credentials'));
 
 ### Parameter map {#parameter-map}
 
-Each function accepts an optional trailing `Map(String, String)` of parameters. All values are strings (quote numbers, e.g. `'0.2'`). Unknown keys are rejected. A key that is present overrides the corresponding named-collection value; a key that is absent falls back to the named collection (for `model`/`max_tokens`) or the built-in default. The exception is `aiEmbed`, which takes `model` as a required positional argument (`aiEmbed(text, model[, params])`) and errors if it is instead set in the parameter map or named collection.
+Each function accepts an optional trailing `Map(String, String)` of parameters. All values are strings (quote numbers, e.g. `'0.2'`). Unknown keys are rejected. A key that is present overrides the corresponding named-collection value; a key that is absent falls back to the named collection (for `model`/`max_tokens`) or the built-in default. The exception is `aiEmbed`, which takes `model` as a required positional argument (`aiEmbed(text, model[, params])`) and errors if it is instead set in the parameter map or named collection. This is in order to enforce reproducible embeddings.
 
 The following parameters are common to all the AI functions:
 

@@ -10,7 +10,7 @@ doc_type: 'guide'
 import { Image } from "/snippets/pt-BR/components/Image.jsx";
 
 Este guia mostra como clientes do ClickHouse Cloud podem usar o controle de acesso baseado em função para se autenticar no Amazon Simple Storage Service (S3) e acessar seus dados com segurança.
-Antes de partir para a configuração do acesso seguro ao S3, é importante entender como isso funciona. Abaixo está uma visão geral de como os serviços do ClickHouse podem acessar buckets privados do S3 assumindo uma função na conta AWS dos clientes.
+Antes de partir para a configuração do acesso seguro ao S3, é importante entender como isso funciona. Abaixo está uma visão geral de como os serviços do ClickHouse podem acessar buckets privados do S3 assumindo uma função na conta da AWS dos clientes.
 
 <Image img="/images/cloud/security/secures3.webp" size="lg" alt="Visão geral do acesso seguro ao S3 com ClickHouse" />
 
@@ -63,12 +63,12 @@ A assunção de função do IAM pode ser configurada de duas maneiras:
 
 5. Configure a stack do CloudFormation. Veja abaixo informações adicionais sobre esses parâmetros.
 
-| Parameter                 |     Default Value    | Description                                                                                                                                            |
-| :------------------------ | :------------------: | :----------------------------------------------------------------------------------------------------------------------------------------------------- |
+| Parameter                 |     Default Value    | Description                                                                                                                                                     |
+| :------------------------ | :------------------: | :-------------------------------------------------------------------------------------------------------------------------------------------------------------- |
 | RoleName                  | ClickHouseAccess-001 | Nome da nova função do IAM que o ClickHouse Cloud usará para acessar seu bucket do S3.                                                                          |
-| Role Session Name         |           *          | Role Session Name pode ser usado como um segredo compartilhado para proteger ainda mais seu bucket.                                                    |
-| ClickHouse Instance Roles |                      | Lista separada por vírgulas de funções do IAM de serviço do ClickHouse que podem usar esta integração segura com S3.                                        |
-| Bucket Access             |         Read         | Define o nível de acesso aos buckets informados.                                                                                                       |
+| Role Session Name         |           *          | Role Session Name pode ser usado como um segredo compartilhado para proteger ainda mais seu bucket.                                                             |
+| ClickHouse Instance Roles |                      | Lista separada por vírgulas de funções do IAM de serviço do ClickHouse que podem usar esta integração segura com S3.                                            |
+| Bucket Access             |         Read         | Define o nível de acesso aos buckets informados.                                                                                                                |
 | Bucket Names              |                      | Lista separada por vírgulas dos nomes dos buckets aos quais esta função do IAM terá acesso. **Observação:** use o nome do bucket, não o ARN completo do bucket. |
 
 6. Marque a caixa de seleção **I acknowledge that AWS CloudFormation might create IAM resources with custom names.**
@@ -167,10 +167,10 @@ DESCRIBE TABLE s3('https://s3.amazonaws.com/BUCKETNAME/BUCKETOBJECT.csv','CSVWit
   ## Controle avançado de ações
 </div>
 
-Para um controle de acesso mais rigoroso, é possível restringir a política do bucket para aceitar apenas solicitações originadas dos endpoints de VPC do ClickHouse Cloud usando a condição [`aws:SourceVpce`](https://docs.aws.amazon.com/AmazonS3/latest/userguide/example-bucket-policies-vpc-endpoint.html#example-bucket-policies-restrict-accesss-vpc-endpoint). Para obter os endpoints de VPC na sua região do ClickHouse Cloud, abra um terminal e execute:
+Para um controle de acesso mais rigoroso, é possível restringir a política do bucket para aceitar apenas solicitações originadas dos endpoints da VPC do ClickHouse Cloud usando a [condição `aws:SourceVpce`](https://docs.aws.amazon.com/AmazonS3/latest/userguide/example-bucket-policies-vpc-endpoint.html#example-bucket-policies-restrict-accesss-vpc-endpoint). Para obter os endpoints da VPC da sua região do ClickHouse Cloud, abra um terminal e execute:
 
 ```bash
-# Substitua <your-region> pela sua região do ClickHouse Cloud
+# Replace <your-region> with your ClickHouse Cloud region
 curl -s https://api.clickhouse.cloud/static-ips.json | jq -r '.aws[] | select(.region == "<your-region>") | .s3_endpoints[]'
 ```
 
@@ -213,4 +213,4 @@ Em seguida, adicione uma regra de negação à política do IAM com os endpoints
 }
 ```
 
-Para mais detalhes sobre como acessar os endpoints dos serviços do ClickHouse Cloud, consulte [Endereços IP da Cloud](/pt-BR/products/cloud/guides/data-sources/cloud-endpoints-api).
+Para mais detalhes sobre o acesso aos endpoints dos serviços do ClickHouse Cloud, consulte [Endereços IP da Cloud](/pt-BR/products/cloud/guides/data-sources/cloud-endpoints-api).

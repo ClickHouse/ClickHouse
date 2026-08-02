@@ -352,6 +352,7 @@ FunctionBaseAI::EmbeddingResult FunctionBaseAI::embedTexts(
     IAIProvider & provider,
     const String & model,
     UInt64 dimensions,
+    const String & function_name,
     const VectorWithMemoryTracking<std::string_view> & inputs,
     size_t max_batch_size,
     UInt64 max_retries,
@@ -376,6 +377,7 @@ FunctionBaseAI::EmbeddingResult FunctionBaseAI::embedTexts(
         AIEmbeddingRequest ai_embedding_request;
         ai_embedding_request.model = model;
         ai_embedding_request.dimensions = dimensions;
+        ai_embedding_request.function_name = function_name;
         ai_embedding_request.inputs.reserve(batch_end - batch_start);
         for (size_t k = batch_start; k < batch_end; ++k)
             ai_embedding_request.inputs.emplace_back(inputs[k]);
@@ -523,6 +525,7 @@ ColumnPtr FunctionBaseAI::executeImpl(const ColumnsWithTypeAndName & arguments, 
                 ai_request.model = model;
                 ai_request.temperature = temperature;
                 ai_request.max_tokens = max_tokens;
+                ai_request.function_name = getName();
 
                 /// update api_calls/quotas before call so failed calls are still added to total
                 ++total_api_calls;
