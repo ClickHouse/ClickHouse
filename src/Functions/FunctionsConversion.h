@@ -159,11 +159,9 @@ struct FunctionConvertSettings
 namespace detail
 {
 
-/// Format the rejected source value for an out-of-range exception message.
-/// Floating sources are widened to double (never narrowed to an integer): narrowing a huge,
-/// Inf or NaN float to an integer is undefined behavior, and the newly-reachable throw paths
-/// for numeric -> Date/Date32 casts hit exactly those inputs. Integral sources keep their own
-/// type (wide ints and Int8 have fmt formatters), so the message shows the real value.
+/// Format the rejected source value for an out-of-range exception message. A float is widened to
+/// double, never narrowed to an integer: that is undefined behavior for a huge, Inf or NaN value.
+/// Integral sources keep their own type so the message shows the real value.
 template <typename FromType>
 static auto formatOutOfBoundsValue(const FromType & from)
 {
@@ -173,15 +171,10 @@ static auto formatOutOfBoundsValue(const FromType & from)
         return from;
 }
 
-/// Saturate a numeric source into the [min_bound, max_bound] second-range of a Date/DateTime/Time
-/// target and return it as a time_t. The comparisons use accurate::greaterOp/lessOp so a source
-/// wider or of different signedness than time_t (UInt64/UInt128/UInt256 above INT64_MAX, huge or
-/// infinite floats) is compared at full precision. The narrowing static_cast<time_t> only runs
-/// once `from` is proven to be inside the bounds, so it never wraps (unsigned > INT64_MAX),
-/// truncates (wide int) or hits undefined behavior (float out of time_t range). NaN is treated as
-/// below the range (the float-capable callers guard NaN before reaching here in throw mode; the
-/// narrow signed transforms cannot receive a float at all, since dispatch restricts them to
-/// Int8/Int16/Int32).
+/// Saturate a numeric source into [min_bound, max_bound] and return it as a time_t. Comparisons use
+/// accurate::greaterOp/lessOp so a source wider or differently signed than time_t is compared at full
+/// precision, and the narrowing cast runs only once `from` is proven in bounds, so it can never wrap,
+/// truncate or be undefined. NaN counts as below the range.
 template <typename FromType>
 static time_t saturateToRange(const FromType & from, time_t min_bound, time_t max_bound)
 {
@@ -2132,11 +2125,9 @@ struct ConvertImpl
                 return DateTimeTransformImpl<FromDataType, ToDataType, ToTimeTransformSigned<typename FromDataType::FieldType, Int32, date_time_overflow_behavior>, false>::template execute<Additions>(
                     arguments, result_type, input_rows_count);
         }
-        /// Unsigned sources to DateTime/Time. UInt128/UInt256 must be routed here too (not just UInt64):
-        /// otherwise they fall through to convertNumericGeneral, which ignores date_time_overflow_behavior
-        /// and truncates instead of clamping/throwing. UInt32 needs it only for Time (4000000 would stay
-        /// verbatim instead of clamping at 3599999); for DateTime it cannot overflow, since UInt32::max
-        /// equals MAX_DATETIME_TIMESTAMP. UInt8/UInt16 always fit both targets and stay on the generic path.
+        /// Unsigned sources to DateTime/Time. Every type that can overflow the target must be listed, or it
+        /// falls through to convertNumericGeneral, which ignores date_time_overflow_behavior. UInt32 is here
+        /// for Time only: it cannot overflow DateTime, whose maximum is UInt32::max.
         else if constexpr ((
                 std::is_same_v<FromDataType, DataTypeUInt64>
                 || std::is_same_v<FromDataType, DataTypeUInt128>

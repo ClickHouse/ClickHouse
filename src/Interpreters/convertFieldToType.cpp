@@ -255,13 +255,10 @@ Int64 clampToTimestamp(const T & value, Int64 min_bound, Int64 max_bound)
     return static_cast<Int64>(value);
 }
 
-/// Coerce a single numeric value into the seconds domain of a Time or DateTime column, honouring
-/// date_time_overflow_behavior. In `throw` mode an out-of-range value raises; otherwise it is clamped
-/// to [min_bound, max_bound], keeping `saturate` and `ignore` consistent with the numeric CAST path
-/// (toTime / toDateTime, which respect the setting in FunctionsConversion.h). NaN is treated as below
-/// the range in non-throw modes. The result is returned in the target's canonical Field representation
-/// (Int64 for a signed Time target, UInt64 for an unsigned DateTime target) so a clamped partition value
-/// still compares equal to the serializer's read-back in getPartitionIDFromQuery.
+/// Coerce a numeric value into the seconds domain of a Time or DateTime column: `throw` raises on
+/// out-of-range, the other modes clamp to [min_bound, max_bound], and NaN counts as below the range.
+/// Returns the target's canonical Field type (Int64 signed / UInt64 unsigned) so a clamped value still
+/// compares equal to the serializer's read-back in getPartitionIDFromQuery.
 template <typename T>
 Field coerceNumericValueToDateTimeOrTime(
     const T & value, Int64 min_bound, Int64 max_bound, bool signed_target,
@@ -290,22 +287,16 @@ Field coerceNumericValueToDateTimeOrTime(
     return signed_target ? Field(in_range) : Field(static_cast<UInt64>(in_range));
 }
 
-/// A temporal type is backed by an integer (day number or seconds), so a fractional float source is not
-/// exactly representable. Exact-target callers (`convert_inexact_floats = false`, e.g. the DROP PARTITION
-/// path via `convertFieldToTypeOrThrow`, and strict `IN`) must reject such a value the same way
-/// `convertNumericType<integer>` does, rather than truncating `0.1` to `0`. Only value-materialization
-/// paths (`convert_inexact_floats = true`) opt into the lossy CAST-like truncation. A non-finite float
-/// (NaN/Inf) is never exactly representable either. Integral floats pass through and are then handled by
-/// `date_time_overflow_behavior` for range.
+/// An exact target rejects any float a temporal integer cannot hold exactly (fractional or non-finite),
+/// matching convertNumericType<integer> rather than truncating. Integral floats pass through and are then
+/// range-checked by date_time_overflow_behavior.
 bool floatRejectedByExactContract(Float64 value, bool exact)
 {
     return exact && (!isFinite(value) || value != std::trunc(value));
 }
 
-/// Dispatch a numeric Field to coerceNumericValueToDateTimeOrTime for the concrete Field type, covering
-/// the integer, float and wide-integer sources evaluateConstantExpression can produce so the VALUES/IN
-/// coercion path respects date_time_overflow_behavior consistently with numeric CAST for all of them.
-/// `exact` threads the strict/convert_inexact_floats contract: an inexact float is rejected (Null).
+/// Dispatch every numeric Field type evaluateConstantExpression can produce (integer, float, wide
+/// integer) to coerceNumericValueToDateTimeOrTime. `exact` rejects an inexact float as Null.
 Field coerceNumericFieldToDateTimeOrTime(
     const Field & src, Int64 min_bound, Int64 max_bound,
     FormatSettings::DateTimeOverflowBehavior overflow_behavior, const char * type_name, bool exact)
@@ -336,11 +327,9 @@ Field coerceNumericFieldToDateTimeOrTime(
     }
 }
 
-/// Coerce a numeric value into a Date day-number Field, honouring date_time_overflow_behavior and
-/// mirroring the numeric CAST path (ToDateTransformFromSecondsOrDays): a value within [0, 0xFFFF] is a
-/// day number, a larger value is a unix timestamp clamped to MAX_DATETIME_TIMESTAMP then converted with
-/// toDayNum. `throw` raises on out-of-range; `saturate`/`ignore` clamp. Date has no valid values below
-/// zero. The result is a UInt64 Field (Date is UInt16 under the hood; UInt64 is its canonical Field).
+/// Coerce a numeric value into a Date day-number Field, mirroring ToDateTransformFromSecondsOrDays:
+/// [0, 0xFFFF] is a day number, anything larger is a unix timestamp. Returns a UInt64 Field, Date's
+/// canonical representation.
 template <typename T>
 Field coerceNumericToDateField(const T & value, const DateLUTImpl & time_zone, FormatSettings::DateTimeOverflowBehavior overflow)
 {
@@ -371,11 +360,9 @@ Field coerceNumericToDateField(const T & value, const DateLUTImpl & time_zone, F
     return Field(static_cast<UInt64>(value));
 }
 
-/// Coerce a numeric value into a Date32 day-number Field, mirroring the numeric CAST path
-/// (ToDate32TransformFromSecondsOrDays): a value within [daynum_min_offset, DATE_LUT_MAX_EXTEND_DAY_NUM)
-/// is a (possibly negative) day number, a larger value is a unix timestamp clamped to
-/// MAX_DATE32_TIMESTAMP then converted with toDayNum. `throw` raises on out-of-range;
-/// `saturate`/`ignore` clamp. The result is an Int64 Field (Date32 is Int32 under the hood).
+/// Coerce a numeric value into a Date32 day-number Field, mirroring ToDate32TransformFromSecondsOrDays:
+/// [daynum_min_offset, DATE_LUT_MAX_EXTEND_DAY_NUM) is a signed day number, anything larger is a unix
+/// timestamp. Returns an Int64 Field, Date32's canonical representation.
 template <typename T>
 Field coerceNumericToDate32Field(const T & value, const DateLUTImpl & time_zone, FormatSettings::DateTimeOverflowBehavior overflow)
 {
@@ -408,10 +395,8 @@ Field coerceNumericToDate32Field(const T & value, const DateLUTImpl & time_zone,
     return Field(static_cast<Int64>(value));
 }
 
-/// Dispatch a numeric Field to coerceNumericToDate/coerceNumericToDate32 for the concrete Field type.
-/// Handles the integer, float and wide-integer sources evaluateConstantExpression can produce so the
-/// VALUES/IN coercion path respects date_time_overflow_behavior consistently with numeric CAST.
-/// `exact` threads the strict/convert_inexact_floats contract: an inexact float is rejected (Null).
+/// Dispatch every numeric Field type evaluateConstantExpression can produce (integer, float, wide
+/// integer) to coerceNumericToDate/coerceNumericToDate32. `exact` rejects an inexact float as Null.
 Field coerceNumericFieldToDateOrDate32(const Field & src, bool is_date32, FormatSettings::DateTimeOverflowBehavior overflow, bool exact)
 {
     const auto & time_zone = DateLUT::instance();
@@ -610,25 +595,13 @@ Field convertFieldToTypeImpl(const Field & src, const IDataType & type, const ID
 
         const bool overflow_ignore = format_settings.date_time_overflow_behavior == FormatSettings::DateTimeOverflowBehavior::Ignore;
 
-        /// Exact-target callers (strict IN, or convert_inexact_floats=false: KeyCondition, sharding-key,
-        /// DROP/OPTIMIZE PARTITION via convertFieldToTypeOrThrow) require the source to be exactly
-        /// representable; only value-materialization paths (VALUES/INSERT) opt into truncating floats.
-        /// A temporal type is integer-backed, so the coerce helpers reject a non-integral float when exact.
+        /// Temporal types are integer-backed, so an exact target cannot accept a non-integral float.
         const bool exact = strict || !convert_inexact_floats;
 
-        /// The four numeric->temporal branches below share one rule for the default ignore mode, because
-        /// they serve two callers with opposite needs (see convertFieldToType.h):
-        ///  - exact target: return the canonical storage value. An out-of-STORAGE value becomes Null, which
-        ///    convertFieldToTypeOrThrow turns into ARGUMENT_OUT_OF_BOUND, so DROP/OPTIMIZE PARTITION no-ops
-        ///    instead of matching a clamped partition id. An in-storage value is returned verbatim: the
-        ///    serializers are plain SerializationNumber, so a partition outside the visible range can exist
-        ///    and must stay addressable.
-        ///  - value materialization: clamp like CAST, via the coerce helpers.
-        /// In saturate/throw modes both callers coerce overflow-awarely, consistent with numeric CAST.
-        /// A window frame `RANGE` offset is a distance in the target's underlying units, not a temporal
-        /// point, so it must never be read as a day number / unix timestamp nor clamped to the visible
-        /// range: it always takes the storage-type arm, in every overflow mode, and an offset outside the
-        /// storage type is rejected (Null) exactly as it was before the coerce helpers existed.
+        /// Take the plain storage-type arm instead of the overflow-aware coerce helpers. Required for an
+        /// exact target in ignore mode (an out-of-storage value must stay Null so convertFieldToTypeOrThrow
+        /// raises ARGUMENT_OUT_OF_BOUND, and an in-storage value must stay verbatim to remain addressable),
+        /// and unconditionally for a frame offset, which is a distance and never a temporal point.
         const bool ignore_exact_target = (overflow_ignore && exact) || temporal_numeric_is_offset;
 
         if (which_type.isDate() && isNumericFieldForTemporalCoercion(src))
