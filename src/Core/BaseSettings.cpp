@@ -9,6 +9,7 @@ namespace DB
 {
 namespace ErrorCodes
 {
+    extern const int BAD_ARGUMENTS;
     extern const int INCORRECT_DATA;
     extern const int TYPE_MISMATCH;
     extern const int UNKNOWN_SETTING;
@@ -72,6 +73,14 @@ void BaseSettingsHelpers::throwValuelessSettingIsNotBool(std::string_view name)
         ErrorCodes::TYPE_MISMATCH,
         "Setting '{}' is not Bool, so it cannot be set without a value. Write '{} = <value>'",
         String{name}, String{name});
+}
+
+void BaseSettingsHelpers::throwValuelessSettingHasValue(std::string_view name)
+{
+    throw Exception(
+        ErrorCodes::BAD_ARGUMENTS,
+        "Setting '{}' is marked as written without a value, which stands for `{} = true`, "
+        "but it carries a different value", String{name}, String{name});
 }
 
 /// Log the summary of unknown settings as a warning instead of warning for each one separately.
