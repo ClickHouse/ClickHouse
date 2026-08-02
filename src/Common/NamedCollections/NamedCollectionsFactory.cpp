@@ -462,6 +462,37 @@ void NamedCollectionFactory::removeDependencies(const StorageID & table_id)
     }
 }
 
+void NamedCollectionFactory::removeDependency(const String & collection_name, const StorageID & table_id)
+{
+    std::lock_guard lock(mutex);
+    LOG_TRACE(log, "Removing dependency: collection={}, table={}", collection_name, table_id.getNameForLogs());
+
+    auto & idx = dependencies.get<Collection>();
+    auto range = idx.equal_range(collection_name);
+
+    /// A dependency of a table of an `Atomic` database is identified by its UUID, and one of a table of
+    /// a name-based database (`Ordinary`, ...) by its name - such an entry has no UUID.
+    auto is_the_same_table = [&](const NamedCollectionDependency & dependency)
+    {
+        if (table_id.hasUUID())
+            return dependency.table_id.uuid == table_id.uuid;
+
+        return dependency.table_id.uuid == UUIDHelpers::Nil
+            && dependency.table_id.database_name == table_id.database_name
+            && dependency.table_id.table_name == table_id.table_name;
+    };
+
+    std::vector<decltype(range.first)> to_erase;
+    for (auto it = range.first; it != range.second; ++it)
+    {
+        if (is_the_same_table(*it))
+            to_erase.push_back(it);
+    }
+
+    for (auto it : to_erase)
+        idx.erase(it);
+}
+
 void NamedCollectionFactory::renameDependencies(const StorageID & from_table_id, const StorageID & to_table_id)
 {
     std::lock_guard lock(mutex);

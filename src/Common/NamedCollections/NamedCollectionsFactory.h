@@ -92,6 +92,9 @@ public:
 
     void addDependency(const String & collection_name, const StorageID & table_id);
     void removeDependencies(const StorageID & table_id);
+    /// Remove the dependency of a single table on a single collection, leaving the dependencies of the
+    /// same table on the other collections in place.
+    void removeDependency(const String & collection_name, const StorageID & table_id);
     void renameDependencies(const StorageID & from_table_id, const StorageID & to_table_id);
     std::vector<StorageID> getDependents(const String & collection_name) const;
 

@@ -64,6 +64,61 @@ DROP DATABASE ${DETACHED_DB};
 DROP NAMED COLLECTION ${NC};
 "
 
+echo "--- a stale dependency of a failed CREATE TABLE does not hold it ---"
+# A dependency is registered while the engine arguments are resolved, which happens before the table is
+# created, so a `CREATE TABLE` that fails after that point leaves the dependency of a table that never
+# came to exist behind. It must not block the drop, not even when the name is taken by another table
+# afterwards.
+${CLICKHOUSE_CLIENT} -m -q "
+CREATE NAMED COLLECTION ${NC} AS url = 'http://localhost:8123', format = 'ThisFormatDoesNotExist';
+CREATE TABLE t3 (x UInt32) ENGINE = URL(${NC}); -- { serverError UNKNOWN_FORMAT }
+CREATE TABLE t3 (x UInt32) ENGINE = Memory;
+DROP NAMED COLLECTION ${NC};
+SELECT count() FROM system.named_collections WHERE name = '${NC}';
+DROP TABLE t3;
+"
+
+echo "--- the same in an Ordinary database, where the name is all there is to identify the table by ---"
+${CLICKHOUSE_CLIENT} --send_logs_level=error -m -q "
+SET allow_deprecated_database_ordinary = 1;
+CREATE DATABASE ${ORDINARY_DB} ENGINE = Ordinary;
+"
+${CLICKHOUSE_CLIENT} -m -q "
+CREATE NAMED COLLECTION ${NC} AS url = 'http://localhost:8123', format = 'ThisFormatDoesNotExist';
+CREATE TABLE ${ORDINARY_DB}.t (x UInt32) ENGINE = URL(${NC}); -- { serverError UNKNOWN_FORMAT }
+CREATE TABLE ${ORDINARY_DB}.t (x UInt32) ENGINE = Memory;
+DROP NAMED COLLECTION ${NC};
+SELECT count() FROM system.named_collections WHERE name = '${NC}';
+DROP TABLE ${ORDINARY_DB}.t;
+DROP DATABASE ${ORDINARY_DB};
+"
+
+echo "--- and in a detached database, where the table has no metadata to be attached from ---"
+${CLICKHOUSE_CLIENT} -m -q "
+CREATE NAMED COLLECTION ${NC} AS url = 'http://localhost:8123', format = 'ThisFormatDoesNotExist';
+CREATE DATABASE ${DETACHED_DB};
+CREATE TABLE ${DETACHED_DB}.t (x UInt32) ENGINE = URL(${NC}); -- { serverError UNKNOWN_FORMAT }
+DETACH DATABASE ${DETACHED_DB};
+DROP NAMED COLLECTION ${NC};
+SELECT count() FROM system.named_collections WHERE name = '${NC}';
+"
+${CLICKHOUSE_CLIENT} -m -q "
+ATTACH DATABASE ${DETACHED_DB};
+DROP DATABASE ${DETACHED_DB};
+"
+
+echo "--- a dependency on another collection is not lost when a stale one is cleaned up ---"
+${CLICKHOUSE_CLIENT} -m -q "
+CREATE NAMED COLLECTION ${NC} AS url = 'http://localhost:8123', format = 'ThisFormatDoesNotExist';
+CREATE NAMED COLLECTION ${NC}_2 AS url = 'http://localhost:8123', format = 'CSV';
+CREATE TABLE t4 (x UInt32) ENGINE = URL(${NC}); -- { serverError UNKNOWN_FORMAT }
+CREATE TABLE t4 (x UInt32) ENGINE = URL(${NC}_2);
+DROP NAMED COLLECTION ${NC};
+DROP NAMED COLLECTION ${NC}_2; -- { serverError NAMED_COLLECTION_IS_USED }
+DROP TABLE t4;
+DROP NAMED COLLECTION ${NC}_2;
+"
+
 echo "--- a permanently detached table does not hold it: the metadata is not loaded at startup ---"
 ${CLICKHOUSE_CLIENT} -m -q "
 CREATE NAMED COLLECTION ${NC} AS url = 'http://localhost:8123', format = 'CSV';
