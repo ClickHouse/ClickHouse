@@ -38,7 +38,7 @@ std::string errnoToString(int the_errno)
     /// same overload above.
     const auto result = strerror_s(buf, buf_size, the_errno);
 #else
-    const auto result = strerror_r(the_errno, buf, buf_size);
+    const auto result = strerror_r(the_errno, buf, buf_size); /// NOLINT(readability-qualified-auto): a `char *` with glibc, an `int` with the XSI form
 #endif
 
     return fmt::format("errno: {}, strerror: {}", the_errno, getErrorMessage(result, buf, buf_size, the_errno));

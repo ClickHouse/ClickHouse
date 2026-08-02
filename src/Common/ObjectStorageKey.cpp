@@ -2,9 +2,6 @@
 
 #include <Common/Exception.h>
 
-#include <filesystem>
-
-namespace fs = std::filesystem;
 
 namespace DB
 {

@@ -12,7 +12,6 @@ bool isCrashed()
 
 #else
 
-#include <Common/SignalHandlers.h>
 #include <Common/config_version.h>
 #include <Common/getHashOfLoadedBinary.h>
 #include <Common/ShellCommandsHolder.h>

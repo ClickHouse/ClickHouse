@@ -9,10 +9,6 @@
 #include <Poco/RegularExpression.h>
 #include <Common/DNSResolver.h>
 #include <Common/isLocalAddress.h>
-#include <filesystem>
-
-namespace fs = std::filesystem;
-
 
 namespace DB
 {
@@ -78,8 +74,12 @@ namespace
         }
         catch (...)
         {
-            /// Keeping the pre-existing behaviour: if the interface list cannot be obtained,
+            /// Ok: keeping the pre-existing behaviour - if the interface list cannot be obtained,
             /// assume the loopback address rather than failing every access check.
+            LOG_WARNING(
+                getLogger("AllowedClientHosts"),
+                "Cannot get the addresses of the local interfaces: {}",
+                getCurrentExceptionMessage(true));
             return {IPAddress{"::1"}};
         }
 

@@ -3,6 +3,22 @@
 #include <Common/Exception.h>
 #include <Common/NetException.h>
 
+namespace DB
+{
+
+/// The declarations of both implementations below, in a single block: the style check counts them
+/// per file and does not follow the preprocessor.
+namespace ErrorCodes
+{
+    extern const int CANNOT_FSTAT;
+    extern const int CANNOT_READ_FROM_FILE_DESCRIPTOR;
+    extern const int CANNOT_WRITE_TO_FILE_DESCRIPTOR;
+    extern const int LOGICAL_ERROR;
+    extern const int NETWORK_ERROR;
+}
+
+}
+
 #if defined(OS_WINDOWS)
 
 #include <Poco/UnWindows.h>
@@ -11,13 +27,6 @@
 
 namespace DB
 {
-
-namespace ErrorCodes
-{
-    extern const int CANNOT_READ_FROM_FILE_DESCRIPTOR;
-    extern const int CANNOT_WRITE_TO_FILE_DESCRIPTOR;
-    extern const int NETWORK_ERROR;
-}
 
 namespace
 {
@@ -155,9 +164,7 @@ void WakeupFd::drain() const
 
 #else
 
-#include <Common/Exception.h>
 #include <Common/ErrnoException.h>
-#include <Common/WakeupFd.h>
 
 #include <cerrno>
 #include <unistd.h>
@@ -169,16 +176,6 @@ void WakeupFd::drain() const
 
 namespace DB
 {
-
-namespace ErrorCodes
-{
-    extern const int CANNOT_READ_FROM_FILE_DESCRIPTOR;
-    extern const int CANNOT_WRITE_TO_FILE_DESCRIPTOR;
-#ifdef DEBUG_OR_SANITIZER_BUILD
-    extern const int CANNOT_FSTAT;
-    extern const int LOGICAL_ERROR;
-#endif
-}
 
 #ifdef DEBUG_OR_SANITIZER_BUILD
 namespace

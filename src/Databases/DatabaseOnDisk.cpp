@@ -937,7 +937,7 @@ void DatabaseOnDisk::modifySettingsMetadata(const SettingsChanges & settings_cha
     auto default_db_disk = getContext()->getDatabaseDisk();
     writeMetadataFile(
         default_db_disk,
-        pathToGenericString(/*file_path=*/metadata_tmp_file_path),
+        pathToGenericString(metadata_tmp_file_path),
         /*content=*/statement,
         getContext()->getSettingsRef()[Setting::fsync_metadata]);
 

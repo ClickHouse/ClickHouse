@@ -183,7 +183,7 @@ static void mergeAttributes(Element & config_element, Element & with_element)
 {
     auto * with_element_attributes = with_element.attributes();
 
-    for (unsigned long i = 0; i < with_element_attributes->length(); ++i)
+    for (decltype(with_element_attributes->length()) i = 0; i < with_element_attributes->length(); ++i)
     {
         auto * attr = with_element_attributes->item(i);
         config_element.setAttribute(attr->nodeName(), attr->getNodeValue());

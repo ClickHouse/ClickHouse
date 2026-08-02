@@ -3,9 +3,7 @@
 #include <cstddef>
 #include <cstring>
 
-#if !defined(OS_WINDOWS)
-#include <cstring>
-#else
+#if defined(OS_WINDOWS)
 
 /// `memmem` is a GNU extension: `strstr` for buffers that may contain nul bytes. The Windows CRT
 /// does not have it.

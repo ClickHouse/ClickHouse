@@ -851,7 +851,7 @@ void DatabaseCatalog::updateMetadataFile(const String & database_name, const AST
 
     writeMetadataFile(
         default_db_disk,
-        pathToGenericString(/*file_path=*/metadata_tmp_file_path),
+        pathToGenericString(metadata_tmp_file_path),
         /*content=*/statement,
         getContext()->getSettingsRef()[Setting::fsync_metadata]);
 

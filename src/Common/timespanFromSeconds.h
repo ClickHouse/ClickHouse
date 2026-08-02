@@ -15,8 +15,10 @@ namespace DB
 /// and so on. `long` is 32 bits on Windows, so a `UInt64` has to be narrowed; a value past what it
 /// can hold saturates, which for a timeout means "about 24 days" rather than a wrapped-around
 /// short wait.
+/// NOLINTNEXTLINE(google-runtime-int): `long` is the type the Poco APIs take
 inline long toPocoMilliseconds(UInt64 milliseconds)
 {
+    /// NOLINTNEXTLINE(google-runtime-int)
     return static_cast<long>(std::min<UInt64>(milliseconds, std::numeric_limits<long>::max()));
 }
 
