@@ -321,8 +321,10 @@ public:
             /// this expression will be analyzed and then represented by following:
             ///   args in hyperrectangle [10, 20] × [20, 30].
             FUNCTION_ARGS_IN_HYPERRECTANGLE,
-            /// Special for pointInPolygon to utilize minmax indices.
+            /// Special for pointInPolygon to utilize primary key and minmax indices.
             /// For example: pointInPolygon((x, y), [(0, 0), (0, 2), (2, 2), (2, 0)])
+            /// where x, y are key columns, or pointInPolygon(coord, [...])
+            /// where coord is a key column of type Point (Tuple of two coordinates).
             FUNCTION_POINT_IN_POLYGON,
             /// Can take any value.
             FUNCTION_UNKNOWN,
@@ -358,7 +360,8 @@ public:
         ///  * if FUNCTION[_NOT]_IN_SET: one or more elements in nondecreasing order, same as
         ///    set_index->getIndexesMapping()[..].key_index,
         ///  * if FUNCTION_POINT_IN_POLYGON: two elements (x, y) describing the point,
-        ///    as in pointInPolygon((x, y), ...).
+        ///    as in pointInPolygon((x, y), ...), or one element if the point is a whole
+        ///    key column of type Tuple of two coordinates, as in pointInPolygon(coord, ...).
         std::vector<size_t> key_columns;
 
         /// If a key column is a space filling curve, e.g. mortonEncode(x, y),
@@ -379,7 +382,8 @@ public:
 
         /// For FUNCTION_POINT_IN_POLYGON.
         /// Function name (e.g. 'pointInPolygon') and the polygon.
-        /// Additionally, `key_columns` has two elements for point coordinates (x, y).
+        /// Additionally, `key_columns` has two elements for point coordinates (x, y),
+        /// or one element if the point is a whole key column of Tuple type.
         std::optional<String> point_in_polygon_function_name;
         std::shared_ptr<Polygon> polygon;
 
