@@ -118,12 +118,14 @@ CREATE TABLE t_packed (id UInt64, key String, v UInt64,
                        PROJECTION pr (SELECT key, sum(v) GROUP BY key))
 ENGINE = MergeTree ORDER BY id
 SETTINGS fsync_after_insert = 1, fsync_part_directory = 1,
+         min_rows_to_fsync_after_merge = 1000, min_compressed_bytes_to_fsync_after_merge = 0,
          min_bytes_for_full_part_storage = 1000000000,
          max_bytes_to_merge_at_max_space_in_pool = 1;
 
 CREATE TABLE t_packed_plain (id UInt64, key String, v UInt64)
 ENGINE = MergeTree ORDER BY id
 SETTINGS fsync_after_insert = 1, fsync_part_directory = 1,
+         min_rows_to_fsync_after_merge = 1000, min_compressed_bytes_to_fsync_after_merge = 0,
          min_bytes_for_full_part_storage = 1000000000,
          max_bytes_to_merge_at_max_space_in_pool = 1;
 
@@ -163,6 +165,38 @@ SELECT 'packed storage type', any(part_storage_type) FROM system.part_log
 WHERE database = currentDatabase() AND table = 't_packed' AND event_type = 'NewPart';
 
 SELECT 'packed check';
+CHECK TABLE t_packed SETTINGS check_query_single_value_result = 1;
+
+-- The merged projection's directory has to be fsynced on `Packed` storage too, and the ordering is
+-- storage-sensitive there: `data.packed` is only finalized when the projection's transaction is
+-- committed, so a guard taken before that would sync a directory not yet holding the archive.
+INSERT INTO t_packed SELECT number + 5000, concat('k', toString(number % 7)), number FROM numbers(5000);
+INSERT INTO t_packed_plain SELECT number + 5000, concat('k', toString(number % 7)), number FROM numbers(5000);
+
+OPTIMIZE TABLE t_packed FINAL SETTINGS optimize_throw_if_noop = 1, alter_sync = 2;
+OPTIMIZE TABLE t_packed_plain FINAL SETTINGS optimize_throw_if_noop = 1, alter_sync = 2;
+
+SYSTEM FLUSH LOGS query_log;
+
+SELECT 'packed merge projection adds directory syncs',
+    (SELECT ProfileEvents['DirectorySync'] FROM system.query_log
+     WHERE current_database = currentDatabase() AND query_kind = 'Optimize'
+       AND query NOT LIKE '%query_log%' AND query LIKE '%t\_packed %' AND type = 'QueryFinish'
+     ORDER BY event_time_microseconds DESC LIMIT 1)
+    -
+    (SELECT ProfileEvents['DirectorySync'] FROM system.query_log
+     WHERE current_database = currentDatabase() AND query_kind = 'Optimize'
+       AND query NOT LIKE '%query_log%' AND query LIKE '%t\_packed\_plain%' AND type = 'QueryFinish'
+     ORDER BY event_time_microseconds DESC LIMIT 1);
+
+SYSTEM FLUSH LOGS part_log;
+
+-- Guards the assertion above: it only covers the `Packed` ordering if the merge really produced a
+-- `Packed` part.
+SELECT 'packed merge storage type', argMax(part_storage_type, event_time_microseconds) FROM system.part_log
+WHERE database = currentDatabase() AND table = 't_packed' AND event_type = 'MergeParts';
+
+SELECT 'packed merge check';
 CHECK TABLE t_packed SETTINGS check_query_single_value_result = 1;
 
 DROP TABLE t_packed;
