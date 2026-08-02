@@ -57,7 +57,8 @@ std::optional<PartProperties::RecompressTTLInfo> buildRecompressTTLInfo(StorageM
                 /// recompression-only merges forever. Resolve it the same way the merge will —
                 /// `MergeTreeData::getCompressionCodecForPart` — and compare the concrete chains.
                 const auto resolved_codec
-                    = part->storage.getCompressionCodecForPart(part->getBytesOnDisk(), part->ttl_infos, current_time);
+                    = part->storage.getCompressionCodecForPart(metadata_snapshot, part->getBytesOnDisk(), part->ttl_infos, current_time)
+                          .codec;
                 will_change_codec = astToString(resolved_codec->getFullCodecDesc()) != current_codec;
             }
             else

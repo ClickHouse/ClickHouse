@@ -1856,7 +1856,8 @@ void IMergeTreeDataPart::loadDefaultCompressionCodec()
             "Part {} has a default compression codec that cannot be used for untyped streams (it requires a column "
             "type or is lossy); falling back to the table's default codec.",
             name);
-        default_codec = storage.getCompressionCodecForPart(getBytesOnDisk(), {}, time(nullptr), getBytesOnDisk());
+        const auto metadata_snapshot = storage.getInMemoryMetadataPtr(storage.getContext(), false);
+        default_codec = storage.getCompressionCodecForPart(metadata_snapshot, getBytesOnDisk(), {}, time(nullptr), getBytesOnDisk()).codec;
 
         /// The selection above never returns a codec unsafe for untyped data; this is a fail-safe for
         /// a future drift of that invariant, because such a codec would corrupt data at the next write.
