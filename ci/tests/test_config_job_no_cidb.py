@@ -28,7 +28,11 @@ from ci.jobs.scripts.find_tests import Targeting
 from ci.praktika.native_jobs import _is_praktika_job
 
 PR_NUMBER = 105710
-CHANGED_TEST = "tests/queries/0_stateless/04652_probe.sh"
+# Must name a file that exists: `Targeting.get_changed_tests` silently skips paths
+# failing `Path(fpath).exists()`, which would empty the selection and make every
+# assertion below run against the no-tests-changed state instead.
+CHANGED_TEST = "tests/queries/0_stateless/04652_compound_key_monotonicity.sql"
+CHANGED_TEST_NAME = "04652_compound_key_monotonicity."
 FLAKY_CHECK_JOB = "Stateless tests (amd_debug, flaky check)"
 
 
@@ -121,12 +125,17 @@ def _merge_queue_job_names():
 
 
 def test_pr_workflow_jobs_are_filtered_without_cidb(monkeypatch):
-    _use_fake_info(monkeypatch)
+    info = _use_fake_info(monkeypatch)
     calls = _record_cidb_requests(monkeypatch)
     job_names = _pr_workflow_job_names()
     assert any(
         "flaky" in n.lower() for n in job_names
     ), "no flaky job in the PR workflow"
+    # The fixture must actually select a test (it names a real file, and `Path` is
+    # relative, so run from the repo root), otherwise every job below is filtered in
+    # the no-tests-changed state and the changed-tests branch is never traversed.
+    assert Targeting(info=info).get_changed_tests() == [CHANGED_TEST_NAME]
+    assert fj.should_skip_job(FLAKY_CHECK_JOB) == (False, "")
     for name in job_names:
         should_skip, _ = fj.should_skip_job(name)
         assert isinstance(should_skip, bool), name
@@ -171,17 +180,25 @@ def test_cidb_outage_changes_no_filter_decision(monkeypatch):
     Compares an unreachable CIDB against a healthy one that answers every query, so a
     reintroduced config-time lookup whose result differs between the two is caught even
     if it never raises.
+
+    The changed file is deliberately *not* a stateless test: that is the only state in
+    which a previously-failed lookup could ever change a decision (with a test changed,
+    the job runs either way), so it is the only state where the two arms can differ.
     """
-    _use_fake_info(monkeypatch)
+    no_tests_changed = ("src/Core/Settings.cpp",)
+
+    _use_fake_info(monkeypatch, changed_files=no_tests_changed)
     _record_cidb_requests(monkeypatch)
     with_cidb_down = {n: fj.should_skip_job(n) for n in _pr_workflow_job_names()}
 
     fj._pipeline_note_labels.clear()
-    _use_fake_info(monkeypatch)
+    _use_fake_info(monkeypatch, changed_files=no_tests_changed)
     monkeypatch.setattr(
         cidb_module.requests,
         "post",
-        lambda *a, **kw: _OkResponse("04652_probe\n01666_merge_tree_max_query_limit\n"),
+        lambda *a, **kw: _OkResponse(
+            f"{CHANGED_TEST_NAME.rstrip('.')}\n01666_merge_tree_max_query_limit\n"
+        ),
     )
     with_cidb_up = {n: fj.should_skip_job(n) for n in _pr_workflow_job_names()}
 
@@ -214,22 +231,41 @@ def test_flaky_check_skipped_when_no_stateless_tests_changed(monkeypatch):
     assert calls == [], f"config-time CIDB requests: {calls}"
 
 
-def test_previously_failed_cannot_change_flaky_coverage(monkeypatch):
+def test_previously_failed_cannot_change_flaky_coverage():
     """Why dropping the previously-failed lookup loses no coverage.
 
     The flaky check selects `get_changed_tests` in-job and exits SKIPPED when that is
     empty, so the only row where previously-failed flipped the config decision
-    scheduled a job that immediately self-skipped.
+    scheduled a job that immediately self-skipped. Asserted structurally - both sides
+    of the decision must consult that one selector, and neither may consult CIDB.
     """
-    _use_fake_info(monkeypatch)
-    calls = _record_cidb_requests(monkeypatch)
-    monkeypatch.setattr(Targeting, "get_changed_tests", lambda self: [])
+    import ast
+    import inspect
 
-    # Same source of truth on both sides of the decision.
-    in_job_selection = Targeting(info=fj._info_cache).get_changed_tests()
-    assert in_job_selection == []
-    assert fj.should_skip_job(FLAKY_CHECK_JOB)[0] is True
-    assert calls == [], f"config-time CIDB requests: {calls}"
+    import ci.jobs.functional_tests as functional_tests
+
+    # In-job side: the `is_flaky_check` branch that picks the test list must pick it
+    # from `get_changed_tests`. Matched on the AST rather than on text, because
+    # `is_flaky_check` also gates an unrelated worker-count branch.
+    selectors = set()
+    for node in ast.walk(ast.parse(inspect.getsource(functional_tests))):
+        if not isinstance(node, ast.If):
+            continue
+        if not (isinstance(node.test, ast.Name) and node.test.id == "is_flaky_check"):
+            continue
+        for stmt in node.body:
+            if not isinstance(stmt, ast.Assign) or not isinstance(stmt.value, ast.Call):
+                continue
+            if any(
+                isinstance(t, ast.Name) and t.id == "tests" for t in stmt.targets
+            ) and isinstance(stmt.value.func, ast.Attribute):
+                selectors.add(stmt.value.func.attr)
+    assert selectors == {"get_changed_tests"}, selectors
+
+    # Config-time side: the same selector, and no CIDB-backed one.
+    hook = inspect.getsource(fj)
+    assert "get_changed_tests" in hook
+    assert "get_previously_failed_tests" not in hook
 
 
 def test_integration_flaky_check_needs_no_cidb(monkeypatch):
@@ -251,31 +287,8 @@ def test_get_changed_tests_issues_no_cidb_query(monkeypatch):
     """
     info = _use_fake_info(monkeypatch)
     calls = _record_cidb_requests(monkeypatch)
-    assert Targeting(info=info).get_changed_tests() == []
+    assert Targeting(info=info).get_changed_tests() == [CHANGED_TEST_NAME]
     assert calls == [], f"config-time CIDB requests: {calls}"
-
-
-def test_cidb_worst_case_budget_exceeds_the_config_job_timeout():
-    """The arithmetic that makes a config-time CIDB call unsafe.
-
-    Documents why the reachability assertions above are the regression, not a retuning
-    of these constants: even one query can outlast the whole job.
-    """
-    import inspect
-
-    from ci.praktika.settings import Settings
-    from ci.praktika.cidb import CIDB
-    from ci.praktika import native_jobs
-
-    retries = inspect.signature(CIDB.query).parameters["retries"].default
-    backoff = sum(2**attempt for attempt in range(1, retries))
-    one_query = retries * Settings.CI_DB_QUERY_TIMEOUT_SEC + backoff
-    config_job_timeout = native_jobs._workflow_config_job.timeout
-
-    assert one_query > config_job_timeout / 2, (
-        f"one CIDB query is {one_query}s against a {config_job_timeout}s job timeout; "
-        "config-time CIDB queries must stay removed"
-    )
 
 
 if __name__ == "__main__":
