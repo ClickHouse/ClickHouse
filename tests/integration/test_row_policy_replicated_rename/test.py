@@ -94,7 +94,7 @@ shared_nodes = [shared1, shared2, shared3]
 # So a count of 1 means filtered and 3 means the policy no longer applies.
 FILTERED = "1\n"
 UNFILTERED = "3\n"
-SKIP_WARNING = "Not moving"
+SKIP_LOG_LINE = "Not moving"
 # The two paths given to `dup_node` in configs/two_local_directories.xml.
 ACCESS_DIR_A = "/var/lib/clickhouse/access"
 ACCESS_DIR_B = "/var/lib/clickhouse/access_b"
@@ -360,7 +360,7 @@ def test_no_rekey_with_shared_access_storage(started_cluster):
         assert n.query(f"SELECT count() FROM {db}.ta", user="rp_user") == FILTERED
 
     try:
-        skips_before = int(shared1.count_in_log(SKIP_WARNING))
+        skips_before = int(shared1.count_in_log(SKIP_LOG_LINE))
         shared1.query(f"RENAME TABLE {db}.ta TO {db}.ta_new")
         # The renaming server sees the table unfiltered under its new name: the policy did not
         # follow. That is the accepted cost, and it is exactly what master does.
@@ -374,8 +374,8 @@ def test_no_rekey_with_shared_access_storage(started_cluster):
             == f"{db}\tta\n"
         )
         # The log is cumulative and never rotated between arms, so a plain `contains_in_log` here
-        # would also be satisfied by another arm's warning. Assert THIS rename emitted one.
-        assert int(shared1.count_in_log(SKIP_WARNING)) > skips_before
+        # would also be satisfied by another arm's line. Assert THIS rename emitted one.
+        assert int(shared1.count_in_log(SKIP_LOG_LINE)) > skips_before
     finally:
         for n in shared_nodes[:2]:
             n.query(f"DROP DATABASE IF EXISTS {db} SYNC")
@@ -467,7 +467,7 @@ def test_no_rekey_on_rename_database_with_shared_access_storage(started_cluster)
         assert n.query(f"SELECT count() FROM {db}.ta", user="rp_user") == FILTERED
 
     try:
-        skips_before = int(shared1.count_in_log(SKIP_WARNING))
+        skips_before = int(shared1.count_in_log(SKIP_LOG_LINE))
         shared1.query(f"RENAME DATABASE {db} TO {new_db}")
         assert shared1.query(f"SELECT count() FROM {new_db}.ta", user="rp_user") == UNFILTERED
         # The peer still has the old database name, and both policies are still bound to it.
@@ -479,7 +479,7 @@ def test_no_rekey_on_rename_database_with_shared_access_storage(started_cluster)
             )
             == f"rp_a\t{db}\tta\nrp_db\t{db}\t\n"
         )
-        assert int(shared1.count_in_log(SKIP_WARNING)) > skips_before
+        assert int(shared1.count_in_log(SKIP_LOG_LINE)) > skips_before
     finally:
         for n in shared_nodes[:2]:
             for d in (db, new_db):
@@ -680,7 +680,7 @@ def test_no_rekey_when_the_shared_policy_is_not_visible(started_cluster):
     )
 
     try:
-        skips_before = int(shared1.count_in_log(SKIP_WARNING))
+        skips_before = int(shared1.count_in_log(SKIP_LOG_LINE))
         with PartitionManager() as pm:
             pm.drop_instance_zk_connections(shared1)
             # Written on shared2 while shared1 cannot reach Keeper, so shared1 never sees it.
@@ -702,7 +702,7 @@ def test_no_rekey_when_the_shared_policy_is_not_visible(started_cluster):
                 )
                 == f"{db}\ttb\n"
             )
-            assert int(shared1.count_in_log(SKIP_WARNING)) > skips_before
+            assert int(shared1.count_in_log(SKIP_LOG_LINE)) > skips_before
 
         # Once Keeper is reachable again the shared policy is still on its original name, so
         # shared2 -- which never renamed -- is unaffected either way.

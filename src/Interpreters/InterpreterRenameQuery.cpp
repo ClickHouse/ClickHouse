@@ -115,7 +115,7 @@ namespace
     /// One case is declined rather than rejected: with a replicated access storage the whole plan is
     /// dropped (see that branch). `rekeys` is therefore mutable and is the same vector the caller
     /// passes to `applyRowPolicyRekeys`, so the apply skips exactly what was dropped.
-    /// `log_declined` is false when the caller only wants the checks, so the warning is logged once.
+    /// `log_declined` is false when the caller only wants the checks, so the skip is logged once.
     void preflightRowPolicyRekeys(
         const AccessControl & access_control, std::vector<RowPolicyRekey> & rekeys, bool log_declined = true)
     {
@@ -143,7 +143,7 @@ namespace
         if (access_control.containsStorage(ReplicatedAccessStorage::STORAGE_TYPE))
         {
             if (log_declined)
-                LOG_WARNING(
+                LOG_INFO(
                     getLogger("InterpreterRenameQuery"),
                     "Not moving {} row polic{} to follow this rename: this server has a replicated access storage "
                     "configured, and such a storage is shared with servers that this rename does not apply to. "
