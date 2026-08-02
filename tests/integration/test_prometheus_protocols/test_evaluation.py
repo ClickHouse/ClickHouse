@@ -909,6 +909,20 @@ def test_function_timestamp():
         [["[]", "1970-01-01 00:02:15.000", 130]],
     )
 
+    do_query_test(
+        "timestamp(timestamp(test offset 1m))",
+        195,
+        '{"resultType": "vector", "result": [{"metric": {}, "value": [195, "130"]}]}',
+        [["[]", "1970-01-01 00:03:15.000", 130]],
+    )
+
+    do_query_test(
+        "timestamp(timestamp(test @ 120))",
+        135,
+        '{"resultType": "vector", "result": [{"metric": {}, "value": [135, "120"]}]}',
+        [["[]", "1970-01-01 00:02:15.000", 120]],
+    )
+
     # Scalar-literal arithmetic still preserves which sample is selected regardless of the scalar's sign -
     # PromQL parses a signed scalar literal (e.g. `-1`, `+2`) as a UnaryOperator wrapping a Scalar, not as a bare
     # Scalar node.

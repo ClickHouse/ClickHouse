@@ -44,10 +44,10 @@ namespace
     /// instant selector this way (e.g. it's an aggregation, a binary operation of two vectors, another function
     /// call, etc.).
     ///
-    /// If the peeled chain goes through an offset/@ modifier, `offset_node` is set to that Offset node so the
-    /// caller can re-apply it (to restore the modifier's effect on the evaluation range and the result's grid
+    /// If the peeled chain goes through offset/@ modifiers, `offset_nodes` collects those Offset nodes so the
+    /// caller can re-apply them in order (to restore their effect on the evaluation range and the result's grid
     /// alignment) after computing the timestamp() result over the bare selector.
-    const PQT::InstantSelector * peelToInstantSelector(const Node * node, const PQT::Offset *& offset_node)
+    const PQT::InstantSelector * peelToInstantSelector(const Node * node, std::vector<const PQT::Offset *> & offset_nodes)
     {
         switch (node->node_type)
         {
@@ -59,7 +59,7 @@ namespace
                 const auto * unary_operator = static_cast<const PQT::UnaryOperator *>(node);
                 if (unary_operator->operator_name != "+" && unary_operator->operator_name != "-")
                     return nullptr;
-                return peelToInstantSelector(unary_operator->getArgument(), offset_node);
+                return peelToInstantSelector(unary_operator->getArgument(), offset_nodes);
             }
 
             case NodeType::BinaryOperator:
@@ -84,7 +84,7 @@ namespace
                 if (!preserves_every_sample)
                     return nullptr;
 
-                return peelToInstantSelector(left_is_scalar_literal ? right : left, offset_node);
+                return peelToInstantSelector(left_is_scalar_literal ? right : left, offset_nodes);
             }
 
             case NodeType::Function:
@@ -92,25 +92,14 @@ namespace
                 const auto * function = static_cast<const PQT::Function *>(node);
                 if (function->function_name != "timestamp" || function->getArguments().size() != 1)
                     return nullptr;
-                return peelToInstantSelector(function->getArguments()[0], offset_node);
+                return peelToInstantSelector(function->getArguments()[0], offset_nodes);
             }
 
             case NodeType::Offset:
             {
-                if (offset_node)
-                    return nullptr; /// Defensive: PromQL's grammar only allows an offset/@ modifier to attach
-                                     /// directly to a selector or a subquery (never to a function call, a
-                                     /// parenthesized expression, or any other operator's result - confirmed
-                                     /// against real Prometheus 3.5.0, which rejects e.g.
-                                     /// `timestamp(test offset 1m) @ 195` with "parse error: @ modifier must be
-                                     /// preceded by an instant vector selector or range vector selector or a
-                                     /// subquery"). So a second Offset node can never actually be reached here for
-                                     /// valid input - combining `@` and `offset` together (e.g. `test @ 100
-                                     /// offset 30s`) is parsed as a single Offset node with both fields set,
-                                     /// which is already handled below without hitting this branch at all.
                 const auto * offset = static_cast<const PQT::Offset *>(node);
-                offset_node = offset;
-                return peelToInstantSelector(offset->getExpression(), offset_node);
+                offset_nodes.push_back(offset);
+                return peelToInstantSelector(offset->getExpression(), offset_nodes);
             }
 
             default:
@@ -141,8 +130,8 @@ SQLQueryPiece applyFunctionTimestamp(
     /// instant vector goes through an arbitrary operator or function its individual samples' original timestamps
     /// aren't tracked through the conversion. So we independently re-walk the raw argument AST instead, to see
     /// whether it reduces to a bare instant selector whose samples' timestamps we can read directly.
-    const PQT::Offset * offset_node = nullptr;
-    const auto * instant_selector = peelToInstantSelector(function_node->getArguments().at(0), offset_node);
+    std::vector<const PQT::Offset *> offset_nodes;
+    const auto * instant_selector = peelToInstantSelector(function_node->getArguments().at(0), offset_nodes);
     if (!instant_selector)
         throw Exception(ErrorCodes::NOT_IMPLEMENTED, "Function {} is not implemented", function_node->function_name);
 
@@ -156,8 +145,8 @@ SQLQueryPiece applyFunctionTimestamp(
     auto instant_selector_text = instant_selector->toString(*context.promql_tree);
     auto range_selector = fromRangeSelector(instant_selector_text, instant_selector, context);
     auto res = applyFunctionOverRange(instant_selector, "timestamp", {std::move(range_selector)}, context);
-    if (offset_node)
-        res = applyOffset(offset_node, std::move(res), context);
+    for (auto it = offset_nodes.rbegin(); it != offset_nodes.rend(); ++it)
+        res = applyOffset(*it, std::move(res), context);
     res.node = function_node;
     return res;
 }
