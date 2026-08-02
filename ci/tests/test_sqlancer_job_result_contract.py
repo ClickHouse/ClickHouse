@@ -328,18 +328,23 @@ def test_scripts_only_assign_valid_status_tokens(script):
 def _read_emitted_result(tmp_path, proc, job_name):
     """Parse the result file at the path the *script* computed, not a fixed one.
 
-    The harnesses run the script's own `RESULT_FILE=` assignment, so the path is
-    evidence: praktika reads `Result.file_name_static(JOB_NAME)` and nothing else.
-    Asserting the emitted path against it is what makes a regression in
+    The harnesses run the script's own `RESULT_FILE=` assignment with `TMP_PATH`
+    pointed at *tmp_path*, so the whole path is evidence: praktika reads
+    `Result.file_name_static(JOB_NAME)` under `Settings.TEMP_DIR` and nothing
+    else. Asserting directory and basename together is what makes a regression in
     `NORMALIZED_JOB_NAME` (a hardcoded literal, or an empty value collapsing the
-    name to `result_.json`) redden, rather than being re-derived in Python here.
+    name to `result_.json`) or in the directory redden, rather than being
+    re-derived in Python here.
     """
     emitted = re.findall(r"^RESULT_FILE_IS=(.*)$", proc.stdout, re.M)
     assert len(emitted) == 1, f"expected one RESULT_FILE_IS line, got {emitted}"
     path = emitted[0]
-    assert os.path.basename(path) == os.path.basename(
-        Result.file_name_static(job_name)
-    ), f"the script writes {path!r}, which is not the file praktika reads"
+    expected = os.path.join(
+        str(tmp_path), os.path.basename(Result.file_name_static(job_name))
+    )
+    assert (
+        path == expected
+    ), f"the script writes {path!r}, not the {expected!r} praktika reads"
     with open(path, encoding="utf-8") as f:
         return json.load(f)
 
