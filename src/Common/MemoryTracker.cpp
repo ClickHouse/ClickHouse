@@ -739,7 +739,7 @@ void MemoryTracker::updateMemoryCredits(Int64 current_amount)
     /// once there, so the value propagates only to User / Global and never lands in Thread, scope, or
     /// nested Process counters used by query_thread_log / query_views_log / nested async-insert rows.
     if (const UInt64 delta = takeMemoryCreditsDelta(current_amount))
-        CurrentThread::getProfileEvents().incrementAtOutermostProcess(ProfileEvents::MemoryCredits, static_cast<Int64>(delta));
+        DB::CurrentThread::getProfileEvents().incrementAtOutermostProcess(ProfileEvents::MemoryCredits, static_cast<Int64>(delta));
 }
 
 
