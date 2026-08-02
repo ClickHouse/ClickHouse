@@ -48,12 +48,14 @@ public:
     /// per-CPU bound (only the per-thread cap applies).
     static constexpr Int64 UNLIMITED_BUDGET = std::numeric_limits<Int64>::max() / 2;
 
-    static int numberOfCPUs() { return static_cast<int>(PerCPU::getNumCPUs()); }
+    /// One slot per CPU when current-CPU ids are available; a single shared slot otherwise.
+    static int numberOfSlots() { return PerCPU::HAS_GET_CURRENT_CPU ? static_cast<int>(PerCPU::getNumCPUs()) : 1; }
 
-    PerCPUMemory(int cpu_count_, Int64 capacity_, Int64 buffer_)
-        : cpu_count(cpu_count_)
-        , slots(std::make_unique<Slot[]>(cpu_count_ > 0 ? static_cast<size_t>(cpu_count_) : 0))
-        , capacity(capacity_ > 0 ? capacity_ : UNLIMITED_BUDGET)
+    PerCPUMemory(int slot_count_, Int64 capacity_, Int64 buffer_)
+        : slot_count(slot_count_)
+        , slots(std::make_unique<Slot[]>(slot_count_ > 0 ? static_cast<size_t>(slot_count_) : 0))
+        , budget_scale(budgetScale(slot_count_))
+        , capacity(scaledCapacity(capacity_, budget_scale))
         , buffer(buffer_ < 0 ? 0 : buffer_)
     {
     }
@@ -72,15 +74,15 @@ public:
             return true;
 
         int cpu = PerCPU::getCurrentCPU();
-        if (unlikely(static_cast<unsigned>(cpu) >= static_cast<unsigned>(cpu_count)))
+        if (unlikely(static_cast<unsigned>(cpu) >= static_cast<unsigned>(slot_count)))
         {
             /// Before the global's constructor runs there are no slots to account on.
-            if (cpu_count == 0)
+            if (slot_count == 0)
                 return false;
             /// The id is not guaranteed dense or valid on every platform (see PerCPU::getCurrentCPU):
-            /// fold out-of-range ids and collapse an unknown CPU (negative) to shard 0 — worst case
+            /// fold out-of-range ids and collapse an unknown CPU (negative) to slot 0 — worst case
             /// is degraded sharding, never lost accounting.
-            cpu = cpu < 0 ? 0 : cpu % cpu_count;
+            cpu = cpu < 0 ? 0 : cpu % slot_count;
         }
 
         Int64 occupied = 0;
@@ -153,14 +155,14 @@ public:
 
     void setBudgetCapacity(Int64 bytes)
     {
-        capacity.store(bytes > 0 ? bytes : UNLIMITED_BUDGET, std::memory_order_relaxed);
+        capacity.store(scaledCapacity(bytes, budget_scale), std::memory_order_relaxed);
     }
 
     /// For system.server_settings; maps the UNLIMITED_BUDGET sentinel back to 0 (bound disabled).
     Int64 budgetCapacity() const
     {
         const Int64 c = capacity.load(std::memory_order_relaxed);
-        return c == UNLIMITED_BUDGET ? 0 : c;
+        return c == UNLIMITED_BUDGET ? 0 : c / budget_scale;
     }
     Int64 threadBuffer() const { return buffer.load(std::memory_order_relaxed); }
 
@@ -178,15 +180,32 @@ private:
         std::atomic<Int64> freed;
     };
 
-    const int cpu_count;
+    /// With fewer slots than CPUs (no current-CPU ids), the configured per-CPU budget still
+    /// applies per hardware CPU: the shared slots absorb it scaled, so the machine-wide bound
+    /// stays ~ ncpu * budget instead of shrinking to a single CPU's worth.
+    static Int64 budgetScale(int slot_count_)
+    {
+        const Int64 cpus = static_cast<Int64>(PerCPU::getNumCPUs());
+        return slot_count_ > 0 && cpus > slot_count_ ? cpus / slot_count_ : 1;
+    }
+
+    static Int64 scaledCapacity(Int64 bytes, Int64 scale)
+    {
+        if (bytes <= 0 || bytes >= UNLIMITED_BUDGET / scale)
+            return UNLIMITED_BUDGET;
+        return bytes * scale;
+    }
+
+    const int slot_count;
     const std::unique_ptr<Slot[]> slots;
+    const Int64 budget_scale;
     std::atomic<Int64> capacity;
     std::atomic<Int64> buffer;
 };
 
 /// Process-wide instance used by CurrentMemoryTracker. Constructed before main(); allocations
-/// before its initialiser runs see cpu_count == 0, so sync() returns false without indexing the
+/// before its initialiser runs see slot_count == 0, so sync() returns false without indexing the
 /// (empty) array — a normal per-thread flush.
-inline PerCPUMemory per_cpu_memory{PerCPUMemory::numberOfCPUs(), PerCPUMemory::DEFAULT_BUDGET, PerCPUMemory::DEFAULT_THREAD_BUFFER};
+inline PerCPUMemory per_cpu_memory{PerCPUMemory::numberOfSlots(), PerCPUMemory::DEFAULT_BUDGET, PerCPUMemory::DEFAULT_THREAD_BUFFER};
 
 }

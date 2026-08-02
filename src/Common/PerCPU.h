@@ -16,8 +16,7 @@ namespace PerCPU
 constexpr UInt32 MAX_CPUS = 1024;
 
 /// Whether `getCurrentCPU` is implemented for this platform/arch; when false it always returns
-/// -1, and `getNumCPUs` reports one CPU so callers size a single shard instead of creating
-/// unreachable ones.
+/// -1 and callers must collapse their per-CPU sharding to a single shard themselves.
 constexpr bool HAS_GET_CURRENT_CPU =
 #if defined(OS_LINUX) || defined(OS_DARWIN) || (defined(OS_FREEBSD) && defined(__x86_64__))
     true;
@@ -25,9 +24,9 @@ constexpr bool HAS_GET_CURRENT_CPU =
     false;
 #endif
 
-/// Number of CPUs `getCurrentCPU` can route to, capped at `MAX_CPUS`. Cached on first call.
-/// `get_nprocs_conf()` on Linux, `sysconf(_SC_NPROCESSORS_ONLN)` on Darwin and FreeBSD; 1 if
-/// `HAS_GET_CURRENT_CPU` is false or the count is unavailable.
+/// Number of CPUs in the machine — a fact independent of `HAS_GET_CURRENT_CPU` — capped at
+/// `MAX_CPUS`; 1 if the count is unavailable. Cached on first call. `get_nprocs_conf()` on
+/// Linux, `sysconf(_SC_NPROCESSORS_ONLN)` on Darwin and FreeBSD.
 UInt32 getNumCPUs() noexcept;
 
 /// Current CPU id, or -1 if unavailable (callers must treat a negative value as "unknown" and

@@ -25,10 +25,6 @@ UInt32 getNumCPUs() noexcept
 {
     static const UInt32 cached = []
     {
-        /// Per-CPU routing is impossible without the current CPU id: one shard, no matter how
-        /// many CPUs the machine has (e.g. FreeBSD on non-amd64).
-        if (!HAS_GET_CURRENT_CPU)
-            return UInt32{1};
 #if defined(OS_LINUX)
         const Int64 n = get_nprocs_conf();
 #elif defined(OS_DARWIN) || defined(OS_FREEBSD)

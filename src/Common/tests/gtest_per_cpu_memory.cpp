@@ -9,6 +9,7 @@
 #include <Common/Exception.h>
 #include <Common/MemoryTracker.h>
 #include <Common/MemoryTrackerSwitcher.h>
+#include <Common/PerCPU.h>
 #include <Common/PerCPUMemory.h>
 #include <Common/ThreadStatus.h>
 
@@ -94,7 +95,7 @@ TEST(PerCPUMemory, FoldsBufferedSignedDelta)
     const bool ran = runOnAnyCpu([&](int cpu)
     {
         const Int64 buffer = 32 * 1024;
-        PerCPUMemory memory(PerCPUMemory::numberOfCPUs(), 8 * 1024 * 1024, buffer);
+        PerCPUMemory memory(PerCPUMemory::numberOfSlots(), 8 * 1024 * 1024, buffer);
         PerCPUMemoryThreadState state;
 
         /// Sub-buffer drift: no fold.
@@ -122,7 +123,7 @@ TEST(PerCPUMemory, DeferredFreesDoNotAdmitAllocations)
 {
     const bool ran = runOnAnyCpu([&](int cpu)
     {
-        PerCPUMemory memory(PerCPUMemory::numberOfCPUs(), /*capacity*/ 40 * 1024, /*buffer*/ 32 * 1024);
+        PerCPUMemory memory(PerCPUMemory::numberOfSlots(), /*capacity*/ 40 * 1024, /*buffer*/ 32 * 1024);
         PerCPUMemoryThreadState freeing;
         PerCPUMemoryThreadState allocating1;
         PerCPUMemoryThreadState allocating2;
@@ -159,7 +160,7 @@ TEST(PerCPUMemory, RollbackRestoresContributionEvenWhenBudgetFull)
     const bool ran = runOnAnyCpu([&](int cpu)
     {
         const Int64 capacity = 64 * 1024;
-        PerCPUMemory memory(PerCPUMemory::numberOfCPUs(), capacity, /*buffer*/ 32 * 1024);
+        PerCPUMemory memory(PerCPUMemory::numberOfSlots(), capacity, /*buffer*/ 32 * 1024);
 
         PerCPUMemoryThreadState mine;
         EXPECT_TRUE(memory.sync(60 * 1024, mine));
@@ -189,7 +190,7 @@ TEST(PerCPUMemory, NetOutOfBudgetForcesFlush)
     const bool ran = runOnAnyCpu([&](int cpu)
     {
         const Int64 capacity = 128 * 1024;
-        PerCPUMemory memory(PerCPUMemory::numberOfCPUs(), capacity, 32 * 1024);
+        PerCPUMemory memory(PerCPUMemory::numberOfSlots(), capacity, 32 * 1024);
 
         /// Over-commit direction.
         PerCPUMemoryThreadState a;
@@ -201,7 +202,7 @@ TEST(PerCPUMemory, NetOutOfBudgetForcesFlush)
         EXPECT_EQ(memory.netOnCPU(cpu), 100 * 1024);       /// only a remains
 
         /// Over-report direction (symmetric).
-        PerCPUMemory negative(PerCPUMemory::numberOfCPUs(), capacity, 32 * 1024);
+        PerCPUMemory negative(PerCPUMemory::numberOfSlots(), capacity, 32 * 1024);
         PerCPUMemoryThreadState c;
         PerCPUMemoryThreadState d;
         EXPECT_TRUE(negative.sync(-100 * 1024, c));
@@ -224,7 +225,7 @@ TEST(PerCPUMemory, MigrationMovesContribution)
     const int cpu_a = cpus[0];
     const int cpu_b = cpus[1];
 
-    PerCPUMemory memory(PerCPUMemory::numberOfCPUs(), 8 * 1024 * 1024, 32 * 1024);
+    PerCPUMemory memory(PerCPUMemory::numberOfSlots(), 8 * 1024 * 1024, 32 * 1024);
     PerCPUMemoryThreadState state;
 
     const bool ran =
@@ -255,7 +256,7 @@ TEST(PerCPUMemory, ZeroBudgetDisablesPerCpuBound)
 {
     const bool ran = runOnAnyCpu([&](int)
     {
-        PerCPUMemory memory(PerCPUMemory::numberOfCPUs(), /*capacity*/ 0, /*buffer*/ 32 * 1024);
+        PerCPUMemory memory(PerCPUMemory::numberOfSlots(), /*capacity*/ 0, /*buffer*/ 32 * 1024);
         PerCPUMemoryThreadState state;
         /// Far more than any real capacity; still no per-CPU flush.
         EXPECT_TRUE(memory.sync(1024 * 1024 * 1024, state));
@@ -336,6 +337,33 @@ TEST(PerCPUMemory, CallerReleasesContributionOnBudgetFlush)
     resetTrackers();
 }
 #endif
+
+/// With fewer slots than CPUs the configured per-CPU budget applies per hardware CPU: the
+/// shared slot absorbs the machine-wide bound, while the reported setting stays unscaled.
+TEST(PerCPUMemory, SingleSlotKeepsMachineWideBudget)
+{
+    const Int64 cpus = static_cast<Int64>(PerCPU::getNumCPUs());
+    if (cpus < 2)
+        GTEST_SKIP() << "need at least 2 CPUs";
+
+    const Int64 capacity = 64 * 1024;
+    PerCPUMemory memory(/*slot_count*/ 1, capacity, /*buffer*/ 0);
+    EXPECT_EQ(memory.budgetCapacity(), capacity);
+
+    /// A single slot needs no pinning: every thread lands on it.
+    PerCPUMemoryThreadState within;
+    EXPECT_TRUE(memory.sync(cpus * capacity, within));
+
+    PerCPUMemoryThreadState beyond;
+    EXPECT_FALSE(memory.sync(capacity, beyond));
+    memory.release(beyond);
+    memory.release(within);
+
+    memory.setBudgetCapacity(2 * capacity);
+    EXPECT_EQ(memory.budgetCapacity(), 2 * capacity);
+    memory.setBudgetCapacity(0);
+    EXPECT_EQ(memory.budgetCapacity(), 0);
+}
 
 TEST(PerCPUMemory, BalancedAllocFreeDoesNotInflateTracker)
 {
