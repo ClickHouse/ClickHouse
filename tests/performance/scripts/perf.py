@@ -24,7 +24,7 @@ from scipy import stats
 # strip_setting_from_query lives in a sibling module so it can be unit-tested
 # (perf.py executes its whole body on import). See
 # ci/tests/test_strip_setting_from_query.py.
-from perf_create_query_utils import strip_setting_from_query
+from perf_create_query_utils import is_mergetree_create_query, strip_setting_from_query
 
 logging.basicConfig(
     format="%(asctime)s: %(levelname)s: %(module)s: %(message)s", level="WARNING"
@@ -791,14 +791,19 @@ if not args.use_existing_tables:
                     # matches the intent on the old side of an A/B perf
                     # comparison.
                     #
-                    # Scope this to `CREATE TABLE` only and to the
-                    # allowlist so that misspelled settings or unknown
-                    # settings on `fill_query` / other statements still
-                    # surface as failures instead of silently producing
-                    # different datasets on the two sides.
+                    # Scope this to `CREATE TABLE` of a `MergeTree`-family
+                    # engine only, and to the allowlist, so that misspelled
+                    # settings, unknown settings on `fill_query` / other
+                    # statements, and a `MergeTree` setting pinned on a
+                    # non-`MergeTree` fixture (e.g. `ENGINE = Memory
+                    # SETTINGS optimize_row_order_if_no_order_by = 0`, which
+                    # the setting cannot affect at all) still surface as
+                    # failures instead of silently producing different
+                    # datasets on the two sides.
                     if (
                         e.code == 115  # UNKNOWN_SETTING
                         and first_keyword(current_query) == "CREATE"
+                        and is_mergetree_create_query(current_query)
                     ):
                         m = re.search(r"Unknown setting '([^']+)'", e.message)
                         if m:

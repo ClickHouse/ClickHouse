@@ -14,7 +14,11 @@ sys.path.insert(
     ),
 )
 
-from perf_create_query_utils import strip_setting_from_query  # noqa: E402
+from perf_create_query_utils import (  # noqa: E402
+    create_query_engine,
+    is_mergetree_create_query,
+    strip_setting_from_query,
+)
 
 SETTING = "optimize_row_order_if_no_order_by"
 
@@ -437,3 +441,75 @@ def test_value_aware_comment_between_eq_and_value_is_stripped():
         "SETTINGS index_granularity = 8192"
     )
     assert strip_setting_from_query(query, SETTING, ALLOWED) == expected
+
+
+# `perf.py` only strips a `MergeTree` setting from a `CREATE TABLE` of the
+# `MergeTree` family. On any other engine an `UNKNOWN_SETTING` means the
+# fixture itself is wrong: the setting cannot affect that table, so silently
+# rewriting the query would let a broken fixture benchmark the wrong setup on
+# both sides instead of failing fast.
+MERGETREE_ENGINE_CASES = [
+    ("plain", "CREATE TABLE t (a UInt64) ENGINE = MergeTree ORDER BY tuple()", True),
+    (
+        "replacing",
+        "CREATE TABLE t (a UInt64) ENGINE = ReplacingMergeTree ORDER BY tuple()",
+        True,
+    ),
+    (
+        "replicated_with_args",
+        "CREATE TABLE t (a UInt64) ENGINE = ReplicatedMergeTree('/clickhouse/t', 'r1') ORDER BY tuple()",
+        True,
+    ),
+    (
+        "shared",
+        "CREATE TABLE t (a UInt64) ENGINE = SharedMergeTree ORDER BY tuple()",
+        True,
+    ),
+    ("no_spaces", "CREATE TABLE t (a UInt64) ENGINE=MergeTree ORDER BY tuple()", True),
+    (
+        "comment_before_engine_name",
+        "CREATE TABLE t (a UInt64) ENGINE = /* engine */ MergeTree ORDER BY tuple()",
+        True,
+    ),
+    ("memory", "CREATE TABLE t (a UInt64) ENGINE = Memory", False),
+    ("log", "CREATE TABLE t (a UInt64) ENGINE = Log", False),
+    ("null_engine", "CREATE TABLE t (a UInt64) ENGINE = Null", False),
+    (
+        "distributed_over_mergetree",
+        "CREATE TABLE t AS src ENGINE = Distributed(cluster, currentDatabase(), src_mergetree)",
+        False,
+    ),
+    (
+        "engine_name_only_in_a_literal",
+        "CREATE TABLE t (a UInt64 COMMENT 'ENGINE = MergeTree') ENGINE = Memory",
+        False,
+    ),
+    ("no_engine_clause", "CREATE VIEW v AS SELECT 1", False),
+]
+
+
+@pytest.mark.parametrize(
+    "query,expected",
+    [(q, e) for _, q, e in MERGETREE_ENGINE_CASES],
+    ids=[name for name, _, _ in MERGETREE_ENGINE_CASES],
+)
+def test_is_mergetree_create_query(query, expected):
+    assert is_mergetree_create_query(query) is expected
+
+
+def test_create_query_engine_ignores_engine_inside_a_column_comment():
+    # The engine scan must not be fooled by the schema parentheses: an
+    # `ENGINE` written inside a column `COMMENT` literal is not the table's
+    # engine, and mistaking it for one would re-enable the baseline rewrite
+    # for a non-`MergeTree` fixture.
+    query = "CREATE TABLE t (a UInt64 COMMENT 'ENGINE = MergeTree') ENGINE = Memory"
+    assert create_query_engine(query) == "Memory"
+
+
+def test_non_mergetree_fixture_is_not_rewritten_by_the_scanner():
+    # End-to-end shape of the rejected case: even though the scanner *could*
+    # cut the assignment out of the SETTINGS clause, `perf.py` never calls it
+    # for a non-`MergeTree` engine, so the baseline keeps failing fast with
+    # `UNKNOWN_SETTING` on such a fixture.
+    query = f"CREATE TABLE t (a UInt64) ENGINE = Memory SETTINGS {SETTING} = 0"
+    assert not is_mergetree_create_query(query)

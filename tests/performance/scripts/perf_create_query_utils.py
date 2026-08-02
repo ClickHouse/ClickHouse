@@ -16,6 +16,131 @@ covered by unit tests in ``ci/tests/test_strip_setting_from_query.py``.
 """
 
 
+def is_word_at(text, pos, word):
+    """Case-insensitive word-boundary match of `word` at `pos`."""
+    wlen = len(word)
+    if text[pos : pos + wlen].upper() != word:
+        return False
+    if pos > 0 and (text[pos - 1].isalnum() or text[pos - 1] == "_"):
+        return False
+    end = pos + wlen
+    return end >= len(text) or not (text[end].isalnum() or text[end] == "_")
+
+
+def skip_whitespace_and_comments(text, pos):
+    """Advance `pos` past whitespace and `--` / `#` / `/* */` comments."""
+    length = len(text)
+    while pos < length:
+        c = text[pos]
+        next_c = text[pos + 1] if pos + 1 < length else ""
+        if c in " \t\r\n":
+            pos += 1
+        elif (c == "-" and next_c == "-") or c == "#":
+            while pos < length and text[pos] != "\n":
+                pos += 1
+        elif c == "/" and next_c == "*":
+            pos += 2
+            while pos < length:
+                if text[pos] == "*" and pos + 1 < length and text[pos + 1] == "/":
+                    pos += 2
+                    break
+                pos += 1
+        else:
+            break
+    return pos
+
+
+def create_query_engine(query):
+    """Return the engine name of a `CREATE TABLE`, or `None` when there is none.
+
+    The `ENGINE` keyword is located outside string / backtick literals,
+    outside `--` / `#` / `/* */` comments and at bracket depth zero, so an
+    `ENGINE` written inside a column `COMMENT` literal or inside the schema
+    parentheses is not matched. Only the bare engine name is returned; its
+    arguments (`ReplicatedMergeTree('/path', 'replica')`) are not parsed.
+    """
+    i = 0
+    n = len(query)
+    quote = None
+    line_comment = False
+    block_comment = False
+    depth = 0
+    while i < n:
+        c = query[i]
+        next_c = query[i + 1] if i + 1 < n else ""
+        if line_comment:
+            if c == "\n":
+                line_comment = False
+            i += 1
+            continue
+        if block_comment:
+            if c == "*" and next_c == "/":
+                block_comment = False
+                i += 2
+                continue
+            i += 1
+            continue
+        if quote is not None:
+            if c == "\\" and i + 1 < n:
+                i += 2
+                continue
+            if c == quote:
+                if quote == "'" and next_c == "'":
+                    i += 2
+                    continue
+                quote = None
+            i += 1
+            continue
+        if (c == "-" and next_c == "-") or c == "#":
+            line_comment = True
+            i += 1
+            continue
+        if c == "/" and next_c == "*":
+            block_comment = True
+            i += 2
+            continue
+        if c in "'\"`":
+            quote = c
+            i += 1
+            continue
+        if c in "([{":
+            depth += 1
+            i += 1
+            continue
+        if c in ")]}":
+            if depth > 0:
+                depth -= 1
+            i += 1
+            continue
+        if depth == 0 and is_word_at(query, i, "ENGINE"):
+            j = skip_whitespace_and_comments(query, i + len("ENGINE"))
+            if j < n and query[j] == "=":
+                j = skip_whitespace_and_comments(query, j + 1)
+            start = j
+            while j < n and (query[j].isalnum() or query[j] == "_"):
+                j += 1
+            if j > start:
+                return query[start:j]
+            return None
+        i += 1
+    return None
+
+
+def is_mergetree_create_query(query):
+    """Whether `query` creates a table of the `MergeTree` family.
+
+    The baseline rewrite performed by `strip_setting_from_query` is only
+    meaningful for a `MergeTree`-family engine: those are the engines that
+    accept the newly added `MergeTree` settings. For any other engine an
+    `UNKNOWN_SETTING` means the fixture itself is wrong (e.g. `ENGINE =
+    Memory SETTINGS optimize_row_order_if_no_order_by = 0`), and silently
+    dropping the setting would let a broken fixture benchmark the wrong
+    setup on both sides instead of failing fast.
+    """
+    engine = create_query_engine(query)
+    return engine is not None and engine.lower().endswith("mergetree")
+
+
 def strip_setting_from_query(query, setting_name, allowed_values=None):
     """Strip a single MergeTree setting from a CREATE TABLE SETTINGS clause.
 
@@ -47,16 +172,6 @@ def strip_setting_from_query(query, setting_name, allowed_values=None):
     setting name inside, e.g., a column `COMMENT` literal preceding the
     clause cannot be matched.
     """
-
-    def is_word_at(text, pos, word):
-        """Case-insensitive word-boundary match of `word` at `pos`."""
-        wlen = len(word)
-        if text[pos : pos + wlen].upper() != word:
-            return False
-        if pos > 0 and (text[pos - 1].isalnum() or text[pos - 1] == "_"):
-            return False
-        end = pos + wlen
-        return end >= len(text) or not (text[end].isalnum() or text[end] == "_")
 
     # Keywords that can follow the SETTINGS clause at the top level of a
     # CREATE TABLE (`AS SELECT ...`, `AS other_table`, `COMMENT '...'`,
@@ -139,27 +254,6 @@ def strip_setting_from_query(query, setting_name, allowed_values=None):
                     return -1
             i += 1
         return -1
-
-    def skip_whitespace_and_comments(text, pos):
-        length = len(text)
-        while pos < length:
-            c = text[pos]
-            next_c = text[pos + 1] if pos + 1 < length else ""
-            if c in " \t\r\n":
-                pos += 1
-            elif (c == "-" and next_c == "-") or c == "#":
-                while pos < length and text[pos] != "\n":
-                    pos += 1
-            elif c == "/" and next_c == "*":
-                pos += 2
-                while pos < length:
-                    if text[pos] == "*" and pos + 1 < length and text[pos + 1] == "/":
-                        pos += 2
-                        break
-                    pos += 1
-            else:
-                break
-        return pos
 
     settings_pos = find_table_settings_keyword(query)
     if settings_pos < 0:
