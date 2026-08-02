@@ -454,7 +454,7 @@ def test_no_rekey_on_rename_database_with_shared_access_storage(started_cluster)
         f"CREATE ROW POLICY rp_a ON {db}.ta FOR SELECT USING dept = 'eng' TO rp_user"
     )
     # A database-wide policy alongside the per-table one. It applies on top of `rp_a` rather than as a
-    # fallback for it: RowPolicyCache::mixFilters seeds a table's mixer from the `db.*` one. The counts
+    # fallback for it: RowPolicyCache::mixFiltersFor seeds a table's mixer from the `db.*` one. The counts
     # below are unchanged for a different reason -- both policies are permissive with identical
     # predicates, and permissive filters are OR-mixed.
     shared1.query(
