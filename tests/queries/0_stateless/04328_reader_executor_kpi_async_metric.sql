@@ -68,16 +68,22 @@ WHERE event_date >= yesterday() AND event_time >= now() - 600
   AND initial_query_id IN (SELECT query_id FROM initial_query_ids);
 
 -- (2) In the same time slot (at or after the query started), the asynchronous KPI
--- metric logged a non-zero value. Scoping by the probe's start time excludes the
--- baseline tick above (which ran before the read).
+-- metric logged a non-zero value. The lower bound is this run's own initiator, so a
+-- reused database cannot satisfy the assertion from an earlier invocation's sample.
 SELECT max(value) > 0
 FROM system.asynchronous_metric_log
 WHERE metric = 'ReaderExecutorModeledCostMsPerRequestedMiB'
+  AND event_date >= yesterday() AND event_time >= now() - 600
   AND event_time >= (
-      SELECT min(query_start_time)
+      SELECT query_start_time
       FROM system.query_log
-      WHERE log_comment = '04328_reader_executor_kpi_probe'
+      WHERE event_date >= yesterday() AND event_time >= now() - 600
         AND current_database = currentDatabase()
+        AND type = 'QueryFinish'
+        AND is_initial_query = 1
+        AND log_comment = '04328_reader_executor_kpi_probe'
+      ORDER BY event_time_microseconds DESC
+      LIMIT 1
   );
 
 DROP TABLE t_reader_executor_kpi;
