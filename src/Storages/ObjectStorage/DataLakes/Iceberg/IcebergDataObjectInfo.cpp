@@ -4,7 +4,6 @@
 #include <Core/Field.h>
 #include <Common/FieldVisitorToString.h>
 #include <Core/Settings.h>
-#include <Core/ProtocolDefines.h>
 #include <Interpreters/Context.h>
 
 #include <Disks/DiskObjectStorage/ObjectStorages/IObjectStorage.h>
