@@ -2,6 +2,7 @@
 
 #include <algorithm>
 #include <string>
+#include <string_view>
 #include <cstring>
 #include <cstddef>
 #include <cstdint>
@@ -269,6 +270,64 @@ inline const char * skipWhitespacesUTF8(const char * pos, const char * end)
 inline bool equalsCaseInsensitive(char a, char b)
 {
     return a == b || (isAlphaASCII(a) && alternateCaseIfAlphaASCII(a) == b);
+}
+
+inline bool equalsCaseInsensitive(std::string_view a, std::string_view b)
+{
+    return a.size() == b.size()
+        && std::equal(a.begin(), a.end(), b.begin(), [](char x, char y) { return equalsCaseInsensitive(x, y); });
+}
+
+/// ASCII-only case conversion. Keywords, identifiers and function names are ASCII, and applying
+/// the locale to them would be wrong, so these deliberately leave every other byte alone.
+
+inline char toLowerASCII(char c)
+{
+    return isUpperAlphaASCII(c) ? toLowerIfAlphaASCII(c) : c;
+}
+
+inline char toUpperASCII(char c)
+{
+    return isLowerAlphaASCII(c) ? toUpperIfAlphaASCII(c) : c;
+}
+
+inline void toLowerASCII(std::string & str)
+{
+    for (char & c : str)
+        c = toLowerASCII(c);
+}
+
+inline void toUpperASCII(std::string & str)
+{
+    for (char & c : str)
+        c = toUpperASCII(c);
+}
+
+inline std::string toLowerCopyASCII(std::string_view str)
+{
+    std::string res{str};
+    toLowerASCII(res);
+    return res;
+}
+
+inline std::string toUpperCopyASCII(std::string_view str)
+{
+    std::string res{str};
+    toUpperASCII(res);
+    return res;
+}
+
+/// Replace every occurrence of `what` with `with`, in place. Does nothing if `what` is empty.
+inline void replaceAll(std::string & str, std::string_view what, std::string_view with)
+{
+    if (what.empty())
+        return;
+
+    for (size_t position = str.find(what); position != std::string::npos; position = str.find(what, position))
+    {
+        str.replace(position, what.length(), with);
+        position += with.length();
+    }
 }
 
 
