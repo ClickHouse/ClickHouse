@@ -2991,6 +2991,23 @@ std::optional<BlockIO> InterpreterCreateQuery::fillMaterializedViewAtomically(co
         /// data is deferred to the background drop task, exactly as for a plain `DROP TABLE`. Waiting for
         /// that here would buy nothing and can hang the failed `CREATE` indefinitely: `clickhouse-local`
         /// never finishes `waitTableFinallyDropped`, so a synchronous drop turns a rollback into a hang.
+        ///
+        /// In a `Replicated` database the view is not ours to drop. The `CREATE` is executed here as an entry
+        /// of the replicated DDL log, whose metadata transaction has already been committed by the creation
+        /// of the view - `DatabaseReplicated::dropTable` would try to add a `ZooKeeper` operation to an
+        /// already executed transaction (a logical error), and even if it could, unilaterally removing the
+        /// view on this replica only would diverge it from the replicas where the same entry succeeded.
+        /// There the failed entry is the replicated DDL machinery's business, so just rethrow.
+        if (getContext()->getZooKeeperMetadataTransaction())
+        {
+            LOG_WARNING(
+                getLogger("InterpreterCreateQuery"),
+                "Not rolling back the failed atomic population of materialized view {}.{}: it is created by an "
+                "entry of a replicated database DDL log, which handles the failure itself",
+                backQuoteIfNeed(create.getDatabase()), backQuoteIfNeed(create.getTable()));
+            throw;
+        }
+
         try
         {
             InterpreterDropQuery::executeDropQuery(

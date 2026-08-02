@@ -1,6 +1,9 @@
--- Tags: no-parallel
+-- Tags: no-parallel, no-replicated-database
 -- - no-parallel - due to usage of fail points, and `materialized_views_populate_atomically` is on by
 --   default, so a concurrent `CREATE MATERIALIZED VIEW ... POPULATE` of another test would hit them too.
+-- - no-replicated-database - in a `Replicated` database the `CREATE` is an entry of the replicated DDL log
+--   and the failed atomic cut is not rolled back locally (that would diverge this replica from the ones
+--   where the same entry succeeded), so the view is left behind there.
 
 -- A failure of the atomic cut of `CREATE MATERIALIZED VIEW ... POPULATE` (e.g. an exclusive-lock timeout
 -- on a busy source) happens after the view was already created and started, but possibly before the view
