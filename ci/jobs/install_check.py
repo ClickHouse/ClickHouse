@@ -107,15 +107,19 @@ exit 1
 
 
 def test_install_deb(image: DockerImage) -> List[Result]:
+    # `clickhouse-common-static-dbg` unpacks to 3.4 GiB and takes around 40 seconds to
+    # install - longer than everything else in a test together. `Install server deb`
+    # covers it, and the two tests below differ from it only in the way the server is
+    # started, so they install the same packages without the debug symbols.
     tests = {
         "Install server deb": r"""#!/bin/bash -ex
 apt-get install /packages/clickhouse-{server,client,common}*deb -y
 bash -ex /packages/server_test.sh""",
         "Run server init.d (proxy to systemd)": r"""#!/bin/bash -ex
-apt-get install /packages/clickhouse-{server,client,common}*deb -y
+apt-get install /packages/clickhouse-{server,client,common-static}_*deb -y
 bash -ex /packages/initd_via_systemd_test.sh""",
         "Run server init.d": r"""#!/bin/bash -ex
-apt-get install /packages/clickhouse-{server,client,common}*deb -y
+apt-get install /packages/clickhouse-{server,client,common-static}_*deb -y
 bash -ex /packages/initd_test.sh""",
         "Install keeper deb": r"""#!/bin/bash -ex
 apt-get install /packages/clickhouse-keeper*deb -y
@@ -141,18 +145,28 @@ bash -ex /packages/keeper_test.sh""",
     return test_install(image, tests)
 
 
-def test_install_tgz(image: DockerImage) -> List[Result]:
+def test_install_tgz(image: DockerImage, debug_symbols: bool) -> List[Result]:
     # FIXME: I couldn't find why Type=notify is broken in centos:8
     # systemd just ignores the watchdog completely
 
     # `doinst.sh` copies the unpacked tree into the system instead of moving it, so a
     # package occupies twice its size - 6.8 GiB for `clickhouse-common-static-dbg` -
     # until the tree is removed. These are by far the most disk hungry tests of the
-    # job, and they used to fail with `No space left on device`.
+    # job, and they used to fail with `No space left on device`. The debug symbols also
+    # take more than a minute to install, and the same tarballs are installed in both
+    # images, so unpack them only in the first one - see `main`.
+    server_packages = (
+        "clickhouse-{common,client,server}*tgz"
+        if debug_symbols
+        else "clickhouse-{common-static,client,server}-[0-9]*tgz"
+    )
+    keeper_packages = (
+        "clickhouse-keeper*tgz" if debug_symbols else "clickhouse-keeper-[0-9]*tgz"
+    )
     tests = {
         f"Install server tgz in {image}": r"""#!/bin/bash -ex
 [ -f /etc/debian_version ] && CONFIGURE=configure || CONFIGURE=
-for pkg in /packages/clickhouse-{common,client,server}*tgz; do
+for pkg in /packages/@PACKAGES@; do
     package=${pkg%-*}
     package=${package##*/}
     tar xf "$pkg"
@@ -160,17 +174,17 @@ for pkg in /packages/clickhouse-{common,client,server}*tgz; do
     rm -rf "/${package:?}"
 done
 [ -f /etc/yum.conf ] && echo CLICKHOUSE_WATCHDOG_ENABLE=0 > /etc/default/clickhouse-server
-bash -ex /packages/server_test.sh""",
+bash -ex /packages/server_test.sh""".replace("@PACKAGES@", server_packages),
         f"Install keeper tgz in {image}": r"""#!/bin/bash -ex
 [ -f /etc/debian_version ] && CONFIGURE=configure || CONFIGURE=
-for pkg in /packages/clickhouse-keeper*tgz; do
+for pkg in /packages/@PACKAGES@; do
     package=${pkg%-*}
     package=${package##*/}
     tar xf "$pkg"
     "/$package/install/doinst.sh" $CONFIGURE
     rm -rf "/${package:?}"
 done
-bash -ex /packages/keeper_test.sh""",
+bash -ex /packages/keeper_test.sh""".replace("@PACKAGES@", keeper_packages),
         f"Install tgz over a symlinked config in {image}": r"""#!/bin/bash -ex
 # An installation may keep its config elsewhere and link to it from the installed path.
 # The installer has to write through such a symlink instead of replacing it.
@@ -326,8 +340,11 @@ def main():
         free_packages("*.rpm")
     if args.tgz:
         print("Test tgz")
-        test_results.extend(test_install_tgz(deb_image))
-        test_results.extend(test_install_tgz(rpm_image))
+        # The tgz packages are the same on both distributions, so the debug symbols are
+        # installed once - the second run only checks that `doinst.sh` works outside of
+        # Debian, for which the debug symbols add nothing but two minutes.
+        test_results.extend(test_install_tgz(deb_image, debug_symbols=True))
+        test_results.extend(test_install_tgz(rpm_image, debug_symbols=False))
 
     Result.create_from(
         results=test_results,
