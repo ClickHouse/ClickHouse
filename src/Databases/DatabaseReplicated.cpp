@@ -1370,7 +1370,7 @@ void DatabaseReplicated::tryCompareLocalAndZooKeeperTablesAndDumpDiffForDebugOnl
                 if (zk_ast_ptr)
                     LOG_ERROR(log, "Table {} coordinator metadata: {}", table_name, zk_ast_ptr->formatForLogging());
             }
-            catch (...)
+            catch (...) /// Ok: saved into failure_reason and logged below, so the loop reaches the later tables.
             {
                 failure_reason = describeCurrentExceptionForDumpOnly();
                 zk_ast_ptr = nullptr;
