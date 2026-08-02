@@ -704,9 +704,10 @@ UInt64 MemoryTracker::takeMemoryCreditsDelta(Int64 current_amount)
     /// The consequence is deliberate and documented in the description of the event: `MemoryCredits` is a
     /// query-scoped quantity, so the rows of the nested scopes (a materialized view in `system.query_views_log`,
     /// an asynchronous insert flush running inside another query) do not report it separately - the memory they
-    /// hold is integrated into the enclosing query. Attributing it per nested scope would require charging the
-    /// counters that each tracker belongs to, which is not reachable from the allocation path without adding a
-    /// back reference to `MemoryTracker` and a second increment on it.
+    /// hold is integrated into the enclosing query. Nested Process trackers therefore skip the
+    /// delta; attribution still uses a single ProfileEvents increment, started at the outermost
+    /// Process `Counters` found via the current thread's counter parent chain (see
+    /// `updateMemoryCredits`), not a MemoryTracker-to-Counters back-reference.
     if (level != VariableContext::Process)
         return 0;
     if (const auto * loaded_parent = parent.load(std::memory_order_relaxed); loaded_parent && loaded_parent->level == VariableContext::Process)
@@ -733,10 +734,12 @@ UInt64 MemoryTracker::takeMemoryCreditsDelta(Int64 current_amount)
 
 void MemoryTracker::updateMemoryCredits(Int64 current_amount)
 {
-    /// Called from alloc/free on a query's own thread, so charge the current thread's profile counters;
-    /// they propagate up to the query's thread group.
+    /// Called from alloc/free while attached to some thread (possibly under a ProfileEventsScope or a
+    /// nested Process group). Walk that counter chain to the outermost Process counters and charge
+    /// once there, so the value propagates only to User / Global and never lands in Thread, scope, or
+    /// nested Process counters used by query_thread_log / query_views_log / nested async-insert rows.
     if (const UInt64 delta = takeMemoryCreditsDelta(current_amount))
-        ProfileEvents::increment(ProfileEvents::MemoryCredits, static_cast<Int64>(delta));
+        CurrentThread::getProfileEvents().incrementAtOutermostProcess(ProfileEvents::MemoryCredits, static_cast<Int64>(delta));
 }
 
 

@@ -144,7 +144,9 @@ private:
     /// held). This does the accounting only; the caller decides which profile counters to charge.
     UInt64 takeMemoryCreditsDelta(Int64 current_amount);
 
-    /// Accumulate the `MemoryCredits` profile event on allocation/free, charging the current thread's counters.
+    /// Accumulate the `MemoryCredits` profile event on allocation/free. The current thread's counter
+    /// chain is used only to locate the outermost Process `ProfileEvents::Counters`; the increment
+    /// starts there so Thread / nested Process scopes do not receive the query-scoped value.
     /// `current_amount` is the amount that was held during the interval that just elapsed.
     void updateMemoryCredits(Int64 current_amount);
 

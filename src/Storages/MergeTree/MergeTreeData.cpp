@@ -196,6 +196,7 @@ namespace ProfileEvents
     extern const Event RestorePartsSkippedFiles;
     extern const Event RestorePartsSkippedBytes;
     extern const Event LoadedStatisticsMicroseconds;
+    extern const Event MemoryCredits;
 }
 
 namespace CurrentMetrics
@@ -11056,6 +11057,13 @@ try
 
         if (profile_counters)
         {
+            /// MemoryCredits is charged to the merge/mutation Process counters, not the task-local scope.
+            /// Preserve local events and copy only MemoryCredits into the part-log snapshot.
+            if (merge_entry)
+                profile_counters->set(
+                    ProfileEvents::MemoryCredits,
+                    (*merge_entry)->thread_group->performance_counters[ProfileEvents::MemoryCredits]);
+
             element.profile_counters = *profile_counters;
         }
 

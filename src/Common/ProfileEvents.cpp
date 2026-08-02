@@ -1750,6 +1750,31 @@ void Counters::setUserCounters(Counters * user)
     current_val->parent.store(user, std::memory_order_relaxed);
 }
 
+void Counters::incrementAtOutermostProcess(Event event, Count amount)
+{
+    /// Locate the outermost Process counters in this chain (parent is not Process), the same way
+    /// MemoryTracker skips nested Process trackers for MemoryCredits. Starting `increment` there
+    /// charges only Process -> User -> Global and leaves Scope / Thread / nested Process untouched.
+    Counters * current = this;
+    Counters * outermost_process = nullptr;
+
+    while (current != nullptr)
+    {
+        Counters * parent_val = current->parent.load(std::memory_order_relaxed);
+        if (current->level == VariableContext::Process
+            && (!parent_val || parent_val->level != VariableContext::Process))
+            outermost_process = current;
+        current = parent_val;
+    }
+
+    /// No Process node (e.g. CurrentThread is unset and we fell back to global_counters alone).
+    /// Do not charge Thread or Global from here: query-scoped events must stay on a Process group.
+    if (!outermost_process)
+        return;
+
+    outermost_process->increment(event, amount);
+}
+
 void Counters::setTraceAllProfileEvents()
 {
     trace_all_profile_events.store(true, std::memory_order_relaxed);
