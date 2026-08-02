@@ -71,6 +71,12 @@ SELECT gini(x) FROM (SELECT [NULL, NULL] :: Array(Nullable(Int32)) AS arr) ARRAY
 -- A bare NULL preserves gini's Float64 result type and empty-input semantics.
 SELECT toTypeName(gini(NULL)), isNaN(gini(NULL));
 
+-- Compile-time NULL preserves the same semantics through combinators.
+SELECT toTypeName(giniIf(NULL, 1)), isNaN(giniIf(NULL, 1));
+SELECT toTypeName(result), isNaN(result) FROM (
+    SELECT giniMerge(state) AS result FROM (SELECT giniState(NULL) AS state)
+);
+
 -- -State / -Merge round trip: split values into two states and merge.
 SELECT giniMerge(state) FROM (
     SELECT giniState(number) AS state FROM numbers(5)
