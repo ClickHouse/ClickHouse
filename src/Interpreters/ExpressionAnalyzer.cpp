@@ -753,7 +753,6 @@ void ExpressionAnalyzer::makeWindowDescriptionFromAST(const Context & context_,
         desc.frame.begin_offset = value;
     }
 
-    // Reject impossible frames (e.g. a start that comes after the end).
     desc.checkValid();
 }
 
