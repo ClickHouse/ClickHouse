@@ -7,6 +7,8 @@ title: 'percent_rank'
 doc_type: 'reference'
 ---
 
+# percent_rank
+
 returns the relative rank (i.e. percentile) of rows within a window partition.
 
 **Syntax**
@@ -27,7 +29,9 @@ For more detail on window function syntax see: [Window Functions - Syntax](./ind
 
 **Example**
 
-```sql title="Query"
+Query:
+
+```sql
 CREATE TABLE salaries
 (
     `team` String,
@@ -47,13 +51,15 @@ INSERT INTO salaries FORMAT Values
     ('South Hampton Seagulls', 'James Henderson', 140000, 'M');
 ```
 
-```sql title="Query"
+```sql
 SELECT player, salary,
        percent_rank() OVER (ORDER BY salary DESC) AS percent_rank
 FROM salaries;
 ```
 
-```response title="Response"
+Result:
+
+```response
 
    ┌─player──────────┬─salary─┬───────percent_rank─┐
 1. │ Gary Chen       │ 195000 │                  0 │

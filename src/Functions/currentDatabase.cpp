@@ -1,4 +1,3 @@
-#include <Columns/ColumnConst.h>
 #include <Functions/IFunction.h>
 #include <Functions/FunctionFactory.h>
 #include <Interpreters/Context.h>
@@ -11,7 +10,7 @@ namespace DB
 namespace
 {
 
-class FunctionCurrentDatabase final : public IFunction
+class FunctionCurrentDatabase : public IFunction
 {
     const String db_name;
 
@@ -92,9 +91,6 @@ SELECT CURRENT_DATABASE
     factory.registerAlias("DATABASE", FunctionCurrentDatabase::name, FunctionFactory::Case::Insensitive);
     factory.registerAlias("SCHEMA", FunctionCurrentDatabase::name, FunctionFactory::Case::Insensitive);
     factory.registerAlias("current_database", FunctionCurrentDatabase::name, FunctionFactory::Case::Insensitive);
-    /// ClickHouse databases are exposed as schemas over the PostgreSQL wire protocol, and unqualified names
-    /// are resolved in the current database, so `current_schema` is the current database.
-    factory.registerAlias("current_schema", FunctionCurrentDatabase::name, FunctionFactory::Case::Insensitive);
 }
 
 }

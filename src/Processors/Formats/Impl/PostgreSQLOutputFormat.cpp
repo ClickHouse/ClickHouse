@@ -1,22 +1,13 @@
 #include <Processors/Formats/Impl/PostgreSQLOutputFormat.h>
 
 #include <Columns/IColumn.h>
-#include <Common/Exception.h>
-#include <Common/logger_useful.h>
 #include <Formats/FormatFactory.h>
-#include <IO/WriteBufferFromString.h>
 #include <Interpreters/ProcessList.h>
-#include <Processors/Formats/PostgreSQLArrayText.h>
 
 #include <Processors/Port.h>
 
 namespace DB
 {
-
-namespace ErrorCodes
-{
-    extern const int QUERY_WAS_CANCELLED;
-}
 
 PostgreSQLOutputFormat::PostgreSQLOutputFormat(WriteBuffer & out_, SharedHeader header_, const FormatSettings & settings_)
     : IOutputFormat(header_, out_)
@@ -31,11 +22,11 @@ PostgreSQLOutputFormat::PostgreSQLOutputFormat(WriteBuffer & out_, SharedHeader 
 void PostgreSQLOutputFormat::writePrefix()
 {
     const auto & header = getPort(PortKind::Main).getHeader();
-    data_types = header.getDataTypes();
+    auto data_types = header.getDataTypes();
 
     if (header.columns())
     {
-        VectorWithMemoryTracking<PostgreSQLProtocol::Messaging::FieldDescription> columns;
+        std::vector<PostgreSQLProtocol::Messaging::FieldDescription> columns;
         columns.reserve(header.columns());
 
         for (size_t i = 0; i < header.columns(); ++i)
@@ -50,20 +41,10 @@ void PostgreSQLOutputFormat::writePrefix()
 
 void PostgreSQLOutputFormat::consume(Chunk chunk)
 {
-    LOG_TEST(getLogger("PostgreSQLOutputFormat"), "Consume a chunk");
-
-    /// Check for cancellation at the beginning of the loop, use throw instead of return.
-    if (isCancelled())
-        throw Exception(ErrorCodes::QUERY_WAS_CANCELLED, "Query was cancelled");
-
     for (size_t i = 0; i != chunk.getNumRows(); ++i)
     {
-        /// Check for cancellation periodically, use throw instead of return.
-        if (isCancelled())
-            throw Exception(ErrorCodes::QUERY_WAS_CANCELLED, "Query was cancelled");
-
         const Columns & columns = chunk.getColumns();
-        VectorWithMemoryTracking<std::shared_ptr<PostgreSQLProtocol::Messaging::ISerializable>> row;
+        std::vector<std::shared_ptr<PostgreSQLProtocol::Messaging::ISerializable>> row;
         row.reserve(chunk.getNumColumns());
 
         for (size_t j = 0; j != chunk.getNumColumns(); ++j)
@@ -73,12 +54,7 @@ void PostgreSQLOutputFormat::consume(Chunk chunk)
             else
             {
                 WriteBufferFromOwnString ostr;
-                if (isArray(data_types[j]))
-                    /// Arrays must be emitted in PostgreSQL array-literal form (`{...}`) so that a
-                    /// self-connected `postgresql(..., 'arr_table')` can read them back.
-                    writePostgreSQLArrayText(*columns[j], *data_types[j], i, ostr, format_settings);
-                else
-                    serializations[j]->serializeText(*columns[j], i, ostr, format_settings);
+                serializations[j]->serializeText(*columns[j], i, ostr, format_settings);
                 row.push_back(std::make_shared<PostgreSQLProtocol::Messaging::StringField>(std::move(ostr.str())));
             }
         }
@@ -92,7 +68,6 @@ void PostgreSQLOutputFormat::flushImpl()
     message_transport.flush();
 }
 
-void registerOutputFormatPostgreSQLWire(FormatFactory & factory);
 void registerOutputFormatPostgreSQLWire(FormatFactory & factory)
 {
     factory.registerOutputFormat(
@@ -103,43 +78,6 @@ void registerOutputFormatPostgreSQLWire(FormatFactory & factory)
            FormatFilterInfoPtr /*format_filter_info*/) { return std::make_shared<PostgreSQLOutputFormat>(buf, std::make_shared<const Block>(sample), settings); });
     factory.markOutputFormatNotTTYFriendly("PostgreSQLWire");
     factory.setContentType("PostgreSQLWire", "application/octet-stream");
-
-    factory.setDocumentation("PostgreSQLWire", Documentation{
-        .description = R"DOCS_MD(
-| Input | Output | Alias |
-|-------|--------|-------|
-| ✗     | ✔      |       |
-
-## Description {#description}
-
-The `PostgreSQLWire` format serializes the result-set portion of the PostgreSQL wire protocol. It writes a
-`RowDescription` message containing column names and types, followed by one `DataRow` message for each result row.
-Values use their text representation, `NULL` values use the protocol's null-field encoding, and booleans are written as
-`t` or `f`.
-
-This is an output-only binary format intended for clients connected through ClickHouse's
-[PostgreSQL interface](/concepts/features/interfaces/postgresql). The interface sets `PostgreSQLWire` as the session
-default and uses it when the query doesn't include an explicit `FORMAT` clause. An explicit clause overrides the default;
-other output formats don't produce a valid PostgreSQL result set. The interface writes the surrounding protocol messages,
-such as authentication, command completion, and ready-for-query messages. `PostgreSQLWire` isn't intended for displaying
-or storing query results as a standalone file.
-
-## Example usage {#example-usage}
-
-After enabling the PostgreSQL interface, use a compatible client to execute a query:
-
-```shell
-psql -p 9005 -h 127.0.0.1 -U default -d default \
-    -c "SELECT number, number % 2 = 0 AS even FROM numbers(3)"
-```
-
-Because the query doesn't specify a `FORMAT` clause, the interface sends the result using `PostgreSQLWire`.
-
-## Format settings {#format-settings}
-
-`PostgreSQLWire` uses the standard text-serialization settings for individual values. It has no settings specific to the
-format itself; booleans are always serialized using PostgreSQL's `t` and `f` representations.
-)DOCS_MD"});
 }
 
 }

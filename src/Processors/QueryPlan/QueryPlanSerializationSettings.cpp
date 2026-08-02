@@ -54,7 +54,6 @@ namespace DB
     DECLARE(UInt64, max_entries_for_hash_table_stats, 10'000, "How many entries hash table statistics collected during aggregation is allowed to have", 0) \
     DECLARE(UInt64, max_size_to_preallocate_for_aggregation, 100'000'000, "For how many elements it is allowed to preallocate space in all hash tables in total before aggregation", 0) \
     DECLARE(Bool, enable_producing_buckets_out_of_order_in_aggregation, true, "Allow aggregation to produce buckets out of order.", 0) \
-    DECLARE(Bool, enable_parallel_single_level_merge, false, "Parallelize the final merge of the single-level aggregation hash tables by splitting the key space into disjoint hash partitions that the threads merge independently.", 0) \
     DECLARE(Bool, distributed_aggregation_memory_efficient, true, "Is the memory-saving mode of distributed aggregation enabled", 0) \
     \
     DECLARE(TotalsMode, totals_mode, TotalsMode::AFTER_HAVING_EXCLUSIVE, "How to calculate TOTALS when HAVING is present, as well as when max_rows_to_group_by and group_by_overflow_mode = 'any' are present.", IMPORTANT) \
@@ -81,14 +80,11 @@ namespace DB
     DECLARE(UInt64, cross_join_min_bytes_to_compress, 1_GiB, "Minimal size of block to compress in CROSS JOIN. Zero value means - disable this threshold. This block is compressed when any of the two thresholds (by rows or by bytes) are reached.", 0) \
     \
     DECLARE(UInt64, partial_merge_join_left_table_buffer_bytes, 0, "If not 0 group left table blocks in bigger ones for left-side table in partial merge join. It uses up to 2x of specified memory per joining thread.", 0) \
-    DECLARE(UInt64, partial_merge_join_rows_in_right_blocks, 65536, "Limits sizes of right-hand join data blocks in partial merge join algorithm for [JOIN](/reference/statements/select/join) queries.", 0) \
+    DECLARE(UInt64, partial_merge_join_rows_in_right_blocks, 65536, "Limits sizes of right-hand join data blocks in partial merge join algorithm for [JOIN](../../sql-reference/statements/select/join.md) queries.", 0) \
     DECLARE(UInt64, join_on_disk_max_files_to_merge, 64, "Limits the number of files allowed for parallel sorting in MergeJoin operations when they are executed on disk.", 0) \
     \
     DECLARE(NonZeroUInt64, grace_hash_join_initial_buckets, 1, "Initial number of grace hash join buckets", 0) \
     DECLARE(NonZeroUInt64, grace_hash_join_max_buckets, 1024, "Limit on the number of grace hash join buckets", 0) \
-    \
-    DECLARE(UInt64, max_bytes_before_external_join, 0, "If set to a non-zero value and `join_algorithm` is `hash`, `parallel_hash`, `default`, or `auto`, the hash join will automatically be converted to grace hash join to enable spilling to disk when the right-side data exceeds this many bytes. When set to 0 (default), automatic spilling is disabled.", 0) \
-    DECLARE(Double, max_bytes_ratio_before_external_join, 0., "Spill threshold for hash joins expressed as a fraction of available memory. Combined with the absolute `max_bytes_before_external_join`, the smaller resulting threshold applies. The ratio is recomputed on each executor against its local memory limits.", 0) \
     \
     DECLARE(UInt64, max_rows_in_set_to_optimize_join, 0, "Maximal size of the set to filter joined tables by each other's row sets before joining.", 0) \
     DECLARE(String, temporary_files_codec, "LZ4", "Sets compression codec for temporary files used in sorting and joining operations on disk.", 0) \
@@ -110,17 +106,28 @@ namespace DB
     DECLARE(UInt64, join_runtime_filter_blocks_to_skip_before_reenabling, 30, "Number of blocks that are skipped before trying to dynamically re-enable a runtime filter that previously was disabled due to poor filtering ratio.", 0) \
     DECLARE(Double, join_runtime_bloom_filter_max_ratio_of_set_bits, 0.7, "If the number of set bits in a runtime bloom filter exceeds this ratio the filter is completely disabled to reduce the overhead.", 0) \
     DECLARE(Bool, enable_lazy_columns_replication, false, "When enabled, replication of columns data during ARRAY JOIN and JOIN is performed lazily", 0) \
-    DECLARE(Bool, enable_software_prefetch_in_join, true, "Enable use of software prefetch in hash join probe phase", 0) \
     DECLARE(Bool, serialize_string_in_memory_with_zero_byte, true, "Serialize String values during aggregation with zero byte at the end. Enable to keep compatibility when querying cluster of incompatible versions.", 0) \
     DECLARE(Bool, use_hash_table_stats_for_join_reordering, false, "Enable using collected hash table statistics for cardinality estimation during join reordering", 0) \
-    DECLARE(Bool, enable_join_fixed_hash_table_conversion, true, R"(Enable converting the hash table to a flat array for joins when the key is a single integer with a small value range)", 0) \
-    DECLARE(Bool, join_runtime_filter_from_fixed_hash_table, true, R"(When the hash join build side was converted to a FixedHashMap (see `enable_join_fixed_hash_table_conversion`), use that hash map directly as the runtime filter.)", 0) \
 
 
 // clang-format on
 
-DECLARE_SETTINGS_TRAITS(QueryPlanSerializationSettingsTraits, PLAN_SERIALIZATION_SETTINGS, QUERY_PLAN_SERIALIZATION_SETTINGS_SUPPORTED_TYPES)
-IMPLEMENT_SETTINGS_TRAITS(QueryPlanSerializationSettingsTraits, PLAN_SERIALIZATION_SETTINGS, QueryPlanSerializationSettings, QueryPlanSerializationSetting)
+DECLARE_SETTINGS_TRAITS(QueryPlanSerializationSettingsTraits, PLAN_SERIALIZATION_SETTINGS)
+IMPLEMENT_SETTINGS_TRAITS(QueryPlanSerializationSettingsTraits, PLAN_SERIALIZATION_SETTINGS)
+
+struct QueryPlanSerializationSettingsImpl : public BaseSettings<QueryPlanSerializationSettingsTraits>
+{
+};
+
+
+#define INITIALIZE_SETTING_EXTERN(TYPE, NAME, DEFAULT, DESCRIPTION, FLAGS, ...) QueryPlanSerializationSettings##TYPE NAME = &QueryPlanSerializationSettingsImpl ::NAME;
+
+namespace QueryPlanSerializationSetting
+{
+PLAN_SERIALIZATION_SETTINGS(INITIALIZE_SETTING_EXTERN, INITIALIZE_SETTING_EXTERN)
+}
+
+#undef INITIALIZE_SETTING_EXTERN
 
 
 QueryPlanSerializationSettings::QueryPlanSerializationSettings() : impl(std::make_unique<QueryPlanSerializationSettingsImpl>())

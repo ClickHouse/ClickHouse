@@ -7,6 +7,8 @@ title: 'Query condition cache'
 doc_type: 'guide'
 ---
 
+# Query condition cache
+
 :::note
 The query condition cache only works when [enable_analyzer](https://clickhouse.com/docs/operations/settings/settings#enable_analyzer) is set to true, which is the default value.
 :::
@@ -15,7 +17,7 @@ Many real-world workloads involve repeated queries against the same or almost th
 ClickHouse provides various optimization techniques to optimize for such query patterns.
 One possibility is to tune the physical data layout using index structures (e.g., primary key indexes, skipping indexes, projections) or pre-calculation (materialized views).
 Another possibility is to use ClickHouse's [query cache](query-cache.md) to avoid repeated query evaluation.
-The downside of the first approach is that it requires manual intervention and monitoring by a database administrator.
+The downside of the first approach is that that it requires manual intervention and monitoring by a database administrator.
 The second approach may return stale results (as the query cache is transactionally not consistent) which may or may not be acceptable, depending on the use case.
 
 The query condition cache provides an elegant solution for both problems.
@@ -52,12 +54,6 @@ SETTINGS use_query_condition_cache = true;
 
 will store ranges of the table which do not satisfy the predicate.
 Subsequent executions of the same query, also with parameter `use_query_condition_cache = true`, will utilize the query condition cache to scan less data.
-
-### `ORDER BY ... LIMIT n` (TopK) queries {#top-k-queries}
-
-Queries which use the TopK optimization (`ORDER BY <column> LIMIT n`, accelerated by dynamic filtering or by a minmax skip index on the sort column) do not use the query condition cache by default: such reads neither consult nor populate it.
-TopK reads can skip granules based on a threshold that changes while the query runs, so their cache entries require additional care; they are gated behind the separate setting [use_query_condition_cache_for_top_k](settings/settings#use_query_condition_cache_for_top_k) (default: disabled) until the soundness of these entries is fully established.
-The setting only takes effect if `use_query_condition_cache` is also enabled.
 
 ## Administration {#administration}
 
