@@ -266,8 +266,13 @@ bool canApplyPatchesRaw(const PatchesIndices & patches)
 UInt128 getNamesHash(const Names & names)
 {
     SipHash hash;
+    hash.update(names.size());
+
     for (const auto & name : names)
-        hash.update(name);
+    {
+        hash.update(name.size());
+        hash.update(name.data(), name.size());
+    }
 
     return hash.get128();
 }

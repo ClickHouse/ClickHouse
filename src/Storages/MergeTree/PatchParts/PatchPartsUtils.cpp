@@ -52,8 +52,13 @@ static String getColumnsHash(Names column_names)
     std::sort(column_names.begin(), column_names.end());
 
     SipHash hash;
+    hash.update(column_names.size());
+
     for (const auto & name : column_names)
-        hash.update(name);
+    {
+        hash.update(name.size());
+        hash.update(name.data(), name.size());
+    }
 
     return getSipHash128AsHexString(hash);
 }

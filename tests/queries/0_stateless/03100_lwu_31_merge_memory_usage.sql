@@ -14,7 +14,7 @@ INSERT INTO t_lwu_memory SELECT number, '' FROM numbers(5000000);
 OPTIMIZE TABLE t_lwu_memory FINAL;
 
 UPDATE t_lwu_memory SET value = toString(id) WHERE 1;
-OPTIMIZE TABLE t_lwu_memory PARTITION ID 'patch-0108a6539a58d0f083bbad20425577dc-all' FINAL;
+OPTIMIZE TABLE t_lwu_memory PARTITION ID 'patch-0b8180d2b2c708974ce0eb17c07c1a0c-all' FINAL;
 
 SELECT count() FROM system.parts WHERE database = currentDatabase() AND table = 't_lwu_memory' AND active = 1;
 SELECT sum(id), sum(toUInt64(value)) FROM t_lwu_memory SETTINGS max_memory_usage = '150M', max_threads = 4;

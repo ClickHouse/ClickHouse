@@ -44,7 +44,7 @@ sleep 1.0
 $CLICKHOUSE_CLIENT --query "
     SET enable_lightweight_update = 1;
     UPDATE t_lwu_block_number SET s = 'bar' WHERE id = 2;
-    OPTIMIZE TABLE t_lwu_block_number PARTITION ID 'patch-6c387a2c50c8ec9b62c8e6c11c885923-all' FINAL;
+    OPTIMIZE TABLE t_lwu_block_number PARTITION ID 'patch-217fed773f8b0f1741d2ccea2e599cdf-all' FINAL;
 "
 
 wait

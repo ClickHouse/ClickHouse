@@ -20,7 +20,7 @@ UPDATE t_lwu_merge_patches_v1 SET c1 = 15000 WHERE id = 15;
 SELECT * FROM t_lwu_merge_patches_v1 ORDER BY id SETTINGS apply_patch_parts = 1;
 SELECT name, rows FROM system.parts WHERE database = currentDatabase() AND table = 't_lwu_merge_patches_v1' AND active ORDER BY min_block_number;
 
-OPTIMIZE TABLE t_lwu_merge_patches_v1 PARTITION ID 'patch-3e1a7650697c132eb044cc6f1d82bc92-all' FINAL;
+OPTIMIZE TABLE t_lwu_merge_patches_v1 PARTITION ID 'patch-63f56de952edf6cfcaf3d77635ceee5f-all' FINAL;
 
 SELECT * FROM t_lwu_merge_patches_v1 ORDER BY id SETTINGS apply_patch_parts = 1;
 SELECT name, rows FROM system.parts WHERE database = currentDatabase() AND table = 't_lwu_merge_patches_v1' AND active ORDER BY min_block_number;

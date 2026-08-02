@@ -24,8 +24,8 @@ UPDATE t_shared SET s = s || '_foo' WHERE id % 2 = 1;
 UPDATE t_shared SET c1 = c1 + 1000 WHERE id % 3 = 0;
 
 OPTIMIZE TABLE t_shared FINAL SETTINGS optimize_throw_if_noop = 1;
-OPTIMIZE TABLE t_shared PARTITION ID 'patch-3e1a7650697c132eb044cc6f1d82bc92-all' FINAL SETTINGS optimize_throw_if_noop = 1;
-OPTIMIZE TABLE t_shared PARTITION ID 'patch-8feeedf7588c601fd7f38da7fe68712b-all' FINAL SETTINGS optimize_throw_if_noop = 1;
+OPTIMIZE TABLE t_shared PARTITION ID 'patch-63f56de952edf6cfcaf3d77635ceee5f-all' FINAL SETTINGS optimize_throw_if_noop = 1;
+OPTIMIZE TABLE t_shared PARTITION ID 'patch-72c05d3e0462ad2099fb4f8778aa3d29-all' FINAL SETTINGS optimize_throw_if_noop = 1;
 
 SET apply_patch_parts = 1;
 SELECT * FROM t_shared ORDER BY id;

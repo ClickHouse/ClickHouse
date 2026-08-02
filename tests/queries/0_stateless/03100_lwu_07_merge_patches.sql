@@ -17,7 +17,7 @@ SELECT * FROM t_lightweight ORDER BY id SETTINGS apply_patch_parts = 1;
 -- Mask the merge level in patch part names: a background merge may bump the level before the explicit OPTIMIZE FINAL below, which is irrelevant to what this test checks.
 SELECT replaceRegexpOne(name, '^(patch-[0-9a-f]+-all_[0-9]+_[0-9]+)_[0-9]+(_[0-9]+)$', '\\1_<lvl>\\2'), rows FROM system.parts WHERE database = currentDatabase() AND table = 't_lightweight' AND active ORDER BY min_block_number;
 
-OPTIMIZE TABLE t_lightweight PARTITION ID 'patch-0ac06936311a5bdcd347ed3272aff961-all' FINAL;
+OPTIMIZE TABLE t_lightweight PARTITION ID 'patch-fa2434eb4a6545e335e6f73a442431b7-all' FINAL;
 
 SELECT * FROM t_lightweight ORDER BY id SETTINGS apply_patch_parts = 1;
 SELECT replaceRegexpOne(name, '^(patch-[0-9a-f]+-all_[0-9]+_[0-9]+)_[0-9]+(_[0-9]+)$', '\\1_<lvl>\\2'), rows FROM system.parts WHERE database = currentDatabase() AND table = 't_lightweight' AND active ORDER BY min_block_number;

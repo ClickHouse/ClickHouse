@@ -726,8 +726,13 @@ std::vector<PatchIndicesPtr> applyPatchesMergeOnKey(const Block & result_block, 
 
             if (column && column->column)
             {
-                hash.update(name);
-                hash.update(column->type->getName());
+                auto type_name = column->type->getName();
+
+                hash.update(name.size());
+                hash.update(name.data(), name.size());
+                hash.update(type_name.size());
+                hash.update(type_name.data(), type_name.size());
+
                 block_updated_columns.push_back(name);
             }
         }
