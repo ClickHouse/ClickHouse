@@ -79,6 +79,14 @@ SELECT toTypeName(result), isNaN(result) FROM (
 SELECT toTypeName(result), isNaN(result) FROM (
     SELECT giniIfMerge(state) AS result FROM (SELECT giniIfState(NULL, NULL) AS state)
 );
+SELECT toTypeName(giniDistinct(NULL)), isNaN(giniDistinct(NULL));
+SELECT toTypeName(giniArgMin(NULL, 1)), isNaN(giniArgMin(NULL, 1));
+SELECT toTypeName(giniArgMax(NULL, 1)), isNaN(giniArgMax(NULL, 1));
+SELECT toTypeName(giniArgMin(1, NULL)), isNaN(giniArgMin(1, NULL));
+SELECT toTypeName(giniOrDefault(NULL)), giniOrDefault(NULL) = 0;
+SELECT toTypeName(giniOrNull(NULL)), isNull(giniOrNull(NULL));
+WITH giniResample(0, 2, 1)(NULL, 0) AS result
+SELECT toTypeName(result), arrayAll(x -> isNaN(x), result);
 
 -- -State / -Merge round trip: split values into two states and merge.
 SELECT giniMerge(state) FROM (
