@@ -90,6 +90,7 @@ const VersionToSettingsChangesMap & getSettingsChangesHistory()
             {"show_remote_databases_in_system_tables", true, true, "New setting to control whether `MySQL` and `PostgreSQL` databases are shown in `system.tables`, `system.columns` and `system.completions`."},
             {"use_constant_folding_in_index_analysis", false, false, "New setting to fold partition-level constants into the filter predicate per part during MergeTree index analysis, improving pruning for filters whose branches depend on partition values."},
             {"join_runtime_filter_size_from_hash_table_stats", false, true, "Use hash table size statistics collected from previous executions to size the JOIN runtime filter. When disabled, fall back to the fixed `join_runtime_bloom_filter_bytes`."},
+            {"allow_experimental_iceberg_deletion_vectors", false, false, "New experimental setting to read Iceberg v3 deletion vectors."},
         });
 
         addSettingsChanges(settings_changes_history, "26.6",
@@ -552,8 +553,6 @@ const VersionToSettingsChangesMap & getSettingsChangesHistory()
             {"allow_experimental_iceberg_compaction", 0, 0, "New setting"},
             {"delta_lake_snapshot_version", -1, -1, "New setting"},
             {"use_roaring_bitmap_iceberg_positional_deletes", false, false, "New setting"},
-            {"allow_experimental_iceberg_deletion_vectors", false, false, "New setting"},
-            {"iceberg_deletion_vector_max_content_size_in_bytes", 0, 0, "New setting"},
             {"iceberg_metadata_compression_method", "", "", "New setting"},
             {"allow_experimental_correlated_subqueries", false, true, "Mark correlated subqueries support as Beta."},
             {"promql_database", "", "", "New experimental setting"},

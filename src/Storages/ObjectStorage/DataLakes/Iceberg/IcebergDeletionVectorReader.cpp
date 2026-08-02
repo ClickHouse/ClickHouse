@@ -35,7 +35,6 @@ std::unique_ptr<roaring::Roaring64Map> readIcebergDeletionVector(
     const String & file_path,
     Int64 content_offset,
     Int64 content_size_in_bytes,
-    UInt64 max_content_size_in_bytes,
     const ObjectStoragePtr & object_storage,
     ContextPtr context,
     LoggerPtr log)
@@ -44,12 +43,6 @@ std::unique_ptr<roaring::Roaring64Map> readIcebergDeletionVector(
         throw Exception(ErrorCodes::BAD_ARGUMENTS, "Iceberg deletion vector content offset cannot be negative: {}", content_offset);
     if (content_size_in_bytes < 12)
         throw Exception(ErrorCodes::INCORRECT_DATA, "Iceberg deletion vector blob is too small: {}", content_size_in_bytes);
-    if (max_content_size_in_bytes && static_cast<UInt64>(content_size_in_bytes) > max_content_size_in_bytes)
-        throw Exception(
-            ErrorCodes::BAD_ARGUMENTS,
-            "Iceberg deletion vector blob is too large: {} bytes, maximum: {} bytes",
-            content_size_in_bytes,
-            max_content_size_in_bytes);
 
     RelativePathWithMetadata object_info(file_path);
     auto read_buffer = createReadBuffer(object_info, object_storage, context, log);
