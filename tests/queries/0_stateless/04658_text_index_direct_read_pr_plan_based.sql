@@ -48,6 +48,14 @@ DROP TABLE IF EXISTS t_plain_pr_plan_based;
 CREATE TABLE t_plain_pr_plan_based (n UInt64, s String) ENGINE = MergeTree ORDER BY tuple();
 INSERT INTO t_plain_pr_plan_based SELECT number, 'hello world ' || toString(number) FROM numbers(1000);
 
+-- The assertion below is about which side of the JOIN is followed by `collectReadsToDistribute`, so the
+-- join order has to be pinned: with join reordering (in particular the randomized
+-- `query_plan_optimize_join_order_randomize` used by the stateless test harness) the text-index table can
+-- end up on the followed side, and then the whole plan legitimately stays local.
+SET query_plan_optimize_join_order_randomize = 0;
+SET query_plan_optimize_join_order_limit = 0;
+SET query_plan_join_swap_table = 'false';
+
 SELECT countIf(explain LIKE '%ReadFromParallelReplicas%') > 0
 FROM (EXPLAIN pretty=0, description=0
     SELECT sum(length(l.s)) FROM t_plain_pr_plan_based AS l
