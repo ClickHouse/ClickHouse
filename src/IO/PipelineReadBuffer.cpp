@@ -154,6 +154,11 @@ void PipelineReadBuffer::setRequestMap(std::vector<std::pair<size_t, size_t>> ra
     executor->setRequestMap(std::move(ranges));
 }
 
+void PipelineReadBuffer::prefetch(Priority)
+{
+    executor->prefetch();
+}
+
 bool PipelineReadBuffer::supportsReadAt()
 {
     /// A `true` answer tells random-read formats (Parquet/ORC/Arrow) the source

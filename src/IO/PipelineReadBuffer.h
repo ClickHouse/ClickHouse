@@ -31,6 +31,11 @@ public:
     void setPlannedReadEnd(size_t position) override;
     void setRequestMap(std::vector<std::pair<size_t, size_t>> ranges) override;  // STYLE_CHECK_ALLOW_STD_CONTAINERS
 
+    /// Forward the consumer's read-ahead hint to the executor, which triggers
+    /// its prefetch jobs. `Priority` is unused: the executor's prefetch runs on
+    /// a dedicated background pool where all read-ahead jobs are peers.
+    void prefetch(Priority priority) override;
+
     /// Parquet's prefetcher takes a fast `RandomRead` path when both are true,
     /// fan-out via `readBigAt` with no shared mutex. Without these overrides
     /// it falls back to serial seek+read under a single lock, which on big

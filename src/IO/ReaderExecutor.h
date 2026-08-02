@@ -202,6 +202,14 @@ public:
     /// Seek to a new position. Discards any prefetched data.
     void seek(size_t new_position);
 
+    /// The external prefetch trigger (the buffer's `ReadBuffer::prefetch` hook,
+    /// forwarded from `PipelineReadBuffer`): collect the in-flight machine,
+    /// replan the look-ahead window from the current position, and launch the
+    /// remote fetch jobs. Same driver that `readNextWindow`/`seek` run
+    /// internally, exposed so a consumer can start read-ahead before it pulls
+    /// the next window. A no-op when no async runner is attached.
+    void prefetch();
+
     /// Feed the single READ BOUND (LOGICAL, monotone-max): every declaration of
     /// how far the read goes lands here - the per-range read-until (advanced per
     /// mark range by `MergeTreeReaderStream::adjustRightMark`) and the announced
@@ -667,7 +675,6 @@ private:
     /// refused residue, bank what is still homeless, and advance the lane's attempted
     /// cursor to the fetch reach.
     void collectInFlightInto();
-    void prefetch();
     /// Build the machine's runner-independent fetch step (see the definition). Shared by the
     /// pool runner and the future inline runner.
     std::function<StepResult()> makeFetchStep(FetchMachine & m);

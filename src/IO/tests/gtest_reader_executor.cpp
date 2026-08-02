@@ -368,6 +368,44 @@ TEST(ReaderExecutor, AheadRelaunchesAfterBackwardSeek)
         << "a stale ahead cursor would retire every post-seek job and kill read-ahead";
 }
 
+/// The external prefetch trigger (`ReaderExecutor::prefetch`, forwarded from
+/// `PipelineReadBuffer::prefetch`) must launch read-ahead BEFORE the first
+/// `readNextWindow`: a consumer that hints prefetch up front should get the
+/// background fetch started, not deferred until it pulls the window. A machine
+/// in flight OR a banked window proves the launch; correct data afterwards
+/// proves the trigger did not corrupt the executor's state.
+TEST(ReaderExecutor, ExternalPrefetchTriggerLaunchesReadAhead)
+{
+    const size_t file = 16 * 1024;
+    String content(file, '\0');
+    for (size_t i = 0; i < file; ++i)
+        content[i] = static_cast<char>('A' + i % 26);
+    auto source = std::make_shared<MemorySourceReader>(
+        std::unordered_map<String, String>{{"obj", content}});
+    StoredObjects objects;
+    objects.emplace_back("obj", "", file);
+
+    auto pool = std::make_shared<PrefetchThreadPool>(2);
+    ReaderExecutor::Options executor_options;
+    executor_options.window_size = 1024;
+    executor_options.prefetch_pool = pool;
+    executor_options.long_connection_limit = std::make_shared<LongConnectionLimit>(10);
+    ReaderExecutor executor(source, objects, {}, executor_options);
+
+    /// No read yet: the external hint alone must start read-ahead from position 0.
+    executor.prefetch();
+    EXPECT_TRUE(inspect(executor).hasInflightPrefetch() || !inspect(executor).bankIntervals().empty())
+        << "external prefetch trigger did not launch read-ahead";
+
+    /// The data still reads correctly after the standalone trigger.
+    auto chain = executor.readNextWindow();
+    ASSERT_EQ(chain.range().offset, 0u);
+    String got;
+    for (const auto & node : chain.getNodes())
+        got.append(node.data(), node.size);
+    EXPECT_EQ(got, content.substr(0, got.size()));
+}
+
 TEST(ReaderExecutor, ReadMultiObject)
 {
     auto source = std::make_shared<MemorySourceReader>(
