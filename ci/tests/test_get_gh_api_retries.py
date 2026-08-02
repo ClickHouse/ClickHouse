@@ -186,14 +186,15 @@ def test_404_failover_unchanged(monkeypatch):
     assert sleeps == [3, 3, 3, 3]
 
 
-# Row 8a: no 4xx changes at all, and no failover for any of them. Without a preset
-# token the failover guard is not short-circuited, so `auth_seen` observes whether
-# the 403 predicate stayed narrow: widening it would grant these a token and a reset.
+# Row 8a: no 4xx changes at all, no failover for any, and 499 pins the new 5xx
+# threshold from below. Without a preset token the failover guard is live, so
+# `auth_seen` catches a widened 403 predicate granting these a token and a reset.
 @pytest.mark.parametrize(
     "status,body",
     [
         (401, b""),
         (422, b""),
+        (499, b""),
         (403, SECONDARY_RATELIMIT_BODY),
         (403, b"You have triggered an abuse detection mechanism."),
     ],
