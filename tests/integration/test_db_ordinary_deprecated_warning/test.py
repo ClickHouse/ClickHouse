@@ -10,6 +10,9 @@ node = cluster.add_instance(
         # Declares a READ-ONLY (users.xml) row policy on an OUTER table of an Ordinary database.
         # See test_conversion_with_a_readonly_policy_on_an_outer_table.
         "configs/readonly_outer_policy.xml",
+        # The same, on a materialized-view INNER table.
+        # See test_conversion_with_a_readonly_policy_on_a_view_inner_table.
+        "configs/readonly_inner_policy.xml",
     ],
     stay_alive = True
 )
@@ -128,9 +131,8 @@ def test_conversion_with_a_readonly_policy_on_an_outer_table():
     # is additionally exempted by the cross-database rejection's own `!converting_database_engine`
     # guard, so a writable per-table policy just moves and moves back either way.
     #
-    # Note this is the OUTER-table case, which the exemption HANDLES. A read-only policy on a
-    # materialized-view INNER table is the disclosed residual: that name genuinely changes, so the
-    # policy must follow it and cannot, and startup fails by design.
+    # This is the OUTER-table case. The INNER-table case is
+    # test_conversion_with_a_readonly_policy_on_a_view_inner_table below.
     node.query("DROP DATABASE IF EXISTS rodb")
     node.query("CREATE DATABASE rodb ENGINE = Ordinary")
     node.query(
@@ -173,5 +175,79 @@ def test_conversion_with_a_readonly_policy_on_an_outer_table():
         assert node.query("SELECT x FROM rodb.outer", user="ro_user") == "1\n"
     finally:
         node.query("DROP DATABASE IF EXISTS rodb")
+        node.stop_clickhouse()
+        node.start_clickhouse()
+
+
+def test_conversion_with_a_readonly_policy_on_a_view_inner_table():
+    # The INNER-table counterpart of the arm above, and the one case where the conversion cannot
+    # keep the name: it assigns the view a fresh UUID, so the inner table goes from `.inner.mv` to
+    # `.inner_id.<uuid>`. A read-only policy cannot be re-keyed onto that new name, and refusing
+    # runs at startup, where there is no user to report to -- the server would not come back up, and
+    # the flag file survives, so every later restart would fail the same way. The move is therefore
+    # declined: the conversion completes and the policy stays on the name it had, which is exactly
+    # where a server without this feature leaves it.
+    node.query("DROP DATABASE IF EXISTS roinner")
+    node.query("CREATE DATABASE roinner ENGINE = Ordinary")
+    node.query(
+        "CREATE TABLE roinner.src (x UInt64, dept String) ENGINE = MergeTree ORDER BY x"
+    )
+    node.query(
+        "CREATE MATERIALIZED VIEW roinner.mv ENGINE = MergeTree ORDER BY x "
+        "AS SELECT x, dept FROM roinner.src"
+    )
+    node.query("INSERT INTO roinner.src VALUES (1, 'eng'), (2, 'fin')")
+
+    inner_before = node.query(
+        "SELECT name FROM system.tables WHERE database = 'roinner' AND name LIKE '.inner%'"
+    ).strip()
+    assert inner_before == ".inner.mv", inner_before
+    # The policy is declared in configs/readonly_inner_policy.xml and binds that hidden name.
+    assert (
+        node.query(
+            "SELECT database, table, storage FROM system.row_policies WHERE database = 'roinner'"
+        )
+        == "roinner\t.inner.mv\tusers_xml\n"
+    )
+
+    try:
+        _convert_to_atomic()
+
+        # The server came back up -- this is the assertion the fix exists for -- and converted.
+        assert (
+            node.query("SELECT engine FROM system.databases WHERE name = 'roinner'")
+            == "Atomic\n"
+        )
+        # The inner table did get the UUID-based name, so the rename really happened.
+        inner_after = node.query(
+            "SELECT name FROM system.tables WHERE database = 'roinner' AND name LIKE '.inner%'"
+        ).strip()
+        assert inner_after.startswith(".inner_id."), inner_after
+        # The read-only policy could not follow it and stayed where it was.
+        assert (
+            node.query(
+                "SELECT database, table FROM system.row_policies WHERE database = 'roinner'"
+            )
+            == "roinner\t.inner.mv\n"
+        )
+        # Declining at startup did not weaken the check itself. The stranded policy still names
+        # `.inner.mv`, so a table created there is covered by it, and a USER rename of that table is
+        # still refused with nothing committed. (Renaming the view itself would not test this: the
+        # database is Atomic now, so its inner table keeps its UUID name and no policy has to move.)
+        node.query(
+            "CREATE TABLE roinner.`.inner.mv` (x UInt64) ENGINE = MergeTree ORDER BY x"
+        )
+        assert "ACCESS_STORAGE_READONLY" in node.query_and_get_error(
+            "RENAME TABLE roinner.`.inner.mv` TO roinner.moved"
+        )
+        assert (
+            node.query(
+                "SELECT count() FROM system.tables "
+                "WHERE database = 'roinner' AND name = '.inner.mv'"
+            )
+            == "1\n"
+        )
+    finally:
+        node.query("DROP DATABASE IF EXISTS roinner")
         node.stop_clickhouse()
         node.start_clickhouse()

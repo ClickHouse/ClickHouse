@@ -112,28 +112,47 @@ namespace
     ///   - another policy in the same plan would end up on the same destination name,
     ///   - its destination name is already taken by a policy that is not itself moving out of the way,
     ///   - the transient parking name used during the move is already taken by a non-moving policy.
-    /// One case is declined rather than rejected: with a replicated access storage the whole plan is
-    /// dropped (see that branch). `rekeys` is therefore mutable and is the same vector the caller
-    /// passes to `applyRowPolicyRekeys`, so the apply skips exactly what was dropped.
+    /// Two cases are declined rather than rejected, and both drop the whole plan: a replicated access
+    /// storage, and a read-only policy while `may_refuse` is false. `rekeys` is therefore mutable and
+    /// is the same vector the caller passes to `applyRowPolicyRekeys`, so the apply skips exactly what
+    /// was dropped.
     /// `log_declined` is false when the caller only wants the checks, so the skip is logged once.
+    /// `may_refuse` is false on the paths that cannot report a rejection to a user: refusing there
+    /// would abort server startup instead (see the callers).
     void preflightRowPolicyRekeys(
-        const AccessControl & access_control, std::vector<RowPolicyRekey> & rekeys, bool log_declined = true)
+        const AccessControl & access_control, std::vector<RowPolicyRekey> & rekeys, bool log_declined = true,
+        bool may_refuse = true)
     {
         if (rekeys.empty())
             return;
 
-        /// (1) Read-only storage: `AccessControl::update` would throw after the commit point. This
-        /// stays first and applies unconditionally -- a policy that is both read-only and shared is
-        /// still a genuine cannot-move on this node, so the rename must fail rather than silently
-        /// skip below.
+        /// (1) Read-only storage: `AccessControl::update` would throw after the commit point. A policy
+        /// that is both read-only and shared is still a genuine cannot-move on this node, so this stays
+        /// first and the rename fails rather than silently skipping below.
         for (const auto & rekey : rekeys)
         {
-            if (auto policy = access_control.tryRead<RowPolicy>(rekey.id); policy && access_control.isReadOnly(rekey.id))
-                throw Exception(
-                    ErrorCodes::ACCESS_STORAGE_READONLY,
-                    "Cannot rename because {} is stored in a read-only access storage "
-                    "and cannot follow the renamed object to its new name",
-                    policy->formatTypeWithName());
+            auto policy = access_control.tryRead<RowPolicy>(rekey.id);
+            if (!policy || !access_control.isReadOnly(rekey.id))
+                continue;
+
+            if (!may_refuse)
+            {
+                if (log_declined)
+                    LOG_INFO(
+                        getLogger("InterpreterRenameQuery"),
+                        "Not moving {} to follow this rename: it is stored in a read-only access storage. "
+                        "It keeps its current name, so the renamed object is no longer covered by it. "
+                        "Recreate the policy on the new name in a writable storage.",
+                        policy->formatTypeWithName());
+                rekeys.clear();
+                return;
+            }
+
+            throw Exception(
+                ErrorCodes::ACCESS_STORAGE_READONLY,
+                "Cannot rename because {} is stored in a read-only access storage "
+                "and cannot follow the renamed object to its new name",
+                policy->formatTypeWithName());
         }
 
         /// (2) A re-key in a replicated access storage is published globally, while the rename
@@ -336,7 +355,9 @@ namespace
                 access_control, elem.to_database_name, elem.to_table_name, elem.from_database_name, elem.from_table_name);
             rekeys.insert(rekeys.end(), to_rekeys.begin(), to_rekeys.end());
         }
-        preflightRowPolicyRekeys(access_control, rekeys);
+        /// The conversion runs at startup, where a rejection aborts the server instead of reaching a user.
+        preflightRowPolicyRekeys(
+            access_control, rekeys, /*log_declined*/ true, /*may_refuse*/ !converting_database_engine);
         return rekeys;
     }
 
@@ -435,7 +456,8 @@ void preflightRowPolicyRekeysForRenames(const ContextPtr & context, const std::v
         /// probe come from each vector's own indices, so a combined vector would probe unused names.
         auto rekeys = collectRowPolicyRekeys(
             access_control, from.database_name, from.table_name, to.database_name, to.table_name);
-        preflightRowPolicyRekeys(access_control, rekeys, /*log_declined*/ false);
+        preflightRowPolicyRekeys(
+            access_control, rekeys, /*log_declined*/ false, /*may_refuse*/ !converting_database_engine);
     }
 }
 
