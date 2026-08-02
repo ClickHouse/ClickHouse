@@ -162,6 +162,11 @@ void MergeTreeDataPartWriterOnDisk::initSkipIndices()
     PackedFilesWriter * packed_writer_for_streams
         = skip_indices_packed_writer ? skip_indices_packed_writer.get() : skip_indices_packed_writer_borrowed;
 
+    /// In a Compact part every column shares one `data.bin`, so no column base can ever equal a
+    /// `skp_idx_*` base and there is nothing for the index side to be checked against.
+    const bool is_compact_part = index_granularity_info.mark_type.part_type == MergeTreeDataPartType::Compact;
+    const StreamBaseManifestPtr manifest = is_compact_part ? nullptr : settings.stream_base_manifest;
+
     for (const auto & skip_index : skip_indices)
     {
         auto index_name = skip_index->getFileName();
@@ -192,11 +197,23 @@ void MergeTreeDataPartWriterOnDisk::initSkipIndices()
 
             SizeAdaptivePacking packing;
             if (packs_this_index)
+            {
+                /// A substream that stays inside `skp_idx.packed` owns no filename, so the claim is
+                /// deferred to the actual spill instead of being made here.
                 packing = {
                     packed_writer_for_streams,
                     logical_stream_name + index_substream.extension,
                     logical_stream_name + marks_file_extension,
-                    packed_spill_threshold};
+                    packed_spill_threshold,
+                    manifest,
+                    on_disk_stream_name,
+                    skip_index->index.name};
+            }
+            else if (manifest)
+            {
+                manifest->registerStreamBase(
+                    on_disk_stream_name, {StreamBaseManifest::Kind::SkipIndex, skip_index->index.name});
+            }
 
             auto stream = std::make_unique<MergeTreeIndexWriterStream>(
                 on_disk_stream_name,

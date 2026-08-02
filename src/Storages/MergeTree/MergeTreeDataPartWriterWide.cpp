@@ -217,6 +217,10 @@ void MergeTreeDataPartWriterWide::addStreams(
             throw Exception(ErrorCodes::FAULT_INJECTED, "Injected failure in Wide part writer addStreams");
         });
 
+        if (settings.stream_base_manifest)
+            settings.stream_base_manifest->registerStreamBase(
+                stream_name, {StreamBaseManifest::Kind::Column, name_and_type.name});
+
         column_streams.emplace(stream_name, std::make_unique<MergeTreeWriterStream>(
             stream_name,
             data_part_storage,
