@@ -1364,9 +1364,19 @@ public:
     ExpressionActionsPtr
     getSortingKeyAndSkipIndicesExpression(const StorageMetadataPtr & metadata_snapshot, const MergeTreeIndices & indices) const;
 
-    /// Get compression codec for part according to TTL rules and <compression>
-    /// section from config.xml.
-    CompressionCodecPtr getCompressionCodecForPart(size_t part_size_compressed, const IMergeTreeDataPart::TTLInfos & ttl_infos, time_t current_time) const;
+    struct PartCompressionCodec
+    {
+        CompressionCodecPtr codec;
+        bool is_explicit_recompression = false; /// True if `codec` comes from a `RECOMPRESS` TTL entry and is not `Default`.
+    };
+
+    /// Get compression codec for part according to `RECOMPRESS` TTL rules from `metadata_snapshot`,
+    /// the `default_compression_codec` setting, or the <compression> section from config.xml, in that order.
+    PartCompressionCodec getCompressionCodecForPart(
+        const StorageMetadataPtr & metadata_snapshot,
+        size_t part_size_compressed,
+        const IMergeTreeDataPart::TTLInfos & ttl_infos,
+        time_t current_time) const;
 
     std::shared_ptr<QueryIdHolder> getQueryIdHolder(const String & query_id, UInt64 max_concurrent_queries) const;
 
