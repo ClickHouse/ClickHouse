@@ -38,10 +38,22 @@ Settings networkCompressionSettings(const Settings & settings)
     static constexpr std::string_view compression_setting_names[]
         = {"network_compression_method", "network_zstd_compression_level", "allow_suspicious_codecs", "allow_experimental_codecs"};
 
+    /// The server re-derives the settings that `compatibility` changed, and a profile may pin them as
+    /// read-only, so an explicitly serialized compatibility-derived value would make the helper query fail
+    /// where an ordinary query succeeds. Drop them first, exactly as ordinary queries do.
+    const Settings * source = &settings;
+    Settings settings_without_compat;
+    if (settings.hasSettingsChangedByCompatibility())
+    {
+        settings_without_compat = settings;
+        settings_without_compat.resetSettingsChangedByCompatibility();
+        source = &settings_without_compat;
+    }
+
     Settings result;
     for (std::string_view name : compression_setting_names)
-        if (settings.isChanged(name))
-            result.set(name, settings.get(name));
+        if (source->isChanged(name))
+            result.set(name, source->get(name));
     return result;
 }
 

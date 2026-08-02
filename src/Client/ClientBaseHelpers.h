@@ -23,6 +23,11 @@ struct Settings;
 /// mode) must honor the user's choice of the network codec, but they must not inherit the rest of the
 /// session settings: `Connection::sendQuery` serializes every changed setting into the query packet, so
 /// passing the whole session would make such a query run under, for example, a non-default `dialect`.
+///
+/// Values that the `compatibility` setting derived are not considered changed here: the server re-derives
+/// them from `compatibility` itself, and serializing them explicitly would break under a profile that pins
+/// them as read-only. This mirrors what `ClientBase::settingsWithoutCompatibilityDerived` does for ordinary
+/// queries.
 Settings networkCompressionSettings(const Settings & settings);
 
 /// Should we celebrate a bit?
