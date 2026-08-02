@@ -63,12 +63,15 @@ run() {
     fi
 }
 
-from_subquery="SELECT y FROM (SELECT y FROM ${CLICKHOUSE_DATABASE}.v_invoker)"
-in_subquery="SELECT count() FROM numbers(3) WHERE number IN (SELECT y FROM ${CLICKHOUSE_DATABASE}.v_invoker)"
-scalar_subquery="SELECT (SELECT max(z) FROM ${CLICKHOUSE_DATABASE}.v_invoker)"
+queries=(
+    "from_subquery|SELECT y FROM (SELECT y FROM ${CLICKHOUSE_DATABASE}.v_invoker)"
+    "in_subquery|SELECT count() FROM numbers(3) WHERE number IN (SELECT y FROM ${CLICKHOUSE_DATABASE}.v_invoker)"
+    "scalar_subquery|SELECT (SELECT max(z) FROM ${CLICKHOUSE_DATABASE}.v_invoker)"
+)
 
-for query_kind in from_subquery in_subquery scalar_subquery; do
-    query="${!query_kind}"
+for query_with_kind in "${queries[@]}"; do
+    query_kind="${query_with_kind%%|*}"
+    query="${query_with_kind#*|}"
 
     echo "-- ${query_kind}: reader has SELECT on the view but not its base table"
     run "${reader}" "SELECT"                 "${query}"
