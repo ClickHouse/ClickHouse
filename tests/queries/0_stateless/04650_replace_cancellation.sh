@@ -38,13 +38,14 @@ BOUND=$((SCALE * 2000))
 # inconclusive rather than passed.
 run() {
     local label="$1" query="$2" mode="${3:-throw}" query_id="${4:-}" shape="${5:-}"
-    local output start_ms elapsed_ms wall_ms
+    local output rc start_ms elapsed_ms wall_ms
     start_ms=$(date +%s%N)
     # shellcheck disable=SC2086
     output=$(timeout 600 ${CLICKHOUSE_CLIENT} --max_execution_time "$DEADLINE" --timeout_overflow_mode "$mode" \
         --compile_regular_expressions 0 \
         ${query_id:+--query_id "$query_id"} \
         --query "$query" 2>&1)
+    rc=$?
     wall_ms=$(( ($(date +%s%N) - start_ms) / 1000000 ))
     elapsed_ms=$(printf '%s' "$output" | grep -oP 'elapsed \K[0-9]+(?=\.)' | head -1)
     # A verdict rather than the number itself keeps the reference stable across machine speeds.
@@ -54,8 +55,13 @@ run() {
         else
             echo "$label: OVERSHOT ${elapsed_ms} ms"
         fi
+    elif [ "$rc" = 0 ]; then
+        # The case finished inside its deadline, so it asserted nothing about being stopped. Named apart
+        # from a missing checkpoint because the remedy is to re-size the case, not to fix the function.
+        echo "$label: completed without hitting the deadline"
     elif ! printf '%s' "$output" | grep -q TIMEOUT_EXCEEDED; then
-        echo "$label: no timeout"
+        # Anything else - a memory limit, say - leaves the deadline untested either way.
+        echo "$label: inconclusive, failed with code $(printf '%s' "$output" | grep -oP 'Code: \K[0-9]+' | head -1)"
     elif [ "$shape" = fold ]; then
         # Wall clock covers the whole client call, not server time alone, hence case 19's allowance.
         if [ "$wall_ms" -lt "$((BOUND * 2))" ]; then
