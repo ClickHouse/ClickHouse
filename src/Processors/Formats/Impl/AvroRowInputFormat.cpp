@@ -6,6 +6,7 @@
 #include <Columns/ColumnMap.h>
 #include <Columns/ColumnNullable.h>
 #include <Columns/ColumnTuple.h>
+#include <Common/DateLUTImpl.h>
 #include <Common/checkStackSize.h>
 #include <Core/AccurateComparison.h>
 #include <Core/Field.h>
@@ -334,6 +335,31 @@ AvroDeserializer::DeserializeFn AvroDeserializer::createDeserializeFn(const avro
                 return createDecimalDeserializeFn<DataTypeDateTime64>(root_node, target_type, false);
             break;
         case avro::AVRO_INT:
+            if (target.isDate32())
+            {
+                /// Avro `date` is a day count since the epoch, and it is inferred as `Date32`.
+                /// Validate it against the range of `Date32` instead of storing an impossible date,
+                /// the same invariant that the Arrow, Arrow IPC, Parquet and ORC readers enforce.
+                const auto date_time_overflow_behavior = settings.date_time_overflow_behavior;
+                return [target, date_time_overflow_behavior](IColumn & column, avro::Decoder & decoder)
+                {
+                    Int32 days_num = decoder.decodeInt();
+                    if (days_num > DATE_LUT_MAX_EXTEND_DAY_NUM || days_num < DATE_LUT_MIN_EXTEND_DAY_NUM)
+                    {
+                        if (date_time_overflow_behavior == FormatSettings::DateTimeOverflowBehavior::Saturate)
+                            days_num = (days_num < DATE_LUT_MIN_EXTEND_DAY_NUM) ? DATE_LUT_MIN_EXTEND_DAY_NUM : DATE_LUT_MAX_EXTEND_DAY_NUM;
+                        else
+                            throw Exception(
+                                ErrorCodes::VALUE_IS_OUT_OF_RANGE_OF_DATA_TYPE,
+                                "Input value {} exceeds the range of type Date32, which is [{}, {}]",
+                                days_num,
+                                DATE_LUT_MIN_EXTEND_DAY_NUM,
+                                DATE_LUT_MAX_EXTEND_DAY_NUM);
+                    }
+                    insertNumber(column, target, days_num);
+                    return true;
+                };
+            }
             if (target_type->isValueRepresentedByNumber())
             {
                 return [target](IColumn & column, avro::Decoder & decoder)

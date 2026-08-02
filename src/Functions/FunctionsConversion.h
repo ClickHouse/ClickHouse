@@ -367,7 +367,12 @@ struct ToDate32TransformFromSecondsOrDays
                 /// timestamps beyond 2299 would saturate to the LUT end instead of 9999-12-31.
                 if constexpr (is_floating_point<FromType>)
                     return time_zone.toDayNum(static_cast<DateLUTImpl::Time>(std::min(static_cast<double>(from), static_cast<double>(MAX_DATE32_TIMESTAMP))));
-                return time_zone.toDayNum(std::min(static_cast<DateLUTImpl::Time>(from), static_cast<DateLUTImpl::Time>(MAX_DATE32_TIMESTAMP)));
+                /// Compare in the source domain: `toDate32` also accepts UInt128 / UInt256, and narrowing a value
+                /// above INT64_MAX to DateLUTImpl::Time first wraps around, which would map it near the epoch
+                /// instead of saturating at the upper boundary of Date32.
+                if (from > MAX_DATE32_TIMESTAMP)
+                    return time_zone.toDayNum(static_cast<DateLUTImpl::Time>(MAX_DATE32_TIMESTAMP));
+                return time_zone.toDayNum(static_cast<DateLUTImpl::Time>(from));
             }
 
         return static_cast<Int32>(from);
