@@ -662,31 +662,50 @@ String getInsertDataSchemaMismatchDescription(
 namespace
 {
 
-/// Reads a decimal number that follows `prefix` in `message`. When `terminator` is not empty,
-/// the number is required to be followed by it.
-std::optional<size_t> parseRowNumberAfter(std::string_view message, std::string_view prefix, std::string_view terminator)
+/// A row marker found in an exception message: its offset and the number that follows the marker.
+struct RowNumberMarker
 {
-    size_t pos = message.find(prefix);
-    if (pos == std::string_view::npos)
-        return {};
+    size_t pos;
+    size_t rows;
+};
 
-    pos += prefix.size();
-    size_t rows = 0;
-    size_t digits = 0;
-    for (; pos < message.size() && isNumericASCII(message[pos]); ++pos, ++digits)
+/// Reads a decimal number that follows the LAST occurrence of `prefix` in `message`. When `terminator`
+/// is not empty, the number is required to be followed by it.
+/// The marker is appended by the format to the end of the message, while the excerpts of the data are
+/// part of the original message, so the last occurrence is the one produced by the parser. Matching the
+/// first occurrence instead would let the inserted data spoof the row bound.
+std::optional<RowNumberMarker> parseRowNumberAfter(std::string_view message, std::string_view prefix, std::string_view terminator)
+{
+    size_t search_from = message.size();
+    while (true)
     {
-        if (digits > 18) /// Do not overflow on a bogus message.
+        size_t marker_pos = message.rfind(prefix, search_from);
+        if (marker_pos == std::string_view::npos)
             return {};
-        rows = rows * 10 + (message[pos] - '0');
+
+        size_t pos = marker_pos + prefix.size();
+        size_t rows = 0;
+        size_t digits = 0;
+        bool overflow = false;
+        for (; pos < message.size() && isNumericASCII(message[pos]); ++pos, ++digits)
+        {
+            if (digits > 18) /// Do not overflow on a bogus message.
+            {
+                overflow = true;
+                break;
+            }
+            rows = rows * 10 + (message[pos] - '0');
+        }
+
+        bool matched = !overflow && digits != 0 && (terminator.empty() || message.substr(pos).starts_with(terminator));
+        if (matched)
+            return RowNumberMarker{marker_pos, rows};
+
+        /// This occurrence is not a well-formed marker; keep looking for an earlier one.
+        if (marker_pos == 0)
+            return {};
+        search_from = marker_pos - 1;
     }
-
-    if (digits == 0)
-        return {};
-
-    if (!terminator.empty() && !message.substr(pos).starts_with(terminator))
-        return {};
-
-    return rows;
 }
 
 }
@@ -694,13 +713,19 @@ std::optional<size_t> parseRowNumberAfter(std::string_view message, std::string_
 std::optional<size_t> getRowsReachedFromParseErrorMessage(std::string_view message)
 {
     /// `IRowInputFormat` appends "(at row N)" where the counter already includes the failing row.
-    if (auto rows = parseRowNumberAfter(message, "(at row ", ")"))
-        return std::max<size_t>(*rows, 1); /// Be defensive about a zero.
+    auto row_input_format_marker = parseRowNumberAfter(message, "(at row ", ")");
 
     /// `ValuesBlockInputFormat` appends " at row N" where the counter is the number of rows that were
     /// parsed completely, so the parser has reached one row more than that.
-    if (auto rows = parseRowNumberAfter(message, " at row ", ""))
-        return *rows + 1;
+    auto values_marker = parseRowNumberAfter(message, " at row ", "");
+
+    /// Both forms can be present when the data itself contains something that looks like the other
+    /// marker - prefer the one that the parser appended, which is the rightmost of the two.
+    if (row_input_format_marker && (!values_marker || values_marker->pos < row_input_format_marker->pos))
+        return std::max<size_t>(row_input_format_marker->rows, 1); /// Be defensive about a zero.
+
+    if (values_marker)
+        return values_marker->rows + 1;
 
     return {};
 }
