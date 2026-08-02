@@ -1,0 +1,493 @@
+---
+sidebarTitle: 'C'
+keywords: ['c', 'protocole natif', 'format natif', 'header-only', 'embarqué', 'tcp', 'décodage de blocs']
+slug: /integrations/c
+description: 'Client C header-only pour le protocole natif de ClickHouse, conçu pour être embarqué.'
+title: 'Client C ClickHouse'
+doc_type: 'reference'
+---
+
+`clickhouse-c` est un client C header-only pour le [protocole natif](/fr/concepts/features/interfaces/tcp) de ClickHouse.
+Le code source et la référence de chaque en-tête se trouvent dans le [dépôt GitHub](https://github.com/ClickHouse/clickhouse-c).
+
+Contrairement aux clients de plus haut niveau, il en fait délibérément très peu pour vous. L’en-tête principal décode et
+encode des blocs au format [Native](/fr/reference/formats/Native) via une fonction de rappel d’E/S que vous fournissez. Vous gérez
+vous-même le socket, le contexte TLS, l’allocateur, les nouvelles tentatives et le pool de connexions. Cela le rend assez compact pour
+être embarqué : inclure uniquement `clickhouse.h` n’ajoute aucune dépendance à l’édition de liens au-delà de libc.
+
+<Note>
+  Cette bibliothèque est en cours de développement actif. La v1 décode les principaux types ClickHouse.
+  Signalez les limitations ou les fonctionnalités manquantes via le [suivi des issues](https://github.com/ClickHouse/clickhouse-c/issues).
+  Gardez toutefois à l’esprit que l’absence de certaines fonctionnalités est intentionnelle.
+</Note>
+
+<div id="non-goals">
+  ## Ce que la bibliothèque ne fait pas
+</div>
+
+Ces éléments sont volontairement hors du périmètre. Gérez-les dans votre application ou avec une bibliothèque associée :
+
+* Protocole HTTP. Encapsulez directement libcurl pour l&#39;[interface HTTP](/fr/concepts/features/interfaces/http).
+* Résolution DNS, basculement de point de terminaison, pool de connexions, nouvelles tentatives et backoff.
+* Cycle de vie du contexte TLS. Le backend OpenSSL utilise un `SSL` que vous avez déjà établi.
+* Gestion des threads. Chaque `chc_client` est monothread par conception.
+* E/S asynchrones au sein de la bibliothèque. Le client bloquant appelle `chc_io.read` de manière synchrone. Pour un
+  client piloté par une boucle d&#39;événements qui ne réalise lui-même aucune E/S, utilisez le [ioless client](#async-client).
+
+<div id="headers">
+  ## Organisation de la bibliothèque
+</div>
+
+`clickhouse-c` est fourni sous la forme d’un ensemble plat de fichiers d’en-tête. Chaque en-tête contient à la fois les déclarations et l’implémentation,
+protégées par une macro sentinelle. Choisissez les en-têtes nécessaires à votre build.
+
+| En-tête                                                                                                          | Rôle                                                                                                     | Options d’édition de liens |
+| ---------------------------------------------------------------------------------------------------------------- | -------------------------------------------------------------------------------------------------------- | -------------------------- |
+| [`clickhouse.h`](https://github.com/ClickHouse/clickhouse-c/blob/main/doc/clickhouse.md)                         | Noyau : types, erreurs, allocateur, vtable d’E/S, analyseur des noms de type, lecteur et writer de blocs | —                          |
+| [`clickhouse-client.h`](https://github.com/ClickHouse/clickhouse-c/blob/main/doc/clickhouse-client.md)           | Boucle de paquets TCP : Hello, Query, Data, EndOfStream, Exception, Progress, Pong                       | —                          |
+| [`clickhouse-async.h`](https://github.com/ClickHouse/clickhouse-c/blob/main/doc/clickhouse-async.md)             | Client ioless : la même boucle de paquets, pilotée par l’envoi d’octets par l’appelant, sans socket      | —                          |
+| [`clickhouse-compression.h`](https://github.com/ClickHouse/clickhouse-c/blob/main/doc/clickhouse-compression.md) | Structure des trames compressées, CityHash128, routage des codecs et adaptateurs `LZ4`/`ZSTD`            | `-llz4 -lzstd`             |
+| [`clickhouse-posix-io.h`](https://github.com/ClickHouse/clickhouse-c/blob/main/doc/clickhouse-posix-io.md)       | Backend d’E/S sur `read(2)`/`write(2)` bloquants                                                         | —                          |
+| [`clickhouse-openssl.h`](https://github.com/ClickHouse/clickhouse-c/blob/main/doc/clickhouse-openssl.md)         | Backend d’E/S sur `SSL_read`/`SSL_write`                                                                 | `-lssl -lcrypto`           |
+
+<div id="server-setting">
+  ## Paramètre de serveur requis
+</div>
+
+Le décodeur lit sur le wire des noms de type affichables, ils doivent donc être encodés sous forme de texte. ClickHouse
+les écrit sous forme de texte par défaut, mais épinglez ce paramètre dans vos requêtes afin qu&#39;un profil de serveur ou de session
+qui le définit en binaire ne puisse pas compromettre le décodage :
+
+```plaintext
+output_format_native_encode_types_in_binary_format = 0
+```
+
+<div id="adding-to-project">
+  ## L’ajouter à votre projet
+</div>
+
+Il n&#39;y a pas de paquet à installer, vous devez donc intégrer les fichiers d’en-tête à votre arborescence via un sous-module Git ou en les copiant.
+Une seule unité de traduction définit `CHC_IMPLEMENTATION` et inclut l’implémentation ;
+toutes les autres unités incluent les mêmes fichiers d’en-tête uniquement pour les déclarations.
+
+```c
+/* clickhouse_impl.c */
+#define CHC_IMPLEMENTATION
+#include "clickhouse.h"
+#include "clickhouse-posix-io.h"
+#include "clickhouse-client.h"
+#include "clickhouse-compression.h"
+```
+
+```c
+/* every other TU */
+#include "clickhouse.h"
+#include "clickhouse-client.h"
+```
+
+Définissez `CHC_PROVIDE_STDLIB_ALLOC` avant d’inclure `clickhouse.h` pour utiliser `chc_alloc_stdlib`.
+Définissez `CHC_NO_LZ4` ou `CHC_NO_ZSTD` dans `clickhouse-compression.h` pour supprimer les dépendances à lz4/zstd.
+
+<div id="connecting-over-tcp">
+  ## Connexion via TCP
+</div>
+
+Pour communiquer avec un serveur ClickHouse, vous configurez vous-même le socket, l’encapsulez dans un `chc_io`, puis le transmettez
+à `chc_client_init`, qui exécute le handshake Hello de manière synchrone. La bibliothèque ne gère ni le DNS,
+ni le failover, ni la reconnexion, ni le pool de connexions — cela relève de l’appelant.
+
+```c
+int fd = socket(AF_INET, SOCK_STREAM, 0);
+int one = 1;
+setsockopt(fd, IPPROTO_TCP, TCP_NODELAY, &one, sizeof one);
+
+struct sockaddr_in sa = {};
+sa.sin_family      = AF_INET;
+sa.sin_port        = htons(9000);
+sa.sin_addr.s_addr = htonl(INADDR_LOOPBACK);
+connect(fd, (struct sockaddr *) &sa, sizeof sa);
+
+chc_alloc al = chc_alloc_stdlib();
+chc_posix_io state;
+chc_io io;
+chc_posix_io_init(&state, &io, fd, NULL, NULL);
+
+chc_client *client = NULL;
+chc_client_opts opts = {
+    .user     = "default",
+    .password = "",
+    .database = "default",
+};
+chc_err err = {};
+if (chc_client_init(&client, &opts, &al, &io, &err) != CHC_OK) {
+    fprintf(stderr, "connect: %s\n", err.msg);
+    chc_client_close(client);   /* safe to call on the NULL-on-failure handle */
+    return 1;
+}
+
+const chc_server_info *info = chc_client_server_info(client);
+printf("connected to %s %llu.%llu.%llu\n", info->display_name,
+       (unsigned long long) info->version_major,
+       (unsigned long long) info->version_minor,
+       (unsigned long long) info->version_patch);
+```
+
+Chaque `chc_client` est mono-thread et encapsule une connexion. La bibliothèque appelle les fonctions de rappel `chc_io`
+de manière synchrone ; ce que ces fonctions de rappel font en arrière-plan (`epoll`, `io_uring`,
+`WaitLatchOrSocket`) dépend de vous.
+
+<div id="running-a-query">
+  ## Exécuter une requête
+</div>
+
+Envoyez la requête, puis lisez les paquets jusqu’à `CHC_PKT_END_OF_STREAM`. Utilisez `chc_client_send_query_ex` pour
+ajouter le [paramètre serveur requis](#server-setting) ; la version simple `chc_client_send_query` envoie une
+liste de paramètres vide et hérite des paramètres par défaut du serveur.
+
+```c
+chc_query_setting settings[] = {
+    { .name = "output_format_native_encode_types_in_binary_format", .value = "0" },
+};
+chc_query_opts qopts = { .settings = settings, .n_settings = 1 };
+
+const char *sql = "SELECT number, toString(number * number) FROM numbers(5)";
+if (chc_client_send_query_ex(client, sql, strlen(sql), &qopts, &err) != CHC_OK) {
+    fprintf(stderr, "query: %s\n", err.msg);
+    return 1;
+}
+
+for (;;) {
+    chc_packet pkt = {};
+    if (chc_client_recv_packet(client, &pkt, &err) != CHC_OK) {
+        fprintf(stderr, "recv: %s\n", err.msg);
+        break;
+    }
+
+    if (pkt.kind == CHC_PKT_DATA) {
+        for (size_t r = 0; r < chc_block_n_rows(pkt.block); r++)
+            for (size_t c = 0; c < chc_block_n_columns(pkt.block); c++)
+                print_value(chc_block_column_type(pkt.block, c),
+                            chc_block_column(pkt.block, c), r);
+    } else if (pkt.kind == CHC_PKT_EXCEPTION) {
+        fprintf(stderr, "server: %s\n", pkt.exception->display_text);
+    }
+
+    bool done = pkt.kind == CHC_PKT_END_OF_STREAM;
+    chc_packet_clear(client, &pkt);
+    if (done) break;
+}
+```
+
+Les exceptions du serveur arrivent sous forme de paquets `CHC_PKT_EXCEPTION`, et non comme un retour non-OK de
+`chc_client_recv_packet`. Seules les défaillances au niveau du transport renvoient non-OK. Le premier paquet `CHC_PKT_DATA`
+d’un résultat est un bloc d’en-tête décrivant le schéma avec zéro ligne ; les blocs de données suivent.
+`chc_packet_clear` libère le bloc ou l’exception du paquet — définissez d’abord ces champs du paquet sur
+null pour en prendre possession à la place.
+
+<div id="reading-column-data">
+  ## Lecture des données de colonnes
+</div>
+
+Les blocs sont orientés par colonne. Chaque colonne possède un layout physique, renvoyé par `chc_column_layout`, sur
+lequel vous effectuez le dispatch ; son type déclaré provient de `chc_block_column_type`. Les layouts composés sont imbriqués. Ainsi,
+lire un `Nullable(Array(String))` consiste à déballer le nullable, parcourir les offsets du tableau, puis
+à découper les données de chaîne.
+
+| Layout                    | Accesseurs                                                                                                                                                                          |
+| ------------------------- | ----------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `CHC_COL_FIXED`           | `chc_column_fixed_data(c, &elem_size)` — `n_rows * elem_size` octets little-endian                                                                                                  |
+| `CHC_COL_STRING`          | `chc_column_string_data(c)`, `chc_column_string_offsets(c)` — `offsets[i]` est la fin exclusive de la ligne `i` dans l&#39;ordre des octets de l&#39;hôte ; la ligne 0 commence à 0 |
+| `CHC_COL_NULLABLE`        | `chc_column_null_map(c)` (un octet par ligne, 1 = `NULL`), `chc_column_nullable_inner(c)`                                                                                           |
+| `CHC_COL_ARRAY`           | `chc_column_array_offsets(c)` (fins cumulées), `chc_column_array_values(c)` ; `Map` se décode comme `Array(Tuple(K, V))`                                                            |
+| `CHC_COL_TUPLE`           | `chc_column_tuple_arity(c)`, `chc_column_tuple_child(c, i)` — chaque enfant a le même nombre de lignes                                                                              |
+| `CHC_COL_LOW_CARDINALITY` | `chc_column_lc_key_size(c)` (1/2/4/8), `chc_column_lc_keys(c)`, `chc_column_lc_dict(c)` ; l&#39;emplacement 0 du dictionnaire est la valeur par défaut                              |
+
+Un lecteur pour les colonnes numériques simples, de chaînes et nullables :
+
+```c
+void print_value(const chc_type *t, const chc_column *c, size_t row)
+{
+    if (chc_column_layout(c) == CHC_COL_NULLABLE) {
+        if (chc_column_null_map(c)[row]) { fputs("\\N", stdout); return; }
+        print_value(chc_type_child(t, 0), chc_column_nullable_inner(c), row);
+        return;
+    }
+
+    switch (chc_column_layout(c)) {
+    case CHC_COL_FIXED: {
+        /* fixed_data is a raw little-endian byte slab. memcpy into a typed
+           local to avoid unaligned loads and strict-aliasing UB, then
+           byte-swap on big-endian hosts. */
+        size_t es;
+        const uint8_t *p = chc_column_fixed_data(c, &es) + row * es;
+        switch (chc_type_kind(t)) {
+        case CHC_UINT64: { uint64_t v; memcpy(&v, p, sizeof v); printf("%" PRIu64, v); break; }
+        case CHC_INT32:  { int32_t  v; memcpy(&v, p, sizeof v); printf("%" PRId32, v); break; }
+        case CHC_FLOAT64: { double  v; memcpy(&v, p, sizeof v); printf("%g", v); break; }
+        /* ... remaining numeric kinds ... */
+        default: break;
+        }
+        break;
+    }
+    case CHC_COL_STRING: {
+        const uint8_t  *bytes   = chc_column_string_data(c);
+        const uint64_t *offsets = chc_column_string_offsets(c);
+        uint64_t start = row == 0 ? 0 : offsets[row - 1];
+        fwrite(bytes + start, 1, (size_t) (offsets[row] - start), stdout);
+        break;
+    }
+    default: break;
+    }
+}
+```
+
+Les données `CHC_COL_FIXED` sont en little-endian dans le format binaire ; sur les hôtes big-endian, vous devez permuter vous-même les octets des entiers multioctets.
+Les offsets et les clés LowCardinality sont déjà convertis dans l&#39;ordre natif de l&#39;hôte au moment du décodage.
+Les UUIDs se composent de deux moitiés `UInt64` little-endian, IPv4 est un entier little-endian sur 4 octets, et IPv6 est en network byte order.
+Les ticks `DateTime64` sont en UTC — le timezone indiqué dans le type n&#39;est qu&#39;une métadonnée.
+
+Lors de l&#39;ingestion depuis un pair non fiable, appelez `chc_column_validate` sur chaque colonne avant de la parcourir.
+`chc_block_read` ne valide pas les invariants entre champs, comme les offsets de tableau et les
+clés LowCardinality, de sorte qu&#39;un bloc falsifié pourrait sinon lire au-delà des limites de la colonne interne.
+
+<div id="inserting-data">
+  ## Insertion de données
+</div>
+
+Construisez des colonnes avec les helpers `chc_build_*`, ajoutez-les à un `chc_block_builder`, puis passez-le à
+`chc_client_send_data`. Le builder utilise le stockage fourni par l’appelant et enregistre des pointeurs au lieu de
+copier les données ; le stockage, les arbres de colonnes, les types, les noms et les slabs doivent donc rester valides jusqu’à la fin de l’envoi. Un INSERT envoie
+la requête, attend le bloc d’en-tête du serveur, envoie un ou plusieurs blocs de données, puis envoie un bloc vide pour terminer le flux.
+
+```c
+const char *sql = "INSERT INTO greetings (id, message) VALUES";
+chc_client_send_query(client, sql, strlen(sql), "", 0, &err);
+
+/* Wait for the server's header block (schema, 0 rows). */
+bool got_header = false;
+while (!got_header) {
+    chc_packet pkt = {};
+    if (chc_client_recv_packet(client, &pkt, &err) != CHC_OK) {
+        fprintf(stderr, "recv: %s\n", err.msg);
+        return 1;
+    }
+    chc_packet_kind kind = pkt.kind;
+    if (kind == CHC_PKT_DATA) got_header = true;
+    else if (kind == CHC_PKT_EXCEPTION && pkt.exception)
+        fprintf(stderr, "server: %s\n", pkt.exception->display_text);
+    chc_packet_clear(client, &pkt);
+    if (kind == CHC_PKT_EXCEPTION || kind == CHC_PKT_END_OF_STREAM) return 1;  /* no header coming */
+}
+
+chc_block_col columns[2];
+chc_block_builder bb;
+chc_block_builder_init(&bb, columns);
+
+uint64_t ids[3] = { 1, 2, 3 };
+chc_type *u64 = NULL;
+chc_type_parse("UInt64", 6, &al, &u64, &err);
+chc_column id = chc_build_fixed(ids, sizeof ids[0], 3);
+chc_block_builder_append(&bb, "id", 2, u64, &id);
+
+/* String columns: cumulative exclusive end offsets + a packed byte slab. */
+uint64_t offsets[3] = { 5, 11, 20 };   /* "hello", "buenas", "goedendag" */
+const uint8_t bytes[] = "hellobuenasgoedendag";
+chc_type *string = NULL;
+chc_type_parse("String", 6, &al, &string, &err);
+chc_column message = chc_build_string(offsets, bytes, 3);
+chc_block_builder_append(&bb, "message", 7, string, &message);
+
+chc_client_send_data(client, &bb, &err);  /* the populated block */
+chc_client_send_data(client, NULL, &err); /* empty block ends the INSERT */
+
+/* Drain to EndOfStream. */
+for (;;) {
+    chc_packet pkt = {};
+    chc_client_recv_packet(client, &pkt, &err);
+    bool done = pkt.kind == CHC_PKT_END_OF_STREAM;
+    chc_packet_clear(client, &pkt);
+    if (done) break;
+}
+
+chc_type_destroy(u64, &al);
+chc_type_destroy(string, &al);
+```
+
+`chc_build_fixed` prend `n_rows * elem_size` octets en little-endian ; `chc_build_string` prend des
+offsets de fin cumulatifs exclusifs dans l’ordre des octets de l’hôte sur un slab compact. Les helpers renvoient des nœuds de colonne par
+valeur. Imbriquez-les pour correspondre au type : par exemple, passez un nœud fixe ou chaîne à
+`chc_build_nullable`, passez ce résultat à `chc_build_array`, puis ajoutez la racine du tableau. Tuple,
+LowCardinality, Map et les colonnes Geo utilisent le même arbre : Map est `Array(Tuple(K, V))`.
+
+Toutes les colonnes d’un block doivent avoir le même nombre de lignes au niveau supérieur. Le writer vérifie l’arbre par rapport
+au type ClickHouse analysé, mais l’appelant doit dimensionner le stockage `chc_block_col` pour chaque ajout.
+Vous pouvez aussi ajouter directement une colonne décodée depuis `chc_block_column` pour la réencoder, ou appeler
+`chc_block_write_cols` avec un tableau `chc_block_col` pour vous passer du builder. Faire passer le builder par
+`chc_client_send_data` plutôt que par `chc_block_write`, de niveau inférieur, permet au client de définir les options du block
+à partir de la revision négociée et d’appliquer la compression.
+
+<div id="compression">
+  ## Compression
+</div>
+
+Indiquez un mode de compression et un codec renseigné dans `chc_client_opts`. Le client décompresse les
+paquets Data entrants et compresse les paquets sortants. L’en-tête de compression inclut les adaptateurs `LZ4` et `ZSTD` ;
+chaque initialisation ne renseigne que ses propres emplacements, appelez donc les deux pour prendre en charge l’un comme l’autre.
+
+```c
+#include "clickhouse-compression.h"
+
+chc_codec codec = {};
+chc_lz4_codec_init(&codec);
+chc_zstd_codec_init(&codec);
+
+chc_client_opts opts = {
+    .user        = "default",
+    .compression = CHC_COMP_LZ4,   /* or CHC_COMP_ZSTD */
+    .codec       = &codec,
+};
+```
+
+Pour utiliser une bibliothèque de compression pour laquelle le projet ne fournit pas de binding, définissez vous-même un `chc_codec` ;
+la vtable est déclarée dans `clickhouse-compression.h`.
+
+<div id="tls">
+  ## TLS
+</div>
+
+`clickhouse-openssl.h` fournit un backend `chc_io` basé sur `SSL_read`/`SSL_write`. Vous pilotez OpenSSL :
+la bibliothèque ne crée jamais de `SSL_CTX`, ne vérifie pas les certificats, ne configure pas le SNI et n&#39;appelle pas `SSL_connect` /
+`SSL_shutdown`. Lorsque `chc_io.read` se déclenche, le handshake doit déjà être terminé.
+
+```c
+#include "clickhouse-openssl.h"
+
+SSL *ssl = /* connected, handshake complete */;
+chc_openssl_io state;
+chc_io io;
+chc_openssl_io_init(&state, &io, ssl, NULL, NULL);
+/* hand &io to chc_client_init, same as the POSIX backend */
+```
+
+[ClickHouse Cloud](/fr/products/cloud/getting-started/intro) et les autres déploiements où TLS est activé utilisent le protocole natif sur
+le port 9440. Les deux backends acceptent une fonction de rappel `check_cancel` facultative, sondée entre les lectures, ainsi qu&#39;une
+échéance de lecture via `chc_openssl_io_set_deadline` / `chc_posix_io_set_deadline`.
+
+<div id="async-client">
+  ## Client ioless (async)
+</div>
+
+`clickhouse-async.h` est une variante ioless du client TCP conçue pour les boucles d&#39;événements. Il n&#39;accède jamais à un
+socket : vous lui fournissez les octets reçus et récupérez ceux qu&#39;il veut envoyer, en pilotant vous-même `epoll`,
+`io_uring` ou `WaitLatchOrSocket`. Les options, les types de paquets et le block builder sont les
+mêmes que pour le client bloquant.
+
+`chc_async_client_init` n&#39;effectue aucune E/S et ne peut pas bloquer. Le handshake s&#39;exécute ensuite sous la forme d&#39;une
+machine à états reprenable, tout comme chaque envoi et chaque réception. Lorsque l&#39;analyse dépasse les octets que vous avez fournis, l&#39;appel
+renvoie `CHC_WOULD_BLOCK` au lieu de bloquer — fournissez davantage d&#39;octets entrants et relancez l&#39;appel, et l&#39;analyseur
+reprendra au milieu du bloc.
+
+```c
+#include "clickhouse-async.h"
+
+chc_async_client *c = NULL;
+chc_client_opts opts = { .user = "default" };
+chc_async_client_init(&c, &opts, &al, &err);
+
+for (;;) {
+    int rc = chc_async_handshake(c, &err);
+    if (rc == CHC_OK) break;
+    if (rc != CHC_WOULD_BLOCK) break;   /* hard error */
+    pump(c);   /* drain pending_out to the socket; feed received bytes to chc_async_submit */
+}
+
+chc_async_send_query(c, sql, strlen(sql), "", 0, &err);
+
+for (;;) {
+    chc_packet pkt = {};
+    int rc = chc_async_recv_packet(c, &pkt, &err);
+    if (rc == CHC_WOULD_BLOCK) { pump(c); continue; }
+    if (rc != CHC_OK) break;
+
+    bool done = pkt.kind == CHC_PKT_END_OF_STREAM;
+    if (pkt.kind == CHC_PKT_DATA && pkt.block) { /* read columns as above */ }
+    chc_async_packet_clear(c, &pkt);
+    if (done) break;
+}
+```
+
+Votre `pump` déplace les octets dans les deux sens. En sortie, `chc_async_pending_out` renvoie un pointeur et une longueur
+vers les octets en file d’attente ; une fois qu’une partie a été acceptée par le socket, appelez `chc_async_consume_out` avec ce nombre ; une
+écriture partielle est acceptée. En entrée, transmettez à `chc_async_submit` les données lues sur le socket. Les envois ne bloquent jamais et n’exercent pas de
+backpressure ; surveillez donc la longueur des données en attente de sortie et cessez d’émettre des envois lorsqu’elle devient trop importante.
+
+Un driver liburing fonctionnel se trouve dans
+[`test/test_async_uring.c`](https://github.com/ClickHouse/clickhouse-c/blob/main/test/test_async_uring.c).
+
+<div id="allocator">
+  ## Mémoire et l’allocateur
+</div>
+
+Chaque point d’entrée prend en paramètre une vtable `chc_alloc`, de sorte que l’allocation s’appuie sur le mécanisme utilisé par l’hôte.
+
+```c
+typedef struct chc_alloc {
+    void *ud;
+    void *(*alloc)  (void *ud, size_t bytes);
+    void *(*realloc)(void *ud, void *p, size_t old_bytes, size_t new_bytes);
+    void  (*free)   (void *ud, void *p, size_t bytes);
+} chc_alloc;
+```
+
+Définissez `CHC_PROVIDE_STDLIB_ALLOC` avant d’inclure `clickhouse.h` et appelez `chc_alloc_stdlib()` pour utiliser un
+allocateur standard basé sur `malloc`.
+
+<div id="errors">
+  ## Erreurs et exceptions du server
+</div>
+
+Les fonctions renvoient `CHC_OK` (0) ou un code `CHC_ERR_*` non nul. Le code est la valeur de retour ; un
+`chc_err` alloué sur la pile de l’appelant contient le message compréhensible par l’être humain. La bibliothèque n’alloue jamais
+d’erreur sur le tas.
+
+```c
+typedef struct chc_err {
+    int  server_code;           /* set when the return code is CHC_ERR_SERVER */
+    char msg[CHC_ERR_MSG_LEN];  /* NUL-terminated, default 256 bytes */
+    char server_name[64];       /* ClickHouse exception class, if SERVER */
+} chc_err;
+```
+
+Les erreurs de requête côté serveur ne sont pas des erreurs `chc_err`. Elles arrivent dans le flux de paquets sous la forme de
+`CHC_PKT_EXCEPTION`, avec le `code`, le `display_text` et le `stack_trace` du serveur. Réservez les vérifications
+`chc_err` aux défaillances de transport, de protocole et de décodage.
+
+<div id="supported-types">
+  ## Types de données pris en charge
+</div>
+
+Le lecteur de blocs décode :
+
+* `Int8`–`Int256`, `UInt8`–`UInt256`
+* `Float32`, `Float64`, `BFloat16`
+* `Bool`
+* `Decimal32`, `Decimal64`, `Decimal128`, `Decimal256`
+* `Date`, `Date32`, `DateTime`, `DateTime64`, `Time`, `Time64`
+* `String`, `FixedString(N)`
+* `UUID`, `IPv4`, `IPv6`
+* `Enum8`, `Enum16`
+* `Nullable(T)`, `Array(T)`, `Tuple(...)`, `Map(K, V)`, `Nested(...)`
+* `LowCardinality(T)`
+* `Interval`
+* `QBit(...)`
+* `Point`, `Ring`, `Polygon`, `MultiPolygon`
+* `SimpleAggregateFunction(f, T)`, qui est décodé comme son `T` interne
+* `JSON` et `Object('json')`, en colonnes `String` avec la sérialisation chaîne (voir ci-dessous)
+
+`JSON` et `Object('json')` sont décodés avec la sérialisation chaîne ; définissez
+`output_format_native_write_json_as_string=1` sur la requête. Chaque ligne prise en charge arrive sous la forme d’un
+document JSON dans une colonne `CHC_COL_STRING`. Construisez la même structure avec `chc_build_string` ;
+le writer émet le préfixe requis par le type analysé.
+
+`Variant`, `Dynamic`, `AggregateFunction` ne sont pas encore décodés et renvoient `CHC_ERR_TYPE` ;
+convertissez-les en `String` côté serveur en solution de repli.

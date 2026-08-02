@@ -144,3 +144,71 @@ def test_database_backup_table(backup_destination):
     instance.query("DROP DATABASE test_table_backup")
     instance.query("DROP DATABASE test_database")
     cleanup_backup_files(instance)
+
+
+@pytest.mark.parametrize(
+    "backup_destination",
+    [
+        "File('test_database_backup_file')",
+        "Disk('backup_disk_local', 'test_database_backup')",
+        "Disk('backup_disk_s3_plain', 'test_database_backup')",
+        "Disk('backup_disk_object_storage_local_plain', 'test_database_backup')",
+    ],
+)
+def test_database_backup_unavailable_but_server_starts(backup_destination):
+    # Regression test for https://github.com/ClickHouse/ClickHouse/issues/83187
+    # When a Backup database refers to a backup that became unavailable (e.g. the backup
+    # files were deleted or the underlying storage is inaccessible), the server must still
+    # start. The Backup database is loaded without any tables.
+    cleanup_backup_files(instance)
+
+    instance.query(
+        f"""
+        DROP DATABASE IF EXISTS test_database SYNC;
+        DROP DATABASE IF EXISTS test_database_backup SYNC;
+
+        CREATE DATABASE test_database;
+
+        CREATE TABLE test_database.test_table (id UInt64, value String) ENGINE=MergeTree ORDER BY id;
+        INSERT INTO test_database.test_table VALUES (0, 'test_database.test_table');
+
+        BACKUP DATABASE test_database TO {backup_destination};
+        CREATE DATABASE test_database_backup ENGINE = Backup('test_database', {backup_destination});
+    """
+    )
+
+    assert (
+        instance.query("SELECT id, value FROM test_database_backup.test_table")
+        == "0\ttest_database.test_table\n"
+    )
+
+    # Make the backup unavailable and restart the server.
+    cleanup_backup_files(instance)
+    instance.restart_clickhouse()
+
+    # The server must start despite the unavailable backup.
+    assert instance.query("SELECT 1") == "1\n"
+
+    # The Backup database is still attached, but loaded without any tables.
+    assert (
+        instance.query(
+            "SELECT name FROM system.databases WHERE name = 'test_database_backup'"
+        )
+        == "test_database_backup\n"
+    )
+    assert (
+        instance.query(
+            "SELECT count() FROM system.tables WHERE database = 'test_database_backup'"
+        )
+        == "0\n"
+    )
+
+    # The original (non-backup) database is unaffected by the unavailable backup.
+    assert (
+        instance.query("SELECT id, value FROM test_database.test_table")
+        == "0\ttest_database.test_table\n"
+    )
+
+    instance.query("DROP DATABASE IF EXISTS test_database_backup SYNC")
+    instance.query("DROP DATABASE IF EXISTS test_database SYNC")
+    cleanup_backup_files(instance)

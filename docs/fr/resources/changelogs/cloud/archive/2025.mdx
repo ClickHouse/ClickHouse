@@ -276,7 +276,7 @@ pour démarrer rapidement.
   pour récupérer les informations d’utilisation. Il s’agit d’un endpoint au niveau de l’organisation, et les coûts d’utilisation
   peuvent être interrogés sur une période maximale de 31 jours. Les métriques pouvant être
   récupérées incluent Storage, Compute, le transfert de données et ClickPipes. Veuillez consulter
-  la [documentation](/fr/api-reference/billing/get-organization-usage-costs) pour plus de détails.
+  la [documentation](/fr/products/cloud/api-reference/billing/get-organization-usage-costs) pour plus de détails.
 * La version [v2.1.0](https://registry.terraform.io/providers/ClickHouse/clickhouse/2.1.0/docs/resources/service#nestedatt--endpoints_configuration) du provider Terraform permet d’activer l’endpoint MySQL.
 
 <div id="february-21-2025">
@@ -436,12 +436,12 @@ JDBC / Java sera disponible dans[ 0.8.0](https://github.com/ClickHouse/clickhous
 
 Nous avons apporté plusieurs améliorations à l’intégration Prometheus :
 
-* **Endpoint au niveau de l’organisation**. Nous avons amélioré notre intégration Prometheus pour ClickHouse Cloud. En plus des métriques au niveau du service, l’API inclut désormais un endpoint pour les **métriques au niveau de l’organisation**. Ce nouvel endpoint collecte automatiquement les métriques de tous les services de votre organisation, ce qui simplifie leur exportation vers votre collector Prometheus. Ces métriques peuvent être intégrées à des outils de visualisation comme Grafana et Datadog afin d’offrir une vue plus complète des performances de votre organisation.
+* **Endpoint au niveau de l’organisation**. Nous avons amélioré notre intégration Prometheus pour ClickHouse Cloud. En plus des métriques au niveau du service, l’API inclut désormais un endpoint pour les **métriques au niveau de l’organisation**. Ce nouvel endpoint collecte automatiquement les métriques de tous les services de votre organisation, ce qui simplifie l’exportation des métriques vers votre collector Prometheus. Ces métriques peuvent être intégrées à des outils de visualisation comme Grafana et Datadog afin d’offrir une vue plus complète des performances de votre organisation.
 
-  Cette fonctionnalité est d’ores et déjà disponible pour tous les utilisateurs. Vous trouverez plus de détails [ici](/fr/products/cloud/features/monitoring/prometheus).
+  Cette fonctionnalité est maintenant disponible pour tous les utilisateurs. Vous trouverez plus de détails [ici](/fr/products/cloud/features/monitoring/prometheus).
 
-* **Métriques filtrées**. Nous avons ajouté la prise en charge du renvoi d’une liste filtrée de métriques dans notre intégration Prometheus pour ClickHouse Cloud. Cette fonctionnalité permet de réduire la taille du payload de réponse en vous permettant de vous concentrer sur les métriques essentielles à la surveillance de l’état de santé de votre service.
+* **Métriques filtrées**. Nous avons ajouté la prise en charge du renvoi d’une liste filtrée de métriques dans notre intégration Prometheus pour ClickHouse Cloud. Cette fonctionnalité permet de réduire la taille du payload de la réponse en vous aidant à vous concentrer sur les métriques essentielles à la surveillance de l’état de santé de votre service.
 
-  Cette fonctionnalité est disponible via un paramètre de requête facultatif dans l’API, ce qui facilite l’optimisation de votre collecte de données et simplifie les intégrations avec des outils comme Grafana et Datadog.
+  Cette fonctionnalité est disponible via un query parameter facultatif dans l’API, ce qui facilite l’optimisation de votre collecte de données et simplifie les intégrations avec des outils comme Grafana et Datadog.
 
-  La fonctionnalité de métriques filtrées est désormais disponible pour tous les utilisateurs. Vous trouverez plus de détails [ici](/fr/products/cloud/features/monitoring/prometheus).
+  La fonctionnalité de métriques filtrées est maintenant disponible pour tous les utilisateurs. Vous trouverez plus de détails [ici](/fr/products/cloud/features/monitoring/prometheus).
