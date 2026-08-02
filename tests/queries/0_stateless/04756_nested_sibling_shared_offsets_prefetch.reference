@@ -1,5 +1,6 @@
 part type	Wide
 both columns in reader header	1
+prefetch limit permits prefetching	1
 missing subcolumn first	199	0	0
 sibling first	199	0	0
 sibling between	199	0	0
