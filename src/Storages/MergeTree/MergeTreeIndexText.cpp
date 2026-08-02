@@ -1641,8 +1641,9 @@ MergeTreeIndexAggregatorText::MergeTreeIndexAggregatorText(
     MergeTreeIndexTextPostprocessorPtr postprocessor_)
     : index_column_name(std::move(index_column_name_))
     , params(std::move(params_))
-    , tokenizer(tokenizer_)
-    , granule_builder(params, tokenizer_, posting_list_codec_)
+    , owned_tokenizer(tokenizer_ && tokenizer_->isStateful() ? std::shared_ptr<const ITokenizer>(tokenizer_->clone()) : nullptr)
+    , tokenizer(owned_tokenizer ? owned_tokenizer.get() : tokenizer_)
+    , granule_builder(params, tokenizer, posting_list_codec_)
     , preprocessor(preprocessor_)
     , postprocessor(postprocessor_)
 {
