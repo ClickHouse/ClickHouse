@@ -46,3 +46,25 @@ SELECT count() FROM a WHERE id IN (SELECT id FROM a)
 UNION ALL
 SELECT count() FROM a
 SETTINGS extremes = 1;
+
+-- The arms above have coinciding extremes, so they only prove the united extremes port exists.
+-- The two below assert the merge ACROSS arms: their extremes are unreachable from any one arm.
+-- The set operation must stay top level, or an outer ExtremesStep recomputes over final rows.
+
+-- max comes only from the excluded second arm: arms (0,4) and (15,19), rows {0..4}
+WITH a AS MATERIALIZED (SELECT number AS id FROM numbers(20))
+SELECT id FROM a WHERE id IN (SELECT id FROM a) AND id < 5
+EXCEPT
+SELECT id FROM a WHERE id >= 15
+ORDER BY id
+SETTINGS extremes = 1;
+
+-- three arms, min and max each from a different one: (5,9), (0,9), (5,19), rows {5..9}
+WITH a AS MATERIALIZED (SELECT number AS id FROM numbers(20))
+SELECT id FROM a WHERE id IN (SELECT id FROM a) AND id >= 5 AND id < 10
+INTERSECT
+SELECT id FROM a WHERE id < 10
+INTERSECT
+SELECT id FROM a WHERE id >= 5
+ORDER BY id
+SETTINGS extremes = 1;
