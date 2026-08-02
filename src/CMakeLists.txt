@@ -501,6 +501,7 @@ endif()
 
 if (TARGET ch_contrib::nuraft)
     add_object_library(clickhouse_coordination Coordination)
+    add_object_library(clickhouse_coordination_storage Coordination/Storage)
 endif()
 
 add_library (dbms STATIC ${dbms_headers} ${dbms_sources})
@@ -699,6 +700,10 @@ endif ()
 
 if (TARGET ch_contrib::icu)
     target_link_libraries(dbms PRIVATE ch_contrib::icu)
+endif ()
+
+if (TARGET ch_contrib::mecab)
+    target_link_libraries(dbms PRIVATE ch_contrib::mecab)
 endif ()
 
 if (TARGET ch_contrib::capnp)
@@ -973,6 +978,10 @@ if (ENABLE_TESTS)
 
     if (TARGET ch_contrib::azure_sdk)
         target_link_libraries(unit_tests_dbms PRIVATE ch_contrib::azure_sdk)
+    endif()
+
+    if (TARGET ch_contrib::hdfs)
+        target_link_libraries(unit_tests_dbms PRIVATE ch_contrib::hdfs)
     endif()
 
     if (TARGET ch_contrib::parquet)

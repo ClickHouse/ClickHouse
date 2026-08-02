@@ -2,6 +2,7 @@
 
 #if USE_SQLITE
 #include <Common/logger_useful.h>
+#include <Common/filesystemHelpers.h>
 #include <Interpreters/Context.h>
 #include <filesystem>
 
@@ -33,7 +34,7 @@ static String validateSQLiteDatabasePath(const String & path, const String & use
 
     String absolute_user_files_path = fs::absolute(user_files_path).lexically_normal();
 
-    if (need_check && !absolute_path.starts_with(absolute_user_files_path))
+    if (need_check && !fileOrSymlinkPathStartsWith(absolute_path, absolute_user_files_path))
     {
         processSQLiteError(fmt::format("SQLite database file path '{}' must be inside 'user_files' directory", path), throw_on_error);
         return "";
