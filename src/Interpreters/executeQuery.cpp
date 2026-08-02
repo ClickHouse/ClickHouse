@@ -1584,7 +1584,7 @@ static BlockIO executeQueryImpl(
 
             const auto client_interface = context->getClientInfo().interface;
             const bool run_query_in_background = settings[Setting::run_query_in_background].value;
-            
+
             /// The query itself may contain `SETTINGS run_query_in_background = 1`.
             /// So to avoid infinite recursion, executeQueryInBackground sets flags.background = true
             /// which indicates that we're on background query execution thread
