@@ -83,7 +83,7 @@ SnowflakeId toSnowflakeId(uint64_t snowflake)
 uint64_t fromSnowflakeId(SnowflakeId components)
 {
     return (components.timestamp << (machine_id_bits_count + machine_seq_num_bits_count) |
-            components.machine_id << (machine_seq_num_bits_count) |
+            components.machine_id << machine_seq_num_bits_count |
             components.machine_seq_num);
 }
 

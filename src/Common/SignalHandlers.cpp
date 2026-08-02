@@ -204,12 +204,10 @@ static void signalHandler(int sig, siginfo_t * info, void * context)
         }
         catch (const std::exception & e)
         {
-            const auto * stack_trace_frames = e.get_stack_trace_frames();
-            const size_t stack_trace_size = e.get_stack_trace_size();
-            __msan_unpoison(stack_trace_frames, stack_trace_size * sizeof(stack_trace_frames[0]));
-            terminate_current_exception_trace_size = std::min(stack_trace_size, FRAMEPOINTER_CAPACITY);
+            const auto trace = getStackTraceOfThrow(e);
+            terminate_current_exception_trace_size = std::min(trace.size(), FRAMEPOINTER_CAPACITY);
             for (size_t i = 0; i < terminate_current_exception_trace_size; ++i)
-                terminate_current_exception_trace[i] = stack_trace_frames[i];
+                terminate_current_exception_trace[i] = trace[i];
         }
         catch (...) {} // NOLINT(bugprone-empty-catch) Ok: best-effort in terminate handler
     }
