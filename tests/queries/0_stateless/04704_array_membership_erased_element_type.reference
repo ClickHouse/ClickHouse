@@ -67,6 +67,12 @@
 2	0	0	0	0	1	1	0	0	0	0
 0	0	0	0	1
 1	1	1
+-- Map(LowCardinality(String), String): a NULL needle, whose dictionary has no null entry
+0	0	0	0
+0	0
+1	0
+1	0	1
+1	2	2	0	1
 -- non-erased fast paths are unchanged
 1	3	2	2
 1	1	2

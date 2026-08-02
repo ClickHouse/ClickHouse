@@ -328,6 +328,42 @@ SELECT
 
 SET enable_nullable_tuple_type = 0;
 
+SELECT '-- Map(LowCardinality(String), String): a NULL needle, whose dictionary has no null entry';
+
+-- A Map key cannot be Nullable, so index 0 of its LowCardinality dictionary is the default value and
+-- not a NULL. Each row pairs the Map answer with the plain array path over the same keys.
+SELECT
+    has(CAST(map('', 'v'), 'Map(LowCardinality(String), String)'), NULL) AS empty_key_got,
+    has(mapKeys(CAST(map('', 'v'), 'Map(LowCardinality(String), String)')), NULL) AS empty_key_want,
+    has(CAST(map('k', 'v'), 'Map(LowCardinality(String), String)'), NULL) AS non_empty_key_got,
+    has(mapKeys(CAST(map('k', 'v'), 'Map(LowCardinality(String), String)')), NULL) AS non_empty_key_want;
+
+-- Materialized, so the key column is a real dictionary rather than a constant.
+SELECT has(m, NULL) AS got, has(mapKeys(m), NULL) AS want
+FROM (SELECT CAST(map('', 'v'), 'Map(LowCardinality(String), String)') AS m);
+
+SELECT
+    mapContainsKey(CAST(map('', 'v'), 'Map(LowCardinality(String), String)'), NULL) AS empty_key,
+    mapContainsKey(CAST(map('k', 'v'), 'Map(LowCardinality(String), String)'), NULL) AS non_empty_key
+SETTINGS optimize_functions_to_subcolumns = 0;
+
+-- Present and absent non-NULL needles: the ordinary LowCardinality Map path is undisturbed.
+SELECT
+    has(CAST(map('k', 'v'), 'Map(LowCardinality(String), String)'), 'k') AS present,
+    has(CAST(map('k', 'v'), 'Map(LowCardinality(String), String)'), 'z') AS absent,
+    mapContainsKey(CAST(map('k', 'v'), 'Map(LowCardinality(String), String)'), 'k') AS present_contains
+SETTINGS optimize_functions_to_subcolumns = 0;
+
+-- Control: the plain Array(LowCardinality(T)) path keeps the answer it has today. Its dictionary also
+-- has no null entry, so this is the same question, but changing it is a separate user-visible change
+-- on a non-erased type and is deliberately not part of this fix.
+SELECT
+    has(CAST(['', 'a'], 'Array(LowCardinality(String))'), NULL) AS has_with_empty,
+    indexOf(CAST(['a', '', 'b'], 'Array(LowCardinality(String))'), NULL) AS index_of_with_empty,
+    countEqual(CAST(['', 'a', ''], 'Array(LowCardinality(String))'), NULL) AS count_equal_with_empty,
+    has(CAST(['a', 'b'], 'Array(LowCardinality(String))'), NULL) AS has_without_empty,
+    has(CAST(['', NULL], 'Array(LowCardinality(Nullable(String)))'), NULL) AS nullable_dictionary;
+
 SELECT '-- non-erased fast paths are unchanged';
 
 SELECT has([1, 2, 3], 2), indexOf([1, 2, 3], 3), countEqual([1, 2, 2], 2), indexOfAssumeSorted([1, 2, 3], 2);

@@ -638,8 +638,8 @@ private:
     }
 
     /// Sole owner of the array-shaped dispatch, so both entry points (executeImpl and executeMap)
-    /// see the same arms in the same order. Keeping the LowCardinality normalisation duplicated in
-    /// executeMap is what caused the null-needle defect its comment records.
+    /// see the same arms in the same order. The Map path normalises cardinality before calling this,
+    /// because a Map key cannot be nullable and so cannot use the arm below that assumes it can.
     ColumnPtr executeArray(const ColumnsWithTypeAndName & arguments, const DataTypePtr & result_type) const
     {
         if (auto res = executeErasedEquality(arguments, result_type))
@@ -1223,8 +1223,15 @@ private:
         arguments_copy[0].type = std::move(array_type);
         arguments_copy[0].name = arguments[0].name;
 
-        /// executeArray owns the LowCardinality normalisation, so the Map path keeps null-needle
-        /// semantics identical to the plain array path without repeating it here.
+        /// A Map key can never be Nullable, so the dictionary of a LowCardinality key column has no
+        /// null entry for executeArrayLowCardinality's index-0 NULL needle convention to name.
+        /// Normalise the cardinality away before the dispatch reaches that arm.
+        for (auto & argument : arguments_copy)
+        {
+            argument.column = recursiveRemoveLowCardinality(argument.column);
+            argument.type = recursiveRemoveLowCardinality(argument.type);
+        }
+
         return executeArray(arguments_copy, result_type);
     }
 
