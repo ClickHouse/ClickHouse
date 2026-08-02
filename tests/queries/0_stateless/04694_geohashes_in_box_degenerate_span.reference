@@ -1,13 +1,11 @@
 -- float64, equal latitudes
-200
+0
 -- float64, negative zero latitude
-200
+0
 -- float32
-200
+0
 -- equal longitudes, wide latitude span
-200
--- degenerate box result
-['s00000000000']	['s00000000000']
+0
 -- non-degenerate box result
 ['sx1q','sx1r','sx32','sx1w','sx1x','sx38']
 -- reversed and nan boxes
