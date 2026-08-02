@@ -45,6 +45,16 @@ void ITableFunction::checkSourceAccess(ContextPtr context, bool is_insert_query)
     }
 }
 
+bool ITableFunction::isSourceAccessGranted(ContextPtr context, bool is_insert_query) const
+{
+    const auto access_object = getSourceAccessObject();
+    if (!access_object)
+        return true;
+
+    const AccessType type_to_check = is_insert_query ? AccessType::WRITE : AccessType::READ;
+    return context->getAccess()->isGrantedWithFilter(type_to_check, toStringSource(*access_object), getFunctionURINormalized());
+}
+
 ColumnsDescription ITableFunction::getActualTableStructureWithAccess(ContextPtr context, bool is_insert_query) const
 {
     /// Resolving table structure is always a read operation.

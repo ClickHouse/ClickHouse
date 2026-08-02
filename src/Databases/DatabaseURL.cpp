@@ -68,13 +68,18 @@ struct URLTableDelegate
     StoragePtr storage;
 };
 
-/// Resolve a table of a `URL` database into the delegate storage of the `url` table function.
-///
-/// `is_insert_query` selects the mode the delegate is constructed in, and the source access is
-/// checked in the same mode (READ for a read, WRITE for a write). The mode is not an optimization:
-/// the backends behave differently for reads and writes — `azureBlobStorage` creates the container
-/// only in write mode — so a storage constructed in read mode must not be written to.
-URLTableDelegate makeURLTableDelegate(const String & url, const String & name, ContextPtr context, bool is_insert_query)
+/// The `url` table function for a table of a `URL` database, constructed but not executed.
+struct URLTableFunction
+{
+    TableFunctionPtr table_function;
+    ASTPtr ast;
+    ContextMutablePtr context;
+};
+
+/// Construct the `url` table function for the URL. Constructing it parses the arguments and
+/// dispatches the URL to the backend (`file`, `s3`, ...), which is enough to know the source
+/// access the table requires; the data itself is not touched until the function is executed.
+URLTableFunction makeURLTableFunction(const String & url, ContextPtr context)
 {
     auto ast_function_ptr = makeASTFunction("url", make_intrusive<ASTLiteral>(url));
 
@@ -87,6 +92,30 @@ URLTableDelegate makeURLTableDelegate(const String & url, const String & name, C
     context_copy->setSetting("parallel_replicas_for_cluster_engines", Field(false));
 
     auto table_function = TableFunctionFactory::instance().get(ast_function_ptr, context_copy);
+    return {std::move(table_function), std::move(ast_function_ptr), std::move(context_copy)};
+}
+
+/// Whether the user is allowed to read the data behind the URL. Used to decide whether the
+/// database may observe the source at all: an observation that is reported back to the user
+/// (whether a file exists) must not happen before the read source grant is confirmed.
+bool isURLReadGranted(const String & url, ContextPtr context)
+{
+    auto url_function = makeURLTableFunction(url, context);
+    if (!url_function.table_function)
+        return false;
+
+    return url_function.table_function->isSourceAccessGranted(url_function.context, /* is_insert_query */ false);
+}
+
+/// Resolve a table of a `URL` database into the delegate storage of the `url` table function.
+///
+/// `is_insert_query` selects the mode the delegate is constructed in, and the source access is
+/// checked in the same mode (READ for a read, WRITE for a write). The mode is not an optimization:
+/// the backends behave differently for reads and writes — `azureBlobStorage` creates the container
+/// only in write mode — so a storage constructed in read mode must not be written to.
+URLTableDelegate makeURLTableDelegate(const String & url, const String & name, ContextPtr context, bool is_insert_query)
+{
+    auto [table_function, ast_function_ptr, context_copy] = makeURLTableFunction(url, context);
     if (!table_function)
         return {};
 
@@ -282,6 +311,15 @@ bool DatabaseURL::checkFileURLExists(const String & url, ContextPtr context_, bo
     /// engine report the access error.
     const bool is_local = getContext()->getApplicationType() == Context::ApplicationType::LOCAL;
     if (!is_local && !fileOrSymlinkPathStartsWith(path, context_->getUserFilesPath()))
+        return true;
+
+    /// The result of this probe is reported to the user (`EXISTS TABLE` returns it, and the
+    /// resolution of a table reports `FILE_DOESNT_EXIST` instead of `ACCESS_DENIED`), so it must
+    /// not be performed without the read source grant: `EXISTS TABLE` requires only `SHOW TABLES`,
+    /// which would otherwise turn a `URL` database into an oracle for the contents of `user_files`.
+    /// Claim the table, as above: a resolution of it fails with the access error, and `EXISTS`
+    /// answers what it answers for a remote URL, which is not probed either.
+    if (!isURLReadGranted(url, context_))
         return true;
 
     if (!fs::exists(path))
