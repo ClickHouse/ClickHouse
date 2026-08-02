@@ -1,5 +1,4 @@
 #include <Processors/Transforms/SortingTransform.h>
-#include <Columns/ColumnReplicated.h>
 
 #include <Core/SortDescription.h>
 #include <Core/SortCursor.h>
@@ -43,17 +42,6 @@ MergeSorter::MergeSorter(SharedHeader header, Chunks chunks_, SortDescription & 
         /// Convert to full column, because some cursors expect non-contant columns
         convertToFullIfConst(chunk);
 
-        size_t num_rows = chunk.getNumRows();
-        auto columns = chunk.detachColumns();
-        /// We don't support sorting by replicated columns for now,
-        /// because it requires special code for them in the cursors.
-        for (const auto & column_desc : description)
-        {
-            size_t column_number = header->getPositionByName(column_desc.column_name);
-            columns[column_number] = columns[column_number]->convertToFullColumnIfReplicated();
-        }
-        chunk.setColumns(std::move(columns), num_rows);
-
         cursors.emplace_back(*header, chunk.getColumns(), chunk.getNumRows(), description, chunk_index);
         has_collation |= cursors.back().has_collation;
 
@@ -95,19 +83,14 @@ template <typename TSortingQueue>
 Chunk MergeSorter::mergeBatchImpl(TSortingQueue & queue)
 {
     size_t num_columns = chunks[0].getNumColumns();
-    MutableColumns merged_columns = createMergedColumns();
-
+    MutableColumns merged_columns = chunks[0].cloneEmptyColumns();
 
     /// Reserve
     if (queue.isValid())
     {
-        size_t size_to_reserve = 0;
-        for (auto & chunk : chunks)
-            size_to_reserve += chunk.getNumRows();
-
         /// The size of output block will not be larger than the `max_merged_block_size`.
         /// If redundant memory space is reserved, `MemoryTracker` will count more memory usage than actual usage.
-        size_to_reserve = std::min(size_to_reserve, max_merged_block_size);
+        size_t size_to_reserve = std::min(static_cast<size_t>(chunks[0].getNumRows()), max_merged_block_size);
         for (auto & column : merged_columns)
             column->reserve(size_to_reserve);
     }
@@ -163,26 +146,6 @@ Chunk MergeSorter::mergeBatchImpl(TSortingQueue & queue)
 
     return Chunk(std::move(merged_columns), merged_rows);
 }
-
-MutableColumns MergeSorter::createMergedColumns() const
-{
-    size_t num_columns = chunks[0].getNumColumns();
-    std::vector<bool> is_replicated(num_columns, false);
-    for (const auto & chunk : chunks)
-    {
-        for (size_t i = 0; i != chunk.getNumColumns(); ++i)
-            is_replicated[i] = is_replicated[i] || chunk.getColumns()[i]->isReplicated();
-    }
-    MutableColumns merged_columns = chunks[0].cloneEmptyColumns();
-    for (size_t i = 0; i != num_columns; ++i)
-    {
-        if (is_replicated[i] && !merged_columns[i]->isReplicated())
-            merged_columns[i] = ColumnReplicated::create(std::move(merged_columns[i]));
-    }
-
-    return merged_columns;
-}
-
 
 SortingTransform::SortingTransform(
     SharedHeader header,
@@ -243,7 +206,7 @@ IProcessor::Status SortingTransform::prepare()
     if (stage == Stage::Serialize)
     {
         if (!processors.empty())
-            return Status::UpdatePipeline;
+            return Status::ExpandPipeline;
 
         auto status = prepareSerialize();
         if (status != Status::Finished)
@@ -267,7 +230,7 @@ IProcessor::Status SortingTransform::prepare()
         return Status::Ready;
 
     if (!processors.empty())
-        return Status::UpdatePipeline;
+        return Status::ExpandPipeline;
 
     return prepareGenerate();
 }

@@ -20,18 +20,10 @@ class SettingsChanges;
 /// TODO: Try to move this checking to Credentials.
 struct Authentication
 {
-
-    enum class CredentialsCheckResult : UInt8
-    {
-        Fail,
-        NeedSecondFactor,
-        Success
-    };
-
     /// Checks the credentials (passwords, readiness, etc.)
     /// If necessary, makes a request to external authenticators and fills in the session settings if they were
     /// returned by the authentication server
-    static CredentialsCheckResult areCredentialsValid(
+    static bool areCredentialsValid(
         const Credentials & credentials,
         const AuthenticationData & authentication_method,
         const ExternalAuthenticators & external_authenticators,
@@ -47,7 +39,7 @@ struct Authentication
         const String & getRealm() const;
 
         Require * clone() const override { return new Require(*this); }
-        void rethrow() const override { throw *this; } /// NOLINT(bugprone-exception-copy-constructor-throws,cert-err60-cpp)
+        void rethrow() const override { throw *this; } /// NOLINT(cert-err60-cpp)
 
     private:
         const String realm;

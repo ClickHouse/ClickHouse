@@ -2,7 +2,6 @@
 
 #include <Parsers/IAST.h>
 
-namespace Poco::JSON { class Object; }
 
 namespace DB
 {
@@ -23,18 +22,14 @@ public:
 
     Rational ratio;
 
-    ASTSampleRatio() = default;
     explicit ASTSampleRatio(const Rational & ratio_) : ratio(ratio_) {}
 
     String getID(char delim) const override { return "SampleRatio" + (delim + toString(ratio)); }
 
-    ASTPtr clone() const override { return make_intrusive<ASTSampleRatio>(*this); }
+    ASTPtr clone() const override { return std::make_shared<ASTSampleRatio>(*this); }
 
     static String toString(BigNum num);
     static String toString(Rational ratio);
-
-    void writeJSON(WriteBuffer & out) const override;
-    void readJSON(const Poco::JSON::Object & json) override;
 
 protected:
     void formatImpl(WriteBuffer & ostr, const FormatSettings &, FormatState &, FormatStateStacked) const override;

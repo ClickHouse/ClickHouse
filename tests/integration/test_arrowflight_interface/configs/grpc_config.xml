@@ -1,0 +1,7 @@
+<clickhouse>
+    <arrowflight>
+        <enable_ssl>true</enable_ssl>
+        <ssl_cert_file>/etc/clickhouse-server/config.d/cert.pem</ssl_cert_file>
+        <ssl_key_file>/etc/clickhouse-server/config.d/key.pem</ssl_key_file>
+    </arrowflight>
+</clickhouse>

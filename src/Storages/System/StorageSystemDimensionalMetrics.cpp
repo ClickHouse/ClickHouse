@@ -1,5 +1,4 @@
 #include <Columns/IColumn.h>
-#include <Storages/System/SystemTableSourceRegistry.h>
 #include <Storages/ColumnsDescription.h>
 #include <DataTypes/DataTypeString.h>
 #include <DataTypes/DataTypesNumber.h>
@@ -31,25 +30,23 @@ ColumnsDescription StorageSystemDimensionalMetrics::getColumnsDescription()
 void StorageSystemDimensionalMetrics::fillData(MutableColumns & res_columns, ContextPtr, const ActionsDAG::Node *, std::vector<UInt8>) const
 {
     const auto & factory = DimensionalMetrics::Factory::instance();
-    factory.forEachFamily([&res_columns](const DimensionalMetrics::MetricFamily & family)
+    for (const auto & record : factory.getRecords())
     {
+        const auto & family = record->family;
         const auto & labels = family.getLabels();
-        family.forEachMetric([&res_columns, &family, &labels](const DimensionalMetrics::LabelValues & label_values, const DimensionalMetrics::Metric & metric)
+        for (const auto & [label_values, metric] : family.getMetrics())
         {
             Map labels_map;
             for (size_t i = 0; i < label_values.size(); ++i)
             {
                 labels_map.push_back(Tuple{labels[i], label_values[i]});
             }
-            res_columns[0]->insert(family.getName());
-            res_columns[1]->insert(metric.get());
-            res_columns[2]->insert(family.getDocumentation());
+            res_columns[0]->insert(record->name);
+            res_columns[1]->insert(metric->get());
+            res_columns[2]->insert(record->documentation);
             res_columns[3]->insert(labels_map);
-        });
-    });
+        }
+    }
 }
 
 }
-
-/// Register the source file of this system table for `system.documentation`.
-namespace DB { REGISTER_SYSTEM_TABLE_SOURCE(StorageSystemDimensionalMetrics) }

@@ -3,9 +3,10 @@ description: 'Documentation for Special Table Engines'
 sidebar_label: 'Special'
 sidebar_position: 50
 slug: /engines/table-engines/special/
-title: 'Special table engines'
-doc_type: 'reference'
+title: 'Special Table Engines'
 ---
+
+# Special table engines
 
 There are three main categories of table engines:
 

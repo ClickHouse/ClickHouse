@@ -1,8 +1,10 @@
 #pragma once
 
 #include <set>
+#include <map>
 #include <list>
 #include <mutex>
+#include <thread>
 #include <atomic>
 #include <boost/noncopyable.hpp>
 #include <Poco/Event.h>
@@ -33,7 +35,7 @@ struct ReplicatedCheckResult
     CheckResult status;
     Action action = None;
 
-    bool exists_in_zookeeper{};
+    bool exists_in_zookeeper;
     MergeTreeDataPartPtr part;
     time_t recheck_after_seconds = 0;
 };
@@ -67,16 +69,12 @@ public:
 
     ReplicatedCheckResult checkPartImpl(const String & part_name, bool throw_on_broken_projection);
 
-    /// Pause parts check in a thread-safe way.
-    /// The returned guard can be safely destroyed from any thread.
-    BackgroundSchedulePoolPausableTask::PauseHolderPtr temporaryPause();
+    std::unique_lock<std::mutex> pausePartsCheck();
 
-    /// Can be called only while holding a BackgroundSchedulePoolTaskBlocker guard.
+    /// Can be called only while holding a lock returned from pausePartsCheck()
     void cancelRemovedPartsCheck(const MergeTreePartInfo & drop_range_info);
 
 private:
-    BackgroundSchedulePoolTaskHolder & getTask();
-
     void run();
 
     bool onPartIsLostForever(const String & part_name);
@@ -109,16 +107,9 @@ private:
     StringSet parts_set;
     PartsToCheckQueue parts_queue;
 
-    /// Serializes cancelRemovedPartsCheck against another such call and against enqueuePart.
-    /// cancelRemovedPartsCheck drops parts_mutex while removing parts from ZooKeeper; without this
-    /// mutex a concurrent cancel or enqueue could mutate parts_queue in that gap and break the
-    /// recheck invariant. Lock order: cancel_removed_parts_mutex before parts_mutex.
-    std::mutex cancel_removed_parts_mutex;
-
     std::mutex start_stop_mutex;
     std::atomic<bool> need_stop { false };
-
-    BackgroundSchedulePoolPausableTask pausable_task;
+    BackgroundSchedulePoolTaskHolder task;
 };
 
 }
