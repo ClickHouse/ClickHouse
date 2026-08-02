@@ -505,10 +505,9 @@ ReadFromMergeTree::ReadFromMergeTree(
             /// Just limit requested_num_streams otherwise.
             requested_num_streams = std::min<size_t>(requested_num_streams, max_streams_for_merge_tree_reading);
     }
-    /// `requested_num_streams` drives pipes.reserve()/resize() in groupPartitionsByStreams and
-    /// spreadMarkRanges; unbounded, reserve() throws std::length_error (size exceeds vector max_size).
-    /// It can be amplified upstream (max_streams * max_streams_to_max_threads_ratio in the planner)
-    /// beyond any setting clamp, so bound the effective value here to the ceiling max_threads gets.
+    /// `requested_num_streams` drives pipes.reserve()/resize() downstream, which throws
+    /// std::length_error when unbounded. It can be amplified past any setting clamp via
+    /// `max_streams_to_max_threads_ratio`, so bound the effective value here too.
     requested_num_streams = std::min<size_t>(requested_num_streams, 256 * getNumberOfCPUCoresToUse());
 
     /// Add explicit description.
