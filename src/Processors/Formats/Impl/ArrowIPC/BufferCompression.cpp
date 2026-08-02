@@ -36,7 +36,7 @@ std::optional<UInt64> declaredFrameContentSize(CompressionCodec codec, const cha
             throw Exception(ErrorCodes::INCORRECT_DATA, "Compressed Arrow IPC buffer is not a valid ZSTD frame");
         if (frame_size != size)
             return std::nullopt;
-        const unsigned long long n = ZSTD_getFrameContentSize(src, size);
+        const UInt64 n = ZSTD_getFrameContentSize(src, size);
         if (n == ZSTD_CONTENTSIZE_ERROR)
             throw Exception(ErrorCodes::INCORRECT_DATA, "Compressed Arrow IPC buffer is not a valid ZSTD frame");
         if (n == ZSTD_CONTENTSIZE_UNKNOWN)
