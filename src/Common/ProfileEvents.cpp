@@ -399,6 +399,7 @@
     M(CompiledFunctionExecute, "Number of times a compiled function was executed.", ValueType::Number) \
     M(CompileExpressionsMicroseconds, "Total time spent for compilation of expressions to LLVM code.", ValueType::Microseconds) \
     M(CompileExpressionsBytes, "Number of bytes used for expressions compilation.", ValueType::Bytes) \
+    M(CompileRegexpFunction, "Number of times a regular expression was JIT-compiled to machine code.", ValueType::Number) \
     \
     M(ExecuteShellCommand, "Number of shell command executions.", ValueType::Number) \
     \
