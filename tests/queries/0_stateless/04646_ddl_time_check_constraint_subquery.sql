@@ -40,4 +40,4 @@ SELECT count() FROM ddl_in_set;
 -- Metadata written before this validation existed keeps loading: the check does not run for the short
 -- `ATTACH TABLE t` form (or on server startup), only the compilation of the constraint expression rejects
 -- it, on the first insert into such a table. A full-definition `ATTACH TABLE t (...) ENGINE = ...` is fresh
--- user input and is rejected -- see `04665_attach_full_definition_check_constraint_subquery`.
+-- user input and is rejected -- see `04671_attach_full_definition_check_constraint_subquery`.
