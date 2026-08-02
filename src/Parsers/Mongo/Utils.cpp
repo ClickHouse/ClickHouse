@@ -190,7 +190,12 @@ rapidjson::Value parseData(const char * begin, const char * end, rapidjson::Docu
 std::optional<size_t> MongoQueryKeyNameExtractor::findPosition(const char * begin, const char * end)
 {
     size_t size_str = end - begin;
-    for (size_t i = 0; i < size_str - pattern.size() + 1; ++i)
+    /// The pattern and the parenthesis that must follow it have to fit, and the subtraction below
+    /// is unsigned: a text shorter than the pattern would wrap it around into a huge count.
+    if (size_str < pattern.size() + 1)
+        return std::nullopt;
+
+    for (size_t i = 0; i + pattern.size() < size_str; ++i)
     {
         bool match = true;
         for (size_t j = 0; j < pattern.size(); ++j)
@@ -222,7 +227,8 @@ std::optional<int> MongoQueryKeyNameExtractor::extractInt(const char * begin, co
     }
     auto start_position = *maybe_start_position;
     std::string str_representation;
-    while (begin[start_position] != ')')
+    /// The end of the text bounds the walk: an unclosed `(` would otherwise read past it.
+    while (begin + start_position != end && begin[start_position] != ')')
     {
         if (begin[start_position] < '0' || begin[start_position] > '9')
         {
@@ -231,6 +237,10 @@ std::optional<int> MongoQueryKeyNameExtractor::extractInt(const char * begin, co
         str_representation.push_back(begin[start_position]);
         ++start_position;
     }
+    if (begin + start_position == end)
+        throw Exception(ErrorCodes::BAD_ARGUMENTS, "Incorrect query : the '{}' is not closed", pattern);
+    if (str_representation.empty())
+        throw Exception(ErrorCodes::BAD_ARGUMENTS, "Incorrect query : the '{}' has no argument", pattern);
     return std::stoi(str_representation);
 }
 
@@ -243,11 +253,13 @@ std::optional<std::string> MongoQueryKeyNameExtractor::extractString(const char 
     }
     auto start_position = *maybe_start_position;
     std::string result;
-    while (begin[start_position] != ')')
+    while (begin + start_position != end && begin[start_position] != ')')
     {
         result.push_back(begin[start_position]);
         ++start_position;
     }
+    if (begin + start_position == end)
+        throw Exception(ErrorCodes::BAD_ARGUMENTS, "Incorrect query : the '{}' is not closed", pattern);
     return result;
 }
 

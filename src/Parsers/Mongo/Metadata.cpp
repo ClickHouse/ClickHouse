@@ -70,18 +70,34 @@ std::shared_ptr<QueryMetadata> extractMetadataFromRequest(const char * begin, co
         throw Exception(ErrorCodes::BAD_ARGUMENTS, "Invalid query: unknown operation '{}'", key);
     }
 
-    /// `.limit(...)` and `.sort(...)` are suffixes of a `find`. Looking for them in any other
-    /// query would match the text of its argument - an aggregation pipeline is free to hold a
-    /// field path such as `$a.limit` - and the pattern is searched for as plain text.
+    /** `.limit(...)` and `.sort(...)` are suffixes of a `find`, so only the text that follows the
+      * argument list of the `find` is searched for them, and the pattern is searched for as plain
+      * text. Searching the whole query would read the argument as well, and a document is free to
+      * hold the pattern in a value of its own: `db.users.find({"name": ".limit(1)"})` looks for a
+      * name and asks for no limit, but scanning from the start would find one there and turn the
+      * user's data into a `LIMIT`. Looking in any other kind of query would go wrong the same way -
+      * an aggregation pipeline may hold a field path such as `$a.limit`.
+      */
     std::optional<int> limit;
     std::optional<std::string> order_by;
     if (*query_type == QueryMetadata::QueryType::select)
     {
+        const char * suffix_begin = getSettingsSubstring(begin, end).second + 1;
+
+        /** The text handed here reaches to the end of everything the client sent, so the suffix
+          * stops at the terminator of this query - otherwise a `find` without a limit would take
+          * the one of a later query of the same multi query. The statements are told apart by
+          * their `;` here the same way `tryParseMongoQuery` tells them apart.
+          */
+        const char * suffix_end = suffix_begin;
+        while (suffix_end != end && *suffix_end != ';')
+            ++suffix_end;
+
         MongoQueryKeyNameExtractor limit_extractor(".limit");
-        limit = limit_extractor.extractInt(begin, end);
+        limit = limit_extractor.extractInt(suffix_begin, suffix_end);
 
         MongoQueryKeyNameExtractor order_by_extractor(".sort");
-        order_by = order_by_extractor.extractString(begin, end);
+        order_by = order_by_extractor.extractString(suffix_begin, suffix_end);
     }
 
     return std::make_shared<QueryMetadata>(std::move(database_name), std::move(collection_name), *query_type, limit, order_by);

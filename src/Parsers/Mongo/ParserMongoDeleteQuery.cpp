@@ -46,15 +46,20 @@ bool ParserMongoDeleteQuery::parseImpl(ASTPtr & node)
     /// Traverse data tree for WHERE operator
     ASTPtr where_condition;
 
-    if (ParserMongoFilter(std::move(data), metadata, "").parseImpl(where_condition))
-    {
-        delete_query->predicate = std::move(where_condition);
-        return true;
-    }
-    else
-    {
+    if (!ParserMongoFilter(std::move(data), metadata, "").parseImpl(where_condition))
         return false;
-    }
+
+    /** An empty filter - `db.t.deleteMany({})`, which deletes every document - leaves no condition
+      * behind, and `ASTDeleteQuery` has no notion of a delete without one: `formatQueryImpl` and
+      * `InterpreterDeleteQuery` both walk `predicate` unconditionally, so a null one is a
+      * segmentation fault any client can ask for. `DELETE FROM ... WHERE 1` says the same thing,
+      * and is what the update path already does with an empty filter.
+      */
+    if (!where_condition)
+        where_condition = make_intrusive<ASTLiteral>(Field(UInt64(1)));
+
+    delete_query->predicate = std::move(where_condition);
+    return true;
 }
 
 }
