@@ -10,11 +10,9 @@
 #include <Common/VectorWithMemoryTracking.h>
 
 #include <Columns/ColumnsNumber.h>
-#include <Columns/ColumnArray.h>
 #include <Columns/ColumnConst.h>
 #include <Columns/ColumnNullable.h>
 
-#include <DataTypes/DataTypeArray.h>
 #include <DataTypes/DataTypeNullable.h>
 #include <DataTypes/DataTypesNumber.h>
 #include <DataTypes/IDataType.h>
@@ -28,7 +26,6 @@
 #include <cmath>
 #include <limits>
 #include <string_view>
-#include <unordered_map>
 
 namespace ProfileEvents
 {
@@ -64,6 +61,32 @@ namespace ErrorCodes
 
 namespace
 {
+
+/// Cosine similarity of two equal-length vectors. `1` means identical direction, `0` orthogonal,
+/// `-1` opposite. Sets `is_null` and returns `0` when a vector has zero magnitude (cosine undefined).
+Float32 cosineSimilarity(
+    const VectorWithMemoryTracking<Float32> & a, const VectorWithMemoryTracking<Float32> & b, UInt8 & is_null)
+{
+    Float64 dot = 0;
+    Float64 norm_a = 0;
+    Float64 norm_b = 0;
+    for (size_t i = 0; i < a.size(); ++i)
+    {
+        dot += static_cast<Float64>(a[i]) * static_cast<Float64>(b[i]);
+        norm_a += static_cast<Float64>(a[i]) * static_cast<Float64>(a[i]);
+        norm_b += static_cast<Float64>(b[i]) * static_cast<Float64>(b[i]);
+    }
+
+    if (norm_a == 0.0 || norm_b == 0.0)
+    {
+        is_null = 1;
+        return 0;
+    }
+
+    Float64 cosine = dot / (std::sqrt(norm_a) * std::sqrt(norm_b));
+    cosine = std::clamp(cosine, -1.0, 1.0); /// Guard against floating-point drift outside the valid range.
+    return static_cast<Float32>(cosine);
+}
 
 class FunctionAiSimilarity final : public IFunction
 {
@@ -102,7 +125,6 @@ public:
         FunctionArgumentDescriptors mandatory_args{
             {"text1", static_cast<FunctionArgumentDescriptor::TypeValidator>(&FunctionBaseAI::isStringOrNullableString), nullptr, "String"},
             {"text2", static_cast<FunctionArgumentDescriptor::TypeValidator>(&FunctionBaseAI::isStringOrNullableString), nullptr, "String"},
-            /// `model` must be a plain (non-nullable) `String`; constness is enforced by the column validator.
             {"model", static_cast<FunctionArgumentDescriptor::TypeValidator>(&isString), &isColumnConst, "const String"},
         };
         FunctionArgumentDescriptors optional_args{
@@ -155,7 +177,7 @@ public:
             const ColumnNullable * nullable = nullptr;
             const IColumn * data = nullptr;
         };
-        auto prepare = [&](size_t arg_index) -> Operand
+        auto unwrap_nullable = [&](size_t arg_index) -> Operand
         {
             Operand op;
             if (arguments[arg_index].type->isNullable())
@@ -170,11 +192,11 @@ public:
             }
             return op;
         };
-        Operand op1 = prepare(0);
-        Operand op2 = prepare(1);
+        Operand op1 = unwrap_nullable(0);
+        Operand op2 = unwrap_nullable(1);
 
         /// A row's operand contributes an embedding only when it is non-null and non-empty.
-        auto liveValue = [](const Operand & op, size_t row, std::string_view & out) -> bool
+        auto get_value = [](const Operand & op, size_t row, std::string_view & out) -> bool
         {
             if (op.nullable && op.nullable->getNullMapData()[row])
                 return false;
@@ -182,30 +204,27 @@ public:
             return !out.empty();
         };
 
-        /// Deduplicate operands across both columns so each distinct text is embedded once per block
-        /// (e.g. a constant query text, or values repeated across a self-join). `left`/`right` map each
-        /// row's operands to an index into `inputs`, or `no_input` when the operand does not embed.
-        std::unordered_map<std::string_view, size_t> input_index; // STYLE_CHECK_ALLOW_STD_CONTAINERS
+        /// Collect the operands that need an embedding (non-null, non-empty). `left`/`right` map each row's
+        /// operands to an index into `inputs`, or `no_input` when the operand does not embed.
         VectorWithMemoryTracking<std::string_view> inputs;
+        inputs.reserve(2 * input_rows_count);
         constexpr size_t no_input = std::numeric_limits<size_t>::max();
         VectorWithMemoryTracking<size_t> left(input_rows_count, no_input);
         VectorWithMemoryTracking<size_t> right(input_rows_count, no_input);
 
-        auto intern = [&](std::string_view text) -> size_t
-        {
-            auto [it, inserted] = input_index.try_emplace(text, inputs.size());
-            if (inserted)
-                inputs.push_back(text);
-            return it->second;
-        };
-
         for (size_t i = 0; i < input_rows_count; ++i)
         {
             std::string_view text;
-            if (liveValue(op1, i, text))
-                left[i] = intern(text);
-            if (liveValue(op2, i, text))
-                right[i] = intern(text);
+            if (get_value(op1, i, text))
+            {
+                left[i] = inputs.size();
+                inputs.push_back(text);
+            }
+            if (get_value(op2, i, text))
+            {
+                right[i] = inputs.size();
+                inputs.push_back(text);
+            }
         }
 
         auto embedding_result = FunctionBaseAI::embedTexts(
@@ -213,71 +232,50 @@ public:
 
         ProfileEvents::increment(ProfileEvents::AIAPICalls, embedding_result.api_calls);
         ProfileEvents::increment(ProfileEvents::AIInputTokens, embedding_result.input_tokens);
-        ProfileEvents::increment(ProfileEvents::AIRowsProcessed, embedding_result.texts_embedded);
-        ProfileEvents::increment(ProfileEvents::AIRowsSkipped, embedding_result.texts_skipped);
 
         const auto & embeddings = embedding_result.embeddings;
 
-        /// Assemble each row's two operand vectors into `Array(Float32)` columns and compute with
-        /// `cosineDistance` (`aiSimilarity = 1 - cosineDistance`). A row is comparable only when
-        /// both operands were embedded into equal-length vectors. A non-comparable row gets an
-        /// empty pair (its distance is ignored) and scores NULL.
-        auto left_vectors = ColumnFloat32::create();
-        auto right_vectors = ColumnFloat32::create();
-        auto left_offsets = ColumnArray::ColumnOffsets::create();
-        auto right_offsets = ColumnArray::ColumnOffsets::create();
-        auto & left_data = left_vectors->getData();
-        auto & right_data = right_vectors->getData();
-        auto & left_offsets_data = left_offsets->getData();
-        auto & right_offsets_data = right_offsets->getData();
-        left_offsets_data.resize(input_rows_count);
-        right_offsets_data.resize(input_rows_count);
-
-        VectorWithMemoryTracking<UInt8> comparable(input_rows_count, 0);
-        for (size_t i = 0; i < input_rows_count; ++i)
-        {
-            size_t a = left[i];
-            size_t b = right[i];
-            /// Not comparable when either operand had no text, its embedding was skipped (quota/error), or
-            /// the two vectors differ in size.
-            if (a != no_input && b != no_input && !embeddings[a].empty() && !embeddings[b].empty()
-                && embeddings[a].size() == embeddings[b].size())
-            {
-                left_data.insert(left_data.end(), embeddings[a].begin(), embeddings[a].end());
-                right_data.insert(right_data.end(), embeddings[b].begin(), embeddings[b].end());
-                comparable[i] = 1;
-            }
-            left_offsets_data[i] = left_data.size();
-            right_offsets_data[i] = right_data.size();
-        }
-
-        auto array_type = std::make_shared<DataTypeArray>(std::make_shared<DataTypeFloat32>());
-        ColumnsWithTypeAndName distance_args{
-            {ColumnArray::create(std::move(left_vectors), std::move(left_offsets)), array_type, "a"},
-            {ColumnArray::create(std::move(right_vectors), std::move(right_offsets)), array_type, "b"},
-        };
-        auto cosine_distance = FunctionFactory::instance().get("cosineDistance", getContext())->build(distance_args);
-        auto distances = cosine_distance->execute(distance_args, cosine_distance->getResultType(), input_rows_count, /*dry_run=*/false)
-                             ->convertToFullColumnIfConst();
-
+        /// The simplest implementation would be a wrapper that embeds both operands and reuses the
+        /// built-in `cosineDistance`. We deliberately do not, because feeding `cosineDistance`
+        /// means materializing two full `Array(Float32)` columns holding one copy of every embedding
+        /// per row. On a default-size block at 3072-dimensional embeddings that is ~1.5 GiB of
+        /// temporaries. Instead we compute the cosine directly over the embedding vectors below,
+        /// so the only large allocation is the score column itself.
         auto score_col = ColumnFloat32::create();
         auto null_map_col = ColumnUInt8::create(input_rows_count, static_cast<UInt8>(0));
         auto & scores = score_col->getData();
         auto & null_map = null_map_col->getData();
         scores.resize(input_rows_count);
 
+        UInt64 rows_processed = 0; /// rows that received a (non-NULL) similarity score
+        UInt64 rows_skipped = 0;   /// rows that are NULL because a needed embedding was skipped (quota/error)
+
         for (size_t i = 0; i < input_rows_count; ++i)
         {
-            Float64 similarity = 1.0 - distances->getFloat64(i);
-            /// NULL for non-comparable rows, and for a zero-magnitude vector (cosine undefined).
-            if (!comparable[i] || std::isnan(similarity))
+            const size_t a = left[i];
+            const size_t b = right[i];
+
+            /// A row scores NULL when either operand had no text, an embedding it needs was skipped
+            /// (quota/error), or the two vectors are not size-comparable (sanity check: both embeddings
+            /// come from the same model, so their sizes should always match).
+            if (a == no_input || b == no_input || embeddings[a].empty() || embeddings[b].empty()
+                || embeddings[a].size() != embeddings[b].size())
             {
                 scores[i] = 0;
                 null_map[i] = 1;
+                if (a != no_input && b != no_input && (embeddings[a].empty() || embeddings[b].empty()))
+                    ++rows_skipped;
                 continue;
             }
-            scores[i] = static_cast<Float32>(std::clamp(similarity, -1.0, 1.0)); /// Guard against float drift outside `[-1, 1]`.
+
+            /// `cosineSimilarity` sets `null_map[i]` for a zero-magnitude vector (cosine undefined).
+            scores[i] = cosineSimilarity(embeddings[a], embeddings[b], null_map[i]);
+            if (!null_map[i])
+                ++rows_processed;
         }
+
+        ProfileEvents::increment(ProfileEvents::AIRowsProcessed, rows_processed);
+        ProfileEvents::increment(ProfileEvents::AIRowsSkipped, rows_skipped);
 
         return ColumnNullable::create(std::move(score_col), std::move(null_map_col));
     }
@@ -297,14 +295,13 @@ REGISTER_FUNCTION(AiSimilarity)
         .description = R"(
 Computes the semantic similarity of two texts using the configured embedding provider.
 
-Both texts are embedded (reusing `aiEmbed`'s batching and server-side provider configuration) and the
-function returns the cosine similarity of the two vectors, in the range `[-1, 1]`: `1` means the texts
-are semantically identical, `0` means unrelated, and negative values mean opposite. This is the
-complement of `cosineDistance` over the same embeddings (`aiSimilarity = 1 - cosineDistance`).
+Calculates the embedding of both texts and returns the cosine similarity of the two vectors
+in the range `[-1, 1]`: `1` means the texts are semantically identical, `0` means unrelated,
+and negative values mean opposite. This is the complement of `cosineDistance` over the
+same embeddings (`aiSimilarity = 1 - cosineDistance`).
 
-Distinct operand values are embedded only once per block, so a constant query text or values repeated
-across a self-join are not re-embedded per row. Batching, credentials, and the `dimensions` parameter
-match `aiEmbed`, including the `ai_function_embedding_default_credentials` default-credentials setting.
+Batching, credentials, and the `dimensions` parameter match `aiEmbed`, including the
+`ai_function_embedding_default_credentials` default-credentials setting.
 
 Like `aiEmbed`, `model` is a required positional argument (a constant `String`), not read from the
 named collection or the parameter map.

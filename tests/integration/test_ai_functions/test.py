@@ -990,7 +990,7 @@ def expected_similarity(t1, t2, dim=4):
 
 
 def test_similarity_identical_is_one(started_cluster):
-    """Identical texts embed once and score exactly 1.0 (cosine of a vector with itself)."""
+    """Identical texts score exactly 1.0 (cosine of a vector with itself)."""
     qid = unique_query_id("sim_identical")
     result = instance.query(
         "SELECT aiSimilarity('hello', 'hello', 'test-embed-model', map('credentials', 'ai_embed'))",
@@ -999,13 +999,13 @@ def test_similarity_identical_is_one(started_cluster):
     )
     assert parse_nullable_float(result) == pytest.approx(1.0, abs=1e-6)
     events = get_profile_events(qid)
-    # The two operands share one distinct value, so only one embedding is computed.
+    # Both operands are embedded in a single batch (one HTTP request).
     assert int(events["api_calls"]) == 1
     assert int(events["rows_processed"]) == 1
 
 
 def test_similarity_matches_cosine_formula(started_cluster):
-    """Two different texts score the exact cosine similarity value, and both are embedded."""
+    """Two different texts score the exact cosine similarity value."""
     qid = unique_query_id("sim_formula")
     result = instance.query(
         "SELECT aiSimilarity('cat', 'kitten', 'test-embed-model', map('credentials', 'ai_embed'))",
@@ -1016,7 +1016,8 @@ def test_similarity_matches_cosine_formula(started_cluster):
     assert score == pytest.approx(expected_similarity("cat", "kitten"), abs=1e-4)
     assert -1.0 <= score <= 1.0
     events = get_profile_events(qid)
-    assert int(events["rows_processed"]) == 2
+    # `rows_processed` is row-level: one row produced one score, even though two texts were embedded.
+    assert int(events["rows_processed"]) == 1
 
 
 def test_similarity_uses_embedding_default_credentials(started_cluster):
@@ -1028,29 +1029,28 @@ def test_similarity_uses_embedding_default_credentials(started_cluster):
     assert parse_nullable_float(result) == pytest.approx(1.0, abs=1e-6)
 
 
-def test_similarity_dedup_within_block(started_cluster):
-    """Distinct operand values are embedded once per block: a constant right-hand text and repeated
-    left-hand values are not re-embedded per row."""
+def test_similarity_rows_processed_is_row_level(started_cluster):
+    """`rows_processed` counts rows that received a score, not embeddings — a row embeds up to two operands,
+    so the two counts are not equal."""
     instance.query("TRUNCATE TABLE test_input")
-    instance.query("INSERT INTO test_input VALUES ('a'), ('a'), ('b')")
-    qid = unique_query_id("sim_dedup")
+    instance.query("INSERT INTO test_input VALUES ('a'), ('a'), ('a')")
+    qid = unique_query_id("sim_rows_processed")
     result = instance.query(
         "SELECT aiSimilarity(x, 'q', 'test-embed-model', map('credentials', 'ai_embed')) FROM test_input ORDER BY x",
         settings=AI_SETTINGS,
         query_id=qid,
     )
     scores = [parse_nullable_float(line) for line in result.strip().split("\n")]
-    assert scores[0] == pytest.approx(expected_similarity("a", "q"), abs=1e-4)
-    assert scores[1] == pytest.approx(expected_similarity("a", "q"), abs=1e-4)
-    assert scores[2] == pytest.approx(expected_similarity("b", "q"), abs=1e-4)
+    assert all(s == pytest.approx(expected_similarity("a", "q"), abs=1e-4) for s in scores)
     events = get_profile_events(qid)
-    # Distinct texts across both operands are {a, b, q} = 3, embedded in a single batch.
+    # The 3 rows embed 6 operands (x and 'q' per row) in a single batch, but all 3 rows receive a score,
+    # so rows_processed counts rows (3), not embeddings (6).
     assert int(events["api_calls"]) == 1
     assert int(events["rows_processed"]) == 3
 
 
 def test_similarity_null_and_empty_operands(started_cluster):
-    """A NULL or empty operand yields a NULL score. Only distinct non-empty texts are embedded."""
+    """A NULL or empty operand yields a NULL score; the non-empty operands are embedded."""
     instance.query("TRUNCATE TABLE test_input_nullable")
     instance.query("INSERT INTO test_input_nullable VALUES (NULL), (''), ('hi')")
     qid = unique_query_id("sim_null_empty")
@@ -1065,7 +1065,7 @@ def test_similarity_null_and_empty_operands(started_cluster):
     assert scores[1] is None
     assert scores[2] == pytest.approx(1.0, abs=1e-6)
     events = get_profile_events(qid)
-    # Only the single distinct non-empty text ('hi') is embedded.
+    # The non-empty operands are embedded in a single batch (one HTTP request).
     assert int(events["api_calls"]) == 1
     assert int(events["rows_processed"]) == 1
 
@@ -1081,7 +1081,9 @@ def test_similarity_with_dimensions(started_cluster):
 
 
 def test_similarity_error_graceful(started_cluster):
-    """With `ai_function_throw_on_error = 0`, a failed embedding makes the score NULL."""
+    """With `ai_function_throw_on_error = 0`, a failed embedding makes the score NULL, and the row is
+    counted as skipped (row-level, not per embedding)."""
+    qid = unique_query_id("sim_error_graceful")
     result = instance.query(
         "SELECT aiSimilarity('a', 'b', 'test-embed-model', map('credentials', 'ai_embed_error'))",
         settings={
@@ -1089,8 +1091,12 @@ def test_similarity_error_graceful(started_cluster):
             "ai_function_throw_on_error": 0,
             "ai_function_max_retries": 0,
         },
+        query_id=qid,
     )
     assert parse_nullable_float(result) is None
+    events = get_profile_events(qid)
+    assert int(events["rows_processed"]) == 0
+    assert int(events["rows_skipped"]) == 1
 
 
 def test_similarity_error_throw(started_cluster):
