@@ -76,6 +76,32 @@ ${CLICKHOUSE_CLIENT} -q "EXISTS TABLE ${ORD}.ts"
 
 ${CLICKHOUSE_CLIENT} --send_logs_level=fatal -q "DROP DATABASE ${ORD} SYNC" 2>/dev/null || true
 
+# The same up-front rejection is owed when it is a ROW POLICY that cannot follow an inner table, not
+# just an occupied table name. A policy on the destination name of a moving policy blocks the move, and
+# the blocked inner table is renamed second, so a per-inner-rename check would only reject after the
+# first inner table had already been moved.
+POL="${CLICKHOUSE_DATABASE}_pol"
+${CLICKHOUSE_CLIENT} -q "DROP DATABASE IF EXISTS ${POL} SYNC"
+${CLICKHOUSE_CLIENT} --send_logs_level=fatal --allow_deprecated_database_ordinary=1 -q "CREATE DATABASE ${POL} ENGINE = Ordinary"
+${CLICKHOUSE_CLIENT} --allow_experimental_time_series_table=1 -q "CREATE TABLE ${POL}.ts ENGINE = TimeSeries"
+${CLICKHOUSE_CLIENT} -q "CREATE ROW POLICY pol ON ${POL}.\`.inner.tags.ts\` FOR SELECT USING 1"
+# The destination policy name, held by a policy that is not itself moving. It needs no table: creating a
+# policy does not require the table to exist, and a table here would trip the name precheck above
+# instead, which would make this arm measure that pre-existing rejection rather than the policy one.
+${CLICKHOUSE_CLIENT} -q "CREATE ROW POLICY pol ON ${POL}.\`.inner.tags.ts2\` FOR SELECT USING 1"
+${CLICKHOUSE_CLIENT} --send_logs_level=fatal -q "RENAME TABLE ${POL}.ts TO ${POL}.ts2" 2>&1 | grep -q -F "ACCESS_ENTITY_ALREADY_EXISTS" && echo "rejected"
+# Nothing moved: every inner table is still on its source name and no destination name exists.
+${CLICKHOUSE_CLIENT} -q "EXISTS TABLE ${POL}.\`.inner.samples.ts\`"
+${CLICKHOUSE_CLIENT} -q "EXISTS TABLE ${POL}.\`.inner.tags.ts\`"
+${CLICKHOUSE_CLIENT} -q "EXISTS TABLE ${POL}.\`.inner.metrics.ts\`"
+${CLICKHOUSE_CLIENT} -q "EXISTS TABLE ${POL}.ts"
+${CLICKHOUSE_CLIENT} -q "EXISTS TABLE ${POL}.\`.inner.samples.ts2\`"
+# Both policies are still on the names they were created with.
+${CLICKHOUSE_CLIENT} -q "SELECT table FROM system.row_policies WHERE short_name = 'pol' AND database = '${POL}' ORDER BY table"
+${CLICKHOUSE_CLIENT} -q "DROP ROW POLICY pol ON ${POL}.\`.inner.tags.ts\`"
+${CLICKHOUSE_CLIENT} -q "DROP ROW POLICY pol ON ${POL}.\`.inner.tags.ts2\`"
+${CLICKHOUSE_CLIENT} --send_logs_level=fatal -q "DROP DATABASE ${POL} SYNC" 2>/dev/null || true
+
 # With lazy_load_tables=1 a reloaded TimeSeries table is materialized as a StorageTableProxy. The
 # proxy must not hide the TimeSeries type from the cross-database move guard -- otherwise a
 # cross-database RENAME would move only the outer table and orphan its inner tables in the old

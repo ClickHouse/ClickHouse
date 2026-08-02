@@ -125,7 +125,11 @@ namespace
     /// that are not renaming (see the comment on that branch). `rekeys` is therefore mutable, and
     /// the caller passes the same vector to `applyRowPolicyRekeys`, so the apply skips exactly what
     /// was dropped and the two cannot disagree.
-    void preflightRowPolicyRekeys(const AccessControl & access_control, std::vector<RowPolicyRekey> & rekeys)
+    ///
+    /// `log_declined` is false when the caller discards the plan and only wants the checks, so the
+    /// warning is emitted once, by the call that decides what actually moves.
+    void preflightRowPolicyRekeys(
+        const AccessControl & access_control, std::vector<RowPolicyRekey> & rekeys, bool log_declined = true)
     {
         if (rekeys.empty())
             return;
@@ -140,7 +144,7 @@ namespace
                 throw Exception(
                     ErrorCodes::ACCESS_STORAGE_READONLY,
                     "Cannot rename because {} is stored in a read-only access storage "
-                    "and cannot follow the table to its new name",
+                    "and cannot follow the renamed object to its new name",
                     policy->formatTypeWithName());
         }
 
@@ -165,14 +169,15 @@ namespace
         /// re-key, so no name ends up less filtered than it is without this feature.
         if (access_control.containsStorage(ReplicatedAccessStorage::STORAGE_TYPE))
         {
-            LOG_WARNING(
-                getLogger("InterpreterRenameQuery"),
-                "Not moving {} row polic{} to follow this rename: this server has a replicated access storage "
-                "configured, and such a storage is shared with servers that this rename does not apply to. "
-                "The policies keep their current names; recreate them on the new name if the rename is meant "
-                "to be visible on every server sharing the storage.",
-                rekeys.size(),
-                rekeys.size() == 1 ? "y" : "ies");
+            if (log_declined)
+                LOG_WARNING(
+                    getLogger("InterpreterRenameQuery"),
+                    "Not moving {} row polic{} to follow this rename: this server has a replicated access storage "
+                    "configured, and such a storage is shared with servers that this rename does not apply to. "
+                    "The policies keep their current names; recreate them on the new name if the rename is meant "
+                    "to be visible on every server sharing the storage.",
+                    rekeys.size(),
+                    rekeys.size() == 1 ? "y" : "ies");
             rekeys.clear();
             return;
         }
@@ -232,7 +237,7 @@ namespace
             {
                 throw Exception(
                     ErrorCodes::ACCESS_ENTITY_ALREADY_EXISTS,
-                    "Cannot rename because {} would have to follow the table, "
+                    "Cannot rename because {} would have to follow the renamed object, "
                     "but row policy {} already exists at the {}",
                     moving_policy->formatTypeWithName(),
                     backQuoteIfNeed(name.toString()),
@@ -261,6 +266,26 @@ namespace
             dst_name.table_name = rekey.new_table;
             reject_if_taken(dst_name, rekey.id, policy, /*allow_moving_occupant*/ true, "destination");
         }
+    }
+
+    /// A database-wide policy (`ON db.*`) is bound to no single table name, so it cannot follow an
+    /// object to another database: the destination lookup is `new_db.tbl` then `new_db.*` and never
+    /// sees the old `db.*`, which would leave the moved data unfiltered. A same-database rename is
+    /// unaffected -- the policy keeps covering the object through the ANY_TABLE_MARK fallback.
+    void rejectCrossDatabaseMoveUnderDatabaseWidePolicy(
+        const AccessControl & access_control,
+        const String & from_db, const String & from_name, const String & to_db)
+    {
+        if (from_db == to_db || !hasDatabaseWideRowPolicy(access_control, from_db))
+            return;
+
+        throw Exception(
+            ErrorCodes::NOT_IMPLEMENTED,
+            "Cannot move {} to another database {} because a database-wide row policy (ON {}.*) "
+            "applies to it and cannot follow it across databases",
+            backQuoteIfNeed(from_db) + "." + backQuoteIfNeed(from_name),
+            backQuoteIfNeed(to_db),
+            backQuoteIfNeed(from_db));
     }
 
     /// True if this rename replaces the storage behind a name while keeping that name, so the row
@@ -350,32 +375,15 @@ namespace
         if (keepsNameOfReplacedStorage(rename, context, elem) || conversion_keeps_table_name || same_name)
             return rekeys;
 
-        /// A database-wide policy (`ON db.*`) is not bound to any single table name, so it cannot
-        /// follow a table that moves to a different database: the destination lookup is `new_db.tbl`
-        /// then `new_db.*`, which never sees the old `db.*`, so the moved data would be readable
-        /// unfiltered (or under an unrelated destination `db.*`). Reject such cross-database moves
-        /// rather than silently dropping the filter. A same-database rename is unaffected: the
-        /// `db.*` policy keeps covering the table through the ANY_TABLE_MARK fallback.
-        if (elem.from_database_name != elem.to_database_name && !converting_database_engine)
+        if (!converting_database_engine)
         {
-            if (hasDatabaseWideRowPolicy(access_control, elem.from_database_name))
-                throw Exception(
-                    ErrorCodes::NOT_IMPLEMENTED,
-                    "Cannot move table {} to another database {} because a database-wide row policy "
-                    "(ON {}.*) applies to it and cannot follow it across databases",
-                    backQuoteIfNeed(elem.from_database_name) + "." + backQuoteIfNeed(elem.from_table_name),
-                    backQuoteIfNeed(elem.to_database_name),
-                    backQuoteIfNeed(elem.from_database_name));
+            rejectCrossDatabaseMoveUnderDatabaseWidePolicy(
+                access_control, elem.from_database_name, elem.from_table_name, elem.to_database_name);
             /// EXCHANGE swaps data both ways, so the destination's `db.*` would likewise fail to
-            /// follow the table arriving from the other database.
-            if (exchange_tables && hasDatabaseWideRowPolicy(access_control, elem.to_database_name))
-                throw Exception(
-                    ErrorCodes::NOT_IMPLEMENTED,
-                    "Cannot exchange table {} with {} because a database-wide row policy (ON {}.*) "
-                    "applies to it and cannot follow it across databases",
-                    backQuoteIfNeed(elem.to_database_name) + "." + backQuoteIfNeed(elem.to_table_name),
-                    backQuoteIfNeed(elem.from_database_name) + "." + backQuoteIfNeed(elem.from_table_name),
-                    backQuoteIfNeed(elem.to_database_name));
+            /// follow the object arriving from the other database.
+            if (exchange_tables)
+                rejectCrossDatabaseMoveUnderDatabaseWidePolicy(
+                    access_control, elem.to_database_name, elem.to_table_name, elem.from_database_name);
         }
 
         /// Collect and PREFLIGHT the per-table re-keys here, before the first mutation of the rename
@@ -469,6 +477,28 @@ namespace
             restore();
             throw;
         }
+    }
+}
+
+void preflightRowPolicyRekeysForRenames(const ContextPtr & context, const std::vector<std::pair<StorageID, StorageID>> & renames)
+{
+    const auto & access_control = context->getAccessControl();
+
+    /// Skipped for the same reason `collectAndPreflightRowPolicyRekeys` skips it: the conversion's
+    /// staging database is renamed back to the original name.
+    const bool converting_database_engine = context->isConvertingDatabaseEngine();
+
+    for (const auto & [from, to] : renames)
+    {
+        if (!converting_database_engine)
+            rejectCrossDatabaseMoveUnderDatabaseWidePolicy(
+                access_control, from.database_name, from.table_name, to.database_name);
+
+        /// One fresh vector per pair, as the nested rename will build it: the parking names the checks
+        /// probe come from each vector's own indices, so a combined vector would probe unused names.
+        auto rekeys = collectRowPolicyRekeys(
+            access_control, from.database_name, from.table_name, to.database_name, to.table_name);
+        preflightRowPolicyRekeys(access_control, rekeys, /*log_declined*/ false);
     }
 }
 
@@ -584,10 +614,11 @@ BlockIO InterpreterRenameQuery::executeToTables(const ASTRenameQuery & rename, c
         ///
         /// The initiator can only validate what it can see. Row policies in a node-local storage
         /// are not replicated by the DDL queue, so replicas can hold different ones, and a replica
-        /// whose own state blocks the move applies the rename anyway and leaves its policy on the
-        /// old name: that name keeps filtering there, while the new name on that replica is filtered
-        /// by whatever policy already sat on it. The replicas end up filtering differently.
-        /// Preflighting here bounds that divergence to the peer-only case, it does not remove it.
+        /// whose own state blocks the move rejects the rename and never commits it, while a
+        /// permissive replica does: the divergence can be in the table NAME, not only in filtering.
+        /// That class is pre-existing -- `database->checkTableNameLength` below is node-local via
+        /// `pathconf(_PC_NAME_MAX)` and diverges the same way.
+        /// Preflighting here bounds the divergence to the peer-only case, it does not remove it.
         /// In-tree precedent for initiator-side pre-enqueue validation:
         /// `DatabaseReplicated::checkQueryValid`.
         std::vector<RowPolicyRekey> row_policy_rekeys = collectAndPreflightRowPolicyRekeys(

@@ -538,6 +538,15 @@ void StorageTimeSeries::renameInMemory(const StorageID & new_table_id)
             inner_renames.emplace_back(std::move(inner_table_id), std::move(new_inner_table_name));
         }
 
+        /// Row policies bound to an inner table follow it, and that transition can be rejected. Each
+        /// nested rename below only preflights its own element, so a rejection from a later inner table
+        /// would arrive after an earlier one has already committed. Preflight them all here instead.
+        std::vector<std::pair<StorageID, StorageID>> policy_renames;
+        policy_renames.reserve(inner_renames.size());
+        for (const auto & [inner_table_id, new_inner_table_name] : inner_renames)
+            policy_renames.emplace_back(inner_table_id, StorageID{new_table_id.database_name, new_inner_table_name});
+        preflightRowPolicyRekeysForRenames(getContext(), policy_renames);
+
         for (const auto & [inner_table_id, new_inner_table_name] : inner_renames)
         {
             auto rename = make_intrusive<ASTRenameQuery>();
