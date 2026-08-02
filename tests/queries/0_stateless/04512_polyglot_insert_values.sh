@@ -143,5 +143,12 @@ ${CLICKHOUSE_CURL} -sS -X POST "${poly_url}&query=INSERT%20INTO%20t%20VALUES%20(
 echo "--- no insert when an HTTP body accompanies a polyglot INSERT (expect: 107 6) ---"
 $CLICKHOUSE_CLIENT -q "SELECT sum(x), count() FROM t"
 
+# The client parses the transpiled SQL only to classify the query, but it must do so with the same
+# parser flags the server uses to execute it (see `executeQuery`). Otherwise a query the server
+# accepts is rejected locally before it is ever sent: with `implicit_select`, a bare expression is
+# a valid query, and the classifier has to accept it too.
+echo "--- implicit_select is honoured by the client-side classifier (expect: 2) ---"
+$CLICKHOUSE_CLIENT $POLY --implicit_select 1 -q "1 + 1"
+
 $CLICKHOUSE_CLIENT -q "DROP TABLE t"
 $CLICKHOUSE_CLIENT -q "DROP TABLE b"

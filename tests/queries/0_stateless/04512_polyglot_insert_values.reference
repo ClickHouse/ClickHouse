@@ -32,3 +32,5 @@ counts towards max_query_size
 NOT_IMPLEMENTED
 --- no insert when an HTTP body accompanies a polyglot INSERT (expect: 107 6) ---
 107	6
+--- implicit_select is honoured by the client-side classifier (expect: 2) ---
+2

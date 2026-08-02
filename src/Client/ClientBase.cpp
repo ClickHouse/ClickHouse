@@ -668,7 +668,7 @@ ASTPtr ClientBase::parseQuery(const char *& pos, const char * end, const Setting
         /// so the per-query size guard must stay active in every mode to reject an oversized query
         /// on the client, before the transpiler runs.
         else if (dialect == Dialect::polyglot)
-            parser = std::make_unique<ParserPolyglotQuery>(settings[Setting::max_query_size], settings[Setting::max_parser_depth], settings[Setting::max_parser_backtracks], settings[Setting::polyglot_dialect], end, settings[Setting::allow_experimental_polyglot_dialect]);
+            parser = std::make_unique<ParserPolyglotQuery>(settings[Setting::max_query_size], settings[Setting::max_parser_depth], settings[Setting::max_parser_backtracks], settings[Setting::polyglot_dialect], end, settings[Setting::allow_experimental_polyglot_dialect], settings[Setting::allow_settings_after_format_in_insert], settings[Setting::implicit_select]);
         else
             parser = std::make_unique<ParserQuery>(end, settings[Setting::allow_settings_after_format_in_insert], settings[Setting::implicit_select]);
 

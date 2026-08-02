@@ -145,7 +145,7 @@ bool ParserPolyglotQuery::parseImpl(Pos & pos, ASTPtr & node, Expected & expecte
     const char * transpiled_begin = transpiled.data();
     const char * const transpiled_end = transpiled.data() + transpiled.size();
     const char * parse_pos = transpiled_begin;
-    ParserQuery query_p(transpiled_end, false);
+    ParserQuery query_p(transpiled_end, allow_settings_after_format_in_insert, implicit_select);
     String error_message;
     node = tryParseQuery(
         query_p,
