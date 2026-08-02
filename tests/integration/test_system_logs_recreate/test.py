@@ -229,7 +229,8 @@ def test_system_log_rotation_keeps_row_policy():
         )
 
         # A different engine makes the stored CREATE query differ, which is what triggers rotation.
-        # PARTITION BY/ORDER BY must live inside <engine>: the separate settings are rejected there.
+        # <engine> carries PARTITION BY/ORDER BY itself, and the server refuses to start if the
+        # sibling <partition_by> is also set, so the one from config.xml has to be removed here.
         node.exec_in_container(
             [
                 "bash",
@@ -238,6 +239,7 @@ def test_system_log_rotation_keeps_row_policy():
         <clickhouse>
             <query_log>
                 <engine>ENGINE = MergeTree ORDER BY (event_time)</engine>
+                <partition_by remove='remove'/>
             </query_log>
         </clickhouse>
         " > /etc/clickhouse-server/config.d/zzz-override-query_log-policy.xml
