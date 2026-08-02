@@ -20,7 +20,8 @@ SELECT
     indexOf(arrayMap(x -> toUInt8(x = 1::UInt8), v), 1) AS index_of_want,
     countEqual(v, 1::UInt8) AS count_equal_got,
     length(arrayFilter(x -> x = 1::UInt8, v)) AS count_equal_want,
-    indexOfAssumeSorted(v, 1::UInt8) AS index_of_sorted_got
+    indexOfAssumeSorted(v, 1::UInt8) AS index_of_sorted_got,
+    indexOf(arrayMap(x -> toUInt8(x = 1::UInt8), v), 1) AS index_of_sorted_want
 FROM t_dyn_num
 ORDER BY id;
 
@@ -155,6 +156,73 @@ CREATE TABLE t_nullable (id UInt8, v Array(Nullable(String))) ENGINE = Memory;
 INSERT INTO t_nullable VALUES (0, ['1']), (1, ['2']), (2, [NULL]);
 
 SELECT id, has(v, '1'::Dynamic) AS got FROM t_nullable ORDER BY id;
+
+SELECT '-- NULL nested in Tuple: invisible at the top level, so asserted at every depth';
+
+-- Oracle note: the `=` oracle used everywhere else cannot express these rows. `=` over a Tuple
+-- holding a NULL yields NULL, and arrayExists reads non-true as false, so it reports no match where
+-- membership reports one. These rows therefore assert the null-safe relation `isNotDistinctFrom`,
+-- which is what has([NULL], NULL) -> 1 means once the NULL sits inside a Tuple.
+
+DROP TABLE IF EXISTS t_tuple_null;
+CREATE TABLE t_tuple_null (id UInt8, v Array(Tuple(Dynamic))) ENGINE = Memory;
+INSERT INTO t_tuple_null VALUES (0, [tuple(NULL::Dynamic)]), (1, [tuple('a'::Dynamic)]);
+
+SELECT
+    id,
+    has(v, tuple(NULL::Dynamic)) AS null_needle_got,
+    toUInt8(arrayExists(x -> isNotDistinctFrom(x, tuple(NULL::Dynamic)), v)) AS null_needle_want,
+    has(v, tuple('a'::Dynamic)) AS value_needle_got,
+    toUInt8(arrayExists(x -> isNotDistinctFrom(x, tuple('a'::Dynamic)), v)) AS value_needle_want,
+    indexOf(v, tuple(NULL::Dynamic)) AS index_of_got,
+    indexOf(arrayMap(x -> toUInt8(isNotDistinctFrom(x, tuple(NULL::Dynamic))), v), 1) AS index_of_want,
+    countEqual(v, tuple(NULL::Dynamic)) AS count_equal_got,
+    length(arrayFilter(x -> isNotDistinctFrom(x, tuple(NULL::Dynamic)), v)) AS count_equal_want
+FROM t_tuple_null
+ORDER BY id;
+
+-- The const twin of the same relation.
+SELECT
+    has(CAST([tuple(NULL::Dynamic)], 'Array(Tuple(Dynamic))'), tuple(NULL::Dynamic)) AS null_pair,
+    has(CAST([tuple(NULL::Dynamic)], 'Array(Tuple(Dynamic))'), tuple('a'::Dynamic)) AS null_vs_value,
+    has(CAST([tuple('a'::Dynamic)], 'Array(Tuple(Dynamic))'), tuple(NULL::Dynamic)) AS value_vs_null;
+
+-- Depth 2: the descent has to be unbounded, not one level.
+DROP TABLE IF EXISTS t_tuple_null2;
+CREATE TABLE t_tuple_null2 (v Array(Tuple(Tuple(Dynamic)))) ENGINE = Memory;
+INSERT INTO t_tuple_null2 VALUES ([tuple(tuple(NULL::Dynamic))]);
+
+SELECT
+    has(v, tuple(tuple(NULL::Dynamic))) AS got,
+    toUInt8(arrayExists(x -> isNotDistinctFrom(x, tuple(tuple(NULL::Dynamic))), v)) AS want,
+    has(v, tuple(tuple('a'::Dynamic))) AS value_needle_got
+FROM t_tuple_null2;
+
+-- Variant erases types the same way Dynamic does.
+DROP TABLE IF EXISTS t_tuple_null_var;
+CREATE TABLE t_tuple_null_var (v Array(Tuple(Variant(UInt8, UInt64)))) ENGINE = Memory;
+INSERT INTO t_tuple_null_var VALUES ([tuple(CAST(NULL, 'Variant(UInt8, UInt64)'))]);
+
+SELECT
+    has(v, tuple(CAST(NULL, 'Variant(UInt8, UInt64)'))) AS got,
+    toUInt8(arrayExists(x -> isNotDistinctFrom(x, tuple(CAST(NULL, 'Variant(UInt8, UInt64)'))), v)) AS want,
+    has(v, tuple(CAST(1::UInt8, 'Variant(UInt8, UInt64)'))) AS value_needle_got
+FROM t_tuple_null_var;
+
+-- Paired NULLs are not on their own a match: the non-NULL positions still have to agree.
+DROP TABLE IF EXISTS t_tuple_null_mixed;
+CREATE TABLE t_tuple_null_mixed (id UInt8, v Array(Tuple(Dynamic, UInt8))) ENGINE = Memory;
+INSERT INTO t_tuple_null_mixed VALUES (0, [(NULL::Dynamic, 1::UInt8)]), (1, [(NULL::Dynamic, 2::UInt8)]),
+    (2, [('a'::Dynamic, 1::UInt8)]);
+
+SELECT
+    id,
+    has(v, (NULL::Dynamic, 1::UInt8)) AS null_first_got,
+    toUInt8(arrayExists(x -> isNotDistinctFrom(x, (NULL::Dynamic, 1::UInt8)), v)) AS null_first_want,
+    has(v, ('a'::Dynamic, 1::UInt8)) AS value_first_got,
+    toUInt8(arrayExists(x -> isNotDistinctFrom(x, ('a'::Dynamic, 1::UInt8)), v)) AS value_first_want
+FROM t_tuple_null_mixed
+ORDER BY id;
 
 SELECT '-- Map: direct has(map, key), mapContainsKey, mapContainsValue';
 

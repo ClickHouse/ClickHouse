@@ -1,6 +1,7 @@
 #pragma once
 
 #include <cstddef>
+#include <optional>
 #include <type_traits>
 
 #include <Functions/IFunction.h>
@@ -702,11 +703,58 @@ private:
         return matches;
     }
 
+    /// Split a Tuple operand into its element columns, or return nothing when it is not a plain
+    /// Tuple (a Nullable or LowCardinality wrapper around one keeps its own nullness at the top
+    /// level, where the fold already sees it).
+    static std::optional<ColumnsWithTypeAndName> tryDecomposeTuple(const ColumnWithTypeAndName & operand)
+    {
+        auto full_column = operand.column->convertToFullColumnIfConst();
+        const auto * tuple_column = checkAndGetColumn<ColumnTuple>(full_column.get());
+        const auto * tuple_type = typeid_cast<const DataTypeTuple *>(operand.type.get());
+
+        if (!tuple_column || !tuple_type || tuple_column->tupleSize() != tuple_type->getElements().size())
+            return {};
+
+        ColumnsWithTypeAndName elements;
+        elements.reserve(tuple_column->tupleSize());
+        for (size_t i = 0, size = tuple_column->tupleSize(); i < size; ++i)
+            elements.emplace_back(tuple_column->getColumnPtr(i), tuple_type->getElement(i), operand.name);
+
+        return elements;
+    }
+
     /// Evaluate `equals` over `elements` against `needles` (already aligned element-wise) and fold
     /// the outcome into a match bitmap.
+    ///
+    /// Tuples are decomposed here rather than left to `equals`, because a NULL nested in a Tuple is
+    /// invisible to the fold: ColumnTuple has no isNullAt of its own, so it inherits IColumn's
+    /// `return false`, while Dynamic/Variant/Nullable leaves do report their nullness. Comparing
+    /// element-wise puts every NULL where the fold can see it, and `equals` collapses a row holding
+    /// one to a single NULL that could not settle the row's other positions anyway.
     ColumnUInt8::MutablePtr evaluateElementwiseEquality(
         const ColumnWithTypeAndName & elements, const ColumnWithTypeAndName & needles) const
     {
+        if (auto element_parts = tryDecomposeTuple(elements))
+        {
+            if (auto needle_parts = tryDecomposeTuple(needles); needle_parts && element_parts->size() == needle_parts->size()
+                    && !element_parts->empty())
+            {
+                /// A tuple matches iff every position does.
+                auto matches = evaluateElementwiseEquality((*element_parts)[0], (*needle_parts)[0]);
+                auto & matches_data = matches->getData();
+
+                for (size_t i = 1, size = element_parts->size(); i < size; ++i)
+                {
+                    auto part_matches = evaluateElementwiseEquality((*element_parts)[i], (*needle_parts)[i]);
+                    const auto & part_matches_data = part_matches->getData();
+                    for (size_t row = 0; row < matches_data.size(); ++row)
+                        matches_data[row] &= part_matches_data[row];
+                }
+
+                return matches;
+            }
+        }
+
         ColumnsWithTypeAndName equals_arguments{elements, needles};
         auto equals_function = equals_resolver->build(equals_arguments);
         auto equality_result = equals_function->execute(

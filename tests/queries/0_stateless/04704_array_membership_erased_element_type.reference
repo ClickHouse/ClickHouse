@@ -1,6 +1,6 @@
 -- Array(Dynamic), cross-width numeric needle: const, materialized, LowCardinality
-0	1	1	1	1	1	1	1
-1	0	0	0	0	0	0	0
+0	1	1	1	1	1	1	1	1
+1	0	0	0	0	0	0	0	0
 1	1	1
 0	1	1
 1	0	0
@@ -32,6 +32,15 @@
 0	1
 1	0
 2	0
+-- NULL nested in Tuple: invisible at the top level, so asserted at every depth
+0	1	1	0	0	1	1	1	1
+1	0	0	1	1	0	0	0	0
+1	0	0
+1	1	0
+1	1	0
+0	1	1	0	0
+1	0	0	0	0
+2	0	0	1	1
 -- Map: direct has(map, key), mapContainsKey, mapContainsValue
 0	1	1
 1	1	1
