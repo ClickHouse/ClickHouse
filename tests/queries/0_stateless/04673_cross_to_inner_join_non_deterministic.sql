@@ -219,8 +219,8 @@ SELECT count() > 0 FROM (
     SETTINGS cross_to_inner_join_rewrite = 1
 ) WHERE explain ILIKE '%kind: INNER%';
 
--- getServerPort() is in the same class but does not report isServerConstant(), so only the name list
--- can refuse it. It is folded on a single-node query like the rows above, so it needs remote() too.
+-- getServerPort() now reports isServerConstant() on both its function base and its overload resolver.
+-- It is folded on a single-node query like the rows above, so it needs remote() too.
 SELECT '-- getServerPort() is no longer rewritten';
 SELECT count() = 0 FROM (
     EXPLAIN QUERY TREE run_passes = 1

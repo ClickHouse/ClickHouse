@@ -14,9 +14,9 @@ CREATE TABLE r (a UInt64, b UInt64) ENGINE = Log;
 INSERT INTO l SELECT number % 16, number % 4 FROM numbers(500);
 INSERT INTO r SELECT number % 16, number % 4 FROM numbers(500);
 
--- showCertificate() reports no determinism predicate at all, so only the name list can refuse it. It
--- never returns a constant column, so it is not folded on a single-node query and needs no remote()
--- vehicle.
+-- showCertificate() reported no determinism predicate at all and now declares isDeterministic() and
+-- isServerConstant(). It never returns a constant column, so it is not folded on a single-node query
+-- and needs no remote() vehicle.
 SELECT '-- showCertificate() is no longer rewritten';
 SELECT count() = 0 FROM (
     EXPLAIN QUERY TREE run_passes = 1
