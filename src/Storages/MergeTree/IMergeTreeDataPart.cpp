@@ -250,8 +250,15 @@ IMergeTreeDataPart::MinMaxIndex::WrittenFiles IMergeTreeDataPart::MinMaxIndex::s
         if (i >= hyperrectangle.size())
             break;
 
+        /// An unknown range: `load` gives the whole universe to a column whose file is missing, and its
+        /// infinite bounds cannot be serialized into a non-nullable column. There is nothing to write - the
+        /// range stays the whole universe on the next load anyway - so skip this column instead of stopping,
+        /// and let the remaining columns still get their files.
         if (!isNullableOrLowCardinalityNullable(column_type) && (hyperrectangle[i].left.isNull() || hyperrectangle[i].right.isNull()))
-            break;
+        {
+            ++i;
+            continue;
+        }
 
         String file_name = "minmax_" + getFileColumnName(column_name, storage_settings, part_storage) + ".idx";
 

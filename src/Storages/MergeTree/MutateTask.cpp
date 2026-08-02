@@ -1440,6 +1440,43 @@ static void processStatisticsChanges(
     }
 }
 
+/// Repair the `_block_number` range of a minmax index inherited from a part that was mutated before the
+/// index started to be materialized for mutated parts: such a part has no `minmax__block_number.idx` of its
+/// own, and `MinMaxIndex::load` is not allowed to synthesize the range for it, so the range came back as the
+/// whole universe. Re-deriving it here heals the part on the next column-only mutation instead of carrying
+/// the lost range forward until a merge or a full rewrite happens.
+///
+/// Only a part that still covers a single block is repaired, and it gets exactly the range `load` would have
+/// synthesized had the part not been mutated: every row of such a part was inserted by that one block.
+/// The `_block_offset` range cannot be repaired the same way - a mutation may have dropped rows, and the row
+/// count of the original block is not recoverable from the mutated part - so it is left as the whole
+/// universe, which does not prune but is not wrong either.
+static void repairInheritedBlockNumberMinMax(
+    IMergeTreeDataPart::MinMaxIndex & minmax_index, const IMergeTreeDataPart & new_data_part, const StorageMetadataPtr & metadata_snapshot)
+{
+    const auto & part_info = new_data_part.info;
+    if (part_info.isPatch() || part_info.level != 0 || part_info.getBlocksCount() != 1
+        || !metadata_snapshot->isVirtualColumn(BlockNumberColumn::name))
+        return;
+
+    const auto columns = MergeTreeData::getMinMaxColumns(metadata_snapshot->getPartitionKey(), new_data_part.storage.getSettings());
+
+    size_t i = 0;
+    for (const auto & [column_name, _] : columns)
+    {
+        if (i >= minmax_index.hyperrectangle.size())
+            break;
+
+        if (column_name == BlockNumberColumn::name && minmax_index.hyperrectangle[i].left.isNegativeInfinity())
+        {
+            const Field block_number = getFieldForConstVirtualColumn(BlockNumberColumn::name, new_data_part);
+            minmax_index.hyperrectangle[i] = Range(block_number, true, block_number, true);
+        }
+
+        ++i;
+    }
+}
+
 /// Initialize and write to disk new part fields like checksums, columns, etc.
 static void finalizeMutatedPart(
     const MergeTreeDataPartPtr & source_part,
@@ -1512,13 +1549,16 @@ static void finalizeMutatedPart(
     /// them from the part name and the row count instead of reading a file. The mutated part is no longer
     /// eligible for that synthesis (its `mutation` is not zero, and a mutation may drop rows, so the
     /// offset range is no longer `[0, rows_count - 1]`), and it would read back the whole universe.
-    /// Materialize the index the new part inherits, for the files that were not carried over.
+    /// Materialize the index the new part inherits, for the files that were not carried over, repairing the
+    /// ranges a part mutated before this became the behaviour has already lost.
     if (source_part->storage.format_version >= MERGE_TREE_DATA_MIN_FORMAT_VERSION_WITH_CUSTOM_PARTITIONING && source_part->rows_count)
     {
-        auto minmax_index = source_part->getMinMaxIndex();
-        if (minmax_index->initialized)
+        auto minmax_index = *source_part->getMinMaxIndex();
+        if (minmax_index.initialized)
         {
-            auto files = minmax_index->store(
+            repairInheritedBlockNumberMinMax(minmax_index, *new_data_part, metadata_snapshot);
+
+            auto files = minmax_index.store(
                 metadata_snapshot,
                 new_data_part->getDataPartStorage(),
                 new_data_part->checksums,
