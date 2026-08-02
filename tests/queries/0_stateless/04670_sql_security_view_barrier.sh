@@ -4,7 +4,7 @@ CURDIR=$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)
 # shellcheck source=../shell_config.sh
 . "$CURDIR"/../shell_config.sh
 
-user="user05021_${CLICKHOUSE_DATABASE}_$RANDOM"
+user="user04670_${CLICKHOUSE_DATABASE}_$RANDOM"
 db=${CLICKHOUSE_DATABASE}
 
 ${CLICKHOUSE_CLIENT} <<EOF
