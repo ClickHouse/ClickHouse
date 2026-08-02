@@ -136,24 +136,28 @@ static const String NOT_YET_WRITTEN_COLUMN_SUBSTREAM_PLACEHOLDER = "dummy";
 static bool haveMutationsOfDynamicColumns(
     const MergeTreeData::DataPartPtr & data_part, const MutationCommands & commands, const StorageMetadataPtr & metadata_snapshot)
 {
-    /// The part's on-disk type (resolved by id off the pinned snapshot) decides dynamic-subcolumn presence.
+    /// RENAME/DROP names its column as it was BEFORE the mutation (already gone from the snapshot, still
+    /// in the part); a metadata-only RENAME is the mirror case. Both domains must be asked: a miss here
+    /// picks the partial-mutation path, which cannot enumerate a dynamic column's dependent substreams.
+    auto hasDynamicSubcolumnsInPart = [&](const String & column_name)
+    {
+        auto column = data_part->tryGetColumnBySnapshotName(column_name, metadata_snapshot);
+        if (!column)
+            column = data_part->tryGetColumnByNameUnsafe(column_name);
+        return column && column->type->hasDynamicSubcolumns();
+    };
+
     for (const auto & command : commands)
     {
-        if (!command.column_name.empty())
-        {
-            auto column = data_part->tryGetColumnBySnapshotName(command.column_name, metadata_snapshot);
-            if (column && column->type->hasDynamicSubcolumns())
-                return true;
-        }
+        if (!command.column_name.empty() && hasDynamicSubcolumnsInPart(command.column_name))
+            return true;
 
         auto alter = command.ast();
         if (!alter || !alter->update_assignments)
             continue;
         for (const auto & child : alter->update_assignments->children)
         {
-            const auto & column_name = child->as<ASTAssignment &>().column_name;
-            auto column = data_part->tryGetColumnBySnapshotName(column_name, metadata_snapshot);
-            if (column && column->type->hasDynamicSubcolumns())
+            if (hasDynamicSubcolumnsInPart(child->as<ASTAssignment &>().column_name))
                 return true;
         }
     }

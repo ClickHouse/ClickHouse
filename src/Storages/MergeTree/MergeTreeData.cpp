@@ -6229,9 +6229,7 @@ void MergeTreeData::changeSettings(
                         disk->createDirectories(relative_data_path);
                         disk->createDirectories(fs::path(relative_data_path) / DETACHED_DIR_NAME);
                     }
-                    /// Known limitation: a config reload that changes which disk is the policy's
-                    /// first (authoritative) one does not move `column_ids.json` there; load-time
-                    /// migration adopts a copy found elsewhere.
+                    /// FIXME how would that be done while reloading configuration???
 
                     has_storage_policy_changed = true;
                     pending_storage_policy = new_storage_policy;

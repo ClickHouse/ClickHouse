@@ -737,13 +737,10 @@ public:
         setInMemoryMetadata(new_metadata);
     }
 
-    /// Publishes @mapping in-memory, then persists that published mapping to disk.
-    /// Pairs setColumnIdMapping + writeColumnIdMappingToDisk, the standing sequence
-    /// at every mapping-commit site (mapping visible to readers stays durable).
     void persistMapping(ColumnIdMapping mapping)
     {
+        writeColumnIdMappingToDisk(mapping);
         setColumnIdMapping(std::move(mapping));
-        writeColumnIdMappingToDisk();
     }
 
     /// `attach` distinguishes a pre-existing table (which must have the file
