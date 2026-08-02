@@ -1060,6 +1060,10 @@ void LocalServer::setupUsers()
     access_control.setEnableUserNameAccessType(config.getBool("access_control_improvements.enable_user_name_access_type", true));
     access_control.setThrowOnInvalidReplicatedAccessEntities(config.getBool("access_control_improvements.throw_on_invalid_replicated_access_entities", true));
 
+    /// Keep in sync with `AccessControl::setupFromMainConfig` and `attachSystemTables`: `system.user_query_log`
+    /// is attached (and thus safe to grant SELECT on implicitly) only when this is enabled.
+    access_control.setUserQueryLogEnabled(config.getBool("query_log.enable_user_query_log", true));
+
     /// Apply user-level configuration from a loaded config file (including those
     /// auto-discovered via `getLocalConfigPath`, e.g. `~/.clickhouse-local/config.xml`).
     if (!loaded_config_path.empty())
