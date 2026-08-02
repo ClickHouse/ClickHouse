@@ -71,6 +71,13 @@ When writing Parquet file, data types that don't have a matching Parquet type ar
 | [MultiLineString](/sql-reference/data-types/geo.md#multilinestring) | `BYTE_ARRAY` (WKB) + GeoParquet metadata |
 | [MultiPolygon](/sql-reference/data-types/geo.md#multipolygon) | `BYTE_ARRAY` (WKB) + GeoParquet metadata |
 
+For `UInt128` and `UInt256`, ClickHouse also writes versioned numeric minimum and maximum values to
+the `clickhouse.wide_integer_statistics` key in each non-empty column chunk's key-value metadata.
+The standard Parquet statistics remain ordered by the raw little-endian byte representation, as
+required for an unannotated `FIXED_LEN_BYTE_ARRAY`. ClickHouse uses the additional numeric bounds to
+skip row groups for predicates on columns explicitly read as `UInt128` or `UInt256`. Other Parquet
+clients and older ClickHouse versions ignore this metadata and continue to read the same payload.
+
 Arrays can be nested and can have a value of `Nullable` type as an argument. `Tuple` and `Map` types can also be nested.
 
 Data types of ClickHouse table columns can differ from the corresponding fields of the Parquet data inserted. When inserting data, ClickHouse interprets data types according to the table above and then [casts](/sql-reference/functions/type-conversion-functions#CAST) the data to that data type which is set for the ClickHouse table column. E.g. a `UINT_32` Parquet column can be read into an [IPv4](/sql-reference/data-types/ipv4.md) ClickHouse column.

@@ -142,6 +142,13 @@ struct StringConverter
 ///  2. after reading page header, the Encoding becomes known, and we create a PageDecoder.
 struct PageDecoderInfo
 {
+    enum class WideIntegerStatisticsType : uint8_t
+    {
+        None,
+        UInt128,
+        UInt256,
+    };
+
     parq::Type::type physical_type{};
 
     /// Postprocessing of decoded values. Exactly one of these is set, depending on physical_type.
@@ -159,6 +166,11 @@ struct PageDecoderInfo
     /// In particular we don't call something like convertFieldToType because working through all
     /// the cases would be a nightmare.
     bool allow_stats = false;
+
+    /// ClickHouse writes wide integers as little-endian `FIXED_LEN_BYTE_ARRAY`, whose numeric
+    /// order differs from the physical Parquet byte order. Numeric row-group bounds are therefore
+    /// stored separately in column-chunk key/value metadata.
+    WideIntegerStatisticsType wide_integer_statistics_type = WideIntegerStatisticsType::None;
 
     /// True if we can decompress the whole page directly into IColumn's memory.
     bool canReadDirectlyIntoColumn(parq::Encoding::type, size_t /*num_values*/, IColumn &, std::span<char> & out) const;

@@ -15,6 +15,7 @@
 #include <Interpreters/castColumn.h>
 #include <IO/CompressionMethod.h>
 #include <IO/Libdeflate.h>
+#include <IO/ReadHelpers.h>
 #include <Processors/Formats/Impl/Parquet/Decoding.h>
 #include <Processors/Formats/Impl/Parquet/parquetBloomFilterHash.h>
 #include <Processors/Formats/Impl/Parquet/Reader.h>
@@ -24,6 +25,7 @@
 #include <Storages/MergeTree/MergeTreeRangeReader.h>
 #include <Storages/MergeTree/MergeTreeSplitPrewhereIntoReadSteps.h>
 
+#include <array>
 #include <mutex>
 #include <lz4.h>
 #include <arrow/util/crc32.h>
@@ -50,6 +52,99 @@ namespace ProfileEvents
 
 namespace DB::Parquet
 {
+
+inline constexpr std::string_view WIDE_INTEGER_STATISTICS_KEY = "clickhouse.wide_integer_statistics";
+
+using WideIntegerStatisticsType = PageDecoderInfo::WideIntegerStatisticsType;
+
+static std::optional<std::pair<Field, Field>> getWideIntegerStatistics(
+    const parq::ColumnMetaData & column_meta, WideIntegerStatisticsType expected_type)
+{
+    if (expected_type == WideIntegerStatisticsType::None || !column_meta.__isset.key_value_metadata)
+        return std::nullopt;
+
+    const parq::KeyValue * metadata = nullptr;
+    for (const auto & key_value : column_meta.key_value_metadata)
+    {
+        if (key_value.key != WIDE_INTEGER_STATISTICS_KEY)
+            continue;
+        if (metadata)
+            throw Exception(ErrorCodes::INCORRECT_DATA, "Duplicate `{}` metadata", WIDE_INTEGER_STATISTICS_KEY);
+        metadata = &key_value;
+    }
+
+    if (!metadata)
+        return std::nullopt;
+    if (!metadata->__isset.value)
+        throw Exception(ErrorCodes::INCORRECT_DATA, "Metadata `{}` has no value", WIDE_INTEGER_STATISTICS_KEY);
+
+    std::string_view value = metadata->value;
+    std::array<std::string_view, 4> fields;
+    size_t begin = 0;
+    for (size_t i = 0; i < fields.size(); ++i)
+    {
+        size_t end = value.find(';', begin);
+        if (i + 1 == fields.size())
+        {
+            if (end != std::string_view::npos)
+                throw Exception(ErrorCodes::INCORRECT_DATA, "Invalid `{}` metadata value", WIDE_INTEGER_STATISTICS_KEY);
+            end = value.size();
+        }
+        else if (end == std::string_view::npos)
+        {
+            throw Exception(ErrorCodes::INCORRECT_DATA, "Invalid `{}` metadata value", WIDE_INTEGER_STATISTICS_KEY);
+        }
+
+        fields[i] = value.substr(begin, end - begin);
+        begin = end + 1;
+    }
+
+    if (fields[0] != "1")
+        throw Exception(
+            ErrorCodes::INCORRECT_DATA,
+            "Unsupported `{}` metadata version `{}`",
+            WIDE_INTEGER_STATISTICS_KEY,
+            fields[0]);
+
+    auto parse = [&]<typename T>(std::string_view expected_name) -> std::pair<Field, Field>
+    {
+        if (fields[1] != expected_name)
+            throw Exception(
+                ErrorCodes::INCORRECT_DATA,
+                "Metadata `{}` has type `{}`, expected `{}`",
+                WIDE_INTEGER_STATISTICS_KEY,
+                fields[1],
+                expected_name);
+
+        T min = parseFromString<T>(fields[2]);
+        T max = parseFromString<T>(fields[3]);
+        if (min > max)
+            throw Exception(
+                ErrorCodes::INCORRECT_DATA,
+                "Metadata `{}` has minimum greater than maximum",
+                WIDE_INTEGER_STATISTICS_KEY);
+        return {Field(min), Field(max)};
+    };
+
+    switch (expected_type)
+    {
+        case WideIntegerStatisticsType::UInt128: return parse.template operator()<UInt128>("UInt128");
+        case WideIntegerStatisticsType::UInt256: return parse.template operator()<UInt256>("UInt256");
+        case WideIntegerStatisticsType::None: break;
+    }
+    throw Exception(ErrorCodes::LOGICAL_ERROR, "Unexpected wide integer statistics type");
+}
+
+static Field getStatisticsDefault(const Reader::PrimitiveColumnInfo & column_info)
+{
+    switch (column_info.decoder.wide_integer_statistics_type)
+    {
+        case WideIntegerStatisticsType::UInt128: return Field(UInt128(0));
+        case WideIntegerStatisticsType::UInt256: return Field(UInt256(0));
+        case WideIntegerStatisticsType::None: return column_info.output_type->getDefault();
+    }
+    throw Exception(ErrorCodes::LOGICAL_ERROR, "Unexpected wide integer statistics type");
+}
 
 /// Thrift deserialization can store an out-of-range value into an unscoped enum field when the
 /// input file is malformed. Loading such an enum directly is undefined behavior (caught by
@@ -300,37 +395,51 @@ void Reader::getHyperrectangleForRowGroup(const parq::RowGroup * meta, Hyperrect
     {
         if (!column_info.used_by_key_condition)
             continue;
-        if (!column_info.decoder.allow_stats)
-            continue;
         try
         {
             const auto & column_meta = meta->columns.at(column_info.column_idx).meta_data;
-            if (!column_meta.__isset.statistics)
+            auto wide_integer_statistics = getWideIntegerStatistics(
+                column_meta, column_info.decoder.wide_integer_statistics_type);
+            bool can_use_standard_statistics = column_info.decoder.allow_stats && column_meta.__isset.statistics;
+
+            bool always_null = column_meta.__isset.statistics
+                && column_meta.statistics.__isset.null_count
+                && column_meta.statistics.null_count == column_meta.num_values;
+            bool can_use_wide_integer_null_count
+                = column_info.decoder.wide_integer_statistics_type != WideIntegerStatisticsType::None && always_null;
+            if (!can_use_standard_statistics && !wide_integer_statistics && !can_use_wide_integer_null_count)
                 continue;
 
             Range & range = hyperrectangle[column_info.idx_in_output_block];
 
             bool nullable = column_info.levels.back().def > 0;
-            bool always_null = column_meta.statistics.__isset.null_count &&
-                            column_meta.statistics.null_count == column_meta.num_values;
-            bool can_be_null = !column_meta.statistics.__isset.null_count ||
-                            column_meta.statistics.null_count != 0;
+            bool can_be_null = !column_meta.__isset.statistics
+                || !column_meta.statistics.__isset.null_count
+                || column_meta.statistics.null_count != 0;
             bool null_as_default = options.format.null_as_default && !column_info.output_nullable;
 
             if (nullable && always_null)
             {
                 /// Single-point range containing either the default value or one of the infinities.
                 if (null_as_default)
-                    range.right = range.left = column_info.output_type->getDefault();
+                    range.right = range.left = getStatisticsDefault(column_info);
                 else
                     range.right = range.left;
                 continue;
             }
 
-            if (column_meta.statistics.__isset.min_value)
-                column_info.decoder.decodeField(column_meta.statistics.min_value, /*is_max=*/ false, range.left);
-            if (column_meta.statistics.__isset.max_value)
-                column_info.decoder.decodeField(column_meta.statistics.max_value, /*is_max=*/ true, range.right);
+            if (wide_integer_statistics)
+            {
+                range.left = wide_integer_statistics->first;
+                range.right = wide_integer_statistics->second;
+            }
+            else
+            {
+                if (column_meta.statistics.__isset.min_value)
+                    column_info.decoder.decodeField(column_meta.statistics.min_value, /*is_max=*/ false, range.left);
+                if (column_meta.statistics.__isset.max_value)
+                    column_info.decoder.decodeField(column_meta.statistics.max_value, /*is_max=*/ true, range.right);
+            }
 
             adjustRangeFromIndexIfNeeded(range, column_info, can_be_null);
         }
@@ -1593,7 +1702,7 @@ void Reader::adjustRangeFromIndexIfNeeded(Range & range, const PrimitiveColumnIn
     {
         if (null_as_default)
         {
-            Field default_value = column_info.output_type->getDefault();
+            Field default_value = getStatisticsDefault(column_info);
             /// Make sure the range contains the default value.
             if (!range.left.isNull() && accurateLess(default_value, range.left))
                 range.left = default_value;

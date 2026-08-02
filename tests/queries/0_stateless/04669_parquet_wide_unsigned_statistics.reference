@@ -1,0 +1,20 @@
+round trip and numeric boundary values
+100	2100	2199
+100	2100	2199
+0	340282366920938463463374607431768211455	0	115792089237316195423570985008687907853269984665640564039457584007913129639935
+legacy little-endian payload
+01000000000000000100000000000000	0100000000000000000000000000000001000000000000000000000000000000
+UInt128 numeric statistics prune three row groups
+read=1 pruned=3
+UInt256 numeric statistics prune three row groups
+read=1 pruned=3
+nullable UInt128 statistics
+[2101]
+all-null UInt256 row group and numeric statistics prune every row group
+0
+read=0 pruned=4
+files without numeric statistics retain legacy behavior
+100
+read=4 pruned=0
+malformed numeric statistics are rejected
+rejected

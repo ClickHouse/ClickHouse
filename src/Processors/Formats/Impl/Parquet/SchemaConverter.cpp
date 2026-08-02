@@ -1419,6 +1419,10 @@ void SchemaConverter::processPrimitiveColumn(
                     type_hint->getSizeOfValueInMemory() == size_t(element.type_length))
                 {
                     out_inferred_type = type_hint;
+                    if (which.idx == TypeIndex::UInt128)
+                        out_decoder.wide_integer_statistics_type = PageDecoderInfo::WideIntegerStatisticsType::UInt128;
+                    else if (which.idx == TypeIndex::UInt256)
+                        out_decoder.wide_integer_statistics_type = PageDecoderInfo::WideIntegerStatisticsType::UInt256;
                 }
             }
 

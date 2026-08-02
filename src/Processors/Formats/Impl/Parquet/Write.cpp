@@ -198,6 +198,79 @@ struct StatisticsFixedStringCopy
     }
 };
 
+inline constexpr std::string_view WIDE_INTEGER_STATISTICS_KEY = "clickhouse.wide_integer_statistics";
+
+/// Parquet orders an unannotated `FIXED_LEN_BYTE_ARRAY` lexicographically, while ClickHouse's
+/// legacy wide-integer payload is little-endian. Keep standards-compliant physical statistics and
+/// additionally accumulate numeric bounds for ClickHouse readers.
+template <typename T>
+struct StatisticsWideUnsignedInteger
+{
+    static_assert(std::is_same_v<T, UInt128> || std::is_same_v<T, UInt256>);
+
+    StatisticsFixedStringCopy<sizeof(T), /*SIGNED=*/ false> physical;
+    bool empty = true;
+    T min {};
+    T max {};
+
+    void add(parquet::FixedLenByteArray a)
+    {
+        physical.add(a);
+
+        T value;
+        memcpy(&value, a.ptr, sizeof(value));
+        if (empty)
+        {
+            min = value;
+            max = value;
+            empty = false;
+        }
+        else
+        {
+            min = std::min(min, value);
+            max = std::max(max, value);
+        }
+    }
+
+    void merge(const StatisticsWideUnsignedInteger & s)
+    {
+        physical.merge(s.physical);
+        if (s.empty)
+            return;
+        if (empty)
+        {
+            min = s.min;
+            max = s.max;
+            empty = false;
+        }
+        else
+        {
+            min = std::min(min, s.min);
+            max = std::max(max, s.max);
+        }
+    }
+
+    void clear()
+    {
+        physical.clear();
+        empty = true;
+    }
+
+    parq::Statistics get(const WriteOptions & options) const
+    {
+        return physical.get(options);
+    }
+
+    std::optional<String> getWideIntegerStatisticsMetadata() const
+    {
+        if (empty)
+            return std::nullopt;
+
+        constexpr std::string_view type_name = std::is_same_v<T, UInt128> ? "UInt128" : "UInt256";
+        return fmt::format("1;{};{};{}", type_name, DB::toString(min), DB::toString(max));
+    }
+};
+
 struct StatisticsStringRef
 {
     parquet::ByteArray min;
@@ -535,12 +608,12 @@ struct ConverterFixedStringAsString
     }
 };
 
-template <typename T>
+template <typename T, typename StatisticsType = StatisticsFixedStringCopy<sizeof(T), /*SIGNED=*/ false>>
 struct ConverterNumberAsFixedString
 {
     /// Calculate min/max statistics for little-endian fixed strings, not numbers, because parquet
     /// doesn't know it's numbers.
-    using Statistics = StatisticsFixedStringCopy<sizeof(T), /*SIGNED=*/ false>;
+    using Statistics = StatisticsType;
 
     const ColumnVector<T> & column;
     PODArray<parquet::FixedLenByteArray> buf;
@@ -1197,6 +1270,18 @@ void writeColumnImpl(
 
         if (s.max_def == 1 && s.max_rep == 0)
             s.column_chunk.meta_data.statistics.__set_null_count(static_cast<Int64>(def_offset - data_offset));
+
+        if constexpr (requires { total_statistics.getWideIntegerStatisticsMetadata(); })
+        {
+            if (auto metadata = total_statistics.getWideIntegerStatisticsMetadata())
+            {
+                parq::KeyValue key_value;
+                key_value.__set_key(String(WIDE_INTEGER_STATISTICS_KEY));
+                key_value.__set_value(std::move(*metadata));
+                s.column_chunk.meta_data.key_value_metadata.push_back(std::move(key_value));
+                s.column_chunk.meta_data.__isset.key_value_metadata = true;
+            }
+        }
     }
 
     /// Report which encodings we've used.
@@ -1333,8 +1418,16 @@ void writeColumnChunkBody(
         #define F(source_type) \
             writeColumnImpl<parquet::FLBAType>( \
                 s, options, out, ConverterNumberAsFixedString<source_type>(s.primitive_column))
-        case TypeIndex::UInt128: F(UInt128); break;
-        case TypeIndex::UInt256: F(UInt256); break;
+        case TypeIndex::UInt128:
+            writeColumnImpl<parquet::FLBAType>(
+                s, options, out,
+                ConverterNumberAsFixedString<UInt128, StatisticsWideUnsignedInteger<UInt128>>(s.primitive_column));
+            break;
+        case TypeIndex::UInt256:
+            writeColumnImpl<parquet::FLBAType>(
+                s, options, out,
+                ConverterNumberAsFixedString<UInt256, StatisticsWideUnsignedInteger<UInt256>>(s.primitive_column));
+            break;
         case TypeIndex::Int128:  F(Int128); break;
         case TypeIndex::Int256:  F(Int256); break;
         case TypeIndex::IPv6:    F(IPv6); break;
