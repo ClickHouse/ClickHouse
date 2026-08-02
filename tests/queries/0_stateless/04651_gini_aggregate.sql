@@ -68,6 +68,9 @@ SELECT gini(x) FROM (SELECT [1, NULL, 3] :: Array(Nullable(Int32)) AS arr) ARRAY
 -- An all-NULL nullable input is treated as no values.
 SELECT gini(x) FROM (SELECT [NULL, NULL] :: Array(Nullable(Int32)) AS arr) ARRAY JOIN arr AS x;
 
+-- A bare NULL preserves gini's Float64 result type and empty-input semantics.
+SELECT toTypeName(gini(NULL)), isNaN(gini(NULL));
+
 -- -State / -Merge round trip: split values into two states and merge.
 SELECT giniMerge(state) FROM (
     SELECT giniState(number) AS state FROM numbers(5)

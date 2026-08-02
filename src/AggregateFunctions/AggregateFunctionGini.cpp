@@ -1,4 +1,5 @@
 #include <AggregateFunctions/AggregateFunctionFactory.h>
+#include <AggregateFunctions/Combinators/AggregateFunctionNull.h>
 #include <AggregateFunctions/FactoryHelpers.h>
 #include <AggregateFunctions/Helpers.h>
 
@@ -186,6 +187,20 @@ public:
 
     bool allocatesMemoryInArena() const override { return false; }
 
+    AggregateFunctionPtr getOwnNullAdapter(
+        const AggregateFunctionPtr & nested_function,
+        const DataTypes & arguments,
+        const Array & params,
+        const AggregateFunctionProperties &) const override
+    {
+        return std::make_shared<AggregateFunctionNullUnary<false, true>>(nested_function, arguments, params);
+    }
+
+    UnorderedSetWithMemoryTracking<size_t> getArgumentsThatCanBeOnlyNull() const override
+    {
+        return {0};
+    }
+
     void add(AggregateDataPtr __restrict place, const IColumn ** columns, const size_t row_num, Arena *) const override
     {
         const auto & column = assert_cast<const ColVecType &>(*columns[0]);
@@ -219,6 +234,9 @@ AggregateFunctionPtr createAggregateFunctionGini(const std::string & name, const
     assertUnary(name, argument_types);
 
     const DataTypePtr & argument_type = argument_types[0];
+    if (argument_type->onlyNull())
+        return std::make_shared<AggregateFunctionGini<Float64>>(std::make_shared<DataTypeFloat64>());
+
     if (!isNumber(argument_type))
         throw Exception(ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT,
                         "Illegal type {} of argument of aggregate function {}, must be a number",
