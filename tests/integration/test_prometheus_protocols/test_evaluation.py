@@ -899,6 +899,38 @@ def test_function_timestamp():
         [["[]", "1970-01-01 00:02:15.000", 120]],
     )
 
+    # Range query regression for offset-modified selector (/api/v1/query_range):
+    # Verifies applyOffset realigns/duplicates selector results across multiple grid steps.
+    do_range_query_test(
+        "timestamp(test offset 1m)",
+        190,
+        210,
+        10,
+        '{"resultType": "matrix", "result": [{"metric": {}, "values": [[190, "130"], [200, "140"], [210, "140"]]}]}',
+        [
+            [
+                "[]",
+                "[('1970-01-01 00:03:10.000',130),('1970-01-01 00:03:20.000',140),('1970-01-01 00:03:30.000',140)]",
+            ]
+        ],
+    )
+
+    # Range query regression for @-modified selector (/api/v1/query_range):
+    # Verifies fixed @ evaluation time realignment across multiple grid steps.
+    do_range_query_test(
+        "timestamp(test @ 120)",
+        135,
+        155,
+        10,
+        '{"resultType": "matrix", "result": [{"metric": {}, "values": [[135, "120"], [145, "120"], [155, "120"]]}]}',
+        [
+            [
+                "[]",
+                "[('1970-01-01 00:02:15.000',120),('1970-01-01 00:02:25.000',120),('1970-01-01 00:02:35.000',120)]",
+            ]
+        ],
+    )
+
     # General instant vector expressions (binary math, unary operators, comparisons, nested timestamp() calls):
     # In Prometheus 3.5.0, non-selector expressions are materialized at each query step evaluation timestamp T_eval,
     # returning T_eval (135) for each present sample.
