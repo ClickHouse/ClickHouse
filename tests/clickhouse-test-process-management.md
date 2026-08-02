@@ -49,7 +49,8 @@ partial write.
 ### Per-test bookkeeping
 
 ```python
-proc = Popen(command, shell=True, start_new_session=True, preexec_fn=cgroup_fn)
+proc = Popen(command, shell=True, start_new_session=True, preexec_fn=cgroup_fn,
+             stdout=subprocess.DEVNULL, stderr=wrapper_stderr)
 # proc.pid == PGID after start_new_session=True
 _gpid_file = _GROUP_PID_PATH / f"{_GROUP_PID_NAME}.{os.getpid()}"
 write_text_atomic(_gpid_file, f"{proc.pid}\n")
@@ -61,6 +62,15 @@ finally:
         cleanup_cgroup(cgroup_name)
     _gpid_file.unlink(missing_ok=True)
 ```
+
+The explicit sinks detach the test from our own stdout/stderr.  The command
+already redirects the test's output to the per-test `.stdout`/`.stderr` files, so
+only the wrapping shell writes to these; its stderr is appended to the `.stderr`
+file rather than discarded, and `stdout` is unused (see the comment on
+`pattern`).  Without this an orphan keeps our descriptors open, and under CI
+those are the write end of a `clickhouse-test | ts | tee` pipeline: `ts` never
+sees EOF, so the job produces no further output and hangs until its watchdog
+kills it, before the stages that collect the server log run.
 
 On a clean run every started test deletes its file in the `finally` block, so
 no files remain when `clickhouse-test` exits.  If `clickhouse-test` is
@@ -118,6 +128,7 @@ The hook contains no kill logic of its own — it just calls
 | `cleanup_child_processes` | SIGTERM/SIGINT/SIGHUP to `clickhouse-test` | `killpg` on each direct child's PGID |
 | test `finally` block | Any exit of the per-test code path (incl. SIGKILL to the worker) | `_gpid_file.unlink` — removes the per-worker file |
 | `run_test()` `finally` | Any exit of `clickhouse-test` (incl. SIGKILL) | `clickhouse-test --cleanup` → `kill_process_group` per PGID file |
+| `run_tests()` `finally` (stateless job) | Any exit of the test run, per invocation | same: `clickhouse-test --cleanup` |
 | Post-hook | Any exit of `fast_test.py` (incl. SIGKILL) | same — `clickhouse-test --cleanup` |
 
 ### Remaining limitation

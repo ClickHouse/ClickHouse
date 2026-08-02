@@ -3613,8 +3613,26 @@ class TestCase:
             cgroup_name = f"clickhouse-test-{os.getpid()}"
             preexec_fn = setup_cgroup_with_memory_limit_cb(cgroup_name, self.memory_limit)
 
+        # A test escaping into its own session must not keep our fd1/fd2 open: under
+        # CI they are the write end of a `clickhouse-test | ts | tee` pipeline, which
+        # then never sees EOF. `pattern` already redirects the test's own output, so
+        # only the wrapping shell writes here.
         # pylint:disable-next=consider-using-with; TODO: fix
-        proc = Popen(command, shell=True, executable=BASH, env=tests_env, start_new_session=True, preexec_fn=preexec_fn)
+        wrapper_stderr = open(self.stderr_file, "ab", buffering=0)
+        try:
+            # pylint:disable-next=consider-using-with; TODO: fix
+            proc = Popen(
+                command,
+                shell=True,
+                executable=BASH,
+                env=tests_env,
+                start_new_session=True,
+                preexec_fn=preexec_fn,
+                stdout=subprocess.DEVNULL,
+                stderr=wrapper_stderr,
+            )
+        finally:
+            wrapper_stderr.close()
         # proc.pid == PGID after start_new_session=True; write it atomically so
         # `clickhouse-test --cleanup` can find it even if we are killed with SIGKILL.
         _gpid_file = _GROUP_PID_PATH / f"{_GROUP_PID_NAME}.{os.getpid()}"
