@@ -81,6 +81,16 @@ MAX_INVESTIGATIONS_PER_RUN = 4
 MAX_REVERTS_PER_RUN = 2
 RUN_BUDGET_SEC = 45 * 60
 
+# The budget is a deadline for the whole run, so it has to be checked against
+# what the next step can still cost, not against what has been spent already: a
+# step started with a minute left runs to its own timeout regardless. The two
+# reserves below are the worst case of the two steps that take real time -- an
+# investigation, which is `MAX_AGENT_ATTEMPTS` agent runs of `AGENT_TIMEOUT_SEC`
+# each, and the revert path, which pushes two branches and makes two GitHub API
+# round trips with retries. `INVESTIGATION_RESERVE_SEC` is defined next to
+# `AGENT_TIMEOUT_SEC`, below, where those constants exist.
+REVERT_RESERVE_SEC = 5 * 60
+
 # A pull request merged longer ago than this is not reverted automatically even
 # when the agent is certain: later changes are likely to depend on it, so the
 # revert becomes a human decision. The investigation is still recorded, with the
@@ -142,6 +152,10 @@ ROBOT_EMAIL = "robot-clickhouse@users.noreply.github.com"
 OPENAI_KEY_SECRET = "/ci/llm/openai_api_key"
 MAX_AGENT_ATTEMPTS = 2
 AGENT_TIMEOUT_SEC = 12 * 60
+
+# What an investigation can cost at worst, plus the revert that may follow it:
+# no new investigation is started unless that much of `RUN_BUDGET_SEC` is left.
+INVESTIGATION_RESERVE_SEC = MAX_AGENT_ATTEMPTS * AGENT_TIMEOUT_SEC + REVERT_RESERVE_SEC
 
 TEMP_DIR = "./ci/tmp"
 # How much of the recorded failure output is put in front of the agent. The full
@@ -626,14 +640,22 @@ def revert_branches(number: int) -> List[str]:
 def search_pull_requests(repo: str, search: str, fields: str) -> List[dict]:
     """The pull requests a GitHub search finds, in any state. The search is
     where a revert on a branch this job did not name is found at all; what it
-    matched is never trusted, always filtered by the caller."""
-    return json.loads(
-        GH.get_output_with_retries(
-            f"gh pr list --repo {shlex.quote(repo)} --state all "
-            f"--search {shlex.quote(search)} --json {fields}"
-        ).strip()
-        or "[]"
-    )
+    matched is never trusted, always filtered by the caller.
+
+    `gh pr list --json` prints `[]` when nothing matched, and
+    `GH.get_output_with_retries` returns nothing at all when the command kept
+    failing. The two must not be confused: the caller is a guard that decides
+    whether a revert may be merged with administrator privileges, so a GitHub
+    answer that could not be read has to stand the investigation down rather
+    than read as "no revert exists".
+    """
+    output = GH.get_output_with_retries(
+        f"gh pr list --repo {shlex.quote(repo)} --state all "
+        f"--search {shlex.quote(search)} --json {fields}"
+    ).strip()
+    if not output:
+        raise RuntimeError(f"failed to search pull requests in {repo} for {search!r}")
+    return json.loads(output)
 
 
 def already_handled(merge_commit: str, number: int, repo: str) -> str:
@@ -1074,9 +1096,15 @@ def investigate(failure: Failure, index: int) -> Investigation:
     raw = ""
     error = ""
     for attempt in range(1, MAX_AGENT_ATTEMPTS + 1):
-        # The agent runs long and makes GitHub calls throughout; refresh the App
-        # token before each attempt so that it cannot expire midway.
-        GHAuth.auth(no_strict=True)
+        # The agent runs long and makes GitHub calls throughout, and so does the
+        # revert that may follow it; mint a fresh App token before each attempt
+        # so that it cannot expire midway. `force` is what makes this a refresh:
+        # without it the token is minted once per process and this is a no-op
+        # from the second attempt on.
+        if not GHAuth.auth(force=True, no_strict=True):
+            print(
+                "WARNING: could not refresh the GitHub token; continuing on the old one"
+            )
         reset_worktree()
         try:
             raw = run_agent(prompt, verdict_file)
@@ -1136,7 +1164,16 @@ def act(investigation: Investigation, repo: str, now: datetime) -> None:
         )
         return
 
-    handled = already_handled(merge_commit, number, repo)
+    try:
+        handled = already_handled(merge_commit, number, repo)
+    except Exception as e:  # noqa: BLE001 -- an unreadable guard stands the revert down
+        investigation.action = Action.SKIPPED_GUARD
+        investigation.note(
+            f"Not reverted: whether #{number} has already been reverted could not be "
+            f"established: {type(e).__name__}: {e}."
+        )
+        print(f"Not reverting #{number}: the already-reverted guard could not be read")
+        return
     if handled:
         investigation.action = (
             Action.ALREADY_REVERTED
@@ -1203,12 +1240,25 @@ def prepare(info: Info) -> bool:
             file=sys.stderr,
         )
         return False
-    Shell.check(
-        "git rev-parse --is-shallow-repository | grep -q true && "
-        "git fetch --unshallow --prune --no-recurse-submodules --filter=tree:0 "
-        f"origin {BASE_BRANCH} ||:",
-        verbose=True,
-    )
+    # `actions/checkout` clones one commit deep, and both the prompt and the
+    # revert need the whole history of the base branch: the agent walks it to
+    # find where the failure started, and `git revert -m 1` needs the merge
+    # commit together with its parents. So an unshallow that does not succeed
+    # has to stop the job -- carrying on against a one-commit clone would
+    # produce a wrong attribution or a revert that fails for no real reason.
+    if Shell.get_output("git rev-parse --is-shallow-repository").strip() == "true":
+        if not Shell.check(
+            "git fetch --unshallow --prune --no-recurse-submodules --filter=tree:0 "
+            f"origin {BASE_BRANCH}",
+            verbose=True,
+        ):
+            print(
+                "Refusing to run: the checkout is shallow and could not be unshallowed, "
+                "so neither the investigation nor the revert can see the history of "
+                f"{BASE_BRANCH}.",
+                file=sys.stderr,
+            )
+            return False
     Shell.check(
         f"git fetch --no-tags --prune --no-recurse-submodules origin "
         f"+refs/heads/{BASE_BRANCH}:refs/remotes/origin/{BASE_BRANCH}",
@@ -1236,7 +1286,11 @@ def connect() -> CIDB:
     return CIDB(url=url, user=user, passwd=password)
 
 
-def select_failures(cidb: CIDB, now: datetime) -> List[Failure]:
+def table_exists(cidb: CIDB, table: str) -> bool:
+    return (cidb.query(f"EXISTS TABLE {table}") or "").strip() == "1"
+
+
+def select_failures(cidb: CIDB, now: datetime, dry_run=False) -> List[Failure]:
     """The failures to investigate in this run, most frequent first."""
     failures = [
         Failure.from_row(row)
@@ -1246,10 +1300,21 @@ def select_failures(cidb: CIDB, now: datetime) -> List[Failure]:
         f"{len(failures)} failures repeated more than {MIN_FAILURES - 1} times "
         f"on {BASE_BRANCH} in the last {FAILURE_WINDOW_HOURS} hours"
     )
-    prior = {
-        (row["test_name"], row["check_name"]): row
-        for row in parse_json_each_row(cidb.query(recent_investigations_query()))
-    }
+    # A live run creates the investigation table before it gets here, a dry run
+    # deliberately does not, so on the first dry run -- the one that judges this
+    # job before it is trusted to act -- the table does not exist yet, and
+    # reading it would fail the run before it selected anything.
+    if dry_run and not table_exists(cidb, INVESTIGATION_TABLE):
+        print(
+            f"Dry run: {INVESTIGATION_TABLE} does not exist yet, so nothing has been "
+            f"investigated before"
+        )
+        prior: Dict[Tuple[str, str], dict] = {}
+    else:
+        prior = {
+            (row["test_name"], row["check_name"]): row
+            for row in parse_json_each_row(cidb.query(recent_investigations_query()))
+        }
     selected = []
     for failure in failures:
         reason = skip_reason(failure, prior, now)
@@ -1302,6 +1367,17 @@ def step(results: List[Result], name: str, command) -> bool:
     return results[-1].is_ok()
 
 
+def minutes_since(started: datetime) -> int:
+    return int((datetime.now(timezone.utc) - started).total_seconds() // 60)
+
+
+def budget_left(started: datetime, reserve_sec: int) -> bool:
+    """Whether a step whose worst case is `reserve_sec` still fits into
+    `RUN_BUDGET_SEC` counted from `started`."""
+    spent = (datetime.now(timezone.utc) - started).total_seconds()
+    return spent + reserve_sec <= RUN_BUDGET_SEC
+
+
 def dry_run_action(investigation: Investigation, repo: str, now: datetime) -> None:
     """Say what the revert would do, running every read-only guard for real.
 
@@ -1330,7 +1406,13 @@ def dry_run_action(investigation: Investigation, repo: str, now: datetime) -> No
                 f"the history of {BASE_BRANCH}"
             )
         else:
-            guard = already_handled(merge_commit, number, repo)
+            try:
+                guard = already_handled(merge_commit, number, repo)
+            except Exception as e:  # noqa: BLE001 -- as in `act`, it stands down
+                guard = (
+                    f"whether #{number} has already been reverted could not be "
+                    f"established: {type(e).__name__}: {e}"
+                )
     if guard:
         investigation.action = Action.SKIPPED_GUARD
         investigation.note(f"Would not revert: {guard}.")
@@ -1376,7 +1458,7 @@ def run(results: List[Result], dry_run=False) -> None:
     if not step(
         results,
         "Select repeated failures",
-        lambda: bool(failures.extend(select_failures(cidb, now)) or True),
+        lambda: bool(failures.extend(select_failures(cidb, now, dry_run)) or True),
     ):
         return
 
@@ -1384,10 +1466,13 @@ def run(results: List[Result], dry_run=False) -> None:
     reverts = 0
     try:
         for index, failure in enumerate(failures):
-            spent = datetime.now(timezone.utc) - now
-            if spent.total_seconds() > RUN_BUDGET_SEC:
+            # The budget is a deadline, so what matters is whether the next step
+            # still fits before it, not how much has been spent: an
+            # investigation started with a minute left runs to its own timeout
+            # anyway, and the hourly runs would start overlapping.
+            if not budget_left(now, INVESTIGATION_RESERVE_SEC):
                 print(
-                    f"Out of time after {int(spent.total_seconds() // 60)} minutes; "
+                    f"Out of time after {minutes_since(now)} minutes; "
                     f"{len(failures) - index} failures are left to the next run"
                 )
                 break
@@ -1415,7 +1500,21 @@ def run(results: List[Result], dry_run=False) -> None:
                     f"which is the limit; the next run picks this up."
                 )
                 continue
-            step(
+            if not budget_left(now, REVERT_RESERVE_SEC):
+                investigation.action = Action.SKIPPED_LIMIT
+                investigation.note(
+                    f"Not reverted: the run is {minutes_since(now)} minutes in and "
+                    f"there is not enough of the {RUN_BUDGET_SEC // 60} minute budget "
+                    f"left to finish a revert; the next run picks this up."
+                )
+                break
+            # `step` turns an exception out of `act` into a failed sub-result and
+            # returns False rather than raising, so the result has to be looked
+            # at: a revert that threw after it merged leaves `action` at
+            # `reverted` while the draft that reintroduces the change was never
+            # opened, and going on to revert another pull request then piles one
+            # half-finished revert on top of the next.
+            done = step(
                 results,
                 f"{'Would revert' if dry_run else 'Revert'} "
                 f"#{investigation.offending_pull_request_number}",
@@ -1429,6 +1528,12 @@ def run(results: List[Result], dry_run=False) -> None:
             if investigation.action == Action.REVERTED:
                 reverts += 1
             reset_worktree()
+            if not done:
+                print(
+                    "Stopping after a revert step that did not finish; the rest is "
+                    "left to the next run"
+                )
+                break
             if investigation.action == Action.REVERT_FAILED:
                 # A revert that got as far as failing means something outside
                 # this job's judgement is wrong -- a push that was refused, a
@@ -1445,7 +1550,9 @@ def run(results: List[Result], dry_run=False) -> None:
             print(f"Dry run: rows that would go into {INVESTIGATION_TABLE}:")
             for investigation in investigations:
                 print(json.dumps(investigation.to_record(_db_time(now), "dry-run")))
-            results.append(Result(name="Would record investigations"))
+            results.append(
+                Result(name="Would record investigations", status=Result.Status.OK)
+            )
         else:
             step(
                 results,

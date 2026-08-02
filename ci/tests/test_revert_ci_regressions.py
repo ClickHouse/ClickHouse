@@ -760,3 +760,281 @@ def test_the_prompt_states_the_consequence_of_a_confident_verdict():
     assert "/tmp/verdict.json" in prompt
     assert "04611_join_runtime_filters" in prompt
     assert "no commits, no pushes, no pull requests" in prompt
+
+
+# --- a GitHub read that failed is not an answer -------------------------------
+
+
+def test_a_search_that_found_nothing_is_an_empty_list(monkeypatch):
+    monkeypatch.setattr(job.GH, "get_output_with_retries", lambda *a, **k: "[]\n")
+    assert (
+        job.search_pull_requests("ClickHouse/ClickHouse", "head:revert-1", "number")
+        == []
+    )
+
+
+def test_a_search_that_could_not_be_read_is_not_an_empty_list(monkeypatch):
+    """`GH.get_output_with_retries` returns nothing when `gh` kept failing. Read
+    as "no revert exists" that would let the job open a second revert for a pull
+    request somebody is already reverting."""
+    monkeypatch.setattr(job.GH, "get_output_with_retries", lambda *a, **k: "")
+    with pytest.raises(RuntimeError):
+        job.search_pull_requests("ClickHouse/ClickHouse", "head:revert-1", "number")
+
+
+def test_an_unreadable_already_reverted_guard_stands_the_revert_down(monkeypatch):
+    monkeypatch.setattr(job, "get_pull_request", lambda *a, **k: make_pull_request())
+    monkeypatch.setattr(job.Shell, "check", lambda *a, **k: True)
+    monkeypatch.setattr(job.Shell, "get_output", lambda *a, **k: "")
+    monkeypatch.setattr(job.GH, "get_output_with_retries", lambda *a, **k: "")
+    monkeypatch.setattr(job, "create_revert", _unexpected("started reverting"))
+
+    investigation = _investigation()
+    job.act(investigation, "ClickHouse/ClickHouse", NOW)
+
+    assert investigation.action == job.Action.SKIPPED_GUARD
+    assert investigation.revert_pull_request_number == 0
+    assert "could not be established" in investigation.explanation
+
+
+def test_an_unreadable_guard_stands_a_dry_run_down_as_well(monkeypatch):
+    monkeypatch.setattr(job, "get_pull_request", lambda *a, **k: make_pull_request())
+    monkeypatch.setattr(job.Shell, "check", lambda *a, **k: True)
+    monkeypatch.setattr(job.Shell, "get_output", lambda *a, **k: "")
+    monkeypatch.setattr(job.GH, "get_output_with_retries", lambda *a, **k: "")
+
+    investigation = _investigation()
+    job.dry_run_action(investigation, "ClickHouse/ClickHouse", NOW)
+
+    assert investigation.action == job.Action.SKIPPED_GUARD
+    assert "could not be established" in investigation.explanation
+
+
+# --- a shallow checkout is not a checkout -------------------------------------
+
+
+class FakeInfo:
+    def __init__(self, branch="master"):
+        self.git_branch = branch
+        self.repo_name = "ClickHouse/ClickHouse"
+
+    def get_job_url(self):
+        return "https://example.invalid/job"
+
+
+def test_a_checkout_that_cannot_be_unshallowed_stops_the_job(monkeypatch):
+    """The agent walks the history of `master` and `git revert -m 1` needs the
+    merge commit's parents; neither works on the one commit `actions/checkout`
+    clones by default."""
+    monkeypatch.setattr(job.Shell, "get_output", lambda *a, **k: "true\n")
+    monkeypatch.setattr(
+        job.Shell, "check", _shell({"fetch --unshallow": False, "": True})
+    )
+    assert job.prepare(FakeInfo()) is False
+
+
+def test_a_checkout_that_was_unshallowed_carries_on(monkeypatch):
+    shallow = ["true\n"]
+    monkeypatch.setattr(
+        job.Shell, "get_output", lambda *a, **k: shallow.pop(0) if shallow else ""
+    )
+    monkeypatch.setattr(job.Shell, "check", lambda *a, **k: True)
+    monkeypatch.setattr(job, "reset_worktree", lambda *a, **k: None)
+    assert job.prepare(FakeInfo()) is True
+
+
+def test_a_checkout_that_is_not_shallow_is_not_unshallowed(monkeypatch):
+    monkeypatch.setattr(job.Shell, "get_output", lambda *a, **k: "false\n")
+
+    def check(command, *_args, **_kwargs):
+        assert "--unshallow" not in command
+        return True
+
+    monkeypatch.setattr(job.Shell, "check", check)
+    monkeypatch.setattr(job, "reset_worktree", lambda *a, **k: None)
+    assert job.prepare(FakeInfo()) is True
+
+
+# --- the run budget is a deadline, not a stopwatch ----------------------------
+
+
+def test_a_step_that_still_fits_into_the_budget_is_started():
+    started = datetime.now(timezone.utc) - timedelta(seconds=60)
+    assert job.budget_left(started, 60) is True
+
+
+def test_a_step_that_would_overrun_the_budget_is_not_started():
+    """An investigation started with a minute left still runs to its own
+    timeout, so what is checked is whether the next step fits, not what was
+    spent."""
+    started = datetime.now(timezone.utc) - timedelta(seconds=job.RUN_BUDGET_SEC - 120)
+    assert job.budget_left(started, 60) is True
+    assert job.budget_left(started, 180) is False
+    assert job.budget_left(started, job.INVESTIGATION_RESERVE_SEC) is False
+
+
+def test_the_reserve_covers_the_worst_case_of_what_it_guards():
+    assert (
+        job.INVESTIGATION_RESERVE_SEC
+        == job.MAX_AGENT_ATTEMPTS * job.AGENT_TIMEOUT_SEC + job.REVERT_RESERVE_SEC
+    )
+    # A run that reserves more than it has could never investigate anything.
+    assert job.INVESTIGATION_RESERVE_SEC < job.RUN_BUDGET_SEC
+
+
+# --- the token is refreshed, not reused ---------------------------------------
+
+
+def test_every_agent_attempt_mints_a_fresh_token(monkeypatch):
+    """`GHAuth.auth` mints once per process unless `force` is passed, so without
+    it the "refresh before each attempt" is a no-op from the second attempt on
+    and a long run can hit token expiry in the middle of a revert."""
+    calls = []
+    monkeypatch.setattr(
+        job.GHAuth, "auth", lambda **kwargs: calls.append(kwargs) or True
+    )
+    monkeypatch.setattr(job, "reset_worktree", lambda *a, **k: None)
+    monkeypatch.setattr(job, "run_agent", _unexpected("ran the agent"))
+
+    investigation = job.investigate(make_failure(), 0)
+
+    assert investigation.verdict == "error"
+    assert len(calls) == job.MAX_AGENT_ATTEMPTS
+    assert all(call.get("force") for call in calls)
+
+
+# --- the dry run works before the job has ever run ----------------------------
+
+
+class FakeDryRunCIDB:
+    """The CI database as it is on the first dry run: the investigation table
+    has not been created, because only a live run creates it."""
+
+    def __init__(self, failures=(), table=False):
+        self.failures = list(failures)
+        self.table = table
+        self.queries = []
+        self.inserted = []
+
+    def query(self, query, *_args, **_kwargs):
+        self.queries.append(query)
+        if query.startswith("EXISTS TABLE"):
+            return "1\n" if self.table else "0\n"
+        if job.INVESTIGATION_TABLE in query and not self.table:
+            raise RuntimeError(f"Table {job.INVESTIGATION_TABLE} does not exist")
+        if job.INVESTIGATION_TABLE in query:
+            return ""
+        return "".join(json.dumps(row) + "\n" for row in self.failures)
+
+    def insert_rows(self, *args, **kwargs):
+        self.inserted.append((args, kwargs))
+
+
+def test_a_dry_run_selects_failures_before_the_table_exists():
+    cidb = FakeDryRunCIDB(failures=[])
+    assert job.select_failures(cidb, NOW, dry_run=True) == []
+    assert any(q.startswith("EXISTS TABLE") for q in cidb.queries)
+
+
+def test_a_dry_run_reads_the_prior_investigations_once_the_table_exists():
+    cidb = FakeDryRunCIDB(failures=[], table=True)
+    job.select_failures(cidb, NOW, dry_run=True)
+    assert any("investigation_time" in q for q in cidb.queries)
+
+
+def _dry_run(monkeypatch, cidb, investigate=None):
+    monkeypatch.setattr(job, "Info", FakeInfo)
+    monkeypatch.setattr(job, "prepare", lambda *a, **k: True)
+    monkeypatch.setattr(job, "connect", lambda: cidb)
+    monkeypatch.setattr(job, "reset_worktree", lambda *a, **k: None)
+    monkeypatch.setattr(
+        job, "investigate", investigate or _unexpected("investigated anything")
+    )
+    results = []
+    job.run(results, dry_run=True)
+    return results
+
+
+def test_a_dry_run_ends_with_a_summary_instead_of_a_type_error(monkeypatch):
+    """`Result` has no default `status`, so a result built without one raises
+    and the dry run ends as a job error after doing all the work."""
+    results = _dry_run(monkeypatch, FakeDryRunCIDB(failures=[]))
+
+    assert results[-1].name == "Would record investigations"
+    assert results[-1].is_ok()
+    assert results[-1].info
+
+
+def test_a_dry_run_writes_nothing_anywhere(monkeypatch):
+    cidb = FakeDryRunCIDB(failures=[])
+    _dry_run(monkeypatch, cidb)
+
+    assert cidb.inserted == []
+    assert not any("CREATE TABLE" in q for q in cidb.queries)
+
+
+# --- a revert step that did not finish stops the run --------------------------
+
+
+def _failure_row(test_name):
+    return {
+        "test_name": test_name,
+        "check_name": "Stateless tests (amd_debug, parallel)",
+        "failure_count": 8,
+        "first_failure_time": "2026-07-31 13:28:40",
+        "last_failure_time": "2026-07-31 21:12:40",
+        "commit_shas": ["a" * 40],
+        "report_url": "https://example.invalid/report",
+        "context": "boom",
+    }
+
+
+def _live_run(monkeypatch, cidb, act):
+    monkeypatch.setattr(job, "Info", FakeInfo)
+    monkeypatch.setattr(job, "prepare", lambda *a, **k: True)
+    monkeypatch.setattr(job, "connect", lambda: cidb)
+    monkeypatch.setattr(job, "reset_worktree", lambda *a, **k: None)
+    monkeypatch.setattr(job, "already_fixed", lambda *a, **k: "")
+    monkeypatch.setattr(job, "investigate", lambda failure, index: _investigation())
+    monkeypatch.setattr(job, "act", act)
+    monkeypatch.setattr(job, "record", lambda *a, **k: None)
+    results = []
+    job.run(results)
+    return results
+
+
+def test_a_revert_that_threw_after_it_merged_stops_the_run(monkeypatch):
+    """`step` turns the exception into a failed sub-result and returns False, so
+    the loop has to look at it: the revert is merged, the draft reintroducing
+    the change was never opened, and reverting one more pull request on top of
+    that would leave a second half-finished revert behind."""
+    reverted = []
+
+    def act(investigation, *_args, **_kwargs):
+        reverted.append(investigation)
+        investigation.action = job.Action.REVERTED
+        raise RuntimeError("failed to push reapply-112345")
+
+    cidb = FakeDryRunCIDB(
+        failures=[_failure_row("first_test"), _failure_row("second_test")], table=True
+    )
+    results = _live_run(monkeypatch, cidb, act)
+
+    assert len(reverted) == 1
+    assert not [r for r in results if r.name.startswith("Revert") and r.is_ok()]
+
+
+def test_a_revert_that_finished_lets_the_run_carry_on(monkeypatch):
+    reverted = []
+
+    def act(investigation, *_args, **_kwargs):
+        reverted.append(investigation)
+        investigation.action = job.Action.REVERTED
+        investigation.revert_pull_request_number = 112400
+
+    cidb = FakeDryRunCIDB(
+        failures=[_failure_row("first_test"), _failure_row("second_test")], table=True
+    )
+    _live_run(monkeypatch, cidb, act)
+
+    assert len(reverted) == job.MAX_REVERTS_PER_RUN
