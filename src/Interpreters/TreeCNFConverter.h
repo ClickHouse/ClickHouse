@@ -109,9 +109,14 @@ public:
 
     std::string dump() const;
 
-    /// Converts != -> NOT =; <,>= -> (NOT) <; >,<= -> (NOT) <= for simpler matching
+    /// Converts != -> NOT =; NOT IN -> NOT in; NOT LIKE -> NOT like; notEmpty -> NOT empty
+    /// for simpler matching. Ordering comparisons (<, <=, >, >=) are not normalized into
+    /// each other: without type information it cannot be proven that no floating-point
+    /// value is involved, and for NaN e.g. NOT (x < c) is not equivalent to x >= c.
     CNFQuery & pullNotOutFunctions();
-    /// Revert pullNotOutFunctions actions
+    /// Revert pullNotOutFunctions actions. Ordering comparisons keep their explicit
+    /// negation here as well, so consumers of the resulting CNF must not assume that an
+    /// atom with a comparison function name is non-negative.
     CNFQuery & pushNotInFunctions();
 
     /// (a OR b OR ...) AND (NOT a OR b OR ...) -> (b OR ...)

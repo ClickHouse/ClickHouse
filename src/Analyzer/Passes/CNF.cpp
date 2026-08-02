@@ -4,6 +4,8 @@
 #include <Analyzer/FunctionNode.h>
 #include <Analyzer/ConstantNode.h>
 
+#include <DataTypes/DataTypeLowCardinality.h>
+
 #include <Interpreters/TreeCNFConverter.h>
 
 #include <IO/WriteBufferFromString.h>
@@ -286,21 +288,74 @@ private:
     }
 };
 
+/// NOT (x < c) is equivalent to x >= c only when the comparison is over a total order.
+/// For floating-point values NaN fails every ordered comparison, so such folding would
+/// silently drop or add NaN rows. Ordering comparisons are folded only when
+/// allArgumentsTotallyOrdered holds: every argument type is on this allowlist and string
+/// operands are not mixed with non-string ones; unknown and composite types are
+/// conservatively not folded.
+bool isTotallyOrderedForComparison(WhichDataType which)
+{
+    return which.isInt() || which.isUInt() || which.isDecimal() || which.isEnum()
+        || which.isDateOrDate32() || which.isDateTime() || which.isDateTime64()
+        || which.isTime() || which.isTime64()
+        || which.isStringOrFixedString() || which.isUUID() || which.isIPv4() || which.isIPv6();
+}
+
+bool allArgumentsTotallyOrdered(const FunctionNode & function_node)
+{
+    bool has_string_argument = false;
+    bool has_non_string_argument = false;
+
+    for (const auto & argument : function_node.getArguments().getNodes())
+    {
+        auto node_type = argument->getNodeType();
+        if (node_type != QueryTreeNodeType::COLUMN && node_type != QueryTreeNodeType::CONSTANT
+            && node_type != QueryTreeNodeType::FUNCTION)
+            return false;
+
+        /// getResultType returns a non-null type for the node types accepted above.
+        WhichDataType which(removeLowCardinalityAndNullable(argument->getResultType()));
+        if (!isTotallyOrderedForComparison(which))
+            return false;
+
+        if (which.isStringOrFixedString())
+            has_string_argument = true;
+        else
+            has_non_string_argument = true;
+    }
+
+    /// Comparing a non-string operand with a string one degenerates like NaN when the
+    /// string cannot be converted to the other type: <, <=, >, >= all return false,
+    /// so NOT (x < c) is not equivalent to x >= c there either.
+    return !(has_string_argument && has_non_string_argument);
+}
+
 std::optional<CNFAtomicFormula> tryInvertFunction(
-    const CNFAtomicFormula & atom, const ContextPtr & context, const std::unordered_map<std::string, std::string> & inverse_relations)
+    const CNFAtomicFormula & atom,
+    const ContextPtr & context,
+    const std::unordered_map<std::string, std::string> & inverse_relations,
+    const std::unordered_map<std::string, std::string> & ordering_inverse_relations)
 {
     auto * function_node = atom.node_with_hash.node->as<FunctionNode>();
     if (!function_node)
         return std::nullopt;
 
-    if (auto it = inverse_relations.find(function_node->getFunctionName()); it != inverse_relations.end())
-    {
-        auto inverse_function_resolver = FunctionFactory::instance().get(it->second, context);
-        function_node->resolveAsFunction(inverse_function_resolver);
-        return CNFAtomicFormula{!atom.negative, atom.node_with_hash.node};
-    }
+    const auto & function_name = function_node->getFunctionName();
+    const std::string * inverted_name = nullptr;
 
-    return std::nullopt;
+    if (auto it = inverse_relations.find(function_name); it != inverse_relations.end())
+        inverted_name = &it->second;
+    else if (auto ordering_it = ordering_inverse_relations.find(function_name);
+             ordering_it != ordering_inverse_relations.end() && allArgumentsTotallyOrdered(*function_node))
+        inverted_name = &ordering_it->second;
+
+    if (!inverted_name)
+        return std::nullopt;
+
+    auto inverse_function_resolver = FunctionFactory::instance().get(*inverted_name, context);
+    function_node->resolveAsFunction(inverse_function_resolver);
+    return CNFAtomicFormula{!atom.negative, atom.node_with_hash.node};
 }
 }
 
@@ -380,20 +435,24 @@ CNFAtomicFormula CNF::pushNotIntoFunction(const CNFAtomicFormula & atom, const C
 
     static const std::unordered_map<std::string, std::string> inverse_relations = {
         {"equals", "notEquals"},
-        {"less", "greaterOrEquals"},
-        {"lessOrEquals", "greater"},
         {"in", "notIn"},
         {"like", "notLike"},
         {"empty", "notEmpty"},
         {"notEquals", "equals"},
-        {"greaterOrEquals", "less"},
-        {"greater", "lessOrEquals"},
         {"notIn", "in"},
         {"notLike", "like"},
         {"notEmpty", "empty"},
     };
 
-    if (auto inverted_atom = tryInvertFunction(atom, context, inverse_relations);
+    /// Folded only for totally ordered argument types, see allArgumentsTotallyOrdered.
+    static const std::unordered_map<std::string, std::string> ordering_inverse_relations = {
+        {"less", "greaterOrEquals"},
+        {"lessOrEquals", "greater"},
+        {"greaterOrEquals", "less"},
+        {"greater", "lessOrEquals"},
+    };
+
+    if (auto inverted_atom = tryInvertFunction(atom, context, inverse_relations, ordering_inverse_relations);
         inverted_atom.has_value())
         return std::move(*inverted_atom);
 
@@ -406,14 +465,18 @@ CNF & CNF::pullNotOutFunctions(const ContextPtr & context)
     {
         static const std::unordered_map<std::string, std::string> inverse_relations = {
             {"notEquals", "equals"},
-            {"greaterOrEquals", "less"},
-            {"greater", "lessOrEquals"},
             {"notIn", "in"},
             {"notLike", "like"},
             {"notEmpty", "empty"},
         };
 
-        if (auto inverted_atom = tryInvertFunction(atom, context, inverse_relations);
+        /// Folded only for totally ordered argument types, see allArgumentsTotallyOrdered.
+        static const std::unordered_map<std::string, std::string> ordering_inverse_relations = {
+            {"greaterOrEquals", "less"},
+            {"greater", "lessOrEquals"},
+        };
+
+        if (auto inverted_atom = tryInvertFunction(atom, context, inverse_relations, ordering_inverse_relations);
             inverted_atom.has_value())
             return std::move(*inverted_atom);
 

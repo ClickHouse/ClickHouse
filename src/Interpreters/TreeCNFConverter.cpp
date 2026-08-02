@@ -302,12 +302,15 @@ static void pushPullNotInAtom(CNFQueryAtomicFormula & atom, const std::unordered
     }
 }
 
+/// Ordering comparisons (less, lessOrEquals, greater, greaterOrEquals) are not inverted
+/// into each other: for floating-point values NaN fails every ordered comparison, so e.g.
+/// NOT (x < c) is true for x = NaN while x >= c is false. The AST here carries no type
+/// information to prove that no float is involved (unlike the Analyzer CNF, which folds
+/// them for totally ordered types), so such atoms always keep their explicit negation.
 static void pullNotOut(CNFQueryAtomicFormula & atom)
 {
     static const std::unordered_map<std::string, std::string> inverse_relations = {
         {"notEquals", "equals"},
-        {"greaterOrEquals", "less"},
-        {"greater", "lessOrEquals"},
         {"notIn", "in"},
         {"notLike", "like"},
         {"notEmpty", "empty"},
@@ -316,6 +319,7 @@ static void pullNotOut(CNFQueryAtomicFormula & atom)
     pushPullNotInAtom(atom, inverse_relations);
 }
 
+/// Ordering comparisons are not folded here for the same NaN reason as in pullNotOut.
 void pushNotIn(CNFQueryAtomicFormula & atom)
 {
     if (!atom.negative)
@@ -323,14 +327,10 @@ void pushNotIn(CNFQueryAtomicFormula & atom)
 
     static const std::unordered_map<std::string, std::string> inverse_relations = {
         {"equals", "notEquals"},
-        {"less", "greaterOrEquals"},
-        {"lessOrEquals", "greater"},
         {"in", "notIn"},
         {"like", "notLike"},
         {"empty", "notEmpty"},
         {"notEquals", "equals"},
-        {"greaterOrEquals", "less"},
-        {"greater", "lessOrEquals"},
         {"notIn", "in"},
         {"notLike", "like"},
         {"notEmpty", "empty"},

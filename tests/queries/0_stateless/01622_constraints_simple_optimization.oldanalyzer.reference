@@ -34,10 +34,10 @@
 0
 SELECT count()
 FROM constraint_test_constants
-WHERE or(greater(b, 100), greater(c, 100))
+WHERE and(or(greater(b, 100), greater(c, 100), greater(a, 100)), or(greater(b, 100), greater(c, 100), lessOrEquals(a, 100)))
 SELECT count()
 FROM constraint_test_constants
-WHERE greater(c, 100)
+WHERE and(or(greater(b, 100), greater(c, 100), greater(a, 100)), or(greater(b, 100), greater(c, 100), lessOrEquals(a, 100)), or(not(greater(b, 100)), greater(c, 100)))
 QUERY id: 0
   PROJECTION COLUMNS
     count() UInt64
@@ -73,6 +73,7 @@ QUERY id: 0
   SETTINGS enable_analyzer=1
 SELECT count()
 FROM constraint_test_constants
+WHERE and(or(greater(b, 100), greater(c, 100), greater(a, 100)), or(greater(b, 100), greater(c, 100), lessOrEquals(a, 100)), or(not(greater(b, 100)), greater(c, 100)), lessOrEquals(c, 100))
 QUERY id: 0
   PROJECTION COLUMNS
     count() UInt64

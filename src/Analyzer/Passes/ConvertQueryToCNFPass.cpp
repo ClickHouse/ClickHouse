@@ -305,6 +305,13 @@ Analyzer::CNF::OrGroup createIndexHintGroup(
         if (arguments.size() != 2)
             continue;
 
+        /// A negated ordering atom, e.g. NOT (x < c) kept by the CNF converter, is not
+        /// representable in the sequence reasoning below: `expected` is derived from the
+        /// function name alone, so the emitted hint would inherit the negation and prune
+        /// the opposite primary key range. Give up on the whole group instead.
+        if (atom.negative)
+            return {};
+
         auto check_and_insert = [&](const size_t index, const ComparisonGraphCompareResult expected_result)
         {
             if (!onlyConstants(arguments[1 - index]))
