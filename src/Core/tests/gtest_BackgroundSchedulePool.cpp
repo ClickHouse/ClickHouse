@@ -299,6 +299,20 @@ TEST(BackgroundSchedulePool, ScheduleAfterHugeDelayDoesNotFire)
     {
         ASSERT_EQ(task->scheduleAfter(ms), true);
         std::this_thread::sleep_for(std::chrono::milliseconds(300));
+
+        /// Assert the task is parked, not merely unfired: a scheduler that dropped the request
+        /// entirely would also leave `executions` at zero.
+        size_t found = 0;
+        for (const auto & info : pool->getTasks())
+        {
+            if (info.log_name != "huge_delay")
+                continue;
+            ++found;
+            ASSERT_TRUE(info.delayed);
+            ASSERT_FALSE(info.executing);
+            ASSERT_FALSE(info.scheduled);
+        }
+        ASSERT_EQ(found, 1u);
         ASSERT_EQ(executions.load(), 0u);
     }
 

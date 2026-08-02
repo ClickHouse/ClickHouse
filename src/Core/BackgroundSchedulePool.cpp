@@ -35,17 +35,20 @@ namespace ErrorCodes
 
 namespace
 {
-    /// Delays are stored and waited on in microseconds, but `condition_variable::wait_for` widens its
-    /// argument to nanoseconds internally, so only microsecond counts below this bound are usable.
-    /// Larger delays are saturated to it (~292 years, so no real caller is affected).
-    constexpr Poco::Timestamp::TimeDiff max_delay_microseconds = std::numeric_limits<Poco::Timestamp::TimeDiff>::max() / 1000;
 
-    Poco::Timestamp::TimeDiff delayToMicroseconds(size_t milliseconds)
-    {
-        if (milliseconds > static_cast<size_t>(max_delay_microseconds / 1000))
-            return max_delay_microseconds;
-        return static_cast<Poco::Timestamp::TimeDiff>(milliseconds) * 1000;
-    }
+/// Delays are stored and waited on in microseconds, but `condition_variable::wait_for` widens its
+/// argument to nanoseconds internally, so only microsecond counts below this bound are usable
+/// (~292 years). Deadlines are bounded by the same value even though `Poco::Timestamp` could hold
+/// ~1000x more, so that a stored deadline always stays waitable.
+constexpr Poco::Timestamp::TimeDiff max_delay_microseconds = std::numeric_limits<Poco::Timestamp::TimeDiff>::max() / 1000;
+
+Poco::Timestamp::TimeDiff delayToMicroseconds(size_t milliseconds)
+{
+    if (milliseconds > static_cast<size_t>(max_delay_microseconds / 1000))
+        return max_delay_microseconds;
+    return static_cast<Poco::Timestamp::TimeDiff>(milliseconds) * 1000;
+}
+
 }
 
 ///
