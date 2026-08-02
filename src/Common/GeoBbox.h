@@ -279,6 +279,8 @@ static bool extractBboxFromFieldValue(const Field & field, BboxAccumulator & acc
                     acc.addAll(g);
                 else if constexpr (std::is_same_v<T, Polygon<CartesianPoint>>)
                     acc.addAll(g.outer());
+                else if constexpr (std::is_same_v<T, MultiPoint<CartesianPoint>>)
+                    acc.addAll(g);
                 else if constexpr (std::is_same_v<T, MultiLineString<CartesianPoint>>)
                     for (const auto & ls : g)
                         acc.addAll(ls);
