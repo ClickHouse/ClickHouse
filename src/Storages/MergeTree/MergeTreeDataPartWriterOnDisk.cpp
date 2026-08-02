@@ -198,8 +198,13 @@ void MergeTreeDataPartWriterOnDisk::initSkipIndices()
             SizeAdaptivePacking packing;
             if (packs_this_index)
             {
-                /// A substream that stays inside `skp_idx.packed` owns no filename, so the claim is
-                /// deferred to the actual spill instead of being made here.
+                /// Claim the archive key here and the on-disk name at the spill: reads resolve
+                /// `skp_idx_*` archive keys before the real disk, so an archive member shadows a
+                /// same-named column even while it owns no directory entry.
+                if (manifest)
+                    manifest->registerStreamBase(
+                        logical_stream_name, {StreamBaseManifest::Kind::SkipIndex, skip_index->index.name});
+
                 packing = {
                     packed_writer_for_streams,
                     logical_stream_name + index_substream.extension,

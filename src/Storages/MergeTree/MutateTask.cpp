@@ -1182,8 +1182,7 @@ static NameSet collectFilesToSkip(
 
 /// Claim the root-directory stream bases of one index whose files the mutation carries over
 /// (hardlink, copy or rename) instead of rewriting them. Called before any bytes move, so it is
-/// agnostic to how they move. Substreams that live inside `skp_idx.packed` own no directory
-/// basename and are skipped, otherwise an ordinary mutation of a legal table would be rejected.
+/// agnostic to how they move.
 static void registerCarriedSkipIndexBases(
     const StreamBaseManifestPtr & manifest,
     const MergeTreeIndexPtr & index,
@@ -1199,12 +1198,15 @@ static void registerCarriedSkipIndexBases(
              source_part->checksums, index_file_name, &source_part->getDataPartStorage()))
     {
         const String stream_name = index_file_name + substream.suffix;
-        if (disk_storage && disk_storage->isFileInPackedSkipIndicesArchive(stream_name + substream.extension))
-            continue;
 
-        auto actual = IMergeTreeDataPart::getStreamNameOrHash(stream_name, substream.extension, source_part->checksums);
-        manifest->registerStreamBase(
-            actual.value_or(stream_name), {StreamBaseManifest::Kind::SkipIndex, index->index.name});
+        /// A substream with no checksums entry is either a packed member, claimed under the archive
+        /// key a read resolves, or a standalone orphan this mutation deliberately drops. Claiming an
+        /// orphan would reject its own cleanup mutation.
+        if (auto resolved
+            = IMergeTreeDataPart::getStreamNameOrHash(stream_name, substream.extension, source_part->checksums))
+            manifest->registerStreamBase(*resolved, {StreamBaseManifest::Kind::SkipIndex, index->index.name});
+        else if (disk_storage && disk_storage->isFileInPackedSkipIndicesArchive(stream_name + substream.extension))
+            manifest->registerStreamBase(stream_name, {StreamBaseManifest::Kind::SkipIndex, index->index.name});
     }
 }
 

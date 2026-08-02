@@ -7,10 +7,9 @@
 namespace DB
 {
 
-/// Tracks which owner claimed each on-disk stream base name (filename minus extension) within one
-/// part directory, so that a column stream and a skip-index substream cannot silently share one
-/// base and therefore one marks file. Created once per part-write operation and shared by every
-/// producer writing into that directory; a null pointer means "no coordination requested".
+/// Which owner claimed each stream base name (filename minus extension) in one part directory, so a
+/// column and a skip-index substream cannot share one base and therefore one marks file. Created per
+/// part-write operation and shared by that directory's producers; a null pointer means no coordination.
 struct StreamBaseManifest
 {
     enum class Kind : uint8_t

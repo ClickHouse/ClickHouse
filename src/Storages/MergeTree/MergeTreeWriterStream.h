@@ -30,8 +30,9 @@ struct SizeAdaptivePacking
     String data_name;
     String marks_name;
     size_t spill_threshold = 0;
-    /// Claimed only when the substream actually spills: while it stays in the archive it occupies
-    /// no filename in the part directory, so a same-named column is legal.
+    /// Claims @on_disk_base on an actual spill, i.e. the directory entry the spill creates. The
+    /// archive key is claimed by the caller instead, since the two names differ under
+    /// `replace_long_file_name_to_hash`.
     StreamBaseManifestPtr stream_base_manifest;
     String on_disk_base;
     String owner_index_name;
