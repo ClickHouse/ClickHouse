@@ -244,6 +244,11 @@ private:
 
     /// For debug purposes only, don't use in production code
     void tryCompareLocalAndZooKeeperTablesAndDumpDiffForDebugOnly(const ContextPtr & local_context) const;
+    /// Reports one table's digest term and its local-vs-coordinator metadata. Never throws.
+    void dumpTableMetadataDiffForOneTable(
+        const String & table_name,
+        const ContextPtr & local_context,
+        const std::map<String, String> & table_name_to_metadata_in_zk) const;
 
     void waitDatabaseStarted() const override;
     void stopLoading() override;

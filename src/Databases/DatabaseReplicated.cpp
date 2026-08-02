@@ -2,6 +2,7 @@
 #include <Common/CurrentThread.h>
 #include <DataTypes/DataTypeString.h>
 
+#include <algorithm>
 #include <atomic>
 #include <tuple>
 #include <utility>
@@ -1139,6 +1140,9 @@ void DatabaseReplicated::reinitializeDDLWorker()
 ASTPtr DatabaseReplicated::tryGetCreateOrAttachTableQuery(const String & name, ContextPtr local_context) const
 {
     auto res = tryGetCreateTableQuery(name, local_context);
+    /// `tryGetCreateTableQuery` returns nullptr when the table has no readable metadata.
+    if (!res)
+        return res;
     auto & create = res->as<ASTCreateQuery &>();
     create.attach = false;
     if (create.is_materialized_view_with_inner_table())
@@ -1148,76 +1152,156 @@ ASTPtr DatabaseReplicated::tryGetCreateOrAttachTableQuery(const String & name, C
     return res;
 }
 
-void DatabaseReplicated::tryCompareLocalAndZooKeeperTablesAndDumpDiffForDebugOnly(const ContextPtr & local_context) const
+void DatabaseReplicated::dumpTableMetadataDiffForOneTable(
+    const String & table_name,
+    const ContextPtr & local_context,
+    const std::map<String, String> & table_name_to_metadata_in_zk) const
 {
-    UInt32 max_log_ptr{};
-    auto table_name_to_metadata_in_zk = tryGetConsistentMetadataSnapshot(getZooKeeper(), max_log_ptr);
-    auto table_names_local = getAllTableNames(local_context);
+    /// The digest sums over the in-memory `tables` map, while the caller iterates
+    /// `getAllTableNames`, which also lists not-yet-loaded tables. A table absent from `tables`
+    /// contributes nothing to the digest, so it can never be the diverging term.
+    const bool is_digest_carrier = isTableExist(table_name, local_context);
 
-    if (table_name_to_metadata_in_zk.size() != table_names_local.size())
+    auto zk_metadata_it = table_name_to_metadata_in_zk.find(table_name);
+    const bool exists_in_zk = zk_metadata_it != table_name_to_metadata_in_zk.end();
+    if (!exists_in_zk)
+        LOG_ERROR(log, "Table {} (digest carrier: {}) exists locally, but is missing in coordinator",
+            table_name, is_digest_carrier);
+
+    /// The digest hashes the raw metadata bytes, so compare those: two spellings of one AST have
+    /// equal formatted forms and different hashes. Report sizes and hashes, not the raw content,
+    /// which is unmasked and may hold secrets.
+    try
     {
-        LOG_ERROR(log, "Amount of tables in coordinator {} differs from number of tables locally {}",
-            table_name_to_metadata_in_zk.size(), table_names_local.size());
+        String on_disk_metadata = readMetadataFile(table_name);
+        if (!exists_in_zk)
+        {
+            LOG_ERROR(log, "Table {} (digest carrier: {}): digest term {}, {} bytes on disk, not in coordinator",
+                table_name, is_digest_carrier, DB::getMetadataHash(table_name, on_disk_metadata), on_disk_metadata.size());
+        }
+        else if (zk_metadata_it->second != on_disk_metadata)
+        {
+            auto mismatch = std::mismatch(on_disk_metadata.begin(), on_disk_metadata.end(),
+                zk_metadata_it->second.begin(), zk_metadata_it->second.end());
+            LOG_ERROR(log, "Table {} (digest carrier: {}): digest term {}, raw metadata DIFFERS from coordinator "
+                "(on disk {} bytes, coordinator {} bytes, first difference at byte {}, coordinator term {})",
+                table_name, is_digest_carrier, DB::getMetadataHash(table_name, on_disk_metadata),
+                on_disk_metadata.size(), zk_metadata_it->second.size(),
+                std::distance(on_disk_metadata.begin(), mismatch.first),
+                DB::getMetadataHash(table_name, zk_metadata_it->second));
+        }
+        else
+        {
+            LOG_ERROR(log, "Table {} (digest carrier: {}): digest term {}, raw metadata matches coordinator",
+                table_name, is_digest_carrier, DB::getMetadataHash(table_name, on_disk_metadata));
+        }
+    }
+    catch (...)
+    {
+        LOG_ERROR(log, "Table {} (digest carrier: {}): cannot read local metadata: {}",
+            table_name, is_digest_carrier, getCurrentExceptionMessage(/*with_stacktrace=*/false));
     }
 
-    std::unordered_set<std::string> checked_tables;
-
-    for (const auto & table_name : table_names_local)
+    /// Supplementary human-readable rendering. It can fail for one table (missing or malformed
+    /// metadata is itself a divergence being hunted), which must not hide the other tables.
+    ASTPtr local_ast_ptr;
+    ASTPtr on_disk_ast_ptr;
+    ASTPtr zk_ast_ptr;
+    try
     {
-        checked_tables.insert(table_name);
-
-        auto local_ast_ptr = tryGetCreateOrAttachTableQuery(table_name, local_context);
-        auto zk_metadata_it = table_name_to_metadata_in_zk.find(table_name);
-
-        auto on_disk_ast_ptr = parseQueryFromMetadataOnDisk(table_name);
-
-        ASTPtr zk_ast_ptr;
-        if (zk_metadata_it != table_name_to_metadata_in_zk.end())
+        local_ast_ptr = tryGetCreateOrAttachTableQuery(table_name, local_context);
+        on_disk_ast_ptr = parseQueryFromMetadataOnDisk(table_name);
+        if (exists_in_zk)
             zk_ast_ptr = parseQueryFromMetadataInZooKeeper(
                 getContext(),
                 /*database_name_=*/getDatabaseName(),
                 /*zookeeper_path_=*/zookeeper_path,
                 /*node_name=*/table_name,
                 /*query=*/zk_metadata_it->second);
-
-        auto local_query_with_secrets = local_ast_ptr ? local_ast_ptr->formatWithSecretsOneLine() : "";
-        auto zookeeper_query_with_secrets = zk_ast_ptr ? zk_ast_ptr->formatWithSecretsOneLine() : "";
-        auto on_disk_query_with_secrets = on_disk_ast_ptr ? on_disk_ast_ptr->formatWithSecretsOneLine() : "";
-
-        if (local_query_with_secrets != zookeeper_query_with_secrets || local_query_with_secrets != on_disk_query_with_secrets)
-        {
-            /// NOTE: due to transaction will be committed **before**
-            /// tryCompareLocalAndZooKeeperTablesAndDumpDiffForDebugOnly()
-            /// runs, you will almost never enter this code path, since it will
-            /// update on disk metadata. But the checkDigestValid() will still
-            /// throw LOGICAL_ERROR since database relies on the on-disk data
-            /// (for tracking tables_metadata_digest)
-            LOG_ERROR(log, "AST differs for table {}", table_name);
-            LOG_ERROR(log, "\t  in memory: {}", local_ast_ptr ? local_ast_ptr->formatForLogging() : "nullptr");
-            LOG_ERROR(log, "\tcoordinator: {}", zk_ast_ptr ? zk_ast_ptr->formatForLogging() : "nullptr");
-            LOG_ERROR(log, "\t    on disk: {}", on_disk_ast_ptr ? on_disk_ast_ptr->formatForLogging() : "nullptr");
-        }
-        else
-        {
-            LOG_DEBUG(log, "AST for table {} is the same", table_name);
-            LOG_DEBUG(log, "\t  in memory: {}", local_ast_ptr ? local_ast_ptr->formatForLogging() : "nullptr");
-            LOG_DEBUG(log, "\tcoordinator: {}", zk_ast_ptr ? zk_ast_ptr->formatForLogging() : "nullptr");
-            LOG_DEBUG(log, "\t    on disk: {}", on_disk_ast_ptr ? on_disk_ast_ptr->formatForLogging() : "nullptr");
-        }
     }
-    for (const auto & [table_name, table_metadata] : table_name_to_metadata_in_zk)
+    catch (...)
     {
-        if (!checked_tables.contains(table_name))
+        LOG_ERROR(log, "Table {} (digest carrier: {}): cannot render metadata as AST: {}",
+            table_name, is_digest_carrier, getCurrentExceptionMessage(/*with_stacktrace=*/false));
+        return;
+    }
+
+    auto local_query_with_secrets = local_ast_ptr ? local_ast_ptr->formatWithSecretsOneLine() : "";
+    auto zookeeper_query_with_secrets = zk_ast_ptr ? zk_ast_ptr->formatWithSecretsOneLine() : "";
+    auto on_disk_query_with_secrets = on_disk_ast_ptr ? on_disk_ast_ptr->formatWithSecretsOneLine() : "";
+
+    if (local_query_with_secrets != zookeeper_query_with_secrets || local_query_with_secrets != on_disk_query_with_secrets)
+    {
+        /// NOTE: due to transaction will be committed **before**
+        /// tryCompareLocalAndZooKeeperTablesAndDumpDiffForDebugOnly()
+        /// runs, you will almost never enter this code path, since it will
+        /// update on disk metadata. But the checkDigestValid() will still
+        /// throw LOGICAL_ERROR since database relies on the on-disk data
+        /// (for tracking tables_metadata_digest)
+        LOG_ERROR(log, "AST differs for table {}", table_name);
+        LOG_ERROR(log, "\t  in memory: {}", local_ast_ptr ? local_ast_ptr->formatForLogging() : "nullptr");
+        LOG_ERROR(log, "\tcoordinator: {}", zk_ast_ptr ? zk_ast_ptr->formatForLogging() : "nullptr");
+        LOG_ERROR(log, "\t    on disk: {}", on_disk_ast_ptr ? on_disk_ast_ptr->formatForLogging() : "nullptr");
+    }
+    else
+    {
+        LOG_DEBUG(log, "AST for table {} is the same", table_name);
+        LOG_DEBUG(log, "\t  in memory: {}", local_ast_ptr ? local_ast_ptr->formatForLogging() : "nullptr");
+        LOG_DEBUG(log, "\tcoordinator: {}", zk_ast_ptr ? zk_ast_ptr->formatForLogging() : "nullptr");
+        LOG_DEBUG(log, "\t    on disk: {}", on_disk_ast_ptr ? on_disk_ast_ptr->formatForLogging() : "nullptr");
+    }
+}
+
+void DatabaseReplicated::tryCompareLocalAndZooKeeperTablesAndDumpDiffForDebugOnly(const ContextPtr & local_context) const
+{
+    /// Runs immediately before aborting on a digest mismatch, so nothing here may throw:
+    /// an escaping exception would replace `LOGICAL_ERROR: Digest does not match` and hide the family.
+    try
+    {
+        UInt32 max_log_ptr{};
+        auto table_name_to_metadata_in_zk = tryGetConsistentMetadataSnapshot(getZooKeeper(), max_log_ptr);
+        auto table_names_local = getAllTableNames(local_context);
+
+        if (table_name_to_metadata_in_zk.size() != table_names_local.size())
         {
-            auto zk_ast_ptr = parseQueryFromMetadataInZooKeeper(
-                getContext(),
-                /*database_name_=*/getDatabaseName(),
-                /*zookeeper_path_=*/zookeeper_path,
-                /*node_name=*/table_name,
-                table_metadata);
-            auto zookeeper_query = zk_ast_ptr ? zk_ast_ptr->formatForLogging() : "nullptr";
+            LOG_ERROR(log, "Amount of tables in coordinator {} differs from number of tables locally {}",
+                table_name_to_metadata_in_zk.size(), table_names_local.size());
+        }
+
+        std::unordered_set<std::string> checked_tables;
+
+        for (const auto & table_name : table_names_local)
+        {
+            checked_tables.insert(table_name);
+            dumpTableMetadataDiffForOneTable(table_name, local_context, table_name_to_metadata_in_zk);
+        }
+
+        for (const auto & [table_name, table_metadata] : table_name_to_metadata_in_zk)
+        {
+            if (checked_tables.contains(table_name))
+                continue;
+
+            String zookeeper_query = "<unparseable>";
+            try
+            {
+                auto zk_ast_ptr = parseQueryFromMetadataInZooKeeper(
+                    getContext(),
+                    /*database_name_=*/getDatabaseName(),
+                    /*zookeeper_path_=*/zookeeper_path,
+                    /*node_name=*/table_name,
+                    table_metadata);
+                if (zk_ast_ptr)
+                    zookeeper_query = zk_ast_ptr->formatForLogging();
+            }
+            catch (...) // NOLINT(bugprone-empty-catch)
+            {
+            }
             LOG_ERROR(log, "Table {} exists in ZK, but missing locally: {}", table_name, zookeeper_query);
         }
+    }
+    catch (...)
+    {
+        tryLogCurrentException(log, "Failed to dump the local and coordinator metadata diff");
     }
 }
 
@@ -1370,7 +1454,7 @@ bool DatabaseReplicated::checkDigestValid(const ContextPtr & local_context) cons
     {
         LOG_ERROR(log, "Digest of local metadata ({}) is not equal to in-memory digest ({})", local_digest, tables_metadata_digest);
 
-#ifndef NDEBUG
+#if defined(DEBUG_OR_SANITIZER_BUILD)
         tryCompareLocalAndZooKeeperTablesAndDumpDiffForDebugOnly(local_context);
 #endif
 
@@ -1390,7 +1474,7 @@ bool DatabaseReplicated::checkDigestValid(const ContextPtr & local_context) cons
     if (zk_digest != local_digest_str)
     {
         LOG_ERROR(log, "Digest of local metadata ({}) is not equal to digest in Keeper ({})", local_digest_str, zk_digest);
-#ifndef NDEBUG
+#if defined(DEBUG_OR_SANITIZER_BUILD)
         tryCompareLocalAndZooKeeperTablesAndDumpDiffForDebugOnly(local_context);
 #endif
         return false;
