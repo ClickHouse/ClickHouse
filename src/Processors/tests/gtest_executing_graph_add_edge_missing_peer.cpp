@@ -5,21 +5,30 @@
 #include <Processors/Executors/PipelineExecutor.h>
 #include <Processors/Sinks/NullSink.h>
 #include <Processors/Sources/SourceFromSingleChunk.h>
-#include <Common/ThreadStatus.h>
 
 #include <fmt/format.h>
 
 using namespace DB;
 
 /// Regression test for the diagnostics of `ExecutingGraph::addEdge` when a connected peer is
-/// missing from the list of processors. The thrown `LOGICAL_ERROR` must name both endpoints of
-/// the broken edge via `getUniqID` (the class name plus the per-thread processor index), so that
-/// repeated processor classes remain distinguishable. Previously the message used `getName`,
-/// which is ambiguous, and the numeric suffix was only recoverable from the out-of-set node
-/// rendering in `printPipeline` that was removed in #110955.
+/// missing from the list of processors. The thrown `LOGICAL_ERROR` must identify both endpoints
+/// of the broken edge unambiguously, so that repeated processor classes remain distinguishable.
+/// Previously the message used `getName`, which is ambiguous, and the numeric suffix was only
+/// recoverable from the out-of-set node rendering in `printPipeline` that was removed in #110955.
+///
+/// The identification must not depend on the execution context: `getUniqID` alone degrades to the
+/// `_0` suffix for every processor when `CurrentThread` is not initialized, which is why the
+/// message also carries the processor address. This test deliberately does not set up a thread
+/// status, so it exercises exactly that degraded context.
 
 namespace
 {
+
+/// Must match the format used by `describeProcessor` in `ExecutingGraph.cpp`.
+String describeProcessor(const IProcessor & processor)
+{
+    return fmt::format("{} at {}", processor.getUniqID(), static_cast<const void *>(&processor));
+}
 
 struct MalformedGraph
 {
@@ -27,8 +36,8 @@ struct MalformedGraph
     /// The peer is deliberately not in `processors`, but it must outlive the executor
     /// construction: `addEdge` dereferences it to build the exception message.
     ProcessorPtr omitted_sink;
-    String source_uniq_id;
-    String sink_uniq_id;
+    String source_description;
+    String sink_description;
     String expected_message;
 };
 
@@ -47,12 +56,12 @@ MalformedGraph makeGraphWithOmittedSink()
     connect(source->getPort(), sink->getPort());
 
     MalformedGraph graph;
-    graph.source_uniq_id = source->getUniqID();
-    graph.sink_uniq_id = sink->getUniqID();
+    graph.source_description = describeProcessor(*source);
+    graph.sink_description = describeProcessor(*sink);
     graph.expected_message = fmt::format(
         "Processor {} was found as output for processor {}, but not found in list of processors",
-        graph.sink_uniq_id,
-        graph.source_uniq_id);
+        graph.sink_description,
+        graph.source_description);
 
     graph.processors = std::make_shared<Processors>();
     graph.processors->emplace_back(std::move(source));
@@ -66,35 +75,34 @@ MalformedGraph makeGraphWithOmittedSink()
 
 /// In debug and sanitizer builds a `LOGICAL_ERROR` aborts the process at the point where the
 /// exception is constructed, so the message can only be observed through a death test.
-TEST(ExecutingGraphDeathTest, AddEdgeMissingPeerNamesUniqIDs)
+TEST(ExecutingGraphDeathTest, AddEdgeMissingPeerIdentifiesBothEndpoints)
 {
     ::testing::FLAGS_gtest_death_test_style = "threadsafe";
 
-    /// A live `ThreadStatus` makes `getUniqID` assign distinct per-thread indices;
-    /// without it every processor gets the `_0` suffix and the test would prove nothing.
-    ThreadStatus thread_status;
-
     auto graph = makeGraphWithOmittedSink();
-    ASSERT_NE(graph.source_uniq_id, graph.sink_uniq_id);
+    ASSERT_NE(graph.source_description, graph.sink_description);
+
+    /// The `threadsafe` style re-executes the test binary, so the child rebuilds the graph at its
+    /// own addresses: match the shape of the message rather than the parent's exact addresses.
+    /// That the two endpoints really differ is asserted above, on the in-process descriptions.
+    const String expected_pattern
+        = "Processor NullSink_[0-9]+ at 0x[0-9a-f]+ was found as output for processor "
+          "SourceFromSingleChunk_[0-9]+ at 0x[0-9a-f]+, but not found in list of processors";
 
     EXPECT_DEATH(
         {
             QueryStatusPtr element;
             PipelineExecutor executor(graph.processors, element);
         },
-        graph.expected_message);
+        expected_pattern);
 }
 
 #else
 
-TEST(ExecutingGraph, AddEdgeMissingPeerNamesUniqIDs)
+TEST(ExecutingGraph, AddEdgeMissingPeerIdentifiesBothEndpoints)
 {
-    /// A live `ThreadStatus` makes `getUniqID` assign distinct per-thread indices;
-    /// without it every processor gets the `_0` suffix and the test would prove nothing.
-    ThreadStatus thread_status;
-
     auto graph = makeGraphWithOmittedSink();
-    ASSERT_NE(graph.source_uniq_id, graph.sink_uniq_id);
+    ASSERT_NE(graph.source_description, graph.sink_description);
 
     try
     {
