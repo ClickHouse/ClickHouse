@@ -47,7 +47,12 @@ QUERIES="${CLICKHOUSE_TMP}/${CLICKHOUSE_DATABASE}_ferretdb_corpus.sql"
 
 echo "queries in the corpus: $(grep -vc '^#' "$CORPUS")"
 
-${CLICKHOUSE_CLIENT} --multiquery --ignore-error --queries-file "$QUERIES" \
+# `--server_logs_file` keeps the server's own log out of this file. The test runner passes
+# `--send_logs_level=error` to every client, so without it the server streams each rejected query
+# back as a log entry, and every one of those ends with `Stack trace (when copying this message,
+# always include the lines below):` - which is what the crash detector below looks for. What is
+# examined here has to be the client's own output and nothing else.
+${CLICKHOUSE_CLIENT} --server_logs_file=/dev/null --multiquery --ignore-error --queries-file "$QUERIES" \
     > "${CLICKHOUSE_TMP}/${CLICKHOUSE_DATABASE}_ferretdb_corpus.out" 2> "${CLICKHOUSE_TMP}/${CLICKHOUSE_DATABASE}_ferretdb_corpus.err"
 
 grep -qx 'corpus consumed' "${CLICKHOUSE_TMP}/${CLICKHOUSE_DATABASE}_ferretdb_corpus.out" && echo 'the whole corpus was consumed'
@@ -64,7 +69,11 @@ fi
 # A logical error means the server reached a state it holds to be impossible, which a query must
 # not be able to do whatever it asks for.
 grep -q 'LOGICAL_ERROR\|Logical error' "${CLICKHOUSE_TMP}/${CLICKHOUSE_DATABASE}_ferretdb_corpus.err" || echo 'no logical error'
-grep -qi 'Segmentation fault\|Sanitizer\|Assertion.*failed\|Stack trace' "${CLICKHOUSE_TMP}/${CLICKHOUSE_DATABASE}_ferretdb_corpus.err" \
+# The shapes a crashed client leaves on its standard error. They are matched case sensitively and
+# with their punctuation: `Assertion .+ failed` is how the C library reports one, and matching it
+# loosely and case insensitively would also match the name of the error code
+# `CANNOT_PARSE_INPUT_ASSERTION_FAILED`, which is an ordinary rejection.
+grep -qE 'Segmentation fault|Sanitizer|Assertion .+ failed|Stack trace:' "${CLICKHOUSE_TMP}/${CLICKHOUSE_DATABASE}_ferretdb_corpus.err" \
     || echo 'no crash'
 
 ${CLICKHOUSE_CLIENT} --query "SELECT 'the server is still there'"
