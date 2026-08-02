@@ -1,0 +1,49 @@
+user_NffrFeUfNV2Hib	user	NffrFeUfNV2Hib	('user','NffrFeUfNV2Hib')
+ch_test_51TpZvW	ch_test	51TpZvW	('ch_test','51TpZvW')
+abc123		abc123	('','abc123')
+			('','')
+user_	user		('user','')
+_abc		abc	('','abc')
+0
+user_NffrFeUfNV2Hib	1
+ch_test_51TpZvW	1
+abc123	1
+123abc	1
+user_9x	1
+a_1_b	1
+	0
+user_	0
+_abc	0
+user__x	0
+1user_x	0
+user-x	0
+user x	0
+user_x!	0
+1
+0
+1
+0
+0
+0
+1
+1
+1
+1
+1
+1
+1
+1
+1
+1
+1
+1
+user	NffrFeUfNV2Hib	('user','NffrFeUfNV2Hib')
+user
+1
+1
+0
+1
+1
+1
+1
+String

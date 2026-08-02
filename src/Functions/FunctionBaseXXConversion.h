@@ -17,11 +17,6 @@
 namespace DB
 {
 
-namespace Setting
-{
-extern const SettingsUInt64 function_base58_max_input_size;
-}
-
 namespace ErrorCodes
 {
 extern const int ILLEGAL_COLUMN;
@@ -35,9 +30,13 @@ struct BaseXXEncode
 {
     static constexpr auto name = Name::name;
     static constexpr bool has_size_optimization = false;
-    /// Compile-time default input-size limit (0 means "no limit"). Only base58 sets a non-zero value;
-    /// the actual limit is configurable at runtime, see FunctionBaseXXConversion.
+    /// Compile-time default input-size limit (0 means "no limit"). Only the quadratic base58 and base62
+    /// set a non-zero value; the actual limit is configurable at runtime, see FunctionBaseXXConversion.
     static constexpr size_t default_max_input_size = Traits::max_input_size;
+
+    /// Reads the runtime input-size limit from the corresponding setting. Only called (and thus only
+    /// required from Traits) when the compile-time default is non-zero.
+    static size_t maxInputSize(const Settings & settings) { return Traits::maxInputSize(settings); }
 
     template <bool /* with_size_optimization */>
     static void processString(const ColumnString & src_column, ColumnString::MutablePtr & dst_column, size_t input_rows_count, size_t, size_t max_input_size, const std::function<void()> & check_cancellation)
@@ -136,9 +135,13 @@ struct BaseXXDecode
 {
     static constexpr auto name = Name::name;
     static constexpr bool has_size_optimization = Traits::has_size_optimization;
-    /// Compile-time default input-size limit (0 means "no limit"). Only base58 sets a non-zero value;
-    /// the actual limit is configurable at runtime, see FunctionBaseXXConversion.
+    /// Compile-time default input-size limit (0 means "no limit"). Only the quadratic base58 and base62
+    /// set a non-zero value; the actual limit is configurable at runtime, see FunctionBaseXXConversion.
     static constexpr size_t default_max_input_size = Traits::max_input_size;
+
+    /// Reads the runtime input-size limit from the corresponding setting. Only called (and thus only
+    /// required from Traits) when the compile-time default is non-zero.
+    static size_t maxInputSize(const Settings & settings) { return Traits::maxInputSize(settings); }
 
     template <bool with_size_optimization>
     static void processString(const ColumnString & src_column, ColumnString::MutablePtr & dst_column, size_t input_rows_count, size_t expected_size, size_t max_input_size, const std::function<void()> & check_cancellation)
@@ -305,11 +308,12 @@ public:
 
     static FunctionPtr create(ContextPtr context)
     {
-        /// The input-size limit is only meaningful for the quadratic base58 conversion (the only function whose
-        /// compile-time default is non-zero); for the linear base32/base64 it stays disabled regardless of the setting.
-        size_t max_input_size = Func::default_max_input_size;
-        if (max_input_size != 0)
-            max_input_size = context->getSettingsRef()[Setting::function_base58_max_input_size];
+        /// The input-size limit is only meaningful for the quadratic base58/base62 conversions (the only
+        /// functions whose compile-time default is non-zero); each of them reads its own setting via the
+        /// traits. For the linear base32/base64 it stays disabled regardless of the settings.
+        size_t max_input_size = 0;
+        if constexpr (Func::default_max_input_size != 0)
+            max_input_size = Func::maxInputSize(context->getSettingsRef());
         return std::make_shared<FunctionBaseXXConversion>(context->getProcessListElementSafe(), max_input_size);
     }
     String getName() const override { return Func::name; }
