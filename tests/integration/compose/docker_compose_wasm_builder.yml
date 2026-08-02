@@ -7,4 +7,6 @@ services:
     # to keep container running
     command: sleep infinity
     stop_grace_period: 5s
-    cpus: 16
+    # No `cpus` cap on purpose: Docker rejects a quota above the number of CPUs the host has, so
+    # any number here is a bet on the runner. The test is scheduled sequentially instead, and the
+    # build gets whatever the runner has.

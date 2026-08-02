@@ -43,7 +43,12 @@ RUN cd /opt/wasi-sdk/share/wasi-sysroot \
 ENV WASI_SDK=/opt/wasi-sdk
 
 # Fail the image build, rather than the test that uses it, if the pruning above went too far.
+# The parser is C++ linked against a C translation unit, so probe both: the C++ sysroot and the
+# C++ headers survive the pruning only by name, and nothing else here would notice if they did not.
 RUN printf 'int main(void) { return 0; }\n' > /tmp/probe.c \
     && "$WASI_SDK/bin/clang" --target=wasm32-wasip1 --sysroot="$WASI_SDK/share/wasi-sysroot" \
         -flto /tmp/probe.c -lsetjmp -o /tmp/probe.wasm \
-    && rm -f /tmp/probe.c /tmp/probe.wasm
+    && printf '#include <string>\nint main() { return static_cast<int>(std::string("x").size()) - 1; }\n' > /tmp/probe.cpp \
+    && "$WASI_SDK/bin/clang++" --target=wasm32-wasip1 --sysroot="$WASI_SDK/share/wasi-sysroot" \
+        -fno-exceptions -flto /tmp/probe.cpp -o /tmp/probe_cpp.wasm \
+    && rm -f /tmp/probe.c /tmp/probe.cpp /tmp/probe.wasm /tmp/probe_cpp.wasm
