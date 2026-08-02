@@ -1,6 +1,7 @@
 #pragma once
 
 #include <map>
+#include <memory>
 #include <optional>
 #include <time.h>
 #include <vector>
@@ -193,6 +194,12 @@ public:
     String getVersionStr() const;
 
 private:
+    struct ForwardedForCache;
+
+    /// `ClientInfo::getLastForwardedFor` can be called several times while processing one HTTP request.
+    /// Cache successful and rejected parses so the header is parsed once and an invalid value is logged once.
+    mutable std::shared_ptr<const ForwardedForCache> last_forwarded_for_cache;
+
     void fillOSUserHostNameAndVersionInfo();
 };
 
