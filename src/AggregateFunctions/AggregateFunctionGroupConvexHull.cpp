@@ -178,6 +178,13 @@ void extractPointsFromField(
             out.push_back(pt);
             break;
         }
+        case GeometryColumnType::MultiPoint: {
+            auto multipoint = getMultiPointFromField<CartesianPoint>(field);
+            for (const auto & pt : multipoint)
+                validateConvexHullPoint(pt);
+            out.insert(out.end(), multipoint.begin(), multipoint.end());
+            break;
+        }
         case GeometryColumnType::Ring: {
             auto ring = getRingFromField<CartesianPoint>(field);
             for (const auto & pt : ring)
@@ -459,7 +466,7 @@ Computes the convex hull of all geometries in the group.
 Coordinates are interpreted as Cartesian (planar), not spherical, regardless of whether the input values represent longitude/latitude. There is no spherical variant of this function.
 
 For `Point` arguments, each point is added directly.
-For `Ring`, `LineString`, and `MultiLineString`, all points are used.
+For `MultiPoint`, `Ring`, `LineString`, and `MultiLineString`, all points are used.
 For `Polygon`, only the outer ring points are used.
 For `MultiPolygon`, only the outer ring points of each polygon are used.
 `Geometry` arguments are also supported according to the active value type.

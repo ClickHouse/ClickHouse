@@ -271,6 +271,8 @@ AggregateFunctionPtr createAggregateFunctionGroupPolygonUnion(
         case GeometryColumnType::MultiPolygon: break;
         case GeometryColumnType::Point:
             throw Exception(ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT, "Argument of function {} must not be Point", name);
+        case GeometryColumnType::MultiPoint:
+            throw Exception(ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT, "Argument of function {} must not be MultiPoint", name);
         case GeometryColumnType::Linestring:
             throw Exception(ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT, "Argument of function {} must not be LineString", name);
         case GeometryColumnType::MultiLinestring:
@@ -291,7 +293,7 @@ Computes the union of all polygonal geometries in the group.
 
 Coordinates are interpreted as Cartesian (planar), not spherical, regardless of whether the input values represent longitude/latitude. There is no spherical variant of this function.
 
-For typed columns, accepts `Ring`, `Polygon`, and `MultiPolygon`. Rejects `Point`, `LineString`, and `MultiLineString`.
+For typed columns, accepts `Ring`, `Polygon`, and `MultiPolygon`. Rejects `Point`, `MultiPoint`, `LineString`, and `MultiLineString`.
 
 For `Geometry` (Variant) columns, an active `LineString` is interpreted as a `Ring`, and an active `MultiLineString` as a `Polygon`, because their underlying array shapes match. Other non-polygonal active types are rejected.
 

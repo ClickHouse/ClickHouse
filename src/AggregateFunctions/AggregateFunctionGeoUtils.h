@@ -508,6 +508,8 @@ inline CartesianMultiPolygon fieldToMultiPolygon(const Field & field, GeometryCo
         }
         case GeometryColumnType::Point:
             throw Exception(ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT, "{} does not accept Point arguments", function_name);
+        case GeometryColumnType::MultiPoint:
+            throw Exception(ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT, "{} does not accept MultiPoint arguments", function_name);
         case GeometryColumnType::Linestring:
             throw Exception(ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT, "{} does not accept LineString arguments", function_name);
         case GeometryColumnType::MultiLinestring:
