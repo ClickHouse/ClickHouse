@@ -358,6 +358,7 @@ std::unordered_map<String, CHSetting> performanceSettings
                      "full_sorting_merge",
                      "grace_hash",
                      "hash",
+                     "parallel_full_sorting_merge",
                      "parallel_hash",
                      "partial_merge",
                      "prefer_partial_merge"});
@@ -371,6 +372,7 @@ std::unordered_map<String, CHSetting> performanceSettings
              "'direct'",
              "'auto'",
              "'full_sorting_merge'",
+             "'parallel_full_sorting_merge'",
              "'prefer_partial_merge'"},
             false)},
        {"join_any_take_last_row", trueOrFalseSetting},
