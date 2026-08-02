@@ -148,7 +148,19 @@ DatabaseTablesIteratorPtr DatabaseMySQL::getTablesIterator(ContextPtr local_cont
     Tables tables;
     std::lock_guard lock(mutex);
 
-    fetchTablesIntoLocalCache(local_context);
+    /// Do not allow to throw here: this is called for enumeration purposes - a query to
+    /// system.tables/columns, completion suggestions, or unknown-name hint generation -
+    /// where an unreachable MySQL server must not fail the enclosing query.
+    /// `DatabasePostgreSQL::getTablesIterator` behaves the same way. On failure the
+    /// iterator serves the (possibly stale or empty) local cache.
+    try
+    {
+        fetchTablesIntoLocalCache(local_context);
+    }
+    catch (...)
+    {
+        tryLogCurrentException(__PRETTY_FUNCTION__);
+    }
 
     for (const auto & [table_name, modify_time_and_storage] : local_tables_cache)
         if (!remove_or_detach_tables.contains(table_name) && (!filter_by_table_name || filter_by_table_name(table_name)))
