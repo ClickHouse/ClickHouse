@@ -1,4 +1,5 @@
 #include <Storages/ObjectStorageQueue/ObjectStorageQueueIFileMetadata.h>
+#include <Common/FailPoint.h>
 #include <Common/SipHash.h>
 #include <Common/CurrentThread.h>
 #include <Common/DNSResolver.h>
@@ -22,6 +23,11 @@ namespace ProfileEvents
 
 namespace DB
 {
+
+namespace FailPoints
+{
+    extern const char object_storage_queue_skip_one_file_in_batch[];
+}
 
 namespace ErrorCodes
 {
@@ -290,6 +296,16 @@ bool ObjectStorageQueueIFileMetadata::trySetProcessing()
 std::optional<ObjectStorageQueueIFileMetadata::SetProcessingResponseIndexes>
 ObjectStorageQueueIFileMetadata::prepareSetProcessingRequests(Coordination::Requests & requests)
 {
+    /// Test-only: simulate the file being grabbed by another consumer (a processing-lock conflict).
+    /// ONCE, so it skips the first file after being enabled, exercising the batch compaction path.
+    bool skip_file = false;
+    fiu_do_on(FailPoints::object_storage_queue_skip_one_file_in_batch, { skip_file = true; });
+    if (skip_file)
+    {
+        LOG_TEST(log, "File {} is skipped because of a failpoint", path);
+        return std::nullopt;
+    }
+
     if (metadata_ref_count.load() > 1)
     {
         std::unique_lock processing_lock(file_status->processing_lock, std::defer_lock);
