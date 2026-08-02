@@ -88,7 +88,8 @@ SELECT 'D array s7', toString([toDateTime64('2024-01-01 00:00:00.1234567', 7, 'U
 SELECT 'D nullable s7', toString(toNullable(toDateTime64('2024-01-01 00:00:00.1234567', 7, 'UTC')));
 SELECT toDateTime64('2024-01-01 00:00:00.1234567', 7, 'UTC') AS d FORMAT TSV;
 SELECT toDateTime64('2024-01-01 00:00:00.1234567', 7, 'UTC') AS d FORMAT JSONEachRow;
--- Row output honours the setting only under the default 'simple' mode, as the setting documents.
+-- Row output honours the setting only under the default 'simple' mode: 'iso' and 'unix_timestamp'
+-- always print the declared scale.
 SELECT toDateTime64('2024-01-01 00:00:00.123000000', 9, 'UTC') AS d SETTINGS date_time_output_format = 'iso' FORMAT TSV;
 SELECT toDateTime64('2024-01-01 00:00:00.123000000', 9, 'UTC') AS d SETTINGS date_time_output_format = 'unix_timestamp' FORMAT TSV;
 SELECT 'D toString under iso', toString(toDateTime64('2024-01-01 00:00:00.123000000', 9, 'UTC')) SETTINGS date_time_output_format = 'iso';

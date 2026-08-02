@@ -144,7 +144,8 @@ SELECT toDateTime64('2024-01-01 00:00:00.1234567', 7, 'UTC') AS d FORMAT TSV;
 2024-01-01 00:00:00.123456700
 SELECT toDateTime64('2024-01-01 00:00:00.1234567', 7, 'UTC') AS d FORMAT JSONEachRow;
 {"d":"2024-01-01 00:00:00.123456700"}
--- Row output honours the setting only under the default 'simple' mode, as the setting documents.
+-- Row output honours the setting only under the default 'simple' mode: 'iso' and 'unix_timestamp'
+-- always print the declared scale.
 SELECT toDateTime64('2024-01-01 00:00:00.123000000', 9, 'UTC') AS d SETTINGS date_time_output_format = 'iso' FORMAT TSV;
 2024-01-01T00:00:00.123000000Z
 SELECT toDateTime64('2024-01-01 00:00:00.123000000', 9, 'UTC') AS d SETTINGS date_time_output_format = 'unix_timestamp' FORMAT TSV;
