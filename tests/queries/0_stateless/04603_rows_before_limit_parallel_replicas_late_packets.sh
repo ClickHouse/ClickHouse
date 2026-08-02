@@ -25,9 +25,10 @@
 #
 # `rows_read` is checked on the parallel-replicas path, where the replicas send
 # their reading progress in trailing `Progress` packets. `rows_before_limit_at_least`
-# is checked on the `remote` table function path, where the counter is fed by the
-# shard's trailing `ProfileInfo` (with parallel replicas the counter is attached to
-# the initiator's own `LimitTransform`, so it is not sensitive to the drain there).
+# and `rows_before_aggregation` are checked on the `remote` table function path, where
+# both counters are fed by the shard's trailing `ProfileInfo` (with parallel replicas
+# the `rows_before_limit_at_least` counter is attached to the initiator's own
+# `LimitTransform`, so it is not sensitive to the drain there).
 
 CUR_DIR=$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)
 # shellcheck source=../shell_config.sh
@@ -51,6 +52,11 @@ REMOTE_TABLE="remote('127.0.0.2', ${CLICKHOUSE_DATABASE}.${TABLE_NAME})"
 REFERENCE=$($CLICKHOUSE_CLIENT --query="SELECT number FROM ${TABLE_NAME} LIMIT 10 FORMAT JSON SETTINGS enable_parallel_replicas=0")
 EXPECTED_ROWS_READ=$(echo "$REFERENCE" | grep -o '"rows_read": [0-9]*' | grep -o '[0-9]*')
 EXPECTED_ROWS_BEFORE_LIMIT=$(echo "$REFERENCE" | grep -o '"rows_before_limit_at_least": [0-9]*' | grep -o '[0-9]*')
+
+# The same ground truth for `rows_before_aggregation`, which is only reported when the
+# `rows_before_aggregation` setting is on.
+REFERENCE_AGGREGATION=$($CLICKHOUSE_CLIENT --query="SELECT number FROM ${TABLE_NAME} GROUP BY number LIMIT 10 FORMAT JSON SETTINGS enable_parallel_replicas=0, rows_before_aggregation=1")
+EXPECTED_ROWS_BEFORE_AGGREGATION=$(echo "$REFERENCE_AGGREGATION" | grep -o '"rows_before_aggregation": [0-9]*' | grep -o '[0-9]*')
 
 function check_field()
 {
@@ -164,6 +170,32 @@ check_field "remote JSONColumnsWithMetadata HTTP" "rows_before_limit_at_least" "
 OUTPUT=$(${CLICKHOUSE_CURL} -sS "${CLICKHOUSE_URL}" -d "SELECT number FROM ${REMOTE_TABLE} LIMIT 10 FORMAT XML")
 check_field_xml "remote XML HTTP" "rows_read" "$EXPECTED_ROWS_READ" "$OUTPUT"
 check_field_xml "remote XML HTTP" "rows_before_limit_at_least" "$EXPECTED_ROWS_BEFORE_LIMIT" "$OUTPUT"
+
+# --- remote GROUP BY: the shard's trailing `ProfileInfo` also carries
+# `rows_before_aggregation`. `distributed_group_by_no_merge` makes the shard produce the
+# final aggregated rows, so the initiator's `LIMIT` is satisfied - and the query is
+# cancelled - while that packet is still in flight; without it the initiator's merging
+# step has to consume the whole stream before it can emit a row, so there is no early
+# break and no drain window at all.
+AGG_QUERY="SELECT number FROM ${REMOTE_TABLE} GROUP BY number LIMIT 10"
+AGG_SETTINGS="rows_before_aggregation=1, distributed_group_by_no_merge=1"
+
+OUTPUT=$(${CLICKHOUSE_CURL} -sS "${CLICKHOUSE_URL}" -d "${AGG_QUERY} FORMAT JSON SETTINGS ${AGG_SETTINGS}")
+check_field "remote GROUP BY JSON HTTP" "rows_before_aggregation" "$EXPECTED_ROWS_BEFORE_AGGREGATION" "$OUTPUT"
+
+OUTPUT=$($CLICKHOUSE_CLIENT --query="${AGG_QUERY} FORMAT JSON SETTINGS ${AGG_SETTINGS}")
+check_field "remote GROUP BY JSON TCP" "rows_before_aggregation" "$EXPECTED_ROWS_BEFORE_AGGREGATION" "$OUTPUT"
+
+OUTPUT=$(${CLICKHOUSE_CURL} -sS "${CLICKHOUSE_URL}" -d "${AGG_QUERY} FORMAT XML SETTINGS ${AGG_SETTINGS}")
+check_field_xml "remote GROUP BY XML HTTP" "rows_before_aggregation" "$EXPECTED_ROWS_BEFORE_AGGREGATION" "$OUTPUT"
+
+OUTPUT=$(${CLICKHOUSE_CURL} -sS "${CLICKHOUSE_URL}" -d "${AGG_QUERY} FORMAT JSONColumnsWithMetadata SETTINGS ${AGG_SETTINGS}")
+check_field "remote GROUP BY JSONColumnsWithMetadata HTTP" "rows_before_aggregation" "$EXPECTED_ROWS_BEFORE_AGGREGATION" "$OUTPUT"
+
+# `rows_before_aggregation`, like `rows_before_limit_at_least`, is printed outside the
+# "statistics" object, so the trailer must be deferred even with the statistics disabled.
+OUTPUT=$(${CLICKHOUSE_CURL} -sS "${CLICKHOUSE_URL}" -d "${AGG_QUERY} FORMAT JSON SETTINGS ${AGG_SETTINGS}, output_format_write_statistics=0")
+check_field "remote GROUP BY JSON HTTP no-stats" "rows_before_aggregation" "$EXPECTED_ROWS_BEFORE_AGGREGATION" "$OUTPUT"
 
 # --- output_format_write_statistics=0: rows_before_limit_at_least is emitted outside the
 # "statistics" object, so it is still printed even when the statistics object is disabled. It must
