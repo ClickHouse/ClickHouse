@@ -133,6 +133,7 @@ namespace MergeTreeSetting
     extern const MergeTreeSettingsBool enable_block_number_column;
     extern const MergeTreeSettingsBool enable_block_offset_column;
     extern const MergeTreeSettingsUInt64 enable_vertical_merge_algorithm;
+    extern const MergeTreeSettingsBool fsync_part_directory;
     extern const MergeTreeSettingsBool materialize_projections_on_merge;
     extern const MergeTreeSettingsUInt64 merge_max_block_size_bytes;
     extern const MergeTreeSettingsNonZeroUInt64 merge_max_block_size;
@@ -2244,10 +2245,19 @@ bool MergeTask::MergeProjectionsStage::executeProjections() const
 
 bool MergeTask::MergeProjectionsStage::finalizeProjectionsAndWholeMerge() const
 {
+    /// Syncing the part directory does not persist the entries inside `<projection>.proj`, and a
+    /// merged projection is written in place, so there is no rename to sync it. It must stay below
+    /// commitTransaction: that is where `Packed` storage finalizes `data.packed`.
+    const bool fsync_projection_directory = (*global_ctx->data_settings)[MergeTreeSetting::fsync_part_directory];
+
     for (const auto & task : ctx->tasks_for_projections)
     {
         auto part = task->getFuture().get();
         part->getDataPartStorage().commitTransaction();
+
+        if (fsync_projection_directory)
+            { SyncGuardPtr projection_sync_guard = part->getDataPartStorage().getDirectorySyncGuard(); }
+
         global_ctx->new_data_part->addProjectionPart(part->name, std::move(part));
     }
 

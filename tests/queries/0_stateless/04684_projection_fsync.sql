@@ -87,6 +87,21 @@ SELECT 'merge projection adds file syncs',
        AND query NOT LIKE '%query_log%' AND query LIKE '%t\_plain%' AND type = 'QueryFinish'
      ORDER BY event_time_microseconds DESC LIMIT 1);
 
+-- A merged projection is written straight into the final `<projection>.proj` of the result part,
+-- so unlike the mutation path there is no rename to make the directory's own entries durable and
+-- the merge has to fsync it. The delta against the identical plain merge is one per merged
+-- projection.
+SELECT 'merge projection adds directory syncs',
+    (SELECT ProfileEvents['DirectorySync'] FROM system.query_log
+     WHERE current_database = currentDatabase() AND query_kind = 'Optimize'
+       AND query NOT LIKE '%query_log%' AND query LIKE '%t\_proj%' AND type = 'QueryFinish'
+     ORDER BY event_time_microseconds DESC LIMIT 1)
+    -
+    (SELECT ProfileEvents['DirectorySync'] FROM system.query_log
+     WHERE current_database = currentDatabase() AND query_kind = 'Optimize'
+       AND query NOT LIKE '%query_log%' AND query LIKE '%t\_plain%' AND type = 'QueryFinish'
+     ORDER BY event_time_microseconds DESC LIMIT 1);
+
 -- The part and its projection must be complete and readable.
 SELECT 'rows', count() FROM t_proj;
 SELECT sum(v) FROM t_proj GROUP BY key ORDER BY key SETTINGS force_optimize_projection = 1 FORMAT Null;
