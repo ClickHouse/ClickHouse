@@ -1363,9 +1363,19 @@ public:
     ExpressionActionsPtr
     getSortingKeyAndSkipIndicesExpression(const StorageMetadataPtr & metadata_snapshot, const MergeTreeIndices & indices) const;
 
-    /// Get compression codec for part according to TTL rules and <compression>
-    /// section from config.xml.
-    CompressionCodecPtr getCompressionCodecForPart(size_t part_size_compressed, const IMergeTreeDataPart::TTLInfos & ttl_infos, time_t current_time) const;
+    struct PartCompressionCodec
+    {
+        CompressionCodecPtr codec;
+        bool is_explicit_recompression = false; /// True if `codec` comes from a `RECOMPRESS` TTL entry and is not `Default`.
+    };
+
+    /// Get compression codec for part according to `RECOMPRESS` TTL rules from `metadata_snapshot`,
+    /// the `default_compression_codec` setting, or the <compression> section from config.xml, in that order.
+    PartCompressionCodec getCompressionCodecForPart(
+        const StorageMetadataPtr & metadata_snapshot,
+        size_t part_size_compressed,
+        const IMergeTreeDataPart::TTLInfos & ttl_infos,
+        time_t current_time) const;
 
     std::shared_ptr<QueryIdHolder> getQueryIdHolder(const String & query_id, UInt64 max_concurrent_queries) const;
 
@@ -1737,13 +1747,18 @@ protected:
     /// The same for unloadPrimaryKeysAndClearCachesOfOutdatedParts.
     std::mutex unload_primary_key_mutex;
 
+    /// `alter_effective_settings`, when non-null, is the MergeTree settings the table WILL have
+    /// after the operation (used only by `checkAlterIsPossible`, which runs before the live
+    /// settings are updated). When null the live `getSettings()` is used. See the block in
+    /// `checkProperties` validating `enable_block_number_column` / `enable_block_offset_column`.
     void checkProperties(
         const StorageInMemoryMetadata & new_metadata,
         const StorageInMemoryMetadata & old_metadata,
         bool attach,
         bool allow_empty_sorting_key,
         bool allow_nullable_key_,
-        ContextPtr local_context) const;
+        ContextPtr local_context,
+        const MergeTreeSettings * alter_effective_settings = nullptr) const;
 
     /// Runs the same metadata validation as `setProperties` but without publishing
     /// `new_metadata`. Lets `alter()` validate against freshly changed settings before
@@ -2149,9 +2164,16 @@ private:
     /// `escape_index_filenames = 0` an index named `a.pos` claims `skp_idx_a.pos`, which is also what a
     /// text index named `a` derives for its positional substream. Each projection is its own namespace
     /// (its files live in `<name>.proj/`) and is validated separately.
-    void checkSkipIndexFilenamesForCollision(const StorageInMemoryMetadata & metadata, bool throw_on_error) const;
+    ///
+    /// @old_metadata / @old_settings are passed only by `checkAlterIsPossible`, to grandfather the
+    /// collisions the ALTER inherits: a table that already holds one (ATTACH tolerates that by design)
+    /// must stay alterable, while an ALTER adding another claimant to a contested base is still refused.
     void checkSkipIndexFilenamesForCollision(
-        const StorageInMemoryMetadata & metadata, const MergeTreeSettings & settings, bool throw_on_error) const;
+        const StorageInMemoryMetadata & metadata,
+        const MergeTreeSettings & settings,
+        bool throw_on_error,
+        const StorageInMemoryMetadata * old_metadata = nullptr,
+        const MergeTreeSettings * old_settings = nullptr) const;
 
     StorageSnapshotPtr
     createStorageSnapshot(const StorageMetadataPtr & metadata_snapshot, ContextPtr query_context, bool without_data) const;

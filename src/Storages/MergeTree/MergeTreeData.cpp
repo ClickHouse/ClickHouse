@@ -137,6 +137,7 @@
 #include <base/insertAtEnd.h>
 #include <base/interpolate.h>
 #include <base/isSharedPtrUnique.h>
+#include <base/scope_guard.h>
 
 #include <algorithm>
 #include <atomic>
@@ -981,7 +982,8 @@ void MergeTreeData::checkProperties(
     bool attach,
     bool allow_empty_sorting_key,
     bool allow_nullable_key_,
-    ContextPtr local_context) const
+    ContextPtr local_context,
+    const MergeTreeSettings * alter_effective_settings) const
 {
     if (!new_metadata.sorting_key.definition_ast && !allow_empty_sorting_key)
         throw Exception(ErrorCodes::BAD_ARGUMENTS, "ORDER BY cannot be empty");
@@ -1195,9 +1197,73 @@ void MergeTreeData::checkProperties(
         }
     }
 
+    /// `enable_block_number_column` / `enable_block_offset_column` are merge-time invariants for
+    /// commit-order projections, so they must be validated against the settings the table WILL
+    /// have after this operation, not against arbitrary values. Otherwise
+    /// `ALTER TABLE ... MODIFY SETTING enable_block_number_column = 0` (or RESET SETTING) on a
+    /// table with such a projection would be accepted, yet a later merge / MATERIALIZE PROJECTION
+    /// rebuild would run without materializing the required `_block_number` / `_block_offset`.
+    ///
+    /// On CREATE / ATTACH the live `getSettings()` already IS the effective table settings, and on
+    /// the post-`changeSettings` validation in `alter()` (`checkMetadataProperties`) the live
+    /// settings have already been updated, so `getSettings()` is correct there too. Only
+    /// `checkAlterIsPossible` runs BEFORE `changeSettings`, with the live settings still holding
+    /// the OLD values; it passes `alter_effective_settings` computed the same way the real
+    /// settings-update path does (`getDefaultSettings()` overlaid with the full post-ALTER
+    /// override list), which also handles RESET SETTING correctly (a dropped override falls back
+    /// to the default). `getDefaultSettings()` is virtual, so it must NOT be called here: this
+    /// runs from `setProperties` during the base `MergeTreeData` constructor, before the derived
+    /// vtable exists.
+    const MergeTreeSettings & effective_settings = alter_effective_settings ? *alter_effective_settings : *getSettings();
+    /// The settings the table has BEFORE this operation. On CREATE / ATTACH this equals
+    /// `effective_settings` (no pending change). On the `checkAlterIsPossible` path it is the OLD
+    /// (pre-`ALTER`) value, while `effective_settings` is the post-`ALTER` value; the difference
+    /// lets us detect an `ALTER` that flips a gate from enabled to disabled.
+    const MergeTreeSettings & live_settings = *getSettings();
+
     for (const auto & projection : new_metadata.projections)
     {
-        if (projection.with_parent_part_offset && !(*getSettings())[MergeTreeSetting::allow_part_offset_column_in_projections])
+        /// `allow_part_offset_column_in_projections` and `allow_commit_order_projection` are
+        /// pure CREATE-time feature gates: nothing at merge / MATERIALIZE PROJECTION time reads
+        /// them. They must fire only when THIS operation is responsible for pairing the projection
+        /// with a disabled gate, i.e. either:
+        ///   - the projection is introduced by the current operation (CREATE / ADD PROJECTION)
+        ///     while the effective gate is off; or
+        ///   - this `ALTER` flips the gate from enabled to disabled while the projection already
+        ///     exists (`MODIFY SETTING ... = 0` / `RESET SETTING`); a table with such a projection
+        ///     must not be able to turn the feature off (matches PR #104822's regression).
+        /// They must NOT fire on ATTACH (else an existing table becomes unattachable once the
+        /// setting is disabled, issue #102445), nor for an unrelated `ALTER` (e.g. `ADD COLUMN`)
+        /// that leaves an already-disabled gate untouched, nor for a mixed
+        /// `ADD PROJECTION` + enable-the-gate `ALTER` (the effective post-`ALTER` gate is on).
+        /// A projection is introduced now iff it is absent from `old_metadata`; on CREATE / ATTACH
+        /// the constructor passes the same metadata object as both old and new, so compare identity
+        /// to treat every projection there as introduced.
+        ///
+        /// `enable_block_number_column` / `enable_block_offset_column` are NOT CREATE-only: a
+        /// commit-order projection can be rebuilt from the base part during a horizontal merge
+        /// (MergeTask pushes it to projections_to_rebuild), and that rebuild only produces the
+        /// `_block_number` / `_block_offset` columns when these settings are enabled
+        /// (MergeTask::enabledBlockNumberColumn / enabledBlockOffsetColumn). So keep validating
+        /// them for every projection (even pre-existing, even on ATTACH) against the effective
+        /// settings below: attaching or altering with them disabled would let a later merge run
+        /// without the columns the projection requires.
+        const bool introduced_now = &old_metadata == &new_metadata || !old_metadata.projections.has(projection.name);
+
+        /// True when a CREATE-only gate that is off in the effective (post-operation) settings must
+        /// be treated as violated: this operation either introduces the projection or disables the
+        /// gate under a pre-existing one.
+        const auto create_gate_violated = [&](bool effective_enabled, bool live_enabled)
+        {
+            if (attach || effective_enabled)
+                return false;
+            return introduced_now || live_enabled;
+        };
+
+        if (projection.with_parent_part_offset
+            && create_gate_violated(
+                effective_settings[MergeTreeSetting::allow_part_offset_column_in_projections],
+                live_settings[MergeTreeSetting::allow_part_offset_column_in_projections]))
         {
             throw Exception(
                 ErrorCodes::BAD_ARGUMENTS,
@@ -1206,35 +1272,35 @@ void MergeTreeData::checkProperties(
                 projection.name);
         }
 
-        if (projection.with_block_number)
-        {
-            if (!(*getSettings())[MergeTreeSetting::allow_commit_order_projection])
-                throw Exception(
-                    ErrorCodes::BAD_ARGUMENTS,
-                    "Projection {} uses `_block_number` column, but MergeTree setting `allow_commit_order_projection` is disabled",
-                    projection.name);
+        if (projection.with_block_number
+            && create_gate_violated(
+                effective_settings[MergeTreeSetting::allow_commit_order_projection],
+                live_settings[MergeTreeSetting::allow_commit_order_projection]))
+            throw Exception(
+                ErrorCodes::BAD_ARGUMENTS,
+                "Projection {} uses `_block_number` column, but MergeTree setting `allow_commit_order_projection` is disabled",
+                projection.name);
 
-            if (!(*getSettings())[MergeTreeSetting::enable_block_number_column])
-                throw Exception(
-                    ErrorCodes::BAD_ARGUMENTS,
-                    "Projection {} uses `_block_number` column, but MergeTree setting `enable_block_number_column` is disabled",
-                    projection.name);
-        }
+        if (projection.with_block_offset
+            && create_gate_violated(
+                effective_settings[MergeTreeSetting::allow_commit_order_projection],
+                live_settings[MergeTreeSetting::allow_commit_order_projection]))
+            throw Exception(
+                ErrorCodes::BAD_ARGUMENTS,
+                "Projection {} uses `_block_offset` column, but MergeTree setting `allow_commit_order_projection` is disabled",
+                projection.name);
 
-        if (projection.with_block_offset)
-        {
-            if (!(*getSettings())[MergeTreeSetting::allow_commit_order_projection])
-                throw Exception(
-                    ErrorCodes::BAD_ARGUMENTS,
-                    "Projection {} uses `_block_offset` column, but MergeTree setting `allow_commit_order_projection` is disabled",
-                    projection.name);
+        if (projection.with_block_number && !effective_settings[MergeTreeSetting::enable_block_number_column])
+            throw Exception(
+                ErrorCodes::BAD_ARGUMENTS,
+                "Projection {} uses `_block_number` column, but MergeTree setting `enable_block_number_column` is disabled",
+                projection.name);
 
-            if (!(*getSettings())[MergeTreeSetting::enable_block_offset_column])
-                throw Exception(
-                    ErrorCodes::BAD_ARGUMENTS,
-                    "Projection {} uses `_block_offset` column, but MergeTree setting `enable_block_offset_column` is disabled",
-                    projection.name);
-        }
+        if (projection.with_block_offset && !effective_settings[MergeTreeSetting::enable_block_offset_column])
+            throw Exception(
+                ErrorCodes::BAD_ARGUMENTS,
+                "Projection {} uses `_block_offset` column, but MergeTree setting `enable_block_offset_column` is disabled",
+                projection.name);
     }
 
     const auto validate_complex_projection = [&](const std::string & projection_name, const std::vector<std::string> & forbid_columns)
@@ -4798,7 +4864,7 @@ void MergeTreeData::checkAlterIsPossible(const AlterCommands & commands, Context
 
     if (!settings[Setting::allow_non_metadata_alters])
     {
-        auto mutation_commands = commands.getMutationCommands(new_metadata, settings[Setting::materialize_ttl_after_modify], local_context);
+        auto mutation_commands = commands.getMutationCommands(new_metadata, settings[Setting::materialize_ttl_after_modify], local_context, /*with_alters*/ false, (*settings_from_storage)[MergeTreeSetting::share_nested_offsets]);
 
         if (!mutation_commands.empty())
             throw Exception(ErrorCodes::ALTER_OF_COLUMN_IS_FORBIDDEN,
@@ -4910,7 +4976,7 @@ void MergeTreeData::checkAlterIsPossible(const AlterCommands & commands, Context
     }
 
     removeImplicitStatistics(new_metadata.columns);
-    commands.apply(new_metadata, local_context);
+    commands.apply(new_metadata, local_context, (*getSettings())[MergeTreeSetting::share_nested_offsets]);
 
     /// The `Quantize(...)` codec is immutable via ALTER: it cannot be added, removed, or changed, and the TYPE of a
     /// Quantize-coded column cannot be changed either. Both reach `ColumnsDescription::modify` as metadata-only changes
@@ -5439,10 +5505,25 @@ void MergeTreeData::checkAlterIsPossible(const AlterCommands & commands, Context
     }
 
     checkColumnFilenamesForCollision(new_metadata, /*throw_on_error=*/ true);
-    checkProperties(new_metadata, old_metadata, false, false, allow_nullable_key, local_context);
+
+    /// `checkAlterIsPossible` runs before `changeSettings`, so the live settings still hold the OLD
+    /// values. Reconstruct the effective post-ALTER settings the same way the real settings-update
+    /// path does (`getDefaultSettings()` overlaid with the full post-ALTER override list) so the
+    /// setting-dependent projection checks in `checkProperties` validate against what the table WILL
+    /// have. This handles RESET SETTING correctly: a dropped override falls back to the default.
+    MergeTreeSettingsPtr alter_effective_settings = getSettings();
+    if (new_metadata.settings_changes)
+    {
+        const auto & new_changes = new_metadata.settings_changes->as<const ASTSetQuery &>().changes;
+        auto copy = getDefaultSettings();
+        copy->applyChanges(new_changes, getContext(), /*is_loading_from_existing_metadata=*/true);
+        alter_effective_settings = std::move(copy);
+    }
+    checkProperties(new_metadata, old_metadata, false, false, allow_nullable_key, local_context, alter_effective_settings.get());
     /// Must run after `checkProperties`: it validates the index descriptions, and the collision check
     /// constructs real index objects whose creators assume a validated description.
-    checkSkipIndexFilenamesForCollision(new_metadata, /*throw_on_error=*/ true);
+    checkSkipIndexFilenamesForCollision(
+        new_metadata, *alter_effective_settings, /*throw_on_error=*/ true, &old_metadata, settings_from_storage.get());
     checkTTLExpressions(new_metadata, old_metadata);
 
     if (!columns_to_check_conversion.empty())
@@ -6469,10 +6550,12 @@ MergeTreeData::PartsToRemoveFromZooKeeper MergeTreeData::removePartsInRangeFromW
             empty_info, partition, empty_part_name, source_part->getMetadataSnapshot(), NO_TRANSACTION_PTR);
 
         MergeTreeData::Transaction transaction(*this, NO_TRANSACTION_RAW);
-        renameTempPartAndAdd(new_data_part, transaction, lock, /*rename_in_transaction=*/ false);     /// All covered parts must be already removed
+        scope_guard rollback_tx_guard = [&]() { transaction.rollback(&lock); };
 
-        /// It will add the empty part to the set of Outdated parts without making it Active (exactly what we need)
-        transaction.rollback(&lock);
+        renameTempPartAndAdd(new_data_part, transaction, lock, /*rename_in_transaction=*/ false);     /// All covered parts must be already removed
+        new_data_part->getDataPartStorage().commitTransaction();
+        rollback_tx_guard.reset();
+
         new_data_part->remove_time.store(0, std::memory_order_relaxed);
         /// Such parts are always local, they don't participate in replication, they don't have shared blobs.
         /// So we don't have locks for shared data in zk for them, and can just remove blobs (this avoids leaving garbage in S3)
@@ -9570,19 +9653,23 @@ bool MergeTreeData::isPartInTTLDestination(const TTLDescription & ttl, const IMe
     return false;
 }
 
-CompressionCodecPtr MergeTreeData::getCompressionCodecForPart(size_t part_size_compressed, const IMergeTreeDataPart::TTLInfos & ttl_infos, time_t current_time) const
+MergeTreeData::PartCompressionCodec MergeTreeData::getCompressionCodecForPart(
+    const StorageMetadataPtr & metadata_snapshot,
+    size_t part_size_compressed,
+    const IMergeTreeDataPart::TTLInfos & ttl_infos,
+    time_t current_time) const
 {
-    auto metadata_snapshot = getInMemoryMetadataPtr(getContext(), false);
-
     const auto & recompression_ttl_entries = metadata_snapshot->getRecompressionTTLs();
     auto best_ttl_entry = selectTTLDescriptionForTTLInfos(recompression_ttl_entries, ttl_infos.recompression_ttl, current_time, true);
 
     if (best_ttl_entry)
-        return CompressionCodecFactory::instance().get(best_ttl_entry->recompression_codec, {});
+        return {
+            .codec = CompressionCodecFactory::instance().get(best_ttl_entry->recompression_codec, {}),
+            .is_explicit_recompression = !CompressionCodecFactory::isDefaultCodec(best_ttl_entry->recompression_codec)};
 
     auto codec_setting = (*getSettings())[MergeTreeSetting::default_compression_codec].value;
     if (!codec_setting.empty())
-        return CompressionCodecFactory::instance().get(codec_setting);
+        return {.codec = CompressionCodecFactory::instance().get(codec_setting)};
 
     /// On the first write into an empty table `getTotalActiveSizeInBytes()` is `0`, which would
     /// turn `part_size / total` into `NaN` and make every `<compression>` case fail the
@@ -9593,7 +9680,7 @@ CompressionCodecPtr MergeTreeData::getCompressionCodecForPart(size_t part_size_c
         ? static_cast<double>(part_size_compressed) / static_cast<double>(total_active_size)
         : 0.0;
 
-    return getContext()->chooseCompressionCodec(part_size_compressed, part_size_ratio);
+    return {.codec = getContext()->chooseCompressionCodec(part_size_compressed, part_size_ratio)};
 }
 
 MergeTreeData::DataParts MergeTreeData::getDataParts(const DataPartStates & affordable_states, const DataPartsKinds & affordable_kinds) const
@@ -10275,8 +10362,20 @@ UInt64 MergeTreeData::estimateNumberOfRowsToRead(
         storage_snapshot->metadata->getColumns().getAll().getNames(),
         storage_snapshot->metadata,
         query_info,
+        /*top_k_filter_info=*/std::nullopt,
         query_context,
-        query_context->getSettingsRef()[Setting::max_threads]);
+        query_context->getSettingsRef()[Setting::max_threads],
+        /*max_block_numbers_to_read=*/nullptr,
+        /// This is the pre-plan estimate for automatic parallel-replicas sizing. It runs before
+        /// `tryOptimizeTopK`, so it cannot know whether the read will be stamped as a TopK read, and
+        /// therefore whether the `use_query_condition_cache_for_top_k` gate applies to it. Analyzing an
+        /// `ORDER BY ... LIMIT n` query as an apparent plain read here would let it reuse plain
+        /// `SELECT ... WHERE` entries (changing the estimate, and with it `max_parallel_replicas`) and
+        /// record index-analysis exclusions back under the plain condition hash - exactly the
+        /// interaction the gate is supposed to prevent. The estimate is a throwaway analysis, so simply
+        /// do not touch the cache here; the read that actually executes runs its own analysis with the
+        /// gate that matches its final shape.
+        /*use_query_condition_cache=*/false);
 
     UInt64 total_rows = result_ptr->selected_rows;
     if (query_info.trivial_limit > 0 && query_info.trivial_limit < total_rows)
@@ -10356,6 +10455,102 @@ void MergeTreeData::checkColumnFilenamesForCollision(const ColumnsDescription & 
 namespace
 {
 
+/// Resolved base stream name -> the names of the indices that already claimed it. One entry per
+/// base claimed by more than one index, i.e. one entry per collision.
+using PreExistingIndexStreamOwners = std::unordered_map<String, NameSet>;
+
+/// A projection's settings are an overlay on the table's.
+MergeTreeSettingsPtr getProjectionEffectiveSettings(
+    const ProjectionDescription & projection, const MergeTreeSettings & table_settings, ContextPtr context)
+{
+    if (projection.settings_changes.empty())
+        return std::make_shared<const MergeTreeSettings>(table_settings);
+
+    auto projection_settings = std::make_shared<MergeTreeSettings>(table_settings);
+    projection_settings->applyChanges(projection.settings_changes, context, /*is_loading_from_existing_metadata=*/true);
+    return projection_settings;
+}
+
+/// Walks the resolved substream bases an index list claims. `on_stream(resolved, full_name, index)`
+/// returning false stops the walk. This is the single resolution shared by the collision check and
+/// the pre-existing-collision collector, so the two cannot disagree about a name.
+template <typename OnStream, typename OnSkippedIndex>
+void forEachIndexSubstreamBase(
+    const StorageMetadataPtr & metadata_snapshot,
+    const IndicesDescription & indices,
+    std::optional<bool> escape_filenames_override,
+    const MergeTreeSettings & settings,
+    bool rethrow_construction_errors,
+    OnStream && on_stream,
+    OnSkippedIndex && on_skipped_index)
+{
+    const auto & index_factory = MergeTreeIndexFactory::instance();
+
+    for (const auto & index : indices)
+    {
+        /// A creator can reject a description that attach-mode validation tolerated on purpose, so
+        /// construction failure is fatal exactly where a collision report is: on CREATE/ALTER the
+        /// creator's own error must surface, on ATTACH refusing to load the table would be worse
+        /// than losing the check for this one index.
+        MergeTreeIndexPtr index_ptr;
+        try
+        {
+            index_ptr = index_factory.get(metadata_snapshot, index, settings);
+        }
+        catch (const Exception & e)
+        {
+            if (rethrow_construction_errors)
+                throw;
+
+            on_skipped_index(index, e);
+            continue;
+        }
+
+        /// Inert index types (a removed type kept only so old tables still attach) hold no data
+        /// and are skipped by every write path, so they can never collide with anything.
+        if (index_ptr->isInert())
+            continue;
+
+        auto file_name = getIndexFileName(index.name, escape_filenames_override.value_or(index.escape_filenames));
+
+        for (const auto & substream : index_ptr->getSubstreams())
+        {
+            auto full_stream_name = file_name + substream.suffix;
+            auto stream_name = replaceFileNameToHashIfNeeded(full_stream_name, settings, nullptr);
+
+            if (!on_stream(stream_name, full_stream_name, index))
+                return;
+        }
+    }
+}
+
+/// Records every owner of every base claimed twice or more, resolving names exactly as the
+/// collision check does. Never throws and never logs: a pre-existing collision was already
+/// reported when the table was attached, and it must not be re-reported on every ALTER.
+PreExistingIndexStreamOwners collectPreExistingOwnersByBase(
+    const StorageMetadataPtr & metadata_snapshot,
+    const IndicesDescription & indices,
+    std::optional<bool> escape_filenames_override,
+    const MergeTreeSettings & settings)
+{
+    std::unordered_map<String, NameSet> owners_by_base;
+
+    forEachIndexSubstreamBase(
+        metadata_snapshot, indices, escape_filenames_override, settings,
+        /*rethrow_construction_errors=*/ false,
+        [&](const String & stream_name, const String &, const IndexDescription & index)
+        {
+            owners_by_base[stream_name].insert(index.name);
+            /// Never short-circuit: a table with two colliding bases must have both recorded, or
+            /// the second would keep refusing every ALTER.
+            return true;
+        },
+        [](const IndexDescription &, const Exception &) {});
+
+    std::erase_if(owners_by_base, [](const auto & entry) { return entry.second.size() < 2; });
+    return owners_by_base;
+}
+
 /// One filename namespace: maps a resolved base stream name to (unresolved name, owner description).
 ///
 /// Skip indices claim `skp_idx_<name>[<suffix>]` per substream, and each substream opens both a data
@@ -10376,58 +10571,32 @@ public:
     /// `escape_filenames` afterwards, so the descriptions still hold the pre-ALTER value here. It is
     /// left unset for a projection, whose descriptions are the only source of truth: their escaping is
     /// fixed at construction and `changeSettings` never revisits them.
+    ///
+    /// @pre_existing grandfathers the collisions an ALTER inherits: a pair is reported only when at
+    /// least one of its two claimants is new to that base, so a table that already holds a collision
+    /// stays alterable while an ALTER adding another claimant to the contested base is still refused.
     void add(
         const StorageMetadataPtr & metadata_snapshot,
         const IndicesDescription & indices,
-        std::optional<bool> escape_filenames_override)
+        std::optional<bool> escape_filenames_override,
+        const PreExistingIndexStreamOwners * pre_existing = nullptr)
     {
-        const auto & index_factory = MergeTreeIndexFactory::instance();
-
-        for (const auto & index : indices)
-        {
-            /// A creator can reject a description that attach-mode validation tolerated on purpose, so
-            /// construction failure is fatal exactly where a collision report is: on CREATE/ALTER the
-            /// creator's own error must surface, on ATTACH refusing to load the table would be worse
-            /// than losing the check for this one index.
-            MergeTreeIndexPtr index_ptr;
-            try
+        forEachIndexSubstreamBase(
+            metadata_snapshot, indices, escape_filenames_override, settings, throw_on_error,
+            [&](const String & stream_name, const String & full_stream_name, const IndexDescription & index)
             {
-                index_ptr = index_factory.get(metadata_snapshot, index, settings);
-            }
-            catch (const Exception & e)
-            {
-                if (throw_on_error)
-                    throw;
+                auto owner = fmt::format("Index '{}' of type '{}'", index.name, index.type);
 
-                LOG_WARNING(
-                    log,
-                    "Skipping index '{}' of type '{}' in the filename collision check: {}",
-                    index.name, index.type, e.message());
-                continue;
-            }
-
-            /// Inert index types (a removed type kept only so old tables still attach) hold no data
-            /// and are skipped by every write path, so they can never collide with anything.
-            if (index_ptr->isInert())
-                continue;
-
-            auto file_name = getIndexFileName(index.name, escape_filenames_override.value_or(index.escape_filenames));
-            auto owner = fmt::format("Index '{}' of type '{}'", index.name, index.type);
-
-            for (const auto & substream : index_ptr->getSubstreams())
-            {
-                auto full_stream_name = file_name + substream.suffix;
-                auto stream_name = replaceFileNameToHashIfNeeded(full_stream_name, settings, nullptr);
-
-                auto [it, inserted] = stream_name_to_owner.emplace(stream_name, std::pair{full_stream_name, owner});
+                auto [it, inserted] = stream_name_to_owner.emplace(stream_name, StreamOwner{full_stream_name, owner, index.name});
                 if (inserted)
-                    continue;
+                    return true;
 
-                const auto & [other_full_name, other_owner] = it->second;
+                if (isGrandfathered(pre_existing, stream_name, index.name, it->second.index_name))
+                    return true;
 
                 auto message = fmt::format(
                     "{} and {} have streams ({} and {}) with collision in file name {}",
-                    owner, other_owner, full_stream_name, other_full_name, stream_name);
+                    owner, it->second.description, full_stream_name, it->second.full_stream_name, stream_name);
 
                 if (settings[MergeTreeSetting::replace_long_file_name_to_hash])
                     message += ". It may be a collision between a filename for one index and a hash of filename for another index (see setting 'replace_long_file_name_to_hash')";
@@ -10436,37 +10605,52 @@ public:
                     throw Exception(ErrorCodes::BAD_ARGUMENTS, "{}", message);
 
                 LOG_ERROR(log, "Table definition is incorrect. {}. It may lead to corruption of data or crashes. You need to resolve it manually", message);
-                return;
-            }
-        }
+                return false;
+            },
+            [&](const IndexDescription & index, const Exception & e)
+            {
+                LOG_WARNING(
+                    log,
+                    "Skipping index '{}' of type '{}' in the filename collision check: {}",
+                    index.name, index.type, e.message());
+            });
     }
 
 private:
+    struct StreamOwner
+    {
+        String full_stream_name;
+        String description;
+        String index_name;
+    };
+
+    static bool isGrandfathered(
+        const PreExistingIndexStreamOwners * pre_existing,
+        const String & stream_name,
+        const String & index_name,
+        const String & other_index_name)
+    {
+        if (!pre_existing)
+            return false;
+
+        auto it = pre_existing->find(stream_name);
+        return it != pre_existing->end() && it->second.contains(index_name) && it->second.contains(other_index_name);
+    }
+
     const MergeTreeSettings & settings;
     LoggerPtr log;
     bool throw_on_error;
-    std::unordered_map<String, std::pair<String, String>> stream_name_to_owner;
+    std::unordered_map<String, StreamOwner> stream_name_to_owner;
 };
 
 }
 
-void MergeTreeData::checkSkipIndexFilenamesForCollision(const StorageInMemoryMetadata & metadata, bool throw_on_error) const
-{
-    /// Re-derive the settings from the metadata rather than reading the installed ones: an ALTER
-    /// MODIFY SETTING is validated before `changeSettings` installs it, so the live settings (and the
-    /// `escape_filenames` flag cached on every index description) still hold the pre-ALTER values.
-    auto settings = getDefaultSettings();
-    if (metadata.settings_changes)
-    {
-        const auto & changes = metadata.settings_changes->as<const ASTSetQuery &>().changes;
-        settings->applyChanges(changes, getContext(), /*is_loading_from_existing_metadata=*/true);
-    }
-
-    checkSkipIndexFilenamesForCollision(metadata, *settings, throw_on_error);
-}
-
 void MergeTreeData::checkSkipIndexFilenamesForCollision(
-    const StorageInMemoryMetadata & metadata, const MergeTreeSettings & settings, bool throw_on_error) const
+    const StorageInMemoryMetadata & metadata,
+    const MergeTreeSettings & settings,
+    bool throw_on_error,
+    const StorageInMemoryMetadata * old_metadata,
+    const MergeTreeSettings * old_settings) const
 {
     /// Constructing real index objects is what makes `getSubstreams` the single source of truth for
     /// the on-disk layout, but a creator assumes its validator has already run (for example
@@ -10476,22 +10660,52 @@ void MergeTreeData::checkSkipIndexFilenamesForCollision(
     /// why `add` tolerates a construction failure there.
     auto metadata_snapshot = std::make_shared<const StorageInMemoryMetadata>(metadata);
 
+    /// The pre-existing collisions are resolved from the metadata and settings the table has BEFORE
+    /// this operation: re-interpreting the old definition under the new naming would let an ALTER
+    /// that itself creates a collision (`MODIFY SETTING escape_index_filenames = 0`) look inherited.
+    std::shared_ptr<const StorageInMemoryMetadata> old_metadata_snapshot;
+    PreExistingIndexStreamOwners pre_existing;
+    if (old_metadata)
+    {
+        old_metadata_snapshot = std::make_shared<const StorageInMemoryMetadata>(*old_metadata);
+        pre_existing = collectPreExistingOwnersByBase(
+            old_metadata_snapshot,
+            old_metadata->secondary_indices,
+            (*old_settings)[MergeTreeSetting::escape_index_filenames],
+            *old_settings);
+    }
+
     SkipIndexFilenameCollisionChecker checker(settings, log.load(), throw_on_error);
-    checker.add(metadata_snapshot, metadata.secondary_indices, settings[MergeTreeSetting::escape_index_filenames]);
+    checker.add(
+        metadata_snapshot, metadata.secondary_indices, settings[MergeTreeSetting::escape_index_filenames],
+        old_metadata ? &pre_existing : nullptr);
 
     /// A projection's files live in its own `<name>.proj/` directory, so it is a separate namespace
     /// and must not be pooled with the table's indices. Its settings are an overlay on the table's.
+    /// Grandfathering is per namespace too, so a table-level collision cannot license one here.
     for (const auto & projection : metadata.projections)
     {
         if (!projection.metadata)
             continue;
 
-        auto projection_settings = std::make_shared<MergeTreeSettings>(settings);
-        if (!projection.settings_changes.empty())
-            projection_settings->applyChanges(projection.settings_changes, getContext(), /*is_loading_from_existing_metadata=*/true);
+        auto projection_settings = getProjectionEffectiveSettings(projection, settings, getContext());
+
+        PreExistingIndexStreamOwners projection_pre_existing;
+        if (old_metadata && old_metadata->projections.has(projection.name))
+        {
+            const auto & old_projection = old_metadata->projections.get(projection.name);
+            if (old_projection.metadata)
+                projection_pre_existing = collectPreExistingOwnersByBase(
+                    old_projection.metadata,
+                    old_projection.metadata->secondary_indices,
+                    std::nullopt,
+                    *getProjectionEffectiveSettings(old_projection, *old_settings, getContext()));
+        }
 
         SkipIndexFilenameCollisionChecker projection_checker(*projection_settings, log.load(), throw_on_error);
-        projection_checker.add(projection.metadata, projection.metadata->secondary_indices, std::nullopt);
+        projection_checker.add(
+            projection.metadata, projection.metadata->secondary_indices, std::nullopt,
+            old_metadata ? &projection_pre_existing : nullptr);
     }
 }
 
@@ -12307,11 +12521,8 @@ std::pair<MergeTreeData::MutableDataPartPtr, scope_guard> MergeTreeData::createE
     if ((*getSettings())[MergeTreeSetting::fsync_part_directory])
         sync_guard = new_data_part_storage->getDirectorySyncGuard();
 
-    /// An empty part has zero size, so this chooses the minimal compression method:
-    /// either the table-level `default_compression_codec` setting, or the default lz4 / a
-    /// compression method with zero thresholds on absolute and relative part size.
-    /// Pass empty TTL infos so that `RECOMPRESS` codecs are not selected for an empty part.
-    auto compression_codec = getCompressionCodecForPart(0, {}, time(nullptr));
+    /// Zero size picks the minimal compression method. Empty TTL infos so no `RECOMPRESS` codec is selected for an empty part.
+    auto compression_codec = getCompressionCodecForPart(metadata_snapshot, 0, {}, time(nullptr)).codec;
 
     const auto & index_factory = MergeTreeIndexFactory::instance();
     auto skip_indices = index_factory.getMany(metadata_snapshot, metadata_snapshot->getSecondaryIndices(), *getSettings());
@@ -12332,7 +12543,8 @@ std::pair<MergeTreeData::MutableDataPartPtr, scope_guard> MergeTreeData::createE
         /*reset_columns_=*/false,
         /*blocks_are_granules_size=*/false,
         /*write_settings=*/{},
-        /*written_offset_substreams=*/nullptr);
+        /*written_offset_substreams=*/nullptr,
+        /*try_adaptive_codec=*/ false); /// Empty 0-row part (also reached by mutations): no data is written, so the flag has no effect.
 
     bool sync_on_insert = (*settings)[MergeTreeSetting::fsync_after_insert];
 
