@@ -250,6 +250,24 @@ SELECT countIf(explain ILIKE '%Clauses:%' AND explain ILIKE '%__table1.k, %') = 
     WHERE toUInt8(assumeNotNull(joinGet('jtn', 'v', toUInt32(l.a % 100))) % 16) = r.b
     SETTINGS query_plan_merge_filter_into_join_condition = 1);
 
+-- L18: an unsafe call inside a lambda body. A lambda reaches the guard as a `FunctionCapture` whose
+-- `children` are only the captured columns, so the body is invisible to a child walk, and the wrapper
+-- itself reports none of the four predicates. The guard therefore descends into the inner
+-- `ActionsDAG`, which is where the `rand` lives. The `arrayMap(...)[1]` spelling keeps the operand
+-- `UInt8`, matching `r.b`: `arrayCount` returns `UInt32` and the pre-existing type test above rejects
+-- it, which would make this row vacuous.
+SELECT countIf(x != rb) = 0 AND count() > 20000 FROM (
+    SELECT arrayMap(z -> toUInt8(rand(z) % 16), [l.a])[1] AS x, r.b AS rb FROM l INNER JOIN r ON l.k = r.k
+    WHERE arrayMap(z -> toUInt8(rand(z) % 16), [l.a])[1] = r.b)
+SETTINGS query_plan_merge_filter_into_join_condition = 1;
+
+-- L19: a stateful call inside a lambda body, so the descent is asserted for both refusal classes and
+-- not only for determinism. As in L5 the correct answer is empty and pre-fix 2000 rows are emitted.
+SELECT count() = 0 FROM (
+    SELECT rc.b AS rb FROM lc INNER JOIN rc ON lc.k = rc.k
+    WHERE arrayMap(z -> toUInt8(runningConcurrency(z, lc.e) % 16), [lc.s])[1] = rc.b)
+SETTINGS query_plan_merge_filter_into_join_condition = 1;
+
 -- Controls: a deterministic-in-scope-of-query expression must keep being merged. A `Clauses:` line
 -- listing two key groups (`(k, <expr>) = (k, b)`) means the extra term was merged.
 
@@ -340,6 +358,15 @@ SELECT countIf(explain ILIKE '%Clauses:%' AND explain ILIKE '%__table1.k, %') = 
 SELECT countIf(explain ILIKE '%Clauses:%' AND explain ILIKE '%__table1.k, %') = 1 FROM (
     EXPLAIN PLAN actions = 1 SELECT r.b FROM l INNER JOIN r ON l.k = r.k
     WHERE toUInt8(dictGet(currentDatabase() || '.dic', 'val', toUInt64(l.a % 320)) % 16) = r.b
+    SETTINGS query_plan_merge_filter_into_join_condition = 1);
+
+-- C11: the deterministic twin of L18, in L18's exact lambda wrapper. The descent into a lambda body
+-- must refuse only what the body actually carries, so a lambda over a deterministic expression must
+-- still be merged. Without this row the descent could be refusing every lambda outright and L18 would
+-- still pass.
+SELECT countIf(explain ILIKE '%Clauses:%' AND explain ILIKE '%__table1.k, %') = 1 FROM (
+    EXPLAIN PLAN actions = 1 SELECT r.b FROM l INNER JOIN r ON l.k = r.k
+    WHERE arrayMap(z -> toUInt8(z % 16), [l.a])[1] = r.b
     SETTINGS query_plan_merge_filter_into_join_condition = 1);
 
 -- C4: the deterministic twin of L1's query, already correct before the fix, so it proves the oracle

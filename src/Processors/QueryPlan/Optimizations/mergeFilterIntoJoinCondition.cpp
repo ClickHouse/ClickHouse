@@ -1,10 +1,12 @@
 #include <Processors/QueryPlan/Optimizations/Optimizations.h>
 
 #include <Columns/ColumnConst.h>
+#include <Columns/ColumnFunction.h>
 #include <Common/assert_cast.h>
 #include <Core/Joins.h>
 
 #include <Functions/FunctionsLogical.h>
+#include <Functions/FunctionsMiscellaneous.h>
 #include <Functions/IFunction.h>
 #include <Functions/IFunctionAdaptors.h>
 
@@ -148,14 +150,48 @@ bool isUnstableLookupFunction(const String & function_name)
     return function_name == "joinGet" || function_name == "joinGetOrNull";
 }
 
+/// The two wrappers that hold a lambda body share only this accessor, not a common base.
+const ActionsDAG * getInnerDAG(const IFunctionBase * function)
+{
+    if (const auto * capture = typeid_cast<const FunctionCapture *>(function))
+        return &capture->getAcionsDAG();
+
+    if (const auto * expression = typeid_cast<const FunctionExpression *>(function))
+        return &expression->getAcionsDAG();
+
+    return nullptr;
+}
+
+/// A captureless lambda is constant-folded, so it arrives as a COLUMN, not as a FUNCTION node.
+const ActionsDAG * getLambdaBody(const ActionsDAG::Node & node)
+{
+    if (node.type == ActionsDAG::ActionType::FUNCTION)
+    {
+        if (const auto * inner = getInnerDAG(node.function_base.get()))
+            return inner;
+    }
+
+    if (node.column)
+    {
+        const IColumn * maybe_function = node.column.get();
+        if (const auto * column_const = typeid_cast<const ColumnConst *>(maybe_function))
+            maybe_function = &column_const->getDataColumn();
+
+        if (const auto * column_function = typeid_cast<const ColumnFunction *>(maybe_function))
+            return getInnerDAG(column_function->getFunction().get());
+    }
+
+    return nullptr;
+}
+
 /// Whether a subgraph yields the same value wherever in the plan it is evaluated, so that it may be
 /// promoted to a JOIN key while the conjunct above the join is replaced by a constant.
 ///
 /// The predicate is `isDeterministicInScopeOfQuery`, not `isDeterministic`: `dictGet` and `today`
-/// report the latter as false yet hold one value per query, and refusing them would lose a correct
-/// optimization. `arrayJoin` is matched on node TYPE because `addArrayJoin` leaves `function_base`
-/// unset. A lambda body is not a child, so non-determinism inside one is not seen. The walk memoizes
-/// because an `ActionsDAG` reuses one node for a repeated subexpression.
+/// report the latter as false yet hold one value per query. `arrayJoin` is matched on node TYPE
+/// because `addArrayJoin` leaves `function_base` unset. A lambda body is not a child and its wrapper
+/// reports none of the flags the body would, so it is enqueued separately. The walk memoizes because
+/// an `ActionsDAG` reuses one node for a repeated subexpression.
 bool isSafeToUseAsJoinKey(const ActionsDAG::Node * node)
 {
     std::unordered_set<const ActionsDAG::Node *> visited;
@@ -178,6 +214,12 @@ bool isSafeToUseAsJoinKey(const ActionsDAG::Node * node)
                 || isRepresentationDependentFunction(current->function_base->getName())
                 || isUnstableLookupFunction(current->function_base->getName())))
             return false;
+
+        if (const auto * lambda_body = getLambdaBody(*current))
+        {
+            for (const auto & inner_node : lambda_body->getNodes())
+                nodes_to_process.push_back(&inner_node);
+        }
 
         for (const auto * child : current->children)
         {
