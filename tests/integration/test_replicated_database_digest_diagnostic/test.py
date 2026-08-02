@@ -23,7 +23,7 @@ def started_cluster():
         cluster.start()
         yield cluster
     finally:
-        # Both tests deliberately drive the digest assertion, which aborts the server.
+        # Every test deliberately drives the digest assertion, which aborts the server.
         cluster.shutdown(ignore_logical_errors=True, ignore_fatal=True)
 
 
@@ -75,21 +75,49 @@ def diverge_metadata_bytes_only(metadata_path):
     )
 
 
-def force_digest_check(db):
-    node.query("SYSTEM ENABLE FAILPOINT database_replicated_force_metadata_digest_check")
+DIGEST_ABORT = "Digest does not match"
+
+
+def arm_failpoint(name):
+    node.query(f"SYSTEM ENABLE FAILPOINT {name}")
     assert (
         node.query(
-            "SELECT count() FROM system.fail_points WHERE enabled"
-            " AND name = 'database_replicated_force_metadata_digest_check'"
+            f"SELECT count() FROM system.fail_points WHERE enabled AND name = '{name}'"
         ).strip()
         == "1"
-    ), "the failpoint did not arm, so nothing below would be evidence"
+    ), f"the failpoint {name} did not arm, so nothing below would be evidence"
+
+
+def force_digest_check(db, extra_failpoints=()):
+    """Drive the digest check and return the log counts captured just before it ran.
+
+    The abort line comes from the root logger, so unlike every other assertion here it cannot be
+    scoped to one database, and an earlier test in this module already put it in the log. Callers
+    therefore have to assert a delta, which is what the returned counts are for.
+    """
+    arm_failpoint("database_replicated_force_metadata_digest_check")
+    for name in extra_failpoints:
+        arm_failpoint(name)
+    before = {
+        line: int(node.count_in_log(line))
+        for line in [DIGEST_ABORT, "Got unexpected query from"]
+    }
     # A DDL on the database samples the now-unconditional check. It aborts the server, which is
     # the point of the test, so losing the connection here is the expected outcome.
     node.query_and_get_error(
         f"CREATE TABLE {db}.probe (n Int32) ENGINE = ReplicatedMergeTree ORDER BY n",
         settings={"distributed_ddl_task_timeout": 0},
     )
+    return before
+
+
+def assert_log_delta(before, line, expected_more):
+    """Assert how many NEW occurrences of `line` this test's own abort produced."""
+    actual = int(node.count_in_log(line)) - before[line]
+    if expected_more:
+        assert actual > 0, f"expected new '{line}' lines, got {actual}"
+    else:
+        assert actual == 0, f"expected no new '{line}' lines, got {actual}"
 
 
 def grep_table_report(db, table, tail):
@@ -120,7 +148,7 @@ def test_digest_mismatch_names_the_diverging_table(started_cluster):
     metadata_path = prepare_database(db)
     on_disk_size = diverge_metadata_bytes_only(f"{metadata_path}diverging.sql")
 
-    force_digest_check(db)
+    before = force_digest_check(db)
 
     assert node.contains_in_log(
         f"DatabaseReplicated ({db}): Digest of local metadata"
@@ -146,7 +174,7 @@ def test_digest_mismatch_names_the_diverging_table(started_cluster):
     assert node.contains_in_log(f"DatabaseReplicated ({db}): AST for table diverging is the same")
 
     # The terminating error is still the one CI matches this failure family on.
-    assert node.contains_in_log("Digest does not match")
+    assert_log_delta(before, DIGEST_ABORT, expected_more=True)
 
     node.start_clickhouse()
     node.query(f"DROP DATABASE IF EXISTS {db} SYNC")
@@ -171,8 +199,9 @@ def test_dump_survives_a_per_table_failure(started_cluster):
         zk.stop()
     diverge_metadata_bytes_only(f"{metadata_path}intact.sql")
 
-    force_digest_check(db)
+    before = force_digest_check(db)
 
+    assert_log_delta(before, DIGEST_ABORT, expected_more=True)
     assert node.contains_in_log(f"DatabaseReplicated ({db}): Digest of local metadata")
     # The unrenderable table is named with an explicit error state, reported as the error CODE:
     # the parser's message embeds the metadata it failed on, and metadata is unmasked and can hold
@@ -219,11 +248,11 @@ def test_dump_survives_metadata_that_is_not_in_the_expected_form(started_cluster
         zk.stop()
     diverge_metadata_bytes_only(f"{metadata_path}intact.sql")
 
-    force_digest_check(db)
+    before = force_digest_check(db)
 
     # The abort must still be the digest assertion, not the parse assertion.
-    assert node.contains_in_log("Digest does not match")
-    assert not node.contains_in_log("Got unexpected query from")
+    assert_log_delta(before, DIGEST_ABORT, expected_more=True)
+    assert_log_delta(before, "Got unexpected query from", expected_more=False)
 
     assert grep_table_report(db, "diverging", "coordinator metadata is not in the expected form")
     # ...and the byte report for the table after it survived.
@@ -237,6 +266,109 @@ def test_dump_survives_metadata_that_is_not_in_the_expected_form(started_cluster
         zk.set(node_path, original_metadata)
     finally:
         zk.stop()
+
+    node.start_clickhouse()
+    node.query(f"DROP DATABASE IF EXISTS {db} SYNC")
+
+
+def test_table_only_in_coordinator_gets_its_digest_term(started_cluster):
+    """A table present in the coordinator and absent locally must report its digest term.
+
+    That term is exactly the amount by which the coordinator digest exceeds the local recompute
+    for this table, so it is the number that answers whether one table explains the whole delta.
+    """
+    db = "digest_diagnostic_coordinator_only"
+    metadata_path = prepare_database(db)
+
+    # Identical bytes under two names, so the reported terms must differ: the digest hashes the
+    # table name together with the metadata. Removed again below, so no local table is ever
+    # created from this metadata and the shared UUID cannot collide.
+    ghost_metadata = (
+        b"ATTACH TABLE _ UUID '00000000-1111-2222-3333-444444444444'"
+        b" (n Int32) ENGINE = MergeTree ORDER BY n"
+    )
+    ghost_paths = [f"/clickhouse/databases/{db}/metadata/ghost_{i}" for i in (1, 2)]
+    zk = cluster.get_kazoo_client("zoo1")
+    try:
+        for path in ghost_paths:
+            zk.create(path, ghost_metadata)
+    finally:
+        zk.stop()
+    diverge_metadata_bytes_only(f"{metadata_path}intact.sql")
+
+    before = force_digest_check(db)
+
+    assert_log_delta(before, DIGEST_ABORT, expected_more=True)
+
+    terms = []
+    for i in (1, 2):
+        report = node.grep_in_log(
+            f"DatabaseReplicated ({db}): Table ghost_{i} exists in ZK, but missing locally:"
+        )
+        found = re.search(
+            r"coordinator digest term (\d{1,20}), (\d+) bytes in coordinator", report
+        )
+        assert found, f"ghost_{i} was named without its coordinator digest term: {report}"
+        term, size = found.groups()
+        assert int(size) == len(ghost_metadata)
+        terms.append(term)
+    assert terms[0] != terms[1], "the digest hashes the table name, so the terms must differ"
+
+    # No local fields are invented for a table that has no local metadata.
+    for i in (1, 2):
+        assert not node.contains_in_log(f"DatabaseReplicated ({db}): Table ghost_{i} (digest carrier")
+
+    zk = cluster.get_kazoo_client("zoo1")
+    try:
+        for path in ghost_paths:
+            zk.delete(path)
+    finally:
+        zk.stop()
+
+    node.start_clickhouse()
+    node.query(f"DROP DATABASE IF EXISTS {db} SYNC")
+
+
+def test_dump_reports_local_metadata_without_a_coordinator_snapshot(started_cluster):
+    """A coordinator snapshot failure must not cost the local half of the report.
+
+    The observed failure is the local recompute disagreeing with the in-memory counter, which
+    reaches the dump without consulting the coordinator at all, and the lane where this family
+    fires runs Keeper fault injection.
+    """
+    db = "digest_diagnostic_no_snapshot"
+    metadata_path = prepare_database(db)
+    on_disk_size = diverge_metadata_bytes_only(f"{metadata_path}diverging.sql")
+
+    before = force_digest_check(
+        db, extra_failpoints=["database_replicated_dump_fail_to_get_metadata_snapshot"]
+    )
+
+    assert_log_delta(before, DIGEST_ABORT, expected_more=True)
+    snapshot_failure = node.grep_in_log(
+        f"DatabaseReplicated ({db}): Cannot get the coordinator metadata snapshot"
+    )
+    assert "FAULT_INJECTED" in snapshot_failure, snapshot_failure
+
+    # Every local table still gets its digest term and on-disk size, under wording that says the
+    # coordinator side is unknown rather than claiming anything about it.
+    for table, size in [("diverging", on_disk_size), ("intact", None)]:
+        report = grep_table_report(db, table, "digest term")
+        found = re.search(
+            r"digest term (\d{1,20}), (\d+) bytes on disk, coordinator state unknown", report
+        )
+        assert found, f"{table} lost its local report without a snapshot: {report}"
+        if size is not None:
+            assert int(found.group(2)) == size
+
+    # ...and nothing is accused of being absent from a coordinator that was never read. An empty
+    # snapshot would otherwise make every table look missing, which is worse than the bug.
+    assert not node.contains_in_log(f"DatabaseReplicated ({db}): Table diverging (digest carrier: true) exists locally, but is missing in coordinator")
+    assert not node.contains_in_log(f"DatabaseReplicated ({db}): Table intact (digest carrier: true) exists locally, but is missing in coordinator")
+
+    # The two coordinator-comparing passes have nothing to say, so they do not run.
+    assert not node.contains_in_log(f"DatabaseReplicated ({db}): AST for table")
+    assert not node.contains_in_log(f"DatabaseReplicated ({db}): AST differs for table")
 
     node.start_clickhouse()
     node.query(f"DROP DATABASE IF EXISTS {db} SYNC")

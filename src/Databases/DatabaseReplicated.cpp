@@ -133,6 +133,7 @@ namespace FailPoints
     extern const char database_replicated_drop_before_removing_keeper_failed[];
     extern const char database_replicated_drop_after_removing_keeper_failed[];
     extern const char database_replicated_force_metadata_digest_check[];
+    extern const char database_replicated_dump_fail_to_get_metadata_snapshot[];
     extern const char database_replicated_pause_after_reading_log_pointer[];
     extern const char database_replicated_pause_after_snapshot_identity_check[];
     extern const char database_replicated_throw_on_stop_replication[];
@@ -1162,20 +1163,22 @@ static String describeCurrentExceptionForDumpOnly()
 
 void DatabaseReplicated::dumpTableRawMetadataDiffForOneTable(
     const String & table_name,
-    const ContextPtr & local_context,
-    const std::map<String, String> & table_name_to_metadata_in_zk) const
+    bool is_digest_carrier,
+    const std::map<String, String> * table_name_to_metadata_in_zk) const
 {
-    /// The digest sums over the in-memory `tables` map, while the caller iterates
-    /// `getAllTableNames`, which also lists not-yet-loaded tables. Sampled after `checkDigestValid`
-    /// released `mutex`, so a concurrent DDL can report `false` for the real culprit: `true` means
-    /// the table contributes a digest term, `false` does not exonerate it.
-    const bool is_digest_carrier = isTableExist(table_name, local_context);
-
-    auto zk_metadata_it = table_name_to_metadata_in_zk.find(table_name);
-    const bool exists_in_zk = zk_metadata_it != table_name_to_metadata_in_zk.end();
-    if (!exists_in_zk)
-        LOG_ERROR(log, "Table {} (digest carrier: {}) exists locally, but is missing in coordinator",
-            table_name, is_digest_carrier);
+    /// A null map means the coordinator snapshot could not be fetched. The on-disk half of the
+    /// report needs no Keeper, so it is still produced, and the coordinator side is reported as
+    /// unknown rather than as missing.
+    const String * zk_metadata = nullptr;
+    if (table_name_to_metadata_in_zk)
+    {
+        auto zk_metadata_it = table_name_to_metadata_in_zk->find(table_name);
+        if (zk_metadata_it == table_name_to_metadata_in_zk->end())
+            LOG_ERROR(log, "Table {} (digest carrier: {}) exists locally, but is missing in coordinator",
+                table_name, is_digest_carrier);
+        else
+            zk_metadata = &zk_metadata_it->second;
+    }
 
     /// The digest hashes the raw metadata bytes, so compare those: two spellings of one AST have
     /// equal formatted forms and different hashes. Report sizes and hashes, not the raw content,
@@ -1183,26 +1186,32 @@ void DatabaseReplicated::dumpTableRawMetadataDiffForOneTable(
     try
     {
         String on_disk_metadata = readMetadataFile(table_name);
-        if (!exists_in_zk)
+        const UInt64 local_term = DB::getMetadataHash(table_name, on_disk_metadata);
+        if (!table_name_to_metadata_in_zk)
+        {
+            LOG_ERROR(log, "Table {} (digest carrier: {}): digest term {}, {} bytes on disk, coordinator state unknown",
+                table_name, is_digest_carrier, local_term, on_disk_metadata.size());
+        }
+        else if (!zk_metadata)
         {
             LOG_ERROR(log, "Table {} (digest carrier: {}): digest term {}, {} bytes on disk, not in coordinator",
-                table_name, is_digest_carrier, DB::getMetadataHash(table_name, on_disk_metadata), on_disk_metadata.size());
+                table_name, is_digest_carrier, local_term, on_disk_metadata.size());
         }
-        else if (zk_metadata_it->second != on_disk_metadata)
+        else if (*zk_metadata != on_disk_metadata)
         {
             auto mismatch = std::mismatch(on_disk_metadata.begin(), on_disk_metadata.end(),
-                zk_metadata_it->second.begin(), zk_metadata_it->second.end());
+                zk_metadata->begin(), zk_metadata->end());
             LOG_ERROR(log, "Table {} (digest carrier: {}): digest term {}, raw metadata DIFFERS from coordinator "
                 "(on disk {} bytes, coordinator {} bytes, first difference at byte {}, coordinator term {})",
-                table_name, is_digest_carrier, DB::getMetadataHash(table_name, on_disk_metadata),
-                on_disk_metadata.size(), zk_metadata_it->second.size(),
+                table_name, is_digest_carrier, local_term,
+                on_disk_metadata.size(), zk_metadata->size(),
                 std::distance(on_disk_metadata.begin(), mismatch.first),
-                DB::getMetadataHash(table_name, zk_metadata_it->second));
+                DB::getMetadataHash(table_name, *zk_metadata));
         }
         else
         {
             LOG_ERROR(log, "Table {} (digest carrier: {}): digest term {}, raw metadata matches coordinator",
-                table_name, is_digest_carrier, DB::getMetadataHash(table_name, on_disk_metadata));
+                table_name, is_digest_carrier, local_term);
         }
     }
     catch (...)
@@ -1214,28 +1223,24 @@ void DatabaseReplicated::dumpTableRawMetadataDiffForOneTable(
 
 void DatabaseReplicated::dumpTableAstDiffForOneTable(
     const String & table_name,
+    bool is_digest_carrier,
     const ContextPtr & local_context,
     const std::map<String, String> & table_name_to_metadata_in_zk) const
 {
-    const bool is_digest_carrier = isTableExist(table_name, local_context);
-
     auto zk_metadata_it = table_name_to_metadata_in_zk.find(table_name);
     const bool exists_in_zk = zk_metadata_it != table_name_to_metadata_in_zk.end();
 
-    /// Supplementary human-readable rendering; the raw-byte pass already carries the actionable
-    /// data. It can fail for one table (missing or malformed metadata is itself a divergence being
-    /// hunted), which must not hide the other tables, so parse without the aborting form check.
-    ASTPtr local_ast_ptr;
-    ASTPtr on_disk_ast_ptr;
-    ASTPtr zk_ast_ptr;
+    /// Supplementary rendering, so one table's failure must not hide the others: parse without the
+    /// aborting form check, and guard the formatting too, since `IAST::format` runs `checkStackSize`.
     try
     {
-        local_ast_ptr = tryGetCreateOrAttachTableQuery(table_name, local_context);
-        on_disk_ast_ptr = parseQueryFromMetadataOnDisk(table_name, /*unexpected_form_is_not_an_error=*/true);
+        ASTPtr local_ast_ptr = tryGetCreateOrAttachTableQuery(table_name, local_context);
+        ASTPtr on_disk_ast_ptr = parseQueryFromMetadataOnDisk(table_name, /*unexpected_form_is_not_an_error=*/true);
         if (!on_disk_ast_ptr)
             LOG_ERROR(log, "Table {} (digest carrier: {}): local metadata is not in the expected form",
                 table_name, is_digest_carrier);
 
+        ASTPtr zk_ast_ptr;
         if (exists_in_zk)
         {
             zk_ast_ptr = parseQueryFromMetadataInZooKeeper(
@@ -1249,76 +1254,106 @@ void DatabaseReplicated::dumpTableAstDiffForOneTable(
                 LOG_ERROR(log, "Table {} (digest carrier: {}): coordinator metadata is not in the expected form",
                     table_name, is_digest_carrier);
         }
+
+        auto local_query_with_secrets = local_ast_ptr ? local_ast_ptr->formatWithSecretsOneLine() : "";
+        auto zookeeper_query_with_secrets = zk_ast_ptr ? zk_ast_ptr->formatWithSecretsOneLine() : "";
+        auto on_disk_query_with_secrets = on_disk_ast_ptr ? on_disk_ast_ptr->formatWithSecretsOneLine() : "";
+
+        if (local_query_with_secrets != zookeeper_query_with_secrets || local_query_with_secrets != on_disk_query_with_secrets)
+        {
+            /// NOTE: due to transaction will be committed **before**
+            /// tryCompareLocalAndZooKeeperTablesAndDumpDiffForDebugOnly()
+            /// runs, you will almost never enter this code path, since it will
+            /// update on disk metadata. But the checkDigestValid() will still
+            /// throw LOGICAL_ERROR since database relies on the on-disk data
+            /// (for tracking tables_metadata_digest)
+            LOG_ERROR(log, "AST differs for table {}", table_name);
+            LOG_ERROR(log, "\t  in memory: {}", local_ast_ptr ? local_ast_ptr->formatForLogging() : "nullptr");
+            LOG_ERROR(log, "\tcoordinator: {}", zk_ast_ptr ? zk_ast_ptr->formatForLogging() : "nullptr");
+            LOG_ERROR(log, "\t    on disk: {}", on_disk_ast_ptr ? on_disk_ast_ptr->formatForLogging() : "nullptr");
+        }
+        else
+        {
+            LOG_DEBUG(log, "AST for table {} is the same", table_name);
+            LOG_DEBUG(log, "\t  in memory: {}", local_ast_ptr ? local_ast_ptr->formatForLogging() : "nullptr");
+            LOG_DEBUG(log, "\tcoordinator: {}", zk_ast_ptr ? zk_ast_ptr->formatForLogging() : "nullptr");
+            LOG_DEBUG(log, "\t    on disk: {}", on_disk_ast_ptr ? on_disk_ast_ptr->formatForLogging() : "nullptr");
+        }
     }
     catch (...)
     {
         LOG_ERROR(log, "Table {} (digest carrier: {}): cannot render metadata as AST: {}",
             table_name, is_digest_carrier, describeCurrentExceptionForDumpOnly());
-        return;
-    }
-
-    auto local_query_with_secrets = local_ast_ptr ? local_ast_ptr->formatWithSecretsOneLine() : "";
-    auto zookeeper_query_with_secrets = zk_ast_ptr ? zk_ast_ptr->formatWithSecretsOneLine() : "";
-    auto on_disk_query_with_secrets = on_disk_ast_ptr ? on_disk_ast_ptr->formatWithSecretsOneLine() : "";
-
-    if (local_query_with_secrets != zookeeper_query_with_secrets || local_query_with_secrets != on_disk_query_with_secrets)
-    {
-        /// NOTE: due to transaction will be committed **before**
-        /// tryCompareLocalAndZooKeeperTablesAndDumpDiffForDebugOnly()
-        /// runs, you will almost never enter this code path, since it will
-        /// update on disk metadata. But the checkDigestValid() will still
-        /// throw LOGICAL_ERROR since database relies on the on-disk data
-        /// (for tracking tables_metadata_digest)
-        LOG_ERROR(log, "AST differs for table {}", table_name);
-        LOG_ERROR(log, "\t  in memory: {}", local_ast_ptr ? local_ast_ptr->formatForLogging() : "nullptr");
-        LOG_ERROR(log, "\tcoordinator: {}", zk_ast_ptr ? zk_ast_ptr->formatForLogging() : "nullptr");
-        LOG_ERROR(log, "\t    on disk: {}", on_disk_ast_ptr ? on_disk_ast_ptr->formatForLogging() : "nullptr");
-    }
-    else
-    {
-        LOG_DEBUG(log, "AST for table {} is the same", table_name);
-        LOG_DEBUG(log, "\t  in memory: {}", local_ast_ptr ? local_ast_ptr->formatForLogging() : "nullptr");
-        LOG_DEBUG(log, "\tcoordinator: {}", zk_ast_ptr ? zk_ast_ptr->formatForLogging() : "nullptr");
-        LOG_DEBUG(log, "\t    on disk: {}", on_disk_ast_ptr ? on_disk_ast_ptr->formatForLogging() : "nullptr");
     }
 }
 
 void DatabaseReplicated::tryCompareLocalAndZooKeeperTablesAndDumpDiffForDebugOnly(const ContextPtr & local_context) const
 {
-    /// Runs immediately before aborting on a digest mismatch, so nothing here may throw:
-    /// an escaping exception would replace `LOGICAL_ERROR: Digest does not match` and hide the family.
+    /// Runs immediately before aborting on a digest mismatch, so an escaping exception would
+    /// replace `LOGICAL_ERROR: Digest does not match` and hide the family. Best effort: every
+    /// catchable failure is contained. A LOGICAL_ERROR still aborts in these builds by design.
     try
     {
-        UInt32 max_log_ptr{};
-        auto table_name_to_metadata_in_zk = tryGetConsistentMetadataSnapshot(getZooKeeper(), max_log_ptr);
         auto table_names_local = getAllTableNames(local_context);
 
-        if (table_name_to_metadata_in_zk.size() != table_names_local.size())
+        /// The digest sums over the in-memory `tables` map, while `getAllTableNames` also lists
+        /// not-yet-loaded ones, and `mutex` is already released: `true` means the table contributes
+        /// a digest term, `false` does not exonerate it. Sampled once, so the passes cannot disagree.
+        std::map<String, bool> is_digest_carrier;
+        for (const auto & table_name : table_names_local)
+            is_digest_carrier.emplace(table_name, isTableExist(table_name, local_context));
+
+        /// The coordinator snapshot is fetched in its own guarded region: the on-disk half of the
+        /// report needs no Keeper, and the field-observed failure is the local recompute disagreeing
+        /// with the in-memory counter, which reaches here without Keeper being consulted at all.
+        std::optional<std::map<String, String>> table_name_to_metadata_in_zk;
+        try
         {
-            LOG_ERROR(log, "Amount of tables in coordinator {} differs from number of tables locally {}",
-                table_name_to_metadata_in_zk.size(), table_names_local.size());
+            fiu_do_on(FailPoints::database_replicated_dump_fail_to_get_metadata_snapshot,
+                { throw Exception(ErrorCodes::FAULT_INJECTED, "Injecting fault while getting the coordinator metadata snapshot"); });
+
+            UInt32 max_log_ptr{};
+            table_name_to_metadata_in_zk = tryGetConsistentMetadataSnapshot(getZooKeeper(), max_log_ptr);
+        }
+        catch (...)
+        {
+            LOG_ERROR(log, "Cannot get the coordinator metadata snapshot, reporting local metadata only: {}",
+                describeCurrentExceptionForDumpOnly());
         }
 
-        std::unordered_set<std::string> checked_tables;
+        if (table_name_to_metadata_in_zk && table_name_to_metadata_in_zk->size() != table_names_local.size())
+        {
+            LOG_ERROR(log, "Amount of tables in coordinator {} differs from number of tables locally {}",
+                table_name_to_metadata_in_zk->size(), table_names_local.size());
+        }
 
         /// Two passes, so that a table whose AST rendering fails does not cost the raw-byte report
         /// of the tables after it: the raw-byte report is what names the diverging table.
         for (const auto & table_name : table_names_local)
         {
-            checked_tables.insert(table_name);
-            dumpTableRawMetadataDiffForOneTable(table_name, local_context, table_name_to_metadata_in_zk);
+            dumpTableRawMetadataDiffForOneTable(
+                table_name, is_digest_carrier.at(table_name),
+                table_name_to_metadata_in_zk ? &*table_name_to_metadata_in_zk : nullptr);
         }
 
-        for (const auto & table_name : table_names_local)
-            dumpTableAstDiffForOneTable(table_name, local_context, table_name_to_metadata_in_zk);
+        /// Both remaining passes compare against the coordinator, so without a snapshot they have
+        /// nothing to say.
+        if (!table_name_to_metadata_in_zk)
+            return;
 
-        for (const auto & [table_name, table_metadata] : table_name_to_metadata_in_zk)
+        for (const auto & table_name : table_names_local)
+            dumpTableAstDiffForOneTable(table_name, is_digest_carrier.at(table_name), local_context, *table_name_to_metadata_in_zk);
+
+        for (const auto & [table_name, table_metadata] : table_name_to_metadata_in_zk.value())
         {
-            if (checked_tables.contains(table_name))
+            if (is_digest_carrier.contains(table_name))
                 continue;
 
-            /// Name the table first: the rendering below is supplementary and may fail.
-            LOG_ERROR(log, "Table {} exists in ZK, but missing locally", table_name);
+            /// This term is exactly the amount by which the coordinator digest exceeds the local
+            /// recompute, so report it before the rendering, which may fail. No local fields and no
+            /// carrier flag: the table does not exist locally, so those would have to be invented.
+            LOG_ERROR(log, "Table {} exists in ZK, but missing locally: coordinator digest term {}, {} bytes in coordinator",
+                table_name, DB::getMetadataHash(table_name, table_metadata), table_metadata.size());
 
             String failure_reason = "is not in the expected form";
             ASTPtr zk_ast_ptr;
@@ -1331,15 +1366,17 @@ void DatabaseReplicated::tryCompareLocalAndZooKeeperTablesAndDumpDiffForDebugOnl
                     /*node_name=*/table_name,
                     table_metadata,
                     /*unexpected_form_is_not_an_error=*/true);
+
+                if (zk_ast_ptr)
+                    LOG_ERROR(log, "Table {} coordinator metadata: {}", table_name, zk_ast_ptr->formatForLogging());
             }
             catch (...)
             {
                 failure_reason = describeCurrentExceptionForDumpOnly();
+                zk_ast_ptr = nullptr;
             }
 
-            if (zk_ast_ptr)
-                LOG_ERROR(log, "Table {} coordinator metadata: {}", table_name, zk_ast_ptr->formatForLogging());
-            else
+            if (!zk_ast_ptr)
                 LOG_ERROR(log, "Table {} coordinator metadata cannot be rendered as AST: {}", table_name, failure_reason);
         }
     }
@@ -2407,10 +2444,9 @@ ASTPtr DatabaseReplicated::parseQueryFromMetadata(
     auto * create = ast->as<ASTCreateQuery>();
     if (!create || create->uuid == UUIDHelpers::Nil || create->getTable() != TABLE_WITH_UUID_NAME_PLACEHOLDER || create->database)
     {
-        /// The metadata dump passes @unexpected_form_is_not_an_error: it runs in builds where a
-        /// LOGICAL_ERROR aborts at construction, so it could not contain one, and it reports the
-        /// unexpected form itself. Every other caller is on a real execution path, where an
-        /// unexpected form is a genuine assertion failure.
+        /// Only the metadata dump passes @unexpected_form_is_not_an_error: it runs in builds where a
+        /// LOGICAL_ERROR aborts at construction, so it could not contain one, and reports the form
+        /// itself. Every other caller is on a real execution path, where this is a real assertion.
         if (unexpected_form_is_not_an_error)
             return nullptr;
         throw Exception(ErrorCodes::LOGICAL_ERROR, "Got unexpected query from {}: {}", table_name, query);

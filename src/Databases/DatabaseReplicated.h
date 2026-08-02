@@ -249,14 +249,18 @@ private:
 
     /// For debug purposes only, don't use in production code
     void tryCompareLocalAndZooKeeperTablesAndDumpDiffForDebugOnly(const ContextPtr & local_context) const;
-    /// Reports one table's digest term and its local-vs-coordinator metadata bytes. Never throws.
+    /// Reports one table's digest term and its local-vs-coordinator metadata bytes; a null map
+    /// means no coordinator snapshot, so only the local side is reported. Best effort: catches every
+    /// catchable failure. A LOGICAL_ERROR still aborts in these builds by design.
     void dumpTableRawMetadataDiffForOneTable(
         const String & table_name,
-        const ContextPtr & local_context,
-        const std::map<String, String> & table_name_to_metadata_in_zk) const;
-    /// Supplementary AST rendering for one table, run only after every byte report. Never throws.
+        bool is_digest_carrier,
+        const std::map<String, String> * table_name_to_metadata_in_zk) const;
+    /// Supplementary AST rendering for one table, run only after every byte report.
+    /// Best effort in the same sense as above.
     void dumpTableAstDiffForOneTable(
         const String & table_name,
+        bool is_digest_carrier,
         const ContextPtr & local_context,
         const std::map<String, String> & table_name_to_metadata_in_zk) const;
 
