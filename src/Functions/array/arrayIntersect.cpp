@@ -112,7 +112,7 @@ private:
     static ColumnPtr execute(const UnpackedArrays & arrays, MutableColumnPtr result_data, ArraySetMode mode);
 
     template <typename Map, typename ColumnType, bool is_numeric_column>
-    static void insertElement(typename Map::LookupResult & pair, size_t & result_offset, ColumnType & result_data, NullMap & null_map, const bool & use_null_map);
+    static void insertElement(typename Map::LookupResult pair, size_t & result_offset, ColumnType & result_data, NullMap & null_map, bool use_null_map);
 
     struct NumberExecutor
     {
@@ -529,6 +529,20 @@ void FunctionArrayIntersect::DecimalExecutor::operator()(TypeList<T>)
             result = execute<Container, ColumnDecimal<T>, true>(arrays, ColumnDecimal<T>::create(0, decimal->getScale()), mode);
 }
 
+/// Returns the counter for `key`, inserting a zero one when `insert` is set and the key is not there
+/// yet. Returns nullptr when the key is absent and must not be inserted.
+template <bool insert, typename Map>
+static ALWAYS_INLINE typename Map::mapped_type * findOrInsert(Map & map, const typename Map::key_type & key)
+{
+    if constexpr (insert)
+        return &map[key];
+    else
+    {
+        typename Map::LookupResult it = map.find(key);
+        return it ? &it->getMapped() : nullptr;
+    }
+}
+
 template <typename Map, typename ColumnType, bool is_numeric_column>
 ColumnPtr FunctionArrayIntersect::execute(const UnpackedArrays & arrays, MutableColumnPtr result_data_ptr, ArraySetMode mode)
 {
@@ -566,6 +580,39 @@ ColumnPtr FunctionArrayIntersect::execute(const UnpackedArrays & arrays, Mutable
 
     Map map;
     VectorWithMemoryTracking<size_t> prev_off(args, 0);
+
+    /// A value missing from any one of the arguments cannot be in the intersection, so it is enough
+    /// to fill the map with the smallest argument and to only look up the rest. This keeps the map
+    /// as small as the smallest argument instead of as large as the union of all of them, which is
+    /// what decides the speed once the map stops fitting in cache.
+    /// Which argument seeds the map does not change the result, so the choice is made once for the
+    /// whole column - doing it per row would cost more than it saves for short arrays.
+    size_t map_arg = 0;
+    if (mode == ArraySetMode::Intersect)
+    {
+        auto average_size = [&](size_t arg_num)
+        {
+            const auto & arg = arrays.args[arg_num];
+            const auto & offsets = *arg.offsets;
+            if (offsets.empty())
+                return static_cast<size_t>(0);
+            /// A const array has only one row and is used for every row of the result.
+            return arg.is_const ? offsets[0] : offsets.back() / offsets.size();
+        };
+
+        for (size_t arg_num = 1; arg_num < args; ++arg_num)
+            if (average_size(arg_num) < average_size(map_arg))
+                map_arg = arg_num;
+    }
+
+    /// `map_arg` is processed first, the remaining arguments keep their relative order.
+    auto argument_at = [&](size_t arg_index)
+    {
+        if (arg_index == 0)
+            return map_arg;
+        return arg_index <= map_arg ? arg_index - 1 : arg_index;
+    };
+
     size_t result_offset = 0;
     for (size_t row = 0; row < rows; ++row)
     {
@@ -575,8 +622,9 @@ ColumnPtr FunctionArrayIntersect::execute(const UnpackedArrays & arrays, Mutable
         bool current_has_nullable = false;
         size_t null_count = 0;
 
-        for (size_t arg_num = 0; arg_num < args; ++arg_num)
+        for (size_t arg_index = 0; arg_index < args; ++arg_index)
         {
+            const size_t arg_num = argument_at(arg_index);
             const auto & arg = arrays.args[arg_num];
             current_has_nullable = false;
 
@@ -587,31 +635,54 @@ ColumnPtr FunctionArrayIntersect::execute(const UnpackedArrays & arrays, Mutable
             else
                 off = (*arg.offsets)[row];
 
-            for (auto i : collections::range(prev_off[arg_num], off))
+            /// Whether this argument fills the map is the same for all of its elements, so the
+            /// branch is lifted out of the loop over them - it is the hot path of the function.
+            auto process_elements = [&]<bool fill_map>()
             {
-                if (arg.null_map && (*arg.null_map)[i])
-                    current_has_nullable = true;
-                else if (!arg.overflow_mask || (*arg.overflow_mask)[i] == 0)
+                for (auto i : collections::range(prev_off[arg_num], off))
                 {
+                    if (arg.null_map && (*arg.null_map)[i])
+                    {
+                        current_has_nullable = true;
+                        continue;
+                    }
+
+                    if (arg.overflow_mask && (*arg.overflow_mask)[i] != 0)
+                        continue;
+
                     typename Map::mapped_type * value = nullptr;
 
                     if constexpr (is_numeric_column)
                     {
-                        value = &map[columns[arg_num]->getElement(i)];
+                        value = findOrInsert<fill_map>(map, columns[arg_num]->getElement(i));
                     }
                     else if constexpr (std::is_same_v<ColumnType, ColumnString> || std::is_same_v<ColumnType, ColumnFixedString>)
-                        value = &map[columns[arg_num]->getDataAt(i)];
+                        value = findOrInsert<fill_map>(map, columns[arg_num]->getDataAt(i));
                     else
                     {
                         const char * data = nullptr;
-                        value = &map[columns[arg_num]->serializeValueIntoArena(i, arena, data, nullptr)];
+                        value = findOrInsert<fill_map>(map, columns[arg_num]->serializeValueIntoArena(i, arena, data, nullptr));
                     }
 
                     /// Here we count the number of element appearances, but no more than once per array.
-                    if (*value <= arg_num)
+                    /// A value is counted for the argument number `arg_index` only when it was present in
+                    /// every argument processed before it, so a counter equal to the number of arguments
+                    /// means "present everywhere".
+                    if constexpr (fill_map)
+                    {
+                        if (*value == arg_index)
+                            ++(*value);
+                    }
+                    else if (value && *value == arg_index)
                         ++(*value);
                 }
-            }
+            };
+
+            /// For the intersection only the first processed argument populates the map.
+            if (mode != ArraySetMode::Intersect || arg_index == 0)
+                process_elements.template operator()<true>();
+            else
+                process_elements.template operator()<false>();
 
             // We update offsets for all the arrays except the first one. Offsets for the first array would be updated later.
             // It is needed to iterate the first array again so that the elements in the result would have fixed order.
@@ -642,12 +713,9 @@ ColumnPtr FunctionArrayIntersect::execute(const UnpackedArrays & arrays, Mutable
         if (mode == ArraySetMode::Union)
         {
             use_null_map = has_nullable;
+            /// Every key of the map is present in at least one of the arguments.
             for (auto & p : map)
-            {
-                typename Map::LookupResult pair = map.find(p.getKey());
-                if (pair && pair->getMapped() >= 1)
-                    insertElement<Map, ColumnType, is_numeric_column>(pair, result_offset, result_data, null_map, use_null_map);
-            }
+                insertElement<Map, ColumnType, is_numeric_column>(&p, result_offset, result_data, null_map, use_null_map);
             if (null_count > 0 && !null_added)
             {
                 ++result_offset;
@@ -659,12 +727,10 @@ ColumnPtr FunctionArrayIntersect::execute(const UnpackedArrays & arrays, Mutable
         else if (mode == ArraySetMode::SymmetricDifference)
         {
             use_null_map = has_nullable;
+            /// A counter equal to the number of arguments means the key is present in all of them.
             for (auto & p : map)
-            {
-                typename Map::LookupResult pair = map.find(p.getKey());
-                if (pair && pair->getMapped() >= 1 && pair->getMapped() < args)
-                    insertElement<Map, ColumnType, is_numeric_column>(pair, result_offset, result_data, null_map, use_null_map);
-            }
+                if (p.getMapped() != args)
+                    insertElement<Map, ColumnType, is_numeric_column>(&p, result_offset, result_data, null_map, use_null_map);
             if (null_count > 0 && null_count < args && !null_added)
             {
                 ++result_offset;
@@ -729,7 +795,7 @@ ColumnPtr FunctionArrayIntersect::execute(const UnpackedArrays & arrays, Mutable
 }
 
 template <typename Map, typename ColumnType, bool is_numeric_column>
-void FunctionArrayIntersect::insertElement(typename Map::LookupResult & pair, size_t & result_offset, ColumnType & result_data, NullMap & null_map, const bool & use_null_map)
+void FunctionArrayIntersect::insertElement(typename Map::LookupResult pair, size_t & result_offset, ColumnType & result_data, NullMap & null_map, bool use_null_map)
 {
     pair->getMapped() = -1;
     ++result_offset;
