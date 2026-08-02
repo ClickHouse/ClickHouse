@@ -1,0 +1,7 @@
+subquery_enables_virtual_row
+1
+subquery_disables_virtual_row
+1
+correctness
+1	90000	4049955000
+1	90000	4049955000

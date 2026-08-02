@@ -1,3 +1,4 @@
+#include <array>
 #include <memory>
 #include <optional>
 #include <Processors/QueryPlan/ParallelReplicasLocalPlan.h>
@@ -178,6 +179,60 @@ std::shared_ptr<const QueryPlan> createRemotePlanForParallelReplicas(
     return query_plan;
 }
 
+ContextPtr getShippedFragmentContext(const QueryTreeNodePtr & query_tree, ContextPtr fallback)
+{
+    if (const auto * query_node = query_tree->as<QueryNode>())
+        return query_node->getContext();
+    if (const auto * union_node = query_tree->as<UnionNode>())
+        return union_node->getContext();
+    return fallback;
+}
+
+/// The initiator-local fragment is the initiator's share of the very same fragment the remote replicas run, so
+/// the settings that shape the read-in-order pipeline must be the ones the fragment is shipped with. The step is
+/// built with the outer query context (`buildQueryPlanForParallelReplicas` passes `planner_context->getQueryContext()`,
+/// which is the outer context even when the fragment is a subquery with its own `SETTINGS`), and that context is
+/// also the one every runtime setting lookup in `ReadFromMergeTree` goes through. So a subquery-scoped
+/// `read_in_order_use_virtual_row_per_block` would be honoured by the remote replicas, which re-plan the shipped
+/// fragment under it, but not by the initiator-local fragment, which would keep evaluating the per-part
+/// `PrefetchingConcat` guard under the outer value.
+///
+/// The outer context still has to be the base: it carries the parallel-replicas plumbing the reading step needs
+/// (the cluster for parallel replicas, `max_parallel_replicas`, the client info identifying the local replica).
+/// So copy over exactly the read-in-order settings that `ReadFromMergeTree` consults at pipeline-build time.
+/// This mirrors the optimizer-side override in `optimizeTree` (`ReadFromLocalParallelReplicaStep`): if a new
+/// setting starts gating the in-order read path from the step context, it must be added here too.
+static ContextPtr makeShippedFragmentReadingContext(const ContextPtr & context, const ContextPtr & fragment_context)
+{
+    static constexpr std::array read_in_order_runtime_settings{
+        "read_in_order_use_virtual_row",
+        "read_in_order_use_virtual_row_per_block",
+        "read_in_order_two_level_merge_threshold",
+    };
+
+    if (!fragment_context || fragment_context.get() == context.get())
+        return context;
+
+    const auto & settings = context->getSettingsRef();
+    const auto & fragment_settings = fragment_context->getSettingsRef();
+
+    ContextMutablePtr reading_context;
+    for (const auto * name : read_in_order_runtime_settings)
+    {
+        auto fragment_value = fragment_settings.get(name);
+        if (fragment_value == settings.get(name))
+            continue;
+
+        if (!reading_context)
+            reading_context = Context::createCopy(context);
+        reading_context->setSetting(name, fragment_value);
+    }
+
+    if (!reading_context)
+        return context;
+    return reading_context;
+}
+
 std::pair<QueryPlanPtr, bool> createLocalPlanForParallelReplicas(
     const QueryTreeNodePtr & query_tree,
     const Block & header,
@@ -269,6 +324,8 @@ std::pair<QueryPlanPtr, bool> createLocalPlanForParallelReplicas(
             analyzed_result_ptr = analyzed_merge_tree->getAnalyzedResult();
     }
 
+    auto reading_context = makeShippedFragmentReadingContext(context, getShippedFragmentContext(query_tree, context));
+
     for (auto * reading_node : reading_nodes)
     {
         auto * reading = typeid_cast<ReadFromMergeTree *>(reading_node->step.get());
@@ -287,7 +344,7 @@ std::pair<QueryPlanPtr, bool> createLocalPlanForParallelReplicas(
         };
 
         auto read_from_merge_tree_parallel_replicas = reading->createLocalParallelReplicasReadingStep(
-            context, analyzed_result_ptr, std::move(all_ranges_cb), std::move(read_task_cb), replica_number);
+            reading_context, analyzed_result_ptr, std::move(all_ranges_cb), std::move(read_task_cb), replica_number);
         reading_node->step = std::move(read_from_merge_tree_parallel_replicas);
 
         /// Only the first reading step can reuse the pre-analyzed result.
