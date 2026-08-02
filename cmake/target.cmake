@@ -34,11 +34,10 @@ if (OS_WASM)
     # ClickHouse assumes a 64-bit `size_t` and 64-bit pointers pervasively - `1e12uz` literals in
     # `Core/Defines.h`, sizeof-equality static_asserts in ProfileEvents, and so on - so build for
     # the 64-bit Memory64 ABI rather than wasm32. Needs a recent engine (Node >= 23, Chrome >= 133).
-    option (WASM_MEMORY64 "Build the WebAssembly target for the 64-bit Memory64 ABI" ON)
-    if (WASM_MEMORY64)
-        add_compile_options (-sMEMORY64=1)
-        add_link_options (-sMEMORY64=1)
-    endif ()
+    # This is not a choice, hence not an option: a wasm32 build of this tree is not expected to
+    # work, and offering the knob would only move the failure to some unrelated place later.
+    add_compile_options (-sMEMORY64=1)
+    add_link_options (-sMEMORY64=1)
 
     # ClickHouse catches exceptions everywhere. Emscripten only emits throws by default and turns
     # every `catch` into a no-op, so enable the native WebAssembly exception-handling proposal.
