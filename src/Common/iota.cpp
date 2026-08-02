@@ -1,48 +1,59 @@
 #include <base/defines.h>
 #include <Common/iota.h>
+#include <Common/TargetSpecific.h>
 
 namespace DB
 {
 
-/// NO_INLINE prevents LTO from inlining these into callers. When inlined, the
-/// hot loop's alignment depends on the surrounding code and can land on a
-/// 64-byte boundary crossing, causing ~5% regression on modern CPUs. As a
-/// separate function the compiler aligns the loop independently.
-/// (Previously the multi-target dispatch mechanism achieved this implicitly.)
+MULTITARGET_FUNCTION_X86_V3(
+    MULTITARGET_FUNCTION_HEADER(template <iota_supported_types T> static void NO_INLINE),
+    iotaImpl, MULTITARGET_FUNCTION_BODY((T * begin, size_t count, T first_value) /// NOLINT
+    {
+        for (size_t i = 0; i < count; i++)
+            *(begin + i) = static_cast<T>(first_value + i);
+    })
+)
 
 template <iota_supported_types T>
-void NO_INLINE iota(T * begin, size_t count, T first_value)
+void iota(T * begin, size_t count, T first_value)
 {
-    T value = first_value;
-    for (size_t i = 0; i < count; i++)
-    {
-        *(begin + i) = value;
-        ++value;
-    }
+#if USE_MULTITARGET_CODE
+    if (isArchSupported(TargetArch::x86_64_v3))
+        return iotaImpl_x86_64_v3(begin, count, first_value);
+#endif
+    return iotaImpl(begin, count, first_value);
 }
 
-template <iota_supported_types T>
-void NO_INLINE iotaWithStep(T * begin, size_t count, T first_value, T step)
-{
-    T value = first_value;
-    for (size_t i = 0; i < count; i++)
+MULTITARGET_FUNCTION_X86_V3(
+    MULTITARGET_FUNCTION_HEADER(template <iota_supported_types T> static void NO_INLINE),
+    iotaWithStepImpl, MULTITARGET_FUNCTION_BODY((T * begin, size_t count, T first_value, T step) /// NOLINT
     {
-        *(begin + i) = value;
-        value += step;
-    }
+        for (size_t i = 0; i < count; i++)
+            *(begin + i) = static_cast<T>(first_value + i * step);
+    })
+)
+
+template <iota_supported_types T>
+void iotaWithStep(T * begin, size_t count, T first_value, T step)
+{
+#if USE_MULTITARGET_CODE
+    if (isArchSupported(TargetArch::x86_64_v3))
+        return iotaWithStepImpl_x86_64_v3(begin, count, first_value, step);
+#endif
+    return iotaWithStepImpl(begin, count, first_value, step);
 }
 
 template void iota(UInt8 * begin, size_t count, UInt8 first_value);
 template void iota(UInt32 * begin, size_t count, UInt32 first_value);
 template void iota(UInt64 * begin, size_t count, UInt64 first_value);
-#if defined(SIZE_T_IS_A_DISTINCT_TYPE)
+#if defined(OS_DARWIN)
 template void iota(size_t * begin, size_t count, size_t first_value);
 #endif
 
 template void iotaWithStep(UInt8 * begin, size_t count, UInt8 first_value, UInt8 step);
 template void iotaWithStep(UInt32 * begin, size_t count, UInt32 first_value, UInt32 step);
 template void iotaWithStep(UInt64 * begin, size_t count, UInt64 first_value, UInt64 step);
-#if defined(SIZE_T_IS_A_DISTINCT_TYPE)
+#if defined(OS_DARWIN)
 template void iotaWithStep(size_t * begin, size_t count, size_t first_value, size_t step);
 #endif
 }

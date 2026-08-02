@@ -8,6 +8,8 @@ title: 'generateRandom'
 doc_type: 'reference'
 ---
 
+# generateRandom Table Function
+
 Generates random data with a given schema.
 Allows populating test tables with that data.
 Not all types are supported.
