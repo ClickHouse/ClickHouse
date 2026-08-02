@@ -141,6 +141,24 @@ SELECT '-- lambda body free identifier colliding with an element name';
 -- still rejected as ambiguous.
 CREATE TABLE t_lambda_free (c Tuple(a UInt8, y Array(UInt8) DEFAULT arrayMap(z -> z + a, [1]))) ENGINE = Memory; -- { serverError BAD_ARGUMENTS }
 
+SELECT '-- element name scope';
+-- Element names are only ambiguous where they are visible. An element of an unrelated nested tuple
+-- that reuses the name of a table column does not make a default ambiguous: after the pull-up, `x`
+-- in the default below can only resolve to the table column.
+CREATE TABLE t_scope
+(
+    x UInt8,
+    c Tuple(a UInt8 DEFAULT x, nested Tuple(x String, y UInt8))
+)
+ENGINE = MergeTree ORDER BY x;
+SELECT type, default_expression
+FROM system.columns
+WHERE database = currentDatabase() AND table = 't_scope' AND name = 'c';
+INSERT INTO t_scope (x) VALUES (5);
+SELECT c FROM t_scope;
+-- A reference to an element of an enclosing tuple is still ambiguous.
+CREATE TABLE t_scope_outer (a UInt8, c Tuple(a UInt8, n Tuple(b UInt8 DEFAULT a))) ENGINE = Memory; -- { serverError BAD_ARGUMENTS }
+
 DROP TABLE t_default_in_tuple;
 DROP TABLE t_nested_tuple;
 DROP TABLE t_ref;
@@ -149,3 +167,4 @@ DROP TABLE t_alter_add;
 DROP TABLE t_alter_modify;
 DROP TABLE t_nullable;
 DROP TABLE t_lambda;
+DROP TABLE t_scope;

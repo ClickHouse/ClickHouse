@@ -27,3 +27,6 @@ Nullable(Tuple(a UInt8, s String))	DEFAULT	tuple(defaultValueOfTypeName(\'UInt8\
 Tuple(x UInt8, y Array(UInt8))	tuple(defaultValueOfTypeName(\'UInt8\'), arrayMap(x -> (x + 1), [1, 2, 3]))
 (0,[2,3,4])
 -- lambda body free identifier colliding with an element name
+-- element name scope
+Tuple(a UInt8, nested Tuple(x String, y UInt8))	tuple(x, defaultValueOfTypeName(\'Tuple(x String, y UInt8)\'))
+(5,('',0))

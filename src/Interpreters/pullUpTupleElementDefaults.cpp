@@ -102,6 +102,27 @@ void collectReferencedIdentifiers(const IAST & ast, NameSet & names, NameSet & b
         collectReferencedIdentifiers(*child, names, bound);
 }
 
+/// A DEFAULT expression may reference other columns of the table, but not elements of the tuple it
+/// is written in, nor elements of an enclosing tuple: after the pull-up such a reference would be
+/// resolved against the table columns, so a name that collides with a visible element name is
+/// ambiguous and is rejected. Only the element names visible at the place of the default are
+/// considered - elements of unrelated (sibling or deeper) tuples cannot be referenced at all, so
+/// reusing their names elsewhere in the table is not ambiguous.
+void checkDefaultDoesNotReferenceElements(const IAST & expression, const NameSet & visible_element_names, const String & column_name)
+{
+    NameSet referenced;
+    NameSet bound;
+    collectReferencedIdentifiers(expression, referenced, bound);
+
+    for (const auto & name : referenced)
+        if (visible_element_names.contains(name))
+            throw Exception(ErrorCodes::BAD_ARGUMENTS,
+                "DEFAULT expression inside the data type of column '{}' references '{}', which is a tuple/nested "
+                "element name. Default expressions cannot reference other elements of the same tuple/nested, and a "
+                "reference that collides with an element name is ambiguous.",
+                column_name, name);
+}
+
 /// Strip the DEFAULT expression from a name-type pair (turning it back into a plain element).
 void stripDefaultFromNameTypePair(ASTNameTypePair & pair)
 {
@@ -118,14 +139,16 @@ void stripDefaultFromNameTypePair(ASTNameTypePair & pair)
 /// A DEFAULT inside a non-Tuple wrapper (Array, Map, Nested, ...) cannot be represented as a static
 /// column default, so it is rejected with NOT_IMPLEMENTED.
 ///
-/// All tuple/nested element names are collected into `element_names`, and the user's explicit
-/// default expressions into `explicit_defaults`, for the ambiguity check performed by the caller.
-ASTPtr buildAndStripTupleDefaults(IAST & type, NameSet & element_names, ASTs & explicit_defaults)
+/// `outer_element_names` holds the element names visible at this point of the walk (the elements of
+/// the enclosing tuples); every explicit default is checked against the names visible where it is
+/// written, which is why the check happens here rather than in the caller.
+ASTPtr buildAndStripTupleDefaults(IAST & type, const NameSet & outer_element_names, const String & column_name)
 {
     /// Named/unnamed tuple parsed via the fast path (ASTTupleDataType). It never carries DEFAULTs
     /// directly (those force the generic parser path), but its element types might contain them.
     if (auto * tuple = type.as<ASTTupleDataType>())
     {
+        NameSet element_names = outer_element_names;
         for (const auto & name : tuple->element_names)
             if (!name.empty())
                 element_names.insert(name);
@@ -138,7 +161,7 @@ ASTPtr buildAndStripTupleDefaults(IAST & type, NameSet & element_names, ASTs & e
         ASTs element_defaults(arguments->children.size());
         for (size_t i = 0; i < arguments->children.size(); ++i)
         {
-            element_defaults[i] = buildAndStripTupleDefaults(*arguments->children[i], element_names, explicit_defaults);
+            element_defaults[i] = buildAndStripTupleDefaults(*arguments->children[i], element_names, column_name);
             has_default |= element_defaults[i] != nullptr;
         }
 
@@ -160,6 +183,13 @@ ASTPtr buildAndStripTupleDefaults(IAST & type, NameSet & element_names, ASTs & e
         if (!arguments)
             return nullptr;
 
+        /// Collect the names of all elements of this tuple first: a default written on the first
+        /// element is equally ambiguous with respect to the name of the last one.
+        NameSet element_names = outer_element_names;
+        for (const auto & child : arguments->children)
+            if (const auto * pair = child->as<ASTNameTypePair>(); pair && !pair->name.empty())
+                element_names.insert(pair->name);
+
         bool has_default = false;
         ASTs element_types(arguments->children.size());
         ASTs element_defaults(arguments->children.size());
@@ -168,11 +198,8 @@ ASTPtr buildAndStripTupleDefaults(IAST & type, NameSet & element_names, ASTs & e
             ASTPtr & child = arguments->children[i];
             if (auto * pair = child->as<ASTNameTypePair>())
             {
-                if (!pair->name.empty())
-                    element_names.insert(pair->name);
-
                 ASTPtr explicit_default = pair->default_expression;
-                ASTPtr nested_default = buildAndStripTupleDefaults(*pair->type, element_names, explicit_defaults);
+                ASTPtr nested_default = buildAndStripTupleDefaults(*pair->type, element_names, column_name);
 
                 if (explicit_default && nested_default)
                     throw Exception(ErrorCodes::BAD_ARGUMENTS,
@@ -181,7 +208,7 @@ ASTPtr buildAndStripTupleDefaults(IAST & type, NameSet & element_names, ASTs & e
 
                 if (explicit_default)
                 {
-                    explicit_defaults.push_back(explicit_default);
+                    checkDefaultDoesNotReferenceElements(*explicit_default, element_names, column_name);
                     stripDefaultFromNameTypePair(*pair);
                 }
 
@@ -191,7 +218,7 @@ ASTPtr buildAndStripTupleDefaults(IAST & type, NameSet & element_names, ASTs & e
             else
             {
                 element_types[i] = child;
-                element_defaults[i] = buildAndStripTupleDefaults(*child, element_names, explicit_defaults);
+                element_defaults[i] = buildAndStripTupleDefaults(*child, element_names, column_name);
             }
             has_default |= element_defaults[i] != nullptr;
         }
@@ -212,12 +239,10 @@ ASTPtr buildAndStripTupleDefaults(IAST & type, NameSet & element_names, ASTs & e
                 auto * pair = child->as<ASTNameTypePair>();
                 if (!pair)
                     continue;
-                if (!pair->name.empty())
-                    element_names.insert(pair->name);
 
-                NameSet inner_names;
-                ASTs inner_defaults;
-                if (pair->default_expression || buildAndStripTupleDefaults(*pair->type, inner_names, inner_defaults))
+                /// A default anywhere inside is rejected below, so the walk starts from an empty
+                /// scope: `NOT_IMPLEMENTED` is the accurate diagnostic here, not an ambiguity error.
+                if (pair->default_expression || buildAndStripTupleDefaults(*pair->type, {}, column_name))
                     throw Exception(ErrorCodes::NOT_IMPLEMENTED,
                         "DEFAULT expressions inside Nested are not supported (found for element '{}'). "
                         "Only Tuple supports DEFAULT expressions for its elements.",
@@ -235,7 +260,7 @@ ASTPtr buildAndStripTupleDefaults(IAST & type, NameSet & element_names, ASTs & e
     {
         if (!arguments || arguments->children.size() != 1)
             return nullptr;
-        return buildAndStripTupleDefaults(*arguments->children[0], element_names, explicit_defaults);
+        return buildAndStripTupleDefaults(*arguments->children[0], outer_element_names, column_name);
     }
 
     /// Any other composite type (Array, Map, LowCardinality, ...): a DEFAULT inside is not
@@ -244,9 +269,8 @@ ASTPtr buildAndStripTupleDefaults(IAST & type, NameSet & element_names, ASTs & e
     {
         for (const auto & child : arguments->children)
         {
-            NameSet inner_names;
-            ASTs inner_defaults;
-            if (buildAndStripTupleDefaults(*child, inner_names, inner_defaults))
+            /// As for `Nested`: an empty scope, so that an unsupported default is reported as such.
+            if (buildAndStripTupleDefaults(*child, {}, column_name))
                 throw Exception(ErrorCodes::NOT_IMPLEMENTED,
                     "DEFAULT expressions inside {} are not supported; they are only supported inside Tuple",
                     data_type->name);
@@ -263,9 +287,9 @@ void pullUpTupleElementDefaults(ASTColumnDeclaration & col_decl)
     if (!type)
         return;
 
-    NameSet element_names;
-    ASTs explicit_defaults;
-    ASTPtr built_default = buildAndStripTupleDefaults(*type, element_names, explicit_defaults);
+    /// The ambiguity check for the individual defaults happens during the walk, where the set of
+    /// element names visible at each default is known.
+    ASTPtr built_default = buildAndStripTupleDefaults(*type, {}, col_decl.name);
     if (!built_default)
         return;
 
@@ -273,22 +297,6 @@ void pullUpTupleElementDefaults(ASTColumnDeclaration & col_decl)
         throw Exception(ErrorCodes::BAD_ARGUMENTS,
             "Column '{}' cannot have both a column-level default and DEFAULT expressions inside its data type",
             col_decl.name);
-
-    /// A DEFAULT expression may reference other columns, but not other elements of the same
-    /// tuple/nested. If a referenced name collides with an element name it is ambiguous, so reject.
-    NameSet referenced;
-    for (const auto & expression : explicit_defaults)
-    {
-        NameSet bound;
-        collectReferencedIdentifiers(*expression, referenced, bound);
-    }
-    for (const auto & name : referenced)
-        if (element_names.contains(name))
-            throw Exception(ErrorCodes::BAD_ARGUMENTS,
-                "DEFAULT expression inside the data type of column '{}' references '{}', which is a tuple/nested "
-                "element name. Default expressions cannot reference other elements of the same tuple/nested, and a "
-                "reference that collides with an element name is ambiguous.",
-                col_decl.name, name);
 
     col_decl.setDefaultExpression(std::move(built_default));
     col_decl.default_specifier = ColumnDefaultSpecifier::Default;
