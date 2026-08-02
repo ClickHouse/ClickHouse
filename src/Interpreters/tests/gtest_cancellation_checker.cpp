@@ -200,9 +200,8 @@ TEST(CancellationChecker, ProcessListPreservesFractionalTimeout)
     /// up both, so the state matches a real query rather than whatever other tests left behind.
     std::thread body([&]
     {
-        /// Declared before the group, because `insert` points the group's counters and memory tracker
-        /// into an entry of `user_to_queries` that is never erased: the group must be detached while
-        /// this is still alive.
+        /// Declared before the group: `insert` points the group's counters into a `user_to_queries`
+        /// entry that is never erased, so the detach below must run while this is still alive.
         ProcessList process_list;
 
         ThreadStatus thread_status;
