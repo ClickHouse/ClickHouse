@@ -81,4 +81,10 @@
         <database>system</database>
         <table>query_condition_cache_log</table>
     </query_condition_cache_log>
+    <!-- Read by `SystemLog` (`src/Interpreters/SystemLog.cpp`): requests the creation of the
+         `all_...` union tables. Only `merge_rotated_tables` is set here - a `cluster` entry would
+         have to name an existing cluster, while merging rotated tables is self-contained. -->
+    <create_union_system_log_tables>
+        <merge_rotated_tables>true</merge_rotated_tables>
+    </create_union_system_log_tables>
 </clickhouse>
