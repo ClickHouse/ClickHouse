@@ -1,6 +1,6 @@
 -- Tags: no-replicated-database, no-parallel-replicas, no-random-merge-tree-settings
 
--- Part of the 04549/04552-04558 family: one set-index exactness suite split across files to fit
+-- Part of the 04549/04552-04562 family: one set-index exactness suite split across files to fit
 -- the flaky check's 180s per-test budget. Every part is self-contained.
 
 SET explain_query_plan_default = 'legacy';
