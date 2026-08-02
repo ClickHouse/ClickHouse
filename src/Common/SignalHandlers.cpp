@@ -358,6 +358,42 @@ void blockSignals(const std::vector<int> & signals)
         throw Poco::Exception("Cannot block signal.");
 }
 
+const std::vector<int> & asynchronousHandledSignals()
+{
+    /// Keep in sync with the handlers installed by `BaseDaemon::initializeTerminationAndSignalProcessing`:
+    /// `SIGTSTP` from `setupCommonDeadlySignalHandlers` (it is the only asynchronous one there),
+    /// `SIGINT`/`SIGQUIT`/`SIGTERM` from `setupCommonTerminateRequestSignalHandlers`, plus `SIGHUP` and `SIGCHLD`.
+    static const std::vector<int> signals{SIGINT, SIGQUIT, SIGTERM, SIGHUP, SIGCHLD, SIGTSTP};
+    return signals;
+}
+
+BlockSignalsScope::BlockSignalsScope(const std::vector<int> & signals)
+{
+    sigset_t sig_set;
+
+#if defined(OS_DARWIN)
+    sigemptyset(&sig_set);
+    for (auto signal : signals)
+        sigaddset(&sig_set, signal);
+#else
+    if (sigemptyset(&sig_set))
+        throw Poco::Exception("Cannot block signal.");
+
+    for (auto signal : signals)
+        if (sigaddset(&sig_set, signal))
+            throw Poco::Exception("Cannot block signal.");
+#endif
+
+    if (pthread_sigmask(SIG_BLOCK, &sig_set, &saved_mask))
+        throw Poco::Exception("Cannot block signal.");
+}
+
+BlockSignalsScope::~BlockSignalsScope()
+{
+    /// Nothing sensible can be done if restoring the mask fails, and throwing from a destructor is worse.
+    pthread_sigmask(SIG_SETMASK, &saved_mask, nullptr);
+}
+
 
 SignalListener::SignalListener(BaseDaemon * daemon_, LoggerPtr log_, TerminateRequestCallback terminate_request_callback_)
     : daemon(daemon_), log(log_), terminate_request_callback(std::move(terminate_request_callback_))
