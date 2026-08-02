@@ -775,8 +775,13 @@ namespace
         transformTypesRecursively(types, transform_simple_types, transform_complex_types, &settings);
     }
 
+    /// reader_refuses_plus says whether the format's value reader refuses a leading '+' for an unsigned
+    /// target, which decides whether a '+' literal is recorded as unreadable. It defaults to the safe
+    /// answer, so a caller added later records nothing unless it opts in. See hasUnreadableSign.
     template <bool is_json>
-    DataTypePtr tryInferDataTypeForSingleFieldImpl(ReadBuffer & buf, const FormatSettings & settings, JSONInferenceInfo * json_info, size_t depth = 1);
+    DataTypePtr tryInferDataTypeForSingleFieldImpl(
+        ReadBuffer & buf, const FormatSettings & settings, JSONInferenceInfo * json_info, size_t depth = 1,
+        bool reader_refuses_plus = false);
 
     bool tryInferDate(std::string_view field, DayNum & date)
     {
@@ -877,7 +882,8 @@ namespace
     }
 
     template <bool is_json>
-    DataTypePtr tryInferArray(ReadBuffer & buf, const FormatSettings & settings, JSONInferenceInfo * json_info, size_t depth)
+    DataTypePtr tryInferArray(
+        ReadBuffer & buf, const FormatSettings & settings, JSONInferenceInfo * json_info, size_t depth, bool reader_refuses_plus)
     {
         assertChar('[', buf);
         skipWhitespaceIfAny(buf);
@@ -897,7 +903,7 @@ namespace
             else
                 first = false;
 
-            auto nested_type = tryInferDataTypeForSingleFieldImpl<is_json>(buf, settings, json_info, depth + 2);
+            auto nested_type = tryInferDataTypeForSingleFieldImpl<is_json>(buf, settings, json_info, depth + 2, reader_refuses_plus);
 
             if (nested_type)
                 nested_types.push_back(nested_type);
@@ -983,7 +989,8 @@ namespace
         }
     }
 
-    DataTypePtr tryInferTuple(ReadBuffer & buf, const FormatSettings & settings, JSONInferenceInfo * json_info, size_t depth)
+    DataTypePtr tryInferTuple(
+        ReadBuffer & buf, const FormatSettings & settings, JSONInferenceInfo * json_info, size_t depth, bool reader_refuses_plus)
     {
         assertChar('(', buf);
         skipWhitespaceIfAny(buf);
@@ -1002,7 +1009,7 @@ namespace
             else
                 first = false;
 
-            auto nested_type = tryInferDataTypeForSingleFieldImpl<false>(buf, settings, json_info, depth + 1);
+            auto nested_type = tryInferDataTypeForSingleFieldImpl<false>(buf, settings, json_info, depth + 1, reader_refuses_plus);
             if (nested_type)
                 nested_types.push_back(nested_type);
             else
@@ -1066,16 +1073,24 @@ namespace
         return std::make_shared<DataTypeFloat64>();
     }
 
-    /// True when the integer literal carries an explicit sign. The integer parsers read a sign only as
-    /// the first character, so an arm that consumed a whole span read its sign here or nowhere.
-    /// The written sign, not the parsed value, is what decides whether the same text can be read back
-    /// as an unsigned type: `readIntTextImpl` refuses a '-' for an unsigned target, and
-    /// `readIntTextUnsafe`, which the escaped text deserializer uses, reads no '+' at all and stops
-    /// before it. A signed zero and an explicitly positive literal are therefore as unreadable as a
-    /// negative one, even though their value is not negative.
-    bool hasExplicitSign(std::string_view span)
+    /// True when the integer literal carries a sign that the caller's value reader refuses for an
+    /// unsigned target, so the same text could not be read back if the type were widened. The written
+    /// sign, not the parsed value, is what decides this, and the integer parsers read a sign only as the
+    /// first character, so an arm that consumed a whole span read its sign here or nowhere.
+    /// A '-' is refused by every integer reader: `readIntTextImpl` throws for an unsigned target and
+    /// `readIntTextUnsafe` stops before it. A '+' is reader-dependent, which is what
+    /// `reader_refuses_plus` carries: `readIntTextUnsafe`, which the escaped text deserializer uses,
+    /// reads no '+' at all and stops before it, while `readIntTextImpl`, which the JSON deserializer
+    /// uses, accepts a '+' for an unsigned target and reads the digits after it. So a signed zero, and
+    /// a '+' literal where the reader refuses one, are as unreadable as a negative literal even though
+    /// their value is not negative.
+    bool hasUnreadableSign(std::string_view span, bool reader_refuses_plus)
     {
-        return !span.empty() && (span.front() == '-' || span.front() == '+');
+        if (span.empty())
+            return false;
+        if (span.front() == '-')
+            return true;
+        return reader_refuses_plus && span.front() == '+';
     }
 
     /// True when the span is written like a float rather than like an integer. Only reached after the
@@ -1095,7 +1110,8 @@ namespace
     /// than reusing the delimiting pass keeps the answer independent of buffer geometry.
     template <bool is_json>
     DataTypePtr classifyNumberSpan(
-        std::string_view span, bool field_was_untouched, const FormatSettings & settings, JSONInferenceInfo * json_info)
+        std::string_view span, bool field_was_untouched, const FormatSettings & settings, JSONInferenceInfo * json_info,
+        bool reader_refuses_plus)
     {
         /// Nothing was delimited. A collection closing right after a delimiter read no characters at
         /// all and keeps its previous answer; a failed `true`/`false`/`null` probe walked past what it
@@ -1114,7 +1130,7 @@ namespace
             if (tryReadIntText(tmp_int, int_buf) && int_buf.eof())
             {
                 auto type = std::make_shared<DataTypeInt64>();
-                if (json_info && hasExplicitSign(span))
+                if (json_info && hasUnreadableSign(span, reader_refuses_plus))
                     json_info->markNegativeInteger(type);
                 return type;
             }
@@ -1157,7 +1173,8 @@ namespace
     /// delimited as empty can be told apart from a leftover a failed literal probe walked past.
     template <bool is_json>
     DataTypePtr tryInferNumber(
-        ReadBuffer & buf, size_t field_start_count, const FormatSettings & settings, JSONInferenceInfo * json_info)
+        ReadBuffer & buf, size_t field_start_count, const FormatSettings & settings, JSONInferenceInfo * json_info,
+        bool reader_refuses_plus)
     {
         if (buf.eof())
             return nullptr;
@@ -1179,7 +1196,8 @@ namespace
             tryReadFloat<is_json>(tmp_float, buf, settings, has_fractional);
 
             return classifyNumberSpan<is_json>(
-                std::string_view(number_start, buf.position() - number_start), field_was_untouched, settings, json_info);
+                std::string_view(number_start, buf.position() - number_start), field_was_untouched, settings, json_info,
+                reader_refuses_plus);
         }
 
         /// Needs a checkpoint to extract the delimited number before classifying it.
@@ -1189,11 +1207,13 @@ namespace
         tryReadFloat<is_json>(tmp_float, peekable_buf, settings, has_fractional);
 
         return classifyNumberSpan<is_json>(
-            extractDelimitedNumber(peekable_buf), field_was_untouched, settings, json_info);
+            extractDelimitedNumber(peekable_buf), field_was_untouched, settings, json_info, reader_refuses_plus);
     }
 
     template <bool is_json>
-    DataTypePtr tryInferNumberFromStringImpl(std::string_view field, const FormatSettings & settings, JSONInferenceInfo * json_inference_info = nullptr)
+    DataTypePtr tryInferNumberFromStringImpl(
+        std::string_view field, const FormatSettings & settings, JSONInferenceInfo * json_inference_info = nullptr,
+        bool reader_refuses_plus = false)
     {
         ReadBufferFromString buf(field);
 
@@ -1203,7 +1223,7 @@ namespace
             if (tryReadIntText(tmp_int, buf) && buf.eof())
             {
                 auto type = std::make_shared<DataTypeInt64>();
-                if (json_inference_info && hasExplicitSign(field))
+                if (json_inference_info && hasUnreadableSign(field, reader_refuses_plus))
                     json_inference_info->markNegativeInteger(type);
                 return type;
             }
@@ -1232,7 +1252,8 @@ namespace
     }
 
     template <bool is_json>
-    DataTypePtr tryInferString(ReadBuffer & buf, const FormatSettings & settings, JSONInferenceInfo * json_info)
+    DataTypePtr tryInferString(
+        ReadBuffer & buf, const FormatSettings & settings, JSONInferenceInfo * json_info, bool reader_refuses_plus)
     {
         String field;
         bool ok = true;
@@ -1260,7 +1281,7 @@ namespace
         {
             if (settings.json.try_infer_numbers_from_strings)
             {
-                if (auto number_type = tryInferNumberFromStringImpl<true>(field, settings, json_info))
+                if (auto number_type = tryInferNumberFromStringImpl<true>(field, settings, json_info, reader_refuses_plus))
                 {
                     json_info->numbers_parsed_from_json_strings.insert(number_type.get());
                     return number_type;
@@ -1271,7 +1292,9 @@ namespace
         return std::make_shared<DataTypeString>();
     }
 
-    bool tryReadJSONObject(ReadBuffer & buf, const FormatSettings & settings, DataTypeJSONPaths::Paths & paths, const std::vector<String> & path, JSONInferenceInfo * json_info, size_t depth)
+    bool tryReadJSONObject(
+        ReadBuffer & buf, const FormatSettings & settings, DataTypeJSONPaths::Paths & paths, const std::vector<String> & path,
+        JSONInferenceInfo * json_info, size_t depth, bool reader_refuses_plus)
     {
         /// max_parser_depth is the primary bound but user-tunable; keep a checkStackSize backstop.
         /// max_parser_depth == 0 means unlimited (matching the SQL parser), leaving only checkStackSize.
@@ -1309,12 +1332,12 @@ namespace
 
             if (!buf.eof() && *buf.position() == '{')
             {
-                if (!tryReadJSONObject(buf, settings, paths, current_path, json_info, depth + 1))
+                if (!tryReadJSONObject(buf, settings, paths, current_path, json_info, depth + 1, reader_refuses_plus))
                     return false;
             }
             else
             {
-                auto value_type = tryInferDataTypeForSingleFieldImpl<true>(buf, settings, json_info, depth + 1);
+                auto value_type = tryInferDataTypeForSingleFieldImpl<true>(buf, settings, json_info, depth + 1, reader_refuses_plus);
                 if (!value_type)
                     return false;
 
@@ -1339,16 +1362,18 @@ namespace
         return true;
     }
 
-    DataTypePtr tryInferJSONPaths(ReadBuffer & buf, const FormatSettings & settings, JSONInferenceInfo * json_info, size_t depth)
+    DataTypePtr tryInferJSONPaths(
+        ReadBuffer & buf, const FormatSettings & settings, JSONInferenceInfo * json_info, size_t depth, bool reader_refuses_plus)
     {
         DataTypeJSONPaths::Paths paths;
-        if (!tryReadJSONObject(buf, settings, paths, {}, json_info, depth))
+        if (!tryReadJSONObject(buf, settings, paths, {}, json_info, depth, reader_refuses_plus))
             return nullptr;
         return std::make_shared<DataTypeJSONPaths>(std::move(paths));
     }
 
     template <bool is_json>
-    DataTypePtr tryInferMapOrObject(ReadBuffer & buf, const FormatSettings & settings, JSONInferenceInfo * json_info, size_t depth)
+    DataTypePtr tryInferMapOrObject(
+        ReadBuffer & buf, const FormatSettings & settings, JSONInferenceInfo * json_info, size_t depth, bool reader_refuses_plus)
     {
         assertChar('{', buf);
         skipWhitespaceIfAny(buf);
@@ -1373,12 +1398,12 @@ namespace
             {
                 /// For JSON key type must be String.
                 json_info->is_object_key = true;
-                key_type = tryInferString<is_json>(buf, settings, json_info);
+                key_type = tryInferString<is_json>(buf, settings, json_info, reader_refuses_plus);
                 json_info->is_object_key = false;
             }
             else
             {
-                key_type = tryInferDataTypeForSingleFieldImpl<is_json>(buf, settings, json_info, depth + 1);
+                key_type = tryInferDataTypeForSingleFieldImpl<is_json>(buf, settings, json_info, depth + 1, reader_refuses_plus);
             }
 
             if (key_type)
@@ -1391,7 +1416,7 @@ namespace
                 return nullptr;
             skipWhitespaceIfAny(buf);
 
-            auto value_type = tryInferDataTypeForSingleFieldImpl<is_json>(buf, settings, json_info, depth + 1);
+            auto value_type = tryInferDataTypeForSingleFieldImpl<is_json>(buf, settings, json_info, depth + 1, reader_refuses_plus);
             if (value_type)
                 value_types.push_back(value_type);
             else
@@ -1457,7 +1482,8 @@ namespace
     }
 
     template <bool is_json>
-    DataTypePtr tryInferDataTypeForSingleFieldImpl(ReadBuffer & buf, const FormatSettings & settings, JSONInferenceInfo * json_info, size_t depth)
+    DataTypePtr tryInferDataTypeForSingleFieldImpl(
+        ReadBuffer & buf, const FormatSettings & settings, JSONInferenceInfo * json_info, size_t depth, bool reader_refuses_plus)
     {
         /// The max_parser_depth limit below is the primary bound, but it is user-tunable; keep a
         /// checkStackSize backstop so a raised limit cannot turn deep nesting into a stack overflow.
@@ -1478,13 +1504,13 @@ namespace
 
         /// Array [field1, field2, ...]
         if (*buf.position() == '[')
-            return tryInferArray<is_json>(buf, settings, json_info, depth);
+            return tryInferArray<is_json>(buf, settings, json_info, depth, reader_refuses_plus);
 
         /// Tuple (field1, field2, ...), if format is not JSON
         if constexpr (!is_json)
         {
             if (*buf.position() == '(')
-                return tryInferTuple(buf, settings, json_info, depth);
+                return tryInferTuple(buf, settings, json_info, depth, reader_refuses_plus);
         }
 
         /// Map/Object for JSON { key1 : value1, key2 : value2, ...}
@@ -1493,16 +1519,16 @@ namespace
             if constexpr (is_json)
             {
                 if (settings.json.try_infer_objects_as_tuples)
-                    return tryInferJSONPaths(buf, settings, json_info, depth);
+                    return tryInferJSONPaths(buf, settings, json_info, depth, reader_refuses_plus);
             }
 
-            return tryInferMapOrObject<is_json>(buf, settings, json_info, depth);
+            return tryInferMapOrObject<is_json>(buf, settings, json_info, depth, reader_refuses_plus);
         }
 
         /// String
         char quote = is_json ? '"' : '\'';
         if (*buf.position() == quote)
-            return tryInferString<is_json>(buf, settings, json_info);
+            return tryInferString<is_json>(buf, settings, json_info, reader_refuses_plus);
 
         /// Bool
         if (checkStringCaseInsensitive("true", buf) || checkStringCaseInsensitive("false", buf))
@@ -1522,7 +1548,7 @@ namespace
         }
 
         /// Number
-        return tryInferNumber<is_json>(buf, field_start_count, settings, json_info);
+        return tryInferNumber<is_json>(buf, field_start_count, settings, json_info, reader_refuses_plus);
     }
 }
 
@@ -1876,10 +1902,11 @@ DataTypePtr tryInferDataTypeForSingleField(ReadBuffer & buf, const FormatSetting
     return tryInferDataTypeForSingleFieldImpl<false>(buf, settings, nullptr);
 }
 
-DataTypePtr tryInferDataTypeForSingleField(std::string_view field, const FormatSettings & settings, JSONInferenceInfo * json_info)
+DataTypePtr tryInferDataTypeForSingleField(
+    std::string_view field, const FormatSettings & settings, JSONInferenceInfo * json_info, bool reader_refuses_plus)
 {
     ReadBufferFromString buf(field);
-    auto type = tryInferDataTypeForSingleFieldImpl<false>(buf, settings, json_info);
+    auto type = tryInferDataTypeForSingleFieldImpl<false>(buf, settings, json_info, /*depth=*/1, reader_refuses_plus);
     /// Check if there is no unread data in buffer.
     if (!buf.eof())
         return nullptr;

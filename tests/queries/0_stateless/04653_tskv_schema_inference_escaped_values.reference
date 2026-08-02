@@ -237,6 +237,16 @@ x	Nullable(Float64)
 18446744073709552000
 x	Nullable(Int64)					
 0
+group 13d: an explicit plus is only unreadable where the reader refuses one
+a	Nullable(UInt64)					
+1
+18446744073709551615
+a	Nullable(UInt64)					
+1
+18446744073709551615
+x	Nullable(String)					
++1
+18446744073709551615
 group 14: one column\'s marking does not leak into another column
 x	Nullable(Int64)					
 y	Nullable(UInt64)					

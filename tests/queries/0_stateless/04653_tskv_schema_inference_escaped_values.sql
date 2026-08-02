@@ -349,6 +349,28 @@ SELECT * FROM format(TSKV, unhex('783D2D302E300A783D3138343436373434303733373039
 DESC format(TSKV, unhex('783D2D300A'));
 SELECT * FROM format(TSKV, unhex('783D2D300A'));
 
+-- 13d. Which signs make a literal unreadable is a property of the READER, not of the text, so the two
+-- halves of the test above cannot both be applied everywhere. A '-' is refused by every integer reader.
+-- A '+' is refused only by readIntTextUnsafe, which the escaped and raw value readers use; readIntText,
+-- which the JSON value reader uses, reads '+1' as 1. So the same '+1' token must keep declining the
+-- widening under TSKV and keep allowing it under JSON, which is what these rows assert side by side.
+-- JSON reaches this inference code from a quoted string only when
+-- input_format_json_try_infer_numbers_from_strings is on. Its default is 0, so the setting is written
+-- on the individual queries below: it is what makes the path reachable at all.
+SELECT 'group 13d: an explicit plus is only unreadable where the reader refuses one';
+-- JSON {"a":"+1"} / {"a":"18446744073709551615"} - readIntText accepts the '+', so this must widen
+DESC format(JSONEachRow, unhex('7B2261223A222B31227D0A7B2261223A223138343436373434303733373039353531363135227D0A')) SETTINGS input_format_json_try_infer_numbers_from_strings = 1;
+SELECT * FROM format(JSONEachRow, unhex('7B2261223A222B31227D0A7B2261223A223138343436373434303733373039353531363135227D0A')) SETTINGS input_format_json_try_infer_numbers_from_strings = 1;
+-- JSON {"a":"-1"} / the same UInt64-range row - a '-' is refused by every reader, so this must decline
+DESC format(JSONEachRow, unhex('7B2261223A222D31227D0A7B2261223A223138343436373434303733373039353531363135227D0A')) SETTINGS input_format_json_try_infer_numbers_from_strings = 1; -- { serverError CANNOT_EXTRACT_TABLE_STRUCTURE }
+SELECT * FROM format(JSONEachRow, unhex('7B2261223A222D31227D0A7B2261223A223138343436373434303733373039353531363135227D0A')) SETTINGS input_format_json_try_infer_numbers_from_strings = 1; -- { serverError CANNOT_EXTRACT_TABLE_STRUCTURE }
+-- JSON {"a":"1"} / the same row - no sign at all, so nothing is recorded and it widens
+DESC format(JSONEachRow, unhex('7B2261223A2231227D0A7B2261223A223138343436373434303733373039353531363135227D0A')) SETTINGS input_format_json_try_infer_numbers_from_strings = 1;
+SELECT * FROM format(JSONEachRow, unhex('7B2261223A2231227D0A7B2261223A223138343436373434303733373039353531363135227D0A')) SETTINGS input_format_json_try_infer_numbers_from_strings = 1;
+-- TSKV x=+1 / x=18446744073709551615 - the SAME token, read by readIntTextUnsafe, must NOT widen
+DESC format(TSKV, unhex('783D2B310A783D31383434363734343037333730393535313631350A'));
+SELECT * FROM format(TSKV, unhex('783D2B310A783D31383434363734343037333730393535313631350A'));
+
 -- 14. The marking is keyed on the type object address, and one column's dropped type object can be
 -- freed while another column is still being inferred. If the address is then reused, the marking is
 -- read as belonging to whatever type landed there, so an unrelated column declines a widening it

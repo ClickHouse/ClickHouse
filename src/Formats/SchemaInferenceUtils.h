@@ -24,10 +24,14 @@ struct JSONInferenceInfo
 
     /// Record that `type` was inferred from a literal that an unsigned type cannot read back, which is
     /// what tells Int64 apart from UInt64 when determining a common type. Where the literal's own text
-    /// is available the recorded property is that it carries an explicit sign, because the sign is what
-    /// the integer parsers refuse for an unsigned target: `-0` and `+1` are as unreadable as `-1`,
-    /// although their value is not negative. A caller that only has the parsed value, like the JSON
-    /// parser, records a negative value instead. Use these accessors rather than touching the set: the
+    /// is available the recorded property is that it carries a sign the value reader refuses for an
+    /// unsigned target, because the sign is what the integer parsers refuse rather than the value: `-0`
+    /// is as unreadable as `-1` although its value is not negative. Which signs those are depends on
+    /// the reader: every integer reader refuses a `-`, while a `+` is refused only by
+    /// `readIntTextUnsafe`, which `SerializationNumber::deserializeText` uses for the escaped and raw
+    /// rules; `readIntText`, which the JSON deserializer uses, reads `+1` as `1`. So the `+` case is
+    /// recorded only for the callers whose reader refuses it. A caller that only has the parsed value,
+    /// like the JSON parser, records a negative value instead. Use these accessors rather than touching the set: the
     /// identity is the type's address, so a recorded type has to be kept alive for as long as the
     /// record is. Otherwise a later allocation can reuse the address of a freed type and be read as
     /// marked, which silently declines a correct widening.
@@ -85,7 +89,13 @@ DataTypePtr tryInferDataTypeForSingleField(std::string_view field, const FormatS
 
 /// The same as above, but records inference provenance in json_info (currently: which Int64 came from
 /// a signed literal), so that types transformation can tell Int64 and UInt64 apart.
-DataTypePtr tryInferDataTypeForSingleField(std::string_view field, const FormatSettings & settings, JSONInferenceInfo * json_info);
+/// `reader_refuses_plus` says whether the calling format's value reader refuses a leading '+' for an
+/// unsigned target, which decides whether a '+' literal is recorded as one that cannot be read back.
+/// It is true for the readers that go through `readIntTextUnsafe` and false for the rest; see the
+/// comment on `markNegativeInteger`. The safe answer is the default, so a caller records the '+' case
+/// only by opting in.
+DataTypePtr tryInferDataTypeForSingleField(
+    std::string_view field, const FormatSettings & settings, JSONInferenceInfo * json_info, bool reader_refuses_plus = false);
 
 /// The same as tryInferDataTypeForSingleField, but for JSON values.
 DataTypePtr tryInferDataTypeForSingleJSONField(ReadBuffer & buf, const FormatSettings & settings, JSONInferenceInfo * json_info);

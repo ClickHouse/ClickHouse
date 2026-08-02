@@ -338,7 +338,13 @@ DataTypePtr tryInferDataTypeByEscapingRule(const String & field, const FormatSet
             if (auto date_type = tryInferDateOrDateTimeFromString(field, format_settings))
                 return date_type;
 
-            auto type = tryInferDataTypeForSingleField(field, format_settings, json_info);
+            /// The escaped and raw value readers go through readIntTextUnsafe, which stops before a
+            /// leading '+', so a '+' literal here cannot be read back as an unsigned type. See
+            /// hasUnreadableSign. allow_number_leading_zeros (hive partitioning) selects readIntText
+            /// instead, which does accept a '+', but that caller passes no json_info, so nothing is
+            /// recorded for it either way.
+            auto type = tryInferDataTypeForSingleField(
+                field, format_settings, json_info, /*reader_refuses_plus=*/!format_settings.allow_number_leading_zeros);
 
             /// An integer starting with 0 must stay a String, because readIntTextUnsafe (see
             /// ReadHelpers.h) reads the leading '0' as the whole value.
