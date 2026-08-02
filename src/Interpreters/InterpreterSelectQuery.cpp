@@ -2022,10 +2022,15 @@ void InterpreterSelectQuery::executeImpl(QueryPlan & query_plan, std::optional<P
 
                         SortingStep::Settings sort_settings(context->getSettingsRef());
 
+                        /// Mark the pre-join sort the same way the analyzer path does (see `addSortingForMergeJoin`
+                        /// in `JoinStepLogical.cpp`). Besides being semantically correct (this sort is done locally
+                        /// before a merge join), it is what lets `optimizeParallelFullSortingMergeJoin` recognize the
+                        /// step and rewrite it into hash-scattered shards; otherwise `parallel_full_sorting_merge`
+                        /// would silently degrade to a single merge join with `enable_analyzer = 0`.
                         auto sorting_step = std::make_unique<SortingStep>(
                             plan.getCurrentHeader(),
                             std::move(order_descr),
-                            0 /* LIMIT */, sort_settings);
+                            0 /* LIMIT */, sort_settings, /*is_sorting_for_merge_join_=*/ true);
                         sorting_step->setStepDescription(fmt::format("Sort {} before JOIN", join_pos), options.max_step_description_length);
                         plan.addStep(std::move(sorting_step));
                     };
@@ -3375,11 +3380,21 @@ void InterpreterSelectQuery::executeDistinct(QueryPlan & query_plan, bool before
         /// If after this stage of DISTINCT,
         /// (1) ORDER BY is not executed
         /// (2) there is no LIMIT BY (todo: we can check if DISTINCT and LIMIT BY expressions are match)
+        /// (3) there is a non-zero LIMIT (a bare OFFSET without a LIMIT still populates limit_offset, but
+        ///     limit_length + limit_offset would then bound the head by the offset alone and drop the tail
+        ///     that OFFSET must return)
+        /// (4) LIMIT is not negative (a negative LIMIT takes rows from the tail, so it cannot bound
+        ///     the number of distinct rows collected from the head)
+        /// (5) LIMIT/OFFSET is not fractional (a fraction of the total row count is only resolved after
+        ///     all rows are read, so it cannot bound the number of distinct rows either)
         /// then you can get no more than limit_length + limit_offset of different rows.
         if ((!query.orderBy() || !before_order) && !query.limitBy())
         {
             const LimitInfo lim_info = getLimitLengthAndOffset(query, context);
-            if (lim_info.limit_length <= std::numeric_limits<UInt64>::max() - lim_info.limit_offset)
+            if (lim_info.limit_length != 0
+                && !lim_info.is_limit_length_negative
+                && lim_info.fractional_limit == 0 && lim_info.fractional_offset == 0
+                && lim_info.limit_length <= std::numeric_limits<UInt64>::max() - lim_info.limit_offset)
                 limit_for_distinct = lim_info.limit_length + lim_info.limit_offset;
         }
 
