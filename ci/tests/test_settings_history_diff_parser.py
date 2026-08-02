@@ -184,3 +184,107 @@ def test_removal_and_replacement_with_another_value_reports_the_setting_once():
     assert parse_settings_history_changes(patch, FILE_LINES) == [
         {"namespace": "Session", "name": "old_setting"}
     ]
+
+
+HEADER_EDIT_FILE_LINES = [
+    "        addSettingsChanges(settings_changes_history, \"26.7\",",
+    "        {",
+    "            {\"first_setting\", false, true, \"Untouched\"},",
+    "            {\"second_setting\", 0, 1, \"Untouched\"},",
+    "        });",
+    "        addSettingsChanges(settings_changes_history, \"26.6\",",
+    "        {",
+    "            {\"older_setting\", 0, 1, \"Untouched\"},",
+    "        });",
+]
+
+
+def test_block_header_version_edit_reports_every_entry_of_the_block():
+    # The block-granularity variant of "move instead of delete": no entry line changes at all,
+    # only the version in the `addSettingsChanges` header, which reassigns every record
+    # underneath to another release. An entry-only scan returns nothing and the style check
+    # would skip, so `compatibility` could be made to attribute the flips to the wrong release.
+    patch = (
+        "@@ -1,5 +1,5 @@\n"
+        '-        addSettingsChanges(settings_changes_history, "26.8",\n'
+        '+        addSettingsChanges(settings_changes_history, "26.7",\n'
+        "         {\n"
+        '             {"first_setting", false, true, "Untouched"},\n'
+        '             {"second_setting", 0, 1, "Untouched"},\n'
+        "         });\n"
+    )
+    assert parse_settings_history_changes(patch, HEADER_EDIT_FILE_LINES) == [
+        {"namespace": "Session", "name": "first_setting"},
+        {"namespace": "Session", "name": "second_setting"},
+    ]
+
+
+def test_block_header_namespace_edit_reports_every_entry_of_the_block():
+    # Same hole, the other axis: the whole block hops from the session history to the MergeTree
+    # history without a single entry line changing.
+    file_lines = [
+        "        addSettingsChanges(merge_tree_settings_changes_history, \"26.8\",",
+        "        {",
+        "            {\"first_setting\", false, true, \"Untouched\"},",
+        "        });",
+    ]
+    patch = (
+        "@@ -1,4 +1,4 @@\n"
+        '-        addSettingsChanges(settings_changes_history, "26.8",\n'
+        '+        addSettingsChanges(merge_tree_settings_changes_history, "26.8",\n'
+        "         {\n"
+        '             {"first_setting", false, true, "Untouched"},\n'
+        "         });\n"
+    )
+    assert parse_settings_history_changes(patch, file_lines) == [
+        {"namespace": "MergeTree", "name": "first_setting"}
+    ]
+
+
+def test_block_header_edit_does_not_report_the_neighbouring_blocks():
+    # Only the edited block is affected; the records of the block above and below keep saying
+    # exactly what they said before.
+    patch = (
+        "@@ -6,4 +6,4 @@\n"
+        '-        addSettingsChanges(settings_changes_history, "26.5",\n'
+        '+        addSettingsChanges(settings_changes_history, "26.6",\n'
+        "         {\n"
+        '             {"older_setting", 0, 1, "Untouched"},\n'
+        "         });\n"
+    )
+    assert parse_settings_history_changes(patch, HEADER_EDIT_FILE_LINES) == [
+        {"namespace": "Session", "name": "older_setting"}
+    ]
+
+
+def test_a_new_block_reports_the_entries_it_introduces():
+    # Opening the block for a new release: the header and its entries are added together. The
+    # entries are reported, which is what the style check wants to see under the current block.
+    patch = (
+        "@@ -1,1 +1,5 @@\n"
+        '+        addSettingsChanges(settings_changes_history, "26.7",\n'
+        "+        {\n"
+        '+            {"first_setting", false, true, "Untouched"},\n'
+        '+            {"second_setting", 0, 1, "Untouched"},\n'
+        "+        });\n"
+        '         addSettingsChanges(settings_changes_history, "26.6",\n'
+    )
+    assert parse_settings_history_changes(patch, HEADER_EDIT_FILE_LINES) == [
+        {"namespace": "Session", "name": "first_setting"},
+        {"namespace": "Session", "name": "second_setting"},
+    ]
+
+
+def test_reason_only_edit_of_a_block_that_keeps_its_header_is_still_ignored():
+    # The header line is untouched, so the block-level path must not fire and turn a harmless
+    # reason-text edit into a violation.
+    patch = (
+        "@@ -1,5 +1,5 @@\n"
+        '         addSettingsChanges(settings_changes_history, "26.7",\n'
+        "         {\n"
+        '-            {"first_setting", false, true, "Old wording"},\n'
+        '+            {"first_setting", false, true, "Untouched"},\n'
+        '             {"second_setting", 0, 1, "Untouched"},\n'
+        "         });\n"
+    )
+    assert parse_settings_history_changes(patch, HEADER_EDIT_FILE_LINES) == []

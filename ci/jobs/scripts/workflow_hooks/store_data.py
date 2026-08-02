@@ -11,6 +11,7 @@ from ci.praktika.utils import Shell
 _SETTINGS_HISTORY_ENTRY_RE = re.compile(r'^\s*\{\s*"([A-Za-z0-9_]+)"')
 _SETTINGS_HISTORY_BLOCK_RE = re.compile(r'addSettingsChanges\(\s*(\w+)\s*,\s*"([\d.]+)"')
 _SETTINGS_HISTORY_HUNK_RE = re.compile(r"^@@ -\d+(?:,\d+)? \+(\d+)(?:,\d+)? @@")
+_SETTINGS_HISTORY_BLOCK_END_RE = re.compile(r"^\s*\}\);")
 _SETTINGS_HISTORY_NAMESPACES = {
     "settings_changes_history": "Session",
     "merge_tree_settings_changes_history": "MergeTree",
@@ -24,21 +25,54 @@ def _settings_history_entry_signature(entry_body):
     return re.sub(r',\s*"(?:[^"\\]|\\.)*"\s*\},?\s*$', "", entry_body).strip()
 
 
+def _settings_history_block_header_index(file_lines, lineno):
+    """Index in `file_lines` of the `addSettingsChanges` header of the block that physically
+    contains the given new-file line number, or None when the line is outside any block."""
+    for i in range(min(lineno, len(file_lines)) - 1, -1, -1):
+        if _SETTINGS_HISTORY_BLOCK_RE.search(file_lines[i]):
+            return i
+    return None
+
+
 def _settings_history_block_at(file_lines, lineno):
     """The (namespace, version) of the `addSettingsChanges` block that physically contains the
     given new-file line number, or (None, None) when the line is outside any known block."""
-    for i in range(min(lineno, len(file_lines)) - 1, -1, -1):
-        mb = _SETTINGS_HISTORY_BLOCK_RE.search(file_lines[i])
-        if mb:
-            return _SETTINGS_HISTORY_NAMESPACES.get(mb.group(1)), mb.group(2)
-    return None, None
+    i = _settings_history_block_header_index(file_lines, lineno)
+    if i is None:
+        return None, None
+    mb = _SETTINGS_HISTORY_BLOCK_RE.search(file_lines[i])
+    return _SETTINGS_HISTORY_NAMESPACES.get(mb.group(1)), mb.group(2)
+
+
+def _settings_history_block_entries(file_lines, header_index):
+    """(namespace, names) of every entry recorded in the `addSettingsChanges` block whose header
+    sits at `header_index`, or (None, []) when that is not a known block."""
+    if header_index is None or not 0 <= header_index < len(file_lines):
+        return None, []
+    mb = _SETTINGS_HISTORY_BLOCK_RE.search(file_lines[header_index])
+    if not mb:
+        return None, []
+    namespace = _SETTINGS_HISTORY_NAMESPACES.get(mb.group(1))
+    if not namespace:
+        return None, []
+    names = []
+    for line in file_lines[header_index + 1 :]:
+        if _SETTINGS_HISTORY_BLOCK_RE.search(line) or _SETTINGS_HISTORY_BLOCK_END_RE.match(
+            line
+        ):
+            break
+        me = _SETTINGS_HISTORY_ENTRY_RE.match(line)
+        if me:
+            names.append(me.group(1))
+    return namespace, names
 
 
 def parse_settings_history_changes(patch, file_lines):
     """Given the unified diff of src/Core/SettingsChangesHistory.cpp and the lines of the file
     at HEAD, return a list of {"namespace", "name"} for settings whose recorded history this
-    change touches: entries that were added, entries whose value was edited in place, and
-    entries that were REMOVED. Only reason-only edits are ignored - an added and a removed
+    change touches: entries that were added, entries whose value was edited in place, entries
+    that were REMOVED, and every entry of a block whose `addSettingsChanges` HEADER changed.
+    Only reason-only edits are ignored - an added and a removed
     entry whose value-signature matches AND that sit in the SAME version block of the same
     namespace, so nothing about what the history records actually changed. The namespace and
     version come from the block that physically contains the line (new-file line number), not
@@ -49,6 +83,12 @@ def parse_settings_history_changes(patch, file_lines):
     keeps the newest recorded value intact, so 03999_stateless_settings_history still passes,
     while `compatibility` starts attributing the default flip to the wrong release. Such a move
     is reported once, and the caller then requires the setting under the current version block.
+
+    A block header edit is the same hole at block granularity: rewriting
+    `addSettingsChanges(settings_changes_history, "26.8",` to `"26.7"` reassigns every record
+    underneath to another release without touching an entry line, so an entry-only scan would
+    report nothing and the check would skip. Such a header change therefore reports the whole
+    block it delimits.
 
     Removals are reported because dropping a record is just another way of changing what the
     history says. Without that, deleting the newest record for a setting would be a silent
@@ -66,6 +106,8 @@ def parse_settings_history_changes(patch, file_lines):
     what keeps a phantom record deletable."""
     added = []  # (new_line_number, name, signature)
     removed = []  # (new_line_number, name, signature)
+    headers_added = []  # new_line_number of an added `addSettingsChanges` header
+    headers_removed = []  # new_line_number a removed `addSettingsChanges` header sat at
     new_lineno = None
     for line in patch.splitlines():
         hunk = _SETTINGS_HISTORY_HUNK_RE.match(line)
@@ -75,12 +117,16 @@ def parse_settings_history_changes(patch, file_lines):
         if new_lineno is None:
             continue
         if line.startswith("+") and not line.startswith("+++"):
+            if _SETTINGS_HISTORY_BLOCK_RE.search(line[1:]):
+                headers_added.append(new_lineno)
             m = _SETTINGS_HISTORY_ENTRY_RE.match(line[1:])
             if m:
                 signature = _settings_history_entry_signature(line[1:])
                 added.append((new_lineno, m.group(1), signature))
             new_lineno += 1
         elif line.startswith("-") and not line.startswith("---"):
+            if _SETTINGS_HISTORY_BLOCK_RE.search(line[1:]):
+                headers_removed.append(new_lineno)
             m = _SETTINGS_HISTORY_ENTRY_RE.match(line[1:])
             if m:
                 signature = _settings_history_entry_signature(line[1:])
@@ -111,6 +157,35 @@ def parse_settings_history_changes(patch, file_lines):
 
     result = []
     seen = set()
+
+    # A block header edit moves every record underneath it to another release or namespace
+    # without touching a single entry line, so the entry-level scan above sees nothing. Report
+    # the whole affected block: those records now claim a different version, which is exactly
+    # the misattribution the check exists to catch.
+    header_blocks = set()
+    for lineno in headers_added:
+        header_index = _settings_history_block_header_index(file_lines, lineno)
+        if header_index is not None:
+            header_blocks.add(header_index)
+    for lineno in headers_removed:
+        # A header edit shows up as a removed and an added header at the same position; the
+        # added one already resolves to the rewritten block, so do not also pull in the
+        # preceding block. A header that is only removed merges its records into the block
+        # above, which is the one to report. Deleting a whole block also removes its header,
+        # and then the block above is reported too - deliberately fail-close: over-reporting
+        # only costs an extra name in a message that is already failing for the removed rows.
+        if lineno in headers_added:
+            continue
+        header_index = _settings_history_block_header_index(file_lines, lineno - 1)
+        if header_index is not None:
+            header_blocks.add(header_index)
+    for header_index in sorted(header_blocks):
+        namespace, names = _settings_history_block_entries(file_lines, header_index)
+        for name in names:
+            if (namespace, name) not in seen:
+                seen.add((namespace, name))
+                result.append({"namespace": namespace, "name": name})
+
     for entries, other_keys in ((added, removed_keys), (removed, added_keys)):
         for namespace, version, name, signature in entries:
             if (namespace, version, signature) in other_keys:

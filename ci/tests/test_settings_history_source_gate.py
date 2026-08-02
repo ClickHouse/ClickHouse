@@ -166,3 +166,33 @@ def test_moving_a_record_to_an_older_block_is_not_an_escape_hatch(monkeypatch):
 
 def test_no_history_change_at_all_is_skipped(monkeypatch):
     assert _run(monkeypatch, _kv(["src/Core/Settings.cpp"], [])) == ""
+
+
+def test_editing_a_block_header_is_not_an_escape_hatch(monkeypatch):
+    # The block-granularity variant: not a single entry line changes, only the version in the
+    # `addSettingsChanges` header, which reassigns every record underneath to another release.
+    # Without the block-level path the parser would report nothing and the style check would
+    # treat the change as "nothing to validate" while `compatibility` starts serving the wrong
+    # value for two releases at once.
+    entry = '            {"no_such_setting_at_all", 0, 1, "Recorded here"},'
+    file_lines = [
+        '        addSettingsChanges(settings_changes_history, "26.7",',
+        "        {",
+        entry,
+        "        });",
+    ]
+    patch = (
+        "@@ -1,4 +1,4 @@\n"
+        '-        addSettingsChanges(settings_changes_history, "26.8",\n'
+        '+        addSettingsChanges(settings_changes_history, "26.7",\n'
+        "         {\n"
+        f" {entry}\n"
+        "         });\n"
+    )
+    changed = parse_settings_history_changes(patch, file_lines)
+    assert changed == [{"namespace": "Session", "name": "no_such_setting_at_all"}]
+    kv = _kv([HISTORY, "src/Core/Settings.cpp"], changed)
+    assert "no_such_setting_at_all" in _run(monkeypatch, kv)
+
+    # The same header edit without any other source change is a historical correction: allowed.
+    assert _run(monkeypatch, _kv([HISTORY], changed)) == ""
