@@ -5,8 +5,7 @@
 #include <Processors/ConcatProcessor.h>
 #include <Processors/LimitTransform.h>
 #include <Processors/Sinks/NullSink.h>
-#include <Processors/Sinks/EmptySink.h>
-#include <Processors/Transforms/ExtremesTransform.h>
+#include <Processors/Transforms/ExtremesOnlyTransform.h>
 #include <Processors/Formats/IOutputFormat.h>
 #include <Processors/Sources/NullSource.h>
 #include <Processors/ISource.h>
@@ -51,25 +50,23 @@ static OutputPort * uniteExtremes(const OutputPortRawPtrs & ports, SharedHeader 
     /// Here we calculate extremes for extremes in case we unite several pipelines.
     /// Example: select number from numbers(2) union all select number from numbers(3)
 
-    /// ->> Resize -> Extremes --(output port)----> Empty
-    ///                        --(extremes port)--> ...
+    /// ->> Resize -> ExtremesOnly --(extremes port)--> ...
 
+    /// This consumer must not be childless: `initializeExecution` seeds such nodes, and the seed
+    /// can drive a `DelayedPortsProcessor`-gated subtree out of order.
     auto resize = std::make_shared<ResizeProcessor>(header, ports.size(), 1);
-    auto extremes = std::make_shared<ExtremesTransform>(header);
-    auto sink = std::make_shared<EmptySink>(header);
+    auto extremes = std::make_shared<ExtremesOnlyTransform>(header);
 
-    auto * extremes_port = &extremes->getExtremesPort();
+    auto * extremes_port = &extremes->getOutputPort();
 
     auto in = resize->getInputs().begin();
     for (const auto & port : ports)
         connect(*port, *(in++));
 
     connect(resize->getOutputs().front(), extremes->getInputPort());
-    connect(extremes->getOutputPort(), sink->getPort());
 
     processors.emplace_back(std::move(resize));
     processors.emplace_back(std::move(extremes));
-    processors.emplace_back(std::move(sink));
 
     return extremes_port;
 }
