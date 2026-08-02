@@ -1121,20 +1121,24 @@ TEST(RemoveSettingsFromQuery, StripsBlockFormingOverrides)
 /// The `copySettingsToQuery` rebuilds are pinned in `src/Backups/tests/gtest_backup_settings_default.cpp`.
 TEST(BackupSettingsDefault, OnClusterRebuildCarriesDefaultedNames)
 {
-    /// The rewrite injects `internal`, `async` and `host_id`, so those must be gone from BOTH carriers:
-    /// a surviving `name = DEFAULT` would reset the injected value on the receiving host.
+    /// The rewrite injects `internal`, `async` and `host_id`, so each must be gone from BOTH carriers:
+    /// a surviving `name = DEFAULT` would reset the injected value on the receiving host. All three are
+    /// defaulted in the input so that every stripped name is discriminated; `foo` and `structure_only`
+    /// are the unrelated control in either carrier.
     const String query = "BACKUP TABLE t ON CLUSTER 'c' TO Disk('d', 'b') "
-                         "SETTINGS foo = DEFAULT, async = DEFAULT";
+                         "SETTINGS foo = DEFAULT, async = DEFAULT, internal = DEFAULT, host_id = DEFAULT, "
+                         "structure_only = 1";
     ParserQuery parser(query.data() + query.size());
     ASTPtr ast = parseQuery(parser, query, "", 0, 0, 0);
     ASSERT_NE(nullptr, ast) << "query: " << query;
 
     auto * backup_query = ast->as<ASTBackupQuery>();
     ASSERT_NE(nullptr, backup_query) << "expected a BACKUP query";
-    /// Sanity: both names really are in `default_settings` before the rewrite.
+    /// Sanity: all four names really are in `default_settings` before the rewrite - without this the
+    /// assertions below could pass on names that were never there.
     ASSERT_NE(nullptr, backup_query->settings);
     const auto & parsed = backup_query->settings->as<const ASTSetQuery &>();
-    ASSERT_EQ(2u, parsed.default_settings.size()) << "query: " << query;
+    ASSERT_EQ(4u, parsed.default_settings.size()) << "query: " << query;
 
     ASTPtr rewritten = backup_query->getRewrittenASTWithoutOnCluster({.default_database = "d", .host_id = "h"});
     ASSERT_NE(nullptr, rewritten);
@@ -1143,18 +1147,22 @@ TEST(BackupSettingsDefault, OnClusterRebuildCarriesDefaultedNames)
     ASSERT_NE(nullptr, rewritten_backup->settings);
     const auto & rebuilt = rewritten_backup->settings->as<const ASTSetQuery &>();
 
-    const auto has_default = [&](std::string_view name)
-    { return std::ranges::find(rebuilt.default_settings, name) != rebuilt.default_settings.end(); };
+    EXPECT_EQ((std::vector<String>{"foo"}), rebuilt.default_settings)
+        << "the rewrite must strip exactly `async`, `internal` and `host_id` from `default_settings` "
+           "and keep every unrelated name";
 
-    EXPECT_TRUE(has_default("foo")) << "dropped an unrelated `name = DEFAULT` item";
-    EXPECT_FALSE(has_default("async")) << "kept `async = DEFAULT`, which would reset the injected value";
-    EXPECT_FALSE(has_default("internal")) << "kept `internal = DEFAULT`";
-    EXPECT_FALSE(has_default("host_id")) << "kept `host_id = DEFAULT`";
-
+    /// `tryGet` returns the first match, and the strip erases all matches before the injection, so each
+    /// name below resolves to the injected copy.
     const auto * async_change = rebuilt.changes.tryGet("async");
     ASSERT_NE(nullptr, async_change) << "the rewrite did not inject `async`";
     EXPECT_TRUE(async_change->safeGet<bool>());
+    const auto * internal_change = rebuilt.changes.tryGet("internal");
+    ASSERT_NE(nullptr, internal_change) << "the rewrite did not inject `internal`";
+    EXPECT_TRUE(internal_change->safeGet<bool>());
     const auto * host_id_change = rebuilt.changes.tryGet("host_id");
     ASSERT_NE(nullptr, host_id_change) << "the rewrite did not inject `host_id`";
     EXPECT_EQ("h", host_id_change->safeGet<String>());
+    const auto * structure_only_change = rebuilt.changes.tryGet("structure_only");
+    ASSERT_NE(nullptr, structure_only_change) << "dropped an unrelated ordinary change";
+    EXPECT_TRUE(structure_only_change->safeGet<bool>());
 }
