@@ -3309,16 +3309,17 @@ ICEBERG_INSERT_SETTINGS = {"allow_experimental_insert_into_iceberg": 1}
 
 
 def _read_iceberg_metadata(instance, table_name):
-    metadata_dir = f"/var/lib/clickhouse/user_files/iceberg_data/default/{table_name}/metadata"
+    metadata_dir = f"/iceberg_data/default/{table_name}/metadata"
     latest = instance.exec_in_container(
         ["bash", "-c", f"ls -v {metadata_dir}/v*.metadata.json | tail -1"]
     ).strip()
+    assert latest, f"No metadata file found under {metadata_dir}"
     raw = instance.exec_in_container(["cat", latest])
     return json.loads(raw), latest
 
 
 def _write_iceberg_metadata(instance, table_name, meta, prev_path):
-    metadata_dir = f"/var/lib/clickhouse/user_files/iceberg_data/default/{table_name}/metadata"
+    metadata_dir = f"/iceberg_data/default/{table_name}/metadata"
     meta["last-updated-ms"] = int(time.time() * 1000)
     version_match = re.search(r"/v(\d+)[^/]*\.metadata\.json$", prev_path)
     new_version = int(version_match.group(1)) + 1
@@ -3368,7 +3369,7 @@ def _rewrite_avro_without_format_version(local_in, local_out):
 def _strip_format_version_avro_metadata(instance, table_name, tmp_dir):
     """Strip the `format-version` Avro metadata key from every manifest list and manifest
     file of the table, simulating manifests written by an older ClickHouse version."""
-    metadata_dir = f"/var/lib/clickhouse/user_files/iceberg_data/default/{table_name}/metadata"
+    metadata_dir = f"/iceberg_data/default/{table_name}/metadata"
     listing = instance.exec_in_container(
         ["bash", "-c", f"ls {metadata_dir}/*.avro 2>/dev/null || true"]
     ).strip()
