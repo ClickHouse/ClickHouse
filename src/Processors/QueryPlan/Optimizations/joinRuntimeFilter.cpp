@@ -246,6 +246,25 @@ bool tryAddJoinRuntimeFilter(QueryPlan::Node & node, QueryPlan::Nodes & nodes, c
     if (join_operator.expression.empty())
         return false;
 
+    /// A `sorted_merge` / `parallel_sorted_merge` listed before the first runtime-filter-compatible
+    /// algorithm wins the selection when the join inputs can be read in the order of the join keys, and a
+    /// merge join cannot use a runtime filter (it reads both sides concurrently, so the probe side would
+    /// wait forever on a filter that is only complete when the build side is fully read). Planting the
+    /// filter would also erase the merge algorithms from the list below, silently overriding the
+    /// priority order the user asked for - the defining feature of these two algorithms. When the inputs
+    /// cannot be read in order, those algorithms are not selectable anyway, so the filter (and the erase)
+    /// stays. The predicate is memoized on the step, and `buildPhysicalJoin` uses the same one, so the
+    /// two passes cannot disagree.
+    for (auto algorithm : join_algorithms)
+    {
+        if (supportsRuntimeFilter(algorithm))
+            break;
+        if ((algorithm == JoinAlgorithm::SORTED_MERGE || algorithm == JoinAlgorithm::PARALLEL_SORTED_MERGE)
+            && optimization_settings.read_in_order
+            && join_step->inputsCanBeReadInJoinKeyOrder(node))
+            return false;
+    }
+
     /// Skip if the probe side is known to produce at most `join_runtime_filter_min_probe_rows` rows
     /// Planning and pipeline overhead outweighs any saving on a tiny probe.
     if (optimization_settings.join_runtime_filter_min_probe_rows > 0)

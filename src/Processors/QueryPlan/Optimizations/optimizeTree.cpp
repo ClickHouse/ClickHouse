@@ -682,8 +682,11 @@ void optimizeTreeSecondPass(
     /// Propagate stream disjointness so that DISTINCT / LIMIT BY / GROUP BY can skip merging streams.
     applyStreamDisjointness(optimization_settings, root);
 
-    if (optimization_settings.query_plan_join_shard_by_pk_ranges)
-        optimizeJoinByShards(root);
+    /// Without `query_plan_join_shard_by_pk_ranges` the pass still runs, but restricted to joins whose
+    /// selected algorithm is `parallel_sorted_merge`: for them the primary-key-range sharding is not an
+    /// opt-in extra but the way the algorithm parallelizes (it keeps the in-order reads intact, unlike the
+    /// hash scatter below, which must not touch pre-sorted sides).
+    optimizeJoinByShards(root, /*only_parallel_sorted_merge=*/!optimization_settings.query_plan_join_shard_by_pk_ranges);
 
     /// Shard `parallel_full_sorting_merge` joins by the hash of the join keys. The `join_algorithm`
     /// choice is the gate (this is a no-op unless a join uses that algorithm).

@@ -186,6 +186,15 @@ public:
     UInt64 getRightHashTableCacheKey() const { return right_hash_table_cache_key; }
     void setRightHashTableCacheKey(UInt64 right_hash_table_cache_key_) { right_hash_table_cache_key = right_hash_table_cache_key_; }
 
+    /// Whether both join inputs can be efficiently read in the order of the join keys, so that the
+    /// pre-join sorts of a merge join become cheap (`FinishSorting`) or disappear. This is what makes the
+    /// `sorted_merge` / `parallel_sorted_merge` algorithms selectable; the method returns false right away
+    /// when neither is in `join_algorithm`. Used by two passes that must agree: `tryAddJoinRuntimeFilter`
+    /// (an eligible sorted-merge join must not get a runtime filter, which would force a hash algorithm)
+    /// and `buildPhysicalJoin` (the actual selection). The result is memoized; `node` must be the plan node
+    /// holding this step.
+    bool inputsCanBeReadInJoinKeyOrder(const QueryPlan::Node & node);
+
 protected:
     SharedHeader calculateOutputHeader(const NameSet & required_output_columns_set) const;
     void updateOutputHeader() override;
@@ -206,6 +215,9 @@ protected:
     SortingStep::Settings sorting_settings;
 
     /// Runtime info, do not serialize
+
+    /// Memoized result of `inputsCanBeReadInJoinKeyOrder`.
+    std::optional<bool> inputs_can_be_read_in_join_key_order;
 
     bool optimized = false;
     std::optional<UInt64> result_rows_estimation = {};

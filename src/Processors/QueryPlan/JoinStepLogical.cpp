@@ -41,10 +41,15 @@
 #include <IO/Operators.h>
 
 #include <Planner/PlannerJoins.h>
+#include <Processors/QueryPlan/ArrayJoinStep.h>
 #include <Processors/QueryPlan/CreateSetAndFilterOnTheFlyStep.h>
+#include <Processors/QueryPlan/CreatingSetsStep.h>
+#include <Processors/QueryPlan/DistinctStep.h>
+#include <Processors/QueryPlan/FilterStep.h>
 #include <Processors/QueryPlan/JoinStep.h>
 #include <Processors/QueryPlan/Optimizations/QueryPlanOptimizationSettings.h>
 #include <Processors/QueryPlan/Optimizations/Utils.h>
+#include <Processors/QueryPlan/Optimizations/optimizeReadInOrder.h>
 #include <Processors/QueryPlan/QueryPlan.h>
 #include <Processors/QueryPlan/QueryPlanSerializationSettings.h>
 #include <Processors/QueryPlan/QueryPlanStepRegistry.h>
@@ -927,6 +932,127 @@ static bool tryAddDisjunctiveConditions(
     return true;
 }
 
+/// Whether one merge-join input can be efficiently read in the order of its join keys, i.e. whether
+/// `optimizeReadInOrder` would later turn the `Sort ... before JOIN` above it into a cheap
+/// `FinishSorting` (or a bare merge of the pre-sorted streams). Gates the `sorted_merge` and
+/// `parallel_sorted_merge` algorithms at selection time, which happens during plan physicalization -
+/// several passes before `optimizeReadInOrder` runs and before the sorting step even exists. So this is
+/// a prediction: it finds the reading step the same way `findReadingStep` in `optimizeReadInOrder.cpp`
+/// does and probes the actual read-in-order matcher (`wouldReadInOrderBeUseful`) with the join-key sort
+/// the physicalization is about to build. A false positive (a later pass declines what was predicted
+/// here, e.g. `requestReadingInOrder` refusing a `FINAL` read) degrades gracefully - the join runs like
+/// `full_sorting_merge` with a full sort; a false negative just makes the selection fall through to the
+/// next algorithm in the `join_algorithm` list.
+///
+/// Unlike `findReadingStep`, this does not descend through nested join steps (reading in order through a
+/// join has extra admission checks that depend on the not-yet-built physical plan above): a nested join
+/// input conservatively disables the gate. Join keys that are not plain input columns (an expression
+/// computed by the pre-join actions, e.g. a type cast) disable it likewise.
+static bool joinInputCanBeReadInJoinKeyOrder(
+    const QueryPlan::Node & input,
+    const Names & key_names,
+    const SortingStep::Settings & sorting_settings)
+{
+    if (key_names.empty())
+        return false;
+
+    const auto & input_header = input.step->getOutputHeader();
+    if (!input_header)
+        return false;
+    for (const auto & key_name : key_names)
+        if (!input_header->has(key_name))
+            return false;
+
+    const QueryPlan::Node * node = &input;
+    const ReadFromMergeTree * reading = nullptr;
+    while (true)
+    {
+        const IQueryPlanStep * step = node->step.get();
+        if ((reading = typeid_cast<const ReadFromMergeTree *>(step)))
+            break;
+
+        if (node->children.size() != 1)
+            return false;
+
+        const auto * distinct = typeid_cast<const DistinctStep *>(step);
+        if (typeid_cast<const ExpressionStep *>(step) || typeid_cast<const FilterStep *>(step)
+            || typeid_cast<const ArrayJoinStep *>(step)
+            || (distinct && distinct->isPreliminary())
+            || typeid_cast<const CreatingSetsStep *>(step) || typeid_cast<const DelayedCreatingSetsStep *>(step))
+        {
+            node = node->children.front();
+            continue;
+        }
+
+        return false;
+    }
+
+    /// Mirror `checkSupportedReadingStep`: a STREAM read returns parts in commit order, an already
+    /// in-order read cannot be requested again, and an empty sorting key gives no order to exploit.
+    if (reading->getQueryInfo().isStream() || reading->getQueryInfo().input_order_info)
+        return false;
+    /// Parallel replicas reading cannot serve an in-order request made this late.
+    if (reading->isParallelReadingEnabled())
+        return false;
+
+    const auto & sorting_key = reading->getStorageMetadata()->getSortingKey();
+    if (sorting_key.column_names.empty())
+        return false;
+
+    SortDescription sort_description;
+    sort_description.reserve(key_names.size());
+    for (const auto & key_name : key_names)
+        sort_description.emplace_back(key_name);
+
+    /// The probe step is ephemeral - nothing is attached to the real plan.
+    SortingStep probe_sorting_step(
+        input_header, std::move(sort_description), 0 /*limit*/, sorting_settings, true /*is_sorting_for_merge_join*/);
+
+    return QueryPlanOptimizations::wouldReadInOrderBeUseful(probe_sorting_step, sorting_key, input);
+}
+
+bool JoinStepLogical::inputsCanBeReadInJoinKeyOrder(const QueryPlan::Node & node)
+{
+    if (inputs_can_be_read_in_join_key_order.has_value())
+        return *inputs_can_be_read_in_join_key_order;
+
+    inputs_can_be_read_in_join_key_order = false;
+
+    /// The eligibility only matters for (and is only computed for) the sorted-merge algorithms.
+    if (!TableJoin::isEnabledAlgorithm(join_settings.join_algorithms, JoinAlgorithm::SORTED_MERGE)
+        && !TableJoin::isEnabledAlgorithm(join_settings.join_algorithms, JoinAlgorithm::PARALLEL_SORTED_MERGE))
+        return false;
+
+    if (node.children.size() != 2 || node.step.get() != this)
+        return false;
+
+    /// Collect the equality key pairs the same way `addJoinPredicatesToTableJoin` will during
+    /// physicalization, in the same order (the merge-join sort description is the keys in clause order).
+    /// The raw operand names are used - without the type-cast / null-safe `tuple` wrapping the
+    /// physicalization may add; such wrapped keys are almost never readable in table order anyway, and a
+    /// too-optimistic answer only costs a full sort (see `joinInputCanBeReadInJoinKeyOrder`). An `ASOF`
+    /// inequality key is appended last in the clause, so leaving it out keeps the probed prefix valid.
+    Names left_keys;
+    Names right_keys;
+    for (const auto & condition : join_operator.expression)
+    {
+        auto [predicate_op, lhs, rhs] = condition.asBinaryPredicate();
+        if (predicate_op != JoinConditionOperator::Equals && predicate_op != JoinConditionOperator::NullSafeEquals)
+            continue;
+        if (lhs.fromRight() && rhs.fromLeft())
+            std::swap(lhs, rhs);
+        else if (!lhs.fromLeft() || !rhs.fromRight())
+            continue;
+        left_keys.push_back(lhs.getColumnName());
+        right_keys.push_back(rhs.getColumnName());
+    }
+
+    inputs_can_be_read_in_join_key_order
+        = joinInputCanBeReadInJoinKeyOrder(*node.children[0], left_keys, sorting_settings)
+        && joinInputCanBeReadInJoinKeyOrder(*node.children[1], right_keys, sorting_settings);
+    return *inputs_can_be_read_in_join_key_order;
+}
+
 static void addSortingForMergeJoin(
     const FullSortingMergeJoin * join_ptr,
     QueryPlan::Node *& left_node,
@@ -984,9 +1110,12 @@ static void addSortingForMergeJoin(
     /// Sorting on a stream with const keys can start returning rows immediately and pipeline may stuck.
     /// Note: it's also doesn't work with the read-in-order optimization.
     /// No checks here because read in order is not applied if we have `CreateSetAndFilterOnTheFlyStep` in the pipeline between the reading and sorting steps.
+    /// For that same reason the step must not be added for `sorted_merge` / `parallel_sorted_merge`:
+    /// those algorithms were selected precisely for the in-order read, which this step would defeat.
     bool has_non_const_keys = has_non_const(*left_node->step->getOutputHeader(), join_clause.key_names_left)
         && has_non_const(*right_node->step->getOutputHeader() , join_clause.key_names_right);
-    if (join_settings.max_rows_in_set_to_optimize_join > 0 && join_type_allows_filtering && has_non_const_keys)
+    if (join_settings.max_rows_in_set_to_optimize_join > 0 && join_type_allows_filtering && has_non_const_keys
+        && !join_ptr->isSortedMerge())
     {
         auto * left_set = add_create_set(left_node, join_clause.key_names_left, JoinTableSide::Left);
         auto * right_set = add_create_set(right_node, join_clause.key_names_right, JoinTableSide::Right);
@@ -1494,6 +1623,14 @@ void JoinStepLogical::buildPhysicalJoin(
                 join_step->join_algorithm_params->rhs_size_estimation = hint->source_rows;
         }
     }
+
+    /// `sorted_merge` / `parallel_sorted_merge` are supported only when both inputs can be efficiently
+    /// read in the order of the join keys. Only here, on the physicalization path, the input subplans are
+    /// visible, so the eligibility is decided here and carried into `chooseJoinAlgorithm` via the params.
+    /// The same memoized predicate already made `tryAddJoinRuntimeFilter` keep its hands off an eligible
+    /// join, so an eligible sorted-merge algorithm listed before a hash algorithm really gets selected.
+    join_step->join_algorithm_params->inputs_can_be_read_in_join_key_order
+        = optimization_settings.read_in_order && join_step->inputsCanBeReadInJoinKeyOrder(node);
 
     LogicalJoinInfo logical_join_info{
         .readable_relation_name = join_step->getReadableRelationName(),

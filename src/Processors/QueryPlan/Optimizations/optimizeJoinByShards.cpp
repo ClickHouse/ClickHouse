@@ -336,8 +336,38 @@ static void apply(struct JoinsAndSourcesWithCommonPrimaryKeyPrefix & data)
 /// * can be enforced for fill_sorting_merge JOIN and Sorting step added for it
 ///
 /// The algorithm finds as many JOIN steps as it can and apply optimization for the minimum possible prefix.
-void optimizeJoinByShards(QueryPlan::Node & root)
+///
+/// With `only_parallel_sorted_merge` the pass is restricted to joins whose selected algorithm is
+/// `parallel_sorted_merge`. That algorithm is parallelized exactly by this sharding, so the pass must run
+/// for it even when the general opt-in (`query_plan_join_shard_by_pk_ranges`) is off; but then other joins
+/// (`hash`, `full_sorting_merge`, ...) must keep their plans unchanged.
+void optimizeJoinByShards(QueryPlan::Node & root, bool only_parallel_sorted_merge)
 {
+    if (only_parallel_sorted_merge)
+    {
+        /// In the restricted mode the pass is a no-op unless some join actually selected
+        /// `parallel_sorted_merge`, while the traversal below builds expression DAGs along every step
+        /// chain. Pre-scan cheaply and bail out for the common case.
+        bool has_parallel_sorted_merge = false;
+        std::stack<const QueryPlan::Node *> prescan;
+        prescan.push(&root);
+        while (!prescan.empty() && !has_parallel_sorted_merge)
+        {
+            const auto * node = prescan.top();
+            prescan.pop();
+            if (const auto * join_step = typeid_cast<const JoinStep *>(node->step.get()))
+            {
+                const auto * merge_join = typeid_cast<const FullSortingMergeJoin *>(join_step->getJoin().get());
+                if (merge_join && merge_join->getSelectedAlgorithm() == JoinAlgorithm::PARALLEL_SORTED_MERGE)
+                    has_parallel_sorted_merge = true;
+            }
+            for (const auto * child : node->children)
+                prescan.push(child);
+        }
+        if (!has_parallel_sorted_merge)
+            return;
+    }
+
     /// The algorithm is basically DFS which build the Result structure for the every child step,
     /// And then update the Result for the current step or apply the optimization.
     struct Result
@@ -381,6 +411,9 @@ void optimizeJoinByShards(QueryPlan::Node & root)
             auto * concurrent_hash_join = typeid_cast<ConcurrentHashJoin *>(join.get());
             auto * full_sorting_merge_join = typeid_cast<FullSortingMergeJoin *>(join.get());
             bool is_algo_supported = hash_join || concurrent_hash_join || full_sorting_merge_join;
+            if (only_parallel_sorted_merge)
+                is_algo_supported = full_sorting_merge_join
+                    && full_sorting_merge_join->getSelectedAlgorithm() == JoinAlgorithm::PARALLEL_SORTED_MERGE;
 
             bool can_split_left_table = frame.results.front() != std::nullopt && is_algo_supported && !join->hasDelayedBlocks();
             // std::cerr << "can_split_left_table " << can_split_left_table << std::endl;
