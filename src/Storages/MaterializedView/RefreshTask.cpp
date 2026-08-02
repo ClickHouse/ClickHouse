@@ -1,3 +1,5 @@
+#include <algorithm>
+#include <limits>
 #include <thread>
 #include <Storages/MaterializedView/RefreshTask.h>
 
