@@ -17,7 +17,7 @@ system enable failpoint replicated_merge_tree_commit_zk_fail_when_recovering_fro
 
 insert into t_hardware_error values (6), (7), (8), (9), (10); -- {serverError UNKNOWN_STATUS_OF_INSERT}
 
-system disable failpoint replicated_commit_zk_fail_after_op;
+system disable failpoint replicated_merge_tree_commit_zk_fail_after_op;
 system disable failpoint replicated_merge_tree_commit_zk_fail_when_recovering_from_hw_fault;
 
 insert into t_hardware_error values (11), (12), (13), (14), (15);

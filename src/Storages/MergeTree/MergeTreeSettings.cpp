@@ -2132,6 +2132,14 @@ Possible values:
 Enables commit-order projections that store `_block_number` and `_block_offset` virtual columns, preserving original insertion order through merges.
 Requires `enable_block_number_column` and `enable_block_offset_column` to be enabled.
 )", EXPERIMENTAL) \
+    DECLARE(Bool, allow_experimental_adaptive_codec_selection, false, R"(
+When enabled, merges and mutations choose a codec per block for columns that use the default codec (no `CODEC` clause, or `CODEC(Default)`).
+The candidates are the table's default codec (see the `default_compression_codec` setting), `NONE`, and specialized codecs suited to the column type.
+Only integer-like types are currently adaptive.
+The smallest output wins. Compression is therefore never worse than the default, and incompressible blocks are stored raw.
+A column whose default codec includes encryption (e.g. `AES_128_GCM_SIV`) is never selected adaptively, so encryption is always applied.
+Per-block codecs are reported by the [`mergeTreeCodecBlockCounts`](/sql-reference/table-functions/mergeTreeCodecBlockCounts) table function.
+)", EXPERIMENTAL) \
     DECLARE(Bool, notify_newest_block_number, false, R"(
 Notify newest block number to SharedJoin or SharedSet. Only in ClickHouse Cloud.
 )", EXPERIMENTAL) \
@@ -2418,7 +2426,7 @@ void MergeTreeSettingsImpl::loadFromQuery(ASTStorage & storage_def, ContextPtr c
             auto changes = storage_def.settings->changes;
             MergeTreeSettings::resolveDiskSetting(changes, context, is_loading_from_existing_metadata, for_system_database);
 
-            for (const auto & [name, value] : changes)
+            for (const auto & [name, value, _] : changes)
             {
                 if (name == "disk")
                 {
