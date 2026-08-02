@@ -8,7 +8,9 @@
 #   - a prefix that disagrees with the size its own codec frame declares;
 #   - an accumulated body size the allocator would reject as an internal error (LOGICAL_ERROR).
 # A prefix that agrees with its frame on a large size is NOT corrupt: it stays a memory-limit
-# condition, which the last case asserts.
+# condition, which the last case asserts. Neither is a ZSTD payload whose frame layout the
+# per-buffer header cannot describe (several concatenated frames, or a leading skippable frame):
+# those decompress correctly and must still be read, which the last two cases assert.
 
 CUR_DIR=$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)
 # shellcheck source=../shell_config.sh
@@ -27,6 +29,11 @@ $CLICKHOUSE_LOCAL --query "
     INTO OUTFILE '${TMP_DIR}/ch_lz4.arrows' TRUNCATE FORMAT ArrowStream
     SETTINGS output_format_arrow_compression_method = 'lz4_frame'"
 
+$CLICKHOUSE_LOCAL --query "
+    SELECT number AS i, toString(number) AS s, number * 0.5 AS f FROM numbers(4000)
+    INTO OUTFILE '${TMP_DIR}/ch_zstd.arrows' TRUNCATE FORMAT ArrowStream
+    SETTINGS output_format_arrow_compression_method = 'zstd'"
+
 python3 - "$TMP_DIR" <<'PYEOF'
 import struct, sys
 import pyarrow as pa
@@ -34,6 +41,7 @@ import pyarrow.ipc as ipc
 
 out = sys.argv[1]
 LZ4_MAGIC = b"\x04\x22\x4d\x18"
+ZSTD_MAGIC = b"\x28\xb5\x2f\xfd"
 
 # Several columns, so the batch carries several compressed buffers: the accumulated-total case needs
 # at least two, and a String column contributes both an offsets and a values buffer.
@@ -50,13 +58,14 @@ for codec in ("lz4", "zstd"):
 
 arrow_lz4 = bytearray(open(f"{out}/wellformed_lz4.arrows", "rb").read())
 ch_lz4 = bytearray(open(f"{out}/ch_lz4.arrows", "rb").read())
+ch_zstd = bytearray(open(f"{out}/ch_zstd.arrows", "rb").read())
 
 
-def prefix_offsets(data):
-    """Offsets of the 8-byte uncompressed-length prefixes, found via the LZ4 frame magic."""
+def prefix_offsets(data, magic=LZ4_MAGIC):
+    """Offsets of the 8-byte uncompressed-length prefixes, found via the codec's frame magic."""
     res, i = [], 0
     while True:
-        i = data.find(LZ4_MAGIC, i)
+        i = data.find(magic, i)
         if i < 0:
             return res
         if i >= 8:
@@ -117,7 +126,83 @@ def set_frame_content_size(d, prefix_off, value):
 
 ch_offs = prefix_offsets(ch_lz4)
 arrow_offs = prefix_offsets(arrow_lz4)
+zstd_offs = prefix_offsets(ch_zstd, ZSTD_MAGIC)
 assert len(arrow_offs) >= 2, f"expected >= 2 compressed buffers, got {len(arrow_offs)}"
+assert zstd_offs, "expected a ZSTD-compressed buffer"
+
+
+def compressed_buffer_spans(data):
+    """Spans of every compressed buffer in the file's single RecordBatch message, from its metadata.
+
+    A buffer's length is only in the RecordBatch flatbuffer, not in the payload, so read it there:
+    Message(version, header_type, header, bodyLength) -> RecordBatch(length, nodes, buffers, ...),
+    whose `buffers` is a vector of inline (offset, length) pairs. Both tables are read through their
+    vtables, so a field the writer omitted is simply absent rather than misread.
+    """
+    def u16(o):
+        return struct.unpack_from("<H", data, o)[0]
+
+    def u32(o):
+        return struct.unpack_from("<I", data, o)[0]
+
+    def i64(o):
+        return struct.unpack_from("<q", data, o)[0]
+
+    def field(table, idx):
+        """Absolute offset of field `idx` of the table at `table`, or None when absent."""
+        vtable = table - struct.unpack_from("<i", data, table)[0]
+        pos = 4 + 2 * idx
+        if pos + 2 > u16(vtable):
+            return None
+        rel = u16(vtable + pos)
+        return None if rel == 0 else table + rel
+
+    spans, pos = [], 0
+    while pos + 8 <= len(data):
+        if u32(pos) != 0xFFFFFFFF:
+            break
+        meta_len, = struct.unpack_from("<i", data, pos + 4)
+        if meta_len == 0:  # end-of-stream marker
+            break
+        meta = pos + 8
+        msg = meta + u32(meta)
+        body = (meta + meta_len + 7) & ~7
+        body_len = i64(field(msg, 3)) if field(msg, 3) is not None else 0
+        if data[field(msg, 1)] == 3:  # Message.header_type == RecordBatch
+            header = field(msg, 2)
+            batch = header + u32(header)
+            buffers = field(batch, 2)
+            vec = buffers + u32(buffers)
+            for k in range(u32(vec)):
+                offset, length = i64(vec + 4 + 16 * k), i64(vec + 12 + 16 * k)
+                if length > 8:  # a compressed buffer: 8-byte prefix plus a payload
+                    spans.append((body + offset + 8, body + offset + length))
+        pos = body + body_len
+    return spans
+
+
+def repack_zstd(data, span, frames):
+    """Replace a ZSTD payload with `frames(decompressed_bytes)`, padded back to its original length.
+
+    Padding is a ZSTD skippable frame, which the decompressor ignores, so the payload keeps its byte
+    length and every buffer offset in the RecordBatch stays valid without patching the metadata.
+    """
+    start, end = span
+    declared, = struct.unpack_from("<q", data, start - 8)
+    raw = pa.decompress(bytes(data[start:end]), decompressed_size=declared, codec="zstd", asbytes=True)
+    new = frames(raw)
+    # Skippable frame: magic(4) size(4) content(size), so any pad of 8 bytes or more fits.
+    room = (end - start) - len(new)
+    assert room >= 8, f"replacement payload is {8 - room} bytes too long to pad"
+    new += struct.pack("<II", 0x184D2A50, room - 8) + b"\x00" * (room - 8)
+    out = bytearray(data)
+    out[start:end] = new
+    return out
+
+
+def zstd_frame(raw):
+    """One ZSTD frame that pledges its content size, as ClickHouse's own writer emits."""
+    return pa.Codec("zstd", compression_level=19).compress(raw, asbytes=True)
 
 # Case 1: not a parsable frame. Clear the magic of the first buffer's payload.
 d = bytearray(arrow_lz4)
@@ -145,6 +230,34 @@ big = 8 * 1024 ** 3
 struct.pack_into("<q", d, ch_offs[0], big)
 set_frame_content_size(d, ch_offs[0], big)
 open(f"{out}/consistent_large.arrows", "wb").write(bytes(d))
+
+# The cases below cover the ZSTD branch of the frame lookup, which the LZ4-derived cases above never
+# reach: the two codecs read their frame headers through different APIs.
+
+# Case 5: a ZSTD prefix disagreeing with the size its own frame declares (ClickHouse's writer
+# records one). Far larger than the real size but below the allocator's ceiling, as in case 2.
+d = bytearray(ch_zstd)
+struct.pack_into("<q", d, zstd_offs[0], 100 * 1024 ** 3)
+open(f"{out}/zstd_prefix_mismatch.arrows", "wb").write(bytes(d))
+
+# Case 6: not a parsable ZSTD frame. Clear the magic of the first buffer's payload.
+d = bytearray(ch_zstd)
+d[zstd_offs[0] + 8:zstd_offs[0] + 12] = b"\x00\x00\x00\x00"
+open(f"{out}/zstd_bad_frame.arrows", "wb").write(bytes(d))
+
+# Cases 7 and 8 (NOT corrupt): payload shapes whose first frame header does not describe the whole
+# payload, so its declared size is not comparable to the prefix. ZSTD decompression accepts both -
+# it sums every concatenated frame and skips skippable ones - so both must still be read.
+zstd_spans = compressed_buffer_spans(ch_zstd)
+assert zstd_spans, "expected a compressed buffer in the RecordBatch metadata"
+
+d = repack_zstd(ch_zstd, zstd_spans[0],
+                lambda raw: zstd_frame(raw[:len(raw) // 2]) + zstd_frame(raw[len(raw) // 2:]))
+open(f"{out}/zstd_multi_frame.arrows", "wb").write(bytes(d))
+
+d = repack_zstd(ch_zstd, zstd_spans[0],
+                lambda raw: struct.pack("<II", 0x184D2A50, 4) + b"\x00" * 4 + zstd_frame(raw))
+open(f"{out}/zstd_skippable_prefix.arrows", "wb").write(bytes(d))
 PYEOF
 
 check() {
@@ -161,11 +274,14 @@ $CLICKHOUSE_LOCAL --query "DESC file('${TMP_DIR}/bad_frame.arrows', ArrowStream)
 check bad_frame.arrows INCORRECT_DATA
 check prefix_mismatch.arrows INCORRECT_DATA
 check aggregate_too_large.arrows INCORRECT_DATA
+check zstd_prefix_mismatch.arrows INCORRECT_DATA
+check zstd_bad_frame.arrows INCORRECT_DATA
 # Not corrupt: a size the query cannot afford is a resource condition, not a data error.
 check consistent_large.arrows MEMORY_LIMIT_EXCEEDED
 
-# Well-formed compressed files must be unaffected, from either writer and both codecs.
-for f in wellformed_lz4 wellformed_zstd ch_lz4; do
+# Well-formed compressed files must be unaffected, from either writer and both codecs, including the
+# two ZSTD payload shapes whose leading frame header describes less than the whole payload.
+for f in wellformed_lz4 wellformed_zstd ch_lz4 ch_zstd zstd_multi_frame zstd_skippable_prefix; do
     $CLICKHOUSE_LOCAL --query "
         SELECT count(), sum(i), uniqExact(s) FROM file('${TMP_DIR}/${f}.arrows', ArrowStream)"
 done

@@ -24,7 +24,6 @@
 #include <DataTypes/DataTypeMap.h>
 #include <DataTypes/IDataType.h>
 #include <Common/assert_cast.h>
-#include <Common/BitHelpers.h>
 #include <Common/FloatUtils.h>
 #include <Common/DateLUTImpl.h>
 #include <Core/UUID.h>
@@ -1486,14 +1485,13 @@ void RecordBatchDecoder::prepareBuffers(const flatbuf::RecordBatch & batch, cons
         throw Exception(
             ErrorCodes::INCORRECT_DATA, "Unsupported Arrow IPC compression type {}", static_cast<int>(compression_type));
 
-    /// `resize(n)` asks the allocator for a power-of-two-rounded byte count (PODArray.h:203), and the
-    /// allocator rejects a size at or above 2^63 as an internal error. Reject it as malformed input.
-    using Body = std::decay_t<decltype(decompressed_body)>;
+    /// A decompressed body this large cannot be allocated on any real machine, and `PODArray::resize`
+    /// rounds its request up to a power of two, so stay an octave below the allocator's own ceiling
+    /// rather than restating its arithmetic here.
+    static constexpr size_t MAX_DECOMPRESSED_BODY_SIZE = 1ULL << 62;
     auto checkBodySize = [](size_t n)
     {
-        const size_t bytes = roundUpToPowerOfTwoOrZero(
-            PODArrayDetails::minimum_memory_for_elements(n, sizeof(Body::value_type), Body::pad_left, Body::pad_right));
-        if (bytes >= 0x8000000000000000ULL)
+        if (n >= MAX_DECOMPRESSED_BODY_SIZE)
             throw Exception(ErrorCodes::INCORRECT_DATA, "Arrow IPC decompressed body size {} is too large to allocate", n);
     };
 
@@ -1553,10 +1551,10 @@ void RecordBatchDecoder::prepareBuffers(const flatbuf::RecordBatch & batch, cons
                 ErrorCodes::INCORRECT_DATA,
                 "Arrow IPC compressed buffer declares {} uncompressed bytes but carries no payload", out_len);
 
-        /// The prefix and the payload's own codec frame are two copies of the same size, which
-        /// `Decompressor::decompress` already requires to agree - assert it before allocating instead.
-        /// The frame size is optional (upstream Arrow's LZ4 writer omits it) and file-controlled too,
-        /// so this is a consistency check, never an allocation bound.
+        /// When the payload's codec frame declares a size, it is a second copy of this prefix, so
+        /// disagreement means the prefix is forged - assert it before allocating for it. The frame size
+        /// is optional (upstream Arrow's LZ4 writer omits it) and file-controlled too, so this is a
+        /// consistency check, never an allocation bound.
         if (uncompressed_length >= 0 && length > 8)
         {
             const auto frame_len = declaredFrameContentSize(codec, src + 8, static_cast<size_t>(length - 8));

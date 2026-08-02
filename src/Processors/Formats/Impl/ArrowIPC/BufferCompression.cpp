@@ -29,10 +29,18 @@ std::optional<UInt64> declaredFrameContentSize(CompressionCodec codec, const cha
 {
     if (codec == CompressionCodec::Zstd)
     {
+        /// ZSTD_decompressDCtx sums every concatenated frame while the header read below describes only
+        /// the first, so a size from it is comparable to the caller's prefix for a lone frame only.
+        const size_t frame_size = ZSTD_findFrameCompressedSize(src, size);
+        if (ZSTD_isError(frame_size))
+            throw Exception(ErrorCodes::INCORRECT_DATA, "Compressed Arrow IPC buffer is not a valid ZSTD frame");
+        if (frame_size != size)
+            return std::nullopt;
         const unsigned long long n = ZSTD_getFrameContentSize(src, size);
         if (n == ZSTD_CONTENTSIZE_ERROR)
             throw Exception(ErrorCodes::INCORRECT_DATA, "Compressed Arrow IPC buffer is not a valid ZSTD frame");
-        if (n == ZSTD_CONTENTSIZE_UNKNOWN)
+        /// A skippable frame reports 0 rather than a content size, so it declares nothing either.
+        if (n == ZSTD_CONTENTSIZE_UNKNOWN || n == 0)
             return std::nullopt;
         return n;
     }

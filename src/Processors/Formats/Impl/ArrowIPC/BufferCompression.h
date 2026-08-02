@@ -21,9 +21,9 @@ enum class CompressionCodec : UInt8
     Zstd = 1,
 };
 
-/// Parses only the codec frame header of `src` and returns the uncompressed size the frame itself
-/// declares, or nullopt when it declares none (an optional field both codecs may omit).
-/// Throws INCORRECT_DATA when the codec cannot parse the header at all.
+/// The uncompressed size of `src` that its own codec frame declares, or nullopt when none is available
+/// for it: the field is optional for both codecs, and a ZSTD header describes only the first of
+/// possibly several frames. Throws INCORRECT_DATA when the codec cannot parse `src` at all.
 std::optional<UInt64> declaredFrameContentSize(CompressionCodec codec, const char * src, size_t size);
 
 /// Compresses Arrow IPC buffers, reusing one codec context across all buffers (creating a fresh
