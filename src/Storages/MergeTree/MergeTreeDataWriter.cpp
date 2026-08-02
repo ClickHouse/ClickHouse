@@ -1026,7 +1026,7 @@ MergeTreeTemporaryPartPtr MergeTreeDataWriter::writeTempPartImpl(
 
     /// Pass empty TTL infos so that `RECOMPRESS` codecs are not selected at insert time;
     /// recompression should happen during merges, not on the initial write path.
-    auto compression_codec = data.getCompressionCodecForPart(0, {}, time(nullptr));
+    auto compression_codec = data.getCompressionCodecForPart(metadata_snapshot, 0, {}, time(nullptr)).codec;
 
     auto index_granularity_ptr = createMergeTreeIndexGranularity(
         block,
@@ -1050,7 +1050,8 @@ MergeTreeTemporaryPartPtr MergeTreeDataWriter::writeTempPartImpl(
         /*reset_columns=*/false,
         /*blocks_are_granules_size=*/false,
         context->getWriteSettings(),
-        static_cast<WrittenOffsetSubstreams *>(nullptr));
+        static_cast<WrittenOffsetSubstreams *>(nullptr),
+        /*try_adaptive_codec=*/ false);
 
     Block permuted_columns_cache;
     out->writeWithPermutation(block, perm_ptr, &permuted_columns_cache);
@@ -1133,6 +1134,7 @@ MergeTreeTemporaryPartPtr MergeTreeDataWriter::writeProjectionPartImpl(
     const ProjectionDescription & projection,
     MergeTreeIndices indices,
     bool merge_is_needed,
+    bool try_adaptive_codec,
     ColumnIdMappingPtr column_id_mapping)
 {
     auto temp_part = std::make_unique<MergeTreeTemporaryPart>();
@@ -1256,7 +1258,7 @@ MergeTreeTemporaryPartPtr MergeTreeDataWriter::writeProjectionPartImpl(
         block = mergeBlock(std::move(block), metadata_snapshot, sort_description, perm_ptr, projection_merging_params);
     }
 
-    auto compression_codec = data.getCompressionCodecForPart(0, {}, time(nullptr));
+    auto compression_codec = data.getCompressionCodecForPart(metadata_snapshot, 0, {}, time(nullptr)).codec;
 
     auto index_granularity_ptr = createMergeTreeIndexGranularity(
         block,
@@ -1277,7 +1279,8 @@ MergeTreeTemporaryPartPtr MergeTreeDataWriter::writeProjectionPartImpl(
         /*reset_columns=*/ false,
         /*blocks_are_granules_size=*/ false,
         data.getContext()->getWriteSettings(),
-        static_cast<WrittenOffsetSubstreams *>(nullptr));
+        static_cast<WrittenOffsetSubstreams *>(nullptr),
+        try_adaptive_codec);
 
     Block permuted_columns_cache;
     out->writeWithPermutation(block, perm_ptr, &permuted_columns_cache);
@@ -1311,8 +1314,18 @@ MergeTreeTemporaryPartPtr MergeTreeDataWriter::writeProjectionPart(
         query_settings,
         *data.getSettings());
 
-    return writeProjectionPartImpl(
-        projection.name, false /* is_temp */, parent_part, data, log, std::move(block), projection, std::move(indices), merge_is_needed, std::move(column_id_mapping));
+        return writeProjectionPartImpl(
+            projection.name,
+            false /* is_temp */,
+            parent_part,
+            data,
+            log,
+            std::move(block),
+            projection,
+            std::move(indices),
+            merge_is_needed,
+            /*try_adaptive_codec=*/ false,
+            std::move(column_id_mapping));
 }
 
 /// This is used for projection materialization process which may contain multiple stages of
@@ -1337,7 +1350,17 @@ MergeTreeTemporaryPartPtr MergeTreeDataWriter::writeTempProjectionPart(
 
     auto part_name = fmt::format("{}_{}", projection.name, block_num);
     auto new_part = writeProjectionPartImpl(
-        part_name, /*is_temp=*/ true, parent_part, data, log, std::move(block), projection, std::move(indices), /*merge_is_needed=*/true, std::move(column_id_mapping));
+        part_name,
+        /*is_temp=*/true,
+        parent_part,
+        data,
+        log,
+        std::move(block),
+        projection,
+        std::move(indices),
+        /*merge_is_needed=*/true,
+        /*try_adaptive_codec=*/ true,
+        std::move(column_id_mapping));
 
     new_part->part->temp_projection_block_number = block_num;
     return new_part;

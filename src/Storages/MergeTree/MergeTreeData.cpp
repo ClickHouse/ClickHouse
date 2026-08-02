@@ -10165,19 +10165,23 @@ bool MergeTreeData::isPartInTTLDestination(const TTLDescription & ttl, const IMe
     return false;
 }
 
-CompressionCodecPtr MergeTreeData::getCompressionCodecForPart(size_t part_size_compressed, const IMergeTreeDataPart::TTLInfos & ttl_infos, time_t current_time) const
+MergeTreeData::PartCompressionCodec MergeTreeData::getCompressionCodecForPart(
+    const StorageMetadataPtr & metadata_snapshot,
+    size_t part_size_compressed,
+    const IMergeTreeDataPart::TTLInfos & ttl_infos,
+    time_t current_time) const
 {
-    auto metadata_snapshot = getInMemoryMetadataPtr(getContext(), false);
-
     const auto & recompression_ttl_entries = metadata_snapshot->getRecompressionTTLs();
     auto best_ttl_entry = selectTTLDescriptionForTTLInfos(recompression_ttl_entries, ttl_infos.recompression_ttl, current_time, true);
 
     if (best_ttl_entry)
-        return CompressionCodecFactory::instance().get(best_ttl_entry->recompression_codec, {});
+        return {
+            .codec = CompressionCodecFactory::instance().get(best_ttl_entry->recompression_codec, {}),
+            .is_explicit_recompression = !CompressionCodecFactory::isDefaultCodec(best_ttl_entry->recompression_codec)};
 
     auto codec_setting = (*getSettings())[MergeTreeSetting::default_compression_codec].value;
     if (!codec_setting.empty())
-        return CompressionCodecFactory::instance().get(codec_setting);
+        return {.codec = CompressionCodecFactory::instance().get(codec_setting)};
 
     /// On the first write into an empty table `getTotalActiveSizeInBytes()` is `0`, which would
     /// turn `part_size / total` into `NaN` and make every `<compression>` case fail the
@@ -10188,7 +10192,7 @@ CompressionCodecPtr MergeTreeData::getCompressionCodecForPart(size_t part_size_c
         ? static_cast<double>(part_size_compressed) / static_cast<double>(total_active_size)
         : 0.0;
 
-    return getContext()->chooseCompressionCodec(part_size_compressed, part_size_ratio);
+    return {.codec = getContext()->chooseCompressionCodec(part_size_compressed, part_size_ratio)};
 }
 
 MergeTreeData::DataParts MergeTreeData::getDataParts(const DataPartStates & affordable_states, const DataPartsKinds & affordable_kinds) const
@@ -10870,8 +10874,20 @@ UInt64 MergeTreeData::estimateNumberOfRowsToRead(
         storage_snapshot->metadata->getColumns().getAll().getNames(),
         storage_snapshot->metadata,
         query_info,
+        /*top_k_filter_info=*/std::nullopt,
         query_context,
-        query_context->getSettingsRef()[Setting::max_threads]);
+        query_context->getSettingsRef()[Setting::max_threads],
+        /*max_block_numbers_to_read=*/nullptr,
+        /// This is the pre-plan estimate for automatic parallel-replicas sizing. It runs before
+        /// `tryOptimizeTopK`, so it cannot know whether the read will be stamped as a TopK read, and
+        /// therefore whether the `use_query_condition_cache_for_top_k` gate applies to it. Analyzing an
+        /// `ORDER BY ... LIMIT n` query as an apparent plain read here would let it reuse plain
+        /// `SELECT ... WHERE` entries (changing the estimate, and with it `max_parallel_replicas`) and
+        /// record index-analysis exclusions back under the plain condition hash - exactly the
+        /// interaction the gate is supposed to prevent. The estimate is a throwaway analysis, so simply
+        /// do not touch the cache here; the read that actually executes runs its own analysis with the
+        /// gate that matches its final shape.
+        /*use_query_condition_cache=*/false);
 
     UInt64 total_rows = result_ptr->selected_rows;
     if (query_info.trivial_limit > 0 && query_info.trivial_limit < total_rows)
@@ -12871,11 +12887,8 @@ std::pair<MergeTreeData::MutableDataPartPtr, scope_guard> MergeTreeData::createE
     if ((*getSettings())[MergeTreeSetting::fsync_part_directory])
         sync_guard = new_data_part_storage->getDirectorySyncGuard();
 
-    /// An empty part has zero size, so this chooses the minimal compression method:
-    /// either the table-level `default_compression_codec` setting, or the default lz4 / a
-    /// compression method with zero thresholds on absolute and relative part size.
-    /// Pass empty TTL infos so that `RECOMPRESS` codecs are not selected for an empty part.
-    auto compression_codec = getCompressionCodecForPart(0, {}, time(nullptr));
+    /// Zero size picks the minimal compression method. Empty TTL infos so no `RECOMPRESS` codec is selected for an empty part.
+    auto compression_codec = getCompressionCodecForPart(metadata_snapshot, 0, {}, time(nullptr)).codec;
 
     const auto & index_factory = MergeTreeIndexFactory::instance();
     auto skip_indices = index_factory.getMany(metadata_snapshot, metadata_snapshot->getSecondaryIndices(), *getSettings());
@@ -12896,7 +12909,8 @@ std::pair<MergeTreeData::MutableDataPartPtr, scope_guard> MergeTreeData::createE
         /*reset_columns_=*/false,
         /*blocks_are_granules_size=*/false,
         /*write_settings=*/{},
-        /*written_offset_substreams=*/nullptr);
+        /*written_offset_substreams=*/nullptr,
+        /*try_adaptive_codec=*/ false); /// Empty 0-row part (also reached by mutations): no data is written, so the flag has no effect.
 
     bool sync_on_insert = (*settings)[MergeTreeSetting::fsync_after_insert];
 

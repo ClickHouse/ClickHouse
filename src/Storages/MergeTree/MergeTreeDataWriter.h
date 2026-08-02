@@ -156,6 +156,7 @@ private:
         const ProjectionDescription & projection,
         MergeTreeIndices indices,
         bool merge_is_needed,
+        bool try_adaptive_codec,
         ColumnIdMappingPtr column_id_mapping);
 
     MergeTreeData & data;
