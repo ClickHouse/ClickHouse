@@ -219,7 +219,7 @@ SELECT count() > 0 FROM (
     SETTINGS cross_to_inner_join_rewrite = 1
 ) WHERE explain ILIKE '%kind: INNER%';
 
--- getServerPort() now reports isServerConstant() on both its function base and its overload resolver.
+-- `getServerPort` now reports `isServerConstant` on both its function base and its overload resolver.
 -- It is folded on a single-node query like the rows above, so it needs remote() too.
 SELECT '-- getServerPort() is no longer rewritten';
 SELECT count() = 0 FROM (
