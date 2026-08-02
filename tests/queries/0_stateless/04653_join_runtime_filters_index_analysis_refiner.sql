@@ -20,6 +20,10 @@ SET enable_parallel_replicas = 0;
 -- The two runs execute the same predicate, so a query condition cache hit in the second run
 -- would prune extra granules and break the read_rows parity check.
 SET use_query_condition_cache = 0;
+-- `PartsSplitter` fault injection is a per-query coin flip: when it fires, the part's ranges are
+-- split by primary key into layers read in order, and the mark on the layer boundary is read twice.
+-- The two runs would then flip independently and read a different number of rows.
+SET merge_tree_read_split_ranges_into_intersecting_and_non_intersecting_injection_probability = 0;
 
 DROP TABLE IF EXISTS refiner_fact;
 DROP TABLE IF EXISTS refiner_dim;
