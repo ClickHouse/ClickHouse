@@ -19,6 +19,7 @@ namespace FailPoints
 {
     extern const char totals_having_transform_pause[];
     extern const char totals_having_transform_totals_pause[];
+    extern const char totals_having_transform_totals_start_pause[];
 }
 
 namespace ErrorCodes
@@ -312,6 +313,20 @@ void TotalsHavingTransform::addToTotals(const Chunk & chunk, const IColumn::Filt
 
 void TotalsHavingTransform::prepareTotals()
 {
+    FailPointInjection::pauseFailPoint(FailPoints::totals_having_transform_totals_start_pause);
+
+    if (isCancelled())
+    {
+        /// The main stream was already cancelled and the result is discarded anyway, so none of the
+        /// totals work below has to be done: no merging of `overflow_aggregates`, no finalization of
+        /// aggregate states, and no evaluation of the `HAVING` expression for the totals row.
+        /// Install an empty chunk matching the totals port header, so that `prepare` pushes it and
+        /// finishes instead of scheduling this method again.
+        totals = Chunk(getTotalsPort().getHeader().cloneEmptyColumns(), 0);
+        total_prepared = true;
+        return;
+    }
+
     /// If totals_mode == AFTER_HAVING_AUTO, you need to decide whether to add aggregates to TOTALS for strings,
     /// not passed max_rows_to_group_by.
     if (overflow_aggregates)
