@@ -55,6 +55,10 @@ public:
 
     size_t getNumberOfArguments() const override { return 0; }
 
+    /// The client certificate of the connection to the executing node.
+    bool isDeterministic() const override { return false; }
+    bool isServerConstant() const override { return true; }
+
     bool isSuitableForShortCircuitArgumentsExecution(const DataTypesWithConstInfo &) const override { return true; }
 
     DataTypePtr getReturnTypeImpl(const ColumnsWithTypeAndName &) const override

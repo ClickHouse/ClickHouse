@@ -55,20 +55,6 @@ void extractJoinConditions(const QueryTreeNodePtr & node, QueryTreeNodes & equi_
     }
 }
 
-/// Values local to the executing node that `isServerConstant` does not already refuse, whether captured
-/// when the function object is created or read per row. Two sides of a key built by different nodes can
-/// therefore disagree. These are canonical names: aliases and letter case resolve first.
-bool isNodeLocalFunction(const String & function_name)
-{
-    return function_name == "queryID" || function_name == "FQDN" || function_name == "getServerPort"
-        || function_name == "transactionID" || function_name == "transactionLatestSnapshot"
-        || function_name == "transactionOldestSnapshot" || function_name == "randConstant"
-        || function_name == "filesystemCapacity" || function_name == "filesystemAvailable"
-        || function_name == "filesystemUnreserved" || function_name == "getClientHTTPHeader"
-        || function_name == "showCertificate" || function_name == "addressToSymbol"
-        || function_name == "addressToLine" || function_name == "addressToLineWithInlines";
-}
-
 /// A condition may become a join key only if its value is stable within one query: in the key position it
 /// is evaluated per row of each joined side instead of once per row of the cross product. Hence
 /// `isDeterministicInScopeOfQuery` rather than `isDeterministic`, which would reject a sound `now()`.
@@ -92,9 +78,6 @@ bool canMoveToJoinExpression(const QueryTreeNodePtr & node)
             auto function_base = function_node->getFunction();
             if (!function_base || function_base->isStateful() || !function_base->isDeterministicInScopeOfQuery()
                 || function_base->isServerConstant())
-                return false;
-
-            if (isNodeLocalFunction(function_node->getFunctionName()))
                 return false;
         }
 
