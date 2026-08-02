@@ -357,9 +357,15 @@ std::shared_ptr<IObjectIterator> StorageObjectStorageSource::createFileIterator(
     /// skips absent alternatives. Expanding a multi-enum pattern such as `file{a,b}{1,2}.csv`
     /// here would make it fail on the first absent cartesian-product member instead of
     /// returning the keys that do exist, as the legacy listing path does.
+    /// An enum whose alternatives contain a `?`, as in `file{a?,b?}.csv`, is excluded too:
+    /// `hasExactlyOneEnum` accepts that shape, but `expand` keeps the `?` as literal text, so
+    /// expanding would probe a key named `filea?.csv` instead of listing and matching
+    /// `filea1.csv` the way the legacy path does. `hasQuestionOrAsterisk` covers those `?`,
+    /// while a `*` inside a brace group makes the group literal text rather than an enum.
     bool can_expand = !match_web_paths_only
         && use_glob_ast
         && glob_string->hasExactlyOneEnum()
+        && !glob_string->hasQuestionOrAsterisk()
         && glob_string->cardinality() <= max_expansion;
 
     if (!can_expand && !match_web_paths_only && !use_glob_ast && has_globs)

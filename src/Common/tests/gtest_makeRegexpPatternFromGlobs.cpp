@@ -776,6 +776,31 @@ TEST(Common, GlobASTMatchStateSpaceLimit)
     EXPECT_FALSE(wide.matches(std::string(71, 'a')));
 }
 
+TEST(Common, GlobASTWildcardInsideEnums)
+{
+    /// A '?' inside an enum alternative is a wildcard for matching but is rendered as literal
+    /// text by expand(), so object storage must not turn such a pattern into exact keys. The
+    /// shape passes hasExactlyOneEnum(), so the exact-key guard has to rely on
+    /// hasQuestionOrAsterisk(), which the parser sets for a '?' inside an enum as well.
+    GlobAST::GlobString with_question("file_{a?,b?}.csv");
+    EXPECT_TRUE(with_question.hasExactlyOneEnum());
+    EXPECT_TRUE(with_question.hasQuestionOrAsterisk());
+    EXPECT_TRUE(with_question.matches("file_a1.csv"));
+    EXPECT_TRUE(with_question.matches("file_b2.csv"));
+    EXPECT_FALSE(with_question.matches("file_a.csv"));
+
+    /// A '*' inside a brace group makes the group literal text plus a wildcard rather than an
+    /// enum, so it is not an exact-key candidate either.
+    GlobAST::GlobString with_asterisk("file_{a*,b*}.csv");
+    EXPECT_FALSE(with_asterisk.hasExactlyOneEnum());
+    EXPECT_TRUE(with_asterisk.hasQuestionOrAsterisk());
+
+    /// A plain enum stays expandable.
+    GlobAST::GlobString plain("file_{a,b}.csv");
+    EXPECT_TRUE(plain.hasExactlyOneEnum());
+    EXPECT_FALSE(plain.hasQuestionOrAsterisk());
+}
+
 TEST(Common, GlobASTMatchDeepRecursionGuard)
 {
     /// A long run of `*` stays far below the memo-table cap against a short candidate
