@@ -640,10 +640,24 @@ class JobConfigs:
         # PR-side run is the stricter of the two: full iteration count and time
         # budget, while the merge-queue run is reduced (see
         # `ci/jobs/functional_tests.py`).
+        #
+        # The `, pr` suffix exists to keep the two lanes on separate cache
+        # records. Praktika keys a cache record by `normalize_string(job_name)`
+        # plus the job digest (`ci/praktika/cache.py`), and the digest contains
+        # no workflow or event (`ci/praktika/digest.py`), so a PR lane named
+        # exactly like the merge-queue lane would share its cache identity: a
+        # reduced merge-queue success (20 iterations / 20 minutes) could then
+        # satisfy this stricter PR run (50 iterations / 45 minutes), and the
+        # stronger pre-merge signal this job exists for would silently not run.
+        # The suffix is a name only - `command` below passes the same
+        # `--options` as the merge-queue lane, so the job itself is configured
+        # identically (the option string is validated token by token in
+        # `functional_tests.py`, which is why the suffix cannot be part of it).
         Job.ParamSet(
-            parameter="amd_binary, flaky check",
+            parameter="amd_binary, flaky check, pr",
             runs_on=RunnerLabels.AMD_MEDIUM,
             requires=[ArtifactNames.CH_AMD_BINARY],
+            command='python3 ./ci/jobs/functional_tests.py --options "amd_binary, flaky check"',
         ),
     )
     # Merge-queue drift guard: reruns the PR's new/changed stateless tests on
