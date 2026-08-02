@@ -1,0 +1,59 @@
+-- Array(Dynamic), cross-width numeric needle: const, materialized, LowCardinality
+0	1	1	1	1	1	1	1
+1	0	0	0	0	0	0	0
+1	1	1
+0	1	1
+1	0	0
+1	1
+-- Array(Dynamic), FixedString needle compared zero-padded, as `=` does
+0	1	1
+1	1	1
+2	0	0
+2	2	1	1
+1	2
+-- Array(Variant)
+0	1	1
+1	1	1
+2	0	0
+-- erasure nested in Tuple, at any depth
+1	1
+1	1
+1	1
+-- erasure behind Array/Map: equality for those containers is not decomposed, so no match
+0	0
+0	0
+0	0
+-- NULL: two NULLs are equal, per has([NULL], NULL) -> 1
+1	1
+1	1
+0	0
+0	1	1
+1	0	1
+0	1
+1	0
+2	0
+-- Map: direct has(map, key), mapContainsKey, mapContainsValue
+0	1	1
+1	1	1
+2	0	0
+0	1	1
+1	1	1
+2	0	0
+0	1	1
+1	0	0
+-- non-erased elements with an erased needle: the common type decides, not the element type
+0	1
+1	0
+0	0
+1	0
+-- mixed variants: the *_throw_on_type_mismatch settings are inherited from `equals`
+0	1	1
+1	0	0
+2	1	1
+0	1	1
+1	0	0
+-- non-erased fast paths are unchanged
+1	3	2	2
+1	1	2
+1	0	1
+1	1	1

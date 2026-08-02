@@ -10,6 +10,7 @@
 #include <DataTypes/DataTypeArray.h>
 #include <DataTypes/DataTypeMap.h>
 #include <DataTypes/DataTypeNullable.h>
+#include <DataTypes/DataTypeTuple.h>
 #include <DataTypes/DataTypesNumber.h>
 #include <DataTypes/getLeastSupertype.h>
 #include <Columns/ColumnArray.h>
@@ -40,6 +41,24 @@ namespace ErrorCodes
 }
 
 using NullMap = PaddedPODArray<UInt8>;
+
+/// True when `type` is Dynamic or Variant, at the top level or inside any chain of Tuple wrappers.
+/// Stops at Array/Map on purpose: equality for identical Array/Map types is itself compareAt-based,
+/// so descending there could not change the answer. forEachChild cannot express that barrier.
+inline bool hasTypeErasingElement(const IDataType & type)
+{
+    if (isDynamic(type) || isVariant(type))
+        return true;
+
+    if (const auto * tuple_type = typeid_cast<const DataTypeTuple *>(&type))
+    {
+        for (const auto & element : tuple_type->getElements())
+            if (hasTypeErasingElement(*element))
+                return true;
+    }
+
+    return false;
+}
 
 /// ConcreteActions -- what to do when the index was found.
 
@@ -510,7 +529,16 @@ class FunctionArrayIndex final : public IFunction
 {
 public:
     static constexpr auto name = Name::name;
-    static FunctionPtr create(ContextPtr) { return std::make_shared<FunctionArrayIndex>(); }
+    static FunctionPtr create(ContextPtr context) { return std::make_shared<FunctionArrayIndex>(context); }
+
+    FunctionArrayIndex() = default;
+
+    /// A null context is benign: `equals` is then built with default ComparisonParams, mirroring
+    /// FunctionComparison::create. The relation stays correct, only query settings are not applied.
+    explicit FunctionArrayIndex(ContextPtr context_)
+        : equals_resolver(FunctionFactory::instance().get("equals", context_))
+    {
+    }
 
     /// Get function name.
     String getName() const override { return name; }
@@ -586,18 +614,7 @@ public:
         if (auto res = executeObject(arguments, result_type))
             return res;
 
-        if (auto res = executeArrayLowCardinality(arguments))
-            return res;
-
-        auto new_arguments = arguments;
-
-        for (auto & argument : new_arguments)
-        {
-            argument.column = recursiveRemoveLowCardinality(argument.column);
-            argument.type = recursiveRemoveLowCardinality(argument.type);
-        }
-
-        return executeArrayImpl(new_arguments, result_type);
+        return executeArray(arguments, result_type);
     }
 
 private:
@@ -614,6 +631,205 @@ private:
 
         return ((isNativeNumber(inner_type_decayed) || isEnum(inner_type_decayed)) && isNativeNumber(arg_decayed))
             || getLeastSupertype(DataTypes{inner_type_decayed, arg_decayed});
+    }
+
+    /// Sole owner of the array-shaped dispatch, so both entry points (executeImpl and executeMap)
+    /// see the same arms in the same order. Keeping the LowCardinality normalisation duplicated in
+    /// executeMap is what caused the null-needle defect its comment records.
+    ColumnPtr executeArray(const ColumnsWithTypeAndName & arguments, const DataTypePtr & result_type) const
+    {
+        if (auto res = executeErasedEquality(arguments, result_type))
+            return res;
+
+        if (auto res = executeArrayLowCardinality(arguments))
+            return res;
+
+        auto new_arguments = arguments;
+
+        for (auto & argument : new_arguments)
+        {
+            argument.column = recursiveRemoveLowCardinality(argument.column);
+            argument.type = recursiveRemoveLowCardinality(argument.type);
+        }
+
+        return executeArrayImpl(new_arguments, result_type);
+    }
+
+    /// The common type of the array element and the needle, with the wrappers that do not affect
+    /// which equality relation applies removed.
+    static DataTypePtr tryGetDecayedCommonType(const ColumnsWithTypeAndName & arguments)
+    {
+        const auto * array_type = checkAndGetDataType<DataTypeArray>(arguments[0].type.get());
+        if (!array_type)
+            return nullptr;
+
+        auto element_type = removeNullable(recursiveRemoveLowCardinality(array_type->getNestedType()));
+        auto needle_type = removeNullable(recursiveRemoveLowCardinality(arguments[1].type));
+
+        return tryGetLeastSupertype(DataTypes{element_type, needle_type});
+    }
+
+    /// Fold a per-element `equals` result plus both operands' nullness into one match bitmap.
+    /// Two NULLs count as equal, per the documented has([NULL], NULL) -> 1 contract; an
+    /// indeterminate (NULL) comparison counts as no match.
+    static ColumnUInt8::MutablePtr foldEqualityResult(
+        const ColumnPtr & equality_result, const IColumn & elements, const IColumn & needles, size_t size)
+    {
+        auto matches = ColumnUInt8::create(size);
+        auto & matches_data = matches->getData();
+
+        auto flat_result = equality_result->convertToFullIfWrapped()->convertToFullColumnIfLowCardinality();
+        const auto * nullable_result = checkAndGetColumn<ColumnNullable>(flat_result.get());
+        const IColumn & result_values = nullable_result ? nullable_result->getNestedColumn() : *flat_result;
+
+        /// `equals` yields Nullable(Nothing) when no comparison is possible at all (an erased operand
+        /// with no compatible alternative and the matching *_throw_on_type_mismatch setting disabled).
+        const bool result_is_nothing = result_values.getDataType() == TypeIndex::Nothing;
+
+        for (size_t i = 0; i < size; ++i)
+        {
+            const bool element_is_null = elements.isNullAt(i);
+            const bool needle_is_null = needles.isNullAt(i);
+
+            if (element_is_null || needle_is_null)
+                matches_data[i] = element_is_null && needle_is_null;
+            else if (result_is_nothing || (nullable_result && nullable_result->isNullAt(i)))
+                matches_data[i] = 0;
+            else
+                matches_data[i] = result_values.getBool(i) ? 1 : 0;
+        }
+
+        return matches;
+    }
+
+    /// Evaluate `equals` over `elements` against `needles` (already aligned element-wise) and fold
+    /// the outcome into a match bitmap.
+    ColumnUInt8::MutablePtr evaluateElementwiseEquality(
+        const ColumnWithTypeAndName & elements, const ColumnWithTypeAndName & needles) const
+    {
+        ColumnsWithTypeAndName equals_arguments{elements, needles};
+        auto equals_function = equals_resolver->build(equals_arguments);
+        auto equality_result = equals_function->execute(
+            equals_arguments, equals_function->getResultType(), elements.column->size(), /* dry_run = */ false);
+
+        return foldEqualityResult(equality_result, *elements.column, *needles.column, elements.column->size());
+    }
+
+    /// Reduce a per-element match bitmap to one result per array row.
+    ResultColumnPtr foldMatchesPerRow(const PaddedPODArray<UInt8> & matches, const ColumnArray::Offsets & offsets) const
+    {
+        auto col_result = ResultColumnType::create(offsets.size());
+        auto & result_data = col_result->getData();
+
+        ColumnArray::Offset current_offset = 0;
+        for (size_t row = 0; row < offsets.size(); ++row)
+        {
+            ResultType current = 0;
+            for (size_t j = 0, array_size = offsets[row] - current_offset; j < array_size; ++j)
+            {
+                if (!matches[current_offset + j])
+                    continue;
+
+                ConcreteAction::apply(current, j);
+
+                if constexpr (!ConcreteAction::resume_execution)
+                    break;
+            }
+            result_data[row] = current;
+            current_offset = offsets[row];
+        }
+
+        return col_result;
+    }
+
+    /// Membership over a type-erasing common type, using the registered `equals` rather than
+    /// compareAt, which for such a column orders by variant name before value.
+    /// Returns nullptr for every other common type, leaving the existing dispatch untouched.
+    ColumnPtr executeErasedEquality(const ColumnsWithTypeAndName & arguments, const DataTypePtr & result_type) const
+    {
+        if (!equals_resolver)
+            return nullptr;
+
+        auto common_type = tryGetDecayedCommonType(arguments);
+        if (!common_type || !hasTypeErasingElement(*common_type))
+            return nullptr;
+
+        const auto & array_type = assert_cast<const DataTypeArray &>(*arguments[0].type);
+        auto element_type = array_type.getNestedType();
+        const auto & needle_type = arguments[1].type;
+
+        const auto * col_array_const = checkAndGetColumnConstData<ColumnArray>(arguments[0].column.get());
+        const auto * col_array = col_array_const ? col_array_const : checkAndGetColumn<ColumnArray>(arguments[0].column.get());
+        if (!col_array)
+            return nullptr;
+
+        const auto * needle_const = checkAndGetColumn<ColumnConst>(arguments[1].column.get());
+
+        /// Const array and const needle: one evaluation over the single logical array, so the cost
+        /// stays proportional to the array length instead of to the row count.
+        if (col_array_const && needle_const)
+        {
+            const auto & elements = col_array->getDataPtr();
+            size_t elements_count = elements->size();
+
+            auto matches = evaluateElementwiseEquality(
+                {elements, element_type, "elements"},
+                {needle_const->getDataColumnPtr()->cloneResized(1)->replicate({elements_count}), needle_type, "needle"});
+
+            ResultType current = 0;
+            for (size_t i = 0; i < elements_count; ++i)
+            {
+                if (!matches->getData()[i])
+                    continue;
+
+                ConcreteAction::apply(current, i);
+
+                if constexpr (!ConcreteAction::resume_execution)
+                    break;
+            }
+
+            return result_type->createColumnConst(arguments[0].column->size(), current);
+        }
+
+        /// LowCardinality elements and a const needle: compare dictionary entries rather than every
+        /// element. Materialising instead was measured slower, which is why that fast path exists.
+        if (const auto * elements_lc = checkAndGetColumn<ColumnLowCardinality>(&col_array->getData());
+            elements_lc && needle_const && !col_array_const)
+        {
+            auto dictionary_type = removeLowCardinality(element_type);
+            auto dictionary_matches = LowCardinalityExecutionHelpers::dictionaryMatchesForSelectedIndexes(
+                *elements_lc,
+                [&](const ColumnPtr & dictionary_values) -> ColumnPtr
+                {
+                    /// dictionaryMatchesForSelectedIndexes requires a plain ColumnUInt8, while `equals`
+                    /// over an erased type returns Nullable(UInt8).
+                    return evaluateElementwiseEquality(
+                        {dictionary_values, dictionary_type, "dictionary"},
+                        {needle_const->getDataColumnPtr()->cloneResized(1)->replicate({dictionary_values->size()}),
+                         needle_type,
+                         "needle"});
+                });
+
+            const auto & dictionary_matches_data = assert_cast<const ColumnUInt8 &>(*dictionary_matches).getData();
+            const auto & offsets = col_array->getOffsets();
+
+            auto matches = ColumnUInt8::create(elements_lc->size());
+            auto & matches_data = matches->getData();
+            for (size_t i = 0, size = elements_lc->size(); i < size; ++i)
+                matches_data[i] = dictionary_matches_data[elements_lc->getIndexAt(i)];
+
+            return foldMatchesPerRow(matches_data, offsets);
+        }
+
+        auto full_array = arguments[0].column->convertToFullColumnIfConst();
+        const auto & array = assert_cast<const ColumnArray &>(*full_array);
+        const auto & offsets = array.getOffsets();
+
+        auto matches = evaluateElementwiseEquality(
+            {array.getDataPtr(), element_type, "elements"},
+            {arguments[1].column->convertToFullColumnIfConst()->replicate(offsets), needle_type, "needle"});
+
+        return foldMatchesPerRow(matches->getData(), offsets);
     }
 
     /** If one or both arguments passed to this function are nullable,
@@ -917,16 +1133,9 @@ private:
         arguments_copy[0].type = std::move(array_type);
         arguments_copy[0].name = arguments[0].name;
 
-        /// executeImpl strips LowCardinality before executeArrayImpl, but the Map path bypasses it.
-        /// Strip here too so executeArrayImpl sees a ColumnNullable lookup column and fills null_map_item,
-        /// keeping null-needle semantics identical to the plain array path.
-        for (auto & argument : arguments_copy)
-        {
-            argument.column = recursiveRemoveLowCardinality(argument.column);
-            argument.type = recursiveRemoveLowCardinality(argument.type);
-        }
-
-        return executeArrayImpl(arguments_copy, result_type);
+        /// executeArray owns the LowCardinality normalisation, so the Map path keeps null-needle
+        /// semantics identical to the plain array path without repeating it here.
+        return executeArray(arguments_copy, result_type);
     }
 
     /**
@@ -1315,5 +1524,8 @@ private:
 
         return col_res;
     }
+
+    /// Null when the function was constructed without a context; executeErasedEquality then declines.
+    FunctionOverloadResolverPtr equals_resolver;
 };
 }

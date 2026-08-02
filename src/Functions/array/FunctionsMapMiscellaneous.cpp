@@ -54,7 +54,22 @@ class FunctionMapToArrayAdapter : public IFunction
 {
 public:
     static constexpr auto name = Name::name;
-    static FunctionPtr create(ContextPtr) { return std::make_shared<FunctionMapToArrayAdapter>(); }
+    static FunctionPtr create(ContextPtr context) { return std::make_shared<FunctionMapToArrayAdapter>(context); }
+
+    /// FunctionWithLowCardinalityFastPath default-constructs its base, so both forms are needed.
+    FunctionMapToArrayAdapter() = default;
+
+    /// Only some Impl types accept a context; the rest stay default-constructed.
+    explicit FunctionMapToArrayAdapter(ContextPtr context)
+        : impl([&]
+        {
+            if constexpr (std::is_constructible_v<Impl, ContextPtr>)
+                return Impl(context);
+            else
+                return Impl();
+        }())
+    {
+    }
 
     String getName() const override { return name; }
 
