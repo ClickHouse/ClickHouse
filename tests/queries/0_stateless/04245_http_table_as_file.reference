@@ -102,10 +102,22 @@
 1
 -- output_format wins over default_format:
 {"1":1}
--- explicit default_format wins over path file extension (path .CSV, default_format=JSONEachRow):
+-- path file extension wins over default_format (path .CSV, default_format=JSONEachRow):
+1,"one"
+2,"two"
+3,"three"
+-- lowercase path file extension is recognized too (path .csv):
+1,"one"
+2,"two"
+3,"three"
+-- X-ClickHouse-Format is an explicit override: it wins over the query FORMAT clause:
+{"1":1}
+-- X-ClickHouse-Format wins over the path file extension (path .CSV):
 {"a":1,"b":"one"}
 {"a":2,"b":"two"}
 {"a":3,"b":"three"}
+-- output_format still wins over X-ClickHouse-Format:
+1
 ===== compression setting =====
 -- compression=gz on /?query (decompressed):
 1

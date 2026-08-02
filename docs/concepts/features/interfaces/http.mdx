@@ -190,7 +190,7 @@ wget -nv -O- 'http://localhost:8123/?query=SELECT 1, 2, 3 FORMAT JSON'
 }
 ```
 
-You can use the `default_format` URL parameter or the `X-ClickHouse-Format` header to specify a default format other than `TabSeparated`.
+You can use the `default_format` URL parameter to specify a default format other than `TabSeparated`. The `X-ClickHouse-Format` header selects the format explicitly: it is an alias for the `format` setting, so it also overrides a `FORMAT` clause in the query.
 
 ```bash
 $ echo 'SELECT 1 FORMAT Pretty' | curl 'http://localhost:8123/?' --data-binary @-
@@ -246,13 +246,15 @@ With `http_allow_table_as_file` enabled, a request to `/table.format.compression
 
 ```bash
 # SELECT * FROM my_db.hits, formatted as CSV
-curl 'http://localhost:8123/my_db/hits.CSV'
+curl 'http://localhost:8123/my_db/hits.csv'
 
 # The same result, compressed with gzip
-curl 'http://localhost:8123/my_db/hits.CSV.gz' | gzip -d
+curl 'http://localhost:8123/my_db/hits.csv.gz' | gzip -d
 ```
 
-An explicit `format`, `output_format`, or `default_format` URL parameter overrides the format in the path. An explicit `compression` parameter must match the compression in the path; conflicting values result in an exception.
+Format and compression extensions are recognized case-insensitively, so `hits.csv` and `hits.CSV` are equivalent.
+
+An explicit `format` or `output_format` URL parameter overrides the format in the path. `default_format` does not: it only provides the format to use when nothing else selects one, and the path extension is more specific. An explicit `compression` parameter must match the compression in the path; conflicting values result in an exception.
 
 ### Construct a query {#query-construction}
 
@@ -275,6 +277,37 @@ curl 'http://localhost:8123/my_db/hits?filter=a%3E0&sort=-a&limit=10'
 curl 'http://localhost:8123/my_db/hits?limit=100&page=2'
 ```
 
+#### Modify an existing query {#modify-an-existing-query}
+
+The construction settings are not limited to path requests: they also shape a query you write yourself. The query becomes the derived table, so the settings apply to its result rather than being merged into it. For example, `?query=SELECT a, b FROM hits&filter=a > 0&sort=-b&limit=10` is executed as:
+
+```sql
+SELECT * FROM (SELECT a, b FROM hits) WHERE a > 0 ORDER BY b DESC LIMIT 10
+```
+
+This is useful for paging through, sorting, or narrowing the result of a query that is fixed elsewhere — in a saved dashboard query, a `predefined_query_handler`, or a client that only lets you append URL parameters:
+
+```bash
+# Page through the result of an arbitrary query without editing the query text
+curl 'http://localhost:8123/?query=SELECT+a,+b+FROM+hits+GROUP+BY+a,+b&limit=100&page=3'
+
+# Keep only some of the resulting columns and rows
+curl -G 'http://localhost:8123/' --data-urlencode 'query=SELECT * FROM hits' --data-urlencode 'select=a, b' --data-urlencode 'filter=b != 0'
+
+# The last 5 rows of an aggregate (a negative `limit` selects from the tail)
+curl 'http://localhost:8123/?query=SELECT+a,+count()+FROM+hits+GROUP+BY+a+ORDER+BY+a&limit=-5'
+```
+
+Because the settings wrap the query instead of rewriting it, they compose with a `FORMAT` clause and with an `ORDER BY` inside the query, and they never change which rows an `INSERT` writes: a construction setting placed on an `INSERT ... SELECT` statement shapes the statement's own (empty) result, not its source `SELECT`. To shape the source, put the setting in the `SELECT`'s own `SETTINGS` clause:
+
+```sql
+-- Inserts all 10 rows: `limit` applies to the INSERT statement, not to its SELECT
+INSERT INTO t SETTINGS limit = 2 SELECT number FROM numbers(10);
+
+-- Inserts 2 rows: `limit` applies to the SELECT itself
+INSERT INTO t SELECT number FROM numbers(10) SETTINGS limit = 2;
+```
+
 <Warning>
 `filter` is not an access-control mechanism. It adds a `WHERE` clause over a wrapping subquery, so the underlying data can be read and processed before the filter is applied. To restrict which rows a user can access, use [row policies](/concepts/features/security/access-rights#row-policy-management) or [`additional_table_filters`](/reference/settings/session-settings/additional#additional_table_filters).
 </Warning>
@@ -285,8 +318,8 @@ curl 'http://localhost:8123/my_db/hits?limit=100&page=2'
 |---------|--------|
 | `output_format` | Overrides the output format. It takes precedence over the query's `FORMAT` clause, the path extension, `format`, and `default_format`. |
 | `input_format` | Overrides the input format for `INSERT`. It takes precedence over the query's `FORMAT` clause and `format`. |
-| `format` | Overrides the format in both directions unless a direction-specific setting is provided. |
-| `default_format` | Sets the output format when the query has no `FORMAT` clause and no other format override. It can also be set using the `X-ClickHouse-Format` header. |
+| `format` | Overrides the format in both directions unless a direction-specific setting is provided. It can also be set using the `X-ClickHouse-Format` header. |
+| `default_format` | Sets the output format when the query has no `FORMAT` clause, no path extension, and no other format override. |
 | `compression` | Compresses the response body, for example with `compression=gz`. This is independent of HTTP `Content-Encoding` and the ClickHouse-native `compress` parameter. |
 
 The format settings also work with other protocols, including the native client and `clickhouse-local`, where they correspond to the `--format`, `--input-format`, and `--output-format` options.

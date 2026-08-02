@@ -390,13 +390,18 @@ void HTTPHandler::processQuery(
             deferred_unrecognized_params.emplace_back(key, value);
     }
 
-    /// `X-ClickHouse-Database` and `X-ClickHouse-Format` headers are aliases for the
-    /// `database` and `default_format` settings. They override any matching URL parameter
-    /// (preserving the historical precedence).
+    /// The `X-ClickHouse-Database` header is an alias for the `database` setting, and
+    /// `X-ClickHouse-Format` is an alias for the `format` setting. They override any matching URL
+    /// parameter (preserving the historical precedence).
+    ///
+    /// `X-ClickHouse-Format` maps to `format` rather than to `default_format`: sending this header
+    /// means the client definitely wants the data in that format, so it is an explicit override
+    /// (winning over the query's `FORMAT` clause and the path extension), not a fallback used only
+    /// when nothing else selects a format.
     if (auto header_value = request.get("X-ClickHouse-Database", ""); !header_value.empty())
         settings_changes.setSetting("database", header_value);
     if (auto header_value = request.get("X-ClickHouse-Format", ""); !header_value.empty())
-        settings_changes.setSetting("default_format", header_value);
+        settings_changes.setSetting("format", header_value);
 
     context->checkSettingsConstraints(settings_changes, SettingSource::QUERY);
     context->applySettingsChanges(settings_changes);
@@ -562,16 +567,20 @@ void HTTPHandler::processQuery(
         if (current_compression.empty())
             path_derived_changes.setSetting("compression", path_info.compression);
     }
-    /// Apply format from path (if no explicit `format`/`output_format`/`default_format` override exists).
+    /// Apply format from path (if no explicit `format`/`output_format` override exists).
     /// "When there is a format from the file extension and there is also an explicit override, the override wins."
+    ///
+    /// `default_format` is not an override: it is the fallback used when nothing else selects a format,
+    /// and it often comes from a user profile or a session-wide default rather than from this request.
+    /// The extension in the path is written per request and is more specific, so it wins over
+    /// `default_format` — but still loses to the explicit `format` / `output_format` overrides.
     if (!path_info.format.empty())
     {
         const String & format_override = settings[Setting::format];
         const String & output_format_override = settings[Setting::output_format];
-        const String & default_format_setting = settings[Setting::default_format];
-        if (format_override.empty() && output_format_override.empty() && default_format_setting.empty())
+        if (format_override.empty() && output_format_override.empty())
         {
-            /// Use as default_format so that queries without explicit FORMAT honor it.
+            /// Use as default_format so that queries with an explicit FORMAT clause still honor that clause.
             path_derived_changes.setSetting("default_format", path_info.format);
         }
     }
