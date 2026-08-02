@@ -60,7 +60,9 @@ ssize_t preadNoWait(
         RWF_NOWAIT);
 
     if (res > 0)
+    {
         __msan_unpoison(buf, res);
+    }
 
     return res;
 #else

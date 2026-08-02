@@ -12,6 +12,8 @@
 #include <Common/formatReadable.h>
 #include <Disks/IO/createReadBufferFromFileBase.h>
 #include <IO/ReadPipeline.h>
+#include <IO/ReadMethod.h>
+#include <IO/preadNoWait.h>
 #include <Disks/loadLocalDiskConfig.h>
 #include <Disks/TemporaryFileOnDisk.h>
 
@@ -404,6 +406,19 @@ void DiskLocal::prepareRead(
         settings,
         read_hint);
 
+    /// Use the same estimated size basis as createReadBufferFromFileBase:
+    /// read_hint first, then file_size. A large file with a small read_hint
+    /// won't trigger O_DIRECT, so page cache remains safe.
+    size_t estimated_size = read_hint.value_or(file_size);
+    bool direct_io = settings.local_fs_settings.direct_io_threshold
+        && estimated_size >= settings.local_fs_settings.direct_io_threshold;
+
+    /// The same resolution as in `createReadBufferFromFileBase`: on a system where the page cache
+    /// cannot be checked without waiting for the disk, 'pread_threadpool' reads with 'pread',
+    /// and then the userspace page cache is usable as it is for 'pread'.
+    const LocalFSReadMethod method
+        = resolveLocalFSReadMethod(settings.local_fs_settings.method, getPreadNoWaitSupport().supported, direct_io);
+
     /// Page cache is incompatible with several local read methods:
     ///   - async methods (io_uring, pread_fake_async, pread_threadpool): the
     ///     async wrapper drives the inner reader incompatibly with page-cache
@@ -415,21 +430,13 @@ void DiskLocal::prepareRead(
     ///   - O_DIRECT when `page_cache_block_size` is not aligned to the direct
     ///     IO sector size (additional check below).
     bool use_page_cache = settings.use_page_cache_for_local_disks && settings.page_cache_settings.cache
-        && settings.local_fs_settings.method != LocalFSReadMethod::io_uring
-        && settings.local_fs_settings.method != LocalFSReadMethod::pread_fake_async
-        && settings.local_fs_settings.method != LocalFSReadMethod::pread_threadpool
-        && settings.local_fs_settings.method != LocalFSReadMethod::mmap;
+        && method != LocalFSReadMethod::io_uring
+        && method != LocalFSReadMethod::pread_fake_async
+        && method != LocalFSReadMethod::pread_threadpool
+        && method != LocalFSReadMethod::mmap;
 
-    {
-        /// Use the same estimated size basis as createReadBufferFromFileBase:
-        /// read_hint first, then file_size. A large file with a small read_hint
-        /// won't trigger O_DIRECT, so page cache remains safe.
-        size_t estimated_size = read_hint.value_or(file_size);
-        if (use_page_cache && settings.local_fs_settings.direct_io_threshold
-            && estimated_size >= settings.local_fs_settings.direct_io_threshold
-            && settings.page_cache_settings.block_size % DEFAULT_AIO_FILE_BLOCK_SIZE != 0)
-            use_page_cache = false;
-    }
+    if (use_page_cache && direct_io && settings.page_cache_settings.block_size % DEFAULT_AIO_FILE_BLOCK_SIZE != 0)
+        use_page_cache = false;
 
     if (use_page_cache)
         pipeline.needMemoryCache("local:", settings.page_cache_settings);
