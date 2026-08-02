@@ -41,7 +41,7 @@ void handleImmediatePassthrough(FiberSocket & client, const FrontendContext & ct
 
     LOG_DEBUG(ctx.log, "Routing {} connection to backend {}", toString(attributes.protocol), backend.name());
 
-    runRelay(client, backend_socket, &backend, /*initial_to_backend=*/ "", ctx.config.relay_buffer_size);
+    runRelay(client, backend_socket, &backend, /*initial_to_backend=*/ "", ctx.config.relay_buffer_size, ctx.config.send_timeout_ms);
     client.close();
     backend_socket.close();
 }
@@ -102,7 +102,7 @@ void handlePassthrough(FiberSocket & client, const FrontendContext & ctx)
 
     LOG_DEBUG(ctx.log, "Routing TLS connection (SNI='{}') to backend {}", attributes.host, backend.name());
 
-    runRelay(client, backend_socket, &backend, reader.received(), ctx.config.relay_buffer_size);
+    runRelay(client, backend_socket, &backend, reader.received(), ctx.config.relay_buffer_size, ctx.config.send_timeout_ms);
     client.close();
     backend_socket.close();
 }

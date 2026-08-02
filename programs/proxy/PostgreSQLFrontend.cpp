@@ -122,7 +122,7 @@ void handlePostgreSQL(FiberSocket & client, const FrontendContext & ctx)
     LOG_DEBUG(ctx.log, "Routing PostgreSQL connection (user='{}', database='{}') to backend {}",
         attributes.user, attributes.database, backend.name());
 
-    runRelay(client, backend_socket, &backend, reader.received(), ctx.config.relay_buffer_size);
+    runRelay(client, backend_socket, &backend, reader.received(), ctx.config.relay_buffer_size, ctx.config.send_timeout_ms);
     client.close();
     backend_socket.close();
 }

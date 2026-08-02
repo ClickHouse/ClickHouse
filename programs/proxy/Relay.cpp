@@ -150,8 +150,15 @@ void runRelay(
     FiberSocket & backend_socket,
     Backend * backend,
     const String & initial_to_backend,
-    size_t buffer_size)
+    size_t buffer_size,
+    UInt64 relay_timeout_ms)
 {
+    /// The handshake is over: leave the short handshake timeout behind, so an ordinary idle gap
+    /// between commands, a slow upload, or a long-running query does not tear down the session.
+    /// This governs the user-space copy path; the zero-copy splice path does not consult it.
+    client.setTimeouts(relay_timeout_ms, relay_timeout_ms);
+    backend_socket.setTimeouts(relay_timeout_ms, relay_timeout_ms);
+
     /// Handshake bytes the proxy already parsed live in user space; forward them with a normal write.
     if (!initial_to_backend.empty())
     {

@@ -190,7 +190,7 @@ void terminateAndRoute(FiberSocket & client, const FrontendContext & ctx)
         client.sendAll(to_client.data(), to_client.size());
     const String to_backend = drainBuffered(client_in);
 
-    runRelay(client, backend_socket, &backend, to_backend, ctx.config.relay_buffer_size);
+    runRelay(client, backend_socket, &backend, to_backend, ctx.config.relay_buffer_size, ctx.config.send_timeout_ms);
     client.close();
     backend_socket.close();
 }

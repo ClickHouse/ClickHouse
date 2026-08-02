@@ -229,7 +229,7 @@ void handleHTTP(FiberSocket & client, const FrontendContext & ctx)
     LOG_DEBUG(ctx.log, "Routing HTTP {} {} (host='{}', user='{}', database='{}') to backend {}",
         method, path, attributes.host, attributes.user, attributes.database, backend.name());
 
-    runRelay(client, backend_socket, &backend, initial, ctx.config.relay_buffer_size);
+    runRelay(client, backend_socket, &backend, initial, ctx.config.relay_buffer_size, ctx.config.send_timeout_ms);
     client.close();
     backend_socket.close();
 }
