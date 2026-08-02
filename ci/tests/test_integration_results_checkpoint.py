@@ -220,11 +220,9 @@ def test_main_hands_the_checkpoint_its_collected_results():
 def test_the_checkpoint_call_is_unconditional():
     """`main` must call the checkpoint on every path, not under a condition of its own.
 
-    The helper owns the only guard there should be, and the runtime arms drive the
-    helper. A second guard wrapped around the CALL SITE is therefore invisible to every
-    other arm here while stopping the checkpoint from ever running in CI, which is the
-    whole defect. Asserted as "a bare call statement in main's own body", the property
-    that makes it unconditional.
+    The helper owns the only guard, and every other arm drives the helper, so a second
+    guard around the CALL SITE would be invisible to all of them while stopping the
+    checkpoint from ever running. Asserted as a bare call statement in main's own body.
     """
     with open(_JOB_SCRIPT, encoding="utf-8") as f:
         tree = ast.parse(f.read(), filename=_JOB_SCRIPT)
@@ -255,12 +253,9 @@ def test_the_checkpoint_call_is_unconditional():
 def test_every_archiving_call_site_is_bounded():
     """Every `compress_files_gz` call in main() must pass a positive timeout.
 
-    The bound is what keeps archiving from starving the result upload, and it is opt-in
-    per call site (`timeout` defaults to None so other callers are unaffected), so an
-    unbounded call site restores the defect for the archive it writes. The behavioural
-    tests drive `compress_files_gz` directly and cannot see a call site that forgot it.
-    The VALUE is checked, not just the keyword: `timeout=None` keeps the keyword and
-    disables the bound.
+    The bound is opt-in per call site, and the behavioural tests drive the helper
+    directly, so they cannot see a call site that forgot it. The VALUE is checked, not
+    just the keyword: `timeout=None` keeps the keyword and disables the bound.
     """
     with open(_JOB_SCRIPT, encoding="utf-8") as f:
         tree = ast.parse(f.read(), filename=_JOB_SCRIPT)
@@ -322,10 +317,9 @@ def test_the_on_error_hook_is_bounded():
 def test_the_on_error_hook_publishes_its_archive_by_rename():
     """The hook's own tar must write to a temporary name and rename on success.
 
-    The hook writes to the same `logs.tar.gz` the normal path produces, and the upload
-    only checks that the file exists. Writing the destination directly would publish a
-    truncated archive when the hook timeout fires, and would also destroy a complete
-    archive the normal path had already written.
+    The hook writes the same `logs.tar.gz` the normal path produces, so writing the
+    destination directly would publish a truncation on the hook's own timeout and destroy
+    a complete archive the normal path had already written.
     """
     with open(_JOB_SCRIPT, encoding="utf-8") as f:
         source = f.read()
@@ -382,12 +376,9 @@ def test_the_on_error_hook_publishes_its_archive_by_rename():
 def test_checkpoint_uses_the_existing_result_not_a_fresh_one():
     """The checkpoint must be built with `from_fs`, never `Result.create_from`.
 
-    `create_from` takes no `ext`, so it would drop the on_error_hook and the run url.
-
-    The `create_from` half is asserted as an absence, not only as a property of the
-    `set_results` receiver: a rewrite to `Result.create_from(...).dump()` has no
-    `set_results` call at all, so a receiver-only check would iterate over nothing and
-    pass.
+    `create_from` takes no `ext`, so it would drop the on_error_hook and the run url. The
+    `create_from` half is asserted as an absence: a rewrite to `create_from(...).dump()`
+    has no `set_results` at all, so a receiver-only check would pass over nothing.
     """
     with open(_JOB_SCRIPT, encoding="utf-8") as f:
         tree = ast.parse(f.read(), filename=_JOB_SCRIPT)
@@ -454,10 +445,9 @@ def test_checkpoint_persists_the_collected_results():
 def test_checkpoint_assigns_no_status_at_the_call_site():
     """The checkpoint statement must not assign a status.
 
-    Every status decision in main() runs after this point, so a status assigned here
-    would be published as final on a killed job. Asserted structurally as well as
-    behaviourally: the runtime arm can only see the status the helper happens to leave,
-    not a `set_status` that a later refactor puts back on the same statement.
+    Every status decision in main() runs after this point. Asserted structurally too: the
+    runtime arm sees only the status the helper leaves, not a `set_status` a later
+    refactor puts back on this statement.
     """
     with open(_JOB_SCRIPT, encoding="utf-8") as f:
         tree = ast.parse(f.read(), filename=_JOB_SCRIPT)
@@ -562,10 +552,9 @@ def test_checkpoint_is_skipped_on_a_local_run(tmp_path):
 def test_checkpoint_assigns_no_status(tmp_path):
     """The checkpoint must stay RUNNING so the harness decides the final status.
 
-    Asserting `is_completed()` is False is deliberate: a completed status here would be
-    assigned before the retry block, the dmesg OOM row, infrastructure-error clearing and
-    the bugfix-validation inversion have run, and on a killed job that half-decided
-    status would be published as the verdict.
+    A completed status here would be assigned before the retry block, the dmesg OOM row,
+    infrastructure-error clearing and the bugfix-validation inversion have run, and on a
+    killed job that half-decided status would be published as the verdict.
     """
     reread = _checkpointed_result(tmp_path, _children(2))
 
