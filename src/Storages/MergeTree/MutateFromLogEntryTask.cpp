@@ -40,6 +40,7 @@ namespace FailPoints
 {
     extern const char rmt_mutate_task_pause_in_prepare[];
     extern const char rmt_mutate_task_pause_before_rename_part[];
+    extern const char rmt_mutate_task_pause_after_temporary_part_released[];
     extern const char rmt_mutate_task_pause_after_zero_copy_lock[];
 }
 
@@ -305,6 +306,11 @@ bool MutateFromLogEntryTask::finalize(ReplicatedMergeMutateTaskBase::PartLogWrit
     auto hardlinked_files = mutate_task->getHardlinkedFiles();
     mutate_task->updateProfileEvents();
     mutate_task.reset();
+
+    /// The temporary directory of the part is no longer protected by `TemporaryParts` here.
+    /// This failpoint lets a test observe that window: with the rename above it is already gone,
+    /// while with the old ordering it is still on disk and the cleanup thread removes it.
+    FailPointInjection::pauseFailPoint(FailPoints::rmt_mutate_task_pause_after_temporary_part_released);
 
     Stopwatch commit_watch;
 
