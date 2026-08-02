@@ -188,14 +188,17 @@ void MergeTreeLazilyReader::readLazyColumns(
             bool should_evaluate_missing_defaults = false;
             reader->fillMissingColumns(columns_to_read, should_evaluate_missing_defaults, read_rows);
 
+            /// Conversions must run before evaluating defaults: evaluateMissingDefaults publishes the
+            /// already-read columns under their requested types, so a column left in its on-disk type
+            /// would be misdescribed there. Same order as MergeTreeReadersChain.
+            reader->performRequiredConversions(columns_to_read);
+
             if (should_evaluate_missing_defaults)
             {
                 Block block;
                 addDummyColumnWithRowCount(block, columns_to_read, read_rows);
                 reader->evaluateMissingDefaults(block, columns_to_read);
             }
-
-            reader->performRequiredConversions(columns_to_read);
 
             for (auto & col : columns_to_read)
                 col = recursiveRemoveSparse(col->convertToFullColumnIfConst());

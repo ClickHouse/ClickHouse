@@ -42,6 +42,7 @@ void fillMissingColumns(
     const NamesAndTypesList & requested_columns,
     const NamesAndTypesList & available_columns,
     const NameSet & partially_read_columns,
-    StorageMetadataPtr metadata_snapshot);
+    StorageMetadataPtr metadata_snapshot,
+    const NameSet & additional_available_columns = {});
 
 }

@@ -77,6 +77,21 @@ bool injectRequiredColumnsRecursively(
             }
             return true;
         }
+
+        if (column_in_part)
+        {
+            /// Parent is present but the part's (older) type lacks the requested subcolumn (metadata-only
+            /// `ALTER MODIFY COLUMN T -> Nullable(T)`). Read the parent so it can be converted and the
+            /// subcolumn extracted from it, instead of being filled from the storage-type default.
+            auto parent_name = column_in_storage->getNameInStorage();
+            if (!required_columns.contains(parent_name))
+            {
+                columns.emplace_back(parent_name);
+                required_columns.emplace(parent_name);
+                injected_columns.emplace(parent_name);
+            }
+            return true;
+        }
     }
 
     /// Column doesn't have default value and don't exist in part

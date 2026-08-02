@@ -41,21 +41,31 @@ ColumnPtr tryGetSubcolumnFromBlock(const Block & block, const DataTypePtr & requ
         return nullptr;
 
     auto subcolumn_name = requested_subcolumn.getSubcolumnName();
-    /// If requested subcolumn is dynamic, we should first perform cast and then
-    /// extract the subcolumn, because the data of dynamic subcolumn can change after cast.
-    if ((elem->type->hasDynamicSubcolumns() || requested_column_type->hasDynamicSubcolumns()) && !elem->type->equals(*requested_column_type))
+    bool is_dynamic = elem->type->hasDynamicSubcolumns() || requested_column_type->hasDynamicSubcolumns();
+
+    /// Cast the parent to the requested type first, then extract, when types differ and either the
+    /// subcolumn is dynamic (its data can change after cast) or the block's (older) type lacks it.
+    /// Otherwise the subcolumn is readable from the block directly, without casting the parent.
+    auto source_column = elem->column->decompress()->convertToFullColumnIfConst();
+
+    bool block_type_has_subcolumn = elem->type->tryGetSubcolumnType(subcolumn_name) != nullptr;
+    if (!elem->type->equals(*requested_column_type) && (is_dynamic || !block_type_has_subcolumn))
     {
-        auto cast_column = castColumn({elem->column->decompress(), elem->type, ""}, requested_column_type);
+        auto cast_column = castColumn({source_column, elem->type, ""}, requested_column_type);
         auto elem_column = requested_column_type->tryGetSubcolumn(subcolumn_name, cast_column);
         auto elem_type = requested_column_type->tryGetSubcolumnType(subcolumn_name);
 
         if (!elem_type || !elem_column)
             return nullptr;
 
-        return elem_column;
+        /// Dynamic subcolumn data already matches after the cast; an extra cast could alter it.
+        if (is_dynamic)
+            return elem_column;
+
+        return castColumn({elem_column, elem_type, ""}, requested_subcolumn.type);
     }
 
-    auto elem_column = elem->type->tryGetSubcolumn(subcolumn_name, elem->column->decompress());
+    auto elem_column = elem->type->tryGetSubcolumn(subcolumn_name, source_column);
     auto elem_type = elem->type->tryGetSubcolumnType(subcolumn_name);
 
     if (!elem_type || !elem_column)
