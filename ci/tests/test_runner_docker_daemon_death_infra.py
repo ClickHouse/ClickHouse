@@ -248,7 +248,10 @@ def test_run_end_to_end_persists_bare_infra_label(tmp_path, monkeypatch):
         f"printf '%s' {shlex.quote(_DAEMON_DEATH_LOG)}; exit 125"
     )
     persisted = _run_no_docker_job(tmp_path, monkeypatch, script)
-    assert persisted["ext"]["labels"] == ["infra"]
+    # Membership, not equality: host-metrics labels may sit alongside ours and
+    # depend on this machine's load. A dict-stored "infra" still fails this,
+    # which is the property retry_infra_failures.yml's jq needs.
+    assert "infra" in persisted["ext"]["labels"]
     assert persisted["status"] == Result.Status.ERROR
 
 
