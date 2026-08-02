@@ -20,9 +20,7 @@ namespace ErrorCodes
 namespace
 {
 
-/// Renders a cursor tree as a SQL-compatible nested map literal:
-///     {'partition_a': {'block_number': 10, 'block_offset': 20}}
-void formatNested(WriteBuffer & wb, CursorTreeNode * node)
+void formatCursorTree(WriteBuffer & wb, const CursorTreeNode * node)
 {
     wb << '{';
 
@@ -38,26 +36,61 @@ void formatNested(WriteBuffer & wb, CursorTreeNode * node)
         if (std::holds_alternative<Int64>(v))
             wb << std::get<Int64>(v);
         else
-            formatNested(wb, std::get<CursorTreeNodePtr>(v).get());
+            formatCursorTree(wb, std::get<CursorTreeNodePtr>(v).get());
     }
 
     wb << '}';
 }
 
+void formatWatermark(
+    WriteBuffer & wb,
+    const WatermarkSettings & node,
+    const IAST::FormatSettings & format_settings,
+    IAST::FormatState & state,
+    IAST::FormatStateStacked frame)
+{
+    wb << "FOR " << backQuoteIfNeed(node.column) << " AS ";
+    node.expression->format(wb, format_settings, state, frame);
+
+    if (node.idle_timeout.count() > 0)
+        wb << " IDLE TIMEOUT INTERVAL " << static_cast<Int64>(node.idle_timeout.count()) << " MILLISECOND";
 }
 
-ASTStreamSettings::ASTStreamSettings(StreamSettings settings_)
-    : settings{std::move(settings_)}
-{
 }
 
-void ASTStreamSettings::formatImpl(WriteBuffer & ostr, const FormatSettings &, FormatState &, FormatStateStacked) const
+ASTPtr ASTStreamSettings::clone() const
 {
-    if (settings.cursor_tree.has_value())
+    auto cloned_stream_settings = make_intrusive<ASTStreamSettings>();
+
+    if (cursor)
+        cloned_stream_settings->cursor = cursor->clone();
+
+    if (watermark)
+        cloned_stream_settings->watermark = watermark->clone();
+
+    return cloned_stream_settings;
+}
+
+bool ASTStreamSettings::hasTweaks() const
+{
+    return cursor != nullptr || watermark != nullptr;
+}
+
+void ASTStreamSettings::formatImpl(WriteBuffer & ostr, const FormatSettings & format_settings, FormatState & state, FormatStateStacked frame) const
+{
+    if (cursor)
     {
-        auto tree = buildCursorTree(settings.cursor_tree.value());
         ostr << "CURSOR ";
-        formatNested(ostr, tree.get());
+        formatCursorTree(ostr, cursor.get());
+    }
+
+    if (watermark)
+    {
+        if (cursor)
+            ostr << ' ';
+
+        ostr << "WATERMARK ";
+        formatWatermark(ostr, *watermark, format_settings, state, frame);
     }
 }
 
@@ -65,8 +98,15 @@ void ASTStreamSettings::writeJSON(WriteBuffer & out) const
 {
     JSONObjectWriter w(out, "StreamSettings");
 
-    if (settings.cursor_tree.has_value())
-        w.writeFieldValue("cursor_tree", Field(settings.cursor_tree.value()));
+    if (cursor)
+        w.writeFieldValue("cursor_tree", Field(cursorTreeToMap(cursor)));
+
+    if (watermark)
+    {
+        w.writeString("watermark_column", watermark->column);
+        w.writeChild("watermark_expression", watermark->expression);
+        w.writeInt("watermark_idle_timeout_ms", static_cast<Int64>(watermark->idle_timeout.count()));
+    }
 }
 
 void ASTStreamSettings::readJSON(const Poco::JSON::Object & json)
@@ -75,18 +115,12 @@ void ASTStreamSettings::readJSON(const Poco::JSON::Object & json)
 
     if (r.has("cursor_tree"))
     {
-        /// `ParserStreamSettings` produces `cursor_tree` only as a flat `Map` of
-        /// `(String dotted path, unsigned integer leaf)` tuples, and `buildCursorTree` (reached from
-        /// `formatImpl` and `QueryTreeBuilder`) relies on that shape via `safeGet`. Validate every
-        /// element here so malformed `clickhouse_json` fails with `BAD_ARGUMENTS` at the boundary
-        /// instead of inside formatter/analyzer code. The leaf may be `UInt64` (parser-produced) or
-        /// `Int64` (`cursorTreeToMap`-produced, see `Analyzer/Utils.cpp`); both satisfy `safeGet<Int64>`.
         Field field = r.readField("cursor_tree");
         if (field.getType() != Field::Types::Map)
             throw Exception(ErrorCodes::BAD_ARGUMENTS,
                 "`StreamSettings` 'cursor_tree' must be a Map during AST JSON deserialization");
 
-        Map map = std::move(field.safeGet<Map>());
+        const auto & map = field.safeGet<Map>();
         for (const auto & element : map)
         {
             if (element.getType() != Field::Types::Tuple)
@@ -94,13 +128,44 @@ void ASTStreamSettings::readJSON(const Poco::JSON::Object & json)
                     "`StreamSettings` 'cursor_tree' element must be a tuple during AST JSON deserialization");
 
             const auto & tuple = element.safeGet<Tuple>();
-            if (tuple.size() != 2
-                || tuple.at(0).getType() != Field::Types::String
-                || (tuple.at(1).getType() != Field::Types::UInt64 && tuple.at(1).getType() != Field::Types::Int64))
+            if (tuple.size() != 2 || tuple.at(0).getType() != Field::Types::String)
                 throw Exception(ErrorCodes::BAD_ARGUMENTS,
                     "`StreamSettings` 'cursor_tree' element must be a (String, integer) tuple during AST JSON deserialization");
+
+            const auto & value = tuple.at(1);
+            if (value.getType() != Field::Types::UInt64 && value.getType() != Field::Types::Int64)
+                throw Exception(ErrorCodes::BAD_ARGUMENTS,
+                    "`StreamSettings` 'cursor_tree' element must be a (String, integer) tuple during AST JSON deserialization");
+
+            if (value.getType() == Field::Types::UInt64 && value.safeGet<UInt64>() > static_cast<UInt64>(std::numeric_limits<Int64>::max()))
+                throw Exception(ErrorCodes::BAD_ARGUMENTS,
+                    "`StreamSettings` 'cursor_tree' value is out of Int64 range during AST JSON deserialization");
         }
-        settings.cursor_tree = std::move(map);
+
+        cursor = buildCursorTree(map);
+    }
+
+    if (r.has("watermark_column"))
+    {
+        auto column = r.getString("watermark_column");
+        if (column.empty())
+            throw Exception(ErrorCodes::BAD_ARGUMENTS,
+                "`StreamSettings` 'watermark_column' must be a non-empty string during AST JSON deserialization");
+
+        auto expression = r.readChild("watermark_expression");
+        if (!expression)
+            throw Exception(ErrorCodes::BAD_ARGUMENTS,
+                "`StreamSettings` 'watermark_expression' must be present when 'watermark_column' is set during AST JSON deserialization");
+
+        auto idle_timeout_ms = r.getInt("watermark_idle_timeout_ms");
+        if (idle_timeout_ms < 0)
+            throw Exception(ErrorCodes::BAD_ARGUMENTS,
+                "`StreamSettings` 'watermark_idle_timeout_ms' must be non-negative during AST JSON deserialization");
+
+        watermark = std::make_shared<WatermarkSettings>();
+        watermark->column = std::move(column);
+        watermark->expression = std::move(expression);
+        watermark->idle_timeout = std::chrono::milliseconds(idle_timeout_ms);
     }
 }
 
