@@ -5,13 +5,13 @@
 # data read reaches it: schema inference must still succeed. Each case must be rejected as
 # INCORRECT_DATA rather than allocating for the declared size:
 #   - a payload that is not a parsable codec frame;
-#   - a prefix that disagrees with the size its own codec frame declares;
-#   - an accumulated body size the allocator would reject as an internal error (LOGICAL_ERROR).
-# A prefix that agrees with its frames on a large size is NOT corrupt: it stays a memory-limit
-# condition, which one case asserts. Neither is a ZSTD payload of several concatenated frames or one
-# behind a skippable frame, nor an empty buffer whose frame honestly declares zero: those decompress
-# correctly and must still be read. The same multi-frame shapes with a forged prefix must be
-# rejected, so the size the prefix is compared against covers the whole payload, not its first frame.
+#   - a prefix that disagrees with a size its own codec frame pledges;
+#   - a prefix exceeding what the payload's frames can produce, whether or not one is pledged.
+# A prefix within what its frames can produce is NOT corrupt even when it is large: it stays a
+# memory-limit condition, which one case asserts. Neither is a ZSTD payload of several concatenated
+# frames or one behind a skippable frame: those decompress correctly and must still be read. The same
+# shapes with a forged prefix must be rejected, so the size the prefix is checked against covers the
+# whole payload rather than its first frame.
 
 CUR_DIR=$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)
 # shellcheck source=../shell_config.sh
@@ -282,21 +282,30 @@ d = bytearray(ch_lz4)
 struct.pack_into("<q", d, ch_offs[0], 100 * 1024 ** 3)
 open(f"{out}/prefix_mismatch.arrows", "wb").write(bytes(d))
 
-# Case 3: two prefixes summing just past 2^62, in frames that declare no size so the comparison is
-# skipped. `PODArray::resize` rounds up to a power of two, so anything above 2^62 would reach the
-# allocator's 2^63 ceiling; the accumulated total is what must be rejected here.
+# Case 3: two prefixes summing just past 2^62, in frames that declare no size. pyarrow omits the
+# frame's optional content size, so this is the shape with nothing to compare a prefix against
+# directly - only the frame's blocks bound it, and each of these prefixes exceeds that bound.
 d = bytearray(arrow_lz4)
 half = (1 << 61) + 8
 struct.pack_into("<q", d, arrow_offs[0], half)
 struct.pack_into("<q", d, arrow_offs[1], half)
 open(f"{out}/aggregate_too_large.arrows", "wb").write(bytes(d))
 
-# Case 4 (NOT corrupt): the prefix and the frame agree on a large size. Patch both in place.
+# Case 4 (NOT corrupt): the prefix and the frame agree on a size the frame's one block really can
+# produce. Patch both in place. Larger than the file, so reading it is a resource condition.
 d = bytearray(ch_lz4)
-big = 8 * 1024 ** 3
+big = 4 * 1024 ** 2
 struct.pack_into("<q", d, ch_offs[0], big)
 set_frame_content_size(d, ch_offs[0], big)
 open(f"{out}/consistent_large.arrows", "wb").write(bytes(d))
+
+# Case 4b: the same prefix and frame size, one byte past what that block can produce. A pledged size
+# is enforced exactly, so this is rejected for disagreeing with the pledge rather than for exceeding
+# the block bound - the two rejection reasons must not be conflated.
+d = bytearray(ch_lz4)
+struct.pack_into("<q", d, ch_offs[0], big + 1)
+set_frame_content_size(d, ch_offs[0], big)
+open(f"{out}/pledge_mismatch.arrows", "wb").write(bytes(d))
 
 # The cases below cover the ZSTD branch of the frame lookup, which the LZ4-derived cases above never
 # reach: the two codecs read their frame headers through different APIs.
@@ -349,10 +358,60 @@ for name, frames in (
     d = repack_zstd(ch_zstd, zstd_spans[0], frames)
     struct.pack_into("<q", d, zstd_spans[0][0] - 8, 100 * 1024 ** 3)
     open(f"{out}/{name}.arrows", "wb").write(bytes(d))
+
+
+def lone_lz4_frame_buffer(data, prefix_value, frame):
+    """Repoint a naturally-empty buffer at a new one carrying `frame`, appended past the body.
+
+    Every other buffer's offset stays valid because nothing already in the body moves.
+    """
+    d = bytearray(data)
+    body, body_len, body_len_field, entries = batch_meta(d)
+    payload = struct.pack("<q", prefix_value) + frame
+    target = next(((o, l) for o, l in entries if struct.unpack_from("<q", d, l)[0] == 0), None)
+    assert target, "no zero-length buffer to repoint"
+    d[body + body_len:body + body_len] = payload + b"\x00" * (-len(payload) % 8)
+    struct.pack_into("<q", d, body_len_field, body_len + len(payload) + (-len(payload) % 8))
+    struct.pack_into("<q", d, target[0], body_len)
+    struct.pack_into("<q", d, target[1], len(payload))
+    return bytes(d)
+
+
+def empty_lz4_frame(declare_zero):
+    """An LZ4 frame carrying no blocks: magic, FLG, BD, [contentSize], HC, EndMark.
+
+    With `declare_zero` the optional content size is present and reads 0, which is exactly the value
+    the API also reports when the field is absent - the two states must not be conflated.
+    """
+    flg = 0x40 | (0x08 if declare_zero else 0)
+    header = bytes([flg, 0x40]) + (struct.pack("<Q", 0) if declare_zero else b"")
+    return LZ4_MAGIC + header + bytes([(xxh32(header) >> 8) & 0xFF]) + struct.pack("<I", 0)
+
+
+# Cases 13 and 14: an empty LZ4 frame produces nothing, so any positive prefix over it is forged. The
+# frame is the only shape whose optional content size can be present and read 0, so both spellings
+# are covered: absent, and present-and-zero.
+for name, declare_zero in (("lz4_empty_frame_forged_prefix", False),
+                           ("lz4_empty_frame_zero_size_forged_prefix", True)):
+    open(f"{out}/{name}.arrows", "wb").write(
+        lone_lz4_frame_buffer(ch_lz4, 100 * 1024 ** 3, empty_lz4_frame(declare_zero)))
+
+# Case 15: a pyarrow LZ4 frame, which omits the optional content size, with a forged prefix below the
+# allocator's ceiling. Nothing pledges a size to contradict, so only the frame's blocks bound it.
+d = bytearray(arrow_lz4)
+struct.pack_into("<q", d, arrow_offs[0], 100 * 1024 ** 3)
+open(f"{out}/lz4_no_declared_size_forged_prefix.arrows", "wb").write(bytes(d))
+
+# Case 16: a frame whose content size is recorded as 0 while its blocks really do produce data - a
+# shape no writer emits but a file can carry, and the one place where "recorded 0" and "not recorded"
+# genuinely differ. Reading the 0 as an exact size would reject the real prefix, so the blocks decide.
+d = bytearray(ch_lz4)
+set_frame_content_size(d, ch_offs[0], 0)
+open(f"{out}/lz4_zero_size_over_blocks.arrows", "wb").write(bytes(d))
 PYEOF
 
 check() {
-    $CLICKHOUSE_LOCAL --max_memory_usage=1G \
+    $CLICKHOUSE_LOCAL --max_memory_usage="${3:-1G}" \
         --query "SELECT * FROM file('${TMP_DIR}/$1', ArrowStream) FORMAT Null" 2>&1 \
         | grep -F -q "$2" && echo "OK $1" || echo "FAIL $1"
 }
@@ -363,24 +422,31 @@ $CLICKHOUSE_LOCAL --query "DESC file('${TMP_DIR}/bad_frame.arrows', ArrowStream)
     && echo 'OK describe' || echo 'FAIL describe'
 
 check bad_frame.arrows INCORRECT_DATA
-check prefix_mismatch.arrows INCORRECT_DATA
-check aggregate_too_large.arrows INCORRECT_DATA
-check zstd_prefix_mismatch.arrows INCORRECT_DATA
 check zstd_bad_frame.arrows INCORRECT_DATA
 # The rejection must come from the frame comparison, so match its message: a bare INCORRECT_DATA
 # would also pass if the allocator guard or the decompression call caught it instead, leaving the
 # comparison untested.
+check prefix_mismatch.arrows 'codec frame declares'
+check aggregate_too_large.arrows 'codec frame declares'
+check pledge_mismatch.arrows 'codec frame declares'
+check zstd_prefix_mismatch.arrows 'codec frame declares'
 check zstd_empty_frame_forged_prefix.arrows 'codec frame declares 0'
 check zstd_multi_frame_forged_prefix.arrows 'codec frame declares'
 check zstd_skippable_prefix_forged_prefix.arrows 'codec frame declares'
-# Not corrupt: a size the query cannot afford is a resource condition, not a data error.
-check consistent_large.arrows MEMORY_LIMIT_EXCEEDED
+# An LZ4 frame with no blocks can produce nothing, so the comparison sees a 0 either way.
+check lz4_empty_frame_forged_prefix.arrows 'codec frame declares 0'
+check lz4_empty_frame_zero_size_forged_prefix.arrows 'codec frame declares 0'
+check lz4_no_declared_size_forged_prefix.arrows 'codec frame declares'
+# Not corrupt: a size the query cannot afford is a resource condition, not a data error. The size a
+# frame's blocks can produce is bounded, so the budget rather than the size is what has to be small.
+check consistent_large.arrows MEMORY_LIMIT_EXCEEDED 1M
 
 # Well-formed compressed files must be unaffected, from either writer and both codecs, including the
-# two ZSTD payload shapes whose leading frame header describes less than the whole payload, and an
-# empty buffer whose frame honestly declares the 0 the comparison now sees.
+# two ZSTD payload shapes whose leading frame header describes less than the whole payload, an empty
+# buffer whose frame honestly declares the 0 the comparison now sees, and a frame whose recorded size
+# reads 0 over blocks that do produce data (which must not be read as an exact size of zero).
 for f in wellformed_lz4 wellformed_zstd ch_lz4 ch_zstd zstd_multi_frame zstd_skippable_prefix \
-         zstd_empty_frame_honest_prefix; do
+         zstd_empty_frame_honest_prefix lz4_zero_size_over_blocks; do
     $CLICKHOUSE_LOCAL --query "
         SELECT count(), sum(i), uniqExact(s) FROM file('${TMP_DIR}/${f}.arrows', ArrowStream)"
 done

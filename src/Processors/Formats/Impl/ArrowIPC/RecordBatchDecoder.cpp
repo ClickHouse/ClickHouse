@@ -1551,18 +1551,17 @@ void RecordBatchDecoder::prepareBuffers(const flatbuf::RecordBatch & batch, cons
                 ErrorCodes::INCORRECT_DATA,
                 "Arrow IPC compressed buffer declares {} uncompressed bytes but carries no payload", out_len);
 
-        /// When the payload's codec frames declare a size, it is a second copy of this prefix, so
-        /// disagreement means the prefix is forged - assert it before allocating for it. The frame size
-        /// is optional (upstream Arrow's LZ4 writer omits it) and file-controlled too, so this is a
-        /// consistency check, never an allocation bound.
+        /// Check this prefix against the payload before allocating for it. A size the codec pledges is
+        /// a second copy of the prefix, so any difference means the prefix is forged; otherwise the
+        /// payload's structure only bounds what it can produce, so only exceeding it is forged.
         if (uncompressed_length >= 0 && length > 8)
         {
-            const auto frame_len = declaredFrameContentSize(codec, src + 8, static_cast<size_t>(length - 8));
-            if (frame_len.has_value() && *frame_len != out_len)
+            const auto bound = frameContentBound(codec, src + 8, static_cast<size_t>(length - 8));
+            if (bound.has_value() && (bound->exact ? out_len != bound->size : out_len > bound->size))
                 throw Exception(
                     ErrorCodes::INCORRECT_DATA,
                     "Arrow IPC compressed buffer declares {} uncompressed bytes but its {}-byte codec frame "
-                    "declares {}", out_len, length - 8, *frame_len);
+                    "declares {}", out_len, length - 8, bound->size);
         }
 
         if (out_len > std::numeric_limits<size_t>::max() - pos)
