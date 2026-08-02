@@ -284,6 +284,50 @@ SELECT
 FROM t_mixed_var ORDER BY id
 SETTINGS variant_throw_on_type_mismatch = 0;
 
+SELECT '-- NULL nested inside a non-null Nullable(Tuple(...)) wrapper';
+
+-- The wrapper's own nullness says nothing about a NULL nested below it, so both levels are
+-- asserted here: rows 0-1 vary the nested value under a non-null wrapper, row 2 is a NULL wrapper.
+-- The outer_* columns pair a NULL wrapper with a needle whose nested payload coincides with the
+-- nested default, which is what pins that the wrapper's null map still counts.
+-- Same isNotDistinctFrom oracle as the group above, for the same reason.
+SET enable_nullable_tuple_type = 1;
+
+DROP TABLE IF EXISTS t_null_tuple;
+CREATE TABLE t_null_tuple (id UInt8, v Array(Nullable(Tuple(Dynamic)))) ENGINE = Memory;
+INSERT INTO t_null_tuple VALUES (0, [tuple(NULL::Dynamic)]), (1, [tuple('a'::Dynamic)]), (2, [NULL]);
+
+SELECT
+    id,
+    has(v, CAST(tuple(NULL::Dynamic), 'Nullable(Tuple(Dynamic))')) AS null_needle_got,
+    toUInt8(arrayExists(x -> isNotDistinctFrom(x, CAST(tuple(NULL::Dynamic), 'Nullable(Tuple(Dynamic))')), v)) AS null_needle_want,
+    has(v, CAST(tuple('a'::Dynamic), 'Nullable(Tuple(Dynamic))')) AS value_needle_got,
+    toUInt8(arrayExists(x -> isNotDistinctFrom(x, CAST(tuple('a'::Dynamic), 'Nullable(Tuple(Dynamic))')), v)) AS value_needle_want,
+    has(v, CAST(NULL, 'Nullable(Tuple(Dynamic))')) AS outer_null_needle_got,
+    toUInt8(arrayExists(x -> isNotDistinctFrom(x, CAST(NULL, 'Nullable(Tuple(Dynamic))')), v)) AS outer_null_needle_want,
+    indexOf(v, CAST(tuple(NULL::Dynamic), 'Nullable(Tuple(Dynamic))')) AS index_of_got,
+    indexOf(arrayMap(x -> toUInt8(isNotDistinctFrom(x, CAST(tuple(NULL::Dynamic), 'Nullable(Tuple(Dynamic))'))), v), 1) AS index_of_want,
+    countEqual(v, CAST(tuple(NULL::Dynamic), 'Nullable(Tuple(Dynamic))')) AS count_equal_got,
+    length(arrayFilter(x -> isNotDistinctFrom(x, CAST(tuple(NULL::Dynamic), 'Nullable(Tuple(Dynamic))')), v)) AS count_equal_want
+FROM t_null_tuple
+ORDER BY id;
+
+-- A NULL wrapper and a needle carrying the nested default must not match, in every function.
+SELECT
+    has(CAST([NULL], 'Array(Nullable(Tuple(Dynamic)))'), CAST(tuple(NULL::Dynamic), 'Nullable(Tuple(Dynamic))')) AS outer_vs_nested,
+    has(CAST([tuple(NULL::Dynamic)], 'Array(Nullable(Tuple(Dynamic)))'), CAST(NULL, 'Nullable(Tuple(Dynamic))')) AS nested_vs_outer,
+    has(CAST([NULL], 'Array(Nullable(Tuple(UInt8, Dynamic)))'), CAST(tuple(0, NULL::Dynamic), 'Nullable(Tuple(UInt8, Dynamic))')) AS outer_vs_defaults,
+    indexOf(CAST([tuple('a'::Dynamic), NULL], 'Array(Nullable(Tuple(Dynamic)))'), CAST(tuple(NULL::Dynamic), 'Nullable(Tuple(Dynamic))')) AS index_of_skips_outer,
+    countEqual(CAST([NULL, tuple(NULL::Dynamic), NULL], 'Array(Nullable(Tuple(Dynamic)))'), CAST(tuple(NULL::Dynamic), 'Nullable(Tuple(Dynamic))')) AS count_counts_nested_only;
+
+-- Two NULL wrappers match each other; deeper nesting and the Variant twin behave the same.
+SELECT
+    has(CAST([NULL], 'Array(Nullable(Tuple(Dynamic)))'), CAST(NULL, 'Nullable(Tuple(Dynamic))')) AS outer_null_pair,
+    has(CAST([tuple(tuple(NULL::Dynamic))], 'Array(Nullable(Tuple(Tuple(Dynamic))))'), CAST(tuple(tuple(NULL::Dynamic)), 'Nullable(Tuple(Tuple(Dynamic)))')) AS depth2,
+    has(CAST([tuple(CAST(NULL, 'Variant(String, UInt64)'))], 'Array(Nullable(Tuple(Variant(String, UInt64))))'), CAST(tuple(CAST(NULL, 'Variant(String, UInt64)')), 'Nullable(Tuple(Variant(String, UInt64)))')) AS variant_twin;
+
+SET enable_nullable_tuple_type = 0;
+
 SELECT '-- non-erased fast paths are unchanged';
 
 SELECT has([1, 2, 3], 2), indexOf([1, 2, 3], 3), countEqual([1, 2, 2], 2), indexOfAssumeSorted([1, 2, 3], 2);
@@ -310,3 +354,4 @@ DROP TABLE IF EXISTS t_map_value;
 DROP TABLE IF EXISTS t_string;
 DROP TABLE IF EXISTS t_mixed_dyn;
 DROP TABLE IF EXISTS t_mixed_var;
+DROP TABLE IF EXISTS t_null_tuple;

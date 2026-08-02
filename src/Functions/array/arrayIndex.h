@@ -22,6 +22,7 @@
 #include <Columns/ColumnNullable.h>
 #include <Common/FieldAccurateComparison.h>
 #include <Common/VectorWithMemoryTracking.h>
+#include <Common/checkStackSize.h>
 #include <base/memcmpSmall.h>
 #include <Common/assert_cast.h>
 #include <Columns/ColumnLowCardinality.h>
@@ -48,6 +49,8 @@ using NullMap = PaddedPODArray<UInt8>;
 /// so descending there could not change the answer. forEachChild cannot express that barrier.
 inline bool hasTypeErasingElement(const IDataType & type)
 {
+    checkStackSize();
+
     if (isDynamic(type) || isVariant(type))
         return true;
 
@@ -703,9 +706,22 @@ private:
         return matches;
     }
 
+    /// Strip a Nullable wrapper, handing back the null map column so the caller can fold the outer
+    /// nullness itself: a wrapper's isNullAt answers about the wrapper, not about a nested NULL.
+    /// The caller must keep the returned null map column alive while reading its data.
+    static ColumnWithTypeAndName unwrapNullable(const ColumnWithTypeAndName & operand, ColumnPtr & null_map_column)
+    {
+        auto full_column = operand.column->convertToFullColumnIfConst();
+        const auto * nullable_column = checkAndGetColumn<ColumnNullable>(full_column.get());
+        if (!nullable_column)
+            return operand;
+
+        null_map_column = nullable_column->getNullMapColumnPtr();
+        return {nullable_column->getNestedColumnPtr(), removeNullable(operand.type), operand.name};
+    }
+
     /// Split a Tuple operand into its element columns, or return nothing when it is not a plain
-    /// Tuple (a Nullable or LowCardinality wrapper around one keeps its own nullness at the top
-    /// level, where the fold already sees it).
+    /// Tuple. A Nullable wrapper is removed by unwrapNullable before this is reached.
     static std::optional<ColumnsWithTypeAndName> tryDecomposeTuple(const ColumnWithTypeAndName & operand)
     {
         auto full_column = operand.column->convertToFullColumnIfConst();
@@ -734,9 +750,17 @@ private:
     ColumnUInt8::MutablePtr evaluateElementwiseEquality(
         const ColumnWithTypeAndName & elements, const ColumnWithTypeAndName & needles) const
     {
-        if (auto element_parts = tryDecomposeTuple(elements))
+        checkStackSize();
+
+        /// Hold the null map columns for as long as their data is read below.
+        ColumnPtr elements_null_map_column;
+        ColumnPtr needles_null_map_column;
+        auto bare_elements = unwrapNullable(elements, elements_null_map_column);
+        auto bare_needles = unwrapNullable(needles, needles_null_map_column);
+
+        if (auto element_parts = tryDecomposeTuple(bare_elements))
         {
-            if (auto needle_parts = tryDecomposeTuple(needles); needle_parts && element_parts->size() == needle_parts->size()
+            if (auto needle_parts = tryDecomposeTuple(bare_needles); needle_parts && element_parts->size() == needle_parts->size()
                     && !element_parts->empty())
             {
                 /// A tuple matches iff every position does.
@@ -749,6 +773,24 @@ private:
                     const auto & part_matches_data = part_matches->getData();
                     for (size_t row = 0; row < matches_data.size(); ++row)
                         matches_data[row] &= part_matches_data[row];
+                }
+
+                /// Same rule the leaf fold applies, one level out: two NULLs match, a lone NULL does not.
+                if (elements_null_map_column || needles_null_map_column)
+                {
+                    const auto * elements_null_map = elements_null_map_column
+                        ? &assert_cast<const ColumnUInt8 &>(*elements_null_map_column).getData() : nullptr;
+                    const auto * needles_null_map = needles_null_map_column
+                        ? &assert_cast<const ColumnUInt8 &>(*needles_null_map_column).getData() : nullptr;
+
+                    for (size_t row = 0; row < matches_data.size(); ++row)
+                    {
+                        const bool element_is_null = elements_null_map && (*elements_null_map)[row];
+                        const bool needle_is_null = needles_null_map && (*needles_null_map)[row];
+
+                        if (element_is_null || needle_is_null)
+                            matches_data[row] = element_is_null && needle_is_null;
+                    }
                 }
 
                 return matches;
