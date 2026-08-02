@@ -268,12 +268,19 @@ KeeperStorage::KeeperStorage(
 
 }
 
-std::unique_ptr<KeeperStorage> KeeperStorage::create(int64_t tick_time_ms, const String & superdigest_, const KeeperContextPtr & keeper_context_, bool initialize_system_nodes)
+std::shared_ptr<KeeperStorage> KeeperStorage::create(int64_t tick_time_ms, const String & superdigest_, const KeeperContextPtr & keeper_context_, bool initialize_system_nodes)
 {
-    std::unique_ptr<KeeperStorage> res = std::make_unique<KeeperMemoryStorage>(tick_time_ms, superdigest_, keeper_context_);
+    std::shared_ptr<KeeperStorage> res = std::make_shared<KeeperMemoryStorage>(tick_time_ms, superdigest_, keeper_context_);
     if (initialize_system_nodes)
         res->initializeSystemNodes();
     return res;
+}
+
+std::unique_ptr<KeeperNodesReadView> KeeperStorage::issueReadView()
+{
+    auto view = nodes_storage->issueReadView();
+    view->storage_holder = shared_from_this();
+    return view;
 }
 
 void KeeperStorage::initializeSystemNodes()
