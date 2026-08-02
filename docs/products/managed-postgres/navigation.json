@@ -34,12 +34,6 @@
       ]
     },
     {
-      "group": "Benchmarks",
-      "pages": [
-        "products/managed-postgres/benchmarks"
-      ]
-    },
-    {
       "group": "Pricing",
       "pages": [
         "products/managed-postgres/pricing"
@@ -60,7 +54,6 @@
         "products/managed-postgres/migrations/peerdb",
         "products/managed-postgres/migrations/clickpipes",
         "products/managed-postgres/migrations/data-validation",
-        "products/managed-postgres/migrations/clickhouse-cloud",
         "products/managed-postgres/migrations/faq"
       ]
     },

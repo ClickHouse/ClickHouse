@@ -355,7 +355,6 @@ DataTypePtr tryInferDataTypeByEscapingRule(const String & field, const FormatSet
             if (field[0] == '0' && field.size() != 1 && !format_settings.allow_number_leading_zeros)
                 return std::make_shared<DataTypeString>();
 
-            auto type = tryInferDataTypeForSingleField(field, format_settings);
             if (!type)
                 return std::make_shared<DataTypeString>();
             return type;
