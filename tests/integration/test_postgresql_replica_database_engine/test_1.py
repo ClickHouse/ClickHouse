@@ -593,10 +593,10 @@ def test_merge_table_over_materialized_postgresql(started_cluster):
 def test_merge_table_over_materialized_postgresql_database(started_cluster):
     """
     Reading a MaterializedPostgreSQL database through Merge forces FINAL on the child read:
-    getTablesIterator must return StorageMaterializedPostgreSQL wrappers instead of the
-    nested ReplacingMergeTree tables, so that Merge over the database reads with the
-    forced FINAL and the `_sign = 1` filter (otherwise stale and deleted row versions
-    would be exposed).
+    Merge maps every table it enumerates through getTableForRead, which returns the
+    StorageMaterializedPostgreSQL wrapper instead of the nested ReplacingMergeTree table, so
+    that Merge over the database reads with the forced FINAL and the `_sign = 1` filter
+    (otherwise stale and deleted row versions would be exposed).
     """
     table_name = "postgresql_replica_final_db"
     pg_manager.create_postgres_table(table_name)
@@ -635,7 +635,7 @@ def test_reads_during_startup_window_use_final(started_cluster):
     Right after a server restart (and right after CREATE / ATTACH DATABASE) the map of
     StorageMaterializedPostgreSQL wrappers is empty until startSynchronization has fetched the
     tables list from PostgreSQL and published the wrappers. In that window tryGetTable and
-    getTablesIterator used to fall back to the nested ReplacingMergeTree tables, so user-facing
+    getTableForRead used to fall back to the nested ReplacingMergeTree tables, so user-facing
     reads bypassed the forced FINAL and the `_sign = 1` filter and exposed stale and deleted row
     versions. Now the nested tables are wrapped on the fly.
 
@@ -689,12 +689,58 @@ def test_reads_during_startup_window_use_final(started_cluster):
     assert instance.query(direct_query) == expected
 
 
+def test_database_introspection_sees_nested_tables(started_cluster):
+    """
+    `Merge` needs the `StorageMaterializedPostgreSQL` wrappers, but generic enumeration must keep
+    exposing the physical nested `ReplacingMergeTree` tables: a wrapper has no Atomic UUID and is
+    not `MergeTreeData`, so returning wrappers from `getTablesIterator` would make
+    `system.tables.uuid` empty and would drop these tables out of `system.parts` and out of the
+    asynchronous table metrics. Only the reading path goes through `getTableForRead`.
+    """
+    table_name = "postgresql_replica_introspection"
+    pg_manager.create_postgres_table(table_name)
+    instance.query(
+        f"INSERT INTO postgres_database.{table_name} SELECT number, number FROM numbers(10)"
+    )
+
+    pg_manager.create_materialized_db(
+        ip=started_cluster.postgres_ip, port=started_cluster.postgres_port
+    )
+    check_tables_are_synchronized(instance, table_name)
+
+    # `system.tables` keeps reporting a real Atomic UUID for the table.
+    uuid = instance.query(
+        f"SELECT uuid FROM system.tables WHERE database = 'test_database' AND name = '{table_name}'"
+    ).strip()
+    assert uuid != "00000000-0000-0000-0000-000000000000", uuid
+
+    # `system.parts` enumerates databases through `getTablesIterator` and keeps only the storages
+    # that are `MergeTreeData`, so the nested table has to stay visible there. The very same
+    # `dynamic_cast<MergeTreeData *>` over the iterator is what `ServerAsynchronousMetrics` uses to
+    # account for the parts, rows and bytes of every table.
+    assert (
+        int(
+            instance.query(
+                "SELECT sum(rows) FROM system.parts "
+                f"WHERE database = 'test_database' AND table = '{table_name}' AND active"
+            )
+        )
+        == 10
+    )
+
+    # Reading still goes through the wrapper.
+    explain = instance.query(
+        f"EXPLAIN actions=1 SELECT key, value FROM test_database.{table_name}"
+    )
+    assert "FINAL: 1" in explain, explain
+
+
 def test_drop_database_while_enumerating_tables(started_cluster):
     """
     `DROP DATABASE` clears the map of `StorageMaterializedPostgreSQL` wrappers that
-    `getTablesIterator` walks, so both sides have to hold the same mutex. Otherwise the drop
-    destroys a wrapper while a reader is still dereferencing it, which is a use-after-free that
-    the sanitizer builds turn into an aborted server.
+    `tryGetTable` and `getTableForRead` look into, so both sides have to hold the same mutex.
+    Otherwise the drop destroys a wrapper while a reader is still dereferencing it, which is a
+    use-after-free that the sanitizer builds turn into an aborted server.
 
     `ServerAsynchronousMetrics` enumerates the tables of every database once per second, so this
     used to be hit by the metrics thread rather than by a query. Here `system.tables` is read in a
@@ -711,14 +757,19 @@ def test_drop_database_while_enumerating_tables(started_cluster):
 
     def keep_enumerating_tables():
         while not stop_reading.is_set():
-            try:
-                instance.query(
-                    "SELECT count() FROM system.tables WHERE database = 'test_database'"
-                )
-            except Exception:
-                # The database being dropped from under the query is expected. What must not
-                # happen is the server going away, which the assertions below check for.
-                pass
+            for query in [
+                "SELECT count() FROM system.tables WHERE database = 'test_database'",
+                # This one goes through the wrapper map: `Merge` maps every enumerated table
+                # through `getTableForRead`, which looks the wrappers up under `tables_mutex`.
+                "SELECT count() FROM merge('test_database', '^postgresql_replica_drop_race_')",
+            ]:
+                try:
+                    instance.query(query)
+                except Exception:
+                    # The database being dropped from under the query is expected. What must
+                    # not happen is the server going away, which the assertions below check
+                    # for.
+                    pass
 
     readers = [threading.Thread(target=keep_enumerating_tables) for _ in range(4)]
     for reader in readers:
