@@ -35,11 +35,11 @@ quantilesGK(accuracy, level1, level2, ...)(expr)
 
 **Argumentos**
 
-* `expr` — Expresión sobre los valores de la columna cuyo resultado son tipos de datos numéricos, Date o DateTime. [`(U)Int*`](/es/reference/data-types/int-uint) o [`Float*`](/es/reference/data-types/float) o [`Decimal*`](/es/reference/data-types/decimal) o [`Date`](/es/reference/data-types/date) o [`DateTime`](/es/reference/data-types/datetime)
+* `expr` — Expresión sobre los valores de la columna cuyo resultado son tipos de datos numéricos, `Date`, `DateTime` o `DateTime64`. [`(U)Int*`](/es/reference/data-types/int-uint) o [`Int128`](/es/reference/data-types/int-uint) o [`UInt128`](/es/reference/data-types/int-uint) o [`Int256`](/es/reference/data-types/int-uint) o [`UInt256`](/es/reference/data-types/int-uint) o [`Float*`](/es/reference/data-types/float) o [`Decimal*`](/es/reference/data-types/decimal) o [`Date`](/es/reference/data-types/date) o [`DateTime`](/es/reference/data-types/datetime) o [`DateTime64`](/es/reference/data-types/datetime64)
 
 **Valor devuelto**
 
-Array de cuantiles de los niveles especificados, en el mismo orden en que se indicaron dichos niveles. [`Array(Float64)`](/es/reference/data-types/array) o [`Array(Date)`](/es/reference/data-types/array) o [`Array(DateTime)`](/es/reference/data-types/array)
+Array de cuantiles de los niveles especificados, en el mismo orden en que se indicaron dichos niveles. Para los tipos de datos numéricos, el formato de salida coincide con el formato de entrada. [`Array((U)Int*)`](/es/reference/data-types/array) o [`Array(Int128)`](/es/reference/data-types/array) o [`Array(UInt128)`](/es/reference/data-types/array) o [`Array(Int256)`](/es/reference/data-types/array) o [`Array(UInt256)`](/es/reference/data-types/array) o [`Array(Float*)`](/es/reference/data-types/array) o [`Array(Decimal*)`](/es/reference/data-types/array) o [`Array(Date)`](/es/reference/data-types/array) o [`Array(DateTime)`](/es/reference/data-types/array) o [`Array(DateTime64)`](/es/reference/data-types/array)
 
 **Ejemplos**
 
