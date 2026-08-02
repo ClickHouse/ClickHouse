@@ -49,9 +49,6 @@ struct ClusterMetadataConfig
 };
 
 /// Top-level owner and Interpreter-facing facade for SQL-managed cluster metadata.
-///
-/// Owns configuration parsing, local snapshot cache, the local DDL worker and public API boundaries.
-/// Concrete mutation APIs are wired in later steps.
 class ClusterMetadataManager : boost::noncopyable
 {
 public:
@@ -93,7 +90,7 @@ public:
     BlockIO alterEndpoint(const String & endpoint_name, const SettingsChanges & properties, bool sync = false, ContextPtr query_context = {});
 
     /// DDL -- shard (SQL catalog; `replica_collections` are endpoint names).
-    /// Returns empty BlockIO when `if_not_exists` is true and the SQL shard catalog row already exists (no-op).
+    /// `IF NOT EXISTS` no-op is decided after DDL log catch-up in `prepareMutation`.
     BlockIO createShard(
         const String & shard_name,
         const std::vector<String> & replica_collections,
@@ -103,17 +100,17 @@ public:
         bool sync = false,
         ContextPtr query_context = {});
     BlockIO dropShard(const String & shard_name, bool if_exists, bool sync = false, ContextPtr query_context = {});
-    /// `ALTER SHARD name MODIFY PROPERTIES (...)` — merge into existing catalog row; empty BlockIO if `IF EXISTS` and shard missing.
+    /// `ALTER SHARD name MODIFY PROPERTIES (...)` — merge into existing catalog row; `IF EXISTS` no-op after catch-up.
     BlockIO updateShardPropertiesFromSQL(const ASTAlterShardQuery & query, bool sync = false, ContextPtr query_context = {});
-    /// `ALTER SHARD name ADD REPLICA collection` — append endpoint to replica list; empty BlockIO if `IF EXISTS` and shard missing.
+    /// `ALTER SHARD name ADD REPLICA collection` — append endpoint to replica list; `IF EXISTS` no-op after catch-up.
     BlockIO addReplicaToShardFromSQL(const ASTAlterShardQuery & query, bool sync = false, ContextPtr query_context = {});
-    /// `ALTER SHARD name DROP REPLICA collection` — remove from replica list (endpoint is not dropped); empty BlockIO if `IF EXISTS` and shard missing.
+    /// `ALTER SHARD name DROP REPLICA collection` — remove from replica list (endpoint is not dropped); `IF EXISTS` no-op after catch-up.
     BlockIO dropReplicaFromShardFromSQL(const ASTAlterShardQuery & query, bool sync = false, ContextPtr query_context = {});
-    /// `ALTER SHARD name REPLACE ... TO ...` — rename which endpoints back replicas (pairwise, simultaneous); optional trailing shard `MODIFY PROPERTIES`; empty BlockIO if `IF EXISTS` and shard missing.
+    /// `ALTER SHARD name REPLACE ... TO ...` — rename which endpoints back replicas (pairwise, simultaneous); optional trailing shard `MODIFY PROPERTIES`; `IF EXISTS` no-op after catch-up.
     BlockIO replaceShardReplicasFromSQL(const ASTAlterShardQuery & query, bool sync = false, ContextPtr query_context = {});
 
     /// DDL -- cluster.
-    /// Returns empty BlockIO when `if_not_exists` is true and the SQL cluster catalog row already exists (no-op).
+    /// `IF NOT EXISTS` no-op is decided after DDL log catch-up in `prepareMutation`.
     BlockIO createCluster(
         const String & cluster_name,
         const std::vector<String> & members,
@@ -123,19 +120,22 @@ public:
         bool sync = false,
         ContextPtr query_context = {});
     BlockIO dropCluster(const String & cluster_name, bool if_exists, bool sync = false, ContextPtr query_context = {});
-    /// `ALTER CLUSTER ... ADD SHARD s1, ...` — append members; empty BlockIO if `IF EXISTS` and cluster missing.
+    /// `ALTER CLUSTER ... ADD SHARD s1, ...` — append members; `IF EXISTS` no-op after catch-up.
     BlockIO addClusterMembersFromSQL(const ASTAlterClusterQuery & query, bool sync = false, ContextPtr query_context = {});
-    /// `ALTER CLUSTER ... DROP SHARD s1, ...` — remove members; empty BlockIO if `IF EXISTS` and cluster missing.
+    /// `ALTER CLUSTER ... DROP SHARD s1, ...` — remove members; `IF EXISTS` no-op after catch-up.
     BlockIO dropClusterMembersFromSQL(const ASTAlterClusterQuery & query, bool sync = false, ContextPtr query_context = {});
-    /// `ALTER CLUSTER ... REPLACE ... TO ...` — remap members; optional cluster `MODIFY PROPERTIES`; empty BlockIO if `IF EXISTS` and cluster missing.
+    /// `ALTER CLUSTER ... REPLACE ... TO ...` — remap members; optional cluster `MODIFY PROPERTIES`; `IF EXISTS` no-op after catch-up.
     BlockIO replaceClusterMembersFromSQL(const ASTAlterClusterQuery & query, bool sync = false, ContextPtr query_context = {});
 
 private:
     ClusterMetadataManager() = default;
 
     mutable std::mutex mutex;
-    /// Serializes access to `ddl_worker` ownership against shutdown. Must not be held while taking
-    /// `mutex` from DDL callbacks (`prepareMutation` / `applyMutations` / `reloadSnapshot`).
+    /// Serializes access to `ddl_worker` ownership against shutdown.
+    /// Commit paths may hold this lock and then take `mutex` via `prepareMutation` / apply
+    /// (order: `ddl_worker_mutex` -> `mutex`). DDL callbacks (`prepareMutation`, `applyMutations`,
+    /// `reloadSnapshot`) must never acquire `ddl_worker_mutex`, or they would deadlock with
+    /// shutdown / in-flight commits.
     mutable std::mutex ddl_worker_mutex;
     bool initialized = false;
 
@@ -178,16 +178,6 @@ private:
         ContextPtr query_context) const;
     ClusterPtr materializeCluster(const String & cluster_name, ContextPtr context) const;
 
-    void assertShardNameAvailable(const String & shard_name) const;
-    void assertClusterNameAvailable(const String & cluster_name) const;
-    void assertEndpointNameAvailable(const String & endpoint_name) const;
-    void validateClusterMemberShardExists(const String & shard_name) const;
-    void validateClusterTotalShardWeight(
-        const String & cluster_name,
-        const std::vector<String> & members,
-        const ShardCatalogDefinition * shard_override = nullptr) const;
-    std::vector<String> listClustersContainingShard(const String & shard_name) const;
-
     ShardCatalogDefinition buildShardDefinition(
         const String & shard_name,
         const std::vector<String> & endpoint_names,
@@ -198,7 +188,6 @@ private:
     static void resolveShardEndpoints(
         ShardCatalogDefinition & shard,
         const std::unordered_map<String, EndpointCatalogDefinition> & endpoints);
-    static bool endpointsMatch(const EndpointCatalogDefinition & lhs, const EndpointCatalogDefinition & rhs);
 
     void materializeSnapshotClusters(
         const ClusterMetadataStorage::Snapshot & source_snapshot,

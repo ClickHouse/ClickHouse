@@ -104,7 +104,6 @@ bool ParserQueryWithOutput::parseImpl(Pos & pos, ASTPtr & node, Expected & expec
     bool parsed =
            explain_p.parse(pos, query, expected)
         || select_p.parse(pos, query, expected)
-        || show_create_access_entity_p.parse(pos, query, expected) /// should be before `show_tables_p`
         || show_create_cluster_catalog_p.parse(pos, query, expected)
         || parseShowCreateAccessEntityQuery(pos, query, expected) /// should be before `show_tables_p`
         || show_tables_p.parse(pos, query, expected)

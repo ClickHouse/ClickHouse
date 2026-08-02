@@ -8,6 +8,7 @@
 
 #include <utility>
 
+
 namespace DB
 {
 
@@ -22,12 +23,16 @@ namespace
 ClusterMetadataMutation makeMutation(
     ClusterMetadataMutation::Type type,
     const String & name,
-    String definition_data = {})
+    String definition_data = {},
+    bool if_exists = false,
+    bool if_not_exists = false)
 {
     return ClusterMetadataMutation{
         .type = type,
         .name = name,
         .definition_data = std::move(definition_data),
+        .if_exists = if_exists,
+        .if_not_exists = if_not_exists,
     };
 }
 
@@ -83,14 +88,17 @@ String serializeReplacements(
 
 }
 
-ClusterMetadataMutation ClusterMetadataMutation::createEndpoint(const String & name, const EndpointCatalogDefinition & definition)
+ClusterMetadataMutation ClusterMetadataMutation::createEndpoint(
+    const String & name,
+    const EndpointCatalogDefinition & definition,
+    bool if_not_exists)
 {
-    return makeMutation(Type::CreateEndpoint, name, definition.serialize());
+    return makeMutation(Type::CreateEndpoint, name, definition.serialize(), /*if_exists=*/false, if_not_exists);
 }
 
-ClusterMetadataMutation ClusterMetadataMutation::dropEndpoint(const String & name)
+ClusterMetadataMutation ClusterMetadataMutation::dropEndpoint(const String & name, bool if_exists)
 {
-    return makeMutation(Type::DropEndpoint, name);
+    return makeMutation(Type::DropEndpoint, name, {}, if_exists);
 }
 
 ClusterMetadataMutation ClusterMetadataMutation::alterEndpoint(const String & name, const EndpointCatalogDefinition & definition)
@@ -98,14 +106,14 @@ ClusterMetadataMutation ClusterMetadataMutation::alterEndpoint(const String & na
     return makeMutation(Type::AlterEndpoint, name, definition.serialize());
 }
 
-ClusterMetadataMutation ClusterMetadataMutation::createShard(const ShardCatalogDefinition & definition)
+ClusterMetadataMutation ClusterMetadataMutation::createShard(const ShardCatalogDefinition & definition, bool if_not_exists)
 {
-    return makeMutation(Type::CreateShard, definition.name, definition.serialize());
+    return makeMutation(Type::CreateShard, definition.name, definition.serialize(), /*if_exists=*/false, if_not_exists);
 }
 
-ClusterMetadataMutation ClusterMetadataMutation::dropShard(const String & name)
+ClusterMetadataMutation ClusterMetadataMutation::dropShard(const String & name, bool if_exists)
 {
-    return makeMutation(Type::DropShard, name);
+    return makeMutation(Type::DropShard, name, {}, if_exists);
 }
 
 ClusterMetadataMutation ClusterMetadataMutation::alterShard(const ShardCatalogDefinition & definition)
@@ -113,14 +121,17 @@ ClusterMetadataMutation ClusterMetadataMutation::alterShard(const ShardCatalogDe
     return makeMutation(Type::AlterShard, definition.name, definition.serialize());
 }
 
-ClusterMetadataMutation ClusterMetadataMutation::createCluster(const String & name, const ClusterCatalogDefinition & definition)
+ClusterMetadataMutation ClusterMetadataMutation::createCluster(
+    const String & name,
+    const ClusterCatalogDefinition & definition,
+    bool if_not_exists)
 {
-    return makeMutation(Type::CreateCluster, name, definition.serialize());
+    return makeMutation(Type::CreateCluster, name, definition.serialize(), /*if_exists=*/false, if_not_exists);
 }
 
-ClusterMetadataMutation ClusterMetadataMutation::dropCluster(const String & name)
+ClusterMetadataMutation ClusterMetadataMutation::dropCluster(const String & name, bool if_exists)
 {
-    return makeMutation(Type::DropCluster, name);
+    return makeMutation(Type::DropCluster, name, {}, if_exists);
 }
 
 ClusterMetadataMutation ClusterMetadataMutation::alterCluster(const String & name, const ClusterCatalogDefinition & definition)
@@ -133,45 +144,62 @@ ClusterMetadataMutation ClusterMetadataMutation::modifyEndpointProperties(const 
     return makeMutation(Type::ModifyEndpointProperties, name, serializeSettingsChanges(properties));
 }
 
-ClusterMetadataMutation ClusterMetadataMutation::modifyShardProperties(const String & name, const SettingsChanges & properties)
+ClusterMetadataMutation ClusterMetadataMutation::modifyShardProperties(
+    const String & name,
+    const SettingsChanges & properties,
+    bool if_exists)
 {
-    return makeMutation(Type::ModifyShardProperties, name, serializeSettingsChanges(properties));
+    return makeMutation(Type::ModifyShardProperties, name, serializeSettingsChanges(properties), if_exists);
 }
 
-ClusterMetadataMutation ClusterMetadataMutation::addShardReplicas(const String & name, const std::vector<String> & endpoint_names)
+ClusterMetadataMutation ClusterMetadataMutation::addShardReplicas(
+    const String & name,
+    const std::vector<String> & endpoint_names,
+    bool if_exists)
 {
-    return makeMutation(Type::AddShardReplicas, name, serializeStringList(endpoint_names));
+    return makeMutation(Type::AddShardReplicas, name, serializeStringList(endpoint_names), if_exists);
 }
 
-ClusterMetadataMutation ClusterMetadataMutation::dropShardReplicas(const String & name, const std::vector<String> & endpoint_names)
+ClusterMetadataMutation ClusterMetadataMutation::dropShardReplicas(
+    const String & name,
+    const std::vector<String> & endpoint_names,
+    bool if_exists)
 {
-    return makeMutation(Type::DropShardReplicas, name, serializeStringList(endpoint_names));
+    return makeMutation(Type::DropShardReplicas, name, serializeStringList(endpoint_names), if_exists);
 }
 
 ClusterMetadataMutation ClusterMetadataMutation::replaceShardReplicas(
     const String & name,
     const std::vector<Replacement> & replacements,
-    const SettingsChanges & properties)
+    const SettingsChanges & properties,
+    bool if_exists)
 {
-    return makeMutation(Type::ReplaceShardReplicas, name, serializeReplacements(replacements, properties));
+    return makeMutation(Type::ReplaceShardReplicas, name, serializeReplacements(replacements, properties), if_exists);
 }
 
-ClusterMetadataMutation ClusterMetadataMutation::addClusterMembers(const String & name, const std::vector<String> & shard_names)
+ClusterMetadataMutation ClusterMetadataMutation::addClusterMembers(
+    const String & name,
+    const std::vector<String> & shard_names,
+    bool if_exists)
 {
-    return makeMutation(Type::AddClusterMembers, name, serializeStringList(shard_names));
+    return makeMutation(Type::AddClusterMembers, name, serializeStringList(shard_names), if_exists);
 }
 
-ClusterMetadataMutation ClusterMetadataMutation::dropClusterMembers(const String & name, const std::vector<String> & shard_names)
+ClusterMetadataMutation ClusterMetadataMutation::dropClusterMembers(
+    const String & name,
+    const std::vector<String> & shard_names,
+    bool if_exists)
 {
-    return makeMutation(Type::DropClusterMembers, name, serializeStringList(shard_names));
+    return makeMutation(Type::DropClusterMembers, name, serializeStringList(shard_names), if_exists);
 }
 
 ClusterMetadataMutation ClusterMetadataMutation::replaceClusterMembers(
     const String & name,
     const std::vector<Replacement> & replacements,
-    const SettingsChanges & properties)
+    const SettingsChanges & properties,
+    bool if_exists)
 {
-    return makeMutation(Type::ReplaceClusterMembers, name, serializeReplacements(replacements, properties));
+    return makeMutation(Type::ReplaceClusterMembers, name, serializeReplacements(replacements, properties), if_exists);
 }
 
 SettingsChanges ClusterMetadataMutation::deserializeSettingsChanges() const
@@ -231,6 +259,8 @@ String ClusterMetadataMutation::serialize() const
     writeBinary(static_cast<UInt8>(type), wb);
     writeStringBinary(name, wb);
     writeStringBinary(definition_data, wb);
+    writeBinary(static_cast<UInt8>(if_exists ? 1 : 0), wb);
+    writeBinary(static_cast<UInt8>(if_not_exists ? 1 : 0), wb);
     return wb.str();
 }
 
@@ -249,6 +279,12 @@ ClusterMetadataMutation ClusterMetadataMutation::deserialize(const String & data
     mutation.type = static_cast<Type>(type);
     readStringBinary(mutation.name, rb);
     readStringBinary(mutation.definition_data, rb);
+    UInt8 if_exists = 0;
+    readBinary(if_exists, rb);
+    mutation.if_exists = if_exists != 0;
+    UInt8 if_not_exists = 0;
+    readBinary(if_not_exists, rb);
+    mutation.if_not_exists = if_not_exists != 0;
 
     if (!rb.eof())
         throw Exception(ErrorCodes::INCORRECT_DATA, "Trailing data in ClusterMetadataMutation blob");

@@ -24,6 +24,8 @@ public:
     {
         String digest;
         ClusterMetadataMutation metadata_mutation;
+        /// Target object disappeared after catch-up under `IF EXISTS` — skip Keeper log write.
+        bool is_noop = false;
     };
 
     using SnapshotReloader = std::function<String()>;
@@ -55,12 +57,15 @@ public:
         String replicas_path;
         String zookeeper_name;
         Strings hosts_to_wait;
+        bool is_noop = false;
     };
 
-    /// Enqueue a mutation, apply it locally on the initiator, and return paths for SYNC waiters.
-    EnqueuedMutationInfo enqueueMutation(const ClusterMetadataMutation & mutation);
-    /// Enqueue and verify only this node's finished status (default, non-SYNC path).
-    void enqueueMutationAndWait(const ClusterMetadataMutation & mutation);
+    /// SYNC path: enqueue + apply locally on the initiator, then return paths / hosts for the
+    /// status pipeline to wait on all registered replicas.
+    EnqueuedMutationInfo enqueueMutationForSync(const ClusterMetadataMutation & mutation);
+    /// Non-SYNC path: enqueue + apply locally, then only confirm this initiator wrote a successful
+    /// `finished/<node>` status (does not wait for other replicas).
+    void enqueueMutationAndConfirmLocal(const ClusterMetadataMutation & mutation);
 
 private:
     struct EnqueuedMutation
@@ -69,6 +74,7 @@ private:
         String entry_name;
         UInt32 entry_number = 0;
         String digest;
+        bool is_noop = false;
     };
 
     ClusterMetadataStoragePtr storage;
@@ -114,7 +120,7 @@ private:
     bool canRemoveEntry(UInt32 entry_number) const;
 
     UInt32 readUInt32Node(const ZooKeeperPtr & zookeeper, const String & path) const;
-    void setLogPointer(UInt32 log_pointer);
+    void updateReplicaLogPointer(UInt32 log_pointer);
     UInt32 logEntryNumber(const String & entry_name) const;
 };
 

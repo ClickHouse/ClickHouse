@@ -185,9 +185,20 @@ bool ClusterMetadataDDLWorker::catchUpLocalSnapshotUnlocked(UInt32 target_log_pt
     return made_progress;
 }
 
-ClusterMetadataDDLWorker::EnqueuedMutationInfo ClusterMetadataDDLWorker::enqueueMutation(const ClusterMetadataMutation & mutation)
+ClusterMetadataDDLWorker::EnqueuedMutationInfo ClusterMetadataDDLWorker::enqueueMutationForSync(const ClusterMetadataMutation & mutation)
 {
     const auto enqueued = enqueueMutationImpl(mutation);
+    if (enqueued.is_noop)
+    {
+        return EnqueuedMutationInfo{
+            .entry_path = {},
+            .replicas_path = replicas_dir,
+            .zookeeper_name = zookeeper_name,
+            .hosts_to_wait = {},
+            .is_noop = true,
+        };
+    }
+
     auto zookeeper = getZooKeeperFromContext();
     auto hosts_to_wait = zookeeper->getChildren(replicas_root);
     std::sort(hosts_to_wait.begin(), hosts_to_wait.end());
@@ -201,7 +212,7 @@ ClusterMetadataDDLWorker::EnqueuedMutationInfo ClusterMetadataDDLWorker::enqueue
 
 ClusterMetadataDDLWorker::EnqueuedMutation ClusterMetadataDDLWorker::enqueueMutationImpl(const ClusterMetadataMutation & mutation)
 {
-    auto component_guard = Coordination::setCurrentComponent("ClusterMetadataDDLWorker::enqueueMutation");
+    auto component_guard = Coordination::setCurrentComponent("ClusterMetadataDDLWorker::enqueueMutationImpl");
     auto zookeeper = getZooKeeperFromContext();
 
     /// Acquire the global enqueue lock (ephemeral node, auto-released on session loss) so that
@@ -237,6 +248,21 @@ ClusterMetadataDDLWorker::EnqueuedMutation ClusterMetadataDDLWorker::enqueueMuta
         if (!mutation_preparer)
             throw Exception(ErrorCodes::LOGICAL_ERROR, "Cluster metadata DDL worker cannot prepare entries without mutation preparer");
         const auto prepared_mutation = mutation_preparer(mutation);
+        if (prepared_mutation.is_noop)
+        {
+            LOG_DEBUG(
+                log,
+                "Skipping enqueue for cluster metadata mutation {} on `{}` after catch-up (IF EXISTS / IF NOT EXISTS no-op)",
+                static_cast<unsigned>(mutation.type),
+                mutation.name);
+            return EnqueuedMutation{
+                .entry_path = {},
+                .entry_name = {},
+                .entry_number = 0,
+                .digest = {},
+                .is_noop = true,
+            };
+        }
 
         enqueued = EnqueuedMutation{
             .entry_path = entry_path,
@@ -273,9 +299,11 @@ ClusterMetadataDDLWorker::EnqueuedMutation ClusterMetadataDDLWorker::enqueueMuta
     return enqueued;
 }
 
-void ClusterMetadataDDLWorker::enqueueMutationAndWait(const ClusterMetadataMutation & mutation)
+void ClusterMetadataDDLWorker::enqueueMutationAndConfirmLocal(const ClusterMetadataMutation & mutation)
 {
     const auto enqueued = enqueueMutationImpl(mutation);
+    if (enqueued.is_noop)
+        return;
 
     auto zookeeper = getZooKeeperFromContext();
     const String finished_path = joinPath(joinPath(enqueued.entry_path, "finished"), node_name);
@@ -294,35 +322,11 @@ void ClusterMetadataDDLWorker::applyEnqueuedMutationLocallyUnlocked(const Enqueu
     if (!mutation_applier)
         throw Exception(ErrorCodes::LOGICAL_ERROR, "Cluster metadata DDL worker cannot apply entries without mutation applier");
 
-    String local_digest;
-    try
-    {
-        local_digest = mutation_applier(std::vector<ClusterMetadataMutation>{mutation});
-    }
-    catch (...)
-    {
-        tryLogCurrentException(log, fmt::format("Local apply of just-enqueued cluster metadata DDL log entry {} failed", enqueued.entry_name));
-        if (!snapshot_reloader)
-            throw;
-
-        local_digest = snapshot_reloader();
-    }
-
-    if (local_digest == enqueued.digest)
-        return;
-
-    if (!snapshot_reloader)
-        throw Exception(
-            ErrorCodes::LOGICAL_ERROR,
-            "Cluster metadata DDL worker local digest {} does not match just-enqueued durable digest {} and snapshot reloader is not set",
-            local_digest,
-            enqueued.digest);
-
-    local_digest = snapshot_reloader();
+    const String local_digest = mutation_applier(std::vector<ClusterMetadataMutation>{mutation});
     if (local_digest != enqueued.digest)
         throw Exception(
             ErrorCodes::LOGICAL_ERROR,
-            "Cluster metadata DDL worker reloaded digest {} does not match just-enqueued durable digest {}",
+            "Cluster metadata DDL worker local digest {} does not match just-enqueued durable digest {}",
             local_digest,
             enqueued.digest);
 }
@@ -384,7 +388,7 @@ void ClusterMetadataDDLWorker::initializeCounter()
     auto zookeeper = getZooKeeper();
     /// `max_log_ptr` holds the highest allocated log entry number. 0 means "no entries yet", so the
     /// first enqueued entry is `query-0000000001`. Entry numbers are derived from `max_log_ptr` while
-    /// holding `counter_lock` (see `enqueueMutation`), so no separate sequential `counter` subtree is
+    /// holding `counter_lock` (see `enqueueMutationImpl`), so no separate sequential `counter` subtree is
     /// needed and there is no allocate-then-commit window that could leak a gap.
     zookeeper->createIfNotExists(max_log_ptr_path, "0");
 }
@@ -420,7 +424,7 @@ bool ClusterMetadataDDLWorker::reloadSnapshotAndAdvanceIfTooFarBehind(UInt32 log
 
     const String digest = snapshot_reloader();
     updateReplicaDigest(digest);
-    setLogPointer(max_log_ptr);
+    updateReplicaLogPointer(max_log_ptr);
     return true;
 }
 
@@ -702,7 +706,7 @@ UInt32 ClusterMetadataDDLWorker::readUInt32Node(const ZooKeeperPtr & zookeeper, 
     return parse<UInt32>(data);
 }
 
-void ClusterMetadataDDLWorker::setLogPointer(UInt32 log_pointer)
+void ClusterMetadataDDLWorker::updateReplicaLogPointer(UInt32 log_pointer)
 {
     auto zookeeper = getZooKeeper();
     zookeeper->createOrUpdate(replica_log_ptr_path, toString(log_pointer), zkutil::CreateMode::Persistent);
