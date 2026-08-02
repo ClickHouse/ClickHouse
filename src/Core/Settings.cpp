@@ -286,23 +286,31 @@ This can speed up the non-joined phase when using the `parallel_hash` join algor
 When disabled, non-joined rows are processed by a single thread.
 )", 0) \
     DECLARE(MaxThreads, max_insert_threads, 0, R"(
-The maximum number of threads to execute the `INSERT SELECT` query.
+The maximum number of threads to execute the `INSERT` query.
+
+This applies both to `INSERT SELECT` and to a plain `INSERT` whose data is sent from
+`clickhouse-client` or over the HTTP interface. The writing side of the pipeline
+(squashing the blocks and writing them to the destination table) is parallelized
+across up to this many threads.
 
 Possible values:
 
 - 0 — Auto. Uses the number of CPU cores available to the server (the same auto value as [`max_threads`](#max_threads)), reduced under memory pressure by [`max_insert_threads_min_free_memory_per_thread`](#max_insert_threads_min_free_memory_per_thread).
-- 1 — `INSERT SELECT` is executed in a single thread (no parallel execution). Use this to preserve the insertion order of `INSERT ... SELECT`.
+- 1 — the `INSERT` is executed in a single thread (no parallel execution). Use this to preserve the insertion order of `INSERT ... SELECT`.
 - Positive integer bigger than 1 — Parallel execution with the specified number of threads.
 
-Before version 26.8 the default was `1` (no parallel execution). Since 26.8 the default (`0`) resolves to the number of CPU cores, so `INSERT SELECT` is parallelized by default. Set `max_insert_threads` to `1` (or use the `compatibility` setting) to restore the previous behavior.
-
-Parallel `INSERT SELECT` has effect only if the `SELECT` part is executed in parallel, see [`max_threads`](#max_threads) setting.
-Higher values will lead to higher memory usage.
+Before version 26.8 the default was `1` (no parallel execution). Since 26.8 the default (`0`) resolves to the number of CPU cores, so `INSERT` is parallelized by default. Set `max_insert_threads` to `1` (or use the `compatibility` setting) to restore the previous behavior.
 
 Cloud default value:
 - `1` for nodes with 8 GiB memory
 - `2` for nodes with 16 GiB memory
 - `4` for larger nodes
+
+Parallel `INSERT SELECT` has effect only if the `SELECT` part is executed in parallel, see [`max_threads`](#max_threads) setting.
+For a plain `INSERT`, the input data is read and parsed as a single stream, and the pipeline is then resized to this many streams for writing.
+The write-side parallelization applies only to synchronous plain `INSERT`s: asynchronous inserts ([`async_insert`](#async_insert) `= 1`) are stored in a queue and flushed in the background, so they are unaffected by this setting and always stay single-stream.
+The writing side is parallelized only when it is safe to do so; otherwise it stays single-stream and this setting has no effect on it. In particular, the write is kept single-stream when [`use_strict_insert_block_limits`](#use_strict_insert_block_limits) is enabled, a destination table (or a table it forwards to) deduplicates inserted blocks, and insert deduplication is enabled for the query (see [`deduplicate_insert`](#deduplicate_insert)), when the destination has dependent materialized views — including views of a table the destination forwards to, e.g. behind an `Alias` — (unless [`parallel_view_processing`](#parallel_view_processing) is enabled and the dependent view chains are free of deduplication hazards — deduplication in the views is disabled ([`deduplicate_blocks_in_dependent_materialized_views`](#deduplicate_blocks_in_dependent_materialized_views)) or no dependent view path can deduplicate), and always for `Buffer` and `Distributed` destinations. A `Buffer` flushes in its own context and a `Distributed` forwards the write to a remote shard (which may itself buffer the data), so this query's deduplication settings do not govern the final write and it is kept single-stream regardless of them. A non-parallel quorum insert ([`insert_quorum`](#insert_quorum) is `2` or greater, or `'auto'`, and [`insert_quorum_parallel`](#insert_quorum_parallel) is disabled) also stays single-stream, because it permits only one in-flight quorum part per table.
+Higher values will lead to higher memory usage.
 )", 0) \
     DECLARE(UInt64, max_insert_delayed_streams_for_parallel_write, 0, R"(
 The maximum number of streams (columns) to delay final part flush. Default - auto (100 in case of underlying storage supports parallel write, for example S3 and disabled otherwise)
@@ -2595,7 +2603,7 @@ is added so the join order optimizer can consider direct (A JOIN C) plans.
 )", BETA) \
     \
     DECLARE(Bool, query_plan_join_shard_by_pk_ranges, false, R"(
-Apply sharding for JOIN if join keys contain a prefix of PRIMARY KEY for both tables. Supported for hash, parallel_hash and full_sorting_merge algorithms. Usually does not speed up queries but may lower memory consumption.
+Apply sharding for JOIN if join keys contain a prefix of PRIMARY KEY for both tables. Supported for hash, parallel_hash, full_sorting_merge and parallel_full_sorting_merge algorithms. Usually does not speed up queries but may lower memory consumption.
 )", 0) \
     \
     DECLARE(Bool, query_plan_display_internal_aliases, false, R"(
@@ -3588,6 +3596,13 @@ Specifies which [JOIN](/reference/statements/select/join) algorithm is used.
 
 Several algorithms can be specified, and an available one would be chosen for a particular query based on kind/strictness and table engine.
 
+Most algorithms affect a query only when they are the one selected for it. Some, however, change planning merely by being listed — even as a lower-priority fallback that is not ultimately selected — because the decision is made before the algorithm is picked. There are two such effects:
+
+- Join-key type inference becomes stricter (a merge join cannot join keys of different types, for example `String` and `Nullable(String)`). This can change the result types of `USING` columns, and can make a join into a `Join`-engine table fail with `TYPE_MISMATCH`. Triggered by `full_sorting_merge` and `parallel_full_sorting_merge`.
+- `ORDER BY ... LIMIT` on the preserved side of a join gets an explicit sort instead of a read in primary-key order, because the join is assumed to break the ordered read (a merge join inserts its own pre-join sort; a partial merge join re-sorts the left blocks; a join that can produce delayed blocks does not propagate the ordered read either). The result is the same, the plan is less efficient. Triggered by `full_sorting_merge`, `parallel_full_sorting_merge`, `partial_merge`, `prefer_partial_merge`, `grace_hash` and `auto`, and also by a non-zero `max_bytes_before_external_join` / `max_bytes_ratio_before_external_join`.
+
+Both apply even when the query eventually runs with `hash` or another algorithm. If this is undesirable, do not list the algorithms above in `join_algorithm` for the affected queries.
+
 Possible values:
 
 - grace_hash
@@ -3634,6 +3649,18 @@ Possible values:
 - full_sorting_merge
 
  [Sort-merge algorithm](https://en.wikipedia.org/wiki/Sort-merge_join) with full sorting of joined tables before joining.
+
+- parallel_full_sorting_merge
+
+ Same as `full_sorting_merge`, but hash-compatible equality joins are sharded by the hash of the join keys into independent per-shard merge joins that run in parallel (up to `max_threads`), instead of a single merge join. This keeps the low, streaming memory usage of a merge join while using all threads, and the result is not ordered.
+
+ Hash-sharding by the join keys is applied only to plain equality joins on key types whose hash agrees with the merge-join comparison, and only when neither side is already sorted. It is skipped in these cases:
+
+ - `ASOF` joins, and floating-point / `JSON` / `Object` / `Dynamic` key types: their hashes are not consistent with the merge-join comparison, so equal keys could land in different shards.
+ - Sides that are already sorted (a MergeTree read in order, or any pre-sorted input): an order-preserving scatter into the per-shard merges can deadlock the pipeline. The in-order read and its `read_in_order_use_virtual_row` optimization are kept instead.
+ - While the initiator builds a distributed plan (`make_distributed_plan`), because the scattered sort is not serializable for remote execution. The local single-fragment plan and the per-worker fragments re-optimize with that setting disabled, so they can still be sharded.
+
+ Skipping it disables only this rewrite, not parallelism in general: the join runs as a single `full_sorting_merge`, and MergeTree sides read in order can still be sharded at the source by primary-key ranges (which order by the same comparison the join uses, so equal keys stay together) when `query_plan_join_shard_by_pk_ranges` is enabled.
 
 - prefer_partial_merge
 
@@ -4048,7 +4075,7 @@ Execute a pipeline for reading dictionary source in several threads. It's suppor
 Controls loading of a dictionary when specified in the `SETTINGS` clause of `CREATE DICTIONARY`: `1` defers loading until first use, `0` loads the dictionary at creation, `'auto'` follows the server setting `dictionaries_lazy_load`. Has no effect when set on a session or query level.
 )", 0) \
     DECLARE(LogsLevel, send_logs_level, LogsLevel::fatal, R"(
-Send server text logs with specified minimum level to client. Valid values: 'trace', 'debug', 'information', 'warning', 'error', 'fatal', 'none'
+Send server text logs with specified minimum level to client. Valid values: 'test', 'trace', 'debug', 'information', 'warning', 'error', 'fatal', 'none'
 )", 0) \
     DECLARE(String, send_logs_source_regexp, "", R"(
 Send server text logs with specified regexp to match log source name. Empty means all sources.
@@ -4470,7 +4497,9 @@ Disabled by default.
     DECLARE(Bool, s3_allow_server_credentials_in_user_queries, false, R"(
 Allow S3 access that originates from user SQL to use server-managed credentials.
 
-When disabled (the default), the `s3`/`s3Cluster` table functions, the `S3`/`S3Queue` engines, S3 named collections, dynamic `disk(type=s3, ...)` definitions, `BACKUP`/`RESTORE TO S3`, DataLake table-data reads, and `DataLakeCatalog` databases (Glue, BigLake) may not resolve credentials from the environment, instance metadata (IMDS), IRSA, ECS, instance profile, SSO, AWS config/credentials files, `role_arn`-based STS assume-role, or the GCP OAuth metadata service. A request that asks for one of those server-managed sources (for example `use_environment_credentials = 1`, a `role_arn`, or `http_client = gcp_oauth`) without supplying usable explicit credentials is rejected with `ACCESS_DENIED`. A request that asks for none of them is sent unsigned (anonymous), the same as if `NOSIGN` had been given.
+When disabled (the default), the `s3`/`s3Cluster` table functions, the `S3`/`S3Queue` engines, S3 named collections, dynamic `disk(type=s3, ...)` definitions, `BACKUP`/`RESTORE TO S3`, DataLake table-data reads, and `DataLakeCatalog` databases (Glue, BigLake) may not resolve credentials from the environment, instance metadata (IMDS), IRSA, ECS, instance profile, SSO, AWS config/credentials files, or the GCP OAuth metadata service. A request that asks for one of those server-managed sources (for example `use_environment_credentials = 1` or `http_client = gcp_oauth`) without supplying usable explicit credentials is rejected with `ACCESS_DENIED`. A request that asks for none of them is sent unsigned (anonymous), the same as if `NOSIGN` had been given.
+
+`role_arn`-based STS assume-role (`extra_credentials(role_arn = '...')`) stays allowed even when this setting is disabled: the target role must explicitly trust the identity the server runs under, and only the assumed role's credentials ever sign the query's S3 requests, so the server's own credentials are not exposed to the query. This is the documented way to grant ClickHouse Cloud access to a private bucket. The role is assumed with the query's own base keys when the query supplies a complete pair; otherwise the STS AssumeRole call is signed by the server's ambient identity. Static keys from the server `<s3>`/endpoint config or from a named collection are never used as the STS base for a query-supplied role, and a `role_arn` configured in the server `<s3>` config is not applied to user queries at all. Dynamic `disk(type=s3, role_arn=...)` definitions remain covered by the restriction.
 
 Whether a credential-less request asks for environment credentials is decided by `use_environment_credentials`. Named collections default it to `0`, so a collection that only specifies a URL reads anonymously. The `s3`/`s3Cluster` table functions and `S3`/`S3Queue` engines use the built-in default (`1`) unless the server `<s3>` config sets it otherwise; set `<s3><use_environment_credentials>0</use_environment_credentials></s3>` to make their credential-less reads anonymous by default too (otherwise such a request is refused and must use `NOSIGN`). Disks defined in the server configuration are unaffected and keep using environment credentials by default; user-created dynamic `disk(type = s3, ...)` definitions are covered by the restriction (see above) and are rejected when they rely on default/environment credentials.
 
@@ -5935,6 +5964,16 @@ Possible values:
 - 0 - Disabled
 - 1 - Enabled
 )", 0) \
+    DECLARE(Bool, use_query_condition_cache_for_top_k, false, R"(
+Enable the [query condition cache](/operations/query-condition-cache) for queries that use the `ORDER BY <column> LIMIT n` (TopK) optimization (dynamic filtering or skip-index based). When disabled, such reads neither consult nor populate the cache.
+
+Such queries can drop granules during execution depending on the running threshold, so their cache entries are partitioned by the TopK plan parameters and by the set of parts read. This setting is disabled by default while the soundness of these cache entries is being established; it has no effect unless `use_query_condition_cache` is also enabled.
+
+Possible values:
+
+- 0 - Disabled
+- 1 - Enabled
+)", 0) \
     DECLARE(Bool, enable_shared_storage_snapshot_in_query, true, R"(
 If enabled, all subqueries within a single query will share the same StorageSnapshot for each table.
 This ensures a consistent view of the data across the entire query, even if the same table is accessed multiple times.
@@ -6089,8 +6128,19 @@ Force the use of optimization when it is applicable, but heuristics decided not 
     DECLARE(Bool, allow_limit_by_partitions_independently, true, R"(
 Enable independent `LIMIT BY` evaluation per partition on separate threads when the partition expression is a deterministic function of the `LIMIT BY` columns.
 )", 0) \
+    DECLARE(Bool, allow_distinct_partitions_independently, true, R"(
+Enable independent `DISTINCT` evaluation per partition on separate threads when the partition expression is a deterministic function of the `DISTINCT` columns, skipping the cross-stream merge. Beneficial when the number of partitions is close to the number of cores and partitions have roughly the same size; otherwise a cost heuristic skips it, see [max_number_of_partitions_for_independent_distinct](#max_number_of_partitions_for_independent_distinct) and [force_distinct_partitions_independently](#force_distinct_partitions_independently). Not applied with `FINAL` or parallel replicas.
+
+Not applied when [max_rows_in_distinct](#max_rows_in_distinct) or [max_bytes_in_distinct](#max_bytes_in_distinct) is set: those limits are enforced by the single `DISTINCT` transform that sees the whole merged result, so the cross-stream merge is kept to preserve their global meaning.
+)", 0) \
+    DECLARE(Bool, force_distinct_partitions_independently, false, R"(
+Force independent `DISTINCT` evaluation per partition when it is applicable, but the cost heuristic decided not to use it. Only bypasses the cost heuristic of [allow_distinct_partitions_independently](#allow_distinct_partitions_independently); the remaining conditions still apply.
+)", 0) \
     DECLARE(UInt64, max_number_of_partitions_for_independent_aggregation, 128, R"(
-Maximal number of partitions in table to apply optimization
+Maximal number of partitions in table to apply independent aggregation per partition. Part of the cost heuristic of [allow_aggregate_partitions_independently](#allow_aggregate_partitions_independently).
+)", 0) \
+    DECLARE(UInt64, max_number_of_partitions_for_independent_distinct, 128, R"(
+Maximal number of partitions in table to apply independent `DISTINCT` per partition. Part of the cost heuristic of [allow_distinct_partitions_independently](#allow_distinct_partitions_independently).
 )", 0) \
     DECLARE(Float, min_hit_rate_to_use_consecutive_keys_optimization, 0.5, R"(
 Minimal hit rate of a cache which is used for consecutive keys optimization in aggregation to keep it enabled
@@ -6148,11 +6198,21 @@ When set, relative URLs are resolved as follows:
 - Query-only reference (e.g. `?x=1`): appended to the base URL path (replacing any existing query/fragment).
 - Fragment-only reference (e.g. `#frag`): appended to the base URL, preserving any query string (replacing any existing fragment).
 - Empty reference: returns the base URL without fragment.
+- If the base URL is only a scheme (e.g. `file://`), a path-relative URL is appended to it directly: `file://` + `data.csv` = `file://data.csv`, which for the `file://` scheme means a path relative to the user_files directory (the current directory for clickhouse-local). Dot segments are kept as-is in this case, so the target engine resolves them against its own base directory.
 
 For example, if `url_base` is `https://example.com/def/`, then:
 - `data.csv` resolves to `https://example.com/def/data.csv`
 - `/test/data.csv` resolves to `https://example.com/test/data.csv`
 - `//other.com/test/data.csv` resolves to `https://other.com/test/data.csv`
+)", 0) \
+    DECLARE(String, s3_base, "", R"(
+The base URL used to resolve relative URLs in the [s3](../../sql-reference/table-functions/s3.md) table function and the [S3](../../engines/table-engines/integrations/s3.md) table engine, as well as in the table functions that share their configuration (`s3Cluster`, `gcs`, `oss`).
+
+When set, a URL without a scheme is resolved against `s3_base` per RFC 3986, using the same rules as [url_base](#url_base). URLs that already contain a scheme are used as-is.
+
+For example, if `s3_base` is `s3://clickhouse-public-datasets/`, then `s3('hits_compatible/hits.csv')` reads `s3://clickhouse-public-datasets/hits_compatible/hits.csv`.
+
+The base URL can use any form accepted by the `s3` table function, e.g. `s3://bucket/`, `https://bucket.s3.amazonaws.com/` or `https://endpoint/bucket/`.
 )", 0) \
     DECLARE(UInt64, database_replicated_initial_query_timeout_sec, 300, R"(
 Sets how long initial DDL query should wait for Replicated database to process previous DDL queue entries in seconds.
@@ -9165,6 +9225,16 @@ SettingsChanges Settings::changes() const
 void Settings::applyChanges(const SettingsChanges & changes)
 {
     impl->applyChanges(changes);
+}
+
+void Settings::checkShorthandChange(const SettingChange & change) const
+{
+    impl->checkShorthandChange(change);
+}
+
+void Settings::checkShorthandChanges(const SettingsChanges & changes) const
+{
+    impl->checkShorthandChanges(changes);
 }
 
 VectorWithMemoryTracking<std::string_view> Settings::getAllRegisteredNames() const
