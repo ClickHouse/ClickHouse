@@ -605,6 +605,12 @@ SinkToStoragePtr StoragePostgreSQL::write(
 
 void StoragePostgreSQL::validateSSLCertificatePaths(Configuration & configuration, const ContextPtr & context, bool enforce_user_files_boundary)
 {
+    validateSSLCertificatePaths(configuration, context, [enforce_user_files_boundary](std::string_view) { return enforce_user_files_boundary; });
+}
+
+void StoragePostgreSQL::validateSSLCertificatePaths(
+    Configuration & configuration, const ContextPtr & context, const std::function<bool(std::string_view)> & enforce_user_files_boundary_for)
+{
     /// clickhouse-local runs with the privileges of the user who started it, there is no file boundary to enforce.
     if (context->getApplicationType() == Context::ApplicationType::LOCAL)
         return;
@@ -625,7 +631,7 @@ void StoragePostgreSQL::validateSSLCertificatePaths(Configuration & configuratio
         if (fs::path(path).is_relative())
             path = (fs::path(user_files_path) / path).lexically_normal().string();
 
-        if (!enforce_user_files_boundary)
+        if (!enforce_user_files_boundary_for(option_name))
             return;
 
         if (!fileOrSymlinkPathStartsWith(path, user_files_path))
@@ -696,7 +702,21 @@ StoragePostgreSQL::Configuration StoragePostgreSQL::processNamedCollectionResult
     configuration.ssl_cert = named_collection.getOrDefault<String>("sslcert", "");
     configuration.ssl_key = named_collection.getOrDefault<String>("sslkey", "");
 
-    validateSSLCertificatePaths(configuration, context_, enforce_ssl_certificate_path_boundary);
+    /// A metadata replay is exempted from the `user_files` boundary check only for values that are
+    /// part of the persisted definition, which cannot change behind the back of the object. A value
+    /// stored in the named collection itself is not such a value: it is read from the collection anew
+    /// on every replay, and `ALTER NAMED COLLECTION` updates a collection even while PostgreSQL
+    /// objects depend on it. Without this, an object created against a valid collection could be
+    /// rebound to a certificate or key outside `user_files` and pick it up on the next restart or
+    /// short `ATTACH`. Only a value written into the query itself (an override of the collection)
+    /// keeps the exemption.
+    auto enforce_boundary_for = [&](std::string_view option_name)
+    {
+        if (enforce_ssl_certificate_path_boundary)
+            return true;
+        return !named_collection.isQueryOverridden(String(option_name));
+    };
+    validateSSLCertificatePaths(configuration, context_, enforce_boundary_for);
 
     if (storage_settings)
         storage_settings->loadFromNamedCollection(named_collection);

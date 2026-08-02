@@ -7,6 +7,9 @@
 #include <Storages/StorageWithCommonVirtualColumns.h>
 #include <Storages/TableNameOrQuery.h>
 
+#include <functional>
+#include <string_view>
+
 namespace Poco
 {
 class Logger;
@@ -85,6 +88,8 @@ public:
     /// `materialized_postgresql_ssl_*` settings in first) or replays previously persisted metadata,
     /// where a stored definition must keep loading even if `user_files_path` changed since it was
     /// created (see `validateSSLCertificatePaths`); only the caller can tell a replay from fresh DDL.
+    /// The replay exemption never covers values taken from a named collection: those are re-read on
+    /// every replay and `ALTER NAMED COLLECTION` can change them after the object was created.
     static Configuration getConfiguration(ASTs engine_args, ContextPtr context, PostgreSQLSettings * storage_settings, const StorageID * table_id = nullptr, bool enforce_ssl_certificate_path_boundary = true);
 
     static Configuration processNamedCollectionResult(const NamedCollection & named_collection, PostgreSQLSettings * storage_settings, ContextPtr context_, bool require_table = true, bool enforce_ssl_certificate_path_boundary = true);
@@ -100,6 +105,13 @@ public:
     /// configuration files, which are trusted, and in clickhouse-local, which runs with the
     /// privileges of the user who started it.
     static void validateSSLCertificatePaths(Configuration & configuration, const ContextPtr & context, bool enforce_user_files_boundary = true);
+
+    /// Same, but the boundary is decided per option (`sslrootcert`, `sslcert`, `sslkey`). A metadata
+    /// replay can only be exempted from the boundary check for values that are part of the persisted
+    /// definition; a value read from a named collection is re-read on every replay and
+    /// `ALTER NAMED COLLECTION` can change it in the meantime, so it must be checked again.
+    static void validateSSLCertificatePaths(
+        Configuration & configuration, const ContextPtr & context, const std::function<bool(std::string_view)> & enforce_user_files_boundary_for);
 
     static ColumnsDescription getTableStructureFromData(
         const postgres::PoolWithFailoverPtr & pool_,

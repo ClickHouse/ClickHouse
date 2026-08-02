@@ -813,3 +813,76 @@ def test_relative_certificate_path_survives_restart(started_cluster):
 
     node.query("DROP TABLE pg_relative_path SYNC")
     node.query("DROP DATABASE pg_relative_path_db")
+
+
+def test_named_collection_certificate_path_is_revalidated_on_attach(started_cluster):
+    # The `user_files` boundary check is skipped when persisted metadata is replayed,
+    # because the stored definition is fixed and must keep loading. A value taken from
+    # a named collection is not fixed: it is read from the collection anew on every
+    # replay, and `ALTER NAMED COLLECTION` changes a collection even while PostgreSQL
+    # objects depend on it. Such a value must therefore be checked again on the replay,
+    # otherwise a table created against a valid collection could be rebound to a
+    # certificate outside `user_files` and pick it up on the next `ATTACH` or restart.
+    node.query("DROP TABLE IF EXISTS pg_nc_mutable SYNC")
+    node.query("DROP NAMED COLLECTION IF EXISTS pg_ssl_mutable")
+    node.query(
+        f"""
+        CREATE NAMED COLLECTION pg_ssl_mutable AS
+            user = 'postgres', password = '{pg_pass}', host = '{PG_HOST}', port = 5432,
+            database = 'postgres', table = 'test_table',
+            sslmode = 'verify-full', sslrootcert = '{CA_CERT_PATH}'
+        """
+    )
+    node.query("CREATE TABLE pg_nc_mutable ENGINE = PostgreSQL(pg_ssl_mutable)")
+    assert node.query("SELECT count() FROM pg_nc_mutable").strip() == "10"
+
+    node.query("ALTER NAMED COLLECTION pg_ssl_mutable SET sslrootcert = '/etc/clickhouse-server/config.xml'")
+
+    node.query("DETACH TABLE pg_nc_mutable")
+    error = node.query_and_get_error("ATTACH TABLE pg_nc_mutable")
+    assert "PATH_ACCESS_DENIED" in error
+
+    # The table is loadable again as soon as the collection points back inside `user_files`.
+    node.query(f"ALTER NAMED COLLECTION pg_ssl_mutable SET sslrootcert = '{CA_CERT_PATH}'")
+    node.query("ATTACH TABLE pg_nc_mutable")
+    assert node.query("SELECT count() FROM pg_nc_mutable").strip() == "10"
+
+    node.query("DROP TABLE pg_nc_mutable SYNC")
+    node.query("DROP NAMED COLLECTION pg_ssl_mutable")
+
+
+def test_materialized_postgresql_table_engine_ssl_settings_cannot_be_altered(started_cluster):
+    # The certificate paths of an existing object must not be replaceable after the
+    # validation done at CREATE time. For the `MaterializedPostgreSQL` database engine
+    # `DatabaseMaterializedPostgreSQL::applySettingsChanges` rejects the whole
+    # `materialized_postgresql_ssl_*` family; the standalone table engine implements no
+    # settings alter at all, so `IStorage::checkAlterIsPossible` rejects it before
+    # anything is persisted. Pin both, so that a future settings alter for this engine
+    # cannot silently become a way to bypass the check.
+    seed_table("tbl_engine_alter", 5)
+    node.query("DROP TABLE IF EXISTS mpg_tbl_alter SYNC")
+    node.query(
+        f"""
+        CREATE TABLE mpg_tbl_alter (key Int32, value Int32)
+        ENGINE = MaterializedPostgreSQL('{PG_HOST}:5432', 'postgres', 'tbl_engine_alter', 'postgres', '{pg_pass}')
+        ORDER BY key
+        SETTINGS
+            materialized_postgresql_ssl_mode = 'verify-full',
+            materialized_postgresql_ssl_root_cert = '{CA_CERT_PATH}'
+        """,
+        settings={"allow_experimental_materialized_postgresql_table": 1},
+    )
+    wait_for(
+        lambda: node.query("SELECT count() FROM mpg_tbl_alter").strip() == "5",
+        120,
+        "MaterializedPostgreSQL table engine initial sync over SSL",
+    )
+
+    for option in ("materialized_postgresql_ssl_root_cert", "materialized_postgresql_ssl_cert", "materialized_postgresql_ssl_key"):
+        error = node.query_and_get_error(f"ALTER TABLE mpg_tbl_alter MODIFY SETTING {option} = '/etc/clickhouse-server/config.xml'")
+        # `IStorage::checkAlterIsPossible` reports `NOT_IMPLEMENTED`; accept a rejection of the
+        # setting itself as well, in case the engine ever gains a settings alter of its own.
+        assert "NOT_IMPLEMENTED" in error or "QUERY_NOT_ALLOWED" in error or "UNKNOWN_SETTING" in error
+        assert node.query("SELECT count() FROM system.tables WHERE database = currentDatabase() AND name = 'mpg_tbl_alter' AND create_table_query ILIKE '%config.xml%'").strip() == "0"
+
+    node.query("DROP TABLE mpg_tbl_alter SYNC")
