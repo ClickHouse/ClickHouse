@@ -53,10 +53,10 @@ SELECT
     -- it per key and per part task states exactly that. Before sharing the speculative build, the
     -- part task that ran the speculative pass materialized the mutation's read key a second time for
     -- the deferred build, which this catches while staying independent of how many part tasks
-    -- overlap in time. How many distinct keys the mutation materializes is not asserted: the old and
-    -- the new analyzer disagree on whether the `isStorageTouchedByMutations` count probe and the
-    -- mutation's own read get the same cache key. The `>= 1` keeps the assertion from passing
-    -- vacuously when nothing was materialized at all.
+    -- overlap in time. How many distinct keys the mutation materializes is not asserted:
+    -- `enable_analyzer = 0` and `enable_analyzer = 1` disagree on whether the
+    -- `isStorageTouchedByMutations` count probe and the mutation's own read get the same cache key.
+    -- The `>= 1` keeps the assertion from passing vacuously when nothing was materialized at all.
     (
         SELECT (count() >= 1) AND (max(materializations_by_one_part_task) = 1)
         FROM
