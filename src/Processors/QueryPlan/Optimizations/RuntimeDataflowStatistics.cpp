@@ -169,6 +169,16 @@ void RuntimeDataflowStatisticsCacheUpdater::recordColumns(Statistics & statistic
         for (const auto & col : cols)
         {
             auto [sample, compressed] = estimateCompressedColumnSize(col);
+            /// The compressed format writes a checksum and a block header in front of every compressed block, so
+            /// a sample of a few states comes out of `CompressedWriteBuffer` larger than it went in. When the
+            /// states are actually sent, that framing is amortized over `min_compress_block_size` of data, so a
+            /// sample dominated by it says nothing about how well the states compress. Report such a sample as
+            /// incompressible rather than as expanding - the other producer of the `AggregationState` statistic,
+            /// `Aggregator::estimateSizeOfCompressedState`, applies the same clamp. Without it a small
+            /// `max_block_size` or `aggregation_in_order_max_block_bytes` gives a compression ratio below one,
+            /// which inflates the estimate above the uncompressed size.
+            if (typeid_cast<const ColumnAggregateFunction *>(col.column.get()))
+                compressed = std::min(sample, compressed);
             sample_bytes += sample;
             compressed_bytes += compressed;
         }
