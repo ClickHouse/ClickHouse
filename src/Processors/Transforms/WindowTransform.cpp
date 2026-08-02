@@ -22,7 +22,6 @@
 #include <Common/FieldVisitorConvertToNumber.h>
 #include <Common/VectorWithMemoryTracking.h>
 #include <Core/Settings.h>
-#include <Core/SortCursor.h>
 
 #include <Poco/Logger.h>
 #include <Common/logger_useful.h>
