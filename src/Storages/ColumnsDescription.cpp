@@ -54,6 +54,7 @@
 #include <Common/Exception.h>
 #include <Common/re2.h>
 #include <Common/randomSeed.h>
+#include <Common/StringUtils.h>
 #include <Common/typeid_cast.h>
 #include <Analyzer/AggregationUtils.h>
 #include <Analyzer/ColumnNode.h>
@@ -1395,10 +1396,39 @@ void collectColumnDependenciesFromAST(
 namespace
 {
 
+/** A typed default is rewritten into a synthetic alias `<column>_tmp_alter<random>` (see
+  * `getDefaultExpressionInfoInto`), which is an implementation detail and carries a random suffix.
+  * Report the column it stands for instead, so that the message is readable and deterministic.
+  */
+String stripSyntheticDefaultAlias(const String & name)
+{
+    static constexpr std::string_view marker = "_tmp_alter";
+
+    const auto pos = name.rfind(marker);
+    if (pos == String::npos)
+        return name;
+
+    const std::string_view suffix = std::string_view(name).substr(pos + marker.size());
+    if (suffix.empty() || !std::ranges::all_of(suffix, isNumericASCII))
+        return name;
+
+    return name.substr(0, pos);
+}
+
 [[noreturn]] void throwDefaultCycleException(const Strings & cycle_path)
 {
-    Strings formatted_cycle = cycle_path;
-    formatted_cycle.emplace_back(cycle_path.front());
+    Strings formatted_cycle;
+    formatted_cycle.reserve(cycle_path.size() + 1);
+    for (const auto & vertex : cycle_path)
+    {
+        /// A synthetic alias collapses onto the column it belongs to, which then repeats in the path.
+        String stripped = stripSyntheticDefaultAlias(vertex);
+        if (formatted_cycle.empty() || formatted_cycle.back() != stripped)
+            formatted_cycle.emplace_back(std::move(stripped));
+    }
+
+    /// Close the cycle, so that a column referencing itself reads as `c -> c`.
+    formatted_cycle.emplace_back(formatted_cycle.front());
 
     std::string message;
     message.reserve(32 * formatted_cycle.size());
