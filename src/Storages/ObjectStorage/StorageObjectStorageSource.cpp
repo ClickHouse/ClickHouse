@@ -462,9 +462,21 @@ std::shared_ptr<IObjectIterator> StorageObjectStorageSource::createFileIterator(
             for (const auto & key : keys)
                 paths.push_back(fs::path(configuration->getNamespace()) / key);
 
-            VirtualColumnUtils::buildSetsForDAG(*filter_dag, local_context);
-            auto actions = std::make_shared<ExpressionActions>(std::move(*filter_dag));
-            VirtualColumnUtils::filterByPathOrFile(keys, paths, actions, virtual_columns, hive_columns, local_context);
+            /// Unlike `GlobIterator`, which applies its filter while listing objects (that is, when the
+            /// pipeline runs), the keys are pruned here, while the pipeline is being built. A set can
+            /// still be unbuilt at this point: `ReadFromObjectStorageStep::applyFilters` leaves the sets
+            /// of `globalIn` / `globalNotIn` alone so that `ReadFromRemote` can attach an external table
+            /// to them first, and plan optimization has since moved the subquery plan of such a set into
+            /// `CreatingSetsStep`, so `buildSetsForDAG` cannot build it here either - it only becomes
+            /// ready when the pipeline runs. Pruning is an optimization (the same predicate is applied by
+            /// the `Filter` step above this source), so skip it rather than execute a not-ready set,
+            /// which throws "Not-ready Set is passed as the second argument".
+            if (VirtualColumnUtils::buildSetsForDAG(*filter_dag, local_context))
+            {
+                auto actions = std::make_shared<ExpressionActions>(std::move(*filter_dag));
+                VirtualColumnUtils::filterByPathOrFile(keys, paths, actions, virtual_columns, hive_columns, local_context);
+            }
+
             paths = keys;
         }
         else

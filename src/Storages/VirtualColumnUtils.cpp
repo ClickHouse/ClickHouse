@@ -67,8 +67,10 @@ namespace ErrorCodes
 namespace VirtualColumnUtils
 {
 
-static void buildSetsForDagImpl(const ActionsDAG & dag, const ContextPtr & context, bool ordered)
+static bool buildSetsForDagImpl(const ActionsDAG & dag, const ContextPtr & context, bool ordered)
 {
+    bool all_sets_are_ready = true;
+
     for (const auto & node : dag.getNodes())
     {
         if (node.type == ActionsDAG::ActionType::COLUMN)
@@ -86,15 +88,23 @@ static void buildSetsForDagImpl(const ActionsDAG & dag, const ContextPtr & conte
                         else
                             set_from_subquery->buildSetInplace(context);
                     }
+
+                    /// The set can stay unbuilt: an in-place build is a no-op once the subquery plan has been
+                    /// moved out of the set (`DelayedCreatingSetsStep::makePlansForSets` does that during plan
+                    /// optimization), and then the set is only created when the pipeline runs.
+                    if (!future_set->get())
+                        all_sets_are_ready = false;
                 }
             }
         }
     }
+
+    return all_sets_are_ready;
 }
 
-void buildSetsForDAG(const ActionsDAG & dag, const ContextPtr & context)
+bool buildSetsForDAG(const ActionsDAG & dag, const ContextPtr & context)
 {
-    buildSetsForDagImpl(dag, context, /* ordered = */ false);
+    return buildSetsForDagImpl(dag, context, /* ordered = */ false);
 }
 
 void buildSetsForDAGExcludingGlobalIn(const ActionsDAG & dag, const ContextPtr & context)
