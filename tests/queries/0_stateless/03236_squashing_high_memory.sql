@@ -1,5 +1,7 @@
--- Tags: no-fasttest, no-asan, no-tsan, no-msan, no-ubsan, no-random-settings, no-random-merge-tree-settings, no-replicated-database
+-- Tags: no-fasttest, no-asan, no-tsan, no-msan, no-ubsan, no-random-settings, no-random-merge-tree-settings, no-replicated-database, no-flaky-check
 -- reason: test requires too many rows to read
+-- no-flaky-check: a single run takes about 12 seconds, but the repeated concurrent runs of the
+-- flaky check contend for the same machine and push it over the 180 seconds per-test limit
 -- reason for no-replicated-database: every replica re-executes the populating SELECT, and the
 -- resulting minutes-long DDL entry blocks the single-threaded global DDLWorker loop, so concurrent
 -- tests exceed distributed_ddl_task_timeout while creating or dropping their databases
