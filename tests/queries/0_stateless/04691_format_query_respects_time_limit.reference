@@ -1,4 +1,5 @@
 all bounded	1
+two-argument bounded	1
 SELECT\n    a,\n    b\nFROM t
 SELECT a, b FROM t
 1

@@ -61,6 +61,21 @@ WITH parseQueryToJSON('SELECT 1 WHERE x=0' || repeat(' OR (y = 1)', 40)) AS json
 SELECT sum(length(formatQueryFromJSON(materialize(json)))) /* 04691_timed */
 FROM numbers(100000) FORMAT Null SETTINGS max_block_size = 200000, max_threads = 1; -- { serverError TIMEOUT_EXCEEDED }
 
+--    The two-argument form also parses the second argument per row, so its bytes have to count
+--    toward the stride as well. A small JSON with a large original is the shape that overshoots when
+--    only the JSON is counted: the JSON floor (339 bytes for the smallest valid AST) admits 193 rows
+--    per stride, each lexing the whole original. `max_query_size` is raised because at its default
+--    the original is capped at 262144 bytes, which bounds the overshoot to ~1.7 s -- under case 7's
+--    threshold, so the default-settings form cannot discriminate. This case therefore carries its own
+--    latency assertion below rather than case 7's marker, since it needs those raised settings. Its
+--    marker spells no other case's marker: a comment is part of the logged query text, so mentioning
+--    one here would make this query match that case's own count and inflate it.
+WITH parseQueryToJSON('SELECT 1') AS json
+SELECT sum(length(formatQueryFromJSON(materialize(json), materialize('SELECT 1 WHERE x=0' || repeat(' OR (y = 1)', 110000))))) /* 04691_twoarg */
+FROM numbers(200) FORMAT Null
+SETTINGS max_block_size = 200000, max_threads = 1, max_query_size = 2000000,
+         max_ast_elements = 100000000, max_parser_depth = 1000000; -- { serverError TIMEOUT_EXCEEDED }
+
 -- 6. `timeout_overflow_mode = 'break'` needs its own case. There `checkTimeLimit` returns false
 --    instead of throwing, and this fix turns that false into a hard stop, so the observable behaviour
 --    changes from "ran the block out, returned a result" to "stopped mid-block". The `throw`-mode
@@ -95,6 +110,17 @@ WHERE current_database = currentDatabase()
   AND type != 'QueryStart'
   AND event_time > now() - INTERVAL 10 MINUTE
   AND (query LIKE '%04691\_timed%' OR query LIKE '%04691\_break%')
+SETTINGS max_execution_time = 0, enable_parallel_replicas = 0;
+
+--    The two-argument case gets its own bound because it needs a raised `max_query_size`, which the
+--    cases above deliberately leave at the default. Measured: 4.7-5.3 s before counting the second
+--    argument's bytes, 1.08-1.13 s after, against a 1 s limit. 3000 ms sits clear of both.
+SELECT 'two-argument bounded', count() = 1 AND countIf(query_duration_ms > 3000) = 0
+FROM system.query_log
+WHERE current_database = currentDatabase()
+  AND type != 'QueryStart'
+  AND event_time > now() - INTERVAL 10 MINUTE
+  AND query LIKE '%04691\_twoarg%'
 SETTINGS max_execution_time = 0, enable_parallel_replicas = 0;
 
 -- 8. Results are unchanged when no limit is hit, including the OrNull NULL-on-parse-error contract.
