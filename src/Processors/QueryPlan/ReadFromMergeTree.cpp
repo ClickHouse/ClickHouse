@@ -282,6 +282,7 @@ namespace Setting
     extern const SettingsBool use_skip_indexes_for_top_k;
     extern const SettingsBool use_top_k_dynamic_filtering;
     extern const SettingsBool use_query_condition_cache;
+    extern const SettingsBool use_query_condition_cache_for_top_k;
     extern const SettingsUInt64 predicate_statistics_sample_rate;
     extern const SettingsNonZeroUInt64 max_parallel_replicas;
     extern const SettingsBool enable_shared_storage_snapshot_in_query;
@@ -518,7 +519,7 @@ std::unique_ptr<ReadFromMergeTree> ReadFromMergeTree::createLocalParallelReplica
     size_t replica_number)
 {
     const bool enable_parallel_reading = true;
-    return std::make_unique<ReadFromMergeTree>(
+    auto parallel_replicas_step = std::make_unique<ReadFromMergeTree>(
         /// Optimized version of getParts() to avoid extra copy
         analyzed_result_ptr ? std::make_shared<RangesInDataParts>(analyzed_result_ptr->parts_with_ranges) : prepared_parts,
         mutations_snapshot,
@@ -537,6 +538,19 @@ std::unique_ptr<ReadFromMergeTree> ReadFromMergeTree::createLocalParallelReplica
         all_ranges_callback_,
         read_task_callback_,
         replica_number);
+    /// This replaces the read step in place, so it must carry over the same state as `clone`: a step
+    /// that was already stamped by `tryOptimizeTopK` would otherwise look like a plain read here and
+    /// consult or populate the query condition cache under the unsalted condition hash. As in `clone`,
+    /// copy `top_k_filter_info` by value - the part-set salt is already folded into its `condition_hash`
+    /// by `setTopKColumn` - and copy `allow_query_condition_cache`, which is what actually gates both
+    /// index analysis and the reader.
+    parallel_replicas_step->allow_query_condition_cache = allow_query_condition_cache;
+    parallel_replicas_step->top_k_filter_info = top_k_filter_info;
+    /// Same for the text-index read tasks: `createLocalPlanForParallelReplicas` runs the full plan
+    /// optimization, so the replaced step can already have a predicate rewritten to `__text_index_*`
+    /// virtual columns that only this task map materializes.
+    parallel_replicas_step->index_read_tasks = index_read_tasks;
+    return parallel_replicas_step;
 }
 
 /// Returns nullptr when no part is filtered by a projection index or the feature is disabled.
@@ -2174,6 +2188,31 @@ ReadFromMergeTree::AnalysisResultPtr ReadFromMergeTree::selectRangesToRead(bool 
     return analyzed_result_ptr;
 }
 
+ReadFromMergeTree::AnalysisResultPtr ReadFromMergeTree::estimateRangesToReadWithoutQueryConditionCache() const
+{
+    /// Deliberately not stored in `analyzed_result_ptr`: the result must not become the analysis of the
+    /// executed read, which has to re-analyze once its final shape (and with it the TopK gate) is known.
+    return selectRangesToRead(
+        getParts(),
+        mutations_snapshot,
+        vector_search_parameters,
+        top_k_filter_info,
+        storage_snapshot->metadata,
+        query_info,
+        context,
+        requested_num_streams,
+        max_block_numbers_to_read,
+        data,
+        data_settings,
+        all_column_names,
+        log,
+        indexes,
+        /*find_exact_ranges=*/false,
+        is_parallel_reading_from_replicas,
+        /*allow_query_condition_cache_=*/false,
+        supportsSkipIndexesOnDataRead());
+}
+
 namespace
 {
 
@@ -2889,7 +2928,11 @@ ReadFromMergeTree::AnalysisResultPtr ReadFromMergeTree::selectRangesToRead(
     }
     else
     {
-        if (!table_has_unique_key) /// consult/skip side of the query-condition cache; disabled for UK reads (see above).
+        /// Consult/skip side of the query-condition cache. Disabled for UK reads (see above) and for a
+        /// read whose step turned the cache off (`allow_query_condition_cache`): that flag means this
+        /// read neither consults nor populates the cache, so it must also not skip granules based on
+        /// entries written by other queries.
+        if (!table_has_unique_key && allow_query_condition_cache_)
             MergeTreeDataSelectExecutor::filterPartsByQueryConditionCache(res_parts, query_info_, vector_search_parameters, top_k_filter_info, mutations_snapshot, *indexes, context_, log);
 
         auto get_indexes_size = [&]() -> size_t
@@ -3023,17 +3066,18 @@ ReadFromMergeTree::AnalysisResultPtr ReadFromMergeTree::selectRangesToRead(
                                                          /// Avoid that SAMPLE-narrowed entries poison the cache (later non-SAMPLE-ing queries would return wrong results).
         {
             const auto & outputs = query_info_.filter_actions_dag->getOutputs();
-            /// `isDeterministicAllowingTopKFilter` keeps the previous `COLUMN`-node strictness
-            /// of `VirtualColumnUtils::isDeterministic` (rejects non-deterministic constants like
-            /// `now()` / `today()`) while admitting `__topKFilter` — its non-determinism is gated
-            /// by the TopK plan salt combined into `condition_hash` below, mirroring the write
-            /// path in `updateQueryConditionCache`.
-            if (outputs.size() == 1 && isDeterministicAllowingTopKFilter(outputs.front()))
+            /// The query condition cache for `ORDER BY ... LIMIT N` (TopK) reads is gated behind the
+            /// `use_query_condition_cache_for_top_k` setting (disabled by default). When it is off, do
+            /// not record index-analysis exclusions for TopK reads: their excluded ranges include marks
+            /// dropped by the running `__topKFilter` threshold, which is not sound to store in the
+            /// (threshold-oblivious) QCC. When it is on, salt the key with the TopK plan parameters so
+            /// only the same plan reuses them (mirrors the write path in `updateQueryConditionCache`).
+            /// For a non-TopK read `top_k_filter_info` is empty and `isDeterministicAllowingTopKFilter`
+            /// is equivalent to `VirtualColumnUtils::isDeterministic` (no `__topKFilter` can appear).
+            const bool skip_top_k = top_k_filter_info && !settings[Setting::use_query_condition_cache_for_top_k];
+            if (outputs.size() == 1 && !skip_top_k && isDeterministicAllowingTopKFilter(outputs.front()))
             {
                 size_t hash = outputs.front()->getHash();
-                /// Match the salting done on the read side in `filterPartsByQueryConditionCache` and
-                /// on the write side in `updateQueryConditionCache` so write/read keys agree under
-                /// `ORDER BY ... LIMIT N` plans.
                 if (top_k_filter_info)
                     boost::hash_combine(hash, top_k_filter_info->condition_hash);
                 condition_hash = hash;
@@ -3701,6 +3745,21 @@ QueryPlanStepPtr ReadFromMergeTree::clone() const
         number_of_current_replica);
     cloned_step->allow_query_condition_cache = allow_query_condition_cache;
     cloned_step->enable_remove_parts_from_snapshot_optimization = enable_remove_parts_from_snapshot_optimization;
+    /// Carry over the TopK marker. `tryOptimizeTopK` runs in the first optimization pass, so a clone
+    /// made later (`materializeQueryPlanReferences` for a common subplan reference, `cloneSubtree` for a
+    /// parallel-replicas plan fragment) clones a subtree whose filter still contains `__topKFilter` and
+    /// whose sorting step still shares the threshold tracker. Losing `top_k_filter_info` here would turn
+    /// the clone into an apparently plain read: it would consult and populate the query condition cache
+    /// under the unsalted condition hash even though its granule-skip decisions depend on the running
+    /// TopK threshold. `condition_hash` already has the part-set salt folded in by `setTopKColumn`, so
+    /// copy the value instead of calling `setTopKColumn` again (which would fold it in twice).
+    cloned_step->top_k_filter_info = top_k_filter_info;
+    /// Carry over the text-index read tasks for the same reason. `processAndOptimizeTextIndexFunctions`
+    /// runs in the second optimization pass before `materializeQueryPlanReferences`, so a clone can
+    /// already have a predicate rewritten to `__text_index_*` virtual columns; those columns are
+    /// materialized only by this task map, and losing it makes the clone evaluate the rewritten filter
+    /// without the index readers (`optimizeLazyFinal` copies the same map onto its synthetic reads).
+    cloned_step->index_read_tasks = index_read_tasks;
     return cloned_step;
 }
 
@@ -4108,7 +4167,10 @@ void ReadFromMergeTree::initializePipeline(QueryPipelineBuilder & pipeline, [[ma
             stripped_snapshot_data->mutations_snapshot = snapshot_data->mutations_snapshot;
         }
 
-        storage_snapshot->data = std::move(stripped_snapshot_data);
+        /// The snapshot object may be shared with other parts of the query
+        /// (see `enable_shared_storage_snapshot_in_query`), which may read its data concurrently.
+        /// So replace our own pointer with a stripped clone instead of mutating the shared object in place.
+        storage_snapshot = storage_snapshot->clone(std::move(stripped_snapshot_data));
     }
 
     /// Check if we should apply row policy and prewhere after FINAL instead of during reading
@@ -5194,6 +5256,17 @@ void ReadFromMergeTree::createReadTasksForTextIndex(const UsefulSkipIndexes & sk
 void ReadFromMergeTree::setTopKColumn(const TopKFilterInfo & top_k_filter_info_)
 {
     top_k_filter_info = top_k_filter_info_;
+
+    /// The query condition cache for `ORDER BY ... LIMIT N` (TopK) reads is gated behind the
+    /// `use_query_condition_cache_for_top_k` setting (disabled by default). When it is off, turn the
+    /// cache off for this read: a TopK read can drop granules during execution depending on the running
+    /// `__topKFilter` threshold, so writing threshold-oblivious QCC entries is unsound.
+    /// Use `allow_query_condition_cache` rather than mutating `reader_settings` directly: it is the
+    /// step's persistent "this read must not use the cache" flag, it is carried over by `clone`, and it
+    /// disables the cache both for index analysis (`selectRangesToReadImpl`) and for the reader
+    /// (`initializePipeline` derives `reader_settings.use_query_condition_cache` from it).
+    if (!context->getSettingsRef()[Setting::use_query_condition_cache_for_top_k])
+        disableQueryConditionCache();
 
     /// A TopK granule-skip decision recorded for one part is computed against the running
     /// `__topKFilter` threshold, which is derived from the rows of *all* parts the query reads.
