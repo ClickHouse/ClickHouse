@@ -632,8 +632,9 @@ public:
     virtual bool isShortCircuit(ShortCircuitSettings & /*settings*/, size_t /*number_of_arguments*/) const { return false; }
     virtual bool isSuitableForShortCircuitArgumentsExecution(const DataTypesWithConstInfo & /*arguments*/) const = 0;
 
-    /// See `IFunctionBase::isInvariantToConstness`
-    virtual bool isInvariantToConstness() const { return false; }
+    /// See `IFunctionBase::isInvariantToConstness`. The argument types are passed because for some
+    /// functions constness only changes the dispatch for particular combinations of argument types
+    virtual bool isInvariantToConstness(const DataTypes & /*arguments*/) const { return false; }
 
     /// Higher-order functions accept at least one lambda expression as an argument.
     virtual bool isHigherOrderFunction() const { return false; }

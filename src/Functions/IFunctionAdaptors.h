@@ -95,7 +95,7 @@ public:
 
     bool isShortCircuit(ShortCircuitSettings & settings, size_t number_of_arguments) const override { return function->isShortCircuit(settings, number_of_arguments); }
 
-    bool isInvariantToConstness() const override { return function->isInvariantToConstness(); }
+    bool isInvariantToConstness() const override { return function->isInvariantToConstness(getArgumentTypes()); }
 
     bool isSuitableForShortCircuitArgumentsExecution(const DataTypesWithConstInfo & args) const override { return function->isSuitableForShortCircuitArgumentsExecution(args); }
 

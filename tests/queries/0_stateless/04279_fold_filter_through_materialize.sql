@@ -78,3 +78,28 @@ SELECT count() > 0 FROM (
     SETTINGS short_circuit_function_evaluation = 'enable'
 );
 
+
+-- comparison is only invariant to constness when both sides are strings or neither is:
+-- `executeWithConstString` casts a *constant* String/FixedString operand to the other operand's
+-- type and is unreachable for a materialized one, so folding a mixed comparison through
+-- `materialize` would switch the dispatch. Such a filter must stay in the plan
+SELECT 'mixed string comparison not folded', countIf(explain LIKE '%Filter column: materialize%')
+FROM (EXPLAIN PLAN actions = 1 SELECT count() FROM numbers(1) WHERE materialize(toUInt8(1)) = '1');
+SELECT count() FROM numbers(1) WHERE materialize(toUInt8(1)) = '1';
+SELECT count() FROM numbers(1) WHERE materialize(toUInt8(1)) = '257';
+
+-- same-typed comparisons stay foldable
+SELECT count() FROM numbers(100) WHERE materialize('online'::String) = materialize('online'::String);
+SELECT count() FROM numbers(100) WHERE materialize(1) = materialize(2);
+
+-- `and` / `or` fold is short-circuit: once an argument is decisive the rest are left alone, so a
+-- non-foldable (or throwing) unreachable argument neither blocks the fold nor raises at plan time
+SELECT 'short circuit and', countIf(explain LIKE '%Filter column: 0%')
+FROM (EXPLAIN PLAN actions = 1 SELECT count() FROM numbers(100) WHERE and(0, number = 1));
+SELECT count() FROM numbers(100) WHERE and(0, number = 1);
+SELECT count() FROM numbers(100) WHERE or(1, number = 1);
+
+-- a NULL argument is not decisive for `and`, and the result stays Nullable
+SELECT count() FROM numbers(100) WHERE and(materialize(1), CAST(NULL AS Nullable(UInt8)));
+SELECT count() FROM numbers(100) WHERE and(materialize(0), CAST(NULL AS Nullable(UInt8)));
+SELECT count() FROM numbers(100) WHERE or(CAST(NULL AS Nullable(UInt8)), materialize(1));

@@ -752,7 +752,23 @@ public:
     bool ALWAYS_INLINE  useDefaultImplementationForNulls() const override { return is_null_safe_cmp_mode ? false : true; }
     bool ALWAYS_INLINE  useDefaultImplementationForVariant() const override { return is_null_safe_cmp_mode ? false : params.use_variant_default_implementation; }
     bool isNameInsensitive() const override { return true; }
-    bool isInvariantToConstness() const override { return true; }
+    bool isInvariantToConstness(const DataTypes & arguments) const override
+    {
+        /// `executeWithConstString` casts a constant String/FixedString operand to the type of the
+        /// other operand, and it is reachable only when that operand really is a `ColumnConst`.
+        /// A materialized string instead falls through to `executeGeneric`, which requires a common
+        /// supertype. So for a mixed string / non-string comparison constness selects the dispatch
+        /// and the function must not be folded through `materialize`
+        if (arguments.size() != 2)
+            return false;
+
+        auto is_string = [](const DataTypePtr & type)
+        {
+            return isStringOrFixedString(removeNullable(removeLowCardinality(type)));
+        };
+
+        return is_string(arguments[0]) == is_string(arguments[1]);
+    }
 private:
     const ComparisonParams params;
 

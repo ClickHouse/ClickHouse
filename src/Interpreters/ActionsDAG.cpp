@@ -957,6 +957,17 @@ struct FoldResult
     bool deterministic;
 };
 
+/// The boolean value of a folded constant, or nullopt when it is `NULL` or not a number at all
+std::optional<bool> tryGetConstBool(const ColumnConstPtr & col, const DataTypePtr & type)
+{
+    if (!isNativeNumber(removeLowCardinalityAndNullable(type)))
+        return std::nullopt;
+    const IColumn & data = col->getDataColumn();
+    if (data.empty() || data.isNullAt(0))
+        return std::nullopt;
+    return data.getBool(0);
+}
+
 /// Fold a predicate: const COLUMN leaves, walk past alias/materialize, recurse into
 /// `isInvariantToConstness` functions
 std::optional<FoldResult> tryFoldPredicate(const ActionsDAG::Node * node)
@@ -991,6 +1002,13 @@ std::optional<FoldResult> tryFoldPredicate(const ActionsDAG::Node * node)
         || !node->function_base->isInvariantToConstness())
         return std::nullopt;
 
+    /// `and` and `or` are short-circuit at runtime: once an argument is decisive (`0` for `and`,
+    /// `1` for `or`) the remaining ones are never evaluated. Folding them here anyway would run
+    /// code that the query never runs, so a throwing unreachable argument would turn a working
+    /// query into an exception during optimization
+    const bool is_and = node->function_base->getName() == "and";
+    const bool is_or = node->function_base->getName() == "or";
+
     ColumnsWithTypeAndName args;
     args.reserve(node->children.size());
     bool all_det = true;
@@ -999,12 +1017,24 @@ std::optional<FoldResult> tryFoldPredicate(const ActionsDAG::Node * node)
         auto folded = tryFoldPredicate(child);
         if (!folded)
             return std::nullopt;
+        all_det = all_det && folded->deterministic;
+
+        if (is_and || is_or)
+        {
+            auto value = tryGetConstBool(folded->column, child->result_type);
+            if (value && *value == is_or)
+            {
+                auto decisive = node->result_type->createColumn();
+                decisive->insert(Field(static_cast<UInt64>(is_or)));
+                return FoldResult{ColumnConst::create(ColumnPtr(std::move(decisive)), 0), all_det};
+            }
+        }
+
         ColumnConstPtr col = folded->column;
         /// DAG consts are size 0, resize to 1 for `execute` (matches `getFunctionArguments`)
         if (col->empty())
             col = ColumnConst::create(col->getDataColumnPtr(), 1);
         args.push_back({col, child->result_type, child->result_name});
-        all_det = all_det && folded->deterministic;
     }
 
     ColumnPtr result = node->function->execute(args, node->result_type, 1, true);
