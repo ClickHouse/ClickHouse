@@ -6,6 +6,7 @@
 #include <map>
 #include <numeric>
 #include <optional>
+#include <string>
 
 #include <Columns/ColumnNullable.h>
 #include <DataTypes/IDataType.h>
@@ -35,6 +36,9 @@ namespace
     /// Both parts of the `fcTL` frame delay are 16-bit, which bounds the time scale settings and the
     /// longest delay a single frame can express.
     constexpr UInt64 MAX_DELAY_PART = std::numeric_limits<UInt16>::max();
+
+    /// Half of the `UInt64` domain: shifting a signed `t` by it turns the signed order into the unsigned one.
+    constexpr UInt64 SIGNED_TIME_BIAS = UInt64(1) << 63;
 
     /// How to interpret a value column when converting it to an 8-bit pixel component.
     /// Determined once from the column type, so the per-row path does not re-dispatch on the data type.
@@ -206,6 +210,9 @@ private:
     /// Animation state. `animated` is set by the presence of the `t` column.
     bool animated = false;
     bool t_nullable = false;
+    /// `t` of an unsigned type covers the whole `UInt64` range, which does not fit into `Int64`, so the
+    /// signedness is remembered and the value is read through the matching accessor.
+    bool t_unsigned = false;
     bool streaming_animation = false;
     UInt64 time_multiplier = 1;
     UInt64 time_divisor = 60;
@@ -213,14 +220,21 @@ private:
     /// The still image, or, in the streaming animated mode, the frame currently being filled.
     Frame single_frame;
     /// All frames of the animation in the buffered mode, ordered by `t`.
-    std::map<Int64, Frame> buffered_frames;
+    std::map<UInt64, Frame> buffered_frames;
     /// The frame the current row is written into.
     Frame * active_frame = nullptr;
 
-    /// The value of `t` of the frame being filled, and the length of the last frame handed over, which the
-    /// final frame reuses because there is no following `t` to derive its duration from.
-    std::optional<Int64> current_time;
+    /// The value of `t` of the frame being filled, as an order-preserving key (see `timeKey`), and the length
+    /// of the last frame handed over, which the final frame reuses because there is no following `t` to derive
+    /// its duration from.
+    std::optional<UInt64> current_time;
     std::optional<UInt64> last_delay_units;
+
+    /// How many frames have already been handed over to the callback, and whether the result has been read to
+    /// the end. Together they tell the streaming mode that the frame it is about to emit is the only one, so
+    /// that `acTL` can declare the exact count instead of an upper bound.
+    size_t emitted_frames = 0;
+    bool finalizing = false;
 
     FrameCallback frame_callback;
 
@@ -242,6 +256,8 @@ private:
     void emitFrame(const Frame & frame, UInt64 delay_units);
     void clearFrame(Frame & frame) const;
     std::pair<UInt16, UInt16> delayFromUnits(UInt64 units) const;
+    UInt64 timeKey(size_t row_num) const;
+    String timeToString(UInt64 key) const;
 };
 
 PNGSerializer::Impl::Impl(const Block & header, const FormatSettings & format_settings)
@@ -385,6 +401,7 @@ PNGSerializer::Impl::Impl(const Block & header, const FormatSettings & format_se
             throw Exception(ErrorCodes::BAD_ARGUMENTS,
                 "Column 't' must have an integer type, got '{}'", t_type.getName());
         t_nullable = isNullableType(t_type);
+        t_unsigned = WhichDataType(*unwrapType(&t_type)).isNativeUInt();
 
         streaming_animation = format_settings.image.streaming_animation;
 
@@ -485,7 +502,10 @@ std::pair<UInt16, UInt16> PNGSerializer::Impl::delayFromUnits(UInt64 units) cons
     /// spirit as the clamping applied to out-of-range pixel values.
     if (num > MAX_DELAY_PART)
     {
-        const UInt64 factor = (num + MAX_DELAY_PART - 1) / MAX_DELAY_PART;
+        /// The ceil-division is written without the usual `num + MAX_DELAY_PART - 1`, because a numerator
+        /// close to the maximum of `UInt64` (two frames at the two ends of the `t` domain) makes that
+        /// addition wrap around and the factor come out as zero.
+        const UInt64 factor = std::max<UInt64>(1, num / MAX_DELAY_PART + (num % MAX_DELAY_PART != 0));
         if (den >= factor)
         {
             num /= factor;
@@ -509,9 +529,14 @@ void PNGSerializer::Impl::emitFrame(const Frame & frame, UInt64 delay_units)
     last_delay_units = delay_units;
     const auto [delay_num, delay_den] = delayFromUnits(delay_units);
     frame_callback(frame.pixels.data(), delay_num, delay_den);
+    ++emitted_frames;
 }
 
-void PNGSerializer::Impl::switchFrame(size_t row_num)
+/// The value of `t` of one row, mapped to a `UInt64` that keeps the order of the original values. A signed
+/// `t` is shifted by half of the domain, which is exactly what flipping the sign bit does. The mapping is
+/// affine, so a difference of two keys is the difference of the two values, and the frame delays and the
+/// frame order can be computed on the keys alone, without narrowing a `UInt64` `t` to `Int64`.
+UInt64 PNGSerializer::Impl::timeKey(size_t row_num) const
 {
     const IColumn * t_col = src_columns[*t_idx].get();
     if (t_nullable)
@@ -523,7 +548,23 @@ void PNGSerializer::Impl::switchFrame(size_t row_num)
                 "which frame of the animation a record belongs to");
         t_col = &nullable.getNestedColumn();
     }
-    const Int64 time = t_col->getInt(row_num);
+
+    if (t_unsigned)
+        return t_col->getUInt(row_num);
+    return static_cast<UInt64>(t_col->getInt(row_num)) ^ SIGNED_TIME_BIAS;
+}
+
+/// The original value of `t` behind a key, for error messages.
+String PNGSerializer::Impl::timeToString(UInt64 key) const
+{
+    if (t_unsigned)
+        return std::to_string(key);
+    return std::to_string(static_cast<Int64>(key ^ SIGNED_TIME_BIAS));
+}
+
+void PNGSerializer::Impl::switchFrame(size_t row_num)
+{
+    const UInt64 time = timeKey(row_num);
 
     if (current_time.has_value() && time == *current_time)
         return;
@@ -539,10 +580,10 @@ void PNGSerializer::Impl::switchFrame(size_t row_num)
                     "as soon as the next value of 't' is seen, but {} follows {}. "
                     "Add 'ORDER BY t' to the query, or set 'output_format_image_streaming_animation = 0' "
                     "to buffer all frames in memory instead.",
-                    time, *current_time);
+                    timeToString(time), timeToString(*current_time));
 
-            /// Unsigned subtraction of two ordered values cannot overflow, unlike the signed one.
-            emitFrame(single_frame, static_cast<UInt64>(time) - static_cast<UInt64>(*current_time));
+            /// Subtraction of two ordered keys cannot overflow, and gives the difference of the values.
+            emitFrame(single_frame, time - *current_time);
             clearFrame(single_frame);
         }
     }
@@ -614,7 +655,7 @@ void PNGSerializer::Impl::writeRow(size_t row_num)
                     "The frame at t = {} has more rows than the {}x{} PNG image can hold ({} pixels). "
                     "Use explicit 'x' and 'y' coordinate columns, or increase "
                     "'output_format_image_width'/'output_format_image_height'.",
-                    *current_time, width, height, width * height);
+                    timeToString(*current_time), width, height, width * height);
 
             throw Exception(ErrorCodes::TOO_MANY_ROWS,
                 "The result has more rows than the {}x{} PNG image can hold ({} pixels). "
@@ -637,6 +678,10 @@ void PNGSerializer::Impl::finalizeFrames()
 {
     if (!animated)
         throw Exception(ErrorCodes::LOGICAL_ERROR, "The PNG result is not an animation");
+
+    /// Every frame handed over from here on is emitted after the whole result has been seen, so the exact
+    /// frame count is known even in the streaming mode.
+    finalizing = true;
 
     if (streaming_animation)
     {
@@ -666,8 +711,12 @@ UInt32 PNGSerializer::Impl::getDeclaredFrameCount() const
 {
     /// In the streaming mode the frames are written out before the result has been read to the end, so the
     /// real count is not known when `acTL` has to be written and an upper bound is declared instead.
+    /// The one exception is an animation whose very first frame is handed over from `finalizeFrames`: the
+    /// result has been read to the end by then and that frame is the only one, so the count is exact. This
+    /// covers an empty result and the common case of a single distinct value of `t`, which would otherwise
+    /// produce a spec-conforming file that looks truncated to a decoder that trusts `acTL`.
     if (streaming_animation)
-        return PNGWriter::MAX_DECLARED_FRAMES;
+        return (finalizing && emitted_frames == 0) ? 1 : PNGWriter::MAX_DECLARED_FRAMES;
 
     return buffered_frames.empty() ? 1 : static_cast<UInt32>(buffered_frames.size());
 }
@@ -679,6 +728,8 @@ void PNGSerializer::Impl::reset()
     src_columns.clear();
     current_time.reset();
     last_delay_units.reset();
+    emitted_frames = 0;
+    finalizing = false;
     if (!animated || streaming_animation)
         active_frame = &single_frame;
     else

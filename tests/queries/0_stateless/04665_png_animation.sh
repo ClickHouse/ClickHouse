@@ -173,6 +173,53 @@ png_http "${DIMS}" "
 " > "${OUT}/empty.png"
 python3 "${PARSER}" "${OUT}/empty.png" 0,0,0
 
+# In the streaming mode the only frame of a one-frame animation is handed over after the whole result has
+# been seen, so the exact count is declared instead of the upper bound.
+echo "--- streaming, single frame ---"
+png_http "${DIMS}&output_format_image_streaming_animation=1" "
+    SELECT 7 AS t, toUInt8(number) AS v FROM numbers(2) FORMAT PNG
+" > "${OUT}/streaming_single.png"
+python3 "${PARSER}" "${OUT}/streaming_single.png" 0,0,0 0,1,0
+
+echo "--- streaming, empty result ---"
+png_http "${DIMS}&output_format_image_streaming_animation=1" "
+    SELECT toUInt8(0) AS t, toUInt8(0) AS v FROM numbers(0) FORMAT PNG
+" > "${OUT}/streaming_empty.png"
+python3 "${PARSER}" "${OUT}/streaming_empty.png" 0,0,0
+
+# `t` of an unsigned type covers the whole `UInt64` range; the values above the maximum of `Int64` must not
+# wrap around into negative ones, which would reorder the frames and break the monotonicity check.
+echo "--- t of UInt64 above the maximum of Int64 ---"
+png_http "${DIMS}" "
+    SELECT * FROM VALUES('t UInt64, v UInt8',
+        (9223372036854775807, 1),
+        (9223372036854775808, 2),
+        (18446744073709551615, 3)
+    ) ORDER BY t FORMAT PNG
+" > "${OUT}/big_t.png"
+python3 "${PARSER}" "${OUT}/big_t.png" 0,0,0 1,0,0 2,0,0
+
+echo "--- t of UInt64 above the maximum of Int64, streaming ---"
+png_http "${DIMS}&output_format_image_streaming_animation=1" "
+    SELECT * FROM VALUES('t UInt64, v UInt8',
+        (9223372036854775807, 1),
+        (9223372036854775808, 2),
+        (18446744073709551615, 3)
+    ) ORDER BY t FORMAT PNG
+" > "${OUT}/big_t_streaming.png"
+python3 "${PARSER}" "${OUT}/big_t_streaming.png" 0,0,0 1,0,0 2,0,0
+
+# The widest possible gap: the delay does not fit into the 16-bit parts of the frame control chunk and is clamped to the
+# longest expressible one, instead of overflowing the scaling factor.
+echo "--- the whole Int64 range in one gap ---"
+png_http "${DIMS}&output_format_image_time_multiplier_seconds=1&output_format_image_time_divisor_seconds=1" "
+    SELECT * FROM VALUES('t Int64, v UInt8',
+        (-9223372036854775808, 1),
+        (9223372036854775807, 2)
+    ) ORDER BY t FORMAT PNG
+" > "${OUT}/wide_gap.png"
+python3 "${PARSER}" "${OUT}/wide_gap.png"
+
 # Without a `t` column the output is a still image and carries no animation chunks.
 echo "--- no t column, still image ---"
 png_http "${DIMS}" "

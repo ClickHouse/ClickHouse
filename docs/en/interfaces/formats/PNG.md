@@ -125,6 +125,8 @@ In exchange:
 - The number of frames is not known when the header has to be written, so the `acTL` chunk declares an upper
   bound instead of the exact count. Browsers play such a file, but decoders that trust the declared count
   (for example, `Pillow` and some command-line `APNG` tools) report an error after the last real frame.
+  An animation of a single frame is the exception: the whole result has been read by the time that frame is
+  written, so the count is declared exactly and the output conforms to the specification.
 
 Because an inline terminal image protocol carries the whole datastream as a single payload, the frames cannot
 reach the terminal early and this setting only affects how much memory is used there. The `sixel` protocol

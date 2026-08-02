@@ -78,6 +78,50 @@ real_frames=1
 sequence_consecutive=True
 frame0 delay=1/60 rect=2x1+0+0 dispose=0 blend=0
 pixel[0](0,0)=0
+--- streaming, single frame ---
+size=2x1 color_type=0
+acTL=num_frames=1 num_plays=0
+real_frames=1
+sequence_consecutive=True
+frame0 delay=1/60 rect=2x1+0+0 dispose=0 blend=0
+pixel[0](0,0)=0
+pixel[0](1,0)=1
+--- streaming, empty result ---
+size=2x1 color_type=0
+acTL=num_frames=1 num_plays=0
+real_frames=1
+sequence_consecutive=True
+frame0 delay=1/60 rect=2x1+0+0 dispose=0 blend=0
+pixel[0](0,0)=0
+--- t of UInt64 above the maximum of Int64 ---
+size=2x1 color_type=0
+acTL=num_frames=3 num_plays=0
+real_frames=3
+sequence_consecutive=True
+frame0 delay=1/60 rect=2x1+0+0 dispose=0 blend=0
+frame1 delay=65535/1 rect=2x1+0+0 dispose=0 blend=0
+frame2 delay=65535/1 rect=2x1+0+0 dispose=0 blend=0
+pixel[0](0,0)=1
+pixel[1](0,0)=2
+pixel[2](0,0)=3
+--- t of UInt64 above the maximum of Int64, streaming ---
+size=2x1 color_type=0
+acTL=num_frames=2147483647 num_plays=0
+real_frames=3
+sequence_consecutive=True
+frame0 delay=1/60 rect=2x1+0+0 dispose=0 blend=0
+frame1 delay=65535/1 rect=2x1+0+0 dispose=0 blend=0
+frame2 delay=65535/1 rect=2x1+0+0 dispose=0 blend=0
+pixel[0](0,0)=1
+pixel[1](0,0)=2
+pixel[2](0,0)=3
+--- the whole Int64 range in one gap ---
+size=2x1 color_type=0
+acTL=num_frames=2 num_plays=0
+real_frames=2
+sequence_consecutive=True
+frame0 delay=65535/1 rect=2x1+0+0 dispose=0 blend=0
+frame1 delay=65535/1 rect=2x1+0+0 dispose=0 blend=0
 --- no t column, still image ---
 size=2x1 color_type=0
 acTL=absent
