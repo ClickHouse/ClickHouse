@@ -1,5 +1,6 @@
 #pragma once
 
+#include <Server/ServerType.h>
 #include <Common/CgroupsMemoryUsageObserver.h>
 #include <Common/MemoryStatisticsOS.h>
 #include <Common/MemoryWorker.h>
@@ -47,6 +48,8 @@ using AsynchronousMetricValues = std::unordered_map<std::string, AsynchronousMet
 struct ProtocolServerMetrics
 {
     String port_name;
+    /// `ServerType::Type::END` for servers with no protocol type of their own (Keeper listeners).
+    ServerType::Type protocol_type = ServerType::Type::END;
     size_t current_threads;
     size_t rejected_connections;
 };
