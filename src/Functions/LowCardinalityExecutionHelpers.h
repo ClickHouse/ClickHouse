@@ -183,7 +183,12 @@ inline __attribute__((always_inline)) bool dictionaryIndexForConstant(
         return true;
 
     auto value_type_without_low_cardinality = recursiveRemoveLowCardinality(value_type);
-    value = castColumn({value, value_type_without_low_cardinality, ""}, target_type);
+    /// Accurate cast, so that a constant which is not representable in the dictionary's type does not
+    /// wrap into the bit pattern of an unrelated element (e.g. UInt32(4294967295) into Int32(-1)).
+    value = castColumnAccurateOrNull({value, value_type_without_low_cardinality, ""}, target_type);
+
+    if (value->isNullAt(0))
+        return false;
 
     if (value->isNullable())
         value = assert_cast<const ColumnNullable &>(*value).getNestedColumnPtr();
