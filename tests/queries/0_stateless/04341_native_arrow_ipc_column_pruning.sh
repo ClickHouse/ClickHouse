@@ -35,13 +35,19 @@ write_data() {
 }
 
 # Reading a subset of columns (which prunes the rest) must return exactly what reading every column and
-# then projecting the same subset returns. The inner `SELECT *` forces the reader to decode all columns,
-# so any pruning bug shows up as a difference between the two.
+# then projecting the same subset returns. The reference side materializes `SELECT *` into a temporary
+# table first: a subquery would be shrunk back to the requested columns by
+# `RemoveUnusedProjectionColumnsPass`, which would compare the pruned reader against itself, while an
+# `INSERT` of every column is a barrier the analyzer cannot see through. Any pruning bug therefore shows
+# up as a difference between the two.
 check_subset() {
     local file="$1" format="$2" cols="$3"
     local pruned full
     pruned=$(${CLICKHOUSE_LOCAL} --query "SELECT ${cols} FROM file('${file}', '${format}') ORDER BY c_i32")
-    full=$(${CLICKHOUSE_LOCAL} --query "SELECT ${cols} FROM (SELECT * FROM file('${file}', '${format}')) ORDER BY c_i32")
+    full=$(${CLICKHOUSE_LOCAL} --query "
+    CREATE TEMPORARY TABLE all_columns ENGINE = Memory AS SELECT * FROM file('${file}', '${format}');
+    SELECT ${cols} FROM all_columns ORDER BY c_i32;
+    ")
     if [ "$pruned" = "$full" ]; then echo "OK   ${format}: ${cols}"; else echo "MISMATCH   ${format}: ${cols}"; fi
 }
 
