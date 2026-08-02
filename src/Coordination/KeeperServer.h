@@ -100,6 +100,9 @@ private:
     std::condition_variable initialized_cv;
     std::atomic<bool> initial_batch_committed = false;
 
+    /// Milliseconds since monotonic clock epoch, or 0 if this node is not a leader.
+    std::atomic<UInt64> leader_since_ms = 0;
+
     std::atomic<uint64_t> last_log_idx_on_disk = 0;
 
     nuraft::ptr<nuraft::cluster_config> last_local_config;
@@ -119,6 +122,10 @@ private:
     void loadLatestConfig();
 
     void enterRecoveryMode(nuraft::raft_params & params);
+
+    void startLeaderUptime();
+    void stopLeaderUptime();
+    std::optional<uint64_t> getLeaderUptime() const;
 
     std::atomic_bool is_recovering = false;
 

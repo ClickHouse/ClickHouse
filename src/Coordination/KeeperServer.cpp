@@ -274,6 +274,11 @@ int32_t getValueOrMaxInt32AndLogWarning(uint64_t value, const std::string & name
     return static_cast<int32_t>(value);
 }
 
+UInt64 getNowMonotonicMs()
+{
+    return static_cast<UInt64>(
+        std::chrono::duration_cast<std::chrono::milliseconds>(std::chrono::steady_clock::now().time_since_epoch()).count());
+}
 }
 
 KeeperServer::KeeperServer(
@@ -837,8 +842,32 @@ KeeperServer::RespondingCounts KeeperServer::getRespondingCounts() const
     return raft_instance->getRespondingCounts();
 }
 
+void KeeperServer::startLeaderUptime()
+{
+    leader_since_ms = getNowMonotonicMs();
+}
+
+void KeeperServer::stopLeaderUptime()
+{
+    leader_since_ms = 0;
+}
+
+std::optional<uint64_t> KeeperServer::getLeaderUptime() const
+{
+    const UInt64 leader_since = leader_since_ms.load();
+    if (leader_since == 0)
+        return {};
+
+    return getNowMonotonicMs() - leader_since;
+}
+
 nuraft::cb_func::ReturnCode KeeperServer::callbackFunc(nuraft::cb_func::Type type, nuraft::cb_func::Param * param)
 {
+    if (type == nuraft::cb_func::BecomeLeader)
+        startLeaderUptime();
+    else if (type == nuraft::cb_func::BecomeFollower)
+        stopLeaderUptime();
+
     if (is_recovering)
     {
         const auto finish_recovering = [&]
@@ -1437,6 +1466,8 @@ Keeper4LWInfo KeeperServer::getPartiallyFilled4LWInfo() const
     result.synced_non_voting_follower_count = 0;
     if (result.is_leader)
     {
+        result.leader_uptime_ms = getLeaderUptime();
+
         auto counts = getRespondingCounts();
         result.learner_count = counts.learners;
         result.follower_count = counts.followers;

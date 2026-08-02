@@ -345,6 +345,9 @@ String MonitorCommand::run()
 
     if (keeper_info.is_leader)
     {
+        if (keeper_info.leader_uptime_ms)
+            print(ret, "leader_uptime", *keeper_info.leader_uptime_ms);
+
         print(ret, "learners", keeper_info.learner_count);
         print(ret, "followers", keeper_info.follower_count);
         print(ret, "synced_followers", keeper_info.synced_follower_count);
