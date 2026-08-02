@@ -17,3 +17,12 @@ part type after the rewrite
 t	Tuple(x String, y String)
 data
 x	('','')	x!
+--- a renamed tuple element and its serialization info ---
+part type before the rewrite
+t	Tuple(String)
+part type after the rewrite
+t	Tuple(y String)
+serialization of the merged part
+t	Default
+data
+105	105
