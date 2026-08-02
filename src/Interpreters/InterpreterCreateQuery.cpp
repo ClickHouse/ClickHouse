@@ -167,6 +167,7 @@ namespace FailPoints
 {
     extern const char create_or_replace_before_rename[];
     extern const char atomic_populate_fail_before_subscription[];
+    extern const char atomic_populate_pause_before_subscription[];
 }
 
 namespace ErrorCodes
@@ -1987,10 +1988,12 @@ BlockIO InterpreterCreateQuery::createTable(ASTCreateQuery & create)
 
     /// Actually creates table
     bool created = doCreateTable(create, properties, ddl_guard, mode);
-    ddl_guard.reset();
 
     if (!created)   /// Table already exists
+    {
+        ddl_guard.reset();
         return {};
+    }
 
     /// A materialized view with POPULATE subscribes to new inserts of its source table and, at the same
     /// time, must be filled with the data that already exists in the source. Doing these two steps
@@ -1998,11 +2001,19 @@ BlockIO InterpreterCreateQuery::createTable(ASTCreateQuery & create)
     /// population snapshot (duplicated), or be routed nowhere and miss the snapshot (lost). To make it
     /// atomic we register the subscription and pin a snapshot of the source together under a brief
     /// exclusive lock, then populate from the pinned snapshot. See fillMaterializedViewAtomically.
+    ///
+    /// The view's own DDL guard is still held here and is passed down: `fillMaterializedViewAtomically`
+    /// releases it once the view is subscribed to the source. Without it, a concurrent `DROP` or `RENAME` of
+    /// the just-published view could run while we wait for the source's exclusive lock, and the subscription
+    /// registered afterwards would name a view that no longer exists there - which stops
+    /// `DatabaseCatalog::getReadyDependentViews` from returning any view of that source.
     if (shouldPopulateMaterializedViewAtomically(create))
     {
-        if (auto result = fillMaterializedViewAtomically(create))
+        if (auto result = fillMaterializedViewAtomically(create, ddl_guard))
             return std::move(*result);
     }
+
+    ddl_guard.reset();
 
     /// If table has dependencies - add them to the graph
     addTableDependencies(create, query_ptr, getContext());
@@ -2952,14 +2963,18 @@ constexpr std::array<std::string_view, 4> settings_incompatible_with_pinned_snap
 
 }
 
-std::optional<BlockIO> InterpreterCreateQuery::fillMaterializedViewAtomically(const ASTCreateQuery & create)
+std::optional<BlockIO> InterpreterCreateQuery::fillMaterializedViewAtomically(const ASTCreateQuery & create, DDLGuardPtr & ddl_guard)
 {
     try
     {
-        return fillMaterializedViewAtomicallyImpl(create);
+        return fillMaterializedViewAtomicallyImpl(create, ddl_guard);
     }
     catch (...)
     {
+        /// The rollback `DROP` below takes the DDL guard of this very view, so the guard we still hold (when
+        /// the failure happened before the cut) has to be released first, otherwise the drop deadlocks on it.
+        ddl_guard.reset();
+
         /// doCreateTable has already created and started the view, but the atomic cut failed - most
         /// realistically `lockExclusively` timed out on a busy source, before `addDependencies` subscribed
         /// the view to it. Letting the exception escape as-is would leave behind a view that exists but is
@@ -2999,7 +3014,7 @@ std::optional<BlockIO> InterpreterCreateQuery::fillMaterializedViewAtomically(co
     }
 }
 
-std::optional<BlockIO> InterpreterCreateQuery::fillMaterializedViewAtomicallyImpl(const ASTCreateQuery & create)
+std::optional<BlockIO> InterpreterCreateQuery::fillMaterializedViewAtomicallyImpl(const ASTCreateQuery & create, DDLGuardPtr & ddl_guard)
 {
     auto source = getValidatedAtomicPopulateSource(create);
     if (!source)
@@ -3043,6 +3058,12 @@ std::optional<BlockIO> InterpreterCreateQuery::fillMaterializedViewAtomicallyImp
 
     StorageSnapshotPtr snapshot;
     {
+        /// Models the window in which the view is already published but not yet subscribed to its source -
+        /// in production it is the wait for the exclusive lock right below. A test uses it to run DDL on the
+        /// view concurrently and check that the view's DDL guard, still held here, serializes it after the
+        /// subscription.
+        FailPointInjection::pauseFailPoint(FailPoints::atomic_populate_pause_before_subscription);
+
         auto source_lock = source->lockExclusively(context->getCurrentQueryId(), context->getSettingsRef()[Setting::lock_acquire_timeout]);
 
         /// Models a failure of the cut before the view is subscribed to the source (the realistic cause is
@@ -3063,6 +3084,16 @@ std::optional<BlockIO> InterpreterCreateQuery::fillMaterializedViewAtomicallyImp
         auto source_metadata = source->getInMemoryMetadataPtr(populate_context, false);
         snapshot = source->getStorageSnapshot(source_metadata, populate_context);
     }
+
+    /// The cut is done: the view is published, subscribed to the source and the snapshot is pinned. Release
+    /// the view's DDL guard, which the caller kept for us across the exclusive-lock wait above, so that a
+    /// concurrent `DROP` or `RENAME` of the view could not squeeze in between publishing it and subscribing
+    /// it - that would have left a subscription naming a view that is no longer there, and
+    /// `DatabaseCatalog::getReadyDependentViews` treats a single missing dependent as "no views are ready",
+    /// silently stopping the population of *every* view of that source. The population below can take
+    /// arbitrarily long, and it does not need the guard: it is an ordinary `INSERT` into the view, so a
+    /// concurrent `DROP` of the view during the population is handled exactly as for any other insert.
+    ddl_guard.reset();
 
     /// Pin the snapshot so the population's SELECT reads exactly the captured data. The population's
     /// SELECT is analyzed and executed under contexts derived from the shared query context

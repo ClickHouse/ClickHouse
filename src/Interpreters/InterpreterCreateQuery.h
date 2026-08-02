@@ -144,10 +144,14 @@ private:
     /// here - most realistically an exclusive-lock timeout on a busy source - the just-created view is
     /// dropped before the exception is rethrown. Otherwise the failed CREATE would leave behind a view that
     /// is not registered as a dependent of its source, which future inserts would silently never populate.
-    std::optional<BlockIO> fillMaterializedViewAtomically(const ASTCreateQuery & create);
+    ///
+    /// `ddl_guard` is the guard of the view being created, still held by the caller. It is kept until the
+    /// view is subscribed to its source and released before the (potentially long) population runs, so that
+    /// concurrent DDL on the view name cannot slip in between publishing the view and subscribing it.
+    std::optional<BlockIO> fillMaterializedViewAtomically(const ASTCreateQuery & create, DDLGuardPtr & ddl_guard);
 
     /// The body of fillMaterializedViewAtomically; the wrapper adds the drop-on-failure rollback.
-    std::optional<BlockIO> fillMaterializedViewAtomicallyImpl(const ASTCreateQuery & create);
+    std::optional<BlockIO> fillMaterializedViewAtomicallyImpl(const ASTCreateQuery & create, DDLGuardPtr & ddl_guard);
 
     void assertOrSetUUID(ASTCreateQuery & create, const DatabasePtr & database) const;
 
