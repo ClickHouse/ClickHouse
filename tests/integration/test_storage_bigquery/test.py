@@ -320,6 +320,30 @@ def test_count_and_paging():
     assert len(mock_stats()["data_requests"]) == 3
 
 
+def test_limit_reduces_the_read():
+    # Predicates cannot be pushed down into `tabledata.list`, but a LIMIT can: the pages are fetched
+    # lazily with `maxResults` set to `max_block_size`, and for a trivial LIMIT the planner lowers
+    # `max_block_size` to the limit itself, so a single request for exactly that many rows is made.
+    mock_reset()
+    assert node.query(f"SELECT i FROM {bq('test_paging')} LIMIT 3") == "0\n1\n2\n"
+    requests = mock_stats()["data_requests"]
+    assert len(requests) == 1
+    assert requests[0]["params"]["maxResults"] == "3"
+
+    # A limit above the server's page size (the mock caps pages at 4 rows) stops the pagination as
+    # soon as it is satisfied, instead of downloading all 10 rows of the table in 3 requests.
+    mock_reset()
+    assert (
+        node.query(f"SELECT i FROM {bq('test_paging')} LIMIT 6") == "0\n1\n2\n3\n4\n5\n"
+    )
+    assert len(mock_stats()["data_requests"]) == 2
+
+    # Without a limit, the whole table is read.
+    mock_reset()
+    assert node.query(f"SELECT count() FROM {bq('test_paging')}") == "10\n"
+    assert len(mock_stats()["data_requests"]) == 3
+
+
 def test_selected_fields():
     mock_reset()
     # The columns are requested in reverse order on purpose: the response returns them

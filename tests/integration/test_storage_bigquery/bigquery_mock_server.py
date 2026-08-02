@@ -257,7 +257,8 @@ GEO_UNSUPPORTED_SCHEMA = [
     f("g", "GEOGRAPHY"),
 ]
 
-# One shape per table: predicates are not pushed down, so a query always reads every row of the table.
+# One shape per table: predicates are not pushed down, so a query without a `LIMIT` always reads every
+# row of the table.
 GEO_COLLECTION_ROWS = [row("1", "GEOMETRYCOLLECTION(POINT(0 0), LINESTRING(1 1, 2 2))")]
 
 # A deliberately wide table. BigQuery allows up to 10000 columns with names up to 300 bytes, so the
