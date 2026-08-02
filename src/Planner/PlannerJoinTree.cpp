@@ -161,6 +161,10 @@ namespace Setting
     extern const SettingsBool parallel_replicas_allow_materialized_views;
     extern const SettingsBool parallel_replicas_allow_view_over_mergetree;
     extern const SettingsBool parallel_replicas_plan_based;
+    extern const SettingsBool use_query_condition_cache;
+    extern const SettingsBool use_query_condition_cache_for_top_k;
+    extern const SettingsBool use_skip_indexes_for_top_k;
+    extern const SettingsBool use_top_k_dynamic_filtering;
 }
 
 namespace ErrorCodes
@@ -943,6 +947,26 @@ UInt64 mainQueryNodeBlockSizeByLimit(const SelectQueryInfo & select_query_info)
         && limit_length <= std::numeric_limits<UInt64>::max() - limit_offset)
         return limit_length + limit_offset;
     return 0;
+}
+
+/// Does the query condition cache have to be kept out of the pre-plan parallel-replicas estimate?
+/// The estimate analyzes the read before `tryOptimizeTopK` has had a chance to stamp it, so for a query
+/// which may still become a TopK read it cannot know whether the `use_query_condition_cache_for_top_k`
+/// gate applies. With the gate off such a read must neither consult nor populate the cache, so analyze
+/// without it. This is a deliberate over-approximation of `tryOptimizeTopK`'s plan pattern (which needs
+/// the sorting and limit steps that do not exist yet): a query which turns out not to be a TopK read
+/// only loses the cache for this throwaway estimate, never for the read that executes.
+bool mustSkipQueryConditionCacheInParallelReplicasEstimate(const SelectQueryInfo & select_query_info, const Settings & settings)
+{
+    if (!settings[Setting::use_query_condition_cache] || settings[Setting::use_query_condition_cache_for_top_k])
+        return false;
+
+    /// `tryOptimizeTopK` stamps the read only if at least one of the two TopK mechanisms is enabled.
+    if (!settings[Setting::use_skip_indexes_for_top_k] && !settings[Setting::use_top_k_dynamic_filtering])
+        return false;
+
+    const auto * main_query_node = select_query_info.query_tree->as<QueryNode>();
+    return main_query_node && main_query_node->hasOrderBy() && main_query_node->hasLimit();
 }
 
 std::unique_ptr<ExpressionStep> createComputeAliasColumnsStep(
@@ -1935,7 +1959,10 @@ JoinTreeQueryPlan buildQueryPlanForTableExpression(TableExpressionNodePtr table_
                             && settings[Setting::parallel_replicas_min_number_of_rows_per_replica] > 0)
                         {
                             const auto * reading_step = typeid_cast<ReadFromMergeTree *>(reading_steps.front()->step.get());
-                            auto result_ptr = reading_step->selectRangesToRead();
+                            auto result_ptr
+                                = mustSkipQueryConditionCacheInParallelReplicasEstimate(select_query_info, settings)
+                                ? reading_step->estimateRangesToReadWithoutQueryConditionCache()
+                                : reading_step->selectRangesToRead();
                             UInt64 rows_to_read = result_ptr->selected_rows;
 
                             if (table_expression_query_info.trivial_limit > 0 && table_expression_query_info.trivial_limit < rows_to_read)

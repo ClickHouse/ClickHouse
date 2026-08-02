@@ -21,6 +21,19 @@
 #    define SIZE_T_IS_A_DISTINCT_TYPE 1
 #endif
 
+/// Whether every `std::exception` carries the stack trace of the throw that created it.
+/// ClickHouse's patched libc++ records it (`contrib/libcxx-cmake` defines this to 1), and every
+/// supported platform links that libc++. A port that has to use a foreign C++ standard library -
+/// the standalone parser build in `utils/wasm-parser`, for one - gets no trace, and there is no
+/// `std::exception::get_stack_trace_frames` to call at all. `Common/StackTrace.h` is where the
+/// difference is handled; nothing else should test this macro.
+/// Only the absence is defaulted here: a supported platform that somehow lost the definition must
+/// not silently start throwing exceptions without stack traces, so `Common/Exception.cpp` asserts
+/// that it is 1 there.
+#if !defined(STD_EXCEPTION_HAS_STACK_TRACE)
+#    define STD_EXCEPTION_HAS_STACK_TRACE 0
+#endif
+
 #if !defined(likely)
 #    define likely(x)   (__builtin_expect(!!(x), 1))
 #endif
