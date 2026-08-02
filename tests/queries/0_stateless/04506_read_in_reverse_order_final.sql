@@ -161,6 +161,21 @@ SELECT if(explain like '%ReadType: InReverseOrder%', 'Error: ' || explain, 'Ok')
 ) WHERE explain like '%ReadType%';
 SELECT * FROM t_reverse_final_m FINAL ORDER BY x DESC LIMIT 2;
 
+-- A nested Merge table does not receive the read-in-order optimization in any direction
+-- (`recursivelyApplyToReadingSteps` does not descend into a nested `ReadFromMerge`),
+-- so it falls back to the unoptimized plan and stays correct, even when all leaves
+-- are ReplacingMergeTree tables.
+CREATE TABLE t_reverse_final_m2 (x Int32, y Int32) ENGINE = Merge(currentDatabase(), '^t_reverse_final_r[12]$');
+CREATE TABLE t_reverse_final_mm (x Int32, y Int32) ENGINE = Merge(currentDatabase(), '^t_reverse_final_m2$');
+
+SELECT 'nested merge table';
+SELECT if(explain like '%ReadType: InReverseOrder%', 'Error: ' || explain, 'Ok') FROM (
+    EXPLAIN PLAN actions = 1 SELECT * FROM t_reverse_final_mm FINAL ORDER BY x DESC LIMIT 2
+) WHERE explain like '%ReadType%';
+SELECT * FROM t_reverse_final_mm FINAL ORDER BY x DESC LIMIT 2;
+
+DROP TABLE t_reverse_final_mm;
+DROP TABLE t_reverse_final_m2;
 DROP TABLE t_reverse_final_m;
 DROP TABLE t_reverse_final_r1;
 DROP TABLE t_reverse_final_r2;
