@@ -841,7 +841,11 @@ void ClientBase::onData(Block & block, ASTPtr parsed_query)
 
 void ClientBase::onLogData(Block & block)
 {
-    initLogsOutputStream();
+    /// The log sink can be unavailable when its open was interrupted by a `Ctrl+C`; drop the
+    /// diagnostics rather than the query - see `initLogsOutputStream`.
+    if (!initLogsOutputStream())
+        return;
+
     if (need_render_progress && tty_buf)
     {
         std::unique_lock lock(tty_mutex);
@@ -910,9 +914,14 @@ namespace
 /// which lets us wait for the sink in an interruptible loop rather than inside the kernel. The
 /// waiting semantics of a blocking `open` are preserved (a FIFO target still waits for its reader),
 /// only now the wait is abandoned as soon as the query is interrupted - already on the first signal,
-/// even with `partial_result_on_first_cancel`: there is no partial result to deliver into a sink
-/// that could not be opened. For every other target -
+/// even with `partial_result_on_first_cancel`. For every other target -
 /// including a regular file - the very first `open` succeeds and the loop is not entered at all.
+///
+/// Returns -1 when the wait was abandoned because the query was interrupted. What that means is left
+/// to the caller: for the primary `INTO OUTFILE` sink it is a cancellation, because there is nothing
+/// to deliver into a sink that could not be opened; for an auxiliary sink such as `--server_logs_file`
+/// it only means that this sink is unavailable, and the query itself must keep going - otherwise the
+/// first signal of a `partial_result_on_first_cancel` query would become a hard client-side cancel.
 ///
 /// `O_NONBLOCK` is cleared afterwards so that writes keep their usual semantics;
 /// `WriteBufferFromFileDescriptor::setCancellationHook` arranges responsive writes on its own.
@@ -944,10 +953,7 @@ int openFileCancellable(const String & file_name, int flags, const std::function
             }
 
             if (is_interrupted())
-                throw Exception(
-                    ErrorCodes::QUERY_WAS_CANCELLED,
-                    "Query was cancelled while waiting for {} to be opened for writing",
-                    file_name);
+                return -1;
 
             /// Nothing to poll on here: the descriptor does not exist yet, so waiting for a reader
             /// to show up is inherently a retry loop. The interval only bounds the reaction time to
@@ -1102,6 +1108,15 @@ try
                 /// cancellation hook exists yet. See `openFileCancellable`.
                 int out_file_fd = openFileCancellable(
                     out_file, flags, [this]() { return query_interrupt_handler.interruptedWhileRunning(); });
+
+                /// The result set has nowhere to go, so this is a cancellation of the query itself -
+                /// including with `partial_result_on_first_cancel`, where the partial result would
+                /// have been written to this very sink.
+                if (out_file_fd == -1)
+                    throw Exception(
+                        ErrorCodes::QUERY_WAS_CANCELLED,
+                        "Query was cancelled while waiting for {} to be opened for writing",
+                        out_file);
 
                 /// The constructor below takes ownership and resets `out_file_fd` to -1; this only
                 /// covers the case when it throws before doing so.
@@ -1263,7 +1278,7 @@ catch (...)
 }
 
 
-void ClientBase::initLogsOutputStream()
+bool ClientBase::initLogsOutputStream()
 {
     if (!logs_out_stream)
     {
@@ -1302,6 +1317,16 @@ void ClientBase::initLogsOutputStream()
                     O_WRONLY | O_APPEND | O_CREAT,
                     [this]() { return query_interrupt_handler.interruptedWhileRunning(); });
 
+                /// This sink is auxiliary: the server logs and profile events are diagnostics, not the
+                /// result of the query. Interrupting its open must therefore not throw - the packet
+                /// handlers this runs from are called from `receiveResult`, and an exception here would
+                /// escape before the stage-one `Cancel` is sent, turning the first `Ctrl+C` of a
+                /// `partial_result_on_first_cancel` query into a hard client-side cancellation instead
+                /// of a request for the partial result. Report the sink as unavailable instead; the
+                /// caller skips the diagnostics and lets the query reach its normal cancellation path.
+                if (logs_fd == -1)
+                    return false;
+
                 /// The constructor below takes ownership and resets `logs_fd` to -1; this only
                 /// covers the case when it throws before doing so.
                 SCOPE_EXIT({
@@ -1334,6 +1359,8 @@ void ClientBase::initLogsOutputStream()
         if (server_logs_file != "-" && logs_out_terminal_buf)
             armResponsiveOutput(*logs_out_terminal_buf);
     }
+
+    return true;
 }
 
 void ClientBase::adjustSettings(ContextMutablePtr context)
@@ -2279,11 +2306,13 @@ void ClientBase::onProfileEvents(Block & block)
         if (profile_events.print || getClientConfiguration().getBool("print-profile-events", false))
         {
             profile_events.delay_ms = getClientConfiguration().getUInt64("profile-events-delay-ms", 0);
-            if (profile_events.watch.elapsedMilliseconds() >= profile_events.delay_ms)
+            /// When the log sink is unavailable - its open was interrupted by a `Ctrl+C`, see
+            /// `initLogsOutputStream` - keep accumulating the events instead of printing them, so
+            /// nothing is lost if the sink becomes available again before the query ends.
+            if (profile_events.watch.elapsedMilliseconds() >= profile_events.delay_ms && initLogsOutputStream())
             {
                 /// We need to restart the watch each time we flushed these events
                 profile_events.watch.restart();
-                initLogsOutputStream();
                 if (need_render_progress && tty_buf)
                 {
                     std::unique_lock lock(tty_mutex);
@@ -3321,10 +3350,11 @@ void ClientBase::processParsedSingleQuery(
         }
     });
 
-    /// Always print last block (if it was not printed already)
-    if (!profile_events.last_block.empty())
+    /// Always print last block (if it was not printed already).
+    /// The interrupt handler is stopped by now, so the interruptible open cannot be abandoned here and
+    /// `initLogsOutputStream` only fails to report the sink as available if it never becomes one.
+    if (!profile_events.last_block.empty() && initLogsOutputStream())
     {
-        initLogsOutputStream();
         if (need_render_progress && tty_buf)
         {
             std::unique_lock lock(tty_mutex);

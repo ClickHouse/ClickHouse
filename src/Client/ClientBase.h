@@ -294,7 +294,10 @@ private:
     void sendExternalTables(ASTPtr parsed_query);
 
     void initOutputFormat(const Block & block, ASTPtr parsed_query);
-    void initLogsOutputStream();
+    /// Returns false when the log sink is unavailable because the interruptible open of an explicit
+    /// --server_logs_file was abandoned on Ctrl+C; the caller then skips the diagnostics, but the
+    /// query keeps going - this sink is not the result of the query.
+    bool initLogsOutputStream();
 
     /// Arm an output sink with the pair of predicates that keep it responsive to Ctrl+C, see
     /// WriteBufferFromFileDescriptor::setCancellationHook.
