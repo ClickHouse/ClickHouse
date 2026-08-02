@@ -1,0 +1,23 @@
+-- returns exactly k centroids of the input dimension
+4	2
+64
+1000
+-- k is capped by the number of points, since one point yields at most one centroid
+100
+-- each blob maps to exactly one cluster
+0	1
+1	1
+2	1
+3	1
+-- deterministic for a given seed, and a different seed is allowed to differ
+1
+-- spherical = 1 makes every centroid unit length
+1	1
+-- degenerate input still terminates and returns k
+50
+200
+-- empty input produces no centroids
+0
+-- the aggregate state round-trips through serialization
+4
+-- errors
