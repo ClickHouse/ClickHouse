@@ -14,3 +14,8 @@ a plain table is still distributed
 same answers with parallel_replicas_local_plan = 1
 1
 100
+100
+the child read of a Merge table is not distributed with a local plan
+0
+a plain table is still distributed with a local plan
+1

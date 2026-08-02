@@ -54,6 +54,23 @@ SET parallel_replicas_local_plan = 1;
 SELECT count() FROM merge(currentDatabase(), 't_merge_pr_local') WHERE name = '1';
 SELECT count() FROM merge(currentDatabase(), 't_merge_pr_local')
 WHERE name IN (SELECT name FROM t_merge_pr_local);
+SELECT count() FROM merge(currentDatabase(), 't_merge_pr_local')
+WHERE name GLOBAL IN (SELECT name FROM t_merge_pr_dist);
+
+-- With a local plan the distributed read is wrapped in `ReadFromLocalReplica` /
+-- `ReadFromRemoteParallelReplicas` instead of `ReadFromParallelReplicas`, so the check above
+-- would not notice a regression in this mode.
+SELECT 'the child read of a Merge table is not distributed with a local plan';
+SELECT countIf(explain LIKE '%ReadFromParallelReplicas%'
+            OR explain LIKE '%ReadFromLocalReplica%'
+            OR explain LIKE '%ReadFromRemoteParallelReplicas%') AS child_read_distributed
+FROM (EXPLAIN description = 0 SELECT count() FROM merge(currentDatabase(), 't_merge_pr_local') WHERE name = '1');
+
+SELECT 'a plain table is still distributed with a local plan';
+SELECT countIf(explain LIKE '%ReadFromParallelReplicas%'
+            OR explain LIKE '%ReadFromLocalReplica%'
+            OR explain LIKE '%ReadFromRemoteParallelReplicas%') > 0 AS plain_read_distributed
+FROM (EXPLAIN description = 0 SELECT count() FROM t_merge_pr_local WHERE name = '1');
 
 DROP TABLE t_merge_pr_dist;
 DROP TABLE t_merge_pr_local;
