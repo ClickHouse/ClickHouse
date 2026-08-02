@@ -151,6 +151,7 @@ public:
     Impl(const Block & header, const FormatSettings & format_settings);
 
     bool isAnimated() const { return animated; }
+    bool isStreamingAnimation() const { return streaming_animation; }
     void setFrameCallback(FrameCallback callback) { frame_callback = std::move(callback); }
 
     void setColumns(const ColumnPtr * columns, size_t num_columns);
@@ -746,6 +747,11 @@ PNGSerializer::~PNGSerializer() = default;
 bool PNGSerializer::isAnimated() const
 {
     return impl->isAnimated();
+}
+
+bool PNGSerializer::isStreamingAnimation() const
+{
+    return impl->isStreamingAnimation();
 }
 
 void PNGSerializer::setFrameCallback(FrameCallback callback)

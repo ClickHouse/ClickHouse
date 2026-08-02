@@ -52,6 +52,10 @@ public:
     /// Whether the input has a `t` column, which turns the result into an animation.
     bool isAnimated() const;
 
+    /// Whether the frames are handed over as soon as they are complete, instead of being buffered until the
+    /// whole result has been read.
+    bool isStreamingAnimation() const;
+
     /// Called once per completed frame, in ascending order of `t`. The frame is displayed for
     /// `delay_num / delay_den` seconds. `pixels` is only valid for the duration of the call.
     using FrameCallback = std::function<void(const UInt8 * pixels, UInt16 delay_num, UInt16 delay_den)>;

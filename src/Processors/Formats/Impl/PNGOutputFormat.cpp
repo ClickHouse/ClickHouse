@@ -49,6 +49,8 @@ PNGOutputFormat::PNGOutputFormat(WriteBuffer & out_, SharedHeader header_, const
             "the PNG format produce one. Remove the 't' column, or choose another value of "
             "'output_format_image_terminal_mode'.");
 
+    streaming = serializer->isStreamingAnimation();
+
     serializer->setFrameCallback([this](const UInt8 * pixels, UInt16 delay_num, UInt16 delay_den)
     {
         writeFrame(pixels, delay_num, delay_den);
@@ -87,6 +89,14 @@ void PNGOutputFormat::writeFrame(const UInt8 * pixels, UInt16 delay_num, UInt16 
     }
 
     animation_writer->writeFrame(reinterpret_cast<const unsigned char *>(pixels), delay_num, delay_den);
+
+    /// The point of the streaming mode is that a viewer can display the frames while the query is still
+    /// running, and `IOutputFormat` only flushes after a whole chunk has been consumed, so a chunk with many
+    /// distinct values of `t` would otherwise hold all of its frames back until the chunk ends. `flushImpl`
+    /// rather than `flush`, because the writing mutex is already held by the caller of `consume`.
+    /// With a terminal protocol the datastream is one payload and nothing can be sent early anyway.
+    if (streaming && terminal_mode == ImageTerminalMode::None)
+        flushImpl();
 }
 
 void PNGOutputFormat::finalizeImpl()

@@ -37,6 +37,8 @@ private:
 
     const ImageTerminalMode terminal_mode;
     std::unique_ptr<PNGSerializer> serializer;
+    /// Whether the animation is written out frame by frame, which also makes every frame flushed on its own.
+    bool streaming = false;
 
     /// The animated output. An inline terminal image protocol carries the datastream as a single payload, so
     /// in that case it is encoded into memory first; otherwise the frames go straight to `out`.
