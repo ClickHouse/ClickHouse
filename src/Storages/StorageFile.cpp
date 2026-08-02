@@ -1878,6 +1878,15 @@ public:
         /// In case of formats with prefixes if file is not empty we have already written prefix.
         bool do_not_write_prefix = naked_buffer->size();
         const auto & settings = getContext()->getSettingsRef();
+
+        /// The size is re-checked here, per sink: `StorageFile::write` checks it once at query
+        /// start, and not at all when writing through a file descriptor or a partitioned path.
+        if (do_not_write_prefix
+            && !FormatFactory::instance().checkIfFormatSupportAppend(format_name, getContext(), format_settings))
+            throw Exception(
+                ErrorCodes::CANNOT_APPEND_TO_FILE,
+                "Data cannot be appended to {} because the {} format doesn't support appends",
+                use_table_fd ? "the given file descriptor" : ("file " + path), format_name);
         write_buf = wrapWriteBufferWithCompressionMethod(
             std::move(naked_buffer),
             compression_method,
