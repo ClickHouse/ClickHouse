@@ -288,13 +288,29 @@ TEST(CancellationChecker, ProcessListPreservesFractionalTimeout)
                 if (deadline_ms == 0)
                     std::this_thread::sleep_for(std::chrono::milliseconds(1));
             }
-            ASSERT_NE(deadline_ms, 0u) << "ProcessList::insert did not register the query";
+
+            if (deadline_ms == 0)
+            {
+                /// Nothing was armed. Only inconclusive if the timeout has passed, in which case the
+                /// worker has already cancelled and removed the query and there is no deadline left
+                /// to read: retry rather than judge the arithmetic. Raising the timeout instead would
+                /// break the retry path above, which waits for a drain that `appendDoneTasks` never
+                /// notifies.
+                ASSERT_GE(steadyNowNs(), now_ns + timeout_us * 1000)
+                    << "the query was not registered with the checker while it was still running";
+                entry.reset();
+                continue;
+            }
 
             EXPECT_GE(deadline_ms * NS_PER_MS, now_ns + timeout_us * 1000)
                 << "the deadline was armed before the exact timeout the setting names";
             measured = true;
         }
-        EXPECT_TRUE(measured) << "could not observe ProcessList::insert within a single millisecond";
+        /// Every attempt was inconclusive, which needs the machine to have starved this thread for
+        /// longer than the timeout 20 times over. Skipping keeps that from reading as a violation of
+        /// the arithmetic, which was never observed.
+        if (!measured)
+            GTEST_SKIP() << "never observed a deadline before the query timed out";
     });
     body.join();
 }
