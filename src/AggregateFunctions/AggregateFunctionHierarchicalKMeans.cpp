@@ -7,6 +7,9 @@
 #include <DataTypes/DataTypesNumber.h>
 #include <IO/WriteHelpers.h>
 #include <IO/ReadHelpers.h>
+#include <IO/Operators_pcg_random.h>
+#include <IO/WriteBufferFromString.h>
+#include <IO/ReadBufferFromString.h>
 #include <Interpreters/Context.h>
 #include <Interpreters/ProcessList.h>
 #include <Common/CurrentThread.h>
@@ -69,6 +72,7 @@ namespace ErrorCodes
     extern const int BAD_ARGUMENTS;
     extern const int ILLEGAL_TYPE_OF_ARGUMENT;
     extern const int SIZES_OF_ARRAYS_DONT_MATCH;
+    extern const int INCORRECT_DATA;
 }
 
 /// Named (not anonymous) so the `TargetSpecific::*` namespaces the macro generates cannot collide with
@@ -289,6 +293,13 @@ struct KMeansParams
 
 /// Renormalize centroids to unit length. With `||c|| = 1` the `||c||^2` term of the argmin is a constant, so
 /// the same L2 kernels become an exact cosine/inner-product argmin.
+///
+/// The `||c|| = 1` guarantee has to be absolute - a single zero-norm centroid would leave `assignCentroid`
+/// ranking against a direction-less centroid and quietly break the cosine equivalence the whole mode rests
+/// on. Zero-norm INPUT vectors are rejected at `add` time (cosine is undefined for them), so the only way to
+/// reach a zero here is exact cancellation of a cluster mean, e.g. a cluster of perfectly antipodal points.
+/// Substitute a fixed unit vector in that case: the direction is arbitrary, but no arbitrary choice is worse
+/// than a centroid that satisfies neither metric.
 void normalizeCentroids(Float * centroids, size_t k, size_t d)
 {
     for (size_t c = 0; c < k; ++c)
@@ -297,11 +308,17 @@ void normalizeCentroids(Float * centroids, size_t k, size_t d)
         double norm2 = 0;
         for (size_t j = 0; j < d; ++j)
             norm2 += static_cast<double>(cen[j]) * static_cast<double>(cen[j]);
+
         if (norm2 > 0)
         {
             const Float inv = static_cast<Float>(1.0 / std::sqrt(norm2));
             for (size_t j = 0; j < d; ++j)
                 cen[j] *= inv;
+        }
+        else
+        {
+            std::fill(cen, cen + d, 0.0f);
+            cen[0] = 1.0f;
         }
     }
 }
@@ -689,7 +706,7 @@ void trainHierarchical(
         TrainTask root;
         root.all_rows = true;
         root.leaves = k;
-        root.seed = seed;
+        root.seed = mixSeed(seed, 0); /// same de-correlation as the reservoir RNG
         level.push_back(std::move(root));
     }
 
@@ -748,10 +765,36 @@ struct HierarchicalKMeansData
     PaddedPODArray<Float> samples; /// flat, (samples.size() / dim) vectors
     UInt64 seen = 0;
     UInt32 dim = 0;
-    pcg64 rng; /// seeded in create()
+
+    /// `pcg32_fast` rather than `pcg64` specifically because this generator crosses the serialization
+    /// boundary: `IO/Operators_pcg_random.h` can round-trip it, while `pcg64` carries a 128-bit state that
+    /// pcg's own stream operators cannot emit here (`unsigned __int128` has no `ostream` overload). The
+    /// training RNG in `insertResultInto` is never serialized and stays `pcg64`.
+    pcg32_fast rng; /// seeded in create()
+
+    /// Uniform in `[0, limit)`. One 32-bit draw does not cover a `limit` past 2^32, which `seen` reaches on a
+    /// large enough stream, so widen with a second draw exactly as `ReservoirSampler` does.
+    UInt64 genRandom(UInt64 limit)
+    {
+        if (limit <= static_cast<UInt64>(pcg32_fast::max()))
+            return rng() % limit;
+        return (static_cast<UInt64>(rng()) * (static_cast<UInt64>(pcg32_fast::max()) + 1ULL) + static_cast<UInt64>(rng())) % limit;
+    }
+
+    /// Uniform in [0, 1).
+    double randomDouble()
+    {
+        return static_cast<double>(rng()) / (static_cast<double>(pcg32_fast::max()) + 1.0);
+    }
 
     void addVector(const Float * v, UInt32 d, UInt64 cap)
     {
+        /// `dim == 0` is the "no rows yet" sentinel, so an empty input array would both make the state
+        /// indistinguishable from empty and turn `samples.size() / dim` below into a division by zero.
+        /// `Array(Float32)` permits empty arrays, so this has to be rejected rather than assumed away.
+        if (d == 0)
+            throw Exception(ErrorCodes::BAD_ARGUMENTS, "hierarchicalKMeans: input vector must not be empty");
+
         if (dim == 0)
             dim = d;
         if (d != dim)
@@ -766,12 +809,18 @@ struct HierarchicalKMeansData
         }
         else
         {
-            UInt64 j = rng() % seen; /// Algorithm R reservoir sampling
+            UInt64 j = genRandom(seen); /// Algorithm R reservoir sampling
             if (j < cap)
                 memcpy(&samples[j * dim], v, d * sizeof(Float));
         }
     }
 
+    /// Merge two reservoirs into a sample of their union.
+    ///
+    /// Every branch below has to make a RANDOM decision about which side a kept row comes from. An earlier
+    /// version fixed the per-side counts to their expectation (`cap * seen / total_seen`), which is not a
+    /// uniform merge and is not even order-independent: with `cap = 1` and two one-row states the split is
+    /// `floor(1 * 1 / 2) = 0`, so the left sample was always dropped and the right one always kept.
     void merge(const HierarchicalKMeansData & other, UInt64 cap)
     {
         if (other.dim == 0)
@@ -784,10 +833,11 @@ struct HierarchicalKMeansData
         if (other.dim != dim)
             throw Exception(ErrorCodes::SIZES_OF_ARRAYS_DONT_MATCH, "hierarchicalKMeans: dim mismatch on merge");
 
-        UInt64 d = dim;
-        UInt64 have_a = samples.size() / d;
-        UInt64 have_b = other.samples.size() / d;
+        const UInt64 d = dim;
+        const UInt64 have_a = samples.size() / d;
+        const UInt64 have_b = other.samples.size() / d;
 
+        /// Neither side overflows the reservoir: keeping everything IS the uniform sample.
         if (have_a + have_b <= cap)
         {
             samples.insert(other.samples.begin(), other.samples.end());
@@ -795,27 +845,40 @@ struct HierarchicalKMeansData
             return;
         }
 
-        /// Weighted subsample of the union: keep counts proportional to `seen` so the result stays ~uniform.
-        UInt64 total_seen = seen + other.seen;
-        UInt64 take_a = std::min<UInt64>(have_a, total_seen ? static_cast<UInt64>(static_cast<double>(cap) * static_cast<double>(seen) / static_cast<double>(total_seen)) : cap / 2);
-        UInt64 take_b = std::min<UInt64>(have_b, cap - take_a);
-        take_a = std::min<UInt64>(have_a, cap - take_b);
-
-        for (UInt64 i = 0; i < take_a; ++i) /// partial Fisher-Yates: keep take_a random rows of `this`
+        /// `other` never dropped a row, so replaying its rows through Algorithm R produces exactly the same
+        /// distribution as if they had arrived on this stream in the first place.
+        if (other.seen <= cap)
         {
-            UInt64 j = i + rng() % (have_a - i);
-            for (UInt64 t = 0; t < d; ++t)
-                std::swap(samples[i * d + t], samples[j * d + t]);
+            for (UInt64 i = 0; i < have_b; ++i)
+                addVector(&other.samples[i * d], static_cast<UInt32>(d), cap);
+            return;
         }
-        samples.resize(take_a * d);
 
-        VectorWithMemoryTracking<UInt64> idx(have_b);
-        std::iota(idx.begin(), idx.end(), 0);
-        for (UInt64 i = 0; i < take_b; ++i) /// append take_b random rows of `other`
+        /// Symmetric case: we are the side that kept everything, so adopt `other`'s reservoir and replay
+        /// our own rows into it.
+        if (seen <= cap)
         {
-            UInt64 j = i + rng() % (have_b - i);
-            std::swap(idx[i], idx[j]);
-            samples.insert(&other.samples[idx[i] * d], &other.samples[(idx[i] + 1) * d]);
+            PaddedPODArray<Float> ours;
+            ours.swap(samples);
+            samples.insert(other.samples.begin(), other.samples.end());
+            const UInt64 ours_seen = seen;
+            seen = other.seen;
+            for (UInt64 i = 0; i < ours_seen; ++i)
+                addVector(&ours[i * d], static_cast<UInt32>(d), cap);
+            return;
+        }
+
+        /// Both sides were downsampled, so both hold exactly `cap` rows. Replace each slot with a row drawn
+        /// from `other` with probability equal to `other`'s share of the combined stream. The choice is made
+        /// per slot rather than as a fixed count, which is what keeps the merge order-independent.
+        const double p = static_cast<double>(other.seen) / (static_cast<double>(seen) + static_cast<double>(other.seen));
+        for (UInt64 i = 0; i < have_a; ++i)
+        {
+            if (randomDouble() < p)
+            {
+                const UInt64 j = genRandom(have_b);
+                memcpy(&samples[i * d], &other.samples[j * d], d * sizeof(Float));
+            }
         }
         seen += other.seen;
     }
@@ -875,7 +938,10 @@ public:
     void create(AggregateDataPtr __restrict place) const override
     {
         new (place) HierarchicalKMeansData();
-        data(place).rng.seed(seed);
+        /// Hash the seed rather than feeding it in raw. pcg's `oneseq` engines set state directly, so nearby
+        /// seeds stay correlated for the first few draws - seeds 1..40 all produced an even first output,
+        /// which biased Algorithm R's very first keep/replace decision the same way every time.
+        data(place).rng.seed(mixSeed(seed, 0));
     }
 
     void add(AggregateDataPtr __restrict place, const IColumn ** columns, size_t row_num, Arena *) const override
@@ -885,6 +951,21 @@ public:
         const auto & offsets = array.getOffsets();
         size_t start = row_num ? offsets[row_num - 1] : 0;
         size_t length = offsets[row_num] - start;
+
+        /// A zero vector has no direction, so cosine against it is undefined. Under `spherical = 1` the whole
+        /// point is that every centroid is a unit direction, so reject the input rather than let a zero-norm
+        /// point silently drag a cluster mean toward the origin.
+        if (spherical)
+        {
+            double norm2 = 0;
+            for (size_t j = 0; j < length; ++j)
+                norm2 += static_cast<double>(nested[start + j]) * static_cast<double>(nested[start + j]);
+            if (norm2 == 0)
+                throw Exception(ErrorCodes::BAD_ARGUMENTS,
+                    "hierarchicalKMeans: zero-norm vectors are not allowed with spherical = 1 "
+                    "(cosine is undefined for a vector with no direction)");
+        }
+
         data(place).addVector(&nested[start], static_cast<UInt32>(length), sample_cap);
     }
 
@@ -900,6 +981,13 @@ public:
         writeBinary(d.seen, buf);
         writeVarUInt(d.samples.size(), buf);
         buf.write(reinterpret_cast<const char *>(d.samples.data()), d.samples.size() * sizeof(Float));
+
+        /// The reservoir is only uniform if the PRNG keeps advancing across the serialization boundary. Without
+        /// this a state that crosses a distributed merge resumes from a default-constructed generator, so every
+        /// shard replays the same draws and later merges stop matching the pre-serialization behaviour.
+        WriteBufferFromOwnString rng_buf;
+        rng_buf << d.rng;
+        writeStringBinary(rng_buf.str(), buf);
     }
 
     void deserialize(AggregateDataPtr __restrict place, ReadBuffer & buf, std::optional<size_t>, Arena *) const override
@@ -909,8 +997,20 @@ public:
         readBinary(d.seen, buf);
         size_t n = 0;
         readVarUInt(n, buf);
+
+        /// Guard the `dim > 0 whenever there are rows` invariant that the rest of the state relies on, rather
+        /// than dividing by zero later on a corrupt or hostile state.
+        if (n > 0 && (d.dim == 0 || n % d.dim != 0))
+            throw Exception(ErrorCodes::INCORRECT_DATA,
+                "hierarchicalKMeans: corrupt aggregate state ({} values for dimension {})", n, d.dim);
+
         d.samples.resize(n);
         buf.readStrict(reinterpret_cast<char *>(d.samples.data()), n * sizeof(Float));
+
+        String rng_string;
+        readStringBinary(rng_string, buf);
+        ReadBufferFromString rng_buf(rng_string);
+        rng_buf >> d.rng;
     }
 
     void insertResultInto(AggregateDataPtr __restrict place, IColumn & to, Arena *) const override
@@ -971,7 +1071,10 @@ void registerAggregateFunctionHierarchicalKMeans(AggregateFunctionFactory & fact
     FunctionDocumentation::Category category = FunctionDocumentation::Category::MachineLearning;
     FunctionDocumentation documentation = {description, syntax, arguments, {}, returned_value, examples, introduced_in, category};
 
-    AggregateFunctionProperties properties = { .is_order_dependent = false };
+    /// Order-dependent: the `k >= n` shortcut emits points in arrival order, and Algorithm R consumes RNG
+    /// draws by stream position. Claiming otherwise lets `removeRedundantSorting` drop an upstream `ORDER BY`
+    /// and silently change the trained centroids.
+    AggregateFunctionProperties properties = { .is_order_dependent = true };
     factory.registerFunction("hierarchicalKMeans",
         {HierarchicalKMeansImpl::createAggregateFunctionHierarchicalKMeans, documentation, properties});
 }

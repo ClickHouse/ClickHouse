@@ -456,6 +456,13 @@ private:
                     "assignCentroid: dictionary {} centroid {} has {} dimensions, expected {}",
                     dict_name, centroids[c].first, centroids[c].second.size(), dim);
             std::copy(centroids[c].second.begin(), centroids[c].second.end(), &row_major[c * dim]);
+
+            /// The result type is `UInt32`, so a wider dictionary key would wrap and return a different
+            /// centroid id than the one that was matched. Reject it instead of narrowing silently.
+            if (centroids[c].first > std::numeric_limits<UInt32>::max())
+                throw Exception(ErrorCodes::BAD_ARGUMENTS,
+                    "assignCentroid: dictionary {} has cid {} which exceeds the UInt32 range of the result",
+                    dict_name, centroids[c].first);
             ids[c] = static_cast<UInt32>(centroids[c].first);
         }
 
