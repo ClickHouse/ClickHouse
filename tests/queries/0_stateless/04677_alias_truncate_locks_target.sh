@@ -26,17 +26,20 @@ $CLICKHOUSE_CLIENT -q "
     CREATE TABLE rdb_alias ENGINE = Alias($CLICKHOUSE_DATABASE, 'rdb');
 "
 
-# Scans that outlive the TRUNCATE they race with. A small max_block_size keeps the iterator alive
+# Scans that outlive the TRUNCATE they race with. One row per block keeps the iterator being pulled
 # for the whole window; every SELECT must still finish without an error.
+# The window is a sleep over a bounded row count, not a scan of the whole table: the truncate waits
+# for these scans, so their duration is this loop's runtime, and a sleep costs the same on every
+# build flavour where scanning 300k rows does not.
 # Both timeouts are pinned to the same value rather than inherited: a scan that reaches the lock only
 # after the truncate has queued must outwait that truncate, and the CI config caps a scan's wait at
 # 60s. The error would go to stderr and the runner fails any test that writes there.
-READ_SETTINGS="max_threads = 1, max_block_size = 100, lock_acquire_timeout = 300"
+READ_SETTINGS="max_threads = 1, max_block_size = 1, lock_acquire_timeout = 300"
 seen_scans=""
 for i in {1..3}; do
     for j in {1..3}; do
         $CLICKHOUSE_CLIENT --query_id="scan_${i}_${j}_$CLICKHOUSE_DATABASE" \
-            -q "SELECT count() FROM rdb_buf SETTINGS $READ_SETTINGS" > /dev/null &
+            -q "SELECT sum(sleepEachRow(0.1)) FROM (SELECT k FROM rdb_buf LIMIT 200) SETTINGS $READ_SETTINGS" > /dev/null &
     done
     # Waited for by outcome rather than by a fixed delay: a reader may only join the owning lock group
     # while no writer is queued, so a scan still starting when the truncate arrives queues behind it
