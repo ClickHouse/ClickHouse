@@ -750,14 +750,11 @@ def test_file_engine():
 def test_backup_to_not_yet_existing_backup_area():
     # When the configured backup area does not exist yet, BackupWriterFile creates the whole chain
     # and has to fsync all of it - a directory that exists but whose parent's entry for it was never
-    # flushed does not survive a power loss. Only an integration test can set this up, because
-    # backups.allowed_path is a server config setting, and in CI it always points somewhere existing.
+    # flushed does not survive a power loss.
     #
-    # The load-bearing assertion is that two backups to the same area fsync the SAME number of
-    # directories: the first has to create deep_backups/a/b/c, the second finds it there, and how
-    # much already exists must not change what gets fsynced. Existence is not proof of durability,
-    # so the writer walks the area's ancestors to the filesystem root either way. The second
-    # assertion pins that the equal counts are the whole chain rather than a collapse to zero.
+    # Load-bearing: two backups to the same area must fsync the SAME number of directories, so how
+    # much already exists cannot change what gets fsynced. The second assertion pins that the equal
+    # counts are the whole chain rather than a collapse to zero.
     #
     # The concurrent variant - two backups racing to create a shared intermediate directory, which
     # is what motivated syncing the ancestors instead of trusting existence - is NOT covered
@@ -822,6 +819,57 @@ def test_backup_to_not_yet_existing_backup_area():
     instance.query("DROP TABLE test.table")
     instance.query(f"RESTORE TABLE test.table FROM File('{AREA}/b1.zip')")
     assert instance.query("SELECT count(), sum(x) FROM test.table") == "10\t45\n"
+    instance.query("DROP TABLE test.table")
+
+
+def test_backup_area_spelling_does_not_change_fsynced_directories():
+    # The fsynced directory set must not depend on how backups.allowed_path is spelled. This module's
+    # entry is written with a trailing slash, which is the majority spelling in the tree and in the
+    # documentation, and a trailing slash survives normalization while the ancestors derived from a
+    # file path never carry one. Both bounds of the directory walk are path comparisons, so a slashed
+    # area used to miss them: the walk ran past the area, fsyncing directories nobody configured
+    # ClickHouse to write in, and one level was fsynced twice.
+    #
+    # The area itself cannot be nested deeper without a new config entry, so depth is varied on the
+    # destination side instead: a destination nested below the area must add exactly its own levels,
+    # not a multiple. Two depths pin that the count tracks the real directory set.
+    create_and_fill_table(n=10)
+
+    # Must match the first backups.allowed_path entry in configs/backups_disk.xml, minus the trailing
+    # slash whose handling is the point. Deriving the expected counts from it rather than hard-coding
+    # them keeps this case honest if the configured area moves.
+    AREA = "/backups"
+    chain_len = len(PurePosixPath(AREA).parents) + 1
+
+    # Archive destinations on purpose: an archive is a single file written into its directory, so the
+    # fsynced set is exactly the area chain plus whatever levels the destination itself adds. A
+    # directory destination also fsyncs one directory per part file, which randomized merge-tree
+    # settings vary.
+    name = f"slash_{uuid.uuid4().hex}"
+
+    def dir_syncs(dest, query_id):
+        instance.query(
+            f"BACKUP TABLE test.table TO File('{dest}') SETTINGS fsync_backup_files = 1",
+            query_id=query_id,
+        )
+        return get_events_for_query(query_id)["DirectorySync"]
+
+    flat = dir_syncs(f"{AREA}/{name}.zip", f"{name}_flat")
+    assert flat == chain_len, (
+        f"expected exactly the {chain_len} directories of {AREA} and its ancestors to be fsynced,"
+        f" got {flat}"
+    )
+
+    # Nested below the area: exactly the levels the destination itself adds, because the walk stops
+    # at the area. The added depth is derived from the destination rather than counted by hand.
+    nested_dir = f"{AREA}/{name}/n1/n2"
+    extra = len(PurePosixPath(nested_dir).relative_to(AREA).parts)
+    nested = dir_syncs(f"{nested_dir}/{name}.zip", f"{name}_nested")
+    assert nested == chain_len + extra, (
+        f"a destination {extra} levels below {AREA} must fsync {chain_len + extra} directories,"
+        f" got {nested}"
+    )
+
     instance.query("DROP TABLE test.table")
 
 
