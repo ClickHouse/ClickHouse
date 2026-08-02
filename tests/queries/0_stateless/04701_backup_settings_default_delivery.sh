@@ -122,6 +122,27 @@ backup table src to Disk('backups', '${uniq}_s2') settings id='${uniq}_s2', asyn
 " | grep -o "CREATING_BACKUP"
 wait_status "${uniq}_s2" "BACKUP_CREATED"
 
+# A repeated `async` takes its last value, so the wait decision must follow the effective setting.
+${CLICKHOUSE_CLIENT} --query "
+backup table src to Disk('backups', '${uniq}_s3') settings id='${uniq}_s3', async=0, async=1;
+" | grep -o "CREATING_BACKUP"
+wait_status "${uniq}_s3" "BACKUP_CREATED"
+
+${CLICKHOUSE_CLIENT} --query "
+backup table src to Disk('backups', '${uniq}_s4') settings id='${uniq}_s4', async=1, async=0;
+" | grep -o "BACKUP_CREATED"
+
+# A string value converts as the Bool setting field does, rather than aborting the query.
+${CLICKHOUSE_CLIENT} --query "
+backup table src to Disk('backups', '${uniq}_s5') settings id='${uniq}_s5', async='1';
+" | grep -o "CREATING_BACKUP"
+wait_status "${uniq}_s5" "BACKUP_CREATED"
+
+${CLICKHOUSE_CLIENT} --query "
+select id like '%_s4' as expected_sync, settings['async']
+from system.backups where id in ('${uniq}_s3', '${uniq}_s4', '${uniq}_s5') order by id
+"
+
 ${CLICKHOUSE_CLIENT} -m --query "
 drop table r1; drop table r2; drop table r3; drop table r4; drop table r5; drop table src;
 "

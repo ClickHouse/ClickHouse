@@ -81,3 +81,43 @@ TEST(BackupSettingsDefault, RestoreCopySettingsToQueryCarriesOnlyCoreDefaults)
     EXPECT_EQ(assigned_uuid, SettingFieldOptionalUUID{*uuid_change}.value)
         << "the generated restore_uuid was discarded";
 }
+
+/// `isAsync` decides whether the client waits (`InterpreterBackupQuery.cpp:47-49`) while
+/// `fromBackupQuery` decides the operation's effective `async`. They read the same clause separately, so
+/// they must agree on it, over duplicates and over value spellings alike.
+TEST(BackupSettingsDefault, IsAsyncAgreesWithFromBackupQuery)
+{
+    struct Case
+    {
+        const char * settings;
+        bool expected;
+    };
+
+    /// A repeated setting takes its last value, as `SET` does; a string value converts as the Bool field
+    /// does. The `= DEFAULT` forms resolve to the field's default, which is false.
+    const Case cases[] = {
+        {"async = 0, async = 1", true},
+        {"async = 1, async = 0", false},
+        {"async = 1, async = 1", true},
+        {"async = '1'", true},
+        {"async = 'true'", true},
+        {"async = '0'", false},
+        {"async = 1", true},
+        {"async = 0", false},
+        {"async = 1, async = DEFAULT", false},
+        {"async = DEFAULT, async = 1", false},
+        {"max_execution_time = 1", false},
+    };
+
+    for (const auto & test_case : cases)
+    {
+        const String query = String("BACKUP TABLE t TO Disk('d', 'b') SETTINGS ") + test_case.settings;
+        ASTPtr holder;
+        ASTBackupQuery * backup_query = parseBackupQuery(holder, query);
+        ASSERT_NE(nullptr, backup_query) << "query: " << query;
+
+        EXPECT_EQ(test_case.expected, BackupSettings::isAsync(*backup_query)) << "query: " << query;
+        EXPECT_EQ(BackupSettings::fromBackupQuery(*backup_query).async, BackupSettings::isAsync(*backup_query))
+            << "the wait decision disagrees with the effective setting, query: " << query;
+    }
+}

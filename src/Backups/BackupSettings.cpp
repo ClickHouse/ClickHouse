@@ -123,13 +123,20 @@ BackupSettings BackupSettings::fromBackupQuery(const ASTBackupQuery & query)
 bool BackupSettings::isAsync(const ASTBackupQuery & query)
 {
     /// This runs before `fromBackupQuery` (BackupsWorker decides where to run the operation first), so it
-    /// resolves `async = DEFAULT` on its own. One name, so no classification is needed.
+    /// resolves `async = DEFAULT` on its own. It must reach the same value `fromBackupQuery` will: hence the
+    /// last of several `async` changes, and the same field conversion. One name, so no classification.
     if (query.settings)
     {
         const auto & settings = query.settings->as<const ASTSetQuery &>();
         if (std::ranges::find(settings.default_settings, "async") == settings.default_settings.end())
-            if (const auto * field = settings.changes.tryGet("async"))
-                return field->safeGet<bool>();
+        {
+            auto it = std::find_if(
+                settings.changes.rbegin(),
+                settings.changes.rend(),
+                [](const SettingChange & change) { return change.name == "async"; });
+            if (it != settings.changes.rend())
+                return SettingFieldBool{it->value}.value;
+        }
     }
     return false; /// `async` is false by default.
 }
