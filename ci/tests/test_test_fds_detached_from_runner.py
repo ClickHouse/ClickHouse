@@ -20,7 +20,10 @@ joins blocked until the job was SIGKILLed - before the stages that collect the
 server log and check for an OOM kill.
 
 `clickhouse-test` now passes explicit sinks for both descriptors, so an escaped
-test cannot hold the runner's pipeline open.
+test cannot hold the runner's pipeline open. The wrapper's stderr gets an
+artifact of its own rather than the test's `2>` target, because that one is
+truncated by the test's redirect and is read back as `stderr`, where content is
+itself a verdict and is matched against `MESSAGES_TO_RETRY`.
 
 These tests drive the mechanism directly rather than running a real suite: the
 production failure needs a dying server and a two-hour window, but the wedge
@@ -38,10 +41,13 @@ unpatched spawn, so getting these wrong certifies a broken fix):
 """
 
 import ast
+import os
+import runpy
 import subprocess
 import sys
 import threading
 import time
+import types
 from pathlib import Path
 
 BASH = "/bin/bash"
@@ -160,59 +166,269 @@ def test_detaching_only_stdout_is_not_enough(tmp_path):
     )
 
 
-def test_run_single_test_passes_explicit_sinks():
-    """The real spawn site must keep passing both sinks.
+def _spawn_kwargs():
+    """The `Popen` keyword arguments of `run_single_test`, as AST nodes.
+
+    Also returns the enclosing function so a sink bound to a local name can be
+    resolved *within it*, which is what stops a decoy `open(...)` elsewhere in
+    `clickhouse-test` from satisfying the assertions below.
+    """
+    tree = ast.parse(_CLICKHOUSE_TEST.read_text())
+    found = [
+        (func, {kw.arg: kw.value for kw in call.keywords})
+        for func in ast.walk(tree)
+        if isinstance(func, ast.FunctionDef) and func.name == "run_single_test"
+        for call in ast.walk(func)
+        if isinstance(call, ast.Call) and getattr(call.func, "id", "") == "Popen"
+    ]
+    assert found, "no Popen call found in run_single_test"
+    return found
+
+
+def _resolve(func, node):
+    """`node`, or the value assigned to it if it is a local name of `func`."""
+    if not isinstance(node, ast.Name):
+        return node
+    assigned = [
+        assign.value
+        for assign in ast.walk(func)
+        if isinstance(assign, ast.Assign)
+        for target in assign.targets
+        if isinstance(target, ast.Name) and target.id == node.id
+    ]
+    assert len(assigned) == 1, (
+        f"expected exactly one assignment to `{node.id}` in run_single_test, "
+        f"got {len(assigned)}"
+    )
+    return assigned[0]
+
+
+def test_run_single_test_detaches_stdout():
+    """The real spawn site must send its stdout to `DEVNULL`.
 
     The timing tests above emulate the spawn, because driving the real one needs
-    a running server. This asserts the property directly on the source, so
-    dropping either argument from `run_single_test` fails here.
+    a running server, so they cannot catch a change here. Asserting the VALUE and
+    not just the presence of the keyword is what makes this a live pin:
+    `stdout=sys.stdout` or `stdout=None` restores the wedge while still passing a
+    presence check.
     """
-    tree = ast.parse(_CLICKHOUSE_TEST.read_text())
-    spawns = [
-        sorted(kw.arg for kw in call.keywords)
-        for func in ast.walk(tree)
-        if isinstance(func, ast.FunctionDef) and func.name == "run_single_test"
-        for call in ast.walk(func)
-        if isinstance(call, ast.Call) and getattr(call.func, "id", "") == "Popen"
-    ]
-    assert spawns, "no Popen call found in run_single_test"
-    for kwargs in spawns:
-        assert "stdout" in kwargs and "stderr" in kwargs, (
-            "run_single_test must pass explicit stdout and stderr so a test cannot "
-            f"inherit the runner's output pipe, got {kwargs}"
+    for _func, kwargs in _spawn_kwargs():
+        assert "stdout" in kwargs, (
+            "run_single_test must pass an explicit stdout so a test cannot inherit "
+            "the runner's output pipe"
+        )
+        assert ast.dump(kwargs["stdout"]) == ast.dump(
+            ast.parse("subprocess.DEVNULL", mode="eval").body
+        ), (
+            "the wrapping shell's stdout must be subprocess.DEVNULL, got "
+            f"`{ast.unparse(kwargs['stdout'])}`"
         )
 
 
-def test_wrapper_stderr_is_kept_not_discarded():
-    """The wrapper's stderr must reach the stderr artifact, not `DEVNULL`.
+def test_wrapper_stderr_goes_to_its_own_artifact():
+    """The wrapper's stderr must be a file of its own, not `DEVNULL`.
 
     The test's own output is redirected by the command, but the wrapping shell
-    still reports failures that happen before that redirect takes effect (a bad
-    redirect target, a syntax error) on its own fd2. Sending those to `DEVNULL`
-    would drop shell-level diagnostics - the same class of loss this change
-    exists to fix - so pin the sink to `self.stderr_file`.
+    reports job status (a killed or segfaulting test, a bad redirect target, a
+    syntax error) on its own fd2. `DEVNULL` would drop those - the same class of
+    loss this change exists to fix.
+
+    It must not be `stderr_file` either, for two measured reasons: the test
+    truncates that file when its own redirect opens it, which destroys anything
+    written before that; and it is read back as `stderr`, where content is itself
+    a verdict and is matched against `MESSAGES_TO_RETRY` - whose entries include
+    `No such file or directory`, which a quoted command line can contain.
     """
-    tree = ast.parse(_CLICKHOUSE_TEST.read_text())
-    spawns = [
-        {kw.arg: kw.value for kw in call.keywords}
-        for func in ast.walk(tree)
-        if isinstance(func, ast.FunctionDef) and func.name == "run_single_test"
-        for call in ast.walk(func)
-        if isinstance(call, ast.Call) and getattr(call.func, "id", "") == "Popen"
-    ]
-    assert spawns, "no Popen call found in run_single_test"
-    for kwargs in spawns:
-        stderr = ast.dump(kwargs["stderr"])
-        assert "DEVNULL" not in stderr, (
-            "the wrapping shell's stderr must go to the stderr artifact, not DEVNULL"
+    for func, kwargs in _spawn_kwargs():
+        assert "stderr" in kwargs, "run_single_test must pass an explicit stderr"
+        sink = _resolve(func, kwargs["stderr"])
+        assert "DEVNULL" not in ast.unparse(sink), (
+            "the wrapping shell's stderr must be reported, not sent to DEVNULL"
+        )
+        assert isinstance(sink, ast.Call) and getattr(sink.func, "id", "") == "open", (
+            f"expected the stderr sink to be an `open(...)`, got `{ast.unparse(sink)}`"
+        )
+        path, mode = sink.args[0], sink.args[1]
+        assert ast.unparse(path) == "self.wrapper_stderr_file", (
+            "the wrapper's stderr must go to its own artifact, not the test's `2>` "
+            f"target, got `{ast.unparse(path)}`"
+        )
+        assert ast.literal_eval(mode) == "ab", (
+            f"the sink must append so nothing is truncated, got {ast.unparse(mode)}"
         )
 
-    # The sink must be opened from `self.stderr_file`, in append mode so it adds
-    # to what the test itself writes there rather than truncating it.
-    source = _CLICKHOUSE_TEST.read_text()
-    assert 'open(self.stderr_file, "ab"' in source, (
-        "the wrapper's stderr sink must append to self.stderr_file"
+
+def test_wrapper_stderr_is_kept_out_of_the_retry_matcher():
+    """The relocated text must be reported without reaching the retry matcher.
+
+    `process_result_impl` builds the description the matcher sees; the wrapper's
+    lines are read there but appended by `process_result`, which runs after the
+    retry check. Pin that ordering: appending them to `debug_log` instead puts a
+    quoted command line in front of `MESSAGES_TO_RETRY`.
+    """
+    tree = ast.parse(_CLICKHOUSE_TEST.read_text())
+    functions = {
+        node.name: node
+        for node in ast.walk(tree)
+        if isinstance(node, ast.FunctionDef)
+    }
+    attribute = "wrapper_stderr_report"
+
+    def stores_to(func):
+        return [
+            node
+            for node in ast.walk(functions[func])
+            if isinstance(node, ast.Attribute)
+            and node.attr == attribute
+            and isinstance(node.ctx, ast.Store)
+        ]
+
+    assert stores_to("process_result_impl"), (
+        f"`process_result_impl` must read the wrapper's stderr into {attribute}"
     )
+    reported = [
+        node
+        for node in ast.walk(functions["process_result"])
+        if isinstance(node, ast.AugAssign)
+        and attribute in ast.unparse(node.value)
+    ]
+    assert reported, (
+        f"`process_result` must report {attribute}, so the text is visible in the "
+        "job log without being matched against MESSAGES_TO_RETRY"
+    )
+    matcher_fed = [
+        node
+        for node in ast.walk(functions["process_result_impl"])
+        if isinstance(node, ast.AugAssign)
+        and isinstance(node.target, ast.Name)
+        and node.target.id in ("debug_log", "stderr", "description")
+        and attribute in ast.unparse(node.value)
+    ]
+    assert not matcher_fed, (
+        f"{attribute} must not be folded into the description built by "
+        "`process_result_impl`: that is what the retry matcher is handed"
+    )
+
+
+def _drive_process_result(tmp_path, wrapper_line, same_path):
+    """Run the real `process_result_impl` + `process_result` over a wrapper message.
+
+    `same_path` writes the line to the test's `2>` target instead of the wrapper's
+    own artifact, which is what the sink used to be. Returns the
+    `MESSAGES_TO_RETRY` entries the retry matcher would see and whether the line
+    was reported to the job log.
+    """
+    ct = runpy.run_path(str(_CLICKHOUSE_TEST))
+    test_case_cls, status_cls = ct["TestCase"], ct["TestStatus"]
+
+    class _Args:
+        debug_log_file = str(tmp_path / "dbg.log")
+        bash_tracing_file = str(tmp_path / "trace.log")
+        stop = False
+        testcase_database = "test_db"
+        test_runs = 1
+        flaky_check = False
+        cloud = False
+        record = False
+        unified = 3
+        check_zookeeper_session = False
+        dont_retry_failures = False
+
+    case = test_case_cls.__new__(test_case_cls)
+    case.name = "00001_probe"
+    case.stdout_file = str(tmp_path / "t.stdout")
+    case.stderr_file = str(tmp_path / "t.stderr")
+    case.wrapper_stderr_file = case.stderr_file + "-wrapper"
+    case.fatal_sanitizer_prefix = case.stderr_file + "-fatal"
+    case.reference_file = str(tmp_path / "t.reference")
+    case.testcase_args = case.args = _Args()
+    case.show_whitespaces_in_diff = False
+    case.tags = set()
+    case.debug_log_retry_substitution = None
+    case.wrapper_stderr_report = ""
+    case.suite = types.SimpleNamespace(blacklist_check=set())
+
+    for path in (case.stdout_file, case.stderr_file, case.reference_file):
+        Path(path).write_text("")
+    sink = case.stderr_file if same_path else case.wrapper_stderr_file
+    Path(sink).write_text(wrapper_line)
+    if same_path and os.path.exists(case.wrapper_stderr_file):
+        os.remove(case.wrapper_stderr_file)
+
+    # A non-zero exit code, the shape every arm of the routing table produces.
+    proc = types.SimpleNamespace(returncode=1, pid=os.getpid())
+    result = case.process_result_impl(proc, 1.0)
+    retry_input = case.retry_matcher_input(result.description)
+    matched = [msg for msg in ct["MESSAGES_TO_RETRY"] if msg in retry_input]
+    reported = case.process_result(
+        result, {status: f"[ {status.name} ]" for status in status_cls}
+    )
+    return matched, wrapper_line.strip() in reported.description
+
+
+def test_wrapper_message_does_not_trigger_a_retry(tmp_path):
+    """A quoted command line must not make a deterministic failure look flaky.
+
+    This is the line the `stdout redirect target unopenable` arm really produces;
+    it contains a verbatim `MESSAGES_TO_RETRY` entry. The `same_path` arm is the
+    mutation: pointing the sink back at the test's `2>` target reddens this, which
+    is what makes the assertion load-bearing rather than incidental.
+    """
+    line = "/bin/bash: line 1: /nonexistent/x.stdout: No such file or directory\n"
+
+    matched, reported = _drive_process_result(tmp_path, line, same_path=False)
+    assert matched == [], f"wrapper text reached the retry matcher: {matched}"
+    assert reported, "the wrapper's message must still be reported"
+
+    matched, reported = _drive_process_result(tmp_path, line, same_path=True)
+    assert "No such file or directory" in matched, (
+        "the mutation arm must show the retry channel this fix closes; if it does "
+        "not, this test no longer pins anything"
+    )
+    assert reported
+
+
+def test_empty_wrapper_file_is_not_left_behind():
+    """An empty wrapper file must be removed while it is still known to be empty.
+
+    `Popen` creates it whether or not the shell writes anything, and the OK-path
+    cleanup does not run for a failing test, so without this every non-passing
+    test leaks an empty file into the suite's tmp dir - which defaults to a
+    directory inside the source tree. Measured before the guard existed: a
+    220-test batch left 13283 of them.
+    """
+    tree = ast.parse(_CLICKHOUSE_TEST.read_text())
+    run_single = next(
+        node
+        for node in ast.walk(tree)
+        if isinstance(node, ast.FunctionDef) and node.name == "run_single_test"
+    )
+    guarded = [
+        node
+        for node in ast.walk(run_single)
+        if isinstance(node, ast.If)
+        and "getsize(self.wrapper_stderr_file) == 0" in ast.unparse(node.test)
+        and "remove(self.wrapper_stderr_file)" in ast.unparse(node.body)
+    ]
+    assert guarded, (
+        "run_single_test must remove the wrapper's file while it is still empty, so "
+        "a non-passing test does not leak one into the suite's tmp dir"
+    )
+
+
+def test_child_side_messages_are_reported_exactly_as_before(tmp_path):
+    """The classes that always went to the test's `2>` target must not move.
+
+    `Permission denied` and `No such file or directory` from a failed exec are
+    emitted after the fork, with the redirect already installed, so they are the
+    test's own stderr and must keep reaching the verdict and the matcher.
+    """
+    line = "/bin/bash: line 1: /tmp/x.sh: Permission denied\n"
+    matched, reported = _drive_process_result(tmp_path, line, same_path=True)
+    assert "Permission denied" in matched, (
+        "a child-side message is the test's own stderr and must still be matched"
+    )
+    assert reported
 
 
 def test_single_child_fixture_cannot_detect_the_wedge(tmp_path):

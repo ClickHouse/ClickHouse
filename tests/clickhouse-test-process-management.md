@@ -63,14 +63,26 @@ finally:
     _gpid_file.unlink(missing_ok=True)
 ```
 
-The explicit sinks detach the test from our own stdout/stderr.  The command
-already redirects the test's output to the per-test `.stdout`/`.stderr` files, so
-only the wrapping shell writes to these; its stderr is appended to the `.stderr`
-file rather than discarded, and `stdout` is unused (see the comment on
-`pattern`).  Without this an orphan keeps our descriptors open, and under CI
-those are the write end of a `clickhouse-test | ts | tee` pipeline: `ts` never
-sees EOF, so the job produces no further output and hangs until its watchdog
-kills it, before the stages that collect the server log run.
+The explicit sinks detach the test from our own stdout/stderr.  Without them an
+orphan keeps our descriptors open, and under CI those are the write end of a
+`clickhouse-test | ts | tee` pipeline: `ts` never sees EOF, so the job produces
+no further output and hangs until its watchdog kills it, before the stages that
+collect the server log run.
+
+Only the wrapping shell writes to these sinks, because the command redirects the
+test's own output to the per-test `.stdout`/`.stderr` files.  It writes nothing to
+fd 1, hence `DEVNULL`; fd 2 carries its job status (a killed or segfaulting test,
+a bad redirect target, a syntax error), which is reported rather than discarded.
+
+That goes to a `.stderr-wrapper` file of its own rather than the test's `2>`
+target, for two reasons: the test truncates that file when its own redirect opens
+it, destroying anything written earlier; and it is read back as `stderr`, where
+any content is itself a verdict (`STDERR`, or `SERVER_DIED` on
+`<Fatal>`/`Connection refused`) and is matched against `MESSAGES_TO_RETRY`.  A
+job-status line quotes the whole command, so sharing the file would let entries as
+generic as `No such file or directory` retry a deterministic failure and report it
+as flaky.  It is appended by `process_result`, which runs after the retry check,
+and removed while still empty so a non-passing test leaves nothing behind.
 
 On a clean run every started test deletes its file in the `finally` block, so
 no files remain when `clickhouse-test` exits.  If `clickhouse-test` is
