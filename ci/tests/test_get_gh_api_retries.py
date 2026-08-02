@@ -235,3 +235,17 @@ def test_transport_error_gets_backoff(monkeypatch, transport_error):
     assert outcome == "APIException"
     assert attempts == bdh.DOWNLOAD_RETRIES_COUNT
     assert sleeps == [3, 6, 12, 24]
+
+
+# Row 10: the retry diagnostic is the only trace a CI operator gets, so pin the level
+# and the two fields the message promises. Reverting to the old `logger.info` line, or
+# dropping the attempt or delay, must redden this row.
+def test_retry_log_names_attempt_and_delay(monkeypatch, caplog):
+    with caplog.at_level("WARNING", logger="build_download_helper"):
+        _run(monkeypatch, [504])
+
+    records = [r for r in caplog.records if r.levelname == "WARNING"]
+    assert records
+    first = records[0].getMessage()
+    assert "attempt 1 of 5" in first
+    assert "retrying in 3 seconds" in first
