@@ -1137,20 +1137,17 @@ def pgrep(ppid: int = None, pgid: int = None, command: str = None) -> List[List[
 def _is_server_cmdline(cmdline: str, binary: str = "clickhouse") -> bool:
     """True when argv IS the server, not a process that merely mentions it.
 
-    A substring match on the whole command line also matches a
-    `/bin/sh -c "clickhouse-server ..."` wrapper (CI starts the server with
-    shell=True, see ci/jobs/scripts/clickhouse_proc.py), and that wrapper sorts
-    before the server by pid.  The multicall selector is accepted bare or
-    `--`-prefixed (programs/main.cpp isClickhouseApp), for either the
-    `clickhouse` name or the binary under test (`--binary` may be any path).
+    Accepts both shapes find_clickhouse_command() can pick: the `-server`
+    symlink, else the multicall selector, bare or `--`-prefixed.
     """
     parts = cmdline.split()
     if not parts:
         return False
     argv0 = os.path.basename(parts[0])
-    if argv0 == "clickhouse-server":
+    base = os.path.basename(binary)
+    if argv0 in ("clickhouse-server", base + "-server"):
         return True
-    if argv0 not in ("clickhouse", os.path.basename(binary)):
+    if argv0 not in ("clickhouse", base):
         return False
     return len(parts) > 1 and parts[1] in ("server", "--server")
 
@@ -1185,28 +1182,26 @@ def get_all_server_pids(args):
     server with `start_new_session=True` or equivalent).  A pgid filter
     silently filters out everything we are meant to find.
 
-    Two independent watchdog tests, because the watchdog
-    (src/Daemon/BaseDaemon.cpp) can present a server argv: its rename to
-    "clickhouse-watchdog" is truncated to the original argv0 length, so for a
-    bare `clickhouse` argv0 it renames to exactly `clickhouse` while argv[1]
-    (`server`) survives.
+    Two watchdog tests, because a watchdog can present a server argv:
 
-    1. It parents another match.  Expressed that way rather than as "drop the
-       lowest pid" because two sibling replicas share a ppid and both must
-       survive.
-    2. Its comm is the watchdog's.  Needed because (1) only holds while the
-       child is alive: after waitpid returns, the parent still logs and only
-       then _exit()s, which is precisely when the abort-path diagnostics run.
-       comm is set independently of argv, but it is inherited across fork, so
-       this is only a tie-breaker: if it would leave nothing at all, keep the
-       matches rather than reporting a crashed server.
+    1. It parents another match.  Not "drop the lowest pid": sibling replicas
+       share a ppid and both must survive.
+    2. Its comm is the watchdog's AND no match parents it.  The comm half is
+       only sound for an unparented survivor, since comm is inherited across
+       fork: a server restarted by its own watchdog carries WATCHDOG_COMM.
+       Tie-breaker only: if it leaves nothing, keep the matches.
     """
     binary = getattr(args, "binary", "clickhouse")
     matches = [p for p in pgrep() if _is_server_cmdline(p[3], binary)]
+    match_pids = {p[0] for p in matches}
     parents = {p[1] for p in matches}
-    survivors = [p[0] for p in matches if p[0] not in parents]
-    serving = [pid for pid in survivors if _process_comm(pid) != WATCHDOG_COMM]
-    return serving or survivors
+    survivors = [p for p in matches if p[0] not in parents]
+    serving = [
+        p[0]
+        for p in survivors
+        if p[1] in match_pids or _process_comm(p[0]) != WATCHDOG_COMM
+    ]
+    return serving or [p[0] for p in survivors]
 
 
 def is_asan_build(args):
