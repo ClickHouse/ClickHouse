@@ -151,11 +151,9 @@ bool parseOrderByClauseBody(
 namespace
 {
 
-constexpr std::string_view select_keyword = "select";
-
 bool isSelectKeyword(std::string_view str)
 {
-    return std::equal(str.begin(), str.end(), select_keyword.begin(), select_keyword.end(), equalsCaseInsensitive);
+    return equalsCaseInsensitive(str, "select");
 }
 
 /// Whether one of the top-level table expressions has the alias `select` (in any letter case).
