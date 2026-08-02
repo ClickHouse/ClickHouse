@@ -102,6 +102,9 @@ private:
 void serializeRational(TableExpressionModifiers::Rational val, WriteBuffer & out);
 TableExpressionModifiers::Rational deserializeRational(ReadBuffer & in);
 
+/// Returns metadata extended according to table expression modifiers.
+StorageMetadataPtr extendMetadataWithModifiers(const StorageMetadataPtr & metadata, const TableExpressionModifiers & modifiers);
+
 inline bool operator==(const TableExpressionModifiers & lhs, const TableExpressionModifiers & rhs)
 {
     return lhs.hasFinal() == rhs.hasFinal()
