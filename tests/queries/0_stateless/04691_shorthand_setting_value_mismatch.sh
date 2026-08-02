@@ -7,7 +7,7 @@ CUR_DIR=$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)
 # The valueless `SETTINGS name` form stands for `name = true`, and the parser always writes Bool
 # `true` for it. The AST JSON dialect can pair the `shorthand` flag with any other value, and for a
 # `Bool` setting the type check alone accepted that: the query executed with the carried value while
-# every formatter rendered the bare name, so `system.query_log` under-reported what ran.
+# every formatter rendered the bare name, so the logged query under-reported what ran.
 
 # Craft a payload for a `Bool` setting whose shorthand flag carries `false`.
 CRAFTED="replaceAll(parseQueryToJSON(\$\$SELECT 1 SETTINGS optimize_move_to_prewhere = false\$\$), '{\"name\":\"optimize_move_to_prewhere\"', '{\"name\":\"optimize_move_to_prewhere\",\"shorthand\":true')"
