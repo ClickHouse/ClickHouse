@@ -57,7 +57,7 @@ void extractJoinConditions(const QueryTreeNodePtr & node, QueryTreeNodes & equi_
 
 /// A condition may become a join key only if its value is stable within one query: in the key position it
 /// is evaluated per row of each joined side instead of once per row of the cross product. Hence
-/// `isDeterministicInScopeOfQuery` rather than `isDeterministic`, which would reject a sound `now()`.
+/// `isDeterministicInScopeOfQuery` rather than `isDeterministic`, which would reject a sound `now`.
 bool canMoveToJoinExpression(const QueryTreeNodePtr & node)
 {
     QueryTreeNodes nodes_to_visit = {node};

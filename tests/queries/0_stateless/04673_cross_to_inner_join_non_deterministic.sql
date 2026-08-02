@@ -87,9 +87,9 @@ SELECT count() > 0 FROM (
     SELECT count() FROM l, r WHERE l.a = r.a SETTINGS cross_to_inner_join_rewrite = 1
 ) WHERE explain ILIKE '%kind: INNER%';
 
--- dictGet() reports isDeterministic() = false, but every node reads the same dictionary by name, so it
--- stays eligible. This is the row that catches a guard written against isDeterministic() instead of
--- isDeterministicInScopeOfQuery(): now() and currentUser() are constant-folded before this pass runs,
+-- `dictGet` reports `isDeterministic` = false, but every node reads the same dictionary by name, so it
+-- stays eligible. This is the row that catches a guard written against `isDeterministic` instead of
+-- `isDeterministicInScopeOfQuery`: `now` and `currentUser` are constant-folded before this pass runs,
 -- so they cannot serve that purpose.
 SELECT '-- dictGet() is still rewritten';
 SELECT count() > 0 FROM (
@@ -104,7 +104,7 @@ FROM l, r WHERE dictGet(currentDatabase() || '.dict', 'v', l.a) = r.a
   AND dictGet(currentDatabase() || '.dict', 'v', l.a) = 3
 SETTINGS cross_to_inner_join_rewrite = 1;
 
--- queryID() and FQDN() are read once per executing node instead of once per query, so the two sides of
+-- `queryID` and `FQDN` are read once per executing node instead of once per query, so the two sides of
 -- a key can be built by different nodes and compare values that never match.
 SELECT '-- queryID() is no longer rewritten';
 SELECT count() = 0 FROM (
@@ -122,7 +122,7 @@ SELECT count() = 0 FROM (
     SETTINGS cross_to_inner_join_rewrite = 1
 ) WHERE explain ILIKE '%kind: INNER%';
 
--- timeSeriesTagsToGroup() is query-deterministic and is not constant-folded, so only the isStateful()
+-- `timeSeriesTagsToGroup` is query-deterministic and is not constant-folded, so only the `isStateful`
 -- clause can refuse it.
 SELECT '-- a stateful function is no longer rewritten';
 SELECT count() = 0 FROM (
@@ -159,8 +159,8 @@ SELECT count() = 0 FROM (
     SETTINGS cross_to_inner_join_rewrite = 1
 ) WHERE explain ILIKE '%kind: INNER%';
 
--- randConstant() is stable within one node's query but is drawn again wherever its function base is
--- built, so it belongs to the same class as queryID() below. The argument is what keeps it a live node:
+-- `randConstant` is stable within one node's query but is drawn again wherever its function base is
+-- built, so it belongs to the same class as `queryID` below. The argument is what keeps it a live node:
 -- with no argument it is constant-folded before this pass runs.
 SELECT '-- randConstant() is no longer rewritten';
 SELECT count() = 0 FROM (
@@ -169,11 +169,11 @@ SELECT count() = 0 FROM (
     SETTINGS cross_to_inner_join_rewrite = 1
 ) WHERE explain ILIKE '%kind: INNER%';
 
--- Server constants (hostName, shardNum, uptime, ... reporting isServerConstant()) are read per
--- executing node, so they belong to the same class as queryID() above. On a single-node query they are
--- constant-folded away, which is why each row below joins a remote() table expression: that sets the
--- query's is_distributed flag, isSuitableForConstantFolding() becomes false, and the function reaches
--- this pass as a live node. Without remote() these rows would pass on master too.
+-- Server constants (`hostName`, `shardNum`, `uptime`, ... reporting `isServerConstant`) are read per
+-- executing node, so they belong to the same class as `queryID` above. On a single-node query they are
+-- constant-folded away, which is why each row below joins a `remote` table expression: that sets the
+-- query's is_distributed flag, `isSuitableForConstantFolding` becomes false, and the function reaches
+-- this pass as a live node. Without `remote` these rows would pass on master too.
 SELECT '-- hostName() is no longer rewritten';
 SELECT count() = 0 FROM (
     EXPLAIN QUERY TREE run_passes = 1
@@ -198,7 +198,7 @@ SELECT count() = 0 FROM (
     SETTINGS cross_to_inner_join_rewrite = 1
 ) WHERE explain ILIKE '%kind: INNER%';
 
--- getMacro() is the server constant that is documented to differ per node by design, so it is the
+-- `getMacro` is the server constant that is documented to differ per node by design, so it is the
 -- clearest member of the class.
 SELECT '-- getMacro() is no longer rewritten';
 SELECT count() = 0 FROM (
@@ -209,7 +209,7 @@ SELECT count() = 0 FROM (
     SETTINGS cross_to_inner_join_rewrite = 1
 ) WHERE explain ILIKE '%kind: INNER%';
 
--- A remote() join with a deterministic predicate must still be rewritten, so the three rows above fail
+-- A `remote` join with a deterministic predicate must still be rewritten, so the three rows above fail
 -- for the server constant rather than merely for being distributed.
 SELECT '-- a deterministic remote() predicate is still rewritten';
 SELECT count() > 0 FROM (
@@ -220,7 +220,7 @@ SELECT count() > 0 FROM (
 ) WHERE explain ILIKE '%kind: INNER%';
 
 -- `getServerPort` now reports `isServerConstant` on both its function base and its overload resolver.
--- It is folded on a single-node query like the rows above, so it needs remote() too.
+-- It is folded on a single-node query like the rows above, so it needs `remote` too.
 SELECT '-- getServerPort() is no longer rewritten';
 SELECT count() = 0 FROM (
     EXPLAIN QUERY TREE run_passes = 1
@@ -229,7 +229,7 @@ SELECT count() = 0 FROM (
     SETTINGS cross_to_inner_join_rewrite = 1
 ) WHERE explain ILIKE '%kind: INNER%';
 
--- transactionID() is the same class again: it reads the executing node's current transaction in its
+-- `transactionID` is the same class again: it reads the executing node's current transaction in its
 -- constructor. Its two snapshot counters read a process-wide counter in theirs, so all three of the
 -- classes in FunctionsTransactionCounters.cpp need the name. The stateless test config enables
 -- transactions, so all three are reachable.
@@ -283,7 +283,7 @@ SELECT count() = 0 FROM (
     SETTINGS cross_to_inner_join_rewrite = 1
 ) WHERE explain ILIKE '%kind: INNER%';
 
--- getClientHTTPHeader() reads the headers of the request being served, which its own documentation
+-- `getClientHTTPHeader` reads the headers of the request being served, which its own documentation
 -- says are non-empty only on the initiator of a distributed query. The argument must be non-constant
 -- for the same reason as the filesystem* rows above.
 SELECT '-- getClientHTTPHeader() is no longer rewritten';
@@ -296,7 +296,7 @@ SELECT count() = 0 FROM (
 ) WHERE explain ILIKE '%kind: INNER%';
 
 -- The three address symbolizers resolve an address against the object files and the address space
--- layout of the node that runs them, so they are node-local too, and like showCertificate() they report
+-- layout of the node that runs them, so they are node-local too, and like `showCertificate` they report
 -- no determinism predicate at all. The argument must be non-constant for the same reason as the
 -- filesystem* rows above. These rows only read the plan shape: EXPLAIN QUERY TREE never executes the
 -- predicate, so no symbolization is attempted and no platform tag is needed.
@@ -321,7 +321,7 @@ SELECT count() = 0 FROM (
     SETTINGS cross_to_inner_join_rewrite = 1, allow_introspection_functions = 1
 ) WHERE explain ILIKE '%kind: INNER%';
 
--- financialNetPresentValueExtended() also reports isDeterministic() = false, but it is stable within
+-- `financialNetPresentValueExtended` also reports `isDeterministic` = false, but it is stable within
 -- one node's query and every node computes the same value, so it must stay eligible. Over a Dynamic or
 -- a Variant argument it is additionally wrapped in an adaptor that declines constant folding, which is
 -- the shape a guard written as "not deterministic and not foldable" would wrongly reject.

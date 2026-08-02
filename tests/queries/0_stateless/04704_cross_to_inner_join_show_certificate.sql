@@ -1,6 +1,6 @@
 -- Tags: no-fasttest
--- no-fasttest: showCertificate() throws SUPPORT_IS_DISABLED when the build has no OpenSSL, and the
--- fast build does not initialize contrib/openssl. The throw is in create(), so even EXPLAIN fails.
+-- no-fasttest: `showCertificate` throws SUPPORT_IS_DISABLED when the build has no OpenSSL, and the
+-- fast build does not initialize contrib/openssl. The throw is in `create`, so even EXPLAIN fails.
 
 SET enable_analyzer = 1;
 SET query_plan_enable_optimizations = 0;
@@ -27,7 +27,7 @@ SELECT count() = 0 FROM (
 ) WHERE explain ILIKE '%kind: INNER%';
 
 -- A deterministic predicate over the same tables must still be rewritten, so the row above fails for
--- showCertificate() rather than for the fixture.
+-- `showCertificate` rather than for the fixture.
 SELECT '-- a deterministic predicate is still rewritten';
 SELECT count() > 0 FROM (
     EXPLAIN QUERY TREE run_passes = 1
