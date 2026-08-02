@@ -43,6 +43,8 @@ private:
     static constexpr float default_temp = 0.3f;
     static constexpr size_t target_language_arg_index = 1;
 
+    String functionName() const override { return name; }
+
     AIParamSpecs functionParams() const override
     {
         return {

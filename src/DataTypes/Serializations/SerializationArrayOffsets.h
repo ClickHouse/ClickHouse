@@ -6,7 +6,7 @@ namespace DB
 {
 
 /// Class for deserialization of Array offsets as a separate subcolumn.
-class SerializationArrayOffsets final : public SerializationNumber<UInt64>
+class SerializationArrayOffsets : public SerializationNumber<UInt64>
 {
 private:
     SerializationArrayOffsets() = default;

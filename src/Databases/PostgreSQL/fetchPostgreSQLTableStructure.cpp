@@ -69,7 +69,7 @@ std::set<String> fetchPostgreSQLTablesList(T & tx, const String & postgres_schem
 }
 
 
-DataTypePtr convertPostgreSQLDataType(String & type, std::function<void()> recheck_array, bool is_nullable, uint16_t dimensions)
+static DataTypePtr convertPostgreSQLDataType(String & type, Fn<void()> auto && recheck_array, bool is_nullable = false, uint16_t dimensions = 0)
 {
     DataTypePtr res;
     bool is_array = false;
@@ -100,34 +100,7 @@ DataTypePtr convertPostgreSQLDataType(String & type, std::function<void()> reche
     else if (type == "bigserial")
         res = std::make_shared<DataTypeUInt64>();
     else if (type.starts_with("timestamp"))
-    {
-        /// PostgreSQL renders an explicit fractional-second precision as `timestamp(p) ...`
-        /// (`format_type` decodes it from the type modifier). Honor it, so that a self-connected
-        /// `DateTime` / `DateTime64(p)` column round-trips with its scale intact. A bare `timestamp`
-        /// (no precision specified) keeps the historical `DateTime64(6)` mapping, which covers
-        /// PostgreSQL's default microsecond precision.
-        ///
-        /// Every precision, including 0, maps to `DateTime64`: `timestamp` is a native PostgreSQL
-        /// type whose range is much wider than that of the 32-bit `DateTime`, so mapping
-        /// `timestamp(0)` to `DateTime` would narrow it for real PostgreSQL sources - a value before
-        /// 1970 or after 2106 would be clamped or truncated on read. `DateTime64(0)` has the same
-        /// second resolution without that loss; a self-connected `DateTime` column therefore comes
-        /// back as `DateTime64(0)` - a wider type holding exactly the same values.
-        UInt32 precision = 6;
-        auto open_bracket_pos = type.find('(');
-        if (open_bracket_pos != std::string::npos)
-        {
-            auto close_bracket_pos = type.find(')', open_bracket_pos);
-            if (close_bracket_pos != std::string::npos)
-            {
-                std::string precision_str = type.substr(open_bracket_pos + 1, close_bracket_pos - open_bracket_pos - 1);
-                boost::trim(precision_str);
-                precision = parse<UInt32>(precision_str);
-            }
-        }
-
-        res = std::make_shared<DataTypeDateTime64>(precision);
-    }
+        res = std::make_shared<DataTypeDateTime64>(6);
     else if (type == "date")
         res = std::make_shared<DataTypeDate32>();
     else if (type == "uuid")
@@ -136,39 +109,22 @@ DataTypePtr convertPostgreSQLDataType(String & type, std::function<void()> reche
     {
         /// Numeric and decimal will both end up here as numeric. If it has type and precision,
         /// there will be Numeric(x, y), otherwise just Numeric
-        UInt32 precision = 0;
-        UInt32 scale = 0;
+        UInt32 precision;
+        UInt32 scale;
         if (type.ends_with(")"))
         {
-            /// Parse precision and scale directly from e.g. "numeric(78,0)" instead of going
-            /// through DataTypeFactory, because Decimal rejects a precision above 76 before we
-            /// get a chance to map it to Int256.
-            auto open_bracket_pos = type.find('(');
-            std::string args = type.substr(open_bracket_pos + 1, type.size() - open_bracket_pos - 2);
-            auto comma_pos = args.find(',');
-            std::string precision_str = args.substr(0, comma_pos);
-            boost::trim(precision_str);
-            precision = parse<UInt32>(precision_str);
-            if (comma_pos != std::string::npos)
-            {
-                std::string scale_str = args.substr(comma_pos + 1);
-                boost::trim(scale_str);
-                scale = parse<UInt32>(scale_str);
-            }
+            res = DataTypeFactory::instance().get(type);
+            precision = getDecimalPrecision(*res);
+            scale = getDecimalScale(*res);
 
-            if (precision <= DecimalUtils::max_precision<Decimal256>)
-                /// createDecimal validates the precision/scale (in particular it rejects scale > precision,
-                /// e.g. numeric(5, 7)) and dispatches to the smallest Decimal type that fits the precision.
-                res = createDecimal<DataTypeDecimal>(precision, scale);
-            else if (scale == 0)
-                /// PostgreSQL numeric with precision higher than Decimal256 supports (76 digits) and no
-                /// fractional part (e.g. numeric(78, 0), used to store 256-bit integers). It cannot be
-                /// represented as a ClickHouse Decimal, so use Int256. Values that do not fit into Int256
-                /// are rejected at insert time (see insertPostgreSQLValue). This mapping is fixed: PostgreSQL
-                /// `numeric` is signed, so a self-connected `UInt256` above the Int256 maximum is rejected
-                /// there (fail-closed) rather than recovered - a distinct `UInt256` mapping would collide with
-                /// this contract for real PostgreSQL sources.
-                res = std::make_shared<DataTypeInt256>();
+            if (precision <= DecimalUtils::max_precision<Decimal32>)
+                res = std::make_shared<DataTypeDecimal<Decimal32>>(precision, scale);
+            else if (precision <= DecimalUtils::max_precision<Decimal64>)
+                res = std::make_shared<DataTypeDecimal<Decimal64>>(precision, scale);
+            else if (precision <= DecimalUtils::max_precision<Decimal128>)
+                res = std::make_shared<DataTypeDecimal<Decimal128>>(precision, scale);
+            else if (precision <= DecimalUtils::max_precision<Decimal256>)
+                res = std::make_shared<DataTypeDecimal<Decimal256>>(precision, scale);
             else
                 throw Exception(ErrorCodes::BAD_ARGUMENTS, "Precision {} and scale {} are too big and not supported", precision, scale);
         }
@@ -345,14 +301,8 @@ PostgreSQLTableStructure fetchPostgreSQLTableStructure(
 
     auto where = fmt::format("relname = {}", quoteStringPostgreSQL(postgres_table));
 
-    /// When no schema is specified, the table has to be looked up in the schema the server itself resolves
-    /// unqualified names in, because that is where the `COPY` statements of the read and write paths will
-    /// read and write the rows: `current_schema()` is the first existing schema of the search path. For
-    /// PostgreSQL with the default search path it is `public`, and a ClickHouse server (which exposes its
-    /// databases as schemas) reports the connected database, so schema discovery and the data path always
-    /// agree on the same relation.
     where += postgres_schema.empty()
-        ? " AND relnamespace = (SELECT oid FROM pg_namespace WHERE nspname = current_schema())"
+        ? " AND relnamespace = (SELECT oid FROM pg_namespace WHERE nspname = 'public')"
         : fmt::format(" AND relnamespace = (SELECT oid FROM pg_namespace WHERE nspname = {})", quoteStringPostgreSQL(postgres_schema));
 
     std::string columns_part;

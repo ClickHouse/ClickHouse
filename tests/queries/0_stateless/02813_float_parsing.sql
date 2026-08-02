@@ -1,6 +1,3 @@
--- Tags: no-darwin
--- no-darwin: the imprecise float parser (precise_float_parsing = 0) rounds to different least-significant digits on Darwin.
-
 SELECT
     toFloat64('1.7091'),
     toFloat64('1.5008753E7'),

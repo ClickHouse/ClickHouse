@@ -993,11 +993,11 @@ def test_concurrent_queries(started_cluster):
 
     def node_insert_select(_):
         for i in range(5):
-            node1.query(
+            result = node1.query(
                 "INSERT INTO test_pg_table SELECT number, number FROM numbers(1000)",
                 user="default",
             )
-            node1.query(
+            result = node1.query(
                 "SELECT * FROM test_pg_table LIMIT 100", user="default"
             )
 

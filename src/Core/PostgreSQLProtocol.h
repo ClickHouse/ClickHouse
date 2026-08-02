@@ -9,9 +9,6 @@
 #include <Common/Exception.h>
 #include <Common/logger_useful.h>
 #include <Common/Base64.h>
-#include <Common/StringUtils.h>
-#include <Common/UnorderedMapWithMemoryTracking.h>
-#include <Common/VectorWithMemoryTracking.h>
 #include <Poco/RegularExpression.h>
 #include <Poco/Net/StreamSocket.h>
 #include <Parsers/ParserPreparedStatement.h>
@@ -67,7 +64,6 @@ enum class FrontMessageType : Int32
     EXECUTE = 'E',
     COPY_DATA = 'd',
     COPY_COMPLETION = 'c',
-    COPY_FAILURE = 'f',
 };
 
 enum class MessageType : Int32
@@ -151,7 +147,6 @@ enum class ColumnType : Int32
     FLOAT8 = 701,
     VARCHAR = 1043,
     DATE = 1082,
-    TIMESTAMP = 1114,
     NUMERIC = 1700,
     UUID = 2950,
 };
@@ -161,11 +156,8 @@ class ColumnTypeSpec
 public:
     ColumnType type;
     Int16 len;
-    /// PostgreSQL type modifier (`atttypmod`), sent verbatim in `RowDescription`. -1 means "no modifier";
-    /// for `numeric` it carries the precision and scale (see `convertDataTypeToPostgresColumnTypeSpec`).
-    Int32 type_modifier;
 
-    ColumnTypeSpec(ColumnType type_, Int16 len_, Int32 type_modifier_ = -1) : type(type_), len(len_), type_modifier(type_modifier_) {}
+    ColumnTypeSpec(ColumnType type_, Int16 len_) : type(type_), len(len_) {}
 };
 
 ColumnTypeSpec convertDataTypeToPostgresColumnTypeSpec(const DataTypePtr & data_type);
@@ -227,7 +219,7 @@ public:
 
     void dropMessage()
     {
-        Int32 size = 0;
+        Int32 size;
         readBinaryBigEndian(size, *in);
         if (size < 4)
             throw Exception(ErrorCodes::UNKNOWN_PACKET_FROM_CLIENT,
@@ -422,7 +414,7 @@ public:
     String user;
     String database;
     // includes username, may also include database and other runtime parameters
-    UnorderedMapWithMemoryTracking<String, String> parameters;
+    std::unordered_map<String, String> parameters;
 
     explicit StartupMessage(Int32 payload_size_) : FirstMessage(payload_size_) {}
 
@@ -520,12 +512,12 @@ public:
 
     void deserialize(ReadBuffer & in) override
     {
-        UInt8 message_type = 0;
+        UInt8 message_type;
         readBinaryBigEndian(message_type, in);
-        Int32 size = 0;
+        Int32 size;
         readBinaryBigEndian(size, in);
         readNullTerminated(auth_method, in);
-        Int32 size_sasl_mechanism = 0;
+        Int32 size_sasl_mechanism;
         readBinaryBigEndian(size_sasl_mechanism, in);
         /// -1 is the protocol sentinel for "no initial response"; any other negative value is malformed.
         if (size_sasl_mechanism < -1)
@@ -580,9 +572,9 @@ public:
 
     void deserialize(ReadBuffer & in) override
     {
-        UInt8 message_type = 0;
+        UInt8 message_type;
         readBinaryBigEndian(message_type, in);
-        Int32 size = 0;
+        Int32 size;
         readBinaryBigEndian(size, in);
         if (size < 4)
             throw Exception(ErrorCodes::UNKNOWN_PACKET_FROM_CLIENT,
@@ -626,7 +618,7 @@ public:
 
     void deserialize(ReadBuffer & in) override
     {
-        Int32 sz = 0;
+        Int32 sz;
         readBinaryBigEndian(sz, in);
         readNullTerminated(password, in);
     }
@@ -706,7 +698,7 @@ public:
 
     void deserialize(ReadBuffer & in) override
     {
-        Int32 sz = 0;
+        Int32 sz;
         readBinaryBigEndian(sz, in);
         readNullTerminated(query, in);
     }
@@ -722,16 +714,16 @@ class ParseQuery : FrontMessage
 public:
     String function_name;
     String sql_query;
-    Int16 num_params{};
+    Int16 num_params;
 
     void deserialize(ReadBuffer & in) override
     {
-        Int32 sz = 0;
+        Int32 sz;
         readBinaryBigEndian(sz, in);
         readNullTerminated(function_name, in);
         readNullTerminated(sql_query, in);
         readBinaryBigEndian(num_params, in);
-        Int32 oid_param = 0;
+        Int32 oid_param;
         for (int i = 0; i < num_params; ++i)
             readBinaryBigEndian(oid_param, in);
     }
@@ -769,19 +761,19 @@ class BindQuery : FrontMessage
 public:
     String portal_name;
     String function_name;
-    VectorWithMemoryTracking<String> parameters;
-    Int16 num_params{};
+    std::vector<String> parameters;
+    Int16 num_params;
 
     void deserialize(ReadBuffer & in) override
     {
-        Int32 sz = 0;
+        Int32 sz;
         readBinaryBigEndian(sz, in);
         readNullTerminated(portal_name, in);
         readNullTerminated(function_name, in);
 
-        Int16 num_format_params = 0;
+        Int16 num_format_params;
         readBinaryBigEndian(num_format_params, in);
-        Int16 format_param = 0;
+        Int16 format_param;
         for (Int16 i = 0; i < num_format_params; ++i)
         {
             readBinaryBigEndian(format_param, in);
@@ -789,7 +781,7 @@ public:
         readBinaryBigEndian(num_params, in);
         for (int i = 0; i < num_params; ++i)
         {
-            Int32 sz_param = 0;
+            Int32 sz_param;
             readBinaryBigEndian(sz_param, in);
             /// -1 is the protocol sentinel for a NULL parameter and no value bytes follow;
             /// any other negative value is malformed.
@@ -806,9 +798,9 @@ public:
             parameters.push_back(current_param);
         }
 
-        Int16 num_format_params_result = 0;
+        Int16 num_format_params_result;
         readBinaryBigEndian(num_format_params_result, in);
-        Int16 format_param_result = 0;
+        Int16 format_param_result;
         for (Int16 i = 0; i < num_format_params_result; ++i)
             readBinaryBigEndian(format_param_result, in);
     }
@@ -844,12 +836,12 @@ public:
 class DescribeQuery : FrontMessage
 {
 public:
-    char describe{};
+    char describe;
     String function_name;
 
     void deserialize(ReadBuffer & in) override
     {
-        Int32 sz = 0;
+        Int32 sz;
         readBinaryBigEndian(sz, in);
         in.readStrict(&describe, 1);
         readNullTerminated(function_name, in);
@@ -866,11 +858,11 @@ class ExecuteQuery : FrontMessage
 {
 public:
     String portal_name;
-    Int32 max_rows{};
+    Int32 max_rows;
 
     void deserialize(ReadBuffer & in) override
     {
-        Int32 sz = 0;
+        Int32 sz;
         readBinaryBigEndian(sz, in);
         readNullTerminated(portal_name, in);
         readBinaryBigEndian(max_rows, in);
@@ -913,16 +905,13 @@ class CloseQuery : FrontMessage
 {
 public:
     String function_name;
-    /// 'S' for prepared statement, 'P' for portal
-    char close_target = 0;
 
     void deserialize(ReadBuffer & in) override
     {
-        Int32 sz = 0;
+        Int32 sz;
         readBinaryBigEndian(sz, in);
-        Int8 byte = 0;
+        Int8 byte;
         readBinaryBigEndian(byte, in);
-        close_target = static_cast<char>(byte);
         readNullTerminated(function_name, in);
     }
 
@@ -935,13 +924,9 @@ public:
 class CloseQueryComplete : BackendMessage
 {
 public:
-    CloseQueryComplete() = default;
-
     void serialize(WriteBuffer & out) const override
     {
-        /// 'C' is `CommandComplete`; `CloseComplete` is tagged with '3' per
-        /// the PostgreSQL message protocol.
-        out.write('3');
+        out.write('C');
         writeBinaryBigEndian(size(), out);
     }
 
@@ -961,7 +946,7 @@ class SyncQuery : FrontMessage
 public:
     void deserialize(ReadBuffer & in) override
     {
-        Int32 sz = 0;
+        Int32 sz;
         readBinaryBigEndian(sz, in);
     }
 
@@ -992,7 +977,7 @@ public:
         writeBinaryBigEndian(static_cast<Int16>(0), out);
         writeBinaryBigEndian(static_cast<Int32>(type_spec.type), out);
         writeBinaryBigEndian(type_spec.len, out);
-        writeBinaryBigEndian(type_spec.type_modifier, out);
+        writeBinaryBigEndian(static_cast<Int32>(-1), out);
         writeBinaryBigEndian(static_cast<Int16>(format_code), out);
     }
 
@@ -1009,10 +994,10 @@ public:
 class RowDescription : BackendMessage
 {
 private:
-    const VectorWithMemoryTracking<FieldDescription> & fields_descr;
+    const std::vector<FieldDescription> & fields_descr;
 
 public:
-    explicit RowDescription(const VectorWithMemoryTracking<FieldDescription> & fields_descr_) : fields_descr(fields_descr_) {}
+    explicit RowDescription(const std::vector<FieldDescription> & fields_descr_) : fields_descr(fields_descr_) {}
 
     void serialize(WriteBuffer & out) const override
     {
@@ -1069,10 +1054,10 @@ public:
 class DataRow : BackendMessage
 {
 private:
-    const VectorWithMemoryTracking<std::shared_ptr<ISerializable>> & row;
+    const std::vector<std::shared_ptr<ISerializable>> & row;
 
 public:
-    explicit DataRow(const VectorWithMemoryTracking<std::shared_ptr<ISerializable>> & row_) : row(row_) {}
+    explicit DataRow(const std::vector<std::shared_ptr<ISerializable>> & row_) : row(row_) {}
 
     void serialize(WriteBuffer & out) const override
     {
@@ -1110,7 +1095,7 @@ public:
 
     void deserialize(ReadBuffer & in) override
     {
-        Int32 sz = 0;
+        Int32 sz;
         readBinaryBigEndian(sz, in);
         readNullTerminated(query, in);
     }
@@ -1180,7 +1165,7 @@ public:
 
     void deserialize(ReadBuffer & in) override
     {
-        Int32 sz = 0;
+        Int32 sz;
         readBinaryBigEndian(sz, in);
         if (sz < static_cast<Int32>(sizeof(Int32)))
             throw Exception(ErrorCodes::UNKNOWN_PACKET_FROM_CLIENT,
@@ -1188,7 +1173,7 @@ public:
         query.reserve(sz - sizeof(Int32));
         for (size_t i = 0; i < sz - sizeof(Int32); ++i)
         {
-            char byte = 0;
+            char byte;
             readBinary(byte, in);
             query.push_back(byte);
         }
@@ -1205,7 +1190,7 @@ class CopyDone : FrontMessage
 public:
     void deserialize(ReadBuffer & in) override
     {
-        Int32 sz = 0;
+        Int32 sz;
         readBinaryBigEndian(sz, in);
     }
 
@@ -1215,43 +1200,11 @@ public:
     }
 };
 
-/// Sent by the client to abort an in-progress `COPY FROM STDIN` (libpq emits it when the local data
-/// source errors out or the copy is cancelled). The body is a human-readable failure reason.
-class CopyFail : FrontMessage
-{
-public:
-    String message;
-
-    void deserialize(ReadBuffer & in) override
-    {
-        Int32 sz = 0;
-        readBinaryBigEndian(sz, in);
-        if (sz < static_cast<Int32>(sizeof(Int32)))
-            throw Exception(ErrorCodes::UNKNOWN_PACKET_FROM_CLIENT,
-                            "Wrong message length {} in CopyFail, it must be at least 4", sz);
-        message.reserve(sz - sizeof(Int32));
-        for (size_t i = 0; i < sz - sizeof(Int32); ++i)
-        {
-            char byte = 0;
-            readBinary(byte, in);
-            message.push_back(byte);
-        }
-        /// The reason is a null-terminated string; drop the trailing NUL if present.
-        if (!message.empty() && message.back() == '\0')
-            message.pop_back();
-    }
-
-    MessageType getMessageType() const override
-    {
-        return MessageType::COPY_FAIL;
-    }
-};
-
 class CopyOutData : public BackendMessage
 {
-    VectorWithMemoryTracking<char> data;
+    std::vector<char> data;
 public:
-    explicit CopyOutData(VectorWithMemoryTracking<char> data_)
+    explicit CopyOutData(std::vector<char> data_)
         : data(data_)
     {
     }
@@ -1341,15 +1294,14 @@ public:
         ALTER_TABLE = 14,
         TRUNCATE = 15,
         USE = 16,
-        SET = 17,
-        ROLLBACK = 18
+        SET = 17
     };
 private:
-    String enum_to_string[19] =
+    String enum_to_string[18] =
     {
         "BEGIN", "COMMIT", "INSERT", "DELETE", "UPDATE", "SELECT", "MOVE", "FETCH", "COPY", "PREPARE",
         "CREATE TABLE", "CREATE DATABASE", "DROP TABLE", "DROP DATABASE", "ALTER TABLE",
-        "TRUNCATE", "USE", "SET", "ROLLBACK"
+        "TRUNCATE", "USE", "SET"
     };
 
     String value;
@@ -1375,14 +1327,6 @@ public:
         }
     }
 
-    /// Construct a CommandComplete carrying an explicit command tag verbatim.
-    /// Used for driver-specific commands (e.g. `RESET ALL`, `UNLISTEN *`) that
-    /// ClickHouse accepts as no-ops and for which no row count applies.
-    explicit CommandComplete(String tag_)
-        : value(std::move(tag_))
-    {
-    }
-
     void serialize(WriteBuffer & out) const override
     {
         out.write('C');
@@ -1400,12 +1344,7 @@ public:
         return MessageType::COMMAND_COMPLETE;
     }
 
-    // Extract and normalize prefix: skip leading spaces, collapse multiple spaces to one, convert to uppercase on the fly.
-    // Only ASCII is classified and case-folded. The text is matched against ASCII keywords, while the query carries
-    // arbitrary user bytes - a `SET application_name` value, a string literal - so the locale-dependent `std::isspace` /
-    // `std::toupper` must not see it: they are undefined for a negative `char` (any byte >= 0x80 on a signed-`char`
-    // build) and would otherwise make the classification depend on the process locale. Non-ASCII bytes are copied
-    // through unchanged, which is what keyword matching needs.
+    // Extract and normalize prefix: skip leading spaces, collapse multiple spaces to one, convert to uppercase on the fly
     static String extractNormalizedPrefix(const String & query, size_t max_len)
     {
         String prefix;
@@ -1415,8 +1354,7 @@ public:
 
         for (size_t i = 0; i < query.size() && prefix.size() < max_len; ++i)
         {
-            const char c = query[i];
-            if (isWhitespaceASCII(c))
+            if (std::isspace(query[i]))
             {
                 if (!prev_was_space)
                 {
@@ -1426,7 +1364,7 @@ public:
             }
             else
             {
-                prefix.push_back(isAlphaASCII(c) ? toUpperIfAlphaASCII(c) : c);
+                prefix.push_back(static_cast<char>(std::toupper(query[i])));
                 prev_was_space = false;
             }
         }
@@ -1436,7 +1374,7 @@ public:
 
     static Command classifyQuery(const String & query)
     {
-        static const VectorWithMemoryTracking<std::pair<String, Command>> query_patterns = {
+        static const std::vector<std::pair<String, Command>> query_patterns = {
             {"CREATE TEMPORARY TABLE", Command::CREATE_TABLE},
             {"CREATE TABLE", Command::CREATE_TABLE},
             {"CREATE DATABASE", Command::CREATE_DATABASE},
@@ -1445,11 +1383,7 @@ public:
             {"ALTER TABLE", Command::ALTER_TABLE},
             {"TRUNCATE", Command::TRUNCATE},
             {"BEGIN", Command::BEGIN},
-            {"START TRANSACTION", Command::BEGIN},
             {"COMMIT", Command::COMMIT},
-            {"END", Command::COMMIT},
-            {"ROLLBACK", Command::ROLLBACK},
-            {"ABORT", Command::ROLLBACK},
             {"INSERT", Command::INSERT},
             {"DELETE", Command::DELETE},
             {"UPDATE", Command::UPDATE},
@@ -1713,10 +1647,10 @@ class AuthenticationManager
 {
 private:
     LoggerPtr log = getLogger("AuthenticationManager");
-    UnorderedMapWithMemoryTracking<AuthenticationType, std::shared_ptr<AuthenticationMethod>> type_to_method = {};
+    std::unordered_map<AuthenticationType, std::shared_ptr<AuthenticationMethod>> type_to_method = {};
 
 public:
-    explicit AuthenticationManager(const VectorWithMemoryTracking<std::shared_ptr<AuthenticationMethod>> & auth_methods)
+    explicit AuthenticationManager(const std::vector<std::shared_ptr<AuthenticationMethod>> & auth_methods)
     {
         for (const std::shared_ptr<AuthenticationMethod> & method : auth_methods)
         {
@@ -1785,68 +1719,42 @@ public:
         return getStatement(execute->function_name, execute->arguments);
     }
 
-    void deleteStatement(const String & function_name)
+    void deleteStatement(ASTDeallocate * query)
     {
-        auto it = statements.find(function_name);
+        auto it = statements.find(query->function_name);
         if (it == statements.end())
             throw Exception(ErrorCodes::BAD_ARGUMENTS, "Unknown statement");
 
         statements.erase(it);
     }
 
-    /// Per the PostgreSQL wire protocol, `Close` on a non-existent prepared
-    /// statement or portal is not an error — it is a silent no-op that still
-    /// responds with `CloseComplete`. Use this instead of `deleteStatement`
-    /// from the extended-query `Close` handler so a stray `Close` does not
-    /// terminate the connection.
-    void tryDeleteStatement(const String & function_name)
-    {
-        statements.erase(function_name);
-    }
-
     void attachBindQuery(std::unique_ptr<PostgreSQLProtocol::Messaging::BindQuery> query)
     {
-        /// We only support the unnamed portal (an empty `portal_name`).
-        /// Reject named portals explicitly: with a single bind slot we cannot
-        /// keep their state correct, and silently overwriting would let
-        /// `Bind(p1, ...); Bind(p2, ...); Execute(p1)` return the result of `p2`.
-        if (!query->portal_name.empty())
-            throw Exception(ErrorCodes::NOT_IMPLEMENTED,
-                "Named portals are not supported in the PostgreSQL wire protocol, "
-                "got portal name '{}'", query->portal_name);
+        if (bind_query)
+            throw Exception(ErrorCodes::UNEXPECTED_PACKET_FROM_CLIENT, "Query is already binded");
 
-        /// For the unnamed portal, a new `Bind` replaces the previous one
-        /// per the PostgreSQL extended-query protocol — clients such as Npgsql
-        /// issue multiple Parse/Bind/Execute/Sync cycles per connection.
         bind_query = std::move(query);
     }
 
     String getStatmentFromBind()
     {
-        if (!bind_query)
-            throw Exception(ErrorCodes::UNEXPECTED_PACKET_FROM_CLIENT, "Execute without prior Bind");
-
         auto result = getStatement(bind_query->function_name, bind_query->parameters);
 
         return result;
     }
 
-    void resetBindQuery()
+    void resetBindQuery(const String& function_name)
     {
+        statements.erase(function_name);
         bind_query.reset();
     }
 
-    bool bindReferencesStatement(const String & function_name) const
-    {
-        return bind_query && bind_query->function_name == function_name;
-    }
-
 private:
-    UnorderedMapWithMemoryTracking<String, String> statements;
+    std::unordered_map<String, String> statements;
     std::optional<size_t> limit_statements;
     std::unique_ptr<PostgreSQLProtocol::Messaging::BindQuery> bind_query;
 
-    String getStatement(const String & function_name, const VectorWithMemoryTracking<String> & arguments)
+    String getStatement(const String & function_name, const std::vector<String> & arguments)
     {
         auto it = statements.find(function_name);
         if (it == statements.end())

@@ -9,7 +9,7 @@ namespace ErrorCodes
     extern const int LOGICAL_ERROR;
 }
 
-PeekableReadBuffer::PeekableReadBuffer(ReadBuffer & sub_buf_, size_t start_size_ /*= 0*/) // NOLINT(cppcoreguidelines-pro-type-member-init,hicpp-member-init) - `stack_memory` is scratch space, written before read
+PeekableReadBuffer::PeekableReadBuffer(ReadBuffer & sub_buf_, size_t start_size_ /*= 0*/)
         : BufferWithOwnMemory(start_size_), sub_buf(&sub_buf_)
 {
     padded &= sub_buf->isPadded();
@@ -98,7 +98,7 @@ void PeekableReadBuffer::rollbackToCheckpoint(bool drop)
 {
     checkStateCorrect();
 
-    chassert(checkpoint);
+    assert(checkpoint);
 
     /// Reset canceled flag since the purpose of rollback is to retry reading from the beginning.
     /// This is important for schema detection where we try multiple formats and expect some to fail.
@@ -114,7 +114,7 @@ void PeekableReadBuffer::rollbackToCheckpoint(bool drop)
         else
         {
             /// Checkpoint is in own memory and position is not.
-            chassert(checkpointInOwnMemory());
+            assert(checkpointInOwnMemory());
 
             char * memory_data = getMemoryData();
             /// Switch to reading from own memory.
@@ -132,7 +132,7 @@ void PeekableReadBuffer::rollbackToCheckpoint(bool drop)
         else
         {
             /// Checkpoint is in own memory and position is not.
-            chassert(checkpointInOwnMemory());
+            assert(checkpointInOwnMemory());
 
             size_t offset_from_checkpoint_in_own_memory = offsetFromCheckpointInOwnMemory();
             if (offset_from_checkpoint >= offset_from_checkpoint_in_own_memory)
@@ -164,7 +164,7 @@ bool PeekableReadBuffer::nextImpl()
     ///        if some pointers were invalidated.
 
     checkStateCorrect();
-    bool res = false;
+    bool res;
     bool checkpoint_at_end = checkpoint && *checkpoint == working_buffer.end() && currentlyReadFromOwnMemory();
 
     if (checkpoint)
