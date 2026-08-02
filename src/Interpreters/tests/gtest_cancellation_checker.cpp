@@ -238,6 +238,7 @@ TEST(CancellationChecker, ProcessListPreservesFractionalTimeout)
         ASSERT_EQ(checker.getArmedDeadline(), 0u) << "warm-up query is still armed";
 
         bool measured = false;
+        bool timed_out_before_read = false;
         for (int attempt = 0; attempt < 20 && !measured; ++attempt)
         {
             /// Built before the window below, leaving only the setting and the insertion inside it:
@@ -298,6 +299,7 @@ TEST(CancellationChecker, ProcessListPreservesFractionalTimeout)
                 /// notifies.
                 ASSERT_GE(steadyNowNs(), now_ns + timeout_us * 1000)
                     << "the query was not registered with the checker while it was still running";
+                timed_out_before_read = true;
                 entry.reset();
                 continue;
             }
@@ -306,11 +308,13 @@ TEST(CancellationChecker, ProcessListPreservesFractionalTimeout)
                 << "the deadline was armed before the exact timeout the setting names";
             measured = true;
         }
-        /// Every attempt was inconclusive, which needs the machine to have starved this thread for
-        /// longer than the timeout 20 times over. Skipping keeps that from reading as a violation of
-        /// the arithmetic, which was never observed.
-        if (!measured)
+        /// Skip only when the deadline was genuinely unobservable, which needs this thread to have
+        /// been starved for longer than the timeout: judging the arithmetic on that would report a
+        /// violation nothing observed. Attempts lost to the millisecond window still fail, so losing
+        /// every one of those keeps reporting a test that can no longer prove anything.
+        if (!measured && timed_out_before_read)
             GTEST_SKIP() << "never observed a deadline before the query timed out";
+        EXPECT_TRUE(measured) << "could not observe ProcessList::insert within a single millisecond";
     });
     body.join();
 }
