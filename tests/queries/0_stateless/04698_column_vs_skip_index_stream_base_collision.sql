@@ -49,11 +49,13 @@ INSERT INTO t_dyn SELECT number, number, toString(number) FROM numbers(10); -- {
 DROP TABLE t_dyn;
 
 -- Both sides go through replaceFileNameToHashIfNeeded, so the comparison is on the post-hash name.
+-- `max_file_name_length` must stay below the 40-character base length, or neither side hashes and
+-- this arm silently degenerates into `t_plain`.
 CREATE TABLE t_hash (k UInt64, `skp_idx_aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa` UInt64, s String,
     INDEX `aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa`(s) TYPE set(100) GRANULARITY 1)
 ENGINE = MergeTree ORDER BY k
-SETTINGS min_bytes_for_wide_part = 0, min_rows_for_wide_part = 0,
-         replace_long_file_name_to_hash = 1, max_file_name_length = 127;
+SETTINGS min_bytes_for_wide_part = 0, min_rows_for_wide_part = 0, packed_skip_index_max_bytes = 0,
+         replace_long_file_name_to_hash = 1, max_file_name_length = 20;
 INSERT INTO t_hash SELECT number, number, toString(number) FROM numbers(10); -- { serverError INCORRECT_FILE_NAME }
 DROP TABLE t_hash;
 
@@ -63,6 +65,15 @@ ENGINE = MergeTree ORDER BY k
 SETTINGS min_bytes_for_wide_part = 0, min_rows_for_wide_part = 0, packed_skip_index_max_bytes = 1;
 INSERT INTO t_spill SELECT number, number, toString(number) FROM numbers(10); -- { serverError INCORRECT_FILE_NAME }
 DROP TABLE t_spill;
+
+-- Spilling with hashing on: the spill closure claims the hashed on-disk name, not the archive key.
+CREATE TABLE t_spill_hash (k UInt64, `skp_idx_aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa` UInt64, s String,
+    INDEX `aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa`(s) TYPE set(100) GRANULARITY 1)
+ENGINE = MergeTree ORDER BY k
+SETTINGS min_bytes_for_wide_part = 0, min_rows_for_wide_part = 0, packed_skip_index_max_bytes = 1,
+         replace_long_file_name_to_hash = 1, max_file_name_length = 20;
+INSERT INTO t_spill_hash SELECT number, number, toString(number) FROM numbers(10); -- { serverError INCORRECT_FILE_NAME }
+DROP TABLE t_spill_hash;
 
 -- A substream that stays inside `skp_idx.packed` still owns the base: reads resolve `skp_idx_*`
 -- archive keys before the real disk, so the archive member shadows the column's own file.
