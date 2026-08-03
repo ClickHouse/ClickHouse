@@ -105,6 +105,10 @@ public:
 
     void onBuildPhaseFinish() override;
 
+    bool canSpillToDisk() const override { return true; }
+    size_t getSpillableBytes() const override;
+    void requestSpill() override;
+
     void setEnableLazyColumnsIndexing(bool value) override;
 
 private:

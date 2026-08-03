@@ -100,7 +100,9 @@ public:
 
     static bool isSupported(const std::shared_ptr<TableJoin> & table_join);
 
-    void forceSpill() { force_spill = true; }
+    bool canSpillToDisk() const override { return true; }
+    size_t getSpillableBytes() const override { return getTotalByteCount(); }
+    void requestSpill() override { force_spill = true; }
 
 private:
     void initBuckets();

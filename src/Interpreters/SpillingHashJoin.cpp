@@ -209,6 +209,11 @@ void SpillingHashJoin::switchToGraceHashJoin()
         return;
     }
 
+    /// Single-thread mode has only one build thread, but `requestSpill` is a second entry point,
+    /// so re-check the state before rebuilding.
+    if (state.load(std::memory_order_relaxed) != State::COLLECTING)
+        return;
+
     print_threshold_reached_log(hash_join, "HashJoin");
     /// Single-thread path: extract from HashJoin, feed to GraceHashJoin.
     ProfileEvents::increment(ProfileEvents::JoinSpillingHashJoinSwitchedToGraceJoin);
@@ -273,6 +278,37 @@ void SpillingHashJoin::onBuildPhaseFinish()
     }
 
     chosen_join->onBuildPhaseFinish();
+}
+
+size_t SpillingHashJoin::getSpillableBytes() const
+{
+    switch (state.load(std::memory_order_acquire))
+    {
+        case State::COLLECTING:
+            /// Everything collected so far can be moved to disk by switching to GraceHashJoin.
+            return concurrent_join ? concurrent_join->getTotalByteCount() : hash_join->getTotalByteCount();
+        case State::GRACE_HASH_JOIN:
+            return chosen_join->getSpillableBytes();
+        case State::IN_MEMORY_JOIN:
+            /// The build phase finished with everything in memory, there is nothing left to spill.
+            return 0;
+    }
+}
+
+void SpillingHashJoin::requestSpill()
+{
+    switch (state.load(std::memory_order_acquire))
+    {
+        case State::COLLECTING:
+            /// `switchToGraceHashJoin` re-checks the state, so a concurrent switch is harmless.
+            switchToGraceHashJoin();
+            return;
+        case State::GRACE_HASH_JOIN:
+            chosen_join->requestSpill();
+            return;
+        case State::IN_MEMORY_JOIN:
+            return;
+    }
 }
 
 void SpillingHashJoin::setEnableLazyColumnsIndexing(bool value)
