@@ -67,7 +67,10 @@ static constexpr auto DBMS_MERGE_TREE_PART_INFO_VERSION = 1;
 /// Version 3 adds the parallel-replicas flag (bit 32) on a serialized `ReadFromMergeTree`, telling the
 /// replica to rebuild the read in parallel-reading mode. An older replica would ignore the bit and do a
 /// full non-parallel read, so the serializer fails closed when this flag is set below version 3.
-/// Version 4 is the outline-first framed envelope. The head is
+/// Version 4 adds `WindowStep` to the set of serializable steps. An older worker does not register a
+/// "Window" step at all (`QueryPlanStepRegistry::createStep` would throw `UNKNOWN_IDENTIFIER` on it), so
+/// the serializer fails closed instead when talking to a peer below version 4.
+/// Version 5 is the outline-first framed envelope. The head is
 /// `[version][format_kind][body_size][min_reader_version]` and is frozen: every future body layout
 /// keeps those four, so a reader that does not know the kind still finds the end of the body,
 /// skips it and rejects the plan without losing the connection.
@@ -76,21 +79,27 @@ static constexpr auto DBMS_MERGE_TREE_PART_INFO_VERSION = 1;
 /// and steps may append ignorable payload fields without a version bump. `min_reader_version` is
 /// the oldest version able to read this particular plan, computed by the writer from the content;
 /// a reader accepts any stream whose `min_reader_version` it meets, even from a newer writer.
-static constexpr auto DBMS_QUERY_PLAN_SERIALIZATION_VERSION = 4;
+static constexpr auto DBMS_QUERY_PLAN_SERIALIZATION_VERSION = 5;
 /// The version writers emit unless a query asks for another one. It lags
 /// `DBMS_QUERY_PLAN_SERIALIZATION_VERSION` for a release after a new version lands: the fleet then
 /// reads the new version everywhere before anyone writes it, and users can try it per query with
 /// `query_plan_serialization_version`. Move it up once the new version has proven itself.
-static constexpr auto DBMS_DEFAULT_QUERY_PLAN_SERIALIZATION_VERSION = 4;
-/// Body layout of a v4+ stream, named in the head so a reader decides what it is looking at instead
+static constexpr auto DBMS_DEFAULT_QUERY_PLAN_SERIALIZATION_VERSION = 5;
+/// Body layout of a v5+ stream, named in the head so a reader decides what it is looking at instead
 /// of inferring it from the version. 0 is never written. Every new layout takes the next value and
 /// names the plan version that introduced it.
 static constexpr auto DBMS_QUERY_PLAN_FORMAT_KIND_OUTLINE = 1;
 /// First version with the outline-first framed envelope.
-static constexpr auto DBMS_MIN_QUERY_PLAN_SERIALIZATION_VERSION_WITH_OUTLINE = 4;
+static constexpr auto DBMS_MIN_QUERY_PLAN_SERIALIZATION_VERSION_WITH_OUTLINE = 5;
 /// First query-plan serialization version that carries the parallel-replicas flag (bit 32) on a
 /// serialized `ReadFromMergeTree`. Used to gate the flag and to skip replicas that are too old.
+/// Not tied to `DBMS_QUERY_PLAN_SERIALIZATION_VERSION`: the plan is cached and written per peer
+/// version, so a replica that is merely older is served a stream it can read rather than the
+/// newest one, and only a replica below the flag itself has to be left out.
 static constexpr auto DBMS_MIN_QUERY_PLAN_SERIALIZATION_VERSION_WITH_PARALLEL_REPLICAS = 3;
+/// First query-plan serialization version that registers a "Window" step. Used to gate serializing a
+/// `WindowStep` for `make_distributed_plan`.
+static constexpr auto DBMS_MIN_QUERY_PLAN_SERIALIZATION_VERSION_WITH_WINDOW_STEP = 4;
 /// Version 1 added the initiator's settings changes to the task.
 /// Version 2 added per-stream streaming-exchange ports to exchange_stream_sources.
 static constexpr auto DBMS_DISTRIBUTED_TASK_SERIALIZATION_VERSION = 2;

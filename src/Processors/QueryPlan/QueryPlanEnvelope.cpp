@@ -143,7 +143,7 @@ PlanOutline readOutlineBody(ReadBuffer & in, size_t max_type_complexity, UInt64 
 
         node.payload_size = readCappedVarUInt(in, max_frame_bytes, "step payload bytes");
 
-        /// Future outline layouts append data here; a v4 reader skips it, which is what keeps
+        /// Future outline layouts append data here; a v5 reader skips it, which is what keeps
         /// shape rendering working for plans of newer versions.
         node.extension_bytes = readCappedSizedBytes(in, MAX_OUTLINE_FIELD_BYTES, "node extra bytes");
 

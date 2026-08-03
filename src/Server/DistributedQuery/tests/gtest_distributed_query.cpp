@@ -1,5 +1,6 @@
 #include <cstddef>
 #include <memory>
+#include <mutex>
 #include <boost/core/noncopyable.hpp>
 #include <gtest/gtest.h>
 #include <Common/CurrentThread.h>
@@ -468,10 +469,11 @@ void registerBuildRuntimeFilterStep(QueryPlanStepRegistry & registry);
 
 void registerPlanSteps()
 {
-    /// The registry is shared with other test suites in this binary; register the full production
-    /// set once (whichever suite gets there first) plus this file's test-only steps.
-    static std::once_flag once;
-    std::call_once(once, []
+    /// The registry is process-wide, shared with the other test suites in this binary, and rejects
+    /// a second registration of the same step. Register the full production set once (whichever
+    /// suite gets there first) plus this file's test-only steps.
+    static std::once_flag registered;
+    std::call_once(registered, []
     {
         QueryPlanStepRegistry & registry = QueryPlanStepRegistry::instance();
 
@@ -545,10 +547,10 @@ try
     auto cleanup = makeTemporaryFilesCleaner(object_storage, path, all_temporary_files_for_cleanup);
 
     query_context->setSetting("distributed_plan_execute_locally", 1);
-    auto cancellation_flag = std::make_shared<std::atomic<bool>>(false);
+    auto cancellation = std::make_shared<DistributedQueryCancellation>();
 
     /// Just execute the distributed query plan without checking the result
-    auto executor = createDistributedQueryExecutor(query_uuid, distributed_query_plan, nullptr, query_context, cancellation_flag);
+    auto executor = createDistributedQueryExecutor(query_uuid, distributed_query_plan, nullptr, query_context, cancellation);
 
     try
     {
@@ -572,6 +574,47 @@ TEST_F(DistributedQueryTest, ShuffleHashJoin)
 {
     executeTestWithExchangeKind("Persisted");
     executeTestWithExchangeKind("Streaming");
+}
+
+/// A stream with no columns (case of `SELECT count()`) carries only row counts, so its chunks are
+/// told apart from the end-of-data marker by the row count alone.
+TEST_F(DistributedQueryTest, InMemoryExchangeStreamWithoutColumns)
+{
+    auto context = Context::createCopy(getContext().context);
+    context->setSetting("distributed_plan_execute_locally", true);
+
+    auto exchange_lookup = createExchangeLookup(
+        "test_query", ExchangeDescriptions{}, ExchangeStreamSources{}, /*temporary_files_=*/ nullptr, context);
+
+    auto header = std::make_shared<const Block>();
+    const ExchangeStreamId stream_id("test_exchange", 0, 0);
+
+    Chunks chunks;
+    chunks.emplace_back(Columns{}, 3);
+    chunks.emplace_back(Columns{}, 4);
+
+    {
+        QueryPipelineBuilder builder;
+        builder.init(Pipe(std::make_shared<SourceFromChunks>(header, std::move(chunks))));
+        builder.setSinks([&](const SharedHeader & sink_header, Pipe::StreamType) -> ProcessorPtr
+        {
+            return exchange_lookup->createSink(sink_header, stream_id);
+        });
+        auto pipeline = QueryPipelineBuilder::getPipeline(std::move(builder));
+        CompletedPipelineExecutor executor(pipeline);
+        executor.execute();
+    }
+
+    size_t total_rows = 0;
+    {
+        QueryPipeline pipeline(Pipe(exchange_lookup->createSource(header, stream_id)));
+        PullingPipelineExecutor executor(pipeline);
+        Chunk chunk;
+        while (executor.pull(chunk))
+            total_rows += chunk.getNumRows();
+    }
+
+    EXPECT_EQ(total_rows, 7u);
 }
 
 /// v1 for legacy-port-only sources (rolling-upgrade safe); v2 once a per-replica port appears.

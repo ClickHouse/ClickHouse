@@ -179,7 +179,7 @@ static UInt64 planVersionIntroducingFormatKind(UInt64 format_kind)
     throw Exception(ErrorCodes::LOGICAL_ERROR, "Nested query plan has unknown body layout {}", format_kind);
 }
 
-/// The "needed to read" floor of a complete nested plan body: a v4+ body declares it in its head;
+/// The "needed to read" floor of a complete nested plan body: a v5+ body declares it in its head;
 /// a legacy body is readable exactly by readers of its leading version.
 static UInt64 nestedPlanBodyMinReader(const String & body)
 {

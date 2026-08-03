@@ -116,6 +116,11 @@ public:
     }
 };
 
+/// The version every outline stream needs, and one above it for the cases about a plan that needs
+/// a reader newer than this build.
+constexpr UInt64 outline_version = DBMS_MIN_QUERY_PLAN_SERIALIZATION_VERSION_WITH_OUTLINE;
+constexpr UInt64 newer_than_outline_version = outline_version + 1;
+
 void registerStepsOnce()
 {
     static std::once_flag flag;
@@ -126,9 +131,11 @@ void registerStepsOnce()
             QueryPlanStepRegistry::registerPlanSteps();
         QueryPlanStepRegistry::instance().registerStep("TestSource", TestSourceStep::deserialize);
 
-        /// A step whose payload format v2 is must-understand: requires plan version 5.
+        /// A step whose payload format v2 is must-understand: it needs a reader newer than the
+        /// version that introduced the outline.
         QueryPlanStepRegistry::StepSerializationInfo info;
-        info.payload_formats[2] = {QueryPlanStepRegistry::PayloadChange::Restructure, /*min_plan_version=*/5};
+        info.payload_formats[2] = {QueryPlanStepRegistry::PayloadChange::Restructure,
+                                   /*min_plan_version=*/newer_than_outline_version};
         QueryPlanStepRegistry::instance().registerStep("TestGatedStep", TestSourceStep::deserialize, std::move(info));
 
         /// Known up to payload format 1, so a tail is only acceptable above that.
@@ -195,7 +202,7 @@ QueryPlan deserializePlan(const std::string & bytes)
 
 /// For the legacy v3 stream and the current stream: serialize -> deserialize -> serialize must reproduce identical
 /// bytes, and the reconstructed plans must explain identically across versions. This pins both
-/// the legacy and the v4 outline formats and per-step determinism.
+/// the legacy and the v5 outline formats and per-step determinism.
 void checkRoundTrip(QueryPlan plan)
 {
     registerStepsOnce();
@@ -575,7 +582,7 @@ PlanOutline makeTestOutline()
     leaf.child_count = 0;
     leaf.step_name = "TestSource";
     leaf.step_format_version = 1;
-    leaf.min_reader_plan_version = 4;
+    leaf.min_reader_plan_version = outline_version;
     leaf.header = makeTestHeader();
     leaf.payload_size = 0;
     outline.nodes.push_back(std::move(leaf));
@@ -584,7 +591,7 @@ PlanOutline makeTestOutline()
     root.child_count = 1;
     root.step_name = "Expression";
     root.step_format_version = 1;
-    root.min_reader_plan_version = 4;
+    root.min_reader_plan_version = outline_version;
     root.header = makeTestHeader();
     outline.nodes.push_back(std::move(root));
 
@@ -644,7 +651,7 @@ TEST(QueryPlanSerialization, PayloadTailIsSkippedForANewerStepFormat)
     node.step_name = "TestTailStep";
     node.step_format_version = 5;
     node.payload_prefix_readable_from = 1;
-    node.min_reader_plan_version = DBMS_MIN_QUERY_PLAN_SERIALIZATION_VERSION_WITH_OUTLINE;
+    node.min_reader_plan_version = outline_version;
     node.header = makeTestHeader();
     node.payload_size = payload.str().size();
     outline.nodes.push_back(std::move(node));
@@ -690,7 +697,7 @@ TEST(QueryPlanOutline, ValidationCollectsAllIssues)
     outline.nodes[0].header = nullptr;
     outline.nodes[1].settings.push_back({.name = "no_such_setting", .flags = 0, .value = ""});
 
-    auto result = validateQueryPlanOutline(outline, /*head_min_reader_plan_version=*/4);
+    auto result = validateQueryPlanOutline(outline, /*head_min_reader_plan_version=*/outline_version);
     ASSERT_FALSE(result.ok());
     /// All three problems reported at once, not just the first.
     EXPECT_EQ(result.issues.size(), 3u) << result.describe();
@@ -706,25 +713,26 @@ TEST(QueryPlanOutline, ValidationAcceptsIgnorableUnknownSetting)
     outline.nodes[0].settings.push_back(
         {.name = "future_setting", .flags = PlanOutline::SettingEntry::FLAG_IGNORABLE, .value = ""});
 
-    EXPECT_TRUE(validateQueryPlanOutline(outline, 4).ok());
+    EXPECT_TRUE(validateQueryPlanOutline(outline, outline_version).ok());
 }
 
 TEST(QueryPlanOutline, ValidationChecksStepVersionAgainstRegistryInfo)
 {
     registerStepsOnce();
 
-    /// Format version 2 of this step requires a reader of plan version 5, and the node says so.
+    /// Format version 2 of this step requires a newer reader than this build's base, and the node
+    /// says so.
     auto outline = makeTestOutline();
     outline.nodes[1].step_name = "TestGatedStep";
     outline.nodes[1].step_format_version = 2;
     outline.nodes[1].payload_prefix_readable_from = 2;
-    outline.nodes[1].min_reader_plan_version = 5;
-    EXPECT_TRUE(validateQueryPlanOutline(outline, 5).ok());
+    outline.nodes[1].min_reader_plan_version = newer_than_outline_version;
+    EXPECT_TRUE(validateQueryPlanOutline(outline, newer_than_outline_version).ok());
 
     /// A version above the known maximum is an ignorable extension: the payload is prefix-readable
     /// from a format this server knows, and nothing the registry says forbids it.
     outline.nodes[1].step_format_version = 3;
-    EXPECT_TRUE(validateQueryPlanOutline(outline, 5).ok());
+    EXPECT_TRUE(validateQueryPlanOutline(outline, newer_than_outline_version).ok());
 }
 
 TEST(QueryPlanOutline, ValidationCrossChecksDeclaredReaderVersions)
@@ -732,18 +740,19 @@ TEST(QueryPlanOutline, ValidationCrossChecksDeclaredReaderVersions)
     registerStepsOnce();
 
     /// A writer that undercounted the "needed to read" version is reported: the gated step's
-    /// registry info requires 5 while the node declares only the base version.
+    /// registry info requires the newer version while the node declares only the base one.
     auto outline = makeTestOutline();
     outline.nodes[1].step_name = "TestGatedStep";
     outline.nodes[1].step_format_version = 2;
-    auto result = validateQueryPlanOutline(outline, 5);
+    auto result = validateQueryPlanOutline(outline, newer_than_outline_version);
     ASSERT_FALSE(result.ok());
-    EXPECT_NE(result.describe().find("registry info requires 5"), std::string::npos);
+    EXPECT_NE(result.describe().find(fmt::format("registry info requires {}", newer_than_outline_version)),
+        std::string::npos) << result.describe();
 
     /// A node requiring more than the plan's declared head value is reported too.
     outline = makeTestOutline();
-    outline.nodes[1].min_reader_plan_version = 5;
-    result = validateQueryPlanOutline(outline, 4);
+    outline.nodes[1].min_reader_plan_version = newer_than_outline_version;
+    result = validateQueryPlanOutline(outline, outline_version);
     ASSERT_FALSE(result.ok());
     EXPECT_NE(result.describe().find("above the plan's declared"), std::string::npos);
 }
@@ -789,7 +798,7 @@ TEST(QueryPlanOutline, ValidationChecksTreeStructureAndSetOrder)
     auto outline = makeTestOutline();
 
     outline.nodes[1].child_count = 2;  /// Declares two children, only one subtree precedes it.
-    EXPECT_FALSE(validateQueryPlanOutline(outline, 4).ok());
+    EXPECT_FALSE(validateQueryPlanOutline(outline, outline_version).ok());
     outline.nodes[1].child_count = 1;
 
     PlanOutline::SetEntry set1;
@@ -802,7 +811,7 @@ TEST(QueryPlanOutline, ValidationChecksTreeStructureAndSetOrder)
     set2.kind = 200;  /// Unknown kind.
     outline.sets = {set1, set2};  /// Also not sorted by hash.
 
-    auto result = validateQueryPlanOutline(outline, 4);
+    auto result = validateQueryPlanOutline(outline, outline_version);
     ASSERT_FALSE(result.ok());
     EXPECT_EQ(result.issues.size(), 2u) << result.describe();
 }
@@ -954,12 +963,12 @@ TEST(QueryPlanOutline, ValidationRefusesPayloadItCannotPrefixRead)
     auto appended = makeTestOutline();
     appended.nodes[0].step_format_version = 5;
     appended.nodes[0].payload_prefix_readable_from = 1;
-    EXPECT_TRUE(validateQueryPlanOutline(appended, 4).ok());
+    EXPECT_TRUE(validateQueryPlanOutline(appended, outline_version).ok());
 
     auto restructured = makeTestOutline();
     restructured.nodes[0].step_format_version = 5;
     restructured.nodes[0].payload_prefix_readable_from = 5;
-    auto result = validateQueryPlanOutline(restructured, 4);
+    auto result = validateQueryPlanOutline(restructured, outline_version);
     EXPECT_FALSE(result.ok());
     EXPECT_NE(result.describe().find("readable only by format 5"), std::string::npos) << result.describe();
 }
@@ -969,17 +978,17 @@ TEST(QueryPlanOutline, ValidationRejectsMalformedChildCounts)
     registerStepsOnce();
 
     /// Nothing to be the root.
-    EXPECT_FALSE(validateQueryPlanOutline(PlanOutline{}, 4).ok());
+    EXPECT_FALSE(validateQueryPlanOutline(PlanOutline{}, outline_version).ok());
 
     /// The first node cannot have children: nothing precedes it.
     auto under_run = makeTestOutline();
     under_run.nodes[0].child_count = 1;
-    EXPECT_FALSE(validateQueryPlanOutline(under_run, 4).ok());
+    EXPECT_FALSE(validateQueryPlanOutline(under_run, outline_version).ok());
 
     /// Two leaves leave two unattached subtrees, so there is no single root.
     auto two_roots = makeTestOutline();
     two_roots.nodes[1].child_count = 0;
-    auto result = validateQueryPlanOutline(two_roots, 4);
+    auto result = validateQueryPlanOutline(two_roots, outline_version);
     EXPECT_FALSE(result.ok());
     EXPECT_NE(result.describe().find("single root"), std::string::npos) << result.describe();
 }
@@ -1083,7 +1092,7 @@ TEST(QueryPlanOutline, ExtensionBytesAreSkippedForFutureLayouts)
 
     /// A reader that does not understand the extra bytes still reconstructs the shape.
     EXPECT_EQ(restored.nodes[0].extension_bytes, "future outline fields");
-    EXPECT_TRUE(validateQueryPlanOutline(restored, 4).ok());
+    EXPECT_TRUE(validateQueryPlanOutline(restored, outline_version).ok());
     EXPECT_FALSE(formatQueryPlanOutline(restored).empty());
 }
 

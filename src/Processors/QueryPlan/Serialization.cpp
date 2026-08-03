@@ -116,8 +116,8 @@ static UInt64 writerSerializationVersion(UInt64 requested_version)
 }
 
 /// The version a plan is written with for a peer that supports up to `max_supported_version`.
-/// v4+ peers accept streams by the content's needed-to-read version, so they all get the writer's
-/// own version (one byte string serves a whole mixed v4+ fleet); only pre-outline peers need the
+/// v5+ peers accept streams by the content's needed-to-read version, so they all get the writer's
+/// own version (one byte string serves a whole mixed v5+ fleet); only pre-outline peers need the
 /// stream clamped down to what they can parse.
 static UInt64 effectiveSerializationVersion(size_t max_supported_version, UInt64 requested_version)
 {
@@ -691,7 +691,7 @@ QueryPlanAndSets QueryPlan::deserialize(ReadBuffer & in, const ContextPtr & cont
 
     /// A legacy stream declares no size, so `max_serialized_query_plan_size` does not apply here:
     /// the reader consumes the plan field by field as it arrives, with per-field caps, rather than
-    /// buffering it whole. Only a peer older than v4 sends one.
+    /// buffering it whole. Only a peer older than v5 sends one.
     return deserialize(in, context, flags, max_type_complexity);
 }
 

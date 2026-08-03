@@ -13,7 +13,7 @@ namespace DB
 class WriteBuffer;
 class ReadBuffer;
 
-/// The outline section (Section A) of the v4 query-plan envelope: the stable, common per-node
+/// The outline section (Section A) of the v5 query-plan envelope: the stable, common per-node
 /// data of every plan — tree shape, step names and format versions, descriptions, output headers,
 /// changed settings, payload sizes — stored in front of the step payloads.
 ///
@@ -49,7 +49,7 @@ struct PlanOutline
         SharedHeader header;                    /// nullptr for a step with no output header
         std::vector<SettingEntry> settings;
         UInt64 payload_size = 0;                /// size of this node's slice of the payload section
-        String extension_bytes;                      /// empty in v4; skipped by readers that do not know it
+        String extension_bytes;                      /// empty in v5; skipped by readers that do not know it
     };
 
     /// Nodes in left-to-right post-order over the serialized tree (Delayed* steps elided, as in
