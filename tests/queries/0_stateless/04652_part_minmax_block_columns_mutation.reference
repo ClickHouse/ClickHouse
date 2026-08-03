@@ -1,0 +1,12 @@
+-- after insert --
+all_1_1_0	(1,1)	(0,8)
+-- ALTER UPDATE --
+all_1_1_0_2	(1,1)	(0,8)
+-- ALTER RENAME COLUMN --
+all_1_1_0_3	(1,1)	(0,8)
+-- ALTER DROP COLUMN --
+all_1_1_0_4	(1,1)	(0,8)
+-- ALTER DELETE --
+all_1_1_0_5	(1,1)	(1,8)
+-- surviving rows --
+6	1	1	1	8
