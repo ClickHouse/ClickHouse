@@ -639,3 +639,56 @@ def test_stacktrace_dumps_reach_the_uploaded_result():
         f"the attach at line {attaches[0].lineno} runs after the result is "
         f"built at line {uploads[0].lineno}, so the dumps are not uploaded"
     )
+
+
+def test_the_clear_and_the_attach_scan_the_directory_the_dumps_land_in():
+    # The axis the two neighbouring tests cannot see: the one above selects the
+    # attach by call shape and never reads its arguments, and
+    # `..._finds_dumps_written_by_the_run` calls the collector with `tmp_path`
+    # directly, so it pins the helper rather than the wiring.  Passing `temp_dir`
+    # at either site therefore keeps every other test in this module green while
+    # the attach uploads nothing and the clear deletes nothing.
+    #
+    # `fast_test.py` attaches these same two files from `temp_dir`, and is right
+    # to, only because its runner command prefixes `cd {temp_dir}`.  This job's
+    # does not, so the dumps land at the harness cwd.  Both halves of that are
+    # asserted: the directory each call scans, and the absence of a `cd` that
+    # would move the dumps out of it.
+    main = _main_ast()
+    calls = [
+        node
+        for node in ast.walk(main)
+        if isinstance(node, ast.Call)
+        and ast.unparse(node.func) == "collect_stacktrace_logs"
+    ]
+    assert len(calls) == 2, (
+        f"main() makes {len(calls)} `collect_stacktrace_logs` calls, at lines "
+        f"{[node.lineno for node in calls]} -- expected exactly 2, the stale-dump "
+        "clear on TEST entry and the attach before the result is built"
+    )
+    for call in calls:
+        assert call.args, (
+            f"the `collect_stacktrace_logs` call at line {call.lineno} names no "
+            "directory, so it cannot reach the harness cwd the dumps land in"
+        )
+        scanned = ast.unparse(call.args[0])
+        assert scanned == "Utils.cwd()", (
+            f"the `collect_stacktrace_logs` call at line {call.lineno} scans "
+            f"{scanned!r}; the dumps land at the harness cwd, not there, because "
+            "this job runs `clickhouse-test` without changing directory (unlike "
+            "fast_test, which is why that job attaches from `temp_dir`)"
+        )
+
+    module = ast.parse(Path(functional_tests.__file__).read_text(encoding="utf-8"))
+    for node in ast.walk(module):
+        if not isinstance(node, (ast.JoinedStr, ast.Constant)):
+            continue
+        text = ast.unparse(node)
+        if "clickhouse-test" not in text:
+            continue
+        assert "cd " not in text, (
+            f"the `clickhouse-test` string at line {node.lineno} contains `cd `: "
+            "changing directory moves the dumps out of the `Utils.cwd()` the "
+            "clear and the attach scan -- that is exactly why fast_test, whose "
+            "runner prefixes `cd {temp_dir}`, attaches from `temp_dir` instead"
+        )
