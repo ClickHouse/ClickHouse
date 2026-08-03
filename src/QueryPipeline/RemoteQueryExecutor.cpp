@@ -189,7 +189,12 @@ RemoteQueryExecutor::RemoteQueryExecutor(
                 result.delay);
 
         ConnectionPoolEntries connection_entries;
-        if (!result.entry.isNull() && result.is_usable && !skip_stale_replica)
+        if (skip_stale_replica)
+        {
+            /// The connection was established successfully, the replica is simply too far behind:
+            /// it is reported above, and there is no failure message for it.
+        }
+        else if (!result.entry.isNull() && result.is_usable)
         {
             chassert(result.entry->isConnected());
 

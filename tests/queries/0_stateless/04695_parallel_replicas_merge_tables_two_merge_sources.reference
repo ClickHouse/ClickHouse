@@ -1,0 +1,10 @@
+-- merge() INNER JOIN merge()
+1000	374250	998000
+-- Merge table INNER JOIN a Merge table
+1000	374250	998000
+-- the same Merge table joined with itself
+1000	374250	374250
+-- merge() joined with a Merge table in a subquery
+1000	998000
+-- merge() UNION ALL merge()
+2000	1372250

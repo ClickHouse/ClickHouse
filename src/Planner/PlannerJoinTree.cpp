@@ -1976,7 +1976,17 @@ JoinTreeQueryPlan buildQueryPlanForTableExpression(TableExpressionNodePtr table_
                             {
                                 const String & designated_on_initiator = settings[Setting::parallel_replicas_designated_table];
 
+                                /// What this replica designated for itself. When it is what the initiator
+                                /// designated as well, the two agree and this leaf is simply a sibling of the
+                                /// designated one - a query can well read from more than one `Merge` table, and
+                                /// only the designated leaf is read in a coordinated way. Without this, two
+                                /// sibling leaves that the identifier cannot tell apart would look like a
+                                /// divergence and the query would needlessly fail.
+                                const String designated_here = parallelReplicasDesignatedTableName(
+                                    planner_context->getGlobalPlannerContext()->parallel_replicas_table);
+
                                 if (!designated_on_initiator.empty()
+                                    && designated_on_initiator != designated_here
                                     && designated_on_initiator
                                         == parallelReplicasDesignatedTableName(table_expression_for_parallel_replicas))
                                     throw Exception(

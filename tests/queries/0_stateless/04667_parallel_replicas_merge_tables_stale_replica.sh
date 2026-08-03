@@ -25,6 +25,8 @@ $CLICKHOUSE_CLIENT --query "
     INSERT INTO t_pr_merge_stale_1 SELECT number FROM numbers(1000);
     INSERT INTO t_pr_merge_stale_2 SELECT number + 1000 FROM numbers(1000);
     CREATE TABLE t_pr_merge_stale ENGINE = Merge(currentDatabase(), '^t_pr_merge_stale_');
+    CREATE TABLE t_pr_dim_stale (k UInt64) ENGINE = ReplicatedMergeTree('/clickhouse/tables/{database}/t_pr_dim_stale', '1') ORDER BY k;
+    INSERT INTO t_pr_dim_stale SELECT number * 100 FROM numbers(20);
 "
 
 PR_SETTINGS="enable_analyzer = 1, enable_parallel_replicas = 1, max_parallel_replicas = 3, cluster_for_parallel_replicas = 'test_cluster_one_shard_three_replicas_localhost', parallel_replicas_local_plan = 1, automatic_parallel_replicas_mode = 0, parallel_replicas_allow_merge_tables = 1, max_replica_delay_for_distributed_queries = 1, fallback_to_stale_replicas_for_distributed_queries = 0"
@@ -52,6 +54,26 @@ do
 
     query_id="04667_${CLICKHOUSE_DATABASE}_stale_$RANDOM"
     $CLICKHOUSE_CLIENT --query_id "$query_id" --query "SELECT count(), sum(k) FROM $source SETTINGS $PR_SETTINGS"
+
+    $CLICKHOUSE_CLIENT --query "SYSTEM DISABLE FAILPOINT replicated_merge_tree_all_replicas_stale"
+
+    replicas_used "$query_id"
+done
+
+# The same for the whole-stage path: a `JOIN` over a `Merge` source is offloaded to the replicas as a
+# single query, and the freshness of the underlying replicated tables decides there as well.
+for source in "t_pr_merge_stale" "merge(currentDatabase(), '^t_pr_merge_stale_')"
+do
+    query="SELECT count(), sum(m.k) FROM $source AS m INNER JOIN t_pr_dim_stale AS d ON m.k = d.k SETTINGS $PR_SETTINGS"
+
+    query_id="04667_${CLICKHOUSE_DATABASE}_join_fresh_$RANDOM"
+    $CLICKHOUSE_CLIENT --query_id "$query_id" --query "$query"
+    replicas_used "$query_id"
+
+    $CLICKHOUSE_CLIENT --query "SYSTEM ENABLE FAILPOINT replicated_merge_tree_all_replicas_stale"
+
+    query_id="04667_${CLICKHOUSE_DATABASE}_join_stale_$RANDOM"
+    $CLICKHOUSE_CLIENT --query_id "$query_id" --query "$query"
 
     $CLICKHOUSE_CLIENT --query "SYSTEM DISABLE FAILPOINT replicated_merge_tree_all_replicas_stale"
 

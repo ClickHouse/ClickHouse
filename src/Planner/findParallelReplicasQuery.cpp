@@ -591,13 +591,27 @@ const IQueryTreeNode * findTableDesignatedForParallelReplicas(const QueryTreeNod
 
 String parallelReplicasDesignatedTableName(const IQueryTreeNode * table_expression)
 {
+    if (!table_expression)
+        return {};
+
+    String name;
+
     if (const auto * table_node = typeid_cast<const TableNode *>(table_expression))
-        return table_node->getStorageID().getFullTableName();
+        name = table_node->getStorageID().getFullTableName();
+    else if (const auto * table_function_node = typeid_cast<const TableFunctionNode *>(table_expression))
+        name = "table function " + table_function_node->getTableFunctionName();
+    else
+        return {};
 
-    if (const auto * table_function_node = typeid_cast<const TableFunctionNode *>(table_expression))
-        return "table function " + table_function_node->getTableFunctionName();
+    /// The same table, and even more so the same table function, can appear more than once in a
+    /// query, and the alias is what tells such sibling table expressions apart. It is a part of the
+    /// query sent to the replicas, so the initiator and every replica derive the same name for the
+    /// same table expression of the same query.
+    const String & alias = table_expression->getAlias();
+    if (!alias.empty())
+        name += " AS " + alias;
 
-    return {};
+    return name;
 }
 
 /// Walk the query tree looking for a UNION node whose every child query
@@ -709,8 +723,23 @@ JoinTreeQueryPlan buildQueryPlanForParallelReplicas(
     /// A storage created by a table function (e.g. merge(...)) does not exist on remote replicas
     /// under its generated id, so the id must not be used to check tables status on remote replicas.
     StorageID storage_id = StorageID::createEmpty();
+    StoragePtr storage;
     if (const auto * table_node = table_expression->as<TableNode>())
+    {
         storage_id = table_node->getStorageID();
+        storage = table_node->getStorage();
+    }
+    else if (const auto * table_function_node = table_expression->as<TableFunctionNode>())
+        storage = table_function_node->getStorage();
+
+    /// A `Merge` table is not replicated itself, and for the `merge` table function it does not even
+    /// exist on the replicas, so its own table status says nothing about the freshness of the data the
+    /// query reads. Check the replication delay of its underlying replicated tables instead, so that
+    /// `max_replica_delay_for_distributed_queries` keeps excluding a lagging replica from coordinated
+    /// reading on this path too (a whole `JOIN` or subquery offloaded to the replicas).
+    std::vector<QualifiedTableName> tables_to_check;
+    if (const auto * merge_storage = typeid_cast<const StorageMerge *>(storage.get()))
+        tables_to_check = merge_storage->getReplicatedChildTableNames(context);
 
     QueryPlan query_plan;
     ClusterProxy::executeQueryWithParallelReplicas(
@@ -723,7 +752,8 @@ JoinTreeQueryPlan buildQueryPlanForParallelReplicas(
         std::move(new_planner_context),
         context,
         storage_limits,
-        nullptr);
+        nullptr,
+        std::move(tables_to_check));
 
     auto converting = ActionsDAG::makeConvertingActions(
         header->getColumnsWithTypeAndName(),
