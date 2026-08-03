@@ -585,3 +585,51 @@ SELECT v, length(v) FROM test ORDER BY v::String NULLS LAST;
 │ 42    │      ᴺᵁᴸᴸ │
 └───────┴───────────┘
 ```
+
+## Aggregate functions with Variant arguments {#aggregate-functions-with-variant-arguments}
+
+Aggregate functions accept `Variant` arguments as well.
+
+Some of them handle a `Variant` argument natively, keeping the original alternative type of every value: `count`, `any`, `argMin`, `argMax`, `groupArray`, `groupConcat`, the `uniq` family, and others.
+The rest — the arithmetic and order-based aggregates such as `sum`, `avg`, `min`, `max`, `quantile` and `stddevPop` — aggregate over the least common supertype of the alternatives, wrapped in `Nullable`:
+
+```text
+f(variant) == f(CAST(variant AS Nullable(supertype(T1, ..., TN))))
+```
+
+If the alternatives have no lossless common supertype, the function reports `ILLEGAL_TYPE_OF_ARGUMENT`, as before. For an aggregate whose result is a floating-point value computed by arithmetic over its input (the `sum`/`avg`/variance families), a mix of numeric alternatives can be promoted to `Float64` instead, if the `allow_lossy_numeric_supertype` setting is enabled:
+
+```sql
+SET allow_lossy_numeric_supertype = 1;
+SELECT sum(v), toTypeName(sum(v))
+FROM values('v Variant(Decimal(7, 2), Float64)', 1.5, 2.5, NULL, 10);
+```
+
+```text
+┌─sum(v)─┬─toTypeName(sum(v))─┐
+│     14 │ Nullable(Float64)  │
+└────────┴────────────────────┘
+```
+
+### NULL values of a Variant argument {#null-values-of-a-variant-argument}
+
+A `Variant` value can be NULL, and the aggregate functions skip the rows where a `Variant` argument holds a NULL value, exactly as they skip the NULL values of a `Nullable` argument:
+
+```sql
+SELECT count(v), any(v), groupArray(v), uniqExact(v)
+FROM values('v Variant(UInt64, String)', NULL, 1::UInt64, NULL, 'a');
+```
+
+```text
+┌─count(v)─┬─any(v)─┬─groupArray(v)─┬─uniqExact(v)─┐
+│        2 │ 1      │ [1,'a']       │            2 │
+└──────────┴────────┴───────────────┴──────────────┘
+```
+
+:::note
+Before version `26.8`, the functions that accept a `Variant` natively aggregated those rows as ordinary values: `count` counted them, `any` could return NULL from a group that has non-NULL values, `groupArray` stored the NULLs, and the `uniq` family counted NULL as a distinct value. Set `aggregate_functions_skip_variant_nulls = 0` (or `SET compatibility = '26.7'`) to restore the previous behavior.
+
+This setting controls how new values are aggregated. It cannot change the meaning of an `AggregateFunction(f, Variant(...))` state that has already been written, because the state representation is the same in both modes: a state written by an older version keeps the values that went into it, including the ones that came from the NULL rows.
+:::
+
+Window functions handle their argument types themselves, so the `RESPECT NULLS` forms keep seeing the NULL rows of a `Variant` argument.

@@ -25,6 +25,7 @@ namespace DB
 struct Settings;
 namespace Setting
 {
+    extern const SettingsBool aggregate_functions_skip_variant_nulls;
     extern const SettingsBool allow_lossy_numeric_supertype;
     extern const SettingsBool log_queries;
 }
@@ -623,7 +624,12 @@ AggregateFunctionPtr AggregateFunctionFactory::getImpl(
         /// This is the resolution point every path funnels through -- the top-level native resolution as well as
         /// a combinator's nested function reconstructed from a declared AggregateFunction(f, Variant(...)) state
         /// type -- so the wrapper is applied consistently and the state layouts always match.
+        /// The `aggregate_functions_skip_variant_nulls` setting restores the previous behavior for the queries of
+        /// a user who depends on it. It can only affect how new values are aggregated, not the meaning of an
+        /// already written state: the state representation is the same in both modes, so it is deliberately not
+        /// consulted when there is no query context (a background operation, or a table loaded at startup).
         if (!out_properties.is_window_function && !out_properties.skips_variant_nulls
+            && (!settings || (*settings)[Setting::aggregate_functions_skip_variant_nulls])
             && std::any_of(argument_types.begin(), argument_types.end(), [](const auto & type) { return isVariant(type); }))
         {
             /// Unlike the "Null" combinator, the wrapper never promotes the result type to Nullable and adds no

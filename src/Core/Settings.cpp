@@ -5424,6 +5424,15 @@ With `aggregate_functions_null_for_empty = 1` the result would be:
 └───────────────┴──────────────┘
 ```
 )", 0) \
+    DECLARE(Bool, aggregate_functions_skip_variant_nulls, true, R"(
+Aggregate functions skip the rows where a `Variant` argument holds a NULL value, exactly as they skip the NULL values of a `Nullable` argument.
+
+A `Variant` is not `Nullable`, so the `-Null` combinator is never applied to it, and before ClickHouse 26.8 the aggregate functions that accept a `Variant` argument natively (`count`, `any`, `groupArray`, `groupConcat`, the `uniq` family, ...) processed those rows as ordinary values: `count` counted them, `any` could return NULL from a group that has non-NULL values, `groupArray` stored the NULLs, and `uniq` counted NULL as a distinct value.
+
+Set this to `false` (or `SET compatibility = '26.7'`) to restore the pre-26.8 behavior. Note that this setting only controls how new values are aggregated; it cannot change the meaning of an `AggregateFunction(f, Variant(...))` state that has already been written, because the state representation is the same in both modes.
+
+Window functions handle their argument types themselves, so the `RESPECT NULLS` forms are not affected by this setting.
+)", 0) \
     DECLARE(AggregateFunctionInputFormat, aggregate_function_input_format, "state", R"(
 Format for AggregateFunction input during INSERT operations.
 

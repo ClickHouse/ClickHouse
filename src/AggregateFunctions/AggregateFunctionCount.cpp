@@ -3,6 +3,7 @@
 #include <Columns/ColumnVariant.h>
 #include <AggregateFunctions/AggregateFunctionCount.h>
 #include <AggregateFunctions/FactoryHelpers.h>
+#include <Core/Settings.h>
 
 #if USE_EMBEDDED_COMPILER
 #    include <llvm/IR/IRBuilder.h>
@@ -19,6 +20,10 @@ namespace ErrorCodes
 }
 
 struct Settings;
+namespace Setting
+{
+    extern const SettingsBool aggregate_functions_skip_variant_nulls;
+}
 
 /// Simply count number of not-NULL values.
 class AggregateFunctionCountNotNullUnary final
@@ -331,7 +336,7 @@ llvm::Value * AggregateFunctionCountNotNullUnary::compileGetResult(llvm::IRBuild
 namespace
 {
 
-AggregateFunctionPtr createAggregateFunctionCount(const std::string & name, const DataTypes & argument_types, const Array & parameters, const Settings *)
+AggregateFunctionPtr createAggregateFunctionCount(const std::string & name, const DataTypes & argument_types, const Array & parameters, const Settings * settings)
 {
     assertNoParameters(name, parameters);
 
@@ -343,7 +348,11 @@ AggregateFunctionPtr createAggregateFunctionCount(const std::string & name, cons
     /// the plain `count` state representation, so `count` declares `skips_variant_nulls` and the factory does not
     /// wrap it in `AggregateFunctionVariantNull` (which would be equivalent, but would lose the interchangeability
     /// of the state with plain `count()` provided by `getNormalizedStateType`).
-    if (argument_types.size() == 1 && isVariant(argument_types[0]))
+    /// The `aggregate_functions_skip_variant_nulls` setting restores the previous behavior, where every row was
+    /// counted; the state representation is the same in both modes, so it is not consulted when there is no query
+    /// context (a background operation, or a table loaded at startup).
+    if (argument_types.size() == 1 && isVariant(argument_types[0])
+        && (!settings || (*settings)[Setting::aggregate_functions_skip_variant_nulls]))
         return std::make_shared<AggregateFunctionCountNotNullVariant>(argument_types[0], parameters);
 
     return std::make_shared<AggregateFunctionCount>(argument_types);
