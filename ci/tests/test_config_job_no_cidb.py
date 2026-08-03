@@ -216,7 +216,9 @@ class _OkResponse:
 def test_flaky_check_runs_when_stateless_tests_changed(monkeypatch):
     _use_fake_info(monkeypatch)
     calls = _record_cidb_requests(monkeypatch)
-    monkeypatch.setattr(Targeting, "get_changed_tests", lambda self: ["04652_probe."])
+    monkeypatch.setattr(
+        Targeting, "get_changed_tests", lambda self: [CHANGED_TEST_NAME]
+    )
     assert fj.should_skip_job(FLAKY_CHECK_JOB) == (False, "")
     assert calls == [], f"config-time CIDB requests: {calls}"
 
@@ -244,9 +246,12 @@ def test_previously_failed_cannot_change_flaky_coverage():
 
     import ci.jobs.functional_tests as functional_tests
 
-    # In-job side: the `is_flaky_check` branch that picks the test list must pick it
-    # from `get_changed_tests`. Matched on the AST rather than on text, because
-    # `is_flaky_check` also gates an unrelated worker-count branch.
+    targeting_methods = {n for n in dir(Targeting) if not n.startswith("__")}
+
+    # In-job side: every `Targeting` selector reached anywhere inside an
+    # `is_flaky_check` branch must be `get_changed_tests`. The whole branch body is
+    # walked, so `tests += ...` and `tests.extend(...)` count too; non-`Targeting`
+    # calls (`join`, `append`) are filtered out.
     selectors = set()
     for node in ast.walk(ast.parse(inspect.getsource(functional_tests))):
         if not isinstance(node, ast.If):
@@ -254,18 +259,24 @@ def test_previously_failed_cannot_change_flaky_coverage():
         if not (isinstance(node.test, ast.Name) and node.test.id == "is_flaky_check"):
             continue
         for stmt in node.body:
-            if not isinstance(stmt, ast.Assign) or not isinstance(stmt.value, ast.Call):
-                continue
-            if any(
-                isinstance(t, ast.Name) and t.id == "tests" for t in stmt.targets
-            ) and isinstance(stmt.value.func, ast.Attribute):
-                selectors.add(stmt.value.func.attr)
+            for sub in ast.walk(stmt):
+                if (
+                    isinstance(sub, ast.Call)
+                    and isinstance(sub.func, ast.Attribute)
+                    and sub.func.attr in targeting_methods
+                ):
+                    selectors.add(sub.func.attr)
     assert selectors == {"get_changed_tests"}, selectors
 
-    # Config-time side: the same selector, and no CIDB-backed one.
-    hook = inspect.getsource(fj)
-    assert "get_changed_tests" in hook
-    assert "get_previously_failed_tests" not in hook
+    # Config-time side: the same selector, and no CIDB-backed one. Scoped to the hook
+    # this PR changed, so an unrelated mention elsewhere in the module cannot mask it.
+    hook_calls = {
+        n.func.attr
+        for n in ast.walk(ast.parse(inspect.getsource(fj.should_skip_job)))
+        if isinstance(n, ast.Call) and isinstance(n.func, ast.Attribute)
+    }
+    assert "get_changed_tests" in hook_calls
+    assert "get_previously_failed_tests" not in hook_calls
 
 
 def test_integration_flaky_check_needs_no_cidb(monkeypatch):
