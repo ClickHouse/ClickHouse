@@ -575,113 +575,32 @@ void MergeTreeData::initializeDirectoriesAndFormatVersion(const std::string & re
 void MergeTreeData::loadColumnIdMappingFromDisk(bool attach)
 {
     const auto column_ids_path = fs::path(relative_data_path) / COLUMN_IDS_FILE_NAME;
-    const auto & disks = getDisks();
 
-    /// The authoritative copy lives on one disk (policy's first).  Read it there.
-    /// A copy found only on other disks is the old multi-disk on-disk format (or
-    /// the authoritative disk was broken when it was last written): adopt it and
-    /// rewrite to the authoritative disk so divergence becomes unrepresentable.
-    std::optional<String> mapping_json;
-    bool found_on_authoritative = false;
-    bool has_usable_disk = false;
+    const DiskPtr authoritative_disk = getColumnIdMappingDisk(getStoragePolicy());
+    std::unique_ptr<ReadBufferFromFileBase> mapping_buf;
+    if (!authoritative_disk->isBroken())
+        mapping_buf = authoritative_disk->readFileIfExists(column_ids_path, getReadSettings());
 
-    DiskPtr authoritative = disks.empty() ? nullptr : getColumnIdMappingDisk(getStoragePolicy());
-    if (authoritative && !authoritative->isBroken())
+    if (!mapping_buf)
     {
-        has_usable_disk = true;
-        if (auto buf = authoritative->readFileIfExists(column_ids_path, getReadSettings()))
-        {
-            String contents;
-            readStringUntilEOF(contents, *buf);
-            mapping_json = std::move(contents);
-            found_on_authoritative = true;
-        }
-    }
-
-    /// Legacy multi-disk fallback: read EVERY readable non-authoritative copy and
-    /// fail closed if any two disagree.  Adopting the first without this check
-    /// could cement a stale copy (e.g. a torn old-format write, or a cleanup skip
-    /// on a read-only disk) whose `b -> old_id` resurrects DROP+re-ADD bytes.
-    if (!mapping_json.has_value())
-    {
-        String first_disk_name;
-        for (const auto & disk : disks)
-        {
-            if (disk->isBroken())
-                continue;
-            has_usable_disk = true;
-            if (authoritative && disk->getName() == authoritative->getName())
-                continue;
-
-            auto buf = disk->readFileIfExists(column_ids_path, getReadSettings());
-            if (!buf)
-                continue;
-            String contents;
-            readStringUntilEOF(contents, *buf);
-            if (!mapping_json.has_value())
-            {
-                mapping_json = std::move(contents);
-                first_disk_name = disk->getName();
-            }
-            else if (*mapping_json != contents)
-            {
-                throw Exception(ErrorCodes::CORRUPTED_DATA,
-                    "Column ID mapping `{}` differs between legacy disk copies ({} vs {}); "
-                    "a stale copy would silently bind logical columns to the wrong physical "
-                    "IDs.  Restore the table from backup or re-sync the copies manually.",
-                    column_ids_path.string(), first_disk_name, disk->getName());
-            }
-        }
-    }
-
-    if (mapping_json.has_value())
-    {
-        ReadBufferFromString buf(*mapping_json);
-        auto loaded_mapping = ColumnIdMapping::deserialize(buf);
-        skipWhitespaceIfAny(buf);
-        assertEOF(buf);
-
-        /// Refuse a torn/hand-edited `column_ids.json` that misses a still-present column BEFORE
-        /// publishing it: publishing stamps the schema off the mapping, so a missing entry would
-        /// otherwise trip the in-memory desync assertion (a debug abort) instead of this clear,
-        /// file-naming refusal. reconcileColumnIdMappingWithMetadata repeats the check on the
-        /// published mapping; here it must precede the stamp.
-        /// Only an ACTIVE mapping is the file-naming authority, so only it must cover the schema.
-        /// An inactive leftover (a failed activation) names nothing -- parts still use logical
-        /// filenames -- and is expected to be empty.
-        if (loaded_mapping.isActive())
-            checkColumnIdMappingCoversMetadata(loaded_mapping);
-        setColumnIdMapping(std::move(loaded_mapping));
-
-        /// Migrate an old multi-disk layout to a single authoritative copy.
-        /// Best-effort: the in-memory mapping is already correct, and a failed
-        /// rewrite just leaves the fallback scan to find it again next load.
-        if (!found_on_authoritative)
-        {
-            try
-            {
-                if (auto mapping = getColumnIdMapping())
-                    writeColumnIdMappingToDisk(*mapping);
-            }
-            catch (...)
-            {
-                tryLogCurrentException(log, "Failed to migrate column ID mapping to the authoritative disk");
-            }
-        }
+        if (attach
+            && (*getSettings())[MergeTreeSetting::serialization_info_version] == MergeTreeSerializationInfoVersion::WITH_COLUMN_IDS)
+            throw Exception(ErrorCodes::CORRUPTED_DATA,
+                "Table {} has `serialization_info_version = 'with_column_ids'` but `{}` cannot be read "
+                "from disk `{}`. It cannot be rebuilt either: DROP + re-ADD of the same column name "
+                "makes on-disk files indistinguishable from their column ID alone. Restore the table "
+                "from backup, or put the file back on that disk by hand.",
+                getStorageID().getNameForLogs(), column_ids_path.string(), authoritative_disk->getName());
         return;
     }
 
-    /// CREATE always writes the mapping, so a healthy pre-existing table can never
-    /// lack it.  Loading without it would resurrect dropped columns' orphaned files
-    /// and lose numeric-ID columns -- silently.  Fail closed, like broken metadata.
-    if (attach && has_usable_disk
-        && (*getSettings())[MergeTreeSetting::serialization_info_version] == MergeTreeSerializationInfoVersion::WITH_COLUMN_IDS)
-        throw Exception(ErrorCodes::CORRUPTED_DATA,
-            "Table {} has `serialization_info_version = 'with_column_ids'` but no disk "
-            "has `{}`. The mapping cannot be rebuilt safely because DROP + re-ADD of "
-            "the same column name makes on-disk files indistinguishable from their "
-            "column ID alone. Restore the table from backup or restore `{}` manually.",
-            getStorageID().getNameForLogs(), column_ids_path.string(), COLUMN_IDS_FILE_NAME);
+    auto loaded_mapping = ColumnIdMapping::deserialize(*mapping_buf);
+    skipWhitespaceIfAny(*mapping_buf);
+    assertEOF(*mapping_buf);
+
+    if (loaded_mapping.isActive())
+        checkColumnIdMappingCoversMetadata(loaded_mapping);
+    setColumnIdMapping(std::move(loaded_mapping));
 }
 
 void MergeTreeData::writeColumnIdMappingToDisk() const

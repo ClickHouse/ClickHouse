@@ -4,10 +4,9 @@
 #   1. FREEZE: a shadow is an immutable, portable, PER-DISK artifact; offline tools
 #      read one disk's subtree at a time, so `column_ids.json` must land in the
 #      shadow of EACH disk holding frozen parts, not just one.
-#   2. ATTACH: with the authoritative copy absent, the legacy multi-disk fallback
-#      must fail closed when the remaining copies diverge -- adopting one silently
-#      could cement a stale mapping (resurrecting DROP+re-ADD bytes under a reused
-#      name).
+#   2. ATTACH: `column_ids.json` is read from the policy's first disk and nowhere else,
+#      so a copy on another disk must not rescue the table -- nothing at load time can
+#      prove it current, and a stale one resurrects DROP+re-ADD bytes under a reused name.
 
 CURDIR=$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)
 # shellcheck source=../shell_config.sh
@@ -57,27 +56,45 @@ echo "freeze mapping copies: ${n_maps}"
 $CLIENT --query "ALTER TABLE t_freeze_disks UNFREEZE WITH NAME '${backup_name}'" > /dev/null
 $CLIENT --query "DROP TABLE t_freeze_disks SYNC"
 
-# 2. ATTACH refuses divergent legacy per-disk copies. Destructive (plants files on
-#    disk), so it runs last and on its own table.
+# 2. ATTACH refuses to adopt a copy that is not on the authoritative disk. Destructive
+#    (moves files on disk), so it runs last and on its own table.
 
-$CLIENT --query "DROP TABLE IF EXISTS t_divergent SYNC"
-create_table t_divergent
-echo "INSERT INTO t_divergent VALUES (1, 'x')" | $CLIENT
+$CLIENT --query "DROP TABLE IF EXISTS t_off_disk SYNC"
+create_table t_off_disk
+echo "INSERT INTO t_off_disk VALUES (1, 'x')" | $CLIENT
 
-# data_paths[1] is the authoritative (policy-first) disk; [2],[3] are others.
-auth=$(resolve "$($CLIENT --query "SELECT data_paths[1] FROM system.tables WHERE database = currentDatabase() AND name = 't_divergent'")")
-other2=$(resolve "$($CLIENT --query "SELECT data_paths[2] FROM system.tables WHERE database = currentDatabase() AND name = 't_divergent'")")
-other3=$(resolve "$($CLIENT --query "SELECT data_paths[3] FROM system.tables WHERE database = currentDatabase() AND name = 't_divergent'")")
+# DROP + re-ADD moves `b` to the numeric ID "1", so the closing SELECT can only return
+# the right values through the right mapping.
+$CLIENT --query "ALTER TABLE t_off_disk DROP COLUMN b"
+$CLIENT --query "ALTER TABLE t_off_disk ADD COLUMN b String"
+echo "INSERT INTO t_off_disk VALUES (2, 'y')" | $CLIENT
 
-$CLIENT --query "DETACH TABLE t_divergent SYNC"
+# data_paths[1] is the authoritative (policy-first) disk; [2] is another one.
+auth=$(resolve "$($CLIENT --query "SELECT data_paths[1] FROM system.tables WHERE database = currentDatabase() AND name = 't_off_disk'")")
+other=$(resolve "$($CLIENT --query "SELECT data_paths[2] FROM system.tables WHERE database = currentDatabase() AND name = 't_off_disk'")")
 
-# Drop the authoritative copy and plant two DIVERGENT copies on other disks
-# (the legacy multi-disk layout after a torn write / partial cleanup).
-rm -f "${auth}column_ids.json"
-printf '%s' '{"active": true, "next_column_id": 3, "mapping": {"a": "a", "b": "b"}}' > "${other2}column_ids.json"
-printf '%s' '{"active": true, "next_column_id": 8, "mapping": {"a": "a", "b": "7"}}' > "${other3}column_ids.json"
+$CLIENT --query "DETACH TABLE t_off_disk SYNC"
 
-attach_out=$($CLIENT --query "ATTACH TABLE t_divergent" 2>&1 || true)
-echo "${attach_out}" | grep -q "differs between legacy disk copies" && echo "rejected: divergent copies" || echo "NOT rejected"
+# Exactly ONE copy is the point: a lone copy has nothing to disagree with, so comparing
+# copies against each other cannot catch it -- only refusing outright can.  This is the
+# shape a skipped cleanup leaves behind on a read-only disk, or a removal that threw.
+mkdir -p "${other}"
+mv "${auth}column_ids.json" "${other}column_ids.json"
 
-$CLIENT --query "DROP TABLE IF EXISTS t_divergent SYNC" 2>/dev/null || true
+attach_out=$($CLIENT --query "ATTACH TABLE t_off_disk" 2>&1 || true)
+echo "${attach_out}" | grep -q "column_ids.json" && echo "rejected: mapping off the authoritative disk" || echo "NOT rejected"
+
+# Discriminators that do not depend on stderr text: the table must not be loaded, and
+# the refusal must not have migrated a copy back onto the authoritative disk.
+echo "loaded after refusal: $($CLIENT --query "SELECT count() FROM system.tables WHERE database = currentDatabase() AND name = 't_off_disk'")"
+[ -f "${auth}column_ids.json" ] && echo "copy migrated back" || echo "copy not adopted"
+
+# Recover the way the error message tells the operator to, and check the data survived.
+# Conditional because a server that wrongly adopted the copy has already moved it back.
+if [ -f "${other}column_ids.json" ]; then
+    mv "${other}column_ids.json" "${auth}column_ids.json"
+fi
+$CLIENT --query "ATTACH TABLE t_off_disk" 2>/dev/null || true
+$CLIENT --query "SELECT a, b FROM t_off_disk ORDER BY a"
+
+$CLIENT --query "DROP TABLE IF EXISTS t_off_disk SYNC" 2>/dev/null || true

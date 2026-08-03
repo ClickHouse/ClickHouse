@@ -251,8 +251,10 @@ ALTER TABLE t_ids_introspection RENAME COLUMN b TO b2;
 SELECT name, column, column_id FROM system.parts_columns
     WHERE database = currentDatabase() AND table = 't_ids_introspection' AND active
     ORDER BY name, column;
+-- Report the offending names rather than a bare 0/1: this fails on macOS only, where we have no
+-- runner to inspect, so the name in the failure is the only clue to which stream went wrong.
 SELECT column, column_id,
-       arrayAll(f -> (f != '') AND startsWith(f, '2'), arraySort(filenames)) AS filenames_id_based,
+       arrayFilter(f -> (f = '') OR NOT startsWith(f, '2'), arraySort(filenames)) AS non_id_filenames,
        length(filenames) > 0 AS has_filenames
 FROM system.parts_columns
     WHERE database = currentDatabase() AND table = 't_ids_introspection' AND active
