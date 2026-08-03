@@ -3,3 +3,4 @@
 4	Carol
 2	Bob
 SELECT * FROM {table:Identifier}(name_pattern = {name_pattern:String})
+1

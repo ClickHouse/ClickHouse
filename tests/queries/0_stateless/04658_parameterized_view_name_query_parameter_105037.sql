@@ -37,5 +37,7 @@ SELECT formatQueryFromJSON(parseQueryToJSON(
 
 SELECT * FROM {missing_table:Identifier}(name_pattern = 'A%'); -- { serverError UNKNOWN_QUERY_PARAMETER }
 
+SELECT count() FROM numbers(1);
+
 DROP VIEW test_04658_active_employees;
 DROP TABLE test_04658_employees;
