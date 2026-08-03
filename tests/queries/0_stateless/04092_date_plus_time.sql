@@ -450,6 +450,23 @@ SELECT toDate('2024-01-15') + toTime(9999999); -- { serverError VALUE_IS_OUT_OF_
 SET date_time_overflow_behavior = 'saturate';
 SELECT toTime(9999999) AS t, toInt32(t) AS raw;
 SELECT toDate('2024-01-15') + toTime(9999999) AS dt;
+
+-- Numeric inputs to `Time` are capped to the range of the type ([-999:59:59, 999:59:59]),
+-- whatever the width of the source type is, so a value beyond the visible range is stored
+-- saturated instead of keeping its full numeric value. Date+Time uses the stored value,
+-- therefore two `Time` values that print identically also produce the same `DateTime`.
+SELECT
+    toTime(9999999) AS t_raw,
+    toTime(3599999) AS t_vis,
+    t_raw = t_vis AS same_time;
+SELECT
+    toDate('2024-01-15') + toTime(9999999) AS dt_raw,
+    toDate('2024-01-15') + toTime(3599999) AS dt_vis,
+    dt_raw = dt_vis AS same_dt;
+SELECT
+    (toDate('2024-01-15') + toTime(9999999)) =
+    (toDate('2024-01-15') + toTime(3599999)) AS same_dt_from_same_visible_time;
+
 SET date_time_overflow_behavior = 'ignore';
 SELECT toTime(9999999) AS t, toInt32(t) AS raw;
 SELECT toDate('2024-01-15') + toTime(9999999) AS dt;

@@ -156,8 +156,10 @@ SELECT toString(c), toString(CAST(toInt256(999999999999) AS Date32)) FROM values
 SELECT toInt32(c), toInt32(CAST(toUInt128(99999999999) AS Time)) FROM values('c Time', toUInt128(99999999999));
 SELECT toString(c), toString(CAST(toUInt128(99999999999) AS DateTime)) FROM values('c DateTime', toUInt128(99999999999));
 SELECT toString(c), toString(CAST(1e30 AS Date)) FROM values('c Date', 1e30);
-SELECT toInt32(c), toInt32(CAST(nan AS Time)) FROM values('c Time', nan);
-SELECT toString(c), toString(CAST(inf AS DateTime)) FROM values('c DateTime', inf);
+-- A non-finite float is unconvertible for these targets, so both sides of the comparison raise
+-- instead of clamping; the value never reaches the column.
+SELECT toInt32(c), toInt32(CAST(nan AS Time)) FROM values('c Time', nan); -- { serverError CANNOT_CONVERT_TYPE }
+SELECT toString(c), toString(CAST(inf AS DateTime)) FROM values('c DateTime', inf); -- { serverError CANNOT_CONVERT_TYPE }
 
 SELECT '-- UInt32 keeps clamping into Time; the UInt32 -> DateTime cast is unaffected (UInt32::max is the DateTime maximum)';
 SELECT toInt32(CAST(toUInt32(4000000) AS Time)), toInt32(CAST(toUInt32(4294967295) AS Time));

@@ -48,6 +48,15 @@ class HostMetricsCollector:
     _PSI_MEM = "/proc/pressure/memory"
     _PSI_IO = "/proc/pressure/io"
 
+    # Utilization label thresholds (see classify). Percentages unless noted.
+    _UNDER_MEM_PCT = 40.0  # peak RAM below this -> RAM over-provisioned
+    _UNDER_CPU_PCT = 20.0  # average CPU below this -> CPU over-provisioned
+    _RAM_PRESSURE_PCT = 95.0  # peak RAM at/above this -> RAM under-provisioned
+    _MEM_STALL_RATIO = 0.02  # mem full-stall / duration above this -> RAM pressure
+    _CPU_STALL_RATIO = 0.5  # cpu stall seconds / duration above this -> CPU-bound
+    _IO_STALL_RATIO = 0.4  # io stall seconds / duration above this -> IO-bound
+    _DISK_WARN_PCT = 85.0  # peak disk at/above this -> almost full
+
     def __init__(
         self,
         out_file: str = Settings.HOST_METRICS_FILE,
@@ -70,6 +79,7 @@ class HostMetricsCollector:
         self._samples: List[Dict[str, float]] = []
         self._mem_total_kb = 0
         self._disk_total_kb = 0
+        self._cpu_count = 0
         # Set in start() by probing disk_path; a bad path disables only the disk
         # series, never CPU/RAM/PSI.
         self._disk_available = False
@@ -77,9 +87,20 @@ class HostMetricsCollector:
         self._cpu_peak = 0.0
         self._mem_peak = 0.0
         self._disk_peak = 0.0
+        # Time-weighted running sums for whole-run averages (area = value * dt).
+        self._cpu_area = 0.0
+        self._mem_area = 0.0
+        self._disk_area = 0.0
+        self._dt_total = 0.0
+        self._disk_dt_total = 0.0
         self._n_fine = 0
         self._psi_start: Optional[Dict[str, int]] = None
         self._psi_end: Optional[Dict[str, int]] = None
+        # Monotonic start reference and the true elapsed span, used as the job
+        # duration so stall% is normalized by real wall time (not by the last
+        # sample timestamp, which lags when the sampler is starved under load).
+        self._t0 = 0.0
+        self._elapsed_s = 0.0
         self._started = False
         self._stopped = False
 
@@ -92,6 +113,7 @@ class HostMetricsCollector:
         if self._started:
             return self
         self._started = True
+        self._cpu_count = self._read_cpu_count()
         # Truncate any stale file from a previous run in the same workspace.
         try:
             Path(self._out_file).parent.mkdir(parents=True, exist_ok=True)
@@ -109,6 +131,7 @@ class HostMetricsCollector:
         except OSError as e:
             print(f"WARNING: disk path [{self._disk_path}] is not accessible ({e}) - disk series disabled")
             self._disk_available = False
+        self._t0 = time.monotonic()
         self._psi_start = self._read_psi()
         self._thread = threading.Thread(target=self._run, name="host-metrics", daemon=True)
         self._thread.start()
@@ -125,9 +148,13 @@ class HostMetricsCollector:
         self._stop_event.set()
         if self._thread is not None:
             self._thread.join(timeout=self._report_interval * 2 + 5)
-        # Fallback in case the thread was killed / timed out before recording it.
+        # Fallback if the thread was starved / timed out before recording these.
+        # Capturing the real elapsed span here (not the last sample timestamp) is
+        # what keeps stall% <= 100%: a starved sampler emits stale sample times,
+        # but the PSI delta always spans the true wall-clock interval.
         if self._psi_end is None:
             self._psi_end = self._read_psi()
+            self._elapsed_s = time.monotonic() - self._t0
         if not self._samples:
             return None
         return self._compact(self._samples)
@@ -136,7 +163,7 @@ class HostMetricsCollector:
         # The first /proc/stat read only establishes a baseline; CPU% needs a
         # delta between two reads, so no sample is emitted for it.
         prev_cpu = self._read_cpu_times()
-        start = time.monotonic()
+        start = self._t0
         window_start = start
         last_time = start
         # Each entry is (value, dt) so the window average can be time-weighted:
@@ -200,6 +227,10 @@ class HostMetricsCollector:
             # Exact global peaks, immune to windowing/decimation.
             self._cpu_peak = max(self._cpu_peak, cpu_pct)
             self._mem_peak = max(self._mem_peak, mem_pct)
+            # Time-weighted running totals for the whole-run averages.
+            self._cpu_area += cpu_pct * dt
+            self._mem_area += mem_pct * dt
+            self._dt_total += dt
             # Disk is sampled independently: a failure here disables only the
             # disk series and leaves CPU/RAM/PSI intact.
             if self._disk_available:
@@ -211,6 +242,8 @@ class HostMetricsCollector:
                 else:
                     win_disk.append((disk_pct, dt))
                     self._disk_peak = max(self._disk_peak, disk_pct)
+                    self._disk_area += disk_pct * dt
+                    self._disk_dt_total += dt
             if now - window_start >= self._report_interval:
                 flush_window(now)
                 window_start = now
@@ -218,9 +251,11 @@ class HostMetricsCollector:
                 break
 
         # Emit the trailing partial window and capture PSI as close to the real
-        # end of the job as possible.
+        # end of the job as possible. Record the true elapsed span (>= the PSI
+        # delta interval) so stall percentages stay bounded by 100%.
         flush_window(time.monotonic())
         self._psi_end = self._read_psi()
+        self._elapsed_s = time.monotonic() - self._t0
 
     def _append_to_fs(self, sample: Dict[str, float]):
         try:
@@ -228,6 +263,22 @@ class HostMetricsCollector:
                 f.write(json.dumps(sample) + "\n")
         except OSError as e:
             print(f"WARNING: Failed to append host metrics sample: {e}")
+
+    def _read_cpu_count(self) -> int:
+        """Number of logical CPUs from the per-cpu lines in ``/proc/stat``.
+
+        Matches the whole-VM denominator of the aggregate ``cpu`` line, so it is
+        the right capacity for weighting CPU utilization by "core-seconds".
+        """
+        try:
+            count = 0
+            with open(self._CPU_STAT, "r", encoding="utf8") as f:
+                for line in f:
+                    if line.startswith("cpu") and len(line) > 3 and line[3].isdigit():
+                        count += 1
+            return count or 1
+        except OSError:
+            return 1
 
     def _read_cpu_times(self) -> Tuple[int, int]:
         """Return (idle_all, total) jiffies from the aggregate ``cpu`` line."""
@@ -338,6 +389,12 @@ class HostMetricsCollector:
             "mem": round(self._mem_peak, 1),
             "mem_gb": round(mem_total_gb * self._mem_peak / 100.0, 2),
         }
+        averages = {
+            "cpu": round(self._cpu_area / self._dt_total, 1) if self._dt_total else 0.0,
+            "mem": round(self._mem_area / self._dt_total, 1) if self._dt_total else 0.0,
+        }
+        if self._disk_dt_total:
+            averages["disk"] = round(self._disk_area / self._disk_dt_total, 1)
         series = {
             "cpu": self._decimate([(s["t"], s["cpu"], s["cpu_peak"]) for s in samples], self._max_points),
             "mem": self._decimate([(s["t"], s["mem"], s["mem_peak"]) for s in samples], self._max_points),
@@ -345,11 +402,15 @@ class HostMetricsCollector:
         result = {
             "interval": self._report_interval,
             "fine_interval": self._fine_interval,
-            "duration": samples[-1]["t"] if samples else 0,
+            "duration": round(self._elapsed_s, 1)
+            if self._elapsed_s
+            else (samples[-1]["t"] if samples else 0),
             "mem_total_gb": mem_total_gb,
+            "cpu_count": self._cpu_count,
             "n_raw": self._n_fine,
             "n_windows": len(samples),
             "peaks": peaks,
+            "averages": averages,
             "series": series,
         }
         # Disk is optional: present only when the disk path was sampled.
@@ -403,3 +464,101 @@ class HostMetricsCollector:
             result.extend(sorted(reps, key=lambda p: p[0]))
         result.append(last)
         return [[t, a, p] for t, a, p in result]
+
+    @staticmethod
+    def qualifies(metrics: Optional[Dict]) -> bool:
+        """Whether a job is substantial enough to label / count for the pipeline
+        utilization KPI: it ran long enough OR on a host with enough RAM. Short
+        jobs on small runners are too noisy and not worth right-sizing.
+        """
+        if not metrics:
+            return False
+        duration = metrics.get("duration") or 0
+        mem_gb = metrics.get("mem_total_gb") or 0
+        return duration >= Settings.HOST_METRICS_MIN_LABEL_DURATION_SEC or mem_gb > Settings.HOST_METRICS_MIN_LABEL_MEM_GB
+
+    @classmethod
+    def classify(cls, metrics: Optional[Dict]) -> List[Tuple[str, str]]:
+        """Derive over/under-utilization labels from a compacted metrics dict.
+
+        Returns a list of ``(label, hint)`` pairs for ``Result.set_label``.
+        Only jobs that ran at least ``HOST_METRICS_MIN_LABEL_DURATION_SEC`` are
+        labelled - shorter runs are noisy and not worth right-sizing. RAM uses
+        the peak (you provision for the worst case); CPU uses the whole-run
+        average (brief bursts do not justify more cores); a large CPU stall or a
+        near-full disk are surfaced as their own warnings.
+        """
+        labels: List[Tuple[str, str]] = []
+        if not cls.qualifies(metrics):
+            return labels
+
+        duration = metrics.get("duration") or 0
+        mem_gb = metrics.get("mem_total_gb") or 0
+        peaks = metrics.get("peaks", {})
+        averages = metrics.get("averages", {})
+        psi = metrics.get("psi", {})
+        mem_peak = peaks.get("mem")
+        cpu_avg = averages.get("cpu")
+        disk_peak = peaks.get("disk")
+        disk_gb = metrics.get("disk_total_gb")
+        mem_full_s = psi.get("mem_full_s", 0)
+        cpu_s = psi.get("cpu_s", 0)
+        io_s = psi.get("io_some_s", 0)
+
+        # RAM: pressure (under-provisioned) takes precedence over idle headroom.
+        # Only a sustained memory full-stall counts - a brief blip (e.g. 0.01s
+        # over a long build) is noise, not pressure, so require a fraction of
+        # the runtime rather than any non-zero value.
+        mem_full_ratio = mem_full_s / duration if duration else 0
+        if (mem_peak is not None and mem_peak >= cls._RAM_PRESSURE_PCT) or mem_full_ratio > cls._MEM_STALL_RATIO:
+            labels.append(
+                (
+                    "ram-pressure",
+                    f"Peak RAM {mem_peak}% of {mem_gb}GB, memory stalled {mem_full_s}s ({round(100 * mem_full_ratio)}% of runtime) - consider more RAM",
+                )
+            )
+        elif mem_peak is not None and mem_peak < cls._UNDER_MEM_PCT:
+            labels.append(
+                (
+                    "under-utilized RAM",
+                    f"Peak RAM only {mem_peak}% of {mem_gb}GB - consider a smaller runner",
+                )
+            )
+
+        # CPU: sustained contention (CPU-bound) vs mostly-idle cores.
+        stall_ratio = cpu_s / duration if duration else 0
+        if stall_ratio > cls._CPU_STALL_RATIO:
+            labels.append(
+                (
+                    "cpu-bound",
+                    f"CPU stalled {cpu_s}s ({round(100 * stall_ratio)}% of runtime) - consider more CPU",
+                )
+            )
+        elif cpu_avg is not None and cpu_avg < cls._UNDER_CPU_PCT:
+            labels.append(
+                (
+                    "under-utilized CPU",
+                    f"Average CPU only {cpu_avg}% - consider a smaller runner",
+                )
+            )
+
+        # IO: sustained stall waiting on storage.
+        io_ratio = io_s / duration if duration else 0
+        if io_ratio > cls._IO_STALL_RATIO:
+            labels.append(
+                (
+                    "io-bound",
+                    f"IO stalled {io_s}s ({round(100 * io_ratio)}% of runtime) - storage may be the bottleneck",
+                )
+            )
+
+        # Disk: nearly full.
+        if disk_peak is not None and disk_peak >= cls._DISK_WARN_PCT:
+            labels.append(
+                (
+                    "disk-almost-full",
+                    f"Peak disk {disk_peak}% of {disk_gb}GB",
+                )
+            )
+
+        return labels

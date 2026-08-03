@@ -532,6 +532,24 @@ SELECT toTime(9999999) AS t, toInt32(t) AS raw;
 999:59:59	3599999
 SELECT toDate('2024-01-15') + toTime(9999999) AS dt;
 2024-02-25 15:59:59
+-- Numeric inputs to `Time` are capped to the range of the type ([-999:59:59, 999:59:59]),
+-- whatever the width of the source type is, so a value beyond the visible range is stored
+-- saturated instead of keeping its full numeric value. Date+Time uses the stored value,
+-- therefore two `Time` values that print identically also produce the same `DateTime`.
+SELECT
+    toTime(9999999) AS t_raw,
+    toTime(3599999) AS t_vis,
+    t_raw = t_vis AS same_time;
+999:59:59	999:59:59	1
+SELECT
+    toDate('2024-01-15') + toTime(9999999) AS dt_raw,
+    toDate('2024-01-15') + toTime(3599999) AS dt_vis,
+    dt_raw = dt_vis AS same_dt;
+2024-02-25 15:59:59	2024-02-25 15:59:59	1
+SELECT
+    (toDate('2024-01-15') + toTime(9999999)) =
+    (toDate('2024-01-15') + toTime(3599999)) AS same_dt_from_same_visible_time;
+1
 SET date_time_overflow_behavior = 'ignore';
 SELECT toTime(9999999) AS t, toInt32(t) AS raw;
 999:59:59	3599999
