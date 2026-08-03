@@ -9,6 +9,8 @@
 
 #include <pcg_random.hpp>
 
+#include <boost/multiprecision/cpp_int.hpp>
+
 #include <Core/Types.h>
 #include <IO/WriteHelpers.h>
 #include <IO/ReadHelpers.h>
@@ -539,31 +541,44 @@ T randomOfWidth(pcg64 & rng, unsigned bits)
     return x >> (sizeof(T) * 8 - bits);
 }
 
+/// The same value as an unbounded integer, so that the expected quotient and remainder can be
+/// computed without anything wrapping around the width of `T`.
 template <typename T>
-void checkDivisionInvariants(T a, T b)
+boost::multiprecision::cpp_int toExactInteger(const T & num)
+{
+    boost::multiprecision::cpp_int result = 0;
+    for (size_t i = std::size(num.items); i-- > 0;)
+        result = (result << 64) | boost::multiprecision::cpp_int(num.items[i]);
+
+    /// The limbs hold two's complement, so a negative value comes out as its residue modulo 2^Bits.
+    if constexpr (is_signed_v<T>)
+        if (num < T(0))
+            result -= boost::multiprecision::cpp_int(1) << (sizeof(T) * 8);
+
+    return result;
+}
+
+template <typename T>
+void checkDivisionAgainstExactOracle(T a, T b)
 {
     ASSERT_NE(b, T(0));
 
     T quotient = a / b;
     T remainder = a % b;
 
-    ASSERT_EQ(quotient * b + remainder, a) << "a = " << toString(a) << ", b = " << toString(b);
-    if constexpr (is_signed_v<T>)
-    {
-        /// The remainder is smaller than the divisor in magnitude and carries the dividend's sign.
-        if (remainder != T(0))
-            ASSERT_EQ(remainder < T(0), a < T(0)) << "a = " << toString(a) << ", b = " << toString(b);
-    }
-    else
-    {
-        ASSERT_LT(remainder, b) << "a = " << toString(a) << ", b = " << toString(b);
-    }
+    /// `cpp_int` division truncates toward zero and its remainder carries the dividend's sign, which
+    /// is exactly what wide integers are expected to do, so the results can be compared directly.
+    const boost::multiprecision::cpp_int exact_a = toExactInteger(a);
+    const boost::multiprecision::cpp_int exact_b = toExactInteger(b);
+
+    ASSERT_EQ(toExactInteger(quotient), exact_a / exact_b) << "a = " << toString(a) << ", b = " << toString(b);
+    ASSERT_EQ(toExactInteger(remainder), exact_a % exact_b) << "a = " << toString(a) << ", b = " << toString(b);
 }
 
 }
 
 
-GTEST_TEST(WideInteger, DivisionInvariants)
+GTEST_TEST(WideInteger, DivisionRandomValues)
 {
     /// Fixed seed: a failure here has to be reproducible.
     pcg64 rng(20260729);
@@ -576,7 +591,7 @@ GTEST_TEST(WideInteger, DivisionInvariants)
             UInt128 a = randomOfWidth<UInt128>(rng, bits_a);
             UInt128 b = randomOfWidth<UInt128>(rng, bits_b);
             if (b != UInt128(0))
-                checkDivisionInvariants(a, b);
+                checkDivisionAgainstExactOracle(a, b);
         }
         {
             unsigned bits_a = rng() % 257;
@@ -584,14 +599,14 @@ GTEST_TEST(WideInteger, DivisionInvariants)
             UInt256 a = randomOfWidth<UInt256>(rng, bits_a);
             UInt256 b = randomOfWidth<UInt256>(rng, bits_b);
             if (b != UInt256(0))
-                checkDivisionInvariants(a, b);
+                checkDivisionAgainstExactOracle(a, b);
 
             /// The same bits read as signed, which exercises the sign handling around `divide`.
             /// `min / -1` is the one combination that overflows, as it does for any signed type.
             Int256 signed_a = static_cast<Int256>(a);
             Int256 signed_b = static_cast<Int256>(b);
             if (signed_b != Int256(0) && !(signed_a == std::numeric_limits<Int256>::min() && signed_b == Int256(-1)))
-                checkDivisionInvariants(signed_a, signed_b);
+                checkDivisionAgainstExactOracle(signed_a, signed_b);
         }
     }
 }
@@ -628,7 +643,7 @@ GTEST_TEST(WideInteger, DivisionEdgeCases)
     for (const UInt256 & a : values)
         for (const UInt256 & b : values)
             if (b != UInt256(0))
-                checkDivisionInvariants(a, b);
+                checkDivisionAgainstExactOracle(a, b);
 
     /// Dividing by zero throws rather than doing anything undefined.
     EXPECT_ANY_THROW(std::ignore = std::numeric_limits<UInt256>::max() / UInt256(0));
