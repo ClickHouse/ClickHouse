@@ -101,24 +101,10 @@ QueryPlanPtr buildPartitionReadingPlan(
     const UInt64 & max_block_size,
     const SharedHeader & output_header)
 {
-    /// Deep-copy the row-level filter: every partition's read step is a separate node of the
-    /// unified plan, so a single optimize() pass still rewrites each one's ActionsDAG in place.
-    /// The copy must be private per partition (the prewhere DAG is cloned below for the same reason).
-    SelectQueryInfo partition_query_info = query_info;
-    if (partition_query_info.row_level_filter)
-    {
-        const auto & original = *partition_query_info.row_level_filter;
-        auto cloned = std::make_shared<FilterDAGInfo>();
-        cloned->actions = original.actions.clone();
-        cloned->column_name = original.column_name;
-        cloned->do_remove_column = original.do_remove_column;
-        partition_query_info.row_level_filter = std::move(cloned);
-    }
-
     auto plan = MergeTreeDataSelectExecutor(storage).read(
         inner_columns,
         storage_snapshot,
-        partition_query_info,
+        query_info,
         context,
         max_block_size,
         requested_num_streams,
