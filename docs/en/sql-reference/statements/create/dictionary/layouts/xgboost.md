@@ -23,6 +23,8 @@ SET allow_experimental_xgboost = 1;
 ```
 
 `predictXGBoost` is the only way to predict with such a dictionary, so with the setting off an already created dictionary cannot be used either.
+
+A dictionary defined in a server configuration file rather than with `CREATE DICTIONARY` belongs to no session, so it is gated by the server setting instead: enable `allow_experimental_xgboost` in the `default` profile, otherwise the dictionary fails to load and reports the same error in `system.dictionaries`.
 :::
 
 [`predictXGBoost`](/sql-reference/functions/machine-learning-functions#predictxgboost) is the only way to query the dictionary: it takes the features as individual arguments, returns the prediction, and accepts additional [prediction parameters](#prediction-parameters). The dictionary holds a trained model rather than rows, so the generic dictionary interface — [`dictGet`](/sql-reference/functions/ext-dict-functions#dictget), `dictHas` and `SELECT * FROM dict` — is not supported and reports an error (see [Notes](#notes)).

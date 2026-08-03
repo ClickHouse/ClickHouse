@@ -2,6 +2,7 @@
 
 #include <Columns/ColumnsNumber.h>
 #include <Core/Block.h>
+#include <Core/Settings.h>
 #include <DataTypes/IDataType.h>
 #include <Dictionaries/DictionaryFactory.h>
 #include <Dictionaries/DictionaryPipelineExecutor.h>
@@ -16,6 +17,11 @@
 
 namespace DB
 {
+
+namespace Setting
+{
+extern const SettingsBool allow_experimental_xgboost;
+}
 
 namespace ErrorCodes
 {
@@ -130,13 +136,26 @@ void registerDictionaryXGBoost(DictionaryFactory & factory)
                             [[maybe_unused]] const std::string & config_prefix,
                             [[maybe_unused]] DictionarySourcePtr source_ptr,
                             [[maybe_unused]] ContextPtr global_context,
-                            bool /* created_from_ddl */) -> DictionaryPtr
+                            [[maybe_unused]] bool created_from_ddl) -> DictionaryPtr
     {
 #if !USE_XGBOOST
         throw Exception(
             ErrorCodes::SUPPORT_IS_DISABLED,
             "Dictionary layout `xgboost` is disabled because ClickHouse was built without XGBoost support");
 #else
+        /// A dictionary defined in a configuration file never goes through `InterpreterCreateQuery`, so the
+        /// `allow_experimental_xgboost` check that guards `CREATE DICTIONARY` does not see it. Enforce the
+        /// setting here for that path, against the server settings, since a configuration-file dictionary
+        /// belongs to no session.
+        ///
+        /// A DDL dictionary is exempt: it reaches this creator on every load, including the load that
+        /// startup and ATTACH perform for a dictionary created earlier, and those must not depend on the
+        /// setting being on now - `InterpreterCreateQuery` already gated its creation.
+        if (!created_from_ddl && !global_context->getSettingsRef()[Setting::allow_experimental_xgboost])
+            throw Exception(
+                ErrorCodes::SUPPORT_IS_DISABLED,
+                "The XGBOOST dictionary layout is experimental. Set `allow_experimental_xgboost` setting to enable it");
+
         /// The structure must be a complex key of one or more numeric feature columns, followed by exactly one
         /// floating-point attribute: the training target.
         if (!dict_struct.key || dict_struct.key->empty())
