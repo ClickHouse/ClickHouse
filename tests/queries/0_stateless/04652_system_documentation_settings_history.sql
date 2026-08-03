@@ -36,13 +36,14 @@ WHERE NOT (recorded_name != setting AND previous_value = new_value AND match(rea
 
 -- The history of an alias is the history of that name as opposed to the history of the setting it resolves to:
 -- every record written under the alias itself, plus the records written under another name of the same setting
--- that register this one as an alias — a record that changes nothing, names the alias, and says either that an
--- alias is being added or that the setting is being renamed (which is how the file words keeping the old name).
+-- that register this one as an alias — a record that names the alias and says either that an alias is being added
+-- or that the setting is being renamed (which is how the file words keeping the old name). Such a record may
+-- change the default value in the same breath, so it is not required to leave it as it was.
 CREATE VIEW alias_registrations AS
 SELECT a.name AS name
 FROM system.settings AS a
 INNER JOIN session_records AS r ON r.setting = a.alias_for
-WHERE a.alias_for != '' AND r.recorded_name != a.name AND r.previous_value = r.new_value
+WHERE a.alias_for != '' AND r.recorded_name != a.name
   AND match(r.reason, '(?i)alias|renam')
   AND match(r.reason, '(?:^|[^0-9A-Za-z_])' || a.name || '(?:$|[^0-9A-Za-z_])');
 
@@ -68,11 +69,12 @@ WHERE type = 'MergeTree Setting' AND (name IN (SELECT name FROM changed)) != (po
 SELECT count() FROM system.documentation WHERE type = 'Server Setting' AND position(description, '**History**') > 0;
 
 -- The history lists exactly one item per recorded change of the setting. A change that concerns both a setting and
--- an alias of it is recorded twice, once under each name, and is listed once.
+-- an alias of it is recorded twice, once under each name, with a reason authored separately for each, and is
+-- listed once — so the identity of a change is the version and the values, not the free-form reason.
 SELECT count() FROM system.documentation AS d
 INNER JOIN
 (
-    SELECT name, uniqExact((version, previous_value, new_value, reason)) AS recorded
+    SELECT name, uniqExact((version, previous_value, new_value)) AS recorded
     FROM session_changes GROUP BY name
 ) AS c USING (name)
 WHERE d.type = 'Setting'
@@ -160,6 +162,14 @@ SELECT description FROM system.documentation WHERE type = 'Setting' AND name = '
 SELECT position(description, '**Introduced in:**') = 0,
        position(description, '\n- **25.9** — the default value remained `auto`. The setting was renamed.') > 0
 FROM system.documentation WHERE type = 'Setting' AND name = 'evaluation_time';
+
+-- An alias can appear in the same version in which the default value of the setting changes, and the record that
+-- registers it is then a record of a change of the default as well: `enable_lightweight_update` was made the
+-- canonical name of `allow_experimental_lightweight_update` in 25.8, in the version in which the default of both
+-- was flipped to `true`. The alias has that version in its history, and the setting lists that one change once,
+-- even though the history file records it under both names with a differently worded reason for each.
+SELECT description FROM system.documentation WHERE type = 'Setting' AND name = 'allow_experimental_lightweight_update';
+SELECT description FROM system.documentation WHERE type = 'Setting' AND name = 'enable_lightweight_update';
 
 DROP VIEW alias_registrations;
 DROP VIEW session_changes;

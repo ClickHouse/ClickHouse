@@ -425,16 +425,19 @@ bool reasonMentionsName(std::string_view reason, std::string_view name)
     return false;
 }
 
-/// Whether a record written under one name of a setting registers `alias` as another name of it: it leaves the
-/// default value as it was, it names the alias, and it says either that an alias is being added ("`x` is aliased to
-/// `y`") or that the setting is being renamed, which is how the file words keeping the old name as an alias
-/// ("Renamed from `text_index_density_threshold` (kept as an alias)", "The setting was renamed. The previous name
-/// is `allow_statistic_optimize`.").
+/// Whether a record written under one name of a setting registers `alias` as another name of it: it names the alias
+/// and says either that an alias is being added ("`x` is aliased to `y`") or that the setting is being renamed,
+/// which is how the file words keeping the old name as an alias ("Renamed from `text_index_density_threshold`
+/// (kept as an alias)", "The setting was renamed. The previous name is `allow_statistic_optimize`.").
+///
+/// Whether the record also changes the default value is irrelevant: the two happen in the same version often
+/// enough ("Lightweight updates were moved to Beta. Added an alias for setting
+/// `allow_experimental_lightweight_update`." changes the default from `false` to `true`), and the alias appeared
+/// in that version all the same.
 bool recordRegistersAliasNamed(const SettingsChangesHistory::SettingChange & change, std::string_view alias)
 {
     static const re2::RE2 aliasing_or_renaming(R"((?i)alias|renam)");
-    return change.previous_value == change.new_value
-        && re2::RE2::PartialMatch(change.reason, aliasing_or_renaming)
+    return re2::RE2::PartialMatch(change.reason, aliasing_or_renaming)
         && reasonMentionsName(change.reason, alias);
 }
 
@@ -450,6 +453,31 @@ bool reasonRegistersAnAlias(std::string_view reason)
     static const re2::RE2 registers_an_alias(
         R"((?i)\b(?:add\w*|new|introduc\w*)\b[^.]{0,20}\balias\b|(?:^|[.;]\s+)(?:an?\s+)?alias\s+(?:for|of|to)\b)");
     return re2::RE2::PartialMatch(reason, registers_an_alias);
+}
+
+/// Adds a record to the history of one name, unless the same change of the default value in the same version is
+/// already listed there. One change is recorded twice whenever it concerns both a setting and an alias of it, once
+/// under each name and with a reason authored separately for each, and the history of a name lists it once. Which
+/// of the two records is kept is decided by `authoritative`: the history of a setting keeps the record written
+/// under the name of that setting, and the history of an alias keeps the record that registers the alias, each
+/// being the more direct account of the change for the name it is rendered for.
+///
+/// The two records are recognized as the same change by the version and the values alone, and not by the reason,
+/// which is free-form and authored per record ("Lightweight updates were moved to Beta. Added an alias for setting
+/// `allow_experimental_lightweight_update`." against "Lightweight updates were moved to Beta.").
+void addSettingHistoryEntry(std::vector<SettingHistoryEntry> & entries, const SettingHistoryEntry & entry, bool authoritative)
+{
+    const auto same_change = std::find_if(entries.begin(), entries.end(), [&](const SettingHistoryEntry & other)
+    {
+        return other.version == entry.version
+            && other.change->previous_value == entry.change->previous_value
+            && other.change->new_value == entry.change->new_value;
+    });
+
+    if (same_change == entries.end())
+        entries.push_back(entry);
+    else if (authoritative)
+        *same_change = entry;
 }
 
 /// Inverts the change history — a map of version to the changes made in that version — into per-setting indices.
@@ -476,11 +504,11 @@ SettingsHistory buildSettingsHistory(const SettingsCollection & settings, const 
             /// A record written under an alias is history of that alias, and a record written under another name of
             /// the same setting is too when it is what registered the alias.
             if (canonical != change.name)
-                result.by_alias[change.name].push_back(entry);
+                addSettingHistoryEntry(result.by_alias[change.name], entry, /* authoritative= */ false);
             if (const auto it = aliases_by_setting.find(canonical); it != aliases_by_setting.end())
                 for (const auto & alias : it->second)
                     if (alias != change.name && recordRegistersAliasNamed(change, alias))
-                        result.by_alias[alias].push_back(entry);
+                        addSettingHistoryEntry(result.by_alias[alias], entry, /* authoritative= */ true);
 
             /// A record written under an alias for the sole purpose of registering that alias is the history of
             /// the alias and not of the setting it aliases: it neither introduces that setting nor changes its
@@ -491,16 +519,7 @@ SettingsHistory buildSettingsHistory(const SettingsCollection & settings, const 
                 && reasonRegistersAnAlias(change.reason))
                 continue;
 
-            /// A change that concerns both an alias and its canonical setting is recorded twice, once under each
-            /// name; the history of the setting mentions it once.
-            auto & entries = result.by_setting[canonical];
-            const bool already_recorded = std::any_of(entries.begin(), entries.end(), [&](const SettingHistoryEntry & other)
-            {
-                return other.version == version_string && other.change->previous_value == change.previous_value
-                    && other.change->new_value == change.new_value && other.change->reason == change.reason;
-            });
-            if (!already_recorded)
-                entries.push_back(entry);
+            addSettingHistoryEntry(result.by_setting[canonical], entry, /* authoritative= */ canonical == change.name);
         }
     }
     return result;
