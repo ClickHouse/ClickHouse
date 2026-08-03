@@ -877,10 +877,10 @@ def test_source_grant_bridges_to_database_engine():
 
 
 def test_executable_table_function_engine_grant():
-    # executable()/executablePool() run a server-side script under the server's OS user with no
-    # other access gate, so they must enforce the TABLE ENGINE grant of their Executable engine,
-    # exactly like CREATE TABLE ... ENGINE=Executable. Otherwise executable(...) bypasses the
-    # denial of ENGINE=Executable and runs a script without GRANT TABLE ENGINE ON Executable.
+    # The `executable` table function runs a server-side script under the server's OS user with no
+    # other access gate, so it must enforce the `TABLE ENGINE` grant of its `Executable` engine
+    # exactly like `CREATE TABLE ... ENGINE = Executable` does. Otherwise it bypasses the denial
+    # of that `CREATE TABLE` and runs a script without `GRANT TABLE ENGINE ON Executable`.
     instance.query("DROP USER IF EXISTS A")
     instance.query("CREATE USER A")
     instance.query("GRANT CREATE TABLE ON test.* TO A")
