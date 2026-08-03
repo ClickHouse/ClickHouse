@@ -1,6 +1,8 @@
 -- `length(arrayFilter(f, arr, ...))` is rewritten to `arrayCount(f, arr, ...)`, which counts the
 -- matching elements instead of building an array of them only to take its size.
 
+SET enable_analyzer = 1;
+
 SELECT '-- the rewrite fires';
 SELECT
     countIf(explain LIKE '%function_name: arrayCount%') AS array_count,
@@ -43,6 +45,13 @@ SELECT length(arrayFilter(x -> (x > 1), materialize([1, 2, 3]))) AS c, c, c + 1;
 SELECT '-- the filtered array is also used on its own';
 WITH arrayFilter(x -> (x > 1), materialize([1, 2, 3])) AS f
 SELECT length(f), f;
+
+SELECT '-- the count is exact for arrays of any size: `arrayCount` also returns UInt64';
+SELECT toTypeName(arrayCount(x -> (x > 1), materialize([1, 2, 3])));
+
+SELECT '-- and the rewrite therefore needs no CAST';
+SELECT countIf(explain LIKE '%CAST%') AS casts
+FROM (EXPLAIN QUERY TREE SELECT length(arrayFilter(x -> (x > 1), range(number))) FROM numbers(3));
 
 SELECT '-- length of something that is not arrayFilter is left alone';
 SELECT length(materialize('abc')), length(materialize([1, 2])), length(materialize(map(1, 2)));

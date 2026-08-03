@@ -2,10 +2,8 @@
 
 #include <Analyzer/FunctionNode.h>
 #include <Analyzer/InDepthQueryTreeVisitor.h>
-#include <Analyzer/Utils.h>
 
 #include <Core/Settings.h>
-#include <DataTypes/DataTypesNumber.h>
 #include <DataTypes/IDataType.h>
 #include <Functions/FunctionFactory.h>
 
@@ -55,9 +53,12 @@ public:
         auto array_count_function = FunctionFactory::instance().get("arrayCount", getContext());
         array_count_function_node->resolveAsFunction(array_count_function->build(array_count_function_node->getArgumentColumns()));
 
-        /// `length` returns UInt64 and `arrayCount` returns UInt32, so the result has to be widened
-        /// back, otherwise the rewrite would change the type of the column.
-        node = createCastFunction(std::move(array_count_function_node), std::make_shared<DataTypeUInt64>(), getContext());
+        /// Both `length` and `arrayCount` return UInt64, so the rewrite changes neither the type nor
+        /// the value of the column, for arrays of any size.
+        if (!array_count_function_node->getResultType()->equals(*length_function_node->getResultType()))
+            return;
+
+        node = std::move(array_count_function_node);
     }
 };
 

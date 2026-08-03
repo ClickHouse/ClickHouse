@@ -23,7 +23,9 @@ struct ArrayCountImpl
 
     static DataTypePtr getReturnType(const DataTypePtr & /*expression_return*/, const DataTypePtr & /*array_element*/)
     {
-        return std::make_shared<DataTypeUInt32>();
+        /// UInt64, and not UInt32: an array can contain more than 2^32 elements, and the count of the
+        /// matching ones has to be exact for such an array as well.
+        return std::make_shared<DataTypeUInt64>();
     }
 
     static ColumnPtr execute(const ColumnArray & array, ColumnPtr mapped)
@@ -40,25 +42,25 @@ struct ArrayCountImpl
             if (column_filter_const->getValue<UInt8>())
             {
                 const IColumn::Offsets & offsets = array.getOffsets();
-                auto out_column = ColumnUInt32::create(offsets.size());
-                ColumnUInt32::Container & out_counts = out_column->getData();
+                auto out_column = ColumnUInt64::create(offsets.size());
+                ColumnUInt64::Container & out_counts = out_column->getData();
 
                 size_t pos = 0;
                 for (size_t i = 0; i < offsets.size(); ++i)
                 {
-                    out_counts[i] = static_cast<UInt32>(offsets[i] - pos);
+                    out_counts[i] = offsets[i] - pos;
                     pos = offsets[i];
                 }
 
                 return out_column;
             }
-            return DataTypeUInt32().createColumnConst(array.size(), 0u);
+            return DataTypeUInt64().createColumnConst(array.size(), UInt64(0));
         }
 
         const IColumn::Filter & filter = column_filter->getData();
         const IColumn::Offsets & offsets = array.getOffsets();
-        auto out_column = ColumnUInt32::create(offsets.size());
-        ColumnUInt32::Container & out_counts = out_column->getData();
+        auto out_column = ColumnUInt64::create(offsets.size());
+        ColumnUInt64::Container & out_counts = out_column->getData();
 
         size_t pos = 0;
         for (size_t i = 0; i < offsets.size(); ++i)
@@ -69,7 +71,7 @@ struct ArrayCountImpl
                 if (filter[pos])
                     ++count;
             }
-            out_counts[i] = static_cast<UInt32>(count);
+            out_counts[i] = count;
         }
 
         return out_column;
@@ -92,7 +94,7 @@ If `func` is not specified, it returns the number of non-zero elements in the ar
         {"func", "Optional. Function to apply to each element of the array(s).", {"Lambda function"}},
         {"arr1, ..., arrN", "N arrays.", {"Array(T)"}},
     };
-    FunctionDocumentation::ReturnedValue returned_value = {"Returns the number of elements for which `func` returns true. Otherwise, returns the number of non-zero elements in the array.", {"UInt32"}};
+    FunctionDocumentation::ReturnedValue returned_value = {"Returns the number of elements for which `func` returns true. Otherwise, returns the number of non-zero elements in the array.", {"UInt64"}};
     FunctionDocumentation::Examples example = {{"Usage example", "SELECT arrayCount(x -> (x % 2), groupArray(number)) FROM numbers(10)", "5"}};
     FunctionDocumentation::IntroducedIn introduced_in = {1, 1};
     FunctionDocumentation::Category category = FunctionDocumentation::Category::Array;

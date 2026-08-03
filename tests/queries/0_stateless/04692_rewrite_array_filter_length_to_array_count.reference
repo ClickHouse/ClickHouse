@@ -23,6 +23,10 @@ UInt64
 2	2	3
 -- the filtered array is also used on its own
 2	[2,3]
+-- the count is exact for arrays of any size: `arrayCount` also returns UInt64
+UInt64
+-- and the rewrite therefore needs no CAST
+0
 -- length of something that is not arrayFilter is left alone
 3	2	1
 3
