@@ -2536,6 +2536,9 @@ Possible values:
 When enabled, `LEFT ARRAY JOIN` fills the array-joined column with NULL instead of the default value
 for rows where the array is empty. The result type becomes `Nullable`.
 Only affects `LEFT ARRAY JOIN`; regular `ARRAY JOIN` drops rows with empty arrays regardless.
+Like `join_use_nulls`, this applies only to element types that can be placed inside `Nullable`.
+For an element type that cannot (`Array`, `Map`, `AggregateFunction`, ...) the column keeps
+its original type and the empty-array rows keep getting the default value of that type.
 )", 0) \
     \
     DECLARE(UInt64, join_output_by_rowlist_perkey_rows_threshold, 5, R"(

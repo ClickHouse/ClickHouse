@@ -62,6 +62,7 @@ const VersionToSettingsChangesMap & getSettingsChangesHistory()
             {"input_format_arrow_use_native_reader", true, true, "Obsolete setting, the native ClickHouse reader is now always used for the `Arrow` and `ArrowStream` formats (the Apache Arrow library-based reader has been removed)."},
             {"output_format_arrow_use_native_writer", true, true, "Obsolete setting, the native ClickHouse writer is now always used for the `Arrow` and `ArrowStream` formats (the Apache Arrow library-based writer has been removed)."},
             {"distributed_cache_min_inflight_bytes_to_discard_connection_on_seek", 0, 4 * 1024 * 1024, "New setting to drop and reopen a distributed cache connection on a seek when too many in-flight bytes would otherwise be discarded. Defaults to 4 MiB; 0 restores the previous behavior (always reuse the connection via the read range id)."},
+            {"array_join_use_nulls", false, false, "New setting to control NULL handling in LEFT ARRAY JOIN."},
         });
         addSettingsChanges(settings_changes_history, "26.7",
         {
@@ -120,7 +121,6 @@ const VersionToSettingsChangesMap & getSettingsChangesHistory()
             {"optimize_and_compare_chain_max_hash_work", 0, 5'000'000, "New setting that bounds the work of the `optimize_and_compare_chain` optimization (measured in query-tree nodes hashed) so it cannot dominate analysis of queries with very many or very large `AND`-chains of comparisons. The previous value `0` (unlimited) reproduces the pre-26.7 behavior where the optimization was uncapped, so `compatibility` set to an earlier version keeps deriving transitive predicates without a budget. Set to `0` to disable the budget."},
             {"iceberg_manifest_min_count_to_compact", 30, 30, "New setting to control manifest compaction for Iceberg tables."},
             {"show_remote_databases_in_system_tables", true, true, "New setting to control whether `MySQL` and `PostgreSQL` databases are shown in `system.tables`, `system.columns` and `system.completions`."},
-            {"array_join_use_nulls", false, false, "New setting to control NULL handling in LEFT ARRAY JOIN."},
             {"use_constant_folding_in_index_analysis", false, false, "New setting to fold partition-level constants into the filter predicate per part during MergeTree index analysis, improving pruning for filters whose branches depend on partition values."},
             {"join_runtime_filter_size_from_hash_table_stats", false, true, "Use hash table size statistics collected from previous executions to size the JOIN runtime filter. When disabled, fall back to the fixed `join_runtime_bloom_filter_bytes`."},
         });

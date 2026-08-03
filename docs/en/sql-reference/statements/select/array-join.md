@@ -410,6 +410,21 @@ SETTINGS array_join_use_nulls = 1;
 
 This setting only affects `LEFT ARRAY JOIN`. Regular `ARRAY JOIN` drops rows with empty arrays regardless of this setting.
 
+Just like [join_use_nulls](/operations/settings/settings#join_use_nulls), the setting applies only to element types that can be placed inside [Nullable](/sql-reference/data-types/nullable). For an element type that cannot — such as `Array`, `Map` or `AggregateFunction` — the array-joined column keeps its original type, and rows with an empty array keep getting the default value of that type (`[]`, `{}`, ...) rather than `NULL`:
+
+```sql
+SELECT x, toTypeName(x)
+FROM (SELECT CAST([], 'Array(Array(UInt8))') AS arr)
+LEFT ARRAY JOIN arr AS x
+SETTINGS array_join_use_nulls = 1;
+```
+
+```response
+┌─x──┬─toTypeName(x)─┐
+│ [] │ Array(UInt8)  │
+└────┴───────────────┘
+```
+
 ## Related content {#related-content}
 
 - Blog: [Working with time series data in ClickHouse](https://clickhouse.com/blog/working-with-time-series-data-and-functions-ClickHouse)
