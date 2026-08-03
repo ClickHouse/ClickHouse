@@ -38,7 +38,6 @@
 #include <fmt/ranges.h>
 
 
-
 namespace DB
 {
 namespace ErrorCodes
