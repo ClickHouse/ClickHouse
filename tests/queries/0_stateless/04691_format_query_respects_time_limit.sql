@@ -106,42 +106,45 @@ SELECT formatQueryOrNull('this is not a query') IS NULL SETTINGS max_execution_t
 --    unconditionally, has to be caught somewhere, and everywhere else these functions appear
 --    TIMEOUT_EXCEEDED is the expected result. One call per polled row loop, no limit set.
 --    Each call has to actually REACH the check, and the check is throttled on accumulated input
---    bytes, so a single short query never polls at all and would make this arm vacuous. These run
---    enough rows in one block to cross the stride many times over, so a spurious throw shows up here.
+--    bytes, so a single short query never polls at all and would make this arm vacuous. The stride
+--    is charged in raw bytes, so a padded row buys the same crossings with far fewer rows than a
+--    bare 'SELECT 1' would: 20000 rows of 39 bytes cross the 64 KiB stride 12 times over.
 --    `fuzzQuery` is non-deterministic, so only the length is asserted.
-SELECT sum(length(formatQuery(materialize('SELECT 1')))) > 0 FROM numbers(100000)
+SELECT sum(length(formatQuery(materialize('SELECT 1 -- ' || repeat('x', 27))))) > 0 FROM numbers(20000)
 SETTINGS max_execution_time = 0, max_block_size = 200000;
-SELECT sum(length(parseQueryToJSON(materialize('SELECT 1')))) > 0 FROM numbers(100000)
+SELECT sum(length(parseQueryToJSON(materialize('SELECT 1 -- ' || repeat('x', 27))))) > 0 FROM numbers(20000)
 SETTINGS max_execution_time = 0, max_block_size = 200000;
-SELECT sum(length(highlightQuery(materialize('SELECT 1')))) > 0 FROM numbers(100000)
+SELECT sum(length(highlightQuery(materialize('SELECT 1 -- ' || repeat('x', 27))))) > 0 FROM numbers(20000)
 SETTINGS max_execution_time = 0, max_block_size = 200000;
-SELECT sum(length(tokenizeQuery(materialize('SELECT 1')))) > 0 FROM numbers(100000)
+SELECT sum(length(tokenizeQuery(materialize('SELECT 1 -- ' || repeat('x', 27))))) > 0 FROM numbers(20000)
 SETTINGS max_execution_time = 0, max_block_size = 200000;
-SELECT sum(length(fuzzQuery(materialize('SELECT 1')))) > 0 FROM numbers(100000)
+SELECT sum(length(fuzzQuery(materialize('SELECT 1 -- ' || repeat('x', 27))))) > 0 FROM numbers(20000)
 SETTINGS max_execution_time = 0, max_block_size = 200000;
-WITH parseQueryToJSON('SELECT 1') AS json
-SELECT sum(length(formatQueryFromJSON(materialize(json)))) > 0 FROM numbers(100000)
+WITH parseQueryToJSON('SELECT 1 -- ' || repeat('x', 27)) AS json
+SELECT sum(length(formatQueryFromJSON(materialize(json)))) > 0 FROM numbers(20000)
 SETTINGS max_execution_time = 0, max_block_size = 200000;
 
 --    The two-argument form takes a separate branch, so without a line of its own nothing would redden
---    if the check threw unconditionally there. Both arguments are small, so the stride is crossed by
---    row count rather than by row size.
-WITH parseQueryToJSON('SELECT 1') AS json
-SELECT sum(length(formatQueryFromJSON(materialize(json), materialize('SELECT 1')))) > 0 FROM numbers(100000)
-SETTINGS max_execution_time = 0, max_block_size = 200000;
+--    if the check threw unconditionally there.
+WITH parseQueryToJSON('SELECT 1 -- ' || repeat('x', 27)) AS json
+SELECT sum(length(formatQueryFromJSON(materialize(json), materialize('SELECT 1 -- ' || repeat('x', 27))))) > 0
+FROM numbers(20000) SETTINGS max_execution_time = 0, max_block_size = 200000;
 
 -- 10. The poll must read the EXECUTING query, not the one that built the function. `ALTER` rebuilds the
 --     partition key from its own query context and `adjustPartitionKey` hands that same object to later
 --     inserts, rebuilding only when the key contains `modulo`, hence the plain key here. Reading a
---     per-instance `QueryStatus` would fail this insert on the ALTER's long-expired 1 s limit.
+--     per-instance `QueryStatus` would fail this insert on the ALTER's expired limit, so the limit only
+--     has to be finite and elapse, not tight: a tight one can time the ALTER itself out on a loaded host.
+--     The insert only needs one stride crossing for the poll to fire, and padded rows reach it with few
+--     enough rows to keep the partition count low.
 DROP TABLE IF EXISTS t_04691_retained;
 CREATE TABLE t_04691_retained (q String, n UInt64)
 ENGINE = MergeTree PARTITION BY cityHash64(formatQuery(q)) ORDER BY n;
-ALTER TABLE t_04691_retained ADD COLUMN extra UInt8 DEFAULT 0 SETTINGS max_execution_time = 1;
-SELECT sleep(2) FORMAT Null SETTINGS max_execution_time = 0;
+ALTER TABLE t_04691_retained ADD COLUMN extra UInt8 DEFAULT 0 SETTINGS max_execution_time = 3;
+SELECT sleep(3), sleep(1) FORMAT Null SETTINGS max_execution_time = 0;
 INSERT INTO t_04691_retained (q, n)
-SELECT 'SELECT ' || toString(number) || repeat(' OR (y = 1)', 60), number FROM numbers(3000)
-SETTINGS max_execution_time = 0, max_partitions_per_insert_block = 0, max_block_size = 200000;
+SELECT 'SELECT ' || toString(number % 4) || ' -- ' || repeat('x', 700), number FROM numbers(200)
+SETTINGS max_execution_time = 0, max_block_size = 200000;
 SELECT count() FROM t_04691_retained SETTINGS max_execution_time = 0;
 DROP TABLE t_04691_retained;
 
