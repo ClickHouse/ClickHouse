@@ -607,3 +607,49 @@ TEST(QueryResultCacheLocal, ClearTagInvalidatesOnlyMatchingTag)
     auto drop_reader = cache.createReader(key_drop);
     EXPECT_FALSE(drop_reader.hasCacheEntryForKey(false));
 }
+
+/// A truncated / forged value must be rejected before `NativeReader` reserves capacity for the
+/// declared row count, otherwise a malformed payload from the external store allocates far beyond
+/// the configured bounds.
+TEST(QueryResultCacheSerialization, EntryRejectsBlockDeclaringMoreRowsThanBytesLeft)
+{
+    auto header = makeTwoColumnHeader();
+    QueryResultCache::Entry entry;
+    entry.chunks.push_back(makeTwoColumnChunk(4));
+
+    WriteBufferFromOwnString wbuf;
+    entry.serializeTo(wbuf, *header);
+
+    /// Cut the value right after the block header so that the declared row count can no longer be
+    /// backed by the remaining bytes.
+    String truncated = wbuf.str();
+    ASSERT_GT(truncated.size(), 8u);
+    truncated.resize(8);
+
+    ReadBufferFromString rbuf(truncated);
+    EXPECT_THROW(QueryResultCache::Entry::deserializeFrom(rbuf, *header), DB::Exception);
+}
+
+/// The row budget must be enforced ahead of the read as well, not only after a chunk was built.
+TEST(QueryResultCacheSerialization, EntryRejectsBlockExceedingRowBudget)
+{
+    auto header = makeTwoColumnHeader();
+    QueryResultCache::Entry entry;
+    entry.chunks.push_back(makeTwoColumnChunk(16));
+
+    WriteBufferFromOwnString wbuf;
+    entry.serializeTo(wbuf, *header);
+
+    ReadBufferFromString rbuf(wbuf.str());
+    EXPECT_THROW(
+        QueryResultCache::Entry::deserializeFrom(
+            rbuf, *header, /*max_chunks=*/8192, /*max_entry_size_in_bytes=*/0, /*max_entry_size_in_rows=*/4),
+        DB::Exception);
+
+    /// The same value is accepted when it fits into the budget.
+    ReadBufferFromString rbuf_ok(wbuf.str());
+    auto restored = QueryResultCache::Entry::deserializeFrom(
+        rbuf_ok, *header, /*max_chunks=*/8192, /*max_entry_size_in_bytes=*/0, /*max_entry_size_in_rows=*/16);
+    ASSERT_EQ(restored.chunks.size(), 1u);
+    assertChunksEqual(entry.chunks[0], restored.chunks[0]);
+}

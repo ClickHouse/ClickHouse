@@ -858,6 +858,40 @@ Chunk readBlockAsChunk(const Block & header, ReadBuffer & buf)
     return Chunk(block.getColumns(), block.rows());
 }
 
+/// Reject a Native block whose declared row count is impossible or exceeds the remaining row
+/// budget, without decoding it.
+///
+/// `NativeReader` reserves capacity for the declared row count before reading any data, so a
+/// malformed payload from an external store would allocate far beyond the configured bounds even
+/// though the check after the chunk is built would eventually reject it. `max_rows == 0` means the
+/// row budget is unbounded, otherwise at most `max_rows - rows_so_far` further rows are allowed.
+///
+/// The block starts with `columns` and `rows` as varints; both are peeked and the read position is
+/// restored, which is safe because the whole value is a single in-memory buffer.
+void checkBlockBoundsBeforeRead(ReadBuffer & buf, size_t rows_so_far, size_t max_rows)
+{
+    char * const saved_position = buf.position();
+
+    UInt64 columns = 0;
+    UInt64 rows = 0;
+    readVarUInt(columns, buf);
+    readVarUInt(rows, buf);
+
+    const size_t bytes_left = buf.buffer().end() - buf.position();
+    buf.position() = saved_position;
+
+    /// Every column costs at least one bit per row, so a block cannot declare more rows than there
+    /// are bits left in the value.
+    if (columns != 0 && rows > bytes_left * 8)
+        throw Exception(ErrorCodes::TOO_LARGE_ARRAY_SIZE,
+            "Cached query result declares {} rows but only {} bytes are left in the value", rows, bytes_left);
+
+    if (max_rows && (rows_so_far >= max_rows || rows > max_rows - rows_so_far))
+        throw Exception(ErrorCodes::TOO_LARGE_ARRAY_SIZE,
+            "Cached query result exceeds max_entry_size_in_rows: a block declares {} rows on top of {} already read (max {})",
+            rows, rows_so_far, max_rows);
+}
+
 }
 
 void QueryResultCache::Entry::serializeTo(WriteBuffer & buf, const Block & header) const
@@ -922,6 +956,7 @@ QueryResultCache::Entry QueryResultCache::Entry::deserializeFrom(
     entry.chunks.reserve(chunks_count);
     for (UInt32 i = 0; i < chunks_count; ++i)
     {
+        checkBlockBoundsBeforeRead(buf, total_rows, max_entry_size_in_rows);
         entry.chunks.push_back(readBlockAsChunk(header, buf));
         check_bounds(entry.chunks.back());
     }
@@ -930,6 +965,7 @@ QueryResultCache::Entry QueryResultCache::Entry::deserializeFrom(
     readIntBinary(has_totals, buf);
     if (has_totals)
     {
+        checkBlockBoundsBeforeRead(buf, total_rows, max_entry_size_in_rows);
         entry.totals = readBlockAsChunk(header, buf);
         check_bounds(*entry.totals);
     }
@@ -938,6 +974,7 @@ QueryResultCache::Entry QueryResultCache::Entry::deserializeFrom(
     readIntBinary(has_extremes, buf);
     if (has_extremes)
     {
+        checkBlockBoundsBeforeRead(buf, total_rows, max_entry_size_in_rows);
         entry.extremes = readBlockAsChunk(header, buf);
         check_bounds(*entry.extremes);
     }
