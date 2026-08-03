@@ -81,7 +81,7 @@ public:
 private:
     static const MappedPtr & notFoundEntry()
     {
-        static const auto entry = std::make_shared<TokenPostingsInfo>();
+        static const MappedPtr entry = std::make_shared<TokenPostingsInfo>();
         return entry;
     }
 };
