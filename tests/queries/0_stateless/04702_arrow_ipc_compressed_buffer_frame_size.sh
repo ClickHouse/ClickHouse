@@ -365,6 +365,9 @@ body = b"row data to bound" * 64
 frame = zstd_frame_without_declared_size(body)
 write("zstd_no_declared_size_forged_prefix", lone_frame_buffer(ch_zstd, forged, frame))
 write("zstd_no_declared_size", lone_frame_buffer(ch_zstd, len(body), frame))
+# Truncated mid-block, so no block structure bounds it either. The prefix is honest, so only the
+# frame is wrong: nothing can bound it and it must be rejected rather than bounded by the unknown.
+write("zstd_no_declared_size_truncated", lone_frame_buffer(ch_zstd, len(body), frame[:-20]))
 PYEOF
 
 check() {
@@ -399,6 +402,7 @@ check lz4_pledge_above_blocks.arrows 'blocks can produce at most'
 check lz4_trailing_data.arrows 'bytes after its LZ4 frame'
 check lz4_truncated_content_checksum.arrows 'ends inside an LZ4 content checksum'
 check zstd_no_declared_size_forged_prefix.arrows 'codec frame declares'
+check zstd_no_declared_size_truncated.arrows 'not a valid ZSTD frame'
 # A size the query cannot afford is a resource condition. What a frame's blocks can produce is
 # bounded, so the budget rather than the size is what has to be small.
 check consistent_large.arrows MEMORY_LIMIT_EXCEEDED 1M
