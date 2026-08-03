@@ -120,6 +120,7 @@ extern const int ICEBERG_SPECIFICATION_VIOLATION;
 extern const int S3_ERROR;
 extern const int TABLE_ALREADY_EXISTS;
 extern const int SUPPORT_IS_DISABLED;
+extern const int FILE_ALREADY_EXISTS;
 }
 
 namespace Setting
@@ -809,7 +810,7 @@ void IcebergMetadata::createInitial(
     }
 
     String location_path = configuration_ptr->getRawPath().path;
-    if (location_path.find("://") == String::npos && !location_path.starts_with('/'))
+    if (!location_path.contains("://") && !location_path.starts_with('/'))
         location_path = "/" + location_path;
     if (local_context->getSettingsRef()[Setting::write_full_path_in_iceberg_metadata].value)
         location_path
@@ -835,8 +836,10 @@ void IcebergMetadata::createInitial(
         /// The write uses `If-None-Match: *`, so S3 returns PreconditionFailed when the metadata file
         /// already exists (e.g. leftover data after `DROP TABLE` with `iceberg_delete_data_on_drop` off,
         /// or a concurrent creation). When `IF NOT EXISTS` was specified, this is expected.
-        if (if_not_exists && e.code() == ErrorCodes::S3_ERROR
-            && e.message().find("PreconditionFailed") != String::npos)
+        const bool precondition_failed
+            = (e.code() == ErrorCodes::S3_ERROR && e.message().contains("PreconditionFailed"))
+            || e.code() == ErrorCodes::FILE_ALREADY_EXISTS;
+        if (if_not_exists && precondition_failed)
             return;
         throw;
     }
@@ -919,7 +922,9 @@ IcebergMetadata::IcebergHistory IcebergMetadata::getHistory(ContextPtr local_con
     std::vector<Iceberg::IcebergHistoryRecord> iceberg_history;
 
     auto snapshots = metadata_object->get(f_snapshots).extract<Poco::JSON::Array::Ptr>();
-    auto snapshot_logs = metadata_object->get(f_snapshot_log).extract<Poco::JSON::Array::Ptr>();
+    /// snapshot-log is optional; treat an absent log as empty rather than throwing.
+    Poco::JSON::Array::Ptr snapshot_logs
+        = metadata_object->has(f_snapshot_log) ? metadata_object->getArray(f_snapshot_log) : Poco::JSON::Array::Ptr(new Poco::JSON::Array);
 
     std::vector<Int64> ancestors;
     std::map<Int64, Int64> parents_list;
@@ -946,6 +951,16 @@ IcebergMetadata::IcebergHistory IcebergMetadata::getHistory(ContextPtr local_con
             current_snapshot_id = parents_list[current_snapshot_id];
         }
     }
+
+    /// Parse an Iceberg `timestamp-ms` field (unix milliseconds) into DateTime64.
+    auto parse_timestamp_ms = [](const Poco::JSON::Object::Ptr & object) -> DateTime64
+    {
+        auto value = object->getValue<std::string>(f_timestamp_ms);
+        ReadBufferFromString in(value);
+        DateTime64 time = 0;
+        readDateTime64Text(time, 6, in);
+        return time;
+    };
 
     for (size_t i = 0; i < snapshots->size(); ++i)
     {
@@ -974,20 +989,24 @@ IcebergMetadata::IcebergHistory IcebergMetadata::getHistory(ContextPtr local_con
         else
             history_record.parent_id = 0;
 
+        bool found_in_snapshot_log = false;
         for (size_t j = 0; j < snapshot_logs->size(); ++j)
         {
             const auto snapshot_log = snapshot_logs->getObject(static_cast<UInt32>(j));
             if (snapshot_log->getValue<Int64>(f_metadata_snapshot_id) == history_record.snapshot_id)
             {
-                auto value = snapshot_log->getValue<std::string>(f_timestamp_ms);
-                ReadBufferFromString in(value);
-                DateTime64 time = 0;
-                readDateTime64Text(time, 6, in);
-
-                history_record.made_current_at = time;
+                history_record.made_current_at = parse_timestamp_ms(snapshot_log);
+                found_in_snapshot_log = true;
                 break;
             }
         }
+
+        /// A retained snapshot can be missing from a trimmed snapshot-log; its log time is then
+        /// unrecoverable, so fall back to the snapshot's own commit time instead of the epoch.
+        /// `timestamp-ms` is required on a snapshot, so a missing one is corrupt metadata: let the
+        /// parse throw rather than reporting the epoch as if it were a real time.
+        if (!found_in_snapshot_log)
+            history_record.made_current_at = parse_timestamp_ms(snapshot);
 
         if (std::find(ancestors.begin(), ancestors.end(), history_record.snapshot_id) != ancestors.end())
             history_record.is_current_ancestor = true;
@@ -1360,7 +1379,13 @@ void IcebergMetadata::addDeleteTransformers(
             const auto & not_in_node = dag.addFunction(func_not_in, {in_lhs_arg, in_rhs_arg}, "notInResult");
             dag.getOutputs().push_back(&not_in_node);
             LOG_DEBUG(log, "Use expression {} in equality deletes", dag.dumpDAG());
-            return std::make_shared<FilterTransform>(header, std::make_shared<ExpressionActions>(std::move(dag)), "notInResult", true);
+            /// update_row_numbers_info = true: every transform that can precede this one (the
+            /// position-delete transform, an earlier equality-delete filter) maintains
+            /// `ChunkInfoRowNumbers`, so it still describes the chunk here.
+            return std::make_shared<FilterTransform>(
+                header, std::make_shared<ExpressionActions>(std::move(dag)), "notInResult", true,
+                /*on_totals=*/false, /*rows_filtered=*/nullptr, /*condition=*/std::nullopt,
+                /*update_row_numbers_info=*/true);
         };
         builder.addSimpleTransform(simple_transform_adder);
     }

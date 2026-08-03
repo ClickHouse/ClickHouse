@@ -1,6 +1,7 @@
 #include <Parsers/Prometheus/PrometheusQueryParsingUtil.h>
 
 #include <Common/Exception.h>
+#include <Common/UTF8Helpers.h>
 
 #include "config.h"
 
@@ -42,6 +43,12 @@ namespace
     using ResultType = PrometheusQueryResultType;
     using Node = PrometheusQueryTree::Node;
 
+    size_t convertCodePointPositionToByteOffset(std::string_view query, size_t position)
+    {
+        return UTF8::computeBytesBeforeCodePoint(
+            reinterpret_cast<const UInt8 *>(query.data()), query.size(), position);
+    }
+
     /// Handles errors while a promql query is parsed.
     class ErrorListener : public antlr4::BaseErrorListener
     {
@@ -70,7 +77,7 @@ namespace
 
             size_t pos = 0;
             if (offending_symbol)
-                pos = offending_symbol->getStartIndex();
+                pos = convertCodePointPositionToByteOffset(promql_query, offending_symbol->getStartIndex());
             else  /// `offending_symbol` can be null if `recognizer` is a lexer.
                 pos = convertLineAndPositionInLine(line, position_in_line);
 
@@ -78,7 +85,7 @@ namespace
         }
 
         /// ANTLR4's lexer returns the position of an error as a line number and a position in that line;
-        /// we need to convert them to a char index.
+        /// we need to convert them to a byte offset.
         size_t convertLineAndPositionInLine(size_t line, size_t position_in_line) const
         {
             size_t char_index = 0;
@@ -96,7 +103,9 @@ namespace
                     }
                 }
             }
-            return std::max(char_index + position_in_line, promql_query.length());
+            auto line_suffix = promql_query.substr(char_index);
+            return char_index + UTF8::computeBytesBeforeCodePoint(
+                reinterpret_cast<const UInt8 *>(line_suffix.data()), line_suffix.size(), position_in_line);
         }
 
     private:
@@ -149,7 +158,10 @@ namespace
 
         static String getText(const antlr4::tree::TerminalNode * ctx) { return ctx->getSymbol()->getText(); }
 
-        static size_t getStartPos(const antlr4::tree::TerminalNode * ctx) { return ctx->getSymbol()->getStartIndex(); }
+        size_t getStartPos(const antlr4::tree::TerminalNode * ctx) const
+        {
+            return convertCodePointPositionToByteOffset(promql_query, ctx->getSymbol()->getStartIndex());
+        }
 
         bool parseStringLiteral(const antlr4::tree::TerminalNode * ctx, String & result)
         {
