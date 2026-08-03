@@ -89,11 +89,11 @@ public:
     /// Initialize configuration from either AST or NamedCollection.
     /// `mode` distinguishes a fresh `CREATE TABLE` from `ATTACH`/server-startup paths; some
     /// validations (for example the data lake `compression_method` rejection) only apply
-    /// when the user supplies a fresh definition, i.e. `mode < LoadingStrictnessLevel::ATTACH`.
-    /// Any `ATTACH` and server-startup replay (`mode >= ATTACH`) reuses previously-validated
-    /// metadata and skips the validation, so old persisted metadata still loads after upgrade.
-    /// `RESTORE TABLE` loads with `SECONDARY_CREATE` (which is `< ATTACH`), so it is skipped
-    /// explicitly via `is_restore_from_backup`.
+    /// when the user supplies a fresh definition, i.e. `mode == LoadingStrictnessLevel::CREATE`.
+    /// Every other mode replays a definition that was already accepted when the table was
+    /// created - `ATTACH`/`FORCE_ATTACH`/`FORCE_RESTORE`, and `SECONDARY_CREATE` (`RESTORE TABLE`
+    /// and `DatabaseReplicated::recoverLostReplica`) - and skips the validation, so old persisted
+    /// metadata still loads after an upgrade.
     static void initialize(
         StorageObjectStorageConfiguration & configuration_to_initialize,
         ASTs & engine_args,

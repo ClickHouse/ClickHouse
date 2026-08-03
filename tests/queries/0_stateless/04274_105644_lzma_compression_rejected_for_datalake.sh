@@ -86,7 +86,7 @@ ${CLICKHOUSE_CLIENT} --query "
 
 # 8 / 9. `ATTACH` path: existing tables persisted before this validation landed
 #        can carry a non-default `compression_method` in their metadata. The
-#        rejection above is gated on `LoadingStrictnessLevel < ATTACH` so
+#        rejection above is gated on `LoadingStrictnessLevel == CREATE` so
 #        server restart and explicit `ATTACH` can still load such tables. We
 #        simulate this by creating without `compression_method`, detaching,
 #        injecting the forbidden value into the on-disk metadata, and
@@ -122,8 +122,8 @@ for forbidden in lzma gzip; do
 done
 
 # 9b. Full-definition `ATTACH TABLE name FROM 'path' (cols) ENGINE = ...` also
-#     skips the rejection: the gate fires only for `LoadingStrictnessLevel <
-#     ATTACH`, and every `ATTACH` form (short or full-definition) is
+#     skips the rejection: the gate fires only for `LoadingStrictnessLevel ==
+#     CREATE`, and every `ATTACH` form (short or full-definition) is
 #     deliberately exempt as a compatibility path, so pre-fix tables can be
 #     re-attached after upgrade even though a full-definition `ATTACH`
 #     supplies the engine args inline. The

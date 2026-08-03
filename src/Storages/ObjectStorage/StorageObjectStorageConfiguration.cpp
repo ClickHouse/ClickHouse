@@ -143,14 +143,21 @@ void StorageObjectStorageConfiguration::initialize(
             throw Exception(ErrorCodes::BAD_ARGUMENTS, "The `partition_strategy` argument is incompatible with data lakes");
         }
 
-        /// Reject only a `CREATE TABLE` or a table function (which always loads with `CREATE`).
-        /// Every `ATTACH` form and server-startup replay has `mode >= ATTACH` and is deliberately
-        /// exempt as a compatibility path, so pre-fix tables still load after upgrade. This
-        /// includes a user-supplied full-definition `ATTACH TABLE ... ENGINE = ...`, which can
-        /// therefore still persist a definition carrying `compression_method`; per review the
-        /// gate is intentionally kept as simple as `mode < ATTACH`. `RESTORE TABLE` loads with
-        /// `SECONDARY_CREATE` (which is `< ATTACH`), hence the explicit `is_restore_from_backup` guard.
-        if (mode < LoadingStrictnessLevel::ATTACH
+        /// Reject only a fresh user-supplied definition: `CREATE TABLE` or a table function
+        /// (which always loads with `CREATE`). Every other mode replays metadata that was
+        /// already accepted when the table was originally created, and is deliberately exempt
+        /// as a compatibility path so pre-fix tables still load after an upgrade:
+        ///  - every `ATTACH` form (`ATTACH`/`FORCE_ATTACH`/`FORCE_RESTORE`), including a
+        ///    user-supplied full-definition `ATTACH TABLE ... ENGINE = ...`, which can therefore
+        ///    still persist a definition carrying `compression_method`; per review the gate is
+        ///    intentionally kept simple rather than special-casing the `ATTACH` shapes;
+        ///  - `SECONDARY_CREATE`, which covers both `RESTORE TABLE` and the replay of stored
+        ///    `CREATE TABLE` text by `DatabaseReplicated::recoverLostReplica`. A fresh
+        ///    `CREATE` in a `Replicated` database is still rejected, because the initiator runs
+        ///    it as an initial query and therefore with `mode == CREATE`.
+        /// The `is_restore_from_backup` guard is kept so that a restore is never rejected even
+        /// if it is ever executed with another mode.
+        if (mode == LoadingStrictnessLevel::CREATE
             && !is_restore_from_backup
             && configuration_to_initialize.compression_method_user_provided)
         {
