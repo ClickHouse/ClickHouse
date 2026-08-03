@@ -2035,7 +2035,12 @@ Maximum time between runs of merge coordinator thread
 Time changing factor for delay of coordinator thread
 )", 0) \
     DECLARE(MergeCoordinatorDistributionAlgorithm, shared_merge_tree_merge_coordinator_distribution_algorithm, MergeCoordinatorDistributionAlgorithm::WATER_FILLING, R"(
-What algorithm will be used by merge coordinator thread to distribute merges between replicas
+The algorithm used by the merge coordinator thread to distribute merges between replicas.
+
+Possible values:
+
+- `water_filling`
+- `sainte_lague`
 )", 0) \
     DECLARE(Milliseconds, shared_merge_tree_merge_worker_fast_timeout_ms, 100, R"(
 Timeout that merge worker thread will use if it is needed to update it's state after immediate action
