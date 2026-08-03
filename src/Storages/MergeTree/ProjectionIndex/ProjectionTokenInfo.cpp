@@ -4,6 +4,8 @@
 
 #include <abpfor.h>
 
+#include <tuple>
+
 namespace ProfileEvents
 {
     extern const Event TextIndexReadPostings;
@@ -152,10 +154,13 @@ bool ProjectionTokenInfo::hasDocInRange(
             auto & dbuf = pst_stream->decodeBuffer();
             dbuf.reset();
             const uint8_t * ptr = dbuf.ptr();
+            /// Deliberately discard the decoded doc-block length: `bytes` spans doc + freq
+            /// (see `packed_block_cum_bytes`), and the buffer must advance past both so the
+            /// next block starts at the right offset.
             if (count == ABPFOR_BLOCK_SIZE)
-                bytes = static_cast<UInt32>(abpfor::b256::decodeBlockDelta1(ptr, entry->doc_ids, delta_base));
+                std::ignore = abpfor::b256::decodeBlockDelta1(ptr, entry->doc_ids, delta_base);
             else
-                bytes = static_cast<UInt32>(abpfor::b256::decodeTailDelta1(ptr, count, entry->doc_ids, delta_base));
+                std::ignore = abpfor::b256::decodeTailDelta1(ptr, count, entry->doc_ids, delta_base);
             dbuf.advance(bytes);
 
             if (!cache)

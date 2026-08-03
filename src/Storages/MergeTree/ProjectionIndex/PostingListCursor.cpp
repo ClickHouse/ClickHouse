@@ -8,6 +8,8 @@
 
 #include <abpfor.h>
 
+#include <tuple>
+
 namespace ProfileEvents
 {
     extern const Event TextIndexLazyPackedBlocksDecoded;
@@ -359,10 +361,12 @@ bool ProjectionPostingListCursor::loadPackedBlock(size_t block_idx)
 
     decoded_count = count;
     decoded_values = decode_buf;
+    /// Deliberately discard the decoded doc-block length: this path does not advance the
+    /// decode buffer (it seeks explicitly per block), and `bytes` spans doc + freq anyway.
     if (count == ABPFOR_BLOCK_SIZE) [[likely]]
-        bytes = static_cast<UInt32>(abpfor::b256::decodeBlockDelta1(src_ptr, decode_buf, delta_base));
+        std::ignore = abpfor::b256::decodeBlockDelta1(src_ptr, decode_buf, delta_base);
     else
-        bytes = static_cast<UInt32>(abpfor::b256::decodeTailDelta1(src_ptr, count, decode_buf, delta_base));
+        std::ignore = abpfor::b256::decodeTailDelta1(src_ptr, count, decode_buf, delta_base);
     index = 0;
 
     /// Validate decoded values: must be strictly monotonically increasing
@@ -672,10 +676,12 @@ void ProjectionPostingListCursor::iterateLargeBlock(
                 }
             }
 
+            /// Deliberately discard the decoded doc-block length: the `advance(bytes)` below
+            /// must skip doc + freq (see `packed_block_cum_bytes`), not just the doc block.
             if (count == ABPFOR_BLOCK_SIZE) [[likely]]
-                bytes = static_cast<UInt32>(abpfor::b256::decodeBlockDelta1(src_ptr, iter_decode_buf, delta_base));
+                std::ignore = abpfor::b256::decodeBlockDelta1(src_ptr, iter_decode_buf, delta_base);
             else
-                bytes = static_cast<UInt32>(abpfor::b256::decodeTailDelta1(src_ptr, count, iter_decode_buf, delta_base));
+                std::ignore = abpfor::b256::decodeTailDelta1(src_ptr, count, iter_decode_buf, delta_base);
 
             /// Validate: strictly monotonically increasing.
             if (count > 1) [[likely]]
