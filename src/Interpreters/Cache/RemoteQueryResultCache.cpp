@@ -3,9 +3,9 @@
 #include <Common/Exception.h>
 #include <Common/quoteString.h>
 #include <Core/UUID.h>
-#include <IO/ReadBufferFromString.h>
 #include <IO/WriteHelpers.h>
 #include <base/sleep.h>
+#include <Common/CurrentThread.h>
 
 #include <algorithm>
 
@@ -54,11 +54,11 @@ QueryResultCacheReader RemoteQueryResultCache::createReader(const Key & key)
 {
     const auto write_context = getWriteContext(key);
 
-    auto result = backend.getWithKey(key, key.encodeToRedisKey(write_context));
+    auto result = backend.getWithKey(key, key.encodeToRedisKey(write_context), write_context);
 
     if (!result.has_value() && !key.is_shared)
     {
-        auto shared_result = backend.getWithKey(key, key.encodeToRedisKey(write_context, true));
+        auto shared_result = backend.getWithKey(key, key.encodeToRedisKey(write_context, true), write_context);
         if (shared_result.has_value())
             result.emplace(std::move(shared_result.value()));
     }
@@ -142,14 +142,21 @@ std::optional<RemoteQueryResultCache::HeldLockInfo> RemoteQueryResultCache::take
 
 /// Poll Redis until a valid entry appears, the lock disappears
 /// (holder crashed), or timeout is reached.
-bool RemoteQueryResultCache::pollForResult(const Key & key, const std::string & redis_key)
+///
+/// This runs synchronously while the query pipeline is still being built, i.e. before any processor
+/// can observe cancellation. `CurrentThread::checkIfNotCancelled` is therefore called on every
+/// iteration so that a client disconnect or `KILL QUERY` aborts the wait immediately instead of
+/// keeping the thread sleeping until `lock_max_wait` expires.
+bool RemoteQueryResultCache::pollForResult(const Key & key, const std::string & redis_key, const QueryResultCache::WriteContext & write_context)
 {
     const auto deadline = std::chrono::steady_clock::now() + lock_max_wait;
     const std::string lk = lockKey(redis_key);
 
     while (true)
     {
-        auto result = backend.getWithKey(key, redis_key);
+        CurrentThread::checkIfNotCancelled();
+
+        auto result = backend.getWithKey(key, redis_key, write_context);
         if (result.has_value() && !QueryResultCache::IsStale()(result->first))
         {
             LOG_TRACE(logger, "Polled and found a valid cache entry for query {} (remote cache)", doubleQuoteString(key.query_string));
@@ -162,7 +169,7 @@ bool RemoteQueryResultCache::pollForResult(const Key & key, const std::string & 
         /// releases the lock between the GET above and the EXISTS here.
         if (!backend.lockExists(lk))
         {
-            auto result_after_unlock = backend.getWithKey(key, redis_key);
+            auto result_after_unlock = backend.getWithKey(key, redis_key, write_context);
             if (result_after_unlock.has_value() && !QueryResultCache::IsStale()(result_after_unlock->first))
             {
                 LOG_TRACE(logger, "Lock for query {} disappeared after the result was written, using the cached value (remote cache)", doubleQuoteString(key.query_string));
@@ -190,14 +197,31 @@ bool RemoteQueryResultCache::hasNonStaleEntry(const Key & key, const QueryResult
 {
     const std::string redis_key = key.encodeToRedisKey(write_context);
 
-    /// Check if this node already holds the lock for this key
-    /// (re-entrant call from `finalizeWrite`). If so, let the
-    /// writer proceed to write.
+    /// Check if this node already holds the lock for this key (re-entrant call from `finalizeWrite`).
+    /// Holding the lock does not by itself mean nothing was written meanwhile: our lease is a
+    /// fixed-TTL advisory lock, so if the query outlived it another node may have acquired the lock
+    /// and stored a fresh value. Recheck the data key before telling the writer to overwrite it -
+    /// otherwise `setIfValid` would clobber a valid newer entry, because it only validates
+    /// generations, not the value.
     {
-        std::lock_guard lock(mutex);
-        auto it = held_locks.find(redis_key);
-        if (it != held_locks.end() && it->second.owner_thread_id == std::this_thread::get_id())
+        bool holds_lock = false;
+        {
+            std::lock_guard lock(mutex);
+            auto it = held_locks.find(redis_key);
+            holds_lock = (it != held_locks.end() && it->second.owner_thread_id == std::this_thread::get_id());
+        }
+
+        if (holds_lock)
+        {
+            auto existing = backend.getWithKey(key, redis_key, write_context);
+            if (existing.has_value() && !QueryResultCache::IsStale()(existing->first))
+            {
+                LOG_TRACE(logger, "Another node stored a result for query {} while our lock lease was held, skipping the write (remote cache)",
+                    doubleQuoteString(key.query_string));
+                return true;
+            }
             return false;
+        }
     }
 
     /// Generate a unique token for the potential lock acquisition.
@@ -210,20 +234,15 @@ bool RemoteQueryResultCache::hasNonStaleEntry(const Key & key, const QueryResult
 
     if (gor.status == 1)
     {
-        /// Data found — verify it is not stale.
-        try
-        {
-            ReadBufferFromString buf(gor.data);
-            auto stored_key = QueryResultCache::Key::deserializeFrom(buf);
-            if (!QueryResultCache::IsStale()(stored_key))
-                return true;
-        }
-        catch (...)
-        {
-            LOG_WARNING(logger, "Failed to deserialize cached entry during hasNonStaleEntry: {}", getCurrentExceptionMessage(false));
-        }
+        /// Data found - it may only suppress recomputation if the *whole* value passes exactly the
+        /// validation the read path applies. Deserializing just the `Key` would let an unreadable
+        /// `Entry` (malformed, oversized, too many chunks) block every writer until the TTL expires
+        /// while no reader can ever serve it.
+        auto existing = backend.decodeAndValidate(gor.data, key, redis_key, write_context);
+        if (existing.has_value() && !QueryResultCache::IsStale()(existing->first))
+            return true;
 
-        /// Data is stale or malformed — fall through to try acquiring the lock
+        /// Data is stale, unreadable or foreign — fall through to try acquiring the lock
         /// via the original two-step path (the Lua script already returned the
         /// data without acquiring a lock).
         auto fallback_token = backend.tryAcquireLock(lk, lock_ttl);
@@ -236,7 +255,7 @@ bool RemoteQueryResultCache::hasNonStaleEntry(const Key & key, const QueryResult
         }
 
         LOG_TRACE(logger, "Another node is computing the result for query {}, waiting... (remote cache)", doubleQuoteString(key.query_string));
-        return pollForResult(key, redis_key);
+        return pollForResult(key, redis_key, write_context);
     }
 
     if (gor.status == 2)
@@ -250,7 +269,7 @@ bool RemoteQueryResultCache::hasNonStaleEntry(const Key & key, const QueryResult
 
     /// status == 0: another node holds the lock — poll for the result.
     LOG_TRACE(logger, "Another node is computing the result for query {}, waiting... (remote cache)", doubleQuoteString(key.query_string));
-    return pollForResult(key, redis_key);
+    return pollForResult(key, redis_key, write_context);
 }
 
 /// Write the cache entry to Redis with a TTL derived from the key's
@@ -410,7 +429,10 @@ size_t RemoteQueryResultCache::recordQueryRun(const Key & key)
 /// `KeyMapped` format expected by `system.query_cache`.
 std::vector<QueryResultCache::Cache::KeyMapped> RemoteQueryResultCache::dump() const
 {
-    auto pairs = backend.dump(0);
+    /// `system.query_cache` is a diagnostic table: cap the traversal so that reading it over a large
+    /// shared Redis cache cannot accumulate the whole key/value set in the server's memory.
+    static constexpr size_t MAX_DUMPED_ENTRIES = 100'000;
+    auto pairs = backend.dump(MAX_DUMPED_ENTRIES);
 
     std::vector<QueryResultCache::Cache::KeyMapped> result;
     result.reserve(pairs.size());

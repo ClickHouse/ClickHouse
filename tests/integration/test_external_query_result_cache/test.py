@@ -22,6 +22,14 @@ node2 = cluster.add_instance(
     with_redis=True,
     randomize_settings=False,
 )
+# Same Redis, but with a tiny `max_entry_chunks` so the write-side chunk budget can be reached
+# with a small query.
+node3 = cluster.add_instance(
+    "node3",
+    main_configs=["configs/query_result_cache_redis_small_chunks.xml"],
+    with_redis=True,
+    randomize_settings=False,
+)
 
 
 @pytest.fixture(scope="module")
@@ -45,6 +53,7 @@ def get_redis_client():
 def flush_redis(r):
     node1.query("SYSTEM DROP QUERY CACHE")
     node2.query("SYSTEM DROP QUERY CACHE")
+    node3.query("SYSTEM DROP QUERY CACHE")
     r.flushdb()
 
 
@@ -447,24 +456,41 @@ def test_private_entries_do_not_block_each_other_across_users(started_cluster):
 
 
 def test_lock_ttl_expiry_allows_progress(started_cluster):
-    """A stale `:lock` key (TTL expired) must not block subsequent queries."""
+    """An `IN_PROGRESS` lock whose TTL expires must unblock a real waiter.
+
+    The lock key has to be the one ClickHouse actually derives for the query, otherwise the
+    cache code never consults it and the test proves nothing about stampede protection."""
     r = get_redis_client()
     flush_redis(r)
 
-    # Manually plant a lock key with a very short TTL (500 ms).
-    # We use an arbitrary key that won't match any real query, so ClickHouse
-    # will never find a result and will degrade to executing the query itself.
-    r.set("stale_lock_test:lock", "IN_PROGRESS", px=500)
-
-    # Wait for the TTL to expire.
-    time.sleep(1)
-
-    # The lock should be gone now — query must proceed normally without hanging.
-    result = node2.query(
-        "SELECT 1111 SETTINGS use_query_cache = true",
-        timeout=10,
+    query = (
+        "SELECT 1111"
+        " SETTINGS use_query_cache = true, query_cache_share_between_users = 1"
     )
+
+    # Warm-up run: let ClickHouse itself create the data key, so we learn the exact key layout
+    # (generations, tag, access scope and AST hash) instead of guessing it.
+    assert node2.query(query, timeout=30).strip() == "1111"
+
+    data_keys = [
+        k for k in r.keys(f"{QUERY_CACHE_KEY_PREFIX}v*") if not k.endswith(b":lock")
+    ]
+    assert len(data_keys) == 1, f"Expected exactly one cache entry, got {data_keys}"
+    data_key = data_keys[0]
+
+    # Remove the result and plant the *derived* lock key held by another (fake) node, so the
+    # next run of the same query really enters the waiting path.
+    r.delete(data_key)
+    r.set(data_key + b":lock", "some-other-node-token", px=1500)
+
+    # The waiter must not hang: once the lease expires, the lock disappears and the query
+    # degrades to executing itself. `lock_max_wait_ms` is 5000, so a hang would be visible.
+    started_at = time.monotonic()
+    result = node2.query(query, timeout=30)
+    elapsed = time.monotonic() - started_at
+
     assert result.strip() == "1111", f"Query should return normally: {result}"
+    assert elapsed < 15, f"Query waited far too long for an expired lock: {elapsed}s"
 
 
 def test_no_stampede_concurrent(started_cluster):
@@ -1218,3 +1244,107 @@ def test_system_query_cache_stale_column(started_cluster):
     assert stale_after in ("1", ""), (
         f"Expected stale=1 or entry evicted after TTL, got: {stale_after!r}"
     )
+
+
+# ---------------------------------------------------------------------------
+# B12. `SYSTEM CLEAR QUERY CACHE TAG ''` is an exact empty-tag clear
+# ---------------------------------------------------------------------------
+
+
+def test_clear_empty_tag_is_exact(started_cluster):
+    """`TAG ''` must clear only entries whose tag really is the empty string.
+
+    The empty string used to double as the internal "clear all tags" marker, which disabled
+    the exact-tag filter and let the `...::*:<hash>` glob delete unrelated tags such as
+    ':foo'."""
+    r = get_redis_client()
+    flush_redis(r)
+
+    # Default `query_cache_tag` is the empty string.
+    node1.query(
+        "SELECT 4242 SETTINGS use_query_cache = true, query_cache_share_between_users = 1"
+    )
+    node1.query(
+        "SELECT 4243"
+        " SETTINGS use_query_cache = true,"
+        " query_cache_tag = ':foo',"
+        " query_cache_share_between_users = 1"
+    )
+
+    assert (
+        int(node1.query("SELECT count() FROM system.query_cache WHERE tag = ''").strip())
+        == 1
+    )
+    assert (
+        int(
+            node1.query(
+                "SELECT count() FROM system.query_cache WHERE tag = ':foo'"
+            ).strip()
+        )
+        == 1
+    )
+
+    node1.query("SYSTEM CLEAR QUERY CACHE TAG ''")
+
+    empty_tag_entries = int(
+        node1.query("SELECT count() FROM system.query_cache WHERE tag = ''").strip()
+    )
+    assert empty_tag_entries == 0, (
+        f"The empty-tag entry should have been cleared, {empty_tag_entries} left"
+    )
+
+    foo_tag_entries = int(
+        node1.query("SELECT count() FROM system.query_cache WHERE tag = ':foo'").strip()
+    )
+    assert foo_tag_entries == 1, (
+        f"Clearing tag '' must not touch tag ':foo', {foo_tag_entries} entries left"
+    )
+
+
+# ---------------------------------------------------------------------------
+# B13. A result exceeding `max_entry_chunks` must not be written at all
+# ---------------------------------------------------------------------------
+
+
+def test_unreadable_write_is_skipped(started_cluster):
+    """A write whose serialized form the read path would reject must never be stored.
+
+    With `query_cache_squash_partial_results = 0` and a small `max_block_size`, the result
+    consists of many tiny chunks. `max_entry_chunks` is enforced on read, so storing such an
+    entry would produce a permanent miss that also suppresses recomputation on every node
+    until its TTL expires."""
+    r = get_redis_client()
+    flush_redis(r)
+
+    # node3 runs with `max_entry_chunks = 4`; 32 rows at one row per block give 32 chunks.
+    query = (
+        "SELECT number FROM numbers(32)"
+        " SETTINGS use_query_cache = true,"
+        " query_cache_share_between_users = 1,"
+        " query_cache_squash_partial_results = 0,"
+        " max_block_size = 1"
+    )
+
+    assert node3.query(query).strip().split("\n")[-1] == "31"
+
+    data_keys = [
+        k for k in r.keys(f"{QUERY_CACHE_KEY_PREFIX}v*") if not k.endswith(b":lock")
+    ]
+    assert data_keys == [], (
+        f"An entry that cannot be read back must not be stored, found: {data_keys}"
+    )
+
+    # No `IN_PROGRESS` lock may be left behind either - it would stall other nodes.
+    lock_keys = [
+        k for k in r.keys(f"{QUERY_CACHE_KEY_PREFIX}v*") if k.endswith(b":lock")
+    ]
+    assert lock_keys == [], f"Skipped write left a stale lock behind: {lock_keys}"
+
+    # The second run must recompute rather than serve or wait for a broken entry.
+    assert node3.query(query).strip().split("\n")[-1] == "31"
+    misses = query_log_value(
+        node3,
+        "ProfileEvents['QueryCacheMisses']",
+        "query LIKE '%numbers(32)%query_cache_squash_partial_results%'",
+    )
+    assert misses == "1", f"Expected a miss on the second run, got: {misses}"

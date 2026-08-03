@@ -67,13 +67,15 @@ std::string lockKeysPatternForAllTags()
 }
 
 /// `expected_tag` is forwarded to `CLEAR_BY_TAG_SCRIPT` so it can filter out
-/// SCAN hits whose parsed tag does not match exactly. An empty string keeps
-/// the all-tags semantics where every qcache-namespace match is in scope.
+/// SCAN hits whose parsed tag does not match exactly. `clear_all` requests the
+/// all-tags semantics where every qcache-namespace match is in scope; it is a
+/// separate flag so that the empty string stays a first-class exact tag.
 void deleteByPatternWithCachedScript(
     Poco::Redis::Client & client,
     const std::string & script_sha,
     const std::string & pattern,
-    const std::string & expected_tag)
+    const std::string & expected_tag,
+    bool clear_all)
 {
     Poco::Redis::Command cmd("EVALSHA");
     cmd << script_sha;
@@ -81,8 +83,12 @@ void deleteByPatternWithCachedScript(
     cmd << pattern;
     cmd << "100"; /// batch size per SCAN iteration
     cmd << expected_tag;
+    cmd << (clear_all ? "1" : "0");
     client.execute<Poco::Int64>(cmd);
 }
+
+/// Number of keys requested per `SCAN` round trip when iterating client-side.
+constexpr size_t SCAN_BATCH_SIZE = 1000;
 
 std::string globalGenerationKey()
 {
@@ -106,6 +112,26 @@ RedisRemoteCacheBackend::RedisRemoteCacheBackend(
     , max_entry_size_in_bytes(max_entry_size_in_bytes_)
     , max_entry_size_in_rows(max_entry_size_in_rows_)
 {
+}
+
+bool RedisRemoteCacheBackend::isSerializedEntryStorable(const std::string & serialized, size_t chunks_count) const
+{
+    const size_t max_bytes = max_entry_size_in_bytes.load(std::memory_order_relaxed);
+    if (max_bytes && serialized.size() > max_bytes)
+    {
+        LOG_TRACE(logger, "Skipped remote write because the serialized entry would be rejected on read: {} > max_entry_size_in_bytes {}",
+            serialized.size(), max_bytes);
+        return false;
+    }
+
+    if (chunks_count > max_entry_chunks)
+    {
+        LOG_TRACE(logger, "Skipped remote write because the entry would be rejected on read: {} chunks > max_entry_chunks {}",
+            chunks_count, max_entry_chunks);
+        return false;
+    }
+
+    return true;
 }
 
 void RedisRemoteCacheBackend::setEntrySizeLimits(
@@ -152,8 +178,6 @@ void RedisRemoteCacheBackend::ensureScriptsLoaded(Poco::Redis::Client & client)
     sha_set           = load(SET_SCRIPT);
     sha_clear_by_tag  = load(CLEAR_BY_TAG_SCRIPT);
     sha_release_lock  = load(RELEASE_LOCK_SCRIPT);
-    sha_dump          = load(DUMP_SCRIPT);
-    sha_count         = load(COUNT_SCRIPT);
     sha_set_if_valid  = load(SET_IF_VALID_SCRIPT);
     sha_get_or_lock   = load(GET_OR_LOCK_SCRIPT);
     sha_clear_and_bump = load(CLEAR_AND_BUMP_SCRIPT);
@@ -167,8 +191,6 @@ RedisRemoteCacheBackend::ScriptShas RedisRemoteCacheBackend::getScriptShas() con
     shas.set = sha_set;
     shas.clear_by_tag = sha_clear_by_tag;
     shas.release_lock = sha_release_lock;
-    shas.dump = sha_dump;
-    shas.count = sha_count;
     shas.set_if_valid = sha_set_if_valid;
     shas.get_or_lock = sha_get_or_lock;
     shas.clear_and_bump = sha_clear_and_bump;
@@ -197,6 +219,43 @@ auto RedisRemoteCacheBackend::executeWithNoscriptRetry(Poco::Redis::Client & cli
         shas = getScriptShas();
         return build_and_execute(shas);
     }
+}
+
+void RedisRemoteCacheBackend::scanKeys(
+    Poco::Redis::Client & client,
+    const std::string & pattern,
+    size_t batch_size,
+    const std::function<bool(const std::vector<std::string> &)> & callback)
+{
+    std::string cursor = "0";
+    std::vector<std::string> keys;
+    do
+    {
+        Poco::Redis::Command cmd("SCAN");
+        cmd << cursor << "MATCH" << pattern << "COUNT" << std::to_string(batch_size);
+        auto reply = client.execute<Poco::Redis::Array>(cmd);
+        if (reply.isNull() || reply.size() < 2)
+            return;
+
+        const auto & cursor_bs = reply.get<Poco::Redis::BulkString>(0);
+        if (cursor_bs.isNull())
+            return;
+        cursor = cursor_bs.value();
+
+        const auto batch = reply.get<Poco::Redis::Array>(1);
+        keys.clear();
+        keys.reserve(batch.size());
+        for (size_t i = 0; i < batch.size(); ++i)
+        {
+            const auto & key_bs = batch.get<Poco::Redis::BulkString>(i);
+            if (!key_bs.isNull())
+                keys.push_back(key_bs.value());
+        }
+
+        if (!callback(keys))
+            return;
+    }
+    while (cursor != "0");
 }
 
 template <typename F>
@@ -250,7 +309,7 @@ std::optional<std::pair<QueryResultCache::Key, QueryResultCache::Entry>>
 RedisRemoteCacheBackend::getWithKey(const QueryResultCache::Key & key)
 try
 {
-    return getWithKey(key, key.encodeToRedisKey());
+    return getWithKey(key, key.encodeToRedisKey(), QueryResultCache::WriteContext{});
 }
 catch (...)
 {
@@ -259,7 +318,36 @@ catch (...)
 }
 
 std::optional<std::pair<QueryResultCache::Key, QueryResultCache::Entry>>
-RedisRemoteCacheBackend::getWithKey(const QueryResultCache::Key & key, const String & redis_key)
+RedisRemoteCacheBackend::decodeAndValidate(
+    const std::string & data,
+    const QueryResultCache::Key & key,
+    const String & redis_key,
+    const QueryResultCache::WriteContext & write_context)
+try
+{
+    auto deserialized = deserializeValue(data, max_entry_chunks, max_entry_size_in_bytes, max_entry_size_in_rows);
+
+    /// `Key::operator==` only compares `ast_hash` and `is_subquery` - it is the equality the in-process
+    /// cache needs, where the rest of the identity is guaranteed by construction. For an external store it
+    /// is not enough, so require that re-encoding the stored key reproduces exactly the Redis key we read
+    /// from. This binds the value to the requested `tag`, access scope (`is_shared` / `user_id` /
+    /// `current_user_roles`) and AST all at once.
+    if (!(deserialized.first == key) || deserialized.first.encodeToRedisKey(write_context) != redis_key)
+    {
+        LOG_WARNING(logger, "Discarding Redis query cache value at key {} because the stored key does not match the requested query", redis_key);
+        return std::nullopt;
+    }
+
+    return deserialized;
+}
+catch (...)
+{
+    LOG_WARNING(logger, "Discarding unreadable Redis query cache value at key {}: {}", redis_key, getCurrentExceptionMessage(false));
+    return std::nullopt;
+}
+
+std::optional<std::pair<QueryResultCache::Key, QueryResultCache::Entry>>
+RedisRemoteCacheBackend::getWithKey(const QueryResultCache::Key & key, const String & redis_key, const QueryResultCache::WriteContext & write_context)
 try
 {
     auto result = execute([&](Poco::Redis::Client & client)
@@ -274,19 +362,7 @@ try
     if (result.isNull())
         return std::nullopt;
 
-    auto deserialized = deserializeValue(result.value(), max_entry_chunks, max_entry_size_in_bytes, max_entry_size_in_rows);
-
-    /// The Redis value is external and untrusted (corruption, manual writes, namespace collisions). Verify
-    /// that the key embedded in the stored value actually matches the requested query before returning a hit,
-    /// otherwise a value planted for a different AST could be served as the result of this query. On mismatch
-    /// degrade to a cache miss rather than returning a wrong result.
-    if (!(deserialized.first == key))
-    {
-        LOG_WARNING(logger, "Discarding Redis query cache value at key {} because the stored key does not match the requested query", redis_key);
-        return std::nullopt;
-    }
-
-    return deserialized;
+    return decodeAndValidate(result.value(), key, redis_key, write_context);
 }
 catch (...)
 {
@@ -340,6 +416,12 @@ try
 
     const std::string lock_key = redis_key + ":lock";
     const std::string serialized = serializeValue(key, value);
+
+    /// Never persist a value that the read path would reject: such an entry is a permanent miss that
+    /// also makes every other node skip recomputation until its TTL expires.
+    if (!isSerializedEntryStorable(serialized, value.chunks.size()))
+        return false;
+
     const std::string global_gen_key = globalGenerationKey();
     const std::string tag_gen_key = tagGenerationKey(key.tag);
     const std::string global_gen_str = std::to_string(write_context.global_generation);
@@ -396,7 +478,7 @@ try
         executeWithNoscriptRetry(client, [&](const ScriptShas & shas)
         {
             for (const auto & pattern : patterns)
-                deleteByPatternWithCachedScript(client, shas.clear_by_tag, pattern, tag);
+                deleteByPatternWithCachedScript(client, shas.clear_by_tag, pattern, tag, /*clear_all=*/false);
         });
     });
 }
@@ -425,7 +507,7 @@ try
         executeWithNoscriptRetry(client, [&](const ScriptShas & shas)
         {
             for (const auto & pattern : patterns)
-                deleteByPatternWithCachedScript(client, shas.clear_by_tag, pattern, /*expected_tag=*/"");
+                deleteByPatternWithCachedScript(client, shas.clear_by_tag, pattern, /*expected_tag=*/"", /*clear_all=*/true);
         });
     });
 }
@@ -439,74 +521,91 @@ catch (...)
         "Failed to clear external query result cache: {}", getCurrentExceptionMessage(false));
 }
 
-/// Use the `DUMP_SCRIPT` Lua script to SCAN all keys and return
-/// up to `max_keys` key-value pairs. Lock keys (ending with
-/// `:lock`) and malformed entries are silently skipped.
+/// SCAN all data keys in client-side bounded batches and `MGET` each batch, returning up to
+/// `max_keys` key-value pairs (`max_keys == 0` means unlimited). Lock keys (ending with `:lock`) and
+/// malformed entries are silently skipped.
+///
+/// The traversal is deliberately client-side: doing it inside a single Lua script would occupy
+/// Redis's event loop for the whole cache, so one `system.query_cache` read could stall every other
+/// client.
 std::vector<std::pair<QueryResultCache::Key, QueryResultCache::Entry>>
 RedisRemoteCacheBackend::dump(size_t max_keys)
 {
     const std::string pattern = dataKeysPatternForAllTags();
-    const std::string max_keys_str = std::to_string(max_keys);
 
-    auto raw = execute([&](Poco::Redis::Client & client)
+    std::vector<std::pair<QueryResultCache::Key, QueryResultCache::Entry>> result;
+
+    execute([&](Poco::Redis::Client & client)
     {
-        return executeWithNoscriptRetry(client, [&](const ScriptShas & shas)
+        scanKeys(client, pattern, SCAN_BATCH_SIZE, [&](const std::vector<std::string> & keys)
         {
-            Poco::Redis::Command cmd("EVALSHA");
-            cmd << shas.dump << "0" << pattern << max_keys_str;
-            return client.execute<Poco::Redis::Array>(cmd);
+            std::vector<std::string> data_keys;
+            data_keys.reserve(keys.size());
+            for (const auto & key : keys)
+            {
+                /// Skip stampede lock keys - they are not cache entries.
+                if (!key.ends_with(":lock"))
+                    data_keys.push_back(key);
+            }
+
+            if (data_keys.empty())
+                return true;
+
+            if (max_keys && data_keys.size() > max_keys - result.size())
+                data_keys.resize(max_keys - result.size());
+
+            Poco::Redis::Command cmd("MGET");
+            for (const auto & key : data_keys)
+                cmd << key;
+            auto values = client.execute<Poco::Redis::Array>(cmd);
+
+            for (size_t i = 0; i < data_keys.size() && i < values.size(); ++i)
+            {
+                try
+                {
+                    const auto & val_bs = values.get<Poco::Redis::BulkString>(i);
+                    /// Skip null values (key expired between SCAN and MGET).
+                    if (val_bs.isNull())
+                        continue;
+
+                    result.push_back(deserializeValue(val_bs.value(), max_entry_chunks, max_entry_size_in_bytes, max_entry_size_in_rows));
+                }
+                catch (...)
+                {
+                    LOG_WARNING(logger, "Skipping malformed cache entry during dump: {}", getCurrentExceptionMessage(false));
+                }
+            }
+
+            return !max_keys || result.size() < max_keys;
         });
     });
-
-    /// The Lua script returns a flat list: [key1, val1, key2, val2, ...]
-    std::vector<std::pair<QueryResultCache::Key, QueryResultCache::Entry>> result;
-    if (raw.isNull())
-        return result;
-
-    result.reserve(raw.size() / 2);
-
-    for (size_t i = 0; i + 1 < raw.size(); i += 2)
-    {
-        try
-        {
-            const auto & key_bs = raw.get<Poco::Redis::BulkString>(i);
-            const auto & val_bs = raw.get<Poco::Redis::BulkString>(i + 1);
-
-            /// Skip null entries (key expired between SCAN and GET).
-            if (key_bs.isNull() || val_bs.isNull())
-                continue;
-
-            /// Skip stampede lock keys — they are not cache entries.
-            if (key_bs.value().ends_with(":lock"))
-                continue;
-
-            result.push_back(deserializeValue(val_bs.value(), max_entry_chunks, max_entry_size_in_bytes, max_entry_size_in_rows));
-        }
-        catch (...)
-        {
-            LOG_WARNING(logger, "Skipping malformed cache entry during dump: {}", getCurrentExceptionMessage(false));
-        }
-    }
 
     return result;
 }
 
 /// Return the total number of query-cache entries in the selected Redis database.
-/// Excludes lock keys ending with `:lock`.
+/// Excludes lock keys ending with `:lock`. Uses client-side bounded `SCAN` batches for the same
+/// reason as `dump`.
 size_t RedisRemoteCacheBackend::count()
 try
 {
     const std::string pattern = dataKeysPatternForAllTags();
 
-    return execute([&](Poco::Redis::Client & client)
+    size_t result = 0;
+    execute([&](Poco::Redis::Client & client)
     {
-        return executeWithNoscriptRetry(client, [&](const ScriptShas & shas)
+        scanKeys(client, pattern, SCAN_BATCH_SIZE, [&](const std::vector<std::string> & keys)
         {
-            Poco::Redis::Command cmd("EVALSHA");
-            cmd << shas.count << "0" << pattern;
-            return static_cast<size_t>(client.execute<Poco::Int64>(cmd));
+            for (const auto & key : keys)
+            {
+                if (!key.ends_with(":lock"))
+                    ++result;
+            }
+            return true;
         });
     });
+
+    return result;
 }
 catch (...)
 {
@@ -677,8 +776,9 @@ try
     const std::string data_pattern = has_tag ? dataKeysPatternForTag(*tag) : dataKeysPatternForAllTags();
     const std::string lock_pattern = has_tag ? lockKeysPatternForTag(*tag) : lockKeysPatternForAllTags();
     const std::string generation_key = has_tag ? tagGenerationKey(*tag) : globalGenerationKey();
-    /// Empty `expected_tag` disables the in-script exact-match filter for the
-    /// all-tags path, where the qcache-namespaced glob is already the right scope.
+    /// The `clear_all` flag - not an empty `expected_tag` - disables the in-script exact-match filter
+    /// for the all-tags path, where the qcache-namespaced glob is already the right scope. Keeping the
+    /// two apart makes `SYSTEM CLEAR QUERY CACHE TAG ''` an exact empty-tag clear.
     const std::string expected_tag = has_tag ? *tag : std::string();
 
     execute([&](Poco::Redis::Client & client)
@@ -686,7 +786,8 @@ try
         executeWithNoscriptRetry(client, [&](const ScriptShas & shas)
         {
             Poco::Redis::Command cmd("EVALSHA");
-            cmd << shas.clear_and_bump << "1" << generation_key << data_pattern << lock_pattern << "100" << expected_tag;
+            cmd << shas.clear_and_bump << "1" << generation_key << data_pattern << lock_pattern << "100" << expected_tag
+                << (has_tag ? "0" : "1");
             client.execute<Poco::Int64>(cmd);
         });
     });

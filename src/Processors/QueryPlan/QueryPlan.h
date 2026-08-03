@@ -163,6 +163,10 @@ public:
 
     void addResources(QueryPlanResourceHolder resources_) { resources = std::move(resources_); }
 
+    /// Move the resources (table locks, storage holders, interpreter contexts) out of this plan.
+    /// Used when a built plan is replaced by another one but its resources must outlive it.
+    QueryPlanResourceHolder detachResources() { return std::move(resources); }
+
     /// Set upper limit for the recommend number of threads. Will be applied to the newly-created pipelines.
     /// TODO: make it in a better way.
     void setMaxThreads(size_t max_threads_) { max_threads = max_threads_; }

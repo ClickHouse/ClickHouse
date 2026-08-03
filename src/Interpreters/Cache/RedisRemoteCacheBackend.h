@@ -7,10 +7,12 @@
 #include <Storages/RedisCommon.h>
 
 #include <atomic>
+#include <functional>
 #include <mutex>
 #include <optional>
 #include <string>
 #include <unordered_map>
+#include <vector>
 
 /// Lua helper inlined into the SCAN-and-delete scripts to filter candidate
 /// keys by the exact tag parsed from the key. The glob patterns used by
@@ -18,11 +20,12 @@
 /// tag and the trailing scope/hash, and `*` also matches `:`, so a tag like
 /// `foo` would otherwise hit keys for `foo:bar`. Defined as a macro because
 /// `static constexpr std::string_view` members cannot be concatenated with
-/// string literals at compile time. An empty `expected` short-circuits to
-/// match every key, used for the all-tags clear path.
+/// string literals at compile time. Matching every key is requested with an
+/// explicit `clear_all` flag rather than by an empty `expected`, so that the
+/// empty string stays a first-class exact tag (`SYSTEM CLEAR QUERY CACHE TAG ''`).
 #define CH_QCACHE_TAG_MATCH_HELPER_LUA \
-    "local function tag_matches(k, expected) " \
-    "    if expected == '' then return true end " \
+    "local function tag_matches(k, expected, clear_all) " \
+    "    if clear_all then return true end " \
     "    if string.sub(k, -5) == ':lock' then " \
     "        k = string.sub(k, 1, -6) " \
     "    end " \
@@ -71,8 +74,28 @@ public:
     std::optional<std::pair<QueryResultCache::Key, QueryResultCache::Entry>>
     getWithKey(const QueryResultCache::Key & key) override;
 
+    /// `write_context` is the generation snapshot the `redis_key` was built from. It is needed to
+    /// re-encode the key embedded in the stored value and compare it with `redis_key`, which is the
+    /// only way to tell that an untrusted Redis value really belongs to the requested cache identity
+    /// (tag, access scope, AST). See `decodeAndValidate`.
     std::optional<std::pair<QueryResultCache::Key, QueryResultCache::Entry>>
-    getWithKey(const QueryResultCache::Key & key, const String & redis_key);
+    getWithKey(const QueryResultCache::Key & key, const String & redis_key, const QueryResultCache::WriteContext & write_context);
+
+    /// Decode a raw Redis value and validate it against the full requested cache identity.
+    /// Returns nullopt when the value is unreadable (malformed, oversized, unknown version) or when
+    /// it belongs to a different query, tag or access scope. Never throws.
+    ///
+    /// Values in the external store are untrusted: they can be corrupt, manually written, or the
+    /// result of a namespace collision. `QueryResultCache::Key::operator==` only compares `ast_hash`
+    /// and `is_subquery`, so it is not sufficient on its own - a value planted under our key with a
+    /// different `tag`, `is_shared`, `user_id` or `current_user_roles` would pass it. Re-encoding the
+    /// stored key and requiring an exact match with `redis_key` closes all of these at once.
+    std::optional<std::pair<QueryResultCache::Key, QueryResultCache::Entry>>
+    decodeAndValidate(
+        const std::string & data,
+        const QueryResultCache::Key & key,
+        const String & redis_key,
+        const QueryResultCache::WriteContext & write_context);
 
     void set(
         const QueryResultCache::Key & key,
@@ -95,6 +118,12 @@ public:
     dump(size_t max_keys) override;
 
     size_t count() override;
+
+    /// Check that a serialized (key + entry) blob satisfies exactly the same bounds that the read
+    /// path enforces in `deserializeValue`. Writes that would be rejected on read must never be
+    /// persisted: they would turn into permanent misses that also suppress recomputation until the
+    /// entry's TTL expires.
+    bool isSerializedEntryStorable(const std::string & serialized, size_t chunks_count) const;
 
     /// Update the per-entry size bounds applied during deserialization.
     /// Used when the cache configuration is reloaded at runtime.
@@ -141,13 +170,23 @@ private:
     /// Load all Lua scripts if not yet loaded (or reload after NOSCRIPT). Thread-safe.
     void ensureScriptsLoaded(Poco::Redis::Client & client);
 
+    /// Iterate over the keys matching `pattern` in client-side `SCAN` batches, calling `callback`
+    /// once per batch. Returning false from `callback` stops the traversal.
+    ///
+    /// `SCAN` is bounded per round trip, so unlike a cursor-to-zero loop inside a single Lua script
+    /// this never occupies Redis's single event loop for the whole traversal. `system.query_cache`
+    /// reads over a large cache must not stall unrelated traffic.
+    static void scanKeys(
+        Poco::Redis::Client & client,
+        const std::string & pattern,
+        size_t batch_size,
+        const std::function<bool(const std::vector<std::string> &)> & callback);
+
     struct ScriptShas
     {
         std::string set;
         std::string clear_by_tag;
         std::string release_lock;
-        std::string dump;
-        std::string count;
         std::string set_if_valid;
         std::string get_or_lock;
         std::string clear_and_bump;
@@ -211,12 +250,14 @@ private:
     /// `dataKeysPatternForTag` also matches `:`, so clearing tag `foo` would
     /// otherwise hit keys for tag `foo:bar`. The expected tag is therefore
     /// passed in `ARGV[3]` and each candidate is parsed to verify an exact
-    /// tag match before deletion. An empty `ARGV[3]` skips the filter and is
+    /// tag match before deletion. `ARGV[4] == '1'` skips the filter and is
     /// used for `clear()` where the all-tags pattern intentionally matches
-    /// every entry under the qcache namespace.
+    /// every entry under the qcache namespace. An empty `ARGV[3]` is an exact
+    /// empty tag, not a wildcard.
     static constexpr std::string_view CLEAR_BY_TAG_SCRIPT =
         CH_QCACHE_TAG_MATCH_HELPER_LUA
         "local expected_tag = ARGV[3] or '' "
+        "local clear_all = ARGV[4] == '1' "
         "local cursor = '0' "
         "local deleted = 0 "
         "repeat "
@@ -225,7 +266,7 @@ private:
         "    local keys = res[2] "
         "    local to_del = {} "
         "    for _, k in ipairs(keys) do "
-        "        if tag_matches(k, expected_tag) then "
+        "        if tag_matches(k, expected_tag, clear_all) then "
         "            table.insert(to_del, k) "
         "        end "
         "    end "
@@ -245,37 +286,6 @@ private:
         "else "
         "    return 0 "
         "end";
-
-    static constexpr std::string_view DUMP_SCRIPT =
-        "local cursor = '0' "
-        "local result = {} "
-        "local max_keys = tonumber(ARGV[2]) "
-        "local unlimited = (not max_keys) or max_keys <= 0 "
-        "repeat "
-        "    local res = redis.call('SCAN', cursor, 'MATCH', ARGV[1], 'COUNT', 100) "
-        "    cursor = res[1] "
-        "    local keys = res[2] "
-        "    for _, k in ipairs(keys) do "
-        "        if (not unlimited) and #result >= max_keys * 2 then break end "
-        "        local v = redis.call('GET', k) "
-        "        if v then "
-        "            table.insert(result, k) "
-        "            table.insert(result, v) "
-        "        end "
-        "    end "
-        "until cursor == '0' or ((not unlimited) and #result >= max_keys * 2) "
-        "return result";
-
-    static constexpr std::string_view COUNT_SCRIPT =
-        "local cursor = '0' "
-        "local result = 0 "
-        "repeat "
-        "    local res = redis.call('SCAN', cursor, 'MATCH', ARGV[1], 'COUNT', 1000) "
-        "    cursor = res[1] "
-        "    local keys = res[2] "
-        "    result = result + #keys "
-        "until cursor == '0' "
-        "return result";
 
     /// Generation checks guard the `SYSTEM CLEAR QUERY CACHE` race; the write no longer
     /// depends on still holding the `IN_PROGRESS` lock, so a query that ran longer than the
@@ -318,10 +328,11 @@ private:
         "return {0, ''}";
 
     /// Same exact-tag filter as `CLEAR_BY_TAG_SCRIPT`: the expected tag is
-    /// passed via `ARGV[4]` (empty when clearing all tags).
+    /// passed via `ARGV[4]` and `ARGV[5] == '1'` requests the all-tags clear.
     static constexpr std::string_view CLEAR_AND_BUMP_SCRIPT =
         CH_QCACHE_TAG_MATCH_HELPER_LUA
         "local expected_tag = ARGV[4] or '' "
+        "local clear_all = ARGV[5] == '1' "
         "local cursor = '0' "
         "repeat "
         "    local res = redis.call('SCAN', cursor, 'MATCH', ARGV[1], 'COUNT', ARGV[3]) "
@@ -329,7 +340,7 @@ private:
         "    local keys = res[2] "
         "    local to_del = {} "
         "    for _, k in ipairs(keys) do "
-        "        if tag_matches(k, expected_tag) then "
+        "        if tag_matches(k, expected_tag, clear_all) then "
         "            table.insert(to_del, k) "
         "        end "
         "    end "
@@ -344,7 +355,7 @@ private:
         "    local keys = res[2] "
         "    local to_del = {} "
         "    for _, k in ipairs(keys) do "
-        "        if tag_matches(k, expected_tag) then "
+        "        if tag_matches(k, expected_tag, clear_all) then "
         "            table.insert(to_del, k) "
         "        end "
         "    end "
@@ -359,8 +370,6 @@ private:
     std::string sha_set;
     std::string sha_clear_by_tag;
     std::string sha_release_lock;
-    std::string sha_dump;
-    std::string sha_count;
     std::string sha_set_if_valid;
     std::string sha_get_or_lock;
     std::string sha_clear_and_bump;

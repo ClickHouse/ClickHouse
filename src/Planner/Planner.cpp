@@ -2757,8 +2757,42 @@ void Planner::buildPlanForQueryNode()
                                 settings[Setting::query_cache_max_size_in_bytes],
                                 settings[Setting::query_cache_max_entries]));
 
-            auto stream_into_query_result_cache_step = std::make_unique<StreamInQueryResultCacheStep>(query_plan.getRootNode()->step->getOutputHeader(), query_result_cache_writer);
-            query_plan.addStep(std::move(stream_into_query_result_cache_step));
+            /// While constructing the writer we may have waited on a remote `IN_PROGRESS` lock and another
+            /// node (or a concurrent local writer) produced the result meanwhile. Serve it from the cache
+            /// instead of executing the plan we just built - the same handoff `executeQuery` performs for
+            /// top-level queries. Without it, stampede protection would only delay the duplicate work.
+            bool served_from_cache = false;
+            if (query_result_cache_writer->hasEntryAlreadyAvailable() && settings[Setting::enable_reads_from_query_cache])
+            {
+                /// Re-read with a read-path key (it maps to the same cache entry) so that access and
+                /// staleness checks are applied.
+                QueryResultCache::Key read_key(
+                    ast, query_context->getCurrentDatabase(), *settings_copy, query_context->getCurrentQueryId(),
+                    query_context->getUserID(), query_context->getCurrentRoles(), /* is_subquery = */ true);
+                /// This probe is an internal `IN_PROGRESS`-wait fast path, not a user-visible query cache
+                /// lookup, so it must not be counted twice in `ProfileEvents`.
+                QueryResultCacheReader reader = query_result_cache->createReader(read_key);
+                if (reader.hasCacheEntryForKey(/*update_profile_events=*/ false))
+                {
+                    QueryPlan cache_plan;
+                    addReadFromQueryResultCacheStep(cache_plan, reader.getSource(), reader.getSourceTotals(), reader.getSourceExtremes());
+                    /// Replace only the root node instead of the whole plan: the nodes of the discarded
+                    /// subtree stay alive in `query_plan`, so the `query_node_to_plan_step_mapping` entries
+                    /// recorded for nested query nodes keep pointing at valid nodes.
+                    cache_plan.addResources(query_plan.detachResources());
+                    query_plan.replaceNodeWithPlan(query_plan.getRootNode(), std::move(cache_plan));
+                    served_from_cache = true;
+                }
+                /// else: the entry vanished after the wait (e.g. a concurrent `SYSTEM CLEAR QUERY CACHE`) -
+                /// fall through and execute the already-built plan. The writer has `skip_insert` set, so
+                /// no write happens.
+            }
+
+            if (!served_from_cache)
+            {
+                auto stream_into_query_result_cache_step = std::make_unique<StreamInQueryResultCacheStep>(query_plan.getRootNode()->step->getOutputHeader(), query_result_cache_writer);
+                query_plan.addStep(std::move(stream_into_query_result_cache_step));
+            }
         }
     }
 

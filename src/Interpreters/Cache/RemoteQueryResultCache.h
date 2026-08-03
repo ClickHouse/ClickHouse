@@ -105,7 +105,7 @@ private:
 
     /// Poll Redis until the real entry appears or the lock disappears (holder crashed) or timeout.
     /// Returns true if a valid entry was found.
-    bool pollForResult(const Key & key, const std::string & redis_key);
+    bool pollForResult(const Key & key, const std::string & redis_key, const QueryResultCache::WriteContext & write_context);
 
     std::optional<HeldLockInfo> takeHeldLockInfo(const std::string & redis_key);
 
