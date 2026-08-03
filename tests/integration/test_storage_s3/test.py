@@ -880,6 +880,107 @@ def test_s3_enum_glob_should_not_list(started_cluster):
     assert list_request_count == "0\n"
 
 
+# With use_glob_ast_parser = 1 the AST classification reduces S3 ListObjects calls in two
+# ways the legacy parser cannot (https://github.com/ClickHouse/ClickHouse/issues/73333):
+#  * an enum glob combined with a literal brace group elsewhere in the path expands to
+#    exact keys (no LIST at all), while legacy declines any pattern with more than one
+#    brace group;
+#  * for patterns that still list, the prefix is cut at the first actual glob, so a
+#    literal brace group stays inside the prefix and the LIST paginates over far fewer
+#    keys.
+# Only single-char brace bodies such as {0} or {x} are literal; a multi-char body like
+# {42} is a single-alternative enum in both engines.
+def test_glob_ast_parser_reduces_list_requests(started_cluster):
+    bucket = started_cluster.minio_bucket
+    instance = started_cluster.instances["dummy"]  # type: ClickHouseInstance
+    table_format = "column1 UInt32, column2 UInt32, column3 UInt32"
+
+    def run_and_count_lists(query, settings):
+        query_id = f"glob_ast_list_reduction_{uuid.uuid4()}"
+        settings_clause = ", ".join(f"{k}={v}" for k, v in settings.items())
+        result = run_query(
+            instance, f"{query} SETTINGS {settings_clause}", query_id=query_id
+        )
+        instance.query("SYSTEM FLUSH LOGS")
+        list_requests = int(
+            instance.query(
+                f"select ProfileEvents['S3ListObjects'] from system.query_log where query_id = '{query_id}' and type = 'QueryFinish'"
+            )
+        )
+        return result, list_requests
+
+    # Case 1: enum glob + literal brace group. dir_{0} is literal text under the AST
+    # parser, tale_{a,b}.csv is an enum, so the whole pattern expands to two exact keys.
+    for i, name in enumerate(("a", "b")):
+        put_s3_file_content(
+            started_cluster,
+            bucket,
+            "glob_ast_expand/dir_{0}/tale_" + name + ".csv",
+            f"{i},1,1\n".encode(),
+        )
+
+    query = (
+        f"select count(), sum(column1) from s3("
+        f"'http://{started_cluster.minio_redirect_host}:{started_cluster.minio_redirect_port}"
+        f"/{bucket}/glob_ast_expand/dir_{{0}}/tale_{{a,b}}.csv', 'CSV', '{table_format}')"
+    )
+    legacy_result, legacy_lists = run_and_count_lists(query, {"use_glob_ast_parser": 0})
+    ast_result, ast_lists = run_and_count_lists(query, {"use_glob_ast_parser": 1})
+    assert legacy_result.splitlines() == ["2\t1"]
+    assert ast_result.splitlines() == ["2\t1"]
+    # Legacy declines to expand (two brace groups) and lists the prefix; the AST parser
+    # reads both keys directly without a single LIST.
+    assert legacy_lists >= 1
+    assert ast_lists == 0
+
+    # Case 2: literal brace group before a wildcard. Legacy cuts the listing prefix at
+    # the raw '{', so it paginates over every tenant_* key; the AST parser keeps
+    # tenant_{x}/part- in the prefix and needs a single page for the two matching keys.
+    for i in range(2):
+        put_s3_file_content(
+            started_cluster,
+            bucket,
+            "glob_ast_cut/tenant_{x}/part-" + str(i) + ".csv",
+            f"{i},1,1\n".encode(),
+        )
+    for i in range(23):
+        put_s3_file_content(
+            started_cluster,
+            bucket,
+            f"glob_ast_cut/tenant_filler/f_{i:03}.csv",
+            b"0,0,0\n",
+        )
+
+    query = (
+        f"select count(), sum(column1) from s3("
+        f"'http://{started_cluster.minio_redirect_host}:{started_cluster.minio_redirect_port}"
+        f"/{bucket}/glob_ast_cut/tenant_{{x}}/part-*.csv', 'CSV', '{table_format}')"
+    )
+    # use_hive_partitioning is disabled so that getPathSample does not add its own
+    # listing pass on top of the read: the counts below are then exactly the read's.
+    legacy_result, legacy_lists = run_and_count_lists(
+        query,
+        {
+            "use_glob_ast_parser": 0,
+            "s3_list_object_keys_size": 5,
+            "use_hive_partitioning": 0,
+        },
+    )
+    ast_result, ast_lists = run_and_count_lists(
+        query,
+        {
+            "use_glob_ast_parser": 1,
+            "s3_list_object_keys_size": 5,
+            "use_hive_partitioning": 0,
+        },
+    )
+    assert legacy_result.splitlines() == ["2\t1"]
+    assert ast_result.splitlines() == ["2\t1"]
+    # 25 keys under tenant_ at 5 keys per page for legacy vs one page of 2 keys.
+    assert legacy_lists >= 5
+    assert ast_lists == 1
+
+
 # a bit simplified version of scheherazade test
 # checks e.g. `prefix{1,2}/file*.csv`, where there are more than 1000 files under prefix1.
 def test_s3_glob_many_objects_under_selection(started_cluster):
