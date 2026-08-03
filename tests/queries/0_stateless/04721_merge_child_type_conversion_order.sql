@@ -21,6 +21,15 @@ CREATE TABLE m_alias   (`A` UInt64) ENGINE = Merge(currentDatabase(), '^(a_inner
 CREATE TABLE m_ok      (`A` Int64)  ENGINE = Merge(currentDatabase(), '^dist_neg$');
 CREATE TABLE m_ok_u    (`A` UInt64) ENGINE = Merge(currentDatabase(), '^dist_pos$');
 
+-- Controls whose declared type DIFFERS from the child yet preserves order, so they detect
+-- over-refusal. `Merge` derives both shapes itself through `getLeastSupertypeOrVariant` when no
+-- column list is given, so refusing them would slow down ordinary tables that are correct today.
+CREATE TABLE t_i32 (A Int32) ENGINE = MergeTree ORDER BY A;
+INSERT INTO t_i32 SELECT -number FROM numbers(1000);
+CREATE TABLE dist_i32 AS t_i32 ENGINE = Distributed('test_cluster_two_shards_localhost', currentDatabase(), t_i32);
+CREATE TABLE m_widen  (`A` Int64)           ENGINE = Merge(currentDatabase(), '^dist_i32$');
+CREATE TABLE m_nullbl (`A` Nullable(Int64)) ENGINE = Merge(currentDatabase(), '^dist_neg$');
+
 -- DISTINCT drops the per-shard duplication, so the expected sequence does not depend on how
 -- many streams the pipeline happens to use. The sort stays at the top level: a subquery ORDER BY
 -- is not preserved by its parent, which makes any nested form report false failures.
@@ -64,6 +73,14 @@ SELECT count(), min(A), max(A) FROM (SELECT A, count() FROM m_alias GROUP BY A);
 SELECT '-- controls: matching types keep the stage pushed down, so the merge step survives';
 SELECT count() > 0 FROM (EXPLAIN PLAN sorting = 1 SELECT DISTINCT plus(0, A) FROM m_ok ORDER BY ALL ASC) WHERE explain ILIKE '%Merge sorted streams%';
 SELECT count() > 0 FROM (EXPLAIN PLAN sorting = 1 SELECT DISTINCT plus(0, A) FROM m_ok_u ORDER BY ALL ASC) WHERE explain ILIKE '%Merge sorted streams%';
+
+-- Controls with DIFFERING but order-preserving types: these are the ones that detect over-refusal,
+-- and the values must still be right, so a later over-broadening cannot hide behind the plan check.
+SELECT '-- controls: differing but order-preserving types keep the stage too';
+SELECT count() > 0 FROM (EXPLAIN PLAN sorting = 1 SELECT DISTINCT plus(0, A) FROM m_widen ORDER BY ALL ASC) WHERE explain ILIKE '%Merge sorted streams%';
+SELECT count() > 0 FROM (EXPLAIN PLAN sorting = 1 SELECT DISTINCT plus(0, A) FROM m_nullbl ORDER BY ALL ASC) WHERE explain ILIKE '%Merge sorted streams%';
+SELECT DISTINCT A FROM m_widen  ORDER BY A ASC LIMIT 3;
+SELECT DISTINCT A FROM m_nullbl ORDER BY A ASC LIMIT 3;
 
 SELECT '-- a self-referential Merge must not hang';
 CREATE TABLE m_self (`A` UInt64) ENGINE = Merge(currentDatabase(), '^m_self$');

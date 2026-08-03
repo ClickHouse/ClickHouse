@@ -19,6 +19,7 @@
 #include <Core/Settings.h>
 #include <DataTypes/DataTypeEnum.h>
 #include <DataTypes/DataTypeLowCardinality.h>
+#include <DataTypes/DataTypeNullable.h>
 #include <DataTypes/DataTypeString.h>
 #include <DataTypes/DataTypesNumber.h>
 #include <DataTypes/getLeastSupertype.h>
@@ -392,27 +393,48 @@ bool conversionPreservesOrder(const IDataType & from, const IDataType & to)
     if (from.equals(to))
         return true;
 
-    /// An Enum is stored as its underlying number, so widening it to that number keeps the order.
-    /// The reverse is not true: a number has values the Enum cannot represent.
+    const WhichDataType which_to(to);
+
+    /// An `Enum` is stored as its underlying number, so widening it to an `Enum` that agrees on the
+    /// shared names, or to a signed integer at least as wide, keeps the numeric order. Narrowing is
+    /// refused: the target cannot represent every source value.
     if (const auto * from_enum8 = typeid_cast<const DataTypeEnum8 *>(&from))
     {
-        if (const auto * to_enum8 = typeid_cast<const DataTypeEnum8 *>(&to))
-            return to_enum8->contains(*from_enum8);
-        return typeid_cast<const DataTypeInt8 *>(&to) != nullptr;
+        if (const auto * to_enum = dynamic_cast<const IDataTypeEnum *>(&to))
+            return to_enum->contains(*from_enum8);
+        return which_to.isNativeInt();
     }
 
     if (const auto * from_enum16 = typeid_cast<const DataTypeEnum16 *>(&from))
     {
         if (const auto * to_enum16 = typeid_cast<const DataTypeEnum16 *>(&to))
             return to_enum16->contains(*from_enum16);
-        return typeid_cast<const DataTypeInt16 *>(&to) != nullptr;
+        return which_to.isInt16() || which_to.isInt32() || which_to.isInt64();
     }
+
+    /// Widening a native integer keeps the order when the signedness is preserved or the target is
+    /// signed, mirroring `ToNumberMonotonicity`'s expansion branch. An equal width can flip the
+    /// sign bit and a narrowing wraps, so both stay refused.
+    if (WhichDataType(from).isNativeInteger() && which_to.isNativeInteger()
+        && from.getSizeOfValueInMemory() < to.getSizeOfValueInMemory()
+        && (from.isValueRepresentedByUnsignedInteger() == to.isValueRepresentedByUnsignedInteger()
+            || !to.isValueRepresentedByUnsignedInteger()))
+        return true;
 
     if (const auto * from_lc = typeid_cast<const DataTypeLowCardinality *>(&from))
         return from_lc->getDictionaryType()->equals(to);
 
     if (const auto * to_lc = typeid_cast<const DataTypeLowCardinality *>(&to))
         return to_lc->getDictionaryType()->equals(from);
+
+    /// Keeping or adding nullability moves no value: no NULL appears and every non-NULL keeps its
+    /// place, so only the nested pair matters. Removing it falls through, because a nullable value
+    /// then has to become a concrete one and NULL placement changes.
+    if (const auto * to_nullable = typeid_cast<const DataTypeNullable *>(&to))
+    {
+        const auto * from_nullable = typeid_cast<const DataTypeNullable *>(&from);
+        return conversionPreservesOrder(from_nullable ? *from_nullable->getNestedType() : from, *to_nullable->getNestedType());
+    }
 
     return false;
 }
@@ -422,7 +444,7 @@ bool conversionPreservesOrder(const IDataType & from, const IDataType & to)
 QueryProcessingStage::Enum StorageMerge::getQueryProcessingStage(
     ContextPtr local_context,
     QueryProcessingStage::Enum to_stage,
-    const StorageSnapshotPtr &,
+    const StorageSnapshotPtr & storage_snapshot,
     SelectQueryInfo & query_info) const
 {
     /// In case of JOIN or ARRAY JOIN the first stage (which includes JOIN/ARRAY JOIN)
@@ -447,8 +469,9 @@ QueryProcessingStage::Enum StorageMerge::getQueryProcessingStage(
 
     size_t selected_table_size = 0;
     bool any_child_conversion_breaks_order = false;
-    const auto declared_metadata = getInMemoryMetadataPtr(local_context, false);
-    const auto & declared_columns = declared_metadata->getColumns();
+    /// These are the types `convertAndFilterSourceStream` casts every child stream to, because the
+    /// same snapshot builds the common header (see `read`).
+    const auto & declared_columns = storage_snapshot->metadata->getColumns();
 
     for (const auto & iterator : database_table_iterators)
     {
@@ -494,7 +517,7 @@ QueryProcessingStage::Enum StorageMerge::getQueryProcessingStage(
         stage = QueryProcessingStage::WithMergeableState;
 
     /// Gated on the effective stage, not on `to_stage`: a single-node `Distributed` child returns
-    /// Complete even for a FetchColumns request, and that is deliberately kept above.
+    /// `Complete` even for a `FetchColumns` request, and that is deliberately kept above.
     if (stage > QueryProcessingStage::FetchColumns && any_child_conversion_breaks_order)
         return QueryProcessingStage::FetchColumns;
 

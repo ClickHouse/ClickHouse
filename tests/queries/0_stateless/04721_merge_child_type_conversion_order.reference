@@ -59,6 +59,15 @@
 -- controls: matching types keep the stage pushed down, so the merge step survives
 1
 1
+-- controls: differing but order-preserving types keep the stage too
+1
+1
+-999
+-998
+-997
+-999
+-998
+-997
 -- a self-referential Merge must not hang
 0
 -- MergeTree child under read-in-order and aggregation-in-order
