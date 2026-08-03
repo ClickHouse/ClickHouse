@@ -653,7 +653,7 @@ const KeyCondition::AtomMap KeyCondition::atom_map
 
                 /// ClickHouse `match` patterns must not contain NUL bytes.
                 /// Do not attempt to optimize such patterns.
-                if (expression.find('\0') != String::npos)
+                if (expression.contains('\0'))
                     return false;
 
                 String prefix;
@@ -1301,6 +1301,91 @@ static const ActionsDAG::Node * tryRewriteInTruthyCondition(
     return &cloneDAGWithInversionPushDown(*predicate, inverted_dag, inputs_mapping, context, false, /* boolean_context */ true);
 }
 
+static const ActionsDAG::Node * tryRewriteNullIfComparison(
+    const ActionsDAG::Node & node,
+    const String & op_name,
+    ActionsDAG & inverted_dag,
+    std::unordered_map<const ActionsDAG::Node *, const ActionsDAG::Node *> & inputs_mapping,
+    const ContextPtr & context)
+{
+    if (node.children.size() != 2)
+        return nullptr;
+
+    auto mirrored_op = [](std::string_view op) -> std::string_view
+    {
+        if (op == "equals") return "equals";
+        if (op == "notEquals") return "notEquals";
+        if (op == "less") return "greater";
+        if (op == "greater") return "less";
+        if (op == "lessOrEquals") return "greaterOrEquals";
+        if (op == "greaterOrEquals") return "lessOrEquals";
+        return {};
+    };
+
+    const std::string_view mirrored = mirrored_op(op_name);
+    if (mirrored.empty())
+        return nullptr;
+
+    auto is_const = [](const ActionsDAG::Node & n)
+    {
+        return n.column && isColumnConst(*n.column);
+    };
+
+    const bool c0 = is_const(*node.children[0]);
+    const bool c1 = is_const(*node.children[1]);
+    if (c0 == c1)
+        return nullptr;
+
+    const ActionsDAG::Node * nullif_node = node.children[c0 ? 1 : 0];
+    const ActionsDAG::Node * const_node = node.children[c0 ? 0 : 1];
+    const std::string_view canonical_op = c0 ? mirrored : std::string_view{op_name};
+
+    if (nullif_node->type != ActionsDAG::ActionType::FUNCTION)
+        return nullptr;
+
+    const auto & function_name = nullif_node->function_base->getName();
+    if (function_name != "nullIf")
+        return nullptr;
+
+    if (nullif_node->children.size() != 2)
+        return nullptr;
+
+    if (canonical_op != "equals")
+        return nullptr;
+
+    const auto * col_node = nullif_node->children[0];
+    const auto * sentinel_node = nullif_node->children[1];
+
+    if (!is_const(*sentinel_node))
+        return nullptr;
+
+    Field sentinel_field;
+    Field const_field;
+    sentinel_node->column->get(0, sentinel_field);
+    const_node->column->get(0, const_field);
+
+    if (!sentinel_node->result_type->equals(*const_node->result_type) || !col_node->result_type->equals(*const_node->result_type) || sentinel_field == const_field)
+        return nullptr;
+
+    auto function_builder = FunctionFactory::instance().get(String(canonical_op), context);
+    if (!function_builder)
+        return nullptr;
+
+    const auto & cloned_col = cloneDAGWithInversionPushDown(*col_node, inverted_dag, inputs_mapping, context, false, false);
+    const auto & cloned_const = cloneDAGWithInversionPushDown(*const_node, inverted_dag, inputs_mapping, context, false, false);
+
+    ActionsDAG::NodeRawConstPtrs args = {&cloned_col, &cloned_const};
+    const auto & cmp_node = inverted_dag.addFunction(function_builder, args, "");
+    /// Normalize the generated comparison through tryRewriteCoalesceComparison so that
+    /// the template KeyCondition and each skip-index KeyCondition produce the same RPN atoms.
+    /// Without this, nullIf(coalesce(a, b), sentinel) = const can expand coalesce differently
+    /// across passes, causing filterMarksUsingIndex to misalign atom positions and drop granules.
+    const String cmp_name(canonical_op);
+    if (const auto * rewritten = tryRewriteCoalesceComparison(cmp_node, cmp_name, inverted_dag, inputs_mapping, context))
+        return rewritten;
+    return &cmp_node;
+}
+
 static const ActionsDAG::Node & cloneDAGWithInversionPushDown(
     const ActionsDAG::Node & node,
     ActionsDAG & inverted_dag,
@@ -1314,7 +1399,7 @@ static const ActionsDAG::Node & cloneDAGWithInversionPushDown(
 
     switch (node.type)
     {
-        case (ActionsDAG::ActionType::INPUT):
+        case ActionsDAG::ActionType::INPUT:
         {
             auto & input = inputs_mapping[&node];
             if (input == nullptr)
@@ -1324,7 +1409,7 @@ static const ActionsDAG::Node & cloneDAGWithInversionPushDown(
             res = input;
             break;
         }
-        case (ActionsDAG::ActionType::COLUMN):
+        case ActionsDAG::ActionType::COLUMN:
         {
             String name;
             if (node.column && node.column->getDataType() != TypeIndex::Function)
@@ -1341,20 +1426,20 @@ static const ActionsDAG::Node & cloneDAGWithInversionPushDown(
             res = &inverted_dag.addColumn(node.column, node.result_type, name);
             break;
         }
-        case (ActionsDAG::ActionType::ALIAS):
+        case ActionsDAG::ActionType::ALIAS:
         {
             /// Ignore aliases
             res = &cloneDAGWithInversionPushDown(*node.children.front(), inverted_dag, inputs_mapping, context, need_inversion, boolean_context);
             handled_inversion = true;
             break;
         }
-        case (ActionsDAG::ActionType::ARRAY_JOIN):
+        case ActionsDAG::ActionType::ARRAY_JOIN:
         {
             const auto & arg = cloneDAGWithInversionPushDown(*node.children.front(), inverted_dag, inputs_mapping, context, false, /* boolean_context */ false);
             res = &inverted_dag.addArrayJoin(arg, {});
             break;
         }
-        case (ActionsDAG::ActionType::FUNCTION):
+        case ActionsDAG::ActionType::FUNCTION:
         {
             auto name = node.function_base->getName();
             if (name == "not")
@@ -1430,7 +1515,8 @@ static const ActionsDAG::Node & cloneDAGWithInversionPushDown(
                 && boolean_context
                 && context->getSettingsRef()[Setting::allow_key_condition_coalesce_rewrite]
                 && ((res = tryRewriteCoalesceComparison(node, name, inverted_dag, inputs_mapping, context)) != nullptr
-                    || (res = tryRewriteCoalesceCondition(node, name, inverted_dag, inputs_mapping, context)) != nullptr))
+                    || (res = tryRewriteCoalesceCondition(node, name, inverted_dag, inputs_mapping, context)) != nullptr
+                    || (res = tryRewriteNullIfComparison(node, name, inverted_dag, inputs_mapping, context)) != nullptr))
             {
                 handled_inversion = true;
             }
@@ -3797,22 +3883,47 @@ bool KeyCondition::extractAtomFromTree(const RPNBuilderTreeNode & node, const Bu
 
             const auto atom_it = atom_map.find(func_name);
 
-            /// Analyze (x, y)
+            /// Analyze the point argument. It is either a `tuple` function of two key columns,
+            /// as in pointInPolygon((x, y), ...), or a single key column of type `Point`
+            /// (or another Tuple of two numeric elements), as in pointInPolygon(coord, ...).
 
-            /// TODO: support index analysis for first argument of Point/Tuple type.
-            if (!func.getArgumentAt(0).isFunction())
-                return false;
-
-            auto first_argument = func.getArgumentAt(0).toFunctionNode();
-            if (first_argument.getArgumentsSize() != 2 || first_argument.getFunctionName() != "tuple")
-                return false;
-
-            for (size_t i = 0; i < 2; ++i)
+            auto point_argument = func.getArgumentAt(0);
+            if (point_argument.isFunction()
+                && point_argument.toFunctionNode().getFunctionName() == "tuple"
+                && point_argument.toFunctionNode().getArgumentsSize() == 2)
             {
-                auto name = first_argument.getArgumentAt(i).getColumnName();
+                auto first_argument = point_argument.toFunctionNode();
+                for (size_t i = 0; i < 2; ++i)
+                {
+                    auto name = first_argument.getArgumentAt(i).getColumnName();
+                    auto it = key_columns.find(name);
+                    if (it == key_columns.end())
+                    {
+                        out.key_columns.clear();
+                        break;
+                    }
+                    out.key_columns.push_back(it->second);
+                }
+            }
+
+            if (out.key_columns.empty())
+            {
+                /// A whole key column (or key expression) of type Tuple of two coordinates,
+                /// e.g. a `Point` column. Tuple values are ordered lexicographically, so the range
+                /// of such key column constrains the coordinates of the point - see the evaluation
+                /// in `checkInHyperrectangle`.
+                auto name = point_argument.getColumnName();
                 auto it = key_columns.find(name);
                 if (it == key_columns.end())
                     return false;
+
+                const auto * tuple_type = typeid_cast<const DataTypeTuple *>(
+                    info.key_expr->getSampleBlock().getByName(name).type.get());
+                if (!tuple_type || tuple_type->getElements().size() != 2
+                    || !isNativeNumber(tuple_type->getElements()[0])
+                    || !isNativeNumber(tuple_type->getElements()[1]))
+                    return false;
+
                 out.key_columns.push_back(it->second);
             }
             out.point_in_polygon_function_name = func_name;
@@ -5309,8 +5420,11 @@ bool KeyCondition::matchesExactContinuousRange() const
                 Constraint & constraint = column_constraints.at(mapping.key_index);
                 /// For Constraint::POINT, we need to check if the function chain is strict.
                 /// For example, `toDate(event_time) in ('2025-06-03')` means a range of `event_time`: ['2025-06-03 00:00:00','2025-06-04 00:00:00')
-                /// So, POINT needs to be converted to a RANGE
-                if (is_chain_strict)
+                /// So, POINT needs to be converted to a RANGE.
+                /// Only an empty chain yields an exact point. A non-empty chain (e.g. a widening CAST for
+                /// a wider-typed constant) is applied to granule bounds with forced-closed bounds, so it
+                /// cannot promise exact continuity across a boundary granule; treat it as a RANGE (#90461).
+                if (is_chain_strict && mapping.functions.empty())
                     constraint = Constraint::POINT;
                 else
                 {
@@ -5334,8 +5448,11 @@ bool KeyCondition::matchesExactContinuousRange() const
             {
                 /// For Constraint::POINT, we need to check if the function chain is strict.
                 /// For example, `toDate(event_time) = '2025-06-03'` means a range of `event_time`: ['2025-06-03 00:00:00','2025-06-04 00:00:00')
-                /// So, POINT needs to be converted to a RANGE
-                if (is_chain_strict)
+                /// So, POINT needs to be converted to a RANGE.
+                /// Only an empty chain yields an exact point. A non-empty chain (e.g. a widening CAST for
+                /// a wider-typed constant) is applied to granule bounds with forced-closed bounds, so it
+                /// cannot promise exact continuity across a boundary granule; treat it as a RANGE (#90461).
+                if (is_chain_strict && element.monotonic_functions_chain.empty())
                     constraint = Constraint::POINT;
             }
 
@@ -5614,6 +5731,42 @@ Ranges KeyCondition::extractBounds() const
     return std::move(bounds.ranges);
 }
 
+/// `FieldVisitorConvertToNumber` cannot handle if `Field` is `Null`
+/// (an unbounded side of a `Range` is represented by a null-like Field), so map it to infinity.
+static Float64 coordinateBoundToFloat64(const Field & field, bool is_left_bound)
+{
+    if (field.isNull())
+        return is_left_bound ? -std::numeric_limits<Float64>::infinity() : std::numeric_limits<Float64>::infinity();
+
+    return applyVisitor(FieldVisitorConvertToNumber<Float64>(), field);
+}
+
+/// For pointInPolygon over a single key column of type Tuple of two coordinates (e.g. `Point`):
+/// derive the bounding box of the coordinates from the range of tuple values. Tuples are ordered
+/// lexicographically: the range [(x1, y1), (x2, y2)] constrains the first coordinate to [x1, x2]
+/// and constrains the second coordinate only if the first coordinate is fixed (x1 = x2).
+static void tupleRangeToBoundingBox(const Range & tuple_range, Float64 & x_min, Float64 & x_max, Float64 & y_min, Float64 & y_max)
+{
+    x_min = -std::numeric_limits<Float64>::infinity();
+    x_max = std::numeric_limits<Float64>::infinity();
+    y_min = -std::numeric_limits<Float64>::infinity();
+    y_max = std::numeric_limits<Float64>::infinity();
+
+    const Tuple * left = tuple_range.left.getType() == Field::Types::Tuple ? &tuple_range.left.safeGet<Tuple>() : nullptr;
+    const Tuple * right = tuple_range.right.getType() == Field::Types::Tuple ? &tuple_range.right.safeGet<Tuple>() : nullptr;
+
+    if (left && !left->empty())
+        x_min = coordinateBoundToFloat64((*left)[0], /*is_left_bound*/ true);
+    if (right && !right->empty())
+        x_max = coordinateBoundToFloat64((*right)[0], /*is_left_bound*/ false);
+
+    if (left && right && left->size() == 2 && right->size() == 2 && (*left)[0] == (*right)[0])
+    {
+        y_min = coordinateBoundToFloat64((*left)[1], /*is_left_bound*/ true);
+        y_max = coordinateBoundToFloat64((*right)[1], /*is_left_bound*/ false);
+    }
+}
+
 BoolMask KeyCondition::checkInHyperrectangle(
     const Hyperrectangle & hyperrectangle,
     const DataTypes & data_types,
@@ -5850,30 +6003,38 @@ BoolMask KeyCondition::checkInHyperrectangle(
               *   Check whether there is any intersection of the 2 polygons. If true return {true, true}, else return {false, true}.
               */
 
-            /// `FieldVisitorConvertToNumber` cannot handle if `Field` is `Null`. So we need to separately handle `Null` case here.
-            auto convert_to_float64 = [](const FieldRef & ref, bool is_left_bound) -> Float64
+            Float64 x_min = std::numeric_limits<Float64>::quiet_NaN();
+            Float64 x_max = std::numeric_limits<Float64>::quiet_NaN();
+            Float64 y_min = std::numeric_limits<Float64>::quiet_NaN();
+            Float64 y_max = std::numeric_limits<Float64>::quiet_NaN();
+
+            if (element.key_columns.size() == 1)
             {
-                if (ref.isNull())
+                /// The point is a whole key column of type Tuple of two coordinates (e.g. `Point`).
+                if (element.key_columns[0] >= hyperrectangle.size())
                 {
-                    return is_left_bound ? -std::numeric_limits<Float64>::infinity() : std::numeric_limits<Float64>::infinity();
+                    rpn_stack.emplace_back(true, true);
+                    continue;
                 }
 
-                return applyVisitor(FieldVisitorConvertToNumber<Float64>(), static_cast<const Field &>(ref));
-            };
-
-            if (element.key_columns[0] >= hyperrectangle.size() || element.key_columns[1] >= hyperrectangle.size())
-            {
-                rpn_stack.emplace_back(true, true);
-                continue;
+                tupleRangeToBoundingBox(hyperrectangle[element.key_columns[0]], x_min, x_max, y_min, y_max);
             }
+            else
+            {
+                if (element.key_columns[0] >= hyperrectangle.size() || element.key_columns[1] >= hyperrectangle.size())
+                {
+                    rpn_stack.emplace_back(true, true);
+                    continue;
+                }
 
-            const auto & range_x = hyperrectangle[element.key_columns[0]];
-            const auto & range_y = hyperrectangle[element.key_columns[1]];
+                const auto & range_x = hyperrectangle[element.key_columns[0]];
+                const auto & range_y = hyperrectangle[element.key_columns[1]];
 
-            Float64 x_min = convert_to_float64(range_x.left, /*is_left_bound*/ true);
-            Float64 x_max = convert_to_float64(range_x.right, /*is_left_bound*/ false);
-            Float64 y_min = convert_to_float64(range_y.left, /*is_left_bound*/ true);
-            Float64 y_max = convert_to_float64(range_y.right, /*is_left_bound*/ false);
+                x_min = coordinateBoundToFloat64(range_x.left, /*is_left_bound*/ true);
+                x_max = coordinateBoundToFloat64(range_x.right, /*is_left_bound*/ false);
+                y_min = coordinateBoundToFloat64(range_y.left, /*is_left_bound*/ true);
+                y_max = coordinateBoundToFloat64(range_y.right, /*is_left_bound*/ false);
+            }
 
             if (unlikely(std::isnan(x_min) || std::isnan(x_max) || std::isnan(y_min) || std::isnan(y_max)))
             {
@@ -6310,59 +6471,62 @@ BoolMask KeyCondition::checkInHyperrectangle(
               *   Check whether there is any intersection of the 2 polygons. If true return {true, true}, else return {false, true}.
               */
 
-            if (element.key_columns.size() != 2)
-                throw Exception(ErrorCodes::LOGICAL_ERROR, "Point-in-polygon requires 2 key columns.");
-
-            size_t x_key_column = element.key_columns[0];
-            size_t y_key_column = element.key_columns[1];
-
-            auto [is_x_key_col_present, x_sparse_pos] = get_sparse_info(x_key_column);
-            auto [is_y_key_col_present, y_sparse_pos] = get_sparse_info(y_key_column);
-
-            if (!is_x_key_col_present && !is_y_key_col_present)
-            {
-                /// Neither coordinate is available — nothing to prune on.
-                rpn_stack.emplace_back(true, true);
-                continue;
-            }
-
-            /// `FieldVisitorConvertToNumber` cannot handle if `Field` is `Null`. So we need to separately handle `Null` case here.
-            auto convert_to_float64 = [](const FieldRef & ref, bool is_left_bound) -> Float64
-            {
-                if (ref.isNull())
-                {
-                    return is_left_bound ? -std::numeric_limits<Float64>::infinity() : std::numeric_limits<Float64>::infinity();
-                }
-
-                return applyVisitor(FieldVisitorConvertToNumber<Float64>(), static_cast<const Field &>(ref));
-            };
-
-            /// For missing coordinates, assume (-inf, +inf) — we can still prune on the available coordinate.
             Float64 x_min = std::numeric_limits<Float64>::quiet_NaN();
             Float64 x_max = std::numeric_limits<Float64>::quiet_NaN();
             Float64 y_min = std::numeric_limits<Float64>::quiet_NaN();
             Float64 y_max = std::numeric_limits<Float64>::quiet_NaN();
-            if (is_x_key_col_present)
+
+            if (element.key_columns.size() == 1)
             {
-                const auto & range_x = sparse_hyperrectangle[x_sparse_pos];
-                x_min = convert_to_float64(range_x.left, /*is_left_bound*/ true);
-                x_max = convert_to_float64(range_x.right, /*is_left_bound*/ false);
+                /// The point is a whole key column of type Tuple of two coordinates (e.g. `Point`).
+                auto [is_key_col_present, sparse_pos] = get_sparse_info(element.key_columns[0]);
+
+                if (!is_key_col_present)
+                {
+                    rpn_stack.emplace_back(true, true);
+                    continue;
+                }
+
+                tupleRangeToBoundingBox(sparse_hyperrectangle[sparse_pos], x_min, x_max, y_min, y_max);
             }
             else
             {
-                x_min = -std::numeric_limits<Float64>::infinity();
-                x_max = std::numeric_limits<Float64>::infinity();
-            }
-            if (is_y_key_col_present)
-            {
-                const auto & range_y = sparse_hyperrectangle[y_sparse_pos];
-                y_min = convert_to_float64(range_y.left, /*is_left_bound*/ true);
-                y_max = convert_to_float64(range_y.right, /*is_left_bound*/ false);
-            }
-            else
-            {
-                y_min = -std::numeric_limits<Float64>::infinity();
-                y_max = std::numeric_limits<Float64>::infinity();
+                size_t x_key_column = element.key_columns[0];
+                size_t y_key_column = element.key_columns[1];
+
+                auto [is_x_key_col_present, x_sparse_pos] = get_sparse_info(x_key_column);
+                auto [is_y_key_col_present, y_sparse_pos] = get_sparse_info(y_key_column);
+
+                if (!is_x_key_col_present && !is_y_key_col_present)
+                {
+                    /// Neither coordinate is available — nothing to prune on.
+                    rpn_stack.emplace_back(true, true);
+                    continue;
+                }
+
+                /// For missing coordinates, assume (-inf, +inf) — we can still prune on the available coordinate.
+                if (is_x_key_col_present)
+                {
+                    const auto & range_x = sparse_hyperrectangle[x_sparse_pos];
+                    x_min = coordinateBoundToFloat64(range_x.left, /*is_left_bound*/ true);
+                    x_max = coordinateBoundToFloat64(range_x.right, /*is_left_bound*/ false);
+                }
+                else
+                {
+                    x_min = -std::numeric_limits<Float64>::infinity();
+                    x_max = std::numeric_limits<Float64>::infinity();
+                }
+                if (is_y_key_col_present)
+                {
+                    const auto & range_y = sparse_hyperrectangle[y_sparse_pos];
+                    y_min = coordinateBoundToFloat64(range_y.left, /*is_left_bound*/ true);
+                    y_max = coordinateBoundToFloat64(range_y.right, /*is_left_bound*/ false);
+                }
+                else
+                {
+                    y_min = -std::numeric_limits<Float64>::infinity();
+                    y_max = std::numeric_limits<Float64>::infinity();
+                }
             }
 
             if (unlikely(std::isnan(x_min) || std::isnan(x_max) || std::isnan(y_min) || std::isnan(y_max)))

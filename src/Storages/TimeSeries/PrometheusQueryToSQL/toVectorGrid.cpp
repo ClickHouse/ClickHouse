@@ -55,10 +55,10 @@ SQLQueryPiece toVectorGrid(SQLQueryPiece && query_piece, ConverterContext & cont
         case StoreMethod::SINGLE_SCALAR:
         {
             /// For const scalar:
-            /// SELECT 0 AS group, arrayResize([], <count_of_time_steps>, <scalar_value>) AS values
+            /// SELECT CAST(0, 'UInt64') AS group, arrayResize([], <count_of_time_steps>, <scalar_value>) AS values
             ///
             /// For single scalar:
-            /// SELECT 0 AS group, arrayResize([], <count_of_time_steps>, value) AS values FROM <subquery>
+            /// SELECT CAST(0, 'UInt64') AS group, arrayResize([], <count_of_time_steps>, value) AS values FROM <subquery>
             SelectQueryBuilder builder;
 
             builder.select_list.push_back(makeASTFunction("CAST", make_intrusive<ASTLiteral>(0u), make_intrusive<ASTLiteral>("UInt64")));
@@ -92,7 +92,7 @@ SQLQueryPiece toVectorGrid(SQLQueryPiece && query_piece, ConverterContext & cont
 
         case StoreMethod::SCALAR_GRID:
         {
-            /// SELECT 0 AS group, values
+            /// SELECT CAST(0, 'UInt64') AS group, values
             /// FROM <scalar_grid>
             SelectQueryBuilder builder;
 
