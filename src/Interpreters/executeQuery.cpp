@@ -3251,9 +3251,6 @@ void executeQuery(
             output_format->finalize();
 
             framing->finalize();
-
-            if (query_finish_callback)
-                query_finish_callback();
         }
         catch (...)
         {
@@ -3269,6 +3266,18 @@ void executeQuery(
                 handle_exception_in_output_format(*output_format, format_name, context, output_format_settings);
             throw;
         }
+
+        /// The response stream is closed outside of the recovery block above: on HTTP this callback is
+        /// `HTTPHandler::Output::finalize`, which starts pushing the delayed results, finalizing the
+        /// compression, and closing the socket. Once that started, the framed stream is no longer safely
+        /// re-framable - a failure in the middle of it has already put some (or all) of the success
+        /// stream on the wire, and routing it back through `handle_exception_in_output_format` would
+        /// append a second framed response (a fresh `exception` packet stream) after a partial success
+        /// response, which is worse than a truncated one. This is the same fail-close rule as for a
+        /// half-written packet (see `IFramingFormat`): the client observes a truncated response and an
+        /// aborted connection instead of a well-formed terminal packet.
+        if (query_finish_callback)
+            query_finish_callback();
     }
     else
     {
