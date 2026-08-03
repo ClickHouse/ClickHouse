@@ -6360,8 +6360,31 @@ std::unordered_set<std::string> QueryAnalyzer::collectMatcherProducedColumnNames
         return produced_names;
     }
 
-    /// Unqualified matcher (`*` / COLUMNS): expand every join-tree table expression, applying the
-    /// same column-kind filter storage nodes use (resolveUnqualifiedMatcher per-table branch).
+    /// Unqualified `COLUMNS(a, b)`: the produced name is NOT the identifier written inside the
+    /// matcher, it is the name of the column that identifier resolves to
+    /// (`resolveUnqualifiedMatcher` COLUMNS_LIST branch). For `COLUMNS(alias)` over `c AS alias`
+    /// the matcher produces `c`, which `isMatchingColumn` (matching against the raw join-tree
+    /// names) never reports, so this needs the same explicit-identifier resolution and must be
+    /// handled before the join-tree walk below.
+    if (matcher_node_typed.getMatcherType() == MatcherNodeType::COLUMNS_LIST)
+    {
+        for (const auto & identifier : matcher_node_typed.getColumnsIdentifiers())
+        {
+            /// An unresolvable identifier, or one that does not resolve into a column, makes full
+            /// matcher resolution throw later; collect nothing for it rather than throwing here.
+            auto resolve_result = tryResolveIdentifier(IdentifierLookup{identifier, IdentifierLookupContext::EXPRESSION}, scope);
+            if (!resolve_result.isResolved())
+                continue;
+
+            if (const auto * resolved_column = resolve_result.resolved_identifier->as<ColumnNode>())
+                produced_names.insert(resolved_column->getColumnName());
+        }
+        return produced_names;
+    }
+
+    /// Unqualified matcher (`*` / `COLUMNS('regexp')`): expand every join-tree table expression,
+    /// applying the same column-kind filter storage nodes use (resolveUnqualifiedMatcher
+    /// per-table branch).
     auto * nearest_query_scope = scope.getNearestQueryScope();
     auto * nearest_query_node = nearest_query_scope ? nearest_query_scope->scope_node->as<QueryNode>() : nullptr;
     if (!nearest_query_node || !nearest_query_node->getJoinTreeNode())
