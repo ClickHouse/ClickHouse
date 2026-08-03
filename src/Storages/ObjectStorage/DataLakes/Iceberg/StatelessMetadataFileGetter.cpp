@@ -221,12 +221,7 @@ ManifestFileCacheKeys getManifestList(
                     manifest_list_deserializer.getValueFromRowByName(i, f_content, TypeIndex::Int32).safeGet<Int32>());
             }
             manifest_file_cache_keys.emplace_back(
-<<<<<<< HEAD
-                manifest_file_name, manifest_length, added_sequence_number, added_snapshot_id.safeGet<Int64>(), content_type);
-=======
-                manifest_file_name, static_cast<size_t>(manifest_length), added_sequence_number, added_snapshot_id.safeGet<Int64>(), content_type,
-                partition_spec_id);
->>>>>>> 6d5ab5522ba (Iceberg: support external paths in tables)
+                manifest_file_name, static_cast<size_t>(manifest_length), added_sequence_number, added_snapshot_id.safeGet<Int64>(), content_type);
 
             insertRowToLogTable(
                 local_context,

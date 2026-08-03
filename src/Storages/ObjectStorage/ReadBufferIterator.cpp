@@ -77,18 +77,8 @@ std::optional<ColumnsDescription> ReadBufferIterator::tryGetColumnsFromCache(
             const auto & path = object_info->isArchive() ? object_info->getPathToArchive() : object_info->getPath();
             if (!object_info->getObjectMetadata())
             {
-<<<<<<< HEAD
-                auto meta = object_storage->tryGetObjectMetadata(path, /*with_tags=*/ false);
-=======
-                /// Probe through the `RelativePathWithMetadata` overload (mirroring `createReader`) so that
-                /// `read_source_index` is preserved. For web URL shards the same archive path can be served
-                /// from different URL options, and the schema-cache key includes that shard identity; the
-                /// plain string overload would drop it and could validate one shard using another's metadata.
-                auto metadata_object = object_info->relative_path_with_metadata;
-                metadata_object.relative_path = path;
                 auto storage_to_use = getResolvedStorageFromObjectInfo(object_info, object_storage);
-                auto meta = storage_to_use->tryGetObjectMetadata(metadata_object, /*with_tags=*/ false);
->>>>>>> 6d5ab5522ba (Iceberg: support external paths in tables)
+                auto meta = storage_to_use->tryGetObjectMetadata(path, /*with_tags=*/ false);
                 if (meta)
                     object_info->setObjectMetadata(*meta);
             }

@@ -492,13 +492,13 @@ static bool writeMetadataFiles(
                 DBMS_DEFAULT_BUFFER_SIZE,
                 context->getWriteSettings());
 
-<<<<<<< HEAD
             try
             {
                 generateManifestList(
                     path_resolver,
                     metadata,
                     object_storage,
+                    secondary_storages,
                     context,
                     manifest_entries,
                     new_snapshot,
@@ -512,23 +512,6 @@ static bool writeMetadataFiles(
                 cleanup();
                 throw;
             }
-=======
-            chassert(!per_entry_content_types.empty());
-            generateManifestList(
-                path_resolver,
-                metadata,
-                object_storage,
-                secondary_storages,
-                context,
-                manifest_entries,
-                new_snapshot,
-                manifest_entry_sizes,
-                *buffer_manifest_list,
-                /* content_type */ Iceberg::FileContentType::POSITION_DELETE,
-                /* use_previous_snapshots */ true,
-                per_entry_content_types);
-            buffer_manifest_list->finalize();
->>>>>>> 6d5ab5522ba (Iceberg: support external paths in tables)
         }
 
         if (write_metadata_json_file)
@@ -680,6 +663,7 @@ void mutate(
             auto result_delete_files_metadata = writeMetadataFiles(
                 mutation_files->delete_file,
                 object_storage,
+                secondary_storages,
                 context,
                 filename_generator,
                 persistent_table_components.path_resolver,

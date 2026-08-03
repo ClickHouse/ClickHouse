@@ -2,13 +2,7 @@
 
 #include <Interpreters/Context_fwd.h>
 #include "config.h"
-<<<<<<< HEAD
-
-#if USE_AVRO
-
-=======
 #include <optional>
->>>>>>> 6d5ab5522ba (Iceberg: support external paths in tables)
 #include <string>
 #include <Storages/ObjectStorage/DataLakes/Iceberg/FileNamesGenerator.h>
 #include <Storages/ObjectStorage/DataLakes/Iceberg/PersistentTableComponents.h>

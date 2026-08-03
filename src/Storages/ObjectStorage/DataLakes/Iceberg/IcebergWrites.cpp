@@ -1045,17 +1045,7 @@ bool IcebergStorageSink::initializeMetadata()
             try
             {
                 generateManifestList(
-<<<<<<< HEAD
-                    persistent_table_components.path_resolver, metadata, object_storage, context, manifest_entries, new_snapshot, manifest_entry_sizes, *buffer_manifest_list, Iceberg::FileContentType::DATA,
-=======
-                    persistent_table_components.path_resolver,
-                    metadata, object_storage, *secondary_storages, context,
-                    manifest_entries,
-                    new_snapshot,
-                    manifest_entry_sizes,
-                    *buffer_manifest_list,
-                    Iceberg::FileContentType::DATA,
->>>>>>> 6d5ab5522ba (Iceberg: support external paths in tables)
+                    persistent_table_components.path_resolver, metadata, object_storage, *secondary_storages, context, manifest_entries, new_snapshot, manifest_entry_sizes, *buffer_manifest_list, Iceberg::FileContentType::DATA,
                     /* use_previous_snapshots = */ true);
                 buffer_manifest_list->finalize();
             }

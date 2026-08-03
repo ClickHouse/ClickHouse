@@ -84,113 +84,6 @@ namespace CurrentMetrics
 
 namespace DB
 {
-<<<<<<< HEAD
-=======
-namespace ErrorCodes
-{
-    extern const int CANNOT_COMPILE_REGEXP;
-    extern const int BAD_ARGUMENTS;
-    extern const int CANNOT_UNPACK_ARCHIVE;
-    extern const int LOGICAL_ERROR;
-    extern const int FILE_DOESNT_EXIST;
-}
-
-namespace
-{
-    Map objectAttributesToMap(const ObjectAttributes & attributes)
-    {
-        Map result;
-        for (const auto & [key, value] : attributes)
-        {
-            Tuple element;
-            element.emplace_back(key);
-            element.emplace_back(value);
-            result.emplace_back(std::move(element));
-        }
-        return result;
-    }
-
-    /// Compose the Query Condition Cache key (`part_name`) for an object, or return nullopt when the
-    /// object cannot be safely cached and caching must be skipped (fail-close).
-    ///
-    /// The object identifier already uses the full path, so files that share a base name in
-    /// different directories do not collide. For general (non-data-lake) remote objects the path
-    /// alone is not a stable identity - an object can be overwritten in place under the same path -
-    /// so the ETag is folded in as a content-version token; a query after an overwrite then misses
-    /// rather than reusing stale row-group information. If the ETag is unavailable we skip the cache
-    /// instead of risking a stale hit. Data-lake data files are immutable, so the path is a stable
-    /// identity on its own and no ETag is required (this also avoids disabling the cache for data
-    /// lakes whose object metadata does not carry an ETag).
-    std::optional<String> makeQueryConditionCacheKey(const ObjectInfo & object_info, bool is_data_lake)
-    {
-        String identifier = object_info.getIdentifier(/*include_file_bucket_info=*/false);
-        if (is_data_lake)
-        {
-#if USE_AVRO
-            /// An Iceberg data file may live outside the table location, so the key inside the
-            /// resolved storage is not unique: `s3://bucket_a/data/p.parquet` and
-            /// `s3://bucket_b/data/p.parquet` both resolve to the key `data/p.parquet`. Use the
-            /// metadata path (an absolute URI, unique across storages) as the cache identity.
-            if (const auto * iceberg_info = dynamic_cast<const IcebergDataObjectInfo *>(&object_info))
-                if (auto metadata_path = iceberg_info->getMetadataPath())
-                    return object_info.getIdentifierForPath(*metadata_path, /*include_file_bucket_info=*/false);
-#endif
-            return identifier;
-        }
-        const auto & metadata = object_info.getObjectMetadata();
-        if (!metadata || metadata->etag.empty())
-            return std::nullopt;
-        return QueryConditionCache::makeFilePartName(identifier, metadata->etag);
-    }
-
-    std::optional<Map> tryGetHeadersFromReadBuffer(const ReadBuffer * read_buffer)
-    {
-        const auto * metadata_provider = dynamic_cast<const IReadBufferMetadataProvider *>(read_buffer);
-        if (!metadata_provider)
-            return std::nullopt;
-
-        auto headers = metadata_provider->getMetadata("headers");
-        if (!headers.has_value())
-            return std::nullopt;
-
-        return headers->safeGet<Map>();
-    }
-
-    String getPathComponentForGlobMatching(const String & path)
-    {
-        const auto position = path.find_first_of("?#");
-        if (position == String::npos)
-            return path;
-        return path.substr(0, position);
-    }
-
-    String getPageCachePathForObjectStorage(const RelativePathWithMetadata & object_info, const ObjectStoragePtr & object_storage)
-    {
-        if (object_storage->getType() != ObjectStorageType::Web)
-            return "s3:" + object_info.getPath();
-
-        if (!object_info.read_source_index)
-            return "web:" + object_info.getPath();
-
-        const auto & web_object_storage = assert_cast<const WebObjectStorage &>(*object_storage);
-        const auto & url_shards = web_object_storage.getURLShards();
-        if (*object_info.read_source_index >= url_shards.size())
-            throw Exception(ErrorCodes::BAD_ARGUMENTS, "Invalid URL shard index: {}", *object_info.read_source_index);
-
-        SipHash hash;
-        for (const auto & url : url_shards[*object_info.read_source_index])
-        {
-            hash.update(url.base_url);
-            hash.update('\0');
-            hash.update(url.query_fragment);
-            hash.update('\0');
-        }
-
-        return fmt::format("web:{}:{}", toString(hash.get128()), object_info.getPath());
-    }
-}
-
->>>>>>> 6d5ab5522ba (Iceberg: support external paths in tables)
 namespace Setting
 {
     extern const SettingsUInt64 max_download_buffer_size;
@@ -813,24 +706,14 @@ StorageObjectStorageSource::ReaderHolder StorageObjectStorageSource::createReade
 
             if (query_settings.ignore_non_existent_file)
             {
-<<<<<<< HEAD
-                auto metadata = object_storage->tryGetObjectMetadata(path, with_tags);
-=======
-                auto metadata = storage_to_use->tryGetObjectMetadata(metadata_object, with_tags);
->>>>>>> 6d5ab5522ba (Iceberg: support external paths in tables)
+                auto metadata = storage_to_use->tryGetObjectMetadata(path, with_tags);
                 if (!metadata)
                     return {};
 
                 object_info->setObjectMetadata(metadata.value());
             }
             else
-<<<<<<< HEAD
-                object_info->setObjectMetadata(object_storage->getObjectMetadata(path, with_tags));
-=======
-            {
-                object_info->setObjectMetadata(storage_to_use->getObjectMetadata(metadata_object, with_tags));
-            }
->>>>>>> 6d5ab5522ba (Iceberg: support external paths in tables)
+                object_info->setObjectMetadata(storage_to_use->getObjectMetadata(path, with_tags));
         }
 
         if (query_settings.skip_empty_files && object_info->getObjectMetadata()->size_bytes == 0
@@ -939,17 +822,11 @@ StorageObjectStorageSource::ReaderHolder StorageObjectStorageSource::createReade
         {
             ProfileEvents::increment(ProfileEvents::ObjectStorageReadObjects);
             compression_method = chooseCompressionMethod(object_info->getFileName(), configuration->compression_method);
-<<<<<<< HEAD
-            read_buf = createReadBuffer(object_info->relative_path_with_metadata, object_storage, context_, log);
-=======
             read_buf = createReadBuffer(
                 object_info->relative_path_with_metadata,
                 getResolvedStorageFromObjectInfo(object_info, object_storage),
                 context_,
-                log,
-                std::nullopt,
-                !headers_requested);
->>>>>>> 6d5ab5522ba (Iceberg: support external paths in tables)
+                log);
         }
 
         Block initial_header = read_from_format_info.format_header;
@@ -1767,8 +1644,6 @@ StorageObjectStorageSource::ReadTaskIterator::ReadTaskIterator(
     }
 }
 
-<<<<<<< HEAD
-=======
 void StorageObjectStorageSource::ReadTaskIterator::resolveIcebergObjectStorageIfNeeded([[maybe_unused]] const ObjectInfoPtr & object)
 {
 #if USE_AVRO
@@ -1793,19 +1668,6 @@ void StorageObjectStorageSource::ReadTaskIterator::resolveIcebergObjectStorageIf
 #endif
 }
 
-static size_t getKnownArchiveSize(const ObjectInfoPtr & object_info)
-{
-    const auto object_metadata = object_info->getObjectMetadata();
-    if (!object_metadata->is_size_known)
-        throw Exception(
-            ErrorCodes::CANNOT_UNPACK_ARCHIVE,
-            "Cannot read archive {} because its size is unknown",
-            object_info->getPath());
-
-    return object_metadata->size_bytes;
-}
-
->>>>>>> 6d5ab5522ba (Iceberg: support external paths in tables)
 ObjectInfoPtr StorageObjectStorageSource::ReadTaskIterator::next(size_t)
 {
     size_t current_index = index.fetch_add(1, std::memory_order_relaxed);
@@ -1942,14 +1804,10 @@ ObjectInfoPtr StorageObjectStorageSource::ArchiveIterator::next(size_t processor
                 }
 
                 if (!archive_object->getObjectMetadata())
-<<<<<<< HEAD
-                    archive_object->setObjectMetadata(object_storage->getObjectMetadata(archive_object->getPath(), /*with_tags=*/ false));
-=======
                 {
                     ObjectStoragePtr storage_to_use = getResolvedStorageFromObjectInfo(archive_object, object_storage);
-                    archive_object->setObjectMetadata(storage_to_use->getObjectMetadata(archive_object->relative_path_with_metadata, /*with_tags=*/ false));
+                    archive_object->setObjectMetadata(storage_to_use->getObjectMetadata(archive_object->getPath(), /*with_tags=*/ false));
                 }
->>>>>>> 6d5ab5522ba (Iceberg: support external paths in tables)
 
                 archive_reader = createArchiveReader(archive_object);
                 file_enumerator = archive_reader->firstFile();
@@ -1975,14 +1833,10 @@ ObjectInfoPtr StorageObjectStorageSource::ArchiveIterator::next(size_t processor
                 return {};
 
             if (!archive_object->getObjectMetadata())
-<<<<<<< HEAD
-                archive_object->setObjectMetadata(object_storage->getObjectMetadata(archive_object->getPath(), /*with_tags=*/ false));
-=======
             {
                 ObjectStoragePtr storage_to_use = getResolvedStorageFromObjectInfo(archive_object, object_storage);
-                archive_object->setObjectMetadata(storage_to_use->getObjectMetadata(archive_object->relative_path_with_metadata, /*with_tags=*/ false));
+                archive_object->setObjectMetadata(storage_to_use->getObjectMetadata(archive_object->getPath(), /*with_tags=*/ false));
             }
->>>>>>> 6d5ab5522ba (Iceberg: support external paths in tables)
 
             archive_reader = createArchiveReader(archive_object);
             if (!archive_reader->fileExists(path_in_archive))

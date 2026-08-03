@@ -13,8 +13,6 @@ namespace ErrorCodes
     extern const int LOGICAL_ERROR;
 }
 
-<<<<<<< HEAD
-=======
 namespace
 {
 
@@ -33,7 +31,6 @@ String getSchedulingIdentifier(const ObjectInfoPtr & object_info, bool send_over
 
 }
 
->>>>>>> 6d5ab5522ba (Iceberg: support external paths in tables)
 StorageObjectStorageStableTaskDistributor::StorageObjectStorageStableTaskDistributor(
     std::shared_ptr<IObjectIterator> iterator_,
     std::vector<std::string> && ids_of_nodes_,

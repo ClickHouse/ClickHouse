@@ -1,7 +1,4 @@
-<<<<<<< HEAD
-=======
 #include <Poco/String.h>
->>>>>>> 6d5ab5522ba (Iceberg: support external paths in tables)
 #include "config.h"
 
 #include <Core/Field.h>

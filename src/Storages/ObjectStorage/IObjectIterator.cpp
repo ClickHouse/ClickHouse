@@ -156,14 +156,6 @@ ObjectInfoPtr ObjectIteratorSplitByBuckets::next(size_t id)
             bool has_cache_entry = false;
             if (query_condition_cache)
             {
-<<<<<<< HEAD
-=======
-                /// For Iceberg external files the storage key is not unique across storages;
-                /// mirror `makeQueryConditionCacheKey` and key by the metadata path when present.
-                auto query_condition_cache_key = last_object_info->getIdentifier(/*include_file_bucket_info=*/ false);
-                if (auto metadata_path = getMetadataPathFromObjectInfo(last_object_info))
-                    query_condition_cache_key = last_object_info->getIdentifierForPath(*metadata_path, /*include_file_bucket_info=*/ false);
->>>>>>> 6d5ab5522ba (Iceberg: support external paths in tables)
                 auto matching_marks = query_condition_cache->read(
                     storage_id.uuid,
                     last_object_info->getFileName(),
@@ -213,7 +205,12 @@ ObjectInfoPtr ObjectIteratorSplitByBuckets::next(size_t id)
 
 String ObjectInfo::getIdentifier() const
 {
-    String result = getPath();
+    return getIdentifierForPath(getPath());
+}
+
+String ObjectInfo::getIdentifierForPath(const String & path) const
+{
+    String result = path;
     if (file_bucket_info)
         result += file_bucket_info->getIdentifier();
     return result;

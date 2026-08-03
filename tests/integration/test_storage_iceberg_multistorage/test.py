@@ -707,6 +707,12 @@ def relocate_data_files_within_base_bucket(started_cluster, table_name, external
 # Regression test: the `OPTIMIZE TABLE ... MANIFEST` threshold pre-check used to read the
 # current manifest list from the base storage only and failed when it lived in another bucket.
 # https://github.com/ClickHouse/ClickHouse/pull/90740#discussion_r3613986714
+@pytest.mark.skip(
+    reason="Manifest-only compaction (`OPTIMIZE TABLE ... MANIFEST` and the "
+    "`iceberg_manifest_min_count_to_compact` setting) is not part of antalya-26.6, so the "
+    "external-manifest-list support this test covers has nothing to exercise here. "
+    "Re-enable together with the manifest compaction feature."
+)
 def test_optimize_manifest_with_external_manifest_list(started_cluster):
     instance = started_cluster.instances["node1"]
     spark = started_cluster.spark_session
