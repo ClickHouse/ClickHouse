@@ -1203,7 +1203,14 @@ TEST(PromQLParser, DurationUnitOrder)
 
 TEST(PromQLParser, LineComments)
 {
-    for (const auto query : {"up # comment", "up#comment", "up # comment\n", "up # comment\r\n"})
+    for (const auto query : {
+             "up #",
+             "up # comment",
+             "up#comment",
+             "up # comment\n",
+             "up # comment\r",
+             "up # comment\r\n",
+         })
         EXPECT_NO_THROW(PrometheusQueryTree{query}) << query;
 
     PrometheusQueryTree query_tree;
