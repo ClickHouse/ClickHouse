@@ -114,11 +114,9 @@ $CLICKHOUSE_LOCAL -q "SELECT count(), sum(k) FROM file('$DATA/flba16.parquet', P
 echo '-- a WHERE over the narrowed column still returns the right rows'
 $CLICKHOUSE_LOCAL -q "SELECT count(), sum(k) FROM file('$DATA/int64_dict.parquet', Parquet) WHERE k > 50000 SETTINGS input_format_parquet_filter_push_down = 1"
 
-# Row group statistics decode to a value of the physical width, which is not the type the key range
-# is built from, so they are not used on this shape. The two fixtures below differ only in declared
-# precision, so the second one shows the layout does admit pruning.
-# All three fixtures hold 10 row groups and `k > 500` matches only the last 2, so the exact counts
-# are the oracle: a conversion that pruned a matching group would print a different split.
+# Statistics decode to a value of the physical width, not the type the key range is built from, so
+# they are unusable on this shape. All three fixtures hold 10 row groups of which `k > 500` matches
+# the last 2, so the exact counts are the oracle: pruning a matching group changes the split.
 prune_counts() {
     $CLICKHOUSE_LOCAL --print-profile-events -q "$1" 2>&1 | awk '
         /ParquetReadRowGroups:/   { read   += $(NF-1) }
