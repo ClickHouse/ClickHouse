@@ -54,6 +54,11 @@ if (OS_WASM)
     # no `dlopen`, no JIT and no architecture-specific code paths.
     set (ENABLE_JEMALLOC OFF CACHE INTERNAL "")
     set (ENABLE_GRPC OFF CACHE INTERNAL "")
+    # Protobuf needs a `protoc` that runs on the host, and the nested native configure at the
+    # bottom of the top-level `CMakeLists.txt` would be handed `emcc` as its host compiler.
+    # Arrow, Parquet and ORC hard-depend on it, so they go with it.
+    set (ENABLE_PROTOBUF OFF CACHE INTERNAL "")
+    set (ENABLE_PARQUET OFF CACHE INTERNAL "")
     set (ENABLE_ARROW_FLIGHT OFF CACHE INTERNAL "")
     set (ENABLE_HDFS OFF CACHE INTERNAL "")
     set (ENABLE_MYSQL OFF CACHE INTERNAL "")
@@ -72,9 +77,15 @@ if (OS_WASM)
     set (ENABLE_KRB5 OFF CACHE INTERNAL "")
     set (ENABLE_GSASL_LIBRARY OFF CACHE INTERNAL "")
     set (ENABLE_CURL OFF CACHE INTERNAL "")
+    # `libssh` needs raw sockets, and its config headers are pregenerated per platform.
+    set (ENABLE_SSH OFF CACHE INTERNAL "")
     set (ENABLE_RUST OFF CACHE INTERNAL "")
     set (ENABLE_DELTA_KERNEL_RS OFF CACHE INTERNAL "")
     set (ENABLE_EMBEDDED_COMPILER OFF CACHE INTERNAL "")
+    # A host WebAssembly runtime inside a WebAssembly sandbox: `WasmEdge` runs guest modules
+    # from native code that this target cannot provide. `wasmtime`, the other engine, is Rust,
+    # so `ENABLE_RUST` above already covers it.
+    set (ENABLE_WASMEDGE OFF CACHE INTERNAL "")
     set (ENABLE_DWARF_PARSER OFF CACHE INTERNAL "")
     set (ENABLE_ROCKSDB OFF CACHE INTERNAL "")
     set (ENABLE_VECTORSCAN OFF CACHE INTERNAL "")
