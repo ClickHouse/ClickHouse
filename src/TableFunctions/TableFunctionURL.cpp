@@ -261,8 +261,21 @@ void TableFunctionURL::buildDelegate(URLSchemeTarget target, const ContextPtr & 
 StoragePtr TableFunctionURL::executeImpl(
     const ASTPtr & ast_function, ContextPtr context, const std::string & table_name, ColumnsDescription cached_columns, bool is_insert_query) const
 {
+    /// The outer `execute` has already run the `CREATE TEMPORARY TABLE` privilege check when it
+    /// applies (it does not when a database engine resolves its table through this function), so
+    /// the delegate must not repeat it. The same holds for the source access check: this function
+    /// reports the delegate's engine name and access URI, so the outer check (or the caller that
+    /// explicitly disabled it and took over) has already covered exactly the delegate's source.
     if (delegate)
-        return delegate->execute(ast_function, context, table_name, std::move(cached_columns), /*use_global_context=*/false, is_insert_query);
+        return delegate->execute(
+            ast_function,
+            context,
+            table_name,
+            std::move(cached_columns),
+            /*use_global_context=*/false,
+            is_insert_query,
+            /*check_create_temporary_table=*/false,
+            /*check_source_access=*/false);
 
     return ITableFunctionFileLike::executeImpl(ast_function, context, table_name, std::move(cached_columns), is_insert_query);
 }
@@ -452,7 +465,18 @@ ColumnsDescription TableFunctionURL::getActualTableStructure(ContextPtr context,
 
 std::optional<String> TableFunctionURL::tryGetFormatFromFirstArgument()
 {
-    return FormatFactory::instance().tryGetFormatFromFileName(Poco::URI(filename).getPath());
+    /// The URL may arrive already resolved against a base URL (e.g. from a `URL` database), and
+    /// `resolveURLBase` tolerates inputs that `Poco::URI` rejects — e.g. `file://report:2026.csv`,
+    /// whose authority parses as a host with an invalid port. Failing to detect the format from
+    /// the file name is not an error.
+    try
+    {
+        return FormatFactory::instance().tryGetFormatFromFileName(Poco::URI(filename).getPath());
+    }
+    catch (const Poco::Exception &)
+    {
+        return std::nullopt;
+    }
 }
 
 void registerTableFunctionURL(TableFunctionFactory & factory)
