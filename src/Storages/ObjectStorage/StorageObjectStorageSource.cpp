@@ -218,6 +218,26 @@ static void logIcebergFileStats(const ObjectInfoPtr & object_info, const LoggerP
 #endif
 }
 
+/// Whether reading this object goes through row-level delete transformers (Iceberg
+/// position/equality deletes, Delta Lake deletion vectors). The count-from-files cache
+/// is keyed only by the file path and its modification time, but delete files change the
+/// number of rows the file contributes WITHOUT touching the file itself, so both
+/// directions are unsafe: a count cached before a delete resurfaces deleted rows, and a
+/// count cached after it goes stale once the deletes are compacted away. Such files must
+/// neither use nor populate the cache.
+static bool hasAttachedDeletes(const ObjectInfo & object_info)
+{
+#if USE_AVRO
+    if (const auto * iceberg_object = dynamic_cast<const IcebergDataObjectInfo *>(&object_info))
+    {
+        if (!iceberg_object->info.position_deletes_objects.empty() || !iceberg_object->info.equality_deletes_objects.empty())
+            return true;
+    }
+#endif
+    return object_info.data_lake_metadata && object_info.data_lake_metadata->excluded_rows
+        && object_info.data_lake_metadata->excluded_rows->size() > 0;
+}
+
 StorageObjectStorageSource::StorageObjectStorageSource(
     const StorageID & storage_id_,
     String name_,
@@ -745,7 +765,7 @@ Chunk StorageObjectStorageSource::generate()
         }
 
         if (reader.getInputFormat() && read_context->getSettingsRef()[Setting::use_cache_for_count_from_files]
-            && !format_filter_info->filter_actions_dag)
+            && !format_filter_info->filter_actions_dag && !hasAttachedDeletes(*reader.getObjectInfo()))
             addNumRowsToCache(*reader.getObjectInfo(), total_rows_in_file);
 
         total_rows_in_file = 0;
@@ -918,6 +938,17 @@ StorageObjectStorageSource::ReaderHolder StorageObjectStorageSource::createReade
         };
         return schema_cache->tryGetNumRows(cache_key, get_last_mod_time);
     };
+
+    /// Row-level delete transformers need real row values: an equality-delete FilterTransform
+    /// evaluates its predicate against column values, but the count-only fast path
+    /// (`input_format->needOnlyCount()`) makes the format emit synthetic chunks filled with
+    /// default values, so the predicate would filter the wrong rows and count() would come
+    /// back wrong. Position deletes and deletion vectors filter by row index, which synthetic
+    /// chunks do preserve, but they would still build the huge synthetic chunks only to drop
+    /// rows from them, so the fast path is disabled for any attached deletes. This also
+    /// covers the count-from-cache shortcut below: a cached per-file row count is keyed only
+    /// by path + mtime, both untouched by delete files, so it must not be used either.
+    need_only_count = need_only_count && !hasAttachedDeletes(*object_info);
 
     /// The count-from-cache shortcut builds a `ConstChunkGenerator` without opening the read buffer, so a
     /// requested `_headers` virtual column (the HTTP response headers of the data `GET`) would have to fall
