@@ -7,6 +7,7 @@
 #include <Storages/TimeSeries/PrometheusQueryToSQL/SelectQueryBuilder.h>
 #include <Storages/TimeSeries/PrometheusQueryToSQL/applySimpleFunction.h>
 #include <Storages/TimeSeries/PrometheusQueryToSQL/dropMetricName.h>
+#include <Storages/TimeSeries/PrometheusQueryToSQL/staleMarker.h>
 #include <Storages/TimeSeries/timeSeriesTypesToAST.h>
 
 
@@ -171,10 +172,19 @@ SQLQueryPiece applyDateTimeFunction(
         /// f(toDateTime64(x, 0, 'UTC'))::scalar_data_type
         chassert(args.size() == 1);
         ASTPtr x = std::move(args[0]);
-        return timeSeriesScalarASTCast(
-            (impl_info->transform_ast)(
-                makeASTFunction("toDateTime64", std::move(x), make_intrusive<ASTLiteral>(0u), make_intrusive<ASTLiteral>("UTC"))),
+
+        /// `toDateTime64` throws on a `NaN` input, and a stale sample carries the Prometheus stale marker,
+        /// which is a `NaN`. Such samples are dropped before evaluation in Prometheus, so the marker is
+        /// substituted with a valid timestamp for the conversion and then passed through as the result.
+        ASTPtr converted = timeSeriesScalarASTCast(
+            (impl_info->transform_ast)(makeASTFunction(
+                "toDateTime64",
+                replaceStaleMarker(x, make_intrusive<ASTLiteral>(0.0)),
+                make_intrusive<ASTLiteral>(0u),
+                make_intrusive<ASTLiteral>("UTC"))),
             context.scalar_data_type);
+
+        return keepStaleMarker(x, std::move(converted));
     };
 
     auto res = applySimpleFunction(function_node, context, apply_function_to_ast, std::move(arguments));

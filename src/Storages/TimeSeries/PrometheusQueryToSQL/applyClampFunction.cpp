@@ -6,6 +6,7 @@
 #include <Storages/TimeSeries/PrometheusQueryToSQL/ConverterContext.h>
 #include <Storages/TimeSeries/PrometheusQueryToSQL/applySimpleFunction.h>
 #include <Storages/TimeSeries/PrometheusQueryToSQL/dropMetricName.h>
+#include <Storages/TimeSeries/PrometheusQueryToSQL/staleMarker.h>
 #include <Storages/TimeSeries/PrometheusQueryToSQL/toVectorGrid.h>
 #include <unordered_map>
 
@@ -97,13 +98,15 @@ namespace
         return max_arg.scalar_value < min_arg.scalar_value;
     }
 
+    /// A stale sample must stay stale: `clamp*` with a `NaN` bound returns that fresh `NaN` for every sample,
+    /// which would hide the Prometheus stale marker from the finalizer, so the marker is passed through here.
     ASTPtr keepNullSamplesSparse(ASTPtr value, ASTPtr clamped_value)
     {
         return makeASTFunction(
             "if",
             makeASTFunction("isNull", value->clone()),
             make_intrusive<ASTLiteral>(Field{}),
-            std::move(clamped_value));
+            keepStaleMarker(value, std::move(clamped_value)));
     }
 
     ASTPtr makeClampMin(ASTPtr value, ASTPtr min_bound)

@@ -4,6 +4,7 @@
 #include <Parsers/ASTLiteral.h>
 #include <Storages/TimeSeries/PrometheusQueryToSQL/applySimpleFunction.h>
 #include <Storages/TimeSeries/PrometheusQueryToSQL/dropMetricName.h>
+#include <Storages/TimeSeries/PrometheusQueryToSQL/staleMarker.h>
 #include <boost/math/special_functions/sign.hpp>
 #include <numbers>
 #include <unordered_map>
@@ -122,23 +123,6 @@ namespace
             return nullptr;
 
         return &it->second;
-    }
-
-    /// A Prometheus stale marker is a `NaN` with the exact payload 0x7ff0000000000002, and it is recognized
-    /// by that bit pattern only at finalization. Math functions either quiet the payload into an ordinary
-    /// `NaN` (for example `floor` or `sqrt`) or replace it with a number (for example `sign`), which would
-    /// make a stale sample survive instead of being dropped. Prometheus drops stale samples before it
-    /// evaluates a function, so here such samples are passed through unchanged and dropped later.
-    ASTPtr keepStaleMarker(const ASTPtr & value, ASTPtr transformed_value)
-    {
-        return makeASTFunction(
-            "if",
-            makeASTFunction(
-                "equals",
-                makeASTFunction("reinterpretAsUInt64", makeASTFunction("assumeNotNull", value->clone())),
-                make_intrusive<ASTLiteral>(0x7ff0000000000002ULL)),
-            value->clone(),
-            std::move(transformed_value));
     }
 }
 

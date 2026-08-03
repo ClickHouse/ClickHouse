@@ -1359,6 +1359,45 @@ def test_conversion_functions():
         [],
     )
 
+    # Behavior: `clamp*` with a `NaN` bound returns that `NaN` for every sample, which would hide
+    # the stale marker from the finalizer. The stale sample must still be dropped.
+    do_query_test(
+        "clamp_min(stale_test, NaN)",
+        160,
+        '{"resultType": "vector", "result": []}',
+        [],
+    )
+
+    do_query_test(
+        "clamp_max(stale_test, NaN)",
+        160,
+        '{"resultType": "vector", "result": []}',
+        [],
+    )
+
+    do_query_test(
+        "clamp(stale_test, NaN, 2)",
+        160,
+        '{"resultType": "vector", "result": []}',
+        [],
+    )
+
+    # Behavior: the `DateTime` helpers convert the sample value to a timestamp, which cannot
+    # represent a `NaN`. A stale sample is dropped instead of failing the whole query.
+    do_query_test(
+        "day_of_week(stale_test)",
+        160,
+        '{"resultType": "vector", "result": []}',
+        [],
+    )
+
+    do_query_test(
+        "minute(stale_test)",
+        160,
+        '{"resultType": "vector", "result": []}',
+        [],
+    )
+
     # Behavior: Prometheus `scalar` returns the only float sample value.
     do_query_test(
         "scalar(vector(1))",
