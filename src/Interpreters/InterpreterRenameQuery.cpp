@@ -160,9 +160,7 @@ BlockIO InterpreterRenameQuery::executeToTables(const ASTRenameQuery & rename, c
         {
             /// The limit is derived from the receiver's own name, so the destination database
             /// is the one that has to be able to hold the new name.
-            DatabasePtr to_database = elem.to_database_name == elem.from_database_name
-                ? database
-                : database_catalog.getDatabase(elem.to_database_name);
+            DatabasePtr to_database = database_catalog.getDatabase(elem.to_database_name);
             to_database->checkTableNameLength(to_table_id.table_name);
 
             DatabaseCatalog::instance().checkTableCanBeRenamedWithNoCyclicDependencies(from_table_id, to_table_id);
