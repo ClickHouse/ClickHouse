@@ -361,8 +361,9 @@ bool GraceHashJoin::hasMemoryOverflow(size_t total_rows, size_t total_bytes) con
         has_overflow = !table_join->sizeLimits().softCheck(total_rows, total_bytes);
 
     if (has_overflow)
-        LOG_TRACE(log, "Memory overflow, size exceeded {} / {} bytes in {} rows",
-            ReadableSize(total_bytes), ReadableSize(external_join_threshold / 2), total_rows);
+        LOG_TRACE(log, "Memory overflow at {} in {} rows (spill threshold {}, max_bytes_in_join {}, max_rows_in_join {})",
+            ReadableSize(total_bytes), total_rows, ReadableSize(external_join_threshold),
+            ReadableSize(table_join->sizeLimits().max_bytes), table_join->sizeLimits().max_rows);
 
     return has_overflow;
 }

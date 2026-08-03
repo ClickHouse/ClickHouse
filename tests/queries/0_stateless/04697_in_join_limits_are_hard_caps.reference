@@ -1,9 +1,10 @@
-max_bytes_in_join stops a spilling join
-max_rows_in_join stops a spilling join
-join_overflow_mode = break truncates instead of throwing
+grace_hash: max_bytes_in_join stops the join
+grace_hash: max_rows_in_join stops the join
+grace_hash: join_overflow_mode = break truncates instead of throwing
 1
-no cap: spilling completes the join
+grace_hash: no cap, spilling completes the join
 2000000
+hash: max_bytes_in_join stops the join after it spilled
 grace_hash without any spill threshold is rejected
 grace_hash with a spill threshold works
 10
