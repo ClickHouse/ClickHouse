@@ -694,3 +694,129 @@ def test_heterogeneous_array_insert(started_cluster):
     collection.insert_many([{"id": 1, "a": [1, "x"]}])
 
     assert collection.estimated_document_count() == 1
+
+
+def test_find_skip(started_cluster):
+    """`skip` is ordinary driver pagination, so it must offset the result rather than be
+    silently ignored and return the first page again."""
+    client = make_client()
+    collection = client["db"]["skip"]
+
+    collection.drop()
+    collection.insert_many([{"id": i} for i in range(1, 11)])
+
+    assert [doc["id"] for doc in collection.find({}).sort("id", 1).skip(7)] == [8, 9, 10]
+    assert [doc["id"] for doc in collection.find({}).sort("id", 1).skip(2).limit(3)] == [
+        3,
+        4,
+        5,
+    ]
+    assert [doc["id"] for doc in collection.find({"id": {"$gt": 5}}).sort("id", -1).skip(1).limit(2)] == [9, 8]
+
+
+def test_count_with_query(started_cluster):
+    """The `count` command carries a `query` filter and the `limit` and `skip` bounds, which
+    take the same path as a `find` instead of counting the whole collection."""
+    client = make_client()
+    db = client["db"]
+    collection = db["count_query"]
+
+    collection.drop()
+    collection.insert_many([{"id": i, "kind": "even" if i % 2 == 0 else "odd"} for i in range(1, 8)])
+
+    assert db.command({"count": "count_query"})["n"] == 7
+    assert db.command({"count": "count_query", "query": {"kind": "odd"}})["n"] == 4
+    assert db.command({"count": "count_query", "query": {"id": {"$gt": 5}}})["n"] == 2
+    assert db.command({"count": "count_query", "query": {"kind": "odd"}, "limit": 2})["n"] == 2
+    assert db.command({"count": "count_query", "query": {"kind": "odd"}, "skip": 3})["n"] == 1
+
+
+def test_insert_int64(started_cluster):
+    """A value outside the 32-bit range is a BSON `int64`, whose column must be a valid
+    ClickHouse type rather than the unregistered alias `long`."""
+    client = make_client()
+    collection = client["db"]["int64"]
+
+    collection.drop()
+    collection.insert_many([{"id": 1, "big": 2147483648}])
+
+    assert [doc for doc in collection.find({})] == [{"id": 1, "big": 2147483648}]
+    assert [doc["id"] for doc in collection.find({"big": {"$gt": 2}})] == [1]
+
+
+def test_insert_datetime(started_cluster):
+    """A driver sends a `datetime` as a BSON date, which arrives as the Extended JSON wrapper
+    `{"$date": ...}`: it is one value of one field, not a subdocument to descend into."""
+    import datetime
+
+    client = make_client()
+    collection = client["db"]["dates"]
+
+    collection.drop()
+    collection.insert_many(
+        [
+            {"id": 1, "when": datetime.datetime(2020, 5, 17, 10, 30, 0)},
+            {"id": 2, "when": datetime.datetime(2021, 6, 18, 11, 45, 30, 123000)},
+        ]
+    )
+
+    found = sorted((doc for doc in collection.find({})), key=lambda x: x["id"])
+    assert found == [
+        {"id": 1, "when": "2020-05-17 10:30:00.000"},
+        {"id": 2, "when": "2021-06-18 11:45:30.123"},
+    ]
+
+    assert [doc["id"] for doc in collection.find({"when": {"$gt": datetime.datetime(2021, 1, 1)}})] == [2]
+
+
+def test_insert_unsupported_bson_type(started_cluster):
+    """A BSON type with no ClickHouse counterpart is rejected explicitly instead of silently
+    becoming bogus `<field>.$<wrapper>` columns."""
+    client = make_client()
+    collection = client["db"]["unsupported_bson"]
+
+    collection.drop()
+    with pytest.raises(pymongo.errors.PyMongoError):
+        collection.insert_many([{"id": 1, "raw": bson.Binary(b"\x00\x01")}])
+
+    # The rejected insert must not have created the collection with rewritten field names.
+    assert "unsupported_bson" not in client["db"].list_collection_names()
+
+
+def test_aggregate_match_subdocument(started_cluster):
+    """A `$match` uses the query syntax, so a subdocument names nested fields exactly like the
+    filter of a `find` - including when the `$match` comes from the `query` of a `distinct`."""
+    client = make_client()
+    collection = client["db"]["match_subdocument"]
+
+    collection.drop()
+    collection.insert_many(
+        [
+            {"id": 1, "profile": {"name": "alpha"}},
+            {"id": 2, "profile": {"name": "beta"}},
+            {"id": 3, "profile": {"name": "alpha"}},
+        ]
+    )
+
+    assert [doc["id"] for doc in collection.aggregate([{"$match": {"profile": {"name": "alpha"}}}, {"$sort": {"id": 1}}, {"$project": {"id": 1}}])] == [1, 3]
+
+    assert collection.distinct("id", {"profile": {"name": "alpha"}}) == [1, 3]
+
+
+def test_dollar_field_path_is_an_error(started_cluster):
+    """`$` by itself is not a valid field path, so it must be a controlled Mongo error rather
+    than an abort on an empty identifier."""
+    client = make_client()
+    collection = client["db"]["dollar_path"]
+
+    collection.drop()
+    collection.insert_many([{"id": 1}, {"id": 2}])
+
+    with pytest.raises(pymongo.errors.PyMongoError):
+        list(collection.aggregate([{"$group": {"_id": "$", "c": {"$sum": 1}}}]))
+
+    with pytest.raises(pymongo.errors.PyMongoError):
+        list(collection.aggregate([{"$unwind": "$"}]))
+
+    # The server is still healthy after the rejected pipelines.
+    assert sorted(doc["id"] for doc in collection.find({})) == [1, 2]
