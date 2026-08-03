@@ -346,6 +346,26 @@ PartSerializationsPtr SharedPartColumns::getSerializations(const SerializationIn
         }
     }
 
+    /// `supportsPooling() == false` marks a serialization that must not be shared: it keeps mutable
+    /// state (`SerializationJSON` accumulates caches inside its extraction tree) or depends on the
+    /// settings of the query that built it (its parser, on `allow_simdjson`). Those groups are rebuilt
+    /// for every part, as they were before they were interned, so they stay out of both caches: a group
+    /// that is not in the group cache can only reach a part through a whole object, which is why one
+    /// containing such a group is not interned either.
+    std::vector<bool> shareable(groups.size(), true);
+    for (size_t i = 0; i != groups.size(); ++i)
+    {
+        for (const auto & serialization : groups[i]->serializations)
+        {
+            if (!serialization->supportsPooling())
+            {
+                shareable[i] = false;
+                break;
+            }
+        }
+    }
+    const bool shareable_as_a_whole = std::all_of(shareable.begin(), shareable.end(), [](bool s) { return s; });
+
     /// Assemble the name lookup map from the names stored in the groups (no subcolumn
     /// enumeration). The map is a pure function of the name sequence, so the sequence hash is its
     /// interning key, verified by full content comparison on a hit.
@@ -381,6 +401,9 @@ PartSerializationsPtr SharedPartColumns::getSerializations(const SerializationIn
     /// Intern the groups this thread built (a concurrent load may have interned the same keys).
     for (size_t i = 0; i != groups.size(); ++i)
     {
+        if (!shareable[i])
+            continue;
+
         auto [it, inserted] = serialization_groups_cache.try_emplace(std::move(group_keys[i]));
         if (!inserted)
         {
@@ -425,6 +448,9 @@ PartSerializationsPtr SharedPartColumns::getSerializations(const SerializationIn
     }
 
     auto built = std::make_shared<const PartSerializations>(std::move(name_to_slot), std::move(groups));
+
+    if (!shareable_as_a_whole)
+        return built;
 
     auto [it, inserted] = serializations_cache.try_emplace(std::move(key));
     if (!inserted)
