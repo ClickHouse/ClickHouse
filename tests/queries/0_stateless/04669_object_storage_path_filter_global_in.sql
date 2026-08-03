@@ -23,7 +23,7 @@ SELECT * FROM s3(s3_conn, filename = concat('04669_path_filter_global_in_', curr
 WHERE _file GLOBAL IN (SELECT concat('04669_path_filter_global_in_', currentDatabase()));
 
 SELECT * FROM s3(s3_conn, filename = concat('04669_path_filter_global_in_', currentDatabase()), format = CSV, structure = 'x UInt64')
-QUALIFY globalNotIn(_file, (SELECT 'no such file'));
+WHERE globalNotIn(_file, (SELECT 'no such file'));
 
 -- A glob applies the same filter lazily, while listing objects; it must keep working too.
 SELECT * FROM s3(s3_conn, filename = concat('04669_path_filter_global_in_', currentDatabase(), '*'), format = CSV, structure = 'x UInt64')
