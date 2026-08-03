@@ -1,8 +1,7 @@
 #!/usr/bin/env bash
 # Tags: no-fasttest
-# Regression test: a Parquet file whose thrift-encoded metadata is corrupt surfaced the thrift
-# exception as STD_EXCEPTION (code 1001), a generic "some std::exception happened" that says nothing
-# about the input. It must be INCORRECT_DATA so callers can classify the failure.
+# Corrupt thrift-encoded Parquet metadata must surface as INCORRECT_DATA, not the generic
+# STD_EXCEPTION (1001) it used to.
 
 CUR_DIR=$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)
 # shellcheck source=../shell_config.sh
@@ -23,9 +22,8 @@ tbl = pa.table({"i": pa.array(list(range(500)), pa.int32())})
 pq.write_table(tbl, path, compression="none")
 
 d = bytearray(open(path, "rb").read())
-# The first data page's thrift-encoded PageHeader starts right after the 4-byte 'PAR1' magic. Corrupt
-# a field-header byte inside it so thrift's compact protocol rejects the wire data; the file footer
-# (and hence schema inference) stays intact, so the failure is on the data-read path.
+# The first data page's PageHeader starts right after the 4-byte 'PAR1' magic. Corrupting it leaves
+# the footer (and hence schema inference) intact, so the failure is on the data-read path.
 footer_len, = struct.unpack_from("<I", d, len(d) - 8)
 data_end = len(d) - 8 - footer_len
 for i in range(4, min(64, data_end)):

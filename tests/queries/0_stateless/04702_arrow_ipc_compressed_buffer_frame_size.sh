@@ -1,17 +1,7 @@
 #!/usr/bin/env bash
 # Tags: no-fasttest
-# Regression tests for malformed per-buffer uncompressed-length prefixes in a compressed Arrow IPC
-# RecordBatch body. The corruption is in the RecordBatch body, not the Schema message, so only a
-# data read reaches it: schema inference must still succeed. Each case must be rejected as
-# INCORRECT_DATA rather than allocating for the declared size:
-#   - a payload that is not a parsable codec frame;
-#   - a prefix that disagrees with a size its own codec frame pledges;
-#   - a prefix exceeding what the payload's frames can produce, whether or not one is pledged.
-# A prefix within what its frames can produce is NOT corrupt even when it is large: it stays a
-# memory-limit condition, which one case asserts. Neither is a ZSTD payload of several concatenated
-# frames or one behind a skippable frame: those decompress correctly and must still be read. The same
-# shapes with a forged prefix must be rejected, so the size the prefix is checked against covers the
-# whole payload rather than its first frame.
+# The corruption is in the RecordBatch body, not the Schema message, so schema inference must still
+# succeed and only a data read reaches it.
 
 CUR_DIR=$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)
 # shellcheck source=../shell_config.sh
@@ -21,10 +11,8 @@ TMP_DIR="${CLICKHOUSE_TMP}/${CLICKHOUSE_TEST_UNIQUE_NAME}"
 mkdir -p "$TMP_DIR"
 trap 'rm -rf "$TMP_DIR"' EXIT
 
-# Two writers, because the frame's content size is optional and each case needs one of the two:
-#   - ClickHouse sets it, so a prefix can be patched to disagree with it (cases 2 and 4);
-#   - pyarrow omits it, so a prefix can be patched without any frame size to contradict (cases 1, 3),
-#     which is also the case the frame/prefix comparison must SKIP rather than reject.
+# Two writers, because the frame's content size is optional: ClickHouse records it, pyarrow omits it,
+# and cases below need both.
 $CLICKHOUSE_LOCAL --query "
     SELECT number AS i, toString(number) AS s, number * 0.5 AS f FROM numbers(4000)
     INTO OUTFILE '${TMP_DIR}/ch_lz4.arrows' TRUNCATE FORMAT ArrowStream
@@ -43,9 +31,9 @@ import pyarrow.ipc as ipc
 out = sys.argv[1]
 LZ4_MAGIC = b"\x04\x22\x4d\x18"
 ZSTD_MAGIC = b"\x28\xb5\x2f\xfd"
+SKIPPABLE = 0x184D2A50
 
-# Several columns, so the batch carries several compressed buffers: the accumulated-total case needs
-# at least two, and a String column contributes both an offsets and a values buffer.
+# A String column contributes two buffers, so the batch carries more than one compressed buffer.
 tbl = pa.table({
     "i": pa.array(list(range(4000)), pa.int64()),
     "s": pa.array(["row%d" % i for i in range(4000)]),
@@ -79,27 +67,17 @@ def xxh32(data, seed=0):
     python so the test needs no module beyond pyarrow."""
     P1, P2, P3, P4, P5 = 2654435761, 2246822519, 3266489917, 668265263, 374761393
     M = 0xFFFFFFFF
+    assert len(data) < 16, "the 16-byte-lane path of xxh32 is not implemented"
 
     def rol(x, r):
         return ((x << r) | (x >> (32 - r))) & M
 
-    n, idx = len(data), 0
-    if n >= 16:
-        v = [(seed + P1 + P2) & M, (seed + P2) & M, seed & M, (seed - P1) & M]
-        while idx + 16 <= n:
-            for k in range(4):
-                lane, = struct.unpack_from("<I", data, idx + 4 * k)
-                v[k] = (rol((v[k] + lane * P2) & M, 13) * P1) & M
-            idx += 16
-        h = (rol(v[0], 1) + rol(v[1], 7) + rol(v[2], 12) + rol(v[3], 18)) & M
-    else:
-        h = (seed + P5) & M
-    h = (h + n) & M
-    while idx + 4 <= n:
+    h, idx = (seed + P5 + len(data)) & M, 0
+    while idx + 4 <= len(data):
         lane, = struct.unpack_from("<I", data, idx)
         h = (rol((h + lane * P3) & M, 17) * P4) & M
         idx += 4
-    while idx < n:
+    while idx < len(data):
         h = (rol((h + data[idx] * P5) & M, 11) * P1) & M
         idx += 1
     h ^= h >> 15
@@ -114,7 +92,6 @@ def set_frame_content_size(d, prefix_off, value):
     """Patch the frame's contentSize in place, then fix the header checksum.
 
     Frame header: magic(4) FLG(1) BD(1) [contentSize(8) if FLG&0x08] [dictID(4) if FLG&0x01] HC(1).
-    In place, so the buffer layout after this frame is left untouched.
     """
     flg_off = prefix_off + 12
     flg = d[flg_off]
@@ -132,13 +109,14 @@ assert len(arrow_offs) >= 2, f"expected >= 2 compressed buffers, got {len(arrow_
 assert zstd_offs, "expected a ZSTD-compressed buffer"
 
 
-def compressed_buffer_spans(data):
-    """Spans of every compressed buffer in the file's single RecordBatch message, from its metadata.
+def i64(data, o):
+    return struct.unpack_from("<q", data, o)[0]
 
-    A buffer's length is only in the RecordBatch flatbuffer, not in the payload, so read it there:
-    Message(version, header_type, header, bodyLength) -> RecordBatch(length, nodes, buffers, ...),
-    whose `buffers` is a vector of inline (offset, length) pairs. Both tables are read through their
-    vtables, so a field the writer omitted is simply absent rather than misread.
+
+def batch_meta(data):
+    """The RecordBatch body offset and length, the bodyLength field offset, and the field offsets of
+    every per-buffer (offset, length) pair - all of which live only in the flatbuffer, not the
+    payload. Read through vtables, so a field the writer omitted is absent rather than misread.
     """
     def u16(o):
         return struct.unpack_from("<H", data, o)[0]
@@ -146,11 +124,7 @@ def compressed_buffer_spans(data):
     def u32(o):
         return struct.unpack_from("<I", data, o)[0]
 
-    def i64(o):
-        return struct.unpack_from("<q", data, o)[0]
-
     def field(table, idx):
-        """Absolute offset of field `idx` of the table at `table`, or None when absent."""
         vtable = table - struct.unpack_from("<i", data, table)[0]
         pos = 4 + 2 * idx
         if pos + 2 > u16(vtable):
@@ -158,7 +132,7 @@ def compressed_buffer_spans(data):
         rel = u16(vtable + pos)
         return None if rel == 0 else table + rel
 
-    spans, pos = [], 0
+    pos = 0
     while pos + 8 <= len(data):
         if u32(pos) != 0xFFFFFFFF:
             break
@@ -168,37 +142,64 @@ def compressed_buffer_spans(data):
         meta = pos + 8
         msg = meta + u32(meta)
         body = (meta + meta_len + 7) & ~7
-        body_len = i64(field(msg, 3)) if field(msg, 3) is not None else 0
+        body_len_field = field(msg, 3)
+        body_len = i64(data, body_len_field) if body_len_field is not None else 0
         if data[field(msg, 1)] == 3:  # Message.header_type == RecordBatch
             header = field(msg, 2)
             batch = header + u32(header)
             buffers = field(batch, 2)
             vec = buffers + u32(buffers)
-            for k in range(u32(vec)):
-                offset, length = i64(vec + 4 + 16 * k), i64(vec + 12 + 16 * k)
-                if length > 8:  # a compressed buffer: 8-byte prefix plus a payload
-                    spans.append((body + offset + 8, body + offset + length))
+            entries = [(vec + 4 + 16 * k, vec + 12 + 16 * k) for k in range(u32(vec))]
+            return body, body_len, body_len_field, entries
         pos = body + body_len
+    raise AssertionError("no RecordBatch message")
+
+
+def compressed_spans(data):
+    """Absolute (start, end) of every compressed buffer's payload, past its 8-byte prefix."""
+    body, _, _, entries = batch_meta(data)
+    spans = []
+    for off_f, len_f in entries:
+        offset, length = i64(data, off_f), i64(data, len_f)
+        if length > 8:  # a compressed buffer: 8-byte prefix plus a payload
+            spans.append((body + offset + 8, body + offset + length))
     return spans
 
 
 def repack_zstd(data, span, frames):
     """Replace a ZSTD payload with `frames(decompressed_bytes)`, padded back to its original length.
 
-    Padding is a ZSTD skippable frame, which the decompressor ignores, so the payload keeps its byte
-    length and every buffer offset in the RecordBatch stays valid without patching the metadata.
+    The pad is a ZSTD skippable frame, which the decompressor ignores, so every buffer offset in the
+    RecordBatch stays valid without patching the metadata.
     """
     start, end = span
-    declared, = struct.unpack_from("<q", data, start - 8)
-    raw = pa.decompress(bytes(data[start:end]), decompressed_size=declared, codec="zstd", asbytes=True)
+    raw = pa.decompress(bytes(data[start:end]), decompressed_size=i64(data, start - 8),
+                        codec="zstd", asbytes=True)
     new = frames(raw)
-    # Skippable frame: magic(4) size(4) content(size), so any pad of 8 bytes or more fits.
     room = (end - start) - len(new)
     assert room >= 8, f"replacement payload is {8 - room} bytes too long to pad"
-    new += struct.pack("<II", 0x184D2A50, room - 8) + b"\x00" * (room - 8)
-    out = bytearray(data)
-    out[start:end] = new
-    return out
+    new += struct.pack("<II", SKIPPABLE, room - 8) + b"\x00" * (room - 8)
+    d = bytearray(data)
+    d[start:end] = new
+    return d
+
+
+def lone_frame_buffer(data, prefix_value, frame):
+    """Repoint a naturally-empty buffer at a new one carrying exactly `frame`, appended past the body.
+
+    No skippable pad, unlike `repack_zstd`: a second frame would take a different path and make the
+    arm vacuous. Appending leaves every existing buffer's offset untouched.
+    """
+    d = bytearray(data)
+    body, body_len, body_len_field, entries = batch_meta(d)
+    payload = struct.pack("<q", prefix_value) + frame
+    target = next(((o, l) for o, l in entries if i64(d, l) == 0), None)
+    assert target, "no zero-length buffer to repoint"
+    d[body + body_len:body + body_len] = payload + b"\x00" * (-len(payload) % 8)
+    struct.pack_into("<q", d, body_len_field, body_len + len(payload) + (-len(payload) % 8))
+    struct.pack_into("<q", d, target[0], body_len)
+    struct.pack_into("<q", d, target[1], len(payload))
+    return bytes(d)
 
 
 def zstd_frame(raw):
@@ -207,14 +208,10 @@ def zstd_frame(raw):
 
 
 def zstd_frame_without_declared_size(raw):
-    """One ZSTD frame that omits Frame_Content_Size, which a streaming writer produces and neither
-    ClickHouse nor pyarrow does, so it has to be assembled here.
+    """One ZSTD frame that omits Frame_Content_Size, which neither ClickHouse nor pyarrow emits.
 
-    Frame_Header_Descriptor 0 selects no content size, no checksum and no dictionary, leaving a
-    Window_Descriptor whose exponent sits in its top 5 bits. The payload goes in Raw blocks:
-    Block_Header is 3 bytes little-endian holding last-block in bit 0, block type in bits 1-2 (0 is
-    Raw) and the block size above them. The block size is capped at min(128 KB, window size), which is
-    also the per-block bound a reader can derive, so the window is set well above the payload.
+    Descriptor 0 selects no content size, checksum or dictionary; the Window_Descriptor exponent sits
+    in its top 5 bits. Raw blocks: 3-byte header, last-block in bit 0, type in bits 1-2, size above.
     """
     max_block = 1 << 17
     out = bytearray(ZSTD_MAGIC + bytes([0x00, (20 - 10) << 3]))
@@ -228,211 +225,29 @@ def zstd_frame_without_declared_size(raw):
             return bytes(out)
 
 
-def batch_meta(data):
-    """The RecordBatch message's body offset, body length and per-buffer (offset, length) field offsets."""
-    def u16(o):
-        return struct.unpack_from("<H", data, o)[0]
-
-    def u32(o):
-        return struct.unpack_from("<I", data, o)[0]
-
-    def i64(o):
-        return struct.unpack_from("<q", data, o)[0]
-
-    def field(table, idx):
-        vtable = table - struct.unpack_from("<i", data, table)[0]
-        pos = 4 + 2 * idx
-        if pos + 2 > u16(vtable):
-            return None
-        rel = u16(vtable + pos)
-        return None if rel == 0 else table + rel
-
-    pos = 0
-    while pos + 8 <= len(data):
-        if u32(pos) != 0xFFFFFFFF:
-            break
-        meta_len, = struct.unpack_from("<i", data, pos + 4)
-        if meta_len == 0:
-            break
-        meta = pos + 8
-        msg = meta + u32(meta)
-        body = (meta + meta_len + 7) & ~7
-        body_len_field = field(msg, 3)
-        body_len = i64(body_len_field) if body_len_field is not None else 0
-        if data[field(msg, 1)] == 3:  # Message.header_type == RecordBatch
-            header = field(msg, 2)
-            batch = header + u32(header)
-            buffers = field(batch, 2)
-            vec = buffers + u32(buffers)
-            entries = [(vec + 4 + 16 * k, vec + 12 + 16 * k) for k in range(u32(vec))]
-            return body, body_len, body_len_field, entries
-        pos = body + body_len
-    raise AssertionError("no RecordBatch message")
-
-
-def lone_empty_zstd_frame_buffer(data, prefix_value):
-    """Repoint a naturally-empty buffer at a new one whose payload is a LONE empty ZSTD frame.
-
-    The payload must be exactly one frame, otherwise the size gate sends it down the `nullopt` path
-    and the arm is vacuous - so it cannot be padded with a skippable frame the way `repack_zstd`
-    does. Instead the buffer is appended past the body and an existing zero-length buffer (a
-    non-nullable column's absent validity bitmap) is pointed at it, which leaves every other
-    buffer's offset untouched.
-    """
-    d = bytearray(data)
-    body, body_len, body_len_field, entries = batch_meta(d)
+def empty_zstd_frame():
+    """A real empty frame, which truthfully declares 0 and keeps ZSTD's own (not skippable) magic."""
     frame = pa.Codec("zstd", compression_level=1).compress(b"", asbytes=True)
-    # Not the skippable shape: an empty *real* frame keeps ZSTD's own magic.
     assert frame[:4] == ZSTD_MAGIC, frame[:4].hex()
-    payload = struct.pack("<q", prefix_value) + frame
-    target = next(((o, l) for o, l in entries if struct.unpack_from("<q", d, l)[0] == 0), None)
-    assert target, "no zero-length buffer to repoint"
-    d[body + body_len:body + body_len] = payload + b"\x00" * (-len(payload) % 8)
-    struct.pack_into("<q", d, body_len_field, body_len + len(payload) + (-len(payload) % 8))
-    struct.pack_into("<q", d, target[0], body_len)
-    struct.pack_into("<q", d, target[1], len(payload))
-    return bytes(d)
-
-# Case 1: not a parsable frame. Clear the magic of the first buffer's payload.
-d = bytearray(arrow_lz4)
-d[arrow_offs[0] + 8:arrow_offs[0] + 12] = b"\x00\x00\x00\x00"
-open(f"{out}/bad_frame.arrows", "wb").write(bytes(d))
-
-# Case 2: the prefix disagrees with the size its own frame declares. Far larger than the real size,
-# but below the allocator's ceiling, so it is the frame comparison and not the total that rejects it.
-d = bytearray(ch_lz4)
-struct.pack_into("<q", d, ch_offs[0], 100 * 1024 ** 3)
-open(f"{out}/prefix_mismatch.arrows", "wb").write(bytes(d))
-
-# Case 3: huge prefixes on two buffers at once, in frames that declare no size. pyarrow omits the
-# frame's optional content size, so this is the shape with nothing to compare a prefix against
-# directly - only the frame's blocks bound it, and each of these prefixes exceeds that bound. Every
-# buffer is checked, so the first one already rejects the file rather than any accumulated total.
-d = bytearray(arrow_lz4)
-half = (1 << 61) + 8
-struct.pack_into("<q", d, arrow_offs[0], half)
-struct.pack_into("<q", d, arrow_offs[1], half)
-open(f"{out}/no_declared_size_forged_prefixes.arrows", "wb").write(bytes(d))
-
-# Case 4 (NOT corrupt): the prefix and the frame agree on a size the frame's one block really can
-# produce. Patch both in place. Larger than the file, so reading it is a resource condition.
-d = bytearray(ch_lz4)
-big = 4 * 1024 ** 2
-struct.pack_into("<q", d, ch_offs[0], big)
-set_frame_content_size(d, ch_offs[0], big)
-open(f"{out}/consistent_large.arrows", "wb").write(bytes(d))
-
-# Case 4b: the same prefix and frame size, one byte past what that block can produce. A pledged size
-# is enforced exactly, so this is rejected for disagreeing with the pledge rather than for exceeding
-# the block bound - the two rejection reasons must not be conflated.
-d = bytearray(ch_lz4)
-struct.pack_into("<q", d, ch_offs[0], big + 1)
-set_frame_content_size(d, ch_offs[0], big)
-open(f"{out}/pledge_mismatch.arrows", "wb").write(bytes(d))
-
-# The cases below cover the ZSTD branch of the frame lookup, which the LZ4-derived cases above never
-# reach: the two codecs read their frame headers through different APIs.
-
-# Case 5: a ZSTD prefix disagreeing with the size its own frame declares (ClickHouse's writer
-# records one). Far larger than the real size but below the allocator's ceiling, as in case 2.
-d = bytearray(ch_zstd)
-struct.pack_into("<q", d, zstd_offs[0], 100 * 1024 ** 3)
-open(f"{out}/zstd_prefix_mismatch.arrows", "wb").write(bytes(d))
-
-# Case 6: not a parsable ZSTD frame. Clear the magic of the first buffer's payload.
-d = bytearray(ch_zstd)
-d[zstd_offs[0] + 8:zstd_offs[0] + 12] = b"\x00\x00\x00\x00"
-open(f"{out}/zstd_bad_frame.arrows", "wb").write(bytes(d))
-
-# Cases 7 and 8 (NOT corrupt): payload shapes whose first frame header does not describe the whole
-# payload, so its declared size is not comparable to the prefix. ZSTD decompression accepts both -
-# it sums every concatenated frame and skips skippable ones - so both must still be read.
-zstd_spans = compressed_buffer_spans(ch_zstd)
-assert zstd_spans, "expected a compressed buffer in the RecordBatch metadata"
-
-d = repack_zstd(ch_zstd, zstd_spans[0],
-                lambda raw: zstd_frame(raw[:len(raw) // 2]) + zstd_frame(raw[len(raw) // 2:]))
-open(f"{out}/zstd_multi_frame.arrows", "wb").write(bytes(d))
-
-d = repack_zstd(ch_zstd, zstd_spans[0],
-                lambda raw: struct.pack("<II", 0x184D2A50, 4) + b"\x00" * 4 + zstd_frame(raw))
-open(f"{out}/zstd_skippable_prefix.arrows", "wb").write(bytes(d))
-
-# Case 9: a lone empty ZSTD frame truthfully declares 0, so a positive prefix disagrees with it and
-# must be rejected before it is allocated for. Zero is a content size here, not a "declares nothing"
-# marker - ZSTD signals that separately, with ZSTD_CONTENTSIZE_UNKNOWN.
-open(f"{out}/zstd_empty_frame_forged_prefix.arrows", "wb").write(
-    lone_empty_zstd_frame_buffer(ch_zstd, 100 * 1024 ** 3))
-
-# Case 10 (NOT corrupt): the same lone empty frame with the prefix it really describes. The
-# comparison must accept the 0 it now compares rather than over-rejecting an empty buffer.
-open(f"{out}/zstd_empty_frame_honest_prefix.arrows", "wb").write(
-    lone_empty_zstd_frame_buffer(ch_zstd, 0))
-
-# Cases 11 and 12: the same two payload shapes as cases 7 and 8, with a forged prefix. Every frame
-# of these payloads declares a size, so the sum of them is comparable to the prefix and the
-# disagreement must be rejected - reading only the first frame's header would not see it.
-for name, frames in (
-    ("zstd_multi_frame_forged_prefix",
-     lambda raw: zstd_frame(raw[:len(raw) // 2]) + zstd_frame(raw[len(raw) // 2:])),
-    ("zstd_skippable_prefix_forged_prefix",
-     lambda raw: struct.pack("<II", 0x184D2A50, 4) + b"\x00" * 4 + zstd_frame(raw)),
-):
-    d = repack_zstd(ch_zstd, zstd_spans[0], frames)
-    struct.pack_into("<q", d, zstd_spans[0][0] - 8, 100 * 1024 ** 3)
-    open(f"{out}/{name}.arrows", "wb").write(bytes(d))
-
-
-def lone_frame_buffer(data, prefix_value, frame):
-    """Repoint a naturally-empty buffer at a new one carrying `frame`, appended past the body.
-
-    Every other buffer's offset stays valid because nothing already in the body moves.
-    """
-    d = bytearray(data)
-    body, body_len, body_len_field, entries = batch_meta(d)
-    payload = struct.pack("<q", prefix_value) + frame
-    target = next(((o, l) for o, l in entries if struct.unpack_from("<q", d, l)[0] == 0), None)
-    assert target, "no zero-length buffer to repoint"
-    d[body + body_len:body + body_len] = payload + b"\x00" * (-len(payload) % 8)
-    struct.pack_into("<q", d, body_len_field, body_len + len(payload) + (-len(payload) % 8))
-    struct.pack_into("<q", d, target[0], body_len)
-    struct.pack_into("<q", d, target[1], len(payload))
-    return bytes(d)
+    return frame
 
 
 def empty_lz4_frame(declare_zero):
     """An LZ4 frame carrying no blocks: magic, FLG, BD, [contentSize], HC, EndMark.
 
-    With `declare_zero` the optional content size is present and reads 0, which is exactly the value
-    the API also reports when the field is absent - the two states must not be conflated.
+    With `declare_zero` the optional content size is present and reads 0, the same value the API
+    reports when it is absent - the two states must not be conflated.
     """
     flg = 0x40 | (0x08 if declare_zero else 0)
     header = bytes([flg, 0x40]) + (struct.pack("<Q", 0) if declare_zero else b"")
     return LZ4_MAGIC + header + bytes([(xxh32(header) >> 8) & 0xFF]) + struct.pack("<I", 0)
 
 
-# Cases 13 and 14: an empty LZ4 frame produces nothing, so any positive prefix over it is forged. The
-# frame is the only shape whose optional content size can be present and read 0, so both spellings
-# are covered: absent, and present-and-zero.
-for name, declare_zero in (("lz4_empty_frame_forged_prefix", False),
-                           ("lz4_empty_frame_zero_size_forged_prefix", True)):
-    open(f"{out}/{name}.arrows", "wb").write(
-        lone_frame_buffer(ch_lz4, 100 * 1024 ** 3, empty_lz4_frame(declare_zero)))
-
-# Case 15: a pyarrow LZ4 frame, which omits the optional content size, with a forged prefix below the
-# allocator's ceiling. Nothing pledges a size to contradict, so only the frame's blocks bound it.
-d = bytearray(arrow_lz4)
-struct.pack_into("<q", d, arrow_offs[0], 100 * 1024 ** 3)
-open(f"{out}/lz4_no_declared_size_forged_prefix.arrows", "wb").write(bytes(d))
-
 def lz4_frame_with_stored_block(content_checksum=b"", trailing=b""):
-    """An LZ4 frame with one stored (uncompressed) block, optionally followed by extra bytes.
+    """An LZ4 frame with one stored block, optionally followed by extra bytes.
 
-    A stored block expands to exactly its own bytes, so the frame's bound is 8 whatever else is
-    appended, which keeps these cases about what follows the blocks rather than about the bound.
-    `content_checksum` and `trailing` are written verbatim so a truncated checksum and a trailing
-    byte can both be spelled out. The block's bytes are all-ones because the buffer this frame is
-    repointed onto is a validity bitmap, and all-ones there means every row stays valid.
+    A stored block expands to exactly its own bytes, so the bound stays 8 whatever is appended, which
+    keeps these cases about the suffix. All-ones because the target buffer is a validity bitmap.
     """
     flg = 0x40 | (0x04 if content_checksum else 0)
     header = bytes([flg, 0x70])  # blockSizeID 7 (4 MB), block independence off
@@ -441,46 +256,115 @@ def lz4_frame_with_stored_block(content_checksum=b"", trailing=b""):
             + struct.pack("<I", 0) + content_checksum + trailing)
 
 
-# Cases 15b and 15c: bytes after the frame's blocks. The block walk stops at the end marker, so
-# without checking what follows it a payload the decompressor will reject still gets a bound and is
-# allocated for first. Both prefixes are the 8 bytes the block really produces, so the bound itself
-# is honest and only the suffix is wrong.
-open(f"{out}/lz4_trailing_data.arrows", "wb").write(
-    lone_frame_buffer(ch_lz4, 8, lz4_frame_with_stored_block(trailing=b"\x00")))
-open(f"{out}/lz4_truncated_content_checksum.arrows", "wb").write(
-    lone_frame_buffer(ch_lz4, 8, lz4_frame_with_stored_block(content_checksum=b"\x00\x00")))
+def write(name, data):
+    open(f"{out}/{name}.arrows", "wb").write(bytes(data))
 
-# Case 15d (NOT corrupt): the same frame with a whole content checksum, so the walk must accept a
-# checksum rather than reading it as trailing data. The checksum is of the block's own bytes.
-open(f"{out}/lz4_content_checksum.arrows", "wb").write(
-    lone_frame_buffer(ch_lz4, 8,
-                      lz4_frame_with_stored_block(content_checksum=struct.pack("<I", xxh32(b"\xff" * 8)))))
 
-# Case 16: a frame whose content size is recorded as 0 while its blocks really do produce data - a
-# shape no writer emits but a file can carry, and the one place where "recorded 0" and "not recorded"
-# genuinely differ. Reading the 0 as an exact size would reject the real prefix, so the blocks decide.
+big = 4 * 1024 ** 2
+# Far larger than any real size, but below the allocator's ceiling, so the frame comparison rather
+# than the total is what rejects these.
+forged = 100 * 1024 ** 3
+
+# Not a parsable frame: clear the first buffer payload's magic. Both codecs, which read their frame
+# headers through different APIs.
+d = bytearray(arrow_lz4)
+d[arrow_offs[0] + 8:arrow_offs[0] + 12] = b"\x00\x00\x00\x00"
+write("bad_frame", d)
+
+d = bytearray(ch_zstd)
+d[zstd_offs[0] + 8:zstd_offs[0] + 12] = b"\x00\x00\x00\x00"
+write("zstd_bad_frame", d)
+
+# A prefix disagreeing with the size its own frame pledges, for both codecs.
 d = bytearray(ch_lz4)
-set_frame_content_size(d, ch_offs[0], 0)
-open(f"{out}/lz4_zero_size_over_blocks.arrows", "wb").write(bytes(d))
+struct.pack_into("<q", d, ch_offs[0], forged)
+write("prefix_mismatch", d)
 
-# Case 17: a frame recording more than its blocks can produce describes no possible frame, so it is
-# rejected on its own terms. The prefix is set to the block bound, which agrees with neither, so a
-# check that only compared the prefix against the bound would allocate for it first.
+d = bytearray(ch_zstd)
+struct.pack_into("<q", d, zstd_offs[0], forged)
+write("zstd_prefix_mismatch", d)
+
+# Two forged prefixes at once in frames that pledge nothing, so only their blocks bound them. Every
+# buffer is checked, so the first already rejects the file rather than any accumulated total.
+d = bytearray(arrow_lz4)
+half = (1 << 61) + 8
+struct.pack_into("<q", d, arrow_offs[0], half)
+struct.pack_into("<q", d, arrow_offs[1], half)
+write("no_declared_size_forged_prefixes", d)
+
+# NOT corrupt: prefix and frame agree on a size that one block really can produce. Larger than the
+# file, so reading it is a resource condition rather than a data error.
+d = bytearray(ch_lz4)
+struct.pack_into("<q", d, ch_offs[0], big)
+set_frame_content_size(d, ch_offs[0], big)
+write("consistent_large", d)
+
+# One byte past that: a pledge is enforced exactly, so this is rejected for disagreeing with the
+# pledge and not for exceeding the block bound. The two reasons must not be conflated.
+d = bytearray(ch_lz4)
+struct.pack_into("<q", d, ch_offs[0], big + 1)
+set_frame_content_size(d, ch_offs[0], big)
+write("pledge_mismatch", d)
+
+# A frame pledging more than its blocks can produce describes no possible frame, so it is rejected on
+# its own terms. The prefix agrees with neither, so comparing only prefix against bound would allocate.
 d = bytearray(ch_lz4)
 set_frame_content_size(d, ch_offs[0], 1024 ** 3)
-struct.pack_into("<q", d, ch_offs[0], 4 * 1024 ** 2)
-open(f"{out}/lz4_pledge_above_blocks.arrows", "wb").write(bytes(d))
+struct.pack_into("<q", d, ch_offs[0], big)
+write("lz4_pledge_above_blocks", d)
 
-# Cases 18 and 19: a ZSTD payload whose frame omits its content size, as a streaming writer emits. It
-# declares nothing to compare a prefix against, so only its block structure bounds it. The frame is
-# appended as its own buffer rather than repacked in place: its blocks are Raw, so it does not fit the
-# space the compressed payload occupied. Case 19 is NOT corrupt and must still be read.
+# A recorded size of 0 over blocks that do produce data: the one shape where "recorded 0" and "not
+# recorded" genuinely differ. Reading it as an exact size would reject the honest prefix.
+d = bytearray(ch_lz4)
+set_frame_content_size(d, ch_offs[0], 0)
+write("lz4_zero_size_over_blocks", d)
+
+# A pyarrow LZ4 frame omits the content size, so nothing pledges a size to contradict the prefix.
+d = bytearray(arrow_lz4)
+struct.pack_into("<q", d, arrow_offs[0], forged)
+write("lz4_no_declared_size_forged_prefix", d)
+
+# NOT corrupt: payload shapes whose leading frame header describes less than the whole payload.
+# ZSTD sums concatenated frames and skips skippable ones, so both must still be read. With a forged
+# prefix the disagreement must be rejected, which reading only the first frame's header would miss.
+zstd_span = compressed_spans(ch_zstd)[0]
+for name, frames in (
+    ("zstd_multi_frame",
+     lambda raw: zstd_frame(raw[:len(raw) // 2]) + zstd_frame(raw[len(raw) // 2:])),
+    ("zstd_skippable_prefix",
+     lambda raw: struct.pack("<II", SKIPPABLE, 4) + b"\x00" * 4 + zstd_frame(raw)),
+):
+    write(name, repack_zstd(ch_zstd, zstd_span, frames))
+    d = repack_zstd(ch_zstd, zstd_span, frames)
+    struct.pack_into("<q", d, zstd_span[0] - 8, forged)
+    write(f"{name}_forged_prefix", d)
+
+# An empty frame produces nothing, so any positive prefix over it is forged, and the honest 0 must
+# still be accepted. Zero is a real content size here, not a "declares nothing" marker: ZSTD signals
+# that separately with ZSTD_CONTENTSIZE_UNKNOWN, and LZ4 cannot signal it at all.
+write("zstd_empty_frame_forged_prefix", lone_frame_buffer(ch_zstd, forged, empty_zstd_frame()))
+write("zstd_empty_frame_honest_prefix", lone_frame_buffer(ch_zstd, 0, empty_zstd_frame()))
+write("lz4_empty_frame_forged_prefix", lone_frame_buffer(ch_lz4, forged, empty_lz4_frame(False)))
+write("lz4_empty_frame_zero_size_forged_prefix",
+      lone_frame_buffer(ch_lz4, forged, empty_lz4_frame(True)))
+
+# Bytes after the frame's blocks. The walk stops at the end marker, so without checking what follows
+# it a payload the decompressor will reject still gets a bound and is allocated for. Both prefixes are
+# the 8 bytes the block really produces, so only the suffix is wrong. A whole checksum is NOT corrupt.
+write("lz4_trailing_data", lone_frame_buffer(ch_lz4, 8, lz4_frame_with_stored_block(trailing=b"\x00")))
+write("lz4_truncated_content_checksum",
+      lone_frame_buffer(ch_lz4, 8, lz4_frame_with_stored_block(content_checksum=b"\x00\x00")))
+write("lz4_content_checksum",
+      lone_frame_buffer(ch_lz4, 8,
+                        lz4_frame_with_stored_block(content_checksum=struct.pack("<I", xxh32(b"\xff" * 8)))))
+
+# A ZSTD frame that omits its content size, as a streaming writer emits: only its block structure
+# bounds it. Appended as its own buffer because its Raw blocks do not fit the compressed payload's
+# space. The honest-prefix file is NOT corrupt and must still be read.
 body = b"row data to bound" * 64
 frame = zstd_frame_without_declared_size(body)
-open(f"{out}/zstd_no_declared_size_forged_prefix.arrows", "wb").write(
-    lone_frame_buffer(ch_zstd, 100 * 1024 ** 3, frame))
-open(f"{out}/zstd_no_declared_size.arrows", "wb").write(
-    lone_frame_buffer(ch_zstd, len(body), frame))
+write("zstd_no_declared_size_forged_prefix", lone_frame_buffer(ch_zstd, forged, frame))
+write("zstd_no_declared_size", lone_frame_buffer(ch_zstd, len(body), frame))
 PYEOF
 
 check() {
@@ -490,15 +374,14 @@ check() {
 }
 
 # Schema inference reads only the intact Schema message, so it must still succeed. Asserting this
-# pins the failure to the data-read path: a DESCRIBE-based test of the cases below would be vacuous.
+# pins the failures below to the data-read path.
 $CLICKHOUSE_LOCAL --query "DESC file('${TMP_DIR}/bad_frame.arrows', ArrowStream)" > /dev/null 2>&1 \
     && echo 'OK describe' || echo 'FAIL describe'
 
 check bad_frame.arrows INCORRECT_DATA
 check zstd_bad_frame.arrows INCORRECT_DATA
-# The rejection must come from the frame comparison, so match its message: a bare INCORRECT_DATA
-# would also pass if the allocator guard or the decompression call caught it instead, leaving the
-# comparison untested.
+# Match the frame comparison's own message: a bare INCORRECT_DATA would also pass if the allocator
+# guard or the decompression call caught it instead, leaving the comparison untested.
 check prefix_mismatch.arrows 'codec frame declares'
 check no_declared_size_forged_prefixes.arrows 'codec frame declares'
 check pledge_mismatch.arrows 'codec frame declares'
@@ -511,20 +394,17 @@ check lz4_empty_frame_forged_prefix.arrows 'codec frame declares 0'
 check lz4_empty_frame_zero_size_forged_prefix.arrows 'codec frame declares 0'
 check lz4_no_declared_size_forged_prefix.arrows 'codec frame declares'
 check lz4_pledge_above_blocks.arrows 'blocks can produce at most'
-# Bytes past the frame's blocks. Both prefixes are honest, so only the suffix is wrong and the file
-# is still rejected either way - match the walk's own messages, otherwise decompression rejecting it
-# after allocating for it would pass these too.
+# Match the walk's own messages, otherwise decompression rejecting these after allocating for them
+# would pass too.
 check lz4_trailing_data.arrows 'bytes after its LZ4 frame'
 check lz4_truncated_content_checksum.arrows 'ends inside an LZ4 content checksum'
 check zstd_no_declared_size_forged_prefix.arrows 'codec frame declares'
-# Not corrupt: a size the query cannot afford is a resource condition, not a data error. The size a
-# frame's blocks can produce is bounded, so the budget rather than the size is what has to be small.
+# A size the query cannot afford is a resource condition. What a frame's blocks can produce is
+# bounded, so the budget rather than the size is what has to be small.
 check consistent_large.arrows MEMORY_LIMIT_EXCEEDED 1M
 
-# Well-formed compressed files must be unaffected, from either writer and both codecs, including the
-# two ZSTD payload shapes whose leading frame header describes less than the whole payload, an empty
-# buffer whose frame honestly declares the 0 the comparison now sees, and a frame whose recorded size
-# reads 0 over blocks that do produce data (which must not be read as an exact size of zero).
+# Well-formed files must be unaffected: both writers, both codecs, and every shape above that is not
+# corrupt.
 for f in wellformed_lz4 wellformed_zstd ch_lz4 ch_zstd zstd_multi_frame zstd_skippable_prefix \
          zstd_empty_frame_honest_prefix lz4_zero_size_over_blocks zstd_no_declared_size \
          lz4_content_checksum; do
