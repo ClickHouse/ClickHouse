@@ -1,7 +1,9 @@
 #include <Common/DateLUTImpl.h>
 #include <Common/CurrentMetrics.h>
 #include <Common/CurrentThread.h>
+#include <Common/ThreadGroupSwitcher.h>
 #include <Common/Logger.h>
+#include <Common/StringUtils.h>
 #include <Common/logger_useful.h>
 #include <Common/Exception.h>
 #include <Common/formatReadable.h>
@@ -35,6 +37,7 @@
 #include <Parsers/ASTTransactionControl.h>
 #include <Parsers/ASTExplainQuery.h>
 #include <Parsers/parseQuery.h>
+#include <Parsers/ASTFromJSON.h>
 #include <Parsers/ParserQuery.h>
 #include <Parsers/queryNormalization.h>
 #include <Parsers/toOneLineQuery.h>
@@ -140,6 +143,7 @@ namespace DB
 namespace Setting
 {
     extern const SettingsBool allow_experimental_analyzer;
+    extern const SettingsBool allow_experimental_json_ast_dialect;
     extern const SettingsBool allow_experimental_kusto_dialect;
     extern const SettingsBool allow_experimental_polyglot_dialect;
     extern const SettingsBool allow_experimental_prql_dialect;
@@ -2965,6 +2969,12 @@ static void executeASTFuzzerQueries(const ASTPtr & ast, const ContextMutablePtr 
             fuzz_context->setCurrentQueryId("");
             if (!fuzzed_query_params.empty())
                 fuzz_context->setQueryParameters(fuzzed_query_params);
+
+            /// Run the fuzzed query on its own thread group, so that code reading the query context
+            /// from the thread (read/write settings, temporary data, distributed plan execution, ...)
+            /// sees the fuzz context and the limits pinned above instead of the outer query's.
+            ThreadGroupSwitcher thread_group_switcher(
+                ThreadGroup::createForQuery(fuzz_context), ThreadName::AST_FUZZER, /*allow_existing_group=*/ true);
 
             auto result = executeQuery(fuzzed_query, fuzz_context, QueryFlags{.internal = true});
 
