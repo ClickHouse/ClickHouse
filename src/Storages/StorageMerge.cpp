@@ -1900,6 +1900,61 @@ std::optional<UInt64> StorageMerge::totalRowsOrBytes(F && func) const
     return first_table ? std::nullopt : std::make_optional(total_rows_or_bytes);
 }
 
+namespace
+{
+
+struct ParsedMergeEngineArguments
+{
+    String source_database_name_or_regexp;
+    bool is_regexp;
+    String table_name_regexp;
+};
+
+/// `engine_args` elements are replaced by their constant-folded literals, which is idempotent.
+ParsedMergeEngineArguments parseMergeEngineArguments(ASTs & engine_args, ContextPtr local_context)
+{
+    if (engine_args.size() != 2)
+        throw Exception(ErrorCodes::NUMBER_OF_ARGUMENTS_DOESNT_MATCH,
+                        "Storage Merge requires exactly 2 parameters - name "
+                        "of source database and regexp for table names.");
+
+    auto [is_regexp, database_ast] = StorageMerge::evaluateDatabaseName(engine_args[0], local_context);
+
+    if (!is_regexp)
+        engine_args[0] = database_ast;
+
+    String source_database_name_or_regexp = checkAndGetLiteralArgument<String>(database_ast, "database_name");
+
+    engine_args[1] = evaluateConstantExpressionAsLiteral(engine_args[1], local_context);
+    String table_name_regexp = checkAndGetLiteralArgument<String>(engine_args[1], "table_name_regexp");
+
+    return {std::move(source_database_name_or_regexp), is_regexp, std::move(table_name_regexp)};
+}
+
+}
+
+void validateMergeEngineTarget(const ASTs & engine_args, ContextPtr local_context)
+{
+    /// Constant folding rewrites the arguments in place, so parse a copy: the caller's query may
+    /// still be formatted afterwards, and this validation must not alter it.
+    ASTs args_copy;
+    args_copy.reserve(engine_args.size());
+    for (const auto & arg : engine_args)
+        args_copy.push_back(arg->clone());
+
+    auto parsed = parseMergeEngineArguments(args_copy, local_context);
+
+    /// Runs the same per-source-table SHOW_COLUMNS checks as construction; the columns are
+    /// discarded. Unlike the member overload this does not reject a regexp matching no table,
+    /// so a statement the constructing host would accept is never rejected here.
+    StorageMerge::getColumnsDescriptionFromSourceTables(
+        local_context,
+        parsed.source_database_name_or_regexp,
+        parsed.is_regexp,
+        parsed.table_name_regexp,
+        local_context->getSettingsRef()[Setting::merge_table_max_tables_to_look_for_schema_inference]);
+}
+
 void registerStorageMerge(StorageFactory & factory);
 void registerStorageMerge(StorageFactory & factory)
 {
@@ -1909,25 +1964,16 @@ void registerStorageMerge(StorageFactory & factory)
           *  as well as regex for source-table names.
           */
 
-        ASTs & engine_args = args.engine_args;
-
-        if (engine_args.size() != 2)
-            throw Exception(ErrorCodes::NUMBER_OF_ARGUMENTS_DOESNT_MATCH,
-                            "Storage Merge requires exactly 2 parameters - name "
-                            "of source database and regexp for table names.");
-
-        auto [is_regexp, database_ast] = StorageMerge::evaluateDatabaseName(engine_args[0], args.getLocalContext());
-
-        if (!is_regexp)
-            engine_args[0] = database_ast;
-
-        String source_database_name_or_regexp = checkAndGetLiteralArgument<String>(database_ast, "database_name");
-
-        engine_args[1] = evaluateConstantExpressionAsLiteral(engine_args[1], args.getLocalContext());
-        String table_name_regexp = checkAndGetLiteralArgument<String>(engine_args[1], "table_name_regexp");
+        auto parsed = parseMergeEngineArguments(args.engine_args, args.getLocalContext());
 
         return std::make_shared<StorageMerge>(
-            args.table_id, args.columns, args.comment, source_database_name_or_regexp, is_regexp, table_name_regexp, args.getLocalContext());
+            args.table_id,
+            args.columns,
+            args.comment,
+            parsed.source_database_name_or_regexp,
+            parsed.is_regexp,
+            parsed.table_name_regexp,
+            args.getLocalContext());
     },
     {
         .supports_schema_inference = true

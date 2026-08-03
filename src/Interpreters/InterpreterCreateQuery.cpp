@@ -47,6 +47,7 @@
 #include <Parsers/parseQuery.h>
 
 #include <Storages/Distributed/validateRemoteEngineTarget.h>
+#include <Storages/StorageMerge.h>
 #include <Storages/StorageQueryRunner.h>
 #include <Storages/MaterializedView/RefreshSet.h>
 #include <Storages/MaterializedView/RefreshTask.h>
@@ -2941,7 +2942,11 @@ void InterpreterCreateQuery::preflightEngineTarget(ASTCreateQuery & create, bool
     auto mode = getLoadingStrictnessLevel(
         create.attach, /*force_attach*/ false, /*has_force_restore_data_flag*/ false, is_restore_from_backup);
 
-    if (engine_name == "Remote" || engine_name == "RemoteSecure")
+    /// One condition for both the branch and the `secure` flag it implies, so that the secure
+    /// engine cannot be dropped from the branch without also changing the plain engine.
+    const bool is_remote_engine = engine_name == "Remote" || engine_name == "RemoteSecure";
+
+    if (is_remote_engine)
     {
         if (!create.storage->engine->arguments)
             return;
@@ -2953,13 +2958,19 @@ void InterpreterCreateQuery::preflightEngineTarget(ASTCreateQuery & create, bool
             mode,
             create.attach_short_syntax,
             /* columns_given = */ structure_given,
-            /* secure = */ engine_name == "RemoteSecure",
-            is_restore_from_backup,
+            /* secure = */ engine_name != "Remote",
+            /* is_restore_from_backup = */ false,
             /* dependent_table_id = */ nullptr);
     }
     else if (engine_name == "QueryRunner")
     {
         validateQueryRunnerTarget(*create.storage, getContext(), mode);
+    }
+    else if (engine_name == "Merge")
+    {
+        /// The engine checks its source tables only while inferring an omitted structure.
+        if (!structure_given && create.storage->engine->arguments)
+            validateMergeEngineTarget(create.storage->engine->arguments->children, getContext());
     }
 }
 
@@ -2969,6 +2980,10 @@ BlockIO InterpreterCreateQuery::executeQueryOnCluster(ASTCreateQuery & create, b
 
     if (engine_is_resolved)
     {
+        /// Resolving the engine's target evaluates user expressions and may contact remote shards,
+        /// so the statement itself must be authorized first.
+        getContext()->checkAccess(getRequiredAccess());
+
         /// Normalization materializes an empty `columns_list`, so its presence says nothing about
         /// whether the user supplied a structure; only its contents do.
         const bool structure_given = create.columns_list && create.columns_list->columns

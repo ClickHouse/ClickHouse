@@ -13,6 +13,12 @@ storage, and all of them live behind `StorageFactory::get`:
     target is a table function and the cluster has a local shard - which fires even
     when the columns are given explicitly.
 
+The `Merge` engine carries the same gap through a different check: its creator passes the
+*local* context into the constructor, which performs a per-source-table `SHOW_COLUMNS`
+while inferring an omitted structure. (Plain `Distributed` is deliberately not covered:
+its creator passes the *global* context, so it is bypassed on the non-`ON CLUSTER` path
+too and the two paths already agree - a separate, pre-existing defect.)
+
 On an `ON CLUSTER` query only each host's DDL worker reaches `StorageFactory::get`, and
 its query context carries no user unless the server setting
 `distributed_ddl_use_initial_user_and_roles` is enabled (default off), so
@@ -26,8 +32,9 @@ Result before the fix: a user holding `CREATE TABLE` on its own database plus
 `DESCRIBE`. The identical statement without `ON CLUSTER` was correctly rejected.
 
 Every `ON CLUSTER` case below is paired with the same statement run without
-`ON CLUSTER` (`test_control_without_on_cluster`), so the test asserts that the two
-paths agree rather than that `ON CLUSTER` merely became stricter.
+`ON CLUSTER` (`test_control_without_on_cluster`, `test_merge_engine_control_without_on_cluster`),
+so the test asserts that the two paths agree rather than that `ON CLUSTER` merely became
+stricter.
 """
 
 import uuid
@@ -74,7 +81,7 @@ def started_cluster():
         cluster.shutdown()
 
 
-def make_user(name, grant_target_access=False, url_filter=None):
+def make_user(name, grant_target_access=False, url_filter=None, engines=("Remote",)):
     """Create `name` on both nodes with the rights needed to reach the engine's checks.
 
     The user may create and read tables in its own database, but (unless
@@ -86,7 +93,8 @@ def make_user(name, grant_target_access=False, url_filter=None):
         node.query(f"DROP USER IF EXISTS {name}")
         node.query(f"CREATE USER {name}")
         node.query(f"GRANT CREATE TABLE, SELECT, INSERT ON {DB}.* TO {name}")
-        node.query(f"GRANT TABLE ENGINE ON Remote TO {name}")
+        for engine in engines:
+            node.query(f"GRANT TABLE ENGINE ON {engine} TO {name}")
         node.query(f"GRANT REMOTE ON *.* TO {name}")
         node.query(f"GRANT CLUSTER ON *.* TO {name}")
         if not grant_target_access:
@@ -100,15 +108,28 @@ def unique(prefix):
     return f"{prefix}_{uuid.uuid4().hex[:8]}"
 
 
+def denial_subject(error):
+    """The privilege named by an `ACCESS_DENIED` error, e.g. `SELECT ON acl_db.local_target`.
+
+    The full error text also carries the offending query and a stack trace, both of which
+    mention the engine's target, so a substring test over the whole text cannot tell *which*
+    privilege was missing. Only this subject can.
+    """
+    assert DENIED in error, error
+    marker = "necessary to have the grant "
+    assert marker in error, error
+    return error.split(marker, 1)[1].split(". Stack trace", 1)[0].strip()
+
+
 def assert_denied_on_target(error, table):
     """The statement must be denied, and denied because of the ENGINE's target.
 
-    Naming the target rules out a denial for some unrelated missing grant, which would make
-    the case pass without exercising the check under test.
+    Asserting that the *denied privilege* names the target rules out a denial for some
+    unrelated missing grant, which would make the case pass without exercising the check
+    under test.
     """
     assert error is not None, "the statement was accepted"
-    assert DENIED in error, error
-    assert "local_target" in error, error
+    assert "local_target" in denial_subject(error), denial_subject(error)
     assert_absent_everywhere(table)
 
 
@@ -153,7 +174,7 @@ def remote_over_local_target(port=9000):
 
 
 # ---------------------------------------------------------------------------
-# 1-3. plain target: the local-shard SELECT + INSERT check
+# plain target: the local-shard SELECT + INSERT check
 # ---------------------------------------------------------------------------
 
 
@@ -182,7 +203,7 @@ def test_plain_target_requires_select_and_insert(started_cluster):
 
 
 # ---------------------------------------------------------------------------
-# 4. omitted structure: the local-shard SHOW_COLUMNS check
+# omitted structure: the local-shard SHOW_COLUMNS check
 # ---------------------------------------------------------------------------
 
 
@@ -217,7 +238,7 @@ def test_omitted_structure_requires_show_columns(started_cluster):
 
 
 # ---------------------------------------------------------------------------
-# 5. table-function target WITH explicit columns
+# table-function target WITH explicit columns
 # ---------------------------------------------------------------------------
 
 
@@ -241,11 +262,13 @@ def test_table_function_target_checked_even_with_explicit_columns(started_cluste
         node.query(f"GRANT SHOW COLUMNS, SELECT, INSERT ON {DB}.local_target TO {user}")
     assert create_on_cluster(user, table, definition) is None
     for node in (node1, node2):
+        # Read through the table, so a table that was created but is unusable would fail here.
+        assert node.query(f"SELECT x FROM {DB}.{table}", user=user).strip() == "42"
         node.query(f"DROP TABLE {DB}.{table} SYNC")
 
 
 # ---------------------------------------------------------------------------
-# 6. filtered source grants keep working
+# filtered source grants keep working
 # ---------------------------------------------------------------------------
 
 
@@ -275,11 +298,13 @@ def test_filtered_source_grant_is_honoured(started_cluster):
         is None
     )
     for node in (node1, node2):
+        # Read through the table, so a table that was created but is unusable would fail here.
+        assert node.query(f"SELECT x FROM {DB}.{allowed}", user=user).strip() == "1"
         node.query(f"DROP TABLE {DB}.{allowed} SYNC")
 
 
 # ---------------------------------------------------------------------------
-# 7. a malformed definition is reported by the initiator
+# a malformed definition is reported by the initiator
 # ---------------------------------------------------------------------------
 
 
@@ -296,14 +321,14 @@ def test_malformed_engine_arguments_reported_by_initiator(started_cluster):
 
 
 # ---------------------------------------------------------------------------
-# 8. control: the same statements without ON CLUSTER
+# control: the same statements without ON CLUSTER
 # ---------------------------------------------------------------------------
 
 
 def test_control_without_on_cluster(started_cluster):
-    # The point of the fix is that the two paths agree. These are the same statements as
-    # cases 1, 2, 4 and 5 with `ON CLUSTER` removed; they were already rejected before the
-    # fix, and must stay rejected.
+    # The point of the fix is that the two paths agree. These are the `Remote` statements
+    # above with `ON CLUSTER` removed; they were already rejected before the fix, and must
+    # stay rejected.
     user = make_user("u_control")
 
     for suffix, definition in [
@@ -328,7 +353,7 @@ def test_control_without_on_cluster(started_cluster):
 
 
 # ---------------------------------------------------------------------------
-# 10 + 12. the legacy `distributed_ddl_entry_format_version < 3` funnel
+# the legacy `distributed_ddl_entry_format_version < 3` funnel
 # ---------------------------------------------------------------------------
 
 LEGACY = {"distributed_ddl_entry_format_version": 2}
@@ -378,8 +403,38 @@ def test_legacy_funnel_inherited_engine_is_rejected(started_cluster):
         node.query(f"DROP TABLE {DB}.{table} SYNC")
 
 
+def test_statement_is_authorized_before_the_target_is_resolved(started_cluster):
+    # Resolving the engine's target evaluates the user's expressions and can send a
+    # `DESC TABLE` to a remote shard, so it must not run for a user who may not issue the
+    # statement at all. On this funnel `execute()` returns before its own `checkAccess`, and
+    # `executeDDLQueryOnCluster` checks only after the enqueue is prepared, so without an
+    # explicit check the preflight would be the first thing an unprivileged user reaches.
+    #
+    # The oracle is *which* grant the error names: `local_target` means the target was
+    # resolved first (the pre-auth surface), the missing statement-level grant means
+    # authorization came first.
+    user = "u_preauth"
+    for node in (node1, node2):
+        node.query(f"DROP USER IF EXISTS {user}")
+        node.query(f"CREATE USER {user}")
+        # Deliberately no CREATE TABLE and no TABLE ENGINE grant.
+        node.query(f"GRANT CLUSTER ON *.* TO {user}")
+
+    table = unique("t_preauth")
+    error = create_on_cluster(
+        user, table, f"(x UInt64) {remote_over_local_target()}", settings=LEGACY
+    )
+    assert error is not None, "the statement was accepted"
+    subject = denial_subject(error)
+    assert "local_target" not in subject, (
+        f"the target was resolved before authorization: denied on {subject}"
+    )
+    assert "CREATE TABLE" in subject or "TABLE ENGINE" in subject, subject
+    assert_absent_everywhere(table)
+
+
 # ---------------------------------------------------------------------------
-# 11. ATTACH ... ON CLUSTER
+# ATTACH ... ON CLUSTER
 # ---------------------------------------------------------------------------
 
 
@@ -416,6 +471,114 @@ def test_full_definition_attach_on_cluster_is_checked(started_cluster):
 
 
 # ---------------------------------------------------------------------------
+# the Merge engine: a per-source-table SHOW_COLUMNS check during inference
+# ---------------------------------------------------------------------------
+
+
+def merge_over_local_target():
+    return f"ENGINE = Merge('{DB}', '^local_target$')"
+
+
+def make_merge_user(name):
+    """A user that can create `Merge` tables and knows `local_target` exists.
+
+    `SHOW TABLES` on the target is granted deliberately. The inference traversal skips a
+    table the user cannot even see (`isGranted(SHOW_TABLES)` returns false and the table is
+    filtered out silently, with no denial), so without it the statement would fail for
+    having found no table rather than for the access check under test.
+    """
+    user = make_user(name, engines=("Merge",))
+    for node in (node1, node2):
+        node.query(f"GRANT SHOW TABLES ON {DB}.local_target TO {user}")
+    return user
+
+
+def test_merge_engine_omitted_structure_requires_show_columns(started_cluster):
+    # `registerStorageMerge` passes the LOCAL context into the constructor, which infers an
+    # omitted structure by reading each source table's columns under a per-table
+    # SHOW_COLUMNS check. On a host replaying the DDL entry that context carries no user, so
+    # the check is a no-op there and the initiator must run it.
+    user = make_merge_user("u_merge")
+    table = unique("t_merge")
+
+    error = create_on_cluster(user, table, merge_over_local_target())
+    assert error is not None, "the statement was accepted"
+    subject = denial_subject(error)
+    assert subject.startswith("SHOW COLUMNS"), subject
+    assert "local_target" in subject, subject
+    assert_absent_everywhere(table)
+
+    for node in (node1, node2):
+        node.query(f"GRANT SHOW COLUMNS ON {DB}.local_target TO {user}")
+    assert create_on_cluster(user, table, merge_over_local_target()) is None
+    for node in (node1, node2):
+        # The structure was inferred from the target, so the column exists and is typed.
+        assert (
+            node.query(
+                f"SELECT name, type FROM system.columns "
+                f"WHERE database = '{DB}' AND table = '{table}'"
+            ).strip()
+            == "x\tUInt64"
+        )
+        # Reading through the table needs SELECT on the source too - that is the engine's own
+        # read-time check, unchanged by this fix, and asserting it keeps the success non-vacuous.
+        node.query(f"GRANT SELECT ON {DB}.local_target TO {user}")
+        assert node.query(f"SELECT x FROM {DB}.{table}", user=user).strip() == "42"
+        node.query(f"DROP TABLE {DB}.{table} SYNC")
+
+
+def test_merge_engine_explicit_structure_is_not_checked(started_cluster):
+    # The engine only reads the source tables while inferring, so a definition that carries
+    # its own structure requires nothing on them. Checking it anyway would reject statements
+    # the non-`ON CLUSTER` path accepts, which is the same divergence in the other direction.
+    user = make_merge_user("u_merge_explicit")
+    table = unique("t_merge_explicit")
+
+    assert create_on_cluster(user, table, f"(x UInt64) {merge_over_local_target()}") is None
+    for node in (node1, node2):
+        assert node.query(f"EXISTS TABLE {DB}.{table}").strip() == "1"
+        node.query(f"DROP TABLE {DB}.{table} SYNC")
+
+
+def test_merge_engine_control_without_on_cluster(started_cluster):
+    # The two paths must agree: without `ON CLUSTER` the same statement was already rejected
+    # before the fix, because the creator gets the user's context. (This is what distinguishes
+    # `Merge` from plain `Distributed`, whose creator gets the global context and so is
+    # bypassed on both paths.)
+    user = make_merge_user("u_merge_control")
+    table = unique("t_merge_local")
+
+    error = _run(user, f"CREATE TABLE {DB}.{table} {merge_over_local_target()}")
+    assert error is not None, "the statement was accepted"
+    subject = denial_subject(error)
+    assert subject.startswith("SHOW COLUMNS"), subject
+    assert "local_target" in subject, subject
+    assert node1.query(f"EXISTS TABLE {DB}.{table}").strip() == "0"
+
+
+# ---------------------------------------------------------------------------
+# RemoteSecure shares the Remote branch
+# ---------------------------------------------------------------------------
+
+
+def test_remote_secure_engine_is_preflighted(started_cluster):
+    # `RemoteSecure` reaches the same preflight branch as `Remote`, from which it differs only
+    # in the `secure` flag - both are selected by one condition, so the secure engine cannot be
+    # dropped from the branch without also changing `Remote`.
+    #
+    # Partial oracle: this asserts the branch runs and denies (the target check fires because
+    # the address carries the default secure port, which the cluster treats as local). The
+    # allowed direction is not covered here because it needs a working TLS listener on both
+    # instances; the `Remote` cases above cover the shared code path end to end.
+    user = make_user("u_secure", engines=("RemoteSecure",))
+    table = unique("t_secure")
+    definition = f"(x UInt64) ENGINE = RemoteSecure('127.0.0.1:9440', {DB}, local_target, 'default')"
+
+    error = create_on_cluster(user, table, definition)
+    assert_denied_on_target(error, table)
+
+
+# ---------------------------------------------------------------------------
 # The same gap in the second engine that checks its target while being constructed
 # ---------------------------------------------------------------------------
 
@@ -436,7 +599,8 @@ def test_query_runner_cluster_requires_remote_source_access(started_cluster):
     definition = "(query String) ENGINE = QueryRunner SETTINGS cluster = 'test_cluster'"
 
     error = create_on_cluster(user, table, definition)
-    assert error is not None and DENIED in error and "REMOTE" in error, error
+    assert error is not None, "the statement was accepted"
+    assert "REMOTE" in denial_subject(error), denial_subject(error)
     assert_absent_everywhere(table)
 
     for node in (node1, node2):
@@ -455,7 +619,7 @@ def test_query_runner_cluster_requires_remote_source_access(started_cluster):
 
 
 # ---------------------------------------------------------------------------
-# 13. the preflight registers no named-collection dependency
+# the preflight registers no named-collection dependency
 # ---------------------------------------------------------------------------
 
 
@@ -480,8 +644,7 @@ def test_denied_create_leaves_no_named_collection_dependency(started_cluster):
         node.query(f"GRANT NAMED COLLECTION ON {collection} TO {user}")
 
     error = create_on_cluster(user, table, f"(x UInt64) ENGINE = Remote({collection})")
-    assert error is not None and "local_target" in error and DENIED in error, error
-    assert_absent_everywhere(table)
+    assert_denied_on_target(error, table)
 
     # Nothing was registered, so the collection is still droppable.
     for node in (node1, node2):

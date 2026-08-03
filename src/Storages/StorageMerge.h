@@ -315,4 +315,8 @@ private:
         ContextPtr query_context) const;
 };
 
+/// Run, under `local_context`, the source-table access checks that constructing a `Merge` storage
+/// performs while inferring an omitted structure. `engine_args` is not modified.
+void validateMergeEngineTarget(const ASTs & engine_args, ContextPtr local_context);
+
 }
