@@ -6,6 +6,14 @@ DROP TABLE IF EXISTS okv;
 -- Every row pins `optimize_functions_to_subcolumns` explicitly: the CI runner randomizes it, and a
 -- run that injects 0 would silently disarm the rows that must observe the optimization firing.
 
+-- `FunctionToSubcolumnsPass` exists only in the analyzer, so every assertion below needs it
+-- enabled. The `old analyzer` CI job turns it off in the server profile.
+SET enable_analyzer = 1;
+
+-- The plan text below is grepped, so the rendering has to be pinned: `pretty` (the default)
+-- renders a different shape from `legacy`.
+SET explain_query_plan_default = 'legacy';
+
 -- A view whose declared column type differs from what its inner query produces.
 CREATE TABLE vstr (arr String) ENGINE = MergeTree ORDER BY tuple();
 INSERT INTO vstr VALUES ('[1,2,3,4,5,6]');
@@ -33,6 +41,9 @@ SELECT count() > 0 FROM (EXPLAIN PLAN actions = 1 SELECT sum(length(arr)) FROM t
 
 -- Reading through a view does not request the subcolumn from the inner query.
 SELECT count() = 0 FROM (EXPLAIN PLAN actions = 1 SELECT sum(length(arr)) FROM okv SETTINGS optimize_functions_to_subcolumns = 1) WHERE explain ILIKE '%arr.size0%';
+-- Positive control for the row above: the un-rewritten `length` call IS in that same plan, so the
+-- absent-substring assertion cannot pass merely because nothing rendered.
+SELECT count() > 0 FROM (EXPLAIN PLAN actions = 1 SELECT sum(length(arr)) FROM okv SETTINGS optimize_functions_to_subcolumns = 1) WHERE explain ILIKE '%length%';
 
 DROP TABLE okv;
 DROP TABLE tgt;
