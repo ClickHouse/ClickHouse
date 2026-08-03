@@ -99,4 +99,19 @@ select 'Partial match - All count' as test, 2 = length(sequenceMatchEventsAll('(
 select 'Partial match - All complete' as test, [0,1,2] = sequenceMatchEventsAll('(?1)(?2)(?3)')(time, event='A', event='B', event='C')[1] from sequence_test_variants;
 select 'Partial match - All partial' as test, [5,6] = sequenceMatchEventsAll('(?1)(?2)(?3)')(time, event='A', event='B', event='C')[2] from sequence_test_variants;
 
+-- Test: First must prefer the earliest match over a longer, later one.
+-- The leading implicit ".*" in the pattern lets a single backtracking search skip ahead and find a
+-- match starting anywhere in the remaining data; without anchoring the search to the current
+-- position, First could incorrectly return a longer match found later instead of the true first one.
+drop table if exists sequence_test_variants;
+create table sequence_test_variants (time UInt32, data UInt8) engine=MergeTree ORDER BY tuple();
+insert into sequence_test_variants values (0,0),(1,9),(2,0),(3,0),(4,9);
+
+-- Pattern (?1)(?1)(?2): data=0 at times 0,2,3; data=1 never appears.
+-- Anchored at time 0: matches action1, but action2 fails at time 1 (data=9) -> partial [0].
+-- Anchored at time 2: matches action1 and action2 (both data=0 at 2,3), but action3 (data=1) never
+-- matches -> partial [2,3], which is longer but starts later.
+-- First must return the earlier, shorter partial [0], not the longer, later one [2,3].
+select 'First prefers earliest over longest' as test, [0] = sequenceMatchEventsFirst('(?1)(?1)(?2)')(time, data = 0, data = 1) from sequence_test_variants;
+
 drop table sequence_test_variants;

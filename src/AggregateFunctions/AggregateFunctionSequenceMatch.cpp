@@ -391,10 +391,17 @@ protected:
         return active_states.back();
     }
 
-    template <typename EventEntry, bool remember_matched_events = false>
+    /// `anchored`: require the match to start exactly at the given `events_it`, rather than allowing
+    /// the search to silently retry starting at later events (which it otherwise does: the leading
+    /// synthetic KleeneStar in `actions`, plus the fact that every successfully matched action is
+    /// itself a backtrack point, together let the search skip ahead and match starting anywhere in
+    /// [events_it, events_end)). Needed by callers that scan position-by-position and require the
+    /// result to be tied to a specific, known anchor rather than "the best match found anywhere in
+    /// the remaining suffix".
+    template <typename EventEntry, bool remember_matched_events = false, bool anchored = false>
     bool backtrackingMatch(EventEntry & events_it, const EventEntry events_end, VectorWithMemoryTracking<T> * best_matched_events = nullptr) const
     {
-        const auto action_begin = std::begin(actions);
+        const auto action_begin = anchored ? std::next(std::begin(actions)) : std::begin(actions);
         const auto action_end = std::end(actions);
         auto action_it = action_begin;
 
@@ -410,7 +417,10 @@ protected:
 
         const auto do_push_event = [&]
         {
-            back_stack.emplace(action_it, events_it, base_it);
+            /// When anchored, the very first action must not be retried against a later event:
+            /// that would defeat the anchoring by effectively trying a different start position.
+            if (!anchored || action_it != action_begin)
+                back_stack.emplace(action_it, events_it, base_it);
 
             current_matched_events.push_back(events_it->first);
             current_matched_actions.push_back(action_it);
@@ -575,27 +585,20 @@ protected:
     template <typename EventEntry>
     VectorWithMemoryTracking<T> backtrackingMatchEventsFirst(EventEntry & events_it, const EventEntry events_end) const
     {
-        VectorWithMemoryTracking<T> first_matched_events;
-
-        /// Scan forward, non-overlapping, until the first non-empty match (partial or complete) is found
+        /// Anchored: test each position in turn for a match starting exactly there. A plain
+        /// (unanchored) call can silently skip ahead and return the longest match found anywhere
+        /// in the remaining suffix rather than the one starting earliest, which would contradict
+        /// the documented "first, unlike sequenceMatchEvents which returns the longest" semantics.
         while (events_it != events_end)
         {
             VectorWithMemoryTracking<T> current_match;
-            bool match_result = backtrackingMatch<EventEntry, true>(events_it, events_end, &current_match);
+            backtrackingMatch<EventEntry, true, true>(events_it, events_end, &current_match);
 
             if (!current_match.empty())
-            {
-                first_matched_events = current_match;
-                break;
-            }
-
-            if (!match_result)
-            {
-                break;
-            }
+                return current_match;
         }
 
-        return first_matched_events;
+        return {};
     }
 
     /// Find the last matching sequence chronologically
