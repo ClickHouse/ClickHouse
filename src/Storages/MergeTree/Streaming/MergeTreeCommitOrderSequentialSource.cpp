@@ -86,6 +86,22 @@ struct PipeWithResources
     QueryPlanResourceHolder resources;
 };
 
+SelectQueryInfo makeSelectQueryInfoForPartitionRead(const SelectQueryInfo & query_info)
+{
+    SelectQueryInfo info = query_info;
+
+    if (info.row_level_filter)
+    {
+        auto cloned = std::make_shared<FilterDAGInfo>();
+        cloned->actions = info.row_level_filter->actions.clone();
+        cloned->column_name = info.row_level_filter->column_name;
+        cloned->do_remove_column = info.row_level_filter->do_remove_column;
+        info.row_level_filter = std::move(cloned);
+    }
+
+    return info;
+}
+
 /// Returns safe snapshot reading plan from the specified partition.
 QueryPlanPtr buildPartitionReadingPlan(
     const String & partition_id,
@@ -101,10 +117,11 @@ QueryPlanPtr buildPartitionReadingPlan(
     const UInt64 & max_block_size,
     const SharedHeader & output_header)
 {
+    auto partition_query_info = makeSelectQueryInfoForPartitionRead(query_info);
     auto plan = MergeTreeDataSelectExecutor(storage).read(
         inner_columns,
         storage_snapshot,
-        query_info,
+        partition_query_info,
         context,
         max_block_size,
         requested_num_streams,
