@@ -54,12 +54,8 @@ if (ENABLE_XRAY)
     )
 endif()
 if (WITH_COVERAGE)
-    # -fprofile-instr-generate on the link line makes clang inject the profile
-    # runtime from its resource directory; that archive is built against the
-    # host glibc (references the _FORTIFY_SOURCE __*_chk functions) and cannot
-    # link into a musl binary. -noprofilelib suppresses the injection; the
-    # archive built in contrib/compiler-rt-cmake from the vendored sources
-    # replaces it.
+    # Tell clang not to inject its own (host-system) profile runtime — we
+    # provide ours.
     list (APPEND SANITIZER_RUNTIMES
         "-noprofilelib"
         "${COMPILER_RT_DIR}/libclang_rt_profile.a"
