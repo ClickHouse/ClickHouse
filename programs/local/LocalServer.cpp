@@ -18,7 +18,7 @@
 #include <Poco/NullChannel.h>
 #include <Poco/SimpleFileChannel.h>
 #include <Databases/registerDatabases.h>
-#include <Databases/DatabaseFilesystem.h>
+#include <Databases/DatabaseURL.h>
 #include <Databases/DatabaseMemory.h>
 #include <Databases/DatabaseAtomic.h>
 #include <Databases/DatabaseOverlay.h>
@@ -491,7 +491,12 @@ DatabasePtr createClickHouseLocalDatabaseOverlay(const String & name_, ContextPt
         DatabaseCatalog::getStoreDirPath(default_database_uuid);
 
     overlay->registerNextDatabase(std::make_shared<DatabaseAtomic>(name_, default_database_metadata_path, default_database_uuid, context));
-    overlay->registerNextDatabase(std::make_shared<DatabaseFilesystem>(name_, "", context));
+    /// The URL database handles local files, URLs and object storage uniformly: with the `file://`
+    /// base URL, a plain table name resolves to `file://<name>` -- a path relative to the current
+    /// directory, read by the File engine (globs included) -- while a name with a URL scheme
+    /// (`https://`, `s3://`, ...) is dispatched by the scheme to the matching engine. This enables
+    /// queries like `SELECT * FROM 'data.csv'` and `SELECT * FROM 'https://example.com/data.csv'`.
+    overlay->registerNextDatabase(std::make_shared<DatabaseURL>(name_, "file://", context));
     return overlay;
 }
 
