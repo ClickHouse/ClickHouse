@@ -54,9 +54,6 @@ const VersionToSettingsChangesMap & getSettingsChangesHistory()
             {"input_format_read_datetime_number_as_raw_value", true, false, "From 26.8, an unquoted number for a `DateTime`/`DateTime64` column in the `JSON` and `Values`/`Quoted` paths (and in `JSONExtract` and typed `JSON`) is a Unix timestamp in seconds, consistent with the `Values` format, `CAST` and `toDateTime64`. Set this to `true` (or `SET compatibility = '26.7'`) to restore the pre-26.8 behavior, where a bare unquoted integer fed to a `DateTime64` column was read as the raw scaled value (ticks). The tab-separated, CSV and other escaped/whole-text formats are not governed by this setting."},
             {"query_plan_short_circuit_constant_false_join", false, true, "New setting to short-circuit a JOIN with a constant-false ON condition so the non-contributing side is not read. previous_value=false so `compatibility` with versions before 26.8 restores the pre-existing behavior (no short-circuit)."},
             {"distributed_cache_min_inflight_bytes_to_discard_connection_on_seek", 0, 4 * 1024 * 1024, "New setting to drop and reopen a distributed cache connection on a seek when too many in-flight bytes would otherwise be discarded. Defaults to 4 MiB; 0 restores the previous behavior (always reuse the connection via the read range id)."},
-        });
-        addSettingsChanges(settings_changes_history, "26.7",
-        {
             {"lance_query_dataset_reuse", false, true, "New setting to reuse a single Lance dataset handle within one query (analysis + execution)."},
             {"lance_enable_predicate_pushdown", false, true, "New setting to disable Lance predicate pushdown while retaining the complete ClickHouse filter."},
             {"lance_runtime_threads", 0, 0, "New setting for the process-wide Lance Tokio runtime worker thread count (0 = automatic bounded default)."},
@@ -72,6 +69,9 @@ const VersionToSettingsChangesMap & getSettingsChangesHistory()
             {"lance_max_fragment_packs", 0, 0, "New setting bounding distributed Lance coarse tasks (0 = align with max_threads)."},
             {"lance_min_rows_per_pack", 0, 0, "New setting for the soft minimum rows per distributed Lance fragment-group task (0 = ignore)."},
             {"lance_min_bytes_per_pack", 0, 0, "New setting for the soft minimum bytes per distributed Lance fragment-group task (0 = ignore)."},
+        });
+        addSettingsChanges(settings_changes_history, "26.7",
+        {
             {"analyzer_compatibility_allow_non_aggregate_in_having", false, false, "New compatibility setting. When enabled, the analyzer mimics the legacy `HAVING`-to-`WHERE` rewrite for non-aggregate AND-conjuncts instead of raising `NOT_AN_AGGREGATE`."},
             {"dictionary_lazy_load", "auto", "auto", "New setting overriding the server setting `dictionaries_lazy_load` for an individual dictionary."},
             {"discard_query_data", false, false, "New setting to skip sending query result rows to the client over the native TCP protocol."},
