@@ -334,8 +334,9 @@ public:
     /// Range [1970-01-01 00:00:00, 2106-02-07 06:28:15]
     String nextDateTime(const String & separator, bool allow_func, bool has_subseconds);
 
-    /// Range [1900-01-01 00:00:00, 2299-12-31 23:59:59.99999999]
-    String nextDateTime64(const String & separator, bool allow_func, bool has_subseconds);
+    /// Scale-dependent range: up to [0001-01-01, 9999-12-31] for scale <= 7, narrower for
+    /// higher scales (the ticks are Int64 in units of 10^-scale seconds)
+    String nextDateTime64(const String & separator, bool allow_func, uint32_t scale);
 
     template <typename T>
     T thresholdGenerator(const double always_on_prob, const double always_off_prob, T min_val, T max_val)
