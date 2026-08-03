@@ -828,8 +828,6 @@ std::optional<QueryProcessingStage::Enum> StorageDistributed::getOptimizedQueryP
     return QueryProcessingStage::Complete;
 }
 
-<<<<<<< HEAD
-=======
 StorageSnapshotPtr StorageDistributed::getStorageSnapshot(const StorageMetadataPtr & metadata_snapshot, ContextPtr) const
 {
     /// For Hybrid tables, freeze the watermark snapshot at snapshot acquisition time so
@@ -846,7 +844,6 @@ StorageSnapshotPtr StorageDistributed::getStorageSnapshot(const StorageMetadataP
     return std::make_shared<StorageSnapshot>(*this, metadata_snapshot);
 }
 
->>>>>>> 992ca2902cf (Merge pull request #1788 from Altinity/mkmkme/antalya-26.3/hybrid-segment-pruning)
 namespace
 {
 
