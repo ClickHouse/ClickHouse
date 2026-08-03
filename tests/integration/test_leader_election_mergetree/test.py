@@ -2025,3 +2025,83 @@ def test_cleanup_stops_when_lease_goes_stale_mid_removal(started_cluster):
             node1.query(f"DROP TABLE IF EXISTS {table} SYNC")
         except Exception:
             pass
+
+
+SHARED_UUID_DETACHED_MUTATION = "12345678-abcd-abcd-abcd-12345678ab21"
+
+
+def test_attach_partition_undoes_detached_changes_when_lease_goes_stale(started_cluster):
+    """
+    Regression for the rollback journal of the shared `detached/` namespace
+    (`MergeTreeData::DetachedNamespaceRollback`): `ATTACH PARTITION` permanently renames
+    directories to `ignored_` / `inactive_` and strips `txn_version.txt*` from the parts it is
+    about to attach, all of it before the batch is published. Those changes are not staged in
+    `PartsTemporaryRename`, so a lease that went stale in the middle of them used to leave the
+    detached namespace altered by a command that returned an exception to the client.
+
+    The `merge_tree_leader_election_stale_lease_mid_detached_mutation` failpoint rejects the
+    command right after its first permanent change to `detached/`, so the journal must restore
+    everything it recorded.
+    """
+    ensure_node_up(node1)
+    failpoint = "merge_tree_leader_election_stale_lease_mid_detached_mutation"
+    table = "test_detached_mutation_rollback"
+    try:
+        node1.query(
+            f"""
+            CREATE TABLE {table} UUID '{SHARED_UUID_DETACHED_MUTATION}' (x UInt64)
+            ENGINE = MergeTree PARTITION BY x % 2 ORDER BY x
+            SETTINGS {TABLE_SETTINGS}
+            """
+        )
+        wait_for_leader([node1], table_name=table)
+
+        # Two detached parts: the transaction metadata of the first one is stripped before the
+        # fence in front of the second one is reached.
+        node1.query(f"INSERT INTO {table} VALUES (11)")
+        node1.query(f"INSERT INTO {table} VALUES (13)")
+        node1.query(f"ALTER TABLE {table} DETACH PARTITION 1")
+
+        def detached_names():
+            return sorted(
+                node1.query(
+                    f"SELECT name FROM system.detached_parts"
+                    f" WHERE database = currentDatabase() AND table = '{table}'"
+                )
+                .strip()
+                .splitlines()
+            )
+
+        detached_before = detached_names()
+        assert len(detached_before) == 2
+
+        node1.query(f"SYSTEM ENABLE FAILPOINT {failpoint}")
+        try:
+            with pytest.raises(Exception, match="middle of changing the detached namespace"):
+                node1.query(f"ALTER TABLE {table} ATTACH PARTITION 1")
+            # `WHERE x > 0` excludes the `x = 0` probe rows inserted by `wait_for_leader`.
+            assert int(node1.query(f"SELECT count() FROM {table} WHERE x > 0").strip()) == 0, (
+                "ATTACH PARTITION was rejected but part of the batch still took effect"
+            )
+            assert detached_names() == detached_before, (
+                "A rejected ATTACH PARTITION consumed part of the detached namespace"
+            )
+            assert node1.contains_in_log(
+                "Restoring detached file .*txn_version.txt removed by a rejected command"
+            ), "The stripped transaction metadata was not restored"
+        finally:
+            node1.query(f"SYSTEM DISABLE FAILPOINT {failpoint}")
+
+        # The restored detached parts are still attachable, contents and all.
+        node1.query(f"ALTER TABLE {table} ATTACH PARTITION 1")
+        assert int(node1.query(f"SELECT count() FROM {table} WHERE x > 0").strip()) == 2
+        assert detached_names() == []
+    finally:
+        try:
+            node1.query(f"SYSTEM DISABLE FAILPOINT {failpoint}")
+        except Exception:
+            pass
+        try:
+            node1.query(f"DROP TABLE IF EXISTS {table} SYNC")
+        except Exception:
+            pass
