@@ -75,6 +75,16 @@ namespace
         {
             chassert(!msg.empty());
 
+            /// Only the first error is reported, so there is nothing to compute for the later ones.
+            /// This early return is what keeps the parse linear: the lexer recovers from an
+            /// unrecognized character by skipping it and calling this listener again for the next
+            /// one, and converting an error position to a byte offset scans the query from its
+            /// start, so doing it for every error would be quadratic in the query length (e.g. a
+            /// query padded with a megabyte of NUL bytes used to keep a thread busy for tens of
+            /// minutes, uncancellable because it happens during analysis).
+            if (hasError())
+                return;
+
             size_t pos = 0;
             if (offending_symbol)
                 pos = convertCodePointPositionToByteOffset(promql_query, offending_symbol->getStartIndex());
@@ -82,16 +92,6 @@ namespace
                 pos = convertLineAndPositionInLine(line, position_in_line);
 
             setError(msg, pos);
-
-            /// Abort on the first error: only the first error is reported, and once it is set the
-            /// parse always fails, so any further lexing and parsing is wasted work. Without the
-            /// bail-out, the lexer recovers from an unrecognized character by skipping it and
-            /// calling this listener again for the next one, and every call converts the error
-            /// position by scanning the query from its start - quadratic in the query length
-            /// (e.g. a query padded with a megabyte of NUL bytes used to keep a thread busy for
-            /// tens of minutes, uncancellable because it happens during analysis).
-            /// `tryParseQuery` catches this exception.
-            throw antlr4::ParseCancellationException(msg);
         }
 
         /// ANTLR4's lexer returns the position of an error as a line number and a position in that line;
@@ -122,6 +122,25 @@ namespace
         std::string_view promql_query;
         size_t error_pos = String::npos;
         String error_message;
+    };
+
+    /// A lexer that gives up on the rest of the input after the first unrecognized character.
+    /// The stock lexer recovers by skipping just that character and carrying on, so an input with
+    /// a long tail of bad bytes (e.g. a `FixedString` padded with NUL bytes) reports one error per
+    /// byte. Only the first error is ever reported and a parse with a recorded error always fails,
+    /// so lexing the remainder is wasted work - a megabyte of NUL bytes used to keep a thread busy
+    /// for minutes, uncancellable because parsing happens during query analysis.
+    class PromQLLexerBailingOutOnError : public antlr4_grammars::PromQLLexer
+    {
+    public:
+        using antlr4_grammars::PromQLLexer::PromQLLexer;
+
+        void recover(const antlr4::LexerNoViableAltException &) override
+        {
+            /// Pretend the input ended here, so that the lexer emits EOF and stops.
+            antlr4::CharStream * stream = getInputStream();
+            stream->seek(stream->size());
+        }
     };
 
     [[noreturn]] void throwInconsistentSchema(std::string_view context_name, std::string_view token)
@@ -900,7 +919,7 @@ bool PrometheusQueryParsingUtil::tryParseQuery([[maybe_unused]] std::string_view
     ErrorListener error_listener{input};
     antlr4::ANTLRInputStream input_stream{input};
 
-    antlr4_grammars::PromQLLexer promql_lexer{&input_stream};
+    PromQLLexerBailingOutOnError promql_lexer{&input_stream};
     promql_lexer.removeErrorListeners();
     promql_lexer.addErrorListener(&error_listener);
 
@@ -912,19 +931,7 @@ bool PrometheusQueryParsingUtil::tryParseQuery([[maybe_unused]] std::string_view
 
     antlr4_grammars::PromQLParser::ExpressionContext * expression = nullptr;
     if (!error_listener.hasError())
-    {
-        try
-        {
-            expression = promql_parser.expression();
-        }
-        catch (const antlr4::ParseCancellationException &)
-        {
-            /// Thrown by `ErrorListener::syntaxError` to abort lexing and parsing
-            /// on the first error; the error itself is recorded in the listener.
-            chassert(error_listener.hasError());
-            expression = nullptr;
-        }
-    }
+        expression = promql_parser.expression();
 
     if (!expression)
         error_listener.setError("Couldn't get an expression after parsing promql query", 0);
