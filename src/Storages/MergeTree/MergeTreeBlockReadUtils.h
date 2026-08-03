@@ -2,8 +2,10 @@
 
 #include <Storages/MergeTree/MergeTreeReadTask.h>
 #include <Storages/MergeTree/MergeTreeRangeReader.h>
+#include <Storages/ColumnSize.h>
 
 #include <algorithm>
+#include <unordered_map>
 
 
 namespace DB
@@ -48,7 +50,7 @@ MergeTreeReadTaskColumns getReadTaskColumnsForMerge(
 
 struct MergeTreeBlockSizePredictor
 {
-    MergeTreeBlockSizePredictor(const DataPartPtr & data_part_, const Names & columns, const Block & sample_block, bool allow_subcolumns_sizes_calculation);
+    MergeTreeBlockSizePredictor(const DataPartPtr & data_part, const Names & columns, bool allow_subcolumns_sizes_calculation);
 
     /// Reset some values for correct statistics calculating
     void startBlock();
@@ -103,7 +105,16 @@ struct MergeTreeBlockSizePredictor
     static double calculateDecay() { return 1. - std::pow(TARGET_WEIGHT, 1. / NUM_UPDATES_TO_TARGET_WEIGHT); }
 
 protected:
-    DataPartPtr data_part;
+    struct PartColumnInfo
+    {
+        bool exists_in_part = false;
+        bool is_subcolumn = false;
+        String name_in_storage;
+        ColumnSize column_size;
+    };
+
+    using PartColumnsInfo = std::unordered_map<String, PartColumnInfo>;
+    std::shared_ptr<const PartColumnsInfo> part_columns_info;
 
     struct ColumnInfo
     {
@@ -126,9 +137,8 @@ protected:
     size_t number_of_rows_in_part;
 
     bool is_initialized_in_update = false;
-    bool allow_subcolumns_sizes_calculation = false;
 
-    void initialize(const Block & sample_block, const Columns & columns, const Names & names, bool from_update = false);
+    void initialize(const Block & sample_block, const Columns & columns, bool from_update = false);
 
 public:
 

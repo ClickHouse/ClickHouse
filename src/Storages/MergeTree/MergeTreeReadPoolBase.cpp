@@ -288,17 +288,9 @@ MergeTreeReadPoolBase::buildReadTaskInfo(const RangesInDataPart & part_with_rang
             all_column_names.insert(pre_column_names.begin(), pre_column_names.end());
         }
 
-        Block sample_block_from_part;
-        for (const auto & column_name : all_column_names)
-        {
-            if (auto column_in_part = read_task_info.data_part->tryGetColumn(column_name))
-                sample_block_from_part.insert(ColumnWithTypeAndName(column_in_part->type->createColumn(), column_in_part->type, column_in_part->name));
-        }
-
         read_task_info.shared_size_predictor = std::make_unique<MergeTreeBlockSizePredictor>(
             read_task_info.data_part,
             Names(all_column_names.begin(), all_column_names.end()),
-            sample_block_from_part,
             settings[Setting::allow_calculating_subcolumns_sizes_for_merge_tree_reading]);
     }
 

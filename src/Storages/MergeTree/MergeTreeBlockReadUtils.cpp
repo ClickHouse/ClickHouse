@@ -21,9 +21,6 @@
 #include <Interpreters/ExpressionActions.h>
 
 #include <algorithm>
-#include <unordered_set>
-
-
 namespace DB
 {
 
@@ -241,22 +238,47 @@ NameSet injectRequiredColumns(
 }
 
 MergeTreeBlockSizePredictor::MergeTreeBlockSizePredictor(
-    const DataPartPtr & data_part_, const Names & columns, const Block & sample_block, bool allow_subcolumns_sizes_calculation_)
-    : data_part(data_part_), allow_subcolumns_sizes_calculation(allow_subcolumns_sizes_calculation_)
+    const DataPartPtr & data_part, const Names & columns, bool allow_subcolumns_sizes_calculation)
 {
     number_of_rows_in_part = data_part->rows_count;
+
+    auto resolved_part_columns = std::make_shared<PartColumnsInfo>();
+    resolved_part_columns->reserve(columns.size());
+
+    Block sample_block;
+    for (const auto & column_name : columns)
+    {
+        if (resolved_part_columns->contains(column_name))
+            continue;
+
+        PartColumnInfo info;
+        if (auto column_from_part = data_part->tryGetColumn(column_name))
+        {
+            info.exists_in_part = true;
+            info.is_subcolumn = column_from_part->isSubcolumn();
+            info.name_in_storage = column_from_part->getNameInStorage();
+
+            auto column = column_from_part->type->createColumn();
+            if (info.is_subcolumn && allow_subcolumns_sizes_calculation)
+                info.column_size = data_part->getSubcolumnSize(column_name);
+            else
+                info.column_size = data_part->getColumnSize(info.name_in_storage);
+
+            sample_block.insert(ColumnWithTypeAndName(std::move(column), column_from_part->type, column_name));
+        }
+
+        resolved_part_columns->emplace(column_name, std::move(info));
+    }
+
+    part_columns_info = std::move(resolved_part_columns);
     /// Initialize with sample block until update won't called.
-    initialize(sample_block, {}, columns);
+    initialize(sample_block, {});
 }
 
-void MergeTreeBlockSizePredictor::initialize(const Block & sample_block, const Columns & columns, const Names & names, bool from_update)
+void MergeTreeBlockSizePredictor::initialize(const Block & sample_block, const Columns & columns, bool from_update)
 {
     fixed_columns_bytes_per_row = 0;
     dynamic_columns_infos.clear();
-
-    std::unordered_set<String> names_set;
-    if (!from_update)
-        names_set.insert(names.begin(), names.end());
 
     size_t num_columns = sample_block.columns();
     for (size_t pos = 0; pos < num_columns; ++pos)
@@ -265,15 +287,15 @@ void MergeTreeBlockSizePredictor::initialize(const Block & sample_block, const C
         const auto & column_name = column_with_type_and_name.name;
         const auto & column_data = from_update ? columns[pos] : column_with_type_and_name.column;
 
-        if (!from_update && !names_set.contains(column_name))
-            continue;
-
         /// At least PREWHERE filter column might be const.
         if (typeid_cast<const ColumnConst *>(column_data.get()))
             continue;
 
-        auto column_from_part = data_part->tryGetColumn(column_name);
-        if ((!column_from_part || !column_from_part->isSubcolumn()) && column_data->valuesHaveFixedSize())
+        const auto part_column_it = part_columns_info->find(column_name);
+        /// The read pipeline can add expression result columns which were not among the
+        /// physical columns used to construct the predictor. They cannot exist in the part.
+        const PartColumnInfo * part_column = part_column_it == part_columns_info->end() ? nullptr : &part_column_it->second;
+        if ((!part_column || !part_column->exists_in_part || !part_column->is_subcolumn) && column_data->valuesHaveFixedSize())
         {
             size_t size_of_value = column_data->sizeOfValueIfFixed();
             fixed_columns_bytes_per_row += column_data->sizeOfValueIfFixed();
@@ -283,16 +305,10 @@ void MergeTreeBlockSizePredictor::initialize(const Block & sample_block, const C
         {
             ColumnInfo info;
             info.name = column_name;
-            info.is_subcolumn = column_from_part && column_from_part->isSubcolumn();
-            /// If column isn't fixed and doesn't have checksum, than take first
-            ColumnSize column_size;
-            if (info.is_subcolumn && allow_subcolumns_sizes_calculation)
-                column_size = data_part->getSubcolumnSize(column_name);
-            else
-                column_size = data_part->getColumnSize(column_from_part ? column_from_part->getNameInStorage() : column_name);
+            info.is_subcolumn = part_column && part_column->is_subcolumn;
 
-            info.bytes_per_row_global = column_size.data_uncompressed
-                ? static_cast<double>(column_size.data_uncompressed) / static_cast<double>(number_of_rows_in_part)
+            info.bytes_per_row_global = part_column && part_column->column_size.data_uncompressed
+                ? static_cast<double>(part_column->column_size.data_uncompressed) / static_cast<double>(number_of_rows_in_part)
                 : static_cast<double>(column_data->byteSize()) / static_cast<double>(std::max<size_t>(1, column_data->size()));
 
             dynamic_columns_infos.emplace_back(info);
@@ -329,7 +345,7 @@ void MergeTreeBlockSizePredictor::update(const Block & sample_block, const Colum
     if (!is_initialized_in_update)
     {
         /// Reinitialize with read block to update estimation for DEFAULT and MATERIALIZED columns without data.
-        initialize(sample_block, columns, {}, true);
+        initialize(sample_block, columns, true);
         is_initialized_in_update = true;
     }
 
