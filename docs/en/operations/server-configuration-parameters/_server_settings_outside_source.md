@@ -1751,12 +1751,12 @@ For example:
 
 ## replica_host {#replica_host}
 
-The hostname that [DatabaseReplicated](../../engines/database-engines/replicated.md) uses to identify this server when registering with ZooKeeper. Useful when the server is behind a load balancer or NAT and the hostname visible to other replicas differs from `interserver_http_host`.
+The hostname that [DatabaseReplicated](../../engines/database-engines/replicated.md) uses to identify this server when registering with ZooKeeper. Useful when the server is behind a load balancer or NAT and the hostname visible to other replicas differs from the configured interserver host.
 
-If not set, ClickHouse falls back to `interserver_http_host`.
+If not set, ClickHouse falls back to the configured interserver host, which is `interserver_http_host` or `interserver_https_host`, depending on which of `interserver_http_port` and `interserver_https_port` is specified. If that host is not set either, the hostname returned by `getFQDNOrHostName` is used.
 
 :::note
-The advertised hostname is also used for the cluster that a `Replicated` database exposes automatically (see `system.clusters`), exactly as `interserver_http_host` is used when `replica_host` is not set. A replica is treated as local for that cluster only if its advertised host resolves to a local interface, so an address that does not resolve locally on the server itself (for example, a virtual IP of a load balancer) makes the server consider its own replica remote, and queries to that cluster go through the network instead of running locally. Prefer a hostname that resolves to the server both from other replicas and from the server itself.
+The advertised hostname is also used for the cluster that a `Replicated` database exposes automatically (see `system.clusters`), exactly as the interserver host is used when `replica_host` is not set. A replica is treated as local for that cluster only if its advertised host resolves to a local interface, so an address that does not resolve locally on the server itself (for example, a virtual IP of a load balancer) makes the server consider its own replica remote, and queries to that cluster go through the network instead of running locally. Prefer a hostname that resolves to the server both from other replicas and from the server itself.
 :::
 
 **Example**

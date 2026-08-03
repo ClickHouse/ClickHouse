@@ -149,7 +149,8 @@ static inline String getHostID(ContextPtr global_context, const UUID & db_uuid, 
 {
     /// Determine the advertised host using the fallback chain:
     /// 1. replica_host (if configured)
-    /// 2. interserver_io_host (from interserver_http_host config)
+    /// 2. the configured interserver host (`interserver_http_host` or `interserver_https_host`,
+    ///    falling back to `getFQDNOrHostName` when neither is set)
     String host;
     if (global_context->hasReplicaHost())
         host = global_context->getReplicaHost();
