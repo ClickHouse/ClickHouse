@@ -220,6 +220,8 @@ std::string getUnmatchedParenthesesErrorMessage(
     return out.str();
 }
 
+}
+
 UnmatchedParentheses checkKQLUnmatchedParentheses(TokenIterator begin)
 {
     std::unordered_set<String> valid_kql_negative_suffix(
@@ -304,8 +306,6 @@ UnmatchedParentheses checkKQLUnmatchedParentheses(TokenIterator begin)
 
     /// If stack is not empty, we have unclosed brackets.
     return stack;
-}
-
 }
 
 

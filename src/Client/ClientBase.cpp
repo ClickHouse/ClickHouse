@@ -3589,6 +3589,26 @@ bool ClientBase::queryNeedsContinuation(const String & text) const
 
         std::unique_ptr<IParserBase> parser = make_parser();
 
+        /// True if the statement starting at `statement_begin` has an opening bracket
+        /// that is never closed. Such a statement clearly needs continuation, and the
+        /// parser may well stop before the end of input on it. Only opens trigger it;
+        /// an excess closing bracket is a real syntax error. Under the Kusto dialect
+        /// the KQL variant of the check is used: the plain one stops at the first
+        /// token the SQL lexer rejects, and KQL's negative operators (`!between`,
+        /// `!in`, ...) begin with such a token, which would hide the very brackets to
+        /// look at.
+        auto has_unclosed_opener = [&](const char * statement_begin)
+        {
+            Tokens statement_tokens(statement_begin, end, 0, true);
+            const UnmatchedParentheses unmatched = effective_settings[Setting::dialect] == Dialect::kusto
+                ? checkKQLUnmatchedParentheses(TokenIterator(statement_tokens))
+                : checkUnmatchedParentheses(TokenIterator(statement_tokens));
+            for (const auto & token : unmatched)
+                if (token.type == TokenType::OpeningRoundBracket || token.type == TokenType::OpeningSquareBracket)
+                    return true;
+            return false;
+        };
+
         unsigned max_parser_depth = static_cast<unsigned>(effective_settings[Setting::max_parser_depth]);
         unsigned max_parser_backtracks = static_cast<unsigned>(effective_settings[Setting::max_parser_backtracks]);
 
@@ -3642,20 +3662,33 @@ bool ClientBase::queryNeedsContinuation(const String & text) const
 
             ASTPtr ast;
             Expected expected;
-            if (!parser->parse(token_iterator, ast, expected))
+            bool parsed = false;
+            try
+            {
+                parsed = parser->parse(token_iterator, ast, expected);
+            }
+            catch (...)
+            {
+                /// Not every parser reports a syntax error by returning false: the
+                /// Kusto operators throw on an unfinished parenthesized operator, so
+                /// e.g. `T | where x !between (` never reaches the check below and,
+                /// without this, would be committed -- executing the statements that
+                /// precede it in the buffer while its last one is still being typed.
+                /// An unclosed opener is still a reliable "needs continuation" signal
+                /// here, but `token_iterator.max()` is not: the parse was abandoned
+                /// at an arbitrary point, so anything else is committed and reported
+                /// by the regular query-processing path.
+                return has_unclosed_opener(statement_begin);
+            }
+
+            if (!parsed)
             {
                 /// The statement does not parse. Check for an unclosed opening
-                /// bracket -- these clearly need continuation (and may make the
-                /// parser stop before the end of input). The check is done only
-                /// here, after a failed parse, and over the current statement's
-                /// text, so it does not apply SQL bracket rules to the inline data
-                /// of a successfully parsed INSERT. Only opens trigger it; an
-                /// excess closing bracket is a real syntax error.
-                Tokens statement_tokens(statement_begin, end, 0, true);
-                UnmatchedParentheses unmatched = checkUnmatchedParentheses(TokenIterator(statement_tokens));
-                for (const auto & token : unmatched)
-                    if (token.type == TokenType::OpeningRoundBracket || token.type == TokenType::OpeningSquareBracket)
-                        return true;
+                /// bracket. The check is done only here, after a failed parse, and
+                /// over the current statement's text, so it does not apply bracket
+                /// rules to the inline data of a successfully parsed INSERT.
+                if (has_unclosed_opener(statement_begin))
+                    return true;
 
                 /// Otherwise continuation only if the failure is at the end of input.
                 return token_iterator.max().type == TokenType::EndOfStream;

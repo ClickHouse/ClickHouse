@@ -1,11 +1,17 @@
 #pragma once
 
 #include <Parsers/IAST_fwd.h>
+#include <Parsers/TokenIterator.h>
 #include <Parsers/parseQuery.h>
 #include <IO/WriteBufferFromString.h>
 
 namespace DB
 {
+
+/// Same as `checkUnmatchedParentheses`, but tolerates the tokens the SQL lexer rejects
+/// and KQL accepts (the negative operators `!between`, `!in`, ..., `!~`, and KQL timespan
+/// literals such as `5m`), so the scan is not cut short before the brackets of interest.
+UnmatchedParentheses checkKQLUnmatchedParentheses(TokenIterator begin);
 
 /** From position in (possible multiline) query, get line number and column number in line.
   * Used in syntax error message.
