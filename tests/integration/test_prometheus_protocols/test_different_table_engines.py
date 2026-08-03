@@ -314,17 +314,39 @@ def test_inner_engines():
     check()
 
 
-# Checks that the `samples_index_granularity` setting sets `index_granularity`
-# of the samples inner table.
-def test_samples_index_granularity():
-    node.query("CREATE TABLE prometheus ENGINE=TimeSeries SETTINGS samples_index_granularity = 32768")
+# Checks that the `samples_index_granularity` and `tags_index_granularity` settings
+# set `index_granularity` of the samples and tags inner tables.
+def test_index_granularity():
+    # The default value of `samples_index_granularity` is 32768,
+    # the default value of `tags_index_granularity` is 8192.
+    node.query("CREATE TABLE prometheus ENGINE=TimeSeries")
     check()
 
-    samples_table = node.query("SELECT _table FROM timeSeriesSamples(prometheus) LIMIT 1").strip()
-    engine_full = node.query(
-        f"SELECT engine_full FROM system.tables WHERE database = currentDatabase() AND name = '{samples_table}'"
+    assert "index_granularity = 32768" in node.query(
+        "SELECT engine_full FROM system.tables WHERE database = currentDatabase() "
+        "AND name = (SELECT _table FROM timeSeriesSamples(prometheus) LIMIT 1)"
     )
-    assert "index_granularity = 32768" in engine_full
+    assert "index_granularity = 8192" in node.query(
+        "SELECT engine_full FROM system.tables WHERE database = currentDatabase() "
+        "AND name = (SELECT _table FROM timeSeriesTags(prometheus) LIMIT 1)"
+    )
+
+    drop_prometheus_table()
+
+    node.query(
+        "CREATE TABLE prometheus ENGINE=TimeSeries "
+        "SETTINGS samples_index_granularity = 16384, tags_index_granularity = 4096"
+    )
+    check()
+
+    assert "index_granularity = 16384" in node.query(
+        "SELECT engine_full FROM system.tables WHERE database = currentDatabase() "
+        "AND name = (SELECT _table FROM timeSeriesSamples(prometheus) LIMIT 1)"
+    )
+    assert "index_granularity = 4096" in node.query(
+        "SELECT engine_full FROM system.tables WHERE database = currentDatabase() "
+        "AND name = (SELECT _table FROM timeSeriesTags(prometheus) LIMIT 1)"
+    )
 
 
 # Checks that a TimeSeries table can be used to access pre-existing external tables

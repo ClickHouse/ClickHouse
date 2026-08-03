@@ -860,7 +860,7 @@ SAMPLES INNER COLUMNS
     `timestamp` DateTime64(3) CODEC(DoubleDelta, ZSTD(1)),
     `value` Float64 CODEC(Gorilla, ZSTD(1))
 )
-SAMPLES INNER ENGINE = MergeTree ORDER BY (id, timestamp)
+SAMPLES INNER ENGINE = MergeTree ORDER BY (id, timestamp) SETTINGS index_granularity = 32768
 TAGS INNER COLUMNS
 (
     `id` UUID DEFAULT reinterpretAsUUID(sipHash128(metric_name, all_tags)),
@@ -870,7 +870,7 @@ TAGS INNER COLUMNS
     `min_time` SimpleAggregateFunction(min, Nullable(DateTime64(3))),
     `max_time` SimpleAggregateFunction(max, Nullable(DateTime64(3)))
 )
-TAGS INNER ENGINE = AggregatingMergeTree PRIMARY KEY metric_name ORDER BY (metric_name, id) SETTINGS allow_dimensions_outside_sorting_key = 1
+TAGS INNER ENGINE = AggregatingMergeTree PRIMARY KEY metric_name ORDER BY (metric_name, id) SETTINGS allow_dimensions_outside_sorting_key = 1, index_granularity = 8192
 METRICS INNER COLUMNS
 (
     `metric_family_name` String,
@@ -897,6 +897,7 @@ CREATE TABLE default.`.inner_id.samples.xxxxxxxx-xxxx-xxxx-xxxx-xxxxxxxxxxxx`
 )
 ENGINE = MergeTree
 ORDER BY (id, timestamp)
+SETTINGS index_granularity = 32768
 ```
 
 ```sql
@@ -912,7 +913,7 @@ CREATE TABLE default.`.inner_id.tags.xxxxxxxx-xxxx-xxxx-xxxx-xxxxxxxxxxxx`
 ENGINE = AggregatingMergeTree
 PRIMARY KEY metric_name
 ORDER BY (metric_name, id)
-SETTINGS allow_dimensions_outside_sorting_key = 1
+SETTINGS allow_dimensions_outside_sorting_key = 1, index_granularity = 8192
 ```
 
 ```sql
@@ -925,6 +926,7 @@ CREATE TABLE default.`.inner_id.metrics.xxxxxxxx-xxxx-xxxx-xxxx-xxxxxxxxxxxx`
 )
 ENGINE = ReplacingMergeTree
 ORDER BY metric_family_name
+SETTINGS index_granularity = 8192
 ```
 
 ## Creating a table AS existing table {#create-as}
@@ -1070,8 +1072,8 @@ Here is a list of settings which can be specified while defining a `TimeSeries` 
 | `store_min_time_and_max_time` | Bool | true | If set to true then the table will store `min_time` and `max_time` for each time series |
 | `aggregate_min_time_and_max_time` | Bool | true | When creating an inner target `tags` table, this flag enables using `SimpleAggregateFunction(min, Nullable(DateTime64(3)))` instead of just `Nullable(DateTime64(3))` as the type of the `min_time` column, and the same for the `max_time` column |
 | `filter_by_min_time_and_max_time` | Bool | true | If set to true then the table will use the `min_time` and `max_time` columns for filtering time series |
-| `samples_index_granularity` | UInt64 | 0 | Sets `index_granularity` of the inner [samples](#samples-table) table. `0` means the default granularity of the table engine. The setting is ignored for an external samples table and when the engine declaration of the inner samples table already sets `index_granularity` explicitly |
-| `tags_index_granularity` | UInt64 | 0 | Sets `index_granularity` of the inner [tags](#tags-table) table. `0` means the default granularity of the table engine. The setting is ignored for an external tags table and when the engine declaration of the inner tags table already sets `index_granularity` explicitly |
+| `samples_index_granularity` | UInt64 | 32768 | Sets `index_granularity` of the inner [samples](#samples-table) table. `0` means the default granularity of the table engine. The setting is ignored for an external samples table and when the engine declaration of the inner samples table already sets `index_granularity` explicitly |
+| `tags_index_granularity` | UInt64 | 8192 | Sets `index_granularity` of the inner [tags](#tags-table) table. `0` means the default granularity of the table engine. The setting is ignored for an external tags table and when the engine declaration of the inner tags table already sets `index_granularity` explicitly |
 
 # Functions {#functions}
 
