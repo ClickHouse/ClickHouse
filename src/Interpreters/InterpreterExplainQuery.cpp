@@ -1696,6 +1696,7 @@ QueryPipeline InterpreterExplainQuery::executeImpl()
             ExpandParameterizedViewsMatcher::Data expand_views_data(query_context);
             ExpandParameterizedViewsVisitor(expand_views_data).visit(query);
             const bool expanded_parameterized_view = expand_views_data.expanded_parameterized_view;
+            const bool referenced_parameterized_view = expand_views_data.referenced_parameterized_view;
 
             /// Set when the analyzer pre-check below was supposed to run but skipped itself. The legacy
             /// fallback must then not dump the expanded query either.
@@ -1718,8 +1719,17 @@ QueryPipeline InterpreterExplainQuery::executeImpl()
                 /// `InterpreterSelectQuery` analysis of the expanded subquery). Running the view-object
                 /// check in the legacy fallback would make `EXPLAIN SYNTAX` deny a query whose real
                 /// execution succeeds.
+                ///
+                /// As on the `EXPLAIN AST optimize = 1` path, the check must not be tied to the expansion
+                /// above having happened. Expansion is deliberately skipped for `FINAL` / `SAMPLE` and for
+                /// `SQL SECURITY DEFINER` / `NONE` parameterized views, and `explainQueryTree` below only
+                /// enforces the view-object grant itself when it accepts the explained statement - it
+                /// declines any root that merely wraps a `SELECT` (`INSERT INTO dst SELECT ... FROM
+                /// pv(...)`). The legacy visitor reached afterwards then inlines the view body through
+                /// `StorageView::replaceWithSubquery` with no check on the view object at all. Every
+                /// referenced parameterized view therefore needs the check here.
                 bool access_check_performed = true;
-                if (expanded_parameterized_view)
+                if (referenced_parameterized_view)
                     access_check_performed = checkAccessForExplainedQuery(
                         explained_query_before_expansion, query_context, settings.run_query_tree_passes, settings.query_tree_passes);
 
@@ -1730,7 +1740,7 @@ QueryPipeline InterpreterExplainQuery::executeImpl()
                 /// formatting the original, unexpanded query instead. That dump carries no view metadata:
                 /// it is the user's own query text, unresolved (the skip can only happen when the query
                 /// tree passes do not run, so `explainQueryTree` dumps the unresolved tree).
-                analyzer_pre_check_skipped = expanded_parameterized_view && !access_check_performed;
+                analyzer_pre_check_skipped = referenced_parameterized_view && !access_check_performed;
 
                 const ASTPtr & query_to_explain
                     = analyzer_pre_check_skipped ? explained_query_before_expansion : ast.getExplainedQuery();

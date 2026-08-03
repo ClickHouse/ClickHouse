@@ -1,0 +1,26 @@
+-- enable_analyzer = 1
+DEFINER INSERT SELECT         base_only: ACCESS_DENIED
+DEFINER INSERT SELECT         full     : OK, view body not revealed
+DEFINER EXPLAIN SYNTAX INSERT base_only: ACCESS_DENIED
+DEFINER EXPLAIN SYNTAX INSERT full     : OK, view body revealed
+DEFINER EXPLAIN AST    INSERT base_only: ACCESS_DENIED
+DEFINER EXPLAIN AST    INSERT full     : OK, view body revealed
+FINAL   INSERT SELECT         base_only: ACCESS_DENIED
+FINAL   INSERT SELECT         full     : OK, view body not revealed
+FINAL   EXPLAIN SYNTAX INSERT base_only: ACCESS_DENIED
+FINAL   EXPLAIN SYNTAX INSERT full     : OK, view body not revealed
+FINAL   EXPLAIN AST    INSERT base_only: ACCESS_DENIED
+FINAL   EXPLAIN AST    INSERT full     : OK, view body not revealed
+-- enable_analyzer = 0
+DEFINER INSERT SELECT         base_only: OK, view body not revealed
+DEFINER INSERT SELECT         full     : OK, view body not revealed
+DEFINER EXPLAIN SYNTAX INSERT base_only: OK, view body revealed
+DEFINER EXPLAIN SYNTAX INSERT full     : OK, view body revealed
+DEFINER EXPLAIN AST    INSERT base_only: OK, view body revealed
+DEFINER EXPLAIN AST    INSERT full     : OK, view body revealed
+FINAL   INSERT SELECT         base_only: OK, view body not revealed
+FINAL   INSERT SELECT         full     : OK, view body not revealed
+FINAL   EXPLAIN SYNTAX INSERT base_only: OK, view body not revealed
+FINAL   EXPLAIN SYNTAX INSERT full     : OK, view body not revealed
+FINAL   EXPLAIN AST    INSERT base_only: OK, view body not revealed
+FINAL   EXPLAIN AST    INSERT full     : OK, view body not revealed
