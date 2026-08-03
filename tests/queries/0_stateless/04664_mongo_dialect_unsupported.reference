@@ -25,7 +25,7 @@ Code: 48. The aggregation stage '$facet' is not supported
 Code: 48. The aggregation stage '$out' is not supported
 Code: 48. The aggregation stage '$lookup' is not supported
 Code: 48. Only a document is supported as the new root of '$replaceWith', because a field path names a column rather than a subdocument
-Code: 36. The path of '$unwind' must start with '$'
+Code: 36. The path of '$unwind' must be a non-empty field name starting with '$'
 Code: 36. '$unset' must name at least one field
 Code: 36. '$sample' must have a 'size' field
 Code: 36. The argument of '$limit' must be a positive number

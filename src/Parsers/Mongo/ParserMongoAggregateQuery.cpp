@@ -454,8 +454,15 @@ void translateSortByCount(SelectChain & chain, const rapidjson::Value & stage)
     element->children.push_back(make_intrusive<ASTIdentifier>("count"));
     element->direction = -1;
     element->nulls_direction = -1;
+    /// Mongo leaves the order of the groups with equal counts unspecified; sorting them by the
+    /// key keeps the result deterministic.
+    auto tiebreak = make_intrusive<ASTOrderByElement>();
+    tiebreak->children.push_back(make_intrusive<ASTIdentifier>("_id"));
+    tiebreak->direction = 1;
+    tiebreak->nulls_direction = 1;
     auto order_by = make_intrusive<ASTExpressionList>();
     order_by->children.push_back(std::move(element));
+    order_by->children.push_back(std::move(tiebreak));
     chain.order_by = std::move(order_by);
 }
 
@@ -505,8 +512,8 @@ void translateUnwind(SelectChain & chain, const rapidjson::Value & stage)
     else
         throw Exception(ErrorCodes::BAD_ARGUMENTS, "The argument of '$unwind' must be a field path or a document");
 
-    if (!path.starts_with("$"))
-        throw Exception(ErrorCodes::BAD_ARGUMENTS, "The path of '$unwind' must start with '$'");
+    if (!path.starts_with("$") || path.size() == 1)
+        throw Exception(ErrorCodes::BAD_ARGUMENTS, "The path of '$unwind' must be a non-empty field name starting with '$'");
     path = path.substr(1);
 
     /** An `ARRAY JOIN` applies to the rows the select reads, so everything collected so far has to
