@@ -1424,6 +1424,12 @@ class SettingsRandomizer:
         "fsync_metadata": lambda: random.randint(0, 1),
         "output_format_parallel_formatting": lambda: random.randint(0, 1),
         "input_format_parallel_parsing": lambda: random.randint(0, 1),
+        # Exercise the disabled path (0), a small limit that only applies to tiny dictionaries, and
+        # the default limit for the Parquet v3 dictionary-based row group filter. Tests that depend
+        # on a fixed pruning behaviour set this setting explicitly (per query or per session).
+        "input_format_parquet_dictionary_filter_push_down": lambda: random.choices(
+            [0, 256, 1048576], weights=[1, 1, 3]
+        )[0],
         "min_chunk_bytes_for_parallel_parsing": lambda: max(
             1024, int(random.gauss(10 * 1024 * 1024, 5 * 1000 * 1000))
         ),
@@ -1594,6 +1600,7 @@ class SettingsRandomizer:
         "secondary_indices_enable_bulk_filtering": lambda: random.randint(0, 1),
         "use_skip_indexes_if_final": lambda: random.randint(0, 1),
         "use_skip_indexes_on_data_read": lambda: random.randint(0, 1),
+        "use_projection_index_in_read_pools": lambda: random.randint(0, 1),
         "enable_join_runtime_filters_index_analysis": lambda: random.randint(0, 1),
         "optimize_trivial_count_with_sparsity_filter": lambda: random.randint(0, 1),
         "optimize_rewrite_like_perfect_affix": lambda: random.randint(0, 1),
@@ -1612,7 +1619,7 @@ class SettingsRandomizer:
         "query_plan_optimize_join_order_algorithm": lambda: random.choice(['greedy', 'dpsize,greedy', 'greedy,dpsize']),
         "max_bytes_before_external_join": lambda: random.choice([0, 1000000000]),
         "grace_hash_join_initial_buckets": lambda: random.choice([1, 2, 4, 8]),
-        "query_plan_optimize_join_order_randomize": lambda: 1 if random.random() < 0.1 else random.randint(2, 1_000_000),
+        "query_plan_optimize_join_order_randomize": lambda: 0 if (r := random.random()) < 0.05 else 1 if r < 0.10 else random.randint(2, 1_000_000),
         "use_top_k_dynamic_filtering_for_variable_length_types": lambda: random.randint(0, 1),
         # Default 16 MiB; randomize across small/large to exercise both the coalescing
         # path and the cap that splits long miss runs into multiple reads.
@@ -2149,11 +2156,17 @@ class TestCase:
         else:
             # If --database is not specified, we will create temporary database with
             # unique name and we will recreate and drop it for each test
-            def random_str(length=8):
-                alphabet = string.ascii_lowercase + string.digits
+            def random_str(length=12):
+                # Alternate letters and digits so no two consecutive characters share a class,
+                # hence no word can appear in the name. It is embedded into DDL, paths and table
+                # names, and tests assert substring absence over those (e.g. NOT ILIKE '%auto%');
+                # an 8-char [a-z0-9] name spelled "auto" once in ~340k runs (CI: test_q2autogn).
+                # 26^6 * 10^6 is ~110x the namespace of the previous 36^8, so collisions get rarer.
                 # NOTE: it is important not to use default random generator, since it shares state.
+                rng = random.SystemRandom()
                 return "".join(
-                    random.SystemRandom().choice(alphabet) for _ in range(length)
+                    rng.choice(string.ascii_lowercase if i % 2 == 0 else string.digits)
+                    for i in range(length)
                 )
 
             database = f"test_{random_str()}"
@@ -2184,6 +2197,13 @@ class TestCase:
         # Since using CLICKHOUSE_TMP is easier to use in expect.
         testcase_args.debug_log_file = (
             os.path.join(testcase_args.test_tmp_dir, testcase_basename) + ".debuglog"
+        )
+        # The bash xtrace (`BASH_XTRACEFD`, see `shell_config.sh`) gets its OWN file. Sharing the
+        # expect trace's path is what lost records: `shell_config.sh` used to open that path with
+        # O_TRUNC on every `source`, i.e. once per `spawn`, discarding what expect had appended.
+        # With separate files each writer owns its artifact and appends to it.
+        testcase_args.bash_tracing_file = (
+            os.path.join(testcase_args.test_tmp_dir, testcase_basename) + ".bashlog"
         )
 
         testcase_args.testcase_client = (
@@ -2647,6 +2667,8 @@ class TestCase:
 
         self.testcase_args = None
         self.runs_count = 0
+        # Set by `process_result_impl`; read by `retry_matcher_input`.
+        self.debug_log_retry_substitution = None
 
         has_no_random_settings_tag = self.tags and "no-random-settings" in self.tags
         has_no_random_merge_tree_settings_tag = (
@@ -3078,6 +3100,24 @@ class TestCase:
 
         return None, ""
 
+    def retry_matcher_input(self, description):
+        """`description` with each diagnostic dump reduced to the retry matcher's window.
+
+        `check_if_need_retry` is handed a failure's description as both stdout and stderr, so
+        every line of a dump that is only meant for a human reader is matched against
+        `MESSAGES_TO_RETRY`, whose entries are as generic as `No such file or directory`.  The
+        dumps are therefore reported at full width and matched at the historical bound.
+
+        Narrowed rather than removed: for an `.expect` test the trace is the only place the
+        spawned client's output lands (they all run with `log_user 0`), so dropping it would
+        lose the transient-error retries this matcher exists to catch.
+        """
+        substitution = self.debug_log_retry_substitution
+        if not substitution:
+            return description
+        shown, matched = substitution
+        return description.replace(shown, matched)
+
     def process_result_impl(self, proc, total_time: float) -> TestResult:
         args = self.args
         kill_output = ""
@@ -3092,12 +3132,68 @@ class TestCase:
 
         description = ""
 
+        # The two diagnostic blocks are trimmed SEPARATELY, with different limits: the expect
+        # trace uses the shared default (its verdict sequence is what makes a timeout readable,
+        # and one progress-table redraw is one very long line), while the bash xtrace keeps the
+        # historical 100-line bound because `set -x` emits ~2 lines per loop iteration and some
+        # .sh tests loop millions of times.
+        #
+        # That wider REPORT must not widen retry matching: `run` feeds the description to
+        # `check_if_need_retry` as both stdout and stderr, and `MESSAGES_TO_RETRY` holds
+        # substrings as generic as `No such file or directory`, so every diagnostic line the
+        # matcher sees can retry a deterministic failure. The matcher's copy is therefore ONE
+        # trim over the untrimmed dumps - the window this code has always had, rather than one
+        # such window per artifact.
         debug_log = ""
+        expect_body = ""
+        bash_body = ""
         if os.path.exists(self.testcase_args.debug_log_file):
             with open(self.testcase_args.debug_log_file, "rb") as stream:
-                debug_log += self.testcase_args.debug_log_file + ":\n"
-                debug_log += str(stream.read(), errors="replace", encoding="utf-8")
-                debug_log += "\n"
+                expect_body = str(stream.read(), errors="replace", encoding="utf-8")
+            debug_log += trim_for_log(
+                self.testcase_args.debug_log_file + ":\n" + expect_body + "\n"
+            )
+        # Emptiness is tolerated here, unlike for the expect trace above: `shell_config.sh` opens
+        # this file the moment it is sourced and only writes once a traced command runs, so a
+        # zero-length one carries no diagnostics - and reporting its name would add a bare header
+        # with an empty body to every consumer of `debug_log` below.
+        bash_tracing_file = self.testcase_args.bash_tracing_file
+        if os.path.exists(bash_tracing_file) and os.path.getsize(bash_tracing_file) > 0:
+            with open(bash_tracing_file, "rb") as stream:
+                bash_body = str(stream.read(), errors="replace", encoding="utf-8")
+            debug_log += trim_for_log(bash_tracing_file + ":\n" + bash_body + "\n", 100)
+        # Read by `run` through `retry_matcher_input`: the reported dumps are replaced by this
+        # single historically-bounded trim before the description reaches the retry matcher.
+        #
+        # Assembled to be line-for-line what the one shared file used to hold, because that file
+        # is what set this window's contract. So the raw BODIES are joined under a single
+        # header and trailer - decorating each dump first would add a header and a trailer per
+        # artifact, and those extra lines shift the window's own boundary, hiding markers near it
+        # that the pre-split shape kept.
+        #
+        # And the xtrace body goes FIRST, opposite to the report order above: bash owns fd 3 from
+        # the moment `shell_config.sh` is sourced and writes while the test runs, whereas expect's
+        # trace is dominated by the verdict lines it emits once the spawned program has produced
+        # its output. Joining in report order instead puts the xtrace behind however long the
+        # expect trace is, which pushes an early xtrace line out of this window's visible head.
+        # Either departure silently drops retries the single-file code would have made.
+        #
+        # Only assembled when there is a reported block to substitute FOR. `str.replace` treats an
+        # empty needle as matching between every character, so pairing an empty `debug_log` with a
+        # non-empty payload would splice that payload through the whole description and break the
+        # very phrases the matcher looks for. A test with no diagnostics at all - every ordinary
+        # `.sql` one - is exactly the case that arrives here with `debug_log` empty.
+        debug_log_for_retry = ""
+        if debug_log:
+            retry_header = (
+                bash_tracing_file if bash_body else self.testcase_args.debug_log_file
+            )
+            debug_log_for_retry = trim_for_log(
+                retry_header + ":\n" + bash_body + expect_body + "\n", 100
+            )
+        self.debug_log_retry_substitution = (
+            (debug_log, debug_log_for_retry) if debug_log != debug_log_for_retry else None
+        )
 
         stdout = ""
         if os.path.exists(self.stdout_file):
@@ -3141,9 +3237,6 @@ class TestCase:
                 for line in stderr.splitlines()
                 if not line.startswith("LLVM Profile Error:")
             ).strip()
-
-        if debug_log:
-            debug_log = trim_for_log(debug_log, 100)
 
         if proc:
             if proc.returncode is None:
@@ -3380,6 +3473,8 @@ class TestCase:
             os.remove(path)
         if os.path.exists(self.testcase_args.debug_log_file):
             os.remove(self.testcase_args.debug_log_file)
+        if os.path.exists(self.testcase_args.bash_tracing_file):
+            os.remove(self.testcase_args.bash_tracing_file)
 
         return TestResult(self.name, TestStatus.OK, None, total_time, description)
 
@@ -3426,6 +3521,19 @@ class TestCase:
         # Ensure that we start with empty files
         for path in glob.glob(self.fatal_sanitizer_prefix + "*"):
             os.remove(path)
+        # Same reason, for the expect trace: `exp_internal -f` opens for append, and since the
+        # bash xtrace no longer shares this path nothing else truncates it. Removing (not
+        # emptying) it matters - the report block above keys on existence alone, so an empty file
+        # would add a bare header to every failing test.
+        if os.path.exists(args.debug_log_file):
+            os.remove(args.debug_log_file)
+        # And the xtrace. Unconditionally, NOT under the `--trace` guard below that exports its
+        # path: the report block keys on the FILE, not on this run's flags, so a run without
+        # `--trace` would otherwise report whatever a previous traced run left behind in the same
+        # tmp dir. Removing rather than emptying, for the same reason as the expect trace above,
+        # and it is safe because `shell_config.sh`'s `3>>` creates the file when it is absent.
+        if os.path.exists(args.bash_tracing_file):
+            os.remove(args.bash_tracing_file)
 
         log_opt = " --client_logs_file=" + self.fatal_sanitizer_prefix + " "
         client_options += log_opt
@@ -3489,7 +3597,7 @@ class TestCase:
 
         tests_env = os.environ.copy()
         if args.trace:
-            tests_env["CLICKHOUSE_BASH_TRACING_FILE"] = args.debug_log_file
+            tests_env["CLICKHOUSE_BASH_TRACING_FILE"] = args.bash_tracing_file
 
         if self.ext == ".sql":
             pattern = (
@@ -3676,8 +3784,9 @@ class TestCase:
                 )
 
                 result = self.process_result_impl(proc, total_time)
+                retry_input = self.retry_matcher_input(result.description)
                 result.check_if_need_retry(
-                    args, result.description, result.description, self.runs_count
+                    args, retry_input, retry_input, self.runs_count
                 )
                 # to avoid breaking CSV parser
                 result.description = result.description.replace("\0", "")
@@ -3722,10 +3831,11 @@ class TestCase:
 
                     result = self.process_result_impl(proc, total_time)
 
+                    retry_input = self.retry_matcher_input(result.description)
                     result.check_if_need_retry(
                         args,
-                        result.description,
-                        result.description,
+                        retry_input,
+                        retry_input,
                         self.runs_count,
                     )
                     # to avoid breaking CSV parser
