@@ -3,6 +3,8 @@
 #include <cstddef>
 #include <optional>
 #include <type_traits>
+#include <unordered_map>
+#include <vector>
 
 #include <Functions/IFunction.h>
 #include <Functions/FunctionFactory.h>
@@ -21,6 +23,8 @@
 #include <Columns/ColumnFixedString.h>
 #include <Columns/ColumnsNumber.h>
 #include <Columns/ColumnNullable.h>
+#include <Columns/ColumnTuple.h>
+#include <Columns/ColumnsCommon.h>
 #include <Common/FieldAccurateComparison.h>
 #include <Common/VectorWithMemoryTracking.h>
 #include <Common/checkStackSize.h>
@@ -644,6 +648,13 @@ private:
         if (auto res = executeErasedEquality(arguments, result_type))
             return res;
 
+        return executeArrayAfterErasedEquality(arguments, result_type);
+    }
+
+    /// The arms that answer whenever the erased-equality one declines. Kept separate so that path can
+    /// ask them for the rows it leaves undecided without re-entering itself.
+    ColumnPtr executeArrayAfterErasedEquality(const ColumnsWithTypeAndName & arguments, const DataTypePtr & result_type) const
+    {
         if (auto res = executeArrayLowCardinality(arguments))
             return res;
 
@@ -777,22 +788,152 @@ private:
         if (alternative_column->size() == variant_column->size())
             return PeeledOperand{{alternative_column, alternative_type, operand.name}, nullptr};
 
-        /// Fewer rows than the column has: the alternative holds only the rows that selected it.
-        PaddedPODArray<UInt8> filter;
-        filter.reserve(variant_column->size());
-        auto local_discriminator = variant_column->localDiscriminatorByGlobal(*discriminator);
-        for (const auto & row_discriminator : variant_column->getLocalDiscriminators())
-            filter.push_back(row_discriminator == local_discriminator);
+        /// The alternative was reported non-empty above, so index 0 below is always in range.
+        if (alternative_column->empty())
+            return {};
 
-        auto expanded = IColumn::mutate(std::move(alternative_column));
-        expanded->expand(filter, /* inverted = */ false);
+        /// The alternative holds only the rows that selected it, each at its own offset. Indexing by
+        /// that offset rather than expanding by a mask avoids assuming the offsets ascend with the
+        /// superproject row order, which ColumnVariant::validateState does not check.
+        const size_t rows = variant_column->size();
+        const auto local_discriminator = variant_column->localDiscriminatorByGlobal(*discriminator);
+        const auto & local_discriminators = variant_column->getLocalDiscriminators();
+        const auto & alternative_offsets = variant_column->getOffsets();
 
-        auto null_map = ColumnUInt8::create(filter.size());
+        auto selector = ColumnUInt64::create(rows);
+        auto & selector_data = selector->getData();
+        auto null_map = ColumnUInt8::create(rows);
         auto & null_map_data = null_map->getData();
-        for (size_t row = 0; row < filter.size(); ++row)
-            null_map_data[row] = !filter[row];
+
+        for (size_t row = 0; row < rows; ++row)
+        {
+            const bool selected = local_discriminators[row] == local_discriminator;
+            null_map_data[row] = !selected;
+            /// An unselected row reads no value, so any in-range index does; 0 keeps index() in bounds.
+            selector_data[row] = selected ? alternative_offsets[row] : 0;
+        }
+
+        auto expanded = alternative_column->index(*selector, rows);
 
         return PeeledOperand{{std::move(expanded), alternative_type, operand.name}, std::move(null_map)};
+    }
+
+    /// The erased column reached by descending `elements` through the Tuple wrappers named by
+    /// `path`, or nothing when the column shape does not match the type. Used to read a row's
+    /// discriminators at the site the peel will act on.
+    static const ColumnVariant * findVariantAtPath(const IColumn & elements, const std::vector<size_t> & path)
+    {
+        const IColumn * current = &elements;
+        auto held = current->getPtr();
+
+        for (size_t position : path)
+        {
+            held = current->convertToFullColumnIfConst();
+            const auto * as_nullable = checkAndGetColumn<ColumnNullable>(held.get());
+            if (as_nullable)
+                held = as_nullable->getNestedColumnPtr();
+
+            const auto * as_tuple = checkAndGetColumn<ColumnTuple>(held.get());
+            if (!as_tuple || position >= as_tuple->tupleSize())
+                return nullptr;
+
+            held = as_tuple->getColumnPtr(position);
+            current = held.get();
+        }
+
+        held = current->convertToFullColumnIfConst();
+        if (const auto * as_nullable = checkAndGetColumn<ColumnNullable>(held.get()))
+            held = as_nullable->getNestedColumnPtr();
+
+        if (const auto * as_dynamic = checkAndGetColumn<ColumnDynamic>(held.get()))
+            return &as_dynamic->getVariantColumn();
+
+        return checkAndGetColumn<ColumnVariant>(held.get());
+    }
+
+    /// The path of Tuple positions leading to the first erased type inside `type`, or nothing when
+    /// `type` erases nothing. Mirrors hasTypeErasingElement's traversal, including its Array/Map stop.
+    static std::optional<std::vector<size_t>> findErasedPath(const IDataType & type)
+    {
+        checkStackSize();
+
+        if (isDynamic(type) || isVariant(type))
+            return std::vector<size_t>{};
+
+        const auto * tuple_type = typeid_cast<const DataTypeTuple *>(removeNullable(type.getPtr()).get());
+        if (!tuple_type)
+            return {};
+
+        const auto & elements = tuple_type->getElements();
+        for (size_t position = 0; position < elements.size(); ++position)
+        {
+            if (auto nested = findErasedPath(*elements[position]))
+            {
+                std::vector<size_t> path{position};
+                path.insert(path.end(), nested->begin(), nested->end());
+                return path;
+            }
+        }
+
+        return {};
+    }
+
+    /// Group the rows by the one global discriminator all of that row's elements carry; NULL elements
+    /// join any group, since the peel answers those from the null maps. A row whose elements disagree
+    /// gets no group, and nothing means no group formed at all.
+    static std::optional<std::unordered_map<ColumnVariant::Discriminator, IColumn::Filter>> groupRowsByAlternative(
+        const ColumnArray & array, const DataTypePtr & element_type)
+    {
+        auto path = findErasedPath(*element_type);
+        if (!path)
+            return {};
+
+        const auto * variant_column = findVariantAtPath(array.getData(), *path);
+        if (!variant_column || variant_column->size() != array.getData().size())
+            return {};
+
+        const auto & offsets = array.getOffsets();
+        const auto & local_discriminators = variant_column->getLocalDiscriminators();
+
+        std::unordered_map<ColumnVariant::Discriminator, IColumn::Filter> groups;
+        ColumnArray::Offset current_offset = 0;
+
+        for (size_t row = 0; row < offsets.size(); ++row)
+        {
+            std::optional<ColumnVariant::Discriminator> row_discriminator;
+            bool groupable = true;
+
+            for (size_t position = current_offset; position < offsets[row]; ++position)
+            {
+                auto local = local_discriminators[position];
+                if (local == ColumnVariant::NULL_DISCRIMINATOR)
+                    continue;
+
+                if (!row_discriminator)
+                    row_discriminator = variant_column->globalDiscriminatorByLocal(local);
+                else if (*row_discriminator != variant_column->globalDiscriminatorByLocal(local))
+                {
+                    groupable = false;
+                    break;
+                }
+            }
+
+            current_offset = offsets[row];
+
+            /// A row holding only NULLs needs no alternative, so it can ride with any group; giving it
+            /// its own keeps every group single-alternative without a special case.
+            if (!groupable)
+                continue;
+
+            auto & filter = groups.try_emplace(
+                row_discriminator.value_or(ColumnVariant::NULL_DISCRIMINATOR), IColumn::Filter(offsets.size(), 0)).first->second;
+            filter[row] = 1;
+        }
+
+        if (groups.empty())
+            return {};
+
+        return groups;
     }
 
     /// True when `type` is an Array or Map, at the top level or inside any chain of Tuple wrappers.
@@ -1091,15 +1232,85 @@ private:
 
         auto full_array = arguments[0].column->convertToFullColumnIfConst();
         const auto & array = assert_cast<const ColumnArray &>(*full_array);
-        const auto & offsets = array.getOffsets();
+        auto full_needle = arguments[1].column->convertToFullColumnIfConst();
 
-        auto matches = evaluateElementwiseEquality(
-            {array.getDataPtr(), element_type, "elements"},
-            {arguments[1].column->convertToFullColumnIfConst()->replicate(offsets), needle_type, "needle"});
-        if (!matches)
+        if (auto matches = evaluateElementwiseEquality(
+                {array.getDataPtr(), element_type, "elements"},
+                {full_needle->replicate(array.getOffsets()), needle_type, "needle"}))
+            return foldMatchesPerRow((*matches)->getData(), array.getOffsets());
+
+        return executeErasedEqualityPerRowGroup(arguments, result_type, array, full_needle, element_type, needle_type);
+    }
+
+    /// Second attempt after a whole-block evaluation declined. A block shares one flattened element
+    /// column, so that verdict covers the union of every row's elements; grouping asks it per row
+    /// instead. Rows left out keep the answer the existing dispatch gives them.
+    ColumnPtr executeErasedEqualityPerRowGroup(
+        const ColumnsWithTypeAndName & arguments,
+        const DataTypePtr & result_type,
+        const ColumnArray & array,
+        const ColumnPtr & full_needle,
+        const DataTypePtr & element_type,
+        const DataTypePtr & needle_type) const
+    {
+        auto groups = groupRowsByAlternative(array, element_type);
+        if (!groups)
             return nullptr;
 
-        return foldMatchesPerRow((*matches)->getData(), offsets);
+        const size_t rows = array.size();
+        auto col_result = ResultColumnType::create(rows, ResultType(0));
+        auto & result_data = col_result->getData();
+        IColumn::Filter undecided(rows, 1);
+        bool any_group_decided = false;
+
+        for (const auto & [discriminator, filter] : *groups)
+        {
+            auto group_array = array.filter(filter, -1);
+            const auto & group = assert_cast<const ColumnArray &>(*group_array);
+
+            auto group_matches = evaluateElementwiseEquality(
+                {group.getDataPtr(), element_type, "elements"},
+                {full_needle->filter(filter, -1)->replicate(group.getOffsets()), needle_type, "needle"});
+            if (!group_matches)
+                continue;
+
+            any_group_decided = true;
+            auto group_result = foldMatchesPerRow((*group_matches)->getData(), group.getOffsets());
+
+            size_t group_row = 0;
+            for (size_t row = 0; row < rows; ++row)
+            {
+                if (!filter[row])
+                    continue;
+
+                result_data[row] = group_result->getData()[group_row++];
+                undecided[row] = 0;
+            }
+        }
+
+        /// Nothing was gained over the whole-block attempt, so leave the call as it was.
+        if (!any_group_decided)
+            return nullptr;
+
+        /// Rows left over are the ones whose elements disagree, or whose group declined; they must get
+        /// exactly the answer the existing dispatch gives them, so it is asked for just those rows.
+        const size_t undecided_rows = countBytesInFilter(undecided);
+        if (undecided_rows != 0)
+        {
+            auto fallback_arguments = arguments;
+            for (auto & argument : fallback_arguments)
+                argument.column = argument.column->convertToFullColumnIfConst()->filter(undecided, -1);
+
+            auto fallback = executeArrayAfterErasedEquality(fallback_arguments, result_type);
+            auto fallback_values = fallback->convertToFullColumnIfConst();
+
+            size_t fallback_row = 0;
+            for (size_t row = 0; row < rows; ++row)
+                if (undecided[row])
+                    result_data[row] = assert_cast<const ResultColumnType &>(*fallback_values).getData()[fallback_row++];
+        }
+
+        return col_result;
     }
 
     /** If one or both arguments passed to this function are nullable,

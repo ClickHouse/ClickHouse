@@ -348,10 +348,12 @@ INSERT INTO t_date_alt VALUES ([toDate('2020-01-01')]);
 
 SELECT has(v, 1::UInt8) AS got FROM t_date_alt;
 
-SELECT '-- out of contract: an erased column holding several concrete types at once';
+SELECT '-- out of contract: a single ROW holding several concrete types at once';
 
--- These answer correctly on master already: an element that cannot be compared with the needle must
--- neither turn the whole row into an error nor shift the position indexOf reports.
+-- The scope is the row, not the column: a row whose own elements share one concrete type is fixed
+-- even when other rows of the same column hold something else. Only the mixed ROW keeps master's
+-- answer, where an element that cannot be compared with the needle must neither turn the whole row
+-- into an error nor shift the position indexOf reports.
 DROP TABLE IF EXISTS t_mixed_dyn;
 CREATE TABLE t_mixed_dyn (id UInt8, v Array(Dynamic)) ENGINE = Memory;
 INSERT INTO t_mixed_dyn VALUES (0, [1::UInt64]), (1, ['s', 1::UInt8]), (2, [1::UInt8]);
@@ -383,13 +385,34 @@ INSERT INTO t_mixed_var VALUES (0, [1::UInt64]), (1, ['s']), (2, ['s', 1::UInt64
 
 SELECT id, has(v, CAST(1::UInt64, 'Variant(String, UInt64)')) AS got FROM t_mixed_var ORDER BY id;
 
--- Values that overflow into the shared variant are serialised together under one discriminator, so
--- such a column is left alone as well.
+-- Values that overflow into the shared variant are serialised together under one discriminator, so a
+-- row holding one is left alone. UInt8 claims the single real slot here, so row 1's matching UInt64
+-- element overflows and its 0 is master's answer, not a fixed one; the shared column is asserted so
+-- the row cannot silently stop exercising that path.
 DROP TABLE IF EXISTS t_shared;
-CREATE TABLE t_shared (v Array(Dynamic(max_types=1))) ENGINE = Memory;
-INSERT INTO t_shared VALUES ([1::UInt64]), (['s']);
+CREATE TABLE t_shared (id UInt8, v Array(Dynamic(max_types=1))) ENGINE = Memory;
+INSERT INTO t_shared VALUES (0, [7::UInt8]), (1, [1::UInt64]), (2, ['s']);
 
-SELECT has(v, 1::UInt8) AS got FROM t_shared;
+SELECT id, has(v, 1::UInt8) AS got, arrayMap(e -> isDynamicElementInSharedData(e), v) AS shared
+FROM t_shared ORDER BY id;
+
+SELECT '-- the answer for a row never depends on which rows share its block';
+
+-- This is the cell that pins block-independence. The same two rows are read under three different
+-- block partitions; every partition must give the same answer, and the single-alternative row must
+-- get the fixed answer (1) rather than the one its heterogeneous neighbour would force.
+DROP TABLE IF EXISTS t_block_one;
+CREATE TABLE t_block_one (id UInt8, v Array(Dynamic)) ENGINE = Memory;
+INSERT INTO t_block_one VALUES (0, [1::UInt64]), (1, ['s', 1::UInt8]);
+
+DROP TABLE IF EXISTS t_block_two;
+CREATE TABLE t_block_two (id UInt8, v Array(Dynamic)) ENGINE = Memory;
+INSERT INTO t_block_two VALUES (0, [1::UInt64]);
+INSERT INTO t_block_two VALUES (1, ['s', 1::UInt8]);
+
+SELECT 'one block   ', id, has(v, 1::UInt8) AS got FROM t_block_one ORDER BY id;
+SELECT 'block size 1', id, has(v, 1::UInt8) AS got FROM t_block_one ORDER BY id SETTINGS max_block_size = 1;
+SELECT 'two blocks  ', id, has(v, 1::UInt8) AS got FROM t_block_two ORDER BY id;
 
 -- An admitted cell answers the same under both values of the mismatch setting: the comparison sees
 -- concrete types, so no adaptor is built and those settings do not reach it.
@@ -506,4 +529,7 @@ DROP TABLE IF EXISTS t_map_value;
 DROP TABLE IF EXISTS t_string;
 DROP TABLE IF EXISTS t_mixed_dyn;
 DROP TABLE IF EXISTS t_mixed_var;
+DROP TABLE IF EXISTS t_shared;
+DROP TABLE IF EXISTS t_block_one;
+DROP TABLE IF EXISTS t_block_two;
 DROP TABLE IF EXISTS t_null_tuple;

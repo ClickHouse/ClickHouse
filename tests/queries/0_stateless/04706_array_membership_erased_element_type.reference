@@ -67,17 +67,25 @@
 0	0	0
 1	0	0
 0
--- out of contract: an erased column holding several concrete types at once
-0	0	0	0	0	1
+-- out of contract: a single ROW holding several concrete types at once
+0	1	1	1	0	1
 1	1	2	1	0	0
-2	1	1	1	0	0
+2	1	1	1	0	1
 1	2	2	0
 1
 0	1
 1	0
 2	1
-0
-0
+0	0	[false]
+1	0	[true]
+2	0	[true]
+-- the answer for a row never depends on which rows share its block
+one block   	0	1
+one block   	1	1
+block size 1	0	1
+block size 1	1	1
+two blocks  	0	1
+two blocks  	1	1
 1
 1
 -- NULL nested inside a non-null Nullable(Tuple(...)) wrapper
