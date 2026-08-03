@@ -37,7 +37,13 @@ CUR_DIR=$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)
 #     draft diverging from the URL (fired by a later structural event / Back-Forward / color
 #     toggle) makes a reload restore that draft as editor text but NEVER auto-run it (the
 #     stale-reload branch, `preserve_local_query`, refuses the URL's `run=1`); a clean run, by
-#     contrast, is both restored and re-run on reload.
+#     contrast, is both restored and re-run on reload;
+#   - the `run=1` policy (`tab.runnableUrl`) is scoped to the history ENTRY, not sticky per tab:
+#     browser history outlives the page, so one page tab can mix an older entry written under a
+#     plain load with a newer one written after a fresh navigation to a shared `?run=1` link.
+#     Back/Forward restore each entry's own recorded policy, so a structural rewrite of the older
+#     plain entry never re-stamps it `?run=1` (which would make reloading or sharing that URL
+#     auto-execute a query never opened with `run=1`), while the newer entry keeps its marker.
 # The harness extracts the real tab/history functions from the served /play page and drives them
 # under node with stub DOM/history objects (including a minimal in-memory IndexedDB), asserting on
 # the observable state: history entries, the active tab, the editor, the persisted workspace, and
@@ -464,6 +470,38 @@ async function openPlain()
     await drain();
 }
 
+/// Simulate a FRESH navigation to a shared `?run=1` link in the SAME browser tab — a typed URL or
+/// a clicked link, not a reload. Unlike `openPlain`, the entries already in the stack stay behind
+/// the new one, which is what makes an older plain-load entry and a newer `?run=1` entry coexist
+/// for the same page tab (browser history outlives the page).
+async function openRunUrl(query, tab_name)
+{
+    await sandbox.persist();
+    const url = '/play?run=1' + (tab_name ? '&tab=' + encodeURIComponent(tab_name) : '')
+        + '#' + sandbox.toBase64(query);
+    sandbox.history.stack.length = sandbox.history.idx + 1;
+    sandbox.history.stack.push({ state: null, url });
+    sandbox.history.idx++;
+    sandbox.current_url = new URL(url, sandbox.location.origin);
+    sandbox.location.href = sandbox.current_url.href;
+    sandbox.url_query = query;
+    sandbox.url_tab_name = tab_name || null;
+    sandbox.has_url_query = query.length > 0;
+    sandbox.run_immediately = true;
+    sandbox.defer_run_for_reconcile = true;
+    sandbox.deferred_run_cancelled = false;
+    sandbox.query_area.value = query;
+    sandbox.param_inputs = {};
+    sandbox.bootstrap_dirty = false;
+    sandbox.bootstrap_settled = false;
+    sandbox.postAllCalled = false;
+    sandbox.activation_num = 0;
+    sandbox.params_restore_pending_token = null;
+    sandbox.save_timer = null;
+    await sandbox.reconcileStartup();
+    await drain();
+}
+
 (async () =>
 {
     /// A keystroke does NOT touch history / the URL: after a run, typing a draft leaves the
@@ -797,6 +835,42 @@ async function openPlain()
     await reload();
     assert_eq('plain load after a run=1 session: a subsequent reload does not auto-run', sandbox.postAllCalled, false);
     assert_eq('plain load after a run=1 session: a subsequent reload restores the query unrun', active().query, 'SELECT 40');
+
+    /// The `run=1` policy is a property of the ENTRY, not a sticky tab-wide bit. Browser history
+    /// outlives the page, so one page tab can hold an older entry written under a plain load and a
+    /// newer one written after a fresh navigation to a shared `?run=1` link. Back to the older
+    /// plain entry must restore that entry's policy (no auto-run), so the next structural rewrite
+    /// of it (`addTab`) leaves it plain — otherwise reloading or sharing that older URL would
+    /// auto-execute a query (possibly a write / DDL statement) that was never opened with `run=1`.
+    /// Forward to the newer entry restores its policy in turn, so a clean run-backed `?run=1`
+    /// entry keeps its marker across an editor-only rewrite.
+    reset();
+    sandbox.run_immediately = false;   /// the first session is a plain load
+    await run('SELECT 1');
+    const plain_entry_idx = sandbox.history.idx;
+    assert_eq('entry-scoped run=1: the plain session entry carries no run=1', sandbox.history.stack[plain_entry_idx].url.includes('run=1'), false);
+    /// A fresh navigation to a shared `?run=1` link in the same browser tab, landing on the same
+    /// page tab (`tab=` names it), then a genuine run under that load.
+    await openRunUrl('SELECT 2', active().title);
+    await run('SELECT 2');
+    const run_entry_idx = sandbox.history.idx;
+    assert_eq('entry-scoped run=1: the run=1 session entry carries run=1', sandbox.history.stack[run_entry_idx].url.includes('run=1'), true);
+    /// Back to the older plain entry: the policy travels with the entry.
+    while (sandbox.history.idx > plain_entry_idx) { sandbox.history.back(); await drain(); }
+    assert_eq('entry-scoped run=1: Back to the older plain entry clears the policy', active().runnableUrl, false);
+    /// Forward to the newer `?run=1` entry: its own policy is restored, so an editor-only rewrite
+    /// of that entry keeps the marker.
+    while (sandbox.history.idx < run_entry_idx) { sandbox.history.forward(); await drain(); }
+    assert_eq('entry-scoped run=1: Forward to the run=1 entry restores the policy', active().runnableUrl, true);
+    sandbox.refreshCurrentHistoryEntry(active());
+    await drain();
+    assert_eq('entry-scoped run=1: rewriting the run=1 entry keeps its marker', sandbox.history.stack[sandbox.history.idx].url.includes('run=1'), true);
+    /// Back to the older plain entry again, then a structural write (`addTab`) that rewrites it:
+    /// it must not be re-stamped as auto-runnable.
+    while (sandbox.history.idx > plain_entry_idx) { sandbox.history.back(); await drain(); }
+    sandbox.addTab();
+    await drain();
+    assert_eq('entry-scoped run=1: a structural write does not re-stamp the older plain entry', sandbox.history.stack[plain_entry_idx].url.includes('run=1'), false);
 
     console.log('OK');
 })().catch(e => { console.error('FAIL: ' + (e && e.stack || e)); process.exit(1); });

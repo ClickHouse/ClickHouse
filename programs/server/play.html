@@ -8247,9 +8247,9 @@ function makeTab(title, query) {
         result: null,          /// last result snapshot (history-state shape) or null
         lastSavedQuery: undefined,
         /// Whether this tab's history entries may carry `run=1` while the editor still reflects
-        /// the produced run. Set by a genuine run under a `?run=1` load (and adopted from a
-        /// Back/Forward entry whose URL already carries the marker), never by the load directive
-        /// alone — so a `run=1` URL meant for one tab cannot make another tab's URLs
+        /// the produced run. Set by a genuine run under a `?run=1` load (and restored from the
+        /// policy the Back/Forward entry itself recorded — see `window.onpopstate`), never by the
+        /// load directive alone — so a `run=1` URL meant for one tab cannot make another tab's URLs
         /// auto-runnable (see `writeHistoryEntry`). Persisted with the tab, so a clean
         /// run-backed tab stays reproducible from its shared `run=1` link across sessions.
         runnableUrl: false,
@@ -9114,11 +9114,11 @@ function writeHistoryEntry(tab, titleForDoc, forceReplace, fromRun) {
     const entry_user = use_snapshot ? run_snapshot.user : user_elem.value;
     const carries_run = fromRun && !live_diverged;
     /// `run=1` additionally requires the tab's own `runnableUrl` policy bit (see `makeTab`): only
-    /// a tab whose entries a genuine run produced under a `?run=1` load — or that adopted such an
-    /// entry on Back/Forward — writes auto-runnable URLs. The load directive alone must not make
-    /// an entry auto-runnable: a `run=1` URL meant for one tab (possibly a pruned or
-    /// stale-reloaded one) would otherwise leak an auto-run onto whichever clean run-backed tab
-    /// an editor-only writer happens to sync next.
+    /// a tab whose entries a genuine run produced under a `?run=1` load — or that restored such a
+    /// policy from the Back/Forward entry it navigated to — writes auto-runnable URLs. The load
+    /// directive alone must not make an entry auto-runnable: a `run=1` URL meant for one tab
+    /// (possibly a pruned or stale-reloaded one) would otherwise leak an auto-run onto whichever
+    /// clean run-backed tab an editor-only writer happens to sync next.
     const stamp_run = carries_run && !!tab.runnableUrl;
     /// This write just made the current entry stop requesting the deferred startup auto-run (see
     /// `deferred_run_cancelled` above `reconcileStartup`): every editor-only writer that can drop
@@ -9151,6 +9151,17 @@ function writeHistoryEntry(tab, titleForDoc, forceReplace, fromRun) {
         /// wrote it), otherwise the completed snapshot's id. `window.onpopstate` matches it against
         /// the tab's live state to decide whether that state stands in for a null entry.
         run_id: tab.inFlight ? tab.launchRunId : (tab.result && tab.result.run_id),
+        /// The tab's `run=1` policy bit (see `makeTab`) as it stood when this entry was written, so
+        /// `window.onpopstate` can restore the policy OF THE ENTRY instead of keeping a sticky
+        /// tab-wide bit. History entries outlive the page: a tab can hold an older entry written
+        /// under a plain load and a newer one written under a `?run=1` load. Without this, Back to
+        /// the older plain entry would leave the bit at `true` and the next structural rewrite of
+        /// that entry (`addTab`, `switchToTab`, a rename, ...) would re-stamp it `?run=1`, so
+        /// reloading or sharing it would auto-execute a query that was never run under `run=1`.
+        /// This is the POLICY, not the entry's own `run=1` marker: an editor-only entry written
+        /// during a `run=1` session legitimately carries no marker (`tabReflectsRun` is false) yet
+        /// must keep the policy, so the next clean run in that session can stamp the marker again.
+        runnableUrl: !!tab.runnableUrl,
     };
     const title = "ClickHouse Query: " + (titleForDoc || tab.query);
     /// Once the tab has materialized, its live `colorModes` / `pinnedColumns` objects are the
@@ -9633,13 +9644,25 @@ window.onpopstate = function(event) {
         checked_connection = connectionTuple();
     }
     const tab = resolveTabForState(event.state);
-    /// Adopt the popped entry's own `run=1` marker into the tab's policy bit (see `makeTab`):
-    /// this entry was demonstrably written as auto-runnable — possibly by a previous session,
-    /// since history entries outlive the page — so later clean editor-only rewrites of this tab
-    /// must preserve the marker rather than dropping it for lack of a run in THIS session. Never
-    /// cleared here: an entry without the marker proves nothing (editor-only entries never carry
-    /// it), and the dirty/divergence checks in `writeHistoryEntry` still gate every future stamp.
-    if (popped_url.searchParams.get('run') !== null) tab.runnableUrl = true;
+    /// Restore the `run=1` policy bit OF THE ENTRY navigated to (see `makeTab` and the
+    /// `runnableUrl` field in `writeHistoryEntry`'s state), rather than treating it as a sticky
+    /// tab-wide bit. Browser-history entries outlive the page, so one tab can mix an older entry
+    /// written under a plain load with a newer one written under a `?run=1` load; the policy is a
+    /// property of the session that wrote each entry, so time travel must travel with it. A
+    /// promote-only rule would leave the bit at `true` after a Back to the older plain entry, and
+    /// the next structural rewrite of that entry (`addTab`, `switchToTab`, a rename, ...) would
+    /// re-stamp it `?run=1` — reloading or sharing it would then auto-execute a query that was
+    /// never run under `run=1`.
+    ///
+    /// The stored policy — not the entry's own `run=1` marker — is what is restored: an
+    /// editor-only entry written during a `run=1` session carries no marker (`tabReflectsRun` is
+    /// false) yet must keep the policy so the session's next clean run can stamp it again.
+    /// A LEGACY entry (written before the policy was serialized) has no `runnableUrl` in its
+    /// state; there the entry's own marker is the only evidence available, and it can only
+    /// promote — an entry without the marker proves nothing. Either way the dirty/divergence
+    /// checks in `writeHistoryEntry` still gate every future stamp.
+    if (typeof event.state.runnableUrl === 'boolean') tab.runnableUrl = event.state.runnableUrl;
+    else if (popped_url.searchParams.get('run') !== null) tab.runnableUrl = true;
     /// Keep this history entry's identity in sync with the tab it actually resolves to, restamping
     /// BOTH the state's `tabId`/`tabName` and the URL's `tab=` key. Two cases need it:
     ///   - The entry named a now-closed tab and we recreated a fresh one (`tabId` changed): adopt

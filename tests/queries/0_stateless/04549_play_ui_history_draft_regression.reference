@@ -67,4 +67,10 @@ plain load after a run=1 session: the synced URL is not rewritten to run=1
 plain load after a run=1 session: the restored tab drops the persisted marker
 plain load after a run=1 session: a subsequent reload does not auto-run
 plain load after a run=1 session: a subsequent reload restores the query unrun
+entry-scoped run=1: the plain session entry carries no run=1
+entry-scoped run=1: the run=1 session entry carries run=1
+entry-scoped run=1: Back to the older plain entry clears the policy
+entry-scoped run=1: Forward to the run=1 entry restores the policy
+entry-scoped run=1: rewriting the run=1 entry keeps its marker
+entry-scoped run=1: a structural write does not re-stamp the older plain entry
 OK
