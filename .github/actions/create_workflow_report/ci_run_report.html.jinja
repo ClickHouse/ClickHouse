@@ -243,6 +243,9 @@
 
   {%- if pr_number == 0 %}
   <div id="prs-in-release" class="tabcontent">
+    {%- if prs_in_release_search_url %}
+    <p>See the PRs on <a href="{{ prs_in_release_search_url }}">GitHub</a></p>
+    {%- endif %}
     {{ prs_in_release_html }}
   </div>
   {%- endif %}

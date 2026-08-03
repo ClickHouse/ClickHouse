@@ -1,9 +1,6 @@
 name: Create and Upload Combined Report
 description: Create and upload a combined CI report
 inputs:
-  workflow_config:
-    description: "Workflow config"
-    required: true
   final:
     description: "Control whether the report is final or a preview"
     required: false
@@ -11,14 +8,6 @@ inputs:
 runs:
   using: "composite"
   steps:
-    - name: Create workflow config
-      shell: bash
-      run: |
-        mkdir -p ./ci/tmp
-        cat > ./ci/tmp/workflow_status.json << 'EOF'
-        ${{ inputs.workflow_config }}
-        EOF
-
     - name: Create and upload workflow report
       env:
         PR_NUMBER: ${{ github.event.pull_request.number || 0 }}
@@ -30,7 +19,7 @@ runs:
         pip install clickhouse-driver==0.2.8 numpy==1.26.4 pandas==2.0.3 jinja2==3.1.5
 
         CMD="python3 .github/actions/create_workflow_report/create_workflow_report.py"
-        ARGS="--actions-run-url $ACTIONS_RUN_URL --known-fails tests/broken_tests.yaml --cves --pr-number $PR_NUMBER"
+        ARGS="--actions-run-url $ACTIONS_RUN_URL --known-fails --cves --pr-number $PR_NUMBER"
 
         set +e -x
         if [[ "$FINAL" == "false" ]]; then
