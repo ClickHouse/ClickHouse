@@ -105,6 +105,11 @@ Each SSH connection borrows an OS thread for its lifetime (libssh drives its own
 SSH does not scale as cheaply as the byte-spliced protocols; it is intended for interactive and
 command sessions rather than very high connection counts.
 
+Entries of an allowlist follow the `authorized_keys` syntax, `[options] <type> <base64> [comment]`;
+the options field, the comment, and `#` comment lines are ignored. A rule that specifies an
+allowlist from which no key can be parsed is rejected at startup, so a malformed allowlist can never
+degrade into a rule that accepts every key.
+
 ## TLS {#tls}
 
 A listener can handle TLS in three ways:

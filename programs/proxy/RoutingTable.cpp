@@ -7,6 +7,8 @@
 #include <boost/algorithm/string/trim.hpp>
 
 #include <fstream>
+#include <string_view>
+#include <vector>
 
 
 namespace DB
@@ -87,7 +89,50 @@ ConfigRoutingTable::Matcher ConfigRoutingTable::makeMatcher(const String & exact
 namespace
 {
 
-/// Turn an "authorized_keys"-style line ("<type> <base64> [comment]") into the canonical "<type> <base64>".
+/// Whether a token is a public key algorithm name, as it appears in an `authorized_keys` entry:
+/// `ssh-rsa`, `ssh-ed25519`, `ssh-dss`, `ecdsa-sha2-nistp256`, `sk-ssh-ed25519@openssh.com`, ...
+bool isKeyType(std::string_view token)
+{
+    return token.starts_with("ssh-") || token.starts_with("ecdsa-sha2-")
+        || token.starts_with("sk-ssh-") || token.starts_with("sk-ecdsa-");
+}
+
+/// Split an `authorized_keys` entry into whitespace-separated tokens, keeping a quoted options
+/// value such as `command="echo hello"` in a single token, as `sshd` does.
+std::vector<std::string_view> tokenize(std::string_view line)
+{
+    std::vector<std::string_view> tokens;
+    bool in_quotes = false;
+    size_t token_begin = String::npos;
+
+    for (size_t i = 0; i < line.size(); ++i)
+    {
+        if (line[i] == '\\' && in_quotes && i + 1 < line.size())
+        {
+            ++i;
+            continue;
+        }
+        if (line[i] == '"')
+            in_quotes = !in_quotes;
+
+        const bool is_separator = !in_quotes && (line[i] == ' ' || line[i] == '\t');
+        if (is_separator)
+        {
+            if (token_begin != String::npos)
+                tokens.push_back(line.substr(token_begin, i - token_begin));
+            token_begin = String::npos;
+        }
+        else if (token_begin == String::npos)
+            token_begin = i;
+    }
+
+    if (token_begin != String::npos)
+        tokens.push_back(line.substr(token_begin));
+    return tokens;
+}
+
+/// Turn an "authorized_keys"-style line ("[options] <type> <base64> [comment]") into the
+/// canonical "<type> <base64>". The optional leading options field is skipped.
 void collectKey(const String & line, std::unordered_set<String> & keys)
 {
     String trimmed = line;
@@ -95,15 +140,13 @@ void collectKey(const String & line, std::unordered_set<String> & keys)
     if (trimmed.empty() || trimmed[0] == '#')
         return;
 
-    const size_t type_end = trimmed.find_first_of(" \t");
-    if (type_end == String::npos)
-        return;
-    const size_t base64_begin = trimmed.find_first_not_of(" \t", type_end);
-    if (base64_begin == String::npos)
-        return;
-    const size_t base64_end = trimmed.find_first_of(" \t", base64_begin);
-
-    keys.insert(trimmed.substr(0, type_end) + " " + trimmed.substr(base64_begin, base64_end - base64_begin));
+    const auto tokens = tokenize(trimmed);
+    for (size_t i = 0; i + 1 < tokens.size(); ++i)
+        if (isKeyType(tokens[i]))
+        {
+            keys.insert(String{tokens[i]} + " " + String{tokens[i + 1]});
+            return;
+        }
 }
 
 }
@@ -127,6 +170,12 @@ std::unordered_set<String> ConfigRoutingTable::loadAuthorizedKeys(const String &
         while (std::getline(stream, line))
             collectKey(line, keys);
     }
+
+    /// An allowlist that parsed to nothing must not silently degrade into "no key restriction".
+    if (keys.empty() && !(inline_keys.empty() && file.empty()))
+        throw Exception(ErrorCodes::INVALID_CONFIG_PARAMETER,
+            "A routing rule specifies an SSH public key allowlist, but no key could be parsed from it. "
+            "Every entry must be an `authorized_keys` line: '[options] <type> <base64> [comment]'");
 
     return keys;
 }
