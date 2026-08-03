@@ -1,8 +1,11 @@
 #include <Interpreters/FunctionNameNormalizer.h>
 
 #include <Parsers/ASTColumnDeclaration.h>
+#include <Parsers/ASTColumnsTransformers.h>
 #include <Parsers/ASTCreateQuery.h>
+#include <Parsers/ASTExpressionList.h>
 #include <Parsers/ASTFunction.h>
+#include <Parsers/ASTIdentifier.h>
 #include <Parsers/ASTTTLElement.h>
 
 #include <Functions/FunctionFactory.h>
@@ -87,6 +90,32 @@ void FunctionNameNormalizer::visit(IAST * ast)
             visit(a.get());
         for (const auto & a : ttl_elem->group_by_assignments)
             visit(a.get());
+    }
+
+    /// An `APPLY` transformer carries its function in the non-child `func_name` string, and its
+    /// `parameters` and `lambda` are not in `children` either, so the walk above does not reach
+    /// them. Stored table definitions are compared as ASTs, so `APPLY SUM` and `APPLY sum` (or a
+    /// lambda spelled `x -> SuM(x)`) must normalize to the same thing.
+    if (auto * apply_transformer = ast->as<ASTColumnsApplyTransformer>())
+    {
+        if (!apply_transformer->func_name.empty())
+        {
+            const String & canonical_name = getAggregateFunctionCanonicalNameIfAny(
+                getFunctionCanonicalNameIfAny(apply_transformer->func_name));
+
+            /// `APPLY f` expands to a call of `f` with the parameters of the transformer and
+            /// exactly one argument, so the shape to check is that of the expansion.
+            auto expansion = make_intrusive<ASTFunction>();
+            expansion->name = canonical_name;
+            expansion->arguments = make_intrusive<ASTExpressionList>();
+            expansion->arguments->children.push_back(make_intrusive<ASTIdentifier>("dummy"));
+            expansion->parameters = apply_transformer->parameters;
+            if (canonicalNameCanReparseShape(canonical_name, *expansion))
+                apply_transformer->func_name = canonical_name;
+        }
+
+        visit(apply_transformer->parameters.get());
+        visit(apply_transformer->lambda.get());
     }
 }
 
