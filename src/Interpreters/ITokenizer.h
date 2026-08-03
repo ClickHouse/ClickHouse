@@ -12,7 +12,6 @@
 #include <base/types.h>
 #include <fmt/format.h>
 
-#include "config.h"
 #if USE_JIEBA
 #  include <Interpreters/JiebaSegmenter.h>
 #endif
@@ -599,14 +598,12 @@ void forEachToken(const ITokenizer & tokenizer, const char * __restrict data, si
             return;
         }
 #endif
-#if USE_ICU
         case ITokenizer::Type::Icu:
         {
             const auto & icu_tokenizer = assert_cast<const IcuTokenizer &>(tokenizer);
             detail::forEachTokenImpl(icu_tokenizer, data, length, callback);
             return;
         }
-#endif
 #if USE_MECAB
         case ITokenizer::Type::Japanese:
             /// Dispatch through the base virtual `nextInString` so this header needn't see the
