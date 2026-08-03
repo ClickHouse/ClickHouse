@@ -187,10 +187,9 @@ TEST(PackedFilesWriter, PrepareFinalizeDoesNotTouchDestination)
     assertEOF(*in);
 }
 
-/// A member view seeks inside the archive, and a direct-IO archive buffer reports a seek position floored to
-/// its alignment (ReadBufferFromFileDescriptor::seek) even though it lands exactly where asked -- the view
-/// must trust the position it requested. `alignment` reproduces that flooring without needing O_DIRECT, and a
-/// buffer smaller than the alignment keeps the targets outside the buffered window, where seek really floors.
+/// ReadBufferFromFileDescriptor::seek reports a position floored to its direct-IO alignment even though it
+/// lands where asked, so the member view must trust the position it requested. `alignment` reproduces that
+/// without O_DIRECT; a buffer below it keeps the targets outside the window, where seek really floors.
 namespace
 {
 

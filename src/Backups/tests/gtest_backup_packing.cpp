@@ -118,10 +118,8 @@ TEST(BackupPackingAssignment, DuplicatesShareBlobAndPack)
     EXPECT_GE(r["dup1"].pack_id, 0);
 }
 
-/// Regression: pack a member from the READ REPRESENTATIVE (smallest-file_name of the (size, checksum) class,
-/// which restore keys on), not the first entry -- a non-representative's base_size stores the wrong
-/// [base_size, size) suffix and corrupts restore. Discriminator: entry-order-first fails both the
-/// representative check and the byte roundtrip below.
+/// The member must come from the smallest-file_name entry of the (size, checksum) class, which restore keys
+/// on: another entry's base_size would store the wrong [base_size, size) suffix.
 TEST(BackupPacking, PackMemberUsesReadRepresentativeBaseSize)
 {
     /// Add order puts non-representative "z_dup" (base_size 30) before representative "a_rep" (base_size 0).

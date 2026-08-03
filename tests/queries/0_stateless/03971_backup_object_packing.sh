@@ -7,10 +7,9 @@ CUR_DIR=$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)
 # shellcheck source=../shell_config.sh
 . "$CUR_DIR"/../shell_config.sh
 
-# experimental_backup_pack_format bundles many small backup blobs into a few pack objects (the
-# PackedFilesIO ".packed" format). Every case below must restore byte-identical data. Row counts are kept
-# tiny on purpose: the number of data files (hence packs) is set by the schema, not the row count, so a few
-# dozen rows exercises every path while keeping the backup-object and system-log-table footprint small.
+# experimental_backup_pack_format bundles many small backup blobs into a few pack objects. Row counts are
+# tiny on purpose: the number of data files, hence of packs, follows the schema and not the row count, so a
+# few dozen rows exercises every path.
 
 name="${CLICKHOUSE_TEST_UNIQUE_NAME}"
 backups_disk_path="$(${CLICKHOUSE_CLIENT} --query "SELECT path FROM system.disks WHERE name='backups'")"
@@ -127,5 +126,89 @@ ${CLICKHOUSE_CLIENT} --query "RESTORE TABLE t FROM Disk('backups', '${name}_9.zi
 # identity packing needs -- reject rather than silently no-op.
 ${CLICKHOUSE_CLIENT} --query "BACKUP TABLE t TO Disk('backups', '${name}_10') SETTINGS experimental_backup_pack_format=1, deduplicate_files=0" 2>&1 \
     | grep -o "not supported with deduplicate_files" | head -1
+
+# Case 11: the manifest's <packed> markers and the packs' front indexes state the same membership, and
+# restore must reject any disagreement -- a member dropped from an index would otherwise be read as an own
+# object of the same data_file id. Each case tampers with a copy of one good packed backup.
+${CLICKHOUSE_CLIENT} -m --query "DROP TABLE IF EXISTS t; $small_create"
+${CLICKHOUSE_CLIENT} --query "$small_insert"
+${CLICKHOUSE_CLIENT} --query "BACKUP TABLE t TO Disk('backups', '${name}_11') SETTINGS experimental_backup_pack_format=1" | grep -o BACKUP_CREATED
+${CLICKHOUSE_CLIENT} --query "DROP TABLE t"
+
+restore_tampered() {
+    local mode=$1
+    local dir="${backups_disk_path}${name}_11_${mode}"
+    rm -rf "$dir"
+    cp -r "${backups_disk_path}${name}_11" "$dir"
+    python3 - "$dir" "$mode" <<'PY'
+import glob, os, re, struct, sys
+
+directory, mode = sys.argv[1], sys.argv[2]
+manifest_path = os.path.join(directory, ".backup")
+
+if mode != "drop_index_member":
+    with open(manifest_path, "r", encoding="utf-8") as f:
+        manifest = f.read()
+    if mode == "drop_num_packs":
+        manifest = re.sub(r"<num_packs>\d+</num_packs>", "", manifest, count=1)
+    else:
+        manifest = manifest.replace("<packed>true</packed>", "")
+    with open(manifest_path, "w", encoding="utf-8") as f:
+        f.write(manifest)
+    sys.exit(0)
+
+pack_path = sorted(glob.glob(os.path.join(directory, "packs_*")))[0]
+with open(pack_path, "rb") as f:
+    pack = f.read()
+
+def read_varint(pos):
+    value = shift = 0
+    while True:
+        byte = pack[pos]
+        pos += 1
+        value |= (byte & 0x7F) << shift
+        if not byte & 0x80:
+            return value, pos
+        shift += 7
+
+def write_varint(value):
+    out = bytearray()
+    while True:
+        byte = value & 0x7F
+        value >>= 7
+        out.append(byte | 0x80 if value else byte)
+        if not value:
+            return bytes(out)
+
+version = pack[0]
+entry_format = "<QQQ" if version >= 1 else "<QQ"
+entry_size = struct.calcsize(entry_format)
+(count,) = struct.unpack_from("<Q", pack, 1)
+pos = 9
+members = []
+for _ in range(count):
+    length, pos = read_varint(pos)
+    name = pack[pos:pos + length]
+    pos += length
+    members.append((name, struct.unpack_from(entry_format, pack, pos)))
+    pos += entry_size
+
+# Drop the first member. Bodies keep their absolute offsets, and the shortened index is zero-padded back to
+# its original length, so every surviving member still resolves -- only the dropped one goes missing.
+index = bytearray(pack[:1]) + struct.pack("<Q", len(members) - 1)
+for name, entry in members[1:]:
+    index += write_varint(len(name)) + name + struct.pack(entry_format, *entry)
+index += b"\0" * (pos - len(index))
+with open(pack_path, "wb") as f:
+    f.write(bytes(index) + pack[pos:])
+PY
+    ${CLICKHOUSE_CLIENT} --query "RESTORE TABLE t FROM Disk('backups', '${name}_11_${mode}')" 2>&1 \
+        | grep -oE "marked as packed in the metadata but no pack contains it|is not marked as packed in the metadata" | head -1
+    ${CLICKHOUSE_CLIENT} --query "DROP TABLE IF EXISTS t"
+}
+
+restore_tampered drop_index_member
+restore_tampered drop_num_packs
+restore_tampered drop_markers
 
 ${CLICKHOUSE_CLIENT} --query "DROP TABLE IF EXISTS t"

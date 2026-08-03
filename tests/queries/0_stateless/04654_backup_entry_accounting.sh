@@ -1,22 +1,25 @@
 #!/usr/bin/env bash
-# Tags: no-fasttest
-# ^ backups need a running server with a configured 'backups' disk.
+# Tags: no-fasttest, no-ordinary-database
+# ^ backups need a running server with a configured 'backups' disk; the KeeperMap case below needs table UUIDs,
+#   without which renaming a table can move the data to the other one.
 
 CUR_DIR=$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)
 # shellcheck source=../shell_config.sh
 . "$CUR_DIR"/../shell_config.sh
 
-# num_entries / uncompressed_size count the objects a backup physically stores, so the BACKUP row and the
-# RESTORE row of one backup must report the same numbers, and the count must not depend on how the objects
-# were named. data_file_name_generator='checksum' names an object after its content, which is where a
-# name-based count breaks: every byte-identical file matches the name on write and none matches it on read.
+# num_entries / uncompressed_size count the objects a backup physically stores, so the BACKUP and RESTORE
+# rows of one backup must agree, and the count must not depend on object naming. data_file_name_generator=
+# 'checksum' names an object after its content, which is where a name-based count breaks.
 
 name="${CLICKHOUSE_TEST_UNIQUE_NAME}"
 
 # Three identical columns in a wide part give several byte-identical files, stored as one object each.
+# min_bytes_for_full_part_storage=0 keeps the part one file per column: packed part storage would put the
+# whole part in a single data.packed blob, leaving nothing to deduplicate.
 ${CLICKHOUSE_CLIENT} -m --query "
 DROP TABLE IF EXISTS t;
-CREATE TABLE t (a UInt64, b UInt64, c UInt64) ENGINE=MergeTree ORDER BY a SETTINGS min_bytes_for_wide_part=0;
+CREATE TABLE t (a UInt64, b UInt64, c UInt64) ENGINE=MergeTree ORDER BY a
+    SETTINGS min_bytes_for_wide_part=0, min_bytes_for_full_part_storage=0;
 INSERT INTO t SELECT number, number, number FROM numbers(1000);
 "
 
@@ -37,26 +40,41 @@ roundtrip nodedup ", deduplicate_files=0"
 # Two KeeperMap tables sharing one Keeper path store the data once: the second table's entry is a reference to
 # the first table's file. A reference inherits its target's object name but keeps pack_id == -1, so with
 # packing on it must not be counted as an object of its own -- the pack already accounts for those bytes.
-# The explicit UUIDs pin which table holds the data (BackupCoordinationKeeperMapTables keeps the largest table
-# id) so the reference always sorts before its target, the order in which a per-file pack test miscounts.
 ${CLICKHOUSE_CLIENT} -m --query "
-CREATE TABLE zzz_target UUID 'ffffffff-ffff-4fff-8fff-ffffffffffff' (key UInt64, value String)
-    ENGINE=KeeperMap('/' || currentDatabase() || '/04654') PRIMARY KEY key;
-CREATE TABLE aaa_reference UUID '00000000-0000-4000-8000-000000000001' (key UInt64, value String)
-    ENGINE=KeeperMap('/' || currentDatabase() || '/04654') PRIMARY KEY key;
-INSERT INTO zzz_target SELECT number, 'v' || toString(number) FROM numbers(50);
+CREATE TABLE km_a (key UInt64, value String) ENGINE=KeeperMap('/' || currentDatabase() || '/04654') PRIMARY KEY key;
+CREATE TABLE km_b (key UInt64, value String) ENGINE=KeeperMap('/' || currentDatabase() || '/04654') PRIMARY KEY key;
+INSERT INTO km_a SELECT number, 'v' || toString(number) FROM numbers(50);
 "
-${CLICKHOUSE_CLIENT} --query "
-    BACKUP TABLE aaa_reference, TABLE zzz_target TO Disk('backups', '${name}_packref')
-    SETTINGS id='${name}_packref_backup', experimental_backup_pack_format=1" | grep -o BACKUP_CREATED
-${CLICKHOUSE_CLIENT} -m --query "DROP TABLE aaa_reference SYNC; DROP TABLE zzz_target SYNC"
-${CLICKHOUSE_CLIENT} --query "
-    RESTORE TABLE aaa_reference, TABLE zzz_target FROM Disk('backups', '${name}_packref')
-    SETTINGS id='${name}_packref_restore'" | grep -o RESTORED
+
+# The miscount only shows when the reference is iterated before its target, and which table holds the data is
+# not ours to pick. Iteration follows the backup path order, which the names decide, so back the same pair up
+# under both name orders; taking both backups before either restore keeps the roles fixed between them.
+packref_backup() {
+    local tag=$1 name_a=$2 name_b=$3
+    ${CLICKHOUSE_CLIENT} --query "RENAME TABLE km_a TO ${name_a}, km_b TO ${name_b}"
+    ${CLICKHOUSE_CLIENT} --query "
+        BACKUP TABLE ${name_a}, TABLE ${name_b} TO Disk('backups', '${name}_${tag}')
+        SETTINGS id='${name}_${tag}_backup', experimental_backup_pack_format=1" | grep -o BACKUP_CREATED
+    ${CLICKHOUSE_CLIENT} --query "RENAME TABLE ${name_a} TO km_a, ${name_b} TO km_b"
+}
+
+packref_restore() {
+    local tag=$1 name_a=$2 name_b=$3
+    ${CLICKHOUSE_CLIENT} -m --query "DROP TABLE IF EXISTS km_a SYNC; DROP TABLE IF EXISTS km_b SYNC"
+    ${CLICKHOUSE_CLIENT} --query "
+        RESTORE TABLE ${name_a}, TABLE ${name_b} FROM Disk('backups', '${name}_${tag}')
+        SETTINGS id='${name}_${tag}_restore'" | grep -o RESTORED
+    ${CLICKHOUSE_CLIENT} --query "RENAME TABLE ${name_a} TO km_a, ${name_b} TO km_b"
+}
+
+packref_backup packref aaa_km zzz_km
+packref_backup packref_swapped zzz_km aaa_km
+packref_restore packref aaa_km zzz_km
+packref_restore packref_swapped zzz_km aaa_km
 
 ${CLICKHOUSE_CLIENT} --query "SYSTEM FLUSH LOGS backup_log"
 
-for tag in first checksum nodedup packref; do
+for tag in first checksum nodedup packref packref_swapped; do
     ${CLICKHOUSE_CLIENT} --query "
     SELECT '$tag',
         (SELECT (num_entries, uncompressed_size) FROM system.backup_log
@@ -77,4 +95,4 @@ SELECT
 
 ${CLICKHOUSE_CLIENT} -m --query "
 DROP TABLE t; DROP TABLE t_first; DROP TABLE t_checksum; DROP TABLE t_nodedup;
-DROP TABLE aaa_reference SYNC; DROP TABLE zzz_target SYNC"
+DROP TABLE km_a SYNC; DROP TABLE km_b SYNC"

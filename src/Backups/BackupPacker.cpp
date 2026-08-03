@@ -26,11 +26,8 @@ void BackupPacker::writePack(std::unique_ptr<WriteBuffer> out, const std::vector
 
 std::map<size_t, std::vector<size_t>> BackupPacker::selectPackMembers(const BackupFileInfos & file_infos)
 {
-    /// Per data_file_index, pick the smallest-file_name entry -- the read representative restore keys on (a
-    /// duplicate may carry a different base_size, so storing its suffix would corrupt the class). Compare
-    /// names explicitly, not by position: this vector is in getFileInfos() insertion order, while
-    /// data_file_index indexes the separately-sorted file_infos_for_all_hosts, so assignPacks's
-    /// "data_file_index == i" does not hold here.
+    /// Compare names explicitly rather than by position: this vector is in getFileInfos() insertion order,
+    /// while data_file_index indexes the separately-sorted file_infos_for_all_hosts.
     std::map<size_t, size_t> representative_by_data_file;
     for (size_t i = 0; i != file_infos.size(); ++i)
     {

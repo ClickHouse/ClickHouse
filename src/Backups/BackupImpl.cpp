@@ -128,7 +128,7 @@ namespace
     /// A backup stores one object per data_file_name -- byte-identical files share one, and a file that is empty
     /// or comes entirely from the base backup has none. This is what `num_entries` / `size_of_entries` count, so
     /// the write and the read path must both go through here or `system.backups` reports two different numbers.
-    bool countsAsPhysicalEntry(const BackupFileInfo & info, std::unordered_set<String> & counted_objects)
+    bool claimPhysicalEntry(const BackupFileInfo & info, std::unordered_set<String> & counted_objects)
     {
         if (info.data_file_name.empty())
             return false;
@@ -476,9 +476,8 @@ void BackupImpl::writeBackupMetadata()
     size_t num_all_file_infos = 0;
     bool base_backup_in_use = false;
     Int64 max_pack_id = -1;
-    /// Names of the objects that live inside a pack. A reference inherits its target's data_file_name but
-    /// keeps pack_id == -1, so a per-file `pack_id < 0` test would count it as an own object whenever it is
-    /// iterated before its packed target; the name is the same for both, whatever the order.
+    /// Keyed by data_file_name, not pack_id: a reference inherits its target's name but keeps pack_id == -1,
+    /// so a per-file test on pack_id would answer differently for the two depending on the iteration order.
     std::unordered_set<String> packed_object_names;
     coordination->forEachFileInfoForAllHosts([&](const BackupFileInfo & info)
     {
@@ -588,13 +587,15 @@ void BackupImpl::writeBackupMetadata()
             }
             if (!info.data_file_name.empty() && (info.data_file_name != info.file_name))
                 *out << "<data_file>" << xml << info.data_file_name << "</data_file>";
+            if (packed_object_names.contains(info.data_file_name))
+                *out << "<packed>true</packed>";
             if (info.encrypted_by_disk)
                 *out << "<encrypted_by_disk>true</encrypted_by_disk>";
         }
 
         total_size += info.size;
         /// Packs are accounted per object below, not per member (see writeFilePack).
-        if (countsAsPhysicalEntry(info, counted_objects) && !packed_object_names.contains(info.data_file_name))
+        if (claimPhysicalEntry(info, counted_objects) && !packed_object_names.contains(info.data_file_name))
         {
             ++num_entries;
             size_of_entries += info.size - info.base_size;
@@ -649,6 +650,7 @@ void BackupImpl::readBackupMetadata()
     num_entries = 0;
     size_of_entries = 0;
     std::unordered_set<String> counted_objects;
+    std::unordered_set<String> declared_packed_files;
 
     bool contents_seen = false;
 
@@ -705,10 +707,8 @@ void BackupImpl::readBackupMetadata()
         if (h.contains("num_packs"))
         {
             num_packs = to_uint64(req("num_packs"), "num_packs");
-            /// Packing is detected on read from the manifest, not from a setting -- promote the layout so the
-            /// read path routes packed members. Archive and packing are mutually exclusive on write, so a
-            /// legit archive never has num_packs > 0; a tampered archive manifest carrying it must fail closed
-            /// rather than read sibling packs_* objects through the archive-opened backup.
+            /// Packing is detected from the manifest, not from a setting: promote the layout here so the read
+            /// path routes packed members off it.
             if (num_packs > 0)
             {
                 if (layout == BackupLayout::Archive)
@@ -805,6 +805,17 @@ void BackupImpl::readBackupMetadata()
             info.encrypted_by_disk = get_bool("encrypted_by_disk", false);
         }
 
+        if (get_bool("packed", false))
+        {
+            if (info.data_file_name.empty())
+                throw Exception(
+                    ErrorCodes::BACKUP_DAMAGED,
+                    "Backup {}: File {} is marked as packed but stores no data in this backup",
+                    backup_name_for_logging,
+                    quoteString(info.file_name));
+            declared_packed_files.emplace(info.data_file_name);
+        }
+
         file_names.emplace(info.file_name, std::pair{info.size, info.checksum});
         if (!info.object_key.empty())
         {
@@ -822,7 +833,7 @@ void BackupImpl::readBackupMetadata()
 
         ++num_files;
         total_size += info.size;
-        if (countsAsPhysicalEntry(info, counted_objects))
+        if (claimPhysicalEntry(info, counted_objects))
         {
             ++num_entries;
             size_of_entries += info.size - info.base_size;
@@ -863,12 +874,9 @@ void BackupImpl::readBackupMetadata()
     {
         loadPackIndexes();
 
-        /// Recompute pack-aware to match the write side (see writeFilePack): own-object data files stay
-        /// individual entries, each pack is one entry sized index + bodies. Pack geometry comes from
-        /// packed_members; a pack's index size is its smallest member offset, since bodies follow it.
-        ///
-        /// The reset below rebuilds only from file_infos + packs, so it would drop object_key/lightweight
-        /// files -- which can't occur here, as packing is rejected alongside experimental_lightweight_snapshot.
+        /// Recompute pack-aware to match the write side (see writeFilePack): a pack is one entry sized index +
+        /// bodies, its index size being its smallest member offset since the bodies follow it. Rebuilding from
+        /// file_infos + packs alone is safe only because packing and a lightweight snapshot are exclusive.
         chassert(lightweight_snapshot_file_infos.empty());
 
         std::unordered_map<String, UInt64> pack_index_size;
@@ -898,6 +906,11 @@ void BackupImpl::readBackupMetadata()
             size_of_entries += pack_index_size[pack_object] + body_size;
         }
     }
+
+    /// Deliberately outside the num_packs branch: deleting that one element would otherwise skip the pack
+    /// indexes and route every declared-packed member to the own-object path.
+    if (open_mode == OpenMode::READ)
+        checkPackedMembershipMatchesManifest(declared_packed_files);
 
     uncompressed_size = size_of_entries + str.size();
     compressed_size = uncompressed_size;
@@ -1103,10 +1116,8 @@ void BackupImpl::loadPackIndexes()
     {
         const String pack_object = getBackupPackObjectName(pack_id);
 
-        /// A declared pack object that doesn't exist is deterministic corruption -- fail closed with a clean
-        /// BACKUP_DAMAGED. A truncated/garbage index still fails closed via readIndex (with its real error).
-        /// Do NOT catch-all around readFile/readIndex: a transient transport/auth error must propagate with its
-        /// real type so a retry can succeed, not be relabeled as corruption and condemn a valid backup.
+        /// No catch-all around readFile/readIndex below: a transient transport or auth error must keep its own
+        /// type so a retry can succeed, instead of being relabeled corruption and condemning a valid backup.
         if (!reader->fileExists(pack_object))
             throw Exception(
                 ErrorCodes::BACKUP_DAMAGED,
@@ -1130,6 +1141,29 @@ void BackupImpl::loadPackIndexes()
                     backup_name_for_logging,
                     quoteString(member_name));
         }
+    }
+}
+
+void BackupImpl::checkPackedMembershipMatchesManifest(const std::unordered_set<String> & declared_packed_files) const
+{
+    for (const auto & data_file_name : declared_packed_files)
+    {
+        if (!packed_members.contains(data_file_name))
+            throw Exception(
+                ErrorCodes::BACKUP_DAMAGED,
+                "Backup {}: Data file {} is marked as packed in the metadata but no pack contains it",
+                backup_name_for_logging,
+                quoteString(data_file_name));
+    }
+
+    for (const auto & [member_name, _] : packed_members)
+    {
+        if (!declared_packed_files.contains(member_name))
+            throw Exception(
+                ErrorCodes::BACKUP_DAMAGED,
+                "Backup {}: Pack member {} is not marked as packed in the metadata",
+                backup_name_for_logging,
+                quoteString(member_name));
     }
 }
 
@@ -1325,10 +1359,8 @@ size_t BackupImpl::copyFileToDisk(const SizeAndChecksum & size_and_checksum,
     }
     else if (info.size && !info.base_size && !isArchive() && packed_location)
     {
-        /// A packed member with no base is a byte range inside a pack object; copy only that range, never a
-        /// whole-object copy, which would copy the entire pack. The pack object's size decides the route the
-        /// storage allows for that source. Packed members that also have a base take the generic path below,
-        /// which concatenates the base backup's data with the member's range.
+        /// Copy only the member's range: a whole-object copy of the source would copy the entire pack. A
+        /// packed member that also has a base falls through to the generic path, which concatenates the two.
         reader->copyFileRangeToDisk(packed_location->pack_object, packed_location->offset, packed_location->size,
                                     packed_location->pack_object_size, info.encrypted_by_disk, destination_disk,
                                     destination_path, write_mode);

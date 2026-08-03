@@ -217,10 +217,8 @@ void BackupCoordinationFileInfos::prepare() const
 
 void BackupCoordinationFileInfos::assignPacks() const
 {
-    /// Bin-pack representatives (each unique blob, where data_file_index == its own position) whose physical
-    /// payload is below the threshold into packs of about config.pack_size. Offsets inside a pack are not
-    /// decided here -- the pack writer derives them from the member manifest it is given -- so only pack
-    /// membership and the running byte total (to bound the pack size) matter.
+    /// Offsets inside a pack are not decided here -- the pack writer derives them from its member manifest --
+    /// so only membership and the running byte total matter.
     Int64 current_pack_id = -1;
     UInt64 current_pack_bytes = 0;
     for (size_t i = 0; i != file_infos_for_all_hosts.size(); ++i)
@@ -231,7 +229,7 @@ void BackupCoordinationFileInfos::assignPacks() const
 
         const UInt64 physical = info.size - info.base_size;
         if (physical >= config.pack_min_size)
-            continue; /// Large blob keeps its own object (pack_id stays -1).
+            continue;
 
         if (current_pack_id < 0 || current_pack_bytes + physical > config.pack_size)
         {

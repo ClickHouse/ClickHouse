@@ -103,9 +103,9 @@ struct BackupSettings
     /// when `data_file_name_generator` is `Checksum`.
     std::optional<size_t> data_file_name_prefix_length;
 
-    /// Experimental: pack many small backup blobs into a bounded set of larger objects (the
-    /// PackedFilesIO ".packed" format) to cut S3 write-request cost. Opt-in, single-node, S3 only;
-    /// mutually exclusive with an archive extension in the destination.
+    /// Experimental: pack many small backup blobs into a bounded set of larger objects (the PackedFilesIO
+    /// ".packed" format) to cut the number of objects written. Opt-in, single-node, any destination that is not
+    /// an archive; only restore's server-side ranged copy is S3-specific, elsewhere the range is read through IO.
     bool experimental_backup_pack_format = false;
 
     /// Target size of one pack object. Packing fills packs up to about this size.

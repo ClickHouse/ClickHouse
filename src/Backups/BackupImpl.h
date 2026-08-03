@@ -10,6 +10,7 @@
 #include <map>
 #include <mutex>
 #include <unordered_map>
+#include <unordered_set>
 
 
 namespace DB
@@ -148,12 +149,12 @@ private:
 
     /// Reads each pack's front index (packs_0000 .. packs_{num_packs-1}) and fills `packed_members`.
     void loadPackIndexes() TSA_REQUIRES(mutex);
+    /// Fails closed unless the pack indexes and the manifest's <packed> markers name the same data files.
+    void checkPackedMembershipMatchesManifest(const std::unordered_set<String> & declared_packed_files) const TSA_REQUIRES(mutex);
     std::unique_ptr<ReadBufferFromFileBase> readPackedMember(const MemberLocation & member) const;
 
-    /// How the backup's objects are laid out. Mutually exclusive; the archive-vs-pack conflict is rejected
-    /// earlier (backup engine registration). Set to Archive/Plain at construction; the read path upgrades a
-    /// plain-opened backup to Packed once the manifest reports num_packs > 0 (packing is detected on read,
-    /// not carried in a setting), so mixed and old backups just work.
+    /// How the backup's objects are laid out. Set at construction; the read path upgrades a plain-opened
+    /// backup to Packed once the manifest reports num_packs > 0.
     enum class BackupLayout : uint8_t
     {
         Plain,

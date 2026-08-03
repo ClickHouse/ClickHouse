@@ -39,8 +39,7 @@ struct BackupFileInfo
 
     /// Index of the pack object holding this blob's bytes when `experimental_backup_pack_format` is on;
     /// -1 means the blob is its own object (the default and the only value in non-packed backups).
-    /// In-memory only: set during coordination and used to route writing; not stored in the .backup manifest
-    /// (a pack's own front index locates its members at restore, see BackupImpl).
+    /// Set during coordination to route writing; the id itself never reaches the manifest.
     Int64 pack_id = -1;
 
     /// Whether this file is encrypted by an encrypted disk.

@@ -12,11 +12,9 @@ namespace DB
 class ReadBuffer;
 class WriteBuffer;
 
-/// Streaming writer for the PackedFilesIO ".packed" format; output is read back by PackedFilesReader.
-/// Unlike PackedFilesWriter (which buffers every member in RAM until finalize), it takes the ordered
-/// (name, size) manifest upfront, writes the front index first, then streams each body straight to the
-/// destination -- a whole pack never has to fit in memory (the point for an S3 multipart sink). Members
-/// must be written in manifest order.
+/// Streaming writer for the PackedFilesIO ".packed" format. Unlike PackedFilesWriter, which buffers every
+/// member in RAM until finalize, it takes the ordered (name, size) manifest upfront and streams each body
+/// straight out, so a whole pack never has to fit in memory. Members must be written in manifest order.
 class PackedArchiveWriter
 {
 public:

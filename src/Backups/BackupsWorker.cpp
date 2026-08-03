@@ -808,11 +808,7 @@ void BackupsWorker::writeBackupEntries(
 
     std::atomic_bool failed = false;
 
-    /// Packed entries (pack_id >= 0) are written serially, one pack object at a time, off the parallel
-    /// per-entry path below. Group them by pack_id and keep one member per unique blob (data_file_index);
-    /// the kept member is the read representative (see BackupPacker::selectPackMembers) so the stored suffix
-    /// matches the base_size restore reconstructs with. References and empties keep pack_id == -1 and stay
-    /// own-object.
+    /// Packed entries are written by the pack pass below, not by the per-entry path.
     std::map<size_t, std::vector<size_t>> pack_to_member_indices = BackupPacker::selectPackMembers(file_infos);
 
     bool always_single_threaded = !backup->supportsWritingInMultipleThreads();
@@ -845,8 +841,7 @@ void BackupsWorker::writeBackupEntries(
 
         const auto & file_info = file_infos[index];
 
-        /// Packed entries are handled by the serial pack pass below; skip them here (and don't move their
-        /// entry, the pack pass still needs it to read the member's bytes).
+        /// The pack pass below still needs this entry to read the member's bytes, so don't move it.
         if (file_info.pack_id >= 0)
             continue;
 
@@ -897,12 +892,8 @@ void BackupsWorker::writeBackupEntries(
         runner.enqueueAndKeepTrack(std::move(job));
     }
 
-    /// Pack pass: each pack object is an independent unit of work -- a disjoint set of members, its own
-    /// destination object, its own streaming writer -- so enqueue one job per pack_id onto the same runner.
-    /// Packs write in parallel with each other and overlap the own-object writes above (distinct objects, no
-    /// ordering dependency). Members within a pack stay serial (one PackedArchiveWriter per object). Each job
-    /// carries the same failed-flag try/catch as the own-object path, so a pack write that throws stops the
-    /// sibling jobs and is rethrown by the runner (then swept by the existing failed-backup cleanup).
+    /// One job per pack: packs share no state and write distinct objects, so they run in parallel with each
+    /// other and with the own-object writes above. Members within a pack stay serial (one writer per object).
     for (const auto & [pack_id, member_indices] : pack_to_member_indices)
     {
         if (failed)

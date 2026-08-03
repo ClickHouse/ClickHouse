@@ -5,9 +5,12 @@ RESTORED
 BACKUP_CREATED
 RESTORED
 BACKUP_CREATED
+BACKUP_CREATED
+RESTORED
 RESTORED
 first	1
 checksum	1
 nodedup	1
 packref	1
+packref_swapped	1
 1	1	1

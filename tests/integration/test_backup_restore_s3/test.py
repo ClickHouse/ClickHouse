@@ -627,11 +627,9 @@ def _count_backup_objects(cluster, backup_name):
 
 
 def test_backup_to_s3_object_packing(cluster):
-    # Object packing coalesces many small backup data files into a few pack objects, cutting the number
-    # of objects (and PUT/copy requests) written. This backup's single pack stays below S3's 5 MiB
-    # byte-range copy-source minimum, so restore reads every member through buffers -- the server-side
-    # ranged-copy route is not covered by any integration test (reaching it needs a >5 MiB pack, which
-    # costs far too much MinIO traffic for CI).
+    # Packing coalesces many small backup data files into a few pack objects, cutting the objects (and PUT
+    # requests) written. This pack stays under S3's 5 MiB byte-range copy-source minimum, so restore reads
+    # members through buffers; the server-side ranged-copy route needs a >5 MiB pack, too costly for CI.
     storage_policy = "policy_s3"
 
     backup_name_off = new_backup_name()
@@ -658,10 +656,8 @@ def test_backup_to_s3_object_packing(cluster):
 
 
 def test_backup_to_s3_object_packing_incremental(cluster):
-    # Incremental packing: an incremental backup stores only the data files new since the base, and object
-    # packing coalesces those small per-part files into a few pack objects -- so the same incremental with
-    # packing on writes fewer objects (PUT/copy requests) than with packing off. Restore walks the
-    # base + incremental chain and must reconstruct byte-identical data.
+    # An incremental backup stores only the data files new since the base, and packing coalesces those small
+    # per-part files -- so the same incremental writes fewer objects with packing on than with it off.
     node = cluster.instances["node"]
     storage_policy = "policy_s3"
 
