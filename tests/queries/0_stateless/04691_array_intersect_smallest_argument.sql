@@ -60,3 +60,11 @@ FROM
 SELECT '-- a single argument is returned deduplicated';
 SELECT arrayIntersect([1, 1, 2, 2, 3]);
 SELECT arraySort(arrayUnion([1, 1, 2, 2, 3]));
+
+SELECT '-- the generic path, where the elements have to be serialized into an arena';
+SELECT arrayIntersect([[1, 2], [3]], [[3], [4]]);
+SELECT arraySort(arrayIntersect([(1, 'a'), (2, 'b')], [(2, 'b'), (3, 'c')], [(2, 'b'), (1, 'a')]));
+SELECT arrayIntersect([[1]], [[2]], [[1], [1]]);
+SELECT arraySort(arrayUnion([[1, 2]], [[2]], [[2], [3]]));
+SELECT arraySymmetricDifference([[1]], [[2]], [[1], [1]]);
+SELECT sum(length(arrayIntersect(a, b))) FROM (SELECT arrayMap(x -> [x, x + 1], range(number % 20)) AS a, arrayMap(x -> [x + 2, x + 3], range(number % 20)) AS b FROM numbers(10000));

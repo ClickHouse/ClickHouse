@@ -62,3 +62,10 @@
 -- a single argument is returned deduplicated
 [1,2,3]
 [1,2,3]
+-- the generic path, where the elements have to be serialized into an arena
+[[3]]
+[(2,'b')]
+[]
+[[1,2],[2],[3]]
+[[2],[1]]
+76500

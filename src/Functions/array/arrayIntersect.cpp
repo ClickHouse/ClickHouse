@@ -543,6 +543,33 @@ static ALWAYS_INLINE typename Map::mapped_type * findOrInsert(Map & map, const t
     }
 }
 
+/// The same for a key that had to be serialized into `arena` first.
+/// The arena is not rolled back per row, so a key that the map does not take stays resident for the
+/// whole function - which would make the memory grow with every looked up argument, not just with
+/// the argument that seeds the map. Roll such a key back right away: on the lookup-only path, and
+/// on the filling path when the key was already there.
+template <bool insert, typename Map>
+static ALWAYS_INLINE typename Map::mapped_type * findOrInsertSerialized(Map & map, Arena & arena, std::string_view key)
+{
+    if constexpr (insert)
+    {
+        typename Map::LookupResult it = nullptr;
+        bool inserted = false;
+        map.emplace(key, it, inserted);
+        if (inserted)
+            new (reinterpret_cast<void *>(&it->getMapped())) typename Map::mapped_type();
+        else
+            arena.rollback(key.size());
+        return &it->getMapped();
+    }
+    else
+    {
+        typename Map::LookupResult it = map.find(key);
+        arena.rollback(key.size());
+        return it ? &it->getMapped() : nullptr;
+    }
+}
+
 template <typename Map, typename ColumnType, bool is_numeric_column>
 ColumnPtr FunctionArrayIntersect::execute(const UnpackedArrays & arrays, MutableColumnPtr result_data_ptr, ArraySetMode mode)
 {
@@ -590,7 +617,7 @@ ColumnPtr FunctionArrayIntersect::execute(const UnpackedArrays & arrays, Mutable
     size_t map_arg = 0;
     if (mode == ArraySetMode::Intersect)
     {
-        auto average_size = [&](size_t arg_num)
+        auto average_size = [&](size_t arg_num) -> size_t
         {
             const auto & arg = arrays.args[arg_num];
             const auto & offsets = *arg.offsets;
@@ -671,7 +698,7 @@ ColumnPtr FunctionArrayIntersect::execute(const UnpackedArrays & arrays, Mutable
                     else
                     {
                         const char * data = nullptr;
-                        value = findOrInsert<fill_map>(map, column->serializeValueIntoArena(i, arena, data, nullptr));
+                        value = findOrInsertSerialized<fill_map>(map, arena, column->serializeValueIntoArena(i, arena, data, nullptr));
                     }
 
                     /// Here we count the number of element appearances, but no more than once per array.
@@ -781,7 +808,10 @@ ColumnPtr FunctionArrayIntersect::execute(const UnpackedArrays & arrays, Mutable
                 else
                 {
                     const char * data = nullptr;
-                    pair = map.find(columns[0]->serializeValueIntoArena(i, arena, data, nullptr));
+                    /// Only a lookup - the serialized key is not kept, see `findOrInsertSerialized`.
+                    const std::string_view key = columns[0]->serializeValueIntoArena(i, arena, data, nullptr);
+                    pair = map.find(key);
+                    arena.rollback(key.size());
                 }
 
                 if (!current_has_nullable)
