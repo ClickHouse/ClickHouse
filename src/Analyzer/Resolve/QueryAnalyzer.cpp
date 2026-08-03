@@ -5639,6 +5639,14 @@ void QueryAnalyzer::inlineViewSubqueryIfNeeded(QueryTreeNodePtr & join_tree_node
     /// Get the view's inner query AST.
     const auto & storage_snapshot = table_node->getStorageSnapshot();
 
+    /// A view whose inner query runs as somebody else must not be inlined: inlining puts the
+    /// invoker's expressions into the same query as the view's own filtering, and the analyzer is
+    /// then free to merge them, so an expression written by the invoker would decide about rows
+    /// the view does not expose. Reading the view through `StorageView::read` instead builds a
+    /// subplan whose filtering steps are marked with `IQueryPlanStep::isSecurityBarrier`.
+    if (StorageView::isSecurityBarrier(*storage_snapshot->metadata, scope.context))
+        return;
+
     auto view_context = StorageView::getViewSubqueryContext(scope.context, storage_snapshot);
 
     /// Check for row policies on the view itself.
