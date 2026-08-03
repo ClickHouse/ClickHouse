@@ -1,7 +1,9 @@
+#include <Columns/ColumnAggregateFunction.h>
 #include <Columns/ColumnLowCardinality.h>
 #include <Columns/IColumn.h>
 #include <Processors/Port.h>
 #include <Processors/Transforms/BufferedShardByHashTransform.h>
+#include <Common/Arena.h>
 #include <Common/Exception.h>
 #include <Common/HashTable/Hash.h>
 #include <Common/MapToRange.h>
@@ -103,6 +105,19 @@ void BufferedShardByHashTransform::releaseQueuedChunk(const std::vector<const vo
     budget->total_buffered_bytes.fetch_sub(releaseTouchedObjectsUnlocked(touched_objects), std::memory_order_relaxed);
 }
 
+void BufferedShardByHashTransform::chargeSharedObject(
+    const void * object, Int64 bytes, std::vector<const void *> & touched, Int64 & total_bytes)
+{
+    touched.push_back(object);
+    auto [it, is_new] = budget->shared_object_refcounts.try_emplace(object);
+    ++it->second.refcount;
+    if (!is_new)
+        return; /// Already billed by whichever charge registered it first, and still held by it.
+
+    it->second.bytes = bytes;
+    total_bytes += bytes;
+}
+
 void BufferedShardByHashTransform::chargeColumnAndDescendants(
     const IColumn & column, std::vector<const void *> & touched, Int64 & total_bytes)
 {
@@ -128,24 +143,46 @@ void BufferedShardByHashTransform::chargeColumnAndDescendants(
     /// subobject regardless of whether it turns out to be new (billed via its own entry) or a duplicate (already
     /// billed elsewhere): either way its bytes must not also be attributed to this node.
     Int64 self_bytes = is_new ? static_cast<Int64>(column.allocatedBytes()) : 0;
+
+    auto charge_subobject = [&](const IColumn & subobject, bool counted_in_allocated_bytes)
+    {
+        if (is_new && counted_in_allocated_bytes)
+            self_bytes -= static_cast<Int64>(subobject.allocatedBytes());
+        chargeColumnAndDescendants(subobject, touched, total_bytes);
+    };
+
+    column.forEachSubcolumn([&](const auto & subcolumn) { charge_subobject(*subcolumn, true); });
+
     if (const auto * lc = typeid_cast<const ColumnLowCardinality *>(&column))
     {
         /// `forEachSubcolumn` skips a shared dictionary (the column does not own it), so it needs an explicit
         /// case; the index column is owned per shard and contributes nothing beyond what's already in
         /// `self_bytes`.
-        const IColumn & dictionary = lc->getDictionary();
-        if (is_new)
-            self_bytes -= static_cast<Int64>(dictionary.allocatedBytes());
-        chargeColumnAndDescendants(dictionary, touched, total_bytes);
+        charge_subobject(lc->getDictionary(), true);
     }
-    else
+    else if (const auto * aggregate = typeid_cast<const ColumnAggregateFunction *>(&column))
     {
-        column.forEachSubcolumn([&](const auto & subcolumn)
+        /// The states themselves live in arenas, and an arena is shared rather than owned: `scatter` hands every
+        /// shard a *view* of this column - the view's `getData` holds the very same state pointers, the source's
+        /// arena becomes one of the view's foreign arenas, and the view keeps the source column alive.
+        /// `allocatedBytes` gets both halves of that wrong. It counts an owned arena in full, so two columns that
+        /// reach the same arena would each charge it whole; and it ignores the foreign arenas entirely, so the
+        /// shard views of a block would charge the states nothing at all even though the arena stays resident for
+        /// as long as any of them is buffered. Registering each arena as a shared object in its own right, keyed
+        /// by the `Arena` address, gives both: billed exactly once, and for exactly as long as some buffered chunk
+        /// still reaches it. The view's source is followed for the same reason - its own bytes (the state pointer
+        /// array) stay resident because this column holds it.
+        aggregate->forEachArena([&](const Arena & arena, bool is_owned)
         {
-            if (is_new)
-                self_bytes -= static_cast<Int64>(subcolumn->allocatedBytes());
-            chargeColumnAndDescendants(*subcolumn, touched, total_bytes);
+            /// Only an owned arena is inside `allocatedBytes` and has to come out of this column's own bytes; a
+            /// foreign one was never in there to begin with.
+            if (is_new && is_owned)
+                self_bytes -= static_cast<Int64>(arena.allocatedBytes());
+            chargeSharedObject(&arena, static_cast<Int64>(arena.allocatedBytes()), touched, total_bytes);
         });
+
+        if (const ColumnPtr & source = aggregate->getSourceColumn())
+            charge_subobject(*source, false);
     }
 
     if (!is_new)

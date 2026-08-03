@@ -7,6 +7,9 @@
 #include <utility>
 #include <vector>
 
+#include <AggregateFunctions/AggregateFunctionFactory.h>
+#include <AggregateFunctions/IAggregateFunction.h>
+#include <Columns/ColumnAggregateFunction.h>
 #include <Columns/ColumnArray.h>
 #include <Columns/ColumnConst.h>
 #include <Columns/ColumnLowCardinality.h>
@@ -17,6 +20,7 @@
 #include <Core/Block.h>
 #include <Core/ColumnNumbers.h>
 #include <Core/ColumnWithTypeAndName.h>
+#include <DataTypes/DataTypeAggregateFunction.h>
 #include <DataTypes/DataTypeArray.h>
 #include <DataTypes/DataTypeLowCardinality.h>
 #include <DataTypes/DataTypeString.h>
@@ -25,8 +29,10 @@
 #include <Processors/Chunk.h>
 #include <Processors/Port.h>
 #include <Processors/Transforms/BufferedShardByHashTransform.h>
+#include <Common/Arena.h>
 #include <Common/Exception.h>
 #include <Common/assert_cast.h>
+#include <Common/tests/gtest_global_register.h>
 
 using namespace DB;
 
@@ -674,6 +680,63 @@ TEST(BufferedShardByHashTransform, WrappedLowCardinalityDictionaryChargedOncePer
 
     EXPECT_GE(buffered, dict_bytes);
     EXPECT_LT(buffered, 2 * dict_bytes);
+}
+
+/// The same invariant for the arena of a `ColumnAggregateFunction` (an `AggregatingMergeTree` payload, or any
+/// `-State` aggregate argument): the states live in an arena the column merely keeps alive, and
+/// `ColumnAggregateFunction::scatter` hands every shard a *view* whose data are the same state pointers, with the
+/// source's arena moved into the view's foreign arenas and the source column itself held alive.
+/// `allocatedBytes()` misreports that in both directions - it counts an owned arena in full (so several columns
+/// reaching one arena would charge it once each, tripping `aggregation_in_order_shuffle_max_buffered_bytes`
+/// spuriously) and ignores a foreign one entirely (so the shard views of a block would charge the states nothing,
+/// letting an arbitrarily large arena stay buffered outside the cap). The budget must charge the arena exactly
+/// once for as long as any buffered chunk reaches it.
+TEST(BufferedShardByHashTransform, AggregateFunctionArenaChargedOncePerBlock)
+{
+    tryRegisterAggregateFunctions();
+
+    const size_t num_rows = 2000;
+    const size_t num_shards = 8;
+    /// Each `groupArray` state accumulates its elements in the arena, so the arena dominates the block: the
+    /// column itself holds only one 8-byte state pointer per row.
+    const size_t values_per_state = 64;
+
+    AggregateFunctionProperties properties;
+    auto aggregate_function = AggregateFunctionFactory::instance().get(
+        "groupArray", NullsAction::EMPTY, DataTypes{std::make_shared<DataTypeUInt64>()}, Array{}, properties);
+
+    auto states = ColumnAggregateFunction::create(aggregate_function);
+    auto argument = ColumnUInt64::create();
+    for (size_t i = 0; i < values_per_state; ++i)
+        argument->insertValue(i);
+    const IColumn * argument_columns[1] = {argument.get()};
+
+    Arena & arena = states->createOrGetArena();
+    for (size_t row = 0; row < num_rows; ++row)
+    {
+        states->insertDefault();
+        for (size_t i = 0; i < values_per_state; ++i)
+            aggregate_function->add(states->getData()[row], argument_columns, i, &arena);
+    }
+
+    const Int64 arena_bytes = static_cast<Int64>(arena.allocatedBytes());
+    /// The arena must dominate: otherwise the assertions below could not tell the two failure modes apart.
+    ASSERT_GT(arena_bytes, static_cast<Int64>(4 * num_rows * sizeof(void *)));
+
+    Block header_block{
+        ColumnWithTypeAndName(std::make_shared<DataTypeUInt64>(), "k"),
+        ColumnWithTypeAndName(std::make_shared<DataTypeAggregateFunction>(aggregate_function, DataTypes{std::make_shared<DataTypeUInt64>()}, Array{}), "s"),
+    };
+    auto header = std::make_shared<const Block>(std::move(header_block));
+
+    Columns columns{makeDistinctKeyColumn(num_rows), std::move(states)};
+    const Int64 buffered = bufferedBytesAfterSplit(header, std::move(columns), num_shards, ColumnNumbers{0});
+
+    /// Charged once: at least the whole arena (dropping the foreign arenas of the shard views would leave only
+    /// the state-pointer arrays, far below it), and below two arenas (charging it per column that reaches it
+    /// would reach ~`num_shards` arenas, since every shard view holds the same one).
+    EXPECT_GE(buffered, arena_bytes);
+    EXPECT_LT(buffered, 2 * arena_bytes);
 }
 
 /// The same invariant for a shared `ColumnConst` payload: `ColumnConst::scatter` wraps the same backing `data`

@@ -107,6 +107,16 @@ void ColumnAggregateFunction::addArena(ConstArenaPtr arena_)
     foreign_arenas.push_back(arena_);
 }
 
+void ColumnAggregateFunction::forEachArena(const std::function<void(const Arena & arena, bool is_owned)> & callback) const
+{
+    if (my_arena)
+        callback(*my_arena, true);
+
+    for (const auto & arena : foreign_arenas)
+        if (arena)
+            callback(*arena, false);
+}
+
 namespace
 {
 

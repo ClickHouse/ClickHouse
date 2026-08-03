@@ -65,7 +65,9 @@ struct BufferedShardByHashBudget
     /// one block are counted at once, or a concurrent scatter would fail the query on a transient artifact.
     std::atomic<Int64> total_buffered_bytes{0};
     /// One entry per physical buffer (by pointer) currently referenced by at least one live charge across the
-    /// whole stage - any scatter's block shard chunks or transient pre-split `pending_input_chunk`. This is what
+    /// whole stage - any scatter's block shard chunks or transient pre-split `pending_input_chunk`. A buffer here
+    /// is not necessarily a column: an `Arena` holding aggregate-function states gets an entry of its own, since a
+    /// `ColumnAggregateFunction` shares it rather than owning it. This is what
     /// lets a buffer `scatter` shares across the shard chunks of one block, across more than one block still
     /// buffered, or across sibling scatters (e.g. the same `ColumnConst`/`LowCardinality` payload the query
     /// evaluates once and every stream references) be charged exactly once for as long as any reference holds it.
@@ -203,9 +205,9 @@ private:
     /// pre-split admission check (via `budget_exceeded`) and the post-split reconciliation re-check in work().
     [[noreturn]] void throwBufferBudgetExceeded() const;
 
-    /// Registers `column` - and everything reachable from it (a `LowCardinality` dictionary, or any nested
-    /// subcolumn `scatter` may share across the shards, across a different buffered block, or across a sibling
-    /// scatter) - as referenced by the charge currently being computed (a block's shard chunks, or the transient
+    /// Registers `column` - and everything reachable from it (a `LowCardinality` dictionary, the arena holding a
+    /// `ColumnAggregateFunction`'s states, or any nested subcolumn `scatter` may share across the shards, across a
+    /// different buffered block, or across a sibling scatter) - as referenced by the charge currently being computed (a block's shard chunks, or the transient
     /// pre-split `pending_input_chunk`). Every visit, including a repeat one, is appended to `touched` and bumps
     /// the object's `BufferedShardByHashBudget::shared_object_refcounts` entry, so `releaseTouchedObjects` can
     /// later reverse this call exactly, however many times the same object was visited. The caller must hold
@@ -220,6 +222,12 @@ private:
     /// (e.g. `ColumnConst::cloneResized` keeps the same backing payload), or across sibling scatters - charged
     /// exactly once for as long as any of them still holds it.
     void chargeColumnAndDescendants(const IColumn & column, std::vector<const void *> & touched, Int64 & total_bytes);
+    /// Same, for a shared object that is not a column and therefore has no subobjects of its own to walk: an
+    /// `Arena` holding aggregate-function states, which several `ColumnAggregateFunction` reach at once (see
+    /// `chargeColumnAndDescendants`). `bytes` is measured by the caller, since only it knows how to size the
+    /// object; like a column, it is billed the first time it is registered and forgotten once the last charge
+    /// referencing it is released. The caller must hold `budget->mutex`.
+    void chargeSharedObject(const void * object, Int64 bytes, std::vector<const void *> & touched, Int64 & total_bytes);
     /// Reverses `chargeColumnAndDescendants` for every object in `touched`: releases this charge's reference to
     /// each, and once an object's refcount reaches zero (no buffered charge references it any longer), forgets
     /// it. Returns the total cached bytes of the objects released, which the caller must subtract from the
