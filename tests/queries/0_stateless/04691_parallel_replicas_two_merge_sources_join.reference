@@ -1,0 +1,10 @@
+-- merge() INNER JOIN merge()
+1000	374250	873250
+-- Merge table INNER JOIN a Merge table
+1000	374250	873250
+-- merge() INNER JOIN a Merge table
+1000	374250	873250
+-- two merge() sources of the same tables joined with each other
+1000	374250	374250
+-- merge() joined with a subquery over another merge()
+1000	873250

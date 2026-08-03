@@ -213,6 +213,37 @@ SELECT count() FROM (
     SELECT i FROM t_chunk_buffer_set_op WHERE 8 <=> (i + (SELECT _part_offset))
 ) WHERE explain ILIKE '%Type: RIGHT%';
 
+-- A list where nothing survives the buffered-case filter: the internal decorrelation join is not a
+-- user-facing join, so `join_algorithm` must not decide whether the query can run at all. With `auto`
+-- or a merge-only list the filter would leave no algorithm and `chooseJoinAlgorithm` would throw
+-- `NOT_IMPLEMENTED`; the compatible hash algorithms are forced instead, so these return the same rows
+-- on the same forced RIGHT layout.
+SET join_algorithm = 'auto';
+
+SELECT i FROM t_chunk_buffer_set_op WHERE 8 = ((SELECT _part_offset) + i)
+  SETTINGS correlated_subqueries_substitute_equivalent_expressions = 0,
+           correlated_subqueries_default_join_kind = 'left'
+INTERSECT
+SELECT i FROM t_chunk_buffer_set_op WHERE 8 <=> (i + (SELECT _part_offset))
+ORDER BY i;
+
+SELECT count() FROM (
+    EXPLAIN actions = 1 SELECT i FROM t_chunk_buffer_set_op WHERE 8 = ((SELECT _part_offset) + i)
+      SETTINGS correlated_subqueries_substitute_equivalent_expressions = 0,
+               correlated_subqueries_default_join_kind = 'left'
+    INTERSECT
+    SELECT i FROM t_chunk_buffer_set_op WHERE 8 <=> (i + (SELECT _part_offset))
+) WHERE explain ILIKE '%Type: RIGHT%';
+
+SET join_algorithm = 'full_sorting_merge';
+
+SELECT i FROM t_chunk_buffer_set_op WHERE 8 = ((SELECT _part_offset) + i)
+  SETTINGS correlated_subqueries_substitute_equivalent_expressions = 0,
+           correlated_subqueries_default_join_kind = 'left'
+EXCEPT ALL
+SELECT i FROM t_chunk_buffer_set_op WHERE 6 <=> (i + (SELECT _part_offset))
+ORDER BY i;
+
 SET join_algorithm = 'direct,parallel_hash,hash';
 
 -- ------------------------------------------------------------------------------------------------
