@@ -2,9 +2,13 @@
 #include <Core/Mongo/Handlers/HandlerRegistry.h>
 #include <Core/Mongo/Handlers/Insert.h>
 
+#include <IO/ReadBufferFromMemory.h>
+#include <IO/ReadHelpers.h>
 #include <IO/WriteBufferFromString.h>
+#include <IO/WriteHelpers.h>
 #include <IO/Operators.h>
 #include <fmt/format.h>
+#include <Common/DateLUT.h>
 #include <Common/Exception.h>
 #include <Common/quoteString.h>
 
@@ -12,12 +16,14 @@
 #include <rapidjson/stringbuffer.h>
 #include <rapidjson/writer.h>
 
+#include <map>
 #include <optional>
 #include <vector>
 
 namespace DB::ErrorCodes
 {
 extern const int BAD_ARGUMENTS;
+extern const int NOT_IMPLEMENTED;
 }
 
 namespace DB::MongoProtocol
@@ -33,7 +39,7 @@ std::optional<String> getSimpleTypeField(const rapidjson::Value & document)
     if (document.IsInt())
         return "int";
     if (document.IsInt64())
-        return "long";
+        return "Int64";
     if (document.IsFloat())
         return "float";
     if (document.IsDouble())
@@ -43,6 +49,72 @@ std::optional<String> getSimpleTypeField(const rapidjson::Value & document)
     return std::nullopt;
 }
 
+/// Tells whether an object is an Extended JSON scalar wrapper, such as `{"$date": ...}` or
+/// `{"$oid": "..."}`: the serialization of a BSON-only type, which is a value rather than a
+/// subdocument. Mongo forbids `$` at the start of a stored field name, so no real subdocument
+/// looks like this.
+bool isExtendedJSONWrapper(const rapidjson::Value & value)
+{
+    if (!value.IsObject() || value.ObjectEmpty())
+        return false;
+    std::string_view name = value.MemberBegin()->name.GetString();
+    return !name.empty() && name.front() == '$';
+}
+
+/// Converts an Extended JSON scalar wrapper into a column type and the value to insert into it.
+/// A wrapper of a BSON type that has no ClickHouse counterpart is rejected rather than descended
+/// into, which would turn the field into bogus `<field>.$<wrapper>` columns.
+std::pair<String, rapidjson::Value>
+convertExtendedJSONWrapper(const rapidjson::Value & wrapper, const String & field_name, rapidjson::Document::AllocatorType & allocator)
+{
+    const auto & member = *wrapper.MemberBegin();
+    std::string_view name = member.name.GetString();
+
+    if (name == "$oid" && member.value.IsString())
+    {
+        rapidjson::Value value;
+        value.CopyFrom(member.value, allocator);
+        return {"String", std::move(value)};
+    }
+
+    if (name == "$numberDecimal" && member.value.IsString())
+    {
+        /// The same type the filters use for `$numberDecimal`.
+        rapidjson::Value value;
+        value.CopyFrom(member.value, allocator);
+        return {"Decimal128(10)", std::move(value)};
+    }
+
+    if (name == "$date")
+    {
+        /// A Mongo date is an instant in UTC: the legacy Extended JSON spells it as the number of
+        /// milliseconds since the epoch and the canonical one wraps that in `$numberLong`. It is
+        /// written as text so that the way the server reads it does not depend on any setting.
+        std::optional<Int64> milliseconds;
+        if (member.value.IsInt64())
+            milliseconds = member.value.GetInt64();
+        else if (member.value.IsObject() && member.value.MemberCount() == 1 && member.value.MemberBegin()->value.IsString())
+        {
+            Int64 parsed = 0;
+            std::string_view text = member.value.MemberBegin()->value.GetString();
+            ReadBufferFromMemory buffer(text.data(), text.size());
+            if (tryReadText(parsed, buffer) && buffer.eof())
+                milliseconds = parsed;
+        }
+        if (milliseconds)
+        {
+            WriteBufferFromOwnString formatted;
+            writeDateTimeText(DateTime64(*milliseconds), 3, formatted, DateLUT::instance("UTC"));
+            rapidjson::Value value;
+            value.SetString(formatted.str().c_str(), static_cast<rapidjson::SizeType>(formatted.str().size()), allocator);
+            return {"DateTime64(3, 'UTC')", std::move(value)};
+        }
+    }
+
+    throw Exception(
+        ErrorCodes::NOT_IMPLEMENTED, "The BSON type '{}' of the field '{}' is not supported by an insert", name, field_name);
+}
+
 /** Flattens a Mongo document into a JSON object whose member names are the ClickHouse column
   * names: nested documents become dot separated paths, `_id` is dropped, and values of types
   * that do not map onto a column are skipped.
@@ -50,8 +122,31 @@ std::optional<String> getSimpleTypeField(const rapidjson::Value & document)
   * Both the inferred schema and the inserted rows are derived from this flattened form, so a
   * document can never produce a value for a column that is not in the schema.
   */
+/// Rejects an Extended JSON wrapper anywhere inside an array: its elements are copied verbatim,
+/// so a wrapper there would silently become a document with a `$`-named field.
+void throwIfExtendedJSONWrapperInside(const rapidjson::Value & value, const String & field_name)
+{
+    if (isExtendedJSONWrapper(value))
+        throw Exception(
+            ErrorCodes::NOT_IMPLEMENTED,
+            "The BSON type '{}' inside the field '{}' is not supported by an insert",
+            value.MemberBegin()->name.GetString(),
+            field_name);
+
+    if (value.IsObject())
+        for (auto it = value.MemberBegin(); it != value.MemberEnd(); ++it)
+            throwIfExtendedJSONWrapperInside(it->value, field_name);
+    else if (value.IsArray())
+        for (const auto & element : value.GetArray())
+            throwIfExtendedJSONWrapperInside(element, field_name);
+}
+
 void flattenDocument(
-    const rapidjson::Value & document, const String & prefix, rapidjson::Value & out, rapidjson::Document::AllocatorType & allocator)
+    const rapidjson::Value & document,
+    const String & prefix,
+    rapidjson::Value & out,
+    rapidjson::Document::AllocatorType & allocator,
+    std::map<String, String> & wrapper_types)
 {
     if (!document.IsObject())
         throw Exception(ErrorCodes::BAD_ARGUMENTS, "Expected a document, got a scalar value");
@@ -65,11 +160,23 @@ void flattenDocument(
 
         String full_name = prefix.empty() ? name : prefix + "." + name;
 
-        if (it->value.IsObject())
+        if (isExtendedJSONWrapper(it->value))
         {
-            flattenDocument(it->value, full_name, out, allocator);
+            auto [type, value] = convertExtendedJSONWrapper(it->value, full_name, allocator);
+            wrapper_types[full_name] = std::move(type);
+            rapidjson::Value key(full_name.c_str(), static_cast<rapidjson::SizeType>(full_name.size()), allocator);
+            out.AddMember(key, value, allocator);
             continue;
         }
+
+        if (it->value.IsObject())
+        {
+            flattenDocument(it->value, full_name, out, allocator, wrapper_types);
+            continue;
+        }
+
+        if (it->value.IsArray())
+            throwIfExtendedJSONWrapperInside(it->value, full_name);
 
         if (!it->value.IsArray() && !getSimpleTypeField(it->value).has_value())
             continue;
@@ -81,12 +188,19 @@ void flattenDocument(
     }
 }
 
-/// Infers the column definitions from an already flattened document.
-std::vector<InsertHandler::DocumentField> inferSchema(const rapidjson::Value & flattened)
+/// Infers the column definitions from an already flattened document. A field that came from an
+/// Extended JSON wrapper keeps the type of the wrapper rather than the type of its serialization.
+std::vector<InsertHandler::DocumentField> inferSchema(const rapidjson::Value & flattened, const std::map<String, String> & wrapper_types)
 {
     std::vector<InsertHandler::DocumentField> fields;
     for (auto it = flattened.MemberBegin(); it != flattened.MemberEnd(); ++it)
     {
+        if (auto wrapper_it = wrapper_types.find(it->name.GetString()); wrapper_it != wrapper_types.end())
+        {
+            fields.push_back(InsertHandler::DocumentField{.full_name = it->name.GetString(), .type = wrapper_it->second});
+            continue;
+        }
+
         if (auto simple_type = getSimpleTypeField(it->value))
         {
             fields.push_back(InsertHandler::DocumentField{.full_name = it->name.GetString(), .type = std::move(*simple_type)});
@@ -247,13 +361,14 @@ std::vector<Document> InsertHandler::handle(const std::vector<OpMessageSection> 
     for (const auto * doc : to_insert)
     {
         rapidjson::Value flattened(rapidjson::kObjectType);
-        flattenDocument(doc->getRapidJSONRepresentation(), "", flattened, allocator);
+        std::map<String, String> wrapper_types;
+        flattenDocument(doc->getRapidJSONRepresentation(), "", flattened, allocator, wrapper_types);
 
         /// The schema comes from the first document only, as in Mongo a collection has no
         /// schema of its own.
         if (schema.empty())
         {
-            schema = inferSchema(flattened);
+            schema = inferSchema(flattened, wrapper_types);
             createDatabase(collection, executor);
             createTable(collection, executor, schema);
         }
