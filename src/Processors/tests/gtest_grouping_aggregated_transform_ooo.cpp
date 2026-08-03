@@ -31,12 +31,11 @@ SharedHeader oneColumnHeader()
 }
 
 /// One partially-aggregated two-level chunk for `bucket`, carrying the given
-/// out_of_order_buckets metadata. EMPTY by default - which is exactly what a
-/// dist layer's MergingAggregatedBucketTransform produces: it builds a FRESH
-/// AggregatedChunkInfo (MergingAggregatedMemoryEfficientTransform.cpp:388-392)
-/// that does NOT copy out_of_order_buckets. So a downstream
-/// GroupingAggregatedTransform receives a stream that may be OUT OF ORDER in
-/// bucket_num but carries NO "this bucket was delayed" metadata.
+/// out_of_order_buckets metadata. It is empty by default, which means that the producer
+/// reports no delayed buckets. `MergingAggregatedBucketTransform` copies the metadata
+/// stamped by `GroupingAggregatedTransform` now, but it did not before, and the tests
+/// below still feed empty metadata on purpose, to check that the consumer coped with a
+/// producer which reorders the buckets without reporting them.
 Chunk makeBucketChunk(Int32 bucket, std::vector<Int32> ooo = {})
 {
     auto col = ColumnUInt64::create();
@@ -326,10 +325,9 @@ TEST(GroupingAggregatedOOO, InOrderTwoInputsOk)
     expectEachBucketOnceAndAscending(d.run());
 }
 
-/// THE BUG. Both inputs are OUT OF ORDER and carry EMPTY out_of_order_buckets
-/// metadata - exactly what a dist layer emits after its MergingAggregatedBucket
-/// Transform strips the metadata (cpp:388-392) and its own GroupingAggregated
-/// Transform was allowed to emit buckets out of order.
+/// Both inputs are out of order and report no delayed buckets, which is what a dist layer
+/// emitted before `MergingAggregatedBucketTransform` started to copy the metadata stamped
+/// by `GroupingAggregatedTransform`.
 ///
 /// input0: 0, 6        input1: 5, 0   (input1 steps BACKWARDS 5 -> 0, no metadata)
 ///
@@ -363,10 +361,10 @@ TEST(GroupingAggregatedOOO, OutOfOrderEmptyMetadataManyBackwardSteps)
 /// because the producer (ConvertingAggregatedToChunksTransform) records each
 /// emitted chunk's pending-bucket snapshot in AggregatedChunkInfo and it survives
 /// network serialization (BlockInfo.h field 3). The accounting in
-/// GroupingAggregatedTransform::addChunk (.cpp:296-303) maintains a per-bucket
+/// GroupingAggregatedTransform::addChunk maintains a per-bucket
 /// "how many inputs still owe this bucket" map by diffing each input's previous vs
-/// new ooo snapshot. The OOO push path (.cpp:69-82) pushes & ERASES a bucket when
-/// its count hits 0; the in-order path (.cpp:84-92) pushes any bucket not in the map.
+/// new ooo snapshot. The out of order push path pushes and erases a bucket when
+/// its count hits 0; the in-order path pushes any bucket not in the map.
 ///
 /// Probe: a single input declares bucket 1 as delayed (ooo=[1]) while sending
 /// bucket 0, then later actually sends bucket 1 with ooo=[] (no longer delayed).
@@ -397,7 +395,7 @@ TEST(GroupingAggregatedOOO, NonEmptyMetadataBothDelaySameBucket)
 
 /// SINGLE-LEVEL + TWO-LEVEL MIX. A remote shard whose data stayed below
 /// group_by_two_level_threshold sends a single-level chunk (bucket=-1); another
-/// shard sends two-level buckets. GroupingAggregatedTransform::work() (cpp:316-341)
+/// shard sends two-level buckets. GroupingAggregatedTransform::work()
 /// converts the single-level chunk into two-level buckets and APPENDS them to
 /// chunks_map. If two-level buckets were already pushed (next_bucket_to_push
 /// advanced) before the single-level chunk is converted, the conversion can produce
@@ -421,7 +419,7 @@ TEST(GroupingAggregatedOOO, SingleLevelAfterTwoLevelPushed)
 }
 
 /// Reverse interleave: single-level first, then two-level - the conversion happens
-/// while two-level buckets coexist (the guard at cpp:183 path).
+/// while two-level buckets coexist.
 TEST(GroupingAggregatedOOO, SingleLevelBeforeTwoLevel)
 {
     std::vector<std::deque<Chunk>> inputs(2);
@@ -440,7 +438,7 @@ namespace
 /// it (add to the pending set, capacity NUM_OOO_BUCKETS=4) and emit a later one
 /// first; pending buckets get flushed out of order. Each EMITTED chunk carries the
 /// CURRENT pending set as its out_of_order_buckets snapshot - exactly what
-/// AggregatingTransform.cpp:636/651 stamps onto the chunk. This is the precise shape
+/// `ConvertingAggregatedToChunksTransform` stamps onto the chunk. This is the precise shape
 /// of metadata the initiator's GroupingAggregatedTransform receives per RemoteSource.
 std::vector<std::pair<Int32, std::vector<Int32>>> genProducerStream(pcg64 & rng, Int32 num_buckets)
 {
@@ -541,19 +539,15 @@ TEST(GroupingAggregatedOOO, NonEmptyMetadataShrinkingSnapshotRace)
 /// =====================================================================================
 /// THE GAP (run 3): EMPTY-METADATA out-of-order streams, fuzzed broadly + swept.
 ///
-/// The prior fuzz (FuzzNonEmptyMetadataNoDuplicate) only fed CONTRACT-FAITHFUL streams
-/// (every reordered chunk carried correct out_of_order_buckets metadata). But the REAL
-/// danger is a MIDDLE dist layer that used num_merging_processors<=1
-/// (addMergingAggregatedMemoryEfficientTransform.cpp:564-568): there is NO
-/// SortingAggregatedTransform to re-sort, AND MergingAggregatedBucketTransform::transform
-/// (cpp:388-392) builds a FRESH AggregatedChunkInfo that does NOT copy
-/// out_of_order_buckets. So that layer emits a stream that is OUT OF ORDER in bucket_num
-/// but carries EMPTY ooo metadata. A downstream GroupingAggregatedTransform fed such a
-/// stream has NO "this bucket is still owed" signal, so its in-order push path
-/// (cpp:84-92) can finalize a bucket B (next_bucket_to_push advances past B) while an
-/// input still has a late B queued; when that late B arrives it resurrects chunks_map[B]
-/// and the finish drain (cpp:60-66) re-pushes it => DOUBLE PUSH => the exact upstream
-/// cause of "SortingAggregatedTransform already got bucket with number N".
+/// The prior fuzz (FuzzNonEmptyMetadataNoDuplicate) only fed contract faithful streams, where
+/// every reordered chunk reports the buckets which are still owed. This one feeds streams which
+/// are out of order and report nothing, which is what a dist layer emitted before
+/// `MergingAggregatedBucketTransform` started to copy the metadata stamped by
+/// `GroupingAggregatedTransform`, and what a producer which does not maintain that metadata at
+/// all would emit. A consumer fed such a stream has no "this bucket is still owed" signal, so
+/// its in-order push path can finalize a bucket B while an input still has a late B queued; when
+/// that late B arrives it resurrects `chunks_map[B]` and it is pushed for the second time, which
+/// is the upstream cause of `SortingAggregatedTransform already got bucket with number N`.
 /// =====================================================================================
 
 /// Deterministic consumer-contract demonstration of the EXACT minimal trigger and WHY the fix
@@ -660,10 +654,10 @@ TEST(GroupingAggregatedOOO, TwoLayerDistMetadataFuzz)
 /// The OUT-OF-ORDER optimization lets an input declare a bucket delayed and then resolve
 /// it EMPTY: the producer (ConvertingAggregatedToChunksTransform) postpones a bucket, finds
 /// it has no rows, and drops it WITHOUT ever sending it - erasing it from the pending set
-/// before stamping the next chunk (AggregatingTransform.cpp:592-600,633-639). The consumer
+/// before stamping the next chunk. The consumer
 /// mirrors this in `addChunk`: the bucket's count in `out_of_order_buckets` is decremented
-/// back to 0, but the map entry is NOT erased (it is erased only on the OOO push path,
-/// cpp:91-94) and the bucket is never buffered in `chunks_map`. So a zero-count entry for an
+/// back to 0, but the map entry is not erased (it is erased only on the out of order push
+/// path) and the bucket is never buffered in `chunks_map`. So a zero-count entry for an
 /// empty-resolved bucket lingers.
 ///
 /// When stamping metadata for a downstream re-merge layer, such zero-count entries must NOT
@@ -709,8 +703,8 @@ TEST(GroupingAggregatedOOO, EmptyDelayedBucketNotStampedAsOwed)
 ///     fixed re-merge path: bucket 1 must NOT appear as owed).
 ///   - shard B: delivers buckets 0,1,2 in order, with real data for bucket 1.
 /// The initiator must push 0,1,2 each exactly once. If shard A wrongly advertised bucket 1 as
-/// owed, the initiator would withhold shard B's bucket 1 (its in-order path skips owed buckets,
-/// cpp:99-107) until the stream finishes - and then could double-push it on the finish drain.
+/// owed, the initiator would withhold shard B's bucket 1 (its in-order path skips owed
+/// buckets) until the stream finishes - and then could double-push it on the finish drain.
 TEST(GroupingAggregatedOOO, EmptyDelayedBucketDownstreamMergesRealData)
 {
     /// Run shard A through a real GroupingAggregatedTransform and forward its STAMPED metadata,
