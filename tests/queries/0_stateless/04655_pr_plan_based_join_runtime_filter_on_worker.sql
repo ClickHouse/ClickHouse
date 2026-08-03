@@ -5,8 +5,9 @@
 --
 -- `parallel_replicas_local_plan = 0` puts the whole join on the replicas, so every runtime-filter counter
 -- below can only come from them. A fragment arrives as a plan packet rather than SQL, so its `query_log` row
--- has neither `tables` nor `log_comment` - it is found through `initial_query_id` of the initiator's row,
--- which in turn is identified by the table it reads and by the setting it ran with.
+-- has neither `tables` nor `log_comment`, and runs with `current_database = default` rather than the test
+-- database - so it is found through `initial_query_id` of the initiator's row, which in turn is identified by
+-- its database, the table it reads and the setting it ran with.
 
 DROP TABLE IF EXISTS rf_probe SYNC;
 DROP TABLE IF EXISTS rf_build SYNC;
@@ -49,7 +50,8 @@ SELECT 'remote queries', countIf(is_initial_query = 0) >= 1,
 FROM system.query_log
 WHERE initial_query_id = (
     SELECT query_id FROM system.query_log
-    WHERE type = 'QueryFinish' AND is_initial_query = 1 AND has(tables, currentDatabase() || '.rf_probe')
+    WHERE type = 'QueryFinish' AND is_initial_query = 1 AND current_database = currentDatabase()
+      AND has(tables, currentDatabase() || '.rf_probe')
       AND Settings['enable_join_runtime_filters'] = '1'
       AND event_date >= yesterday() AND event_time > now() - INTERVAL 1 HOUR
     ORDER BY event_time DESC LIMIT 1)
@@ -59,7 +61,8 @@ SELECT 'no filter built', sumIf(ProfileEvents['RuntimeFiltersCreated'], is_initi
 FROM system.query_log
 WHERE initial_query_id = (
     SELECT query_id FROM system.query_log
-    WHERE type = 'QueryFinish' AND is_initial_query = 1 AND has(tables, currentDatabase() || '.rf_probe')
+    WHERE type = 'QueryFinish' AND is_initial_query = 1 AND current_database = currentDatabase()
+      AND has(tables, currentDatabase() || '.rf_probe')
       AND Settings['enable_join_runtime_filters'] = '0'
       AND event_date >= yesterday() AND event_time > now() - INTERVAL 1 HOUR
     ORDER BY event_time DESC LIMIT 1)
