@@ -47,9 +47,6 @@ void ITableFunction::checkSourceAccess(ContextPtr context, bool is_insert_query)
 
 void ITableFunction::checkEngineAccess(ContextPtr context) const
 {
-    /// Only capability engines opt in (Executable/ExecutablePool run a server-side script with no
-    /// other access gate). Wrapper/proxy engines (Merge/Loop/Dictionary/View/Distributed) are gated
-    /// by their delegated data access, and source engines by checkSourceAccess, so neither opts in.
     if (!requiresTableEngineGrant())
         return;
 
@@ -74,8 +71,7 @@ StoragePtr ITableFunction::execute(const ASTPtr & ast_function, ContextPtr conte
     if (check_source_access)
         checkSourceAccess(context, is_insert_query);
 
-    /// Not covered by `check_source_access`: that flag only means the caller took over the source
-    /// check, and no caller takes over the engine check.
+    /// Deliberately not under `check_source_access`: no caller takes over the engine check.
     checkEngineAccess(context);
 
     auto table_function_properties = TableFunctionFactory::instance().tryGetProperties(getName());

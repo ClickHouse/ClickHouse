@@ -55,8 +55,7 @@ private:
 
     const char * getStorageEngineName() const override { return "Executable"; }
 
-    /// executable()/executablePool() run a server-side script, so they must enforce the
-    /// TABLE ENGINE grant like CREATE TABLE ... ENGINE=Executable does.
+    /// `executable` and `executablePool` run a server-side script.
     bool requiresTableEngineGrant() const override { return true; }
 
     ColumnsDescription getActualTableStructure(ContextPtr context, bool is_insert_query) const override;
