@@ -514,6 +514,9 @@ private:
 
     String index_column_name;
     MergeTreeIndexTextParams params;
+    /// A private clone of the index tokenizer when it is stateful (e.g. the Japanese or sparse-grams
+    /// tokenizers), so concurrent aggregators do not share mutable parsing state; null otherwise.
+    std::shared_ptr<const ITokenizer> owned_tokenizer;
     TokenizerPtr tokenizer;
     MergeTreeIndexTextGranuleBuilder granule_builder;
     MergeTreeIndexTextPreprocessorPtr preprocessor;
