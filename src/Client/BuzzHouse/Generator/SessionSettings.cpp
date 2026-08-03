@@ -1009,7 +1009,6 @@ std::unordered_map<String, CHSetting> serverSettings = {
     {"input_format_arrow_allow_missing_columns", trueOrFalseSettingNoOracle},
     {"input_format_arrow_case_insensitive_column_matching", trueOrFalseSettingNoOracle},
     {"input_format_arrow_skip_columns_with_unsupported_types_in_schema_inference", trueOrFalseSettingNoOracle},
-    {"input_format_arrow_use_native_reader", trueOrFalseSetting},
     {"input_format_avro_allow_missing_fields", trueOrFalseSettingNoOracle},
     {"input_format_avro_null_as_default", trueOrFalseSettingNoOracle},
     {"input_format_binary_read_json_as_string", trueOrFalseSettingNoOracle},
@@ -1332,7 +1331,6 @@ static std::unordered_map<String, CHSetting> serverSettings2 = {
     {"output_format_arrow_string_as_string", trueOrFalseSettingNoOracle},
     {"output_format_arrow_unsupported_types_as_binary", trueOrFalseSettingNoOracle},
     {"output_format_arrow_use_64_bit_indexes_for_dictionary", trueOrFalseSettingNoOracle},
-    {"output_format_arrow_use_native_writer", trueOrFalseSetting},
     {"output_format_arrow_use_signed_indexes_for_dictionary", trueOrFalseSettingNoOracle},
     {"output_format_avro_codec",
      CHSetting(
