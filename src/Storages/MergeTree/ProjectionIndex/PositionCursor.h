@@ -2,7 +2,7 @@
 
 #include <Storages/MergeTree/ProjectionIndex/PostingListData.h>
 #include <Storages/MergeTree/ProjectionIndex/ProjectionTokenInfo.h>
-#include <Storages/MergeTree/ProjectionIndex/TurboPForBlockDecodeBuffer.h>
+#include <Storages/MergeTree/ProjectionIndex/AbpforBlockDecodeBuffer.h>
 #include <base/types.h>
 
 namespace DB
@@ -50,7 +50,7 @@ private:
     /// Ensure the packed block (doc_deltas + freqs) at (lb_idx, pb_idx) is decoded.
     void ensurePackedBlockDecoded(size_t lb_idx, size_t pb_idx);
 
-    /// Ensure the position TurboPFor block at pos_block_idx is decoded.
+    /// Ensure the position abpfor block at pos_block_idx is decoded.
     void ensurePosBlockDecoded(size_t lb_idx, UInt32 pos_block_idx);
 
     /// Get LargeBlockData for the given large block index.
@@ -66,17 +66,17 @@ private:
     {
         size_t large_block = SIZE_MAX;
         size_t packed_block = SIZE_MAX;
-        alignas(16) UInt32 doc_ids[TURBOPFOR_BLOCK_SIZE]; // NOLINT(cppcoreguidelines-pro-type-member-init)
-        UInt32 freqs[TURBOPFOR_BLOCK_SIZE]; // NOLINT(cppcoreguidelines-pro-type-member-init)
+        alignas(16) UInt32 doc_ids[ABPFOR_BLOCK_SIZE]; // NOLINT(cppcoreguidelines-pro-type-member-init)
+        UInt32 freqs[ABPFOR_BLOCK_SIZE]; // NOLINT(cppcoreguidelines-pro-type-member-init)
         UInt32 count = 0;
     };
 
-    /// Cached last-decoded position TurboPFor block (from .pos)
+    /// Cached last-decoded position abpfor block (from .pos)
     struct PosBlockCache // NOLINT(cppcoreguidelines-pro-type-member-init,hicpp-member-init)
     {
         size_t large_block = SIZE_MAX;
         UInt32 pos_block_idx = UINT32_MAX;
-        UInt32 values[TURBOPFOR_BLOCK_SIZE]; // NOLINT(cppcoreguidelines-pro-type-member-init)
+        UInt32 values[ABPFOR_BLOCK_SIZE]; // NOLINT(cppcoreguidelines-pro-type-member-init)
         UInt32 count = 0;
     };
 
@@ -97,8 +97,8 @@ private:
     DocPosState doc_state;
 
     /// Decode buffers for stream reads (lazily initialized).
-    std::optional<TurboPForBlockDecodeBuffer> pst_decode_buf;
-    std::optional<TurboPForBlockDecodeBuffer> pos_decode_buf;
+    std::optional<AbpforBlockDecodeBuffer> pst_decode_buf;
+    std::optional<AbpforBlockDecodeBuffer> pos_decode_buf;
 };
 
 using PositionCursorPtr = std::shared_ptr<PositionCursor>;

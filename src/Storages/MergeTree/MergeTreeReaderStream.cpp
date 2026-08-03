@@ -586,7 +586,7 @@ void LargePostingListReaderStream::seek(UInt64 offset)
         decode_buf->reset();
 }
 
-TurboPForBlockDecodeBuffer & LargePostingListReaderStream::decodeBuffer()
+AbpforBlockDecodeBuffer & LargePostingListReaderStream::decodeBuffer()
 {
     if (!decode_buf)
     {

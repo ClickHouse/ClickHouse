@@ -28,7 +28,7 @@ namespace ErrorCodes
 namespace
 {
 
-/// Probe whether a TurboPFor-encoded block is arithmetic (constant-delta).
+/// Probe whether a abpfor-encoded block is arithmetic (constant-delta).
 /// If so, sets `constant_value` and returns true.
 inline bool probeArithmeticBlock(const uint8_t * payload_start, UInt32 bytes, uint32_t & constant_value)
 {
@@ -72,7 +72,7 @@ inline bool probeArithmeticBlock(const uint8_t * payload_start, UInt32 bytes, ui
     return false;
 }
 
-/// Compute the delta base for TurboPFor decoding of packed block `blk`
+/// Compute the delta base for abpfor decoding of packed block `blk`
 /// within large block `large_block_idx`.
 /// `prev_large_block_last_doc` is the last doc_id of the previous large block
 /// (only used when large_block_idx > 0 and blk == 0).
@@ -104,7 +104,7 @@ inline UInt32 packedBlockCount(size_t blk, const LargeBlockData & lb)
 {
     if (blk + 1 == lb.block_count && lb.tail_size > 0)
         return static_cast<UInt32>(lb.tail_size);
-    return static_cast<UInt32>(TURBOPFOR_BLOCK_SIZE);
+    return static_cast<UInt32>(ABPFOR_BLOCK_SIZE);
 }
 
 /// Seek within an arithmetic block: find index of first element >= target.
@@ -359,7 +359,7 @@ bool ProjectionPostingListCursor::loadPackedBlock(size_t block_idx)
 
     decoded_count = count;
     decoded_values = decode_buf;
-    if (count == TURBOPFOR_BLOCK_SIZE) [[likely]]
+    if (count == ABPFOR_BLOCK_SIZE) [[likely]]
         bytes = static_cast<UInt32>(abpfor::b256::decodeBlockDelta1(src_ptr, decode_buf, delta_base));
     else
         bytes = static_cast<UInt32>(abpfor::b256::decodeTailDelta1(src_ptr, count, decode_buf, delta_base));
@@ -672,7 +672,7 @@ void ProjectionPostingListCursor::iterateLargeBlock(
                 }
             }
 
-            if (count == TURBOPFOR_BLOCK_SIZE) [[likely]]
+            if (count == ABPFOR_BLOCK_SIZE) [[likely]]
                 bytes = static_cast<UInt32>(abpfor::b256::decodeBlockDelta1(src_ptr, iter_decode_buf, delta_base));
             else
                 bytes = static_cast<UInt32>(abpfor::b256::decodeTailDelta1(src_ptr, count, iter_decode_buf, delta_base));

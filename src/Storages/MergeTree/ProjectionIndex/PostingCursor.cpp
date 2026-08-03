@@ -95,7 +95,7 @@ AndCursor::AndCursor(std::vector<PostingCursorPtr> children_)
 /// Children are sorted by cardinality ascending (sparsest first).
 ///
 /// All-leaf path (all children are ProjectionPostingListCursor):
-///   The sparsest child batch-collects doc_ids via collectDocIds (TurboPFor
+///   The sparsest child batch-collects doc_ids via collectDocIds (abpfor
 ///   block decode into a vector), then seek-verifies against each remaining
 ///   child. No bitmap materialization needed — O(driver_cardinality) seeks.
 ///

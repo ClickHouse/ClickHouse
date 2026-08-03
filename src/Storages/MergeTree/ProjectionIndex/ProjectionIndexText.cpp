@@ -260,12 +260,12 @@ Block tokenize(
     PagePool page_pool(&page_arena);
 
     /// Shared scratch buffer for gather+encode, reused across all tokens.
-    alignas(16) UInt32 scratch_buffer[TURBOPFOR_BLOCK_SIZE];
+    alignas(16) UInt32 scratch_buffer[ABPFOR_BLOCK_SIZE];
 
-    /// Shared TurboPFor encode output buffer. Sized to the worst-case 256-element block;
+    /// Shared abpfor encode output buffer. Sized to the worst-case 256-element block;
     /// reused across all tokens' flush/finalize calls (each call consumes it atomically
     /// before the encoded bytes are copied into a PostingListChunk).
-    uint8_t packed_buffer[TURBOPFOR_MAX_ENCODED_SIZE];
+    uint8_t packed_buffer[ABPFOR_MAX_ENCODED_SIZE];
 
     char * place = nullptr;
     size_t place_left = 0;

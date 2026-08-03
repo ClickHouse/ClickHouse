@@ -33,7 +33,7 @@ struct PostingListChunk
     /// Semantics depend on chunk role in the interleaved [doc][freq]...[pos] chain:
     ///   - doc chunk: last_doc_id of the block (used for binary search at write-to-disk time)
     ///   - freq chunk: sum(freq) for the block — lets PostingListWriter::finish skip decoding
-    ///     the freq TurboPFor block just to compute pos_cum_deltas
+    ///     the freq abpfor block just to compute pos_cum_deltas
     ///   - pos page: unused (set to 0)
     union
     {
@@ -67,18 +67,18 @@ struct PostingListChunk
     const uint8_t * data() const { return reinterpret_cast<const uint8_t *>(this + 1); }
 };
 
-/// TurboPFor encodes/decodes deltas in fixed-size blocks.
+/// abpfor encodes/decodes deltas in fixed-size blocks.
 /// 256 gives better compression ratio and smaller Index Sections than 128,
 /// with equivalent query performance.
-inline static constexpr size_t TURBOPFOR_BLOCK_SIZE = 256;
+inline static constexpr size_t ABPFOR_BLOCK_SIZE = 256;
 
-/// Maximum encoded size of a single TurboPFor block (256 elements).
+/// Maximum encoded size of a single abpfor block (256 elements).
 /// Worst case: b=32, bx=0 → 1 header byte + 256×4 payload bytes = 1025.
-inline static constexpr size_t TURBOPFOR_MAX_ENCODED_SIZE = TURBOPFOR_BLOCK_SIZE * 4 + 2;
+inline static constexpr size_t ABPFOR_MAX_ENCODED_SIZE = ABPFOR_BLOCK_SIZE * 4 + 2;
 
-/// Maximum encoded size for 64-bit TurboPFor block (256 elements).
+/// Maximum encoded size for 64-bit abpfor block (256 elements).
 /// Worst case: b=64, bx=0 → 1 header byte + 256×8 payload bytes = 2049.
-inline static constexpr size_t TURBOPFOR_MAX_ENCODED_SIZE_64 = TURBOPFOR_BLOCK_SIZE * 8 + 2;
+inline static constexpr size_t ABPFOR_MAX_ENCODED_SIZE_64 = ABPFOR_BLOCK_SIZE * 8 + 2;
 
 struct LargePostingBlockMeta;
 struct LargePostingListReaderStream;
@@ -97,7 +97,7 @@ struct LargeBlockData
 
     /// Position skip data (phrase mode only, empty when phrase=false)
     std::vector<UInt64> pos_cum_deltas; /// cumulative freq sum per doc block [0..n], n+1 values
-    std::vector<UInt64> pos_cum_bytes; /// cumulative bytes per pos TurboPFor block, N values
+    std::vector<UInt64> pos_cum_bytes; /// cumulative bytes per pos abpfor block, N values
     UInt32 num_pos_blocks = 0;
     UInt64 pos_start_offset = 0; /// Start offset of this large block's pos data in .pos
     bool has_positions = false;
@@ -119,7 +119,7 @@ struct LargeBlockData
         bool decode_positions);
 };
 
-/// Query-scoped cache of decoded TurboPFor packed blocks.
+/// Query-scoped cache of decoded abpfor packed blocks.
 ///
 /// During mark filtering, `hasDocInRangePrecise` may decode a packed block from
 /// `.pst` to determine whether a mark range contains any doc_ids. The decoded doc_ids
@@ -133,7 +133,7 @@ class DecodedBlockCache
 public:
     struct Entry // NOLINT(cppcoreguidelines-pro-type-member-init,hicpp-member-init)
     {
-        alignas(16) uint32_t doc_ids[TURBOPFOR_BLOCK_SIZE];
+        alignas(16) uint32_t doc_ids[ABPFOR_BLOCK_SIZE];
         uint32_t count = 0;
     };
 
@@ -239,8 +239,8 @@ private:
 };
 
 /// Lightweight chain of pages in a PagePool. Zero-overhead per token.
-/// Accumulates UInt32 values; when full (TURBOPFOR_BLOCK_SIZE elements),
-/// the caller gathers into a scratch buffer for TurboPFor encoding.
+/// Accumulates UInt32 values; when full (ABPFOR_BLOCK_SIZE elements),
+/// the caller gathers into a scratch buffer for abpfor encoding.
 ///
 /// Compact 8-byte layout: head (32 bits) + tail+used packed (27+5 bits).
 /// NOTE: tail index uses 27 bits (max 134M pages). See PagePool for the

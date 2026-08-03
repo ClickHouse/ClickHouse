@@ -16,16 +16,16 @@ namespace ErrorCodes
     extern const int INCORRECT_DATA;
 }
 
-/// Bridges ReadBuffer page boundaries for TurboPFor block-at-a-time decoding.
+/// Bridges ReadBuffer page boundaries for abpfor block-at-a-time decoding.
 ///
-/// TurboPFor decoders (p4D1Dec256v32, p4D1Dec32, etc.) require contiguous input
+/// abpfor decoders (`abpfor::b256::decodeBlockDelta1`, `decodeTailDelta1`, etc.) require contiguous input
 /// memory, but ReadBuffer may split encoded data across internal pages. This class
 /// provides a contiguous view via ptr()/advance() with a zero-copy fast path and
 /// efficient carry-over for page-boundary crossings.
 ///
 /// Usage:
 ///
-///   TurboPForBlockDecodeBuffer dbuf(in);
+///   AbpforBlockDecodeBuffer dbuf(in);
 ///   while (has_more_blocks)
 ///   {
 ///       const uint8_t * p = dbuf.ptr();
@@ -119,17 +119,17 @@ namespace ErrorCodes
 ///
 ///   At end-of-stream, the fill loop may yield fewer than MAX bytes.
 ///   carry_end is set to 1 (only position 0 is valid). The tail-block
-///   decoder (p4D1Dec32) reads exactly the encoded bytes without
+///   decoder (`decodeTailDelta1`) reads exactly the encoded bytes without
 ///   overreading past them.
-class TurboPForBlockDecodeBuffer
+class AbpforBlockDecodeBuffer
 {
 public:
-    explicit TurboPForBlockDecodeBuffer(ReadBuffer & in_)
+    explicit AbpforBlockDecodeBuffer(ReadBuffer & in_)
         : in(in_)
     {
     }
 
-    /// Returns a pointer to contiguous memory where one TurboPFor block can
+    /// Returns a pointer to contiguous memory where one abpfor block can
     /// be safely decoded. Valid until the next ptr() call.
     const uint8_t * ptr()
     {
@@ -160,7 +160,7 @@ public:
                 if (leftover > 0)
                     memmove(buf.data(), buf.data() + buf_pos, leftover);
 
-                size_t target = leftover + TURBOPFOR_MAX_ENCODED_SIZE_64;
+                size_t target = leftover + ABPFOR_MAX_ENCODED_SIZE_64;
                 if (buf.size() < target)
                     buf.resize(target);
 
@@ -183,7 +183,7 @@ public:
                 buffered = have;
                 in_place = false;
 
-                if (have >= leftover + TURBOPFOR_MAX_ENCODED_SIZE_64)
+                if (have >= leftover + ABPFOR_MAX_ENCODED_SIZE_64)
                     carry_end = leftover + 1;
                 else
                     carry_end = 1;
@@ -193,7 +193,7 @@ public:
         }
 
         /// Step 3: Fast path — ReadBuffer page has enough contiguous data.
-        if (!in.eof() && in.available() >= TURBOPFOR_MAX_ENCODED_SIZE_64)
+        if (!in.eof() && in.available() >= ABPFOR_MAX_ENCODED_SIZE_64)
         {
             in_place = true;
             return reinterpret_cast<const uint8_t *>(in.position());
@@ -201,7 +201,7 @@ public:
 
         /// Step 4: New carry — copy page tail, then fill MAX from next page(s).
         size_t tail = in.available();
-        size_t target = tail + TURBOPFOR_MAX_ENCODED_SIZE_64;
+        size_t target = tail + ABPFOR_MAX_ENCODED_SIZE_64;
         if (buf.size() < target)
             buf.resize(target);
 
@@ -219,10 +219,10 @@ public:
 
         /// Zero-pad the unfilled tail so any decoder over-read into the padding stays
         /// deterministic. Without this `PODArray::resize` leaves the trailing bytes
-        /// uninitialised, and TurboPFor's loadU64Fast (which over-reads up to 7 bytes)
+        /// uninitialised, and abpfor's loadU64Fast (which over-reads up to 7 bytes)
         /// would see stale data and decode garbage that `advance()` could still mark
         /// as legitimately consumed. The cost is bounded by the padding region only,
-        /// which is at most `TURBOPFOR_MAX_ENCODED_SIZE_64` (~2 KB) and only runs on the
+        /// which is at most `ABPFOR_MAX_ENCODED_SIZE_64` (~2 KB) and only runs on the
         /// rare EOF carry path — full-page fast paths skip this code entirely.
         if (have < target)
             std::memset(buf.data() + have, 0, target - have);
@@ -231,7 +231,7 @@ public:
         buffered = have;
         in_place = false;
 
-        if (have >= tail + TURBOPFOR_MAX_ENCODED_SIZE_64)
+        if (have >= tail + ABPFOR_MAX_ENCODED_SIZE_64)
             carry_end = tail + 1;
         else
             carry_end = 1;
@@ -250,7 +250,7 @@ public:
             if (consumed > in.available()) [[unlikely]]
                 throw Exception(
                     ErrorCodes::INCORRECT_DATA,
-                    "Corrupted projection text index: TurboPFor decoder consumed {} bytes from in-place buffer with only {} available",
+                    "Corrupted projection text index: abpfor decoder consumed {} bytes from in-place buffer with only {} available",
                     consumed, in.available());
             in.position() += consumed;
             in_place = false;
@@ -259,7 +259,7 @@ public:
         if (buf_pos + consumed > buffered) [[unlikely]]
             throw Exception(
                 ErrorCodes::INCORRECT_DATA,
-                "Corrupted projection text index: TurboPFor decoder consumed {} bytes from carry buffer at position {} with only {} buffered",
+                "Corrupted projection text index: abpfor decoder consumed {} bytes from carry buffer at position {} with only {} buffered",
                 consumed, buf_pos, buffered);
         buf_pos += consumed;
     }
@@ -296,7 +296,7 @@ public:
         if (leftover > rewind_room)
             throw Exception(
                 ErrorCodes::CANNOT_READ_ALL_DATA,
-                "TurboPForBlockDecodeBuffer::sync: prefetch spans multiple pages, cannot rewind {} bytes (room: {})",
+                "AbpforBlockDecodeBuffer::sync: prefetch spans multiple pages, cannot rewind {} bytes (room: {})",
                 leftover,
                 rewind_room);
         in.position() -= leftover;

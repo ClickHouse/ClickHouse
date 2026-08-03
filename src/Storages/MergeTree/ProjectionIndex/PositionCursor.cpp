@@ -28,7 +28,7 @@ inline UInt32 packedBlockCount(size_t blk, const LargeBlockData & lb)
     size_t num_pb = lb.numPackedBlocks();
     if (blk + 1 == num_pb && lb.tail_size > 0)
         return static_cast<UInt32>(lb.tail_size);
-    return static_cast<UInt32>(TURBOPFOR_BLOCK_SIZE);
+    return static_cast<UInt32>(ABPFOR_BLOCK_SIZE);
 }
 
 inline uint32_t packedBlockDeltaBase(size_t blk, size_t large_block_idx, UInt32 range_begin, const LargeBlockData & lb, UInt32 prev_lb_last)
@@ -143,7 +143,7 @@ void PositionCursor::ensurePackedBlockDecoded(size_t lb_idx, size_t pb_idx)
     {
         const uint8_t * p = pst_decode_buf->ptr();
         const uint8_t * end = nullptr;
-        if (count == TURBOPFOR_BLOCK_SIZE)
+        if (count == ABPFOR_BLOCK_SIZE)
             end = abpfor::b256::decodeBlockDelta1(p, pb_cache.doc_ids, delta_base) + p;
         else
             end = abpfor::b256::decodeTailDelta1(p, count, pb_cache.doc_ids, delta_base) + p;
@@ -154,7 +154,7 @@ void PositionCursor::ensurePackedBlockDecoded(size_t lb_idx, size_t pb_idx)
     {
         const uint8_t * p = pst_decode_buf->ptr();
         const uint8_t * end = nullptr;
-        if (count == TURBOPFOR_BLOCK_SIZE)
+        if (count == ABPFOR_BLOCK_SIZE)
             end = abpfor::b256::decodeBlock(p, pb_cache.freqs) + p;
         else
             end = abpfor::b256::decodeTail(p, count, pb_cache.freqs) + p;
@@ -205,14 +205,14 @@ void PositionCursor::ensurePosBlockDecoded(size_t lb_idx, UInt32 pos_block_idx)
     const auto & lb = getLargeBlockData(lb_idx);
     UInt64 total_pos_deltas = lb.pos_cum_deltas.back();
 
-    UInt64 block_start_delta = static_cast<UInt64>(pos_block_idx) * TURBOPFOR_BLOCK_SIZE;
+    UInt64 block_start_delta = static_cast<UInt64>(pos_block_idx) * ABPFOR_BLOCK_SIZE;
     /// Guard against corrupted .pos where pos_block_idx points past the end of the
     /// position stream — unsigned subtraction below would wrap to a huge value.
     if (block_start_delta > total_pos_deltas)
         throw Exception(ErrorCodes::INCORRECT_DATA,
             "Corrupted projection text index: position block index {} starts at delta {} which exceeds total {}",
             pos_block_idx, block_start_delta, total_pos_deltas);
-    UInt32 count = static_cast<UInt32>(std::min(static_cast<UInt64>(TURBOPFOR_BLOCK_SIZE), total_pos_deltas - block_start_delta));
+    UInt32 count = static_cast<UInt32>(std::min(static_cast<UInt64>(ABPFOR_BLOCK_SIZE), total_pos_deltas - block_start_delta));
 
     /// Seek to the right byte offset in .pos
     UInt64 byte_offset = (pos_block_idx == 0) ? 0 : lb.pos_cum_bytes[pos_block_idx - 1];
@@ -224,7 +224,7 @@ void PositionCursor::ensurePosBlockDecoded(size_t lb_idx, UInt32 pos_block_idx)
 
     const uint8_t * p = pos_decode_buf->ptr();
     const uint8_t * end = nullptr;
-    if (count == TURBOPFOR_BLOCK_SIZE)
+    if (count == ABPFOR_BLOCK_SIZE)
         end = abpfor::b256::decodeBlock(p, pos_cache.values) + p;
     else
         end = abpfor::b256::decodeTail(p, count, pos_cache.values) + p;
@@ -268,10 +268,10 @@ UInt32 PositionCursor::seekDoc(UInt32 doc_id)
                 else
                     pos_decode_buf->reset();
 
-                UInt32 n = std::min(freq, static_cast<UInt32>(TURBOPFOR_BLOCK_SIZE));
+                UInt32 n = std::min(freq, static_cast<UInt32>(ABPFOR_BLOCK_SIZE));
                 const uint8_t * p = pos_decode_buf->ptr();
                 const uint8_t * end = nullptr;
-                if (n == TURBOPFOR_BLOCK_SIZE)
+                if (n == ABPFOR_BLOCK_SIZE)
                     end = abpfor::b256::decodeBlock(p, pos_cache.values) + p;
                 else
                     end = abpfor::b256::decodeTail(p, n, pos_cache.values) + p;
@@ -321,8 +321,8 @@ UInt32 PositionCursor::seekDoc(UInt32 doc_id)
         for (size_t i = 0; i < doc_pos_in_block; ++i)
             cum_freq_before += pb_cache.freqs[i];
 
-        doc_state.cur_pos_block = static_cast<UInt32>(cum_freq_before / TURBOPFOR_BLOCK_SIZE);
-        doc_state.cur_offset = static_cast<UInt32>(cum_freq_before % TURBOPFOR_BLOCK_SIZE);
+        doc_state.cur_pos_block = static_cast<UInt32>(cum_freq_before / ABPFOR_BLOCK_SIZE);
+        doc_state.cur_offset = static_cast<UInt32>(cum_freq_before % ABPFOR_BLOCK_SIZE);
 
         ensurePosBlockDecoded(lb_idx, doc_state.cur_pos_block);
     }
@@ -342,10 +342,10 @@ UInt32 PositionCursor::nextPosition()
         {
             /// Single-doc first_doc: decode next block from sequential stream
             UInt32 remaining = doc_state.freq - doc_state.consumed;
-            UInt32 n = std::min(remaining, static_cast<UInt32>(TURBOPFOR_BLOCK_SIZE));
+            UInt32 n = std::min(remaining, static_cast<UInt32>(ABPFOR_BLOCK_SIZE));
             const uint8_t * p = pos_decode_buf->ptr();
             const uint8_t * end = nullptr;
-            if (n == TURBOPFOR_BLOCK_SIZE)
+            if (n == ABPFOR_BLOCK_SIZE)
                 end = abpfor::b256::decodeBlock(p, pos_cache.values) + p;
             else
                 end = abpfor::b256::decodeTail(p, n, pos_cache.values) + p;

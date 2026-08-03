@@ -7,7 +7,7 @@ Test 2: Seek across packed block boundaries with ngrams
 0
 500
 2000
-Test 3: Exact TurboPFor boundary (128, 256, 384 docs)
+Test 3: Exact abpfor boundary (128, 256, 384 docs)
 129
 257
 385

@@ -115,7 +115,7 @@ bool ProjectionTokenInfo::hasDocInRange(
         /// Need precise decode — check contiguous fast-path first.
         UInt32 count_meta = (lo + 1 == lb.block_count && lb.tail_size > 0)
             ? static_cast<UInt32>(lb.tail_size)
-            : static_cast<UInt32>(TURBOPFOR_BLOCK_SIZE);
+            : static_cast<UInt32>(ABPFOR_BLOCK_SIZE);
         uint32_t delta_base_meta = 0;
         if (lo == 0)
         {
@@ -152,7 +152,7 @@ bool ProjectionTokenInfo::hasDocInRange(
             auto & dbuf = pst_stream->decodeBuffer();
             dbuf.reset();
             const uint8_t * ptr = dbuf.ptr();
-            if (count == TURBOPFOR_BLOCK_SIZE)
+            if (count == ABPFOR_BLOCK_SIZE)
                 bytes = static_cast<UInt32>(abpfor::b256::decodeBlockDelta1(ptr, entry->doc_ids, delta_base));
             else
                 bytes = static_cast<UInt32>(abpfor::b256::decodeTailDelta1(ptr, count, entry->doc_ids, delta_base));

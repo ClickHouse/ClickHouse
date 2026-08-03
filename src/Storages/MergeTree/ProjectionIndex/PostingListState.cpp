@@ -99,7 +99,7 @@ void AggregateFunctionPostingList::serialize(ConstAggregateDataPtr place, WriteB
         writeVarUInt(writer.first_doc_id, buf);
         writeVarUInt(writer.first_doc_freq, buf);
 
-        /// The `Writer`'s doc ids are TurboPFor-encoded across its chunk chain and are not cheaply
+        /// The `Writer`'s doc ids are abpfor-encoded across its chunk chain and are not cheaply
         /// decodable here. Approximate the payload size by the encoded byte length of those chunks —
         /// this is the same order of magnitude as the compressed on-disk posting size, which is the
         /// quantity the granularity estimate cares about.

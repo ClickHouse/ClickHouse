@@ -72,23 +72,23 @@ struct LargePostingListWriterStream
 
     bool is_prefinalized = false;
 
-    alignas(16) UInt32 doc_buffer[TURBOPFOR_BLOCK_SIZE]; // NOLINT(cppcoreguidelines-pro-type-member-init)
-    /// Sized for 64-bit TurboPFor worst case (position index uses p4D1Enc256v64).
-    uint8_t packed_buffer[TURBOPFOR_MAX_ENCODED_SIZE_64]; // NOLINT(cppcoreguidelines-pro-type-member-init)
+    alignas(16) UInt32 doc_buffer[ABPFOR_BLOCK_SIZE]; // NOLINT(cppcoreguidelines-pro-type-member-init)
+    /// Sized for 64-bit abpfor worst case (position index uses `abpfor::b256::encodeBlockDelta1` on UInt64).
+    uint8_t packed_buffer[ABPFOR_MAX_ENCODED_SIZE_64]; // NOLINT(cppcoreguidelines-pro-type-member-init)
 
     /// Phrase-mode scratch buffer for position delta accumulation across doc blocks.
     /// Not zero-initialized — always overwritten before use.
     /// Non-phrase mode does not use this buffer.
     ///
-    /// `packed_buffer` (above) is reused as the TurboPFor encode output buffer for
+    /// `packed_buffer` (above) is reused as the abpfor encode output buffer for
     /// positions in finish(), and for freq re-encoding in merge() — it is unused by
     /// those paths for its original purpose (tokenize add/finalize already completed).
-    alignas(16) UInt32 pos_accum[TURBOPFOR_BLOCK_SIZE]; // NOLINT(cppcoreguidelines-pro-type-member-init)
+    alignas(16) UInt32 pos_accum[ABPFOR_BLOCK_SIZE]; // NOLINT(cppcoreguidelines-pro-type-member-init)
 
     /// Phrase-mode scratch buffer for frequency accumulation during merge.
     /// Separate from pos_accum because LargePostingBlockWriter uses pos_accum
     /// for position delta accumulation concurrently with freq buffering.
-    alignas(16) UInt32 freq_accum[TURBOPFOR_BLOCK_SIZE]; // NOLINT(cppcoreguidelines-pro-type-member-init)
+    alignas(16) UInt32 freq_accum[ABPFOR_BLOCK_SIZE]; // NOLINT(cppcoreguidelines-pro-type-member-init)
 };
 
 using LargePostingListWriterStreamPtr = std::unique_ptr<LargePostingListWriterStream>;

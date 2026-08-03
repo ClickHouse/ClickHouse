@@ -3,7 +3,7 @@
 #include <Storages/MergeTree/ProjectionIndex/PostingCursor.h>
 #include <Storages/MergeTree/ProjectionIndex/PostingListData.h>
 #include <Storages/MergeTree/ProjectionIndex/ProjectionTokenInfo.h>
-#include <Storages/MergeTree/ProjectionIndex/TurboPForBlockDecodeBuffer.h>
+#include <Storages/MergeTree/ProjectionIndex/AbpforBlockDecodeBuffer.h>
 #include <base/defines.h>
 #include <base/types.h>
 #include <Common/PODArray.h>
@@ -27,8 +27,8 @@ using LargePostingListReaderStreamPtr = std::shared_ptr<LargePostingListReaderSt
 /// Storage layout (two-level hierarchy):
 ///   Large blocks  — variable-size segments of the posting list, each stored as a
 ///                   contiguous region in the .pst stream with its own Index Section.
-///   Packed blocks — fixed-size TURBOPFOR_BLOCK_SIZE-element groups within a large block,
-///                   delta-encoded and compressed with TurboPFor.
+///   Packed blocks — fixed-size ABPFOR_BLOCK_SIZE-element groups within a large block,
+///                   delta-encoded and compressed with abpfor.
 class ProjectionPostingListCursor final : public IPostingCursor
 {
 public:
@@ -94,7 +94,7 @@ private:
     /// Element-level iterator state.
     /// Points to either decode_buf (self-decoded) or a DecodedBlockCache::Entry (cache hit).
     const uint32_t * decoded_values = nullptr;
-    alignas(16) uint32_t decode_buf[TURBOPFOR_BLOCK_SIZE]; // NOLINT(cppcoreguidelines-pro-type-member-init)
+    alignas(16) uint32_t decode_buf[ABPFOR_BLOCK_SIZE]; // NOLINT(cppcoreguidelines-pro-type-member-init)
     size_t decoded_count = 0;
     size_t index = 0;
     size_t current_packed_block = 0;
@@ -121,7 +121,7 @@ private:
     double density_value = 0;
 
     /// Decode buffer for stream-based .pst reads (lazily initialized).
-    std::optional<TurboPForBlockDecodeBuffer> pst_decode_buf;
+    std::optional<AbpforBlockDecodeBuffer> pst_decode_buf;
 
     /// Optional decoded block cache shared with mark filtering (query-scoped).
     DecodedBlockCache * decoded_cache = nullptr;

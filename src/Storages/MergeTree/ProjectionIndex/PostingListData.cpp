@@ -10,7 +10,7 @@
 #include <Storages/MergeTree/MergedPartOffsets.h>
 #include <Storages/MergeTree/ProjectionIndex/LengthPrefixedInt.h>
 #include <Storages/MergeTree/ProjectionIndex/PostingListState.h>
-#include <Storages/MergeTree/ProjectionIndex/TurboPForBlockDecodeBuffer.h>
+#include <Storages/MergeTree/ProjectionIndex/AbpforBlockDecodeBuffer.h>
 #include <base/scope_guard.h>
 #include <Common/Arena.h>
 #include <Common/Exception.h>
@@ -78,14 +78,14 @@ void TokenWriteContext::add(UInt32 doc_id, PagePool & pool, Arena & chunk_arena,
     /// Track the first doc_id of the current packed block.
     /// doc_count starts at 1 (first_doc_id is separate), so the first delta-encoded doc
     /// has doc_count == 2. A new block starts when (doc_count - 1) % 256 == 1.
-    if ((w.doc_count - 1) % TURBOPFOR_BLOCK_SIZE == 0)
+    if ((w.doc_count - 1) % ABPFOR_BLOCK_SIZE == 0)
         block_first_doc_id = doc_id;
 
     doc_deltas.append(doc_id - last_doc_id - 1, pool);
     last_doc_id = doc_id;
     ++w.doc_count;
 
-    UInt32 buf_count = (w.doc_count - 1) % TURBOPFOR_BLOCK_SIZE;
+    UInt32 buf_count = (w.doc_count - 1) % ABPFOR_BLOCK_SIZE;
     if (buf_count == 0)
     {
         doc_deltas.gather(pool, scratch);
@@ -93,7 +93,7 @@ void TokenWriteContext::add(UInt32 doc_id, PagePool & pool, Arena & chunk_arena,
 
         uint8_t * end = abpfor::b256::encodeBlock(scratch, packed_buffer) + packed_buffer;
         UInt32 doc_len = static_cast<UInt32>(end - packed_buffer);
-        chassert(doc_len <= TURBOPFOR_MAX_ENCODED_SIZE);
+        chassert(doc_len <= ABPFOR_MAX_ENCODED_SIZE);
         auto * place = chunk_arena.alignedAlloc(doc_len + sizeof(PostingListChunk), alignof(PostingListChunk));
         PostingListChunk * cur_block = new (place) PostingListChunk(last_doc_id, doc_len, block_first_doc_id);
         memcpy(cur_block->data(), packed_buffer, doc_len);
@@ -113,7 +113,7 @@ void TokenWriteContext::finalize(PagePool & pool, Arena & chunk_arena, UInt32 * 
     if (w.doc_count == 0)
         return;
 
-    UInt32 tail = (w.doc_count - 1) % TURBOPFOR_BLOCK_SIZE;
+    UInt32 tail = (w.doc_count - 1) % ABPFOR_BLOCK_SIZE;
     if (tail > 0)
     {
         doc_deltas.gather(pool, scratch);
@@ -143,7 +143,7 @@ void TokenWriteContextPhrase::flushBlock(PagePool & pool, Arena & chunk_arena, U
     doc_deltas.freeAll(pool);
     uint8_t * doc_end = abpfor::b256::encodeBlock(scratch, packed_buffer) + packed_buffer;
     UInt32 doc_len = static_cast<UInt32>(doc_end - packed_buffer);
-    chassert(doc_len <= TURBOPFOR_MAX_ENCODED_SIZE);
+    chassert(doc_len <= ABPFOR_MAX_ENCODED_SIZE);
     auto * doc_place = chunk_arena.alignedAlloc(doc_len + sizeof(PostingListChunk), alignof(PostingListChunk));
     PostingListChunk * doc_chunk = new (doc_place) PostingListChunk(last_doc_id, doc_len, block_first_doc_id);
     memcpy(doc_chunk->data(), packed_buffer, doc_len);
@@ -159,7 +159,7 @@ void TokenWriteContextPhrase::flushBlock(PagePool & pool, Arena & chunk_arena, U
     freqs.gather(pool, scratch);
     freqs.freeAll(pool);
     UInt32 freq_sum = 0;
-    for (UInt32 i = 0; i < TURBOPFOR_BLOCK_SIZE; ++i)
+    for (UInt32 i = 0; i < ABPFOR_BLOCK_SIZE; ++i)
         freq_sum += scratch[i];
     uint8_t * freq_end = abpfor::b256::encodeBlock(scratch, packed_buffer) + packed_buffer;
     UInt32 freq_len = static_cast<UInt32>(freq_end - packed_buffer);
@@ -227,8 +227,8 @@ void TokenWriteContextPhrase::add(
         /// Flush now so the doc chunk records the 256th doc_id as its last_doc_id.
         if (w.doc_count > 1)
         {
-            UInt32 idx = (w.doc_count - 2) % TURBOPFOR_BLOCK_SIZE;
-            if (idx == TURBOPFOR_BLOCK_SIZE - 1)
+            UInt32 idx = (w.doc_count - 2) % ABPFOR_BLOCK_SIZE;
+            if (idx == ABPFOR_BLOCK_SIZE - 1)
                 flushBlock(pool, chunk_arena, scratch, packed_buffer);
         }
 
@@ -239,7 +239,7 @@ void TokenWriteContextPhrase::add(
 
         /// Track the first doc_id of the current packed block.
         /// doc_count - 1 = number of delta-encoded docs. A new block starts at boundary.
-        if ((w.doc_count - 2) % TURBOPFOR_BLOCK_SIZE == 0)
+        if ((w.doc_count - 2) % ABPFOR_BLOCK_SIZE == 0)
             block_first_doc_id = doc_id;
     }
 
@@ -250,8 +250,8 @@ void TokenWriteContextPhrase::add(
 
     positions.append(pos_delta, pool);
 
-    /// Seal position page at TURBOPFOR_BLOCK_SIZE boundary
-    if (positions.size(pool) == TURBOPFOR_BLOCK_SIZE)
+    /// Seal position page at ABPFOR_BLOCK_SIZE boundary
+    if (positions.size(pool) == ABPFOR_BLOCK_SIZE)
         sealPosPage(pool, chunk_arena, scratch);
 }
 
@@ -277,7 +277,7 @@ void TokenWriteContextPhrase::finalize(PagePool & pool, Arena & chunk_arena, UIn
     freqs.append(current_doc_freq, pool);
     last_doc_id = current_doc_id;
 
-    UInt32 tail = (w.doc_count - 1) % TURBOPFOR_BLOCK_SIZE;
+    UInt32 tail = (w.doc_count - 1) % ABPFOR_BLOCK_SIZE;
 
     if (tail == 0)
     {
@@ -327,7 +327,7 @@ void TokenWriteContextPhrase::finalize(PagePool & pool, Arena & chunk_arena, UIn
 /// to enable sub-block seeking for lazy cursor apply mode.
 ///
 /// When `pos_out` is non-null (phrase mode), each doc block in `.pst` is followed by a
-/// TurboPFor-encoded freq block, and position deltas are written as 256-element TurboPFor
+/// abpfor-encoded freq block, and position deltas are written as 256-element abpfor
 /// blocks to `.pos`. The `.pidx` Index Section is extended with `pos_cum_deltas` (cumulative
 /// freq sums) and `pos_cum_bytes` (cumulative `.pos` block byte offsets).
 class LargePostingBlockWriter
@@ -352,7 +352,7 @@ public:
         if (write_block_index)
         {
             chassert(index_out);
-            UInt32 packed_blocks_per_large_block = docs_per_large_block / TURBOPFOR_BLOCK_SIZE;
+            UInt32 packed_blocks_per_large_block = docs_per_large_block / ABPFOR_BLOCK_SIZE;
             packed_block_ranges.reserve(packed_blocks_per_large_block * 2);
             packed_block_cum_bytes.reserve(packed_blocks_per_large_block);
 
@@ -386,7 +386,7 @@ public:
         const char * freq_data = nullptr,
         UInt32 freq_bytes = 0,
         UInt32 freq_sum = 0,
-        UInt32 block_doc_count = TURBOPFOR_BLOCK_SIZE)
+        UInt32 block_doc_count = ABPFOR_BLOCK_SIZE)
     {
         if (docs_in_current_block == 0)
         {
@@ -440,7 +440,7 @@ public:
 
         chassert(num_large_blocks_written == num_large_blocks_expected);
 
-        /// Write large block metadata in columnar TurboPFor format.
+        /// Write large block metadata in columnar abpfor format.
         writeLargeBlockMeta();
     }
 
@@ -472,18 +472,18 @@ public:
     /// Carry buffer for stateful pos-delta encoding within a single large block.
     /// Multiple `encodePosDeltas`/`feedPositionDeltas` calls are joined into 256-element
     /// blocks; the residual is flushed by `flushPositionTail` at large block boundary.
-    UInt32 pos_carry[TURBOPFOR_BLOCK_SIZE]; // NOLINT(cppcoreguidelines-pro-type-member-init)
+    UInt32 pos_carry[ABPFOR_BLOCK_SIZE]; // NOLINT(cppcoreguidelines-pro-type-member-init)
     UInt32 pos_carry_count = 0;
 
 private:
     /// Delta-1-encode an array in 256-element SIMD blocks and write to `out`.
-    /// Supports both UInt32 (p4D1Enc256v32/p4D1Enc32) and UInt64 (p4D1Enc256v64/p4D1Enc64).
+    /// Supports both UInt32 and UInt64 via `abpfor::b256::encodeBlockDelta1`/`encodeTailDelta1` overloads.
     template <typename T>
     void encodeDelta1(T * values, UInt32 count, T start, WriteBuffer & out) const
     {
         UInt32 p = 0;
         UInt32 remaining = count;
-        while (remaining >= TURBOPFOR_BLOCK_SIZE)
+        while (remaining >= ABPFOR_BLOCK_SIZE)
         {
             uint8_t * end = nullptr;
             if constexpr (std::is_same_v<T, UInt32>)
@@ -491,9 +491,9 @@ private:
             else
                 end = abpfor::b256::encodeBlockDelta1(values + p, pos_encode_buf, start) + pos_encode_buf;
             out.write(reinterpret_cast<const char *>(pos_encode_buf), static_cast<size_t>(end - pos_encode_buf));
-            start = values[p + TURBOPFOR_BLOCK_SIZE - 1];
-            p += TURBOPFOR_BLOCK_SIZE;
-            remaining -= TURBOPFOR_BLOCK_SIZE;
+            start = values[p + ABPFOR_BLOCK_SIZE - 1];
+            p += ABPFOR_BLOCK_SIZE;
+            remaining -= ABPFOR_BLOCK_SIZE;
         }
         if (remaining > 0)
         {
@@ -519,23 +519,23 @@ private:
         /// Top up the carry first.
         if (pos_carry_count > 0)
         {
-            UInt32 need = TURBOPFOR_BLOCK_SIZE - pos_carry_count;
+            UInt32 need = ABPFOR_BLOCK_SIZE - pos_carry_count;
             UInt32 fill = std::min(need, count);
             std::memcpy(pos_carry + pos_carry_count, deltas, fill * sizeof(UInt32));
             pos_carry_count += fill;
             src_pos += fill;
-            if (pos_carry_count == TURBOPFOR_BLOCK_SIZE)
+            if (pos_carry_count == ABPFOR_BLOCK_SIZE)
             {
-                emitPosBlock(pos_carry, TURBOPFOR_BLOCK_SIZE, false);
+                emitPosBlock(pos_carry, ABPFOR_BLOCK_SIZE, false);
                 pos_carry_count = 0;
             }
         }
 
         /// Emit full 256-blocks directly from the input.
-        while (src_pos + TURBOPFOR_BLOCK_SIZE <= count)
+        while (src_pos + ABPFOR_BLOCK_SIZE <= count)
         {
-            emitPosBlock(deltas + src_pos, TURBOPFOR_BLOCK_SIZE, false);
-            src_pos += TURBOPFOR_BLOCK_SIZE;
+            emitPosBlock(deltas + src_pos, ABPFOR_BLOCK_SIZE, false);
+            src_pos += ABPFOR_BLOCK_SIZE;
         }
 
         /// Stash any leftover into the carry.
@@ -570,7 +570,7 @@ private:
     }
 
     /// Consume `count` raw UInt32 deltas from pos page walker and encode to .pos.
-    /// Pos pages may not be aligned to TURBOPFOR_BLOCK_SIZE — `encodePosDeltas` carries
+    /// Pos pages may not be aligned to ABPFOR_BLOCK_SIZE — `encodePosDeltas` carries
     /// state across calls so a multi-page large block produces one tail at the end.
     void consumeAndEncodePos(UInt64 count)
     {
@@ -618,7 +618,7 @@ private:
 
             VarInt::writeUInt32(num_packed_blocks, *index_out);
 
-            /// Interleaved ranges [f0, l0, f1, l1, ...] — strictly monotone, single TurboPFor stream.
+            /// Interleaved ranges [f0, l0, f1, l1, ...] — strictly monotone, single abpfor stream.
             encodeDelta1(packed_block_ranges.data(), num_packed_blocks * 2, UInt32{0}, *index_out);
             encodeDelta1(packed_block_cum_bytes.data(), num_packed_blocks, static_cast<UInt32>(-1), *index_out);
 
@@ -656,7 +656,7 @@ private:
         ++num_large_blocks_written;
     }
 
-    /// Write all large block metadata in columnar TurboPFor format to meta_out.
+    /// Write all large block metadata in columnar abpfor format to meta_out.
     /// Prefixed with total byte count so readers can skip without decoding.
     void writeLargeBlockMeta()
     {
@@ -672,10 +672,10 @@ private:
         {
             WriteBufferFromVector<PODArray<char>> tmp(buf);
 
-            /// UInt32 doc_ids — interleaved [first, last, ...], TurboPFor delta-1 encoded.
+            /// UInt32 doc_ids — interleaved [first, last, ...], abpfor delta-1 encoded.
             encodeDelta1(large_block_ranges.data(), n * 2, UInt32{0}, tmp);
 
-            /// UInt64 offsets — TurboPFor delta-1 encoded.
+            /// UInt64 offsets — abpfor delta-1 encoded.
             encodeDelta1(large_block_pst_offsets.data(), n, UInt64{0}, tmp);
 
             if (write_block_index)
@@ -725,7 +725,7 @@ private:
 
     /// Position index data (phrase mode only)
     std::vector<UInt64> packed_block_pos_cum_deltas; /// cumulative freq sum per doc block
-    std::vector<UInt64> pos_block_cum_bytes; /// cumulative bytes per pos TurboPFor block
+    std::vector<UInt64> pos_block_cum_bytes; /// cumulative bytes per pos abpfor block
 
     /// Pos page walker state — walks the 256-aligned raw UInt32 delta pages
     /// from the tokenize phase, encoding directly to .pos in flushLargeBlock.
@@ -796,7 +796,7 @@ void PostingListWriter::finish(
 
     /// ---- Large posting list (doc_count > 1) ----
     const UInt32 docs_per_large_block
-        = (static_cast<UInt32>(index_params.posting_list_block_size) + TURBOPFOR_BLOCK_SIZE - 1) & ~(TURBOPFOR_BLOCK_SIZE - 1);
+        = (static_cast<UInt32>(index_params.posting_list_block_size) + ABPFOR_BLOCK_SIZE - 1) & ~(ABPFOR_BLOCK_SIZE - 1);
     const UInt32 large_doc_count = doc_count - 1;
     const UInt32 num_large_blocks = (large_doc_count + docs_per_large_block - 1) / docs_per_large_block;
 
@@ -806,8 +806,8 @@ void PostingListWriter::finish(
     LargePostingBlockWriter block_writer(
         entry_wb, stream.plain_hashing, docs_per_large_block, index_params.has_block_index, stream, index_stream, pos_buf);
 
-    UInt32 full_chunks = large_doc_count / TURBOPFOR_BLOCK_SIZE;
-    UInt32 tail_docs = large_doc_count % TURBOPFOR_BLOCK_SIZE;
+    UInt32 full_chunks = large_doc_count / ABPFOR_BLOCK_SIZE;
+    UInt32 tail_docs = large_doc_count % ABPFOR_BLOCK_SIZE;
     UInt32 num_doc_chunks = full_chunks + (tail_docs > 0 ? 1 : 0);
 
     /// Walk the interleaved chain:
@@ -832,7 +832,7 @@ void PostingListWriter::finish(
     {
         chassert(it);
         bool is_tail = (tail_docs > 0) && (chunk_idx == full_chunks);
-        UInt32 block_doc_count = is_tail ? tail_docs : TURBOPFOR_BLOCK_SIZE;
+        UInt32 block_doc_count = is_tail ? tail_docs : ABPFOR_BLOCK_SIZE;
 
         const char * doc_data = reinterpret_cast<const char *>(it->data());
         UInt32 doc_bytes = it->len;
@@ -1024,14 +1024,14 @@ private:
             do_seek = false;
         }
 
-        UInt32 count = std::min(remaining_count, static_cast<UInt32>(TURBOPFOR_BLOCK_SIZE));
+        UInt32 count = std::min(remaining_count, static_cast<UInt32>(ABPFOR_BLOCK_SIZE));
         auto & dbuf = stream->decodeBuffer();
 
         /// Decode doc deltas
         {
             const uint8_t * p = dbuf.ptr();
             const uint8_t * end = nullptr;
-            if (count == TURBOPFOR_BLOCK_SIZE)
+            if (count == ABPFOR_BLOCK_SIZE)
                 end = abpfor::b256::decodeBlockDelta1(p, doc_buffer, last_doc_id) + p;
             else
                 end = abpfor::b256::decodeTailDelta1(p, count, doc_buffer, last_doc_id) + p;
@@ -1044,7 +1044,7 @@ private:
             UInt32 * freq_discard = stream->scratch_a;
             const uint8_t * p = dbuf.ptr();
             const uint8_t * end = nullptr;
-            if (count == TURBOPFOR_BLOCK_SIZE)
+            if (count == ABPFOR_BLOCK_SIZE)
                 end = abpfor::b256::decodeBlock(p, freq_discard) + p;
             else
                 end = abpfor::b256::decodeTail(p, count, freq_discard) + p;
@@ -1195,7 +1195,7 @@ void PostingListStream::read(
 
     PODArray<char> entry_storage;
     const uint8_t * ptr = nullptr;
-    /// TurboPFor loadU64Fast may read up to 7 bytes past the last encoded byte.
+    /// abpfor loadU64Fast may read up to 7 bytes past the last encoded byte.
     static constexpr size_t DECODE_PADDING = 7;
     if (static_cast<size_t>(in.available()) >= entry_bytes + DECODE_PADDING)
     {
@@ -1290,19 +1290,19 @@ void PostingListStream::read(
 
     UInt32 remaining_docs = doc_count - 1;
     const UInt32 docs_per_large_block
-        = (static_cast<UInt32>(index_params.posting_list_block_size) + TURBOPFOR_BLOCK_SIZE - 1) & ~(TURBOPFOR_BLOCK_SIZE - 1);
+        = (static_cast<UInt32>(index_params.posting_list_block_size) + ABPFOR_BLOCK_SIZE - 1) & ~(ABPFOR_BLOCK_SIZE - 1);
 
-    /// Decode columnar large block metadata from contiguous memory — no TurboPForBlockDecodeBuffer needed.
+    /// Decode columnar large block metadata from contiguous memory — no AbpforBlockDecodeBuffer needed.
     auto decode_delta1 = [](const uint8_t *& src, UInt32 count, UInt32 * out, uint32_t prev)
     {
         UInt32 pos = 0;
         UInt32 remaining = count;
-        while (remaining >= TURBOPFOR_BLOCK_SIZE)
+        while (remaining >= ABPFOR_BLOCK_SIZE)
         {
             src = abpfor::b256::decodeBlockDelta1(src, out + pos, prev) + src;
-            prev = out[pos + TURBOPFOR_BLOCK_SIZE - 1];
-            pos += TURBOPFOR_BLOCK_SIZE;
-            remaining -= TURBOPFOR_BLOCK_SIZE;
+            prev = out[pos + ABPFOR_BLOCK_SIZE - 1];
+            pos += ABPFOR_BLOCK_SIZE;
+            remaining -= ABPFOR_BLOCK_SIZE;
         }
         if (remaining > 0)
             src = abpfor::b256::decodeTailDelta1(src, remaining, out + pos, prev) + src;
@@ -1312,12 +1312,12 @@ void PostingListStream::read(
     {
         UInt32 pos = 0;
         UInt32 remaining = count;
-        while (remaining >= TURBOPFOR_BLOCK_SIZE)
+        while (remaining >= ABPFOR_BLOCK_SIZE)
         {
             src = abpfor::b256::decodeBlockDelta1(src, out + pos, prev) + src;
-            prev = out[pos + TURBOPFOR_BLOCK_SIZE - 1];
-            pos += TURBOPFOR_BLOCK_SIZE;
-            remaining -= TURBOPFOR_BLOCK_SIZE;
+            prev = out[pos + ABPFOR_BLOCK_SIZE - 1];
+            pos += ABPFOR_BLOCK_SIZE;
+            remaining -= ABPFOR_BLOCK_SIZE;
         }
         if (remaining > 0)
             src = abpfor::b256::decodeTailDelta1(src, remaining, out + pos, prev) + src;
@@ -1452,23 +1452,23 @@ void PostingListStream::write(
                     auto & pos_dbuf = entry.pos_stream->decodeBuffer();
 
                     UInt32 remaining = entry.first_doc_freq;
-                    alignas(16) UInt32 decode_buf[TURBOPFOR_BLOCK_SIZE];
-                    uint8_t encode_buf[TURBOPFOR_MAX_ENCODED_SIZE];
+                    alignas(16) UInt32 decode_buf[ABPFOR_BLOCK_SIZE];
+                    uint8_t encode_buf[ABPFOR_MAX_ENCODED_SIZE];
 
                     while (remaining > 0)
                     {
-                        UInt32 n = std::min(remaining, static_cast<UInt32>(TURBOPFOR_BLOCK_SIZE));
+                        UInt32 n = std::min(remaining, static_cast<UInt32>(ABPFOR_BLOCK_SIZE));
 
                         const uint8_t * p = pos_dbuf.ptr();
                         const uint8_t * end = nullptr;
-                        if (n == TURBOPFOR_BLOCK_SIZE)
+                        if (n == ABPFOR_BLOCK_SIZE)
                             end = abpfor::b256::decodeBlock(p, decode_buf) + p;
                         else
                             end = abpfor::b256::decodeTail(p, n, decode_buf) + p;
                         pos_dbuf.advance(static_cast<size_t>(end - p));
 
                         uint8_t * enc_end = nullptr;
-                        if (n == TURBOPFOR_BLOCK_SIZE)
+                        if (n == ABPFOR_BLOCK_SIZE)
                             enc_end = abpfor::b256::encodeBlock(decode_buf, encode_buf) + encode_buf;
                         else
                             enc_end = abpfor::b256::encodeTail(decode_buf, n, encode_buf) + encode_buf;
@@ -1494,9 +1494,9 @@ void PostingListStream::write(
 
     UInt32 last_doc_id = 0;
 
-    /// Align to TURBOPFOR_BLOCK_SIZE-doc blocks
+    /// Align to ABPFOR_BLOCK_SIZE-doc blocks
     const UInt32 docs_per_large_block
-        = (static_cast<UInt32>(index_params.posting_list_block_size) + TURBOPFOR_BLOCK_SIZE - 1) & ~(TURBOPFOR_BLOCK_SIZE - 1);
+        = (static_cast<UInt32>(index_params.posting_list_block_size) + ABPFOR_BLOCK_SIZE - 1) & ~(ABPFOR_BLOCK_SIZE - 1);
     const UInt32 large_doc_count = doc_count - 1;
     const UInt32 num_large_blocks = (large_doc_count + docs_per_large_block - 1) / docs_per_large_block;
     LargePostingBlockWriter block_writer(
@@ -1513,7 +1513,7 @@ void PostingListStream::write(
     /// During init(), pre-reads all freq values from .pst (doc_deltas are decoded
     /// and discarded), then seeks .pst back so ReaderStreamCursor can reuse it.
     /// During nextDoc(), reads pos_deltas from .pos sequentially, one 256-element
-    /// TurboPFor block at a time. Memory: O(doc_count) for freq + O(256) for pos buffer.
+    /// abpfor block at a time. Memory: O(doc_count) for freq + O(256) for pos buffer.
     struct SequentialPositionReader
     {
         LargePostingListReaderStream * pst_stream = nullptr;
@@ -1526,14 +1526,14 @@ void PostingListStream::write(
         std::vector<UInt32> all_freq;
         UInt32 freq_idx = 0;
 
-        /// Pos decode buffer — 256-element TurboPFor blocks from .pos, consumed per-doc.
+        /// Pos decode buffer — 256-element abpfor blocks from .pos, consumed per-doc.
         /// Pointer is bound to pos_stream->pos_decoded inside init(); null until then.
         UInt32 * pos_decoded = nullptr;
         UInt32 pos_buf_pos = 0;
         UInt32 pos_buf_count = 0;
 
         /// Per-large-block pos tracking: .pos data is written per-LB with independent
-        /// TurboPFor block layout (each LB ends with a tail block). We must read each
+        /// abpfor block layout (each LB ends with a tail block). We must read each
         /// LB's pos data independently and seek to the next LB's pos_start_offset at
         /// LB boundaries. Without this, loadNextPosBlock would try to decode a 256-block
         /// across an LB boundary where a tail block ends and a new full block begins.
@@ -1565,12 +1565,12 @@ void PostingListStream::write(
 
                 while (remaining > 0)
                 {
-                    UInt32 n = std::min(remaining, static_cast<UInt32>(TURBOPFOR_BLOCK_SIZE));
+                    UInt32 n = std::min(remaining, static_cast<UInt32>(ABPFOR_BLOCK_SIZE));
 
                     /// Decode doc deltas (discard — we only need freq)
                     {
                         const uint8_t * p = dbuf.ptr();
-                        const uint8_t * end = (n == TURBOPFOR_BLOCK_SIZE)
+                        const uint8_t * end = (n == ABPFOR_BLOCK_SIZE)
                             ? abpfor::b256::decodeBlockDelta1(p, init_discard, 0) + p
                             : abpfor::b256::decodeTailDelta1(p, n, init_discard, 0) + p;
                         dbuf.advance(static_cast<size_t>(end - p));
@@ -1579,7 +1579,7 @@ void PostingListStream::write(
                     /// Decode freq values
                     {
                         const uint8_t * p = dbuf.ptr();
-                        const uint8_t * end = (n == TURBOPFOR_BLOCK_SIZE) ? abpfor::b256::decodeBlock(p, init_freq_buf) + p
+                        const uint8_t * end = (n == ABPFOR_BLOCK_SIZE) ? abpfor::b256::decodeBlock(p, init_freq_buf) + p
                                                                           : abpfor::b256::decodeTail(p, n, init_freq_buf) + p;
                         dbuf.advance(static_cast<size_t>(end - p));
                     }
@@ -1682,12 +1682,12 @@ void PostingListStream::write(
                 pos_buf_count = 0;
                 return;
             }
-            UInt32 n = std::min(lb_pos_remaining, static_cast<UInt32>(TURBOPFOR_BLOCK_SIZE));
+            UInt32 n = std::min(lb_pos_remaining, static_cast<UInt32>(ABPFOR_BLOCK_SIZE));
             auto & dbuf = pos_stream->decodeBuffer();
 
             const uint8_t * p = dbuf.ptr();
             const uint8_t * end = nullptr;
-            if (n == TURBOPFOR_BLOCK_SIZE)
+            if (n == ABPFOR_BLOCK_SIZE)
                 end = abpfor::b256::decodeBlock(p, pos_decoded) + p;
             else
                 end = abpfor::b256::decodeTail(p, n, pos_decoded) + p;
@@ -1816,10 +1816,10 @@ void PostingListStream::write(
     {
         const char * freq_data = nullptr;
         UInt32 freq_bytes = 0;
-        uint8_t freq_packed[TURBOPFOR_MAX_ENCODED_SIZE];
+        uint8_t freq_packed[ABPFOR_MAX_ENCODED_SIZE];
         if (pos_writer && freq_buffered > 0)
         {
-            chassert(freq_buffered == TURBOPFOR_BLOCK_SIZE);
+            chassert(freq_buffered == ABPFOR_BLOCK_SIZE);
             uint8_t * freq_end = abpfor::b256::encodeBlock(freq_buffer_merge, freq_packed) + freq_packed;
             freq_bytes = static_cast<UInt32>(freq_end - freq_packed);
             freq_data = reinterpret_cast<const char *>(freq_packed);
@@ -1830,7 +1830,7 @@ void PostingListStream::write(
 
         /// Feed position deltas BEFORE encoding doc deltas into packed_buffer,
         /// because feedPositionDeltas uses the same packed_buffer (via pos_encode_buf alias)
-        /// as a scratch buffer for TurboPFor encoding of position data to .pos.
+        /// as a scratch buffer for abpfor encoding of position data to .pos.
         if (!pos_deltas_buffer.empty())
             block_writer.feedPositionDeltas(pos_deltas_buffer.data(), static_cast<UInt32>(pos_deltas_buffer.size()));
 
@@ -1857,7 +1857,7 @@ void PostingListStream::write(
 
         const char * freq_data = nullptr;
         UInt32 freq_bytes = 0;
-        uint8_t freq_packed[TURBOPFOR_MAX_ENCODED_SIZE];
+        uint8_t freq_packed[ABPFOR_MAX_ENCODED_SIZE];
         if (pos_writer && freq_buffered > 0)
         {
             uint8_t * freq_end = abpfor::b256::encodeTail(freq_buffer_merge, freq_buffered, freq_packed) + freq_packed;
@@ -1941,7 +1941,7 @@ void PostingListStream::write(
                 pos_deltas_buffer.insert(pos_deltas_buffer.end(), deltas.begin(), deltas.end());
             }
 
-            if (buffered == TURBOPFOR_BLOCK_SIZE)
+            if (buffered == ABPFOR_BLOCK_SIZE)
                 flush_block();
         });
 
@@ -2074,8 +2074,8 @@ std::shared_ptr<LargeBlockData> LargeBlockData::decodeFromIndex(
     lb->doc_count = meta.block_doc_count;
     lb->data_section_start = meta.offset;
 
-    size_t full = lb->doc_count / TURBOPFOR_BLOCK_SIZE;
-    lb->tail_size = lb->doc_count % TURBOPFOR_BLOCK_SIZE;
+    size_t full = lb->doc_count / ABPFOR_BLOCK_SIZE;
+    lb->tail_size = lb->doc_count % ABPFOR_BLOCK_SIZE;
     lb->block_count = full + (lb->tail_size > 0 ? 1 : 0);
 
     /// `num_packed_blocks` is derived from the large block's `doc_count`; if the on-disk value
@@ -2096,14 +2096,14 @@ std::shared_ptr<LargeBlockData> LargeBlockData::decodeFromIndex(
     {
         UInt32 p = 0;
         UInt32 remaining = count;
-        while (remaining >= TURBOPFOR_BLOCK_SIZE)
+        while (remaining >= ABPFOR_BLOCK_SIZE)
         {
             const uint8_t * ptr = dbuf.ptr();
             const uint8_t * end = abpfor::b256::decodeBlockDelta1(ptr, out + p, prev) + ptr;
             dbuf.advance(static_cast<size_t>(end - ptr));
-            prev = out[p + TURBOPFOR_BLOCK_SIZE - 1];
-            p += TURBOPFOR_BLOCK_SIZE;
-            remaining -= TURBOPFOR_BLOCK_SIZE;
+            prev = out[p + ABPFOR_BLOCK_SIZE - 1];
+            p += ABPFOR_BLOCK_SIZE;
+            remaining -= ABPFOR_BLOCK_SIZE;
         }
         if (remaining > 0)
         {
@@ -2135,14 +2135,14 @@ std::shared_ptr<LargeBlockData> LargeBlockData::decodeFromIndex(
         {
             UInt32 p = 0;
             UInt32 remaining = count;
-            while (remaining >= TURBOPFOR_BLOCK_SIZE)
+            while (remaining >= ABPFOR_BLOCK_SIZE)
             {
                 const uint8_t * ptr = dbuf.ptr();
                 const uint8_t * end = abpfor::b256::decodeBlockDelta1(ptr, out + p, prev) + ptr;
                 dbuf.advance(static_cast<size_t>(end - ptr));
-                prev = out[p + TURBOPFOR_BLOCK_SIZE - 1];
-                p += TURBOPFOR_BLOCK_SIZE;
-                remaining -= TURBOPFOR_BLOCK_SIZE;
+                prev = out[p + ABPFOR_BLOCK_SIZE - 1];
+                p += ABPFOR_BLOCK_SIZE;
+                remaining -= ABPFOR_BLOCK_SIZE;
             }
             if (remaining > 0)
             {
@@ -2162,13 +2162,13 @@ std::shared_ptr<LargeBlockData> LargeBlockData::decodeFromIndex(
             dbuf.advance(static_cast<size_t>(q - p));
         }
         /// Cap `num_pos_blocks` against the total positions implied by `pos_cum_deltas`. Each
-        /// position block holds `TURBOPFOR_BLOCK_SIZE` positions, so a sane upper bound is
-        /// `ceil(total_positions / TURBOPFOR_BLOCK_SIZE)`. A corrupt count beyond that would
+        /// position block holds `ABPFOR_BLOCK_SIZE` positions, so a sane upper bound is
+        /// `ceil(total_positions / ABPFOR_BLOCK_SIZE)`. A corrupt count beyond that would
         /// drive an unbounded vector allocation below.
         if (lb->num_pos_blocks > 0)
         {
             const UInt64 total_positions = lb->pos_cum_deltas.back();
-            const UInt64 max_pos_blocks = (total_positions + TURBOPFOR_BLOCK_SIZE - 1) / TURBOPFOR_BLOCK_SIZE;
+            const UInt64 max_pos_blocks = (total_positions + ABPFOR_BLOCK_SIZE - 1) / ABPFOR_BLOCK_SIZE;
             if (lb->num_pos_blocks > max_pos_blocks) [[unlikely]]
                 throw Exception(
                     ErrorCodes::INCORRECT_DATA,

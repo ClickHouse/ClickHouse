@@ -3,7 +3,7 @@ SET allow_experimental_projection_text_index = 1;
 -- Tests for lazy apply mode edge cases:
 -- 1. Multiple large blocks per token (small posting_list_block_size)
 -- 2. Seek across packed block boundaries (leapfrog intersection)
--- 3. Exact TurboPFor boundary doc counts (128, 256, 384 docs)
+-- 3. Exact abpfor boundary doc counts (128, 256, 384 docs)
 -- 4. Multi-way intersection (3, 4, 5+ tokens)
 -- 5. High-density posting lists (brute-force path)
 -- 6. first_doc_id prepend correctness
@@ -70,7 +70,7 @@ SELECT count() FROM tab_seek WHERE s LIKE '%aaa%' AND s LIKE '%xxx%';
 SELECT count() FROM tab_seek WHERE s LIKE '%aaa%' OR s LIKE '%bbb%';
 
 ----------------------------------------------------
-SELECT 'Test 3: Exact TurboPFor boundary (128, 256, 384 docs)';
+SELECT 'Test 3: Exact abpfor boundary (128, 256, 384 docs)';
 
 -- Test that tail_size=0 (perfectly aligned) works correctly.
 -- With posting_list_block_size=128, insert exactly 129 rows (first_doc_id + 128 docs = 1 full packed block, no tail).
@@ -188,7 +188,7 @@ SELECT count() FROM tab_dense WHERE hasAllTokens(s, ['half', 'other']);
 ----------------------------------------------------
 SELECT 'Test 6: first_doc_id prepend correctness';
 
--- The first doc_id is stored inline in the dictionary, not in TurboPFor data.
+-- The first doc_id is stored inline in the dictionary, not in abpfor data.
 -- PostingListCursor must prepend it when decoding large block 0's packed block 0.
 -- Verify the exact first row is returned correctly.
 

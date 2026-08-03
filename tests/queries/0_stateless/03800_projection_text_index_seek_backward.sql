@@ -38,7 +38,7 @@ SYSTEM STOP MERGES tab_seek_backward;
 
 -- Single dense part: every row has both 'foo' and 'bar'. With density=1.0
 -- on both posting lists, the all-leaf AndCursor path drives through foo
--- and seek-verifies bar; backward seeks across the 256-element TurboPFor
+-- and seek-verifies bar; backward seeks across the 256-element abpfor
 -- packed-block boundary trigger the fast-path clamping bug.
 INSERT INTO tab_seek_backward SELECT number, ['foo', 'bar'] FROM numbers(8192);
 

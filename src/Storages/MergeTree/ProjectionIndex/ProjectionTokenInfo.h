@@ -54,7 +54,7 @@ struct ProjectionTokenInfo : public TokenInfoBase
         bool phrase_enabled);
 
     /// Check whether this token's posting list has any doc in [range_begin, range_end].
-    /// Encapsulates binary search on packed_block_ranges + precise TurboPFor decode.
+    /// Encapsulates binary search on packed_block_ranges + precise abpfor decode.
     bool hasDocInRange(
         const RowsRange & current_range,
         UInt32 range_begin,

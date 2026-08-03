@@ -11,7 +11,7 @@ namespace DB
 {
 
 /// Validates a DDL `posting_list_codec` value. Accepts 'none', 'bitpacking', or empty
-/// (all map to TurboPFor, the only supported projection codec). Throws on unknown names.
+/// (all map to abpfor, the only supported projection codec). Throws on unknown names.
 void parsePostingListCodecType(const String & codec_name);
 
 /// On-disk posting list format version.
@@ -28,7 +28,7 @@ struct PostingListParams : MergeTreeIndexTextParams
     size_t format_version = POSTING_LIST_FORMAT_VERSION_CURRENT;
 
     /// Codec name from DDL. Accepted for backward compatibility with existing DDLs
-    /// that specify 'none' or 'bitpacking'; both now resolve to TurboPFor (the only
+    /// that specify 'none' or 'bitpacking'; both now resolve to abpfor (the only
     /// supported projection codec). Validated at construction via `parsePostingListCodecType`.
     String posting_list_codec;
 
