@@ -1568,14 +1568,13 @@ private:
     {
         size_t operator()(const NamesAndTypesList & list) const noexcept;
     };
-    /// The stored column list plus the value of the `share_nested_offsets` setting the bundle was
-    /// built with. The setting shapes `columns_description_with_collected_nested` inside the
-    /// bundle and can change on a live table (it is alterable on `SharedMergeTree`), so bundles
-    /// built under different values must not be shared: readers compare the bundle's descriptions
-    /// against structures rebuilt from the current setting.
+    /// The stored column list, the identities of its custom serializations (which the list itself does
+    /// not distinguish, see `SharedPartColumns::describeCustomSerializations`) and the `share_nested_offsets`
+    /// value the bundle was built with (readers compare its descriptions against the live setting).
     struct SharedPartColumnsCacheKey
     {
         std::reference_wrapper<const NamesAndTypesList> columns;
+        std::reference_wrapper<const String> custom_serializations;
         bool collect_nested;
     };
     struct SharedPartColumnsCacheKeyHash
@@ -1586,7 +1585,9 @@ private:
     {
         bool operator()(const SharedPartColumnsCacheKey & lhs, const SharedPartColumnsCacheKey & rhs) const
         {
-            return lhs.collect_nested == rhs.collect_nested && lhs.columns.get() == rhs.columns.get();
+            return lhs.collect_nested == rhs.collect_nested
+                && lhs.custom_serializations.get() == rhs.custom_serializations.get()
+                && lhs.columns.get() == rhs.columns.get();
         }
     };
     mutable AggregatedMetrics::GlobalSum shared_part_columns_metric_handle;

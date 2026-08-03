@@ -1,5 +1,6 @@
 #include <Storages/MergeTree/SharedPartColumns.h>
 
+#include <base/scope_guard.h>
 #include <DataTypes/IDataType.h>
 #include <DataTypes/NestedUtils.h>
 #include <IO/VarInt.h>
@@ -99,18 +100,37 @@ SharedPartColumns::SharedPartColumns(
     NamesAndTypesList columns_,
     std::shared_ptr<const ColumnsDescription> columns_description_,
     std::shared_ptr<const ColumnsDescription> columns_description_with_collected_nested_,
-    bool collect_nested_)
+    bool collect_nested_,
+    String custom_serializations_)
     : columns(std::move(columns_))
     , column_name_to_position(buildColumnPositions(columns))
     , columns_description(std::move(columns_description_))
     , columns_description_with_collected_nested(std::move(columns_description_with_collected_nested_))
     , collect_nested(collect_nested_)
+    , custom_serializations(std::move(custom_serializations_))
     , serializations_cache_metric_handle(CurrentMetrics::SharedPartSerializationsCacheSize)
     , serialization_groups_metric_handle(CurrentMetrics::SharedPartSerializationGroupsCacheSize)
     , substreams_cache_metric_handle(CurrentMetrics::SharedPartColumnsSubstreamsCacheSize)
     , substream_entries_metric_handle(CurrentMetrics::SharedPartColumnSubstreamsEntriesCacheSize)
     , default_kind_encodings(buildDefaultKindEncodings(columns))
 {
+}
+
+String SharedPartColumns::describeCustomSerializations(const NamesAndTypesList & columns)
+{
+    String result;
+    UInt32 position = 0;
+    for (const auto & column : columns)
+    {
+        if (const auto * custom = column.type->getCustomSerialization())
+        {
+            if (!result.empty())
+                result += ',';
+            result += fmt::format("{}:{}", position, custom->getCustomSerializationIdentity());
+        }
+        ++position;
+    }
+    return result;
 }
 
 SerializationByName PartSerializations::toSerializationByName() const
@@ -502,16 +522,24 @@ std::shared_ptr<const ColumnsSubstreams> SharedPartColumns::internColumnsSubstre
 
 void SharedPartColumns::onPartRelease() const
 {
-    /// A part just returned its bundle reference, so interned pieces may have expired. A sweep costs
-    /// O(entries), so wait for enough releases to amortize it, but never for more releases than can
-    /// still happen: the threshold is at most half of the parts that still hold this bundle (see
-    /// below), so a draining table always reaches it again, halving down to its last part, instead of
-    /// pinning the dead entries until the next insertion.
+    /// A part just returned its bundle reference, so interned pieces may have expired. Sweeping costs
+    /// O(entries), so wait for enough releases to amortize it, but never for more than can still
+    /// happen: the threshold is at most half of the remaining holders, so a draining table always
+    /// reaches it again instead of pinning the dead entries until the next insertion.
+    /// Not inside `chassert`: it does not evaluate its argument in release builds.
     const UInt64 holders_before_release = holders.fetch_sub(1, std::memory_order_relaxed);
     chassert(holders_before_release > 0);
 
     if (releases_since_sweep.fetch_add(1, std::memory_order_relaxed) + 1 < release_sweep_threshold.load(std::memory_order_relaxed))
         return;
+
+    /// Exactly one sweeper: concurrent part removals all cross the gate above, and scanning the caches
+    /// once per removal would serialize them behind the cache locks. The winner's sweep covers the
+    /// releases the others just counted.
+    if (sweeping.exchange(true, std::memory_order_acquire))
+        return;
+
+    SCOPE_EXIT({ sweeping.store(false, std::memory_order_release); });
 
     releases_since_sweep.store(0, std::memory_order_relaxed);
 
@@ -534,10 +562,9 @@ void SharedPartColumns::onPartRelease() const
         substream_entries_size_after_sweep = substream_entries_cache.size();
     }
 
-    /// Both scales matter: sweeping again before another `live_entries` releases would not be
-    /// amortized, and waiting for more than half of the remaining holders would never happen on a
-    /// table that only drains. A full drain of P parts therefore sweeps O(log P) times.
-    const UInt64 remaining_holders = holders_before_release - 1;
+    /// Both scales matter, so a full drain of P parts sweeps O(log P) times. Read the holders now: the
+    /// releases that crossed the gate during the sweep are covered by it.
+    const UInt64 remaining_holders = holders.load(std::memory_order_relaxed);
     release_sweep_threshold.store(
         std::max<UInt64>(1, std::min<UInt64>(live_entries, remaining_holders / 2)), std::memory_order_relaxed);
 }
@@ -547,7 +574,7 @@ const SharedPartColumnsPtr & SharedPartColumns::getEmpty()
     static const SharedPartColumnsPtr empty = []
     {
         auto description = std::make_shared<const ColumnsDescription>();
-        return std::make_shared<const SharedPartColumns>(NamesAndTypesList{}, description, description, false);
+        return std::make_shared<const SharedPartColumns>(NamesAndTypesList{}, description, description, false, String{});
     }();
     return empty;
 }

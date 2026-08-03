@@ -37,18 +37,14 @@ class ColumnsDescription;
 /// counters of the part) and stays in the part.
 ///
 /// A serialization kind is an `ISerialization::Kind` (`Default`, `Sparse`, `Detached`, `Replicated`),
-/// chosen for a column when a part is written and stored in the part's `serialization.json`. Kinds
-/// stack (e.g. `Detached` over `Sparse` over `Default`) and every subcolumn of a nested type has its
-/// own stack, so what identifies a column's serialization is a whole recursive kind stack. That is
-/// why the same column can serialize differently in two parts of one table (sparse in the part where
-/// it is mostly default, dense in the next one) and why the members that depend on the kinds cannot
-/// live in the bundle directly.
+/// chosen per column when a part is written and stored in its `serialization.json`. Kinds stack
+/// (`Detached` over `Sparse` over `Default`) and every subcolumn of a nested type has its own stack, so
+/// a column's serialization is identified by a whole recursive kind stack.
 ///
 /// Everything here is immutable after construction; the nested caches only intern immutable values.
-/// The nested caches hold `weak_ptr`s, so an entry dies with the last part holding its value and
-/// nothing can leak. The dead entries themselves are reclaimed by two amortized sweeps: on insertion
-/// once a cache has doubled since its last sweep, and on part release (see `onPartRelease`), which
-/// covers tables that stop inserting but keep deleting parts. Lifetime of the bundle itself is
+/// They hold `weak_ptr`s, so an entry dies with the last part holding its value and nothing can leak.
+/// The dead entries are reclaimed by two amortized sweeps: on insertion once a cache has doubled, and
+/// on part release (see `onPartRelease`) for tables that only delete. Lifetime of the bundle itself is
 /// managed by the owning `MergeTreeData` cache.
 
 /// The serializations of the columns of one data part, assembled from shared pieces:
@@ -121,7 +117,13 @@ public:
         NamesAndTypesList columns_,
         std::shared_ptr<const ColumnsDescription> columns_description_,
         std::shared_ptr<const ColumnsDescription> columns_description_with_collected_nested_,
-        bool collect_nested_);
+        bool collect_nested_,
+        String custom_serializations_);
+
+    /// Identities of the custom serializations of these columns, empty when none has one. Part of the
+    /// bundle key: they change the streams of a column, but a list without them (parts loaded from
+    /// `columns.txt` rebuild bare types) compares equal to one with them.
+    static String describeCustomSerializations(const NamesAndTypesList & columns);
 
     const NamesAndTypesList columns;
     const NameToNumber column_name_to_position;
@@ -129,11 +131,12 @@ public:
     /// Aliases `columns_description` when `Nested::collect` produces no distinct list
     /// (or when the `share_nested_offsets` setting is disabled).
     const std::shared_ptr<const ColumnsDescription> columns_description_with_collected_nested;
-    /// The value of the `share_nested_offsets` setting the bundle was built with. It shapes
-    /// `columns_description_with_collected_nested`. The setting is read-only, but it is part of the
-    /// interning key and of the release lookup anyway, so that a bundle can never be shared across
-    /// two values of it (see `MergeTreeData::getSharedPartColumnsForColumns`).
+    /// The `share_nested_offsets` value the bundle was built with, which shapes
+    /// `columns_description_with_collected_nested`. Read-only, but part of the interning key anyway so
+    /// that a bundle can never be shared across two values of it.
     const bool collect_nested;
+    /// Stored so that the release lookup rebuilds the key the bundle was interned under.
+    const String custom_serializations;
 
     /// Returns the serializations for the given serialization infos. The whole object is shared
     /// across parts whose infos produce the same serializations (same kinds and settings,
@@ -148,8 +151,7 @@ public:
     /// equal content yet.
     std::shared_ptr<const ColumnsSubstreams> internColumnsSubstreams(const ColumnsSubstreams & substreams) const;
 
-    /// Bundle reference accounting for the release gate below. Called by `SharedPartColumnsHolder`,
-    /// which is the only way to hold a bundle, when a part takes its reference.
+    /// Reference accounting for the release gate below, called by `SharedPartColumnsHolder`.
     void onPartAcquire() const { holders.fetch_add(1, std::memory_order_relaxed); }
 
     /// Reclamation hook, called when a part returns its bundle reference (i.e. when interned
@@ -184,15 +186,10 @@ private:
         /// fields cleared (see `normalizeSettingsForKey`): only the fields that affect the built
         /// serializations participate in the key.
         SerializationInfoSettings settings;
-        /// The settings of the whole `SerializationInfoByName`, normalized as above. An entry
-        /// reports only its own top-level settings, and `SerializationInfoTuple` reports defaults
-        /// because a Tuple cannot be sparse itself, while `DataTypeTuple::getSerialization` builds
-        /// every element from that element's info: the serialization versions of the elements
-        /// (`map_serialization_version` and friends) are therefore invisible in `settings` above.
-        /// They are the map settings of the part, so keying on them keeps parts written with
-        /// different versions from sharing a group (inserts use
-        /// `map_serialization_version_for_zero_level_parts` while merges use
-        /// `map_serialization_version`, so both are live on one table by design).
+        /// The settings of the whole `SerializationInfoByName`, normalized as above: the effective
+        /// settings of every recursive element. `settings` above hides them, because
+        /// `SerializationInfoTuple` reports defaults while `DataTypeTuple::getSerialization` builds
+        /// each element from that element's info.
         SerializationInfoSettings map_settings;
 
         bool operator==(const SerializationGroupKey & other) const = default;
@@ -286,11 +283,11 @@ private:
     /// `SerializationGroupKey`). Computed once per bundle.
     const std::vector<String> default_kind_encodings;
 
-    /// See `onPartRelease`. `holders` is the number of parts currently holding a reference to this
-    /// bundle; the reference of the `MergeTreeData` cache itself is not counted.
+    /// See `onPartRelease`. `holders` counts the parts holding this bundle, not the cache reference.
     mutable std::atomic<UInt64> holders{0};
     mutable std::atomic<UInt64> releases_since_sweep{0};
     mutable std::atomic<UInt64> release_sweep_threshold{1};
+    mutable std::atomic<bool> sweeping{false};
 };
 
 using SharedPartColumnsPtr = std::shared_ptr<const SharedPartColumns>;
