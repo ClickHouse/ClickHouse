@@ -532,17 +532,9 @@ StorageKeeperMap::StorageKeeperMap(
                         /// Backward compatibility: tables created before 25.1 don't have
                         /// the drop_lock_version node. Create it if missing so the set below
                         /// doesn't fail with ZNONODE (same pattern as drop() uses).
-                        /// A concurrent drop can remove the whole metadata subtree between the
-                        /// exists() check above and this create, so ZNONODE here means the leftover
-                        /// nodes are already gone: retry from the top instead of failing the CREATE.
+                        /// A concurrent drop may have removed the parent already; the tryMulti below handles that.
                         FailPointInjection::pauseFailPoint(FailPoints::keepermap_create_pause_before_drop_lock_version);
-                        if (auto create_code
-                            = client->tryCreate(zk_dropped_lock_version_path, "", zkutil::CreateMode::Persistent);
-                            create_code == Coordination::Error::ZNONODE)
-                        {
-                            LOG_INFO(log, "Someone else removed leftover nodes");
-                            return;
-                        }
+                        client->tryCreate(zk_dropped_lock_version_path, "", zkutil::CreateMode::Persistent);
 
                         Coordination::Requests drop_lock_requests{
                             zkutil::makeCreateRequest(zk_dropped_lock_path, "", zkutil::CreateMode::Ephemeral),
