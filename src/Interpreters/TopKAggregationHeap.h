@@ -179,26 +179,68 @@ struct TopKAggregationHeap
     {
         size_t evicted_count = 0;
         const HeapComparator cmp{this};
+        const auto tied = [&](size_t a, size_t b) { return !cmp(a, b) && !cmp(b, a); };
         while (heap_indices.size() > capacity)
         {
             std::pop_heap(heap_indices.begin(), heap_indices.end(), cmp);
             const size_t candidate = heap_indices.back();
 
-            const size_t new_front = heap_indices.front();
-            if (!cmp(candidate, new_front) && !cmp(new_front, candidate))
+            if (heap_indices.size() < 2 || !tied(candidate, heap_indices.front()))
             {
-                std::push_heap(heap_indices.begin(), heap_indices.end(), cmp);
-                next_trim_size = std::max(next_trim_size, heap_indices.size() + trim_slack + 1);
+                heap_indices.pop_back();
+                on_evict(candidate);
+                ++evicted_count;
+                tie_scan_size = 0;
+                continue;
+            }
 
+            /// The worst value is a plateau of equal keys. Only the tie-set that straddles the
+            /// capacity boundary must be kept: evicting a key tied with the boundary while its twin
+            /// stays would resurface an incomplete aggregate. But a tie with the entry at the front
+            /// does not prove the candidate sits at the boundary (the two coincide only at
+            /// size == capacity + 1) - a plateau strictly outside the top-K, which is the normal case
+            /// in prefix mode, is fully evictable. Treating it as protected would stall every trim,
+            /// pin the skip boundary and grow the heap until it froze.
+            std::push_heap(heap_indices.begin(), heap_indices.end(), cmp);
+
+            /// Deciding needs a pass over the heap, so do not redo it for a plateau already found
+            /// unevictable until enough keys have arrived to change the answer. Together with the
+            /// `next_trim_size` ratchet below this keeps the cost amortized: a plateau that legitimately
+            /// owns the boundary (every key ties, so eviction is never possible) is rescanned only once
+            /// per doubling instead of on every trim.
+            if (tie_scan_size != 0 && heap_indices.size() < 2 * tie_scan_size)
+            {
+                next_trim_size = std::max(next_trim_size, heap_indices.size() + trim_slack + 1);
                 if (heap_indices.size() > tie_overflow_limit)
                     tie_overflow = true;
-
                 break;
             }
 
-            heap_indices.pop_back();
-            on_evict(candidate);
-            ++evicted_count;
+            const size_t boundary = heap_indices.front();
+            size_t plateau = 0;
+            for (size_t idx : heap_indices)
+                plateau += tied(idx, boundary);
+
+            if (heap_indices.size() - plateau < capacity)
+            {
+                tie_scan_size = heap_indices.size();
+                next_trim_size = std::max(next_trim_size, heap_indices.size() + trim_slack + 1);
+                if (heap_indices.size() > tie_overflow_limit)
+                    tie_overflow = true;
+                break;
+            }
+
+            /// Enough strictly better keys remain, so the whole plateau is outside the top-K.
+            const auto plateau_begin = std::partition(
+                heap_indices.begin(), heap_indices.end(), [&](size_t idx) { return !tied(idx, boundary); });
+            for (auto it = plateau_begin; it != heap_indices.end(); ++it)
+            {
+                on_evict(*it);
+                ++evicted_count;
+            }
+            heap_indices.erase(plateau_begin, heap_indices.end());
+            std::make_heap(heap_indices.begin(), heap_indices.end(), cmp);
+            tie_scan_size = 0;
         }
         evicted_keys += evicted_count;
 
@@ -245,6 +287,8 @@ private:
     UInt64 evicted_keys = 0;
 
     bool tie_overflow = false;
+    /// Heap size when a boundary plateau was last found unevictable; 0 means "decide again".
+    size_t tie_scan_size = 0;
 
     std::vector<size_t> low_cardinality_columns;
 
@@ -281,6 +325,7 @@ private:
     void setCapacity(size_t cap)
     {
         capacity = cap;
+        tie_scan_size = 0;
 
         const auto slack_f = static_cast<Float64>(capacity) * (trim_load_factor - 1.0);
         trim_slack = slack_f >= static_cast<Float64>(std::numeric_limits<size_t>::max())
