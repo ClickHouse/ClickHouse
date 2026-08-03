@@ -1026,22 +1026,42 @@ bool JoinStepLogical::inputsCanBeReadInJoinKeyOrder(const QueryPlan::Node & node
     if (node.children.size() != 2 || node.step.get() != this)
         return false;
 
+    /// The shape of the join must be one a merge join can actually execute, otherwise the physical
+    /// selection declines the sorted-merge algorithms (`FullSortingMergeJoin::isSupported`) and falls
+    /// through to the next entry of `join_algorithm`. The answer here must not be more optimistic than
+    /// that: `tryAddJoinRuntimeFilter` uses the same predicate to leave an eligible sorted-merge join
+    /// alone, so a `true` for a join that ends up as `hash` would cost it a runtime filter for nothing.
+    if (!FullSortingMergeJoin::isMergeAlgorithmStrictnessAndKindSupported(join_operator.kind, join_operator.strictness))
+        return false;
+
     /// Collect the equality key pairs the same way `addJoinPredicatesToTableJoin` will during
     /// physicalization, in the same order (the merge-join sort description is the keys in clause order).
     /// The raw operand names are used - without the type-cast / null-safe `tuple` wrapping the
     /// physicalization may add; such wrapped keys are almost never readable in table order anyway, and a
     /// too-optimistic answer only costs a full sort (see `joinInputCanBeReadInJoinKeyOrder`). An `ASOF`
     /// inequality key is appended last in the clause, so leaving it out keeps the probed prefix valid.
+    ///
+    /// Anything that is not such a two-sided key predicate makes the join unsupported by the merge
+    /// algorithm and therefore ineligible: a one-sided `ON` condition (e.g. `ON l.k = r.k AND r.flag = 1`)
+    /// becomes a clause filter condition, and a disjunction (a single `or` condition here) gives more than
+    /// one clause - `FullSortingMergeJoin::isSupported` rejects both.
     Names left_keys;
     Names right_keys;
     for (const auto & condition : join_operator.expression)
     {
         auto [predicate_op, lhs, rhs] = condition.asBinaryPredicate();
-        if (predicate_op != JoinConditionOperator::Equals && predicate_op != JoinConditionOperator::NullSafeEquals)
-            continue;
+        const bool is_equality
+            = predicate_op == JoinConditionOperator::Equals || predicate_op == JoinConditionOperator::NullSafeEquals;
+        /// The single inequality of an `ASOF` join is a key of the same clause, not a filter condition.
+        const bool is_asof_inequality
+            = join_operator.strictness == JoinStrictness::Asof && operatorToAsofInequality(predicate_op).has_value();
+        if (!is_equality && !is_asof_inequality)
+            return false;
         if (lhs.fromRight() && rhs.fromLeft())
             std::swap(lhs, rhs);
         else if (!lhs.fromLeft() || !rhs.fromRight())
+            return false;
+        if (!is_equality)
             continue;
         left_keys.push_back(lhs.getColumnName());
         right_keys.push_back(rhs.getColumnName());
