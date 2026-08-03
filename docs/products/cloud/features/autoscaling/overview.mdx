@@ -9,7 +9,7 @@ doc_type: 'guide'
 
 import { ScalePlanFeatureBadge } from "/snippets/components/ScalePlanFeatureBadge/ScalePlanFeatureBadge.jsx";
 
-Scaling is the ability to adjust available resources to meet client demands. Scale and Enterprise (with standard 1:4 profile) tier services can be scaled horizontally by calling an API programmatically, or changing settings on the UI to adjust system resources. These services can also be **autoscaled** vertically to meet application demands.
+Scaling is the ability to adjust available resources to meet client demands. Scale and Enterprise tier services can be scaled horizontally by calling an API programmatically or changing settings in the UI. Scale tier services and Enterprise tier services with standard `1:4` profiles can also be **autoscaled** vertically to meet application demands.
 
 <ScalePlanFeatureBadge feature="Automatic vertical scaling"/>
 
@@ -23,9 +23,9 @@ Currently, ClickHouse Cloud supports vertical autoscaling and manual horizontal 
 
 For Enterprise tier services scaling works as follows:
 
-- **Horizontal scaling**: Manual horizontal scaling will be available across all standard and custom profiles on the enterprise tier.
+- **Horizontal scaling**: Manual horizontal scaling is available across all standard and custom profiles on the Enterprise tier.
 - **Vertical scaling**:
-  - Standard profiles (1:4) will support vertical autoscaling.
+  - Standard `1:4` profiles support vertical autoscaling.
   - Custom profiles (`highMemory` and `highCPU`) don't support vertical autoscaling or manual vertical scaling. However, these services can be scaled vertically by contacting support.
 
 <Note>
