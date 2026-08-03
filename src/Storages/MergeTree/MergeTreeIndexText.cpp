@@ -52,6 +52,8 @@ namespace ProfileEvents
     extern const Event TextIndexUsedEmbeddedPostings;
     extern const Event TextIndexTokensCacheHits;
     extern const Event TextIndexTokensCacheMisses;
+    extern const Event TextIndexTokensCacheNegativeHits;
+    extern const Event TextIndexTokensCacheNegativeMisses;
     extern const Event TextIndexDiscardPatternScan;
 }
 
@@ -80,6 +82,7 @@ namespace Setting
 {
     extern const SettingsUInt64 text_index_like_max_postings_to_read;
     extern const SettingsFloat text_index_hint_max_selectivity;
+    extern const SettingsBool use_text_index_negative_tokens_cache;
 }
 
 static constexpr UInt64 MAX_CARDINALITY_FOR_RAW_POSTINGS = 12;
@@ -528,6 +531,8 @@ void MergeTreeIndexGranuleText::analyzeDictionaryForTokens(
     }
 
     auto tokens_cache = condition_text.tokensCache();
+    const bool use_negative_tokens_cache
+        = condition_text.getContext()->getSettingsRef()[Setting::use_text_index_negative_tokens_cache];
     cardinalities_cache->sortTokens(tokens_to_read);
 
     LOG_TEST(getLogger("MergeTreeIndexGranuleText"), "Reading tokens {} from part {}", toString(tokens_to_read), state.part.getDataPartStorage().getFullPath());
@@ -573,6 +578,11 @@ void MergeTreeIndexGranuleText::analyzeDictionaryForTokens(
 
         for (const auto & token : missing_tokens)
         {
+            if (use_negative_tokens_cache)
+            {
+                tokens_cache->setNotFound(TextIndexTokensCache::hash(index_id_for_caches, token));
+                ProfileEvents::increment(ProfileEvents::TextIndexTokensCacheNegativeMisses);
+            }
             analyzer->addMissingToken(token);
         }
 
@@ -677,6 +687,8 @@ std::vector<String> MergeTreeIndexGranuleText::fillTokensFromCache(MergeTreeInde
     const auto & condition_text = typeid_cast<const MergeTreeIndexConditionText &>(*state.condition);
     const auto & all_search_tokens = condition_text.getAllSearchTokens();
     auto tokens_cache = condition_text.tokensCache();
+    const bool use_negative_tokens_cache
+        = condition_text.getContext()->getSettingsRef()[Setting::use_text_index_negative_tokens_cache];
 
     std::vector<TextIndexTokensCache::Key> keys;
     keys.reserve(all_search_tokens.size());
@@ -689,17 +701,27 @@ std::vector<String> MergeTreeIndexGranuleText::fillTokensFromCache(MergeTreeInde
 
     for (size_t i = 0; i < all_search_tokens.size(); ++i)
     {
-        auto token_info = cached_infos[i] ? std::dynamic_pointer_cast<TokenPostingsInfo>(cached_infos[i]) : nullptr;
-        if (token_info)
+        if (cached_infos[i])
         {
-            analyzer->addTokenInfo(all_search_tokens[i], std::move(token_info));
-            ProfileEvents::increment(ProfileEvents::TextIndexTokensCacheHits);
+            if (TextIndexTokensCache::isNotFound(cached_infos[i]))
+            {
+                if (use_negative_tokens_cache)
+                {
+                    analyzer->addMissingToken(all_search_tokens[i]);
+                    ProfileEvents::increment(ProfileEvents::TextIndexTokensCacheNegativeHits);
+                    continue;
+                }
+            }
+            else if (auto token_info = std::dynamic_pointer_cast<TokenPostingsInfo>(cached_infos[i]))
+            {
+                analyzer->addTokenInfo(all_search_tokens[i], std::move(token_info));
+                ProfileEvents::increment(ProfileEvents::TextIndexTokensCacheHits);
+                continue;
+            }
         }
-        else
-        {
-            tokens_to_read.emplace_back(all_search_tokens[i]);
-            ProfileEvents::increment(ProfileEvents::TextIndexTokensCacheMisses);
-        }
+
+        tokens_to_read.emplace_back(all_search_tokens[i]);
+        ProfileEvents::increment(ProfileEvents::TextIndexTokensCacheMisses);
     }
 
     return tokens_to_read;
