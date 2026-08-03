@@ -279,7 +279,7 @@ class S3:
                 "PreconditionFailed" in stderr
                 or "ConditionalRequestConflict" in stderr
             ):
-                # Lost optimistic-lock race. Set to true s.t. the caller re-reads the current version and retries.
+                # Lost optimistic-lock race. Suppress the raise and return False so the caller retries.
                 no_strict = True
                 print("AWS API conditional request failed (concurrent write detected)")
                 print(f"  | aws error: {stderr}")
