@@ -361,7 +361,6 @@ struct SparseGramsTokenizer final : public ITokenizerHelper<SparseGramsTokenizer
 
     bool nextInStringLike(const char * data, size_t length, size_t & pos, String & token) const override;
     bool supportsStringLike() const override { return true; }
-    /// Holds a mutable sparse-grams iterator that is advanced during tokenization.
     bool isStateful() const override { return true; }
     void substringToBloomFilter(const char * data, size_t length, BloomFilter & bloom_filter, bool is_prefix, bool is_suffix) const override;
     void substringToTokens(const char * data, size_t length, VectorWithMemoryTracking<String> & tokens, bool is_prefix, bool is_suffix) const override;
