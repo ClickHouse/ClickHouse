@@ -403,8 +403,9 @@ std::optional<NameSet> StorageObjectStorage::supportedPrewhereColumns(const Stor
     NamesAndTypesList exclude = hive_partition_columns_to_read_from_file_path;
     if (configuration->isDataLakeConfiguration())
     {
-        /// Fail closed when metadata is not resolved yet (cold table via an MV / Merge wrapper): an empty
-        /// set keeps nothing PREWHERE-safe, so no filter is pushed below the backfill until metadata warms.
+        /// A wrapper asks its child here without the analyzer having warmed it, as in
+        /// `supportsDelete` / `supportsParallelInsert`. Resolve first, then fail closed.
+        configuration->lazyInitializeIfNeeded(object_storage, query_context);
         if (!configuration->hasInitializedMetadata())
             return NameSet{};
 
