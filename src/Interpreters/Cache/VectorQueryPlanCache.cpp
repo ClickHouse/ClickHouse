@@ -61,7 +61,7 @@ namespace DB
 {
 
 namespace Setting
-{   
+{
     extern const SettingsString vector_query_plan_cache_tag;
 }
 
@@ -309,7 +309,7 @@ void collectMutationTargets(
                             }
                         }
                     }
- 
+
                     if (!table_name.empty())
                     {
                         if (database_name.empty())
@@ -447,7 +447,7 @@ VectorQueryPlanCache::Writer::Writer(
     // If a non-stale entry already exists, avoid overwriting it with a new writer.
     if (auto entry = cache.getWithKey(key); entry.has_value() && !IsStale()(entry->key))
     {
-        LOG_TRACE(logger, "Skipped insert because the cache contains a non-stale query plan for query {}", doubleQuoteString(key.query_string)); 
+        LOG_TRACE(logger, "Skipped insert because the cache contains a non-stale query plan for query {}", doubleQuoteString(key.query_string));
         skip_insert = true;
     }
 }
@@ -488,7 +488,7 @@ void VectorQueryPlanCache::Writer::setPlan(QueryPlan & plan)
     }
     catch (const Exception & e)
     {
-        LOG_TRACE(logger, "Skipped plan clone for query {}: {}", doubleQuoteString(key.query_string), e.message()); 
+        LOG_TRACE(logger, "Skipped plan clone for query {}: {}", doubleQuoteString(key.query_string), e.message());
     }
 }
 
@@ -509,7 +509,7 @@ void VectorQueryPlanCache::Writer::setAst(const ASTPtr & ast)
     }
     catch (const Exception & e)
     {
-        LOG_TRACE(logger, "Skipped AST clone for query {}: {}", doubleQuoteString(key.query_string), e.message()); 
+        LOG_TRACE(logger, "Skipped AST clone for query {}: {}", doubleQuoteString(key.query_string), e.message());
     }
 }
 
@@ -586,7 +586,7 @@ void VectorQueryPlanCache::Writer::finalizeWrite()
             LOG_TRACE(logger, "Skipped insert because the query is not expensive enough, query runtime: {} msec (minimum query runtime: {} msec), query: {}",
                 query_runtime.count(), min_plan_build_time.count(), doubleQuoteString(key.query_string));
             return;
-        }    
+        }
 
         auto existing_entry = cache.getWithKey(key);
         if (existing_entry.has_value())
@@ -646,7 +646,7 @@ void VectorQueryPlanCache::Writer::finalizeWrite()
         was_finalized.store(true);
         LOG_TRACE(logger, "Stored query result of query {}", doubleQuoteString(key.query_string));
     } // lock goes out of scope here
-    
+
     if (needs_rebuild_mappings)
     {
         std::lock_guard cache_lock(owner.mutex);
@@ -736,7 +736,7 @@ QueryPlanPtr VectorQueryPlanCache::Reader::getPlan()
     }
     catch (const Exception & e)
     {
-        LOG_TRACE(logger, "Failed to clone cached plan: {}", e.message()); 
+        LOG_TRACE(logger, "Failed to clone cached plan: {}", e.message());
         return {};
     }
 }
@@ -751,7 +751,7 @@ ASTPtr VectorQueryPlanCache::Reader::getAst()
     }
     catch (const Exception & e)
     {
-        LOG_TRACE(logger, "Failed to clone cached AST: {}", e.message()); 
+        LOG_TRACE(logger, "Failed to clone cached AST: {}", e.message());
         return {};
     }
 }
@@ -855,7 +855,7 @@ void VectorQueryPlanCache::clearByTables(const std::vector<String> & table_names
         return keys_to_remove.find(key) != keys_to_remove.end();
     };
     cache->remove(predicate);
-    
+
     std::lock_guard lock(mutex);
     rebuildTableMappings();
 }

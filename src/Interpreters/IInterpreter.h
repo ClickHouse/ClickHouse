@@ -46,10 +46,10 @@ public:
 
     void setVectorQueryString(String vector_query_string) { vector_query_string_ = vector_query_string; }
     const String & getVectorQueryString() const { return vector_query_string_; }
-    
+
     void setVectorQueryPlanCacheWriter(std::shared_ptr<VectorQueryPlanCache::Writer> vector_query_plan_cache_writer) { vector_query_plan_cache_writer_ = vector_query_plan_cache_writer; }
     const std::shared_ptr<VectorQueryPlanCache::Writer> & getVectorQueryPlanCacheWriter() const { return vector_query_plan_cache_writer_; }
-    
+
     bool is_internal = false;
     bool is_select = false;
     size_t params_size = 0;

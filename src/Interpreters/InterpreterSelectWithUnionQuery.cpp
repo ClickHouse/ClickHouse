@@ -429,10 +429,10 @@ BlockIO InterpreterSelectWithUnionQuery::execute()
 
     QueryPlan query_plan;
     buildQueryPlan(query_plan);
-    
+
     const auto & settings = context->getSettingsRef();
     const bool can_vector_query_plan_cache = settings[Setting::vector_query_plan_cache];
-    if (can_vector_query_plan_cache && !is_internal && is_select 
+    if (can_vector_query_plan_cache && !is_internal && is_select
         && !VectorQueryPlanCache::containsSubquery(query_ptr))
     {
         auto vector_query_plan_cache = context->getVectorQueryPlanCache();
@@ -451,20 +451,20 @@ BlockIO InterpreterSelectWithUnionQuery::execute()
                 query_result = parameterizer.normalizedAST(query_ptr, vector_query_plan_cache_only_vector);
                 if (!query_result.parsed_params.empty() && !query_result.ast_literal_position_list.empty())
                 {
-                   vector_query_string = query_result.normalized_sql.empty() ? query_ptr->formatForLogging() : query_result.normalized_sql; 
+                   vector_query_string = query_result.normalized_sql.empty() ? query_ptr->formatForLogging() : query_result.normalized_sql;
                 }
             }
             else
             {
                 vector_query_string = getVectorQueryString().empty() ? query_ptr->formatForLogging() : getVectorQueryString();
             }
-            
+
             if (!vector_query_string.empty())
             {
                 VectorQueryPlanCache::Key key(
                     vector_query_string,
-                    context->getCurrentDatabase(),  
-                    context->getSettingsCopy(),     
+                    context->getCurrentDatabase(),
+                    context->getSettingsCopy(),
                     Block{},
                     context->getUserID(),
                     context->getCurrentRoles(),
@@ -472,14 +472,14 @@ BlockIO InterpreterSelectWithUnionQuery::execute()
                     expires_at,
                     false
                 );
-                
+
                 auto vector_query_plan_cache_writer = vector_query_plan_cache->createWriter(
                     key,
                     std::chrono::milliseconds(settings[Setting::query_cache_min_query_duration].totalMilliseconds()),
                     settings[Setting::vector_query_plan_cache_max_size_in_bytes],
                     settings[Setting::vector_query_plan_cache_max_entries]);
                 vector_query_plan_cache_writer.setTableNames(VectorQueryPlanCache::collectTableNames(query_ptr, context));
-            
+
                 if (!vector_only_cache_query_plan)
                 {
                     query_result.ast_literal_position_list = parameterizer.collectASTLiteralPositions(query_ptr, vector_query_plan_cache_only_vector);
@@ -495,7 +495,7 @@ BlockIO InterpreterSelectWithUnionQuery::execute()
                     }
                 }
                 vector_query_plan_cache_writer.setAstLiteralPositions(query_result.ast_literal_position_list);
-                
+
                 plan_constant_bindings = parameterizer.CollectQueryPlanConstants(
                     query_plan, query_result, vector_query_plan_cache_only_vector);
                 if (!plan_constant_bindings.empty())
@@ -504,14 +504,14 @@ BlockIO InterpreterSelectWithUnionQuery::execute()
                     vector_query_plan_cache_writer.setPlanConstantBindings(std::move(plan_constant_bindings));
                     vector_query_plan_cache_writer.setPlan(query_plan);
                     LOG_DEBUG(getLogger("InterpreterSelectWithUnionQuery"), "setPlan");
-                    setVectorQueryPlanCacheWriter(std::make_shared<VectorQueryPlanCache::Writer>(std::move(vector_query_plan_cache_writer)));   
+                    setVectorQueryPlanCacheWriter(std::make_shared<VectorQueryPlanCache::Writer>(std::move(vector_query_plan_cache_writer)));
                 }
-            }    
+            }
         }
     }
-    
+
     auto builder = query_plan.buildQueryPipeline(QueryPlanOptimizationSettings(context), BuildQueryPipelineSettings(context));
-    
+
     res.pipeline = QueryPipelineBuilder::getPipeline(std::move(*builder));
     setQuota(res.pipeline);
     return res;

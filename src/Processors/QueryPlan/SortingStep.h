@@ -107,7 +107,7 @@ public:
 
     /// Clone sorting step for plan cache reuse.
     QueryPlanStepPtr clone() const override;
-    
+
     UInt64 getLimit() const { return limit; }
     /// Add limit or change it to lower value.
     void updateLimit(size_t limit_);

@@ -36,6 +36,7 @@
 #include <memory>
 #include <mutex>
 #include <optional>
+#include <sstream>
 
 
 namespace Poco::Net
@@ -1047,7 +1048,8 @@ public:
     {
         std::lock_guard lock(query_access_info->mutex);
         Poco::JSON::Object json;
-        auto setToArray = [](const std::set<std::string> & s) {
+        auto setToArray = [](const std::set<std::string> & s)
+        {
             Poco::JSON::Array arr;
             for (const auto & item : s)
                 arr.add(item);
@@ -1062,9 +1064,9 @@ public:
         json.set("views", setToArray(query_access_info->views));
         json.set("row_policies", setToArray(query_access_info->row_policies));
 
-        std::stringstream ss;
-        json.stringify(ss);
-        return ss.str();
+        std::ostringstream out; // STYLE_CHECK_ALLOW_STD_STRING_STREAM
+        json.stringify(out);
+        return out.str();
     }
 
     QueryAccessInfoPtr deserializeQueryAccessInfo(const String & data)
@@ -1073,7 +1075,8 @@ public:
         std::lock_guard lock(info->mutex);
         Poco::JSON::Parser parser;
         auto json = parser.parse(data).extract<Poco::JSON::Object::Ptr>();
-        auto arrayToSet = [](Poco::JSON::Array::Ptr arr) {
+        auto arrayToSet = [](Poco::JSON::Array::Ptr arr)
+        {
             std::set<std::string> s;
             if (arr)
             {

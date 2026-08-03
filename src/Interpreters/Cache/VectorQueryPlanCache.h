@@ -134,7 +134,7 @@ public:
         std::vector<ASTLiteralPosition> ast_literal_positions; /// Ordered ASTLiteral node positions for fast replacement.
         std::vector<PlanConstantBinding> plan_constant_bindings; /// QueryPlan constant-node positions for fast replacement.
         std::vector<String> table_names;         /// Canonical `db.table` names referenced by this cached SELECT entry.
-        String query_access_info_cache; 
+        String query_access_info_cache;
     };
 
 private:

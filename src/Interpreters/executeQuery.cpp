@@ -74,7 +74,6 @@
 #include <Interpreters/executeQuery.h>
 #include <Interpreters/DatabaseCatalog.h>
 #include <Interpreters/VectorQueryParameters.h>
-#include <Interpreters/Cache/QueryResultCache.h>
 #include <Interpreters/Cache/VectorQueryPlanCache.h>
 #include <Common/ProfileEvents.h>
 #include <Common/ElapsedTimeProfileEventIncrement.h>
@@ -227,7 +226,6 @@ namespace Setting
     extern const SettingsSeconds vector_query_plan_cache_ttl;
     extern const SettingsUInt64 vector_query_plan_cache_max_size_in_bytes;
     extern const SettingsUInt64 vector_query_plan_cache_max_entries;
-    extern const SettingsMilliseconds query_cache_min_query_duration;
 }
 
 namespace ServerSetting
@@ -440,7 +438,7 @@ static VectorQueryPlanCacheRestoreResult tryRestoreFromQueryPlanCache(
                                 auto cached_plan_constant_bindings = reader.getPlanConstantBindings();
                                 if (!parsed_cache_parameters && parameterized_result.parsed_params.empty())
                                 {
-                                    parsed_cache_parameters = parameterizer.parseNormalizedParamsWithPlan(
+                                    parameterizer.parseNormalizedParamsWithPlan(
                                         parameterized_result,
                                         &cached_plan_constant_bindings,
                                         vector_query_plan_cache_only_vector);
@@ -1502,6 +1500,12 @@ static std::optional<BlockIO> tryExecuteQueryPlan(
     const Settings & settings = context->getSettingsRef();
     auto logger = getLogger("executeQuery");
     QueryResultCachePtr query_result_cache = context->getQueryResultCache();
+    size_t log_queries_cut_to_length = settings[Setting::log_queries_cut_to_length];
+    String query(begin, end);
+    String query_for_logging = wipeSensitiveDataAndCutToLength(query, log_queries_cut_to_length, true);
+    UInt64 normalized_query_hash = normalizedQueryHash(query_for_logging, false);
+    context->setNormalizedQueryHash(normalized_query_hash);
+
     if (!query_access_info_cache.empty())
     {
         auto query_access_info = context->deserializeQueryAccessInfo(query_access_info_cache);
@@ -1515,6 +1519,7 @@ static std::optional<BlockIO> tryExecuteQueryPlan(
 
         auto query_cached_builder = output.cached_plan->buildQueryPipeline(optimization_settings, build_pipeline_settings, true);
         res.pipeline = QueryPipelineBuilder::getPipeline(std::move(*query_cached_builder));
+        res.pipeline.setNormalizedQueryHash(normalized_query_hash);
 
         StreamLocalLimits limits = StreamLocalLimits::forQueryResult(settings);
         if (stage == QueryProcessingStage::Complete && res.pipeline.pulling())
@@ -1562,10 +1567,12 @@ static std::optional<BlockIO> tryExecuteQueryPlan(
                 result_details.query_cache_entry_expires_at = expires_at;
         }
     }
-    size_t log_queries_cut_to_length = settings[Setting::log_queries_cut_to_length];
-    String query(begin, end);
-    String query_for_logging = wipeSensitiveDataAndCutToLength(query, log_queries_cut_to_length, true);
-    UInt64 normalized_query_hash = normalizedQueryHash(query_for_logging, false);
+    else
+    {
+        /// A query-result-cache hit restores the pipeline before entering this function.
+        /// Propagate the hash before any quota transform is attached by the caller.
+        res.pipeline.setNormalizedQueryHash(normalized_query_hash);
+    }
     InterpreterSetQuery::applySettingsFromQuery(ast, context);
 
     logQuery(query_for_logging, context, internal, stage);
@@ -1765,13 +1772,13 @@ static BlockIO executeQueryImpl(
             context->checkSettingsConstraints(vector_settings, SettingSource::QUERY);
             context->applySettingsChanges(vector_settings);
         }
-    } 
-    
+    }
+
     size_t max_query_size = settings[Setting::max_query_size];
     /// Don't limit the size of internal queries or distributed subquery.
     if (internal || client_info.query_kind == ClientInfo::QueryKind::SECONDARY_QUERY)
         max_query_size = 0;
-    
+
     bool vector_only_cache_query_plan = settings[Setting::vector_only_cache_query_plan];
     bool enable_vector_query_plan_cache = settings[Setting::vector_query_plan_cache];
     CacheProbeOutput cache_output;
@@ -1829,6 +1836,8 @@ static BlockIO executeQueryImpl(
     {
         try
         {
+            ProfileEventTimeIncrement<Microseconds> parse_time_watch(ProfileEvents::QueryParseMicroseconds);
+
             if (stage == QueryProcessingStage::QueryPlan)
             {
                 /// Do not parse Query
@@ -2080,6 +2089,10 @@ static BlockIO executeQueryImpl(
             throw;
         }
     }
+
+    /// Make the normalized query hash available to interpreters created below. In particular,
+    /// ordinary INSERT queries use it for the written_bytes quota pre-check and CountingTransform.
+    context->setNormalizedQueryHash(normalized_query_hash);
 
     /// Avoid early destruction of process_list_entry if it was not saved to `res` yet (in case of exception)
     ProcessList::EntryPtr process_list_entry;
@@ -2441,6 +2454,7 @@ static BlockIO executeQueryImpl(
                         auto build_pipeline_settings = BuildQueryPipelineSettings(context);
                         auto query_cached_builder = cache_result.cached_plan->buildQueryPipeline(optimization_settings, build_pipeline_settings, true);
                         res.pipeline = QueryPipelineBuilder::getPipeline(std::move(*query_cached_builder));
+                        res.pipeline.setNormalizedQueryHash(normalized_query_hash);
                         limits = StreamLocalLimits::forQueryResult(settings);
                         if (stage == QueryProcessingStage::Complete && res.pipeline.pulling())
                         {

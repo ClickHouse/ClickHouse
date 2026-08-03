@@ -1,4 +1,5 @@
--- Tags: no-parallel
+-- Tags: no-parallel, no-fasttest
+-- no-fasttest: vector search needs the usearch 3rd party library
 
 DROP TABLE IF EXISTS trips SYNC;
 CREATE TABLE trips (vendor_id UInt8,passenger_count UInt8,trip_distance Float32,payment_type UInt8,total_amount Float32) ENGINE = MergeTree ORDER BY vendor_id;

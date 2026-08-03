@@ -96,7 +96,7 @@ public:
     {
         /// SipHash of normalized_sql. A value of zero means normalization was skipped
         /// or the query was not eligible for cache-oriented normalization.
-        UInt64 hash;
+        UInt64 hash = 0;
         /// Normalized SQL text used as the cache key payload.
         /// All replaceable literals are collapsed to '?' placeholders.
         String normalized_sql;

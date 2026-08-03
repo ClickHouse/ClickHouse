@@ -228,7 +228,7 @@ bool checkFunctionName(const String function_name, bool only_vector)
     {
         if (function_name == COSINEDISTANCE_FUNCTION_NAME ||
             function_name == L2DISTANCE_FUNCTION_NAME ||
-            function_name == HASTOKEN_FUNCTION_NAME )
+            function_name == HASTOKEN_FUNCTION_NAME)
             return true;
         return false;
     }
@@ -536,7 +536,7 @@ std::string_view getFunctionName(FunctionNames fn_enum)
         case FunctionNames::CAST:
             return CAST_FUNCTION_NAME;
     }
-    __builtin_unreachable();
+    UNREACHABLE();
 }
 
 /// Append the canonical function name string to the output buffer.
@@ -759,7 +759,7 @@ void findActionsDAGAndCollectConstants(
                     {
                         for (const auto * child : parent_node->children)
                         {
-                            switch(child->type)
+                            switch (child->type)
                             {
                                 case ActionsDAG::ActionType::INPUT:
                                     input_number++;
@@ -1634,7 +1634,7 @@ bool VectorQueryParameters::replaceConstantsInQueryPlan(
             if (plan_constant_binding.dag_scope != "FilterStep")
                 continue;
             ActionsDAG & dag = filter_step->getExpression();
-            if (!apply_bindings_to_dag(dag,  plan_constant_binding.dag_node_index, plan_constant_binding.parameter_index, plan_constant_binding.target_type))
+            if (!apply_bindings_to_dag(dag, plan_constant_binding.dag_node_index, plan_constant_binding.parameter_index, plan_constant_binding.target_type))
                 return false;
         }
         else if (auto * expression_step = typeid_cast<ExpressionStep *>(node->step.get()))
@@ -1642,7 +1642,7 @@ bool VectorQueryParameters::replaceConstantsInQueryPlan(
             if (plan_constant_binding.dag_scope != "ExpressionStep")
                 continue;
             ActionsDAG & dag = expression_step->getExpression();
-            if (!apply_bindings_to_dag(dag,  plan_constant_binding.dag_node_index, plan_constant_binding.parameter_index, plan_constant_binding.target_type))
+            if (!apply_bindings_to_dag(dag, plan_constant_binding.dag_node_index, plan_constant_binding.parameter_index, plan_constant_binding.target_type))
                 return false;
         }
     }
