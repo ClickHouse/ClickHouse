@@ -691,7 +691,20 @@ void NetCDFSchemaReader::initialize()
         return;
 
     is_initialized = true;
+
+    /// The number of records of a file written in the streaming mode is not in the header and is
+    /// derived from the size of the file, exactly as the input format does it, so that the number
+    /// of rows of such a file is also answered from the metadata.
+    std::optional<UInt64> file_size;
+    auto * seekable = dynamic_cast<SeekableReadBuffer *>(&in);
+    if (seekable && format_settings.seekable_read && isBufferWithFileSize(in) && seekable->checkIfActuallySeekable())
+        file_size = getFileSizeFromReadBuffer(in);
+
     netcdf_header = readNetCDFHeader(in);
+
+    if (file_size)
+        netcdf_header.resolveNumberOfRecords(*file_size);
+
     layout = getNetCDFTableLayout(netcdf_header, format_settings);
 }
 

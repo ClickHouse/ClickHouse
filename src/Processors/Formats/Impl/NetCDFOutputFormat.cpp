@@ -14,6 +14,7 @@
 #include <IO/WriteHelpers.h>
 #include <Common/StringUtils.h>
 #include <Common/assert_cast.h>
+#include <Common/isValidUTF8.h>
 #include <Common/transformEndianness.h>
 
 #include <base/arithmeticOverflow.h>
@@ -93,14 +94,21 @@ void writeAttribute(WriteBuffer & out, std::string_view name, NetCDFType type, U
 }
 
 /// A name that the format cannot store would produce a file that no reader can open. The rules are
-/// the ones of the classic format: the first character is a letter, a digit, an underscore or the
-/// beginning of a UTF-8 sequence; the rest are printable characters other than a slash; and there
-/// are no trailing spaces.
+/// the ones of the classic format: a name is UTF-8 text; the first character is a letter, a digit,
+/// an underscore or a character outside of ASCII; the rest are printable characters other than a
+/// slash; and there are no trailing spaces.
 /// See https://docs.unidata.ucar.edu/nug/current/file_format_specifications.html
 void checkName(const String & name)
 {
     if (name.empty())
         throw Exception(ErrorCodes::BAD_ARGUMENTS, "The NetCDF format cannot store a column with an empty name");
+
+    /// The names of the classic format are UTF-8 text, and an identifier of ClickHouse is an
+    /// arbitrary sequence of bytes: a name that is not valid UTF-8 would be written into the header
+    /// as is and make the whole file unreadable for the readers that decode the names.
+    if (!UTF8::isValidUTF8(reinterpret_cast<const UInt8 *>(name.data()), name.size()))
+        throw Exception(ErrorCodes::BAD_ARGUMENTS,
+            "The NetCDF format cannot store the name {} because it is not valid UTF-8", name);
 
     auto first = static_cast<unsigned char>(name.front());
     if (!isAlphaNumericASCII(name.front()) && first != '_' && first < 0x80)
