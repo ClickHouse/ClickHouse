@@ -170,8 +170,14 @@ SQLQueryPiece applyFunctionOverRange(
 
     auto argument = std::move(arguments[0]);
 
+    /// `<range_vector> @ <timestamp>` is evaluated once over its fixed window: `setEvaluationTime` (see
+    /// `applyOffset.cpp`) leaves the samples of a range vector intact, so the aggregation below has to run over that
+    /// fixed range and the single resulting value is then repeated across the query grid. This covers both a range
+    /// selector (`RAW_DATA`) and a subquery (`SCALAR_GRID` / `VECTOR_GRID`) under `@`.
     std::optional<NodeEvaluationRange> fixed_argument_range;
-    if (argument.store_method == StoreMethod::RAW_DATA && argument.node->node_type == NodeType::Offset)
+    if (argument.node->node_type == NodeType::Offset
+        && (argument.store_method == StoreMethod::RAW_DATA || argument.store_method == StoreMethod::SCALAR_GRID
+            || argument.store_method == StoreMethod::VECTOR_GRID))
     {
         const auto * offset_node = static_cast<const PQT::Offset *>(argument.node);
         if (offset_node->at_timestamp)

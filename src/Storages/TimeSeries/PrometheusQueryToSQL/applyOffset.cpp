@@ -139,6 +139,16 @@ namespace
             case StoreMethod::SCALAR_GRID:
             case StoreMethod::VECTOR_GRID:
             {
+                if (expression.type == ResultType::RANGE_VECTOR)
+                {
+                    /// A range vector (i.e. a subquery like `rate(x[1m])[30m:10s] @ 130`) must keep the samples of its
+                    /// fixed window intact - collapsing the grid to its first value here would throw the window away.
+                    /// `NodeEvaluationRangeGetter` has already planned the whole grid at the fixed evaluation time, and
+                    /// the range-vector function applied on top of this expression aggregates that fixed window before
+                    /// repeating the result across the query grid (see `applyFunctionOverRange`).
+                    return std::move(expression);
+                }
+
                 /// For scalar grid:
                 /// SELECT arrayResize([], <count_of_time_steps>, values[1])) AS values
                 /// FROM <scalar_grid>
@@ -176,9 +186,10 @@ namespace
 
             case StoreMethod::RAW_DATA:
             {
-                /// `NodeEvaluationRangeGetter` has already planned the child range selector at the fixed evaluation time.
-                /// Keep raw sample timestamps unchanged here so range-vector functions can aggregate that fixed window first
-                /// and then repeat the resulting value across the outer query grid.
+                /// `RAW_DATA` always carries a range vector, and `NodeEvaluationRangeGetter` has already planned the
+                /// child range selector at the fixed evaluation time. Keep raw sample timestamps unchanged here so
+                /// range-vector functions can aggregate that fixed window first and then repeat the resulting value
+                /// across the outer query grid.
                 return std::move(expression);
             }
         }
