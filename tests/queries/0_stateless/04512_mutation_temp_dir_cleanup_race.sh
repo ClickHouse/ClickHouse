@@ -13,6 +13,19 @@ CUR_DIR=$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)
 
 set -e
 
+# Both failpoints are server-global and pause every `ReplicatedMergeTree` mutation, so they must be
+# disabled even when the test fails in the middle: otherwise the next tests on the same server hang.
+# Disabling a pauseable failpoint also resumes the threads that are currently paused at it.
+function disable_failpoints()
+{
+    $CLICKHOUSE_CLIENT --query "
+        SYSTEM DISABLE FAILPOINT rmt_mutate_task_pause_before_rename_part;
+        SYSTEM DISABLE FAILPOINT rmt_mutate_task_pause_after_temporary_part_released;
+    " ||:
+}
+
+trap disable_failpoints EXIT
+
 # `temporary_directories_lifetime = 1` makes the cleanup thread consider the temporary directory of
 # an in-flight mutation old enough to be removed, which is exactly what the test needs to check.
 $CLICKHOUSE_CLIENT --query "
