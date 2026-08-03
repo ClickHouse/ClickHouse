@@ -402,10 +402,22 @@ void materializeVirtualColumns(Block & block, const Names & columns, const IColu
     }
 }
 
-bool hasVirtualColumnsInBlock(const Block & block, const VirtualColumnsDescription & virtuals)
+/// The primary index is built from the primary key columns. Virtual columns are materialized on the
+/// write path with placeholder values (the real block number is only assigned at commit), so a part
+/// whose primary key contains them cannot have its index initialized eagerly - it is built later in
+/// `IMergeTreeDataPart::setIndex`, which replaces the placeholders with the committed values.
+///
+/// Note that this is derived from the part's own primary key rather than from the written block:
+/// the block may additionally carry virtual columns materialized for a projection, which says
+/// nothing about the primary key of the part being written.
+bool hasVirtualColumnsInPrimaryKey(const StorageMetadataPtr & metadata_snapshot)
 {
-    for (const auto & col : virtuals)
-        if (block.has(col.name))
+    if (!metadata_snapshot->hasPrimaryKey())
+        return false;
+
+    const auto & virtuals = metadata_snapshot->virtuals;
+    for (const auto & column_name : metadata_snapshot->getPrimaryKey().expression->getRequiredColumns())
+        if (virtuals.has(column_name))
             return true;
 
     return false;
@@ -1124,7 +1136,7 @@ MergeTreeTemporaryPartPtr MergeTreeDataWriter::writeTempPartImpl(
         new_data_part,
         gathered_data,
         /*sync=*/(*data_settings)[MergeTreeSetting::fsync_after_insert],
-        /*init_index=*/!hasVirtualColumnsInBlock(block, metadata_snapshot->virtuals));
+        /*init_index=*/!hasVirtualColumnsInPrimaryKey(metadata_snapshot));
 
     temp_part->part = new_data_part;
     temp_part->streams.emplace_back(MergeTreeTemporaryPart::Stream{.stream = std::move(out), .finalizer = std::move(finalizer)});
@@ -1291,7 +1303,7 @@ MergeTreeTemporaryPartPtr MergeTreeDataWriter::writeProjectionPartImpl(
     Block permuted_columns_cache;
     out->writeWithPermutation(block, perm_ptr, &permuted_columns_cache);
     out->finalizeIndexGranularity();
-    auto finalizer = out->finalizePartAsync(new_data_part, IMergedBlockOutputStream::GatheredData{}, /*sync=*/false, /*init_index=*/!hasVirtualColumnsInBlock(block, metadata_snapshot->virtuals));
+    auto finalizer = out->finalizePartAsync(new_data_part, IMergedBlockOutputStream::GatheredData{}, /*sync=*/false, /*init_index=*/!hasVirtualColumnsInPrimaryKey(metadata_snapshot));
     temp_part->part = new_data_part;
     temp_part->streams.emplace_back(MergeTreeTemporaryPart::Stream{.stream = std::move(out), .finalizer = std::move(finalizer)});
 
