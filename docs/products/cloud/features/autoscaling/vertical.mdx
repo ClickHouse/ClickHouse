@@ -20,7 +20,7 @@ Scale and Enterprise tier services support autoscaling based on CPU and memory u
 The scaling of ClickHouse Cloud Scale or Enterprise services can be adjusted by organization members with the **Admin** role.  To configure vertical autoscaling, go to the **Settings** tab for your service and adjust the minimum and maximum memory, along with CPU settings as shown below.
 
 <Note>
-Single-replica services support vertical scaling on the Scale and Enterprise tiers. Basic tier services remain fixed in size and can't be scaled.
+Single-replica Scale services and Enterprise services with standard `1:4` profiles support vertical autoscaling. Enterprise services with custom profiles require support-assisted vertical resizing. Basic tier services remain fixed in size and can't be scaled.
 </Note>
 
 <Image img="/images/cloud/manage/AutoScaling.webp" size="lg" alt="Scaling settings page" border/>

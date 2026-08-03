@@ -4,12 +4,12 @@ sidebar_label: 'Large single-replica services'
 sidebar_position: 8
 slug: /cloud/features/large-single-replica-services
 title: 'Large single-replica services'
-description: 'Run vertically scalable single-replica services on the Scale and Enterprise tiers in ClickHouse Cloud'
+description: 'Understand availability and scaling for large single-replica services in ClickHouse Cloud'
 keywords: ['single replica', 'vertical scaling', 'autoscaling', 'Scale tier', 'Enterprise tier']
 doc_type: 'guide'
 ---
 
-Large single-replica services let you run a ClickHouse Cloud service with one compute replica while using the configurable compute resources available on the Scale and Enterprise tiers. Unlike fixed-size Basic tier services, these services support vertical scaling.
+Large single-replica services let you run a ClickHouse Cloud service with one compute replica while using the configurable compute resources available on the Scale and Enterprise tiers. Unlike fixed-size Basic tier services, their scaling behavior depends on the tier and hardware profile.
 
 ## Availability {#availability}
 
@@ -27,12 +27,12 @@ Single-replica services have reduced availability and aren't recommended for pro
 
 ## Scaling {#scaling}
 
-Single-replica services on the Scale and Enterprise tiers support the same scaling controls as other services on those tiers:
+Vertical scaling behavior depends on the tier and hardware profile:
 
-- [Vertical autoscaling](/products/cloud/features/autoscaling/vertical) adjusts CPU and memory within the minimum and maximum resources you configure.
-- [Horizontal scaling](/products/cloud/features/autoscaling/horizontal) lets you scale out to multiple replicas and scale back in to one replica.
+- Scale tier services and Enterprise tier services with standard `1:4` profiles support [vertical autoscaling](/products/cloud/features/autoscaling/vertical). You can configure minimum and maximum CPU and memory resources in the Cloud Console.
+- Enterprise tier services with custom profiles don't support vertical autoscaling or manual vertical scaling in the Cloud Console. Contact support for vertical resizing.
 
-Enterprise tier services with standard `1:4` profiles support vertical autoscaling. Custom Enterprise profiles don't support vertical autoscaling or manual vertical scaling through the Cloud Console, but support can scale them vertically.
+Scale and Enterprise tier services support [horizontal scaling](/products/cloud/features/autoscaling/horizontal), so you can scale out to multiple replicas and scale back in to one replica.
 
 ## Service limits {#service-limits}
 
