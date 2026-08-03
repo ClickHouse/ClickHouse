@@ -1,3 +1,8 @@
+-- Tags: no-replicated-database
+-- Tag no-replicated-database: a `Replicated` database re-parses the column type from the formatted
+-- `CREATE`, and version 0 is not printed in the type name, so the pin this test is about does not
+-- survive the round trip through the DDL log.
+
 -- A `quantileDeterministic` state column whose version is pinned to 0 - which is what a table created
 -- before the state had a version looks like once it is attached on a server that knows about version 1 -
 -- must survive a round trip through `Native` transport. Version 0 is not printed in the type name, so

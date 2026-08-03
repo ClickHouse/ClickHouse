@@ -1,4 +1,8 @@
 #!/usr/bin/env bash
+# Tags: no-replicated-database
+# Tag no-replicated-database: a `Replicated` database re-parses the column type from the formatted
+# `CREATE`, and version 0 is not printed in the type name, so the version pinned on `ATTACH` differs
+# from the one this test expects.
 
 CUR_DIR=$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)
 # shellcheck source=../shell_config.sh

@@ -358,16 +358,25 @@ void setVersionToAggregateFunctions(DataTypePtr & type, bool if_empty, std::opti
 
         /// A custom name is part of the observable type and must survive the replacement. The only
         /// custom name an `AggregateFunction` type can carry is `SimpleAggregateFunction` over an
-        /// `AggregateFunction` argument; it prints its own stored argument types, so the rebuilt name
-        /// stays identical and only the serialization version changes.
+        /// `AggregateFunction` argument.
         if (column_type->hasCustomName())
         {
             const auto * simple = typeid_cast<const DataTypeCustomSimpleAggregateFunction *>(column_type->getCustomName());
             if (!simple)
                 return;
 
+            /// The custom name keeps its own copy of the argument types, and for
+            /// `SimpleAggregateFunction` over an `AggregateFunction` that argument is the state type
+            /// itself - both the printed name and the binary type encoding come from it. It has to be
+            /// given the same version as the storage type, otherwise the announced type and the payload
+            /// disagree: a downgraded state would still be announced as the newer version and the
+            /// receiver would read one version too many out of it.
+            DataTypes new_argument_types = simple->getArgumentsDataTypes();
+            for (auto & argument_type : new_argument_types)
+                setVersionToAggregateFunctions(argument_type, if_empty, revision);
+
             new_type->setCustomization(std::make_unique<DataTypeCustomDesc>(std::make_unique<DataTypeCustomSimpleAggregateFunction>(
-                simple->getFunction(), simple->getArgumentsDataTypes(), simple->getParameters())));
+                simple->getFunction(), new_argument_types, simple->getParameters())));
         }
 
         column_type = new_type;
