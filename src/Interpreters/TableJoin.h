@@ -200,10 +200,8 @@ private:
     NameToTypeMap left_type_map;
     NameToTypeMap right_type_map;
 
-    /// Right keys of a special storage (Join engine) whose output type is corrected after the join
-    /// because of a USING common-type promotion (see JoinStepLogical). For a LEFT/FULL join these
-    /// keys must be emitted as Nullable so an unmatched-left row fills NULL instead of the storage
-    /// default; without USING coalescing the raw right key is output directly and must keep its type.
+    /// Special-storage right keys whose type is corrected after the join by a USING promotion.
+    /// Filled by JoinStepLogical; empty means no key is promoted.
     NameSet using_promoted_right_keys;
 
     /// Name -> original name. Names are the same as in columns_from_joined_table list.

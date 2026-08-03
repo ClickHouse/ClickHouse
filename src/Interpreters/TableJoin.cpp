@@ -519,11 +519,9 @@ Block TableJoin::getRequiredRightKeys(const Block & right_table_keys, std::vecto
         {
             auto right_key = right_table_keys.getByName(right_key_name);
 
-            /// A USING-promoted special-storage right key (its type is corrected after the join, see
-            /// JoinStepLogical) must be Nullable in a LEFT/FULL join so an unmatched-left row fills
-            /// NULL instead of the storage default, letting `firstNonDefault` keep the left NULL. A
-            /// matched row cannot have a NULL left key here (non null-safe join), so matched values
-            /// are unchanged; a raw `JOIN ... ON` right key is not promoted and keeps its type.
+            /// A promoted key must be Nullable so an unmatched-left row fills NULL rather than the
+            /// storage default, which `firstNonDefault` would then prefer over the left NULL.
+            /// A matched row cannot have a NULL left key here, so matched values are unchanged.
             if ((using_promoted_right_keys.contains(right_key_name)
                  || using_promoted_right_keys.contains(renamedRightColumnName(right_key_name)))
                 && isLeftOrFull(kind())
