@@ -58,6 +58,8 @@ struct AnalyzedStepData
     bool label_stages = false;
     UInt64 step_wall_time_ns = 0;
     UInt64 branch_wall_time_ns = 0;
+    double step_concurrency = 0.0;
+    double branch_concurrency = 0.0;
 };
 
 struct StepStatsContext

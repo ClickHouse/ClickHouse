@@ -334,6 +334,8 @@ AnalyzedStepData AnalyzeStepsStats::analyzeStep(const IQueryPlanStep * step) con
     {
         result.step_wall_time_ns = interval_timings->getStepTime(step);
         result.branch_wall_time_ns = interval_timings->getBranchTime(step);
+        result.step_concurrency = interval_timings->getStepConcurrency(step);
+        result.branch_concurrency = interval_timings->getBranchConcurrency(step);
     }
 
     return result;
@@ -362,6 +364,11 @@ void AnalyzeStepsStats::renderStep(const AnalyzedStepData & report, WriteBuffer 
 
         out << prefix << "  Time: step " << with_share(report.step_wall_time_ns)
             << " · branch " << with_share(report.branch_wall_time_ns) << "\n";
+
+        out << prefix << "  Concurrency: step "
+            << fmt::format("{:.2f}/{}", report.step_concurrency, max_num_threads_per_query)
+            << " · branch "
+            << fmt::format("{:.2f}/{}", report.branch_concurrency, max_num_threads_per_query) << "\n";
     }
 
     for (const auto & stage : report.stages)

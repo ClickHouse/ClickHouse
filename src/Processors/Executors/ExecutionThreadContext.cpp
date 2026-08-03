@@ -99,23 +99,22 @@ bool ExecutionThreadContext::executeTask()
 
     const size_t group = node->processor()->getQueryPlanStepGroup();
 
-    StepWallClock * clock = nullptr;
-    if (step_to_wall_clock_registry)
-    {
-        /// Some processors are pipeline "plumbing" (resize, converting, output format, etc.)
-        /// and are not attributed to any query plan step, so there is no clock for them.
-        if (const auto * step = node->processor()->getQueryPlanStep())
-        {
-            auto & cached_clock = node->cached_clock;
-            /// We will search in the registry only initially or when the group of the processor changed
-            if (!cached_clock.wall_clock_ptr || node->cached_clock.group != group)
-                cached_clock.wall_clock_ptr = step_to_wall_clock_registry->find(step, group);
+    /// Some processors are pipeline "plumbing" (resize, converting, output format, etc.)
+    /// and are not attributed to any query plan step, so there is no clock for them.
+    const auto * step = node->processor()->getQueryPlanStep();
 
-            clock = cached_clock.wall_clock_ptr;
-            chassert(clock);
-            if (clock)
-                clock->onEnter();
-        }
+    StepWallClock * clock = nullptr;
+    if (step_to_wall_clock_registry && step)
+    {
+        auto & cached_clock = node->cached_clock;
+        /// We will search in the registry only initially or when the group of the processor changed
+        if (!cached_clock.wall_clock_ptr || node->cached_clock.group != group)
+            cached_clock.wall_clock_ptr = step_to_wall_clock_registry->find(step, group);
+
+        clock = cached_clock.wall_clock_ptr;
+        chassert(clock);
+        if (clock)
+            clock->onEnter();
     }
 
 #ifndef NDEBUG
@@ -149,7 +148,7 @@ bool ExecutionThreadContext::executeTask()
         clock->onLeave();
 
     if (collect_work_intervals)
-        work_intervals.emplace_back(execution_time_watch->getStart(), elapsed_ns, node->processor());
+        work_intervals.emplace_back(execution_time_watch->getStart(), elapsed_ns, step);
 
 #ifndef NDEBUG
     execution_time_ns += execution_time_watch->elapsed();

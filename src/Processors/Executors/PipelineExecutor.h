@@ -85,7 +85,7 @@ public:
 
     void setCollectWorkIntervals(bool collect_work_intervals_);
 
-    WorkIntervals takeWorkIntervals();
+    WorkIntervalsPerThread takeWorkIntervals();
 
 private:
     ExecutingGraphPtr graph;

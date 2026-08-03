@@ -1,4 +1,3 @@
-#include <iterator>
 #include <memory>
 #include <IO/WriteBufferFromString.h>
 #include <Common/Scheduler/MemoryReservation.h>
@@ -303,24 +302,26 @@ void PipelineExecutor::setCollectWorkIntervals(bool collect_work_intervals_)
     collect_work_intervals = collect_work_intervals_;
 }
 
-WorkIntervals PipelineExecutor::takeWorkIntervals()
+WorkIntervalsPerThread PipelineExecutor::takeWorkIntervals()
 {
     if (!collect_work_intervals)
-        return {}; 
-    
-    WorkIntervals result;
+        return {};
+
+    WorkIntervalsPerThread result;
+    result.reserve(tasks.getNumThreads());
 
     for (size_t thread_ind = 0; thread_ind < tasks.getNumThreads(); ++thread_ind)
     {
-        auto working_interval_from_context = tasks.getThreadContext(thread_ind).takeWorkIntervals();
+        auto intervals_of_thread = tasks.getThreadContext(thread_ind).takeWorkIntervals();
+        if (intervals_of_thread.empty())
+            continue;
 
-        for (auto & interval : working_interval_from_context)
+        for (auto & interval : intervals_of_thread)
             interval.start_of_interval_ns -= query_start_ns;
 
-        result.insert(result.end(), 
-                std::make_move_iterator(working_interval_from_context.begin()),
-                std::make_move_iterator(working_interval_from_context.end()));
+        result.push_back(std::move(intervals_of_thread));
     }
+
     return result;
 }
 

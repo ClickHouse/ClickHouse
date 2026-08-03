@@ -1,143 +1,203 @@
 #include <Processors/QueryPlan/StepIntervalTimings.h>
 #include <Processors/QueryPlan/IQueryPlanStep.h>
-#include <Processors/IProcessor.h>
-#include <algorithm>
-#include <iterator>
+
+#include <limits>
 
 namespace DB
 {
 
-StepIntervalTimings::StepIntervalTimings(const WorkIntervals & intervals, const QueryPlan & plan)
+namespace
 {
-    collectStepIntervals(intervals);
 
-    if (plan.isInitialized())
-        computeBranchTime(plan.getRootNode());
+double ratio(UInt64 busy_ns, UInt64 total_ns)
+{
+    return total_ns != 0 ? static_cast<double>(busy_ns) / static_cast<double>(total_ns) : 0.0;
+}
+
+}
+
+StepIntervalTimings::StepIntervalTimings(const WorkIntervalsPerThread & intervals_per_thread, const QueryPlan & plan)
+    : concurrency_profile(intervals_per_thread)
+{
+    indexPlanSteps(plan);
+    computeBranchTime(plan, collectStepIntervals(intervals_per_thread));
 }
 
 UInt64 StepIntervalTimings::getStepTime(const IQueryPlanStep * step) const
 {
-    const auto it = timings_by_step.find(step);
-    return it != timings_by_step.end() ? it->second.step_time_ns : 0;
+    const auto * timing = findTiming(step);
+    return timing ? timing->step_time_ns : 0;
 }
 
 UInt64 StepIntervalTimings::getBranchTime(const IQueryPlanStep * step) const
 {
-    const auto it = timings_by_step.find(step);
-    return it != timings_by_step.end() ? it->second.branch_time_ns : 0;
+    const auto * timing = findTiming(step);
+    return timing ? timing->branch_time_ns : 0;
 }
 
-void StepIntervalTimings::collectStepIntervals(const WorkIntervals & intervals)
+double StepIntervalTimings::getStepConcurrency(const IQueryPlanStep * step) const
 {
-    for (const auto & interval : intervals)
+    const auto * timing = findTiming(step);
+    return timing ? timing->step_concurrency : 0.0;
+}
+
+double StepIntervalTimings::getBranchConcurrency(const IQueryPlanStep * step) const
+{
+    const auto * timing = findTiming(step);
+    return timing ? timing->branch_concurrency : 0.0;
+}
+
+const StepIntervalTimings::StepTiming * StepIntervalTimings::findTiming(const IQueryPlanStep * step) const
+{
+    const auto it = index_by_step.find(step);
+    return it != index_by_step.end() ? &timings[it->second] : nullptr;
+}
+
+void StepIntervalTimings::indexPlanSteps(const QueryPlan & plan)
+{
+    if (!plan.isInitialized())
+        return;
+
+    std::vector<QueryPlan::Node *> stack;
+    stack.push_back(plan.getRootNode());
+
+    while (!stack.empty())
     {
-        const auto * step = interval.processor->getQueryPlanStep();
-        if (!step)
+        auto * node = stack.back();
+        stack.pop_back();
+
+        index_by_step.emplace(node->step.get(), index_by_step.size());
+
+        for (auto * child : node->children)
+            stack.push_back(child);
+
+        for (auto * child_plan : node->step->getChildPlans())
+            if (child_plan && child_plan->isInitialized())
+                stack.push_back(child_plan->getRootNode());
+    }
+
+    timings.resize(index_by_step.size());
+}
+
+std::vector<TimeIntervals> StepIntervalTimings::collectStepIntervals(const WorkIntervalsPerThread & intervals_per_thread) const
+{
+    static constexpr size_t no_thread = std::numeric_limits<size_t>::max();
+
+    std::vector<std::vector<TimeIntervals>> runs_by_step(timings.size());
+    std::vector<size_t> last_thread(timings.size(), no_thread);
+
+    for (size_t thread = 0; thread < intervals_per_thread.size(); ++thread)
+    {
+        for (const auto & interval : intervals_per_thread[thread])
+        {
+            const auto it = index_by_step.find(interval.step);
+            if (it == index_by_step.end())
+                continue;
+
+            const size_t step_index = it->second;
+            if (last_thread[step_index] != thread)
+            {
+                runs_by_step[step_index].emplace_back();
+                last_thread[step_index] = thread;
+            }
+
+            runs_by_step[step_index].back().push_back(
+                {interval.start_of_interval_ns, interval.start_of_interval_ns + interval.duration_of_interval_ns});
+        }
+    }
+
+    std::vector<TimeIntervals> step_intervals(timings.size());
+    for (size_t step_index = 0; step_index < step_intervals.size(); ++step_index)
+        step_intervals[step_index] = uniteSortedIntervals(runs_by_step[step_index]);
+
+    return step_intervals;
+}
+
+void StepIntervalTimings::computeBranchTime(const QueryPlan & plan, std::vector<TimeIntervals> step_intervals)
+{
+    if (!plan.isInitialized())
+        return;
+
+    struct Frame
+    {
+        QueryPlan::Node * node = nullptr;
+        std::vector<QueryPlan *> child_plans;
+        size_t next_child = 0;
+        size_t next_child_plan = 0;
+        /// The node's own intervals first, then the branch of every child that has finished.
+        std::vector<TimeIntervals> branch_sequences;
+    };
+
+    std::vector<Frame> stack;
+
+    const auto push_frame = [&](QueryPlan::Node * node)
+    {
+        Frame frame;
+        frame.node = node;
+
+        const auto child_plans = node->step->getChildPlans();
+        frame.child_plans.assign(child_plans.begin(), child_plans.end());
+
+        TimeIntervals own;
+        if (const auto it = index_by_step.find(node->step.get()); it != index_by_step.end())
+            own = std::move(step_intervals[it->second]);
+        frame.branch_sequences.push_back(std::move(own));
+
+        stack.push_back(std::move(frame));
+    };
+
+    push_frame(plan.getRootNode());
+
+    TimeIntervals branch_of_child;
+    bool has_branch_of_child = false;
+
+    while (!stack.empty())
+    {
+        Frame & frame = stack.back();
+
+        if (has_branch_of_child)
+        {
+            frame.branch_sequences.push_back(std::move(branch_of_child));
+            has_branch_of_child = false;
+        }
+
+        if (frame.next_child < frame.node->children.size())
+        {
+            push_frame(frame.node->children[frame.next_child++]);
+            continue;
+        }
+
+        bool descended = false;
+        while (frame.next_child_plan < frame.child_plans.size())
+        {
+            auto * child_plan = frame.child_plans[frame.next_child_plan++];
+            if (child_plan && child_plan->isInitialized())
+            {
+                push_frame(child_plan->getRootNode());
+                descended = true;
+                break;
+            }
+        }
+        if (descended)
             continue;
 
-        timings_by_step[step].intervals.push_back(
-            {interval.start_of_interval_ns, interval.start_of_interval_ns + interval.duration_of_interval_ns});
+        TimeIntervals branch = uniteSortedIntervals(frame.branch_sequences);
+
+        if (const auto it = index_by_step.find(frame.node->step.get()); it != index_by_step.end())
+        {
+            const TimeIntervals & own = frame.branch_sequences.front();
+            StepTiming & timing = timings[it->second];
+
+            timing.step_time_ns = totalIntervalsLength(own);
+            timing.branch_time_ns = totalIntervalsLength(branch);
+            timing.step_concurrency = ratio(concurrency_profile.busyTimeIn(own), timing.step_time_ns);
+            timing.branch_concurrency = ratio(concurrency_profile.busyTimeIn(branch), timing.branch_time_ns);
+        }
+
+        branch_of_child = std::move(branch);
+        has_branch_of_child = true;
+        stack.pop_back();
     }
-}
-
-StepIntervalTimings::Intervals StepIntervalTimings::computeBranchTime(QueryPlan::Node * node)
-{
-    const auto * step = node->step.get();
-
-    Intervals own = std::move(timings_by_step[step].intervals);
-    std::sort(own.begin(), own.end(),
-        [](const Interval & lhs, const Interval & rhs) { return lhs.start < rhs.start; });
-
-    std::vector<Intervals> branch_sequences;
-    branch_sequences.push_back(collapseSorted(std::move(own)));
-    const UInt64 step_time_ns = totalLength(branch_sequences.front());
-
-    for (auto * child : node->children)
-        branch_sequences.push_back(computeBranchTime(child));
-
-    for (auto * child_plan : node->step->getChildPlans())
-        if (child_plan && child_plan->isInitialized())
-            branch_sequences.push_back(computeBranchTime(child_plan->getRootNode()));
-
-    Intervals branch = uniteSortedSequences(branch_sequences);
-
-    /// Look the step up again: the recursion above may have rehashed the map.
-    auto & timing = timings_by_step[step];
-    timing.step_time_ns = step_time_ns;
-    timing.branch_time_ns = totalLength(branch);
-
-    return branch;
-}
-
-StepIntervalTimings::Intervals StepIntervalTimings::collapseSorted(Intervals sorted)
-{
-    size_t write = 0;
-    for (size_t read = 0; read < sorted.size(); ++read)
-    {
-        if (write > 0 && sorted[read].start <= sorted[write - 1].end)
-            sorted[write - 1].end = std::max(sorted[write - 1].end, sorted[read].end);
-        else
-            sorted[write++] = sorted[read];
-    }
-    sorted.resize(write);
-    return sorted;
-}
-
-StepIntervalTimings::Intervals StepIntervalTimings::mergeSortedSequences(const std::vector<Intervals> & sorted_sequences)
-{
-    /// Cursor into one input sequence: which sequence, and the next unread position in it.
-    struct Cursor
-    {
-        size_t sequence;
-        size_t position;
-    };
-
-    size_t total = 0;
-    for (const auto & sequence : sorted_sequences)
-        total += sequence.size();
-
-    /// Min-heap over the current head of each non-empty sequence, ordered by interval start.
-    const auto later_start = [&](const Cursor & lhs, const Cursor & rhs)
-    {
-        return sorted_sequences[lhs.sequence][lhs.position].start
-             > sorted_sequences[rhs.sequence][rhs.position].start;
-    };
-
-    std::vector<Cursor> heads;
-    heads.reserve(sorted_sequences.size());
-    for (size_t i = 0; i < sorted_sequences.size(); ++i)
-        if (!sorted_sequences[i].empty())
-            heads.push_back({i, 0});
-    std::make_heap(heads.begin(), heads.end(), later_start);
-
-    Intervals merged;
-    merged.reserve(total);
-    while (!heads.empty())
-    {
-        std::pop_heap(heads.begin(), heads.end(), later_start);
-        Cursor & head = heads.back();
-        merged.push_back(sorted_sequences[head.sequence][head.position]);
-
-        if (++head.position < sorted_sequences[head.sequence].size())
-            std::push_heap(heads.begin(), heads.end(), later_start);
-        else
-            heads.pop_back();
-    }
-
-    return merged;
-}
-
-StepIntervalTimings::Intervals StepIntervalTimings::uniteSortedSequences(const std::vector<Intervals> & sorted_sequences)
-{
-    return collapseSorted(mergeSortedSequences(sorted_sequences));
-}
-
-UInt64 StepIntervalTimings::totalLength(const Intervals & intervals)
-{
-    UInt64 total_length_ns = 0;
-    for (const auto & interval : intervals)
-        total_length_ns += interval.end - interval.start;
-    return total_length_ns;
 }
 
 }

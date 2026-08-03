@@ -3,7 +3,9 @@
 #include <unordered_map>
 #include <vector>
 #include <Processors/Executors/WorkInterval.h>
+#include <Processors/QueryPlan/ConcurrencyProfile.h>
 #include <Processors/QueryPlan/QueryPlan.h>
+#include <Processors/QueryPlan/TimeIntervals.h>
 #include <base/types.h>
 
 namespace DB
@@ -11,57 +13,43 @@ namespace DB
 
 class IQueryPlanStep;
 
-/// Computes, from the work intervals collected during execution, per step:
-///  - step time: length of the union of the intervals of the processors the step owns;
-///  - branch time: length of that union taken over the step's whole subtree in the plan tree,
-///    including embedded child plans.
-/// The union discounts the overlap of intervals running in parallel, so both are wall-clock times.
+/// Attributes the work intervals collected during execution to query plan steps. Per step it gives
+/// the wall-clock time of the step itself and of its whole subtree, and, over the same two sets of
+/// intervals, the average number of threads the query kept busy while they were active.
 class StepIntervalTimings
 {
 public:
-    StepIntervalTimings(const WorkIntervals & intervals, const QueryPlan & plan);
+    StepIntervalTimings(const WorkIntervalsPerThread & intervals_per_thread, const QueryPlan & plan);
 
     UInt64 getStepTime(const IQueryPlanStep * step) const;
     UInt64 getBranchTime(const IQueryPlanStep * step) const;
+    double getStepConcurrency(const IQueryPlanStep * step) const;
+    double getBranchConcurrency(const IQueryPlanStep * step) const;
 
 private:
-    struct Interval
-    {
-        UInt64 start;
-        UInt64 end;
-    };
-    using Intervals = std::vector<Interval>;
-
     struct StepTiming
     {
-        /// The step's own intervals, working data used only while walking the tree.
-        Intervals intervals;
         UInt64 step_time_ns = 0;
         UInt64 branch_time_ns = 0;
+        double step_concurrency = 0.0;
+        double branch_concurrency = 0.0;
     };
 
-    using StepTimings = std::unordered_map<const IQueryPlanStep *, StepTiming>;
+    /// Give every step of the plan tree a dense index, so that the timings live in a vector whose
+    /// elements keep their addresses while the tree is walked.
+    void indexPlanSteps(const QueryPlan & plan);
 
-    /// Bucket every work interval under the step of the processor that produced it.
-    void collectStepIntervals(const WorkIntervals & intervals);
+    /// One sorted, non-overlapping sequence per step, merged from the per-thread runs.
+    std::vector<TimeIntervals> collectStepIntervals(const WorkIntervalsPerThread & intervals_per_thread) const;
 
-    /// Post-order walk that records the step and branch time of the node's step and returns the
-    /// branch's intervals as one sorted, non-overlapping sequence for the parent to reuse.
-    Intervals computeBranchTime(QueryPlan::Node * node);
+    /// Post-order walk that records the metrics of every node from its own and its subtree's intervals.
+    void computeBranchTime(const QueryPlan & plan, std::vector<TimeIntervals> step_intervals);
 
-    /// Collapse overlaps in a start-sorted sequence into one sorted, non-overlapping sequence, in place.
-    static Intervals collapseSorted(Intervals sorted);
+    const StepTiming * findTiming(const IQueryPlanStep * step) const;
 
-    /// k-way merge of already start-sorted sequences into one start-sorted (possibly overlapping) sequence.
-    static Intervals mergeSortedSequences(const std::vector<Intervals> & sorted_sequences);
-
-    /// Merge sorted sequences and collapse overlaps into one sorted, non-overlapping sequence.
-    static Intervals uniteSortedSequences(const std::vector<Intervals> & sorted_sequences);
-
-    /// Total length of a non-overlapping sequence.
-    static UInt64 totalLength(const Intervals & intervals);
-
-    StepTimings timings_by_step;
+    std::unordered_map<const IQueryPlanStep *, size_t> index_by_step;
+    std::vector<StepTiming> timings;
+    ConcurrencyProfile concurrency_profile;
 };
 
 }
