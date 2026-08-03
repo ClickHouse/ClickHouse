@@ -735,6 +735,52 @@ def test_database_introspection_sees_nested_tables(started_cluster):
     assert "FINAL: 1" in explain, explain
 
 
+def test_merge_keeps_child_table_capabilities(started_cluster):
+    """
+    `Merge` discovers the capabilities and the statistics of its children through the very same
+    enumeration that it reads through, so every one of those checks now sees the
+    `StorageMaterializedPostgreSQL` wrapper. The wrapper hands the query over to the nested
+    `ReplacingMergeTree` untouched, so it has to report what the nested table supports - otherwise
+    a `Merge` over a `MaterializedPostgreSQL` database silently loses `PREWHERE` and the size
+    estimates.
+    """
+    table_name = "postgresql_replica_capabilities"
+    pg_manager.create_postgres_table(table_name)
+    instance.query(
+        f"INSERT INTO postgres_database.{table_name} SELECT number, number FROM numbers(10)"
+    )
+
+    pg_manager.create_materialized_db(
+        ip=started_cluster.postgres_ip, port=started_cluster.postgres_port
+    )
+    check_tables_are_synchronized(instance, table_name)
+
+    instance.query("DROP TABLE IF EXISTS merge_over_matpg")
+    # The columns are inferred from the source table, so that they match its types exactly:
+    # `Merge` drops a column out of `supportedPrewhereColumns` when its type differs.
+    instance.query(
+        f"CREATE TABLE merge_over_matpg ENGINE = Merge('test_database', '^{table_name}$')"
+    )
+
+    # An explicit PREWHERE is rejected outright when the storage does not support it.
+    assert (
+        instance.query("SELECT key FROM merge_over_matpg PREWHERE value = 5") == "5\n"
+    )
+
+    # `totalRows` and `totalBytes` of the nested table are what fills these in.
+    total_rows, total_bytes = (
+        instance.query(
+            "SELECT total_rows, total_bytes FROM system.tables WHERE name = 'merge_over_matpg'"
+        )
+        .strip()
+        .split("\t")
+    )
+    assert int(total_rows) == 10, total_rows
+    assert int(total_bytes) > 0, total_bytes
+
+    instance.query("DROP TABLE merge_over_matpg")
+
+
 def test_drop_database_while_enumerating_tables(started_cluster):
     """
     `DROP DATABASE` clears the map of `StorageMaterializedPostgreSQL` wrappers that
