@@ -33,6 +33,9 @@ INSERT INTO 04709_dst_null VALUES ('x');
 CREATE TABLE 04709_buf_null (c Nullable(String))
     ENGINE = Buffer(currentDatabase(), 04709_dst_null, 1, 100, 100, 1000, 10000, 1000000, 10000000);
 SELECT 'nullable_null', count(), any(c), any(c.null) FROM 04709_buf_null;
+-- The correct .null for a non-NULL row is the same 0 a type default supplies, so the row count is
+-- the only assertion that can distinguish the two behaviours for this carrier.
+SELECT 'nullable_null_rows', count() FROM (SELECT c.null FROM 04709_buf_null);
 
 DROP TABLE IF EXISTS 04709_dst_tuple;
 DROP TABLE IF EXISTS 04709_buf_tuple;
@@ -52,8 +55,10 @@ SELECT 'nested_array', count(), any(a), any(a.size0) FROM 04709_buf_nested;
 
 DROP TABLE IF EXISTS 04709_dst_map;
 DROP TABLE IF EXISTS 04709_buf_map;
-CREATE TABLE 04709_dst_map (m Map(String, String)) ENGINE = MergeTree ORDER BY tuple();
-INSERT INTO 04709_dst_map VALUES ({'k':'7'});
+-- A Map destination would resolve .keys/.values itself, so the parent type here must be one that
+-- casts to Map but exposes no such subcolumn.
+CREATE TABLE 04709_dst_map (m Array(Tuple(String, UInt64))) ENGINE = MergeTree ORDER BY tuple();
+INSERT INTO 04709_dst_map VALUES ([('k', 7)]);
 CREATE TABLE 04709_buf_map (m Map(String, UInt64))
     ENGINE = Buffer(currentDatabase(), 04709_dst_map, 1, 100, 100, 1000, 10000, 1000000, 10000000);
 SELECT 'map', count(), any(m), any(m.keys), any(m.values) FROM 04709_buf_map;

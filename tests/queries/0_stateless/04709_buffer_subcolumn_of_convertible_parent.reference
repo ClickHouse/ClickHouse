@@ -9,6 +9,7 @@ row_policy_effective	2
 row_policy_effective	1
 row_policy	1	[1,2,3]	3
 nullable_null	1	x	0
+nullable_null_rows	1
 tuple_element	1	(1,2)	1	2
 nested_array	1	[[1,2],[3]]	2
 map	1	{'k':7}	['k']	[7]
