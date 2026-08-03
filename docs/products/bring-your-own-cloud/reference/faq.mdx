@@ -27,7 +27,11 @@ Provisioning retries automatically and self-heals once the underlying issue is f
 </Accordion>
 
 <Accordion title="What value should we use for the external ID in the onboarding template?">
-Use the external ID shown in the ClickHouse Cloud onboarding flow (the `ExternalID` parameter in CloudFormation, the `external_id` input in Terraform — both required). Displaying the external ID in the console is rolling out gradually — if your onboarding screen doesn't show one, ask your ClickHouse contact for the value before applying the template or module. Don't choose your own value: it must match what ClickHouse's automation expects, or the cross-account role can't be assumed and provisioning fails.
+The ClickHouse Cloud console generates an external ID for your AWS account when you start onboarding and pre-fills it in the CloudFormation link (the `ExternalID` parameter); if you use Terraform, pass the same value as `external_id`. All BYOC infrastructures on the same AWS account share the same external ID. Don't choose your own value: it must match what ClickHouse's automation expects, or the cross-account role can't be assumed and provisioning fails. See [AWS external ID](/products/bring-your-own-cloud/onboarding/standard#aws-external-id) for details.
+</Accordion>
+
+<Accordion title="Why is my external ID emptyid?">
+BYOC infrastructures onboarded before external IDs were introduced use the placeholder value `emptyid` for backward compatibility. When you add new infrastructure on an AWS account with an existing legacy deployment, the console reuses this placeholder so that all infrastructures on the account keep a consistent trust configuration. If you would like to switch to a unique external ID, contact ClickHouse Support.
 </Accordion>
 
 <Accordion title="Can BYOC use an existing VPC? What about shared VPCs?">
