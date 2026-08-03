@@ -347,18 +347,16 @@ public:
         /// defaults, e.g. `output_string_as_string = false`) made table-function
         /// writes produce parquet without the `String` annotation, unreadable for
         /// external Iceberg readers such as Spark.
-        auto effective_format_settings = format_settings.has_value() ? *format_settings : getFormatSettings(context);
         /// An Iceberg table's metadata is the authoritative source of Parquet `field_id`s: every
         /// write receives the table's own column-id mapping, and `ParquetBlockOutputFormat` rejects
         /// the user `field_id` settings in that case. A table function has no definition that could
         /// express an intent to override them, so every value seen here is ambient
         /// (server/profile/session); ignore them, matching the `ENGINE = Iceberg*` definition path
-        /// (`createStorageObjectStorage`) and the catalog-table path (`DatabaseDataLake`).
-        if (!format_settings.has_value() && isIcebergConfiguration())
-        {
-            effective_format_settings.parquet.column_field_ids.clear();
-            effective_format_settings.parquet.auto_assign_field_ids = false;
-        }
+        /// (`createStorageObjectStorage`) and the catalog-table path (`DatabaseDataLake`). They are
+        /// reset before the `FormatSettings` are built, so that an ambient value is not even parsed.
+        auto effective_format_settings = format_settings.has_value()
+            ? *format_settings
+            : (isIcebergConfiguration() ? getFormatSettingsIgnoringParquetFieldIds(context) : getFormatSettings(context));
         return current_metadata->write(
             sample_block,
             table_id,

@@ -254,3 +254,21 @@ SELECT (1)::Tuple(b UInt8) AS a, 2::UInt8 AS \`a.b\`
 SETTINGS engine_file_truncate_on_insert = 1,
          output_format_parquet_column_field_ids = {'a': '1', 'a.b': '2'};
 " 2>&1 | grep -oE 'BAD_ARGUMENTS|two output columns or nested fields flatten' | sort -u
+
+# The overrides are used by the Parquet output format only, and are parsed there, at the point of
+# use: `FormatSettings` are built for every input and output format of every query, so a malformed
+# value must not break a query that writes no Parquet at all — otherwise a user with such a value in
+# their profile could not run anything.
+echo "== a malformed value only affects Parquet output =="
+${CLICKHOUSE_LOCAL} --query="
+SELECT 1 AS a
+SETTINGS output_format_parquet_column_field_ids = {'a': 'oops'};
+"
+${CLICKHOUSE_LOCAL} --query="
+INSERT INTO FUNCTION file('$WORKDIR/04321_field_ids_tsv.tsv', 'TSV')
+SELECT 2 AS a
+SETTINGS engine_file_truncate_on_insert = 1,
+         output_format_parquet_column_field_ids = {'a': 'oops'};
+SELECT * FROM file('$WORKDIR/04321_field_ids_tsv.tsv', 'TSV', 'a Int32')
+SETTINGS output_format_parquet_column_field_ids = {'a': 'oops'};
+"

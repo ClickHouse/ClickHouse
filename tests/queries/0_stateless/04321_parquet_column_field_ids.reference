@@ -89,3 +89,6 @@ two output columns or nested fields flatten
 == error: dotted top-level name collides with nested path (overrides) ==
 BAD_ARGUMENTS
 two output columns or nested fields flatten
+== a malformed value only affects Parquet output ==
+1
+2

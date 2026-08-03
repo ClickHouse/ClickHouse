@@ -97,15 +97,17 @@ namespace
     ///      conventionally start at 1 and go up).
     ///   4. If `auto_assign` is false, the override map must cover every path produced by
     ///      the schema (top-level and nested).
-    std::optional<std::unordered_map<String, Int64>> buildColumnFieldIds(
-        const Block & header,
-        const std::vector<std::pair<String, Int32>> & overrides,
-        bool auto_assign,
-        bool write_geometadata)
+    /// Enumerates every Parquet schema path of the header (top-level columns and nested fields), in
+    /// schema DFS order, and rejects a header whose paths are ambiguous.
+    ///
+    /// Path identity is a dotted string, so a top-level column literally named `a.b` and the nested
+    /// field `b` under `a Tuple(b ...)` would flatten to the same key. Letting that slide silently
+    /// would either emit duplicate `field_id`s in auto-assign mode, make full coverage in
+    /// override-only mode impossible, or — for a datalake column-id mapping, which is keyed by the
+    /// same dotted paths — collapse two logical fields onto one id. Detect the collision and reject
+    /// it up front.
+    std::vector<String> enumerateOutputFieldPaths(const Block & header, bool write_geometadata)
     {
-        if (overrides.empty() && !auto_assign)
-            return std::nullopt;
-
         std::vector<String> all_paths;
         for (const auto & col : header)
         {
@@ -119,10 +121,6 @@ namespace
                 enumerateFieldPaths(col.name, col.type, all_paths);
         }
 
-        /// Path identity is a dotted string, so a top-level column literally named `a.b` and the
-        /// nested field `b` under `a Tuple(b ...)` would flatten to the same key. Letting that slide
-        /// silently would either emit duplicate `field_id`s in auto-assign mode or make full coverage
-        /// in override-only mode impossible. Detect the collision and reject it up front.
         std::unordered_set<String> known_paths;
         known_paths.reserve(all_paths.size());
         for (const auto & path : all_paths)
@@ -136,11 +134,37 @@ namespace
                     path);
         }
 
+        return all_paths;
+    }
+
+    std::optional<std::unordered_map<String, Int64>> buildColumnFieldIds(
+        const Block & header,
+        const std::vector<std::pair<String, String>> & overrides,
+        bool auto_assign,
+        bool write_geometadata)
+    {
+        if (overrides.empty() && !auto_assign)
+            return std::nullopt;
+
+        const std::vector<String> all_paths = enumerateOutputFieldPaths(header, write_geometadata);
+        const std::unordered_set<String> known_paths(all_paths.begin(), all_paths.end());
+
         std::unordered_map<String, Int64> result;
         std::unordered_set<Int32> used_ids;
 
-        for (const auto & [name, id] : overrides)
+        for (const auto & [name, raw_id] : overrides)
         {
+            /// The setting is a `Map(String, Int32)`, but its values are carried unparsed in
+            /// `FormatSettings` (see `getFormatSettings`), so the conversion happens here.
+            Int64 parsed_id = 0;
+            if (!tryParse<Int64>(parsed_id, raw_id))
+                throw Exception(ErrorCodes::BAD_ARGUMENTS,
+                    "output_format_parquet_column_field_ids value '{}' is not an integer", raw_id);
+            if (parsed_id < std::numeric_limits<Int32>::min() || parsed_id > std::numeric_limits<Int32>::max())
+                throw Exception(ErrorCodes::BAD_ARGUMENTS,
+                    "output_format_parquet_column_field_ids value {} out of Int32 range", parsed_id);
+            const Int32 id = static_cast<Int32>(parsed_id);
+
             if (id < 0)
                 throw Exception(ErrorCodes::BAD_ARGUMENTS,
                     "output_format_parquet_column_field_ids value {} must be non-negative", id);
@@ -207,6 +231,12 @@ ParquetBlockOutputFormat::ParquetBlockOutputFormat(WriteBuffer & out_, SharedHea
         throw Exception(ErrorCodes::BAD_ARGUMENTS,
             "output_format_parquet_column_field_ids / output_format_parquet_auto_assign_field_ids "
             "cannot be used when writing to a datalake table that provides its own column-id mapping");
+
+    /// A datalake column-id mapping is keyed by the same dotted paths as the user settings, so an
+    /// ambiguous header would collapse two logical fields onto one id there as well. The mapping
+    /// path never goes through `buildColumnFieldIds`, so the invariant is enforced here.
+    if (has_metadata_mapping)
+        enumerateOutputFieldPaths(*header_, format_settings.parquet.write_geometadata);
 
     /// Resolve Parquet `field_id`s from the user-facing settings (explicit overrides and/or
     /// the Iceberg-style auto-assign toggle). Used only when there is no metadata mapping.

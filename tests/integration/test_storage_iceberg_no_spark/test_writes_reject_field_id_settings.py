@@ -171,6 +171,41 @@ def test_writes_reject_field_id_settings(
         == "1\n2\n"
     )
 
+    # Ignoring the ambient settings also covers values that are malformed: they
+    # are reset before the `FormatSettings` are built, so they are never parsed.
+    # Otherwise a user with a broken value in their profile would still be
+    # unable to create, load or write an Iceberg table.
+    malformed_settings = {
+        "output_format_parquet_column_field_ids": "{'x': 'not_an_integer'}"
+    }
+    malformed_table = make_table_name("malformed")
+    create_iceberg_table(
+        storage_type,
+        instance,
+        malformed_table,
+        started_cluster_iceberg_no_spark,
+        "(x Int32)",
+        format_version,
+        settings=malformed_settings,
+    )
+    instance.query(
+        f"INSERT INTO {malformed_table} VALUES (1);", settings=malformed_settings
+    )
+    malformed_table_function_expr = get_creation_expression(
+        storage_type,
+        malformed_table,
+        started_cluster_iceberg_no_spark,
+        table_function=True,
+    )
+    instance.query(
+        f"INSERT INTO FUNCTION {malformed_table_function_expr} VALUES (2);",
+        settings={"allow_insert_into_iceberg": 1, **malformed_settings},
+    )
+    # The malformed value is not passed to the `SELECT`: the format of the
+    # query result is built from the ambient settings as well, and rejecting a
+    # malformed value there is the intended behaviour.
+    assert instance.query(f"SELECT * FROM {malformed_table} ORDER BY ALL") == "1\n2\n"
+
     # A legacy table created before the definition-time guard existed can still
     # carry these settings in its stored definition. Replaying such a stored
     # definition (short ATTACH, server startup, replica recovery, RESTORE) must

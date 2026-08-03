@@ -1132,6 +1132,18 @@ def test_ambient_parquet_field_id_settings_are_ignored(started_cluster):
         node.query(f"SELECT * FROM {table_ref}", settings=field_id_settings) == "AAPL\n"
     )
 
+    # The values are reset before the `FormatSettings` are built, so even a
+    # malformed ambient value is ignored rather than parsed and rejected.
+    node.query(
+        f"INSERT INTO {table_ref} VALUES ('MSFT');",
+        settings={
+            "allow_insert_into_iceberg": 1,
+            "write_full_path_in_iceberg_metadata": 1,
+            "output_format_parquet_column_field_ids": "{'x': 'not_an_integer'}",
+        },
+    )
+    assert node.query(f"SELECT * FROM {table_ref} ORDER BY ALL") == "AAPL\nMSFT\n"
+
 
 def test_create_gzip_metadata(started_cluster):
     # Catalog-backed CREATE TABLE from ClickHouse with gzip metadata

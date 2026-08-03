@@ -64,6 +64,19 @@ using BucketSplitter = std::shared_ptr<IBucketSplitter>;
 FormatSettings getFormatSettings(const ContextPtr & context);
 FormatSettings getFormatSettings(const ContextPtr & context, const Settings & settings);
 
+/** Resets the Parquet `field_id` settings (`output_format_parquet_column_field_ids` and
+  * `output_format_parquet_auto_assign_field_ids`) to their defaults.
+  *
+  * A datalake table that carries its own column-id mapping (Iceberg) is the authoritative source of
+  * `field_id`s, so ambient (server/profile/session) values of these settings are ignored for such
+  * tables. They are reset before the `FormatSettings` are built, so that an ambient value never
+  * reaches the `FormatSettings` of an Iceberg table at all.
+  */
+void resetParquetFieldIdSettings(Settings & settings);
+
+/// Same as `getFormatSettings(context)`, but with the Parquet `field_id` settings reset first.
+FormatSettings getFormatSettingsIgnoringParquetFieldIds(const ContextPtr & context);
+
 /** Allows to create an IInputFormat or IOutputFormat by the name of the format.
   * Note: format and compression are independent things.
   */

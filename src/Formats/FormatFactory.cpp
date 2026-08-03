@@ -20,6 +20,7 @@
 #include <Disks/DiskObjectStorage/ObjectStorages/IObjectStorage.h>
 #include <Poco/URI.h>
 #include <Common/Exception.h>
+#include <Common/FieldVisitorToString.h>
 #include <Common/MemoryTracker.h>
 #include <Common/KnownObjectNames.h>
 #include <Common/RemoteHostFilter.h>
@@ -103,6 +104,20 @@ FormatFactory::Creators & FormatFactory::getOrCreateCreators(const String & name
 FormatSettings getFormatSettings(const ContextPtr & context)
 {
     const auto & settings = context->getSettingsRef();
+
+    return getFormatSettings(context, settings);
+}
+
+void resetParquetFieldIdSettings(Settings & settings)
+{
+    settings[Setting::output_format_parquet_column_field_ids] = Map{};
+    settings[Setting::output_format_parquet_auto_assign_field_ids] = false;
+}
+
+FormatSettings getFormatSettingsIgnoringParquetFieldIds(const ContextPtr & context)
+{
+    Settings settings = context->getSettingsCopy();
+    resetParquetFieldIdSettings(settings);
 
     return getFormatSettings(context, settings);
 }
@@ -260,59 +275,33 @@ FormatSettings getFormatSettings(const ContextPtr & context, const Settings & se
     format_settings.parquet.allow_geoparquet_parser = settings[Setting::input_format_parquet_allow_geoparquet_parser];
     format_settings.parquet.write_geometadata = settings[Setting::output_format_parquet_geometadata];
     {
-        /// `output_format_parquet_column_field_ids` is a `Map(String, Int32)`. We parse the
-        /// `field_id` to a real `Int32` here, at FormatSettings build time, so the setting
-        /// is rejected as soon as it's set rather than only when Parquet output is invoked.
+        /// `output_format_parquet_column_field_ids` is a `Map(String, Int32)`. Only the raw entries
+        /// are collected here: `FormatSettings` are built for every input and output format of every
+        /// query, while these overrides are used by the Parquet output format only. Converting the
+        /// value to an `Int32` here would make a malformed value break unrelated queries — every
+        /// query, for a user who has such a value in their profile — and would also defeat the rule
+        /// that ambient values of this setting are ignored for Iceberg tables. So the conversion, and
+        /// the rest of the validation, happen in `ParquetBlockOutputFormat`, at the point of use.
         const auto & raw = settings[Setting::output_format_parquet_column_field_ids].value;
         format_settings.parquet.column_field_ids.clear();
         format_settings.parquet.column_field_ids.reserve(raw.size());
         for (const auto & entry : raw)
         {
-            if (entry.getType() != Field::Types::Tuple || entry.safeGet<Tuple>().size() != 2)
-                throw Exception(ErrorCodes::BAD_ARGUMENTS,
-                    "output_format_parquet_column_field_ids must be a Map(String, Int32)");
+            /// A `Map` field is always a list of two-element tuples.
+            const Tuple & tuple = entry.safeGet<Tuple>();
+            chassert(tuple.size() == 2);
 
-            const auto & tuple = entry.safeGet<Tuple>();
-            if (tuple.at(0).getType() != Field::Types::String)
-                throw Exception(ErrorCodes::BAD_ARGUMENTS,
-                    "output_format_parquet_column_field_ids key must be a String");
-
-            const Field & value_field = tuple.at(1);
-            Int64 id_value = 0;
-            switch (value_field.getType())
+            /// A quoted value (e.g. `{'a': '1'}`) is kept as is, so that the setting can be set from
+            /// contexts that quote everything; anything else is dumped, to be reported as a
+            /// non-integer by the Parquet output format.
+            auto to_string = [](const Field & field)
             {
-                case Field::Types::Int64:
-                    id_value = value_field.safeGet<Int64>();
-                    break;
-                case Field::Types::UInt64:
-                {
-                    const UInt64 u = value_field.safeGet<UInt64>();
-                    if (u > static_cast<UInt64>(std::numeric_limits<Int64>::max()))
-                        throw Exception(ErrorCodes::BAD_ARGUMENTS,
-                            "output_format_parquet_column_field_ids value out of Int32 range");
-                    id_value = static_cast<Int64>(u);
-                    break;
-                }
-                case Field::Types::String:
-                {
-                    /// Tolerate integers passed as strings (e.g. `{'a': '1'}`) so that the
-                    /// setting can be set from contexts that quote everything.
-                    const String & s = value_field.safeGet<String>();
-                    if (!tryParse<Int64>(id_value, s))
-                        throw Exception(ErrorCodes::BAD_ARGUMENTS,
-                            "output_format_parquet_column_field_ids value '{}' is not an integer", s);
-                    break;
-                }
-                default:
-                    throw Exception(ErrorCodes::BAD_ARGUMENTS,
-                        "output_format_parquet_column_field_ids value must be an Int32");
-            }
-            if (id_value < std::numeric_limits<Int32>::min() || id_value > std::numeric_limits<Int32>::max())
-                throw Exception(ErrorCodes::BAD_ARGUMENTS,
-                    "output_format_parquet_column_field_ids value {} out of Int32 range", id_value);
+                return field.getType() == Field::Types::String
+                    ? field.safeGet<String>()
+                    : applyVisitor(FieldVisitorToString(), field);
+            };
 
-            format_settings.parquet.column_field_ids.emplace_back(
-                tuple.at(0).safeGet<String>(), static_cast<Int32>(id_value));
+            format_settings.parquet.column_field_ids.emplace_back(to_string(tuple.at(0)), to_string(tuple.at(1)));
         }
     }
     format_settings.parquet.auto_assign_field_ids = settings[Setting::output_format_parquet_auto_assign_field_ids];

@@ -898,13 +898,11 @@ StoragePtr DatabaseDataLake::tryGetTableImpl(const String & name, ContextPtr con
     /// storage for every later write. An Iceberg table's metadata is the authoritative source of
     /// Parquet `field_id`s, so the write path rejects them; a user whose profile enables them would
     /// otherwise be unable to write to any catalog table at all. The same rule is applied to the
-    /// `ENGINE = Iceberg*` definition path in `createStorageObjectStorage`.
-    auto catalog_format_settings = getFormatSettings(context_copy);
-    if (configuration->isIcebergConfiguration())
-    {
-        catalog_format_settings.parquet.column_field_ids.clear();
-        catalog_format_settings.parquet.auto_assign_field_ids = false;
-    }
+    /// `ENGINE = Iceberg*` definition path in `createStorageObjectStorage`. They are reset before the
+    /// `FormatSettings` are built, so that an ambient value is not even parsed.
+    auto catalog_format_settings = configuration->isIcebergConfiguration()
+        ? getFormatSettingsIgnoringParquetFieldIds(context_copy)
+        : getFormatSettings(context_copy);
 
     auto result_storage = std::make_shared<StorageObjectStorage>(
         configuration,
