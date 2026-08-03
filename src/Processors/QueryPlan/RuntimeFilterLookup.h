@@ -61,6 +61,11 @@ public:
     /// A closed [min, max] envelope of the values inserted into the filter, if one can be computed
     virtual std::optional<Range> getRecordedKeyRanges() const;
 
+    /// True once the last build stream has merged into this filter and published it.
+    /// Consumers that snapshot the filter's contents (instead of only reading them once) must
+    /// check this: a snapshot taken before the build finished stays empty forever.
+    bool insertsAreFinished() const { return inserts_are_finished.load(); }
+
     /// Opt in to tracking the [min, max] key-range envelope during build.
     void enableIndexAnalysis() { index_analysis_enabled = true; }
 

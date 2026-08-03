@@ -72,8 +72,12 @@ IRuntimeFilter::IRuntimeFilter(
 
 std::optional<Range> IRuntimeFilter::getRecordedKeyRanges() const
 {
-    /// inserts_are_finished (seq_cst) publishes the range without a lock.
-    if (!range_supported || !range_positive || !has_range || !inserts_are_finished.load())
+    /// inserts_are_finished (seq_cst) publishes the range without a lock, so it must be read first:
+    /// has_range, range_min and range_max are written by updateRange/mergeRange on the build side
+    /// and are only safe to read after the publication.
+    if (!inserts_are_finished.load())
+        return {};
+    if (!range_supported || !range_positive || !has_range)
         return {};
     if (range_min.isNull() || range_max.isNull())
         return {};
