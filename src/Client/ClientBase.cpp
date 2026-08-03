@@ -3589,16 +3589,32 @@ bool ClientBase::queryNeedsContinuation(const String & text) const
 
         std::unique_ptr<IParserBase> parser = make_parser();
 
-        /// True if the statement starting at `statement_begin` has an opening bracket
-        /// that is never closed. Such a statement clearly needs continuation, and the
-        /// parser may well stop before the end of input on it. Only opens trigger it;
-        /// an excess closing bracket is a real syntax error. Under the Kusto dialect
-        /// the KQL variant of the check is used: the plain one stops at the first
-        /// token the SQL lexer rejects, and KQL's negative operators (`!between`,
-        /// `!in`, ...) begin with such a token, which would hide the very brackets to
-        /// look at.
+        /// True if the statement that failed to parse at `statement_begin` is still
+        /// being typed, judged by an opening bracket that is never closed. The parser
+        /// may well stop before the end of input on such a statement, so the
+        /// end-of-input test below cannot see it. Only opens trigger it; an excess
+        /// closing bracket is a real syntax error.
+        ///
+        /// A `;` anywhere in what remains of the buffer means the user has already
+        /// terminated the statement, so it is a syntax error to report, not an
+        /// unfinished one -- `SELECT (; SELECT 1` must be submitted rather than kept
+        /// open forever. (A `;` inside a string or a comment is not a token here, so
+        /// it does not count.) The scan runs to the end of the buffer because a failed
+        /// parse leaves no reliable statement end.
+        ///
+        /// Under the Kusto dialect the KQL variant of the bracket check is used: the
+        /// plain one stops at the first token the SQL lexer rejects, and KQL's negative
+        /// operators (`!between`, `!in`, ...) begin with such a token, which would hide
+        /// the very brackets to look at.
         auto has_unclosed_opener = [&](const char * statement_begin)
         {
+            {
+                Tokens terminator_tokens(statement_begin, end, 0, true);
+                for (TokenIterator it(terminator_tokens); !it->isEnd(); ++it)
+                    if (it->type == TokenType::Semicolon)
+                        return false;
+            }
+
             Tokens statement_tokens(statement_begin, end, 0, true);
             const UnmatchedParentheses unmatched = effective_settings[Setting::dialect] == Dialect::kusto
                 ? checkKQLUnmatchedParentheses(TokenIterator(statement_tokens))
