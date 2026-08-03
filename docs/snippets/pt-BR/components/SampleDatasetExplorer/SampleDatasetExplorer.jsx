@@ -26,18 +26,6 @@ export const SampleDatasetExplorer = ({ categories }) => {
           imgDark: "/images/sample-datasets-grid/brown-benchmark-dark.jpg"
         },
         {
-          title: "Logs de cliques em terabytes do Criteo",
-          href: "/pt-BR/get-started/sample-datasets/criteo",
-          imgLight: "/images/sample-datasets-grid/criteo-light.jpg",
-          imgDark: "/images/sample-datasets-grid/criteo-dark.jpg"
-        },
-        {
-          title: "JOB benchmark",
-          href: "/pt-BR/get-started/sample-datasets/job",
-          imgLight: "/images/sample-datasets-grid/benchmarks-light.jpg",
-          imgDark: "/images/sample-datasets-grid/benchmarks-dark.jpg"
-        },
-        {
           title: "Star Schema Benchmark (SSB)",
           href: "/pt-BR/get-started/sample-datasets/star-schema",
           imgLight: "/images/sample-datasets-grid/star-schema-light.jpg",
@@ -88,12 +76,6 @@ export const SampleDatasetExplorer = ({ categories }) => {
           imgDark: "/images/sample-datasets-grid/covid19-dark.jpg"
         },
         {
-          title: "O que tem no cardápio? (NYPL)",
-          href: "/pt-BR/get-started/sample-datasets/menus",
-          imgLight: "/images/sample-datasets-grid/menus-light.jpg",
-          imgDark: "/images/sample-datasets-grid/menus-dark.jpg"
-        },
-        {
           title: "Dados de ocorrências do NYPD",
           href: "/pt-BR/get-started/sample-datasets/nypd-complaint-data",
           imgLight: "/images/sample-datasets-grid/nypd-complaint-data-light.jpg",
@@ -110,6 +92,12 @@ export const SampleDatasetExplorer = ({ categories }) => {
           href: "/pt-BR/get-started/sample-datasets/uk-price-paid",
           imgLight: "/images/sample-datasets-grid/uk-price-paid-light.jpg",
           imgDark: "/images/sample-datasets-grid/uk-price-paid-dark.jpg"
+        },
+        {
+          title: "O que tem no cardápio? (NYPL)",
+          href: "/pt-BR/get-started/sample-datasets/menus",
+          imgLight: "/images/sample-datasets-grid/menus-light.jpg",
+          imgDark: "/images/sample-datasets-grid/menus-dark.jpg"
         }
       ]
     },
@@ -137,8 +125,7 @@ export const SampleDatasetExplorer = ({ categories }) => {
           href: "/pt-BR/get-started/sample-datasets/tw-weather",
           imgLight: "/images/sample-datasets-grid/tw-weather-light.jpg",
           imgDark: "/images/sample-datasets-grid/tw-weather-dark.jpg"
-        },
-        { title: "WikiStat", href: "/pt-BR/get-started/sample-datasets/wikistat", imgLight: "/images/sample-datasets-grid/wikistat-light.jpg", imgDark: "/images/sample-datasets-grid/wikistat-dark.jpg" }
+        }
       ]
     },
     {
@@ -161,16 +148,16 @@ export const SampleDatasetExplorer = ({ categories }) => {
           imgDark: "/images/sample-datasets-grid/hacker-news-vector-search-dark.jpg"
         },
         {
-          title: "Laion-400M dataset",
-          href: "/pt-BR/get-started/sample-datasets/laion",
-          imgLight: "/images/sample-datasets-grid/laion-400m-light.jpg",
-          imgDark: "/images/sample-datasets-grid/laion-400m-dark.jpg"
-        },
-        {
           title: "LAION 5B dataset",
           href: "/pt-BR/get-started/sample-datasets/laion5b",
           imgLight: "/images/sample-datasets-grid/laion5b-light.jpg",
           imgDark: "/images/sample-datasets-grid/laion5b-dark.jpg"
+        },
+        {
+          title: "Laion-400M dataset",
+          href: "/pt-BR/get-started/sample-datasets/laion",
+          imgLight: "/images/sample-datasets-grid/laion-400m-light.jpg",
+          imgDark: "/images/sample-datasets-grid/laion-400m-dark.jpg"
         }
       ]
     },
@@ -188,16 +175,22 @@ export const SampleDatasetExplorer = ({ categories }) => {
           imgDark: "/images/sample-datasets-grid/amazon-reviews-dark.jpg"
         },
         {
+          title: "Analisando dados do Stack Overflow",
+          href: "/pt-BR/get-started/sample-datasets/stackoverflow",
+          imgLight: "/images/sample-datasets-grid/stackoverflow-light.jpg",
+          imgDark: "/images/sample-datasets-grid/stackoverflow-dark.jpg"
+        },
+        {
           title: "Analytics web anonimizado",
           href: "/pt-BR/get-started/sample-datasets/anon-web-analytics-metrica",
           imgLight: "/images/sample-datasets-grid/anon-web-analytics-light.jpg",
           imgDark: "/images/sample-datasets-grid/anon-web-analytics-dark.jpg"
         },
         {
-          title: "Consultando dados do GitHub",
-          href: "/pt-BR/get-started/sample-datasets/github",
-          imgLight: "/images/sample-datasets-grid/github-light.jpg",
-          imgDark: "/images/sample-datasets-grid/github-dark.jpg"
+          title: "Logs de cliques em terabytes do Criteo",
+          href: "/pt-BR/get-started/sample-datasets/criteo",
+          imgLight: "/images/sample-datasets-grid/criteo-light.jpg",
+          imgDark: "/images/sample-datasets-grid/criteo-dark.jpg"
         },
         {
           title: "Dataset de eventos do GitHub",
@@ -212,11 +205,12 @@ export const SampleDatasetExplorer = ({ categories }) => {
           imgDark: "/images/sample-datasets-grid/hacker-news-dark.jpg"
         },
         {
-          title: "Analisando dados do Stack Overflow",
-          href: "/pt-BR/get-started/sample-datasets/stackoverflow",
-          imgLight: "/images/sample-datasets-grid/stackoverflow-light.jpg",
-          imgDark: "/images/sample-datasets-grid/stackoverflow-dark.jpg"
+          title: "Consultando dados do GitHub",
+          href: "/pt-BR/get-started/sample-datasets/github",
+          imgLight: "/images/sample-datasets-grid/github-light.jpg",
+          imgDark: "/images/sample-datasets-grid/github-dark.jpg"
         },
+        { title: "WikiStat", href: "/pt-BR/get-started/sample-datasets/wikistat", imgLight: "/images/sample-datasets-grid/wikistat-light.jpg", imgDark: "/images/sample-datasets-grid/wikistat-dark.jpg" },
         {
           title: "Dataset de dislikes do YouTube",
           href: "/pt-BR/get-started/sample-datasets/youtube-dislikes",
@@ -227,10 +221,7 @@ export const SampleDatasetExplorer = ({ categories }) => {
     }
   ]
 
-  // Mantenha o explorador na mesma ordem da barra lateral. O playground é um
-  // link para uma página independente acima do explorador, seguido por estas categorias.
-  const categoryOrder = ["benchmarks", "vector-search", "web-social", "geo-location", "time-series-sensors", "public-records"]
-  const cats = (categories || CATEGORIES).slice().sort((a, b) => categoryOrder.indexOf(a.id) - categoryOrder.indexOf(b.id))
+  const cats = categories || CATEGORIES
 
   const [selectedId, setSelectedId] = useState(null)
   const selected = cats.find((c) => c.id === selectedId) || null
@@ -376,12 +367,12 @@ export const SampleDatasetExplorer = ({ categories }) => {
         <div className="sde-view">
           <div className="grid grid-cols-2 lg:grid-cols-3 gap-6 items-start">
             {cats.map((cat, i) => (
-              <button key={cat.id} type="button" className="sde-tile" style={{ animationDelay: `${i * 60}ms` }} onClick={() => setSelectedId(cat.id)} aria-label={`Explorar conjuntos de dados de ${cat.title}`}>
+              <button key={cat.id} type="button" className="sde-tile" style={{ animationDelay: `${i * 60}ms` }} onClick={() => setSelectedId(cat.id)} aria-label={`Explore ${cat.title} datasets`}>
                 <span className="sde-tile-media">
                   <Banner cat={cat} />
                   <span className="sde-tile-hint">
                     <span className="sde-count">
-                      {cat.datasets.length} conjunto{cat.datasets.length === 1 ? "" : "s"} de dados
+                      {cat.datasets.length} dataset{cat.datasets.length === 1 ? "" : "s"}
                     </span>
                     <span className="sde-explore">
                       Explorar
@@ -403,7 +394,7 @@ export const SampleDatasetExplorer = ({ categories }) => {
               <svg width="18" height="18" viewBox="0 0 24 24" fill="none" xmlns="http://www.w3.org/2000/svg">
                 <path d="M15 18l-6-6 6-6" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" />
               </svg>
-              Todas as categorias
+              All categories
             </button>
           </div>
 

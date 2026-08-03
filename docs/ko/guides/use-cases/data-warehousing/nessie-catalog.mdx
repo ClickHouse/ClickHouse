@@ -9,7 +9,7 @@ show_related_blogs: true
 doc_type: 'guide'
 ---
 
-import { ExperimentalBadge } from "/snippets/ko/components/ExperimentalBadge/ExperimentalBadge.jsx";
+import ExperimentalBadge from "/snippets/ko/components/ExperimentalBadge/ExperimentalBadge.jsx";
 
 <ExperimentalBadge />
 
@@ -50,7 +50,7 @@ Nessie는 데이터 레이크를 위한 오픈 소스 트랜잭션 카탈로그�
   ### 로컬 Nessie 카탈로그 설정
 </div>
 
-Nessie, 인메모리 버전 저장소, 객체 스토리지용 MinIO를 포함한 전체 환경을 제공하는 공식 [Nessie docker-compose setup](https://projectnessie.org/guides/)을 사용할 수 있습니다.
+Nessie, 인메모리 버전 저장소, 객체 스토리지용 MinIO를 포함한 전체 환경을 제공하는 공식 [Nessie docker-compose setup](https://projectnessie.org/guides/setting-up/)을 사용할 수 있습니다.
 
 **1단계:** 예시를 실행할 새 폴더를 만든 다음, 아래 구성으로 `docker-compose.yml` 파일을 생성합니다:
 
@@ -108,13 +108,13 @@ services:
   clickhouse:
     image: clickhouse/clickhouse-server:head
     container_name: nessie-clickhouse
-    user: '0:0'  # Ensures root permissions
+    user: '0:0'  # 루트 권한 보장
     ports:
       - "8123:8123"
       - "9000:9000"
     volumes:
       - clickhouse_data:/var/lib/clickhouse
-      - ./clickhouse/data_import:/var/lib/clickhouse/data_import  # Mount dataset folder
+      - ./clickhouse/data_import:/var/lib/clickhouse/data_import  # 데이터셋 폴더 마운트
     networks:
       - iceberg_net
     environment:
@@ -149,7 +149,7 @@ docker-compose logs -f
 ```
 
 <Note>
-  Nessie 설정은 인메모리 버전 저장소를 사용하므로, 먼저 샘플 데이터를 Iceberg 테이블에 로드해야 합니다. ClickHouse를 통해 해당 테이블에 쿼리하기 전에 환경에서 테이블이 생성되고 데이터가 채워져 있는지 확인하십시오.
+  Nessie 설정은 메모리 내 버전 저장소를 사용하므로, 먼저 샘플 데이터를 Iceberg 테이블에 로드해야 합니다. ClickHouse를 통해 해당 테이블에 쿼리하기 전에 환경에서 테이블이 생성되고 데이터가 채워져 있는지 확인하십시오.
 </Note>
 
 <div id="connecting-to-local-nessie-catalog">

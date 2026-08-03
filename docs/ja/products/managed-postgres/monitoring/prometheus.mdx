@@ -7,7 +7,7 @@ keywords: ['managed postgres', 'prometheus', 'grafana', 'datadog', 'メトリク
 doc_type: 'guide'
 ---
 
-import { BetaBadge } from "/snippets/ja/components/BetaBadge/BetaBadge.jsx";
+import BetaBadge from "/snippets/ja/components/BetaBadge/BetaBadge.jsx";
 import { Image } from "/snippets/ja/components/Image.jsx";
 
 import { TrackedLink } from "/snippets/ja/components/GalaxyTrackedLink/GalaxyTrackedLink.jsx";
@@ -123,15 +123,21 @@ scrape_configs:
 </div>
 
 <Steps>
-  <Step title="ダッシュボード JSON のダウンロード" id="download">
+  <Step>
+    #### ダッシュボード JSON のダウンロード
+
     <TrackedLink href={'https://clickhouse-docs-assets.s3.us-east-1.amazonaws.com/examples/managed-postgres-grafana-dashboard.json'} download="managed-postgres-grafana-dashboard.json" eventName="docs.managed_postgres_grafana_dashboard.download">ダッシュボード JSON をダウンロード</TrackedLink>。
   </Step>
 
-  <Step title="Grafana でインポート画面を開く" id="open-import">
+  <Step>
+    #### Grafana でインポート画面を開く
+
     **Dashboards → New → Import** に移動します。JSON ファイルをアップロードするか、その内容を貼り付けます。
   </Step>
 
-  <Step title="Prometheus データソースを選択する" id="pick-datasource">
+  <Step>
+    #### Prometheus データソースを選択する
+
     `DS_PROMETHEUS` の入力を求められたら、[前のセクション](#configuring-prometheus)で設定したエンドポイントをスクレイプしている Prometheus データソースを選択します。
   </Step>
 </Steps>

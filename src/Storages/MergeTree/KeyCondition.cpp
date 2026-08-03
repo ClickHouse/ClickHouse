@@ -31,7 +31,6 @@
 #include <Common/MortonUtils.h>
 #include <Common/typeid_cast.h>
 #include <DataTypes/DataTypeArray.h>
-#include <DataTypes/DataTypeFixedString.h>
 #include <DataTypes/DataTypeTuple.h>
 #include <Columns/ColumnArray.h>
 #include <Columns/ColumnSet.h>
@@ -1301,91 +1300,6 @@ static const ActionsDAG::Node * tryRewriteInTruthyCondition(
     return &cloneDAGWithInversionPushDown(*predicate, inverted_dag, inputs_mapping, context, false, /* boolean_context */ true);
 }
 
-static const ActionsDAG::Node * tryRewriteNullIfComparison(
-    const ActionsDAG::Node & node,
-    const String & op_name,
-    ActionsDAG & inverted_dag,
-    std::unordered_map<const ActionsDAG::Node *, const ActionsDAG::Node *> & inputs_mapping,
-    const ContextPtr & context)
-{
-    if (node.children.size() != 2)
-        return nullptr;
-
-    auto mirrored_op = [](std::string_view op) -> std::string_view
-    {
-        if (op == "equals") return "equals";
-        if (op == "notEquals") return "notEquals";
-        if (op == "less") return "greater";
-        if (op == "greater") return "less";
-        if (op == "lessOrEquals") return "greaterOrEquals";
-        if (op == "greaterOrEquals") return "lessOrEquals";
-        return {};
-    };
-
-    const std::string_view mirrored = mirrored_op(op_name);
-    if (mirrored.empty())
-        return nullptr;
-
-    auto is_const = [](const ActionsDAG::Node & n)
-    {
-        return n.column && isColumnConst(*n.column);
-    };
-
-    const bool c0 = is_const(*node.children[0]);
-    const bool c1 = is_const(*node.children[1]);
-    if (c0 == c1)
-        return nullptr;
-
-    const ActionsDAG::Node * nullif_node = node.children[c0 ? 1 : 0];
-    const ActionsDAG::Node * const_node = node.children[c0 ? 0 : 1];
-    const std::string_view canonical_op = c0 ? mirrored : std::string_view{op_name};
-
-    if (nullif_node->type != ActionsDAG::ActionType::FUNCTION)
-        return nullptr;
-
-    const auto & function_name = nullif_node->function_base->getName();
-    if (function_name != "nullIf")
-        return nullptr;
-
-    if (nullif_node->children.size() != 2)
-        return nullptr;
-
-    if (canonical_op != "equals")
-        return nullptr;
-
-    const auto * col_node = nullif_node->children[0];
-    const auto * sentinel_node = nullif_node->children[1];
-
-    if (!is_const(*sentinel_node))
-        return nullptr;
-
-    Field sentinel_field;
-    Field const_field;
-    sentinel_node->column->get(0, sentinel_field);
-    const_node->column->get(0, const_field);
-
-    if (!sentinel_node->result_type->equals(*const_node->result_type) || !col_node->result_type->equals(*const_node->result_type) || sentinel_field == const_field)
-        return nullptr;
-
-    auto function_builder = FunctionFactory::instance().get(String(canonical_op), context);
-    if (!function_builder)
-        return nullptr;
-
-    const auto & cloned_col = cloneDAGWithInversionPushDown(*col_node, inverted_dag, inputs_mapping, context, false, false);
-    const auto & cloned_const = cloneDAGWithInversionPushDown(*const_node, inverted_dag, inputs_mapping, context, false, false);
-
-    ActionsDAG::NodeRawConstPtrs args = {&cloned_col, &cloned_const};
-    const auto & cmp_node = inverted_dag.addFunction(function_builder, args, "");
-    /// Normalize the generated comparison through tryRewriteCoalesceComparison so that
-    /// the template KeyCondition and each skip-index KeyCondition produce the same RPN atoms.
-    /// Without this, nullIf(coalesce(a, b), sentinel) = const can expand coalesce differently
-    /// across passes, causing filterMarksUsingIndex to misalign atom positions and drop granules.
-    const String cmp_name(canonical_op);
-    if (const auto * rewritten = tryRewriteCoalesceComparison(cmp_node, cmp_name, inverted_dag, inputs_mapping, context))
-        return rewritten;
-    return &cmp_node;
-}
-
 static const ActionsDAG::Node & cloneDAGWithInversionPushDown(
     const ActionsDAG::Node & node,
     ActionsDAG & inverted_dag,
@@ -1515,8 +1429,7 @@ static const ActionsDAG::Node & cloneDAGWithInversionPushDown(
                 && boolean_context
                 && context->getSettingsRef()[Setting::allow_key_condition_coalesce_rewrite]
                 && ((res = tryRewriteCoalesceComparison(node, name, inverted_dag, inputs_mapping, context)) != nullptr
-                    || (res = tryRewriteCoalesceCondition(node, name, inverted_dag, inputs_mapping, context)) != nullptr
-                    || (res = tryRewriteNullIfComparison(node, name, inverted_dag, inputs_mapping, context)) != nullptr))
+                    || (res = tryRewriteCoalesceCondition(node, name, inverted_dag, inputs_mapping, context)) != nullptr))
             {
                 handled_inversion = true;
             }
@@ -4161,34 +4074,6 @@ bool KeyCondition::extractAtomFromTree(const RPNBuilderTreeNode & node, const Bu
 
                     if (!should_keep_original_string_constant)
                     {
-                        /// A `FixedString(N)` constant is stored as a `String` Field of N bytes,
-                        /// right-padded with '\0', and compared zero-padded, so it can match more than
-                        /// the single padded value while `convertFieldToType` below builds a point
-                        /// range from the padding:
-                        ///   - against a `String` key it matches the family `value` + trailing '\0'*
-                        ///     (`'abc'`, `'abc\0'`, ...), not a point;
-                        ///   - against a narrower `FixedString(M)` key (N > M) it keeps the N padded
-                        ///     bytes, which no longer map into the key domain.
-                        /// Either way the point range is unsound and prunes matching granules, so
-                        /// decline index analysis (fall back to a full scan). A wider-or-equal
-                        /// `FixedString(M)` key (M >= N) pads the constant into exactly one key value,
-                        /// so pruning stays correct and is left untouched.
-                        /// Strip `LowCardinality` and `Nullable` first: a wrapped constant such as
-                        /// `toFixedString(x, N)` with a non-literal length (`LowCardinality(FixedString(N))`)
-                        /// or `CAST(... AS LowCardinality(Nullable(FixedString(N))))` carries the same padded
-                        /// bytes and comparison semantics. `tryGetConstant` only peels an outer `Nullable`, so
-                        /// a `LowCardinality(Nullable(FixedString(N)))` constant reaches here with the inner
-                        /// `Nullable` intact; peel both wrappers so no variant slips past this guard (the key
-                        /// type is already `LowCardinality`/`Nullable`-stripped above).
-                        const auto const_type_unwrapped = removeLowCardinalityAndNullable(const_type);
-                        if (WhichDataType(const_type_unwrapped).isFixedString() && isStringOrFixedString(key_expr_type_not_null))
-                        {
-                            const size_t const_bytes = const_value.safeGet<String>().size();
-                            const auto * fixed_key = typeid_cast<const DataTypeFixedString *>(key_expr_type_not_null.get());
-                            if (!fixed_key || fixed_key->getN() < const_bytes)
-                                return false;
-                        }
-
                         const_value = convertFieldToType(const_value, *key_expr_type_not_null);
                         if (const_value.isNull())
                             return false;
@@ -5395,11 +5280,8 @@ bool KeyCondition::matchesExactContinuousRange() const
                 Constraint & constraint = column_constraints.at(mapping.key_index);
                 /// For Constraint::POINT, we need to check if the function chain is strict.
                 /// For example, `toDate(event_time) in ('2025-06-03')` means a range of `event_time`: ['2025-06-03 00:00:00','2025-06-04 00:00:00')
-                /// So, POINT needs to be converted to a RANGE.
-                /// Only an empty chain yields an exact point. A non-empty chain (e.g. a widening CAST for
-                /// a wider-typed constant) is applied to granule bounds with forced-closed bounds, so it
-                /// cannot promise exact continuity across a boundary granule; treat it as a RANGE (#90461).
-                if (is_chain_strict && mapping.functions.empty())
+                /// So, POINT needs to be converted to a RANGE
+                if (is_chain_strict)
                     constraint = Constraint::POINT;
                 else
                 {
@@ -5423,11 +5305,8 @@ bool KeyCondition::matchesExactContinuousRange() const
             {
                 /// For Constraint::POINT, we need to check if the function chain is strict.
                 /// For example, `toDate(event_time) = '2025-06-03'` means a range of `event_time`: ['2025-06-03 00:00:00','2025-06-04 00:00:00')
-                /// So, POINT needs to be converted to a RANGE.
-                /// Only an empty chain yields an exact point. A non-empty chain (e.g. a widening CAST for
-                /// a wider-typed constant) is applied to granule bounds with forced-closed bounds, so it
-                /// cannot promise exact continuity across a boundary granule; treat it as a RANGE (#90461).
-                if (is_chain_strict && element.monotonic_functions_chain.empty())
+                /// So, POINT needs to be converted to a RANGE
+                if (is_chain_strict)
                     constraint = Constraint::POINT;
             }
 

@@ -15,12 +15,16 @@ keywords: ['clickstack', 'telemetrygen', '合成データ', 'OpenTelemetry', '�
 <Tabs>
   <Tab title="Managed ClickStack">
     <Steps>
-      <Step title="前提条件" id="prerequisites-managed">
+      <Step>
+        ### 前提条件
+
         このガイドは、[Managed ClickStack の Getting Started Guide](/ja/clickstack/deployment/managed) を完了しており、`telemetrygen` を実行するマシンから OTLP gRPC (`4317`) および HTTP (`4318`) のエンドポイントにアクセスできる OpenTelemetry collector が稼働していることを前提としています。collector を [`OTLP_AUTH_TOKEN` で保護](/ja/clickstack/ingesting-data/collector#securing-the-collector) している場合は、その値をすぐ使えるようにしておいてください。
       </Step>
 
-      <Step title="telemetrygen をインストールする" id="install-telemetrygen-managed">
-        Dockerイメージから `telemetrygen` を実行します (インストールは不要です) 。以下のコマンドを読みやすくするため、簡単なラッパーを定義します。`--add-host` を指定すると、コンテナーからホスト上で待ち受けている collector に接続できます。
+      <Step>
+        ### telemetrygen をインストールする
+
+        Dockerイメージから `telemetrygen` を実行します (インストールは不要です) 。以降のコマンドを見やすくするために、簡単なラッパーを定義します。`--add-host` を使うと、コンテナーからホスト上で待ち受けている collector に接続できます。
 
         ```shell
         telemetrygen() {
@@ -38,7 +42,9 @@ keywords: ['clickstack', 'telemetrygen', '合成データ', 'OpenTelemetry', '�
         ```
       </Step>
 
-      <Step title="環境変数を設定する" id="set-env-vars-managed">
+      <Step>
+        ### 環境変数を設定する
+
         collector が保護されている場合は、認証トークンを設定します。
 
         ```shell
@@ -61,7 +67,9 @@ keywords: ['clickstack', 'telemetrygen', '合成データ', 'OpenTelemetry', '�
         ```
       </Step>
 
-      <Step title="ログを生成する" id="generate-logs-managed">
+      <Step>
+        ### ログを生成する
+
         ログは、単一で均一なストリームではなく、複数のサービスにまたがって、主に情報レベルを中心に警告やエラーも含めた現実的な重大度の組み合わせで送信します。
 
         ```shell
@@ -85,7 +93,9 @@ keywords: ['clickstack', 'telemetrygen', '合成データ', 'OpenTelemetry', '�
         * `--telemetry-attributes` はレコード単位の属性を設定します。
       </Step>
 
-      <Step title="トレースを生成する" id="generate-traces-managed">
+      <Step>
+        ### トレースを生成する
+
         正常な複数のサービスと、障害が発生している 1 つの依存先から、複数のスパンを含むトレースを送信します。これにより、サービスマップは大半が正常で 1 つのサービスのみがエラーを返す、より現実的な構成となり、エラービューにもデータが投入されます。
 
         ```shell
@@ -111,7 +121,9 @@ keywords: ['clickstack', 'telemetrygen', '合成データ', 'OpenTelemetry', '�
         * `--workers` は、より多く、より変化に富んだボリュームを得るために、複数のジェネレーターを並列に実行します。
       </Step>
 
-      <Step title="メトリクスを生成" id="generate-metrics-managed">
+      <Step>
+        ### メトリクスを生成
+
         ダッシュボードでカウンター、Gauge、分布を利用できるよう、一般的な3種類のメトリクスタイプを送信します。一部のジェネレーターとは異なり、`telemetrygen` はメトリクスでも `--duration` を尊重するため、手動で停止する必要はありません。
 
         ```shell
@@ -123,7 +135,9 @@ keywords: ['clickstack', 'telemetrygen', '合成データ', 'OpenTelemetry', '�
         `--metric-type` には `Gauge`、`Sum`、`Histogram`、または `ExponentialHistogram` を指定できます。`--otlp-metric-name` は series 名を指定するオプションで、UI で見つけやすくなります。`--aggregation-temporality` には `delta` または `cumulative` を指定します。
       </Step>
 
-      <Step title="ClickStack で確認する" id="verify-managed">
+      <Step>
+        ### ClickStack で確認する
+
         ClickHouse Cloud コンソールから ClickStack UI を開きます。`Search` ビューで、時間範囲を `Last 15 minutes` に設定し、ログソースを `Logs` と `Traces` に切り替えます。`ServiceName` で絞り込んで `frontend`、`checkout`、`cart`、`payment` の各サービスを表示し、`SeverityText` で絞り込んで warning と error のログ行を探します。`payment` の trace を開き、子 span とエラーステータスを確認します。`Chart Explorer` を開き、`Metrics` を選択して、上で設定したメトリクス名の 1 つ (たとえば `http.server.requests`) をチャート化し、メトリクスのインジェストを確認します。
       </Step>
     </Steps>
@@ -131,11 +145,15 @@ keywords: ['clickstack', 'telemetrygen', '合成データ', 'OpenTelemetry', '�
 
   <Tab title="ClickStack Open Source">
     <Steps>
-      <Step title="前提条件" id="prerequisites-oss">
+      <Step>
+        ### 前提条件
+
         このガイドでは、[all-in-one イメージの手順](/ja/clickstack/getting-started/oss)に従って Open Source ClickStack を起動しており、OTLP エンドポイント (`4317` gRPC および `4318` HTTP) に接続できることを前提としています。また、`Team Settings > API Keys` にある HyperDX UI のインジェスト API key も必要です。
       </Step>
 
-      <Step title="telemetrygen をインストールする" id="install-telemetrygen-oss">
+      <Step>
+        ### telemetrygen をインストールする
+
         Dockerイメージから `telemetrygen` を実行します (インストールは不要です) 。以下のコマンドを読みやすくするため、簡単なラッパーを定義します。`--add-host` を指定すると、コンテナーからホスト上で待ち受けている collector に接続できます。
 
         ```shell
@@ -146,7 +164,7 @@ keywords: ['clickstack', 'telemetrygen', '合成データ', 'OpenTelemetry', '�
         export OTEL_ENDPOINT=host.docker.internal:4317
         ```
 
-        または、Go でバイナリをインストールし、代わりに `localhost` を対象にします。
+        または、Go を使ってバイナリをインストールし、代わりに `localhost` を指定します。
 
         ```shell
         go install github.com/open-telemetry/opentelemetry-collector-contrib/cmd/telemetrygen@latest
@@ -154,14 +172,16 @@ keywords: ['clickstack', 'telemetrygen', '合成データ', 'OpenTelemetry', '�
         ```
       </Step>
 
-      <Step title="環境変数を設定する" id="set-env-vars-oss">
+      <Step>
+        ### 環境変数を設定する
+
         インジェスト API key をエクスポートします。
 
         ```shell
         export CLICKSTACK_API_KEY=<your_ingestion_api_key>
         ```
 
-        各コマンドでは変わる部分 (service、severity、status、属性) だけを指定すればよいように、小さな `tg` ヘルパーを定義します:
+        各コマンドで変わる部分 (service、severity、status、属性) だけを指定すればよいよう、簡単な `tg` ヘルパーを定義します:
 
         ```shell
         tg() { local signal=$1; shift; telemetrygen "$signal" \
@@ -171,8 +191,10 @@ keywords: ['clickstack', 'telemetrygen', '合成データ', 'OpenTelemetry', '�
         ```
       </Step>
 
-      <Step title="ログを生成する" id="generate-logs-oss">
-        ログは、単一で均一なストリームではなく、複数のサービスにまたがって、主に情報レベルを中心に警告やエラーも含めた現実的な重大度の組み合わせで送信します。
+      <Step>
+        ### ログを生成する
+
+        サービス全体で重大度が現実的に混在するようにログを送信します。大半は情報レベルとし、均一な単一ストリームではなく、警告やエラーも含めます。
 
         ```shell
         tg logs --service frontend --severity-text Info  --severity-number 9  --body "GET /api/products 200" \
@@ -187,8 +209,10 @@ keywords: ['clickstack', 'telemetrygen', '合成データ', 'OpenTelemetry', '�
         ```
       </Step>
 
-      <Step title="トレースを生成する" id="generate-traces-oss">
-        正常な複数のサービスと、障害が発生している 1 つの依存先から、複数のスパンを含むトレースを送信します。これにより、サービスマップは大半が正常で 1 つのサービスのみがエラーを返す、より現実的な構成となり、エラービューにもデータが投入されます。
+      <Step>
+        ### トレースを生成する
+
+        正常な複数のサービスと、障害が発生している 1 つの依存先から、複数のスパンを含むトレースを送信します。これにより、サービスマップには現実的な構成 (大半は正常で、1 つのサービスでエラーが発生している状態) が反映され、エラービューにもデータが表示されます。
 
         ```shell
         # Healthy services: the bulk of the traffic, all spans Ok
@@ -205,7 +229,9 @@ keywords: ['clickstack', 'telemetrygen', '合成データ', 'OpenTelemetry', '�
         ```
       </Step>
 
-      <Step title="メトリクスを生成する" id="generate-metrics-oss">
+      <Step>
+        ### メトリクスを生成する
+
         チャートにカウンター、Gauge、分布を表示できるように、一般的な 3 種類のメトリクスを送信します。
 
         ```shell
@@ -217,7 +243,9 @@ keywords: ['clickstack', 'telemetrygen', '合成データ', 'OpenTelemetry', '�
         `--metric-type` には `Gauge`、`Sum`、`Histogram`、または `ExponentialHistogram` を指定できます。
       </Step>
 
-      <Step title="ClickStack で確認する" id="verify-oss">
+      <Step>
+        ### ClickStack で確認する
+
         [http://localhost:8080](http://localhost:8080) にアクセスして ClickStack UI を開きます。`Search` ビューで、時間範囲を `Last 15 minutes` に設定し、ログソースを `Logs` と `Traces` の間で切り替えます。`ServiceName` で絞り込むと `frontend`、`checkout`、`cart`、`payment` の各サービスを確認でき、`SeverityText` で絞り込むと `warning` と `error` のログ行を見つけられます。`payment` のトレースを開き、子スパンとエラーのステータスを確認します。`Chart Explorer` を開いて `Metrics` を選択し、先ほど設定したメトリクス名の 1 つ (たとえば `http.server.requests`) をチャート化して、メトリクスのインジェストを確認します。
       </Step>
     </Steps>

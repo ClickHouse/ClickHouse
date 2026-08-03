@@ -123,62 +123,76 @@ ClickHouse 版本遵循 `YY.M.patch.build-type` 方案，其中 `YY` 表示两�
   ### 逐步操作流程
 </div>
 
-<Steps>
-  <Step title="查找活跃的发行版" id="discover-active-releases">
-    `BackportPRs.receive_release_prs` 会查询 GitHub 中所有带有 `release` 标签的未关闭 PR。这些 PR 的 head ref 就是发布分支名称 (例如 `release/25.3`) 。基于这些信息，它会推导出需要搜索的特定版本标签集合：代码仓库中存在的所有 `v{VER}-must-backport` 标签，只要其版本不比最新的活跃发布更新，都会被纳入。即使某个发布已不再活跃，与之对应的较旧标签也会被包含在内 (比所有活跃发布都更新的标签会被跳过，因为它无法扩展到任何活跃分支) ，因此，只要仍有较新的发布处于活跃状态，被标记为面向已终止生命周期发布的 PR 仍然会被找到。
-  </Step>
+<div id="discover-active-releases">
+  #### 1. 发现活跃的发布分支
+</div>
 
-  <Step title="查找要回移的 PR" id="find-prs-to-backport">
-    `BackportPRs.receive_prs_for_backport` 使用 GitHub search API 查找满足以下条件的已合并 PR：
+`BackportPRs.receive_release_prs` 会在 GitHub 上查询所有带有 `release` 标签的未关闭 PR。这些 PR 的 head ref 就是发布分支名 (例如 `release/25.3`) 。系统会根据这些分支推导出一组需要搜索的特定版本标签：仓库中所有版本不高于最新活跃发布分支的 `v{VER}-must-backport` 标签都会包含在内。即使某个较旧标签对应的发布分支已不再活跃，它也会被纳入 (而比所有活跃发布分支都新的标签会被跳过，因为它不可能扩展到任何活跃分支)，因此，只要仍有较新的发布分支处于活跃状态，带有已终止支持发布分支标签的 PR 仍然会被找到。
 
-    * 带有至少一个回移标签 (`pr-must-backport`、`pr-must-backport-force`、`pr-critical-bugfix` 或特定版本标签) ，并且
-    * **尚未**带有 `pr-backports-created`，并且
-    * 在任一发布分支上找到的最早提交日期之后完成合并，并且
-    * 在最近 90 天内有过更新 (以确保搜索查询的效率) 。
-  </Step>
+<div id="find-prs-to-backport">
+  #### 2. 查找需要回移的 PR
+</div>
 
-  <Step title="Rolling-out 分支的处理" id="rolling-out-branch-handling">
-    当一个 release PR 带有 `rolling-out` 标签时，通用回移标签 (`pr-must-backport`、`pr-critical-bugfix`) 会跳过该分支。bot 会关闭此前为该分支创建的所有 cherry-pick PR 或 backport PR，并附上一条说明性评论。特定版本标签 (例如 `v25.3-must-backport`) 始终会覆盖这一行为——对于指定的发布版本，以及它所扩展到的每一个更新的活动发布分支，都是如此。`pr-must-backport-force` 会对所有分支绕过 `rolling-out` 检查。
-  </Step>
+`BackportPRs.receive_prs_for_backport` 使用 GitHub 搜索 API 查找满足以下条件的已合并 PR：
 
-  <Step title={<>Cherry-pick 阶段 (<code>ReleaseBranch.create_cherrypick</code>)</>} id="cherry-pick-stage">
-    对于每一组尚未存在 cherry-pick PR 的 (原始 PR、发布分支) 组合：
+* 带有至少一个回移标签 (`pr-must-backport`、`pr-must-backport-force`、`pr-critical-bugfix` 或特定版本标签) ，且
+* **不**带有 `pr-backports-created`，且
+* 合并时间晚于任一发布分支上找到的最早提交日期，且
+* 在过去 90 天内有更新 (以提高搜索查询效率) 。
 
-    1. 检出发布分支，并基于它创建一个 **backport 分支** (`backport/release/X.Y/N`) 。
-    2. 对合并提交的第一个父提交执行 `git merge -s ours`，以创建一个不包含任何内容变更的合成合并基线。
-    3. 强制创建一个直接指向原始 PR 的合并提交的 **cherry-pick 分支** (`cherrypick/release/X.Y/N`) 。
-    4. 尝试使用 `git merge --no-commit --no-ff` 将 cherry-pick 分支合并到 backport 分支：
-       * 如果已是最新状态，则说明该变更已存在于发布分支中——标记为完成并跳过。
-       * 否则 (无论是否有冲突) ，重置并推送这两个分支。
-    5. 创建一个 cherry-pick PR，将 `cherrypick/release/X.Y/N` 合并到 `backport/release/X.Y/N`，并添加 `pr-cherrypick` 和 `do not test` 标签。
-    6. 如果适用，则从原始 PR 继承 `pr-bugfix` 或 `pr-critical-bugfix`。
-    7. 此时**不会**设置受分配人；只有在检测到冲突时才会添加。
-  </Step>
+<div id="rolling-out-branch-handling">
+  #### 3. `rolling-out` 分支处理
+</div>
 
-  <Step title="自动合并无冲突的 cherry-pick PR" id="auto-merge-conflict-free-cherry-pick-prs">
-    如果 cherry-pick PR 可合并 (无冲突) ，bot 会通过 GitHub API 自动将其合并，并立即进入回移阶段。
-  </Step>
+当发布 PR 带有 `rolling-out` 标签时，通用的回移标签 (`pr-must-backport`、`pr-critical-bugfix`) 会跳过该分支。机器人会关闭此前为该分支创建的所有 cherry-pick 或回移 PR，并附上说明性注释。特定版本的标签 (例如 `v25.3-must-backport`) 始终会覆盖这一行为——对于指定的 release，以及它扩展到的每个更新且仍处于活动状态的发布分支，都是如此。`pr-must-backport-force` 会绕过对所有分支的 `rolling-out` 检查。
 
-  <Step title={<>回移阶段 (<code>ReleaseBranch.create_backport</code>)</>} id="backport-stage">
-    在 cherry-pick PR 合并后：
+<div id="cherry-pick-stage">
+  #### 4. Cherry-pick 阶段 (`ReleaseBranch.create_cherrypick`)
+</div>
 
-    1. 检出并拉取 backport 分支。
-    2. 找到发布分支与 backport 分支之间的 merge-base。
-    3. 使用 `git reset --soft` 重置到该 merge-base，将所有 cherry-picked 提交压缩为一个。
-    4. 使用 backport PR 的标题作为提交消息进行提交。
-    5. 强制推送 backport 分支，并创建一个以实际发布分支为目标的 backport PR。
-    6. 为该 PR 添加 `pr-backport` 标签 (以及在适用时添加 `pr-bugfix` / `pr-critical-bugfix`) 。
-    7. 将该 PR 分配给原始 PR 的作者、合并人和现有受分配人 (不包括机器人账户) 。
-  </Step>
+对于每一组尚未存在 cherry-pick PR 的 (原始 PR、发布分支) 组合：
 
-  <Step title="完成" id="completion">
-    当某个原始 PR 对应的所有发布分支都已完成回移时，bot 会为该原始 PR 添加 `pr-backports-created`。
-  </Step>
+1. 检出发布分支，并基于它创建一个 **backport 分支** (`backport/release/X.Y/N`) 。
+2. 对合并提交的第一个父提交执行 `git merge -s ours`，以创建一个不包含任何内容变更的合成合并基线。
+3. 强制创建一个直接指向原始 PR 的合并提交的 **cherry-pick 分支** (`cherrypick/release/X.Y/N`) 。
+4. 尝试使用 `git merge --no-commit --no-ff` 将 cherry-pick 分支合并到 backport 分支：
+   * 如果已是最新状态，则说明该变更已存在于发布分支中——标记为完成并跳过。
+   * 否则 (无论是否有冲突) ，重置并推送这两个分支。
+5. 创建一个 cherry-pick PR，将 `cherrypick/release/X.Y/N` 合并到 `backport/release/X.Y/N`，并添加 `pr-cherrypick` 和 `do not test` 标签。
+6. 如果适用，则从原始 PR 继承 `pr-bugfix` 或 `pr-critical-bugfix`。
+7. 此时**不会**设置受分配人；只有在检测到冲突时才会添加。
 
-  <Step title="前置检查" id="pre-check">
-    在开始对 PR 进行任何处理之前，`ReleaseBranch.pre_check` 会运行 `git merge-base --is-ancestor`，以验证该合并提交是否已经在发布分支的可达范围内。如果是，则该 PR 会被视为已回移并跳过。
-  </Step>
-</Steps>
+<div id="auto-merge-conflict-free-cherry-pick-prs">
+  #### 5. 无冲突的 cherry-pick PR 自动合并
+</div>
+
+如果 cherry-pick PR 可合并 (无冲突) ，机器人会通过 GitHub API 自动合并它，并立即进入回移阶段。
+
+<div id="backport-stage">
+  #### 6. 回移阶段 (`ReleaseBranch.create_backport`)
+</div>
+
+在 cherry-pick PR 合并后：
+
+1. 检出并拉取 backport 分支。
+2. 找到 release branch 与 backport 分支之间的 merge-base。
+3. 执行 `git reset --soft` 回退到该 merge-base，将所有 cherry-pick 过的提交 squash 为一个提交。
+4. 使用回移 PR 的标题作为提交消息进行提交。
+5. 强制推送 backport 分支，并创建一个以实际 release branch 为目标分支的回移 PR。
+6. 为该 PR 添加 `pr-backport` label (如适用，还需添加 `pr-bugfix` / `pr-critical-bugfix`) 。
+7. 将该 PR 分配给原始 PR 的作者、合并者以及现有受分配人 (不包括机器人账户) 。
+
+<div id="completion">
+  #### 7. 完成
+</div>
+
+当某个原始 PR 对应的所有发布分支都已完成回移后，机器人会在该原始 PR 上添加 `pr-backports-created`。
+
+<div id="pre-check">
+  #### 8. 预检查
+</div>
+
+在开始处理某个 PR 之前，`ReleaseBranch.pre_check` 会运行 `git merge-base --is-ancestor`，以确认该合并提交尚未包含在发布分支的历史中。如果已经包含，则该 PR 会被视为已回移并跳过。
 
 <div id="stale-cherry-pick-pr-handling">
   ### 长时间未处理的 Cherry-pick PR 处理

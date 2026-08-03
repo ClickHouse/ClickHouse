@@ -225,7 +225,7 @@ namespace
 
     /// MySQL returns spatial values as a 4-byte SRID prefix followed by a standard WKB payload.
     /// Parse it and insert into the target column, which is either a concrete geometric type
-    /// (`MultiPoint`, `LineString`, `Polygon`, `MultiLineString`, `MultiPolygon`) or the umbrella `Geometry`
+    /// (`LineString`, `Polygon`, `MultiLineString`, `MultiPolygon`) or the umbrella `Geometry`
     /// type (a `Variant` over all of them). `Point` is read by the dedicated `vtPoint` path.
     void insertGeometryValue(const IDataType & data_type, IColumn & column, const mysqlxx::Value & value, UInt32 max_wkb_geometry_elements)
     {
@@ -273,13 +273,6 @@ namespace
                 serializer.add(geometry);
                 concrete = serializer.finalize();
                 concrete_type_name = "MultiPolygon";
-            }
-            else if constexpr (std::is_same_v<T, MultiPoint<CartesianPoint>>)
-            {
-                MultiPointSerializer<CartesianPoint> serializer;
-                serializer.add(geometry);
-                concrete = serializer.finalize();
-                concrete_type_name = "MultiPoint";
             }
         }, object);
 

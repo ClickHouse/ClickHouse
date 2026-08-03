@@ -2,7 +2,6 @@
 
 #include <Parsers/ASTQueryWithOutput.h>
 
-namespace Poco::JSON { class Object; }
 
 namespace DB
 {
@@ -137,9 +136,6 @@ public:
     const ASTPtr & getTableOverride() const { return table_override; }
 
     QueryKind getQueryKind() const override { return QueryKind::Explain; }
-
-    void writeJSON(WriteBuffer & out) const override;
-    void readJSON(const Poco::JSON::Object & json) override;
 
 protected:
     void formatQueryImpl(WriteBuffer & ostr, const FormatSettings & settings, FormatState & state, FormatStateStacked frame) const override

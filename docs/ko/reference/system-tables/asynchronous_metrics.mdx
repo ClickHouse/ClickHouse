@@ -318,18 +318,6 @@ CPU 코어가 사용자 공간 코드를 실행한 시간의 비율입니다. �
 
 수정할 수 없는 ECC 메모리 오류의 개수입니다. 이 값이 0이 아니면 RAM에 결함이 있음을 의미하며, 잠재적인 데이터 손상을 나타내므로 즉시 교체해야 합니다. 출처: `/sys/devices/system/edac/mc/`
 
-<div id="executableuserdefinedfunctionmemoryresidentbytes">
-  ### ExecutableUserDefinedFunctionMemoryResidentBytes
-</div>
-
-실행형 및 실행형 풀 사용자 정의 함수와 해당 자식 프로세스에서 실행 중인 모든 프로세스의 상주 집합 크기(VmRSS) 합계로, 단위는 바이트입니다. 유휴 상태인 실행형 풀 워커도 포함됩니다. 공유 페이지는 프로세스별로 한 번씩만 계산되므로, 이 합계는 상한값이며 UDF 프로세스의 고유한 실제 물리 메모리 사용량을 초과할 수 있습니다.
-
-<div id="executableuserdefinedfunctionprocesses">
-  ### ExecutableUserDefinedFunctionProcesses
-</div>
-
-실행형 및 실행형 풀 사용자 정의 함수에 대해 생성된 현재 실행 중인 프로세스 수로, 해당 하위 프로세스도 포함합니다.
-
 <div id="filesystemcachebytes">
   ### FilesystemCacheBytes
 </div>

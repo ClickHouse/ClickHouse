@@ -91,10 +91,10 @@ Podemos tener otra tabla, `otel_logs_archive`, que usamos para almacenar los dat
 
 ```sql
 CREATE TABLE otel_logs_archive AS otel_logs
---move data to archive table
+--mover datos a la tabla de archivo
 ALTER TABLE otel_logs
         (MOVE PARTITION tuple('2019-01-26') TO TABLE otel_logs_archive
---confirm data has been moved
+--confirmar que los datos se han movido
 SELECT
         Timestamp::Date AS day,
         count() AS c

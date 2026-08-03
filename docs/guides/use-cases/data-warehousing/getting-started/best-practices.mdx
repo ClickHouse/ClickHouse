@@ -1,5 +1,5 @@
 ---
-title: 'Data lakes best practices'
+title: 'Data lake best practices'
 sidebarTitle: 'Best practices'
 slug: /use-cases/data-lake/best-practices
 description: 'Production guidance for querying open table formats in ClickHouse: integration patterns, performance tuning, catalog setup, and debugging.'
@@ -74,7 +74,7 @@ Many integrations require a feature flag before first use. Check your service ve
 
 For catalog connections, each catalog type has its own flag. See [Connecting to catalogs](/use-cases/data-lake/getting-started/connecting-catalogs) for an overview and the [DataLakeCatalog reference](/engines/database-engines/datalakecatalog) for setting details. Per-catalog setup lives in the [catalog guides](/use-cases/data-lake/reference).
 
-For writes, Iceberg requires [allow_insert_into_iceberg](/reference/settings/session-settings/allow#allow_insert_into_iceberg) (25.7+, Beta from 26.2). See [Writing to data lakes](/use-cases/data-lake/getting-started/writing-data). Delta Lake requires [allow_delta_lake_writes](/reference/settings/session-settings/allow-experimental#allow_experimental_delta_lake_writes) (25.9+). The [support matrix](/use-cases/data-lake/support-matrix) lists which flags apply to each format and operation.
+For writes, Iceberg requires [allow_insert_into_iceberg](/operations/settings/settings#allow_insert_into_iceberg) (25.7+, Beta from 26.2). See [Writing to data lakes](/use-cases/data-lake/getting-started/writing-data). Delta Lake requires [allow_delta_lake_writes](/operations/settings/settings#allow_experimental_delta_lake_writes) (25.9+). The [support matrix](/use-cases/data-lake/support-matrix) lists which flags apply to each format and operation.
 
 ## Improve query performance {#query-performance}
 
@@ -124,12 +124,12 @@ For repeated batch loads from lake tables, scope each run to a snapshot range in
 
 Store the snapshot identifier from your last successful load and use it as the lower bound on the next run.
 
-- For Iceberg, read a point-in-time view with [iceberg_snapshot_id](/reference/settings/session-settings/iceberg#iceberg_snapshot_id) or [iceberg_timestamp_ms](/reference/settings/session-settings/iceberg#iceberg_timestamp_ms) (25.4+). For append-only tables, combine snapshot settings with partition filters in `WHERE`. Use [system.iceberg_history](/operations/system-tables/iceberg_history) (25.6+) to look up snapshot IDs between runs.
-- For Delta Lake, read changes between two versions with [delta_lake_snapshot_start_version](/reference/settings/session-settings/delta-lake#delta_lake_snapshot_start_version) and [delta_lake_snapshot_end_version](/reference/settings/session-settings/delta-lake#delta_lake_snapshot_end_version) (25.12+). Read a single snapshot with [delta_lake_snapshot_version](/reference/settings/session-settings/delta-lake#delta_lake_snapshot_version) (25.8+). See [Delta change data feed](#delta-incremental-sync) for a CDF example.
+- For Iceberg, read a point-in-time view with [iceberg_snapshot_id](/operations/settings/settings#iceberg_snapshot_id) or [iceberg_timestamp_ms](/operations/settings/settings#iceberg_timestamp_ms) (25.4+). For append-only tables, combine snapshot settings with partition filters in `WHERE`. Use [system.iceberg_history](/operations/system-tables/iceberg_history) (25.6+) to look up snapshot IDs between runs.
+- For Delta Lake, read changes between two versions with [delta_lake_snapshot_start_version](/operations/settings/settings#delta_lake_snapshot_start_version) and [delta_lake_snapshot_end_version](/operations/settings/settings#delta_lake_snapshot_end_version) (25.12+). Read a single snapshot with [delta_lake_snapshot_version](/operations/settings/settings#delta_lake_snapshot_version) (25.8+). See [Delta change data feed](#delta-incremental-sync) for a CDF example.
 
 ### Cache Parquet files locally {#filesystem-cache}
 
-Both formats honor [enable_filesystem_cache](/reference/settings/session-settings/enable-filesystem#enable_filesystem_cache) to keep hot [Parquet](/interfaces/formats/Parquet) files on local disk between queries. On self-managed deployments, configure a [filesystem cache disk](/operations/storing-data#using-local-cache) in server config so the setting has storage to write to. ClickHouse Cloud manages caching automatically. Set `enable_filesystem_cache = 0` when benchmarking so cache hits don't mask changes between runs.
+Both formats honor [enable_filesystem_cache](/operations/settings/settings#enable_filesystem_cache) to keep hot [Parquet](/interfaces/formats/Parquet) files on local disk between queries. On self-managed deployments, configure a [filesystem cache disk](/operations/storing-data#using-local-cache) in server config so the setting has storage to write to. ClickHouse Cloud manages caching automatically. Set `enable_filesystem_cache = 0` when benchmarking so cache hits don't mask changes between runs.
 
 ### Apache Iceberg {#iceberg-settings}
 
@@ -139,9 +139,9 @@ Most Iceberg read optimizations are on by default. The settings below control pa
 
 | Setting                                                                                            | Since | Default       | Notes                                                                                                          |
 | -------------------------------------------------------------------------------------------------- | ----- | ------------- | -------------------------------------------------------------------------------------------------------------- |
-| [use_iceberg_partition_pruning](/reference/settings/session-settings/use-iceberg#use_iceberg_partition_pruning)       | 25.1  | `1` from 25.6 | Skips data files using partition metadata in manifests                                                         |
-| [use_iceberg_metadata_files_cache](/reference/settings/session-settings/use-iceberg#use_iceberg_metadata_files_cache) | 25.4  | `1`           | Caches manifest lists and metadata JSON in memory                                                              |
-| [iceberg_metadata_staleness_ms](/reference/settings/session-settings/iceberg-metadata#iceberg_metadata_staleness_ms)       | 26.3  | `0`           | Query setting. Use cached metadata when fresher than this window instead of calling the catalog on every query |
+| [use_iceberg_partition_pruning](/operations/settings/settings#use_iceberg_partition_pruning)       | 25.1  | `1` from 25.6 | Skips data files using partition metadata in manifests                                                         |
+| [use_iceberg_metadata_files_cache](/operations/settings/settings#use_iceberg_metadata_files_cache) | 25.4  | `1`           | Caches manifest lists and metadata JSON in memory                                                              |
+| [iceberg_metadata_staleness_ms](/operations/settings/settings#iceberg_metadata_staleness_ms)       | 26.3  | `0`           | Query setting. Use cached metadata when fresher than this window instead of calling the catalog on every query |
 | [iceberg_use_version_hint](/sql-reference/table-functions/iceberg#writes-into-iceberg-table)      | 25.6  | —             | Reads `version-hint.text` for faster metadata resolution on direct path access                                 |
 
 #### Cut catalog latency {#iceberg-catalog-latency}
@@ -149,7 +149,7 @@ Most Iceberg read optimizations are on by default. The settings below control pa
 Catalog-connected Iceberg tables pay a metadata fetch on each query unless you cache it. Pair two settings (26.4+):
 
 1. Set [iceberg_metadata_async_prefetch_period_ms](/engines/table-engines/integrations/iceberg#async-metadata-prefetch) at table creation to prefetch metadata in the background.
-2. Set [iceberg_metadata_staleness_ms](/reference/settings/session-settings/iceberg-metadata#iceberg_metadata_staleness_ms) (26.3+) on queries to accept slightly stale metadata in exchange for skipping the catalog roundtrip.
+2. Set [iceberg_metadata_staleness_ms](/operations/settings/settings#iceberg_metadata_staleness_ms) (26.3+) on queries to accept slightly stale metadata in exchange for skipping the catalog roundtrip.
 
 ```sql
 CREATE TABLE events
@@ -167,7 +167,7 @@ When ClickHouse picks the wrong metadata file (multiple `.metadata.json` files i
 
 #### Time travel {#iceberg-time-travel}
 
-Read a historical snapshot with [iceberg_timestamp_ms](/reference/settings/session-settings/iceberg#iceberg_timestamp_ms) or [iceberg_snapshot_id](/reference/settings/session-settings/iceberg#iceberg_snapshot_id) (both 25.4+). Don't set both in the same query. Inspect snapshot lineage in [system.iceberg_history](/operations/system-tables/iceberg_history) (25.6+) before choosing an ID. For repeated batch loads, see [Bound batch reads to snapshots](#snapshot-bounds).
+Read a historical snapshot with [iceberg_timestamp_ms](/operations/settings/settings#iceberg_timestamp_ms) or [iceberg_snapshot_id](/operations/settings/settings#iceberg_snapshot_id) (both 25.4+). Don't set both in the same query. Inspect snapshot lineage in [system.iceberg_history](/operations/system-tables/iceberg_history) (25.6+) before choosing an ID. For repeated batch loads, see [Bound batch reads to snapshots](#snapshot-bounds).
 
 ```sql
 SELECT count()
@@ -177,23 +177,23 @@ SETTINGS iceberg_timestamp_ms = 1714636800000
 
 #### Iceberg writes {#iceberg-write-settings}
 
-Beyond [allow_insert_into_iceberg](/reference/settings/session-settings/allow#allow_insert_into_iceberg) (25.7+, Beta from 26.2), control output file size and partition count on insert:
+Beyond [allow_insert_into_iceberg](/operations/settings/settings#allow_insert_into_iceberg) (25.7+, Beta from 26.2), control output file size and partition count on insert:
 
 | Setting                                                                                                      | Since | Purpose                                      |
 | ------------------------------------------------------------------------------------------------------------ | ----- | -------------------------------------------- |
-| [iceberg_insert_max_rows_in_data_file](/reference/settings/session-settings/iceberg-insert#iceberg_insert_max_rows_in_data_file)   | 25.9  | Row limit per output data file               |
-| [iceberg_insert_max_bytes_in_data_file](/reference/settings/session-settings/iceberg-insert#iceberg_insert_max_bytes_in_data_file) | 25.9  | Byte limit per output data file              |
-| [iceberg_insert_max_partitions](/reference/settings/session-settings/iceberg-insert#iceberg_insert_max_partitions)                 | 25.12 | Cap on partitions written in a single insert |
+| [iceberg_insert_max_rows_in_data_file](/operations/settings/settings#iceberg_insert_max_rows_in_data_file)   | 25.9  | Row limit per output data file               |
+| [iceberg_insert_max_bytes_in_data_file](/operations/settings/settings#iceberg_insert_max_bytes_in_data_file) | 25.9  | Byte limit per output data file              |
+| [iceberg_insert_max_partitions](/operations/settings/settings#iceberg_insert_max_partitions)                 | 25.12 | Cap on partitions written in a single insert |
 
 See [Writing to data lakes](/use-cases/data-lake/getting-started/writing-data) and the [Iceberg engine reference](/engines/table-engines/integrations/iceberg).
 
 ### Delta Lake {#delta-lake-settings}
 
-From version 25.6, ClickHouse reads Delta Lake on S3 and GCS through the Delta Lake Rust kernel ([allow_experimental_delta_kernel_rs](/reference/settings/session-settings/allow-experimental#allow_experimental_delta_kernel_rs), 25.5+). On Azure Blob Storage, use [deltaLakeAzure()](/sql-reference/table-functions/deltalake) with the legacy reader because the kernel is disabled there. Without the kernel, partition pruning, change data feed, and snapshot version reads aren't available.
+From version 25.6, ClickHouse reads Delta Lake on S3 and GCS through the Delta Lake Rust kernel ([allow_experimental_delta_kernel_rs](/operations/settings/settings#allow_experimental_delta_kernel_rs), 25.5+). On Azure Blob Storage, use [deltaLakeAzure()](/sql-reference/table-functions/deltalake) with the legacy reader because the kernel is disabled there. Without the kernel, partition pruning, change data feed, and snapshot version reads aren't available.
 
 #### Delta Kernel {#delta-kernel}
 
-[allow_experimental_delta_kernel_rs](/reference/settings/session-settings/allow-experimental#allow_experimental_delta_kernel_rs) must be enabled for partition pruning, change data feed, and snapshot version reads. It's on by default on S3 and GCS from 25.5. Enable it explicitly on older versions or when troubleshooting:
+[allow_experimental_delta_kernel_rs](/operations/settings/settings#allow_experimental_delta_kernel_rs) must be enabled for partition pruning, change data feed, and snapshot version reads. It's on by default on S3 and GCS from 25.5. Enable it explicitly on older versions or when troubleshooting:
 
 ```sql
 SET allow_experimental_delta_kernel_rs = 1;
@@ -203,16 +203,16 @@ SET allow_experimental_delta_kernel_rs = 1;
 
 | Setting                                                                                                                                                                                                 | Since | Default | Notes                                                                                        |
 | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- | ----- | ------- | -------------------------------------------------------------------------------------------- |
-| [delta_lake_enable_engine_predicate](/reference/settings/session-settings/delta-lake#delta_lake_enable_engine_predicate)                                                                                                  | 25.8  | `1`     | Pushes filters into the kernel for partition pruning. Requires [Delta Kernel](#delta-kernel) |
-| [delta_lake_reload_schema_for_consistency](/reference/settings/session-settings/delta-lake#delta_lake_reload_schema_for_consistency)                                                                                      | 26.3  | `0`     | Reloads schema before each query when concurrent writers evolve schema                       |
-| [delta_lake_snapshot_start_version](/reference/settings/session-settings/delta-lake#delta_lake_snapshot_start_version) / [delta_lake_snapshot_end_version](/reference/settings/session-settings/delta-lake#delta_lake_snapshot_end_version) | 25.12 | `-1`    | Read CDF changes between two snapshot versions. Requires CDF enabled upstream                |
-| [delta_lake_snapshot_version](/reference/settings/session-settings/delta-lake#delta_lake_snapshot_version)                                                                                                                | 25.8  | `-1`    | Read a single historical snapshot. Set `-1` for latest (`0` is valid)                        |
+| [delta_lake_enable_engine_predicate](/operations/settings/settings#delta_lake_enable_engine_predicate)                                                                                                  | 25.8  | `1`     | Pushes filters into the kernel for partition pruning. Requires [Delta Kernel](#delta-kernel) |
+| [delta_lake_reload_schema_for_consistency](/operations/settings/settings#delta_lake_reload_schema_for_consistency)                                                                                      | 26.3  | `0`     | Reloads schema before each query when concurrent writers evolve schema                       |
+| [delta_lake_snapshot_start_version](/operations/settings/settings#delta_lake_snapshot_start_version) / [delta_lake_snapshot_end_version](/operations/settings/settings#delta_lake_snapshot_end_version) | 25.12 | `-1`    | Read CDF changes between two snapshot versions. Requires CDF enabled upstream                |
+| [delta_lake_snapshot_version](/operations/settings/settings#delta_lake_snapshot_version)                                                                                                                | 25.8  | `-1`    | Read a single historical snapshot. Set `-1` for latest (`0` is valid)                        |
 
 Tables with [deletion vectors](https://docs.delta.io/latest/delta-deletion-vectors.html) (26.2+) apply row-level filtering during reads. ClickHouse handles this automatically, but scans on DV-heavy tables do more work per file.
 
 #### Delta change data feed {#delta-incremental-sync}
 
-To read only the rows that changed between two Delta snapshots, set [delta_lake_snapshot_start_version](/reference/settings/session-settings/delta-lake#delta_lake_snapshot_start_version) and [delta_lake_snapshot_end_version](/reference/settings/session-settings/delta-lake#delta_lake_snapshot_end_version) (25.12+). The table must have change data feed enabled upstream (`delta.enableChangeDataFeed`). Set both start and end version in query settings. Setting only the end version produces an error.
+To read only the rows that changed between two Delta snapshots, set [delta_lake_snapshot_start_version](/operations/settings/settings#delta_lake_snapshot_start_version) and [delta_lake_snapshot_end_version](/operations/settings/settings#delta_lake_snapshot_end_version) (25.12+). The table must have change data feed enabled upstream (`delta.enableChangeDataFeed`). Set both start and end version in query settings. Setting only the end version produces an error.
 
 ```sql
 SELECT *
@@ -226,12 +226,12 @@ Store the end version after each successful load and pass it as the start versio
 
 #### Delta Lake writes {#delta-write-settings}
 
-Beyond [allow_delta_lake_writes](/reference/settings/session-settings/allow-experimental#allow_experimental_delta_lake_writes) (25.9+), control output file size on insert:
+Beyond [allow_delta_lake_writes](/operations/settings/settings#allow_experimental_delta_lake_writes) (25.9+), control output file size on insert:
 
 | Setting                                                                                                            | Since | Purpose                         |
 | ------------------------------------------------------------------------------------------------------------------ | ----- | ------------------------------- |
-| [delta_lake_insert_max_rows_in_data_file](/reference/settings/session-settings/delta-lake#delta_lake_insert_max_rows_in_data_file)   | 25.9  | Row limit per output data file  |
-| [delta_lake_insert_max_bytes_in_data_file](/reference/settings/session-settings/delta-lake#delta_lake_insert_max_bytes_in_data_file) | 25.9  | Byte limit per output data file |
+| [delta_lake_insert_max_rows_in_data_file](/operations/settings/settings#delta_lake_insert_max_rows_in_data_file)   | 25.9  | Row limit per output data file  |
+| [delta_lake_insert_max_bytes_in_data_file](/operations/settings/settings#delta_lake_insert_max_bytes_in_data_file) | 25.9  | Byte limit per output data file |
 
 ```sql
 SET allow_delta_lake_writes = 1;
@@ -263,7 +263,7 @@ On earlier versions, confirm connectivity with `SHOW TABLES FROM my_lake` and in
 SHOW CREATE TABLE my_lake.`db.table`;
 ```
 
-If catalog tables don't appear in `system.tables`, enable [show_remote_databases_in_system_tables](/reference/settings/session-settings/show#show_remote_databases_in_system_tables) (25.8+). Catalog tables are hidden from system introspection by default. On versions before 26.6, use its former name, `show_data_lake_catalogs_in_system_tables`.
+If catalog tables don't appear in `system.tables`, enable [show_remote_databases_in_system_tables](/operations/settings/settings#show_remote_databases_in_system_tables) (25.8+). Catalog tables are hidden from system introspection by default. On versions before 26.6, use its former name, `show_data_lake_catalogs_in_system_tables`.
 
 ### See which files are read {#debug-files}
 
@@ -282,7 +282,7 @@ ORDER BY rows DESC;
 
 Compare `read_rows` and `read_bytes` in [system.query_log](/operations/system-tables/query_log) before and after adding filters or tuning settings. ProfileEvents like `ReadBufferFromS3Bytes` and `CachedReadBufferReadFromCacheBytes` show how much data came from object storage versus the local cache. See [Query optimization](/optimize/query-optimization) for a full walkthrough of query_log and EXPLAIN.
 
-Disable [enable_filesystem_cache](/reference/settings/session-settings/enable-filesystem#enable_filesystem_cache) when benchmarking so cache hits don't mask changes between runs.
+Disable [enable_filesystem_cache](/operations/settings/settings#enable_filesystem_cache) when benchmarking so cache hits don't mask changes between runs.
 
 ### Metadata logs {#debug-metadata-logs}
 
@@ -290,9 +290,9 @@ ClickHouse exposes three system tables for metadata-level debugging. Enable logg
 
 | System table                                                                        | Format     | Since | Enable with                                                                                         | Use it to                                                 |
 | ----------------------------------------------------------------------------------- | ---------- | ----- | --------------------------------------------------------------------------------------------------- | --------------------------------------------------------- |
-| [system.iceberg_metadata_log](/operations/system-tables/iceberg_metadata_log)       | Iceberg    | 25.9  | [iceberg_metadata_log_level](/reference/settings/session-settings/iceberg-metadata#iceberg_metadata_log_level) on the query | Trace metadata files read and partition pruning decisions |
+| [system.iceberg_metadata_log](/operations/system-tables/iceberg_metadata_log)       | Iceberg    | 25.9  | [iceberg_metadata_log_level](/operations/settings/settings#iceberg_metadata_log_level) on the query | Trace metadata files read and partition pruning decisions |
 | [system.iceberg_history](/operations/system-tables/iceberg_history)                 | Iceberg    | 25.6  | Populated automatically for Iceberg tables in ClickHouse                                            | Inspect snapshot lineage before time travel queries       |
-| [system.delta_lake_metadata_log](/operations/system-tables/delta_lake_metadata_log) | Delta Lake | 25.10 | [delta_lake_log_metadata](/reference/settings/session-settings/delta-lake#delta_lake_log_metadata) = `1` on the query | Trace Delta metadata files and snapshot resolution        |
+| [system.delta_lake_metadata_log](/operations/system-tables/delta_lake_metadata_log) | Delta Lake | 25.10 | [delta_lake_log_metadata](/operations/settings/settings#delta_lake_log_metadata) = `1` on the query | Trace Delta metadata files and snapshot resolution        |
 
 Run a query with logging enabled, flush the log, then inspect entries for that `query_id`:
 
@@ -309,7 +309,7 @@ WHERE query_id = '<previous_query_id>';
 
 On ClickHouse Cloud, log data is local to each node. Use `clusterAllReplicas` to see the full picture across replicas.
 
-Verbose Iceberg log levels disable metadata caching for manifest lists and files, which slows subsequent queries on the same table. Use high verbosity only while actively investigating. For Delta Lake predicate issues, enable [delta_lake_throw_on_engine_predicate_error](/reference/settings/session-settings/delta-lake#delta_lake_throw_on_engine_predicate_error) (25.8+) to fail fast when the kernel can't push a filter down.
+Verbose Iceberg log levels disable metadata caching for manifest lists and files, which slows subsequent queries on the same table. Use high verbosity only while actively investigating. For Delta Lake predicate issues, enable [delta_lake_throw_on_engine_predicate_error](/operations/settings/settings#delta_lake_throw_on_engine_predicate_error) (25.8+) to fail fast when the kernel can't push a filter down.
 
 See the [iceberg_metadata_log](/operations/system-tables/iceberg_metadata_log) and [delta_lake_metadata_log](/operations/system-tables/delta_lake_metadata_log) reference pages for column details and verbosity options.
 

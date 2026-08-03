@@ -16,9 +16,9 @@ The clause has the same meaning as the `WHERE` clause. The difference is in whic
 
 A query may simultaneously specify `PREWHERE` and `WHERE`. In this case, `PREWHERE` precedes `WHERE`.
 
-If the [optimize_move_to_prewhere](/reference/settings/session-settings/optimize-move-to-prewhere#optimize_move_to_prewhere) setting is set to 0, heuristics to automatically move parts of expressions from `WHERE` to `PREWHERE` are disabled.
+If the [optimize_move_to_prewhere](/reference/settings/session-settings#optimize_move_to_prewhere) setting is set to 0, heuristics to automatically move parts of expressions from `WHERE` to `PREWHERE` are disabled.
 
-If query has [FINAL](/reference/statements/select/from#final-modifier) modifier, the `PREWHERE` optimization is not always correct. It is enabled only if both settings [optimize_move_to_prewhere](/reference/settings/session-settings/optimize-move-to-prewhere#optimize_move_to_prewhere) and [optimize_move_to_prewhere_if_final](/reference/settings/session-settings/optimize-move-to-prewhere#optimize_move_to_prewhere_if_final) are turned on.
+If query has [FINAL](/reference/statements/select/from#final-modifier) modifier, the `PREWHERE` optimization is not always correct. It is enabled only if both settings [optimize_move_to_prewhere](/reference/settings/session-settings#optimize_move_to_prewhere) and [optimize_move_to_prewhere_if_final](/reference/settings/session-settings#optimize_move_to_prewhere_if_final) are turned on.
 
 <Note>
 The `PREWHERE` section is executed before `FINAL`, so the results of `FROM ... FINAL` queries may be skewed when using `PREWHERE` with fields not in the `ORDER BY` section of a table.
