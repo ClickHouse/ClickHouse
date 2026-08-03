@@ -1064,8 +1064,8 @@ static std::shared_ptr<DirectKeyValueJoin> tryDirectJoin(const std::shared_ptr<T
     if (!allowed_inner && !allowed_left)
         return {};
 
-    /// DirectKeyValueJoin looks rows up by the equality key only and never evaluates a mixed
-    /// (cross-side non-equi) ON condition, so accepting one here would silently drop it.
+    /// `DirectKeyValueJoin` looks rows up by the equality key only and never evaluates a mixed
+    /// (cross-side non-equi) `ON` condition, so accepting one here would silently drop it.
     if (table_join->getMixedJoinExpression())
         return {};
 
