@@ -42,7 +42,7 @@ The following section describes how the **Tailscale** private network is used fo
 
 ## Tailscale Private Network {#tailscale-private-network}
 
-Tailscale provides a zero-trust, private network connection between ClickHouse Cloud's management services and your BYOC deployment. This secure channel enables ClickHouse engineers to perform troubleshooting and management operations without requiring public internet access or complex VPN configurations.
+Tailscale provides a zero-trust, private network connection between ClickHouse Cloud's management services and your BYOC deployment. This secure channel enables ClickHouse engineers to perform troubleshooting and management operations without requiring inbound public network access or complex VPN configurations; the agents themselves make outbound-only connections and need outbound internet access to reach the Tailscale coordination service.
 
 ### Overview {#tailscale-overview}
 
