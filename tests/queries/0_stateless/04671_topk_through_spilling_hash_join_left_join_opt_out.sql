@@ -28,7 +28,7 @@ INSERT INTO t_topk_no_join_payloads
 
 SET explain_query_plan_default = 'legacy';
 SET optimize_read_in_order = 1, query_plan_read_in_order = 1, query_plan_read_in_order_through_join = 1;
-SET query_plan_top_k_through_join = 1;
+SET query_plan_top_k_through_join = 1, query_plan_max_limit_for_top_k_optimization = 1000;
 SET min_joined_block_size_rows = 0, min_joined_block_size_bytes = 0;
 SET read_in_order_use_virtual_row = 1, query_plan_optimize_join_order_limit = 1;
 SET query_plan_join_swap_table = 0, join_algorithm = 'hash';
@@ -44,7 +44,9 @@ SELECT trim(explain) FROM (
     LEFT JOIN t_topk_no_join_payloads ON t_topk_no_join_events.Id = t_topk_no_join_payloads.Id
     ORDER BY t_topk_no_join_events.Time
     LIMIT 3
-) WHERE explain LIKE '%Sorting%' OR explain LIKE '%Join%' OR explain LIKE '%ReadType%';
+-- `Expression` steps are named differently by the old analyzer, and they carry no information here.
+) WHERE explain NOT LIKE '%Expression%'
+  AND (explain LIKE '%Sorting%' OR explain LIKE '%Join%' OR explain LIKE '%ReadType%');
 
 -- The results are the same either way.
 SELECT t_topk_no_join_events.Time, t_topk_no_join_events.Id, t_topk_no_join_payloads.Payload
