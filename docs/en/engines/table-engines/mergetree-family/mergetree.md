@@ -879,7 +879,7 @@ ALTER TABLE logs
 :::
 
 :::note
-For replicated tables, generation of dedicated `TTLClearIndex` merge log entries is controlled by the `enable_ttl_clear_index_merge_type_generation` setting. Keep this setting disabled during rolling upgrades until all replicas can parse and execute `TTLClearIndex` merge entries. Regular merges may still apply `CLEAR INDEX` TTL rules to their output parts.
+For replicated tables, use a two-phase rollout. First deploy parser and table-metadata support to every replica before adding `CLEAR INDEX` TTL rules. Only then enable `enable_ttl_clear_index_merge_type_generation`, after every replica can execute `TTLClearIndex` merge entries. Regular merges may still apply `CLEAR INDEX` TTL rules to their output parts.
 :::
 
 #### Creating a table, where expired rows are recompressed: {#creating-a-table-where-expired-rows-are-recompressed}

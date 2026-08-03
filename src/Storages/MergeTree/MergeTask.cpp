@@ -600,9 +600,10 @@ static void pruneExpiredIndexFilesFromPart(
 
     for (const auto & file : files_to_clear)
     {
+        /// Legacy index files may exist without a checksum entry.
+        storage.removeFileIfExists(file);
         if (part->checksums.has(file))
         {
-            storage.removeFileIfExists(file);
             part->checksums.remove(file);
             removed_any = true;
         }

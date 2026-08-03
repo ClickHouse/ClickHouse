@@ -1913,9 +1913,8 @@ If INSERTs build and store skip indexes. If disabled, skip indexes will only be 
 See also [exclude_materialize_skip_indexes_on_insert](#exclude_materialize_skip_indexes_on_insert).
 )", 0) \
     DECLARE(Bool, enable_ttl_clear_index_merge_type_generation, false, R"(
-Allow this server to generate replicated merge log entries with merge type TTLClearIndex for TTL CLEAR INDEX cleanup.
-This setting controls generation only; parsing/execution support is always present.
-Keep disabled during rolling upgrades until all replicas that may read the log support TTLClearIndex.
+Controls generation of dedicated `TTLClearIndex` merges globally, including for non-replicated tables.
+Parsing and execution support is always present. The setting defaults to disabled for replication compatibility; enable it only after every replica can execute `TTLClearIndex` merge entries.
 )", 0) \
     DECLARE(String, exclude_materialize_skip_indexes_on_insert, "", R"(
 Excludes specified skip indexes from being built and stored during INSERTs. The excluded skip indexes will still be built and stored [during merges](merge-tree-settings.md/#materialize_skip_indexes_on_merge) or by an explicit

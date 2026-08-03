@@ -279,12 +279,8 @@ bool TTLRecompressMergeSelector::canConsiderPart(const PartProperties & part) co
     return part.recompression_ttl_info->will_change_codec;
 }
 
-/// `merge_due_times` is nullptr and there is no per-partition throttling. A merge of this kind
-/// runs once per part: after it removes the index files, `buildNextIndexClearTTL` returns 0 for
-/// the result part, so the part is not selected again. A per-partition due time would also slow
-/// down partitions with several expired parts, because `select` returns one part per call.
-/// Failed attempts on replicated tables are retried with the usual queue postpone backoff.
-/// `TTLPartDropMergeSelector` passes nullptr for the same reason.
+/// No per-partition delay is needed because a successful merge removes the files that made the
+/// part selectable. Replicated failures use the merge queue retry delay.
 TTLIndexClearMergeSelector::TTLIndexClearMergeSelector(time_t current_time_)
     : ITTLMergeSelector(/*merge_due_times_=*/nullptr, current_time_)
 {

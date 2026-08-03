@@ -49,37 +49,33 @@ SkipIndexClearFiles getClearIndexFilesToClear(
     time_t current_time,
     bool ttl_merges_allowed);
 
-/// Return every concrete filename that may belong to these skip indexes in a part:
-/// logical substream names, mark files, legacy data extensions, and hashed / storage-overlay names.
+/// Return the logical, legacy, and resolved filenames that may belong to these skip indexes.
 NameSet getSkipIndexSubstreamFileNames(
     const std::set<MergeTreeIndexPtr> & indexes,
     const String & mrk_extension,
     const MergeTreeDataPartChecksums & checksums,
     const IDataPartStorage * storage = nullptr);
 
-/// Resolve files for a clear/drop/recalculate operation and report whether any of them exist as
-/// standalone files or virtual members of `skp_idx.packed`.
+/// Resolve files for a clear, drop, or recalculation and report whether they exist separately
+/// or in `skp_idx.packed`.
 SkipIndexClearFiles collectSkipIndexClearFiles(
     const std::set<MergeTreeIndexPtr> & indexes,
     const String & mrk_extension,
     const MergeTreeDataPartChecksums & checksums,
     const IDataPartStorage & storage);
 
-/// True iff the part still contains any file of the skip index: substream data files, mark files,
-/// hashed long names, or files inside the `skp_idx.packed` archive. Answers from the part
-/// checksums and the cached archive listing without calling `existsFile`, so it is cheap enough
-/// to run during merge selection over every part.
+/// Return whether the part still contains any file of the skip index. This uses checksums and
+/// the cached packed archive listing without calling `existsFile`.
 bool partHasSkipIndexFiles(const IMergeTreeDataPart & part, const MergeTreeIndexPtr & index);
 
-/// True iff any data or mark substream of the index lives in the source part's packed skip-index archive.
+/// Return whether the packed skip-index archive contains a data or mark file for the index.
 bool skipIndexHasFilesInPackedArchive(
     const IMergeTreeIndex & index,
     const DataPartStorageOnDiskBase * storage,
     const String & mrk_extension);
 
-/// DROP INDEX mutations may run after the dropped index disappeared from metadata. Probe the
-/// format-independent skip-index filename candidates used by existing index types and return exact
-/// virtual names that are present in `skp_idx.packed`.
+/// `DROP INDEX` mutations may run after the index disappears from metadata. Return matching
+/// skip-index filenames present in `skp_idx.packed`.
 NameSet getDroppedSkipIndexArchiveFileNames(
     const NameSet & dropped_index_names,
     bool escape_index_filenames,

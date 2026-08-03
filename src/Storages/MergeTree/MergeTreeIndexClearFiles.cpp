@@ -152,20 +152,15 @@ bool partHasSkipIndexFiles(const IMergeTreeDataPart & part, const MergeTreeIndex
 {
     const auto & checksums = part.checksums;
 
-    /// Resolve candidate names from checksums only. That already covers hashed long names listed
-    /// in checksums, and archive members are looked up below by their plain names. Passing a
-    /// storage here would make `getSkipIndexSubstreamFileNames` call `existsFile`.
+    /// Resolve hashed names from checksums. Omitting storage avoids `existsFile` calls.
     const NameSet candidates = getSkipIndexSubstreamFileNames({index}, part.getMarksFileExtension(), checksums, /*storage=*/nullptr);
 
     for (const auto & file : candidates)
         if (checksums.has(file))
             return true;
 
-    /// Files bundled into `skp_idx.packed` are not listed in checksums individually, so look
-    /// inside the archive as well, but only if the part has one (the archive itself has a
-    /// checksums entry). For parts without an archive this function therefore does no IO at all;
-    /// for parts with one, the archive reader is opened once, cached on the storage, and later
-    /// lookups are answered from memory.
+    /// Packed index files lack individual checksum entries. Inspect the cached archive listing
+    /// only when the archive itself has a checksum entry.
     if (checksums.has(String(SKIP_INDICES_PACKED_FILENAME)))
     {
         if (const auto * disk_storage = dynamic_cast<const DataPartStorageOnDiskBase *>(&part.getDataPartStorage()))
@@ -283,7 +278,11 @@ bool canCopyPartFilesWithSkip(
             continue;
 
         if (endsWith(name, ".tmp_proj"))
-            return !options.fail_on_temporary_projection_directories;
+        {
+            if (options.fail_on_temporary_projection_directories)
+                return false;
+            continue;
+        }
 
         auto projection_src = source_storage.getProjection(name);
         for (auto projection_it = projection_src->iterate(); projection_it->isValid(); projection_it->next())

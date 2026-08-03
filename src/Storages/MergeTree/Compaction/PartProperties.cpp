@@ -88,10 +88,7 @@ time_t buildNextIndexClearTTL(StorageMetadataPtr metadata_snapshot, MergeTreeDat
         if (index_it == secondary_indices.end())
             continue;
 
-        /// Consider the part only while it still has files of the index. Checking just the base
-        /// `.idx`/`.idx2` names is not enough: an index may also have substream files, mark
-        /// files, hashed long names, or files inside the packed skip-index archive, and missing
-        /// them would select an already cleared part again and again.
+        /// Check every index file so an already cleared part is not selected again.
         const auto index = index_factory.get(metadata_snapshot, *index_it, *part->storage.getSettings());
         if (!partHasSkipIndexFiles(*part, index))
             continue;
@@ -183,6 +180,10 @@ PartProperties buildPartProperties(
     time_t current_time)
 {
     const bool all_ttl_calculated_if_any = part->checkAllTTLCalculated(metadata_snapshot);
+    const time_t next_index_clear_ttl = buildNextIndexClearTTL(metadata_snapshot, part, current_time);
+    const bool can_preserve_files_for_index_clear = all_ttl_calculated_if_any
+        && next_index_clear_ttl != 0
+        && canPreserveFilesForIndexClear(metadata_snapshot, part);
 
     return PartProperties{
         .name = part->name,
@@ -195,8 +196,8 @@ PartProperties buildPartProperties(
         .rows = part->rows_count,
         .general_ttl_info = buildGeneralTTLInfo(metadata_snapshot, part),
         .recompression_ttl_info = buildRecompressTTLInfo(metadata_snapshot, part, current_time),
-        .next_index_clear_ttl = buildNextIndexClearTTL(metadata_snapshot, part, current_time),
-        .can_preserve_files_for_index_clear = all_ttl_calculated_if_any && canPreserveFilesForIndexClear(metadata_snapshot, part),
+        .next_index_clear_ttl = next_index_clear_ttl,
+        .can_preserve_files_for_index_clear = can_preserve_files_for_index_clear,
     };
 }
 
