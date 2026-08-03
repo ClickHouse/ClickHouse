@@ -1897,13 +1897,15 @@ static BlockIO executeQueryImpl(
                         qrc_key->user_id,
                         qrc_key->current_user_roles,
                         settings[Setting::query_cache_share_between_users],
-                        qrc_key->tag};
+                        qrc_key->tag,
+                        /* is_subquery = */ false};
                     /// Keep the herd wait cancellation-aware: if this query is killed while blocked waiting for the
                     /// executor, observe it promptly instead of after the full `query_cache_herd_wait_timeout`.
                     QueryStatusPtr herd_wait_process_list_elem = context->getProcessListElement();
                     auto herd_wait_is_cancelled = [herd_wait_process_list_elem]()
                     { return herd_wait_process_list_elem && herd_wait_process_list_elem->isKilled(); };
-                    if (auto token = query_result_cache->startAsyncInsert(herd_key, std::chrono::milliseconds(herd_wait_ms), herd_wait_is_cancelled))
+                    if (auto token = query_result_cache->startAsyncInsert(
+                            herd_key, std::chrono::milliseconds(herd_wait_ms), context->getCurrentQueryId(), herd_wait_is_cancelled))
                     {
                         /// This query is the herd "executor".
                         async_insert_token_to_finish = std::move(token);
@@ -1926,7 +1928,7 @@ static BlockIO executeQueryImpl(
                             /// though we repopulate the cache first - the same latency problem in a new shape.
                             /// `tryTakeOverAsyncInsert` never waits: if another query is already the executor, it returns
                             /// nullptr and we simply execute untokened while that executor wakes its own waiters.
-                            async_insert_token_to_finish = query_result_cache->tryTakeOverAsyncInsert(herd_key);
+                            async_insert_token_to_finish = query_result_cache->tryTakeOverAsyncInsert(herd_key, context->getCurrentQueryId());
                     }
                 }
 

@@ -50,6 +50,7 @@
 
 #include <Interpreters/ClusterProxy/executeQuery.h>
 #include <Interpreters/Context.h>
+#include <Interpreters/ProcessList.h>
 #include <Interpreters/convertColumnToType.h>
 #include <Interpreters/HashTablesStatistics.h>
 #include <Interpreters/StorageID.h>
@@ -140,6 +141,7 @@ namespace Setting
     extern const SettingsUInt64 parallel_replicas_min_number_of_rows_per_replica;
     extern const SettingsBool parallel_replicas_plan_based;
     extern const SettingsBool query_cache_compress_entries;
+    extern const SettingsSeconds query_cache_herd_wait_timeout;
     extern const SettingsUInt64 query_cache_max_entries;
     extern const SettingsUInt64 query_cache_max_size_in_bytes;
     extern const SettingsMilliseconds query_cache_min_query_duration;
@@ -2194,16 +2196,83 @@ void Planner::buildPlanForQueryNode()
     if (local_can_use_cache)
         settings_copy = settings;
 
+    /// When should_cache is true but the outer query didn't set use_query_cache (explicit subquery opt-in),
+    /// skip the context flag check in checkCanWriteQueryResultCache while still respecting safety checks.
+    const bool skip_context_check = should_cache && !can_use_query_result_cache;
+
+    std::optional<QueryResultCache::Key> qrc_read_key;
+    if (should_cache)
+        qrc_read_key.emplace(
+            ast, query_context->getCurrentDatabase(), *settings_copy, query_context->getCurrentQueryId(),
+            query_context->getUserID(), query_context->getCurrentRoles(), /* is_subquery = */ true);
+
     /// If it is a non-internal SELECT, and passive (read) use of the query cache is enabled, and the cache knows the query, then add a ReadFromQueryResultCacheStep instead of building the rest of the plan.
-    if (should_cache && settings[Setting::enable_reads_from_query_cache])
+    auto try_read_from_query_result_cache = [&]
     {
-        QueryResultCache::Key key(ast, query_context->getCurrentDatabase(), *settings_copy, query_context->getCurrentQueryId(), query_context->getUserID(), query_context->getCurrentRoles(), /* is_subquery = */ true);
-        auto reader = std::make_shared<QueryResultCacheReader>(query_result_cache->createReader(key));
-        if (reader->hasCacheEntryForKey())
+        if (!should_cache || !settings[Setting::enable_reads_from_query_cache])
+            return false;
+        auto reader = std::make_shared<QueryResultCacheReader>(query_result_cache->createReader(*qrc_read_key));
+        if (!reader->hasCacheEntryForKey())
+            return false;
+        addReadFromQueryResultCacheStep(query_plan, reader->getSource(), reader->getSourceTotals(), reader->getSourceExtremes());
+        return true;
+    };
+
+    if (try_read_from_query_result_cache())
+        return;
+
+    /// Thundering herd for the Planner-level (`is_subquery = true`) cache: concurrent identical subqueries coalesce on
+    /// one in-flight computation, the same way `executeQuery` does it for the top-level (`is_subquery = false`) cache.
+    /// The two herds are separate namespaces (`HerdCoalescingKey::is_subquery`) because they populate separate entries.
+    ///
+    /// Unlike the top-level path, the token is acquired while the plan is being *built* and can only be released once
+    /// the subquery has actually run, so it is owned by a `QueryResultCacheHerdTokenHolder` handed to the write step
+    /// below. If the write step is never added - because writing turns out to be impossible, because planning throws,
+    /// or because the plan is discarded - the holder goes out of scope here and wakes the waiters immediately.
+    ///
+    /// The eligibility gates mirror the write path below: coalescing only helps if the executor is actually going to
+    /// populate the cache, otherwise waiters block, re-read, miss and execute anyway.
+    QueryResultCacheHerdTokenHolderPtr herd_token_holder;
+    const UInt64 herd_wait_ms = settings[Setting::query_cache_herd_wait_timeout].totalMilliseconds();
+    if (should_cache && herd_wait_ms > 0
+        && settings[Setting::enable_reads_from_query_cache] && settings[Setting::enable_writes_to_query_cache]
+        && settings[Setting::query_cache_min_query_runs] == 0
+        && settings[Setting::query_cache_min_query_duration].totalMilliseconds() == 0
+        && checkCanWriteQueryResultCache(ast, query_context, skip_context_check, /* no_throw = */ true))
+    {
+        const QueryResultCache::HerdCoalescingKey herd_key{
+            qrc_read_key->ast_hash,
+            qrc_read_key->user_id,
+            qrc_read_key->current_user_roles,
+            settings[Setting::query_cache_share_between_users],
+            qrc_read_key->tag,
+            /* is_subquery = */ true};
+
+        /// Keep the wait cancellation-aware: a killed query must not stay blocked for the full timeout.
+        QueryStatusPtr process_list_elem = query_context->getProcessListElement();
+        auto is_cancelled = [process_list_elem] { return process_list_elem && process_list_elem->isKilled(); };
+
+        auto token = query_result_cache->startAsyncInsert(
+            herd_key, std::chrono::milliseconds(herd_wait_ms), query_context->getCurrentQueryId(), is_cancelled);
+        if (!token)
         {
-            addReadFromQueryResultCacheStep(query_plan, reader->getSource(), reader->getSourceTotals(), reader->getSourceExtremes());
-            return;
+            /// We were a waiter, not the executor. `startAsyncInsert` also returns nullptr when this query was killed
+            /// while waiting - surface that instead of silently starting a full execution of our own.
+            if (process_list_elem)
+                process_list_elem->throwIfKilled();
+
+            /// The executor may have finished and filled the cache while we waited.
+            if (try_read_from_query_result_cache())
+                return;
+
+            /// The cache is still empty (the executor died, was cancelled, or the entry was cleared) and we are about to
+            /// compute the result ourselves, so take over as the executor. `tryTakeOverAsyncInsert` never waits: if
+            /// another query became the executor meanwhile it returns nullptr and we simply execute untokened.
+            token = query_result_cache->tryTakeOverAsyncInsert(herd_key, query_context->getCurrentQueryId());
         }
+
+        if (token)
+            herd_token_holder = std::make_shared<QueryResultCacheHerdTokenHolder>(query_result_cache, std::move(token));
     }
 
     StorageLimitsList current_storage_limits = storage_limits;
@@ -2724,9 +2793,6 @@ void Planner::buildPlanForQueryNode()
 
     /// If it is a non-internal SELECT query, and active (write) use of the query cache is enabled,
     /// then add a step which stores the result in the query cache.
-    /// When should_cache is true but the outer query didn't set use_query_cache (explicit subquery opt-in),
-    /// skip the context flag check in checkCanWriteQueryResultCache while still respecting safety checks.
-    bool skip_context_check = should_cache && !can_use_query_result_cache;
     if (should_cache && checkCanWriteQueryResultCache(ast, query_context, skip_context_check))
     {
         auto created_at = std::chrono::system_clock::now();
@@ -2757,7 +2823,10 @@ void Planner::buildPlanForQueryNode()
                                 settings[Setting::query_cache_max_size_in_bytes],
                                 settings[Setting::query_cache_max_entries]));
 
-            auto stream_into_query_result_cache_step = std::make_unique<StreamInQueryResultCacheStep>(query_plan.getRootNode()->step->getOutputHeader(), query_result_cache_writer);
+            /// Hand the herd token to the step: the queries waiting for this computation are woken once the result has
+            /// been written into the cache (or when the step is destroyed, should the write never happen).
+            auto stream_into_query_result_cache_step = std::make_unique<StreamInQueryResultCacheStep>(
+                query_plan.getRootNode()->step->getOutputHeader(), query_result_cache_writer, std::move(herd_token_holder));
             query_plan.addStep(std::move(stream_into_query_result_cache_step));
         }
     }

@@ -80,3 +80,25 @@ TEST(QueryResultCacheHerdCoalescingKey, SeparatesDifferentQueries)
     EXPECT_FALSE(key_ast_1 == key_ast_2);
     EXPECT_NE(hashOf(key_ast_1), hashOf(key_ast_2));
 }
+
+TEST(QueryResultCacheHerdCoalescingKey, SeparatesTopLevelAndSubqueryHerds)
+{
+    /// The top-level (`executeQuery`) cache and the Planner-level subquery cache store separate entries for the same
+    /// AST, so their herds must be separate too: a top-level query coalescing on a subquery executor would wait for a
+    /// computation that never fills the entry it is going to read (and vice versa).
+    QueryResultCache::HerdCoalescingKey key_top_level{ast_hash_1, user_a, {}, /*share_between_users=*/ false, "", /*is_subquery=*/ false};
+    QueryResultCache::HerdCoalescingKey key_subquery{ast_hash_1, user_a, {}, /*share_between_users=*/ false, "", /*is_subquery=*/ true};
+    EXPECT_FALSE(key_top_level == key_subquery);
+    EXPECT_NE(hashOf(key_top_level), hashOf(key_subquery));
+
+    /// The separation also holds when users are shared.
+    QueryResultCache::HerdCoalescingKey key_top_level_shared{ast_hash_1, user_a, {}, /*share_between_users=*/ true, "", /*is_subquery=*/ false};
+    QueryResultCache::HerdCoalescingKey key_subquery_shared{ast_hash_1, user_b, {}, /*share_between_users=*/ true, "", /*is_subquery=*/ true};
+    EXPECT_FALSE(key_top_level_shared == key_subquery_shared);
+    EXPECT_NE(hashOf(key_top_level_shared), hashOf(key_subquery_shared));
+
+    /// Two subqueries of the same shape still coalesce.
+    QueryResultCache::HerdCoalescingKey key_subquery_2{ast_hash_1, user_a, {}, /*share_between_users=*/ false, "", /*is_subquery=*/ true};
+    EXPECT_TRUE(key_subquery == key_subquery_2);
+    EXPECT_EQ(hashOf(key_subquery), hashOf(key_subquery_2));
+}

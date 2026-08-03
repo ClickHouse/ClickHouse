@@ -147,6 +147,11 @@ public:
         /// necessarily share the same tag. It is carried here so that `SYSTEM CLEAR QUERY CACHE TAG '...'` can wake
         /// only the herd waiters of the cleared tag instead of resetting coalescing globally.
         String tag;
+        /// Mirrors `Key::is_subquery`: the top-level (`executeQuery`) cache and the Planner-level subquery cache store
+        /// separate entries for the same AST, so their herds must not be mixed. Otherwise a top-level query could
+        /// coalesce on a subquery executor whose entry it is not allowed to read (and vice versa), and would end up
+        /// waiting for a computation that never populates the entry it is looking for.
+        bool is_subquery = false;
 
         bool operator==(const HerdCoalescingKey & other) const;
     };
@@ -219,8 +224,15 @@ public:
     /// a stale map entry cannot strand other waiters still blocked on that token.
     /// `is_cancelled` (if set) is polled while a waiter blocks: when it becomes true the waiter stops waiting and returns
     /// nullptr, so query cancellation is observed promptly instead of only when the executor finishes or `timeout` elapses.
+    /// `query_id` identifies the calling query and guards against a query waiting for itself: the Planner-level subquery
+    /// cache acquires a token during planning and releases it only after the subquery ran, so a query containing the same
+    /// subquery twice would otherwise block on its own token until `timeout`. A waiter whose `query_id` matches the token
+    /// owner's does not wait and gets nullptr right away.
     HerdCoalescingTokenPtr startAsyncInsert(
-        const HerdCoalescingKey & key, std::chrono::milliseconds timeout, const std::function<bool()> & is_cancelled = {});
+        const HerdCoalescingKey & key,
+        std::chrono::milliseconds timeout,
+        const String & query_id,
+        const std::function<bool()> & is_cancelled = {});
     void finishAsyncInsert(const HerdCoalescingTokenPtr & token);
 
     /// Non-blocking counterpart of startAsyncInsert for a query that finished waiting and found the cache still empty
@@ -228,7 +240,7 @@ public:
     /// take over as the executor. Returns a fresh token if no other query owns the key, nullptr if one already does (that
     /// query is the executor and wakes its own waiters). Never waits, so it cannot chain one herd wait onto another. As
     /// with startAsyncInsert, a non-null token must be passed back to finishAsyncInsert.
-    HerdCoalescingTokenPtr tryTakeOverAsyncInsert(const HerdCoalescingKey & key);
+    HerdCoalescingTokenPtr tryTakeOverAsyncInsert(const HerdCoalescingKey & key, const String & query_id);
 
     /// For debugging and system tables
     std::vector<QueryResultCache::Cache::KeyMapped> dump() const;
@@ -255,6 +267,33 @@ private:
     friend class QueryResultCacheWriter;
     friend class QueryResultCacheReader;
 };
+
+/// RAII owner of a herd coalescing token, used by the Planner-level subquery cache path.
+///
+/// The top-level `executeQuery` path finishes its token from the query's finalize/exception callbacks, which always run.
+/// The Planner has no such callbacks: it acquires the token while *building* the plan and the subquery only runs later
+/// (or never, if planning fails, if the plan is discarded, or if the write step is not added at all). Wrapping the token
+/// in a holder ties waking the waiters to the holder's lifetime, so they are never stranded for the full
+/// `query_cache_herd_wait_timeout`. `finish` is idempotent and is called explicitly once the result has been written to
+/// the cache, so waiters are woken as soon as the entry is readable rather than when the pipeline is torn down.
+class QueryResultCacheHerdTokenHolder
+{
+public:
+    QueryResultCacheHerdTokenHolder(std::shared_ptr<QueryResultCache> cache_, QueryResultCache::HerdCoalescingTokenPtr token_);
+    ~QueryResultCacheHerdTokenHolder();
+
+    QueryResultCacheHerdTokenHolder(const QueryResultCacheHerdTokenHolder &) = delete;
+    QueryResultCacheHerdTokenHolder & operator=(const QueryResultCacheHerdTokenHolder &) = delete;
+
+    void finish();
+
+private:
+    const std::shared_ptr<QueryResultCache> cache;
+    QueryResultCache::HerdCoalescingTokenPtr token;
+    std::mutex mutex;
+};
+
+using QueryResultCacheHerdTokenHolderPtr = std::shared_ptr<QueryResultCacheHerdTokenHolder>;
 
 /// Buffers multiple partial query result chunks (buffer()) and eventually stores them as cache entry (finalizeWrite()).
 ///
