@@ -58,7 +58,7 @@ IProcessor::Status ScatterByPartitionTransform::prepare()
         auto output_it = outputs.begin();
         bool can_push = false;
         /// A finished output never becomes pushable again, so waiting for one would wedge the
-        /// pipeline forever. `work()` already skips them; `prepare()` must agree.
+        /// pipeline forever. `work` already skips them; `prepare` must agree.
         bool has_pending_output = false;
         for (size_t i = 0; i < output_size; ++i, ++output_it)
         {
