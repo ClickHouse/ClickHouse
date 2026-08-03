@@ -399,12 +399,15 @@ void ReadWriteBufferFromHTTP::doWithRetries(std::function<void()> && callable,
 
             if (cancelled)
             {
-                /// The read was cancelled for another reason: the pipeline is being torn down, because
-                /// something else in the query has already failed. There is nothing to gain from the
-                /// remaining attempts, so report the error of the last one - it is the only reason we
-                /// have, and it is what the caller would get after the attempts were exhausted anyway.
+                /// The read was cancelled for another reason: the pipeline is being torn down because
+                /// something else in the query has already failed, the client has disconnected, or the
+                /// query gave up on further data (a soft timeout with the `break` overflow mode, or a
+                /// consumer that has enough data). There is nothing to gain from the remaining
+                /// attempts, so report the error of the last one - it is the only reason we have, and
+                /// it is what the caller would get after the attempts were exhausted anyway.
                 /// Do not leave this loop silently: the callers rely on getting either their data or an
-                /// exception, and treat a normal return as a success.
+                /// exception, and treat a normal return as a success. A reader which must succeed
+                /// without the data discards this error itself, see StorageURLSource::generate.
                 if (!mute_logging)
                     LOG_DEBUG(log,
                               "Stopped retrying the request to '{}'{} at try {}/{}, because the read was cancelled. "

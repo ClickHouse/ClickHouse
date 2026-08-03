@@ -505,11 +505,36 @@ Chunk StorageURLSource::generate()
             break;
         }
 
-        if (!reader && !initialize())
-            return {};
-
         Chunk chunk;
-        if (reader->pull(chunk))
+        bool pulled = false;
+        try
+        {
+            if (!reader && !initialize())
+                return {};
+
+            pulled = reader->pull(chunk);
+        }
+        catch (...)
+        {
+            /// The query does not need any more data and must succeed with what it has already read:
+            /// a soft `max_execution_time` with the `break` overflow mode, or a consumer that has
+            /// enough data - see cancel. A failure of the interrupted read - for example, the last
+            /// HTTP error rethrown by ReadWriteBufferFromHTTP::doWithRetries when the cancellation
+            /// wakes up its retry backoff - must not fail the query, so end the stream instead.
+            if (!discard_read_errors)
+                throw;
+
+            tryLogCurrentException(
+                getLogger("StorageURLSource"),
+                "The read was interrupted by a cancellation after which the query returns its partial result, discarding the error",
+                LogsLevel::information);
+
+            if (reader)
+                reader->cancel();
+            break;
+        }
+
+        if (pulled)
         {
             UInt64 num_rows = chunk.getNumRows();
             total_rows_in_file += num_rows;
@@ -582,17 +607,26 @@ void StorageURLSource::onFinish() { parser_shared_resources->finishStream(); }
 
 void StorageURLSource::cancel(CancelReason reason) noexcept
 {
-    /// Stop retrying the HTTP requests when the query is being torn down - killed by the user, timed
-    /// out, or failed elsewhere - and wake up the backoff between the attempts, so that the read stops
-    /// as soon as it is cancelled instead of when the whole backoff has expired.
-    /// A consumer which simply has enough data must not interrupt a read that can still succeed and be
-    /// used: CancelReason::PartialResult, and CancelReason::CancelledByTimeout, which despite its name
-    /// only ever comes from PipelineExecutor::checkTimeLimitSoft, that is from `max_execution_time` with
-    /// the `break` overflow mode - a query which is not killed and is expected to return what it has
-    /// read so far. A timeout with the `throw` overflow mode kills the query through
-    /// CancellationChecker and arrives here as CancelReason::CancelledByUser instead.
-    if (reason == CancelReason::CancelledByUser || reason == CancelReason::Exception)
-        cancellation->cancel();
+    /// Stop retrying the HTTP requests and wake up the backoff between the attempts, so that the read
+    /// stops as soon as it is cancelled instead of when the whole backoff has expired. Whatever the
+    /// reason, no one is left to wait for the remaining attempts. The interrupted read then ends with
+    /// its last error, see doWithRetries, and the reasons only differ in what that comes out as:
+    ///
+    /// - A hard teardown propagates an exception: the query is killed or timed out with the `throw`
+    ///   overflow mode (CancelledByUser - such a timeout arrives here as this reason, through
+    ///   CancellationChecker and QueryStatus::cancelQuery), the pipeline has already failed elsewhere
+    ///   (Exception), or is torn down by a caller which does not report a reason, such as
+    ///   BlockIO::onCancelOrConnectionLoss on a client disconnect (Unknown).
+    ///
+    /// - A query whose consumer simply does not need any more data must still succeed with what it has
+    ///   already read, so the error of the interrupted read is discarded in generate:
+    ///   CancelReason::PartialResult, and CancelReason::CancelledByTimeout, which despite its name only
+    ///   ever comes from PipelineExecutor::checkTimeLimitSoft, that is from `max_execution_time` with
+    ///   the `break` overflow mode - a query which is not killed and returns what it has read so far.
+    if (reason == CancelReason::CancelledByTimeout || reason == CancelReason::PartialResult)
+        discard_read_errors = true;
+
+    cancellation->cancel();
 
     ISource::cancel(reason);
 }

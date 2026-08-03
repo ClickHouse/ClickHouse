@@ -297,6 +297,11 @@ private:
     /// Tells the buffers created by this source to stop retrying HTTP requests, see cancel.
     ReadWriteBufferFromHTTP::CancellationPtr cancellation = std::make_shared<ReadWriteBufferFromHTTP::Cancellation>();
 
+    /// Set on a cancellation after which the query must still succeed - a soft `max_execution_time`
+    /// with the `break` overflow mode, or a consumer that has enough data, see cancel. A failure of
+    /// the interrupted read is then discarded instead of failing the query, see generate.
+    std::atomic<bool> discard_read_errors = false;
+
     Map http_response_headers;
     bool http_response_headers_initialized = false;
 
