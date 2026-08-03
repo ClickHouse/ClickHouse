@@ -111,7 +111,7 @@ TEST(PrometheusMetricsWriter, HistogramConstantLabels)
     std::string output;
     {
         WriteBufferFromString buffer(output);
-        PrometheusMetricsWriter::writeHistogramMetric(buffer, family, "environment=\"staging\",shard=\"s1\"");
+        PrometheusMetricsWriter::writeHistogramMetric(buffer, family, R"(environment="staging",shard="s1")");
     }
 
     static constexpr const char * expected =
@@ -135,7 +135,7 @@ TEST(PrometheusMetricsWriter, DimensionalConstantLabels)
     std::string output;
     {
         WriteBufferFromString buffer(output);
-        PrometheusMetricsWriter::writeDimensionalMetric(buffer, family, "environment=\"staging\",shard=\"s1\"");
+        PrometheusMetricsWriter::writeDimensionalMetric(buffer, family, R"(environment="staging",shard="s1")");
     }
 
     static constexpr const char * expected =
