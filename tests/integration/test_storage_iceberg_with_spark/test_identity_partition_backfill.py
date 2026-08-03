@@ -93,6 +93,19 @@ def test_identity_partition_backfill(started_cluster_iceberg_with_spark, storage
             == "1\ta\n3\tc"
         )
 
+    # The exclusion must be selective, not a blanket "no column is PREWHERE-safe": in a mixed
+    # predicate the physical column still has to move down while the identity column stays above the
+    # backfill. Asserting rows alone would also accept the fail-closed set that
+    # StorageObjectStorage::supportedPrewhereColumns returns for cold metadata.
+    plan = instance.query(
+        f"SELECT trim(explain) FROM (EXPLAIN actions = 1"
+        f" SELECT id FROM {table_function} WHERE region = 'East' AND val = 'a')"
+        f" WHERE explain ILIKE '%Prewhere filter column%'"
+        f" SETTINGS optimize_move_to_prewhere = 1"
+    )
+    assert "val" in plan, plan
+    assert "region" not in plan, plan
+
     # count() with the same filter (statistics path) and GROUP BY on the backfilled column.
     assert int(instance.query(f"SELECT count() FROM {table_function} WHERE region = 'East'")) == 2
     assert (
