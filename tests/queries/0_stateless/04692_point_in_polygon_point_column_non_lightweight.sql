@@ -20,12 +20,15 @@ SETTINGS use_lightweight_primary_key_index_analysis = 0, force_primary_key = 1, 
 
 DROP TABLE points_non_lightweight;
 
--- Asymmetric case: the first coordinate is fixed (x = 100) and only the second varies, so
--- pruning MUST use the second coordinate of the bounding box. The diagonal case above cannot
--- distinguish first- from second-coordinate pruning; here every row shares x = 100 which lies
--- inside the polygon's x range, so a regression that drops or swaps the y bound in the regular
--- overload's tupleRangeToBoundingBox would prune nothing and read all 100000 rows, exceeding
--- max_rows_to_read. Correct behaviour prunes on y and stays well under the cap.
+-- Asymmetric case: the first coordinate is fixed (x = 100), only the second varies, and the
+-- polygon has DIFFERENT x/y extents (x in [0, 200], y in [0, 25000]). The diagonal case above
+-- cannot distinguish first- from second-coordinate pruning, and a symmetric square cannot catch a
+-- coordinate swap. Correct pruning uses the second coordinate and reads 26 granules (26000 rows),
+-- returning 25001 under the cap. A regression that DROPS the y bound in the regular overload's
+-- tupleRangeToBoundingBox prunes nothing and reads all 100000 rows, exceeding max_rows_to_read. A
+-- regression that SWAPS x and y makes the granule bbox x = [y_lo, y_hi], y = [100, 100]; only
+-- granule 0 intersects the narrow x = [0, 200] extent, so the query reads 1000 rows and returns
+-- 1000 instead of 25001, failing the reference.
 DROP TABLE IF EXISTS points_non_lightweight_fixed_x;
 CREATE TABLE points_non_lightweight_fixed_x (coord Point) ENGINE = MergeTree ORDER BY coord SETTINGS index_granularity = 1000;
 
@@ -33,7 +36,7 @@ INSERT INTO points_non_lightweight_fixed_x SELECT (100, number) FROM numbers(100
 
 SELECT count()
 FROM points_non_lightweight_fixed_x
-WHERE pointInPolygon(coord, [(0, 0), (0, 25000), (25000, 25000), (25000, 0)])
+WHERE pointInPolygon(coord, [(0, 0), (0, 25000), (200, 25000), (200, 0)])
 SETTINGS use_lightweight_primary_key_index_analysis = 0, force_primary_key = 1, max_rows_to_read = 40000;
 
 DROP TABLE points_non_lightweight_fixed_x;
