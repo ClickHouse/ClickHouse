@@ -69,6 +69,8 @@ public:
         return next_column_id;
     }
 
+    static UInt64 extractNumericCounter(const String & s);
+
     /// Throws if `logical_name` is not in the mapping.
     String getColumnId(const String & logical_name) const;
 

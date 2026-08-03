@@ -45,38 +45,11 @@ UInt64 safeIncrementColumnId(UInt64 max_id)
     return max_id + 1;
 }
 
-/// Parse a numeric counter from `s`: either the whole string ("5") or the
-/// prefix before a '.' for a compound-ID form ("5.x").  Dotted forms occur
-/// for flattened Nested children whose offset stream shares the prefix; if
-/// the counter doesn't reserve that prefix, a later plain-counter allocation
-/// could reuse "5" and end up sharing the "5.size0" offset stream with the
-/// dotted siblings.
-///
-/// Accepts any non-empty suffix after the '.' (including digit-only suffixes
-/// like a Nested child literally named "0", which is valid when quoted).
-/// Pathological inputs like "18446744073709551615.x" still parse to
-/// UInt64::max here; `safeIncrementColumnId` then throws a clear
-/// "counter overflow" error instead of silently wrapping.
-UInt64 extractNumericCounter(const String & s)
-{
-    UInt64 value = 0;
-    const auto * begin = s.data();
-    const auto * end = begin + s.size();
-    auto [ptr, ec] = std::from_chars(begin, end, value);
-    if (ec != std::errc())
-        return 0;
-    if (ptr == end)
-        return value;
-    if (*ptr == '.' && ptr + 1 != end)
-        return value;
-    return 0;
-}
-
 UInt64 getNextColumnId(const NamesAndTypesList & columns)
 {
     UInt64 max_numeric_column_id = 0;
     for (const auto & column : columns)
-        max_numeric_column_id = std::max(max_numeric_column_id, extractNumericCounter(column.name));
+        max_numeric_column_id = std::max(max_numeric_column_id, ColumnIdMapping::extractNumericCounter(column.name));
     return safeIncrementColumnId(max_numeric_column_id);
 }
 
@@ -84,7 +57,7 @@ UInt64 getNextColumnId(const std::unordered_map<String, String> & logical_to_id)
 {
     UInt64 max_numeric_column_id = 0;
     for (const auto & [_, column_id] : logical_to_id)
-        max_numeric_column_id = std::max(max_numeric_column_id, extractNumericCounter(column_id));
+        max_numeric_column_id = std::max(max_numeric_column_id, ColumnIdMapping::extractNumericCounter(column_id));
     return safeIncrementColumnId(max_numeric_column_id);
 }
 
@@ -98,6 +71,21 @@ UInt64 getNextColumnId(const std::unordered_map<String, String> & logical_to_id)
     throw Exception(ErrorCodes::BAD_ARGUMENTS, "Column ID '{}' is not found in `ColumnIdMapping`", column_id);
 }
 
+}
+
+UInt64 ColumnIdMapping::extractNumericCounter(const String & s)
+{
+    UInt64 value = 0;
+    const auto * begin = s.data();
+    const auto * end = begin + s.size();
+    auto [ptr, ec] = std::from_chars(begin, end, value);
+    if (ec != std::errc())
+        return 0;
+    if (ptr == end)
+        return value;
+    if (*ptr == '.' && ptr + 1 != end)
+        return value;
+    return 0;
 }
 
 String ColumnIdMapping::getColumnId(const String & logical_name) const

@@ -28,6 +28,7 @@
 #include <Parsers/parseQuery.h>
 #include <Storages/ColumnsDescription.h>
 #include <Storages/MergeTree/Backup.h>
+#include <Storages/MergeTree/ColumnIdMapping.h>
 #include <Storages/MergeTree/LoadedMergeTreeDataPartInfoForReader.h>
 #include <Storages/MergeTree/MergeTreeData.h>
 #include <Storages/MergeTree/MergeTreeVirtualColumns.h>
@@ -2436,6 +2437,15 @@ NamesAndTypesList IMergeTreeDataPart::remapColumnsWithPhysicalNames(
             remapped_columns.push_back(remapped_column);
             continue;
         }
+
+        /// The counter only grows, and every load raises it past every ID in the mapping.
+        if (ColumnIdMapping::extractNumericCounter(column.name) >= mapping.getNextColumnIdCounter())
+            throw Exception(ErrorCodes::CORRUPTED_DATA,
+                "Part {} of table {} lists column ID '{}' in columns.txt, at or above the table's next "
+                "column ID counter ({}). The part cannot be attached here -- it most likely comes from "
+                "another table -- because a later ADD COLUMN would be given that same ID and would read "
+                "this part's data as its own.",
+                name, storage.getStorageID().getNameForLogs(), column.name, mapping.getNextColumnIdCounter());
 
         if (mapping.hasColumnId(column.name))
         {

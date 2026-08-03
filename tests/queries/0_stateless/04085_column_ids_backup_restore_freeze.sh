@@ -218,3 +218,43 @@ $CLIENT --query "BACKUP TABLE t_inactive TO Disk('backups', '${backup5}')" > /de
     && echo "inactive_mapping_not_backed_up" || echo "inactive_mapping_leaked"
 
 $CLIENT --query "DROP TABLE t_inactive SYNC"
+
+# Scenario 7: a part copied in from another table carries a column ID above this table's counter,
+# and one that is a live logical name here -- loading it must throw, not alias that column.
+$CLIENT --query "DROP TABLE IF EXISTS t_ahead_src SYNC"
+$CLIENT --query "DROP TABLE IF EXISTS t_ahead_dst SYNC"
+$CLIENT --query "
+CREATE TABLE t_ahead_src (k UInt32, \`5\` String)
+ENGINE = MergeTree ORDER BY k
+SETTINGS serialization_info_version = 'with_column_ids',
+         min_bytes_for_wide_part = 0, min_rows_for_wide_part = 0;
+"
+echo "INSERT INTO t_ahead_src VALUES (1, 'from_src')" | $CLIENT
+
+$CLIENT --query "
+CREATE TABLE t_ahead_dst (k UInt32)
+ENGINE = MergeTree ORDER BY k
+SETTINGS serialization_info_version = 'with_column_ids',
+         min_bytes_for_wide_part = 0, min_rows_for_wide_part = 0;
+"
+# src's identity mapping puts its counter past the name '5'; dst's '5' is added post-activation
+# and holds the counter ID '1', so dst's counter is only 2 -- below the ID the part carries.
+$CLIENT --query "ALTER TABLE t_ahead_dst ADD COLUMN \`5\` String"
+
+src_dir=$($CLIENT --query "SELECT data_paths[1] FROM system.tables WHERE database = currentDatabase() AND name = 't_ahead_src'")
+dst_dir=$($CLIENT --query "SELECT data_paths[1] FROM system.tables WHERE database = currentDatabase() AND name = 't_ahead_dst'")
+
+$CLIENT --query "ALTER TABLE t_ahead_src DETACH PART 'all_1_1_0'"
+mkdir -p "${dst_dir}detached"
+cp -r "${src_dir}detached/all_1_1_0" "${dst_dir}detached/all_1_1_0"
+
+$CLIENT --query "ALTER TABLE t_ahead_dst ATTACH PART 'all_1_1_0'" 2>&1 \
+    | grep -qE "at or above the table's next column ID counter" \
+    && echo "throws_on_above_counter_id" || echo "missing_guard"
+
+# The refused part must not have disturbed the table's own data.
+echo "INSERT INTO t_ahead_dst VALUES (10, 'own')" | $CLIENT
+$CLIENT --query "SELECT k, \`5\` FROM t_ahead_dst ORDER BY k"
+
+$CLIENT --query "DROP TABLE t_ahead_src SYNC"
+$CLIENT --query "DROP TABLE t_ahead_dst SYNC"
