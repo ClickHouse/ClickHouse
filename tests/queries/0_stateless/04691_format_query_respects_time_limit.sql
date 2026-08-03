@@ -130,4 +130,19 @@ WITH parseQueryToJSON('SELECT 1') AS json
 SELECT sum(length(formatQueryFromJSON(materialize(json), materialize('SELECT 1')))) > 0 FROM numbers(100000)
 SETTINGS max_execution_time = 0, max_block_size = 200000;
 
+-- 10. The poll must read the EXECUTING query, not the one that built the function. `ALTER` rebuilds the
+--     partition key from its own query context and `adjustPartitionKey` hands that same object to later
+--     inserts, rebuilding only when the key contains `modulo`, hence the plain key here. Reading a
+--     per-instance `QueryStatus` would fail this insert on the ALTER's long-expired 1 s limit.
+DROP TABLE IF EXISTS t_04691_retained;
+CREATE TABLE t_04691_retained (q String, n UInt64)
+ENGINE = MergeTree PARTITION BY cityHash64(formatQuery(q)) ORDER BY n;
+ALTER TABLE t_04691_retained ADD COLUMN extra UInt8 DEFAULT 0 SETTINGS max_execution_time = 1;
+SELECT sleep(2) FORMAT Null SETTINGS max_execution_time = 0;
+INSERT INTO t_04691_retained (q, n)
+SELECT 'SELECT ' || toString(number) || repeat(' OR (y = 1)', 60), number FROM numbers(3000)
+SETTINGS max_execution_time = 0, max_partitions_per_insert_block = 0, max_block_size = 200000;
+SELECT count() FROM t_04691_retained SETTINGS max_execution_time = 0;
+DROP TABLE t_04691_retained;
+
 SELECT 'ok';

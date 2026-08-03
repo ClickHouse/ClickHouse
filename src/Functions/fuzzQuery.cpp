@@ -43,8 +43,6 @@ public:
                 ErrorCodes::SUPPORT_IS_DISABLED,
                 "Function `fuzzQuery` is disabled. Set `allow_fuzz_query_functions` to 1 to enable it");
 
-        query_status = context->getProcessListElementSafe();
-
         const Settings & settings = context->getSettingsRef();
         max_query_size = settings[Setting::max_query_size];
         max_parser_depth = settings[Setting::max_parser_depth];
@@ -71,6 +69,7 @@ public:
     ColumnPtr executeImpl(const ColumnsWithTypeAndName & arguments, const DataTypePtr &, size_t input_rows_count) const override
     {
         const ColumnPtr col_query = arguments[0].column;
+        const QueryStatusPtr query_status = getQueryStatusOfExecutingQuery();
 
         if (const ColumnString * col_query_string = checkAndGetColumn<ColumnString>(col_query.get()))
         {
@@ -78,7 +77,7 @@ public:
             fuzzVector(
                 col_query_string->getChars(), col_query_string->getOffsets(),
                 *col_res,
-                input_rows_count);
+                input_rows_count, query_status);
             return col_res;
         }
 
@@ -121,7 +120,8 @@ private:
         const ColumnString::Chars & data,
         const ColumnString::Offsets & offsets,
         ColumnString & col_res,
-        size_t input_rows_count) const
+        size_t input_rows_count,
+        const QueryStatusPtr & query_status) const
     {
         size_t prev_offset = 0;
         size_t bytes_since_check = 0;
@@ -148,7 +148,6 @@ private:
         }
     }
 
-    QueryStatusPtr query_status;
     size_t max_query_size;
     size_t max_parser_depth;
     size_t max_parser_backtracks;

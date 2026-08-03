@@ -48,8 +48,6 @@ public:
     FunctionFormatQuery(ContextPtr context, String name_, OutputFormatting output_formatting_, ErrorHandling error_handling_)
         : name(name_), output_formatting(output_formatting_), error_handling(error_handling_)
     {
-        query_status = context->getProcessListElementSafe();
-
         const Settings & settings = context->getSettingsRef();
         max_query_size = settings[Setting::max_query_size];
         max_parser_depth = settings[Setting::max_parser_depth];
@@ -87,7 +85,9 @@ public:
         if (const ColumnString * col_query_string = checkAndGetColumn<ColumnString>(col_query.get()))
         {
             auto col_res = ColumnString::create();
-            formatVector(col_query_string->getChars(), col_query_string->getOffsets(), col_res->getChars(), col_res->getOffsets(), col_null_map, input_rows_count);
+            formatVector(
+                col_query_string->getChars(), col_query_string->getOffsets(), col_res->getChars(), col_res->getOffsets(),
+                col_null_map, input_rows_count, getQueryStatusOfExecutingQuery());
 
             if (error_handling == ErrorHandling::Null)
                 return ColumnNullable::create(std::move(col_res), std::move(col_null_map));
@@ -103,7 +103,8 @@ private:
         ColumnString::Chars & res_data,
         ColumnString::Offsets & res_offsets,
         ColumnUInt8::MutablePtr & res_null_map,
-        size_t input_rows_count) const
+        size_t input_rows_count,
+        const QueryStatusPtr & query_status) const
     {
         res_offsets.resize(input_rows_count);
         res_data.resize(data.size());
@@ -171,7 +172,6 @@ private:
     String name;
     OutputFormatting output_formatting;
     ErrorHandling error_handling;
-    QueryStatusPtr query_status;
 
     size_t max_query_size;
     size_t max_parser_depth;

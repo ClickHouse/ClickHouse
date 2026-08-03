@@ -67,8 +67,6 @@ public:
     {
         if (context)
         {
-            query_status = context->getProcessListElementSafe();
-
             const auto & settings = context->getSettingsRef();
             parser_settings.max_parser_depth = settings[Setting::max_parser_depth];
             parser_settings.max_parser_backtracks = settings[Setting::max_parser_backtracks];
@@ -108,6 +106,7 @@ public:
 
         size_t total = 0;
         size_t bytes_since_check = 0;
+        const QueryStatusPtr query_status = getQueryStatusOfExecutingQuery();
 
         for (size_t i = 0; i < input_rows_count; ++i)
         {
@@ -130,7 +129,6 @@ public:
 
 private:
     QueryTokenizationSettings parser_settings;
-    QueryStatusPtr query_status;
 };
 
 }

@@ -44,8 +44,6 @@ public:
 
     explicit FunctionParseQueryToJSON(ContextPtr context)
     {
-        query_status = context->getProcessListElementSafe();
-
         const Settings & settings = context->getSettingsRef();
         max_query_size = settings[Setting::max_query_size];
         max_parser_depth = settings[Setting::max_parser_depth];
@@ -76,6 +74,7 @@ public:
 
         const auto * col = arguments[0].column.get();
         size_t bytes_since_check = 0;
+        const QueryStatusPtr query_status = getQueryStatusOfExecutingQuery();
 
         for (size_t i = 0; i < input_rows_count; ++i)
         {
@@ -100,7 +99,6 @@ public:
     }
 
 private:
-    QueryStatusPtr query_status;
     size_t max_query_size;
     size_t max_parser_depth;
     size_t max_parser_backtracks;

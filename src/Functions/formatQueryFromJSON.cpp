@@ -252,8 +252,6 @@ public:
 
     explicit FunctionFormatQueryFromJSON(ContextPtr context)
     {
-        query_status = context->getProcessListElementSafe();
-
         const Settings & settings = context->getSettingsRef();
         max_ast_depth = settings[Setting::max_ast_depth];
         max_ast_elements = settings[Setting::max_ast_elements];
@@ -297,6 +295,7 @@ public:
         const auto * json_col = arguments[0].column.get();
         const auto * orig_col = arguments.size() > 1 ? arguments[1].column.get() : nullptr;
         size_t bytes_since_check = 0;
+        const QueryStatusPtr query_status = getQueryStatusOfExecutingQuery();
 
         for (size_t i = 0; i < input_rows_count; ++i)
         {
@@ -380,7 +379,6 @@ public:
     }
 
 private:
-    QueryStatusPtr query_status;
     size_t max_ast_depth;
     size_t max_ast_elements;
     size_t max_query_size;
