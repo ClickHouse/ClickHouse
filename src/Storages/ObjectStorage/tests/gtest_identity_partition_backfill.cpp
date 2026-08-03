@@ -2,6 +2,7 @@
 
 #include <Storages/ObjectStorage/StorageObjectStorageSource.h>
 #include <Columns/ColumnDecimal.h>
+#include <Columns/ColumnNullable.h>
 #include <Columns/ColumnsNumber.h>
 #include <Core/Field.h>
 #include <DataTypes/DataTypeNullable.h>
@@ -51,12 +52,20 @@ TEST(IdentityPartitionBackfill, DateTime64TickInsertedDirectly)
 TEST(IdentityPartitionBackfill, NullableDecimal32)
 {
     /// Nullable target: the inner width must still drive the DecimalField tag.
+    const Int64 tick = 777;
     auto type = makeNullable(std::make_shared<DataTypeDecimal<Decimal32>>(9, 3));
-    ColumnPtr col = backfillIdentityPartitionColumn(type, Field(Int64(777)), 1);
-    ASSERT_EQ(col->size(), 1u);
-    Field f;
-    col->get(0, f);
-    EXPECT_FALSE(f.isNull());
+    ColumnPtr col = backfillIdentityPartitionColumn(type, Field(tick), 2);
+    ASSERT_EQ(col->size(), 2u);
+    const auto & nullable = assert_cast<const ColumnNullable &>(*col);
+    /// Assert the tick reached the nested column unscaled: a non-null check alone also passes when
+    /// the value went through convertFieldToType, which would multiply it by the scale.
+    const auto & dec = assert_cast<const ColumnDecimal<Decimal32> &>(nullable.getNestedColumn());
+    EXPECT_EQ(dec.getScale(), 3u);
+    for (size_t i = 0; i < col->size(); ++i)
+    {
+        EXPECT_FALSE(nullable.isNullAt(i));
+        EXPECT_EQ(dec.getData()[i].value, static_cast<Decimal32::NativeType>(tick));
+    }
 }
 
 TEST(IdentityPartitionBackfill, NonScaleTypeGoesThroughConversion)

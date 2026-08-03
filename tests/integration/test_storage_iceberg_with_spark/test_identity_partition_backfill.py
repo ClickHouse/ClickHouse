@@ -153,13 +153,17 @@ def test_identity_partition_backfill_spec_evolution(
         ).strip()
         == "1\tEast\ta\n2\tWest\tb\n3\tEast\tc"
     )
-    # Filter across both specs; the old-spec East row must survive PREWHERE.
-    assert (
-        instance.query(
-            f"SELECT id, val FROM {table_function} WHERE region = 'East' ORDER BY id"
-        ).strip()
-        == "1\ta\n3\tc"
-    )
+    # Filter across both specs; the old-spec East row must survive PREWHERE. Pin the setting: with
+    # the move disabled the filter runs above the backfill and would pass even if the exclusion only
+    # looked at the current spec.
+    for prewhere in ("1", "0"):
+        assert (
+            instance.query(
+                f"SELECT id, val FROM {table_function} WHERE region = 'East' ORDER BY id"
+                f" SETTINGS optimize_move_to_prewhere = {prewhere}"
+            ).strip()
+            == "1\ta\n3\tc"
+        )
 
 
 # Regression for issue #110216 (row-level security): a row policy on an identity-partition column
