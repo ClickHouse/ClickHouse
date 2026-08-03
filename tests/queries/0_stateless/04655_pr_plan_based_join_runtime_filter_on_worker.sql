@@ -1,16 +1,15 @@
--- A JOIN shipped by plan-based parallel replicas carries its join runtime filter into the fragment, where
--- the shipped `BuildRuntimeFilterStep` is inert: a deserialized step has no rendezvous key, so the replica
--- must re-derive the filter itself while re-optimizing the fragment. This test asserts it really does, and
--- that the filter is applied, not just planned. See PR #112268 review (comment r3685836765).
+-- A JOIN shipped by plan-based parallel replicas carries its join runtime filter into the fragment, but the
+-- shipped build step does nothing there: a deserialized step cannot publish its filter, so the replica has
+-- to build its own while re-optimizing the fragment. This test asserts it really does, and that the filter
+-- is applied, not just planned. See PR #112268 review (comment r3685836765).
 --
 -- `parallel_replicas_local_plan = 0` puts the whole join on the replicas, so every runtime-filter counter
--- below can only come from them. The fragment arrives as a plan packet rather than SQL, so its `query_log`
--- row carries neither `tables` nor `log_comment` - it has to be found through `initial_query_id`, which is
--- why the join result is captured together with `queryID()`.
+-- below can only come from them. A fragment arrives as a plan packet rather than SQL, so its `query_log` row
+-- has neither `tables` nor `log_comment` - it is found through `initial_query_id` of the initiator's row,
+-- which in turn is identified by the table it reads and by the setting it ran with.
 
 DROP TABLE IF EXISTS rf_probe SYNC;
 DROP TABLE IF EXISTS rf_build SYNC;
-DROP TABLE IF EXISTS rf_query SYNC;
 
 CREATE TABLE rf_probe (a UInt64) ENGINE = MergeTree ORDER BY a SETTINGS index_granularity = 1024;
 CREATE TABLE rf_build (a UInt64) ENGINE = MergeTree ORDER BY a SETTINGS index_granularity = 1024;
@@ -34,40 +33,37 @@ SET query_plan_optimize_join_order_randomize = 0;
 
 -- RIGHT JOIN: the build side is the coordinated side, so this is the shape whose split has to be lifted
 -- through `BuildRuntimeFilterStep` for the join to ship at all.
-CREATE TABLE rf_query ENGINE = Memory AS
-    SELECT queryID() AS query_id, count() AS cnt
-    FROM rf_probe RIGHT JOIN rf_build ON rf_probe.a = rf_build.a
-    SETTINGS enable_join_runtime_filters = 1;
+SELECT 'result', count() FROM rf_probe RIGHT JOIN rf_build ON rf_probe.a = rf_build.a
+SETTINGS enable_join_runtime_filters = 1;
+
+-- Control: the same join with the filter disabled, so the counters below cannot come from anything else.
+SELECT 'result', count() FROM rf_probe RIGHT JOIN rf_build ON rf_probe.a = rf_build.a
+SETTINGS enable_join_runtime_filters = 0;
 
 SYSTEM FLUSH LOGS query_log;
 
-SELECT 'result', (SELECT cnt FROM rf_query);
 SELECT 'remote queries', countIf(is_initial_query = 0) >= 1,
        'filter built on worker', sumIf(ProfileEvents['RuntimeFiltersCreated'], is_initial_query = 0) > 0,
        'filter applied on worker', sumIf(ProfileEvents['RuntimeFilterRowsPassed'], is_initial_query = 0)
                                        < sumIf(ProfileEvents['RuntimeFilterRowsChecked'], is_initial_query = 0)
 FROM system.query_log
-WHERE initial_query_id = (SELECT query_id FROM rf_query) AND type = 'QueryFinish'
-  -- `initial_query_id` already scopes this to the query above; the date and time bounds only keep the scan
-  -- from touching older partitions when the test is rerun on a busy server.
-  AND event_date >= yesterday() AND event_time > now() - INTERVAL 1 HOUR;
+WHERE initial_query_id = (
+    SELECT query_id FROM system.query_log
+    WHERE type = 'QueryFinish' AND is_initial_query = 1 AND has(tables, currentDatabase() || '.rf_probe')
+      AND Settings['enable_join_runtime_filters'] = '1'
+      AND event_date >= yesterday() AND event_time > now() - INTERVAL 1 HOUR
+    ORDER BY event_time DESC LIMIT 1)
+  AND type = 'QueryFinish' AND event_date >= yesterday() AND event_time > now() - INTERVAL 1 HOUR;
 
--- Control: with the filter disabled the same counters must stay at zero, so the numbers above cannot come
--- from anything else.
-TRUNCATE TABLE rf_query;
-INSERT INTO rf_query
-    SELECT queryID() AS query_id, count() AS cnt
-    FROM rf_probe RIGHT JOIN rf_build ON rf_probe.a = rf_build.a
-    SETTINGS enable_join_runtime_filters = 0;
-
-SYSTEM FLUSH LOGS query_log;
-
-SELECT 'result', (SELECT cnt FROM rf_query);
 SELECT 'no filter built', sumIf(ProfileEvents['RuntimeFiltersCreated'], is_initial_query = 0) = 0
 FROM system.query_log
-WHERE initial_query_id = (SELECT query_id FROM rf_query) AND type = 'QueryFinish'
-  AND event_date >= yesterday() AND event_time > now() - INTERVAL 1 HOUR;
+WHERE initial_query_id = (
+    SELECT query_id FROM system.query_log
+    WHERE type = 'QueryFinish' AND is_initial_query = 1 AND has(tables, currentDatabase() || '.rf_probe')
+      AND Settings['enable_join_runtime_filters'] = '0'
+      AND event_date >= yesterday() AND event_time > now() - INTERVAL 1 HOUR
+    ORDER BY event_time DESC LIMIT 1)
+  AND type = 'QueryFinish' AND event_date >= yesterday() AND event_time > now() - INTERVAL 1 HOUR;
 
 DROP TABLE rf_probe SYNC;
 DROP TABLE rf_build SYNC;
-DROP TABLE rf_query SYNC;

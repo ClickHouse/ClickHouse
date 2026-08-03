@@ -213,11 +213,9 @@ public:
         auto * original_split_node = current_node;
         const auto * parent_step = parent_node->step.get();
 
-        /// BuildRuntimeFilterStep is lifted through as well: tryAddJoinRuntimeFilter plants it directly above
-        /// the join's build side, which for a RIGHT join is the coordinated side, so without this the split
-        /// never reaches the join and the join could not ship. The step ends up inside the fragment, where it
-        /// is inert (a deserialized step has no rendezvous key) - each replica re-derives its own runtime
-        /// filters when it re-optimizes the fragment.
+        /// BuildRuntimeFilterStep sits above the join's build side, which for a RIGHT join is the coordinated
+        /// side, so the split step has to pass it too. The step becomes part of the plan fragment, where it
+        /// does nothing: a deserialized step cannot publish its filter, so every replica builds its own.
         if (typeid_cast<const ExpressionStep *>(parent_step) || typeid_cast<const FilterStep *>(parent_step)
             || typeid_cast<const BuildRuntimeFilterStep *>(parent_step))
         {
