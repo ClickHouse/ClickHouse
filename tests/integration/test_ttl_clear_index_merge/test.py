@@ -101,6 +101,8 @@ def test_alter_ttl_recalculates_stale_metadata_before_index_clear(started_cluste
         """
     )
 
+    file_preserving_merges_before = event_value(node1, "TTLClearIndexMetadataOnlyMerges")
+
     node1.query("SYSTEM START TTL MERGES")
     assert_eq_with_retry(
         node1,
@@ -148,6 +150,10 @@ def test_alter_ttl_recalculates_stale_metadata_before_index_clear(started_cluste
             """
         )
         == "0\n"
+    )
+    assert (
+        event_value(node1, "TTLClearIndexMetadataOnlyMerges")
+        == file_preserving_merges_before
     )
     node1.query("DROP TABLE ttl_clear_index_stale SYNC")
 
@@ -227,8 +233,9 @@ def test_source_replica_produces_ttl_clear_index_merge(started_cluster):
     assert node1.query(part_identity_query) == node2.query(part_identity_query)
     assert node1.query("SELECT sum(v), count() FROM ttl_clear_index") == "3\t2\n"
     assert node2.query("SELECT sum(v), count() FROM ttl_clear_index") == "3\t2\n"
-    assert node1.query("CHECK TABLE ttl_clear_index") == "1\n"
-    assert node2.query("CHECK TABLE ttl_clear_index") == "1\n"
+    check_query = "CHECK TABLE ttl_clear_index SETTINGS check_query_single_value_result = 1"
+    assert node1.query(check_query) == "1\n"
+    assert node2.query(check_query) == "1\n"
 
     node2.query("DROP TABLE ttl_clear_index SYNC")
     node1.query("DROP TABLE ttl_clear_index SYNC")
