@@ -15,6 +15,7 @@
 #include <Processors/QueryPlan/ExtremesStep.h>
 #include <Processors/QueryPlan/UnionStep.h>
 #include <Processors/QueryPlan/IntersectOrExceptStep.h>
+#include <Processors/QueryPlan/LimitStep.h>
 #include <Processors/QueryPlan/Optimizations/Optimizations.h>
 #include <Processors/QueryPlan/Optimizations/Utils.h>
 #include <Processors/QueryPlan/JoinStepLogical.h>
@@ -518,10 +519,12 @@ void tryMakeDistributedAggregation(QueryPlan::Node & node, QueryPlan::Nodes & no
 /// Replaces SortingStep step with a subtree like this:
 ///
 ///   GatherExchange (merge sorted streams)
-///     SortingStep
-///       ScatterExchange (any partitioning)
+///     LimitStep (only for a top-N sort)
+///       SortingStep
+///         ScatterExchange (any partitioning)
 ///
 /// NOTE: GatherExchange step is aware of sort descripiton and merges multiple sorted streams into one sorted stream.
+/// The `LimitStep` restates the bound `SortingStep::serialize` drops, so the worker still sees a top-N read.
 void tryMakeDistributedSorting(QueryPlan::Node & node, QueryPlan::Nodes & nodes, const QueryPlanOptimizationSettings & optimization_settings)
 {
     /// Is this a sorting step?
@@ -549,12 +552,23 @@ void tryMakeDistributedSorting(QueryPlan::Node & node, QueryPlan::Nodes & nodes,
     new_sorting_node.step = std::move(node.step);
     new_sorting_node.children = {&exchange_scatter_node};
 
+    QueryPlan::Node * gather_input = &new_sorting_node;
+
+    if (const size_t local_limit = sorting_step->getLimit())
+    {
+        auto & limit_node = nodes.emplace_back();
+        limit_node.step = std::make_unique<LimitStep>(new_sorting_node.step->getOutputHeader(), local_limit, 0);
+        limit_node.step->setStepDescription("local top-N");
+        limit_node.children = {&new_sorting_node};
+        gather_input = &limit_node;
+    }
+
     /// Add merge sorted gather exchange step above sorting
     QueryPlan::Node gather_node;
-    QueryPlanStepPtr exchange_gather_step = std::make_unique<GatherExchangeStep>(new_sorting_node.step->getOutputHeader(), bucket_count, sort_description);
+    QueryPlanStepPtr exchange_gather_step = std::make_unique<GatherExchangeStep>(gather_input->step->getOutputHeader(), bucket_count, sort_description);
     exchange_gather_step->setStepDescription(fmt::format("sorted by ({})", dumpSortDescription(sort_description)), optimization_settings.max_step_description_length);
     gather_node.step = std::move(exchange_gather_step);
-    gather_node.children = {&new_sorting_node};
+    gather_node.children = {gather_input};
 
     /// Replace sorting node with gather node
     node = std::move(gather_node);

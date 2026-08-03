@@ -593,6 +593,13 @@ void optimizeTreeSecondPass(
         {
             auto & frame = stack.back();
 
+            /// A lazy branch must stay within one fragment; below a logical exchange it belongs to another one.
+            if (frame.next_child == 0 && dynamic_cast<const LogicalExchangeStep *>(frame.node->step.get()))
+            {
+                stack.pop_back();
+                continue;
+            }
+
             if (frame.next_child == 0 && optimization_settings.optimize_lazy_materialization)
             {
                 if (optimizeLazyMaterialization2(*frame.node, query_plan, nodes, optimization_settings, optimization_settings.max_limit_for_lazy_materialization))
