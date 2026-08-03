@@ -117,3 +117,33 @@ INSERT INTO t_04092_root VALUES
     (3, '{"n": {"x": 1}}');
 SELECT 'root rows', id, JSONExtractRaw(j), JSONExtractRawCaseInsensitive(j), JSONLength(j) FROM t_04092_root ORDER BY id;
 DROP TABLE t_04092_root;
+
+-- An empty string is a legal JSON key. Extracting it from a `JSON` column must read the stored
+-- empty key instead of being mistaken for the root form, matching the same call on a JSON string.
+SELECT 'empty key cs', JSONExtractString('{"": "empty key"}'::JSON, ''), JSONExtractString('{"": "empty key"}', '');
+SELECT 'empty key ci', JSONExtractStringCaseInsensitive('{"": "empty key"}'::JSON, ''), JSONExtractStringCaseInsensitive('{"": "empty key"}', '');
+SELECT 'empty key raw', JSONExtractRaw('{"": "empty key", "a": 1}'::JSON, ''), JSONHas('{"": "empty key"}'::JSON, '');
+-- An empty key is also legal in the middle of a path, on either side of a non-empty one.
+SELECT 'empty key nested', JSONExtractInt('{"": {"b": 1}}'::JSON, '', 'b'), JSONExtractInt('{"": {"b": 1}}', '', 'b');
+SELECT 'empty key nested ci', JSONExtractIntCaseInsensitive('{"": {"B": 1}}'::JSON, '', 'b'), JSONExtractIntCaseInsensitive('{"": {"B": 1}}', '', 'b');
+SELECT 'empty key trailing', JSONExtractInt('{"a": {"": 1}}'::JSON, 'a', ''), JSONExtractInt('{"a": {"": 1}}', 'a', '');
+-- A missing empty key still returns the default.
+SELECT 'empty key missing', JSONExtractString('{"a": 1}'::JSON, ''), JSONHas('{"a": 1}'::JSON, '');
+
+-- Same per row, so the empty key goes through the shared-data and per-row resolution paths too.
+DROP TABLE IF EXISTS t_04092_empty_key;
+CREATE TABLE t_04092_empty_key (id UInt32, j JSON) ENGINE = Memory;
+INSERT INTO t_04092_empty_key VALUES
+    (1, '{"": "empty"}'),
+    (2, '{"a": 1}'),
+    (3, '{"": "other"}');
+SELECT 'empty key rows', id, JSONExtractString(j, ''), JSONExtractStringCaseInsensitive(j, '') FROM t_04092_empty_key ORDER BY id;
+DROP TABLE t_04092_empty_key;
+
+-- The root form must serialize the row with the caller's JSON format settings. With
+-- `json_type_escape_dots_in_keys` a dot inside a key is escaped in the stored path, and only a
+-- serialization that sees the setting unescapes it back, so the extracted text must round-trip.
+SET json_type_escape_dots_in_keys = 1;
+SELECT 'escaped dots root', JSONExtractRaw('{"a.b": 42}'::JSON), JSONExtractRawCaseInsensitive('{"a.b": 42}'::JSON);
+SELECT 'escaped dots root keys', JSONExtractKeys('{"a.b": 42}'::JSON), JSONLength('{"a.b": 42}'::JSON);
+SET json_type_escape_dots_in_keys = 0;

@@ -47,3 +47,15 @@ root scalars	2	Object	1	1
 root rows	1	{"Key":"value"}	{"Key":"value"}	1
 root rows	2	{}	{}	0
 root rows	3	{"n":{"x":1}}	{"n":{"x":1}}	1
+empty key cs	empty key	empty key
+empty key ci	empty key	empty key
+empty key raw	"empty key"	1
+empty key nested	1	1
+empty key nested ci	1	1
+empty key trailing	1	1
+empty key missing		0
+empty key rows	1	empty	empty
+empty key rows	2		
+empty key rows	3	other	other
+escaped dots root	{"a.b":42}	{"a.b":42}
+escaped dots root keys	['a.b']	1

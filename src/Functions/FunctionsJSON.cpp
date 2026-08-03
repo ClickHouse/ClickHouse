@@ -128,7 +128,7 @@ public:
 
                 auto string_type = std::make_shared<DataTypeString>();
                 arguments_holder = arguments;
-                arguments_holder[0].column = castColumn(first_column, string_type);
+                arguments_holder[0].column = serializeObjectColumnToJSONText(first_column, input_rows_count, format_settings);
                 arguments_holder[0].type = string_type;
             }
 
@@ -202,6 +202,41 @@ public:
         }
 
     private:
+        /// Serialize a `JSON`/`Object` column back to its JSON text representation.
+        /// An internal `castColumn` to `String` cannot be used here: internal casts are created without a
+        /// context and therefore serialize with default `FormatSettings`, which would drop the caller's
+        /// JSON settings. For example, with `json_type_escape_dots_in_keys = 1` a row `{"a.b": 42}` is
+        /// stored with the dot escaped, and only a serialization that sees that setting unescapes it back,
+        /// so a default-settings cast would produce `{"a%2Eb": 42}` and the reparsed text would not match
+        /// the value the caller stored.
+        static ColumnPtr serializeObjectColumnToJSONText(
+            const ColumnWithTypeAndName & column, size_t input_rows_count, const FormatSettings & format_settings)
+        {
+            const auto * col_const = typeid_cast<const ColumnConst *>(column.column.get());
+            const IColumn & object_column = col_const ? col_const->getDataColumn() : *column.column;
+            const size_t num_rows = col_const ? 1 : input_rows_count;
+
+            auto serialization = column.type->getDefaultSerialization();
+            auto col_str = ColumnString::create();
+            ColumnString::Chars & data_to = col_str->getChars();
+            ColumnString::Offsets & offsets_to = col_str->getOffsets();
+            offsets_to.resize(num_rows);
+
+            {
+                WriteBufferFromVector<ColumnString::Chars> write_buffer(data_to);
+                for (size_t i = 0; i < num_rows; ++i)
+                {
+                    serialization->serializeText(object_column, i, write_buffer, format_settings);
+                    offsets_to[i] = write_buffer.count();
+                }
+                write_buffer.finalize();
+            }
+
+            if (col_const)
+                return ColumnConst::create(std::move(col_str), input_rows_count);
+            return col_str;
+        }
+
         /// Helper to process ColumnObject directly using subcolumns.
         /// Only supports constant string path keys (no indexes or non-const keys).
         /// - Extract literal subcolumn (json.path) for scalar values
@@ -260,7 +295,10 @@ public:
                         String(TName::name));
                 }
 
-                if (!path.empty())
+                /// The separator is added for every key after the first one, not only when the path
+                /// built so far is non-empty: an empty key is a legal JSON key, and `{"": {"b": 1}}`
+                /// is stored under the path `.b`, not `b`.
+                if (i > 1)
                     path += '.';
                 path += key;
             }
@@ -268,10 +306,9 @@ public:
             /// Expand ColumnConst to full column if needed.
             ColumnPtr object_column = col_const ? col_const->convertToFullColumn() : first_column.column;
 
-            /// The root form (no path arguments) is handled by the caller. Getting here with an empty
-            /// path means all the key arguments are empty strings, which cannot match a stored path.
-            if (path.empty())
-                return result_type->createColumnConstWithDefaultValue(input_rows_count)->convertToFullColumnIfConst();
+            /// Note: an empty `path` is not a special case here. The root form (no path arguments) is
+            /// handled by the caller, so getting here with an empty path means a single empty key
+            /// argument, which addresses the legal JSON key `""` and is looked up like any other path.
 
             /// For JSONExtractRaw: serialize each value as a JSON string
             constexpr bool is_extract_raw = std::string_view(TName::name) == std::string_view("JSONExtractRaw")
