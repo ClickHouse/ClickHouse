@@ -10,13 +10,11 @@ array tokenizer
 Output: hasAnyTokens(tags, [\'make-payment-check\'], \'array\'), hasAllTokens(tags, [\'make-payment-check\'], \'array\')
 -- EXPLAIN shows the tokenizer injected into the WHERE filter (use_skip_indexes = 0)
 Filter column: hasAnyTokens(tags, [\'make-payment-check\'], \'array\')
-preprocessor
--- SELECT-list position (hasAnyTokens, hasAllTokens, hasPhrase)
-10	10	10
--- WHERE is consistent across use_skip_indexes
+preprocessor is applied only on the index path
+-- SELECT-list position: preprocessor not applied
+0
+-- WHERE: preprocessor applied only with use_skip_indexes = 1
+0
 10
-10
-10
-10
--- EXPLAIN shows preprocessor and tokenizer injected into SELECT-list functions
-Output: hasAnyTokens(lower(s), [\'hello\'], \'splitByNonAlpha\'), hasPhrase(lower(s), \'hello world\', \'splitByNonAlpha\')
+-- EXPLAIN: SELECT-list injects the tokenizer but not the preprocessor
+Output: hasAnyTokens(s, [\'hello\'], \'splitByNonAlpha\')

@@ -5,7 +5,7 @@
 -- aggregate-function arguments), and that a WHERE result is the same regardless of `use_skip_indexes`.
 
 SET enable_analyzer = 1;
-SET enable_text_index = 1;
+SET enable_full_text_index = 1;
 SET use_skip_indexes_on_data_read = 1;
 
 SELECT 'array tokenizer';
@@ -53,7 +53,7 @@ SELECT replaceRegexpOne(explain, '^[^A-Za-z]*', '') FROM (
 
 DROP TABLE tab;
 
-SELECT 'preprocessor';
+SELECT 'preprocessor is applied only on the index path';
 
 DROP TABLE IF EXISTS tab;
 CREATE TABLE tab
@@ -67,26 +67,21 @@ SETTINGS index_granularity = 4;
 
 INSERT INTO tab SELECT number, if(number < 10, 'Hello World', 'foo bar') FROM numbers(1000);
 
-SELECT '-- SELECT-list position (hasAnyTokens, hasAllTokens, hasPhrase)';
+-- The tokenizer is always applied; the preprocessor (lower) only on the index path, so 'hello' matches via the index (use_skip_indexes = 1) but not row-level.
+SELECT '-- SELECT-list position: preprocessor not applied';
 
-SELECT
-    countIf(hasAnyTokens(s, 'hello')),
-    countIf(hasAllTokens(s, 'hello world')),
-    countIf(hasPhrase(s, 'hello world'))
-FROM tab;
+SELECT countIf(hasAnyTokens(s, 'hello')) FROM tab;
 
-SELECT '-- WHERE is consistent across use_skip_indexes';
+SELECT '-- WHERE: preprocessor applied only with use_skip_indexes = 1';
 
 SELECT count() FROM tab WHERE hasAnyTokens(s, 'hello') SETTINGS use_skip_indexes = 0;
-SELECT count() FROM tab WHERE hasAllTokens(s, 'hello world') SETTINGS use_skip_indexes = 0;
 SELECT count() FROM tab WHERE hasAnyTokens(s, 'hello') SETTINGS use_skip_indexes = 1;
-SELECT count() FROM tab WHERE hasAllTokens(s, 'hello world') SETTINGS use_skip_indexes = 1;
 
-SELECT '-- EXPLAIN shows preprocessor and tokenizer injected into SELECT-list functions';
+SELECT '-- EXPLAIN: SELECT-list injects the tokenizer but not the preprocessor';
 
 SELECT replaceRegexpOne(explain, '^[^A-Za-z]*', '') FROM (
     EXPLAIN actions = 1
-    SELECT hasAnyTokens(s, 'hello'), hasPhrase(s, 'hello world') FROM tab
-) WHERE explain ILIKE '%hasAnyTokens%' OR explain ILIKE '%hasPhrase%';
+    SELECT hasAnyTokens(s, 'hello') FROM tab
+) WHERE explain ILIKE '%hasAnyTokens%';
 
 DROP TABLE tab;

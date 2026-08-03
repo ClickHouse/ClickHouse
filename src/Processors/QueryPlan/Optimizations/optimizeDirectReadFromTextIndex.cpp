@@ -608,7 +608,15 @@ private:
         const auto * tokenizer = condition_text.getTokenizer();
         auto function_name = replacement.node->function_base->getName();
 
-        if (needApplyPreprocessor(function_name) && preprocessor && preprocessor->hasActions())
+        /// Preprocessor/postprocessor are index-path-only; off only the tokenizer is applied.
+        const bool index_is_used = condition.info->index != nullptr;
+        const bool apply_postprocessor = index_is_used && has_postprocessor;
+
+        /// Nothing to inject when the function takes no tokenizer argument (hasToken) and the index is not used.
+        if (!(needApplyTokenizer(function_name) && tokenizer) && !index_is_used)
+            return;
+
+        if (index_is_used && needApplyPreprocessor(function_name) && preprocessor && preprocessor->hasActions())
         {
             const auto & preprocessor_dag = preprocessor->getOriginalActionsDAG();
             chassert(preprocessor_dag.getOutputs().size() == 1);
@@ -652,10 +660,10 @@ private:
                 VectorWithMemoryTracking<String> needles_array;
                 const auto & needles_string = needles_field.safeGet<String>();
                 tokenizer->stringToTokens(needles_string.data(), needles_string.size(), needles_array);
-                /// Skip tokenizer-specific compaction when a postprocessor is configured: these needle tokens
+                /// Skip tokenizer-specific compaction when a postprocessor is applied: these needle tokens
                 /// are postprocessed and deduplicated below instead, because sparseGrams containment
                 /// compaction is unsound after a postprocessor (it can drop a required token).
-                if (!has_postprocessor)
+                if (!apply_postprocessor)
                     needles_array = tokenizer->compactTokens(needles_array);
                 needles_field = Array(needles_array.begin(), needles_array.end());
                 needles_type = std::make_shared<DataTypeArray>(std::make_shared<DataTypeString>());
@@ -665,7 +673,7 @@ private:
         /// Rewrite the haystack into the postprocessed tokens the index stores, so the row-level
         /// function still matches when the index isn't read directly (direct read off, or unmaterialized
         /// parts). getOriginalActionsDAG yields an Array(String) of postprocessed tokens.
-        if (needApplyPostprocessor(function_name) && has_postprocessor)
+        if (needApplyPostprocessor(function_name) && apply_postprocessor)
         {
             auto haystack_name = getNameWithoutAliases(new_children[0]);
             ActionsDAG::NodeRawConstPtrs merged_outputs;
