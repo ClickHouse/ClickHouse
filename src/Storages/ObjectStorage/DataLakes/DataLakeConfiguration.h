@@ -363,11 +363,8 @@ public:
         if ((*settings)[DataLakeStorageSetting::storage_catalog_type].changed
             || (*settings)[DataLakeStorageSetting::storage_catalog_url].changed
             || (*settings)[DataLakeStorageSetting::storage_aws_access_key_id].changed)
-            throw Exception(
-                ErrorCodes::BAD_ARGUMENTS,
-                "Settings storage_catalog_type, storage_catalog_url and storage_aws_access_key_id are no longer "
-                "supported on Iceberg/DeltaLake table engines. Use the DataLakeCatalog database engine instead "
-                "(https://clickhouse.com/docs/engines/database-engines/datalakecatalog)");
+            throw Exception(ErrorCodes::BAD_ARGUMENTS,
+                "Don't use deprecated settings storage_catalog_type, storage_catalog_url, storage_aws_access_key_id");
         const String db_name = table_id.hasDatabase() ? table_id.database_name : context->getCurrentDatabase();
         /// Having no associated `DataLakeDatabase` is a valid state (e.g. an `Iceberg` table in a
         /// regular `Atomic`/`Ordinary` database, or a database not currently registered during

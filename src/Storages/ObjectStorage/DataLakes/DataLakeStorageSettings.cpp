@@ -7,54 +7,11 @@
 #include <Storages/System/MutableColumnsAndConstraints.h>
 #include <Common/Exception.h>
 
-#include <unordered_set>
-
 namespace DB
 {
 
-namespace ErrorCodes
-{
-    extern const int BAD_ARGUMENTS;
-}
-
 DECLARE_SETTINGS_TRAITS(DataLakeStorageSettingsTraits, LIST_OF_DATA_LAKE_STORAGE_SETTINGS, STORAGE_DATA_LAKE_STORAGE_SETTINGS_SUPPORTED_TYPES)
 IMPLEMENT_SETTINGS_TRAITS(DataLakeStorageSettingsTraits, LIST_OF_DATA_LAKE_STORAGE_SETTINGS, DataLakeStorageSettings, DataLakeStorageSetting)
-
-namespace
-{
-/// Settings that belong to the DataLakeCatalog database engine. Users often pass them to Iceberg/DeltaLake
-/// table engines by mistake (especially `catalog_type`), which previously produced a bare UNKNOWN_SETTING.
-void throwIfDataLakeCatalogDatabaseSetting(std::string_view name)
-{
-    static const std::unordered_set<std::string_view> database_catalog_settings = {
-        "catalog_type",
-        "catalog_credential",
-        "vended_credentials",
-        "auth_scope",
-        "oauth_server_uri",
-        "oauth_server_use_request_body",
-        "warehouse",
-        "auth_header",
-        "aws_access_key_id",
-        "aws_secret_access_key",
-        "region",
-        "aws_role_arn",
-        "aws_role_session_name",
-        "aws_external_id",
-        "storage_endpoint",
-    };
-
-    if (!database_catalog_settings.contains(name))
-        return;
-
-    throw Exception(
-        ErrorCodes::BAD_ARGUMENTS,
-        "Setting '{}' is a database engine setting for DataLakeCatalog, not a table engine setting. "
-        "To integrate with a data catalog, create a database with ENGINE = DataLakeCatalog and put catalog "
-        "settings there. See https://clickhouse.com/docs/engines/database-engines/datalakecatalog",
-        String(name));
-}
-}
 
 DataLakeStorageSettings::DataLakeStorageSettings() : impl(std::make_unique<DataLakeStorageSettingsImpl>())
 {
@@ -75,9 +32,6 @@ STORAGE_DATA_LAKE_STORAGE_SETTINGS_SUPPORTED_TYPES(DataLakeStorageSettings, IMPL
 
 void DataLakeStorageSettings::loadFromQuery(ASTSetQuery & settings_ast)
 {
-    for (const auto & change : settings_ast.changes)
-        throwIfDataLakeCatalogDatabaseSetting(change.name);
-
     impl->applyChanges(settings_ast.changes);
 }
 
