@@ -1271,13 +1271,16 @@ static std::shared_ptr<IJoin> tryCreateJoin(
 
         if (GraceHashJoin::isSupported(table_join))
         {
-            return std::make_shared<GraceHashJoin>(
-                params.grace_hash_join_initial_buckets,
-                params.grace_hash_join_max_buckets,
+            /// Under the unified model `grace_hash` means "force external hash join": the same
+            /// `SpillingHashJoin` as the adaptive path, but starting in the partitioned state.
+            return std::make_shared<SpillingHashJoin>(
+                SpillingHashJoin::ForceExternalTag{},
                 table_join,
                 left_table_expression_header,
                 right_table_expression_header,
                 table_join->getTempDataOnDisk(),
+                params.grace_hash_join_initial_buckets,
+                params.grace_hash_join_max_buckets,
                 params.join_any_take_last_row);
         }
     }

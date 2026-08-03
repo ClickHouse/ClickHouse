@@ -69,6 +69,39 @@ SpillingHashJoin::SpillingHashJoin(
     supports_parallel_non_joined_blocks_processing = concurrent_join->supportParallelNonJoinedBlocksProcessing();
 }
 
+SpillingHashJoin::SpillingHashJoin(
+    ForceExternalTag,
+    std::shared_ptr<TableJoin> table_join_,
+    SharedHeader left_sample_block_,
+    SharedHeader right_sample_block_,
+    TemporaryDataOnDiskScopePtr tmp_data_,
+    size_t initial_num_buckets_,
+    size_t max_num_buckets_,
+    bool any_take_last_row_)
+    : log(getLogger("SpillingHashJoin"))
+    , table_join(std::move(table_join_))
+    , left_sample_block(std::move(left_sample_block_))
+    , right_sample_block(right_sample_block_->cloneEmpty())
+    , tmp_data(std::move(tmp_data_))
+    , initial_num_buckets(initial_num_buckets_)
+    , max_num_buckets(max_num_buckets_)
+    , any_take_last_row(any_take_last_row_)
+    , max_bytes_before_external_join(table_join->maxBytesBeforeExternalJoin())
+    , force_external(true)
+{
+    grace_join = std::make_shared<GraceHashJoin>(
+        initial_num_buckets,
+        max_num_buckets,
+        table_join,
+        left_sample_block,
+        right_sample_block_,
+        tmp_data,
+        any_take_last_row,
+        max_bytes_before_external_join);
+    chosen_join = grace_join;
+    state.store(State::GRACE_HASH_JOIN, std::memory_order_release);
+}
+
 SpillingHashJoin::~SpillingHashJoin() = default;
 
 void SpillingHashJoin::tryConvertSlots()
@@ -100,6 +133,11 @@ void SpillingHashJoin::tryConvertSlots()
 std::string SpillingHashJoin::getName() const
 {
     static constexpr auto name_format = "SpillingHashJoin({})";
+
+    /// In force-external mode there is no in-memory phase to wrap, so report the plain grace name:
+    /// `EXPLAIN` output for `join_algorithm = 'grace_hash'` stays what it always was.
+    if (force_external)
+        return grace_join->getName();
 
     if (concurrent_join)
         return fmt::format(name_format, concurrent_join->getName());
@@ -321,7 +359,9 @@ void SpillingHashJoin::setEnableLazyColumnsIndexing(bool value)
 
 void SpillingHashJoin::checkTypesOfKeys(const Block & block) const
 {
-    if (concurrent_join)
+    if (force_external)
+        grace_join->checkTypesOfKeys(block);
+    else if (concurrent_join)
         concurrent_join->checkTypesOfKeys(block);
     else
         hash_join->checkTypesOfKeys(block);
@@ -330,7 +370,9 @@ void SpillingHashJoin::checkTypesOfKeys(const Block & block) const
 void SpillingHashJoin::initialize(const Block & sample_block)
 {
     left_sample_block = std::make_shared<const Block>(sample_block.cloneEmpty());
-    if (!concurrent_join)
+    if (force_external)
+        grace_join->initialize(sample_block);
+    else if (!concurrent_join)
         hash_join->initialize(sample_block);
 }
 
