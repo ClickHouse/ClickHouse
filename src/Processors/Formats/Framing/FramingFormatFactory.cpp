@@ -29,12 +29,7 @@ FramingFormatPtr createFramingFormat(
         if (!parameters.is_http)
             throw Exception(ErrorCodes::BAD_ARGUMENTS,
                 "The EventStream framing format integrates with the HTTP protocol and is not applicable here");
-        /// Base64-encode the payloads when the output format may produce non-UTF-8 bytes, or may emit
-        /// raw carriage returns (which the server-sent events transport normalizes as line
-        /// terminators), so that binary, raw and CRLF output can be transported byte-exactly over the
-        /// text-only server-sent events.
-        const bool base64 = parameters.binary_payload || parameters.payload_has_carriage_returns;
-        return std::make_shared<FramingFormatEventStream>(out, format_settings, base64);
+        return std::make_shared<FramingFormatEventStream>(out, format_settings);
     }
 
     if (boost::iequals(name, "JSONEachPacketBase64"))

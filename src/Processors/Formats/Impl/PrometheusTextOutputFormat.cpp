@@ -358,11 +358,6 @@ void registerOutputFormatPrometheus(FormatFactory & factory)
     /// https://github.com/prometheus/docs/blob/86386ed25bc8a5309492483ec7d18d0914043162/content/docs/instrumenting/exposition_formats.md
     factory.setContentType(FORMAT_NAME, "text/plain; version=0.0.4; charset=UTF-8");
 
-    /// The metric names and help texts are written verbatim from the data, so the output may contain
-    /// raw carriage returns. Those cannot survive the text `EventStream` framing, so the output is
-    /// base64-encoded there (see `checkIfOutputFormatMayEmitCarriageReturn`).
-    factory.markOutputFormatMayEmitCarriageReturns(FORMAT_NAME);
-
     factory.setDocumentation("Prometheus", Documentation{
         .description = R"DOCS_MD(
 | Input | Output | Alias |

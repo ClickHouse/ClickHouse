@@ -14,13 +14,10 @@ data | ["k", "c"]
 data | ["UInt64", "UInt64"]
 data | ["0", "2"]
 data | ["1", "2"]
-data | 
 totals | 
 totals | ["0", "4"]
-totals | 
 extremes | ["0", "2"]
 extremes | ["1", "2"]
-extremes | 
 --- the concatenation of the payloads is exactly the output of the format
 0	2
 1	2
@@ -36,14 +33,11 @@ extremes |
 --- EventStream
 data | 0	2
 data | 1	2
-data | 
 totals | 
 totals | 0	4
-totals | 
 extremes | 
 extremes | 0	2
 extremes | 1	2
-extremes | 
 --- EventStream, payload without a trailing newline
 data | (0),(1),(2)
 --- EventStream reconstructs the payload byte-for-byte, including the trailing newline
@@ -53,7 +47,7 @@ byte-exact round trip: OK
 {"number":1}
 {"number":2}
 --- EventStream content type
-text/event-stream; charset=UTF-8
+text/event-stream; charset=UTF-8; payload=base64
 --- JSONEachPacket content type
 application/x-ndjson; charset=UTF-8
 --- progress packets are sent
@@ -99,28 +93,20 @@ CustomSeparated (Escaped) accepted: OK
 1
 --- a compatibility error is delivered as a framed exception packet (wait_end_of_query)
 1
---- EventStream base64-encodes TSV with a CRLF row terminator
-text/event-stream; charset=UTF-8; payload=base64
+--- EventStream carries TSV with a CRLF row terminator
 TSV CRLF payload round-trips
---- EventStream base64-encodes CSV (the CSV quoting passes a carriage return in the data verbatim)
-text/event-stream; charset=UTF-8; payload=base64
+--- EventStream carries CSV with a carriage return in the data
 CSV payload with a carriage return round-trips
---- EventStream base64-encodes formats that write values without escaping (Vertical)
+--- EventStream carries formats that write values without escaping (Vertical)
 Vertical payload with a carriage return round-trips
---- EventStream base64-encodes SQLInsert (the table name setting is written verbatim)
+--- EventStream carries SQLInsert with a carriage return in the table name setting
 SQLInsert payload with a carriage return in the table name round-trips
---- EventStream base64-encodes Pretty and XML (values are written without escaping the carriage return)
+--- EventStream content type does not depend on the output format
 text/event-stream; charset=UTF-8; payload=base64
 text/event-stream; charset=UTF-8; payload=base64
---- EventStream base64-encodes CustomSeparated with the CSV escaping rule
 text/event-stream; charset=UTF-8; payload=base64
---- EventStream base64-encodes CustomSeparated when a delimiter contains a carriage return
 text/event-stream; charset=UTF-8; payload=base64
---- EventStream still embeds CustomSeparated with the Escaped rule as plain text
-text/event-stream; charset=UTF-8
---- EventStream base64-encodes Markdown only with escape_special_characters (that path passes a carriage return verbatim)
 text/event-stream; charset=UTF-8; payload=base64
-text/event-stream; charset=UTF-8
 --- JSONEachPacketString accepts CSV with a carriage return in the data (escaped in the JSON string)
 {"packet":"data","data":"\"a\rb\"\n"}
 --- JSONEachPacketString accepts TSV with a CRLF row terminator (the carriage return is escaped)
@@ -295,7 +281,11 @@ JSONStringsEachRow accepted: OK
 is not compatible with the output format JSONCompactColumns
 --- JSONEachPacketString is rejected for JSONObjectEachRow with a non-UTF-8 named Tuple element
 is not compatible with the output format JSONObjectEachRow
---- JSONEachPacketString is rejected for GeoJSON with a non-UTF-8 named Tuple element
+--- JSONEachPacketString is rejected for GeoJSON with a non-UTF-8 named Tuple element in a direct properties column
 is not compatible with the output format GeoJSON
+--- JSONEachPacketString is rejected for GeoJSON with a non-UTF-8 named Tuple element in an ordinary property column written as an object
+is not compatible with the output format GeoJSON
+--- JSONEachPacketString accepts GeoJSON with a non-UTF-8 named Tuple element in an ordinary property column written as an array
+GeoJSON array-mode tuple property accepted: OK
 --- JSONEachPacketString is rejected for CustomSeparated with the JSON escaping rule and a non-UTF-8 named Tuple element
 is not compatible with the output format CustomSeparated

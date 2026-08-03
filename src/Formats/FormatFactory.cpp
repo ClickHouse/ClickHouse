@@ -223,6 +223,7 @@ FormatSettings getFormatSettings(const ContextPtr & context, const Settings & se
     format_settings.parquet.preserve_order = settings[Setting::input_format_parquet_preserve_order];
     format_settings.parquet.filter_push_down = settings[Setting::input_format_parquet_filter_push_down];
     format_settings.parquet.bloom_filter_push_down = settings[Setting::input_format_parquet_bloom_filter_push_down];
+    format_settings.parquet.dictionary_filter_push_down = settings[Setting::input_format_parquet_dictionary_filter_push_down];
     format_settings.parquet.page_filter_push_down = settings[Setting::input_format_parquet_page_filter_push_down];
     format_settings.parquet.use_offset_index = settings[Setting::input_format_parquet_use_offset_index];
 
@@ -342,8 +343,6 @@ FormatSettings getFormatSettings(const ContextPtr & context, const Settings & se
     format_settings.arrow.output_compression_method = settings[Setting::output_format_arrow_compression_method];
     format_settings.arrow.output_date_as_uint16 = settings[Setting::output_format_arrow_date_as_uint16];
     format_settings.arrow.output_unsupported_types_as_binary = settings[Setting::output_format_arrow_unsupported_types_as_binary];
-    format_settings.arrow.input_use_native_reader = settings[Setting::input_format_arrow_use_native_reader];
-    format_settings.arrow.output_use_native_writer = settings[Setting::output_format_arrow_use_native_writer];
     format_settings.orc.allow_missing_columns = settings[Setting::input_format_orc_allow_missing_columns];
     format_settings.orc.row_batch_size = settings[Setting::input_format_orc_row_batch_size];
     format_settings.orc.skip_columns_with_unsupported_types_in_schema_inference = settings[Setting::input_format_orc_skip_columns_with_unsupported_types_in_schema_inference];
@@ -1133,22 +1132,6 @@ void FormatFactory::registerOutputFormatMayProduceRawBytesChecker(const String &
     target = std::move(checker);
 }
 
-void FormatFactory::markOutputFormatMayEmitCarriageReturns(const String & name)
-{
-    auto & target = getOrCreateCreators(name).may_emit_carriage_returns;
-    if (target)
-        throw Exception(ErrorCodes::LOGICAL_ERROR, "FormatFactory: Format {} is already marked as emitting carriage returns", name);
-    target = true;
-}
-
-void FormatFactory::registerOutputFormatMayEmitCarriageReturnChecker(const String & name, MayEmitCarriageReturnChecker checker)
-{
-    auto & target = getOrCreateCreators(name).may_emit_carriage_return_checker;
-    if (target)
-        throw Exception(ErrorCodes::LOGICAL_ERROR, "FormatFactory: Carriage-return checker for format {} is already registered", name);
-    target = std::move(checker);
-}
-
 void FormatFactory::setContentType(const String & name, const String & content_type)
 {
     getOrCreateCreators(name).content_type = [=](const std::optional<FormatSettings> &){ return content_type; };
@@ -1247,14 +1230,6 @@ bool FormatFactory::checkIfOutputFormatMayProduceRawBytes(const String & name, c
     if (target.may_produce_raw_bytes)
         return true;
     return target.may_produce_raw_bytes_checker && target.may_produce_raw_bytes_checker(settings, header);
-}
-
-bool FormatFactory::checkIfOutputFormatMayEmitCarriageReturn(const String & name, const FormatSettings & settings) const
-{
-    const auto & target = getCreators(name);
-    if (target.may_emit_carriage_returns)
-        return true;
-    return target.may_emit_carriage_return_checker && target.may_emit_carriage_return_checker(settings);
 }
 
 bool FormatFactory::checkParallelizeOutputAfterReading(const String & name, const ContextPtr & context) const

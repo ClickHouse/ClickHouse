@@ -61,7 +61,7 @@ SELECT final progress result_rows: OK
 INSERT with unknown default_format no exception: OK
 INSERT with unknown default_format rows written: OK
 DDL EventStream content type with binary default_format: OK
-DDL EventStream no payload=base64 with binary default_format: OK
+DDL EventStream payload=base64 with binary default_format: OK
 --- a failure while finalizing the framing format is delivered as a framed exception packet
 finalization failure delivered as a framed exception packet: OK
 --- a partial packet write is not retried into a duplicated packet

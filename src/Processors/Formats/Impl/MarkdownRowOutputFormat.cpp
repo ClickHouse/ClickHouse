@@ -79,15 +79,6 @@ void registerOutputFormatMarkdown(FormatFactory & factory)
     factory.markOutputFormatSupportsParallelFormatting("Markdown");
     factory.registerFileExtension("md", "Markdown");
 
-    /// With `output_format_markdown_escape_special_characters`, the values are written with the
-    /// Markdown escaping, which escapes the special punctuation but passes a carriage return through
-    /// verbatim (the default path uses the `Escaped` rule, which does escape it). A raw carriage
-    /// return cannot survive the text `EventStream` framing, so such output is base64-encoded there
-    /// (see `checkIfOutputFormatMayEmitCarriageReturn`).
-    for (const auto * name : {"Markdown", "MD"})
-        factory.registerOutputFormatMayEmitCarriageReturnChecker(
-            name, [](const FormatSettings & settings) { return settings.markdown.escape_special_characters; });
-
     /// The header column names are written verbatim (through `writeEscapedString`, which escapes the
     /// control characters but does not validate UTF-8), so a name that is not valid UTF-8 makes the
     /// output not valid UTF-8 either. The text framings reject or base64-encode the output in that case

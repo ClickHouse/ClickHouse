@@ -65,8 +65,8 @@ public:
     /// The content type for the HTTP response.
     virtual String getContentType() const = 0;
 
-    /// Whether this framing embeds the output payload as UTF-8 text (`EventStream`,
-    /// `JSONEachPacketString`) rather than in a binary-safe way (`JSONEachPacketBase64`).
+    /// Whether this framing embeds the output payload as UTF-8 text (`JSONEachPacketString`)
+    /// rather than in a binary-safe way (`JSONEachPacketBase64`, `EventStream`).
     /// Text framings can only be used with text output formats; binary output formats
     /// (such as `Native` or `RowBinary`) require a binary-safe framing.
     virtual bool requiresTextPayload() const = 0;
@@ -131,8 +131,8 @@ protected:
 
     /// Writes `s` as a JSON string, replacing invalid UTF-8 sequences with the replacement character.
     /// Auxiliary packets (`log`, `profile_events`, `exception`) are always JSON, unlike the query result
-    /// payload, which - depending on the framing format - may embed non-UTF-8 bytes verbatim (`EventStream`
-    /// and `JSONEachPacketString` with a text output format) or byte-exactly (base64). Auxiliary packets have
+    /// payload, which - depending on the framing format - may embed non-UTF-8 bytes verbatim
+    /// (`JSONEachPacketString` with a text output format) or byte-exactly (base64). Auxiliary packets have
     /// no such escape hatch, and some of their string fields (for example `query_id` in the `log` packet)
     /// can come from user input, so they must always be sanitized to keep the packet valid JSON.
     static void writeJSONStringValidUTF8(std::string_view s, WriteBuffer & buf, const FormatSettings & settings);

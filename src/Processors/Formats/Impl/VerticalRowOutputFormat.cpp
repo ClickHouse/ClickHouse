@@ -214,11 +214,6 @@ void registerOutputFormatVertical(FormatFactory & factory)
 
     factory.markOutputFormatSupportsParallelFormatting("Vertical");
 
-    /// The values are written with `serializeText`, which passes the bytes of a `String` value through
-    /// verbatim, including carriage returns. Those cannot survive the text `EventStream` framing, so
-    /// the output is base64-encoded there (see `checkIfOutputFormatMayEmitCarriageReturn`).
-    factory.markOutputFormatMayEmitCarriageReturns("Vertical");
-
     /// Each field is labelled with its column name, written verbatim, so a name that is not valid UTF-8
     /// makes the output not valid UTF-8 either. The text framings reject or base64-encode the output in
     /// that case (see `checkIfOutputFormatMayProduceRawBytes`). `Vertical` does not write the data type

@@ -100,12 +100,6 @@ void registerOutputFormatCSV(FormatFactory & factory)
         /// https://www.iana.org/assignments/media-types/text/csv
         factory.setContentType(format_name, String("text/csv; charset=UTF-8; header=") + (with_names ? "present" : "absent"));
 
-        /// The CSV quoting (`writeCSVString`) passes a carriage return in a `String` value through
-        /// verbatim, and with `output_format_csv_crlf_end_of_line` rows end with `\r\n`. A raw carriage
-        /// return cannot survive the text `EventStream` framing, so the output is base64-encoded there
-        /// (see `checkIfOutputFormatMayEmitCarriageReturn`).
-        factory.markOutputFormatMayEmitCarriageReturns(format_name);
-
         /// The `*WithNames*` variants write the column names (and data type names) into the header
         /// through `writeCSVString`, which quotes special characters but does not validate UTF-8, so a
         /// name that is not valid UTF-8 (a quoted identifier or an `Enum` element with arbitrary bytes)
