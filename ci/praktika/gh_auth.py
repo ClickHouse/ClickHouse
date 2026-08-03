@@ -3,19 +3,35 @@ import time
 
 import requests
 
-try:
-    import jwt  # From pyjwt
-
-    assert hasattr(jwt, "encode"), "Invalid jwt module, 'encode' not found"
-    USING_PYJWT = True
-except (ImportError, AssertionError):
-    USING_PYJWT = False
-    print(
-        "Warning: pyjwt not available. Falling back to 'jwt' module (not recommended)"
-    )
-    from jwt import jwk_from_pem, JWT
-
 from praktika.utils import Shell
+
+# The JWT backend is imported lazily (see _jwt_backend) so importing this module
+# - and therefore runner.py - never requires pyjwt. Only GitHub App auth needs
+# it; local flows such as running integration tests must not depend on it.
+_JWT_BACKEND = None
+
+
+def _jwt_backend():
+    """Return (using_pyjwt, backend), importing the JWT library on first use.
+
+    backend is the ``jwt`` module when pyjwt is available, otherwise the
+    ``(jwk_from_pem, JWT)`` symbols from the legacy ``jwt`` package.
+    """
+    global _JWT_BACKEND
+    if _JWT_BACKEND is None:
+        try:
+            import jwt  # From pyjwt
+
+            assert hasattr(jwt, "encode"), "Invalid jwt module, 'encode' not found"
+            _JWT_BACKEND = (True, jwt)
+        except (ImportError, AssertionError):
+            print(
+                "Warning: pyjwt not available. Falling back to 'jwt' module (not recommended)"
+            )
+            from jwt import JWT, jwk_from_pem
+
+            _JWT_BACKEND = (False, (jwk_from_pem, JWT))
+    return _JWT_BACKEND
 
 # `gh auth login --with-token` validates the token against api.github.com. A single
 # transient GitHub API 5xx/timeout there would otherwise hard-fail the whole job.
@@ -91,6 +107,7 @@ class GHAuth:
             "iss": app_id,
         }
 
+        _, jwt = _jwt_backend()
         jwt_instance = jwt.PyJWT()
         encoded_jwt = jwt_instance.encode(payload, private_key, algorithm="RS256")
         return cls._get_access_token_by_jwt(encoded_jwt, installation_id)
@@ -98,6 +115,7 @@ class GHAuth:
     @classmethod
     def _get_access_token_deprecated(cls, app_key, app_id, installation_id: int):
         def _generate_jwt(client_id, pem):
+            _, (jwk_from_pem, JWT) = _jwt_backend()
             pem = str.encode(pem)
             signing_key = jwk_from_pem(pem)
             payload = {
@@ -124,7 +142,8 @@ class GHAuth:
         instead print a warning and return False.
         """
         try:
-            if USING_PYJWT:
+            using_pyjwt, _ = _jwt_backend()
+            if using_pyjwt:
                 access_token = cls._get_access_token(app_key, app_id, installation_id)
             else:
                 access_token = cls._get_access_token_deprecated(app_key, app_id, installation_id)
