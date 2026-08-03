@@ -228,6 +228,12 @@ bool GlobString::hasExactlyOneEnum() const
         switch (expression.type())
         {
             case ExpressionType::CONSTANT:
+                /// A literal '{' in constant text is a brace group the parser rejected
+                /// (e.g. "{0}" or "{a}"). The legacy exact-expansion contract
+                /// (hasExactlyOneBracketsExpansion) requires the enum's '{' to be the
+                /// only one in the pattern, so such patterns stay on the listing path.
+                if (std::get<std::string_view>(expression.getData()).contains('{'))
+                    return false;
                 continue;
             case ExpressionType::WILDCARD:
                 return false;

@@ -352,9 +352,10 @@ std::shared_ptr<IObjectIterator> StorageObjectStorageSource::createFileIterator(
     /// for that path and silently miss rows. Always use `GlobIterator` for web listings, which preserves
     /// the source index.
     /// Expand to exact keys only for the shape the legacy parser expands (exactly one enum
-    /// group, no wildcards — including `?` inside an enum alternative, which `expand` would
-    /// keep as literal text); everything else stays on the listing path, which skips absent
-    /// alternatives instead of failing on them.
+    /// group, no other brace text such as a literal "{0}" group, and no wildcards — including
+    /// `?` inside an enum alternative, which `expand` would keep as literal text); everything
+    /// else stays on the listing path, which skips absent alternatives instead of failing on
+    /// them.
     bool can_expand = !match_web_paths_only
         && use_glob_ast
         && glob_string->hasExactlyOneEnum()

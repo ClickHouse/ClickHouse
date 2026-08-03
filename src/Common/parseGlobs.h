@@ -202,6 +202,14 @@ public:
     /// literal text (a literal brace group such as "{a}" does not count as a glob).
     size_t firstGlobPosition() const;
 
+    /// True when the pattern holds exactly one enum group and no other brace text —
+    /// the shape the legacy parser expands to exact keys (hasExactlyOneBracketsExpansion
+    /// requires the enum's '{' to be the only one in the pattern). A literal brace group
+    /// such as "{0}" fails the check even though it parses as constant text: the legacy
+    /// path lists and filters such patterns, and probing exact keys instead would change
+    /// missing-file semantics under strict `*_ignore_file_doesnt_exist = 0` mode.
+    /// Note this does not check for '?' wildcards inside enum alternatives — callers
+    /// must combine it with hasQuestionOrAsterisk (see GlobASTWildcardInsideEnums).
     bool hasExactlyOneEnum() const;
 
 private:

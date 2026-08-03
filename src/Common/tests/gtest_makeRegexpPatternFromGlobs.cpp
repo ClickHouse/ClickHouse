@@ -801,6 +801,28 @@ TEST(Common, GlobASTWildcardInsideEnums)
     EXPECT_FALSE(plain.hasQuestionOrAsterisk());
 }
 
+TEST(Common, GlobASTLiteralBraceGroupBesideEnum)
+{
+    /// A literal brace group like "{0}" parses as constant text, so the pattern holds
+    /// exactly one enum — but the legacy exact-key contract (hasExactlyOneBracketsExpansion)
+    /// requires the enum's '{' to be the only one in the pattern. Probing exact keys for
+    /// such patterns would change strict missing-file semantics vs the legacy listing path,
+    /// so hasExactlyOneEnum must reject them.
+    GlobAST::GlobString with_literal_group("dir_{0}/file_{a,b}.csv");
+    EXPECT_FALSE(with_literal_group.hasExactlyOneEnum());
+    EXPECT_TRUE(with_literal_group.matches("dir_{0}/file_a.csv"));
+    EXPECT_FALSE(with_literal_group.matches("dir_0/file_a.csv"));
+
+    /// Doubled braces contribute literal '{' text around the inner enum.
+    GlobAST::GlobString doubled("file_{{a,b}}.csv");
+    EXPECT_FALSE(doubled.hasExactlyOneEnum());
+
+    /// A literal '}' with no opening brace is not a brace group; the legacy parser expands
+    /// this shape (it counts only '{'), so it stays expandable.
+    GlobAST::GlobString closing_only("dir_}/file_{a,b}.csv");
+    EXPECT_TRUE(closing_only.hasExactlyOneEnum());
+}
+
 TEST(Common, GlobASTMatchDeepRecursionGuard)
 {
     /// A long run of `*` stays far below the memo-table cap against a short candidate
