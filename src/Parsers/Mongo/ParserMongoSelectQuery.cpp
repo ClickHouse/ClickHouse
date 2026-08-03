@@ -78,6 +78,13 @@ bool ParserMongoSelectQuery::parseImpl(ASTPtr & node)
         select_query->setExpression(ASTSelectQuery::Expression::LIMIT_LENGTH, std::move(literal));
     }
 
+    if (metadata->getOffset())
+    {
+        size_t offset_value = *metadata->getOffset();
+        auto literal = make_intrusive<ASTLiteral>(Field(offset_value));
+        select_query->setExpression(ASTSelectQuery::Expression::LIMIT_OFFSET, std::move(literal));
+    }
+
     if (metadata->getOrderBy())
     {
         ASTPtr order_by_node;

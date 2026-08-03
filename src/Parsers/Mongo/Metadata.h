@@ -47,6 +47,7 @@ public:
         std::string collection_name_,
         QueryType query_type_,
         std::optional<int> limit_,
+        std::optional<int> offset_,
         std::optional<std::string> order_by_);
 
     /// Empty when the query does not name a database, which means the current one.
@@ -57,6 +58,8 @@ public:
     QueryType getQueryType() const { return query_type; }
 
     std::optional<size_t> getLimit() const { return limit; }
+
+    std::optional<size_t> getOffset() const { return offset; }
 
     std::optional<std::string> getOrderBy() const { return order_by; }
 
@@ -69,6 +72,7 @@ private:
     std::string collection_name;
     QueryType query_type;
     std::optional<size_t> limit;
+    std::optional<size_t> offset;
     std::optional<std::string> order_by;
     rapidjson::Document::AllocatorType allocator;
 };

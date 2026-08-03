@@ -18,11 +18,13 @@ QueryMetadata::QueryMetadata(
     std::string collection_name_,
     QueryType query_type_,
     std::optional<int> limit_,
+    std::optional<int> offset_,
     std::optional<std::string> order_by_)
     : database_name(std::move(database_name_))
     , collection_name(std::move(collection_name_))
     , query_type(query_type_)
     , limit(limit_)
+    , offset(offset_)
     , order_by(order_by_)
 {
 }
@@ -70,7 +72,7 @@ std::shared_ptr<QueryMetadata> extractMetadataFromRequest(const char * begin, co
         throw Exception(ErrorCodes::BAD_ARGUMENTS, "Invalid query: unknown operation '{}'", key);
     }
 
-    /** `.limit(...)` and `.sort(...)` are suffixes of a `find`, so only the text that follows the
+    /** `.limit(...)`, `.skip(...)` and `.sort(...)` are suffixes of a `find`, so only the text that follows the
       * argument list of the `find` is searched for them, and the pattern is searched for as plain
       * text. Searching the whole query would read the argument as well, and a document is free to
       * hold the pattern in a value of its own: `db.users.find({"name": ".limit(1)"})` looks for a
@@ -79,6 +81,7 @@ std::shared_ptr<QueryMetadata> extractMetadataFromRequest(const char * begin, co
       * an aggregation pipeline may hold a field path such as `$a.limit`.
       */
     std::optional<int> limit;
+    std::optional<int> offset;
     std::optional<std::string> order_by;
     if (*query_type == QueryMetadata::QueryType::select)
     {
@@ -96,11 +99,14 @@ std::shared_ptr<QueryMetadata> extractMetadataFromRequest(const char * begin, co
         MongoQueryKeyNameExtractor limit_extractor(".limit");
         limit = limit_extractor.extractInt(suffix_begin, suffix_end);
 
+        MongoQueryKeyNameExtractor offset_extractor(".skip");
+        offset = offset_extractor.extractInt(suffix_begin, suffix_end);
+
         MongoQueryKeyNameExtractor order_by_extractor(".sort");
         order_by = order_by_extractor.extractString(suffix_begin, suffix_end);
     }
 
-    return std::make_shared<QueryMetadata>(std::move(database_name), std::move(collection_name), *query_type, limit, order_by);
+    return std::make_shared<QueryMetadata>(std::move(database_name), std::move(collection_name), *query_type, limit, offset, order_by);
 }
 
 }

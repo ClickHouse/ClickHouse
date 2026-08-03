@@ -75,6 +75,7 @@ std::vector<Document> FindHandler::handle(const std::vector<OpMessageSection> & 
     serialized_filter = modifyFilter(serialized_filter);
 
     auto serialized_limit = serializeMember(json_representation, "limit");
+    auto serialized_skip = serializeMember(json_representation, "skip");
 
     auto sorting = serializeMember(json_representation, "sort");
     if (!sorting.empty())
@@ -86,6 +87,8 @@ std::vector<Document> FindHandler::handle(const std::vector<OpMessageSection> & 
     auto mongo_dialect_query = fmt::format("db.{}.find({})", collection.collection, serialized_filter);
     if (!serialized_limit.empty())
         mongo_dialect_query += fmt::format(".limit({})", std::stoi(serialized_limit));
+    if (!serialized_skip.empty())
+        mongo_dialect_query += fmt::format(".skip({})", std::stoi(serialized_skip));
     if (!sorting.empty())
         mongo_dialect_query += fmt::format(".sort({})", sorting);
 
