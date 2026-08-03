@@ -8,13 +8,6 @@
 namespace DB
 {
 
-/// Which operation is producing the part. Determines if CODEC(Default) should be resolved adaptively.
-enum class WriteOrigin : uint8_t
-{
-    Insert,
-    MergeOrMutation,
-};
-
 /** To write one part.
   * The data refers to one partition, and is written in one part.
   */
@@ -35,8 +28,7 @@ public:
         bool blocks_are_granules_size,
         const WriteSettings & write_settings,
         WrittenOffsetSubstreams * written_offset_substreams,
-        WriteOrigin write_origin,
-        bool is_explicit_recompression); /// T when the part is recompressed to an explicit non-Default codec (RECOMPRESS CODEC(X)).
+        bool try_adaptive_codec);
 
     Block getHeader() const { return metadata_snapshot->getSampleBlock(); }
 
