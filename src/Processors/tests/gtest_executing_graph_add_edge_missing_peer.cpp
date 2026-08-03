@@ -85,9 +85,12 @@ TEST(ExecutingGraphDeathTest, AddEdgeMissingPeerIdentifiesBothEndpoints)
     /// The `threadsafe` style re-executes the test binary, so the child rebuilds the graph at its
     /// own addresses: match the shape of the message rather than the parent's exact addresses.
     /// That the two endpoints really differ is asserted above, on the in-process descriptions.
+    /// Only `.` and `*` are used here: depending on the platform, gtest matches death-test
+    /// patterns either with POSIX extended regular expressions or with its own simple engine,
+    /// and the latter supports neither character classes nor `\d`.
     const String expected_pattern
-        = "Processor NullSink_[0-9]+ at 0x[0-9a-f]+ was found as output for processor "
-          "SourceFromSingleChunk_[0-9]+ at 0x[0-9a-f]+, but not found in list of processors";
+        = "Processor NullSink_.* at 0x.* was found as output for processor "
+          "SourceFromSingleChunk_.* at 0x.*, but not found in list of processors";
 
     EXPECT_DEATH(
         {
