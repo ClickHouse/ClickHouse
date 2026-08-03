@@ -1027,12 +1027,49 @@ void PredefinedQueryHandler::customizeContext(HTTPServerRequest & request, Conte
 
 std::string PredefinedQueryHandler::getQuery(HTTPServerRequest & request, HTMLForm & params, ContextMutablePtr context)
 {
+    bool body_fields_loaded = false;
+
     if (unlikely(startsWith(request.getContentType(), "multipart/form-data")))
     {
         /// Support for "external data for query processing".
         ExternalTablesHandler handler(context, params);
         auto input_stream = request.getStream();
         params.load(request, *input_stream, handler);
+        body_fields_loaded = true;
+    }
+    else if (unlikely(startsWith(request.getContentType(), "application/x-www-form-urlencoded")))
+    {
+        /// A urlencoded body carries parameter values for the query, so parse it - but only for a handler that
+        /// declares parameters bindable this way, and only on a body-carrying method. `_request_body` is excluded:
+        /// it binds the raw body in `customizeContext`, and parsing the body as a form here would consume it first.
+        const bool wants_form_body_params = std::any_of(
+            receive_params.begin(), receive_params.end(), [](const String & name) { return name != "_request_body"; });
+        const auto & method = request.getMethod();
+        const bool body_carrying_method
+            = method == HTTPRequest::HTTP_POST || method == HTTPRequest::HTTP_PUT || method == HTTPRequest::HTTP_DELETE;
+        if (wants_form_body_params && body_carrying_method)
+        {
+            auto input_stream = request.getStream();
+            params.read(*input_stream);
+            body_fields_loaded = true;
+        }
+    }
+
+    if (body_fields_loaded)
+    {
+        /// The parameter loop in `processQuery` ran before the body was parsed, so bind the body-sourced fields
+        /// here. Unlike URL parameters they only bind declared query parameters and are never treated as settings
+        /// (mirroring the `DynamicQueryHandler` multipart path), and a parameter already bound - e.g. from the
+        /// URL query string, which `params` still also contains - keeps its value.
+        for (const auto & [key, value] : params)
+        {
+            String name = key;
+            if (startsWith(key, QUERY_PARAMETER_NAME_PREFIX))
+                name = key.substr(strlen(QUERY_PARAMETER_NAME_PREFIX));
+
+            if (receive_params.contains(name) && !context->getQueryParameters().contains(name))
+                context->setQueryParameter(name, value);
+        }
     }
 
     return predefined_query;
