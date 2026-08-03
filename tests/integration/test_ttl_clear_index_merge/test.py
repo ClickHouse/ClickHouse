@@ -33,7 +33,7 @@ def started_cluster():
 def event_value(node, event):
     return int(
         node.query(
-            f"SELECT value FROM system.events WHERE event = '{event}'"
+            f"SELECT sum(value) FROM system.events WHERE event = '{event}'"
         ).strip()
     )
 
@@ -156,8 +156,8 @@ def test_source_replica_produces_ttl_clear_index_merge(started_cluster):
     create_table(node1, "r1")
     create_table(node2, "r2")
 
-    node1.query("SYSTEM STOP MERGES ttl_clear_index")
-    node2.query("SYSTEM STOP MERGES ttl_clear_index")
+    node1.query("SYSTEM STOP TTL MERGES ttl_clear_index")
+    node2.query("SYSTEM STOP TTL MERGES ttl_clear_index")
     node1.query(
         "INSERT INTO ttl_clear_index VALUES "
         "('2000-01-01', 1, 1), ('2000-01-01', 2, 2)"
@@ -179,10 +179,10 @@ def test_source_replica_produces_ttl_clear_index_merge(started_cluster):
     follower_mismatches_before = event_value(node2, "DataAfterMergeDiffersFromReplica")
     follower_fetches_before = event_value(node2, "ReplicatedPartFetches")
 
-    node1.query("SYSTEM START MERGES ttl_clear_index")
+    node1.query("SYSTEM START TTL MERGES ttl_clear_index")
     assert_eq_with_retry(
         node1,
-        "SELECT value > {} FROM system.events "
+        "SELECT sum(value) > {} FROM system.events "
         "WHERE event = 'TTLClearIndexMetadataOnlyMerges'".format(source_merges_before),
         "1",
         retry_count=60,
@@ -204,7 +204,7 @@ def test_source_replica_produces_ttl_clear_index_merge(started_cluster):
         "1",
     )
 
-    node2.query("SYSTEM START MERGES ttl_clear_index")
+    node2.query("SYSTEM START TTL MERGES ttl_clear_index")
     node2.query("SYSTEM SYNC REPLICA ttl_clear_index")
     assert event_value(node2, "ReplicatedPartFetches") > follower_fetches_before
     assert node2.query(index_size_query) == "0\n"
