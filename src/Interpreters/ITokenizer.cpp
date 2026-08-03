@@ -11,6 +11,8 @@
 
 #include <limits>
 
+#include <stringzilla/utf8_wordbreaks.h>
+
 #if defined(__SSE2__)
 #  include <emmintrin.h>
 #  if defined(__SSE4_2__)
@@ -802,6 +804,131 @@ bool AsciiCJKTokenizer::nextInStringLike(const char * data, size_t length, size_
     }
 
     return false;
+}
+
+namespace
+{
+
+struct StringZillaWordBreakState
+{
+    static constexpr size_t capacity = sz_iterators_default_steps_k;
+
+    const char * data = nullptr;
+    size_t length = 0;
+    size_t next_batch_start = 0;
+    size_t current_batch_start = 0;
+    size_t count = 0;
+    size_t index = 0;
+    size_t starts[capacity]{};
+    size_t lengths[capacity]{};
+};
+
+bool isCJKCodePoint(UInt32 code_point)
+{
+    return code_point == 0x3005
+        || code_point == 0x303B
+        || (code_point >= 0x3040 && code_point <= 0x30FF)
+        || (code_point >= 0x31F0 && code_point <= 0x31FF)
+        || (code_point >= 0x3400 && code_point <= 0x4DBF)
+        || (code_point >= 0x4E00 && code_point <= 0x9FFF)
+        || (code_point >= 0xF900 && code_point <= 0xFAFF)
+        || (code_point >= 0x20000 && code_point <= 0x2FA1F)
+        || (code_point >= 0x30000 && code_point <= 0x323AF);
+}
+
+bool isStringZillaWordSegment(const char * data, size_t length)
+{
+    size_t offset = 0;
+    while (offset < length)
+    {
+        const auto code_point = UTF8::convertUTF8ToCodePoint(data + offset, length - offset);
+        if (!code_point)
+        {
+            ++offset;
+            continue;
+        }
+
+        const auto property = sz_rune_word_break_property(*code_point);
+        if ((property >= sz_utf8_word_break_aletter_k && property <= sz_utf8_word_break_katakana_k)
+            || isCJKCodePoint(*code_point))
+            return true;
+
+        offset += UTF8::seqLength(static_cast<UInt8>(data[offset]));
+    }
+
+    return false;
+}
+
+}
+
+bool AsciiCJKV2Tokenizer::nextInString(
+    const char * data, size_t length, size_t & __restrict pos, size_t & __restrict token_start, size_t & __restrict token_length) const
+{
+    thread_local StringZillaWordBreakState state;
+
+    if (pos == 0 || state.data != data || state.length != length)
+    {
+        state.data = data;
+        state.length = length;
+        state.next_batch_start = 0;
+        state.current_batch_start = 0;
+        state.count = 0;
+        state.index = 0;
+    }
+
+    while (pos < length)
+    {
+        if (state.index == state.count)
+        {
+            size_t bytes_consumed = 0;
+            state.current_batch_start = state.next_batch_start;
+            state.count = sz_utf8_wordbreaks(
+                data + state.current_batch_start,
+                length - state.current_batch_start,
+                state.starts,
+                state.lengths,
+                StringZillaWordBreakState::capacity,
+                &bytes_consumed);
+            state.index = 0;
+
+            if (state.count == 0)
+            {
+                pos = length;
+                return false;
+            }
+
+            state.next_batch_start += bytes_consumed;
+        }
+
+        token_start = state.current_batch_start + state.starts[state.index];
+        token_length = state.lengths[state.index];
+        ++state.index;
+        pos = token_start + token_length;
+
+        /// StringZilla emits a lossless tiling that includes separators. Keep word-forming segments
+        /// and CJK code points, which UAX #29 deliberately classifies as individual boundaries.
+        if (isStringZillaWordSegment(data + token_start, token_length))
+            return true;
+    }
+
+    return false;
+}
+
+bool AsciiCJKV2Tokenizer::nextInStringLike(const char *, size_t, size_t &, String &) const
+{
+    throw Exception(ErrorCodes::NOT_IMPLEMENTED, "The 'asciiCJK_v2' tokenizer does not support LIKE patterns");
+}
+
+void AsciiCJKV2Tokenizer::substringToBloomFilter(
+    const char * data, size_t length, BloomFilter & bloom_filter, bool is_prefix, bool is_suffix) const
+{
+    wordBoundarySubstringToBloomFilter(*this, data, length, bloom_filter, is_prefix, is_suffix);
+}
+
+void AsciiCJKV2Tokenizer::substringToTokens(
+    const char * data, size_t length, VectorWithMemoryTracking<String> & tokens, bool is_prefix, bool is_suffix) const
+{
+    wordBoundarySubstringToTokens(*this, data, length, tokens, is_prefix, is_suffix);
 }
 
 void AsciiCJKTokenizer::substringToBloomFilter(
