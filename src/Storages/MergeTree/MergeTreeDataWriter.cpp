@@ -834,10 +834,14 @@ MergeTreeTemporaryPartPtr MergeTreeDataWriter::writeTempPartImpl(
         /// statistics during merges instead, avoiding per-insert overhead. `getTotalActiveSizeInBytes`
         /// is an O(1) atomic load of the compressed on-disk size of active parts; parts of the current
         /// INSERT are not active yet, so we add the size of the block being written (`block.bytes()`,
-        /// the same estimate used below for the part size) to still bound the very first bulk load into
-        /// an otherwise empty table. The block size is uncompressed (the compressed size is unknown
-        /// before the part is written), so the check is deliberately conservative by at most one block;
-        /// the only consequence of a skip is that statistics are built during merges instead.
+        /// the same estimate used below for the part size). The check is therefore per block, not per
+        /// INSERT: one INSERT is split into one block per partition (and into several blocks for a
+        /// streaming insert), and each of them is compared against the already active parts only, so a
+        /// single bulk load into an empty table can build statistics for all of its parts. That is
+        /// intentional - the gate is about the steady-state size of the table, and the parts of one
+        /// INSERT are not visible to each other. The block size is uncompressed (the compressed size is
+        /// unknown before the part is written), so the check is deliberately conservative by at most one
+        /// block; the only consequence of a skip is that statistics are built during merges instead.
         /// `0` disables the limit.
         if (max_table_size == 0 || data.getTotalActiveSizeInBytes() + block.bytes() <= max_table_size)
         {
