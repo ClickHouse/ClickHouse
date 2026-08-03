@@ -146,6 +146,12 @@ _TWO_FAILURES = (
     "more failure details\n"
 )
 
+# A single failure from a sequential run that crashed the server.
+_ONE_FAILURE = (
+    "04545_regression_test: [ FAIL ] 1.23 sec.\n"
+    "server died with SIGABRT\n"
+)
+
 
 def _write_err_log(tmp_path: Path, lines: list) -> Path:
     err_log = tmp_path / "clickhouse-server.err.log"
@@ -153,9 +159,12 @@ def _write_err_log(tmp_path: Path, lines: list) -> Path:
     return err_log
 
 
-def _process(tmp_path, output, runner_exit_code):
+def _process(tmp_path, output, runner_exit_code, is_bugfix_validation=False):
     (tmp_path / "test_result.txt").write_text(output, encoding="utf-8")
-    return FTResultsProcessor(wd=str(tmp_path)).run(runner_exit_code=runner_exit_code)
+    return FTResultsProcessor(wd=str(tmp_path)).run(
+        runner_exit_code=runner_exit_code,
+        is_bugfix_validation=is_bugfix_validation,
+    )
 
 
 def _named(result, name):
@@ -613,3 +622,75 @@ def test_aborted_run_exit_codes_set_includes_expected_codes():
     assert -signal.SIGKILL in ABORTED_RUN_EXIT_CODES  # -9
     assert (128 + signal.SIGTERM) in ABORTED_RUN_EXIT_CODES  # 143
     assert (128 + signal.SIGKILL) in ABORTED_RUN_EXIT_CODES  # 137
+
+
+def test_aborted_run_single_culprit_demoted_to_error(tmp_path):
+    """A sequential run where exactly one test crashed the server: the test is
+    the attributed culprit and is demoted to ERROR so it does not read as an
+    ordinary test failure (e.g. in flaky reports)."""
+    result = _process(tmp_path, _ONE_FAILURE, STOP_TESTING_EXIT_CODE)
+
+    assert result.status == Result.Status.FAIL
+    assert len(_named(result, "Server died")) == 1
+    entries = _named(result, "04545_regression_test")
+    assert len(entries) == 1
+    assert entries[0].status == Result.Status.ERROR
+
+
+def test_bugfix_validation_keeps_single_crash_culprit_as_fail(tmp_path):
+    """In bugfix validation the regression test crashing the server on master
+    HEAD is the expected reproduction of the bug. The culprit must stay FAIL:
+    an ERROR row would make `invert_bugfix_validation_status` report the run
+    inconclusive (its fail-closed guard against infra errors, #105789)."""
+    result = _process(
+        tmp_path, _ONE_FAILURE, STOP_TESTING_EXIT_CODE, is_bugfix_validation=True
+    )
+
+    assert result.status == Result.Status.FAIL
+    assert len(_named(result, "Server died")) == 1
+    entries = _named(result, "04545_regression_test")
+    assert len(entries) == 1
+    assert entries[0].status == Result.Status.FAIL
+
+
+def test_bugfix_validation_parallel_crash_still_validates_via_server_died(tmp_path):
+    """The >1-failed counterpart: in bugfix validation a parallel-run crash
+    keeps the UNKNOWN demotion (attribution is genuinely unknown), and the
+    validation still passes end-to-end through the inverter via the flipped
+    `Server died` row, with the UNKNOWN rows left un-flipped."""
+    from ci.jobs.functional_tests import invert_bugfix_validation_status
+
+    result = _process(
+        tmp_path, _TWO_FAILURES, STOP_TESTING_EXIT_CODE, is_bugfix_validation=True
+    )
+
+    for name in ("00001_first_failing_test", "00002_second_failing_test"):
+        assert _named(result, name)[0].status == Result.Status.UNKNOWN, name
+
+    no_repro = invert_bugfix_validation_status(result)
+
+    assert no_repro is False
+    assert result.status == Result.Status.OK
+    assert _named(result, "Server died")[0].status == Result.Status.OK
+    for name in ("00001_first_failing_test", "00002_second_failing_test"):
+        assert _named(result, name)[0].status == Result.Status.UNKNOWN, name
+
+
+def test_bugfix_validation_single_crash_counts_as_reproduction(tmp_path):
+    """End-to-end #105789 scenario: processor output for a single-test server
+    crash in bugfix-validation mode, fed through the inverter, must report a
+    successful reproduction (OK), not an inconclusive ERROR."""
+    from ci.jobs.functional_tests import invert_bugfix_validation_status
+
+    result = _process(
+        tmp_path, _ONE_FAILURE, STOP_TESTING_EXIT_CODE, is_bugfix_validation=True
+    )
+
+    no_repro = invert_bugfix_validation_status(result)
+
+    assert no_repro is False
+    assert result.status == Result.Status.OK
+    culprit = _named(result, "04545_regression_test")[0]
+    assert culprit.status == Result.Status.OK
+    assert _named(result, "Server died")[0].status == Result.Status.OK
+
