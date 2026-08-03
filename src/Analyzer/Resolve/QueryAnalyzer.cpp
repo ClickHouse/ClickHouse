@@ -41,7 +41,6 @@
 #include <Common/quoteString.h>
 
 #include <Core/Settings.h>
-#include <Core/Streaming/StreamingVirtualColumns.h>
 
 #include <Parsers/ASTSelectQuery.h>
 #include <Parsers/ASTSelectWithUnionQuery.h>
