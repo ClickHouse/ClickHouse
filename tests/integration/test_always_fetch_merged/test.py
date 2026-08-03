@@ -173,9 +173,11 @@ def test_no_mutation_failure_while_waiting_for_mutated_part(started_cluster):
     try:
         node2.query("ALTER TABLE test_mutated_wait_table UPDATE value = 'mutated' WHERE 1")
 
-        # Wait until node2 goes to the fetch path for this mutation.
-        node2.wait_for_log_line(
-            "test_mutated_wait_table.*because setting 'always_fetch_mutated_part' is true"
+        # Wait until node2 attempts to execute (i.e. fetch) the mutation entry.
+        assert_eq_with_retry(
+            node2,
+            "SELECT count() > 0 FROM system.replication_queue WHERE table = 'test_mutated_wait_table' AND type = 'MUTATE_PART' AND num_tries >= 1",
+            "1",
         )
 
         # While the mutated part exists nowhere, the fetch-only replica must treat it as
