@@ -487,7 +487,8 @@ SettingsConstraints::Checker SettingsConstraints::getChecker(const Settings & cu
         bool allowed_beta = access_control->getAllowBetaTierSettings();
         if (!allowed_experimental || !allowed_beta)
         {
-            auto setting_tier = current_settings.getTier(resolved_name);
+            /// Not `current_settings.getTier`: `merge_tree_`-prefixed names belong to `MergeTreeSettings`.
+            auto setting_tier = settingGetTier(resolved_name, current_settings);
             if (setting_tier == SettingsTierType::EXPERIMENTAL && !allowed_experimental)
                 return Checker(
                     PreformattedMessage::create(

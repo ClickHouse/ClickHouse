@@ -54,6 +54,18 @@ inline Field settingStringToValueUtil(std::string_view full_name, const String &
     });
 }
 
+/// `current_settings` is needed because an unresolved name can still be one of its custom settings.
+inline SettingsTierType settingGetTier(std::string_view full_name, const Settings & current_settings)
+{
+    return resolveSetting(full_name, [&] <typename T> (std::string_view short_name, SettingsType<T>)
+    {
+        if constexpr (std::is_same_v<T, Settings>)
+            return current_settings.getTier(short_name);
+        else
+            return T::getBuiltinTier(short_name);
+    });
+}
+
 inline bool settingIsBuiltin(std::string_view full_name)
 {
     return resolveSetting(full_name, [&] <typename T> (std::string_view short_name, SettingsType<T>)

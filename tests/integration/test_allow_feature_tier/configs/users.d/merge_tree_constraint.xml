@@ -1,0 +1,16 @@
+<clickhouse>
+    <profiles>
+        <default>
+            <!-- Old compatibility changes the default value of some `MergeTree` settings -->
+            <compatibility>24.10</compatibility>
+            <!-- `merge_tree_` refers to `MergeTreeSettings`. This one is PRODUCTION, so it is valid at any tier. -->
+            <merge_tree_max_avg_part_size_for_too_many_parts>1073741824</merge_tree_max_avg_part_size_for_too_many_parts>
+            <constraints>
+                <merge_tree_max_avg_part_size_for_too_many_parts>
+                    <min>536870912</min>
+                    <max>2147483648</max>
+                </merge_tree_max_avg_part_size_for_too_many_parts>
+            </constraints>
+        </default>
+    </profiles>
+</clickhouse>

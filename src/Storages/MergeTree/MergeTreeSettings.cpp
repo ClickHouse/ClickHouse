@@ -26,6 +26,7 @@
 #include <Disks/DiskObjectStorage/DiskObjectStorage.h>
 
 #include <cmath>
+#include <unordered_set>
 #include <boost/program_options.hpp>
 #include <fmt/ranges.h>
 #include <Poco/Util/AbstractConfiguration.h>
@@ -2379,6 +2380,23 @@ struct MergeTreeSettingsImpl : public BaseSettings<MergeTreeSettingsTraits>
     /// Check that the values are sane taking also query-level settings into account.
     void sanityCheck(size_t background_pool_tasks, bool allow_experimental, bool allow_beta, bool background_pool_auto_lowered) const;
 
+    /// Settings whose value comes from the server itself (`compatibility` and the `merge_tree` config section)
+    /// instead of from a query. The feature tier check skips them, the same way the default profile is applied
+    /// without checking constraints. Otherwise a single EXPERIMENTAL or BETA setting in the config or in the
+    /// compatibility history makes every `CREATE TABLE` fail once the tier disallows it.
+    std::unordered_set<String> changed_by_server;
+
+    void markChangedByServer(std::string_view name) { changed_by_server.emplace(Traits::resolveName(name)); }
+    void unmarkChangedByServer(std::string_view name) { changed_by_server.erase(String(Traits::resolveName(name))); }
+
+    /// Apply changes requested by a query, so they are subject to the feature tier check.
+    void applyChangesFromQuery(const SettingsChanges & changes)
+    {
+        for (const auto & change : changes)
+            unmarkChangedByServer(change.name);
+        applyChanges(changes);
+    }
+
     /// Subscript operators so that MergeTreeSetting::NAME can be used inside Impl methods.
     /// Delegate to `BaseSettings::operator[]` so the Impl->Data subobject offset is handled
     /// by a real derived-to-base static_cast (offsets are stored relative to `Data`, not Impl).
@@ -2454,7 +2472,7 @@ void MergeTreeSettingsImpl::loadFromQuery(ASTStorage & storage_def, ContextPtr c
             if (table_disk)
                 validateTableDisk(disk);
 
-            applyChanges(changes);
+            applyChangesFromQuery(changes);
         }
         catch (Exception & e)
         {
@@ -2488,7 +2506,7 @@ void MergeTreeSettingsImpl::sanityCheck(size_t background_pool_tasks, bool allow
     {
         for (const auto & setting : all())
         {
-            if (!setting.isValueChanged())
+            if (!setting.isValueChanged() || changed_by_server.contains(String(setting.getName())))
                 continue;
 
             auto tier = setting.getTier();
@@ -2749,6 +2767,7 @@ Field MergeTreeSettings::get(std::string_view name) const
 
 void MergeTreeSettings::set(std::string_view name, const Field & value)
 {
+    impl->unmarkChangedByServer(name);
     impl->set(name, value);
 }
 
@@ -2761,13 +2780,14 @@ void MergeTreeSettings::applyChanges(const SettingsChanges & changes, ContextPtr
 {
     auto resolved_changes = changes;
     resolveDiskSetting(resolved_changes, context, is_loading_from_existing_metadata);
-    impl->applyChanges(resolved_changes);
+    impl->applyChangesFromQuery(resolved_changes);
 }
 
 void MergeTreeSettings::applyChange(const SettingChange & change, ContextPtr context, bool is_loading_from_existing_metadata)
 {
     auto resolved_change = change;
     resolveDiskSetting(resolved_change, context, is_loading_from_existing_metadata);
+    impl->unmarkChangedByServer(resolved_change.name);
     impl->applyChange(resolved_change);
 }
 
@@ -2838,7 +2858,10 @@ void MergeTreeSettings::applyCompatibilitySetting(const String & compatibility_v
             auto previous_value = MergeTreeSettingsTraits::Accessor::instance().castValueUtil(setting_index, change.previous_value);
 
             if (get(final_name) != previous_value)
-                set(final_name, previous_value);
+            {
+                impl->set(final_name, previous_value);
+                impl->markChangedByServer(final_name);
+            }
         }
     }
 }
@@ -2898,7 +2921,10 @@ void MergeTreeSettings::loadFromConfig(const String & config_elem, const Poco::U
     try
     {
         for (const String & key : config_keys)
+        {
             impl->set(key, config.getString(config_elem + "." + key));
+            impl->markChangedByServer(key);
+        }
     }
     catch (Exception & e)
     {
@@ -3043,6 +3069,15 @@ Field MergeTreeSettings::stringToValueUtil(std::string_view name, const String &
 bool MergeTreeSettings::hasBuiltin(std::string_view name)
 {
     return MergeTreeSettingsImpl::hasBuiltin(name);
+}
+
+SettingsTierType MergeTreeSettings::getBuiltinTier(std::string_view name)
+{
+    const auto & accessor = MergeTreeSettingsImpl::Traits::Accessor::instance();
+    size_t index = accessor.find(MergeTreeSettingsImpl::Traits::resolveName(name));
+    if (index == static_cast<size_t>(-1))
+        BaseSettingsHelpers::throwSettingNotFound(name);
+    return accessor.getTier(index);
 }
 
 std::string_view MergeTreeSettings::resolveName(std::string_view name)
