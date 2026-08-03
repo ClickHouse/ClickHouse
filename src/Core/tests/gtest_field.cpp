@@ -174,3 +174,51 @@ GTEST_TEST(Field, CompareFloat64NaN)
     ASSERT_TRUE(nan == nan_again);
     ASSERT_FALSE(nan == one);
 }
+
+
+GTEST_TEST(Field, CompareDifferentTypes)
+{
+    /// Fields of different types are ordered by Types::Which before any value comparison,
+    /// so values don't matter across types; operator== / != short-circuit on differing Which.
+    const Field i{Int64(999)};   /// Which::Int64 == 2
+    const Field s{String("a")};  /// Which::String == 16
+
+    ASSERT_TRUE(i < s);
+    ASSERT_FALSE(s < i);
+
+    ASSERT_TRUE(i <= s);
+    ASSERT_FALSE(s <= i);
+
+    ASSERT_TRUE(s > i);
+    ASSERT_TRUE(s >= i);
+    ASSERT_FALSE(i >= s);
+
+    ASSERT_FALSE(i == s);
+    ASSERT_TRUE(i != s);
+    ASSERT_FALSE(Field(Int64(1)) == Field(UInt64(1)));  /// same value, different Which
+    ASSERT_TRUE(Field(Int64(1)) != Field(UInt64(1)));
+}
+
+
+GTEST_TEST(Field, CompareUUID)
+{
+    /// UUID is a StrongTypedef<UInt128> with operator< but no operator<=, so the <= / >=
+    /// branches compare toUnderType(); pin that the two forms stay consistent.
+    const Field one{UUID(UInt128(1))};
+    const Field two{UUID(UInt128(2))};
+    const Field one_again{UUID(UInt128(1))};
+
+    ASSERT_TRUE(one < two);
+    ASSERT_FALSE(two < one);
+
+    ASSERT_TRUE(one <= two);
+    ASSERT_FALSE(two <= one);
+    ASSERT_TRUE(one <= one_again);
+
+    ASSERT_TRUE(two >= one);
+    ASSERT_FALSE(one >= two);
+    ASSERT_TRUE(one >= one_again);
+
+    ASSERT_TRUE(one == one_again);
+    ASSERT_FALSE(one == two);
+}
