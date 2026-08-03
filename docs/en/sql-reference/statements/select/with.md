@@ -272,7 +272,7 @@ ORDER BY table_disk_usage DESC
 LIMIT 10;
 ```
 
-**Example 6:** Reusing a common scalar expression in a subquery
+**Example 6:** Reusing a lambda-defined common scalar expression in a subquery
 
 Define the common scalar expression as a lambda so that its argument is explicitly bound:
 
