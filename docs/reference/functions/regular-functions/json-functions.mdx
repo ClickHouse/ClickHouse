@@ -716,13 +716,13 @@ Returns an array of tuples with the parsed key-value pairs. [`Array(Tuple(String
 **Usage example**
 
 ```sql title=Query
-SELECT JSONExtractKeysAndValues('{"x": {"a": 5, "b": 7, "c": 11}}', 'Int8', 'x') AS res;
+SELECT JSONExtractKeysAndValues('{"x": {"a": 5, "b": 7, "c": 11}}', 'x', 'Int8') AS res
 ```
 
 ```response title=Response
-┌─res────────────────────┐
+┌─res────────────────────────┐
 │ [('a',5),('b',7),('c',11)] │
-└────────────────────────┘
+└────────────────────────────┘
 ```
 
 ## JSONExtractKeysAndValuesCaseInsensitive {#JSONExtractKeysAndValuesCaseInsensitive}
@@ -792,7 +792,7 @@ SELECT JSONExtractKeysAndValuesRaw('{"a": [-100, 200.0], "b": "hello"}') AS res;
 
 ```response title=Response
 ┌─res──────────────────────────────────┐
-│ [('a','[-100,200.0]'),('b','"hello"')] │
+│ [('a','[-100,200]'),('b','"hello"')] │
 └──────────────────────────────────────┘
 ```
 
@@ -1310,10 +1310,10 @@ SELECT json, JSONSharedDataPathsWithTypes(json) FROM test;
 
 ```response title=Response
 ┌─json─────────────────────────────────┬─JSONSharedDataPathsWithTypes(json)─┐
-│ {"a":"42"}                           │ {}                                  │
-│ {"b":"Hello"}                        │ {'b':'String'}                      │
-│ {"a":["1","2","3"],"c":"2020-01-01"} │ {'c':'Date'}                        │
-└──────────────────────────────────────┴─────────────────────────────────────┘
+│ {"a":"42"}                           │ {}                                 │
+│ {"b":"Hello"}                        │ {'b':'String'}                     │
+│ {"a":["1","2","3"],"c":"2020-01-01"} │ {'c':'Date'}                       │
+└──────────────────────────────────────┴────────────────────────────────────┘
 ```
 
 ## JSONType {#JSONType}
@@ -2093,13 +2093,13 @@ SELECT simpleJSONHas(json, 'bar') FROM jsons;
 Introduced in: v21.7.0
 
 Serializes a value to its JSON representation. Various data types and nested structures are supported.
-64-bit [integers](/reference/data-types/int-uint) or bigger (like `UInt64` or `Int128`) are enclosed in quotes by default. [output_format_json_quote_64bit_integers](/reference/settings/formats#output_format_json_quote_64bit_integers) controls this behavior.
-Special values `NaN` and `inf` are replaced with `null`. Enable [output_format_json_quote_denormals](/reference/settings/formats#output_format_json_quote_denormals) setting to show them.
+64-bit [integers](/reference/data-types/int-uint) or bigger (like `UInt64` or `Int128`) are enclosed in quotes by default. [output_format_json_quote_64bit_integers](/reference/settings/formats/output-format#output_format_json_quote_64bit_integers) controls this behavior.
+Special values `NaN` and `inf` are replaced with `null`. Enable [output_format_json_quote_denormals](/reference/settings/formats/output-format#output_format_json_quote_denormals) setting to show them.
 When serializing an [Enum](/reference/data-types/enum) value, the function outputs its name.
 
 See also:
-- [output_format_json_quote_64bit_integers](/reference/settings/formats#output_format_json_quote_64bit_integers)
-- [output_format_json_quote_denormals](/reference/settings/formats#output_format_json_quote_denormals)
+- [output_format_json_quote_64bit_integers](/reference/settings/formats/output-format#output_format_json_quote_64bit_integers)
+- [output_format_json_quote_denormals](/reference/settings/formats/output-format#output_format_json_quote_denormals)
     
 
 **Syntax**

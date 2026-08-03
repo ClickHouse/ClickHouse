@@ -69,7 +69,7 @@ The result is output as a binary format without delimiters and escaping. If more
 
 ### Raw formats comparison {#raw-formats-comparison}
 
-Below is a comparison of the formats `RawBLOB` and [`TabSeparatedRaw`](./TabSeparated/TabSeparatedRaw.md).
+Below is a comparison of the formats `RawBLOB` and [`TabSeparatedRaw`](/reference/formats/TabSeparated/TabSeparatedRaw).
 
 `RawBLOB`:
 - data is output in binary format, no escaping;
@@ -81,7 +81,7 @@ Below is a comparison of the formats `RawBLOB` and [`TabSeparatedRaw`](./TabSepa
 - the rows contain values separated by tabs;
 - there is a line feed after the last value in every row.
 
-The following is a comparison of the `RawBLOB` and [RowBinary](./RowBinary/RowBinary.md) formats.
+The following is a comparison of the `RawBLOB` and [RowBinary](/reference/formats/RowBinary/RowBinary) formats.
 
 `RawBLOB`:
 - String fields are output without being prefixed by length.

@@ -21,7 +21,7 @@ _site/styles/
 
 # Legacy content in the docs folder. Anchored to the top level so that
 # resources/changelogs/ (and its locale copies) stays published.
-/_description_templates/
+/_templates/
 /_includes/
 /changelogs/
 /en/
