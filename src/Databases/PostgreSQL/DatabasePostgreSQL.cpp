@@ -6,7 +6,6 @@
 
 #include <Storages/NamedCollectionsHelpers.h>
 #include <Storages/StoragePostgreSQL.h>
-#include <Storages/PostgreSQL/PostgreSQLSettings.h>
 #include <Interpreters/Context.h>
 #include <Interpreters/DatabaseCatalog.h>
 #include <Interpreters/evaluateConstantExpression.h>
@@ -33,15 +32,11 @@ namespace DB
 namespace Setting
 {
     extern const SettingsUInt64 glob_expansion_max_elements;
-}
-
-namespace PostgreSQLSetting
-{
-    extern const PostgreSQLSettingsUInt64 postgresql_connection_pool_size;
-    extern const PostgreSQLSettingsUInt64 postgresql_connection_pool_wait_timeout;
-    extern const PostgreSQLSettingsUInt64 postgresql_connection_pool_retries;
-    extern const PostgreSQLSettingsBool postgresql_connection_pool_auto_close_connection;
-    extern const PostgreSQLSettingsUInt64 postgresql_connection_attempt_timeout;
+    extern const SettingsUInt64 postgresql_connection_pool_size;
+    extern const SettingsUInt64 postgresql_connection_pool_wait_timeout;
+    extern const SettingsUInt64 postgresql_connection_pool_retries;
+    extern const SettingsBool postgresql_connection_pool_auto_close_connection;
+    extern const SettingsUInt64 postgresql_connection_attempt_timeout;
 }
 
 namespace ErrorCodes
@@ -218,7 +213,7 @@ StoragePtr DatabasePostgreSQL::fetchTable(const String & table_name, ContextPtr 
             return StoragePtr{};
 
         auto storage = std::make_shared<StoragePostgreSQL>(
-                StorageID(database_name, table_name), pool, TableNameOrQuery(TableNameOrQuery::Type::TABLE, table_name),
+                StorageID(database_name, table_name), pool, table_name,
                 ColumnsDescription{columns_info->columns}, ConstraintsDescription{}, String{},
                 context_, configuration.schema, configuration.on_conflict);
 
@@ -521,14 +516,9 @@ void registerDatabasePostgreSQL(DatabaseFactory & factory)
         auto use_table_cache = false;
         StoragePostgreSQL::Configuration configuration;
 
-        /// The connection-pool parameters are seeded from the query-level `postgresql_*` settings
-        /// (preserving the historical behaviour); a named collection may override them.
-        PostgreSQLSettings postgresql_settings;
-        postgresql_settings.loadFromQueryContext(*args.context);
-
         if (auto named_collection = tryGetNamedCollectionWithOverrides(engine_args, args.context))
         {
-            configuration = StoragePostgreSQL::processNamedCollectionResult(*named_collection, &postgresql_settings, args.context, false);
+            configuration = StoragePostgreSQL::processNamedCollectionResult(*named_collection, args.context, false);
             use_table_cache = named_collection->getOrDefault<UInt64>("use_table_cache", 0);
         }
         else
@@ -569,16 +559,14 @@ void registerDatabasePostgreSQL(DatabaseFactory & factory)
                 use_table_cache = safeGetLiteralValue<UInt8>(engine_args[5], engine_name);
         }
 
-        if (!postgresql_settings[PostgreSQLSetting::postgresql_connection_pool_size])
-            throw Exception(ErrorCodes::BAD_ARGUMENTS, "postgresql_connection_pool_size cannot be zero.");
-
+        const auto & settings = args.context->getSettingsRef();
         auto pool = std::make_shared<postgres::PoolWithFailover>(
             configuration,
-            postgresql_settings[PostgreSQLSetting::postgresql_connection_pool_size],
-            postgresql_settings[PostgreSQLSetting::postgresql_connection_pool_wait_timeout],
-            postgresql_settings[PostgreSQLSetting::postgresql_connection_pool_retries],
-            postgresql_settings[PostgreSQLSetting::postgresql_connection_pool_auto_close_connection],
-            postgresql_settings[PostgreSQLSetting::postgresql_connection_attempt_timeout]);
+            settings[Setting::postgresql_connection_pool_size],
+            settings[Setting::postgresql_connection_pool_wait_timeout],
+            settings[Setting::postgresql_connection_pool_retries],
+            settings[Setting::postgresql_connection_pool_auto_close_connection],
+            settings[Setting::postgresql_connection_attempt_timeout]);
 
         return std::make_shared<DatabasePostgreSQL>(
             args.context,
@@ -626,7 +614,7 @@ ENGINE = PostgreSQL('host:port', 'database', 'user', 'password'[, `schema`, `use
 | TIMESTAMP        | [DateTime](../../sql-reference/data-types/datetime.md)       |
 | REAL             | [Float32](../../sql-reference/data-types/float.md)           |
 | DOUBLE           | [Float64](../../sql-reference/data-types/float.md)           |
-| DECIMAL, NUMERIC | [Decimal](../../sql-reference/data-types/decimal.md) (see note below) |
+| DECIMAL, NUMERIC | [Decimal](../../sql-reference/data-types/decimal.md)       |
 | SMALLINT         | [Int16](../../sql-reference/data-types/int-uint.md)          |
 | INTEGER          | [Int32](../../sql-reference/data-types/int-uint.md)          |
 | BIGINT           | [Int64](../../sql-reference/data-types/int-uint.md)          |
@@ -635,10 +623,6 @@ ENGINE = PostgreSQL('host:port', 'database', 'user', 'password'[, `schema`, `use
 | TEXT, CHAR       | [String](../../sql-reference/data-types/string.md)           |
 | INTEGER          | Nullable([Int32](../../sql-reference/data-types/int-uint.md))|
 | ARRAY            | [Array](../../sql-reference/data-types/array.md)             |
-
-:::note
-PostgreSQL `numeric(p, 0)` with a precision `p` greater than 76 (the maximum supported by `Decimal256`) — for example `numeric(78, 0)`, commonly used to store 256-bit integers — is mapped to [`Int256`](../../sql-reference/data-types/int-uint.md) instead of `Decimal`. Values that do not fit into the `Int256` range are rejected with an error.
-:::
 
 ## Examples of use {#examples-of-use}
 

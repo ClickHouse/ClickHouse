@@ -48,18 +48,15 @@ size_t SetVariantsTemplate<Variant>::getTotalRowCount() const
 template <typename Variant>
 size_t SetVariantsTemplate<Variant>::getTotalByteCount() const
 {
-    /// String keys are stored in the string_pool arena, not in the hash table buffer.
-    size_t bytes = string_pool.allocatedBytes();
     switch (type)
     {
-        case Type::EMPTY: break;
+        case Type::EMPTY: return 0;
 
     #define M(NAME) \
-        case Type::NAME: bytes += (NAME)->data.getBufferSizeInBytes(); break;
+        case Type::NAME: return (NAME)->data.getBufferSizeInBytes();
         APPLY_FOR_SET_VARIANTS(M)
     #undef M
     }
-    return bytes;
 }
 
 template <typename Variant>
@@ -175,6 +172,5 @@ typename SetVariantsTemplate<Variant>::Type SetVariantsTemplate<Variant>::choose
 
 template struct SetVariantsTemplate<NonClearableSet>;
 template struct SetVariantsTemplate<ClearableSet>;
-template struct SetVariantsTemplate<CountingSet>;
 
 }
