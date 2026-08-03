@@ -8806,6 +8806,7 @@ Name of the named collection used by `aiEmbed` when the call does not pass `cred
     MAKE_OBSOLETE(M, Bool, enable_zstd_qat_codec, false) \
     MAKE_OBSOLETE(M, Bool, enable_deflate_qpl_codec, false) \
     MAKE_OBSOLETE(M, Bool, throw_if_deduplication_in_dependent_materialized_views_enabled_with_async_insert, false) \
+    MAKE_OBSOLETE(M, Bool, use_projection_index_in_read_pools, false) \
 \
     /* moved to config.xml: see also src/Core/ServerSettings.h */ \
     MAKE_DEPRECATED_BY_SERVER_CONFIG(M, UInt64, background_buffer_flush_schedule_pool_size, 16) \
