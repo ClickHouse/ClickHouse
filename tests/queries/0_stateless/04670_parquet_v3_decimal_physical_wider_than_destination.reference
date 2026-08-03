@@ -6,8 +6,14 @@
 300	14083299.5
 -- FIXED_LEN_BYTE_ARRAY type_length 16, declared precision 9 (skips two width buckets)
 300	14083299.5
--- filter push-down over the narrowed column
+-- a WHERE over the narrowed column still returns the right rows
 140	10224882.45
+-- physical wider than declared: statistics are not usable, so no row group is pruned
+not pruned
+99	54499.5
+-- same file well-formed (declared precision 18): pruning still works
+pruned
+99	54499.5
 -- schema inference still reports the declared precision
 k	Nullable(Decimal(9, 2))					
 -- explicit wider type hint reads without narrowing
