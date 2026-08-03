@@ -561,6 +561,108 @@ std::pair<DataTypePtr, SerializationPtr> buildSubObjectTypeAndSerialization(
 
 }
 
+DataTypePtr DataTypeObject::tryGetSubcolumnType(std::string_view subcolumn_name) const
+{
+    /// A custom serialization can expose a different set of subcolumns than the type itself.
+    if (getCustomSerialization())
+        return IDataType::tryGetSubcolumnType(subcolumn_name);
+
+    if (subcolumn_name == SPECIAL_SUBCOLUMN_NAME_FOR_DISTINCT_PATHS_CALCULATION)
+        return std::make_shared<DataTypeArray>(std::make_shared<DataTypeString>());
+
+    if (auto sub_object_subcolumn = tryGetPrefixedSubcolumn(subcolumn_name, SUB_OBJECT_SUBCOLUMN_PREFIX))
+    {
+        const String prefix = *sub_object_subcolumn + ".";
+        std::unordered_map<String, DataTypePtr> typed_sub_paths;
+        for (const auto & [path, type] : typed_paths)
+        {
+            if (path.starts_with(prefix))
+                typed_sub_paths[path.substr(prefix.size())] = type;
+        }
+
+        return std::make_shared<DataTypeObject>(
+            schema_format,
+            std::move(typed_sub_paths),
+            paths_to_skip,
+            path_regexps_to_skip,
+            max_dynamic_paths,
+            max_dynamic_types);
+    }
+
+    if (auto combined_subcolumn = tryGetPrefixedSubcolumn(subcolumn_name, COMBINED_SUBCOLUMN_PREFIX))
+    {
+        if (auto it = typed_paths.find(*combined_subcolumn); it != typed_paths.end())
+            return it->second;
+        return getDynamicType();
+    }
+
+    /// A type hint at the beginning is handled by an outer dynamic type. It is not a JSON path.
+    if (subcolumn_name.starts_with(":`"))
+        return nullptr;
+
+    auto split = splitPathAndDynamicTypeSubcolumn(subcolumn_name, getTypeOfNestedObjects()->getName());
+
+    auto resolve_remaining_subcolumn = [&](const DataTypePtr & type, const String & remaining) -> DataTypePtr
+    {
+        if (remaining.empty())
+            return type;
+        return type->tryGetSubcolumnType(remaining);
+    };
+
+    if (auto it = typed_paths.find(split.path); it != typed_paths.end())
+    {
+        String remaining;
+        if (!split.type_hint.empty() && removeJSONTypeParameters(split.type_hint) == removeJSONTypeParameters(it->second->getName()))
+            remaining = split.remaining;
+        else
+            remaining = split.fullSubcolumn();
+
+        return resolve_remaining_subcolumn(it->second, remaining);
+    }
+
+    /// A declared typed path can be a prefix of a requested nested dynamic subcolumn.
+    /// Keep the last successful match to mirror serialization enumeration, which visits
+    /// typed paths in sorted order and lets a more specific prefix replace an earlier one.
+    DataTypePtr result_from_typed_prefix;
+    bool inside_quotes = false;
+    for (size_t pos = 0; pos < split.path.size(); ++pos)
+    {
+        if (split.path[pos] == '`')
+        {
+            if (inside_quotes && pos + 1 < split.path.size() && split.path[pos + 1] == '`')
+            {
+                ++pos;
+                continue;
+            }
+            inside_quotes = !inside_quotes;
+            continue;
+        }
+
+        if (split.path[pos] == '\\' && pos + 1 < split.path.size())
+        {
+            ++pos;
+            continue;
+        }
+
+        if (split.path[pos] != '.' || inside_quotes)
+            continue;
+
+        auto it = typed_paths.find(split.path.substr(0, pos));
+        if (it == typed_paths.end())
+            continue;
+
+        String remaining(subcolumn_name.substr(pos + 1));
+
+        if (auto type = resolve_remaining_subcolumn(it->second, remaining))
+            result_from_typed_prefix = std::move(type);
+    }
+
+    if (result_from_typed_prefix)
+        return result_from_typed_prefix;
+
+    return resolve_remaining_subcolumn(getDynamicType(), split.fullSubcolumn());
+}
+
 std::unique_ptr<ISerialization::SubstreamData> DataTypeObject::getDynamicSubcolumnData(std::string_view subcolumn_name, const SubstreamData & data, size_t initial_array_level, bool throw_if_null) const
 {
     /// Check if it's a special subcolumn used for distinct paths calculation.

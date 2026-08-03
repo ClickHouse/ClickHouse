@@ -1,4 +1,6 @@
+#include <Common/assert_cast.h>
 #include <DataTypes/DataTypeFactory.h>
+#include <DataTypes/DataTypeObject.h>
 #include <DataTypes/IDataType.h>
 #include <Parsers/ASTExpressionList.h>
 #include <Parsers/ASTFunction.h>
@@ -194,4 +196,55 @@ TEST(DataTypeObject, CreateJSONWithValidAST)
 
     auto type_default = factory.get("JSON");
     ASSERT_NE(type_default, nullptr);
+}
+
+TEST(DataTypeObject, TypeOnlySubcolumnLookupMatchesSerializationLookup)
+{
+    auto type = DataTypeFactory::instance().get(
+        "JSON("
+        "max_dynamic_types=5, max_dynamic_paths=3, "
+        "typed_string String, typed_array Array(UInt64), "
+        "nested Array(JSON(inner UInt32)), nullable Nullable(String), "
+        "a Array(JSON), a.b Int64, `escaped.dot` UInt8, `spaced path` UInt8, obj.x UInt16)");
+    const auto & object = assert_cast<const DataTypeObject &>(*type);
+
+    const std::vector<std::pair<String, String>> subcolumns = {
+        {"typed_string", "String"},
+        {"typed_array", "Array(UInt64)"},
+        {"typed_array.size0", "UInt64"},
+        {"arbitrary", "Dynamic(max_types=5)"},
+        {"arbitrary.:`Int64`", "Nullable(Int64)"},
+        {"arbitrary.:`Array(String)`.size0", "UInt64"},
+        {"nested.inner", "Array(UInt32)"},
+        {"nested.inner.:`UInt32`", "Array(UInt32)"},
+        {"a.x", "Array(Dynamic)"},
+        {"a.b", "Int64"},
+        {"a.b.c", "Array(Dynamic)"},
+        {"a.:`Array(JSON)`.x", "Array(Dynamic)"},
+        {"a.:`String`", "Array(Dynamic)"},
+        {"nullable", "Nullable(String)"},
+        {"escaped.dot", "UInt8"},
+        {"spaced path", "UInt8"},
+        {"^`obj`", "JSON(max_dynamic_types=5, max_dynamic_paths=3, x UInt16)"},
+        {"@`obj`.x", "UInt16"},
+        {"@`missing`", "Dynamic(max_types=5)"},
+        {DataTypeObject::SPECIAL_SUBCOLUMN_NAME_FOR_DISTINCT_PATHS_CALCULATION, "Array(String)"},
+        {":`Int64`", ""},
+    };
+
+    for (const auto & [subcolumn, expected_name] : subcolumns)
+    {
+        SCOPED_TRACE(subcolumn);
+        auto expected = object.IDataType::tryGetSubcolumnType(subcolumn);
+        auto actual = object.tryGetSubcolumnType(subcolumn);
+
+        ASSERT_EQ(static_cast<bool>(actual), static_cast<bool>(expected));
+        if (actual)
+        {
+            EXPECT_TRUE(actual->equals(*expected)) << "expected " << expected->getName() << ", got " << actual->getName();
+            EXPECT_EQ(actual->getName(), expected_name);
+        }
+        else
+            EXPECT_TRUE(expected_name.empty());
+    }
 }
