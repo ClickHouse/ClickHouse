@@ -43,6 +43,9 @@
 #include <Storages/MergeTree/checkDataPart.h>
 #include <Storages/StorageReplicatedMergeTree.h>
 #include <base/JSON.h>
+
+#include <unordered_set>
+
 #include <Common/StackTrace.h>
 #include <Common/CurrentMetrics.h>
 #include <Common/CurrentThread.h>
@@ -349,26 +352,15 @@ Names IMergeTreeDataPart::MinMaxIndex::getProbablyWrittenFiles(const IMergeTreeD
     const auto data_settings = part.storage.getSettings();
     const auto & data_part_storage = part.getDataPartStorage();
 
-    auto to_file_names = [&](const NamesAndTypesList & minmax_columns)
-    {
-        return minmax_columns.getNames()
-            | std::views::transform([&](const auto & column_name) { return "minmax_" + getFileColumnName(column_name, data_settings, data_part_storage) + ".idx"; })
-            | std::ranges::to<Names>();
-    };
+    /// The hyperrectangle may hold more columns than the current setting prescribes (a wider index that
+    /// has not been re-materialized yet), so clamp to what `store` actually writes: its leading prefix.
+    auto minmax_columns = MergeTreeData::getMinMaxColumns(partition_key, data_settings);
+    if (minmax_columns.size() > hyperrectangle.size())
+        minmax_columns.resize(hyperrectangle.size());
 
-    {
-        auto minmax_columns = MergeTreeData::getMinMaxColumns(partition_key, data_settings, MergeTreePartMinMaxIndexColumns::PARTITION_KEY_ONLY);
-        if (hyperrectangle.size() == minmax_columns.size())
-            return to_file_names(minmax_columns);
-    }
-
-    {
-        auto minmax_columns = MergeTreeData::getMinMaxColumns(partition_key, data_settings, MergeTreePartMinMaxIndexColumns::WITH_BLOCK_NUMBER_OFFSET);
-        if (hyperrectangle.size() == minmax_columns.size())
-            return to_file_names(minmax_columns);
-    }
-
-    throw Exception(ErrorCodes::LOGICAL_ERROR, "Part level Min-Max index was constructed from unexpected columns set.");
+    return minmax_columns.getNames()
+        | std::views::transform([&](const auto & column_name) { return "minmax_" + getFileColumnName(column_name, data_settings, data_part_storage) + ".idx"; })
+        | std::ranges::to<Names>();
 }
 
 String IMergeTreeDataPart::MinMaxIndex::getFileColumnName(const String & column_name, const MergeTreeSettingsPtr & storage_settings_, const IDataPartStorage & data_part_storage)
@@ -1238,18 +1230,27 @@ ColumnsStatistics IMergeTreeDataPart::loadStatisticsPacked(const PackedFilesRead
 
         size_t file_size = reader.getFileSize(filename);
         auto file_buf = reader.readFile(disk, packed_file, filename, read_settings, file_size);
-
         CompressedReadBuffer compressed_buf(*file_buf);
         try
         {
+            fiu_do_on(FailPoints::merge_tree_load_statistics_throw,
+            {
+                throw Exception(ErrorCodes::CANNOT_READ_ALL_DATA, "Injected failure in loadStatistics");
+            });
+
             auto column_stat = ColumnStatistics::deserialize(compressed_buf, column_desc->type);
             if (column_stat)
                 result.emplace(column_desc->name, std::move(column_stat));
         }
-        catch (...)
+        catch (Exception & e)
         {
-            LOG_WARNING(storage.log, "Cannot load statistics for column {} from file {}, ignoring: {}",
-                column_desc->name, filename, getCurrentExceptionMessage(false));
+            e.addMessage(
+                "(while loading statistics for column {} from file {} in packed file {} of part {})",
+                column_desc->name,
+                filename,
+                ColumnsStatistics::FILENAME,
+                name);
+            throw;
         }
     }
 
@@ -1274,14 +1275,23 @@ ColumnsStatistics IMergeTreeDataPart::loadStatisticsWide(const NameSet & require
         CompressedReadBuffer compressed_buf(*file_buf);
         try
         {
+            fiu_do_on(FailPoints::merge_tree_load_statistics_throw,
+            {
+                throw Exception(ErrorCodes::CANNOT_READ_ALL_DATA, "Injected failure in loadStatistics");
+            });
+
             auto column_stat = ColumnStatistics::deserialize(compressed_buf, column_desc->type);
             if (column_stat)
                 result.emplace(column_desc->name, std::move(column_stat));
         }
-        catch (...)
+        catch (Exception & e)
         {
-            LOG_WARNING(storage.log, "Cannot load statistics for column {} from file {}, ignoring: {}",
-                column_desc->name, filename, getCurrentExceptionMessage(false));
+            e.addMessage(
+                "(while loading statistics for column {} from file {} in part {})",
+                column_desc->name,
+                filename,
+                name);
+            throw;
         }
     }
 
@@ -1290,12 +1300,6 @@ ColumnsStatistics IMergeTreeDataPart::loadStatisticsWide(const NameSet & require
 
 ColumnsStatistics IMergeTreeDataPart::loadStatistics() const
 {
-    fiu_do_on(FailPoints::merge_tree_load_statistics_throw,
-    {
-        throw Exception(ErrorCodes::CANNOT_READ_ALL_DATA,
-                        "Injected failure in loadStatistics");
-    });
-
     auto component_guard = Coordination::setCurrentComponent("IMergeTreeDataPart::loadStatistics");
 
     if (auto * reader = getStatisticsPackedReader())
@@ -2743,6 +2747,8 @@ DataPartStoragePtr IMergeTreeDataPart::makeCloneInDetached(const String & prefix
         .keep_metadata_version = true,
         .make_source_readonly = true,
         .external_transaction = disk_transaction,
+        /// Make the detached/ clone durable so an acknowledged DETACH is not lost on power loss (#111382).
+        .fsync_part_directory = (*storage_settings)[MergeTreeSetting::fsync_part_directory],
     };
     return getDataPartStorage().freeze(
         storage.relative_data_path,
@@ -3012,7 +3018,12 @@ void IMergeTreeDataPart::calculateSecondaryIndicesSizesOnDisk() const
     {
         auto index_ptr = MergeTreeIndexFactory::instance().get(storage_metadata_snapshot, index_description, *storage.getSettings());
         auto index_name = index_ptr->getFileName();
-        auto index_substreams = index_ptr->getSubstreams();
+        /// Union of all on-disk versions (`getAllSubstreamsInPart`) so the size counts every payload
+        /// present, including a stale legacy file a part may still carry alongside the current one.
+        auto index_substreams = index_ptr->getAllSubstreamsInPart(checksums, index_name, &getDataPartStorage());
+
+        /// A shared mark file (substreams resolving to the same stream name) is counted once.
+        std::unordered_set<std::string> counted_mark_streams;
 
         for (const auto & index_substream : index_substreams)
         {
@@ -3050,7 +3061,8 @@ void IMergeTreeDataPart::calculateSecondaryIndicesSizesOnDisk() const
                     substream_size.data_uncompressed = size;
             }
 
-            substream_size.marks = getFileSizeOrZeroResolved(index_stream_name, getMarksFileExtension());
+            if (counted_mark_streams.emplace(index_stream_name).second)
+                substream_size.marks = getFileSizeOrZeroResolved(index_stream_name, getMarksFileExtension());
 
             total_secondary_indices_size.add(substream_size);
             new_secondary_index_sizes[index_description.name].add(substream_size);
@@ -3146,7 +3158,9 @@ bool IMergeTreeDataPart::isSkipIndexInPackedArchive(const IMergeTreeIndex & skip
     if (!disk_storage)
         return false;
     const String file_name = skip_index.getFileName();
-    for (const auto & substream : skip_index.getSubstreams())
+    /// Probe what the part actually holds, not the writer's current `getSubstreams`, so a legacy
+    /// member inside `skp_idx.packed` on an upgraded part is found.
+    for (const auto & substream : skip_index.getAllSubstreamsInPart(checksums, file_name, &getDataPartStorage()))
         if (disk_storage->isFileInPackedSkipIndicesArchive(file_name + substream.suffix + substream.extension))
             return true;
     return false;

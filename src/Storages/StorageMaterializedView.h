@@ -33,6 +33,12 @@ public:
     bool supportsSampling() const override { return getTargetTable()->supportsSampling(); }
     bool supportsPrewhere() const override { return getTargetTable()->supportsPrewhere(); }
     std::optional<NameSet> supportedPrewhereColumns() const override;
+    bool supportedPrewhereColumnsIncludeSubcolumns() const override;
+    /// Unlike `supportsPrewhere()`, this defaults to `supportsPrewhere()` rather than to something
+    /// forwarding would match, so a target that supports PREWHERE but refuses the automatic
+    /// WHERE -> PREWHERE move (`Distributed`, or a `Merge` over one) would have that refusal
+    /// silently dropped by the view.
+    bool canMoveConditionsToPrewhere() const override { return getTargetTable()->canMoveConditionsToPrewhere(); }
     bool supportsFinal() const override { return getTargetTable()->supportsFinal(); }
     bool supportsParallelInsert() const override { return getTargetTable()->supportsParallelInsert(); }
     bool supportsSubcolumns() const override { return getTargetTable()->supportsSubcolumns(); }

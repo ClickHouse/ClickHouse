@@ -928,6 +928,7 @@ MutableDataPartStoragePtr DataPartStorageOnDiskPacked::freeze(
         auto projection_storage = getProjectionStorage(projection_dir);
         auto child_params = params.forProjection(
             params.external_transaction, params.copy_instead_of_hardlink || cloneCopiesWholeArchive(params));
+        child_params.fsync_part_directory = false;  /// the single top-level fsync below covers the whole subtree
         projection_storage->freeze(
             to, proj_dst_dir, dst_disk_, read_settings, write_settings,
             /*save_metadata_callback=*/ {}, child_params);
@@ -1042,6 +1043,7 @@ MutableDataPartStoragePtr DataPartStorageOnDiskPacked::freeze(
         /// The child keeps the parent's archive copy-vs-hardlink decision: blob tracking in cloneAndLoadDataPart keys on it.
         auto child_params = params.forProjection(
             dest_storage->transaction, params.copy_instead_of_hardlink || cloneCopiesWholeArchive(params));
+        child_params.fsync_part_directory = false;  /// the single top-level fsync below covers the whole subtree
         projection_storage->freeze(
             dest_storage->getRelativePath(), projection_dir, dst_disk_, read_settings, write_settings,
             /*save_metadata_callback=*/ {}, child_params);
@@ -1057,6 +1059,10 @@ MutableDataPartStoragePtr DataPartStorageOnDiskPacked::freeze(
 
     if (save_metadata_callback)
         save_metadata_callback(dst_disk);
+
+    /// Durability graft from master #111426: one fsync for the whole subtree (children set false above).
+    if (params.fsync_part_directory && !params.external_transaction && !dst_disk->isRemote())
+        fsyncFrozenCloneTree(*dst_disk, fs::path(to) / dir_path);
 
     seedFrozenCopy(*dest_storage);
 
