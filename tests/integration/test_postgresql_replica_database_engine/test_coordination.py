@@ -761,6 +761,73 @@ def test_adopted_table_set_survives_publication_recreation(started_cluster):
     check_tables_are_synchronized(instance, "test_table")
 
 
+def test_adopted_table_set_survives_restart_and_publication_recreation(started_cluster):
+    # The adoption of the shared publication's table set over a mismatching explicit
+    # `materialized_postgresql_tables_list` must also survive a restart of the joiner. A restarted replica
+    # rebuilds its handler from the persisted (stale) setting, so if the shared publication happens to be
+    # missing at that moment, deriving the table set from the setting would both recreate the publication
+    # with the wrong set and be refused by the `<keeper_path>/table_set` fence - wedging the replica in a
+    # retry loop exactly in the recovery path that is supposed to repair the publication. The fenced set in
+    # Keeper is authoritative in that situation.
+    pg_manager.create_postgres_table("test_table")
+    pg_manager.create_postgres_table("extra_table")
+    instance.query(
+        "INSERT INTO postgres_database.test_table SELECT number, number FROM numbers(100)"
+    )
+
+    first_settings = COORDINATION_SETTINGS + [
+        "materialized_postgresql_tables_list = 'test_table'"
+    ]
+    pg_manager.create_materialized_db(
+        ip=cluster.postgres_ip, port=cluster.postgres_port, settings=first_settings
+    )
+    check_tables_are_synchronized(instance, "test_table")
+    wait_for_leader(instance, expected="coord_instance1")
+
+    second_settings = COORDINATION_SETTINGS + [
+        "materialized_postgresql_tables_list = 'test_table, extra_table'"
+    ]
+    pg_manager2.create_materialized_db(
+        ip=cluster.postgres_ip, port=cluster.postgres_port, settings=second_settings
+    )
+    check_tables_are_synchronized(instance2, "test_table")
+
+    # Take the whole setup down before removing the publication, so that no live replica can recreate it
+    # from its in-memory adopted list: the joiner must come back up with only its stale persisted setting.
+    instance.stop_clickhouse()
+    instance2.stop_clickhouse()
+    for (pubname,) in pg_query("SELECT pubname FROM pg_publication"):
+        pg_query(f'DROP PUBLICATION "{pubname}"')
+    assert not publication_exists()
+
+    instance2.start_clickhouse()
+
+    deadline = time.time() + 90
+    while time.time() < deadline:
+        if publication_exists():
+            break
+        time.sleep(1)
+    assert publication_exists()
+
+    # The publication is recreated from the fenced shared set - test_table only, no extra_table.
+    published = sorted(
+        row[0] for row in pg_query("SELECT tablename FROM pg_publication_tables")
+    )
+    assert published == ["test_table"]
+    assert "extra_table" not in instance2.query("SHOW TABLES FROM test_database")
+
+    # Replication keeps flowing through the recreated publication.
+    check_tables_are_synchronized(instance2, "test_table")
+    instance2.query(
+        "INSERT INTO postgres_database.test_table SELECT number, number FROM numbers(100, 100)"
+    )
+    check_tables_are_synchronized(instance2, "test_table")
+    assert int(instance2.query("SELECT count() FROM test_database.test_table")) == 200
+
+    instance.start_clickhouse()
+    check_tables_are_synchronized(instance, "test_table")
+
+
 def test_shared_engine_is_rejected_when_unavailable(started_cluster):
     # `SharedReplacingMergeTree` is a ClickHouse Cloud engine that is not registered in the open-source
     # build. Accepting it here would let CREATE DATABASE succeed and only fail much later, when the nested

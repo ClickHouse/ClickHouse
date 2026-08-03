@@ -2024,6 +2024,27 @@ void PostgreSQLReplicationHandler::ensureCoordinatedTableSetCompatible()
 }
 
 
+std::optional<std::set<String>> PostgreSQLReplicationHandler::readCoordinatedTableSetFromKeeper()
+{
+    auto component_guard = Coordination::setCurrentComponent("PostgreSQLReplicationHandler::readCoordinatedTableSetFromKeeper");
+
+    auto zookeeper = getContext()->getZooKeeper();
+    String published_table_set;
+    if (!zookeeper->tryGet(coordination_keeper_path + "/table_set", published_table_set))
+        return {};
+
+    std::set<String> table_names;
+    Strings lines;
+    splitInto<'\n'>(lines, published_table_set);
+    for (const auto & line : lines)
+    {
+        if (!line.empty())
+            table_names.insert(line);
+    }
+    return table_names;
+}
+
+
 void PostgreSQLReplicationHandler::registerReplicaInKeeper()
 {
     auto component_guard = Coordination::setCurrentComponent("PostgreSQLReplicationHandler::registerReplicaInKeeper");
@@ -3038,6 +3059,46 @@ std::set<String> PostgreSQLReplicationHandler::fetchRequiredTables()
                     }
                 }
             }
+        }
+    }
+
+    /// The shared publication is absent, but this is not a fresh setup: coordination state survives in
+    /// Keeper, so this replica is rejoining an existing coordinated setup whose publication has to be
+    /// recreated (it was dropped externally, or the active worker died between the teardown of a previous
+    /// generation and the recreation). The authoritative table set of that setup is the one fenced at
+    /// <keeper_path>/table_set, not this replica's local `materialized_postgresql_tables_list`: a replica
+    /// that once adopted a smaller publication set over a mismatching explicit setting is rebuilt from the
+    /// persisted (stale) setting after a restart, so honoring the setting here would recreate the shared
+    /// publication with a different table set - and `ensureCoordinatedTableSetCompatible` would refuse the
+    /// startup against the already fenced set, wedging the replica instead of repairing the publication.
+    /// Only a setup with surviving coordination state is trusted, for the same reason the publication-leak
+    /// check above requires it: a leftover /table_set node of an incompletely dropped setup must not become
+    /// authoritative for a fresh CREATE. Keeper errors propagate (fail-close), the startup task retries.
+    if (coordination_enabled && !publication_exists_before_startup && result_tables.empty() && hasSurvivingCoordinationState())
+    {
+        if (auto fenced_tables = readCoordinatedTableSetFromKeeper(); fenced_tables && !fenced_tables->empty())
+        {
+            const std::set<String> local_tables(expected_tables.begin(), expected_tables.end());
+            if (!tables_list.empty() && local_tables != *fenced_tables)
+            {
+                LOG_WARNING(log,
+                    "Coordinated setup: the shared publication {} does not exist and the specified "
+                    "`materialized_postgresql_tables_list` ({}) does not match the table set fenced at {}/table_set "
+                    "({}). The fenced set is authoritative in coordinated mode, so it is used instead of the setting "
+                    "and the publication is recreated from it.",
+                    doubleQuoteString(publication_name), fmt::join(local_tables, ", "), coordination_keeper_path,
+                    fmt::join(*fenced_tables, ", "));
+            }
+            else
+            {
+                LOG_DEBUG(log, "Coordinated setup: the shared publication {} does not exist, deriving tables from {}/table_set ({})",
+                    doubleQuoteString(publication_name), coordination_keeper_path, fmt::join(*fenced_tables, ", "));
+            }
+
+            result_tables = *fenced_tables;
+            /// `createPublicationIfNeeded` rebuilds the publication from `tables_list` whenever it is not
+            /// empty, so it must carry the adopted set too (see the mismatch branch above).
+            tables_list = fmt::format("{}", fmt::join(result_tables, ", "));
         }
     }
 

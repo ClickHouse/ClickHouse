@@ -274,6 +274,11 @@ private:
     /// schema change) and silently build diverging nested tables on the same keeper path. Idempotent.
     void ensureCoordinatedTableSetCompatible();
 
+    /// Read the fenced shared table set from <keeper_path>/table_set, or return nullopt if the node does
+    /// not exist. Used when the shared publication is (temporarily) absent, so that the authoritative set
+    /// is taken from Keeper instead of a stale local materialized_postgresql_tables_list.
+    std::optional<std::set<String>> readCoordinatedTableSetFromKeeper();
+
     /// Register this replica under <keeper_path>/replicas, so that dropping the engine on another
     /// replica knows the shared PostgreSQL objects (slot, publication) are still in use. Idempotent.
     void registerReplicaInKeeper();
