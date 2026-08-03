@@ -714,6 +714,11 @@ void BackupImpl::readBackupMetadata()
                 if (layout == BackupLayout::Archive)
                     throw Exception(ErrorCodes::BACKUP_DAMAGED,
                         "Archive backup cannot contain packed objects (num_packs > 0)");
+                /// Keep the version field authoritative: an older server would misread packs_* as ordinary files.
+                if (version < PACKED_FORMAT_VERSION)
+                    throw Exception(ErrorCodes::BACKUP_DAMAGED,
+                        "Backup {}: Metadata declares {} packs but its version {} predates the packed format (version {})",
+                        backup_name_for_logging, num_packs, version, PACKED_FORMAT_VERSION);
                 layout = BackupLayout::Packed;
             }
         }

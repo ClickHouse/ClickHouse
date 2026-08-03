@@ -151,6 +151,8 @@ if mode != "drop_index_member":
         manifest = f.read()
     if mode == "drop_num_packs":
         manifest = re.sub(r"<num_packs>\d+</num_packs>", "", manifest, count=1)
+    elif mode == "downgrade_version":
+        manifest = re.sub(r"<version>\d+</version>", "<version>1</version>", manifest, count=1)
     else:
         manifest = manifest.replace("<packed>true</packed>", "")
     with open(manifest_path, "w", encoding="utf-8") as f:
@@ -203,12 +205,13 @@ with open(pack_path, "wb") as f:
     f.write(bytes(index) + pack[pos:])
 PY
     ${CLICKHOUSE_CLIENT} --query "RESTORE TABLE t FROM Disk('backups', '${name}_11_${mode}')" 2>&1 \
-        | grep -oE "marked as packed in the metadata but no pack contains it|is not marked as packed in the metadata" | head -1
+        | grep -oE "marked as packed in the metadata but no pack contains it|is not marked as packed in the metadata|predates the packed format" | head -1
     ${CLICKHOUSE_CLIENT} --query "DROP TABLE IF EXISTS t"
 }
 
 restore_tampered drop_index_member
 restore_tampered drop_num_packs
 restore_tampered drop_markers
+restore_tampered downgrade_version
 
 ${CLICKHOUSE_CLIENT} --query "DROP TABLE IF EXISTS t"
