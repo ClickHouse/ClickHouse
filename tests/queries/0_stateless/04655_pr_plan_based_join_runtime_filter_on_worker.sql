@@ -13,8 +13,8 @@ DROP TABLE IF EXISTS rf_build SYNC;
 
 CREATE TABLE rf_probe (a UInt64) ENGINE = MergeTree ORDER BY a SETTINGS index_granularity = 1024;
 CREATE TABLE rf_build (a UInt64) ENGINE = MergeTree ORDER BY a SETTINGS index_granularity = 1024;
-INSERT INTO rf_probe SELECT number FROM numbers(300000);
-INSERT INTO rf_build SELECT number FROM numbers(10000);   -- 10000 of the 300000 probe keys match
+INSERT INTO rf_probe SELECT number FROM numbers(300_000);
+INSERT INTO rf_build SELECT number FROM numbers(10_000);   -- 10000 of the 300000 probe keys match
 
 SET enable_analyzer = 1;
 SET enable_parallel_replicas = 1;
