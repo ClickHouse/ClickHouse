@@ -111,6 +111,7 @@ struct JoinSettings
     bool use_join_disjunctions_push_down;
     bool enable_lazy_columns_replication;
     bool enable_software_prefetch_in_join;
+    bool legacy_join_size_limits_trigger_spilling;
     bool use_hash_table_stats_for_join_reordering;
 
     bool enable_join_fixed_hash_table_conversion;

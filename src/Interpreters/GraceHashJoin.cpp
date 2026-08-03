@@ -280,9 +280,9 @@ GraceHashJoin::GraceHashJoin(
 {
     if (!GraceHashJoin::isSupported(table_join))
         throw Exception(ErrorCodes::NOT_IMPLEMENTED, "GraceHashJoin is not supported for this join type");
-    /// `SpillingHashJoin` rejects a zero threshold before it gets here; without one, `hasMemoryOverflow`
-    /// would report an overflow for every block and rehash until it ran out of buckets.
-    chassert(external_join_threshold > 0);
+    /// `SpillingHashJoin` rejects a zero threshold before it gets here, except in legacy mode where the
+    /// size limits take over as the spill trigger.
+    chassert(external_join_threshold > 0 || table_join->legacyJoinSizeLimitsTriggerSpilling());
 }
 
 void GraceHashJoin::initBuckets()
@@ -329,7 +329,9 @@ bool GraceHashJoin::addBlockToJoin(const Block & block, bool check_limits)
 
     addBlockToJoinImpl(std::move(materialized));
 
-    if (!check_limits)
+    /// In legacy mode the size limits are the spill trigger (see `hasMemoryOverflow`), so they must not
+    /// also stop the query here.
+    if (!check_limits || table_join->legacyJoinSizeLimitsTriggerSpilling())
         return true;
 
     /// `max_rows_in_join` / `max_bytes_in_join` with `join_overflow_mode` are hard caps on the whole
@@ -350,7 +352,13 @@ bool GraceHashJoin::hasMemoryOverflow(size_t total_rows, size_t total_bytes) con
     /// owner: the in-memory hash table doubles its buffer in power-of-two steps, transiently holding
     /// 3X the previous size, so rehashing buckets early prevents that doubling from exceeding the
     /// cap.
-    const bool has_overflow = total_bytes * 2 >= external_join_threshold;
+    bool has_overflow = external_join_threshold > 0 && total_bytes * 2 >= external_join_threshold;
+
+    /// Before unification the size limits were the spill trigger of the standalone `grace_hash` path,
+    /// so whichever of the two fires first wins. Legacy mode is also the only way the threshold can be
+    /// 0 here, in which case the limits are the only trigger.
+    if (!has_overflow && table_join->legacyJoinSizeLimitsTriggerSpilling())
+        has_overflow = !table_join->sizeLimits().softCheck(total_rows, total_bytes);
 
     if (has_overflow)
         LOG_TRACE(log, "Memory overflow, size exceeded {} / {} bytes in {} rows",
@@ -798,7 +806,7 @@ void GraceHashJoin::addBlockToJoinImpl(Block block)
         /// the actual hash-table cost (cell overhead, load-factor padding, resize peaks),
         /// so a tiny block could leave a near-full bucket bypassing the pre-check and OOM
         /// during the resize. Mirrors `SpillingHashJoin::addBlockToJoin`.
-        const bool pre_threshold_overflow = pre_total_bytes * 2 >= external_join_threshold;
+        const bool pre_threshold_overflow = external_join_threshold > 0 && pre_total_bytes * 2 >= external_join_threshold;
 
         bool block_added = false;
         if (!pre_threshold_overflow)

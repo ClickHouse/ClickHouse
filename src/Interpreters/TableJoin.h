@@ -167,6 +167,8 @@ private:
     const bool allow_dynamic_type_in_join_keys = false;
     const bool enable_lazy_columns_replication = false;
     const bool enable_software_prefetch_in_join = false;
+    /// Pre-unification behavior of `max_rows_in_join` / `max_bytes_in_join`: a spill trigger rather than a hard cap.
+    const bool legacy_join_size_limits_trigger_spilling = false;
     const size_t max_bytes_before_external_join = 0;
     /// The `max_bytes_before_external_join` setting as the user wrote it, before combining it with
     /// `max_bytes_ratio_before_external_join`. Only used to diagnose a hard cap that contradicts an
@@ -337,6 +339,7 @@ public:
     bool needStreamWithNonJoinedRows() const;
     bool enableColumnsLazyReplication() const { return enable_lazy_columns_replication; }
     bool enableSoftwarePrefetchInJoin() const { return enable_software_prefetch_in_join; }
+    bool legacyJoinSizeLimitsTriggerSpilling() const { return legacy_join_size_limits_trigger_spilling; }
     size_t maxBytesBeforeExternalJoin() const { return max_bytes_before_external_join; }
     size_t explicitMaxBytesBeforeExternalJoin() const { return explicit_max_bytes_before_external_join; }
     bool enableJoinFixedHashTableConversion() const { return enable_join_fixed_hash_table_conversion; }

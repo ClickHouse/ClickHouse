@@ -6645,6 +6645,14 @@ Used by the aggregate projection matcher (and any future projection matcher that
     DECLARE(Bool, enable_software_prefetch_in_join, true, R"(
 Enable use of software prefetch in hash join probe phase to hide memory access latency for large hash tables.
 )", 0) \
+    DECLARE(Bool, legacy_join_size_limits_trigger_spilling, false, R"(
+Restores the pre-unification meaning of `max_rows_in_join` and `max_bytes_in_join` for hash joins that spill to disk: they
+trigger spilling instead of acting as hard caps, and the effective spill point is whichever of the limit and
+`max_bytes_before_external_join` is reached first. `join_algorithm = 'grace_hash'` also stops requiring a spill threshold.
+
+Enable it only to keep queries that were written against the old behavior working; it is set automatically by the
+`compatibility` setting.
+)", 0) \
     DECLARE(Bool, serialize_query_plan, false, R"(
 Serialize query plan for distributed processing
 )", 0) \

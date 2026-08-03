@@ -123,17 +123,32 @@ SpillingHashJoin::SpillingHashJoin(
     , max_bytes_before_external_join(table_join->maxBytesBeforeExternalJoin())
     , force_external(true)
 {
-    warnIfHardCapMakesSpillingUnreachable(*table_join, log);
+    if (table_join->legacyJoinSizeLimitsTriggerSpilling())
+    {
+        /// Legacy mode reproduces the standalone `grace_hash` path, where the size limits drive the
+        /// spilling and no threshold is required.
+        if (table_join->sizeLimits().max_bytes != 0 || table_join->sizeLimits().max_rows != 0)
+            LOG_WARNING(
+                log,
+                "join_algorithm = 'grace_hash' is spilling on max_rows_in_join / max_bytes_in_join because "
+                "legacy_join_size_limits_trigger_spilling is enabled (usually through the compatibility setting). Those two are "
+                "hard caps now; drive spilling with max_bytes_before_external_join / max_bytes_ratio_before_external_join "
+                "instead, and disable legacy_join_size_limits_trigger_spilling");
+    }
+    else
+    {
+        warnIfHardCapMakesSpillingUnreachable(*table_join, log);
 
-    /// Force-external mode has no in-memory phase to fall back on, so without a spill threshold
-    /// there would be nothing to bound the size of a bucket.
-    if (max_bytes_before_external_join == 0)
-        throw Exception(
-            ErrorCodes::BAD_ARGUMENTS,
-            "join_algorithm = 'grace_hash' spills to disk and needs a spill threshold, but none resolved to a non-zero "
-            "value. Set max_bytes_before_external_join, or set max_bytes_ratio_before_external_join on a server that has "
-            "memory limits configured (the ratio is ignored without them). Use join_algorithm = 'hash' for a purely "
-            "in-memory join");
+        /// Force-external mode has no in-memory phase to fall back on, so without a spill threshold
+        /// there would be nothing to bound the size of a bucket.
+        if (max_bytes_before_external_join == 0)
+            throw Exception(
+                ErrorCodes::BAD_ARGUMENTS,
+                "join_algorithm = 'grace_hash' spills to disk and needs a spill threshold, but none resolved to a non-zero "
+                "value. Set max_bytes_before_external_join, or set max_bytes_ratio_before_external_join on a server that has "
+                "memory limits configured (the ratio is ignored without them). Use join_algorithm = 'hash' for a purely "
+                "in-memory join");
+    }
 
     grace_join = std::make_shared<GraceHashJoin>(
         initial_num_buckets,
