@@ -87,6 +87,17 @@ String QueryExecutor::execute(const String & query)
 
     query_context->setCurrentQueryId(fmt::format("mongo:{:d}", secret_key));
 
+    /// The output of a `FORMAT JSON` query is parsed back into the BSON reply, so its shape must
+    /// not depend on the output settings of the authenticated user's profile: with
+    /// `output_format_json_quote_64bit_integers` an `Int64` column would come back as a BSON
+    /// string rather than a number.
+    query_context->setSetting("output_format_json_quote_64bit_integers", false);
+    query_context->setSetting("output_format_json_quote_64bit_floats", false);
+    query_context->setSetting("output_format_json_quote_decimals", false);
+    query_context->setSetting("output_format_json_quote_denormals", false);
+    query_context->setSetting("output_format_json_named_tuples_as_objects", true);
+    query_context->setSetting("output_format_json_array_of_rows", false);
+
     auto query_scope = QueryScope::create(query_context);
     ReadBufferFromString read_buf(query);
 
