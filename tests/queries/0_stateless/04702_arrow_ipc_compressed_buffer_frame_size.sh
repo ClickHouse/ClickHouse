@@ -408,6 +408,14 @@ open(f"{out}/lz4_no_declared_size_forged_prefix.arrows", "wb").write(bytes(d))
 d = bytearray(ch_lz4)
 set_frame_content_size(d, ch_offs[0], 0)
 open(f"{out}/lz4_zero_size_over_blocks.arrows", "wb").write(bytes(d))
+
+# Case 17: a frame recording more than its blocks can produce describes no possible frame, so it is
+# rejected on its own terms. The prefix is set to the block bound, which agrees with neither, so a
+# check that only compared the prefix against the bound would allocate for it first.
+d = bytearray(ch_lz4)
+set_frame_content_size(d, ch_offs[0], 1024 ** 3)
+struct.pack_into("<q", d, ch_offs[0], 4 * 1024 ** 2)
+open(f"{out}/lz4_pledge_above_blocks.arrows", "wb").write(bytes(d))
 PYEOF
 
 check() {
@@ -437,6 +445,7 @@ check zstd_skippable_prefix_forged_prefix.arrows 'codec frame declares'
 check lz4_empty_frame_forged_prefix.arrows 'codec frame declares 0'
 check lz4_empty_frame_zero_size_forged_prefix.arrows 'codec frame declares 0'
 check lz4_no_declared_size_forged_prefix.arrows 'codec frame declares'
+check lz4_pledge_above_blocks.arrows 'blocks can produce at most'
 # Not corrupt: a size the query cannot afford is a resource condition, not a data error. The size a
 # frame's blocks can produce is bounded, so the budget rather than the size is what has to be small.
 check consistent_large.arrows MEMORY_LIMIT_EXCEEDED 1M

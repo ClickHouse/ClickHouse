@@ -121,12 +121,19 @@ std::optional<FrameContentBound> frameContentBound(CompressionCodec codec, const
         return FrameContentBound{0, false};
 
     const UInt64 bound = lz4BlockOutputBound(info, src, size, header_size);
-    /// `contentSize` is optional and reads 0 when absent, so a recorded zero is indistinguishable from
-    /// none and cannot be treated as exact. Otherwise decompression enforces it, so it is exact - but
-    /// only up to the block bound, which is the stronger claim when it is smaller.
-    if (info.contentSize != 0 && info.contentSize <= bound)
-        return FrameContentBound{info.contentSize, true};
-    return FrameContentBound{bound, false};
+    /// `contentSize` reads 0 both when the field is absent and when it records zero, so a zero cannot
+    /// be treated as a size; the blocks are then all there is to go on.
+    if (info.contentSize == 0)
+        return FrameContentBound{bound, false};
+    /// A recorded size above what the blocks can produce describes no possible frame, and
+    /// decompression rejects it, so reject it here rather than allocating for either value first.
+    if (info.contentSize > bound)
+        throw Exception(
+            ErrorCodes::INCORRECT_DATA,
+            "Compressed Arrow IPC buffer's LZ4 frame declares {} uncompressed bytes but its blocks can "
+            "produce at most {}", info.contentSize, bound);
+    /// Decompression enforces a recorded size exactly, so a prefix differing from it at all is forged.
+    return FrameContentBound{info.contentSize, true};
 }
 
 Compressor::~Compressor()
