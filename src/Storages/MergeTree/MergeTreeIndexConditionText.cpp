@@ -134,7 +134,8 @@ MergeTreeIndexConditionText::MergeTreeIndexConditionText(
     bool has_positions_)
     : WithContext(context_)
     , header(index_sample_block)
-    , tokenizer(tokenizer_)
+    , owned_tokenizer(tokenizer_ && tokenizer_->isStateful() ? std::shared_ptr<const ITokenizer>(tokenizer_->clone()) : nullptr)
+    , tokenizer(owned_tokenizer ? owned_tokenizer.get() : tokenizer_)
     , preprocessor(preprocessor_)
     , has_preprocessor(preprocessor && preprocessor->hasActions())
     , postprocessor(postprocessor_)
@@ -1170,11 +1171,13 @@ bool MergeTreeIndexConditionText::traverseFunctionNode(
     }
     if (function_name == "hasPhrase")
     {
+        /// Only splitByNonAlpha, splitByString, splitByRegexp, ngrams, asciiCJK, and icu tokenizers are supported with the `hasPhrase` function.
         static const std::unordered_set<std::string_view> supported_tokenizers = {
             SplitByNonAlphaTokenizer::getExternalName(),
             SplitByStringTokenizer::getExternalName(),
             SplitByRegexpTokenizer::getExternalName(),
             AsciiCJKTokenizer::getExternalName(),
+            IcuTokenizer::getExternalName(),
             NgramsTokenizer::getExternalName(),
         };
         if (!supported_tokenizers.contains(tokenizer->getTokenizerExternalName()))
