@@ -50,7 +50,7 @@ OPTIMIZE TABLE ttl_clear_index_recompression_metadata FINAL
 SETTINGS enable_ttl_clear_index_merge_type_generation = 1, optimize_skip_merged_partitions = 1;
 
 -- Missing recompression metadata must force a regular rewrite that recalculates all TTL
--- metadata and clears the expired index instead of preserving source files.
+-- metadata and clears the expired index instead of preserving files.
 SELECT notEmpty(recompression_ttl_info.expression), secondary_indices_compressed_bytes
 FROM system.parts
 WHERE database = currentDatabase()
@@ -61,14 +61,18 @@ SELECT sum(value) = (SELECT value FROM ttl_clear_index_recompression_events_befo
 FROM system.events
 WHERE event = 'TTLClearIndexMetadataOnlyMerges';
 
-SYSTEM FLUSH LOGS;
-SELECT count() > 0
-FROM system.part_log
+-- Once the first rewrite has populated the metadata, the expired recompression rule is applied.
+OPTIMIZE TABLE ttl_clear_index_recompression_metadata FINAL;
+
+SELECT default_compression_codec
+FROM system.parts
 WHERE database = currentDatabase()
   AND table = 'ttl_clear_index_recompression_metadata'
-  AND event_type = 'MergeParts'
-  AND merge_reason = 'RegularMerge'
-  AND error = 0
-SETTINGS enable_parallel_replicas = 0;
+  AND active;
+
+SELECT count(), sum(k), sum(length(v))
+FROM ttl_clear_index_recompression_metadata;
+
+CHECK TABLE ttl_clear_index_recompression_metadata SETTINGS check_query_single_value_result = 1;
 
 DROP TABLE ttl_clear_index_recompression_metadata;
