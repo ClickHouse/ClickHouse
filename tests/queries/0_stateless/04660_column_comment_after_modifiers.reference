@@ -26,7 +26,7 @@ c	c comment
 d	
 e	e new comment
 f	f newer comment
-g	g new comment
+g	g comment
 h	h comment
 i	i comment
 j	j comment
@@ -47,7 +47,6 @@ CREATE TABLE t\n(\n    `a` String COMMENT \'a comment\' COLLATE utf8_bin\n)\nENG
 CREATE TABLE t\n(\n    `a` String TTL now() COLLATE utf8_bin\n)\nENGINE = MergeTree\nORDER BY a
 ALTER TABLE t\n    (MODIFY COLUMN `a` UInt64 COMMENT \'a comment\' CODEC(ZSTD))
 ALTER TABLE t\n    (MODIFY COLUMN `a` COMMENT \'a comment\' SETTINGS (max_compress_block_size = 1024))
-ALTER TABLE t\n    (MODIFY COLUMN `a` COMMENT \'a comment\' STATISTICS(tdigest))
-ALTER TABLE t\n    (MODIFY COLUMN `a` COMMENT \'a comment\' COLLATE utf8_bin)
+ALTER TABLE t\n    (MODIFY COLUMN `a` STATISTICS(tdigest) COMMENT \'a comment\')
 CREATE TABLE t\n(\n    `a` String COMMENT \'a comment\' COLLATE utf8_bin\n)\nENGINE = Memory
 CREATE TABLE t\n(\n    `a` String TTL now() COLLATE utf8_bin\n)\nENGINE = MergeTree\nORDER BY a

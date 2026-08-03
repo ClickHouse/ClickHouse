@@ -235,6 +235,13 @@ bool IParserColumnDeclaration<NameParser>::parseImpl(Pos & pos, ASTPtr & node, E
     };
 
     /// Keep this list of keywords in sync with ParserDataType::parseImpl().
+    ///
+    /// Only the modifiers that a type-less declaration can actually carry through the rest of the
+    /// pipeline are exempted from the requirement to have a type. `STATISTICS` and `COLLATE` are
+    /// deliberately not in the list: `AlterCommand::parse` drops both of them, so treating them as
+    /// the start of a type-less `ALTER TABLE ... MODIFY COLUMN c STATISTICS(tdigest) COMMENT 'x'`
+    /// would silently apply only the comment. They keep being read as the type name and rejected
+    /// downstream, as before (use `ALTER TABLE ... MODIFY STATISTICS` instead).
     if (!null_check_without_moving()
         && !s_default.checkWithoutMoving(pos, expected)
         && !s_materialized.checkWithoutMoving(pos, expected)
@@ -246,8 +253,6 @@ bool IParserColumnDeclaration<NameParser>::parseImpl(Pos & pos, ASTPtr & node, E
         && (require_type
             || (!s_comment.checkWithoutMoving(pos, expected)
                 && !s_codec.checkWithoutMoving(pos, expected)
-                && !s_stat.checkWithoutMoving(pos, expected)
-                && !s_collate.checkWithoutMoving(pos, expected)
                 && !s_settings.checkWithoutMoving(pos, expected))))
     {
         if (check_type_keyword && !s_type.ignore(pos, expected))

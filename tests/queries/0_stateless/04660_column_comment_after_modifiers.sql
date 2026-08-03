@@ -33,12 +33,17 @@ ALTER TABLE t_column_comment_order ADD COLUMN k UInt64 SETTINGS (max_compress_bl
 ALTER TABLE t_column_comment_order MODIFY COLUMN b UInt64 COMMENT 'b new comment' SETTINGS mutations_sync = 2;
 ALTER TABLE t_column_comment_order MODIFY COLUMN b UInt64 CODEC(ZSTD) COMMENT 'b newer comment' SETTINGS mutations_sync = 2;
 
--- Type-less `MODIFY COLUMN`: a leading `SETTINGS`, `STATISTICS` or `COLLATE` is a modifier, not a data type,
+-- Type-less `MODIFY COLUMN`: a leading `SETTINGS` is a modifier, not a data type,
 -- so the modifiers can be reordered here as well.
 ALTER TABLE t_column_comment_order MODIFY COLUMN f SETTINGS (max_compress_block_size = 2048) COMMENT 'f new comment';
-ALTER TABLE t_column_comment_order MODIFY COLUMN g STATISTICS(tdigest) COMMENT 'g new comment';
 ALTER TABLE t_column_comment_order MODIFY COLUMN e CODEC(LZ4) COMMENT 'e new comment';
 ALTER TABLE t_column_comment_order MODIFY COLUMN f SETTINGS (max_compress_block_size = 4096) COMMENT 'f newer comment' SETTINGS mutations_sync = 2;
+
+-- `MODIFY COLUMN` applies neither `STATISTICS` nor `COLLATE` (`AlterCommand::parse` drops both),
+-- so a leading one of them is still read as the type name and rejected, rather than being taken
+-- for a modifier and silently applying only the comment. Use `ALTER TABLE ... MODIFY STATISTICS`.
+ALTER TABLE t_column_comment_order MODIFY COLUMN g STATISTICS(tdigest) COMMENT 'g new comment'; -- { serverError UNKNOWN_TYPE }
+ALTER TABLE t_column_comment_order MODIFY COLUMN g COLLATE utf8_bin COMMENT 'g new comment'; -- { clientError SYNTAX_ERROR }
 
 SELECT name, comment FROM system.columns WHERE database = currentDatabase() AND table = 't_column_comment_order' ORDER BY name;
 
@@ -61,8 +66,9 @@ SELECT formatQuery('CREATE TABLE t (a String COLLATE utf8_bin COMMENT \'a commen
 SELECT formatQuery('CREATE TABLE t (a String TTL now() COLLATE utf8_bin) ENGINE = MergeTree ORDER BY a');
 SELECT formatQuery('ALTER TABLE t MODIFY COLUMN a UInt64 CODEC(ZSTD) COMMENT \'a comment\'');
 SELECT formatQuery('ALTER TABLE t MODIFY COLUMN a SETTINGS (max_compress_block_size = 1024) COMMENT \'a comment\'');
+-- Here `STATISTICS(tdigest)` is the type name, not a modifier, so it is printed before the comment.
 SELECT formatQuery('ALTER TABLE t MODIFY COLUMN a STATISTICS(tdigest) COMMENT \'a comment\'');
-SELECT formatQuery('ALTER TABLE t MODIFY COLUMN a COLLATE utf8_bin COMMENT \'a comment\'');
+SELECT formatQuery('ALTER TABLE t MODIFY COLUMN a COLLATE utf8_bin COMMENT \'a comment\''); -- { serverError SYNTAX_ERROR }
 
 -- Formatting is idempotent: the canonical order prints `COLLATE` last, and it is parsed back.
 SELECT formatQuery(formatQuery('CREATE TABLE t (a String COLLATE utf8_bin COMMENT \'a comment\') ENGINE = Memory'));
