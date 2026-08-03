@@ -12,11 +12,7 @@
 #include <Storages/ObjectStorage/StorageObjectStorage.h>
 #include <Storages/ObjectStorage/IObjectIterator.h>
 #include <Formats/FormatFilterInfo.h>
-<<<<<<< HEAD
-=======
 #include <Storages/Cache/ObjectStorageListObjectsCache.h>
-
->>>>>>> 9a9645c97cc (Merge pull request #1718 from Altinity/feature/antalya-26.3/apassos-3)
 
 namespace DB
 {

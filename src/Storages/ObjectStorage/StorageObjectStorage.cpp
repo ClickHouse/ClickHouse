@@ -986,7 +986,6 @@ void StorageObjectStorage::checkAlterIsPossible(const AlterCommands & commands, 
     configuration->checkAlterIsPossible(object_storage, context, commands);
 }
 
-<<<<<<< HEAD
 void StorageObjectStorage::startup()
 {
     if (configuration->isBackgroundExecutable())
@@ -1007,6 +1006,4 @@ bool StorageObjectStorage::scheduleDataProcessingJob(BackgroundJobsAssignee & as
     return configuration->scheduleDataProcessingJob(assignee, *this);
 }
 
-=======
->>>>>>> 9a9645c97cc (Merge pull request #1718 from Altinity/feature/antalya-26.3/apassos-3)
 }

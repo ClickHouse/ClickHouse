@@ -1,10 +1,6 @@
 #pragma once
 
-<<<<<<< HEAD
-=======
-#include <DataTypes/DataTypesNumber.h>
 #include <Interpreters/CancellationCode.h>
->>>>>>> 9a9645c97cc (Merge pull request #1718 from Altinity/feature/antalya-26.3/apassos-3)
 #include <Interpreters/Cluster.h>
 #include <Interpreters/PartLog.h>
 #include <Parsers/SyncReplicaMode.h>

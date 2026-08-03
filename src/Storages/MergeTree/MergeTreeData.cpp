@@ -19,34 +19,14 @@
 #include <Backups/IBackup.h>
 #include <Backups/RestorerFromBackup.h>
 #include <Columns/ColumnAggregateFunction.h>
-<<<<<<< HEAD
 #include <Columns/ColumnConst.h>
 #include <Compression/CompressedReadBuffer.h>
-=======
-#include <Common/Config/ConfigHelper.h>
-#include <Common/CurrentMetrics.h>
-#include <Common/Increment.h>
-#include <Common/ProfileEventsScope.h>
-#include <Common/Stopwatch.h>
-#include <Common/StringUtils.h>
-#include <Common/ThreadFuzzer.h>
-#include <Common/ZooKeeper/ZooKeeperCommon.h>
-#include <Common/escapeForFileName.h>
-#include <Common/noexcept_scope.h>
-#include <Common/quoteString.h>
-#include <Common/typeid_cast.h>
-#include <Common/thread_local_rng.h>
 #include <Storages/MergeTree/ExportPartTask.h>
 #include <Storages/MergeTree/ExportPartitionUtils.h>
 #include <Processors/Executors/CompletedPipelineExecutor.h>
 #include <Processors/QueryPlan/Optimizations/QueryPlanOptimizationSettings.h>
 #include <Storages/MergeTree/MergeTreeSequentialSource.h>
 #include <Processors/QueryPlan/QueryPlan.h>
-#include <Core/BackgroundSchedulePool.h>
-#include <Core/Settings.h>
-#include <Core/ServerSettings.h>
-#include <Storages/MergeTree/RangesInDataPart.h>
->>>>>>> 9a9645c97cc (Merge pull request #1718 from Altinity/feature/antalya-26.3/apassos-3)
 #include <Compression/CompressionFactory.h>
 #include <Core/BackgroundSchedulePool.h>
 #include <Core/QueryProcessingStage.h>
@@ -101,27 +81,10 @@
 #include <Processors/QueryPlan/QueryIdHolder.h>
 #include <Processors/QueryPlan/ReadFromMergeTree.h>
 #include <Processors/Transforms/DeduplicationTokenTransforms.h>
-<<<<<<< HEAD
 #include <Processors/Transforms/SquashingTransform.h>
-=======
-#include <Storages/AlterCommands.h>
-#include <Storages/MergeTree/MergeTreeVirtualColumns.h>
-#include <Storages/Freeze.h>
-#include <Storages/MergeTree/DataPartStorageOnDiskFull.h>
-#include <Storages/MergeTree/MergeTreeDataPartBuilder.h>
-#include <Storages/MergeTree/MergeTreeSettings.h>
-#include <Storages/MergeTree/PrimaryIndexCache.h>
-#include <Storages/Statistics/ConditionSelectivityEstimator.h>
 #include <Storages/ObjectStorage/StorageObjectStorageCluster.h>
-#include <Storages/MergeTree/checkDataPart.h>
-#include <Storages/MutationCommands.h>
-#include <Storages/MergeTree/ActiveDataPartSet.h>
-#include <Storages/StorageReplicatedMergeTree.h>
-#include <Storages/VirtualColumnUtils.h>
-#include <Storages/MergeTree/LoadedMergeTreeDataPartInfoForReader.h>
 #include <Storages/ObjectStorage/StorageObjectStorage.h>
 #include <Storages/ObjectStorage/DataLakes/Iceberg/IcebergMetadata.h>
->>>>>>> 9a9645c97cc (Merge pull request #1718 from Altinity/feature/antalya-26.3/apassos-3)
 #include <QueryPipeline/QueryPipelineBuilder.h>
 #include <Storages/AlterCommands.h>
 #include <Storages/Freeze.h>
@@ -131,7 +94,6 @@
 #include <Storages/MergeTree/Compaction/MergeSelectorApplier.h>
 #include <Storages/MergeTree/Compaction/PartProperties.h>
 #include <Storages/MergeTree/Compaction/PartsCollectors/Common.h>
-<<<<<<< HEAD
 #include <Storages/MergeTree/Streaming/MergeTreeBoundsSubscription.h>
 #include <Storages/MergeTree/Streaming/SubscriptionEnrichment.h>
 #include <Storages/MergeTree/DataPartStorageOnDiskFull.h>
@@ -172,9 +134,7 @@
 #include <Common/scope_guard_safe.h>
 #include <Common/thread_local_rng.h>
 #include <Common/typeid_cast.h>
-=======
 #include <Functions/generateSnowflakeID.h>
->>>>>>> 9a9645c97cc (Merge pull request #1718 from Altinity/feature/antalya-26.3/apassos-3)
 
 #include <boost/algorithm/string/join.hpp>
 
@@ -295,9 +255,7 @@ namespace Setting
     extern const SettingsBool use_statistics;
     extern const SettingsBool use_statistics_cache;
     extern const SettingsBool use_partition_pruning;
-<<<<<<< HEAD
     extern const SettingsBool use_skip_indexes;
-=======
     extern const SettingsBool allow_experimental_export_merge_tree_part;
     extern const SettingsUInt64 min_bytes_to_use_direct_io;
     extern const SettingsMergeTreePartExportFileAlreadyExistsPolicy export_merge_tree_part_file_already_exists_policy;
@@ -306,7 +264,6 @@ namespace Setting
     extern const SettingsBool export_merge_tree_part_throw_on_pending_mutations;
     extern const SettingsBool export_merge_tree_part_throw_on_pending_patch_parts;
     extern const SettingsBool allow_insert_into_iceberg;
->>>>>>> 9a9645c97cc (Merge pull request #1718 from Altinity/feature/antalya-26.3/apassos-3)
 }
 
 namespace MergeTreeSetting
@@ -443,8 +400,10 @@ namespace ErrorCodes
     extern const int CANNOT_FORGET_PARTITION;
     extern const int DATA_TYPE_CANNOT_BE_USED_IN_KEY;
     extern const int TOO_LARGE_LIGHTWEIGHT_UPDATES;
-<<<<<<< HEAD
     extern const int FAULT_INJECTED;
+    extern const int UNKNOWN_TABLE;
+    extern const int FILE_ALREADY_EXISTS;
+    extern const int PENDING_MUTATIONS_NOT_ALLOWED;
 }
 
 namespace FailPoints
@@ -453,11 +412,6 @@ namespace FailPoints
     /// transient error (e.g. temporary disk unavailability). Used to test that the refresh task
     /// reschedules itself after such an error instead of stopping permanently.
     extern const char merge_tree_refresh_parts_throw_once[];
-=======
-    extern const int UNKNOWN_TABLE;
-    extern const int FILE_ALREADY_EXISTS;
-    extern const int PENDING_MUTATIONS_NOT_ALLOWED;
->>>>>>> 9a9645c97cc (Merge pull request #1718 from Altinity/feature/antalya-26.3/apassos-3)
 }
 
 static String getPartNameFromAST(const ASTPtr & partition)
@@ -10341,11 +10295,8 @@ void MergeTreeData::writePartLog(
     const MergeListEntry * merge_entry,
     std::shared_ptr<ProfileEvents::Counters::Snapshot> profile_counters,
     const Strings & mutation_ids,
-<<<<<<< HEAD
-    const std::map<String, UInt64> & projections_duration_ms)
-=======
+    const std::map<String, UInt64> & projections_duration_ms,
     const ExportsListEntry * exports_entry)
->>>>>>> 9a9645c97cc (Merge pull request #1718 from Altinity/feature/antalya-26.3/apassos-3)
 try
 {
     auto table_id = getStorageID();

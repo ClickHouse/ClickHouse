@@ -172,11 +172,9 @@ namespace ProfileEvents
     extern const Event ReplicaPartialShutdown;
     extern const Event ReplicatedCoveredPartsInZooKeeperOnStart;
     extern const Event MergesRejectedByMemoryLimit;
-<<<<<<< HEAD
     extern const Event ZooKeeperWatchTriggeredReplicatedMergeTreeLeaderElection;
     extern const Event ZooKeeperWatchTriggeredReplicatedMergeTreeReplicaSync;
     extern const Event ZooKeeperWatchTriggeredReplicatedMergeTreeMutations;
-=======
     extern const Event ExportPartitionZooKeeperRequests;
     extern const Event ExportPartitionZooKeeperGet;
     extern const Event ExportPartitionZooKeeperGetChildren;
@@ -186,7 +184,6 @@ namespace ProfileEvents
     extern const Event ExportPartitionZooKeeperRemoveRecursive;
     extern const Event ExportPartitionZooKeeperMulti;
     extern const Event ExportPartitionZooKeeperExists;
->>>>>>> 9a9645c97cc (Merge pull request #1718 from Altinity/feature/antalya-26.3/apassos-3)
 }
 
 namespace CurrentMetrics

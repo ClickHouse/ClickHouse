@@ -302,6 +302,7 @@ bool ExportPartTask::executeStep()
             nullptr,
             nullptr,
             {},
+            {},
             exports_list_entry.get());
 
         storage.export_manifests.erase(manifest);
@@ -338,6 +339,7 @@ bool ExportPartTask::executeStep()
                     nullptr,
                     nullptr,
                     {},
+                    {},
                     exports_list_entry.get());
 
                 std::lock_guard inner_lock(storage.export_manifests_mutex);
@@ -366,6 +368,7 @@ bool ExportPartTask::executeStep()
             {manifest.data_part},
             nullptr,
             nullptr,
+            {},
             {},
             exports_list_entry.get());
 

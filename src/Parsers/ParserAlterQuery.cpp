@@ -186,12 +186,9 @@ bool ParserAlterCommand::parseImpl(Pos & pos, ASTPtr & node, Expected & expected
     ASTPtr command_rename_to;
     ASTPtr command_sql_security;
     ASTPtr command_snapshot_desc;
-<<<<<<< HEAD
     ASTPtr command_refresh;
-=======
     ASTPtr export_table_function;
     ASTPtr export_table_function_partition_by_expr;
->>>>>>> 9a9645c97cc (Merge pull request #1718 from Altinity/feature/antalya-26.3/apassos-3)
 
     if (with_round_bracket)
     {
@@ -1205,15 +1202,12 @@ bool ParserAlterCommand::parseImpl(Pos & pos, ASTPtr & node, Expected & expected
         command->rename_to = command->children.emplace_back(std::move(command_rename_to)).get();
     if (command_snapshot_desc)
         command->snapshot_desc = command->children.emplace_back(std::move(command_snapshot_desc)).get();
-<<<<<<< HEAD
     if (command_refresh)
         command->refresh = command->children.emplace_back(std::move(command_refresh)).get();
-=======
     if (export_table_function)
         command->to_table_function = command->children.emplace_back(std::move(export_table_function)).get();
     if (export_table_function_partition_by_expr)
         command->partition_by_expr = command->children.emplace_back(std::move(export_table_function_partition_by_expr)).get();
->>>>>>> 9a9645c97cc (Merge pull request #1718 from Altinity/feature/antalya-26.3/apassos-3)
 
     return true;
 }

@@ -95,12 +95,7 @@ namespace Setting
     extern const SettingsBool table_engine_read_through_distributed_cache;
     extern const SettingsUInt64 s3_path_filter_limit;
     extern const SettingsBool use_parquet_metadata_cache;
-<<<<<<< HEAD
-=======
-    extern const SettingsBool input_format_parquet_use_native_reader_v3;
-    extern const SettingsBool allow_experimental_iceberg_read_optimization;
     extern const SettingsBool use_object_storage_list_objects_cache;
->>>>>>> 9a9645c97cc (Merge pull request #1718 from Altinity/feature/antalya-26.3/apassos-3)
 }
 
 namespace ErrorCodes

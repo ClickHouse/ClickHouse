@@ -6,11 +6,7 @@
 #include <Core/Field.h>
 #include <Core/NamesAndTypes.h>
 #include <Core/Types.h>
-<<<<<<< HEAD
-=======
-#include <Core/Range.h>
 #include <DataTypes/IDataType.h>
->>>>>>> 9a9645c97cc (Merge pull request #1718 from Altinity/feature/antalya-26.3/apassos-3)
 #include <Databases/DataLake/ICatalog.h>
 #include <Formats/FormatFilterInfo.h>
 #include <Interpreters/ActionsDAG.h>

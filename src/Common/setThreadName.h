@@ -169,11 +169,8 @@ namespace DB
     M(ZOOKEEPER_SEND, "ZooKeeperSend") \
     M(BLOB_KILLER_TASK, "BlobKillerTask") \
     M(BLOB_COPIER_TASK, "BlobCopierTask") \
-<<<<<<< HEAD
     M(DISK_OBJECT_STORAGE_COPY, "DiskObjStCopy") \
-=======
     M(EXPORT_PART, "ExportPart") \
->>>>>>> 9a9645c97cc (Merge pull request #1718 from Altinity/feature/antalya-26.3/apassos-3)
 
 
 enum class ThreadName : uint8_t

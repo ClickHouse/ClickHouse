@@ -18,11 +18,8 @@
 #include <Storages/ObjectStorage/DataLakes/IDataLakeMetadata.h>
 #include <optional>
 #include <Databases/DataLake/StorageCredentials.h>
-<<<<<<< HEAD
 #include <Storages/MergeTree/BackgroundJobsAssignee.h>
-=======
 #include <Storages/ObjectStorage/ObjectStorageFilePathGenerator.h>
->>>>>>> 9a9645c97cc (Merge pull request #1718 from Altinity/feature/antalya-26.3/apassos-3)
 
 namespace DB
 {
@@ -327,14 +324,10 @@ public:
     /// Whether partition column values are contained in the actual data.
     /// And alternative is with hive partitioning, when they are contained in file path.
     bool partition_columns_in_data_file = true;
-<<<<<<< HEAD
     /// Tracks whether `partition_columns_in_data_file` was explicitly provided by the user.
     /// When false, `initPartitionStrategy` recomputes the default once the effective strategy is known
     /// (which may have been chosen implicitly via `file_like_engine_default_partition_strategy`).
     bool partition_columns_in_data_file_was_set = false;
-    std::shared_ptr<IPartitionStrategy> partition_strategy;
-=======
->>>>>>> 9a9645c97cc (Merge pull request #1718 from Altinity/feature/antalya-26.3/apassos-3)
 
 protected:
     void initializeFromParsedArguments(const StorageParsedArguments & parsed_arguments);

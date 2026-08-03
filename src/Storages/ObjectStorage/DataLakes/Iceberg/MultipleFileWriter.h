@@ -57,25 +57,22 @@ public:
         return aggregate_stats;
     }
 
-<<<<<<< HEAD
     const std::vector<DataFileStatisticsPtr> & getPerFileStatistics() const
     {
         return completed_file_stats;
     }
-=======
+
     /// Returns one entry per written data file, with the accurate row count, byte size,
     /// and per-file column statistics collected during finalization.
     /// Must be called only after finalize().
     std::vector<IcebergDataFileEntry> getDataFileEntries() const;
->>>>>>> 9a9645c97cc (Merge pull request #1718 from Altinity/feature/antalya-26.3/apassos-3)
 
 private:
     UInt64 max_data_file_num_rows;
     UInt64 max_data_file_num_bytes;
-<<<<<<< HEAD
     Poco::JSON::Array::Ptr schema;
-    DataFileStatistics stats;
-    DataFileStatisticsPtr current_file_stats;
+    DataFileStatistics aggregate_stats;   /// accumulates across all files
+    DataFileStatisticsPtr current_file_stats; /// accumulates for the current file only
     std::vector<DataFileStatisticsPtr> completed_file_stats;
     /// Pre-built ColumnMapper for `startNewFile`. Traversing the Iceberg schema is invariant
     /// for the lifetime of the writer, so we compute the mapping once and reuse it across
@@ -86,16 +83,6 @@ private:
     std::vector<Iceberg::IcebergPathFromMetadata> data_file_names;
     std::vector<UInt64> data_file_row_counts;
     std::vector<UInt64> data_file_byte_counts;
-=======
-    DataFileStatistics aggregate_stats;   /// accumulates across all files
-    DataFileStatistics current_file_stats; /// accumulates for the current file only
-    std::optional<size_t> current_file_num_rows = std::nullopt;
-    std::optional<size_t> current_file_num_bytes = std::nullopt;
-    std::vector<String> data_file_names;
-    std::vector<Int64> per_file_record_counts;
-    std::vector<Int64> per_file_byte_sizes;
-    std::vector<DataFileStatistics> per_file_stats_list;
->>>>>>> 9a9645c97cc (Merge pull request #1718 from Altinity/feature/antalya-26.3/apassos-3)
     std::unique_ptr<WriteBufferFromFileBase> buffer;
     OutputFormatPtr output_format;
     FileNamesGenerator & filename_generator;
@@ -106,7 +93,6 @@ private:
     const String& write_format;
     SharedHeader sample_block;
     UInt64 total_bytes = 0;
-    Poco::JSON::Array::Ptr schema_fields_json;
     std::function<void(const std::string &)> new_file_path_callback;
 };
 

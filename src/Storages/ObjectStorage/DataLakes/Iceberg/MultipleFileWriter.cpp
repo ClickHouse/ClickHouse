@@ -26,14 +26,9 @@ MultipleFileWriter::MultipleFileWriter(
     std::function<void(const std::string &)> new_file_path_callback_)
     : max_data_file_num_rows(max_data_file_num_rows_)
     , max_data_file_num_bytes(max_data_file_num_bytes_)
-<<<<<<< HEAD
     , schema(schema_)
-    , stats(schema_)
+    , aggregate_stats(schema_)
     , column_mapper(std::make_shared<ColumnMapper>())
-=======
-    , aggregate_stats(schema)
-    , current_file_stats(schema)
->>>>>>> 9a9645c97cc (Merge pull request #1718 from Altinity/feature/antalya-26.3/apassos-3)
     , filename_generator(filename_generator_)
     , path_resolver(path_resolver_)
     , object_storage(object_storage_)
@@ -41,7 +36,6 @@ MultipleFileWriter::MultipleFileWriter(
     , format_settings(format_settings_)
     , write_format(std::move(write_format_))
     , sample_block(sample_block_)
-    , schema_fields_json(schema)
     , new_file_path_callback(std::move(new_file_path_callback_))
 {
     column_mapper->setStorageColumnEncoding(Iceberg::IcebergSchemaProcessor::traverseSchema(schema_));
@@ -52,7 +46,6 @@ void MultipleFileWriter::startNewFile()
     if (buffer)
     {
         finalize();
-        current_file_stats = DataFileStatistics(schema_fields_json);
     }
 
     current_file_stats = std::make_shared<DataFileStatistics>(schema);
@@ -61,14 +54,10 @@ void MultipleFileWriter::startNewFile()
     auto metadata_path = filename_generator.generateDataFileName();
     auto storage_path = path_resolver.resolve(metadata_path);
 
-<<<<<<< HEAD
     data_file_names.push_back(metadata_path);
-=======
-    data_file_names.push_back(filename.path_in_storage);
     if (new_file_path_callback)
-        new_file_path_callback(filename.path_in_storage);
+        new_file_path_callback(storage_path);
 
->>>>>>> 9a9645c97cc (Merge pull request #1718 from Altinity/feature/antalya-26.3/apassos-3)
     buffer = object_storage->writeObject(
         StoredObject(storage_path), WriteMode::Rewrite, std::nullopt, DBMS_DEFAULT_BUFFER_SIZE, context->getWriteSettings());
 
@@ -93,13 +82,8 @@ void MultipleFileWriter::consume(const Chunk & chunk)
     output_format->flush();
     *current_file_num_rows += chunk.getNumRows();
     *current_file_num_bytes += chunk.bytes();
-<<<<<<< HEAD
-    stats.update(chunk);
-    current_file_stats->update(chunk);
-=======
     aggregate_stats.update(chunk);
-    current_file_stats.update(chunk);
->>>>>>> 9a9645c97cc (Merge pull request #1718 from Altinity/feature/antalya-26.3/apassos-3)
+    current_file_stats->update(chunk);
 }
 
 void MultipleFileWriter::finalize()
@@ -107,7 +91,6 @@ void MultipleFileWriter::finalize()
     output_format->flush();
     output_format->finalize();
     buffer->finalize();
-<<<<<<< HEAD
     auto buffer_bytes = buffer->count();
     UInt64 file_bytes = 0;
     if (buffer_bytes > 0)
@@ -128,31 +111,31 @@ void MultipleFileWriter::finalize()
         completed_file_stats.push_back(std::move(current_file_stats));
     data_file_byte_counts.push_back(file_bytes);
     data_file_row_counts.push_back(current_file_num_rows.value_or(0));
-=======
-    const UInt64 file_bytes = buffer->count();
-    total_bytes += file_bytes;
-    per_file_record_counts.push_back(static_cast<Int64>(*current_file_num_rows));
-    per_file_byte_sizes.push_back(static_cast<Int64>(file_bytes));
-    per_file_stats_list.push_back(current_file_stats);
 }
 
 std::vector<IcebergDataFileEntry> MultipleFileWriter::getDataFileEntries() const
 {
-    chassert(data_file_names.size() == per_file_record_counts.size());
-    chassert(data_file_names.size() == per_file_stats_list.size());
+    chassert(data_file_names.size() == data_file_row_counts.size());
+    chassert(data_file_names.size() == data_file_byte_counts.size());
+    chassert(data_file_names.size() == completed_file_stats.size());
 
     std::vector<IcebergDataFileEntry> entries;
     entries.reserve(data_file_names.size());
 
     for (size_t i = 0; i < data_file_names.size(); ++i)
+    {
+        std::optional<DataFileStatistics> statistics;
+        if (completed_file_stats[i])
+            statistics = *completed_file_stats[i];
+
         entries.emplace_back(
-            data_file_names[i],
-            per_file_record_counts[i],
-            per_file_byte_sizes[i],
-            per_file_stats_list[i]);
+            path_resolver.resolve(data_file_names[i]),
+            static_cast<Int64>(data_file_row_counts[i]),
+            static_cast<Int64>(data_file_byte_counts[i]),
+            std::move(statistics));
+    }
 
     return entries;
->>>>>>> 9a9645c97cc (Merge pull request #1718 from Altinity/feature/antalya-26.3/apassos-3)
 }
 
 void MultipleFileWriter::release()

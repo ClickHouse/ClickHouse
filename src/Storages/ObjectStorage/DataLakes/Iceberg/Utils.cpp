@@ -162,11 +162,7 @@ static bool isTemporaryMetadataFile(const String & file_name)
     return Poco::UUID{}.tryParse(substring);
 }
 
-<<<<<<< HEAD
-static MetadataFileWithInfo getMetadataFileAndVersion(const std::string & path)
-=======
 Iceberg::MetadataFileWithInfo getMetadataFileAndVersion(const std::string & path)
->>>>>>> 9a9645c97cc (Merge pull request #1718 from Altinity/feature/antalya-26.3/apassos-3)
 {
     String file_name = std::filesystem::path(path).filename();
     if (isTemporaryMetadataFile(file_name))
@@ -608,14 +604,10 @@ Poco::Dynamic::Var getAvroType(DataTypePtr type)
 {
     switch (type->getTypeId())
     {
-<<<<<<< HEAD
         case TypeIndex::UInt8:
         case TypeIndex::Int8:
         case TypeIndex::UInt16:
         case TypeIndex::Int16:
-=======
-        case TypeIndex::UInt16:
->>>>>>> 9a9645c97cc (Merge pull request #1718 from Altinity/feature/antalya-26.3/apassos-3)
         case TypeIndex::UInt32:
         case TypeIndex::Int32:
         case TypeIndex::Date:

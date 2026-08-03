@@ -214,14 +214,8 @@ public:
 
     void drop(ContextPtr context) override;
 
-<<<<<<< HEAD
-=======
-    std::optional<String> partitionKey(ContextPtr) const override;
-    std::optional<String> sortingKey(ContextPtr) const override;
-
     Poco::JSON::Object::Ptr getMetadataJSON(ContextPtr local_context) const;
 
->>>>>>> 9a9645c97cc (Merge pull request #1718 from Altinity/feature/antalya-26.3/apassos-3)
 private:
     static Iceberg::PersistentTableComponents initializePersistentTableComponents(
         ObjectStoragePtr object_storage,

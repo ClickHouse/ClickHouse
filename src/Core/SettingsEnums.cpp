@@ -504,7 +504,6 @@ IMPLEMENT_SETTING_ENUM(JemallocProfileFormat, ErrorCodes::BAD_ARGUMENTS,
      {"symbolized", JemallocProfileFormat::Symbolized},
      {"collapsed", JemallocProfileFormat::Collapsed}})
 
-<<<<<<< HEAD
 IMPLEMENT_SETTING_ENUM(S3UriStyle, ErrorCodes::BAD_ARGUMENTS,
     {{"auto", S3UriStyle::AUTO},
      {"path", S3UriStyle::PATH},
@@ -515,8 +514,7 @@ IMPLEMENT_SETTING_ENUM(
     ErrorCodes::BAD_ARGUMENTS,
     {{"wildcard", FileLikeEngineDefaultPartitionStrategy::WILDCARD},
      {"hive", FileLikeEngineDefaultPartitionStrategy::HIVE}})
-=======
+
 IMPLEMENT_SETTING_AUTO_ENUM(MergeTreePartExportFileAlreadyExistsPolicy, ErrorCodes::BAD_ARGUMENTS);
 
->>>>>>> 9a9645c97cc (Merge pull request #1718 from Altinity/feature/antalya-26.3/apassos-3)
 }

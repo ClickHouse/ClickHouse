@@ -92,11 +92,8 @@ void generateManifestFile(
     Int64 partition_spec_id,
     WriteBuffer & buf,
     Iceberg::FileContentType content_type,
-<<<<<<< HEAD
-    std::optional<Int64> user_defined_sequence_number = std::nullopt);
-=======
+    std::optional<Int64> user_defined_sequence_number = std::nullopt,
     const std::vector<IcebergSerializedFileStats> & per_file_stats = {});
->>>>>>> 9a9645c97cc (Merge pull request #1718 from Altinity/feature/antalya-26.3/apassos-3)
 
 void generateManifestList(
     const Iceberg::IcebergPathResolver & path_resolver,
@@ -110,13 +107,9 @@ void generateManifestList(
     Iceberg::FileContentType content_type,
     bool use_previous_snapshots = true);
 
-<<<<<<< HEAD
-class IcebergStorageSink final : public SinkToStorage
-=======
 std::string getIcebergExportPartSidecarStoragePath(const String & data_file_storage_path);
 
-class IcebergStorageSink : public SinkToStorage
->>>>>>> 9a9645c97cc (Merge pull request #1718 from Altinity/feature/antalya-26.3/apassos-3)
+class IcebergStorageSink final : public SinkToStorage
 {
 public:
     IcebergStorageSink(

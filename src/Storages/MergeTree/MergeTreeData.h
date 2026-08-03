@@ -1396,14 +1396,12 @@ public:
     /// Mutex for currently_moving_parts
     mutable std::mutex moving_parts_mutex;
 
-<<<<<<< HEAD
     /// Used for streaming queries registration.
     mutable StreamSubscriptionManager subscription_manager;
-=======
+
     mutable std::mutex export_manifests_mutex;
 
     std::set<MergeTreePartExportManifest> export_manifests;
->>>>>>> 9a9645c97cc (Merge pull request #1718 from Altinity/feature/antalya-26.3/apassos-3)
 
     PinnedPartUUIDsPtr getPinnedPartUUIDs() const;
 
@@ -1501,15 +1499,12 @@ protected:
     friend class IPartMetadataManager;
     friend class IMergedBlockOutputStream; // for access to log
     friend struct DataPartsLock; // for access to shared_parts_list/shared_ranges_in_parts
-<<<<<<< HEAD
     friend class VersionMetadata; // for access to log
     friend class VersionMetadataOnDisk; // for access to log
     friend class VersionMetadataOnKeeper; // for access to log
     friend class MutationsState; // for access to log
-=======
     friend class ExportPartTask;
     friend class ExportPartFromPartitionExportTask;
->>>>>>> 9a9645c97cc (Merge pull request #1718 from Altinity/feature/antalya-26.3/apassos-3)
 
     bool require_part_metadata;
 
@@ -1831,13 +1826,9 @@ protected:
         const DataPartsVector & source_parts,
         const MergeListEntry * merge_entry,
         std::shared_ptr<ProfileEvents::Counters::Snapshot> profile_counters,
-<<<<<<< HEAD
         const Strings & mutation_ids,
-        const std::map<String, UInt64> & projections_duration_ms);
-=======
-        const Strings & mutation_ids = {},
+        const std::map<String, UInt64> & projections_duration_ms,
         const ExportsListEntry * exports_entry = nullptr);
->>>>>>> 9a9645c97cc (Merge pull request #1718 from Altinity/feature/antalya-26.3/apassos-3)
 
     /// If part is assigned to merge or mutation (possibly replicated)
     /// Should be overridden by children, because they can have different

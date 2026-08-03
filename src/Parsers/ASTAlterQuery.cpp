@@ -68,17 +68,14 @@ ASTPtr ASTAlterCommand::clone() const
         res->rename_to = res->children.emplace_back(rename_to->clone()).get();
     if (execute_args)
         res->execute_args = res->children.emplace_back(execute_args->clone()).get();
-<<<<<<< HEAD
     if (add_enum_values)
         res->add_enum_values = res->children.emplace_back(add_enum_values->clone());
     if (refresh)
         res->refresh = res->children.emplace_back(refresh->clone()).get();
-=======
     if (to_table_function)
         res->to_table_function = res->children.emplace_back(to_table_function->clone()).get();
     if (partition_by_expr)
         res->partition_by_expr = res->children.emplace_back(partition_by_expr->clone()).get();
->>>>>>> 9a9645c97cc (Merge pull request #1718 from Altinity/feature/antalya-26.3/apassos-3)
 
     return res;
 }
@@ -655,12 +652,9 @@ void ASTAlterCommand::forEachPointerToChild(std::function<void(IAST **, boost::i
     f(&sql_security, nullptr);
     f(&rename_to, nullptr);
     f(&execute_args, nullptr);
-<<<<<<< HEAD
     f(&refresh, nullptr);
-=======
     f(&to_table_function, nullptr);
     f(&partition_by_expr, nullptr);
->>>>>>> 9a9645c97cc (Merge pull request #1718 from Altinity/feature/antalya-26.3/apassos-3)
 }
 
 

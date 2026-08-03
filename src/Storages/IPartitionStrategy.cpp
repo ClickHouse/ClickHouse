@@ -103,11 +103,8 @@ namespace
         const IPartitionStrategy & partition_strategy,
         BuildAST && build_ast)
     {
-<<<<<<< HEAD
         /// The cache write happens in the cacheDeterministicActions function, which is called from the constructor of the partition strategy.
         /// If the actions are not deterministic, it will not be cached.
-=======
->>>>>>> 9a9645c97cc (Merge pull request #1718 from Altinity/feature/antalya-26.3/apassos-3)
         if (cached_result)
             return *cached_result;
 
@@ -353,44 +350,6 @@ HiveStylePartitionStrategy::HiveStylePartitionStrategy(
 
 ColumnPtr HiveStylePartitionStrategy::computePartitionKey(const Chunk & chunk) const
 {
-<<<<<<< HEAD
-    return prefix + "**." + Poco::toLower(file_format);
-}
-
-std::string HiveStylePartitionStrategy::getPathForWrite(
-    const std::string & prefix,
-    const std::string & partition_key)
-{
-    std::string path;
-
-    if (!prefix.empty())
-    {
-        path += prefix;
-        if (path.back() != '/')
-        {
-            path += '/';
-        }
-    }
-
-    /// Not adding '/' because buildExpressionHive() always adds a trailing '/'
-    path += partition_key;
-
-    /*
-     * File extension is toLower(format)
-     * This isn't ideal, but I guess multiple formats can be specified and introduced.
-     * So I think it is simpler to keep it this way.
-     *
-     * Or perhaps implement something like `IInputFormat::getFileExtension()`
-     */
-    path += std::to_string(generateSnowflakeID()) + "." + Poco::toLower(file_format);
-
-    return path;
-}
-
-ColumnPtr HiveStylePartitionStrategy::computePartitionKey(const Chunk & chunk) const
-{
-=======
->>>>>>> 9a9645c97cc (Merge pull request #1718 from Altinity/feature/antalya-26.3/apassos-3)
     auto actions_with_column = getCachedOrBuildActions(
         cached_result,
         *this,

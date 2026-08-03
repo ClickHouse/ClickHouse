@@ -81,11 +81,8 @@
 #include <Storages/ObjectStorage/DataLakes/Iceberg/StatelessMetadataFileGetter.h>
 #include <Common/FailPoint.h>
 #include <Storages/ObjectStorage/DataLakes/Iceberg/Utils.h>
-<<<<<<< HEAD
 
 #include <Common/FieldVisitorToString.h>
-=======
->>>>>>> 9a9645c97cc (Merge pull request #1718 from Altinity/feature/antalya-26.3/apassos-3)
 #include <Common/ProfileEvents.h>
 #include <Common/SharedLockGuard.h>
 #include <Common/logger_useful.h>
@@ -1631,12 +1628,19 @@ bool IcebergMetadata::commitImportPartitionTransactionImpl(
                 throw Exception(ErrorCodes::BAD_ARGUMENTS, "Failpoint for cleanup enabled");
             });
 
+            std::vector<Iceberg::IcebergPathFromMetadata> data_file_metadata_paths;
+            data_file_metadata_paths.reserve(data_file_paths.size());
+            for (const auto & data_file_path : data_file_paths)
+                data_file_metadata_paths.push_back(Iceberg::IcebergPathFromMetadata::deserialize(data_file_path));
+
             generateManifestFile(
                 metadata,
                 partition_columns,
                 partition_values,
                 partition_types,
-                data_file_paths,
+                data_file_metadata_paths,
+                /* data_file_row_counts */ {},
+                /* data_file_byte_counts */ {},
                 std::nullopt,  /// per_file_stats is filled, no need for the generic aggregate
                 sample_block,
                 new_snapshot,
@@ -1645,6 +1649,7 @@ bool IcebergMetadata::commitImportPartitionTransactionImpl(
                 partition_spec_id,
                 *buffer_manifest_entry,
                 Iceberg::FileContentType::DATA,
+                /* user_defined_sequence_number */ std::nullopt,
                 per_file_stats);
             buffer_manifest_entry->finalize();
             manifest_lengths += buffer_manifest_entry->count();

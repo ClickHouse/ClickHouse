@@ -370,13 +370,11 @@ public:
     }
 #endif
 
-<<<<<<< HEAD
     /// Returns the inner (unwrapped) object storage for decorator types such as `CachedObjectStorage`.
     /// Returns nullptr for non-decorator types, meaning this storage is already the base.
     virtual ObjectStoragePtr getUnderlying() { return nullptr; }
-=======
+
     virtual bool supportsListObjectsCache() { return false; }
->>>>>>> 9a9645c97cc (Merge pull request #1718 from Altinity/feature/antalya-26.3/apassos-3)
 };
 
 using ObjectStoragePtr = std::shared_ptr<IObjectStorage>;
