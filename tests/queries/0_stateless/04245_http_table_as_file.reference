@@ -116,8 +116,10 @@
 {"a":1,"b":"one"}
 {"a":2,"b":"two"}
 {"a":3,"b":"three"}
--- output_format still wins over X-ClickHouse-Format:
-1
+-- X-ClickHouse-Format overrides a matching output_format URL parameter:
+{"1":1}
+-- X-ClickHouse-Format does not change the input format of an INSERT body:
+4,"four"
 ===== compression setting =====
 -- compression=gz on /?query (decompressed):
 1

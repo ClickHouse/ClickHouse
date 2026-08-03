@@ -391,17 +391,19 @@ void HTTPHandler::processQuery(
     }
 
     /// The `X-ClickHouse-Database` header is an alias for the `database` setting, and
-    /// `X-ClickHouse-Format` is an alias for the `format` setting. They override any matching URL
-    /// parameter (preserving the historical precedence).
+    /// `X-ClickHouse-Format` is an alias for the `output_format` setting. They override any matching
+    /// URL parameter (preserving the historical precedence).
     ///
-    /// `X-ClickHouse-Format` maps to `format` rather than to `default_format`: sending this header
-    /// means the client definitely wants the data in that format, so it is an explicit override
-    /// (winning over the query's `FORMAT` clause and the path extension), not a fallback used only
-    /// when nothing else selects a format.
+    /// `X-ClickHouse-Format` maps to `output_format` rather than to `default_format`: sending this
+    /// header means the client definitely wants the response in that format, so it is an explicit
+    /// override (winning over the query's `FORMAT` clause and the path extension), not a fallback
+    /// used only when nothing else selects a format. It maps to `output_format` and not to the
+    /// bidirectional `format`, because the header has always described the response only: the same
+    /// header on `INSERT INTO t FORMAT JSONEachRow …` must not reinterpret the request body.
     if (auto header_value = request.get("X-ClickHouse-Database", ""); !header_value.empty())
         settings_changes.setSetting("database", header_value);
     if (auto header_value = request.get("X-ClickHouse-Format", ""); !header_value.empty())
-        settings_changes.setSetting("format", header_value);
+        settings_changes.setSetting("output_format", header_value);
 
     context->checkSettingsConstraints(settings_changes, SettingSource::QUERY);
     context->applySettingsChanges(settings_changes);

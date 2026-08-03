@@ -116,8 +116,14 @@ echo "-- X-ClickHouse-Format is an explicit override: it wins over the query FOR
 http_get -H "X-ClickHouse-Format: JSONEachRow" "${BASE_URL}/?query=SELECT+1+FORMAT+CSV"
 echo "-- X-ClickHouse-Format wins over the path file extension (path .CSV):"
 http_get -H "X-ClickHouse-Format: JSONEachRow" "${BASE_URL}/${DB}/hits.CSV"
-echo "-- output_format still wins over X-ClickHouse-Format:"
+echo "-- X-ClickHouse-Format overrides a matching output_format URL parameter:"
 http_get -H "X-ClickHouse-Format: JSONEachRow" "${BASE_URL}/?query=SELECT+1&output_format=CSV"
+echo "-- X-ClickHouse-Format does not change the input format of an INSERT body:"
+${CLICKHOUSE_CLIENT} -q "CREATE TABLE ${DB}.inserted (a UInt32, b String) ENGINE=Memory"
+http_get -H "X-ClickHouse-Format: JSONEachRow" -d 'INSERT INTO inserted FORMAT CSV
+4,"four"' "${BASE_URL}/?database=${DB}"
+http_get "${BASE_URL}/${DB}/inserted.CSV"
+${CLICKHOUSE_CLIENT} -q "DROP TABLE ${DB}.inserted"
 
 echo "===== compression setting ====="
 echo "-- compression=gz on /?query (decompressed):"
