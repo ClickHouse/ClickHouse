@@ -164,6 +164,45 @@ INSTANTIATE_TEST_SUITE_P(
     })
 );
 
+/// A `Date32` day number does not fit into `UInt16`, so the coercion must keep the exact timestamp
+/// instead of narrowing the day number and wrapping around. A timestamp outside the range of `DateTime`
+/// simply matches nothing, which is what the exact-bound users of `convertFieldToType` need.
+INSTANTIATE_TEST_SUITE_P(
+    Date32ToDateTime,
+    ConvertFieldToTypeTest,
+    ::testing::ValuesIn(std::initializer_list<ConvertFieldToTypeTestParams>{
+        // An ordinary day number.
+        {
+            "Date32",
+            Field(19'723),
+            "DateTime('UTC')",
+            Field(19'723 * Day)
+        },
+        // min value of Date32: 1st Jan 0000 (see DATE_LUT_MIN_EXTEND_DAY_NUM).
+        // It would wrap to day 1368 (30 Sep 1973) if the day number were narrowed to UInt16.
+        {
+            "Date32",
+            Field(-719'528),
+            "DateTime('UTC')",
+            Field(-719'528 * Day)
+        },
+        // 31 Dec 1899, one day below the previous lower boundary of Date32.
+        {
+            "Date32",
+            Field(-25'568),
+            "DateTime('UTC')",
+            Field(-25'568 * Day)
+        },
+        // max value of Date32: 31 Dec 9999 (see DATE_LUT_MAX_EXTEND_DAY_NUM).
+        {
+            "Date32",
+            Field(2'932'896),
+            "DateTime('UTC')",
+            Field(2'932'896 * Day)
+        },
+    })
+);
+
 INSTANTIATE_TEST_SUITE_P(
     DateTimeToDateTime64,
     ConvertFieldToTypeTest,

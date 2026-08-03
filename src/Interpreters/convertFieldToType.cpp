@@ -256,7 +256,12 @@ Field convertFieldToTypeImpl(const Field & src, const IDataType & type, const ID
     }
     if (which_type.isDateTime() && which_from_type.isDate32())
     {
-        return static_cast<const DataTypeDateTime &>(type).getTimeZone().fromDayNum(DayNum(static_cast<UInt16>(src.safeGet<Int32>())));
+        /// Use `ExtendedDayNum`: narrowing the day number to `UInt16` wraps around, so `0000-01-01`
+        /// (day `-719528`) would become day `1368` and the resulting bound would spuriously match rows in
+        /// 1973. The exact timestamp is kept even when it falls outside the range of `DateTime` - it is then
+        /// simply outside the range of every stored value, which is what the exact-bound users
+        /// (`SetUtils`, `KeyCondition`) need. This mirrors the `Date` -> `DateTime` branch above.
+        return static_cast<const DataTypeDateTime &>(type).getTimeZone().fromDayNum(ExtendedDayNum(static_cast<Int32>(src.safeGet<Int32>())));
     }
     if (which_type.isDateTime64() && which_from_type.isDate())
     {
@@ -289,7 +294,8 @@ Field convertFieldToTypeImpl(const Field & src, const IDataType & type, const ID
     }
     if (which_type.isTime() && which_from_type.isDate32())
     {
-        return static_cast<const DataTypeTime &>(type).getTimeZone().fromDayNum(DayNum(static_cast<DayNum::UnderlyingType>(src.safeGet<Int32>())));
+        /// Same as above: use `ExtendedDayNum` instead of narrowing the day number to `UInt16`.
+        return static_cast<const DataTypeTime &>(type).getTimeZone().fromDayNum(ExtendedDayNum(static_cast<Int32>(src.safeGet<Int32>())));
     }
     if (which_type.isTime64() && which_from_type.isDate())
     {
