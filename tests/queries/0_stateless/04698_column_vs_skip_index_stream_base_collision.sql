@@ -181,6 +181,37 @@ ALTER TABLE t_empty_ok DROP PARTITION 0;
 SELECT 'empty-part-legal', count() FROM t_empty_ok;
 DROP TABLE t_empty_ok;
 
+-- A merge whose TTL drops every row also yields a 0-row part, but reaches the writer through
+-- finalize instead of a write. Merges are stopped while the colliding column is added so the
+-- collision is already in place when the merge runs.
+CREATE TABLE t_ttl_ok (k UInt64, d DateTime, s String, INDEX a(s) TYPE set(100) GRANULARITY 1)
+ENGINE = MergeTree ORDER BY k TTL d + INTERVAL 1 SECOND
+SETTINGS min_bytes_for_wide_part = 0, min_rows_for_wide_part = 0, merge_with_ttl_timeout = 0;
+SYSTEM STOP MERGES t_ttl_ok;
+INSERT INTO t_ttl_ok SELECT number, toDateTime('2000-01-01'), toString(number) FROM numbers(10);
+ALTER TABLE t_ttl_ok ADD COLUMN `skp_idx_a` UInt64 DEFAULT 7;
+SYSTEM START MERGES t_ttl_ok;
+OPTIMIZE TABLE t_ttl_ok FINAL SETTINGS optimize_throw_if_noop = 0;
+SELECT 'ttl-merge-legal', count() FROM t_ttl_ok;
+DROP TABLE t_ttl_ok;
+
+-- The same 0-row TTL merge under the vertical algorithm, where columns go through
+-- MergedColumnOnlyOutputStream.
+CREATE TABLE t_ttl_vert_ok (k UInt64, d DateTime, s String, c1 UInt64, c2 UInt64, c3 UInt64,
+    INDEX a(s) TYPE set(100) GRANULARITY 1)
+ENGINE = MergeTree ORDER BY k TTL d + INTERVAL 1 SECOND
+SETTINGS min_bytes_for_wide_part = 0, min_rows_for_wide_part = 0, merge_with_ttl_timeout = 0,
+         enable_vertical_merge_algorithm = 1, vertical_merge_algorithm_min_rows_to_activate = 1,
+         vertical_merge_algorithm_min_columns_to_activate = 1;
+SYSTEM STOP MERGES t_ttl_vert_ok;
+INSERT INTO t_ttl_vert_ok
+    SELECT number, toDateTime('2000-01-01'), toString(number), number, number, number FROM numbers(10);
+ALTER TABLE t_ttl_vert_ok ADD COLUMN `skp_idx_a` UInt64 DEFAULT 7;
+SYSTEM START MERGES t_ttl_vert_ok;
+OPTIMIZE TABLE t_ttl_vert_ok FINAL SETTINGS optimize_throw_if_noop = 0;
+SELECT 'ttl-merge-vertical-legal', count() FROM t_ttl_vert_ok;
+DROP TABLE t_ttl_vert_ok;
+
 -- The carry helper runs before any bytes move, so copying behaves like hardlinking.
 CREATE TABLE t_carry_copy (k UInt64, s String, INDEX a(s) TYPE set(100) GRANULARITY 1)
 ENGINE = MergeTree ORDER BY k

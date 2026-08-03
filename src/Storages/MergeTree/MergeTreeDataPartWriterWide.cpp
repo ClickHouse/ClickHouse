@@ -217,7 +217,7 @@ void MergeTreeDataPartWriterWide::addStreams(
             throw Exception(ErrorCodes::FAULT_INJECTED, "Injected failure in Wide part writer addStreams");
         });
 
-        if (settings.stream_base_manifest)
+        if (settings.stream_base_manifest && claim_column_stream_bases)
             settings.stream_base_manifest->registerStreamBase(
                 stream_name, {StreamBaseManifest::Kind::Column, name_and_type.name});
 
@@ -806,6 +806,7 @@ void MergeTreeDataPartWriterWide::validateColumnOfFixedSize(const NameAndTypePai
 void MergeTreeDataPartWriterWide::finalizeIndexGranularity()
 {
     /// If no data was written, streams and columns substreams will be uninitialized, but we need them.
+    claim_column_stream_bases = streams_initialized;
     initStreamsIfNeeded();
     initColumnsSubstreamsIfNeeded();
 
