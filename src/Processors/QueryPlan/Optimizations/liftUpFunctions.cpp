@@ -120,10 +120,16 @@ size_t tryExecuteFunctionsAfterSorting(QueryPlan::Node * parent_node, QueryPlan:
 
     sorting_step->updateInputHeader(getChildOutputHeader(*child_node));
 
+    /// `OrderedGather` reproduces the order of the chunks, not the order in which the streams reach a
+    /// function. A stateful or non-deterministic function therefore observes an arbitrary interleaving
+    /// once the lifted part is evaluated by several streams, so keep those on the single post-sort stream.
+    const bool can_parallelize = !unneeded_for_sorting.hasStatefulFunctions() && !unneeded_for_sorting.hasNonDeterministic();
+
     auto description = parent_step->getStepDescription();
     auto new_expression_step = std::make_unique<DB::ExpressionStep>(child_step->getOutputHeader(), std::move(unneeded_for_sorting));
     new_expression_step->setStepDescription(fmt::format("{} [lifted up part]", description), settings.max_step_description_length);
-    new_expression_step->setParallelizeSingleStream();
+    if (can_parallelize)
+        new_expression_step->setParallelizeSingleStream();
     parent_step = std::move(new_expression_step);
     // UneededCalculations (parent_node) -> Sorting (child_node) -> NeededCalculations (node_with_needed)
 

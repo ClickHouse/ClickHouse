@@ -30,6 +30,15 @@ SELECT
         FROM numbers_mt(300000) ORDER BY k % 977 DESC, k LIMIT 1000
         SETTINGS max_threads = 1, query_plan_execute_functions_after_sorting = 0));
 
+-- A stateful function keeps the lifted part on a single stream: the streams reach it in an arbitrary
+-- order, which `OrderedGather` cannot undo.
+SELECT count()
+FROM (EXPLAIN PIPELINE
+    SELECT number AS k, rowNumberInAllBlocks() AS r
+    FROM numbers_mt(1000000) ORDER BY k % 977 DESC, k
+    SETTINGS max_threads = 8)
+WHERE explain LIKE '%OrderedScatter%';
+
 -- `arrayJoin` in the lifted part changes the number of rows in a chunk.
 SELECT
     (SELECT groupArray(e) FROM (
