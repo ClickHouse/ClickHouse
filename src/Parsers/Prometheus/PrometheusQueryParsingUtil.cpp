@@ -27,6 +27,11 @@ namespace
             *error_pos = value;
     }
 
+    bool isUnicodeSurrogate(UInt32 code_point)
+    {
+        return code_point >= 0xD800 && code_point <= 0xDFFF;
+    }
+
     /// Parses escape sequences in a string literal and replaces them with the characters which they mean.
     bool tryUnescapeStringLiteral(std::string_view input, String & res_string, String * error_message, size_t * error_pos)
     {
@@ -150,6 +155,14 @@ namespace
                         setErrorPos(error_pos, pos);
                         return false;
                     }
+                    if (isUnicodeSurrogate(code_point))
+                    {
+                        setErrorMessage(error_message,
+                                        "Invalid escape sequence {}: A Unicode code point can't be in the surrogate range 0xD800-0xDFFF",
+                                        quoteString(input.substr(pos, 6)));
+                        setErrorPos(error_pos, pos);
+                        return false;
+                    }
                     char bytes[3];  /// 3 bytes is enough to represent a Unicode code point up to 0xFFFF.
                     size_t num_bytes = UTF8::convertCodePointToUTF8(code_point, bytes, sizeof(bytes));
                     res_string.append(bytes, num_bytes);
@@ -180,6 +193,14 @@ namespace
                     {
                         setErrorMessage(error_message,
                                         "Invalid escape sequence {}: A Unicode code point can't be greater than 0x10FFFF",
+                                        quoteString(input.substr(pos, 10)));
+                        setErrorPos(error_pos, pos);
+                        return false;
+                    }
+                    if (isUnicodeSurrogate(code_point))
+                    {
+                        setErrorMessage(error_message,
+                                        "Invalid escape sequence {}: A Unicode code point can't be in the surrogate range 0xD800-0xDFFF",
                                         quoteString(input.substr(pos, 10)));
                         setErrorPos(error_pos, pos);
                         return false;

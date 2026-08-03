@@ -1284,3 +1284,18 @@ PrometheusQueryTree(STRING):
 )");
 
 }
+
+
+TEST(PromQLParser, RejectUnicodeSurrogateEscapes)
+{
+    for (const auto query : {R"("\uD800")", R"("\uDFFF")", R"("\U0000D800")", R"("\U0000DFFF")"})
+    {
+        PrometheusQueryTree query_tree;
+        String error_message;
+        size_t error_pos = String::npos;
+        EXPECT_FALSE(query_tree.tryParse(query, 3, &error_message, &error_pos)) << query;
+    }
+
+    for (const auto query : {R"("\uD7FF")", R"("\uE000")", R"("\U00010000")", R"("\U0010FFFF")"})
+        EXPECT_NO_THROW(PrometheusQueryTree{query}) << query;
+}
