@@ -103,6 +103,8 @@ Name: json_idx
 Description: tokenbf_v1 GRANULARITY 1
 Parts: 1/4
 Granules: 1/4
+4
+4
 -- sparse_grams
 SELECT id FROM json_values_bloom WHERE data.key1 = 'quick silver' ORDER BY id
 2
