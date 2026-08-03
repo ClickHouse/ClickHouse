@@ -1267,7 +1267,7 @@ static std::shared_ptr<IJoin> tryCreateJoin(
     /// This makes them meaningful as a high-priority preference in the `join_algorithm` list: when the
     /// tables' order cannot be exploited, the selection falls through to the next listed algorithm.
     /// The eligibility is decided on the query plan by inspecting the join input subplans
-    /// (see `joinInputCanBeReadInJoinKeyOrder`), so these algorithms exist only for the new analyzer.
+    /// (see `joinInputCanBeReadInJoinKeyOrder`), so these algorithms exist only for the analyzer.
     if (algorithm == JoinAlgorithm::SORTED_MERGE || algorithm == JoinAlgorithm::PARALLEL_SORTED_MERGE)
     {
         if (params.inputs_can_be_read_in_join_key_order && FullSortingMergeJoin::isSupported(table_join))
