@@ -94,11 +94,11 @@ open(path, 'wb').write(bytes(data))
 EOF
 
     echo "--- ${FORMAT}: SELECT the column whose dictionary is intact succeeds ---"
-    ${CLICKHOUSE_LOCAL} --input_format_arrow_use_native_reader=1 \
+    ${CLICKHOUSE_LOCAL} \
         --query "SELECT a FROM file('${DATA_FILE}', '${FORMAT}') ORDER BY a"
 
     echo "--- ${FORMAT}: SELECT the column whose dictionary is corrupt fails ---"
-    ${CLICKHOUSE_LOCAL} --input_format_arrow_use_native_reader=1 \
+    ${CLICKHOUSE_LOCAL} \
         --query "SELECT b FROM file('${DATA_FILE}', '${FORMAT}') FORMAT Null" 2>&1 \
         | grep -oF 'has no data' | head -1 || echo 'FAIL: expected a missing-data error'
 
