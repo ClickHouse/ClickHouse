@@ -54,9 +54,7 @@ struct MergeTreeIndexAggregatorBloomFilterText final : IMergeTreeIndexAggregator
     Names index_columns;
     String index_name;
     BloomFilterParameters params;
-    /// A stateful tokenizer (e.g. sparseGrams) is cloned so each aggregator advances its own
-    /// iterator: one aggregator is created per part from the index's single tokenizer and they
-    /// run concurrently during inserts and merges. Empty for stateless tokenizers.
+
     std::unique_ptr<ITokenizer> owned_tokenizer;
     TokenizerPtr tokenizer;
 
@@ -151,12 +149,10 @@ private:
     Names index_columns;
     DataTypes index_data_types;
     BloomFilterParameters params;
-    /// A stateful tokenizer (e.g. sparseGrams) is cloned per condition: conditions are built
-    /// per-partition in parallel when use_constant_folding_in_index_analysis is on, so sharing the
-    /// index's single tokenizer instance would race on its mutable iterator state. Empty for
-    /// stateless tokenizers, which stay shared via the raw pointer below.
+
     std::unique_ptr<ITokenizer> owned_tokenizer;
     TokenizerPtr tokenizer;
+
     RPN rpn;
 };
 
