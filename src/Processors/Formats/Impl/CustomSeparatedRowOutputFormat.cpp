@@ -163,23 +163,6 @@ void registerOutputFormatCustomSeparated(FormatFactory & factory)
                 || (custom.escaping_rule == FormatSettings::EscapingRule::JSON
                     && JSONUtils::tupleElementNamesMayProduceRawBytesInJSON(header, settings, /*validate_utf8=*/false));
         });
-
-        /// The `CSV` and `XML` escaping rules pass a carriage return in a `String` value through
-        /// verbatim, and the literal delimiters may contain one themselves. A raw carriage return
-        /// cannot survive the text `EventStream` framing, so such output is base64-encoded there
-        /// (the `Raw` escaping rule is already covered by the raw-bytes check above).
-        factory.registerOutputFormatMayEmitCarriageReturnChecker(format_name, [](const FormatSettings & settings)
-        {
-            const auto & custom = settings.custom;
-            return custom.escaping_rule == FormatSettings::EscapingRule::CSV
-                || custom.escaping_rule == FormatSettings::EscapingRule::XML
-                || custom.result_before_delimiter.contains('\r')
-                || custom.result_after_delimiter.contains('\r')
-                || custom.row_before_delimiter.contains('\r')
-                || custom.row_after_delimiter.contains('\r')
-                || custom.row_between_delimiter.contains('\r')
-                || custom.field_delimiter.contains('\r');
-        });
     };
 
     registerWithNamesAndTypes("CustomSeparated", register_func);

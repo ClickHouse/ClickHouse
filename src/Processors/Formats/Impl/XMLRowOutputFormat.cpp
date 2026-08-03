@@ -267,11 +267,6 @@ void registerOutputFormatXML(FormatFactory & factory)
     factory.markFormatHasNoAppendSupport("XML");
     factory.setContentType("XML", "application/xml; charset=UTF-8");
 
-    /// The XML text-element escaping covers `<`, `&`, `>` and the quotes only: a carriage return in a
-    /// `String` value passes through verbatim. It cannot survive the text `EventStream` framing, so
-    /// the output is base64-encoded there (see `checkIfOutputFormatMayEmitCarriageReturn`).
-    factory.markOutputFormatMayEmitCarriageReturns("XML");
-
     /// `writePrefix` serializes the column names and type names into `<name>` / `<type>` elements
     /// through `writeXMLStringForTextElement`, which escapes XML metacharacters but does not
     /// validate UTF-8. The UTF-8 validation adaptor installs its validating buffer only when some

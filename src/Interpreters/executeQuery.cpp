@@ -2585,14 +2585,6 @@ FramingFormatPtr createFramingFormatIfApplicable(
     /// `LineAsString`) that write the column bytes verbatim.
     bool binary_payload = false;
 
-    /// Whether the output format may emit raw carriage returns: from the data itself (for example the
-    /// `CSV` quoting, `XML` text elements, and the unescaped values of `Pretty` / `Vertical` pass `\r`
-    /// in a `String` value through verbatim) or from the settings (for example `TSV` with
-    /// `output_format_tsv_crlf_end_of_line`, or `CustomSeparated` with a `CSV` escaping rule or
-    /// delimiters containing `\r`). Those cannot be carried losslessly by the text `EventStream`
-    /// framing and are base64-encoded there instead.
-    bool payload_has_carriage_returns = false;
-
     /// When the stream carries no output payload (`carries_no_payload`), the output format contributes
     /// no bytes, so its properties are irrelevant: the payloads are plain text (the framing's own JSON),
     /// and the format probes are skipped - the format name may not even refer to an existing format
@@ -2600,19 +2592,14 @@ FramingFormatPtr createFramingFormatIfApplicable(
     if (!carries_no_payload)
     {
         binary_payload = !outputFormatProducesText(format_name, output_format_settings, format_settings, header);
-        payload_has_carriage_returns
-            = FormatFactory::instance().checkIfOutputFormatMayEmitCarriageReturn(format_name, format_settings);
     }
 
     auto framing = createFramingFormat(
-        framing_name,
-        ostr,
-        format_settings,
-        {.is_http = true, .binary_payload = binary_payload, .payload_has_carriage_returns = payload_has_carriage_returns});
+        framing_name, ostr, format_settings, {.is_http = true, .binary_payload = binary_payload});
 
     /// A text framing embeds the output bytes as UTF-8 text, so an output format that can produce
     /// non-textual output would corrupt the stream. `EventStream` handles this by base64-encoding
-    /// the payloads (see `binary_payload`), but `JSONEachPacketString` puts the bytes into a JSON
+    /// the payloads, but `JSONEachPacketString` puts the bytes into a JSON
     /// string and cannot; it is rejected here, pointing to `JSONEachPacketBase64` instead.
     ///
     /// When the stream carries no output payload (`carries_no_payload`), the output format

@@ -888,12 +888,6 @@ void registerOutputFormatPretty(FormatFactory & factory)
                     return std::make_shared<PrettyBlockOutputFormat>(buf, std::make_shared<const Block>(sample), format_settings, style, mono_block, color, glue_chunks);
                 });
 
-                /// The values are written with `serializeText`, which passes the bytes of a `String`
-                /// value through verbatim, including carriage returns. Those cannot survive the text
-                /// `EventStream` framing, so the output is base64-encoded there (see
-                /// `checkIfOutputFormatMayEmitCarriageReturn`).
-                factory.markOutputFormatMayEmitCarriageReturns(name);
-
                 /// The header (and, for many rows, the footer) column names are written verbatim, so a
                 /// name that is not valid UTF-8 makes the output not valid UTF-8 either. The text
                 /// framings reject or base64-encode the output in that case (see

@@ -245,7 +245,7 @@ rm "$result_file"
 
 # The output format is irrelevant for a no-result query (no payload is formatted), so the framing must
 # not depend on it: a mistyped `default_format` must not fail the query, and a binary `default_format`
-# (`Native`) must not flip the `EventStream` content type to `payload=base64`.
+# (`Native`) must not change the `EventStream` content type, which always carries `payload=base64`.
 echo '--- a framed no-result query does not depend on the output format'
 ${CLICKHOUSE_CLIENT} -q "DROP TABLE IF EXISTS framing_no_result_04513"
 ${CLICKHOUSE_CLIENT} -q "CREATE TABLE framing_no_result_04513 (x UInt64) ENGINE = Memory"
@@ -256,7 +256,7 @@ ${CLICKHOUSE_CURL} -sS "${URL}&framing_output_format=JSONEachPacketString&defaul
 ${CLICKHOUSE_CURL} -sS -D "$header_file" "${URL}&framing_output_format=EventStream&default_format=Native" \
     -d "CREATE TABLE IF NOT EXISTS framing_no_result_04513_ddl (x UInt64) ENGINE = Memory" > /dev/null
 grep -qi '^content-type: *text/event-stream' "$header_file" && echo 'DDL EventStream content type with binary default_format: OK'
-grep -qi 'payload=base64' "$header_file" || echo 'DDL EventStream no payload=base64 with binary default_format: OK'
+grep -qi 'payload=base64' "$header_file" && echo 'DDL EventStream payload=base64 with binary default_format: OK'
 ${CLICKHOUSE_CLIENT} -q "DROP TABLE IF EXISTS framing_no_result_04513"
 ${CLICKHOUSE_CLIENT} -q "DROP TABLE IF EXISTS framing_no_result_04513_ddl"
 rm "$result_file" "$header_file"

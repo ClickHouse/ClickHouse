@@ -1132,22 +1132,6 @@ void FormatFactory::registerOutputFormatMayProduceRawBytesChecker(const String &
     target = std::move(checker);
 }
 
-void FormatFactory::markOutputFormatMayEmitCarriageReturns(const String & name)
-{
-    auto & target = getOrCreateCreators(name).may_emit_carriage_returns;
-    if (target)
-        throw Exception(ErrorCodes::LOGICAL_ERROR, "FormatFactory: Format {} is already marked as emitting carriage returns", name);
-    target = true;
-}
-
-void FormatFactory::registerOutputFormatMayEmitCarriageReturnChecker(const String & name, MayEmitCarriageReturnChecker checker)
-{
-    auto & target = getOrCreateCreators(name).may_emit_carriage_return_checker;
-    if (target)
-        throw Exception(ErrorCodes::LOGICAL_ERROR, "FormatFactory: Carriage-return checker for format {} is already registered", name);
-    target = std::move(checker);
-}
-
 void FormatFactory::setContentType(const String & name, const String & content_type)
 {
     getOrCreateCreators(name).content_type = [=](const std::optional<FormatSettings> &){ return content_type; };
@@ -1246,14 +1230,6 @@ bool FormatFactory::checkIfOutputFormatMayProduceRawBytes(const String & name, c
     if (target.may_produce_raw_bytes)
         return true;
     return target.may_produce_raw_bytes_checker && target.may_produce_raw_bytes_checker(settings, header);
-}
-
-bool FormatFactory::checkIfOutputFormatMayEmitCarriageReturn(const String & name, const FormatSettings & settings) const
-{
-    const auto & target = getCreators(name);
-    if (target.may_emit_carriage_returns)
-        return true;
-    return target.may_emit_carriage_return_checker && target.may_emit_carriage_return_checker(settings);
 }
 
 bool FormatFactory::checkParallelizeOutputAfterReading(const String & name, const ContextPtr & context) const

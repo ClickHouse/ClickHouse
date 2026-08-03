@@ -17,6 +17,20 @@ URL="${CLICKHOUSE_URL}&http_wait_end_of_query=0&http_response_buffer_size=0&outp
 SINGLE_BLOCK="&max_threads=1&group_by_two_level_threshold=0&group_by_two_level_threshold_bytes=0"
 SINGLE_BLOCK="${SINGLE_BLOCK}&max_block_size=65535&max_bytes_before_external_sort=0&max_bytes_ratio_before_external_sort=0"
 
+# Prints "<packet kind> | <payload>" for the packets of an `EventStream` response. A block of formatted
+# data is base64-encoded into a single `data:` field, so the `data`, `totals` and `extremes` payloads
+# are decoded here (one output line per line of the decoded payload); the auxiliary packets are JSON and
+# are printed as they are. The timing-dependent `progress` and `profile_events` packets are dropped.
+event_stream_packets() {
+    awk '/^event: /{name=$2; next} /^data: /{if (name != "progress" && name != "profile_events") print name" "substr($0, 7)}' \
+    | while read -r name payload; do
+        case "$name" in
+            data|totals|extremes) echo "$payload" | base64 --decode | awk -v kind="$name" '{print kind" | "$0}' ;;
+            *) echo "$name | $payload" ;;
+        esac
+    done
+}
+
 echo '--- JSONEachPacketString, data packets follow block boundaries'
 ${CLICKHOUSE_CURL} -sS "${URL}&framing_output_format=JSONEachPacketString&max_block_size=2" \
     -d "SELECT number FROM numbers(3) FORMAT JSONEachRow" \
@@ -32,7 +46,7 @@ ${CLICKHOUSE_CURL} -sS "${URL}&extremes=1${SINGLE_BLOCK}" \
     -d "SELECT intDiv(number, 2) AS k, count() AS c FROM numbers(4) GROUP BY k WITH TOTALS ORDER BY k FORMAT JSONCompactStringsEachRowWithNamesAndTypes"
 ${CLICKHOUSE_CURL} -sS "${URL}&framing_output_format=EventStream&extremes=1${SINGLE_BLOCK}" \
     -d "SELECT intDiv(number, 2) AS k, count() AS c FROM numbers(4) GROUP BY k WITH TOTALS ORDER BY k FORMAT JSONCompactStringsEachRowWithNamesAndTypes" \
-    | awk '/^event: /{name=$2; next} /^data: /{if (name != "progress" && name != "profile_events") print name" | "substr($0, 7)}'
+    | event_stream_packets
 
 echo '--- the concatenation of the payloads is exactly the output of the format'
 ${CLICKHOUSE_CURL} -sS "${URL}&framing_output_format=JSONEachPacketBase64&extremes=1${SINGLE_BLOCK}" \
@@ -49,26 +63,24 @@ ${CLICKHOUSE_CURL} -sS "${URL}&framing_output_format=JSONEachPacketBase64" \
 echo '--- EventStream'
 ${CLICKHOUSE_CURL} -sS "${URL}&framing_output_format=EventStream&extremes=1${SINGLE_BLOCK}" \
     -d "SELECT intDiv(number, 2) AS k, count() AS c FROM numbers(4) GROUP BY k WITH TOTALS ORDER BY k FORMAT TSV" \
-    | awk '/^event: /{name=$2; next} /^data: /{if (name != "progress" && name != "profile_events") print name" | "substr($0, 7)}'
+    | event_stream_packets
 
 echo '--- EventStream, payload without a trailing newline'
 ${CLICKHOUSE_CURL} -sS "${URL}&framing_output_format=EventStream${SINGLE_BLOCK}" \
     -d "SELECT number FROM numbers(3) FORMAT Values" \
-    | awk '/^event: /{name=$2; next} /^data: /{if (name != "progress" && name != "profile_events") print name" | "substr($0, 7)}'
+    | event_stream_packets
 
-# The client rebuilds `event.data` by joining the values of consecutive `data:` fields with '\n' and then
-# stripping a single trailing '\n' (per the SSE specification). Reconstruct it here and compare byte-for-byte
-# with the unframed output: the trailing newline that line-based formats emit must survive the round trip.
+# A client rebuilds the payload by base64-decoding the single `data:` field of every event and
+# concatenating the results. Do that here and compare byte-for-byte with the unframed output: the
+# trailing newline that line-based formats emit must survive the round trip.
 echo '--- EventStream reconstructs the payload byte-for-byte, including the trailing newline'
 expected_output=$(mktemp "$CLICKHOUSE_TMP/04512_expected_XXXXXX")
 reconstructed_output=$(mktemp "$CLICKHOUSE_TMP/04512_reconstructed_XXXXXX")
 ${CLICKHOUSE_CURL} -sS "${URL}" -d "SELECT number FROM numbers(3) FORMAT TSV" > "$expected_output"
 ${CLICKHOUSE_CURL} -sS "${URL}&framing_output_format=EventStream${SINGLE_BLOCK}" \
     -d "SELECT number FROM numbers(3) FORMAT TSV" \
-    | awk '
-        /^event: /{event=$2; data=""; next}
-        /^data: /{data=data substr($0, 7) "\n"; next}
-        /^$/{if (event == "data") {sub(/\n$/, "", data); printf "%s", data} event=""; data=""}' > "$reconstructed_output"
+    | awk '/^event: data$/ { getline; sub(/^data: /, ""); print }' \
+    | while IFS= read -r payload; do printf '%s' "$payload" | base64 -d; done > "$reconstructed_output"
 if cmp -s "$expected_output" "$reconstructed_output"; then echo 'byte-exact round trip: OK'; else echo 'byte-exact round trip: MISMATCH'; fi
 rm -f "$expected_output" "$reconstructed_output"
 
@@ -128,10 +140,10 @@ ${CLICKHOUSE_CURL} -sS "${URL}&framing_output_format=JSONEachPacketString" \
     -d "SELECT k FROM table_does_not_exist_04512 FORMAT Template SETTINGS format_template_row_format = '\${k:CSV}\n', format_template_resultset_format = '\${data}'" \
     | grep -c '"packet":"exception"'
 
-# `EventStream` base64-encodes the payloads for output formats that may produce non-UTF-8 bytes
-# (binary formats, and raw passthrough formats that write the column bytes verbatim), signalling it
-# with a `payload=base64` content-type parameter. The base64-decoded payload is byte-for-byte the
-# output the format would have produced without framing.
+# `EventStream` base64-encodes the payloads, signalling it with a `payload=base64` content-type
+# parameter, so any output format is carried - including binary formats and raw passthrough formats
+# that write the column bytes verbatim. The base64-decoded payload is byte-for-byte the output the
+# format would have produced without framing.
 echo '--- EventStream base64-encodes binary output formats (Native)'
 ${CLICKHOUSE_CURL} -sS -o /dev/null -w '%{content_type}\n' "${URL}&framing_output_format=EventStream" \
     -d "SELECT number FROM numbers(3) FORMAT Native"
@@ -196,12 +208,10 @@ echo '--- a compatibility error is delivered as a framed exception packet (wait_
 ${CLICKHOUSE_CURL} -sS "${CLICKHOUSE_URL}&http_wait_end_of_query=1&framing_output_format=JSONEachPacketString" \
     -d "SELECT number FROM numbers(3) FORMAT RowBinary" | grep -c '"packet":"exception"'
 
-# A carriage return (`\r`) cannot survive the text `EventStream` framing (server-sent events treat it
-# as a line terminator), so output formats that may emit one - for example `TSV` with a CRLF row
-# terminator - are base64-encoded as well. The base64-decoded payload keeps the `\r\n` byte-for-byte.
-echo '--- EventStream base64-encodes TSV with a CRLF row terminator'
-${CLICKHOUSE_CURL} -sS -o /dev/null -w '%{content_type}\n' "${URL}&framing_output_format=EventStream&output_format_tsv_crlf_end_of_line=1" \
-    -d "SELECT number FROM numbers(3) FORMAT TSV"
+# A carriage return (`\r`) cannot be embedded verbatim in server-sent events (they treat it as a line
+# terminator), and the payloads carry one whenever the data or the settings produce it - for example
+# `TSV` with a CRLF row terminator. Base64 carries it: the decoded payload keeps the `\r\n` byte-for-byte.
+echo '--- EventStream carries TSV with a CRLF row terminator'
 ${CLICKHOUSE_CURL} -sS "${URL}&framing_output_format=EventStream&output_format_tsv_crlf_end_of_line=1${SINGLE_BLOCK}" \
     -d "SELECT number FROM numbers(3) FORMAT TSV" \
     | awk '/^event: data$/ { getline; sub(/^data: /, ""); print }' | base64 -d \
@@ -209,54 +219,36 @@ ${CLICKHOUSE_CURL} -sS "${URL}&framing_output_format=EventStream&output_format_t
     && echo 'TSV CRLF payload round-trips' || echo 'MISMATCH'
 
 # The carriage return can also come from the data itself: the CSV quoting passes `\r` inside a `String`
-# value through verbatim, so `CSV` is base64-encoded under `EventStream` regardless of the row
-# terminator setting, and the decoded payload reproduces the unframed output byte-for-byte.
-echo '--- EventStream base64-encodes CSV (the CSV quoting passes a carriage return in the data verbatim)'
-${CLICKHOUSE_CURL} -sS -o /dev/null -w '%{content_type}\n' "${URL}&framing_output_format=EventStream" \
-    -d "SELECT 1 FORMAT CSV"
+# value through verbatim, and the decoded payload reproduces the unframed output byte-for-byte.
+echo '--- EventStream carries CSV with a carriage return in the data'
 ${CLICKHOUSE_CURL} -sS "${URL}&framing_output_format=EventStream${SINGLE_BLOCK}" \
     -d "SELECT 'a\rb' FORMAT CSV" \
     | awk '/^event: data$/ { getline; sub(/^data: /, ""); print }' | base64 -d \
     | cmp -s - <(${CLICKHOUSE_CURL} -sS "${URL}" -d "SELECT 'a\rb' FORMAT CSV") \
     && echo 'CSV payload with a carriage return round-trips' || echo 'MISMATCH'
 
-echo '--- EventStream base64-encodes formats that write values without escaping (Vertical)'
+echo '--- EventStream carries formats that write values without escaping (Vertical)'
 ${CLICKHOUSE_CURL} -sS "${URL}&framing_output_format=EventStream${SINGLE_BLOCK}" \
     -d "SELECT 'a\rb' AS x FORMAT Vertical" \
     | awk '/^event: data$/ { getline; sub(/^data: /, ""); print }' | base64 -d \
     | cmp -s - <(${CLICKHOUSE_CURL} -sS "${URL}" -d "SELECT 'a\rb' AS x FORMAT Vertical") \
     && echo 'Vertical payload with a carriage return round-trips' || echo 'MISMATCH'
 
-echo '--- EventStream base64-encodes SQLInsert (the table name setting is written verbatim)'
+echo '--- EventStream carries SQLInsert with a carriage return in the table name setting'
 ${CLICKHOUSE_CURL} -sS "${URL}&framing_output_format=EventStream&output_format_sql_insert_table_name=a%0Db${SINGLE_BLOCK}" \
     -d "SELECT 1 FORMAT SQLInsert" \
     | awk '/^event: data$/ { getline; sub(/^data: /, ""); print }' | base64 -d \
     | cmp -s - <(${CLICKHOUSE_CURL} -sS "${URL}&output_format_sql_insert_table_name=a%0Db" -d "SELECT 1 FORMAT SQLInsert") \
     && echo 'SQLInsert payload with a carriage return in the table name round-trips' || echo 'MISMATCH'
 
-echo '--- EventStream base64-encodes Pretty and XML (values are written without escaping the carriage return)'
-${CLICKHOUSE_CURL} -sS -o /dev/null -w '%{content_type}\n' "${URL}&framing_output_format=EventStream" \
-    -d "SELECT 1 FORMAT PrettyCompact"
-${CLICKHOUSE_CURL} -sS -o /dev/null -w '%{content_type}\n' "${URL}&framing_output_format=EventStream" \
-    -d "SELECT 1 FORMAT XML"
-
-echo '--- EventStream base64-encodes CustomSeparated with the CSV escaping rule'
-${CLICKHOUSE_CURL} -sS -o /dev/null -w '%{content_type}\n' "${URL}&framing_output_format=EventStream&format_custom_escaping_rule=CSV" \
-    -d "SELECT 1 FORMAT CustomSeparated"
-
-echo '--- EventStream base64-encodes CustomSeparated when a delimiter contains a carriage return'
-${CLICKHOUSE_CURL} -sS -o /dev/null -w '%{content_type}\n' "${URL}&framing_output_format=EventStream&format_custom_escaping_rule=Escaped&format_custom_row_after_delimiter=%0D%0A" \
-    -d "SELECT 1 FORMAT CustomSeparated"
-
-echo '--- EventStream still embeds CustomSeparated with the Escaped rule as plain text'
+# The content type does not depend on the output format or its settings: every `EventStream` response
+# base64-encodes its payloads, so the `payload=base64` parameter is always there.
+echo '--- EventStream content type does not depend on the output format'
+for format_query in "SELECT 1 FORMAT PrettyCompact" "SELECT 1 FORMAT XML" "SELECT 1 FORMAT Markdown" "SELECT 1 FORMAT JSONEachRow"; do
+    ${CLICKHOUSE_CURL} -sS -o /dev/null -w '%{content_type}\n' "${URL}&framing_output_format=EventStream" -d "$format_query"
+done
 ${CLICKHOUSE_CURL} -sS -o /dev/null -w '%{content_type}\n' "${URL}&framing_output_format=EventStream&format_custom_escaping_rule=Escaped" \
     -d "SELECT 1 FORMAT CustomSeparated"
-
-echo '--- EventStream base64-encodes Markdown only with escape_special_characters (that path passes a carriage return verbatim)'
-${CLICKHOUSE_CURL} -sS -o /dev/null -w '%{content_type}\n' "${URL}&framing_output_format=EventStream&output_format_markdown_escape_special_characters=1" \
-    -d "SELECT 1 FORMAT Markdown"
-${CLICKHOUSE_CURL} -sS -o /dev/null -w '%{content_type}\n' "${URL}&framing_output_format=EventStream" \
-    -d "SELECT 1 FORMAT Markdown"
 
 echo '--- JSONEachPacketString accepts CSV with a carriage return in the data (escaped in the JSON string)'
 ${CLICKHOUSE_CURL} -sS "${URL}&framing_output_format=JSONEachPacketString${SINGLE_BLOCK}" \
@@ -264,7 +256,7 @@ ${CLICKHOUSE_CURL} -sS "${URL}&framing_output_format=JSONEachPacketString${SINGL
     | grep -v -e '"packet":"progress"' -e '"packet":"profile_events"'
 
 # `JSONEachPacketString` puts the payload bytes into a JSON string, which escapes `\r`, so a CRLF row
-# terminator is carried losslessly and the format is not rejected (unlike the text `EventStream`).
+# terminator is carried losslessly and the format is not rejected.
 echo '--- JSONEachPacketString accepts TSV with a CRLF row terminator (the carriage return is escaped)'
 ${CLICKHOUSE_CURL} -sS "${URL}&framing_output_format=JSONEachPacketString&output_format_tsv_crlf_end_of_line=1${SINGLE_BLOCK}" \
     -d "SELECT number FROM numbers(3) FORMAT TSV" \

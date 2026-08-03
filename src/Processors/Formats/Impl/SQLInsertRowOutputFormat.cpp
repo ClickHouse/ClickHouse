@@ -108,11 +108,6 @@ void registerOutputFormatSQLInsert(FormatFactory & factory)
 
     factory.setContentType("SQLInsert", "text/plain; charset=UTF-8");
 
-    /// `output_format_sql_insert_table_name` and the column names of the header are written verbatim
-    /// (`printLineStart`/`printColumnNames`), so a table or column name containing a carriage return
-    /// cannot survive the text `EventStream` framing (see `checkIfOutputFormatMayEmitCarriageReturn`).
-    factory.markOutputFormatMayEmitCarriageReturns("SQLInsert");
-
     /// `output_format_sql_insert_table_name` and the column names (when
     /// `output_format_sql_insert_include_column_names` is enabled) are written verbatim, so a table or
     /// column name that is not valid UTF-8 makes the output non-textual. Quoted identifiers can contain
