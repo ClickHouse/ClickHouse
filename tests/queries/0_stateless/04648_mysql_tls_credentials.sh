@@ -49,6 +49,15 @@ format "MySQL table engine, positional arguments" \
 format "MySQL database engine, positional arguments" \
     "CREATE DATABASE d ENGINE = MySQL('127.0.0.1:3306', 'db', 'u', '${SECRET}', ssl_ca_pem = '${SECRET}')"
 
+# The key of a named argument is not required to be a plain identifier or literal: the named
+# collection parser evaluates it as a constant expression, so `concat('ssl_ca', '_pem')` names a TLS
+# credential too. The formatter cannot evaluate it, so it hides the value of every argument whose key
+# it cannot read; the keys themselves and the arguments around them stay visible.
+format "key given as a constant expression" \
+    "SELECT * FROM mysql(creds, concat('ssl_ca', '_pem') = '${SECRET}', table = 't')"
+format "key given as a constant expression, positional arguments" \
+    "SELECT * FROM mysql('127.0.0.1:3306', 'db', 't', 'u', '${SECRET}', upper('ssl_key_pem') = '${SECRET}')"
+
 expect_error() {
     local pattern="$1"
     shift

@@ -1485,6 +1485,32 @@ def test_mysql_ssl_contents_override_configured_paths(started_cluster):
             node1.query(f"SELECT count() FROM mysql(mysql_with_locked_ssl, {credentials})")
         assert "Override not allowed for 'ssl_ca'" in str(exception.value)
 
+        # The contents form is the only way to supply a TLS credential from SQL, so it stays usable
+        # when overrides are forbidden by default: it is not a new key, it replaces the path the
+        # collection defines, and the operator forbids that with `overridable="false"` instead.
+        hardened = {"allow_named_collection_override_by_default": 0}
+        assert (
+            node1.query(
+                f"SELECT count() FROM mysql(mysql_with_ssl, {credentials})",
+                settings=hardened,
+            )
+            == "0\n"
+        )
+        with pytest.raises(QueryRuntimeException) as exception:
+            node1.query(
+                f"SELECT count() FROM mysql(mysql_with_locked_ssl, {credentials})",
+                settings=hardened,
+            )
+        assert "Override not allowed for 'ssl_ca'" in str(exception.value)
+
+        # An unrelated key is still a new key, and is still refused under that policy.
+        with pytest.raises(QueryRuntimeException) as exception:
+            node1.query(
+                "SELECT count() FROM mysql(mysql_with_ssl, table = 'test_table')",
+                settings=hardened,
+            )
+        assert "Override not allowed for 'table'" in str(exception.value)
+
         # The same override on the dictionary DDL path: the overrides of `SOURCE(MYSQL(NAME ...))`
         # arrive as generated configuration keys rather than as an AST, and must be recognized as
         # query-supplied all the same. The source is instantiated when the dictionary is loaded.

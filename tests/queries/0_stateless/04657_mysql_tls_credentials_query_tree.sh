@@ -36,3 +36,8 @@ explain "positional arguments" \
 
 explain "named collection" \
     "SELECT * FROM mysql(creds, table = 't', ssl_ca_pem = '${SECRET}', ssl_key_pem = '${SECRET}')"
+
+# A key written as a constant expression names a credential just as well - the named collection
+# parser evaluates it - and the query tree cannot evaluate it either, so it fails closed too.
+explain "key given as a constant expression" \
+    "SELECT * FROM mysql(creds, table = 't', concat('ssl_ca', '_pem') = '${SECRET}')"
