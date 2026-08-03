@@ -2,6 +2,7 @@
 
 #include <Common/DateLUT.h>
 #include <Common/DateLUTImpl.h>
+#include <Common/StringUtils.h>
 
 #include <algorithm>
 #include <array>
@@ -31,12 +32,12 @@ std::optional<UInt32> parseNumber(std::string_view date, size_t pos, size_t size
 
 bool isDayName(std::string_view name)
 {
-    return std::ranges::find(day_names, name) != day_names.end();
+    return std::ranges::any_of(day_names, [&](std::string_view day_name) { return equalsCaseInsensitive(day_name, name); });
 }
 
 std::optional<UInt8> parseMonth(std::string_view name)
 {
-    const auto it = std::ranges::find(month_names, name);
+    const auto it = std::ranges::find_if(month_names, [&](std::string_view month_name) { return equalsCaseInsensitive(month_name, name); });
     if (it == month_names.end())
         return std::nullopt;
     return static_cast<UInt8>(it - month_names.begin() + 1);
@@ -84,7 +85,7 @@ std::optional<time_t> tryParseIMFFixdate(std::string_view date)
         return std::nullopt;
 
     if (date.substr(3, 2) != ", " || date[7] != ' ' || date[11] != ' ' || date[16] != ' ' || date[25] != ' '
-        || date.substr(26) != "GMT")
+        || !equalsCaseInsensitive(date.substr(26), "GMT"))
         return std::nullopt;
 
     if (!isDayName(date.substr(0, 3)))
@@ -122,8 +123,9 @@ std::optional<time_t> makeTimestampFromTwoDigitYear(
 
 std::optional<time_t> tryParseRFC850Date(std::string_view date, time_t reference_time)
 {
-    const auto day_name_it
-        = std::ranges::find_if(long_day_names, [&](std::string_view name) { return date.starts_with(name); });
+    const auto day_name_it = std::ranges::find_if(
+        long_day_names,
+        [&](std::string_view name) { return date.size() >= name.size() && equalsCaseInsensitive(date.substr(0, name.size()), name); });
     if (day_name_it == long_day_names.end())
         return std::nullopt;
 
@@ -132,7 +134,7 @@ std::optional<time_t> tryParseRFC850Date(std::string_view date, time_t reference
         return std::nullopt;
 
     if (!rest.starts_with(", ") || rest[4] != '-' || rest[8] != '-' || rest[11] != ' ' || rest[20] != ' '
-        || rest.substr(21) != "GMT")
+        || !equalsCaseInsensitive(rest.substr(21), "GMT"))
         return std::nullopt;
 
     std::optional<UInt8> month = parseMonth(rest.substr(5, 3));

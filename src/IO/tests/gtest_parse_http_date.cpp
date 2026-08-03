@@ -62,7 +62,6 @@ TEST(ParseHTTPDate, RFC850Date)
     EXPECT_EQ(parse("Sun, 06-Nov-94 08:49:37 GMT"), std::nullopt);
 
     EXPECT_EQ(parse("Sunday, 06-Nov-26 08:49:37 GMT"), 1793954977);
-    EXPECT_EQ(parse("sunday, 06-Nov-94 08:49:37 GMT"), std::nullopt);
     EXPECT_EQ(parse("Sunday, 06 Nov 94 08:49:37 GMT"), std::nullopt);
     EXPECT_EQ(parse("Sunday, 06-Nov-94 08:49:37 UTC"), std::nullopt);
     EXPECT_EQ(parse("Sunday, 06-Nov-1994 08:49:37 GMT"), std::nullopt);
@@ -132,8 +131,25 @@ TEST(ParseHTTPDate, AsctimeDate)
     EXPECT_EQ(parse("Sun Nov  6 08:49:37 GMT "), std::nullopt);
     EXPECT_EQ(parse("Sun Nov  6 1994 08:49:37"), std::nullopt);
     EXPECT_EQ(parse("Sunday Nov  6 08:49:37 19"), std::nullopt);
-    EXPECT_EQ(parse("sun Nov  6 08:49:37 1994"), std::nullopt);
-    EXPECT_EQ(parse("Sun nov  6 08:49:37 1994"), std::nullopt);
+}
+
+TEST(ParseHTTPDate, CaseInsensitive)
+{
+    /// RFC 9110, 5.6.7 defines `HTTP-date` as case sensitive, but RFC 9111, 4.2 relaxes that for cache
+    /// recipients, and `Last-Modified` is read to validate cached schemas and row counts.
+    EXPECT_EQ(parse("sun, 06 nov 1994 08:49:37 gmt"), 784111777);
+    EXPECT_EQ(parse("SUN, 06 NOV 1994 08:49:37 GMT"), 784111777);
+    EXPECT_EQ(parse("sUn, 06 nOv 1994 08:49:37 gMt"), 784111777);
+
+    EXPECT_EQ(parse("sunday, 06-nov-94 08:49:37 gmt"), 784111777);
+    EXPECT_EQ(parse("SUNDAY, 06-NOV-94 08:49:37 GMT"), 784111777);
+
+    EXPECT_EQ(parse("sun nov  6 08:49:37 1994"), 784111777);
+    EXPECT_EQ(parse("SUN NOV  6 08:49:37 1994"), 784111777);
+
+    /// Case folding is ASCII-only and does not turn an unknown token into a known one.
+    EXPECT_EQ(parse("sun, 06 foo 1994 08:49:37 gmt"), std::nullopt);
+    EXPECT_EQ(parse("sun, 06 nov 1994 08:49:37 utc"), std::nullopt);
 }
 
 TEST(ParseHTTPDate, Invalid)
@@ -155,9 +171,7 @@ TEST(ParseHTTPDate, Invalid)
 
     /// Bad names.
     EXPECT_EQ(parse("Foo, 06 Nov 1994 08:49:37 GMT"), std::nullopt);
-    EXPECT_EQ(parse("sun, 06 Nov 1994 08:49:37 GMT"), std::nullopt);
     EXPECT_EQ(parse("Sun, 06 Foo 1994 08:49:37 GMT"), std::nullopt);
-    EXPECT_EQ(parse("Sun, 06 nov 1994 08:49:37 GMT"), std::nullopt);
 
     /// Non-digits and out-of-range numbers.
     EXPECT_EQ(parse("Sun, ab Nov 1994 08:49:37 GMT"), std::nullopt);
