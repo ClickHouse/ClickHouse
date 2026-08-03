@@ -312,7 +312,7 @@ namespace
         if (!scalar_type)
             scalar_type = std::make_shared<DataTypeFloat64>();
         if (!id_type)
-            id_type = std::make_shared<DataTypeUUID>();
+            id_type = std::make_shared<DataTypeTuple>(DataTypes{std::make_shared<DataTypeUInt64>(), std::make_shared<DataTypeUUID>()});
 
         /// Validate types.
         {
@@ -328,13 +328,13 @@ namespace
                     table_id.getNameForLogs(), scalar_type->getName(), TimeSeriesColumnNames::Value);
         }
         {
-            WhichDataType id_which{*id_type};
-            bool id_ok = id_which.isUInt64()
-                || (id_which.isFixedString() && typeid_cast<const DataTypeFixedString &>(*id_type).getN() == 16)
-                || id_which.isUUID()
-                || id_which.isUInt128();
+            /// Identifiers can be of any comparable type: the id column is used in the sorting keys of the inner tables
+            /// and in JOINs between them.
+            bool id_ok = id_type->isComparable() && !id_type->isNullable() && !id_type->isLowCardinalityNullable()
+                && !isNothing(*id_type) && !isVariant(*id_type) && !id_type->hasDynamicSubcolumns();
             if (!id_ok)
-                throw Exception(ErrorCodes::BAD_TYPE_OF_FIELD, "{}: Unexpected type {} of the {} column",
+                throw Exception(ErrorCodes::BAD_TYPE_OF_FIELD,
+                    "{}: Unexpected type {} of the {} column, it must be a comparable non-Nullable type",
                     table_id.getNameForLogs(), id_type->getName(), TimeSeriesColumnNames::ID);
         }
 
@@ -719,7 +719,7 @@ namespace
     /// engine — both when we generate it and when the user specifies an aggregating engine explicitly.
     void allowOffKeyDimensionsForAggregatingTagsEngine(ASTStorage & storage)
     {
-        if (!storage.engine || storage.engine->name.find("Aggregating") == std::string::npos)
+        if (!storage.engine || !storage.engine->name.contains("Aggregating"))
             return;
 
         if (storage.settings)
