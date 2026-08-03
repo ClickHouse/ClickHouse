@@ -50,7 +50,9 @@ QuotaValue QuotaTypeInfo::scaleToValue(Float64 unscaled) const
     if (!isFinite(scaled)
         || accurate::greaterOp(scaled, std::numeric_limits<QuotaValue>::max())
         || accurate::lessOp(scaled, std::numeric_limits<QuotaValue>::lowest()))
+    {
         throw Exception(ErrorCodes::BAD_ARGUMENTS, "Value {} is out of range for the quota type {}", unscaled, name);
+    }
 
     return static_cast<QuotaValue>(scaled);
 }
