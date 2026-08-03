@@ -393,7 +393,7 @@ void optimizeTreeSecondPass(
                         applied_projection_names.insert(*applied_projection);
 
                 if (optimization_settings.aggregation_in_order)
-                    optimizeAggregationInOrder(*frame.node, nodes, optimization_settings);
+                    optimizeAggregationInOrder(stack, nodes, optimization_settings);
             }
 
             /// Traverse all children first.

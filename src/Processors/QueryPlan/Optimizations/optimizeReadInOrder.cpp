@@ -1726,8 +1726,10 @@ void optimizeReadInOrder(QueryPlan::Node & node, QueryPlan::Nodes & nodes, const
     }
 }
 
-void optimizeAggregationInOrder(QueryPlan::Node & node, QueryPlan::Nodes &, const QueryPlanOptimizationSettings & optimization_settings)
+void optimizeAggregationInOrder(const Stack & stack, QueryPlan::Nodes &, const QueryPlanOptimizationSettings & optimization_settings)
 {
+    QueryPlan::Node & node = *stack.back().node;
+
     if (node.children.size() != 1)
         return;
 
@@ -1755,6 +1757,24 @@ void optimizeAggregationInOrder(QueryPlan::Node & node, QueryPlan::Nodes &, cons
         for (const auto & key : aggregating->getParams().keys)
             if (used_keys.emplace(key).second)
                 group_by_sort_description.push_back(SortColumnDescription(std::string(key)));
+
+        /// In-order aggregation supersedes the top-K heap (see `AggregatingStep::applyOrder`), and
+        /// it is the better plan for this shape: the LIMIT terminates the read early instead of
+        /// paying for a heap. But for the no-`ORDER BY` shape the heap owns a synthesized sort, and
+        /// dropping the heap while that sort stays would block exactly that early termination - a
+        /// plan slower than the un-optimized one. Remove the sort together with the heap; if the
+        /// plan no longer has that shape, keep the heap and skip the in-order conversion.
+        const auto & params = aggregating->getParams();
+        if (params.top_k && params.top_k->synthetic_sort)
+        {
+            if (stack.size() < 3)
+                return;
+
+            QueryPlan::Node * sort_node = stack[stack.size() - 2].node;
+            QueryPlan::Node * parent_of_sort = stack[stack.size() - 3].node;
+            if (!removeSyntheticTopKSort(&node, sort_node, parent_of_sort))
+                return;
+        }
 
         aggregating->applyOrder(std::move(order_info.sort_description), std::move(group_by_sort_description));
     }
