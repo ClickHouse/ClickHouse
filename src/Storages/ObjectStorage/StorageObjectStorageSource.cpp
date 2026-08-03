@@ -1581,11 +1581,11 @@ StorageObjectStorageSource::GlobIterator::GlobIterator(
     {
         match_web_paths_only = configuration->getType() == ObjectStorageType::Web;
         const auto & key_with_globs = reading_path;
-        const auto key_prefix = reading_path.cutGlobs(configuration->supportsPartialPathPrefix());
+        const bool use_glob_ast = getContext()->getSettingsRef()[Setting::use_glob_ast_parser];
+        const auto key_prefix = reading_path.cutGlobs(configuration->supportsPartialPathPrefix(), use_glob_ast);
 
         object_storage_iterator = object_storage->iterate(key_prefix, list_object_keys_size, with_tags, std::nullopt);
 
-        const bool use_glob_ast = getContext()->getSettingsRef()[Setting::use_glob_ast_parser];
         if (use_glob_ast)
             matcher.emplace(GlobMatcher::createNew(key_with_globs.path));
         else

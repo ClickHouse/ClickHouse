@@ -684,6 +684,17 @@ TEST(Common, GlobASTExponentialBacktracking)
     std::string long_candidate(200, 'a');
     GlobAST::GlobString many_stars("*a*a*a*a*a*a*a*a*a*a*b");
     EXPECT_FALSE(many_stars.matches(long_candidate));
+
+    /// The memoization state space (candidate length x pattern expressions) is capped:
+    /// an adversarial combination must be rejected up front instead of allocating an
+    /// arbitrarily large memo table.
+    std::string huge_pattern;
+    for (size_t i = 0; i < 100000; ++i)
+        huge_pattern += "*a";
+    GlobAST::GlobString huge(huge_pattern);
+    EXPECT_THROW(huge.matches(std::string(1000, 'a')), DB::Exception);
+    /// A short candidate against the same pattern stays under the cap and must not throw.
+    EXPECT_FALSE(huge.matches("b"));
 }
 
 TEST(Common, GlobASTFindDoubleDot)

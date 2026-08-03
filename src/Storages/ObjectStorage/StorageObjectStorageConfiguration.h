@@ -88,7 +88,11 @@ public:
         /// about whether the table is readonly.
         bool hasGlobsIgnorePlaceholders(bool use_glob_ast) const;
         bool hasGlobs(bool use_glob_ast) const;
-        std::string cutGlobs(bool supports_partial_prefix) const;
+        /// Listing prefix of the path: everything before the first glob (with
+        /// use_glob_ast, the first glob under the AST classification, so literal brace
+        /// groups stay inside the prefix). Pass the same use_glob_ast_parser value that
+        /// drives the matcher, or the listing scope and the matcher disagree.
+        std::string cutGlobs(bool supports_partial_prefix, bool use_glob_ast) const;
     };
 
     using Paths = std::vector<Path>;

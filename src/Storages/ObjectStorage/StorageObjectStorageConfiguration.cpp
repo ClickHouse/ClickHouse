@@ -324,14 +324,22 @@ bool StorageObjectStorageConfiguration::Path::hasGlobs(bool use_glob_ast) const
     return GlobAST::GlobString(path).hasGlobs();
 }
 
-std::string StorageObjectStorageConfiguration::Path::cutGlobs(bool supports_partial_prefix) const
+std::string StorageObjectStorageConfiguration::Path::cutGlobs(bool supports_partial_prefix, bool use_glob_ast) const
 {
+    /// The listing prefix must extend up to the first *actual* glob. Under the AST parser
+    /// a literal brace group is not a glob, so for "tenant_{42}/part-*.parquet" the prefix
+    /// is "tenant_{42}/part-", not "tenant_" — cutting at the raw '{' would both widen the
+    /// listing scope (up to the container root on backends without partial-prefix listing)
+    /// and break under prefix-restricted credentials.
+    const auto first_glob_pos = use_glob_ast
+        ? GlobAST::GlobString(path).firstGlobPosition()
+        : path.find_first_of("*?{");
+
     if (supports_partial_prefix)
     {
-        return path.substr(0, path.find_first_of("*?{"));
+        return path.substr(0, first_glob_pos);
     }
 
-    auto first_glob_pos = path.find_first_of("*?{");
     auto end_of_path_without_globs = path.substr(0, first_glob_pos).rfind('/');
     if (end_of_path_without_globs == std::string::npos || end_of_path_without_globs == 0)
         return "/";
