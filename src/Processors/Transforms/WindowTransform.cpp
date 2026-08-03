@@ -803,6 +803,12 @@ bool WindowTransform::arePeers(const RowNumber & x, const RowNumber & y) const
 
     // For RANGE and GROUPS frames, rows that compare equal w/ORDER BY are peers.
     chassert(window_description.frame.type == WindowFrame::FrameType::RANGE);
+    return haveEqualOrderByValues(x, y);
+}
+
+bool WindowTransform::haveEqualOrderByValues(const RowNumber & x, const RowNumber & y) const
+{
+    // Unlike arePeers, this does not depend on the frame type.
     const size_t n = order_by_indices.size();
     if (n == 0)
     {
@@ -1313,6 +1319,24 @@ void WindowTransform::appendChunk(Chunk & chunk)
                 peer_group_start = current_row;
                 peer_group_start_row_number = current_row_number;
                 ++peer_group_number;
+
+                // For RANGE this transition is exactly the ORDER BY peer group boundary.
+                if (window_description.frame.type != WindowFrame::FrameType::ROWS)
+                {
+                    order_by_peer_group_start_row_number = current_row_number;
+                    ++order_by_peer_group_number;
+                }
+            }
+
+            // Under ROWS the check above compares nothing, so find the boundary here: equal
+            // ORDER BY rows are contiguous, the input being sorted by PARTITION BY + ORDER BY.
+            // The row number guard keeps this idempotent: the loop below can re-run this row.
+            if (window_description.frame.type == WindowFrame::FrameType::ROWS
+                && current_row_number > order_by_peer_group_start_row_number
+                && !haveEqualOrderByValues(prevRowNumber(current_row), current_row))
+            {
+                order_by_peer_group_start_row_number = current_row_number;
+                ++order_by_peer_group_number;
             }
 
             // Advance the frame start.
@@ -1424,6 +1448,8 @@ void WindowTransform::appendChunk(Chunk & chunk)
         peer_group_start = partition_start;
         peer_group_start_row_number = 1;
         peer_group_number = 1;
+        order_by_peer_group_start_row_number = 1;
+        order_by_peer_group_number = 1;
 
         // Reinitialize the aggregate function states because the new partition
         // has started.
@@ -1603,7 +1629,12 @@ void WindowTransform::work()
     // that the frame start can be further than current row for some frame specs
     // (e.g. EXCLUDE CURRENT ROW), so we have to check both.
     chassert(prev_frame_start <= frame_start);
-    const auto first_used_block = std::min({next_output_block_number, prev_frame_start.block, current_row.block});
+    // The ORDER BY peer group boundary check reads the row before the current one, so its block
+    // must stay alive. Derived arithmetically, since retreatRowNumber asserts liveness itself.
+    const auto prev_row_block = (current_row.row > 0 || current_row.block == 0)
+        ? current_row.block : current_row.block - 1;
+    const auto first_used_block
+        = std::min({next_output_block_number, prev_frame_start.block, current_row.block, prev_row_block});
     if (first_block_number < first_used_block)
     {
         blocks.erase(blocks.begin(),
@@ -1632,7 +1663,7 @@ struct WindowFunctionRank final : public StatelessWindowFunction
         IColumn & to = *transform->blockAt(transform->current_row)
             .output_columns[function_index];
         assert_cast<ColumnUInt64 &>(to).getData().push_back(
-            transform->peer_group_start_row_number);
+            transform->order_by_peer_group_start_row_number);
     }
 };
 
@@ -1650,7 +1681,7 @@ struct WindowFunctionDenseRank final : public StatelessWindowFunction
         IColumn & to = *transform->blockAt(transform->current_row)
             .output_columns[function_index];
         assert_cast<ColumnUInt64 &>(to).getData().push_back(
-            transform->peer_group_number);
+            transform->order_by_peer_group_number);
     }
 };
 
