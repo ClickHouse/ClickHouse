@@ -86,17 +86,16 @@ struct PipeWithResources
     QueryPlanResourceHolder resources;
 };
 
-SelectQueryInfo makeSelectQueryInfoForPartitionRead(const SelectQueryInfo & query_info)
+SelectQueryInfo makeSelectQueryInfoForPartitionRead(const SelectQueryInfo & initial)
 {
-    SelectQueryInfo info = query_info;
+    SelectQueryInfo info = initial;
 
     if (info.row_level_filter)
     {
-        auto cloned = std::make_shared<FilterDAGInfo>();
-        cloned->actions = info.row_level_filter->actions.clone();
-        cloned->column_name = info.row_level_filter->column_name;
-        cloned->do_remove_column = info.row_level_filter->do_remove_column;
-        info.row_level_filter = std::move(cloned);
+        info.row_level_filter = std::make_shared<FilterDAGInfo>();
+        info.row_level_filter->actions = initial.row_level_filter->actions.clone();
+        info.row_level_filter->column_name = initial.row_level_filter->column_name;
+        info.row_level_filter->do_remove_column = initial.row_level_filter->do_remove_column;
     }
 
     return info;
