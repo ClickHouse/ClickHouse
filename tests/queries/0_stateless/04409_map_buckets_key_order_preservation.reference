@@ -1,0 +1,32 @@
+S1: key order preserved in wide parts after insert
+1	['z','a','m','b']
+2	['dog','ant','cat','bat']
+3	['3','1','2']
+S2: key order preserved in compact parts after insert
+1	['z','a','m','b']
+2	['dog','ant','cat','bat']
+3	['3','1','2']
+S3: key order preserved after merge
+1	['z','a','m']
+2	['x','b','w']
+S4: UInt64 key order preserved
+1	[100,1,50,25]
+2	[999,0,500]
+S5: Int32 key order preserved
+1	[-10,5,-100,0]
+S6: bucket_indexes stream present
+1
+S7: no bucket_indexes with 1 bucket
+0
+S8: key order preserved after basic+with_buckets merge
+1	['z','a','m']
+2	['x','b','w']
+S9: order after zero-level=basic merged=with_buckets
+1	['z','a']
+2	['x','b']
+3	['m','c']
+S10: order preserved after multiple merges
+1	['z','a','m']
+2	['x','b','w']
+3	['q','j','p']
+4	['d','f','e']
