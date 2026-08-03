@@ -59,6 +59,10 @@ size_t tryMergeExpressions(QueryPlan::Node * parent_node, QueryPlan::Nodes &, co
         if (prevent_input_removal)
             expr->setPreventInputRemoval();
 
+        /// The merged step takes the place of the child, so it inherits the child's position in the plan.
+        if (child_expr->isSingleStreamParallelized())
+            expr->setParallelizeSingleStream();
+
         parent_node->step = std::move(expr);
         parent_node->children.swap(child_node->children);
         return 1;

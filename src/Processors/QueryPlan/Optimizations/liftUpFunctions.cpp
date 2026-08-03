@@ -123,6 +123,9 @@ size_t tryExecuteFunctionsAfterSorting(QueryPlan::Node * parent_node, QueryPlan:
     auto description = parent_step->getStepDescription();
     auto new_expression_step = std::make_unique<DB::ExpressionStep>(child_step->getOutputHeader(), std::move(unneeded_for_sorting));
     new_expression_step->setStepDescription(fmt::format("{} [lifted up part]", description), settings.max_step_description_length);
+    /// `SortingStep` merges the pipeline into a single stream, so without this the lifted expression
+    /// would be the only single-threaded part of the query.
+    new_expression_step->setParallelizeSingleStream();
     parent_step = std::move(new_expression_step);
     // UneededCalculations (parent_node) -> Sorting (child_node) -> NeededCalculations (node_with_needed)
 

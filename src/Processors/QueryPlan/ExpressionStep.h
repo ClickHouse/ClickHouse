@@ -19,6 +19,7 @@ public:
         : ITransformingStep(other)
         , actions_dag(other.actions_dag.clone())
         , prevent_input_removal(other.prevent_input_removal)
+        , parallelize_single_stream(other.parallelize_single_stream)
     {}
 
     String getName() const override { return "Expression"; }
@@ -54,11 +55,18 @@ public:
     void setPreventInputRemoval() { prevent_input_removal = true; }
     bool isInputRemovalPrevented() const { return prevent_input_removal; }
 
+    /// Evaluate the expression by several threads if the pipeline has a single stream at this point.
+    /// The order of rows is preserved. Set for the expressions lifted above a `SortingStep`, which always
+    /// merges the pipeline into one stream, so that they do not become the single-threaded part of the query.
+    void setParallelizeSingleStream() { parallelize_single_stream = true; }
+    bool isSingleStreamParallelized() const { return parallelize_single_stream; }
+
 private:
     void updateOutputHeader() override;
 
     ActionsDAG actions_dag;
     bool prevent_input_removal = false;
+    bool parallelize_single_stream = false;
 };
 
 }
