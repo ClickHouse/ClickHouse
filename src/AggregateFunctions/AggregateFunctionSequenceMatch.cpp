@@ -599,13 +599,23 @@ protected:
         /// result on total failure is the longest one found anywhere in the remaining suffix, not
         /// necessarily the one starting earliest, which would contradict the documented "first,
         /// unlike sequenceMatchEvents which returns the longest" semantics.
-        while (events_it != events_end)
+        ///
+        /// Drive the scan with a separate `anchor` iterator, advanced by exactly one candidate
+        /// position at a time, and pass a *copy* into backtrackingMatch: a time constraint
+        /// (?t>..., ?t<..., etc.) scans forward internally even on failure, unlike a plain
+        /// SpecificEvent action, so letting the anchored call mutate the scan's own iterator could
+        /// skip candidate positions entirely.
+        auto anchor = events_it;
+        while (anchor != events_end)
         {
+            auto probe_anchor = anchor;
             VectorWithMemoryTracking<T> current_match;
-            backtrackingMatch<EventEntry, true, true>(events_it, events_end, &current_match);
+            backtrackingMatch<EventEntry, true, true>(probe_anchor, events_end, &current_match);
 
             if (!current_match.empty())
                 return current_match;
+
+            ++anchor;
         }
 
         return {};
@@ -643,13 +653,23 @@ protected:
         /// Phase 2: no complete match remains; find the latest anchor with any (partial) result.
         /// A plain (unanchored) call's partial result on total failure is the longest one found
         /// anywhere in the remaining suffix, not necessarily the one starting latest.
-        while (events_it_copy != events_end)
+        ///
+        /// Drive the scan with a separate `anchor` iterator, advanced by exactly one candidate
+        /// position at a time, and pass a *copy* into backtrackingMatch: a time constraint
+        /// (?t>..., ?t<..., etc.) scans forward internally even on failure, unlike a plain
+        /// SpecificEvent action, so letting the anchored call mutate the scan's own iterator could
+        /// skip later candidate positions entirely.
+        auto anchor = events_it_copy;
+        while (anchor != events_end)
         {
+            auto probe_anchor = anchor;
             VectorWithMemoryTracking<T> current_match;
-            backtrackingMatch<EventEntry, true, true>(events_it_copy, events_end, &current_match);
+            backtrackingMatch<EventEntry, true, true>(probe_anchor, events_end, &current_match);
 
             if (!current_match.empty())
                 last_matched_events = current_match;
+
+            ++anchor;
         }
 
         return last_matched_events;
@@ -679,14 +699,19 @@ protected:
         }
 
         /// Phase 2: append at most one trailing partial - the latest anchor with any result.
+        /// Drive the scan with a separate `anchor` iterator (see backtrackingMatchEventsLast).
         VectorWithMemoryTracking<T> trailing_partial;
-        while (events_it != events_end)
+        auto anchor = events_it;
+        while (anchor != events_end)
         {
+            auto probe_anchor = anchor;
             VectorWithMemoryTracking<T> current_match;
-            backtrackingMatch<EventEntry, true, true>(events_it, events_end, &current_match);
+            backtrackingMatch<EventEntry, true, true>(probe_anchor, events_end, &current_match);
 
             if (!current_match.empty())
                 trailing_partial = current_match;
+
+            ++anchor;
         }
         if (!trailing_partial.empty())
             all_matches.push_back(trailing_partial);

@@ -144,3 +144,17 @@ insert into sequence_test_variants values (1, 'A'), (2, 'B'), (3, 'A');
 select 'Last prefers a later partial over an earlier, longer one' as test, [3] = sequenceMatchEventsLast('(?1)(?2)(?3)')(time, event = 'A', event = 'B', event = 'C') from sequence_test_variants;
 
 drop table sequence_test_variants;
+
+-- Test: a time constraint scanning forward internally on failure must not cause Last/All to skip
+-- later candidate anchors. No complete match exists anywhere (cond2='B' never occurs). Anchored at
+-- time 0: action1 (A) matches, then (?t>10) scans forward past times 5 and 20 looking for a
+-- satisfying timestamp before giving up -> if the scan resumed from wherever that search left off
+-- instead of from the very next candidate position, times 5 and 20 would never be tried on their
+-- own, and the wrong (earliest, not latest) partial would be returned.
+create table sequence_test_variants (time UInt32, event String) engine=MergeTree ORDER BY tuple();
+insert into sequence_test_variants values (0, 'A'), (5, 'A'), (20, 'A');
+
+select 'Last is not fooled by a time constraint scanning past later anchors' as test, [20] = sequenceMatchEventsLast('(?1)(?t>10)(?2)')(time, event = 'A', event = 'B') from sequence_test_variants;
+select 'All is not fooled by a time constraint scanning past later anchors' as test, [[20]] = sequenceMatchEventsAll('(?1)(?t>10)(?2)')(time, event = 'A', event = 'B') from sequence_test_variants;
+
+drop table sequence_test_variants;
