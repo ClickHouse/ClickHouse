@@ -19,6 +19,24 @@ SELECT 'aggregates', sum(length(arr)), sum(empty(arr)) FROM 04709_buf;
 SELECT 'prewhere_ordinary', arr, arr.size0 FROM 04709_buf PREWHERE k = 1
     SETTINGS optimize_functions_to_subcolumns = 0;
 
+-- A filter consuming the parent while nothing else keeps it alive: the destination does not emit
+-- the parent, so a derivation reading it back must not pick up a fabricated default.
+SELECT 'prewhere_consumes_parent', k, arr.size0 FROM 04709_buf PREWHERE has(arr, 2) ORDER BY k;
+SELECT 'prewhere_consumes_parent_element', k, arr.size0 FROM 04709_buf PREWHERE arr[1] = 1 ORDER BY k;
+SELECT 'prewhere_consumes_parent_old_analyzer', k, arr.size0 FROM 04709_buf PREWHERE has(arr, 2) ORDER BY k
+    SETTINGS enable_analyzer = 0;
+SELECT 'prewhere_consumes_parent_selected', k, arr, arr.size0 FROM 04709_buf PREWHERE has(arr, 2) ORDER BY k;
+SELECT 'prewhere_consumes_parent_other_expression', k, arr.size0, length(arr) FROM 04709_buf
+    PREWHERE has(arr, 2) ORDER BY k SETTINGS optimize_functions_to_subcolumns = 0;
+SELECT 'where_consumes_parent', k, arr.size0 FROM 04709_buf WHERE has(arr, 2) ORDER BY k;
+SELECT 'where_on_subcolumn', k, arr.size0 FROM 04709_buf WHERE arr.size0 = 3 ORDER BY k;
+
+SELECT 'row_policy_parent_effective', count() FROM 04709_buf;
+CREATE ROW POLICY 04709_pol_parent ON 04709_buf USING has(arr, 2) TO ALL;
+SELECT 'row_policy_parent_effective', count() FROM 04709_buf;
+SELECT 'row_policy_parent', arr.size0 FROM 04709_buf;
+DROP ROW POLICY 04709_pol_parent ON 04709_buf;
+
 SELECT 'row_policy_effective', count() FROM 04709_buf;
 CREATE ROW POLICY 04709_pol ON 04709_buf USING k = 1 TO ALL;
 SELECT 'row_policy_effective', count() FROM 04709_buf;
@@ -62,6 +80,10 @@ INSERT INTO 04709_dst_map VALUES ([('k', 7)]);
 CREATE TABLE 04709_buf_map (m Map(String, UInt64))
     ENGINE = Buffer(currentDatabase(), 04709_dst_map, 1, 100, 100, 1000, 10000, 1000000, 10000000);
 SELECT 'map', count(), any(m), any(m.keys), any(m.values) FROM 04709_buf_map;
+-- Two subcolumns of one parent behind a parent-consuming filter: the parent must be kept alive
+-- exactly once, so assert the whole column set rather than a count.
+SELECT 'map_prewhere_consumes_parent', m.keys, m.values FROM 04709_buf_map
+    PREWHERE mapContains(m, 'k') SETTINGS optimize_functions_to_subcolumns = 0;
 
 DROP TABLE IF EXISTS 04709_dst_lc;
 DROP TABLE IF EXISTS 04709_buf_lc;

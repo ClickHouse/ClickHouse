@@ -5,6 +5,16 @@ folded	1	[1,2,3]	3
 folded	2	[9,9,9,9]	4
 aggregates	7	0
 prewhere_ordinary	[1,2,3]	3
+prewhere_consumes_parent	1	3
+prewhere_consumes_parent_element	1	3
+prewhere_consumes_parent_old_analyzer	1	3
+prewhere_consumes_parent_selected	1	[1,2,3]	3
+prewhere_consumes_parent_other_expression	1	3	3
+where_consumes_parent	1	3
+where_on_subcolumn	1	3
+row_policy_parent_effective	2
+row_policy_parent_effective	1
+row_policy_parent	3
 row_policy_effective	2
 row_policy_effective	1
 row_policy	1	[1,2,3]	3
@@ -13,6 +23,7 @@ nullable_null_rows	1
 tuple_element	1	(1,2)	1	2
 nested_array	1	[[1,2],[3]]	2
 map	1	{'k':7}	['k']	[7]
+map_prewhere_consumes_parent	['k']	[7]
 lowcardinality	1	['x','y']	2
 dynamic_prewhere	5	3
 missing_column	0	[]	0

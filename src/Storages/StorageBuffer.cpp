@@ -453,11 +453,16 @@ void StorageBuffer::read(
 
             std::vector<DerivableSubcolumn> derivable_subcolumns;
             NameSet derivable_names;
+            /// Several subcolumns can share one parent, so keep the parents deduplicated.
+            Names derivable_parent_names;
+            NameSet seen_parent_names;
             for (const String & column_name : column_names)
             {
                 if (auto derivation = tryGetDerivableSubcolumn(destination_snapshot, storage_snapshot, get_columns_options, column_name))
                 {
                     derivable_names.insert(derivation->name);
+                    if (seen_parent_names.insert(derivation->parent_name).second)
+                        derivable_parent_names.push_back(derivation->parent_name);
                     derivable_subcolumns.push_back(std::move(*derivation));
                 }
             }
@@ -537,6 +542,22 @@ void StorageBuffer::read(
                         filter_outputs.push_back(output->result_name);
 
                     auto merged = ActionsDAG::merge(converting_dag.clone(), std::move(filter_dag));
+
+                    /// A column the filter consumes is dropped from the read's output unless it is
+                    /// also an output of the filter's actions. The parents below must survive, or
+                    /// the subcolumns derived after the read see a fabricated default instead.
+                    NameSet filter_output_names(filter_outputs.begin(), filter_outputs.end());
+                    for (const auto & parent_name : derivable_parent_names)
+                    {
+                        if (!merged.tryRestoreColumn(parent_name))
+                            throw Exception(ErrorCodes::LOGICAL_ERROR,
+                                "Cannot preserve column {} required to derive a subcolumn of Buffer table",
+                                backQuoteIfNeed(parent_name));
+
+                        if (filter_output_names.insert(parent_name).second)
+                            filter_outputs.push_back(parent_name);
+                    }
+
                     merged.removeUnusedActions(filter_outputs);
                     return merged;
                 };
