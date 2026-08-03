@@ -28,6 +28,17 @@ C-v4-mapped	1	1
 C-v4-bare	1	1
 C-typed	1	1
 C-not-equals	63	63
+C-inverted-not-equals	1	1
+C-inverted-not-equals-overprune	0
+C-inverted-not-equals-absent-prunes	1
+-- F: an IN set built from a subquery is not type-checked against the index, so it needs the same conversion
+F-in-subquery	1	1
+F-in-subquery-token	1	1
+F-in-subquery-lc	1	1
+F-in-subquery-overprune	0
+F-in-subquery-absent-prunes	1
+F-notin-subquery	63	63
+F-in-subquery-multi	2	2
 -- D: predicates and column types that never reach index analysis stay rejected
 -- E: the String and FixedString domains are unaffected
 E-string	1	1

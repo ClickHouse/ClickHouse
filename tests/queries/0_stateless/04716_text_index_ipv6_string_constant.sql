@@ -80,6 +80,20 @@ SELECT 'C-v4-mapped', (SELECT count() FROM t_oracle WHERE ip = '::ffff:1.2.3.4')
 SELECT 'C-v4-bare', (SELECT count() FROM t_oracle WHERE ip = '1.2.3.4'), (SELECT count() FROM t_ngram WHERE ip = '1.2.3.4');
 SELECT 'C-typed', (SELECT count() FROM t_oracle WHERE ip = toIPv6('2001:db8::')), (SELECT count() FROM t_ngram WHERE ip = toIPv6('2001:db8::'));
 SELECT 'C-not-equals', (SELECT count() FROM t_oracle WHERE ip != '2001:db8::'), (SELECT count() FROM t_ngram WHERE ip != '2001:db8::');
+-- Inversion push-down rewrites this into an `equals` atom before index analysis, so it is a
+-- separate wrong-results spelling rather than a probe of the notEquals arm.
+SELECT 'C-inverted-not-equals', (SELECT count() FROM t_oracle WHERE NOT (ip != '2001:db8::')), (SELECT count() FROM t_ngram WHERE NOT (ip != '2001:db8::'));
+SELECT 'C-inverted-not-equals-overprune', count() FROM (EXPLAIN indexes = 1 SELECT count() FROM t_ngram WHERE NOT (ip != '2001:db8::')) WHERE explain ILIKE '%Granules: 0/64%';
+SELECT 'C-inverted-not-equals-absent-prunes', count() FROM (EXPLAIN indexes = 1 SELECT count() FROM t_ngram WHERE NOT (ip != 'dead:beef::1')) WHERE explain ILIKE '%Granules: 0/64%';
+
+SELECT '-- F: an IN set built from a subquery is not type-checked against the index, so it needs the same conversion';
+SELECT 'F-in-subquery', (SELECT count() FROM t_oracle WHERE ip IN (SELECT '2001:db8::')), (SELECT count() FROM t_ngram WHERE ip IN (SELECT '2001:db8::'));
+SELECT 'F-in-subquery-token', (SELECT count() FROM t_oracle WHERE ip IN (SELECT '2001:db8::')), (SELECT count() FROM t_token WHERE ip IN (SELECT '2001:db8::'));
+SELECT 'F-in-subquery-lc', (SELECT count() FROM t_oracle WHERE ip IN (SELECT '2001:db8::')), (SELECT count() FROM t_lc WHERE ip IN (SELECT '2001:db8::'));
+SELECT 'F-in-subquery-overprune', count() FROM (EXPLAIN indexes = 1 SELECT count() FROM t_ngram WHERE ip IN (SELECT '2001:db8::')) WHERE explain ILIKE '%Granules: 0/64%';
+SELECT 'F-in-subquery-absent-prunes', count() FROM (EXPLAIN indexes = 1 SELECT count() FROM t_ngram WHERE ip IN (SELECT 'dead:beef::1')) WHERE explain ILIKE '%Granules: 0/64%';
+SELECT 'F-notin-subquery', (SELECT count() FROM t_oracle WHERE ip NOT IN (SELECT '2001:db8::')), (SELECT count() FROM t_ngram WHERE ip NOT IN (SELECT '2001:db8::'));
+SELECT 'F-in-subquery-multi', (SELECT count() FROM t_oracle WHERE ip IN (SELECT arrayJoin(['2001:db8::', '::1']))), (SELECT count() FROM t_ngram WHERE ip IN (SELECT arrayJoin(['2001:db8::', '::1'])));
 
 SELECT '-- D: predicates and column types that never reach index analysis stay rejected';
 SELECT count() FROM t_ngram WHERE ip LIKE '2001%'; -- { serverError ILLEGAL_TYPE_OF_ARGUMENT }

@@ -855,10 +855,21 @@ bool MergeTreeConditionBloomFilterText::tryPrepareSetBloomFilter(
         size_t tuple_idx = elem.tuple_index;
         const auto & column = columns[tuple_idx];
 
+        /// A set element's own bytes are the index encoding only when the indexed column is a string; on
+        /// any other domain each element needs the same re-encoding a single constant gets.
+        const DataTypePtr & indexed_type = index_data_types[elem.key_index];
+        const bool convert = !WhichDataType(BloomFilter::getPrimitiveType(indexed_type)).isStringOrFixedString();
+        const DataTypePtr & element_type = prepared_set->getElementsTypes()[tuple_idx];
+
         for (size_t row = 0; row < prepared_set_total_row_count; ++row)
         {
+            String converted;
+            /// One unconvertible element would under-approximate membership, so decline the whole atom.
+            if (convert && !convertConstantToIndexDomain(indexed_type, element_type, (*column)[row], converted))
+                return false;
+
             bloom_filters.back().emplace_back(params);
-            auto ref = column->getDataAt(row);
+            const std::string_view ref = convert ? std::string_view(converted) : column->getDataAt(row);
             forEachTokenToBloomFilter(*tokenizer, ref.data(), ref.size(), bloom_filters.back().back());
         }
     }
