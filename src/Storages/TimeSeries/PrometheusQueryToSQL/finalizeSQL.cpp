@@ -285,10 +285,34 @@ namespace
 
         builder.where = std::move(where);
 
-        /// If sort() / sort_desc() was applied, order the output by value.
+        /// If a sort function was applied, order the output accordingly.
         if (result.sort_direction != 0)
         {
-            builder.order_by.push_back(make_intrusive<ASTIdentifier>(ColumnNames::Value));
+            if (result.sort_by_labels.empty())
+            {
+                /// sort() / sort_desc(): order by sample value.
+                builder.order_by.push_back(make_intrusive<ASTIdentifier>(ColumnNames::Value));
+            }
+            else
+            {
+                /// sort_by_label() / sort_by_label_desc(): order by the natural sort order of the given label values.
+                /// A missing label is treated as an empty string (matching Prometheus).
+                ///   naturalSortKey(tupleElement(arrayFirst(t -> t.1 = '<label>', tags), 2))
+                for (const auto & label : result.sort_by_labels)
+                {
+                    auto label_value = makeASTFunction("tupleElement",
+                        makeASTFunction("arrayFirst",
+                            makeASTLambda({"t"},
+                                makeASTFunction("equals",
+                                    makeASTFunction("tupleElement", make_intrusive<ASTIdentifier>("t"), make_intrusive<ASTLiteral>(UInt64(1))),
+                                    make_intrusive<ASTLiteral>(label))),
+                            make_intrusive<ASTIdentifier>(ColumnNames::Tags)),
+                        make_intrusive<ASTLiteral>(UInt64(2)));
+                    builder.order_by.push_back(makeASTFunction("naturalSortKey", std::move(label_value)));
+                }
+                /// Append the full label set as a deterministic tiebreaker for series with equal label values.
+                builder.order_by.push_back(make_intrusive<ASTIdentifier>(ColumnNames::Tags));
+            }
             builder.order_direction = result.sort_direction;
         }
 

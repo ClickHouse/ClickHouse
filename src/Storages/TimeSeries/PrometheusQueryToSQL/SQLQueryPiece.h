@@ -80,8 +80,13 @@ struct SQLQueryPiece
     String string_value;
 
     /// Sort direction for the output: 0 = no sorting, 1 = ascending, -1 = descending.
-    /// Set by sort() / sort_desc() functions. Only affects the final output ordering of instant vectors.
+    /// Set by sort() / sort_desc() / sort_by_label() / sort_by_label_desc() functions.
+    /// Only affects the final output ordering of instant vectors.
     int sort_direction = 0;
+
+    /// Label names to sort the output by (in natural sort order), set by sort_by_label() / sort_by_label_desc().
+    /// When empty (but `sort_direction` != 0) the output is sorted by sample value instead (sort() / sort_desc()).
+    std::vector<String> sort_by_labels;
 
     /// `select_query` is used only if `store_method` is one of [SINGLE_SCALAR, SCALAR_GRID, VECTOR_GRID, RAW_DATA].
     /// If `store_method` is SINGLE_SCALAR then the SELECT query outputs one column `value` (scalar_data_type) with a single row.
