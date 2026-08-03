@@ -105,8 +105,7 @@ TEST_F(AsynchronousBoundedReadBufferTest, concurrentReadBigAtWithPrefetch)
 
     constexpr size_t num_threads = 4;
     constexpr size_t num_iterations = 500;
-    /// Smaller than the file, so the prefetch covers only a prefix of it and readBigAt
-    /// exercises both the served-from-prefetch path and the read-the-suffix path.
+    /// Smaller than the file, so the prefetch is usually still in flight when the reads run.
     constexpr size_t buffer_size = 16384;
 
     for (size_t iteration = 0; iteration < num_iterations; ++iteration)
@@ -133,8 +132,7 @@ TEST_F(AsynchronousBoundedReadBufferTest, concurrentReadBigAtWithPrefetch)
 
                 try
                 {
-                    /// First two threads read from inside the prefetch window [0, buffer_size),
-                    /// the other two - fully outside of it (they must not wait for the prefetch).
+                    /// Threads read different, partially overlapping ranges.
                     const size_t offset = (t < 2) ? 1000 * (t + 1) : 20000 * t;
                     const size_t count = 30000;
                     String buf(count, 0);

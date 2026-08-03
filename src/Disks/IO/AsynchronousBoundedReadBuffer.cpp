@@ -1,7 +1,5 @@
 #include <Disks/IO/AsynchronousBoundedReadBuffer.h>
 
-#include <cstring>
-
 #include <Common/CurrentThread.h>
 
 #include <Common/Stopwatch.h>
@@ -169,12 +167,7 @@ void AsynchronousBoundedReadBuffer::prefetch(Priority priority)
         prefetch_buffer.resize(buffer_size);
 
     prefetch_future = readAsync(prefetch_buffer.data(), buffer_size, priority);
-
-    /// Publish the file range the prefetch may cover, so that concurrent readBigAt calls can tell
-    /// whether it may serve their range without consuming it.
-    prefetch_window_begin = file_offset_of_buffer_end;
-    prefetch_window_end.store(prefetch_window_begin + buffer_size, std::memory_order_release);
-
+    prefetch_pending.store(true, std::memory_order_release);
     ProfileEvents::increment(ProfileEvents::RemoteFSPrefetches);
 }
 
@@ -265,7 +258,7 @@ bool AsynchronousBoundedReadBuffer::nextImpl()
         }
 
         prefetch_future = {};
-        prefetch_window_end.store(0, std::memory_order_relaxed);
+        prefetch_pending.store(false, std::memory_order_relaxed);
         prefetch_buffer.swap(memory);
 
         if (enable_prefetches_log)
@@ -459,7 +452,7 @@ void AsynchronousBoundedReadBuffer::resetPrefetch(FilesystemPrefetchState state)
 
     auto result = prefetch_future.get();
     prefetch_future = {};
-    prefetch_window_end.store(0, std::memory_order_relaxed);
+    prefetch_pending.store(false, std::memory_order_relaxed);
     last_prefetch_info = {};
 
     ProfileEvents::increment(ProfileEvents::RemoteFSPrefetchedBytes, result.size);
@@ -483,64 +476,27 @@ size_t AsynchronousBoundedReadBuffer::readBigAt(char * to, size_t n, size_t rang
     if (!impl->supportsReadAt())
         throw Exception(ErrorCodes::NOT_IMPLEMENTED, "Method readBigAt() is not implemented for a given implementation");
 
-    /// If an in-flight (small-object initial) prefetch may cover the head of the requested range,
-    /// consume it and serve that head from it. Concurrent callers race on this, hence the mutex.
-    std::optional<IAsynchronousReader::Result> prefetch_result;
-    if (const size_t window_end = prefetch_window_end.load(std::memory_order_acquire);
-        range_begin >= prefetch_window_begin && range_begin < window_end)
+    /// An in-flight prefetch must be consumed (dropped) before reading from impl. Concurrent
+    /// readBigAt callers race on this, hence the mutex; the atomic makes the no-prefetch case lock-free.
+    if (prefetch_pending.load(std::memory_order_acquire))
     {
         std::lock_guard lock(prefetch_future_mutex);
         if (prefetch_future.valid())
         {
-            ProfileEventTimeIncrement<Microseconds> watch(ProfileEvents::AsynchronousRemoteReadWaitMicroseconds);
-            CurrentMetrics::Increment metric_increment{CurrentMetrics::AsynchronousReadWait};
-            prefetch_result = prefetch_future.get();
-            prefetch_future = {};
-            prefetch_window_end.store(0, std::memory_order_release);
-            last_prefetch_info = {};
-        }
-    }
-
-    if (prefetch_result)
-    {
-        const auto & result = *prefetch_result;
-        const size_t prefetched_bytes = result.size - result.offset;
-        const size_t prefetch_end = result.file_offset_of_buffer_end;
-        const size_t prefetch_begin = prefetch_end - prefetched_bytes;
-
-        /// Serve the prefix of the range that the prefetch covers.
-        if (prefetched_bytes != 0 && range_begin >= prefetch_begin && range_begin < prefetch_end)
-        {
-            const size_t from_prefetch = std::min(n, prefetch_end - range_begin);
-            memcpy(to, result.buf + result.offset + (range_begin - prefetch_begin), from_prefetch);
-            ProfileEvents::increment(ProfileEvents::RemoteFSPrefetchedReads);
-            ProfileEvents::increment(ProfileEvents::RemoteFSPrefetchedBytes, from_prefetch);
-
-            if (from_prefetch == n)
+            IAsynchronousReader::Result result;
             {
-                if (progress_callback)
-                    progress_callback(n);
-                return n;
+                ProfileEventTimeIncrement<Microseconds> watch(ProfileEvents::AsynchronousRemoteReadWaitMicroseconds);
+                CurrentMetrics::Increment metric_increment{CurrentMetrics::AsynchronousReadWait};
+                result = prefetch_future.get();
             }
-
-            /// Read the missing suffix directly. impl->readBigAt reports progress relative to its own
-            /// request (starting from 0), but the progress reported for the whole readBigAt must stay
-            /// cumulative and monotonic (e.g. ParallelReadBuffer::on_progress ignores non-increasing
-            /// values), so shift the suffix progress by the prefix already served.
-            std::function<bool(size_t)> suffix_progress;
-            if (progress_callback)
-                suffix_progress = [&](size_t copied) { return progress_callback(from_prefetch + copied); };
-
-            return from_prefetch
-                + impl->readBigAt(to + from_prefetch, n - from_prefetch, range_begin + from_prefetch, suffix_progress);
+            prefetch_future = {};
+            prefetch_pending.store(false, std::memory_order_release);
+            last_prefetch_info = {};
+            ProfileEvents::increment(ProfileEvents::RemoteFSPrefetchedBytes, result.size);
+            ProfileEvents::increment(ProfileEvents::RemoteFSCancelledPrefetches);
         }
-
-        /// The prefetched range does not cover the head of the request; drop it and read directly.
-        ProfileEvents::increment(ProfileEvents::RemoteFSCancelledPrefetches);
     }
 
-    /// Safe even if the prefetch task is still running: impl's readBigAt reads via per-call state,
-    /// independent of the sequential read path.
     return impl->readBigAt(to, n, range_begin, progress_callback);
 }
 
