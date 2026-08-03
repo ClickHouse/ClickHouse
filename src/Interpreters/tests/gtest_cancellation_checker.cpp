@@ -292,13 +292,15 @@ TEST(CancellationChecker, ProcessListPreservesFractionalTimeout)
 
             if (deadline_ms == 0)
             {
-                /// Nothing was armed. Only inconclusive if the timeout has passed, in which case the
-                /// worker has already cancelled and removed the query and there is no deadline left
-                /// to read: retry rather than judge the arithmetic. Raising the timeout instead would
-                /// break the retry path above, which waits for a drain that `appendDoneTasks` never
-                /// notifies.
-                ASSERT_GE(steadyNowNs(), now_ns + timeout_us * 1000)
+                /// Nothing left to read. Inconclusive only if the checker had tracked this query and
+                /// already cancelled it for exceeding its timeout, which needs this thread to have
+                /// lost the CPU for that long: retry rather than judge the arithmetic. A query that
+                /// is still running was never tracked, which is a real defect at the caller. Raising
+                /// the timeout instead would break the retry path above, which waits for a drain that
+                /// `appendDoneTasks` never notifies.
+                ASSERT_TRUE(entry->getQueryStatus()->isKilled())
                     << "the query was not registered with the checker while it was still running";
+                ASSERT_GE(steadyNowNs(), now_ns + timeout_us * 1000);
                 timed_out_before_read = true;
                 entry.reset();
                 continue;
