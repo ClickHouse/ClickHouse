@@ -64,6 +64,32 @@ SELECT 'A-mapkey', (SELECT count() FROM m_oracle WHERE m.`key_2001:db8::` = 'v')
 SELECT 'A-mapkey-overprune', count() FROM (EXPLAIN indexes = 1 SELECT count() FROM m_idx WHERE m.`key_2001:db8::` = 'v') WHERE explain ILIKE '%Granules: 0/16%';
 SELECT 'A-mapkey-absent-prunes', count() FROM (EXPLAIN indexes = 1 SELECT count() FROM m_idx WHERE m.`key_dead:beef::1` = 'v') WHERE explain ILIKE '%Granules: 0/16%';
 
+SELECT '-- A: the map key is converted with its own type, not the type of the compared value';
+-- The value being converted here is the map key, so the conversion must be told the key's type.
+-- Given the compared value's type instead, a FixedString(16) is read as a binary address: a
+-- 16-byte key text decodes into the wrong bytes, any other length hits EOF and declines. Both need
+-- an explicitly typed compared value, since a bare literal is a String and hides the mismatch.
+SELECT 'A-mapkey-keylen', length('2001:db8::abcd:1'), length('dead:beef::abc:1'), length('2001:db8::');
+
+DROP TABLE IF EXISTS mf_oracle;
+CREATE TABLE mf_oracle (k UInt64, m Map(IPv6, String)) ENGINE = Log;
+INSERT INTO mf_oracle SELECT number, map(if(number = 7, toIPv6('2001:db8::abcd:1'), toIPv6('::2')), 'v') FROM numbers(16);
+
+DROP TABLE IF EXISTS mf_idx;
+CREATE TABLE mf_idx (k UInt64, m Map(IPv6, String), INDEX idx mapKeys(m) TYPE ngrambf_v1(3, 512, 3, 0) GRANULARITY 1)
+ENGINE = MergeTree ORDER BY k SETTINGS index_granularity = 1;
+INSERT INTO mf_idx SELECT * FROM mf_oracle;
+
+SELECT 'A-mapkey-fs-16', (SELECT count() FROM mf_oracle WHERE m.`key_2001:db8::abcd:1` = toFixedString('v', 16)), (SELECT count() FROM mf_idx WHERE m.`key_2001:db8::abcd:1` = toFixedString('v', 16));
+SELECT 'A-mapkey-fs-16-overprune', count() FROM (EXPLAIN indexes = 1 SELECT count() FROM mf_idx WHERE m.`key_2001:db8::abcd:1` = toFixedString('v', 16)) WHERE explain ILIKE '%Granules: 0/16%';
+SELECT 'A-mapkey-fs-16-absent-prunes', count() FROM (EXPLAIN indexes = 1 SELECT count() FROM mf_idx WHERE m.`key_dead:beef::abc:1` = toFixedString('v', 16)) WHERE explain ILIKE '%Granules: 0/16%';
+-- Any other key-text length cannot be read as a binary address at all, so the atom declines and an
+-- absent key stops pruning. The answer stays correct, so only the lost prune is observable.
+SELECT 'A-mapkey-fs-other-len', (SELECT count() FROM m_oracle WHERE m.`key_2001:db8::` = toFixedString('v', 16)), (SELECT count() FROM m_idx WHERE m.`key_2001:db8::` = toFixedString('v', 16));
+SELECT 'A-mapkey-fs-other-len-absent-prunes', count() FROM (EXPLAIN indexes = 1 SELECT count() FROM m_idx WHERE m.`key_dead:beef::1` = toFixedString('v', 16)) WHERE explain ILIKE '%Granules: 0/16%';
+-- A value type that is not 16 bytes wide is not a binary address either way: this arm is unaffected.
+SELECT 'A-mapkey-fs-8', (SELECT count() FROM mf_oracle WHERE m.`key_2001:db8::abcd:1` = toFixedString('v', 8)), (SELECT count() FROM mf_idx WHERE m.`key_2001:db8::abcd:1` = toFixedString('v', 8));
+
 SELECT '-- B: a non-matching address still prunes, so pruning is not blanket-disabled';
 SELECT 'B-rows', count() FROM t_ngram WHERE ip = 'dead:beef::1';
 SELECT 'B-ngram-prunes', count() FROM (EXPLAIN indexes = 1 SELECT count() FROM t_ngram WHERE ip = 'dead:beef::1') WHERE explain ILIKE '%Granules: 0/64%';
@@ -137,6 +163,8 @@ DROP TABLE t_sparse;
 DROP TABLE t_lc;
 DROP TABLE m_oracle;
 DROP TABLE m_idx;
+DROP TABLE mf_oracle;
+DROP TABLE mf_idx;
 DROP TABLE s_oracle;
 DROP TABLE s_idx;
 DROP TABLE f_idx;

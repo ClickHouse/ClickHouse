@@ -10,6 +10,7 @@
 #include <DataTypes/DataTypeLowCardinality.h>
 #include <DataTypes/DataTypeNullable.h>
 #include <DataTypes/DataTypeMapHelpers.h>
+#include <DataTypes/DataTypeString.h>
 #include <DataTypes/DataTypesNumber.h>
 #include <Interpreters/Set.h>
 #include <IO/ReadHelpers.h>
@@ -493,6 +494,9 @@ bool MergeTreeConditionBloomFilterText::traverseTreeEquals(
         return false;
 
     Field const_value = value_field;
+    /// Travels with `const_value`: the map branches below replace the value with the map key, whose
+    /// type is not the compared expression's type. `convertFieldToType` dispatches on this.
+    DataTypePtr const_source_type = value_type;
 
     const auto column_name = key_node.getColumnName();
     auto key_index = getKeyIndex(column_name);
@@ -530,6 +534,8 @@ bool MergeTreeConditionBloomFilterText::traverseTreeEquals(
                     auto const_data_type = WhichDataType(const_type);
                     if (!const_data_type.isStringOrFixedString() && !const_data_type.isArray())
                         return false;
+
+                    const_source_type = const_type;
                 }
                 else
                 {
@@ -563,6 +569,7 @@ bool MergeTreeConditionBloomFilterText::traverseTreeEquals(
             {
                 key_index = map_keys_index;
                 const_value = serialized_key;
+                const_source_type = std::make_shared<DataTypeString>();
             }
             else if (const auto map_values_idx = getKeyIndex(fmt::format("mapValues({})", map_column_name)))
             {
@@ -675,7 +682,7 @@ bool MergeTreeConditionBloomFilterText::traverseTreeEquals(
         if (!value_data_type.isStringOrFixedString())
             return false;
         String value;
-        if (!convertConstantToIndexDomain(index_data_types[*key_index], value_type, const_value, value))
+        if (!convertConstantToIndexDomain(index_data_types[*key_index], const_source_type, const_value, value))
             return false;
         out.key_column = *key_index;
         out.function = RPNElement::FUNCTION_NOT_EQUALS;
@@ -688,7 +695,7 @@ bool MergeTreeConditionBloomFilterText::traverseTreeEquals(
         if (!value_data_type.isStringOrFixedString())
             return false;
         String value;
-        if (!convertConstantToIndexDomain(index_data_types[*key_index], value_type, const_value, value))
+        if (!convertConstantToIndexDomain(index_data_types[*key_index], const_source_type, const_value, value))
             return false;
         out.key_column = *key_index;
         out.function = RPNElement::FUNCTION_EQUALS;

@@ -13,6 +13,14 @@ A-lc-overprune	0
 A-mapkey	1	1
 A-mapkey-overprune	0
 A-mapkey-absent-prunes	1
+-- A: the map key is converted with its own type, not the type of the compared value
+A-mapkey-keylen	16	16	10
+A-mapkey-fs-16	1	1
+A-mapkey-fs-16-overprune	0
+A-mapkey-fs-16-absent-prunes	1
+A-mapkey-fs-other-len	1	1
+A-mapkey-fs-other-len-absent-prunes	1
+A-mapkey-fs-8	1	1
 -- B: a non-matching address still prunes, so pruning is not blanket-disabled
 B-rows	0
 B-ngram-prunes	1
