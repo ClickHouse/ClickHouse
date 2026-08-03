@@ -445,7 +445,8 @@ KQLToken KQLLexer::lexNumberOrTimespan(const char * token_begin)
         }
         else
         {
-            is_floating_point = true;
+            /// An exponent makes the literal a plain number - a timespan suffix cannot follow it,
+            /// so `is_floating_point`, which only the timespan branch below reads, stays as it is.
             if (pos < end && isIdentifierChar(*pos))
                 return makeError(token_begin, "invalid character after a numeric literal");
             return makeToken(KQLTokenType::Number, token_begin);

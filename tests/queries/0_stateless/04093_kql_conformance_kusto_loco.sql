@@ -1,3 +1,6 @@
+-- Tags: no-fasttest
+-- `tolower` and `toupper` map to `lowerUTF8` and `upperUTF8`, which need ICU, and the
+-- fast test builds without it.
 -- Tests adapted from https://github.com/NeilMacMullen/kusto-loco
 -- Copyright (c) Neil MacMullen. Licensed under the MIT License.
 -- Source: test/BasicTests/

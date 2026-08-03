@@ -112,11 +112,12 @@ ASTPtr termMatch(const ASTPtr & haystack, const ASTPtr & needle, bool case_sensi
     return makeASTFunction("match", asString(haystack), pattern);
 }
 
-/// Case-insensitive comparison in Kusto is ordinal, so lower-casing both sides matches it
-/// closely enough for the substring operators.
-ASTPtr foldCase(const ASTPtr & argument, bool case_sensitive)
+/// Case-insensitive comparison in Kusto is ordinal. The `*CaseInsensitiveUTF8` search functions
+/// implement exactly that and, unlike `lowerUTF8`, do not need ICU - so the string operators keep
+/// working in a build without it.
+ASTPtr caseInsensitivePosition(const ASTPtr & haystack, const ASTPtr & needle)
 {
-    return case_sensitive ? asString(argument) : ASTPtr(makeASTFunction("lowerUTF8", asString(argument)));
+    return makeASTFunction("positionCaseInsensitiveUTF8", asString(haystack), asString(needle));
 }
 
 const std::map<String, Entry> & scalarFunctions()
@@ -159,6 +160,8 @@ const std::map<String, Entry> & scalarFunctions()
         /// ---- Strings ----------------------------------------------------------------
         result.emplace("strlen", rename("lengthUTF8", 1, 1));
         result.emplace("string_size", rename("lengthUTF8", 1, 1));
+        /// Case mapping in Kusto is Unicode, so these are the UTF-8 functions rather than the
+        /// ASCII ones - which means they are only available in a build with ICU.
         result.emplace("toupper", rename("upperUTF8", 1, 1));
         result.emplace("tolower", rename("lowerUTF8", 1, 1));
         result.emplace("reverse", rename("reverseUTF8", 1, 1));
@@ -416,7 +419,9 @@ const std::map<String, Entry> & scalarFunctions()
                         makeASTFunction("reverse", makeASTFunction("unhex", makeASTFunction("lpad", hex_digits, litI(16), litS("0")))));
                     return makeASTFunction(
                         "if",
-                        makeASTFunction("startsWith", makeASTFunction("lowerUTF8", text), litS("0x")),
+                        /// `lower` rather than `lowerUTF8`: the prefix tested for is ASCII, and
+                        /// `lowerUTF8` needs ICU.
+                        makeASTFunction("startsWith", makeASTFunction("lower", text), litS("0x")),
                         makeASTFunction("accurateCastOrNull", from_hex, litS(name)),
                         makeASTFunction("accurateCastOrNull", text, litS(name)));
                 }};
@@ -1338,21 +1343,27 @@ ASTPtr buildKQLStringOperator(const String & op, const ASTPtr & haystack, const 
     /// ordinary characters.
     if (op == "contains" || op == "contains_cs")
     {
-        const bool cs = op == "contains_cs";
-        return makeASTFunction(
-            "greater", makeASTFunction("positionUTF8", foldCase(haystack, cs), foldCase(needle, cs)), litI(0));
+        ASTPtr position = op == "contains_cs" ? makeASTFunction("positionUTF8", asString(haystack), asString(needle))
+                                              : caseInsensitivePosition(haystack, needle);
+        return makeASTFunction("greater", position, litI(0));
     }
 
     if (op == "startswith" || op == "startswith_cs")
     {
-        const bool cs = op == "startswith_cs";
-        return makeASTFunction("startsWith", foldCase(haystack, cs), foldCase(needle, cs));
+        if (op == "startswith_cs")
+            return makeASTFunction("startsWith", asString(haystack), asString(needle));
+        /// The needle occurs, and it occurs at the very beginning.
+        return makeASTFunction("equals", caseInsensitivePosition(haystack, needle), litI(1));
     }
 
     if (op == "endswith" || op == "endswith_cs")
     {
-        const bool cs = op == "endswith_cs";
-        return makeASTFunction("endsWith", foldCase(haystack, cs), foldCase(needle, cs));
+        if (op == "endswith_cs")
+            return makeASTFunction("endsWith", asString(haystack), asString(needle));
+        /// Compare the tail of the haystack, because `position` finds the *first* occurrence:
+        /// 'abab' does end with 'AB' even though the first match is at 1, not at 3.
+        ASTPtr tail = makeASTFunction("rightUTF8", asString(haystack), makeASTFunction("lengthUTF8", asString(needle)));
+        return makeASTFunction("equals", caseInsensitivePosition(tail, needle), litI(1));
     }
 
     /// The term family. A KQL term is a maximal run of ASCII alphanumerics.
@@ -1365,6 +1376,16 @@ ASTPtr buildKQLStringOperator(const String & op, const ASTPtr & haystack, const 
 
     error = fmt::format("'{}' is not a supported KQL operator", op);
     return nullptr;
+}
+
+ASTPtr kqlCaseInsensitiveEquals(const ASTPtr & left, const ASTPtr & right)
+{
+    /// Equal ignoring case means: the second string occurs at the start of the first, and there
+    /// is nothing after it.
+    return makeASTFunction(
+        "and",
+        makeASTFunction("equals", makeASTFunction("lengthUTF8", asString(left)), makeASTFunction("lengthUTF8", asString(right))),
+        makeASTFunction("equals", caseInsensitivePosition(left, right), litI(1)));
 }
 
 static const std::set<String> & unsupportedKQLFunctions()

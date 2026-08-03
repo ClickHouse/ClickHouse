@@ -1,3 +1,6 @@
+-- Tags: no-fasttest
+-- `tolower` and `toupper` map to `lowerUTF8` and `upperUTF8`, which need ICU, and the
+-- fast test builds without it.
 -- Tests adapted from https://github.com/runreveal/pql
 -- Copyright (c) RunReveal Inc. Licensed under the Apache License, Version 2.0.
 -- Source: testdata/Goldens/

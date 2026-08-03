@@ -76,15 +76,8 @@ false
 1545615.7905499663
 true
 false
--- geohash and H3 cells are token strings --
+-- a geohash is a token string --
 dhwfz15h
-862a1072fffffff
-6
-852a1073fffffff
-812a3ffffffffff
-10
-7
-6
 -- more mathematics --
 24
 0.6420926159343306

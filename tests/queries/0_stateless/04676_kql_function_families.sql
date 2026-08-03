@@ -95,15 +95,9 @@ print geo_distance_2points(-122.407628, 47.578557, -118.275287, 34.019056, true)
 print geo_point_in_circle(-122.143564, 47.535677, -122.100896, 47.527351, 3500);  // true
 print geo_point_in_circle(-122.137575, 47.630683, -122.100896, 47.527351, 3500);  // false
 
-print '-- geohash and H3 cells are token strings --';
+-- The H3 cells are in 04693_kql_geo_h3, which the fast test skips: it has no H3 library.
+print '-- a geohash is a token string --';
 print geo_point_to_geohash(-80.195829, 25.802215, 8);      // dhwfz15h
-print geo_point_to_h3cell(-74.04450446039874, 40.689250859314974, 6);   // 862a1072fffffff
-print geo_h3cell_level('862a1072fffffff');                 // 6
-print geo_h3cell_parent('862a1072fffffff');                // 852a1073fffffff
-print geo_h3cell_parent('862a1072fffffff', 1);             // 812a3ffffffffff
-print geo_h3cell_level(geo_point_to_h3cell(1, 1, 10));     // 10
-print array_length(geo_h3cell_children('862a1072fffffff'));   // 7
-print array_length(geo_h3cell_neighbors('862a1072fffffff')); // 6
 
 print '-- more mathematics --';
 print gamma(5);          // 24

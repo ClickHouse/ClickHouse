@@ -132,8 +132,7 @@ Rejected with a parse error, rather than mistranslated:
   Set `interval_output_format = 'kusto'` to render them the Kusto way (`1.00:00:00`) rather
   than as a number.
 - **Division follows Kusto**: `7 / 2` is `3`, because both operands are integers. This is
-  implemented by [`kqlDivide`](/reference/functions/regular-functions/arithmetic-functions#kqlDivide),
-  which decides from the argument types.
+  implemented by `kqlDivide`, which decides from the argument types.
 - **Subtracting two datetimes gives a number of seconds**, where Kusto gives a timespan.
   Adding or subtracting a timespan works as expected.
 - **`sort` defaults to descending**, unlike SQL, and puts nulls at the small end.

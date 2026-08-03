@@ -75,11 +75,11 @@ const std::map<String, KQLOperatorKind> & pipelineOperatorNames()
 const std::set<String> & unsupportedOperatorNames()
 {
     static const std::set<String> names{
-        "consume",       "evaluate",     "externaldata", "facet",   "find",     "fork",
-        "getschema",     "invoke",       "lookup",       "make-series", "materialize",
-        "mv-apply",      "parse",        "parse-kv",     "parse-where", "partition",
-        "reduce",        "sample",       "sample-distinct",           "scan",   "search",
-        "serialize",     "top-hitters",  "top-nested",
+        "consume", "evaluate", "externaldata", "facet", "find", "fork",
+        "getschema", "invoke", "lookup", "make-series", "materialize",
+        "mv-apply", "parse", "parse-kv", "parse-where", "partition",
+        "reduce", "sample", "sample-distinct", "scan", "search",
+        "serialize", "top-hitters", "top-nested",
     };
     return names;
 }
@@ -1272,7 +1272,7 @@ ASTPtr KQLParser::parseComparison()
         const bool negated = at(KQLTokenType::NotTildeEquals);
         ++index;
         ASTPtr right = parseAdditive();
-        ASTPtr equal = makeASTFunction("equals", makeASTFunction("lowerUTF8", left), makeASTFunction("lowerUTF8", right));
+        ASTPtr equal = kqlCaseInsensitiveEquals(left, right);
         return negated ? ASTPtr(makeASTFunction("not", equal)) : equal;
     }
 
@@ -1410,10 +1410,10 @@ ASTPtr KQLParser::parsePrimary()
             const String digits(text);
             errno = 0;
             char * parse_end = nullptr;
-            const long long value = std::strtoll(digits.c_str(), &parse_end, 10);
+            const Int64 value = static_cast<Int64>(std::strtoll(digits.c_str(), &parse_end, 10));
             if (errno == ERANGE || parse_end != digits.c_str() + digits.size())
                 failAt(token, "integer literal is out of range");
-            return makeLiteral(static_cast<Int64>(value));
+            return makeLiteral(value);
         }
 
         case KQLTokenType::StringLiteral:
@@ -1873,17 +1873,27 @@ ASTPtr KQLParser::tryParseWordOperator(const ASTPtr & left)
         }
         expect(KQLTokenType::ClosingRoundBracket);
 
-        auto tuple = makeASTFunction("tuple");
-        tuple->arguments->children = elements;
-
-        ASTPtr haystack = left;
         if (case_insensitive)
         {
-            haystack = makeASTFunction("lowerUTF8", left);
-            for (auto & element : tuple->arguments->children)
-                element = makeASTFunction("lowerUTF8", element);
+            /// There is no case-insensitive `IN`, so the membership test is spelled out as a
+            /// disjunction of case-insensitive equalities.
+            if (elements.empty())
+                return finish(makeLiteral(false));
+
+            ASTs comparisons;
+            for (const auto & element : elements)
+                comparisons.push_back(kqlCaseInsensitiveEquals(left->clone(), element));
+            if (comparisons.size() == 1)
+                return finish(comparisons.front());
+
+            auto disjunction = makeASTFunction("or");
+            disjunction->arguments->children = comparisons;
+            return finish(ASTPtr(disjunction));
         }
-        return finish(makeASTFunction("in", haystack, tuple));
+
+        auto tuple = makeASTFunction("tuple");
+        tuple->arguments->children = elements;
+        return finish(makeASTFunction("in", left, tuple));
     }
 
     /// `has_any (a, b)` / `has_all (a, b)`

@@ -50,4 +50,12 @@ bool isKQLAggregateFunction(const String & name);
   */
 ASTPtr buildKQLStringOperator(const String & op, const ASTPtr & haystack, const ASTPtr & needle, String & error);
 
+/** Builds `left` equals `right`, ignoring case - what `=~`, `!~` and `in~` compare with.
+  *
+  * Kusto compares ordinally, which is what the `*CaseInsensitiveUTF8` search functions do.
+  * They are used in preference to lower-casing both sides, because `lowerUTF8` requires ICU
+  * and would make the operator unavailable in a build without it.
+  */
+ASTPtr kqlCaseInsensitiveEquals(const ASTPtr & left, const ASTPtr & right);
+
 }
