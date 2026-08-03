@@ -104,7 +104,6 @@ ObjectStorageQueueMetadata::ObjectStorageQueueMetadata(
     size_t cleanup_interval_max_ms_,
     bool use_persistent_processing_nodes_,
     size_t persistent_processing_nodes_ttl_seconds_,
-    time_t foreign_processing_node_cache_ttl_seconds_,
     size_t keeper_multiread_batch_size_,
     size_t metadata_cache_size_bytes_,
     size_t metadata_cache_size_elements_)
@@ -123,7 +122,6 @@ ObjectStorageQueueMetadata::ObjectStorageQueueMetadata(
     , cleanup_interval_max_ms(cleanup_interval_max_ms_)
     , use_persistent_processing_nodes(use_persistent_processing_nodes_)
     , persistent_processing_node_ttl_seconds(persistent_processing_nodes_ttl_seconds_)
-    , foreign_processing_node_cache_ttl_seconds(foreign_processing_node_cache_ttl_seconds_)
     , buckets_num(table_metadata_.getBucketsNum())
     , log(getLogger(fmt::format(
         "StorageObjectStorageQueue({}{})",
@@ -231,7 +229,8 @@ void ObjectStorageQueueMetadata::shutdown()
 
 ObjectStorageQueueMetadata::FileMetadataPtr ObjectStorageQueueMetadata::getFileMetadata(
     const std::string & path,
-    ObjectStorageQueueOrderedFileMetadata::BucketInfoPtr bucket_info)
+    ObjectStorageQueueOrderedFileMetadata::BucketInfoPtr bucket_info,
+    time_t foreign_processing_node_cache_ttl_sec)
 {
     chassert(metadata_ref_count);
     auto [file_status, _] = local_file_statuses.getOrSet(
@@ -256,7 +255,7 @@ ObjectStorageQueueMetadata::FileMetadataPtr ObjectStorageQueueMetadata::getFileM
                 partitioning_mode,
                 filename_parser.get(),
                 log,
-                foreign_processing_node_cache_ttl_seconds);
+                foreign_processing_node_cache_ttl_sec);
         case ObjectStorageQueueMode::UNORDERED:
             return std::make_shared<ObjectStorageQueueUnorderedFileMetadata>(
                 zookeeper_path,
@@ -267,7 +266,7 @@ ObjectStorageQueueMetadata::FileMetadataPtr ObjectStorageQueueMetadata::getFileM
                 use_persistent_processing_nodes,
                 zookeeper_name,
                 log,
-                foreign_processing_node_cache_ttl_seconds);
+                foreign_processing_node_cache_ttl_sec);
     }
 }
 

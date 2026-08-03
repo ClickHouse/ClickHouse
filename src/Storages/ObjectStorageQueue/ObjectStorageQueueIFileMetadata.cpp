@@ -101,20 +101,13 @@ void ObjectStorageQueueIFileMetadata::FileStatus::updateState(State state_)
 
 void ObjectStorageQueueIFileMetadata::FileStatus::onProcessingByAnotherProcessor()
 {
-    /// The observation time is set before the state, so that a concurrent reader
-    /// which sees `Processing` never misses that this state is not ours.
+    /// Same as a local attempt (the data of the previous local attempt is reset,
+    /// `retries` is kept), but the state is remembered as not ours.
+    onProcessing();
     processing_by_another_processor_since = now();
-    state = FileStatus::State::Processing;
-    /// Reset the per-attempt fields of the previous local attempt (but keep `retries`),
-    /// otherwise introspection shows a `Processing` file with stale failure data.
-    processing_start_time = now();
-    processing_end_time = {};
-    processed_rows = 0;
-    std::lock_guard lock(last_exception_mutex);
-    last_exception = {};
 }
 
-bool ObjectStorageQueueIFileMetadata::FileStatus::isProcessingRetryable(time_t ttl_sec) const
+bool ObjectStorageQueueIFileMetadata::FileStatus::shouldRetryProcessing(time_t ttl_sec) const
 {
     const time_t since = processing_by_another_processor_since.load();
     if (!since)
@@ -328,7 +321,7 @@ bool ObjectStorageQueueIFileMetadata::checkProcessingOwnership(std::shared_ptr<Z
 bool ObjectStorageQueueIFileMetadata::trySetProcessing()
 {
     auto state = file_status->state.load();
-    if ((state == FileStatus::State::Processing && !file_status->isProcessingRetryable(foreign_processing_node_cache_ttl_sec))
+    if ((state == FileStatus::State::Processing && !file_status->shouldRetryProcessing(foreign_processing_node_cache_ttl_sec))
         || state == FileStatus::State::Processed
         || (state == FileStatus::State::Failed
             && file_status->retries
@@ -373,7 +366,7 @@ ObjectStorageQueueIFileMetadata::prepareSetProcessingRequests(Coordination::Requ
     }
 
     auto state = file_status->state.load();
-    if ((state == FileStatus::State::Processing && !file_status->isProcessingRetryable(foreign_processing_node_cache_ttl_sec))
+    if ((state == FileStatus::State::Processing && !file_status->shouldRetryProcessing(foreign_processing_node_cache_ttl_sec))
         || state == FileStatus::State::Processed
         || (state == FileStatus::State::Failed
             && file_status->retries

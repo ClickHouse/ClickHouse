@@ -159,6 +159,10 @@ private:
     size_t min_insert_block_size_rows_for_materialized_views TSA_GUARDED_BY(mutex);
     size_t min_insert_block_size_bytes_for_materialized_views TSA_GUARDED_BY(mutex);
 
+    /// How long an observation of a `processing` node of another processor is trusted.
+    /// It is a per-table setting, while `files_metadata` is shared by the tables with the same `keeper_path`.
+    const time_t foreign_processing_node_cache_ttl_seconds;
+
     std::unique_ptr<ObjectStorageQueueMetadata> temp_metadata;
     std::shared_ptr<ObjectStorageQueueMetadata> files_metadata;
     StorageObjectStorageConfigurationPtr configuration;

@@ -45,7 +45,7 @@ public:
         bool isProcessingByAnotherProcessor() const { return processing_by_another_processor_since.load() != 0; }
         /// Whether a file in `Processing` state may be attempted again: only if the state is a
         /// cached observation of a foreign node and the observation is older than `ttl_sec`.
-        bool isProcessingRetryable(time_t ttl_sec) const;
+        bool shouldRetryProcessing(time_t ttl_sec) const;
 
         std::string getException() const;
 

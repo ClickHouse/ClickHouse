@@ -57,7 +57,8 @@ public:
             LoggerPtr logger_,
             bool enable_hash_ring_filtering_,
             bool file_deletion_on_processed_enabled_,
-            std::atomic<bool> & shutdown_called_);
+            std::atomic<bool> & shutdown_called_,
+            time_t foreign_processing_node_cache_ttl_sec_ = 0);
 
         bool isFinished();
 
@@ -97,6 +98,8 @@ public:
         const StorageID storage_id;
         const bool use_buckets_for_processing;
         const size_t buckets_num = 0;
+        /// A per-table setting: `metadata` is shared by the tables with the same `keeper_path`.
+        const time_t foreign_processing_node_cache_ttl_sec;
 
         ObjectStorageIteratorPtr object_storage_iterator;
         std::unique_ptr<re2::RE2> matcher;

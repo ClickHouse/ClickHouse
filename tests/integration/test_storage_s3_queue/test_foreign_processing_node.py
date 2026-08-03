@@ -131,3 +131,90 @@ def test_file_is_retried_after_foreign_processing_node_disappears(started_cluste
         DROP TABLE IF EXISTS {table_name};
         """
         )
+
+
+def test_foreign_processing_node_cache_ttl_is_per_table(started_cluster):
+    """`foreign_processing_node_cache_ttl_seconds` must be honored per table.
+
+    `ObjectStorageQueueMetadataFactory` shares one `ObjectStorageQueueMetadata` between all
+    tables with the same `keeper_path`, so a setting kept in that shared object would be
+    silently fixed by the table which was created first. This setting belongs to the table:
+    both introspection and the actual retry window must use the value from its own DDL.
+    """
+    node = started_cluster.instances["instance"]
+
+    suffix = generate_random_string()
+    first_table_name = f"test_foreign_ttl_first_{suffix}"
+    second_table_name = f"test_foreign_ttl_second_{suffix}"
+    dst_table_name = f"test_foreign_ttl_dst_{suffix}"
+    keeper_path = f"/clickhouse/test_foreign_ttl_{suffix}"
+    files_path = f"test_foreign_ttl_{suffix}_data"
+
+    files_to_generate = 3
+    generate_random_files(started_cluster, files_path, files_to_generate, start_ind=0, row_num=1)
+
+    # The first table trusts an observation of a foreign `processing` node for an hour.
+    create_table(
+        started_cluster,
+        node,
+        first_table_name,
+        "unordered",
+        files_path,
+        additional_settings={
+            "keeper_path": keeper_path,
+            "s3queue_processing_threads_num": 1,
+            "s3queue_foreign_processing_node_cache_ttl_seconds": 3600,
+        },
+    )
+
+    # The second table shares the keeper path, but always checks keeper.
+    create_table(
+        started_cluster,
+        node,
+        second_table_name,
+        "unordered",
+        files_path,
+        additional_settings={
+            "keeper_path": keeper_path,
+            "s3queue_processing_threads_num": 1,
+            "s3queue_loading_retries": 100,
+            "s3queue_foreign_processing_node_cache_ttl_seconds": 0,
+        },
+    )
+
+    conflict_file = f"{files_path}/test_1.csv"
+    conflict_node = node.query(f"SELECT sipHash64('{conflict_file}')").strip()
+    zk = started_cluster.get_kazoo_client("zoo1")
+    zk.ensure_path(f"{keeper_path}/processing")
+    zk.create(f"{keeper_path}/processing/{conflict_node}", b"another processor")
+
+    try:
+        # Each table reports the value from its own DDL, not the value of the first table.
+        def get_setting(table):
+            return node.query(
+                f"SELECT value FROM system.s3_queue_settings "
+                f"WHERE table = '{table}' AND name = 'foreign_processing_node_cache_ttl_seconds'"
+            ).strip()
+
+        assert get_setting(first_table_name) == "3600"
+        assert get_setting(second_table_name) == "0"
+
+        # Only the second table streams, so it is its own TTL which is in effect.
+        create_mv(node, second_table_name, dst_table_name)
+
+        def get_count():
+            return int(node.query(f"SELECT count() FROM {dst_table_name}").strip())
+
+        run_with_retry(lambda x: x == files_to_generate - 1, get_count)
+
+        # With the TTL of the first table (an hour) the file would not be retried in time.
+        zk.delete(f"{keeper_path}/processing/{conflict_node}")
+        run_with_retry(lambda x: x == files_to_generate, get_count, retries=60)
+    finally:
+        node.query(
+            f"""
+        DROP TABLE IF EXISTS {dst_table_name};
+        DROP TABLE IF EXISTS {second_table_name};
+        DROP TABLE IF EXISTS {first_table_name};
+        """
+        )

@@ -101,7 +101,8 @@ ObjectStorageQueueSource::FileIterator::FileIterator(
     LoggerPtr logger_,
     bool enable_hash_ring_filtering_,
     bool file_deletion_on_processed_enabled_,
-    std::atomic<bool> & shutdown_called_)
+    std::atomic<bool> & shutdown_called_,
+    time_t foreign_processing_node_cache_ttl_sec_)
     : WithContext(context_)
     , metadata(metadata_)
     , object_storage(object_storage_)
@@ -114,6 +115,7 @@ ObjectStorageQueueSource::FileIterator::FileIterator(
     , storage_id(storage_id_)
     , use_buckets_for_processing(metadata->useBucketsForProcessing())
     , buckets_num(use_buckets_for_processing ? metadata->getBucketsNum() : 0)
+    , foreign_processing_node_cache_ttl_sec(foreign_processing_node_cache_ttl_sec_)
     , shutdown_called(shutdown_called_)
     , log(logger_)
 {
@@ -272,7 +274,8 @@ ObjectStorageQueueSource::FileIterator::next()
                 {
                     file_metadatas[i] = metadata->getFileMetadata(
                         new_batch[i]->getPath(),
-                        /* bucket_info */ {}); /// No buckets for Unordered mode.
+                        /* bucket_info */ {}, /// No buckets for Unordered mode.
+                        foreign_processing_node_cache_ttl_sec);
 
                     auto set_processing_result = file_metadatas[i]->prepareSetProcessingRequests(requests, processing_id);
                     if (set_processing_result.has_value())
@@ -551,7 +554,7 @@ ObjectInfoPtr ObjectStorageQueueSource::FileIterator::next(size_t processor)
 
         if (!file_metadata)
         {
-            file_metadata = metadata->getFileMetadata(object_info->getPath(), bucket_info);
+            file_metadata = metadata->getFileMetadata(object_info->getPath(), bucket_info, foreign_processing_node_cache_ttl_sec);
             if (!file_metadata->trySetProcessing())
                 continue;
         }

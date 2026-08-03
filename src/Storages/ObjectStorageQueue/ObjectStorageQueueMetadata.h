@@ -80,7 +80,6 @@ public:
         size_t cleanup_interval_max_ms_,
         bool use_persistent_processing_nodes_,
         size_t persistent_processing_nodes_ttl_seconds_,
-        time_t foreign_processing_node_cache_ttl_seconds_,
         size_t keeper_multiread_batch_size_,
         size_t metadata_cache_size_bytes_,
         size_t metadata_cache_size_elements_);
@@ -129,9 +128,12 @@ public:
     /// for the requested file.
     /// ObjectStorageQueueIFileMetadata (either Ordered or Unordered implementation)
     /// allows to manage metadata of a concrete file.
+    /// `foreign_processing_node_cache_ttl_sec` is a per-table setting: this object is shared
+    /// by all tables with the same `keeper_path`, so it is passed by the caller.
     FileMetadataPtr getFileMetadata(
         const std::string & path,
-        ObjectStorageQueueOrderedFileMetadata::BucketInfoPtr bucket_info = {});
+        ObjectStorageQueueOrderedFileMetadata::BucketInfoPtr bucket_info = {},
+        time_t foreign_processing_node_cache_ttl_sec = 0);
 
     /// Register table in keeper metadata.
     /// active = false:
@@ -196,7 +198,6 @@ public:
 
     bool usePersistentProcessingNode() const { return use_persistent_processing_nodes; }
     size_t getPersistentProcessingNodeTTLSeconds() const { return persistent_processing_node_ttl_seconds; }
-    time_t getForeignProcessingNodeCacheTTLSeconds() const { return foreign_processing_node_cache_ttl_seconds; }
 
 private:
     void cleanupThreadFunc();
@@ -231,8 +232,6 @@ private:
     std::atomic<size_t> cleanup_interval_max_ms;
     std::atomic<bool> use_persistent_processing_nodes;
     std::atomic<size_t> persistent_processing_node_ttl_seconds;
-    /// How long an observation of a `processing` node of another processor is trusted.
-    const time_t foreign_processing_node_cache_ttl_seconds;
 
     size_t buckets_num;
     std::unique_ptr<ThreadFromGlobalPool> update_registry_thread;

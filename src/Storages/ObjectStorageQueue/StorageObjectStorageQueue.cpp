@@ -310,6 +310,7 @@ StorageObjectStorageQueue::StorageObjectStorageQueue(
     , deduplication_v2((*queue_settings_)[ObjectStorageQueueSetting::deduplication_v2])
     , min_insert_block_size_rows_for_materialized_views((*queue_settings_)[ObjectStorageQueueSetting::min_insert_block_size_rows_for_materialized_views])
     , min_insert_block_size_bytes_for_materialized_views((*queue_settings_)[ObjectStorageQueueSetting::min_insert_block_size_bytes_for_materialized_views])
+    , foreign_processing_node_cache_ttl_seconds((*queue_settings_)[ObjectStorageQueueSetting::foreign_processing_node_cache_ttl_seconds])
     , configuration{configuration_}
     , format_settings(format_settings_)
     , reschedule_processing_interval_ms((*queue_settings_)[ObjectStorageQueueSetting::polling_min_timeout_ms])
@@ -442,7 +443,6 @@ StorageObjectStorageQueue::StorageObjectStorageQueue(
         (*queue_settings_)[ObjectStorageQueueSetting::cleanup_interval_max_ms],
         /* use_persistent_processing_nodes */true,
         (*queue_settings_)[ObjectStorageQueueSetting::persistent_processing_node_ttl_seconds],
-        (*queue_settings_)[ObjectStorageQueueSetting::foreign_processing_node_cache_ttl_seconds],
         getContext()->getServerSettings()[ServerSetting::keeper_multiread_batch_size],
         (*queue_settings_)[ObjectStorageQueueSetting::metadata_cache_size_bytes],
         (*queue_settings_)[ObjectStorageQueueSetting::metadata_cache_size_elements]);
@@ -1750,7 +1750,8 @@ StorageObjectStorageQueue::createFileIterator(ContextPtr local_context, const Ac
         log,
         enable_hash_ring_filtering_copy,
         file_deletion_enabled,
-        shutdown_called);
+        shutdown_called,
+        foreign_processing_node_cache_ttl_seconds);
 }
 
 ObjectStorageQueueSettings StorageObjectStorageQueue::getSettings() const
@@ -1789,7 +1790,7 @@ ObjectStorageQueueSettings StorageObjectStorageQueue::getSettings() const
     settings[ObjectStorageQueueSetting::persistent_processing_node_ttl_seconds] = static_cast<UInt32>(files_metadata->getPersistentProcessingNodeTTLSeconds());
     settings[ObjectStorageQueueSetting::use_persistent_processing_nodes] = files_metadata->usePersistentProcessingNode();
     settings[ObjectStorageQueueSetting::foreign_processing_node_cache_ttl_seconds]
-        = static_cast<UInt64>(files_metadata->getForeignProcessingNodeCacheTTLSeconds());
+        = static_cast<UInt64>(foreign_processing_node_cache_ttl_seconds);
     const auto & file_statuses_cache = files_metadata->getFileStatusesCache();
     settings[ObjectStorageQueueSetting::metadata_cache_size_bytes] = file_statuses_cache.maxSizeInBytes();
     settings[ObjectStorageQueueSetting::metadata_cache_size_elements] = file_statuses_cache.maxCount();
@@ -1916,7 +1917,7 @@ void StorageObjectStorageQueue::waitForPathToBeProcessed(
     /// while the failed node is still per-file.
     const bool is_ordered = files_metadata->getTableMetadata().getMode() == ObjectStorageQueueMode::ORDERED;
 
-    auto file_metadata = files_metadata->getFileMetadata(path);
+    auto file_metadata = files_metadata->getFileMetadata(path, /* bucket_info */ {}, foreign_processing_node_cache_ttl_seconds);
     const auto & processed_node_path = file_metadata->getProcessedNodePath();
     const auto & failed_node_path = file_metadata->getFailedNodePath();
 
