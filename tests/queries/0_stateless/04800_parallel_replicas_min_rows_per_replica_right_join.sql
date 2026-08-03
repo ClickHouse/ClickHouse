@@ -12,6 +12,10 @@ CREATE TABLE tl (k Int32, a Int32) ENGINE = MergeTree ORDER BY k;
 CREATE TABLE tr (k Int32, ver Int32) ENGINE = MergeTree ORDER BY k;
 INSERT INTO tl SELECT number, number FROM numbers(1000);
 INSERT INTO tr SELECT number, number FROM numbers(500);
+-- Keys 1000..1019 have no match in tl, so the RIGHT JOIN must keep those rows with a default
+-- left side. Without them the join produces no unmatched rows and RIGHT JOIN semantics, along
+-- with the silently-wrong-result variant of the bug, would go unchecked.
+INSERT INTO tr SELECT number, number FROM numbers(1000, 20);
 
 -- `automatic_parallel_replicas_mode` is a separate feature, pinned to 0 only because the runner
 -- randomizes it to 2 and a non-zero mode forces `enable_parallel_replicas` to 0, which would leave
@@ -23,8 +27,17 @@ SET enable_analyzer = 1, enable_parallel_replicas = 1, max_parallel_replicas = 3
     automatic_parallel_replicas_mode = 0,
     parallel_replicas_min_number_of_rows_per_replica = 100;
 
+-- Liveness oracle: the results below are also produced by plain execution, so assert that the
+-- query really runs with parallel replicas. Prints 1; prints 0 if the path is ever bypassed.
+SELECT count() > 0 FROM (
+    EXPLAIN SELECT r.ver, (l.a + 2) FROM tl AS l RIGHT JOIN tr AS r USING (k) ORDER BY r.ver LIMIT 5
+) WHERE explain ILIKE '%ParallelReplicas%';
+
 -- Projecting a left column under RIGHT JOIN (issue's Error 10 case).
 SELECT r.ver, (l.a + 2) FROM tl AS l RIGHT JOIN tr AS r USING (k) ORDER BY r.ver LIMIT 5;
+
+-- Unmatched right rows: the left side must come back as defaults, not as wrong values.
+SELECT r.k, r.ver, (l.a + 2) FROM tl AS l RIGHT JOIN tr AS r USING (k) ORDER BY r.k DESC LIMIT 5;
 
 -- Aggregate of a right non-key column with a WHERE (issue's Error 8 case).
 SELECT uniqExact(r.ver) FROM tl AS l RIGHT JOIN tr AS r ON l.k = r.k WHERE r.k != 5;
