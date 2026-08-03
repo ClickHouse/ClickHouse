@@ -558,3 +558,50 @@ check_if_not_detached "CREATE HYPOTHETICAL INDEX idx_h ON t_reattach_index (b) T
 check_if_not_detached "DROP HYPOTHETICAL INDEX IF EXISTS idx_h ON t_reattach_index" "t_reattach_index"
 
 ${CLICKHOUSE_CLIENT} -q "DROP TABLE IF EXISTS t_reattach_index"
+
+# A `CREATE` statement stops on its own destination before it ever reads the tables it selects from:
+# `InterpreterCreateQuery::execute` checks the destination-side access first, and the plain-create path
+# then short-circuits on a taken destination name. Neither shape may detach the source.
+${CLICKHOUSE_CLIENT} -q "DROP TABLE IF EXISTS t_reattach_dest_src"
+${CLICKHOUSE_CLIENT} -q "CREATE TABLE t_reattach_dest_src (a UInt64) ENGINE = MergeTree ORDER BY a"
+
+# 1. Destination access. The user has full grants on the source (so it is a genuine detach candidate) but
+# no `CREATE VIEW` on the destination, so `CREATE VIEW v AS SELECT * FROM src` fails with `ACCESS_DENIED`.
+DEST_USER="user_reattach_dest_${CLICKHOUSE_DATABASE}"
+${CLICKHOUSE_CLIENT} -q "DROP USER IF EXISTS ${DEST_USER}"
+${CLICKHOUSE_CLIENT} -q "CREATE USER ${DEST_USER} IDENTIFIED WITH no_password"
+${CLICKHOUSE_CLIENT} -q "GRANT ALL ON ${CLICKHOUSE_DATABASE}.t_reattach_dest_src TO ${DEST_USER}"
+
+REATTACH_OUTPUT=$(${MY_CLICKHOUSE_CLIENT} --user "${DEST_USER}" \
+    --reattach_tables_before_query_execution=1 \
+    --query "CREATE VIEW t_reattach_dest_view AS SELECT * FROM t_reattach_dest_src" 2>&1)
+REATTACH_STATUS=$?
+if [ "$REATTACH_STATUS" -eq 0 ]; then
+    echo "FAIL (query unexpectedly succeeded)"
+elif ! echo "$REATTACH_OUTPUT" | grep -q "ACCESS_DENIED"; then
+    echo "FAIL (unexpected error: $REATTACH_OUTPUT)"
+elif echo "$REATTACH_OUTPUT" | grep -q "DETACH TABLE $CLICKHOUSE_DATABASE.t_reattach_dest_src"; then
+    echo "FAIL (source detached for an access-rejected query)"
+else
+    echo "OK"
+fi
+
+${CLICKHOUSE_CLIENT} -q "DROP VIEW IF EXISTS t_reattach_dest_view"
+${CLICKHOUSE_CLIENT} -q "DROP USER IF EXISTS ${DEST_USER}"
+
+# 2. Taken destination name. `CREATE ... IF NOT EXISTS` over an existing destination is a pure no-op that
+# never runs the `SELECT`, and the plain form fails with `TABLE_ALREADY_EXISTS` before it — in both cases
+# the source must stay attached. The same statement over a free destination name does detach the source.
+${CLICKHOUSE_CLIENT} -q "DROP TABLE IF EXISTS t_reattach_dest_taken"
+${CLICKHOUSE_CLIENT} -q "CREATE TABLE t_reattach_dest_taken (a UInt64) ENGINE = MergeTree ORDER BY a"
+
+check_if_not_detached "CREATE TABLE IF NOT EXISTS t_reattach_dest_taken ENGINE = MergeTree ORDER BY a AS SELECT * FROM t_reattach_dest_src" "t_reattach_dest_src"
+check_if_not_detached "CREATE VIEW IF NOT EXISTS t_reattach_dest_taken AS SELECT * FROM t_reattach_dest_src" "t_reattach_dest_src"
+check_fails_kind_without_detach "CREATE TABLE t_reattach_dest_taken ENGINE = MergeTree ORDER BY a AS SELECT * FROM t_reattach_dest_src" "t_reattach_dest_src" "TABLE_ALREADY_EXISTS"
+
+${CLICKHOUSE_CLIENT} -q "DROP TABLE IF EXISTS t_reattach_dest_free"
+check_if_detached "CREATE TABLE t_reattach_dest_free ENGINE = MergeTree ORDER BY a AS SELECT * FROM t_reattach_dest_src" "t_reattach_dest_src"
+
+${CLICKHOUSE_CLIENT} -q "DROP TABLE IF EXISTS t_reattach_dest_free"
+${CLICKHOUSE_CLIENT} -q "DROP TABLE IF EXISTS t_reattach_dest_taken"
+${CLICKHOUSE_CLIENT} -q "DROP TABLE IF EXISTS t_reattach_dest_src"

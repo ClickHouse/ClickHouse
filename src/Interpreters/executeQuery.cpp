@@ -68,6 +68,7 @@
 #include <Storages/StorageInput.h>
 
 #include <Access/Common/AccessFlags.h>
+#include <Access/Common/AccessRightsElement.h>
 #include <Access/ContextAccess.h>
 #include <Access/EnabledQuota.h>
 #include <Interpreters/ApplyWithGlobalVisitor.h>
@@ -1346,9 +1347,9 @@ bool mainTableExistenceRequired(const IAST & ast)
 /// give a no-op or failing query a side effect on a table it never touches, breaking the side-effect-free
 /// invariant this hook keeps for failing queries, so those targets are not eligible. Only the
 /// `CREATE OR REPLACE`/`REPLACE` forms replace an existing object, so only they keep the target eligible
-/// (the `AS src` source of any `CREATE` form stays eligible independently — the interpreter reads the
-/// source's structure before the destination existence check, see the `ASTCreateQuery` branch in
-/// `collectTablesInQuery`). The index-management statements that also travel through
+/// (the tables a `CREATE` reads — the `AS src` source, the populating `SELECT` — are eligible or not
+/// independently of its destination: see `createQueryStopsBeforeSources`, which suppresses them exactly
+/// when the statement stops on the destination first). The index-management statements that also travel through
 /// `ASTQueryWithTableAndOutput` are handled below for the same reason.
 bool mainTableTouchedIfExists(const IAST & ast, const ContextPtr & context)
 {
@@ -1378,6 +1379,117 @@ bool mainTableTouchedIfExists(const IAST & ast, const ContextPtr & context)
     if (ast.as<ASTHypotheticalIndexQuery>())
         return false;
     return true;
+}
+
+/// The access `InterpreterCreateQuery::getRequiredAccess` checks on the statement's own destination — the
+/// database for `CREATE DATABASE`, the dictionary/view/table being created otherwise, plus the engine grant.
+/// The external `TO`/target tables are deliberately left out: the collector records them separately, with
+/// their own required access, so the generic access preflight covers them.
+AccessRightsElements createQueryDestinationAccess(const ASTCreateQuery & create, const String & database, const String & table)
+{
+    AccessRightsElements required_access;
+
+    if (!create.table)
+        required_access.emplace_back(AccessType::CREATE_DATABASE, database);
+    else if (create.is_dictionary)
+        required_access.emplace_back(AccessType::CREATE_DICTIONARY, database, table);
+    else if (create.isView())
+    {
+        if (create.replace_view)
+            required_access.emplace_back(AccessType::DROP_VIEW | AccessType::CREATE_VIEW, database, table);
+        else if (create.isTemporary())
+            required_access.emplace_back(AccessType::CREATE_TEMPORARY_VIEW);
+        else
+            required_access.emplace_back(AccessType::CREATE_VIEW, database, table);
+    }
+    else if (create.isTemporary())
+    {
+        /// The default engine for a temporary table is `Memory`, and `default_table_engine` does not apply.
+        if (create.storage && create.storage->engine && create.storage->engine->name != "Memory")
+            required_access.emplace_back(AccessType::CREATE_ARBITRARY_TEMPORARY_TABLE);
+        else
+            required_access.emplace_back(AccessType::CREATE_TEMPORARY_TABLE);
+    }
+    else
+    {
+        if (create.replace_table)
+            required_access.emplace_back(AccessType::DROP_TABLE, database, table);
+        required_access.emplace_back(AccessType::CREATE_TABLE, database, table);
+    }
+
+    if (create.storage && create.storage->engine)
+        required_access.emplace_back(AccessType::TABLE_ENGINE, create.storage->engine->name);
+
+    return required_access;
+}
+
+/// Whether a `CREATE` statement stops on its own destination before its interpreter ever touches the
+/// tables the statement reads. Unlike the destination itself (handled by `mainTableTouchedIfExists`),
+/// those source tables — the `AS src` structure source, the populating `SELECT`, the external `TO dst`
+/// targets — are collected from the statement's other fields and children, so they need this separate
+/// guard: `InterpreterCreateQuery::execute` checks the destination-side access first, and the plain-create
+/// path then short-circuits on a taken destination name, both before reading any source. Without the
+/// guard, `CREATE VIEW v AS SELECT * FROM src` by a user lacking `CREATE VIEW`, or
+/// `CREATE TABLE IF NOT EXISTS existing AS SELECT * FROM src`, would `DETACH`/`ATTACH src` and only then
+/// fail or no-op, breaking the side-effect-free invariant this hook keeps for such queries.
+///
+/// Like the preflights in `reattachTablesUsedInQuery`, this is a best-effort, point-in-time check, and it
+/// errs toward suppressing the hook: an unresolvable destination counts as stopping the statement.
+bool createQueryStopsBeforeSources(const ASTCreateQuery & create, const ContextPtr & context)
+{
+    String destination_database = create.getDatabase();
+    String destination_table = create.getTable();
+
+    /// A persistent destination is resolved in the ordinary namespace (`InterpreterCreateQuery` never
+    /// resolves it against session temporary tables); a temporary one carries no database at all.
+    if (create.table && !create.isTemporary())
+    {
+        auto resolved = context->tryResolveStorageID(
+            destination_database.empty() ? StorageID("", destination_table) : StorageID(destination_database, destination_table),
+            Context::ResolveOrdinary);
+        if (!resolved)
+            return true;
+        destination_database = resolved.getDatabaseName();
+        destination_table = resolved.getTableName();
+    }
+
+    if (!context->getAccess()->isGranted(createQueryDestinationAccess(create, destination_database, destination_table)))
+        return true;
+
+    /// The replacing forms really do replace an existing destination, so a taken name does not stop them.
+    /// `CREATE DATABASE` has no destination table to collide with.
+    if (!create.table || create.replace_table || create.replace_view || create.create_or_replace)
+        return false;
+
+    if (create.isTemporary())
+        return static_cast<bool>(context->tryResolveStorageID(StorageID("", create.getTable()), Context::ResolveExternal));
+
+    /// A taken destination name makes the statement throw `TABLE_ALREADY_EXISTS` (or, with
+    /// `IF NOT EXISTS`, a pure no-op) before the populating `SELECT` runs — see the `is_plain_create`
+    /// branch of `InterpreterCreateQuery::doCreateTableAsSelectViaTemporaryTable` and the existence check
+    /// at the top of `InterpreterCreateQuery::doCreateTable`.
+    if (DatabaseCatalog::instance().isTableExist(StorageID(destination_database, destination_table), context))
+        return true;
+
+    /// The name may also be reserved by a table in a detached state: its metadata file is present even
+    /// though the table is not in the catalog. That stops a plain create in the same way. `ATTACH` is the
+    /// exception — it is what such a metadata file is for.
+    if (!create.attach)
+    {
+        if (auto database = DatabaseCatalog::instance().tryGetDatabase(destination_database))
+        {
+            try
+            {
+                database->checkMetadataFilenameAvailability(destination_table);
+            }
+            catch (const Exception &)
+            {
+                return true;
+            }
+        }
+    }
+
+    return false;
 }
 
 /// The object kind the query's main-table reference demands (see `ExpectedObjectKind`). Everything not
@@ -1628,6 +1740,13 @@ void collectTablesInQuery(const ASTPtr & ast, CollectTablesData & data, std::uno
         /// unqualified. Resolving it through the persistent catalog would detach an unrelated persistent
         /// table of the same name that the query never touches, so skip temporary-table references.
         ///
+        /// A `CREATE` that stops on its own destination — its destination-side access check fails, or the
+        /// plain-create path short-circuits on a taken name — never reaches the tables it reads, so the
+        /// whole statement is skipped here, children included (see `createQueryStopsBeforeSources`).
+        if (const auto * create_query = ast->as<ASTCreateQuery>())
+            if (createQueryStopsBeforeSources(*create_query, data.context))
+                return;
+
         /// Targets whose query never touches an existing table of that name (plain `CREATE`/`ATTACH`,
         /// `CREATE ... IF NOT EXISTS`, `UNDROP`, the failing/no-op shapes of `CREATE INDEX`, and the
         /// session-local hypothetical-index statements — see `mainTableTouchedIfExists`) are skipped too:
