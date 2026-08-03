@@ -1,0 +1,8 @@
+analyzer, policy stateful	1
+analyzer, policy plain	4
+analyzer, additional filter stateful	1
+analyzer, additional filter plain	4
+old analyzer, policy stateful	1
+old analyzer, policy plain	4
+old analyzer, additional filter stateful	1
+old analyzer, additional filter plain	4

@@ -18,6 +18,7 @@
 #include <DataTypes/DataTypeLowCardinality.h>
 
 #include <Functions/FunctionFactory.h>
+#include <Functions/UserDefined/UserDefinedSQLFunctionFactory.h>
 
 #include <AggregateFunctions/AggregateFunctionCount.h>
 
@@ -369,6 +370,40 @@ RowPolicyFilterPtr getEffectiveRowPolicyFilter(const StoragePtr & storage, const
     if (!row_policy_filter || row_policy_filter->isAlwaysTrue())
         return nullptr;
     return row_policy_filter;
+}
+
+/// Whether the AST subtree contains a call to a stateful function (`IFunctionBase::isStateful`,
+/// e.g. `neighbor`, `runningAccumulate`, `logTrace`), without descending into nested subqueries.
+/// The hidden reader-side filters (a row policy, an additional table filter) are kept as ASTs at
+/// the point where the trivial-`LIMIT` decision is taken, so the query-tree based
+/// `hasStatefulFunctionNode` cannot be used for them. Mirrors
+/// `numbersLikeUtils::astContainsStatefulFunction` and the copy in `MergeTreeWhereOptimizer`.
+/// Such a call can also hide behind a SQL UDF wrapper (`CREATE FUNCTION f AS x -> neighbor(x, 1)`),
+/// so the check descends into SQL UDF bodies with cycle protection.
+bool astContainsStatefulFunctionImpl(const ASTPtr & ast, const ContextPtr & context, std::unordered_set<String> & visited_udfs)
+{
+    if (!ast)
+        return false;
+    if (const auto * function = ast->as<ASTFunction>())
+    {
+        const auto function_resolver = FunctionFactory::instance().tryGet(function->name, context);
+        if (function_resolver && function_resolver->isStateful())
+            return true;
+        if (auto udf_body = UserDefinedSQLFunctionFactory::instance().tryGet(function->name);
+            udf_body && visited_udfs.insert(function->name).second
+                && astContainsStatefulFunctionImpl(udf_body, context, visited_udfs))
+            return true;
+    }
+    for (const auto & child : ast->children)
+        if (!child->as<ASTSelectQuery>() && astContainsStatefulFunctionImpl(child, context, visited_udfs))
+            return true;
+    return false;
+}
+
+bool astContainsStatefulFunction(const ASTPtr & ast, const ContextPtr & context)
+{
+    std::unordered_set<String> visited_udfs;
+    return astContainsStatefulFunctionImpl(ast, context, visited_udfs);
 }
 
 bool applyTrivialCountIfPossible(
@@ -886,7 +921,11 @@ std::optional<FilterDAGInfo> buildAdditionalFiltersIfNeeded(
     return filter_info;
 }
 
-UInt64 mainQueryNodeBlockSizeByLimit(const SelectQueryInfo & select_query_info, bool & out_stateful_function_blocked_trivial_limit)
+UInt64 mainQueryNodeBlockSizeByLimit(
+    const SelectQueryInfo & select_query_info,
+    const ASTs & hidden_filter_asts,
+    const ContextPtr & query_context,
+    bool & out_stateful_function_blocked_trivial_limit)
 {
     out_stateful_function_blocked_trivial_limit = false;
 
@@ -964,7 +1003,12 @@ UInt64 mainQueryNodeBlockSizeByLimit(const SelectQueryInfo & select_query_info, 
     /// This check is BEFORE the hidden-reader-side-filter check below on purpose: the
     /// single-deterministic-stream requirement holds even when a row policy / additional filter is
     /// present (the caller suppresses only the source cap in that case).
-    if (hasStatefulFunctionNode(main_query_node.getProjectionNode()))
+    /// The hidden reader-side filters themselves (`hidden_filter_asts`: a row policy, an additional
+    /// table filter) are evaluated on the read side as well, so a stateful function inside one of
+    /// them (`CREATE ROW POLICY ... USING logTrace('x') = 0`) imposes the very same requirement even
+    /// when the projection is free of stateful functions.
+    if (hasStatefulFunctionNode(main_query_node.getProjectionNode())
+        || std::ranges::any_of(hidden_filter_asts, [&](const ASTPtr & filter_ast) { return astContainsStatefulFunction(filter_ast, query_context); }))
     {
         out_stateful_function_blocked_trivial_limit = true;
         return 0;
@@ -1609,13 +1653,24 @@ JoinTreeQueryPlan buildQueryPlanForTableExpression(TableExpressionNodePtr table_
             /// this replica's share of the key space, so the source cap would truncate the read
             /// before the surviving rows are reached. The predicate mirrors the conditions under
             /// which `buildCustomKeyFilterIfNeeded` actually produces the filter.
+            auto row_policy_filter = getEffectiveRowPolicyFilter(storage, query_context);
             bool has_additional_filters = !!table_expression_query_info.additional_filter_ast
-                || !!getEffectiveRowPolicyFilter(storage, query_context)
+                || !!row_policy_filter
                 || (query_context->canUseParallelReplicasCustomKey()
                     && settings[Setting::parallel_replicas_count] > 1
                     && !settings[Setting::parallel_replicas_custom_key].value.empty());
+            /// These filters run on the read side, so a stateful function inside one of them has the
+            /// same single-deterministic-stream requirement as a stateful function in the projection.
+            /// (The parallel-replicas custom-key filter is generated from the key expression by the
+            /// server and is a plain range predicate, so it cannot hold a stateful call.)
+            ASTs hidden_filter_asts;
+            if (table_expression_query_info.additional_filter_ast)
+                hidden_filter_asts.push_back(table_expression_query_info.additional_filter_ast);
+            if (row_policy_filter)
+                hidden_filter_asts.push_back(row_policy_filter->expression);
             bool stateful_function_blocked_trivial_limit = false;
-            max_block_size_limited = mainQueryNodeBlockSizeByLimit(select_query_info, stateful_function_blocked_trivial_limit);
+            max_block_size_limited = mainQueryNodeBlockSizeByLimit(
+                select_query_info, hidden_filter_asts, query_context, stateful_function_blocked_trivial_limit);
             /// Suppress ONLY the source cap when a hidden filter is present -- but keep
             /// `stateful_function_blocked_trivial_limit`. The single-deterministic-stream requirement
             /// for a stateful projection (below) is a separate concern from the source cap: it holds

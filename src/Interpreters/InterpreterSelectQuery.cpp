@@ -2858,17 +2858,22 @@ UInt64 InterpreterSelectQuery::maxBlockSizeByLimit(bool & out_stateful_function_
     /// This check is BEFORE the hidden-reader-side-filter check below on purpose: the
     /// single-deterministic-stream requirement holds even when a row policy / additional filter is
     /// present, whereas the source cap does not (see the sibling caller in `PlannerJoinTree`).
-    if (selectListHasStatefulFunction(query.select(), context))
+    /// The hidden reader-side filters themselves (a row policy, an additional table filter, or a
+    /// parallel-replicas custom-key filter -- all collected into `query_info.filter_asts`) are
+    /// evaluated on the read side as well, so a stateful function inside one of them
+    /// (`CREATE ROW POLICY ... USING logTrace('x') = 0`) imposes the very same requirement even
+    /// when the SELECT list is free of stateful functions.
+    if (selectListHasStatefulFunction(query.select(), context)
+        || std::ranges::any_of(query_info.filter_asts, [&](const ASTPtr & filter_ast) { return selectListHasStatefulFunction(filter_ast, context); }))
     {
         out_stateful_function_blocked_trivial_limit = true;
         return 0;
     }
 
-    /// A hidden reader-side filter (a row policy, an additional table filter, or a parallel-replicas
-    /// custom-key filter -- all collected into `query_info.filter_asts`) can drop rows before the
-    /// LIMIT applies, so capping the source to `limit + offset` rows is unsafe (it could drop output
-    /// rows the LIMIT should keep). There is no stateful function in the SELECT list here (checked
-    /// above), so there is no single-stream requirement -- just skip the source cap.
+    /// A hidden reader-side filter can drop rows before the LIMIT applies, so capping the source to
+    /// `limit + offset` rows is unsafe (it could drop output rows the LIMIT should keep). There is no
+    /// stateful function in the SELECT list or in the filters here (checked above), so there is no
+    /// single-stream requirement -- just skip the source cap.
     if (!query_info.filter_asts.empty())
         return 0;
 
