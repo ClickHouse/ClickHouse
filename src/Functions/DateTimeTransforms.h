@@ -1,5 +1,6 @@
 #pragma once
 
+#include <cmath>
 #include <limits>
 #include <base/arithmeticOverflow.h>
 #include <base/types.h>
@@ -17,6 +18,8 @@
 #include <Functions/FunctionHelpers.h>
 #include <Functions/IFunction.h>
 #include <Functions/extractTimeZoneFromFunctionArguments.h>
+#include <DataTypes/DataTypeDate.h>
+#include <DataTypes/DataTypeDate32.h>
 #include <DataTypes/DataTypeDateTime.h>
 #include <DataTypes/DataTypeDateTime64.h>
 #include <DataTypes/DataTypeTime.h>
@@ -2660,15 +2663,73 @@ struct Transformer
 
         for (size_t i = 0; i < input_rows_count; ++i)
         {
-            if constexpr (is_any_of<ToType, DataTypeDate, DataTypeDateTime, DataTypeTime>)
+            if constexpr (is_any_of<ToType, DataTypeDate, DataTypeDate32, DataTypeDateTime, DataTypeTime>)
             {
                 if constexpr (is_any_of<Additions, DateTimeAccurateConvertStrategyAdditions, DateTimeAccurateOrNullConvertStrategyAdditions>)
                 {
-                    using UpperBoundType = std::conditional_t<
-                        std::is_floating_point_v<typename FromTypeVector::value_type>,
-                        typename FromTypeVector::value_type,
-                        Int64>;
-                    bool is_valid_input = vec_from[i] >= 0 && vec_from[i] <= static_cast<UpperBoundType>(0xFFFFFFFFL);
+                    using FromValueType = typename FromTypeVector::value_type;
+                    bool is_valid_input = false;
+                    if constexpr (std::is_same_v<ToType, DataTypeTime>)
+                    {
+                        /// `Time` is a signed count of seconds of a clock reading within
+                        /// `[-MAX_TIME_TIMESTAMP, MAX_TIME_TIMESTAMP]`, so it cannot share the unsigned `DateTime`
+                        /// window: negative numeric inputs are meaningful and preserved for `Time`, while values
+                        /// above its own maximum are not representable and would be silently saturated by the
+                        /// transform below, which is exactly what the accurate cast must reject.
+                        if constexpr (is_floating_point<FromValueType>)
+                        {
+                            /// `Float64` represents every `BFloat16` and `Float32` value and `MAX_TIME_TIMESTAMP`
+                            /// exactly. Every comparison with a NaN is false, so a NaN is rejected as well.
+                            /// A non-integral value cannot be represented and would be truncated by the
+                            /// transform below, so the accurate cast must reject it too.
+                            const Float64 value = static_cast<Float64>(vec_from[i]);
+                            is_valid_input = value >= -static_cast<Float64>(MAX_TIME_TIMESTAMP)
+                                && value <= static_cast<Float64>(MAX_TIME_TIMESTAMP)
+                                && value == std::trunc(value);
+                        }
+                        else if constexpr (is_signed_v<FromValueType>)
+                            is_valid_input = vec_from[i] >= -MAX_TIME_TIMESTAMP && vec_from[i] <= MAX_TIME_TIMESTAMP;
+                        else
+                            is_valid_input = vec_from[i] <= static_cast<UInt64>(MAX_TIME_TIMESTAMP);
+                    }
+                    else if constexpr (std::is_same_v<ToType, DataTypeDate32>)
+                    {
+                        /// `Date32` spans `[1900-01-01, 2299-12-31]`, and a numeric source is read either as an
+                        /// extended day number or as a unix timestamp, so its representable window is
+                        /// `[-getDayNumOffsetEpoch(), MAX_DATE32_TIMESTAMP]`. Anything outside is silently clamped
+                        /// by the transform below, which is exactly what the accurate cast must reject.
+                        static constexpr Int64 lower_bound = -static_cast<Int64>(DateLUTImpl::getDayNumOffsetEpoch());
+                        if constexpr (is_floating_point<FromValueType>)
+                        {
+                            /// `Float64` represents every `BFloat16` and `Float32` value and both bounds exactly.
+                            /// Every comparison with a NaN is false, so a NaN is rejected as well.
+                            /// A non-integral value cannot be represented and would be truncated by the
+                            /// transform below, so the accurate cast must reject it too.
+                            const Float64 value = static_cast<Float64>(vec_from[i]);
+                            is_valid_input = value >= static_cast<Float64>(lower_bound)
+                                && value <= static_cast<Float64>(MAX_DATE32_TIMESTAMP)
+                                && value == std::trunc(value);
+                        }
+                        else if constexpr (is_signed_v<FromValueType>)
+                            is_valid_input = vec_from[i] >= lower_bound && vec_from[i] <= MAX_DATE32_TIMESTAMP;
+                        else
+                            is_valid_input = vec_from[i] <= static_cast<UInt64>(MAX_DATE32_TIMESTAMP);
+                    }
+                    else
+                    {
+                        if constexpr (is_floating_point<FromValueType>)
+                        {
+                            /// `Float64` represents every `BFloat16` and `Float32` value and the upper bound
+                            /// exactly. Every comparison with a NaN is false, so a NaN is rejected as well.
+                            /// A non-integral value cannot be represented and would be truncated by the
+                            /// transform below, so the accurate cast must reject it too.
+                            const Float64 value = static_cast<Float64>(vec_from[i]);
+                            is_valid_input = value >= 0 && value <= static_cast<Float64>(0xFFFFFFFFL)
+                                && value == std::trunc(value);
+                        }
+                        else
+                            is_valid_input = vec_from[i] >= 0 && vec_from[i] <= static_cast<Int64>(0xFFFFFFFFL);
+                    }
                     if (!is_valid_input)
                     {
                         if constexpr (std::is_same_v<Additions, DateTimeAccurateOrNullConvertStrategyAdditions>)
@@ -2680,7 +2741,7 @@ struct Transformer
                         else
                         {
                             throw Exception(ErrorCodes::CANNOT_CONVERT_TYPE, "Value {} cannot be safely converted into type {}",
-                                static_cast<double>(vec_from[i]), TypeName<ValueType>);
+                                static_cast<double>(vec_from[i]), ToType::family_name);
                         }
                     }
                 }
