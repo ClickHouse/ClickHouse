@@ -197,3 +197,24 @@ $CLIENT --query "SELECT a, b, c FROM t_attach_dst ORDER BY a"
 
 $CLIENT --query "DROP TABLE t_attach_src SYNC"
 $CLIENT --query "DROP TABLE t_attach_dst SYNC"
+
+# Scenario 6: an inactive leftover mapping must not travel with BACKUP, or RESTORE
+# adopts it over an empty destination's own mapping and scenario 4's guard never fires.
+backup5="${CLICKHOUSE_TEST_UNIQUE_NAME}_b5"
+$CLIENT --query "DROP TABLE IF EXISTS t_inactive SYNC"
+$CLIENT --query "
+CREATE TABLE t_inactive (a UInt32, b String)
+ENGINE = MergeTree ORDER BY a
+SETTINGS min_bytes_for_wide_part = 0, min_rows_for_wide_part = 0;
+"
+echo "INSERT INTO t_inactive VALUES (1, 'x')" | $CLIENT
+table_dir=$($CLIENT --query "SELECT data_paths[1] FROM system.tables WHERE database = currentDatabase() AND name = 't_inactive'")
+$CLIENT --query "DETACH TABLE t_inactive SYNC"
+printf '%s' '{"active": false, "next_column_id": 1, "mapping": {}}' > "${table_dir}column_ids.json"
+$CLIENT --query "ATTACH TABLE t_inactive"
+
+$CLIENT --query "BACKUP TABLE t_inactive TO Disk('backups', '${backup5}')" > /dev/null
+[ "$(find "${backups_root}${backup5}" -name 'column_ids.json' -type f | wc -l)" = "0" ] \
+    && echo "inactive_mapping_not_backed_up" || echo "inactive_mapping_leaked"
+
+$CLIENT --query "DROP TABLE t_inactive SYNC"

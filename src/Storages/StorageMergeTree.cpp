@@ -3737,7 +3737,7 @@ void StorageMergeTree::backupData(BackupEntriesCollector & backup_entries_collec
             ErrorCodes::NOT_IMPLEMENTED,
             "Column ID mapping changed during BACKUP collection; retry.");
 
-    if (column_ids_mapping_snapshot)
+    if (column_ids_mapping_snapshot && column_ids_mapping_snapshot->isActive())
     {
         backup_entries_collector.addBackupEntry(
             fs::path(data_path_in_backup) / COLUMN_IDS_FILE_NAME,

@@ -8578,25 +8578,28 @@ void MergeTreeData::restoreDataFromBackup(RestorerFromBackup & restorer, const S
         RestorerFromBackup::throwTableIsNotEmpty(getStorageID());
 
     /// Restore the mapping before parts attach so the reader can resolve
-    /// non-identity column IDs.  Older backups predating this fix have no
-    /// `column_ids.json`; they fall through to the legacy logical-name path.
+    /// non-identity column IDs.
     auto column_ids_in_backup = fs::path(data_path_in_backup) / COLUMN_IDS_FILE_NAME;
-    if (!backup->fileExists(column_ids_in_backup))
+
+    std::optional<ColumnIdMapping> restored;
+    if (backup->fileExists(column_ids_in_backup))
     {
-        /// Absence of `column_ids.json` is only safe when column IDs are NOT
-        /// active for the restored table.  The previous identity-only check
-        /// was unsafe: a backup made from a column-ID table that lost its
-        /// mapping file can still hold parts whose physical files are named
-        /// by numeric IDs (after DROP+ADD or RENAME) -- restoring such parts
-        /// into a destination with an active identity mapping `c -> c` would
-        /// silently return defaults for `c`.  We cannot prove the backup is
-        /// purely-logical without re-reading every part's columns.txt, so
-        /// fail closed whenever any active mapping is present on the
-        /// destination.
+        auto read_buf = backup->readFile(column_ids_in_backup);
+        auto loaded = ColumnIdMapping::deserialize(*read_buf);
+        skipWhitespaceIfAny(*read_buf);
+        assertEOF(*read_buf);
+        if (loaded.isActive())
+            restored = std::move(loaded);
+    }
+
+    if (!restored)
+    {
+        /// Whether the backup's parts are named logically cannot be known without
+        /// reading every part's columns.txt, so fail closed rather than guess.
         auto current = getColumnIdMapping();
         if (current && current->isActive())
             throw Exception(ErrorCodes::BAD_ARGUMENTS,
-                "RESTORE: backup has no `{}` but destination has an active "
+                "RESTORE: backup has no active `{}` but destination has an active "
                 "column-ID mapping.  The backup may contain parts whose files "
                 "are named by numeric IDs which would resolve to the wrong "
                 "logical columns under the destination's mapping.  Restore "
@@ -8605,14 +8608,6 @@ void MergeTreeData::restoreDataFromBackup(RestorerFromBackup & restorer, const S
     }
     else
     {
-        ColumnIdMapping restored;
-        {
-            auto read_buf = backup->readFile(column_ids_in_backup);
-            restored = ColumnIdMapping::deserialize(*read_buf);
-            skipWhitespaceIfAny(*read_buf);
-            assertEOF(*read_buf);
-        }
-
         /// Restoring into a non-empty table (`allow_non_empty_tables = 1`) must not
         /// silently overwrite an existing active mapping: destination parts written
         /// under the current mapping would then resolve through the backup's mapping
@@ -8627,7 +8622,7 @@ void MergeTreeData::restoreDataFromBackup(RestorerFromBackup & restorer, const S
         {
             auto current = getColumnIdMapping();
             const bool same_mapping = current && current->isActive()
-                && current->getLogicalToId() == restored.getLogicalToId();
+                && current->getLogicalToId() == restored->getLogicalToId();
             if (!same_mapping)
                 throw Exception(ErrorCodes::BAD_ARGUMENTS,
                     "RESTORE: backup's `{}` differs from destination's active "
@@ -8635,15 +8630,15 @@ void MergeTreeData::restoreDataFromBackup(RestorerFromBackup & restorer, const S
                     "wrong physical column names.  Restore into an empty table.",
                     COLUMN_IDS_FILE_NAME);
 
-            if (restored.getNextColumnIdCounter() > current->getNextColumnIdCounter())
+            if (restored->getNextColumnIdCounter() > current->getNextColumnIdCounter())
             {
-                persistMapping(std::move(restored));
+                persistMapping(std::move(*restored));
             }
             /// Else: destination's counter is at least as high — leave it alone.
         }
         else
         {
-            persistMapping(std::move(restored));
+            persistMapping(std::move(*restored));
         }
     }
 
@@ -11412,7 +11407,7 @@ PartitionCommandsResultInfo MergeTreeData::freezePartitionsByMatcher(
     /// -- unlike the mutable live copy -- write `column_ids.json` into EACH disk's
     /// shadow subtree that produced a frozen part.  Per-disk redundancy is correct
     /// here precisely because the shadow never changes (no torn-write concern).
-    if (column_ids_mapping_snapshot && !result.empty())
+    if (column_ids_mapping_snapshot && column_ids_mapping_snapshot->isActive() && !result.empty())
     {
         const auto column_ids_in_freeze = fs::path(backup_path) / relative_data_path / COLUMN_IDS_FILE_NAME;
         for (const auto & disk : getStoragePolicy()->getDisks())
