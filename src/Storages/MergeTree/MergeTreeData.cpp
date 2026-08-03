@@ -10145,7 +10145,6 @@ Block MergeTreeData::getMinMaxCountProjectionBlock(
                 continue;
         }
 
-        /// hyperrectangle must come from the part whose metadata built the condition.
         if (minmax_idx_condition && !minmax_idx_condition->generateForPart(part).checkInHyperrectangle(part->getMinMaxIndex()->hyperrectangle, minmax_columns_types).can_be_true)
             continue;
 
