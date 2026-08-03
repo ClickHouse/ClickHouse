@@ -230,7 +230,7 @@ In addition to the built-in authenticator, you can configure your ClickHouse Clo
 | Issuer | The value of the `iss` claim in tokens issued by your identity provider, typically the provider's URL (for example, `https://your-tenant.okta.com`). ClickHouse rejects tokens whose issuer does not match this value. |
 | Audience | The value of the `aud` claim that your identity provider places in tokens intended for this service. ClickHouse rejects tokens issued for a different audience. |
 | JWKS URL | The HTTPS endpoint where your identity provider publishes its JSON Web Key Set (for example, `https://idp.example.com/.well-known/jwks.json`). ClickHouse fetches the public keys from this endpoint to verify token signatures. JWKS verification works with RSA keys (`RS256`) only, as described in [Required claims](#required-claims). |
-| Roles claim | The name of the token claim that holds the ClickHouse roles for the ephemeral user (the default is `clickhouse:roles`). The claim must contain a JSON array of role names, e.g. `["analyst", "reader"]`. |
+| Roles claim | The name of the token claim that holds the ClickHouse roles for the ephemeral user (the default is `clickhouse:roles`). The claim must contain a JSON array of role names, for example `["analyst", "reader"]`. |
 
 The roles named in the claim must already exist in the service (create them with `CREATE ROLE`), and the permission limit still caps the effective access rights, as described in [Access rights](#access-rights).
 
