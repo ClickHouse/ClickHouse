@@ -82,16 +82,21 @@ void PostgreSQLSource<T>::onStart()
 
     if (!tx)
     {
+        /// Construct outside tx_mutex: the transaction constructor issues BEGIN, i.e. network I/O.
+        std::shared_ptr<T> new_tx;
         try
         {
             auto & conn = connection_holder->get();
-            tx = std::make_shared<T>(conn);
+            new_tx = std::make_shared<T>(conn);
         }
         catch (const pqxx::broken_connection &)
         {
             connection_holder->update();
-            tx = std::make_shared<T>(connection_holder->get());
+            new_tx = std::make_shared<T>(connection_holder->get());
         }
+
+        std::lock_guard lock(tx_mutex);
+        tx = std::move(new_tx);
     }
 
     LOG_TEST(getLogger("PostgreSQLSource"), "Stream data from database");
@@ -197,20 +202,35 @@ void PostgreSQLSource<T>::onCancel() noexcept
     if (is_completed.exchange(true))
         return;
 
-    /// The code is executed only if onStart() was not finished mainly due to freezing on pqxx::from_query
-    if (!started.load() && tx && tx->conn().is_open())
+    /// Outer try/catch: this function is noexcept, and locking tx_mutex may throw.
+    try
     {
-        try
+        /// Snapshot under the lock, then use it with the lock released: the pqxx calls below block.
+        std::shared_ptr<T> tx_snapshot;
         {
-            tx->conn().cancel_query();
-        }
-        catch (...)
-        {
-            tryLogCurrentException(__PRETTY_FUNCTION__);
+            std::lock_guard lock(tx_mutex);
+            tx_snapshot = tx;
         }
 
-        if (connection_holder)
-            connection_holder->setBroken();
+        /// The code is executed only if onStart() was not finished mainly due to freezing on pqxx::from_query
+        if (!started.load() && tx_snapshot && tx_snapshot->conn().is_open())
+        {
+            try
+            {
+                tx_snapshot->conn().cancel_query();
+            }
+            catch (...)
+            {
+                tryLogCurrentException(__PRETTY_FUNCTION__);
+            }
+
+            if (connection_holder)
+                connection_holder->setBroken();
+        }
+    }
+    catch (...)
+    {
+        tryLogCurrentException(__PRETTY_FUNCTION__);
     }
 }
 

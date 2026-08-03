@@ -10,6 +10,8 @@
 #include <Core/PostgreSQL/ConnectionHolder.h>
 #include <Core/PostgreSQL/Utils.h>
 
+#include <mutex>
+
 
 namespace DB
 {
@@ -54,6 +56,10 @@ private:
 
     std::atomic<bool> started{false};
     std::atomic<bool> is_completed{false};
+
+    /// Serializes publication of `tx` in onStart() against the read in onCancel(), which runs on the
+    /// cancelling thread while onStart() is still in flight. Must not be held across pqxx calls.
+    std::mutex tx_mutex;
 
     postgres::ConnectionHolderPtr connection_holder;
 
