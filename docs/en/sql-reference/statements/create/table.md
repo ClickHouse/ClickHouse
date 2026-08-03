@@ -363,6 +363,7 @@ ENGINE = <Engine>
 
 The `Default` codec can be specified to reference default compression which may depend on different settings (and properties of data) in runtime.
 Example: `value UInt64 CODEC(Default)` — the same as lack of codec specification.
+See also [Adaptive Codec Selection](#adaptive-codec-selection).
 
 Also you can remove current CODEC from the column and use default compression from config.xml:
 
@@ -562,6 +563,43 @@ CREATE TABLE mytable
 )
 ENGINE = MergeTree ORDER BY x;
 ```
+
+### Adaptive Codec Selection {#adaptive-codec-selection}
+
+<ExperimentalBadge/>
+
+The specialized codecs above can shrink the right data dramatically, but choosing them takes expertise, and no single choice fits a column whose data changes over time. With the MergeTree setting `allow_experimental_adaptive_codec_selection` enabled, ClickHouse chooses for you. For columns that use the default codec (`CODEC(Default)` or no `CODEC` at all), each block is written with whichever codec would compress it smallest, chosen among the table's default codec, `NONE`, and specialized codecs suited to the column type.
+
+A block is never larger than the default codec would make it, and incompressible data is stored raw (compressing it would produce a slightly larger file that is slower to read). The work happens in the background, on merges and mutations, where the data is recompressed anyway. Insert speed is unaffected. Queries often get faster: less data is fetched from disk, every block a query reads must be decompressed first, and specialized codecs decompress faster than the default `LZ4`. Each block records the codec it was written with, so reading requires no setting, and the feature can be switched off at any time with all data remaining readable.
+
+```sql
+CREATE TABLE adaptive
+(
+    time DateTime,
+    user_id UInt64
+)
+ENGINE = MergeTree
+ORDER BY time
+SETTINGS allow_experimental_adaptive_codec_selection = 1;
+
+INSERT INTO adaptive SELECT toDateTime('2026-01-01') + number, cityHash64(number) FROM numbers(1000000);
+OPTIMIZE TABLE adaptive FINAL;
+```
+
+You can observe how it works with [`mergeTreeCodecBlockCounts`](/sql-reference/table-functions/mergeTreeCodecBlockCounts) table function. Here `time` grows steadily, so `T64`, which stores only the bits that vary within a block, beat the default codec on every block. `user_id` holds hashes that no codec can shrink, so its blocks were stored raw:
+
+```sql
+SELECT column, codec_block_counts FROM mergeTreeCodecBlockCounts(currentDatabase(), 'adaptive');
+```
+
+```text
+   ┌─column──┬─codec_block_counts─┐
+1. │ time    │ {'T64':62}         │
+2. │ user_id │ {'NONE':123}       │
+   └─────────┴────────────────────┘
+```
+
+Selection currently covers integer-like columns: integers, enums, dates and times, `Decimal32`/`Decimal64`, and `IPv4`.
 
 ## Temporary Tables {#temporary-tables}
 
