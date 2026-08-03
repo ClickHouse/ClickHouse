@@ -296,8 +296,27 @@ def build_fragment(spec: dict, entries_by_tag: dict) -> list:
     return groups
 
 
-def group_page_refs(group: dict) -> set[str]:
-    """Return every leaf page reference below one navigation group."""
+def operation_ref_keys(spec: dict) -> dict[str, str]:
+    """Map both navigation forms of an operation to its stable method/path key."""
+    keys = {}
+    for entry in iter_operations(spec):
+        operation_key = f"{entry['method']} {entry['path']}"
+        badge_ref = (
+            f"{API_REF_DIR}/{dir_slug(entry['tag'])}/{file_slug(entry['operation_id'])}"
+        )
+        for ref in (operation_key, badge_ref):
+            previous = keys.get(ref)
+            if previous is not None and previous != operation_key:
+                raise SystemExit(
+                    f"Navigation reference {ref!r} maps to multiple operations: "
+                    f"{previous!r} and {operation_key!r}"
+                )
+            keys[ref] = operation_key
+    return keys
+
+
+def group_page_refs(group: dict, ref_keys: dict[str, str]) -> set[str]:
+    """Return normalized leaf page references below one navigation group."""
     pages = group.get("pages")
     if not isinstance(pages, list):
         raise SystemExit(f"Navigation group has no pages list: {group.get('group', group)!r}")
@@ -305,20 +324,23 @@ def group_page_refs(group: dict) -> set[str]:
     refs = set()
     for page in pages:
         if isinstance(page, str):
-            refs.add(page)
+            refs.add(ref_keys.get(page, page))
         elif isinstance(page, dict):
-            refs.update(group_page_refs(page))
+            refs.update(group_page_refs(page, ref_keys))
         else:
             raise SystemExit(f"Unexpected navigation page entry: {page!r}")
     return refs
 
 
-def localize_fragment(generated_groups: list, current_groups: list) -> list:
+def localize_fragment(
+    generated_groups: list, current_groups: list, ref_keys: dict[str, str]
+) -> list:
     """Copy generated navigation while preserving existing translated group names.
 
-    Groups are matched by their shared descendant page references instead of by
-    position, so inserting or reordering an OpenAPI tag does not shift the
-    translated names onto unrelated groups. A group containing only new
+    Groups are matched by their shared operations instead of by position or
+    rendered reference. This preserves translated names across reordering and
+    across maturity changes that switch a navigation leaf between `METHOD /path`
+    and a generated badge-page path. A group containing only new
     endpoints keeps the name supplied by the OpenAPI spec until translation
     catches up.
     """
@@ -327,12 +349,12 @@ def localize_fragment(generated_groups: list, current_groups: list) -> list:
     if not all(isinstance(group, dict) for group in generated_groups + current_groups):
         raise SystemExit("Cloud API navigation fragments contain a non-group entry")
 
-    current_refs = [group_page_refs(group) for group in current_groups]
+    current_refs = [group_page_refs(group, ref_keys) for group in current_groups]
     used_current_groups = set()
     localized_groups = []
 
     for generated_group in generated_groups:
-        generated_refs = group_page_refs(generated_group)
+        generated_refs = group_page_refs(generated_group, ref_keys)
         candidates = []
         for index, refs in enumerate(current_refs):
             if index in used_current_groups:
@@ -368,7 +390,9 @@ def localize_fragment(generated_groups: list, current_groups: list) -> list:
                 current_children = [
                     page for page in current_group["pages"] if isinstance(page, dict)
                 ]
-            localized_group["pages"] = localize_fragment(generated_children, current_children)
+            localized_group["pages"] = localize_fragment(
+                generated_children, current_children, ref_keys
+            )
 
         localized_groups.append(localized_group)
 
@@ -487,12 +511,13 @@ def main() -> int:
     # endpoint structure. Locale fragments reuse that structure while keeping
     # their translated group names.
     fragment = build_fragment(spec, entries_by_tag)
+    ref_keys = operation_ref_keys(spec)
     expected_files[Path(FRAGMENT_REL)] = json.dumps(fragment, indent=2, ensure_ascii=False) + "\n"
     for locale in LOCALE_DIRS:
         rel = Path(locale) / FRAGMENT_REL
         path = docs_dir / rel
         current_fragment = json.loads(path.read_text(encoding="utf-8"))
-        localized_fragment = localize_fragment(fragment, current_fragment)
+        localized_fragment = localize_fragment(fragment, current_fragment, ref_keys)
         expected_files[rel] = json.dumps(localized_fragment, indent=2, ensure_ascii=False) + "\n"
 
     # Pin the spec the navigation and pages were generated from, so that page

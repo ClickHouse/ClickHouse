@@ -1,4 +1,23 @@
-from ci.jobs.scripts.docs.generate_cloud_api_reference import localize_fragment
+from ci.jobs.scripts.docs.generate_cloud_api_reference import (
+    localize_fragment,
+    operation_ref_keys,
+)
+
+
+def identity_ref_keys(*groups):
+    refs = {}
+
+    def collect(group):
+        for page in group["pages"]:
+            if isinstance(page, str):
+                refs[page] = page
+            else:
+                collect(page)
+
+    for group_list in groups:
+        for group in group_list:
+            collect(group)
+    return refs
 
 
 def test_localize_fragment_preserves_names_and_syncs_pages():
@@ -31,7 +50,7 @@ def test_localize_fragment_preserves_names_and_syncs_pages():
         },
     ]
 
-    localized = localize_fragment(generated, current)
+    localized = localize_fragment(generated, current, identity_ref_keys(generated, current))
 
     assert localized == [
         {
@@ -58,7 +77,57 @@ def test_localize_fragment_matches_reordered_groups_by_pages():
         {"group": "Deuxième", "pages": ["GET /second"]},
     ]
 
-    assert localize_fragment(generated, current) == [
+    assert localize_fragment(
+        generated, current, identity_ref_keys(generated, current)
+    ) == [
         {"group": "Deuxième", "pages": ["GET /second"]},
         {"group": "Premier", "pages": ["GET /first"]},
     ]
+
+
+def test_localize_fragment_preserves_names_across_maturity_changes():
+    operation = "GET /v1/organizations/{organizationId}/usageCost"
+    badge_page = "products/cloud/api-reference/billing/billing-usage-get"
+    ref_keys = {operation: operation, badge_page: operation}
+    translated = "Organisation traduite"
+    translated_billing = "Facturation"
+
+    def fragment(page, organization="Organization", billing="Billing"):
+        return [
+            {
+                "group": organization,
+                "pages": [{"group": billing, "pages": [page]}],
+            }
+        ]
+
+    current_ga = fragment(operation, translated, translated_billing)
+    generated_badge = fragment(badge_page)
+    assert localize_fragment(generated_badge, current_ga, ref_keys) == fragment(
+        badge_page, translated, translated_billing
+    )
+
+    current_badge = fragment(badge_page, translated, translated_billing)
+    generated_ga = fragment(operation)
+    assert localize_fragment(generated_ga, current_badge, ref_keys) == fragment(
+        operation, translated, translated_billing
+    )
+
+
+def test_operation_ref_keys_maps_ga_and_badge_forms():
+    spec = {
+        "paths": {
+            "/v1/organizations/{organizationId}/usageCost": {
+                "get": {
+                    "operationId": "billingUsageGet",
+                    "summary": "Get usage cost",
+                    "tags": ["Billing"],
+                }
+            }
+        }
+    }
+
+    operation = "GET /v1/organizations/{organizationId}/usageCost"
+    assert operation_ref_keys(spec) == {
+        operation: operation,
+        "products/cloud/api-reference/billing/billing-usage-get": operation,
+    }
