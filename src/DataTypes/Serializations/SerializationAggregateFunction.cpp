@@ -182,9 +182,10 @@ void deserializeFromValues(IColumn & column, ReadBuffer & istr, const FormatSett
 /// else with the CSV serialization (the released form; the scalar CSV parse itself accepts both quote kinds).
 /// `Variant` and `Dynamic` arguments also take this path: their `deserializeTextCSV` reads a whole CSV field
 /// and tries the variants (or infers the type) from it, so released input accepted double-quoted strings and
-/// bareword scalars for them too. Composite argument types stay on the unified path: their quoted
-/// elements start with `[`, `(` or `{`, which the released per-element CSV parse could not handle anyway
-/// (the CSV string parse stops at the first comma), so no released form is lost for them.
+/// bareword scalars for them too. Composite argument types take it as well: released fed their elements
+/// through the same per-element CSV parse, which accepted a double-quoted representation of the whole
+/// composite value, e.g. `["[1,2]","[3]"]` for `AggregateFunction(groupArray, Array(UInt64))`,
+/// `["{'a':1}"]` for a `Map` argument and `["{""a"":1}"]` for a `JSON` one (verified on released `26.7.1`).
 bool useLegacyTextArrayParsing(const AggregateFunctionPtr & function, const FormatSettings & settings)
 {
     if (settings.aggregate_function_input_format != FormatSettings::AggregateFunctionInputFormat::Array)
@@ -195,8 +196,7 @@ bool useLegacyTextArrayParsing(const AggregateFunctionPtr & function, const Form
         return false;
 
     WhichDataType which(removeNullable(removeLowCardinality(argument_types[0])));
-    return !(which.isArray() || which.isTuple() || which.isMap() || which.isObject()
-        || which.isAggregateFunction() || which.isNothing());
+    return !(which.isAggregateFunction() || which.isNothing());
 }
 
 void deserializeFromSingleArgumentTextArray(IColumn & column, ReadBuffer & istr, const FormatSettings & settings, const AggregateFunctionPtr & function)
@@ -230,10 +230,20 @@ void deserializeFromSingleArgumentTextArray(IColumn & column, ReadBuffer & istr,
     /// degenerate behavior with the native composite form). A bareword
     /// starting with `N`/`n` must stay on the CSV branch: for a `Variant` with a `String`-like variant
     /// (and for `Dynamic`), released input parsed e.g. `[NaN,"a"]` as the string 'NaN'.
+    /// Composite argument types (`Array`, `Tuple`, `Map`, `Object`) are dispatched the same way as
+    /// `Variant`/`Dynamic`: an element opening with `[`, `(` or `{` is the native form added here and is
+    /// parsed with the quoted serialization (which is what the generic array text path would do), while
+    /// anything else keeps the released per-element CSV parse. That parse is how released accepted the
+    /// double-quoted representation of a whole composite element (`["[1,2]","[3]"]`, `["{'a':1}"]`,
+    /// `["{""a"":1}"]`) and also the flattened `Tuple` form, where the tuple's CSV representation is the
+    /// bare comma-separated list of its elements (`[1,"a"]` for `Tuple(UInt64, String)`).
     const auto unwrapped_type = removeNullable(removeLowCardinality(value_type));
     const bool quoted_form_is_string = isStringOrFixedString(unwrapped_type) || isEnum(unwrapped_type);
     const bool is_variant_or_dynamic = isVariant(unwrapped_type) || isDynamic(unwrapped_type);
     const bool is_nullable = value_type->isNullable() || value_type->isLowCardinalityNullable();
+    WhichDataType which_unwrapped(unwrapped_type);
+    const bool is_composite = which_unwrapped.isArray() || which_unwrapped.isTuple()
+        || which_unwrapped.isMap() || which_unwrapped.isObject();
 
     assertChar('[', istr);
     bool first = true;
@@ -251,6 +261,7 @@ void deserializeFromSingleArgumentTextArray(IColumn & column, ReadBuffer & istr,
         const char first_char = istr.eof() ? 0 : *istr.position();
         if ((quoted_form_is_string && first_char == '\'')
             || (is_variant_or_dynamic && (first_char == '\'' || first_char == '[' || first_char == '(' || first_char == '{'))
+            || (is_composite && (first_char == '[' || first_char == '(' || first_char == '{'))
             || (!quoted_form_is_string && !is_variant_or_dynamic && is_nullable && (first_char == 'N' || first_char == 'n')))
             elem_serialization->deserializeTextQuoted(*tmp_column, istr, settings);
         else
@@ -273,12 +284,15 @@ void deserializeFromSingleArgumentTextArray(IColumn & column, ReadBuffer & istr,
 /// resolution is reproduced for both: the CSV parse of a `String`-like argument treats only `"` as a quote, so
 /// `'abc'` stays the string `'abc'`, while for the other scalar types `readCSVSimple` strips `'` and `"` alike.
 /// The unquoted forms are unaffected and keep the unified parse.
+bool isSingleArgumentValueMode(const AggregateFunctionPtr & function, const FormatSettings & settings)
+{
+    return settings.aggregate_function_input_format == FormatSettings::AggregateFunctionInputFormat::Value
+        && function->getArgumentTypes().size() == 1;
+}
+
 bool useLegacyQuotedValueParsing(const AggregateFunctionPtr & function, const FormatSettings & settings, ReadBuffer & istr)
 {
-    if (settings.aggregate_function_input_format != FormatSettings::AggregateFunctionInputFormat::Value)
-        return false;
-
-    if (function->getArgumentTypes().size() != 1)
+    if (!isSingleArgumentValueMode(function, settings))
         return false;
 
     return !istr.eof() && (*istr.position() == '\'' || *istr.position() == '"');
@@ -500,13 +514,40 @@ void SerializationAggregateFunction::deserializeTextEscaped(IColumn & column, Re
         return;
     }
 
-    /// Backward compatibility, see `useLegacyQuotedValueParsing`. A quote cannot be the start of an escape
-    /// sequence, so the first character of the field can be inspected before the escaped read.
+    /// Backward compatibility, see `useLegacyQuotedValueParsing`. An unescaped quote can be recognized
+    /// before the escaped read, because it cannot be the start of an escape sequence.
     if (useLegacyQuotedValueParsing(function, settings, istr))
     {
         String s;
         settings.tsv.crlf_end_of_line_input ? readEscapedStringCRLF(s, istr) : readEscapedString(s, istr);
         deserializeFromSingleArgumentLegacyQuotedValue(column, s, settings, function);
+        return;
+    }
+
+    /// The released implementation decoded the whole escaped field before that CSV parse, so the leading
+    /// quote may itself be escaped in the input: `\"42\"` for `AggregateFunction(any, UInt64)` in
+    /// `TabSeparated` inserted `42` on released `26.7.1`. Telling that apart from any other escape sequence
+    /// (e.g. the `\N` null marker of a `Nullable` argument) needs two characters of lookahead, so for a field
+    /// that starts with a backslash read the raw field first and either take the compatibility path or replay
+    /// the raw bytes through the unified escaped parse, which then sees exactly the same field.
+    if (isSingleArgumentValueMode(function, settings) && !istr.eof() && *istr.position() == '\\')
+    {
+        String raw_field;
+        settings.tsv.crlf_end_of_line_input ? readTSVFieldCRLF(raw_field, istr) : readTSVField(raw_field, istr);
+        ReadBufferFromString raw_buf(raw_field);
+
+        if (raw_field.size() >= 2 && (raw_field[1] == '\'' || raw_field[1] == '"'))
+        {
+            String s;
+            settings.tsv.crlf_end_of_line_input ? readEscapedStringCRLF(s, raw_buf) : readEscapedString(s, raw_buf);
+            deserializeFromSingleArgumentLegacyQuotedValue(column, s, settings, function);
+            return;
+        }
+
+        auto method = DESERIALIZE_METHOD(deserializeTextEscaped);
+        deserializeFromValues<method>(column, raw_buf, settings, function);
+        if (!raw_buf.eof())
+            throwUnexpectedDataAfterParsedValue(column, raw_buf, settings, "Value");
         return;
     }
 
