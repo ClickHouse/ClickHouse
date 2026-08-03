@@ -1194,6 +1194,14 @@ size_t HashJoinMethods<KIND, STRICTNESS, MapsTemplate>::joinRightColumnsWithAddi
         added_columns.offsets_to_replicate.resize(left_block_rows);
         added_columns.filter.resize(left_block_rows);
     }
+    else if (need_filter)
+    {
+        /// The loop above may break early at max_joined_block_rows, producing fewer left rows
+        /// than the selector size the filter was allocated for. Trim the filter to the number of
+        /// processed rows so the required right key column built from it matches the left block,
+        /// which is cut to left_block_rows downstream.
+        added_columns.filter.resize(left_block_rows);
+    }
     added_columns.applyLazyDefaults();
     return left_block_rows;
 }
