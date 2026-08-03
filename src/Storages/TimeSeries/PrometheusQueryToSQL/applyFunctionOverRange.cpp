@@ -165,16 +165,20 @@ SQLQueryPiece applyFunctionOverRange(
 
     checkArgumentTypes(function_name, arguments, context);
 
+    auto argument = std::move(arguments[0]);
+
     auto node_range = context.node_range_getter.get(node);
     if (node_range.empty())
-        return SQLQueryPiece{node, ResultType::INSTANT_VECTOR, StoreMethod::EMPTY};
+    {
+        SQLQueryPiece res{node, ResultType::INSTANT_VECTOR, StoreMethod::EMPTY};
+        res.value_data_type = argument.value_data_type;
+        return res;
+    }
 
     auto start_time = node_range.start_time;
     auto end_time = node_range.end_time;
     auto step = node_range.step;
     auto window = node_range.window;
-
-    auto argument = std::move(arguments[0]);
 
     SQLQueryPiece res = argument;
     res.node = node;
@@ -197,8 +201,9 @@ SQLQueryPiece applyFunctionOverRange(
             /// SELECT <aggregate_function>(timeSeriesRange(<start_time>, <end_time>, <step>),
             ///                             arrayResize([], <count_of_time_steps>, <scalar_value>)) AS values
             /// FROM <subquery>
+            const auto & scalar_data_type = argument.value_data_type ? argument.value_data_type : context.scalar_data_type;
             ASTPtr value = (argument.store_method == StoreMethod::CONST_SCALAR)
-                ? timeSeriesScalarToAST(argument.scalar_value, context.scalar_data_type)
+                ? timeSeriesScalarToAST(argument.scalar_value, scalar_data_type)
                 : make_intrusive<ASTIdentifier>(ColumnNames::Value);
 
             /// arrayResize([], <count_of_time_steps>, <scalar_value>)

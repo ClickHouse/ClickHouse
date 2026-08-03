@@ -155,7 +155,12 @@ SQLQueryPiece applyOneArgumentAggregationOperator(
 
     /// If the argument is empty then the result is also empty.
     if (argument.store_method == StoreMethod::EMPTY)
-        return SQLQueryPiece{operator_node, operator_node->result_type, StoreMethod::EMPTY};
+    {
+        auto res = argument;
+        res.node = operator_node;
+        res.type = operator_node->result_type;
+        return res;
+    }
 
     argument = toVectorGrid(std::move(argument), context);
 
@@ -177,7 +182,8 @@ SQLQueryPiece applyOneArgumentAggregationOperator(
         builder.select_list.push_back(std::move(new_group));
         builder.select_list.back()->setAlias(ColumnNames::NewGroup);
 
-        builder.select_list.push_back(impl_info->transform_ast(make_intrusive<ASTIdentifier>(ColumnNames::Values), context.scalar_data_type));
+        const auto & scalar_data_type = res.value_data_type ? res.value_data_type : context.scalar_data_type;
+        builder.select_list.push_back(impl_info->transform_ast(make_intrusive<ASTIdentifier>(ColumnNames::Values), scalar_data_type));
         builder.select_list.back()->setAlias(ColumnNames::Values);
 
         if (operator_node->by || operator_node->without)

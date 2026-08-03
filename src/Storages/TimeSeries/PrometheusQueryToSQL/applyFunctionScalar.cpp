@@ -53,6 +53,7 @@ SQLQueryPiece applyFunctionScalar(
     auto res = argument;
     res.node = function_node;
     res.type = ResultType::SCALAR;
+    const auto & scalar_data_type = res.value_data_type ? res.value_data_type : context.scalar_data_type;
 
     switch (argument.store_method)
     {
@@ -89,7 +90,7 @@ SQLQueryPiece applyFunctionScalar(
                             "any",
                             makeASTFunction(
                                 "arrayElement", make_intrusive<ASTIdentifier>(ColumnNames::Values), make_intrusive<ASTLiteral>(1u)))),
-                    timeSeriesScalarToAST(std::numeric_limits<Float64>::quiet_NaN(), context.scalar_data_type)));
+                    timeSeriesScalarToAST(std::numeric_limits<Float64>::quiet_NaN(), scalar_data_type)));
 
                 builder.select_list.back()->setAlias(ColumnNames::Value);
                 res.store_method = StoreMethod::SINGLE_SCALAR;
@@ -107,7 +108,7 @@ SQLQueryPiece applyFunctionScalar(
                             "if",
                             makeASTFunction("equals", make_intrusive<ASTIdentifier>("x"), make_intrusive<ASTLiteral>(1)),
                             makeASTFunction("assumeNotNull", make_intrusive<ASTIdentifier>("y")),
-                            timeSeriesScalarToAST(std::numeric_limits<Float64>::quiet_NaN(), context.scalar_data_type))),
+                            timeSeriesScalarToAST(std::numeric_limits<Float64>::quiet_NaN(), scalar_data_type))),
                     makeASTFunction("countForEach", make_intrusive<ASTIdentifier>(ColumnNames::Values)),
                     makeASTFunction("anyForEach", make_intrusive<ASTIdentifier>(ColumnNames::Values))));
 

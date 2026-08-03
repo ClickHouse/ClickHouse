@@ -84,10 +84,14 @@ SQLQueryPiece applyHistogramQuantile(
             "Function 'histogram_quantile' currently requires a constant phi parameter");
     }
 
-    expression = toVectorGrid(std::move(expression), context);
-
     if (expression.store_method == StoreMethod::EMPTY)
-        return SQLQueryPiece{function_node, function_node->result_type, StoreMethod::EMPTY};
+    {
+        SQLQueryPiece res{function_node, function_node->result_type, StoreMethod::EMPTY};
+        res.value_data_type = expression.value_data_type;
+        return res;
+    }
+
+    expression = toVectorGrid(std::move(expression), context);
 
     Float64 phi = phi_arg.scalar_value;
 
@@ -214,6 +218,7 @@ SQLQueryPiece applyHistogramQuantile(
     res.end_time = expression.end_time;
     res.step = expression.step;
     res.metric_name_dropped = false;
+    res.value_data_type = expression.value_data_type;
 
     /// Drop `__name__` from the result (matching PromQL: function outputs have no
     /// metric name). `dropMetricName` also enforces uniqueness via

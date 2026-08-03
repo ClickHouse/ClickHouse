@@ -2,6 +2,7 @@
 
 #include <Common/Exception.h>
 #include <Core/DecimalFunctions.h>
+#include <DataTypes/DataTypesNumber.h>
 #include <Parsers/ASTFunction.h>
 #include <Parsers/ASTIdentifier.h>
 #include <Parsers/ASTLiteral.h>
@@ -25,6 +26,12 @@ namespace DB::PrometheusQueryToSQL
 
 namespace
 {
+    const DataTypePtr & timestampValueDataType()
+    {
+        static const DataTypePtr data_type = std::make_shared<DataTypeFloat64>();
+        return data_type;
+    }
+
     /// Returns the InstantSelector if `node` is a bare InstantSelector or an Offset node
     /// directly wrapping a bare InstantSelector; returns nullptr for any other expression
     /// (unary/binary operators, aggregations, functions, etc.).
@@ -55,7 +62,11 @@ namespace
         switch (argument.store_method)
         {
             case StoreMethod::EMPTY:
-                return SQLQueryPiece{function_node, ResultType::INSTANT_VECTOR, StoreMethod::EMPTY};
+            {
+                SQLQueryPiece res{function_node, ResultType::INSTANT_VECTOR, StoreMethod::EMPTY};
+                res.value_data_type = timestampValueDataType();
+                return res;
+            }
 
             case StoreMethod::CONST_SCALAR:
             case StoreMethod::SINGLE_SCALAR:
@@ -63,7 +74,11 @@ namespace
             {
                 auto node_range = context.node_range_getter.get(function_node);
                 if (node_range.empty())
-                    return SQLQueryPiece{function_node, ResultType::INSTANT_VECTOR, StoreMethod::EMPTY};
+                {
+                    SQLQueryPiece res{function_node, ResultType::INSTANT_VECTOR, StoreMethod::EMPTY};
+                    res.value_data_type = timestampValueDataType();
+                    return res;
+                }
 
                 if (node_range.start_time == node_range.end_time)
                 {
@@ -73,6 +88,7 @@ namespace
                     res.end_time = node_range.end_time;
                     res.step = node_range.step;
                     res.scalar_value = DecimalUtils::convertTo<Float64>(node_range.start_time, context.timestamp_scale);
+                    res.value_data_type = timestampValueDataType();
                     return res;
                 }
                 else
@@ -91,10 +107,11 @@ namespace
                             timeSeriesTimestampToAST(node_range.start_time, context.timestamp_data_type),
                             timeSeriesTimestampToAST(node_range.end_time, context.timestamp_data_type),
                             timeSeriesDurationToAST(node_range.step, context.timestamp_data_type)),
-                        make_intrusive<ASTLiteral>(fmt::format("Array({})", context.scalar_data_type->getName()))));
+                        make_intrusive<ASTLiteral>(fmt::format("Array({})", timestampValueDataType()->getName()))));
 
                     builder.select_list.back()->setAlias(ColumnNames::Values);
                     res.select_query = builder.getSelectQuery();
+                    res.value_data_type = timestampValueDataType();
 
                     return res;
                 }
@@ -110,6 +127,7 @@ namespace
                 res.start_time = argument.start_time;
                 res.end_time = argument.end_time;
                 res.step = argument.step;
+                res.value_data_type = timestampValueDataType();
 
                 SelectQueryBuilder builder;
                 builder.from_table = subquery_name;
@@ -188,6 +206,7 @@ SQLQueryPiece applyFunctionTimestamp(
         if (offset_node)
             res = applyOffset(offset_node, std::move(res), context);
         res.node = function_node;
+        res.value_data_type = timestampValueDataType();
         return res;
     }
 

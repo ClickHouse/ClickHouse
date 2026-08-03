@@ -194,6 +194,7 @@ SQLQueryPiece applyBinaryOperatorOr(
     res.start_time = left_argument.start_time;
     res.end_time = left_argument.end_time;
     res.step = left_argument.step;
+    res.value_data_type = mergeValueDataType(left_argument.value_data_type, right_argument.value_data_type);
 
     return res;
 }

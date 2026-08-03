@@ -1,0 +1,96 @@
+-- Tags: no-fasttest, no-replicated-database
+-- PromQL needs ANTLR4, which is disabled in the fast-test build. The TimeSeries table uses external
+-- data tables, whose cleanup is not synchronous in DatabaseReplicated.
+
+SET allow_experimental_time_series_table = 1;
+SET session_timezone = 'UTC';
+
+DROP TABLE IF EXISTS promql_timestamp_float32;
+DROP TABLE IF EXISTS promql_timestamp_float32_tags;
+DROP TABLE IF EXISTS promql_timestamp_float32_samples;
+
+CREATE TABLE promql_timestamp_float32_tags
+(
+    id UInt64,
+    metric_name LowCardinality(String),
+    tags Map(LowCardinality(String), String),
+    min_time DateTime64(3, 'UTC'),
+    max_time DateTime64(3, 'UTC')
+)
+ENGINE = MergeTree ORDER BY id;
+
+CREATE TABLE promql_timestamp_float32_samples
+(
+    id UInt64,
+    timestamp DateTime64(3, 'UTC'),
+    value Float32
+)
+ENGINE = MergeTree ORDER BY (id, timestamp);
+
+CREATE TABLE promql_timestamp_float32
+(
+    time_series Array(Tuple(DateTime64(3, 'UTC'), Float32))
+)
+ENGINE = TimeSeries
+SAMPLES promql_timestamp_float32_samples
+TAGS promql_timestamp_float32_tags;
+
+INSERT INTO promql_timestamp_float32_tags VALUES
+    (1, 'float32_timestamp_metric', map(),
+     toDateTime64('2025-11-30 10:30:05.125', 3, 'UTC'),
+     toDateTime64('2025-11-30 10:30:05.125', 3, 'UTC'));
+
+INSERT INTO promql_timestamp_float32_samples VALUES
+    (1, toDateTime64('2025-11-30 10:30:05.125', 3, 'UTC'), 1);
+
+-- A direct selector returns the source sample timestamp, independently of the Float32 sample value type.
+SELECT toTypeName(value), value
+FROM prometheusQuery(
+    'promql_timestamp_float32',
+    'timestamp(float32_timestamp_metric)',
+    toDateTime64('2025-11-30 10:30:10.250', 3, 'UTC'));
+
+-- A general expression returns the evaluation timestamp and keeps Float64 through common wrappers.
+SELECT toTypeName(value), value
+FROM prometheusQuery(
+    'promql_timestamp_float32',
+    'timestamp(vector(1))',
+    toDateTime64('2025-11-30 10:30:10.250', 3, 'UTC'));
+
+SELECT toTypeName(value), value
+FROM prometheusQuery(
+    'promql_timestamp_float32',
+    'abs(timestamp(vector(1)))',
+    toDateTime64('2025-11-30 10:30:10.250', 3, 'UTC'));
+
+SELECT toTypeName(value), value
+FROM prometheusQuery(
+    'promql_timestamp_float32',
+    'timestamp(vector(1)) + vector(0)',
+    toDateTime64('2025-11-30 10:30:10.250', 3, 'UTC'));
+
+-- A scalar-backed range exercises the `timestamp` SCALAR_GRID result and the range table-function schema.
+SELECT toTypeName(sample.2), toUnixTimestamp64Milli(sample.1), sample.2
+FROM prometheusQueryRange(
+    'promql_timestamp_float32',
+    'timestamp(vector(1))',
+    toDateTime64('2025-11-30 10:30:10.250', 3, 'UTC'),
+    toDateTime64('2025-11-30 10:30:20.250', 3, 'UTC'),
+    5)
+ARRAY JOIN time_series AS sample
+ORDER BY sample.1;
+
+-- A series-backed range exercises VECTOR_GRID and retains every fractional grid timestamp.
+SELECT toTypeName(sample.2), toUnixTimestamp64Milli(sample.1), sample.2
+FROM prometheusQueryRange(
+    'promql_timestamp_float32',
+    'timestamp(float32_timestamp_metric * 1)',
+    toDateTime64('2025-11-30 10:30:10.250', 3, 'UTC'),
+    toDateTime64('2025-11-30 10:30:20.250', 3, 'UTC'),
+    5)
+ARRAY JOIN time_series AS sample
+ORDER BY sample.1;
+
+DROP TABLE promql_timestamp_float32;
+DROP TABLE promql_timestamp_float32_tags;
+DROP TABLE promql_timestamp_float32_samples;

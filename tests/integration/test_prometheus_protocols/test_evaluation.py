@@ -991,12 +991,14 @@ def test_function_timestamp():
     do_query_test_expect_error(
         "timestamp(1)",
         135,
+        "expected type instant vector",
         "Function 'timestamp' expects an argument of type instant vector",
     )
 
     do_query_test_expect_error(
         "timestamp(test[5m])",
         135,
+        "expected type instant vector",
         "Function 'timestamp' expects an argument of type instant vector",
     )
 

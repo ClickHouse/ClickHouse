@@ -20,7 +20,11 @@ SQLQueryPiece applyBinaryOperatorUnless(
 
     /// If the left argument is empty then the result is also empty.
     if (left_argument.store_method == StoreMethod::EMPTY)
-        return SQLQueryPiece(operator_node, ResultType::INSTANT_VECTOR, StoreMethod::EMPTY);
+    {
+        auto res = std::move(left_argument);
+        res.node = operator_node;
+        return res;
+    }
 
     /// If the right argument is empty then we return the left argument.
     if (right_argument.store_method == StoreMethod::EMPTY)
@@ -125,6 +129,7 @@ SQLQueryPiece applyBinaryOperatorUnless(
     res.start_time = left_argument.start_time;
     res.end_time = left_argument.end_time;
     res.step = left_argument.step;
+    res.value_data_type = left_argument.value_data_type;
 
     return res;
 }
