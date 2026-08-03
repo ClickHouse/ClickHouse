@@ -1403,7 +1403,22 @@ void IMergeTreeDataPart::loadColumnsChecksumsIndexes(bool require_columns_checks
         /// so keep it outside the arena scope above (each child re-enters the arena for its own
         /// persistent metadata, and its transient load scratch stays on the default per-CPU arenas).
         if (!parent_part)
+        {
+            /// Seed the owned projection set from a manifest-driven disk probe -- only a part loaded from disk
+            /// needs this. A part written by a mutation does NOT reach loadProjections through here (its finalize
+            /// calls loadProjections directly), and there createProjection/renameProjection already keep the owned
+            /// set true; a probe there could miss dirs still staged in the part's deferred object-storage transaction.
+            auto metadata_snapshot = storage.getInMemoryMetadataPtr(storage.getContext(), false);
+            Strings owned_projection_dirs;
+            for (const auto & [file_name, _] : checksums.files)
+                if (IDataPartStorage::Projection::dirNameType(file_name) == IDataPartStorage::Projection::Status::Live)
+                    owned_projection_dirs.push_back(file_name);
+            for (const auto & projection : metadata_snapshot->projections)
+                owned_projection_dirs.push_back(IDataPartStorage::Projection::dirName(projection.name, false));
+            getDataPartStorage().setProjections(getDataPartStorage().detectProjections({.candidates = owned_projection_dirs}));
+
             loadProjections(require_columns_checksums, check_consistency, has_broken_projections, false /* if_not_loaded */);
+        }
 
         /// Kept out of the dedicated arena scope above on purpose: the size computation is heavy
         /// short-lived churn (a sample column per column/substream). The finished, part-lifetime maps
@@ -1504,15 +1519,6 @@ void IMergeTreeDataPart::loadProjections(
     /// child's own `loadColumnsChecksumsIndexes`). The projection load's transient scratch is
     /// deliberately left on the default per-CPU arenas, so no arena scope is taken here.
     auto metadata_snapshot = storage.getInMemoryMetadataPtr(storage.getContext(), false);
-
-    /// metadata+checksums is the commit point: every materialized projection is loaded, others will get ignored and flagged
-    Strings owned_projection_dirs;
-    for (const auto & [file_name, _] : checksums.files)
-        if (IDataPartStorage::Projection::dirNameType(file_name) == IDataPartStorage::Projection::Status::Live)
-            owned_projection_dirs.push_back(file_name);
-    for (const auto & projection : metadata_snapshot->projections)
-        owned_projection_dirs.push_back(IDataPartStorage::Projection::dirName(projection.name, false));
-    getDataPartStorage().setProjections(getDataPartStorage().detectProjections({.candidates = owned_projection_dirs}));
 
     for (const auto & projection : metadata_snapshot->projections)
     {

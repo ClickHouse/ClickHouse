@@ -225,6 +225,20 @@ def with_storage(extra_settings, storage_kind):
     return extra_settings + (", " + PACKED if storage_kind == "packed" else "")
 
 
+# Disk backend a mutation/rebuild test runs for. 'local' is the default disk (immediate part
+# transactions); 's3' is the MinIO-backed disk, which runs DEFERRED transactions -- the setting the
+# object-storage projection-rebuild regression needs. See section N. (Azure/Azurite exercises the same
+# deferred-transaction path; it was verified manually but kept out of the automated matrix because a
+# per-worker azurite cluster times out under xdist parallelism -- s3 covers the regression.)
+@pytest.fixture(params=["local", "s3"])
+def disk(request):
+    return request.param
+
+
+def with_disk(extra_settings, disk):
+    return extra_settings + (f", storage_policy = '{disk}'" if disk != "local" else "")
+
+
 def minio_keys():
     return {
         o.object_name
@@ -3006,3 +3020,172 @@ def test_packed_mutation_rebuilds_projection():
     ).strip()
     assert updated == "100\t390"
     assert check_table("t_pk_mut") == "1"
+
+
+# ==============================================================================
+# N. Object-storage rebuild-path regression (#108443)
+#
+# A projection REBUILT during a mutation on an object-storage disk must survive the part's final
+# rename. Object-storage disks run DEFERRED part transactions (master #89658 / 228ca4c8a4c): the
+# rebuilt projection's `<n>.tmp_proj -> <name>.proj` move is queued and not yet on disk when the
+# mutation's finalize re-derives the part's owned projection set from a disk probe, so the probe
+# misses it and the tmp->final repoint is skipped. The failure surfaces at READ time as
+# `Code 107 FILE_DOESNT_EXIST` on a `tmp_mut_.../<name>.proj/...` path, after the mutation itself
+# succeeded. On the default (local) disk the transaction is immediate, the probe sees the move, and
+# the bug is invisible -- which is why every other test in this file, all on the local disk, misses
+# it. Each test runs both on 'local' (control: must pass) and 's3' (the regression surface).
+#
+# Fail-closed: force_optimize_projection = 1 throws if the projection cannot serve the query, so a
+# silently-skipped (unused) projection cannot masquerade as a pass -- that is exactly what let the
+# regression through the existing suite.
+# ==============================================================================
+
+
+# This test checks the canonical failing class: ADD then MATERIALIZE a projection (a rebuild inside
+# a mutation) on an object-storage disk. The materialize succeeds; the projection must then be
+# readable, healthy, and survive a reload -- not left rooted at the vacated tmp_mut_ path.
+def test_os_materialize_projection_rebuild(storage_kind, disk):
+    node.query("DROP TABLE IF EXISTS t_os_mat SYNC")
+    node.query("SYSTEM STOP MERGES")
+    node.query(
+        f"""CREATE TABLE t_os_mat (key UInt64, id UInt64, value String)
+           ENGINE = MergeTree ORDER BY key
+           SETTINGS {with_disk(with_storage("min_bytes_for_wide_part = 0, projection_storage_format = 'flat'", storage_kind), disk)}"""
+    )
+    node.query(
+        "INSERT INTO t_os_mat SELECT number, number * 2, toString(number) FROM numbers(1000)"
+    )
+
+    # add and materialize the projection (rebuild path inside a mutation)
+    node.query("ALTER TABLE t_os_mat ADD PROJECTION p (SELECT key, id, value ORDER BY id)")
+    node.query("ALTER TABLE t_os_mat MATERIALIZE PROJECTION p SETTINGS mutations_sync = 2")
+
+    # the mutation succeeded; a projection read must not open a vacated tmp_mut_ path
+    assert broken_projection_parts("t_os_mat") == "0"
+    assert (
+        proj_query("t_os_mat", extra_settings="force_optimize_projection = 1") == "100\t4950"
+    )
+    assert check_table("t_os_mat") == "1"
+
+    # the projection also survives a reload from disk (the load path this fix relocates)
+    node.restart_clickhouse()
+    block_until_tables_loaded("t_os_mat")
+    assert broken_projection_parts("t_os_mat") == "0"
+    assert (
+        proj_query("t_os_mat", extra_settings="force_optimize_projection = 1") == "100\t4950"
+    )
+
+
+# This test checks the same rebuild via a plain data mutation: ALTER UPDATE of a column the
+# projection materializes forces the projection to be rebuilt inside the mutation.
+def test_os_update_projected_column_rebuild(storage_kind, disk):
+    node.query("DROP TABLE IF EXISTS t_os_upd SYNC")
+    node.query("SYSTEM STOP MERGES")
+    node.query(
+        f"""CREATE TABLE t_os_upd (key UInt64, id UInt64, value String,
+           PROJECTION p (SELECT key, id, value ORDER BY id))
+           ENGINE = MergeTree ORDER BY key
+           SETTINGS {with_disk(with_storage("min_bytes_for_wide_part = 0, projection_storage_format = 'flat'", storage_kind), disk)}"""
+    )
+    node.query(
+        "INSERT INTO t_os_upd SELECT number, number * 2, toString(number) FROM numbers(1000)"
+    )
+
+    # UPDATE a projected column -> the mutation rebuilds the projection
+    node.query(
+        "ALTER TABLE t_os_upd UPDATE value = concat(value, '!') WHERE id < 200 SETTINGS mutations_sync = 2"
+    )
+    assert broken_projection_parts("t_os_upd") == "0"
+    assert (
+        proj_query("t_os_upd", extra_settings="force_optimize_projection = 1") == "100\t4950"
+    )
+    assert check_table("t_os_upd") == "1"
+
+    # survives a reload from disk (load path)
+    node.restart_clickhouse()
+    block_until_tables_loaded("t_os_upd")
+    assert broken_projection_parts("t_os_upd") == "0"
+    assert check_table("t_os_upd") == "1"
+
+
+# This test checks the lightweight-DELETE rebuild path (lightweight_mutation_projection_mode =
+# 'rebuild'): the deleting mutation re-materializes the projection, which must survive on object storage.
+def test_os_lightweight_delete_rebuild(storage_kind, disk):
+    node.query("DROP TABLE IF EXISTS t_os_lwd SYNC")
+    node.query("SYSTEM STOP MERGES")
+    node.query(
+        f"""CREATE TABLE t_os_lwd (key UInt64, id UInt64, value String,
+           PROJECTION p (SELECT key, id, value ORDER BY id))
+           ENGINE = MergeTree ORDER BY key
+           SETTINGS {with_disk(with_storage("min_bytes_for_wide_part = 0, projection_storage_format = 'flat', lightweight_mutation_projection_mode = 'rebuild'", storage_kind), disk)}"""
+    )
+    node.query(
+        "INSERT INTO t_os_lwd SELECT number, number * 2, toString(number) FROM numbers(1000)"
+    )
+
+    # lightweight DELETE rebuilds the projection
+    node.query("DELETE FROM t_os_lwd WHERE key >= 500 SETTINGS mutations_sync = 2")
+    assert node.query("SELECT count() FROM t_os_lwd").strip() == "500"
+    assert broken_projection_parts("t_os_lwd") == "0"
+    # rows with id < 200 (key < 100) are untouched by the delete: still 100 rows, sum(key) = 4950
+    assert (
+        proj_query("t_os_lwd", extra_settings="force_optimize_projection = 1") == "100\t4950"
+    )
+    assert check_table("t_os_lwd") == "1"
+
+
+# This test probes the merge path: two parts merged with OPTIMIZE FINAL rebuild the projection into
+# the merged part, which must stay readable on object storage. (Merges use a different driver than
+# mutations; this guards that path too.)
+def test_os_optimize_final_merge(storage_kind, disk):
+    node.query("DROP TABLE IF EXISTS t_os_merge SYNC")
+    node.query("SYSTEM STOP MERGES")
+    node.query(
+        f"""CREATE TABLE t_os_merge (key UInt64, id UInt64, value String,
+           PROJECTION p (SELECT key, id, value ORDER BY id))
+           ENGINE = MergeTree ORDER BY key
+           SETTINGS {with_disk(with_storage("min_bytes_for_wide_part = 0, projection_storage_format = 'flat'", storage_kind), disk)}"""
+    )
+    for rng in ("numbers(1000)", "numbers(1000, 1000)"):
+        node.query(
+            f"INSERT INTO t_os_merge SELECT number, number * 2, toString(number) FROM {rng}"
+        )
+
+    # merge into a single part; the merged part rebuilds the projection
+    node.query("SYSTEM START MERGES t_os_merge")
+    node.query("OPTIMIZE TABLE t_os_merge FINAL")
+    wait_for(lambda: active_parts("t_os_merge") == "1")
+
+    assert broken_projection_parts("t_os_merge") == "0"
+    assert (
+        proj_query("t_os_merge", extra_settings="force_optimize_projection = 1") == "100\t4950"
+    )
+    assert check_table("t_os_merge") == "1"
+
+
+# This test is the CONTROL: a mutation of a column the projection does NOT reference carries the
+# projection by hardlink/copy rather than rebuilding it. The carry loop commits its own part
+# transaction early, so this must pass both before and after the fix -- it proves the regression is
+# specific to the REBUILD path, not to object-storage mutations in general.
+def test_os_mutation_carries_unprojected_column(storage_kind, disk):
+    node.query("DROP TABLE IF EXISTS t_os_carry SYNC")
+    node.query("SYSTEM STOP MERGES")
+    node.query(
+        f"""CREATE TABLE t_os_carry (key UInt64, id UInt64, value String,
+           PROJECTION p (SELECT key, id ORDER BY id))
+           ENGINE = MergeTree ORDER BY key
+           SETTINGS {with_disk(with_storage("min_bytes_for_wide_part = 0, projection_storage_format = 'flat'", storage_kind), disk)}"""
+    )
+    node.query(
+        "INSERT INTO t_os_carry SELECT number, number * 2, toString(number) FROM numbers(1000)"
+    )
+
+    # UPDATE a column the projection does not reference -> projection is carried, not rebuilt
+    node.query(
+        "ALTER TABLE t_os_carry UPDATE value = concat(value, '!') WHERE id < 200 SETTINGS mutations_sync = 2"
+    )
+    assert broken_projection_parts("t_os_carry") == "0"
+    assert (
+        proj_query("t_os_carry", extra_settings="force_optimize_projection = 1") == "100\t4950"
+    )
+    assert check_table("t_os_carry") == "1"
