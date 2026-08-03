@@ -1,5 +1,3 @@
--- Tags: no-parallel-replicas, long
-
 DROP TABLE IF EXISTS v_pr_view;
 DROP TABLE IF EXISTS mt_pr_view;
 
@@ -13,10 +11,8 @@ SET cluster_for_parallel_replicas = 'parallel_replicas';
 SET parallel_replicas_for_non_replicated_merge_tree = 1;
 SET parallel_replicas_allow_view_over_mergetree = 1;
 
--- A UNION where subqueries over a view carry different per-query values of
--- parallel_replicas_allow_view_over_mergetree used to abort with
--- "Can't determine table for parallel replicas": the parallel-replicas decision
--- and the plan build evaluated view eligibility with inconsistent contexts.
+-- Per-query values of parallel_replicas_allow_view_over_mergetree must be honored
+-- consistently by the parallel-replicas decision and the plan build.
 SELECT 1 FROM v_pr_view SETTINGS parallel_replicas_allow_view_over_mergetree = 0
 EXCEPT DISTINCT
 SELECT 1024 FROM v_pr_view SETTINGS parallel_replicas_allow_view_over_mergetree = 1;
@@ -27,7 +23,7 @@ SELECT materialize(-2147483648) FROM v_pr_view LIMIT 255 SETTINGS parallel_repli
 EXCEPT DISTINCT
 SELECT 1024 FROM v_pr_view LIMIT 1024 SETTINGS parallel_replicas_allow_view_over_mergetree = 1;
 
--- Still works (does not crash) when the view is eligible.
+-- The view is eligible here, so parallel replicas must still be used and return correct results.
 SELECT count() FROM v_pr_view SETTINGS parallel_replicas_allow_view_over_mergetree = 1;
 
 DROP TABLE v_pr_view;

@@ -102,9 +102,7 @@ static std::vector<const QueryNode *> getSupportingParallelReplicasQueries(const
 {
     std::vector<const QueryNode *> res;
 
-    /// Table eligibility (e.g. parallel_replicas_allow_view_over_mergetree) must be evaluated with the
-    /// context of the enclosing (sub)query, since per-subquery SETTINGS can override it. Keep it in sync
-    /// as we descend so that this decision matches the one made later at build time.
+    /// Context of the enclosing (sub)query: per-subquery SETTINGS can change table eligibility.
     ContextPtr current_context = context;
 
     while (query_tree_node)
@@ -419,11 +417,9 @@ const QueryNode * findQueryForParallelReplicas(const QueryTreeNodePtr & query_tr
 
 static const TableNode * findTableForParallelReplicas(const IQueryTreeNode * query_tree_node, const ContextPtr & context)
 {
-    /// Table eligibility must be evaluated with the context of the enclosing (sub)query, since per-subquery
-    /// SETTINGS can override it. Track it as we descend so this matches the decision in
-    /// getSupportingParallelReplicasQueries; otherwise a subquery selected for parallel replicas may have no
-    /// eligible table here, leading to a "Can't determine table for parallel replicas" logical error.
     std::stack<const IQueryTreeNode *> join_nodes;
+    /// Enclosing (sub)query context per pending join branch: must match the one
+    /// getSupportingParallelReplicasQueries used, or no eligible table is found here.
     std::stack<ContextPtr> join_contexts;
     ContextPtr current_context = context;
     while (query_tree_node || !join_nodes.empty())
