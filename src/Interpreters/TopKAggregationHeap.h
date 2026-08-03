@@ -194,20 +194,8 @@ struct TopKAggregationHeap
                 continue;
             }
 
-            /// The worst value is a plateau of equal keys. Only the tie-set that straddles the
-            /// capacity boundary must be kept: evicting a key tied with the boundary while its twin
-            /// stays would resurface an incomplete aggregate. But a tie with the entry at the front
-            /// does not prove the candidate sits at the boundary (the two coincide only at
-            /// size == capacity + 1) - a plateau strictly outside the top-K, which is the normal case
-            /// in prefix mode, is fully evictable. Treating it as protected would stall every trim,
-            /// pin the skip boundary and grow the heap until it froze.
             std::push_heap(heap_indices.begin(), heap_indices.end(), cmp);
 
-            /// Deciding needs a pass over the heap, so do not redo it for a plateau already found
-            /// unevictable until enough keys have arrived to change the answer. Together with the
-            /// `next_trim_size` ratchet below this keeps the cost amortized: a plateau that legitimately
-            /// owns the boundary (every key ties, so eviction is never possible) is rescanned only once
-            /// per doubling instead of on every trim.
             if (tie_scan_size != 0 && heap_indices.size() < 2 * tie_scan_size)
             {
                 next_trim_size = std::max(next_trim_size, heap_indices.size() + trim_slack + 1);
@@ -230,7 +218,6 @@ struct TopKAggregationHeap
                 break;
             }
 
-            /// Enough strictly better keys remain, so the whole plateau is outside the top-K.
             const auto plateau_begin = std::partition(
                 heap_indices.begin(), heap_indices.end(), [&](size_t idx) { return !tied(idx, boundary); });
             for (auto it = plateau_begin; it != heap_indices.end(); ++it)
@@ -287,7 +274,6 @@ private:
     UInt64 evicted_keys = 0;
 
     bool tie_overflow = false;
-    /// Heap size when a boundary plateau was last found unevictable; 0 means "decide again".
     size_t tie_scan_size = 0;
 
     std::vector<size_t> low_cardinality_columns;
@@ -523,10 +509,6 @@ private:
             case TypeIndex::Float32:   resolveNumericFastPath<Float32>(); break;
             case TypeIndex::Float64:   resolveNumericFastPath<Float64>(); break;
             case TypeIndex::IPv4:      resolveNumericFastPath<IPv4>(); break;
-            /// `Date`, `Date32`, `DateTime`, `Enum8` and `Enum16` need no cases of their own:
-            /// `ColumnVector::getDataType` reports `TypeToTypeIndex<T>`, which is specialized only
-            /// for the underlying C++ types, so those keys arrive as `UInt16`/`Int32`/`UInt32`/
-            /// `Int8`/`Int16` and take the fast path above.
             default: break;
         }
     }

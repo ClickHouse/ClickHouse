@@ -175,11 +175,6 @@ size_t tryOptimizeGroupByTopK(QueryPlan::Node * parent_node, QueryPlan::Nodes & 
 
         node_above_aggregation->children.front() = &sort_node;
 
-        /// This pass returns 0 even though it inserted a node, so the framework neither re-traverses
-        /// the subtree (nothing above needs to re-match: the annotation is invisible to other
-        /// patterns, and re-running them over the new sort could reshape a plan we just validated)
-        /// nor runs its debug `checkHeaders`. Sorting preserves the header, so assert that here
-        /// instead - it is the only invariant the skipped check would have covered.
         chassert(blocksHaveEqualStructure(
             *sort_node.step->getOutputHeader(), *aggregating_node->step->getOutputHeader()));
     }
@@ -192,14 +187,6 @@ size_t tryOptimizeGroupByTopK(QueryPlan::Node * parent_node, QueryPlan::Nodes & 
         .nulls_directions = std::move(nulls_directions),
         .key_columns = num_key_columns,
         .load_factor = settings.top_k_optimization_load_factor,
-        /// The profitability freeze (`0` disables it) is a liability once the sort is synthesized.
-        /// Freezing keeps the plan but stops bounding the hash table, and this shape's plan is
-        /// strictly worse than the un-optimized one in that state: the synthesized sort has to
-        /// finalize and order every group, where without it the LIMIT would have cancelled after N
-        /// rows. A stream whose first rows hold few keys and whose later rows explode - so the heap
-        /// is full but has nothing to reject yet - would freeze into exactly that. Keeping the heap
-        /// alive costs a skip check per row when the cardinality never exceeds the limit, and the
-        /// plan-level size hint already removes heap and sort together for that case.
         .observation_rows = synthetic_sort ? 0 : settings.top_k_optimization_observation_rows,
         .synthetic_sort = synthetic_sort,
     });
@@ -231,10 +218,6 @@ bool removeSyntheticTopKSort(QueryPlan::Node * aggregating_node, QueryPlan::Node
 
 void abandonUnprofitableGroupByTopK(const QueryPlanOptimizationSettings & optimization_settings, QueryPlan::Node & root)
 {
-    /// The decision reads the server-wide hash-table size statistics, which every concurrent query
-    /// mutates. Applying it under EXPLAIN would make the printed plan depend on what ran before, so
-    /// EXPLAIN deliberately shows the un-gated plan: it can name a Top-K (and the sort synthesized
-    /// for it) that execution then drops.
     if (optimization_settings.is_explain)
         return;
 
@@ -274,7 +257,6 @@ void abandonUnprofitableGroupByTopK(const QueryPlanOptimizationSettings & optimi
             auto grandparent_it = sort_node ? parents.find(sort_node) : parents.end();
             QueryPlan::Node * parent_of_sort = grandparent_it == parents.end() ? nullptr : grandparent_it->second;
 
-            /// Keep the heap rather than strand a sort it was supposed to pay for.
             if (!removeSyntheticTopKSort(node, sort_node, parent_of_sort))
                 continue;
         }

@@ -178,9 +178,6 @@ QueryPlanOptimizationSettings::QueryPlanOptimizationSettings(
     convert_any_join_to_semi_or_anti_join = from[Setting::query_plan_enable_optimizations] && from[Setting::query_plan_convert_any_join_to_semi_or_anti_join];
     try_use_top_k_optimization = from[Setting::use_skip_indexes_for_top_k] || from[Setting::use_top_k_dynamic_filtering];
     enable_group_by_top_k_optimization = from[Setting::query_plan_enable_optimizations] && from[Setting::enable_group_by_top_k_optimization];
-    /// The documented minimum is 1: below it the heap would trim on every admitted key, and the
-    /// size-hint gate would compare against a bound smaller than the heap actually keeps. Clamp
-    /// here so every consumer of `TopKParams::load_factor` sees the same effective value.
     top_k_optimization_load_factor
         = std::max(1.0, static_cast<Float64>(from[Setting::group_by_top_k_optimization_load_factor].value));
     top_k_optimization_observation_rows = from[Setting::group_by_top_k_optimization_observation_rows];

@@ -224,8 +224,6 @@ void optimizePrimaryKeyConditionAndLimit(const Stack & stack);
 void processAndOptimizeTextIndexFunctions(const Stack & stack, QueryPlan::Nodes & nodes, bool direct_read_from_text_index);
 void optimizeReadInOrder(QueryPlan::Node & node, QueryPlan::Nodes & nodes, const QueryPlanOptimizationSettings & optimization_settings);
 void optimizePrewhere(QueryPlan::Node & parent_node, bool remove_unused_columns, bool suppress_for_vector_search = true);
-/// Takes the traversal stack (not just the node) so that, when in-order aggregation supersedes a
-/// GROUP BY top-K heap, the sort synthesized for that heap can be unlinked instead of stranded.
 void optimizeAggregationInOrder(const Stack & stack, QueryPlan::Nodes &, const QueryPlanOptimizationSettings &);
 bool optimizeLazyMaterialization2(QueryPlan::Node & root, QueryPlan & query_plan, QueryPlan::Nodes & nodes, const QueryPlanOptimizationSettings & settings, size_t max_limit_for_lazy_materialization);
 void optimizeLazyFinal(const Stack & stack, QueryPlan & query_plan, QueryPlan::Nodes & nodes, const QueryPlanOptimizationSettings & optimization_settings);
@@ -256,10 +254,6 @@ void setAggregationHashTableCacheKeys(const QueryPlanOptimizationSettings & opti
 
 void abandonUnprofitableGroupByTopK(const QueryPlanOptimizationSettings & optimization_settings, QueryPlan::Node & root);
 
-/// Unlink the `Sorting for GROUP BY top-K` step that tryOptimizeGroupByTopK synthesized above
-/// `aggregating_node`, restoring the pre-optimization plan shape. Returns false when the plan no
-/// longer has that shape; the caller must then keep the heap so the sort is not left without an
-/// owner. Every path that abandons a `synthetic_sort` top-K has to go through this.
 bool removeSyntheticTopKSort(QueryPlan::Node * aggregating_node, QueryPlan::Node * sort_node, QueryPlan::Node * parent_of_sort);
 
 /// Populates two maps in lock-step:
