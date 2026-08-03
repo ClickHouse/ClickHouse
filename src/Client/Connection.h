@@ -85,6 +85,10 @@ public:
     /// the remaining addresses are tried as usual.
     void setPreferredAddress(const Poco::Net::SocketAddress & address) { preferred_address = address; }
 
+    /// The address of the host the connection has been established to, if it has been resolved.
+    /// It is the address to pass to `setPreferredAddress` of a subsequent connection to the same host.
+    std::optional<Poco::Net::SocketAddress> getResolvedAddress() const;
+
     /// Set throttler of network traffic. One throttler could be used for multiple connections to limit total traffic.
     void setThrottler(const ThrottlerPtr & throttler_) override
     {
@@ -235,9 +239,6 @@ private:
     String description;
     String full_description;
     void setDescription();
-
-    /// Returns resolved address if it was resolved.
-    std::optional<Poco::Net::SocketAddress> getResolvedAddress() const;
 
     String client_name;
 

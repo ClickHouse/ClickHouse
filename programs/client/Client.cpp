@@ -557,7 +557,7 @@ void Client::connect()
         std::optional<UInt16> port;
         if (config().has("port"))
             port = static_cast<UInt16>(config().getInt("port"));
-        hosts_and_ports.emplace_back(HostAndPort{host, port, {}, false});
+        hosts_and_ports.emplace_back(HostAndPort{host, port, {}, {}, false});
     }
 
     for (size_t attempted_address_index = 0; attempted_address_index < hosts_and_ports.size(); ++attempted_address_index)
@@ -589,9 +589,11 @@ void Client::connect()
             std::vector<std::pair<UInt16, Protocol::Secure>> candidates;
             candidates.emplace_back(connection_parameters.port, connection_parameters.security);
 
-            /// The address that answered during the probing, if it took place: the host can resolve to
-            /// several addresses, and the connection has to start with the one that is known to answer.
-            std::optional<Poco::Net::SocketAddress> probed_address;
+            /// The address that is known to answer, if any: the host can resolve to several addresses,
+            /// and the connection has to start with this one. It is either found by the probing below or
+            /// remembered from the connection that has already worked for this address (see below), because
+            /// a reconnect does not probe the ports again.
+            std::optional<Poco::Net::SocketAddress> answering_address = hosts_and_ports[attempted_address_index].address;
 
             const bool port_unspecified = !hosts_and_ports[attempted_address_index].port.has_value() && !config().has("port");
             const bool secure_unspecified = !hosts_and_ports[attempted_address_index].secure.has_value() && !config().has("secure")
@@ -626,7 +628,7 @@ void Client::connect()
                     throw;
                 }
 
-                probed_address = probe.address;
+                answering_address = probe.address;
 
                 switch (probe.choice)
                 {
@@ -658,11 +660,11 @@ void Client::connect()
                 connection_parameters.port = candidates[candidate_index].first;
                 connection_parameters.security = candidates[candidate_index].second;
 
-                /// Connect to the address that has answered during the probing, but only on the port it
-                /// has answered on: the fallback candidate (the secure port) was not probed successfully.
+                /// Connect to the address that is known to answer, but only on the port it has answered on:
+                /// the fallback candidate (the secure port) was not probed successfully.
                 connection_parameters.preferred_address.reset();
-                if (probed_address && probed_address->port() == connection_parameters.port)
-                    connection_parameters.preferred_address = probed_address;
+                if (answering_address && answering_address->port() == connection_parameters.port)
+                    connection_parameters.preferred_address = answering_address;
 
                 const bool secure_auto_detected = secure_unspecified && connection_parameters.security == Protocol::Secure::Enable;
 
@@ -757,7 +759,14 @@ void Client::connect()
             hosts_and_ports[attempted_address_index].port = connection_parameters.port;
             hosts_and_ports[attempted_address_index].secure = connection_parameters.security == Protocol::Secure::Enable;
             if (port_unspecified && secure_unspecified)
+            {
                 hosts_and_ports[attempted_address_index].transport_auto_detected = true;
+                /// Remember the address that has answered as well, and not only the port and the TLS mode:
+                /// the ports are not probed again on a reconnect, and without the address the connection
+                /// would start from the first address of the host once more and pay a whole connection
+                /// timeout for every unresponsive address in front of the one that works.
+                hosts_and_ports[attempted_address_index].address = assert_cast<Connection &>(*connection).getResolvedAddress();
+            }
 
             settings_from_server = assert_cast<Connection &>(*connection).settingsFromServer();
 
@@ -769,12 +778,13 @@ void Client::connect()
             /// valid for the endpoints this host resolved to when the ports were probed. `Connection::connect`
             /// drops the `DNSResolver` cache entries for the host on a connect-level failure, so the next
             /// attempt can resolve to another backend, e.g. a secure-only backend can be replaced by a
-            /// plain-only one; keeping the remembered port and TLS mode would make the client retry the
-            /// secure port forever and never rediscover the healthy plain port.
+            /// plain-only one; keeping the remembered port, TLS mode and address would make the client
+            /// retry the secure port forever and never rediscover the healthy plain port.
             if (hosts_and_ports[attempted_address_index].transport_auto_detected)
             {
                 hosts_and_ports[attempted_address_index].port.reset();
                 hosts_and_ports[attempted_address_index].secure.reset();
+                hosts_and_ports[attempted_address_index].address.reset();
                 hosts_and_ports[attempted_address_index].transport_auto_detected = false;
             }
 
@@ -1116,7 +1126,7 @@ void Client::processOptions(
         std::string host = host_and_port_options["host"].as<std::string>();
         std::optional<UInt16> port
             = !host_and_port_options["port"].empty() ? std::make_optional(host_and_port_options["port"].as<UInt16>()) : std::nullopt;
-        hosts_and_ports.emplace_back(HostAndPort{host, port, {}, false});
+        hosts_and_ports.emplace_back(HostAndPort{host, port, {}, {}, false});
     }
 
     send_external_tables = true;

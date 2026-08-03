@@ -337,6 +337,19 @@ def test_the_probed_address_is_used_for_the_connection():
     # Here `multiaddress` resolves to a black hole first and to a healthy server second, and the
     # connect timeout is raised to 60 seconds, so the query cannot possibly finish in time unless
     # the address that answered during the probing is the one the client connects to.
+    #
+    # The session is then broken and re-established in the same client process: a reconnect does not
+    # probe the ports again, so the address that answered has to be remembered along with the port
+    # and the TLS mode, or the second connection walks the addresses from the start again.
+    #
+    # An `INSERT` that the server rejects while it receives the data makes the client disconnect
+    # (the protocol is out of sync at that point), and `--ignore-error` lets it proceed to the next
+    # query, which reconnects. This needs no help from the network or from the server process, so
+    # the reconnect happens at a well-defined moment.
+    node_both_ports.query(
+        "CREATE TABLE IF NOT EXISTS reconnect_trigger (x UInt8, CONSTRAINT c CHECK x < 5)"
+        " ENGINE = Memory"
+    )
     blackhole = unresponsive_address()
     blackhole_address(blackhole, add=True)
     node_plain_only.exec_in_container(
@@ -354,15 +367,28 @@ def test_the_probed_address_is_used_for_the_connection():
                 "bash",
                 "-c",
                 "clickhouse client --host multiaddress --accept-invalid-certificate"
-                " --connect_timeout 60 --query \"SELECT 'connected'\" 2>&1 || true",
+                " --connect_timeout 60 --async_insert 0 --ignore-error"
+                " --query \"SELECT 'ready';"
+                " INSERT INTO reconnect_trigger VALUES (10);"
+                " SELECT 'reconnected'\" < /dev/null 2>&1 || true",
             ]
         )
         elapsed = time.time() - start
-        assert "connected" in output, output
+        assert "ready" in output, output
+        assert "VIOLATED_CONSTRAINT" in output, output
+        assert "reconnected" in output, output
         assert elapsed < 30, f"Connecting took {elapsed} seconds: {output}"
     finally:
+        node_both_ports.query("DROP TABLE IF EXISTS reconnect_trigger")
+        # `/etc/hosts` is bind-mounted into the container, so it can only be rewritten in place:
+        # `sed -i` renames its temporary file over it and fails with `Device or resource busy`.
         node_plain_only.exec_in_container(
-            ["bash", "-c", "sed -i '/multiaddress/d' /etc/hosts"], user="root"
+            [
+                "bash",
+                "-c",
+                "grep -v multiaddress /etc/hosts > /tmp/hosts && cat /tmp/hosts > /etc/hosts && rm /tmp/hosts",
+            ],
+            user="root",
         )
         blackhole_address(blackhole, add=False)
 

@@ -542,10 +542,16 @@ protected:
         /// secure port, which remembers its outcome here (and not in the global configuration,
         /// so that the other addresses keep choosing their transport on their own).
         std::optional<bool> secure;
+        /// Which of the addresses this host resolves to is known to answer. A host can resolve to several
+        /// addresses, and the connection tries them one by one, so an unresponsive address in front of the
+        /// list costs a whole connection timeout. The automatic choice between the plain and the secure
+        /// port learns the answering address and remembers it here, because a reconnect to this address
+        /// does not probe the ports again and would otherwise start from the first address once more.
+        std::optional<Poco::Net::SocketAddress> address;
         /// Whether `port` and `secure` above were determined by the automatic choice between the plain
         /// and the secure port rather than specified by the user. Such a choice is only valid for the
-        /// endpoints the host resolved to at the time of the probe, so it is forgotten after a failed
-        /// connection attempt to this address, and the next attempt probes the ports again.
+        /// endpoints the host resolved to at the time of the probe, so it and the address above are
+        /// forgotten after a failed connection attempt, and the next attempt probes the ports again.
         bool transport_auto_detected = false;
     };
 
