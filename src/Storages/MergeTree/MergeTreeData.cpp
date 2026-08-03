@@ -45,6 +45,8 @@
 #include <Disks/TemporaryFileOnDisk.h>
 #include <Disks/createVolume.h>
 #include <IO/Operators.h>
+#include <IO/ReadHelpers.h>
+#include <IO/ReadSettings.h>
 #include <IO/S3Common.h>
 #include <IO/SharedThreadPools.h>
 #include <IO/WriteBufferFromString.h>
@@ -434,6 +436,12 @@ namespace FailPoints
     /// a batch of outdated parts from the filesystem: the first part is removed and the per-part
     /// freshness re-check rejects the rest, so they are rolled back to the Outdated state.
     extern const char merge_tree_leader_election_stale_lease_mid_cleanup[];
+
+    /// Deterministically simulates a leadership lease that goes stale in the MIDDLE of a sequence
+    /// of permanent changes to the shared `detached/` namespace (`ATTACH PARTITION`): the first
+    /// change succeeds and the next fence rejects the command, so the rollback journal is
+    /// exercised.
+    extern const char merge_tree_leader_election_stale_lease_mid_detached_mutation[];
 }
 
 static String getPartNameFromAST(const ASTPtr & partition)
@@ -4283,7 +4291,10 @@ void MergeTreeData::clearPartsFromFilesystemImpl(const DataPartsVector & parts, 
     {
         get_failed_parts();
 
-        LOG_DEBUG(log, "Failed to remove all parts, all count {}, removed {}", parts.size(), part_names_succeed.size());
+        /// Include the reason: when the error is not rethrown it would be lost entirely otherwise,
+        /// and the removal of a batch stops on the first failure, so it is the decisive one.
+        LOG_DEBUG(log, "Failed to remove all parts, all count {}, removed {}: {}",
+            parts.size(), part_names_succeed.size(), getCurrentExceptionMessage(false));
 
         if (throw_on_error)
             throw;
@@ -6215,6 +6226,62 @@ MergeTreeData::PartsTemporaryRename::~PartsTemporaryRename()
     catch (...)
     {
         tryLogCurrentException(__PRETTY_FUNCTION__);
+    }
+}
+
+void MergeTreeData::DetachedNamespaceRollback::renameDirectory(
+    const DiskPtr & disk, const String & from_relative, const String & to_relative)
+{
+    disk->moveDirectory(from_relative, to_relative);
+    if (armed)
+        changes.push_back(Change{disk, from_relative, to_relative, {}, {}});
+}
+
+void MergeTreeData::DetachedNamespaceRollback::removeFileIfExists(const DiskPtr & disk, const String & relative_path)
+{
+    /// Read the contents before the removal so that the file can be recreated verbatim. These
+    /// files (`txn_version.txt` and its temporary counterpart) are a few dozen bytes.
+    String content;
+    const bool remember = armed && disk->existsFile(relative_path);
+    if (remember)
+    {
+        auto in = disk->readFile(relative_path, getReadSettingsForMetadata());
+        readStringUntilEOF(content, *in);
+    }
+
+    disk->removeFileIfExists(relative_path);
+
+    if (remember)
+        changes.push_back(Change{disk, {}, {}, relative_path, std::move(content)});
+}
+
+MergeTreeData::DetachedNamespaceRollback::~DetachedNamespaceRollback()
+{
+    /// Replay in reverse: the last change is the one closest to the failure. Best effort — this
+    /// runs while an exception is propagating to the client, and a failure to undo one change must
+    /// not hide the original rejection nor prevent the remaining changes from being undone.
+    for (auto it = changes.rbegin(); it != changes.rend(); ++it)
+    {
+        try
+        {
+            if (!it->removed_path.empty())
+            {
+                LOG_INFO(storage.log, "Restoring detached file {} removed by a rejected command (leader_election)", it->removed_path);
+                auto out = it->disk->writeFile(it->removed_path);
+                writeString(it->removed_content, *out);
+                out->finalize();
+            }
+            else
+            {
+                LOG_INFO(storage.log, "Renaming detached directory {} back to {} after a rejected command (leader_election)",
+                    it->renamed_to, it->renamed_from);
+                it->disk->moveDirectory(it->renamed_to, it->renamed_from);
+            }
+        }
+        catch (...)
+        {
+            tryLogCurrentException(storage.log, "Cannot undo a change of the detached namespace made by a rejected command");
+        }
     }
 }
 
@@ -9284,10 +9351,25 @@ void MergeTreeData::validateDetachedPartName(const String & name)
 }
 
 void MergeTreeData::assertLeaseFreshForDetachedOperation(
-    std::string_view action, const String & dir_name, std::optional<UInt64> admission_epoch) const
+    std::string_view action,
+    const String & dir_name,
+    std::optional<UInt64> admission_epoch,
+    const DetachedNamespaceRollback * rollback) const
 {
     bool lease_is_fresh = mayMutateSharedStorage();
     fiu_do_on(FailPoints::merge_tree_leader_election_stale_lease_detached_ddl, { lease_is_fresh = false; });
+
+    /// Test hook: fail only after this command already made at least one permanent change to the
+    /// shared `detached/` namespace, which is exactly the window the rollback journal closes.
+    if (rollback && rollback->recordedChanges() > 0)
+    {
+        fiu_do_on(FailPoints::merge_tree_leader_election_stale_lease_mid_detached_mutation,
+        {
+            throw Exception(ErrorCodes::TABLE_IS_READ_ONLY,
+                "Simulated leadership loss in the middle of changing the detached namespace (leader_election)");
+        });
+    }
+
     if (!lease_is_fresh)
         throw Exception(ErrorCodes::TABLE_IS_READ_ONLY,
             "The leader lease was not renewed within the session timeout; refusing to {} detached part "
@@ -9337,14 +9419,31 @@ void MergeTreeData::dropDetached(const ASTPtr & partition, bool part, ContextPtr
 
     renamed_parts.tryRenameAll();
 
+    Names dropped_so_far;
     for (auto & [_, old_dir, new_dir, disk] : renamed_parts.old_and_new_names)
     {
         /// The deletion is irreversible, so re-check the lease before EACH removed directory:
         /// once the lease goes stale mid-sequence, the remaining (still renamed) directories are
         /// rolled back instead of deleted by a possibly stale leader.
-        assertLeaseFreshForDetachedOperation("drop", old_dir, admission_epoch);
+        ///
+        /// Unlike `ATTACH PARTITION`, a partially executed `DROP DETACHED` cannot be undone: the
+        /// directories already deleted are gone. Name them in the exception so that the operator
+        /// is not left guessing which half of the command took effect.
+        try
+        {
+            assertLeaseFreshForDetachedOperation("drop", old_dir, admission_epoch);
+        }
+        catch (Exception & e)
+        {
+            if (!dropped_so_far.empty())
+                e.addMessage("{} detached part directories were already dropped and cannot be restored: {}",
+                    dropped_so_far.size(), fmt::join(dropped_so_far, ", "));
+            throw;
+        }
+
         bool keep_shared = removeDetachedPart(disk, fs::path(relative_data_path) / DETACHED_DIR_NAME / new_dir / "", old_dir);
         LOG_DEBUG(log, "Dropped detached part {}, keep shared data: {}", old_dir, keep_shared);
+        dropped_so_far.push_back(old_dir);
         old_dir.clear();
     }
 }
@@ -9484,9 +9583,17 @@ MergeTreeData::MutableDataPartsVector MergeTreeData::tryLoadPartsToAttach(
     const PartitionCommand & command,
     ContextPtr local_context,
     PartsTemporaryRename & renamed_parts,
-    std::optional<UInt64> admission_epoch)
+    std::optional<UInt64> admission_epoch,
+    DetachedNamespaceRollback * detached_rollback)
 {
     const fs::path source_dir = DETACHED_DIR_NAME;
+
+    /// Every permanent change of the shared `detached/` namespace below goes through the caller's
+    /// rollback journal when there is one, so that a command rejected afterwards — including by
+    /// the publish fence, which can only reject after some of these changes succeeded — leaves the
+    /// namespace exactly as it found it. Without a journal the helpers are plain disk calls.
+    DetachedNamespaceRollback unrecorded_changes(*this, /*armed*/ false);
+    DetachedNamespaceRollback & detached_changes = detached_rollback ? *detached_rollback : unrecorded_changes;
 
     /// Let's compose a list of parts that should be added.
     if (command.part)
@@ -9547,9 +9654,11 @@ MergeTreeData::MutableDataPartsVector MergeTreeData::tryLoadPartsToAttach(
                 LOG_WARNING(log, "Ignoring detached part {} because it intersects another detached part: {}", part_info.dir_name, reason);
                 /// The `ignored_` rename permanently mutates the shared `detached/` namespace and
                 /// happens before the commit-time epoch fence in `attachPartition`, so re-check
-                /// the lease — and the admitting leadership epoch — before each one.
-                assertLeaseFreshForDetachedOperation("rename to ignored_", part_info.dir_name, admission_epoch);
-                part_info.disk->moveDirectory(fs::path(relative_data_path) / source_dir / part_info.dir_name,
+                /// the lease — and the admitting leadership epoch — before each one, and record it
+                /// so that a rejection later undoes it.
+                assertLeaseFreshForDetachedOperation("rename to ignored_", part_info.dir_name, admission_epoch, detached_rollback);
+                detached_changes.renameDirectory(part_info.disk,
+                    fs::path(relative_data_path) / source_dir / part_info.dir_name,
                     fs::path(relative_data_path) / source_dir / ("ignored_" + part_info.dir_name));
             }
         }
@@ -9582,8 +9691,9 @@ MergeTreeData::MutableDataPartsVector MergeTreeData::tryLoadPartsToAttach(
             if (containing_part != part_info.dir_name)
             {
                 /// Same as the `ignored_` rename above: permanent, pre-fence, shared-namespace.
-                assertLeaseFreshForDetachedOperation("rename to inactive_", part_info.dir_name, admission_epoch);
-                part_info.disk->moveDirectory(fs::path(relative_data_path) / source_dir / part_info.dir_name,
+                assertLeaseFreshForDetachedOperation("rename to inactive_", part_info.dir_name, admission_epoch, detached_rollback);
+                detached_changes.renameDirectory(part_info.disk,
+                    fs::path(relative_data_path) / source_dir / part_info.dir_name,
                     fs::path(relative_data_path) / source_dir / ("inactive_" + part_info.dir_name));
             }
             else
@@ -9596,7 +9706,8 @@ MergeTreeData::MutableDataPartsVector MergeTreeData::tryLoadPartsToAttach(
     /// leader may be operating on. A failure here or below rolls the temporary renames back via
     /// the caller's `PartsTemporaryRename` destructor.
     if (!renamed_parts.old_and_new_names.empty())
-        assertLeaseFreshForDetachedOperation("rename to attaching_", renamed_parts.old_and_new_names.front().old_dir, admission_epoch);
+        assertLeaseFreshForDetachedOperation(
+            "rename to attaching_", renamed_parts.old_and_new_names.front().old_dir, admission_epoch, detached_rollback);
     renamed_parts.tryRenameAll();
 
     /// Synchronously check that added parts exist and are not broken. We will write checksums.txt if it does not exist.
@@ -9615,11 +9726,14 @@ MergeTreeData::MutableDataPartsVector MergeTreeData::tryLoadPartsToAttach(
         /// The removals are irreversible shared-storage side effects, so re-check the lease before
         /// EACH of them: the lease may go stale between the two removals, and stripping only the
         /// main `txn_version.txt` of a part whose attach is then rolled back would silently turn
-        /// detached transactional data into non-transactional data for the next leader.
-        assertLeaseFreshForDetachedOperation("strip transaction metadata from", new_dir, admission_epoch);
-        disk->removeFileIfExists(fs::path(relative_data_path) / source_dir / new_dir / VersionMetadata::TMP_TXN_VERSION_METADATA_FILE_NAME);
-        assertLeaseFreshForDetachedOperation("strip transaction metadata from", new_dir, admission_epoch);
-        disk->removeFileIfExists(fs::path(relative_data_path) / source_dir / new_dir / VersionMetadata::TXN_VERSION_METADATA_FILE_NAME);
+        /// detached transactional data into non-transactional data for the next leader. Both
+        /// removals are recorded, so a rejection later restores the files verbatim.
+        assertLeaseFreshForDetachedOperation("strip transaction metadata from", new_dir, admission_epoch, detached_rollback);
+        detached_changes.removeFileIfExists(
+            disk, fs::path(relative_data_path) / source_dir / new_dir / VersionMetadata::TMP_TXN_VERSION_METADATA_FILE_NAME);
+        assertLeaseFreshForDetachedOperation("strip transaction metadata from", new_dir, admission_epoch, detached_rollback);
+        detached_changes.removeFileIfExists(
+            disk, fs::path(relative_data_path) / source_dir / new_dir / VersionMetadata::TXN_VERSION_METADATA_FILE_NAME);
 
         /// The per-part `SingleDiskVolume` lives for the part's lifetime, so create it in the dedicated
         /// arena; `build()` and `loadPartAndFixMetadataImpl` below run outside it (the metadata load's
@@ -10158,13 +10272,10 @@ void MergeTreeData::Transaction::renameParts()
                 throw;
             }
 
-            /// `renameTo` takes a path relative to the table root, so a part staged from the
-            /// detached namespace (`ATTACH PARTITION`) must be restored under `detached/`,
-            /// not just under its directory name.
-            String previous_directory = part_need_rename->getDataPartStorage().getPartDirectory();
-            if (part_need_rename->getDataPartStorage().getParentDirectory() == DETACHED_DIR_NAME)
-                previous_directory = String(DETACHED_DIR_NAME) + "/" + previous_directory;
-            published_in_this_call.emplace_back(part_need_rename, previous_directory);
+            /// `getPartDirectory` is already relative to the table root and keeps the parent
+            /// directory of a part staged from the detached namespace (`detached/attaching_…` for
+            /// `ATTACH PARTITION`), which is exactly what `renameTo` expects.
+            published_in_this_call.emplace_back(part_need_rename, part_need_rename->getDataPartStorage().getPartDirectory());
         }
 
         LOG_TEST(data.log, "Renaming part to {}", part_need_rename->name);

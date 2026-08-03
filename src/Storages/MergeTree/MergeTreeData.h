@@ -456,6 +456,54 @@ public:
         bool renamed = false;
     };
 
+    /// Journal of the permanent changes an `ATTACH PARTITION` makes to the shared `detached/`
+    /// namespace before its parts are published: the `ignored_` / `inactive_` renames and the
+    /// stripped `txn_version.txt*` files. Those changes are not staged in `PartsTemporaryRename`
+    /// and used to survive a command that was rejected afterwards — in particular by the publish
+    /// fence, which can reject the command only after the first parts of the batch were already
+    /// prepared. The journal replays them in reverse in the destructor unless `commit` was called,
+    /// so a rejected command leaves the shared `detached/` contents byte-identical.
+    ///
+    /// Only armed under `leader_election`: with the journal disarmed the methods below are plain
+    /// pass-throughs to the disk, so the behaviour of every other engine is unchanged.
+    struct DetachedNamespaceRollback : private boost::noncopyable
+    {
+        DetachedNamespaceRollback(const MergeTreeData & storage_, bool armed_)
+            : storage(storage_)
+            , armed(armed_)
+        {
+        }
+
+        /// Moves a directory inside `detached/`, remembering how to move it back.
+        void renameDirectory(const DiskPtr & disk, const String & from_relative, const String & to_relative);
+
+        /// Removes a file if it exists, remembering its contents so that it can be recreated.
+        void removeFileIfExists(const DiskPtr & disk, const String & relative_path);
+
+        /// How many permanent changes were recorded so far. Zero when the journal is disarmed.
+        size_t recordedChanges() const { return changes.size(); }
+
+        /// The command succeeded: its changes to `detached/` are final.
+        void commit() { changes.clear(); }
+
+        ~DetachedNamespaceRollback();
+
+        struct Change
+        {
+            DiskPtr disk;
+            /// A rename: `renamed_to` has to be moved back to `renamed_from`.
+            String renamed_from;
+            String renamed_to;
+            /// A removed file: `removed_path` has to be recreated with `removed_content`.
+            String removed_path;
+            String removed_content;
+        };
+
+        const MergeTreeData & storage;
+        const bool armed;
+        std::vector<Change> changes;
+    };
+
     /// Parameters for various modes.
     struct MergingParams
     {
@@ -920,8 +968,14 @@ public:
     /// detached-namespace changes it is about to make belong to a command admitted under the
     /// previous epoch — and the command's own publish fence will reject it afterwards, leaving
     /// those permanent changes behind.
+    /// `rollback`, when set, is the journal of the permanent changes this command already made to
+    /// the shared `detached/` namespace; it only gates the test hook that simulates a lease going
+    /// stale in the middle of such a sequence.
     void assertLeaseFreshForDetachedOperation(
-        std::string_view action, const String & dir_name, std::optional<UInt64> admission_epoch = {}) const;
+        std::string_view action,
+        const String & dir_name,
+        std::optional<UInt64> admission_epoch = {},
+        const DetachedNamespaceRollback * rollback = nullptr) const;
 
     /// Execute a merge of the specified parts to a temporary directory without committing.
     /// Used by OPTIMIZE ... DRY RUN PARTS.
@@ -937,11 +991,14 @@ public:
     /// namespace made here (`ignored_` / `inactive_` renames, `attaching_` renames, stripping
     /// `txn_version.txt*`) against the leadership epoch that admitted the `ATTACH` command, not
     /// merely against lease freshness. See `assertLeaseFreshForDetachedOperation`.
+    /// `detached_rollback`, when set, records those permanent changes so that a command rejected
+    /// later (by the publish fence in the caller) undoes them. See `DetachedNamespaceRollback`.
     MutableDataPartsVector tryLoadPartsToAttach(
         const PartitionCommand & command,
         ContextPtr context,
         PartsTemporaryRename & renamed_parts,
-        std::optional<UInt64> admission_epoch = {});
+        std::optional<UInt64> admission_epoch = {},
+        DetachedNamespaceRollback * detached_rollback = nullptr);
 
     bool assertNoPatchesForParts(const DataPartsVector & parts, const DataPartsVector & patches, std::string_view command, bool throw_on_error = true) const;
 

@@ -72,6 +72,7 @@ static struct InitFiu
     REGULAR(merge_tree_leader_election_stale_lease_detached_ddl) \
     REGULAR(merge_tree_leader_election_stale_lease_mid_batch_rename) \
     REGULAR(merge_tree_leader_election_stale_lease_mid_cleanup) \
+    REGULAR(merge_tree_leader_election_stale_lease_mid_detached_mutation) \
     ONCE(rmt_lightweight_update_sleep_after_block_allocation) \
     ONCE(rmt_merge_task_sleep_in_prepare) \
     ONCE(merge_tree_refresh_parts_throw_once) \

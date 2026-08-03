@@ -3591,10 +3591,21 @@ PartitionCommandsResultInfo StorageMergeTree::attachPartition(
     assertNotReadonly();
     PartitionCommandsResultInfo results;
     PartsTemporaryRename renamed_parts(*this, DETACHED_DIR_NAME);
-    MutableDataPartsVector loaded_parts = tryLoadPartsToAttach(command, local_context, renamed_parts, admission_epoch);
+
+    /// Declared after `renamed_parts` on purpose: the journal restores files inside the
+    /// `attaching_` directories, so it has to run before `renamed_parts` renames them back.
+    /// Armed only under `leader_election`; for every other table it records nothing.
+    DetachedNamespaceRollback detached_rollback(*this, leader_election_ptr != nullptr);
+    MutableDataPartsVector loaded_parts
+        = tryLoadPartsToAttach(command, local_context, renamed_parts, admission_epoch, &detached_rollback);
 
     if (loaded_parts.empty())
+    {
+        /// Nothing is published, but `ignored_` / `inactive_` renames of a command that found no
+        /// part to attach are its intended and only effect, so they stay.
+        detached_rollback.commit();
         return results;
+    }
 
     /// All parts are published through a single transaction so that a lease lost — or lost and
     /// reacquired — in the middle of the batch undoes the renames already done instead of
@@ -3644,6 +3655,9 @@ PartitionCommandsResultInfo StorageMergeTree::attachPartition(
 
         transaction.commit(lock);
     }
+
+    /// The parts are published: the changes this command made to `detached/` are final.
+    detached_rollback.commit();
 
     for (size_t i = 0; i < loaded_parts.size(); ++i)
     {
