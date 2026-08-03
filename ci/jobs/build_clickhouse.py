@@ -385,14 +385,16 @@ def main():
         ):
             targets = "-k0 all"
         elif build_type == BuildTypes.AMD_WINDOWS:
-            # The Windows port does not link a binary yet: Poco's Windows platform layer is
-            # missing from our fork and src/Common still uses Linux-only interfaces. This
-            # aggregate target is everything that is expected to build today - the C++
-            # runtime plus the third-party libraries - so the cross-build cannot regress
-            # while the remaining porting lands. It is defined in
-            # cmake/windows/ported_targets.cmake, which also lists what is left out and why.
-            # Switch this to `clickhouse-bundle` once the binary links.
-            targets = "clickhouse-windows-ported"
+            # `clickhouse` rather than `clickhouse-bundle`: the bundle pulls in the symlinks,
+            # `clickhouse-keeper` and the self-extracting wrapper, none of which the Windows
+            # port has. It covers everything the port builds - the C++ runtime, the
+            # third-party libraries, Poco, all of `src` and `programs` - so a change to any of
+            # them that does not compile for Windows fails here rather than being found the
+            # next time someone cross-builds by hand.
+            # `clickhouse-windows-ported` is built alongside it because it is derived from the
+            # contrib list rather than from what the binary happens to link, so it keeps a
+            # newly added third-party library covered even when nothing depends on it yet.
+            targets = "clickhouse clickhouse-windows-ported"
         else:
             targets = "clickhouse-bundle"
 

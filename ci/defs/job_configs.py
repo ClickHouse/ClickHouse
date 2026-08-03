@@ -531,8 +531,8 @@ class JobConfigs:
             runs_on=RunnerLabels.ARM_LARGE,
         ),
         Job.ParamSet(
-            # No artifact: the Windows port does not link a binary yet, this builds the
-            # `clickhouse-windows-ported` target. See
+            # No artifact: the Windows port links `clickhouse.exe` but it has never been run,
+            # so there is nothing worth handing to anyone yet. See
             # docs/en/development/build-cross-windows.md.
             parameter=BuildTypes.AMD_WINDOWS,
             provides=[],

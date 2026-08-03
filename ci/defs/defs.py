@@ -340,9 +340,8 @@ class BuildTypes(metaclass=MetaClasses.WithIter):
     ARM_TIDY = "arm_tidy"
     AMD_DARWIN = "amd_darwin"
     ARM_DARWIN = "arm_darwin"
-    # Cross-build for Windows (mingw-w64). The port is in progress and does not produce a
-    # binary yet - the job builds the `clickhouse-windows-ported` target, which covers the
-    # C++ runtime and the third-party libraries. See
+    # Cross-build for Windows (mingw-w64). It links a native PE `clickhouse.exe`, which has
+    # not been run yet, so the job builds the binary but publishes no artifact. See
     # docs/en/development/build-cross-windows.md.
     AMD_WINDOWS = "amd_windows"
     ARM_V80COMPAT = "arm_v80compat"
