@@ -23,6 +23,10 @@ Tuple(a UInt8, b UInt8)	DEFAULT	tuple(defaultValueOfTypeName(\'UInt8\'), 42)
 -- nullable tuple
 Nullable(Tuple(a UInt8, s String))	DEFAULT	tuple(defaultValueOfTypeName(\'UInt8\'), \'Hi\')
 1	(0,'Hi')
+-- variant alternative
+Variant(Tuple(a UInt32, b UInt32), UInt64)	DEFAULT	CAST(tuple(defaultValueOfTypeName(\'UInt32\'), 5), \'Tuple(a UInt32, b UInt32)\')
+1	(0,5)	Tuple(a UInt32, b UInt32)
+2	7	UInt64
 -- lambda parameter shadowing an element name
 Tuple(x UInt8, y Array(UInt8))	tuple(defaultValueOfTypeName(\'UInt8\'), arrayMap(x -> (x + 1), [1, 2, 3]))
 (0,[2,3,4])

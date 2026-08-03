@@ -56,6 +56,14 @@ ASTPtr makeTupleDefault(const ASTs & element_types, const ASTs & element_default
     return function;
 }
 
+/// Build `CAST(<expression>, '<type>')`. Used for a default pulled up out of a `Variant` alternative:
+/// a value is convertible to a `Variant` only when its type is exactly one of the alternatives, so
+/// the built tuple has to be brought to the type of the alternative it came from first.
+ASTPtr makeCastToType(ASTPtr expression, const IAST & type)
+{
+    return makeASTFunction("CAST", std::move(expression), make_intrusive<ASTLiteral>(type.formatForLogging()));
+}
+
 /// Collect the names of identifiers referenced by an expression (for the ambiguity check below).
 /// Lambda parameters (e.g. `x` in `arrayMap(x -> x + 1, arr)`) are scoped local variables, not
 /// references to columns or tuple elements, so they are skipped while free identifiers from the
@@ -261,6 +269,34 @@ ASTPtr buildAndStripTupleDefaults(IAST & type, const NameSet & outer_element_nam
         if (!arguments || arguments->children.size() != 1)
             return nullptr;
         return buildAndStripTupleDefaults(*arguments->children[0], outer_element_names, column_name);
+    }
+
+    /// Variant is a transparent wrapper as well: a value of one of its alternatives is a valid value
+    /// of the whole Variant, so a DEFAULT inside `Variant(..., Tuple(...))` is representable as the
+    /// column-level default of that alternative. Conversion to a Variant requires the value to have
+    /// exactly the type of an alternative, so the pulled-up tuple is cast to the alternative type
+    /// before it becomes the column default.
+    if (data_type->name == "Variant")
+    {
+        if (!arguments)
+            return nullptr;
+
+        ASTPtr result;
+        for (const auto & child : arguments->children)
+        {
+            ASTPtr alternative_default = buildAndStripTupleDefaults(*child, outer_element_names, column_name);
+            if (!alternative_default)
+                continue;
+
+            if (result)
+                throw Exception(ErrorCodes::BAD_ARGUMENTS,
+                    "DEFAULT expressions inside the data type of column '{}' are written in more than one alternative "
+                    "of a Variant. A column has a single default value, so at most one alternative may define it.",
+                    column_name);
+
+            result = makeCastToType(std::move(alternative_default), *child);
+        }
+        return result;
     }
 
     /// Any other composite type (Array, Map, LowCardinality, ...): a DEFAULT inside is not

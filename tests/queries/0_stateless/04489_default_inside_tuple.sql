@@ -121,6 +121,26 @@ WHERE database = currentDatabase() AND table = 't_nullable' AND name = 'c';
 INSERT INTO t_nullable (id) VALUES (1);
 SELECT id, c FROM t_nullable;
 
+SELECT '-- variant alternative';
+-- A value of an alternative of a Variant is a valid value of the whole Variant, so a DEFAULT inside
+-- a Tuple alternative is pulled up as the default of the column, cast to the type of the alternative.
+CREATE TABLE t_variant
+(
+    id UInt8,
+    c Variant(UInt64, Tuple(a UInt32, b UInt32 DEFAULT 5))
+)
+ENGINE = MergeTree ORDER BY id;
+SELECT type, default_kind, default_expression
+FROM system.columns
+WHERE database = currentDatabase() AND table = 't_variant' AND name = 'c';
+INSERT INTO t_variant (id) VALUES (1);
+INSERT INTO t_variant (id, c) VALUES (2, 7);
+SELECT id, c, variantType(c) FROM t_variant ORDER BY id;
+-- A column has a single default value, so at most one alternative may define one.
+CREATE TABLE t_variant_two (c Variant(Tuple(a UInt32 DEFAULT 1), Tuple(b String, c String DEFAULT 'x'))) ENGINE = Memory; -- { serverError BAD_ARGUMENTS }
+-- An unsupported wrapper inside a Variant is still rejected.
+CREATE TABLE t_variant_array (c Variant(UInt64, Array(Tuple(a UInt32 DEFAULT 1)))) ENGINE = Memory; -- { serverError NOT_IMPLEMENTED }
+
 SELECT '-- lambda parameter shadowing an element name';
 -- A lambda parameter is a scoped local variable, not a reference to a tuple element or a column, so
 -- a parameter named like an element does not make the default ambiguous.
@@ -166,5 +186,6 @@ DROP TABLE t_expr;
 DROP TABLE t_alter_add;
 DROP TABLE t_alter_modify;
 DROP TABLE t_nullable;
+DROP TABLE t_variant;
 DROP TABLE t_lambda;
 DROP TABLE t_scope;
