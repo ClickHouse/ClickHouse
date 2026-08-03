@@ -22,10 +22,11 @@ FILE_FRAC_EPOCH="${CLICKHOUSE_TEST_UNIQUE_NAME}_frac_epoch.pb"
 FILE_FRAC="${CLICKHOUSE_TEST_UNIQUE_NAME}_frac.pb"
 FILE_LEGACY_SECONDS="${CLICKHOUSE_TEST_UNIQUE_NAME}_legacy_seconds.pb"
 FILE_LEGACY_OUT="${CLICKHOUSE_TEST_UNIQUE_NAME}_legacy_out.pb"
+FILE_LEGACY_DOUBLE="${CLICKHOUSE_TEST_UNIQUE_NAME}_legacy_double.pb"
 FILE_YEAR_ZERO_BE="${CLICKHOUSE_TEST_UNIQUE_NAME}_year_zero_be.pb"
 FILE_YEAR_ZERO_BASIC="${CLICKHOUSE_TEST_UNIQUE_NAME}_year_zero_basic.pb"
 FILE_YEAR_ZERO_FRAC="${CLICKHOUSE_TEST_UNIQUE_NAME}_year_zero_frac.pb"
-trap 'rm -f "${FILE_BEFORE}" "${FILE_AFTER}" "${FILE_MAX}" "${FILE_PAST_MAX}" "${FILE_FRAC_EPOCH}" "${FILE_FRAC}" "${FILE_LEGACY_SECONDS}" "${FILE_LEGACY_OUT}" "${FILE_YEAR_ZERO_BE}" "${FILE_YEAR_ZERO_BASIC}" "${FILE_YEAR_ZERO_FRAC}"' EXIT
+trap 'rm -f "${FILE_BEFORE}" "${FILE_AFTER}" "${FILE_MAX}" "${FILE_PAST_MAX}" "${FILE_FRAC_EPOCH}" "${FILE_FRAC}" "${FILE_LEGACY_SECONDS}" "${FILE_LEGACY_OUT}" "${FILE_LEGACY_DOUBLE}" "${FILE_YEAR_ZERO_BE}" "${FILE_YEAR_ZERO_BASIC}" "${FILE_YEAR_ZERO_FRAC}"' EXIT
 
 echo '-- pre-epoch'
 ${CLICKHOUSE_LOCAL} --query "
@@ -111,6 +112,42 @@ ${CLICKHOUSE_LOCAL} --query "
 SELECT *
 FROM file('${FILE_LEGACY_OUT}', 'Protobuf', 't DateTime64(3, \\'UTC\\')')
 SETTINGS input_format_protobuf_datetime64_legacy_seconds = 1"
+
+DOUBLE_SCHEMA='syntax = "proto3"; message Row { double t = 1; }'
+
+echo '-- legacy double field stores fractional Unix seconds'
+${CLICKHOUSE_LOCAL} --query "
+INSERT INTO FUNCTION file('${FILE_LEGACY_DOUBLE}', 'Protobuf')
+SETTINGS format_schema_source = 'string',
+         format_schema = '${DOUBLE_SCHEMA}',
+         format_schema_message_name = 'Row',
+         engine_file_truncate_on_insert = 1
+SELECT CAST(1577836800.125 AS Float64) AS t"
+
+echo '-- legacy double read preserves subseconds'
+${CLICKHOUSE_LOCAL} --query "
+SELECT *
+FROM file('${FILE_LEGACY_DOUBLE}', 'Protobuf', 't DateTime64(3, \\'UTC\\')')
+SETTINGS format_schema_source = 'string',
+         format_schema = '${DOUBLE_SCHEMA}',
+         format_schema_message_name = 'Row',
+         input_format_protobuf_datetime64_legacy_seconds = 1"
+
+echo '-- legacy double write intermediately preserves subseconds'
+${CLICKHOUSE_LOCAL} --query "
+INSERT INTO FUNCTION file('${FILE_LEGACY_DOUBLE}', 'Protobuf')
+SETTINGS format_schema_source = 'string',
+         format_schema = '${DOUBLE_SCHEMA}',
+         format_schema_message_name = 'Row',
+         engine_file_truncate_on_insert = 1,
+         output_format_protobuf_datetime64_legacy_seconds = 1
+SELECT toDateTime64('2020-01-01 00:00:00.125', 3, 'UTC') AS t"
+${CLICKHOUSE_LOCAL} --query "
+SELECT t
+FROM file('${FILE_LEGACY_DOUBLE}', 'Protobuf', 't Float64')
+SETTINGS format_schema_source = 'string',
+         format_schema = '${DOUBLE_SCHEMA}',
+         format_schema_message_name = 'Row'"
 
 echo '-- calendar year 0000 via best_effort text parse into Protobuf'
 ${CLICKHOUSE_LOCAL} --query "

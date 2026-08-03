@@ -1665,16 +1665,18 @@ Enabling this option disables parallel parsing and makes deduplication impossibl
 Indicate which field of protobuf oneof was found by means of setting enum value in a special column
 )", 0) \
     DECLARE(Bool, input_format_protobuf_datetime64_legacy_seconds, false, R"(
-When enabled, numeric Protobuf fields mapped to `DateTime64` are interpreted as whole Unix seconds
-(for backward compatibility, previously discarded subsecond precision). When disabled (default), they are
-interpreted as scaled `DateTime64` ticks matching the column precision, which preserves subseconds.
-Enable it (or `SET compatibility = '26.7'`) to restore the pre-26.8 whole-seconds reader.
+When enabled, numeric Protobuf fields mapped to `DateTime64` are interpreted as Unix seconds
+(for backward compatibility with pre-26.8 writers). Integer fields are whole seconds; `float`/`double`
+fields keep fractional seconds. When disabled (default), they are interpreted as scaled `DateTime64`
+ticks matching the column precision, preserving subseconds for integer schemas.
+Enable it (or `SET compatibility = '26.7'`) to restore the pre-26.8 reader.
 )", 0) \
     DECLARE(Bool, output_format_protobuf_datetime64_legacy_seconds, false, R"(
-When enabled, numeric Protobuf fields mapped from `DateTime64` are written as whole Unix seconds
+When enabled, numeric Protobuf fields mapped from `DateTime64` are written as Unix seconds
 (for backward compatibility with older ClickHouse builds and external readers, and with user-supplied
-schemas that use narrower numeric field types). When disabled (default), they are written as scaled
-`DateTime64` ticks matching the column precision, which preserves subseconds.
+schemas that use narrower numeric field types). Integer fields are whole seconds; `float`/`double`
+fields keep fractional seconds. When disabled (default), they are written as scaled `DateTime64`
+ticks matching the column precision, preserving subseconds for integer schemas.
 )", 0) \
     DECLARE(Bool, input_format_parquet_allow_geoparquet_parser, true, R"(
 Use geo column parser to convert Array(UInt8) into Point/MultiPoint/Linestring/Polygon/MultiLineString/MultiPolygon types

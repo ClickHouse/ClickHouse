@@ -26,6 +26,7 @@
 #    include <DataTypes/DataTypeString.h>
 #    include <DataTypes/DataTypeTuple.h>
 #    include <DataTypes/DataTypesDecimal.h>
+#    include <DataTypes/DataTypesNumber.h>
 #    include <DataTypes/Serializations/SerializationDecimal.h>
 #    include <DataTypes/Serializations/SerializationFixedString.h>
 #    include <Formats/ProtobufReader.h>
@@ -1848,18 +1849,32 @@ namespace
                 }
 
                 case FieldTypeId::TYPE_FLOAT: {
-                    write_function = [this](DateTime64 value) { writeFixed<Float32>(castNumber<Float32>(numericForProtobufField(value))); };
-                    read_function = [this]() -> DateTime64 { return ticksFromNumericField(castNumber<Int64>(readFixed<Float32>())); };
+                    /// Legacy float/double schemas stored fractional Unix seconds via ProtobufSerializerDecimal
+                    /// (decimalToNumber / numberToDecimal)
+                    write_function = [this](DateTime64 value)
+                    {
+                        if (output_datetime64_legacy_seconds)
+                            writeFixed<Float32>(DecimalUtils::convertTo<Float32>(value, scale));
+                        else
+                            writeFixed<Float32>(castNumber<Float32>(value.value));
+                    };
+                    read_function = [this]() -> DateTime64 { return dateTime64FromFloatingProtobufField(readFixed<Float32>()); };
                     default_function = [this]() -> DateTime64
-                    { return ticksFromNumericField(castNumber<Int64>(field_descriptor.default_value_float())); };
+                    { return dateTime64FromFloatingProtobufField(field_descriptor.default_value_float()); };
                     break;
                 }
 
                 case FieldTypeId::TYPE_DOUBLE: {
-                    write_function = [this](DateTime64 value) { writeFixed<Float64>(castNumber<Float64>(numericForProtobufField(value))); };
-                    read_function = [this]() -> DateTime64 { return ticksFromNumericField(castNumber<Int64>(readFixed<Float64>())); };
+                    write_function = [this](DateTime64 value)
+                    {
+                        if (output_datetime64_legacy_seconds)
+                            writeFixed<Float64>(DecimalUtils::convertTo<Float64>(value, scale));
+                        else
+                            writeFixed<Float64>(castNumber<Float64>(value.value));
+                    };
+                    read_function = [this]() -> DateTime64 { return dateTime64FromFloatingProtobufField(readFixed<Float64>()); };
                     default_function = [this]() -> DateTime64
-                    { return ticksFromNumericField(castNumber<Int64>(field_descriptor.default_value_double())); };
+                    { return dateTime64FromFloatingProtobufField(field_descriptor.default_value_double()); };
                     break;
                 }
 
@@ -1896,20 +1911,30 @@ namespace
         {
             if (input_datetime64_legacy_seconds && scale > 0)
             {
-                /// For backward compatibility, previous serialization discarded subsecond precision.
-                /// Legacy interpretation is enabled by the input_format_protobuf_datetime64_legacy_seconds setting.
+                /// Integer protobuf fields, legacy writers stored whole Unix seconds and truncated subseconds.
                 return DecimalUtils::decimalFromComponentsWithMultiplier<DateTime64>(value, 0, scale_multiplier);
             }
 
             return DateTime64(value);
         }
 
+        template <typename FloatType>
+        DateTime64 dateTime64FromFloatingProtobufField(FloatType value) const
+        {
+            if (input_datetime64_legacy_seconds)
+            {
+                /// Float/double protobuf fields, legacy writers stored fractional Unix seconds.
+                return convertToDecimal<DataTypeNumber<FloatType>, DataTypeDateTime64>(value, scale);
+            }
+
+            return ticksFromNumericField(castNumber<Int64>(value));
+        }
+
         DateTime64::NativeType numericForProtobufField(DateTime64 value) const
         {
             if (output_datetime64_legacy_seconds)
             {
-                /// Legacy writers emitted whole Unix seconds via ProtobufSerializerDecimal / getWholePart.
-                /// Enabled by the output_format_protobuf_datetime64_legacy_seconds setting.
+                /// Integer protobuf fields: legacy writers emitted whole Unix seconds via getWholePart.
                 return DecimalUtils::getWholePart(value, scale);
             }
 
