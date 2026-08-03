@@ -189,7 +189,7 @@ FROM t_raw_timeseries
 WHERE metric_id = 3 AND timestamp BETWEEN '2024-12-12 12:00:12' AND '2024-12-12 12:00:31'
 ORDER BY metric_id, timestamp;
         )",
-        R"(
+        R"DOCS_MD(
 3	2024-12-12 12:00:12.870	29
 3	2024-12-12 12:00:13.770	8
 3	2024-12-12 12:00:14.670	19
@@ -211,7 +211,7 @@ ORDER BY metric_id, timestamp;
 3	2024-12-12 12:00:29.069	6
 3	2024-12-12 12:00:29.969	14
 3	2024-12-12 12:00:30.869	25
-        )"
+        )DOCS_MD"
     },
     {
         "Query the last 2 sample for timestamps '2024-12-12 12:00:15' and '2024-12-12 12:00:30'",
@@ -266,10 +266,10 @@ FROM t_resampled_timeseries_15_sec
 WHERE metric_id = 3 AND grid_timestamp BETWEEN '2024-12-12 12:00:15' AND '2024-12-12 12:00:30'
 ORDER BY metric_id, grid_timestamp;
         )",
-        R"(
+        R"DOCS_MD(
 3	2024-12-12 12:00:15	(['2024-12-12 12:00:14.670','2024-12-12 12:00:13.770'],[19,8])
 3	2024-12-12 12:00:30	(['2024-12-12 12:00:29.969','2024-12-12 12:00:29.069'],[14,6])
-        )"
+        )DOCS_MD"
     },
     {
         "Calculate idelta and irate from the raw data",
@@ -306,9 +306,9 @@ FROM t_raw_timeseries
 WHERE metric_id = 3 AND timestamp BETWEEN start_ts - interval window_seconds seconds AND end_ts
 GROUP BY metric_id;
         )",
-        R"(
+        R"DOCS_MD(
 3	[11,8,-18,8,11]	[12.222222222222221,8.88888888888889,1.1111111111111112,8.88888888888889,12.222222222222221]
-        )"
+        )DOCS_MD"
     },
     {
         "Calculate idelta and irate from the re-sampled data",
@@ -376,9 +376,9 @@ FROM (
 )
 GROUP BY metric_id;
         )",
-        R"(
+        R"DOCS_MD(
 3	[11,8,-18,8,11]	[12.222222222222221,8.88888888888889,1.1111111111111112,8.88888888888889,12.222222222222221]
-        )"
+        )DOCS_MD"
     }
     };
     FunctionDocumentation::IntroducedIn introduced_in_timeSeriesLastTwoSamples = {25, 6};

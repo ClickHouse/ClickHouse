@@ -185,13 +185,13 @@ SELECT
     (number, toDate('2019-05-20')),
     dictGetOrNull('range_key_dictionary', 'value', number, toDate('2019-05-20')),
 FROM system.numbers LIMIT 5 FORMAT TabSeparated;
-)", R"(
+)", R"DOCS_MD(
 (0,'2019-05-20')	\N
 (1,'2019-05-20')	First
 (2,'2019-05-20')	Second
 (3,'2019-05-20')	Third
 (4,'2019-05-20')	\N
-)"}};
+)DOCS_MD"}};
         FunctionDocumentation::IntroducedIn introduced_in = {21, 4};
         FunctionDocumentation documentation = {description, syntax, arguments, {}, returned_value, examples, introduced_in, category_dictionary};
 

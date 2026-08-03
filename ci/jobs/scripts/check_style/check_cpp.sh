@@ -15,8 +15,9 @@
 LC_ALL="en_US.UTF-8"
 ROOT_PATH=$(git rev-parse --show-toplevel)
 EXCLUDE='build/|integration/|widechar_width/|glibc-compatibility/|poco/|memcpy/|consistent-hashing|benchmark|tests/.*\.cpp$|programs/keeper-bench/example\.yaml|src/Storages/ObjectStorage/DataLakes/Iceberg/AvroSchema\.h|utils/wasm-parser/shim/'
-# Heuristic style checks must skip the verbatim Markdown documentation embedded into
-# the format source files as R"DOCS_MD( ... )DOCS_MD" raw-string literals (literal tabs
+# Heuristic style checks must skip the verbatim documentation embedded into the source
+# files as R"DOCS_MD( ... )DOCS_MD" raw-string literals - the Markdown pages of the
+# formats, and the responses of the examples of FunctionDocumentation (literal tabs
 # in TabSeparated/TSV examples, Pretty result tables indented by one to three spaces,
 # trailing whitespace inherited from the Markdown pages, etc.). Hits inside those raw
 # strings are filtered out by this helper rather than excluding whole files.

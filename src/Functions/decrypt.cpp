@@ -75,13 +75,13 @@ SELECT comment, hex(secret) FROM encryption_test;
             R"(
 SELECT comment, decrypt('aes-256-cfb8', secret, '12345678910121314151617181920212') AS plaintext FROM encryption_test
             )",
-            R"(
+            R"DOCS_MD(
 aes-256-ofb no IV	S��(�
 aes-256-ofb no IV, different key	�k�@M�
 aes-256-ofb with IV	�e�Y*
 aes-256-cbc no IV	�U.P��EY��s/�
 ��
-            )"
+            )DOCS_MD"
         }
     };
     FunctionDocumentation::IntroducedIn introduced_in = {20, 12};

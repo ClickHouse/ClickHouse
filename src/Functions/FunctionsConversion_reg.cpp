@@ -2225,9 +2225,9 @@ SELECT toBFloat16OrZero('0x5E'), -- unsupported arguments
        toBFloat16OrZero('12.3'), -- typical use
        toBFloat16OrZero('12.3456789') -- silent loss of precision
         )",
-        R"(
+        R"DOCS_MD(
 0	12.25	12.3125
-        )"
+        )DOCS_MD"
     }
     };
     FunctionDocumentation::IntroducedIn toBFloat16OrZero_introduced_in = {1, 1};
@@ -3436,9 +3436,9 @@ SELECT toBFloat16OrNull('0x5E'), -- unsupported arguments
        toBFloat16OrNull('12.3'), -- typical use
        toBFloat16OrNull('12.3456789') -- silent loss of precision
         )",
-        R"(
+        R"DOCS_MD(
 \N	12.25	12.3125
-        )"
+        )DOCS_MD"
     }
     };
     FunctionDocumentation::IntroducedIn toBFloat16OrNull_introduced_in = {1, 1};

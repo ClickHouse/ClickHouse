@@ -2,9 +2,10 @@
 """Filter out style-check hits that fall inside embedded documentation.
 
 The heuristic C++ style checks (tabs, trailing whitespace, indentation, spacing)
-must not apply to the verbatim Markdown documentation embedded into the format
-source files as `R"DOCS_MD( ... )DOCS_MD"` raw-string literals: that text
-legitimately contains literal tabs (`TabSeparated`/`TSV` examples), result
+must not apply to the verbatim documentation embedded into the source files as
+`R"DOCS_MD( ... )DOCS_MD"` raw-string literals - the Markdown pages of the
+formats, and the responses of the examples of `FunctionDocumentation`: that
+text legitimately contains literal tabs (`TabSeparated`/`TSV` examples), result
 tables indented by one to three spaces (`Pretty` formats), trailing whitespace
 inherited from the Markdown pages, and so on.
 

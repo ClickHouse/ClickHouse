@@ -111,7 +111,7 @@ SELECT
     detectTonality('Шарик - пёс'),
     detectTonality('Шарик - плохой пёс')
         )",
-        "0.44445	0	-0.3"
+        "0.44445\t0\t-0.3"
     }
     };
     FunctionDocumentation::IntroducedIn introduced_in = {22, 2};
