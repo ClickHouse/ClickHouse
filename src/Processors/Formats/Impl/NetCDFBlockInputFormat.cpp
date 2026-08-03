@@ -851,6 +851,11 @@ String or FixedString value that itself ends in a zero byte cannot be stored: it
 without its trailing zero bytes by every implementation of the format. Writing such a value throws
 an exception instead of corrupting it.
 
+The names of the classic format are UTF-8 text that begins with a letter, a digit, an underscore or
+a character outside of ASCII, and contains no slashes, no control characters and no trailing spaces.
+A column whose name is not one of these - including a name that is not valid UTF-8, which a quoted
+identifier of ClickHouse may be - cannot be written, and throws an exception.
+
 The version of the format is chosen automatically: CDF-5 when a column needs one of the types that
 only CDF-5 has, or when a number that the header of a CDF-2 file writes as a 32-bit value - the
 length of a dimension or the size of a variable - does not fit into it, and CDF-2 otherwise.

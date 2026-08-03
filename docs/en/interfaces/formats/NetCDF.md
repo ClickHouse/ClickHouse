@@ -117,6 +117,11 @@ A string shorter than its dimension is padded with zero bytes, as the format pre
 back without its trailing zero bytes by every implementation of the format. Writing such a value
 throws an exception instead of corrupting it.
 
+The names of the classic format are UTF-8 text that begins with a letter, a digit, an underscore or
+a character outside of ASCII, and contains no slashes, no control characters and no trailing spaces.
+A column whose name is not one of these - including a name that is not valid UTF-8, which a quoted
+identifier of ClickHouse may be - cannot be written, and throws an exception.
+
 The offsets of the data of the variables are a part of the header, and the header is at the
 beginning of the file, so the whole result is kept in memory until the query finishes.
 
