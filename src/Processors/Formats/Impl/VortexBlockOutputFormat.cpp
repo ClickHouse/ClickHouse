@@ -90,7 +90,7 @@ void VortexBlockOutputFormat::initWriter(const Chunk * chunk)
     ch_column_to_arrow_column->initializeArrowSchema(chunk);
     auto arrow_schema = ch_column_to_arrow_column->getArrowSchema();
 
-    ArrowSchema c_schema;
+    ArrowSchema c_schema{};
     throwFromArrowStatusIfFailed(arrow::ExportSchema(*arrow_schema, &c_schema));
 
     write_context = std::make_unique<VortexWriteContext>();
@@ -120,8 +120,8 @@ void VortexBlockOutputFormat::consume(Chunk chunk)
     auto batch = arrow_table->CombineChunksToBatch(ArrowMemoryPool::instance());
     throwFromArrowStatusIfFailed(batch.status());
 
-    ArrowArray c_array;
-    ArrowSchema c_schema;
+    ArrowArray c_array{};
+    ArrowSchema c_schema{};
     throwFromArrowStatusIfFailed(arrow::ExportRecordBatch(**batch, &c_array, &c_schema));
 
     char * error = nullptr;
@@ -138,6 +138,20 @@ void VortexBlockOutputFormat::finalizeImpl()
     char * error = nullptr;
     if (vortex_ffi_writer_finish(writer, &error) != 0)
         throwVortexError(error, write_context->exception);
+}
+
+void VortexBlockOutputFormat::resetFormatterImpl()
+{
+    /// The formatter can be reused to write another file into the same output buffer (this is how
+    /// `MessageQueueSink` formats every message). The Rust writer is consumed by
+    /// `vortex_ffi_writer_finish`, so drop it and start the next file from scratch.
+    if (writer)
+    {
+        vortex_ffi_writer_free(writer);
+        writer = nullptr;
+    }
+    ch_column_to_arrow_column.reset();
+    write_context.reset();
 }
 
 void registerOutputFormatVortex(FormatFactory & factory);

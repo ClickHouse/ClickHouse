@@ -34,6 +34,13 @@ Reading a subset of columns with an explicit schema and a missing column:
 Constant column and count without columns:
 42
 42
+Reading a subcolumn of a nested structure with an explicit schema:
+0
+1
+2
+0	0
+1	1
+2	2
 Empty file:
 0
 n	UInt64					

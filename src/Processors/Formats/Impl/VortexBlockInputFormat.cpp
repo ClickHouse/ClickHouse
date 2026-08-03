@@ -3,6 +3,7 @@
 #if USE_VORTEX
 
 #include <Core/Defines.h>
+#include <DataTypes/NestedUtils.h>
 #include <Formats/FormatFactory.h>
 #include <Formats/SchemaInferenceUtils.h>
 #include <IO/ReadBuffer.h>
@@ -103,7 +104,7 @@ static VortexFFIReader * openVortexReader(
     if (!reader)
         throwVortexError(error, read_context.exception);
 
-    ArrowSchema c_schema;
+    ArrowSchema c_schema{};
     if (vortex_ffi_reader_schema(reader, &c_schema, &error) != 0)
     {
         vortex_ffi_reader_free(reader);
@@ -175,12 +176,24 @@ void VortexBlockInputFormat::prepareReader()
     /// columns that are not present in the file are filled with default values. If none of the
     /// requested columns is present (or no columns are requested at all), no scanner is created,
     /// and only the number of rows is used.
+    ///
+    /// A header column can also address a subcolumn of a top-level field: a `Nested`/struct
+    /// subcolumn is requested as `name.sub`, and `ArrowColumnToCHColumn` can extract it only if
+    /// the whole top-level field `name` was scanned. Keep `Nested::extractTableName` of every
+    /// header column for that reason, the same way the `ArrowIPC` reader does — otherwise such a
+    /// column would be silently filled with default values.
     std::vector<std::string> column_names;
     std::vector<const char *> column_name_pointers;
+    std::unordered_set<std::string> added_column_names;
+    auto add_column_name = [&](const std::string & name)
+    {
+        if (file_schema->GetFieldByName(name) && added_column_names.emplace(name).second)
+            column_names.push_back(name);
+    };
     for (const auto & column : getPort().getHeader())
     {
-        if (file_schema->GetFieldByName(column.name))
-            column_names.push_back(column.name);
+        add_column_name(column.name);
+        add_column_name(Nested::extractTableName(column.name));
     }
     for (const auto & name : column_names)
         column_name_pointers.push_back(name.c_str());
@@ -235,8 +248,8 @@ Chunk VortexBlockInputFormat::read()
         return readWithoutColumns();
 
     char * error = nullptr;
-    ArrowArray c_array;
-    ArrowSchema c_schema;
+    ArrowArray c_array{};
+    ArrowSchema c_schema{};
     int32_t result = vortex_ffi_scanner_next(scanner, &c_array, &c_schema, &error);
     if (result < 0)
         throwVortexError(error, read_context->exception);

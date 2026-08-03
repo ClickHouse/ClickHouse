@@ -42,6 +42,15 @@ $CLICKHOUSE_LOCAL -q "SELECT * FROM file('$DATA_FILE', 'Vortex', 'n UInt64, miss
 echo "Constant column and count without columns:"
 $CLICKHOUSE_LOCAL -q "SELECT 42 FROM file('$DATA_FILE', 'Vortex') LIMIT 2 FORMAT TSV"
 
+echo "Reading a subcolumn of a nested structure with an explicit schema:"
+$CLICKHOUSE_LOCAL -q "
+    SELECT number AS n, tuple(number, toString(number))::Tuple(a UInt64, b String) AS t
+    FROM numbers(3)
+    FORMAT Vortex" > "$DATA_FILE".nested
+$CLICKHOUSE_LOCAL -q "SELECT * FROM file('$DATA_FILE.nested', 'Vortex', '\`t.a\` UInt64') FORMAT TSV"
+$CLICKHOUSE_LOCAL -q "SELECT * FROM file('$DATA_FILE.nested', 'Vortex', '\`t.b\` String, n UInt64') FORMAT TSV"
+rm -f "$DATA_FILE".nested
+
 echo "Empty file:"
 $CLICKHOUSE_LOCAL -q "SELECT number AS n, toString(number) AS s FROM numbers(10) WHERE 0 FORMAT Vortex" > "$DATA_FILE"
 $CLICKHOUSE_LOCAL -q "SELECT count() FROM file('$DATA_FILE', 'Vortex'); DESC file('$DATA_FILE', 'Vortex')"

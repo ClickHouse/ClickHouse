@@ -31,6 +31,7 @@ public:
 private:
     void consume(Chunk) override;
     void finalizeImpl() override;
+    void resetFormatterImpl() override;
 
     void initWriter(const Chunk * chunk);
 
