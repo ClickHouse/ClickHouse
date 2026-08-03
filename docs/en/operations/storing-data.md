@@ -39,14 +39,14 @@ The `s3` disk type can also be used with S3-compatible object storage providers,
 
 Disk configuration requires:
 
-1. A `type` section, equal to one of `s3`, `azure_blob_storage`, `hdfs` (unsupported), `local_blob_storage`, `web`.
+1. A `type` section, equal to one of `s3`, `azure_blob_storage`, `hdfs` (unsupported), `local_blob_storage`, `web`, `gcs` (experimental, from `26.8`).
 2. Configuration of a specific external storage type.
 
 Starting from 24.1 clickhouse version, it is possible to use a new configuration option.
 It requires specifying:
 
 1. A `type` equal to `object_storage`
-2. `object_storage_type`, equal to one of `s3`, `azure_blob_storage` (or just `azure` from `24.3`), `hdfs` (unsupported), `local_blob_storage` (or just `local` from `24.3`), `web`.
+2. `object_storage_type`, equal to one of `s3`, `azure_blob_storage` (or just `azure` from `24.3`), `hdfs` (unsupported), `local_blob_storage` (or just `local` from `24.3`), `web`, `gcs` (experimental, from `26.8`, see [native Google Cloud Storage](/operations/storing-data#native-gcs-storage)).
 
 <br/>
 
@@ -524,6 +524,67 @@ Examples of working configurations can be found in integration tests directory (
 :::note Zero-copy replication is not ready for production
 Zero-copy replication is disabled by default in ClickHouse version 22.8 and higher.  This feature is not recommended for production use.
 :::
+
+### Using Native Google Cloud Storage (Experimental) {#native-gcs-storage}
+
+Starting from `26.8`, `MergeTree` family table engines can store data in [Google Cloud Storage](https://cloud.google.com/storage) through a native client based on the GCS JSON API (`google-cloud-cpp`), using a disk with type `gcs` (or `type = object_storage` with `object_storage_type = gcs`). This backend is experimental. The S3-compatible route described [above](/operations/storing-data#s3-storage) remains the recommended way to use GCS in production.
+
+Configuration markup:
+
+```xml
+<storage_configuration>
+    ...
+    <disks>
+        <gcs_disk>
+            <type>object_storage</type>
+            <object_storage_type>gcs</object_storage_type>
+            <metadata_type>local</metadata_type>
+            <endpoint>https://storage.googleapis.com/bucket-name/data/</endpoint>
+            <service_account_key_file>/etc/clickhouse-server/gcs-key.json</service_account_key_file>
+        </gcs_disk>
+    </disks>
+    ...
+</storage_configuration>
+```
+
+The same disk can be created dynamically:
+
+```sql
+CREATE TABLE table_name (a UInt64) ENGINE = MergeTree ORDER BY a
+SETTINGS disk = disk(
+    name = 'gcs_disk',
+    type = object_storage,
+    object_storage_type = gcs,
+    metadata_type = local,
+    endpoint = 'https://storage.googleapis.com/bucket-name/data/',
+    no_sign_request = true
+);
+```
+
+#### Parameters {#native-gcs-storage-parameters}
+
+| Parameter                   | Description                                                                                                                                        | Default Value |
+|-----------------------------|----------------------------------------------------------------------------------------------------------------------------------------------------|---------------|
+| `endpoint` (Required)       | GCS endpoint in `https://storage.googleapis.com/bucket-name/root-path/` form. A non-Google host is treated as an endpoint override (for emulators). | -             |
+| `service_account_key`       | Contents of a service account JSON key for authentication.                                                                                          | -             |
+| `service_account_key_file`  | Path to a service account JSON key file.                                                                                                            | -             |
+| `access_token`              | A pre-issued OAuth access token.                                                                                                                     | -             |
+| `google_adc_client_id`, `google_adc_client_secret`, `google_adc_refresh_token` | An authorized-user (Application Default Credentials) triple; exchanged for an access token at client construction. | -             |
+| `no_sign_request`           | If `true`, send anonymous (unsigned) requests.                                                                                                       | `false`       |
+| `header`                    | Additional HTTP header to send with every request; can be specified multiple times.                                                                 | -             |
+| `connect_timeout_ms`        | Connection timeout, in milliseconds.                                                                                                                 | `1000`        |
+| `request_timeout_ms`        | Request (transfer stall) timeout, in milliseconds.                                                                                                   | `30000`       |
+| `list_object_keys_size`     | Maximum number of objects requested per listing page.                                                                                                | `1000`        |
+| `readonly`                  | Only allow reading from the disk.                                                                                                                    | `false`       |
+| `proxy`                     | Proxy configuration in the same format as for the `s3` disk type; the server-wide `<proxy>` section and proxy environment variables also apply.      | -             |
+
+If none of the explicit credential parameters is set, the client falls back to [Application Default Credentials](https://cloud.google.com/docs/authentication/application-default-credentials) (a key file referenced by the `GOOGLE_APPLICATION_CREDENTIALS` environment variable, or the metadata server on GCE/GKE).
+
+#### Limitations {#native-gcs-storage-limitations}
+
+- The backend is experimental; the `gcs` table function and `GCS` table engine additionally require the experimental setting [`use_native_gcs`](/operations/settings/settings#use_native_gcs).
+- The `plain_rewritable` metadata type is not supported with the native `gcs` object storage type.
+- The server must be built with `google-cloud-cpp` support (`USE_GOOGLE_CLOUD`, enabled in official builds).
 
 ## Using HDFS storage (Unsupported) {#using-hdfs-storage-unsupported}
 
