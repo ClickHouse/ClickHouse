@@ -778,6 +778,12 @@ void IMergeTreeDataPart::setColumns(const NamesAndTypesList & new_columns, const
 
     metadata_version = new_metadata_version;
 
+    /// Drop the pieces interned for the previous column list before asking for the new ones: this
+    /// runs again on the same part in the empty-column rewrite paths, and the nested caches can only
+    /// reclaim an entry that is already expired when they sweep (on the bundle release below, or on
+    /// the insertion inside `getSerializations`).
+    serializations = SharedPartColumns::getEmptySerializations();
+
     /// Install the bundle into the part before anything below can throw: the holder returns the
     /// reference to the cache in its destructor, so once it is in the member the part is
     /// responsible for it even when building the serializations fails and this part never finishes
@@ -2360,6 +2366,10 @@ void IMergeTreeDataPart::loadColumns(bool require, bool load_metadata_version)
 void IMergeTreeDataPart::setColumnsSubstreams(const ColumnsSubstreams & columns_substreams_)
 {
     columns_substreams_.validateColumns(getColumns().getNames());
+    /// Drop the previously interned list first, for the same reason as in `setColumns`. Callers always
+    /// pass a list of their own, never the one this part holds.
+    chassert(&columns_substreams_ != columns_substreams.get());
+    columns_substreams = SharedPartColumns::getEmptyColumnsSubstreams();
     /// `internColumnsSubstreams` routes everything that survives in the cache to the parts arena.
     columns_substreams = shared_part_columns->internColumnsSubstreams(columns_substreams_);
 }

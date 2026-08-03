@@ -30,17 +30,27 @@ class ColumnsDescription;
 ///
 /// The members that are a pure function of the column list (`columns`, `column_name_to_position`,
 /// `columns_description{,_with_collected_nested}`) live directly in the bundle. The members that also
-/// depend on the per-part serialization kinds (the `serializations` map and `columns_substreams`,
-/// which differ between parts when columns are sparse in one part and dense in another) are interned
-/// in secondary caches nested inside the bundle, so they deduplicate across all parts whose
+/// depend on the per-part serialization kinds (the `serializations` map and `columns_substreams`) are
+/// interned in secondary caches nested inside the bundle, so they deduplicate across all parts whose
 /// serialization kinds coincide, independently of the per-part row statistics stored in
 /// `SerializationInfo::Data`. `serialization_infos` itself is per-part data (it holds the row/default
 /// counters of the part) and stays in the part.
 ///
+/// A serialization kind is an `ISerialization::Kind` (`Default`, `Sparse`, `Detached`, `Replicated`),
+/// chosen for a column when a part is written and stored in the part's `serialization.json`. Kinds
+/// stack (e.g. `Detached` over `Sparse` over `Default`) and every subcolumn of a nested type has its
+/// own stack, so what identifies a column's serialization is a whole recursive kind stack. That is
+/// why the same column can serialize differently in two parts of one table (sparse in the part where
+/// it is mostly default, dense in the next one) and why the members that depend on the kinds cannot
+/// live in the bundle directly.
+///
 /// Everything here is immutable after construction; the nested caches only intern immutable values.
-/// The nested caches hold `weak_ptr`s (entries expire when the last part holding them dies) and
-/// expired entries are swept lazily on insertion, so they cannot leak and need no manual eviction
-/// thresholds. Lifetime of the bundle itself is managed by the owning `MergeTreeData` cache.
+/// The nested caches hold `weak_ptr`s, so an entry dies with the last part holding its value and
+/// nothing can leak. The dead entries themselves are reclaimed by two amortized sweeps: on insertion
+/// once a cache has doubled since its last sweep, and on part release (see `onPartRelease`), which
+/// covers tables that stop inserting but keep deleting parts. Lifetime of the bundle itself is
+/// managed by the owning `MergeTreeData` cache.
+
 /// The serializations of the columns of one data part, assembled from shared pieces:
 /// one immutable group per column (the serialization of the column itself followed by the
 /// serializations of its subcolumns) and one immutable name -> (column, index) lookup map.
@@ -120,9 +130,9 @@ public:
     /// (or when the `share_nested_offsets` setting is disabled).
     const std::shared_ptr<const ColumnsDescription> columns_description_with_collected_nested;
     /// The value of the `share_nested_offsets` setting the bundle was built with. It shapes
-    /// `columns_description_with_collected_nested`, and it can change on a live table (it is
-    /// alterable on `SharedMergeTree`), so it is part of the interning key and of the release
-    /// lookup (see `MergeTreeData::getSharedPartColumnsForColumns`).
+    /// `columns_description_with_collected_nested`. The setting is read-only, but it is part of the
+    /// interning key and of the release lookup anyway, so that a bundle can never be shared across
+    /// two values of it (see `MergeTreeData::getSharedPartColumnsForColumns`).
     const bool collect_nested;
 
     /// Returns the serializations for the given serialization infos. The whole object is shared
@@ -138,10 +148,14 @@ public:
     /// equal content yet.
     std::shared_ptr<const ColumnsSubstreams> internColumnsSubstreams(const ColumnsSubstreams & substreams) const;
 
+    /// Bundle reference accounting for the release gate below. Called by `SharedPartColumnsHolder`,
+    /// which is the only way to hold a bundle, when a part takes its reference.
+    void onPartAcquire() const { holders.fetch_add(1, std::memory_order_relaxed); }
+
     /// Reclamation hook, called when a part returns its bundle reference (i.e. when interned
     /// pieces may have just died): sweeps the expired entries of the nested caches, gated so the
-    /// cost stays amortized O(1) per release. Without it, a table that stops creating parts but
-    /// keeps deleting them (TTL, retention) would pin the dead entries until the next insertion.
+    /// cost stays amortized. Without it, a table that stops creating parts but keeps deleting them
+    /// (TTL, retention) would pin the dead entries until the next insertion.
     void onPartRelease() const;
 
     /// The bundle installed in parts before `setColumns` is called (and in parts that never store
@@ -262,9 +276,11 @@ private:
     /// `SerializationGroupKey`). Computed once per bundle.
     const std::vector<String> default_kind_encodings;
 
-    /// See `onPartRelease`.
+    /// See `onPartRelease`. `holders` is the number of parts currently holding a reference to this
+    /// bundle; the reference of the `MergeTreeData` cache itself is not counted.
+    mutable std::atomic<UInt64> holders{0};
     mutable std::atomic<UInt64> releases_since_sweep{0};
-    mutable std::atomic<UInt64> release_sweep_threshold{64};
+    mutable std::atomic<UInt64> release_sweep_threshold{1};
 };
 
 using SharedPartColumnsPtr = std::shared_ptr<const SharedPartColumns>;

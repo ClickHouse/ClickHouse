@@ -74,7 +74,10 @@ public:
 private:
     friend class MergeTreeData;
     SharedPartColumnsHolder(const MergeTreeData & storage_, SharedPartColumnsPtr bundle_)
-        : storage(&storage_), bundle(std::move(bundle_)) {}
+        : storage(&storage_), bundle(std::move(bundle_))
+    {
+        bundle->onPartAcquire();
+    }
 
     void release() noexcept;
 

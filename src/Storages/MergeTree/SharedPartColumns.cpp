@@ -93,12 +93,6 @@ void sweepExpiredEntries(Cache & cache, size_t & size_after_sweep, AggregatedMet
     size_after_sweep = eraseExpiredEntries(cache, metric);
 }
 
-/// Hard cap for `release_sweep_threshold` (see `onPartRelease`). Without it, a table that once grows a huge
-/// number of distinct cache entries and is only drained afterwards (no more insertions to trigger
-/// `sweepExpiredEntries`) would set the threshold to that peak size, so the much smaller number of remaining
-/// releases would never reach it again and expired entries would stay resident until the table is dropped.
-constexpr UInt64 max_release_sweep_threshold = 65536;
-
 }
 
 SharedPartColumns::SharedPartColumns(
@@ -506,12 +500,14 @@ std::shared_ptr<const ColumnsSubstreams> SharedPartColumns::internColumnsSubstre
 
 void SharedPartColumns::onPartRelease() const
 {
-    /// A part just returned its bundle reference, so interned pieces may have expired. Sweep once
-    /// enough releases accumulated to amortize the cost: the threshold tracks the number of live
-    /// entries after the last sweep (capped by `max_release_sweep_threshold`), so a mass eviction
-    /// pays O(entries) of sweeping per O(entries) of releases, up to the cap, and a quiescent table
-    /// reclaims its dead entries after a bounded number of part removals instead of holding them
-    /// until the next insertion.
+    /// A part just returned its bundle reference, so interned pieces may have expired. A sweep costs
+    /// O(entries), so wait for enough releases to amortize it, but never for more releases than can
+    /// still happen: the threshold is at most half of the parts that still hold this bundle (see
+    /// below), so a draining table always reaches it again, halving down to its last part, instead of
+    /// pinning the dead entries until the next insertion.
+    const UInt64 holders_before_release = holders.fetch_sub(1, std::memory_order_relaxed);
+    chassert(holders_before_release > 0);
+
     if (releases_since_sweep.fetch_add(1, std::memory_order_relaxed) + 1 < release_sweep_threshold.load(std::memory_order_relaxed))
         return;
 
@@ -536,7 +532,12 @@ void SharedPartColumns::onPartRelease() const
         substream_entries_size_after_sweep = substream_entries_cache.size();
     }
 
-    release_sweep_threshold.store(std::min(max_release_sweep_threshold, std::max<UInt64>(64, live_entries)), std::memory_order_relaxed);
+    /// Both scales matter: sweeping again before another `live_entries` releases would not be
+    /// amortized, and waiting for more than half of the remaining holders would never happen on a
+    /// table that only drains. A full drain of P parts therefore sweeps O(log P) times.
+    const UInt64 remaining_holders = holders_before_release - 1;
+    release_sweep_threshold.store(
+        std::max<UInt64>(1, std::min<UInt64>(live_entries, remaining_holders / 2)), std::memory_order_relaxed);
 }
 
 const SharedPartColumnsPtr & SharedPartColumns::getEmpty()
