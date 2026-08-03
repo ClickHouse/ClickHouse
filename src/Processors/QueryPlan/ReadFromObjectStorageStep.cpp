@@ -18,7 +18,20 @@
 #include <Interpreters/Context.h>
 #include <Storages/prepareReadingFromFormat.h>
 #include <Storages/VirtualColumnUtils.h>
+#include <Processors/Merges/MergingSortedTransform.h>
+#include <Processors/Transforms/ExpressionTransform.h>
+#include <Interpreters/ExpressionActions.h>
+#include <Interpreters/ExpressionAnalyzer.h>
+#include <Interpreters/TreeRewriter.h>
+#include <Common/CurrentMetrics.h>
 #include <boost/algorithm/string/predicate.hpp>
+
+namespace CurrentMetrics
+{
+    extern const Metric StorageObjectStorageThreads;
+    extern const Metric StorageObjectStorageThreadsActive;
+    extern const Metric StorageObjectStorageThreadsScheduled;
+}
 
 
 namespace DB
@@ -27,6 +40,9 @@ namespace DB
 namespace Setting
 {
     extern const SettingsBool parallelize_output_from_storages;
+    extern const SettingsUInt64 read_in_order_two_level_merge_threshold;
+    extern const SettingsBool compile_sort_description;
+    extern const SettingsUInt64 min_count_to_compile_sort_description;
 }
 
 
@@ -93,6 +109,111 @@ void ReadFromObjectStorageStep::updatePrewhereInfo(const PrewhereInfoPtr & prewh
     output_header = std::make_shared<const Block>(info.source_header);
 }
 
+/// One source per file, as ReadFromMergeTree uses one source per part: a source reads its files
+/// serially, so a multi-file source emits a concatenation rather than a sorted run.
+Pipe ReadFromObjectStorageStep::buildInOrderPipe(const ContextPtr & local_context, const FormatFilterInfoPtr & format_filter_info)
+{
+    const auto & settings = local_context->getSettingsRef();
+    const size_t num_files = read_in_order_files.size();
+
+    auto parser_shared_resources = std::make_shared<FormatParserSharedResources>(settings, num_files);
+
+    /// Shared by every source of this read. Unlimited queue: scheduling must not be refused.
+    auto shared_reader_pool = std::make_shared<ThreadPool>(
+        CurrentMetrics::StorageObjectStorageThreads,
+        CurrentMetrics::StorageObjectStorageThreadsActive,
+        CurrentMetrics::StorageObjectStorageThreadsScheduled,
+        /*max_threads=*/ std::max<size_t>(1, num_streams),
+        /*max_free_threads=*/ std::max<size_t>(1, num_streams),
+        /*queue_size=*/ 0);
+
+    Pipes pipes;
+    pipes.reserve(num_files);
+    for (const auto & object_info : read_in_order_files)
+    {
+        auto file_iterator = std::make_shared<SingleObjectIterator>(object_info, iterator_wrapper);
+        file_iterator->setEmitProfileEvents(iterator_wrapper->emit_profile_events);
+
+        pipes.emplace_back(std::make_shared<StorageObjectStorageSource>(
+            storage_id,
+            getName(),
+            object_storage,
+            configuration,
+            storage_snapshot,
+            info,
+            format_settings,
+            local_context,
+            max_block_size,
+            std::move(file_iterator),
+            parser_shared_resources,
+            format_filter_info,
+            need_only_count,
+            shared_reader_pool));
+    }
+
+    /// Same gate as ReadFromMergeTree.cpp:1482. The cap in requestReadingInOrder guarantees at
+    /// most `threshold` files per group, hence at most `num_streams` groups.
+    const size_t threshold = settings[Setting::read_in_order_two_level_merge_threshold];
+    if (num_files <= threshold || num_files <= 2)
+        return Pipe::unitePipes(std::move(pipes));
+
+    /// Merging by the query's sort description is not possible here: an expression sorting key is
+    /// absent from source_header. Materialize the key, merge on it, then project it away so the
+    /// step's output header is unchanged.
+    const auto & sorting_key = storage_snapshot->metadata->getSortingKey();
+    auto key_ast = sorting_key.expression_list_ast->clone();
+    auto syntax_result = TreeRewriter(local_context).analyze(key_ast, info.source_header.getNamesAndTypesList());
+    auto key_dag = ExpressionAnalyzer(key_ast, syntax_result, local_context).getActionsDAG(false);
+    auto key_expr = std::make_shared<ExpressionActions>(std::move(key_dag));
+
+    const auto & reverse_flags = storage_snapshot->metadata->getSortingKeyReverseFlags();
+    SortDescription sort_description;
+    sort_description.compile_sort_description = settings[Setting::compile_sort_description];
+    sort_description.min_count_to_compile_sort_description = settings[Setting::min_count_to_compile_sort_description];
+    sort_description.reserve(sorting_key.column_names.size());
+    for (size_t i = 0; i < sorting_key.column_names.size(); ++i)
+        sort_description.emplace_back(sorting_key.column_names[i], (!reverse_flags.empty() && reverse_flags[i]) ? -1 : 1);
+
+    /// >= 2 groups: SortingStep::mergingSorted installs its merge only when more than one port
+    /// reaches it (SortingStep.cpp:393), and finishSorting does not run on a full key match
+    /// (SortingStep.cpp:574), so collapsing to a single port here would leave nothing merging.
+    const size_t num_groups = std::max<size_t>(2, (num_files + threshold - 1) / threshold);
+    std::vector<Pipes> grouped(num_groups);
+    for (size_t i = 0; i < num_files; ++i)
+        grouped[i % num_groups].emplace_back(std::move(pipes[i]));
+
+    Pipes merged;
+    merged.reserve(num_groups);
+    for (auto & group_pipes : grouped)
+    {
+        if (group_pipes.empty())
+            continue;
+
+        auto group = Pipe::unitePipes(std::move(group_pipes));
+        group.addSimpleTransform([&](const SharedHeader & header)
+                                 { return std::make_shared<ExpressionTransform>(header, key_expr); });
+        if (group.numOutputPorts() > 1)
+            group.addTransform(std::make_shared<MergingSortedTransform>(
+                group.getSharedHeader(),
+                group.numOutputPorts(),
+                sort_description,
+                max_block_size,
+                /*max_block_size_bytes=*/ 0,
+                /*max_dynamic_subcolumns=*/ std::nullopt,
+                SortingQueueStrategy::Batch,
+                /*limit=*/ 0,
+                /*always_read_till_end=*/ false,
+                /*out_row_sources_buf=*/ nullptr));
+        /// Drop the temporary sorting-key columns so the header matches info.source_header.
+        auto projection = std::make_shared<ExpressionActions>(ActionsDAG(info.source_header.getNamesAndTypesList()));
+        group.addSimpleTransform([&](const SharedHeader & header)
+                                 { return std::make_shared<ExpressionTransform>(header, projection); });
+        merged.emplace_back(std::move(group));
+    }
+
+    return Pipe::unitePipes(std::move(merged));
+}
+
 void ReadFromObjectStorageStep::initializePipeline(QueryPipelineBuilder & pipeline, const BuildQueryPipelineSettings &)
 {
     createIterator();
@@ -110,15 +231,26 @@ void ReadFromObjectStorageStep::initializePipeline(QueryPipelineBuilder & pipeli
         num_streams = 1;
     }
 
-    // here create for node -> query -> level thread pool
-    auto parser_shared_resources = std::make_shared<FormatParserSharedResources>(context->getSettingsRef(), num_streams);
-
     auto format_filter_info = std::make_shared<FormatFilterInfo>(
         filter_actions_dag,
         context,
         configuration->getColumnMapperForCurrentSchema(storage_snapshot->metadata, context),
         query_info.row_level_filter,
         query_info.prewhere_info);
+
+    if (read_in_order && !read_in_order_files.empty())
+    {
+        auto in_order_pipe = buildInOrderPipe(context, format_filter_info);
+        /// Deliberately no pipe.resize here: it redistributes chunks across ports and would
+        /// destroy the per-port ordering established above.
+        for (const auto & processor : in_order_pipe.getProcessors())
+            processors.emplace_back(processor);
+        pipeline.init(std::move(in_order_pipe));
+        return;
+    }
+
+    // here create for node -> query -> level thread pool
+    auto parser_shared_resources = std::make_shared<FormatParserSharedResources>(context->getSettingsRef(), num_streams);
 
     for (size_t i = 0; i < num_streams; ++i)
     {
@@ -182,9 +314,103 @@ static InputOrderInfoPtr convertSortingKeyToInputOrder(const KeyDescription & ke
     return std::make_shared<const InputOrderInfo>(sort_description_for_merging, sort_description_for_merging.size(), 1, 0);
 }
 
-bool ReadFromObjectStorageStep::requestReadingInOrder() const
+/// Can this format deliver a single file as a sorted run? Only Parquet has a preserve_order
+/// setting, so every other format must be refused rather than assumed.
+static bool formatCanDeliverSortedRun(const String & format)
 {
-    return configuration->isDataSortedBySortingKey(storage_snapshot->metadata, getContext());
+    return boost::iequals(format, "Parquet");
+}
+
+bool ReadFromObjectStorageStep::requestReadingInOrder(int direction, const QueryPlanOptimizationSettings & optimization_settings)
+{
+    /// Reachable more than once (read-, aggregation- and distinct-in-order), and the enumeration
+    /// below consumes the iterator, so decide only once.
+    if (read_in_order_attempted)
+        return read_in_order && direction == 1;
+    read_in_order_attempted = true;
+
+    if (!configuration->isDataSortedBySortingKey(storage_snapshot->metadata, getContext()))
+        return false;
+
+    /// There is no reverse file walk and no ReverseTransform here.
+    if (direction != 1)
+        return false;
+
+    /// Bucket assignment happens after optimization, so a topology cached here would bypass it.
+    /// The cached file list is also outside the step's serialization contract.
+    if (optimization_settings.make_distributed_plan || distributed_processing)
+        return false;
+
+    auto context = getContext();
+    const auto & settings = context->getSettingsRef();
+
+    /// The merge is over the storage sorting key, so its expression must be computable from the
+    /// header this step emits.
+    if (!sortingKeyIsComputableFromSourceHeader())
+        return false;
+
+    createIterator();
+
+    /// Enumerating consumes the iterator, so stop at cap+1 (enough to prove the cap is exceeded)
+    /// and hand the consumed prefix back through a replaying wrapper. Every path below, including
+    /// every rejection, must leave the step able to read all files.
+    const size_t threshold = settings[Setting::read_in_order_two_level_merge_threshold];
+    const size_t max_files = std::max<size_t>(1, threshold) * std::max<size_t>(1, num_streams);
+
+    ObjectInfos files;
+    bool over_cap = false;
+    while (auto object_info = iterator_wrapper->next(0))
+    {
+        files.push_back(object_info);
+        if (files.size() > max_files)
+        {
+            over_cap = true;
+            break;
+        }
+    }
+
+    iterator_wrapper = std::make_shared<ObjectIteratorReplayThenDelegate>(files, iterator_wrapper);
+
+    if (over_cap)
+        return false;
+
+    /// The format is chosen per file, not per table, so check the files this query will read.
+    for (const auto & object_info : files)
+    {
+        if (object_info->isArchive())
+            return false;
+        if (!formatCanDeliverSortedRun(object_info->getFileFormat().value_or(configuration->format)))
+            return false;
+    }
+
+    /// Without this the Parquet reader delivers row groups in completion order, so one file per
+    /// port is still not a sorted run.
+    if (!format_settings)
+        format_settings.emplace(getFormatSettings(context));
+    format_settings->parquet.preserve_order = true;
+
+    read_in_order = true;
+    read_in_order_files = std::move(files);
+    return true;
+}
+
+bool ReadFromObjectStorageStep::sortingKeyIsComputableFromSourceHeader() const
+{
+    const auto & sorting_key = storage_snapshot->metadata->getSortingKey();
+    if (!sorting_key.expression_list_ast)
+        return false;
+
+    try
+    {
+        auto ast = sorting_key.expression_list_ast->clone();
+        auto syntax_result = TreeRewriter(getContext()).analyze(ast, info.source_header.getNamesAndTypesList());
+        ExpressionAnalyzer(ast, syntax_result, getContext()).getActionsDAG(false);
+    }
+    catch (...)
+    {
+        return false;
+    }
+    return true;
 }
 
 InputOrderInfoPtr ReadFromObjectStorageStep::getDataOrder() const

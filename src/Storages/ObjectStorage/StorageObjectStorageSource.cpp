@@ -231,7 +231,8 @@ StorageObjectStorageSource::StorageObjectStorageSource(
     std::shared_ptr<IObjectIterator> file_iterator_,
     FormatParserSharedResourcesPtr parser_shared_resources_,
     FormatFilterInfoPtr format_filter_info_,
-    bool need_only_count_)
+    bool need_only_count_,
+    std::shared_ptr<ThreadPool> shared_create_reader_pool_)
     : ISource(std::make_shared<const Block>(info.source_header), false)
     , storage_id(storage_id_)
     , name(std::move(name_))
@@ -246,11 +247,14 @@ StorageObjectStorageSource::StorageObjectStorageSource(
     , format_filter_info(std::move(format_filter_info_))
     , read_from_format_info(info)
     , create_reader_pool(
-          std::make_shared<ThreadPool>(
-              CurrentMetrics::StorageObjectStorageThreads,
-              CurrentMetrics::StorageObjectStorageThreadsActive,
-              CurrentMetrics::StorageObjectStorageThreadsScheduled,
-              1 /* max_threads */))
+          shared_create_reader_pool_
+              ? shared_create_reader_pool_
+              : std::make_shared<ThreadPool>(
+                  CurrentMetrics::StorageObjectStorageThreads,
+                  CurrentMetrics::StorageObjectStorageThreadsActive,
+                  CurrentMetrics::StorageObjectStorageThreadsScheduled,
+                  1 /* max_threads */))
+    , owns_create_reader_pool(shared_create_reader_pool_ == nullptr)
     , file_iterator(file_iterator_)
     , schema_cache(StorageObjectStorage::getSchemaCache(context_, configuration->getTypeName()))
     , create_reader_scheduler(threadPoolCallbackRunnerUnsafe<ReaderHolder>(*create_reader_pool, ThreadName::READER_POOL))
@@ -260,7 +264,14 @@ StorageObjectStorageSource::StorageObjectStorageSource(
 StorageObjectStorageSource::~StorageObjectStorageSource()
 {
     LOG_DEBUG(log, "Source finished: files_read={}", total_files_read);
-    create_reader_pool->wait();
+    /// An in-flight reader task captures `this`, so it must not outlive the source.
+    /// Waiting on the whole pool is wrong when it is shared: it would also wait for other
+    /// sources' tasks. wait() never throws; the promise is satisfied even if the task threw
+    /// or was dropped unrun.
+    if (owns_create_reader_pool)
+        create_reader_pool->wait();
+    else if (reader_future.valid())
+        reader_future.wait();
 }
 
 std::string StorageObjectStorageSource::getUniqueStoragePathIdentifier(
@@ -760,7 +771,10 @@ Chunk StorageObjectStorageSource::generate()
 
         /// Even if task is finished the thread may be not freed in pool.
         /// So wait until it will be freed before scheduling a new task.
-        create_reader_pool->wait();
+        /// A shared pool serves other sources too, so waiting on all of it would serialize them;
+        /// its queue is unbounded and this source has no other job in flight here.
+        if (owns_create_reader_pool)
+            create_reader_pool->wait();
         reader_future = createReaderAsync();
     }
 
