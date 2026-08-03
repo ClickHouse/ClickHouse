@@ -612,8 +612,10 @@ String computeFileCacheVersionToken(const struct stat & file_stat)
 /// the same timestamp tick as the previous write produces an identical token. Once the last
 /// modification is comfortably in the past, its tick is over and any further write is guaranteed
 /// to change the token. For files modified more recently - or with an mtime in the future, e.g.
-/// due to clock skew on a network mount - anything keyed on the token (the format metadata cache,
-/// the query condition cache) must fail close and stay bypassed rather than risk a stale entry.
+/// due to clock skew on a network mount - a consumer that draws a correctness conclusion from the
+/// token must fail close and stay bypassed rather than risk a stale entry. The query condition
+/// cache is such a consumer: it skips whole row groups without reading them. The format metadata
+/// cache is not - it only reuses a parsed footer - and stays keyed on the token unconditionally.
 bool isFileCacheVersionSettled(const struct stat & file_stat)
 {
 #if defined(OS_DARWIN)
@@ -1778,10 +1780,9 @@ Chunk StorageFileSource::generate()
                         current_path, *expected_file_cache_version, *current_file_cache_version);
 
                 /// The version token above proves a rewrite only after the file has settled
-                /// (see `isFileCacheVersionSettled`). The query condition cache skips whole
-                /// row groups and the format metadata cache reuses parsed footers based on
-                /// this token, so for unsettled files both fail close and stay bypassed (see
-                /// the gates below) rather than risking stale results.
+                /// (see `isFileCacheVersionSettled`). The query condition cache skips whole row
+                /// groups based on this token, so for unsettled files it fails close and stays
+                /// bypassed (see the gate below) rather than risking stale results.
                 current_file_version_settled = isFileCacheVersionSettled(file_stat);
 
                 if (getContext()->getSettingsRef()[Setting::engine_file_skip_empty_files] && file_stat.st_size == 0)
@@ -1838,16 +1839,19 @@ Chunk StorageFileSource::generate()
             /// cache — neither reading from nor populating `ParquetMetadataCache`. This
             /// matches `StorageObjectStorageSource`.
             ///
-            /// Also gated on `current_file_version_settled`: until the token has settled it
-            /// cannot prove a rewrite (a same-size in-place rewrite within the same timestamp
-            /// tick keeps it stable), so keying the metadata cache on it could serve a footer
-            /// cached for the previous file generation against the new bytes — stale row-group
-            /// offsets fed into the reader. Fail close and parse the footer instead.
+            /// Deliberately NOT gated on `current_file_version_settled`. That gate belongs to the
+            /// query condition cache below, which draws a stronger conclusion from the token: it
+            /// skips whole row groups without reading them, so a token that cannot yet prove a
+            /// rewrite must fail close. The format metadata cache only reuses a parsed footer,
+            /// and reusing it for a file whose token has not settled is exactly the behaviour
+            /// master already has and pins in `04207_parquet_metadata_cache_local_file` - a
+            /// freshly written file is the common case, and bypassing the cache for it would
+            /// reparse the footer on every query. See the thread on this gate for the rationale.
             std::optional<RelativePathWithMetadata> object_with_metadata;
             if (getContext()->getSettingsRef()[Setting::use_parquet_metadata_cache]
                 && !storage->use_table_fd && !storage->archive_info && !current_path.empty()
                 && current_file_size.has_value() && current_file_last_modified.has_value()
-                && current_file_cache_version.has_value() && current_file_version_settled)
+                && current_file_cache_version.has_value())
             {
                 ObjectMetadata md;
                 md.size_bytes = *current_file_size;
@@ -2387,13 +2391,14 @@ void ReadFromFile::initializePipeline(QueryPipelineBuilder & pipeline, const Bui
                 /// `splitParquetFileWithCache` (parses without caching) honor the setting,
                 /// matching `StorageObjectStorageSource`.
                 ///
-                /// Also bypass the cache while the version token has not settled (see
-                /// `isFileCacheVersionSettled`): an unsettled token cannot prove a rewrite,
-                /// so a footer cached under it for the previous file generation could drive
-                /// the split decision for the new bytes - stale row-group offsets and counts.
-                /// The split itself still proceeds, parsing the footer directly.
+                /// Not additionally gated on `isFileCacheVersionSettled`, for the same reason
+                /// as `object_with_metadata` in `StorageFileSource::generate`: this is the very
+                /// same `(path, etag)` entry the sources use, so gating only here would just
+                /// make the plan and the sources disagree about the cache while leaving the
+                /// entry itself reachable. A split decision taken from a stale footer is also
+                /// not silently wrong - the read re-stats the file and throws
+                /// `FILE_CHANGED_WHILE_READING` when the token moved under it.
                 auto metadata_cache = ctx->getSettingsRef()[Setting::use_parquet_metadata_cache]
-                        && isFileCacheVersionSettled(file_stat)
                     ? ctx->tryGetParquetMetadataCache()
                     : nullptr;
 

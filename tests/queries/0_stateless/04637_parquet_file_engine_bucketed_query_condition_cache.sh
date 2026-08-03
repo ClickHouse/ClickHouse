@@ -1,6 +1,9 @@
 #!/usr/bin/env bash
-# Tags: no-fasttest
+# Tags: no-fasttest, no-parallel
 # Tag no-fasttest: needs Parquet
+# Tag no-parallel: the query condition cache is server-wide and size-bounded, so a
+# concurrent test can evict our entry between the two plain reads and turn the
+# expected hit into a miss
 
 # Coverage for the query-condition-cache guards on the bucketed local-file read path
 # (`StorageFile`), on a surface with a real storage UUID. The `file()` / `s3Cluster()`
@@ -8,8 +11,8 @@
 # are no-ops, so tests built on them (e.g. `04402_parquet_bucketed_query_condition_cache`)
 # cannot observe the cache. A `File`-engine table in an `Atomic` database has a real UUID,
 # so here the cache genuinely engages and the guards are observable per query through the
-# `QueryConditionCacheHits` / `QueryConditionCacheMisses` profile events (parallel-safe:
-# no global cache inspection).
+# `QueryConditionCacheHits` / `QueryConditionCacheMisses` profile events (per query, so
+# no global cache inspection is needed).
 #
 # The invariant: a source assigned one bucket of a parallel single-file split
 # (`file_bucket_info` is set) must neither consult nor populate the query condition
