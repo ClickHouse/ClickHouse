@@ -261,20 +261,40 @@ OwnAsyncSplitChannel::~OwnAsyncSplitChannel()
 
 void OwnAsyncSplitChannel::open()
 {
-    is_open = true;
-    if (text_log_max_priority && !text_log_thread)
+    /// If a thread fails to start, reset its pointer before tearing down: close() joins every thread it
+    /// sees, and joining a never-started Poco::Thread waits forever on a completion event nobody sets.
+    auto start_thread = [](std::unique_ptr<Poco::Thread> & thread, const std::string & name, Poco::Runnable & runnable)
     {
-        text_log_thread = std::make_unique<Poco::Thread>("AsyncTextLog");
-        text_log_thread->start(*text_log_runnable);
-    }
-
-    for (size_t i = 0; i < channels.size(); i++)
-    {
-        if (!threads[i])
+        thread = std::make_unique<Poco::Thread>(name);
+        try
         {
-            threads[i] = std::make_unique<Poco::Thread>("AsyncLog");
-            threads[i]->start(*runnables[i]);
+            thread->start(runnable);
         }
+        catch (...)
+        {
+            thread.reset();
+            throw;
+        }
+    };
+
+    is_open = true;
+    try
+    {
+        if (text_log_max_priority && !text_log_thread)
+            start_thread(text_log_thread, "AsyncTextLog", *text_log_runnable);
+
+        for (size_t i = 0; i < channels.size(); i++)
+        {
+            if (!threads[i])
+                start_thread(threads[i], "AsyncLog", *runnables[i]);
+        }
+    }
+    catch (...)
+    {
+        /// Fail closed: a partially opened channel would keep accepting messages into queues that no
+        /// consumer drains, silently losing diagnostics. Tear back down and let the caller handle it.
+        close();
+        throw;
     }
 }
 
@@ -304,6 +324,12 @@ void OwnAsyncSplitChannel::close()
         writeRetry(STDERR_FILENO, exception_message.data(), exception_message.size());
         writeRetry(STDERR_FILENO, "\n");
     }
+
+    /// Release any flusher still waiting: the thread that would serve it has exited. Records the final
+    /// drain did not take stay queued and are drained when the channel reopens (e.g. after remapExecutable),
+    /// the same as for a flush that arrives while the channel is closed.
+    text_log_flush_completed.store(text_log_flush_requested.load(std::memory_order_seq_cst), std::memory_order_release);
+    text_log_flush_completed.notify_all();
 }
 
 class AsyncLogMessage
@@ -422,14 +448,23 @@ void OwnAsyncSplitChannel::flushTextLogs()
     if (!is_open)
         return;
 
-    /// Wait out any flush already in progress, else we'd wake when that one ends; concurrent callers flush together.
-    text_log_flush_requested.wait(true, std::memory_order_seq_cst);
+    /// Take a request number and wait until the async thread reports it as served. The thread checks the
+    /// request counter between messages and after each empty-queue sleep. A flush already in progress does
+    /// not release this caller: it has an older request number, and its drain boundary was sampled before
+    /// this increment, so it may not cover this caller's records.
+    const UInt64 my_request = text_log_flush_requested.fetch_add(1, std::memory_order_seq_cst) + 1;
 
-    /// The async thread checks this flag between messages and after each empty-queue sleep.
-    text_log_flush_requested = true;
-
-    /// Now we simply wait for the async thread to notify it has finished flushing
-    text_log_flush_requested.wait(true, std::memory_order_seq_cst);
+    UInt64 completed = text_log_flush_completed.load(std::memory_order_acquire);
+    while (completed < my_request)
+    {
+        /// The consumer thread may have exited (shutdown or remapExecutable) after the is_open check above.
+        /// Its final drain flushes everything queued and publishes the requests it observed; bail out
+        /// instead of waiting forever for a request nobody will serve.
+        if (!is_open)
+            return;
+        text_log_flush_completed.wait(completed, std::memory_order_acquire);
+        completed = text_log_flush_completed.load(std::memory_order_acquire);
+    }
 }
 
 AsyncLogQueueSizes OwnAsyncSplitChannel::getAsynchronousMetrics()
@@ -480,9 +515,9 @@ void OwnAsyncSplitChannel::runChannel(size_t i)
 
     auto flush_queue = [&]()
     {
-        /// Exact, bounded flush boundary: drain every message enqueued as of now (position captured with
-        /// acquire so we observe their published slots) and no later arrival, so producers can't prolong
-        /// the flush; dequeueMessageForFlush waits out any slot still being published.
+        /// Exact, bounded flush boundary: drain every message enqueued before close() flipped is_open
+        /// (pushes happen-before this thread's read of is_open == false) and no later arrival, so producers
+        /// can't prolong the flush; dequeueMessageForFlush waits out any slot still being published.
         const size_t target = queue.messages.enqueuePosition();
         while (queue.messages.dequeuePosition() < target)
         {
@@ -562,9 +597,11 @@ void OwnAsyncSplitChannel::runTextLog()
     auto flush_queue = [&](const std::shared_ptr<SystemLogQueue<TextLogElement>> & text_log_locked)
     {
         /// Exact, bounded flush boundary: SYSTEM FLUSH LOGS relies on every record accepted before the
-        /// request reaching text_log before flushImpl samples the last index. Capture the enqueue position
-        /// with acquire (size() is imprecise while producers run) and drain up to it, waiting out any slot
-        /// still being published. Later arrivals aren't included, so producers can't prolong the flush.
+        /// request reaching text_log before flushImpl samples the last index. This position is sampled
+        /// after the request counter is loaded, so it covers every record enqueued before a served request
+        /// (see the handshake comment in the header); size() would be imprecise while producers run.
+        /// Drain up to it, waiting out any slot still being published. Later arrivals aren't included,
+        /// so producers can't prolong the flush.
         const size_t target = text_log_queue.messages.enqueuePosition();
         while (text_log_queue.messages.dequeuePosition() < target)
         {
@@ -583,14 +620,18 @@ void OwnAsyncSplitChannel::runTextLog()
             if (!text_log_locked)
                 return;
 
-            if (text_log_flush_requested)
+            /// Load the request counter before sampling the queue position in flush_queue, so the drain
+            /// boundary covers every record enqueued before the requests served here (see the header).
+            /// text_log_flush_completed is only written by this thread, so a relaxed read is exact.
+            const UInt64 flush_requested = text_log_flush_requested.load(std::memory_order_seq_cst);
+            if (text_log_flush_completed.load(std::memory_order_relaxed) < flush_requested)
             {
                 flush_queue(text_log_locked);
-                /// Emit the drop warning as part of the flush, before releasing the waiter, so SYSTEM FLUSH
+                /// Emit the drop warning as part of the flush, before releasing the waiters, so SYSTEM FLUSH
                 /// LOGS / shutdown can't miss the only record that tells users messages were dropped.
                 report_dropped_messages(text_log_locked);
-                text_log_flush_requested = false;
-                text_log_flush_requested.notify_all();
+                text_log_flush_completed.store(flush_requested, std::memory_order_release);
+                text_log_flush_completed.notify_all();
                 continue;
             }
 
@@ -625,8 +666,13 @@ void OwnAsyncSplitChannel::runTextLog()
         if (!text_log_locked)
             return;
 
+        const UInt64 flush_requested = text_log_flush_requested.load(std::memory_order_seq_cst);
         flush_queue(text_log_locked);
         report_dropped_messages(text_log_locked);
+        /// Release flushers racing with shutdown: this drain took everything they enqueued (their remaining
+        /// recourse is the is_open check, close() publishes once more after the join for the late ones).
+        text_log_flush_completed.store(flush_requested, std::memory_order_release);
+        text_log_flush_completed.notify_all();
     }
     catch (...)
     {

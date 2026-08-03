@@ -1306,22 +1306,40 @@ try
         /// Restart the async logging threads even if remapExecutable throws. Otherwise the logger would stay
         /// stopped, and the exception unwinding through Server::main would be logged into a queue that no
         /// consumer thread is draining, silently losing the startup exception and any queued diagnostics.
-        /// This guard is declared first, so that it runs last: the signal mask is restored before the
-        /// logging threads are started again, and they get the same mask as during a normal startup.
-        SCOPE_EXIT_SAFE(startAsyncLoggingThreads());
+        /// The remap exception is stashed rather than rethrown directly, so the restart happens outside the
+        /// signal-blocking scope: the mask is restored first, and the logging threads get the same mask as
+        /// during a normal startup.
+        std::exception_ptr remap_exception;
+        size_t remapped_size = 0;
+        {
+            /// `BaseDaemon::initializeTerminationAndSignalProcessing` has already installed the signal handlers
+            /// and started the signal listener thread. Block the asynchronously delivered handled signals in this
+            /// thread; the listener thread already has them blocked (it inherited the mask at creation), and no
+            /// other thread exists yet, so no handler can run while the code is unmapped. Nothing is lost: the
+            /// signal stays pending for the process and is delivered once the mask is restored below.
+            BlockSignalsScope block_signals(asynchronousHandledSignals());
 
-        /// `BaseDaemon::initializeTerminationAndSignalProcessing` has already installed the signal handlers
-        /// and started the signal listener thread. Block the asynchronously delivered handled signals in this
-        /// thread; the listener thread already has them blocked (it inherited the mask at creation), and no
-        /// other thread exists yet, so no handler can run while the code is unmapped. Nothing is lost: the
-        /// signal stays pending for the process and is delivered once the mask is restored below.
-        BlockSignalsScope block_signals(asynchronousHandledSignals());
+            /// The async logging threads poll rather than block, so join them for the duration and restart afterwards.
+            stopAsyncLoggingThreads();
 
-        /// The async logging threads poll rather than block, so join them for the duration and restart afterwards.
-        stopAsyncLoggingThreads();
+            try
+            {
+                remapped_size = remapExecutable();
+            }
+            catch (...)
+            {
+                remap_exception = std::current_exception();
+            }
+        }
 
-        size_t size = remapExecutable();
-        LOG_DEBUG(log, "The code ({}) in memory has been successfully remapped.", ReadableSize(size));
+        /// Fail closed if the restart itself throws: continuing with only part of the logging threads
+        /// running would keep accepting messages into queues that no consumer drains (open() tears the
+        /// partially opened channel back down before rethrowing), silently losing later diagnostics.
+        startAsyncLoggingThreads();
+
+        if (remap_exception)
+            std::rethrow_exception(remap_exception);
+        LOG_DEBUG(log, "The code ({}) in memory has been successfully remapped.", ReadableSize(remapped_size));
     }
 
     if (server_settings[ServerSetting::mlock_executable])

@@ -1,6 +1,7 @@
 #pragma once
 
 #include <base/strong_typedef.h>
+#include <base/types.h>
 
 #include <atomic>
 #include <memory>
@@ -166,8 +167,17 @@ private:
 
     /// system.text_log does not have a channel, but it's also async
     LogQueue text_log_queue;
-    /// Set by flushTextLogs to request a full flush; the text log thread resets it and notifies waiters when done.
-    std::atomic<bool> text_log_flush_requested = false;
+    /// Flush handshake. A flushTextLogs caller increments text_log_flush_requested and waits until
+    /// text_log_flush_completed reaches its request number. The text log thread loads the request counter,
+    /// only then samples the queue's enqueue position, drains up to it, and publishes the request number it
+    /// served. Sampling after the load makes the boundary exact: the acquire load of the request counter
+    /// synchronizes with every requester's increment (an RMW extends the release sequence), so every record
+    /// enqueued before a served request is covered by the sampled position (read-write coherence).
+    /// Distinct request numbers also keep concurrent flushers exact: a flush that starts during another
+    /// flush gets a higher number and is not released by the earlier drain, whose boundary was sampled
+    /// before its records were pushed.
+    std::atomic<UInt64> text_log_flush_requested = 0;
+    std::atomic<UInt64> text_log_flush_completed = 0;
     std::unique_ptr<Poco::Thread> text_log_thread;
     std::unique_ptr<OwnRunnableForTextLog> text_log_runnable;
     std::weak_ptr<DB::TextLogQueue> text_log;
