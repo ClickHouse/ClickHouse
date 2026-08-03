@@ -1,0 +1,17 @@
+<clickhouse>
+    <!-- Route `s3://<bucket>/<key>` at the test MinIO, so a URL(named_collection) whose url uses the
+         `s3://` scheme dispatches to the object storage engine. The URL engine's named collection
+         accepts no credential keys, so the endpoint carries them. -->
+    <url_scheme_mappers>
+        <s3>
+            <to>http://minio1:9001/root/{bucket}</to>
+        </s3>
+    </url_scheme_mappers>
+    <s3>
+        <minio_root>
+            <endpoint>http://minio1:9001/root/</endpoint>
+            <access_key_id>minio</access_key_id>
+            <secret_access_key>ClickHouse_Minio_P@ssw0rd</secret_access_key>
+        </minio_root>
+    </s3>
+</clickhouse>

@@ -2705,6 +2705,14 @@ public:
     {
         return getNested()->supportsTrivialCountOptimization(storage_snapshot, query_context);
     }
+
+    /// Read by the `disable_insertion_and_mutation` guard before the `write()` that would
+    /// materialize, so the `IStorage` default (a local engine) would reject an `INSERT` the eager
+    /// `URL(...)` path allows. Materializing is fine: such an `INSERT` materializes anyway.
+    bool isDataLake() const override { return getNested()->isDataLake(); }
+    bool isExternalDatabase() const override { return getNested()->isExternalDatabase(); }
+    bool isObjectStorage() const override { return getNested()->isObjectStorage(); }
+    bool isMessageQueue() const override { return getNested()->isMessageQueue(); }
 };
 
 /// The full eager construction of a `URL(...)` engine: scheme dispatch, named-collection /

@@ -17,7 +17,11 @@ writing_node = cluster.add_instance(
 )
 reading_node = cluster.add_instance(
     "reading_node",
-    main_configs=["config/reading_node.xml", "config/cluster.xml"],
+    main_configs=[
+        "config/reading_node.xml",
+        "config/cluster.xml",
+        "config/minio_scheme_mapper.xml",
+    ],
     with_zookeeper=True,
     with_minio=True,
     stay_alive=True,
@@ -124,3 +128,48 @@ def test_disable_insertion_and_mutation_with_external_tables(started_cluster):
     assert "2" in result
 
     reading_node.query("DROP TABLE IF EXISTS s3_table")
+
+
+def test_disable_insertion_and_mutation_deferred_url_named_collection(started_cluster):
+    """A URL(named_collection) table attached while its collection was missing is served by a lazy
+    proxy. The proxy must report the delegate's engine classification, so an object-storage-backed
+    table gets the same external-engine exemption as the eager `ENGINE = URL(...)` form."""
+
+    unique_id = uuid.uuid4().hex
+    collection = f"nc_deferred_{unique_id}"
+    # config/minio_scheme_mapper.xml maps `s3://<bucket>/<key>` to the test MinIO and supplies the
+    # endpoint credentials, so this dispatches to the object storage engine. The URL engine's named
+    # collection schema accepts no credential keys, hence the server-side endpoint config.
+    create_collection = f"""
+        CREATE NAMED COLLECTION {collection} AS
+            url = 's3://data/test_deferred_{unique_id}.csv', format = 'CSV'
+        """
+    ignore_deps = {"check_named_collection_dependencies": 0}
+
+    reading_node.query("DROP TABLE IF EXISTS deferred_url_table")
+    reading_node.query(
+        f"DROP NAMED COLLECTION IF EXISTS {collection}", settings=ignore_deps
+    )
+
+    reading_node.query(create_collection)
+    reading_node.query(
+        f"CREATE TABLE deferred_url_table (key UInt64, value String) ENGINE = URL({collection})"
+    )
+
+    # Drive the table onto the deferred path: ATTACH with the collection gone is what server startup
+    # replays from metadata, so the lazy proxy is what answers queries afterwards.
+    reading_node.query("DETACH TABLE deferred_url_table")
+    reading_node.query(f"DROP NAMED COLLECTION {collection}", settings=ignore_deps)
+    reading_node.query("ATTACH TABLE deferred_url_table")
+    reading_node.query(create_collection)
+
+    # Allowed despite disable_insertion_and_mutation=true: the delegate is object storage. Without
+    # the classification forwarding this throws QUERY_IS_PROHIBITED, while the eager
+    # `ENGINE = URL('s3://...')` form inserts.
+    reading_node.query("INSERT INTO deferred_url_table VALUES (1, 'hello'), (2, 'world')")
+    assert reading_node.query("SELECT count() FROM deferred_url_table").strip() == "2"
+
+    reading_node.query("DROP TABLE IF EXISTS deferred_url_table")
+    reading_node.query(
+        f"DROP NAMED COLLECTION IF EXISTS {collection}", settings=ignore_deps
+    )
