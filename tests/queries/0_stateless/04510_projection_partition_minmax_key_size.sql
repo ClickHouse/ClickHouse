@@ -27,11 +27,12 @@ SELECT count() FROM t_04510 WHERE v < 1000;
 DROP TABLE t_04510;
 
 -- Regression test for over-pruning of projection parts on partition virtuals.
--- generateForPartition specializes the whole predicate DAG, including the _partition_id /
+-- generateForPart specializes the whole predicate DAG, including the _partition_id /
 -- _partition_value virtuals that projection metadata still advertises from the parent partition
 -- key. Feeding the projection's empty partition would fold those virtuals to 'all' / an empty
--- tuple and prune the matching projection part. The projection read must use the parent part's
--- real partition for these virtuals, so the results below must match the non-projection baseline.
+-- tuple and prune the matching projection part. Projection parts must not be specialized at all
+-- (they get the unsubstituted condition), so the results below must match the non-projection
+-- baseline.
 
 DROP TABLE IF EXISTS t_04510_virt;
 
