@@ -142,12 +142,12 @@ QueryPlanSerializationSettings::QueryPlanSerializationSettings(const QueryPlanSe
 
 QueryPlanSerializationSettings::~QueryPlanSerializationSettings() = default;
 
-/// Settings added in query plan serialization version 4 (see DBMS_QUERY_PLAN_SERIALIZATION_VERSION).
-/// They must not be emitted when serializing for a receiver older than version 4: such a receiver does
+/// Settings added in query plan serialization version 5 (see DBMS_QUERY_PLAN_SERIALIZATION_VERSION).
+/// They must not be emitted when serializing for a receiver older than version 5: such a receiver does
 /// not know these names and BaseSettings::readBinary throws on unknown setting names, which would break
 /// mixed-version distributed queries (with serialize_query_plan) even when these settings are at
 /// their defaults.
-static constexpr std::array<std::string_view, 2> settings_since_version_4 =
+static constexpr std::array<std::string_view, 2> settings_since_version_5 =
 {
     "max_memory_usage",
     "enable_join_in_memory_compression",
@@ -155,16 +155,16 @@ static constexpr std::array<std::string_view, 2> settings_since_version_4 =
 
 void QueryPlanSerializationSettings::writeChangedBinary(WriteBuffer & out, UInt64 version) const
 {
-    if (version >= 4)
+    if (version >= 5)
     {
         impl->writeChangedBinary(out);
         return;
     }
 
-    /// Omit the version-4 settings for an older receiver by resetting them to defaults on a copy
+    /// Omit the version-5 settings for an older receiver by resetting them to defaults on a copy
     /// (resetting clears the "changed" flag, so writeChangedBinary no longer emits them).
     QueryPlanSerializationSettingsImpl filtered(*impl);
-    for (const auto & name : settings_since_version_4)
+    for (const auto & name : settings_since_version_5)
         filtered.resetToDefault(name);
     filtered.writeChangedBinary(out);
 }
@@ -178,7 +178,7 @@ bool QueryPlanSerializationSettings::isChanged(std::string_view name) const
     return impl->isChanged(name);
 }
 
-/// Which of the version-4 settings the join implementation that a step will really run can consume.
+/// Which of the version-5 settings the join implementation that a step will really run can consume.
 struct JoinSettingsConsumption
 {
     bool in_memory_compression = false;
@@ -225,7 +225,7 @@ static JoinSettingsConsumption getJoinSettingsConsumption(
                 /// not evaluate the trigger at all) and the compression pass is a forced
                 /// `shrinkStoredBlocksToFit(..., true)`, which skips the threshold branch entirely. Its
                 /// only memory bounds are `max_rows_in_join` / `max_bytes_in_join`
-                /// (`GraceHashJoin::hasMemoryOverflow`), neither of which is a version-4 setting.
+                /// (`GraceHashJoin::hasMemoryOverflow`), neither of which is a version-5 setting.
                 /// `GraceHashJoin` is built only for the kinds it supports, so keep scanning: an
                 /// unsupported shape falls through to the next algorithm in the list.
                 result.in_memory_compression = true;
@@ -266,17 +266,17 @@ static JoinSettingsConsumption getJoinSettingsConsumption(
 
 UInt64 QueryPlanSerializationSettings::getMinRequiredVersion() const
 {
-    /// This cannot be keyed on the "changed" flags of the version-4 settings: a step assigns every
+    /// This cannot be keyed on the "changed" flags of the version-5 settings: a step assigns every
     /// setting it serializes, and assignment marks a setting changed even when the value equals the
     /// default (see JoinSettings::updatePlanSettings), so e.g. `max_memory_usage` is flagged on every
-    /// serialized join step and a flag-based check would raise every join fragment to version 4.
+    /// serialized join step and a flag-based check would raise every join fragment to version 5.
     /// Key it on behavior instead: only an actually enabled in-memory join compression requires the
     /// higher version, because dropping `enable_join_in_memory_compression` from the stream would
     /// silently disable the requested feature. `max_memory_usage` does not raise the version even
     /// though HashJoin also consumes it with compression off (as the shrinkStoredBlocksToFit
     /// trigger): a receiver that does not get it from the stream restores it from its query context
-    /// settings (see JoinStepLogical::deserialize), and a pre-version-4 receiver behaves exactly
-    /// like a pre-version-4 server - a graceful degradation.
+    /// settings (see JoinStepLogical::deserialize), and a pre-version-5 receiver behaves exactly
+    /// like a pre-version-5 server - a graceful degradation.
     /// The exception is a step-local `max_memory_usage` (a subquery-local SETTINGS override, flagged
     /// by JoinSettings::updatePlanSettings): the receiver's query context carries only the outer
     /// query's value, so an omitted step-local value cannot be restored and the stream must carry it.
@@ -294,7 +294,7 @@ UInt64 QueryPlanSerializationSettings::getMinRequiredVersion() const
     /// (join_kind_consumes_in_memory_compression): a `ConstantJoin` (a CROSS JOIN or a join with a
     /// constant predicate) keeps its own threshold-based compression path and never consults
     /// `enable_join_in_memory_compression`, and PASTE join stores no build side - raising such a
-    /// fragment to version 4 would only make older receivers reject a stream whose extra setting
+    /// fragment to version 5 would only make older receivers reject a stream whose extra setting
     /// they would ignore anyway.
     /// A `DirectKeyValueJoin` (a dictionary or key-value storage on the right side) needs no such
     /// exception, even though it ignores `enable_join_in_memory_compression` too: it is chosen only
@@ -318,7 +318,7 @@ UInt64 QueryPlanSerializationSettings::getMinRequiredVersion() const
         && (consumption.step_local_max_memory_usage || join_executes_as_constant_join);
 
     if (compression_matters || step_local_max_memory_usage_matters)
-        return 4;
+        return 5;
     return 1;
 }
 

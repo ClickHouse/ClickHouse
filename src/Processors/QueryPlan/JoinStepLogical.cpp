@@ -1710,7 +1710,7 @@ void JoinStepLogical::serializeSettings(QueryPlanSerializationSettings & setting
     /// join stores no build side, so `enable_join_in_memory_compression` never applies to this step
     /// and must not raise its fragment's minimum serialization version (a receiver that later
     /// rewrites the join into an inner hash join simply plans without the setting, the same graceful
-    /// degradation as a pre-version-4 receiver). `ConstantJoin` does consume `max_memory_usage`
+    /// degradation as a pre-version-5 receiver). `ConstantJoin` does consume `max_memory_usage`
     /// though, so a step-local value must still reach the receiver whatever `join_algorithm` allows.
     /// See getMinRequiredVersion.
     settings.join_executes_as_constant_join = willExecuteAsConstantJoin(join_operator);
@@ -1800,19 +1800,19 @@ QueryPlanStepPtr JoinStepLogical::deserialize(Deserialization & ctx)
     SortingStep::Settings sort_settings(ctx.settings);
     JoinSettings join_settings(ctx.settings);
 
-    /// `max_memory_usage` joined the plan serialization only in version 4, and version selection
+    /// `max_memory_usage` joined the plan serialization only in version 5, and version selection
     /// (QueryPlanSerializationSettings::getMinRequiredVersion) keeps fragments without in-memory
     /// join compression at the baseline version, so their streams omit it. It is not only the
     /// compression trigger: HashJoin::shrinkStoredBlocksToFit consults it for plain block shrinking
     /// too, and leaving it at 0 here would silently drop that shrink trigger on the remote fragment
     /// (a possible MEMORY_LIMIT_EXCEEDED where the local path would have shrunk). The query settings
     /// travel with the distributed query, so restore the value from the receiver's query context.
-    /// A version-4 stream always carries the sender's exact value (updatePlanSettings marks every
+    /// A version-5 stream always carries the sender's exact value (updatePlanSettings marks every
     /// serialized setting changed), so this never overrides an explicitly sent value.
     if (!ctx.settings.isChanged("max_memory_usage"))
         join_settings.max_memory_usage = ctx.context->getSettingsRef()[Setting::max_memory_usage];
 
-    /// A step-local value (a subquery-local SETTINGS override, carried only by version-4 streams -
+    /// A step-local value (a subquery-local SETTINGS override, carried only by version-5 streams -
     /// see QueryPlanSerializationSettings::getMinRequiredVersion) cannot be restored from the query
     /// context. Recompute the flag against this receiver's query context, so re-serializing the step
     /// for a further hop keeps carrying the value. An omitted value was just restored from that very

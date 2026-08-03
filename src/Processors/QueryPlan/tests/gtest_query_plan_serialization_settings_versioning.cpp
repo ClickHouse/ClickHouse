@@ -32,9 +32,9 @@ QueryPlanSerializationSettings roundTrip(const QueryPlanSerializationSettings & 
 
 }
 
-/// The in-memory join compression settings were added to the plan serialization in version 4.
-/// When serializing for a receiver older than version 4 (a pre-PR server in a mixed-version cluster,
-/// including a version-3 server that only knows the parallel-replicas flag and a version-2 server that
+/// The in-memory join compression settings were added to the plan serialization in version 5.
+/// When serializing for a receiver older than version 5 (a pre-PR server in a mixed-version cluster,
+/// including a version-4 server that only knows the `WindowStep` encoding and a version-2 server that
 /// only knows the bucketed-read encoding), their names must be omitted: BaseSettings::readBinary throws
 /// on unknown setting names, so emitting them would break mixed-version distributed queries with
 /// serialize_query_plan even at default values.
@@ -45,18 +45,18 @@ TEST(QueryPlanSerializationSettings, JoinCompressionSettingsOmittedForOlderVersi
     settings[QueryPlanSerializationSetting::max_memory_usage] = 12345;
     settings[QueryPlanSerializationSetting::enable_join_in_memory_compression] = true;
 
-    /// A version-4 receiver gets all of the settings, including the new ones.
+    /// A version-5 receiver gets all of the settings, including the new ones.
     {
-        auto v4 = roundTrip(settings, 4);
-        EXPECT_EQ(v4[QueryPlanSerializationSetting::max_bytes_in_join].value, 777u);
-        EXPECT_EQ(v4[QueryPlanSerializationSetting::max_memory_usage].value, 12345u);
-        EXPECT_EQ(v4[QueryPlanSerializationSetting::enable_join_in_memory_compression].value, true);
+        auto v5 = roundTrip(settings, 5);
+        EXPECT_EQ(v5[QueryPlanSerializationSetting::max_bytes_in_join].value, 777u);
+        EXPECT_EQ(v5[QueryPlanSerializationSetting::max_memory_usage].value, 12345u);
+        EXPECT_EQ(v5[QueryPlanSerializationSetting::enable_join_in_memory_compression].value, true);
     }
 
-    /// A receiver older than version 4 (version 3, version 2 and version 1) does not get the new
+    /// A receiver older than version 5 (version 4, version 3, version 2 and version 1) does not get the new
     /// settings (they fall back to their defaults), while the pre-existing settings are still sent.
     /// This is exactly the stream a pre-PR server reads.
-    for (UInt64 old_version : {1u, 2u, 3u})
+    for (UInt64 old_version : {1u, 2u, 3u, 4u})
     {
         auto old = roundTrip(settings, old_version);
         EXPECT_EQ(old[QueryPlanSerializationSetting::max_bytes_in_join].value, 777u);
@@ -70,13 +70,13 @@ TEST(QueryPlanSerializationSettings, JoinCompressionSettingsOmittedForOlderVersi
 /// negotiation. It must be keyed on the values, not on the "changed" flags: a join step assigns every
 /// setting it serializes (marking it changed even at the default value), so a flag-based check would
 /// raise every join fragment - including a `full_sorting_merge` join, or a hash join with compression
-/// off but a non-default `max_memory_usage` - to version 4 and get it rejected by a version-3 worker
+/// off but a non-default `max_memory_usage` - to version 5 and get it rejected by a version-4 worker
 /// during a rolling upgrade. Only an actually enabled `enable_join_in_memory_compression` or a
-/// step-local `max_memory_usage` override requires version 4; omitting a query-wide
-/// `max_memory_usage` reproduces pre-version-4 behavior.
+/// step-local `max_memory_usage` override requires version 5; omitting a query-wide
+/// `max_memory_usage` reproduces pre-version-5 behavior.
 TEST(QueryPlanSerializationSettings, MinRequiredVersion)
 {
-    /// Nothing set, or only pre-version-4 settings set: the baseline version is enough.
+    /// Nothing set, or only pre-version-5 settings set: the baseline version is enough.
     {
         QueryPlanSerializationSettings settings;
         EXPECT_EQ(settings.getMinRequiredVersion(), 1u);
@@ -86,18 +86,18 @@ TEST(QueryPlanSerializationSettings, MinRequiredVersion)
     }
 
     /// Enabled in-memory join compression is the one case where a version-1 stream would silently
-    /// drop the requested feature, so it requires version 4.
+    /// drop the requested feature, so it requires version 5.
     {
         QueryPlanSerializationSettings settings;
         settings[QueryPlanSerializationSetting::enable_join_in_memory_compression] = true;
-        EXPECT_EQ(settings.getMinRequiredVersion(), 4u);
+        EXPECT_EQ(settings.getMinRequiredVersion(), 5u);
     }
 
-    /// The other version-4 setting (`max_memory_usage`) must not raise the version even when
+    /// The other version-5 setting (`max_memory_usage`) must not raise the version even when
     /// assigned (a join step assigns it - changed-flagged - on every serialization, e.g. the
     /// query-level `max_memory_usage`): a receiver that does not find it in the stream restores it
-    /// from its query context settings (see JoinStepLogical::deserialize), and a version-3 worker
-    /// simply behaves like a pre-version-4 server.
+    /// from its query context settings (see JoinStepLogical::deserialize), and a version-4 worker
+    /// simply behaves like a pre-version-5 server.
     {
         QueryPlanSerializationSettings settings;
         settings[QueryPlanSerializationSetting::max_memory_usage] = 12345;
@@ -114,7 +114,7 @@ TEST(QueryPlanSerializationSettings, MinRequiredVersion)
 
     /// Even with compression enabled, a step whose `join_algorithm` cannot resolve to a hash-family
     /// implementation (`full_sorting_merge`, `partial_merge`, `direct`) never consumes the setting,
-    /// so its fragment must stay on the baseline version and remain readable by a version-3 worker.
+    /// so its fragment must stay on the baseline version and remain readable by a version-4 worker.
     {
         QueryPlanSerializationSettings settings;
         settings[QueryPlanSerializationSetting::enable_join_in_memory_compression] = true;
@@ -123,7 +123,7 @@ TEST(QueryPlanSerializationSettings, MinRequiredVersion)
         EXPECT_EQ(settings.getMinRequiredVersion(), 1u);
     }
 
-    /// A single hash-capable algorithm in the set is enough to require version 4 - including
+    /// A single hash-capable algorithm in the set is enough to require version 5 - including
     /// `prefer_partial_merge`, which falls back to hash when partial merge does not support the
     /// join kind, and `grace_hash`, whose buckets are hash joins.
     for (auto algorithm : {JoinAlgorithm::DEFAULT, JoinAlgorithm::AUTO, JoinAlgorithm::HASH,
@@ -133,7 +133,7 @@ TEST(QueryPlanSerializationSettings, MinRequiredVersion)
         settings[QueryPlanSerializationSetting::enable_join_in_memory_compression] = true;
         settings[QueryPlanSerializationSetting::join_algorithm]
             = std::vector<JoinAlgorithm>{JoinAlgorithm::FULL_SORTING_MERGE, algorithm};
-        EXPECT_EQ(settings.getMinRequiredVersion(), 4u);
+        EXPECT_EQ(settings.getMinRequiredVersion(), 5u);
     }
 
     /// A step that never consults `enable_join_in_memory_compression` (a `ConstantJoin` - a
@@ -142,21 +142,21 @@ TEST(QueryPlanSerializationSettings, MinRequiredVersion)
     /// join_kind_consumes_in_memory_compression, see JoinStepLogical::serializeSettings) must not
     /// raise the version even with compression enabled and a hash-capable `join_algorithm`: such a
     /// join executes as `ConstantJoin` whatever the algorithm setting says, and bumping its fragment
-    /// would make a version-3 receiver reject it for a setting it would never consume.
+    /// would make a version-4 receiver reject it for a setting it would never consume.
     {
         QueryPlanSerializationSettings settings;
         settings[QueryPlanSerializationSetting::enable_join_in_memory_compression] = true;
         settings.join_kind_consumes_in_memory_compression = false;
         EXPECT_EQ(settings.getMinRequiredVersion(), 1u);
 
-        /// A step-local `max_memory_usage` still requires version 4 for such a step: `ConstantJoin`
+        /// A step-local `max_memory_usage` still requires version 5 for such a step: `ConstantJoin`
         /// consumes `max_memory_usage` as its plain shrink trigger.
         settings.max_memory_usage_is_step_local = true;
-        EXPECT_EQ(settings.getMinRequiredVersion(), 4u);
+        EXPECT_EQ(settings.getMinRequiredVersion(), 5u);
     }
 
     /// A step-local `max_memory_usage` (a subquery-local SETTINGS override, flagged by
-    /// JoinSettings::updatePlanSettings) is the other case that requires version 4 even with
+    /// JoinSettings::updatePlanSettings) is the other case that requires version 5 even with
     /// compression off: the receiver's query context carries only the outer query's value, so an
     /// omitted step-local value could not be restored (see JoinStepLogical::deserialize). The gate is
     /// the implementation that will run: hash-family joins consume the setting, and so does
@@ -165,7 +165,7 @@ TEST(QueryPlanSerializationSettings, MinRequiredVersion)
         QueryPlanSerializationSettings settings;
         settings[QueryPlanSerializationSetting::max_memory_usage] = 12345;
         settings.max_memory_usage_is_step_local = true;
-        EXPECT_EQ(settings.getMinRequiredVersion(), 4u);
+        EXPECT_EQ(settings.getMinRequiredVersion(), 5u);
 
         settings[QueryPlanSerializationSetting::join_algorithm]
             = std::vector<JoinAlgorithm>{JoinAlgorithm::FULL_SORTING_MERGE, JoinAlgorithm::PARTIAL_MERGE, JoinAlgorithm::DIRECT};
@@ -174,7 +174,7 @@ TEST(QueryPlanSerializationSettings, MinRequiredVersion)
         /// ... but a `ConstantJoin` step (`CROSS JOIN`, `JOIN ON 1`) ignores `join_algorithm`, and it
         /// consumes `max_memory_usage`, so its fragment must still carry a step-local value.
         settings.join_executes_as_constant_join = true;
-        EXPECT_EQ(settings.getMinRequiredVersion(), 4u);
+        EXPECT_EQ(settings.getMinRequiredVersion(), 5u);
 
         /// Compression, on the other hand, is never consumed by `ConstantJoin`: such a step stays on
         /// the baseline version when the step-local override is absent.
@@ -187,9 +187,9 @@ TEST(QueryPlanSerializationSettings, MinRequiredVersion)
 
     /// `prefer_partial_merge` and `partial_merge` build a `MergeJoin` for every shape it supports (the
     /// serializing step flags that via join_shape_supports_merge_join), and `MergeJoin` consumes neither
-    /// version-4 setting. The hash fallback that makes `prefer_partial_merge` hash-capable is only
+    /// version-5 setting. The hash fallback that makes `prefer_partial_merge` hash-capable is only
     /// reached for a shape `MergeJoin` does not support, so a supported shape must stay on the baseline
-    /// version - otherwise a version-3 receiver rejects a fragment it would execute identically.
+    /// version - otherwise a version-4 receiver rejects a fragment it would execute identically.
     {
         QueryPlanSerializationSettings settings;
         settings[QueryPlanSerializationSetting::enable_join_in_memory_compression] = true;
@@ -201,7 +201,7 @@ TEST(QueryPlanSerializationSettings, MinRequiredVersion)
         EXPECT_EQ(settings.getMinRequiredVersion(), 1u);
 
         settings.join_shape_supports_merge_join = false;
-        EXPECT_EQ(settings.getMinRequiredVersion(), 4u);
+        EXPECT_EQ(settings.getMinRequiredVersion(), 5u);
 
         /// A lone `partial_merge` has no hash fallback at all: an unsupported shape makes the query
         /// fail with NOT_IMPLEMENTED instead of building a hash join, so the shape does not matter.
@@ -222,14 +222,14 @@ TEST(QueryPlanSerializationSettings, MinRequiredVersion)
 
         settings[QueryPlanSerializationSetting::join_algorithm]
             = std::vector<JoinAlgorithm>{JoinAlgorithm::HASH, JoinAlgorithm::PREFER_PARTIAL_MERGE};
-        EXPECT_EQ(settings.getMinRequiredVersion(), 4u);
+        EXPECT_EQ(settings.getMinRequiredVersion(), 5u);
 
         settings[QueryPlanSerializationSetting::join_algorithm]
             = std::vector<JoinAlgorithm>{JoinAlgorithm::PARTIAL_MERGE, JoinAlgorithm::HASH};
         EXPECT_EQ(settings.getMinRequiredVersion(), 1u);
 
         settings.join_shape_supports_merge_join = false;
-        EXPECT_EQ(settings.getMinRequiredVersion(), 4u);
+        EXPECT_EQ(settings.getMinRequiredVersion(), 5u);
     }
 
     /// `auto` on a shape `MergeJoin` supports builds a `JoinSwitcher`, which inserts into its `HashJoin`
@@ -244,25 +244,25 @@ TEST(QueryPlanSerializationSettings, MinRequiredVersion)
         EXPECT_EQ(settings.getMinRequiredVersion(), 1u);
 
         settings[QueryPlanSerializationSetting::enable_join_in_memory_compression] = true;
-        EXPECT_EQ(settings.getMinRequiredVersion(), 4u);
+        EXPECT_EQ(settings.getMinRequiredVersion(), 5u);
 
         /// Once spilling is allowed, `auto` builds a `SpillingHashJoin` instead, which consumes both
         /// settings. Either threshold is enough: the ratio one is resolved on the receiver.
         settings[QueryPlanSerializationSetting::enable_join_in_memory_compression] = false;
         settings[QueryPlanSerializationSetting::max_bytes_before_external_join] = 1000000000;
-        EXPECT_EQ(settings.getMinRequiredVersion(), 4u);
+        EXPECT_EQ(settings.getMinRequiredVersion(), 5u);
 
         settings[QueryPlanSerializationSetting::max_bytes_before_external_join] = 0;
         EXPECT_EQ(settings.getMinRequiredVersion(), 1u);
 
         settings[QueryPlanSerializationSetting::max_bytes_ratio_before_external_join] = 0.5;
-        EXPECT_EQ(settings.getMinRequiredVersion(), 4u);
+        EXPECT_EQ(settings.getMinRequiredVersion(), 5u);
     }
 
     /// A standalone `grace_hash` compresses its in-memory bucket, but it never runs the
     /// `max_memory_usage` trigger: its bucket inserts pass `check_limits = false` and the compression
     /// pass is a forced `shrinkStoredBlocksToFit`, which skips the thresholds. A step-local
-    /// `max_memory_usage` therefore must not raise the version - a version-3 receiver executes such a
+    /// `max_memory_usage` therefore must not raise the version - a version-4 receiver executes such a
     /// fragment identically.
     {
         QueryPlanSerializationSettings settings;
@@ -272,20 +272,20 @@ TEST(QueryPlanSerializationSettings, MinRequiredVersion)
 
         /// ... while the compression setting is consumed there and does raise it.
         settings[QueryPlanSerializationSetting::enable_join_in_memory_compression] = true;
-        EXPECT_EQ(settings.getMinRequiredVersion(), 4u);
+        EXPECT_EQ(settings.getMinRequiredVersion(), 5u);
 
         /// A hash algorithm listed after `grace_hash` is reached for a join kind `GraceHashJoin` does
         /// not support, and it does consume a step-local `max_memory_usage`, so the union of the two
-        /// requires version 4.
+        /// requires version 5.
         settings[QueryPlanSerializationSetting::enable_join_in_memory_compression] = false;
         settings[QueryPlanSerializationSetting::join_algorithm]
             = std::vector<JoinAlgorithm>{JoinAlgorithm::GRACE_HASH, JoinAlgorithm::HASH};
-        EXPECT_EQ(settings.getMinRequiredVersion(), 4u);
+        EXPECT_EQ(settings.getMinRequiredVersion(), 5u);
     }
 }
 
 /// `max_memory_usage` is consumed by `HashJoin::shrinkStoredBlocksToFit` even with compression off,
-/// and a fragment without compression is serialized below version 4, so the stream omits it.
+/// and a fragment without compression is serialized below version 5, so the stream omits it.
 /// JoinStepLogical::deserialize then restores it from the receiver's query context settings, keyed
 /// on the changed flag: a value read from the stream must be marked changed (so an explicitly sent
 /// value - even one equal to the default - is never overridden), and a value absent from the stream
@@ -295,11 +295,11 @@ TEST(QueryPlanSerializationSettings, MaxMemoryUsageChangedFlagAfterRoundTrip)
     QueryPlanSerializationSettings settings;
     settings[QueryPlanSerializationSetting::max_memory_usage] = 12345;
 
-    /// A version-4 stream carries the value; the receiver sees it as changed.
-    EXPECT_TRUE(roundTrip(settings, 4).isChanged("max_memory_usage"));
+    /// A version-5 stream carries the value; the receiver sees it as changed.
+    EXPECT_TRUE(roundTrip(settings, 5).isChanged("max_memory_usage"));
 
-    /// A version-3 stream omits it; the receiver sees it as unchanged and falls back.
-    EXPECT_FALSE(roundTrip(settings, 3).isChanged("max_memory_usage"));
+    /// A version-4 stream omits it; the receiver sees it as unchanged and falls back.
+    EXPECT_FALSE(roundTrip(settings, 4).isChanged("max_memory_usage"));
 
     /// A default-constructed instance has nothing changed.
     EXPECT_FALSE(QueryPlanSerializationSettings{}.isChanged("max_memory_usage"));

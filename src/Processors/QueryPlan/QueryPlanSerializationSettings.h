@@ -68,7 +68,7 @@ struct QueryPlanSerializationSettings
     /// changing the receiver's behavior, i.e. the version below which `writeChangedBinary` would
     /// omit a version-gated setting whose value actually matters. Returns the baseline version 1
     /// when omitting the version-gated settings degrades gracefully (the receiver then behaves like
-    /// an older server); in particular, a version-4 setting merely being marked changed does not
+    /// an older server); in particular, a version-5 setting merely being marked changed does not
     /// raise the version, because steps mark every serialized setting changed even at its default.
     UInt64 getMinRequiredVersion() const;
 
@@ -81,7 +81,7 @@ struct QueryPlanSerializationSettings
     /// Whether the serializing join step's kind can resolve to an implementation that consults
     /// `enable_join_in_memory_compression`. CROSS (and COMMA, always executed as CROSS) join keeps
     /// its own dedicated threshold-based compression path and PASTE join stores no build side, so
-    /// their fragments must not be raised to the version carrying the setting - a pre-version-4
+    /// their fragments must not be raised to the version carrying the setting - a pre-version-5
     /// receiver would reject them during a rolling upgrade for a setting they never consume. Not a
     /// serialized setting; it only feeds getMinRequiredVersion. Defaults to true so a step that
     /// does not know its join kind keeps the conservative version bump.
@@ -97,8 +97,8 @@ struct QueryPlanSerializationSettings
     /// Whether `MergeJoin` supports the serializing join step's shape (its kind, strictness and
     /// single-clause ON expression), i.e. whether `join_algorithm = 'partial_merge'` /
     /// `'prefer_partial_merge'` really builds a `MergeJoin` for it and `'auto'` really builds a
-    /// `JoinSwitcher`. Those implementations consume none of the version-4 settings (a `JoinSwitcher`
-    /// only the compression one), so such a fragment must not be raised to version 4 just because the
+    /// `JoinSwitcher`. Those implementations consume none of the version-5 settings (a `JoinSwitcher`
+    /// only the compression one), so such a fragment must not be raised to version 5 just because the
     /// `join_algorithm` set also contains a hash fallback that will never be reached. Not a serialized
     /// setting; it only feeds getMinRequiredVersion. Defaults to false so a step that does not know
     /// its shape keeps the conservative version bump.
