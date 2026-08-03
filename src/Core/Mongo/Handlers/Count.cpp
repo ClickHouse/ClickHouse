@@ -1,22 +1,104 @@
 #include <Core/Mongo/Handler.h>
 #include <Core/Mongo/Handlers/Count.h>
 #include <Core/Mongo/Handlers/HandlerRegistry.h>
+#include <Parsers/Mongo/ParserMongoQuery.h>
+#include <Parsers/Mongo/parseMongoQuery.h>
+
+#include <IO/WriteBufferFromString.h>
+#include <Common/Exception.h>
 
 #include <bson/bson.h>
 #include <fmt/format.h>
+#include <rapidjson/document.h>
+#include <rapidjson/stringbuffer.h>
+#include <rapidjson/writer.h>
+
+namespace DB::ErrorCodes
+{
+extern const int BAD_ARGUMENTS;
+}
 
 namespace DB::MongoProtocol
 {
 
+namespace
+{
+
+/// The count options `limit` and `skip` bound the documents being counted. Mongo reads a
+/// negative `limit` as its absolute value, the same way `find` does.
+Int64 getCountOption(const rapidjson::Value & json, const char * name)
+{
+    auto it = json.FindMember(name);
+    if (it == json.MemberEnd() || it->value.IsNull())
+        return 0;
+    if (!it->value.IsNumber())
+        throw Exception(ErrorCodes::BAD_ARGUMENTS, "The '{}' of a 'count' command must be a number", name);
+    return it->value.IsInt64() ? it->value.GetInt64() : static_cast<Int64>(it->value.GetDouble());
+}
+
+}
+
 std::vector<Document> CountHandler::handle(const std::vector<OpMessageSection> & documents, std::shared_ptr<QueryExecutor> executor)
 {
-    auto collection = getCollectionRef(documents[0].documents[0], "count");
+    const auto & document = documents[0].documents[0];
+    auto collection = getCollectionRef(document, "count");
 
-    auto output = executor->execute(fmt::format("SELECT count() FROM {}", collection.getQualifiedName()));
+    auto json_representation = document.getRapidJSONRepresentation();
+
+    /// `count` is the size of the result of a `find`, so its filter takes exactly the same
+    /// path as the filter of a `find` - including the normalization of subdocument paths.
+    String serialized_filter = "{}";
+    if (auto query_it = json_representation.FindMember("query");
+        query_it != json_representation.MemberEnd() && !query_it->value.IsNull())
+    {
+        if (!query_it->value.IsObject())
+            throw Exception(ErrorCodes::BAD_ARGUMENTS, "The 'query' of a 'count' command must be a document");
+
+        rapidjson::StringBuffer buffer;
+        rapidjson::Writer<rapidjson::StringBuffer> writer(buffer);
+        query_it->value.Accept(writer);
+        serialized_filter = modifyFilter(buffer.GetString());
+    }
+
+    auto limit = getCountOption(json_representation, "limit");
+    auto skip = getCountOption(json_representation, "skip");
+    if (skip < 0)
+        throw Exception(ErrorCodes::BAD_ARGUMENTS, "The 'skip' of a 'count' command must not be negative");
+
+    auto mongo_dialect_query = fmt::format("db.{}.find({})", collection.collection, serialized_filter);
+    if (skip != 0)
+        mongo_dialect_query += fmt::format(".skip({})", skip);
+    if (limit != 0)
+        mongo_dialect_query += fmt::format(".limit({})", limit < 0 ? -limit : limit);
+
+    auto parser = Mongo::ParserMongoQuery(10000, 10000, 10000);
+    auto ast = Mongo::parseMongoQuery(
+        parser,
+        mongo_dialect_query.data(),
+        mongo_dialect_query.data() + mongo_dialect_query.size(),
+        "",
+        10000,
+        10000,
+        10000,
+        collection.database);
+
+    String sql_query;
+    {
+        WriteBufferFromString sql_buffer(sql_query);
+        ast->format(sql_buffer, IAST::FormatSettings(true));
+    }
+
+    auto output = executor->execute(fmt::format("SELECT count() FROM ({}) FORMAT TSV", sql_query));
+
+    /// A ClickHouse table is free to hold more rows than an `int32` can count.
+    Int64 count = std::stoll(output);
 
     bson_t * bson_doc = bson_new();
 
-    BSON_APPEND_INT32(bson_doc, "n", std::stoi(output));
+    if (count <= INT32_MAX)
+        BSON_APPEND_INT32(bson_doc, "n", static_cast<int32_t>(count));
+    else
+        BSON_APPEND_INT64(bson_doc, "n", count);
     BSON_APPEND_DOUBLE(bson_doc, "ok", 1.0);
 
     std::vector<Document> result;
