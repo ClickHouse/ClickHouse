@@ -5,8 +5,7 @@ float64 break stopped promptly
 TIMEOUT_EXCEEDED
 float32 throw stopped promptly
 expanding kill returned promptly
-degenerate kill returned promptly
-nan kill returned promptly
 ['sx1q','sx1r','sx32','sx1w','sx1x','sx38']
 2048000
+2000000	0
 2000000	0
