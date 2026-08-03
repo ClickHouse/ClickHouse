@@ -118,4 +118,15 @@ insert into sequence_test_variants values (0,0),(1,2),(2,0),(3,0),(4,2);
 -- First must return the earlier, shorter partial [0], not the longer, later one [2,3].
 select 'First prefers earliest over longest' as test, [0] = sequenceMatchEventsFirst('(?1)(?1)(?2)')(time, data = 0, data = 1, data = 2) from sequence_test_variants;
 
+-- Test: First must prefer a later *complete* match over an earlier *partial* one.
+-- An earlier anchor producing only a partial match must not shadow a genuine complete match that
+-- starts at a later position.
+drop table if exists sequence_test_variants;
+create table sequence_test_variants (time UInt32, event String) engine=MergeTree ORDER BY tuple();
+insert into sequence_test_variants values (1, 'A'), (2, 'A'), (3, 'B');
+
+-- Pattern (?1)(?2): anchored at time 1, action1 (A) matches but action2 (B) fails at time 2 (A) ->
+-- partial [1]. The complete match [2,3] (A then B) starts right after. First must return [2,3].
+select 'First prefers a later complete match over an earlier partial' as test, [2,3] = sequenceMatchEventsFirst('(?1)(?2)')(time, event = 'A', event = 'B') from sequence_test_variants;
+
 drop table sequence_test_variants;

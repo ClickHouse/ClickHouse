@@ -585,10 +585,20 @@ protected:
     template <typename EventEntry>
     VectorWithMemoryTracking<T> backtrackingMatchEventsFirst(EventEntry & events_it, const EventEntry events_end) const
     {
-        /// Anchored: test each position in turn for a match starting exactly there. A plain
-        /// (unanchored) call can silently skip ahead and return the longest match found anywhere
-        /// in the remaining suffix rather than the one starting earliest, which would contradict
-        /// the documented "first, unlike sequenceMatchEvents which returns the longest" semantics.
+        /// A plain (unanchored) call already correctly finds the earliest-starting *complete* match
+        /// if one exists anywhere: backtracking explores start positions in strict left-to-right
+        /// order and returns the instant any full match completes, so it can never skip a match
+        /// that starts earlier in favor of one that starts later. Try that first.
+        auto probe_it = events_it;
+        VectorWithMemoryTracking<T> whole_match;
+        if (backtrackingMatch<EventEntry, true>(probe_it, events_end, &whole_match))
+            return whole_match;
+
+        /// No complete match exists anywhere. Fall back to the earliest partial, testing each
+        /// position in turn for a match starting exactly there: a plain (unanchored) call's partial
+        /// result on total failure is the longest one found anywhere in the remaining suffix, not
+        /// necessarily the one starting earliest, which would contradict the documented "first,
+        /// unlike sequenceMatchEvents which returns the longest" semantics.
         while (events_it != events_end)
         {
             VectorWithMemoryTracking<T> current_match;
