@@ -193,12 +193,9 @@ void listFilesWithRegexpMatchingImpl(
         }
     };
 
-    /// Split the pattern into its literal prefix and the glob suffix using the same
-    /// classification as the matcher. Under the AST parser a literal brace group such as
-    /// "{a}" is not a glob, so a path like "data_{x}.csv" must take the exact-path branch
-    /// below (a raw find_first_of("*?{") would misroute it to directory enumeration, which
-    /// changes observable behavior — e.g. an exactly-named readable file inside an
-    /// unlistable directory would not be found).
+    /// Split at the first glob under the matcher's classification: a literal brace path
+    /// like "data_{x}.csv" must take the exact-path branch below, not directory enumeration
+    /// (which e.g. cannot find a readable file inside an unlistable directory).
     const size_t first_glob_pos = use_glob_ast
         ? GlobAST::GlobString(for_match).firstGlobPosition()
         : for_match.find_first_of("*?{");
@@ -336,11 +333,8 @@ std::vector<std::string> listFilesWithRegexpMatching(
     if (use_glob_ast)
     {
         GlobAST::GlobString glob(for_match);
-        /// Expand enum globs into separate traversals only when the expansion stays within
-        /// the budget; otherwise traverse the unexpanded pattern once (listFilesWithRegexpMatchingImpl
-        /// matches enums per directory level via GlobMatcher). This mirrors
-        /// StorageObjectStorageSource::createFileIterator, which falls back to list-and-filter
-        /// instead of throwing when the expansion would be too large.
+        /// When the expansion exceeds the budget, traverse the unexpanded pattern once
+        /// (enums are then matched per directory level) instead of throwing.
         if (glob.expansionSize() <= max_expansion)
             for_match_paths_expanded = glob.expand(max_expansion);
         else

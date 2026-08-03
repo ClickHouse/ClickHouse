@@ -351,17 +351,10 @@ std::shared_ptr<IObjectIterator> StorageObjectStorageSource::createFileIterator(
     /// so losing the source index would make `WebObjectStorage::readObject` treat all shards as failover
     /// for that path and silently miss rows. Always use `GlobIterator` for web listings, which preserves
     /// the source index.
-    /// Expand to exact keys only for the same shape the legacy parser expands: exactly one
-    /// enum group and nothing else. `KeysIterator` checks every generated key and throws on a
-    /// missing one when `ignore_non_existent_file = 0`, while `GlobIterator` lists and simply
-    /// skips absent alternatives. Expanding a multi-enum pattern such as `file{a,b}{1,2}.csv`
-    /// here would make it fail on the first absent cartesian-product member instead of
-    /// returning the keys that do exist, as the legacy listing path does.
-    /// An enum whose alternatives contain a `?`, as in `file{a?,b?}.csv`, is excluded too:
-    /// `hasExactlyOneEnum` accepts that shape, but `expand` keeps the `?` as literal text, so
-    /// expanding would probe a key named `filea?.csv` instead of listing and matching
-    /// `filea1.csv` the way the legacy path does. `hasQuestionOrAsterisk` covers those `?`,
-    /// while a `*` inside a brace group makes the group literal text rather than an enum.
+    /// Expand to exact keys only for the shape the legacy parser expands (exactly one enum
+    /// group, no wildcards — including `?` inside an enum alternative, which `expand` would
+    /// keep as literal text); everything else stays on the listing path, which skips absent
+    /// alternatives instead of failing on them.
     bool can_expand = !match_web_paths_only
         && use_glob_ast
         && glob_string->hasExactlyOneEnum()

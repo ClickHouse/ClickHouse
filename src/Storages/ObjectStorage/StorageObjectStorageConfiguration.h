@@ -81,17 +81,11 @@ public:
         bool hasGlobsIgnorePlaceholders() const;
         bool hasGlobs() const;
         /// Setting-aware variants: with use_glob_ast the path is classified by the AST
-        /// parser (GlobAST::GlobString), under which a literal brace group such as "{a}"
-        /// is not a glob; otherwise they fall back to the raw "*?{" scan above. Callers
-        /// that gate read/write behavior on "does this path glob" must use these with the
-        /// same use_glob_ast_parser value as the read path, or reads and writes disagree
-        /// about whether the table is readonly.
+        /// parser, under which a literal brace group such as "{a}" is not a glob. Pass the
+        /// same use_glob_ast_parser value that drives the matcher.
         bool hasGlobsIgnorePlaceholders(bool use_glob_ast) const;
         bool hasGlobs(bool use_glob_ast) const;
         std::string cutGlobs(bool supports_partial_prefix) const;
-        /// Setting-aware variant: with use_glob_ast the listing prefix is cut at the first
-        /// expression the AST parser classifies as a glob, so a literal brace group such as
-        /// "tenant_{42}/" stays inside the prefix instead of truncating it at the raw '{'.
         std::string cutGlobs(bool supports_partial_prefix, bool use_glob_ast) const;
     };
 
@@ -152,9 +146,8 @@ public:
 
     virtual bool isArchive() const { return false; }
     bool isPathInArchiveWithGlobs() const;
-    /// Setting-aware variant: with use_glob_ast_parser enabled in the given context the
-    /// path inside the archive is classified by the AST parser, under which a literal
-    /// brace group is not a glob.
+    /// Setting-aware variant: classifies the path inside the archive with the parser
+    /// selected by use_glob_ast_parser in the given context.
     bool isPathInArchiveWithGlobs(const ContextPtr & context) const;
     virtual std::string getPathInArchive() const;
 

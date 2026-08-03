@@ -380,9 +380,6 @@ bool StorageObjectStorageConfiguration::isPathInArchiveWithGlobs(const ContextPt
 {
     if (!context->getSettingsRef()[Setting::use_glob_ast_parser])
         return isPathInArchiveWithGlobs();
-    /// Under the AST parser a literal brace group such as "data_{x}.csv" is not a glob:
-    /// the archive iterator must take the exact `fileExists` path for it instead of
-    /// enumerating every archive entry against a filter.
     return GlobAST::GlobString(getPathInArchive()).hasGlobs();
 }
 

@@ -97,9 +97,8 @@ namespace DB
 namespace GlobAST
 {
 
-/// A parsed "{M..N}" range: the endpoints as written (start may exceed end for a
-/// descending range — matching normalizes to [min, max]) plus the zero-padding
-/// metadata of each endpoint's text, from which the effective padding width is derived.
+/// A parsed "{M..N}" range: the endpoints as written (matching normalizes to
+/// [min, max]) plus the zero-padding metadata of each endpoint's text.
 struct Range
 {
     size_t start = 0;
@@ -177,28 +176,16 @@ public:
     std::string dump() const;
     size_t cardinality() const;
 
-    /// Number of strings expand(expand_ranges) would produce: the product of the enum
-    /// alternative counts (and range lengths when expand_ranges is set). Constants,
-    /// wildcards, and unexpanded ranges contribute a factor of 1, because expand() renders
-    /// them as literal text rather than enumerating them. Saturates at SIZE_MAX. Unlike
-    /// cardinality(), a wildcard does not make the whole product SIZE_MAX. Use this to
-    /// decide whether expand() stays within a budget without risking it throwing.
+    /// Number of strings expand(expand_ranges) would produce; unlike cardinality(),
+    /// a wildcard does not saturate the product.
     size_t expansionSize(bool expand_ranges = false) const;
 
-    /// Expand enum globs (and optionally range globs) into concrete path strings
-    /// via cartesian product.
-    /// Non-expanded expressions (constants, wildcards, unexpanded ranges) are rendered as literal text.
-    /// E.g. "file{a,b}{1,2}.csv" → ["filea1.csv", "filea2.csv", "fileb1.csv", "fileb2.csv"]
-    /// With expand_ranges=true: "file{1..3}.csv" → ["file1.csv", "file2.csv", "file3.csv"]
-    /// Throws if the total expansion would exceed max_expansion.
+    /// Expand enum (and optionally range) globs into concrete strings via cartesian
+    /// product; everything else is rendered as literal text. Throws above max_expansion.
     static constexpr size_t DEFAULT_MAX_EXPANSION = 1000;
     std::vector<std::string> expand(size_t max_expansion = DEFAULT_MAX_EXPANSION, bool expand_ranges = false) const;
 
-    /// Match a candidate string against this glob pattern directly (no regex).
-    /// Handles CONSTANT, WILDCARD (?, *, **), RANGE, and ENUM expressions.
-    /// This is more efficient than converting to regex and using re2::RE2::FullMatch,
-    /// especially for RANGE patterns where regex produces O(N) alternations
-    /// but direct matching does O(1) numeric bounds checking.
+    /// Whole-string match of a candidate against this glob pattern, without a regex.
     bool matches(std::string_view candidate) const;
 
     bool hasGlobs() const { return has_globs; }
@@ -206,11 +193,8 @@ public:
     bool hasEnums() const { return has_enums; }
     bool hasQuestionOrAsterisk() const { return has_question_or_asterisk; }
 
-    /// Byte offset of the first glob expression (wildcard, range or enum) in the input,
-    /// or std::string::npos when the whole pattern is literal text. Unlike
-    /// find_first_of("*?{") on the raw string, a literal brace group such as "{a}" or
-    /// "{}" does not count as a glob. Use this to split a path into its literal prefix
-    /// and the glob suffix under this parser's classification.
+    /// Byte offset of the first glob expression, or npos when the whole pattern is
+    /// literal text (a literal brace group such as "{a}" does not count as a glob).
     size_t firstGlobPosition() const;
 
     bool hasExactlyOneEnum() const;
@@ -222,9 +206,6 @@ private:
     std::vector<std::string_view> tryParseEnumMatcher(const std::string_view & input) const;
     std::optional<Range> tryParseRangeMatcher(const std::string_view & input) const;
 
-    /// Recursive helper for matches(): tries to match candidate[pos..] against expressions[expr_idx..].
-    /// memo is a flat array of size (candidate.size()+1) * (expressions.size()+1), tri-state:
-    ///   0 = unknown, 1 = true, -1 = false.
     bool matchesImpl(std::string_view candidate, size_t pos, size_t expr_idx, std::vector<int8_t> & memo) const;
 
     std::vector<Expression> expressions;

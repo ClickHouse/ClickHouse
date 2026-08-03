@@ -84,11 +84,6 @@ String StorageObjectStorage::getPathSample(ContextPtr context)
     if (context->getSettingsRef()[Setting::use_hive_partitioning])
         local_distributed_processing = false;
 
-    /// Classify and expand the path using the same parser contract as the read iterator
-    /// (StorageObjectStorageSource::createFileIterator), so schema-inference sampling never
-    /// disagrees with what is actually read. In particular, with use_glob_ast_parser = 1 a
-    /// brace group like "{a}" or "{a,}" is literal text, not an enum, so it must not be
-    /// expanded here (the legacy parser would strip it to "a").
     std::optional<GlobAST::GlobString> glob_string;
     if (use_glob_ast)
         glob_string.emplace(path.path);
@@ -120,15 +115,10 @@ String StorageObjectStorage::getPathSample(ContextPtr context)
             expanded = expandSelectionGlob(path.path);
         }
 
-        /// Returning the first expansion without checking existence is only sound when every
-        /// alternative is layout-equivalent for sample-path purposes: the sample feeds
-        /// hive-partition column discovery, which reads the `key=value` segments of the
-        /// directory part. Enum alternatives may contain '/', so for a pattern like
-        /// "root/{year=2024/file.parquet,plain.parquet}" the alternatives disagree about the
-        /// layout, while the real read path (`KeysIterator` with `ignore_non_existent_file`)
-        /// skips missing keys and may read only the other alternative. Use the fast path only
-        /// when all expansions share the same directory part; otherwise fall through to the
-        /// listing iterator below, which samples what would actually be read.
+        /// The first expansion is returned without an existence check, which is sound only
+        /// when all expansions share the same directory part (the sample feeds hive-partition
+        /// column discovery). Enum alternatives may contain '/'; when they disagree about the
+        /// layout, fall through to the listing iterator, which samples what is actually read.
         if (!expanded.empty())
         {
             const auto directory_part = [](const std::string & p) { return std::string_view(p).substr(0, p.find_last_of('/') + 1); };
@@ -727,10 +717,6 @@ SinkToStoragePtr StorageObjectStorage::write(
                         raw_path.path);
     }
 
-    /// Classify the path with the same parser as the read side (see getPathSample and
-    /// StorageObjectStorageSource::createFileIterator): with use_glob_ast_parser = 1 a
-    /// literal brace group like "{a}" is not a glob, so a table on such a path is
-    /// readable as an exact key and must stay writable too.
     if (raw_path.hasGlobsIgnorePlaceholders(local_context->getSettingsRef()[Setting::use_glob_ast_parser]))
     {
         throw Exception(ErrorCodes::DATABASE_ACCESS_DENIED,
@@ -802,8 +788,6 @@ void StorageObjectStorage::truncate(
                         "Truncate is not supported for data lake engine");
     }
 
-    /// Same parser contract as write and the read side: a literal brace group is not a
-    /// glob under use_glob_ast_parser = 1 and must not make the table readonly.
     if (path.hasGlobsIgnorePlaceholders(context->getSettingsRef()[Setting::use_glob_ast_parser]))
     {
         throw Exception(

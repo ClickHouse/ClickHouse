@@ -67,11 +67,6 @@ namespace GlobAST
 
 namespace
 {
-/// Zero-padding width for a range, matching the legacy regex contract: padding is
-/// derived from the LOWER endpoint after normalization. It applies only when the
-/// lower endpoint's text has a leading zero and more than one digit; the width is
-/// then the maximum of both endpoints' digit counts. So {0..010} -> width 1 ->
-/// unpadded (matches f10, not f010), while {00..10} -> width 2.
 size_t rangePadWidth(const Range & range)
 {
     const bool lo_is_start = range.start <= range.end;
@@ -218,7 +213,6 @@ size_t GlobString::firstGlobPosition() const
     {
         if (expression.type() != ExpressionType::CONSTANT)
             return offset;
-        /// A CONSTANT's data is a view into the input, so its size is its exact extent there.
         offset += std::get<std::string_view>(expression.getData()).size();
     }
 
@@ -448,9 +442,6 @@ std::vector<std::string> GlobString::expand(size_t max_expansion, bool expand_ra
 
 bool GlobString::matches(std::string_view candidate) const
 {
-    /// Memoization table: (candidate_pos, expression_idx) -> tri-state.
-    /// This avoids exponential backtracking for patterns with multiple wildcards.
-    /// The state space also bounds the matching work, so cap it before allocating.
     static constexpr size_t max_match_states = 1ULL << 26;
     const size_t cols = expressions.size() + 1;
     size_t memo_size = 0;
@@ -461,8 +452,6 @@ bool GlobString::matches(std::string_view candidate) const
             "Consider simplifying the glob pattern.",
             expressions.size(), candidate.size(), max_match_states);
 
-    /// matches() runs inside file/object-storage listing loops, once per listed key,
-    /// so reuse the buffer across calls instead of allocating a fresh one per key.
     thread_local std::vector<int8_t> memo;
     memo.assign(memo_size, 0);
     const bool result = matchesImpl(candidate, 0, 0, memo);
@@ -480,9 +469,8 @@ bool GlobString::matches(std::string_view candidate) const
 
 bool GlobString::matchesImpl(std::string_view candidate, size_t pos, size_t expr_idx, std::vector<int8_t> & memo) const
 {
-    /// The memo table bounds the heap, but every backtracking expression (an asterisk, an
-    /// enum, a non-padded range) still adds one recursion frame, so a pattern made of many
-    /// such expressions can exhaust the thread stack. Turn that into an exception.
+    /// Every backtracking expression adds a recursion frame; fail with an exception
+    /// instead of exhausting the thread stack.
     checkStackSize();
 
     const size_t cols = expressions.size() + 1;
@@ -754,12 +742,9 @@ void GlobString::parse()
 
             if (position + 1 < input.length() && input[position] == input[position + 1] && input[position] == '*')
             {
-                /// A "**" that forms a whole path segment — bounded by '/' (or the start
-                /// of the glob) on the left and by '/' on the right — is a globstar: it
-                /// matches zero or more directory components, consuming the trailing '/'.
-                /// A "**" adjacent to other characters in its segment (e.g. "a**/", or a
-                /// run of 3+ stars like "***/") keeps the legacy DOUBLE_ASTERISK meaning.
-                /// Mirrors the same rule in makeRegexpPatternFromGlobs.
+                /// A "**" that forms a whole path segment is a globstar, consuming the
+                /// trailing '/'; otherwise it keeps the legacy DOUBLE_ASTERISK meaning
+                /// (same rule as makeRegexpPatternFromGlobs).
                 if (position + 2 < input.length() && input[position + 2] == '/'
                     && (position == 0 || input[position - 1] == '/'))
                 {
