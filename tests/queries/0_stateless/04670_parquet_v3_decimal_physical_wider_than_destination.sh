@@ -26,9 +26,9 @@ $CLICKHOUSE_LOCAL -q "SELECT count(), sum(k) FROM file('$DATA/04670_decimal_flba
 echo '-- a WHERE over the narrowed column still returns the right rows'
 $CLICKHOUSE_LOCAL -q "SELECT count(), sum(k) FROM file('$DATA/04670_decimal_int64_precision9_dict.parquet', Parquet) WHERE k > 50000 SETTINGS input_format_parquet_filter_push_down = 1"
 
-# Row group statistics hold a value of the physical width, so comparing them against a key range of
-# the narrower declared type can prune row groups that do contain matching rows. The two fixtures
-# below differ only in declared precision, so the second one shows the layout does admit pruning.
+# Row group statistics decode to a value of the physical width, which is not the type the key range
+# is built from, so they are not used on this shape. The two fixtures below differ only in declared
+# precision, so the second one shows the layout does admit pruning.
 prune_verdict() {
     $CLICKHOUSE_LOCAL --print-profile-events -q "$1" 2>&1 | awk '
         /ParquetReadRowGroups:/   { read   += $(NF-1) }
