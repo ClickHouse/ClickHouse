@@ -528,7 +528,7 @@ namespace
         const char * getName() const override { return "function name"; }
         bool parseImpl(Pos & pos, ASTPtr & node, Expected & expected) override
         {
-            ParserCompoundIdentifier parser(allow_query_parameter, true, Highlight::function);
+            ParserCompoundIdentifier parser(false, allow_query_parameter, Highlight::function);
             if (!parser.parse(pos, node, expected))
                 return false;
 
