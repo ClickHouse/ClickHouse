@@ -1,0 +1,20 @@
+part_name	String
+mark_number	UInt64
+rows_in_granule	UInt64
+toTime(c1)	Time
+1000
+304
+part_name	String
+mark_number	UInt64
+rows_in_granule	UInt64
+toTime(c1)	Time
+1000
+304
+2000
+304
+part_name	String
+mark_number	UInt64
+rows_in_granule	UInt64
+toTime(c1)	Time
+2000
+304
