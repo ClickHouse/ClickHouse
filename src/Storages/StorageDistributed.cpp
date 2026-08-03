@@ -458,8 +458,8 @@ StorageDistributed::StorageDistributed(
         throw Exception(ErrorCodes::BAD_ARGUMENTS, "Settings flush_on_detach=0 and background_insert_batch=1 are incompatible");
 
     StorageInMemoryMetadata storage_metadata;
-    /// Reached only when loading stored metadata that carries no column list: the creators infer an
-    /// omitted structure themselves, under the user's context.
+    /// Only a definition loaded from validated metadata reaches here with no columns; the creators
+    /// infer an omitted structure themselves, under the user's context.
     if (columns_.empty())
     {
         StorageID id = StorageID::createEmpty();
@@ -2224,9 +2224,11 @@ void registerStorageDistributed(StorageFactory & factory)
         ColumnsDescription columns = args.columns;
         if (columns.empty() && !(isLoadingFromExistingMetadata(args.mode) || args.query.attach_short_syntax))
         {
-            /// `getCluster` expands macros, so this is the cluster the constructor will use.
+            /// Expanded first, so this resolves the same cluster the constructor will: a Replicated
+            /// database's implicit cluster is found by the expanded name only.
+            const String expanded_cluster_name = local_context->getMacros()->expand(cluster_name);
             columns = getStructureOfRemoteTable(
-                *local_context->getCluster(cluster_name),
+                *local_context->getCluster(expanded_cluster_name),
                 StorageID{remote_database, remote_table},
                 local_context,
                 /* table_func_ptr = */ nullptr);
