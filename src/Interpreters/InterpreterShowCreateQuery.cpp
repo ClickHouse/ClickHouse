@@ -201,7 +201,13 @@ QueryPipeline InterpreterShowCreateQuery::executeImpl()
             throw Exception(ErrorCodes::SYNTAX_ERROR, "Temporary databases are not possible.");
         show_query->setDatabase(getContext()->resolveDatabase(show_query->getDatabase()));
         getContext()->checkAccess(AccessType::SHOW_DATABASES, show_query->getDatabase());
-        create_query = DatabaseCatalog::instance().getDatabase(show_query->getDatabase())->getCreateDatabaseQuery();
+        auto database = DatabaseCatalog::instance().getDatabase(show_query->getDatabase());
+        /// The definition of a read-only `Overlay` facade names every source database, so showing
+        /// it requires `SHOW DATABASES` on each of them: the facade must not widen the visibility
+        /// of the source database names either (see the `Overlay` access-control contract).
+        if (const auto * facade = DatabaseOverlay::asReadonlyFacade(database.get()))
+            facade->checkSourceDatabaseNamesVisible(getContext());
+        create_query = database->getCreateDatabaseQuery();
     }
 
     if (!create_query)

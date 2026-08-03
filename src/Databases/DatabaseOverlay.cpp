@@ -34,6 +34,7 @@ namespace ErrorCodes
     extern const int BAD_ARGUMENTS;
     extern const int UNKNOWN_TABLE;
     extern const int TABLE_IS_PERMANENTLY_READ_ONLY;
+    extern const int ACCESS_DENIED;
 }
 
 DatabaseOverlay::DatabaseOverlay(const String & name_, ContextPtr context_, bool readonly_)
@@ -150,6 +151,34 @@ void DatabaseOverlay::checkSourceTableAccessIfFacade(const StorageID & table_id,
 {
     if (const auto facade = tryGetReadonlyFacade(table_id.database_name))
         facade->checkSourceTableAccess(table_id.table_name, context_, access_to_check);
+}
+
+bool DatabaseOverlay::areSourceDatabaseNamesVisible(const ContextPtr & context_) const
+{
+    /// The `clickhouse-local` variant is registered programmatically and its definition carries no
+    /// engine clause at all, so there is nothing to disclose.
+    if (!readonly)
+        return true;
+
+    const auto & access = context_->getAccess();
+    for (const auto & name : source_names)
+        if (!access->isGranted(AccessType::SHOW_DATABASES, name))
+            return false;
+    return true;
+}
+
+void DatabaseOverlay::checkSourceDatabaseNamesVisible(const ContextPtr & context_) const
+{
+    if (areSourceDatabaseNamesVisible(context_))
+        return;
+
+    /// Deliberately names only the facade: naming the source that failed the check would leak
+    /// exactly what the check protects.
+    throw Exception(
+        ErrorCodes::ACCESS_DENIED,
+        "Not enough privileges to show the definition of database {}: it is an Overlay facade, and its definition "
+        "lists its source databases, which requires SHOW DATABASES on every one of them",
+        backQuote(getDatabaseName()));
 }
 
 std::optional<StorageID> DatabaseOverlay::getSourceTableIdForReadonlyFacade(const StorageID & written_id, const StoragePtr & storage)

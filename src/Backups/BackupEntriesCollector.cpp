@@ -9,6 +9,7 @@
 #include <Backups/IBackupCoordination.h>
 #include <Core/Settings.h>
 #include <Databases/IDatabase.h>
+#include <Databases/DatabaseOverlay.h>
 #include <Interpreters/Context.h>
 #include <Interpreters/DatabaseCatalog.h>
 #include <Interpreters/StorageID.h>
@@ -481,6 +482,13 @@ void BackupEntriesCollector::gatherDatabaseMetadata(
             LOG_WARNING(log, "Couldn't get a create query for database {}", backQuoteIfNeed(database_name));
             return;
         }
+
+        /// A backed-up `CREATE DATABASE ... ENGINE = Overlay(...)` names every source database of
+        /// the facade, so writing it into the backup requires `SHOW DATABASES` on all of them, the
+        /// same gate the other database-metadata paths apply: `BACKUP DATABASE` on the facade must
+        /// not become a way around the source-database visibility model.
+        if (const auto * facade = DatabaseOverlay::asReadonlyFacade(database_info.database.get()))
+            facade->checkSourceDatabaseNamesVisible(context);
 
         auto * create = create_database_query->as<ASTCreateQuery>();
         if (create->getDatabase() != database_name)

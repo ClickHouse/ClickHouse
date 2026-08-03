@@ -165,6 +165,14 @@ The `Maybe you meant ...?` hints attached to unknown-table errors follow the sam
 misspelled facade name suggests a source table only to a user who holds the `SHOW` privilege
 on both the `Overlay` and that source table, so error messages do not reveal hidden names.
 
+The facade's own definition — `Overlay('db_a', 'db_b', ...)` — names its source databases, so it
+is subject to the visibility of those databases too: `SHOW CREATE DATABASE` on the facade and
+`BACKUP DATABASE` of the facade require `SHOW DATABASES` on **every** source database and are
+denied otherwise, and the `engine_full` column of `system.databases` reports the bare `Overlay`
+engine, without the member list, to a user who is not granted on all of them. This keeps the
+facade from disclosing the names of databases the user is not allowed to see; the denial message
+names only the facade, never a source.
+
 System views and metrics that aggregate or enumerate tables across all databases
 (`CHECK ALL TABLES`, `system.graphite_retentions`, `system.rocksdb`, `system.s3_queue_settings`,
 `system.azure_queue_settings`, and the asynchronous mutation / detached-part metrics)

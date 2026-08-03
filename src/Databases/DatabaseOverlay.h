@@ -214,6 +214,20 @@ public:
     static bool isSourceTableHiddenFromShow(
         const ContextAccessWrapper & access, const String & written_database_name, const String & written_table_name, const StoragePtr & storage);
 
+    /// True when the current user may see the facade's own definition. The definition of a
+    /// read-only facade is `Overlay('db_a', 'db_b', ...)` — it names every source database, so
+    /// formatting it for a user who is not granted on those databases would disclose their names
+    /// through the facade, bypassing the source-database visibility model. `SHOW DATABASES` on
+    /// every source name is required, the same privilege that makes a database visible directly.
+    /// Always true for the non-readonly (`clickhouse-local`) variant, whose definition names no
+    /// source databases.
+    bool areSourceDatabaseNamesVisible(const ContextPtr & context) const;
+
+    /// Throwing form of `areSourceDatabaseNamesVisible` for the database-metadata queries that
+    /// report a denial (`SHOW CREATE DATABASE`, `BACKUP DATABASE`). The message names only the
+    /// facade, never a source, so a denied user learns nothing about which sources are hidden.
+    void checkSourceDatabaseNamesVisible(const ContextPtr & context) const;
+
 protected:
     ASTPtr getCreateDatabaseQueryImpl() const override TSA_REQUIRES(mutex);
 
