@@ -264,10 +264,11 @@ The performance test report is described in detail [here](https://github.com/Cli
 
 This is not a check on your pull request: it runs on `master` every hour, and it may revert a pull request that has already been merged.
 
-The job takes the failures the CI database recorded for `master` over the last 24 hours and groups them by test name and check name, the pair that identifies a failure there.
-Failures that are not attributed to any test, such as a build failure or a job that ran out of time, have an empty test name and are grouped by their check alone; a check that failed only because a test in it failed is not counted a second time.
-The same test failing in two different checks is two failures: they can have different causes, and each is investigated on its own evidence.
-A group that failed more than twice is handed to an AI agent, which is given the repository, the `gh` CLI and read-only access to the CI database, and answers a single question: was this failure introduced by a recently merged pull request, and which one.
+The job takes the failing tests the CI database recorded for `master` over the last 24 hours and groups them by test name, across every check the test failed in.
+The same test failing in the debug and in the tsan build is one failure with one cause to look for, and the checks it appeared in go to the investigation as evidence: a change that breaks a test usually breaks it in several builds at once.
+Failures that are not attributed to any test, such as a build failure or a job that ran out of time, are left out: "why does this check fail" has no single answer to revert on.
+A test that failed on more than one `master` commit is handed to an AI agent, which is given the repository, the `gh` CLI and read-only access to the CI database, and answers a single question: was this failure introduced by a recently merged pull request, and which one.
+The threshold counts commits rather than failing rows, so one bad commit that fails in three builds is still a single occurrence and is not acted on.
 
 Only an unambiguous answer leads to an action.
 When the agent reports a regression with high confidence, and the named pull request passes the safety checks (merged into `master` within the last three days, not a revert itself, not already reverted, and the revert applies cleanly), the job reverts it, merges the revert immediately without waiting for checks, and opens a draft pull request titled `Reapply "..."` that reintroduces the change.
@@ -280,10 +281,10 @@ If your pull request was reverted:
 - The `Reapply "..."` draft pull request holds your change unchanged. Fix the failure on that branch, mark it ready for review, and let it go through normal CI.
 
 Every investigation is recorded in the `checks_investigated` table of the CI database, including the ones that revert nothing.
-The table joins with `checks` on `test_name`, `check_name`, `commit_shas`, `report_url` and `offending_pull_request_number`, so the history of what the job looked at, what it concluded and what it did is queryable on [play.clickhouse.com](https://play.clickhouse.com/):
+The table joins with `checks` on `test_name`, `check_names`, `commit_shas`, `report_url` and `offending_pull_request_number`, so the history of what the job looked at, what it concluded and what it did is queryable on [play.clickhouse.com](https://play.clickhouse.com/):
 
 ```sql
-SELECT investigation_time, test_name, check_name, failure_count, verdict, confidence, action, explanation
+SELECT investigation_time, test_name, check_names, failure_count, commit_count, verdict, confidence, action, explanation
 FROM checks_investigated
 WHERE investigation_time >= now() - INTERVAL 7 DAY
 ORDER BY investigation_time DESC;
