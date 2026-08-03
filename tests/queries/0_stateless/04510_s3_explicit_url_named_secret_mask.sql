@@ -333,3 +333,13 @@ WHERE current_database = currentDatabase()
                                   -- initiator's initial_query_id but gets a fresh query_id
   AND event_date >= yesterday() AND event_time > now() - INTERVAL 5 MINUTE
 ORDER BY event_time_microseconds;
+
+-- The transcript above is scoped to the statements this test issued. A Replicated database also
+-- logs each DDL from the replay worker, which re-masks a rewritten AST independently, so assert
+-- the masking property over every row this test produced, replay rows included. count() > 0 keeps
+-- an empty row set from passing vacuously.
+SELECT count() > 0, countIf(query LIKE '%SEKRIT%')
+FROM system.query_log
+WHERE current_database = currentDatabase()
+  AND type != 'QueryStart'
+  AND event_date >= yesterday() AND event_time > now() - INTERVAL 5 MINUTE;
