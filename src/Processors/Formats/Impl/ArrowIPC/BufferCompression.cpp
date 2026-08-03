@@ -39,9 +39,9 @@ UInt64 readLittleEndian(const char * p)
     return v;
 }
 
-/// The most the blocks of one LZ4 frame can expand to, without decompressing any of them.
-/// `LZ4F_decompress` caps each block's output at the frame's maximum block size, so that cap summed
-/// over the blocks bounds the frame. `header_size` is where its blocks begin.
+/// The most the blocks of one LZ4 frame can expand to, without decompressing any of them: each
+/// block's output is capped both by the frame's maximum block size and by what its own stored bytes
+/// can encode, and those per-block caps summed bound the frame. `header_size` is where its blocks begin.
 UInt64 lz4BlockOutputBound(const LZ4F_frameInfo_t & info, const char * src, size_t size, size_t header_size)
 {
     /// `LZ4F_getBlockSize` maps these, but is declared only in the static-linking section of
@@ -59,6 +59,8 @@ UInt64 lz4BlockOutputBound(const LZ4F_frameInfo_t & info, const char * src, size
     static constexpr UInt32 UNCOMPRESSED_BLOCK_FLAG = 0x80000000;
     static constexpr size_t BLOCK_HEADER_SIZE = 4;
     static constexpr size_t CHECKSUM_SIZE = 4;
+    /// `block_size` is at most 4 MiB, so multiplying by this cannot wrap.
+    static constexpr size_t MAX_LZ4_BLOCK_EXPANSION = 255;
 
     UInt64 bound = 0;
     size_t pos = header_size;
@@ -83,7 +85,13 @@ UInt64 lz4BlockOutputBound(const LZ4F_frameInfo_t & info, const char * src, size
             pos += CHECKSUM_SIZE;
         }
         /// An uncompressed block is stored verbatim, so it expands to exactly its stored bytes.
-        bound += (block_header & UNCOMPRESSED_BLOCK_FLAG) ? block_size : max_block_size;
+        if (block_header & UNCOMPRESSED_BLOCK_FLAG)
+        {
+            bound += block_size;
+            continue;
+        }
+        /// A compressed block cannot expand past what its own stored bytes can encode either.
+        bound += std::min(max_block_size, block_size * MAX_LZ4_BLOCK_EXPANSION);
     }
     if (info.contentChecksumFlag == LZ4F_contentChecksumEnabled)
     {

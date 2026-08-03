@@ -256,11 +256,42 @@ def lz4_frame_with_stored_block(content_checksum=b"", trailing=b""):
             + struct.pack("<I", 0) + content_checksum + trailing)
 
 
+def lz4_frame_with_tiny_compressed_blocks(nblocks, literals=4):
+    """An LZ4 frame of `nblocks` literals-only compressed blocks, declaring no content size.
+
+    Each block stores 1 + `literals` bytes and produces `literals`, so crediting a whole
+    maxBlockSize per block would bound the frame thousands of times above what it can emit.
+    """
+    header = bytes([0x40, 0x70])  # no content size, blockSizeID 7 (4 MB)
+    block = bytes([literals << 4]) + b"\xff" * literals
+    return (LZ4_MAGIC + header + bytes([(xxh32(header) >> 8) & 0xFF])
+            + (struct.pack("<I", len(block)) + block) * nblocks + struct.pack("<I", 0))
+
+
 def write(name, data):
     open(f"{out}/{name}.arrows", "wb").write(bytes(data))
 
 
-big = 4 * 1024 ** 2
+def lz4_block_bound(data, prefix_off):
+    """What the frame at `prefix_off` can produce: per block, the least of the frame's maximum block
+    size and what the block's own stored bytes can encode."""
+    flg = data[prefix_off + 12]
+    p = prefix_off + 8 + 7 + (8 if flg & 0x08 else 0)
+    max_block = 64 * 1024 << (2 * (((data[prefix_off + 13] >> 4) & 7) - 4))
+    bound = 0
+    while True:
+        bh, = struct.unpack_from("<I", data, p)
+        p += 4
+        if bh == 0:
+            return bound
+        n = bh & 0x7FFFFFFF
+        bound += n if bh & 0x80000000 else min(max_block, n * 255)
+        p += n + (4 if flg & 0x10 else 0)
+
+
+# Larger than the file but below what one block can produce, so `consistent_large` is a resource
+# condition rather than a data error. Asserted, because the block bound follows the writer's output.
+big = 2 * 1024 ** 2
 # Far larger than any real size, but below the allocator's ceiling, so the frame comparison rather
 # than the total is what rejects these.
 forged = 100 * 1024 ** 3
@@ -295,6 +326,7 @@ write("no_declared_size_forged_prefixes", d)
 # NOT corrupt: prefix and frame agree on a size that one block really can produce. Larger than the
 # file, so reading it is a resource condition rather than a data error.
 d = bytearray(ch_lz4)
+assert big <= lz4_block_bound(d, ch_offs[0]), "big exceeds what the frame's blocks can produce"
 struct.pack_into("<q", d, ch_offs[0], big)
 set_frame_content_size(d, ch_offs[0], big)
 write("consistent_large", d)
@@ -358,6 +390,14 @@ write("lz4_content_checksum",
       lone_frame_buffer(ch_lz4, 8,
                         lz4_frame_with_stored_block(content_checksum=struct.pack("<I", xxh32(b"\xff" * 8)))))
 
+# Many tiny compressed blocks declaring no content size. What each block's own bytes can encode has
+# to bound it too: 256 blocks of 5 stored bytes emit 1 KiB, so crediting a whole maxBlockSize each
+# would accept a forged 512 MiB prefix and allocate for it before decompression rejected it. The
+# honest-prefix file is NOT corrupt and must still be read.
+tiny_blocks = lz4_frame_with_tiny_compressed_blocks(256)
+write("lz4_tiny_blocks_forged_prefix", lone_frame_buffer(ch_lz4, 512 * 1024 ** 2, tiny_blocks))
+write("lz4_tiny_blocks", lone_frame_buffer(ch_lz4, 256 * 4, tiny_blocks))
+
 # A ZSTD frame that omits its content size, as a streaming writer emits: only its block structure
 # bounds it. Appended as its own buffer because its Raw blocks do not fit the compressed payload's
 # space. The honest-prefix file is NOT corrupt and must still be read.
@@ -401,6 +441,7 @@ check lz4_pledge_above_blocks.arrows 'blocks can produce at most'
 # would pass too.
 check lz4_trailing_data.arrows 'bytes after its LZ4 frame'
 check lz4_truncated_content_checksum.arrows 'ends inside an LZ4 content checksum'
+check lz4_tiny_blocks_forged_prefix.arrows 'codec frame declares'
 check zstd_no_declared_size_forged_prefix.arrows 'codec frame declares'
 check zstd_no_declared_size_truncated.arrows 'not a valid ZSTD frame'
 # A size the query cannot afford is a resource condition. What a frame's blocks can produce is
@@ -411,7 +452,7 @@ check consistent_large.arrows MEMORY_LIMIT_EXCEEDED 1M
 # corrupt.
 for f in wellformed_lz4 wellformed_zstd ch_lz4 ch_zstd zstd_multi_frame zstd_skippable_prefix \
          zstd_empty_frame_honest_prefix lz4_zero_size_over_blocks zstd_no_declared_size \
-         lz4_content_checksum; do
+         lz4_content_checksum lz4_tiny_blocks; do
     $CLICKHOUSE_LOCAL --query "
         SELECT count(), sum(i), uniqExact(s) FROM file('${TMP_DIR}/${f}.arrows', ArrowStream)"
 done
