@@ -116,8 +116,25 @@ private:
     mutable std::mutex interval_index_mutex;
 
     /// Per-table invalidation generation, advanced by removeTable. See
-    /// getTableGeneration. Guarded by interval_index_mutex.
+    /// getInvalidationGeneration. Guarded by interval_index_mutex.
     std::unordered_map<UUID, UInt64> table_generations;
+
+    /// Cache-wide invalidation generation, advanced by clearAll (`SYSTEM DROP
+    /// COLUMNS CACHE`). It is folded into the token returned by
+    /// getInvalidationGeneration, so a drop also rejects deferred writes from
+    /// readers that started before it. Guarded by interval_index_mutex.
+    UInt64 global_generation = 0;
+
+    /// The invalidation token a reader captures for a table: the sum of the
+    /// cache-wide and the per-table generations. Both components only ever
+    /// increase, so the sum increases on every invalidation and a token captured
+    /// before an invalidation can never compare equal to the current one.
+    /// Must be called with interval_index_mutex held.
+    UInt64 currentGeneration(const UUID & table_uuid) const
+    {
+        auto it = table_generations.find(table_uuid);
+        return global_generation + (it == table_generations.end() ? 0 : it->second);
+    }
 
     /// Counts set() calls since the last compaction. Used to amortize the cost of
     /// compactIntervalIndex() across many inserts.
@@ -169,19 +186,22 @@ public:
     /// size limit). Callers use the return value to avoid charging the per-query
     /// write budget for writes that never landed in the cache.
     ///
-    /// `expected_table_generation` is the table invalidation generation the
-    /// caller captured (via getTableGeneration) when it started reading the data
-    /// being cached. If it no longer matches the table's current generation, the
-    /// table was invalidated (e.g. by a `RENAME COLUMN`) after the read started,
-    /// so this write would repopulate the cache with stale data and is dropped.
-    bool set(const Key & key, const MappedPtr & mapped, UInt64 expected_table_generation);
+    /// `expected_generation` is the invalidation token the caller captured (via
+    /// getInvalidationGeneration) when it started reading the data being cached.
+    /// If it no longer matches the table's current token, the table (or the whole
+    /// cache) was invalidated (e.g. by a `RENAME COLUMN` or a `SYSTEM DROP COLUMNS
+    /// CACHE`) after the read started, so this write would repopulate the cache
+    /// with stale or just-dropped data and is dropped instead.
+    bool set(const Key & key, const MappedPtr & mapped, UInt64 expected_generation);
 
-    /// Current invalidation generation for a table. Advances each time
-    /// removeTable is called (a metadata change that can remap column names). A
-    /// reader captures this at the start of a read and passes it back to `set`,
-    /// so a deferred write issued by a reader that started before a removeTable
-    /// cannot repopulate the cache with stale data after invalidation.
-    UInt64 getTableGeneration(const UUID & table_uuid);
+    /// Current invalidation token for a table. Advances each time removeTable is
+    /// called (a metadata change that can remap column names) and each time
+    /// clearAll is called (`SYSTEM DROP COLUMNS CACHE`). A reader captures this at
+    /// the start of a read and passes it back to `set`, so a deferred write issued
+    /// by a reader that started before the invalidation cannot repopulate the
+    /// cache with stale data, and cannot resurrect entries an explicit drop
+    /// removed.
+    UInt64 getInvalidationGeneration(const UUID & table_uuid);
 
     /// Remove all cached entries for a specific data part.
     /// Should be called when a part is dropped, merged, or mutated.
@@ -196,6 +216,9 @@ public:
 
     /// Clear both the base cache and the interval index.
     /// Used by SYSTEM DROP COLUMNS CACHE.
+    /// Advances the cache-wide invalidation generation first, so the drop is
+    /// sticky: a reader that started before it cannot write its deferred entries
+    /// back into the cache afterwards.
     /// Holds interval_index_mutex across both operations so that a concurrent
     /// set() cannot insert into interval_index between the two clears.
     /// This is deadlock-safe because both paths use the same lock order:
@@ -204,6 +227,7 @@ public:
     void clearAll()
     {
         std::lock_guard lock(interval_index_mutex);
+        ++global_generation;
         Base::clear();
         interval_index.clear();
     }

@@ -43,6 +43,48 @@ TEST(ColumnsCache, SetAndGetIntersecting)
     EXPECT_FALSE(cache.set(narrow_key, makeEntry(10), 0));
 }
 
+TEST(ColumnsCache, ClearAllIsStickyAgainstInFlightReaders)
+{
+    ColumnsCache cache("LRU", CurrentMetrics::ColumnsCacheBytes, CurrentMetrics::ColumnsCacheEntries,
+        /*max_size_in_bytes=*/ 1 << 20, /*max_count=*/ 0, /*size_ratio=*/ 0.5);
+    const UUID table_uuid = UUIDHelpers::generateV4();
+
+    /// A reader captures the generation when it starts reading.
+    const UInt64 generation = cache.getInvalidationGeneration(table_uuid);
+
+    /// `SYSTEM DROP COLUMNS CACHE` happens while that reader is still running.
+    cache.clearAll();
+
+    /// The reader's deferred write must not resurrect entries after the drop.
+    ColumnsCacheKey key{table_uuid, "part_1", "col", 0, 100};
+    EXPECT_FALSE(cache.set(key, makeEntry(100), generation));
+    EXPECT_TRUE(cache.getIntersecting(table_uuid, "part_1", "col", 0, 100).empty());
+
+    /// A reader that starts after the drop caches normally again.
+    EXPECT_TRUE(cache.set(key, makeEntry(100), cache.getInvalidationGeneration(table_uuid)));
+    EXPECT_EQ(cache.getIntersecting(table_uuid, "part_1", "col", 0, 100).size(), 1u);
+}
+
+TEST(ColumnsCache, ClearAllAndRemoveTableGenerationsDoNotCancelOut)
+{
+    ColumnsCache cache("LRU", CurrentMetrics::ColumnsCacheBytes, CurrentMetrics::ColumnsCacheEntries,
+        /*max_size_in_bytes=*/ 1 << 20, /*max_count=*/ 0, /*size_ratio=*/ 0.5);
+    const UUID table_uuid = UUIDHelpers::generateV4();
+
+    const UInt64 generation = cache.getInvalidationGeneration(table_uuid);
+
+    /// Both kinds of invalidation happen while a reader is in flight. The token is
+    /// a sum of two monotonically increasing counters, so no combination of bumps
+    /// can bring it back to a previously observed value.
+    cache.clearAll();
+    cache.removeTable(table_uuid);
+    EXPECT_NE(cache.getInvalidationGeneration(table_uuid), generation);
+
+    ColumnsCacheKey key{table_uuid, "part_1", "col", 0, 100};
+    EXPECT_FALSE(cache.set(key, makeEntry(100), generation));
+    EXPECT_TRUE(cache.getIntersecting(table_uuid, "part_1", "col", 0, 100).empty());
+}
+
 TEST(ColumnsCache, OversizedEntryRejected)
 {
     /// 10 rows of UInt64 plus the per-entry overhead fit into 1024 bytes,

@@ -163,14 +163,13 @@ ColumnsCache::getIntersecting(
     return result;
 }
 
-UInt64 ColumnsCache::getTableGeneration(const UUID & table_uuid)
+UInt64 ColumnsCache::getInvalidationGeneration(const UUID & table_uuid)
 {
     std::lock_guard lock(interval_index_mutex);
-    auto it = table_generations.find(table_uuid);
-    return it == table_generations.end() ? 0 : it->second;
+    return currentGeneration(table_uuid);
 }
 
-bool ColumnsCache::set(const Key & key, const MappedPtr & mapped, UInt64 expected_table_generation)
+bool ColumnsCache::set(const Key & key, const MappedPtr & mapped, UInt64 expected_generation)
 {
     /// Hold interval_index_mutex across all updates so getIntersecting / clearAll
     /// observe a consistent view, and so that overlap detection cannot race with
@@ -179,17 +178,16 @@ bool ColumnsCache::set(const Key & key, const MappedPtr & mapped, UInt64 expecte
     /// (taken inside Base::set / Base::remove). No lock-order cycle.
     std::lock_guard lock(interval_index_mutex);
 
-    /// Reject the write if the table was invalidated (removeTable) after the
-    /// reader captured the generation. Otherwise a deferred write from a reader
-    /// that started before a `RENAME COLUMN` could repopulate the cache with
-    /// stale data the invalidation was meant to drop. Checked under the same lock
-    /// removeTable uses, so the comparison cannot race with a concurrent bump.
-    {
-        auto gen_it = table_generations.find(key.table_uuid);
-        const UInt64 current_generation = gen_it == table_generations.end() ? 0 : gen_it->second;
-        if (current_generation != expected_table_generation)
-            return false;
-    }
+    /// Reject the write if the table was invalidated (removeTable) or the whole
+    /// cache was dropped (clearAll) after the reader captured the generation.
+    /// Otherwise a deferred write from a reader that started before a `RENAME
+    /// COLUMN` could repopulate the cache with stale data the invalidation was
+    /// meant to drop, and a reader that started before a `SYSTEM DROP COLUMNS
+    /// CACHE` could resurrect entries the drop removed. Checked under the same
+    /// lock removeTable and clearAll use, so the comparison cannot race with a
+    /// concurrent bump.
+    if (currentGeneration(key.table_uuid) != expected_generation)
+        return false;
 
     /// An entry whose weight exceeds the cache size limit would be evicted by
     /// Base::set immediately after insertion. Reject it up front, before the
