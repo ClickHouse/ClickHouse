@@ -593,7 +593,19 @@ StoragePtr DatabaseDataLake::tryGetTableImpl(const String & name, ContextPtr con
                 LOG_DEBUG(log, "Has no credentials");
             }
         }
+<<<<<<< HEAD
         else if (!lightweight && table_metadata.requiresCredentials() && std::find(vended_credentials_catalogs.begin(), vended_credentials_catalogs.end(), catalog->getCatalogType()) == vended_credentials_catalogs.end())
+=======
+        else if (static_credentials)
+        {
+            LOG_TRACE(log, "Using static credentials from database settings");
+            static_credentials->addCredentialsToEngineArgs(args);
+            static_credentials_applied = true;
+        }
+        else if (!lightweight && table_metadata.requiresCredentials()
+            && std::find(vended_credentials_catalogs.begin(), vended_credentials_catalogs.end(), catalog->getCatalogType()) == vended_credentials_catalogs.end()
+            && table_metadata.getStorageType() != DatabaseDataLakeStorageType::Local)
+>>>>>>> 6d5ab5522ba (Iceberg: support external paths in tables)
         {
             throw Exception(
                ErrorCodes::BAD_ARGUMENTS,

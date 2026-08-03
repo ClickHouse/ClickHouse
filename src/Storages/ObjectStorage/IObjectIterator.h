@@ -53,7 +53,16 @@ struct ObjectInfo
 
     FileBucketInfoPtr file_bucket_info;
 
+<<<<<<< HEAD
     String getIdentifier() const;
+=======
+    /// Polymorphic copy: preserves the dynamic type (e.g. `IcebergDataObjectInfo` with its
+    /// resolved storage and metadata path) where a plain copy construction would slice it.
+    virtual std::shared_ptr<ObjectInfo> clone() const { return std::make_shared<ObjectInfo>(*this); }
+
+    String getIdentifier(bool include_file_bucket_info = true) const;
+    String getIdentifierForPath(const String & path, bool include_file_bucket_info = true) const;
+>>>>>>> 6d5ab5522ba (Iceberg: support external paths in tables)
 };
 
 using ObjectInfoPtr = std::shared_ptr<ObjectInfo>;

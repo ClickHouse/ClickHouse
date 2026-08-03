@@ -13,6 +13,7 @@
 #include <Storages/ObjectStorage/DataLakes/Iceberg/ManifestFilesPruning.h>
 #include <Storages/ObjectStorage/DataLakes/Iceberg/PositionDeleteTransform.h>
 #include <Storages/ObjectStorage/DataLakes/Iceberg/Utils.h>
+#include <Storages/ObjectStorage/Utils.h>
 
 #include <Core/TypeId.h>
 #include <DataTypes/DataTypesDecimal.h>

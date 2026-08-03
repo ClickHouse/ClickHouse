@@ -28,6 +28,7 @@
 #include <Storages/ObjectStorage/DataLakes/Iceberg/PersistentTableComponents.h>
 #include <Storages/ObjectStorage/DataLakes/Iceberg/StatelessMetadataFileGetter.h>
 #include <Storages/ObjectStorage/DataLakes/Iceberg/Utils.h>
+#include <Storages/ObjectStorage/Utils.h>
 
 namespace DB
 {
@@ -139,6 +140,8 @@ public:
 
     CompressionMethod getCompressionMethod() const { return persistent_components.metadata_compression_method; }
 
+    std::string getTableLocation() const override { return persistent_components.table_location; }
+
     bool optimize(const StorageMetadataPtr & metadata_snapshot, ContextPtr context, const std::optional<FormatSettings> & format_settings) override;
     bool supportsDelete() const override { return true; }
     void mutate(
@@ -200,7 +203,8 @@ private:
 
     LoggerPtr log;
     const ObjectStoragePtr object_storage;
-    const DB::Iceberg::PersistentTableComponents persistent_components;
+    mutable std::shared_ptr<SecondaryStorages> secondary_storages;
+    DB::Iceberg::PersistentTableComponents persistent_components;
     const DataLakeStorageSettings & data_lake_settings;
     const String write_format;
     BackgroundSchedulePoolTaskHolder background_metadata_prefetch_task;

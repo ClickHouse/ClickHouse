@@ -1,0 +1,17 @@
+<clickhouse>
+    <profiles>
+        <default>
+            <!-- `DROP TABLE` runs in the background with the global context, so it reads this setting
+                 from the default profile rather than from per-query settings. Enable it here so the
+                 delete-on-drop regression test can observe data being removed on drop. -->
+            <iceberg_delete_data_on_drop>1</iceberg_delete_data_on_drop>
+        </default>
+    </profiles>
+    <users>
+        <default>
+            <password></password>
+            <profile>default</profile>
+            <named_collection_control>1</named_collection_control>
+        </default>
+    </users>
+</clickhouse>
