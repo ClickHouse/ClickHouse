@@ -333,6 +333,16 @@ static bool checkAllPartsOnRemoteFS(const RangesInDataParts & parts)
     return true;
 }
 
+static bool checkAnyPartOnRemoteFS(const RangesInDataParts & parts)
+{
+    for (const auto & part : parts)
+    {
+        if (part.data_part->isStoredOnRemoteDisk())
+            return true;
+    }
+    return false;
+}
+
 /// build sort description for output stream
 static SortDescription getSortDescriptionForOutputHeader(
     const SharedHeader & output_header,
@@ -1519,8 +1529,12 @@ Pipe ReadFromMergeTree::spreadMarkRangesAmongStreams(
                 num_streams = parts_with_ranges.size();
         }
 
+        /// The per-stream cost the cap trades against was measured for local reads. Remote reads
+        /// have their own latency and prefetch tradeoffs, and they already get separate
+        /// `..._for_remote_filesystem` concurrency thresholds above, so leave them alone.
         if (!is_parallel_reading_from_replicas
             && !isQueryWithFinal()
+            && !checkAnyPartOnRemoteFS(parts_with_ranges)
             && settings[Setting::merge_tree_read_split_ranges_into_intersecting_and_non_intersecting_injection_probability] == 0)
             capStreamsByReadBytes(num_streams, parts_with_ranges, column_names, storage_snapshot, settings, log);
     }
