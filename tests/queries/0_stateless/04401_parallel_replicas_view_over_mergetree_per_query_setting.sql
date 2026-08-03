@@ -10,6 +10,11 @@ SET max_parallel_replicas = 3;
 SET cluster_for_parallel_replicas = 'parallel_replicas';
 SET parallel_replicas_for_non_replicated_merge_tree = 1;
 SET parallel_replicas_allow_view_over_mergetree = 1;
+-- Mode 2 only collects statistics and does not use parallel replicas, which would
+-- make every assertion below pass without exercising the planner paths under test.
+SET automatic_parallel_replicas_mode = 0;
+SET parallel_replicas_local_plan = 1;
+SET enable_analyzer = 1;
 
 -- Per-query values of parallel_replicas_allow_view_over_mergetree must be honored
 -- consistently by the parallel-replicas decision and the plan build.
@@ -23,7 +28,14 @@ SELECT materialize(-2147483648) FROM v_pr_view LIMIT 255 SETTINGS parallel_repli
 EXCEPT DISTINCT
 SELECT 1024 FROM v_pr_view LIMIT 1024 SETTINGS parallel_replicas_allow_view_over_mergetree = 1;
 
--- The view is eligible here, so parallel replicas must still be used and return correct results.
+-- The view is eligible here, so parallel replicas must still be used: assert the plan
+-- keeps the remote step, otherwise the assertions above could pass with local execution.
+SELECT count() > 0
+FROM viewExplain('EXPLAIN', '', (
+    SELECT count() FROM v_pr_view SETTINGS parallel_replicas_allow_view_over_mergetree = 1
+))
+WHERE explain LIKE '%ReadFromRemoteParallelReplicas%';
+
 SELECT count() FROM v_pr_view SETTINGS parallel_replicas_allow_view_over_mergetree = 1;
 
 DROP TABLE v_pr_view;
