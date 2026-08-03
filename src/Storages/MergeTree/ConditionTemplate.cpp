@@ -192,13 +192,13 @@ const Cond & ConditionTemplate<Cond>::generateUnsubstituted() const
 }
 
 template <typename Cond>
-const Cond & ConditionTemplate<Cond>::generateForPart(const IMergeTreeDataPart & part) const
+const Cond & ConditionTemplate<Cond>::generateForPart(const MergeTreeDataPartPtr & part) const
 {
-    if (skip_folding || !dag || !dag->predicate || part.isProjectionPart())
+    if (skip_folding || !dag || !dag->predicate || part->isProjectionPart())
         return generateUnsubstituted();
 
-    const auto & partition = part.partition;
-    const auto & partition_id = part.info.getPartitionId();
+    const auto & partition = part->partition;
+    const auto & partition_id = part->info.getPartitionId();
     if (const auto * cond = lookupSubstituted(partition_id))
         return *cond;
 

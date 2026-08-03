@@ -1078,9 +1078,9 @@ RangesInDataParts MergeTreeDataSelectExecutor::filterPartsByPrimaryKeyAndSkipInd
                 ranges.ranges = markRangesFromPKRange(
                     ranges,
                     metadata_snapshot,
-                    key_condition->generateForPart(*ranges.data_part),
-                    part_offset_condition ? &part_offset_condition->generateForPart(*ranges.data_part) : nullptr,
-                    total_offset_condition ? &total_offset_condition->generateForPart(*ranges.data_part) : nullptr,
+                    key_condition->generateForPart(ranges.data_part),
+                    part_offset_condition ? &part_offset_condition->generateForPart(ranges.data_part) : nullptr,
+                    total_offset_condition ? &total_offset_condition->generateForPart(ranges.data_part) : nullptr,
                     find_exact_ranges ? &ranges.exact_ranges : nullptr,
                     pk_to_minmax_slot_ptr,
                     settings,
@@ -1161,8 +1161,8 @@ RangesInDataParts MergeTreeDataSelectExecutor::filterPartsByPrimaryKeyAndSkipInd
                     {
                         std::tie(ranges.ranges, ranges.read_hints) = filterMarksUsingIndex(
                             index_and_condition.index,
-                            index_and_condition.condition_template->generateForPart(*ranges.data_part),
-                            key_condition_rpn_template->generateForPart(*ranges.data_part),
+                            index_and_condition.condition_template->generateForPart(ranges.data_part),
+                            key_condition_rpn_template->generateForPart(ranges.data_part),
                             ranges.data_part,
                             ranges.ranges,
                             ranges.read_hints,
@@ -1185,7 +1185,7 @@ RangesInDataParts MergeTreeDataSelectExecutor::filterPartsByPrimaryKeyAndSkipInd
                 if (use_skip_indexes_for_disjunctions && key_condition_rpn_template != nullptr)
                 {
                     ranges.ranges = mergePartialResultsForDisjunctions(ranges.data_part,
-                                        ranges.ranges, key_condition_rpn_template->generateForPart(*ranges.data_part),
+                                        ranges.ranges, key_condition_rpn_template->generateForPart(ranges.data_part),
                                         partial_eval_results, reader_settings, log);
 
                     sum_marks_union.fetch_add(ranges.getMarksCount(), std::memory_order_relaxed);
@@ -1360,7 +1360,7 @@ RangesInDataParts MergeTreeDataSelectExecutor::filterPartsByPrimaryKeyAndSkipInd
                     .name = index_name,
                     .part_name = parts_with_ranges[part_index].data_part->name,
                     .description = std::move(description),
-                    .condition = index_and_condition.condition_template->generateForPart(*parts_with_ranges[part_index].data_part)->getDescription(),
+                    .condition = index_and_condition.condition_template->generateForPart(parts_with_ranges[part_index].data_part)->getDescription(),
                     .num_parts_after = stat.total_parts - stat.parts_dropped,
                     .num_granules_after = stat.total_granules - stat.granules_dropped});
             }
@@ -2874,7 +2874,7 @@ RangesInDataParts MergeTreeDataSelectExecutor::selectPartsToRead(
         /// was built from its metadata. For a projection part the partition is empty (matching the
         /// projection's empty partition key); using the parent partition here would mismatch the
         /// projection partition key size and abort in getID.
-        if (minmax_idx_condition && !minmax_idx_condition->generateForPart(*part_or_projection).checkInHyperrectangle(part_or_projection->getMinMaxIndex()->hyperrectangle, minmax_columns_types).can_be_true)
+        if (minmax_idx_condition && !minmax_idx_condition->generateForPart(part_or_projection).checkInHyperrectangle(part_or_projection->getMinMaxIndex()->hyperrectangle, minmax_columns_types).can_be_true)
             continue;
 
         counters.num_parts_after_minmax += 1;

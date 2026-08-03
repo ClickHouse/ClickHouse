@@ -15,6 +15,7 @@ namespace DB
 {
 
 class IMergeTreeDataPart;
+using MergeTreeDataPartPtr = std::shared_ptr<const IMergeTreeDataPart>;
 
 /// Class that represents Key or Index condition template.
 template <class Cond>
@@ -45,7 +46,7 @@ public:
     const Cond & generateUnsubstituted() const;
 
     /// Substitutes partition level constants into dag.
-    const Cond & generateForPart(const IMergeTreeDataPart & part) const;
+    const Cond & generateForPart(const MergeTreeDataPartPtr & part) const;
 
     /// Maps already generated condition using provided lambda.
     void addTransformation(Transformer transformer_);
