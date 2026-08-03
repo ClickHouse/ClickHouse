@@ -48,7 +48,6 @@ const VersionToSettingsChangesMap & getSettingsChangesHistory()
             {"use_indexes_refiner_in_read_pools", false, false, "New setting to drop mark ranges fully filtered out by skip indexes or a projection index before read tasks are created in MergeTree read pools."},
             {"s3_base", "", "", "New setting to specify the base URL for resolving relative URLs in the s3 table function and the S3 table engine."},
             {"use_query_condition_cache_for_top_k", false, false, "New setting to gate the query condition cache for `ORDER BY ... LIMIT n` (TopK) reads; disabled by default."},
-            {"use_projection_index_in_read_pools", false, false, "New setting to drop mark ranges fully filtered out by a projection index before read tasks are created in MergeTree read pools."},
             {"allow_distinct_partitions_independently", false, true, "New setting to enable independent per-partition evaluation of `DISTINCT` when the partition expression is a deterministic function of the `DISTINCT` columns."},
             {"force_distinct_partitions_independently", false, false, "New setting to force independent per-partition evaluation of `DISTINCT` even when the cost heuristic would skip it."},
             {"max_number_of_partitions_for_independent_distinct", 128, 128, "New setting: maximal number of partitions to apply independent per-partition `DISTINCT`."},
