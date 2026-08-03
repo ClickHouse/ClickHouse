@@ -101,8 +101,8 @@ public:
     /// Changes the number of output ports if needed. Adds ResizeTransform.
     void resize(size_t num_streams, bool strict = false, UInt64 min_outstreams_per_resize_after_split = 0);
 
-    /// Split a single stream and merge it back, keeping the order of chunks.
-    /// Only transforms producing exactly one chunk per input chunk may be added in between.
+    /// Split a single stream and merge it back, keeping the order of chunks. Only transforms producing
+    /// exactly one chunk per input chunk may be added in between. See `OrderedResize.h`.
     void scatterPreservingOrder(size_t num_streams);
     void gatherPreservingOrder();
 

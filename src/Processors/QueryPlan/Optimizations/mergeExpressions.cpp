@@ -68,11 +68,9 @@ size_t tryMergeExpressions(QueryPlan::Node * parent_node, QueryPlan::Nodes &, co
     }
     if (parent_filter && child_expr)
     {
-        /// `FilterStep` cannot inherit the flag: `FilterTransform` drops a chunk that becomes empty, so
-        /// the ordered scatter/gather pair would no longer see one chunk per input chunk.
-        if (child_expr->isSingleStreamParallelized())
-            return 0;
-
+        /// The merged step drops `parallelize_single_stream`, since `FilterTransform` removes a chunk that
+        /// becomes empty. Blocking the merge instead would also block pushing the filter below the
+        /// `SortingStep`, which saves more than evaluating the lifted expression in parallel.
         auto & child_actions = child_expr->getExpression();
         auto & parent_actions = parent_filter->getExpression();
 

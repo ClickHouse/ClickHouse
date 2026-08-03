@@ -19,16 +19,6 @@ SELECT
         FROM numbers_mt(300000) ORDER BY k % 977 DESC, k
         SETTINGS max_threads = 1, query_plan_execute_functions_after_sorting = 0));
 
--- A `FilterStep` above the lifted part must not merge it away.
-SELECT count() > 0
-FROM (EXPLAIN PIPELINE
-    SELECT k, a FROM (
-        SELECT number AS k, arrayMap(i -> sipHash64(i, k), range(4)) AS a
-        FROM numbers_mt(1000000) ORDER BY k % 977 DESC, k)
-    WHERE length(a) = 4
-    SETTINGS max_threads = 8)
-WHERE explain LIKE '%OrderedScatter%';
-
 -- The parallel section must also stop cleanly when a `LIMIT` closes the pipeline early.
 SELECT
     (SELECT groupArray(a) FROM (

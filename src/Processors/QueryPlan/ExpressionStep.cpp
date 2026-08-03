@@ -126,9 +126,9 @@ void ExpressionStep::updateOutputHeader()
     output_header = std::make_shared<const Block>(ExpressionTransform::transformHeader(*input_headers.front(), actions_dag));
 }
 
-/// `parallelize_single_stream` is left out of the wire format: it only affects performance, and there is
-/// no spare flags byte here, so keeping it would need a `DBMS_QUERY_PLAN_SERIALIZATION_VERSION` bump,
-/// which also excludes replicas of the previous version from serialized-plan parallel replicas.
+/// `parallelize_single_stream` is left out of the wire format: there is no spare flags byte here, so
+/// keeping it would need a `DBMS_QUERY_PLAN_SERIALIZATION_VERSION` bump, which in turn drops replicas
+/// of the previous version from serialized-plan parallel replicas. It only affects performance.
 void ExpressionStep::serialize(Serialization & ctx) const
 {
     actions_dag.serialize(ctx.out, ctx.registry);

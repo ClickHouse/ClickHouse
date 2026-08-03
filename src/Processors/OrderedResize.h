@@ -6,10 +6,9 @@
 namespace DB
 {
 
-/** Splits a single stream into `num_streams` streams, dispatching whole chunks in round-robin order.
-  * `OrderedGatherProcessor` takes the chunks back in the same order, so the transforms in between
-  * are applied by several threads without changing the order of the rows.
-  * Every transform in between must produce exactly one chunk per input chunk.
+/** Dispatches whole chunks to `num_streams` streams in round-robin order; `OrderedGatherProcessor`
+  * takes them back in the same order. Every transform in between must produce exactly one chunk per
+  * input chunk, otherwise the round-robin desynchronizes and the order of rows changes.
   */
 class OrderedScatterProcessor final : public IProcessor
 {

@@ -57,8 +57,7 @@ IProcessor::Status OrderedGatherProcessor::prepare()
         return Status::Finished;
     }
 
-    /// Every input is kept needed even while we cannot push, otherwise only the branch we are
-    /// waiting for would be allowed to work.
+    /// Every input is kept needed even while we cannot push, otherwise only the branch we wait for works.
     for (auto & in : inputs)
         if (!in.isFinished())
             in.setNeeded();
