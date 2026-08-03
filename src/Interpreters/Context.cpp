@@ -624,22 +624,22 @@ struct ContextSharedPart : boost::noncopyable
     ConfigurationPtr users_config TSA_GUARDED_BY(mutex);                              /// Config with the users, profiles and quotas sections.
     InterserverIOHandler interserver_io_handler;                /// Handler for interserver communication.
 
-    /// Each background schedule pool is created lazily. The pool is constructed outside
-    /// `mutex` (creating one spawns threads and can throw) and published under it, so a reader
-    /// holding `mutex` either sees a fully constructed pool or none. `shutdown` clears the
-    /// members under the same lock.
+    /// Guards the six schedule pool members below. Not `mutex`: a getter can be reached from a
+    /// chain already holding `mutex` exclusively, and neither mutex is recursive. Each pool is
+    /// created outside the lock (that spawns threads and can throw) and published under it.
+    mutable SharedMutex schedule_pools_mutex;
     OnceFlag buffer_flush_schedule_pool_initialized;
-    mutable BackgroundSchedulePoolPtr buffer_flush_schedule_pool TSA_GUARDED_BY(mutex); /// A thread pool that can do background flush for Buffer tables.
+    mutable BackgroundSchedulePoolPtr buffer_flush_schedule_pool TSA_GUARDED_BY(schedule_pools_mutex); /// A thread pool that can do background flush for Buffer tables.
     OnceFlag schedule_pool_initialized;
-    mutable BackgroundSchedulePoolPtr schedule_pool TSA_GUARDED_BY(mutex);    /// A thread pool that can run different jobs in background (used in replicated tables)
+    mutable BackgroundSchedulePoolPtr schedule_pool TSA_GUARDED_BY(schedule_pools_mutex);    /// A thread pool that can run different jobs in background (used in replicated tables)
     OnceFlag distributed_schedule_pool_initialized;
-    mutable BackgroundSchedulePoolPtr distributed_schedule_pool TSA_GUARDED_BY(mutex); /// A thread pool that can run different jobs in background (used for distributed sends)
+    mutable BackgroundSchedulePoolPtr distributed_schedule_pool TSA_GUARDED_BY(schedule_pools_mutex); /// A thread pool that can run different jobs in background (used for distributed sends)
     OnceFlag message_broker_schedule_pool_initialized;
-    mutable BackgroundSchedulePoolPtr message_broker_schedule_pool TSA_GUARDED_BY(mutex); /// A thread pool that can run different jobs in background (used for message brokers, like RabbitMQ and Kafka)
+    mutable BackgroundSchedulePoolPtr message_broker_schedule_pool TSA_GUARDED_BY(schedule_pools_mutex); /// A thread pool that can run different jobs in background (used for message brokers, like RabbitMQ and Kafka)
     OnceFlag iceberg_schedule_pool_initialized;
-    mutable BackgroundSchedulePoolPtr iceberg_schedule_pool TSA_GUARDED_BY(mutex); /// A thread pool that runs background metadata refresh for all active Iceberg tables
+    mutable BackgroundSchedulePoolPtr iceberg_schedule_pool TSA_GUARDED_BY(schedule_pools_mutex); /// A thread pool that runs background metadata refresh for all active Iceberg tables
     OnceFlag streaming_schedule_pool_initialized;
-    mutable BackgroundSchedulePoolPtr streaming_schedule_pool TSA_GUARDED_BY(mutex); /// A thread pool that runs streaming background jobs
+    mutable BackgroundSchedulePoolPtr streaming_schedule_pool TSA_GUARDED_BY(schedule_pools_mutex); /// A thread pool that runs streaming background jobs
 
     mutable OnceFlag readers_initialized;
     mutable std::unique_ptr<IAsynchronousReader> asynchronous_remote_fs_reader;
@@ -1128,18 +1128,21 @@ struct ContextSharedPart : boost::noncopyable
             delete_workload_entity_storage = std::move(workload_entity_storage);
             delete_ddl_worker = std::move(ddl_worker);
 
+            delete_access_control = std::move(access_control);
+
+            /// Stop trace collector if any
+            has_trace_collector = false;
+            trace_collector.reset();
+        }
+
+        {
+            std::lock_guard lock(schedule_pools_mutex);
             delete_buffer_flush_schedule_pool = std::move(buffer_flush_schedule_pool);
             delete_schedule_pool = std::move(schedule_pool);
             delete_distributed_schedule_pool = std::move(distributed_schedule_pool);
             delete_message_broker_schedule_pool = std::move(message_broker_schedule_pool);
             delete_iceberg_schedule_pool = std::move(iceberg_schedule_pool);
             delete_streaming_schedule_pool = std::move(streaming_schedule_pool);
-
-            delete_access_control = std::move(access_control);
-
-            /// Stop trace collector if any
-            has_trace_collector = false;
-            trace_collector.reset();
         }
 
         zkutil::ZooKeeperPtr delete_zookeeper;
@@ -5310,11 +5313,11 @@ BackgroundSchedulePoolPtr Context::getBufferFlushSchedulePool() const
             CurrentMetrics::BackgroundBufferFlushSchedulePoolTask,
             CurrentMetrics::BackgroundBufferFlushSchedulePoolSize,
             ThreadName::BACKGROUND_BUFFER_FLUSH_SCHEDULE_POOL);
-        std::lock_guard lock(shared->mutex);
+        std::lock_guard lock(shared->schedule_pools_mutex);
         shared->buffer_flush_schedule_pool = std::move(created_pool);
     });
 
-    SharedLockGuard lock(shared->mutex);
+    SharedLockGuard lock(shared->schedule_pools_mutex);
     return shared->buffer_flush_schedule_pool;
 }
 
@@ -5381,11 +5384,11 @@ BackgroundSchedulePoolPtr Context::getSchedulePool() const
                 CurrentMetrics::BackgroundSchedulePoolTask,
                 CurrentMetrics::BackgroundSchedulePoolSize,
                 DB::ThreadName::BACKGROUND_SCHEDULE_POOL);
-            std::lock_guard lock(shared->mutex);
+            std::lock_guard lock(shared->schedule_pools_mutex);
             shared->schedule_pool = std::move(created_pool);
         });
 
-    SharedLockGuard lock(shared->mutex);
+    SharedLockGuard lock(shared->schedule_pools_mutex);
     return shared->schedule_pool;
 }
 
@@ -5399,11 +5402,11 @@ BackgroundSchedulePoolPtr Context::getDistributedSchedulePool() const
             CurrentMetrics::BackgroundDistributedSchedulePoolTask,
             CurrentMetrics::BackgroundDistributedSchedulePoolSize,
             DB::ThreadName::DISTRIBUTED_SCHEDULE_POOL);
-        std::lock_guard lock(shared->mutex);
+        std::lock_guard lock(shared->schedule_pools_mutex);
         shared->distributed_schedule_pool = std::move(created_pool);
     });
 
-    SharedLockGuard lock(shared->mutex);
+    SharedLockGuard lock(shared->schedule_pools_mutex);
     return shared->distributed_schedule_pool;
 }
 
@@ -5417,11 +5420,11 @@ BackgroundSchedulePoolPtr Context::getMessageBrokerSchedulePool() const
             CurrentMetrics::BackgroundMessageBrokerSchedulePoolTask,
             CurrentMetrics::BackgroundMessageBrokerSchedulePoolSize,
             DB::ThreadName::MSG_BROKER_SCHEDULE_POOL);
-        std::lock_guard lock(shared->mutex);
+        std::lock_guard lock(shared->schedule_pools_mutex);
         shared->message_broker_schedule_pool = std::move(created_pool);
     });
 
-    SharedLockGuard lock(shared->mutex);
+    SharedLockGuard lock(shared->schedule_pools_mutex);
     return shared->message_broker_schedule_pool;
 }
 
@@ -5435,11 +5438,11 @@ BackgroundSchedulePoolPtr Context::getIcebergSchedulePool() const
             CurrentMetrics::IcebergSchedulePoolTask,
             CurrentMetrics::IcebergSchedulePoolSize,
             DB::ThreadName::ICEBERG_SCHEDULE_POOL);
-        std::lock_guard lock(shared->mutex);
+        std::lock_guard lock(shared->schedule_pools_mutex);
         shared->iceberg_schedule_pool = std::move(created_pool);
     });
 
-    SharedLockGuard lock(shared->mutex);
+    SharedLockGuard lock(shared->schedule_pools_mutex);
     return shared->iceberg_schedule_pool;
 }
 
@@ -5453,47 +5456,47 @@ BackgroundSchedulePoolPtr Context::getStreamingSchedulePool() const
             CurrentMetrics::BackgroundStreamingSchedulePoolTask,
             CurrentMetrics::BackgroundStreamingSchedulePoolSize,
             DB::ThreadName::BACKGROUND_STREAMING_SCHEDULE_POOL);
-        std::lock_guard lock(shared->mutex);
+        std::lock_guard lock(shared->schedule_pools_mutex);
         shared->streaming_schedule_pool = std::move(created_pool);
     });
 
-    SharedLockGuard lock(shared->mutex);
+    SharedLockGuard lock(shared->schedule_pools_mutex);
     return shared->streaming_schedule_pool;
 }
 
 BackgroundSchedulePoolPtr Context::getBufferFlushSchedulePoolIfExists() const
 {
-    SharedLockGuard lock(shared->mutex);
+    SharedLockGuard lock(shared->schedule_pools_mutex);
     return shared->buffer_flush_schedule_pool;
 }
 
 BackgroundSchedulePoolPtr Context::getSchedulePoolIfExists() const
 {
-    SharedLockGuard lock(shared->mutex);
+    SharedLockGuard lock(shared->schedule_pools_mutex);
     return shared->schedule_pool;
 }
 
 BackgroundSchedulePoolPtr Context::getDistributedSchedulePoolIfExists() const
 {
-    SharedLockGuard lock(shared->mutex);
+    SharedLockGuard lock(shared->schedule_pools_mutex);
     return shared->distributed_schedule_pool;
 }
 
 BackgroundSchedulePoolPtr Context::getMessageBrokerSchedulePoolIfExists() const
 {
-    SharedLockGuard lock(shared->mutex);
+    SharedLockGuard lock(shared->schedule_pools_mutex);
     return shared->message_broker_schedule_pool;
 }
 
 BackgroundSchedulePoolPtr Context::getIcebergSchedulePoolIfExists() const
 {
-    SharedLockGuard lock(shared->mutex);
+    SharedLockGuard lock(shared->schedule_pools_mutex);
     return shared->iceberg_schedule_pool;
 }
 
 BackgroundSchedulePoolPtr Context::getStreamingSchedulePoolIfExists() const
 {
-    SharedLockGuard lock(shared->mutex);
+    SharedLockGuard lock(shared->schedule_pools_mutex);
     return shared->streaming_schedule_pool;
 }
 
