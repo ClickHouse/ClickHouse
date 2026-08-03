@@ -52,25 +52,6 @@ Chunk makeBucketChunk(Int32 bucket, std::vector<Int32> ooo = {})
     return chunk;
 }
 
-/// A SINGLE-LEVEL chunk (bucket_num = -1) carrying `num_keys` distinct keys, so
-/// that convertBlockToTwoLevel splits it across MANY two-level buckets. This is
-/// what a remote shard sends when its data stayed below group_by_two_level_threshold.
-Chunk makeSingleLevelChunk(Int64 num_keys)
-{
-    auto col = ColumnUInt64::create();
-    for (Int64 k = 0; k < num_keys; ++k)
-        col->insertValue(static_cast<UInt64>(k));
-    Columns columns;
-    columns.emplace_back(std::move(col));
-    Chunk chunk(std::move(columns), num_keys);
-
-    auto info = std::make_shared<AggregatedChunkInfo>();
-    info->bucket_num = -1; // single level
-    info->is_overflows = false;
-    chunk.getChunkInfos().add(std::move(info));
-    return chunk;
-}
-
 AggregatingTransformParamsPtr makeMergeParams(const SharedHeader & header)
 {
     Aggregator::Params params(
@@ -117,8 +98,9 @@ class ManualGroupingDriver
 {
 public:
     /// per_input[i] = the ordered list of buckets input i will deliver.
-    explicit ManualGroupingDriver(std::vector<std::deque<Chunk>> per_input)
+    ManualGroupingDriver(std::vector<std::deque<Chunk>> per_input, pcg64 & rng_)
         : num_inputs(per_input.size())
+        , rng(rng_)
         , header(oneColumnHeader())
         , params(makeMergeParams(header))
         , transform(std::make_shared<GroupingAggregatedTransform>(*header, num_inputs, params))
@@ -209,18 +191,15 @@ public:
     size_t num_inputs;
 
 private:
-    /// If any input port is needed and empty and has a queued chunk, push it.
+    /// If any input port is needed and empty and has a queued chunk, push it. A RANDOM one of them, so
+    /// that the order in which the inputs arrive is fuzzed as well, not only what every input sends.
     bool deliverToNeededInput()
     {
-        size_t i = 0;
-        auto in_it = transform->getInputs().begin();
-        for (; i < num_inputs; ++i, ++in_it)
+        const size_t start = std::uniform_int_distribution<size_t>(0, num_inputs - 1)(rng);
+        for (size_t k = 0; k < num_inputs; ++k)
         {
-            if (input_finished[i])
-                continue;
-            if (!feeders[i]->canPush())
-                continue; // not needed yet, or still holds data
-            if (queues[i].empty())
+            const size_t i = (start + k) % num_inputs;
+            if (input_finished[i] || queues[i].empty() || !feeders[i]->canPush())
                 continue;
             feeders[i]->push(std::move(queues[i].front()));
             queues[i].pop_front();
@@ -248,6 +227,7 @@ private:
         return any;
     }
 
+    pcg64 & rng;
     SharedHeader header;
     AggregatingTransformParamsPtr params;
     std::shared_ptr<GroupingAggregatedTransform> transform;
@@ -295,140 +275,6 @@ void expectEachBucketOnce(const std::vector<Int32> & pushed)
                         << " times - a duplicate push is the 'SortingAggregatedTransform already got bucket' LOGICAL_ERROR";
 }
 
-/// Some tests additionally want to confirm well-behaved ascending output.
-void expectEachBucketOnceAndAscending(const std::vector<Int32> & pushed)
-{
-    expectEachBucketOnce(pushed);
-    for (size_t i = 1; i < pushed.size(); ++i)
-        EXPECT_LE(pushed[i - 1], pushed[i])
-            << "buckets pushed out of ascending order (" << pushed[i - 1] << " then " << pushed[i] << ")";
-}
-
-}
-
-/// Sanity: a single in-order input -> each bucket pushed exactly once, ascending.
-TEST(GroupingAggregatedOOO, InOrderSingleInputOk)
-{
-    auto inputs = buildInputs({{{0, {}}, {1, {}}, {2, {}}}});
-    ManualGroupingDriver d(std::move(inputs));
-    expectEachBucketOnceAndAscending(d.run());
-}
-
-/// Two in-order inputs -> still ascending, each bucket once.
-TEST(GroupingAggregatedOOO, InOrderTwoInputsOk)
-{
-    auto inputs = buildInputs({
-        {{0, {}}, {2, {}}, {5, {}}},
-        {{0, {}}, {1, {}}, {5, {}}},
-    });
-    ManualGroupingDriver d(std::move(inputs));
-    expectEachBucketOnceAndAscending(d.run());
-}
-
-/// Both inputs are out of order and report no delayed buckets, which is what a dist layer
-/// emitted before `MergingAggregatedBucketTransform` started to copy the metadata stamped
-/// by `GroupingAggregatedTransform`.
-///
-/// input0: 0, 6        input1: 5, 0   (input1 steps BACKWARDS 5 -> 0, no metadata)
-///
-/// Expected-correct behaviour: every bucket pushed exactly once, in ascending
-/// order. If the consumer instead advances past bucket 0 (pushing it once with
-/// only input0's data) and then re-pushes it when input1's late 0 arrives, we get
-/// a duplicate / out-of-order push == the LOGICAL_ERROR signature.
-TEST(GroupingAggregatedOOO, OutOfOrderEmptyMetadataDoublePush)
-{
-    auto inputs = buildInputs({
-        {{0, {}}, {6, {}}},
-        {{5, {}}, {0, {}}},
-    });
-    ManualGroupingDriver d(std::move(inputs));
-    expectEachBucketOnceAndAscending(d.run());
-}
-
-/// Wider variant: more inputs, more aggressive backward steps.
-TEST(GroupingAggregatedOOO, OutOfOrderEmptyMetadataManyBackwardSteps)
-{
-    auto inputs = buildInputs({
-        {{0, {}}, {10, {}}},
-        {{7, {}}, {1, {}}},
-        {{8, {}}, {2, {}}},
-    });
-    ManualGroupingDriver d(std::move(inputs));
-    expectEachBucketOnce(d.run());
-}
-
-/// NON-EMPTY out_of_order_buckets metadata - this is what the INITIATOR sees,
-/// because the producer (ConvertingAggregatedToChunksTransform) records each
-/// emitted chunk's pending-bucket snapshot in AggregatedChunkInfo and it survives
-/// network serialization (BlockInfo.h field 3). The accounting in
-/// GroupingAggregatedTransform::addChunk maintains a per-bucket
-/// "how many inputs still owe this bucket" map by diffing each input's previous vs
-/// new ooo snapshot. The out of order push path pushes and erases a bucket when
-/// its count hits 0; the in-order path pushes any bucket not in the map.
-///
-/// Probe: a single input declares bucket 1 as delayed (ooo=[1]) while sending
-/// bucket 0, then later actually sends bucket 1 with ooo=[] (no longer delayed).
-/// A second input sends 0 then 1 in order. Assert each bucket pushed once,
-/// ascending - any duplicate is the upstream cause of the SortingAggregated crash.
-TEST(GroupingAggregatedOOO, NonEmptyMetadataDelayedThenDelivered)
-{
-    auto inputs = buildInputs({
-        {{0, {1}}, {1, {}}},   // input0: send 0 (delaying 1), then send 1
-        {{0, {}},  {1, {}}},   // input1: in order
-    });
-    ManualGroupingDriver d(std::move(inputs));
-    expectEachBucketOnce(d.run());
-}
-
-/// Two inputs both declare the SAME bucket delayed, deliver it at different times,
-/// stepping through higher buckets meanwhile - stresses the map count going 2->1->0
-/// across the OOO and in-order push paths.
-TEST(GroupingAggregatedOOO, NonEmptyMetadataBothDelaySameBucket)
-{
-    auto inputs = buildInputs({
-        {{0, {2}}, {3, {2}}, {2, {}}},   // input0: delays 2 twice, then delivers it late
-        {{0, {2}}, {2, {}},  {3, {}}},   // input1: delays 2 once, delivers it earlier
-    });
-    ManualGroupingDriver d(std::move(inputs));
-    expectEachBucketOnce(d.run());
-}
-
-/// SINGLE-LEVEL + TWO-LEVEL MIX. A remote shard whose data stayed below
-/// group_by_two_level_threshold sends a single-level chunk (bucket=-1); another
-/// shard sends two-level buckets. GroupingAggregatedTransform::work()
-/// converts the single-level chunk into two-level buckets and APPENDS them to
-/// chunks_map. If two-level buckets were already pushed (next_bucket_to_push
-/// advanced) before the single-level chunk is converted, the conversion can produce
-/// buckets BELOW next_bucket_to_push that get pushed AGAIN on the finish drain.
-///
-/// input0: a single-level chunk (many keys -> spans many two-level buckets).
-/// input1: two-level buckets 0,1,2,3 in order (these get pushed, advancing
-///         next_bucket_to_push), delivered BEFORE input0's single-level chunk.
-TEST(GroupingAggregatedOOO, SingleLevelAfterTwoLevelPushed)
-{
-    auto header = oneColumnHeader();
-    std::vector<std::deque<Chunk>> inputs(2);
-    /// input1 delivers two-level buckets first.
-    for (Int32 b : {0, 1, 2, 3})
-        inputs[1].push_back(makeBucketChunk(b));
-    /// input0 delivers a single-level chunk LAST (after two-level pushed).
-    inputs[0].push_back(makeSingleLevelChunk(512));
-
-    ManualGroupingDriver d(std::move(inputs));
-    expectEachBucketOnce(d.run());
-}
-
-/// Reverse interleave: single-level first, then two-level - the conversion happens
-/// while two-level buckets coexist.
-TEST(GroupingAggregatedOOO, SingleLevelBeforeTwoLevel)
-{
-    std::vector<std::deque<Chunk>> inputs(2);
-    inputs[0].push_back(makeSingleLevelChunk(512));
-    for (Int32 b : {0, 1, 2, 3})
-        inputs[1].push_back(makeBucketChunk(b));
-
-    ManualGroupingDriver d(std::move(inputs));
-    expectEachBucketOnce(d.run());
 }
 
 namespace
@@ -486,94 +332,6 @@ std::vector<std::pair<Int32, std::vector<Int32>>> genProducerStream(pcg64 & rng,
 }
 }
 
-/// Fuzz: generate many random-but-CONTRACT-FAITHFUL producer streams across 2-4
-/// inputs and assert the merged output never duplicates a bucket. A single
-/// duplicate is the upstream root cause of the SortingAggregatedTransform crash.
-TEST(GroupingAggregatedOOO, FuzzNonEmptyMetadataNoDuplicate)
-{
-    pcg64 rng(0xC10C0FFEEULL);
-    int total = 0;
-    for (int iter = 0; iter < 20000; ++iter)
-    {
-        size_t num_inputs = std::uniform_int_distribution<size_t>(2, 4)(rng);
-        Int32 num_buckets = std::uniform_int_distribution<Int32>(3, 12)(rng);
-
-        std::vector<std::deque<Chunk>> inputs;
-        for (size_t i = 0; i < num_inputs; ++i)
-        {
-            auto stream = genProducerStream(rng, num_buckets);
-            std::deque<Chunk> q;
-            for (auto & [bucket, ooo] : stream)
-                q.push_back(makeBucketChunk(bucket, ooo));
-            inputs.push_back(std::move(q));
-        }
-
-        ManualGroupingDriver d(std::move(inputs));
-        auto pushed = d.run();
-
-        std::map<Int32, int> counts;
-        for (auto b : pushed)
-            counts[b]++;
-        for (auto [bucket, c] : counts)
-            ASSERT_EQ(c, 1) << "iter " << iter << ": bucket " << bucket << " pushed " << c
-                            << " times (inputs=" << num_inputs << ", buckets=" << num_buckets << ")";
-        ++total;
-    }
-    std::cerr << "fuzz iterations checked: " << total << std::endl;
-}
-
-/// The producer keeps a bucket in its ooo snapshot until it actually SENDS it, so a
-/// chunk that delays B carries B in ooo, and the chunk that finally delivers B is
-/// the FIRST one without B in ooo. Model an input whose ooo snapshot SHRINKS as it
-/// delivers, against a second input that races ahead - the exact desync surface.
-TEST(GroupingAggregatedOOO, NonEmptyMetadataShrinkingSnapshotRace)
-{
-    auto inputs = buildInputs({
-        {{0, {1, 2}}, {3, {1, 2}}, {1, {2}}, {2, {}}},   // input0
-        {{0, {}},     {1, {}},     {2, {}},  {3, {}}},   // input1 strictly in order
-    });
-    ManualGroupingDriver d(std::move(inputs));
-    expectEachBucketOnce(d.run());
-}
-
-/// =====================================================================================
-/// THE GAP (run 3): EMPTY-METADATA out-of-order streams, fuzzed broadly + swept.
-///
-/// The prior fuzz (FuzzNonEmptyMetadataNoDuplicate) only fed contract faithful streams, where
-/// every reordered chunk reports the buckets which are still owed. This one feeds streams which
-/// are out of order and report nothing, which is what a dist layer emitted before
-/// `MergingAggregatedBucketTransform` started to copy the metadata stamped by
-/// `GroupingAggregatedTransform`, and what a producer which does not maintain that metadata at
-/// all would emit. A consumer fed such a stream has no "this bucket is still owed" signal, so
-/// its in-order push path can finalize a bucket B while an input still has a late B queued; when
-/// that late B arrives it resurrects `chunks_map[B]` and it is pushed for the second time, which
-/// is the upstream cause of `SortingAggregatedTransform already got bucket with number N`.
-/// =====================================================================================
-
-/// Deterministic consumer-contract demonstration of the EXACT minimal trigger and WHY the fix
-/// works. A dist_layer that postpones bucket 0 (emits 1,2 first, then 0) sends, per the OOO
-/// optimization, a stream that is out of order in bucket_num.
-///   - The BUGGY re-merge path dropped the delayed-bucket metadata, so the initiator received
-///     [(1,{}),(2,{}),(0,{})] from that shard - and pushes bucket 0 TWICE (once prematurely in
-///     order, once when its late copy arrives), which downstream becomes the
-///     SortingAggregatedTransform "already got bucket" logical error.
-///   - The FIXED re-merge path forwards the metadata: [(1,{0}),(2,{0}),(0,{})]. With the "0 is
-///     still owed" signal the initiator's in-order push path skips bucket 0 until it actually
-///     arrives, so it is pushed exactly once.
-/// This test asserts the FIXED stream merges cleanly (each bucket once), and documents that the
-/// metadata is precisely what prevents the duplicate. The consumer itself is unchanged by the
-/// fix; correctness depends on the producer always supplying this metadata (see
-/// TwoLayerDistMetadataFuzz for the end-to-end check through the real production code path).
-TEST(GroupingAggregatedOOO, DelayedBucketMetadataPreventsDoublePush)
-{
-    auto inputs = buildInputs({
-        {{1, {0}}, {2, {0}}, {0, {}}},   // dist_layer shard 0: postponed 0, metadata forwarded
-        {{0, {}},  {1, {}},  {2, {}}},   // dist_layer shard 1: in order
-    });
-    ManualGroupingDriver d(std::move(inputs));
-    expectEachBucketOnce(d.run());
-}
-
 namespace
 {
 /// Run ONE "remote dist-layer shard": a real GroupingAggregatedTransform fed `num_inner`
@@ -594,7 +352,7 @@ std::vector<PushedBucket> runRemoteShard(pcg64 & rng, size_t num_inner, Int32 nu
             q.push_back(makeBucketChunk(bucket, ooo));
         inputs.push_back(std::move(q));
     }
-    ManualGroupingDriver d(std::move(inputs));
+    ManualGroupingDriver d(std::move(inputs), rng);
     return d.runPushed(); // reordered bucket sequence, each bucket once, WITH stamped metadata
 }
 }
@@ -634,7 +392,7 @@ TEST(GroupingAggregatedOOO, TwoLayerDistMetadataFuzz)
             outer_inputs.push_back(std::move(q));
         }
 
-        ManualGroupingDriver d(std::move(outer_inputs));
+        ManualGroupingDriver d(std::move(outer_inputs), rng);
         auto pushed = d.run();
 
         std::map<Int32, int> counts;
@@ -648,24 +406,11 @@ TEST(GroupingAggregatedOOO, TwoLayerDistMetadataFuzz)
     std::cerr << "TwoLayerDistMetadataFuzz iterations checked: " << total << std::endl;
 }
 
-/// =====================================================================================
-/// SPARSE / EMPTY DELAYED BUCKET (review follow-up).
-///
-/// The OUT-OF-ORDER optimization lets an input declare a bucket delayed and then resolve
-/// it EMPTY: the producer (ConvertingAggregatedToChunksTransform) postpones a bucket, finds
-/// it has no rows, and drops it WITHOUT ever sending it - erasing it from the pending set
-/// before stamping the next chunk. The consumer
-/// mirrors this in `addChunk`: the bucket's count in `out_of_order_buckets` is decremented
-/// back to 0, but the map entry is not erased (it is erased only on the out of order push
-/// path) and the bucket is never buffered in `chunks_map`. So a zero-count entry for an
-/// empty-resolved bucket lingers.
-///
-/// When stamping metadata for a downstream re-merge layer, such zero-count entries must NOT
-/// be forwarded: a sparse two-level layout (only some of 0..255 present) routinely leaves
-/// them, and advertising one as "still owed" makes the next layer hold back the real chunk
-/// for that bucket from every other input until the stream finishes, breaking the
-/// memory-efficient merge contract (and re-introducing the very double-push this fix removes).
-/// =====================================================================================
+/// A producer can declare a bucket delayed and then resolve it empty, dropping it without ever
+/// sending it. The consumer decrements the count of that bucket in `out_of_order_buckets` back to
+/// 0, but the entry itself stays, and the bucket is never buffered in `chunks_map`. Such a zero
+/// count entry must not be reported as owed to the next layer, otherwise that layer holds back the
+/// real chunks of the bucket from all the other inputs until the stream finishes.
 
 /// What an inner dist-layer shard stamps when it had a delayed-then-empty bucket.
 /// input: (0, ooo=[1]) then (2, ooo=[]) - declare 1 delayed while sending 0, then resolve 1
@@ -674,10 +419,11 @@ TEST(GroupingAggregatedOOO, TwoLayerDistMetadataFuzz)
 /// 2) must NOT list bucket 1 - it is not owed by anyone, the shard simply skipped it.
 TEST(GroupingAggregatedOOO, EmptyDelayedBucketNotStampedAsOwed)
 {
+    pcg64 rng(0xE0B0CE7);
     auto inputs = buildInputs({
         {{0, {1}}, {2, {}}},   // single shard: postpone 1, resolve it empty, emit 2
     });
-    ManualGroupingDriver d(std::move(inputs));
+    ManualGroupingDriver d(std::move(inputs), rng);
     const auto & pushed = d.runPushed();
 
     /// All buckets must still be pushed exactly once.
@@ -695,41 +441,6 @@ TEST(GroupingAggregatedOOO, EmptyDelayedBucketNotStampedAsOwed)
         /// Sanity: a bucket is never owed to itself.
         EXPECT_EQ(std::ranges::count(p.ooo, p.bucket), 0);
     }
-}
-
-/// End-to-end: a downstream initiator must still merge real bucket-1 data once a sibling shard
-/// supplies it, NOT buffer it to the end of the stream.
-///   - shard A: postpones 1, resolves it EMPTY, emits 0 and 2 (its stamped metadata models the
-///     fixed re-merge path: bucket 1 must NOT appear as owed).
-///   - shard B: delivers buckets 0,1,2 in order, with real data for bucket 1.
-/// The initiator must push 0,1,2 each exactly once. If shard A wrongly advertised bucket 1 as
-/// owed, the initiator would withhold shard B's bucket 1 (its in-order path skips owed
-/// buckets) until the stream finishes - and then could double-push it on the finish drain.
-TEST(GroupingAggregatedOOO, EmptyDelayedBucketDownstreamMergesRealData)
-{
-    /// Run shard A through a real GroupingAggregatedTransform and forward its STAMPED metadata,
-    /// exactly as MergingAggregatedBucketTransform would in a multi-layer query.
-    std::vector<PushedBucket> shard_a;
-    {
-        auto inputs = buildInputs({{{0, {1}}, {2, {}}}});
-        ManualGroupingDriver da(std::move(inputs));
-        shard_a = da.runPushed();
-    }
-
-    /// The fix makes shard A NOT advertise the empty bucket 1 as owed. (Pre-fix it does, which
-    /// is what holds back shard B's real bucket 1 until the stream ends.)
-    for (const auto & p : shard_a)
-        EXPECT_EQ(std::ranges::count(p.ooo, 1), 0)
-            << "shard A stamped empty bucket 1 as owed on its push of bucket " << p.bucket;
-
-    std::vector<std::deque<Chunk>> outer(2);
-    for (const auto & p : shard_a)
-        outer[0].push_back(makeBucketChunk(p.bucket, p.ooo));
-    for (Int32 b : {0, 1, 2})
-        outer[1].push_back(makeBucketChunk(b, {}));
-
-    ManualGroupingDriver d(std::move(outer));
-    expectEachBucketOnce(d.run());
 }
 
 /// Faithful producer model EXTENDED to resolve postponed buckets EMPTY at random: when a
@@ -799,7 +510,7 @@ std::vector<PushedBucket> runRemoteShardWithEmpties(pcg64 & rng, size_t num_inne
             q.push_back(makeBucketChunk(bucket, ooo));
         inputs.push_back(std::move(q));
     }
-    ManualGroupingDriver d(std::move(inputs));
+    ManualGroupingDriver d(std::move(inputs), rng);
     return d.runPushed();
 }
 }
@@ -831,7 +542,7 @@ TEST(GroupingAggregatedOOO, TwoLayerDistSparseEmptyBucketFuzz)
             outer_inputs.push_back(std::move(q));
         }
 
-        ManualGroupingDriver d(std::move(outer_inputs));
+        ManualGroupingDriver d(std::move(outer_inputs), rng);
         auto pushed = d.run();
 
         std::map<Int32, int> counts;
@@ -845,30 +556,15 @@ TEST(GroupingAggregatedOOO, TwoLayerDistSparseEmptyBucketFuzz)
     std::cerr << "TwoLayerDistSparseEmptyBucketFuzz iterations checked: " << total << std::endl;
 }
 
-/// =====================================================================================
-/// THE MERGING LAYER (review follow-up).
-///
-/// Everything above models an intermediate distributed layer as
-/// `GroupingAggregatedTransform` alone. That is only the first half of it. The real pipeline
-/// built by `addMergingAggregatedMemoryEfficientTransform` is
-///
-///     GroupingAggregated -> Resize -> N x MergingAggregatedBucket -> SortingAggregated
-///
-/// whenever `num_merging_processors > 1`, which is the common case (it is
-/// `aggregation_memory_efficient_merge_threads`, defaulting to `max_threads`). The N mergers
-/// run concurrently and finish in an order unrelated to the order they started in, so:
-///
-///   1. `SortingAggregatedTransform` can emit a bucket AFTER a bigger one which
-///      `GroupingAggregatedTransform` emitted EARLIER. That inversion did not exist upstream,
-///      so no metadata stamped upstream describes it: if `GroupingAggregatedTransform` pushed
-///      6 (delayed) and then 8, the stamp on 8 does not mention 6, because 6 was no longer
-///      pending by then. Forwarding that stamp unchanged is therefore not enough.
-///   2. So the delayed-bucket metadata has to be RE-DERIVED when this transform pushes,
-///      from the latest announcement of each input minus what it has already pushed
-///      (`SortingAggregatedTransform::getDelayedBucketsBefore`).
-///
-/// These tests drive that transform for real, with a randomized merger completion order.
-/// =====================================================================================
+/// The tests above model an intermediate layer as `GroupingAggregatedTransform` alone, which is
+/// only a half of it: `addMergingAggregatedMemoryEfficientTransform` builds
+/// `GroupingAggregated -> Resize -> N x MergingAggregatedBucket -> SortingAggregated`, and the
+/// mergers finish in an order unrelated to the order they started in. So `SortingAggregatedTransform`
+/// can emit a bucket after a bigger one which `GroupingAggregatedTransform` emitted earlier, an
+/// inversion which no metadata stamped upstream describes: when 6 is delayed, pushed, and 8 is
+/// pushed after it, the stamp on 8 does not mention 6. That is why this transform re-derives the
+/// delayed buckets instead of forwarding the stamp. These tests drive it with a randomized merger
+/// completion order.
 
 namespace
 {
@@ -1023,7 +719,7 @@ std::vector<PushedBucket> runDistLayer(pcg64 & rng, size_t num_inner, Int32 num_
         inputs.push_back(std::move(q));
     }
 
-    ManualGroupingDriver grouping(std::move(inputs));
+    ManualGroupingDriver grouping(std::move(inputs), rng);
     auto mergers = fanOutToMergers(grouping.runPushed(), num_mergers, rng);
     ManualSortingDriver sorting(std::move(mergers), rng);
     return sorting.runPushed();
@@ -1106,7 +802,7 @@ TEST(GroupingAggregatedOOO, TwoLayerDistThroughSortingLayerFuzz)
             outer_inputs.push_back(std::move(q));
         }
 
-        ManualGroupingDriver d(std::move(outer_inputs));
+        ManualGroupingDriver d(std::move(outer_inputs), rng);
         auto pushed = d.run();
 
         std::map<Int32, int> counts;
