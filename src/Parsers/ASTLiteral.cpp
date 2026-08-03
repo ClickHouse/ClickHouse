@@ -11,6 +11,7 @@
 #include <IO/Operators.h>
 #include <Common/Exception.h>
 
+#include <cmath>
 
 namespace DB
 {
@@ -220,6 +221,7 @@ public:
     template<typename T>
     String operator() (const T & x) const { return visitor(x); }
 
+    String operator() (const Float64 & x) const;
     String operator() (const Array & x) const;
     String operator() (const Tuple & x) const;
     String operator() (const Map & x) const;
@@ -234,6 +236,15 @@ String FieldVisitorToStringStandardSQL::operator() (const String & x) const
     WriteBufferFromOwnString wb;
     writeQuotedStringStandardSQL(x, wb);
     return wb.str();
+}
+
+String FieldVisitorToStringStandardSQL::operator() (const Float64 & x) const
+{
+    if (!std::isfinite(x))
+        throw Exception(ErrorCodes::BAD_ARGUMENTS,
+            "A non-finite floating-point literal cannot be represented as standard SQL text");
+
+    return visitor(x);
 }
 
 String FieldVisitorToStringStandardSQL::operator() (const Array & x) const

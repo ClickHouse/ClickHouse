@@ -18,6 +18,7 @@
 #include <Storages/MergeTree/KeyCondition.h>
 #include <Storages/transformQueryForExternalDatabaseAnalyzer.h>
 
+#include <cmath>
 #include <queue>
 
 
@@ -168,25 +169,34 @@ bool containsUUIDColumn(const ASTPtr & node, const NamesAndTypesList & available
     return false;
 }
 
-/// Whether the field contains a String with an embedded NUL byte anywhere inside (including nested inside a
-/// Tuple, e.g. the right-hand side of IN).
-bool fieldContainsNulByte(const Field & field)
+/// Whether the field cannot be represented by the standard SQL literal formatter anywhere inside, including
+/// nested inside a `Tuple` such as the right-hand side of `IN`.
+bool fieldCannotBeRepresentedWithStandardSQLLiteralStyle(const Field & field)
 {
     switch (field.getType())
     {
         case Field::Types::String:
             return field.safeGet<String>().find('\0') != String::npos;
+        case Field::Types::Float64:
+            return !std::isfinite(field.safeGet<Float64>());
         case Field::Types::Tuple:
         {
             for (const auto & element : field.safeGet<Tuple>())
-                if (fieldContainsNulByte(element))
+                if (fieldCannotBeRepresentedWithStandardSQLLiteralStyle(element))
                     return true;
             return false;
         }
         case Field::Types::Array:
         {
             for (const auto & element : field.safeGet<Array>())
-                if (fieldContainsNulByte(element))
+                if (fieldCannotBeRepresentedWithStandardSQLLiteralStyle(element))
+                    return true;
+            return false;
+        }
+        case Field::Types::Map:
+        {
+            for (const auto & element : field.safeGet<Map>())
+                if (fieldCannotBeRepresentedWithStandardSQLLiteralStyle(element))
                     return true;
             return false;
         }
@@ -314,11 +324,11 @@ bool isCompatible(
 
     if (const auto * literal = node->as<ASTLiteral>())
     {
-        /// A standard SQL string literal has no escape sequences at all, so a String containing a NUL byte
-        /// cannot be represented in the pushed-down SQL text (the statement text would be truncated at the
-        /// NUL). Keep such a predicate local instead of pushing it down (the external database this style is
-        /// used for, SQLite, receives the statement as NUL-terminated text).
-        if (literal_escaping_style == LiteralEscapingStyle::StandardSQL && fieldContainsNulByte(literal->value))
+        /// A standard SQL string literal cannot represent a NUL byte (SQLite receives NUL-terminated statement
+        /// text), and the formatter emits non-finite floats as bare `inf`/`nan`, which SQLite parses as
+        /// identifiers. Keep predicates containing either kind of literal local instead of pushing them down.
+        if (literal_escaping_style == LiteralEscapingStyle::StandardSQL
+            && fieldCannotBeRepresentedWithStandardSQLLiteralStyle(literal->value))
             return false;
 
         if (literal->value.getType() == Field::Types::Tuple)
