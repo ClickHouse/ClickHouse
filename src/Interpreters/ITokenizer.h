@@ -34,6 +34,7 @@ public:
         Array,
         SparseGrams,
         AsciiCJK,
+        Icu,
 #if USE_MECAB
         Japanese,
 #endif
@@ -443,6 +444,30 @@ struct AsciiCJKTokenizer final : public ITokenizerHelper<AsciiCJKTokenizer>
     bool supportsStringLike() const override { return true; }
 };
 
+/// Tokenizer based on ICU's word break iteration (UAX #29). For scripts without whitespace between
+/// words (e.g. Chinese, Japanese, Thai) ICU applies dictionary-based segmentation, so such text is
+/// split into meaningful word tokens rather than single characters.
+struct IcuTokenizer final : public ITokenizerHelper<IcuTokenizer>
+{
+    explicit IcuTokenizer(String locale_) : ITokenizerHelper(Type::Icu), locale(std::move(locale_)) {}
+
+    static const char * getName() { return "icu"; }
+    static const char * getExternalName() { return getName(); }
+    String getDescription() const override;
+
+    bool nextInString(const char * data, size_t length, size_t & __restrict pos, size_t & __restrict token_start, size_t & __restrict token_length) const override;
+    bool nextInStringLike(const char * data, size_t length, size_t & pos, String & token) const override;
+
+    bool supportsStringLike() const override { return false; }
+    void substringToBloomFilter(const char * data, size_t length, BloomFilter & bloom_filter, bool is_prefix, bool is_suffix) const override;
+    void substringToTokens(const char * data, size_t length, VectorWithMemoryTracking<String> & tokens, bool is_prefix, bool is_suffix) const override;
+
+    const String & getLocale() const { return locale; }
+
+private:
+    String locale;
+};
+
 /// The Japanese (MeCab) tokenizer is declared in its own header (`JapaneseTokenizer.h`) so that this
 /// widely-included header does not pull in `<mecab.h>`. `forEachToken` dispatches it via the base
 /// `nextInString` (see `Type::Japanese` below), so the concrete type is not needed here.
@@ -513,6 +538,12 @@ void forEachToken(const ITokenizer & tokenizer, const char * __restrict data, si
         {
             const auto & ascii_cjk_tokenizer = assert_cast<const AsciiCJKTokenizer &>(tokenizer);
             detail::forEachTokenImpl(ascii_cjk_tokenizer, data, length, callback);
+            return;
+        }
+        case ITokenizer::Type::Icu:
+        {
+            const auto & icu_tokenizer = assert_cast<const IcuTokenizer &>(tokenizer);
+            detail::forEachTokenImpl(icu_tokenizer, data, length, callback);
             return;
         }
 #if USE_MECAB
