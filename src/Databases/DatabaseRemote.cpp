@@ -5,6 +5,7 @@
 #include <Columns/ColumnString.h>
 #include <Core/Block.h>
 #include <Core/Defines.h>
+#include <Core/Names.h>
 #include <Core/Settings.h>
 #include <DataTypes/DataTypeString.h>
 #include <Databases/DatabaseFactory.h>
@@ -152,6 +153,44 @@ Strings DatabaseRemote::fetchTablesList(ContextPtr local_context, const String *
         query_context->setSettings(new_settings);
     }
 
+    /// Ask the replicas of the cluster for the list of names, taking the answer of the first one that
+    /// responds (`PoolMode::GET_ONE`), and report the failed attempts when none of them does.
+    auto fetch_from_cluster = [&](const Cluster & remote_cluster)
+    {
+        std::string fail_messages;
+        for (const auto & shard_info : remote_cluster.getShardsInfo())
+        {
+            try
+            {
+                RemoteQueryExecutor executor(shard_info.pool, query, sample_block, query_context);
+                executor.setPoolMode(PoolMode::GET_ONE);
+
+                /// Accumulate per attempt: names read before a mid-stream failure must not leak into
+                /// the next attempt, or a retried listing would return a mixed or duplicated result.
+                Strings tables;
+                for (Block block = executor.readBlock(); !block.empty(); block = executor.readBlock())
+                {
+                    const IColumn & name_column = *block.getByName("name").column;
+                    for (size_t i = 0, size = name_column.size(); i < size; ++i)
+                        tables.push_back(name_column[i].safeGet<String>());
+                }
+
+                executor.finish();
+                return tables;
+            }
+            catch (const NetException &)
+            {
+                fail_messages += getCurrentExceptionMessage(/* with_stacktrace = */ false) + '\n';
+                continue;
+            }
+        }
+
+        throw NetException(
+            ErrorCodes::NO_REMOTE_SHARD_AVAILABLE,
+            "All attempts to get the list of tables of the remote database failed. Log:\n\n{}\n",
+            fail_messages);
+    };
+
     /// The metadata (the list of the tables and, in `fetchTableStructure`, their structure) is resolved
     /// from an arbitrary shard, exactly like `getStructureOfRemoteTable` does: the shards of one cluster
     /// normally serve the same set of tables, and asking every one of them would multiply the cost of
@@ -227,12 +266,61 @@ Strings DatabaseRemote::fetchTablesList(ContextPtr local_context, const String *
                 const bool check_access_for_tables = !underlying_listing_is_filtered_by_access
                     && !access->isGranted(AccessType::SHOW_TABLES, remote_database);
                 Strings tables;
+                NameSet local_names;
                 for (const auto & table : local_database->getLightweightTablesIterator(query_context))
                 {
+                    local_names.insert(table.name);
                     if (check_access_for_tables && !access->isGranted(AccessType::SHOW_TABLES, remote_database, table.name))
                         continue;
                     tables.push_back(table.name);
                 }
+
+                /// The local replica has the database, but it may still be missing a table that another
+                /// replica of the shard has, and resolution (`EXISTS TABLE`, `SELECT`) does fall back to
+                /// that replica, so the listing has to include such a table as well; otherwise the same
+                /// name would be absent from `SHOW TABLES` and `system.tables` while it can be described
+                /// and read. Only a name that the local replica does not have at all is taken from the
+                /// fallback: a name it has but hides from the caller stays hidden, exactly like in the
+                /// `only_table` branch above.
+                if (!remote_only_cluster)
+                    return tables;
+
+                Strings remote_tables;
+                try
+                {
+                    remote_tables = fetch_from_cluster(*remote_only_cluster);
+                }
+                catch (...)
+                {
+                    /// The metadata is resolved from an arbitrary available replica, and the local one
+                    /// has just answered, so its list is a valid answer on its own: an unreachable
+                    /// second replica must not turn a `SHOW TABLES` that the local replica can serve
+                    /// into an error. Log at debug level for the same reason as in `getTablesIterator`.
+                    LOG_DEBUG(
+                        log,
+                        "Cannot complete the list of the tables of the remote database {} from its remote replicas: {}",
+                        backQuoteIfNeed(remote_database),
+                        getCurrentExceptionMessage(/* with_stacktrace = */ false));
+                    return tables;
+                }
+
+                for (const auto & table_name : remote_tables)
+                {
+                    if (local_names.contains(table_name))
+                        continue;
+
+                    /// A table that the lightweight iterator did not return can still exist locally and
+                    /// merely be invisible to the caller (a nested `Remote` database filters its own
+                    /// listing), and such a name must not be served by another replica.
+                    const bool exists_locally = underlying_remote
+                        ? underlying_remote->isTableExistIgnoringVisibility(table_name, query_context)
+                        : local_database->isTableExist(table_name, query_context);
+                    if (exists_locally)
+                        continue;
+
+                    tables.push_back(table_name);
+                }
+
                 return tables;
             }
         }
@@ -249,36 +337,7 @@ Strings DatabaseRemote::fetchTablesList(ContextPtr local_context, const String *
         break;
     }
 
-    std::string fail_messages;
-    for (const auto & shard_info : remote_cluster->getShardsInfo())
-    {
-        try
-        {
-            RemoteQueryExecutor executor(shard_info.pool, query, sample_block, query_context);
-            executor.setPoolMode(PoolMode::GET_ONE);
-
-            /// Accumulate per attempt: names read before a mid-stream failure must not leak into
-            /// the next attempt, or a retried listing would return a mixed or duplicated result.
-            Strings tables;
-            for (Block block = executor.readBlock(); !block.empty(); block = executor.readBlock())
-            {
-                const IColumn & name_column = *block.getByName("name").column;
-                for (size_t i = 0, size = name_column.size(); i < size; ++i)
-                    tables.push_back(name_column[i].safeGet<String>());
-            }
-
-            executor.finish();
-            return tables;
-        }
-        catch (const NetException &)
-        {
-            fail_messages += getCurrentExceptionMessage(/* with_stacktrace = */ false) + '\n';
-            continue;
-        }
-    }
-
-    throw NetException(
-        ErrorCodes::NO_REMOTE_SHARD_AVAILABLE, "All attempts to get the list of tables of the remote database failed. Log:\n\n{}\n", fail_messages);
+    return fetch_from_cluster(*remote_cluster);
 }
 
 

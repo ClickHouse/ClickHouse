@@ -89,6 +89,54 @@ def test_replica_fallback_needs_no_local_grants(started_cluster):
     node2.query("DROP DATABASE grants_src")
 
 
+def test_listing_includes_a_table_of_a_remote_replica(started_cluster):
+    # The database exists on the local replica of the shard, but one of its tables exists only on the
+    # remote replica. Resolution falls back to that replica, so the listing has to include the table
+    # as well: otherwise the same name would be missing from `SHOW TABLES` and `system.tables` while
+    # `EXISTS TABLE`, `DESCRIBE` and `SELECT` answer for it.
+    for node in (node1, node2):
+        node.query("CREATE DATABASE listing_src")
+        node.query("CREATE TABLE listing_src.both (x UInt64) ENGINE = MergeTree ORDER BY x")
+    node2.query(
+        "CREATE TABLE listing_src.only_remote (x UInt64) ENGINE = MergeTree ORDER BY x"
+    )
+    node2.query("INSERT INTO listing_src.only_remote VALUES (5)")
+
+    node1.query(
+        "CREATE DATABASE listing_proxy ENGINE = Remote('node1|node2', 'listing_src', 'default', '')"
+    )
+
+    assert node1.query("SHOW TABLES FROM listing_proxy") == "both\nonly_remote\n"
+    assert (
+        node1.query(
+            "SELECT name FROM system.tables WHERE database = 'listing_proxy' ORDER BY name"
+        )
+        == "both\nonly_remote\n"
+    )
+    assert node1.query("EXISTS TABLE listing_proxy.only_remote") == "1\n"
+    assert node1.query("SELECT sum(x) FROM listing_proxy.only_remote") == "5\n"
+
+    node1.query("DROP DATABASE listing_proxy")
+    for node in (node1, node2):
+        node.query("DROP DATABASE listing_src")
+
+
+def test_listing_does_not_fail_when_a_remote_replica_is_unavailable(started_cluster):
+    # The listing is completed from the remote replicas of the shard, but they are consulted only to
+    # add what the local replica does not have: when none of them answers, the list of the local
+    # replica is still a valid answer of an available replica, so `SHOW TABLES` must not fail.
+    node1.query("CREATE DATABASE unavailable_src")
+    node1.query("CREATE TABLE unavailable_src.t (x UInt64) ENGINE = MergeTree ORDER BY x")
+    node1.query(
+        "CREATE DATABASE unavailable_proxy ENGINE = Remote('node1|127.0.0.1:1', 'unavailable_src', 'default', '')"
+    )
+
+    assert node1.query("SHOW TABLES FROM unavailable_proxy") == "t\n"
+
+    node1.query("DROP DATABASE unavailable_proxy")
+    node1.query("DROP DATABASE unavailable_src")
+
+
 def test_multi_shard_metadata_comes_from_one_shard(started_cluster):
     # `Remote('node1,node2', db)` on node3 describes two remote shards. The metadata is resolved from
     # an arbitrary shard -- the first reachable one, here node1 -- so that a listing costs a single
