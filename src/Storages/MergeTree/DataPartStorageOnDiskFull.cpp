@@ -1,6 +1,5 @@
 #include <Storages/MergeTree/DataPartStorageOnDiskFull.h>
 
-#include <climits>
 #include <Disks/IDiskTransaction.h>
 #include <Disks/SingleDiskVolume.h>
 #include <IO/PackedFilesReader.h>
@@ -59,13 +58,23 @@ bool DataPartStorageOnDiskFull::existsFileImpl(const std::string & name) const
 {
     /// A logical file name is not bounded by the filesystem - it can live inside an archive, and a
     /// skip index whose name does not fit into a directory entry has its substreams stored under a
-    /// hash instead (`replace_long_file_name_to_hash`). Here the name is a real directory entry
-    /// though, and probing one that is too long throws `File name too long` instead of reporting
-    /// the file as absent. Such a name cannot name a file on this disk, so it is absent.
-    if (name.size() > NAME_MAX)
-        return false;
-
-    return volume->getDisk()->existsFile(fs::path(root_path) / part_dir / name);
+    /// hash instead (`replace_long_file_name_to_hash`). Here the name is looked up on the disk, and a
+    /// local disk answers a name longer than `NAME_MAX` by throwing `File name too long` instead of
+    /// reporting the file as absent. A name the disk cannot represent names no file on it, so the
+    /// answer is "absent".
+    ///
+    /// This is decided by the disk rather than by the length alone: `DataPartStorageOnDiskFull` also
+    /// fronts object storage, where the name becomes an object key and is not bounded by `NAME_MAX`.
+    try
+    {
+        return volume->getDisk()->existsFile(fs::path(root_path) / part_dir / name);
+    }
+    catch (const fs::filesystem_error & e)
+    {
+        if (e.code() == std::errc::filename_too_long)
+            return false;
+        throw;
+    }
 }
 
 bool DataPartStorageOnDiskFull::existsDirectory(const std::string & name) const
