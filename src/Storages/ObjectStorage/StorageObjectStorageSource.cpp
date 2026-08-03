@@ -106,12 +106,8 @@ namespace ErrorCodes
 
 ColumnPtr backfillIdentityPartitionColumn(const DataTypePtr & column_type, const Field & value, size_t num_rows)
 {
-    /// The manifest stores the partition value in Iceberg physical encoding, which for scale-backed
-    /// target types (Decimal, DateTime64, Time64) is the raw unscaled integer tick (e.g. int64
-    /// microseconds for a timestamp). Feeding that integer to convertFieldToType applies value
-    /// semantics and overflows (issue #110216 follow-up: DateTime64). For those types the tick is
-    /// already the column's internal value, so build the column by inserting the tick directly;
-    /// other types go through the normal value conversion.
+    /// For a scale-backed type the manifest value is the raw unscaled tick, i.e. already the
+    /// column's internal value: insert it directly, since convertFieldToType would apply the scale.
     const auto inner_type = removeNullable(column_type);
     if (auto scale = tryGetDecimalScale(*inner_type);
         scale.has_value()

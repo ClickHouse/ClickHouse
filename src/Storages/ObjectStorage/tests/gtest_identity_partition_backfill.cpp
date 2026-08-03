@@ -11,12 +11,8 @@
 
 using namespace DB;
 
-/// Finding G (issue #110216 follow-up): an identity-partition column absent from the data file is
-/// backfilled from the manifest partition value, which for scale-backed types is the raw physical
-/// integer tick. The DecimalField wrapping must use the target column's own width, otherwise
-/// ColumnDecimal<T>::insert -> Field::safeGet<T>() throws BAD_GET for Decimal32/128/256, whose Field
-/// type tags differ from Decimal64. IcebergLocal cannot write Decimal partition columns, so this is
-/// not reproducible from SQL; the backfill helper is exercised directly here.
+/// The helper is exercised directly because `IcebergLocal` cannot write a Decimal partition column,
+/// so the per-width `DecimalField` wrapping is not reachable from SQL.
 namespace
 {
 template <typename DecimalT>

@@ -375,11 +375,8 @@ ObjectInfoPtr IcebergIterator::next(size_t)
                 persistent_components.path_resolver.resolve(manifest_file_entry->parsed_entry->file_path_key),
                 table_state_snapshot->schema_id);
 
-        /// Backfill identity-partition columns whose value lives only in the manifest partition tuple
-        /// and is absent from the data file (Hive-style / Fabric-virtualized Iceberg, issue #110216).
-        /// The partition tuple is positionally aligned with the manifest partition spec; for every
-        /// `identity` transform we map the source field id to its name in the current read schema and
-        /// carry the value so the read source can populate the otherwise NULL-filled output column.
+        /// The partition tuple is positionally aligned with the partition spec, hence the size guard
+        /// and the shared index below.
         const auto & partition_spec = manifest_file_entry->common_partition_specification;
         const auto & partition_values = manifest_file_entry->parsed_entry->partition_key_value;
         if (partition_spec && partition_spec->size() == partition_values.size())
