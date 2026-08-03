@@ -385,10 +385,8 @@ namespace
 {
 
 /// Does converting a column from `from` to `to` keep values in the same relative order?
-/// Deliberately conservative: an unrecognised pair is reported as order-breaking, because a
-/// false "safe" yields wrong query results while a false "unsafe" only costs one pushdown.
-/// Wrappers are compared as part of the type, so a Nullable change (which moves where NULLs
-/// sort) is order-breaking. Shape follows `isSafeForKeyConversion` in MergeTreeData.cpp.
+/// Conservative: an unrecognised pair is reported as order-breaking, because a false "safe"
+/// yields wrong results while a false "unsafe" only costs one pushdown.
 bool conversionPreservesOrder(const IDataType & from, const IDataType & to)
 {
     if (from.equals(to))
@@ -419,56 +417,6 @@ bool conversionPreservesOrder(const IDataType & from, const IDataType & to)
     return false;
 }
 
-/// Unwrap transparent wrappers so a nested `Merge` behind an `Alias` is still recognised as one.
-StoragePtr resolveThroughAliases(StoragePtr table)
-{
-    /// `Alias` chains are shallow in practice; the bound only stops a cycle.
-    for (size_t i = 0; table && i < 16; ++i)
-    {
-        const auto * alias = table->as<StorageAlias>();
-        if (!alias)
-            break;
-        table = alias->tryGetTargetTable();
-    }
-    return table;
-}
-
-}
-
-bool StorageMerge::childConversionsBreakOrder(ContextPtr local_context, size_t depth) const
-{
-    /// A nested `Merge` may have to refuse for its own grandchild while our declared types match
-    /// its declared types, so the answer cannot be derived from the stage it reports.
-    if (depth >= max_conversion_check_depth)
-        return true;
-
-    const auto declared_metadata = getInMemoryMetadataPtr(local_context, false);
-    if (!declared_metadata)
-        return true;
-    const auto & declared_columns = declared_metadata->getColumns();
-
-    return traverseTablesUntil([&](const StoragePtr & raw_table)
-    {
-        auto table = resolveThroughAliases(raw_table);
-        if (!table || table.get() == this)
-            return false;
-
-        const auto table_metadata = table->getInMemoryMetadataPtr(local_context, false);
-        if (!table_metadata)
-            return true;
-
-        for (const auto & child_column : table_metadata->getColumns().getAllPhysical())
-        {
-            auto declared_column = declared_columns.tryGetPhysical(child_column.name);
-            if (declared_column && !conversionPreservesOrder(*child_column.type, *declared_column->type))
-                return true;
-        }
-
-        if (const auto * child_merge = table->as<StorageMerge>())
-            return child_merge->childConversionsBreakOrder(local_context, depth + 1);
-
-        return false;
-    }) != nullptr;
 }
 
 QueryProcessingStage::Enum StorageMerge::getQueryProcessingStage(
@@ -498,6 +446,9 @@ QueryProcessingStage::Enum StorageMerge::getQueryProcessingStage(
     DatabaseTablesIterators database_table_iterators = database_name_or_regexp.getDatabaseIterators(local_context);
 
     size_t selected_table_size = 0;
+    bool any_child_conversion_breaks_order = false;
+    const auto declared_metadata = getInMemoryMetadataPtr(local_context, false);
+    const auto & declared_columns = declared_metadata->getColumns();
 
     for (const auto & iterator : database_table_iterators)
     {
@@ -512,6 +463,13 @@ QueryProcessingStage::Enum StorageMerge::getQueryProcessingStage(
                     stage_in_source_tables,
                     table->getQueryProcessingStage(local_context, to_stage,
                         table->getStorageSnapshot(table_metadata, local_context), query_info));
+
+                for (const auto & child_column : table_metadata->getColumns().getAllPhysical())
+                {
+                    auto declared_column = declared_columns.tryGetPhysical(child_column.name);
+                    if (declared_column && !conversionPreservesOrder(*child_column.type, *declared_column->type))
+                        any_child_conversion_breaks_order = true;
+                }
             }
 
             iterator->next();
@@ -535,13 +493,9 @@ QueryProcessingStage::Enum StorageMerge::getQueryProcessingStage(
     if (to_stage == QueryProcessingStage::WithMergeableState && stage > to_stage)
         stage = QueryProcessingStage::WithMergeableState;
 
-    /// A stage above FetchColumns lets children sort for us, but `convertAndFilterSourceStream`
-    /// then casts their output above that sort, and an order-breaking cast leaves the merge above
-    /// us reading streams it believes are sorted. Do the work here instead.
-    ///
-    /// Checked on the effective stage, not on `to_stage`: a single-node `Distributed` child
-    /// returns Complete even for a FetchColumns request, and that is deliberately kept above.
-    if (stage > QueryProcessingStage::FetchColumns && childConversionsBreakOrder(local_context, 0))
+    /// Gated on the effective stage, not on `to_stage`: a single-node `Distributed` child returns
+    /// Complete even for a FetchColumns request, and that is deliberately kept above.
+    if (stage > QueryProcessingStage::FetchColumns && any_child_conversion_breaks_order)
         return QueryProcessingStage::FetchColumns;
 
     return stage;

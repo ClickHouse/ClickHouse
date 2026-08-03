@@ -63,11 +63,6 @@ public:
     QueryProcessingStage::Enum
     getQueryProcessingStage(ContextPtr, QueryProcessingStage::Enum, const StorageSnapshotPtr &, SelectQueryInfo &) const override;
 
-    /// True if any source table's column type differs from this table's declared type in a way
-    /// that does not preserve sort order. Recurses into nested `Merge` children, whose own
-    /// grandchildren can be unsafe while their declared types match ours.
-    bool childConversionsBreakOrder(ContextPtr local_context, size_t depth) const;
-
     StorageMetadataHandle getInMemoryMetadataPtr(ContextPtr context, bool bypass_metadata_cache) const override;
 
     void read(
@@ -111,10 +106,6 @@ public:
         size_t max_tables_to_look);
 
 private:
-    /// Recursion bound for `childConversionsBreakOrder`. Reaching it reports "unsafe", so a
-    /// self-referential `Merge` cannot loop forever nor slip through as safe.
-    static constexpr size_t max_conversion_check_depth = 8;
-
     /// (Database, Table, Lock, TableName)
     using StorageWithLockAndName = std::tuple<String, StoragePtr, TableLockHolder, String>;
     using StorageListWithLocks = std::list<StorageWithLockAndName>;
