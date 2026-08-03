@@ -629,6 +629,7 @@ std::pair<Poco::URI, std::unique_ptr<ReadWriteBufferFromHTTP>> StorageURLSource:
             if (context_->getSettingsRef()[Setting::engine_url_skip_empty_files] && res->eof() && option != std::prev(end))
             {
                 last_skipped_empty_res = {request_uri, std::move(res)};
+                CurrentThread::checkIfNotCancelled();
                 continue;
             }
 

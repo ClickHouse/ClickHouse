@@ -24,8 +24,17 @@ s.bind(('127.0.0.1', 0))
 print(s.getsockname()[1])
 s.close()
 ")
+EMPTY_PORT=$(python3 -c "
+import socket
+s = socket.socket()
+s.bind(('127.0.0.1', 0))
+print(s.getsockname()[1])
+s.close()
+")
 
 STDERR="${CLICKHOUSE_TMP}/${CLICKHOUSE_TEST_UNIQUE_NAME}.stderr"
+RELEASE="${CLICKHOUSE_TMP}/${CLICKHOUSE_TEST_UNIQUE_NAME}.release"
+rm -f "$RELEASE"
 
 # Accepts every connection and never writes a response, so every attempt there ends in a timeout.
 python3 -c "
@@ -62,7 +71,30 @@ while True:
 " &
 LIVE_PID=$!
 
-trap 'kill $DEAD_PID $LIVE_PID 2>/dev/null ||:; wait $DEAD_PID $LIVE_PID 2>/dev/null ||:; rm -f "$STDERR"' EXIT
+# Answers an empty body, but only once the shell has observed the kill landing and created the
+# release file. Holding the response back that way keeps the empty-option skip and the cancellation
+# ordered by observation rather than by a wall clock.
+python3 -c "
+import os, socket, time
+srv = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
+srv.setsockopt(socket.SOL_SOCKET, socket.SO_REUSEADDR, 1)
+srv.bind(('127.0.0.1', $EMPTY_PORT))
+srv.listen(128)
+head = b'HTTP/1.1 200 OK\r\nContent-Type: text/tab-separated-values\r\nContent-Length: 0\r\nConnection: close\r\n\r\n'
+while True:
+    conn, _ = srv.accept()
+    try:
+        if conn.recv(65536):
+            while not os.path.exists('$RELEASE'):
+                time.sleep(0.05)
+            conn.sendall(head)
+    except OSError:
+        pass
+    conn.close()
+" &
+EMPTY_PID=$!
+
+trap 'kill $DEAD_PID $LIVE_PID $EMPTY_PID 2>/dev/null ||:; wait $DEAD_PID $LIVE_PID $EMPTY_PID 2>/dev/null ||:; rm -f "$STDERR" "$RELEASE"' EXIT
 
 wait_for_port()
 {
@@ -79,10 +111,12 @@ s.close()
 " && return 0
         sleep 0.1
     done
-    return 1
+    echo "Timeout waiting for port $1 to open"
+    exit 1
 }
 wait_for_port "$DEAD_PORT"
 wait_for_port "$LIVE_PORT"
+wait_for_port "$EMPTY_PORT"
 
 # Counts the HTTP requests the still-running query itself has sent. The counter belongs to the
 # query's own thread group, so readiness probes, earlier groups and parallel copies cannot contribute.
@@ -100,6 +134,19 @@ wait_for_requests()
         sleep 0.1
     done
     echo "Timeout waiting for $2 HTTP requests from query $1"
+    exit 1
+}
+
+# Waits until the server has recorded the cancellation. system.processes exposes is_killed, so the
+# empty option's response can be released once the kill has landed rather than after a fixed delay.
+wait_for_cancelled()
+{
+    for _ in $(seq 1 600); do
+        [ "$(${CLICKHOUSE_CLIENT} --query "
+            SELECT count() FROM system.processes WHERE query_id = '$1' AND is_cancelled")" = "1" ] && return 0
+        sleep 0.1
+    done
+    echo "Timeout waiting for query $1 to be marked cancelled"
     exit 1
 }
 
@@ -173,6 +220,26 @@ kill_and_wait "$QUERY_ID_LAST"
 wait "$CLIENT_PID" ||:
 grep -c -m1 'All uri' "$STDERR" | sed 's/^0$/reported as a cancellation/;s/^1$/reported as an unreachable endpoint/'
 outcome "$QUERY_ID_LAST"
+
+# An option skipped for being empty also advances to the next one, so that exit needs the same check.
+# The empty option answers only after the kill has been observed, so the skip happens on a cancelled
+# query. Without the check on that path the dead second option is requested anyway.
+echo "--- KILL QUERY while an empty option is skipped ---"
+QUERY_ID_EMPTY="04674_empty_${CLICKHOUSE_DATABASE}"
+${CLICKHOUSE_CLIENT} --query_id "$QUERY_ID_EMPTY" --query "
+    SELECT * FROM url('http://127.0.0.1:$EMPTY_PORT/a|http://127.0.0.1:$DEAD_PORT/b', 'TSV', 's String')
+    SETTINGS engine_url_skip_empty_files = 1, max_execution_time = 0, http_receive_timeout = 10,
+             http_max_tries = 1, http_make_head_request = 0, parallel_replicas_for_cluster_engines = 0,
+             send_logs_level = 'fatal'
+" > "$STDERR" 2>&1 &
+CLIENT_PID=$!
+wait_for_requests "$QUERY_ID_EMPTY" 1
+${CLICKHOUSE_CLIENT} --query "KILL QUERY WHERE query_id = '$QUERY_ID_EMPTY' ASYNC" > /dev/null
+wait_for_cancelled "$QUERY_ID_EMPTY"
+touch "$RELEASE"
+wait "$CLIENT_PID" ||:
+grep -c -m1 'All uri' "$STDERR" | sed 's/^0$/reported as a cancellation/;s/^1$/reported as an unreachable endpoint/'
+outcome "$QUERY_ID_EMPTY"
 
 # Must not regress: with no cancellation, all options genuinely down still reports the aggregate
 # NETWORK_ERROR naming the option count, and still attempts every option.
