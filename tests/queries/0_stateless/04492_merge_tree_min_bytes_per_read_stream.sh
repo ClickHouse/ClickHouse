@@ -8,6 +8,12 @@
 # stable across compression differences. The tags pin the pipeline shape: random
 # merge-tree/object-storage settings change the read-stream layout.
 
+# `max_threads_min_free_memory_per_thread` (1 GiB by default) lowers `max_threads` from the free
+# memory of the global memory tracker at the moment a query is planned. On a busy server the two
+# queries of a comparison get different values (e.g. 51 and 50), which changes the stream count
+# without the cap having anything to do with it. Disable it for every query of this test.
+CLICKHOUSE_CLIENT_OPT="--max_threads_min_free_memory_per_thread=0"
+
 CUR_DIR=$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)
 # shellcheck source=../shell_config.sh
 . "$CUR_DIR"/../shell_config.sh
