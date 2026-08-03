@@ -4,7 +4,7 @@ import pyspark
 import os
 
 from helpers.cluster import ClickHouseCluster
-from helpers.iceberg_utils import get_uuid_str
+from helpers.iceberg_utils import get_uuid_str, iceberg_local_interop_dir
 from helpers.spark_tools import ResilientSparkSession, write_spark_log_config
 
 
@@ -13,8 +13,10 @@ from helpers.spark_tools import ResilientSparkSession, write_spark_log_config
 # We then create symlinks on the host so that the container path also resolves
 # on the host — this way Iceberg metadata with absolute paths works for both
 # Spark (host) and ClickHouse (container).
-ICEBERG_DIR_NODE1 = "/var/lib/clickhouse/user_files/iceberg_node1"
-ICEBERG_DIR_NODE2 = "/var/lib/clickhouse/user_files/iceberg_node2"
+# The path is namespaced by the xdist worker (see iceberg_local_interop_dir) so the
+# module stays parallel-safe with itself under the flaky check's -n 3 --dist=each.
+ICEBERG_DIR_NODE1 = iceberg_local_interop_dir("node1")
+ICEBERG_DIR_NODE2 = iceberg_local_interop_dir("node2")
 
 
 def create_host_symlink(container_path, host_path):
@@ -100,12 +102,12 @@ def started_cluster_iceberg():
         logging.info("Starting cluster...")
         cluster.start()
 
-        # external_dirs creates:
-        #   host: <instances_dir>/var/lib/clickhouse/user_files/iceberg_node1
-        #   container: /var/lib/clickhouse/user_files/iceberg_node1
-        #
-        # Create symlinks on the host so the container path resolves to the
-        # host path. Now both Spark and ClickHouse use the same absolute paths.
+        # external_dirs mounts <instances_dir>/<ICEBERG_DIR_NODEn> (host) at the
+        # same absolute path inside the container. Create a symlink on the host so
+        # that same absolute path also resolves on the host, so Spark (host) and
+        # ClickHouse (container) share one path. instances_dir is already xdist-
+        # worker-unique, and ICEBERG_DIR_NODEn is too, so parallel workers never
+        # collide on the symlink or the data dir.
         for iceberg_dir in [ICEBERG_DIR_NODE1, ICEBERG_DIR_NODE2]:
             host_path = os.path.join(
                 cluster.instances_dir, iceberg_dir.lstrip("/")

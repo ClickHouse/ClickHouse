@@ -396,7 +396,7 @@ struct MinHashImpl
             }
         }
 
-        MapWithMemoryTracking<UInt64, BytesRef, Comp> values;
+        MapWithMemoryTracking<UInt64, BytesRef, Comp> values{};
     };
 
     using MaxHeap = Heap<std::less<>>;
@@ -775,7 +775,7 @@ REGISTER_FUNCTION(StringHash)
     FunctionDocumentation::Description ngramSimHash_description = R"(
 Splits a ASCII string into n-grams of `ngramsize` symbols and returns the n-gram `simhash`.
 
-Can be used for detection of semi-duplicate strings with [`bitHammingDistance`](../functions/bit-functions.md/#bitHammingDistance).
+Can be used for detection of semi-duplicate strings with [`bitHammingDistance`](/reference/functions/regular-functions/bit-functions#bitHammingDistance).
 The smaller the [Hamming distance](https://en.wikipedia.org/wiki/Hamming_distance) of the calculated `simhashes` of two strings, the more likely these strings are the same.
 )";
     FunctionDocumentation::Syntax ngramSimHash_syntax = "ngramSimHash(string[, ngramsize])";
@@ -812,7 +812,7 @@ The smaller the [Hamming distance](https://en.wikipedia.org/wiki/Hamming_distanc
         {"string", "String for which to compute the case insensitive `simhash`.", {"String"}},
         {"ngramsize", "Optional. The size of an n-gram, any number from `1` to `25`. The default value is `3`.", {"UInt8"}}
     };
-    FunctionDocumentation::ReturnedValue ngramSimHashCaseInsensitive_returned_value = {"Hash value. [UInt64](../data-types/int-uint.md).", {"UInt64"}};
+    FunctionDocumentation::ReturnedValue ngramSimHashCaseInsensitive_returned_value = {"Hash value. [UInt64](/reference/data-types/int-uint).", {"UInt64"}};
     FunctionDocumentation::Examples ngramSimHashCaseInsensitive_examples = {
         {
             "Usage example",
@@ -833,7 +833,7 @@ The smaller the [Hamming distance](https://en.wikipedia.org/wiki/Hamming_distanc
 Splits a UTF-8 encoded string into n-grams of `ngramsize` symbols and returns the n-gram `simhash`.
 It is case sensitive.
 
-Can be used for detection of semi-duplicate strings with [`bitHammingDistance`](../functions/bit-functions.md/#bitHammingDistance).
+Can be used for detection of semi-duplicate strings with [`bitHammingDistance`](/reference/functions/regular-functions/bit-functions#bitHammingDistance).
 The smaller the [Hamming distance](https://en.wikipedia.org/wiki/Hamming_distance) of the calculated `simhashes` of two strings, the more likely these strings are the same.
 )";
     FunctionDocumentation::Syntax ngramSimHashUTF8_syntax = "ngramSimHashUTF8(string[, ngramsize])";
@@ -862,7 +862,7 @@ The smaller the [Hamming distance](https://en.wikipedia.org/wiki/Hamming_distanc
 Splits a UTF-8 string into n-grams of `ngramsize` symbols and returns the n-gram `simhash`.
 It is case insensitive.
 
-Can be used for detection of semi-duplicate strings with [bitHammingDistance](../functions/bit-functions.md/#bitHammingDistance). The smaller is the [Hamming Distance](https://en.wikipedia.org/wiki/Hamming_distance) of the calculated `simhashes` of two strings, the more likely these strings are the same.
+Can be used for detection of semi-duplicate strings with [bitHammingDistance](/reference/functions/regular-functions/bit-functions#bitHammingDistance). The smaller is the [Hamming Distance](https://en.wikipedia.org/wiki/Hamming_distance) of the calculated `simhashes` of two strings, the more likely these strings are the same.
 )";
     FunctionDocumentation::Syntax ngramSimHashCaseInsensitiveUTF8_syntax = "ngramSimHashCaseInsensitiveUTF8(string[, ngramsize])";
     FunctionDocumentation::Arguments ngramSimHashCaseInsensitiveUTF8_arguments = {
@@ -890,7 +890,7 @@ Can be used for detection of semi-duplicate strings with [bitHammingDistance](..
 Splits a ASCII string into parts (shingles) of `shinglesize` words and returns the word shingle `simhash`.
 Is is case sensitive.
 
-Can be used for detection of semi-duplicate strings with [`bitHammingDistance`](../functions/bit-functions.md/#bitHammingDistance).
+Can be used for detection of semi-duplicate strings with [`bitHammingDistance`](/reference/functions/regular-functions/bit-functions#bitHammingDistance).
 The smaller the [Hamming distance](https://en.wikipedia.org/wiki/Hamming_distance) of the calculated `simhashes` of two strings, the more likely these strings are the same.
 )";
     FunctionDocumentation::Syntax wordShingleSimHash_syntax = "wordShingleSimHash(string[, shinglesize])";
@@ -919,7 +919,7 @@ The smaller the [Hamming distance](https://en.wikipedia.org/wiki/Hamming_distanc
 Splits a ASCII string into parts (shingles) of `shinglesize` words and returns the word shingle `simhash`.
 It is case insensitive.
 
-Can be used for detection of semi-duplicate strings with [`bitHammingDistance`](../functions/bit-functions.md/#bitHammingDistance).
+Can be used for detection of semi-duplicate strings with [`bitHammingDistance`](/reference/functions/regular-functions/bit-functions#bitHammingDistance).
 The smaller the [Hamming distance](https://en.wikipedia.org/wiki/Hamming_distance) of the calculated `simhashes` of two strings, the more likely these strings are the same.
 )";
     FunctionDocumentation::Syntax wordShingleSimHashCaseInsensitive_syntax = "wordShingleSimHashCaseInsensitive(string[, shinglesize])";
@@ -948,7 +948,7 @@ The smaller the [Hamming distance](https://en.wikipedia.org/wiki/Hamming_distanc
 Splits a UTF-8 string into parts (shingles) of `shinglesize` words and returns the word shingle `simhash`.
 It is case sensitive.
 
-Can be used for detection of semi-duplicate strings with [`bitHammingDistance`](../functions/bit-functions.md/#bitHammingDistance).
+Can be used for detection of semi-duplicate strings with [`bitHammingDistance`](/reference/functions/regular-functions/bit-functions#bitHammingDistance).
 The smaller the [Hamming distance](https://en.wikipedia.org/wiki/Hamming_distance) of the calculated `simhashes` of two strings, the more likely these strings are the same.
 )";
     FunctionDocumentation::Syntax wordShingleSimHashUTF8_syntax = "wordShingleSimHashUTF8(string[, shinglesize])";
@@ -977,7 +977,7 @@ The smaller the [Hamming distance](https://en.wikipedia.org/wiki/Hamming_distanc
 Splits a UTF-8 encoded string into parts (shingles) of `shinglesize` words and returns the word shingle `simhash`.
 It is case insensitive.
 
-Can be used for detection of semi-duplicate strings with [`bitHammingDistance`](../functions/bit-functions.md/#bitHammingDistance).
+Can be used for detection of semi-duplicate strings with [`bitHammingDistance`](/reference/functions/regular-functions/bit-functions#bitHammingDistance).
 The smaller the [Hamming Distance](https://en.wikipedia.org/wiki/Hamming_distance) of the calculated `simhashes` of two strings, the more likely these strings are the same.
 )";
     FunctionDocumentation::Syntax wordShingleSimHashCaseInsensitiveUTF8_syntax = "wordShingleSimHashCaseInsensitiveUTF8(string[, shinglesize])";
@@ -1007,7 +1007,7 @@ Splits a ASCII string into n-grams of `ngramsize` symbols and calculates hash va
 Uses `hashnum` minimum hashes to calculate the minimum hash and `hashnum` maximum hashes to calculate the maximum hash.
 It is case sensitive.
 
-Can be used to detect semi-duplicate strings with [`tupleHammingDistance`](../functions/tuple-functions.md#tupleHammingDistance).
+Can be used to detect semi-duplicate strings with [`tupleHammingDistance`](/reference/functions/regular-functions/tuple-functions#tupleHammingDistance).
 For two strings, if the returned hashes are the same for both strings, then those strings are the same.
 )";
     FunctionDocumentation::Syntax ngramMinHash_syntax = "ngramMinHash(string[, ngramsize, hashnum])";
@@ -1038,16 +1038,16 @@ Splits a ASCII string into n-grams of `ngramsize` symbols and calculates hash va
 Uses `hashnum` minimum hashes to calculate the minimum hash and `hashnum` maximum hashes to calculate the maximum hash.
 It is case insensitive.
 
-Can be used to detect semi-duplicate strings with [`tupleHammingDistance`](../functions/tuple-functions.md#tupleHammingDistance).
+Can be used to detect semi-duplicate strings with [`tupleHammingDistance`](/reference/functions/regular-functions/tuple-functions#tupleHammingDistance).
 For two strings, if the returned hashes are the same for both strings, then those strings are the same.
 )";
     FunctionDocumentation::Syntax ngramMinHashCaseInsensitive_syntax = "ngramMinHashCaseInsensitive(string[, ngramsize, hashnum])";
     FunctionDocumentation::Arguments ngramMinHashCaseInsensitive_arguments = {
-        {"string", "String. [String](../data-types/string.md)."},
-        {"ngramsize", "The size of an n-gram. Optional. Possible values: any number from `1` to `25`. Default value: `3`. [UInt8](../data-types/int-uint.md)."},
-        {"hashnum", "The number of minimum and maximum hashes used to calculate the result. Optional. Possible values: any number from `1` to `25`. Default value: `6`. [UInt8](../data-types/int-uint.md)."}
+        {"string", "String. [String](/reference/data-types/string)."},
+        {"ngramsize", "The size of an n-gram. Optional. Possible values: any number from `1` to `25`. Default value: `3`. [UInt8](/reference/data-types/int-uint)."},
+        {"hashnum", "The number of minimum and maximum hashes used to calculate the result. Optional. Possible values: any number from `1` to `25`. Default value: `6`. [UInt8](/reference/data-types/int-uint)."}
     };
-    FunctionDocumentation::ReturnedValue ngramMinHashCaseInsensitive_returned_value = {"Tuple with two hashes — the minimum and the maximum. [Tuple](../data-types/tuple.md)([UInt64](../data-types/int-uint.md), [UInt64](../data-types/int-uint.md)).", {"Tuple"}};
+    FunctionDocumentation::ReturnedValue ngramMinHashCaseInsensitive_returned_value = {"Tuple with two hashes — the minimum and the maximum. [Tuple](/reference/data-types/tuple)([UInt64](/reference/data-types/int-uint), [UInt64](/reference/data-types/int-uint)).", {"Tuple"}};
     FunctionDocumentation::Examples ngramMinHashCaseInsensitive_examples = {
         {
             "Usage example",
@@ -1069,7 +1069,7 @@ Splits a UTF-8 string into n-grams of `ngramsize` symbols and calculates hash va
 Uses `hashnum` minimum hashes to calculate the minimum hash and `hashnum` maximum hashes to calculate the maximum hash.
 It is case sensitive.
 
-Can be used to detect semi-duplicate strings with [`tupleHammingDistance`](../functions/tuple-functions.md#tupleHammingDistance).
+Can be used to detect semi-duplicate strings with [`tupleHammingDistance`](/reference/functions/regular-functions/tuple-functions#tupleHammingDistance).
 For two strings, if the returned hashes are the same for both strings, then those strings are the same.
 )";
     FunctionDocumentation::Syntax ngramMinHashUTF8_syntax = "ngramMinHashUTF8(string[, ngramsize, hashnum])";
@@ -1100,7 +1100,7 @@ Splits a UTF-8 string into n-grams of `ngramsize` symbols and calculates hash va
 Uses `hashnum` minimum hashes to calculate the minimum hash and `hashnum` maximum hashes to calculate the maximum hash.
 It is case insensitive.
 
-Can be used to detect semi-duplicate strings with [`tupleHammingDistance`](../functions/tuple-functions.md#tupleHammingDistance).
+Can be used to detect semi-duplicate strings with [`tupleHammingDistance`](/reference/functions/regular-functions/tuple-functions#tupleHammingDistance).
 For two strings, if the returned hashes are the same for both strings, then those strings are the same.
 )";
     FunctionDocumentation::Syntax ngramMinHashCaseInsensitiveUTF8_syntax = "ngramMinHashCaseInsensitiveUTF8(string [, ngramsize, hashnum])";
@@ -1131,7 +1131,7 @@ Splits a ASCII string into parts (shingles) of `shinglesize` words, calculates h
 Uses `hashnum` minimum hashes to calculate the minimum hash and `hashnum` maximum hashes to calculate the maximum hash.
 It is case sensitive.
 
-Can be used to detect semi-duplicate strings with [`tupleHammingDistance`](../functions/tuple-functions.md#tupleHammingDistance).
+Can be used to detect semi-duplicate strings with [`tupleHammingDistance`](/reference/functions/regular-functions/tuple-functions#tupleHammingDistance).
 For two strings, if the returned hashes are the same for both strings, then those strings are the same.
 )";
     FunctionDocumentation::Syntax wordShingleMinHash_syntax = "wordShingleMinHash(string[, shinglesize, hashnum])";
@@ -1162,7 +1162,7 @@ Splits a ASCII string into parts (shingles) of `shinglesize` words, calculates h
 Uses `hashnum` minimum hashes to calculate the minimum hash and `hashnum` maximum hashes to calculate the maximum hash.
 It is case insensitive.
 
-Can be used to detect semi-duplicate strings with [`tupleHammingDistance`](../functions/tuple-functions.md#tupleHammingDistance).
+Can be used to detect semi-duplicate strings with [`tupleHammingDistance`](/reference/functions/regular-functions/tuple-functions#tupleHammingDistance).
 For two strings, if the returned hashes are the same for both strings, then those strings are the same.
 )";
     FunctionDocumentation::Syntax wordShingleMinHashCaseInsensitive_syntax = "wordShingleMinHashCaseInsensitive(string[, shinglesize, hashnum])";
@@ -1193,7 +1193,7 @@ Splits a UTF-8 string into parts (shingles) of `shinglesize` words, calculates h
 Uses `hashnum` minimum hashes to calculate the minimum hash and `hashnum` maximum hashes to calculate the maximum hash.
 It is case sensitive.
 
-Can be used to detect semi-duplicate strings with [`tupleHammingDistance`](../functions/tuple-functions.md#tupleHammingDistance).
+Can be used to detect semi-duplicate strings with [`tupleHammingDistance`](/reference/functions/regular-functions/tuple-functions#tupleHammingDistance).
 For two strings, if the returned hashes are the same for both strings, then those strings are the same.
 )";
     FunctionDocumentation::Syntax wordShingleMinHashUTF8_syntax = "wordShingleMinHashUTF8(string[, shinglesize, hashnum])";
@@ -1224,7 +1224,7 @@ Splits a UTF-8 string into parts (shingles) of `shinglesize` words, calculates h
 Uses `hashnum` minimum hashes to calculate the minimum hash and `hashnum` maximum hashes to calculate the maximum hash.
 It is case insensitive.
 
-Can be used to detect semi-duplicate strings with [`tupleHammingDistance`](../functions/tuple-functions.md#tupleHammingDistance).
+Can be used to detect semi-duplicate strings with [`tupleHammingDistance`](/reference/functions/regular-functions/tuple-functions#tupleHammingDistance).
 For two strings, if the returned hashes are the same for both strings, then those strings are the same.
 )";
     FunctionDocumentation::Syntax wordShingleMinHashCaseInsensitiveUTF8_syntax = "wordShingleMinHashCaseInsensitiveUTF8(string[, shinglesize, hashnum])";
