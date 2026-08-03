@@ -26,8 +26,7 @@
                   "group": "Deployment modes",
                   "pages": [
                     "products/cloud/guides/infrastructure/deployment-options/clickhouse-private",
-                    "products/cloud/guides/infrastructure/deployment-options/clickhouse-government",
-                    "products/cloud/guides/infrastructure/deployment-options/byoc/overview"
+                    "products/cloud/guides/infrastructure/deployment-options/clickhouse-government"
                   ]
                 }
               ]
