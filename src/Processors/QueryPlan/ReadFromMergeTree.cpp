@@ -9,12 +9,14 @@
 #include <Storages/MergeTree/Streaming/MergeTreeBoundsSubscription.h>
 #include <Storages/MergeTree/Streaming/MergeTreeCommitOrderSequentialSource.h>
 #include <Storages/MergeTree/Streaming/SubscriptionEnrichment.h>
+#include <Access/ContextAccess.h>
 #include <Analyzer/QueryNode.h>
 #include <Core/Names.h>
 #include <Core/ProtocolDefines.h>
 #include <Core/ServerSettings.h>
 #include <Core/Settings.h>
 #include <DataTypes/IDataType.h>
+#include <DataTypes/NestedUtils.h>
 #include <Formats/FormatSettings.h>
 #include <Functions/IFunction.h>
 #include <IO/Operators.h>
@@ -1292,10 +1294,19 @@ static std::optional<size_t> estimateReadBytes(
     const RangesInDataParts & parts_with_ranges,
     const Names & column_names,
     const StorageSnapshotPtr & storage_snapshot,
+    const MergeTreeData::MutationsSnapshotPtr & mutations_snapshot,
+    const ContextPtr & context,
     const Settings & settings)
 {
     const bool use_subcolumn_sizes = settings[Setting::allow_calculating_subcolumns_sizes_for_merge_tree_reading];
     const auto & virtuals = storage_snapshot->metadata->virtuals;
+
+    /// A metadata-only `ALTER TABLE ... RENAME COLUMN` does not rewrite the part: until the mutation
+    /// is applied the part still holds the old name, and the reader resolves the new name through
+    /// `AlterConversions`. Resolve it the same way here, otherwise the whole scan would be treated
+    /// as unknown. Other mutation kinds do not rename anything, so skip the work when there are none.
+    const bool resolve_renames = mutations_snapshot && mutations_snapshot->hasMetadataMutations();
+    const auto storage_options = GetColumnsOptions(GetColumnsOptions::AllPhysical).withSubcolumns();
 
     size_t total_bytes = 0;
 
@@ -1306,6 +1317,37 @@ static std::optional<size_t> estimateReadBytes(
         const size_t part_marks = data_part.getMarksCount();
         if (part_marks == 0)
             continue;
+
+        AlterConversionsPtr alter_conversions;
+        if (resolve_renames)
+            alter_conversions = MergeTreeData::getAlterConversionsForPart(part.data_part, mutations_snapshot, context
+#if CLICKHOUSE_CLOUD
+                , context->getAccess()->getEnabledMaskingPolicies()
+#endif
+            );
+
+        /// The name of a requested column as it is stored in this particular part.
+        auto try_get_column_in_part = [&](const String & col_name) -> std::optional<NameAndTypePair>
+        {
+            if (auto col = data_part.tryGetColumn(col_name))
+                return col;
+
+            if (!alter_conversions)
+                return {};
+
+            const auto col_in_storage = storage_snapshot->tryGetColumn(storage_options, col_name);
+            if (!col_in_storage)
+                return {};
+
+            const auto name_in_storage = col_in_storage->getNameInStorage();
+            if (!alter_conversions->isColumnRenamed(name_in_storage))
+                return {};
+
+            const auto old_name = alter_conversions->getColumnOldName(name_in_storage);
+            return data_part.tryGetColumn(col_in_storage->isSubcolumn()
+                ? Nested::concatenateName(old_name, col_in_storage->getSubcolumnName())
+                : old_name);
+        };
 
         /// Only a fraction of the part may survive primary key / partition pruning. Scaling by it
         /// keeps the cap meaningful for selective queries, which would otherwise be sized as if the
@@ -1319,7 +1361,7 @@ static std::optional<size_t> estimateReadBytes(
         std::unordered_map<String, NameSet> requested_names_by_column;
         for (const auto & col_name : column_names)
         {
-            const auto col = data_part.tryGetColumn(col_name);
+            const auto col = try_get_column_in_part(col_name);
             /// Defaults and mutation steps can make the reader fetch other physical columns. The
             /// dependency set is built later for each read task, so do not cap when it is unknown here.
             if (!col)
@@ -1336,7 +1378,9 @@ static std::optional<size_t> estimateReadBytes(
             if (selected_rows < data_part.rows_count && !canScaleSizeBySelectedRows(*col->type))
                 return std::nullopt;
 
-            requested_names_by_column[col->getNameInStorage()].emplace(col_name);
+            /// `col->name` rather than `col_name`: the per-column sizes below are keyed by the name
+            /// the part was written with, which differs for a not-yet-applied rename.
+            requested_names_by_column[col->getNameInStorage()].emplace(col->name);
         }
 
         /// Virtual-only reads inject the smallest physical column to determine the number of rows.
@@ -1480,10 +1524,13 @@ static void capStreamsByReadBytes(
     const RangesInDataParts & parts_with_ranges,
     const Names & column_names,
     const StorageSnapshotPtr & storage_snapshot,
+    const MergeTreeData::MutationsSnapshotPtr & mutations_snapshot,
+    const ContextPtr & context,
     const Settings & settings,
     LoggerPtr log)
 {
-    const auto estimated_read_bytes = estimateReadBytes(parts_with_ranges, column_names, storage_snapshot, settings);
+    const auto estimated_read_bytes
+        = estimateReadBytes(parts_with_ranges, column_names, storage_snapshot, mutations_snapshot, context, settings);
     if (!estimated_read_bytes)
         return;
 
@@ -1545,7 +1592,8 @@ Pipe ReadFromMergeTree::spreadMarkRangesAmongStreams(
             && !isQueryWithFinal()
             && !checkAnyPartOnRemoteFS(parts_with_ranges)
             && settings[Setting::merge_tree_read_split_ranges_into_intersecting_and_non_intersecting_injection_probability] == 0)
-            capStreamsByReadBytes(num_streams, parts_with_ranges, column_names, storage_snapshot, settings, log);
+            capStreamsByReadBytes(
+                num_streams, parts_with_ranges, column_names, storage_snapshot, mutations_snapshot, context, settings, log);
     }
 
     auto read_type = is_parallel_reading_from_replicas ? ReadType::ParallelReplicas : ReadType::Default;

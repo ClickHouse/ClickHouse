@@ -6,3 +6,5 @@
 1
 -- unknown DEFAULT dependencies do not cap streams --
 1
+-- the cap still applies through an unapplied RENAME COLUMN --
+1

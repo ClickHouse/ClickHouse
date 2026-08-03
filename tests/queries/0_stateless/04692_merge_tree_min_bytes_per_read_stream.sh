@@ -61,5 +61,20 @@ DEFAULT_ON=$(stream_count "SELECT sum(w), sum(d) FROM t_default_dependency SETTI
 DEFAULT_OFF=$(stream_count "SELECT sum(w), sum(d) FROM t_default_dependency SETTINGS $FORCE_STREAMS, merge_tree_min_bytes_per_read_stream = 0")
 [ "$DEFAULT_ON" -eq "$DEFAULT_OFF" ] && echo 1 || echo 0
 
+# A metadata-only `RENAME COLUMN` leaves the part holding the old name until the mutation is
+# applied; the reader resolves the new name through `AlterConversions`. The estimator has to resolve
+# it the same way, otherwise the cap silently stops applying to such a table.
+$CLICKHOUSE_CLIENT -q "DROP TABLE IF EXISTS t_pending_rename"
+$CLICKHOUSE_CLIENT -q "CREATE TABLE t_pending_rename (k UInt64, w UInt16) ENGINE = MergeTree ORDER BY k SETTINGS index_granularity = 8192, min_bytes_for_wide_part = 0"
+$CLICKHOUSE_CLIENT -q "INSERT INTO t_pending_rename SELECT number, number % 50000 FROM numbers(2000000)"
+# Keep the mutation unapplied, so the part on disk still stores `w`.
+$CLICKHOUSE_CLIENT -q "SYSTEM STOP MERGES t_pending_rename"
+$CLICKHOUSE_CLIENT --alter_sync 0 -q "ALTER TABLE t_pending_rename RENAME COLUMN w TO w2"
+echo "-- the cap still applies through an unapplied RENAME COLUMN --"
+RENAME_ON=$(stream_count "SELECT sum(w2) FROM t_pending_rename SETTINGS $FORCE_STREAMS")
+RENAME_OFF=$(stream_count "SELECT sum(w2) FROM t_pending_rename SETTINGS $FORCE_STREAMS, merge_tree_min_bytes_per_read_stream = 0")
+[ "$RENAME_ON" -lt "$RENAME_OFF" ] && echo 1 || echo 0
+
 $CLICKHOUSE_CLIENT -q "DROP TABLE t_narrow"
 $CLICKHOUSE_CLIENT -q "DROP TABLE t_default_dependency"
+$CLICKHOUSE_CLIENT -q "DROP TABLE t_pending_rename"
