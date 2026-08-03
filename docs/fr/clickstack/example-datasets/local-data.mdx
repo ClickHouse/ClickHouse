@@ -18,10 +18,8 @@ Ce guide de prise en main vous permet de collecter les logs et les métriques lo
     Ce guide suppose que vous avez suivi le [guide de démarrage pour Managed ClickStack](/fr/clickstack/deployment/managed) et que vous avez [noté vos identifiants de connexion](/fr/clickstack/getting-started/managed#next-steps).
 
     <Steps>
-      <Step>
-        ### Créez une configuration OpenTelemetry personnalisée
-
-        Créez un fichier `custom-local-config.yaml` contenant le texte suivant :
+      <Step title="Créer une configuration OpenTelemetry personnalisée" id="create-otel-configuration">
+        Créez un fichier `custom-local-config.yaml` avec le contenu suivant :
 
         ```yaml
         receivers:
@@ -102,9 +100,7 @@ Ce guide de prise en main vous permet de collecter les logs et les métriques lo
         Pour plus de détails sur la structure de configuration d’OpenTelemetry (OTel), nous recommandons [le guide officiel](https://opentelemetry.io/docs/collector/configuration/).
       </Step>
 
-      <Step>
-        ### Démarrer le collector OpenTelemetry
-
+      <Step title="Démarrer le collector OpenTelemetry" id="start-the-otel-collector">
         Lancez un collector autonome avec la commande suivante :
 
         ```shell
@@ -124,17 +120,13 @@ Ce guide de prise en main vous permet de collecter les logs et les métriques lo
         Le collector commencera immédiatement à recueillir les logs et les métriques du système local.
       </Step>
 
-      <Step>
-        ### Sélectionnez votre service
-
+      <Step title="Sélectionnez votre service" id="select-your-service">
         Sélectionnez le service Managed ClickStack depuis la page d’accueil principale de ClickHouse Cloud.
 
         <Image img="/images/clickstack/select_service.webp" alt="Sélectionner le service" size="lg" />
       </Step>
 
-      <Step>
-        ### Explorer les logs système
-
+      <Step title="Explorer les logs système" id="navigate-to-the-hyperdx-ui">
         Sélectionnez `ClickStack` dans le menu de gauche pour ouvrir la ClickStack UI, où l’authentification se fera automatiquement.
 
         L’UI de recherche devrait déjà afficher les logs système locaux. Dépliez les filtres pour sélectionner `system.log` :
@@ -142,9 +134,7 @@ Ce guide de prise en main vous permet de collecter les logs et les métriques lo
         <Image img="/images/use-cases/observability/hyperdx-20.webp" alt="Logs locaux HyperDX" size="lg" />
       </Step>
 
-      <Step>
-        ### Explorer les métriques système
-
+      <Step title="Explorer les métriques système" id="explore-system-metrics">
         Nous pouvons explorer nos métriques à l’aide de graphiques.
 
         Accédez à Chart Explorer depuis le menu de gauche. Sélectionnez la source `Metrics` et `Maximum` comme type d’agrégation.
@@ -235,19 +225,19 @@ Ce guide de prise en main vous permet de collecter les logs et les métriques lo
             - clickhouse
     ```
 
-    Cette configuration collecte les logs système et les métriques pour les systèmes OSX et Linux, et envoie les résultats à ClickStack. Elle étend le ClickStack collector en ajoutant de nouveaux receivers et pipelines — vous référencez l&#39;exporter `clickhouse` existant ainsi que les processors (`memory_limiter`, `batch`) déjà configurés dans le ClickStack collector de base.
+    Cette configuration collecte les logs et les métriques système pour les systèmes OSX et Linux, puis envoie les résultats à ClickStack. Elle étend le ClickStack collector en ajoutant de nouveaux receivers et pipelines : vous réutilisez l&#39;exporter `clickhouse` existant ainsi que les processors (`memory_limiter`, `batch`) déjà configurés dans le ClickStack collector de base.
 
     <Info>
       **Horodatages d’ingestion**
 
-      Cette configuration ajuste les horodatages lors de l’ingestion, en attribuant à chaque événement une valeur temporelle mise à jour. Dans l’idéal, vous devriez [prétraiter ou analyser les horodatages](/fr/clickstack/ingesting-data/collector#processing-filtering-transforming-enriching) à l’aide des processeurs ou opérateurs OTel dans leurs fichiers journaux, afin de garantir la conservation du temps réel de l’événement.
+      Cette configuration ajuste les timestamps lors de l’ingestion en attribuant à chaque événement une valeur temporelle mise à jour. Idéalement, vous devriez [prétraiter ou analyser les timestamps](/fr/clickstack/ingesting-data/collector#processing-filtering-transforming-enriching) à l’aide de processors ou d’operators OTel dans les fichiers de logs afin de préserver l’heure réelle de l’événement.
 
-      Avec cet exemple de configuration, si le receiver ou le processeur de fichiers est configuré pour démarrer au début du fichier, toutes les entrées de journal existantes recevront le même horodatage ajusté — l’heure du traitement plutôt que le temps d’origine de l’événement. Tous les nouveaux événements ajoutés au fichier recevront des horodatages proches de leur heure réelle de génération.
+      Avec cet exemple de configuration, si le receiver ou le processeur de fichier est configuré pour démarrer au début du fichier, toutes les log entries existantes se verront attribuer le même timestamp ajusté — l’heure du traitement plutôt que l’heure d’origine de l’événement. Tous les nouveaux événements ajoutés au fichier recevront des timestamps proches de leur heure réelle de génération.
 
-      Pour éviter ce comportement, vous pouvez définir la position de départ sur `end` dans la configuration du receiver. Cela garantit que seules les nouvelles entrées sont ingérées et horodatées à un moment proche de leur heure d’arrivée réelle.
+      Pour éviter ce comportement, vous pouvez définir la position de départ sur `end` dans la configuration du receiver. Cela garantit que seules les nouvelles entrées sont ingérées et horodatées au plus près de leur heure réelle d’arrivée.
     </Info>
 
-    Pour plus de détails sur la structure de configuration OpenTelemetry (OTel), nous vous recommandons de consulter [le guide officiel](https://opentelemetry.io/docs/collector/configuration/).
+    Pour plus de détails sur la structure de configuration d&#39;OpenTelemetry (OTel), nous recommandons [le guide officiel](https://opentelemetry.io/docs/collector/configuration/).
 
     ### Démarrer ClickStack avec une configuration personnalisée
 
@@ -272,11 +262,11 @@ Ce guide de prise en main vous permet de collecter les logs et les métriques lo
       Notez que nous montons le `/var/log` de l’hôte sur `/host/var/log` à l’intérieur du conteneur afin d’éviter les conflits avec les fichiers de logs du conteneur lui-même.
     </Info>
 
-    ### Explorer les journaux système
+    ### Explorer les logs système
 
-    Accédez à [http://localhost:8080](http://localhost:8080) pour accéder à l&#39;interface ClickStack UI si vous déployez en local.
+    Accédez à [http://localhost:8080](http://localhost:8080) pour accéder à la ClickStack UI si vous déployez en local.
 
-    Les sources de données doivent déjà être créées pour vous. La page Search de l&#39;UI doit être peuplée avec les journaux système locaux. Développez les filtres pour sélectionner `system.log` :
+    Les sources de données doivent déjà être créées pour vous. La page Search de l&#39;UI doit être peuplée avec les logs système locaux. Développez les filtres pour sélectionner `system.log` :
 
     <Image img="/images/use-cases/observability/hyperdx-20.webp" alt="Logs locaux HyperDX" size="lg" />
 
@@ -286,18 +276,18 @@ Ce guide de prise en main vous permet de collecter les logs et les métriques lo
 
     Accédez au Chart Explorer via le menu de gauche. Sélectionnez la source `Metrics` et `Maximum` comme type d&#39;agrégation.
 
-    Pour le menu `Select a Metric`, saisissez simplement `memory` avant de sélectionner `system.memory.utilization (Gauge)`.
+    Dans le menu `Select a Metric`, saisissez simplement `memory` avant de sélectionner `system.memory.utilization (Gauge)`.
 
-    Cliquez sur le bouton Run pour visualiser l&#39;utilisation de votre mémoire au fil du temps.
+    Appuyez sur le bouton `Run` pour visualiser l’utilisation de la mémoire au fil du temps.
 
-    <Image img="/images/use-cases/observability/hyperdx-21.webp" alt="Memory au fil du temps" size="lg" />
+    <Image img="/images/use-cases/observability/hyperdx-21.webp" alt="Mémoire au fil du temps" size="lg" />
 
-    Notez que le nombre est renvoyé sous forme de virgule flottante `%`. Pour l&#39;afficher plus clairement, sélectionnez `Set number format`.
+    Notez que la valeur renvoyée est un `%` en virgule flottante. Pour l&#39;afficher plus clairement, sélectionnez `Set number format`.
 
     <Image img="/images/use-cases/observability/hyperdx-22.webp" alt="Format numérique" size="lg" />
 
-    Dans le menu qui s&#39;affiche, sélectionnez `Percentage` dans le menu déroulant `Output format`, puis cliquez sur `Apply`.
+    Dans le menu suivant, vous pouvez sélectionner `Percentage` dans la liste déroulante `Output format`, puis cliquer sur `Apply`.
 
-    <Image img="/images/use-cases/observability/hyperdx-23.webp" alt="Pourcentage de mémoire au fil du temps" size="lg" />
+    <Image img="/images/use-cases/observability/hyperdx-23.webp" alt="% de mémoire au fil du temps" size="lg" />
   </Tab>
 </Tabs>
