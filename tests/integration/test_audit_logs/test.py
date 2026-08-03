@@ -700,3 +700,59 @@ def test_audit_log_reload_recovers_after_failed_open(start_cluster):
         "<allow_experimental_audit_log>false</allow_experimental_audit_log>",
     )
     node_bad_path.query("SYSTEM RELOAD CONFIG")
+
+
+def test_audit_log_failed_database_statement_object_names(start_cluster):
+    """A database-level statement that fails before execution starts carries no table name, so
+    OBJECT_NAMES is filled from the AST. It must then be recorded exactly like the normal
+    `query_databases` path does it: the bare database name, with no trailing dot, and quoted with
+    backquotes when the identifier needs quoting."""
+    missing_db = "audit-missing-db"
+    node_ddl.query(f"DROP DATABASE IF EXISTS `{missing_db}`")
+
+    error = node_ddl.query_and_get_error(f"DROP DATABASE `{missing_db}`")
+    assert error, "DROP of a missing database must fail"
+
+    # Do not grep for the backquoted name: `grep_in_log` interpolates the substring into a
+    # double-quoted bash string, where a backquote starts a command substitution.
+    assert_audit_log_contain_with_retry(node_ddl, missing_db)
+    log_content = node_ddl.grep_in_log(missing_db, from_host=True, filename="clickhouse-server.audit.log")
+    lines = [line for line in log_content.strip().split("\n")
+             if "AUDIT:" in line and "Drop" in line and missing_db in line]
+    assert len(lines) >= 1, "A failed DROP DATABASE must produce a DDL audit record"
+
+    # Audit message format: "TYPE, COMMAND, EXCEPTION_CODE, USER, IP, OBJECT_NAMES, QUERY".
+    audit_part = lines[0].split("AUDIT: ", 1)[1]
+    fields = audit_part.split(", ")
+    assert fields[0] == "DDL", f"DROP DATABASE must be classified as DDL: {lines[0]}"
+    assert fields[2] != "0", f"A failed DROP DATABASE must record a non-zero exception code: {lines[0]}"
+    # OBJECT_NAMES is field index 5: the quoted database name only, without a trailing dot.
+    assert fields[5] == f"`{missing_db}`", \
+        f"OBJECT_NAMES must be the backquoted database name without a trailing dot: {lines[0]}"
+
+
+def test_audit_log_failed_query_object_names_are_quoted(start_cluster):
+    """Identifiers that need quoting must reach OBJECT_NAMES backquoted on the failed-query path
+    too, so that consumers see the same format as in the records produced after the query
+    started."""
+    quoted_db = "audit-quoted-db"
+    quoted_table = "audit-quoted-table"
+    node_dml_misc.query(f"DROP DATABASE IF EXISTS `{quoted_db}`")
+
+    error = node_dml_misc.query_and_get_error(f"SELECT * FROM `{quoted_db}`.`{quoted_table}`")
+    assert error, "SELECT from a missing database must fail"
+
+    assert_audit_log_contain_with_retry(node_dml_misc, quoted_table)
+    log_content = node_dml_misc.grep_in_log(quoted_table, from_host=True, filename="clickhouse-server.audit.log")
+    lines = [line for line in log_content.strip().split("\n")
+             if "AUDIT:" in line and "Select" in line and quoted_table in line]
+    assert len(lines) >= 1, "A failed SELECT must produce a DML audit record"
+
+    # Audit message format: "TYPE, COMMAND, EXCEPTION_CODE, USER, IP, OBJECT_NAMES, QUERY".
+    audit_part = lines[0].split("AUDIT: ", 1)[1]
+    fields = audit_part.split(", ")
+    assert fields[0] == "DML", f"SELECT must be classified as DML: {lines[0]}"
+    assert fields[2] != "0", f"A failed SELECT must record a non-zero exception code: {lines[0]}"
+    # OBJECT_NAMES is field index 5; both components must be backquoted, as in `system.query_log`.
+    assert fields[5] == f"`{quoted_db}`.`{quoted_table}`", \
+        f"OBJECT_NAMES must carry both components backquoted: {lines[0]}"
