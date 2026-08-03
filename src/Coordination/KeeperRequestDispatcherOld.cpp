@@ -170,8 +170,28 @@ KeeperRequestDispatcherOld::KeeperRequestDispatcherOld(KeeperServer * server_)
     , keeper_context(server->getKeeperContext())
 {
     requests_queue = std::make_unique<RequestsQueue>(keeper_context->getCoordinationSettings()[CoordinationSetting::max_request_queue_size]);
-    request_thread = ThreadFromGlobalPool([this] { requestThread(); });
-    responses_thread = ThreadFromGlobalPool([this] { responseThread(); });
+    try
+    {
+        request_thread = ThreadFromGlobalPool([this] { requestThread(); });
+        responses_thread = ThreadFromGlobalPool([this] { responseThread(); });
+    }
+    catch (...)
+    {
+        /// Starting a thread may throw (e.g. `CANNOT_SCHEDULE_TASK` when the global thread pool has no
+        /// free slot for a long-running job). The destructor is not called for an object whose constructor
+        /// threw, and destroying a still joinable `ThreadFromGlobalPool` aborts the process, so the
+        /// workers started so far have to be stopped and joined before the exception leaves the constructor.
+        /// The worker loops exit only when the context is marked as shut down; Keeper cannot serve without
+        /// the dispatcher anyway.
+        keeper_context->setShutdownCalled();
+        requests_queue->finish();
+        responses_queue.finish();
+        if (request_thread.joinable())
+            request_thread.join();
+        if (responses_thread.joinable())
+            responses_thread.join();
+        throw;
+    }
 }
 
 void KeeperRequestDispatcherOld::onResponse(KeeperResponseForSession response) noexcept
