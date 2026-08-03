@@ -29,6 +29,7 @@ ci/local.env
 # logs
 *.log
 *.debuglog
+*.bashlog
 *.stderr
 *.stderr-fatal*
 *.stdout
