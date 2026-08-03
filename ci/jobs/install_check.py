@@ -124,7 +124,6 @@ bash -ex /packages/initd_test.sh""",
         "Install keeper deb": r"""#!/bin/bash -ex
 apt-get install /packages/clickhouse-keeper*deb -y
 bash -ex /packages/keeper_test.sh""",
-        "Install clickhouse binary in deb": r"bash -ex /packages/binary_test.sh",
     }
     return test_install(image, tests)
 
@@ -140,9 +139,18 @@ bash -ex /packages/server_test.sh""",
         "Install keeper rpm": r"""#!/bin/bash -ex
 yum localinstall --disablerepo=* --allowerasing -y /packages/clickhouse-keeper*rpm
 bash -ex /packages/keeper_test.sh""",
-        "Install clickhouse binary in rpm": r"bash -ex /packages/binary_test.sh",
     }
     return test_install(image, tests)
+
+
+def test_install_binary(image: DockerImage, name: str) -> List[Result]:
+    # By far the most disk hungry test of the job. The self-extracting archive unpacks in
+    # place, so `/packages/clickhouse` grows from 1 GiB to 4 GiB, and `clickhouse install`
+    # needs as much again: it hard links the binary into `/usr/bin` when it can, but
+    # `/packages` is a directory mounted from the host, so the link cannot be made and the
+    # binary is copied instead. On top of that, the installer refuses to start unless the
+    # whole size of the binary is available, which is why this test runs last - see `main`.
+    return test_install(image, {name: r"bash -ex /packages/binary_test.sh"})
 
 
 def test_install_tgz(image: DockerImage, debug_symbols: bool) -> List[Result]:
@@ -345,6 +353,22 @@ def main():
         # Debian, for which the debug symbols add nothing but two minutes.
         test_results.extend(test_install_tgz(deb_image, debug_symbols=True))
         test_results.extend(test_install_tgz(rpm_image, debug_symbols=False))
+        free_packages("*.tgz*")
+
+    # The binary tests need nothing but `/packages/clickhouse`, and they need around 7 GiB
+    # of disk for it, more than twice as much as any other test here. The runners hand the
+    # job as little as 4 GiB of free space, so run these tests once every package has been
+    # deleted, which is worth 7 GiB on its own. Keeping the binary packed until the very
+    # end leaves 3 GiB more for the tgz tests as well.
+    print("Test the binary")
+    if args.deb:
+        test_results.extend(
+            test_install_binary(deb_image, "Install clickhouse binary in deb")
+        )
+    if args.rpm:
+        test_results.extend(
+            test_install_binary(rpm_image, "Install clickhouse binary in rpm")
+        )
 
     Result.create_from(
         results=test_results,
