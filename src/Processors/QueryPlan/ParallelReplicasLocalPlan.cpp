@@ -202,6 +202,14 @@ ContextPtr getShippedFragmentContext(const QueryTreeNodePtr & query_tree, Contex
 /// So copy over exactly the read-in-order settings that `ReadFromMergeTree` consults at pipeline-build time.
 /// This mirrors the optimizer-side override in `optimizeTree` (`ReadFromLocalParallelReplicaStep`): if a new
 /// setting starts gating the in-order read path from the step context, it must be added here too.
+///
+/// `fragment_context` is taken per reading step, not once for the whole fragment: with
+/// `parallel_replicas_allow_view_over_mergetree` a view can expand into a `UNION ALL` whose branches carry their
+/// own `SETTINGS`, and the analyzer gives each branch its own `QueryNode` context. Each branch is planned by its
+/// own `Planner` under that context (`buildPlannerContext` takes the node's context), so on a remote replica each
+/// branch's `ReadFromMergeTree` looks these settings up in the branch context. Deriving one context from the
+/// fragment root would flatten those branches on the initiator only. Optimizer-level gates are not affected:
+/// a plan is optimized once, under the top-level context, on the initiator and on the replicas alike.
 static ContextPtr makeShippedFragmentReadingContext(const ContextPtr & context, const ContextPtr & fragment_context)
 {
     static constexpr std::array read_in_order_runtime_settings{
@@ -324,11 +332,13 @@ std::pair<QueryPlanPtr, bool> createLocalPlanForParallelReplicas(
             analyzed_result_ptr = analyzed_merge_tree->getAnalyzedResult();
     }
 
-    auto reading_context = makeShippedFragmentReadingContext(context, getShippedFragmentContext(query_tree, context));
-
     for (auto * reading_node : reading_nodes)
     {
         auto * reading = typeid_cast<ReadFromMergeTree *>(reading_node->step.get());
+
+        /// The step was planned under the context of the query node it belongs to, which is the branch context
+        /// for a view expanded into `UNION ALL`, so it is the shipped scope of this particular read.
+        auto reading_context = makeShippedFragmentReadingContext(context, reading->getContext());
 
         MergeTreeAllRangesCallback all_ranges_cb
             = [coordinator](InitialAllRangesAnnouncement announcement) -> std::optional<InitialAllRangesAnnouncementResponse>
