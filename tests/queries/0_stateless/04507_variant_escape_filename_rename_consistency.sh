@@ -6,6 +6,12 @@
 # no-object-storage, no-shared-merge-tree: the test inspects the part directory directly, but for
 #   object storage the local part directory contains metadata files, not the data itself, so
 #   reading `columns_substreams.txt` from it returns blob metadata instead of the substream list.
+#
+# The tables pin `min_bytes_for_full_part_storage=0` in addition to the wide-part settings: with
+# packed part storage every file of the part lives inside a single `data.cmrk3`-style blob, so the
+# individual `.bin` files and `columns_substreams.txt` do not exist as separate files on disk. CI
+# randomizes `min_bytes_for_full_part_storage` to a large value, which would otherwise make the
+# test fail.
 
 CUR_DIR=$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)
 # shellcheck source=../shell_config.sh
@@ -18,7 +24,7 @@ CH="$CLICKHOUSE_CLIENT --enable_variant_type=1"
 
 echo "Case 1: escaping 0 -> 1 with RENAME COLUMN"
 $CH -q "DROP TABLE IF EXISTS test_rename_escape"
-$CH -q "CREATE TABLE test_rename_escape (v Variant(Tuple(a UInt32, b UInt32))) ENGINE=MergeTree ORDER BY tuple() SETTINGS min_rows_for_wide_part=0, min_bytes_for_wide_part=0, escape_variant_subcolumn_filenames=0, replace_long_file_name_to_hash=0"
+$CH -q "CREATE TABLE test_rename_escape (v Variant(Tuple(a UInt32, b UInt32))) ENGINE=MergeTree ORDER BY tuple() SETTINGS min_rows_for_wide_part=0, min_bytes_for_wide_part=0, min_bytes_for_full_part_storage=0, escape_variant_subcolumn_filenames=0, replace_long_file_name_to_hash=0"
 $CH -q "INSERT INTO test_rename_escape SELECT tuple(1, 2)::Tuple(a UInt32, b UInt32)"
 
 part_path=$($CH -q "SELECT path FROM system.parts WHERE table = 'test_rename_escape' AND database = currentDatabase() AND active")
@@ -48,7 +54,7 @@ $CH -q "DROP TABLE test_rename_escape"
 
 echo "Case 2: escaping 1 -> 0 with RENAME COLUMN"
 $CH -q "DROP TABLE IF EXISTS test_rename_escape"
-$CH -q "CREATE TABLE test_rename_escape (v Variant(Tuple(a UInt32, b UInt32))) ENGINE=MergeTree ORDER BY tuple() SETTINGS min_rows_for_wide_part=0, min_bytes_for_wide_part=0, escape_variant_subcolumn_filenames=1, replace_long_file_name_to_hash=0"
+$CH -q "CREATE TABLE test_rename_escape (v Variant(Tuple(a UInt32, b UInt32))) ENGINE=MergeTree ORDER BY tuple() SETTINGS min_rows_for_wide_part=0, min_bytes_for_wide_part=0, min_bytes_for_full_part_storage=0, escape_variant_subcolumn_filenames=1, replace_long_file_name_to_hash=0"
 $CH -q "INSERT INTO test_rename_escape SELECT tuple(3, 4)::Tuple(a UInt32, b UInt32)"
 
 part_path=$($CH -q "SELECT path FROM system.parts WHERE table = 'test_rename_escape' AND database = currentDatabase() AND active")
@@ -81,7 +87,7 @@ $CH -q "DROP TABLE test_rename_escape"
 
 echo "Case 3: escaping 0 -> 1 with RENAME COLUMN, no columns_substreams.txt"
 $CH -q "DROP TABLE IF EXISTS test_rename_escape"
-$CH -q "CREATE TABLE test_rename_escape (v Variant(Tuple(a UInt32, b UInt32))) ENGINE=MergeTree ORDER BY tuple() SETTINGS min_rows_for_wide_part=0, min_bytes_for_wide_part=0, escape_variant_subcolumn_filenames=0, replace_long_file_name_to_hash=0"
+$CH -q "CREATE TABLE test_rename_escape (v Variant(Tuple(a UInt32, b UInt32))) ENGINE=MergeTree ORDER BY tuple() SETTINGS min_rows_for_wide_part=0, min_bytes_for_wide_part=0, min_bytes_for_full_part_storage=0, escape_variant_subcolumn_filenames=0, replace_long_file_name_to_hash=0"
 $CH -q "INSERT INTO test_rename_escape SELECT tuple(5, 6)::Tuple(a UInt32, b UInt32)"
 
 part_path=$($CH -q "SELECT path FROM system.parts WHERE table = 'test_rename_escape' AND database = currentDatabase() AND active")
@@ -108,7 +114,7 @@ $CH -q "DROP TABLE test_rename_escape"
 
 echo "Case 4: escaping 1 -> 0 with RENAME COLUMN, no columns_substreams.txt"
 $CH -q "DROP TABLE IF EXISTS test_rename_escape"
-$CH -q "CREATE TABLE test_rename_escape (v Variant(Tuple(a UInt32, b UInt32))) ENGINE=MergeTree ORDER BY tuple() SETTINGS min_rows_for_wide_part=0, min_bytes_for_wide_part=0, escape_variant_subcolumn_filenames=1, replace_long_file_name_to_hash=0"
+$CH -q "CREATE TABLE test_rename_escape (v Variant(Tuple(a UInt32, b UInt32))) ENGINE=MergeTree ORDER BY tuple() SETTINGS min_rows_for_wide_part=0, min_bytes_for_wide_part=0, min_bytes_for_full_part_storage=0, escape_variant_subcolumn_filenames=1, replace_long_file_name_to_hash=0"
 $CH -q "INSERT INTO test_rename_escape SELECT tuple(7, 8)::Tuple(a UInt32, b UInt32)"
 
 part_path=$($CH -q "SELECT path FROM system.parts WHERE table = 'test_rename_escape' AND database = currentDatabase() AND active")
