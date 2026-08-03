@@ -1,5 +1,6 @@
 #!/usr/bin/env bash
-# Tags: no-debug, no-llvm-coverage, no-flaky-check
+# Tags: no-msan, no-debug, no-llvm-coverage, no-flaky-check
+# Tag no-msan: the sampling query profiler is disabled under Memory Sanitizer (QUERY_PROFILER_SUPPORTED).
 
 CURDIR=$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)
 # shellcheck source=../shell_config.sh

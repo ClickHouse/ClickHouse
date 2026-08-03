@@ -1,4 +1,5 @@
--- Tags: no-debug, no-fasttest, no-llvm-coverage, long
+-- Tags: no-msan, no-debug, no-fasttest, no-llvm-coverage, long
+-- Tag no-msan: the sampling query profiler is disabled under Memory Sanitizer (QUERY_PROFILER_SUPPORTED).
 -- Tag no-fasttest: Not sure why fail even in sequential mode. Disabled for now to make some progress.
 
 SET allow_introspection_functions = 1;
