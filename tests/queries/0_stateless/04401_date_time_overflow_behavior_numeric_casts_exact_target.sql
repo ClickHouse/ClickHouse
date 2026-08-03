@@ -156,10 +156,20 @@ SELECT toString(c), toString(CAST(toInt256(999999999999) AS Date32)) FROM values
 SELECT toInt32(c), toInt32(CAST(toUInt128(99999999999) AS Time)) FROM values('c Time', toUInt128(99999999999));
 SELECT toString(c), toString(CAST(toUInt128(99999999999) AS DateTime)) FROM values('c DateTime', toUInt128(99999999999));
 SELECT toString(c), toString(CAST(1e30 AS Date)) FROM values('c Date', 1e30);
--- A non-finite float is unconvertible for these targets, so both sides of the comparison raise
--- instead of clamping; the value never reaches the column.
-SELECT toInt32(c), toInt32(CAST(nan AS Time)) FROM values('c Time', nan); -- { serverError CANNOT_CONVERT_TYPE }
-SELECT toString(c), toString(CAST(inf AS DateTime)) FROM values('c DateTime', inf); -- { serverError CANNOT_CONVERT_TYPE }
+-- A non-finite float is unconvertible, so materialization rejects it exactly like CAST does, in every
+-- overflow mode. Each row below selects ONLY the values() side: pairing it with a throwing CAST would
+-- pass on the CAST's exception alone and never test what the column received.
+SELECT toInt32(c) FROM values('c Time', nan); -- { serverError CANNOT_CONVERT_TYPE }
+SELECT toString(c) FROM values('c DateTime', inf); -- { serverError CANNOT_CONVERT_TYPE }
+SELECT toString(c) FROM values('c Date', nan); -- { serverError CANNOT_CONVERT_TYPE }
+-- Date32 is the one target whose CAST float path has no non-finite guard, so both sides saturate here
+-- instead of rejecting (the values() rows keep matching CAST, which is what this section asserts).
+SELECT toString(c), toString(CAST(-inf AS Date32)) FROM values('c Date32', -inf) SETTINGS date_time_overflow_behavior = 'saturate';
+SELECT toInt32(c) FROM values('c Time', nan) SETTINGS date_time_overflow_behavior = 'saturate'; -- { serverError CANNOT_CONVERT_TYPE }
+SELECT toString(c) FROM values('c Date', nan) SETTINGS date_time_overflow_behavior = 'saturate'; -- { serverError CANNOT_CONVERT_TYPE }
+SELECT toString(c) FROM values('c DateTime', inf) SETTINGS date_time_overflow_behavior = 'ignore'; -- { serverError CANNOT_CONVERT_TYPE }
+-- Control: a finite out-of-range value still clamps, so the rows above cannot pass by rejecting everything.
+SELECT toInt32(c) FROM values('c Time', 4000000.0) SETTINGS date_time_overflow_behavior = 'saturate';
 
 SELECT '-- UInt32 keeps clamping into Time; the UInt32 -> DateTime cast is unaffected (UInt32::max is the DateTime maximum)';
 SELECT toInt32(CAST(toUInt32(4000000) AS Time)), toInt32(CAST(toUInt32(4294967295) AS Time));

@@ -47,6 +47,7 @@ namespace ErrorCodes
     extern const int UNEXPECTED_DATA_AFTER_PARSED_VALUE;
     extern const int DECIMAL_OVERFLOW;
     extern const int VALUE_IS_OUT_OF_RANGE_OF_DATA_TYPE;
+    extern const int CANNOT_CONVERT_TYPE;
 }
 
 
@@ -264,12 +265,14 @@ Field coerceNumericValueToDateTimeOrTime(
     const T & value, Int64 min_bound, Int64 max_bound, bool signed_target,
     FormatSettings::DateTimeOverflowBehavior overflow_behavior, const char * type_name)
 {
-    bool is_nan = false;
+    /// A non-finite value is not out of range but unrepresentable, so no mode may clamp it. The CAST
+    /// path rejects it the same way, and materialization must not diverge from CAST.
     if constexpr (is_floating_point<T>)
-        is_nan = isNaN(value);
+        if (!isFinite(value))
+            throw Exception(ErrorCodes::CANNOT_CONVERT_TYPE, "Unexpected inf or nan to integer conversion");
 
-    const bool over_max = !is_nan && accurate::greaterOp(value, max_bound);
-    const bool under_min = is_nan || accurate::lessOp(value, min_bound);
+    const bool over_max = accurate::greaterOp(value, max_bound);
+    const bool under_min = accurate::lessOp(value, min_bound);
 
     if (over_max || under_min)
     {
@@ -341,8 +344,8 @@ Field coerceNumericToDateField(const T & value, const DateLUTImpl & time_zone, F
     };
 
     if constexpr (is_floating_point<T>)
-        if (isNaN(value))
-            return throw_mode ? out_of_bounds() : Field(static_cast<UInt64>(0));
+        if (!isFinite(value))
+            throw Exception(ErrorCodes::CANNOT_CONVERT_TYPE, "Unexpected inf or nan to integer conversion");
 
     if (accurate::lessOp(value, 0))
         return throw_mode ? out_of_bounds() : Field(static_cast<UInt64>(0));

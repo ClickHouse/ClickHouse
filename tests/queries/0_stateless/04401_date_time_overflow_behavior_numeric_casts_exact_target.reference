@@ -42,6 +42,8 @@
 3599999	3599999
 2106-02-07 06:28:15	2106-02-07 06:28:15
 2106-02-07	2106-02-07
+1900-01-01	1900-01-01
+3599999
 -- UInt32 keeps clamping into Time; the UInt32 -> DateTime cast is unaffected (UInt32::max is the DateTime maximum)
 3599999	3599999
 2106-02-07 06:28:15	1970-02-16 07:06:40
