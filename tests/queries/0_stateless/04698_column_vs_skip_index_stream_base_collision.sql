@@ -131,6 +131,19 @@ SETTINGS min_bytes_for_wide_part = 0, min_rows_for_wide_part = 0;
 INSERT INTO t_text SELECT number, number, toString(number) FROM numbers(10); -- { serverError INCORRECT_FILE_NAME }
 DROP TABLE t_text;
 
+-- The arm above is caught during ordinary writer init, so it never reaches MergeTextIndexesTask.
+-- Building the column before the index exists leaves the merge as the only producer that can see
+-- the pair, which is the claim inside that task.
+CREATE TABLE t_text_merge (k UInt64, s String) ENGINE = MergeTree ORDER BY k
+SETTINGS min_bytes_for_wide_part = 0, min_rows_for_wide_part = 0;
+INSERT INTO t_text_merge SELECT number, toString(number) FROM numbers(10);
+INSERT INTO t_text_merge SELECT number + 100, toString(number) FROM numbers(10);
+ALTER TABLE t_text_merge ADD COLUMN `skp_idx_a` String DEFAULT 'x';
+ALTER TABLE t_text_merge UPDATE `skp_idx_a` = 'y' WHERE 1;
+ALTER TABLE t_text_merge ADD INDEX a(s) TYPE text(tokenizer = 'splitByNonAlpha') GRANULARITY 1;
+OPTIMIZE TABLE t_text_merge FINAL; -- { serverError INCORRECT_FILE_NAME }
+DROP TABLE t_text_merge;
+
 -- An ordinary text index must still build and merge: the temporary per-segment streams must not
 -- claim anything in the part registry.
 CREATE TABLE t_text_ok (k UInt64, v UInt64, s String,
