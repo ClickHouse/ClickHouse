@@ -503,6 +503,11 @@ protected:
     /// the block of external data of that query, and then close the connection. The close can
     /// arrive with an arbitrary delay, so looking at the socket is not enough to notice it - the
     /// connection has to be checked with a round trip before the next query of the same session.
+    /// The flag is armed when a query exchange starts (right before the query is sent) and cleared
+    /// when the exchange completes cleanly, so a purely local error that happens before anything
+    /// has been sent to the server does not force the round trip: the protocol never left sync,
+    /// and a reconnection could needlessly lose the session state (temporary tables, the current
+    /// database, session settings).
     bool connection_needs_resynchronization = false;
 
     std::list<ExternalTable> external_tables; /// External tables info.
