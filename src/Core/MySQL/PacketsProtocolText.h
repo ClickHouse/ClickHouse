@@ -19,7 +19,8 @@ namespace ProtocolText
 enum CharacterSet
 {
     utf8_general_ci = 33,
-    binary = 63
+    binary = 63,
+    utf8mb4_0900_ai_ci = 255
 };
 
 // https://dev.mysql.com/doc/dev/mysql-server/latest/group__group__cs__column__definition__flags.html
