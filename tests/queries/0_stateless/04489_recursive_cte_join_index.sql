@@ -998,7 +998,8 @@ SETTINGS join_algorithm = 'hash'; -- pinned: this proof is about raw-bit hash-jo
 
 DROP TABLE float_edges;
 
--- The sort/merge-based join algorithms (`full_sorting_merge`, `partial_merge`,
+-- The sort/merge-based join algorithms (`full_sorting_merge`,
+-- `parallel_full_sorting_merge`, `partial_merge`,
 -- `prefer_partial_merge`, and `auto`, which may fall back to `partial_merge`)
 -- compare floating-point keys by value: `+0.` equals `-0.` and all NaNs are
 -- equal. The generated `IN` prefilter matches on the raw representation
@@ -1033,6 +1034,20 @@ WITH RECURSIVE float_walk_pm AS
 )
 SELECT cur FROM float_walk_pm ORDER BY cur
 SETTINGS join_algorithm = 'partial_merge';
+
+-- `parallel_full_sorting_merge` builds the very same `FullSortingMergeJoin` as
+-- `full_sorting_merge`, so it compares floating-point keys by value too and
+-- must fail closed identically.
+WITH RECURSIVE float_walk_pfsm AS
+(
+    SELECT toFloat64(0.) AS cur
+  UNION ALL
+    SELECT e.to_id AS cur
+    FROM float_edges_mj AS e
+    INNER JOIN float_walk_pfsm AS w ON e.from_id = w.cur
+)
+SELECT cur FROM float_walk_pfsm ORDER BY cur
+SETTINGS join_algorithm = 'parallel_full_sorting_merge';
 
 DROP TABLE float_edges_mj;
 

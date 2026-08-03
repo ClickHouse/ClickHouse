@@ -716,6 +716,8 @@ bool typeInvolvesFloatingPoint(const DataTypePtr & type)
 /// by the hash-family joins — `hash`, `parallel_hash`, `grace_hash`,
 /// `direct` — and by the generated `IN` set) distinguishes both. `auto` is
 /// value-comparing because it may fall back to `partial_merge` at runtime.
+/// `parallel_full_sorting_merge` builds the very same `FullSortingMergeJoin`
+/// as `full_sorting_merge`, so it is value-comparing as well.
 bool joinAlgorithmsMayCompareFloatsByValue(const std::vector<JoinAlgorithm> & join_algorithms)
 {
     for (const auto algorithm : join_algorithms)
@@ -723,7 +725,8 @@ bool joinAlgorithmsMayCompareFloatsByValue(const std::vector<JoinAlgorithm> & jo
         if (algorithm == JoinAlgorithm::AUTO
             || algorithm == JoinAlgorithm::PARTIAL_MERGE
             || algorithm == JoinAlgorithm::PREFER_PARTIAL_MERGE
-            || algorithm == JoinAlgorithm::FULL_SORTING_MERGE)
+            || algorithm == JoinAlgorithm::FULL_SORTING_MERGE
+            || algorithm == JoinAlgorithm::PARALLEL_FULL_SORTING_MERGE)
             return true;
     }
     return false;
@@ -1055,7 +1058,8 @@ private:
             /// exactly like the hash-family join algorithms: `-0. IN (0.)` is
             /// `0` and NaNs with different payloads do not match. The
             /// sort/merge-based algorithms (`full_sorting_merge`,
-            /// `partial_merge`, `prefer_partial_merge`, and `auto`, which may
+            /// `parallel_full_sorting_merge`, `partial_merge`,
+            /// `prefer_partial_merge`, and `auto`, which may
             /// fall back to `partial_merge`) instead compare floating-point
             /// keys by value through `compareAt`, where `+0.` equals `-0.`
             /// and all NaNs are equal. Under such an algorithm the prefilter
