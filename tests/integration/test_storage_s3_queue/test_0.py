@@ -5,6 +5,7 @@ import time
 from datetime import datetime
 
 import pytest
+from minio.commonconfig import Tags
 
 from helpers.client import QueryRuntimeException
 from helpers.cluster import ClickHouseCluster
@@ -177,6 +178,79 @@ def test_delete_after_processing(started_cluster, mode, engine_name):
     else:
         blob_count = count_azurite_blobs(started_cluster, started_cluster.azurite_container, files_path)
         assert blob_count == 0, f"blobs left: {blob_count}"
+
+
+def test_delete_after_processing_failure_not_counted(started_cluster):
+    # A failed after-processing DELETE must not be reported as a successful removal:
+    # the objects should be left behind in the bucket and the
+    # ObjectStorageQueueRemovedObjects profile event must not move.
+    node = started_cluster.instances["instance"]
+    table_name = f"delete_after_processing_failure_{generate_random_string()}"
+    dst_table_name = f"{table_name}_dst"
+    files_path = f"{table_name}_data"
+    files_num = 5
+    row_num = 10
+    keeper_path = f"/clickhouse/test_{table_name}_{generate_random_string()}"
+
+    generate_random_files(
+        started_cluster, files_path, files_num, row_num=row_num, storage="s3"
+    )
+    create_table(
+        started_cluster,
+        node,
+        table_name,
+        "ordered",
+        files_path,
+        additional_settings={
+            "keeper_path": keeper_path,
+            # Do not retry the after-processing delete, the failpoint fails it anyway.
+            "after_processing_retries": 0,
+        },
+        engine_name="S3Queue",
+        after_processing="delete",
+    )
+
+    def removed_objects():
+        node.query("SYSTEM FLUSH LOGS")
+        return int(
+            node.query(
+                "SELECT value FROM system.events "
+                "WHERE name = 'ObjectStorageQueueRemovedObjects' "
+                "SETTINGS system_events_show_zero_values = 1"
+            )
+        )
+
+    removed_before = removed_objects()
+
+    node.query("SYSTEM ENABLE FAILPOINT object_storage_queue_fail_delete")
+    try:
+        create_mv(node, table_name, dst_table_name)
+
+        expected_count = files_num * row_num
+        for _ in range(100):
+            if (
+                int(node.query(f"SELECT count() FROM {dst_table_name}"))
+                == expected_count
+            ):
+                break
+            time.sleep(1)
+
+        # The files are processed into the destination table ...
+        assert (
+            int(node.query(f"SELECT count() FROM {dst_table_name}")) == expected_count
+        )
+        # ... but the after-processing delete fails, so the objects are left behind.
+        assert (
+            count_minio_objects(
+                started_cluster, started_cluster.minio_bucket, files_path
+            )
+            == files_num
+        )
+    finally:
+        node.query("SYSTEM DISABLE FAILPOINT object_storage_queue_fail_delete")
+
+    # The failed delete must not have been reported as a successful removal.
+    assert removed_objects() == removed_before
 
 
 @pytest.mark.parametrize("engine_name", ["S3Queue", "AzureQueue"])
@@ -1104,7 +1178,7 @@ def test_virtual_columns(started_cluster):
         node,
         table_name,
         dst_table_name,
-        virtual_columns="_path String, _file String, _size UInt64, _time DateTime",
+        virtual_columns="_path String, _file String, _size UInt64, _time DateTime, _etag String",
     )
     expected_values = set([tuple(i) for i in total_values])
     for i in range(20):
@@ -1119,15 +1193,150 @@ def test_virtual_columns(started_cluster):
         time.sleep(1)
     assert selected_values == expected_values
     virtual_values = node.query(
-        f"SELECT count(), _path, _file, _size, _time FROM {dst_table_name} GROUP BY _path, _file, _size, _time"
+        f"SELECT count(), _path, _file, _size, _time, _etag FROM {dst_table_name} GROUP BY _path, _file, _size, _time, _etag"
     ).splitlines()
     assert len(virtual_values) > 0
-    (_, res_path, res_file, res_size, res_time) = virtual_values[0].split("\t")
+    (_, res_path, res_file, res_size, res_time, res_etag) = virtual_values[0].split("\t")
     finish_time = datetime.now().strftime("%Y-%m-%d %H:%M:%S")
     assert f"{files_path}/{res_file}" == res_path
     assert int(res_size) > 0
     assert start_time <= res_time
     assert res_time <= finish_time
+    # _etag must be populated (issue #108605: it was declared but never filled, always empty)
+    assert res_etag != ""
+
+
+def test_virtual_column_tags(started_cluster):
+    # _tags is S3-only: it requires a separate GetObjectTagging call and Azure's
+    # getObjectMetadata does not expose blob tags.
+    node = started_cluster.instances["instance"]
+    table_name = f"test_s3queue_virtual_column_tags_{generate_random_string()}"
+    keeper_path = f"/clickhouse/test_{table_name}"
+    dst_table_name = f"{table_name}_dst"
+    files_path = f"{table_name}_data"
+
+    total_values = generate_random_files(started_cluster, files_path, 1)
+
+    # The single generated file is {files_path}/test_0.csv. Tag it before processing.
+    object_key = f"{files_path}/test_0.csv"
+    tags = Tags(for_object=True)
+    tags["Database"] = "ClickHouse"
+    tags["Team"] = "Core"
+    started_cluster.minio_client.set_object_tags(
+        started_cluster.minio_bucket, object_key, tags
+    )
+
+    create_table(
+        started_cluster,
+        node,
+        table_name,
+        "ordered",
+        files_path,
+        additional_settings={"keeper_path": keeper_path},
+    )
+    # Build the destination table and MV directly: create_mv() splits virtual_columns on
+    # "," and cannot express Map(String, String).
+    node.query(
+        f"""
+        CREATE TABLE {dst_table_name}
+        (column1 UInt32, column2 UInt32, column3 UInt32, _tags Map(String, String))
+        ENGINE = MergeTree() ORDER BY column1;
+        """
+    )
+    node.query(
+        f"""
+        CREATE MATERIALIZED VIEW {table_name}_mv TO {dst_table_name} AS
+        SELECT column1, column2, column3, _tags FROM {table_name};
+        """
+    )
+
+    expected_values = set([tuple(i) for i in total_values])
+    for _ in range(20):
+        selected_values = {
+            tuple(map(int, l.split()))
+            for l in node.query(
+                f"SELECT column1, column2, column3 FROM {dst_table_name}"
+            ).splitlines()
+        }
+        if selected_values == expected_values:
+            break
+        time.sleep(1)
+    assert selected_values == expected_values
+
+    # _tags must be populated. Before the fix the queue read path never fetched
+    # tags (it lists with with_tags = false), so _tags was always an empty map.
+    res_tags = node.query(
+        f"SELECT _tags['Database'], _tags['Team'] FROM {dst_table_name} LIMIT 1"
+    ).strip()
+    assert res_tags == "ClickHouse\tCore"
+
+
+def test_virtual_column_tags_fetch_failure_is_accounted(started_cluster):
+    # The on-demand _tags fetch runs after the file is claimed and appended to
+    # processed_files, so a fetch failure (e.g. GetObjectTagging denied) must fail
+    # the claimed file through the normal commit accounting instead of orphaning it.
+    node = started_cluster.instances["instance"]
+    table_name = f"test_s3queue_tags_fetch_failure_{generate_random_string()}"
+    keeper_path = f"/clickhouse/test_{table_name}"
+    dst_table_name = f"{table_name}_dst"
+    files_path = f"{table_name}_data"
+
+    generate_random_files(started_cluster, files_path, 1)
+
+    object_key = f"{files_path}/test_0.csv"
+    tags = Tags(for_object=True)
+    tags["Database"] = "ClickHouse"
+    tags["Team"] = "Core"
+    started_cluster.minio_client.set_object_tags(
+        started_cluster.minio_bucket, object_key, tags
+    )
+
+    create_table(
+        started_cluster,
+        node,
+        table_name,
+        "ordered",
+        files_path,
+        additional_settings={"keeper_path": keeper_path},
+    )
+    # Build the destination table and MV directly: create_mv() splits virtual_columns on
+    # "," and cannot express Map(String, String).
+    node.query(
+        f"""
+        CREATE TABLE {dst_table_name}
+        (column1 UInt32, column2 UInt32, column3 UInt32, _tags Map(String, String))
+        ENGINE = MergeTree() ORDER BY column1;
+        """
+    )
+
+    node.query("SYSTEM ENABLE FAILPOINT object_storage_queue_fail_tags_fetch")
+    try:
+        node.query(
+            f"""
+            CREATE MATERIALIZED VIEW {table_name}_mv TO {dst_table_name} AS
+            SELECT column1, column2, column3, _tags FROM {table_name};
+            """
+        )
+
+        # The claimed file must be recorded as Failed (with the failpoint exception),
+        # not silently orphaned. Before the fetch was moved after processed_files
+        # accounting, the throw left processed_files empty, so commit() wrote no
+        # Failed entry and the file was re-picked outside the retry/failure path.
+        failed_seen = False
+        for _ in range(60):
+            node.query("SYSTEM FLUSH LOGS")
+            failed_seen = 0 < int(
+                node.query(
+                    f"SELECT count() FROM system.s3queue_log WHERE table = '{table_name}' "
+                    f"and status = 'Failed' and exception ilike '%Failpoint-triggered tag fetch failure%'"
+                )
+            )
+            if failed_seen:
+                break
+            time.sleep(1)
+        assert failed_seen
+    finally:
+        node.query("SYSTEM DISABLE FAILPOINT object_storage_queue_fail_tags_fetch")
 
 
 def test_message_queue_disable_insertion_does_not_affect_s3queue(started_cluster):

@@ -162,7 +162,7 @@ public:
             add(place, &values, offset_it.getValueIndex(), arena);
     }
 
-    void merge(AggregateDataPtr __restrict place, ConstAggregateDataPtr rhs, Arena *) const override
+    void mergeImpl(AggregateDataPtr __restrict place, ConstAggregateDataPtr rhs, Arena *) const override
     {
         auto & state = data(place);
         const auto & rhs_state = data(rhs);
