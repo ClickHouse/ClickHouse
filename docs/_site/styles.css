@@ -33,6 +33,13 @@ html:not(.dark) .ch-usecase-arrow {
 .dark .ch-usecase-arrow {
     color: #FCFF74;
 }
+/* Highlight the `View` selector above the table of contents with theme accents. */
+html:not(.dark) .multi-view-dropdown-trigger {
+    border-color: #135BE6 !important;
+}
+.dark .multi-view-dropdown-trigger {
+    border-color: #FDFF75 !important;
+}
 /* Homepage content hidden until React has mounted and child effects have settled.
    Double-RAF in PageWrapper ensures FullWidthDivider's own RAF fires first. */
 .ch-page-hidden {
@@ -818,25 +825,19 @@ html:not(.dark) .pagination-prev:hover {
     max-width: none !important;
 }
 
-/* Fix code block text alignment: JetBrains Mono renders box-drawing characters
-   (─, ┌, ┐, │, etc.) at ~13.6px vs ASCII at ~8.6px because it falls back to a
-   system font for box-drawing. Monaco renders both at equal width. Target the
-   pre.shiki and code elements directly since Mintlify overrides .font-mono. */
+/* Match the monospace stack used by the server's built-in documentation. */
 [data-component-part="code-block-root"] pre.shiki,
 [data-component-part="code-block-root"] code,
 [data-component-part="code-block-root"] .line,
 [data-component-part="code-block-root"] .line span {
-    font-family: "Monaco", "Menlo", "Consolas", "Ubuntu Mono", monospace !important;
-    font-variant-ligatures: none !important;
-    font-feature-settings: "kern" 0 !important;
+    font-family: "DejaVu Sans Mono", "Liberation Mono", "MonoLisa", "Consolas", monospace !important;
 }
 
-/* Slightly reduce the code-block font size to limit horizontal scrolling.
-   Tighten line-height to match monospace table output while ensuring
-   box-drawing characters render fully. */
 [data-component-part="code-block-root"] .font-mono {
+    font-variant-ligatures: none !important;
+    font-feature-settings: "kern" 0 !important;
     font-size: 0.8125rem !important;
-    line-height: 1.5 !important;
+    line-height: 1.25 !important;
 }
 
 
@@ -1571,6 +1572,14 @@ button.rounded-xl {
     border-radius: 4px !important;
 }
 
+/* Match navigation division dropdowns to the sidebar's 4px radius. Mintlify
+   uses an arbitrary radius on the trigger and `rounded-2xl` on the menu, so
+   neither is covered by the shared `rounded-xl` override above. */
+.nav-dropdown-trigger,
+.nav-dropdown-content {
+    border-radius: 4px !important;
+}
+
 /* Override topbar CTA button styling */
 
 #topbar-cta-button {
@@ -1654,14 +1663,14 @@ button.rounded-xl {
    query for <img>-loaded SVGs while Blink ignores it — so the same icon paints a
    different grey in Safari vs Chrome. Force a deterministic grey keyed to the
    SITE theme instead: brightness(0) collapses whatever colour the SVG picked to
-   black, then invert() sets an exact grey — identical in every browser. The five
-   colourful brand icons (clickhouse, cloud-oss, language-picker, mcp, server) are
-   not part of this grey family and are excluded. */
-img[src*="/images/icons/icon-"]:not([src*="icon-clickhouse.svg"]):not([src*="icon-cloud-oss.svg"]):not([src*="icon-language-picker.svg"]):not([src*="icon-mcp.svg"]):not([src*="icon-server.svg"]) {
+   black, then invert() sets an exact grey — identical in every browser. The four
+   colourful brand icons (clickhouse, cloud-oss, language-picker, mcp) are not
+   part of this grey family and are excluded. */
+img[src*="/images/icons/icon-"]:not([src*="icon-clickhouse.svg"]):not([src*="icon-cloud-oss.svg"]):not([src*="icon-language-picker.svg"]):not([src*="icon-mcp.svg"]) {
     filter: brightness(0) invert(0.31); /* rgb(79,79,79) — matches the SVGs' light value */
 }
-.dark img[src*="/images/icons/icon-"]:not([src*="icon-clickhouse.svg"]):not([src*="icon-cloud-oss.svg"]):not([src*="icon-language-picker.svg"]):not([src*="icon-mcp.svg"]):not([src*="icon-server.svg"]),
-:is(.dark) img[src*="/images/icons/icon-"]:not([src*="icon-clickhouse.svg"]):not([src*="icon-cloud-oss.svg"]):not([src*="icon-language-picker.svg"]):not([src*="icon-mcp.svg"]):not([src*="icon-server.svg"]) {
+.dark img[src*="/images/icons/icon-"]:not([src*="icon-clickhouse.svg"]):not([src*="icon-cloud-oss.svg"]):not([src*="icon-language-picker.svg"]):not([src*="icon-mcp.svg"]),
+:is(.dark) img[src*="/images/icons/icon-"]:not([src*="icon-clickhouse.svg"]):not([src*="icon-cloud-oss.svg"]):not([src*="icon-language-picker.svg"]):not([src*="icon-mcp.svg"]) {
     filter: brightness(0) invert(0.78); /* rgb(199,199,199) — matches the SVGs' dark value */
 }
 
@@ -2880,7 +2889,7 @@ div[data-radix-popper-content-wrapper]:has([role="menu"] > .nav-dropdown-item) {
 
 /* Match clickhouse.com/clickhouse navbar dropdown panel radius (8px instead
    of Mintlify's default 16px). Targets the panel that wraps `.nav-dropdown-item`. */
-div[data-radix-popper-content-wrapper]:has([role="menu"] > .nav-dropdown-item) > div {
+div[data-radix-popper-content-wrapper]:has([role="menu"] > .nav-dropdown-item) > div:not(.nav-dropdown-content) {
     border-radius: 8px !important;
 }
 
