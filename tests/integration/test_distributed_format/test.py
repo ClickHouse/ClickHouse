@@ -331,3 +331,35 @@ def test_long_directory_name_internal_replication(started_cluster):
 
     node.query("drop table test.distr_long_path sync")
     node.query("drop table test.local_long_path sync")
+
+
+def test_long_directory_name_rejected_before_local_write(started_cluster):
+    # A shard holding this server plus a too long remote destination must be rejected before the
+    # local write, otherwise the INSERT reports a failure it has already partly applied and a
+    # retry duplicates rows on the local replica.
+    node.query("drop table if exists test.local_mixed_path sync")
+    node.query("drop table if exists test.distr_mixed_path sync")
+    node.query(
+        "create table test.local_mixed_path (x UInt64) engine = MergeTree order by x"
+    )
+    node.query(
+        "create table test.distr_mixed_path (x UInt64) engine = "
+        "Distributed('test_cluster_mixed_local_long_path', test, local_mixed_path)"
+    )
+
+    settings = {
+        "distributed_foreground_insert": "0",
+        "prefer_localhost_replica": "1",
+        "use_compact_format_in_distributed_parts_names": "0",
+    }
+    for _ in range(3):
+        error = node.query_and_get_error(
+            "insert into test.distr_mixed_path values (1)", settings=settings
+        )
+        assert "ARGUMENT_OUT_OF_BOUND" in error
+        assert "The max length of a directory name" in error
+
+    assert node.query("select count() from test.local_mixed_path").strip() == "0"
+
+    node.query("drop table test.distr_mixed_path sync")
+    node.query("drop table test.local_mixed_path sync")

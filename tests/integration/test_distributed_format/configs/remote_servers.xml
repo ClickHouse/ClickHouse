@@ -34,5 +34,13 @@
                 <replica><host>not_existing_replica_09</host><port>9000</port></replica>
             </shard>
         </test_cluster_internal_replication_long_path>
+
+        <!-- One shard holding this server plus a remote destination whose name exceeds NAME_MAX. -->
+        <test_cluster_mixed_local_long_path>
+            <shard>
+                <replica><host>node</host><port>9000</port></replica>
+                <replica><host>cccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccc</host><port>9000</port></replica>
+            </shard>
+        </test_cluster_mixed_local_long_path>
     </remote_servers>
 </clickhouse>
