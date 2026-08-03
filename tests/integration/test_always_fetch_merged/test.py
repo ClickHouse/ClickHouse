@@ -137,3 +137,65 @@ def test_replica_always_download_mutated_part(started_cluster):
 
     node1.query_with_retry("DROP TABLE test_mutated_table SYNC")
     node2.query_with_retry("DROP TABLE test_mutated_table SYNC")
+
+
+def test_no_mutation_failure_while_waiting_for_mutated_part(started_cluster):
+    """A replica with `always_fetch_mutated_part` must not record `NO_REPLICA_HAS_PART`
+    as a mutation failure while no replica has produced the mutated part yet, otherwise
+    `ALTER ... SETTINGS mutations_sync = 1/2` issued on the fetch-only replica fails for
+    long-running mutations."""
+    node1.query_with_retry(
+        """
+        CREATE TABLE IF NOT EXISTS test_mutated_wait_table(
+            key UInt64,
+            value String
+        ) ENGINE = ReplicatedMergeTree('/clickhouse/tables/test_mutated_wait_table/replicated', '1')
+        ORDER BY tuple()
+    """
+    )
+    node2.query_with_retry(
+        """
+        CREATE TABLE IF NOT EXISTS test_mutated_wait_table(
+            key UInt64,
+            value String
+        ) ENGINE = ReplicatedMergeTree('/clickhouse/tables/test_mutated_wait_table/replicated', '2')
+        ORDER BY tuple()
+        SETTINGS always_fetch_mutated_part=1
+    """
+    )
+
+    node1.query("INSERT INTO test_mutated_wait_table VALUES (1, 'value')")
+    node2.query("SYSTEM SYNC REPLICA test_mutated_wait_table")
+
+    # Hold the mutation on the only replica that can execute it, so that node2
+    # keeps trying to fetch a part that no replica has yet.
+    node1.query("SYSTEM STOP MERGES test_mutated_wait_table")
+    try:
+        node2.query("ALTER TABLE test_mutated_wait_table UPDATE value = 'mutated' WHERE 1")
+
+        # Wait until node2 goes to the fetch path for this mutation.
+        node2.wait_for_log_line(
+            "test_mutated_wait_table.*because setting 'always_fetch_mutated_part' is true"
+        )
+
+        # While the mutated part exists nowhere, the fetch-only replica must treat it as
+        # a normal wait, not as a mutation failure.
+        for _ in range(20):
+            fail_reason = node2.query(
+                "SELECT latest_fail_reason FROM system.mutations WHERE table = 'test_mutated_wait_table' AND NOT is_done"
+            )
+            assert "NO_REPLICA_HAS_PART" not in fail_reason, fail_reason
+            time.sleep(0.5)
+    finally:
+        node1.query("SYSTEM START MERGES test_mutated_wait_table")
+
+    assert_eq_with_retry(
+        node2,
+        "SELECT count() FROM system.mutations WHERE table = 'test_mutated_wait_table' AND NOT is_done",
+        "0",
+    )
+    assert node1.query("SELECT value FROM test_mutated_wait_table") == "mutated\n"
+    assert node2.query("SELECT value FROM test_mutated_wait_table") == "mutated\n"
+
+    node1.query_with_retry("DROP TABLE test_mutated_wait_table SYNC")
+    node2.query_with_retry("DROP TABLE test_mutated_wait_table SYNC")

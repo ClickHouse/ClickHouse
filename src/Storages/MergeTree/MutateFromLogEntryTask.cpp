@@ -83,9 +83,15 @@ ReplicatedMergeMutateTaskBase::PrepareResult MutateFromLogEntryTask::prepare()
     if ((*storage_settings_ptr)[MergeTreeSetting::always_fetch_mutated_part])
     {
         LOG_INFO(log, "Will fetch part {} because setting 'always_fetch_mutated_part' is true", entry.new_part_name);
+        /// No replica may have produced the mutated part yet, so a missing part is not an error
+        /// here: `executeFetch` must quietly return and let the entry be retried later instead of
+        /// throwing `NO_REPLICA_HAS_PART`. Otherwise the exception would be recorded as
+        /// `latest_fail_reason` in `system.mutations`, and a synchronous wait
+        /// (`mutations_sync` = 1/2) issued on this replica could fail for a long-running mutation
+        /// that another replica is still executing.
         return PrepareResult{
             .prepared_successfully = false,
-            .need_to_check_missing_part_in_fetch = true,
+            .need_to_check_missing_part_in_fetch = false,
             .part_log_writer = part_log_writer,
         };
     }
