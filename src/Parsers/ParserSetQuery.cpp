@@ -155,7 +155,7 @@ protected:
 };
 
 /// Parse Identifier, Literal, Array/Tuple/Map of literals
-static bool parseParameterValueIntoString(IParser::Pos & pos, String & value, Expected & expected)
+bool parseParameterValueIntoString(IParser::Pos & pos, String & value, Expected & expected)
 {
     ASTPtr node;
 
@@ -247,7 +247,7 @@ bool ParserSetQuery::parseNameValuePairWithParameterOrDefault(
     ASTPtr node;
     String name;
     ASTPtr function_ast;
-    bool have_eq = false;
+    bool have_eq;
 
     if (!name_p.parse(pos, node, expected))
         return false;
@@ -299,22 +299,6 @@ bool ParserSetQuery::parseNameValuePairWithParameterOrDefault(
                 return true;
             }
             pos = pos_before_func;
-        }
-
-        /// Query parameter as a setting value, e.g. `SET max_threads = {threads:UInt64}`
-        /// or `SELECT ... SETTINGS max_threads = {threads:UInt64}`.
-        /// Keep it as an ASTQueryParameter wrapped into a Field (same mechanism as disk(...) above);
-        /// it is resolved later by ReplaceQueryParameterVisitor once parameter values are known.
-        {
-            ParserSubstitution substitution_p;
-            ASTPtr substitution;
-            if (substitution_p.parse(pos, substitution, expected))
-            {
-                change.name = name;
-                change.value = createFieldFromAST(substitution);
-
-                return true;
-            }
         }
 
         if (!value_p.parse(pos, node, expected))

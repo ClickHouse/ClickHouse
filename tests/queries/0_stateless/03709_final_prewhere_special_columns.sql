@@ -150,8 +150,7 @@ CREATE TABLE test_aggregating_mt(
   value Int64,
   agg_state AggregateFunction(sum, Int64)
 ) ENGINE = AggregatingMergeTree()
-ORDER BY key
-SETTINGS allow_dimensions_outside_sorting_key = 1;
+ORDER BY key;
 
 INSERT INTO test_aggregating_mt
 SELECT

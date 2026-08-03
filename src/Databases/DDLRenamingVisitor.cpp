@@ -4,7 +4,6 @@
 #include <Interpreters/InDepthNodeVisitor.h>
 #include <Interpreters/evaluateConstantExpression.h>
 #include <Interpreters/Context.h>
-#include <Interpreters/misc.h>
 #include <Common/isLocalAddress.h>
 #include <Common/quoteString.h>
 #include <Parsers/ASTCreateQuery.h>
@@ -278,7 +277,10 @@ namespace
 
     void visitFunction(const ASTFunction & function, const DDLRenamingVisitor::Data & data)
     {
-        if (functionIsJoinGet(function.name) || functionIsDictGet(function.name))
+        if (function.name == "joinGet" ||
+            function.name == "dictHas" ||
+            function.name == "dictIsIn" ||
+            function.name.starts_with("dictGet"))
         {
             replaceTableNameInArgument(function, data, 0);
         }

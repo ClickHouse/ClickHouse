@@ -6,7 +6,6 @@
 #include <Functions/IFunction.h>
 #include <Functions/FunctionFactory.h>
 #include <Functions/FunctionHelpers.h>
-#include <Functions/LowCardinalityExecutionHelpers.h>
 #include <DataTypes/DataTypeArray.h>
 #include <DataTypes/DataTypeMap.h>
 #include <DataTypes/DataTypeNullable.h>
@@ -19,7 +18,6 @@
 #include <Columns/ColumnsNumber.h>
 #include <Columns/ColumnNullable.h>
 #include <Common/FieldAccurateComparison.h>
-#include <Common/VectorWithMemoryTracking.h>
 #include <base/memcmpSmall.h>
 #include <Common/assert_cast.h>
 #include <Columns/ColumnLowCardinality.h>
@@ -28,6 +26,7 @@
 #include <Columns/ColumnObject.h>
 #include <Columns/ColumnDynamic.h>
 #include <DataTypes/DataTypeObject.h>
+
 
 namespace DB
 {
@@ -89,12 +88,12 @@ private:
     using ArrOffset = ColumnArray::Offset;
     using ArrOffsets = ColumnArray::Offsets;
 
-    static constexpr bool compare(const Initial & left, const PaddedPODArray<Result> & right, size_t, size_t i)
-    {
 #pragma clang diagnostic push
 #pragma clang diagnostic ignored "-Wsign-compare"
+
+    static constexpr bool compare(const Initial & left, const PaddedPODArray<Result> & right, size_t, size_t i)
+    {
         return left == right[i];
-#pragma clang diagnostic pop
     }
 
     static constexpr bool compare(const PaddedPODArray<Initial> & left, const Result & right, size_t i, size_t)
@@ -109,11 +108,7 @@ private:
         }
         else
         {
-#pragma clang diagnostic push
-#pragma clang diagnostic ignored "-Wsign-compare"
-#pragma clang diagnostic ignored "-Wdouble-promotion"
             return left[i] == right;
-#pragma clang diagnostic pop
         }
     }
 
@@ -130,11 +125,7 @@ private:
         }
         else
         {
-#pragma clang diagnostic push
-#pragma clang diagnostic ignored "-Wsign-compare"
-#pragma clang diagnostic ignored "-Wdouble-promotion"
             return left[i] == right[j];
-#pragma clang diagnostic pop
         }
     }
 
@@ -167,11 +158,7 @@ private:
         }
         else
         {
-#pragma clang diagnostic push
-#pragma clang diagnostic ignored "-Wsign-compare"
-#pragma clang diagnostic ignored "-Wdouble-promotion"
             return left[i] >= right;
-#pragma clang diagnostic pop
         }
     }
 
@@ -181,6 +168,8 @@ private:
     {
         return accurateLessOrEqual(rhs, arr[pos]);
     }
+
+#pragma clang diagnostic pop
 
 public:
     /** Assuming that the array is sorted, use a binary search */
@@ -506,7 +495,7 @@ public:
 }
 
 template <typename ConcreteAction, typename Name>
-class FunctionArrayIndex final : public IFunction
+class FunctionArrayIndex : public IFunction
 {
 public:
     static constexpr auto name = Name::name;
@@ -837,13 +826,6 @@ private:
      */
     static ColumnPtr executeArrayLowCardinality(const ColumnsWithTypeAndName & arguments)
     {
-        /// The LowCardinality optimization compares dictionary indices instead of actual values.
-        /// This is correct for linear scan (indexOf, has, countEqual) where only equality is checked,
-        /// but incorrect for binary search (indexOfAssumeSorted) where ordering matters --
-        /// dictionary indices are assigned in insertion order, not in sorted order of values.
-        if constexpr (std::is_same_v<ConcreteAction, IndexOfAssumeSorted>)
-            return nullptr;
-
         const auto * col_array = checkAndGetColumn<ColumnArray>(arguments[0].column.get());
         const auto * col_array_const = checkAndGetColumnConstData<ColumnArray>(arguments[0].column.get());
 
@@ -863,20 +845,36 @@ private:
 
         const auto & array_type  = assert_cast<const DataTypeArray &>(*arguments[0].type);
         const auto target_type = recursiveRemoveLowCardinality(array_type.getNestedType());
+        auto right = recursiveRemoveLowCardinality(right_const->getDataColumnPtr());
 
         UInt64 index = 0;
         UInt64 left_size = arguments[0].column->size();
         ResultColumnPtr col_result = ResultColumnType::create();
 
-        if (!LowCardinalityExecutionHelpers::dictionaryIndexForConstant(
-                *left_lc, right_const->getDataColumnPtr(), arguments[1].type, target_type, index))
+        if (!right->isNullAt(0))
         {
-            col_result->getData().resize_fill(col_array->size());
+            auto right_type = recursiveRemoveLowCardinality(arguments[1].type);
+            right = castColumn({right, right_type, ""}, target_type);
 
-            if (col_array_const)
-                return ColumnConst::create(std::move(col_result), left_size);
+            if (right->isNullable())
+                right = checkAndGetColumn<ColumnNullable>(*right).getNestedColumnPtr();
 
-            return col_result;
+            std::string_view elem = right->getDataAt(0);
+            const auto & left_dict = left_lc->getDictionary();
+
+            if (std::optional<UInt64> maybe_index = left_dict.getOrFindValueIndex(elem); maybe_index)
+            {
+                index = *maybe_index;
+            }
+            else
+            {
+                col_result->getData().resize_fill(col_array->size());
+
+                if (col_array_const)
+                    return ColumnConst::create(std::move(col_result), left_size);
+
+                return col_result;
+            }
         }
 
         Impl::Main<ConcreteAction, true>::vector(
@@ -1071,7 +1069,7 @@ private:
 
             /// Collect columns from dynamic paths that match exact path or prefix.
             /// These columns need to be checked for non-null values per row.
-            VectorWithMemoryTracking<const IColumn *> relevant_dynamic_columns;
+            std::vector<const IColumn *> relevant_dynamic_columns;
             const auto & dynamic_paths = object_column.getDynamicPathsPtrs();
 
             if (auto it = dynamic_paths.find(path); it != dynamic_paths.end())

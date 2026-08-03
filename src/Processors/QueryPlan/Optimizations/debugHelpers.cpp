@@ -35,10 +35,6 @@ constexpr auto DUMMY_JOIN_STATS_PARAM_NAME = "_internal_join_table_stat_hints";
  *   ...
  * }';
  */
-RelationStats getDummyStats(const String & dummy_stats_str, const String & table_name);
-RelationStats getDummyStats(ContextPtr context, const String & table_name);
-RelationStats getRandomizedStats(UInt64 seed, size_t relation_index, const String & table_name, const Block & header);
-
 RelationStats getDummyStats(const String & dummy_stats_str, const String & table_name)
 {
     try
@@ -58,8 +54,6 @@ RelationStats getDummyStats(const String & dummy_stats_str, const String & table
 
         RelationStats stats;
         stats.table_name = table_name;
-        stats.imprecise_estimate = true;
-        stats.source = RowEstimateSource::Hint;
 
         if (stat_object->has("cardinality"))
             stats.estimated_rows = stat_object->getValue<UInt64>("cardinality");
@@ -101,8 +95,6 @@ RelationStats getRandomizedStats(UInt64 seed, size_t relation_index, const Strin
     RelationStats stats;
     stats.table_name = table_name;
     stats.estimated_rows = 1 + (hash % 10'000'000);
-    stats.imprecise_estimate = true;
-    stats.source = RowEstimateSource::Randomized;
 
     pcg64 rng(hash);
     for (const auto & col : header)

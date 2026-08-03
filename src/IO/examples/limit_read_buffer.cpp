@@ -6,7 +6,6 @@
 
 #include <iostream>
 #include <string>
-#include <Examples/clickhouse_examples.h>
 
 
 int mainEntryExampleLimitReadBuffer(int argc, char ** argv)

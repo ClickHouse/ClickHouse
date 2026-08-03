@@ -18,7 +18,7 @@ namespace ErrorCodes
 using namespace GatherUtils;
 
 template <typename Name, typename Impl>
-class HasSubsequenceImpl final : public IFunction
+class HasSubsequenceImpl : public IFunction
 {
 public:
     static constexpr auto name = Name::name;
