@@ -285,6 +285,9 @@ namespace CurrentMetrics
 
 namespace DB
 {
+
+ContextPtr ContextData::global_context_instance;
+ContextPtr ContextData::background_context_instance;
 namespace Setting
 {
     extern const SettingsUInt64 allow_experimental_parallel_reading_from_replicas;

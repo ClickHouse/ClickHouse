@@ -12,6 +12,8 @@
 namespace DB
 {
 
+UUID ServerUUID::server_uuid = UUIDHelpers::Nil;
+
 namespace ErrorCodes
 {
     extern const int CANNOT_CREATE_FILE;

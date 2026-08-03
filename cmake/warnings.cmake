@@ -44,6 +44,11 @@ no_warning(unsafe-buffer-usage) # too aggressive
 no_warning(switch-default) # conflicts with "defaults in a switch covering all enum values"
 no_warning(nrvo) # not eliding copy on return - too aggressive
 no_warning(missing-noreturn) # too aggressive with no clear benefit, see https://github.com/ClickHouse/ClickHouse/pull/86416
+# -Wunique-object-duplication is enabled: a mutable object defined in a header, with external
+# linkage and hidden visibility, gets one copy per shared object rather than one per process, so
+# any "singleton" declared that way silently stops being one. It only has anything to report under
+# `-fvisibility=hidden`, which is why the default build never used to trip it - but see the CFI
+# block in the top-level CMakeLists.txt: hidden visibility made the binary SIGSEGV before main.
 # Hard-code knowledge of clang version-specific warnings rather than probing the compiler.
 # `lifetime-safety-*` were introduced in clang 23.
 if (CMAKE_CXX_COMPILER_VERSION VERSION_GREATER_EQUAL 23)
