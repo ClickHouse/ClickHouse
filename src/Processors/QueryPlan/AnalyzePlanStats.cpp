@@ -47,12 +47,7 @@ String formatStepMetricValue(const StepMetric & metric)
         case StepMetric::Format::Quantity:
             return formatReadableQuantity(numeric);
         case StepMetric::Format::Time:
-        {
-            String result = formatReadableTime(numeric);
-            if (metric.share_of_stage_time)
-                result += fmt::format(" ({:.1f}%)", *metric.share_of_stage_time);
-            return result;
-        }
+            return formatReadableTime(numeric);
         case StepMetric::Format::Percent:
             return fmt::format("{:.2f}%", numeric);
         case StepMetric::Format::Ratio:
@@ -94,32 +89,20 @@ void printMetricGroup(const MetricGroup & metric_group, WriteBuffer & out, const
     out << "\n";
 }
 
-MetricGroup makeIOGroup(const StepStats & step_stats)
+/// The group is built by `makeIOGroup`, so a missing metric means the two went out of sync.
+UInt64 getQuantity(const MetricGroup & metric_group, std::string_view name)
 {
-    MetricGroup io_group;
-    io_group.label = "I/O";
-    io_group.metrics.emplace_back("input rows", step_stats.input_rows, StepMetric::Format::Quantity);
-    io_group.metrics.emplace_back("output rows", step_stats.output_rows, StepMetric::Format::Quantity);
-    io_group.metrics.emplace_back("input bytes", step_stats.input_bytes, StepMetric::Format::Bytes);
-    io_group.metrics.emplace_back("output bytes", step_stats.output_bytes, StepMetric::Format::Bytes);
-    return io_group;
-}
-
-UInt64 findQuantity(const MetricGroup & metric_group, const std::string & name)
-{
-    for (const auto & metric : metric_group.metrics)
-        if (metric.name == name)
-            if (const auto * quantity = std::get_if<UInt64>(&metric.value))
-                return *quantity;
-    return 0;
+    const auto quantity = findQuantity(metric_group, name);
+    chassert(quantity, "metric is missing from the I/O group");
+    return quantity.value_or(0);
 }
 
 void printIOGroup(const MetricGroup & io_group, WriteBuffer & out, const std::string & prefix)
 {
-    const UInt64 input_rows = findQuantity(io_group, "input rows");
-    const UInt64 output_rows = findQuantity(io_group, "output rows");
-    const UInt64 input_bytes = findQuantity(io_group, "input bytes");
-    const UInt64 output_bytes = findQuantity(io_group, "output bytes");
+    const UInt64 input_rows = getQuantity(io_group, "input rows");
+    const UInt64 output_rows = getQuantity(io_group, "output rows");
+    const UInt64 input_bytes = getQuantity(io_group, "input bytes");
+    const UInt64 output_bytes = getQuantity(io_group, "output bytes");
 
     const UInt8 precision_rows_in = input_rows < 1000 ? 0 : 2;
     const UInt8 precision_rows_out = output_rows < 1000 ? 0 : 2;
@@ -204,8 +187,7 @@ void AnalyzeStepsStats::collectIOStats(const Processors & processors)
 
         auto & step_stats = stats_by_step[step];
 
-        const auto step_group_key = std::make_pair(step, proc->getQueryPlanStepGroup());
-        processors_by_step_group[step_group_key].push_back(proc.get());
+        processors_by_step[step].push_back(proc.get());
 
         for (const auto & input_port : proc->getInputs())
         {
@@ -308,16 +290,14 @@ StepStatsContext AnalyzeStepsStats::makeContext(const IQueryPlanStep * step) con
 
 AnalyzedStepData AnalyzeStepsStats::analyzeStep(const IQueryPlanStep * step) const
 {
-    ProcessorsByGroup processors_by_group;
-    for (size_t group : step->getStepGroups())
-        if (const auto group_processors_it = processors_by_step_group.find(std::make_pair(step, group)); group_processors_it != processors_by_step_group.end())
-            processors_by_group[group] = group_processors_it->second;
+    StepProcessors step_processors;
+    if (const auto processors_it = processors_by_step.find(step); processors_it != processors_by_step.end())
+        step_processors = processors_it->second;
 
-    StepAnalysisReport raw_report = step->getAnalysisReport(processors_by_group);
+    StepAnalysisReport raw_report = step->getAnalysisReport(step_processors);
 
     auto context_for_step = makeContext(step);
-    auto step_name = step->getName();
-    StepStatsAnalyzer step_stats_generator = getStepStatsAnalyzer(step_name);
+    StepStatsAnalyzer step_stats_generator = getStepStatsAnalyzer(step->getName());
 
     /// Use the service of a generator, which takes the context (e.g. i/o, total time)
     /// some internal raw metrics, which are specific for each step,  that
@@ -325,19 +305,23 @@ AnalyzedStepData AnalyzeStepsStats::analyzeStep(const IQueryPlanStep * step) con
     return step_stats_generator(context_for_step, std::move(raw_report));
 }
 
-void AnalyzeStepsStats::renderStep(const AnalyzedStepData & report, WriteBuffer & out, const std::string & prefix, bool processors_info) const
+void AnalyzeStepsStats::renderStep(const AnalyzedStepData & step_data, WriteBuffer & out, const std::string & prefix, bool processors_info) const
 {
-    for (const auto & group : report.groups)
+    for (const auto & group : step_data.step_metric_groups)
     {
+        if (group.label == "I/O")
+        {
+            printIOGroup(group, out, prefix);
+            continue;
+        }
+
         MetricGroup display = group;
         capitalizeLabel(display.label);
         printMetricGroup(display, out, prefix);
     }
 
-    printIOGroup(makeIOGroup(report.io), out, prefix);
-
-    for (const auto & stage : report.stages)
-        printStage(stage, report.label_stages, out, prefix, processors_info);
+    for (const auto & stage : step_data.stage_reports)
+        printStage(stage, step_data.label_stages, out, prefix, processors_info);
 }
 
 void AnalyzeStepsStats::printStepStats(const IQueryPlanStep * step, WriteBuffer & out, const std::string & prefix, bool processors_info) const

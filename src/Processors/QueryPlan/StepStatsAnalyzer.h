@@ -2,13 +2,14 @@
 
 #include <Processors/QueryPlan/StepStatsModel.h>
 #include <base/types.h>
+#include <string_view>
 
 namespace DB
 {
 
 using StepStatsAnalyzer = AnalyzedStepData (*)(const StepStatsContext & context, StepAnalysisReport report);
 
-StepStatsAnalyzer getStepStatsAnalyzer(const String & step_name);
+StepStatsAnalyzer getStepStatsAnalyzer(std::string_view step_name);
 
 AnalyzedStepData analyzeDefaultStep(const StepStatsContext & context, StepAnalysisReport report);
 

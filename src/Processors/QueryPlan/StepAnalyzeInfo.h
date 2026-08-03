@@ -3,6 +3,7 @@
 #include <base/types.h>
 #include <optional>
 #include <string>
+#include <string_view>
 #include <variant>
 #include <vector>
 
@@ -16,8 +17,6 @@ struct StepMetric
 
     enum class Format { Raw, Bytes, Quantity, Time, Percent, Ratio };
     Format format = Format::Raw;
-
-    std::optional<double> share_of_stage_time;
 };
 
 using MetricList = std::vector<StepMetric>;
@@ -29,6 +28,20 @@ struct MetricGroup
 };
 
 using StepAnalysisReport = std::vector<MetricGroup>;
+
+inline std::optional<UInt64> findQuantity(const MetricGroup & group, std::string_view name)
+{
+    for (const auto & metric : group.metrics)
+    {
+        if (metric.name == name)
+        {
+            if (const auto * quantity = std::get_if<UInt64>(&metric.value))
+                return *quantity;
+            break;
+        }
+    }
+    return std::nullopt;
+}
 
 struct JoinAnalysisCounters
 {

@@ -231,26 +231,23 @@ QueryPipelineBuilderPtr JoinStep::updatePipeline(QueryPipelineBuilders pipelines
     return joined_pipeline;
 }
 
-StepAnalysisReport JoinStep::getAnalysisReport(const ProcessorsByGroup & processors_by_group) const
+StepAnalysisReport JoinStep::getAnalysisReport(StepProcessors step_processors) const
 {
     if (!typeid_cast<const FullSortingMergeJoin *>(join.get()))
         return join->getAnalysisReport();
 
     JoinAnalysisCounters counters;
-    for (const auto & [group, processors] : processors_by_group)
+    for (const auto * proc : step_processors)
     {
-        for (const auto * proc : processors)
+        if (const auto * merge_join = typeid_cast<const MergeJoinTransform *>(proc))
         {
-            if (const auto * merge_join = typeid_cast<const MergeJoinTransform *>(proc))
-            {
-                const auto join_counters = merge_join->getJoinAnalysisCounters();
-                counters.left_rows += join_counters.left_rows;
-                if (join_counters.matched_left)
-                    counters.matched_left = counters.matched_left.value_or(0) + *join_counters.matched_left;
-                counters.right_rows += join_counters.right_rows;
-                if (join_counters.matched_right)
-                    counters.matched_right = counters.matched_right.value_or(0) + *join_counters.matched_right;
-            }
+            const auto join_counters = merge_join->getJoinAnalysisCounters();
+            counters.left_rows += join_counters.left_rows;
+            if (join_counters.matched_left)
+                counters.matched_left = counters.matched_left.value_or(0) + *join_counters.matched_left;
+            counters.right_rows += join_counters.right_rows;
+            if (join_counters.matched_right)
+                counters.matched_right = counters.matched_right.value_or(0) + *join_counters.matched_right;
         }
     }
 
@@ -471,7 +468,7 @@ void FilledJoinStep::updateOutputHeader()
 }
 
 
-StepAnalysisReport FilledJoinStep::getAnalysisReport(const ProcessorsByGroup & /*processors_by_group*/) const
+StepAnalysisReport FilledJoinStep::getAnalysisReport(StepProcessors /*step_processors*/) const
 {
     return join->getAnalysisReport();
 }

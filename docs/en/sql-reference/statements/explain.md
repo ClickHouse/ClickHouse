@@ -793,6 +793,7 @@ fanout              = <matched output rows> / <matched_rows of that side>
 
 An outer join emits one `NULL`-padded output row for every row of a preserved side that found no partner. Those rows are subtracted so that they do not dilute the ratio:
 
+- `fanout = 0` — the matched rows produced no output row at all, which is what an `ANTI` join does: it emits only the rows that found no partner.
 - `fanout = 1` — a clean 1:1 join; every matched row produced exactly one output row.
 - `fanout > 1` — a 1:N join; duplicate keys on the other side multiplied the rows. A large value on both sides at once is the signature of an unintended Cartesian blowup.
 
@@ -847,14 +848,15 @@ For `partial_merge` join the `Right:` line carries extra information about how t
 
 ```txt
 Right: rows <right_rows> · matched <matched_right_rows> · size <right_size> · blocks <right_blocks> · storage <in-memory|external> · match rate <match_rate>% · fanout <fanout>
-  Stage (build): time <t> (<share>%) · parallelism <avg>/<max> · sort time <build_sort_time>
-  Stage (probe): time <t> (<share>%) · parallelism <avg>/<max> · sort time <probe_sort_time>
+  Stage (build): time <t> (<share>%) · parallelism <avg>/<max> · sort time <build_sort_time> · sort share <build_sort_share>%
+  Stage (probe): time <t> (<share>%) · parallelism <avg>/<max> · sort time <probe_sort_time> · sort share <probe_sort_share>%
 ```
 
 - `size <right_size>` — the in-memory size of the buffered right table.
 - `blocks <right_blocks>` — the number of blocks the right table was buffered into.
 - `storage <in-memory|external>` — whether the right table fit into memory (`in-memory`) or had to be spilled to disk (`external`). When it is `external`, an extra `spilled <spilled_bytes>` reports the compressed bytes written to disk.
-- `sort time <sort_time>` — the time spent sorting the right table (on the build stage) and each incoming left block (on the probe stage). Its percentage is a share of *that stage's own busy time* (the sum of its processors' elapsed time), unlike the stage `time` percentage, which is a share of the *whole query's execution time*.
+- `sort time <sort_time>` — the time spent sorting the right table (on the build stage) and each incoming left block (on the probe stage).
+- `sort share <sort_share>%` — `sort time` as a share of *that stage's own busy time* (the sum of its processors' elapsed time), unlike the stage `time` percentage, which is a share of the *whole query's execution time*.
 
 For `full_sorting_merge` join only the common `Left:` and `Right:` lines are printed.
 

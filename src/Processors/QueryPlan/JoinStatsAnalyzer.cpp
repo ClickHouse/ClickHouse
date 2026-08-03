@@ -37,27 +37,6 @@ void swapReportSides(StepAnalysisReport & report)
     }
 }
 
-UInt64 findQuantity(const MetricGroup & group, const std::string & name)
-{
-    for (const auto & metric : group.metrics)
-        if (metric.name == name)
-            if (const auto * quantity = std::get_if<UInt64>(&metric.value))
-                return *quantity;
-    return 0;
-}
-
-std::optional<UInt64> findMatched(const MetricGroup & group)
-{
-    for (const auto & metric : group.metrics)
-        if (metric.name == "matched")
-        {
-            if (const auto * quantity = std::get_if<UInt64>(&metric.value))
-                return *quantity;
-            return std::nullopt;
-        }
-    return std::nullopt;
-}
-
 MetricGroup * findGroup(StepAnalysisReport & report, std::string_view label)
 {
     for (auto & group : report)
@@ -66,61 +45,48 @@ MetricGroup * findGroup(StepAnalysisReport & report, std::string_view label)
     return nullptr;
 }
 
-/// Rows an outer join adds for rows of a preserved side that found no partner. Unknown when that
-/// side has no matched count.
-std::optional<UInt64> nullFilledRows(bool side_preserved, UInt64 input_rows, std::optional<UInt64> matched_rows)
+std::optional<UInt64> unpairedOutputRows(std::optional<UInt64> input_rows, std::optional<UInt64> matched_rows)
 {
-    if (!side_preserved)
-        return 0;
-    if (!matched_rows)
-        return {};
-    return input_rows > *matched_rows ? input_rows - *matched_rows : 0;
+    if (!input_rows || !matched_rows)
+        return std::nullopt;
+    return *input_rows > *matched_rows ? *input_rows - *matched_rows : 0;
 }
 
-/// Output rows produced by an actual match, per matched row of the side. The NULL-padded rows are
-/// excluded, so a fanout above 1 means row multiplication and nothing else. The numerator is shared
-/// by both sides, which gives `fanout_left * matched_left == fanout_right * matched_right`.
-std::optional<double> fanoutForSide(
-    bool is_left_table, JoinKind kind, JoinStrictness strictness,
-    UInt64 input_rows, UInt64 matched_rows, UInt64 output_rows, std::optional<UInt64> matched_output_rows)
+double matchRate(UInt64 matched_rows, UInt64 input_rows)
 {
-    if (strictness == JoinStrictness::Semi || strictness == JoinStrictness::Anti)
-    {
-        /// These emit one output row per row of a single side, so there is nothing to multiply.
-        const bool this_side_emitted = is_left_table ? isLeft(kind) : isRight(kind);
-        if (!this_side_emitted)
-            return {};
+    if (input_rows == 0)
+        return 0.0;
+    return 100.0 * static_cast<double>(matched_rows) / static_cast<double>(input_rows);
+}
 
-        const UInt64 unmatched_rows = input_rows > matched_rows ? input_rows - matched_rows : 0;
-        const UInt64 emitted_rows = strictness == JoinStrictness::Anti ? unmatched_rows : matched_rows;
-        if (!emitted_rows)
-            return {};
-
-        return static_cast<double>(output_rows) / static_cast<double>(emitted_rows);
-    }
-
-    if (!matched_output_rows || !matched_rows)
-        return {};
-
-    return static_cast<double>(*matched_output_rows) / static_cast<double>(matched_rows);
+std::optional<double> computeFanout(UInt64 matched_output_rows, UInt64 matched_rows)
+{
+    if (matched_rows == 0)
+        return std::nullopt;
+    return static_cast<double>(matched_output_rows) / static_cast<double>(matched_rows);
 }
 
 void appendSideMetrics(
-    MetricGroup & group, bool is_left_table, JoinKind kind, JoinStrictness strictness,
-    UInt64 input_rows, std::optional<UInt64> matched_rows, UInt64 output_rows, std::optional<UInt64> matched_output_rows)
+    MetricGroup & group,
+    std::optional<UInt64> input_rows,
+    std::optional<UInt64> matched_rows,
+    std::optional<UInt64> matched_output_rows)
 {
-    if (!matched_rows)
+    if (!input_rows || !matched_rows)
     {
         group.metrics.emplace_back("match rate", std::string("not collected"), StepMetric::Format::Raw);
         group.metrics.emplace_back("fanout", std::string("not collected"), StepMetric::Format::Raw);
         return;
     }
 
-    const double match_rate = input_rows ? 100.0 * static_cast<double>(*matched_rows) / static_cast<double>(input_rows) : 0.0;
-    group.metrics.emplace_back("match rate", match_rate, StepMetric::Format::Percent);
+    group.metrics.emplace_back("match rate", matchRate(*matched_rows, *input_rows), StepMetric::Format::Percent);
 
-    if (auto fanout = fanoutForSide(is_left_table, kind, strictness, input_rows, *matched_rows, output_rows, matched_output_rows))
-        group.metrics.emplace_back("fanout", *fanout, StepMetric::Format::Ratio);
+    std::optional<double> fanout_value;
+    if (matched_output_rows)
+        fanout_value = computeFanout(*matched_output_rows, *matched_rows);
+
+    if (fanout_value.has_value())
+        group.metrics.emplace_back("fanout", *fanout_value, StepMetric::Format::Ratio);
     else
         group.metrics.emplace_back("fanout", std::string("not collected"), StepMetric::Format::Raw);
 }
@@ -132,32 +98,43 @@ void enrichJoinSides(StepAnalysisReport & report, UInt64 output_rows, JoinKind k
     if (!left_group || !right_group)
         return;
 
-    const UInt64 left_input_rows = findQuantity(*left_group, "rows");
-    const UInt64 right_input_rows = findQuantity(*right_group, "rows");
-    const auto left_matched_rows = findMatched(*left_group);
-    const auto right_matched_rows = findMatched(*right_group);
+    const auto left_input_rows = findQuantity(*left_group, "rows");
+    const auto right_input_rows = findQuantity(*right_group, "rows");
+    const auto left_matched_rows = findQuantity(*left_group, "matched");
+    const auto right_matched_rows = findQuantity(*right_group, "matched");
 
-    const bool one_sided = strictness == JoinStrictness::Semi || strictness == JoinStrictness::Anti;
-    const auto left_null_filled_rows = nullFilledRows(isLeftOrFull(kind) && !one_sided, left_input_rows, left_matched_rows);
-    const auto right_null_filled_rows = nullFilledRows(isRightOrFull(kind) && !one_sided, right_input_rows, right_matched_rows);
+    const bool left_side_preserved_with_nulls = isLeftOrFull(kind) && strictness != JoinStrictness::Semi;
+    const bool right_side_preserved_with_nulls = isRightOrFull(kind) && strictness != JoinStrictness::Semi;
+
+    std::optional<UInt64> left_unpaired_rows = 0;
+    if (left_side_preserved_with_nulls)
+        left_unpaired_rows = unpairedOutputRows(left_input_rows, left_matched_rows);
+        
+    std::optional<UInt64> right_unpaired_rows = 0;
+    if (right_side_preserved_with_nulls)
+        right_unpaired_rows = unpairedOutputRows(right_input_rows, right_matched_rows);
 
     std::optional<UInt64> matched_output_rows;
-    if (left_null_filled_rows && right_null_filled_rows)
+    if (left_unpaired_rows.has_value() && right_unpaired_rows.has_value())
     {
-        const UInt64 null_filled_rows = *left_null_filled_rows + *right_null_filled_rows;
-        matched_output_rows = output_rows > null_filled_rows ? output_rows - null_filled_rows : 0;
+        const UInt64 unpaired_rows = *left_unpaired_rows + *right_unpaired_rows;
+        matched_output_rows = output_rows > unpaired_rows ? output_rows - unpaired_rows : 0;
     }
 
-    appendSideMetrics(*left_group, true, kind, strictness, left_input_rows, left_matched_rows, output_rows, matched_output_rows);
-    appendSideMetrics(*right_group, false, kind, strictness, right_input_rows, right_matched_rows, output_rows, matched_output_rows);
+    appendSideMetrics(*left_group, left_input_rows, left_matched_rows, matched_output_rows);
+    appendSideMetrics(*right_group, right_input_rows, right_matched_rows, matched_output_rows);
 }
 
 /// `sort time` is the time a merge join spent sorting the blocks of one side. Relate it to the
 /// processor time of the corresponding stage to show whether sorting dominated that stage.
-void annotateSortTimeShare(StepAnalysisReport & report, const StepStatsContext & context, std::string_view label, JoinStage stage)
+void appendSortShare(StepAnalysisReport & report, const StepStatsContext & context, std::string_view label, JoinStep::JoinStage stage)
 {
     auto * group = findGroup(report, label);
     if (!group)
+        return;
+
+    const auto sort_time_ns = findQuantity(*group, "sort time");
+    if (!sort_time_ns)
         return;
 
     const auto stage_stats_it = context.group_stats.find(static_cast<size_t>(stage));
@@ -168,11 +145,8 @@ void annotateSortTimeShare(StepAnalysisReport & report, const StepStatsContext &
     if (stage_sum_elapsed_ns == 0)
         return;
 
-    for (auto & metric : group->metrics)
-        if (metric.name == "sort time")
-            if (const auto * sort_time_ns = std::get_if<UInt64>(&metric.value))
-                metric.share_of_stage_time
-                    = 100.0 * static_cast<double>(*sort_time_ns) / static_cast<double>(stage_sum_elapsed_ns);
+    const double share = 100.0 * static_cast<double>(*sort_time_ns) / static_cast<double>(stage_sum_elapsed_ns);
+    group->metrics.emplace_back("sort share", share, StepMetric::Format::Percent);
 }
 
 void reshapeSpillGroup(MetricGroup & spill_group)
@@ -211,8 +185,8 @@ AnalyzedStepData analyzeJoinStep(const StepStatsContext & context, StepAnalysisR
     const auto & table_join = join_step->getJoin()->getTableJoin();
     enrichJoinSides(report, context.io.output_rows, table_join.kind(), table_join.strictness());
 
-    annotateSortTimeShare(report, context, "build", JoinStage::Build);
-    annotateSortTimeShare(report, context, "probe", JoinStage::Probe);
+    appendSortShare(report, context, "build", JoinStep::JoinStage::Build);
+    appendSortShare(report, context, "probe", JoinStep::JoinStage::Probe);
 
     for (auto & group : report)
         if (group.label == "spill")
