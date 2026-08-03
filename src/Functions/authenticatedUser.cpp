@@ -44,13 +44,15 @@ public:
 
     bool isSuitableForShortCircuitArgumentsExecution(const DataTypesWithConstInfo & /*arguments*/) const override { return false; }
 
-    /// The result must not be a constant column: `authenticated_user` is not propagated to
-    /// secondary queries (see `ClientInfo::write`), so folding the call on the initiator of a
-    /// distributed query would ship the initiator's authenticated user to every shard instead
-    /// of letting each shard observe its own value (same as `queryID` and `currentQueryID`).
+    /// The result stays a constant column on purpose: `authenticated_user` is not propagated to
+    /// secondary queries (`ClientInfo::write` does not serialize it, and `Session::makeQueryContextImpl`
+    /// copies only `current_user`/`current_address` from `prepared_client_info`), so on a remote
+    /// shard the field is empty. Folding the call on the initiator ships the session's authenticated
+    /// user - the only meaningful value - to the shards; a non-foldable result would make every
+    /// shard return an empty string. Revisit if the field is ever propagated to secondary queries.
     ColumnPtr executeImpl(const ColumnsWithTypeAndName &, const DataTypePtr &, size_t input_rows_count) const override
     {
-        return DataTypeString().createColumnConst(input_rows_count, user_name)->convertToFullColumnIfConst();
+        return DataTypeString().createColumnConst(input_rows_count, user_name);
     }
 };
 

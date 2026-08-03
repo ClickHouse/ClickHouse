@@ -1,9 +1,11 @@
 -- Tags: replica, shard
 
 -- `authenticatedUser` reads `client_info.authenticated_user`, which is not propagated to
--- secondary queries: each shard observes its own authentication identity. The initiator of
--- a distributed query must ship the call to the shards instead of folding it into a literal
--- with its own authenticated user.
+-- secondary queries (`ClientInfo::write` does not serialize it), so on a remote shard the
+-- field is empty. The initiator therefore folds the call and ships its own authenticated
+-- user - the session identity, the only meaningful value - to the shards. This pins that
+-- deliberate behavior: if the call were shipped unfolded instead, every shard would return
+-- an empty string. Revisit if the field is ever propagated to secondary queries.
 
 SELECT authenticatedUser()
 FROM clusterAllReplicas('test_cluster_two_shards', system.one)
@@ -12,11 +14,10 @@ SETTINGS enable_analyzer = 1, prefer_localhost_replica = 0, log_comment = '04544
 
 SYSTEM FLUSH LOGS query_log;
 
--- Both shard queries must still contain the function call, not a folded literal
--- (when folded, the shipped query starts with `SELECT _CAST(<initiator value>, ...`).
--- The shard-side entries do not run in the test database, so they are anchored to the
--- initial query, which does.
-SELECT count() = 2, countIf(query LIKE 'SELECT authenticatedUser(%') = 2
+-- Both shard queries must contain the folded literal (`SELECT _CAST(<initiator value>, ...`),
+-- not the function call. The shard-side entries do not run in the test database, so they are
+-- anchored to the initial query, which does.
+SELECT count() = 2, countIf(query LIKE 'SELECT _CAST(%') = 2
 FROM system.query_log
 WHERE event_date >= yesterday() AND is_initial_query = 0 AND type = 'QueryFinish'
     AND initial_query_id =
