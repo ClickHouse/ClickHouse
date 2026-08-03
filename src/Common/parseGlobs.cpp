@@ -775,7 +775,6 @@ void GlobString::parse()
                 continue;
             }
 
-            /// FIXME move to WildcardType enum
             switch (input[position])
             {
                 case '?':
@@ -847,7 +846,7 @@ void GlobString::parse()
             auto enum_matcher = tryParseEnumMatcher(matcher_expression);
 
             if (enum_matcher.empty())
-                throw Exception(ErrorCodes::LOGICAL_ERROR, "Expected an enum expression, but read 0 bytes.");  // FIXME
+                throw Exception(ErrorCodes::LOGICAL_ERROR, "Expected an enum expression, but read 0 bytes.");
 
             position += matcher_expression.length();
             expressions.push_back(Expression(enum_matcher));
@@ -868,7 +867,7 @@ void GlobString::parse()
             auto constant_expression = consumeConstantExpression(input.substr(position));
 
             if (constant_expression.empty())
-                throw Exception(ErrorCodes::LOGICAL_ERROR, "Expected a constant expression, but read 0 bytes.");  // FIXME
+                throw Exception(ErrorCodes::LOGICAL_ERROR, "Expected a constant expression, but read 0 bytes.");
 
             position += constant_expression.length();
             expressions.push_back(Expression(constant_expression));
@@ -891,7 +890,6 @@ void GlobString::parse()
  */
 std::string makeRegexpPatternFromGlobs(const std::string & initial_str_with_globs)
 {
-    /// FIXME make it better
     WriteBufferFromOwnString buf_for_escaping;
     /// Escaping only characters that not used in glob syntax
     for (const auto & letter : initial_str_with_globs)

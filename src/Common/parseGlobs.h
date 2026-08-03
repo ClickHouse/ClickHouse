@@ -97,9 +97,9 @@ namespace DB
 namespace GlobAST
 {
 
-/// fixme more clever range:
-/// select start and end depending on which is higher or lower
-/// calculate necessary padding to match values
+/// A parsed "{M..N}" range: the endpoints as written (start may exceed end for a
+/// descending range — matching normalizes to [min, max]) plus the zero-padding
+/// metadata of each endpoint's text, from which the effective padding width is derived.
 struct Range
 {
     size_t start = 0;
