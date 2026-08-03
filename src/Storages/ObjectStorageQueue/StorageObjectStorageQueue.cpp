@@ -1393,6 +1393,13 @@ static bool requiresDetachedMV(const std::string & name)
     return name == "buckets";
 }
 
+bool StorageObjectStorageQueue::isSettingChangeableInPlace(
+    const std::string & name,
+    ObjectStorageQueueMode mode)
+{
+    return isSettingChangeable(name, mode) && !requiresDetachedMV(name);
+}
+
 static AlterCommands normalizeAlterCommands(const AlterCommands & alter_commands)
 {
     /// Remove s3queue_ prefix from setting to avoid duplicated settings,
@@ -1519,11 +1526,11 @@ void StorageObjectStorageQueue::alter(
             auto get_names = [](const SettingsChanges & settings)
             {
                 std::set<std::string> names;
-                for (const auto & [name, _] : settings)
+                for (const auto & change : settings)
                 {
-                    auto inserted = names.insert(name).second;
+                    auto inserted = names.insert(change.name).second;
                     if (!inserted)
-                        throw Exception(ErrorCodes::BAD_ARGUMENTS, "Setting {} is duplicated", name);
+                        throw Exception(ErrorCodes::BAD_ARGUMENTS, "Setting {} is duplicated", change.name);
                 }
                 return names;
             };
