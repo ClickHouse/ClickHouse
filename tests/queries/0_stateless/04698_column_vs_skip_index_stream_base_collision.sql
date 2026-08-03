@@ -170,6 +170,17 @@ SELECT 't_carry', countIf(latest_fail_reason LIKE '%INCORRECT_FILE_NAME%'
 FROM system.mutations WHERE database = currentDatabase() AND table = 't_carry';
 DROP TABLE t_carry;
 
+-- A 0-row part cannot share anything, so the empty covering part that DROP PARTITION and the
+-- replicated lost-part heal both commit through must not be rejected.
+CREATE TABLE t_empty_ok (k UInt64, s String, INDEX a(s) TYPE set(100) GRANULARITY 1)
+ENGINE = MergeTree PARTITION BY (k < 5) ORDER BY k
+SETTINGS min_bytes_for_wide_part = 0, min_rows_for_wide_part = 0;
+INSERT INTO t_empty_ok SELECT number, toString(number) FROM numbers(10);
+ALTER TABLE t_empty_ok ADD COLUMN `skp_idx_a` UInt64 DEFAULT 7;
+ALTER TABLE t_empty_ok DROP PARTITION 0;
+SELECT 'empty-part-legal', count() FROM t_empty_ok;
+DROP TABLE t_empty_ok;
+
 -- The carry helper runs before any bytes move, so copying behaves like hardlinking.
 CREATE TABLE t_carry_copy (k UInt64, s String, INDEX a(s) TYPE set(100) GRANULARITY 1)
 ENGINE = MergeTree ORDER BY k
