@@ -816,24 +816,35 @@ void BackupImpl::readBackupMetadata()
             declared_packed_files.emplace(info.data_file_name);
         }
 
-        file_names.emplace(info.file_name, std::pair{info.size, info.checksum});
         if (!info.object_key.empty())
         {
             if (original_endpoint.empty() || original_namespace.empty())
                 throw Exception(ErrorCodes::LOGICAL_ERROR, "In lightweight snapshot backup, the endpoint or namespace should be not empty. We cannot restore this file.");
 
-            if (open_mode == OpenMode::READ)
-                lightweight_snapshot_reader = lightweight_snapshot_reader_creator(original_endpoint, original_namespace);
+            /// UNLOCK only reads table metadata to remove the snapshot's locks, never the data parts
+            /// (`object_key` entries). Skipping their bookkeeping avoids holding one `BackupFileInfo` per
+            /// part, which OOMs the server for snapshots with millions of parts.
+            if (open_mode != OpenMode::UNLOCK)
+            {
+                if (open_mode == OpenMode::READ)
+                    lightweight_snapshot_reader = lightweight_snapshot_reader_creator(original_endpoint, original_namespace);
 
-            file_object_keys.emplace(info.file_name, info.object_key);
-            lightweight_snapshot_file_infos.try_emplace(info.object_key, info);
+                file_names.emplace(info.file_name, std::pair{info.size, info.checksum});
+                file_object_keys.emplace(info.file_name, info.object_key);
+                lightweight_snapshot_file_infos.try_emplace(info.object_key, info);
+            }
         }
-        else if (info.size)
-            file_infos.try_emplace(std::pair{info.size, info.checksum}, info);
+        else
+        {
+            file_names.emplace(info.file_name, std::pair{info.size, info.checksum});
+            if (info.size)
+                file_infos.try_emplace(std::pair{info.size, info.checksum}, info);
+        }
 
         ++num_files;
         total_size += info.size;
-        if (claimPhysicalEntry(info, counted_objects))
+        /// UNLOCK never reads these counters, and `counted_objects` would grow per part (see above).
+        if ((open_mode != OpenMode::UNLOCK) && claimPhysicalEntry(info, counted_objects))
         {
             ++num_entries;
             size_of_entries += info.size - info.base_size;
