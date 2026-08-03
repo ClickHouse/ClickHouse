@@ -28,6 +28,7 @@
 #include <Analyzer/QueryNode.h>
 
 #include <Columns/ColumnAggregateFunction.h>
+#include <Common/FailPoint.h>
 #include <Common/logger_useful.h>
 #include <Common/scope_guard_safe.h>
 #include <Core/Settings.h>
@@ -47,6 +48,11 @@ namespace Setting
     extern const SettingsBool force_optimize_projection;
     extern const SettingsString preferred_optimize_projection_name;
     extern const SettingsBool use_statistics_for_min_max_aggregation;
+}
+
+namespace FailPoints
+{
+    extern const char parallel_replicas_skip_aggregate_projection_on_follower[];
 }
 }
 
@@ -1027,6 +1033,17 @@ std::optional<String> optimizeUseAggregateProjections(
     if (!canUseProjectionForReadingStep(reading))
         return {};
 
+    /// Test hook: make a parallel-replicas follower skip the aggregate-projection short-circuit so it
+    /// plans a real read while the initiator still short-circuits. This deterministically manufactures the
+    /// initiator/follower plan divergence that a homogeneous single-server test cluster cannot otherwise
+    /// produce, reproducing the "unknown stream" coordinator abort. Gated on the follower predicate so it
+    /// never affects the initiator's plan.
+    fiu_do_on(FailPoints::parallel_replicas_skip_aggregate_projection_on_follower,
+    {
+        if (reading->isParallelReplicasLocalPlanForFollower())
+            return {};
+    });
+
     PartitionIdToMaxBlockPtr max_added_blocks = getMaxAddedBlocks(reading);
 
     const size_t max_set_size_for_match = optimization_settings.max_set_size_for_projection_match;
@@ -1198,6 +1215,7 @@ std::optional<String> optimizeUseAggregateProjections(
                     metadata,
                     *parent_reading_select_result,
                     projection_query_info,
+                    reading->getTopKFilterInfo(),
                     context);
 
                 if (!analyzed)
@@ -1280,6 +1298,10 @@ std::optional<String> optimizeUseAggregateProjections(
 
     QueryPlanStepPtr projection_reading;
     bool has_parent_parts = false;
+    /// True when the minmax/exact-count short-circuit fully replaces `reading` with a prepared source
+    /// (no projection read of its own to carry the parallel-replicas announcement). See the announcement
+    /// call after the branch below.
+    bool short_circuited_with_prepared_source = false;
     String selected_projection_name;
     if (best_candidate)
         selected_projection_name = best_candidate->projection->name;
@@ -1302,6 +1324,7 @@ std::optional<String> optimizeUseAggregateProjections(
             pipe = Pipe(std::make_shared<NullSource>(std::make_shared<const Block>(candidates.minmax_projection->block.cloneEmpty())));
         projection_reading = std::make_unique<ReadFromPreparedSource>(std::move(pipe));
         has_parent_parts = false;
+        short_circuited_with_prepared_source = true;
     }
     else if (candidates.column_statistics_projection)
     {
@@ -1357,6 +1380,8 @@ std::optional<String> optimizeUseAggregateProjections(
         has_parent_parts = !inexact_ranges_select_result->parts_with_ranges.empty();
         if (has_parent_parts)
             reading->setAnalyzedResult(std::move(inexact_ranges_select_result));
+        else
+            short_circuited_with_prepared_source = true;
     }
     else
     {
@@ -1394,11 +1419,20 @@ std::optional<String> optimizeUseAggregateProjections(
             Pipe pipe(std::make_shared<NullSource>(std::make_shared<const Block>(
                 proj_snapshot->getSampleBlockForColumns(best_candidate->dag.getRequiredColumnsNames()))));
             projection_reading = std::make_unique<ReadFromPreparedSource>(std::move(pipe));
+            /// The projection read that would have announced the base-table stream is gone (the stored
+            /// projection selected no ranges, or reads only on the initiator). If no parent parts remain
+            /// either, `reading` is detached below with nothing left to announce.
+            short_circuited_with_prepared_source = true;
         }
 
         if (has_parent_parts && optimization_settings.is_parallel_replicas_initiator_with_projection_support)
             fallbackToLocalProjectionReading(projection_reading);
     }
+
+    /// `reading` is detached below without running initializePipeline(), so announce its empty read
+    /// set here instead (issue #110518).
+    if (short_circuited_with_prepared_source && !has_parent_parts && reading->isParallelReadingEnabled())
+        reading->announceEmptyReadRangesToCoordinatorIfInitiator();
 
     if (!query_info.is_internal && context->hasQueryContext())
     {
