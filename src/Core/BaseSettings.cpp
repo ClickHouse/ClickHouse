@@ -7,6 +7,9 @@
 
 namespace DB
 {
+
+thread_local Strings BaseSettingsHelpers::unknown_settings;
+thread_local bool BaseSettingsHelpers::unknown_settings_warning_logged = false;
 namespace ErrorCodes
 {
     extern const int INCORRECT_DATA;
