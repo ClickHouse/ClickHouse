@@ -226,20 +226,28 @@ def test_kill_query_while_sqlite_busy(started_cluster):
     # Read the CPU the query consumed from query_log. OSCPUVirtualTimeMicroseconds is the
     # OS-level CPU time for the query; while blocked on the lock the fix consumes almost
     # none, whereas the old bare-continue loop consumes ~one core (CPU ~= wall time).
-    node1.query("SYSTEM FLUSH LOGS")
-    cpu_us, duration_ms = (
-        node1.query(
+    #
+    # The server sends the cancellation error to the client before it finalizes the query
+    # and pushes the query_log entry, so the row can still be missing right after the
+    # client thread joined. Flush and retry until it appears instead of reading once.
+    row = ""
+    for _ in range(60):
+        node1.query("SYSTEM FLUSH LOGS")
+        row = node1.query(
             f"""SELECT
                     ProfileEvents['OSCPUVirtualTimeMicroseconds'],
                     query_duration_ms
                 FROM system.query_log
-                WHERE query_id = '{query_id}' AND type = 'ExceptionWhileProcessing'
+                WHERE query_id = '{query_id}' AND type != 'QueryStart'
                 ORDER BY event_time_microseconds DESC
                 LIMIT 1"""
-        )
-        .strip()
-        .split("\t")
-    )
+        ).strip()
+        if row:
+            break
+        time.sleep(0.5)
+
+    assert row, f"no query_log entry for the cancelled query {query_id}"
+    cpu_us, duration_ms = row.split("\t")
     cpu_us = int(cpu_us)
     duration_ms = int(duration_ms)
     # The query waited on the lock for essentially its whole lifetime. If the retry loop
