@@ -1,8 +1,8 @@
-analyzer, policy stateful	1
-analyzer, policy plain	4
-analyzer, additional filter stateful	1
-analyzer, additional filter plain	4
-old analyzer, policy stateful	1
-old analyzer, policy plain	4
-old analyzer, additional filter stateful	1
-old analyzer, additional filter plain	4
+analyzer, policy stateful	single stream
+analyzer, policy plain	multiple streams
+analyzer, additional filter stateful	single stream
+analyzer, additional filter plain	multiple streams
+old analyzer, policy stateful	single stream
+old analyzer, policy plain	multiple streams
+old analyzer, additional filter stateful	single stream
+old analyzer, additional filter plain	multiple streams

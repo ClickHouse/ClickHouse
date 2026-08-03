@@ -27,42 +27,42 @@ SET allow_deprecated_error_prone_window_functions = 1;
 SET enable_analyzer = 1;
 
 -- A stateful row policy - a single stream.
-SELECT 'analyzer, policy stateful', toUInt64OrDefault(extract(explain, '× (\d+)'), 1::UInt64)
+SELECT 'analyzer, policy stateful', if(toUInt64OrDefault(extract(explain, '× (\d+)'), 1::UInt64) = 1, 'single stream', 'multiple streams')
 FROM (EXPLAIN PIPELINE SELECT k FROM t_stateful_policy LIMIT 1000)
 WHERE explain LIKE '%MergeTreeSelect%';
 
 -- A deterministic row policy - the read still uses several streams.
-SELECT 'analyzer, policy plain', toUInt64OrDefault(extract(explain, '× (\d+)'), 1::UInt64)
+SELECT 'analyzer, policy plain', if(toUInt64OrDefault(extract(explain, '× (\d+)'), 1::UInt64) = 1, 'single stream', 'multiple streams')
 FROM (EXPLAIN PIPELINE SELECT k FROM t_plain_policy LIMIT 1000)
 WHERE explain LIKE '%MergeTreeSelect%';
 
 -- The same for `additional_table_filters`.
-SELECT 'analyzer, additional filter stateful', toUInt64OrDefault(extract(explain, '× (\d+)'), 1::UInt64)
+SELECT 'analyzer, additional filter stateful', if(toUInt64OrDefault(extract(explain, '× (\d+)'), 1::UInt64) = 1, 'single stream', 'multiple streams')
 FROM (EXPLAIN PIPELINE SELECT k FROM t_plain_policy LIMIT 1000
       SETTINGS additional_table_filters = {'t_plain_policy': 'neighbor(v, 1) = 20'})
 WHERE explain LIKE '%MergeTreeSelect%';
 
-SELECT 'analyzer, additional filter plain', toUInt64OrDefault(extract(explain, '× (\d+)'), 1::UInt64)
+SELECT 'analyzer, additional filter plain', if(toUInt64OrDefault(extract(explain, '× (\d+)'), 1::UInt64) = 1, 'single stream', 'multiple streams')
 FROM (EXPLAIN PIPELINE SELECT k FROM t_plain_policy LIMIT 1000
       SETTINGS additional_table_filters = {'t_plain_policy': 'v = 20'})
 WHERE explain LIKE '%MergeTreeSelect%';
 
 SET enable_analyzer = 0;
 
-SELECT 'old analyzer, policy stateful', toUInt64OrDefault(extract(explain, '× (\d+)'), 1::UInt64)
+SELECT 'old analyzer, policy stateful', if(toUInt64OrDefault(extract(explain, '× (\d+)'), 1::UInt64) = 1, 'single stream', 'multiple streams')
 FROM (EXPLAIN PIPELINE SELECT k FROM t_stateful_policy LIMIT 1000)
 WHERE explain LIKE '%MergeTreeSelect%';
 
-SELECT 'old analyzer, policy plain', toUInt64OrDefault(extract(explain, '× (\d+)'), 1::UInt64)
+SELECT 'old analyzer, policy plain', if(toUInt64OrDefault(extract(explain, '× (\d+)'), 1::UInt64) = 1, 'single stream', 'multiple streams')
 FROM (EXPLAIN PIPELINE SELECT k FROM t_plain_policy LIMIT 1000)
 WHERE explain LIKE '%MergeTreeSelect%';
 
-SELECT 'old analyzer, additional filter stateful', toUInt64OrDefault(extract(explain, '× (\d+)'), 1::UInt64)
+SELECT 'old analyzer, additional filter stateful', if(toUInt64OrDefault(extract(explain, '× (\d+)'), 1::UInt64) = 1, 'single stream', 'multiple streams')
 FROM (EXPLAIN PIPELINE SELECT k FROM t_plain_policy LIMIT 1000
       SETTINGS additional_table_filters = {'t_plain_policy': 'neighbor(v, 1) = 20'})
 WHERE explain LIKE '%MergeTreeSelect%';
 
-SELECT 'old analyzer, additional filter plain', toUInt64OrDefault(extract(explain, '× (\d+)'), 1::UInt64)
+SELECT 'old analyzer, additional filter plain', if(toUInt64OrDefault(extract(explain, '× (\d+)'), 1::UInt64) = 1, 'single stream', 'multiple streams')
 FROM (EXPLAIN PIPELINE SELECT k FROM t_plain_policy LIMIT 1000
       SETTINGS additional_table_filters = {'t_plain_policy': 'v = 20'})
 WHERE explain LIKE '%MergeTreeSelect%';
