@@ -109,8 +109,8 @@ private:
     bool isNewToken(const TokenSortCursor & cursor) const;
     /// Reads the next dictionary block for the given source index.
     void readDictionaryBlock(size_t source_num);
-    /// Reads the next posting lists for the next token in the given source index.
-    std::vector<PostingListPtr> readPostingLists(size_t source_num);
+    /// Reads the posting lists of the token at the given row of the source's dictionary block.
+    std::vector<PostingListPtr> readPostingLists(size_t source_num, size_t row);
     /// Adjusts row numbers in the postings list according to merged part offsets.
     PostingListPtr adjustPartOffsets(size_t source_num, PostingListPtr posting_list);
 
@@ -138,7 +138,9 @@ private:
 
     SortCursorImpls cursors;
     std::vector<DictionaryBlock> inputs;
-    SortingQueue<TokenSortCursor> queue;
+    /// Batch queue: consecutive rows of the top cursor that sort before the next-best
+    /// cursor are consumed as one run, with a single heap fixup per run.
+    SortingQueueBatch<TokenSortCursor> queue;
 
     /// Tokens accumulated for the current dictionary block.
     MutableColumnPtr output_tokens;

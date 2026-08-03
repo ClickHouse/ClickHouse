@@ -352,9 +352,9 @@ void MergeTextIndexesTask::readDictionaryBlock(size_t source_num)
     queue.push(cursors[source_num]);
 }
 
-std::vector<PostingListPtr> MergeTextIndexesTask::readPostingLists(size_t source_num)
+std::vector<PostingListPtr> MergeTextIndexesTask::readPostingLists(size_t source_num, size_t row)
 {
-    const auto & token_info = inputs[source_num].token_infos[queue.current()->getRow()];
+    const auto & token_info = inputs[source_num].token_infos[row];
 
     if (token_info.embedded_postings)
         return {token_info.embedded_postings};
@@ -516,67 +516,79 @@ bool MergeTextIndexesTask::executeStep()
 
     do
     {
-        TokenSortCursor current = queue.current();
+        auto [current_ptr, batch_size] = queue.current();
+        TokenSortCursor & current = *current_ptr;
 
-        if (isNewToken(current))
+        size_t source_num = current->order;
+        const auto & source_block = inputs[source_num];
+
+        /// All rows of a batch belong to one dictionary block, whose tokens are strictly
+        /// increasing. Only the first row of the batch can continue the current token.
+        bool first_row_is_new_token = isNewToken(current);
+        size_t row = current->getRow();
+
+        for (size_t i = 0; i < batch_size; ++i, ++row)
         {
-            if (!output_postings.isEmpty())
-                flushPostingList();
-
-            if (output_tokens->size() >= params.dictionary_block_size)
-                flushDictionaryBlock();
-
-            output_tokens->insertFrom(*inputs[current->order].tokens, current->getRow());
-        }
-
-        auto read_postings = readPostingLists(current->order);
-
-        for (auto & posting : read_postings)
-        {
-            posting = adjustPartOffsets(current->order, posting);
-            output_postings |= *posting;
-        }
-
-        /// Read and merge position data if positions are enabled.
-        if (params.positions)
-        {
-            const auto & token_info = inputs[current->order].token_infos[current->getRow()];
-            if (token_info.header & PostingsSerialization::Flags::HasPositions)
+            if (i > 0 || first_row_is_new_token)
             {
-                auto * pos_stream = input_streams[current->order].at(MergeTreeIndexSubstream::Type::TextIndexPositions);
-                auto * pos_data_buffer = pos_stream->getDataBuffer();
-                pos_stream->seekToMark({token_info.position_offset, 0});
+                if (!output_postings.isEmpty())
+                    flushPostingList();
 
-                PODArray<RoaringishEntry> position_entries;
-                TextIndexPositionCodec::decode(*pos_data_buffer, position_entries);
+                if (output_tokens->size() >= params.dictionary_block_size)
+                    flushDictionaryBlock();
 
-                /// Adjust doc_ids if merging parts with offset remapping.
-                if (merged_part_offsets)
+                output_tokens->insertFrom(*source_block.tokens, row);
+            }
+
+            auto read_postings = readPostingLists(source_num, row);
+
+            for (auto & posting : read_postings)
+            {
+                posting = adjustPartOffsets(source_num, posting);
+                output_postings |= *posting;
+            }
+
+            /// Read and merge position data if positions are enabled.
+            if (params.positions)
+            {
+                const auto & token_info = source_block.token_infos[row];
+                if (token_info.header & PostingsSerialization::Flags::HasPositions)
                 {
-                    size_t part_index = segments[current->order].part_index;
-                    for (auto & entry : position_entries)
-                    {
-                        UInt64 new_doc_id = (*merged_part_offsets)[part_index, entry.doc_id];
-                        if (new_doc_id > std::numeric_limits<UInt32>::max())
-                            throw Exception(ErrorCodes::SUPPORT_IS_DISABLED,
-                                "Cannot merge text index: remapped row id {} exceeds the maximum supported row id {}",
-                                new_doc_id, std::numeric_limits<UInt32>::max());
-                        entry = entry.withDocId(static_cast<UInt32>(new_doc_id));
-                    }
-                }
+                    auto * pos_stream = input_streams[source_num].at(MergeTreeIndexSubstream::Type::TextIndexPositions);
+                    auto * pos_data_buffer = pos_stream->getDataBuffer();
+                    pos_stream->seekToMark({token_info.position_offset, 0});
 
-                output_positions.insert(output_positions.end(), position_entries.begin(), position_entries.end());
+                    PODArray<RoaringishEntry> position_entries;
+                    TextIndexPositionCodec::decode(*pos_data_buffer, position_entries);
+
+                    /// Adjust doc_ids if merging parts with offset remapping.
+                    if (merged_part_offsets)
+                    {
+                        size_t part_index = segments[source_num].part_index;
+                        for (auto & entry : position_entries)
+                        {
+                            UInt64 new_doc_id = (*merged_part_offsets)[part_index, entry.doc_id];
+                            if (new_doc_id > std::numeric_limits<UInt32>::max())
+                                throw Exception(ErrorCodes::SUPPORT_IS_DISABLED,
+                                    "Cannot merge text index: remapped row id {} exceeds the maximum supported row id {}",
+                                    new_doc_id, std::numeric_limits<UInt32>::max());
+                            entry = entry.withDocId(static_cast<UInt32>(new_doc_id));
+                        }
+                    }
+
+                    output_positions.insert(output_positions.end(), position_entries.begin(), position_entries.end());
+                }
             }
         }
 
-        if (!current->isLast())
+        if (!current->isLast(batch_size))
         {
-            queue.next();
+            queue.next(batch_size);
         }
         else
         {
             queue.removeTop();
-            readDictionaryBlock(current->order);
+            readDictionaryBlock(source_num);
         }
     } while (queue.isValid() && watch.elapsedMilliseconds() < step_time_ms);
 
