@@ -4,8 +4,9 @@ sidebar_label: 'Parametric'
 sidebar_position: 38
 slug: /sql-reference/aggregate-functions/parametric-functions
 title: 'Parametric Aggregate Functions'
-doc_type: 'reference'
 ---
+
+# Parametric aggregate functions
 
 Some aggregate functions can accept not only argument columns (used for compression), but a set of parameters – constants for initialization. The syntax is two pairs of brackets instead of one. The first is for parameters, and the second is for arguments.
 
@@ -322,8 +323,7 @@ windowFunnel(window, [mode, [mode, ... ]])(timestamp, cond1, cond2, ..., condN)
   - `'strict_deduplication'` — If the same condition holds for the sequence of events, then such repeating event interrupts further processing. Note: it may work unexpectedly if several conditions hold for the same event.
   - `'strict_order'` — Don't allow interventions of other events. E.g. in the case of `A->B->D->C`, it stops finding `A->B->C` at the `D` and the max event level is 2.
   - `'strict_increase'` — Apply conditions only to events with strictly increasing timestamps.
-  - `'strict_once'` — Count each event only once in the chain even if it meets the condition several times.
-  - `'allow_reentry'` — Ignore events that violate the strict order. E.g. in the case of A->A->B->C, it finds A->B->C by ignoring the redundant A and the max event level is 3.
+  - `'strict_once'` — Count each event only once in the chain even if it meets the condition several times
 
 **Returned value**
 
@@ -362,7 +362,9 @@ Input table:
 
 Find out how far the user `user_id` could get through the chain in a period in January-February of 2019.
 
-```sql title="Query"
+Query:
+
+```sql
 SELECT
     level,
     count() AS c
@@ -379,41 +381,12 @@ GROUP BY level
 ORDER BY level ASC;
 ```
 
-```text title="Response"
+Result:
+
+```text
 ┌─level─┬─c─┐
 │     4 │ 1 │
 └───────┴───┘
-```
-
-**Example with allow_reentry mode**
-
-This example demonstrates how `allow_reentry` mode works with user reentry patterns:
-
-```sql
--- Sample data: user visits checkout -> product detail -> checkout again -> payment
--- Without allow_reentry: stops at level 2 (product detail page)
--- With allow_reentry: reaches level 4 (payment completion)
-
-SELECT
-    level,
-    count() AS users
-FROM
-(
-    SELECT
-        user_id,
-        windowFunnel(3600, 'strict_order', 'allow_reentry')(
-            timestamp,
-            action = 'begin_checkout',      -- Step 1: Begin checkout
-            action = 'view_product_detail', -- Step 2: View product detail  
-            action = 'begin_checkout',      -- Step 3: Begin checkout again (reentry)
-            action = 'complete_payment'     -- Step 4: Complete payment
-        ) AS level
-    FROM user_events
-    WHERE event_date = today()
-    GROUP BY user_id
-)
-GROUP BY level
-ORDER BY level ASC;
 ```
 
 ## retention {#retention}
@@ -448,7 +421,7 @@ Let's consider an example of calculating the `retention` function to determine s
 
 **1.** Create a table to illustrate an example.
 
-```sql title="Query"
+```sql
 CREATE TABLE retention_test(date Date, uid Int32) ENGINE = Memory;
 
 INSERT INTO retention_test SELECT '2020-01-01', number FROM numbers(5);
@@ -458,11 +431,15 @@ INSERT INTO retention_test SELECT '2020-01-03', number FROM numbers(15);
 
 Input table:
 
-```sql title="Query"
+Query:
+
+```sql
 SELECT * FROM retention_test
 ```
 
-```text title="Response"
+Result:
+
+```text
 ┌───────date─┬─uid─┐
 │ 2020-01-01 │   0 │
 │ 2020-01-01 │   1 │
@@ -503,7 +480,9 @@ SELECT * FROM retention_test
 
 **2.** Group users by unique ID `uid` using the `retention` function.
 
-```sql title="Query"
+Query:
+
+```sql
 SELECT
     uid,
     retention(date = '2020-01-01', date = '2020-01-02', date = '2020-01-03') AS r
@@ -513,7 +492,9 @@ GROUP BY uid
 ORDER BY uid ASC
 ```
 
-```text title="Response"
+Result:
+
+```text
 ┌─uid─┬─r───────┐
 │   0 │ [1,1,1] │
 │   1 │ [1,1,1] │
@@ -535,7 +516,9 @@ ORDER BY uid ASC
 
 **3.** Calculate the total number of site visits per day.
 
-```sql title="Query"
+Query:
+
+```sql
 SELECT
     sum(r[1]) AS r1,
     sum(r[2]) AS r2,
@@ -551,7 +534,9 @@ FROM
 )
 ```
 
-```text title="Response"
+Result:
+
+```text
 ┌─r1─┬─r2─┬─r3─┐
 │  5 │  5 │  5 │
 └────┴────┴────┘
@@ -603,7 +588,9 @@ This function behaves the same as [sumMap](/sql-reference/aggregate-functions/re
 
 **Example**
 
-```sql title="Query"
+Query:
+
+```sql
 CREATE TABLE sum_map
 (
     `date` Date,
@@ -619,11 +606,13 @@ INSERT INTO sum_map VALUES
     ('2000-01-01', '2000-01-01 00:01:00', [6, 7, 8], [10, 10, 10]);
 ```
 
-```sql title="Query"
+```sql
 SELECT sumMapFiltered([1, 4, 8])(statusMap.status, statusMap.requests) FROM sum_map;
 ```
 
-```response title="Response"
+Result:
+
+```response
    ┌─sumMapFiltered([1, 4, 8])(statusMap.status, statusMap.requests)─┐
 1. │ ([1,4,8],[10,20,10])                                            │
    └─────────────────────────────────────────────────────────────────┘
@@ -651,7 +640,9 @@ This function behaves the same as [sumMap](/sql-reference/aggregate-functions/re
 
 In this example we create a table `sum_map`, insert some data into it and then use both `sumMapFilteredWithOverflow` and `sumMapFiltered` and the `toTypeName` function for comparison of the result. Where `requests` was of type `UInt8` in the created table, `sumMapFiltered` has promoted the type of the summed values to `UInt64` to avoid overflow whereas `sumMapFilteredWithOverflow` has kept the type as `UInt8` which is not large enough to store the result - i.e. overflow has occurred.
 
-```sql title="Query"
+Query:
+
+```sql
 CREATE TABLE sum_map
 (
     `date` Date,
@@ -667,21 +658,23 @@ INSERT INTO sum_map VALUES
     ('2000-01-01', '2000-01-01 00:01:00', [6, 7, 8], [10, 10, 10]);
 ```
 
-```sql title="Query"
+```sql
 SELECT sumMapFilteredWithOverflow([1, 4, 8])(statusMap.status, statusMap.requests) as summap_overflow, toTypeName(summap_overflow) FROM sum_map;
 ```
 
-```sql title="Query"
+```sql
 SELECT sumMapFiltered([1, 4, 8])(statusMap.status, statusMap.requests) as summap, toTypeName(summap) FROM sum_map;
 ```
 
-```response title="Response"
+Result:
+
+```response
    ┌─sum──────────────────┬─toTypeName(sum)───────────────────┐
 1. │ ([1,4,8],[10,20,10]) │ Tuple(Array(UInt8), Array(UInt8)) │
    └──────────────────────┴───────────────────────────────────┘
 ```
 
-```response title="Response"
+```response
    ┌─summap───────────────┬─toTypeName(summap)─────────────────┐
 1. │ ([1,4,8],[10,20,10]) │ Tuple(Array(UInt8), Array(UInt64)) │
    └──────────────────────┴────────────────────────────────────┘
@@ -731,7 +724,7 @@ It can be used when events are A->B->C->D->E and you want to know the event foll
 
 The query statement searching the event following A->B:
 
-```sql title="Query"
+```sql
 CREATE TABLE test_flow (
     dt DateTime,
     id int,
@@ -745,7 +738,9 @@ INSERT INTO test_flow VALUES (1, 1, 'A') (2, 1, 'B') (3, 1, 'C') (4, 1, 'D') (5,
 SELECT id, sequenceNextNode('forward', 'head')(dt, page, page = 'A', page = 'A', page = 'B') as next_flow FROM test_flow GROUP BY id;
 ```
 
-```text title="Response"
+Result:
+
+```text
 ┌─id─┬─next_flow─┐
 │  1 │ C         │
 └────┴───────────┘

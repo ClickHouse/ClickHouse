@@ -16,9 +16,9 @@ namespace ErrorCodes
 template <typename Variant>
 void SetVariantsTemplate<Variant>::init(Type type_)
 {
-    /// Allocate before changing `type`: if make_unique throws, the object stays EMPTY
-    /// instead of having `type != EMPTY` with a null variant pointer (matches AggregatedDataVariants::init).
-    switch (type_)
+    type = type_;
+
+    switch (type)
     {
         case Type::EMPTY: break;
 
@@ -27,8 +27,6 @@ void SetVariantsTemplate<Variant>::init(Type type_)
         APPLY_FOR_SET_VARIANTS(M)
     #undef M
     }
-
-    type = type_;
 }
 
 template <typename Variant>
@@ -48,18 +46,15 @@ size_t SetVariantsTemplate<Variant>::getTotalRowCount() const
 template <typename Variant>
 size_t SetVariantsTemplate<Variant>::getTotalByteCount() const
 {
-    /// String keys are stored in the string_pool arena, not in the hash table buffer.
-    size_t bytes = string_pool.allocatedBytes();
     switch (type)
     {
-        case Type::EMPTY: break;
+        case Type::EMPTY: return 0;
 
     #define M(NAME) \
-        case Type::NAME: bytes += (NAME)->data.getBufferSizeInBytes(); break;
+        case Type::NAME: return (NAME)->data.getBufferSizeInBytes();
         APPLY_FOR_SET_VARIANTS(M)
     #undef M
     }
-    return bytes;
 }
 
 template <typename Variant>
@@ -119,11 +114,11 @@ typename SetVariantsTemplate<Variant>::Type SetVariantsTemplate<Variant>::choose
         {
             /// Pack if possible all the keys along with information about which key values are nulls
             /// into a fixed 16- or 32-byte blob.
-            if (keys_bytes > (std::numeric_limits<size_t>::max() - std::tuple_size_v<KeysNullMap<UInt128>>))
+            if (keys_bytes > (std::numeric_limits<size_t>::max() - std::tuple_size<KeysNullMap<UInt128>>::value))
                 throw Exception(ErrorCodes::LOGICAL_ERROR, "Aggregator: keys sizes overflow");
-            if ((std::tuple_size_v<KeysNullMap<UInt128>> + keys_bytes) <= 16)
+            if ((std::tuple_size<KeysNullMap<UInt128>>::value + keys_bytes) <= 16)
                 return Type::nullable_keys128;
-            if ((std::tuple_size_v<KeysNullMap<UInt256>> + keys_bytes) <= 32)
+            if ((std::tuple_size<KeysNullMap<UInt256>>::value + keys_bytes) <= 32)
                 return Type::nullable_keys256;
         }
 
@@ -151,10 +146,6 @@ typename SetVariantsTemplate<Variant>::Type SetVariantsTemplate<Variant>::choose
     }
 
     /// If the keys fit in N bits, we will use a hash table for N-bit-packed keys
-    if (all_fixed && keys_bytes <= 4)
-        return Type::keys32;
-    if (all_fixed && keys_bytes <= 8)
-        return Type::keys64;
     if (all_fixed && keys_bytes <= 16)
         return Type::keys128;
     if (all_fixed && keys_bytes <= 32)
@@ -175,6 +166,5 @@ typename SetVariantsTemplate<Variant>::Type SetVariantsTemplate<Variant>::choose
 
 template struct SetVariantsTemplate<NonClearableSet>;
 template struct SetVariantsTemplate<ClearableSet>;
-template struct SetVariantsTemplate<CountingSet>;
 
 }

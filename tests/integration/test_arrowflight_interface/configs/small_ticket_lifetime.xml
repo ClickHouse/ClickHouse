@@ -1,5 +1,0 @@
-<clickhouse>
-    <arrowflight>
-        <tickets_lifetime_seconds>2</tickets_lifetime_seconds>
-    </arrowflight>
-</clickhouse>

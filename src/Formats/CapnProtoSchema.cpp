@@ -9,6 +9,7 @@
 #include <DataTypes/DataTypesNumber.h>
 #include <DataTypes/DataTypeString.h>
 #include <DataTypes/IDataType.h>
+#include <Common/StringUtils.h>
 #include <boost/algorithm/string/join.hpp>
 #include <capnp/schema.h>
 #include <capnp/schema-parser.h>
@@ -32,7 +33,7 @@ capnp::StructSchema CapnProtoSchemaParser::getMessageSchema(const FormatSchemaIn
     capnp::ParsedSchema schema;
     try
     {
-        int fd = 0;
+        int fd;
         KJ_SYSCALL(fd = open(schema_info.schemaDirectory().data(), O_RDONLY)); // NOLINT(bugprone-suspicious-semicolon)
         auto schema_dir = kj::newDiskDirectory(kj::OsFileHandle(fd));
         schema = impl.parseFromDirectory(*schema_dir, kj::Path::parse(schema_info.schemaPath()), {});

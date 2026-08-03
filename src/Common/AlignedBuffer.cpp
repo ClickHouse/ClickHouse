@@ -1,7 +1,6 @@
 #include <Common/AlignedBuffer.h>
 
 #include <Common/Exception.h>
-#include <Common/ErrnoException.h>
 #include <Common/formatReadable.h>
 
 
@@ -16,7 +15,7 @@ namespace ErrorCodes
 
 void AlignedBuffer::alloc(size_t size, size_t alignment)
 {
-    void * new_buf = nullptr;
+    void * new_buf;
     int res = ::posix_memalign(&new_buf, std::max(alignment, sizeof(void*)), size);
     if (0 != res)
         throw ErrnoException(

@@ -5,7 +5,6 @@
 #include <Databases/DatabaseFactory.h>
 #include <Databases/DatabaseS3.h>
 
-#include <Common/Logger.h>
 #include <Common/RemoteHostFilter.h>
 #include <Core/Settings.h>
 #include <Interpreters/Context.h>
@@ -13,7 +12,6 @@
 #include <IO/S3/URI.h>
 #include <Parsers/ASTCreateQuery.h>
 #include <Parsers/ASTFunction.h>
-#include <Parsers/ASTIdentifier.h>
 #include <Parsers/ASTLiteral.h>
 #include <Parsers/parseQuery.h>
 #include <Parsers/ParserCreateQuery.h>
@@ -39,12 +37,12 @@ static const std::unordered_set<std::string_view> optional_configuration_keys = 
     "url",
     "access_key_id",
     "secret_access_key",
-    "no_sign_request",
-    "use_environment_credentials"
+    "no_sign_request"
 };
 
 namespace ErrorCodes
 {
+    extern const int LOGICAL_ERROR;
     extern const int UNKNOWN_TABLE;
     extern const int BAD_ARGUMENTS;
     extern const int FILE_DOESNT_EXIST;
@@ -60,6 +58,17 @@ DatabaseS3::DatabaseS3(const String & name_, const Configuration& config_, Conte
     , config(config_)
     , log(getLogger("DatabaseS3(" + name_ + ")"))
 {
+}
+
+void DatabaseS3::addTable(const std::string & table_name, StoragePtr table_storage) const
+{
+    std::lock_guard lock(mutex);
+    auto [_, inserted] = loaded_tables.emplace(table_name, table_storage);
+    if (!inserted)
+        throw Exception(
+            ErrorCodes::LOGICAL_ERROR,
+            "Table with name `{}` already exists in database `{}` (engine {})",
+            table_name, getDatabaseName(), getEngineName());
 }
 
 std::string DatabaseS3::getFullUrl(const std::string & name) const
@@ -89,7 +98,7 @@ bool DatabaseS3::checkUrl(const std::string & url, ContextPtr context_, bool thr
 bool DatabaseS3::isTableExist(const String & name, ContextPtr context_) const
 {
     std::lock_guard lock(mutex);
-    if (loaded_tables.contains(name))
+    if (loaded_tables.find(name) != loaded_tables.end())
         return true;
 
     return checkUrl(getFullUrl(name), context_, false);
@@ -97,35 +106,31 @@ bool DatabaseS3::isTableExist(const String & name, ContextPtr context_) const
 
 StoragePtr DatabaseS3::getTableImpl(const String & name, ContextPtr context_) const
 {
-    /// Not cached across sessions: the built S3 client depends on the per-session
-    /// `s3_allow_server_credentials_in_user_queries`, so reuse could let an allowed session prime a client for a
-    /// restricted one. Rebuild every time. Caching can return once it keys on the credential mode.
+    /// Check if the table exists in the loaded tables map.
+    {
+        std::lock_guard lock(mutex);
+        auto it = loaded_tables.find(name);
+        if (it != loaded_tables.end())
+            return it->second;
+    }
+
     auto url = getFullUrl(name);
     checkUrl(url, context_, /* throw_on_error */true);
 
-    auto function = make_intrusive<ASTFunction>();
+    auto function = std::make_shared<ASTFunction>();
     function->name = "s3";
-    function->arguments = make_intrusive<ASTExpressionList>();
+    function->arguments = std::make_shared<ASTExpressionList>();
     function->children.push_back(function->arguments);
 
-    function->arguments->children.push_back(make_intrusive<ASTLiteral>(url));
+    function->arguments->children.push_back(std::make_shared<ASTLiteral>(url));
     if (config.no_sign_request)
     {
-        function->arguments->children.push_back(make_intrusive<ASTLiteral>("NOSIGN"));
+        function->arguments->children.push_back(std::make_shared<ASTLiteral>("NOSIGN"));
     }
     else if (config.access_key_id.has_value() && config.secret_access_key.has_value())
     {
-        function->arguments->children.push_back(make_intrusive<ASTLiteral>(config.access_key_id.value()));
-        function->arguments->children.push_back(make_intrusive<ASTLiteral>(config.secret_access_key.value()));
-    }
-    else if (config.use_environment_credentials)
-    {
-        /// Carry the opt-in as an explicit key-value arg; the positional `s3(url)` form would lose it. The
-        /// table function then applies the user-query credential restriction like any other query.
-        function->arguments->children.push_back(
-            makeASTFunction("equals",
-                make_intrusive<ASTIdentifier>("use_environment_credentials"),
-                make_intrusive<ASTLiteral>(static_cast<UInt64>(1))));
+        function->arguments->children.push_back(std::make_shared<ASTLiteral>(config.access_key_id.value()));
+        function->arguments->children.push_back(std::make_shared<ASTLiteral>(config.secret_access_key.value()));
     }
 
     auto table_function = TableFunctionFactory::instance().get(function, context_);
@@ -134,7 +139,8 @@ StoragePtr DatabaseS3::getTableImpl(const String & name, ContextPtr context_) co
 
     /// TableFunctionS3 throws exceptions, if table cannot be created.
     auto table_storage = table_function->execute(function, context_, name, /*cached_columns_=*/{}, /*use_global_context=*/false, /*is_insert_query=*/true);
-    /// Intentionally not cached -- see the note above.
+    if (table_storage)
+        addTable(name, table_storage);
 
     return table_storage;
 }
@@ -179,7 +185,7 @@ bool DatabaseS3::empty() const
     return loaded_tables.empty();
 }
 
-ASTPtr DatabaseS3::getCreateDatabaseQueryImpl() const
+ASTPtr DatabaseS3::getCreateDatabaseQuery() const
 {
     const auto & settings = getContext()->getSettingsRef();
     ParserCreateQuery parser;
@@ -190,17 +196,15 @@ ASTPtr DatabaseS3::getCreateDatabaseQueryImpl() const
         creation_args += ", 'NOSIGN'";
     else if (config.access_key_id.has_value() && config.secret_access_key.has_value())
         creation_args += fmt::format(", '{}', '{}'", config.access_key_id.value(), config.secret_access_key.value());
-    else if (config.use_environment_credentials)
-        creation_args += ", use_environment_credentials = 1";
 
-    const String query = fmt::format("CREATE DATABASE {} ENGINE = S3({})", backQuoteIfNeed(database_name), creation_args);
+    const String query = fmt::format("CREATE DATABASE {} ENGINE = S3({})", backQuoteIfNeed(getDatabaseName()), creation_args);
     ASTPtr ast
         = parseQuery(parser, query.data(), query.data() + query.size(), "", 0, settings[Setting::max_parser_depth], settings[Setting::max_parser_backtracks]);
 
-    if (!comment.empty())
+    if (const auto database_comment = getDatabaseComment(); !database_comment.empty())
     {
         auto & ast_create_query = ast->as<ASTCreateQuery &>();
-        ast_create_query.set(ast_create_query.comment, make_intrusive<ASTLiteral>(comment));
+        ast_create_query.set(ast_create_query.comment, std::make_shared<ASTLiteral>(database_comment));
     }
 
     return ast;
@@ -236,7 +240,6 @@ DatabaseS3::Configuration DatabaseS3::parseArguments(ASTs engine_args, ContextPt
 
         result.url_prefix = collection.getOrDefault<String>("url", "");
         result.no_sign_request = collection.getOrDefault<bool>("no_sign_request", false);
-        result.use_environment_credentials = collection.getOrDefault<bool>("use_environment_credentials", false);
 
         auto key_id = collection.getOrDefault<String>("access_key_id", "");
         auto secret_key = collection.getOrDefault<String>("secret_access_key", "");
@@ -246,16 +249,6 @@ DatabaseS3::Configuration DatabaseS3::parseArguments(ASTs engine_args, ContextPt
 
         if (!secret_key.empty())
             result.secret_access_key = secret_key;
-
-        /// A URL-only collection is anonymous; record it as NOSIGN so `getTableImpl` does not flatten it to
-        /// the positional `s3(url)` form, whose built-in `use_environment_credentials = 1` default would
-        /// resolve the server's credentials.
-        const bool has_complete_keys = result.access_key_id.has_value() && result.secret_access_key.has_value();
-        if (!result.no_sign_request && !has_complete_keys
-            && !collection.getOrDefault<bool>("use_environment_credentials", false))
-        {
-            result.no_sign_request = true;
-        }
     }
     else
     {
@@ -266,26 +259,6 @@ DatabaseS3::Configuration DatabaseS3::parseArguments(ASTs engine_args, ContextPt
             " - S3('url', 'access_key_id', 'secret_access_key')\n";
         const auto error_message =
             fmt::format("Engine DatabaseS3 must have the following arguments signature\n{}", supported_signature);
-
-        /// Accept a `use_environment_credentials = N` key-value argument (emitted by
-        /// `getCreateDatabaseQueryImpl` for a named-collection database that opted in) so that form round-trips.
-        auto is_use_environment_credentials_kv = [&](const ASTPtr & arg)
-        {
-            const auto * func = arg->as<ASTFunction>();
-            if (!func || func->name != "equals" || !func->arguments || func->arguments->children.size() != 2)
-                return false;
-            const auto * key = func->arguments->children[0]->as<ASTIdentifier>();
-            if (!key || key->name() != "use_environment_credentials")
-                return false;
-            const auto * value = func->arguments->children[1]->as<ASTLiteral>();
-            if (!value)
-                return false;
-            result.use_environment_credentials = value->value.safeGet<UInt64>() != 0;
-            return true;
-        };
-        engine_args.erase(
-            std::remove_if(engine_args.begin(), engine_args.end(), is_use_environment_credentials_kv),
-            engine_args.end());
 
         for (auto & arg : engine_args)
             arg = evaluateConstantExpressionOrIdentifierAsLiteral(arg, context_);
@@ -343,7 +316,6 @@ DatabaseTablesIteratorPtr DatabaseS3::getTablesIterator(ContextPtr, const Filter
     return std::make_unique<DatabaseTablesSnapshotIterator>(Tables{}, getDatabaseName());
 }
 
-void registerDatabaseS3(DatabaseFactory & factory);
 void registerDatabaseS3(DatabaseFactory & factory)
 {
     auto create_fn = [](const DatabaseFactory::Arguments & args)
@@ -361,14 +333,7 @@ void registerDatabaseS3(DatabaseFactory & factory)
 
         return std::make_shared<DatabaseS3>(args.database_name, config, args.context);
     };
-    factory.registerDatabase("S3", create_fn, {
-        .supports_arguments = true,
-        .is_external = true,
-        .source_access_type = AccessTypeObjects::Source::S3,
-    }, Documentation{
-        .description = "A read-only database that exposes objects in Amazon S3 (or S3-compatible storage) as tables.",
-        .syntax = "ENGINE = S3([config_or_url[, access_key_id, secret_access_key]])",
-        .related = {"Filesystem", "HDFS"}});
+    factory.registerDatabase("S3", create_fn, {.supports_arguments = true});
 }
 }
 #endif

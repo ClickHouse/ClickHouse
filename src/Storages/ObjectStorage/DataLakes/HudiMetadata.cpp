@@ -1,6 +1,6 @@
-#include <Disks/DiskObjectStorage/ObjectStorages/IObjectStorage.h>
+#include <Disks/ObjectStorages/IObjectStorage.h>
 #include <IO/ReadHelpers.h>
-#include <Storages/ObjectStorage/DataLakes/Common/Common.h>
+#include <Storages/ObjectStorage/DataLakes/Common.h>
 #include <Storages/ObjectStorage/DataLakes/HudiMetadata.h>
 #include <base/find_symbols.h>
 #include <Poco/String.h>
@@ -11,7 +11,7 @@ namespace DB
 
 namespace ErrorCodes
 {
-    extern const int INCORRECT_DATA;
+    extern const int LOGICAL_ERROR;
 }
 
 /**
@@ -42,8 +42,9 @@ namespace ErrorCodes
     */
 Strings HudiMetadata::getDataFilesImpl() const
 {
+    auto configuration_ptr = configuration.lock();
     auto log = getLogger("HudiMetadata");
-    const auto keys = listFiles(*object_storage, table_path, "", Poco::toLower(format));
+    const auto keys = listFiles(*object_storage, *configuration_ptr, "", Poco::toLower(configuration_ptr->format));
 
     using Partition = std::string;
     using FileID = std::string;
@@ -61,10 +62,7 @@ Strings HudiMetadata::getDataFilesImpl() const
         const String stem = key_file.stem();
         splitInto<'_'>(file_parts, stem);
         if (file_parts.size() != 3)
-            throw Exception(
-                ErrorCodes::INCORRECT_DATA,
-                "Unexpected format for file: {}. Hudi data files must follow the naming convention "
-                "[FileId]_[FileWriteToken]_[Timestamp].[extension]", key);
+            throw Exception(ErrorCodes::LOGICAL_ERROR, "Unexpected format for file: {}", key);
 
         const auto partition = key_file.parent_path().stem();
         const auto & file_id = file_parts[0];
@@ -88,11 +86,8 @@ Strings HudiMetadata::getDataFilesImpl() const
     return result;
 }
 
-HudiMetadata::HudiMetadata(ObjectStoragePtr object_storage_, StorageObjectStorageConfigurationPtr configuration_, ContextPtr context_)
-    : WithContext(context_)
-    , object_storage(object_storage_)
-    , table_path(configuration_->getPathForRead().path)
-    , format(configuration_->format)
+HudiMetadata::HudiMetadata(ObjectStoragePtr object_storage_, StorageObjectStorageConfigurationWeakPtr configuration_, ContextPtr context_)
+    : WithContext(context_), object_storage(object_storage_), configuration(configuration_)
 {
 }
 
@@ -107,7 +102,6 @@ ObjectIterator HudiMetadata::iterate(
     const ActionsDAG * filter_dag,
     FileProgressCallback callback,
     size_t /* list_batch_size */,
-    StorageMetadataPtr /* storage_metadata_snapshot*/,
     ContextPtr /* context  */) const
 {
     return createKeysIterator(getDataFiles(filter_dag), object_storage, callback);
