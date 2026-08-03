@@ -166,7 +166,7 @@ jobs:
       pipeline_status: ${{{{ steps.run.outputs.pipeline_status || 'undefined' }}}}
     steps:
       - name: Checkout code
-        uses: actions/checkout@v6
+        uses: actions/checkout@d23441a48e516b6c34aea4fa41551a30e30af803  # v6.1.0
         with:
           ref: ${{{{ env.CHECKOUT_REF }}}}
 {JOB_ADDONS}
@@ -225,7 +225,7 @@ jobs:
 
         TEMPLATE_PY_INSTALL = """
       - name: Set up Python
-        uses: actions/setup-python@v5
+        uses: actions/setup-python@a26af69be951a213d495a4c3e4e4022e16d87065  # v5.6.0
         with:
           python-version: {PYTHON_VERSION}
 """
@@ -241,7 +241,7 @@ jobs:
 
         TEMPLATE_GH_UPLOAD = """
       - name: Upload artifact {NAME}
-        uses: actions/upload-artifact@v4
+        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02  # v4.6.2
         with:
           name: {NAME}
           path: {PATH}
@@ -249,7 +249,7 @@ jobs:
 
         TEMPLATE_GH_DOWNLOAD = """
       - name: Download artifact {NAME}
-        uses: actions/download-artifact@v4
+        uses: actions/download-artifact@d3f86a106a0bac45b974a628896c90dbdf5c8093  # v4.3.0
         with:
           name: {NAME}
           path: {PATH}
