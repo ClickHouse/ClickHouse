@@ -1,12 +1,17 @@
--- A row policy on the view (or on the underlying Distributed table) suppresses the
--- trivial-view pushdown. Row policies must be enforced in the view-output namespace,
--- which the canonical StorageView::readImpl path does correctly; the pushdown would
--- inline the body and could bind the policy to a source column instead of the view
--- alias (e.g. `SELECT val * 2 AS v` with policy on `v` under
--- prefer_column_name_to_alias = 1), so whenever a policy applies we fall back to
--- readImpl. This test asserts both that the pushdown is suppressed (plan keeps the
--- "VIEW subquery" steps) and that the result is correct, identical with the setting
--- on and off.
+-- A row policy on the view suppresses the trivial-view pushdown. Row policies must
+-- be enforced in the view-output namespace, which the canonical StorageView::readImpl
+-- path does correctly; the pushdown would inline the body and could bind the policy
+-- to a source column instead of the view alias (e.g. `SELECT val * 2 AS v` with
+-- policy on `v` under prefer_column_name_to_alias = 1), so whenever a view-level
+-- policy applies we fall back to readImpl. This test asserts both that the pushdown
+-- is suppressed (plan keeps the "VIEW subquery" steps) and that the result is
+-- correct, identical with the setting on and off.
+--
+-- A row policy directly on the underlying Distributed table is a separate case,
+-- unrelated to this pushdown: such a policy is now rejected outright with
+-- ILLEGAL_PREWHERE (a Distributed table only ships the query text to the remote
+-- servers, so the filter can never be applied there), regardless of whether the
+-- read goes through a view at all.
 --
 -- Tags: distributed
 
@@ -65,10 +70,15 @@ FROM (EXPLAIN SELECT id, v FROM 04098_view_alias);
 SELECT id, v FROM 04098_view_alias ORDER BY id;
 DROP ROW POLICY 04098_policy_view_alias ON 04098_view_alias;
 
--- A row policy on the underlying Distributed table also suppresses the pushdown.
+-- A row policy directly on a Distributed table is now rejected outright (by
+-- design, unrelated to this pushdown): the policy can only be applied where
+-- the table data is read locally, and a Distributed table only ships the
+-- query text to the remote servers, so the filter cannot be applied there.
+-- Every query through the view (even EXPLAIN, which must plan the read) now
+-- throws ILLEGAL_PREWHERE instead of silently returning unfiltered rows.
 CREATE ROW POLICY 04098_policy_dist ON 04098_dist USING id != 3 TO ALL;
 SELECT countIf(explain LIKE '%VIEW subquery%') > 0 AS pushdown_suppressed
-FROM (EXPLAIN SELECT id, val FROM 04098_view);
+FROM (EXPLAIN SELECT id, val FROM 04098_view); -- { serverError ILLEGAL_PREWHERE }
 DROP ROW POLICY 04098_policy_dist ON 04098_dist;
 
 -- The view policy must appear in system.query_log.used_row_policies.
