@@ -26,18 +26,20 @@ See [hudi](https://clickhouse.com/docs/sql-reference/table-functions/hudi) which
 
 # Data catalogs {#data-catalogs}
 
+Catalog integration is done through the [`DataLakeCatalog`](/engines/database-engines/datalakecatalog) database engine. Settings such as `catalog_type` are database-level settings and are not available on bare `Iceberg*` / `DeltaLake*` table engines.
+
 ## AWS Glue {#aws-glue}
 
-AWS Glue Data Catalog can be used with Iceberg tables. You can use it with the `iceberg` table engine, or with the [DataLakeCatalog](https://clickhouse.com/docs/engines/database-engines/datalakecatalog) database engine.
+AWS Glue Data Catalog can be used with Iceberg tables via the [`DataLakeCatalog`](/engines/database-engines/datalakecatalog) database engine. See the [Glue catalog guide](/use-cases/data-lake/glue-catalog).
 
 ## Iceberg REST Catalog {#iceberg-rest-catalog}
 
-The Iceberg REST Catalog can be used with Iceberg tables. You can use it with the `iceberg` table engine, or with the [DataLakeCatalog](https://clickhouse.com/docs/engines/database-engines/datalakecatalog) database engine.
+The Iceberg REST Catalog can be used with Iceberg tables via the [`DataLakeCatalog`](/engines/database-engines/datalakecatalog) database engine. See the [REST catalog guide](/use-cases/data-lake/rest-catalog).
 
 ## Unity Catalog {#unity-catalog}
 
-Unity Catalog can be used with both Delta Lake and Iceberg tables. You can use it with the `iceberg` or `deltaLake` table engines, or with the [DataLakeCatalog](https://clickhouse.com/docs/engines/database-engines/datalakecatalog) database engine.
+Unity Catalog can be used with both Delta Lake and Iceberg tables via the [`DataLakeCatalog`](/engines/database-engines/datalakecatalog) database engine. See the [Unity catalog guide](/use-cases/data-lake/unity-catalog).
 
 ## Microsoft OneLake {#microsoft-onelake}
 
-Microsoft OneLake can be used with both Delta Lake and Iceberg tables. You can use it with the [DataLakeCatalog](https://clickhouse.com/docs/engines/database-engines/datalakecatalog) database engine.
+Microsoft OneLake can be used with both Delta Lake and Iceberg tables via the [`DataLakeCatalog`](/engines/database-engines/datalakecatalog) database engine. See the [OneLake catalog guide](/use-cases/data-lake/onelake-catalog).

@@ -1,5 +1,5 @@
 ---
-description: 'This engine provides a read-only data integration with existing Apache Iceberg
+description: 'This engine provides a data integration with existing Apache Iceberg
   tables in Amazon S3, Azure, HDFS and locally stored tables, plus experimental metadata-maintenance writes.'
 sidebar_label: 'Iceberg'
 sidebar_position: 90
@@ -8,15 +8,11 @@ title: 'Iceberg table engine'
 doc_type: 'reference'
 ---
 
-:::warning 
-We recommend using the [Iceberg Table Function](/sql-reference/table-functions/iceberg.md) for working with Iceberg data in ClickHouse. The Iceberg Table Function currently provides sufficient functionality, offering a partial read-only interface for Iceberg tables.
+:::warning
+We recommend using the [Iceberg table function](/sql-reference/table-functions/iceberg.md) for ad hoc queries against a storage path. The Iceberg table engine is available but may have limitations — ClickHouse was not originally designed for tables whose schema changes externally, so some features that work with regular tables may be unavailable or may not function correctly, especially when using the old analyzer.
 
-The Iceberg Table Engine is available but may have limitations. ClickHouse wasn't originally designed to support tables with externally changing schemas, which can affect the functionality of the Iceberg Table Engine. As a result, some features that work with regular tables may be unavailable or may not function correctly, especially when using the old analyzer.
-
-For optimal compatibility, we suggest using the Iceberg Table Function while we continue to improve support for the Iceberg Table Engine.
+If your tables are managed by a data catalog such as Glue, see [Using a data catalog](#using-a-data-catalog).
 :::
-
-This engine provides a read-only *data* integration with existing Apache [Iceberg](https://iceberg.apache.org/) tables in Amazon S3, Azure, HDFS and locally stored tables.
 
 ## Create table {#create-table}
 
@@ -35,6 +31,23 @@ CREATE TABLE iceberg_table_hdfs
 CREATE TABLE iceberg_table_local
     ENGINE = IcebergLocal(path_to_table, [,format] [,compression_method])
 ```
+
+**Create a new Iceberg table** by specifying the schema explicitly. Requires [allow_insert_into_iceberg](/operations/settings/settings#allow_insert_into_iceberg). See [Writes into iceberg table](/sql-reference/table-functions/iceberg.md#writes-into-iceberg-table).
+
+```sql
+SET allow_insert_into_iceberg = 1;
+
+CREATE TABLE iceberg_writes_example
+(
+    x Nullable(String),
+    y Nullable(Int32)
+)
+ENGINE = IcebergS3('https://my-bucket.s3.amazonaws.com/warehouse/example/', 'key', 'secret')
+```
+
+## Using a data catalog {#using-a-data-catalog}
+
+If your Iceberg tables are managed by a catalog (Glue, REST, Unity, and others), use the [`DataLakeCatalog`](/engines/database-engines/datalakecatalog) database engine instead of attaching tables with `IcebergS3` directly. See [Connecting to catalogs](/use-cases/data-lake/getting-started/connecting-catalogs) and the [catalog guides](/use-cases/data-lake/reference).
 
 ## Engine arguments {#engine-arguments}
 
@@ -67,7 +80,6 @@ Using named collections:
 
 ```sql
 CREATE TABLE iceberg_table ENGINE=IcebergS3(iceberg_conf, filename = 'test_table')
-
 ```
 
 ## Aliases {#aliases}
@@ -375,4 +387,6 @@ SETTINGS iceberg_metadata_staleness_ms=120000
 
 ## See also {#see-also}
 
-- [iceberg table function](/sql-reference/table-functions/iceberg.md)
+- [iceberg table function](/sql-reference/table-functions/iceberg.md) — writes, time travel, and maintenance commands
+- [DataLakeCatalog](/engines/database-engines/datalakecatalog) — for catalog-managed tables
+- [Connecting to catalogs](/use-cases/data-lake/getting-started/connecting-catalogs)

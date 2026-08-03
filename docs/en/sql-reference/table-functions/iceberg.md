@@ -72,33 +72,9 @@ DESCRIBE icebergS3(iceberg_conf, filename = 'test_table')
 
 ## Using a data catalog {#iceberg-writes-catalogs}
 
-Iceberg tables can also be used with various data catalogs, such as the [REST Catalog](https://iceberg.apache.org/rest-catalog-spec/), [AWS Glue Data Catalog](https://docs.aws.amazon.com/prescriptive-guidance/latest/serverless-etl-aws-glue/aws-glue-data-catalog.html) and [Unity Catalog](https://www.unitycatalog.io/).
+If your Iceberg tables are managed by a catalog (Glue, REST, Unity, and others), use the [`DataLakeCatalog`](/engines/database-engines/datalakecatalog) database engine instead of the `iceberg` table function or bare `IcebergS3` tables. Catalog settings such as `catalog_type` are database settings and are not valid on the table function or table engine.
 
-:::important
-When using a catalog, most users will want to use the `DataLakeCatalog` database engine, which connects ClickHouse to your catalog to discover your tables. You can use this database engine instead of manually creating individual tables with `IcebergS3` table engine.
-:::
-
-To use them, create a table with the `IcebergS3` engine and provide the necessary settings.
-
-For example, using REST Catalog with MinIO storage:
-```sql
-CREATE TABLE `database_name.table_name`
-ENGINE = IcebergS3(
-  'http://minio:9000/warehouse-rest/table_name/',
-  'minio_access_key',
-  'minio_secret_key'
-)
-```
-
-Or, using AWS Glue Data Catalog with S3:
-```sql
-CREATE TABLE `my_database.my_table`  
-ENGINE = IcebergS3(
-  's3://my-data-bucket/warehouse/my_database/my_table/',
-  'aws_access_key',
-  'aws_secret_key'
-)
-```
+See [Connecting to catalogs](/use-cases/data-lake/getting-started/connecting-catalogs) and the [catalog guides](/use-cases/data-lake/reference).
 
 ## Schema Evolution {#schema-evolution}
 

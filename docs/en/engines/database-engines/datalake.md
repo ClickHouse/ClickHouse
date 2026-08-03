@@ -25,9 +25,9 @@ The `DataLakeCatalog` engine supports the following data catalogs:
 You will need to enable the relevant settings below to use the `DataLakeCatalog` engine:
 
 ```sql
-SET allow_experimental_database_iceberg = 1;
-SET allow_experimental_database_unity_catalog = 1;
-SET allow_experimental_database_glue_catalog = 1;
+SET allow_database_iceberg = 1;
+SET allow_database_unity_catalog = 1;
+SET allow_database_glue_catalog = 1;
 SET allow_experimental_database_hms_catalog = 1;
 SET allow_experimental_database_paimon_rest_catalog = 1;
 ```
