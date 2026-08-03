@@ -108,8 +108,8 @@ void logToSystemTextLogQueue(
     ThreadName msg_thread_name)
 {
     const Poco::Message & msg = *msg_ext.base;
-    text_log_locked->add([&](TextLogElement & elem)
-    {
+    TextLogElement elem;
+
     elem.event_time = msg_ext.time_seconds;
     elem.event_time_microseconds = msg_ext.time_in_microseconds;
 
@@ -142,7 +142,8 @@ void logToSystemTextLogQueue(
     SET_VALUE_IF_EXISTS(10);
 
 #undef SET_VALUE_IF_EXISTS
-    });
+
+    text_log_locked->push(std::move(elem));
 }
 }
 

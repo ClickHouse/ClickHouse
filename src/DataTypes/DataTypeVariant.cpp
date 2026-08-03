@@ -23,33 +23,19 @@ namespace ErrorCodes
 }
 
 
-/// Nullable(...), LowCardinality(Nullable(...)), Variant(...) and Dynamic types are not allowed inside Variant type.
-static void checkAllowedInsideVariant(const DataTypePtr & type)
-{
-    if (isNullableOrLowCardinalityNullable(type))
-        throw Exception(ErrorCodes::BAD_ARGUMENTS, "Nullable/LowCardinality(Nullable) types are not allowed inside Variant type");
-    if (type->getTypeId() == TypeIndex::Variant)
-        throw Exception(ErrorCodes::BAD_ARGUMENTS, "Nested Variant types are not allowed");
-    if (type->getTypeId() == TypeIndex::Dynamic)
-        throw Exception(ErrorCodes::BAD_ARGUMENTS, "Dynamic type is not allowed inside Variant type");
-}
-
-static void checkVariantsNotEmptyAndNotTooMany(const DataTypes & variants)
-{
-    if (variants.empty())
-        throw Exception(ErrorCodes::BAD_ARGUMENTS, "Variant type should have at least one nested type");
-
-    if (variants.size() > ColumnVariant::MAX_NESTED_COLUMNS)
-        throw Exception(ErrorCodes::BAD_ARGUMENTS, "Variant type with more than {} nested types is not allowed", ColumnVariant::MAX_NESTED_COLUMNS);
-}
-
 DataTypeVariant::DataTypeVariant(const DataTypes & variants_)
 {
     /// Sort nested types by their full names and squash identical types.
     std::map<String, DataTypePtr> name_to_type;
     for (const auto & type : variants_)
     {
-        checkAllowedInsideVariant(type);
+        /// Nullable(...), LowCardinality(Nullable(...)) and Variant(...) types are not allowed inside Variant type.
+        if (isNullableOrLowCardinalityNullable(type))
+            throw Exception(ErrorCodes::BAD_ARGUMENTS, "Nullable/LowCardinality(Nullable) types are not allowed inside Variant type");
+        if (type->getTypeId() == TypeIndex::Variant)
+            throw Exception(ErrorCodes::BAD_ARGUMENTS, "Nested Variant types are not allowed");
+        if (type->getTypeId() == TypeIndex::Dynamic)
+            throw Exception(ErrorCodes::BAD_ARGUMENTS, "Dynamic type is not allowed inside Variant type");
 
         /// Don't use Nothing type as a variant.
         if (!isNothing(type))
@@ -60,26 +46,11 @@ DataTypeVariant::DataTypeVariant(const DataTypes & variants_)
     for (const auto & [_, type] : name_to_type)
         variants.push_back(type);
 
-    checkVariantsNotEmptyAndNotTooMany(variants);
-}
+    if (variants.empty())
+        throw Exception(ErrorCodes::BAD_ARGUMENTS, "Variant type should have at least one nested type");
 
-DataTypeVariant::DataTypeVariant(const DataTypes & variants_, FixedDiscriminatorOrder)
-{
-    std::unordered_set<String> names;
-    for (const auto & type : variants_)
-    {
-        checkAllowedInsideVariant(type);
-
-        if (isNothing(type))
-            throw Exception(ErrorCodes::BAD_ARGUMENTS, "Nothing type is not allowed in a Variant with a fixed discriminator order");
-
-        if (!names.insert(type->getName()).second)
-            throw Exception(ErrorCodes::BAD_ARGUMENTS, "Duplicate type {} in a Variant with a fixed discriminator order", type->getName());
-
-        variants.push_back(type);
-    }
-
-    checkVariantsNotEmptyAndNotTooMany(variants);
+    if (variants.size() > ColumnVariant::MAX_NESTED_COLUMNS)
+        throw Exception(ErrorCodes::BAD_ARGUMENTS, "Variant type with more than {} nested types is not allowed", ColumnVariant::MAX_NESTED_COLUMNS);
 }
 
 void DataTypeVariant::updateHashImpl(SipHash & hash) const
@@ -520,7 +491,7 @@ Note: converting from `String` type is always performed through parsing, if you 
 SELECT '[1, 2, 3]'::Variant(String)::Variant(String, Array(UInt64), UInt64) as variant, variantType(variant) as variant_type
 ```
 
-```text
+```sql
 ┌─variant───┬─variant_type─┐
 │ [1, 2, 3] │ String       │
 └───────────┴──────────────┘
@@ -617,7 +588,6 @@ INSERT INTO test VALUES (42, 42), (42, 43), (42, 'abc'), (42, [1, 2, 3]), (42, [
 ```
 
 ```sql
-SET allow_suspicious_types_in_order_by = 1;
 SELECT v2, variantType(v2) AS v2_type FROM test ORDER BY v2;
 ```
 
@@ -633,7 +603,6 @@ SELECT v2, variantType(v2) AS v2_type FROM test ORDER BY v2;
 ```
 
 ```sql
-SET use_variant_default_implementation_for_comparisons = 0;
 SELECT v1, variantType(v1) AS v1_type, v2, variantType(v2) AS v2_type, v1 = v2, v1 < v2, v1 > v2 FROM test;
 ```
 
@@ -654,7 +623,6 @@ If you need to find the row with specific `Variant` value, you can do one of the
 - Cast value to the corresponding `Variant` type:
 
 ```sql
-SET use_variant_default_implementation_for_comparisons = 0;
 SELECT * FROM test WHERE v2 == [1,2,3]::Array(UInt32)::Variant(String, UInt64, Array(UInt32));
 ```
 
@@ -708,7 +676,6 @@ Example:
 
 ```sql
 SET allow_suspicious_variant_types = 1;
-SET allow_suspicious_types_in_order_by = 1;
 CREATE TABLE test (v Variant(UInt32, Int64)) ENGINE=Memory;
 INSERT INTO test VALUES (1::UInt32), (1::Int64), (100::UInt32), (100::Int64);
 SELECT v, variantType(v) FROM test ORDER by v;
@@ -773,7 +740,6 @@ This allows you to use regular functions with Variant columns without special ha
 **Example:**
 
 ```sql
-SET variant_throw_on_type_mismatch = 0;
 CREATE TABLE test (v Variant(UInt32, String)) ENGINE = Memory;
 INSERT INTO test VALUES (42), ('hello'), (NULL);
 SELECT *, toTypeName(v) FROM test WHERE v = 42;
@@ -793,7 +759,6 @@ The result type depends on what the function returns for each variant:
 
 - **Different result types**: `Variant(T1, T2, ...)`
 ```sql
-SET variant_throw_on_type_mismatch = 0;
 CREATE TABLE test2 (v Variant(UInt64, Float64)) ENGINE = Memory;
 INSERT INTO test2 VALUES (42::UInt64), (42.42);
 SELECT v + 1 AS result, toTypeName(result) FROM test2;
@@ -808,7 +773,6 @@ SELECT v + 1 AS result, toTypeName(result) FROM test2;
 
 - **Type incompatibility**: `NULL` for incompatible variants
 ```sql
-SET variant_throw_on_type_mismatch = 0;
 CREATE TABLE test3 (v Variant(Array(UInt32), UInt32)) ENGINE = Memory;
 INSERT INTO test3 VALUES ([1,2,3]), (42);
 SELECT v + 10 AS result, toTypeName(result) FROM test3;

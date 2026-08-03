@@ -1,7 +1,6 @@
 #if defined(OS_LINUX) || defined(OS_DARWIN)
 
 #include <poll.h>
-#include <Storages/System/SystemTableSourceRegistry.h>
 
 #include <mutex>
 #include <unordered_map>
@@ -162,9 +161,6 @@ void signalHandler(int, siginfo_t * info, void * context)
 
     /// All these methods are signal-safe.
     const ucontext_t signal_context = *reinterpret_cast<ucontext_t *>(context);
-    /// The ucontext StackTrace constructor recovers internally from a fault while unwinding the
-    /// target thread (e.g. off a frame-pointer-less libsystem frame or a fiber stack on macOS),
-    /// yielding an empty trace instead of crashing the server.
     stack_trace = StackTrace(signal_context);
 
     auto query_id = CurrentThread::getQueryId();
@@ -172,7 +168,7 @@ void signalHandler(int, siginfo_t * info, void * context)
     if (!query_id.empty())
         memcpy(query_id_data, query_id.data(), query_id_size);
 
-    untracked_memory_data = current_thread ? current_thread->untracked_memory.load() : 0;
+    untracked_memory_data = current_thread ? current_thread->untracked_memory : 0;
 
     /// This is unneeded (because we synchronize through pipe) but makes TSan happy.
     data_ready_num.store(notification_num, std::memory_order_release);
@@ -736,7 +732,7 @@ StorageSystemStackTrace::StorageSystemStackTrace(const StorageID & table_id_)
         {"thread_id", std::make_shared<DataTypeUInt64>(), "The thread identifier"},
         {"query_id", std::make_shared<DataTypeString>(), "The ID of the query this thread belongs to."},
         {"trace", std::make_shared<DataTypeArray>(std::make_shared<DataTypeUInt64>()), "The stacktrace of this thread. Basically just an array of addresses."},
-        {"untracked_memory", std::make_shared<DataTypeInt64>(), "Per-thread counter of memory allocations not yet propagated to the parent MemoryTracker. May be negative if more was freed than allocated since the last flush."},
+        {"untracked_memory", std::make_shared<DataTypeInt64>(), "Per-thread atomic-less counter of memory allocations not yet propagated to the parent MemoryTracker. May be negative if more was freed than allocated since the last flush."},
     }));
     storage_metadata.setVirtuals(createVirtuals());
     setInMemoryMetadata(storage_metadata);
@@ -756,15 +752,6 @@ StorageSystemStackTrace::StorageSystemStackTrace(const StorageID & table_id_)
         throw ErrnoException(ErrorCodes::CANNOT_MANIPULATE_SIGSET, "Cannot set signal handler");
 
     if (sigaddset(&sa.sa_mask, STACK_TRACE_SERVICE_SIGNAL))
-        throw ErrnoException(ErrorCodes::CANNOT_MANIPULATE_SIGSET, "Cannot set signal handler");
-
-    /// This handler captures through StackTrace(ucontext), sharing one thread-local async-unwind recovery
-    /// (asynchronous_stack_unwinding + sigjmp_buf in StackTrace) with the query profiler and the debug
-    /// SIGTSTP stack dumper. Block their signals (SIGUSR1/SIGUSR2 profilers, SIGTSTP) while it runs so
-    /// none can nest and clobber that buffer, which would make the next fault's siglongjmp jump to the
-    /// wrong frame (or, if SIGTSTP cleared the flag on return, turn a recoverable unwind fault into a
-    /// fatal crash).
-    if (sigaddset(&sa.sa_mask, SIGUSR1) || sigaddset(&sa.sa_mask, SIGUSR2) || sigaddset(&sa.sa_mask, SIGTSTP))
         throw ErrnoException(ErrorCodes::CANNOT_MANIPULATE_SIGSET, "Cannot set signal handler");
 #pragma clang diagnostic pop
 
@@ -802,9 +789,5 @@ void StorageSystemStackTrace::readImpl(
 }
 
 #pragma clang diagnostic pop
-
-
-/// Register the source file of this system table for `system.documentation`.
-namespace DB { REGISTER_SYSTEM_TABLE_SOURCE(StorageSystemStackTrace) }
 
 #endif

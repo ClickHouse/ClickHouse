@@ -257,12 +257,12 @@ Data type `Map(K, V)` stores key-value pairs.
 Unlike other databases, maps are not unique in ClickHouse, i.e. a map can contain two elements with the same key.
 (The reason for that is that maps are internally implemented as `Array(Tuple(K, V))`.)
 
-You can use syntax `m[k]` to obtain the value for key `k` in map `m`.
+You can use use syntax `m[k]` to obtain the value for key `k` in map `m`.
 Also, `m[k]` scans the map, i.e. the runtime of the operation is linear in the size of the map.
 
 **Parameters**
 
-- `K` — The type of the Map keys. Arbitrary type except [Nullable](/reference/data-types/nullable) and [LowCardinality](/reference/data-types/lowcardinality) nested with [Nullable](/reference/data-types/nullable) types.
+- `K` — The type of the Map keys. Arbitrary type except [Nullable](../../sql-reference/data-types/nullable.md) and [LowCardinality](../../sql-reference/data-types/lowcardinality.md) nested with [Nullable](../../sql-reference/data-types/nullable.md) types.
 - `V` — The type of the Map values. Arbitrary type.
 
 **Examples**
@@ -477,7 +477,7 @@ Manual sharding is beneficial when vertical merges are important for reducing me
 
 - [map()](/sql-reference/functions/tuple-map-functions#map) function
 - [CAST()](/sql-reference/functions/type-conversion-functions#CAST) function
-- [-Map combinator for Map datatype](/reference/functions/aggregate-functions/combinators#-map)
+- [-Map combinator for Map datatype](../aggregate-functions/combinators.md#-map)
 
 ## Related content {#related-content}
 
