@@ -339,6 +339,35 @@ std::vector<FileBucketInfoPtr> ParquetBucketSplitter::splitToBuckets(size_t buck
     return result;
 }
 
+std::vector<FileBucketInfoPtr> ParquetBucketSplitter::splitToBucketsByCount(size_t target_count, ReadBuffer & buf, const FormatSettings & format_settings_)
+{
+    std::atomic<int> is_stopped = false;
+    auto arrow_file = asArrowFile(buf, format_settings_, is_stopped, "Parquet", PARQUET_MAGIC_BYTES, /* avoid_buffering */ true, nullptr);
+    auto metadata = parquet::ReadMetaData(arrow_file);
+    const size_t num_row_groups = metadata->num_row_groups();
+
+    if (target_count == 0 || num_row_groups == 0)
+        return {};
+
+    /// Distribute row groups across at most target_count contiguous chunks. Each
+    /// chunk becomes a single ParquetFileBucketInfo containing several row groups,
+    /// so the caller gets one source per chunk and no row group is dropped.
+    const size_t num_chunks = std::min(target_count, num_row_groups);
+    std::vector<FileBucketInfoPtr> result;
+    result.reserve(num_chunks);
+    for (size_t g = 0; g < num_chunks; ++g)
+    {
+        size_t lo = g * num_row_groups / num_chunks;
+        size_t hi = (g + 1) * num_row_groups / num_chunks;
+        std::vector<size_t> ids;
+        ids.reserve(hi - lo);
+        for (size_t k = lo; k < hi; ++k)
+            ids.push_back(k);
+        result.push_back(std::make_shared<ParquetFileBucketInfo>(ids));
+    }
+    return result;
+}
+
 void registerInputFormatParquet(FormatFactory & factory);
 void registerInputFormatParquet(FormatFactory & factory)
 {
