@@ -562,6 +562,10 @@ public:
 
     bool supportsPrewhere() const override { return true; }
 
+    /// The contract is std::nullopt here, so this only matters when a wrapper (`Merge`,
+    /// `MaterializedView`, `Buffer`) delegating the read to this table forwards the question.
+    bool supportedPrewhereColumnsIncludeSubcolumns() const override { return true; }
+
     ConditionSelectivityEstimatorPtr getConditionSelectivityEstimator(const RangesInDataParts & parts, const Names & required_columns, ContextPtr local_context) const override;
 
     bool supportsFinal() const override;
@@ -1370,9 +1374,19 @@ public:
     ExpressionActionsPtr
     getSortingKeyAndSkipIndicesExpression(const StorageMetadataPtr & metadata_snapshot, const MergeTreeIndices & indices) const;
 
-    /// Get compression codec for part according to TTL rules and <compression>
-    /// section from config.xml.
-    CompressionCodecPtr getCompressionCodecForPart(size_t part_size_compressed, const IMergeTreeDataPart::TTLInfos & ttl_infos, time_t current_time) const;
+    struct PartCompressionCodec
+    {
+        CompressionCodecPtr codec;
+        bool is_explicit_recompression = false; /// True if `codec` comes from a `RECOMPRESS` TTL entry and is not `Default`.
+    };
+
+    /// Get compression codec for part according to `RECOMPRESS` TTL rules from `metadata_snapshot`,
+    /// the `default_compression_codec` setting, or the <compression> section from config.xml, in that order.
+    PartCompressionCodec getCompressionCodecForPart(
+        const StorageMetadataPtr & metadata_snapshot,
+        size_t part_size_compressed,
+        const IMergeTreeDataPart::TTLInfos & ttl_infos,
+        time_t current_time) const;
 
     std::shared_ptr<QueryIdHolder> getQueryIdHolder(const String & query_id, UInt64 max_concurrent_queries) const;
 
