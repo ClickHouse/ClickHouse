@@ -85,6 +85,18 @@ def test_localize_fragment_matches_reordered_groups_by_pages():
     ]
 
 
+def test_localize_fragment_keeps_english_name_when_groups_merge():
+    generated = [{"group": "Merged", "pages": ["GET /a", "GET /b"]}]
+    current = [
+        {"group": "Translated A", "pages": ["GET /a"]},
+        {"group": "Translated B", "pages": ["GET /b"]},
+    ]
+
+    assert localize_fragment(
+        generated, current, identity_ref_keys(generated, current)
+    ) == generated
+
+
 def test_localize_fragment_preserves_names_across_maturity_changes():
     operation = "GET /v1/organizations/{organizationId}/usageCost"
     badge_page = "products/cloud/api-reference/billing/billing-usage-get"

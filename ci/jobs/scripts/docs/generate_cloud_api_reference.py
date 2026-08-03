@@ -367,15 +367,13 @@ def localize_fragment(
         if candidates:
             best_overlap = max(overlap for overlap, _ in candidates)
             best_matches = [index for overlap, index in candidates if overlap == best_overlap]
-            if len(best_matches) != 1:
-                names = [current_groups[index].get("group") for index in best_matches]
-                raise SystemExit(
-                    f"Ambiguous localized navigation match for {generated_group.get('group')!r}: "
-                    f"{names!r}"
-                )
-            current_index = best_matches[0]
-            used_current_groups.add(current_index)
-            current_group = current_groups[current_index]
+            # A tie means groups were merged or rebucketed. Do not guess which
+            # translation to keep; leaving `current_group` unset retains the
+            # generated English name.
+            if len(best_matches) == 1:
+                current_index = best_matches[0]
+                used_current_groups.add(current_index)
+                current_group = current_groups[current_index]
 
         localized_group = copy.deepcopy(generated_group)
         if current_group is not None:
