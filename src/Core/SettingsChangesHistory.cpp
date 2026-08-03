@@ -50,6 +50,7 @@ const VersionToSettingsChangesMap & getSettingsChangesHistory()
             {"allow_experimental_json_ast_dialect", false, false, "New setting to enable the `clickhouse_json` value of the `dialect` setting, which interprets queries as JSON ASTs (the output of `parseQueryToJSON`) instead of SQL text."},
             {"analyzer_compatibility_apply_final_to_all_joined_tables", false, false, "New setting on master (default false = the fixed behavior). The behavior flip itself is recorded under 26.6, and the introduction for backports to older release branches (with default true) under 26.4."},
             {"enable_parallel_single_level_merge", false, true, "New setting to parallelize the final merge of the single-level aggregation hash tables by splitting the key space into disjoint hash partitions that the threads merge independently."},
+            {"max_bytes_ratio_before_external_join", 0., 0., "Retrospectively disable automatic spilling, because it interfeers with read-in-order-through-join optimization."},
             {"join_runtime_filter_min_probe_rows", 0, 1000, "New setting to control minimum probe side size for installing JOIN runtime filters. It wasn't limited before, so previous value is 0 meaning always install."},
             {"input_format_read_datetime_number_as_raw_value", true, false, "From 26.8, an unquoted number for a `DateTime`/`DateTime64` column in the `JSON` and `Values`/`Quoted` paths (and in `JSONExtract` and typed `JSON`) is a Unix timestamp in seconds, consistent with the `Values` format, `CAST` and `toDateTime64`. Set this to `true` (or `SET compatibility = '26.7'`) to restore the pre-26.8 behavior, where a bare unquoted integer fed to a `DateTime64` column was read as the raw scaled value (ticks). The tab-separated, CSV and other escaped/whole-text formats are not governed by this setting."},
             {"query_plan_short_circuit_constant_false_join", false, true, "New setting to short-circuit a JOIN with a constant-false ON condition so the non-contributing side is not read. previous_value=false so `compatibility` with versions before 26.8 restores the pre-existing behavior (no short-circuit)."},
@@ -58,6 +59,7 @@ const VersionToSettingsChangesMap & getSettingsChangesHistory()
         addSettingsChanges(settings_changes_history, "26.7",
         {
             {"analyzer_compatibility_allow_non_aggregate_in_having", false, false, "New compatibility setting. When enabled, the analyzer mimics the legacy `HAVING`-to-`WHERE` rewrite for non-aggregate AND-conjuncts instead of raising `NOT_AN_AGGREGATE`."},
+            {"max_bytes_ratio_before_external_join", 0., 0., "Retrospectively disable automatic spilling, because it interfeers with read-in-order-through-join optimization."},
             {"dictionary_lazy_load", "auto", "auto", "New setting overriding the server setting `dictionaries_lazy_load` for an individual dictionary."},
             {"discard_query_data", false, false, "New setting to skip sending query result rows to the client over the native TCP protocol."},
             {"optimize_trivial_count_with_sparsity_filter", false, false, "New (experimental) setting to serve `SELECT count() FROM t WHERE <pred>` from per-column `num_defaults` / `num_rows` recorded in `serialization.json` when `<pred>` partitions rows into defaults vs non-defaults."},
@@ -160,6 +162,7 @@ const VersionToSettingsChangesMap & getSettingsChangesHistory()
             {"enable_join_transitive_predicates", false, true, "Turn on enable_join_transitive_predicates by default"},
             {"allow_experimental_query_deduplication", false, false, "The setting is obsolete, the feature has been removed."},
             {"query_plan_min_columns_for_join_lazy_indexing", 0, 3, "Control the minimum number of payload columns from the left side required for enabling lazy indexing optimization in JOIN"},
+            {"max_bytes_ratio_before_external_join", 0., 0., "Retrospectively disable automatic spilling, because it interfeers with read-in-order-through-join optimization."},
             {"query_plan_max_limit_for_join_lazy_indexing", 1000, 1000, "Added new setting to control maximum limit value that allows to use query plan for lazy join indexing optimization. If zero, there is no limit"},
         });
 
