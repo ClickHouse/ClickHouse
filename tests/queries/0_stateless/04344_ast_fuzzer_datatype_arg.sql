@@ -9,6 +9,6 @@ SET send_logs_level = 'fatal';
 SET ast_fuzzer_runs = 20;
 SET ast_fuzzer_any_query = 1;
 
-CREATE TABLE t_04344 (a Nullable(Int32), b LowCardinality(String), c Array(Nullable(UInt64)), d Map(String, Int64), e FixedString(8), f JSON(max_dynamic_paths=8, p1 UInt32, p2 Array(String), SKIP s), g QBit(Float32, 16), h SimpleAggregateFunction(sumMap, Tuple(Array(String), Array(UInt64))), n SimpleAggregateFunction(sum, UInt64), i DateTime('Asia/Istanbul'), j DateTime64(3, 'UTC'), k Nested(x UInt32, y Array(Nullable(Int64))), l AggregateFunction(quantileExact(0.5), Float64), m AggregateFunction(topK(10), String), o Point, p Ring, w MultiPoint, q Polygon, r MultiPolygon, s LineString, u MultiLineString, v Geometry) ENGINE = Memory;
+CREATE TABLE t_04344 (a Nullable(Int32), b LowCardinality(String), c Array(Nullable(UInt64)), d Map(String, Int64), e FixedString(8), f JSON(max_dynamic_paths=8, p1 UInt32, p2 Array(String), SKIP s, SKIP REGEXP '^sk.*$'), g QBit(Float32, 16), h SimpleAggregateFunction(sumMap, Tuple(Array(String), Array(UInt64))), n SimpleAggregateFunction(sum, UInt64), i DateTime('Asia/Istanbul'), j DateTime64(3, 'UTC'), k Nested(x UInt32, y Array(Nullable(Int64))), l AggregateFunction(quantileExact(0.5), Float64), m AggregateFunction(topK(10), String), o Point, p Ring, w MultiPoint, q Polygon, r MultiPolygon, s LineString, u MultiLineString, v Geometry) ENGINE = Memory;
 
 SELECT 1;
