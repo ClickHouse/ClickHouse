@@ -23,6 +23,35 @@ def get_array_as_returned(query_result: str):
     print(arr)
     return arr
 
+def top_step_output_columns(instance, query, step, settings=""):
+    """Columns the topmost processor of `step` emits, from EXPLAIN PIPELINE header=1.
+
+    A header block spans one line per column, so reading only the first line would miss exactly
+    the leaked-column case this exists to catch. Every column line carries "(size = "; the next
+    processor line does not, which is what terminates the block."""
+    suffix = f" SETTINGS {settings}" if settings else ""
+    plan = instance.query(f"EXPLAIN PIPELINE header=1 {query}{suffix}")
+    body = plan.split(f"({step})")[1].strip().split("\n")
+    header_lines = []
+    for line in body[1:]:
+        if "(size = " not in line:
+            break
+        header_lines.append(line.strip())
+    assert header_lines, body[:4]
+    header_lines[0] = header_lines[0].removeprefix("Header: ")
+    return [line.split(":")[0].strip() for line in header_lines]
+
+def count_in_pipeline(instance, query, processor, settings=""):
+    """Occurrences of `processor` in EXPLAIN PIPELINE. Result assertions alone cannot tell the
+    in-order topology from a correct fallback, so the plan has to be asserted directly."""
+    suffix = f" SETTINGS {settings}" if settings else ""
+    return int(
+        instance.query(
+            f"SELECT count() FROM (EXPLAIN PIPELINE {query}{suffix}) "
+            f"WHERE explain ILIKE '%{processor}%'"
+        )
+    )
+
 def patch_metadata(table_name):
     # HACK This is terribly ugly hack, because of the issue:https://github.com/apache/iceberg/issues/13634
     # Iceberg sort order looks relatively new feature. There are no writer implementations which support it properly.
@@ -213,7 +242,10 @@ def test_read_in_order_more_files_than_streams(started_cluster_iceberg_with_spar
 
     # threshold=2 with 4 streams groups the 6 files into 3 merged groups; threshold=100 keeps one
     # port per file. Both must be order-preserving and lose no rows.
-    for max_threads, threshold in [(4, 2), (4, 3), (2, 100), (4, 100), (1, 100)]:
+    # threshold=0 means "always preliminary-merge" and must not divide by zero: with 6 files it
+    # only reaches the grouping once the cap (threshold * num_streams) admits them, i.e. at
+    # max_threads >= 6. (4, 0) declines and (6, 0) groups; keep both.
+    for max_threads, threshold in [(4, 2), (4, 3), (6, 0), (4, 0), (4, 1), (2, 100), (4, 100), (1, 100)]:
         settings = f"max_threads={max_threads}, read_in_order_two_level_merge_threshold={threshold}"
         assert get_array_as_returned(
             instance.query(f"SELECT id FROM {TABLE_NAME} ORDER BY id SETTINGS {settings}")
@@ -230,6 +262,22 @@ def test_read_in_order_more_files_than_streams(started_cluster_iceberg_with_spar
             f"SETTINGS max_threads=4, read_in_order_two_level_merge_threshold=2;"
         )
     )
+
+    # The grouping topology, not just its result: one sorted run per port plus the downstream
+    # merge already sorts correctly, so only the plan shape distinguishes the two.
+    q = f"SELECT id FROM {TABLE_NAME} ORDER BY id"
+    n_grouped = count_in_pipeline(
+        instance, q, "MergingSortedTransform",
+        "max_threads=4, read_in_order_two_level_merge_threshold=2")
+    n_flat = count_in_pipeline(
+        instance, q, "MergingSortedTransform",
+        "max_threads=4, read_in_order_two_level_merge_threshold=100")
+    assert n_flat == 1, n_flat
+    assert n_grouped == 4, n_grouped
+    # 6 files / threshold 3 -> 2 groups, so one fewer preliminary merge than threshold 2.
+    assert count_in_pipeline(
+        instance, q, "MergingSortedTransform",
+        "max_threads=4, read_in_order_two_level_merge_threshold=3") == 3
 
 
 @pytest.mark.parametrize("storage_type", ["s3", "local"])
@@ -266,14 +314,11 @@ def test_read_in_order_complex_key_more_files_than_streams(started_cluster_icebe
 
     create_iceberg_table(storage_type, instance, TABLE_NAME, started_cluster_iceberg_with_spark)
 
+    q = f"SELECT icebergBucket(16, id) FROM {TABLE_NAME} ORDER BY icebergBucket(16, id)"
+
     for max_threads, threshold in [(4, 2), (4, 100)]:
         settings = f"max_threads={max_threads}, read_in_order_two_level_merge_threshold={threshold}"
-        buckets = get_array_as_returned(
-            instance.query(
-                f"SELECT icebergBucket(16, id) FROM {TABLE_NAME} "
-                f"ORDER BY icebergBucket(16, id) SETTINGS {settings}"
-            )
-        )
+        buckets = get_array_as_returned(instance.query(f"{q} SETTINGS {settings}"))
         assert buckets == sorted(buckets)
         assert len(buckets) == 12
         assert get_array(
@@ -283,6 +328,19 @@ def test_read_in_order_complex_key_more_files_than_streams(started_cluster_icebe
         assert len(instance.query(
             f"SELECT * FROM {TABLE_NAME} ORDER BY icebergBucket(16, id) LIMIT 1 SETTINGS {settings}"
         ).strip().split("\t")) == 2
+        # An expression key IS accepted, so the sorting step is dropped for it. Without this the
+        # sorted-bucket assertion above is also satisfied by an ordinary sort.
+        assert count_in_pipeline(instance, q, "PartialSortingTransform", settings) == 0
+
+    # Regression: the grouping merge materializes the sorting key into the pipe, and an identity
+    # projection cannot remove it again (unmatched header columns are re-emitted), so the step
+    # leaked a column absent from its declared output header. It must emit exactly the columns it
+    # declares - the grouped and ungrouped shapes agree on that.
+    for threshold in [2, 100]:
+        assert top_step_output_columns(
+            instance, q, "ReadFromObjectStorage",
+            f"max_threads=4, read_in_order_two_level_merge_threshold={threshold}"
+        ) == ["id Nullable(Int64)"], threshold
 
 
 def test_read_in_order_orc_declines(started_cluster_iceberg_with_spark):
@@ -380,6 +438,26 @@ def test_read_in_order_duplicate_keys(started_cluster_iceberg_with_spark, storag
         assert get_array_as_returned(
             instance.query(f"SELECT DISTINCT id FROM {TABLE_NAME} ORDER BY id SETTINGS {settings}")
         ) == [1,2,3]
+
+    # Aggregation-in-order consumes the same per-port sorted runs, so assert it is really the
+    # operator producing the results above and not an ordinary hash aggregation.
+    agg = f"SELECT id, count() FROM {TABLE_NAME} GROUP BY id"
+    assert count_in_pipeline(
+        instance, agg, "AggregatingInOrderTransform",
+        "max_threads=4, optimize_aggregation_in_order=1") > 0
+    assert count_in_pipeline(
+        instance, agg, "AggregatingInOrderTransform",
+        "max_threads=4, optimize_aggregation_in_order=0") == 0
+    assert instance.query(
+        f"{agg} ORDER BY id SETTINGS max_threads=4, optimize_aggregation_in_order=1"
+    ).strip() == "1\t2\n2\t1\n3\t1"
+
+    # Distinct-in-order cannot engage on this step: it only fires when it can IMPROVE on the
+    # order the step already advertises, and getDataOrder advertises the full sorting key. So the
+    # plain DistinctTransform above is the expected operator, not a silent fallback.
+    assert count_in_pipeline(
+        instance, f"SELECT DISTINCT id FROM {TABLE_NAME}", "DistinctSortedStreamTransform",
+        "max_threads=4, optimize_distinct_in_order=1") == 0
 
 
 def test_defining_columns_with_special_character(started_cluster_iceberg_with_spark):

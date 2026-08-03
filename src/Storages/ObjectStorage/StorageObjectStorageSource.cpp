@@ -264,10 +264,8 @@ StorageObjectStorageSource::StorageObjectStorageSource(
 StorageObjectStorageSource::~StorageObjectStorageSource()
 {
     LOG_DEBUG(log, "Source finished: files_read={}", total_files_read);
-    /// An in-flight reader task captures `this`, so it must not outlive the source.
-    /// Waiting on the whole pool is wrong when it is shared: it would also wait for other
-    /// sources' tasks. wait() never throws; the promise is satisfied even if the task threw
-    /// or was dropped unrun.
+    /// An in-flight reader task captures `this`, so it must not outlive the source. A shared pool
+    /// also serves other sources, so wait on this source's own task instead.
     if (owns_create_reader_pool)
         create_reader_pool->wait();
     else if (reader_future.valid())
@@ -771,8 +769,7 @@ Chunk StorageObjectStorageSource::generate()
 
         /// Even if task is finished the thread may be not freed in pool.
         /// So wait until it will be freed before scheduling a new task.
-        /// A shared pool serves other sources too, so waiting on all of it would serialize them;
-        /// its queue is unbounded and this source has no other job in flight here.
+        /// Skipped for a shared pool: that would serialize the other sources using it.
         if (owns_create_reader_pool)
             create_reader_pool->wait();
         reader_future = createReaderAsync();

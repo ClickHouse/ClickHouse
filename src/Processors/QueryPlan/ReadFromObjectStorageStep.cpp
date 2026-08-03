@@ -1,5 +1,6 @@
 #include <Processors/QueryPlan/ReadFromObjectStorageStep.h>
 #include <QueryPipeline/QueryPipelineBuilder.h>
+#include <Core/Block.h>
 #include <Core/Settings.h>
 #include <Storages/ObjectStorage/StorageObjectStorageSource.h>
 #include <Interpreters/ActionsDAG.h>
@@ -109,6 +110,14 @@ void ReadFromObjectStorageStep::updatePrewhereInfo(const PrewhereInfoPtr & prewh
     output_header = std::make_shared<const Block>(info.source_header);
 }
 
+/// Zero means "always preliminary-merge", so it must never reach the group-count division.
+/// The cap and the grouping have to read the same value or the cap admits a file count the
+/// grouping cannot divide.
+static size_t effectiveTwoLevelMergeThreshold(const Settings & settings)
+{
+    return std::max<size_t>(1, settings[Setting::read_in_order_two_level_merge_threshold]);
+}
+
 /// One source per file, as ReadFromMergeTree uses one source per part: a source reads its files
 /// serially, so a multi-file source emits a concatenation rather than a sorted run.
 Pipe ReadFromObjectStorageStep::buildInOrderPipe(const ContextPtr & local_context, const FormatFilterInfoPtr & format_filter_info)
@@ -151,15 +160,12 @@ Pipe ReadFromObjectStorageStep::buildInOrderPipe(const ContextPtr & local_contex
             shared_reader_pool));
     }
 
-    /// Same gate as ReadFromMergeTree.cpp:1482. The cap in requestReadingInOrder guarantees at
-    /// most `threshold` files per group, hence at most `num_streams` groups.
-    const size_t threshold = settings[Setting::read_in_order_two_level_merge_threshold];
+    const size_t threshold = effectiveTwoLevelMergeThreshold(settings);
     if (num_files <= threshold || num_files <= 2)
         return Pipe::unitePipes(std::move(pipes));
 
-    /// Merging by the query's sort description is not possible here: an expression sorting key is
-    /// absent from source_header. Materialize the key, merge on it, then project it away so the
-    /// step's output header is unchanged.
+    /// An expression sorting key is absent from source_header, so materialize it, merge on it,
+    /// then convert back to source_header.
     const auto & sorting_key = storage_snapshot->metadata->getSortingKey();
     auto key_ast = sorting_key.expression_list_ast->clone();
     auto syntax_result = TreeRewriter(local_context).analyze(key_ast, info.source_header.getNamesAndTypesList());
@@ -174,9 +180,8 @@ Pipe ReadFromObjectStorageStep::buildInOrderPipe(const ContextPtr & local_contex
     for (size_t i = 0; i < sorting_key.column_names.size(); ++i)
         sort_description.emplace_back(sorting_key.column_names[i], (!reverse_flags.empty() && reverse_flags[i]) ? -1 : 1);
 
-    /// >= 2 groups: SortingStep::mergingSorted installs its merge only when more than one port
-    /// reaches it (SortingStep.cpp:393), and finishSorting does not run on a full key match
-    /// (SortingStep.cpp:574), so collapsing to a single port here would leave nothing merging.
+    /// Never collapse to one port: the sorting step installs no merge above a single port, so a
+    /// single group would leave the concatenation unmerged.
     const size_t num_groups = std::max<size_t>(2, (num_files + threshold - 1) / threshold);
     std::vector<Pipes> grouped(num_groups);
     for (size_t i = 0; i < num_files; ++i)
@@ -204,10 +209,19 @@ Pipe ReadFromObjectStorageStep::buildInOrderPipe(const ContextPtr & local_contex
                 /*limit=*/ 0,
                 /*always_read_till_end=*/ false,
                 /*out_row_sources_buf=*/ nullptr));
-        /// Drop the temporary sorting-key columns so the header matches info.source_header.
-        auto projection = std::make_shared<ExpressionActions>(ActionsDAG(info.source_header.getNamesAndTypesList()));
-        group.addSimpleTransform([&](const SharedHeader & header)
-                                 { return std::make_shared<ExpressionTransform>(header, projection); });
+        /// Drop the temporary sorting-key columns. An identity DAG cannot do it: unmatched header
+        /// columns are re-emitted (ActionsDAG::updateHeader), so the key would survive, and out of
+        /// position. Converting actions output exactly the requested columns, in order.
+        if (!blocksHaveEqualStructure(group.getHeader(), info.source_header))
+        {
+            auto converting = std::make_shared<ExpressionActions>(ActionsDAG::makeConvertingActions(
+                group.getHeader().getColumnsWithTypeAndName(),
+                info.source_header.getColumnsWithTypeAndName(),
+                ActionsDAG::MatchColumnsMode::Name,
+                local_context));
+            group.addSimpleTransform([&](const SharedHeader & header)
+                                     { return std::make_shared<ExpressionTransform>(header, converting); });
+        }
         merged.emplace_back(std::move(group));
     }
 
@@ -354,8 +368,7 @@ bool ReadFromObjectStorageStep::requestReadingInOrder(int direction, const Query
     /// Enumerating consumes the iterator, so stop at cap+1 (enough to prove the cap is exceeded)
     /// and hand the consumed prefix back through a replaying wrapper. Every path below, including
     /// every rejection, must leave the step able to read all files.
-    const size_t threshold = settings[Setting::read_in_order_two_level_merge_threshold];
-    const size_t max_files = std::max<size_t>(1, threshold) * std::max<size_t>(1, num_streams);
+    const size_t max_files = effectiveTwoLevelMergeThreshold(settings) * std::max<size_t>(1, num_streams);
 
     ObjectInfos files;
     bool over_cap = false;

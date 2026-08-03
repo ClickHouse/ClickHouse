@@ -9,6 +9,7 @@
 #include <Common/Logger.h>
 #include <Common/Macros.h>
 #include <Formats/FormatSettings.h>
+#include <limits>
 
 namespace DB
 {
@@ -132,7 +133,18 @@ public:
         return iterator->next(id);
     }
 
-    size_t estimatedKeysCount() override { return iterator->estimatedKeysCount(); }
+    /// The un-replayed prefix counts too: a drained delegate can report 0, and a consumer seeing
+    /// <= 1 key collapses to a single stream.
+    size_t estimatedKeysCount() override
+    {
+        const size_t delegate_count = iterator->estimatedKeysCount();
+        if (delegate_count == std::numeric_limits<size_t>::max())
+            return delegate_count;
+
+        std::lock_guard lock(mutex);
+        return (replay.size() - replay_pos) + delegate_count;
+    }
+
     std::optional<UInt64> getSnapshotVersion() const override { return iterator->getSnapshotVersion(); }
 
     void setEmitProfileEvents(bool value) override
