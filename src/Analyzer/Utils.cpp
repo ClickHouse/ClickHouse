@@ -1329,6 +1329,12 @@ Field getFieldFromColumnForASTLiteralImpl(const ColumnPtr & column, size_t row, 
                 return Null();
             return getFieldFromColumnForASTLiteralImpl(nullable_column.getNestedColumnPtr(), row, nullable_data_type.getNestedType(), is_inside_object);
         }
+        /// `UUID2` shares the `Field` representation with `UUID` (`Field::Types::UUID`) but keeps the two
+        /// 64-bit halves in the opposite order, and a literal is always formatted with `UUID` semantics.
+        /// Writing the raw field would therefore print - and a secondary server would parse back from
+        /// `_CAST(<literal>, 'UUID2')` - a different value, so serialize the canonical text instead, the
+        /// same way the date and time types below avoid a lossy literal round trip.
+        case TypeIndex::UUID2: [[fallthrough]];
         case TypeIndex::Date: [[fallthrough]];
         case TypeIndex::Date32: [[fallthrough]];
         case TypeIndex::DateTime: [[fallthrough]];
