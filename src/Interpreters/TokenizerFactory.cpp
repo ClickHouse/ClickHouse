@@ -1,5 +1,7 @@
 #include <Interpreters/TokenizerFactory.h>
 
+#include "config.h"
+
 #include <Common/Exception.h>
 #include <Interpreters/ITokenizer.h>
 #if USE_MECAB
@@ -284,6 +286,33 @@ static void registerTokenizers(TokenizerFactory & factory)
 
     factory.registerTokenizer(AsciiCJKTokenizer::getName(), ITokenizer::Type::AsciiCJK, ascii_cjk_creator);
     factory.registerTokenizer("unicodeWord", ITokenizer::Type::AsciiCJK, ascii_cjk_creator);
+    factory.registerTokenizer("unicode_word", ITokenizer::Type::AsciiCJK, ascii_cjk_creator);
+
+#if USE_ICU
+    auto icu_creator = [](const FieldVector & args) -> std::unique_ptr<ITokenizer>
+    {
+        const auto * tokenizer_name = IcuTokenizer::getExternalName();
+        assertParamsCount(args.size(), 1, tokenizer_name);
+
+        /// The locale is mandatory; there is no default.
+        if (args.empty())
+            throw Exception(
+                ErrorCodes::BAD_ARGUMENTS,
+                "Tokenizer '{}' requires a mandatory locale argument, e.g. {}('en')",
+                tokenizer_name, tokenizer_name);
+
+        auto locale = castAs<String>(args[0], "locale");
+        if (locale.empty())
+            throw Exception(
+                ErrorCodes::BAD_ARGUMENTS,
+                "Incorrect parameter of tokenizer '{}': the locale must not be empty",
+                tokenizer_name);
+
+        return std::make_unique<IcuTokenizer>(locale);
+    };
+
+    factory.registerTokenizer(IcuTokenizer::getName(), ITokenizer::Type::Icu, icu_creator);
+#endif
 
 #if USE_MECAB
     auto japanese_creator = [](const FieldVector & args) -> std::unique_ptr<ITokenizer>
