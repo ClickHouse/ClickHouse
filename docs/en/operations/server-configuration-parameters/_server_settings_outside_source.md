@@ -1308,7 +1308,7 @@ Settings:
 - `events` – Expose metrics from the [system.events](/operations/system-tables/events) table.
 - `asynchronous_metrics` – Expose current metrics values from the [system.asynchronous_metrics](/operations/system-tables/asynchronous_metrics) table.
 - `errors` - Expose the number of errors by error codes occurred since the last server restart. This information could be obtained from the [system.errors](/operations/system-tables/errors) as well.
-- `labels` – Constant labels added to every exposed metric. Each child element defines one label: the element name is the label name (must match `[a-zA-Z_][a-zA-Z0-9_]*`) and the element value is the label value. Label values support standard config substitutions such as the `from_env` attribute.
+- `labels` – Constant labels added to every exposed metric. Each child element defines one label: the element name is the label name (must match `[a-zA-Z_][a-zA-Z0-9_]*`) and the element value is the label value. Label values support standard config substitutions such as the `from_env` attribute. Label names starting with `__` are reserved by Prometheus, and names such as `le`, `name`, `version`, `version_describe`, `version_major`, `version_minor`, `version_patch` are reserved by ClickHouse itself, so they cannot be used here.
 
 **Example**
 

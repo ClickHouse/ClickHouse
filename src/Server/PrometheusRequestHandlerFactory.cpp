@@ -1,6 +1,7 @@
 #include <Access/Credentials.h>
 #include <Server/PrometheusRequestHandlerFactory.h>
 
+#include <unordered_set>
 #include <Core/Types_fwd.h>
 #include <Server/HTTPHandlerFactory.h>
 #include <Server/PrometheusMetricsWriter.h>
@@ -44,6 +45,17 @@ namespace
         return true;
     }
 
+    /// Names starting with "__" are reserved by Prometheus itself.
+    /// The other names are reserved because `PrometheusMetricsWriter` always writes them itself for
+    /// specific metrics (the "le" label of histogram buckets, and the labels of the "ClickHouse_Info"
+    /// metric); allowing them as constant labels would make a sample contain two labels with the same name.
+    bool isReservedPrometheusLabelName(const String & name)
+    {
+        static const std::unordered_set<String> reserved_names
+            = {"le", "name", "version", "version_describe", "version_major", "version_minor", "version_patch"};
+        return name.starts_with("__") || reserved_names.contains(name);
+    }
+
     /// Parses a configuration like this:
     /// <labels>
     ///     <shard>1</shard>
@@ -63,6 +75,12 @@ namespace
                 throw Exception(
                     ErrorCodes::INVALID_CONFIG_PARAMETER,
                     "Invalid Prometheus label name '{}' in the configuration: label names must match [a-zA-Z_][a-zA-Z0-9_]* and must not be repeated",
+                    label_name);
+            if (isReservedPrometheusLabelName(label_name))
+                throw Exception(
+                    ErrorCodes::INVALID_CONFIG_PARAMETER,
+                    "Invalid Prometheus label name '{}' in the configuration: this name is reserved by Prometheus or by ClickHouse "
+                    "and cannot be used as a constant label",
                     label_name);
             res.constant_labels[label_name] = config.getString(labels_prefix + "." + label_name);
         }

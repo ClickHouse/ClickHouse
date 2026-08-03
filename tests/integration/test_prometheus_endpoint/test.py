@@ -1,3 +1,4 @@
+import os
 import re
 import time
 
@@ -124,3 +125,34 @@ def test_prometheus_endpoint_constant_labels(start_cluster):
         response.text,
         re.MULTILINE,
     )
+
+
+def test_prometheus_endpoint_reserved_label():
+    reserved_label_cluster = ClickHouseCluster(__file__)
+    reserved_label_cluster.add_instance(
+        "node_reserved_label",
+        main_configs=["configs/prom_conf_reserved_label.xml"],
+    )
+
+    try:
+        # The "le" label is reserved because it always is written for histogram buckets,
+        # so it cannot be also configured as a constant label.
+        with pytest.raises(Exception):
+            reserved_label_cluster.start()
+
+        logs = ""
+        error_logs_file = os.path.join(
+            reserved_label_cluster.instances_dir,
+            "node_reserved_label",
+            "logs",
+            "clickhouse-server.err.log",
+        )
+        with open(error_logs_file, "r") as f:
+            logs = f.read()
+
+        assert (
+            "Invalid Prometheus label name 'le' in the configuration: this name is reserved"
+            in logs
+        )
+    finally:
+        reserved_label_cluster.shutdown()
