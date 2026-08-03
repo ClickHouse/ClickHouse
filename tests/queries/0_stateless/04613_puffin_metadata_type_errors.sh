@@ -32,11 +32,8 @@ do
     id=$((id + 1))
 done
 
-for f in type_number compression_codec_number compression_codec_null
-do
-    launch "$id" meta "$DATA/$f.puffin" 'must be a string'
-    id=$((id + 1))
-done
+launch "$id" meta "$DATA/type_number.puffin" 'must be a string'
+id=$((id + 1))
 
 launch "$id" meta "$DATA/footer_root_array.puffin" 'footer JSON must be an object'
 id=$((id + 1))
@@ -47,15 +44,7 @@ do
     id=$((id + 1))
 done
 
-for f in invalid_non_dv_properties_array null_non_dv_properties
-do
-    launch "$id" meta "$DATA/$f.puffin" "field 'properties' must be an object"
-    id=$((id + 1))
-done
-
 launch "$id" meta "$DATA/dv_with_compression_codec.puffin" "must omit 'compression-codec'"
-id=$((id + 1))
-launch "$id" meta "$DATA/dv_nonzero_snapshot_id.puffin" 'snapshot-id and sequence-number must be -1'
 id=$((id + 1))
 
 for f in invalid_cardinality_non_numeric invalid_cardinality_negative

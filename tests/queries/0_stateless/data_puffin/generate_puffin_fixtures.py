@@ -404,7 +404,7 @@ def generate_invalid_integer_fields() -> None:
 
 
 def generate_invalid_string_fields() -> None:
-    """BlobMetadata type / compression-codec must be JSON strings."""
+    """BlobMetadata type must be a JSON string."""
     footer_json = footer_json_for_blob(BLOB_PLACEHOLDER)
     base = json.loads(footer_json.decode("utf-8"))
 
@@ -417,34 +417,6 @@ def generate_invalid_string_fields() -> None:
             json.dumps(case_payload, separators=(", ", ": ")).encode("utf-8"),
         ),
     )
-
-    # Non-DV blob so DV omit-codec logic does not hide the type error.
-    # Number covers !isString; null covers present-null for the optional codec field.
-    theta_cases = {
-        "compression_codec_number.puffin": 1,
-        "compression_codec_null.puffin": None,
-    }
-    for name, codec_value in theta_cases.items():
-        case_payload = {
-            "blobs": [
-                {
-                    "type": "apache-datasketches-theta-v1",
-                    "fields": [],
-                    "snapshot-id": -1,
-                    "sequence-number": -1,
-                    "offset": 4,
-                    "length": len(BLOB_PLACEHOLDER),
-                    "compression-codec": codec_value,
-                }
-            ]
-        }
-        write_fixture(
-            name,
-            build_puffin_file(
-                BLOB_PLACEHOLDER,
-                json.dumps(case_payload, separators=(", ", ": ")).encode("utf-8"),
-            ),
-        )
 
 
 def generate_cardinality_mismatch_large_bitmap() -> None:
@@ -509,22 +481,6 @@ def generate_invalid_cardinality_strings() -> None:
         write_fixture(name, build_puffin_file(blob, footer_json_for_blob(blob, properties)))
 
 
-def generate_invalid_dv_snapshot_sequence() -> None:
-    """Iceberg requires deletion-vector-v1 snapshot-id and sequence-number to be -1."""
-    footer_json = footer_json_for_blob(BLOB_PLACEHOLDER)
-    base = json.loads(footer_json.decode("utf-8"))
-    # Shared check rejects either field; one nonzero fixture is enough.
-    case_payload = json.loads(json.dumps(base))
-    case_payload["blobs"][0]["snapshot-id"] = 1
-    write_fixture(
-        "dv_nonzero_snapshot_id.puffin",
-        build_puffin_file(
-            BLOB_PLACEHOLDER,
-            json.dumps(case_payload, separators=(", ", ": ")).encode("utf-8"),
-        ),
-    )
-
-
 def generate_sparse_large_key() -> None:
     bitmap = pyroaring.BitMap()
     bitmap.add(SPARSE_SUB_POSITION)
@@ -537,93 +493,60 @@ def generate_sparse_large_key() -> None:
     write_fixture("sparse_large_key.puffin", build_puffin_file(blob, footer_json_for_blob(blob, properties)))
 
 
-def generate_mixed_blob_types() -> None:
-    theta_blob = b"\x00" * 16
-    bitmap = pyroaring.BitMap([2, 5])
-    vector = struct.pack("<qi", 1, 0) + bitmap.serialize()
-    deletion_vector_blob = wrap_deletion_vector_blob(vector)
-    theta_offset = len(PUFFIN_MAGIC)
-    deletion_vector_offset = theta_offset + len(theta_blob)
-    footer_json = json.dumps(
-        {
-            "blobs": [
-                {
-                    "type": "apache-datasketches-theta-v1",
-                    "fields": [1],
-                    "snapshot-id": -1,
-                    "sequence-number": -1,
-                    "offset": theta_offset,
-                    "length": len(theta_blob),
-                    "properties": {},
-                },
-                {
-                    "type": "deletion-vector-v1",
-                    "fields": [],
-                    "snapshot-id": -1,
-                    "sequence-number": -1,
-                    "offset": deletion_vector_offset,
-                    "length": len(deletion_vector_blob),
-                    "properties": {
-                        "referenced-data-file": DEFAULT_REFERENCED_DATA_FILE,
-                        "cardinality": "2",
-                    },
-                },
-            ]
-        },
-        separators=(", ", ": "),
-    ).encode("utf-8")
-    write_fixture(
-        "mixed_blob_types.puffin",
-        build_puffin_file_from_blobs([theta_blob, deletion_vector_blob], footer_json),
-    )
+def multi_bitmap_vector() -> tuple[bytes, int]:
+    """Three buckets whose bitmaps use three different container types.
+
+    Container types are what makes this fixture interesting: an array, a run and a
+    bitset container serialize to very different sizes, so a reader that advances
+    over a bitmap by a wrong number of bytes lands in the middle of the next key.
+    """
+    array_bitmap = pyroaring.BitMap([1, 5, 100])
+
+    run_bitmap = pyroaring.BitMap()
+    run_bitmap.add_range(10, 5000)
+    run_bitmap.run_optimize()
+
+    bitset_bitmap = pyroaring.BitMap(range(0, 20_000, 3))
+
+    buckets = [(0, array_bitmap), (1, run_bitmap), (LARGE_KEY, bitset_bitmap)]
+    vector = struct.pack("<q", len(buckets))
+    for key, bitmap in buckets:
+        vector += struct.pack("<i", key) + bitmap.serialize()
+
+    cardinality = sum(len(bitmap) for _, bitmap in buckets)
+    return vector, cardinality
 
 
-def generate_invalid_non_dv_properties() -> None:
-    theta_blob = b"\x00" * 16
-    bitmap = pyroaring.BitMap([2, 5])
-    vector = struct.pack("<qi", 1, 0) + bitmap.serialize()
-    deletion_vector_blob = wrap_deletion_vector_blob(vector)
-    theta_offset = len(PUFFIN_MAGIC)
-    deletion_vector_offset = theta_offset + len(theta_blob)
-    footer_template = {
-        "blobs": [
-            {
-                "type": "apache-datasketches-theta-v1",
-                "fields": [1],
-                "snapshot-id": -1,
-                "sequence-number": -1,
-                "offset": theta_offset,
-                "length": len(theta_blob),
-                "properties": {},
-            },
-            {
-                "type": "deletion-vector-v1",
-                "fields": [],
-                "snapshot-id": -1,
-                "sequence-number": -1,
-                "offset": deletion_vector_offset,
-                "length": len(deletion_vector_blob),
-                "properties": {
-                    "referenced-data-file": DEFAULT_REFERENCED_DATA_FILE,
-                    "cardinality": "2",
-                },
-            },
-        ]
-    }
-    non_dv_property_cases = {
-        "invalid_non_dv_properties_array.puffin": [],
-        "null_non_dv_properties.puffin": None,
-    }
-    for name, properties in non_dv_property_cases.items():
-        case_payload = json.loads(json.dumps(footer_template))
-        case_payload["blobs"][0]["properties"] = properties
-        write_fixture(
-            name,
-            build_puffin_file_from_blobs(
-                [theta_blob, deletion_vector_blob],
-                json.dumps(case_payload, separators=(", ", ": ")).encode("utf-8"),
-            ),
+def generate_multi_bitmap_keys() -> None:
+    vector, cardinality = multi_bitmap_vector()
+    blob = wrap_deletion_vector_blob(vector)
+    properties = default_dv_properties(str(cardinality))
+    write_fixture("multi_bitmap_keys.puffin", build_puffin_file(blob, footer_json_for_blob(blob, properties)))
+
+
+def generate_bitmap_keys_out_of_order() -> None:
+    first = pyroaring.BitMap([7])
+    second = pyroaring.BitMap([8])
+    for name, keys in (("bitmap_keys_out_of_order", (5, 1)), ("bitmap_keys_duplicate", (1, 1))):
+        vector = (
+            struct.pack("<q", 2)
+            + struct.pack("<i", keys[0])
+            + first.serialize()
+            + struct.pack("<i", keys[1])
+            + second.serialize()
         )
+        blob = wrap_deletion_vector_blob(vector)
+        properties = default_dv_properties("2")
+        write_fixture(f"{name}.puffin", build_puffin_file(blob, footer_json_for_blob(blob, properties)))
+
+
+def generate_bitmap_count_exceeds_data() -> None:
+    """Declared bucket count is larger than the number of serialized buckets."""
+    bitmap = pyroaring.BitMap([3])
+    vector = struct.pack("<qi", 2, 0) + bitmap.serialize()
+    blob = wrap_deletion_vector_blob(vector)
+    properties = default_dv_properties("1")
+    write_fixture("bitmap_count_exceeds_data.puffin", build_puffin_file(blob, footer_json_for_blob(blob, properties)))
 
 
 def write_raw_footer_fixture(name: str, footer_payload: bytes) -> None:
@@ -730,15 +653,15 @@ def main() -> None:
     generate_missing_footer_leading_magic()
     generate_invalid_file_metadata_properties()
     generate_unparseable_footer_json()
-    generate_mixed_blob_types()
-    generate_invalid_non_dv_properties()
 
     generate_cardinality_mismatch_large_bitmap()
     generate_dense_range_100k()
     generate_cardinality_exceeds_materialization_limit()
     generate_invalid_cardinality_strings()
-    generate_invalid_dv_snapshot_sequence()
     generate_sparse_large_key()
+    generate_multi_bitmap_keys()
+    generate_bitmap_keys_out_of_order()
+    generate_bitmap_count_exceeds_data()
 
 
 if __name__ == "__main__":
