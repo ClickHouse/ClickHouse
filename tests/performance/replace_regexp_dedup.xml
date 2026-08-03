@@ -8,6 +8,9 @@
     <query>SELECT count() FROM test.hits WHERE NOT ignore(replaceRegexpAll(Referer, '^https?://(?:www\\.)?([^/]+)/.*$', '\\1'))</query>
     <query>SELECT count() FROM test.hits WHERE NOT ignore(replaceRegexpOne(URL, '^https?://(?:www\\.)?([^/]+)/.*$', '\\1'))</query>
 
+    <!-- FixedString haystacks, which go through their own entry point. -->
+    <query>SELECT count() FROM test.hits WHERE NOT ignore(replaceRegexpAll(toFixedString(substring(Referer, 1, 64), 64), '^https?://(?:www\\.)?([^/]+)/.*$', '\\1'))</query>
+
     <!-- Mostly-distinct haystacks: the distinct-ratio guard must disable deduplication. -->
     <query>SELECT count() FROM numbers(2000000) WHERE NOT ignore(replaceRegexpAll(concat('https://example.com/path/', toString(number)), '^https?://(?:www\\.)?([^/]+)/.*$', '\\1'))</query>
 

@@ -361,6 +361,101 @@ struct ReplaceRegexpImpl
         }
     }
 
+    /// Haystacks are often repetitive (e.g. URLs), so run the regexp once per distinct value and copy the
+    /// cached result (a range in `res_data`) for repeats: adjacent duplicates are caught by comparing with
+    /// the previous row, non-adjacent ones through a hash map. The map is switched off once the block turns
+    /// out to be mostly distinct values, so low-repetition columns do not pay for it.
+    /// This pays off only for RE2 matches; a JIT-compiled match is about as cheap as the hash table probe it
+    /// would save, which is why the JIT loop processes every row directly.
+    /// `get_haystack(i)` returns the i-th haystack, which must stay valid for the whole call.
+    template <typename GetHaystack>
+    static void processStringsDeduplicated(
+        GetHaystack && get_haystack,
+        size_t input_rows_count,
+        ColumnString::Chars & res_data,
+        ColumnString::Offsets & res_offsets,
+        ColumnString::Offset & res_offset,
+        const re2::RE2 & searcher,
+        int num_captures,
+        const Instructions & instructions,
+        ReplaceCancellationBudget & budget)
+    {
+        struct CachedResult
+        {
+            UInt64 start;
+            UInt64 length;
+        };
+
+        HashMap<std::string_view, CachedResult> results_cache;
+        bool map_enabled = true;
+        /// Blocks smaller than this never trigger a ratio check, so the map is never disabled for them.
+        /// Starts low so small max_block_size settings and naturally short blocks still benefit.
+        size_t next_distinct_ratio_check = 256;
+
+        std::string_view prev_haystack;
+        bool has_prev_haystack = false;
+        CachedResult prev_result{0, 0};
+
+        auto copy_cached = [&](const CachedResult & cached)
+        {
+            res_data.resize(res_data.size() + cached.length);
+            /// Plain memcpy: the gap to the source region can be smaller than the 15 bytes of
+            /// slack that memcpySmallAllowReadWriteOverflow15 requires.
+            if (cached.length)
+                memcpy(&res_data[res_offset], &res_data[cached.start], cached.length);
+            res_offset += cached.length;
+            /// The row itself is charged by the caller; a cached copy can still move megabytes.
+            budget.chargeUnits(cached.length / ReplaceCancellationBudget::bytes_per_unit);
+        };
+
+        for (size_t i = 0; i < input_rows_count; ++i)
+        {
+            budget.charge();
+
+            const std::string_view haystack = get_haystack(i);
+
+            if (has_prev_haystack && haystack == prev_haystack)
+            {
+                copy_cached(prev_result);
+                res_offsets[i] = res_offset;
+                continue;
+            }
+
+            if (map_enabled && i >= next_distinct_ratio_check)
+            {
+                if (results_cache.size() * 10 > i * 9)
+                {
+                    map_enabled = false;
+                    results_cache.clearAndShrink();
+                }
+                next_distinct_ratio_check *= 2;
+            }
+
+            const UInt64 result_start = res_offset;
+
+            if (map_enabled)
+            {
+                typename HashMap<std::string_view, CachedResult>::LookupResult it;
+                bool inserted = false;
+                results_cache.emplace(haystack, it, inserted);
+                if (!inserted)
+                    copy_cached(it->getMapped());
+                else
+                {
+                    processString(haystack.data(), haystack.size(), res_data, res_offset, searcher, num_captures, instructions, budget);
+                    it->getMapped() = {result_start, res_offset - result_start};
+                }
+            }
+            else
+                processString(haystack.data(), haystack.size(), res_data, res_offset, searcher, num_captures, instructions, budget);
+
+            prev_haystack = haystack;
+            has_prev_haystack = true;
+            prev_result = {result_start, res_offset - result_start};
+            res_offsets[i] = res_offset;
+        }
+    }
+
     static void vectorConstantConstant(
         const ColumnString::Chars & haystack_data,
         const ColumnString::Offsets & haystack_offsets,
@@ -443,87 +538,15 @@ struct ReplaceRegexpImpl
             return;
         }
 
-        /// Haystacks are often repetitive (e.g. URLs), so run the regexp once per distinct value
-        /// and copy the cached result (a range in res_data) for repeats. The hash map is switched
-        /// off if the block is mostly distinct values. This pays off only for RE2 matches;
-        /// a JIT-compiled match is about as cheap as the hash table probe it would save,
-        /// which is why the JIT loop above processes every row directly.
-        struct CachedResult
-        {
-            UInt64 start;
-            UInt64 length;
-        };
-        HashMap<std::string_view, CachedResult> results_cache;
-        bool map_enabled = true;
-        /// Blocks smaller than this never trigger a ratio check, so the map is never disabled for them.
-        /// Starts low so small max_block_size settings and naturally short blocks still benefit.
-        size_t next_distinct_ratio_check = 256;
-
-        const char * prev_hs_data = nullptr;
-        size_t prev_hs_length = 0;
-        CachedResult prev_result{0, 0};
-
-        auto copy_cached = [&](const CachedResult & cached)
-        {
-            res_data.resize(res_data.size() + cached.length);
-            /// Plain memcpy: the gap to the source region can be smaller than the 15 bytes of
-            /// slack that memcpySmallAllowReadWriteOverflow15 requires.
-            if (cached.length)
-                memcpy(&res_data[res_offset], &res_data[cached.start], cached.length);
-            res_offset += cached.length;
-            /// The row itself is charged by the caller; a cached copy can still move megabytes.
-            budget.chargeUnits(cached.length / ReplaceCancellationBudget::bytes_per_unit);
-        };
-
-        for (size_t i = 0; i < input_rows_count; ++i)
-        {
-            budget.charge();
-
-            size_t from = haystack_offsets[i - 1];
-
-            const char * hs_data = reinterpret_cast<const char *>(haystack_data.data() + from);
-            const size_t hs_length = static_cast<size_t>(haystack_offsets[i] - from);
-
-            if (prev_hs_data && hs_length == prev_hs_length && 0 == memcmp(hs_data, prev_hs_data, hs_length))
+        processStringsDeduplicated(
+            [&](size_t i)
             {
-                copy_cached(prev_result);
-                res_offsets[i] = res_offset;
-                continue;
-            }
-
-            if (map_enabled && i >= next_distinct_ratio_check)
-            {
-                if (results_cache.size() * 10 > i * 9)
-                {
-                    map_enabled = false;
-                    results_cache.clearAndShrink();
-                }
-                next_distinct_ratio_check *= 2;
-            }
-
-            const UInt64 result_start = res_offset;
-
-            if (map_enabled)
-            {
-                typename HashMap<std::string_view, CachedResult>::LookupResult it;
-                bool inserted = false;
-                results_cache.emplace(std::string_view(hs_data, hs_length), it, inserted);
-                if (!inserted)
-                    copy_cached(it->getMapped());
-                else
-                {
-                    processString(hs_data, hs_length, res_data, res_offset, searcher, num_captures, instructions, budget);
-                    it->getMapped() = {result_start, res_offset - result_start};
-                }
-            }
-            else
-                processString(hs_data, hs_length, res_data, res_offset, searcher, num_captures, instructions, budget);
-
-            prev_hs_data = hs_data;
-            prev_hs_length = hs_length;
-            prev_result = {result_start, res_offset - result_start};
-            res_offsets[i] = res_offset;
-        }
+                const size_t from = haystack_offsets[i - 1];
+                return std::string_view(
+                    reinterpret_cast<const char *>(haystack_data.data() + from),
+                    static_cast<size_t>(haystack_offsets[i] - from));
+            },
+            input_rows_count, res_data, res_offsets, res_offset, searcher, num_captures, instructions, budget);
     }
 
     static void vectorVectorConstant(
@@ -745,17 +768,9 @@ struct ReplaceRegexpImpl
         int num_captures = std::min(searcher.NumberOfCapturingGroups() + 1, max_captures);
         Instructions instructions = createInstructions(replacement, num_captures, budget);
 
-        for (size_t i = 0; i < input_rows_count; ++i)
-        {
-            budget.charge();
-
-            size_t from = i * n;
-            const char * hs_data = reinterpret_cast<const char *>(haystack_data.data() + from);
-            const size_t hs_length = n;
-
-            processString(hs_data, hs_length, res_data, res_offset, searcher, num_captures, instructions, budget);
-            res_offsets[i] = res_offset;
-        }
+        processStringsDeduplicated(
+            [&](size_t i) { return std::string_view(reinterpret_cast<const char *>(haystack_data.data() + i * n), n); },
+            input_rows_count, res_data, res_offsets, res_offset, searcher, num_captures, instructions, budget);
     }
 };
 
