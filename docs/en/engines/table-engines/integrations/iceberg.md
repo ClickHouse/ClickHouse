@@ -47,7 +47,9 @@ ENGINE = IcebergS3('https://my-bucket.s3.amazonaws.com/warehouse/example/', 'key
 
 ## Using a data catalog {#using-a-data-catalog}
 
-If your Iceberg tables are managed by a catalog (Glue, REST, Unity, and others), use the [`DataLakeCatalog`](/engines/database-engines/datalakecatalog) database engine instead of attaching tables with `IcebergS3` directly. See [Connecting to catalogs](/use-cases/data-lake/getting-started/connecting-catalogs) and the [catalog guides](/use-cases/data-lake/reference).
+If your Iceberg tables are managed by a catalog (Glue, REST, Unity, and others), use the [`DataLakeCatalog`](/engines/database-engines/datalakecatalog) database engine instead of attaching tables with `IcebergS3` directly. This gives you access to catalog tables in one go instead of per table. Catalog settings such as `catalog_type` are database settings and are not valid on `IcebergS3`. From 26.4, table-level `storage_catalog_*` settings are also rejected.
+
+See [Connecting to catalogs](/use-cases/data-lake/getting-started/connecting-catalogs) and the [catalog guides](/use-cases/data-lake/reference).
 
 ## Engine arguments {#engine-arguments}
 

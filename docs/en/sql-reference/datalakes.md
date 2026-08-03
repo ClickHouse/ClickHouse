@@ -26,7 +26,7 @@ See [hudi](https://clickhouse.com/docs/sql-reference/table-functions/hudi) which
 
 # Data catalogs {#data-catalogs}
 
-Catalog integration is done through the [`DataLakeCatalog`](/engines/database-engines/datalakecatalog) database engine. Settings such as `catalog_type` are database-level settings and are not available on bare `Iceberg*` / `DeltaLake*` table engines.
+Catalog integration is done through the [`DataLakeCatalog`](/engines/database-engines/datalakecatalog) database engine. Settings such as `catalog_type` are database-level settings and are not available on bare `Iceberg*` / `DeltaLake*` table engines. From 26.4, table-level `storage_catalog_*` settings are rejected.
 
 ## AWS Glue {#aws-glue}
 

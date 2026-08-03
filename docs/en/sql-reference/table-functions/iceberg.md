@@ -72,7 +72,7 @@ DESCRIBE icebergS3(iceberg_conf, filename = 'test_table')
 
 ## Using a data catalog {#iceberg-writes-catalogs}
 
-If your Iceberg tables are managed by a catalog (Glue, REST, Unity, and others), use the [`DataLakeCatalog`](/engines/database-engines/datalakecatalog) database engine instead of the `iceberg` table function or bare `IcebergS3` tables. Catalog settings such as `catalog_type` are database settings and are not valid on the table function or table engine.
+If your Iceberg tables are managed by a catalog (Glue, REST, Unity, and others), use the [`DataLakeCatalog`](/engines/database-engines/datalakecatalog) database engine instead of the `iceberg` table function or bare `IcebergS3` tables. Catalog settings such as `catalog_type` are database settings and are not valid on the table function or table engine. From 26.4, table-level `storage_catalog_*` settings are also rejected — catalog identity must come from the enclosing `DataLakeCatalog` database.
 
 See [Connecting to catalogs](/use-cases/data-lake/getting-started/connecting-catalogs) and the [catalog guides](/use-cases/data-lake/reference).
 
