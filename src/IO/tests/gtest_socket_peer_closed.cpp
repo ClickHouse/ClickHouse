@@ -99,8 +99,8 @@ TEST(SocketPeerClosed, InvalidFd)
 
 #if USE_SSL
 
-using DB::getSslSocketState;
-using DB::isSslPeerClosed;
+using DB::getSSLSocketState;
+using DB::isSSLPeerClosed;
 
 namespace
 {
@@ -185,8 +185,8 @@ TEST(SocketPeerClosed, SecureAliveIdle)
 {
     EphemeralCert cert;
     TlsPair p(cert);
-    EXPECT_EQ(SocketState::Idle, getSslSocketState(p.client));
-    EXPECT_FALSE(isSslPeerClosed(p.client));
+    EXPECT_EQ(SocketState::Idle, getSSLSocketState(p.client));
+    EXPECT_FALSE(isSSLPeerClosed(p.client));
 }
 
 /// A post-handshake session ticket - the record that made the old `poll` + `available()` check
@@ -212,8 +212,8 @@ TEST(SocketPeerClosed, SecureSessionTicketIsIdle)
     const ssize_t peeked = ::recv(p.fds[1], &c, 1, MSG_PEEK | MSG_DONTWAIT);
     ASSERT_GT(peeked, 0);
     /// ... but it is a session ticket, so the connection is alive and idle.
-    EXPECT_EQ(SocketState::Idle, getSslSocketState(p.client));
-    EXPECT_FALSE(isSslPeerClosed(p.client));
+    EXPECT_EQ(SocketState::Idle, getSSLSocketState(p.client));
+    EXPECT_FALSE(isSSLPeerClosed(p.client));
 }
 
 /// Pending application data reads as alive-but-not-idle and is not consumed by the check.
@@ -227,8 +227,8 @@ TEST(SocketPeerClosed, SecureAppDataIsPendingAndNotConsumed)
     const char payload = 'x';
     ASSERT_EQ(1, SSL_write(p.server, &payload, 1));
 
-    EXPECT_EQ(SocketState::DataPending, getSslSocketState(p.client));
-    EXPECT_FALSE(isSslPeerClosed(p.client));
+    EXPECT_EQ(SocketState::DataPending, getSSLSocketState(p.client));
+    EXPECT_FALSE(isSSLPeerClosed(p.client));
 
     /// The application byte is still there to be read.
     char got = 0;
@@ -250,8 +250,8 @@ TEST(SocketPeerClosed, SecureCloseNotifyIsClosed)
     EXPECT_EQ(SocketState::DataPending, getSocketState(p.fds[1]));
     EXPECT_FALSE(isSocketPeerClosed(p.fds[1]));
     /// ... while the TLS-aware check correctly reports the connection as closed.
-    EXPECT_EQ(SocketState::Closed, getSslSocketState(p.client));
-    EXPECT_TRUE(isSslPeerClosed(p.client));
+    EXPECT_EQ(SocketState::Closed, getSSLSocketState(p.client));
+    EXPECT_TRUE(isSSLPeerClosed(p.client));
 }
 
 /// Only part of a TLS record has arrived: `SSL_peek` cannot decrypt it yet and returns
@@ -280,12 +280,12 @@ TEST(SocketPeerClosed, SecurePartialRecordIsPendingNotIdle)
 
     /// Deliver only the first byte of the record onto the real socket.
     ASSERT_EQ(1, ::send(p.fds[0], record, 1, 0));
-    EXPECT_EQ(SocketState::DataPending, getSslSocketState(p.client));
-    EXPECT_FALSE(isSslPeerClosed(p.client));
+    EXPECT_EQ(SocketState::DataPending, getSSLSocketState(p.client));
+    EXPECT_FALSE(isSSLPeerClosed(p.client));
 
     /// Deliver the rest: the record is now complete and decryptable.
     ASSERT_EQ(record_len - 1, ::send(p.fds[0], record + 1, static_cast<size_t>(record_len - 1), 0));
-    EXPECT_EQ(SocketState::DataPending, getSslSocketState(p.client));
+    EXPECT_EQ(SocketState::DataPending, getSSLSocketState(p.client));
     char got = 0;
     ASSERT_EQ(1, SSL_read(p.client, &got, 1));
     EXPECT_EQ('x', got);
@@ -300,8 +300,8 @@ TEST(SocketPeerClosed, SecureAbruptCloseIsClosed)
     ::close(p.fds[0]);
     p.fds[0] = -1;
 
-    EXPECT_EQ(SocketState::Closed, getSslSocketState(p.client));
-    EXPECT_TRUE(isSslPeerClosed(p.client));
+    EXPECT_EQ(SocketState::Closed, getSSLSocketState(p.client));
+    EXPECT_TRUE(isSSLPeerClosed(p.client));
 }
 
 #endif
