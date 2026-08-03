@@ -296,7 +296,7 @@ message Message
     uint32 data = 1;
     int32 date32 = 2;
     uint32 datetime = 3;
-    uint64 datatime64 = 4;
+    int64 datatime64 = 4;
 }
 
 Strings
