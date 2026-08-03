@@ -2,6 +2,7 @@
 
 #include <Storages/MemorySettings.h>
 #include <Storages/transformQueryForExternalDatabase.h>
+#include <Parsers/ExpressionListParsers.h>
 #include <Parsers/ParserSelectQuery.h>
 #include <Parsers/parseQuery.h>
 #include <DataTypes/DataTypesNumber.h>
@@ -120,11 +121,23 @@ private:
     }
 };
 
+/// A filter that is applied locally, on top of the rows read from the external table, and is not a part
+/// of the query AST - `additional_table_filters` is the user-facing way to get one. `SelectQueryInfo`
+/// is normally filled in by the interpreter / planner, so in the test it is filled in manually.
+static ASTPtr parseLocalFilter(const std::string & filter)
+{
+    if (filter.empty())
+        return nullptr;
+    ParserExpression parser;
+    return parseQuery(parser, filter, 1000, 1000, 1000000);
+}
+
 static void checkOld(
     const State & state,
     size_t table_num,
     const std::string & query,
-    const std::string & expected)
+    const std::string & expected,
+    const std::string & additional_filter = "")
 {
     ParserSelectQuery parser;
     ASTPtr ast = parseQuery(parser, query, 1000, 1000, 1000000);
@@ -133,6 +146,11 @@ static void checkOld(
     query_info.syntax_analyzer_result
         = TreeRewriter(state.context).analyzeSelect(ast, DB::TreeRewriterResult(state.getColumns(0)), select_options, state.getTables(table_num));
     query_info.query = ast;
+    if (auto additional_filter_ast = parseLocalFilter(additional_filter))
+    {
+        query_info.additional_filter_ast = additional_filter_ast;
+        query_info.filter_asts.push_back(additional_filter_ast);
+    }
     std::string transformed_query = transformQueryForExternalDatabase(
         query_info,
         query_info.syntax_analyzer_result->requiredSourceColumns(),
@@ -167,7 +185,8 @@ static void checkNewAnalyzer(
     const State & state,
     const Names & column_names,
     const std::string & query,
-    const std::string & expected)
+    const std::string & expected,
+    const std::string & additional_filter = "")
 {
     ParserSelectQuery parser;
     ASTPtr ast = parseQuery(parser, query, 1000, 1000, 1000000);
@@ -188,6 +207,7 @@ static void checkNewAnalyzer(
         throw Exception(ErrorCodes::LOGICAL_ERROR, "QueryNode expected");
 
     query_info.table_expression = static_pointer_cast<ITableExpressionNode>(findTableExpression(query_node->getJoinTreeNode(), "table"));
+    query_info.additional_filter_ast = parseLocalFilter(additional_filter);
 
     std::string transformed_query = transformQueryForExternalDatabase(
         query_info, column_names, state.getColumns(0), IdentifierQuotingStyle::DoubleQuotes,
@@ -202,15 +222,16 @@ static void check(
     const Names & column_names,
     const std::string & query,
     const std::string & expected,
-    const std::string & expected_new = "")
+    const std::string & expected_new = "",
+    const std::string & additional_filter = "")
 {
     {
         SCOPED_TRACE("Old analyzer");
-        checkOld(state, table_num, query, expected);
+        checkOld(state, table_num, query, expected, additional_filter);
     }
     {
         SCOPED_TRACE("Analyzer");
-        checkNewAnalyzer(state, column_names, query, expected_new.empty() ? expected : expected_new);
+        checkNewAnalyzer(state, column_names, query, expected_new.empty() ? expected : expected_new, additional_filter);
     }
 }
 
@@ -526,6 +547,23 @@ TEST(TransformQueryForExternalDatabase, Limit)
     check(state, 1, {"column"},
         "SELECT column FROM table LIMIT 10 SETTINGS max_threads = 1",
         R"(SELECT "column" FROM "test"."table" LIMIT 10)");
+
+    /// A filter that is applied locally on top of the rows read from the external table - here an
+    /// `additional_table_filters` entry - is not a part of the rewritten query, but it runs before the
+    /// LIMIT. Pushing the LIMIT down would truncate the remote result before that filter is applied and
+    /// could return fewer rows than the query should.
+    check(state, 1, {"column"},
+        "SELECT column FROM table LIMIT 10",
+        R"(SELECT "column" FROM "test"."table")",
+        /*expected_new=*/"",
+        /*additional_filter=*/"column > 100");
+
+    /// The same, with a WHERE clause that is fully pushed down: the local filter alone still blocks it.
+    check(state, 1, {"column"},
+        "SELECT column FROM table WHERE column > 2 LIMIT 10",
+        R"(SELECT "column" FROM "test"."table" WHERE "column" > 2)",
+        /*expected_new=*/"",
+        /*additional_filter=*/"column > 100");
 
     /// `external_storage_push_down_limit = false` disables pushing the LIMIT down (previous behavior).
     state.context->setSetting("external_storage_push_down_limit", false);

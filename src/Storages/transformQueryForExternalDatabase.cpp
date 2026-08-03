@@ -1,5 +1,8 @@
 #include <Common/typeid_cast.h>
+#include <Access/Common/RowPolicyDefs.h>
+#include <Access/EnabledRowPolicies.h>
 #include <AggregateFunctions/AggregateFunctionFactory.h>
+#include <Analyzer/TableNode.h>
 #include <Columns/ColumnConst.h>
 #include <Core/Settings.h>
 #include <DataTypes/DataTypesNumber.h>
@@ -15,6 +18,7 @@
 #include <Interpreters/InDepthNodeVisitor.h>
 #include <Interpreters/Context.h>
 #include <IO/WriteBufferFromString.h>
+#include <Storages/IStorage.h>
 #include <Storages/transformQueryForExternalDatabase.h>
 #include <Storages/MergeTree/KeyCondition.h>
 #include <Storages/transformQueryForExternalDatabaseAnalyzer.h>
@@ -443,10 +447,11 @@ String transformQueryForExternalDatabaseImpl(
     const String & database,
     const String & table,
     ContextPtr context,
-    std::optional<size_t> limit)
+    std::optional<size_t> limit,
+    bool allow_limit_push_down)
 {
     bool strict = context->getSettingsRef()[Setting::external_table_strict_query];
-    bool push_down_limit = context->getSettingsRef()[Setting::external_storage_push_down_limit];
+    bool push_down_limit = allow_limit_push_down && context->getSettingsRef()[Setting::external_storage_push_down_limit];
 
     auto select = make_intrusive<ASTSelectQuery>();
 
@@ -582,6 +587,39 @@ String transformQueryForExternalDatabaseImpl(
     return out.str();
 }
 
+/// The `LIMIT` of the query can be pushed down to the external database only if every filter that is
+/// logically applied before it is also sent to the external database. A filter that is applied locally,
+/// on top of the rows read from the external table, runs before the query's `LIMIT`, so truncating the
+/// remote result could discard rows that this filter would have kept, and the query would return fewer
+/// rows than it should. Not every such filter is a part of the query AST that is rewritten here:
+/// `additional_table_filters` and row policies are carried in `SelectQueryInfo` (or, with the analyzer,
+/// are added by the planner as a separate filter step) instead, so they are checked explicitly.
+bool hasLocalFilterAppliedBeforeLimit(const SelectQueryInfo & query_info, const ContextPtr & context)
+{
+    if (query_info.additional_filter_ast || !query_info.filter_asts.empty() || query_info.row_level_filter || query_info.prewhere_info)
+        return true;
+
+    /// With the analyzer, the row policy filter is resolved by the planner and is not reflected in `query_info`.
+    if (query_info.table_expression)
+    {
+        const auto * table_node = query_info.table_expression->as<TableNode>();
+        const auto & storage = table_node ? table_node->getStorage() : nullptr;
+        if (storage)
+        {
+            const auto storage_id = storage->getStorageID();
+            if (storage_id.hasDatabase())
+            {
+                auto row_policy_filter = context->getRowPolicyFilter(
+                    storage_id.getDatabaseName(), storage_id.getTableName(), RowPolicyFilterType::SELECT_FILTER);
+                if (row_policy_filter && !row_policy_filter->isAlwaysTrue())
+                    return true;
+            }
+        }
+    }
+
+    return false;
+}
+
 }
 
 String transformQueryForExternalDatabase(
@@ -595,6 +633,8 @@ String transformQueryForExternalDatabase(
     ContextPtr context,
     std::optional<size_t> limit)
 {
+    const bool allow_limit_push_down = !hasLocalFilterAppliedBeforeLimit(query_info, context);
+
     if (!query_info.syntax_analyzer_result)
     {
         if (!query_info.query_tree)
@@ -619,7 +659,8 @@ String transformQueryForExternalDatabase(
             database,
             table,
             context,
-            limit);
+            limit,
+            allow_limit_push_down);
     }
 
     auto clone_query = query_info.query->clone();
@@ -632,7 +673,8 @@ String transformQueryForExternalDatabase(
         database,
         table,
         context,
-        limit);
+        limit,
+        allow_limit_push_down);
 }
 
 void rejectOuterFilterForQueryBackedExternalSourceIfStrict(const SelectQueryInfo & query_info, const ContextPtr & context)
