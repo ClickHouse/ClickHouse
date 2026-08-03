@@ -458,6 +458,8 @@ StorageDistributed::StorageDistributed(
         throw Exception(ErrorCodes::BAD_ARGUMENTS, "Settings flush_on_detach=0 and background_insert_batch=1 are incompatible");
 
     StorageInMemoryMetadata storage_metadata;
+    /// Reached only when loading stored metadata that carries no column list: the creators infer an
+    /// omitted structure themselves, under the user's context.
     if (columns_.empty())
     {
         StorageID id = StorageID::createEmpty();
@@ -2216,9 +2218,23 @@ void registerStorageDistributed(StorageFactory & factory)
 
         finalizeDistributedSettings(distributed_settings, context);
 
+        /// Infer an omitted structure under the user's context, so that the `SHOW_COLUMNS` check for a
+        /// local shard is not made against the global context the constructor holds. Skipped when the
+        /// definition comes from already-validated metadata, which has no user to check against.
+        ColumnsDescription columns = args.columns;
+        if (columns.empty() && !(isLoadingFromExistingMetadata(args.mode) || args.query.attach_short_syntax))
+        {
+            /// `getCluster` expands macros, so this is the cluster the constructor will use.
+            columns = getStructureOfRemoteTable(
+                *local_context->getCluster(cluster_name),
+                StorageID{remote_database, remote_table},
+                local_context,
+                /* table_func_ptr = */ nullptr);
+        }
+
         return std::make_shared<StorageDistributed>(
             args.table_id,
-            args.columns,
+            columns,
             args.constraints,
             args.comment,
             remote_database,
