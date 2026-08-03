@@ -16,7 +16,7 @@ Reach out to ClickHouse via the [contact form](https://clickhouse.com/cloud/brin
 </Accordion>
 
 <Accordion title="How long does infrastructure provisioning take, and what are common reasons it gets stuck?">
-Expect roughly 45–90 minutes end to end. When provisioning stalls, the most common causes are on the account side:
+Expect roughly 45–90 minutes end to end. The range is wide because most of that time is the cloud provider provisioning resources (the Kubernetes cluster, load balancers, network components), which takes an inconsistent amount of time from run to run and is outside ClickHouse's control. When provisioning stalls, the most common causes are on the account side:
 
 - The CloudFormation template or Terraform module was modified before applying it — for example, adding a `PermissionsBoundary`, or renaming the IAM role to satisfy a naming convention (on AWS it must be named exactly `ClickHouseManagementRole`). Apply the artifacts as provided — supported customizations are exposed as parameters, and any other change needs ClickHouse's approval first.
 - Organization-level policies (AWS SCPs, GCP organization policies such as `iam.allowedPolicyMemberDomains`, or Azure policies restricting role assignments) blocking role assumption or IAM bindings.
