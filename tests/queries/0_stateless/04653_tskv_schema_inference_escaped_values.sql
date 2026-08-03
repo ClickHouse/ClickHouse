@@ -371,6 +371,38 @@ SELECT * FROM format(JSONEachRow, unhex('7B2261223A2231227D0A7B2261223A223138343
 DESC format(TSKV, unhex('783D2B310A783D31383434363734343037333730393535313631350A'));
 SELECT * FROM format(TSKV, unhex('783D2B310A783D31383434363734343037333730393535313631350A'));
 
+-- 13e. Declining to widen only settles what two rows agree on. A single row carrying a '+' still has to
+-- be readable on its own, and no merge happens there to consult, so the type it infers must be one the
+-- value reader accepts. readIntTextUnsafe stops before the '+' and leaves it in the buffer, so an
+-- integer type cannot be read back at all: the field parses as zero and the leftover '+' is reported as
+-- garbage after the field. Such a field stays a String, exactly as an integer with a leading zero does.
+SELECT 'group 13e: a single field the value reader refuses stays a String';
+-- x=+1 alone - inference accepts the '+', the value reader does not, so this must not infer an integer
+DESC format(TSKV, unhex('783D2B310A'));
+SELECT * FROM format(TSKV, unhex('783D2B310A'));
+-- x=+18446744073709551615 alone - the same, reached through the unsigned branch of the number parser
+DESC format(TSKV, unhex('783D2B31383434363734343037333730393535313631350A'));
+SELECT * FROM format(TSKV, unhex('783D2B31383434363734343037333730393535313631350A'));
+-- x=+0 alone - a signed zero is refused for the sign, not for the zero
+DESC format(TSKV, unhex('783D2B300A'));
+SELECT * FROM format(TSKV, unhex('783D2B300A'));
+-- x=+00 alone - both the sign and the leading zero would make it unreadable
+DESC format(TSKV, unhex('783D2B30300A'));
+SELECT * FROM format(TSKV, unhex('783D2B30300A'));
+-- Controls. A float reader does consume a leading '+', so floats must keep inferring Float64:
+-- x=+1.5 alone
+DESC format(TSKV, unhex('783D2B312E350A'));
+SELECT * FROM format(TSKV, unhex('783D2B312E350A'));
+-- x=+0.0 alone
+DESC format(TSKV, unhex('783D2B302E300A'));
+SELECT * FROM format(TSKV, unhex('783D2B302E300A'));
+-- x=-1 alone - the integer reader does consume a '-', so a negative literal needs no fallback
+DESC format(TSKV, unhex('783D2D310A'));
+SELECT * FROM format(TSKV, unhex('783D2D310A'));
+-- x=1 alone - no sign at all
+DESC format(TSKV, unhex('783D310A'));
+SELECT * FROM format(TSKV, unhex('783D310A'));
+
 -- 14. The marking is keyed on the type object address, and one column's dropped type object can be
 -- freed while another column is still being inferred. If the address is then reused, the marking is
 -- read as belonging to whatever type landed there, so an unrelated column declines a widening it
@@ -404,6 +436,15 @@ SELECT * FROM format(CustomSeparated, unhex('2D310A310A3138343436373434303733373
 -- 1 / 2 / 18446744073709551615 - no negative value, so the widening must still happen
 DESC format(CustomSeparated, unhex('310A320A31383434363734343037333730393535313631350A'));
 SELECT * FROM format(CustomSeparated, unhex('310A320A31383434363734343037333730393535313631350A'));
+-- +1 alone - the single-row fallback of group 13e applies here too, through the shared escaping rule
+DESC format(CustomSeparated, unhex('2B310A'));
+SELECT * FROM format(CustomSeparated, unhex('2B310A'));
+-- +1.5 alone - and floats keep their type here too
+DESC format(CustomSeparated, unhex('2B312E350A'));
+SELECT * FROM format(CustomSeparated, unhex('2B312E350A'));
+-- -1 alone - the negative control needs no fallback
+DESC format(CustomSeparated, unhex('2D310A'));
+SELECT * FROM format(CustomSeparated, unhex('2D310A'));
 
 -- The same three inputs through Regexp, whose escaping rule is a separate setting and whose reader
 -- keeps its own provenance set. The settings are per statement so the other groups are unaffected.
@@ -418,6 +459,15 @@ SELECT * FROM format(Regexp, unhex('2D310A310A3138343436373434303733373039353531
 -- 1 / 2 / 18446744073709551615 - no negative value, so the widening must still happen
 DESC format(Regexp, unhex('310A320A31383434363734343037333730393535313631350A')) SETTINGS format_regexp = '^(.+)$', format_regexp_escaping_rule = 'Escaped';
 SELECT * FROM format(Regexp, unhex('310A320A31383434363734343037333730393535313631350A')) SETTINGS format_regexp = '^(.+)$', format_regexp_escaping_rule = 'Escaped';
+-- +1 alone - the single-row fallback of group 13e applies here too
+DESC format(Regexp, unhex('2B310A')) SETTINGS format_regexp = '^(.+)$', format_regexp_escaping_rule = 'Escaped';
+SELECT * FROM format(Regexp, unhex('2B310A')) SETTINGS format_regexp = '^(.+)$', format_regexp_escaping_rule = 'Escaped';
+-- +1.5 alone - and floats keep their type here too
+DESC format(Regexp, unhex('2B312E350A')) SETTINGS format_regexp = '^(.+)$', format_regexp_escaping_rule = 'Escaped';
+SELECT * FROM format(Regexp, unhex('2B312E350A')) SETTINGS format_regexp = '^(.+)$', format_regexp_escaping_rule = 'Escaped';
+-- -1 alone - the negative control needs no fallback
+DESC format(Regexp, unhex('2D310A')) SETTINGS format_regexp = '^(.+)$', format_regexp_escaping_rule = 'Escaped';
+SELECT * FROM format(Regexp, unhex('2D310A')) SETTINGS format_regexp = '^(.+)$', format_regexp_escaping_rule = 'Escaped';
 
 -- The round trip through the writer, asserted without hand-written bytes: what TSKV emits for a
 -- negative map key must infer a type that reads back. This is the reason group 11 is not a

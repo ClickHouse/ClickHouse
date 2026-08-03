@@ -343,13 +343,15 @@ DataTypePtr tryInferDataTypeByEscapingRule(const String & field, const FormatSet
             /// hasUnreadableSign. allow_number_leading_zeros (hive partitioning) selects readIntText
             /// instead, which does accept a '+', but that caller passes no json_info, so nothing is
             /// recorded for it either way.
-            auto type = tryInferDataTypeForSingleField(
-                field, format_settings, json_info, /*reader_refuses_plus=*/!format_settings.allow_number_leading_zeros);
+            const bool reader_refuses_plus = !format_settings.allow_number_leading_zeros;
 
-            /// An integer starting with 0 must stay a String, because readIntTextUnsafe (see
-            /// ReadHelpers.h) reads the leading '0' as the whole value.
-            /// allow_number_leading_zeros (hive partitioning) opts out.
-            if (type && field[0] == '0' && field.size() != 1 && !format_settings.allow_number_leading_zeros
+            auto type = tryInferDataTypeForSingleField(field, format_settings, json_info, reader_refuses_plus);
+
+            /// An integer starting with '0' or '+' must stay a String: readIntTextUnsafe (see
+            /// ReadHelpers.h) reads the leading '0' as the whole value and stops before a '+',
+            /// so neither reads back as the integer type inference would propose.
+            /// allow_number_leading_zeros (hive partitioning) opts out of both.
+            if (type && (field[0] == '0' || field[0] == '+') && field.size() != 1 && reader_refuses_plus
                 && isInteger(removeNullable(recursiveRemoveLowCardinality(type))))
                 return std::make_shared<DataTypeString>();
 

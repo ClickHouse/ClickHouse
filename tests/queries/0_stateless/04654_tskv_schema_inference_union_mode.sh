@@ -131,4 +131,17 @@ verdict "set $TEMPLATE_SETTINGS; select * from format(Template, unhex('313834343
 verdict "set $TEMPLATE_SETTINGS; desc format(Template, unhex('310A31383434363734343037333730393535313631350A'));"
 verdict "set $TEMPLATE_SETTINGS; select * from format(Template, unhex('310A31383434363734343037333730393535313631350A'));"
 
+# A single row carrying an explicit plus has no merge to decline, so its own type has to be readable on
+# its own. The escaped-rule value reader refuses a '+', so it falls back to String as in 04653 group 13e.
+# Floats do consume a '+' and keep Float64; a '-' is consumed too and needs no fallback.
+# +1
+verdict "set $TEMPLATE_SETTINGS; desc format(Template, unhex('2B310A'));"
+verdict "set $TEMPLATE_SETTINGS; select * from format(Template, unhex('2B310A'));"
+# +1.5
+verdict "set $TEMPLATE_SETTINGS; desc format(Template, unhex('2B312E350A'));"
+verdict "set $TEMPLATE_SETTINGS; select * from format(Template, unhex('2B312E350A'));"
+# -1
+verdict "set $TEMPLATE_SETTINGS; desc format(Template, unhex('2D310A'));"
+verdict "set $TEMPLATE_SETTINGS; select * from format(Template, unhex('2D310A'));"
+
 rm -rf "$DIR"

@@ -50,3 +50,9 @@ Nullable(String)
 Nullable(UInt64)
 1
 18446744073709551615
+Nullable(String)
++1
+Nullable(Float64)
+1.5
+Nullable(Int64)
+-1
