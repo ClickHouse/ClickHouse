@@ -33,7 +33,7 @@ Any of the available [distance function](/reference/functions/regular-functions/
 
 An exact vector search can be performed using above SELECT query as is.
 The runtime of such queries is generally proportional to the number of stored vectors and their dimension, i.e. the number of array elements.
-Also, since ClickHouse performs a brute-force scan of all vectors, the runtime depends also on the number of threads by the query (see setting [max_threads](/reference/settings/session-settings#max_threads)).
+Also, since ClickHouse performs a brute-force scan of all vectors, the runtime depends also on the number of threads by the query (see setting [max_threads](/reference/settings/session-settings/max-threads#max_threads)).
 
 ### Example {#exact-nearest-neighbor-search-example}
 
@@ -194,7 +194,7 @@ Above formula does not account for additional memory required by vector similari
 #### Using a Vector Similarity Index {#using-a-vector-similarity-index}
 
 <Note>
-To use vector similarity indexes, setting [compatibility](/reference/settings/session-settings) has be `''` (the default value), or `'25.1'` or newer.
+To use vector similarity indexes, setting [compatibility](/reference/settings/session-settings/compatibility#compatibility) has be `''` (the default value), or `'25.1'` or newer.
 </Note>
 
 Vector similarity indexes support SELECT queries of this form:
@@ -211,12 +211,12 @@ LIMIT <N>
 ClickHouse's query optimizer tries to match above query template and make use of available vector similarity indexes.
 A query can only use a vector similarity index if the distance function in the SELECT query is the same as the distance function in the index definition.
 
-Advanced users may provide a custom value for setting [hnsw_candidate_list_size_for_search](/reference/settings/session-settings#hnsw_candidate_list_size_for_search) (also know as HNSW hyperparameter "ef_search") to tune the size of the candidate list during search (e.g.  `SELECT [...] SETTINGS hnsw_candidate_list_size_for_search = <value>`).
+Advanced users may provide a custom value for setting [hnsw_candidate_list_size_for_search](/reference/settings/session-settings/other#hnsw_candidate_list_size_for_search) (also know as HNSW hyperparameter "ef_search") to tune the size of the candidate list during search (e.g.  `SELECT [...] SETTINGS hnsw_candidate_list_size_for_search = <value>`).
 The default value of the setting 256 works well in the majority of use cases.
 Higher setting values mean better accuracy at the cost of slower performance.
 
 If the query can use a vector similarity index, ClickHouse checks that the LIMIT `<N>` provided in SELECT queries is within reasonable bounds.
-More specifically, an error is returned if `<N>` is bigger than the value of setting [max_limit_for_vector_search_queries](/reference/settings/session-settings#max_limit_for_vector_search_queries) with default value 100.
+More specifically, an error is returned if `<N>` is bigger than the value of setting [max_limit_for_vector_search_queries](/reference/settings/session-settings/max#max_limit_for_vector_search_queries) with default value 100.
 Too large LIMIT values can slow down searches and usually indicate a usage error.
 
 To check if a SELECT query uses a vector similarity index, you can prefix the query with `EXPLAIN indexes = 1`.
@@ -263,7 +263,7 @@ In this case, the vector similarity index dropped two of four granules, i.e. 50%
 The more granules can be dropped, the more effective index usage becomes.
 
 <Tip>
-To enforce index usage, you can run the SELECT query with setting [force_data_skipping_indexes](/reference/settings/session-settings#force_data_skipping_indices) (provide the index name as setting value).
+To enforce index usage, you can run the SELECT query with setting [force_data_skipping_indices](/reference/settings/session-settings/force#force_data_skipping_indices) (provide the index name as setting value).
 </Tip>
 
 **Post-filtering and Pre-filtering**
@@ -315,7 +315,7 @@ In such cases, the vector similarity index is evaluated first as it is expected 
 
 For finer control over post-filtering vs. pre-filtering, two settings can be used:
 
-Setting [vector_search_filter_strategy](/reference/settings/session-settings#vector_search_filter_strategy) (default: `auto` which implements above heuristics) may be set to `prefilter`.
+Setting [vector_search_filter_strategy](/reference/settings/session-settings/vector-search#vector_search_filter_strategy) (default: `auto` which implements above heuristics) may be set to `prefilter`.
 This is useful to force pre-filtering in cases where the additional filter conditions are extremely selective.
 As an example, the following query may benefit from pre-filtering:
 
@@ -330,7 +330,7 @@ LIMIT 10
 Assuming that only a very small number of books cost less than 2 dollar, post-filtering may return zero rows because the top 10 matches returned by the vector index could all be priced above 2 dollar.
 By forcing pre-filtering (add `SETTINGS vector_search_filter_strategy = 'prefilter'` to the query), ClickHouse first finds all books with a price of less than 2 dollar and then executes a brute-force vector search for the found books.
 
-As an alternative approach to resolve above issue, setting [vector_search_index_fetch_multiplier](/reference/settings/session-settings#vector_search_index_fetch_multiplier) (default: `1.0`, maximum: `1000.0`) may be configured to a value > `1.0` (for example, `2.0`).
+As an alternative approach to resolve above issue, setting [vector_search_index_fetch_multiplier](/reference/settings/session-settings/vector-search#vector_search_index_fetch_multiplier) (default: `1.0`, maximum: `1000.0`) may be configured to a value > `1.0` (for example, `2.0`).
 The number of nearest neighbors fetched from the vector index is multiplied by the setting value and then the additional filter to be applied on those rows to return LIMIT-many rows.
 As an example, we can query again but with multiplier `3.0`:
 
@@ -358,7 +358,7 @@ This step is called rescoring and can improve accuracy, especially with quantize
 If additional filters remove too many candidates or more recall is needed, increase setting `vector_search_index_fetch_multiplier` so the vector index returns more candidate rows for rescoring.
 
 ClickHouse therefore provides an optimization which disables rescoring and returns the most similar vectors and their distances directly from the index.
-The optimization is enabled by default, see setting [vector_search_with_rescoring](/reference/settings/session-settings#vector_search_with_rescoring).
+The optimization is enabled by default, see setting [vector_search_with_rescoring](/reference/settings/session-settings/vector-search#vector_search_with_rescoring).
 The way it works at a high level is that ClickHouse makes the most similar vectors and their distances available as a virtual column `_distance`.
 To see this, run a vector search query with `EXPLAIN header = 1`:
 
@@ -421,14 +421,14 @@ Vector similarity indexes are ideally only used if the data is immutable or rare
 To speed up index creation, the following techniques can be used:
 
 First, index creation can be parallelized.
-The maximum number of index creation threads can be configured using server setting [max_build_vector_similarity_index_thread_pool_size](/reference/settings/server-settings/settings#max_build_vector_similarity_index_thread_pool_size).
+The maximum number of index creation threads can be configured using server setting [max_build_vector_similarity_index_thread_pool_size](/reference/settings/server-settings/settings/max#max_build_vector_similarity_index_thread_pool_size).
 For optimal performance, the setting value should be configured to the number of CPU cores.
 
-Second, to speed up INSERT statements, users may disable the creation of skipping indexes on newly inserted parts using session setting [materialize_skip_indexes_on_insert](/reference/settings/session-settings#materialize_skip_indexes_on_insert).
+Second, to speed up INSERT statements, users may disable the creation of skipping indexes on newly inserted parts using session setting [materialize_skip_indexes_on_insert](/reference/settings/session-settings/materialize#materialize_skip_indexes_on_insert).
 SELECT queries on such parts will fall back to exact search.
 Since inserted parts tend to be small compared to the total table size, the performance impact of that is expected to be negligible.
 
-Third, to speed up merges, users may disable the creation of skipping indexes on merged parts using session setting [materialize_skip_indexes_on_merge](/reference/settings/merge-tree-settings#materialize_skip_indexes_on_merge).
+Third, to speed up merges, users may disable the creation of skipping indexes on merged parts using session setting [materialize_skip_indexes_on_merge](/reference/settings/merge-tree-settings/materialize#materialize_skip_indexes_on_merge).
 This, in conjunction with statement [ALTER TABLE \[...\] MATERIALIZE INDEX \[...\]](/reference/statements/alter/skipping-index#materialize-index), provides explicit control over the life cycle of vector similarity indexes.
 For example, index creation can be deferred until all data was ingested or until a period of low system load such as the weekend.
 
@@ -437,7 +437,7 @@ For example, index creation can be deferred until all data was ingested or until
 SELECT queries need to load vector similarity indexes into main memory to use them.
 To avoid that the same vector similarity index is loaded repeatedly into main memory, ClickHouse provides a dedicated in-memory cache for such indexes.
 The bigger this cache is, the fewer unnecessary loads will happen.
-The maximum cache size can be configured using server setting [vector_similarity_index_cache_size](/reference/settings/server-settings/settings#vector_similarity_index_cache_size).
+The maximum cache size can be configured using server setting [vector_similarity_index_cache_size](/reference/settings/server-settings/settings/vector-similarity#vector_similarity_index_cache_size).
 By default, the cache can grow up to 5 GB in size.
 
 The following log messages (`system.text_log`) indicate that the vector similarity index is being loaded.
@@ -497,7 +497,7 @@ Quantization reduces the precision of vector searches compared to searching the 
 However, on most datasets, half-precision brain float quantization (`bf16`) results in a negligible precision loss, therefore vector similarity indexes use this quantization technique by default.
 Quarter precision (`i8`) and binary (`b1`) quantization causes appreciable precision loss in vector searches.
 We recommend both quantizations only if the size of the vector similarity index is significantly larger than the available DRAM size.
-In this case, we also suggest enabling rescoring ([vector_search_index_fetch_multiplier](/reference/settings/session-settings#vector_search_index_fetch_multiplier), [vector_search_with_rescoring](/reference/settings/session-settings#vector_search_with_rescoring)) to improve accuracy.
+In this case, we also suggest enabling rescoring ([vector_search_index_fetch_multiplier](/reference/settings/session-settings/vector-search#vector_search_index_fetch_multiplier), [vector_search_with_rescoring](/reference/settings/session-settings/vector-search#vector_search_with_rescoring)) to improve accuracy.
 Binary quantization is only recommended for 1) normalized embeddings (i.e. vector length = 1, OpenAI models are usually normalized), and 2) if the cosine distance is used as distance function.
 Binary quantization internally uses the Hamming distance to construct and search the proximity graph.
 The rescoring step uses the original full-precision vectors stored in the table to identify the nearest neighbours via cosine distance.
