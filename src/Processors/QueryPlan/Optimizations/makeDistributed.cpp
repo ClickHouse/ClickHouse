@@ -472,6 +472,7 @@ void tryMakeDistributedAggregation(QueryPlan::Node & node, QueryPlan::Nodes & no
 
         /// Replace original aggregation step with MergingAggregated step
         aggregator_params.only_merge = true;    /// Merge partial aggregation results
+        aggregator_params.top_k.reset(); /// The heap prunes in the partial aggregation; the merge path ignores it
         QueryPlanStepPtr final_aggregation_step = std::make_unique<MergingAggregatedStep>(
             gather_node.step->getOutputHeader(),
             aggregator_params,

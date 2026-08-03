@@ -522,12 +522,11 @@ private:
             case TypeIndex::Int64:     resolveNumericFastPath<Int64>(); break;
             case TypeIndex::Float32:   resolveNumericFastPath<Float32>(); break;
             case TypeIndex::Float64:   resolveNumericFastPath<Float64>(); break;
-            case TypeIndex::Date:      resolveNumericFastPath<UInt16>(); break;
-            case TypeIndex::Date32:    resolveNumericFastPath<Int32>(); break;
-            case TypeIndex::DateTime:  resolveNumericFastPath<UInt32>(); break;
-            case TypeIndex::Enum8:     resolveNumericFastPath<Int8>(); break;
-            case TypeIndex::Enum16:    resolveNumericFastPath<Int16>(); break;
             case TypeIndex::IPv4:      resolveNumericFastPath<IPv4>(); break;
+            /// `Date`, `Date32`, `DateTime`, `Enum8` and `Enum16` need no cases of their own:
+            /// `ColumnVector::getDataType` reports `TypeToTypeIndex<T>`, which is specialized only
+            /// for the underlying C++ types, so those keys arrive as `UInt16`/`Int32`/`UInt32`/
+            /// `Int8`/`Int16` and take the fast path above.
             default: break;
         }
     }

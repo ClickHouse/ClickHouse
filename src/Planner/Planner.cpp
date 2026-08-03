@@ -762,6 +762,12 @@ void applyTopKPushdownToPartialAggregation(
     if (aggregating_step.isGroupingSets() || params.overflow_row || params.max_rows_to_group_by > 0 || params.keys.empty())
         return;
 
+    /// In-order aggregation ignores the heap and has a more efficient optimization for this shape;
+    /// the same gate exists in `validateAggregatingStep` and in `AggregatingStep::applyOrder`.
+    /// Reachable here through `force_aggregation_in_order`, which presets the sort descriptions.
+    if (aggregating_step.inOrder())
+        return;
+
     /// ORDER BY must be a leading prefix of the GROUP BY keys, by action name.
     /// Both name sets come from the same `PlannerContext`, so a name match means
     /// the same expression; anything else (a function of a key, a projection
@@ -792,7 +798,8 @@ void applyTopKPushdownToPartialAggregation(
         .directions = std::move(directions),
         .nulls_directions = std::move(nulls_directions),
         .key_columns = sort_description.size(),
-        .load_factor = static_cast<Float64>(settings[Setting::group_by_top_k_optimization_load_factor].value),
+        /// Clamped to the documented minimum of 1, matching `QueryPlanOptimizationSettings`.
+        .load_factor = std::max(1.0, static_cast<Float64>(settings[Setting::group_by_top_k_optimization_load_factor].value)),
         .observation_rows = settings[Setting::group_by_top_k_optimization_observation_rows],
     });
 }

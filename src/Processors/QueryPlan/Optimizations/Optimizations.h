@@ -62,7 +62,7 @@ struct Optimization
         /// join is swapped from `LEFT` to `RIGHT` after we returned.
         std::optional<bool> join_swap_table;
 
-        bool enable_group_by_top_k_optimization;
+        bool enable_group_by_top_k_optimization{};
         Float64 top_k_optimization_load_factor{};
         UInt64 top_k_optimization_observation_rows{};
 

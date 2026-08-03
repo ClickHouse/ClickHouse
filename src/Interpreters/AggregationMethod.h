@@ -241,7 +241,9 @@ struct AggregationMethodSingleLowCardinalityColumn : public SingleColumnMethod
     using Key = typename Base::Key;
     using Mapped = typename Base::Mapped;
     using Base::data;
-    TopKAggregationHeap top_k_heap;
+    /// The heap comes from the base method; do not redeclare it here, or the base one becomes dead
+    /// weight that any code holding this method by its base type would use instead.
+    using Base::top_k_heap;
 
     template <bool use_cache>
     using BaseStateImpl = typename Base::template StateImpl<use_cache>;
