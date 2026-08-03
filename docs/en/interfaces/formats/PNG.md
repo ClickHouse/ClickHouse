@@ -129,8 +129,12 @@ In exchange:
   written, so the count is declared exactly and the output conforms to the specification.
 
 Because an inline terminal image protocol carries the whole datastream as a single payload, the frames cannot
-reach the terminal early and this setting only affects how much memory is used there. The `sixel` protocol
-cannot represent an animation at all and rejects a result with a `t` column.
+reach the terminal early and this setting only affects how much memory is used there.
+
+An animation is displayed only in the `iterm` terminal mode. The `sixel` protocol cannot represent an
+animation at all, and the Kitty graphics protocol animates only through a separate flow of per-frame commands,
+not through an animated datastream, so it would display just the first frame; both modes reject a result with
+a `t` column.
 
 ## Displaying images in the terminal {#terminal-mode}
 
@@ -142,7 +146,7 @@ makes the format render the image directly to the terminal using an inline image
 |-----------------|--------------------------------------------------------------------------------------------------------|
 | `` (empty)      | Write the raw image bytes (the default).                                                                |
 | `iterm`         | Use the iTerm2 inline image protocol.                                                                   |
-| `kitty`         | Use the Kitty graphics protocol.                                                                        |
+| `kitty`         | Use the Kitty graphics protocol. Cannot display an animation.                                           |
 | `sixel`         | Use the Sixel protocol. The image is reduced to a fixed 6×6×6 palette and the alpha channel, if any, is composited over a black background. |
 | `auto`          | If the output is a terminal, detect its capabilities and use `iterm`, `kitty`, or `sixel` (in this order); otherwise write the raw image bytes. |
 

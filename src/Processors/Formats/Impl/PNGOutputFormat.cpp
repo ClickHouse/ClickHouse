@@ -43,11 +43,16 @@ PNGOutputFormat::PNGOutputFormat(WriteBuffer & out_, SharedHeader header_, const
     if (!serializer->isAnimated())
         return;
 
-    if (terminal_mode == ImageTerminalMode::Sixel)
+    /// Sixel has no notion of an animation at all, and the Kitty graphics protocol has one, but it is a
+    /// separate flow of per-frame commands ('a=f' and 'a=a') rather than an animated datastream: Kitty
+    /// receives a single PNG payload and would display only the default image of the `APNG`, silently
+    /// turning the animation into a still image.
+    if (terminal_mode == ImageTerminalMode::Sixel || terminal_mode == ImageTerminalMode::Kitty)
         throw Exception(ErrorCodes::BAD_ARGUMENTS,
-            "The Sixel protocol cannot display an animation, but the result has a 't' column, which makes "
+            "The {} protocol cannot display an animation, but the result has a 't' column, which makes "
             "the PNG format produce one. Remove the 't' column, or choose another value of "
-            "'output_format_image_terminal_mode'.");
+            "'output_format_image_terminal_mode'.",
+            terminal_mode == ImageTerminalMode::Sixel ? "Sixel" : "Kitty");
 
     streaming = serializer->isStreamingAnimation();
 
@@ -118,11 +123,8 @@ void PNGOutputFormat::finalizeImpl()
                 writeImageITerm(out, animation_buffer);
                 break;
             case ImageTerminalMode::Kitty:
-                animation_buffer_out->finalize();
-                writeImageKitty(out, animation_buffer);
-                break;
             case ImageTerminalMode::Sixel:
-                break; /// Rejected in the constructor: Sixel has no animation.
+                break; /// Rejected in the constructor: neither can display an `APNG` animation.
         }
         return;
     }
@@ -297,8 +299,12 @@ In exchange:
   written, so the count is declared exactly and the output conforms to the specification.
 
 Because an inline terminal image protocol carries the whole datastream as a single payload, the frames cannot
-reach the terminal early and this setting only affects how much memory is used there. The `sixel` protocol
-cannot represent an animation at all and rejects a result with a `t` column.
+reach the terminal early and this setting only affects how much memory is used there.
+
+An animation is displayed only in the `iterm` terminal mode. The `sixel` protocol cannot represent an
+animation at all, and the Kitty graphics protocol animates only through a separate flow of per-frame commands,
+not through an animated datastream, so it would display just the first frame; both modes reject a result with
+a `t` column.
 
 ## Displaying images in the terminal {#terminal-mode}
 
@@ -310,7 +316,7 @@ makes the format render the image directly to the terminal using an inline image
 |-----------------|--------------------------------------------------------------------------------------------------------|
 | `` (empty)      | Write the raw image bytes (the default).                                                                |
 | `iterm`         | Use the iTerm2 inline image protocol.                                                                   |
-| `kitty`         | Use the Kitty graphics protocol.                                                                        |
+| `kitty`         | Use the Kitty graphics protocol. Cannot display an animation.                                           |
 | `sixel`         | Use the Sixel protocol. The image is reduced to a fixed 6×6×6 palette and the alpha channel, if any, is composited over a black background. |
 | `auto`          | If the output is a terminal, detect its capabilities and use `iterm`, `kitty`, or `sixel` (in this order); otherwise write the raw image bytes. |
 

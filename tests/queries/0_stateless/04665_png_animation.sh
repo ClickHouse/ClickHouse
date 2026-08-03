@@ -233,6 +233,12 @@ png_http "${DIMS}&output_format_image_terminal_mode=sixel" "
     SELECT toUInt8(number) AS t, toUInt8(number) AS v FROM numbers(2) FORMAT PNG
 " | grep -oE "BAD_ARGUMENTS" | head -1
 
+# The Kitty graphics protocol animates with per-frame commands, not with an animated datastream, so it would
+# display an `APNG` as a still image.
+png_http "${DIMS}&output_format_image_terminal_mode=kitty" "
+    SELECT toUInt8(number) AS t, toUInt8(number) AS v FROM numbers(2) FORMAT PNG
+" | grep -oE "BAD_ARGUMENTS" | head -1
+
 # The time scale must fit into the 16-bit parts of the frame delay.
 png_http "${DIMS}&output_format_image_time_divisor_seconds=0" "
     SELECT toUInt8(number) AS t, toUInt8(number) AS v FROM numbers(2) FORMAT PNG
