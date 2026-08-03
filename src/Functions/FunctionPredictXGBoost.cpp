@@ -133,8 +133,11 @@ public:
         return std::make_shared<DataTypeFloat64>();
     }
 
-    ColumnPtr executeImpl(const ColumnsWithTypeAndName & arguments, const DataTypePtr &, size_t /* input_rows_count */) const override
+    ColumnPtr executeImpl(const ColumnsWithTypeAndName & arguments, const DataTypePtr & result_type, size_t input_rows_count) const override
     {
+        if (input_rows_count == 0)
+            return result_type->createColumn();
+
         const String dictionary_name = getConstString(arguments[0], "dictionary name");
 
         auto dictionary = context->getExternalDictionariesLoader().getDictionary(dictionary_name, context);
