@@ -198,6 +198,9 @@ private:
 
     Block header;
     std::optional<String> normalized_index_column_name;
+    /// A private clone of the index tokenizer when it is stateful, so concurrent conditions do not
+    /// share mutable parsing state; null otherwise.
+    std::shared_ptr<const ITokenizer> owned_tokenizer;
     TokenizerPtr tokenizer;
     RPN rpn;
     PreparedSetsPtr prepared_sets;
