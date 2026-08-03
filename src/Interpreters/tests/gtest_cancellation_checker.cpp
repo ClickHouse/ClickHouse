@@ -292,12 +292,8 @@ TEST(CancellationChecker, ProcessListPreservesFractionalTimeout)
 
             if (deadline_ms == 0)
             {
-                /// Nothing left to read. Inconclusive only if the checker had tracked this query and
-                /// already cancelled it for exceeding its timeout, which needs this thread to have
-                /// lost the CPU for that long: retry rather than judge the arithmetic. A query that
-                /// is still running was never tracked, which is a real defect at the caller. Raising
-                /// the timeout instead would break the retry path above, which waits for a drain that
-                /// `appendDoneTasks` never notifies.
+                /// A killed query was tracked and timed out, so there is legitimately no deadline
+                /// left to read; one still running was never registered, which is the defect.
                 ASSERT_TRUE(entry->getQueryStatus()->isKilled())
                     << "the query was not registered with the checker while it was still running";
                 ASSERT_GE(steadyNowNs(), now_ns + timeout_us * 1000);
@@ -310,10 +306,7 @@ TEST(CancellationChecker, ProcessListPreservesFractionalTimeout)
                 << "the deadline was armed before the exact timeout the setting names";
             measured = true;
         }
-        /// Skip only when the deadline was genuinely unobservable, which needs this thread to have
-        /// been starved for longer than the timeout: judging the arithmetic on that would report a
-        /// violation nothing observed. Attempts lost to the millisecond window still fail, so losing
-        /// every one of those keeps reporting a test that can no longer prove anything.
+        /// Only a starved thread skips; attempts lost to the millisecond window still fail below.
         if (!measured && timed_out_before_read)
             GTEST_SKIP() << "never observed a deadline before the query timed out";
         EXPECT_TRUE(measured) << "could not observe ProcessList::insert within a single millisecond";
