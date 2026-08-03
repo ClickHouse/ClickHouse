@@ -328,5 +328,8 @@ WHERE current_database = currentDatabase()
   AND type != 'QueryStart'
   AND query_kind != 'Set' -- sent by the test harness, not by this test
   AND query NOT ILIKE 'SYSTEM FLUSH%' -- its own terminal event races with the flush it performs
+  AND query_id = initial_query_id -- only the statements issued here: a Replicated database logs
+                                  -- each DDL again from the replay worker, which inherits the
+                                  -- initiator's initial_query_id but gets a fresh query_id
   AND event_date >= yesterday() AND event_time > now() - INTERVAL 5 MINUTE
 ORDER BY event_time_microseconds;
