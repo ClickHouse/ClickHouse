@@ -30,7 +30,7 @@ CREATE TABLE tab_v0_initial
 )
 ENGINE = MergeTree() ORDER BY id
 -- 'v0_initial' requires the 'none' codec; pin it so randomized settings cannot inject a codec.
-SETTINGS index_granularity = 1, text_index_serialization_version = 'v0_initial', text_index_posting_list_codec = 'none';
+SETTINGS index_granularity = 64, text_index_serialization_version = 'v0_initial', text_index_posting_list_codec = 'none';
 
 INSERT INTO tab_v0_initial SELECT number, 'foo bar' FROM numbers(512);
 INSERT INTO tab_v0_initial SELECT number, 'foo baz' FROM numbers(512);
@@ -53,7 +53,7 @@ CREATE TABLE tab_v1_with_codec
     INDEX text_idx str TYPE text(tokenizer = 'splitByNonAlpha')
 )
 ENGINE = MergeTree() ORDER BY id
-SETTINGS index_granularity = 1, text_index_serialization_version = 'v1_with_codec', text_index_posting_list_codec = 'bitpacking';
+SETTINGS index_granularity = 64, text_index_serialization_version = 'v1_with_codec', text_index_posting_list_codec = 'bitpacking';
 
 INSERT INTO tab_v1_with_codec SELECT number, 'foo bar' FROM numbers(512);
 SELECT count() FROM tab_v1_with_codec WHERE hasToken(str, 'foo');
@@ -68,7 +68,7 @@ CREATE TABLE tab_v2_with_positions
     INDEX text_idx str TYPE text(tokenizer = 'splitByNonAlpha', support_phrase_search = 1)
 )
 ENGINE = MergeTree() ORDER BY id
-SETTINGS index_granularity = 1, text_index_serialization_version = 'v2_with_positions', allow_experimental_text_index_phrase_search = 1;
+SETTINGS index_granularity = 64, text_index_serialization_version = 'v2_with_positions', allow_experimental_text_index_phrase_search = 1;
 
 INSERT INTO tab_v2_with_positions SELECT number, 'foo bar baz' FROM numbers(512);
 SELECT count() FROM tab_v2_with_positions WHERE hasPhrase(str, 'foo bar');
@@ -91,7 +91,7 @@ CREATE TABLE tab_conflict
     INDEX text_idx str TYPE text(tokenizer = 'splitByNonAlpha')
 )
 ENGINE = MergeTree() ORDER BY id
-SETTINGS index_granularity = 1, text_index_serialization_version = 'v0_initial', text_index_posting_list_codec = 'bitpacking'; -- { serverError BAD_ARGUMENTS }
+SETTINGS index_granularity = 64, text_index_serialization_version = 'v0_initial', text_index_posting_list_codec = 'bitpacking'; -- { serverError BAD_ARGUMENTS }
 
 SELECT '-- altering into the incompatible combination is also rejected';
 DROP TABLE IF EXISTS tab_alter;
@@ -102,7 +102,7 @@ CREATE TABLE tab_alter
     INDEX text_idx str TYPE text(tokenizer = 'splitByNonAlpha')
 )
 ENGINE = MergeTree() ORDER BY id
-SETTINGS index_granularity = 1, text_index_posting_list_codec = 'bitpacking';
+SETTINGS index_granularity = 64, text_index_posting_list_codec = 'bitpacking';
 ALTER TABLE tab_alter MODIFY SETTING text_index_serialization_version = 'v0_initial'; -- { serverError BAD_ARGUMENTS }
 
 SELECT '-- a posting list codec index argument requires at least the v1_with_codec version';

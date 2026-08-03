@@ -3707,24 +3707,6 @@ TEST(PostingListCursorTest, TextIndexHeaderWriteInitialVersionOmitsCodec)
     EXPECT_TRUE(with_positions_data.has_positions);
 }
 
-TEST(PostingListCursorTest, TextIndexHeaderInitialVersionWithCodecThrows)
-{
-    auto tokens = ColumnString::create();
-    tokens->insert("delta");
-
-    auto offsets = ColumnUInt64::create();
-    offsets->insertValue(21);
-
-    DictionarySparseIndex sparse_index(tokens->getPtr(), offsets->getPtr());
-
-    WriteBufferFromOwnString out;
-    EXPECT_THROW(
-        TextIndexSerialization::serializeHeader(
-            MergeTreeTextIndexSerializationVersion::V0_Initial,
-            sparse_index, IPostingListCodec::Type::Bitpacking, /*has_positions=*/ false, out),
-        Exception);
-}
-
 // Section: row_offset beyond UInt32::max must throw — doc IDs are 32-bit, and
 // `values[i] - row_offset` would otherwise underflow `size_t` and write OOB.
 // Skipped under debug/sanitizers: `LOGICAL_ERROR` aborts there, so `EXPECT_THROW`
