@@ -72,7 +72,7 @@ class AggregateFunctionQuantile final
 private:
     using ColVecType = ColumnVectorOrDecimal<Value>;
 
-    static constexpr bool returns_float = !(std::is_same_v<FloatReturnType, void>);
+    static constexpr bool returns_float = !std::is_same_v<FloatReturnType, void>;
     static constexpr bool is_quantile_ddsketch = std::is_same_v<Data, QuantileDD<Value>>;
     static constexpr size_t state_version = quantileStateVersion<Data>();
     static_assert(!is_decimal<Value> || !returns_float);
