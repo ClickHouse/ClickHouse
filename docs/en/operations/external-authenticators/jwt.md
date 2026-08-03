@@ -8,6 +8,9 @@ doc_type: 'reference'
 ---
 
 import CloudOnlyBadge from '@theme/badges/CloudOnlyBadge';
+import BetaBadge from '@theme/badges/BetaBadge';
+import VersionBadge from '@theme/badges/VersionBadge';
+import EnterprisePlanFeatureBadge from '@theme/badges/EnterprisePlanFeatureBadge';
 
 <CloudOnlyBadge/>
 
@@ -212,6 +215,24 @@ Every ClickHouse Cloud service comes with a predefined JWT authenticator that is
 The built-in authenticator has a permission limit set to the `default_role` role and the `default` user. This means the effective rights of any JWT user are intersected with the grants held by those two entities, so a token can never escalate privileges beyond what `default_role` and `default` are allowed to do.
 
 You do not need to configure anything to use this authenticator. It is provisioned automatically when the service is created.
+
+## Enabling JWT authentication for your service {#enabling-jwt-authentication-for-your-service}
+
+<BetaBadge/>
+<VersionBadge minVersion="26.4" />
+<EnterprisePlanFeatureBadge feature="JWT authentication with a custom identity provider" support="true"/>
+
+In addition to the built-in authenticator, you can configure your ClickHouse Cloud service to accept JWTs issued by your own identity provider (for example, Microsoft Entra or Okta). This is a beta feature, available in the Enterprise plan for services running ClickHouse version 26.4 or later. To enable it, open a [support ticket](https://clickhouse.com/support/program) with the following setup details:
+
+| Parameter | Description |
+|---|---|
+| Service ID | The UUID of the ClickHouse Cloud service to enable JWT authentication on. You can find it in the Cloud console URL when you open the service. |
+| Issuer | The value of the `iss` claim in tokens issued by your identity provider, typically the provider's URL (for example, `https://your-tenant.okta.com`). ClickHouse rejects tokens whose issuer does not match this value. |
+| Audience | The value of the `aud` claim that your identity provider places in tokens intended for this service. ClickHouse rejects tokens issued for a different audience. |
+| JWKS URL | The HTTPS endpoint where your identity provider publishes its JSON Web Key Set (for example, `https://idp.example.com/.well-known/jwks.json`). ClickHouse fetches the public keys from this endpoint to verify token signatures. JWKS verification works with RSA keys (`RS256`) only, as described in [Required claims](#required-claims). |
+| Roles claim | The name of the token claim that holds the ClickHouse roles for the ephemeral user (the default is `clickhouse:roles`). The claim must contain a JSON array of role names, e.g. `["analyst", "reader"]`. |
+
+The roles named in the claim must already exist in the service (create them with `CREATE ROLE`), and the permission limit still caps the effective access rights, as described in [Access rights](#access-rights).
 
 ## Interserver communication {#interserver-communication}
 
