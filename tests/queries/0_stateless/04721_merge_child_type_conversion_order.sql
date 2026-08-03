@@ -137,6 +137,21 @@ SELECT DISTINCT A FROM m_lc_widen ORDER BY A ASC LIMIT 3;
 SELECT DISTINCT A FROM m_e8_null  ORDER BY A ASC LIMIT 3;
 SELECT DISTINCT A FROM m_e8_int   ORDER BY A ASC LIMIT 3;
 
+SELECT '-- the same wrapper shape with the declared type left to Merge to derive';
+-- No column list, so the type the children are cast to is whatever `getLeastSupertypeOrVariant`
+-- picks. That derivation is what makes these shapes ordinary rather than exotic, and pinning it
+-- here keeps the arm honest if the resolver ever changes.
+CREATE TABLE t_lc_str (A LowCardinality(String)) ENGINE = MergeTree ORDER BY A;
+INSERT INTO t_lc_str SELECT toString(number % 50) FROM numbers(200);
+CREATE TABLE dist_lc_str AS t_lc_str ENGINE = Distributed('test_cluster_two_shards_localhost', currentDatabase(), t_lc_str);
+CREATE TABLE t_null_str (A Nullable(String)) ENGINE = MergeTree ORDER BY A SETTINGS allow_nullable_key = 1;
+INSERT INTO t_null_str SELECT toString(number % 50) FROM numbers(200);
+CREATE TABLE dist_null_str AS t_null_str ENGINE = Distributed('test_cluster_two_shards_localhost', currentDatabase(), t_null_str);
+CREATE TABLE m_derived ENGINE = Merge(currentDatabase(), '^(dist_lc_str|dist_null_str)$');
+SELECT type FROM system.columns WHERE database = currentDatabase() AND table = 'm_derived' AND name = 'A';
+SELECT count() > 0 FROM (EXPLAIN PLAN sorting = 1 SELECT DISTINCT A FROM m_derived ORDER BY A ASC) WHERE explain ILIKE '%Merge sorted streams%';
+SELECT DISTINCT A FROM m_derived ORDER BY A ASC LIMIT 3;
+
 SELECT '-- an equal-width signedness flip inside LowCardinality stays refused';
 CREATE TABLE t_lc_i64 (A LowCardinality(Int64)) ENGINE = MergeTree ORDER BY A;
 INSERT INTO t_lc_i64 SELECT -number % 50 FROM numbers(200);

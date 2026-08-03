@@ -100,6 +100,12 @@ c
 1
 2
 3
+-- the same wrapper shape with the declared type left to Merge to derive
+Nullable(String)
+1
+0
+1
+10
 -- an equal-width signedness flip inside LowCardinality stays refused
 0
 0

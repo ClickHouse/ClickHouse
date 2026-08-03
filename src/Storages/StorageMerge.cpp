@@ -419,15 +419,13 @@ bool conversionPreservesOrder(const IDataType & from, const IDataType & to)
         return true;
 
     /// `ColumnLowCardinality::compareAt` compares through the dictionary, so a `LowCardinality`
-    /// column orders exactly like its nested type.
+    /// column orders exactly like its nested type. The wrapper is therefore stripped from either
+    /// side; it never nests, so the stripped side is not `LowCardinality` again.
     const auto * from_lc = typeid_cast<const DataTypeLowCardinality *>(&from);
     const auto * to_lc = typeid_cast<const DataTypeLowCardinality *>(&to);
-    if (from_lc && to_lc)
-        return conversionPreservesOrder(*from_lc->getDictionaryType(), *to_lc->getDictionaryType());
-    if (from_lc)
-        return from_lc->getDictionaryType()->equals(to);
-    if (to_lc)
-        return to_lc->getDictionaryType()->equals(from);
+    if (from_lc || to_lc)
+        return conversionPreservesOrder(
+            from_lc ? *from_lc->getDictionaryType() : from, to_lc ? *to_lc->getDictionaryType() : to);
 
     /// Keeping or adding nullability moves no value: no NULL appears and every non-NULL keeps its
     /// place, so only the nested pair matters. Removing it falls through, because a nullable value
