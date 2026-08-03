@@ -526,7 +526,10 @@ ASTPtr parseMongoAggregateExpression(const rapidjson::Value & value)
         {
             /// A field path names the column of the same name, dots included: the dialect maps a
             /// nested document field onto an `a.b` column.
-            return make_intrusive<ASTIdentifier>(String(text.substr(1)));
+            auto field = text.substr(1);
+            if (field.empty())
+                throw Exception(ErrorCodes::BAD_ARGUMENTS, "'$' by itself is not a valid field path");
+            return make_intrusive<ASTIdentifier>(String(field));
         }
         return makeLiteral(Field(String(text)));
     }
@@ -606,10 +609,10 @@ ASTPtr parseMongoAccumulator(const rapidjson::Value & value)
     {
         /// `{"$sum": 1}` counts the documents of the group. Counting is much cheaper than summing a
         /// constant, and it is by far the most common accumulator.
-        const auto * literal = parseMongoAggregateExpression(member.value)->as<ASTLiteral>();
-        if (literal && literal->value == Field(Int64(1)))
+        auto argument = parseMongoAggregateExpression(member.value);
+        if (const auto * literal = argument->as<ASTLiteral>(); literal && literal->value == Field(Int64(1)))
             return makeASTFunction("count");
-        return makeASTFunction("sum", parseMongoAggregateExpression(member.value));
+        return makeASTFunction("sum", std::move(argument));
     }
 
     if (auto it = accumulators.find(name); it != accumulators.end())
