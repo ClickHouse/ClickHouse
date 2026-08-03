@@ -79,7 +79,8 @@ public:
         const String & table_name,
         const String & new_metadata_path,
         Poco::JSON::Object::Ptr new_schema,
-        Int32 previous_schema_id) const override;
+        Int32 previous_schema_id,
+        Poco::JSON::Object::Ptr full_metadata = nullptr) const override;
 
     bool isTransactional() const override { return true; }
 
@@ -242,6 +243,16 @@ private:
     AccessToken retrieveGoogleCloudAccessToken() const;
     AccessToken retrieveGoogleCloudAccessTokenFromRefreshToken() const;
 };
+
+/// Builds the JSON body for `POST .../namespaces/{ns}/tables/{table}` (Iceberg REST update).
+///
+/// Returns `nullptr` when `new_snapshot` is null (nothing to commit). Throws
+/// `DB::Exception(DATALAKE_DATABASE_ERROR)` with a specific message when the metadata
+/// blob is malformed (e.g. missing `current-schema-id`, no schema object matching it).
+Poco::JSON::Object::Ptr buildUpdateMetadataRequestBody(
+    const String & namespace_name,
+    const String & table_name,
+    Poco::JSON::Object::Ptr new_snapshot);
 
 }
 

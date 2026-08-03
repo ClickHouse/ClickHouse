@@ -138,7 +138,10 @@ static Plan getPlan(
         context,
         log.get(),
         persistent_table_components.table_uuid,
-        persistent_table_components.metadata_compression_method);
+        persistent_table_components.metadata_compression_method,
+        /* force_fetch_latest_metadata */ true,
+        /* ignore_explicit_metadata_file_path */ false,
+        /* select_by_table_uuid */ true);
 
     Poco::JSON::Object::Ptr initial_metadata_object
         = getMetadataJSONObject(metadata_file_path, object_storage, persistent_table_components.metadata_cache, context, log, compression_method, persistent_table_components.table_uuid);

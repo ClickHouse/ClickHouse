@@ -54,6 +54,7 @@ bool checkValidSchemaEvolution(Poco::Dynamic::Var old_type, Poco::Dynamic::Var n
         return true;
     }
 
+    if (!old_type.isString() && !new_type.isString())
     {
         auto old_complex_type = old_type.extract<Poco::JSON::Object::Ptr>();
         auto new_complex_type = new_type.extract<Poco::JSON::Object::Ptr>();
@@ -64,6 +65,23 @@ bool checkValidSchemaEvolution(Poco::Dynamic::Var old_type, Poco::Dynamic::Var n
         {
             return true;
         }
+    }
+
+    return false;
+}
+
+bool icebergTypesEqual(Poco::Dynamic::Var old_type, Poco::Dynamic::Var new_type)
+{
+    if (old_type.isString() && new_type.isString())
+        return old_type.extract<String>() == new_type.extract<String>();
+
+    if (!old_type.isString() && !new_type.isString())
+    {
+        std::ostringstream oss_old; // STYLE_CHECK_ALLOW_STD_STRING_STREAM
+        std::ostringstream oss_new; // STYLE_CHECK_ALLOW_STD_STRING_STREAM
+        old_type.extract<Poco::JSON::Object::Ptr>()->stringify(oss_old);
+        new_type.extract<Poco::JSON::Object::Ptr>()->stringify(oss_new);
+        return oss_old.str() == oss_new.str();
     }
 
     return false;
@@ -317,10 +335,9 @@ void MetadataGenerator::generateAddColumnMetadata(const String & column_name, Da
     metadata_object->getArray(Iceberg::f_schemas)->add(current_schema);
 }
 
-void MetadataGenerator::generateModifyColumnMetadata(const String & column_name, DataTypePtr type)
+bool MetadataGenerator::generateModifyColumnMetadata(const String & column_name, DataTypePtr type)
 {
     auto current_schema_id = metadata_object->getValue<Int32>(Iceberg::f_current_schema_id);
-    metadata_object->set(Iceberg::f_current_schema_id, current_schema_id + 1);
 
     Poco::JSON::Object::Ptr current_schema;
     auto schemas = metadata_object->getArray(Iceberg::f_schemas);
@@ -335,37 +352,41 @@ void MetadataGenerator::generateModifyColumnMetadata(const String & column_name,
 
     if (!current_schema)
         throw Exception(ErrorCodes::BAD_ARGUMENTS, "Not found schema with id {}", current_schema_id);
-    current_schema = deepCopy(current_schema);
-    auto last_column_id = metadata_object->getValue<Int32>(Iceberg::f_last_column_id);
 
+    auto last_column_id = metadata_object->getValue<Int32>(Iceberg::f_last_column_id);
     auto new_type = Iceberg::getIcebergType(type, last_column_id);
     auto schema_fields = current_schema->getArray(Iceberg::f_fields);
 
-    bool found = false;
     for (UInt32 i = 0; i < schema_fields->size(); ++i)
     {
         auto current_field = schema_fields->getObject(i);
         if (current_field->getValue<String>(Iceberg::f_name) == column_name)
         {
+            if (current_field->getValue<bool>(Iceberg::f_required) == new_type.second
+                && icebergTypesEqual(current_field->get(Iceberg::f_type), new_type.first))
+                return false;
+
             if (!checkValidSchemaEvolution(current_field->get(Iceberg::f_type), new_type.first))
                 throw Exception(ErrorCodes::BAD_ARGUMENTS, "Iceberg spec doesn't allow schema evolution to type {}", type->getPrettyName());
 
-            auto old_type = deepCopy(current_field);
-            current_field->set(Iceberg::f_type, new_type.first);
             if (!current_field->getValue<bool>(Iceberg::f_required) && !type->isNullable())
                 throw Exception(ErrorCodes::BAD_ARGUMENTS, "Iceberg spec doesn't allow change type from nullable to non-nullable {}", type->getPrettyName());
 
+            current_schema = deepCopy(current_schema);
+            schema_fields = current_schema->getArray(Iceberg::f_fields);
+            current_field = schema_fields->getObject(i);
+
+            current_field->set(Iceberg::f_type, new_type.first);
             current_field->set(Iceberg::f_required, new_type.second);
-            found = true;
-            break;
+
+            metadata_object->set(Iceberg::f_current_schema_id, current_schema_id + 1);
+            current_schema->set(Iceberg::f_schema_id, current_schema_id + 1);
+            metadata_object->getArray(Iceberg::f_schemas)->add(current_schema);
+            return true;
         }
     }
 
-    if (!found)
-        throw Exception(ErrorCodes::BAD_ARGUMENTS, "Not found column {}", column_name);
-
-    current_schema->set(Iceberg::f_schema_id, current_schema_id + 1);
-    metadata_object->getArray(Iceberg::f_schemas)->add(current_schema);
+    throw Exception(ErrorCodes::BAD_ARGUMENTS, "Column {} not found in schema", column_name);
 }
 
 void MetadataGenerator::generateRenameColumnMetadata(const String & column_name, const String & new_column_name)

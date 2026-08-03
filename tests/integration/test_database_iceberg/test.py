@@ -13,10 +13,13 @@ import pytz
 from pyiceberg.catalog import load_catalog
 from pyiceberg.partitioning import PartitionField, PartitionSpec
 from pyiceberg.schema import Schema
-from pyiceberg.table.sorting import SortField, SortOrder
+from pyiceberg.table.sorting import SortField, SortOrder, UNSORTED_SORT_ORDER
 from pyiceberg.transforms import DayTransform, IdentityTransform
 from pyiceberg.types import (
     DoubleType,
+    IntegerType,
+    LongType,
+    FloatType,
     NestedField,
     StringType,
     StructType,
@@ -24,9 +27,11 @@ from pyiceberg.types import (
     TimestamptzType
 )
 
+from minio import Minio
 from helpers.cluster import ClickHouseCluster
 from helpers.config_cluster import minio_secret_key, minio_access_key
 from helpers.client import QueryRuntimeException
+from helpers.s3_tools import list_s3_objects
 
 BASE_URL = "http://rest:8181/v1"
 
@@ -95,11 +100,12 @@ def create_table(
     schema=DEFAULT_SCHEMA,
     partition_spec=DEFAULT_PARTITION_SPEC,
     sort_order=DEFAULT_SORT_ORDER,
+    location="s3://warehouse-rest/data",
 ):
     return catalog.create_table(
         identifier=f"{namespace}.{table}",
         schema=schema,
-        location="s3://warehouse-rest/data",
+        location=location,
         partition_spec=partition_spec,
         sort_order=sort_order,
     )
@@ -1238,3 +1244,384 @@ def test_iceberg_file_progress_callback(started_cluster):
         f"`IcebergIterator::next` did not invoke the file-progress callback "
         f"(regression of PR #105413 wiring)."
     )
+
+
+def test_alter_drop_column_without_reload(started_cluster):
+    node = started_cluster.instances["node1"]
+
+    test_ref = f"test_alter_drop_column_{uuid.uuid4()}"
+    table_name = f"{test_ref}_table"
+    root_namespace = f"{test_ref}_namespace"
+
+    schema = Schema(
+        NestedField(field_id=1, name="x", field_type=StringType(), required=False),
+        NestedField(field_id=2, name="y", field_type=StringType(), required=False),
+    )
+
+    catalog = load_catalog_impl(started_cluster)
+    catalog.create_namespace(root_namespace)
+    create_table(
+        catalog,
+        root_namespace,
+        table_name,
+        schema,
+        PartitionSpec(),
+        DEFAULT_SORT_ORDER,
+        location=f"s3://warehouse-rest/data/{root_namespace}/{table_name}",
+    )
+
+    create_clickhouse_iceberg_database(started_cluster, node, CATALOG_NAME)
+    node.query(
+        f"INSERT INTO {CATALOG_NAME}.`{root_namespace}.{table_name}` VALUES ('a', 'b');",
+        settings={"allow_insert_into_iceberg": 1, "write_full_path_in_iceberg_metadata": 1},
+    )
+    assert (
+        node.query(f"SELECT * FROM {CATALOG_NAME}.`{root_namespace}.{table_name}`")
+        == "a\tb\n"
+    )
+
+    node.query(
+        f"ALTER TABLE {CATALOG_NAME}.`{root_namespace}.{table_name}` DROP COLUMN y;",
+        settings={"allow_insert_into_iceberg": 1},
+    )
+    assert (
+        node.query(f"SELECT * FROM {CATALOG_NAME}.`{root_namespace}.{table_name}`")
+        == "a\n"
+    )
+    assert "`y`" not in node.query(
+        f"SHOW CREATE TABLE {CATALOG_NAME}.`{root_namespace}.{table_name}`"
+    )
+
+
+def test_alter_modify_column_rest_catalog(started_cluster):
+    node = started_cluster.instances["node1"]
+
+    test_ref = f"test_alter_modify_column_{uuid.uuid4()}"
+    table_name = f"{test_ref}_table"
+    root_namespace = f"{test_ref}_namespace"
+
+    schema = Schema(
+        NestedField(field_id=1, name="id", field_type=IntegerType(), required=False),
+        NestedField(field_id=2, name="value", field_type=StringType(), required=False),
+    )
+
+    catalog = load_catalog_impl(started_cluster)
+    catalog.create_namespace(root_namespace)
+    create_table(
+        catalog,
+        root_namespace,
+        table_name,
+        schema,
+        PartitionSpec(),
+        DEFAULT_SORT_ORDER,
+        location=f"s3://warehouse-rest/data/{root_namespace}/{table_name}",
+    )
+
+    create_clickhouse_iceberg_database(started_cluster, node, CATALOG_NAME)
+    node.query(
+        f"INSERT INTO {CATALOG_NAME}.`{root_namespace}.{table_name}` VALUES (1, 'hello'), (2, 'world');",
+        settings={"allow_insert_into_iceberg": 1, "write_full_path_in_iceberg_metadata": 1},
+    )
+    assert (
+        node.query(f"SELECT id, value FROM {CATALOG_NAME}.`{root_namespace}.{table_name}` ORDER BY id")
+        == "1\thello\n2\tworld\n"
+    )
+
+    node.query(
+        f"ALTER TABLE {CATALOG_NAME}.`{root_namespace}.{table_name}` ADD COLUMN newCol Nullable(Int64);",
+        settings={"allow_insert_into_iceberg": 1},
+    )
+
+    node.query(
+        f"ALTER TABLE {CATALOG_NAME}.`{root_namespace}.{table_name}` MODIFY COLUMN newCol Nullable(Int64);",
+        settings={"allow_insert_into_iceberg": 1},
+    )
+
+    node.query(
+        f"ALTER TABLE {CATALOG_NAME}.`{root_namespace}.{table_name}` MODIFY COLUMN id Nullable(Int64);",
+        settings={"allow_insert_into_iceberg": 1},
+    )
+
+    assert (
+        node.query(f"SELECT id, value FROM {CATALOG_NAME}.`{root_namespace}.{table_name}` ORDER BY id")
+        == "1\thello\n2\tworld\n"
+    )
+
+    node.query(
+        f"INSERT INTO {CATALOG_NAME}.`{root_namespace}.{table_name}` VALUES (3000000000, 'foo', NULL);",
+        settings={"allow_insert_into_iceberg": 1, "write_full_path_in_iceberg_metadata": 1},
+    )
+    assert (
+        node.query(
+            f"SELECT id, value, newCol FROM {CATALOG_NAME}.`{root_namespace}.{table_name}` ORDER BY id"
+        )
+        == "1\thello\t\\N\n2\tworld\t\\N\n3000000000\tfoo\t\\N\n"
+    )
+
+    iceberg_table = catalog.load_table(f"{root_namespace}.{table_name}")
+    current_schema = iceberg_table.schema()
+    assert isinstance(current_schema.find_field("id").field_type, LongType)
+    assert isinstance(current_schema.find_field("newCol").field_type, LongType)
+
+
+def test_alter_orphan_metadata_cleanup_on_catalog_failure(started_cluster):
+    node = started_cluster.instances["node1"]
+
+    test_ref = f"test_alter_orphan_cleanup_{uuid.uuid4()}"
+    table_name = f"{test_ref}_table"
+    root_namespace = f"{test_ref}_namespace"
+
+    schema = Schema(
+        NestedField(field_id=1, name="x", field_type=StringType(), required=False),
+        NestedField(field_id=2, name="y", field_type=StringType(), required=False),
+    )
+
+    catalog = load_catalog_impl(started_cluster)
+    catalog.create_namespace(root_namespace)
+    create_table(
+        catalog,
+        root_namespace,
+        table_name,
+        schema,
+        PartitionSpec(),
+        DEFAULT_SORT_ORDER,
+        location=f"s3://warehouse-rest/data/{root_namespace}/{table_name}",
+    )
+
+    create_clickhouse_iceberg_database(started_cluster, node, CATALOG_NAME)
+    node.query(
+        f"INSERT INTO {CATALOG_NAME}.`{root_namespace}.{table_name}` VALUES ('a', 'b');",
+        settings={"allow_insert_into_iceberg": 1, "write_full_path_in_iceberg_metadata": 1},
+    )
+
+    iceberg_table = catalog.load_table(f"{root_namespace}.{table_name}")
+    metadata_location_before = iceberg_table.metadata_location
+    metadata_prefix = metadata_location_before.replace("s3://warehouse-rest/", "").rsplit("/", 1)[0] + "/"
+
+    minio_client = Minio(
+        f"{started_cluster.get_instance_ip('minio')}:9000",
+        access_key=minio_access_key,
+        secret_key=minio_secret_key,
+        secure=False,
+    )
+
+    def count_metadata_files():
+        return len(
+            [
+                f
+                for f in list_s3_objects(minio_client, "warehouse-rest", prefix=metadata_prefix)
+                if f.endswith(".metadata.json")
+            ]
+        )
+
+    metadata_files_before = count_metadata_files()
+
+    node.query("SYSTEM ENABLE FAILPOINT iceberg_alter_catalog_update_metadata_fail")
+    try:
+        with pytest.raises(QueryRuntimeException, match="catalog commit failed"):
+            node.query(
+                f"ALTER TABLE {CATALOG_NAME}.`{root_namespace}.{table_name}` DROP COLUMN y;",
+                settings={"allow_insert_into_iceberg": 1},
+            )
+    finally:
+        node.query("SYSTEM DISABLE FAILPOINT iceberg_alter_catalog_update_metadata_fail")
+
+    assert count_metadata_files() == metadata_files_before
+    catalog.load_table(f"{root_namespace}.{table_name}")
+    assert catalog.load_table(f"{root_namespace}.{table_name}").metadata_location == metadata_location_before
+    assert (
+        node.query(f"SELECT * FROM {CATALOG_NAME}.`{root_namespace}.{table_name}`")
+        == "a\tb\n"
+    )
+
+
+def test_alter_fails_when_metadata_not_initialized(started_cluster):
+    node = started_cluster.instances["node1"]
+
+    test_ref = f"test_alter_uninit_metadata_{uuid.uuid4()}"
+    table_name = f"{test_ref}_table"
+    root_namespace = f"{test_ref}_namespace"
+
+    schema = Schema(
+        NestedField(field_id=1, name="x", field_type=StringType(), required=False),
+        NestedField(field_id=2, name="y", field_type=StringType(), required=False),
+    )
+
+    catalog = load_catalog_impl(started_cluster)
+    catalog.create_namespace(root_namespace)
+    create_table(
+        catalog,
+        root_namespace,
+        table_name,
+        schema,
+        PartitionSpec(),
+        DEFAULT_SORT_ORDER,
+        location=f"s3://warehouse-rest/data/{root_namespace}/{table_name}",
+    )
+
+    create_clickhouse_iceberg_database(started_cluster, node, CATALOG_NAME)
+
+    node.query("SYSTEM ENABLE FAILPOINT datalake_iceberg_metadata_create_fail")
+    try:
+        node.query(f"DROP DATABASE IF EXISTS {CATALOG_NAME}")
+        create_clickhouse_iceberg_database(started_cluster, node, CATALOG_NAME)
+
+        with pytest.raises(QueryRuntimeException, match="Metadata is not initialized"):
+            node.query(
+                f"ALTER TABLE {CATALOG_NAME}.`{root_namespace}.{table_name}` DROP COLUMN y;",
+                settings={"allow_insert_into_iceberg": 1},
+            )
+    finally:
+        node.query("SYSTEM DISABLE FAILPOINT datalake_iceberg_metadata_create_fail")
+        node.query(f"DROP DATABASE IF EXISTS {CATALOG_NAME}")
+        create_clickhouse_iceberg_database(started_cluster, node, CATALOG_NAME)
+
+
+def test_alter_orphan_cleanup_failure_reported(started_cluster):
+    node = started_cluster.instances["node1"]
+
+    test_ref = f"test_alter_orphan_cleanup_fail_{uuid.uuid4()}"
+    table_name = f"{test_ref}_table"
+    root_namespace = f"{test_ref}_namespace"
+
+    schema = Schema(
+        NestedField(field_id=1, name="x", field_type=StringType(), required=False),
+        NestedField(field_id=2, name="y", field_type=StringType(), required=False),
+    )
+
+    catalog = load_catalog_impl(started_cluster)
+    catalog.create_namespace(root_namespace)
+    create_table(
+        catalog,
+        root_namespace,
+        table_name,
+        schema,
+        PartitionSpec(),
+        DEFAULT_SORT_ORDER,
+        location=f"s3://warehouse-rest/data/{root_namespace}/{table_name}",
+    )
+
+    create_clickhouse_iceberg_database(started_cluster, node, CATALOG_NAME)
+    node.query(
+        f"INSERT INTO {CATALOG_NAME}.`{root_namespace}.{table_name}` VALUES ('a', 'b');",
+        settings={"allow_insert_into_iceberg": 1, "write_full_path_in_iceberg_metadata": 1},
+    )
+
+    node.query("SYSTEM ENABLE FAILPOINT iceberg_alter_catalog_update_metadata_fail")
+    node.query("SYSTEM ENABLE FAILPOINT iceberg_alter_orphan_metadata_cleanup_fail")
+    try:
+        with pytest.raises(QueryRuntimeException) as exc_info:
+            node.query(
+                f"ALTER TABLE {CATALOG_NAME}.`{root_namespace}.{table_name}` DROP COLUMN y;",
+                settings={"allow_insert_into_iceberg": 1},
+            )
+        error = exc_info.value.args[0].lower()
+        assert "catalog commit failed" in error
+        assert "failed to remove orphan metadata file" in error
+    finally:
+        node.query("SYSTEM DISABLE FAILPOINT iceberg_alter_orphan_metadata_cleanup_fail")
+        node.query("SYSTEM DISABLE FAILPOINT iceberg_alter_catalog_update_metadata_fail")
+
+
+def test_alter_sequential_add_drop_shared_location(started_cluster):
+    """
+    Two Iceberg tables share the same storage location, so their metadata files
+    land in the same folder. Running a sequence of ALTER ADD/DROP COLUMN
+    statements on one table must keep selecting that table's own metadata
+    (by table-uuid) instead of the globally highest-version metadata file.
+    """
+    node = started_cluster.instances["node1"]
+
+    test_ref = f"test_alter_sequential_{uuid.uuid4()}"
+    table_a = f"{test_ref}_table_a"
+    table_b = f"{test_ref}_table_b"
+    root_namespace = f"{test_ref}_namespace"
+
+    schema = Schema(
+        NestedField(field_id=1, name="x", field_type=StringType(), required=False),
+    )
+
+    shared_location = f"s3://warehouse-rest/data/{root_namespace}/shared"
+
+    catalog = load_catalog_impl(started_cluster)
+    catalog.create_namespace(root_namespace)
+    create_table(
+        catalog,
+        root_namespace,
+        table_a,
+        schema,
+        PartitionSpec(),
+        UNSORTED_SORT_ORDER,
+        location=shared_location,
+    )
+    create_table(
+        catalog,
+        root_namespace,
+        table_b,
+        schema,
+        PartitionSpec(),
+        UNSORTED_SORT_ORDER,
+        location=shared_location,
+    )
+
+    create_clickhouse_iceberg_database(started_cluster, node, CATALOG_NAME)
+
+    node.query(
+        f"INSERT INTO {CATALOG_NAME}.`{root_namespace}.{table_a}` VALUES ('a');",
+        settings={"allow_insert_into_iceberg": 1, "write_full_path_in_iceberg_metadata": 1},
+    )
+    node.query(
+        f"INSERT INTO {CATALOG_NAME}.`{root_namespace}.{table_b}` VALUES ('b');",
+        settings={"allow_insert_into_iceberg": 1, "write_full_path_in_iceberg_metadata": 1},
+    )
+
+    table_b_columns = ["b_col1", "b_col2", "b_col3", "b_col4", "b_col5", "b_col6"]
+    for column in table_b_columns:
+        node.query(
+            f"ALTER TABLE {CATALOG_NAME}.`{root_namespace}.{table_b}` ADD COLUMN IF NOT EXISTS {column} Nullable(String);",
+            settings={"allow_insert_into_iceberg": 1},
+        )
+
+    alter_statements = [
+        f"ALTER TABLE {CATALOG_NAME}.`{root_namespace}.{table_a}` ADD COLUMN IF NOT EXISTS name Nullable(String);",
+        f"ALTER TABLE {CATALOG_NAME}.`{root_namespace}.{table_a}` ADD COLUMN IF NOT EXISTS age Nullable(UInt64);",
+        f"ALTER TABLE {CATALOG_NAME}.`{root_namespace}.{table_a}` ADD COLUMN IF NOT EXISTS email Nullable(String);",
+        f"ALTER TABLE {CATALOG_NAME}.`{root_namespace}.{table_a}` ADD COLUMN IF NOT EXISTS `double` Nullable(Float64);",
+        f"ALTER TABLE {CATALOG_NAME}.`{root_namespace}.{table_a}` ADD COLUMN IF NOT EXISTS `integer` Nullable(UInt64);",
+        f"ALTER TABLE {CATALOG_NAME}.`{root_namespace}.{table_a}` DROP COLUMN IF EXISTS name;",
+        f"ALTER TABLE {CATALOG_NAME}.`{root_namespace}.{table_a}` DROP COLUMN IF EXISTS age;",
+        f"ALTER TABLE {CATALOG_NAME}.`{root_namespace}.{table_a}` DROP COLUMN IF EXISTS email;",
+        f"ALTER TABLE {CATALOG_NAME}.`{root_namespace}.{table_a}` DROP COLUMN IF EXISTS `double`;",
+        f"ALTER TABLE {CATALOG_NAME}.`{root_namespace}.{table_a}` DROP COLUMN IF EXISTS `integer`;",
+    ]
+    for i, statement in enumerate(alter_statements):
+        if i > 0:
+            time.sleep(2)
+        node.query(statement, settings={"allow_insert_into_iceberg": 1})
+
+    show_create_a = node.query(
+        f"SHOW CREATE TABLE {CATALOG_NAME}.`{root_namespace}.{table_a}`"
+    )
+    assert "`x`" in show_create_a
+    for column in ["name", "age", "email", "double", "integer"]:
+        assert f"`{column}`" not in show_create_a
+
+    assert (
+        node.query(f"SELECT * FROM {CATALOG_NAME}.`{root_namespace}.{table_a}`") == "a\n"
+    )
+
+    schema_a = catalog.load_table(f"{root_namespace}.{table_a}").schema()
+    assert [field.name for field in schema_a.fields] == ["x"]
+
+    show_create_b = node.query(
+        f"SHOW CREATE TABLE {CATALOG_NAME}.`{root_namespace}.{table_b}`"
+    )
+    for column in table_b_columns:
+        assert f"`{column}`" in show_create_b
+
+    assert (
+        node.query(f"SELECT x FROM {CATALOG_NAME}.`{root_namespace}.{table_b}`") == "b\n"
+    )
+
+    schema_b = catalog.load_table(f"{root_namespace}.{table_b}").schema()
+    assert [field.name for field in schema_b.fields] == ["x"] + table_b_columns

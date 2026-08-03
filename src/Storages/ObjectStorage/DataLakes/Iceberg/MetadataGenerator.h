@@ -43,7 +43,8 @@ public:
 
     void generateAddColumnMetadata(const String & column_name, DataTypePtr type);
     void generateDropColumnMetadata(const String & column_name);
-    void generateModifyColumnMetadata(const String & column_name, DataTypePtr type);
+    /// Returns false when the column already has the requested type (no metadata change).
+    bool generateModifyColumnMetadata(const String & column_name, DataTypePtr type);
     void generateRenameColumnMetadata(const String & column_name, const String & new_column_name);
 
 private:

@@ -325,7 +325,8 @@ bool ICatalog::updateSchema(
     const String & /*table_name*/,
     const String & /*new_metadata_path*/,
     Poco::JSON::Object::Ptr /*new_schema*/,
-    Int32 /*previous_schema_id*/) const
+    Int32 /*previous_schema_id*/,
+    Poco::JSON::Object::Ptr /*full_metadata*/) const
 {
     throw DB::Exception(DB::ErrorCodes::NOT_IMPLEMENTED, "updateSchema is not implemented");
 }

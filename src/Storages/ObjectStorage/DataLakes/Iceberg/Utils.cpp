@@ -1210,7 +1210,8 @@ MetadataFileWithInfo getLatestOrExplicitMetadataFileAndVersion(
     const std::optional<String> & table_uuid,
     CompressionMethod known_compression_method,
     bool force_fetch_latest_metadata,
-    bool ignore_explicit_metadata_file_path)
+    bool ignore_explicit_metadata_file_path,
+    bool select_by_table_uuid)
 {
     if (data_lake_settings[DataLakeStorageSetting::iceberg_metadata_file_path].changed && !ignore_explicit_metadata_file_path)
     {
@@ -1270,7 +1271,14 @@ MetadataFileWithInfo getLatestOrExplicitMetadataFileAndVersion(
 
     {
         return getLatestMetadataFileAndVersion(
-            object_storage, table_path, data_lake_settings, metadata_cache, local_context, table_uuid, false, force_fetch_latest_metadata);
+            object_storage,
+            table_path,
+            data_lake_settings,
+            metadata_cache,
+            local_context,
+            table_uuid,
+            select_by_table_uuid && table_uuid.has_value(),
+            force_fetch_latest_metadata);
     }
 }
 
