@@ -22,7 +22,11 @@
 #include <Storages/StorageFactory.h>
 #include <Storages/SelectQueryDescription.h>
 
+#include <Interpreters/Cache/QueryResultCache.h>
+
 #include <Common/CurrentThread.h>
+#include <Common/SipHash.h>
+#include <Common/scope_guard_safe.h>
 #include <Common/typeid_cast.h>
 
 #include <Core/Settings.h>
@@ -422,6 +426,63 @@ void StorageView::alter(
         instance.addDependency(*new_metadata.definer, table_id);
 
     setInMemoryMetadata(new_metadata);
+}
+
+std::optional<UInt128> StorageView::getModificationHash(const StorageSnapshotPtr & storage_snapshot, ContextPtr query_context) const
+{
+    /// A view holds no data of its own: reading it reads the tables behind its stored SELECT, so its
+    /// modification hash is derived from theirs. A view can reference other views, so this recurses
+    /// through `computeTableModificationHashForConsistency` (which checks the invoker's `SELECT` access on
+    /// every referenced table and folds each table's identity), and two views can reference each other
+    /// (`Ordinary` databases allow creating such a cycle). Match `Merge` and `Distributed`: track the views
+    /// currently being hashed on this thread and fail closed on re-entry. The size of that set is the view
+    /// nesting depth, so cap it as well - any sane chain is shallow, and a very deep one would recurse as
+    /// deeply here as it costs to hash.
+    static constexpr size_t max_view_nesting_depth = 32;
+    static thread_local std::unordered_set<const IStorage *> views_being_hashed;
+    if (views_being_hashed.size() >= max_view_nesting_depth)
+        return {};
+    if (!views_being_hashed.insert(this).second)
+        return {};
+    SCOPE_EXIT({ views_being_hashed.erase(this); });
+
+    /// A parameterized view is not readable without its parameters, and the parameters are part of what
+    /// the query reads, so there is nothing meaningful to report.
+    if (is_parameterized_view)
+        return {};
+
+    try
+    {
+        /// The stored SELECT was CTE-expanded and database-qualified at CREATE time
+        /// (`InterpreterCreateQuery`), so its table references resolve unambiguously here.
+        const auto & inner_query = storage_snapshot->metadata->getSelectQuery().inner_query;
+        if (!inner_query)
+            return {};
+
+        auto referenced_tables_hash = computeQueryReferencedTablesModificationHash(inner_query, query_context);
+        if (!referenced_tables_hash)
+            return {};
+
+        SipHash hash;
+        hash.update(storage_snapshot->metadata->getColumns().toString(/*include_comments=*/ false));
+        /// Loop-free metadata version for this view's own column metadata (a reverted metadata-only `ALTER`
+        /// would otherwise repeat the column string above). See `IStorage::getMetadataVersionForModificationHash`.
+        hash.update(getMetadataVersionForModificationHash());
+        /// A view in a database without UUIDs (`Ordinary`) can be re-created with a different definition
+        /// but the same identity, and the new definition may read the same tables. Fold the stored SELECT
+        /// so that a definition change is detected as a modification.
+        IASTHash view_query_hash = inner_query->getTreeHash(/*ignore_aliases*/ false);
+        hash.update(view_query_hash.low64);
+        hash.update(view_query_hash.high64);
+        hash.update(*referenced_tables_hash);
+        return hash.get128();
+    }
+    catch (...)
+    {
+        /// Ok to ignore: we could not inspect a referenced table, so we conservatively assume the data may
+        /// have changed.
+        return {};
+    }
 }
 
 static ASTTableExpression * getFirstTableExpression(ASTSelectQuery & select_query)

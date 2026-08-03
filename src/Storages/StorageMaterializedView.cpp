@@ -42,7 +42,10 @@
 #include <Processors/QueryPlan/QueryPlan.h>
 #include <Processors/Sinks/SinkToStorage.h>
 #include <QueryPipeline/Pipe.h>
+#include <Interpreters/Cache/QueryResultCache.h>
 #include <Common/checkStackSize.h>
+#include <Common/SipHash.h>
+#include <Common/scope_guard_safe.h>
 #include <Common/typeid_cast.h>
 #include <Common/randomSeed.h>
 #include <Core/UUID.h>
@@ -949,6 +952,40 @@ StoragePtr StorageMaterializedView::tryGetTargetTable() const
 {
     checkStackSize();
     return DatabaseCatalog::instance().tryGetTable(getTargetTableId(), getContext());
+}
+
+std::optional<UInt128> StorageMaterializedView::getModificationHash(const StorageSnapshotPtr & storage_snapshot, ContextPtr query_context) const
+{
+    /// Reading a materialized view reads its target table, so its modification hash is derived from the
+    /// target's. The target can itself be a view-like storage, so guard against a cycle the same way
+    /// `StorageView`, `Merge` and `Distributed` do: fail closed on re-entry on this thread.
+    static thread_local std::unordered_set<const IStorage *> views_being_hashed;
+    if (!views_being_hashed.insert(this).second)
+        return {};
+    SCOPE_EXIT({ views_being_hashed.erase(this); });
+
+    try
+    {
+        /// `computeTableModificationHashForConsistency` checks the invoker's `SELECT` access on the target
+        /// table and folds its identity (including the UUID, so that a re-created target is distinguished).
+        auto target_hash = computeTableModificationHashForConsistency(getTargetTableId(), query_context);
+        if (!target_hash)
+            return {};
+
+        SipHash hash;
+        hash.update(storage_snapshot->metadata->getColumns().toString(/*include_comments=*/ false));
+        /// Loop-free metadata version for this view's own column metadata. See
+        /// `IStorage::getMetadataVersionForModificationHash`.
+        hash.update(getMetadataVersionForModificationHash());
+        hash.update(*target_hash);
+        return hash.get128();
+    }
+    catch (...)
+    {
+        /// Ok to ignore: we could not inspect the target table, so we conservatively assume the data may
+        /// have changed.
+        return {};
+    }
 }
 
 Strings StorageMaterializedView::getDataPaths() const

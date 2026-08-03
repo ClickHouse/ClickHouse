@@ -9,6 +9,7 @@
 #include <Processors/Sources/SourceFromChunks.h>
 #include <QueryPipeline/Pipe.h>
 #include <Parsers/IAST_fwd.h>
+#include <Interpreters/StorageID.h>
 #include <Core/Types.h>
 #include <base/UUID.h>
 
@@ -34,6 +35,13 @@ bool checkCanWriteQueryResultCache(ASTPtr ast, ContextPtr context, bool skip_con
 /// Returns nullopt if consistency cannot be guaranteed (the query uses a table function, references a table
 /// that cannot be resolved, or a referenced table cannot report whether its data changed).
 std::optional<UInt128> computeQueryReferencedTablesModificationHash(ASTPtr ast, ContextPtr context);
+
+/// Computes the modification hash of a single table, folded together with the table identity (database,
+/// name and UUID) and gated by the current user's `SELECT` access on it. This is the per-table building
+/// block of `computeQueryReferencedTablesModificationHash`; view-like storages use it to hash the table
+/// they actually read. Returns nullopt if the table cannot be resolved, the user may not read it, or it
+/// cannot report whether it changed.
+std::optional<UInt128> computeTableModificationHashForConsistency(const StorageID & table_id, ContextPtr context);
 
 class QueryResultCacheWriter;
 class QueryResultCacheReader;

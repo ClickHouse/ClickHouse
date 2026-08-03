@@ -1855,9 +1855,13 @@ static std::optional<UInt128> getModificationHashOfRemoteTableInShard(
     /// probe-consistent: the unified `URL` engine dispatches recognized non-HTTP schemes
     /// (`URL('s3://...')`, `URL('az://...')`, `URL('hdfs://...')`) to listing-based object storage while
     /// still reporting `URL` as its engine name, so the name alone cannot tell the probe-consistent HTTP
-    /// variant from a delegated object-storage one on the shard. So accept only engines known to be
-    /// probe-consistent and fail closed for everything else (including engines this server does not
-    /// know - the shard may run a different version).
+    /// variant from a delegated object-storage one on the shard. `View` and `MaterializedView` report a
+    /// hash of the tables they read (see `StorageView::getModificationHash`), which makes them work through
+    /// the local-shard path and through `Merge` in-process, but they are excluded here for the same reason
+    /// as `Merge` and `Distributed`: what they read is decided on the shard and may be a listing-based
+    /// object storage table. So accept only engines known to be probe-consistent and fail closed for
+    /// everything else (including engines this server does not know - the shard may run a different
+    /// version).
     auto engine_hash_is_probe_consistent = [](const String & engine)
     {
         return engine.ends_with("MergeTree")

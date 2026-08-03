@@ -11,8 +11,6 @@
 #include <Access/ContextAccess.h>
 #include <Access/Common/AccessType.h>
 #include <Storages/IStorage.h>
-#include <Storages/StorageMaterializedView.h>
-#include <Storages/StorageView.h>
 #include <Common/typeid_cast.h>
 #include <Parsers/ASTCreateFunctionWithDriverQuery.h>
 #include <Parsers/ASTFunction.h>
@@ -310,21 +308,13 @@ static bool astContainsSystemTables(ASTPtr ast, ContextPtr context)
     return finder_data.has_system_tables;
 }
 
-/// A view can reference other views, so the dependency walk below is recursive. Any sane chain is
-/// shallow; give up (fail closed) on anything deeper instead of risking unbounded recursion.
-static constexpr size_t MAX_TABLE_DEPENDENCY_RECURSION_DEPTH = 32;
-
-static std::optional<UInt128> computeReferencedTablesModificationHashImpl(ASTPtr ast, ContextPtr context, size_t depth);
-
-/// Computes the folded modification hash of a single referenced table, looking through view-like
-/// wrappers: a `View` has no data of its own, so its hash is derived from the tables behind its stored
-/// SELECT, and reading a `MaterializedView` reads its target table. Engines that neither override
-/// `getModificationHash` nor are handled here (e.g. `WindowView`, `LiveView`) yield nullopt (fail closed).
-static std::optional<UInt128> computeSingleTableModificationHash(const StorageID & table_id, ContextPtr context, size_t depth)
+/// Computes the folded modification hash of a single referenced table. View-like wrappers are looked
+/// through by their own `getModificationHash` (`StorageView` hashes the tables behind its stored SELECT,
+/// `StorageMaterializedView` hashes its target table), so that the same value also appears in
+/// `system.tables.modification_hash` and is seen by wrapper engines (`Merge`, `Distributed`). Engines
+/// that do not override `getModificationHash` (e.g. `WindowView`, `LiveView`) yield nullopt (fail closed).
+std::optional<UInt128> computeTableModificationHashForConsistency(const StorageID & table_id, ContextPtr context)
 {
-    if (depth > MAX_TABLE_DEPENDENCY_RECURSION_DEPTH)
-        return {};
-
     /// Resolve through the context so that an unqualified name picks the same table the query will
     /// actually read - in particular a temporary or external table that shadows a permanent one, not
     /// just `current_database.<name>`.
@@ -372,25 +362,8 @@ static std::optional<UInt128> computeSingleTableModificationHash(const StorageID
             return {};
     }
 
-    std::optional<UInt128> table_hash;
-    if (typeid_cast<const StorageView *>(storage.get()))
-    {
-        /// The stored SELECT was CTE-expanded and database-qualified at CREATE time
-        /// (`InterpreterCreateQuery`), so its table references resolve unambiguously here.
-        const auto & inner_query = metadata->getSelectQuery().inner_query;
-        if (!inner_query)
-            return {};
-        table_hash = computeReferencedTablesModificationHashImpl(inner_query->clone(), context, depth + 1);
-    }
-    else if (const auto * materialized_view = typeid_cast<const StorageMaterializedView *>(storage.get()))
-    {
-        table_hash = computeSingleTableModificationHash(materialized_view->getTargetTableId(), context, depth + 1);
-    }
-    else
-    {
-        auto snapshot = storage->getStorageSnapshotWithoutData(metadata, context);
-        table_hash = storage->getModificationHash(snapshot, context);
-    }
+    auto snapshot = storage->getStorageSnapshotWithoutData(metadata, context);
+    std::optional<UInt128> table_hash = storage->getModificationHash(snapshot, context);
 
     if (!table_hash)
         return {}; /// The referenced table cannot tell whether it changed.
@@ -403,24 +376,11 @@ static std::optional<UInt128> computeSingleTableModificationHash(const StorageID
     per_table.update(resolved_id.uuid);
     per_table.update(*table_hash);
 
-    /// A view in a database without UUIDs (`Ordinary`) can be re-created with a different definition
-    /// but the same identity, and the new definition may read the same tables. Fold the stored SELECT
-    /// so that a definition change is detected as a modification.
-    if (typeid_cast<const StorageView *>(storage.get()))
-    {
-        IASTHash view_query_hash = metadata->getSelectQuery().inner_query->getTreeHash(/*ignore_aliases*/ false);
-        per_table.update(view_query_hash.low64);
-        per_table.update(view_query_hash.high64);
-    }
-
     return per_table.get128();
 }
 
-static std::optional<UInt128> computeReferencedTablesModificationHashImpl(ASTPtr ast, ContextPtr context, size_t depth)
+static std::optional<UInt128> computeReferencedTablesModificationHashImpl(ASTPtr ast, ContextPtr context)
 {
-    if (depth > MAX_TABLE_DEPENDENCY_RECURSION_DEPTH)
-        return {};
-
     /// Expand CTEs first, the same way the interpreter does, so that in
     /// `WITH q AS (SELECT ... FROM t) SELECT ... FROM q` the reference `q` is not mistaken for a real
     /// (or temporary) table of the same name: the walker below must see the base tables the query will
@@ -447,7 +407,7 @@ static std::optional<UInt128> computeReferencedTablesModificationHashImpl(ASTPtr
     std::vector<UInt128> table_hashes;
     for (const auto & table_id : finder_data.table_ids)
     {
-        auto table_hash = computeSingleTableModificationHash(table_id, context, depth);
+        auto table_hash = computeTableModificationHashForConsistency(table_id, context);
         if (!table_hash)
             return {};
         table_hashes.push_back(*table_hash);
@@ -466,7 +426,7 @@ static std::optional<UInt128> computeReferencedTablesModificationHashImpl(ASTPtr
 std::optional<UInt128> computeQueryReferencedTablesModificationHash(ASTPtr ast, ContextPtr context)
 {
     /// The CTE expansion inside mutates the AST, so work on a copy.
-    return computeReferencedTablesModificationHashImpl(ast->clone(), context, 0);
+    return computeReferencedTablesModificationHashImpl(ast->clone(), context);
 }
 
 bool checkCanWriteQueryResultCache(ASTPtr ast, ContextPtr context, bool skip_context_check)
