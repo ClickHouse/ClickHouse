@@ -54,12 +54,18 @@ size_t tryMergeExpressions(QueryPlan::Node * parent_node, QueryPlan::Nodes &, co
 
         auto merged = ActionsDAG::merge(std::move(child_actions), std::move(parent_actions));
 
+        /// Recompute the flag instead of propagating it: the other side may contribute stateful or
+        /// non-deterministic functions, which `liftUpFunctions` excludes from parallel evaluation.
+        const bool parallelize_single_stream
+            = (child_expr->isSingleStreamParallelized() || parent_expr->isSingleStreamParallelized())
+            && !merged.hasStatefulFunctions() && !merged.hasNonDeterministic();
+
         auto expr = std::make_unique<ExpressionStep>(child_expr->getInputHeaders().front(), std::move(merged));
         expr->setStepDescription(fmt::format("({} + {})", parent_expr->getStepDescription(), child_expr->getStepDescription()), settings.max_step_description_length);
         if (prevent_input_removal)
             expr->setPreventInputRemoval();
 
-        if (child_expr->isSingleStreamParallelized() || parent_expr->isSingleStreamParallelized())
+        if (parallelize_single_stream)
             expr->setParallelizeSingleStream();
 
         parent_node->step = std::move(expr);

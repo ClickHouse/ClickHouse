@@ -39,6 +39,26 @@ FROM (EXPLAIN PIPELINE
     SETTINGS max_threads = 8)
 WHERE explain LIKE '%OrderedScatter%';
 
+-- `mergeExpressions` can fold an outer expression into the lifted one, so the same restriction has to
+-- be re-checked on the merged expression.
+SELECT count()
+FROM (EXPLAIN PIPELINE
+    SELECT rowNumberInAllBlocks() AS r, a
+    FROM (
+        SELECT number AS k, arrayMap(i -> sipHash64(i, k), range(4)) AS a
+        FROM numbers_mt(1000000) ORDER BY k % 977 DESC, k)
+    SETTINGS max_threads = 8)
+WHERE explain LIKE '%OrderedScatter%';
+
+SELECT count()
+FROM (EXPLAIN PIPELINE
+    SELECT rand() AS r, a
+    FROM (
+        SELECT number AS k, arrayMap(i -> sipHash64(i, k), range(4)) AS a
+        FROM numbers_mt(1000000) ORDER BY k % 977 DESC, k)
+    SETTINGS max_threads = 8)
+WHERE explain LIKE '%OrderedScatter%';
+
 -- `arrayJoin` in the lifted part changes the number of rows in a chunk.
 SELECT
     (SELECT groupArray(e) FROM (
