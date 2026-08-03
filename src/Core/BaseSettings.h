@@ -61,8 +61,9 @@ struct BaseSettingsHelpers
 
 private:
     /// For logging the summary of unknown settings instead of logging each one separately.
-    inline static thread_local Strings unknown_settings;
-    inline static thread_local bool unknown_settings_warning_logged = false;
+    /// Defined out of line: a definition in the header gives every shared object its own copy.
+    static thread_local Strings unknown_settings;
+    static thread_local bool unknown_settings_warning_logged;
 };
 
 /// Maps a Traits type to its owning settings class (e.g. `SettingsTraits` -> `Settings`,
