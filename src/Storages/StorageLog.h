@@ -43,6 +43,7 @@ public:
         const ConstraintsDescription & constraints_,
         const String & comment,
         LoadingStrictnessLevel mode,
+        bool is_fresh_definition,
         ContextMutablePtr context_);
 
     ~StorageLog() override;

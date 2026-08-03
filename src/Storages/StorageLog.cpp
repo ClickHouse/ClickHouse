@@ -12,6 +12,7 @@
 #include <Interpreters/evaluateConstantExpression.h>
 
 #include <Parsers/ASTCheckQuery.h>
+#include <Parsers/ASTCreateQuery.h>
 
 #include <Compression/CompressedReadBuffer.h>
 #include <Compression/CompressedWriteBuffer.h>
@@ -755,6 +756,7 @@ StorageLog::StorageLog(
     const ConstraintsDescription & constraints_,
     const String & comment,
     LoadingStrictnessLevel mode,
+    bool is_fresh_definition,
     ContextMutablePtr context_)
     : StorageWithCommonVirtualColumns(table_id_)
     , WithMutableContext(context_)
@@ -781,9 +783,9 @@ StorageLog::StorageLog(
     for (const auto & column : storage_metadata.getColumns().getAllPhysical())
         addDataFiles(column);
 
-    /// Only for a fresh definition, so a table created before this check keeps loading, like
-    /// `checkTableNameLength` is skipped for secondary creates.
-    if (mode <= LoadingStrictnessLevel::CREATE)
+    /// Only for a definition the user just supplied, so a table whose stored metadata already carries
+    /// an over-long name keeps loading.
+    if (is_fresh_definition)
         checkStreamFileNameLengths();
 
     /// Ensure the file checker is initialized.
@@ -1437,6 +1439,13 @@ void registerStorageLog(StorageFactory & factory)
         String disk_name = getDiskName(*args.storage_def, args.getContext());
         DiskPtr disk = args.getContext()->getDisk(disk_name);
 
+        /// A full-definition `ATTACH TABLE t (...) ENGINE = Log [FROM '...']` is CREATE-like user input
+        /// that runs under `ATTACH`; definitions read back from stored metadata carry
+        /// `attach_short_syntax` (see `createTableFromAST`). Same predicate as
+        /// `registerStorageMergeTree`.
+        const bool is_fresh_definition = args.mode <= LoadingStrictnessLevel::CREATE
+            || (args.mode == LoadingStrictnessLevel::ATTACH && !args.query.attach_short_syntax);
+
         return std::make_shared<StorageLog>(
             args.engine_name,
             disk,
@@ -1446,6 +1455,7 @@ void registerStorageLog(StorageFactory & factory)
             args.constraints,
             args.comment,
             args.mode,
+            is_fresh_definition,
             args.getContext());
     };
 

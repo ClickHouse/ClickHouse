@@ -26,5 +26,14 @@ INSERT INTO t_stripe VALUES (1);
 SELECT count() FROM t_stripe;
 DROP TABLE t_stripe;
 
-DROP TABLE t_at_limit;
+-- A full-definition ATTACH is fresh user input, unlike a short ATTACH of stored metadata.
+ATTACH TABLE t_attach_over UUID '00000000-0000-0000-0000-0000000004a2' (`cccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccc` UInt8) ENGINE = Log; -- { serverError ARGUMENT_OUT_OF_BOUND }
+
+-- RENAME does not touch a column name, and the limit is per path component, so the at-limit
+-- table stays writable however long the table and database names become.
+RENAME TABLE t_at_limit TO t_at_limit_renamed_to_something_very_much_longer_than_before;
+INSERT INTO t_at_limit_renamed_to_something_very_much_longer_than_before VALUES (2);
+SELECT count() FROM t_at_limit_renamed_to_something_very_much_longer_than_before;
+
+DROP TABLE t_at_limit_renamed_to_something_very_much_longer_than_before;
 DROP TABLE t_nested_at_limit;
