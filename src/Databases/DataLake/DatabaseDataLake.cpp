@@ -320,32 +320,11 @@ std::shared_ptr<DataLake::ICatalog> DatabaseDataLake::getCatalog() const
     std::lock_guard lock(catalog_mutex);
     /// Lazily build the catalog on first access for databases attached at startup (see ctor).
     if (!catalog_impl)
-<<<<<<< HEAD
-=======
-    {
-        initializeOrLeaveUnavailable();
-        if (!catalog_impl)
-            throw Exception(
-                ErrorCodes::ACCESS_DENIED,
-                "DataLakeCatalog database is inaccessible: its catalog uses server-managed credentials that are "
-                "restricted for user queries and could not be resolved when the database was loaded from metadata. "
-                "Provide explicit credentials, or enable `s3_allow_server_credentials_in_user_queries`. Reason: {}",
-                catalog_unavailable_reason);
-    }
-
-    const auto settings_version = database_settings.get();
-    catalog_impl->setVendedCredentialsCacheTTL(
-        std::chrono::seconds((*settings_version)[DatabaseDataLakeSetting::vended_credentials_cache_ttl].value));
-
-    return catalog_impl;
-}
-
-void DatabaseDataLake::initializeOrLeaveUnavailable() const
-{
-    try
-    {
->>>>>>> 8e1a1d4d0b0 (Cache vended credentials from REST data lake catalogs)
         initialize();
+
+    catalog_impl->setVendedCredentialsCacheTTL(
+        std::chrono::seconds(settings[DatabaseDataLakeSetting::vended_credentials_cache_ttl].value));
+
     return catalog_impl;
 }
 

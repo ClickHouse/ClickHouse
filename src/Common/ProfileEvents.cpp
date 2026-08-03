@@ -1503,26 +1503,9 @@ The server successfully detected this situation and will download merged part fr
     M(AIRowsProcessed, "Number of rows that received an AI result.", ValueType::Number) \
     M(AIRowsSkipped, "Number of rows that received a default value due to quota or error.", ValueType::Number) \
     \
-<<<<<<< HEAD
-=======
     M(DataLakeRestCatalogCredentialsVended, "Number of table metadata requests to REST catalog asking to vend storage credentials.", ValueType::Number) \
     M(DataLakeRestCatalogCredentialsCacheHits, "Number of table metadata requests to REST catalog reusing cached storage credentials.", ValueType::Number) \
     \
-    M(StatelessWorkerRequested, "Number of stateless workers requested by queries for distributed query execution.", ValueType::Number) \
-    M(StatelessWorkerProvided, "Number of stateless workers provided to queries for distributed query execution.", ValueType::Number) \
-    M(StatelessWorkerProvisioningMicroseconds, "Total time queries spent waiting for stateless workers to be provisioned.", ValueType::Microseconds) \
-    M(StatelessWorkerProvisioningWaits, "Number of times a query had to wait for the stateless worker discovery service to provide workers.", ValueType::Number) \
-    M(StatelessWorkerCreateLeaseRequests, "Number of create_lease requests sent to the stateless worker discovery service to acquire workers.", ValueType::Number) \
-    M(StatelessWorkerCreateLeaseMicroseconds, "Total time spent in create_lease requests to the stateless worker discovery service.", ValueType::Microseconds) \
-    M(StatelessWorkerCreateLeaseErrors, "Number of failed create_lease requests to the stateless worker discovery service (any error or timeout).", ValueType::Number) \
-    M(StatelessWorkerGetLeaseRequests, "Number of get_lease requests sent to the stateless worker discovery service to refresh the list of leased workers.", ValueType::Number) \
-    M(StatelessWorkerGetLeaseMicroseconds, "Total time spent in get_lease requests to the stateless worker discovery service.", ValueType::Microseconds) \
-    M(StatelessWorkerGetLeaseErrors, "Number of failed get_lease requests to the stateless worker discovery service (any error or timeout).", ValueType::Number) \
-    M(StatelessWorkerUpdateLeaseRequests, "Number of update_lease requests sent to the stateless worker discovery service to renew worker leases.", ValueType::Number) \
-    M(StatelessWorkerUpdateLeaseMicroseconds, "Total time spent in update_lease requests to the stateless worker discovery service.", ValueType::Microseconds) \
-    M(StatelessWorkerUpdateLeaseErrors, "Number of failed update_lease requests to the stateless worker discovery service (any error or timeout).", ValueType::Number) \
-    \
->>>>>>> 8e1a1d4d0b0 (Cache vended credentials from REST data lake catalogs)
 
 #ifdef APPLY_FOR_EXTERNAL_EVENTS
     #define APPLY_FOR_EVENTS(M) APPLY_FOR_BUILTIN_EVENTS(M) APPLY_FOR_EXTERNAL_EVENTS(M)
