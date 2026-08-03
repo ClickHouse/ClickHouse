@@ -1,3 +1,6 @@
+-- Timestamps are interpreted in the session time zone, so pin it to make the results reproducible.
+SET session_timezone = 'UTC';
+
 -- Timestamps above the Date32 range saturate at `9999-12-31` for every accepted numeric type,
 -- including the wide unsigned integers, where narrowing to Int64 before the comparison would wrap around.
 SELECT toDate32(toUInt8(255));
