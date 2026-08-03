@@ -51,6 +51,14 @@
 
 // more aliases: https://mailman.videolan.org/pipermail/x264-devel/2014-May/010660.html
 
+/// Give a header-defined mutable object default visibility, so a build with hidden visibility
+/// gets one instance across all shared objects rather than one per shared object. On a function
+/// it covers that function's static locals, which cannot carry the attribute themselves.
+/// Prefer moving the definition into a .cpp instead; use this only where the definition has to
+/// stay in the header (a template, or a hot function that must remain inlinable).
+/// See `-Wunique-object-duplication`.
+#define SHARED_ACROSS_DSO __attribute__((visibility("default")))
+
 #define ALWAYS_INLINE __attribute__((__always_inline__))
 #define NO_INLINE __attribute__((__noinline__))
 #define MAY_ALIAS __attribute__((__may_alias__))

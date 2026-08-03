@@ -12,6 +12,7 @@ namespace DB
 namespace ErrorCodes
 {
 extern const int BAD_ARGUMENTS;
+extern const int SUPPORT_IS_DISABLED;
 };
 
 #if USE_LIBFIU
@@ -138,6 +139,7 @@ static struct InitFiu
     PAUSEABLE_ONCE(replicated_table_remove_zk_before_final_multi) \
     PAUSEABLE_ONCE(kafka2_remove_zk_before_get_children) \
     PAUSEABLE_ONCE(kafka2_remove_zk_before_final_multi) \
+    PAUSEABLE_ONCE(keeper_map_delete_pause_before_multi) \
     PAUSEABLE(dummy_pausable_failpoint) \
     ONCE(execute_query_calling_empty_set_result_func_on_exception) \
     ONCE(terminate_with_exception) \
@@ -493,7 +495,19 @@ std::vector<FailPointInjection::FailPointInfo> FailPointInjection::getFailPoints
 
 #else // USE_LIBFIU
 
+/// These are hooks in regular code paths, so they must be no-ops rather than throw.
+/// In particular, `disableFailPoint` is called unconditionally during quorum cleanup
+/// in `StorageReplicatedMergeTree` and `ReplicatedMergeTreeRestartingThread`.
+
 void FailPointInjection::pauseFailPoint(const String &)
+{
+}
+
+void FailPointInjection::notifyPauseAndWaitForResume(const String &)
+{
+}
+
+void FailPointInjection::disableFailPoint(const String &)
 {
 }
 
@@ -502,33 +516,40 @@ bool FailPointInjection::hasAnyFailPointBeenRegistered()
     return false;
 }
 
-void FailPointInjection::enableFailPoint(const String &)
+/// The rest are only reachable through SYSTEM ... FAILPOINT queries (whose interpreter
+/// already throws in builds without libfiu), and pretending to succeed would leave the
+/// caller waiting for a fail point that can never fire.
+
+[[noreturn]] static void throwDisabled()
 {
+    throw Exception(ErrorCodes::SUPPORT_IS_DISABLED, "Fail points are disabled because ClickHouse was built without libfiu");
 }
 
-void FailPointInjection::disableFailPoint(const String &)
+void FailPointInjection::enableFailPoint(const String &)
 {
+    throwDisabled();
 }
 
 void FailPointInjection::notifyFailPoint(const String &)
 {
-}
-
-void FailPointInjection::notifyPauseAndWaitForResume(const String &)
-{
+    throwDisabled();
 }
 
 void FailPointInjection::waitForPause(const String &)
 {
+    throwDisabled();
 }
 
 void FailPointInjection::waitForResume(const String &)
 {
+    throwDisabled();
 }
 
 std::vector<FailPointInjection::FailPointInfo> FailPointInjection::getFailPoints()
 {
-    return {};
+    std::vector<FailPointInfo> result;
+
+    return result;
 }
 
 #endif // USE_LIBFIU
