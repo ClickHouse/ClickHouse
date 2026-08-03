@@ -113,6 +113,10 @@ private:
     /// Saves the sizes of the data and marks files.
     void saveFileSizes(const WriteLock &);
 
+    /// Recreates the table directory if it went missing while the disk was read-only. See the
+    /// comment at the definition.
+    void createTableDirectoryIfNeeded(const WriteLock &);
+
     /// Recalculates the number of rows stored in this table.
     void updateTotalRows(const WriteLock &);
 
@@ -144,6 +148,10 @@ private:
     const String engine_name;
     const DiskPtr disk;
     String table_path;
+
+    /// Set when the table was attached while the disk was read-only, so its directory could not be
+    /// recreated at that point. Protected by `rwlock`, held in exclusive mode while writing.
+    bool table_directory_is_missing = false;
 
     std::vector<DataFile> data_files;
     size_t num_data_files = 0;

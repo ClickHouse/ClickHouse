@@ -780,8 +780,13 @@ StorageLog::StorageLog(
         /// (such as `memory`, used by the `borrow_from_cache` object storage) the table directory is
         /// gone when the table is reattached, and the first write would fail with
         /// `DIRECTORY_DOESNT_EXIST`. Recreate it, the same way the `MergeTree` family does on attach.
-        if (!disk->isReadOnly() && !disk->existsDirectory(table_path))
-            disk->createDirectories(table_path);
+        if (!disk->existsDirectory(table_path))
+        {
+            if (disk->isReadOnly())
+                table_directory_is_missing = true;
+            else
+                disk->createDirectories(table_path);
+        }
 
         try
         {
@@ -938,6 +943,20 @@ void StorageLog::saveFileSizes(const WriteLock & /* already locked for writing *
 
     file_checker.save();
     total_bytes = file_checker.getTotalSize();
+}
+
+
+void StorageLog::createTableDirectoryIfNeeded(const WriteLock & /* already locked for writing */)
+{
+    /// The table was attached while the disk was read-only, so its directory could not be recreated
+    /// then. A disk can stop being read-only later: a `borrow_from_cache` disk is read-only exactly
+    /// while the cache it borrows from is not registered yet. Recreate the directory before the
+    /// first write, otherwise it would fail with `DIRECTORY_DOESNT_EXIST` forever.
+    if (!table_directory_is_missing)
+        return;
+
+    disk->createDirectories(table_path);
+    table_directory_is_missing = false;
 }
 
 
@@ -1106,6 +1125,8 @@ SinkToStoragePtr StorageLog::write(const ASTPtr & /*query*/, const StorageMetada
     WriteLock lock{rwlock, getLockTimeout(local_context)};
     if (!lock)
         throw Exception(ErrorCodes::TIMEOUT_EXCEEDED, "Lock timeout exceeded");
+
+    createTableDirectoryIfNeeded(lock);
 
     return std::make_shared<LogSink>(*this, metadata_snapshot, std::move(lock));
 }
