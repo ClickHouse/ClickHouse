@@ -27,13 +27,11 @@ void StreamBaseManifest::registerStreamBase(const String & base, Owner owner)
         return;
 
     const auto & existing = it->second;
-    if (existing.kind == owner.kind && existing.name == owner.name)
-        return;
 
-    /// Two columns may legitimately share one base (Nested array sizes); that direction is owned by
-    /// `MergeTreeDataPartWriterWide::addStreams`. Keep the first claim so a later index conflict
-    /// still names a real column.
-    if (existing.kind == Kind::Column && owner.kind == Kind::Column)
+    /// Only a column meeting a skip index is this check's concern: columns-vs-columns is owned by
+    /// `MergeTreeDataPartWriterWide::addStreams`. Keep the first claim so a later cross-kind
+    /// conflict still names a real owner.
+    if (existing.kind == owner.kind)
         return;
 
     throw Exception(ErrorCodes::INCORRECT_FILE_NAME,

@@ -24,9 +24,9 @@ struct StreamBaseManifest
         String name;
     };
 
-    /// Throws INCORRECT_FILE_NAME when @base is already claimed by a different owner. Re-claiming
-    /// with the identical owner is a no-op (peer data/marks files of one substream, a packed
-    /// substream that spills after its index was registered), as is one column over another.
+    /// Throws INCORRECT_FILE_NAME when @base is claimed by owners of both kinds. A repeat claim of
+    /// the same kind is a no-op: either one owner's peer files (data/marks of a substream, a packed
+    /// substream that spills), or a same-kind direction owned elsewhere.
     void registerStreamBase(const String & base, Owner owner);
 
 private:
