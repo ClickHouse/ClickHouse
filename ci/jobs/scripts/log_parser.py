@@ -76,6 +76,56 @@ class FuzzerLogParser:
         # Remove quotes and trailing period
         return substring.strip().rstrip(".").strip("'\"")
 
+    @staticmethod
+    def thread_id(line):
+        # The thread id of a server log line: "... [ 4353 ] {} <Fatal> : ...".
+        match = re.search(r"\[ (\d+) \] \{", line)
+        return match.group(1) if match else ""
+
+    def find_format_string(self, matched_pattern, matched_log_file):
+        # Find the `Format string:` message belonging to the failure matched by
+        # `matched_pattern`. `abortOnFailedAssertion` logs it immediately after the
+        # `Logical error:` message, from the same thread, but does not log it at all
+        # when the format string is empty. So it belongs to this failure only if it is
+        # the next fatal message of the same thread; otherwise this failure has none
+        # and "" is returned, so that an unrelated later failure never renames it.
+        # `None` means the search could not be bounded to the failure, because the
+        # thread that logged it is unknown - e.g. the input has no server log lines.
+        if self.stack_trace_str:
+            lines = self.stack_trace_str.splitlines()
+            match_index = next(
+                (i for i, line in enumerate(lines) if re.search(matched_pattern, line)),
+                -1,
+            )
+            if match_index == -1:
+                return None
+            thread = self.thread_id(lines[match_index])
+            if not thread:
+                return None
+            next_fatal_line = next(
+                (
+                    line
+                    for line in lines[match_index + 1 :]
+                    if f"[ {thread} ] {{" in line and "<Fatal>" in line
+                ),
+                "",
+            )
+            return self.extract_format_string(next_fatal_line)
+
+        if not matched_log_file:
+            return None
+        match_position, _, match_line = Shell.get_output(
+            f"rg --text -n -m1 '{matched_pattern}' {matched_log_file}"
+        ).partition(":")
+        thread = self.thread_id(match_line)
+        if not match_position.isdigit() or not thread:
+            return None
+        next_fatal_line = Shell.get_output(
+            f"tail -n +{int(match_position) + 1} {matched_log_file}"
+            f" | rg --text -m1 '\\[ {thread} \\] \\{{.*<Fatal>'"
+        )
+        return self.extract_format_string(next_fatal_line)
+
     def parse_failure(self):
         files = []
         is_logical_error = False
@@ -171,31 +221,25 @@ class FuzzerLogParser:
         if marker_pos != -1:
             result_name = result_name[:marker_pos].rstrip().removesuffix(".")
         format_message = ""
-        for line in error_lines:
-            if "Format string: " in line:
-                format_message = self.extract_format_string(line)
-                break
-        if not format_message and is_logical_error:
-            # `abortOnFailedAssertion` logs the `Format string:` line right after the
-            # `Logical error:` line, but messages from other threads (together with
-            # their multi-line stack traces) may interleave between the two and push
-            # it out of the 10-line window captured above. Search for it separately,
-            # starting from the matched error line, so the failure name stays
-            # normalized regardless of log interleaving.
-            format_line = ""
-            if self.stack_trace_str:
-                format_line = Shell.get_output(
-                    f"echo '{self.stack_trace_str}' | rg --text -m1 'Format string: '"
-                )
-            elif matched_log_file:
-                match_position = Shell.get_output(
-                    f"rg --text -n -m1 '{matched_pattern}' {matched_log_file} | cut -d: -f1"
-                )
-                if match_position.isdigit():
-                    format_line = Shell.get_output(
-                        f"tail -n +{match_position} {matched_log_file} | rg --text -m1 'Format string: '"
-                    )
-            format_message = self.extract_format_string(format_line)
+        # `abortOnFailedAssertion` logs the `Format string:` line right after the
+        # `Logical error:` line, but messages from other threads (together with their
+        # multi-line stack traces) may interleave between the two and push it out of
+        # the 10-line window captured above, while the window may as well reach into a
+        # later unrelated failure. So, for a logical error, take the format string from
+        # the matched failure itself - the next fatal message of the same thread.
+        bounded_format_message = (
+            self.find_format_string(matched_pattern, matched_log_file)
+            if is_logical_error
+            else None
+        )
+        if bounded_format_message is not None:
+            format_message = bounded_format_message
+        else:
+            # The thread that logged the failure is unknown - scan the window.
+            for line in error_lines:
+                if "Format string: " in line:
+                    format_message = self.extract_format_string(line)
+                    break
         is_check_failed = bool(
             error_lines and re.search(r"\w+Sanitizer: CHECK failed:", error_lines[0])
         )

@@ -167,3 +167,37 @@ def test_parse_failure_logical_error_finds_format_string_despite_interleaving(
         "Logical error: Query context must be created after authentication (STID:"
     )
     assert "'" not in result_name
+
+
+def test_parse_failure_logical_error_without_own_format_string(tmp_path):
+    server_log = tmp_path / "clickhouse-server.err.log"
+
+    # `abortOnFailedAssertion(description)` logs no `Format string:` line when the
+    # format string is empty. The search for it must stay inside the matched failure
+    # (the next fatal message of the same thread), so that a later unrelated logical
+    # error does not rename the first one with its own format string.
+    server_log.write_text(
+        "2026.08.01 18:35:11.672071 [ 4353 ] {} <Fatal> : Logical error: "
+        "'first error without format'.\n"
+        "2026.08.01 18:35:11.694220 [ 4353 ] {} <Fatal> : Stack trace (when "
+        "copying this message, always include the lines below):\n"
+        "\n"
+        "0. ./src/Common/Exception.cpp:66:5: DB::abortOnFailedAssertion() "
+        "@ 0x00000000139d383c\n"
+        "2026.08.01 18:36:00.000000 [ 4400 ] {} <Fatal> : Logical error: "
+        "'second error normalized A'.\n"
+        "2026.08.01 18:36:00.000001 [ 4400 ] {} <Fatal> : Format string: "
+        "'second error normalized {}'.\n",
+        encoding="utf-8",
+    )
+
+    parser = FuzzerLogParser(
+        server_log=str(server_log),
+        stderr_log="",
+        fuzzer_log="",
+    )
+
+    result_name, _, _ = parser.parse_failure()
+
+    assert result_name.startswith("Logical error: 'first error without format' (STID:")
+    assert "second error normalized" not in result_name
