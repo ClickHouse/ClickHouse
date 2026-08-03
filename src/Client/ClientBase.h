@@ -297,7 +297,11 @@ private:
     /// Returns false when the log sink is unavailable because the interruptible open of an explicit
     /// --server_logs_file was abandoned on Ctrl+C; the caller then skips the diagnostics, but the
     /// query keeps going - this sink is not the result of the query.
-    bool initLogsOutputStream();
+    /// `wait_for_sink = false` makes acquiring an explicit --server_logs_file fail-close: the open
+    /// becomes a plain availability check that never waits for a FIFO reader. It must be used from
+    /// every call site that runs with the interrupt handler stopped (the post-query epilogue),
+    /// where a wait could not be abandoned by a Ctrl+C and would hang the client forever.
+    bool initLogsOutputStream(bool wait_for_sink = true);
 
     /// Arm an output sink with the pair of predicates that keep it responsive to Ctrl+C, see
     /// WriteBufferFromFileDescriptor::setCancellationHook.

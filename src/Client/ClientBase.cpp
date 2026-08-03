@@ -922,6 +922,8 @@ namespace
 /// to deliver into a sink that could not be opened; for an auxiliary sink such as `--server_logs_file`
 /// it only means that this sink is unavailable, and the query itself must keep going - otherwise the
 /// first signal of a `partial_result_on_first_cancel` query would become a hard client-side cancel.
+/// An empty `is_interrupted` turns the call into a plain availability check: nothing would ever be
+/// able to abandon the wait, so a FIFO without a reader is reported as unavailable immediately.
 ///
 /// `O_NONBLOCK` is cleared afterwards so that writes keep their usual semantics;
 /// `WriteBufferFromFileDescriptor::setCancellationHook` arranges responsive writes on its own.
@@ -952,7 +954,10 @@ int openFileCancellable(const String & file_name, int flags, const std::function
                     file_name);
             }
 
-            if (is_interrupted())
+            /// An empty predicate means the caller cannot wait at all (nothing could ever abandon
+            /// the wait, e.g. after the interrupt handler has been stopped): report the sink as
+            /// unavailable right away instead of retrying forever.
+            if (!is_interrupted || is_interrupted())
                 return -1;
 
             /// Nothing to poll on here: the descriptor does not exist yet, so waiting for a reader
@@ -1278,7 +1283,7 @@ catch (...)
 }
 
 
-bool ClientBase::initLogsOutputStream()
+bool ClientBase::initLogsOutputStream(bool wait_for_sink)
 {
     if (!logs_out_stream)
     {
@@ -1312,10 +1317,15 @@ bool ClientBase::initLogsOutputStream()
                 /// interrupt handler armed for the query) and track the buffer as the terminal-facing
                 /// sink so it is armed on the responsive path below; for a regular file both are a
                 /// no-op (the open succeeds at once and fstat marks the sink as non-blocking).
-                int logs_fd = openFileCancellable(
-                    server_logs_file,
-                    O_WRONLY | O_APPEND | O_CREAT,
-                    [this]() { return query_interrupt_handler.interruptedWhileRunning(); });
+                /// `wait_for_sink` is false when this runs after the query, with the interrupt
+                /// handler already stopped: no signal could abandon the wait there, so the open is
+                /// reduced to an availability check and the diagnostics are dropped if the sink is
+                /// not ready - it must never hang the client once the result has been delivered.
+                std::function<bool()> is_interrupted;
+                if (wait_for_sink)
+                    is_interrupted = [this]() { return query_interrupt_handler.interruptedWhileRunning(); };
+
+                int logs_fd = openFileCancellable(server_logs_file, O_WRONLY | O_APPEND | O_CREAT, is_interrupted);
 
                 /// This sink is auxiliary: the server logs and profile events are diagnostics, not the
                 /// result of the query. Interrupting its open must therefore not throw - the packet
@@ -3359,9 +3369,13 @@ void ClientBase::processParsedSingleQuery(
     });
 
     /// Always print last block (if it was not printed already).
-    /// The interrupt handler is stopped by now, so the interruptible open cannot be abandoned here and
-    /// `initLogsOutputStream` only fails to report the sink as available if it never becomes one.
-    if (!profile_events.last_block.empty() && initLogsOutputStream())
+    /// The interrupt handler is stopped by now, so a wait for the sink could not be abandoned by a
+    /// Ctrl+C: acquire it fail-close (`wait_for_sink = false`). Otherwise an explicit
+    /// `--server_logs_file` naming a FIFO that never got a reader - the events were deferred into
+    /// `last_block` because of `profile-events-delay-ms`, or an earlier open reported the sink as
+    /// unavailable - would retry forever and hang the client after the result is already delivered.
+    /// These are diagnostics, so dropping them is the right trade here.
+    if (!profile_events.last_block.empty() && initLogsOutputStream(/*wait_for_sink=*/false))
     {
         if (need_render_progress && tty_buf)
         {
