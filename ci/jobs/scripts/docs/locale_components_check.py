@@ -16,6 +16,8 @@ For every localized file (under `<locale>/` and `snippets/<locale>/`), check:
   * template-literal href bases, e.g. `` `/get-started/quickstarts/${id}` `` --
     the fallback the "featured" cards render -- flagged when localized pages
     exist under the base (GT copies the English base verbatim into every locale);
+  * legacy beta and experimental badge paths that the localized router prefixes
+    with the current locale, producing a non-existent `/<locale>/docs/...` URL;
   * `image`/`img`/`src` asset refs to /images or /assets must exist on disk
     (catches stale JS data left over from an old English structure).
 
@@ -36,6 +38,14 @@ EXTS = (".mdx", ".md", ".jsx", ".tsx", ".js")
 # a repo-relative doc path, so it is out of scope for the locale check.
 SKIP_PREFIXES = ("/images/", "/assets/", "/_site/", "/.well-known/", "/docs/")
 SKIP_EXACT = {"/docs", "/"}
+LEGACY_BADGE_PATHS = {
+    "/docs/beta-and-experimental-features#beta-features": (
+        "/reference/settings/beta-and-experimental-features#beta-features"
+    ),
+    "/docs/beta-and-experimental-features#experimental-features": (
+        "/reference/settings/beta-and-experimental-features#experimental-features"
+    ),
+}
 # `href: "/x"`, `href="/x"`, `href={'/x'}`, `to: "/x"`, ...
 HREF = re.compile(r"""\b(?:href|to)\s*[:=]\s*\{?\s*(['"`])(/[^'"`\s]+)\1""")
 # A template literal whose static prefix is a doc path, e.g.
@@ -60,7 +70,9 @@ def build_targets(docs_root):
     redirects = set()
     rj = os.path.join(docs_root, "_site", "redirects.json")
     if os.path.isfile(rj):
-        for r in json.load(open(rj)):
+        with open(rj, encoding="utf-8") as redirects_file:
+            configured_redirects = json.load(redirects_file)
+        for r in configured_redirects:
             s = (r.get("source") or "").strip().strip("/")
             if s:
                 redirects.add(s)
@@ -91,12 +103,22 @@ def main(argv=None):
                         continue
                     fp = os.path.join(root, n)
                     rel = os.path.relpath(fp, docs_root)
-                    s = open(fp, encoding="utf-8", errors="replace").read()
+                    with open(fp, encoding="utf-8", errors="replace") as source_file:
+                        s = source_file.read()
 
                     def check(m):
                         nonlocal fixed
                         path = m.group(2)
                         raw = path
+                        if raw in LEGACY_BADGE_PATHS:
+                            suggestion = f"/{loc}{LEGACY_BADGE_PATHS[raw]}"
+                            violations.append(
+                                (rel, raw, "legacy-badge-path", suggestion)
+                            )
+                            if args.fix:
+                                fixed += 1
+                                return m.group(0).replace(raw, suggestion, 1)
+                            return m.group(0)
                         path = path.split("#")[0].split("?")[0]
                         if (path in SKIP_EXACT or path.startswith(SKIP_PREFIXES)):
                             return m.group(0)
@@ -145,7 +167,8 @@ def main(argv=None):
 
                     ns = TEMPLATE.sub(check_template, HREF.sub(check, s))
                     if args.fix and ns != s:
-                        open(fp, "w", encoding="utf-8").write(ns)
+                        with open(fp, "w", encoding="utf-8") as source_file:
+                            source_file.write(ns)
 
                     # Asset refs are not rewritten (a broken image needs a content
                     # decision, not a mechanical fix) -- report only.
@@ -159,7 +182,11 @@ def main(argv=None):
         kinds[k] = kinds.get(k, 0) + 1
     if args.fix:
         print(f"fixed (localized): {fixed}")
-    FIXABLE = {"should-localize", "should-localize-template"}
+    FIXABLE = {
+        "legacy-badge-path",
+        "should-localize",
+        "should-localize-template",
+    }
     remaining = [v for v in violations if not (args.fix and v[2] in FIXABLE)]
     print(f"violations: {len(remaining)}  by kind: {kinds}")
     for rel, raw, k, sug in remaining[:40]:
