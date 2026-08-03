@@ -115,7 +115,7 @@ By default, ClickHouse management services access your BYOC Kubernetes cluster v
 
 - You can configure the Kubernetes API server to use only a private endpoint
 - In this case, management services access the API server via Tailscale (similar to human troubleshooting access) or, on AWS, via VPC Lattice (see [Kubernetes API Private Connection](/products/bring-your-own-cloud/configuration/configurations#k8s-api-private-connection))
-- Public access is kept as a backup mechanism for emergency investigation and support needs
+- By default, the public endpoint (restricted to ClickHouse's NAT IP addresses) is kept as a backup mechanism for emergency investigation and support needs; once private access is verified, it can be disabled entirely in coordination with ClickHouse
 
 ### Network Traffic Flow {#tailscale-traffic-flow}
 

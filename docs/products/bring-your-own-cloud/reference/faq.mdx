@@ -85,7 +85,7 @@ Yes. Warehouses (compute-compute separation) are supported in BYOC: multiple ser
 ### Network and security {#network-and-security}
 
 <Accordion title="Can we limit or revoke the permissions granted during installation?">
-You can reduce the grants from the start: the onboarding template is parameterized, so you can withhold network write permissions when bringing your own VPC (`IncludeVPCWritePermissions=false`) and — in private preview on AWS, enabled through support — manage the IAM roles yourself (`IncludeIAMWritePermissions=false`, see [customer-managed IAM roles](/products/bring-your-own-cloud/onboarding/customization-aws)). The cross-account roles support an `ExternalId` condition to prevent confused-deputy access. In addition, some permissions are required only for specific features and can be removed if you will never use those features — contact support if you need to scope down permissions beyond what the template parameters provide.
+You can reduce the grants from the start on AWS and GCP: the onboarding artifacts are parameterized, so you can withhold network write permissions when bringing your own VPC (`IncludeVPCWritePermissions` in CloudFormation, `include_vpc_write_permissions` in the Terraform modules). On AWS you can additionally — in private preview, enabled through support — manage the IAM roles yourself (`IncludeIAMWritePermissions=false`, see [customer-managed IAM roles](/products/bring-your-own-cloud/onboarding/customization-aws)), and the cross-account roles are protected by an external ID against confused-deputy access. On Azure, the onboarding module grants a fixed subscription-scoped role with no scoping parameters today. Across all clouds, some permissions are required only for specific features and can be removed if you will never use those features — contact support if you need to scope down permissions beyond what the artifacts expose.
 
 After provisioning, do not remove permissions from the management identity unilaterally: ClickHouse continuously reconciles the infrastructure, and missing permissions break provisioning, upgrades, and support. To change the granted permissions or offboard entirely, coordinate with support (see the decommissioning question below).
 </Accordion>
@@ -125,7 +125,7 @@ No. Table data blobs are stored in a shared layout without per-table paths, so o
 </Accordion>
 
 <Accordion title="What ports are used for client and cluster communication?">
-Client connections terminate at the load balancer on TLS ports: **8443** (HTTPS interface) and **9440** (native protocol over TLS); port 443 also routes to the HTTPS interface.
+Client connections terminate at the load balancer on TLS ports: **8443** (HTTPS interface) and **9440** (native protocol over TLS); port 443 also routes to the HTTPS interface. The MySQL interface (port 3306) is not currently exposed in BYOC — it is on the roadmap (see the [overview](/products/cloud/guides/infrastructure/deployment-options/byoc/overview)).
 
 Inside the network, cluster-internal communication uses the native protocol on port 9000, HTTP on port 8123, and interserver communication on port 9009 for replication and distributed queries. These internal ports and the ClickHouse Keeper ports are never exposed on any load balancer.
 </Accordion>
