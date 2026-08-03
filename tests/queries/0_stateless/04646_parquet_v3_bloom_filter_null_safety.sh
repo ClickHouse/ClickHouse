@@ -72,3 +72,24 @@ ${CLICKHOUSE_CLIENT} --query="
 echo "required column: the bloom filter prunes a non-present value"
 ${CH} --input_format_parquet_dictionary_filter_push_down=0 --input_format_null_as_default=0 --query="select count() from file('${DATA_FILE_2}', Parquet, 'x UInt64') where x = 9999 FORMAT JSON" \
     | jq -c '{result: .data, rows_read: .statistics.rows_read}'
+
+# A String column over ten row groups: the default is the empty string, which is not a physical value
+# anywhere in the file, and the pruning decision is taken per column chunk rather than once.
+DATA_FILE_3="${CLICKHOUSE_TEST_UNIQUE_NAME}_string.parquet"
+${CLICKHOUSE_CLIENT} --query="
+    insert into function file('${DATA_FILE_3}', Parquet)
+    select number as id, if(number % 2 = 0, NULL, 'v' || toString(number)) as n
+    from numbers(1000)
+    settings output_format_parquet_row_group_size = 100, output_format_parquet_write_bloom_filter = 1,
+             engine_file_truncate_on_insert = 1, max_block_size = 1000000;
+"
+
+echo "String over ten row groups, null_as_default on: nulls decode to '', no row group must be pruned"
+run 0 1 "select count() from file('${DATA_FILE_3}', Parquet, 'id UInt64, n String') where n = ''"
+
+echo "String over ten row groups, null_as_default on, both disjuncts on the nullable column"
+run 0 1 "select count() from file('${DATA_FILE_3}', Parquet, 'id UInt64, n String') where n = '' or n = 'v3'"
+
+# Control: read as Nullable the guard does not apply, so the bloom filter must still prune everything.
+echo "String over ten row groups read as Nullable: the bloom filter still prunes a non-present value"
+run 0 0 "select count() from file('${DATA_FILE_3}', Parquet, 'id UInt64, n Nullable(String)') where n = 'absent'"
