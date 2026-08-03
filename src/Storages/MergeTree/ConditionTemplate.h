@@ -44,29 +44,23 @@ public:
     /// Substitutes nothing.
     const Cond & generateUnsubstituted() const;
 
-    /// Substitutes partition level constants into dag. The part supplies both its own partition
-    /// (for partition-key substitution and the metadata partition key size) and, when it is a
-    /// projection part, its parent for the _partition_id / _partition_value virtual columns.
-    const Cond & generateForPartition(const IMergeTreeDataPart & part) const;
+    /// Substitutes partition level constants into dag.
+    const Cond & generateForPart(const IMergeTreeDataPart & part) const;
 
     /// Maps already generated condition using provided lambda.
     void addTransformation(Transformer transformer_);
 
 private:
-    std::shared_ptr<ActionsDAGWithInversionPushDown> dag;
-    Factory factory;
-    Transformers transformers;
-    StorageMetadataPtr metadata_snapshot;
-    ContextPtr context;
-    bool skip_folding;
-
-    /// Legacy-adjusted partition key (modulo -> moduloLegacy) used to match the predicate
-    /// against the expression that actually produced the stored partition value. Computed once.
-    KeyDescription partition_key_for_substitution;
+    const std::shared_ptr<ActionsDAGWithInversionPushDown> dag;
+    const Factory factory;
+    const StorageMetadataPtr metadata_snapshot;
+    const ContextPtr context;
+    const bool skip_folding;
 
     mutable std::mutex mutex;
     mutable std::optional<Cond> unsubstituted;
     mutable std::unordered_map<std::string, Cond> cache;
+    mutable Transformers transformers;
 };
 
 }

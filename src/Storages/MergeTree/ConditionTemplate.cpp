@@ -35,9 +35,11 @@ namespace
 void fillPartitionConstantsSubstitution(
     std::unordered_map<const ActionsDAG::Node *, ColumnWithTypeAndName> & substitutions,
     const ActionsDAG & predicate_dag,
-    const KeyDescription & partition_key,
+    const StorageMetadataPtr & metadata_snapshot,
+    const ContextPtr & context,
     const MergeTreePartition & partition)
 {
+    const auto partition_key = MergeTreePartition::adjustPartitionKey(metadata_snapshot, context);
     const auto & key_dag = partition_key.expression->getActionsDAG();
     const auto key_outputs = key_dag.findInOutputs(partition_key.column_names);
     const auto matches = matchTrees(key_outputs, predicate_dag, /*check_monotonicity=*/false);
@@ -87,18 +89,17 @@ void fillVirtualConstantsSubstitution(
 ActionsDAG substituteConstantInputs(
     const ActionsDAG::Node * predicate_node,
     const MergeTreePartition & partition,
-    const std::string & virtual_partition_id,
-    const MergeTreePartition & virtual_partition,
-    const KeyDescription & partition_key_for_substitution,
-    const StorageMetadataPtr & metadata_snapshot)
+    const std::string & partition_id,
+    const StorageMetadataPtr & metadata_snapshot,
+    const ContextPtr & context)
 {
     chassert(predicate_node);
 
     auto dag = ActionsDAG::cloneSubDAG({predicate_node}, /*remove_aliases=*/false);
 
     std::unordered_map<const ActionsDAG::Node *, ColumnWithTypeAndName> substitutions;
-    fillPartitionConstantsSubstitution(substitutions, dag, partition_key_for_substitution, partition);
-    fillVirtualConstantsSubstitution(substitutions, dag, metadata_snapshot, virtual_partition_id, virtual_partition);
+    fillPartitionConstantsSubstitution(substitutions, dag, metadata_snapshot, context, partition);
+    fillVirtualConstantsSubstitution(substitutions, dag, metadata_snapshot, partition_id, partition);
 
     dag.substitute(substitutions);
     dag.removeUnusedActions(/*allow_remove_inputs=*/false, /*allow_constant_folding=*/true, /*evaluate_constants=*/true);
@@ -175,17 +176,6 @@ ConditionTemplate<Cond>::ConditionTemplate(
     , context(std::move(context_))
     , skip_folding(skip_folding_)
 {
-    /// The stored partition value is computed with the backward-compatible `moduloLegacy`
-    /// rewrite (see MergeTreePartition::adjustPartitionKey), so it can differ from what the
-    /// query-time expression yields: e.g. `id % 200` stores `moduloLegacy(-199, 200) = 57`
-    /// (Int8) while the filter evaluates `modulo(-199, 200) = -199` (Int16). Match the
-    /// predicate against the same legacy-adjusted key that produced the value; a modern
-    /// `modulo` predicate node then cannot match the key's `moduloLegacy` node, so no unsound
-    /// substitution is made for modulo partition keys. Non-modulo keys are unaffected.
-    partition_key_for_substitution = (skip_folding || !metadata_snapshot->isPartitionKeyDefined())
-        ? metadata_snapshot->getPartitionKey()
-        : MergeTreePartition::adjustPartitionKey(metadata_snapshot, context);
-
     generateUnsubstituted();
 }
 
@@ -202,35 +192,23 @@ const Cond & ConditionTemplate<Cond>::generateUnsubstituted() const
 }
 
 template <typename Cond>
-const Cond & ConditionTemplate<Cond>::generateForPartition(const IMergeTreeDataPart & part) const
+const Cond & ConditionTemplate<Cond>::generateForPart(const IMergeTreeDataPart & part) const
 {
-    if (skip_folding || !dag || !dag->predicate)
+    if (skip_folding || !dag || !dag->predicate || part.isProjectionPart())
         return generateUnsubstituted();
 
-    /// Two different sources are needed here. Partition-key expression substitution and getID use
-    /// the part's own partition: for a projection part it is empty, matching the projection's empty
-    /// partition key, so getID does not mismatch the metadata partition key size. The
-    /// _partition_id / _partition_value virtuals, however, are advertised from the parent table's
-    /// partition key even on projection metadata, so they must be substituted from the parent
-    /// part's real partition, not the projection's empty one, otherwise a filter on a partition
-    /// virtual folds to 'all' / an empty tuple and over-prunes the projection part.
-    const auto & parent = part.isProjectionPart() ? *part.getParentPart() : part;
-    const auto & virtual_partition_id = parent.info.getPartitionId();
-
-    /// Cache by the parent's real partition id: distinct parent partitions produce distinct
-    /// virtual-column substitutions even when the part's own partition is empty.
-    if (const auto * cond = lookupSubstituted(virtual_partition_id))
+    const auto & partition = part.partition;
+    const auto & partition_id = part.info.getPartitionId();
+    if (const auto * cond = lookupSubstituted(partition_id))
         return *cond;
 
     try
     {
-        auto specialized = substituteConstantInputs(
-            dag->predicate, part.partition, virtual_partition_id, parent.partition,
-            partition_key_for_substitution, metadata_snapshot);
+        auto specialized = substituteConstantInputs(dag->predicate, partition, partition_id, metadata_snapshot, context);
         chassert(!specialized.getOutputs().empty());
 
         Cond produced = generate(&specialized, specialized.getOutputs().front());
-        return setSubstituted(virtual_partition_id, std::move(produced));
+        return setSubstituted(partition_id, std::move(produced));
     }
     catch (const Exception &)
     {
