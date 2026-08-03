@@ -20,45 +20,35 @@ Os clientes do ClickHouse Cloud podem selecionar funções de sistema predefinid
 As funções personalizadas podem incluir uma combinação de permissões de organização, serviço e banco de dados. As permissões podem ser aplicadas a todos os serviços e bancos de dados ou a um subconjunto deles.
 
 <Steps>
-  <Step>
-    ### Acesse as configurações da organização e selecione `Users and roles`
-
+  <Step title="Acesse as configurações da organização e selecione `Users and roles`" id="users-and-roles-1">
     Na página de serviços, selecione o nome da sua organização. No menu pop-up, selecione o item de menu `Users and roles`.
 
     <Image img="/images/cloud/guides/control_plane/1_users_and_roles.webp" size="lg" />
   </Step>
 
-  <Step>
-    ### Selecione a aba `Roles`
-
+  <Step title={<>Selecione a aba <code>Roles</code></>} id="roles-tab">
     Selecione a aba `Roles` na parte superior central da tela.
 
     <Image img="/images/cloud/guides/control_plane/manage_custom_roles/2_custom_role.webp" size="lg" />
   </Step>
 
-  <Step>
-    ### Selecione `Create new role` no canto superior direito
-
+  <Step title={<>Selecione <code>Create new role</code> no canto superior direito</>} id="create-new-role">
     Selecione o botão `Create new role` no canto superior direito da tela.
 
     <Image img="/images/cloud/guides/control_plane/manage_custom_roles/3_custom_role.webp" size="lg" />
   </Step>
 
-  <Step>
-    ### Dê um nome à função
-
+  <Step title="Dê um nome à função" id="name-the-role">
     Digite um nome descritivo para a função. Esse será o nome exibido ao atribuir funções a usuários e chaves de API.
 
     <Image img="/images/cloud/guides/control_plane/manage_custom_roles/4_custom_role.webp" size="md" />
   </Step>
 
-  <Step>
-    ### Clique em `Allow` e selecione o escopo da permissão
-
+  <Step title={<>Clique em <code>Allow</code> e selecione o escopo da permissão</>} id="scope-permissions">
     Clique no botão `Allow` e selecione permissões de organização, serviço e/ou banco de dados. Para ver a descrição de todas as permissões, consulte [Console roles and permissions](/pt-BR/products/cloud/reference/security/console-roles).
 
     <Tip>
-      Certifique-se de que os usuários que farão login no Console tenham, no mínimo, a permissão Organization &gt; Access organization.
+      Certifique-se de que os usuários que farão login no console tenham, no mínimo, a permissão Organization &gt; Access organization.
     </Tip>
 
     <Info>
@@ -70,9 +60,7 @@ As funções personalizadas podem incluir uma combinação de permissões de org
     <Image img="/images/cloud/guides/control_plane/manage_custom_roles/5_custom_role.webp" size="md" />
   </Step>
 
-  <Step>
-    ### Revise sua nova função
-
+  <Step title="Revise sua nova função" id="review-role">
     Revise as permissões atribuídas à sua nova função antes de concluir. Clique em `Create role` quando terminar.
 
     <Image img="/images/cloud/guides/control_plane/manage_custom_roles/6_custom_role.webp" size="md" />

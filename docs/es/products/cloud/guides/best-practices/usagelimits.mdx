@@ -11,7 +11,7 @@ Aunque ClickHouse es conocido por su velocidad y fiabilidad, el rendimiento ópt
 alcanza dentro de determinados parámetros operativos. Por ejemplo, tener demasiadas tablas,
 bases de datos o partes puede afectar negativamente al rendimiento. Para evitarlo, ClickHouse
 Cloud aplica límites en varias dimensiones operativas.
-A continuación se detallan estas restricciones.
+A continuación se detallan estas restricciones, que muestran valores predeterminados.
 
 <Tip>
   Si se ha topado con una de estas restricciones, es posible que esté
@@ -41,3 +41,15 @@ A continuación se detallan estas restricciones.
   100, y el número máximo de tablas está restringido a 500. Además, el almacenamiento
   para los servicios del nivel Basic está limitado a 1 TB.
 </Note>
+
+<Note>
+  Para los servicios que ya superan los límites de uso anteriores, los límites de tablas y bases de datos se establecen en el número actual de tablas y bases de datos del servicio más un 25%.
+</Note>
+
+Los límites específicos de advertencia y excepción de su servicio pueden verificarse consultando system.server&#95;settings. Por ejemplo,
+
+```
+SELECT * 
+FROM system.server_settings 
+WHERE name IN ('max_table_num_to_warn', 'max_table_num_to_throw', 'max_database_num_to_warn', 'max_database_num_to_throw')
+```

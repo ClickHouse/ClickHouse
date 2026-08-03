@@ -1,0 +1,132 @@
+---
+description: '`QueryRunner` テーブルに挿入されたレコードは、エンジンがローカルまたはリモートクラスターで「fire and forget」モードにより実行するクエリを表します。'
+sidebarTitle: 'QueryRunner'
+slug: /engines/table-engines/special/query-runner
+title: 'QueryRunner テーブルエンジン'
+doc_type: 'reference'
+---
+
+`QueryRunner` テーブルに挿入されたレコードは、エンジンが実行するクエリを表します。
+このエンジンは、非同期クエリ実行、生成されたクエリのバッチ実行、
+リモートクラスターへのクエリの送信、ベンチマーク、ファジング、シャドートラフィックを用いたテストに使用できます。
+
+<div id="creating-a-table">
+  ## テーブルの作成
+</div>
+
+```sql
+CREATE TABLE runner
+(
+    query String,
+    database String,
+    settings Map(LowCardinality(String), String)
+)
+ENGINE = QueryRunner
+SETTINGS
+    cluster = 'cluster_name',
+    shard = '1',
+    mode = 'asynchronous',
+    threads = 4,
+    max_queue_size = 1000
+[DEFINER = { user | CURRENT_USER }] [SQL SECURITY { DEFINER | INVOKER | NONE }];
+```
+
+テーブルは、許可されたカラムの一部 (`query`、`database`、`settings`) を含めて作成する必要があります。
+カラム `query` は必須で、その他のカラムは任意です。
+
+| カラム        | 型                     | 意味                                             |
+| ---------- | --------------------- | ---------------------------------------------- |
+| `query`    | `String`              | 実行するクエリ。                                       |
+| `database` | `String`              | クエリのデフォルトデータベース。空の場合は、サーバーのデフォルトデータベースが使用されます。 |
+| `settings` | `Map(String, String)` | クエリに適用される設定。                                   |
+
+<div id="engine-settings">
+  ## エンジン設定
+</div>
+
+| Setting          | Default          | Meaning                                                                                                               |
+| ---------------- | ---------------- | --------------------------------------------------------------------------------------------------------------------- |
+| `cluster`        | `''`             | クエリの送信先となるクラスター名。空の場合、クエリはローカルで実行されます。                                                                                |
+| `shard`          | `'1'`            | クエリの送信先となるクラスター内の分片の 1 始まりの索引。`'random'` を指定するとクエリごとにランダムな分片が選択され、`'all'` を指定すると各クエリがすべての分片で実行されます。`cluster` 設定が必要です。 |
+| `mode`           | `'asynchronous'` | `synchronous` モードでは、挿入されたバッチ内のすべてのクエリが完了してから INSERT が返ります。`asynchronous` モードでは、クエリがキューに入れられた時点で INSERT が返ります。         |
+| `threads`        | `4`              | クエリを実行するバックグラウンドスレッド数。                                                                                                |
+| `max_queue_size` | `1000`           | キューに入れられるクエリの最大数。キューがいっぱいになると、新たに挿入されたクエリは破棄され、エラーが記録されます。                                                            |
+
+<div id="details">
+  ## 詳細
+</div>
+
+このテーブルで実行できるのは `INSERT` クエリのみです。
+クエリは &quot;fire and forget&quot; モードで実行されます。つまり、例外が発生しても再試行は行われず、
+`SELECT` クエリの結果は破棄されます (結果を残す唯一の方法は `INSERT SELECT` です) 。
+各クエリが成功したかどうかは `system.query_log` テーブルで確認できます。この
+エンジンによって開始されたクエリには、開始元のサーバーで `is_internal = 1` が設定されます。
+
+キューに入ったクエリはメモリ内に保持されるため、サーバーを再起動すると失われます。サーバーのシャットダウン時
+ (またはテーブルに対する `DROP`/`DETACH` 時) には、まだ開始されていないクエリは破棄されます。すでに
+実行中のクエリのうち、クラスターに送出されるものはキャンセルされ、ローカルで実行されているものは完了するまで
+待機されます。
+
+実行対象のクエリ自体が `INSERT` の場合、そのデータはインラインで指定されている必要があります。つまり `INSERT ... VALUES (...)`、
+`INSERT ... SELECT ...`、またはクエリテキスト内にデータを含む `INSERT ... FORMAT ...` です。データを
+別個のストリームから受け取ることを前提とする `INSERT` はサポートされていません。
+
+<div id="local-mode-and-sql-security">
+  ## ローカルモードとSQL SECURITY
+</div>
+
+`cluster` 設定がない場合、クエリはローカルサーバーで実行されます。
+どのユーザーとして実行されるかは、`SQL SECURITY` 句で決まります。
+
+* `INVOKER` (デフォルト) : クエリは、`INSERT` を実行したユーザーの権限で実行されます。
+* `DEFINER`: クエリは、指定された `DEFINER` ユーザーの権限で実行されます。挿入されるクエリは任意の内容になり得るため、このようなテーブルに対する `INSERT` を許可すると、definer のすべての権限を委譲することになります。
+* `NONE`: クエリは、ユーザーなしで完全なアクセス権限を持って実行されます。テーブルの作成時に `ALLOW_SQL_SECURITY_NONE` 権限が必要です。
+
+<div id="cluster-mode">
+  ## クラスターモード
+</div>
+
+`cluster` 設定を指定すると、クエリは指定したクラスターに送信されます。
+
+対象の分片は `shard` によって選択されます。指定できるのは、固定の 1-based index (デフォルトは `'1'`) 、クエリごとに
+ランダムな分片を選択する `'random'`、またはクラスター内のすべての分片で各クエリを実行する `'all'` です。分片内のレプリカは、
+サーバーの `load_balancing` 設定に従って選択されます。
+
+`database` カラムは、リモートサーバーへの接続のデフォルトデータベースを設定します。この
+デフォルトデータベースは接続ごとに一度だけ設定されるため、`database` の値ごとに専用の
+接続プールが使われます。この接続プールは最初の使用時に作成され、テーブルの存続期間中は再利用されます。
+
+`DEFINER` と `SQL SECURITY` が効果を持つのはローカルモードだけであり、これらを
+`cluster` 設定と組み合わせるとエラーになります。リモートサーバーでは、クエリは
+クラスター設定の認証情報で認証され、通常の初期クエリとして実行されます。これらは
+`system.query_log` に `is_initial_query = 1` とそれぞれ固有の `query_id` とともに記録されます (それらを生成した INSERT には
+関連付けられません) 。開始元のサーバーでは、送出されるクエリが `system.query_log` に
+`is_internal = 1` として記録されます。
+
+このエンジンはクエリ結果を破棄するため、送出されるクエリは常に
+`discard_query_data = 1` を付けて実行されます。したがって、SELECT クエリの結果データはネットワーク経由で
+転送されません (これは `settings` カラムで設定された `discard_query_data` の値を上書きします) 。
+
+<div id="waiting-for-queries-to-finish">
+  ## クエリの完了を待機する
+</div>
+
+非同期モードでは、これまでにそのテーブルに送信されたすべてのクエリが完了するまでブロックするために、次のクエリを使用できます。
+
+```sql
+SYSTEM WAIT QUERY RUNNER runner;
+```
+
+<div id="example">
+  ## 例
+</div>
+
+クエリログに記録された最近の `SELECT` クエリを再実行する:
+
+```sql
+INSERT INTO runner (query, database, settings)
+SELECT query, current_database, Settings
+FROM system.query_log
+WHERE type = 'QueryFinish' AND is_initial_query AND NOT is_internal AND query_kind = 'Select'
+  AND event_time > now() - INTERVAL 1 HOUR;
+```
