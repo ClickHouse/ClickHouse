@@ -213,6 +213,9 @@ static struct InitFiu
     ONCE(database_replicated_drop_after_removing_keeper_failed) \
     PAUSEABLE_ONCE(mt_mutate_task_pause_in_prepare) \
     PAUSEABLE(merge_task_projection_stage_pause) \
+    PAUSEABLE(merge_task_finalize_pause) \
+    PAUSEABLE(mutate_task_finalize_pause) \
+    PAUSEABLE(insert_write_temp_part_pause) \
     PAUSEABLE(rmt_mutate_task_pause_in_prepare) \
     PAUSEABLE(rmt_mutate_task_pause_after_zero_copy_lock) \
     PAUSEABLE(merge_tree_background_task_marked_for_deletion) \
@@ -259,6 +262,9 @@ static struct InitFiu
     REGULAR(storage_merge_tree_background_schedule_merge_fail) \
     ONCE(mt_skip_scheduling_merge_once) \
     REGULAR(patch_parts_reverse_column_order) \
+    PAUSEABLE_ONCE(column_ids_pause_after_metadata_alter) \
+    ONCE(column_ids_throw_before_mapping_persist) \
+    ONCE(column_ids_throw_after_mapping_persist) \
     REGULAR(wide_part_writer_fail_in_add_streams) \
     REGULAR(compact_part_writer_fail_in_add_streams) \
     PAUSEABLE_ONCE(smt_clone_partition_pause_before_commit) \

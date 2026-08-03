@@ -347,7 +347,7 @@ void SerializationInfo::fromJSON(const Poco::JSON::Object & object)
 {
     if (!object.has(KEY_KIND) || !object.has(KEY_NUM_DEFAULTS) || !object.has(KEY_NUM_ROWS))
         throw Exception(ErrorCodes::CORRUPTED_DATA,
-            "Missed field '{}' or '{}' or '{}' in SerializationInfo of columns",
+            "Missing field '{}' or '{}' or '{}' in SerializationInfo of columns",
             KEY_KIND, KEY_NUM_DEFAULTS, KEY_NUM_ROWS);
 
     data.num_rows = object.getValue<size_t>(KEY_NUM_ROWS);
@@ -447,6 +447,54 @@ void SerializationInfoByName::replaceData(const SerializationInfoByName & other)
     }
 }
 
+void SerializationInfoByName::reKeyToColumnIds(const NamesAndTypesList & columns)
+{
+    if (empty())
+        return;
+
+    bool has_distinct_column_ids = std::any_of(columns.begin(), columns.end(),
+        [](const auto & column) { return !column.column_id.empty() && column.column_id.value() != column.name; });
+
+    if (!has_distinct_column_ids)
+        return;
+
+    std::unordered_map<String, String> id_by_name;
+    for (const auto & column : columns)
+        id_by_name.emplace(column.name, column.getColumnId().value());
+
+    /// Rebuild into a fresh map: re-keying in place would overwrite another
+    /// column's record when a logical name equals that column's ID (RENAME
+    /// keeps the ID, so the freed name can be re-added under a fresh one).
+    std::map<String, MutableSerializationInfoPtr> rekeyed;
+    for (auto & [name, info] : *this)
+    {
+        auto it = id_by_name.find(name);
+        rekeyed.emplace(it == id_by_name.end() ? name : it->second, std::move(info));
+    }
+    swap(rekeyed);
+}
+
+SerializationInfoByName SerializationInfoByName::reKeyToLogicalNames(const NamesAndTypesList & columns, bool drop_orphans) const
+{
+    std::unordered_map<String, String> name_by_id;
+    for (const auto & column : columns)
+        name_by_id.emplace(column.getColumnId().value(), column.name);
+
+    SerializationInfoByName rekeyed(settings);
+    for (const auto & [id, info] : *this)
+    {
+        auto it = name_by_id.find(id);
+        if (it == name_by_id.end())
+        {
+            if (!drop_orphans)
+                rekeyed.emplace(id, info);
+            continue;
+        }
+        rekeyed.emplace(it->second, info);
+    }
+    return rekeyed;
+}
+
 ISerialization::KindStack SerializationInfoByName::getKindStack(const String & column_name) const
 {
     auto it = find(column_name);
@@ -463,16 +511,17 @@ bool SerializationInfoByName::needsPersistence() const
     return !empty() || getVersion() > MergeTreeSerializationInfoVersion::BASIC;
 }
 
-void SerializationInfoByName::writeJSON(WriteBuffer & out) const
+static void writeJSONImpl(const SerializationInfoByName & infos, WriteBuffer & out)
 {
-    auto version = getVersion();
+    auto version = infos.getVersion();
+    const auto & settings = infos.getSettings();
 
     writeChar('{', out);
     writeJSONKey(KEY_COLUMNS, out);
     writeChar('[', out);
 
     bool first = true;
-    for (const auto & [name, info] : *this)
+    for (const auto & [name, info] : infos)
     {
         if (!first)
             writeChar(',', out);
@@ -518,6 +567,11 @@ void SerializationInfoByName::writeJSON(WriteBuffer & out) const
     writeChar('}', out);
 }
 
+void SerializationInfoByName::writeJSON(WriteBuffer & out) const
+{
+    writeJSONImpl(*this, out);
+}
+
 SerializationInfoByName SerializationInfoByName::clone() const
 {
     SerializationInfoByName res(settings);
@@ -526,7 +580,16 @@ SerializationInfoByName SerializationInfoByName::clone() const
     return res;
 }
 
-SerializationInfoByName SerializationInfoByName::readJSONFromString(const NamesAndTypesList & columns, const std::string & json_str)
+namespace
+{
+
+struct ParsedJSON
+{
+    Poco::JSON::Array::Ptr columns_array;
+    SerializationInfoSettings settings;
+};
+
+ParsedJSON parseJSONEnvelope(const std::string & json_str)
 {
     Poco::JSON::Parser parser;
     auto object = parser.parse(json_str).extract<Poco::JSON::Object::Ptr>();
@@ -575,7 +638,6 @@ SerializationInfoByName SerializationInfoByName::readJSONFromString(const NamesA
     MergeTreeMapSerializationVersion map_serialization_version = MergeTreeMapSerializationVersion::BASIC;
     if (version >= MergeTreeSerializationInfoVersion::WITH_TYPES)
     {
-        /// types_serialization_versions is mandatory in WITH_TYPES mode
         if (!type_versions_obj)
         {
             throw Exception(
@@ -624,6 +686,15 @@ SerializationInfoByName SerializationInfoByName::readJSONFromString(const NamesA
         map_serialization_version,
         propagate_types_serialization_versions_to_nested_types);
 
+    return {columns_array, settings};
+}
+
+} /// anonymous namespace
+
+SerializationInfoByName SerializationInfoByName::readJSONFromString(const NamesAndTypesList & columns, const std::string & json_str)
+{
+    auto [columns_array, settings] = parseJSONEnvelope(json_str);
+
     SerializationInfoByName infos(settings);
     if (columns_array)
     {
@@ -637,7 +708,7 @@ SerializationInfoByName SerializationInfoByName::readJSONFromString(const NamesA
 
             if (!elem_object->has(KEY_NAME))
                 throw Exception(ErrorCodes::CORRUPTED_DATA,
-                    "Missed field '{}' in serialization infos", KEY_NAME);
+                    "Missing field '{}' in serialization infos", KEY_NAME);
 
             auto name = elem_object->getValue<String>(KEY_NAME);
             auto it = column_type_by_name.find(name);
@@ -660,6 +731,46 @@ SerializationInfoByName SerializationInfoByName::readJSON(const NamesAndTypesLis
     String json_str;
     readString(json_str, in);
     return readJSONFromString(columns, json_str);
+}
+
+SerializationInfoByName SerializationInfoByName::readJSONWithColumnIds(const NamesAndTypesList & columns, ReadBuffer & in)
+{
+    String json_str;
+    readString(json_str, in);
+    auto [columns_array, settings] = parseJSONEnvelope(json_str);
+
+    SerializationInfoByName infos(settings);
+    if (!columns_array)
+        return infos;
+
+    /// A record's on-disk key is the columns.txt token: the stamped column ID, or the
+    /// logical name for pre-activation parts.  IDs claim keys first -- a key equal to
+    /// some column's ID belongs to that ID's owner, never to a same-named column.
+    std::unordered_map<String, const NameAndTypePair *> column_by_stored_key = columns.getIndexByStorageColumnId();
+    for (const auto & column : columns)
+    {
+        if (!column.column_id.empty() && column.column_id.value() != column.name)
+            column_by_stored_key.emplace(column.name, &column);
+    }
+
+    for (const auto & elem : *columns_array)
+    {
+        const auto & elem_object = elem.extract<Poco::JSON::Object::Ptr>();
+
+        if (!elem_object->has(KEY_NAME))
+            throw Exception(ErrorCodes::CORRUPTED_DATA, "Missing field '{}' in serialization infos", KEY_NAME);
+
+        auto stored_name = elem_object->getValue<String>(KEY_NAME);
+        auto it = column_by_stored_key.find(stored_name);
+        if (it == column_by_stored_key.end())
+            continue;
+
+        auto info = it->second->type->createSerializationInfo(infos.getSettings());
+        info->fromJSON(*elem_object);
+        infos.emplace(it->second->getColumnId().value(), std::move(info));
+    }
+
+    return infos;
 }
 
 }

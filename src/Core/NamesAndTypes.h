@@ -1,5 +1,6 @@
 #pragma once
 
+#include <Core/ColumnId.h>
 #include <Core/Names.h>
 #include <DataTypes/IDataType.h>
 #include <base/types.h>
@@ -29,10 +30,19 @@ public:
     NameAndTypePair(const String & name_, const DataTypePtr & type_)
         : name(name_), type(type_), type_in_storage(type_) {}
 
+    NameAndTypePair(const String & name_, const DataTypePtr & type_, ColumnId column_id_)
+        : name(name_), type(type_), column_id(std::move(column_id_)), type_in_storage(type_) {}
+
     NameAndTypePair(const String & name_in_storage_, const String & subcolumn_name_,
         const DataTypePtr & type_in_storage_, const DataTypePtr & subcolumn_type_);
 
     String getNameInStorage() const;
+    /// Key for the part's whole-column-keyed maps -- `getColumnPosition`, `getColumnSize`,
+    /// `tryGetColumn` -- so a subcolumn reports its parent's id: it has no entry of its own there.
+    ColumnId getColumnId() const;
+    /// Key for `getSerialization`, the one part map that also holds subcolumn entries: the id for a
+    /// whole column, `"<id>.<subpath>"` for a subcolumn. A pure read -- the id must already be stamped.
+    ColumnId getStorageKey() const;
     String getSubcolumnName() const;
 
     bool isSubcolumn() const { return subcolumn_delimiter_position != std::nullopt; }
@@ -46,9 +56,23 @@ public:
     /// Can be used to convert "t.a.b.c" from meaning "column `t` in storage, subcolumn `a.b.c` inside it"
     /// to meaning "column `t.a.b` in storage, subcolumn `c` inside it".
     void setDelimiterAndTypeInStorage(const String & name_in_storage_, DataTypePtr type_in_storage_);
+    void setColumnId(ColumnId column_id_) { column_id = std::move(column_id_); }
 
     String name;
     DataTypePtr type;
+
+    /// The name used for on-disk storage files (.bin, .mrk, etc.).
+    ///
+    /// When a table has a ColumnIdMapping (serialization_info_version =
+    /// 'with_column_ids'), each column is assigned a stable, counter-allocated
+    /// column ID (e.g. "0", "1", "2") that never changes across renames or
+    /// drops. This decouples the file names on disk from the logical column names
+    /// visible to users, enabling metadata-only RENAME and DROP without rewriting
+    /// data files.
+    ///
+    /// When empty (the default), the logical `name` is used as the file name --
+    /// this is the traditional behavior for tables without column ID mapping.
+    ColumnId column_id;
 
 private:
     DataTypePtr type_in_storage;
@@ -89,7 +113,11 @@ public:
     NamesAndTypesList(Iterator begin, Iterator end) : ListWithMemoryTracking<NameAndTypePair>(begin, end) {}
 
     void readText(ReadBuffer & buf, bool check_eof = true);
-    void writeText(WriteBuffer & buf) const;
+    /// When use_column_ids is true, columns that have a non-empty
+    /// column_id write that id instead of the logical name.  This is
+    /// used when persisting columns.txt for MergeTree parts so that the
+    /// on-disk file contains stable column IDs that survive renames.
+    void writeText(WriteBuffer & buf, bool use_column_ids = false) const;
 
     String toString() const;
     static NamesAndTypesList parse(const String & s);
@@ -110,6 +138,11 @@ public:
 
     /// Creates a mapping from name to the type
     UnorderedMapWithMemoryTracking<std::string, DataTypePtr> getNameToTypeMap() const;
+
+    /// Index each element by its `getColumnId()` (the stamped column ID, or
+    /// the logical name when no ID is stamped). The returned pointers borrow from this
+    /// list, so the list must outlive the map.
+    std::unordered_map<String, const NameAndTypePair *> getIndexByStorageColumnId() const;
 
     /// Remove columns which names are not in the `names`.
     void filterColumns(const NameSet & names);

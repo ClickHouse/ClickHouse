@@ -43,6 +43,8 @@
 #include <Parsers/ParserCreateQuery.h>
 #include <Parsers/parseQuery.h>
 #include <Storages/IStorage.h>
+#include <Storages/MergeTree/ColumnIdMapping.h>
+#include <Storages/MergeTree/MergeTreeVirtualColumns.h>
 #include <Storages/StorageDummy.h>
 #include <Common/Exception.h>
 #include <Common/randomSeed.h>
@@ -109,6 +111,7 @@ ColumnDescription & ColumnDescription::operator=(const ColumnDescription & other
     settings = other.settings;
     ttl = other.ttl ? other.ttl->clone() : nullptr;
     statistics = other.statistics;
+    column_id = other.column_id;
 
     return *this;
 }
@@ -132,6 +135,7 @@ ColumnDescription & ColumnDescription::operator=(ColumnDescription && other) ///
     other.ttl.reset();
 
     statistics = std::move(other.statistics);
+    column_id = std::move(other.column_id);
 
     return *this;
 }
@@ -301,6 +305,29 @@ void ColumnsDescription::invalidateGetCache() const
     get_cache.clear();
 }
 
+void ColumnsDescription::setColumnIds(const ColumnIdMapping & mapping)
+{
+    /// Stamp each column's id off the active mapping. An empty id means name-keyed (a non-stored
+    /// ALIAS / EPHEMERAL column, or a virtual column) -- legitimate to leave absent from the mapping.
+    /// A physically-stored, non-virtual column missing from the mapping is a schema/mapping desync:
+    /// fail loud rather than name-defaulting its id (which would silently defeat id resolution).
+    for (auto it = columns.begin(); it != columns.end(); ++it)
+    {
+        ColumnId id;
+        if (auto column_id = mapping.tryGetColumnId(it->name))
+            id = *column_id;
+        else if (const bool physically_stored = it->default_desc.kind != ColumnDefaultKind::Alias
+                     && it->default_desc.kind != ColumnDefaultKind::Ephemeral;
+                 physically_stored && !isVirtualColumn(it->name))
+            throw Exception(ErrorCodes::LOGICAL_ERROR,
+                "Column '{}' is absent from the active column-ID mapping while stamping the schema; "
+                "the table schema and column-ID mapping have desynced", it->name);
+
+        columns.modify(it, [&](ColumnDescription & col) { col.column_id = id; });
+    }
+    invalidateGetCache();
+}
+
 ColumnsDescription::ColumnsDescription(std::initializer_list<ColumnDescription> ordinary)
 {
     for (auto && elem : ordinary)
@@ -318,7 +345,13 @@ ColumnsDescription ColumnsDescription::fromNamesAndTypes(NamesAndTypes ordinary)
 ColumnsDescription::ColumnsDescription(NamesAndTypesList ordinary, bool with_subcolumns)
 {
     for (auto & elem : ordinary)
-        add(ColumnDescription(std::move(elem.name), std::move(elem.type)), String(), false, with_subcolumns);
+    {
+        ColumnDescription column(std::move(elem.name), std::move(elem.type));
+        /// Preserve the stable storage ID so a description rebuilt from a stamped list
+        /// (e.g. a part's collected-Nested columns) keeps ID-keyed resolution.
+        column.column_id = elem.column_id;
+        add(std::move(column), String(), false, with_subcolumns);
+    }
 }
 
 ColumnsDescription::ColumnsDescription(NamesAndTypesList ordinary, NamesAndAliases aliases)
@@ -567,7 +600,7 @@ NamesAndTypesList ColumnsDescription::getOrdinary() const
     NamesAndTypesList ret;
     for (const auto & col : columns)
         if (col.default_desc.kind == ColumnDefaultKind::Default)
-            ret.emplace_back(col.name, col.type);
+            ret.push_back(NameAndTypePair(col.name, col.type, col.column_id));
     return ret;
 }
 
@@ -576,7 +609,7 @@ NamesAndTypesList ColumnsDescription::getInsertable() const
     NamesAndTypesList ret;
     for (const auto & col : columns)
         if (col.default_desc.kind == ColumnDefaultKind::Default || col.default_desc.kind == ColumnDefaultKind::Ephemeral)
-            ret.emplace_back(col.name, col.type);
+            ret.push_back(NameAndTypePair(col.name, col.type, col.column_id));
     return ret;
 }
 
@@ -585,7 +618,7 @@ NamesAndTypesList ColumnsDescription::getMaterialized() const
     NamesAndTypesList ret;
     for (const auto & col : columns)
         if (col.default_desc.kind == ColumnDefaultKind::Materialized)
-            ret.emplace_back(col.name, col.type);
+            ret.push_back(NameAndTypePair(col.name, col.type, col.column_id));
     return ret;
 }
 
@@ -594,7 +627,7 @@ NamesAndTypesList ColumnsDescription::getAliases() const
     NamesAndTypesList ret;
     for (const auto & col : columns)
         if (col.default_desc.kind == ColumnDefaultKind::Alias)
-            ret.emplace_back(col.name, col.type);
+            ret.push_back(NameAndTypePair(col.name, col.type, col.column_id));
     return ret;
 }
 
@@ -603,7 +636,7 @@ NamesAndTypesList ColumnsDescription::getEphemeral() const
     NamesAndTypesList ret;
         for (const auto & col : columns)
             if (col.default_desc.kind == ColumnDefaultKind::Ephemeral)
-                ret.emplace_back(col.name, col.type);
+                ret.push_back(NameAndTypePair(col.name, col.type, col.column_id));
     return ret;
 }
 
@@ -611,14 +644,24 @@ NamesAndTypesList ColumnsDescription::getAll() const
 {
     NamesAndTypesList ret;
     for (const auto & col : columns)
-        ret.emplace_back(col.name, col.type);
+        ret.push_back(NameAndTypePair(col.name, col.type, col.column_id));
     return ret;
 }
 
 NamesAndTypesList ColumnsDescription::getSubcolumns(const String & name_in_storage) const
 {
     auto range = subcolumns.get<1>().equal_range(name_in_storage);
-    return NamesAndTypesList(range.first, range.second);
+    auto parent = columns.get<1>().find(name_in_storage);
+    NamesAndTypesList ret;
+    for (auto it = range.first; it != range.second; ++it)
+    {
+        /// A subcolumn shares its parent column's stamped ID (streams live under the parent).
+        NameAndTypePair pair = *it;
+        if (parent != columns.get<1>().end())
+            pair.column_id = parent->column_id;
+        ret.push_back(std::move(pair));
+    }
+    return ret;
 }
 
 NamesAndTypesList ColumnsDescription::getNested(const String & column_name) const
@@ -626,7 +669,7 @@ NamesAndTypesList ColumnsDescription::getNested(const String & column_name) cons
     auto range = getNameRange(columns, column_name);
     NamesAndTypesList nested;
     for (auto & it = range.first; it != range.second; ++it)
-        nested.emplace_back(it->name, it->type);
+        nested.push_back(NameAndTypePair(it->name, it->type, it->column_id));
     return nested;
 }
 
@@ -642,8 +685,14 @@ void ColumnsDescription::addSubcolumnsToList(NamesAndTypesList & source_list) co
             continue;
 
         auto range = subcolumns.get<1>().equal_range(col.name);
-        if (range.first != range.second)
-            subcolumns_list.insert(subcolumns_list.end(), range.first, range.second);
+        for (auto jt = range.first; jt != range.second; ++jt)
+        {
+            /// A subcolumn shares its parent column's stamped ID (streams live under the parent).
+            NameAndTypePair pair = *jt;
+            if (it != columns.get<1>().end())
+                pair.column_id = it->column_id;
+            subcolumns_list.push_back(std::move(pair));
+        }
     }
 
     source_list.splice(source_list.end(), std::move(subcolumns_list));
@@ -807,7 +856,7 @@ NamesAndTypesList ColumnsDescription::getAllPhysical() const
     NamesAndTypesList ret;
     for (const auto & col : columns)
         if (col.default_desc.kind != ColumnDefaultKind::Alias && col.default_desc.kind != ColumnDefaultKind::Ephemeral)
-            ret.emplace_back(col.name, col.type);
+            ret.push_back(NameAndTypePair(col.name, col.type, col.column_id));
     return ret;
 }
 
@@ -824,13 +873,22 @@ std::optional<NameAndTypePair> ColumnsDescription::tryGetColumn(const GetColumns
 {
     auto it = columns.get<1>().find(column_name);
     if (it != columns.get<1>().end() && (defaultKindToGetKind(it->default_desc.kind) & options.kind))
-        return NameAndTypePair(it->name, it->type);
+        return NameAndTypePair(it->name, it->type, it->column_id);
 
     if (options.with_subcolumns)
     {
         auto jt = subcolumns.get<0>().find(column_name);
-        if (jt != subcolumns.get<0>().end() && (defaultKindToGetKind(columns.get<1>().find(jt->getNameInStorage())->default_desc.kind) & options.kind))
-            return *jt;
+        if (jt != subcolumns.get<0>().end())
+        {
+            auto parent = columns.get<1>().find(jt->getNameInStorage());
+            if (defaultKindToGetKind(parent->default_desc.kind) & options.kind)
+            {
+                /// A subcolumn shares its parent column's stamped ID (streams live under the parent).
+                NameAndTypePair pair = *jt;
+                pair.column_id = parent->column_id;
+                return pair;
+            }
+        }
 
         if (options.with_dynamic_subcolumns)
         {

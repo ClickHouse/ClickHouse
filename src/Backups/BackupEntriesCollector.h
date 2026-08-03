@@ -25,6 +25,8 @@ struct IAccessEntity;
 using AccessEntityPtr = std::shared_ptr<const IAccessEntity>;
 class QueryStatus;
 using QueryStatusPtr = std::shared_ptr<QueryStatus>;
+class ColumnIdMapping;
+using ColumnIdMappingPtr = std::shared_ptr<const ColumnIdMapping>;
 
 
 /// Collects backup entries for all databases and tables which should be put to a backup.
@@ -67,6 +69,10 @@ public:
     /// This function is designed to help making a consistent in some complex cases like
     /// 1) we need to join (in a backup) the data of replicated tables gathered on different hosts.
     void addPostTask(std::function<void()> task);
+
+    /// Storage-side snapshot captured at `lockTablesForReading` time, or
+    /// nullptr if the storage opted out.  See `IStorage::captureBackupAuxSnapshot`.
+    ColumnIdMappingPtr getBackupAuxSnapshot(const QualifiedTableName & table_name) const;
 
 private:
     void calculateRootPathInBackup();
@@ -173,6 +179,9 @@ private:
         std::optional<String> replicated_table_zk_path;
         std::optional<ASTs> partitions;
         bool should_backup_data = true;
+        /// Storage-side state captured at lock-acquisition time, verified
+        /// by `backupData`.  See `IStorage::captureBackupAuxSnapshot`.
+        ColumnIdMappingPtr backup_aux_snapshot;
     };
 
     String current_stage;

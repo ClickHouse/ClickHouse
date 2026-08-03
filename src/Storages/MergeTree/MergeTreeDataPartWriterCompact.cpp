@@ -82,7 +82,7 @@ void MergeTreeDataPartWriterCompact::addStreams(const NameAndTypePair & name_and
     ISerialization::StreamCallback callback = [&](const auto & substream_path)
     {
         chassert(!substream_path.empty());
-        String stream_name = ISerialization::getFileNameForStream(name_and_type, substream_path, ISerialization::StreamFileNameSettings(*storage_settings));
+        String stream_name = ISerialization::getFileNameForStreamByColumnId(name_and_type, substream_path, ISerialization::StreamFileNameSettings(*storage_settings));
 
         /// Shared offsets for Nested type.
         if (compressed_streams.contains(stream_name))
@@ -140,7 +140,7 @@ void MergeTreeDataPartWriterCompact::addStreams(const NameAndTypePair & name_and
     enumerate_settings.map_buckets_coefficient = settings.map_buckets_coefficient;
     enumerate_settings.map_buckets_min_avg_size = settings.map_buckets_min_avg_size;
     enumerate_settings.data_part_type = MergeTreeDataPartType::Compact;
-    auto serialization = getSerialization(name_and_type.name);
+    auto serialization = getSerialization(name_and_type);
     auto substream_data = ISerialization::SubstreamData(serialization).withType(name_and_type.type).withColumn(block_sample.getByName(name_and_type.name).column);
     serialization->enumerateStreams(enumerate_settings, callback, substream_data);
 }
@@ -333,7 +333,7 @@ void MergeTreeDataPartWriterCompact::writeDataBlock(const Block & block, const G
             bool is_first_substream = true;
             auto stream_getter = [&, this](const ISerialization::SubstreamPath & substream_path) -> WriteBuffer *
             {
-                String stream_name = ISerialization::getFileNameForStream(*name_and_type, substream_path, ISerialization::StreamFileNameSettings(*storage_settings));
+                String stream_name = ISerialization::getFileNameForStreamByColumnId(*name_and_type, substream_path, ISerialization::StreamFileNameSettings(*storage_settings));
 
                 auto stream_it = compressed_streams.find(stream_name);
                 if (stream_it == compressed_streams.end())
@@ -384,13 +384,13 @@ void MergeTreeDataPartWriterCompact::writeDataBlock(const Block & block, const G
 
             auto stream_mark_getter = [&](const ISerialization::SubstreamPath & substream_path) -> MarkInCompressedFile
             {
-                String stream_name = ISerialization::getFileNameForStream(*name_and_type, substream_path, ISerialization::StreamFileNameSettings(*storage_settings));
+                String stream_name = ISerialization::getFileNameForStreamByColumnId(*name_and_type, substream_path, ISerialization::StreamFileNameSettings(*storage_settings));
                 return {plain_hashing.count(), compressed_streams[stream_name]->hashing_buf.offset()};
             };
 
             writeColumnSingleGranule(
                 block.getByName(name_and_type->name), block_sample.getByName(name_and_type->name),
-                getSerialization(name_and_type->name),
+                getSerialization(*name_and_type),
                 stream_getter, stream_mark_getter, granule.start_row, granule.rows_to_write, !data_written, getSerializationSettings());
 
             if (settings.compress_per_column_in_compact_parts)

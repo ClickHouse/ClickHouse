@@ -53,7 +53,8 @@ public:
         SharedHeader minmax_header_,
         MergeTreeData::DataPartsVector data_parts_,
         ContextPtr context_,
-        bool with_marks_)
+        bool with_marks_,
+        StorageMetadataHandle source_metadata_)
         : ISource(header_)
         , WithContext(context_)
         , header(std::move(header_))
@@ -61,6 +62,7 @@ public:
         , minmax_header(std::move(minmax_header_))
         , data_parts(std::move(data_parts_))
         , with_marks(with_marks_)
+        , source_metadata(std::move(source_metadata_))
     {
     }
 
@@ -179,7 +181,8 @@ protected:
 private:
     std::shared_ptr<MergeTreeMarksLoader> createMarksLoader(const MergeTreeDataPartPtr & part, const String & prefix_name, size_t num_columns)
     {
-        auto info_for_read = std::make_shared<LoadedMergeTreeDataPartInfoForReader>(part, std::make_shared<AlterConversions>());
+        auto info_for_read = std::make_shared<LoadedMergeTreeDataPartInfoForReader>(
+            part, std::make_shared<AlterConversions>());
         auto local_context = getContext();
 
         return std::make_shared<MergeTreeMarksLoader>(
@@ -205,9 +208,30 @@ private:
         bool has_marks_in_part = false;
         size_t num_rows = part->index_granularity->getMarksCount();
 
+        const auto unescaped_name = unescapeForFileName(column_name);
+
+        /// An ID absent from the part means the column is missing here (NULL marks) -- never fall
+        /// back to a by-name lookup, which could bind a same-named orphan stream left by a DROP +
+        /// re-ADD. A name outside the mapping (non-ID table, or a virtual/helper column) keeps the
+        /// traditional by-name resolution.
+        const auto column_id_mapping = source_metadata->getActiveColumnIdMapping();
+        std::optional<ColumnId> column_id;
+        if (column_id_mapping)
+            column_id = column_id_mapping->tryGetColumnId(unescaped_name);
+
         if (isWidePart(part))
         {
-            if (auto stream_name = IMergeTreeDataPart::getStreamNameOrHash(column_name, ".bin", part->checksums))
+            std::optional<String> stream_name;
+            if (column_id)
+            {
+                if (auto column_in_part = part->tryGetColumn(*column_id))
+                    stream_name = IMergeTreeDataPart::getStreamNameForColumn(
+                        *column_in_part, {}, ".bin", part->checksums, part->storage.getSettings());
+            }
+            else
+                stream_name = IMergeTreeDataPart::getStreamNameOrHash(column_name, ".bin", part->checksums);
+
+            if (stream_name)
             {
                 col_idx = 0;
                 has_marks_in_part = true;
@@ -218,18 +242,35 @@ private:
         {
             if (part->index_granularity_info.mark_type.with_substreams)
             {
-                if (auto col_idx_opt = part->getColumnsSubstreams().tryGetSubstreamPosition(column_name))
+                /// column_name is a substream name. Resolve the part column by ID (id-active) and
+                /// locate its ID-keyed substream; a streamless-root column (e.g. a Tuple) has no
+                /// matching substream, so has_marks_in_part stays false (NULL marks). On non-id
+                /// parts the substream map is keyed by the logical name, so look it up by name.
+                if (column_id)
                 {
-                    col_idx = *col_idx_opt;
+                    auto column_position = part->getColumnPosition(*column_id);
+                    auto column_in_part = part->tryGetColumn(*column_id);
+                    if (column_position && column_in_part)
+                    {
+                        if (auto substream_position = part->getColumnsSubstreams().tryGetSubstreamPosition(
+                                *column_position, *column_in_part, {}, part->storage.getSettings()))
+                        {
+                            col_idx = *substream_position;
+                            has_marks_in_part = true;
+                        }
+                    }
+                }
+                else if (auto substream_position = part->getColumnsSubstreams().tryGetSubstreamPosition(column_name))
+                {
+                    col_idx = *substream_position;
                     has_marks_in_part = true;
                 }
             }
             else
             {
-                auto unescaped_name = unescapeForFileName(column_name);
-                if (auto col_idx_opt = part->getColumnPosition(unescaped_name))
+                if (auto column_position = part->getColumnPosition(column_id.value_or(ColumnId{unescaped_name})))
                 {
-                    col_idx = *col_idx_opt;
+                    col_idx = *column_position;
                     has_marks_in_part = true;
                 }
             }
@@ -272,6 +313,10 @@ private:
     SharedHeader minmax_header;
     MergeTreeData::DataPartsVector data_parts;
     bool with_marks;
+    /// Source table's live metadata, captured once at pipeline init (this source holds no
+    /// StorageSnapshot of the source table). fillMarks resolves a current logical name to its
+    /// stable ID through its active column-ID mapping, then locates the part column by that ID.
+    StorageMetadataHandle source_metadata;
 
     size_t part_index = 0;
 };
@@ -433,13 +478,19 @@ void ReadFromMergeTreeIndex::initializePipeline(QueryPipelineBuilder & pipeline,
         filtered_parts.size(),
         storage->source_table->getStorageID().getNameForLogs());
 
+    /// Capture the source table's live metadata once here (this step holds no StorageSnapshot
+    /// of the source table); fillMarks uses its active column-ID mapping to resolve current
+    /// names to stable IDs before locating the part column by ID.
+    auto source_metadata = storage->source_table->getInMemoryMetadataPtr(context, false);
+
     pipeline.init(Pipe(std::make_shared<MergeTreeIndexSource>(
         getOutputHeader(),
         storage->key_sample_block,
         storage->minmax_sample_block,
         std::move(filtered_parts),
         context,
-        storage->with_marks)));
+        storage->with_marks,
+        std::move(source_metadata))));
 }
 
 }

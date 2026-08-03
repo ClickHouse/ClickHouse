@@ -174,8 +174,10 @@ private:
     friend class MergeTreeReaderTextIndex;
 
     /// Returns actual column name in part, which can differ from table metadata.
-    String getColumnNameInPart(const NameAndTypePair & required_column) const;
     std::pair<String, String> getStorageAndSubcolumnNameInPart(const NameAndTypePair & required_column) const;
+    /// Resolves a requested column against the part -- by stamped column ID when the request
+    /// carries one, else through the rename chain by name. Empty if the part has no such column.
+    std::optional<NameAndTypePair> tryResolveInPart(const NameAndTypePair & required_column) const;
     /// Returns actual column name and type in part, which can differ from table metadata.
     NameAndTypePair getColumnInPart(const NameAndTypePair & required_column) const;
     /// Returns actual serialization in part, which can differ from table metadata.

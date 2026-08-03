@@ -28,6 +28,7 @@
 #include <Parsers/parseQuery.h>
 #include <Storages/ColumnsDescription.h>
 #include <Storages/MergeTree/Backup.h>
+#include <Storages/MergeTree/ColumnIdMapping.h>
 #include <Storages/MergeTree/LoadedMergeTreeDataPartInfoForReader.h>
 #include <Storages/MergeTree/MergeTreeData.h>
 #include <Storages/MergeTree/MergeTreeVirtualColumns.h>
@@ -196,7 +197,7 @@ void IMergeTreeDataPart::MinMaxIndex::load(const IMergeTreeDataPart & part)
             continue;
         }
 
-        const String file_name = "minmax_" + getFileColumnName(column_name, part.checksums) + ".idx";
+        const String file_name = getFileName(getFileColumnName(part.minmaxFileKey(column_name), part.checksums));
 
         /// Treat missing columns as universe range so they don't prune; the file gets created on the next merge or mutation.
         auto file = part.readFileIfExists(file_name);
@@ -225,9 +226,20 @@ void IMergeTreeDataPart::MinMaxIndex::load(const IMergeTreeDataPart & part)
 }
 
 IMergeTreeDataPart::MinMaxIndex::WrittenFiles IMergeTreeDataPart::MinMaxIndex::store(
-    StorageMetadataPtr metadata_snapshot, IDataPartStorage & part_storage, Checksums & out_checksums, const MergeTreeSettingsPtr & storage_settings) const
+    StorageMetadataPtr metadata_snapshot, IDataPartStorage & part_storage, Checksums & out_checksums,
+    const MergeTreeSettingsPtr & storage_settings, const NamesAndTypesList & part_columns) const
 {
-    return store(MergeTreeData::getMinMaxColumns(metadata_snapshot->getPartitionKey(), storage_settings), part_storage, out_checksums, storage_settings);
+    auto minmax_columns = MergeTreeData::getMinMaxColumns(metadata_snapshot->getPartitionKey(), storage_settings);
+
+    /// Name minmax files after the stamped column IDs; columns absent from the part
+    /// (e.g. block-number virtuals) keep their name.
+    for (auto & column : minmax_columns)
+    {
+        if (auto part_column = part_columns.tryGetByName(column.name))
+            column.name = part_column->getColumnId().value();
+    }
+
+    return store(minmax_columns, part_storage, out_checksums, storage_settings);
 }
 
 IMergeTreeDataPart::MinMaxIndex::WrittenFiles IMergeTreeDataPart::MinMaxIndex::store(
@@ -253,7 +265,7 @@ IMergeTreeDataPart::MinMaxIndex::WrittenFiles IMergeTreeDataPart::MinMaxIndex::s
         if (!isNullableOrLowCardinalityNullable(column_type) && (hyperrectangle[i].left.isNull() || hyperrectangle[i].right.isNull()))
             break;
 
-        String file_name = "minmax_" + getFileColumnName(column_name, storage_settings, part_storage) + ".idx";
+        String file_name = getFileName(getFileColumnName(column_name, storage_settings, part_storage));
         auto serialization = column_type->getDefaultSerialization();
 
         auto out = part_storage.writeFile(file_name, 4096, {});
@@ -359,7 +371,7 @@ Names IMergeTreeDataPart::MinMaxIndex::getProbablyWrittenFiles(const IMergeTreeD
         minmax_columns.resize(hyperrectangle.size());
 
     return minmax_columns.getNames()
-        | std::views::transform([&](const auto & column_name) { return "minmax_" + getFileColumnName(column_name, data_settings, data_part_storage) + ".idx"; })
+        | std::views::transform([&](const auto & column_name) { return getFileName(getFileColumnName(part.minmaxFileKey(column_name), data_settings, data_part_storage)); })
         | std::ranges::to<Names>();
 }
 
@@ -371,11 +383,11 @@ String IMergeTreeDataPart::MinMaxIndex::getFileColumnName(const String & column_
 String IMergeTreeDataPart::MinMaxIndex::getFileColumnName(const String & column_name, const Checksums & checksums_)
 {
     String stream_name = escapeForFileName(column_name);
-    if (checksums_.files.contains("minmax_" + stream_name + ".idx"))
+    if (checksums_.files.contains(getFileName(stream_name)))
         return stream_name;
 
     auto hash = sipHash128String(stream_name);
-    if (checksums_.files.contains("minmax_" + hash + ".idx"))
+    if (checksums_.files.contains(getFileName(hash)))
         return hash;
     return stream_name;
 }
@@ -676,10 +688,11 @@ String IMergeTreeDataPart::getNewName(const MergeTreePartInfo & new_part_info) c
     return new_part_info.getPartNameV1();
 }
 
-std::optional<size_t> IMergeTreeDataPart::getColumnPosition(const String & column_name) const
+std::optional<size_t> IMergeTreeDataPart::getColumnPosition(const ColumnId & column_id) const
 {
-    auto it = column_name_to_position.find(column_name);
-    if (it == column_name_to_position.end())
+    /// An empty id is never a valid key, so it misses (nullopt).
+    auto it = column_storage_key_to_position.find(column_id.value());
+    if (it == column_storage_key_to_position.end())
         return {};
     return it->second;
 }
@@ -750,7 +763,7 @@ std::pair<time_t, time_t> IMergeTreeDataPart::getMinMaxTime() const
 void IMergeTreeDataPart::setColumns(const NamesAndTypesList & new_columns, const SerializationInfoByName & new_infos, int32_t new_metadata_version)
 {
     /// Per-part metadata (`columns`, `serialization_infos`, the `serializations` map,
-    /// `column_name_to_position`, and the `columns_description{,_with_collected_nested}`) lives as
+    /// `column_storage_key_to_position`, and the `columns_description{,_with_collected_nested}`) lives as
     /// long as the part — i.e. far longer than a query. Routing these allocations to the dedicated
     /// parts arena keeps them off the default arena's pages, which would otherwise be pinned by
     /// per-part survivors and unable to be returned to the OS while query allocations come and go.
@@ -761,27 +774,34 @@ void IMergeTreeDataPart::setColumns(const NamesAndTypesList & new_columns, const
     metadata_version = new_metadata_version;
 
     serializations.clear();
-    column_name_to_position.clear();
-    column_name_to_position.reserve(new_columns.size());
+    column_storage_key_to_position.clear();
+    column_storage_key_to_position.reserve(new_columns.size());
     size_t pos = 0;
 
+    /// The part's internal maps are keyed by the stable storage id (`getColumnId()`),
+    /// not the logical name. For a table without column ids the id falls back to the name, so
+    /// this is identical to name-keying; for an id table the key survives a metadata-only RENAME
+    /// (the part is not reloaded), so a site that resolves by id off the schema it holds finds the
+    /// right on-disk slot without threading a mapping in. Name-based entry points resolve name -> id
+    /// first: against the operation's schema (`tryGetColumnBySnapshotName`) for a current logical name,
+    /// or against this part's own columns (`tryGetColumnByNameUnsafe`) for a bare part-own name.
     for (const auto & column : columns)
-        column_name_to_position.emplace(column.name, pos++);
+        column_storage_key_to_position.emplace(column.getColumnId().value(), pos++);
 
     for (const auto & column : columns)
     {
-        auto it = serialization_infos.find(column.name);
+        auto it = serialization_infos.find(column.getColumnId().value());
         auto serialization = it == serialization_infos.end()
             ? IDataType::getSerialization(column, serialization_infos.getSettings())
             : IDataType::getSerialization(column, *it->second);
 
-        serializations.emplace(column.name, serialization);
+        serializations.emplace(column.getColumnId().value(), serialization);
 
         IDataType::forEachSubcolumn([&](const auto &, const auto & subname, const auto & subdata)
         {
-            auto full_name = Nested::concatenateName(column.name, subname);
+            auto full_name = Nested::concatenateName(column.getColumnId().value(), subname);
             /// Don't override the column serialization with subcolumn serialization if column with the same name exists.
-            if (!column_name_to_position.contains(full_name))
+            if (!column_storage_key_to_position.contains(full_name))
                 serializations.emplace(full_name, subdata.serialization);
         }, ISerialization::SubstreamData(serialization));
     }
@@ -826,29 +846,66 @@ StorageMetadataPtr IMergeTreeDataPart::getMetadataSnapshot() const
     return metadata_snapshot->projections.get(getProjectionName()).metadata;
 }
 
-NameAndTypePair IMergeTreeDataPart::getColumn(const String & column_name) const
+std::optional<NameAndTypePair> IMergeTreeDataPart::tryGetColumnByNameUnsafe(const String & column_name) const
 {
-    return columns_description->getColumnOrSubcolumn(GetColumnsOptions::AllPhysical, column_name);
+    /// Unsafe: resolves the name to an id-carrying pair off the part's OWN columns. The caller must
+    /// hold a bare part-own name -- a current/renamed name may not be in this part yet, and would
+    /// silently miss. Not for new code -- prefer the id overloads.
+    if (auto sub = columns_description->tryGetColumnOrSubcolumn(GetColumnsOptions::AllPhysical, column_name))
+    {
+        for (const auto & column : columns)
+            if (column.name == sub->getNameInStorage())
+            {
+                NameAndTypePair pair = *sub;
+                pair.setColumnId(column.column_id);
+                return pair;
+            }
+        return sub;
+    }
+    return {};
 }
 
-std::optional<NameAndTypePair> IMergeTreeDataPart::tryGetColumn(const String & column_name) const
+SerializationPtr IMergeTreeDataPart::tryGetSerializationByNameUnsafe(const String & column_name) const
 {
-    return columns_description->tryGetColumnOrSubcolumn(GetColumnsOptions::AllPhysical, column_name);
+    /// Name-based resolver (see tryGetColumnByNameUnsafe).
+    auto pair = tryGetColumnByNameUnsafe(column_name);
+    if (!pair)
+        return nullptr;
+    return tryGetSerialization(pair->getStorageKey());
 }
 
-SerializationPtr IMergeTreeDataPart::getSerialization(const String & column_name) const
+std::optional<NameAndTypePair> IMergeTreeDataPart::tryGetColumn(const ColumnId & column_id) const
 {
-    auto serialization = tryGetSerialization(column_name);
+    /// The part's own column carrying this stable storage id (id-carrying pair). Top-level only;
+    /// subcolumns share their parent's id, so a subcolumn lookup must resolve to the parent id first.
+    for (const auto & column : columns)
+        if (column.getColumnId() == column_id)
+            return column;
+    return {};
+}
+
+std::optional<NameAndTypePair> IMergeTreeDataPart::tryGetColumnBySnapshotName(
+    const String & current_name, const StorageMetadataPtr & snapshot) const
+{
+    auto snapshot_column = snapshot->getColumns().tryGetColumnOrSubcolumn(GetColumnsOptions::AllPhysical, current_name);
+    if (!snapshot_column)
+        return {};
+    return tryGetColumn(snapshot_column->getColumnId());
+}
+
+SerializationPtr IMergeTreeDataPart::getSerialization(const ColumnId & column_id) const
+{
+    auto serialization = tryGetSerialization(column_id);
     if (!serialization)
         throw Exception(ErrorCodes::NO_SUCH_COLUMN_IN_TABLE,
-            "There is no column or subcolumn {} in part {}", column_name, name);
+            "There is no column or subcolumn with id {} in part {}", column_id.value(), name);
 
     return serialization;
 }
 
-SerializationPtr IMergeTreeDataPart::tryGetSerialization(const String & column_name) const
+SerializationPtr IMergeTreeDataPart::tryGetSerialization(const ColumnId & column_id) const
 {
-    auto it = serializations.find(column_name);
+    auto it = serializations.find(column_id.value());
     return it == serializations.end() ? nullptr : it->second;
 }
 
@@ -870,7 +927,8 @@ void IMergeTreeDataPart::loadIndexMarksToCache(MarkCache * index_mark_cache) con
     if (secondary_indices.empty())
         return;
 
-    auto info_for_read = std::make_shared<LoadedMergeTreeDataPartInfoForReader>(shared_from_this(), std::make_shared<AlterConversions>());
+    auto info_for_read = std::make_shared<LoadedMergeTreeDataPartInfoForReader>(
+        shared_from_this(), std::make_shared<AlterConversions>());
     auto read_settings = storage.getContext()->getReadSettings();
     std::vector<std::unique_ptr<MergeTreeMarksLoader>> loaders;
 
@@ -1146,7 +1204,7 @@ String IMergeTreeDataPart::getColumnNameWithMinimumCompressedSize(const NamesAnd
         if (!hasColumnFiles(column))
             continue;
 
-        const auto size = getColumnSize(column.name).data_compressed;
+        const auto size = getColumnSize(column.getColumnId()).data_compressed;
         if (size < minimum_size)
         {
             minimum_size = size;
@@ -1186,13 +1244,27 @@ PackedFilesReader * IMergeTreeDataPart::getStatisticsPackedReader() const
     return statistics_reader.get();
 }
 
-static const ColumnDescription * getColumnForStatisticsFile(const String & filename, const ColumnsDescription & all_columns, const NameSet & required_columns)
+static const ColumnDescription * getColumnForStatisticsFile(
+    const String & filename, const ColumnsDescription & all_columns, const NamesAndTypesList & part_columns, const NameSet & required_columns)
 {
     chassert(filename.starts_with(STATS_FILE_PREFIX));
     chassert(filename.ends_with(STATS_FILE_SUFFIX));
 
     size_t num_chars_to_truncate = STATS_FILE_PREFIX.size() + STATS_FILE_SUFFIX.size();
     String column_name = unescapeForFileName(filename.substr(STATS_FILE_PREFIX.size(), filename.size() - num_chars_to_truncate));
+
+    /// New parts name statistics files by the stamped column ID; resolve it to the
+    /// part's logical name first.  Files matching no ID keep the token as a name --
+    /// legacy name-based files and dropped-column orphans (the latter then fail the
+    /// lookups below and are skipped).
+    for (const auto & part_column : part_columns)
+    {
+        if (part_column.getColumnId().value() == column_name)
+        {
+            column_name = part_column.name;
+            break;
+        }
+    }
 
     /// `<col>.null` subcolumn may appear in required_columns when
     /// `optimize_functions_to_subcolumns=1`, keep stats for the parent column in that case.
@@ -1224,7 +1296,7 @@ ColumnsStatistics IMergeTreeDataPart::loadStatisticsPacked(const PackedFilesRead
         if (!filename.ends_with(STATS_FILE_SUFFIX) || !filename.starts_with(STATS_FILE_PREFIX))
             throw Exception(ErrorCodes::CORRUPTED_DATA, "File {} is not a statistics file", filename);
 
-        const auto * column_desc = getColumnForStatisticsFile(filename, *columns_description, required_columns);
+        const auto * column_desc = getColumnForStatisticsFile(filename, *columns_description, columns, required_columns);
         if (!column_desc)
             continue;
 
@@ -1267,7 +1339,7 @@ ColumnsStatistics IMergeTreeDataPart::loadStatisticsWide(const NameSet & require
         if (!filename.ends_with(STATS_FILE_SUFFIX) || !filename.starts_with(STATS_FILE_PREFIX))
             continue;
 
-        const auto * column_desc = getColumnForStatisticsFile(filename, *columns_description, required_columns);
+        const auto * column_desc = getColumnForStatisticsFile(filename, *columns_description, columns, required_columns);
         if (!column_desc)
             continue;
 
@@ -1372,6 +1444,7 @@ void IMergeTreeDataPart::loadColumnsChecksumsIndexes(bool require_columns_checks
         if (!isStoredOnReadonlyDisk())
             loadUUID();
 
+        tryPreloadChecksums();
         loadColumns(require_columns_checksums, load_metadata_version);
 
         bool has_broken_projections = false;
@@ -1875,7 +1948,7 @@ void IMergeTreeDataPart::writeColumns(const NamesAndTypesList & columns_, const 
 {
     writeMetadata("columns.txt", settings, [&columns_](auto & buffer)
     {
-        columns_.writeText(buffer);
+        columns_.writeText(buffer, /*use_column_ids=*/true);
     });
 }
 
@@ -1928,11 +2001,11 @@ CompressionCodecPtr IMergeTreeDataPart::detectDefaultCompressionCodec() const
     for (const auto & part_column : columns)
     {
         /// It was compressed with default codec and it's not empty
-        auto column_size = getColumnSize(part_column.name);
+        auto column_size = getColumnSize(part_column.getColumnId());
         if (column_size.data_compressed != 0 && !storage_columns.hasCompressionCodec(part_column.name))
         {
             String path_to_data_file;
-            getSerialization(part_column.name)->enumerateStreams([&](const ISerialization::SubstreamPath & substream_path)
+            getSerialization(part_column.getStorageKey())->enumerateStreams([&](const ISerialization::SubstreamPath & substream_path)
             {
                 if (path_to_data_file.empty())
                 {
@@ -2009,8 +2082,31 @@ void IMergeTreeDataPart::loadPartitionAndMinMaxIndex()
             getDataPartStorage().getFullPath(), calculated_partition_id, info.getPartitionId());
 }
 
+void IMergeTreeDataPart::tryPreloadChecksums()
+{
+    if (!checksums.empty())
+        return;
+
+    if (auto buf = readFileIfExists("checksums.txt"))
+    {
+        if (checksums.read(*buf))
+        {
+            assertEOF(*buf);
+            bytes_on_disk = checksums.getTotalSizeOnDisk();
+            bytes_uncompressed_on_disk = checksums.getTotalSizeUncompressedOnDisk();
+        }
+        else
+        {
+            bytes_on_disk = getDataPartStorage().calculateTotalSizeOnDisk();
+        }
+    }
+}
+
 void IMergeTreeDataPart::loadChecksums(bool require)
 {
+    if (!checksums.empty())
+        return;
+
     /// Arena-agnostic: the real part-load callers (`loadColumnsChecksumsIndexes`, the projection load)
     /// already run inside the parts-arena scope, while transient checksum-only probes must stay on the
     /// default arenas. So the caller picks the arena rather than pinning it here.
@@ -2093,9 +2189,9 @@ void IMergeTreeDataPart::loadRowsCount()
             /// Most trivial types
             if (column.type->isValueRepresentedByNumber()
                 && !column.type->haveSubtypes()
-                && getSerialization(column.name)->getKindStack() == ISerialization::KindStack{ISerialization::Kind::DEFAULT})
+                && getSerialization(column.getStorageKey())->getKindStack() == ISerialization::KindStack{ISerialization::Kind::DEFAULT})
             {
-                auto size = getColumnSize(column.name);
+                auto size = getColumnSize(column.getColumnId());
 
                 if (size.data_uncompressed == 0)
                     continue;
@@ -2152,11 +2248,11 @@ void IMergeTreeDataPart::loadRowsCount()
 
         for (const NameAndTypePair & column : columns)
         {
-            ColumnPtr column_col = column.type->createColumn(*getSerialization(column.name));
+            ColumnPtr column_col = column.type->createColumn(*getSerialization(column.getStorageKey()));
             if (!column_col->isFixedAndContiguous() || column_col->lowCardinality())
                 continue;
 
-            size_t column_size = getColumnSize(column.name).data_uncompressed;
+            size_t column_size = getColumnSize(column.getColumnId()).data_uncompressed;
             if (!column_size)
                 continue;
 
@@ -2210,7 +2306,8 @@ UInt64 IMergeTreeDataPart::readExistingRowsCount()
     StorageSnapshotPtr storage_snapshot_ptr = std::make_shared<StorageSnapshot>(storage, metadata_ptr);
 
     auto alter_conversions = std::make_shared<AlterConversions>();
-    auto part_info = std::make_shared<LoadedMergeTreeDataPartInfoForReader>(shared_from_this(), alter_conversions);
+    auto part_info = std::make_shared<LoadedMergeTreeDataPartInfoForReader>(
+        shared_from_this(), alter_conversions);
 
     MergeTreeReaderPtr reader = createMergeTreeReader(
         part_info,
@@ -2305,12 +2402,112 @@ void IMergeTreeDataPart::loadUUID()
     }
 }
 
+/// Translates the part's on-disk column list (columns.txt) into logical names
+/// (see the mapping contract in `ColumnIdMapping.h`).
+///
+/// Every entry in columns.txt is a physical storage key: a column ID, or -- for a
+/// part written before activation -- the name that was also its ID at activation
+/// (identity). Resolution is purely in ID-space: the key is never reinterpreted as
+/// a current logical name, so a dropped column's stale key cannot be re-bound to a
+/// live sibling's stream.
+///
+/// Three cases per entry:
+///
+///  (a) The key is a live column ID: translate to its current logical name.
+///
+///  (b) The key is not a live ID: its column was dropped, so the on-disk stream is
+///      an orphan. Keep the slot -- compact ordinals must not shift (positions are
+///      the entry order in columns.txt; readers look up live columns by ID and miss
+///      the orphan, then default-fill). Pin the orphan to its physical key; if its
+///      stale name now belongs to a live column, give it a unique placeholder so the
+///      part's column list holds no duplicate logical name.
+///
+///  (c) The key is unknown to the mapping (persistent virtual columns like
+///      _row_exists, or columns that predate column IDs): pass through with identity.
+NamesAndTypesList IMergeTreeDataPart::remapColumnsWithPhysicalNames(
+    const NamesAndTypesList & loaded_columns,
+    const ColumnIdMapping & mapping) const
+{
+    /// Every on-disk key plus every current logical name is reserved so a case-(b) orphan
+    /// placeholder can collide with neither: a duplicate logical name in the part's list makes
+    /// the reloaded part unresolvable, and a placeholder equal to a live logical name would let
+    /// callers mistake the orphan's dropped-column bytes for that live column's.
+    NameSet reserved_names;
+    for (const auto & column : loaded_columns)
+        reserved_names.insert(column.name);
+    const auto mapping_logical_names = mapping.logicalNames();
+    reserved_names.insert(mapping_logical_names.begin(), mapping_logical_names.end());
+
+    NamesAndTypesList remapped_columns;
+    for (const auto & column : loaded_columns)
+    {
+        /// Case (c): persistent virtual columns are not managed by the mapping.
+        if (isPersistentVirtualColumn(column.name))
+        {
+            auto remapped_column = column;
+            remapped_column.setColumnId(ColumnId{column.getNameInStorage()});
+            remapped_columns.push_back(remapped_column);
+            continue;
+        }
+
+        /// The counter only grows, and every load raises it past every ID in the mapping.
+        if (ColumnIdMapping::extractNumericCounter(column.name) >= mapping.getNextColumnIdCounter())
+            throw Exception(ErrorCodes::CORRUPTED_DATA,
+                "Part {} of table {} lists column ID '{}' in columns.txt, at or above the table's next "
+                "column ID counter ({}). The part cannot be attached here -- it most likely comes from "
+                "another table -- because a later ADD COLUMN would be given that same ID and would read "
+                "this part's data as its own.",
+                name, storage.getStorageID().getNameForLogs(), column.name, mapping.getNextColumnIdCounter());
+
+        if (mapping.hasColumnId(column.name))
+        {
+            /// Case (a): the key is a live column ID -- resolve to its logical name.
+            auto remapped_column = column;
+            remapped_column.name = mapping.getLogicalName(column.name);
+            remapped_column.setColumnId(ColumnId{column.name});
+            remapped_columns.push_back(remapped_column);
+            continue;
+        }
+
+        if (mapping.hasLogicalName(column.name))
+        {
+            /// Case (b): the key is a dropped column's orphan stream. Pin it to its physical
+            /// on-disk key and rename it to a unique placeholder: its stale name may now belong
+            /// to a live column (a RENAME or DROP+ADD freed it), and keeping the stale name would
+            /// both duplicate a live logical name in the part's list and let callers attribute the
+            /// orphan's bytes to that live column. Uniform for every orphan -- the placeholder and
+            /// the pinned id make the orphan's identity distinct from every live column's.
+            auto remapped_column = column;
+            remapped_column.setColumnId(ColumnId{column.getNameInStorage()});
+            String placeholder = column.name;
+            do
+                placeholder += "_";
+            while (reserved_names.contains(placeholder));
+            reserved_names.insert(placeholder);
+            remapped_column.name = placeholder;
+            remapped_columns.push_back(remapped_column);
+            continue;
+        }
+
+        /// Case (c): unknown to the mapping -- pass through with identity.
+        auto remapped_column = column;
+        remapped_column.setColumnId(ColumnId{column.getNameInStorage()});
+        remapped_columns.push_back(remapped_column);
+    }
+
+    return remapped_columns;
+}
+
 void IMergeTreeDataPart::loadColumns(bool require, bool load_metadata_version)
 {
     String path = fs::path(getDataPartStorage().getRelativePath()) / "columns.txt";
 
     NamesAndTypesList loaded_columns;
     bool is_readonly_storage = getDataPartStorage().isReadonly();
+
+    /// One mapping snapshot for the whole load: a concurrent column-ID ALTER between
+    /// two reads would make the remapped columns and the serialization infos disagree.
+    const auto column_id_mapping = storage.getActiveColumnIdMapping();
 
     if (auto in = readFileIfExists("columns.txt"))
     {
@@ -2328,7 +2525,16 @@ void IMergeTreeDataPart::loadColumns(bool require, bool load_metadata_version)
 
         auto metadata_snapshot = getMetadataSnapshot();
         /// If there is no file with a list of columns, write it down.
-        for (const auto & column : metadata_snapshot->getColumns().getAllPhysical())
+        auto columns_to_load = metadata_snapshot->getColumns().getAllPhysical();
+        /// Lenient, not strict: for a projection part this fallback rebuilds columns from
+        /// projection metadata (synthetic aggregates like `sum(c)`, `_parent_part_offset`) and
+        /// stamps them against the PARENT table's mapping, where those names are legitimately
+        /// absent and non-virtual — the strict stamp would (wrongly) throw. loadColumns stamps a
+        /// part's own columns, so "unmapped ⇒ name-keyed" is correct here.
+        if (column_id_mapping)
+            column_id_mapping->stampColumnIdsLenient(columns_to_load);
+
+        for (const auto & column : columns_to_load)
             if (getFileNameForColumn(column))
                 loaded_columns.push_back(column);
 
@@ -2339,9 +2545,17 @@ void IMergeTreeDataPart::loadColumns(bool require, bool load_metadata_version)
             writeColumns(loaded_columns, {});
     }
 
+    if (column_id_mapping)
+        loaded_columns = remapColumnsWithPhysicalNames(loaded_columns, *column_id_mapping);
+
     SerializationInfoByName infos({});
     if (auto in = readFileIfExists(SERIALIZATION_FILE_NAME))
-        infos = SerializationInfoByName::readJSON(loaded_columns, *in);
+    {
+        if (column_id_mapping)
+            infos = SerializationInfoByName::readJSONWithColumnIds(loaded_columns, *in);
+        else
+            infos = SerializationInfoByName::readJSON(loaded_columns, *in);
+    }
 
     std::optional<int32_t> loaded_metadata_version;
     if (load_metadata_version)
@@ -2363,6 +2577,16 @@ void IMergeTreeDataPart::loadColumns(bool require, bool load_metadata_version)
     setColumns(loaded_columns, infos, *loaded_metadata_version);
 }
 
+bool IMergeTreeDataPart::hasActiveColumnIds() const
+{
+    /// A part participates in the column-ID feature when at least one of its
+    /// columns carries a non-empty column_id (populated at write/merge time).
+    for (const auto & col : getColumns())
+        if (!col.column_id.empty())
+            return true;
+    return false;
+}
+
 void IMergeTreeDataPart::setColumnsSubstreams(const ColumnsSubstreams & columns_substreams_)
 {
     /// `ColumnsSubstreams::operator=` is one of the heaviest per-part allocators (deep copy of nested
@@ -2370,7 +2594,8 @@ void IMergeTreeDataPart::setColumnsSubstreams(const ColumnsSubstreams & columns_
     /// rationale as `setColumns` above.
     ScopedJemallocThreadArena mergetree_arena_scope(JemallocMergeTreeArena::getArenaIndex());
 
-    columns_substreams_.validateColumns(getColumns().getNames());
+    if (!hasActiveColumnIds())
+        columns_substreams_.validateColumns(getColumns().getNames());
     columns_substreams = columns_substreams_;
 }
 
@@ -2405,8 +2630,10 @@ void IMergeTreeDataPart::loadColumnsSubstreams()
         /// (fixed in https://github.com/ClickHouse/ClickHouse/pull/102689) where renaming a column
         /// produced wrong substream names in columns_substreams.txt.
         /// For Wide parts this file is not mandatory, so we can safely discard it and proceed
-        /// as if it didn't exist.
-        if (part_type == MergeTreeDataPartType::Wide)
+        /// as if it didn't exist.  Skip for parts written with column IDs active —
+        /// the column key in columns_substreams.txt is the logical name but substreams
+        /// are keyed by column_id, so the prefix check would always false-positive.
+        if (part_type == MergeTreeDataPartType::Wide && !hasActiveColumnIds())
         {
             auto [invalid_substream, invalid_column] = columns_substreams.findInvalidSubstreamName();
             if (!invalid_substream.empty())
@@ -2429,7 +2656,8 @@ void IMergeTreeDataPart::loadColumnsSubstreams()
             }
         }
 
-        columns_substreams.validateColumns(getColumns().getNames());
+        if (!hasActiveColumnIds())
+            columns_substreams.validateColumns(getColumns().getNames());
     }
     /// In Compact part with marks for substreams we must have substreams file. For other cases it's not mandatory.
     else if (part_type == MergeTreeDataPartType::Compact && index_granularity_info.mark_type.with_substreams)
@@ -2741,6 +2969,12 @@ IndexSize IMergeTreeDataPart::getIndexSizeFromFile() const
     return {};
 }
 
+String IMergeTreeDataPart::minmaxFileKey(const String & column_name) const
+{
+    auto column = getColumns().tryGetByName(column_name);
+    return column ? column->getColumnId().value() : column_name;
+}
+
 void IMergeTreeDataPart::checkConsistencyBase() const
 {
     auto metadata_snapshot = getMetadataSnapshot();
@@ -2764,16 +2998,18 @@ void IMergeTreeDataPart::checkConsistencyBase() const
             if (metadata_snapshot->hasPartitionKey() && !checksums.files.contains("partition.dat"))
                 throw Exception(ErrorCodes::NO_FILE_IN_DATA_PART, "No checksum for partition.dat");
 
+            /// Verify minmax index checksums exist. Resolve id-first when the mapping is
+            /// active so a foreign column's minmax_<id>.idx cannot satisfy the check for a
+            /// different column whose logical name equals that id.
             if (!isEmpty() && !parent_part)
             {
                 for (const String & col_name : partition_key.expression->getRequiredColumns())
                 {
-                    if (!checksums.files.contains("minmax_" + escapeForFileName(col_name) + ".idx"))
-                        /// check hash one more time
-                        if (!checksums.files.contains("minmax_" + sipHash128String(escapeForFileName(col_name)) + ".idx"))
-                        {
-                            throw Exception(ErrorCodes::NO_FILE_IN_DATA_PART, "No minmax idx file checksum for column {}", col_name);
-                        }
+                    /// getFileColumnName returns whichever of the escaped / hashed variants the
+                    /// checksums hold, else the escaped one -- which is then absent, as required.
+                    auto file_column = MinMaxIndex::getFileColumnName(minmaxFileKey(col_name), checksums);
+                    if (!checksums.files.contains(MinMaxIndex::getFileName(file_column)))
+                        throw Exception(ErrorCodes::NO_FILE_IN_DATA_PART, "No minmax idx file checksum for column {}", col_name);
                 }
             }
         }
@@ -2830,16 +3066,22 @@ void IMergeTreeDataPart::checkConsistencyBase() const
 
             if (!parent_part)
             {
+                /// There are no checksums here to say which variant was written, so probe the
+                /// filesystem: escaped first, then hashed. If neither is there, re-check the
+                /// escaped one so it owns the error message.
+                auto try_file = [&](const String & file_name)
+                {
+                    try { check_file_not_empty(file_name); return true; }
+                    catch (Exception &) { return false; }
+                };
+
                 for (const String & col_name : partition_key.expression->getRequiredColumns())
-                    try
-                    {
-                        check_file_not_empty("minmax_" + escapeForFileName(col_name) + ".idx");
-                    }
-                    catch (Exception&)
-                    {
-                        /// check hash one more time
-                        check_file_not_empty("minmax_" + sipHash128String(escapeForFileName(col_name)) + ".idx");
-                    }
+                {
+                    auto escaped = escapeForFileName(minmaxFileKey(col_name));
+                    if (!try_file(MinMaxIndex::getFileName(escaped))
+                        && !try_file(MinMaxIndex::getFileName(sipHash128String(escaped))))
+                        check_file_not_empty(MinMaxIndex::getFileName(escaped));
+                }
             }
         }
     }
@@ -3002,14 +3244,14 @@ void IMergeTreeDataPart::calculateSecondaryIndicesSizesOnDisk() const
     secondary_index_sizes = std::make_shared<IndexSizeByName>(std::move(new_secondary_index_sizes));
 }
 
-ColumnSize IMergeTreeDataPart::getColumnSize(const String & column_name) const
+ColumnSize IMergeTreeDataPart::getColumnSize(const ColumnId & column_id) const
 {
     UniqueLock lock(columns_and_secondary_indices_sizes_mutex);
     if (!are_columns_and_secondary_indices_sizes_calculated && areChecksumsLoaded())
         calculateColumnsAndSecondaryIndicesSizesOnDiskUnlocked();
 
-    /// For some types of parts columns_size maybe not calculated
-    auto it = columns_sizes->find(column_name);
+    /// `columns_sizes` is keyed by storage id (see MergeTreeDataPartWide::calculateEachColumnSizes).
+    auto it = columns_sizes->find(column_id.value());
     if (it != columns_sizes->end())
         return it->second;
 
@@ -3024,15 +3266,15 @@ IMergeTreeDataPart::ColumnSizeByNameConstPtr IMergeTreeDataPart::getColumnSizes(
     return columns_sizes;
 }
 
-ColumnSize IMergeTreeDataPart::getSubcolumnSize(const String & subcolumn_name) const
+ColumnSize IMergeTreeDataPart::getSubcolumnSize(const NameAndTypePair & subcolumn) const
 {
     /// First, check if we already calculated the size of this subcolumn and have it in cache.
-    if (auto size = subcolumns_sizes_cache.get(subcolumn_name))
+    if (auto size = subcolumns_sizes_cache.get(subcolumn.name))
         return *size;
 
     /// If not, calculate the size of the subcolumn on disk and put it to cache.
-    auto size = calculateSubcolumnSize(subcolumn_name);
-    subcolumns_sizes_cache.add(subcolumn_name, size);
+    auto size = calculateSubcolumnSize(subcolumn);
+    subcolumns_sizes_cache.add(subcolumn.name, size);
     return size;
 }
 
@@ -3122,8 +3364,9 @@ bool IMergeTreeDataPart::checkAllTTLCalculated(const StorageMetadataPtr & metada
 
     for (const auto & [column, desc] : metadata_snapshot->getColumnTTLs())
     {
-        /// Part has this column, but we don't calculated TTL for it
-        if (!ttl_infos.columns_ttl.contains(column) && getColumns().contains(column))
+        /// Part has this column, but we don't calculated TTL for it.
+        auto column_in_part = tryGetColumnBySnapshotName(column, metadata_snapshot);
+        if (column_in_part && !ttl_infos.columns_ttl.contains(column_in_part->getColumnId().value()))
             return false;
     }
 
@@ -3224,14 +3467,14 @@ std::optional<String> IMergeTreeDataPart::getStreamNameForColumn(
     const MergeTreeSettingsPtr & settings)
 {
     ISerialization::StreamFileNameSettings stream_file_name_settings(*settings);
-    auto stream_name = ISerialization::getFileNameForStream(column, substream_path, stream_file_name_settings);
+    auto stream_name = ISerialization::getFileNameForStreamByColumnId(column, substream_path, stream_file_name_settings);
     if (auto result_stream_name = getStreamNameOrHash(stream_name, extension, checksums_))
         return result_stream_name;
 
     /// To be able to read old parts after changes in stream file name settings, try to change settings and try to find it again.
     if (ISerialization::tryToChangeStreamFileNameSettingsForNotFoundStream(substream_path, stream_file_name_settings))
     {
-        stream_name = ISerialization::getFileNameForStream(column, substream_path, stream_file_name_settings);
+        stream_name = ISerialization::getFileNameForStreamByColumnId(column, substream_path, stream_file_name_settings);
         return getStreamNameOrHash(stream_name, extension, checksums_);
     }
 
@@ -3268,14 +3511,14 @@ std::optional<String> IMergeTreeDataPart::getStreamNameForColumn(
     const MergeTreeSettingsPtr & settings)
 {
     ISerialization::StreamFileNameSettings stream_file_name_settings(*settings);
-    auto stream_name = ISerialization::getFileNameForStream(column, substream_path, stream_file_name_settings);
+    auto stream_name = ISerialization::getFileNameForStreamByColumnId(column, substream_path, stream_file_name_settings);
     if (auto result_stream_name = getStreamNameOrHash(stream_name, extension, storage_))
         return result_stream_name;
 
     /// To be able to read old parts after changes in stream file name settings, try to change settings and try to find it again.
     if (ISerialization::tryToChangeStreamFileNameSettingsForNotFoundStream(substream_path, stream_file_name_settings))
     {
-        stream_name = ISerialization::getFileNameForStream(column, substream_path, stream_file_name_settings);
+        stream_name = ISerialization::getFileNameForStreamByColumnId(column, substream_path, stream_file_name_settings);
         return getStreamNameOrHash(stream_name, extension, storage_);
     }
 
@@ -3333,7 +3576,8 @@ ColumnPtr IMergeTreeDataPart::getColumnSample(const NameAndTypePair & column) co
     settings.read_only_column_sample = true;
 
     auto alter_conversions = std::make_shared<AlterConversions>();
-    auto part_info = std::make_shared<LoadedMergeTreeDataPartInfoForReader>(shared_from_this(), alter_conversions);
+    auto part_info = std::make_shared<LoadedMergeTreeDataPartInfoForReader>(
+        shared_from_this(), alter_conversions);
 
     MergeTreeReaderPtr reader = createMergeTreeReader(
         part_info,

@@ -1,4 +1,5 @@
 #pragma once
+#include <memory>
 #include <Interpreters/Context_fwd.h>
 #include <Storages/MergeTree/RangesInDataPart.h>
 #include <Storages/MergeTree/ColumnsSubstreams.h>
@@ -13,6 +14,9 @@ namespace ErrorCodes
 {
 extern const int NOT_IMPLEMENTED;
 }
+
+class ColumnIdMapping;
+using ColumnIdMappingPtr = std::shared_ptr<const ColumnIdMapping>;
 
 class IDataPartStorage;
 using DataPartStoragePtr = std::shared_ptr<const IDataPartStorage>;
@@ -74,7 +78,11 @@ public:
 
     virtual const ColumnsSubstreams & getColumnsSubstreams() const = 0;
 
-    virtual std::optional<size_t> getColumnPosition(const String & column_name) const = 0;
+    /// Direct lookup by stable storage id (IMergeTreeDataPart::getColumnPosition).
+    virtual std::optional<size_t> getColumnPosition(const ColumnId & column_id) const = 0;
+
+    /// The part's own stored column carrying this id (id-carrying pair, part's on-disk type).
+    virtual std::optional<NameAndTypePair> tryGetColumn(const ColumnId & column_id) const = 0;
 
     virtual bool isSystemColumnInvalidated(const String & column_name) const = 0;
 

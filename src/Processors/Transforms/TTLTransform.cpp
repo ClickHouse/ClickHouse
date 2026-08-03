@@ -123,13 +123,16 @@ TTLTransform::TTLTransform(
             if (!expired_columns_map.contains(name))
             {
                 auto [default_expression, default_column_name] = build_default_expr(name);
+                auto column_in_part = data_part->tryGetColumnBySnapshotName(name, metadata_snapshot_);
+                auto column_id = column_in_part ? column_in_part->getColumnId() : ColumnId{name};
                 algorithms.emplace_back(std::make_unique<TTLColumnAlgorithm>(
                     getExpressions(description, subqueries_for_sets, context),
                     description,
-                    old_ttl_infos.columns_ttl[name],
+                    old_ttl_infos.columns_ttl[column_id.value()],
                     current_time_,
                     force_,
                     name,
+                    column_id,
                     default_expression,
                     default_column_name,
                     isCompactPart(data_part)));

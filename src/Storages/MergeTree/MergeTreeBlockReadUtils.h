@@ -48,7 +48,7 @@ MergeTreeReadTaskColumns getReadTaskColumnsForMerge(
 
 struct MergeTreeBlockSizePredictor
 {
-    MergeTreeBlockSizePredictor(const DataPartPtr & data_part_, const Names & columns, const Block & sample_block, bool allow_subcolumns_sizes_calculation);
+    MergeTreeBlockSizePredictor(const DataPartPtr & data_part_, const Names & columns, const Block & sample_block, const StorageMetadataPtr & storage_metadata_, bool allow_subcolumns_sizes_calculation);
 
     /// Reset some values for correct statistics calculating
     void startBlock();
@@ -104,6 +104,8 @@ struct MergeTreeBlockSizePredictor
 
 protected:
     DataPartPtr data_part;
+    /// The op's pinned metadata snapshot (carries column ids).
+    StorageMetadataPtr storage_metadata;
 
     struct ColumnInfo
     {

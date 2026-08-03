@@ -237,6 +237,10 @@ MergedBlockOutputStream::Finalizer MergedBlockOutputStream::finalizePartAsync(
         auto part_columns = total_columns_list ? *total_columns_list : columns_list;
         auto serialization_infos = new_part->getSerializationInfos();
 
+        /// The part's records are keyed by stamped column ID while the writer
+        /// accumulated fresh data under logical names; align the keys or
+        /// `replaceData` would miss the join and lose the chosen kinds.
+        new_serialization_infos.reKeyToColumnIds(part_columns);
         serialization_infos.replaceData(new_serialization_infos);
         files_to_remove_after_sync
             = removeEmptyColumnsFromPart(new_part, part_columns, new_part->expired_columns, serialization_infos, checksums);
@@ -356,7 +360,7 @@ MergedBlockOutputStream::WrittenFiles MergedBlockOutputStream::finalizePartOnDis
 
             if (new_part->getMinMaxIndex()->initialized)
             {
-                auto files = new_part->getMinMaxIndex()->store(metadata_snapshot, new_part->getDataPartStorage(), checksums, storage_settings);
+                auto files = new_part->getMinMaxIndex()->store(metadata_snapshot, new_part->getDataPartStorage(), checksums, storage_settings, new_part->getColumns());
                 for (auto & file : files)
                     written_files.emplace_back(std::move(file));
             }
@@ -393,6 +397,8 @@ MergedBlockOutputStream::WrittenFiles MergedBlockOutputStream::finalizePartOnDis
     const auto & serialization_infos = new_part->getSerializationInfos();
     if (serialization_infos.needsPersistence())
     {
+        /// In-memory records are keyed by the stamped column IDs (see `setColumns`),
+        /// which is exactly the on-disk key: write them as is.
         write_hashed_file(IMergeTreeDataPart::SERIALIZATION_FILE_NAME, [&](auto & buffer)
         {
             serialization_infos.writeJSON(buffer);
@@ -406,20 +412,20 @@ MergedBlockOutputStream::WrittenFiles MergedBlockOutputStream::finalizePartOnDis
     {
         if (isFullPartStorage(new_part->getDataPartStorage()))
         {
-            auto out = serializeStatisticsPacked(new_part->getDataPartStorage(), checksums, statistics, default_codec, writer_settings.query_write_settings);
+            auto out = serializeStatisticsPacked(new_part->getDataPartStorage(), checksums, statistics, new_part->getColumns(), default_codec, writer_settings.query_write_settings);
             written_files.emplace_back(std::move(out));
         }
         /// Write statistics as separate compressed files in packed parts to avoid double buffering.
         else
         {
-            auto files = serializeStatisticsWide(new_part->getDataPartStorage(), checksums, statistics, default_codec, writer_settings.query_write_settings);
+            auto files = serializeStatisticsWide(new_part->getDataPartStorage(), checksums, statistics, new_part->getColumns(), default_codec, writer_settings.query_write_settings);
             std::move(files.begin(), files.end(), std::back_inserter(written_files));
         }
     }
 
     write_plain_file("columns.txt", [&](auto & buffer)
     {
-        new_part->getColumns().writeText(buffer);
+        new_part->getColumns().writeText(buffer, /*use_column_ids=*/true);
     });
 
     /// Merge columns substreams from current writer and additional columns substreams

@@ -45,6 +45,7 @@
 #include <Disks/TemporaryFileOnDisk.h>
 #include <Disks/createVolume.h>
 #include <IO/Operators.h>
+#include <IO/ReadHelpers.h>
 #include <IO/S3Common.h>
 #include <IO/SharedThreadPools.h>
 #include <IO/WriteBufferFromString.h>
@@ -570,6 +571,233 @@ void MergeTreeData::initializeDirectoriesAndFormatVersion(const std::string & re
             throw Exception(ErrorCodes::METADATA_MISMATCH, "MergeTree data format version on disk doesn't support custom partitioning");
     }
 }
+
+void MergeTreeData::loadColumnIdMappingFromDisk(bool attach)
+{
+    const auto column_ids_path = fs::path(relative_data_path) / COLUMN_IDS_FILE_NAME;
+
+    const DiskPtr authoritative_disk = getColumnIdMappingDisk(getStoragePolicy());
+    std::unique_ptr<ReadBufferFromFileBase> mapping_buf;
+    if (!authoritative_disk->isBroken())
+        mapping_buf = authoritative_disk->readFileIfExists(column_ids_path, getReadSettings());
+
+    if (!mapping_buf)
+    {
+        if (attach
+            && (*getSettings())[MergeTreeSetting::serialization_info_version] == MergeTreeSerializationInfoVersion::WITH_COLUMN_IDS)
+            throw Exception(ErrorCodes::CORRUPTED_DATA,
+                "Table {} has `serialization_info_version = 'with_column_ids'` but `{}` cannot be read "
+                "from disk `{}`. It cannot be rebuilt either: DROP + re-ADD of the same column name "
+                "makes on-disk files indistinguishable from their column ID alone. Restore the table "
+                "from backup, or put the file back on that disk by hand.",
+                getStorageID().getNameForLogs(), column_ids_path.string(), authoritative_disk->getName());
+        return;
+    }
+
+    auto loaded_mapping = ColumnIdMapping::deserialize(*mapping_buf);
+    skipWhitespaceIfAny(*mapping_buf);
+    assertEOF(*mapping_buf);
+
+    if (loaded_mapping.isActive())
+        checkColumnIdMappingCoversMetadata(loaded_mapping);
+    setColumnIdMapping(std::move(loaded_mapping));
+}
+
+void MergeTreeData::writeColumnIdMappingToDisk() const
+{
+    auto mapping = getColumnIdMapping();
+    if (!mapping)
+        return;
+    writeColumnIdMappingToDisk(*mapping);
+}
+
+void MergeTreeData::writeColumnIdMappingToDisk(const ColumnIdMapping & mapping) const
+{
+    writeColumnIdMappingToDisk(mapping, getStoragePolicy());
+}
+
+DiskPtr MergeTreeData::getColumnIdMappingDisk(const StoragePolicyPtr & target_policy) const
+{
+    const auto & disks = target_policy->getDisks();
+    if (disks.empty())
+        throw Exception(ErrorCodes::LOGICAL_ERROR,
+            "Storage policy for table {} has no disks to hold `{}`",
+            getStorageID().getNameForLogs(), COLUMN_IDS_FILE_NAME);
+    return disks.front();
+}
+
+void MergeTreeData::writeColumnIdMappingToDisk(const ColumnIdMapping & mapping, const StoragePolicyPtr & target_policy) const
+{
+    const auto column_ids_path = fs::path(relative_data_path) / COLUMN_IDS_FILE_NAME;
+    const auto column_ids_tmp_path = fs::path(relative_data_path) / (String(COLUMN_IDS_FILE_NAME) + ".tmp");
+
+    auto disk = getColumnIdMappingDisk(target_policy);
+    if (disk->isBroken() || disk->isReadOnly() || disk->isWriteOnce())
+        throw Exception(ErrorCodes::SUPPORT_IS_DISABLED,
+            "Cannot hold the authoritative `{}` for table {}: the policy's "
+            "first disk `{}` is read-only/write-once/broken.  A column-ID table "
+            "requires a writable authoritative disk; change the storage policy "
+            "so a writable disk comes first.",
+            COLUMN_IDS_FILE_NAME, getStorageID().getNameForLogs(), disk->getName());
+
+    /// Two-step atomic publish on the single authoritative disk: write to
+    /// <name>.tmp, fsync, then replace.  A crash between the two leaves either
+    /// the previous file intact or only the .tmp behind; readers never see a
+    /// torn final file.  One filesystem, so no cross-disk divergence is possible.
+    try
+    {
+        {
+            auto buf = disk->writeFile(column_ids_tmp_path, 4096, WriteMode::Rewrite, getContext()->getWriteSettings());
+            mapping.serialize(*buf);
+            buf->finalize();
+            if (getContext()->getSettingsRef()[Setting::fsync_metadata])
+                buf->sync();
+        }
+        disk->replaceFile(column_ids_tmp_path, column_ids_path);
+    }
+    catch (...)
+    {
+        try
+        {
+            disk->removeFileIfExists(column_ids_tmp_path);
+        }
+        catch (...)
+        {
+            tryLogCurrentException(__PRETTY_FUNCTION__);
+        }
+        throw;
+    }
+
+    /// Best-effort: drop any stale copy on the other disks (e.g. left by the old
+    /// multi-disk format) so exactly one authoritative copy exists.
+    for (const auto & other : target_policy->getDisks())
+    {
+        if (other->getName() == disk->getName())
+            continue;
+        if (other->isBroken() || other->isReadOnly() || other->isWriteOnce())
+            continue;
+        try
+        {
+            other->removeFileIfExists(column_ids_path);
+        }
+        catch (...)
+        {
+            tryLogCurrentException(log, "Failed to remove stale column ID mapping copy");
+        }
+    }
+}
+
+void MergeTreeData::removeColumnIdMappingFromDisk() const
+{
+    const auto column_ids_path = fs::path(relative_data_path) / COLUMN_IDS_FILE_NAME;
+    for (const auto & disk : getStoragePolicy()->getDisks())
+    {
+        if (disk->isBroken() || disk->isReadOnly() || disk->isWriteOnce())
+            continue;
+        try
+        {
+            disk->removeFileIfExists(column_ids_path);
+        }
+        catch (...)
+        {
+            tryLogCurrentException(log, "Failed to remove column ID mapping from disk");
+        }
+    }
+}
+
+void MergeTreeData::checkColumnIdMappingCoversMetadata(const ColumnIdMapping & mapping) const
+{
+    auto metadata_snapshot = getInMemoryMetadataPtr(nullptr, false);
+
+    /// Fail loud if metadata names a column the mapping does not cover.
+    /// This is the mapping-behind-schema window: `column_ids.json` was
+    /// not updated while `metadata.sql` already added the column.  We
+    /// cannot recover by scanning disk because DROP + re-ADD of the
+    /// same column name makes on-disk files indistinguishable from the
+    /// column ID alone — silent rebuild could mix the new column with
+    /// orphaned data from a previously-dropped column.
+    Names missing_from_mapping;
+    for (const auto & col : metadata_snapshot->getColumns().getAllPhysical())
+    {
+        if (!mapping.hasLogicalName(col.name))
+            missing_from_mapping.push_back(col.name);
+    }
+    if (!missing_from_mapping.empty())
+        throw Exception(
+            ErrorCodes::CORRUPTED_DATA,
+            "Column ID mapping for table {} is missing entries for column(s): {}. "
+            "This indicates a torn write of `column_ids.json` (mapping not "
+            "updated while `metadata.sql` already committed the schema change). "
+            "The mapping cannot be rebuilt safely because DROP + re-ADD of the "
+            "same column name makes on-disk files indistinguishable from their "
+            "column ID alone. Restore the table from backup or fix "
+            "`column_ids.json` manually.",
+            getStorageID().getNameForLogs(),
+            fmt::join(missing_from_mapping, ", "));
+}
+
+void MergeTreeData::reconcileColumnIdMappingWithMetadata()
+{
+    if (!hasColumnIdMapping())
+        return;
+
+    auto mapping = getColumnIdMapping();
+    auto metadata_snapshot = getInMemoryMetadataPtr(nullptr, false);
+    auto metadata_columns = metadata_snapshot->getColumns().getAllPhysical();
+
+    checkColumnIdMappingCoversMetadata(*mapping);
+
+    /// Trim mapping entries whose logical name is no longer in metadata
+    /// (mapping-ahead-of-schema window from a crash between the mapping
+    /// write and the `metadata.sql` truncation).  Safe to recover from
+    /// because the dropped/renamed column already lost its on-disk
+    /// authority via the schema commit; the mapping entry is just dead
+    /// weight.
+    ColumnIdMapping reconciled = *mapping;
+    bool changed = false;
+    for (const auto & col_name : mapping->logicalNames())
+    {
+        if (!metadata_columns.tryGetByName(col_name))
+        {
+            reconciled.removeColumn(col_name);
+            changed = true;
+        }
+    }
+
+    if (changed)
+        persistMapping(std::move(reconciled));
+
+    /// Fail loud on duplicate-physical-ID corruption.  Two-phase rename
+    /// produces a transient state where the old and new logical names map
+    /// to the same physical ID, but after the metadata-vs-mapping trim
+    /// above either the old name is gone (single survivor) or both are
+    /// still in metadata, which is true corruption.  Without this check a
+    /// hand-edited or torn `column_ids.json` could silently let two SQL
+    /// columns share one on-disk stream.
+    auto final_mapping = getColumnIdMapping();
+    if (final_mapping)
+    {
+        std::unordered_map<String, std::vector<String>> physical_to_logicals;
+        for (const auto & [logical, physical] : final_mapping->getLogicalToId())
+            physical_to_logicals[physical].push_back(logical);
+
+        for (const auto & [physical, logicals] : physical_to_logicals)
+        {
+            if (logicals.size() > 1)
+                throw Exception(
+                    ErrorCodes::CORRUPTED_DATA,
+                    "Column ID mapping for table {} has multiple logical columns "
+                    "mapped to the same physical ID '{}': {}.  All of them are "
+                    "still present in the schema, which indicates a corrupted "
+                    "`column_ids.json` (not a transient two-phase-rename state). "
+                    "Restore from backup or repair the file manually.",
+                    getStorageID().getNameForLogs(),
+                    physical,
+                    fmt::join(logicals, ", "));
+        }
+    }
+}
+
 DataPartsLock::DataPartsLock(SharedMutex & data_parts_mutex_, const MergeTreeData * data_)
     : wait_watch(Stopwatch(CLOCK_MONOTONIC))
     , lock(data_parts_mutex_)
@@ -833,30 +1061,10 @@ MergeTreeData::MergeTreeData(
 
 VirtualColumnsDescription MergeTreeData::createVirtuals(const KeyDescription * partition_key)
 {
-    VirtualColumnsDescription desc;
-
-    desc.addEphemeral("_part", std::make_shared<DataTypeLowCardinality>(std::make_shared<DataTypeString>()), "Name of part", VirtualsMaterializationPlace::Reader);
-    desc.addEphemeral("_part_index", std::make_shared<DataTypeUInt64>(), "Sequential index of the part in the query result", VirtualsMaterializationPlace::Reader);
-    desc.addEphemeral("_part_starting_offset", std::make_shared<DataTypeUInt64>(), "Cumulative starting row of the part in the query result", VirtualsMaterializationPlace::Reader);
-    desc.addEphemeral("_part_uuid", std::make_shared<DataTypeUUID>(), "Unique part identifier (if enabled MergeTree setting assign_part_uuids)", VirtualsMaterializationPlace::Reader);
-    desc.addEphemeral(PartitionIdColumn::name, PartitionIdColumn::type, "Name of partition", VirtualsMaterializationPlace::Reader);
-    desc.addEphemeral("_sample_factor", std::make_shared<DataTypeFloat64>(), "Sample factor (from the query)", VirtualsMaterializationPlace::Reader);
-    desc.addEphemeral("_part_offset", std::make_shared<DataTypeUInt64>(), "Number of row in the part", VirtualsMaterializationPlace::Reader);
-    desc.addEphemeral("_part_granule_offset", std::make_shared<DataTypeUInt64>(), "Number of granule in the part", VirtualsMaterializationPlace::Reader);
-    desc.addEphemeral(PartDataVersionColumn::name, PartDataVersionColumn::type, "Data version of part (either min block number or mutation version)", VirtualsMaterializationPlace::Reader);
-    desc.addEphemeral("_disk_name", std::make_shared<DataTypeLowCardinality>(std::make_shared<DataTypeString>()), "Disk name", VirtualsMaterializationPlace::Reader);
-    desc.addEphemeral("_distance", std::make_shared<DataTypeFloat32>(), "Pre-computed distance for vector search queries", VirtualsMaterializationPlace::Reader);
-    desc.addEphemeral("_table", std::make_shared<DataTypeLowCardinality>(std::make_shared<DataTypeString>()), "", VirtualsMaterializationPlace::Reader);
-    desc.addEphemeral("_database", std::make_shared<DataTypeLowCardinality>(std::make_shared<DataTypeString>()), "", VirtualsMaterializationPlace::Reader);
-
-    if (partition_key && partition_key->sample_block.columns() > 0)
-        desc.addEphemeral(PartitionValueColumn::name, PartitionValueColumn::type(partition_key), "Value (a tuple) of a PARTITION BY expression", VirtualsMaterializationPlace::Reader);
-
-    desc.addPersistent(RowExistsColumn::name, RowExistsColumn::type, nullptr, "Persisted mask created by lightweight delete that show whether row exists or is deleted");
-    desc.addPersistent(BlockNumberColumn::name, BlockNumberColumn::type, BlockNumberColumn::codec, "Persisted original number of block that was assigned at insert");
-    desc.addPersistent(BlockOffsetColumn::name, BlockOffsetColumn::type, BlockOffsetColumn::codec, "Persisted original number of row in block that was assigned at insert");
-
-    return desc;
+    /// Single source of truth for the MergeTree virtual-column set lives in the low layer
+    /// (MergeTreeVirtualColumns), so `isVirtualColumn` — which the strict column-ID stamp relies
+    /// on to distinguish a virtual from a schema/mapping desync — cannot drift from it.
+    return getMergeTreeVirtuals(partition_key);
 }
 
 StoragePolicyPtr MergeTreeData::getStoragePolicy() const
@@ -4848,13 +5056,66 @@ void MergeTreeData::checkAlterIsPossible(const AlterCommands & commands, Context
 
     if (!settings[Setting::allow_non_metadata_alters])
     {
-        auto mutation_commands = commands.getMutationCommands(new_metadata, settings[Setting::materialize_ttl_after_modify], local_context, /*with_alters*/ false, (*settings_from_storage)[MergeTreeSetting::share_nested_offsets]);
+        /// Evaluate activation against the post-MODIFY-SETTING state so that a
+        /// single ALTER mixing `MODIFY SETTING ... , RENAME COLUMN ...` activates
+        /// column IDs and correctly takes the metadata-only path.
+        StorageInMemoryMetadata check_metadata = new_metadata;
+        commands.apply(check_metadata, local_context, (*settings_from_storage)[MergeTreeSetting::share_nested_offsets]);
+
+        MergeTreeSettings effective_settings(*settings_from_storage);
+        if (check_metadata.settings_changes)
+            effective_settings.applyChanges(
+                check_metadata.settings_changes->as<const ASTSetQuery &>().changes,
+                local_context,
+                /*is_loading_from_existing_metadata=*/true);
+
+        bool settings_enable_pn =
+            effective_settings[MergeTreeSetting::serialization_info_version] == MergeTreeSerializationInfoVersion::WITH_COLUMN_IDS;
+        bool has_compat_alter = std::any_of(commands.begin(), commands.end(), [](const auto & c)
+        {
+            return c.type == AlterCommand::RENAME_COLUMN || c.type == AlterCommand::DROP_COLUMN || c.type == AlterCommand::ADD_COLUMN;
+        });
+        bool pn_active = hasColumnIdMapping() || (settings_enable_pn && has_compat_alter);
+
+        auto mutation_commands = commands.getMutationCommands(
+            new_metadata, settings[Setting::materialize_ttl_after_modify], local_context,
+            /*with_alters=*/false, (*settings_from_storage)[MergeTreeSetting::share_nested_offsets],
+            /*column_ids_active=*/pn_active);
 
         if (!mutation_commands.empty())
             throw Exception(ErrorCodes::ALTER_OF_COLUMN_IS_FORBIDDEN,
                             "The following alter commands: '{}' will modify data on disk, "
                             "but setting `allow_non_metadata_alters` is disabled",
                             mutation_commands.ast()->formatForErrorMessage());
+    }
+
+    bool has_settings_commands = std::any_of(commands.begin(), commands.end(), [](const AlterCommand & c)
+    {
+        return c.type == AlterCommand::MODIFY_SETTING || c.type == AlterCommand::RESET_SETTING;
+    });
+    if (hasColumnIdMapping() && has_settings_commands)
+    {
+        /// Recompute effective settings from defaults, the way `changeSettings`
+        /// does -- applying onto the current settings would let `RESET SETTING`
+        /// slip through unnoticed.
+        StorageInMemoryMetadata result_metadata = *storage_metadata_snapshot;
+        commands.apply(result_metadata, local_context);
+
+        auto result_settings = getDefaultSettings();
+        if (result_metadata.settings_changes)
+            result_settings->applyChanges(
+                result_metadata.settings_changes->as<const ASTSetQuery &>().changes,
+                local_context,
+                /*is_loading_from_existing_metadata=*/true);
+
+        /// The table's files are already named by column IDs, so the mapping stays
+        /// authoritative no matter what the settings say -- reject the lie.
+        if ((*result_settings)[MergeTreeSetting::serialization_info_version] != MergeTreeSerializationInfoVersion::WITH_COLUMN_IDS)
+            throw Exception(ErrorCodes::SUPPORT_IS_DISABLED,
+                "Cannot change `serialization_info_version` away from 'with_column_ids' for table {}: "
+                "the table has a column ID mapping and its data files are named by column IDs. "
+                "Column IDs cannot be deactivated once active.",
+                getStorageID().getNameForLogs());
     }
 
     /// Block the case of alter table add projection for special merge trees.
@@ -5832,6 +6093,12 @@ void MergeTreeData::changeSettings(
         MergeTreeSettings::resolveDiskSetting(new_changes, getContext(), /*is_loading_from_existing_metadata=*/true);
 
         StoragePolicyPtr new_storage_policy = nullptr;
+        /// Capture the new policy out of the per-change loop so the mapping block
+        /// below can push `column_ids.json` onto its disks before publishing the
+        /// new `storage_settings` (the throw-on-disk-write path must leave
+        /// `storage_settings`/metadata unchanged for settings-only ALTERs,
+        /// which lack a rollback wrapper).
+        StoragePolicyPtr pending_storage_policy = nullptr;
 
         for (const auto & change : new_changes)
         {
@@ -5870,6 +6137,7 @@ void MergeTreeData::changeSettings(
                     /// FIXME how would that be done while reloading configuration???
 
                     has_storage_policy_changed = true;
+                    pending_storage_policy = new_storage_policy;
                 }
             }
         }
@@ -5877,6 +6145,15 @@ void MergeTreeData::changeSettings(
         /// Reset to default settings before applying existing.
         auto copy = getDefaultSettings();
         copy->applyChanges(new_changes, getContext(), /*is_loading_from_existing_metadata=*/true);
+
+        if (supportsReplication()
+            && (*copy)[MergeTreeSetting::serialization_info_version] == MergeTreeSerializationInfoVersion::WITH_COLUMN_IDS)
+        {
+            throw Exception(
+                ErrorCodes::SUPPORT_IS_DISABLED,
+                "Column IDs are currently supported only for non-replicated `MergeTree` tables");
+        }
+
         if (run_sanity_checks)
         {
             const auto & ac = getContext()->getAccessControl();
@@ -5889,11 +6166,55 @@ void MergeTreeData::changeSettings(
                 getContext()->wasBackgroundPoolAutoLowered());
         }
 
+        /// All `column_ids.json` disk writes stay BEFORE `storage_settings.set` /
+        /// `setInMemoryMetadata` below, so a disk-full / read-only / I/O exception
+        /// leaves the table's state unchanged (settings-only ALTERs have no
+        /// rollback wrapper around `changeSettings`).
+        std::optional<ColumnIdMapping> mapping_to_publish;
+        if ((*copy)[MergeTreeSetting::serialization_info_version] == MergeTreeSerializationInfoVersion::WITH_COLUMN_IDS
+            && !hasColumnIdMapping())
+        {
+            /// The settings commit that turns column IDs ON must create the identity
+            /// mapping in the same commit: the load path fails closed when the setting
+            /// says `with_column_ids` but `column_ids.json` is absent.
+            auto current_metadata = getInMemoryMetadataPtr(getContext(), false);
+            mapping_to_publish = ColumnIdMapping::createIdentity(current_metadata->getColumns().getAllPhysical());
+            try
+            {
+                /// Write to the disk this table will use after the commit: the
+                /// pending policy's authoritative disk when the same ALTER also
+                /// switches policy, otherwise the current one.
+                writeColumnIdMappingToDisk(
+                    *mapping_to_publish, pending_storage_policy ? pending_storage_policy : getStoragePolicy());
+            }
+            catch (...)
+            {
+                /// Delete any partially written copy so a failed activation
+                /// leaves NO `column_ids.json` behind -- an inactive mapping
+                /// persisting would activate the table on restart while parts
+                /// still use logical filenames.
+                removeColumnIdMappingFromDisk();
+                throw;
+            }
+        }
+        else if (pending_storage_policy)
+        {
+            /// Policy change on a table that already has an active mapping: put
+            /// the authoritative copy on the new policy's disk before the switch.
+            if (auto current_mapping = getActiveColumnIdMapping())
+                writeColumnIdMappingToDisk(*current_mapping, pending_storage_policy);
+        }
+
         bool has_escape_index_filenames_changed
             = (*storage_settings.get())[MergeTreeSetting::escape_index_filenames] != (*copy)[MergeTreeSetting::escape_index_filenames];
 
         UInt64 has_refresh_statistics_interval_changed
             = (*storage_settings.get())[MergeTreeSetting::refresh_statistics_interval].totalSeconds() != (*copy)[MergeTreeSetting::refresh_statistics_interval].totalSeconds();
+
+        /// Publish the mapping before the settings so no reader can observe
+        /// `with_column_ids` without a mapping.
+        if (mapping_to_publish)
+            setColumnIdMapping(std::move(*mapping_to_publish));
 
         storage_settings.set(std::move(copy));
 
@@ -5914,6 +6235,10 @@ void MergeTreeData::changeSettings(
                 idx.escape_filenames = new_value;
         }
 
+        /// The mapping is folded into the metadata: carry the live mapping (possibly the
+        /// identity just published above) into this republish so it is not clobbered.
+        /// `storage_metadata_snapshot` may be a cached copy that predates that publish.
+        new_metadata.column_id_mapping = getColumnIdMapping();
         setInMemoryMetadata(new_metadata);
 
         if (has_storage_policy_changed)
@@ -6822,6 +7147,12 @@ MergeTreeData::getColumnDefaultnessStats(const String & column_name, ContextPtr 
         return std::nullopt;
     }
 
+    /// Per-part serialization records are keyed by the stamped column ID; translate the
+    /// requested name once (IDs are stable, so one snapshot serves all parts).
+    String record_key = column_name;
+    if (auto mapping_snapshot = getActiveColumnIdMapping())
+        record_key = mapping_snapshot->getColumnIdOrDefault(column_name);
+
     ColumnDefaultnessStats aggregate;
     for (const auto & part : getActivePartsForColumnDefaultnessStats(query_context))
     {
@@ -6829,7 +7160,7 @@ MergeTreeData::getColumnDefaultnessStats(const String & column_name, ContextPtr 
             continue;
 
         const auto & infos = part->getSerializationInfos();
-        auto it = infos.find(column_name);
+        auto it = infos.find(record_key);
         if (it == infos.end())
         {
             LOG_DEBUG(log, "No defaultness stats for column {}: not present in serialization info of part {}", column_name, part->name);
@@ -7453,12 +7784,30 @@ void MergeTreeData::addPartContributionToColumnAndSecondaryIndexSizes(const Data
     addPartContributionToColumnAndSecondaryIndexSizesUnlocked(part);
 }
 
+/// Aggregate sizes are keyed by CURRENT logical name.  A part loaded before a
+/// metadata-only RENAME still stamps the old name, so derive the key from the
+/// stamped column ID; `renameColumnSizesEntry` re-keys the aggregate on RENAME.
+/// An orphan (a dropped column's stream still present in an old part) has no live logical name;
+/// `nullopt` skips it, so its bytes never land in the size aggregate. Keying it by its id-token
+/// instead would risk colliding with a live column whose logical name equals that token (the id
+/// and name namespaces are both plain strings), attributing the dropped column's bytes to it.
+static std::optional<String> columnSizesKey(const NameAndTypePair & column, const ColumnIdMapping * mapping)
+{
+    if (mapping)
+        return mapping->tryGetLogicalName(column.column_id);
+    return column.name;
+}
+
 void MergeTreeData::addPartContributionToColumnAndSecondaryIndexSizesUnlocked(const DataPartPtr & part) const
 {
+    auto mapping = getActiveColumnIdMapping();
     for (const auto & column : part->getColumns())
     {
-        ColumnSize & total_column_size = column_sizes[column.name];
-        ColumnSize part_column_size = part->getColumnSize(column.name);
+        auto key = columnSizesKey(column, mapping.get());
+        if (!key)
+            continue;
+        ColumnSize & total_column_size = column_sizes[*key];
+        ColumnSize part_column_size = part->getColumnSize(column.getColumnId());
         total_column_size.add(part_column_size);
     }
 
@@ -7477,34 +7826,29 @@ void MergeTreeData::addPartContributionToColumnAndSecondaryIndexSizesUnlocked(co
 IStorage::ColumnSizeByName MergeTreeData::getColumnSizes(const Names & columns) const
 {
     auto result = getColumnSizes();
+    auto metadata_snapshot = getInMemoryMetadataPtr(CurrentThread::tryGetQueryContext(), false);
 
-    /// Collect subcolumn names that are not already in the result.
-    Names subcolumn_names;
+    /// A requested name absent from the whole-column map may be a subcolumn, whose size only the
+    /// parts know. Classify against the current schema (the isSubcolumn check keeps unknown names
+    /// from inserting zero-size entries); the part resolves a stale-after-rename name itself.
+    NamesAndTypesList subcolumns;
     for (const auto & col_name : columns)
     {
         if (result.contains(col_name))
             continue;
 
-        subcolumn_names.push_back(col_name);
+        auto column = metadata_snapshot->getColumns().tryGetColumnOrSubcolumn(GetColumnsOptions::AllPhysical, col_name);
+        if (column && column->isSubcolumn())
+            subcolumns.push_back(*column);
     }
 
-    if (subcolumn_names.empty())
+    if (subcolumns.empty())
         return result;
 
-    /// For each requested column that is a subcolumn and not already in the result,
-    /// aggregate its size across all active parts using getSubcolumnSize.
-    /// This gives the correct on-disk size for subcolumns based on required substreams.
     auto parts_lock = readLockParts();
-    auto committed_parts_range = getDataPartsStateRange(DataPartState::Active);
-    for (const auto & part : committed_parts_range)
-    {
-        for (const auto & col_name : subcolumn_names)
-        {
-            auto column = part->tryGetColumn(col_name);
-            if (column && column->isSubcolumn())
-                result[col_name].add(part->getSubcolumnSize(col_name));
-        }
-    }
+    for (const auto & part : getDataPartsStateRange(DataPartState::Active))
+        for (const auto & subcolumn : subcolumns)
+            result[subcolumn.name].add(part->getSubcolumnSize(subcolumn));
 
     return result;
 }
@@ -7516,10 +7860,14 @@ void MergeTreeData::removePartContributionToColumnAndSecondaryIndexSizes(const D
     if (!are_columns_and_secondary_indices_sizes_calculated)
         return;
 
+    auto mapping = getActiveColumnIdMapping();
     for (const auto & column : part->getColumns())
     {
-        ColumnSize & total_column_size = column_sizes[column.name];
-        ColumnSize part_column_size = part->getColumnSize(column.name);
+        auto key = columnSizesKey(column, mapping.get());
+        if (!key)
+            continue;
+        ColumnSize & total_column_size = column_sizes[*key];
+        ColumnSize part_column_size = part->getColumnSize(column.getColumnId());
 
         auto log_subtract = [&](size_t & from, size_t value, const char * field)
         {
@@ -7556,6 +7904,22 @@ void MergeTreeData::removePartContributionToColumnAndSecondaryIndexSizes(const D
         log_subtract(total_secondary_index_size.data_uncompressed, part_secondary_index_size.data_uncompressed, ".data_uncompressed");
         log_subtract(total_secondary_index_size.marks, part_secondary_index_size.marks, ".marks");
     }
+}
+
+void MergeTreeData::renameColumnSizesEntry(const String & old_name, const String & new_name) const
+{
+    std::unique_lock lock(columns_and_secondary_indices_sizes_mutex);
+    if (!are_columns_and_secondary_indices_sizes_calculated)
+        return;
+
+    auto it = column_sizes.find(old_name);
+    if (it == column_sizes.end())
+        return;
+
+    /// Merge rather than overwrite: a previously dropped column with the new
+    /// name may have left an entry that live parts still contribute to.
+    column_sizes[new_name].add(it->second);
+    column_sizes.erase(it);
 }
 
 void MergeTreeData::checkAlterPartitionIsPossible(
@@ -8199,6 +8563,71 @@ void MergeTreeData::restoreDataFromBackup(RestorerFromBackup & restorer, const S
     if (!restorer.isNonEmptyTableAllowed() && getTotalActiveSizeInBytes() && backup->hasFiles(data_path_in_backup))
         RestorerFromBackup::throwTableIsNotEmpty(getStorageID());
 
+    /// Restore the mapping before parts attach so the reader can resolve
+    /// non-identity column IDs.
+    auto column_ids_in_backup = fs::path(data_path_in_backup) / COLUMN_IDS_FILE_NAME;
+
+    std::optional<ColumnIdMapping> restored;
+    if (backup->fileExists(column_ids_in_backup))
+    {
+        auto read_buf = backup->readFile(column_ids_in_backup);
+        auto loaded = ColumnIdMapping::deserialize(*read_buf);
+        skipWhitespaceIfAny(*read_buf);
+        assertEOF(*read_buf);
+        if (loaded.isActive())
+            restored = std::move(loaded);
+    }
+
+    if (!restored)
+    {
+        /// Whether the backup's parts are named logically cannot be known without
+        /// reading every part's columns.txt, so fail closed rather than guess.
+        auto current = getColumnIdMapping();
+        if (current && current->isActive())
+            throw Exception(ErrorCodes::BAD_ARGUMENTS,
+                "RESTORE: backup has no active `{}` but destination has an active "
+                "column-ID mapping.  The backup may contain parts whose files "
+                "are named by numeric IDs which would resolve to the wrong "
+                "logical columns under the destination's mapping.  Restore "
+                "into a fresh non-column-ID table instead.",
+                COLUMN_IDS_FILE_NAME);
+    }
+    else
+    {
+        /// Restoring into a non-empty table (`allow_non_empty_tables = 1`) must not
+        /// silently overwrite an existing active mapping: destination parts written
+        /// under the current mapping would then resolve through the backup's mapping
+        /// and read the wrong physical files.  Require the active `logical_to_id`
+        /// to match, and preserve the higher counter.
+        ///
+        /// Counter bump: backup parts may carry orphan column files at IDs the
+        /// destination's counter has not yet handed out.  Without the bump, a
+        /// later `ADD COLUMN` would reuse one of those IDs and read stale orphan
+        /// bytes from the restored parts.
+        if (getTotalActiveSizeInBytes() > 0)
+        {
+            auto current = getColumnIdMapping();
+            const bool same_mapping = current && current->isActive()
+                && current->getLogicalToId() == restored->getLogicalToId();
+            if (!same_mapping)
+                throw Exception(ErrorCodes::BAD_ARGUMENTS,
+                    "RESTORE: backup's `{}` differs from destination's active "
+                    "column-ID mapping; existing parts would be read with the "
+                    "wrong physical column names.  Restore into an empty table.",
+                    COLUMN_IDS_FILE_NAME);
+
+            if (restored->getNextColumnIdCounter() > current->getNextColumnIdCounter())
+            {
+                persistMapping(std::move(*restored));
+            }
+            /// Else: destination's counter is at least as high — leave it alone.
+        }
+        else
+        {
+            persistMapping(std::move(*restored));
+        }
+    }
+
     restorePartsFromBackup(restorer, data_path_in_backup, partitions);
 }
 
@@ -8291,6 +8720,7 @@ void MergeTreeData::restorePartsFromBackup(RestorerFromBackup & restorer, const 
     auto backup = restorer.getBackup();
     Strings part_names = backup->listFiles(data_path_in_backup, /*recursive*/ false);
     std::erase(part_names, "mutations");
+    std::erase(part_names, COLUMN_IDS_FILE_NAME); /// Already restored by restoreDataFromBackup before parts attach.
 
     bool restore_broken_parts_as_detached = restorer.getRestoreSettings().restore_broken_parts_as_detached;
 
@@ -10381,6 +10811,14 @@ void MergeTreeData::checkColumnFilenamesForCollision(const ColumnsDescription & 
     auto columns_list = settings[MergeTreeSetting::share_nested_offsets]
         ? Nested::collect(columns.getAllPhysical())
         : columns.getAllPhysical();
+
+    /// Filename-collision pre-check for a PROPOSED schema (e.g. `checkAlterIsPossible` passes the
+    /// post-ALTER columns). A newly added or renamed column is legitimately absent from the live
+    /// mapping at this point, so use the lenient stamp rather than the strict write stamp: this
+    /// only needs a stable per-column key to detect two columns sharing a stream file.
+    if (auto mapping = getActiveColumnIdMapping())
+        mapping->stampColumnIdsLenient(columns_list);
+
     SerializationInfo::Settings serialization_settings
     {
         static_cast<double>(settings[MergeTreeSetting::ratio_of_defaults_for_sparse_serialization]),
@@ -10399,7 +10837,7 @@ void MergeTreeData::checkColumnFilenamesForCollision(const ColumnsDescription & 
 
         auto callback = [&](const auto & substream_path)
         {
-            auto full_stream_name = ISerialization::getFileNameForStream(column, substream_path, ISerialization::StreamFileNameSettings(settings));
+            auto full_stream_name = ISerialization::getFileNameForStreamByColumnId(column, substream_path, ISerialization::StreamFileNameSettings(settings));
             String stream_name = replaceFileNameToHashIfNeeded(full_stream_name, settings, nullptr);
             column_streams.emplace(stream_name, full_stream_name);
         };
@@ -10484,6 +10922,34 @@ MergeTreeData & MergeTreeData::checkStructureAndGetMergeTreeData(IStorage & sour
 
     if (!check_definitions(my_snapshot->getProjections(), src_snapshot->getProjections()))
         throw Exception(ErrorCodes::BAD_ARGUMENTS, "Tables have different projections");
+
+    auto my_pn = getActiveColumnIdMapping();
+    auto src_pn = src_data->getActiveColumnIdMapping();
+    bool my_has_pn = (my_pn != nullptr);
+    bool src_has_pn = (src_pn != nullptr);
+    if (my_has_pn != src_has_pn)
+        throw Exception(ErrorCodes::BAD_ARGUMENTS,
+            "Tables have incompatible column ID mapping state: "
+            "one table has column IDs active while the other does not");
+    if (my_has_pn && src_has_pn)
+    {
+        if (my_pn->getLogicalToId() != src_pn->getLogicalToId())
+            throw Exception(ErrorCodes::BAD_ARGUMENTS,
+                "Tables have different column ID mappings; "
+                "partition operations require identical logical-to-ID column mappings");
+
+        /// Counter compatibility: source parts can carry orphan column files at
+        /// IDs the destination's counter has not yet handed out.  Transferring
+        /// such parts and later ADDing a column on the destination would
+        /// allocate one of those IDs and read the stale orphan bytes.
+        if (src_pn->getNextColumnIdCounter() > my_pn->getNextColumnIdCounter())
+            throw Exception(ErrorCodes::BAD_ARGUMENTS,
+                "Source table's column-ID counter ({}) is ahead of destination's "
+                "({}); transferred parts may carry orphan column IDs the "
+                "destination would later reuse.  Bump the destination's counter "
+                "(e.g. via ADD/DROP COLUMN cycles) before the partition operation.",
+                src_pn->getNextColumnIdCounter(), my_pn->getNextColumnIdCounter());
+    }
 
     return *src_data;
 }
@@ -10809,6 +11275,15 @@ PartitionCommandsResultInfo MergeTreeData::freezePartitionsByMatcher(
     /// Acquire a snapshot of active data parts to prevent removing while doing backup.
     const auto data_parts = getVisibleDataPartsVector(local_context);
 
+    /// FREEZE PARTITION holds only `lockForShare`, but column-ID ALTERs run
+    /// under the separate `lockForAlter`.  A `RENAME` or `DROP`+`ADD` can
+    /// therefore slip in between the visible-parts snapshot above and the
+    /// mapping snapshot below.  Pin the mapping pointer now and re-check it
+    /// after the freeze loop -- if it changed the shadow tree would hold
+    /// frozen parts from the old layout paired with a newer mapping, which
+    /// makes offline readers resolve columns through the wrong IDs.
+    auto column_ids_mapping_snapshot = getColumnIdMapping();
+
     bool has_zero_copy_part = false;
     for (const auto & part : data_parts)
     {
@@ -10835,6 +11310,8 @@ PartitionCommandsResultInfo MergeTreeData::freezePartitionsByMatcher(
 
     PartitionCommandsResultInfo result;
     std::mutex result_mutex;
+    std::set<String> frozen_disk_names;
+    std::mutex frozen_disks_mutex;
 
     ThreadPoolCallbackRunnerLocal<void> runner(pool, ThreadName::MERGETREE_FREEZE_PART);
 
@@ -10847,7 +11324,7 @@ PartitionCommandsResultInfo MergeTreeData::freezePartitionsByMatcher(
 
         /// Passing by reference here is fine. All variables outlive the runner.
         runner.enqueueAndKeepTrack(
-            [this, &part, &backup_path, &backup_name, &local_context, &result, &result_mutex]()
+            [this, &part, &backup_path, &backup_name, &local_context, &result, &result_mutex, &frozen_disk_names, &frozen_disks_mutex]()
             {
                 LOG_DEBUG(log, "Freezing part {} snapshot will be placed at {}", part->name, backup_path);
 
@@ -10879,6 +11356,10 @@ PartitionCommandsResultInfo MergeTreeData::freezePartitionsByMatcher(
 
                 part->is_frozen.store(true, std::memory_order_relaxed);
                 {
+                    std::lock_guard lock(frozen_disks_mutex);
+                    frozen_disk_names.insert(part->getDataPartStorage().getDiskName());
+                }
+                {
                     std::lock_guard lock(result_mutex);
                     result.push_back(PartitionCommandResultInfo{
                         .command_type = "FREEZE PART",
@@ -10893,6 +11374,41 @@ PartitionCommandsResultInfo MergeTreeData::freezePartitionsByMatcher(
     }
 
     runner.waitForAllToFinishAndRethrowFirstError();
+
+    /// Pointer equality is the column-ID mapping version check: MultiVersion::set
+    /// always installs a fresh unique_ptr, so a changed pointer means a
+    /// column-ID `ALTER` (RENAME, DROP+ADD activation, ...) ran between the
+    /// parts snapshot and now.  The user must retry FREEZE for the
+    /// mapping/parts pair to be coherent.
+    if (getColumnIdMapping().get() != column_ids_mapping_snapshot.get())
+        throw Exception(
+            ErrorCodes::NOT_IMPLEMENTED,
+            "Column ID mapping changed concurrently with FREEZE; the shadow "
+            "tree would mix frozen parts from the old layout with a newer "
+            "mapping.  Retry the FREEZE without a concurrent column-ID ALTER.");
+
+    /// Off-line readers (`mergeTreeParts()`, clickhouse-local) need the mapping
+    /// alongside the frozen parts to resolve non-identity IDs.  A shadow tree is
+    /// an immutable, portable, PER-DISK artifact consumed one disk at a time, so
+    /// -- unlike the mutable live copy -- write `column_ids.json` into EACH disk's
+    /// shadow subtree that produced a frozen part.  Per-disk redundancy is correct
+    /// here precisely because the shadow never changes (no torn-write concern).
+    if (column_ids_mapping_snapshot && column_ids_mapping_snapshot->isActive() && !result.empty())
+    {
+        const auto column_ids_in_freeze = fs::path(backup_path) / relative_data_path / COLUMN_IDS_FILE_NAME;
+        for (const auto & disk : getStoragePolicy()->getDisks())
+        {
+            if (disk->isBroken() || disk->isReadOnly() || disk->isWriteOnce())
+                continue;
+            if (!frozen_disk_names.contains(disk->getName()))
+                continue;
+
+            disk->createDirectories(fs::path(column_ids_in_freeze).parent_path());
+            auto buf = disk->writeFile(column_ids_in_freeze, 4096, WriteMode::Rewrite, local_context->getWriteSettings());
+            column_ids_mapping_snapshot->serialize(*buf);
+            buf->finalize();
+        }
+    }
 
     LOG_DEBUG(log, "Froze {} parts", result.size());
     return result;
@@ -11497,7 +12013,11 @@ AlterConversionsPtr MergeTreeData::getAlterConversionsForPart(
     {
         auto patch_commands = mutations->getOnFlyMutationCommandsForPart(patch.part);
         auto patch_conversions = std::make_shared<AlterConversions>(patch_commands, PatchPartsForReader{}, query_context);
-        auto patch_for_reader = std::make_shared<LoadedMergeTreeDataPartInfoForReader>(std::move(patch.part), std::move(patch_conversions));
+        /// The patch reader stamps its requested columns from the same snapshot mapping the
+        /// base-part reader uses (both go through createMergeTreeReader), so a concurrent
+        /// DROP+ADD name reuse cannot orphan the patch's stamped column and drop the update.
+        auto patch_for_reader = std::make_shared<LoadedMergeTreeDataPartInfoForReader>(
+            std::move(patch.part), std::move(patch_conversions));
 
         patches_for_reader.push_back(PatchPartInfoForReader
         {
@@ -11887,18 +12407,36 @@ ReservationPtr MergeTreeData::balancedReservation(
 }
 
 template <typename DataPartPtr>
-static void updateSerializationHintsForPart(const DataPartPtr & part, const ColumnsDescription & storage_columns, SerializationInfoByName & hints, bool remove)
+static void updateSerializationHintsForPart(
+    const DataPartPtr & part,
+    const ColumnsDescription & storage_columns,
+    const ColumnIdMappingPtr & column_id_mapping,
+    SerializationInfoByName & hints,
+    bool remove)
 {
     const auto & part_columns = part->getColumnsDescription();
-    for (const auto & [name, info] : part->getSerializationInfos())
+    const auto & part_infos = part->getSerializationInfos();
+
+    for (const auto & part_column : part->getColumns())
     {
-        auto new_hint = hints.tryGet(name);
+        /// Part records are keyed by the stamped column ID; hints by the current
+        /// logical name. Join them through the part's stamped column list.
+        auto info = part_infos.tryGet(part_column.getColumnId().value());
+        if (!info)
+            continue;
+
+        String hint_name = part_column.name;
+        if (column_id_mapping)
+            if (auto name = column_id_mapping->tryGetLogicalName(part_column.getColumnId()))
+                hint_name = *name;
+
+        auto new_hint = hints.tryGet(hint_name);
         if (!new_hint)
             continue;
 
         /// Structure may change after alter. Do not add info for such items.
         /// Instead it will be updated on commit of the result part of alter.
-        if (part_columns.tryGetPhysical(name) != storage_columns.tryGetPhysical(name))
+        if (part_columns.tryGetPhysical(part_column.name) != storage_columns.tryGetPhysical(hint_name))
             continue;
 
         chassert(new_hint->structureEquals(*info));
@@ -11933,8 +12471,9 @@ void MergeTreeData::resetSerializationHints(const DataPartsLock & /*lock*/)
     serialization_hints = SerializationInfoByName(storage_columns.getAllPhysical(), settings);
     auto range = getDataPartsStateRange(DataPartState::Active);
 
+    const auto mapping_snapshot = getActiveColumnIdMapping();
     for (const auto & part : range)
-        updateSerializationHintsForPart(part, storage_columns, serialization_hints, false);
+        updateSerializationHintsForPart(part, storage_columns, mapping_snapshot, serialization_hints, false);
 }
 
 template <typename AddedParts, typename RemovedParts>
@@ -11946,12 +12485,13 @@ void MergeTreeData::updateSerializationHints(const AddedParts & added_parts, con
 
     const auto metadata_snapshot = getInMemoryMetadataPtr(getContext(), false);
     const auto & storage_columns = metadata_snapshot->getColumns();
+    const auto mapping_snapshot = getActiveColumnIdMapping();
 
     for (const auto & part : added_parts)
-        updateSerializationHintsForPart(part, storage_columns, serialization_hints, false);
+        updateSerializationHintsForPart(part, storage_columns, mapping_snapshot, serialization_hints, false);
 
     for (const auto & part : removed_parts)
-        updateSerializationHintsForPart(part, storage_columns, serialization_hints, true);
+        updateSerializationHintsForPart(part, storage_columns, mapping_snapshot, serialization_hints, true);
 }
 
 SerializationInfoByName MergeTreeData::getSerializationHints() const
@@ -12060,10 +12600,11 @@ StorageMetadataHandle MergeTreeData::getInMemoryMetadataPtr(ContextPtr query_con
 StorageSnapshotPtr
 MergeTreeData::createStorageSnapshot(const StorageMetadataPtr & metadata_snapshot, ContextPtr query_context, bool without_data) const
 {
-    if (without_data)
-        return std::make_shared<StorageSnapshot>(*this, metadata_snapshot, std::make_unique<SnapshotData>());
-
     auto snapshot_data = std::make_unique<SnapshotData>();
+
+    if (without_data)
+        return std::make_shared<StorageSnapshot>(*this, metadata_snapshot, std::move(snapshot_data));
+
     snapshot_data->storage = shared_from_this();
 
     auto [query_ranges, query_parts] = getPossiblySharedVisibleDataPartsRanges(query_context);

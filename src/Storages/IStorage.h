@@ -32,6 +32,8 @@ using StorageActionBlockType = size_t;
 
 class ASTCreateQuery;
 class ASTInsertQuery;
+class ColumnIdMapping;
+using ColumnIdMappingPtr = std::shared_ptr<const ColumnIdMapping>;
 
 struct Settings;
 
@@ -236,7 +238,13 @@ public:
     /// any locks.
     void setInMemoryMetadata(const StorageInMemoryMetadata & metadata_)
     {
-        metadata.set(std::make_unique<StorageInMemoryMetadata>(metadata_));
+        auto new_metadata = std::make_unique<StorageInMemoryMetadata>(metadata_);
+        /// In-memory-C single re-sync chokepoint: every metadata publish (load, ALTER, settings
+        /// change) passes through here, so stamping the columns off the active column-ID mapping
+        /// here guarantees the schema always carries per-column IDs. No-op for tables without an
+        /// active mapping (i.e. everything except column-ID MergeTree tables).
+        new_metadata->syncColumnIdsFromMapping();
+        metadata.set(std::move(new_metadata));
     }
 
     VectorWithMemoryTracking<String> getAllRegisteredNames() const override;
@@ -248,6 +256,14 @@ public:
 
     /// Makes backup entries to backup the data of this storage.
     virtual void backupData(BackupEntriesCollector & backup_entries_collector, const String & data_path_in_backup, const std::optional<ASTs> & partitions);
+
+    /// Storage-side state that must stay stable between table-metadata and
+    /// data capture during BACKUP.  Called by `BackupEntriesCollector` once
+    /// the per-table share lock is held; `backupData` later compares against
+    /// the current state and fails closed on divergence.  Default: no check.
+    /// The token is opaque to the backup machinery: it is only null-checked
+    /// and identity-compared, never dereferenced.
+    virtual ColumnIdMappingPtr captureBackupAuxSnapshot() const { return nullptr; }
 
     /// Extracts data from the backup and put it to the storage.
     virtual void restoreDataFromBackup(RestorerFromBackup & restorer, const String & data_path_in_backup, const std::optional<ASTs> & partitions);

@@ -8,6 +8,7 @@
 #include <Storages/MergeTree/MergeTreeDataPartCompact.h>
 #include <Storages/MergeTree/MergeTreeSettings.h>
 #include <Storages/MergeTree/IDataPartStorage.h>
+#include <Storages/MergeTree/ColumnIdMapping.h>
 #include <Interpreters/FileCache/FileCache.h>
 #include <Interpreters/FileCache/FileCacheFactory.h>
 #include <Compression/CompressedReadBuffer.h>
@@ -146,6 +147,59 @@ bool isRetryableException(std::exception_ptr exception_ptr)
     }
 }
 
+/// Compact parts store all columns in one data file and the full-column reader
+/// seeks by `columns.txt` ordinal (`getColumnPosition`), while substream offsets
+/// live per-slot in `columns_substreams.txt`.  If `columns.txt` is reordered
+/// relative to that physical layout, a full-column read fetches a neighbour's
+/// bytes and no name check fires (name-checked substream resolution runs only
+/// for subcolumns).  Confirm per slot that the substreams `columns[i]` emits are
+/// the ones recorded at `columns_substreams[i]`, resolving by column ID the same
+/// way the reader does -- so a legitimate rename (which leaves the write-time ID
+/// in `columns_substreams`) is not a false positive.
+static void checkCompactColumnIdSubstreamPositions(
+    const MergeTreeData::DataPartPtr & data_part,
+    const NamesAndTypesList & columns_list,
+    const SerializationInfoByName & serialization_infos,
+    const IDataPartStorage & data_part_storage)
+{
+    const auto & cols_substreams = data_part->getColumnsSubstreams();
+    if (cols_substreams.empty())
+        return;
+
+    const auto storage_settings = data_part->storage.getSettings();
+
+    /// Dynamic substreams need deserialization state to enumerate; the base
+    /// stream alone pins the slot, so skipping them is enough to catch a reorder.
+    ISerialization::EnumerateStreamsSettings enum_settings;
+    enum_settings.enumerate_dynamic_streams = false;
+
+    size_t column_position = 0;
+    for (const auto & column : columns_list)
+    {
+        auto it = serialization_infos.find(column.getColumnId().value());
+        auto serialization = it == serialization_infos.end()
+            ? column.type->getSerialization(serialization_infos.getSettings())
+            : column.type->getSerialization(*it->second);
+
+        auto data = ISerialization::SubstreamData(serialization)
+            .withType(column.type)
+            .withColumn(data_part->getColumnSample(column));
+
+        serialization->enumerateStreams(enum_settings, [&](const ISerialization::SubstreamPath & substream_path)
+        {
+            if (ISerialization::isEphemeralSubcolumn(substream_path, substream_path.size()))
+                return;
+            if (!cols_substreams.tryGetSubstreamPosition(column_position, column, substream_path, storage_settings).has_value())
+                throw Exception(ErrorCodes::CORRUPTED_DATA,
+                    "Substream layout mismatch in compact part {} at position {}: column '{}' (ID '{}') "
+                    "does not own the substreams recorded there. `columns.txt` is reordered relative to "
+                    "`columns_substreams.txt`; reads would return swapped columns.",
+                    data_part_storage.getFullPath(), column_position, column.name, column.getColumnId().value());
+        }, data);
+        ++column_position;
+    }
+}
+
 static IMergeTreeDataPart::Checksums checkDataPart(
     MergeTreeData::DataPartPtr data_part,
     const IDataPartStorage & data_part_storage,
@@ -175,9 +229,76 @@ static IMergeTreeDataPart::Checksums checkDataPart(
         assertEOF(*buf);
     }
 
-    if (columns_txt != columns_list)
-        throw Exception(ErrorCodes::CORRUPTED_DATA, "Columns doesn't match in part {}. Expected: {}. Found: {}",
-            data_part_storage.getFullPath(), columns_list.toString(), columns_txt.toString());
+    auto pn_mapping = data_part->storage.getActiveColumnIdMapping();
+    bool column_ids_active = pn_mapping != nullptr;
+
+    if (!column_ids_active)
+    {
+        if (columns_txt != columns_list)
+            throw Exception(ErrorCodes::CORRUPTED_DATA, "Columns doesn't match in part {}. Expected: {}. Found: {}",
+                data_part_storage.getFullPath(), columns_list.toString(), columns_txt.toString());
+    }
+    else
+    {
+        /// With column IDs, old parts have pre-rename column names in
+        /// `columns.txt`, so exact equality is impossible. Perform a weaker
+        /// check: for every column found in both the expected list and the
+        /// part (matched by column ID), verify the types agree.
+        std::unordered_map<String, DataTypePtr> expected_types;
+        for (const auto & col : columns_list)
+        {
+            auto phys = pn_mapping->getColumnIdOrDefault(col.name);
+            expected_types[phys] = col.type;
+        }
+        for (const auto & col : columns_txt)
+        {
+            String phys;
+            /// Prefer column-ID resolution first: `columns.txt` for parts
+            /// written with column-IDs active stores the column_id form,
+            /// and after a `RENAME COLUMN b TO d` followed by reuse of the
+            /// name `b` for a new column, the on-disk token `b` is the
+            /// column_id for logical `d` (id_to_logical), NOT the logical
+            /// name for the new `b` (logical_to_id `b -> 1`).  Treating
+            /// `b` as a logical name first would compare the old part's
+            /// stream against the new `b` column's type and falsely report
+            /// `CORRUPTED_DATA`.  Mirrors `SerializationInfoByName::readJSONWithColumnIds`
+            /// and `remapColumnsWithPhysicalNames`.
+            if (pn_mapping->hasColumnId(col.name))
+                phys = col.name;
+            else if (auto id = pn_mapping->tryGetColumnId(col.name))
+                phys = id->value();
+            else
+            {
+                /// A counter-format token below the counter is an orphan of a dropped
+                /// column (expected after DROP + re-ADD); anything else is suspicious.
+                UInt64 numeric_id = 0;
+                bool is_counter_format = tryParse(numeric_id, col.name.substr(0, col.name.find('.')))
+                    && numeric_id < pn_mapping->getNextColumnIdCounter();
+                LOG_TRACE(getLogger("checkDataPart"),
+                    "Token '{}' in columns.txt of part {} {}",
+                    col.name, data_part_storage.getFullPath(),
+                    is_counter_format ? "is an orphaned column ID of a dropped column, skipping"
+                                      : "matches no column ID or logical name of the table, skipping");
+                continue;
+            }
+
+            auto it = expected_types.find(phys);
+            if (it != expected_types.end() && !col.type->equals(*it->second))
+                throw Exception(ErrorCodes::CORRUPTED_DATA,
+                    "Column type mismatch in part {} for column ID '{}': "
+                    "expected {}, found {}",
+                    data_part_storage.getFullPath(), phys,
+                    it->second->getName(), col.type->getName());
+        }
+
+        /// The compact ordinal-consistency check (columns.txt order vs the
+        /// physical substream layout) runs below, once serializations are
+        /// loaded -- see `checkCompactColumnIdSubstreamPositions`.  A naive
+        /// `columns[i].name == columns_substreams[i].first` comparison cannot
+        /// be used: `columns_substreams` keeps the write-time name, so rename
+        /// history would false-positive.  The check resolves by column ID
+        /// instead, exactly as the reader does.
+    }
 
     /// Real checksums based on contents of data. Must correspond to checksums.txt. If not - it means the data is broken.
     IMergeTreeDataPart::Checksums checksums_data;
@@ -204,7 +325,10 @@ static IMergeTreeDataPart::Checksums checkDataPart(
         try
         {
             auto serialization_file = data_part_storage.readFile(IMergeTreeDataPart::SERIALIZATION_FILE_NAME, read_settings, std::nullopt);
-            serialization_infos = SerializationInfoByName::readJSON(columns_txt, *serialization_file);
+            if (column_ids_active)
+                serialization_infos = SerializationInfoByName::readJSONWithColumnIds(columns_list, *serialization_file);
+            else
+                serialization_infos = SerializationInfoByName::readJSON(columns_txt, *serialization_file);
         }
         catch (...)
         {
@@ -219,7 +343,8 @@ static IMergeTreeDataPart::Checksums checkDataPart(
 
     auto get_serialization = [&serialization_infos](const auto & column)
     {
-        auto it = serialization_infos.find(column.name);
+        /// Records are keyed by the stamped column ID (identity for parts without IDs).
+        auto it = serialization_infos.find(column.getColumnId().value());
         return it == serialization_infos.end()
             ? column.type->getSerialization(serialization_infos.getSettings())
             : column.type->getSerialization(*it->second);
@@ -233,6 +358,9 @@ static IMergeTreeDataPart::Checksums checkDataPart(
         hashing_buf.ignoreAll();
         checksums_data.files[file_name] = IMergeTreeDataPart::Checksums::Checksum(hashing_buf.count(), hashing_buf.getHash());
     };
+
+    if (column_ids_active && part_type == MergeTreeDataPartType::Compact)
+        checkCompactColumnIdSubstreamPositions(data_part, columns_list, serialization_infos, data_part_storage);
 
     /// Do not check uncompressed for projections. But why?
     bool check_uncompressed = !data_part->isProjectionPart();

@@ -26,6 +26,7 @@
 #include <Storages/MergeTree/ZeroCopyLock.h>
 #include <Storages/MergeTree/TemporaryParts.h>
 #include <Storages/MergeTree/AlterConversions.h>
+#include <Storages/MergeTree/ColumnIdMapping.h>
 #include <Storages/MergeTree/RangesInDataPart.h>
 #include <Storages/MergeTree/Streaming/CursorPromoter.h>
 #include <Storages/Streaming/SubscriptionManager.h>
@@ -222,6 +223,7 @@ public:
     using PartitionIdToMinBlockPtr = std::shared_ptr<const PartitionIdToMinBlock>;
 
     constexpr static auto FORMAT_VERSION_FILE_NAME = "format_version.txt";
+    constexpr static auto COLUMN_IDS_FILE_NAME = "column_ids.json";
     constexpr static auto DETACHED_DIR_NAME = "detached";
     constexpr static auto MOVING_DIR_NAME = "moving";
 
@@ -695,6 +697,94 @@ public:
 
     /// Load the set of data parts from disk. Call once - immediately after the object is created.
     void loadDataParts(bool skip_sanity_checks, std::optional<std::unordered_set<std::string>> expected_parts);
+
+    bool hasColumnIdMapping() const
+    {
+        return getActiveColumnIdMapping() != nullptr;
+    }
+
+    /// Returns the column ID mapping only if it is active (i.e. physical
+    /// names have been activated for this table). Returns nullptr otherwise.
+    ColumnIdMappingPtr getActiveColumnIdMapping() const
+    {
+        auto mapping = getColumnIdMapping();
+        if (mapping && mapping->isActive())
+            return mapping;
+        return nullptr;
+    }
+
+    /// Raw mapping pointer regardless of activation state, read off the live metadata
+    /// (bypassing the per-query cache). A fresh pointer per mapping change, so pointer
+    /// identity still discriminates "did it change".
+    ColumnIdMappingPtr getColumnIdMapping() const
+    {
+        auto metadata = getInMemoryMetadataPtr(nullptr, /*bypass_metadata_cache=*/true);
+        return metadata->column_id_mapping;
+    }
+
+    /// Snapshot the column-ID mapping pointer at BACKUP-lock time.
+    /// A fresh mapping pointer is installed per publish, so a different pointer at
+    /// `backupData` time means an ALTER landed.
+    ColumnIdMappingPtr captureBackupAuxSnapshot() const override
+    {
+        return getColumnIdMapping();
+    }
+
+    /// Republishes the current in-memory metadata carrying @mapping_ (the mapping is a
+    /// metadata field). Read-modify-write on the live metadata, correct only because
+    /// every metadata publish is serialized under the alter lock.
+    void setColumnIdMapping(ColumnIdMapping mapping_)
+    {
+        auto metadata = getInMemoryMetadataPtr(nullptr, /*bypass_metadata_cache=*/true);
+        StorageInMemoryMetadata new_metadata = *metadata;
+        new_metadata.column_id_mapping = std::make_shared<const ColumnIdMapping>(std::move(mapping_));
+        setInMemoryMetadata(new_metadata);
+    }
+
+    void persistMapping(ColumnIdMapping mapping)
+    {
+        writeColumnIdMappingToDisk(mapping);
+        setColumnIdMapping(std::move(mapping));
+    }
+
+    /// `attach` distinguishes a pre-existing table (which must have the file
+    /// when it opted into column IDs) from CREATE, which writes the file only
+    /// after the storage is constructed.
+    void loadColumnIdMappingFromDisk(bool attach);
+    void writeColumnIdMappingToDisk() const;
+    void writeColumnIdMappingToDisk(const ColumnIdMapping & mapping) const;
+    /// Variant that targets an explicit storage policy.  Used by `changeSettings`
+    /// to push the mapping onto the NEW policy's authoritative disk BEFORE
+    /// publishing the new `storage_settings`, so the disk-write throw path leaves
+    /// `storage_settings`/metadata unchanged.
+    void writeColumnIdMappingToDisk(const ColumnIdMapping & mapping, const StoragePolicyPtr & target_policy) const;
+
+    /// The single disk that holds the authoritative `column_ids.json`.  Unlike
+    /// `format_version.txt`, the mapping is only the live name<->id oracle: parts
+    /// are self-describing (columns.txt stores IDs), so no disk reads its own
+    /// copy.  One `tmp`+`replaceFile` on this one filesystem is atomic, so a
+    /// single copy is crash-safe with no cross-disk protocol.  Deterministic
+    /// (policy's first disk) so load and write always agree on which disk it is.
+    /// Writability is enforced by `writeColumnIdMappingToDisk`, not here, so the
+    /// read path can select the same disk without throwing on an unwritable one.
+    DiskPtr getColumnIdMappingDisk(const StoragePolicyPtr & target_policy) const;
+
+    /// Best-effort removal of `column_ids.json` from every disk in the policy.
+    /// Used to undo a failed activation: an inactive mapping must never persist,
+    /// or a post-restart ALTER would take the wrong (already-active) path while
+    /// parts still use logical filenames.
+    void removeColumnIdMappingFromDisk() const;
+
+    /// Reconcile the on-disk mapping with table metadata after load.
+    /// Throws `CORRUPTED_DATA` if any column in metadata has no entry in the
+    /// mapping (the mapping-behind-schema window — unrecoverable, because
+    /// DROP + re-ADD of the same column name makes on-disk files
+    /// indistinguishable from their column ID alone). Otherwise removes
+    /// mapping entries whose logical name no longer exists in metadata
+    /// (mapping-ahead-of-schema window from: a crash between mapping
+    /// persist and metadata commit, completed DROPs, or incomplete two-phase
+    /// renames).
+    void reconcileColumnIdMappingWithMetadata();
 
     /// Check the set of data parts on disk and load if needed, assuming the data on disk can change under the hood.
     /// This method allows read-only replicas of tables on a shared storage.
@@ -1311,6 +1401,10 @@ public:
     static PartsSnapshotInfo getPartsSnapshotInfo(const DataPartsVector & parts);
 
     /// Return alter conversions for part which must be applied on fly.
+    /// The patch-part reader built for these conversions stamps its requested columns from
+    /// the snapshot mapping at read ingress (createMergeTreeReader), the same way the
+    /// base-part reader does, so base and patch resolve names against one consistent mapping
+    /// with no column-id mapping threaded through here.
     static AlterConversionsPtr getAlterConversionsForPart(
         const MergeTreeDataPartPtr & part,
         const MutationsSnapshotPtr & mutations,
@@ -1798,6 +1892,10 @@ protected:
     void addPartContributionToColumnAndSecondaryIndexSizesUnlocked(const DataPartPtr & part) const;
     void removePartContributionToColumnAndSecondaryIndexSizes(const DataPartPtr & part) const;
 
+    /// Re-keys the table-level `column_sizes` aggregate when a metadata-only
+    /// RENAME flips the mapping; per-part state is untouched.
+    void renameColumnSizesEntry(const String & old_name, const String & new_name) const;
+
     /// If there is no part in the partition with ID `partition_id`, returns empty ptr. Should be called under the lock.
     DataPartPtr getAnyPartInPartition(const String & partition_id, const DataPartsAnyLock & data_parts_lock) const;
 
@@ -2044,6 +2142,12 @@ protected:
     static MutableDataPartPtr asMutableDeletingPart(const DataPartPtr & part);
 
 private:
+    /// Throws `CORRUPTED_DATA` (naming the table, the offending column(s) and `column_ids.json`) if
+    /// any physical metadata column has no entry in @mapping. Runs on the load path BEFORE the
+    /// mapping is published, so a torn/hand-edited `column_ids.json` is refused with a clear,
+    /// file-naming error rather than tripping the schema-stamp desync assertion (a debug abort).
+    void checkColumnIdMappingCoversMetadata(const ColumnIdMapping & mapping) const;
+
     /// Checking that candidate part doesn't break invariants: correct partition
     void checkPartPartition(MutableDataPartPtr & part, const DataPartsAnyLock & lock) const;
     void checkPartDuplicate(MutableDataPartPtr & part, Transaction & transaction, const DataPartsAnyLock & lock) const;

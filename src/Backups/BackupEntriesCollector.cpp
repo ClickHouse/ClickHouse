@@ -698,6 +698,30 @@ void BackupEntriesCollector::lockTablesForReading()
         checkIsQueryCancelled();
 
         table_info.table_lock = storage->tryLockForShare(context->getInitialQueryId(), context->getSettingsRef()[Setting::lock_acquire_timeout]);
+
+        /// Capture storage-side state (e.g. column-ID mapping) at lock-acquisition
+        /// time so `backupData` can detect ALTERs that bypass the share lock.
+        if (table_info.table_lock)
+            table_info.backup_aux_snapshot = storage->captureBackupAuxSnapshot();
+
+        /// Close the gather-vs-lock window for storages that opted into the
+        /// aux snapshot: re-read the current CREATE and reject if it diverges
+        /// from the captured one.  Runs unconditionally so the cloud-default
+        /// case (`compare_collected_metadata` off) is also covered; the
+        /// thrown `INCONSISTENT_METADATA_FOR_BACKUP` is caught by the
+        /// surrounding retry loop.
+        if (table_info.table_lock && table_info.backup_aux_snapshot && table_info.database)
+        {
+            ASTPtr current_create_query = table_info.database->tryGetCreateTableQuery(table_name.table, context);
+            if (current_create_query && table_info.create_table_query
+                && current_create_query->formatWithSecretsOneLine() != table_info.create_table_query->formatWithSecretsOneLine())
+            {
+                throw Exception(
+                    ErrorCodes::INCONSISTENT_METADATA_FOR_BACKUP,
+                    "Table {} CREATE changed between gather and lock acquisition; retrying.",
+                    tableNameWithTypeToString(table_name, false));
+            }
+        }
     }
 
     std::erase_if(
@@ -707,6 +731,14 @@ void BackupEntriesCollector::lockTablesForReading()
             const auto & table_info = key_value.second;
             return table_info.storage && !table_info.table_lock; /// Table was dropped while acquiring the lock.
         });
+}
+
+ColumnIdMappingPtr BackupEntriesCollector::getBackupAuxSnapshot(const QualifiedTableName & table_name) const
+{
+    auto it = table_infos.find(table_name);
+    if (it == table_infos.end())
+        return nullptr;
+    return it->second.backup_aux_snapshot;
 }
 
 /// Check consistency of collected information about databases and tables.
@@ -723,7 +755,15 @@ bool BackupEntriesCollector::compareWithPrevious(String & mismatch_description)
     for (const auto & [database_name, database_info] : database_infos)
         databases_metadata.emplace_back(database_name, database_info.create_database_query ? database_info.create_database_query->formatWithSecretsOneLine() : "");
     for (const auto & [table_name, table_info] : table_infos)
-        tables_metadata.emplace_back(table_name, table_info.create_table_query->formatWithSecretsOneLine());
+    {
+        String metadata_str = table_info.create_table_query->formatWithSecretsOneLine();
+        /// Append the aux-snapshot pointer so an ALTER that flips per-table
+        /// state without touching CREATE (e.g. column-ID DROP+ADD same name)
+        /// still triggers a retry.
+        if (table_info.backup_aux_snapshot)
+            metadata_str += fmt::format("|aux_snapshot={}", reinterpret_cast<uintptr_t>(table_info.backup_aux_snapshot.get()));
+        tables_metadata.emplace_back(table_name, std::move(metadata_str));
+    }
 
     /// We need to sort the lists to make the comparison below correct.
     ::sort(databases_metadata.begin(), databases_metadata.end());

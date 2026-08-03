@@ -7,6 +7,7 @@
 #include <Storages/MergeTree/MergeTreeReadTask.h>
 #include <Storages/MergeTree/MergeTreeVirtualColumns.h>
 #include <Storages/MergeTree/LoadedMergeTreeDataPartInfoForReader.h>
+#include <Storages/MergeTree/ColumnIdMapping.h>
 #include <DataTypes/NestedUtils.h>
 #include <DataTypes/DataTypeNested.h>
 #include <DataTypes/Serializations/SerializationQuantizedVector.h>
@@ -64,12 +65,10 @@ IMergeTreeReader::IMergeTreeReader(
     , alter_conversions(data_part_info_for_read->getAlterConversions())
     , original_requested_columns(columns_)
     , converted_requested_columns((*storage_settings_)[MergeTreeSetting::share_nested_offsets]
-        ? Nested::convertToSubcolumns(columns_)
+        ? Nested::convertToSubcolumns(columns_, /*skip_columns_with_id=*/true)
         : columns_)
     , virtual_fields(virtual_fields_)
 {
-    /// Check the memory consumption before doing all the heavy-lifting such as
-    /// initializing buffers, reading marks, etc. Maybe that's not needed?
     CurrentMemoryTracker::check();
 
     columns_to_read.reserve(getColumns().size());
@@ -82,7 +81,7 @@ IMergeTreeReader::IMergeTreeReader(
 
         if (column.isSubcolumn())
         {
-            NameAndTypePair requested_column_in_storage{column.getNameInStorage(), column.getTypeInStorage()};
+            NameAndTypePair requested_column_in_storage{column.getNameInStorage(), column.getTypeInStorage(), column.column_id};
             serializations_of_full_columns.emplace(column_to_read.getNameInStorage(), getSerializationInPart(requested_column_in_storage));
         }
     }
@@ -345,12 +344,8 @@ bool IMergeTreeReader::isSubcolumnOffsetsOfNested(const String & name_in_storage
     return nested_column && isNested(nested_column->type);
 }
 
-String IMergeTreeReader::getColumnNameInPart(const NameAndTypePair & required_column) const
-{
-    auto name_pair = getStorageAndSubcolumnNameInPart(required_column);
-    return Nested::concatenateName(name_pair.first, name_pair.second);
-}
-
+/// The rename-chain name path. Only id-less requests reach here: `tryResolveInPart` and
+/// `getColumnInPart` both answer an id-carrying request before consulting names.
 std::pair<String, String> IMergeTreeReader::getStorageAndSubcolumnNameInPart(const NameAndTypePair & required_column) const
 {
     auto name_in_storage = required_column.getNameInStorage();
@@ -359,22 +354,48 @@ std::pair<String, String> IMergeTreeReader::getStorageAndSubcolumnNameInPart(con
     if (alter_conversions->isColumnRenamed(name_in_storage))
         name_in_storage = alter_conversions->getColumnOldName(name_in_storage);
 
-    /// A special case when we read subcolumn of shared offsets of Nested.
-    /// E.g. instead of requested column "n.arr1.size0" we must read column "n.size0" from disk.
     if (isSubcolumnOffsetsOfNested(name_in_storage, subcolumn_name))
         name_in_storage = Nested::splitName(name_in_storage).first;
 
     return {name_in_storage, subcolumn_name};
 }
 
+std::optional<NameAndTypePair> IMergeTreeReader::tryResolveInPart(const NameAndTypePair & required_column) const
+{
+    /// The requested columns were stamped with their physical IDs at read ingress
+    /// (ColumnIdMapping::stampColumnIds), so an id-carrying request resolves by ID: no
+    /// query-name -> part-name remap. Resolving such a request by name would bind stale state --
+    /// after DROP+ADD an old part still lists a same-named dead column of the old type, and after
+    /// RENAME the part's cached logical names lag behind the requested ones.
+    if (!required_column.column_id.empty())
+    {
+        auto part_column = data_part_info_for_read->tryGetColumn(required_column.getColumnId());
+        if (!part_column || !required_column.isSubcolumn())
+            return part_column;
+
+        /// A subcolumn of an ID-identified parent (e.g. a Tuple element) has no ID of its own:
+        /// resolve it within the part's parent column.
+        return part_columns.tryGetColumnOrSubcolumn(GetColumnsOptions::AllPhysical,
+            Nested::concatenateName(part_column->getNameInStorage(), required_column.getSubcolumnName()));
+    }
+
+    auto name_pair = getStorageAndSubcolumnNameInPart(required_column);
+    return part_columns.tryGetColumnOrSubcolumn(
+        GetColumnsOptions::AllPhysical, Nested::concatenateName(name_pair.first, name_pair.second));
+}
+
 NameAndTypePair IMergeTreeReader::getColumnInPart(const NameAndTypePair & required_column) const
 {
-    auto name_pair = getStorageAndSubcolumnNameInPart(required_column);
-    auto name_in_part = Nested::concatenateName(name_pair.first, name_pair.second);
-    auto column_in_part = part_columns.tryGetColumnOrSubcolumn(GetColumnsOptions::AllPhysical, name_in_part);
+    auto column_in_part = tryResolveInPart(required_column);
 
     if (!column_in_part)
     {
+        /// An id-carrying request has no rename chain to walk: the column is simply absent from
+        /// this part and reads as defaults of the requested (current) type.
+        if (!required_column.column_id.empty())
+            return required_column;
+
+        auto name_pair = getStorageAndSubcolumnNameInPart(required_column);
         /// If column is missing in part, return column with required type but with name that should be
         /// in part according to renames to avoid ambiguity in case of transitive renames.
         ///
@@ -385,20 +406,20 @@ NameAndTypePair IMergeTreeReader::getColumnInPart(const NameAndTypePair & requir
         return NameAndTypePair{name_pair.first, name_pair.second, required_column.getTypeInStorage(), required_column.type};
     }
 
+    /// A subcolumn resolves through the columns description, which drops IDs -- re-stamp so the
+    /// pair keeps addressing the part's ID-keyed maps.
+    if (!required_column.column_id.empty())
+        column_in_part->setColumnId(required_column.column_id);
+
     return *column_in_part;
 }
 
 SerializationPtr IMergeTreeReader::getSerializationInPart(const NameAndTypePair & required_column) const
 {
-    auto name_pair = getStorageAndSubcolumnNameInPart(required_column);
-    auto name_in_part = Nested::concatenateName(name_pair.first, name_pair.second);
-    auto column_in_part = part_columns.tryGetColumnOrSubcolumn(GetColumnsOptions::AllPhysical, name_in_part);
+    auto column_in_part = tryResolveInPart(required_column);
 
     if (!column_in_part)
-    {
-        NameAndTypePair missed_column{name_pair.first, name_pair.second, required_column.getTypeInStorage(), required_column.type};
-        return IDataType::getSerialization(missed_column);
-    }
+        return IDataType::getSerialization(getColumnInPart(required_column));
 
     const auto & infos = data_part_info_for_read->getSerializationInfos();
 
@@ -417,6 +438,16 @@ SerializationPtr IMergeTreeReader::getSerializationInPart(const NameAndTypePair 
         if (required_column.isSubcolumn())
             return type_in_storage->getSubcolumnSerialization(required_column.getSubcolumnName(), serialization);
         return serialization;
+    }
+
+    /// Records are keyed by the stamped column ID; `column_in_part` may come from the columns
+    /// description, which drops IDs, so probe the requested column's ID first.
+    if (!required_column.column_id.empty())
+    {
+        if (auto it = infos.find(required_column.getColumnId().value()); it != infos.end())
+            return IDataType::getSerialization(*column_in_part, *it->second);
+
+        return IDataType::getSerialization(*column_in_part, infos.getSettings());
     }
 
     if (auto it = infos.find(column_in_part->getNameInStorage()); it != infos.end())
@@ -439,17 +470,19 @@ void IMergeTreeReader::performRequiredConversions(Columns & res_columns) const
                             "Expected {}, got {}", num_columns, res_columns.size());
         }
 
-        /// We check types manually while iterating to avoid unnecessary copies
+        /// We check types manually while iterating to avoid unnecessary copies.
+        /// `columns_to_read` already resolved each requested column against the part
+        /// (by stamped column ID when active), so use it rather than re-resolving by
+        /// name, which could bind a same-named dead column left from DROP+ADD.
         Block copy_block;
         auto name_and_type = getColumns().begin();
         for (size_t pos = 0; pos < num_columns; ++pos, ++name_and_type)
         {
             if (res_columns[pos] == nullptr)
                 continue;
-            auto column_in_part = getColumnInPart(*name_and_type);
-            if (column_in_part.type->equals(*name_and_type->type))
+            if (columns_to_read[pos].type->equals(*name_and_type->type))
                 continue;
-            copy_block.insert({res_columns[pos], column_in_part.type, name_and_type->name});
+            copy_block.insert({res_columns[pos], columns_to_read[pos].type, name_and_type->name});
         }
 
         if (copy_block.empty())
@@ -507,7 +540,14 @@ IMergeTreeReader::findColumnForOffsets(const NameAndTypePair & required_column) 
 
     /// Find column that has maximal number of matching
     /// offsets columns with required_column.
-    for (const auto & part_column : Nested::convertToSubcolumns(data_part_info_for_read->getColumns()))
+    ///
+    /// Iterate the part's own flat columns. Folding a flattened Nested field onto its Nested
+    /// parent first would break the returned column's storage key: the part's whole-column maps
+    /// (position, serialization) are keyed by `getColumnId()`, and for such a fold that key
+    /// degrades to the Nested prefix ("n" instead of "n.a") while the part has no slot under it.
+    /// Nothing here needs the folded form: only the column's Nested prefix (from its name, which
+    /// the fold preserves) and its own serialization take part in the match.
+    for (const auto & part_column : data_part_info_for_read->getColumns())
     {
         auto name_in_storage = Nested::extractTableName(part_column.name);
         if (name_in_storage != required_name_in_storage)

@@ -8,9 +8,9 @@ namespace DB::JemallocMergeTreeArena
 
 /// Dedicated jemalloc arena(s) for long-lived MergeTree heap state:
 ///   - per-part metadata: `NamesAndTypesList`, `SerializationInfoByName`, the `serializations`
-///     map, `column_name_to_position`, `MergeTreeDataPartChecksums` tree, `ColumnsSubstreams`,
-///     the per-part `ColumnSize`/`IndexSize` maps, `MinMaxIndex`, `index_granularity`, and the
-///     primary index arrays.
+///     map, `column_storage_key_to_position`, `MergeTreeDataPartChecksums` tree,
+///     `ColumnsSubstreams`, the per-part `ColumnSize`/`IndexSize` maps, `MinMaxIndex`,
+///     `index_granularity`, and the primary index arrays.
 ///   - per-table metadata: `ColumnsDescription`, `VirtualColumnsDescription`,
 ///     `StorageInMemoryMetadata` clones, the `serialization_hints` aggregation, and the
 ///     `columns_descriptions_cache`.

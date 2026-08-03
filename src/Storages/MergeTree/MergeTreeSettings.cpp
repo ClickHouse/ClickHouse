@@ -292,6 +292,7 @@ This setting is required for compatibility during cluster upgrades.
 Possible values:
 - `basic` - Basic format.
 - `with_types` - Format with additional `types_serialization_versions` field, allowing per-type serialization versions.
+- `with_column_ids` - Format with additional support for persistent column IDs.
 This makes settings like `string_serialization_version` effective.
 
 During rolling upgrades, set this to `basic` so that new servers produce
@@ -301,7 +302,7 @@ switch to `WITH_TYPES` to enable per-type serialization versions.
     DECLARE(MergeTreeStringSerializationVersion, string_serialization_version, "with_size_stream", R"(
 Controls the serialization format for top-level `String` columns.
 
-This setting is only effective when `serialization_info_version` is set to "with_types".
+This setting is only effective when `serialization_info_version` is set to "with_types" or "with_column_ids".
 When set to `with_size_stream`, top-level `String` columns are serialized with a separate
 `.size` subcolumn storing string lengths, rather than inline. This allows real `.size`
 subcolumns and can improve compression efficiency.

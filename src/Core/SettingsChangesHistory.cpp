@@ -43,6 +43,7 @@ const VersionToSettingsChangesMap & getSettingsChangesHistory()
         /// Note: please check if the key already exists to prevent duplicate entries.
         addSettingsChanges(settings_changes_history, "26.8",
         {
+            {"allow_experimental_column_ids", false, false, "New setting to gate persistent column IDs for MergeTree"},
             {"max_insert_threads", 1, 0, "Changed the default from 1 (no parallel execution) to auto (0), which resolves to the number of CPU cores available to the server, reduced under memory pressure via `max_insert_threads_min_free_memory_per_thread`. This parallelizes `INSERT SELECT` by default. Set to 1 to restore the previous single-threaded behavior."},
             {"unique_key_probe_implementation", "auto", "auto", "New setting: selects the UNIQUE KEY probe implementation (currently only the simple baseline exists)"},
             {"s3_base", "", "", "New setting to specify the base URL for resolving relative URLs in the s3 table function and the S3 table engine."},
@@ -1344,6 +1345,7 @@ const VersionToSettingsChangesMap & getMergeTreeSettingsChangesHistory()
             {"allow_experimental_adaptive_codec_selection", false, false, "New setting."},
             {"text_index_max_processed_tokens_before_flush", 100000000, 100000000, "New setting"},
             {"text_index_max_memory_usage_before_flush", std::numeric_limits<UInt64>::max(), 1073741824, "New setting. The previous value disables memory-based flushing to preserve pre-26.8 behavior"},
+            {"serialization_info_version", "with_types", "with_types", "Add `with_column_ids` option for persistent column IDs"},
         });
 
         addSettingsChanges(merge_tree_settings_changes_history, "26.7",

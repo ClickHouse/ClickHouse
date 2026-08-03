@@ -81,7 +81,7 @@ public:
     virtual const ColumnsSubstreams & getColumnsSubstreams() const = 0;
 
 protected:
-    SerializationPtr getSerialization(const String & column_name) const;
+    SerializationPtr getSerialization(const NameAndTypePair & column) const;
 
     ASTPtr getCodecDescOrDefault(const String & column_name, CompressionCodecPtr default_codec) const;
 

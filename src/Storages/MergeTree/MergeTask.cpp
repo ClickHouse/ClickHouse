@@ -10,8 +10,11 @@
 #include <fmt/format.h>
 
 #include <Compression/CompressedWriteBuffer.h>
+#include <Core/ColumnId.h>
 #include <Core/Settings.h>
 #include <Core/ServerSettings.h>
+
+#include <unordered_set>
 #include <DataTypes/NestedUtils.h>
 #include <DataTypes/Serializations/SerializationInfo.h>
 #include <Disks/SingleDiskVolume.h>
@@ -49,6 +52,7 @@
 #include <Storages/MergeTree/IMergeTreeDataPart.h>
 #include <Storages/MergeTree/MergeProjectionPartsTask.h>
 #include <Storages/MergeTree/MergeTreeData.h>
+#include <Storages/MergeTree/ColumnIdMapping.h>
 #include <Storages/MergeTree/MergeTreeDataWriter.h>
 #include <Storages/MergeTree/MergeTreeIndexGranularity.h>
 #include <Storages/MergeTree/MergeTreeSequentialSource.h>
@@ -113,6 +117,7 @@ namespace DB
 namespace FailPoints
 {
     extern const char merge_task_projection_stage_pause[];
+    extern const char merge_task_finalize_pause[];
 }
 
 namespace Setting
@@ -316,24 +321,29 @@ private:
     size_t final_size = 0;
 };
 
+using ColumnIdSet = std::unordered_set<ColumnId>;
+
 static void addMissedColumnsToSerializationInfos(
     size_t num_rows_in_parts,
-    const Names & part_columns,
-    const ColumnsDescription & storage_columns,
+    const NamesAndTypesList & part_columns,
+    const NamesAndTypesList & storage_columns,
+    const ColumnsDescription & storage_columns_description,
     const SerializationInfo::Settings & info_settings,
     SerializationInfoByName & new_infos)
 {
-    NameSet part_columns_set(part_columns.begin(), part_columns.end());
+    /// Match by stamped column ID: the part's logical names may be stale after a
+    /// metadata-only RENAME, while IDs are stable.
+    ColumnIdSet part_column_ids;
+    for (const auto & column : part_columns)
+        part_column_ids.insert(column.getColumnId());
 
     for (const auto & column : storage_columns)
     {
-        if (part_columns_set.contains(column.name))
+        if (part_column_ids.contains(column.getColumnId()))
             continue;
 
-        if (column.default_desc.kind != ColumnDefaultKind::Default)
-            continue;
-
-        if (column.default_desc.expression)
+        if (auto default_desc = storage_columns_description.getDefault(column.name);
+            default_desc && (default_desc->kind != ColumnDefaultKind::Default || default_desc->expression))
             continue;
 
         auto new_info = column.type->createSerializationInfo(info_settings);
@@ -620,7 +630,10 @@ bool MergeTask::ExecuteAndFinalizeHorizontalPart::prepare() const
     if (!global_ctx->parent_part)
         global_ctx->temporary_directory_lock = global_ctx->data->getTemporaryPartDirectoryHolder(local_tmp_part_basename);
 
-    global_ctx->storage_snapshot = std::make_shared<StorageSnapshot>(*global_ctx->data, global_ctx->metadata_snapshot);
+    /// A metadata-only snapshot (the merge reads its own `future_part` sources, not the
+    /// snapshot's parts). getAllPhysical() already carries the stamped ids (folded into the schema
+    /// at metadata publish via setColumnIds), so no separate stampColumnIds pass is needed here.
+    global_ctx->storage_snapshot = global_ctx->data->getStorageSnapshotWithoutData(global_ctx->metadata_snapshot, global_ctx->context);
     global_ctx->storage_columns = global_ctx->metadata_snapshot->getColumns().getAllPhysical();
     global_ctx->virtual_columns = global_ctx->metadata_snapshot->virtuals.getSampleBlock(VirtualsKind::All, VirtualsMaterializationPlace::Reader).getNamesAndTypesList();
 
@@ -685,11 +698,17 @@ bool MergeTask::ExecuteAndFinalizeHorizontalPart::prepare() const
         NameSet columns_present_in_parts;
         columns_present_in_parts.reserve(global_ctx->storage_columns.size());
 
-        /// Collect all column names that actually exist in the source parts
+        /// Collect all column names that actually exist in the source parts.
+        /// With column IDs, a column may appear under old logical names (before rename)
+        /// or under its column ID, so we add both to recognize the column as present.
         for (const auto & part : global_ctx->future_part->parts)
         {
             for (const auto & col : part->getColumns())
+            {
                 columns_present_in_parts.emplace(col.name);
+                if (!col.column_id.empty())
+                    columns_present_in_parts.emplace(col.getColumnId().value());
+            }
         }
 
         /// The only live values of a column may sit in the patch parts selected for this merge: a
@@ -737,10 +756,16 @@ bool MergeTask::ExecuteAndFinalizeHorizontalPart::prepare() const
         /// Any storage column not present in any part and without a default expression is considered expired
         for (const auto & storage_column : global_ctx->storage_columns)
         {
-            if (!columns_present_in_parts.contains(storage_column.name)
-                && !columns_present_in_patch_parts.contains(storage_column.name)
-                && !renamed_column_targets.contains(storage_column.name)
-                && !columns_desc.getDefault(storage_column.name))
+            bool present = columns_present_in_parts.contains(storage_column.name)
+                || columns_present_in_patch_parts.contains(storage_column.name)
+                || renamed_column_targets.contains(storage_column.name);
+
+            /// A part written before a rename holds the column under its ID, not the current name.
+            /// Patch parts carry no IDs, so only the base-part set needs the fallback.
+            if (!present && !storage_column.column_id.empty())
+                present = columns_present_in_parts.contains(storage_column.getColumnId().value());
+
+            if (!present && !columns_desc.getDefault(storage_column.name))
                 global_ctx->new_data_part->expired_columns.emplace(storage_column.name);
         }
     }
@@ -904,11 +929,15 @@ bool MergeTask::ExecuteAndFinalizeHorizontalPart::prepare() const
     {
         if (!info_settings.isAlwaysDefault())
         {
-            auto part_infos = part->getSerializationInfos();
+            /// Translate the source part's ID-keyed records to this merge's logical
+            /// names so `add` matches the keys of `infos`.
+            SerializationInfoByName part_infos
+                = part->getSerializationInfos().reKeyToLogicalNames(global_ctx->storage_columns, /*drop_orphans=*/true);
 
             addMissedColumnsToSerializationInfos(
                 part->rows_count,
-                part->getColumns().getNames(),
+                part->getColumns(),
+                global_ctx->storage_columns,
                 global_ctx->metadata_snapshot->getColumns(),
                 info_settings,
                 part_infos);
@@ -916,7 +945,8 @@ bool MergeTask::ExecuteAndFinalizeHorizontalPart::prepare() const
             infos.add(part_infos);
         }
 
-        global_ctx->alter_conversions.push_back(MergeTreeData::getAlterConversionsForPart(part, mutations_snapshot, global_ctx->context
+        global_ctx->alter_conversions.push_back(MergeTreeData::getAlterConversionsForPart(
+            part, mutations_snapshot, global_ctx->context
 #if CLICKHOUSE_CLOUD
             , nullptr
 #endif
@@ -929,6 +959,9 @@ bool MergeTask::ExecuteAndFinalizeHorizontalPart::prepare() const
         global_ctx->new_data_part->setSourcePartsSet(std::move(set));
     }
 
+    /// The part's records are keyed by stamped column ID; `infos` was accumulated
+    /// in the logical-name domain above.
+    infos.reKeyToColumnIds(global_ctx->storage_columns);
     global_ctx->new_data_part->setColumns(global_ctx->storage_columns, infos, global_ctx->metadata_snapshot->getMetadataVersion());
 
     /// partition / ttl_infos / minmax / expired_columns (and patch source parts) are populated
@@ -1361,8 +1394,11 @@ void MergeTask::ExecuteAndFinalizeHorizontalPart::prepareProjectionsToMergeAndRe
             {
                 for (const auto & column : projection_columns)
                 {
-                    if (!it->second->tryGetColumn(column.name)
-                        && (part->tryGetColumn(column.name)
+                    /// The projection part is resolved by its own name: a projection's columns cannot be
+                    /// renamed, so its stored names never go stale. The parent part must go through the
+                    /// snapshot, since a parent column may have been renamed after the part was written.
+                    if (!it->second->tryGetColumnByNameUnsafe(column.name)
+                        && (part->tryGetColumnBySnapshotName(column.name, global_ctx->metadata_snapshot)
                             || !parent_table_columns.hasColumnOrSubcolumn(GetColumnsOptions::AllPhysical, column.name)))
                     {
                         projection_part_misses_column = true;
@@ -1519,7 +1555,8 @@ void MergeTask::ExecuteAndFinalizeHorizontalPart::calculateProjectionForBlock(
     {
         auto result = projection_squash_plan.getHeader()->cloneWithColumns(squashed_chunk.detachColumns());
         auto tmp_part = MergeTreeDataWriter::writeTempProjectionPart(
-            *global_ctx->data, ctx->log, result, projection, global_ctx->new_data_part.get(), ++ctx->projection_block_num, global_ctx->context);
+            *global_ctx->data, ctx->log, result, projection, global_ctx->new_data_part.get(), ++ctx->projection_block_num, global_ctx->context,
+            global_ctx->metadata_snapshot->getActiveColumnIdMapping());
 
         tmp_part->finalize();
         tmp_part->part->getDataPartStorage().commitTransaction();
@@ -1561,7 +1598,8 @@ void MergeTask::ExecuteAndFinalizeHorizontalPart::finalizeProjections() const
         {
             auto result = projection_squash_plan.getHeader()->cloneWithColumns(squashed_chunk.detachColumns());
             auto temp_part = MergeTreeDataWriter::writeTempProjectionPart(
-                *global_ctx->data, ctx->log, result, projection, global_ctx->new_data_part.get(), ++ctx->projection_block_num, global_ctx->context);
+                *global_ctx->data, ctx->log, result, projection, global_ctx->new_data_part.get(), ++ctx->projection_block_num, global_ctx->context,
+                global_ctx->metadata_snapshot->getActiveColumnIdMapping());
 
             temp_part->finalize();
             temp_part->part->getDataPartStorage().commitTransaction();
@@ -1965,7 +2003,12 @@ MergeTask::VerticalMergeStage::createPipelineForReadingOneColumn(const String & 
         else if (global_ctx->future_part->part_format.part_type == MergeTreeDataPartType::Compact)
             max_dynamic_subcolumns = (*merge_tree_settings)[MergeTreeSetting::merge_max_dynamic_subcolumns_in_compact_part].valueOrNullopt();
 
-        bool is_result_sparse = ISerialization::hasKind(global_ctx->new_data_part->getSerialization(column_name)->getKindStack(), ISerialization::Kind::SPARSE);
+        /// Probe the fresh output part's serialization by the merge column's storage key (id off the snapshot).
+        auto snapshot_column = global_ctx->metadata_snapshot->getColumns().tryGetColumnOrSubcolumn(GetColumnsOptions::AllPhysical, column_name);
+        auto result_serialization = snapshot_column
+            ? global_ctx->new_data_part->tryGetSerialization(snapshot_column->getStorageKey())
+            : nullptr;
+        bool is_result_sparse = result_serialization && ISerialization::hasKind(result_serialization->getKindStack(), ISerialization::Kind::SPARSE);
         auto merge_step = std::make_unique<ColumnGathererStep>(
             merge_column_query_plan.getCurrentHeader(),
             RowsSourcesTemporaryFile::FILE_ID,
@@ -2321,6 +2364,11 @@ bool MergeTask::MergeProjectionsStage::finalizeProjectionsAndWholeMerge() const
         part->getDataPartStorage().commitTransaction();
         global_ctx->new_data_part->addProjectionPart(part->name, std::move(part));
     }
+
+    /// Test hook: pause after the part's column IDs are stamped, right before
+    /// `finalizePart` writes columns.txt/serialization.json/minmax from them,
+    /// so a test can inject a concurrent column-ID ALTER.
+    FailPointInjection::pauseFailPoint(FailPoints::merge_task_finalize_pause);
 
     if (global_ctx->chosen_merge_algorithm != MergeAlgorithm::Vertical)
         global_ctx->to->finalizePart(global_ctx->new_data_part, global_ctx->gathered_data, ctx->need_sync, nullptr);

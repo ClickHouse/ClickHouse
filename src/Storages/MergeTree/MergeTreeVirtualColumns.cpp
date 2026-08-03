@@ -1,7 +1,9 @@
 #include <Storages/MergeTree/MergeTreeVirtualColumns.h>
 #include <Storages/MergeTree/IMergeTreeDataPart.h>
+#include <Core/Names.h>
 #include <DataTypes/DataTypesNumber.h>
 #include <DataTypes/DataTypeString.h>
+#include <DataTypes/DataTypeUUID.h>
 #include <DataTypes/DataTypeLowCardinality.h>
 #include <DataTypes/DataTypeTuple.h>
 #include <Parsers/ASTAssignment.h>
@@ -56,6 +58,51 @@ DataTypePtr PartitionValueColumn::type(const KeyDescription * partition_key)
 {
     auto partition_types = partition_key->sample_block.getDataTypes();
     return std::make_shared<DataTypeTuple>(std::move(partition_types));
+}
+
+VirtualColumnsDescription getMergeTreeVirtuals(const KeyDescription * partition_key)
+{
+    VirtualColumnsDescription desc;
+
+    desc.addEphemeral("_part", std::make_shared<DataTypeLowCardinality>(std::make_shared<DataTypeString>()), "Name of part", VirtualsMaterializationPlace::Reader);
+    desc.addEphemeral("_part_index", std::make_shared<DataTypeUInt64>(), "Sequential index of the part in the query result", VirtualsMaterializationPlace::Reader);
+    desc.addEphemeral("_part_starting_offset", std::make_shared<DataTypeUInt64>(), "Cumulative starting row of the part in the query result", VirtualsMaterializationPlace::Reader);
+    desc.addEphemeral("_part_uuid", std::make_shared<DataTypeUUID>(), "Unique part identifier (if enabled MergeTree setting assign_part_uuids)", VirtualsMaterializationPlace::Reader);
+    desc.addEphemeral(PartitionIdColumn::name, PartitionIdColumn::type, "Name of partition", VirtualsMaterializationPlace::Reader);
+    desc.addEphemeral("_sample_factor", std::make_shared<DataTypeFloat64>(), "Sample factor (from the query)", VirtualsMaterializationPlace::Reader);
+    desc.addEphemeral("_part_offset", std::make_shared<DataTypeUInt64>(), "Number of row in the part", VirtualsMaterializationPlace::Reader);
+    desc.addEphemeral("_part_granule_offset", std::make_shared<DataTypeUInt64>(), "Number of granule in the part", VirtualsMaterializationPlace::Reader);
+    desc.addEphemeral(PartDataVersionColumn::name, PartDataVersionColumn::type, "Data version of part (either min block number or mutation version)", VirtualsMaterializationPlace::Reader);
+    desc.addEphemeral("_disk_name", std::make_shared<DataTypeLowCardinality>(std::make_shared<DataTypeString>()), "Disk name", VirtualsMaterializationPlace::Reader);
+    desc.addEphemeral("_distance", std::make_shared<DataTypeFloat32>(), "Pre-computed distance for vector search queries", VirtualsMaterializationPlace::Reader);
+    desc.addEphemeral("_table", std::make_shared<DataTypeLowCardinality>(std::make_shared<DataTypeString>()), "", VirtualsMaterializationPlace::Reader);
+    desc.addEphemeral("_database", std::make_shared<DataTypeLowCardinality>(std::make_shared<DataTypeString>()), "", VirtualsMaterializationPlace::Reader);
+
+    if (partition_key && partition_key->sample_block.columns() > 0)
+        desc.addEphemeral(PartitionValueColumn::name, PartitionValueColumn::type(partition_key), "Value (a tuple) of a PARTITION BY expression", VirtualsMaterializationPlace::Reader);
+
+    desc.addPersistent(RowExistsColumn::name, RowExistsColumn::type, nullptr, "Persisted mask created by lightweight delete that show whether row exists or is deleted");
+    desc.addPersistent(BlockNumberColumn::name, BlockNumberColumn::type, BlockNumberColumn::codec, "Persisted original number of block that was assigned at insert");
+    desc.addPersistent(BlockOffsetColumn::name, BlockOffsetColumn::type, BlockOffsetColumn::codec, "Persisted original number of row in block that was assigned at insert");
+
+    return desc;
+}
+
+bool isVirtualColumn(const String & column_name)
+{
+    /// Derived from the one registry (`getMergeTreeVirtuals`) so it cannot drift from the set a
+    /// MergeTree table actually exposes. Built once (partition-key-independent membership).
+    /// `_partition_value` is registered only with a partition key, so add it explicitly here —
+    /// it is a virtual name regardless of whether the current table has a partition key.
+    static const NameSet virtual_columns = []
+    {
+        NameSet names;
+        for (const auto & column : getMergeTreeVirtuals(nullptr))
+            names.insert(column.name);
+        names.insert(PartitionValueColumn::name);
+        return names;
+    }();
+    return virtual_columns.contains(column_name);
 }
 
 Field getFieldForConstVirtualColumn(const String & column_name, const IMergeTreeDataPart & part_or_projection)

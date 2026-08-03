@@ -46,6 +46,7 @@ Each row describes one data part.
 - `disk_name` ([String](/sql-reference/data-types/string)) — Name of a disk that stores the data part.
 - `path` ([String](/sql-reference/data-types/string)) — Absolute path to the folder with data part files.
 - `column` ([String](/sql-reference/data-types/string)) — Name of the column.
+- `column_id` ([String](/sql-reference/data-types/string)) — Column ID of the column on disk. Differs from the logical column name when [column ID mapping](/engines/table-engines/mergetree-family/mergetree#physical-column-names) is active (e.g. `0`, `1`, `2`). Equals the logical column name when column IDs are not enabled.
 - `type` ([String](/sql-reference/data-types/string)) — Column type.
 - `column_position` ([UInt64](/sql-reference/data-types/int-uint)) — Ordinal position of a column in a table starting with 1.
 - `default_kind` ([String](/sql-reference/data-types/string)) — Expression type (DEFAULT, MATERIALIZED, ALIAS) for the default value, or an empty string if it is not defined.

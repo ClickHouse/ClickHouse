@@ -42,7 +42,9 @@
 #include <Interpreters/evaluateConstantExpression.h>
 #include <Interpreters/DDLTask.h>
 
+#include <filesystem>
 
+namespace fs = std::filesystem;
 namespace DB
 {
 namespace Setting
@@ -57,6 +59,7 @@ namespace Setting
     extern const SettingsUInt64 keeper_max_retries;
     extern const SettingsUInt64 keeper_retry_initial_backoff_ms;
     extern const SettingsUInt64 keeper_retry_max_backoff_ms;
+    extern const SettingsBool allow_experimental_column_ids;
 }
 
 namespace MergeTreeSetting
@@ -75,6 +78,7 @@ namespace MergeTreeSetting
     extern const MergeTreeSettingsString auto_statistics_types;
     extern const MergeTreeSettingsString default_compression_codec;
     extern const MergeTreeSettingsBool escape_index_filenames;
+    extern const MergeTreeSettingsMergeTreeSerializationInfoVersion serialization_info_version;
     extern const MergeTreeSettingsString disk;
     extern const MergeTreeSettingsString marks_compression_codec;
     extern const MergeTreeSettingsString primary_key_compression_codec;
@@ -1140,6 +1144,13 @@ static StoragePtr create(const StorageFactory::Arguments & args)
 
     if (replicated)
     {
+        if ((*storage_settings)[MergeTreeSetting::serialization_info_version] == MergeTreeSerializationInfoVersion::WITH_COLUMN_IDS)
+        {
+            throw Exception(
+                ErrorCodes::SUPPORT_IS_DISABLED,
+                "Column IDs are currently supported only for non-replicated `MergeTree` tables");
+        }
+
         bool need_check_table_structure = true;
         if (auto txn = args.getLocalContext()->getZooKeeperMetadataTransaction())
             need_check_table_structure = txn->isInitialQuery();
@@ -1164,7 +1175,23 @@ static StoragePtr create(const StorageFactory::Arguments & args)
             create_query_zk_retries_info);
     }
 
-    return std::make_shared<StorageMergeTree>(
+    /// Validate the experimental gate BEFORE the `StorageMergeTree` constructor
+    /// runs.  The constructor calls `initializeDirectoriesAndFormatVersion`,
+    /// which creates the table's data directory and writes `format_version.txt`
+    /// as visible side effects.  If `allow_experimental_column_ids` is missing
+    /// and the throw happened after construction, normal drop cleanup could
+    /// not run (the database never received a StoragePtr) and a retry would
+    /// observe an existing data directory.
+    if (args.mode == LoadingStrictnessLevel::CREATE
+        && (*storage_settings)[MergeTreeSetting::serialization_info_version] == MergeTreeSerializationInfoVersion::WITH_COLUMN_IDS
+        && !args.getLocalContext()->getSettingsRef()[Setting::allow_experimental_column_ids])
+    {
+        throw Exception(
+            ErrorCodes::SUPPORT_IS_DISABLED,
+            "Column IDs require setting `allow_experimental_column_ids = 1`");
+    }
+
+    auto storage = std::make_shared<StorageMergeTree>(
         args.table_id,
         args.relative_data_path,
         metadata,
@@ -1173,6 +1200,16 @@ static StoragePtr create(const StorageFactory::Arguments & args)
         date_column_name,
         merging_params,
         std::move(storage_settings));
+
+    if (args.mode == LoadingStrictnessLevel::CREATE
+        && (*storage->getSettings())[MergeTreeSetting::serialization_info_version] == MergeTreeSerializationInfoVersion::WITH_COLUMN_IDS)
+    {
+        auto column_id_mapping = ColumnIdMapping::createIdentity(metadata.getColumns().getAllPhysical());
+        storage->setColumnIdMapping(std::move(column_id_mapping));
+        storage->writeColumnIdMappingToDisk();
+    }
+
+    return storage;
 }
 
 

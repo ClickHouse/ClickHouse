@@ -150,7 +150,7 @@ void MergeTreeDataPartWriterWide::addStreams(
         if (ISerialization::isEphemeralSubcolumn(substream_path, substream_path.size()))
             return;
 
-        auto full_stream_name = ISerialization::getFileNameForStream(name_and_type, substream_path, ISerialization::StreamFileNameSettings(*storage_settings));
+        auto full_stream_name = ISerialization::getFileNameForStreamByColumnId(name_and_type, substream_path, ISerialization::StreamFileNameSettings(*storage_settings));
 
         String stream_name = replaceFileNameToHashIfNeeded(full_stream_name, *storage_settings, data_part_storage.get());
 
@@ -237,7 +237,7 @@ void MergeTreeDataPartWriterWide::addStreams(
         stream_name_to_full_name.emplace(stream_name, full_stream_name);
     };
 
-    auto serialization = getSerialization(name_and_type.name);
+    auto serialization = getSerialization(name_and_type);
     auto data = ISerialization::SubstreamData(serialization).withType(name_and_type.type).withColumn(block_sample.getByName(name_and_type.name).column);
     auto enumerate_settings = getEnumerateSettings(settings);
     serialization->enumerateStreams(enumerate_settings, callback, data);
@@ -247,7 +247,7 @@ const String & MergeTreeDataPartWriterWide::getStreamName(
     const NameAndTypePair & column,
     const ISerialization::SubstreamPath & substream_path) const
 {
-    auto full_stream_name = ISerialization::getFileNameForStream(column, substream_path, ISerialization::StreamFileNameSettings(*storage_settings));
+    auto full_stream_name = ISerialization::getFileNameForStreamByColumnId(column, substream_path, ISerialization::StreamFileNameSettings(*storage_settings));
     String stream_name = replaceFileNameToHashIfNeeded(full_stream_name, *storage_settings, data_part_storage.get());
 
     if (written_offset_substreams)
@@ -377,7 +377,7 @@ void MergeTreeDataPartWriterWide::write(const Block & block, const IColumnPermut
     {
         auto & column = block_to_write.getByName(it->name);
 
-        if (!ISerialization::hasKind(getSerialization(it->name)->getKindStack(), ISerialization::Kind::SPARSE))
+        if (!ISerialization::hasKind(getSerialization(*it)->getKindStack(), ISerialization::Kind::SPARSE))
             column.column = recursiveRemoveSparse(column.column);
 
         if (permutation)
@@ -481,7 +481,7 @@ StreamsWithMarks MergeTreeDataPartWriterWide::getCurrentMarksForColumn(const Nam
         result.push_back(stream_with_mark);
     };
 
-    auto serialization = getSerialization(name_and_type.name);
+    auto serialization = getSerialization(name_and_type);
     auto data = ISerialization::SubstreamData(serialization).withType(name_and_type.type).withColumn(block_sample.getByName(name_and_type.name).column);
     auto enumerate_settings = getEnumerateSettings(settings);
     serialization->enumerateStreams(enumerate_settings, callback, data);
@@ -496,7 +496,7 @@ void MergeTreeDataPartWriterWide::writeSingleGranule(
     ISerialization::SerializeBinaryBulkSettings & serialize_settings,
     const Granule & granule)
 {
-    const auto & serialization = getSerialization(name_and_type.name);
+    const auto & serialization = getSerialization(name_and_type);
 
     auto data = ISerialization::SubstreamData(serialization).withType(name_and_type.type).withColumn(block_sample.getByName(name_and_type.name).column);
     auto enumerate_settings = getEnumerateSettings(settings);
@@ -557,7 +557,7 @@ void MergeTreeDataPartWriterWide::writeColumn(
 
     const auto & [name, type] = name_and_type;
     auto [it, inserted] = serialization_states.emplace(name, nullptr);
-    auto serialization = getSerialization(name_and_type.name);
+    auto serialization = getSerialization(name_and_type);
 
     if (inserted)
     {
@@ -658,7 +658,7 @@ void MergeTreeDataPartWriterWide::writeColumn(
 void MergeTreeDataPartWriterWide::validateColumnOfFixedSize(const NameAndTypePair & name_type)
 {
     const auto & [name, type] = name_type;
-    const auto & serialization = getSerialization(name_type.name);
+    const auto & serialization = getSerialization(name_type);
 
     if (!type->isValueRepresentedByNumber() || type->haveSubtypes() || serialization->getKindStack() != ISerialization::KindStack{ISerialization::Kind::DEFAULT})
         throw Exception(ErrorCodes::LOGICAL_ERROR, "Cannot validate column of non fixed type {}", type->getName());
@@ -828,7 +828,7 @@ void MergeTreeDataPartWriterWide::finalizeIndexGranularity()
             if (!serialization_states.empty())
             {
                 serialize_settings.getter = createStreamGetter(*it, offset_substreams);
-                getSerialization(it->name)->serializeBinaryBulkStateSuffix(serialize_settings, serialization_states[it->name]);
+                getSerialization(*it)->serializeBinaryBulkStateSuffix(serialize_settings, serialization_states[it->name]);
             }
 
             if (write_final_mark)
@@ -879,7 +879,7 @@ void MergeTreeDataPartWriterWide::finishDataSerialization(bool sync)
     {
         if (column.type->isValueRepresentedByNumber()
             && !column.type->haveSubtypes()
-            && getSerialization(column.name)->getKindStack() == ISerialization::KindStack{ISerialization::Kind::DEFAULT})
+            && getSerialization(column)->getKindStack() == ISerialization::KindStack{ISerialization::Kind::DEFAULT})
         {
             validateColumnOfFixedSize(column);
         }
@@ -936,7 +936,7 @@ void MergeTreeDataPartWriterWide::writeFinalMark(const NameAndTypePair & name_an
         if (is_offsets)
             offset_substreams.insert(getStreamName(name_and_type, substream_path));
     };
-    auto serialization = getSerialization(name_and_type.name);
+    auto serialization = getSerialization(name_and_type);
     auto data = ISerialization::SubstreamData(serialization).withType(name_and_type.type).withColumn(block_sample.getByName(name_and_type.name).column);
     auto enumerate_settings = getEnumerateSettings(settings);
     serialization->enumerateStreams(enumerate_settings, callback, data);

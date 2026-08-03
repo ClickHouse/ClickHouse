@@ -5,6 +5,7 @@
 #include <thread>
 
 #include <Backups/BackupEntriesCollector.h>
+#include <Backups/BackupEntryFromMemory.h>
 #include <Core/BackgroundSchedulePool.h>
 #include <Core/MergeSelectorAlgorithm.h>
 #include <Core/Names.h>
@@ -29,11 +30,13 @@
 #include <Parsers/ASTCheckQuery.h>
 #include <Parsers/ASTFunction.h>
 #include <Parsers/ASTPartition.h>
+#include <Parsers/ASTSetQuery.h>
 #include <Planner/Utils.h>
 #include <Processors/QueryPlan/Optimizations/QueryPlanOptimizationSettings.h>
 #include <Processors/QueryPlan/QueryPlan.h>
 #include <Storages/AlterCommands.h>
 #include <Storages/MergeTree/ActiveDataPartSet.h>
+#include <Storages/MergeTree/ColumnIdAlterPlanner.h>
 #include <Storages/MergeTree/AlterConversions.h>
 #include <Storages/MergeTree/Compaction/CompactionStatistics.h>
 #include <Storages/MergeTree/Compaction/ConstructFuturePart.h>
@@ -65,6 +68,7 @@
 #include <Common/ProfileEventsScope.h>
 #include <Common/ZooKeeper/ZooKeeperCommon.h>
 #include <Common/escapeForFileName.h>
+#include <DataTypes/NestedUtils.h>
 #include <Common/Jemalloc.h>
 #include <Common/JemallocMergeTreeArena.h>
 
@@ -92,11 +96,15 @@ namespace FailPoints
     extern const char mt_alter_throw_after_mutation_registered[];
     extern const char mt_throw_after_mutation_commit[];
     extern const char mt_alter_throw_in_durable_rollback[];
+    extern const char column_ids_pause_after_metadata_alter[];
+    extern const char column_ids_throw_before_mapping_persist[];
+    extern const char column_ids_throw_after_mapping_persist[];
 }
 
 namespace Setting
 {
     extern const SettingsBool allow_experimental_analyzer;
+    extern const SettingsBool allow_experimental_column_ids;
     extern const SettingsBool allow_replace_partition_from_empty_source;
     extern const SettingsBool allow_suspicious_primary_key;
     extern const SettingsUInt64 alter_sync;
@@ -217,6 +225,8 @@ StorageMergeTree::StorageMergeTree(
     , support_transaction(supportTransaction(getDisks(), log.load()))
 {
     initializeDirectoriesAndFormatVersion(relative_data_path_, LoadingStrictnessLevel::ATTACH <= mode, date_column_name);
+    loadColumnIdMappingFromDisk(LoadingStrictnessLevel::ATTACH <= mode);
+    reconcileColumnIdMappingWithMetadata();
 
     loadDataParts(LoadingStrictnessLevel::FORCE_RESTORE <= mode, std::nullopt);
 
@@ -450,6 +460,50 @@ void StorageMergeTree::drop()
     dropAllData();
 }
 
+void StorageMergeTree::finalizeColumnIdRenames(const std::vector<String> & old_names)
+{
+    if (old_names.empty())
+        return;
+
+    auto current = getColumnIdMapping();
+    if (!current)
+        return;
+
+    ColumnIdMapping finalized = *current;
+    for (const auto & old_name : old_names)
+    {
+        auto column_id = finalized.tryGetColumnId(old_name);
+        finalized.finishRename(old_name);
+
+        /// The rename is committed; move the old name's table-level size
+        /// aggregate to the new name so the optimizer sees the full totals.
+        if (column_id)
+        {
+            if (auto new_name = finalized.tryGetLogicalName(*column_id); new_name && *new_name != old_name)
+                renameColumnSizesEntry(old_name, *new_name);
+        }
+    }
+    persistMapping(std::move(finalized));
+}
+
+void StorageMergeTree::finalizeColumnIdDrops(const std::vector<String> & drop_names)
+{
+    if (drop_names.empty())
+        return;
+
+    auto current = getColumnIdMapping();
+    if (!current)
+        return;
+
+    ColumnIdMapping finalized = *current;
+    for (const auto & name : drop_names)
+    {
+        if (finalized.hasLogicalName(name))
+            finalized.removeColumn(name);
+    }
+    persistMapping(std::move(finalized));
+}
+
 void StorageMergeTree::alter(
     const AlterCommands & commands,
     ContextPtr local_context,
@@ -477,14 +531,36 @@ void StorageMergeTree::alter(
     StorageInMemoryMetadata new_metadata = *metadata_snapshot;
     const StorageInMemoryMetadata & old_metadata = *metadata_snapshot;
 
-    auto maybe_mutation_commands = commands.getMutationCommands(new_metadata, query_settings[Setting::materialize_ttl_after_modify], local_context, /*with_alters*/ false, (*old_storage_settings)[MergeTreeSetting::share_nested_offsets]);
-    if (!maybe_mutation_commands.empty())
-        delayMutationOrThrowIfNeeded(nullptr, local_context);
-
     Int64 mutation_version = -1;
 
     removeImplicitStatistics(new_metadata.columns);
     commands.apply(new_metadata, local_context, (*old_storage_settings)[MergeTreeSetting::share_nested_offsets]);
+
+    auto pn_plan = prepareColumnIdMappingForAlter(
+        commands, old_metadata, new_metadata, *getSettings(), getColumnIdMapping(), getContext());
+
+    /// Gate on the experimental flag in two cases:
+    ///   (a) this ALTER activates the mapping (has add/drop/rename commands),
+    ///   (b) the ALTER leaves `serialization_info_version = 'with_column_ids'`
+    ///       persisted while the table has no mapping -- the same condition
+    ///       CREATE gates on; `changeSettings` then creates the mapping (or
+    ///       rejects the flip) at commit time.
+    if (!hasColumnIdMapping()
+        && !local_context->getSettingsRef()[Setting::allow_experimental_column_ids])
+    {
+        if (pn_plan.column_ids_active || pn_plan.persists_column_id_settings)
+            throw Exception(
+                ErrorCodes::SUPPORT_IS_DISABLED,
+                "Column IDs require setting `allow_experimental_column_ids = 1`");
+    }
+
+    auto maybe_mutation_commands = commands.getMutationCommands(
+        old_metadata, query_settings[Setting::materialize_ttl_after_modify], local_context,
+        /*with_alters=*/false, (*old_storage_settings)[MergeTreeSetting::share_nested_offsets],
+        /*column_ids_active=*/pn_plan.column_ids_active);
+
+    if (!maybe_mutation_commands.empty())
+        delayMutationOrThrowIfNeeded(nullptr, local_context);
 
     auto [auto_statistics_types, statistics_changed] = getNewImplicitStatisticsTypes(new_metadata, *old_storage_settings);
     addImplicitStatistics(new_metadata.columns, auto_statistics_types);
@@ -499,6 +575,10 @@ void StorageMergeTree::alter(
 
         if (statistics_changed)
         {
+            /// `changeSettings` may have activated column IDs and published the identity
+            /// mapping; carry the live mapping into this republish so it is not clobbered
+            /// (the mapping is folded into the versioned metadata).
+            new_metadata.column_id_mapping = getColumnIdMapping();
             /// Route the long-lived metadata snapshot clone into the dedicated MergeTree arena.
             ScopedJemallocThreadArena mergetree_arena_scope(JemallocMergeTreeArena::getArenaIndex());
             setInMemoryMetadata(new_metadata);
@@ -584,9 +664,28 @@ void StorageMergeTree::alter(
             /// so `~MergeTreeMutationEntry` removes it on unwinding. Writing it before the
             /// durable commit keeps durable metadata and the mutation file in lockstep. See #80648.
             std::optional<PreparedMutationEntry> prepared;
+
+            /// Invariant: persist the mapping to disk BEFORE publishing it in-memory and
+            /// BEFORE the metadata commit, so a crash can only leave the on-disk mapping
+            /// "ahead" of metadata. `reconcileColumnIdMappingWithMetadata` cleans stale
+            /// entries on load.
+            bool mapping_update_started = false;
+            bool mapping_was_changed = false;
+            std::shared_ptr<const ColumnIdMapping> old_published_mapping;
+
             try
             {
+                /// `changeSettings` creates and publishes the identity mapping itself
+                /// when this ALTER's settings turn column IDs on; capture the pre-ALTER
+                /// mapping first so the revert paths cover that publish too.
+                old_published_mapping = getColumnIdMapping();
                 changeSettings(new_metadata.settings_changes, table_lock_holder);
+                if (getColumnIdMapping().get() != old_published_mapping.get())
+                {
+                    mapping_update_started = true;
+                    mapping_was_changed = true;
+                }
+
                 checkTTLExpressions(new_metadata, old_metadata);
 
                 /// Validate setting-dependent metadata against the just-applied settings
@@ -598,6 +697,26 @@ void StorageMergeTree::alter(
                 if (!maybe_mutation_commands.empty())
                     prepared.emplace(prepareMutationEntry(maybe_mutation_commands, local_context));
 
+                if (pn_plan.new_mapping)
+                {
+                    mapping_update_started = true;
+
+                    fiu_do_on(FailPoints::column_ids_throw_before_mapping_persist,
+                    {
+                        throw Exception(ErrorCodes::FAULT_INJECTED, "Injected failure before column ID mapping persist");
+                    });
+
+                    writeColumnIdMappingToDisk(*pn_plan.new_mapping);
+
+                    fiu_do_on(FailPoints::column_ids_throw_after_mapping_persist,
+                    {
+                        throw Exception(ErrorCodes::FAULT_INJECTED, "Injected failure after column ID mapping persist");
+                    });
+
+                    setColumnIdMapping(std::move(*pn_plan.new_mapping));
+                    mapping_was_changed = true;
+                }
+
                 /// Not under `currently_processing_in_background_mutex`: `alterTable` takes
                 /// `DatabaseAtomic::mutex`, which would invert lock order with the
                 /// scheduler/`RENAME`/`DROP` paths. Validation already ran above. See #80648.
@@ -607,6 +726,37 @@ void StorageMergeTree::alter(
             {
                 LOG_ERROR(log, "Failed to commit metadata changes, reverting settings");
                 changeSettings(old_metadata.settings_changes, table_lock_holder);
+                if (mapping_update_started)
+                {
+                    if (mapping_was_changed)
+                    {
+                        try
+                        {
+                            if (old_published_mapping)
+                                setColumnIdMapping(*old_published_mapping);
+                            else
+                                setColumnIdMapping(ColumnIdMapping{});
+                        }
+                        catch (...)
+                        {
+                            tryLogCurrentException(log,
+                                "Failed to revert column ID mapping in-memory");
+                        }
+                    }
+                    try
+                    {
+                        if (old_published_mapping)
+                            writeColumnIdMappingToDisk(*old_published_mapping);
+                        else
+                            removeColumnIdMappingFromDisk();
+                    }
+                    catch (...)
+                    {
+                        tryLogCurrentException(log,
+                            "Failed to revert column ID mapping to disk; "
+                            "reconciliation at next startup will fix it");
+                    }
+                }
                 /// `prepared` destructor removes the orphan `mutation_*.txt` (is_registered == false).
                 throw;
             }
@@ -644,6 +794,10 @@ void StorageMergeTree::alter(
                     throw Exception(ErrorCodes::FAULT_INJECTED, "Injected failure after mutation registered");
                 });
 
+                /// `new_metadata` was built before the pre-commit mapping publish, so stamp
+                /// the current (superset) mapping in or `setProperties` clobbers it back to
+                /// pre-ALTER; `finalizeColumnId*` prunes it after commit.
+                new_metadata.column_id_mapping = getColumnIdMapping();
                 setProperties(new_metadata, old_metadata, false, local_context);
 
                 {
@@ -752,6 +906,22 @@ void StorageMergeTree::alter(
                             }
                         }
                         changeSettings(old_metadata.settings_changes, table_lock_holder);
+
+                        /// Durable metadata is `old_metadata` again; revert the column ID
+                        /// mapping published before the durable commit to match it.
+                        if (mapping_was_changed)
+                        {
+                            try
+                            {
+                                persistMapping(old_published_mapping ? *old_published_mapping : ColumnIdMapping{});
+                            }
+                            catch (...)
+                            {
+                                tryLogCurrentException(log,
+                                    "Failed to revert column ID mapping after durable metadata rollback; "
+                                    "reconciliation at next startup will fix it");
+                            }
+                        }
                     }
                     else
                     {
@@ -783,6 +953,22 @@ void StorageMergeTree::alter(
                 }
                 throw;
             }
+
+            background_lock.unlock();
+
+            try
+            {
+                finalizeColumnIdRenames(pn_plan.rename_old_names);
+                finalizeColumnIdDrops(pn_plan.drop_names);
+            }
+            catch (...)
+            {
+                tryLogCurrentException(log,
+                    "Failed to finalize column ID mapping after metadata commit; "
+                    "reconciliation at next startup will fix it");
+            }
+
+            FailPointInjection::pauseFailPoint(FailPoints::column_ids_pause_after_metadata_alter);
         }
 
         if (!maybe_mutation_commands.empty() && query_settings[Setting::alter_sync] > 0)
@@ -2961,6 +3147,23 @@ PartitionCommandsResultInfo StorageMergeTree::attachPartition(
     return results;
 }
 
+/// Pointer-identity guard for a pinned column-ID mapping. The partition-transfer and
+/// BACKUP paths hold only `lockForShare`, but column-ID ALTERs use `lockForAlter` and
+/// republish the mapping -- a field of `StorageInMemoryMetadata`, installed as a fresh
+/// `make_shared` per publish via `setColumnIdMapping` -- so one can land between pinning a
+/// mapping and committing. A different pointer therefore means a concurrent column-ID ALTER
+/// republished the mapping, which would leave the transferred or backed-up parts resolving
+/// through stale physical IDs; the caller must reject and retry.
+///
+/// Comparing raw addresses is safe only because `pinned` is a retained `ColumnIdMappingPtr`:
+/// the live reference keeps that mapping object alive, so its address cannot be freed and
+/// reused by a different object (no ABA). Callers must hold the pinned pointer across the
+/// whole pin-then-recheck window.
+static bool mappingPointersUnchanged(const ColumnIdMappingPtr & pinned, const ColumnIdMappingPtr & current)
+{
+    return pinned.get() == current.get();
+}
+
 void StorageMergeTree::replacePartitionFrom(const StoragePtr & source_table, const ASTPtr & partition, bool replace, ContextPtr local_context)
 {
     assertNotReadonly();
@@ -3006,6 +3209,13 @@ void StorageMergeTree::replacePartitionFrom(const StoragePtr & source_table, con
     ProfileEventsScope profile_events_scope;
 
     MergeTreeData & src_data = checkStructureAndGetMergeTreeData(source_table, source_metadata_snapshot, my_metadata_snapshot);
+
+    /// Pin both mapping pointers now and re-check just before commit (see
+    /// mappingPointersUnchanged); the structure check above snapshotted them once, but
+    /// the transfer runs under `lockForShare` and a column-ID ALTER can republish either.
+    auto my_mapping_pinned = getColumnIdMapping();
+    auto src_mapping_pinned = src_data.getColumnIdMapping();
+
     DataPartsVector src_parts;
     DataPartsVector src_patch_parts;
 
@@ -3169,6 +3379,17 @@ void StorageMergeTree::replacePartitionFrom(const StoragePtr & source_table, con
                 block_holders.emplace_back(fillNewPartName(part, data_parts_lock));
                 renameTempPartAndReplaceUnlocked(part, transaction, data_parts_lock, /*rename_in_transaction=*/ false);
             }
+
+            /// Final coherence gate right before `transaction.commit` (minimizes the residual
+            /// window); the uncommitted transaction rolls back the dst-parts staging on throw.
+            if (!mappingPointersUnchanged(my_mapping_pinned, getColumnIdMapping())
+                || !mappingPointersUnchanged(src_mapping_pinned, src_data.getColumnIdMapping()))
+                throw Exception(
+                    ErrorCodes::NOT_IMPLEMENTED,
+                    "Column ID mapping changed concurrently with REPLACE/ATTACH PARTITION FROM; "
+                    "transferred parts may resolve through stale physical IDs on the destination. "
+                    "Retry the partition operation without a concurrent column-ID ALTER on either table.");
+
             /// Populate transaction
             transaction.commit(data_parts_lock);
 
@@ -3247,6 +3468,13 @@ void StorageMergeTree::movePartitionToTable(const StoragePtr & dest_table, const
     ProfileEventsScope profile_events_scope;
 
     MergeTreeData & src_data = dest_table_storage->checkStructureAndGetMergeTreeData(*this, metadata_snapshot, dest_metadata_snapshot);
+
+    /// Same pin+recheck race as replacePartitionFrom (see there). Note `src_data`
+    /// is the SOURCE table here (`dest_table_storage->checkStructure(*this, ...)`
+    /// flips perspective).
+    auto src_mapping_pinned = src_data.getColumnIdMapping();
+    auto dest_mapping_pinned = dest_table_storage->getColumnIdMapping();
+
     String partition_id = getPartitionIDFromQuery(partition, local_context);
 
     DataPartsVector src_parts;
@@ -3346,6 +3574,17 @@ void StorageMergeTree::movePartitionToTable(const StoragePtr & dest_table, const
             }
 
             dest_transaction.renameParts();
+
+            /// Recheck after `renameParts` (its per-part `renameTo` I/O yields), right before
+            /// `commit`, to minimize the residual window (see mappingPointersUnchanged).
+            if (!mappingPointersUnchanged(src_mapping_pinned, src_data.getColumnIdMapping())
+                || !mappingPointersUnchanged(dest_mapping_pinned, dest_table_storage->getColumnIdMapping()))
+                throw Exception(
+                    ErrorCodes::NOT_IMPLEMENTED,
+                    "Column ID mapping changed concurrently with MOVE PARTITION TO TABLE; "
+                    "transferred parts may resolve through stale physical IDs on the destination. "
+                    "Retry the partition operation without a concurrent column-ID ALTER on either table.");
+
             dest_transaction.commit(dest_data_parts_lock);
 
             src_transaction.renameParts();
@@ -3487,6 +3726,17 @@ void StorageMergeTree::backupData(BackupEntriesCollector & backup_entries_collec
             "BACKUP is not supported for UNIQUE KEY tables yet: delete-bitmap sidecars "
             "are not preserved across backup/restore.");
 
+    /// Same pin+recheck race as replacePartitionFrom (see there): BACKUP holds only
+    /// `lockForShare`. Compare the mapping pointer captured at share-lock time against
+    /// the current one so the backup can't pair captured parts with a newer mapping.
+    auto qualified_name = QualifiedTableName{getStorageID().database_name, getStorageID().table_name};
+    auto captured_snapshot = backup_entries_collector.getBackupAuxSnapshot(qualified_name);
+    auto column_ids_mapping_snapshot = getColumnIdMapping();
+    if (!mappingPointersUnchanged(captured_snapshot, column_ids_mapping_snapshot))
+        throw Exception(
+            ErrorCodes::NOT_IMPLEMENTED,
+            "Column ID mapping changed between table metadata and BACKUP data capture; retry.");
+
     DataPartsVector data_parts;
     if (partitions)
         data_parts = getVisibleDataPartsVectorInPartitions(local_context, getPartitionIDsFromQuery(*partitions, local_context));
@@ -3502,6 +3752,19 @@ void StorageMergeTree::backupData(BackupEntriesCollector & backup_entries_collec
         backup_entries_collector.addBackupEntries(std::move(part_backup_entries.backup_entries));
 
     backup_entries_collector.addBackupEntries(backupMutations(min_data_version, data_path_in_backup));
+
+    /// Re-check after parts/mutations collection (catches ALTER racing with it).
+    if (!mappingPointersUnchanged(column_ids_mapping_snapshot, getColumnIdMapping()))
+        throw Exception(
+            ErrorCodes::NOT_IMPLEMENTED,
+            "Column ID mapping changed during BACKUP collection; retry.");
+
+    if (column_ids_mapping_snapshot && column_ids_mapping_snapshot->isActive())
+    {
+        backup_entries_collector.addBackupEntry(
+            fs::path(data_path_in_backup) / COLUMN_IDS_FILE_NAME,
+            std::make_shared<BackupEntryFromMemory>(column_ids_mapping_snapshot->toString()));
+    }
 }
 
 

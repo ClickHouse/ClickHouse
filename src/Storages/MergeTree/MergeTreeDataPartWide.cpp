@@ -3,6 +3,7 @@
 #include <Storages/MergeTree/MergeTreeReaderWide.h>
 #include <Storages/MergeTree/MergeTreeDataPartWriterWide.h>
 #include <Storages/MergeTree/IMergeTreeDataPartWriter.h>
+#include <Storages/MergeTree/ColumnIdMapping.h>
 #include <Storages/MergeTree/LoadedMergeTreeDataPartInfoForReader.h>
 #include <Storages/MergeTree/MergeTreeIndexGranularityConstant.h>
 #include <Storages/MergeTree/MergeTreeSettings.h>
@@ -121,9 +122,14 @@ MergeTreeReaderPtr createMergeTreeReaderWide(
     const ValueSizeMap & avg_value_size_hints,
     const ReadBufferFromFileBase::ProfileCallback & profile_callback)
 {
+    /// Stamp the requested columns with their storage ids off the snapshot, so the reader keys files by id.
+    NamesAndTypesList columns = columns_to_read;
+    if (const auto mapping = storage_snapshot->metadata->getActiveColumnIdMapping())
+        mapping->stampColumnIds(columns);
+
     return std::make_unique<MergeTreeReaderWide>(
         read_info,
-        columns_to_read,
+        columns,
         virtual_fields,
         storage_snapshot,
         storage_settings,
@@ -202,7 +208,7 @@ ColumnSize MergeTreeDataPartWide::getColumnSizeImpl(
 
     if (column.type->hasDynamicSubcolumns() && !columns_substreams.empty())
     {
-        auto column_position = getColumnPosition(column.name);
+        auto column_position = getColumnPosition(column.getColumnId());
         if (!column_position)
             return size;
 
@@ -215,7 +221,7 @@ ColumnSize MergeTreeDataPartWide::getColumnSizeImpl(
     }
     else
     {
-        getSerialization(column.name)->enumerateStreams([&](const ISerialization::SubstreamPath & substream_path)
+        getSerialization(column.getStorageKey())->enumerateStreams([&](const ISerialization::SubstreamPath & substream_path)
         {
             auto stream_name = IMergeTreeDataPart::getStreamNameForColumn(column, substream_path, DATA_FILE_EXTENSION, checksums, storage.getSettings());
 
@@ -233,13 +239,17 @@ ColumnSize MergeTreeDataPartWide::getColumnSizeImpl(
 }
 
 
-ColumnSize MergeTreeDataPartWide::calculateSubcolumnSize(const String & subcolumn_name) const
+ColumnSize MergeTreeDataPartWide::calculateSubcolumnSize(const NameAndTypePair & subcolumn) const
 {
     ColumnSize size;
     if (checksums.empty())
         return size;
 
-    for (const auto & stream : getListOfStreamsForColumn(getColumn(subcolumn_name)))
+    /// The caller resolved `subcolumn` against its own schema snapshot, so its id (inherited from
+    /// the parent -- a subcolumn has none of its own) is the stable key the on-disk streams use.
+    /// Resolving the name here instead would hit the part's load-time names, which a metadata-only
+    /// RENAME leaves stale.
+    for (const auto & stream : getListOfStreamsForColumn(subcolumn))
         addStreamToColumnSize(stream, size);
 
     return size;
@@ -333,19 +343,25 @@ void MergeTreeDataPartWide::loadMarksToCache(const Names & column_names, MarkCac
 
     auto context = storage.getContext();
     auto read_settings = context->getReadSettings();
-    auto info_for_read = std::make_shared<LoadedMergeTreeDataPartInfoForReader>(shared_from_this(), std::make_shared<AlterConversions>());
+    auto info_for_read = std::make_shared<LoadedMergeTreeDataPartInfoForReader>(
+        shared_from_this(), std::make_shared<AlterConversions>());
 
     LOG_TEST(getLogger("MergeTreeDataPartWide"), "Loading marks into mark cache for columns {} of part {}", toString(column_names), name);
 
-    for (const auto & column_name : column_names)
+    /// Key serialization and stream names by each part column's id so the disk-side keys (e.g. "1.cmrk2") match.
+    NameSet requested(column_names.begin(), column_names.end());
+    for (const auto & column : getColumns())
     {
-        auto serialization = tryGetSerialization(column_name);
+        if (!requested.contains(column.name))
+            continue;
+
+        auto serialization = tryGetSerialization(column.getStorageKey());
         if (!serialization)
             continue;
 
         serialization->enumerateStreams([&](const auto & subpath)
         {
-            auto stream_name = getStreamNameForColumn(column_name, subpath, DATA_FILE_EXTENSION, checksums, storage.getSettings());
+            auto stream_name = getStreamNameForColumn(column, subpath, DATA_FILE_EXTENSION, checksums, storage.getSettings());
             if (!stream_name)
                 return;
 
@@ -374,12 +390,17 @@ void MergeTreeDataPartWide::removeMarksFromCache(MarkCache * mark_cache) const
     if (!mark_cache)
         return;
 
-    const auto & serializations = getSerializations();
-    for (const auto & [column_name, serialization] : serializations)
+    /// Same id-keyed resolution as loadMarksToCache, so the cache keys we evict match those insertion produced.
+    const auto & part_columns = getColumns();
+    for (const auto & column : part_columns)
     {
+        auto serialization = tryGetSerialization(column.getStorageKey());
+        if (!serialization)
+            continue;
+
         serialization->enumerateStreams([&](const auto & subpath)
         {
-            auto stream_name = getStreamNameForColumn(column_name, subpath, DATA_FILE_EXTENSION, checksums, storage.getSettings());
+            auto stream_name = getStreamNameForColumn(column, subpath, DATA_FILE_EXTENSION, checksums, storage.getSettings());
             if (!stream_name)
                 return;
 
@@ -469,7 +490,7 @@ void MergeTreeDataPartWide::doCheckConsistency(bool require_part_metadata) const
                 settings.enumerate_dynamic_streams = false;
                 for (const auto & name_type : columns)
                 {
-                    auto serialization = getSerialization(name_type.name);
+                    auto serialization = getSerialization(name_type.getStorageKey());
                     auto data = ISerialization::SubstreamData(serialization)
                         .withType(name_type.type)
                         .withColumn(getColumnSample(name_type));
@@ -541,7 +562,7 @@ void MergeTreeDataPartWide::doCheckConsistency(bool require_part_metadata) const
             std::optional<UInt64> marks_size;
             for (const auto & name_type : columns)
             {
-                auto serialization = getSerialization(name_type.name);
+                auto serialization = getSerialization(name_type.getStorageKey());
                 auto data = ISerialization::SubstreamData(serialization)
                     .withType(name_type.type)
                     .withColumn(getColumnSample(name_type));
@@ -577,7 +598,7 @@ void MergeTreeDataPartWide::doCheckConsistency(bool require_part_metadata) const
 
 bool MergeTreeDataPartWide::hasColumnFiles(const NameAndTypePair & column) const
 {
-    auto serialization = tryGetSerialization(column.name);
+    auto serialization = tryGetSerialization(column.getStorageKey());
     if (!serialization)
         return false;
     auto marks_file_extension = index_granularity_info.mark_type.getFileExtension();
@@ -597,11 +618,15 @@ bool MergeTreeDataPartWide::hasColumnFiles(const NameAndTypePair & column) const
     return res;
 }
 
-std::optional<time_t> MergeTreeDataPartWide::getColumnModificationTime(const String & column_name) const
+std::optional<time_t> MergeTreeDataPartWide::getColumnModificationTime(const ColumnId & column_id) const
 {
     try
     {
-        auto stream_name = getStreamNameOrHash(column_name, DATA_FILE_EXTENSION, checksums);
+        /// Streams are named by the stamped column id; resolve the part's own pair for this id.
+        auto column = tryGetColumn(column_id);
+        if (!column)
+            return {};
+        auto stream_name = getStreamNameForColumn(*column, {}, DATA_FILE_EXTENSION, checksums, storage.getSettings());
         if (!stream_name)
             return {};
 
@@ -621,7 +646,7 @@ std::optional<String> MergeTreeDataPartWide::getFileNameForColumn(const NameAndT
     if (getSerializations().empty())
         return getStreamNameForColumn(column, {}, DATA_FILE_EXTENSION, getDataPartStorage(), storage.getSettings());
 
-    getSerialization(column.name)->enumerateStreams([&](const ISerialization::SubstreamPath & substream_path)
+    getSerialization(column.getStorageKey())->enumerateStreams([&](const ISerialization::SubstreamPath & substream_path)
     {
         if (!filename.has_value())
         {
@@ -642,7 +667,7 @@ void MergeTreeDataPartWide::calculateEachColumnSizes(ColumnSizeByName & each_col
     for (const auto & column : columns)
     {
         ColumnSize size = getColumnSizeImpl(column, &processed_substreams);
-        each_columns_size[column.name] = size;
+        each_columns_size[column.getColumnId().value()] = size;
         total_size.add(size);
 
 #ifndef NDEBUG
@@ -654,7 +679,7 @@ void MergeTreeDataPartWide::calculateEachColumnSizes(ColumnSizeByName & each_col
             && size.data_uncompressed != 0
             && column.type->isValueRepresentedByNumber()
             && !column.type->haveSubtypes()
-            && getSerialization(column.name)->getKindStack() == ISerialization::KindStack{ISerialization::Kind::DEFAULT})
+            && getSerialization(column.getStorageKey())->getKindStack() == ISerialization::KindStack{ISerialization::Kind::DEFAULT})
         {
             size_t rows_in_column = size.data_uncompressed / column.type->getSizeOfValueInMemory();
             if (rows_in_column != rows_count)
@@ -685,7 +710,8 @@ std::vector<String> MergeTreeDataPartWide::getListOfStreamsForColumn(const NameA
     settings.read_only_column_sample = true;
 
     auto alter_conversions = std::make_shared<AlterConversions>();
-    auto part_info = std::make_shared<LoadedMergeTreeDataPartInfoForReader>(shared_from_this(), alter_conversions);
+    auto part_info = std::make_shared<LoadedMergeTreeDataPartInfoForReader>(
+        shared_from_this(), alter_conversions);
 
     MergeTreeReaderPtr reader = createMergeTreeReaderWide(
         part_info,

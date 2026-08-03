@@ -177,7 +177,8 @@ struct AlterCommand
     /// executed. For example, cast from Date to UInt16 type can be executed
     /// without any data modifications. But column drop or modify from UInt16 to
     /// UInt32 require data modification.
-    bool isRequireMutationStage(const StorageInMemoryMetadata & metadata, const ContextPtr & context) const;
+    /// When column_ids_active is true, RENAME and DROP are metadata-only.
+    bool isRequireMutationStage(const StorageInMemoryMetadata & metadata, const ContextPtr & context, bool column_ids_active = false) const;
 
     /// Checks that only settings changed by alter
     bool isSettingsAlter() const;
@@ -199,7 +200,8 @@ struct AlterCommand
     /// metadata changes.
     /// share_nested_offsets is forwarded to the internal apply() so mutation-planning replay
     /// treats IF NOT EXISTS nested existence the same way as the real commands.apply().
-    std::optional<MutationCommand> tryConvertToMutationCommand(StorageInMemoryMetadata & metadata, ContextPtr context, bool share_nested_offsets = true) const;
+    std::optional<MutationCommand> tryConvertToMutationCommand(
+        StorageInMemoryMetadata & metadata, ContextPtr context, bool share_nested_offsets = true, bool column_ids_active = false) const;
 };
 
 class Context;
@@ -246,7 +248,9 @@ public:
     /// share_nested_offsets is threaded to tryConvertToMutationCommand -> AlterCommand::apply so the
     /// intermediate metadata built while planning mutations matches the real commands.apply() for
     /// IF NOT EXISTS nested adds (see AlterCommand::apply).
-    MutationCommands getMutationCommands(StorageInMemoryMetadata metadata, bool materialize_ttl, ContextPtr context, bool with_alters=false, bool share_nested_offsets = true) const;
+    MutationCommands getMutationCommands(
+        StorageInMemoryMetadata metadata, bool materialize_ttl, ContextPtr context,
+        bool with_alters = false, bool share_nested_offsets = true, bool column_ids_active = false) const;
 
     /// Check if commands have a text index
     static bool hasTextIndex(const StorageInMemoryMetadata & metadata);

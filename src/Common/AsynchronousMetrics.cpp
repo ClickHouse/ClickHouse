@@ -1272,7 +1272,7 @@ void AsynchronousMetrics::update(TimePoint update_time, bool force_update)
                 "Active bytes summed across the dedicated jemalloc MergeTree arena pool "
                 "(`jemalloc.mergetree_arena.count` arenas). Holds long-lived MergeTree heap "
                 "state: per-part metadata (`NamesAndTypesList`, `SerializationInfoByName`, the "
-                "`serializations` map, `column_name_to_position`, `MergeTreeDataPartChecksums` tree, the "
+                "`serializations` map, `column_storage_key_to_position`, `MergeTreeDataPartChecksums` tree, the "
                 "`Poco::LRUCache<String, ColumnSize>` delegates inside each `IMergeTreeDataPart`, the "
                 "per-part `ColumnSize`/`IndexSize` maps, `MinMaxIndex`, `VersionMetadataOnDisk`, and the "
                 "`MergeTreeDataPart{Compact,Wide}` object itself) plus per-table metadata "
