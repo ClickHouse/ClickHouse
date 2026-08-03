@@ -30,6 +30,8 @@ INSERT INTO with_password_04725 SETTINGS distributed_foreground_insert = 0, pref
 SYSTEM FLUSH LOGS query_log;
 SELECT 'password_not_leaked', countIf(exception LIKE '%secret_04725%') FROM system.query_log
 WHERE current_database = currentDatabase() AND exception_code = 69;
+SELECT 'message_names_scope', countIf(exception LIKE '%over_limit_04725%' AND exception LIKE '%is 255%') FROM system.query_log
+WHERE current_database = currentDatabase() AND exception_code = 69 AND query LIKE '%over_limit_04725%';
 
 -- The compact format builds bounded 'shard<N>_replica<M>' names, so it is unaffected.
 INSERT INTO over_limit_04725 SETTINGS distributed_foreground_insert = 0, prefer_localhost_replica = 0, use_compact_format_in_distributed_parts_names = 1 VALUES (1);

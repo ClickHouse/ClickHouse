@@ -308,6 +308,9 @@ def test_long_directory_name_internal_replication(started_cluster):
     )
     assert "ARGUMENT_OUT_OF_BOUND" in error
     assert "The max length of a directory name" in error
+    assert "distr_long_path" in error
+    assert "test_cluster_internal_replication_long_path" in error
+    assert "is 255" in error
 
     # The compact format keeps the name bounded, so the same cluster still works with it.
     node.query(
