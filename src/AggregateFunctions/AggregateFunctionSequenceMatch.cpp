@@ -55,15 +55,6 @@ struct ComparePairFirst final
 
 constexpr size_t max_events = 32;
 
-/// Strategy for finding matching event sequences
-enum class MatchStrategy : uint8_t
-{
-    Longest,  /// Return the longest matching sequence (default behavior)
-    First,    /// Return the first matching sequence chronologically
-    Last,     /// Return the last matching sequence chronologically
-    All       /// Return all matching sequences
-};
-
 template <typename T>
 struct AggregateFunctionSequenceMatchData final
 {
@@ -576,12 +567,25 @@ protected:
     template <typename EventEntry>
     VectorWithMemoryTracking<T> backtrackingMatchEventsFirst(EventEntry & events_it, const EventEntry events_end) const
     {
-        VectorWithMemoryTracking<T> matched_events;
+        VectorWithMemoryTracking<T> first_matched_events;
 
-        /// Find first match (backtrackingMatch returns first match found, partial or complete)
-        backtrackingMatch<EventEntry, true>(events_it, events_end, &matched_events);
+        /// Scan forward, non-overlapping, until the first non-empty match (partial or complete) is found
+        while (events_it != events_end)
+        {
+            VectorWithMemoryTracking<T> current_match;
+            bool match_result = backtrackingMatch<EventEntry, true>(events_it, events_end, &current_match);
 
-        return matched_events;
+            if (!current_match.empty())
+            {
+                first_matched_events = current_match;
+                break;
+            }
+
+            if (!match_result)
+                break;
+        }
+
+        return first_matched_events;
     }
 
     /// Find the last matching sequence chronologically
