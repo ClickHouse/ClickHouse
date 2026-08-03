@@ -62,8 +62,6 @@ private:
     static constexpr float default_temp = 0.0f;
     static constexpr size_t categories_arg_index = 1;
 
-    String functionName() const override { return name; }
-
     AIParamSpecs functionParams() const override
     {
         return {{"temperature", AIParamKind::Float, Field(static_cast<Float64>(default_temp))}};
