@@ -37,7 +37,8 @@ public:
     void addFileInfos(BackupFileInfos && file_infos, const String & host_id);
 
     /// Returns file infos for the specified host after preparation.
-    BackupFileInfos getFileInfos(const String & host_id) const;
+    /// Returned by reference; the referenced storage is immutable after prepare() (see addFileInfos()).
+    const BackupFileInfos & getFileInfos(const String & host_id) const;
 
     /// Returns file infos for all hosts after preparation.
     BackupFileInfos getFileInfosForAllHosts() const;
