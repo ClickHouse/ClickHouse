@@ -64,7 +64,7 @@ module "clickhouse_onboarding" {
 Replace `<version>` with the latest tag from the module's [releases page](https://github.com/ClickHouse/terraform-byoc-onboarding/releases) — always use the latest release.
 
 <Note>
-**External ID.** For `external_id` (or the `ExternalId` CloudFormation parameter), use the value shown in the ClickHouse Cloud onboarding flow. Displaying the external ID in the console is rolling out gradually — if your onboarding screen doesn't show one, leave the CloudFormation parameter at its default, or ask your ClickHouse contact for the value to use with Terraform. Don't choose your own value: it must match what ClickHouse's automation expects, or the cross-account role can't be assumed and provisioning fails.
+**External ID.** For the required `external_id` input (or the `ExternalID` CloudFormation parameter), use the value shown in the ClickHouse Cloud onboarding flow. Displaying the external ID in the console is rolling out gradually — if your onboarding screen doesn't show one, ask your ClickHouse contact for the value before applying the template or module. Don't choose your own value: it must match what ClickHouse's automation expects, or the cross-account role can't be assumed and provisioning fails.
 </Note>
 
 <Note>

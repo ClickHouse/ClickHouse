@@ -51,7 +51,7 @@ Storage buckets, VPC/VNet, Kubernetes cluster, and compute resources required fo
 </Note>
 
 <Note>
-**External ID.** On AWS, the setup uses an external ID (the `ExternalId` CloudFormation parameter / `external_id` Terraform input) as an `sts:ExternalId` condition on the role trust policy. Use the value shown in the ClickHouse Cloud onboarding flow. Displaying the external ID in the console is rolling out gradually — if your onboarding screen doesn't show one, leave the CloudFormation parameter at its default, or ask your ClickHouse contact for the value to use with Terraform. Don't choose your own value: it must match what ClickHouse's automation expects, or the cross-account role can't be assumed and provisioning fails.
+**External ID.** On AWS, the setup requires an external ID (the `ExternalID` CloudFormation parameter / `external_id` Terraform input), applied as an `sts:ExternalId` condition on the role trust policy. Use the value shown in the ClickHouse Cloud onboarding flow. Displaying the external ID in the console is rolling out gradually — if your onboarding screen doesn't show one, ask your ClickHouse contact for the value before applying the template or module. Don't choose your own value: it must match what ClickHouse's automation expects, or the cross-account role can't be assumed and provisioning fails.
 </Note>
 
 #### Terraform Module for AWS {#terraform-module-aws}
