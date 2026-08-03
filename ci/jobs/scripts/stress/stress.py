@@ -304,10 +304,15 @@ def run_func_test(
     global_time_limit: int,
     upgrade_check: bool,
     encrypted_storage: bool,
+    s3_storage: bool = False,
+    azure_blob_storage: bool = False,
     query_killer: Optional["RandomQueryKiller"] = None,
 ) -> List[Popen]:
     upgrade_check_option = "--upgrade-check" if upgrade_check else ""
     encrypted_storage_option = "--encrypted-storage" if encrypted_storage else ""
+    # clickhouse-test evaluates its storage skip tags from these flags alone.
+    s3_storage_option = "--s3-storage" if s3_storage else ""
+    azure_blob_storage_option = "--azure-blob-storage" if azure_blob_storage else ""
     global_time_limit_option = (
         f"--global_time_limit={global_time_limit}" if global_time_limit else ""
     )
@@ -329,6 +334,7 @@ def run_func_test(
         base_command = (
             f"{cmd} --stress-tests {options} "
             f"{skip_tests_option} {upgrade_check_option} {encrypted_storage_option} "
+            f"{s3_storage_option} {azure_blob_storage_option} "
         )
         full_command = f"{base_command} {global_time_limit_option} "
         commands.append(full_command)
@@ -615,6 +621,10 @@ def parse_args() -> argparse.Namespace:
     parser.add_argument(
         "--encrypted-storage", type=lambda x: bool(int(x)), default=False
     )
+    parser.add_argument("--s3-storage", type=lambda x: bool(int(x)), default=False)
+    parser.add_argument(
+        "--azure-blob-storage", type=lambda x: bool(int(x)), default=False
+    )
     parser.add_argument(
         "--no-random-query-killer",
         action="store_true",
@@ -652,6 +662,8 @@ def main():
             args.global_time_limit,
             args.upgrade_check,
             args.encrypted_storage,
+            args.s3_storage,
+            args.azure_blob_storage,
             query_killer,
         )
     finally:

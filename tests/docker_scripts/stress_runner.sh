@@ -295,7 +295,10 @@ cp -av --dereference /repo/ci/jobs/scripts/fuzzer/limit-recursion-settings.xml /
 start_server || { echo "Failed to start server"; exit 1; }
 
 cd /repo/tests/ || exit 1  # clickhouse-test can find queries dir from there
-python3 /repo/ci/jobs/scripts/stress/stress.py --hung-check --drop-databases --output-folder /test_output --skip-func-tests "$SKIP_TESTS_OPTION" --global-time-limit "${STRESS_GLOBAL_TIME_LIMIT:-1200}" --encrypted-storage "$USE_ENCRYPTED_STORAGE" \
+# Forward the backend chosen above so clickhouse-test can honor the storage skip tags.
+# Both variables are exported conditionally, so the :-0 defaults are required: stress.py
+# rejects an empty string and exits before running any test.
+python3 /repo/ci/jobs/scripts/stress/stress.py --hung-check --drop-databases --output-folder /test_output --skip-func-tests "$SKIP_TESTS_OPTION" --global-time-limit "${STRESS_GLOBAL_TIME_LIMIT:-1200}" --encrypted-storage "$USE_ENCRYPTED_STORAGE" --s3-storage "${USE_S3_STORAGE_FOR_MERGE_TREE:-0}" --azure-blob-storage "${USE_AZURE_STORAGE_FOR_MERGE_TREE:-0}" \
     && echo -e "Test script exit code$OK" >> /test_output/test_results.tsv \
     || echo -e "Test script failed$FAIL script exit code: $?" >> /test_output/test_results.tsv
 
