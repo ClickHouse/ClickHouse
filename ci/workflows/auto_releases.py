@@ -1,19 +1,22 @@
 from praktika import Job, Secret, Workflow
 
-from ci.defs.defs import BASE_BRANCH, SECRETS, RunnerLabels
+from ci.defs.defs import BASE_BRANCH, SECRETS
 
 # Scheduled patch-release driver (praktika port of the legacy
 # .github/workflows/auto_releases.yml + tests/ci/auto_release.py).
 #
 # Once a day it scans each open `release`-labeled branch for the newest fully
-# green commit and, for every branch that has one, dispatches the CreateRelease
-# workflow (ci/workflows/create_release.py) for that commit. Releases are fired
-# one branch at a time: the job waits for each CreateRelease run to finish
-# before starting the next, because CreateRelease's concurrency group keeps only
-# the most recent pending run and would otherwise silently drop a branch.
+# green commit whose release build artifacts are already in S3 and, for every
+# branch that has one, dispatches the CreateRelease workflow
+# (ci/workflows/create_release.py) for that commit. Releases are fired one
+# branch at a time: the job waits for each CreateRelease run to finish before
+# starting the next, because CreateRelease's concurrency group keeps only the
+# most recent pending run and would otherwise silently drop a branch.
 #
-# The job only reads GitHub and dispatches/watches runs, so it runs on the cheap
-# style-check runner rather than a release-maker; the heavy release work happens
+# It runs on the release-maker runner (same as CreateRelease): besides reading
+# GitHub and dispatching/watching runs, its artifact-readiness gate lists the
+# release packages in S3 through `S3Helper` (boto3 + credentials), which the
+# cheap style-check runner does not have. The heavy release work still happens
 # in the dispatched CreateRelease runs.
 
 robot_token_secret = Secret.Config(
@@ -23,7 +26,9 @@ robot_token_secret = Secret.Config(
 
 auto_release_job = Job.Config(
     name="AutoReleaseInfo",
-    runs_on=RunnerLabels.STYLE_CHECK_ARM,
+    # Same runner CreateRelease uses: the artifact-readiness gate needs S3
+    # access (boto3 via S3Helper), unavailable on the style-check runner.
+    runs_on=["self-hosted", "amd-release-maker"],
     command="PYTHONPATH=. python3 ./ci/jobs/auto_release_job.py",
     # Sequential per-branch CreateRelease runs (up to ~2h each) are awaited in
     # this job, so allow for several release branches back to back.
