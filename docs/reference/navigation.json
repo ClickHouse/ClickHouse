@@ -1001,6 +1001,7 @@
         "reference/system-tables/database_replicas",
         "reference/system-tables/databases",
         "reference/system-tables/dead_letter_queue",
+        "reference/system-tables/delta_lake_metadata_log",
         "reference/system-tables/delta_metadata_log",
         "reference/system-tables/detached_parts",
         "reference/system-tables/detached_tables",

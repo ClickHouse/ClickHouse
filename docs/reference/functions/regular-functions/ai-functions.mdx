@@ -230,7 +230,7 @@ from a chat one.
 
 The `model` is a required positional argument (a constant `String`). Unlike the text functions,
 `aiEmbed` does not read `model` from the named collection or the parameter map. A named collection
-that defines `model` is rejected rather than silently ignored.
+that defines `model` is rejected.
 
 The optional `dimensions` parameter, when supported by the model (e.g. OpenAI's `text-embedding-3-*`),
 requests a vector of the given size; otherwise the model's native size is returned.

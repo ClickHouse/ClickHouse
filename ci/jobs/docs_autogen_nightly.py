@@ -7,12 +7,13 @@ from praktika.info import Info
 from praktika.result import Result
 from praktika.utils import Shell
 
-# The self-extracting binary from the CH_ARM_BINARY artifact. Required artifacts
+# The self-extracting master binary from the CH_ARM_BINARY artifact. Required artifacts
 # are downloaded into the input dir under their basename, so it lands at
 # ci/tmp/clickhouse (not the producer's build tree), as a plain file that must be
 # made executable before use -- the same convention other consumers follow
-# (e.g. ci/jobs/install_check.py). Nightly uses a master binary; the PR-time
-# Mintlify regeneration check reuses this helper with the PR binary.
+# (e.g. ci/jobs/install_check.py). The generator resolves the path to an absolute
+# one, so a repo-relative value is fine even though it runs the binary from a
+# scratch directory.
 BINARY = "ci/tmp/clickhouse"
 GENERATOR = "ci/jobs/scripts/docs/autogenerate/autogenerate_docs.py"
 
@@ -49,7 +50,7 @@ nightly run regenerates the pages.
 
 
 def regenerate():
-    """Regenerate the docs tree in place from the configured binary.
+    """Regenerate the docs tree in place from the master binary.
 
     The artifact downloader materializes a plain file, so make it executable
     before invoking the generator."""
