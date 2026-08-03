@@ -152,9 +152,10 @@ public:
 
     virtual bool isArchive() const { return false; }
     bool isPathInArchiveWithGlobs() const;
-    /// Setting-aware variant: with use_glob_ast the path inside the archive is classified
-    /// by the AST parser, under which a literal brace group is not a glob.
-    bool isPathInArchiveWithGlobs(bool use_glob_ast) const;
+    /// Setting-aware variant: with use_glob_ast_parser enabled in the given context the
+    /// path inside the archive is classified by the AST parser, under which a literal
+    /// brace group is not a glob.
+    bool isPathInArchiveWithGlobs(const ContextPtr & context) const;
     virtual std::string getPathInArchive() const;
 
     virtual void check(ContextPtr context);

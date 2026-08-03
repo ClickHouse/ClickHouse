@@ -2004,7 +2004,7 @@ StorageObjectStorageSource::ArchiveIterator::ArchiveIterator(
     bool ignore_archive_globs_)
     : WithContext(context_)
     , object_storage(object_storage_)
-    , is_path_in_archive_with_globs(configuration_->isPathInArchiveWithGlobs(context_->getSettingsRef()[Setting::use_glob_ast_parser]))
+    , is_path_in_archive_with_globs(configuration_->isPathInArchiveWithGlobs(context_))
     , archives_iterator(std::move(archives_iterator_))
     , filter(is_path_in_archive_with_globs
         ? createArchivePathFilter(configuration_->getPathInArchive(), context_->getSettingsRef()[Setting::use_glob_ast_parser])
