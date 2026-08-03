@@ -7,6 +7,7 @@
 #include <Parsers/ASTSelectWithUnionQuery.h>
 #include <Parsers/ASTSelectQuery.h>
 #include <Parsers/ASTKillQueryQuery.h>
+#include <Parsers/ASTSystemQuery.h>
 #include <Parsers/IAST.h>
 #include <Parsers/queryNormalization.h>
 #include <Processors/Executors/PipelineExecutor.h>
@@ -122,6 +123,21 @@ static bool isUnlimitedQuery(const IAST * ast)
     return false;
 }
 
+/// Should the query bypass the FIFO admission queue?
+///
+/// `SYSTEM RELOAD CONFIG` is the documented way to raise `max_concurrent_queries` at runtime, so it
+/// must not queue behind the very limit it is about to raise: under a saturated limit the operator
+/// would otherwise have no way to apply the relief. It is a cheap administrative command, in the same
+/// spirit as `KILL QUERY`, which `isUnlimitedQuery` already exempts.
+///
+/// This is scoped to the admission queue only (an opt-in feature), so the legacy
+/// `max_concurrent_queries` path keeps its existing behavior.
+static bool isAdmissionExemptQuery(const IAST * ast)
+{
+    const auto * system_query = ast ? ast->as<ASTSystemQuery>() : nullptr;
+    return system_query && system_query->type == ASTSystemQuery::Type::RELOAD_CONFIG;
+}
+
 ProcessList::EntryPtr ProcessList::insert(
     const String & query_,
     UInt64 normalized_query_hash,
@@ -220,7 +236,10 @@ ProcessList::EntryPtr ProcessList::insert(
         /// observe the real running count instead of `0` and queue as expected, rather than slipping
         /// past the limit on the fast path. The FIFO *wait* only happens for a finite limit
         /// (`needs_admission`, i.e. `max_size > 0`); when unlimited, a slot is always taken immediately.
-        const bool admission_tracked = !is_unlimited_query && admission_queue_enabled;
+        ///
+        /// `isAdmissionExemptQuery` (currently `SYSTEM RELOAD CONFIG`) is never tracked: it must stay
+        /// available to raise `max_concurrent_queries` while the limit is saturated.
+        const bool admission_tracked = !is_unlimited_query && admission_queue_enabled && !isAdmissionExemptQuery(ast);
         const bool needs_admission = admission_tracked && max_size;
 
         /// Connection liveness callback and its polling interval, shared by the FIFO admission wait and the
@@ -263,6 +282,15 @@ ProcessList::EntryPtr ProcessList::insert(
             CurrentMetrics::Increment queue_length_increment(CurrentMetrics::QueryAdmissionQueueLength);
             Stopwatch admission_watch;
 
+            /// The event is documented as the total time spent waiting in the FIFO admission queue, so it
+            /// must be recorded on every exit path, not only on the one where the slot was granted: a
+            /// waiter that times out or is cancelled is exactly the case that spends the most time queued,
+            /// and reporting zero for it would hide the overload it is evidence of.
+            SCOPE_EXIT({
+                ProfileEvents::increment(
+                    ProfileEvents::QueryAdmissionQueueWaitMicroseconds, admission_watch.elapsedMicroseconds());
+            });
+
             /// Predicate: the releaser has granted us the slot.
             auto my_turn = [&] { return waiter.granted; };
 
@@ -302,8 +330,6 @@ ProcessList::EntryPtr ProcessList::insert(
                                     max_size, effective_wait_ms);
                 }
             }
-
-            ProfileEvents::increment(ProfileEvents::QueryAdmissionQueueWaitMicroseconds, admission_watch.elapsedMicroseconds());
 
             /// Final alive-check after the slot has been granted but before we commit to using it.
             /// The periodic loop above only checks liveness while still waiting (`!my_turn()`). If the

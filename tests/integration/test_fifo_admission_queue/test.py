@@ -8,7 +8,10 @@ admission queue (per-waiter CV with notify_one — no thundering herd). These te
 2. replace_running_query works correctly after passing through the admission queue
 3. Queue slot is not leaked when a queued query times out
 4. Client disconnect while waiting in queue is detected, and queue length metric is accurate
-5. QueryAdmissionQueueWaitMicroseconds is recorded per-query and globally
+5. QueryAdmissionQueueWaitMicroseconds is recorded per-query and globally,
+   including for waiters that time out
+6. `SYSTEM RELOAD CONFIG` bypasses admission, so the limit can be raised while
+   it is saturated
 """
 
 import re
@@ -111,10 +114,10 @@ def set_max_concurrent_queries(node, value):
 
     The change is applied by the background `ConfigReloader` thread (see
     `config_reload_interval_ms` in the test config), which calls
-    `ProcessList::setMaxSize`. We deliberately do NOT issue `SYSTEM RELOAD CONFIG`:
-    that is a regular query and, when the admission queue is full, it would block
-    in the queue itself — so it cannot be used to relieve admission pressure.
-    The background reloader runs in a separate thread and is not gated by admission.
+    `ProcessList::setMaxSize`. Most tests here let the background reloader apply the
+    change instead of issuing `SYSTEM RELOAD CONFIG`, so that they exercise the
+    reloader path; `SYSTEM RELOAD CONFIG` itself bypasses admission and works while
+    the limit is saturated (see `test_reload_config_bypasses_admission_queue`).
     """
     node.replace_in_config(
         SERVER_CONFIG_PATH,
@@ -511,6 +514,160 @@ def test_queue_wait_time_profile_event(started_cluster):
     assert int(per_query_wait_us) > 0, (
         f"Expected per-query wait time > 0, got {per_query_wait_us}"
     )
+
+
+def get_prometheus_profile_event(node, event_name, timeout=5):
+    """Read a global ProfileEvent counter from the Prometheus /metrics endpoint.
+
+    Like `get_prometheus_metric`, this bypasses the query pipeline, so it works
+    while every execution slot is occupied.
+    """
+    resp = requests.get(f"http://{node.ip_address}:9363/metrics", timeout=timeout)
+    resp.raise_for_status()
+    pattern = rf"^ClickHouseProfileEvents_{event_name}\s+(\d+)"
+    for line in resp.text.splitlines():
+        m = re.match(pattern, line)
+        if m:
+            return int(m.group(1))
+    return 0
+
+
+def test_timed_out_waiter_records_wait_time(started_cluster):
+    """
+    Verify that a waiter which times out in the admission queue still contributes
+    its waiting time to `QueryAdmissionQueueWaitMicroseconds`.
+
+    The event is documented as the total time spent waiting in the FIFO admission
+    queue, and a timed-out waiter is exactly the overload case that spends the most
+    time queued, so it must not report zero.
+
+    Strategy:
+    1. Read the global counter
+    2. Saturate both slots
+    3. Submit a query with a short `queue_max_wait_ms` — it times out in the queue
+    4. The global counter must have grown by roughly the timeout
+    """
+    prefix = uuid.uuid4().hex[:8]
+    blocker_ids = [f"timedout_wait_blocker_{prefix}_{i}" for i in range(2)]
+    timeout_ms = 2000
+
+    before_us = get_prometheus_profile_event(
+        node, "QueryAdmissionQueueWaitMicroseconds"
+    )
+
+    pool = Pool(4)
+
+    def run_blocker(qid):
+        node.query(
+            "SELECT sleep(30) FORMAT Null",
+            settings={
+                "function_sleep_max_microseconds_per_block": 0,
+                "queue_max_wait_ms": 60000,
+            },
+            query_id=qid,
+        )
+
+    for qid in blocker_ids:
+        pool.apply_async(run_blocker, (qid,))
+
+    for qid in blocker_ids:
+        wait_for_query_start(node, qid)
+
+    error = node.query_and_get_error(
+        "SELECT 1",
+        settings={"queue_max_wait_ms": timeout_ms},
+    )
+    assert "TOO_MANY_SIMULTANEOUS_QUERIES" in error
+
+    after_us = get_prometheus_profile_event(
+        node, "QueryAdmissionQueueWaitMicroseconds"
+    )
+
+    for qid in blocker_ids:
+        node.query(f"KILL QUERY WHERE query_id = '{qid}' SYNC")
+
+    pool.close()
+    pool.join()
+
+    # Allow for scheduling slack: require at least half of the configured timeout.
+    assert after_us - before_us >= timeout_ms * 1000 / 2, (
+        f"Expected the timed-out waiter to add ~{timeout_ms} ms of queue wait time, "
+        f"got {after_us - before_us} us (before={before_us}, after={after_us})"
+    )
+
+
+def test_reload_config_bypasses_admission_queue(started_cluster):
+    """
+    Verify that `SYSTEM RELOAD CONFIG` is not subject to admission control.
+
+    `SYSTEM RELOAD CONFIG` is the way to raise `max_concurrent_queries` at runtime.
+    If it queued behind the very limit it raises, the documented relief path would be
+    unavailable exactly when it is needed, so it must run while the limit is saturated
+    and its effect must reach the already queued waiters.
+
+    Strategy:
+    1. Saturate both slots and queue one waiter behind them
+    2. Raise `max_concurrent_queries` in the config file and apply it with
+       `SYSTEM RELOAD CONFIG` — the command itself must not queue or time out
+    3. The queued waiter is admitted on the newly raised limit, while the blockers
+       are still running
+    4. Restore the original limit
+    """
+    prefix = uuid.uuid4().hex[:8]
+    blocker_ids = [f"reload_blocker_{prefix}_{i}" for i in range(2)]
+    waiter_id = f"reload_waiter_{prefix}"
+
+    pool = Pool(4)
+
+    def run_blocker(qid):
+        node.query(
+            "SELECT sleep(30) FORMAT Null",
+            settings={
+                "function_sleep_max_microseconds_per_block": 0,
+                "queue_max_wait_ms": 60000,
+            },
+            query_id=qid,
+        )
+
+    for qid in blocker_ids:
+        pool.apply_async(run_blocker, (qid,))
+
+    for qid in blocker_ids:
+        wait_for_query_start(node, qid)
+
+    def run_waiter():
+        node.query(
+            "SELECT sleep(3) FORMAT Null",
+            settings={
+                "function_sleep_max_microseconds_per_block": 0,
+                "queue_max_wait_ms": 60000,
+            },
+            query_id=waiter_id,
+        )
+
+    pool.apply_async(run_waiter)
+    wait_for_queue_length(node, 1)
+
+    try:
+        set_max_concurrent_queries(node, 4)
+
+        # Both slots are busy: this must not queue behind them, and must not time out.
+        node.query("SYSTEM RELOAD CONFIG", settings={"queue_max_wait_ms": 5000})
+
+        # The relief is effective: the queued waiter starts while the blockers still run.
+        wait_for_query_start(node, waiter_id)
+        assert get_prometheus_metric(node, "QueryAdmissionQueueLength") == 0
+    finally:
+        for qid in blocker_ids:
+            node.query(f"KILL QUERY WHERE query_id = '{qid}' SYNC")
+        node.query(f"KILL QUERY WHERE query_id = '{waiter_id}' SYNC")
+
+        pool.close()
+        pool.join()
+
+        set_max_concurrent_queries(node, 2)
+        node.query("SYSTEM RELOAD CONFIG")
+        wait_for_max_concurrent_queries(node, 2)
 
 
 def test_max_execution_time_fallback_timeout(started_cluster):
