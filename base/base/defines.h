@@ -5,11 +5,13 @@
 #endif
 
 /// Whether plain `long` is a type of its own, distinct from every fixed-width integer type.
-/// On Darwin `Int64` is `long long`, and on 32-bit platforms (WebAssembly) `Int32` is `int`
-/// while `long` is a separate 32-bit type. In both cases functions overloaded on the
-/// fixed-width types need an overload for `long` as well, or calls with a `long` argument
-/// become ambiguous.
-#if defined(OS_DARWIN) || !defined(__LP64__)
+/// On Darwin and on WebAssembly `Int64` is `long long`, so a 64-bit `long` matches neither it
+/// nor `Int32`; on 32-bit platforms `Int32` is `int` while `long` is a separate 32-bit type.
+/// In all of these cases functions overloaded on the fixed-width types need an overload for
+/// `long` as well, or calls with a `long` argument become ambiguous.
+/// Note that `wasm64` defines `__LP64__` and still has `Int64` as `long long`, so the pointer
+/// width alone does not answer the question.
+#if defined(OS_DARWIN) || defined(__wasm__) || !defined(__LP64__)
 #    define LONG_IS_A_DISTINCT_TYPE 1
 #endif
 
