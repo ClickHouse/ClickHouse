@@ -58,7 +58,7 @@ private:
     const char * getStorageEngineName() const override { return "Merge"; }
 
     ColumnsDescription getActualTableStructure(ContextPtr context, bool is_insert_query) const override;
-    VectorWithMemoryTracking<size_t> skipAnalysisForArguments(const QueryTreeNodePtr & query_node_table_function, ContextPtr context) const override;
+    std::vector<size_t> skipAnalysisForArguments(const QueryTreeNodePtr & query_node_table_function, ContextPtr context) const override;
     void parseArguments(const ASTPtr & ast_function, ContextPtr context) override;
 
     String source_database_name_or_regexp;
@@ -66,13 +66,13 @@ private:
     bool database_is_regexp = false;
 };
 
-VectorWithMemoryTracking<size_t> TableFunctionMerge::skipAnalysisForArguments(const QueryTreeNodePtr & query_node_table_function, ContextPtr) const
+std::vector<size_t> TableFunctionMerge::skipAnalysisForArguments(const QueryTreeNodePtr & query_node_table_function, ContextPtr) const
 {
     auto & table_function_node = query_node_table_function->as<TableFunctionNode &>();
     auto & table_function_arguments_nodes = table_function_node.getArguments().getNodes();
     size_t table_function_arguments_size = table_function_arguments_nodes.size();
 
-    VectorWithMemoryTracking<size_t> result;
+    std::vector<size_t> result;
 
     for (size_t i = 0; i < table_function_arguments_size; ++i)
     {
@@ -139,11 +139,11 @@ ColumnsDescription TableFunctionMerge::getActualTableStructure(ContextPtr contex
 }
 
 
-StoragePtr TableFunctionMerge::executeImpl(const ASTPtr & /*ast_function*/, ContextPtr context, const std::string & table_name, ColumnsDescription cached_columns, bool /*is_insert_query*/) const
+StoragePtr TableFunctionMerge::executeImpl(const ASTPtr & /*ast_function*/, ContextPtr context, const std::string & table_name, ColumnsDescription /*cached_columns*/, bool /*is_insert_query*/) const
 {
     auto res = std::make_shared<StorageMerge>(
         StorageID(getDatabaseName(), table_name),
-        std::move(cached_columns),
+        ColumnsDescription{},
         String{},
         source_database_name_or_regexp,
         database_is_regexp,
@@ -159,27 +159,11 @@ StoragePtr TableFunctionMerge::executeImpl(const ASTPtr & /*ast_function*/, Cont
 void registerTableFunctionMerge(TableFunctionFactory & factory)
 {
     factory.registerFunction<TableFunctionMerge>(
-        {.description = R"DOCS_MD(
-Creates a temporary [Merge](/reference/engines/table-engines/special/merge) table.
-The table schema is derived from underlying tables by using a union of their columns and by deriving common types.
-The same virtual columns are available as for the [Merge](/reference/engines/table-engines/special/merge) table engine.
-
-## Syntax {#syntax}
-
-```sql
-merge(['db_name',] 'tables_regexp')
-```
-## Arguments {#arguments}
-
-| Argument        | Description                                                                                                                                                                                                                                                                                     |
-|-----------------|-------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------|
-| `db_name`       | Possible values (optional, default is `currentDatabase()`):<br/>    - database name,<br/>    - constant expression that returns a string with a database name, for example, `currentDatabase()`,<br/>    - `REGEXP(expression)`, where `expression` is a regular expression to match the DB names. |
-| `tables_regexp` | A regular expression to match the table names in the specified DB or DBs.                                                                                                                                                                                                                       |
-
-## Related {#related}
-
-- [Merge](/reference/engines/table-engines/special/merge) table engine
-)DOCS_MD", .category = FunctionDocumentation::Category::TableFunction},
+        {
+            .description = "Creates a temporary Merge table. The structure will be derived from underlying tables by using a union of their columns and by deriving common types.",
+            .examples = {{"merge", "SELECT * FROM merge(db, '^table_.*')", ""}},
+            .category = FunctionDocumentation::Category::TableFunction
+        },
         {.allow_readonly = true}
     );
 }

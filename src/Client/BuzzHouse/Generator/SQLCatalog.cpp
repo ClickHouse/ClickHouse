@@ -3,6 +3,132 @@
 namespace BuzzHouse
 {
 
+const std::vector<std::vector<OutFormat>> outFormats
+    = {{OutFormat::OUT_Arrow},
+       {OutFormat::OUT_Avro},
+       {OutFormat::OUT_BSONEachRow},
+       {OutFormat::OUT_Buffers},
+       {OutFormat::OUT_CSV, OutFormat::OUT_CSVWithNames, OutFormat::OUT_CSVWithNamesAndTypes},
+       {OutFormat::OUT_CustomSeparated, OutFormat::OUT_CustomSeparatedWithNames, OutFormat::OUT_CustomSeparatedWithNamesAndTypes},
+       {OutFormat::OUT_JSON,
+        OutFormat::OUT_JSONColumns,
+        OutFormat::OUT_JSONColumnsWithMetadata,
+        OutFormat::OUT_JSONCompact,
+        OutFormat::OUT_JSONCompactColumns,
+        OutFormat::OUT_JSONCompactEachRow,
+        OutFormat::OUT_JSONCompactEachRowWithNames,
+        OutFormat::OUT_JSONCompactEachRowWithNamesAndTypes,
+        OutFormat::OUT_JSONCompactStringsEachRow,
+        OutFormat::OUT_JSONCompactStringsEachRowWithNames,
+        OutFormat::OUT_JSONCompactStringsEachRowWithNamesAndTypes,
+        OutFormat::OUT_JSONEachRow,
+        OutFormat::OUT_JSONLines,
+        OutFormat::OUT_JSONObjectEachRow,
+        OutFormat::OUT_JSONStringsEachRow},
+       {OutFormat::OUT_LineAsString},
+       {OutFormat::OUT_MsgPack},
+       {OutFormat::OUT_Native},
+       {OutFormat::OUT_ORC},
+       {OutFormat::OUT_Parquet},
+       {OutFormat::OUT_Protobuf, OutFormat::OUT_ProtobufSingle},
+       {OutFormat::OUT_RawBLOB},
+       {OutFormat::OUT_RowBinary, OutFormat::OUT_RowBinaryWithNames, OutFormat::OUT_RowBinaryWithNamesAndTypes},
+       {OutFormat::OUT_TabSeparated,
+        OutFormat::OUT_TabSeparatedRaw,
+        OutFormat::OUT_TabSeparatedRawWithNames,
+        OutFormat::OUT_TabSeparatedRawWithNamesAndTypes,
+        OutFormat::OUT_TabSeparatedWithNames,
+        OutFormat::OUT_TabSeparatedWithNamesAndTypes},
+       {OutFormat::OUT_TSKV},
+       {OutFormat::OUT_Values}};
+
+const std::unordered_map<OutFormat, InFormat> outIn
+    = {{OutFormat::OUT_Arrow, InFormat::IN_Arrow},
+       {OutFormat::OUT_Avro, InFormat::IN_Avro},
+       {OutFormat::OUT_BSONEachRow, InFormat::IN_BSONEachRow},
+       {OutFormat::OUT_Buffers, InFormat::IN_Buffers},
+       {OutFormat::OUT_CSV, InFormat::IN_CSV},
+       {OutFormat::OUT_CSVWithNames, InFormat::IN_CSVWithNames},
+       {OutFormat::OUT_CSVWithNamesAndTypes, InFormat::IN_CSVWithNamesAndTypes},
+       {OutFormat::OUT_CustomSeparated, InFormat::IN_CustomSeparated},
+       {OutFormat::OUT_CustomSeparatedWithNames, InFormat::IN_CustomSeparatedWithNames},
+       {OutFormat::OUT_CustomSeparatedWithNamesAndTypes, InFormat::IN_CustomSeparatedWithNamesAndTypes},
+       {OutFormat::OUT_JSON, InFormat::IN_JSON},
+       {OutFormat::OUT_JSONColumns, InFormat::IN_JSONColumns},
+       {OutFormat::OUT_JSONColumnsWithMetadata, InFormat::IN_JSONColumnsWithMetadata},
+       {OutFormat::OUT_JSONCompact, InFormat::IN_JSONCompact},
+       {OutFormat::OUT_JSONCompactColumns, InFormat::IN_JSONCompactColumns},
+       {OutFormat::OUT_JSONCompactEachRow, InFormat::IN_JSONCompactEachRow},
+       {OutFormat::OUT_JSONCompactEachRowWithNames, InFormat::IN_JSONCompactEachRowWithNames},
+       {OutFormat::OUT_JSONCompactEachRowWithNamesAndTypes, InFormat::IN_JSONCompactEachRowWithNamesAndTypes},
+       {OutFormat::OUT_JSONCompactStringsEachRow, InFormat::IN_JSONCompactStringsEachRow},
+       {OutFormat::OUT_JSONCompactStringsEachRowWithNames, InFormat::IN_JSONCompactStringsEachRowWithNames},
+       {OutFormat::OUT_JSONCompactStringsEachRowWithNamesAndTypes, InFormat::IN_JSONCompactStringsEachRowWithNamesAndTypes},
+       {OutFormat::OUT_JSONEachRow, InFormat::IN_JSONEachRow},
+       {OutFormat::OUT_JSONLines, InFormat::IN_JSONLines},
+       {OutFormat::OUT_JSONObjectEachRow, InFormat::IN_JSONObjectEachRow},
+       {OutFormat::OUT_JSONStringsEachRow, InFormat::IN_JSONStringsEachRow},
+       {OutFormat::OUT_LineAsString, InFormat::IN_LineAsString},
+       {OutFormat::OUT_MsgPack, InFormat::IN_MsgPack},
+       {OutFormat::OUT_Native, InFormat::IN_Native},
+       {OutFormat::OUT_ORC, InFormat::IN_ORC},
+       {OutFormat::OUT_Parquet, InFormat::IN_Parquet},
+       {OutFormat::OUT_Protobuf, InFormat::IN_Protobuf},
+       {OutFormat::OUT_ProtobufSingle, InFormat::IN_ProtobufSingle},
+       {OutFormat::OUT_RawBLOB, InFormat::IN_RawBLOB},
+       {OutFormat::OUT_RowBinary, InFormat::IN_RowBinary},
+       {OutFormat::OUT_RowBinaryWithNames, InFormat::IN_RowBinaryWithNames},
+       {OutFormat::OUT_RowBinaryWithNamesAndTypes, InFormat::IN_RowBinaryWithNamesAndTypes},
+       {OutFormat::OUT_TabSeparated, InFormat::IN_TabSeparated},
+       {OutFormat::OUT_TabSeparatedRaw, InFormat::IN_TabSeparatedRaw},
+       {OutFormat::OUT_TabSeparatedRawWithNames, InFormat::IN_TabSeparatedRawWithNames},
+       {OutFormat::OUT_TabSeparatedRawWithNamesAndTypes, InFormat::IN_TabSeparatedRawWithNamesAndTypes},
+       {OutFormat::OUT_TabSeparatedWithNames, InFormat::IN_TabSeparatedWithNames},
+       {OutFormat::OUT_TabSeparatedWithNamesAndTypes, InFormat::IN_TabSeparatedWithNamesAndTypes},
+       {OutFormat::OUT_TSKV, InFormat::IN_TSKV},
+       {OutFormat::OUT_Values, InFormat::IN_Values}};
+
+const std::vector<std::vector<InOutFormat>> inOutFormats = {
+    {InOutFormat::INOUT_Arrow, InOutFormat::INOUT_ArrowStream},
+    {InOutFormat::INOUT_Avro},
+    {InOutFormat::INOUT_BSONEachRow},
+    {InOutFormat::INOUT_Buffers},
+    {InOutFormat::INOUT_CSV, InOutFormat::INOUT_CSVWithNames, InOutFormat::INOUT_CSVWithNamesAndTypes},
+    {InOutFormat::INOUT_CustomSeparated, InOutFormat::INOUT_CustomSeparatedWithNames, InOutFormat::INOUT_CustomSeparatedWithNamesAndTypes},
+    {InOutFormat::INOUT_JSON,
+     InOutFormat::INOUT_JSONColumns,
+     InOutFormat::INOUT_JSONColumnsWithMetadata,
+     InOutFormat::INOUT_JSONCompact,
+     InOutFormat::INOUT_JSONCompactColumns,
+     InOutFormat::INOUT_JSONCompactEachRow,
+     InOutFormat::INOUT_JSONCompactEachRowWithNames,
+     InOutFormat::INOUT_JSONCompactEachRowWithNamesAndTypes,
+     InOutFormat::INOUT_JSONCompactStringsEachRow,
+     InOutFormat::INOUT_JSONCompactStringsEachRowWithNames,
+     InOutFormat::INOUT_JSONCompactStringsEachRowWithNamesAndTypes,
+     InOutFormat::INOUT_JSONEachRow,
+     InOutFormat::INOUT_JSONLines,
+     InOutFormat::INOUT_JSONObjectEachRow,
+     InOutFormat::INOUT_JSONStringsEachRow},
+    {InOutFormat::INOUT_LineAsString},
+    {InOutFormat::INOUT_MsgPack},
+    {InOutFormat::INOUT_Native},
+    {InOutFormat::INOUT_Npy},
+    {InOutFormat::INOUT_ORC},
+    {InOutFormat::INOUT_Parquet},
+    {InOutFormat::INOUT_Protobuf, InOutFormat::INOUT_ProtobufList, InOutFormat::INOUT_ProtobufSingle},
+    {InOutFormat::INOUT_RawBLOB},
+    {InOutFormat::INOUT_RowBinary, InOutFormat::INOUT_RowBinaryWithNames, InOutFormat::INOUT_RowBinaryWithNamesAndTypes},
+    {InOutFormat::INOUT_TabSeparated,
+     InOutFormat::INOUT_TabSeparatedRaw,
+     InOutFormat::INOUT_TabSeparatedRawWithNames,
+     InOutFormat::INOUT_TabSeparatedRawWithNamesAndTypes,
+     InOutFormat::INOUT_TabSeparatedWithNames,
+     InOutFormat::INOUT_TabSeparatedWithNamesAndTypes},
+    {InOutFormat::INOUT_Template},
+    {InOutFormat::INOUT_TSKV},
+    {InOutFormat::INOUT_Values}};
+
 bool SQLColumn::canBeInserted() const
 {
     return !dmod.has_value() || dmod.value() == DModifier::DEF_DEFAULT;
@@ -10,7 +136,7 @@ bool SQLColumn::canBeInserted() const
 
 String SQLColumn::getColumnName() const
 {
-    return cname;
+    return "c" + std::to_string(cname);
 }
 
 void SQLDatabase::setRandomDatabase(RandomGenerator & rg, SQLDatabase & d)
@@ -18,9 +144,9 @@ void SQLDatabase::setRandomDatabase(RandomGenerator & rg, SQLDatabase & d)
     d.random_engine = rg.nextMediumNumber() < 4;
 }
 
-void SQLDatabase::setName(SQLIdentifier * db, const String & n)
+void SQLDatabase::setName(Database * db, const uint32_t name)
 {
-    db->set_value(n);
+    db->set_database("d" + std::to_string(name));
 }
 
 bool SQLDatabase::isAtomicDatabase() const
@@ -73,14 +199,14 @@ bool SQLDatabase::isDettached() const
     return attached != DetachStatus::ATTACHED;
 }
 
-void SQLDatabase::setName(SQLIdentifier * db) const
+void SQLDatabase::setName(Database * db) const
 {
-    db->set_value(getName());
+    SQLDatabase::setName(db, dname);
 }
 
 String SQLDatabase::getName() const
 {
-    return name;
+    return "d" + std::to_string(dname);
 }
 
 void SQLDatabase::finishDatabaseSpecification(DatabaseEngine * de)
@@ -123,368 +249,256 @@ String SQLDatabase::getSparkCatalogName() const
     return (catalog == LakeCatalog::None && format == LakeFormat::DeltaLake) ? "spark_catalog" : getName();
 }
 
-bool TableEngineDescriptor::isMergeTreeFamily() const
-{
-    return value >= TableEngineValues::MergeTree && value <= TableEngineValues::GraphiteMergeTree;
-}
-
-bool TableEngineDescriptor::isLogFamily() const
-{
-    return value >= TableEngineValues::StripeLog && value <= TableEngineValues::TinyLog;
-}
-
-bool TableEngineDescriptor::isShared() const
-{
-    return option.has_value() && option.value() == TableEngineOption::TShared;
-}
-
-bool TableEngineDescriptor::isReplicated() const
-{
-    return option.has_value() && option.value() == TableEngineOption::TReplicated;
-}
-
-bool TableEngineDescriptor::supportsFinal() const
-{
-    return value >= TableEngineValues::ReplacingMergeTree && value <= TableEngineValues::GraphiteMergeTree;
-}
-
-bool TableEngineDescriptor::hasSignColumn() const
-{
-    return value >= TableEngineValues::CollapsingMergeTree && value <= TableEngineValues::VersionedCollapsingMergeTree;
-}
-
-bool TableEngineDescriptor::hasVersionColumn() const
-{
-    return value == TableEngineValues::VersionedCollapsingMergeTree;
-}
-
-bool TableEngineDescriptor::areInsertsAppends() const
-{
-    return value == TableEngineValues::MergeTree || isLogFamily() || value == TableEngineValues::Memory || value == TableEngineValues::MySQL
-        || value == TableEngineValues::PostgreSQL || value == TableEngineValues::MaterializedPostgreSQL
-        || value == TableEngineValues::SQLite || value == TableEngineValues::MongoDB || value == TableEngineValues::Redis
-        || value == TableEngineValues::Hudi || (value >= TableEngineValues::DeltaLakeS3 && value <= TableEngineValues::DeltaLakeLocal)
-        || (value >= TableEngineValues::IcebergS3 && value <= TableEngineValues::IcebergLocal)
-        || (value >= TableEngineValues::PaimonS3 && value <= TableEngineValues::PaimonLocal) || value == TableEngineValues::Dictionary;
-}
-
 void SQLBase::setDeterministic(const FuzzConfig & fc, RandomGenerator & rg, SQLBase & b)
 {
-    b.engine.is_deterministic = rg.nextMediumNumber() <= fc.deterministic_prob;
-    b.random_engine = !b.engine.is_deterministic && rg.nextMediumNumber() < 6;
+    b.is_deterministic = rg.nextMediumNumber() <= fc.deterministic_prob;
+    b.random_engine = !b.is_deterministic && rg.nextMediumNumber() < 6;
 }
 
-bool SQLBase::isDeterministic() const
+bool SQLBase::supportsFinal(const TableEngineValues teng)
 {
-    return engine.isDeterministic() && (!subengine.has_value() || subengine->isDeterministic());
+    return teng >= TableEngineValues::ReplacingMergeTree && teng <= TableEngineValues::GraphiteMergeTree;
 }
 
-bool SQLBase::isMergeTreeFamily(const bool as_alias) const
+bool SQLBase::isMergeTreeFamily() const
 {
-    return engine.isMergeTreeFamily() || (as_alias && isAliasEngine() && subengine.has_value() && subengine->isMergeTreeFamily());
+    return teng >= TableEngineValues::MergeTree && teng <= TableEngineValues::GraphiteMergeTree;
 }
 
-bool SQLBase::isLogFamily(const bool as_alias) const
+bool SQLBase::isLogFamily() const
 {
-    return engine.isLogFamily() || (as_alias && isAliasEngine() && subengine.has_value() && subengine->isLogFamily());
+    return teng >= TableEngineValues::StripeLog && teng <= TableEngineValues::TinyLog;
 }
 
-bool SQLBase::isSharedMergeTree(const bool as_alias) const
+bool SQLBase::isSharedMergeTree() const
 {
-    return (isMergeTreeFamily() && engine.isShared())
-        || (as_alias && isAliasEngine() && subengine.has_value() && subengine->isMergeTreeFamily() && subengine->isShared());
+    return isMergeTreeFamily() && toption.has_value() && toption.value() == TableEngineOption::TShared;
 }
 
-bool SQLBase::isReplicatedMergeTree(const bool as_alias) const
+bool SQLBase::isReplicatedMergeTree() const
 {
-    return (isMergeTreeFamily() && engine.isReplicated())
-        || (as_alias && isAliasEngine() && subengine.has_value() && subengine->isMergeTreeFamily() && subengine->isReplicated());
+    return isMergeTreeFamily() && toption.has_value() && toption.value() == TableEngineOption::TReplicated;
 }
 
-bool SQLBase::isReplicatedOrSharedMergeTree(const bool as_alias) const
+bool SQLBase::isReplicatedOrSharedMergeTree() const
 {
-    return isReplicatedMergeTree(as_alias) || isSharedMergeTree(as_alias);
+    return isReplicatedMergeTree() || isSharedMergeTree();
 }
 
-bool SQLBase::isShared(const bool as_alias) const
+bool SQLBase::isShared() const
 {
-    return engine.isShared() || (as_alias && isAliasEngine() && subengine.has_value() && subengine->isShared());
+    return toption.has_value() && toption.value() == TableEngineOption::TShared;
 }
 
-bool SQLBase::isFileEngine(const bool as_alias) const
+bool SQLBase::isFileEngine() const
 {
-    return engine.value == TableEngineValues::File
-        || (as_alias && isAliasEngine() && subengine.has_value() && subengine->value == TableEngineValues::File);
+    return teng == TableEngineValues::File;
 }
 
-bool SQLBase::isJoinEngine(const bool as_alias) const
+bool SQLBase::isJoinEngine() const
 {
-    return engine.value == TableEngineValues::Join
-        || (as_alias && isAliasEngine() && subengine.has_value() && subengine->value == TableEngineValues::Join);
+    return teng == TableEngineValues::Join;
 }
 
-bool SQLBase::isNullEngine(const bool as_alias) const
+bool SQLBase::isNullEngine() const
 {
-    return engine.value == TableEngineValues::Null
-        || (as_alias && isAliasEngine() && subengine.has_value() && subengine->value == TableEngineValues::Null);
+    return teng == TableEngineValues::Null;
 }
 
-bool SQLBase::isSetEngine(const bool as_alias) const
+bool SQLBase::isSetEngine() const
 {
-    return engine.value == TableEngineValues::Set
-        || (as_alias && isAliasEngine() && subengine.has_value() && subengine->value == TableEngineValues::Set);
+    return teng == TableEngineValues::Set;
 }
 
-bool SQLBase::isBufferEngine(const bool as_alias) const
+bool SQLBase::isBufferEngine() const
 {
-    return engine.value == TableEngineValues::Buffer
-        || (as_alias && isAliasEngine() && subengine.has_value() && subengine->value == TableEngineValues::Buffer);
+    return teng == TableEngineValues::Buffer;
 }
 
-bool SQLBase::isRocksEngine(const bool as_alias) const
+bool SQLBase::isRocksEngine() const
 {
-    return engine.value == TableEngineValues::EmbeddedRocksDB
-        || (as_alias && isAliasEngine() && subengine.has_value() && subengine->value == TableEngineValues::EmbeddedRocksDB);
+    return teng == TableEngineValues::EmbeddedRocksDB;
 }
 
-bool SQLBase::isMemoryEngine(const bool as_alias) const
+bool SQLBase::isMemoryEngine() const
 {
-    return engine.value == TableEngineValues::Memory
-        || (as_alias && isAliasEngine() && subengine.has_value() && subengine->value == TableEngineValues::Memory);
+    return teng == TableEngineValues::Memory;
 }
 
-bool SQLBase::isMySQLEngine(const bool as_alias) const
+bool SQLBase::isMySQLEngine() const
 {
-    return engine.value == TableEngineValues::MySQL
-        || (isExternalDistributedEngine() && subengine.has_value() && subengine->value == TableEngineValues::MySQL)
-        || (as_alias && isAliasEngine() && subengine.has_value() && subengine->value == TableEngineValues::MySQL);
+    return teng == TableEngineValues::MySQL || (isExternalDistributedEngine() && sub == TableEngineValues::MySQL);
 }
 
-bool SQLBase::isPostgreSQLEngine(const bool as_alias) const
+bool SQLBase::isPostgreSQLEngine() const
 {
-    return engine.value == TableEngineValues::PostgreSQL || engine.value == TableEngineValues::MaterializedPostgreSQL
-        || (isExternalDistributedEngine() && subengine.has_value()
-            && (subengine->value == TableEngineValues::PostgreSQL || subengine->value == TableEngineValues::MaterializedPostgreSQL))
-        || (as_alias && isAliasEngine() && subengine.has_value()
-            && (subengine->value == TableEngineValues::PostgreSQL || subengine->value == TableEngineValues::MaterializedPostgreSQL));
+    return teng == TableEngineValues::PostgreSQL || teng == TableEngineValues::MaterializedPostgreSQL
+        || (isExternalDistributedEngine() && (sub == TableEngineValues::PostgreSQL || sub == TableEngineValues::MaterializedPostgreSQL));
 }
 
-bool SQLBase::isSQLiteEngine(const bool as_alias) const
+bool SQLBase::isSQLiteEngine() const
 {
-    return engine.value == TableEngineValues::SQLite
-        || (as_alias && isAliasEngine() && subengine.has_value() && subengine->value == TableEngineValues::SQLite);
+    return teng == TableEngineValues::SQLite;
 }
 
-bool SQLBase::isMongoDBEngine(const bool as_alias) const
+bool SQLBase::isMongoDBEngine() const
 {
-    return engine.value == TableEngineValues::MongoDB
-        || (as_alias && isAliasEngine() && subengine.has_value() && subengine->value == TableEngineValues::MongoDB);
+    return teng == TableEngineValues::MongoDB;
 }
 
-bool SQLBase::isRedisEngine(const bool as_alias) const
+bool SQLBase::isRedisEngine() const
 {
-    return engine.value == TableEngineValues::Redis
-        || (as_alias && isAliasEngine() && subengine.has_value() && subengine->value == TableEngineValues::Redis);
+    return teng == TableEngineValues::Redis;
 }
 
-bool SQLBase::isS3Engine(const bool as_alias) const
+bool SQLBase::isS3Engine() const
 {
-    return engine.value == TableEngineValues::S3
-        || (as_alias && isAliasEngine() && subengine.has_value() && subengine->value == TableEngineValues::S3);
+    return teng == TableEngineValues::S3;
 }
 
-bool SQLBase::isS3QueueEngine(const bool as_alias) const
+bool SQLBase::isS3QueueEngine() const
 {
-    return engine.value == TableEngineValues::S3Queue
-        || (as_alias && isAliasEngine() && subengine.has_value() && subengine->value == TableEngineValues::S3Queue);
+    return teng == TableEngineValues::S3Queue;
 }
 
-bool SQLBase::isAnyS3Engine(const bool as_alias) const
+bool SQLBase::isAnyS3Engine() const
 {
-    return isS3Engine(as_alias) || isS3QueueEngine(as_alias);
+    return isS3Engine() || isS3QueueEngine();
 }
 
-bool SQLBase::isAzureEngine(const bool as_alias) const
+bool SQLBase::isAzureEngine() const
 {
-    return engine.value == TableEngineValues::AzureBlobStorage
-        || (as_alias && isAliasEngine() && subengine.has_value() && subengine->value == TableEngineValues::AzureBlobStorage);
+    return teng == TableEngineValues::AzureBlobStorage;
 }
 
-bool SQLBase::isAzureQueueEngine(const bool as_alias) const
+bool SQLBase::isAzureQueueEngine() const
 {
-    return engine.value == TableEngineValues::AzureQueue
-        || (as_alias && isAliasEngine() && subengine.has_value() && subengine->value == TableEngineValues::AzureQueue);
+    return teng == TableEngineValues::AzureQueue;
 }
 
-bool SQLBase::isAnyAzureEngine(const bool as_alias) const
+bool SQLBase::isAnyAzureEngine() const
 {
-    return isAzureEngine(as_alias) || isAzureQueueEngine(as_alias);
+    return isAzureEngine() || isAzureQueueEngine();
 }
 
-bool SQLBase::isAnyQueueEngine(const bool as_alias) const
+bool SQLBase::isAnyQueueEngine() const
 {
-    return isS3QueueEngine(as_alias) || isAzureQueueEngine(as_alias);
+    return isS3QueueEngine() || isAzureQueueEngine();
 }
 
-bool SQLBase::isHudiEngine(const bool as_alias) const
+bool SQLBase::isHudiEngine() const
 {
-    return engine.value == TableEngineValues::Hudi
-        || (as_alias && isAliasEngine() && subengine.has_value() && subengine->value == TableEngineValues::Hudi);
+    return teng == TableEngineValues::Hudi;
 }
 
-bool SQLBase::isDeltaLakeS3Engine(const bool as_alias) const
+bool SQLBase::isDeltaLakeS3Engine() const
 {
-    return engine.value == TableEngineValues::DeltaLakeS3
-        || (as_alias && isAliasEngine() && subengine.has_value() && subengine->value == TableEngineValues::DeltaLakeS3);
+    return teng == TableEngineValues::DeltaLakeS3;
 }
 
-bool SQLBase::isDeltaLakeAzureEngine(const bool as_alias) const
+bool SQLBase::isDeltaLakeAzureEngine() const
 {
-    return engine.value == TableEngineValues::DeltaLakeAzure
-        || (as_alias && isAliasEngine() && subengine.has_value() && subengine->value == TableEngineValues::DeltaLakeAzure);
+    return teng == TableEngineValues::DeltaLakeAzure;
 }
 
-bool SQLBase::isDeltaLakeLocalEngine(const bool as_alias) const
+bool SQLBase::isDeltaLakeLocalEngine() const
 {
-    return engine.value == TableEngineValues::DeltaLakeLocal
-        || (as_alias && isAliasEngine() && subengine.has_value() && subengine->value == TableEngineValues::DeltaLakeLocal);
+    return teng == TableEngineValues::DeltaLakeLocal;
 }
 
-bool SQLBase::isAnyDeltaLakeEngine(const bool as_alias) const
+bool SQLBase::isAnyDeltaLakeEngine() const
 {
-    return isDeltaLakeS3Engine(as_alias) || isDeltaLakeAzureEngine(as_alias) || isDeltaLakeLocalEngine(as_alias);
+    return teng >= TableEngineValues::DeltaLakeS3 && teng <= TableEngineValues::DeltaLakeLocal;
 }
 
-bool SQLBase::isIcebergS3Engine(const bool as_alias) const
+bool SQLBase::isIcebergS3Engine() const
 {
-    return engine.value == TableEngineValues::IcebergS3
-        || (as_alias && isAliasEngine() && subengine.has_value() && subengine->value == TableEngineValues::IcebergS3);
+    return teng == TableEngineValues::IcebergS3;
 }
 
-bool SQLBase::isIcebergAzureEngine(const bool as_alias) const
+bool SQLBase::isIcebergAzureEngine() const
 {
-    return engine.value == TableEngineValues::IcebergAzure
-        || (as_alias && isAliasEngine() && subengine.has_value() && subengine->value == TableEngineValues::IcebergAzure);
+    return teng == TableEngineValues::IcebergAzure;
 }
 
-bool SQLBase::isIcebergLocalEngine(const bool as_alias) const
+bool SQLBase::isIcebergLocalEngine() const
 {
-    return engine.value == TableEngineValues::IcebergLocal
-        || (as_alias && isAliasEngine() && subengine.has_value() && subengine->value == TableEngineValues::IcebergLocal);
+    return teng == TableEngineValues::IcebergLocal;
 }
 
-bool SQLBase::isAnyIcebergEngine(const bool as_alias) const
+bool SQLBase::isAnyIcebergEngine() const
 {
-    return isIcebergS3Engine(as_alias) || isIcebergAzureEngine(as_alias) || isIcebergLocalEngine(as_alias);
-}
-
-bool SQLBase::isPaimonS3Engine(const bool as_alias) const
-{
-    return engine.value == TableEngineValues::PaimonS3
-        || (as_alias && isAliasEngine() && subengine.has_value() && subengine->value == TableEngineValues::PaimonS3);
-}
-
-bool SQLBase::isPaimonAzureEngine(const bool as_alias) const
-{
-    return engine.value == TableEngineValues::PaimonAzure
-        || (as_alias && isAliasEngine() && subengine.has_value() && subengine->value == TableEngineValues::PaimonAzure);
-}
-
-bool SQLBase::isPaimonLocalEngine(const bool as_alias) const
-{
-    return engine.value == TableEngineValues::PaimonLocal
-        || (as_alias && isAliasEngine() && subengine.has_value() && subengine->value == TableEngineValues::PaimonLocal);
-}
-
-bool SQLBase::isAnyPaimonEngine(const bool as_alias) const
-{
-    return isPaimonS3Engine(as_alias) || isPaimonAzureEngine(as_alias) || isPaimonLocalEngine(as_alias);
-}
-
-bool SQLBase::isAnyLakeEngine(const bool as_alias) const
-{
-    return isAnyIcebergEngine(as_alias) || isAnyDeltaLakeEngine(as_alias) || isAnyPaimonEngine(as_alias);
+    return teng >= TableEngineValues::IcebergS3 && teng <= TableEngineValues::IcebergLocal;
 }
 
 bool SQLBase::isOnS3() const
 {
-    return isIcebergS3Engine() || isDeltaLakeS3Engine() || isPaimonS3Engine() || isAnyS3Engine();
+    return isIcebergS3Engine() || isDeltaLakeS3Engine() || isAnyS3Engine();
 }
 
 bool SQLBase::isOnAzure() const
 {
-    return isIcebergAzureEngine() || isDeltaLakeAzureEngine() || isPaimonAzureEngine() || isAnyAzureEngine();
+    return isIcebergAzureEngine() || isDeltaLakeAzureEngine() || isAnyAzureEngine();
 }
 
 bool SQLBase::isOnLocal() const
 {
-    return isIcebergLocalEngine() || isDeltaLakeLocalEngine() || isPaimonLocalEngine();
+    return isIcebergLocalEngine() || isDeltaLakeLocalEngine();
 }
 
-bool SQLBase::isMergeEngine(const bool as_alias) const
+bool SQLBase::isMergeEngine() const
 {
-    return engine.value == TableEngineValues::Merge
-        || (as_alias && isAliasEngine() && subengine.has_value() && subengine->value == TableEngineValues::Merge);
+    return teng == TableEngineValues::Merge;
 }
 
-bool SQLBase::isDistributedEngine(const bool as_alias) const
+bool SQLBase::isDistributedEngine() const
 {
-    return engine.value == TableEngineValues::Distributed
-        || (as_alias && isAliasEngine() && subengine.has_value() && subengine->value == TableEngineValues::Distributed);
+    return teng == TableEngineValues::Distributed;
 }
 
-bool SQLBase::isDictionaryEngine(const bool as_alias) const
+bool SQLBase::isDictionaryEngine() const
 {
-    return engine.value == TableEngineValues::Dictionary
-        || (as_alias && isAliasEngine() && subengine.has_value() && subengine->value == TableEngineValues::Dictionary);
+    return teng == TableEngineValues::Dictionary;
 }
 
-bool SQLBase::isGenerateRandomEngine(const bool as_alias) const
+bool SQLBase::isGenerateRandomEngine() const
 {
-    return engine.value == TableEngineValues::GenerateRandom
-        || (as_alias && isAliasEngine() && subengine.has_value() && subengine->value == TableEngineValues::GenerateRandom);
+    return teng == TableEngineValues::GenerateRandom;
 }
 
-bool SQLBase::isURLEngine(const bool as_alias) const
+bool SQLBase::isURLEngine() const
 {
-    return engine.value == TableEngineValues::URL
-        || (as_alias && isAliasEngine() && subengine.has_value() && subengine->value == TableEngineValues::URL);
+    return teng == TableEngineValues::URL;
 }
 
-bool SQLBase::isKeeperMapEngine(const bool as_alias) const
+bool SQLBase::isKeeperMapEngine() const
 {
-    return engine.value == TableEngineValues::KeeperMap
-        || (as_alias && isAliasEngine() && subengine.has_value() && subengine->value == TableEngineValues::KeeperMap);
+    return teng == TableEngineValues::KeeperMap;
 }
 
-bool SQLBase::isExternalDistributedEngine(const bool as_alias) const
+bool SQLBase::isExternalDistributedEngine() const
 {
-    return engine.value == TableEngineValues::ExternalDistributed
-        || (as_alias && isAliasEngine() && subengine.has_value() && subengine->value == TableEngineValues::ExternalDistributed);
+    return teng == TableEngineValues::ExternalDistributed;
 }
 
-bool SQLBase::isMaterializedPostgreSQLEngine(const bool as_alias) const
+bool SQLBase::isMaterializedPostgreSQLEngine() const
 {
-    return engine.value == TableEngineValues::MaterializedPostgreSQL
-        || (as_alias && isAliasEngine() && subengine.has_value() && subengine->value == TableEngineValues::MaterializedPostgreSQL);
+    return teng == TableEngineValues::MaterializedPostgreSQL;
 }
 
-bool SQLBase::isArrowFlightEngine(const bool as_alias) const
+bool SQLBase::isArrowFlightEngine() const
 {
-    return engine.value == TableEngineValues::ArrowFlight
-        || (as_alias && isAliasEngine() && subengine.has_value() && subengine->value == TableEngineValues::ArrowFlight);
+    return teng == TableEngineValues::ArrowFlight;
 }
 
-bool SQLBase::isAliasEngine(const bool as_alias) const
+bool SQLBase::isAliasEngine() const
 {
-    return engine.value == TableEngineValues::Alias
-        || (as_alias && isAliasEngine() && subengine.has_value() && subengine->value == TableEngineValues::Alias);
+    return teng == TableEngineValues::Alias;
 }
 
-bool SQLBase::isKafkaEngine(const bool as_alias) const
+bool SQLBase::isKafkaEngine() const
 {
-    return engine.value == TableEngineValues::Kafka
-        || (as_alias && isAliasEngine() && subengine.has_value() && subengine->value == TableEngineValues::Kafka);
+    return teng == TableEngineValues::Kafka;
 }
 
 bool SQLBase::isNotTruncableEngine() const
@@ -496,9 +510,9 @@ bool SQLBase::isNotTruncableEngine() const
 
 bool SQLBase::isEngineReplaceable() const
 {
-    return isMySQLEngine() || isPostgreSQLEngine() || isSQLiteEngine() || isAnyLakeEngine() || isAnyS3Engine() || isAnyAzureEngine()
-        || isFileEngine() || isURLEngine() || isRedisEngine() || isMongoDBEngine() || isDictionaryEngine() || isNullEngine()
-        || isGenerateRandomEngine() || isArrowFlightEngine();
+    return isMySQLEngine() || isPostgreSQLEngine() || isSQLiteEngine() || isAnyIcebergEngine() || isAnyDeltaLakeEngine() || isAnyS3Engine()
+        || isAnyAzureEngine() || isFileEngine() || isURLEngine() || isRedisEngine() || isMongoDBEngine() || isDictionaryEngine()
+        || isNullEngine() || isGenerateRandomEngine() || isArrowFlightEngine();
 }
 
 bool SQLBase::isAnotherRelationalDatabaseEngine() const
@@ -508,7 +522,7 @@ bool SQLBase::isAnotherRelationalDatabaseEngine() const
 
 bool SQLBase::hasDatabasePeer() const
 {
-    chassert(isDeterministic() || peer_table == PeerTableDatabase::None);
+    chassert(is_deterministic || peer_table == PeerTableDatabase::None);
     return peer_table != PeerTableDatabase::None;
 }
 
@@ -544,10 +558,10 @@ bool SQLBase::isDettached() const
 
 String SQLBase::getDatabaseName() const
 {
-    return db ? db->getName() : "default";
+    return "d" + (db ? std::to_string(db->dname) : "efault");
 }
 
-String SQLBase::getBaseName(const bool full) const
+String SQLBase::getTableName(const bool full) const
 {
     String res;
 
@@ -555,7 +569,7 @@ String SQLBase::getBaseName(const bool full) const
     {
         res += "test.";
     }
-    res += name;
+    res += this->prefix + std::to_string(tname);
     return res;
 }
 
@@ -567,36 +581,22 @@ String SQLBase::getFullName(const bool setdbname) const
     {
         res += getDatabaseName() + ".";
     }
-    res += getBaseName();
+    res += getTableName();
     return res;
 }
 
 String SQLBase::getSparkCatalogName() const
 {
-    chassert(isAnyLakeEngine());
+    chassert(isAnyIcebergEngine() || isAnyDeltaLakeEngine());
     if (getLakeCatalog() == LakeCatalog::None)
     {
         /// DeltaLake tables on Spark must be on the `spark_catalog` :(
-        return isAnyDeltaLakeEngine() ? "spark_catalog" : getBaseName(false);
+        return isAnyIcebergEngine() ? getTableName(false) : "spark_catalog";
     }
     return db->getSparkCatalogName();
 }
 
 static const constexpr String PARTITION_STR = "{_partition_id}";
-static const constexpr String SCHEMA_HASH_STR = "{_schema_hash}";
-
-/// Returns the placeholder suffix to append to an S3/Azure path component.
-/// Both placeholders may appear in either order, chosen randomly.
-static String placeholders(RandomGenerator & rg, bool want_partition, bool want_hash)
-{
-    if (want_partition && want_hash)
-        return rg.nextBool() ? PARTITION_STR + SCHEMA_HASH_STR : SCHEMA_HASH_STR + PARTITION_STR;
-    if (want_partition)
-        return PARTITION_STR;
-    if (want_hash)
-        return SCHEMA_HASH_STR;
-    return {};
-}
 
 void SQLBase::setTablePath(RandomGenerator & rg, const FuzzConfig & fc, const bool has_dolor)
 {
@@ -605,16 +605,15 @@ void SQLBase::setTablePath(RandomGenerator & rg, const FuzzConfig & fc, const bo
         && !partition_columns_in_data_file.has_value() && !storage_class_name.has_value());
     has_partition_by = (isRedisEngine() || isKeeperMapEngine() || isMaterializedPostgreSQLEngine() || isAnyIcebergEngine()
                         || isAzureEngine() || isS3Engine())
-        && rg.nextSmallNumber() < 3;
+        && rg.nextSmallNumber() < 4;
     has_order_by = isAnyIcebergEngine() && rg.nextSmallNumber() < 4;
-    if (isAnyLakeEngine() || isAnyS3Engine() || isAnyAzureEngine())
+    if (isAnyIcebergEngine() || isAnyDeltaLakeEngine() || isAnyS3Engine() || isAnyAzureEngine())
     {
         /// Set bucket path first if possible
         String next_bucket_path;
-        const String bname = rg.nextSmallNumber() < 4 ? name : ("t" + std::to_string(counter));
 
         /// Set integration call to use, sometimes create tables in ClickHouse, others also in Spark
-        if (has_dolor && isAnyLakeEngine() && rg.nextBool())
+        if (has_dolor && (isAnyIcebergEngine() || isAnyDeltaLakeEngine()) && rg.nextBool())
         {
             integration = IntegrationCall::Dolor;
         }
@@ -627,21 +626,20 @@ void SQLBase::setTablePath(RandomGenerator & rg, const FuzzConfig & fc, const bo
             integration = IntegrationCall::Azurite;
         }
 
-        if (isAnyLakeEngine())
+        if (isAnyIcebergEngine() || isAnyDeltaLakeEngine())
         {
             const LakeCatalog catalog = getLakeCatalog();
 
             if (catalog == LakeCatalog::None)
             {
                 /// DeltaLake tables on Spark must be on the `spark_catalog` :(
-                /// Paimon uses `.db` suffix for database directories (e.g. test.db/)
                 next_bucket_path = fmt::format(
-                    "{}{}{}{}{}{}",
+                    "{}{}{}{}t{}{}",
                     isOnLocal() ? fc.lakes_path.generic_string() : "",
                     isOnLocal() ? "/" : "",
                     (integration == IntegrationCall::Dolor) ? getSparkCatalogName() : "",
-                    (integration == IntegrationCall::Dolor) ? (!isAnyIcebergEngine() ? "/test.db/" : "/test/") : "",
-                    bname,
+                    (integration == IntegrationCall::Dolor) ? "/test/" : "",
+                    tname,
                     rg.nextBool() ? "/" : "");
             }
             else if (fc.dolor_server.has_value() && fc.minio_server.has_value())
@@ -652,18 +650,27 @@ void SQLBase::setTablePath(RandomGenerator & rg, const FuzzConfig & fc, const bo
                 chassert(isOnS3()); /// What is supported at the moment
                 switch (catalog)
                 {
-                    case LakeCatalog::Glue: cat = &sc.glue_catalog.value(); break;
-                    case LakeCatalog::Hive: cat = &sc.hive_catalog.value(); break;
-                    case LakeCatalog::REST: cat = &sc.rest_catalog.value(); break;
-                    case LakeCatalog::Unity: cat = &sc.unity_catalog.value(); break;
-                    default: UNREACHABLE();
+                    case LakeCatalog::Glue:
+                        cat = &sc.glue_catalog.value();
+                        break;
+                    case LakeCatalog::Hive:
+                        cat = &sc.hive_catalog.value();
+                        break;
+                    case LakeCatalog::REST:
+                        cat = &sc.rest_catalog.value();
+                        break;
+                    case LakeCatalog::Unity:
+                        cat = &sc.unity_catalog.value();
+                        break;
+                    default:
+                        UNREACHABLE();
                 }
                 next_bucket_path = fmt::format(
-                    "http://{}:{}/{}/{}{}",
+                    "http://{}:{}/{}/t{}{}",
                     fc.minio_server.value().server_hostname,
                     fc.minio_server.value().port,
                     cat->warehouse,
-                    bname,
+                    tname,
                     rg.nextBool() ? "/" : "");
             }
         }
@@ -673,18 +680,16 @@ void SQLBase::setTablePath(RandomGenerator & rg, const FuzzConfig & fc, const bo
             bool used_partition = false;
 
             chassert(isAnyS3Engine() || isAnyAzureEngine());
-            bool used_schema_hash = false;
-
             if (rg.nextBool())
             {
                 /// Use a subdirectory
                 next_bucket_path += "subdir";
-                next_bucket_path += rg.nextBool() ? bname : "";
-                const bool want_partition = has_partition_by && rg.nextBool();
-                const bool want_hash = rg.nextBool();
-                next_bucket_path += placeholders(rg, want_partition, want_hash);
-                used_partition |= want_partition;
-                used_schema_hash |= want_hash;
+                next_bucket_path += rg.nextBool() ? std::to_string(tname) : "";
+                if (has_partition_by && rg.nextBool())
+                {
+                    next_bucket_path += PARTITION_STR;
+                    used_partition = true;
+                }
                 next_bucket_path += "/";
             }
             if (rg.nextBool())
@@ -692,10 +697,12 @@ void SQLBase::setTablePath(RandomGenerator & rg, const FuzzConfig & fc, const bo
                 const bool add_before = rg.nextBool();
 
                 next_bucket_path += "file";
-                next_bucket_path += add_before ? bname : "";
-                next_bucket_path
-                    += placeholders(rg, has_partition_by && !used_partition && rg.nextBool(), !used_schema_hash && rg.nextBool());
-                next_bucket_path += !add_before ? bname : "";
+                next_bucket_path += add_before ? std::to_string(tname) : "";
+                if (has_partition_by && !used_partition && rg.nextBool())
+                {
+                    next_bucket_path += PARTITION_STR;
+                }
+                next_bucket_path += !add_before ? std::to_string(tname) : "";
                 if ((isS3QueueEngine() || isAzureQueueEngine()) && rg.nextMediumNumber() < 81)
                 {
                     next_bucket_path += "/";
@@ -707,61 +714,35 @@ void SQLBase::setTablePath(RandomGenerator & rg, const FuzzConfig & fc, const bo
             }
             if (rg.nextBool())
             {
-                /// Either a generic .data extension or a compression-recognized extension
-                /// (exercises ClickHouse's extension-based compression auto-detection)
-                static const DB::Strings comp_extensions
-                    = {"gz", "gzip", "bz2", "lz4", "xz", "zst", "zstd", "lzma", "br", "brotli", "deflate", "snappy", "7z"};
-                next_bucket_path += rg.nextSmallNumber() < 4 ? ".data" : ("." + rg.pickRandomly(comp_extensions));
+                next_bucket_path += ".data";
             }
         }
         bucket_path = std::move(next_bucket_path);
     }
-    else if (isKeeperMapEngine() || isArrowFlightEngine() || isFileEngine() || (isURLEngine() && fc.http_server.has_value()))
-    {
-        /// Nasty strings give bad URLs, so use table counter
-        const String bname = rg.nextSmallNumber() < 4 ? name : ("t" + std::to_string(counter));
-
-        if (isKeeperMapEngine() || isArrowFlightEngine())
-        {
-            bucket_path = fmt::format("/{}", bname);
-        }
-        else if (isFileEngine())
-        {
-            bucket_path = fmt::format("{}/{}", fc.server_file_path.generic_string(), bname);
-        }
-        else if (isURLEngine() && fc.http_server.has_value())
-        {
-            const ServerCredentials & sc = fc.http_server.value();
-
-            bucket_path = fmt::format("http://{}:{}/{}", sc.server_hostname, sc.port, bname);
-        }
-    }
-
     if (isAnyIcebergEngine() && rg.nextMediumNumber() < 91)
     {
         /// Iceberg supports 3 formats
-        static const DB::Strings formats = {"ORC", "Avro", "Parquet"};
+        static const std::vector<InOutFormat> formats = {InOutFormat::INOUT_ORC, InOutFormat::INOUT_Avro, InOutFormat::INOUT_Parquet};
 
-        file_format = rg.nextMediumNumber() < 91 ? rg.pickRandomly(formats) : rg.pickRandomly(fc.in_out_formats);
+        file_format = rg.nextMediumNumber() < 91 ? rg.pickRandomly(formats) : rg.pickRandomly(rg.pickRandomly(inOutFormats));
     }
     else if (isAnyDeltaLakeEngine() && rg.nextMediumNumber() < 91)
     {
         /// What Delta Lake supports
-        file_format = rg.nextMediumNumber() < 91 ? "Parquet" : rg.pickRandomly(fc.in_out_formats);
+        file_format = rg.nextMediumNumber() < 91 ? INOUT_Parquet : rg.pickRandomly(rg.pickRandomly(inOutFormats));
     }
-    else if (isAnyPaimonEngine() && rg.nextMediumNumber() < 91)
+    else if (isAnyS3Engine() || isAnyAzureEngine() || isFileEngine() || isURLEngine() || isKafkaEngine())
     {
-        static const DB::Strings formats = {"ORC", "Parquet"};
-        file_format = rg.nextMediumNumber() < 91 ? rg.pickRandomly(formats) : rg.pickRandomly(fc.in_out_formats);
-    }
-    else if (isFileEngine() || ((isAnyS3Engine() || isAnyAzureEngine() || isURLEngine() || isKafkaEngine()) && rg.nextMediumNumber() < 91))
-    {
-        /// At the moment give more preference for Parquet
-        file_format = rg.nextMediumNumber() < 26 ? "Parquet" : rg.pickRandomly(fc.in_out_formats);
-    }
-    if ((isAnyLakeEngine() || isAnyS3Engine() || isAnyAzureEngine() || isFileEngine() || isURLEngine()) && rg.nextMediumNumber() < 41)
-    {
-        file_comp = rg.pickRandomly(compressionMethods);
+        /// Set other parameters
+        if (isFileEngine() || rg.nextMediumNumber() < 91)
+        {
+            /// At the moment give more preference for Parquet
+            file_format = rg.nextMediumNumber() < 26 ? INOUT_Parquet : rg.pickRandomly(rg.pickRandomly(inOutFormats));
+        }
+        if (!isKafkaEngine() && rg.nextMediumNumber() < 51)
+        {
+            file_comp = rg.pickRandomly(compressionMethods);
+        }
     }
     if ((isS3Engine() || isAzureEngine()) && rg.nextMediumNumber() < 21)
     {
@@ -807,17 +788,39 @@ void SQLBase::setTablePath(RandomGenerator & rg, const FuzzConfig & fc, const bo
     }
 }
 
-String SQLBase::getTablePath() const
+String SQLBase::getTablePath(const FuzzConfig & fc) const
 {
-    /// Only engines that own a `bucket_path` should be calling this. Object-storage queues
-    /// (S3Queue, AzureQueue) are covered by isAnyS3Engine()/isAnyAzureEngine().
-    chassert(
-        isAnyLakeEngine() || isAnyS3Engine() || isAnyAzureEngine() || isKeeperMapEngine() || isArrowFlightEngine() || isFileEngine()
-        || isURLEngine());
-    return bucket_path.has_value() ? bucket_path.value() : "test";
+    if (isAnyIcebergEngine() || isAnyDeltaLakeEngine() || isAnyS3Engine() || isAnyAzureEngine())
+    {
+        return bucket_path.has_value() ? bucket_path.value() : "test";
+    }
+    if (isFileEngine())
+    {
+        return fmt::format("{}/file{}", fc.server_file_path.generic_string(), tname);
+    }
+    if (isURLEngine())
+    {
+        if (fc.http_server.has_value())
+        {
+            const ServerCredentials & sc = fc.http_server.value();
+
+            return fmt::format("http://{}:{}/file{}", sc.server_hostname, sc.port, tname);
+        }
+        return "test";
+    }
+    if (isKeeperMapEngine())
+    {
+        return fmt::format("/kfile{}", tname);
+    }
+    if (isArrowFlightEngine())
+    {
+        return fmt::format("/aflight{}", tname);
+    }
+
+    UNREACHABLE();
 }
 
-String SQLBase::getTablePath(RandomGenerator & rg, const bool allow_not_deterministic) const
+String SQLBase::getTablePath(RandomGenerator & rg, const FuzzConfig & fc, const bool allow_not_deterministic) const
 {
     if ((isAnyS3Engine() || isAnyAzureEngine()) && allow_not_deterministic && rg.nextSmallNumber() < 8)
     {
@@ -829,15 +832,6 @@ String SQLBase::getTablePath(RandomGenerator & rg, const bool allow_not_determin
             res.replace(
                 partition_pos,
                 PARTITION_STR.length(),
-                rg.nextBool() ? std::to_string(rg.randomInt<uint32_t>(0, 100)) : rg.nextString("", true, rg.nextStrlen()));
-        }
-        /// Replace schema hash str
-        const size_t schema_hash_pos = res.find(SCHEMA_HASH_STR);
-        if (schema_hash_pos != std::string::npos && rg.nextMediumNumber() < 81)
-        {
-            res.replace(
-                schema_hash_pos,
-                SCHEMA_HASH_STR.length(),
                 rg.nextBool() ? std::to_string(rg.randomInt<uint32_t>(0, 100)) : rg.nextString("", true, rg.nextStrlen()));
         }
         /// Replace glob for number
@@ -854,7 +848,7 @@ String SQLBase::getTablePath(RandomGenerator & rg, const bool allow_not_determin
         }
         return res;
     }
-    if (isAnyLakeEngine() && allow_not_deterministic && rg.nextSmallNumber() < 4)
+    if ((isAnyIcebergEngine() || isAnyDeltaLakeEngine()) && allow_not_deterministic && rg.nextSmallNumber() < 4)
     {
         /// Add or remove '/'
         String res = bucket_path.has_value() ? bucket_path.value() : "test";
@@ -872,7 +866,12 @@ String SQLBase::getTablePath(RandomGenerator & rg, const bool allow_not_determin
         }
         return res;
     }
-    return getTablePath();
+    return getTablePath(fc);
+}
+
+String SQLBase::getMetadataPath(const FuzzConfig & fc) const
+{
+    return has_metadata ? fmt::format("{}/metadatat{}", fc.server_file_path.generic_string(), tname) : "";
 }
 
 LakeCatalog SQLBase::getLakeCatalog() const
@@ -890,35 +889,32 @@ LakeFormat SQLBase::getPossibleLakeFormat() const
     return db ? db->format : LakeFormat::All;
 }
 
-void SQLBase::setName(ExprSchemaTable * est, const String & n, const bool setdbname, std::shared_ptr<SQLDatabase> database)
+void SQLBase::setName(
+    ExprSchemaTable * est, const String & prefix, const bool setdbname, std::shared_ptr<SQLDatabase> database, const uint32_t name)
 {
     String res;
 
     if (database || setdbname)
     {
-        est->mutable_database()->set_value(database ? database->getName() : "default");
+        est->mutable_database()->set_database("d" + (database ? std::to_string(database->dname) : "efault"));
     }
     if (database && database->catalog != LakeCatalog::None)
     {
         res += "test.";
     }
-    res += n;
-    est->mutable_table()->set_value(std::move(res));
+    res += prefix + std::to_string(name);
+    est->mutable_table()->set_table(std::move(res));
 }
 
 void SQLBase::setName(ExprSchemaTable * est, const bool setdbname) const
 {
-    if (db || setdbname)
-    {
-        est->mutable_database()->set_value(getDatabaseName());
-    }
-    est->mutable_table()->set_value(getBaseName(true));
+    SQLBase::setName(est, this->prefix, setdbname, db, tname);
 }
 
 void SQLBase::setName(TableEngine * te) const
 {
-    te->add_params()->mutable_database()->set_value(getDatabaseName());
-    te->add_params()->mutable_table()->set_value(getBaseName());
+    te->add_params()->mutable_database()->set_database(getDatabaseName());
+    te->add_params()->mutable_table()->set_table(getTableName());
 }
 
 size_t SQLTable::numberOfInsertableColumns(const bool all) const
@@ -932,26 +928,26 @@ size_t SQLTable::numberOfInsertableColumns(const bool all) const
     return res;
 }
 
-bool SQLTable::supportsFinal(const bool as_alias) const
+bool SQLTable::supportsFinal() const
 {
-    return engine.supportsFinal() || isBufferEngine() || (isDistributedEngine() && subengine.has_value() && subengine->supportsFinal())
-        || (as_alias && isAliasEngine() && subengine.has_value() && subengine->supportsFinal());
+    return SQLBase::supportsFinal(teng) || isBufferEngine() || (isDistributedEngine() && SQLBase::supportsFinal(sub));
 }
 
-bool SQLTable::hasSignColumn(const bool as_alias) const
+bool SQLTable::hasSignColumn() const
 {
-    return engine.hasSignColumn() || (as_alias && isAliasEngine() && subengine.has_value() && subengine->hasSignColumn());
+    return teng >= TableEngineValues::CollapsingMergeTree && teng <= TableEngineValues::VersionedCollapsingMergeTree;
 }
 
-bool SQLTable::hasVersionColumn(const bool as_alias) const
+bool SQLTable::hasVersionColumn() const
 {
-    return engine.hasVersionColumn() || (as_alias && isAliasEngine() && subengine.has_value() && subengine->hasVersionColumn());
+    return teng == TableEngineValues::VersionedCollapsingMergeTree;
 }
 
-bool SQLTable::areInsertsAppends(const bool as_alias) const
+bool SQLTable::areInsertsAppends() const
 {
-    return engine.areInsertsAppends() || isMySQLEngine() || isPostgreSQLEngine()
-        || (as_alias && isAliasEngine() && subengine.has_value() && subengine->areInsertsAppends());
+    return teng == TableEngineValues::MergeTree || isLogFamily() || isMemoryEngine() || isMySQLEngine() || isPostgreSQLEngine()
+        || isSQLiteEngine() || isMongoDBEngine() || isRedisEngine() || isHudiEngine() || isAnyDeltaLakeEngine() || isAnyIcebergEngine()
+        || isDictionaryEngine();
 }
 
 bool SQLView::supportsFinal() const
@@ -964,20 +960,20 @@ bool SQLDictionary::supportsFinal() const
     return false;
 }
 
-void WithCluster::setName(SQLIdentifier * f) const
+void SQLFunction::setName(Function * f) const
 {
-    f->set_value(name);
+    f->set_function("f" + std::to_string(fname));
+}
+
+void SQLPolicy::setName(Policy * f) const
+{
+    f->set_policy("p" + std::to_string(policy_id));
 }
 
 const String & ColumnPathChain::getBottomName() const
 {
     chassert(!path.empty());
     return path[path.size() - 1].cname;
-}
-
-String ColumnPathChain::getBottomNameSQL() const
-{
-    return "`" + escapeSQLString(getBottomName(), '`') + "`";
 }
 
 SQLType * ColumnPathChain::getBottomType() const

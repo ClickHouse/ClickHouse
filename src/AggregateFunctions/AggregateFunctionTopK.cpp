@@ -1,5 +1,4 @@
 #include <AggregateFunctions/AggregateFunctionFactory.h>
-#include <Columns/ColumnTuple.h>
 #include <AggregateFunctions/Helpers.h>
 #include <AggregateFunctions/FactoryHelpers.h>
 #include <Common/FieldVisitorConvertToNumber.h>
@@ -236,7 +235,7 @@ public:
             set.insert(assert_cast<const ColumnVector<T> &>(*columns[0]).getData()[row_num]);
     }
 
-    void mergeImpl(AggregateDataPtr __restrict place, ConstAggregateDataPtr rhs, Arena *) const override
+    void merge(AggregateDataPtr __restrict place, ConstAggregateDataPtr rhs, Arena *) const override
     {
         if (this->data(rhs).value.empty())
             return;
@@ -417,7 +416,7 @@ public:
         }
     }
 
-    void mergeImpl(AggregateDataPtr __restrict place, ConstAggregateDataPtr rhs, Arena *) const override
+    void merge(AggregateDataPtr __restrict place, ConstAggregateDataPtr rhs, Arena *) const override
     {
         if (this->data(rhs).value.empty())
             return;
@@ -624,7 +623,6 @@ AggregateFunctionPtr createAggregateFunctionTopK(const std::string & name, const
 
 }
 
-void registerAggregateFunctionTopK(AggregateFunctionFactory & factory);
 void registerAggregateFunctionTopK(AggregateFunctionFactory & factory)
 {
     AggregateFunctionProperties properties = { .returns_default_when_only_null = false, .is_order_dependent = true };
@@ -638,9 +636,9 @@ This function does not provide a guaranteed result. In certain situations, error
 
 **See Also**
 
-- [topKWeighted](/reference/functions/aggregate-functions/topKWeighted)
-- [approx_top_k](/reference/functions/aggregate-functions/approxtopk)
-- [approx_top_sum](/reference/functions/aggregate-functions/approxtopsum)
+- [topKWeighted](../../../sql-reference/aggregate-functions/reference/topKWeighted.md)
+- [approx_top_k](../../../sql-reference/aggregate-functions/reference/approx_top_k.md)
+- [approx_top_sum](../../../sql-reference/aggregate-functions/reference/approx_top_sum.md)
     )";
     FunctionDocumentation::Syntax syntax_topK = R"(
 topK(N)(column)
@@ -683,9 +681,9 @@ Additionally, the weight of the value is taken into account.
 
 **See Also**
 
-- [topK](/reference/functions/aggregate-functions/topK)
-- [approx_top_k](/reference/functions/aggregate-functions/approxtopk)
-- [approx_top_sum](/reference/functions/aggregate-functions/approxtopsum)
+- [topK](../../../sql-reference/aggregate-functions/reference/topK.md)
+- [approx_top_k](../../../sql-reference/aggregate-functions/reference/approx_top_k.md)
+- [approx_top_sum](../../../sql-reference/aggregate-functions/reference/approx_top_sum.md)
     )";
     FunctionDocumentation::Syntax syntax_topKWeighted = R"(
 topKWeighted(N)(column, weight)
@@ -782,9 +780,9 @@ In certain situations, errors might occur and it might return frequent values th
 
 **See Also**
 
-- [topK](/reference/functions/aggregate-functions/topK)
-- [topKWeighted](/reference/functions/aggregate-functions/topKWeighted)
-- [approx_top_k](/reference/functions/aggregate-functions/approxtopk)
+- [topK](../../../sql-reference/aggregate-functions/reference/topK.md)
+- [topKWeighted](../../../sql-reference/aggregate-functions/reference/topKWeighted.md)
+- [approx_top_k](../../../sql-reference/aggregate-functions/reference/approx_top_k.md)
     )";
     FunctionDocumentation::Syntax syntax_approx_top_sum = R"(
 approx_top_sum(N[, reserved])(column, weight)
