@@ -178,6 +178,17 @@ def test_identity_partition_backfill_spec_evolution(
             == "1\ta\n3\tc"
         )
 
+    # Rows alone cannot separate the all-spec exclusion from the fail-closed empty set, which keeps
+    # the filter above the backfill too. Assert the split directly for the multi-spec cache path.
+    plan = instance.query(
+        f"SELECT trim(explain) FROM (EXPLAIN actions = 1"
+        f" SELECT id FROM {table_function} WHERE region = 'East' AND val = 'a')"
+        f" WHERE explain ILIKE '%Prewhere filter column%'"
+        f" SETTINGS optimize_move_to_prewhere = 1"
+    )
+    assert "val" in plan, plan
+    assert "region" not in plan, plan
+
 
 # Regression for issue #110216 (row-level security): a row policy on an identity-partition column
 # was pushed into the in-source filter path and evaluated against the synthetic NULL before the
@@ -242,6 +253,17 @@ def test_identity_partition_backfill_row_policy(
                 )
                 == 2
             )
+
+        # The rows above also hold if nothing at all is PREWHERE-safe, so assert that the policy
+        # column specifically stays above the source while a physical predicate still moves down.
+        plan = instance.query(
+            f"SELECT trim(explain) FROM (EXPLAIN actions = 1"
+            f" SELECT id FROM {TABLE_NAME} WHERE val = 'a')"
+            f" WHERE explain ILIKE '%Prewhere filter column%'"
+            f" SETTINGS optimize_move_to_prewhere = 1"
+        )
+        assert "val" in plan, plan
+        assert "region" not in plan, plan
     finally:
         instance.query(f"DROP ROW POLICY IF EXISTS {policy} ON {TABLE_NAME}")
 
