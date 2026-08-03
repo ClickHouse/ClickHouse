@@ -164,8 +164,11 @@ run "replacement parsing" \
     "SELECT sum(length(replaceRegexpAll(materialize(''), toString(number)||'(q)', repeat('\\\\1', 200000)))) FROM numbers(1500) SETTINGS max_block_size = 1500"
 
 # 13. A FixedString haystack, which reaches the regexp loop through its own entry point.
+#     Every row has to be a distinct value, or the per-block deduplication runs the regexp once and copies
+#     that result for the other rows, which leaves the loop nothing to be interrupted in. The tail is what
+#     varies, so the work per row is the same as for one repeated value.
 run "fixed string haystack" \
-    "SELECT sum(length(replaceRegexpAll(toFixedString(materialize(repeat('1', 20000)), 20000), '[0-9]((a|b)(c|d)|(e|f)(g|h))?', 'x'))) FROM numbers(2000) SETTINGS max_block_size = 2000"
+    "SELECT sum(length(replaceRegexpAll(toFixedString(concat(repeat('1', 19990), toString(1000000000 + number)), 20000), '[0-9]((a|b)(c|d)|(e|f)(g|h))?', 'x'))) FROM numbers(2000) SETTINGS max_block_size = 2000"
 
 # 14. A different replacement per row, which rebuilds the instruction list per row.
 run "per-row replacement" \
@@ -194,10 +197,12 @@ run "one match, long instruction list" \
 run "replaceRegexpOne" \
     "SELECT sum(length(replaceRegexpOne(materialize(''), toString(number)||'[0-9]{1,3}(a|b|c)+x?', 'y'))) FROM numbers(1000000) SETTINGS max_block_size = 1000000"
 
-# NOTE. Four charged sites have no case of their own, because under the 5GiB test memory profile none of
+# NOTE. Five charged sites have no case of their own, because under the 5GiB test memory profile none of
 #     them can be made to run past the deadline: the unconditional suffix and remainder copies, the two
-#     FixedString offset loops that follow a bulk copy, and the JIT implementation's output-byte charge and
-#     one-byte in-place fast path. Their charges are verified by inspection. This is why the case numbering
+#     FixedString offset loops that follow a bulk copy, the JIT implementation's output-byte charge and
+#     one-byte in-place fast path, and the per-block deduplication's copy of a cached result, which moves
+#     at memcpy speed over an output the memory profile already bounds - and whose loop the per-row charge
+#     above it bounds regardless. Their charges are verified by inspection. This is why the case numbering
 #     below has gaps.
 
 # 19. The "break" overflow mode, where checkTimeLimit() returns false instead of throwing, so a path that
@@ -260,13 +265,14 @@ fi
 #     so the query to check is the one running the call, not the one that defined it: a definition-time
 #     query would be the wrong deadline and, held alive, a permanent `CurrentMetrics::QueryNonInternal`
 #     leak. Asserted from both sides. The rows must arrive in one block, or the pipeline's own check bounds
-#     the INSERT whatever the function does.
+#     the INSERT whatever the function does, and every row has to be a distinct value, for the reason
+#     case 13 gives.
 ${CLICKHOUSE_CLIENT} --query "DROP TABLE IF EXISTS t_replace_stored SYNC"
 ${CLICKHOUSE_CLIENT} --query "
     CREATE TABLE t_replace_stored (k String) ENGINE = MergeTree
     PARTITION BY substring(replaceRegexpAll(k, '[0-9]((a|b)(c|d)|(e|f)(g|h))?', 'x'), 1, 1) ORDER BY tuple()"
 run "stored expression" \
-    "INSERT INTO t_replace_stored SELECT repeat('1', 1000000) FROM numbers(40) SETTINGS max_insert_block_size = 40, min_insert_block_size_rows = 40"
+    "INSERT INTO t_replace_stored SELECT concat(repeat('1', 999990), toString(1000000000 + number)) FROM numbers(40) SETTINGS max_insert_block_size = 40, min_insert_block_size_rows = 40"
 ${CLICKHOUSE_CLIENT} --query "DROP TABLE t_replace_stored SYNC"
 
 #     The leak side: a retained QueryStatus keeps the `CurrentMetrics::QueryNonInternal` increment it owns,
