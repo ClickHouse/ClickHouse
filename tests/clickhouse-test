@@ -5676,6 +5676,8 @@ def main(args):
         msg = "Server is not responding. Cannot execute 'SELECT 1' query."
         if args.hung_check:
             print(msg)
+            # The probe that just failed is HTTP; this dump goes over TCP.
+            print_sql_stacktraces(args)
             print_c_stacktraces(args)
         raise TestException(msg)
 

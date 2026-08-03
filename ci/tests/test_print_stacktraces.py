@@ -433,6 +433,38 @@ def test_server_died_abort_dumps_sql_before_c_stacktraces():
     ], calls
 
 
+def test_startup_check_abort_dumps_sql_before_c_stacktraces():
+    # The third abort site, asserted independently of the other two.  Here the
+    # mismatch is not a removable gate: `check_server_started` IS the HTTP
+    # probe, so arriving here says nothing about the TCP the SQL dump uses.
+    ct = _load_clickhouse_test()
+    calls, namespace = _record_calls(
+        ["print_sql_stacktraces", "print_c_stacktraces", "print"]
+    )
+    namespace["check_server_started"] = lambda *_a, **_k: False
+    namespace["args"] = _make_args()
+    namespace["args"].hung_check = True
+    namespace["TestException"] = ct["TestException"]
+
+    try:
+        exec(
+            _abort_site(
+                "main",
+                "Server is not responding",
+                "not check_server_started(args)",
+            ),
+            namespace,
+        )
+    except ct["TestException"]:
+        pass  # the site ends by raising; the calls before it are the subject
+
+    assert calls == [
+        "print",
+        "print_sql_stacktraces",
+        "print_c_stacktraces",
+    ], calls
+
+
 def test_sql_stacktraces_writes_nothing_to_the_server_log(tmp_path):
     # Guards the reason a server-side self-dump (SIGTSTP) was rejected: it
     # would log `<Fatal>` lines, and `check_fatal_messages_in_logs` turns any
