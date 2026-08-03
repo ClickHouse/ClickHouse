@@ -39,6 +39,7 @@
 
 #include <base/range.h>
 
+#include <climits>
 #include <filesystem>
 
 
@@ -89,6 +90,7 @@ namespace DistributedSetting
 
 namespace ErrorCodes
 {
+    extern const int ARGUMENT_OUT_OF_BOUND;
     extern const int BAD_ARGUMENTS;
     extern const int LOGICAL_ERROR;
     extern const int TIMEOUT_EXCEEDED;
@@ -844,6 +846,15 @@ void DistributedSink::writeToShard(const Cluster::ShardInfo & shard_info, const 
 {
     OpenTelemetry::SpanHolder span(__PRETTY_FUNCTION__);
     span.addAttribute("clickhouse.shard_num", shard_info.shard_num);
+
+    /// Every directory this function creates is named after an element of `dir_names`, so reject
+    /// too long names here. The name embeds `user:password@host:port`, hence it is not reported
+    /// (see `maskDataPath` in StorageSystemDistributionQueue.cpp).
+    for (const auto & dir_name : dir_names)
+        if (dir_name.size() > NAME_MAX)
+            throw Exception(ErrorCodes::ARGUMENT_OUT_OF_BOUND,
+                "The max length of a directory name for async distributed INSERT into table {} (cluster {}, shard {}) is {}, current length is {}",
+                storage.getStorageID().getFullNameNotQuoted(), storage.getClusterName(), shard_info.shard_num, NAME_MAX, dir_name.size());
 
     const auto & settings = context->getSettingsRef();
     const auto & distributed_settings = storage.getDistributedSettingsRef();
