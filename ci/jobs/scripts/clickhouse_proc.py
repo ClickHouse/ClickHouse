@@ -1,6 +1,7 @@
 import glob
 import os
 import platform
+import shlex
 import signal
 import subprocess
 import sys
@@ -390,14 +391,17 @@ class ClickHouseProc:
         captured name to a `Distributed` table of its own. It combines:
 
         * `uuid` - `system` is an `Atomic` database in the server, so a
-          recreated table normally gets a fresh one;
-        * `metadata_modification_time` - the mtime of the table's metadata
-          file. This is the part a test cannot choose: `CREATE TABLE ...
-          UUID '<captured uuid>'` IS accepted in an `Atomic` database, so
-          `uuid` alone is forgeable, but a table recreated during the suite
-          is necessarily stamped later than the pre-suite snapshot;
-        * a hash of `engine_full` - so a rebind that somehow preserved both
-          of the above still has to reproduce the exact engine definition.
+          recreated table normally gets a fresh one. On its own it is
+          forgeable: `CREATE TABLE ... UUID '<captured uuid>'` IS accepted
+          in an `Atomic` database;
+        * `metadata_modification_time` and a hash of `engine_full` - a
+          rebind has to reproduce these too;
+        * the metadata file's `metadata_path`, inode and NANOSECOND mtime,
+          read from the host filesystem with `stat`. This is the component
+          no query can reach: `metadata_modification_time` is a `DateTime`,
+          so a table recreated inside the snapshot second would still match
+          it, but a drop/create writes a new metadata file with a new inode
+          and a new sub-second timestamp.
 
         Returns an empty mapping on any error - the heuristic then abstains
         and the run stays on the `Server died` path.
@@ -405,20 +409,61 @@ class ClickHouseProc:
         return self._query_log_export_senders()
 
     @staticmethod
-    def _query_log_export_senders():
+    def _stat_metadata_files(paths):
+        """Return `{path: "<inode>:<mtime with nanoseconds>"}` for the given
+        metadata files, taken from the host filesystem the server runs on.
+
+        This is the part of the sender fingerprint that SQL cannot reach:
+        `system.tables.metadata_modification_time` is a `DateTime`, so it is
+        second-resolution and a table recreated inside the snapshot second
+        would still match. Verified against a real server: a
+        `DROP TABLE ... SYNC` followed by
+        `CREATE TABLE system.query_log_sender UUID '<captured uuid>' ENGINE =
+        Distributed(...)` keeps the `uuid`, the `engine_full` hash and the
+        `metadata_path`, but always rewrites the metadata file, so its mtime
+        moves - at nanosecond resolution, whatever the recreating query asks
+        for. A file that cannot be stat'ed is simply absent from the result,
+        so its sender drops out of the snapshot (fail closed).
+        """
+        if not paths:
+            return {}
+        quoted = " ".join(shlex.quote(p) for p in sorted(paths))
+        # `--printf`, not `-c`: only the former interprets the `\t` / `\n`
+        # escapes, and a file that cannot be stat'ed is skipped in stdout.
+        out = Shell.get_output(rf"stat --printf='%n\t%i\t%y\n' {quoted}")
+        stats = {}
+        for line in out.splitlines():
+            parts = line.rstrip("\n").split("\t")
+            if len(parts) != 3:
+                continue
+            path, inode, mtime = (p.strip() for p in parts)
+            if not path or not inode or not mtime:
+                continue
+            stats[path] = f"{inode}:{mtime}"
+        return stats
+
+    @classmethod
+    def _query_log_export_senders(cls):
         out = Shell.get_output(
             "clickhouse-client --query \""
             "SELECT name, toString(uuid), toString(metadata_modification_time), "
-            "hex(sipHash64(engine_full)) FROM system.tables "
+            "hex(sipHash64(engine_full)), "
+            # `metadata_path` is relative to the server's data directory
+            # (e.g. `store/6f4/<db-uuid>/query_log_sender.sql`), so resolve
+            # it here - the job stats it on the host.
+            "if(startsWith(metadata_path, '/'), metadata_path, "
+            "concat((SELECT value FROM system.server_settings WHERE name = 'path'), "
+            "metadata_path)) "
+            "FROM system.tables "
             "WHERE database = 'system' AND name LIKE '%\\_sender' "
             'FORMAT TSV"'
         )
-        senders = {}
+        rows = []
         for line in out.splitlines():
             parts = line.rstrip("\n").split("\t")
-            if len(parts) != 4:
+            if len(parts) != 5:
                 continue
-            name, uuid, mtime, engine_hash = (p.strip() for p in parts)
+            name, uuid, mtime, engine_hash, metadata_path = (p.strip() for p in parts)
             # A zero `uuid` carries no identity (a non-`Atomic` `system`
             # database, e.g. `clickhouse-local`), so it cannot be verified
             # later. Drop such entries rather than trust a bare name.
@@ -428,7 +473,20 @@ class ClickHouseProc:
             # table match the snapshot, so it is required too.
             if not mtime or mtime.endswith("1970-01-01 00:00:00"):
                 continue
-            senders[name] = f"{uuid}|{mtime}|{engine_hash}"
+            if not metadata_path:
+                continue
+            rows.append((name, uuid, mtime, engine_hash, metadata_path))
+
+        file_stats = cls._stat_metadata_files({row[4] for row in rows})
+        senders = {}
+        for name, uuid, mtime, engine_hash, metadata_path in rows:
+            file_stat = file_stats.get(metadata_path)
+            # No host-side identity for this metadata file (it is gone, or the
+            # server's filesystem is not visible from the job) - abstain for
+            # that sender rather than fall back to the forgeable columns.
+            if not file_stat:
+                continue
+            senders[name] = f"{uuid}|{mtime}|{engine_hash}|{metadata_path}|{file_stat}"
         return senders
 
     def verify_log_export_senders(self, snapshot):
@@ -442,10 +500,10 @@ class ClickHouseProc:
         explicit `CREATE TABLE ... UUID '...'` is accepted in an `Atomic`
         database, even under the same `uuid` - which would otherwise let it
         emit `system.query_log_sender.DistributedInsertQueue.*` errors that
-        read as CI log-export noise. A recreated table is stamped with a new
-        `metadata_modification_time`, which no SQL can backdate to the
-        pre-suite value, so it drops out here and the heuristic stops
-        counting that name.
+        read as CI log-export noise. A recreated table writes a new metadata
+        file, whose inode and nanosecond mtime no query can choose - not even
+        by recreating within the same second as the snapshot - so it drops
+        out here and the heuristic stops counting that name.
 
         Fails closed: a table that disappeared, was rebound, or a failed
         query (e.g. the server is gone - then it really did die) yields an
