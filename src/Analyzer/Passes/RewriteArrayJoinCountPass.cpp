@@ -182,9 +182,8 @@ public:
         const auto & column_name = physical_column->getColumnName();
         auto context = getContext();
 
-        /// A hopped wrapper is transparent only if its declared columns are the ones the read executes against, which the
-        /// comparison below establishes without naming a wrapper type. NOTE: an Alias resolves its target by name with no lock and
-        /// resolves again in read(), so unlike the accepted canMoveConditionsToPrewhere race a swapped target miscounts, not fails.
+        /// A hopped wrapper is transparent only if its declared columns are the ones the read executes
+        /// against, which the comparison below establishes without naming a wrapper type.
         auto resolved_metadata = resolved_storage->getInMemoryMetadataPtr(context, false);
         if (!resolved_metadata)
             return;
@@ -199,9 +198,6 @@ public:
         if (const auto * storage_merge = typeid_cast<const StorageMerge *>(resolved_storage.get()))
         {
             auto access = context->getAccess();
-            /// NOTE: validates the child set as it is NOW, while execution re-enumerates children in
-            /// ReadFromMerge::getSelectedTables with no snapshot or lock spanning both. Unlike the same
-            /// race in canMoveConditionsToPrewhere, a child lacking the subcolumn is silently defaulted.
             if (storage_merge->hasChildTable([&](const StoragePtr & child)
                 {
                     /// Direct children only, so a nested Merge -- or a wrapper around one -- could hide
