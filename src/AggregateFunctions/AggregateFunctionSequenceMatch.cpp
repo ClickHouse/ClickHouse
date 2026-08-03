@@ -618,22 +618,38 @@ protected:
         VectorWithMemoryTracking<T> last_matched_events;
         auto events_it_copy = events_it;
 
-        /// Find all non-overlapping matches and keep the last one (including partial matches)
+        /// Phase 1: collect complete matches via plain (unanchored) calls. A complete match is
+        /// always unambiguous (backtracking stops the instant one completes), so this reliably
+        /// finds every non-overlapping complete match in order.
         while (events_it_copy != events_end)
         {
+            auto anchor = events_it_copy;
             VectorWithMemoryTracking<T> current_match;
             bool match_result = backtrackingMatch<EventEntry, true>(events_it_copy, events_end, &current_match);
 
-            if (!current_match.empty())
+            if (match_result)
             {
                 last_matched_events = current_match;
+                continue;
             }
 
-            if (!match_result)
-            {
-                /// Partial match found, this is the last possible match
-                break;
-            }
+            /// No complete match exists anywhere from `anchor` onward (an unanchored call that
+            /// fails exhausts events_it_copy all the way to events_end, so rewind to where this
+            /// attempt began before falling back to an anchored, position-by-position search).
+            events_it_copy = anchor;
+            break;
+        }
+
+        /// Phase 2: no complete match remains; find the latest anchor with any (partial) result.
+        /// A plain (unanchored) call's partial result on total failure is the longest one found
+        /// anywhere in the remaining suffix, not necessarily the one starting latest.
+        while (events_it_copy != events_end)
+        {
+            VectorWithMemoryTracking<T> current_match;
+            backtrackingMatch<EventEntry, true, true>(events_it_copy, events_end, &current_match);
+
+            if (!current_match.empty())
+                last_matched_events = current_match;
         }
 
         return last_matched_events;
@@ -645,23 +661,35 @@ protected:
     {
         VectorWithMemoryTracking<VectorWithMemoryTracking<T>> all_matches;
 
-        /// Find all non-overlapping matches (including partial matches, similar to sequenceCount)
+        /// Phase 1: collect complete matches via plain (unanchored) calls (see backtrackingMatchEventsLast).
         while (events_it != events_end)
         {
+            auto anchor = events_it;
             VectorWithMemoryTracking<T> current_match;
             bool match_result = backtrackingMatch<EventEntry, true>(events_it, events_end, &current_match);
 
-            if (!current_match.empty())
+            if (match_result)
             {
                 all_matches.push_back(current_match);
+                continue;
             }
 
-            if (!match_result)
-            {
-                /// Partial match found, no more matches possible
-                break;
-            }
+            events_it = anchor;
+            break;
         }
+
+        /// Phase 2: append at most one trailing partial - the latest anchor with any result.
+        VectorWithMemoryTracking<T> trailing_partial;
+        while (events_it != events_end)
+        {
+            VectorWithMemoryTracking<T> current_match;
+            backtrackingMatch<EventEntry, true, true>(events_it, events_end, &current_match);
+
+            if (!current_match.empty())
+                trailing_partial = current_match;
+        }
+        if (!trailing_partial.empty())
+            all_matches.push_back(trailing_partial);
 
         return all_matches;
     }

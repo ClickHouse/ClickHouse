@@ -50,9 +50,11 @@ select 'Time constraint <11 - First' as test, [0,4] = sequenceMatchEventsFirst('
 
 -- Test: Mixed pattern (?2)(?3)(?1)
 -- data=1 at 4, data=2 at 5, data=0 at 6 -> complete match [4,5,6]
--- data=1 at 10, no data=2 after -> partial match [10]
+-- data=1 at 10 and 11, no data=2 after either -> the latest anchor with any result is [11]
+-- (matching only action1/cond2; there's nothing left to even attempt cond3 against), not [10]
+-- (which got as far as failing cond3 against 11): Last/All must prefer the later one.
 select 'Mixed pattern - First' as test, [4,5,6] = sequenceMatchEventsFirst('(?2)(?3)(?1)')(time, data = 0, data = 1, data = 2, data = 3) from sequence_test_variants;
-select 'Mixed pattern - Last (partial)' as test, [10] = sequenceMatchEventsLast('(?2)(?3)(?1)')(time, data = 0, data = 1, data = 2, data = 3) from sequence_test_variants;
+select 'Mixed pattern - Last (partial)' as test, [11] = sequenceMatchEventsLast('(?2)(?3)(?1)')(time, data = 0, data = 1, data = 2, data = 3) from sequence_test_variants;
 select 'Mixed pattern - All count' as test, 2 = length(sequenceMatchEventsAll('(?2)(?3)(?1)')(time, data = 0, data = 1, data = 2, data = 3)) from sequence_test_variants;
 
 -- Test: No match cases (data=3 never appears)
@@ -128,5 +130,17 @@ insert into sequence_test_variants values (1, 'A'), (2, 'A'), (3, 'B');
 -- Pattern (?1)(?2): anchored at time 1, action1 (A) matches but action2 (B) fails at time 2 (A) ->
 -- partial [1]. The complete match [2,3] (A then B) starts right after. First must return [2,3].
 select 'First prefers a later complete match over an earlier partial' as test, [2,3] = sequenceMatchEventsFirst('(?1)(?2)')(time, event = 'A', event = 'B') from sequence_test_variants;
+
+drop table sequence_test_variants;
+
+-- Test: Last must prefer a later partial over an earlier, longer one.
+-- No complete match exists anywhere (cond3='C' never occurs). Anchored at time 1: matches action1
+-- and action2 (A then B), but action3 (C) fails at time 3 -> partial [1,2], length 2. Anchored at
+-- time 3: matches only action1 (A) with nothing left to attempt action2 against -> partial [3],
+-- length 1 but starting later. Last must return the later, shorter [3], not the earlier, longer [1,2].
+create table sequence_test_variants (time UInt32, event String) engine=MergeTree ORDER BY tuple();
+insert into sequence_test_variants values (1, 'A'), (2, 'B'), (3, 'A');
+
+select 'Last prefers a later partial over an earlier, longer one' as test, [3] = sequenceMatchEventsLast('(?1)(?2)(?3)')(time, event = 'A', event = 'B', event = 'C') from sequence_test_variants;
 
 drop table sequence_test_variants;
