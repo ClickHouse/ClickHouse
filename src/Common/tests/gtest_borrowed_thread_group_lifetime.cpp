@@ -22,83 +22,103 @@ namespace CurrentMetrics
 ///
 /// Borrowed groups keep raw accounting pointers into the parent query group. They must stay scoped:
 /// async captures must not extend borrowed accounting past the parent query lifetime.
+///
+/// The assertions below are deliberately written against observable behaviour (which group a pool
+/// thread runs under, and whether a group stays alive) rather than against the internal predicates
+/// introduced by the fix, so that this file also compiles against the unfixed sources - that is what
+/// the `Bugfix validation (unit tests)` job needs in order to reproduce the bug.
 
 namespace DB
 {
 
-TEST(BorrowedThreadGroupLifetime, AsyncCallbackCaptureDropsBorrowedGroup)
+namespace
+{
+
+std::unique_ptr<ThreadPool> makeSingleThreadPool()
+{
+    return std::make_unique<ThreadPool>(
+        CurrentMetrics::LocalThread,
+        CurrentMetrics::LocalThreadActive,
+        CurrentMetrics::LocalThreadScheduled,
+        /*max_threads=*/ 1,
+        /*max_free_threads=*/ 1,
+        /*queue_size=*/ 10);
+}
+
+}
+
+TEST(BorrowedThreadGroupLifetime, UnsafeRunnerEnqueuedUnderBorrowedGroupRunsWithoutIt)
 {
     std::thread t([&]
     {
         ThreadStatus ts;
         auto context = getContext().context;
+
+        auto pool = makeSingleThreadPool();
 
         auto root = std::make_shared<ThreadGroup>(context, 0);
         auto borrowed = ThreadGroup::createForFlushAsyncInsertQueue(context, root);
 
         CurrentThread::attachToGroupIfDetached(borrowed);
-
-        EXPECT_EQ(getCurrentThreadGroupForAsyncCallback(), nullptr);
-
+        auto runner = threadPoolCallbackRunnerUnsafe<bool>(*pool, ThreadName::REMOTE_FS_READ_THREAD_POOL);
+        auto future = runner([borrowed] { return getCurrentThreadGroup() == borrowed; }, Priority{});
         CurrentThread::detachFromGroupIfNotDetached();
+
+        EXPECT_FALSE(future.get()) << "async work must not run under a borrowed `ThreadGroup`";
+        pool->wait();
     });
     t.join();
 }
 
-TEST(BorrowedThreadGroupLifetime, AsyncCallbackCaptureDropsNestedBorrowedGroup)
+TEST(BorrowedThreadGroupLifetime, UnsafeRunnerEnqueuedUnderNestedBorrowedGroupRunsWithoutIt)
 {
     std::thread t([&]
     {
         ThreadStatus ts;
         auto context = getContext().context;
+
+        auto pool = makeSingleThreadPool();
 
         auto root = std::make_shared<ThreadGroup>(context, 0);
         CurrentThread::attachToGroupIfDetached(root);
         auto borrowed = ThreadGroup::createForMaterializedView(context);
         CurrentThread::detachFromGroupIfNotDetached();
 
+        /// A materialized view reading from another materialized view: the borrowed group of the inner
+        /// view borrows from the borrowed group of the outer one, so it is borrowed just the same.
         CurrentThread::attachToGroupIfDetached(borrowed);
         auto nested_borrowed = ThreadGroup::createForMaterializedView(context);
         CurrentThread::detachFromGroupIfNotDetached();
 
         CurrentThread::attachToGroupIfDetached(nested_borrowed);
-        EXPECT_TRUE(nested_borrowed->isBorrowed());
-        EXPECT_EQ(getCurrentThreadGroupForAsyncCallback(), nullptr);
-
+        auto runner = threadPoolCallbackRunnerUnsafe<bool>(*pool, ThreadName::REMOTE_FS_READ_THREAD_POOL);
+        auto future = runner([nested_borrowed] { return getCurrentThreadGroup() == nested_borrowed; }, Priority{});
         CurrentThread::detachFromGroupIfNotDetached();
+
+        EXPECT_FALSE(future.get()) << "async work must not run under a nested borrowed `ThreadGroup`";
+        pool->wait();
     });
     t.join();
 }
 
-TEST(BorrowedThreadGroupLifetime, UnsafeRunnerCreatedUnderBorrowedGroupRunsWithoutBorrowedGroup)
+TEST(BorrowedThreadGroupLifetime, UnsafeRunnerEnqueuedUnderRootGroupKeepsIt)
 {
     std::thread t([&]
     {
         ThreadStatus ts;
         auto context = getContext().context;
 
-        ThreadPool pool(
-            CurrentMetrics::LocalThread,
-            CurrentMetrics::LocalThreadActive,
-            CurrentMetrics::LocalThreadScheduled,
-            /*max_threads=*/ 1,
-            /*max_free_threads=*/ 1,
-            /*queue_size=*/ 10);
+        auto pool = makeSingleThreadPool();
 
         auto root = std::make_shared<ThreadGroup>(context, 0);
-        auto borrowed = ThreadGroup::createForFlushAsyncInsertQueue(context, root);
 
-        CurrentThread::attachToGroupIfDetached(borrowed);
-        auto runner = threadPoolCallbackRunnerUnsafe<bool>(pool, ThreadName::REMOTE_FS_READ_THREAD_POOL);
-        auto future = runner([]
-        {
-            auto group = getCurrentThreadGroup();
-            return group && group->isBorrowed();
-        }, Priority{});
+        CurrentThread::attachToGroupIfDetached(root);
+        auto runner = threadPoolCallbackRunnerUnsafe<bool>(*pool, ThreadName::REMOTE_FS_READ_THREAD_POOL);
+        auto future = runner([root] { return getCurrentThreadGroup() == root; }, Priority{});
         CurrentThread::detachFromGroupIfNotDetached();
 
-        EXPECT_FALSE(future.get());
-        pool.wait();
+        EXPECT_TRUE(future.get()) << "async work must still run under a normal (owning) `ThreadGroup`";
+        pool->wait();
     });
     t.join();
 }
@@ -110,59 +130,44 @@ TEST(BorrowedThreadGroupLifetime, UnsafeRunnerCreatedUnderRootGroupDoesNotKeepIt
         ThreadStatus ts;
         auto context = getContext().context;
 
-        ThreadPool pool(
-            CurrentMetrics::LocalThread,
-            CurrentMetrics::LocalThreadActive,
-            CurrentMetrics::LocalThreadScheduled,
-            /*max_threads=*/ 1,
-            /*max_free_threads=*/ 1,
-            /*queue_size=*/ 10);
+        auto pool = makeSingleThreadPool();
 
         auto root = std::make_shared<ThreadGroup>(context, 0);
         std::weak_ptr<ThreadGroup> root_weak = root;
 
         CurrentThread::attachToGroupIfDetached(root);
-        auto runner = threadPoolCallbackRunnerUnsafe<void>(pool, ThreadName::REMOTE_FS_READ_THREAD_POOL);
+        auto runner = threadPoolCallbackRunnerUnsafe<void>(*pool, ThreadName::REMOTE_FS_READ_THREAD_POOL);
         CurrentThread::detachFromGroupIfNotDetached();
 
         root.reset();
 
-        EXPECT_TRUE(root_weak.expired());
-        pool.wait();
+        EXPECT_TRUE(root_weak.expired())
+            << "a runner object must not keep the `ThreadGroup` current at its creation alive";
+        pool->wait();
     });
     t.join();
 }
 
-TEST(BorrowedThreadGroupLifetime, LocalRunnerCreatedUnderBorrowedGroupRunsWithoutBorrowedGroup)
+TEST(BorrowedThreadGroupLifetime, LocalRunnerEnqueuedUnderBorrowedGroupRunsWithoutIt)
 {
     std::thread t([&]
     {
         ThreadStatus ts;
         auto context = getContext().context;
 
-        ThreadPool pool(
-            CurrentMetrics::LocalThread,
-            CurrentMetrics::LocalThreadActive,
-            CurrentMetrics::LocalThreadScheduled,
-            /*max_threads=*/ 1,
-            /*max_free_threads=*/ 1,
-            /*queue_size=*/ 10);
+        auto pool = makeSingleThreadPool();
 
         auto root = std::make_shared<ThreadGroup>(context, 0);
         auto borrowed = ThreadGroup::createForFlushAsyncInsertQueue(context, root);
 
         CurrentThread::attachToGroupIfDetached(borrowed);
-        ThreadPoolCallbackRunnerLocal<bool> runner(pool, ThreadName::REMOTE_FS_READ_THREAD_POOL);
-        auto task = runner.enqueueAndGiveOwnership([]
-        {
-            auto group = getCurrentThreadGroup();
-            return group && group->isBorrowed();
-        }, Priority{});
+        ThreadPoolCallbackRunnerLocal<bool> runner(*pool, ThreadName::REMOTE_FS_READ_THREAD_POOL);
+        auto task = runner.enqueueAndGiveOwnership([borrowed] { return getCurrentThreadGroup() == borrowed; }, Priority{});
         CurrentThread::detachFromGroupIfNotDetached();
 
         ASSERT_TRUE(task->future.valid());
-        EXPECT_FALSE(task->future.get());
-        pool.wait();
+        EXPECT_FALSE(task->future.get()) << "async work must not run under a borrowed `ThreadGroup`";
+        pool->wait();
     });
     t.join();
 }
