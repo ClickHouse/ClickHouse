@@ -7,7 +7,7 @@
  *   <VersionBadge minVersion="25.4" />
  */
 export const VersionBadge = ({ minVersion }) => (
-  <div className="versionBadge" style={{ display: "inline-flex", alignItems: "center" }}>
+  <div className="versionBadge">
     <div className="versionIcon" style={{ marginRight: "8px", marginTop: "4px" }}>
       <svg width="16" height="16" viewBox="0 0 16 16" fill="none" xmlns="http://www.w3.org/2000/svg">
         <path d="M5 14C5.82843 14 6.5 13.3284 6.5 12.5C6.5 11.6716 5.82843 11 5 11C4.17157 11 3.5 11.6716 3.5 12.5C3.5 13.3284 4.17157 14 5 14Z" stroke="currentColor" strokeLinecap="round" strokeLinejoin="round" strokeWidth="1.25" />
