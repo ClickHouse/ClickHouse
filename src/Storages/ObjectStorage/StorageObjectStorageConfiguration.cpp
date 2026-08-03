@@ -376,6 +376,16 @@ bool StorageObjectStorageConfiguration::isPathInArchiveWithGlobs() const
     return getPathInArchive().find_first_of("*?{") != std::string::npos;
 }
 
+bool StorageObjectStorageConfiguration::isPathInArchiveWithGlobs(bool use_glob_ast) const
+{
+    if (!use_glob_ast)
+        return isPathInArchiveWithGlobs();
+    /// Under the AST parser a literal brace group such as "data_{x}.csv" is not a glob:
+    /// the archive iterator must take the exact `fileExists` path for it instead of
+    /// enumerating every archive entry against a filter.
+    return GlobAST::GlobString(getPathInArchive()).hasGlobs();
+}
+
 std::string StorageObjectStorageConfiguration::getPathInArchive() const
 {
     throw Exception(ErrorCodes::LOGICAL_ERROR, "Path {} is not archive", getRawPath().path);

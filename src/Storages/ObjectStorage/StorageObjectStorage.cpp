@@ -120,8 +120,22 @@ String StorageObjectStorage::getPathSample(ContextPtr context)
             expanded = expandSelectionGlob(path.path);
         }
 
+        /// Returning the first expansion without checking existence is only sound when every
+        /// alternative is layout-equivalent for sample-path purposes: the sample feeds
+        /// hive-partition column discovery, which reads the `key=value` segments of the
+        /// directory part. Enum alternatives may contain '/', so for a pattern like
+        /// "root/{year=2024/file.parquet,plain.parquet}" the alternatives disagree about the
+        /// layout, while the real read path (`KeysIterator` with `ignore_non_existent_file`)
+        /// skips missing keys and may read only the other alternative. Use the fast path only
+        /// when all expansions share the same directory part; otherwise fall through to the
+        /// listing iterator below, which samples what would actually be read.
         if (!expanded.empty())
-            return expanded.front();
+        {
+            const auto directory_part = [](const std::string & p) { return std::string_view(p).substr(0, p.find_last_of('/') + 1); };
+            const auto sample_directory = directory_part(expanded.front());
+            if (std::all_of(expanded.begin(), expanded.end(), [&](const std::string & p) { return directory_part(p) == sample_directory; }))
+                return expanded.front();
+        }
     }
 
     auto query_settings = configuration->getQuerySettings(context);
