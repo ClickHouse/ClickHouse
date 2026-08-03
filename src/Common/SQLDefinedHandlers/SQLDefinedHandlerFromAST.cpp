@@ -56,11 +56,12 @@ bool queryKindRequiresMutatingMethod(IAST::QueryKind kind)
         case IAST::QueryKind::Commit:
         case IAST::QueryKind::Rollback:
         case IAST::QueryKind::SetTransactionSnapshot:
+        /// BACKUP and RESTORE run under `readonly = 2` - the mode the HTTP execution path sets for safe methods
+        /// such as `GET` - because `BackupsWorker` rejects them only under the strict, user-set `readonly = 1`.
+        /// So this readonly-mirror predicate reports them as runnable over a safe method; their durable side
+        /// effects are fenced off separately by `queryKindHasSideEffectsUnderReadonly`, which requires *every*
+        /// method of such a handler to be a mutating one.
         case IAST::QueryKind::Backup:
-        /// RESTORE follows the same `readonly` contract as BACKUP: `BackupsWorker` rejects it only under the
-        /// strict, user-set `readonly = 1` and explicitly allows it under `readonly = 2` - the mode the HTTP
-        /// execution path sets for safe methods such as `GET` (see `BackupsWorker::startRestoring`). So a
-        /// RESTORE handler is runnable over a safe method and must not require a mutating one.
         case IAST::QueryKind::Restore:
             return false;
 
@@ -126,6 +127,18 @@ bool queryConsumesRequestBody(const IAST & query)
     return input_function != nullptr;
 }
 
+/// Whether `readonly = 2` (the mode the HTTP execution path sets for safe methods such as `GET`) still lets a
+/// query of this kind produce durable side effects. `BACKUP` writes an archive to disk or object storage and
+/// `RESTORE` writes data into tables, yet `BackupsWorker` rejects them only under the strict, user-set
+/// `readonly = 1` - so the runtime `readonly` enforcement cannot fence them off. HTTP requires safe methods to be
+/// side-effect-free: `GET` is expected to have no effects, and a handler declared for `GET` is also served for
+/// `HEAD` (see `HTTPHandlerFactory`), where the suppressed response body would hide the effect entirely. Such
+/// queries therefore must not be reachable over safe methods at all.
+bool queryKindHasSideEffectsUnderReadonly(IAST::QueryKind kind)
+{
+    return kind == IAST::QueryKind::Backup || kind == IAST::QueryKind::Restore;
+}
+
 /// The HTTP methods that are allowed to run modifying queries (see `setReadOnlyIfHTTPMethodIdempotent`).
 bool isMutatingHTTPMethod(const String & method)
 {
@@ -181,6 +194,23 @@ SQLDefinedHandlerPtr makeSQLDefinedHandler(const ASTCreateHandlerQuery & create)
             "Handler `{}` runs a query that modifies data, but its allowed HTTP methods ({}) are all read-only. "
             "Add a mutating method (POST, PUT, or DELETE) to the METHODS clause.",
             create.handler_name, fmt::join(handler->methods, ", "));
+    }
+
+    /// The `readonly` enforcement above cannot fence off `BACKUP` / `RESTORE`: they run under the `readonly = 2`
+    /// mode that safe methods set, yet they have durable side effects. A safe method must never trigger them -
+    /// `GET` is expected to be side-effect-free, and a declared `GET` is also served for `HEAD` (see
+    /// `HTTPHandlerFactory`), where the suppressed response body would hide the effect entirely. So require
+    /// *every* allowed method of such a handler to be a mutating one.
+    if (queryKindHasSideEffectsUnderReadonly(create.query->getQueryKind())
+        && !std::all_of(handler->methods.begin(), handler->methods.end(), isMutatingHTTPMethod))
+    {
+        throw Exception(ErrorCodes::BAD_ARGUMENTS,
+            "Handler `{}` runs a {} query, which has side effects that the read-only mode of safe HTTP methods "
+            "does not prevent, but its allowed HTTP methods ({}) include read-only ones. "
+            "List only mutating methods (POST, PUT, or DELETE) in the METHODS clause.",
+            create.handler_name,
+            create.query->getQueryKind() == IAST::QueryKind::Backup ? "BACKUP" : "RESTORE",
+            fmt::join(handler->methods, ", "));
     }
 
     handler->query = create.query->formatWithSecretsOneLine();
