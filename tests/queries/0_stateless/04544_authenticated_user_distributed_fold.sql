@@ -32,3 +32,10 @@ WHERE event_date >= yesterday() AND is_initial_query = 0 AND type = 'QueryFinish
         ORDER BY event_time_microseconds DESC
         LIMIT 1
     );
+
+-- Value-level: every shard must observe the initiator's authenticated user, which for this
+-- session (no `EXECUTE AS`) equals `currentUser` - the initiator identity that `initial_user`
+-- propagates. If the call were shipped unfolded, the shards would compare an empty string.
+SELECT DISTINCT authenticatedUser() = currentUser()
+FROM clusterAllReplicas('test_cluster_two_shards', system.one)
+SETTINGS enable_analyzer = 1, prefer_localhost_replica = 0;

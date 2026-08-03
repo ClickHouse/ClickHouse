@@ -108,6 +108,8 @@ REGISTER_FUNCTION(Profiles)
 {
     FunctionDocumentation::Description description_currentProfiles = R"(
 Returns an array of the setting profiles for the current user.
+
+In a distributed query, the function is evaluated on the initiator, so every shard observes the profiles of the user on the initiating server (profile state is not propagated to secondary queries).
 )";
     FunctionDocumentation::Syntax syntax_currentProfiles = "currentProfiles()";
     FunctionDocumentation::Arguments arguments_currentProfiles = {};
@@ -131,6 +133,8 @@ SELECT currentProfiles();
 
     FunctionDocumentation::Description description_enabledProfiles = R"(
 Returns an array of setting profile names which are enabled for the current user.
+
+In a distributed query, the function is evaluated on the initiator, so every shard observes the profiles of the user on the initiating server (profile state is not propagated to secondary queries).
 )";
     FunctionDocumentation::Syntax syntax_enabledProfiles = "enabledProfiles()";
     FunctionDocumentation::Arguments arguments_enabledProfiles = {};
@@ -154,6 +158,8 @@ SELECT enabledProfiles();
 
     FunctionDocumentation::Description description_defaultProfiles = R"(
 Returns an array of default setting profile names for the current user.
+
+In a distributed query, the function is evaluated on the initiator, so every shard observes the profiles of the user on the initiating server (profile state is not propagated to secondary queries).
 )";
     FunctionDocumentation::Syntax syntax_defaultProfiles = "defaultProfiles()";
     FunctionDocumentation::Arguments arguments_defaultProfiles = {};

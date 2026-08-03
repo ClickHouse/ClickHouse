@@ -64,6 +64,8 @@ REGISTER_FUNCTION(AuthenticatedUser)
         .description=R"(
 If the session user has been switched using the EXECUTE AS command, this function returns the name of the original user that was used for authentication and creating the session.
 Alias: authUser()
+
+In a distributed query, the function is evaluated on the initiator, so every shard observes the initiator's authenticated user (the authenticated user is not propagated to secondary queries).
         )",
         .syntax=R"(authenticatedUser())",
         .arguments={},

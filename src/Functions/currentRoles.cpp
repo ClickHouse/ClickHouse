@@ -109,6 +109,8 @@ REGISTER_FUNCTION(CurrentRoles)
 {
     FunctionDocumentation::Description description_currentRoles = R"(
 Returns an array of the roles which are assigned to the current user.
+
+In a distributed query, the function is evaluated on the initiator, so every shard observes the roles of the user on the initiating server (role state is not propagated to secondary queries).
     )";
     FunctionDocumentation::Syntax syntax_currentRoles = "currentRoles()";
     FunctionDocumentation::Arguments arguments_currentRoles = {};
@@ -132,6 +134,8 @@ SELECT currentRoles();
 
     FunctionDocumentation::Description description_enabledRoles = R"(
 Returns an array of the roles which are enabled for the current user.
+
+In a distributed query, the function is evaluated on the initiator, so every shard observes the roles of the user on the initiating server (role state is not propagated to secondary queries).
     )";
     FunctionDocumentation::Syntax syntax_enabledRoles = "enabledRoles()";
     FunctionDocumentation::Arguments arguments_enabledRoles = {};
@@ -155,6 +159,8 @@ SELECT enabledRoles();
 
     FunctionDocumentation::Description description_defaultRoles = R"(
 Returns an array of default roles for the current user.
+
+In a distributed query, the function is evaluated on the initiator, so every shard observes the roles of the user on the initiating server (role state is not propagated to secondary queries).
     )";
     FunctionDocumentation::Syntax syntax_defaultRoles = "defaultRoles()";
     FunctionDocumentation::Arguments arguments_defaultRoles = {};
