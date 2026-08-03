@@ -6,8 +6,11 @@
 #include <IO/ReadBufferFromString.h>
 #include <IO/VarInt.h>
 #include <IO/WriteBufferFromString.h>
+#include <Core/ProtocolDefines.h>
+#include <Interpreters/WindowDescription.h>
 #include <Processors/QueryPlan/QueryPlan.h>
 #include <Processors/QueryPlan/ReadFromTableStep.h>
+#include <Processors/QueryPlan/WindowStep.h>
 
 using namespace DB;
 
@@ -68,6 +71,21 @@ TEST(QueryPlanSerializeForReceiver, CachedPlanReSerializedForOlderReceiver)
         EXPECT_EQ(readLeadingVersion(out.str()), 4u);
         EXPECT_NE(out.str(), std::string(plan.getSerializedData()));
     }
+}
+
+/// A step that cannot be written below its own minimum serialization version at all (WindowStep is
+/// only registered under QueryPlanStepRegistry since version 4) must raise the plan's required
+/// version, so that a serialization path without version negotiation (the stateless-worker task in
+/// DistributedPlanExecutor, pinned to version 3) serializes such a plan at the version it needs
+/// instead of hitting the fail-closed check in WindowStep::serialize.
+TEST(QueryPlanRequiredSerializationVersion, WindowStepRaisesRequiredVersion)
+{
+    auto plan = makeTrivialPlan();
+    EXPECT_EQ(plan.getRequiredSerializationVersion(), 1u);
+
+    plan.addStep(std::make_unique<WindowStep>(
+        plan.getCurrentHeader(), WindowDescription{}, std::vector<WindowFunctionDescription>{}, false));
+    EXPECT_EQ(plan.getRequiredSerializationVersion(), UInt64(DBMS_MIN_QUERY_PLAN_SERIALIZATION_VERSION_WITH_WINDOW_STEP));
 }
 
 /// When the plan was never pre-serialized, serializeForReceiver serializes on the fly at the receiver's

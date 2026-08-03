@@ -82,17 +82,19 @@ void QueryPlan::serialize(WriteBuffer & out, size_t max_supported_version) const
 UInt64 QueryPlan::getRequiredSerializationVersion() const
 {
     /// The version below which serializing this plan would silently change the behavior of some
-    /// step on the receiver (see QueryPlanSerializationSettings::getMinRequiredVersion). This lets
-    /// a caller on a path without version negotiation raise the version only for plans that
-    /// actually need it, instead of keying off a session setting that may not correspond to
-    /// anything in this fragment, and lets the negotiated path (serializeForReceiver) refuse a
-    /// receiver that is too old for this plan instead of silently dropping the newer settings.
+    /// step on the receiver (see QueryPlanSerializationSettings::getMinRequiredVersion) or fail
+    /// outright because a step cannot be written at all below its own minimum version (see
+    /// IQueryPlanStep::getRequiredSerializationVersion, e.g. WindowStep). This lets a caller on a
+    /// path without version negotiation raise the version only for plans that actually need it,
+    /// instead of keying off a session setting that may not correspond to anything in this
+    /// fragment, and lets the negotiated path (serializeForReceiver) refuse a receiver that is
+    /// too old for this plan instead of silently dropping the newer settings.
     UInt64 version = 1;
     for (const auto & node : nodes)
     {
         QueryPlanSerializationSettings settings;
         node.step->serializeSettings(settings);
-        version = std::max(version, settings.getMinRequiredVersion());
+        version = std::max({version, settings.getMinRequiredVersion(), node.step->getRequiredSerializationVersion()});
     }
     return version;
 }
