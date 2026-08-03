@@ -3,6 +3,7 @@
 #include <Common/HistogramMetrics.h>
 #include <Common/DimensionalMetrics.h>
 #include <Common/AsynchronousMetrics.h>
+#include <unordered_set>
 #include <Common/CurrentMetrics.h>
 #include <Common/ErrorCodes.h>
 #include <Common/re2.h>
@@ -361,6 +362,37 @@ void PrometheusMetricsWriter::writeInfo(WriteBuffer & wb) const
 }
 
 
+std::unordered_set<std::string> PrometheusMetricsWriter::getReservedLabelNames(
+    bool expose_info, bool expose_histograms, bool expose_dimensional_metrics) const
+{
+    std::unordered_set<std::string> reserved_names;
+
+    if (expose_info)
+        reserved_names.insert({"name", "version", "version_describe", "version_major", "version_minor", "version_patch"});
+
+    if (expose_histograms)
+    {
+        reserved_names.insert("le");
+        HistogramMetrics::Factory::instance().forEachFamily(
+            [&reserved_names](const HistogramMetrics::MetricFamily & family)
+            {
+                for (const auto & label : family.getLabels())
+                    reserved_names.insert(label);
+            });
+    }
+
+    if (expose_dimensional_metrics)
+        DimensionalMetrics::Factory::instance().forEachFamily(
+            [&reserved_names](const DimensionalMetrics::MetricFamily & family)
+            {
+                for (const auto & label : family.getLabels())
+                    reserved_names.insert(label);
+            });
+
+    return reserved_names;
+}
+
+
 void KeeperPrometheusMetricsWriter::writeEvents([[maybe_unused]] WriteBuffer & wb) const
 {
 #if USE_NURAFT
@@ -407,6 +439,36 @@ void KeeperPrometheusMetricsWriter::writeDimensionalMetrics([[maybe_unused]] Wri
 
 void KeeperPrometheusMetricsWriter::writeErrors(WriteBuffer &) const
 {
+}
+
+std::unordered_set<std::string> KeeperPrometheusMetricsWriter::getReservedLabelNames(
+    [[maybe_unused]] bool expose_info,
+    [[maybe_unused]] bool expose_histograms,
+    [[maybe_unused]] bool expose_dimensional_metrics) const
+{
+    std::unordered_set<std::string> reserved_names;
+
+    /// writeInfo() is not overridden for Keeper, so ClickHouse_Info is still exposed when enabled.
+    if (expose_info)
+        reserved_names.insert({"name", "version", "version_describe", "version_major", "version_minor", "version_patch"});
+
+#if USE_NURAFT
+    /// Keeper only exposes the curated keeper_* families, not every family registered in the process.
+    if (expose_histograms)
+    {
+        reserved_names.insert("le");
+        for (const auto * histogram : HistogramMetrics::keeper_histograms)
+            for (const auto & label : histogram->getLabels())
+                reserved_names.insert(label);
+    }
+
+    if (expose_dimensional_metrics)
+        for (const auto * metric : DimensionalMetrics::keeper_dimensional_metrics)
+            for (const auto & label : metric->getLabels())
+                reserved_names.insert(label);
+#endif
+
+    return reserved_names;
 }
 
 }

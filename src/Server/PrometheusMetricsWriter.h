@@ -3,6 +3,7 @@
 #include <map>
 #include <memory>
 #include <string>
+#include <unordered_set>
 #include <Common/HistogramMetrics.h>
 #include <Common/DimensionalMetrics.h>
 
@@ -28,6 +29,14 @@ public:
     virtual void writeDimensionalMetrics(WriteBuffer & wb) const;
     virtual void writeInfo(WriteBuffer & wb) const;
 
+    /// Label names this writer emits itself for the sections enabled by the given flags (the "le" label
+    /// of histogram buckets, the "ClickHouse_Info" labels, and the per-sample labels of the exposed
+    /// histogram/dimensional families). A constant label must not reuse any of them, or an exported
+    /// sample would carry two labels with the same name. The default reflects the full server surface;
+    /// derived writers override to reflect their own (e.g. Keeper exposes only keeper_* families).
+    virtual std::unordered_set<std::string> getReservedLabelNames(
+        bool expose_info, bool expose_histograms, bool expose_dimensional_metrics) const;
+
     /// `extra_labels` must be either empty or rendered as `name="value",...` (without braces);
     /// they are written before the family's own labels.
     static void writeHistogramMetric(WriteBuffer & wb, const HistogramMetrics::MetricFamily & family, const std::string & extra_labels = {});
@@ -52,6 +61,8 @@ public:
     void writeErrors(WriteBuffer & wb) const override;
     void writeHistogramMetrics(WriteBuffer & wb) const override;
     void writeDimensionalMetrics(WriteBuffer & wb) const override;
+    std::unordered_set<std::string> getReservedLabelNames(
+        bool expose_info, bool expose_histograms, bool expose_dimensional_metrics) const override;
 };
 
 }

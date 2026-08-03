@@ -12,6 +12,10 @@ node = cluster.add_instance("node", main_configs=["configs/prom_conf.xml"])
 node_labels = cluster.add_instance(
     "node_labels", main_configs=["configs/prom_conf_labels.xml"]
 )
+node_group_label_disabled = cluster.add_instance(
+    "node_group_label_disabled",
+    main_configs=["configs/prom_conf_group_label_disabled_sections.xml"],
+)
 
 
 @pytest.fixture(scope="module")
@@ -125,6 +129,26 @@ def test_prometheus_endpoint_constant_labels(start_cluster):
         response.text,
         re.MULTILINE,
     )
+
+
+def test_prometheus_endpoint_constant_label_allowed_when_section_disabled(start_cluster):
+    # `group` is a histogram-family label, but this endpoint has histograms and dimensional metrics
+    # disabled, so no exported sample can contain a `group` label. The reserved-name check must be
+    # derived from the actual export surface, so `group` is accepted here (server starts and serves).
+    node_group_label_disabled.query("SELECT 1")
+
+    response = get_metrics_response(node_group_label_disabled, 10)
+
+    saw_metric = False
+    for line in response.text.split("\n"):
+        line = line.rstrip()
+        if not line or line.startswith("#"):
+            continue
+        # The constant label is present on every sample and never duplicated.
+        assert 'group="prod"' in line, line
+        assert line.count("group=") == 1, line
+        saw_metric = True
+    assert saw_metric
 
 
 def test_prometheus_endpoint_reserved_label():

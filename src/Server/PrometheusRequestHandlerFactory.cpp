@@ -1,15 +1,12 @@
 #include <Access/Credentials.h>
 #include <Server/PrometheusRequestHandlerFactory.h>
 
-#include <unordered_set>
 #include <Core/Types_fwd.h>
 #include <Server/HTTPHandlerFactory.h>
 #include <Server/PrometheusMetricsWriter.h>
 #include <Server/PrometheusRequestHandler.h>
 #include <Server/PrometheusRequestHandlerConfig.h>
 #include <Common/StringUtils.h>
-#include <Common/HistogramMetrics.h>
-#include <Common/DimensionalMetrics.h>
 
 
 namespace DB
@@ -47,33 +44,6 @@ namespace
         return true;
     }
 
-    /// Label names that `PrometheusMetricsWriter` writes itself, so they cannot also be used as constant
-    /// labels - otherwise a sample would contain two labels with the same name (invalid exposition).
-    /// This covers the "le" label of histogram buckets, the labels of the "ClickHouse_Info" metric, and
-    /// the per-sample labels of every histogram/dimensional metric family (e.g. "group", "direction",
-    /// "http_method", "part_state"), which are prepended-then-appended without de-duplication.
-    /// (Names starting with "__" are reserved by Prometheus itself and are checked separately.)
-    std::unordered_set<String> getReservedPrometheusLabelNames()
-    {
-        std::unordered_set<String> reserved_names
-            = {"le", "name", "version", "version_describe", "version_major", "version_minor", "version_patch"};
-
-        HistogramMetrics::Factory::instance().forEachFamily(
-            [&reserved_names](const HistogramMetrics::MetricFamily & family)
-            {
-                for (const auto & label : family.getLabels())
-                    reserved_names.insert(label);
-            });
-        DimensionalMetrics::Factory::instance().forEachFamily(
-            [&reserved_names](const DimensionalMetrics::MetricFamily & family)
-            {
-                for (const auto & label : family.getLabels())
-                    reserved_names.insert(label);
-            });
-
-        return reserved_names;
-    }
-
     /// Parses a configuration like this:
     /// <labels>
     ///     <shard>1</shard>
@@ -87,7 +57,6 @@ namespace
 
         Strings label_names;
         config.keys(labels_prefix, label_names);
-        const auto reserved_names = getReservedPrometheusLabelNames();
         for (const String & label_name : label_names)
         {
             if (!isValidPrometheusLabelName(label_name))
@@ -95,12 +64,14 @@ namespace
                     ErrorCodes::INVALID_CONFIG_PARAMETER,
                     "Invalid Prometheus label name '{}' in the configuration: label names must match [a-zA-Z_][a-zA-Z0-9_]* and must not be repeated",
                     label_name);
-            if (label_name.starts_with("__") || reserved_names.contains(label_name))
+            if (label_name.starts_with("__"))
                 throw Exception(
                     ErrorCodes::INVALID_CONFIG_PARAMETER,
-                    "Invalid Prometheus label name '{}' in the configuration: this name is reserved by Prometheus or by ClickHouse "
-                    "and cannot be used as a constant label",
+                    "Invalid Prometheus label name '{}' in the configuration: names starting with '__' are reserved by Prometheus",
                     label_name);
+            /// Collisions with labels this endpoint writes itself (le, ClickHouse_Info labels, exposed
+            /// family labels) depend on the active export surface and are validated in
+            /// createPrometheusMetricWriter(), where `for_keeper` and the expose_* flags are known.
             res.constant_labels[label_name] = config.getString(labels_prefix + "." + label_name);
         }
     }
@@ -273,9 +244,33 @@ namespace
     /// Creates a writer which serializes exposing metrics.
     std::shared_ptr<PrometheusMetricsWriter> createPrometheusMetricWriter(const PrometheusRequestHandlerConfig & config, bool for_keeper)
     {
+        std::shared_ptr<PrometheusMetricsWriter> writer;
         if (for_keeper)
-            return std::make_unique<KeeperPrometheusMetricsWriter>(config.constant_labels);
-        return std::make_unique<PrometheusMetricsWriter>(config.constant_labels);
+            writer = std::make_unique<KeeperPrometheusMetricsWriter>(config.constant_labels);
+        else
+            writer = std::make_unique<PrometheusMetricsWriter>(config.constant_labels);
+
+        /// A constant label must not reuse a label name this endpoint writes itself for one of its
+        /// enabled sections (the "le" label, the ClickHouse_Info labels, or an exposed histogram/
+        /// dimensional family label) - otherwise an exported sample would carry two labels with the same
+        /// name. The reserved set is derived from the writer's actual surface (server vs Keeper) and the
+        /// enabled expose_* flags, so a name is only rejected when it can really collide.
+        if (!config.constant_labels.empty())
+        {
+            const auto reserved_names = writer->getReservedLabelNames(
+                config.expose_info, config.expose_histograms, config.expose_dimensional_metrics);
+            for (const auto & label : config.constant_labels)
+            {
+                if (reserved_names.contains(label.first))
+                    throw Exception(
+                        ErrorCodes::INVALID_CONFIG_PARAMETER,
+                        "Invalid Prometheus label name '{}' in the configuration: this name is reserved by ClickHouse "
+                        "for a metric exposed by this endpoint and cannot be used as a constant label",
+                        label.first);
+            }
+        }
+
+        return writer;
     }
 
     /// Base function for making a factory for PrometheusRequestHandler. This function can return nullptr.
