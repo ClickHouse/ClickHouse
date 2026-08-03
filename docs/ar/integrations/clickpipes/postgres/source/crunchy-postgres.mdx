@@ -70,7 +70,7 @@ SHOW max_replication_slots; -- should be 10
     CREATE PUBLICATION clickpipes FOR TABLES IN SCHEMA "public";
     ```
 
-سيحتوي المنشور `clickpipes` على مجموعة أحداث التغييرات الناتجة عن الجداول المحددة، وسيُستخدم لاحقًا لإدخال تدفق النسخ المتماثل.
+يحدّد المنشور `clickpipes` مجموعة الجداول التي ستُبثّ أحداث التغيير الخاصة بها إلى ClickPipes. نوصي بعدم استخدام `FOR ALL TABLES` ما لم تكن تنوي نسخ جميع الجداول متماثلًا، لأن تضمين جداول غير ضرورية يزيد من حركة WAL من Postgres إلى ClickPipes ويقلّل من الكفاءة الإجمالية للنسخ المتماثل.
 
 <div id="safe-list-clickpipes-ips">
   ## إضافة عناوين IP الخاصة بـ ClickPipes إلى قائمة السماح
