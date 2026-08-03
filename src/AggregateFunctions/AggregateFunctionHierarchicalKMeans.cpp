@@ -787,12 +787,6 @@ struct HierarchicalKMeansData
         return (static_cast<UInt64>(rng()) * (static_cast<UInt64>(pcg32_fast::max()) + 1ULL) + static_cast<UInt64>(rng())) % limit;
     }
 
-    /// Uniform in [0, 1).
-    double randomDouble()
-    {
-        return static_cast<double>(rng()) / (static_cast<double>(pcg32_fast::max()) + 1.0);
-    }
-
     void addVector(const Float * v, UInt32 d, UInt64 cap)
     {
         /// `dim == 0` is the "no rows yet" sentinel, so an empty input array would both make the state
@@ -876,18 +870,58 @@ struct HierarchicalKMeansData
             return;
         }
 
-        /// Both sides were downsampled, so both hold exactly `cap` rows. Replace each slot with a row drawn
-        /// from `other` with probability equal to `other`'s share of the combined stream. The choice is made
-        /// per slot rather than as a fixed count, which is what keeps the merge order-independent.
-        const double p = static_cast<double>(other.seen) / (static_cast<double>(seen) + static_cast<double>(other.seen));
-        for (UInt64 i = 0; i < have_a; ++i)
+        /// Both sides overflowed the reservoir, so each holds exactly `cap` rows.
+        ///
+        /// How many of the `cap` result slots come from `other` is a HYPERGEOMETRIC draw - `cap` items taken
+        /// from the `seen + other.seen` combined stream, of which `other.seen` belong to `other`. Deciding it
+        /// per slot with an independent coin gets the count distribution wrong (binomial, so `cap = 2` with
+        /// `seen = other.seen = 3` yields P(both from other) = 1/4 instead of the correct 1/5), and picking
+        /// the row WITH replacement can emit the same underlying row twice, which a size-`cap` sample of the
+        /// union can never do.
+        ///
+        /// Drawn by urn simulation, which is exact and needs no floating point: `genRandom(remaining_total)
+        /// < remaining_b` is precisely `remaining_b / remaining_total`. It costs O(cap), against the
+        /// O(cap * d) the row copying below already costs.
+        UInt64 take_b = 0;
         {
-            if (randomDouble() < p)
+            UInt64 remaining_total = seen + other.seen;
+            UInt64 remaining_b = other.seen;
+            for (UInt64 i = 0; i < cap; ++i)
             {
-                const UInt64 j = genRandom(have_b);
-                memcpy(&samples[i * d], &other.samples[j * d], d * sizeof(Float));
+                if (genRandom(remaining_total) < remaining_b)
+                {
+                    ++take_b;
+                    --remaining_b;
+                }
+                --remaining_total;
             }
         }
+        const UInt64 take_a = cap - take_b;
+
+        /// Both sides then contribute WITHOUT replacement. Subsampling a uniform sample uniformly is itself
+        /// uniform over the underlying stream, so the two halves compose into a uniform sample of the union.
+        /// `take_a <= cap == have_a` and `take_b <= cap == have_b`, so neither side can be over-drawn.
+
+        /// Partial Fisher-Yates over our own rows, moving the survivors to the front.
+        for (UInt64 i = 0; i < take_a; ++i)
+        {
+            const UInt64 j = i + genRandom(have_a - i);
+            if (j != i)
+                for (UInt64 t = 0; t < d; ++t)
+                    std::swap(samples[i * d + t], samples[j * d + t]);
+        }
+        samples.resize(take_a * d);
+
+        /// Same for `other`, but it is const, so permute an index array rather than the rows.
+        VectorWithMemoryTracking<UInt64> idx(have_b);
+        std::iota(idx.begin(), idx.end(), 0);
+        for (UInt64 i = 0; i < take_b; ++i)
+        {
+            const UInt64 j = i + genRandom(have_b - i);
+            std::swap(idx[i], idx[j]);
+            samples.insert(&other.samples[idx[i] * d], &other.samples[(idx[i] + 1) * d]);
+        }
+
         seen += other.seen;
     }
 };
