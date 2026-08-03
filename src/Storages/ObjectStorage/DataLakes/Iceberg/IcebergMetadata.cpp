@@ -238,7 +238,11 @@ bool IcebergMetadata::update(const ContextPtr & local_context)
     }
 
     auto metadata_object = getMetadataJSONObject(metadata_file_path, object_storage, configuration_ptr, persistent_components.metadata_cache, local_context, log, compression_method);
-    chassert(persistent_components.format_version == metadata_object->getValue<int>(f_format_version));
+
+    /// The Iceberg `format-version` in the metadata file may differ from the value cached in
+    /// `persistent_components` when an external tool (e.g. Spark) upgrades the table between
+    /// queries. Downstream parsers determine the version they need from the Avro metadata of
+    /// each manifest list / manifest file, so we do not update the shared cached value here.
 
     auto previous_snapshot_id = relevant_snapshot_id;
     auto previous_snapshot_schema_id = relevant_snapshot_schema_id;
@@ -608,11 +612,6 @@ IcebergMetadata::IcebergHistory IcebergMetadata::getHistory(ContextPtr local_con
     }());
 
     auto metadata_object = getMetadataJSONObject(metadata_file_path, object_storage, configuration_ptr, persistent_components.metadata_cache, local_context, log, compression_method);
-    chassert([&]()
-    {
-        SharedLockGuard lock(mutex);
-        return persistent_components.format_version == metadata_object->getValue<int>(f_format_version);
-    }());
 
     /// History
     std::vector<Iceberg::IcebergHistoryRecord> iceberg_history;

@@ -1,6 +1,7 @@
 #include <memory>
 #include <sstream>
 #include <Storages/ObjectStorage/DataLakes/Iceberg/AvroForIcebergDeserializer.h>
+#include <Storages/ObjectStorage/DataLakes/Iceberg/Constant.h>
 #include <Poco/JSON/Array.h>
 #include <Poco/JSON/Object.h>
 #include <Core/ColumnWithTypeAndName.h>
@@ -92,6 +93,34 @@ std::optional<std::string> AvroForIcebergDeserializer::tryGetAvroMetadataValue(s
         return std::nullopt;
 
     return std::string{it->second.begin(), it->second.end()};
+}
+
+Int64 AvroForIcebergDeserializer::getFormatVersionFromManifestFileMetadata() const
+{
+    auto format_version_value = tryGetAvroMetadataValue(f_format_version);
+    if (format_version_value.has_value())
+    {
+        try
+        {
+            return std::stoi(format_version_value.value());
+        }
+        catch (const std::exception & e)
+        {
+            throw Exception(
+                ErrorCodes::ICEBERG_SPECIFICATION_VIOLATION,
+                "Cannot read iceberg table format version from Iceberg avro manifest file '{}': {}",
+                manifest_file_path,
+                e.what());
+        }
+    }
+
+    /// Older ClickHouse versions wrote both manifest lists and manifest files without the
+    /// `format-version` Avro metadata key, so we fall back to schema-based detection: the
+    /// `sequence_number` field appears at the top level of v2 manifest lists and v2
+    /// manifest entries, but is absent from their v1 counterparts.
+    if (hasPath(f_sequence_number))
+        return 2;
+    return 1;
 }
 
 namespace

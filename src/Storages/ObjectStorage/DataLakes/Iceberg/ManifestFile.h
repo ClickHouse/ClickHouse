@@ -110,7 +110,6 @@ public:
     explicit ManifestFileContent(
         const AvroForIcebergDeserializer & manifest_file_deserializer,
         const String & manifest_file_name,
-        Int32 format_version_,
         const String & common_path,
         IcebergSchemaProcessor & schema_processor,
         Int64 inherited_sequence_number,
