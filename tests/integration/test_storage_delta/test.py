@@ -1701,12 +1701,20 @@ def test_replicated_database_and_unavailable_s3(started_cluster, use_delta_kerne
 
         node2.restart_clickhouse()
 
-        assert (
-            node2.query(
+        # `restart_clickhouse` only waits until the server answers a query, but the
+        # digest is rewritten by the background `startup Replicated database` job, so
+        # poll instead of reading it once.
+        digest = None
+        deadline = time.monotonic() + 60
+        while time.monotonic() < deadline:
+            digest = node2.query(
                 f"SELECT value FROM system.zookeeper WHERE path = '{replica_path}' AND name = 'digest'"
             ).strip()
-            != "123456"
-        )
+            if digest != "123456":
+                break
+            time.sleep(1)
+
+        assert digest != "123456"
 
 
 def test_session_token(started_cluster):
