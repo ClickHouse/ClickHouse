@@ -1186,9 +1186,11 @@ def get_all_server_pids(args):
 
     1. It parents another match.  Not "drop the lowest pid": sibling replicas
        share a ppid and both must survive.
-    2. Its comm is the watchdog's AND no match parents it.  The comm half is
-       only sound for an unparented survivor, since comm is inherited across
-       fork: a server restarted by its own watchdog carries WATCHDOG_COMM.
+    2. Its comm is the watchdog's AND no watchdog is above it.  The comm half is
+       only sound for a survivor with no watchdog parent, since comm is
+       inherited across fork: a server restarted by its own watchdog carries
+       WATCHDOG_COMM.  A watchdog parent is recognised by comm, not by argv,
+       because it renames itself to `clickhouse-watchdog` and so stops matching.
        Tie-breaker only: if it leaves nothing, keep the matches.
     """
     binary = getattr(args, "binary", "clickhouse")
@@ -1199,7 +1201,9 @@ def get_all_server_pids(args):
     serving = [
         p[0]
         for p in survivors
-        if p[1] in match_pids or _process_comm(p[0]) != WATCHDOG_COMM
+        if p[1] in match_pids
+        or _process_comm(p[1]) == WATCHDOG_COMM
+        or _process_comm(p[0]) != WATCHDOG_COMM
     ]
     return serving or [p[0] for p in survivors]
 
