@@ -52,7 +52,7 @@ FROM orders |> WHERE amount > 100;
 
 Table aliases can be written with or without the `AS` keyword, as in the `FROM` clause of an ordinary `SELECT` query: `FROM orders o WHERE o.amount > 100`. The only exception is an alias written as the bare word `select`: after the tables it starts the explicit `SELECT` clause instead of being treated as an alias. A table named `select` is unaffected and keeps its own alias: `FROM select s WHERE s.id = 1`.
 
-The `SELECT` clause cannot be omitted when the table is sampled with an offset, because in `FROM t SAMPLE 1/10 OFFSET 5` the `OFFSET` belongs to `SAMPLE`, while in `FROM t SAMPLE 1/10 SELECT * OFFSET 5` it is a query-level `OFFSET` - the explicit `SELECT` is required to disambiguate the two.
+The `SELECT` clause cannot be omitted when the sample offset of the last table could also be read as a query-level `OFFSET`, because in `FROM t SAMPLE 1/10 OFFSET 5` the `OFFSET` belongs to `SAMPLE`, while in `FROM t SAMPLE 1/10 SELECT * OFFSET 5` it is a query-level `OFFSET` - the explicit `SELECT` is required to disambiguate the two. When the query continues with a clause that a query-level `OFFSET` cannot precede, there is no ambiguity and the `SELECT` clause is optional as usual: `FROM t SAMPLE 1/10 OFFSET 5 WHERE x > 0`, `FROM t SAMPLE 1/10 OFFSET 5 JOIN dim USING (id)`.
 
 ## Operators {#operators}
 
@@ -154,6 +154,8 @@ FROM customers
 ```
 
 Since every operator is a new subquery scope, table aliases are visible only inside the same operator (in the `ON` condition). The following operators see the combined columns of the join result, as after `SELECT *`.
+
+The comma spelling of a cross join is supported as well, with the input of the operator as the left side: `FROM customers |> , orders`.
 
 As in the `FROM` clause of an ordinary query, a comma (cross) join is not supported right after an `ARRAY JOIN`: a comma after the `ARRAY JOIN` always belongs to its expression list.
 

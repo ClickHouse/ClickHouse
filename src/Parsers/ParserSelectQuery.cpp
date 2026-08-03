@@ -202,6 +202,47 @@ bool endsWithBarewordSelect(TokenIterator begin, TokenIterator end)
     return end->type == TokenType::BareWord && isSelectKeyword({end->begin, end->size()});
 }
 
+/// Whether the last top-level table expression is sampled with an offset, so that the OFFSET is the
+/// last thing consumed by the tables parse: FROM t SAMPLE 1/10 OFFSET 5. Only in this position the
+/// consumed OFFSET could have been meant as a query-level OFFSET instead. A sample offset that is
+/// followed by more of the FROM clause (FROM t SAMPLE 1/10 OFFSET 5 JOIN dim USING (id)) is
+/// unambiguous - a query-level OFFSET cannot appear there.
+bool lastTableExpressionHasSampleOffset(const ASTPtr & tables)
+{
+    if (!tables || tables->children.empty())
+        return false;
+
+    const auto * tables_element = tables->children.back()->as<ASTTablesInSelectQueryElement>();
+    if (!tables_element || !tables_element->table_expression)
+        return false;
+
+    return tables_element->table_expression->as<ASTTableExpression &>().sample_offset != nullptr;
+}
+
+/// Whether the query continues with a clause that can only precede a query-level OFFSET. If it does,
+/// a preceding OFFSET must have been the sample offset, so the omitted-SELECT form is unambiguous.
+bool nextClauseCannotFollowQueryLevelOffset(IParser::Pos & pos, Expected & expected)
+{
+    static const Keyword clause_keywords[] = {
+        Keyword::PREWHERE,
+        Keyword::WHERE,
+        Keyword::GROUP_BY,
+        Keyword::HAVING,
+        Keyword::WINDOW,
+        Keyword::QUALIFY,
+        Keyword::ORDER_BY,
+        Keyword::LIMIT,
+    };
+
+    for (auto keyword : clause_keywords)
+    {
+        if (ParserKeyword(keyword).checkWithoutMoving(pos, expected))
+            return true;
+    }
+
+    return false;
+}
+
 }
 
 
@@ -356,17 +397,12 @@ bool ParserSelectQuery::parseImpl(Pos & pos, ASTPtr & node, Expected & expected)
         /// consumed as the SAMPLE offset, while in the explicit form FROM t SAMPLE 1/10 SELECT * OFFSET 5
         /// it is a query-level OFFSET (the formatter of ASTSelectQuery relies on the explicit form to
         /// disambiguate). Reject the omitted-SELECT form for this shape and require an explicit SELECT.
-        for (const auto & child : tables->children)
+        /// The ambiguity exists only for the sample offset that ends the tables parse and only when the
+        /// query does not continue with a clause that a query-level OFFSET could not precede.
+        if (lastTableExpressionHasSampleOffset(tables) && !nextClauseCannotFollowQueryLevelOffset(pos, expected))
         {
-            if (const auto * tables_element = child->as<ASTTablesInSelectQueryElement>())
-            {
-                if (tables_element->table_expression
-                    && tables_element->table_expression->as<ASTTableExpression &>().sample_offset)
-                {
-                    expected.add(pos, "SELECT (it cannot be omitted when the table has SAMPLE with OFFSET)");
-                    return false;
-                }
-            }
+            expected.add(pos, "SELECT (it cannot be omitted when the last table has SAMPLE with OFFSET)");
+            return false;
         }
 
         /// A query that starts with the FROM clause can omit SELECT - then it is equivalent to SELECT *.

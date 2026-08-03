@@ -492,10 +492,9 @@ bool parsePipeOperators(IParser::Pos & pos, ASTPtr & query, Expected & expected)
         {
             /// Operators of the FROM clause: |> [LEFT/RIGHT/...] JOIN table ON/USING ..., |> ARRAY JOIN expr
             /// -> SELECT * FROM (query) JOIN table ON/USING ...
-            /// A single operator can contain several JOINs, like a FROM clause.
-            if (pos->type == TokenType::Comma)
-                return false;
-
+            /// A single operator can contain several JOINs, like a FROM clause. The comma (cross) join
+            /// spelling is allowed as well, with the input of the operator as its left side:
+            /// FROM lhs |> , rhs   ->   SELECT * FROM (SELECT * FROM lhs), rhs
             auto select = wrapQueryIntoSelect(std::move(query), pending_alias);
             auto & tables = select->refTables()->children;
 

@@ -88,6 +88,8 @@ alice	250	1
 alice	250	2
 charlie	1	3
 charlie	2	4
+charlie	1
+1
 -- Set operations
 alice
 bob
@@ -129,6 +131,12 @@ alice
 9
 0
 1
+9
+0
+1
+0
+0
+0
 -- A trailing comma is allowed in the select-list-like operators, as in an ordinary SELECT clause
 alice	100
 alice	250

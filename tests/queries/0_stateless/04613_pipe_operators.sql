@@ -89,6 +89,9 @@ FROM orders |> WHERE customer = 'alice' |> EXTEND [1, 2] AS arr |> ARRAY JOIN ar
 -- ARRAY JOIN is rejected, same as in the FROM clause of an ordinary query
 FROM orders |> WHERE customer = 'charlie' |> EXTEND [1, 2] AS arr, [3, 4] AS brr |> ARRAY JOIN arr, brr |> SELECT customer, arr, brr |> ORDER BY arr, brr;
 FROM orders |> EXTEND [1] AS arr |> ARRAY JOIN arr, (b, view(SELECT 1 AS A), x); -- { clientError SYNTAX_ERROR }
+-- The comma spelling of a cross join is supported, with the input of the operator as the left side
+FROM orders |> WHERE customer = 'charlie' |> AS o |> , (SELECT 1 AS one) AS x |> SELECT customer, one;
+FROM orders |> WHERE customer = 'charlie' |> AS o |> , (SELECT 1 AS one) AS x, (SELECT 2 AS two) AS y |> AGGREGATE count();
 
 SELECT '-- Set operations';
 FROM orders |> WHERE customer = 'alice' |> SELECT customer |> UNION ALL (FROM orders |> WHERE customer = 'bob' |> SELECT customer) |> DISTINCT |> ORDER BY customer;
@@ -138,6 +141,14 @@ FROM sampled SAMPLE 1 SELECT * ORDER BY id OFFSET 8;
 FROM sampled SAMPLE 1 OFFSET 0 SELECT * ORDER BY id LIMIT 2;
 FROM sampled SAMPLE 1 OFFSET 0; -- { clientError SYNTAX_ERROR }
 FROM sampled SAMPLE 1 OFFSET 0 |> LIMIT 1; -- { clientError SYNTAX_ERROR }
+-- When the query continues with a clause that a query-level OFFSET cannot precede, there is no
+-- ambiguity and SELECT stays optional
+FROM sampled SAMPLE 1 OFFSET 0 WHERE id > 8;
+FROM sampled SAMPLE 1 OFFSET 0 ORDER BY id LIMIT 2;
+FROM sampled SAMPLE 1 OFFSET 0 GROUP BY id ORDER BY id LIMIT 1;
+-- The sample offset is unambiguous when it does not end the tables of the query either
+FROM sampled SAMPLE 1 OFFSET 0 JOIN sampled AS dim USING (id) ORDER BY id LIMIT 1;
+FROM sampled SAMPLE 1 OFFSET 0 JOIN sampled AS dim USING (id) |> ORDER BY id |> LIMIT 1;
 DROP TABLE sampled;
 
 SELECT '-- A trailing comma is allowed in the select-list-like operators, as in an ordinary SELECT clause';
