@@ -42,6 +42,7 @@
 #include <Processors/QueryPlan/QueryPlan.h>
 #include <Processors/Sinks/SinkToStorage.h>
 #include <QueryPipeline/Pipe.h>
+#include <Common/CurrentThread.h>
 #include <Common/checkStackSize.h>
 #include <Common/typeid_cast.h>
 #include <Common/randomSeed.h>
@@ -1082,13 +1083,18 @@ std::optional<NameSet> StorageMaterializedView::supportedPrewhereColumns(const S
     if (!table)
         return std::nullopt;
 
+    /// Must match what `readImpl` resolves the target against; `getContext()` is the view's context.
+    auto local_context = CurrentThread::tryGetQueryContext();
+    if (!local_context)
+        local_context = getContext();
+
     /// Refresh the target's data-lake metadata first (mirrors readImpl), else PREWHERE support is
     /// decided against stale target metadata and can reopen the pushdown bug. No-op for non-data-lake.
-    table->updateExternalDynamicMetadataIfExists(getContext());
+    table->updateExternalDynamicMetadataIfExists(local_context);
 
-    auto view_metadata = getInMemoryMetadataPtr(getContext(), false);
+    auto view_metadata = getInMemoryMetadataPtr(local_context, false);
     const auto & view_columns_description = view_metadata->getColumns();
-    auto target_table_metadata = table->getInMemoryMetadataPtr(getContext(), false);
+    auto target_table_metadata = table->getInMemoryMetadataPtr(local_context, false);
     auto target_table_columns = target_table_metadata->getColumns();
     NameSet supported_columns;
     for (const auto & [name, type] : view_columns_description.getAll())
@@ -1111,7 +1117,7 @@ std::optional<NameSet> StorageMaterializedView::supportedPrewhereColumns(const S
     /// itself allows so the constraint holds transitively. Target chains cannot cycle: a
     /// self-target is rejected with BAD_ARGUMENTS and a loop with INFINITE_LOOP, both at DDL time.
     if (const auto target_supported_columns
-        = table->supportedPrewhereColumns(table->getStorageSnapshot(target_table_metadata, getContext())))
+        = table->supportedPrewhereColumns(table->getStorageSnapshot(target_table_metadata, local_context)))
         std::erase_if(supported_columns, [&](const auto & name) { return !target_supported_columns->contains(name); });
 
     return supported_columns;

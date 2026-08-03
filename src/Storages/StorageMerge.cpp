@@ -11,6 +11,7 @@
 #include <Analyzer/QueryTreeBuilder.h>
 #include <Analyzer/TableNode.h>
 #include <Analyzer/Utils.h>
+#include <Common/CurrentThread.h>
 #include <Common/Logger.h>
 #include <Common/logger_useful.h>
 #include <Common/quoteString.h>
@@ -319,7 +320,12 @@ std::optional<NameSet> StorageMerge::supportedPrewhereColumns(const StorageSnaps
 {
     bool supports_prewhere = true;
 
-    const auto metadata_snapshot = getInMemoryMetadataPtr(getContext(), false);
+    /// Must match what `createChildrenPlans` resolves children against; `getContext()` is global.
+    auto local_context = CurrentThread::tryGetQueryContext();
+    if (!local_context)
+        local_context = getContext();
+
+    const auto metadata_snapshot = getInMemoryMetadataPtr(local_context, false);
     const auto & columns = metadata_snapshot->getColumns();
 
     NameSet supported_columns;
@@ -336,7 +342,7 @@ std::optional<NameSet> StorageMerge::supportedPrewhereColumns(const StorageSnaps
 
     forEachTable([&](const StoragePtr & table)
     {
-        const auto table_metadata_ptr = table->getInMemoryMetadataPtr(getContext(), false);
+        const auto table_metadata_ptr = table->getInMemoryMetadataPtr(local_context, false);
         if (!table_metadata_ptr)
             supports_prewhere = false;
         if (!supports_prewhere)
@@ -367,7 +373,7 @@ std::optional<NameSet> StorageMerge::supportedPrewhereColumns(const StorageSnaps
         /// Intersect with what the child itself allows, so the constraint holds transitively.
         /// `supportsPrewhere` above is already transitive - it recurses through virtual dispatch.
         if (const auto nested_supported_columns
-            = table->supportedPrewhereColumns(table->getStorageSnapshot(table_metadata_ptr, getContext())))
+            = table->supportedPrewhereColumns(table->getStorageSnapshot(table_metadata_ptr, local_context)))
             std::erase_if(supported_columns, [&](const auto & name) { return !nested_supported_columns->contains(name); });
     });
 

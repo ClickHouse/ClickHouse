@@ -46,6 +46,7 @@
 #include <base/range.h>
 #include <Columns/IColumn.h>
 #include <Common/CurrentMetrics.h>
+#include <Common/CurrentThread.h>
 #include <Common/FieldVisitorConvertToNumber.h>
 #include <Common/MemoryTracker.h>
 #include <Common/MemoryTrackerBlockerInThread.h>
@@ -960,12 +961,17 @@ std::optional<NameSet> StorageBuffer::supportedPrewhereColumns(const StorageSnap
     if (!destination)
         return NameSet{};
 
+    /// Must match what `read` resolves the destination against; `getContext()` is the flush context.
+    auto local_context = CurrentThread::tryGetQueryContext();
+    if (!local_context)
+        local_context = getContext();
+
     /// A type declared differently than in the destination is fine: read() prepends a converting
     /// prefix to the filter. But the filter is forwarded into the raw destination read, so the
     /// column must be physical there just like here: an ALIAS twin has no input the filter binds to.
-    auto own_metadata = getInMemoryMetadataPtr(getContext(), false);
+    auto own_metadata = getInMemoryMetadataPtr(local_context, false);
     const auto & own_columns_description = own_metadata->getColumns();
-    auto destination_metadata = destination->getInMemoryMetadataPtr(getContext(), false);
+    auto destination_metadata = destination->getInMemoryMetadataPtr(local_context, false);
     const auto & destination_columns = destination_metadata->getColumns();
     NameSet supported_columns;
     for (const auto & column : own_columns_description.getAll())
@@ -980,7 +986,7 @@ std::optional<NameSet> StorageBuffer::supportedPrewhereColumns(const StorageSnap
 
     /// And only if the destination itself allows them, so the constraint holds transitively.
     if (const auto destination_supported_columns
-        = destination->supportedPrewhereColumns(destination->getStorageSnapshot(destination_metadata, getContext())))
+        = destination->supportedPrewhereColumns(destination->getStorageSnapshot(destination_metadata, local_context)))
         std::erase_if(supported_columns, [&](const auto & name) { return !destination_supported_columns->contains(name); });
 
     return supported_columns;
