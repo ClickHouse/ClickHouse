@@ -14,6 +14,8 @@ not pruned
 -- same file well-formed (declared precision 18): pruning still works
 pruned
 99	54499.5
+-- a hint of exactly the decoded width restores pruning
+pruned
 -- schema inference still reports the declared precision
 k	Nullable(Decimal(9, 2))					
 -- explicit wider type hint reads without narrowing
