@@ -297,7 +297,7 @@ SELECT sequenceMatchEvents('(?1).*(?2).*(?1)(?3)')(time, number = 1, number = 2,
 
 ## sequenceMatchEventsFirst {#sequencematcheventsfirst}
 
-Return event timestamps of the first event chain (chronologically) that matched the pattern. The function searches for non-overlapping matches and returns the earliest one found. Unlike `sequenceMatchEvents` which returns the longest match, this function returns the first match encountered in time order.
+Return event timestamps of the first event chain (chronologically) that matched the pattern. The function searches for non-overlapping matches and returns the earliest one found. Unlike `sequenceMatchEvents` which returns the longest match, this function returns the first match encountered in time order. Matches are non-overlapping, similar to how `sequenceCount` works: among overlapping candidate chains, the one reachable from the earliest starting position is preferred.
 
 :::note
 Events that occur at the same second may lay in the sequence in an undefined order affecting the result.
@@ -362,7 +362,7 @@ The function returns `[1,2,3]` (first match) even though there is also a later m
 
 ## sequenceMatchEventsLast {#sequencematcheventslast}
 
-Return event timestamps of the last event chain (chronologically) that matched the pattern. The function searches for non-overlapping matches and returns the latest one found.
+Return event timestamps of the last event chain (chronologically) that matched the pattern. The function searches for non-overlapping matches and returns the latest one found. Matches are non-overlapping, similar to how `sequenceCount` works: among overlapping candidate chains, the one reachable from the earliest starting position is preferred, the same greedy decomposition `sequenceMatchEventsAll` produces.
 
 :::note
 Events that occur at the same second may lay in the sequence in an undefined order affecting the result.
