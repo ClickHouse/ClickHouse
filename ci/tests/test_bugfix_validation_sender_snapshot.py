@@ -42,7 +42,7 @@ def test_sender_snapshot_is_cleared_before_the_binary_swap_restart():
     clean_logs = _index_of(lines, "CH.clean_logs()")
     assert clean_logs != -1, "the bugfix-validation binary swap no longer calls `CH.clean_logs()`"
 
-    reset = _index_of(lines, 'log_export_state["senders"] = set()', clean_logs)
+    reset = _index_of(lines, 'log_export_state["senders"] = {}', clean_logs)
     assert reset != -1, (
         "the pre-swap `system.<table>_sender` snapshot is not cleared on the "
         "binary-swap path - the overload heuristic would stay keyed off names "
@@ -60,13 +60,40 @@ def test_sender_snapshot_is_cleared_before_the_binary_swap_restart():
 def test_later_build_type_processor_uses_the_cleared_snapshot():
     lines = _lines()
 
-    reset = _index_of(lines, 'log_export_state["senders"] = set()')
+    reset = _index_of(lines, 'log_export_state["senders"] = {}')
     processor = _index_of(lines, "ft_res_processor_bt = FTResultsProcessor(", reset)
     assert processor != -1, (
         "the per-build-type `FTResultsProcessor` is no longer constructed after "
         "the snapshot reset - re-check that it cannot see a stale sender set"
     )
-    assert 'log_export_state["senders"]' in "".join(lines[processor : processor + 4])
+    assert 'log_export_state["senders"]' in "".join(lines[processor : processor + 6])
+
+
+def test_every_processor_gets_a_verified_sender_set():
+    """No `FTResultsProcessor` may be handed the raw pre-suite snapshot: the
+    names must go through `CH.verify_log_export_senders`, which drops any
+    sender table that was dropped or rebound while the tests ran."""
+    lines = _lines()
+
+    i = 0
+    constructions = 0
+    while True:
+        i = _index_of(lines, "FTResultsProcessor(", i)
+        if i == -1:
+            break
+        block = "".join(lines[i : i + 8])
+        if "log_export_senders" in block:
+            constructions += 1
+            assert "CH.verify_log_export_senders(" in block, (
+                f"`FTResultsProcessor` at line {i + 1} is given a sender set "
+                "that was not re-verified after the suite"
+            )
+        i += 1
+
+    assert constructions == 2, (
+        "expected exactly the main-path and per-build-type processors to take "
+        f"a sender set, found {constructions}"
+    )
 
 
 def test_snapshot_is_only_populated_from_the_pre_suite_capture():
@@ -88,4 +115,4 @@ def test_snapshot_is_only_populated_from_the_pre_suite_capture():
                 populating.append(ast.unparse(node.value))
 
     assert populating, "`log_export_state` is no longer assigned anywhere"
-    assert set(populating) == {"CH.get_log_export_senders()", "set()"}, populating
+    assert set(populating) == {"CH.get_log_export_senders()", "{}"}, populating

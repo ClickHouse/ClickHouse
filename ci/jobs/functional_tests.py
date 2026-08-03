@@ -636,14 +636,18 @@ def main():
     debug_files = []
 
     # The concrete `system.<table>_sender` `Distributed` tables that CIDB log
-    # export created for this run, captured from `system.tables` before any
-    # test runs. Threaded into `FTResultsProcessor` so the CIDB-staging-overload
-    # heuristic is both gated on log export having really started AND keyed off
-    # the exact sender tables - a set a test cannot forge (a test CAN create a
-    # `system.*_sender` table, but it will not be in this pre-suite snapshot).
+    # export created for this run, captured from `system.tables` as a
+    # `{name: uuid}` mapping before any test runs. Re-verified against the live
+    # `system.tables` after the suite (see `CH.verify_log_export_senders`) and
+    # only then threaded into `FTResultsProcessor`, so the
+    # CIDB-staging-overload heuristic is gated on log export having really
+    # started AND keyed off tables a test can neither forge (a test CAN create
+    # a `system.*_sender` table, but it will not be in this pre-suite snapshot)
+    # nor rebind (dropping a captured sender and recreating it changes the
+    # `uuid` in the `Atomic` `system` database).
     # Defined at function scope so it is always available to the TEST stage even
     # if the START stage is scoped out.
-    log_export_state = {"senders": set()}
+    log_export_state = {"senders": {}}
 
     stages = list(JobStages)
     if not is_per_test_coverage:
@@ -936,10 +940,6 @@ def main():
         step_name = "Tests"
         print(step_name)
 
-        ft_res_processor = FTResultsProcessor(
-            wd=temp_dir, log_export_senders=log_export_state["senders"]
-        )
-
         global_time_limit = 0
         if is_flaky_check:
             # The merge-queue run gets a tighter budget: it delays merges
@@ -1004,6 +1004,19 @@ def main():
                 build_type=build_types[0] if is_bugfix_validation else None,
             )
 
+        # Only the sender tables that still carry the `uuid` captured before
+        # the suite may key the CIDB-staging-overload heuristic: a test can
+        # drop a CI-created sender and recreate a `Distributed` table under
+        # the same name, and its shipping errors must not read as CI
+        # log-export noise. The check runs here, after the tests, and fails
+        # closed - if the server is gone the query returns nothing, the set is
+        # empty, and the run stays on the `Server died` path.
+        ft_res_processor = FTResultsProcessor(
+            wd=temp_dir,
+            log_export_senders=CH.verify_log_export_senders(
+                log_export_state["senders"]
+            ),
+        )
         test_result = ft_res_processor.run(
             runner_exit_code=runner_exit_code,
             is_bugfix_validation=is_labeled_bugfix_validation,
@@ -1082,7 +1095,7 @@ def main():
                     # classifier abstains and the run stays on the
                     # `Server died` path (fail closed). See the
                     # `clickhouse-gh[bot]` review on PR #106176.
-                    log_export_state["senders"] = set()
+                    log_export_state["senders"] = {}
                     # The server memory cap must follow the binary being
                     # launched (see the install-stage comment): sanitizer
                     # builds get the tighter 0.7 ratio, the debug build
@@ -1163,8 +1176,15 @@ def main():
                         test_result.status = Result.Status.ERROR
                         break
 
+                    # `log_export_state["senders"]` was emptied above when the
+                    # binary was swapped (log export is not set up again for
+                    # the new server), so this always abstains - the overload
+                    # heuristic never applies to a later build type.
                     ft_res_processor_bt = FTResultsProcessor(
-                        wd=temp_dir, log_export_senders=log_export_state["senders"]
+                        wd=temp_dir,
+                        log_export_senders=CH.verify_log_export_senders(
+                            log_export_state["senders"]
+                        ),
                     )
                     bt_runner_exit_code = run_tests(
                         batch_num=0,

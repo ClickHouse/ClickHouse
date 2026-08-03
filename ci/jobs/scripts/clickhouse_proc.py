@@ -373,24 +373,73 @@ class ClickHouseProc:
 
     def get_log_export_senders(self):
         """Return the concrete `system.<table>_sender` `Distributed` tables
-        that log export created for this run, as a set of names (e.g.
-        `{"query_log_sender", "trace_log_sender"}`).
+        that log export created for this run, as a `{name: uuid}` mapping
+        (e.g. `{"query_log_sender": "8f...-..."}`).
 
         Called right after `start_log_exports` succeeds, before any test
-        runs, so the set reflects only the CI-owned sender tables
+        runs, so the mapping reflects only the CI-owned sender tables
         `setup_log_cluster.sh` created (one per `system.%_log` table). The
-        CIDB-staging-overload heuristic in `FTResultsProcessor` keys off this
-        exact set, so a test that later forges a `system.*_sender` name
-        cannot be mistaken for a log-export shipping error. Returns an empty
-        set on any error - the heuristic then abstains and the run stays on
-        the `Server died` path.
+        CIDB-staging-overload heuristic in `FTResultsProcessor` keys off
+        these exact tables, so a test that later forges a `system.*_sender`
+        name cannot be mistaken for a log-export shipping error.
+
+        The `uuid` is captured, not just the name: `system` is an `Atomic`
+        database in the server, so a table dropped and recreated under a
+        captured name gets a fresh `uuid`. `verify_log_export_senders` uses
+        that to detect rebinding - a test CAN create and drop tables in
+        `system` (e.g. `02494_query_cache_system_tables.sql`), so the name
+        alone is not an identity a test cannot forge.
+
+        Returns an empty mapping on any error - the heuristic then abstains
+        and the run stays on the `Server died` path.
         """
+        return self._query_log_export_senders()
+
+    @staticmethod
+    def _query_log_export_senders():
         out = Shell.get_output(
             "clickhouse-client --query \""
-            "SELECT name FROM system.tables "
-            "WHERE database = 'system' AND name LIKE '%\\_sender'\""
+            "SELECT name, toString(uuid) FROM system.tables "
+            "WHERE database = 'system' AND name LIKE '%\\_sender' "
+            'FORMAT TSV"'
         )
-        return {name.strip() for name in out.splitlines() if name.strip()}
+        senders = {}
+        for line in out.splitlines():
+            parts = line.rstrip("\n").split("\t")
+            if len(parts) != 2:
+                continue
+            name, uuid = parts[0].strip(), parts[1].strip()
+            # A zero `uuid` carries no identity (a non-`Atomic` `system`
+            # database, e.g. `clickhouse-local`), so it cannot be verified
+            # later. Drop such entries rather than trust a bare name.
+            if not name or not uuid or uuid == "00000000-0000-0000-0000-000000000000":
+                continue
+            senders[name] = uuid
+        return senders
+
+    def verify_log_export_senders(self, snapshot):
+        """Return the subset of the pre-suite `{name: uuid}` ``snapshot``
+        whose tables still exist with the SAME `uuid`, as a set of names.
+
+        This is what the CIDB-staging-overload heuristic is allowed to trust
+        after the suite has run. A test can drop a CI-created sender and
+        recreate a `Distributed` table under the same name (tables in
+        `system` are creatable by tests), which would otherwise let it emit
+        `system.query_log_sender.DistributedInsertQueue.*` errors that read
+        as CI log-export noise. In an `Atomic` database the recreated table
+        has a different `uuid`, so it drops out here and the heuristic stops
+        counting that name.
+
+        Fails closed: a table that disappeared, was rebound, or a failed
+        query (e.g. the server is gone - then it really did die) yields an
+        empty set, so the classifier abstains.
+        """
+        if not snapshot:
+            return set()
+        current = self._query_log_export_senders()
+        return {
+            name for name, uuid in snapshot.items() if current.get(name) == uuid
+        }
 
     @staticmethod
     def stop_log_exports():
