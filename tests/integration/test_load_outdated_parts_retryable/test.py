@@ -39,6 +39,16 @@ UNEXPECTED_POST_CLEANUP_MOVE_FAILPOINT = (
 PART_CLEANUP_PRE_MOVE_FAILPOINT = (
     "mergetree_part_cleanup_inject_pre_move_retryable_exception"
 )
+# The same pre-move error, but thrown as an ErrnoException - the exception type a real filesystem rename
+# failure has, and one of the two types IMergeTreeDataPart::renameToDetached swallows when ignore_error is
+# set. The loaders used to pass ignore_error = replicated for the broken-on-start detach, so on a REPLICATED
+# table such an error never reached their retry/fail-fast classification: the worker fell through as if the
+# detach had succeeded, leaving the broken part on its original path (with its ZooKeeper entry already
+# removed) and counted as loaded. The failpoints above cannot catch that, because a plain Exception is not
+# swallowed. These cases pin that the loaders now see the error and retry it.
+PART_CLEANUP_PRE_MOVE_SWALLOWED_FAILPOINT = (
+    "mergetree_part_cleanup_inject_pre_move_swallowed_retryable_exception"
+)
 # Fire a retryable error from moveDirectory ITSELF (e.g. a local fs::rename ENOSPC/EIO, or an object-storage
 # metadata write failure). moveDirectory is all-or-nothing - the local disk uses an atomic rename and the
 # object-storage disk rolls its metadata transaction back on failure - so the source directory is left intact
@@ -585,6 +595,122 @@ def test_retryable_exception_before_unexpected_cleanup_move_reschedules():
     node.query(f"SYSTEM DISABLE FAILPOINT {PART_CLEANUP_PRE_MOVE_FAILPOINT}")
     attach.get_answer()
     assert node.query(f"SELECT count() FROM {table}").strip() == "2000"
+
+    node.query(f"DROP TABLE {table} SYNC")
+
+
+def test_swallowed_detach_error_while_loading_outdated_parts_reschedules():
+    # A broken OUTDATED part on a REPLICATED table. The loader used to call
+    # renameToDetached("broken-on-start", ignore_error = replicated), and renameToDetached swallows
+    # ErrnoException / fs::filesystem_error when ignore_error is set - which is exactly what a failing
+    # rename raises, and exactly the class isRetryableException treats as transient. The transient detach
+    # failure therefore never reached the loader's retry/fail-fast classification: the worker continued as
+    # if the cleanup had succeeded, so the broken part stayed on its original path even though its
+    # ZooKeeper entry had already been removed by
+    # forcefullyRemoveBrokenOutdatedPartFromZooKeeperBeforeDetaching, and it was counted as loaded. The
+    # loaders now pass ignore_error = false and classify the error themselves, so this must be retried.
+    table = "t_outdated_swallowed"
+    zk_path = "/clickhouse/tables/t_outdated_swallowed"
+    node.query(f"DROP TABLE IF EXISTS {table} SYNC")
+    node.query(
+        f"""
+        CREATE TABLE {table} (a UInt64, b String) ENGINE = ReplicatedMergeTree('{zk_path}', '1') ORDER BY a
+        SETTINGS old_parts_lifetime = 600, merge_tree_clear_old_parts_interval_seconds = 600,
+                 cleanup_delay_period = 600, max_cleanup_delay_period = 600
+        """
+    )
+    node.query(f"INSERT INTO {table} SELECT number, toString(number) FROM numbers(1000)")
+    node.query(f"INSERT INTO {table} SELECT number, toString(number) FROM numbers(1000, 1000)")
+    node.query(f"INSERT INTO {table} SELECT number, toString(number) FROM numbers(2000, 1000)")
+    node.query(f"OPTIMIZE TABLE {table} FINAL")
+
+    data_path = node.query(
+        f"SELECT arrayElement(data_paths, 1) FROM system.tables WHERE name = '{table}'"
+    ).strip()
+    # Corrupt one inactive (outdated) part so the loader marks it broken and routes it through the
+    # broken-on-start detach, where the swallowed-type failpoint fires.
+    outdated_part = node.query(
+        f"SELECT name FROM system.parts WHERE table = '{table}' AND active = 0 ORDER BY name LIMIT 1"
+    ).strip()
+    assert outdated_part
+    node.exec_in_container(
+        ["mv", f"{data_path}/{outdated_part}/columns.txt", f"{data_path}/{outdated_part}/columns.txt.bak"]
+    )
+
+    interrupts_before = int(node.count_in_log(OUTDATED_INTERRUPT_LOG))
+
+    node.query(f"SYSTEM ENABLE FAILPOINT {PART_CLEANUP_PRE_MOVE_SWALLOWED_FAILPOINT}")
+    node.query(f"DETACH TABLE {table}")
+    node.query(f"ATTACH TABLE {table}")
+
+    # Before the fix this error was swallowed inside renameToDetached, so the loader logged nothing and
+    # finished; the interrupt line only grows if the loader actually saw the failure and requeued the part.
+    wait_for_log_count_above(node, OUTDATED_INTERRUPT_LOG, interrupts_before)
+    assert node.query("SELECT 1").strip() == "1"
+
+    # Clear the transient condition; the still-present part is retried and its detach completes.
+    node.query(f"SYSTEM DISABLE FAILPOINT {PART_CLEANUP_PRE_MOVE_SWALLOWED_FAILPOINT}")
+    node.query(f"SYSTEM WAIT LOADING PARTS {table}", timeout=60)
+    assert node.query(f"SELECT count() FROM {table}").strip() == "3000"
+
+    node.query(f"DROP TABLE {table} SYNC")
+
+
+def test_swallowed_detach_error_while_loading_unexpected_parts_reschedules():
+    # Same swallowed-detach-error hole in the unexpected-parts loader: a transient ErrnoException from the
+    # broken-on-start detach used to be hidden by ignore_error = replicated, so the worker set its "finished"
+    # marker and loading completed with the broken part left in place. It must be retried instead.
+    table = "t_unexpected_swallowed"
+    zk_path = "/clickhouse/tables/t_unexpected_swallowed"
+    node.query(f"DROP TABLE IF EXISTS {table} SYNC")
+    node.query(
+        f"""
+        CREATE TABLE {table} (key UInt64) ENGINE = ReplicatedMergeTree('{zk_path}', '1') ORDER BY key
+        SETTINGS max_suspicious_broken_parts = 0, replicated_max_ratio_of_wrong_parts = 0
+        """
+    )
+    node.query(f"INSERT INTO {table} SELECT number FROM numbers(1000)")
+    node.query(f"INSERT INTO {table} SELECT number FROM numbers(1000, 1000)")
+    node.query(f"OPTIMIZE TABLE {table} FINAL")
+
+    data_path = node.query(
+        f"SELECT arrayElement(data_paths, 1) FROM system.tables WHERE name = '{table}'"
+    ).strip()
+    # Make all_0_0_0 an unexpected BROKEN part (drop from ZK, remove count.txt) so it routes through the
+    # broken-on-start detach where the swallowed-type failpoint fires.
+    zk = cluster.get_kazoo_client("zoo1")
+    zk.delete(os.path.join(zk_path, "replicas/1/parts", "all_0_0_0"))
+    node.exec_in_container(
+        ["mv", f"{data_path}/all_0_0_0/count.txt", f"{data_path}/all_0_0_0/count.txt.bak"]
+    )
+
+    interrupts_before = int(node.count_in_log(UNEXPECTED_INTERRUPT_LOG))
+
+    node.query(f"SYSTEM ENABLE FAILPOINT {PART_CLEANUP_PRE_MOVE_SWALLOWED_FAILPOINT}")
+    node.query(f"DETACH TABLE {table}")
+    # The replicated attach thread blocks until unexpected parts finish loading, so run ATTACH async.
+    attach = node.get_query_request(f"ATTACH TABLE {table}")
+
+    # Before the fix the swallowed error let the worker mark the part finished on the first try, so loading
+    # completed and ATTACH returned without a single retry. Require several NEW retries instead.
+    retries = 0
+    for _ in range(60):
+        retries = int(node.count_in_log(UNEXPECTED_INTERRUPT_LOG)) - interrupts_before
+        if retries >= 3:
+            break
+        time.sleep(0.5)
+    assert retries >= 3
+    assert node.query("SELECT 1").strip() == "1"
+
+    # Clear the transient condition; the broken part's detach finishes and ATTACH returns.
+    node.query(f"SYSTEM DISABLE FAILPOINT {PART_CLEANUP_PRE_MOVE_SWALLOWED_FAILPOINT}")
+    attach.get_answer()
+    assert node.query(f"SELECT count() FROM {table}").strip() == "2000"
+    # The part was really detached once the failure cleared, not just declared finished.
+    assert (
+        node.query(f"SELECT count() FROM system.detached_parts WHERE table = '{table}'").strip()
+        == "1"
+    )
 
     node.query(f"DROP TABLE {table} SYNC")
 

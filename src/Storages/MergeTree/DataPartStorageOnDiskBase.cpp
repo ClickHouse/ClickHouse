@@ -25,6 +25,7 @@
 #include <Storages/MergeTree/MergeTreeData.h>
 #include <Storages/MergeTree/MergeTreeDataPartChecksum.h>
 #include <Storages/MergeTree/MergeTreeIndicesSerialization.h>
+#include <Common/ErrnoException.h>
 #include <Common/FailPoint.h>
 #include <Common/formatReadable.h>
 #include <Common/logger_useful.h>
@@ -42,11 +43,13 @@ namespace ErrorCodes
     extern const int FILE_DOESNT_EXIST;
     extern const int CORRUPTED_DATA;
     extern const int MEMORY_LIMIT_EXCEEDED;
+    extern const int ATOMIC_RENAME_FAIL;
 }
 
 namespace FailPoints
 {
     extern const char mergetree_part_cleanup_inject_pre_move_retryable_exception[];
+    extern const char mergetree_part_cleanup_inject_pre_move_swallowed_retryable_exception[];
     extern const char mergetree_part_cleanup_inject_move_retryable_exception[];
 }
 
@@ -747,6 +750,15 @@ void DataPartStorageOnDiskBase::rename(
         fiu_do_on(FailPoints::mergetree_part_cleanup_inject_pre_move_retryable_exception,
         {
             throw Exception(ErrorCodes::MEMORY_LIMIT_EXCEEDED, "Injected retryable failure before moving the directory of part {}", from);
+        });
+
+    /// The same pre-move error, but of the exception type a real filesystem rename failure has and that
+    /// `IMergeTreeDataPart::renameToDetached` swallows when `ignore_error` is set. The part loaders must see
+    /// it (and retry) rather than have it hidden from their retry/fail-fast classification.
+    if (part_cleanup_move_failpoints_armed)
+        fiu_do_on(FailPoints::mergetree_part_cleanup_inject_pre_move_swallowed_retryable_exception,
+        {
+            ErrnoException::throwWithErrno(ErrorCodes::ATOMIC_RENAME_FAIL, ENOMEM, "Injected retryable failure before moving the directory of part {}", from);
         });
 
     /// Why?

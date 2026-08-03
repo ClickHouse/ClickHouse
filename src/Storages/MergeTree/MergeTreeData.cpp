@@ -439,6 +439,31 @@ namespace FailPoints
     extern const char mergetree_load_outdated_parts_inject_body_retryable_exception[];
 }
 
+/// The exception types `IMergeTreeDataPart::renameToDetached` tolerates when `ignore_error` is set: a
+/// replicated table can re-fetch a part it failed to move into `detached/`, so such a failure is logged
+/// instead of being propagated. The part loaders pass `ignore_error = false` and reproduce that tolerance
+/// themselves (see `loadOutdatedDataParts`), so that a detach failure first goes through their
+/// retry-vs-fail-fast classification instead of being hidden inside `renameToDetached`.
+static bool isBestEffortDetachError(std::exception_ptr exception_ptr)
+{
+    try
+    {
+        std::rethrow_exception(exception_ptr);
+    }
+    catch (const ErrnoException &)
+    {
+        return true;
+    }
+    catch (const std::filesystem::filesystem_error &)
+    {
+        return true;
+    }
+    catch (...)
+    {
+        return false;
+    }
+}
+
 static String getPartNameFromAST(const ASTPtr & partition)
 {
     const auto * literal = partition->as<ASTLiteral>();
@@ -3473,7 +3498,11 @@ try
                     try
                     {
                         PartCleanupMoveFailpointGuard cleanup_move_failpoint_guard;
-                        load_state.part->renameToDetached("broken-on-start", /*ignore_error=*/ replicated); /// detached parts must not have '_' in prefixes
+                        /// ignore_error = false on purpose: a swallowed ErrnoException / fs::filesystem_error
+                        /// would let this worker mark the part finished while its directory was never moved.
+                        /// The catch below classifies the error and keeps the historical tolerance for a
+                        /// permanent failure on a replicated table - same as load_outdated_part.
+                        load_state.part->renameToDetached("broken-on-start", /*ignore_error=*/ false); /// detached parts must not have '_' in prefixes
 
                         fiu_do_on(FailPoints::mergetree_load_unexpected_parts_inject_post_cleanup_move_retryable_exception,
                         {
@@ -3503,8 +3532,22 @@ try
                                 throw Exception(ErrorCodes::CORRUPTED_DATA,
                                     "Unexpected part {} hit a retryable error after its directory was moved during detach, "
                                     "cannot retry safely: {}", load_state.part->name, getCurrentExceptionMessage(/*with_stacktrace=*/ false));
+
+                            throw;
                         }
-                        throw;
+
+                        /// A permanent (non-retryable) filesystem failure to move the part into detached/. This
+                        /// is what `renameToDetached(..., ignore_error = true)` used to swallow for replicated
+                        /// tables, which also hid the retryable case handled above from this classification. Keep
+                        /// exactly that tolerance here - a replica can re-fetch the part - but only now that the
+                        /// error has been classified, and only for a table that can recover this way.
+                        /// Falling out of this catch continues to `load_state.finished = true` below, exactly as
+                        /// the swallowing `renameToDetached` did.
+                        if (replicated && isBestEffortDetachError(std::current_exception()))
+                            tryLogCurrentException(log.load(),
+                                fmt::format("Failed to detach broken unexpected part {}, will continue loading", load_state.part->name));
+                        else
+                            throw;
                     }
                 }
 
@@ -3751,7 +3794,32 @@ try
                 if (res.is_broken)
                 {
                     forcefullyRemoveBrokenOutdatedPartFromZooKeeperBeforeDetaching(res.part->name);
-                    res.part->renameToDetached("broken-on-start", /*ignore_error=*/ replicated); /// detached parts must not have '_' in prefixes
+
+                    /// ignore_error = false on purpose. With ignore_error = true (what a replicated table used
+                    /// to pass) renameToDetached swallows ErrnoException and fs::filesystem_error - exactly the
+                    /// errors a failing detach raises, and exactly the class isRetryableException recognizes as
+                    /// transient (ENOMEM/EMFILE, ENOSPC, EROFS, ...). Swallowing them hid a failed detach from
+                    /// the retry-vs-fail-fast classification in the catch below: the worker fell through as if
+                    /// the cleanup had succeeded, leaving the broken part on its original path with its
+                    /// ZooKeeper entry already removed, and counted the part as loaded. Let every error out
+                    /// here, and reproduce the tolerance ignore_error gave replicated tables below, after the
+                    /// error has been classified.
+                    try
+                    {
+                        res.part->renameToDetached("broken-on-start", /*ignore_error=*/ false); /// detached parts must not have '_' in prefixes
+                    }
+                    catch (...)
+                    {
+                        /// A transient failure is handled by the enclosing catch: it requeues the part (pre-move)
+                        /// or fails fast (post-move). A permanent one on a replicated table keeps the historical
+                        /// best-effort behaviour - the replica can re-fetch the part - so it is only logged.
+                        if (!replicated || isRetryableException(std::current_exception())
+                            || !isBestEffortDetachError(std::current_exception()))
+                            throw;
+
+                        tryLogCurrentException(log.load(),
+                            fmt::format("Failed to detach broken outdated part {}, will continue loading", res.part->name));
+                    }
 
                     fiu_do_on(FailPoints::mergetree_load_outdated_parts_inject_post_cleanup_move_retryable_exception,
                     {

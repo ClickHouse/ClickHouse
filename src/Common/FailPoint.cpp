@@ -277,6 +277,7 @@ static struct InitFiu
     REGULAR(mergetree_load_unexpected_parts_inject_worker_nonretryable_exception) \
     REGULAR(mergetree_load_unexpected_parts_inject_worker_retryable_exception) \
     REGULAR(mergetree_part_cleanup_inject_pre_move_retryable_exception) \
+    REGULAR(mergetree_part_cleanup_inject_pre_move_swallowed_retryable_exception) \
     REGULAR(mergetree_part_cleanup_inject_move_retryable_exception) \
     REGULAR(mergetree_load_outdated_parts_inject_table_lock_timeout) \
     REGULAR(mergetree_load_unexpected_parts_inject_build_retryable_exception) \
