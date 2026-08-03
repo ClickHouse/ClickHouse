@@ -2970,7 +2970,20 @@ void InterpreterCreateQuery::preflightEngineTarget(ASTCreateQuery & create, bool
     {
         /// The engine checks its source tables only while inferring an omitted structure.
         if (!structure_given && create.storage->engine->arguments)
-            validateMergeEngineTarget(create.storage->engine->arguments->children, getContext());
+        {
+            try
+            {
+                validateMergeEngineTarget(create.storage->engine->arguments->children, getContext());
+            }
+            catch (const Exception & e)
+            {
+                /// The initiator need not host the source database: there is then nothing local to
+                /// authorize, and every host still checks its own sources while constructing the
+                /// storage. Only this one code is tolerated, so a denial still propagates.
+                if (e.code() != ErrorCodes::UNKNOWN_DATABASE)
+                    throw;
+            }
+        }
     }
 }
 

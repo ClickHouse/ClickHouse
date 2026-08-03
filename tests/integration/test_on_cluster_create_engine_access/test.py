@@ -19,6 +19,14 @@ while inferring an omitted structure. (Plain `Distributed` is deliberately not c
 its creator passes the *global* context, so it is bypassed on the non-`ON CLUSTER` path
 too and the two paths already agree - a separate, pre-existing defect.)
 
+For `Merge` the parity is partial, and no case below can assert the remainder. The
+inference traversal filters on `isGranted(SHOW_TABLES)` before it checks `SHOW_COLUMNS`,
+so the set of tables it checks depends on what the acting user can see. On a host the
+acting user is `full_access` and sees everything; on the initiator the issuing user's own
+visibility applies, so a source table the user has no `SHOW TABLES` on is skipped there
+and its columns can still be inferred on the hosts. Exact parity needs the host to run as
+the user, which is the open question in #111561.
+
 On an `ON CLUSTER` query only each host's DDL worker reaches `StorageFactory::get`, and
 its query context carries no user unless the server setting
 `distributed_ddl_use_initial_user_and_roles` is enabled (default off), so
@@ -145,14 +153,14 @@ def assert_absent_everywhere(table):
         )
 
 
-def create_on_cluster(user, table, definition, settings=None):
-    """Run `CREATE TABLE <table> ON CLUSTER test_cluster <definition>` as `user`.
+def create_on_cluster(user, table, definition, settings=None, cluster_name="test_cluster"):
+    """Run `CREATE TABLE <table> ON CLUSTER <cluster_name> <definition>` as `user`.
 
     Returns the error text, or None when the statement succeeded.
     """
     return _run(
         user,
-        f"CREATE TABLE {DB}.{table} ON CLUSTER test_cluster {definition}",
+        f"CREATE TABLE {DB}.{table} ON CLUSTER {cluster_name} {definition}",
         settings,
     )
 
@@ -480,12 +488,17 @@ def merge_over_local_target():
 
 
 def make_merge_user(name):
-    """A user that can create `Merge` tables and knows `local_target` exists.
+    """A user that can create `Merge` tables and can see `local_target`.
 
-    `SHOW TABLES` on the target is granted deliberately. The inference traversal skips a
-    table the user cannot even see (`isGranted(SHOW_TABLES)` returns false and the table is
-    filtered out silently, with no denial), so without it the statement would fail for
-    having found no table rather than for the access check under test.
+    Visibility of the source table is a precondition of these cases, not an incidental
+    grant: the inference traversal filters on `isGranted(SHOW_TABLES)` and silently skips
+    what the user cannot see, with no denial. `make_user`'s database-level
+    `CREATE TABLE, SELECT, INSERT ON acl_db.*` already implies it (a table flag implies
+    `SHOW_TABLES`, and the later `REVOKE SELECT, INSERT` leaves `CREATE TABLE` in place),
+    so this grant is redundant and kept only to state the precondition where the reader
+    looks for it. That same filter is why the suite cannot observe the residual described
+    in the module docstring: a source table the issuing user cannot see is skipped on the
+    initiator and inferred anyway on the hosts.
     """
     user = make_user(name, engines=("Merge",))
     for node in (node1, node2):
@@ -556,6 +569,70 @@ def test_merge_engine_control_without_on_cluster(started_cluster):
     assert node1.query(f"EXISTS TABLE {DB}.{table}").strip() == "0"
 
 
+def test_merge_engine_source_database_absent_on_initiator(started_cluster):
+    # The initiator of an `ON CLUSTER` query need not host the source database: it need not
+    # even be a member of the cluster. The `Merge` traversal resolves the database through
+    # `DatabaseCatalog::getDatabase`, which throws `UNKNOWN_DATABASE` when it is absent, so
+    # the preflight tolerates exactly that one code -- otherwise a statement that used to
+    # succeed on every host that does have the database would now be rejected outright.
+    #
+    # Paired with `test_merge_engine_omitted_structure_requires_show_columns`, which proves
+    # the tolerance did not widen into swallowing `ACCESS_DENIED`.
+    user = "u_merge_absent"
+    remote_db = unique("remote_only_db")
+    table = unique("t_merge_absent")
+
+    for node in (node1, node2):
+        node.query(f"DROP USER IF EXISTS {user}")
+        node.query(f"CREATE USER {user}")
+        node.query(f"GRANT CREATE TABLE, SELECT ON {DB}.* TO {user}")
+        node.query(f"GRANT TABLE ENGINE ON Merge TO {user}")
+        node.query(f"GRANT CLUSTER ON *.* TO {user}")
+
+    # The database, and the source table the structure is inferred from, exist on node2 only.
+    node2.query(f"CREATE DATABASE {remote_db}")
+    node2.query(f"CREATE TABLE {remote_db}.src (x UInt64) ENGINE = MergeTree ORDER BY x")
+    node2.query(f"GRANT SHOW COLUMNS, SELECT ON {remote_db}.src TO {user}")
+    assert node1.query(f"EXISTS DATABASE {remote_db}").strip() == "0"
+
+    try:
+        error = create_on_cluster(
+            user,
+            table,
+            f"ENGINE = Merge('{remote_db}', '^src$')",
+            cluster_name="node2_only_cluster",
+        )
+        assert error is None, error
+        assert node2.query(f"EXISTS TABLE {DB}.{table}").strip() == "1"
+        assert (
+            node2.query(
+                f"SELECT name, type FROM system.columns "
+                f"WHERE database = '{DB}' AND table = '{table}'"
+            ).strip()
+            == "x\tUInt64"
+        )
+    finally:
+        node2.query(f"DROP TABLE IF EXISTS {DB}.{table} SYNC")
+        node2.query(f"DROP DATABASE IF EXISTS {remote_db} SYNC")
+
+
+def test_merge_engine_denial_survives_the_absent_database_tolerance(started_cluster):
+    # The regression guard for the tolerance above: with the source database present, the
+    # preflight's denial must still reach the user. A tolerance that swallowed
+    # `ACCESS_DENIED` would reinstate the whole bypass while every positive case stayed
+    # green, so this asserts the code that is *not* tolerated on the same code path -- the
+    # `Merge` branch of the preflight, reached with an omitted structure.
+    user = make_merge_user("u_merge_denial")
+    table = unique("t_merge_denial")
+
+    error = create_on_cluster(user, table, merge_over_local_target())
+    assert error is not None, "the statement was accepted"
+    subject = denial_subject(error)
+    assert subject.startswith("SHOW COLUMNS"), subject
+    assert "local_target" in subject, subject
+    assert_absent_everywhere(table)
+
+
 # ---------------------------------------------------------------------------
 # RemoteSecure shares the Remote branch
 # ---------------------------------------------------------------------------
@@ -566,16 +643,30 @@ def test_remote_secure_engine_is_preflighted(started_cluster):
     # in the `secure` flag - both are selected by one condition, so the secure engine cannot be
     # dropped from the branch without also changing `Remote`.
     #
-    # Partial oracle: this asserts the branch runs and denies (the target check fires because
-    # the address carries the default secure port, which the cluster treats as local). The
-    # allowed direction is not covered here because it needs a working TLS listener on both
-    # instances; the `Remote` cases above cover the shared code path end to end.
+    # Both directions are asserted: the denial proves the secure engine reaches the branch,
+    # the grant proves the branch does not reject what it should allow. With the columns given
+    # explicitly nothing on the create path opens a connection - the inference block is skipped
+    # and so is `getStructureOfRemoteTable` in the constructor - so no TLS listener is needed.
+    # Reading *through* the table would need one, so the granted case only asserts existence.
+    #
+    # The granted direction cannot redden on an over-broad guard here, and that is a property of
+    # the privileges rather than of this case: the grant it needs is `SELECT`, a column-level
+    # flag that implies `SHOW_COLUMNS`, so forcing the inference the guard suppresses requires
+    # nothing the granted user lacks. `test_merge_engine_explicit_structure_is_not_checked`
+    # covers that mutation class - it reddens when the preflight ignores `structure_given`.
     user = make_user("u_secure", engines=("RemoteSecure",))
     table = unique("t_secure")
     definition = f"(x UInt64) ENGINE = RemoteSecure('127.0.0.1:9440', {DB}, local_target, 'default')"
 
     error = create_on_cluster(user, table, definition)
     assert_denied_on_target(error, table)
+
+    for node in (node1, node2):
+        node.query(f"GRANT SELECT, INSERT ON {DB}.local_target TO {user}")
+    assert create_on_cluster(user, table, definition) is None
+    for node in (node1, node2):
+        assert node.query(f"EXISTS TABLE {DB}.{table}").strip() == "1"
+        node.query(f"DROP TABLE {DB}.{table} SYNC")
 
 
 # ---------------------------------------------------------------------------
