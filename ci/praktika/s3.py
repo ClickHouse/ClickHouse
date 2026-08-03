@@ -273,7 +273,7 @@ class S3:
                 break
             elif "Unknown options" in stderr:
                 print("ERROR: Invalid AWS CLI command or CLI client version:")
-                print(f"  | awc error: {stderr}")
+                print(f"  | aws error: {stderr}")
                 break
             elif (
                 "PreconditionFailed" in stderr
@@ -282,7 +282,7 @@ class S3:
                 # Lost optimistic-lock race. Set to true s.t. the caller re-reads the current version and retries.
                 no_strict = True
                 print("AWS API conditional request failed (concurrent write detected)")
-                print(f"  | awc error: {stderr}")
+                print(f"  | aws error: {stderr}")
                 break
             if ret_code != 0:
                 print(
