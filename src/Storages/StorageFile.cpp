@@ -485,11 +485,11 @@ StorageFile::ArchiveInfo getArchiveInfo(
 
     if (use_glob_ast)
     {
-        GlobAST::GlobString glob_string(file_in_archive);
+        auto glob_string = std::make_unique<GlobAST::GlobString>(file_in_archive);
 
-        if (glob_string.hasGlobs())
+        if (glob_string->hasGlobs())
         {
-            auto matcher = std::make_shared<GlobMatcher>(GlobMatcher::createNew(file_in_archive));
+            auto matcher = std::make_shared<GlobMatcher>(GlobMatcher::createNew(std::move(glob_string)));
             archive_info.filter = [matcher](const std::string & p) { return matcher->matches(p); };
         }
     }

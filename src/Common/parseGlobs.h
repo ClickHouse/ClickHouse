@@ -142,6 +142,12 @@ public:
 
     ExpressionType type() const
     {
+        /// Pin the enum values to the variant alternative order that the cast relies on.
+        static_assert(std::variant_size_v<ExpressionData> == 4);
+        static_assert(std::is_same_v<std::variant_alternative_t<static_cast<size_t>(ExpressionType::RANGE), ExpressionData>, Range>);
+        static_assert(std::is_same_v<std::variant_alternative_t<static_cast<size_t>(ExpressionType::CONSTANT), ExpressionData>, std::string_view>);
+        static_assert(std::is_same_v<std::variant_alternative_t<static_cast<size_t>(ExpressionType::ENUM), ExpressionData>, std::vector<std::string_view>>);
+        static_assert(std::is_same_v<std::variant_alternative_t<static_cast<size_t>(ExpressionType::WILDCARD), ExpressionData>, WildcardType>);
         return static_cast<ExpressionType>(data.index());
     }
 
@@ -170,7 +176,6 @@ public:
     GlobString(GlobString &&) = delete;
     GlobString & operator=(GlobString &&) = delete;
 
-    void parse();
     const std::vector<Expression> & getExpressions() const { return expressions; }
 
     std::string dump() const;
@@ -200,6 +205,9 @@ public:
     bool hasExactlyOneEnum() const;
 
 private:
+    /// Called once from the constructor; a second call would append duplicate expressions.
+    void parse();
+
     std::string_view consumeConstantExpression(const std::string_view & input) const;
     std::string_view consumeMatcher(const std::string_view & input) const;
 
@@ -227,6 +235,8 @@ class GlobMatcher
 public:
     /// Create a matcher using the new AST-based glob parser.
     static GlobMatcher createNew(const std::string & glob_pattern);
+    /// Same, adopting an already-parsed pattern instead of parsing it again.
+    static GlobMatcher createNew(std::unique_ptr<GlobAST::GlobString> glob_string);
 
     static GlobMatcher createLegacy(const std::string & glob_pattern);
 

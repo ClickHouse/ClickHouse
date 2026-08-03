@@ -1136,6 +1136,13 @@ GlobMatcher GlobMatcher::createNew(const std::string & glob_pattern)
     return m;
 }
 
+GlobMatcher GlobMatcher::createNew(std::unique_ptr<GlobAST::GlobString> glob_string)
+{
+    GlobMatcher m;
+    m.glob_string = std::move(glob_string);
+    return m;
+}
+
 GlobMatcher GlobMatcher::createLegacy(const std::string & glob_pattern)
 {
     GlobMatcher m;
