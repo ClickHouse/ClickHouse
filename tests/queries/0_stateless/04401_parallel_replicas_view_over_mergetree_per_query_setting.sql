@@ -28,13 +28,20 @@ SELECT materialize(-2147483648) FROM v_pr_view LIMIT 255 SETTINGS parallel_repli
 EXCEPT DISTINCT
 SELECT 1024 FROM v_pr_view LIMIT 1024 SETTINGS parallel_replicas_allow_view_over_mergetree = 1;
 
--- The view is eligible here, so parallel replicas must still be used: assert the plan
--- keeps the remote step, otherwise the assertions above could pass with local execution.
+-- Parallel replicas must be used either way, so assert on what the setting actually
+-- changes: which relation the remote step reads. Enabled sends the view, disabled sends
+-- the underlying table. Result-only assertions cannot tell these apart.
 SELECT count() > 0
 FROM viewExplain('EXPLAIN', '', (
     SELECT count() FROM v_pr_view SETTINGS parallel_replicas_allow_view_over_mergetree = 1
 ))
-WHERE explain LIKE '%ReadFromRemoteParallelReplicas%';
+WHERE explain LIKE '%ReadFromRemoteParallelReplicas%' AND explain LIKE '%v_pr_view%';
+
+SELECT count()
+FROM viewExplain('EXPLAIN', '', (
+    SELECT count() FROM v_pr_view SETTINGS parallel_replicas_allow_view_over_mergetree = 0
+))
+WHERE explain LIKE '%ReadFromRemoteParallelReplicas%' AND explain LIKE '%v_pr_view%';
 
 SELECT count() FROM v_pr_view SETTINGS parallel_replicas_allow_view_over_mergetree = 1;
 
