@@ -254,16 +254,6 @@ String requireBlobMetadataString(const Poco::JSON::Object::Ptr & blob_obj, const
     return requireJSONStringValue(blob_obj->get(field_name), blob_index, field_name);
 }
 
-String optBlobMetadataString(const Poco::JSON::Object::Ptr & blob_obj, const char * field_name, size_t blob_index)
-{
-    if (!blob_obj->has(field_name))
-        return {};
-    // Iceberg spec allows to have null metadata.
-    if (blob_obj->isNull(field_name))
-        return {};
-    return requireJSONStringValue(blob_obj->get(field_name), blob_index, field_name);
-}
-
 void requireDeletionVectorV1Properties(const PuffinBlob & blob, size_t blob_index)
 {
     static constexpr const char * required_properties[] = {"referenced-data-file", "cardinality"};
