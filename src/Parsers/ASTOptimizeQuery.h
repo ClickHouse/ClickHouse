@@ -27,12 +27,10 @@ public:
     bool dry_run = false;
     /// List of part names for DRY RUN (ASTExpressionList of ASTLiteral strings)
     ASTPtr parts_list;
-    /// Compact manifests only (for Iceberg tables)
-    bool manifest = false;
     /** Get the text that identifies this element. */
     String getID(char delim) const override
     {
-        return "OptimizeQuery" + (delim + getDatabase()) + delim + getTable() + (final ? "_final" : "") + (deduplicate ? "_deduplicate" : "") + (cleanup ? "_cleanup" : "") + (dry_run ? "_dry_run" : "") + (manifest ? "_manifest" : "");
+        return "OptimizeQuery" + (delim + getDatabase()) + delim + getTable() + (final ? "_final" : "") + (deduplicate ? "_deduplicate" : "") + (cleanup ? "_cleanup" : "") + (dry_run ? "_dry_run" : "");
     }
 
     ASTPtr clone() const override
@@ -57,9 +55,6 @@ public:
             res->parts_list = parts_list->clone();
             res->children.push_back(res->parts_list);
         }
-
-        cloneOutputOptions(*res);
-        cloneTableOptions(*res);
 
         return res;
     }

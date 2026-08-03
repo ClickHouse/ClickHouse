@@ -7,9 +7,9 @@ title: 'JSONEachRow'
 doc_type: 'reference'
 ---
 
-| Input | Output | Alias                          |
-|-------|--------|--------------------------------|
-| ✔     | ✔      | `JSONLines`, `NDJSON`, `JSONL` |
+| Input | Output | Alias                 |
+|-------|--------|-----------------------|
+| ✔     | ✔      | `JSONLines`, `NDJSON` |
 
 ## Description {#description}
 

@@ -15,7 +15,7 @@ namespace DB::ErrorCodes
     extern const int CANNOT_GET_THREAD_PRIORITY;
 }
 
-static int getCurrentNiceValue(UInt32 thread_id = 0)
+int getCurrentNiceValue(UInt32 thread_id = 0)
 {
     errno = 0;
     const int value = getpriority(PRIO_PROCESS, thread_id);

@@ -20,12 +20,15 @@ void ASTInterpolateElement::formatImpl(WriteBuffer & ostr, const FormatSettings 
     settings.writeIdentifier(ostr, column, /*ambiguous=*/true);
     ostr << " AS ";
 
-    /// If the expression has an alias, it must be wrapped in parentheses
+    /// If the expression has an alias, we need to wrap it in parentheses
     /// to avoid ambiguity with double AS: `col AS expr AS alias` is not parseable,
-    /// but `col AS (expr AS alias)` is. Setting `need_parens` makes the generic
-    /// aliased-expression handling produce the wrap.
-    frame.need_parens = !expr->tryGetAlias().empty();
+    /// but `col AS (expr AS alias)` is.
+    bool need_parens = !expr->tryGetAlias().empty();
+    if (need_parens)
+        ostr << '(';
     expr->format(ostr, settings, state, frame);
+    if (need_parens)
+        ostr << ')';
 }
 
 }

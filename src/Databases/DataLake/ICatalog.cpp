@@ -1,28 +1,17 @@
 #include <Databases/DataLake/ICatalog.h>
-#include <Databases/DataLake/DatabaseDataLakeSettings.h>
 #include <Common/Exception.h>
-#include <Common/StringUtils.h>
 #include <Common/logger_useful.h>
 #include <Poco/String.h>
 
-#include <algorithm>
 #include <filesystem>
-#include <iterator>
-#include <tuple>
 
 #include <Common/FailPoint.h>
-#include <Poco/URI.h>
 
 namespace DB::ErrorCodes
 {
     extern const int NOT_IMPLEMENTED;
     extern const int LOGICAL_ERROR;
     extern const int BAD_ARGUMENTS;
-}
-
-namespace DB::DatabaseDataLakeSetting
-{
-    extern const DatabaseDataLakeSettingsDatabaseDataLakeCatalogType catalog_type;
 }
 
 namespace DB::FailPoints
@@ -130,6 +119,15 @@ void TableMetadata::setLocation(const std::string & location_)
         bucket = bucket_part.substr(0, at_pos);
         azure_account_with_suffix = bucket_part.substr(at_pos + 1);
 
+        /// Some catalogs (e.g. Apache Polaris) follow the ADLS Gen2 filesystem convention
+        /// of including the container name as the first segment of the path in abfss:// locations,
+        /// e.g. abfss://container@account.dfs.core.windows.net/container/actual/path.
+        /// We record this as a flag so that `constructLocation` and `getMetadataLocation` can
+        /// strip the redundant prefix when needed, while `path` itself is left intact so that
+        /// `getLocation` remains a round-trip of `setLocation`.
+        if (polaris_style_abfss_paths && path.starts_with(bucket + "/"))
+            abfss_has_container_path_prefix = true;
+
         LOG_TEST(getLogger("TableMetadata"),
                  "Parsed Azure location - container: {}, account: {}, path: {}",
                  bucket, azure_account_with_suffix, path);
@@ -150,12 +148,12 @@ std::string TableMetadata::getLocation() const
         throw DB::Exception(DB::ErrorCodes::LOGICAL_ERROR, "Data location was not requested");
 
     if (!endpoint.empty())
-        return constructLocation(endpoint, DB::S3UriStyle::AUTO);
+        return constructLocation(endpoint);
 
     return std::filesystem::path(location_without_path) / path;
 }
 
-std::string TableMetadata::getLocationWithEndpoint(const std::string & endpoint_, DB::S3UriStyle uri_style) const
+std::string TableMetadata::getLocationWithEndpoint(const std::string & endpoint_) const
 {
     if (!with_location)
         throw DB::Exception(DB::ErrorCodes::LOGICAL_ERROR, "Data location was not requested");
@@ -163,10 +161,10 @@ std::string TableMetadata::getLocationWithEndpoint(const std::string & endpoint_
     if (endpoint_.empty())
         throw DB::Exception(DB::ErrorCodes::LOGICAL_ERROR, "Passed endpoint is empty");
 
-    return constructLocation(endpoint_, uri_style);
+    return constructLocation(endpoint_);
 }
 
-std::string TableMetadata::constructLocation(const std::string & endpoint_, DB::S3UriStyle uri_style) const
+std::string TableMetadata::constructLocation(const std::string & endpoint_) const
 {
     std::string location = endpoint_;
     if (location.ends_with('/'))
@@ -177,38 +175,19 @@ std::string TableMetadata::constructLocation(const std::string & endpoint_, DB::
     /// The bucket variable contains the container name for Azure.
     if (!azure_account_with_suffix.empty())
     {
-        if (!force_add_bucket && location.find("/" + bucket) != std::string::npos)
-            return std::filesystem::path(location) / path / "";
-        return std::filesystem::path(location) / bucket / path / "";
+        /// Azure storage - endpoint should be https://<account>.dfs.core.windows.net
+        /// Construct the full URL with container and path.
+        /// When the path carries a Polaris-style redundant container prefix (e.g. "c/actual/path"
+        /// for container "c"), strip it before prepending the container, so we don't double it.
+        std::string_view effective_path = path;
+        if (abfss_has_container_path_prefix && effective_path.starts_with(bucket + "/"))
+            effective_path = effective_path.substr(bucket.size() + 1);
+        if (location.ends_with(bucket))
+            return std::filesystem::path(location) / effective_path / "";
+        return std::filesystem::path(location) / bucket / effective_path / "";
     }
 
-    if (uri_style == DB::S3UriStyle::VIRTUAL_HOSTED)
-    {
-        /// Virtual-hosted style: embed the bucket name in the hostname.
-        /// Transform https://endpoint.com[:port] -> https://bucket.endpoint.com[:port]/path/
-        /// If the endpoint hostname already starts with the bucket (already virtual-hosted), don't add it again.
-        Poco::URI endpoint_uri(location);
-        const std::string & host = endpoint_uri.getHost();
-        if (!host.starts_with(bucket + "."))
-            endpoint_uri.setHost(bucket + "." + host);
-        std::string vhosted_base = endpoint_uri.toString();
-        if (vhosted_base.ends_with('/'))
-            vhosted_base.pop_back();
-        return std::filesystem::path(vhosted_base) / path / "";
-    }
-
-    if (uri_style == DB::S3UriStyle::PATH)
-    {
-        Poco::URI endpoint_uri(location);
-        if (endpoint_uri.getHost().starts_with(bucket + "."))
-            throw DB::Exception(
-                DB::ErrorCodes::BAD_ARGUMENTS,
-                "Cannot use PATH addressing style with endpoint '{}': "
-                "the hostname already embeds bucket '{}' in virtual-hosted form",
-                endpoint_uri.getHost(), bucket);
-    }
-
-    if (!force_add_bucket && location.ends_with(bucket))
+    if (location.ends_with(bucket))
         return std::filesystem::path(location) / path / "";
     return std::filesystem::path(location) / bucket / path / "";
 }
@@ -294,8 +273,55 @@ std::string TableMetadata::getMetadataLocation(const std::string & iceberg_metad
             metadata_location = metadata_location.substr(storage_type_str.size());
         if (data_location.starts_with(storage_type_str))
             data_location = data_location.substr(storage_type_str.size());
-        else if (!endpoint.empty() && data_location.starts_with(endpoint))
-            data_location = data_location.substr(endpoint.size());
+        else if (!endpoint.empty())
+        {
+            std::string normalized_endpoint = endpoint;
+            if (normalized_endpoint.ends_with('/'))
+                normalized_endpoint.pop_back();
+            if (data_location.starts_with(normalized_endpoint))
+            {
+                data_location = data_location.substr(normalized_endpoint.size());
+                if (azure_account_with_suffix.empty() && !data_location.empty() && data_location.front() == '/')
+                    data_location = data_location.substr(1);
+            }
+        }
+
+        /// For Azure ABFSS locations we need to reconcile two different formats:
+        ///   - metadata_location (from catalog): "container@account.host/path/..."
+        ///   - data_location (with endpoint set): "/container/path/" (HTTPS path after endpoint stripped)
+        /// When no endpoint is set both sides are in ABFSS authority form and compare directly.
+        if (!azure_account_with_suffix.empty() && !bucket.empty())
+        {
+            /// The host part after stripping the ABFSS protocol is: bucket@azure_account_with_suffix/
+            std::string azure_host_prefix = bucket + "@" + azure_account_with_suffix + "/";
+
+            /// For Polaris-style paths: the container name is repeated as the first path segment
+            /// (e.g. abfss://c@account/c/actual/path). Strip that redundant prefix from both sides
+            /// before the comparison below so we identify the correct relative path.
+            /// This runs for both with-endpoint and without-endpoint cases.
+            if (abfss_has_container_path_prefix)
+            {
+                auto strip_container = [&](std::string & location_str)
+                {
+                    if (location_str.starts_with(azure_host_prefix))
+                    {
+                        std::string_view after_host = std::string_view(location_str).substr(azure_host_prefix.size());
+                        if (after_host.starts_with(bucket + "/"))
+                        {
+                            location_str = std::string(azure_host_prefix) + std::string(after_host.substr(bucket.size() + 1));
+                        }
+                    }
+                };
+                strip_container(metadata_location);
+                strip_container(data_location);
+            }
+
+            /// With endpoint: data_location is now in HTTPS path form ("/container/path/").
+            /// Convert metadata_location from ABFSS authority form ("container@account.host/path")
+            /// to the matching HTTPS path form ("/container/path") so the prefix comparison works.
+            if (!endpoint.empty() && metadata_location.starts_with(azure_host_prefix))
+                metadata_location = "/" + bucket + "/" + metadata_location.substr(azure_host_prefix.size());
+        }
 
         if (metadata_location.starts_with(data_location))
         {
@@ -315,58 +341,8 @@ DB::SettingsChanges CatalogSettings::allChanged() const
     changes.emplace_back("region", region);
     changes.emplace_back("aws_role_arn", aws_role_arn);
     changes.emplace_back("aws_role_session_name", aws_role_session_name);
-    changes.emplace_back("aws_external_id", aws_external_id);
 
     return changes;
-}
-
-CatalogTables ICatalog::getTables(const TableNameFilter & filter) const
-{
-    switch (filter.kind)
-    {
-        case TableNameFilter::Kind::All:
-            return getTables();
-
-        case TableNameFilter::Kind::Equals:
-        {
-            /// `name = 'ns.table'` -> list only namespace `ns`; the outer filter keeps the exact row.
-            const auto pos = filter.value.rfind('.');
-            if (pos == std::string::npos)
-                return getTables();
-            return listTablesInNamespaceDirect(filter.value.substr(0, pos));
-        }
-
-        case TableNameFilter::Kind::Like:
-        {
-            /// Every table name matching `pattern` must start with the pattern's
-            /// fixed prefix — the literal part before the first LIKE wildcard
-            /// (`%`/`_`) — extracted here the same way `KeyCondition` prunes ranges.
-            /// A namespace `N` can hold such a table (full name `N + "." + <...>`)
-            /// only if `N + "."` and the fixed prefix are consistent, i.e. one is a
-            /// prefix of the other. This never rejects a namespace `LIKE` could match
-            /// (the fixed prefix is a *necessary* prefix of any match), so no
-            /// `system.tables` row is dropped; a looser match only costs an extra
-            /// table listing.
-            const String fixed_prefix = std::get<0>(extractFixedPrefixFromLikePattern(filter.value, /*requires_perfect_prefix*/ false));
-
-            /// A leading wildcard (e.g. `%foo%`) yields an empty prefix, so we must list all namespaces and tables.
-            /// Calling getTables() is better as its parallel.
-            if (fixed_prefix.empty())
-                return getTables();
-
-            CatalogTables result;
-            for (const auto & namespace_name : getNamespaces())
-            {
-                const std::string namespace_prefix = namespace_name + ".";
-                if (!startsWith(namespace_prefix, fixed_prefix) && !startsWith(fixed_prefix, namespace_prefix))
-                    continue;
-                auto tables = listTablesInNamespaceDirect(namespace_name);
-                std::move(tables.begin(), tables.end(), std::back_inserter(result));
-            }
-            return result;
-        }
-    }
-    return {};
 }
 
 void ICatalog::createTable(const String & /*namespace_name*/, const String & /*table_name*/, const String & /*new_metadata_path*/, Poco::JSON::Object::Ptr /*metadata_content*/) const
@@ -379,56 +355,9 @@ bool ICatalog::updateMetadata(const String & /*namespace_name*/, const String & 
     throw DB::Exception(DB::ErrorCodes::NOT_IMPLEMENTED, "updateMetadata is not implemented");
 }
 
-bool ICatalog::updateSchema(
-    const String & /*namespace_name*/,
-    const String & /*table_name*/,
-    const String & /*new_metadata_path*/,
-    Poco::JSON::Object::Ptr /*new_schema*/,
-    Int32 /*previous_schema_id*/) const
-{
-    throw DB::Exception(DB::ErrorCodes::NOT_IMPLEMENTED, "updateSchema is not implemented");
-}
-
 void ICatalog::dropTable(const String & /*namespace_name*/, const String & /*table_name*/) const
 {
     throw DB::Exception(DB::ErrorCodes::NOT_IMPLEMENTED, "dropTable is not implemented");
-}
-
-ICatalog::PreparedSettingsChangesPtr ICatalog::prepareSettingsChanges(const DB::SettingsChanges & /*changes*/)
-{
-    throw DB::Exception(DB::ErrorCodes::NOT_IMPLEMENTED, "Settings of a catalog of this type cannot be altered");
-}
-
-void ICatalog::commitSettingsChanges(PreparedSettingsChangesPtr /*prepared*/)
-{
-    throw DB::Exception(DB::ErrorCodes::LOGICAL_ERROR, "Settings changes were prepared for a catalog that cannot commit them");
-}
-
-CatalogSettingsAlterValidatorFactory & CatalogSettingsAlterValidatorFactory::instance()
-{
-    static CatalogSettingsAlterValidatorFactory factory;
-    return factory;
-}
-
-void CatalogSettingsAlterValidatorFactory::registerValidator(DB::DatabaseDataLakeCatalogType catalog_type, Validator validator)
-{
-    if (!validators.emplace(catalog_type, std::move(validator)).second)
-        throw DB::Exception(
-            DB::ErrorCodes::LOGICAL_ERROR,
-            "Settings alter validator for catalog type '{}' is already registered",
-            DB::SettingFieldDatabaseDataLakeCatalogType(catalog_type).toString());
-}
-
-void CatalogSettingsAlterValidatorFactory::validate(const DB::DatabaseDataLakeSettings & current_settings, const DB::SettingsChanges & changes) const
-{
-    const auto it = validators.find(current_settings[DB::DatabaseDataLakeSetting::catalog_type].value);
-    if (it == validators.end())
-        throw DB::Exception(
-            DB::ErrorCodes::NOT_IMPLEMENTED,
-            "ALTER MODIFY SETTING is not supported for catalog type '{}'",
-            current_settings[DB::DatabaseDataLakeSetting::catalog_type].toString());
-
-    it->second(current_settings, changes);
 }
 
 }
