@@ -4941,20 +4941,34 @@ def check_server_liveness(args, max_retries=10) -> bool:
     return False
 
 
+def _read_process_rss(pid: Optional[int]) -> Optional[int]:
+    """Resident set size in bytes from /proc/<pid>/statm, or None when unreadable."""
+    if pid is None:
+        return None
+    try:
+        # fields: size resident shared text lib data dt, in pages
+        with open(f"/proc/{pid}/statm", encoding="utf-8") as f:
+            rss_pages = int(f.read().split()[1])
+    except (OSError, IndexError, ValueError):
+        return None
+    return rss_pages * os.sysconf("SC_PAGE_SIZE")
+
+
 def get_server_memory_fraction(args) -> Optional[float]:
-    """Return the fraction of max_server_memory_usage currently in use (0.0–1.0).
+    """Return the fraction of max_server_memory_usage currently in use (0.0-1.0).
 
     Reads the server process RSS from /proc/<pid>/statm, which is more reliable
-    than querying MemoryTracking from system.metrics — the latter can be far
+    than querying MemoryTracking from system.metrics: the latter can be far
     below actual RSS under sanitizer builds where jemalloc is disabled and the
     memory tracker is not corrected to match RSS.
 
     The max_server_memory_usage value is fetched once from the server and cached.
+    The server PID is cached as a hint and re-resolved whenever it stops reading.
 
-    Returns None when the server PID is unavailable, the limit is unconfigured
-    (0), or the query/read fails.
+    Returns None when no server PID reads, the limit is unconfigured (0), or the
+    query/read fails.
     """
-    # Cache the hard limit — it does not change at runtime.
+    # Cache the hard limit: it does not change at runtime.
     if not hasattr(get_server_memory_fraction, "_max_memory"):
         try:
             get_server_memory_fraction._max_memory = int(
@@ -4974,22 +4988,16 @@ def get_server_memory_fraction(args) -> Optional[float]:
     if maximum == 0:
         return None
 
-    # Cache the server PID — it does not change during a test run.
-    if not hasattr(get_server_memory_fraction, "_server_pid"):
+    # The cached pid is a hint, not an invariant: a watchdog restart replaces the
+    # server mid-run, and the first lookup can miss it entirely before it is up.
+    rss = _read_process_rss(getattr(get_server_memory_fraction, "_server_pid", None))
+    if rss is None:
         get_server_memory_fraction._server_pid = get_server_pid(args)
-    pid = get_server_memory_fraction._server_pid
-    if pid is None:
+        rss = _read_process_rss(get_server_memory_fraction._server_pid)
+    if rss is None:
         return None
 
-    try:
-        # /proc/<pid>/statm fields: size resident shared text lib data dt (in pages)
-        with open(f"/proc/{pid}/statm", "r") as f:
-            parts = f.read().split()
-        rss_pages = int(parts[1])
-        rss_bytes = rss_pages * os.sysconf("SC_PAGE_SIZE")
-        return rss_bytes / maximum
-    except Exception:
-        return None
+    return rss / maximum
 
 
 def check_server_started(args):
