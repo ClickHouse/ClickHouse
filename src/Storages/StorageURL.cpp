@@ -2266,6 +2266,7 @@ public:
     /// return `false`. `FunctionToSubcolumnsPass` reads this bit, so `ENGINE = URL('file://...')`
     /// would otherwise receive subcolumn rewrites the backend explicitly disables.
     bool supportsOptimizationToSubcolumns() const override { return nested->supportsOptimizationToSubcolumns(); }
+    bool supportsOptimizationToTupleElementSubcolumns() const override { return nested->supportsOptimizationToTupleElementSubcolumns(); }
 
     /// Forward the delegate's narrower PREWHERE contract. `StorageProxy` forwards `supportsPrewhere`,
     /// but not `supportedPrewhereColumns`/`canMoveConditionsToPrewhere`. Without these overrides the

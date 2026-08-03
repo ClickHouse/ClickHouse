@@ -174,6 +174,10 @@ public:
     virtual bool supportsSubcolumns() const { return false; }
     /// Returns true if storage supports optimizations of functions by reading subcolumns.
     virtual bool supportsOptimizationToSubcolumns() const { return supportsSubcolumns(); }
+    /// Same, but restricted to tuple element access (`tupleElement(t, 'x')` -> reading `t.x`).
+    /// A storage that cannot serve synthesised subcolumns such as `.null`/`.size0` as standalone
+    /// inputs may enable this while keeping supportsOptimizationToSubcolumns() false.
+    virtual bool supportsOptimizationToTupleElementSubcolumns() const { return supportsOptimizationToSubcolumns(); }
 
     /// Returns true if the storage supports transactions for SELECT, INSERT and ALTER queries.
     /// Storage may throw an exception later if some query kind is not fully supported.

@@ -182,11 +182,27 @@ std::unique_ptr<orc::InputStream> asORCInputStreamLoadIntoMemory(ReadBuffer & in
     return std::make_unique<ORCInputStreamFromString>(std::move(file_data), file_size);
 }
 
-static const orc::Type * getORCTypeByName(const orc::Type & schema, const String & name, bool ignore_case)
+/// Defined below, next to the read path that also uses it. The sargs path resolves predicate column
+/// names through the same recursive walk, so pruning and reading always agree on the column.
+static const orc::Type *
+traverseDownORCTypeByName(const std::string & target, const orc::Type * orc_type, DataTypePtr & type, bool ignore_case);
+
+/// Resolves the CH type of `name` against `header`, following dots into tuple elements when the
+/// header carries only the parent column (which is the case for ORC, whose reader is not asked for
+/// individual tuple elements). Returns nullptr when no prefix of `name` is a header column.
+static DataTypePtr findHeaderTypeByPath(const Block & header, const String & name, bool ignore_case)
 {
-    for (UInt64 i = 0; i != schema.getSubtypeCount(); ++i)
-        if (boost::equals(schema.getFieldName(i), name) || (ignore_case && boost::iequals(schema.getFieldName(i), name)))
-            return schema.getSubtype(i);
+    if (const auto * column = header.findByName(name, ignore_case))
+        return column->type;
+
+    for (auto [column_name, subcolumn_name] : Nested::getAllColumnAndSubcolumnPairs(name))
+    {
+        const auto * column = header.findByName(String(column_name), ignore_case);
+        if (!column)
+            continue;
+        if (auto subcolumn_type = column->type->tryGetSubcolumnType(subcolumn_name))
+            return subcolumn_type;
+    }
     return nullptr;
 }
 
@@ -622,7 +638,8 @@ static void buildORCSearchArgumentImpl(
     const orc::Type & schema,
     KeyCondition::RPN & rpn_stack,
     orc::SearchArgumentBuilder & builder,
-    const FormatSettings & format_settings)
+    const FormatSettings & format_settings,
+    std::unordered_set<UInt64> & sargs_column_ids)
 {
     if (rpn_stack.empty())
         throw Exception(ErrorCodes::LOGICAL_ERROR, "Empty rpn stack in buildORCSearchArgumentImpl");
@@ -670,7 +687,21 @@ static void buildORCSearchArgumentImpl(
             }
 
             String column_name = getColumnNameFromKeyCondition(key_condition, curr.getKeyColumn());
-            const auto * orc_type = getORCTypeByName(schema, column_name, format_settings.orc.case_insensitive_column_matching);
+            const bool ignore_case = format_settings.orc.case_insensitive_column_matching;
+
+            /// The predicate column may be a tuple element (`t.x`), which the ORC header does not
+            /// carry as a flat entry, so resolve it through the type as well as through the schema.
+            auto column_type = findHeaderTypeByPath(header, column_name, ignore_case);
+            if (!column_type)
+            {
+                builder.literal(orc::TruthValue::YES_NO_NULL);
+                break;
+            }
+
+            /// traverseDownORCTypeByName may adjust the CH type while descending (a LIST of STRUCT
+            /// from a flattened Nested column becomes the array's nested type), and the adjusted
+            /// type is what the type-equality guard below must compare.
+            const auto * orc_type = traverseDownORCTypeByName(column_name, &schema, column_type, ignore_case);
             if (!orc_type)
             {
                 builder.literal(orc::TruthValue::YES_NO_NULL);
@@ -688,14 +719,13 @@ static void buildORCSearchArgumentImpl(
             ///     down filters would result in different outputs.
             bool skipped = false;
             auto expect_type = makeNullableRecursively(parseORCType(orc_type, true, false, nullptr, skipped, format_settings.max_parser_depth), format_settings);
-            const ColumnWithTypeAndName * column = header.findByName(column_name, format_settings.orc.case_insensitive_column_matching);
-            if (!expect_type || !column)
+            if (!expect_type)
             {
                 builder.literal(orc::TruthValue::YES_NO_NULL);
                 break;
             }
 
-            auto nested_type = removeNullable(recursiveRemoveLowCardinality(column->type));
+            auto nested_type = removeNullable(recursiveRemoveLowCardinality(column_type));
             auto expect_nested_type = removeNullable(expect_type);
             if (!nested_type->equals(*expect_nested_type))
             {
@@ -705,10 +735,10 @@ static void buildORCSearchArgumentImpl(
 
             /// If null_as_default is true, the only difference is nullable, and the evaluations of current RPNElement based on default and null field
             /// have the same result, we still should push down current filter.
-            if (format_settings.null_as_default && !column->type->isNullable() && !column->type->isLowCardinalityNullable())
+            if (format_settings.null_as_default && !column_type->isNullable() && !column_type->isLowCardinalityNullable())
             {
                 bool match_if_null = evaluateRPNElement({}, curr);
-                bool match_if_default = evaluateRPNElement(column->type->getDefault(), curr);
+                bool match_if_default = evaluateRPNElement(column_type->getDefault(), curr);
                 if (match_if_default != match_if_null)
                 {
                     builder.literal(orc::TruthValue::YES_NO_NULL);
@@ -722,6 +752,11 @@ static void buildORCSearchArgumentImpl(
                 builder.literal(orc::TruthValue::YES_NO_NULL);
                 break;
             }
+
+            /// liborc loads row indexes only for selected columns and degrades a leaf without them
+            /// to YES_NO_NULL, so a predicate column absent from the read set silently disables
+            /// pruning. Report it so the caller can add it to the selected set.
+            sargs_column_ids.insert(orc_type->getColumnId());
 
             if (need_wrap_not)
                 builder.startNot();
@@ -844,7 +879,7 @@ static void buildORCSearchArgumentImpl(
         {
             builder.startNot();
             rpn_stack.pop_back();
-            buildORCSearchArgumentImpl(key_condition, header, schema, rpn_stack, builder, format_settings);
+            buildORCSearchArgumentImpl(key_condition, header, schema, rpn_stack, builder, format_settings, sargs_column_ids);
             builder.end();
             break;
         }
@@ -852,8 +887,8 @@ static void buildORCSearchArgumentImpl(
         {
             builder.startAnd();
             rpn_stack.pop_back();
-            buildORCSearchArgumentImpl(key_condition, header, schema, rpn_stack, builder, format_settings);
-            buildORCSearchArgumentImpl(key_condition, header, schema, rpn_stack, builder, format_settings);
+            buildORCSearchArgumentImpl(key_condition, header, schema, rpn_stack, builder, format_settings, sargs_column_ids);
+            buildORCSearchArgumentImpl(key_condition, header, schema, rpn_stack, builder, format_settings, sargs_column_ids);
             builder.end();
             break;
         }
@@ -861,8 +896,8 @@ static void buildORCSearchArgumentImpl(
         {
             builder.startOr();
             rpn_stack.pop_back();
-            buildORCSearchArgumentImpl(key_condition, header, schema, rpn_stack, builder, format_settings);
-            buildORCSearchArgumentImpl(key_condition, header, schema, rpn_stack, builder, format_settings);
+            buildORCSearchArgumentImpl(key_condition, header, schema, rpn_stack, builder, format_settings, sargs_column_ids);
+            buildORCSearchArgumentImpl(key_condition, header, schema, rpn_stack, builder, format_settings, sargs_column_ids);
             builder.end();
             break;
         }
@@ -882,14 +917,18 @@ static void buildORCSearchArgumentImpl(
 }
 
 std::unique_ptr<orc::SearchArgument> buildORCSearchArgument(
-    const KeyCondition & key_condition, const Block & header, const orc::Type & schema, const FormatSettings & format_settings)
+    const KeyCondition & key_condition,
+    const Block & header,
+    const orc::Type & schema,
+    const FormatSettings & format_settings,
+    std::unordered_set<UInt64> & sargs_column_ids)
 {
     auto rpn_stack = key_condition.getRPN();
     if (rpn_stack.empty())
         return nullptr;
 
     auto builder = orc::SearchArgumentFactory::newBuilder();
-    buildORCSearchArgumentImpl(key_condition, header, schema, rpn_stack, *builder, format_settings);
+    buildORCSearchArgumentImpl(key_condition, header, schema, rpn_stack, *builder, format_settings, sargs_column_ids);
     return builder->build();
 }
 
@@ -1138,10 +1177,18 @@ void NativeORCBlockInputFormat::prepareFileReader()
         if (orc_type)
             updateIncludeTypeIds(adjusted_type, orc_type, ignore_case, include_typeids);
     }
-    include_indices.assign(include_typeids.begin(), include_typeids.end());
-
+    /// Build the search argument before finalizing the read set: a predicate column that is not
+    /// selected gets no row indexes from liborc, which silently turns pruning off. This happens for
+    /// a tuple element predicate, whose parent column is selected but whose own leaf is not.
     if (format_settings.orc.filter_push_down && format_filter_info && format_filter_info->key_condition && !sargs)
-        sargs = buildORCSearchArgument(*format_filter_info->key_condition, getPort().getHeader(), file_reader->getType(), format_settings);
+    {
+        std::unordered_set<UInt64> sargs_column_ids;
+        sargs = buildORCSearchArgument(
+            *format_filter_info->key_condition, header, file_schema, format_settings, sargs_column_ids);
+        include_typeids.insert(sargs_column_ids.begin(), sargs_column_ids.end());
+    }
+
+    include_indices.assign(include_typeids.begin(), include_typeids.end());
 
     selected_stripes = calculateSelectedStripes(static_cast<int>(file_reader->getNumberOfStripes()), skip_stripes);
     read_iterator = 0;
