@@ -123,7 +123,7 @@ Splits a string separated by a specified constant string `separator` of exactly 
 Empty substrings may be selected if the separator occurs at the beginning or end of the string, or if there are multiple consecutive separators.
 
 :::note
-Setting [`splitby_max_substrings_includes_remaining_string`](../../operations/settings/settings.md#splitby_max_substrings_includes_remaining_string) (default: `0`) controls if the remaining string is included in the last element of the result array when argument `max_substrings > 0`.
+Setting [`splitby_max_substrings_includes_remaining_string`](/reference/settings/session-settings/other#splitby_max_substrings_includes_remaining_string) (default: `0`) controls if the remaining string is included in the last element of the result array when argument `max_substrings > 0`.
 :::
 
 Empty substrings may be selected when:

@@ -48,7 +48,8 @@ SELECT a, b, c FROM (SELECT ...)
 
 ## Parameterized View {#parameterized-view}
 
-Parameterized views are similar to normal views, but can be created with parameters which are not resolved immediately. These views can be used with table functions, which specify the name of the view as function name and the parameter values as its arguments.
+Parameterized views are similar to normal views, but can be created with parameters which are not resolved immediately.
+These views can be used with table functions, which specify the name of the view as function name and the parameter values as its arguments.
 
 ```sql
 CREATE VIEW view AS SELECT * FROM TABLE WHERE Column1={column1:datatype1} and Column2={column2:datatype2} ...
@@ -57,6 +58,14 @@ The above creates a view for table which can be used as table function by substi
 
 ```sql
 SELECT * FROM view(column1=value1, column2=value2 ...)
+```
+
+Since the parameterized view depends on the parameter values, it doesn't have a schema when parameters are not provided.
+That means there's no information about parameterized views in the `system.columns` table.
+Also, `DESCRIBE` queries would work only if parameters are provided.
+
+```sql
+DESCRIBE view(column1=value1, column2=value2 ...)
 ```
 
 ## Materialized View {#materialized-view}
@@ -166,8 +175,6 @@ Instead a separate `INSERT ... SELECT` can be used.
 A `SELECT` query can contain `DISTINCT`, `GROUP BY`, `ORDER BY`, `LIMIT`. Note that the corresponding conversions are performed independently on each block of inserted data. For example, if `GROUP BY` is set, data is aggregated during insertion, but only within a single packet of inserted data. The data won't be further aggregated. The exception is when using an `ENGINE` that independently performs data aggregation, such as `SummingMergeTree`.
 
 If the materialized view uses the construction `TO [db.]name`, you can `DETACH` the view, run `ALTER` for the target table, and then `ATTACH` the previously detached (`DETACH`) view.
-
-Note that materialized view is influenced by [optimize_on_insert](/operations/settings/settings#optimize_on_insert) setting. The data is merged before the insertion into a view.
 
 Views look the same as normal tables. For example, they are listed in the result of the `SHOW TABLES` query.
 
@@ -448,11 +455,11 @@ Fun fact: the refresh query is allowed to read from the view that's being refres
 
 ## Window View {#window-view}
 
-<ExperimentalBadge/>
+<DeprecatedBadge/>
 <CloudNotSupportedBadge/>
 
-:::info
-This is an experimental feature that may change in backwards-incompatible ways in the future releases. Enable usage of window views and `WATCH` query using [allow_experimental_window_view](/operations/settings/settings#allow_experimental_window_view) setting. Input the command `set allow_experimental_window_view = 1`.
+:::warning Deprecated
+Window views are deprecated and may be removed in a future release. They remain gated behind the [allow_experimental_window_view](/operations/settings/settings#allow_experimental_window_view) setting (`SET allow_experimental_window_view = 1`) and are not recommended for new use.
 :::
 
 ```sql
