@@ -6364,10 +6364,10 @@ std::unordered_set<std::string> QueryAnalyzer::collectMatcherProducedColumnNames
     /// same column-kind filter storage nodes use (resolveUnqualifiedMatcher per-table branch).
     auto * nearest_query_scope = scope.getNearestQueryScope();
     auto * nearest_query_node = nearest_query_scope ? nearest_query_scope->scope_node->as<QueryNode>() : nullptr;
-    if (!nearest_query_node || !nearest_query_node->getJoinTree())
+    if (!nearest_query_node || !nearest_query_node->getJoinTreeNode())
         return produced_names;
 
-    for (const auto & table_expression : buildTableExpressionsStack(nearest_query_node->getJoinTree()))
+    for (const auto & table_expression : buildTableExpressionsStack(nearest_query_node->getJoinTreeNode()))
     {
         if (auto * query_node = table_expression->as<QueryNode>())
             collect_from_columns(query_node->getProjectionColumns());
