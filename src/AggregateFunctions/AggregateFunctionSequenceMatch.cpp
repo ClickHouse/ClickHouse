@@ -590,7 +590,9 @@ protected:
             }
 
             if (!match_result)
+            {
                 break;
+            }
         }
 
         return first_matched_events;
