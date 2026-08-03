@@ -73,7 +73,27 @@ SELECT 'on regular analyzer=0 join_use_nulls=0';
 SELECT t_left_04545.x AS lx, isNull(lx) AS lx_is_null, t_mem_04545.x AS rx, str
 FROM t_left_04545 FULL JOIN t_mem_04545 ON t_left_04545.x = t_mem_04545.x ORDER BY str, lx;
 
+-- join_use_nulls = 1 also makes the raw right key nullable, so the ON reference has to be taken
+-- again under that setting for the equivalence above to mean anything.
+SET join_use_nulls = 1;
+SET enable_analyzer = 1;
+SELECT 'on storage analyzer=1 join_use_nulls=1';
+SELECT t_left_04545.x AS lx, isNull(lx) AS lx_is_null, t_full_nulls_04545.x AS rx, str
+FROM t_left_04545 FULL JOIN t_full_nulls_04545 ON t_left_04545.x = t_full_nulls_04545.x ORDER BY str, lx;
+SELECT 'on regular analyzer=1 join_use_nulls=1';
+SELECT t_left_04545.x AS lx, isNull(lx) AS lx_is_null, t_mem_04545.x AS rx, str
+FROM t_left_04545 FULL JOIN t_mem_04545 ON t_left_04545.x = t_mem_04545.x ORDER BY str, lx;
+
+SET enable_analyzer = 0;
+SELECT 'on storage analyzer=0 join_use_nulls=1';
+SELECT t_left_04545.x AS lx, isNull(lx) AS lx_is_null, t_full_nulls_04545.x AS rx, str
+FROM t_left_04545 FULL JOIN t_full_nulls_04545 ON t_left_04545.x = t_full_nulls_04545.x ORDER BY str, lx;
+SELECT 'on regular analyzer=0 join_use_nulls=1';
+SELECT t_left_04545.x AS lx, isNull(lx) AS lx_is_null, t_mem_04545.x AS rx, str
+FROM t_left_04545 FULL JOIN t_mem_04545 ON t_left_04545.x = t_mem_04545.x ORDER BY str, lx;
+
 -- LEFT resolves the USING key from the left side only; the NULL key must survive.
+SET join_use_nulls = 0;
 SET enable_analyzer = 1;
 CREATE TABLE t_leftj_04545 (x UInt32, s String) ENGINE = Join(ALL, LEFT, x);
 INSERT INTO t_leftj_04545 VALUES (1, 'x'), (3, 'z');
