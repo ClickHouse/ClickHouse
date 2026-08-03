@@ -156,6 +156,7 @@
             "resources/support-center/knowledge-base/security/common-rbac-queries",
             "resources/support-center/knowledge-base/security/remove-default-user",
             "resources/support-center/knowledge-base/security/row-column-policy",
+            "resources/support-center/knowledge-base/security/set-role-not-persisting-in-sql-console",
             "resources/support-center/knowledge-base/security/windows-active-directory-to-ch-roles"
           ]
         },
