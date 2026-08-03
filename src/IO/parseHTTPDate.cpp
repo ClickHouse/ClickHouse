@@ -18,6 +18,10 @@ constexpr std::array<std::string_view, 7> day_names{"Mon", "Tue", "Wed", "Thu", 
 constexpr std::array<std::string_view, 7> long_day_names{"Monday", "Tuesday", "Wednesday", "Thursday", "Friday", "Saturday", "Sunday"};
 constexpr std::array<std::string_view, 12> month_names{"Jan", "Feb", "Mar", "Apr", "May", "Jun", "Jul", "Aug", "Sep", "Oct", "Nov", "Dec"};
 
+constexpr std::string_view imf_fixdate_example{"Sun, 06 Nov 1994 08:49:37 GMT"};
+constexpr std::string_view rfc850_date_rest_example{", 06-Nov-94 08:49:37 GMT"};
+constexpr std::string_view asctime_date_example{"Sun Nov  6 08:49:37 1994"};
+
 std::optional<UInt32> parseNumber(std::string_view date, size_t pos, size_t size)
 {
     UInt32 res = 0;
@@ -81,7 +85,7 @@ std::optional<time_t> makeTimestamp(UInt32 year, UInt8 month, UInt32 day, TimeOf
 
 std::optional<time_t> tryParseIMFFixdate(std::string_view date)
 {
-    if (date.size() != std::string_view{"Sun, 06 Nov 1994 08:49:37 GMT"}.size())
+    if (date.size() != imf_fixdate_example.size())
         return std::nullopt;
 
     if (date.substr(3, 2) != ", " || date[7] != ' ' || date[11] != ' ' || date[16] != ' ' || date[25] != ' '
@@ -130,7 +134,7 @@ std::optional<time_t> tryParseRFC850Date(std::string_view date, time_t reference
         return std::nullopt;
 
     std::string_view rest = date.substr(day_name_it->size());
-    if (rest.size() != std::string_view{", 06-Nov-94 08:49:37 GMT"}.size())
+    if (rest.size() != rfc850_date_rest_example.size())
         return std::nullopt;
 
     if (!rest.starts_with(", ") || rest[4] != '-' || rest[8] != '-' || rest[11] != ' ' || rest[20] != ' '
@@ -150,7 +154,7 @@ std::optional<time_t> tryParseRFC850Date(std::string_view date, time_t reference
 
 std::optional<time_t> tryParseAsctimeDate(std::string_view date)
 {
-    if (date.size() != std::string_view{"Sun Nov  6 08:49:37 1994"}.size())
+    if (date.size() != asctime_date_example.size())
         return std::nullopt;
 
     if (date[3] != ' ' || date[7] != ' ' || date[10] != ' ' || date[19] != ' ')
