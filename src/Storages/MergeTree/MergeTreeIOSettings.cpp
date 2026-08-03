@@ -127,11 +127,9 @@ MergeTreeReaderSettings MergeTreeReaderSettings::createFromContext(const Context
         && (settings[Setting::max_streams_to_max_threads_ratio] > 1 || settings[Setting::max_streams_for_merge_tree_reading] > 1);
     result.enable_multiple_prewhere_read_steps = settings[Setting::enable_multiple_prewhere_read_steps];
     result.force_short_circuit_execution = settings[Setting::query_plan_merge_filters];
-    /// `apply_deleted_mask = 0` reads rows that a normal query does not see, so its verdicts are not
-    /// interchangeable with those of a normal read of the same part. Only one direction is actually
-    /// unsound (an `apply_deleted_mask = 1` entry consumed by an `apply_deleted_mask = 0` query,
-    /// which would then miss deleted rows it is supposed to return), but the setting is a debugging
-    /// aid, so simply keeping such queries out of the cache is cheaper than splitting the key space.
+    /// `apply_deleted_mask = 0` reads deleted rows, so its entries and those of normal reads are not
+    /// interchangeable. The setting is a debugging aid, so such queries skip the cache instead of
+    /// getting a key space of their own. Mirrored on the read side in MergeTreeDataSelectExecutor.
     result.use_query_condition_cache = settings[Setting::use_query_condition_cache]
         && settings[Setting::allow_experimental_analyzer]
         && settings[Setting::apply_deleted_mask];

@@ -3,26 +3,18 @@
 -- no-parallel-replicas: the query condition cache is populated per replica, so the granule
 --                       accounting below is deterministic only on a single replica
 
--- A materialized lightweight delete must not disable the query condition cache.
---
--- The step that applies the `_row_exists` mask is appended to the read task's `mutation_steps`,
--- and the cache write path used to treat a non-empty `mutation_steps` as "a mutation filtered rows
--- before PREWHERE, do not attribute anything to the predicate". A materialized mask is committed
--- part data rather than a pending mutation, so that check disabled the cache for every table that
--- had ever been touched by a lightweight delete - a single deleted row was enough.
+-- A materialized lightweight delete must not disable the query condition cache. The cache write
+-- path used to skip any part with a non-empty `mutation_steps`, which also holds the step applying
+-- the committed `_row_exists` mask - so one deleted row disabled the cache for the whole table.
 
 SET use_query_condition_cache = 1;
--- The query condition cache requires the analyzer, on both the write and the read side; without
--- this the cache never functions in the old-analyzer CI configuration and the effectiveness
--- assertions below cannot hold.
+-- The cache needs the analyzer on both the write and the read side.
 SET enable_analyzer = 1;
 
 DROP TABLE IF EXISTS t_qcc_lwd;
 
 -- auto_statistics_types = '': randomized auto statistics would prune the whole part for the
--- never-matching predicates below (`Part ... pruned by statistics`), so nothing would be read,
--- nothing would be written to the query condition cache, and the granule accounting would be
--- vacuous.
+-- never-matching predicates below, leaving nothing to read and the granule counts below vacuous.
 CREATE TABLE t_qcc_lwd (id UInt64, v UInt64)
 ENGINE = MergeTree ORDER BY id
 SETTINGS index_granularity = 8192, min_bytes_for_wide_part = 0, auto_statistics_types = '';
@@ -58,13 +50,12 @@ WHERE event_date >= yesterday() AND event_time >= now() - 600
     AND log_comment IN ('04669_lwd_prime', '04669_lwd_reuse')
 ORDER BY event_time_microseconds;
 
--- An unmaterialized (on-fly) lightweight delete still varies per query, so it must keep the cache
--- write disabled. That direction is covered by 03229_query_condition_cache_on_fly_mutations.
+-- The unmaterialized (on-fly) direction, which must keep the cache write disabled, is covered by
+-- 03229_query_condition_cache_on_fly_mutations.
 
 SELECT '--- apply_deleted_mask = 0 must not consume entries written by a normal read';
--- Prime with a predicate that only the deleted row satisfies. A normal read sees no match and may
--- record the granule as non-matching; a later `apply_deleted_mask = 0` read must still return the
--- deleted row rather than reuse that verdict.
+-- `id = 0` matches only the deleted row, so a normal read may record the granule as non-matching.
+-- An `apply_deleted_mask = 0` read must still return that row instead of reusing the verdict.
 SYSTEM DROP QUERY CONDITION CACHE;
 SELECT count() FROM t_qcc_lwd WHERE id = 0;
 SELECT count() FROM t_qcc_lwd WHERE id = 0 SETTINGS apply_deleted_mask = 0;
@@ -80,11 +71,9 @@ SELECT count() FROM t_qcc_lwd WHERE v < 10;
 
 DROP TABLE t_qcc_lwd;
 
--- A pending on-fly mutation that touches none of the columns the query reads is filtered out of
--- the read chain entirely (`AlterConversions::filterMutationCommands`), rewrites nothing the query
--- observes, and therefore must not disable the cache write. The entry it writes is consumable by
--- an `apply_mutations_on_fly = 0` query (the read path skips the cache while a data mutation is
--- pending, so the `= 0` side is the one that can actually hit).
+-- A pending on-fly mutation of a column the query does not read produces no read step, so it must
+-- not disable the cache write either. Only an `apply_mutations_on_fly = 0` query can consume the
+-- entry: the read path skips the cache while a data mutation is pending.
 
 SELECT '--- a pending mutation on an unread column must not disable the cache';
 

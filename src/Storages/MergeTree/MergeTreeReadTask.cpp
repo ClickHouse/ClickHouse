@@ -494,30 +494,20 @@ bool MergeTreeReadTask::appliesMutationsBeforePrewhere() const
     /// them. The read path already bypasses the cache in this case; this keeps the write path
     /// symmetric.
     ///
-    /// Only filters whose effect varies between queries are disqualifying. `mutation_steps` cannot
-    /// be used as the criterion because it also holds the step that applies an already materialized
-    /// lightweight-delete mask (`_row_exists`, added in MergeTreeReadPoolBase). That mask is
-    /// committed part data, not a pending mutation: every query reading the part observes exactly
-    /// the same rows, so a mark it empties is attributable to the predicate just like any other.
-    /// Treating it as disqualifying disabled the cache for every table that ever had a lightweight
-    /// delete. The read path draws the same line - it bypasses on `hasDataMutations()` and
-    /// `hasPatchParts()` but not on `hasLightweightDeletedMask()` - so keying off the source of the
-    /// filter (rather than the resulting step list) is what actually makes the two sides symmetric.
-    ///
-    /// The one way the mask can vary is `apply_deleted_mask = 0`; that is handled by not using the
-    /// cache at all for such queries (see MergeTreeIOSettings and MergeTreeDataSelectExecutor).
+    /// Only filters that vary between queries count. A materialized lightweight delete does not:
+    /// `_row_exists` is committed part data, so every query reading the part sees the same rows.
+    /// Its step lands in `mutation_steps` too, hence the checks below instead of testing that list.
+    /// (`apply_deleted_mask = 0` is the exception and skips the cache entirely, see
+    /// MergeTreeReaderSettings::createFromContext.)
     if (!info->patch_parts.empty())
         return true;
 
-    /// Only the steps that actually made it into `mutation_steps` count: a pending mutation whose
-    /// commands touch none of the columns this query reads is filtered out entirely (see
-    /// `AlterConversions::filterMutationCommands`), so it rewrites nothing this query observes and
-    /// must not disable the cache. `hasMutations()` would be too broad here.
+    /// Not `alter_conversions->hasMutations()`: a pending mutation that touches no column this
+    /// query reads produces no step and rewrites nothing the query observes.
     if (info->has_on_fly_mutation_steps)
         return true;
 
-    /// An unmaterialized lightweight delete is applied from the mutations snapshot at read time and
-    /// therefore does vary between queries, so it stays disqualifying.
+    /// An unmaterialized lightweight delete is applied from the mutations snapshot at read time.
     return info->alter_conversions && info->alter_conversions->hasLightweightDelete();
 }
 
