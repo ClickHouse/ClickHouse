@@ -628,9 +628,9 @@ protected:
 
     /// Find all non-overlapping matching sequences
     template <typename EventEntry>
-    std::vector<VectorWithMemoryTracking<T>> backtrackingMatchEventsAll(EventEntry & events_it, const EventEntry events_end) const
+    VectorWithMemoryTracking<VectorWithMemoryTracking<T>> backtrackingMatchEventsAll(EventEntry & events_it, const EventEntry events_end) const
     {
-        std::vector<VectorWithMemoryTracking<T>> all_matches;
+        VectorWithMemoryTracking<VectorWithMemoryTracking<T>> all_matches;
 
         /// Find all non-overlapping matches (including partial matches, similar to sequenceCount)
         while (events_it != events_end)
@@ -988,7 +988,7 @@ public:
     }
 
 private:
-    std::vector<VectorWithMemoryTracking<T>> getAllEvents(ConstAggregateDataPtr __restrict place) const
+    VectorWithMemoryTracking<VectorWithMemoryTracking<T>> getAllEvents(ConstAggregateDataPtr __restrict place) const
     {
         const auto & data_ref = this->data(place);
 
