@@ -121,8 +121,9 @@ ObjectStorageQueueSource::FileIterator::FileIterator(
         throw Exception(ErrorCodes::BAD_ARGUMENTS, "Expression can not have wildcards inside namespace name");
 
     const auto & reading_path = configuration->getPathForRead();
+    const bool use_glob_ast = context_->getSettingsRef()[Setting::use_glob_ast_parser];
 
-    if (!reading_path.hasGlobs())
+    if (!reading_path.hasGlobs(use_glob_ast))
     {
         throw Exception(
             ErrorCodes::BAD_ARGUMENTS,
@@ -132,7 +133,6 @@ ObjectStorageQueueSource::FileIterator::FileIterator(
 
     const auto globbed_key = reading_path.path;
     const auto start_after = metadata->getStartAfterForListing();
-    const bool use_glob_ast = context_->getSettingsRef()[Setting::use_glob_ast_parser];
     object_storage_iterator = object_storage->iterate(
         reading_path.cutGlobs(configuration->supportsPartialPathPrefix(), use_glob_ast),
         list_objects_batch_size_,

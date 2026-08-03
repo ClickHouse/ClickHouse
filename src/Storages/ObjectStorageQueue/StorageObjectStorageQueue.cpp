@@ -71,6 +71,7 @@ namespace DB
 {
 namespace Setting
 {
+    extern const SettingsBool use_glob_ast_parser;
     extern const SettingsString s3queue_default_zookeeper_path;
     extern const SettingsBool s3queue_enable_logging_to_s3queue_log;
     extern const SettingsBool stream_like_engine_allow_direct_select;
@@ -327,7 +328,10 @@ StorageObjectStorageQueue::StorageObjectStorageQueue(
     {
         configuration->setPathForRead({read_path.path + '*'});
     }
-    else if (!read_path.hasGlobs())
+    /// Setting-aware classification: with use_glob_ast_parser = 1 a literal brace path
+    /// such as "data_{x}.csv" is an exact path, and the queue only supports glob paths,
+    /// so it is rejected here instead of being silently routed through prefix listing.
+    else if (!read_path.hasGlobs(context_->getSettingsRef()[Setting::use_glob_ast_parser]))
     {
         throw Exception(ErrorCodes::BAD_QUERY_PARAMETER, "ObjectStorageQueue url must either end with '/' or contain globs");
     }
