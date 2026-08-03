@@ -4405,7 +4405,7 @@ This is a very inefficient way to select data. Don't use it for large tables.
         .related = {"MergeTree", "CollapsingMergeTree", "ReplicatedVersionedCollapsingMergeTree"}});
 
     factory.registerStorage("MergeTreeQueue", create, features, Documentation{
-        .description = "MergeTree engine variant that keeps rows sorted by insertion (commit) order, using the `_block_number` and `_block_offset` virtual columns as the sorting key. It does not support user-defined ORDER BY or PRIMARY KEY.",
+        .description = "MergeTree engine variant that keeps rows sorted by insertion (commit) order, using the `_block_number` and `_block_offset` virtual columns as the sorting key. It does not support user-defined ORDER BY, PRIMARY KEY or PARTITION BY. This is an experimental engine: enable the `allow_experimental_merge_tree_queue` setting to create such a table.",
         .syntax = "ENGINE = MergeTreeQueue()",
         .related = {"MergeTree", "ReplicatedMergeTreeQueue"}});
 
@@ -4791,7 +4791,7 @@ If the data in ClickHouse Keeper was lost or damaged, you can save data by movin
         .related = {"VersionedCollapsingMergeTree"}});
 
     factory.registerStorage("ReplicatedMergeTreeQueue", create, features, Documentation{
-        .description = "Replicated version of the MergeTreeQueue engine.",
+        .description = "Replicated version of the MergeTreeQueue engine. This is an experimental engine: enable the `allow_experimental_merge_tree_queue` setting to create such a table.",
         .syntax = "ENGINE = ReplicatedMergeTreeQueue('zoo_path', 'replica_name')",
         .related = {"MergeTreeQueue"}});
 }
