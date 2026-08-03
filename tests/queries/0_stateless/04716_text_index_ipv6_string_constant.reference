@@ -1,0 +1,39 @@
+-- A: matching row is found, per index type
+A-oracle	1
+A-ngram	1
+A-token	1
+A-sparse	1
+A-lc	1
+-- A: the skip index does not prune the matching granule away
+A-ngram-overprune	0
+A-token-overprune	0
+A-sparse-overprune	0
+A-lc-overprune	0
+-- A: the same defect via the map-key subcolumn, whose serialized key is also a String constant
+A-mapkey	1	1
+A-mapkey-overprune	0
+A-mapkey-absent-prunes	1
+-- B: a non-matching address still prunes, so pruning is not blanket-disabled
+B-rows	0
+B-ngram-prunes	1
+B-token-prunes	1
+B-sparse-prunes	1
+B-lc-prunes	1
+-- C: address spellings agree with the oracle (oracle, indexed)
+C-expanded	1	1
+C-uppercase	1	1
+C-loopback	1	1
+C-all-zero	0	0
+C-v4-mapped	1	1
+C-v4-bare	1	1
+C-typed	1	1
+C-not-equals	63	63
+-- D: predicates and column types that never reach index analysis stay rejected
+-- E: the String and FixedString domains are unaffected
+E-string	1	1
+E-string-overprune	0
+E-string-neg-prunes	1
+E-fixedstring	1	1
+E-fixedstring-neg-prunes	1
+E-fixedstring-oversize	0	0
+E-fixedstring-oversize-prunes	1

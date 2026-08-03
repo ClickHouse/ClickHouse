@@ -16,6 +16,7 @@
 #include <IO/WriteHelpers.h>
 #include <Interpreters/ExpressionAnalyzer.h>
 #include <Interpreters/PreparedSets.h>
+#include <Interpreters/convertFieldToType.h>
 #include <Interpreters/misc.h>
 #include <Parsers/ASTSelectQuery.h>
 #include <Storages/MergeTree/MergeTreeData.h>
@@ -315,6 +316,32 @@ std::optional<size_t> MergeTreeConditionBloomFilterText::getKeyIndex(const std::
 {
     const auto it = std::ranges::find(index_columns, key_column_name);
     return it == index_columns.end() ? std::nullopt : std::make_optional<size_t>(std::ranges::distance(index_columns.cbegin(), it));
+}
+
+/// The granule tokenizes the raw bytes of the indexed column, so a probe must be built from bytes of
+/// that same encoding. Returns false when the constant cannot be represented there, in which case the
+/// caller must not use the index: declining costs pruning, probing foreign bytes loses rows.
+static bool convertConstantToIndexDomain(
+    const DataTypePtr & indexed_type, const DataTypePtr & constant_type, const Field & constant, String & out_bytes)
+{
+    const DataTypePtr actual_type = BloomFilter::getPrimitiveType(indexed_type);
+
+    if (WhichDataType(actual_type).isStringOrFixedString())
+    {
+        out_bytes = constant.safeGet<String>();
+        return true;
+    }
+
+    /// `try` because index analysis can run for constants the comparison itself would never evaluate.
+    Field converted = tryConvertFieldToType(constant, *actual_type, constant_type.get());
+    if (converted.isNull())
+        return false;
+
+    auto column = actual_type->createColumn();
+    if (!column->tryInsert(converted))
+        return false;
+    out_bytes = column->getDataAt(0);
+    return true;
 }
 
 bool MergeTreeConditionBloomFilterText::extractAtomFromTree(const RPNBuilderTreeNode & node, RPNElement & out)
@@ -647,10 +674,12 @@ bool MergeTreeConditionBloomFilterText::traverseTreeEquals(
     {
         if (!value_data_type.isStringOrFixedString())
             return false;
+        String value;
+        if (!convertConstantToIndexDomain(index_data_types[*key_index], value_type, const_value, value))
+            return false;
         out.key_column = *key_index;
         out.function = RPNElement::FUNCTION_NOT_EQUALS;
         out.bloom_filter = std::make_unique<BloomFilter>(params);
-        const auto & value = const_value.safeGet<String>();
         tokenizer->stringToBloomFilter(value.data(), value.size(), *out.bloom_filter);
         return true;
     }
@@ -658,10 +687,12 @@ bool MergeTreeConditionBloomFilterText::traverseTreeEquals(
     {
         if (!value_data_type.isStringOrFixedString())
             return false;
+        String value;
+        if (!convertConstantToIndexDomain(index_data_types[*key_index], value_type, const_value, value))
+            return false;
         out.key_column = *key_index;
         out.function = RPNElement::FUNCTION_EQUALS;
         out.bloom_filter = std::make_unique<BloomFilter>(params);
-        const auto & value = const_value.safeGet<String>();
         tokenizer->stringToBloomFilter(value.data(), value.size(), *out.bloom_filter);
         return true;
     }
