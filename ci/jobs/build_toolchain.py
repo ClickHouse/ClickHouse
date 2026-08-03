@@ -9,10 +9,6 @@ from ci.praktika.utils import MetaClasses, Shell, Utils
 
 TEMP = "/tmp"
 
-# The LLVM version this script builds. It is also the version of the bootstrap compiler taken from
-# the builder image and the version of the `clang++-<version>` symlink added at package time. These
-# must agree - a symlink naming a different version than the toolchain that was built silently
-# produces a mixed C/C++ toolchain - so derive all of them from this one constant.
 LLVM_VERSION = "22"
 
 LLVM_SOURCE_DIR = f"{TEMP}/llvm-project"
