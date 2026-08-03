@@ -166,119 +166,97 @@ void ASTLiteral::appendColumnNameImplLegacy(WriteBuffer & ostr) const
     }
 }
 
+/// Base for the visitors that print a `Field` as a literal of a particular external dialect.
+///
+/// Everything except strings and containers is printed exactly like `FieldVisitorToString` does.
+/// Container literals (`Array` / `Tuple` / `Map` / `Object`) are handled here so that the visitor
+/// recurses into itself instead of falling back to `FieldVisitorToString`: once a target dialect is
+/// selected, nested strings (e.g. the elements of an `IN` tuple) have to stay in that dialect all
+/// the way down. `Derived` only has to provide `operator()` for `String`.
+template <typename Derived>
+class FieldVisitorToStringForDialect : public StaticVisitor<String>
+{
+public:
+    template <typename T>
+    String operator() (const T & x) const { return visitor(x); }
+
+    String operator() (const Array & x) const { return formatContainer(x, "[", "]"); }
+    String operator() (const Map & x) const { return formatContainer(x, "[", "]"); }
+
+    String operator() (const Tuple & x) const
+    {
+        /// For single-element tuples we must use the explicit `tuple` function,
+        /// or they will be parsed back as plain literals.
+        return formatContainer(x, x.size() > 1 ? "(" : "tuple(", ")");
+    }
+
+    String operator() (const Object & x) const
+    {
+        checkStackSize();
+        /// Like `FieldVisitorToString`: an Object is written as a string containing valid JSON,
+        /// but the string itself has to be quoted with the rules of the target dialect.
+        return derived()(convertObjectToString(x));
+    }
+
+private:
+    FieldVisitorToString visitor;
+
+    const Derived & derived() const { return static_cast<const Derived &>(*this); }
+
+    template <typename Container>
+    String formatContainer(const Container & x, const char * prefix, const char * suffix) const
+    {
+        checkStackSize();
+
+        WriteBufferFromOwnString wb;
+        wb << prefix;
+        for (auto it = x.begin(); it != x.end(); ++it)
+        {
+            if (it != x.begin())
+                wb << ", ";
+            wb << applyVisitor(derived(), *it);
+        }
+        wb << suffix;
+        return wb.str();
+    }
+};
+
 /// Use different rules for escaping backslashes and quotes
-class FieldVisitorToStringPostgreSQL : public StaticVisitor<String>
+class FieldVisitorToStringPostgreSQL : public FieldVisitorToStringForDialect<FieldVisitorToStringPostgreSQL>
 {
 public:
-    template<typename T>
-    String operator() (const T & x) const { return visitor(x); }
+    using FieldVisitorToStringForDialect<FieldVisitorToStringPostgreSQL>::operator();
 
-private:
-    FieldVisitorToString visitor;
+    String operator() (const String & x) const
+    {
+        WriteBufferFromOwnString wb;
+        writeQuotedStringPostgreSQL(x, wb);
+        return wb.str();
+    }
 };
 
-template<>
-String FieldVisitorToStringPostgreSQL::operator() (const String & x) const
-{
-    WriteBufferFromOwnString wb;
-    writeQuotedStringPostgreSQL(x, wb);
-    return wb.str();
-}
-
-/// Like FieldVisitorToString, but strings are escaped with SQLite rules (writeQuotedStringSQLite).
-/// Container literals (Array/Tuple/Map) are handled explicitly so that the visitor recurses into
-/// itself: nested strings (e.g. the elements of an `IN` tuple) are escaped for SQLite too, instead
-/// of falling back to the default backslash escaping of the embedded FieldVisitorToString.
-class FieldVisitorToStringSQLite : public StaticVisitor<String>
+/// Like `FieldVisitorToString`, but strings are escaped with SQLite rules (`writeQuotedStringSQLite`).
+class FieldVisitorToStringSQLite : public FieldVisitorToStringForDialect<FieldVisitorToStringSQLite>
 {
 public:
-    template<typename T>
-    String operator() (const T & x) const { return visitor(x); }
+    using FieldVisitorToStringForDialect<FieldVisitorToStringSQLite>::operator();
 
-private:
-    FieldVisitorToString visitor;
+    String operator() (const String & x) const
+    {
+        /// A NUL byte cannot be represented in a SQLite string literal (see `writeQuotedStringSQLite`).
+        /// Predicates with such literals are normally not pushed down (`isCompatible` rejects them), so
+        /// reaching here means we are about to emit a literal that cannot match: fail explicitly rather
+        /// than silently produce wrong results.
+        if (x.find('\0') != String::npos)
+            throw Exception(ErrorCodes::BAD_ARGUMENTS,
+                "Cannot push down a predicate to SQLite: a string literal contains a NUL byte, "
+                "which cannot be represented in a SQLite string literal");
+
+        WriteBufferFromOwnString wb;
+        writeQuotedStringSQLite(x, wb);
+        return wb.str();
+    }
 };
-
-/// Forward declarations of the explicit specializations so that the container overloads below can
-/// recurse into each other (e.g. a Tuple element that is itself a String or a nested Tuple)
-/// regardless of definition order.
-template<> String FieldVisitorToStringSQLite::operator() (const String & x) const;
-template<> String FieldVisitorToStringSQLite::operator() (const Array & x) const;
-template<> String FieldVisitorToStringSQLite::operator() (const Tuple & x) const;
-template<> String FieldVisitorToStringSQLite::operator() (const Map & x) const;
-
-template<>
-String FieldVisitorToStringSQLite::operator() (const String & x) const
-{
-    /// A NUL byte cannot be represented in a SQLite string literal (see writeQuotedStringSQLite).
-    /// Predicates with such literals are normally not pushed down (isCompatible rejects them), so
-    /// reaching here means we are about to emit a literal that cannot match: fail explicitly rather
-    /// than silently produce wrong results.
-    if (x.find('\0') != String::npos)
-        throw Exception(ErrorCodes::BAD_ARGUMENTS,
-            "Cannot push down a predicate to SQLite: a string literal contains a NUL byte, "
-            "which cannot be represented in a SQLite string literal");
-
-    WriteBufferFromOwnString wb;
-    writeQuotedStringSQLite(x, wb);
-    return wb.str();
-}
-
-template<>
-String FieldVisitorToStringSQLite::operator() (const Array & x) const
-{
-    checkStackSize();
-
-    WriteBufferFromOwnString wb;
-    wb << '[';
-    for (auto it = x.begin(); it != x.end(); ++it)
-    {
-        if (it != x.begin())
-            wb << ", ";
-        wb << applyVisitor(*this, *it);
-    }
-    wb << ']';
-    return wb.str();
-}
-
-template<>
-String FieldVisitorToStringSQLite::operator() (const Tuple & x) const
-{
-    checkStackSize();
-
-    WriteBufferFromOwnString wb;
-    /// For single-element tuples we must use the explicit tuple() function,
-    /// or they will be parsed back as plain literals.
-    if (x.size() > 1)
-        wb << '(';
-    else
-        wb << "tuple(";
-    for (auto it = x.begin(); it != x.end(); ++it)
-    {
-        if (it != x.begin())
-            wb << ", ";
-        wb << applyVisitor(*this, *it);
-    }
-    wb << ')';
-    return wb.str();
-}
-
-template<>
-String FieldVisitorToStringSQLite::operator() (const Map & x) const
-{
-    checkStackSize();
-
-    WriteBufferFromOwnString wb;
-    wb << '[';
-    for (auto it = x.begin(); it != x.end(); ++it)
-    {
-        if (it != x.begin())
-            wb << ", ";
-        wb << applyVisitor(*this, *it);
-    }
-    wb << ']';
-    return wb.str();
-}
 
 void ASTLiteral::formatImplWithoutAlias(WriteBuffer & ostr, const FormatSettings & settings, IAST::FormatState &, IAST::FormatStateStacked) const
 {
