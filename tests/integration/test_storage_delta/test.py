@@ -1691,6 +1691,10 @@ def test_replicated_database_and_unavailable_s3(started_cluster, use_delta_kerne
 
         replica_path = f"/clickhouse/databases/{DB_NAME}/replicas/shard1|node2"
         zk = started_cluster.get_kazoo_client("zoo1")
+        expected_digest = node2.query(
+            f"SELECT value FROM system.zookeeper WHERE path = '{replica_path}' AND name = 'digest'"
+        ).strip()
+        assert expected_digest != "123456"
         zk.set(replica_path + "/digest", "123456".encode())
 
         # Compare the `digest` value exactly instead of substring-matching the
@@ -1705,20 +1709,22 @@ def test_replicated_database_and_unavailable_s3(started_cluster, use_delta_kerne
 
         node2.restart_clickhouse()
 
-        # `restart_clickhouse` only waits until the server answers a query, but the
-        # digest is rewritten by the background `startup Replicated database` job, so
-        # poll instead of reading it once.
+        # `restart_clickhouse` only waits until the server answers a query, while the
+        # digest is rewritten later, from replica recovery on a background thread, so
+        # poll instead of reading it once. Compare against the digest from before the
+        # overwrite: any other value ("42" to force recovery, an empty result from a
+        # missing znode) means the digest was not restored.
         digest = None
         deadline = time.monotonic() + 60
         while time.monotonic() < deadline:
             digest = node2.query(
                 f"SELECT value FROM system.zookeeper WHERE path = '{replica_path}' AND name = 'digest'"
             ).strip()
-            if digest != "123456":
+            if digest == expected_digest:
                 break
             time.sleep(1)
 
-        assert digest != "123456"
+        assert digest == expected_digest
 
 
 def test_session_token(started_cluster):
