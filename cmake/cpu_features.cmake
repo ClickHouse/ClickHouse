@@ -3,6 +3,12 @@
 # On x86-64, the build target is specified as a microarchitecture level (1, 2, 3, 4) via `X86_ARCH_LEVEL`.
 # All of this is unrelated to the instruction set of the host machine
 # (you can compile for a newer instruction set on old machines and vice versa).
+#
+# The one exception is the best-effort preflight check in the `ARCH_AMD64` branch below. It is not part of target selection: it fails
+# early on a *native* x86 build whose host cannot execute the build-time tools (`llvm-tablegen`, `protoc`, ...) that are themselves
+# compiled with the requested flags. Cross-compilation is never affected by it, so targeting a newer level from an older machine stays
+# possible that way. There is deliberately no such check on AArch64 - the target profile there is selected purely from
+# `NO_ARMV81_OR_HIGHER`.
 
 set(RUSTFLAGS_CPU)
 if (ARCH_AARCH64)
@@ -88,7 +94,9 @@ elseif (ARCH_AMD64)
     endif ()
 
     # Best-effort check: verify that the build host supports the requested microarchitecture level. Build-time tools
-    # (tablegen, code generators) are compiled with these flags and will crash with SIGILL otherwise.
+    # (tablegen, code generators) are compiled with these flags and will crash with SIGILL otherwise. This does not
+    # influence the selected target - it only rejects a *native* build that could not complete anyway. The host-arch
+    # condition below excludes cross-compilation, which can target any level regardless of the host.
     if (OS_LINUX AND CMAKE_HOST_SYSTEM_PROCESSOR MATCHES "amd64|x86_64" AND X86_ARCH_LEVEL VERSION_GREATER_EQUAL 2)
         # Test for a representative flag at each level. We intentionally keep this simple - no real CPU has avx2 without
         # fma/bmi2, so checking the headline flag is enough while avoiding false positives from /proc/cpuinfo quirks
@@ -113,8 +121,10 @@ elseif (ARCH_AMD64)
         endif ()
     endif ()
 
-    # ClickHouse can be cross-compiled (e.g. on an ARM host for x86) but it is also possible to build ClickHouse on x86 w/o AVX for x86 w/
-    # AVX. We only assume that the compiler can emit certain SIMD instructions, we don't care if the host system is able to run the binary.
+    # Target selection assumes nothing about the host: we only assume that the compiler can emit certain SIMD instructions, we don't care
+    # if the host system is able to run the resulting binary. ClickHouse can therefore be cross-compiled for any level (e.g. on an ARM host
+    # for x86-64-v4). Building for a higher level *natively* on an older x86 host is the single case the preflight check above rejects, and
+    # it does so because the build itself - not the resulting binary - would fail when it runs the tools it just compiled.
 
     if (X86_ARCH_LEVEL VERSION_GREATER_EQUAL 2)
         set (COMPILER_FLAGS "${COMPILER_FLAGS} -march=x86-64-v${X86_ARCH_LEVEL}")
