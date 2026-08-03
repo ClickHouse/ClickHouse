@@ -1,0 +1,9 @@
+--- the table through the PostgreSQL engine
+1	one
+2	two
+--- addressing the database as an explicit schema
+1
+2
+--- the search path agrees with current_schema()
+1	1
+"db Mixed,""Case"
