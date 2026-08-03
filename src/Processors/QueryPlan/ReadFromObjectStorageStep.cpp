@@ -419,7 +419,7 @@ bool ReadFromObjectStorageStep::sortingKeyIsComputableFromSourceHeader() const
         auto syntax_result = TreeRewriter(getContext()).analyze(ast, info.source_header.getNamesAndTypesList());
         ExpressionAnalyzer(ast, syntax_result, getContext()).getActionsDAG(false);
     }
-    catch (...)
+    catch (...) /// Ok: this only probes computability, and the caller falls back to a full sort.
     {
         return false;
     }
