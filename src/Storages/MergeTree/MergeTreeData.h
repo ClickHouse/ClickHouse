@@ -1564,17 +1564,11 @@ protected:
     }
 
 private:
-    struct NamesAndTypesListHash
-    {
-        size_t operator()(const NamesAndTypesList & list) const noexcept;
-    };
-    /// The stored column list, the identities of its custom serializations (which the list itself does
-    /// not distinguish, see `SharedPartColumns::describeCustomizations`) and the `share_nested_offsets`
-    /// value the bundle was built with (readers compare its descriptions against the live setting).
+    /// `SharedPartColumns::describeColumns` of the stored columns, plus the `share_nested_offsets` value
+    /// the bundle was built with (readers compare its descriptions against the live setting).
     struct SharedPartColumnsCacheKey
     {
-        std::reference_wrapper<const NamesAndTypesList> columns;
-        std::reference_wrapper<const String> customizations;
+        std::reference_wrapper<const String> description;
         bool collect_nested;
     };
     struct SharedPartColumnsCacheKeyHash
@@ -1585,17 +1579,15 @@ private:
     {
         bool operator()(const SharedPartColumnsCacheKey & lhs, const SharedPartColumnsCacheKey & rhs) const
         {
-            return lhs.collect_nested == rhs.collect_nested
-                && lhs.customizations.get() == rhs.customizations.get()
-                && lhs.columns.get() == rhs.columns.get();
+            return lhs.collect_nested == rhs.collect_nested && lhs.description.get() == rhs.description.get();
         }
     };
     mutable AggregatedMetrics::GlobalSum shared_part_columns_metric_handle;
     mutable SharedMutex shared_part_columns_cache_mutex;
     /// Interning cache for the schema-derived metadata shared across data parts (see SharedPartColumns.h).
-    /// The key references the `columns` member of the bundle it maps to, so the column list is stored
-    /// only once per entry; the bundle is always alive while its entry exists because the cache holds
-    /// a strong reference.
+    /// The key references the `description` member of the bundle it maps to, so it is stored only once
+    /// per entry; the bundle is always alive while its entry exists because the cache holds a strong
+    /// reference.
     mutable std::unordered_map<SharedPartColumnsCacheKey, SharedPartColumnsPtr, SharedPartColumnsCacheKeyHash, SharedPartColumnsCacheKeyEqual>
         shared_part_columns_cache TSA_GUARDED_BY(shared_part_columns_cache_mutex);
 

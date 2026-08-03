@@ -118,13 +118,15 @@ public:
         std::shared_ptr<const ColumnsDescription> columns_description_,
         std::shared_ptr<const ColumnsDescription> columns_description_with_collected_nested_,
         bool collect_nested_,
-        String customizations_);
+        String description_);
 
-    /// The custom names and serializations of these columns, empty when none has either. `IDataType::equals`
-    /// ignores both, so they are part of the bundle key: a custom name is what the part persists in
-    /// `columns.txt` (`SimpleAggregateFunction(sum, UInt64)` against a plain `UInt64`), and a custom
-    /// serialization changes the streams of the column (the `Quantized` codec adds one).
-    static String describeCustomizations(const NamesAndTypesList & columns);
+    /// What makes two column lists interchangeable for a data part, and therefore the interning key of a
+    /// bundle: the names of the columns, their full type names and the identities of the custom
+    /// serializations attached to them from outside the type. `NamesAndTypesList` equality is not enough:
+    /// it compares types with `IDataType::equals`, which ignores custom names at any depth
+    /// (`Nullable(Bool)` against `Nullable(UInt8)`) although a part persists the name it was declared
+    /// with, and no type name shows a serialization attached by a codec (`Quantized` attaches one).
+    static String describeColumns(const NamesAndTypesList & columns);
 
     const NamesAndTypesList columns;
     const NameToNumber column_name_to_position;
@@ -137,7 +139,7 @@ public:
     /// that a bundle can never be shared across two values of it.
     const bool collect_nested;
     /// Stored so that the release lookup rebuilds the key the bundle was interned under.
-    const String customizations;
+    const String description;
 
     /// Returns the serializations for the given serialization infos. The whole object is shared
     /// across parts whose infos produce the same serializations (same kinds and settings,

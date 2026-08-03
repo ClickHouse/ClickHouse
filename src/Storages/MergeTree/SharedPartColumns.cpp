@@ -102,13 +102,13 @@ SharedPartColumns::SharedPartColumns(
     std::shared_ptr<const ColumnsDescription> columns_description_,
     std::shared_ptr<const ColumnsDescription> columns_description_with_collected_nested_,
     bool collect_nested_,
-    String customizations_)
+    String description_)
     : columns(std::move(columns_))
     , column_name_to_position(buildColumnPositions(columns))
     , columns_description(std::move(columns_description_))
     , columns_description_with_collected_nested(std::move(columns_description_with_collected_nested_))
     , collect_nested(collect_nested_)
-    , customizations(std::move(customizations_))
+    , description(std::move(description_))
     , serializations_cache_metric_handle(CurrentMetrics::SharedPartSerializationsCacheSize)
     , serialization_groups_metric_handle(CurrentMetrics::SharedPartSerializationGroupsCacheSize)
     , substreams_cache_metric_handle(CurrentMetrics::SharedPartColumnsSubstreamsCacheSize)
@@ -117,27 +117,24 @@ SharedPartColumns::SharedPartColumns(
 {
 }
 
-String SharedPartColumns::describeCustomizations(const NamesAndTypesList & columns)
+String SharedPartColumns::describeColumns(const NamesAndTypesList & columns)
 {
-    String result;
-    UInt32 position = 0;
+    /// Everything is length-framed, so no description can be read as another one.
+    WriteBufferFromOwnString out;
     for (const auto & column : columns)
     {
-        const auto * custom_name = column.type->getCustomName();
-        const auto * custom_serialization = column.type->getCustomSerialization();
-        if (custom_name || custom_serialization)
+        writeStringBinary(column.name, out);
+        writeStringBinary(column.type->getName(), out);
+
+        auto describe_custom_serialization = [&](const IDataType & type)
         {
-            if (!result.empty())
-                result += ',';
-            result += fmt::format(
-                "{}:{}:{}",
-                position,
-                custom_name ? custom_name->getName() : "",
-                custom_serialization ? custom_serialization->getCustomSerializationIdentity() : "");
-        }
-        ++position;
+            if (const auto * custom = type.getCustomSerialization())
+                writeStringBinary(custom->getCustomSerializationIdentity(), out);
+        };
+        describe_custom_serialization(*column.type);
+        column.type->forEachChild(describe_custom_serialization);
     }
-    return result;
+    return out.str();
 }
 
 SerializationByName PartSerializations::toSerializationByName() const
