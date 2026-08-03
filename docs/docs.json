@@ -116,7 +116,7 @@
                 "$ref": "./products/kubernetes-operator/navigation.json"
               },
               {
-                "$ref": "./products/clickhouse-private/navigation.json"
+                "sourceRef": "ClickHouse/airgap-docs"
               }
             ],
             "tab": "Solutions"
