@@ -287,15 +287,15 @@ DataTypePtr QueryFuzzer::fuzzDataType(DataTypePtr type)
     const auto * type_object = typeid_cast<const DataTypeObject *>(type.get());
     if (type_object && fuzz_rand() % 4 != 0)
     {
-        /// Fuzz the typed-path element types, then rebuild with randomized numeric parameters, keeping the
-        /// SKIP lists intact so the result stays round-trippable.
         std::unordered_map<String, DataTypePtr> typed_paths = type_object->getTypedPaths();
         for (auto & [path, path_type] : typed_paths)
             path_type = fuzzDataType(path_type);
         try
         {
             return makeRandomObject(
-                std::move(typed_paths), type_object->getPathsToSkip(), type_object->getPathRegexpsToSkip());
+                std::move(typed_paths),
+                fuzzObjectPathsToSkip(type_object->getPathsToSkip()),
+                fuzzObjectPathRegexpsToSkip(type_object->getPathRegexpsToSkip()));
         }
         catch (...) // NOLINT(bugprone-empty-catch) Ok: a fuzzed typed-path type may violate an Object invariant
         {
@@ -410,13 +410,49 @@ DataTypePtr QueryFuzzer::makeRandomQBit()
     return std::make_shared<DataTypeQBit>(element_type, dimension, dimension);
 }
 
+std::unordered_set<String> QueryFuzzer::fuzzObjectPathsToSkip(std::unordered_set<String> paths_to_skip)
+{
+    if (paths_to_skip.empty() || fuzz_rand() % 4 != 0)
+        return paths_to_skip;
+
+    /// A skipped path is a compound identifier, so only identifier-shaped values keep the type parseable.
+    static constexpr const char * path_names[] = {"a", "b", "c", "a.b", "a.b.c", "SKIP", "x_1", "some.path"};
+    static constexpr size_t n_paths = std::size(path_names);
+
+    std::vector<String> paths(paths_to_skip.begin(), paths_to_skip.end());
+    std::sort(paths.begin(), paths.end()); /// Iteration order of the set is unspecified; keep it seed-stable.
+    paths[fuzz_rand() % paths.size()] = path_names[fuzz_rand() % n_paths];
+    if (paths.size() < 4 && fuzz_rand() % 3 == 0)
+        paths.push_back(path_names[fuzz_rand() % n_paths]);
+    else if (paths.size() > 1 && fuzz_rand() % 3 == 0)
+        paths.erase(paths.begin() + fuzz_rand() % paths.size());
+    return std::unordered_set<String>(paths.begin(), paths.end());
+}
+
+std::vector<String> QueryFuzzer::fuzzObjectPathRegexpsToSkip(std::vector<String> path_regexps_to_skip)
+{
+    if (path_regexps_to_skip.empty() || fuzz_rand() % 4 != 0)
+        return path_regexps_to_skip;
+
+    /// The DataTypeObject constructor rejects a regexp RE2 cannot compile, so only compilable ones are used.
+    static constexpr const char * regexps[]
+        = {"^a.*$", ".*", "a|b", "[0-9]+", "^$", "(a)(b)?", "\\d{1,3}", "a{2,}", "[[:alpha:]]+", "x(?:y|z)"};
+    static constexpr size_t n_regexps = std::size(regexps);
+
+    path_regexps_to_skip[fuzz_rand() % path_regexps_to_skip.size()] = regexps[fuzz_rand() % n_regexps];
+    if (path_regexps_to_skip.size() < 4 && fuzz_rand() % 3 == 0)
+        path_regexps_to_skip.push_back(regexps[fuzz_rand() % n_regexps]);
+    else if (path_regexps_to_skip.size() > 1 && fuzz_rand() % 3 == 0)
+        path_regexps_to_skip.erase(path_regexps_to_skip.begin() + fuzz_rand() % path_regexps_to_skip.size());
+    return path_regexps_to_skip;
+}
+
 DataTypePtr QueryFuzzer::makeRandomObject(
     std::unordered_map<String, DataTypePtr> typed_paths,
     std::unordered_set<String> paths_to_skip,
     std::vector<String> path_regexps_to_skip)
 {
-    /// Randomize the numeric parameters within the parser limits, keeping the given typed paths and SKIP
-    /// lists intact so getName() re-parses to the same type.
+    /// Only the numeric parameters are randomized here; the typed paths and SKIP lists are used as given.
     const size_t max_dynamic_paths = (fuzz_rand() % 4 == 0)
         ? fuzz_rand() % (DataTypeObject::MAX_DYNAMIC_PATHS_LIMIT + 1)
         : DataTypeObject::DEFAULT_MAX_DYNAMIC_PATHS;

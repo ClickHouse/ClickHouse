@@ -259,6 +259,10 @@ private:
     DataTypePtr getRandomType();
     /// A random QBit with a valid element type and a dimension/stride pair satisfying the type's invariants.
     DataTypePtr makeRandomQBit();
+    /// Mutate a JSON `SKIP` path list. Replacements stay identifier-shaped so the type still parses.
+    std::unordered_set<String> fuzzObjectPathsToSkip(std::unordered_set<String> paths_to_skip);
+    /// Mutate a JSON `SKIP REGEXP` list. Replacements are RE2-compilable, which the type requires.
+    std::vector<String> fuzzObjectPathRegexpsToSkip(std::vector<String> path_regexps_to_skip);
     /// A JSON Object with the given typed paths / SKIP lists and randomized numeric parameters.
     DataTypePtr makeRandomObject(
         std::unordered_map<String, DataTypePtr> typed_paths = {},
