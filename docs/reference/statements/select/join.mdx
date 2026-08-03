@@ -221,7 +221,7 @@ key2    a2    1    1    1            0    0    \N
 key4    f    2    3    4            0    0    \N
 ```
 
-## NULL values in JOIN keys {#null-values-in-join-keys}
+## NULL and NaN values in JOIN keys {#null-values-in-join-keys}
 
 `NULL` is not equal to any value, including itself. This means that if a `JOIN` key has a `NULL` value in one table, it won't match a `NULL` value in the other table.
 
@@ -275,14 +275,12 @@ SELECT A.name, B.score FROM A LEFT JOIN B ON isNotDistinctFrom(A.id, B.id)
 └─────────┴───────┘
 ```
 
-<Warning>
-`NaN` in a `Float` `JOIN` key does not follow the `NULL` rule above. The scalar comparison
-`NaN = NaN` is `0`, but `JOIN` keys are not compared with scalar semantics, so `NaN` keys can match
-each other. Whether they do is not specified: it varies with the join algorithm, the key type, and
-the settings in effect, so do not rely on either outcome. When `NaN` rows must not match, map them
-to `NULL` in the key: `ON if(isNaN(A.id), NULL, A.id) = B.id`. In an `ASOF JOIN`, the closest-match
-column is compared by ordering, which `NaN` does not support — filter such rows out on both sides.
-</Warning>
+`NaN` values in a float JOIN keys do not follow the `NULL` rule above.
+A scalar comparison of two NaN values (`NaN = NaN`) is `0`, however, `JOIN` keys are not compared using scalar semantics - `NaN` keys may match.
+If they actually do is an implementation detail and depends on the join algorithm, the key type, and the session settings.
+Do do not rely on a specific behavior.
+If you require that `NaN` rows do not match, map them to `NULL` values: `ON if(isNaN(A.id), NULL, A.id) = B.id`.
+In an `ASOF JOIN`, the closest-match column is compared by ordering, which `NaN` does not support — filter such rows out on both sides.
 
 ## ASOF JOIN usage {#asof-join-usage}
 
