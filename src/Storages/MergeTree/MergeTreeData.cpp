@@ -5702,10 +5702,23 @@ void MergeTreeData::checkMutationIsPossible(const MutationCommands & commands, c
             const auto & column_desc = columns.get(command.column_name);
             if (column_desc.codec && codecResolvesToLossyCompression(column_desc.codec, column_desc.type))
             {
+                /// A dependency list may name a subcolumn (`val.x` of a `Tuple`, `arr.size0`, ...) instead of
+                /// the stored column that holds it, and reading a subcolumn reads the very stream that the
+                /// recompression rewrites. Map every required column back to its owning stored column before
+                /// comparing - the same normalization `MutateTask` applies to these lists.
+                const auto storage_columns = columns.getAllPhysical().getNameSet();
+                auto depends_on_recompressed_column = [&](const Names & required_columns)
+                {
+                    return std::ranges::any_of(required_columns, [&](const String & required_column)
+                    {
+                        auto column_in_storage = Nested::tryGetColumnNameInStorage(required_column, storage_columns);
+                        return column_in_storage && *column_in_storage == command.column_name;
+                    });
+                };
+
                 for (const auto & projection : columns_metadata->getProjections())
                 {
-                    const auto & required_columns = projection.getRequiredColumns();
-                    if (std::ranges::find(required_columns, command.column_name) != required_columns.end())
+                    if (depends_on_recompressed_column(projection.getRequiredColumns()))
                         throw Exception(ErrorCodes::SUPPORT_IS_DISABLED,
                             "Cannot RECOMPRESS COLUMN `{}` with the lossy codec {}: projection `{}` reads this column, "
                             "and it is not rebuilt by the recompression, so it would keep describing the values as they "
@@ -5717,8 +5730,7 @@ void MergeTreeData::checkMutationIsPossible(const MutationCommands & commands, c
 
                 for (const auto & index : columns_metadata->getSecondaryIndices())
                 {
-                    const auto & required_columns = index.expression->getRequiredColumns();
-                    if (std::ranges::find(required_columns, command.column_name) != required_columns.end())
+                    if (depends_on_recompressed_column(index.expression->getRequiredColumns()))
                         throw Exception(ErrorCodes::SUPPORT_IS_DISABLED,
                             "Cannot RECOMPRESS COLUMN `{}` with the lossy codec {}: index `{}` depends on this column, "
                             "and it is not rebuilt by the recompression, so it would keep describing the values as they "
