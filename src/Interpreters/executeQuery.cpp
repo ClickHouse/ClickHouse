@@ -1618,7 +1618,9 @@ static BlockIO executeQueryImpl(
                         "A query whose data streams over the connection cannot be run in the background");
 
                 executeQueryInBackground(std::string_view(begin, end), context, CurrentThread::getGroup());
-                return BlockIO();
+                BlockIO io;
+                io.dispatched = true;
+                return io;
             }
 
             validateAnalyzerSettings(out_ast, settings[Setting::allow_experimental_analyzer]);
@@ -2939,6 +2941,13 @@ void executeQuery(
                 handle_exception_in_output_format(*output_format, format_name, context, output_format_settings);
         }
         throw;
+    }
+
+    if (streams.dispatched)
+    {
+        if (query_finish_callback)
+            query_finish_callback();
+        return;
     }
 
     QueryFinishCallback finish_callback;
