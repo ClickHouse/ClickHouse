@@ -386,6 +386,36 @@ protected:
             return current != NOT_RUNNING && receivedSignals(current) > 0;
         }
 
+        /// How many interrupt signals the in-flight query has received so far; 0 for a disarmed
+        /// handler. Used to take a baseline before query teardown starts, see
+        /// cancelledOrInterruptedSince().
+        Int32 receivedSignalCount() const
+        {
+            const Int64 current = state.load();
+            return current == NOT_RUNNING ? 0 : static_cast<Int32>(receivedSignals(current));
+        }
+
+        /// The latch predicate of query teardown: true when the in-flight query is fully cancelled,
+        /// or when it has received a new interrupt signal since `signals_before_teardown` of them
+        /// were counted. Once the receive loop is gone there is no stage-one `Cancel` left to send
+        /// to the server, so any *fresh* signal has to stop the teardown right away instead of
+        /// waiting for the full signal budget - the responsive write path already gives up on the
+        /// first one (see interruptedWhileRunning), and requiring a second Ctrl+C to leave e.g. a
+        /// stuck pager wait would contradict that. Signals counted *before* teardown are
+        /// deliberately not latched here: with `partial_result_on_first_cancel` the first one only
+        /// requested the partial result, which was received and formatted normally, so its output
+        /// must still be published and shown in the pager.
+        /// A single load, so a concurrent reader can never stitch together a stopped handler and a
+        /// signal count, see cancelledWhileRunning().
+        bool cancelledOrInterruptedSince(Int32 signals_before_teardown) const
+        {
+            const Int64 current = state.load();
+            if (current == NOT_RUNNING)
+                return false;
+            const Int64 received = receivedSignals(current);
+            return received >= signalsBeforeStop(current) || received > signals_before_teardown;
+        }
+
         /// Account for one interrupt signal. Called from a signal handler, hence only lock-free
         /// atomic operations. Returns true when the query has already been cancelled by earlier
         /// signals (the caller then makes the client exit abruptly); a disarmed handler is left

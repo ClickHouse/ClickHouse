@@ -2414,6 +2414,11 @@ void ClientBase::resetOutput()
     /// predicate on a captured `!cancelled()` instead would go permanently inert if the signal arrived
     /// just before the capture (the handler's cancelled() flips, but the local `cancelled` flag is only
     /// set by cancelQuery inside receiveResult, which no longer runs once we are in this teardown).
+    ///
+    /// Take the baseline of already-received interrupt signals before the flushes start: from here
+    /// on, *any* additional signal has to stop the teardown immediately, even when the query is not
+    /// fully cancelled yet under `partial_result_on_first_cancel`. See the latch below.
+    const Int32 signals_before_teardown = query_interrupt_handler.receivedSignalCount();
     if (std_out)
         armResponsiveOutput(*std_out);
     /// tty_buf carries the same per-query hook (installed alongside std_out's), and the teardown
@@ -2476,7 +2481,10 @@ void ClientBase::resetOutput()
     /// below would block as if nothing was cancelled, processOrdinaryQuery() would publish a
     /// partially flushed `INTO OUTFILE ... TRUNCATE` target as a success, and the
     /// "Query was cancelled." message would not be printed.
-    if (!cancelled && query_interrupt_handler.cancelledWhileRunning())
+    /// A signal received *during* the teardown counts even when it does not exhaust the signal
+    /// budget: the responsive write path already gave up on it, and no stage-one `Cancel` can be
+    /// sent from here anymore, so waiting for a second Ctrl+C would leave the client stuck.
+    if (!cancelled && query_interrupt_handler.cancelledOrInterruptedSince(signals_before_teardown))
         cancelled = true;
 
     if (pager_cmd)
@@ -2493,7 +2501,7 @@ void ClientBase::resetOutput()
         /// its first iteration, so no separate pre-wait re-check is needed.
         while (!cancelled && !pager_cmd->waitIfProccesTerminated())
         {
-            if (query_interrupt_handler.cancelledWhileRunning())
+            if (query_interrupt_handler.cancelledOrInterruptedSince(signals_before_teardown))
             {
                 cancelled = true;
                 break;
