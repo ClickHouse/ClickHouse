@@ -17,6 +17,14 @@ SELECT x, arraySlice(big, 2, 3), arraySlice(big, -2), arraySlice(big, x), arrayS
 FROM (SELECT arrayMap(i -> 's' || toString(i + number), range(5)) AS big, [1, -1, 0, 3] AS r FROM numbers(2)) ARRAY JOIN r AS x
 SETTINGS enable_lazy_columns_replication = 1;
 
+SELECT '-- Array(LowCardinality(String)) elements and slices';
+SELECT x, toTypeName(big), big[x], big[2], arraySlice(big, x, 2), arraySlice(big, 2, 3), arraySlice(big, -2)
+FROM (SELECT arrayMap(i -> 'lc_' || toString((i + number) % 3), range(5))::Array(LowCardinality(String)) AS big, [1, 2, 5, -1] AS r FROM numbers(2)) ARRAY JOIN r AS x
+SETTINGS enable_lazy_columns_replication = 0;
+SELECT x, toTypeName(big), big[x], big[2], arraySlice(big, x, 2), arraySlice(big, 2, 3), arraySlice(big, -2)
+FROM (SELECT arrayMap(i -> 'lc_' || toString((i + number) % 3), range(5))::Array(LowCardinality(String)) AS big, [1, 2, 5, -1] AS r FROM numbers(2)) ARRAY JOIN r AS x
+SETTINGS enable_lazy_columns_replication = 1;
+
 SELECT '-- nullable elements';
 SELECT x, big[x], arrayElementOrNull(big, x), arraySlice(big, x, 2)
 FROM (SELECT arrayMap(i -> if(i % 2 = 0, NULL, i + number), range(6))::Array(Nullable(UInt64)) AS big, [1, 2, 7, -1] AS r FROM numbers(2)) ARRAY JOIN r AS x

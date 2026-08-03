@@ -32,6 +32,23 @@
 -1	['s2','s3','s4']	['s4','s5']	['s5']	[]	s2
 0	['s2','s3','s4']	['s4','s5']	[]	[]	s2
 3	['s2','s3','s4']	['s4','s5']	['s3','s4','s5']	['s3','s4','s5']	s2
+-- Array(LowCardinality(String)) elements and slices
+1	Array(LowCardinality(String))	lc_0	lc_1	['lc_0','lc_1']	['lc_1','lc_2','lc_0']	['lc_0','lc_1']
+2	Array(LowCardinality(String))	lc_1	lc_1	['lc_1','lc_2']	['lc_1','lc_2','lc_0']	['lc_0','lc_1']
+5	Array(LowCardinality(String))	lc_1	lc_1	['lc_1']	['lc_1','lc_2','lc_0']	['lc_0','lc_1']
+-1	Array(LowCardinality(String))	lc_1	lc_1	['lc_1']	['lc_1','lc_2','lc_0']	['lc_0','lc_1']
+1	Array(LowCardinality(String))	lc_1	lc_2	['lc_1','lc_2']	['lc_2','lc_0','lc_1']	['lc_1','lc_2']
+2	Array(LowCardinality(String))	lc_2	lc_2	['lc_2','lc_0']	['lc_2','lc_0','lc_1']	['lc_1','lc_2']
+5	Array(LowCardinality(String))	lc_2	lc_2	['lc_2']	['lc_2','lc_0','lc_1']	['lc_1','lc_2']
+-1	Array(LowCardinality(String))	lc_2	lc_2	['lc_2']	['lc_2','lc_0','lc_1']	['lc_1','lc_2']
+1	Array(LowCardinality(String))	lc_0	lc_1	['lc_0','lc_1']	['lc_1','lc_2','lc_0']	['lc_0','lc_1']
+2	Array(LowCardinality(String))	lc_1	lc_1	['lc_1','lc_2']	['lc_1','lc_2','lc_0']	['lc_0','lc_1']
+5	Array(LowCardinality(String))	lc_1	lc_1	['lc_1']	['lc_1','lc_2','lc_0']	['lc_0','lc_1']
+-1	Array(LowCardinality(String))	lc_1	lc_1	['lc_1']	['lc_1','lc_2','lc_0']	['lc_0','lc_1']
+1	Array(LowCardinality(String))	lc_1	lc_2	['lc_1','lc_2']	['lc_2','lc_0','lc_1']	['lc_1','lc_2']
+2	Array(LowCardinality(String))	lc_2	lc_2	['lc_2','lc_0']	['lc_2','lc_0','lc_1']	['lc_1','lc_2']
+5	Array(LowCardinality(String))	lc_2	lc_2	['lc_2']	['lc_2','lc_0','lc_1']	['lc_1','lc_2']
+-1	Array(LowCardinality(String))	lc_2	lc_2	['lc_2']	['lc_2','lc_0','lc_1']	['lc_1','lc_2']
 -- nullable elements
 1	\N	\N	[NULL,1]
 2	1	1	[1,NULL]
