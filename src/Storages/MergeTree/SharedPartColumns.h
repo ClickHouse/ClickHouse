@@ -118,7 +118,7 @@ public:
         std::shared_ptr<const ColumnsDescription> columns_description_,
         std::shared_ptr<const ColumnsDescription> columns_description_with_collected_nested_,
         bool collect_nested_,
-        String description_);
+        String interning_key_);
 
     /// What makes two column lists interchangeable for a data part, and therefore the interning key of a
     /// bundle: the names of the columns, their full type names and the identities of the custom
@@ -139,7 +139,7 @@ public:
     /// that a bundle can never be shared across two values of it.
     const bool collect_nested;
     /// Stored so that the release lookup rebuilds the key the bundle was interned under.
-    const String description;
+    const String interning_key;
 
     /// Returns the serializations for the given serialization infos. The whole object is shared
     /// across parts whose infos produce the same serializations (same kinds and settings,

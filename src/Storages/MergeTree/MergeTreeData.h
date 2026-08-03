@@ -1568,7 +1568,7 @@ private:
     /// the bundle was built with (readers compare its descriptions against the live setting).
     struct SharedPartColumnsCacheKey
     {
-        std::reference_wrapper<const String> description;
+        std::reference_wrapper<const String> interning_key;
         bool collect_nested;
     };
     struct SharedPartColumnsCacheKeyHash
@@ -1579,13 +1579,13 @@ private:
     {
         bool operator()(const SharedPartColumnsCacheKey & lhs, const SharedPartColumnsCacheKey & rhs) const
         {
-            return lhs.collect_nested == rhs.collect_nested && lhs.description.get() == rhs.description.get();
+            return lhs.collect_nested == rhs.collect_nested && lhs.interning_key.get() == rhs.interning_key.get();
         }
     };
     mutable AggregatedMetrics::GlobalSum shared_part_columns_metric_handle;
     mutable SharedMutex shared_part_columns_cache_mutex;
     /// Interning cache for the schema-derived metadata shared across data parts (see SharedPartColumns.h).
-    /// The key references the `description` member of the bundle it maps to, so it is stored only once
+    /// The key references the `interning_key` member of the bundle it maps to, so it is stored only once
     /// per entry; the bundle is always alive while its entry exists because the cache holds a strong
     /// reference.
     mutable std::unordered_map<SharedPartColumnsCacheKey, SharedPartColumnsPtr, SharedPartColumnsCacheKeyHash, SharedPartColumnsCacheKeyEqual>
