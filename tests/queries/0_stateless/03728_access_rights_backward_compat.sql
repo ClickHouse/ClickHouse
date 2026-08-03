@@ -17,7 +17,7 @@ REVOKE WRITE ON FILE FROM test_u_03728;
 -- A deprecated full-source grant (POSTGRES) must still collapse for backward compatibility:
 -- it round-trips through replaceDeprecated as READ|WRITE ON POSTGRES and
 -- makeBackwardCompatible collapses READ|WRITE back to POSTGRES.
-GRANT POSTGRES TO test_u_03728;
+GRANT POSTGRES ON *.* TO test_u_03728;
 SHOW GRANTS FOR test_u_03728;
 
 DROP USER IF EXISTS test_u_03728;
