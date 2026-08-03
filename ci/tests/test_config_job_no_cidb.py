@@ -268,6 +268,20 @@ def test_previously_failed_cannot_change_flaky_coverage():
                     selectors.add(sub.func.attr)
     assert selectors == {"get_changed_tests"}, selectors
 
+    # Shape-independent backstop: the scan above only enters `if is_flaky_check:`, so a
+    # hoist into the enclosing `if is_flaky_check or is_bugfix_validation:` escapes it.
+    # Satisfiable because the targeted check reads `get_all_relevant_tests_with_info`.
+    module_targeting_calls = {
+        n.func.attr
+        for n in ast.walk(ast.parse(inspect.getsource(functional_tests)))
+        if isinstance(n, ast.Call)
+        and isinstance(n.func, ast.Attribute)
+        and n.func.attr in targeting_methods
+    }
+    assert "get_previously_failed_tests" not in module_targeting_calls, (
+        module_targeting_calls
+    )
+
     # Config-time side: the same selector, and no CIDB-backed one. Scoped to the hook
     # this PR changed, so an unrelated mention elsewhere in the module cannot mask it.
     hook_calls = {
