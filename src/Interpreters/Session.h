@@ -107,7 +107,8 @@ public:
 
     /// Makes a query context for a query that outlives the session. It is always created from a copy of
     /// a global context, so it does not share the session state (temporary tables, transaction), but the
-    /// function assigns the session's user, settings, current database and query parameters to this context.
+    /// function assigns the session's user, current roles, settings, current database and query parameters
+    /// to this context.
     ContextMutablePtr makeDetachedQueryContext() const { return makeDetachedQueryContext(getClientInfo()); }
     ContextMutablePtr makeDetachedQueryContext(const ClientInfo & query_client_info) const;
 

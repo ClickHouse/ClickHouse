@@ -760,6 +760,7 @@ ContextMutablePtr Session::makeQueryContextImpl(const ClientInfo * client_info_t
 
     if (detached && session_context)
     {
+        query_context->setCurrentRoles(session_context->getCurrentRoles());
         query_context->setSettings(session_context->getSettingsRef());
         if (const String database = session_context->getCurrentDatabase(); !database.empty())
             query_context->setCurrentDatabase(database);
