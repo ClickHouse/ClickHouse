@@ -93,8 +93,7 @@ void XGBoostModel::startTraining(const Block & header, const String & target_col
 
 void XGBoostModel::addTrainingData(const Block & batch)
 {
-    const std::size_t rows = batch.rows();
-    if (rows == 0)
+    if (batch.rows() == 0)
         return;
 
     VectorWithMemoryTracking<const IColumn *> feature_cols;
@@ -116,18 +115,18 @@ void XGBoostModel::addTrainingData(const Block & batch)
     }
     chassert(label_col);
 
-    flattened_features.reserve(ingested_rows + (rows * n_features));
-    labels.reserve(ingested_rows + rows);
+    flattened_features.reserve(flattened_features.size() + (batch.rows() * n_features));
+    labels.reserve(labels.size() + batch.rows());
 
     // Transforms from the Block into a flattened vector, stores the tuples row-wise
-    for (std::size_t r = 0; r < rows; ++r)
+    for (std::size_t r = 0; r < batch.rows(); ++r)
     {
         for (std::size_t c = 0; c < n_features; ++c)
             flattened_features.push_back(static_cast<float>(feature_cols[c]->getFloat64(r)));
         labels.push_back(static_cast<float>(label_col->getFloat64(r)));
     }
 
-    ingested_rows += rows;
+    ingested_rows += batch.rows();
 }
 
 void XGBoostModel::finalizeTraining()
