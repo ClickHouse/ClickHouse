@@ -1,0 +1,23 @@
+rows	2
+explicit	1	[1,2,3]	3	3
+explicit	2	[9,9,9,9]	4	4
+folded	1	[1,2,3]	3
+folded	2	[9,9,9,9]	4
+aggregates	7	0
+prewhere_ordinary	[1,2,3]	3
+row_policy_effective	2
+row_policy_effective	1
+row_policy	1	[1,2,3]	3
+nullable_null	1	x	0
+tuple_element	1	(1,2)	1	2
+nested_array	1	[[1,2],[3]]	2
+map	1	{'k':7}	['k']	[7]
+lowcardinality	1	['x','y']	2
+dynamic_prewhere	5	3
+missing_column	0	[]	0
+missing_column_rows	0
+same_structure	1	[1,2,3]	3
+same_structure_prewhere	3
+ordinary_mismatch	1	42
+[1,2,3,4,5,6]
+[1,2,3]	3
