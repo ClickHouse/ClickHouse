@@ -1711,17 +1711,13 @@ void MergeTreeIndexAggregatorText::update(const Block & block, size_t * pos, siz
         const auto & keys = tuple.getColumn(0);
         const auto & values = tuple.getColumn(1);
 
-        /// Index tokens from a ColumnString: StringHashTable::dispatch reads an 8-byte word around each
-        /// key (including a backward read ending at the key end, which under-reads for tokens < 8 bytes).
-        /// Arena pads only on the right; ColumnString's PaddedPODArray pads both sides, like the
-        /// plain-String and Array paths.
+        /// ColumnString (not Arena): StringHashTable::dispatch over-reads around each key, and
+        /// ColumnString's PaddedPODArray pads both sides, matching the plain-String/Array paths.
         auto tokens_column = ColumnString::create();
-        /// Reused per pair so encoding does not allocate a String per token (bytes are then copied into
-        /// the padded ColumnString above).
+        /// Reused per pair to avoid a String allocation per token.
         String token_buf;
-        /// Keys seen so far in the current row: first occurrence gets is_rest = 0, later duplicates
-        /// is_rest = 1 (see MapKeyValueToken.h). A linear back-scan beats a hash set for small maps —
-        /// allocation-free and short-circuits.
+        /// Keys seen in the current row: first occurrence is_rest = 0, later duplicates is_rest = 1.
+        /// Linear scan beats a hash set for small maps. See MapKeyValueToken.h.
         std::vector<std::string_view> row_keys;
         for (size_t i = offset; i < offset + rows_read; ++i)
         {

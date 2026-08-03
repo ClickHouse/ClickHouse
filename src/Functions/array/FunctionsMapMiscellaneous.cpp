@@ -1277,7 +1277,7 @@ SELECT mapContainsValueLike(a, 'a%') FROM tab;
     FunctionDocumentation::Description description_mapContainsKeyValueLike = R"(
 Checks whether a map contains at least one entry whose key is `LIKE` the specified `key_pattern`
 and whose value is `LIKE` the specified `value_pattern`.
-Requires the map keys and values to be `String` (or `LowCardinality(String)`).
+Requires the map keys and values to be `String` or `FixedString`.
 )";
     FunctionDocumentation::Syntax syntax_mapContainsKeyValueLike = "mapContainsKeyValueLike(map, key_pattern, value_pattern)";
     FunctionDocumentation::Arguments arguments_mapContainsKeyValueLike = {
