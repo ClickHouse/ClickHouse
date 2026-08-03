@@ -2765,7 +2765,7 @@ A background query does not survive a server restart.
 
 Track the query by its `query_id`: in `system.processes` while it is running and in `system.query_log` after it finishes. Poll rather than conclude from a single empty lookup, because between submission and the start of execution the id resolves in neither table. Errors are recorded only in `system.query_log`. `KILL QUERY` works as usual.
 
-Applies to queries received over the native TCP and HTTP protocols. Over HTTP, pass the setting as a URL parameter or set it in the session or the profile.
+Applies to queries received over the native TCP and HTTP protocols. Over HTTP, pass the setting as a URL parameter. It cannot be changed with `SET`; enable it per query, or at the user or profile level.
 
 The main use case is a long `INSERT ... SELECT` that must not be lost when the client connection drops.
 )", 0) \

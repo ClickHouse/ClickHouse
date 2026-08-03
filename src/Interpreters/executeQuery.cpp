@@ -101,7 +101,6 @@
 #include <Common/randomSeed.h>
 #include <Common/ThreadPool.h>
 #include <Common/ThreadStatus.h>
-#include <Common/ThreadGroupSwitcher.h>
 
 #include <Poco/Net/SocketAddress.h>
 
@@ -1585,7 +1584,7 @@ static BlockIO executeQueryImpl(
 
             const auto client_interface = context->getClientInfo().interface;
             const bool run_query_in_background = settings[Setting::run_query_in_background].value;
-            
+
             /// The query itself may contain `SETTINGS run_query_in_background = 1`.
             /// So to avoid infinite recursion, executeQueryInBackground sets flags.background = true
             /// which indicates that we're on background query execution thread
@@ -1603,14 +1602,18 @@ static BlockIO executeQueryImpl(
                 /// So this setting should not be set via query (i.e. `SETTINGS run_query_in_background = 1`).
                 if (client_interface == ClientInfo::Interface::HTTP && !run_query_in_background_before_settings_from_query)
                     throw Exception(ErrorCodes::BAD_ARGUMENTS,
-                        "run_query_in_background cannot be enabled in the SETTINGS clause of the query. "
-                        "Pass it as a query setting of the native protocol, an HTTP URL parameter, "
-                        "or set it in the session or the profile.");
+                        "run_query_in_background cannot be enabled in the SETTINGS clause of the query over HTTP. "
+                        "Pass it as an HTTP URL parameter, or set it at the user or profile level");
 
                 if (http_continue_callback)
                     http_continue_callback();
 
-                if (istr && !istr->eof())
+                const auto * insert_query = out_ast->as<ASTInsertQuery>();
+                ASTPtr input_function;
+                if (insert_query)
+                    insert_query->tryFindInputFunction(input_function);
+                if ((istr && !istr->eof())
+                    || (insert_query && !insert_query->hasInlinedData() && (!insert_query->select || input_function)))
                     throw Exception(ErrorCodes::BAD_ARGUMENTS,
                         "A query whose data streams over the connection cannot be run in the background");
 
