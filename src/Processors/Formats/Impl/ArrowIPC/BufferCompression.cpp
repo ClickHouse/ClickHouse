@@ -85,6 +85,18 @@ UInt64 lz4BlockOutputBound(const LZ4F_frameInfo_t & info, const char * src, size
         /// An uncompressed block is stored verbatim, so it expands to exactly its stored bytes.
         bound += (block_header & UNCOMPRESSED_BLOCK_FLAG) ? block_size : max_block_size;
     }
+    if (info.contentChecksumFlag == LZ4F_contentChecksumEnabled)
+    {
+        if (CHECKSUM_SIZE > size - pos)
+            throw Exception(ErrorCodes::INCORRECT_DATA, "Compressed Arrow IPC buffer ends inside an LZ4 content checksum");
+        pos += CHECKSUM_SIZE;
+    }
+    /// Decompression accepts exactly one frame and no trailing bytes, so reject them here rather than
+    /// bounding a payload that cannot decode and allocating for it first.
+    if (pos != size)
+        throw Exception(
+            ErrorCodes::INCORRECT_DATA,
+            "Compressed Arrow IPC buffer has {} bytes after its LZ4 frame", size - pos);
     return bound;
 }
 }

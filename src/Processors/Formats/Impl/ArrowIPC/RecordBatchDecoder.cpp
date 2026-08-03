@@ -1487,7 +1487,8 @@ void RecordBatchDecoder::prepareBuffers(const flatbuf::RecordBatch & batch, cons
 
     /// A decompressed body this large cannot be allocated on any real machine, and `PODArray::resize`
     /// rounds its request up to a power of two, so stay an octave below the allocator's own ceiling
-    /// rather than restating its arithmetic here.
+    /// rather than restating its arithmetic here. The per-buffer frame bound below caps every
+    /// `out_len` far short of this, so keep it as the backstop on the running total.
     static constexpr size_t MAX_DECOMPRESSED_BODY_SIZE = 1ULL << 62;
     auto checkBodySize = [](size_t n)
     {

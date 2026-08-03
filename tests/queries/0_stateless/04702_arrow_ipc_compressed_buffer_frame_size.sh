@@ -304,14 +304,15 @@ d = bytearray(ch_lz4)
 struct.pack_into("<q", d, ch_offs[0], 100 * 1024 ** 3)
 open(f"{out}/prefix_mismatch.arrows", "wb").write(bytes(d))
 
-# Case 3: two prefixes summing just past 2^62, in frames that declare no size. pyarrow omits the
+# Case 3: huge prefixes on two buffers at once, in frames that declare no size. pyarrow omits the
 # frame's optional content size, so this is the shape with nothing to compare a prefix against
-# directly - only the frame's blocks bound it, and each of these prefixes exceeds that bound.
+# directly - only the frame's blocks bound it, and each of these prefixes exceeds that bound. Every
+# buffer is checked, so the first one already rejects the file rather than any accumulated total.
 d = bytearray(arrow_lz4)
 half = (1 << 61) + 8
 struct.pack_into("<q", d, arrow_offs[0], half)
 struct.pack_into("<q", d, arrow_offs[1], half)
-open(f"{out}/aggregate_too_large.arrows", "wb").write(bytes(d))
+open(f"{out}/no_declared_size_forged_prefixes.arrows", "wb").write(bytes(d))
 
 # Case 4 (NOT corrupt): the prefix and the frame agree on a size the frame's one block really can
 # produce. Patch both in place. Larger than the file, so reading it is a resource condition.
@@ -424,6 +425,37 @@ d = bytearray(arrow_lz4)
 struct.pack_into("<q", d, arrow_offs[0], 100 * 1024 ** 3)
 open(f"{out}/lz4_no_declared_size_forged_prefix.arrows", "wb").write(bytes(d))
 
+def lz4_frame_with_stored_block(content_checksum=b"", trailing=b""):
+    """An LZ4 frame with one stored (uncompressed) block, optionally followed by extra bytes.
+
+    A stored block expands to exactly its own bytes, so the frame's bound is 8 whatever else is
+    appended, which keeps these cases about what follows the blocks rather than about the bound.
+    `content_checksum` and `trailing` are written verbatim so a truncated checksum and a trailing
+    byte can both be spelled out. The block's bytes are all-ones because the buffer this frame is
+    repointed onto is a validity bitmap, and all-ones there means every row stays valid.
+    """
+    flg = 0x40 | (0x04 if content_checksum else 0)
+    header = bytes([flg, 0x70])  # blockSizeID 7 (4 MB), block independence off
+    block = struct.pack("<I", 0x80000000 | 8) + b"\xff" * 8
+    return (LZ4_MAGIC + header + bytes([(xxh32(header) >> 8) & 0xFF]) + block
+            + struct.pack("<I", 0) + content_checksum + trailing)
+
+
+# Cases 15b and 15c: bytes after the frame's blocks. The block walk stops at the end marker, so
+# without checking what follows it a payload the decompressor will reject still gets a bound and is
+# allocated for first. Both prefixes are the 8 bytes the block really produces, so the bound itself
+# is honest and only the suffix is wrong.
+open(f"{out}/lz4_trailing_data.arrows", "wb").write(
+    lone_frame_buffer(ch_lz4, 8, lz4_frame_with_stored_block(trailing=b"\x00")))
+open(f"{out}/lz4_truncated_content_checksum.arrows", "wb").write(
+    lone_frame_buffer(ch_lz4, 8, lz4_frame_with_stored_block(content_checksum=b"\x00\x00")))
+
+# Case 15d (NOT corrupt): the same frame with a whole content checksum, so the walk must accept a
+# checksum rather than reading it as trailing data. The checksum is of the block's own bytes.
+open(f"{out}/lz4_content_checksum.arrows", "wb").write(
+    lone_frame_buffer(ch_lz4, 8,
+                      lz4_frame_with_stored_block(content_checksum=struct.pack("<I", xxh32(b"\xff" * 8)))))
+
 # Case 16: a frame whose content size is recorded as 0 while its blocks really do produce data - a
 # shape no writer emits but a file can carry, and the one place where "recorded 0" and "not recorded"
 # genuinely differ. Reading the 0 as an exact size would reject the real prefix, so the blocks decide.
@@ -468,7 +500,7 @@ check zstd_bad_frame.arrows INCORRECT_DATA
 # would also pass if the allocator guard or the decompression call caught it instead, leaving the
 # comparison untested.
 check prefix_mismatch.arrows 'codec frame declares'
-check aggregate_too_large.arrows 'codec frame declares'
+check no_declared_size_forged_prefixes.arrows 'codec frame declares'
 check pledge_mismatch.arrows 'codec frame declares'
 check zstd_prefix_mismatch.arrows 'codec frame declares'
 check zstd_empty_frame_forged_prefix.arrows 'codec frame declares 0'
@@ -479,6 +511,11 @@ check lz4_empty_frame_forged_prefix.arrows 'codec frame declares 0'
 check lz4_empty_frame_zero_size_forged_prefix.arrows 'codec frame declares 0'
 check lz4_no_declared_size_forged_prefix.arrows 'codec frame declares'
 check lz4_pledge_above_blocks.arrows 'blocks can produce at most'
+# Bytes past the frame's blocks. Both prefixes are honest, so only the suffix is wrong and the file
+# is still rejected either way - match the walk's own messages, otherwise decompression rejecting it
+# after allocating for it would pass these too.
+check lz4_trailing_data.arrows 'bytes after its LZ4 frame'
+check lz4_truncated_content_checksum.arrows 'ends inside an LZ4 content checksum'
 check zstd_no_declared_size_forged_prefix.arrows 'codec frame declares'
 # Not corrupt: a size the query cannot afford is a resource condition, not a data error. The size a
 # frame's blocks can produce is bounded, so the budget rather than the size is what has to be small.
@@ -489,7 +526,8 @@ check consistent_large.arrows MEMORY_LIMIT_EXCEEDED 1M
 # buffer whose frame honestly declares the 0 the comparison now sees, and a frame whose recorded size
 # reads 0 over blocks that do produce data (which must not be read as an exact size of zero).
 for f in wellformed_lz4 wellformed_zstd ch_lz4 ch_zstd zstd_multi_frame zstd_skippable_prefix \
-         zstd_empty_frame_honest_prefix lz4_zero_size_over_blocks zstd_no_declared_size; do
+         zstd_empty_frame_honest_prefix lz4_zero_size_over_blocks zstd_no_declared_size \
+         lz4_content_checksum; do
     $CLICKHOUSE_LOCAL --query "
         SELECT count(), sum(i), uniqExact(s) FROM file('${TMP_DIR}/${f}.arrows', ArrowStream)"
 done
