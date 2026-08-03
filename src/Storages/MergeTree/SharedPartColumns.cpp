@@ -140,6 +140,7 @@ std::vector<SharedPartColumns::SerializationGroupKey> SharedPartColumns::buildSe
 
         SerializationGroupKey key;
         key.column_position = position;
+        key.map_settings = normalizeSettingsForKey(infos.getSettings());
         if (it == infos.end())
         {
             key.kinds = default_kind_encodings[position];
@@ -237,6 +238,7 @@ size_t SharedPartColumns::SerializationGroupKeyHash::operator()(const Serializat
 
     SipHash settings_hash;
     key.settings.updateHash(settings_hash);
+    key.map_settings.updateHash(settings_hash);
     UInt64 settings_hash_value = settings_hash.get64();
     XXH_INLINE_XXH3_64bits_update(&state, &settings_hash_value, sizeof(settings_hash_value));
 

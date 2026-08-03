@@ -184,6 +184,16 @@ private:
         /// fields cleared (see `normalizeSettingsForKey`): only the fields that affect the built
         /// serializations participate in the key.
         SerializationInfoSettings settings;
+        /// The settings of the whole `SerializationInfoByName`, normalized as above. An entry
+        /// reports only its own top-level settings, and `SerializationInfoTuple` reports defaults
+        /// because a Tuple cannot be sparse itself, while `DataTypeTuple::getSerialization` builds
+        /// every element from that element's info: the serialization versions of the elements
+        /// (`map_serialization_version` and friends) are therefore invisible in `settings` above.
+        /// They are the map settings of the part, so keying on them keeps parts written with
+        /// different versions from sharing a group (inserts use
+        /// `map_serialization_version_for_zero_level_parts` while merges use
+        /// `map_serialization_version`, so both are live on one table by design).
+        SerializationInfoSettings map_settings;
 
         bool operator==(const SerializationGroupKey & other) const = default;
     };
