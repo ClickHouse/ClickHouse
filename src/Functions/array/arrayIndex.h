@@ -820,8 +820,10 @@ private:
 
     /// The erased column reached by descending `elements` through the Tuple wrappers named by
     /// `path`, or nothing when the column shape does not match the type. Used to read a row's
-    /// discriminators at the site the peel will act on.
-    static const ColumnVariant * findVariantAtPath(const IColumn & elements, const std::vector<size_t> & path)
+    /// discriminators at the site the peel will act on. `holder` keeps the returned column alive: a
+    /// level of the descent may materialise a temporary, which the caller must outlive.
+    static const ColumnVariant * findVariantAtPath(
+        const IColumn & elements, const std::vector<size_t> & path, ColumnPtr & holder)
     {
         const IColumn * current = &elements;
         auto held = current->getPtr();
@@ -846,9 +848,17 @@ private:
             held = as_nullable->getNestedColumnPtr();
 
         if (const auto * as_dynamic = checkAndGetColumn<ColumnDynamic>(held.get()))
+        {
+            /// The pointee lives inside the dynamic column, so that is what has to stay alive.
+            holder = held;
             return &as_dynamic->getVariantColumn();
+        }
 
-        return checkAndGetColumn<ColumnVariant>(held.get());
+        const auto * as_variant = checkAndGetColumn<ColumnVariant>(held.get());
+        if (as_variant)
+            holder = held;
+
+        return as_variant;
     }
 
     /// The path of Tuple positions leading to the first erased type inside `type`, or nothing when
@@ -888,7 +898,8 @@ private:
         if (!path)
             return {};
 
-        const auto * variant_column = findVariantAtPath(array.getData(), *path);
+        ColumnPtr variant_holder;
+        const auto * variant_column = findVariantAtPath(array.getData(), *path, variant_holder);
         if (!variant_column || variant_column->size() != array.getData().size())
             return {};
 
@@ -1263,6 +1274,8 @@ private:
         IColumn::Filter undecided(rows, 1);
         bool any_group_decided = false;
 
+        /// At most one group per real alternative (ColumnVariant::MAX_NESTED_COLUMNS), and only a
+        /// heterogeneous column reaches here: a single-alternative block was answered above.
         for (const auto & [discriminator, filter] : *groups)
         {
             auto group_array = array.filter(filter, -1);
