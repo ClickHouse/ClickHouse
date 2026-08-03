@@ -1228,7 +1228,9 @@ void ReplicatedMergeTreeSink::onStart()
 {
     /// It's only allowed to throw "too many parts" before write,
     /// because interrupting long-running INSERT query in the middle is not convenient for users.
-    storage.delayInsertOrThrowIfNeeded(&storage.partial_shutdown_event, context, true);
+    /// The query may write through several sinks in parallel (`max_insert_threads`), so the check is
+    /// shared by all of them: it runs once, before any of the sinks writes its first part.
+    runOnceBeforeFirstWrite([this] { storage.delayInsertOrThrowIfNeeded(&storage.partial_shutdown_event, context, true); });
 
     auto component_guard = Coordination::setCurrentComponent("ReplicatedMergeTreeSink::onStart");
     ZooKeeperWithFaultInjectionPtr zookeeper = createKeeper("ReplicatedMergeTreeSink::onStart");

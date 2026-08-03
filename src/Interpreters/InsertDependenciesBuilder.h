@@ -12,6 +12,7 @@
 
 #include <exception>
 #include <memory>
+#include <mutex>
 #include <unordered_map>
 #include <vector>
 
@@ -20,6 +21,9 @@ namespace DB
 
 class ThreadGroup;
 using ThreadGroupPtr = std::shared_ptr<ThreadGroup>;
+
+/// See SinkToStorage.h
+using InsertStartGatePtr = std::shared_ptr<std::once_flag>;
 
 class IStorage;
 using StoragePtr = std::shared_ptr<IStorage>;
@@ -82,6 +86,8 @@ private:
         = std::unordered_map<StorageIDMaybeEmpty, SharedHeader, StorageID::DatabaseAndTableNameHash, StorageID::DatabaseAndTableNameEqual>;
     using MapIdThreadGroup = std::
         unordered_map<StorageIDMaybeEmpty, ThreadGroupPtr, StorageID::DatabaseAndTableNameHash, StorageID::DatabaseAndTableNameEqual>;
+    using MapIdInsertStartGate = std::
+        unordered_map<StorageIDMaybeEmpty, InsertStartGatePtr, StorageID::DatabaseAndTableNameHash, StorageID::DatabaseAndTableNameEqual>;
     using MapIdViewType = std::unordered_map<
         StorageIDMaybeEmpty,
         QueryViewsLogElement::ViewType,
@@ -265,6 +271,8 @@ private:
     MapIdBlock input_headers;
     MapIdBlock output_headers;
     MapIdThreadGroup thread_groups;
+    /// One gate per destination table, shared by the sinks of all the parallel streams writing into it.
+    MapIdInsertStartGate insert_start_gates;
 
     using SquashingProcessorsMap = std::unordered_map<
         StorageIDMaybeEmpty,

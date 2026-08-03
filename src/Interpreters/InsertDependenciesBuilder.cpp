@@ -1154,6 +1154,11 @@ InsertDependenciesBuilder::InsertDependenciesBuilder(
         && (settings[Setting::parallel_view_processing] || !isViewsInvolved())
         && !mv_dedup_single_stream)
         sink_stream_size = max_insert_threads;
+
+    /// The gates are created here, once per destination table, so that the sinks of all the streams
+    /// created later for the same destination share them.
+    for (const auto & [view_id, _] : inner_tables)
+        insert_start_gates.emplace(view_id, std::make_shared<std::once_flag>());
 }
 
 namespace
@@ -1866,6 +1871,7 @@ Chain InsertDependenciesBuilder::createSinkImpl(StorageIDMaybeEmpty view_id) con
         auto sink = std::make_shared<PushingToWindowViewSink>(std::make_shared<const Block>(window_view->getInputHeader()), *window_view, insert_context);
         sink->setRuntimeData(thread_groups.at(view_id));
         sink->setHasDependentMaterializedViews(has_dependent_materialized_views);
+        sink->setInsertStartGate(insert_start_gates.at(view_id));
         result.addSink(std::move(sink));
     }
     else if (dynamic_cast<StorageMaterializedView *>(inner_storage.get()))
@@ -1878,6 +1884,7 @@ Chain InsertDependenciesBuilder::createSinkImpl(StorageIDMaybeEmpty view_id) con
         auto sink = inner_storage->write(select_queries.at(view_id), metadata_snapshots.at(inner_table_id), insert_context, async_insert);
         sink->setRuntimeData(thread_groups.at(view_id));
         sink->setHasDependentMaterializedViews(has_dependent_materialized_views);
+        sink->setInsertStartGate(insert_start_gates.at(view_id));
         result.addSink(std::move(sink));
     }
 
