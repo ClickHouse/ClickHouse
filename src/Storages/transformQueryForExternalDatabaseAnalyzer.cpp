@@ -1,3 +1,5 @@
+#include <memory>
+#include <Analyzer/IQueryTreeNode.h>
 #include <Parsers/ASTSubquery.h>
 #include <Storages/transformQueryForExternalDatabaseAnalyzer.h>
 
@@ -63,25 +65,25 @@ public:
 
 }
 
-ASTPtr getASTForExternalDatabaseFromQueryTree(ContextPtr context, const QueryTreeNodePtr & query_tree, const QueryTreeNodePtr & table_expression)
+ASTPtr getASTForExternalDatabaseFromQueryTree(ContextPtr context, const QueryTreeNodePtr & query_tree, const TableExpressionNodePtr & table_expression)
 {
     auto replacement_table_expression = table_expression->clone();
-    auto new_tree = query_tree->cloneAndReplace(table_expression, replacement_table_expression);
+    auto new_tree = query_tree->cloneAndReplace(table_expression, static_pointer_cast<ITableExpressionNode>(replacement_table_expression));
 
     PrepareForExternalDatabaseVisitor visitor;
     visitor.visit(new_tree);
     auto * query_node = new_tree->as<QueryNode>();
 
-    const auto & join_tree = query_node->getJoinTree();
+    const auto & join_tree = query_node->getJoinTreeNode();
     bool allow_where = true;
     bool allow_limit = context->getSettingsRef()[Setting::external_storage_push_down_limit];
     if (const auto * join_node = join_tree->as<JoinNode>())
     {
         allow_limit = false;
         if (join_node->getKind() == JoinKind::Left)
-            allow_where = join_node->getLeftTableExpression()->isEqual(*replacement_table_expression);
+            allow_where = join_node->getLeftTableExpressionNode()->isEqual(*replacement_table_expression);
         else if (join_node->getKind() == JoinKind::Right)
-            allow_where = join_node->getRightTableExpression()->isEqual(*replacement_table_expression);
+            allow_where = join_node->getRightTableExpressionNode()->isEqual(*replacement_table_expression);
         else
             allow_where = (join_node->getKind() == JoinKind::Inner);
     }
