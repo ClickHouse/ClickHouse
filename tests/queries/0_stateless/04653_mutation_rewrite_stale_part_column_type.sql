@@ -141,3 +141,42 @@ SELECT 'data';
 SELECT count(), countIf(t.y != '') FROM t_stale_part_type_4;
 
 DROP TABLE t_stale_part_type_4;
+
+SELECT '--- a renamed column with a stale type ---';
+
+DROP TABLE IF EXISTS t_stale_part_type_5;
+
+-- The type in the column list of the new part is recorded from three places: the source part column
+-- with the same name, the column the mutation renames into this name, and the column a stale part
+-- carries under its old name. All three must record the type in storage when the whole part is
+-- rewritten. Here `b` is renamed to `d` after the part was detached across the type change, so the
+-- part still carries `d` as `String` while the table says `Nullable(String)`, and the rewrite reads it
+-- through the rename branch.
+CREATE TABLE t_stale_part_type_5 (a String, b String, c String MATERIALIZED concat(a, '!'))
+ENGINE = MergeTree ORDER BY a SETTINGS min_bytes_for_wide_part = 0, min_bytes_for_full_part_storage = 0;
+
+INSERT INTO t_stale_part_type_5 VALUES ('x', 'y');
+
+ALTER TABLE t_stale_part_type_5 DETACH PART 'all_1_1_0';
+ALTER TABLE t_stale_part_type_5 MODIFY COLUMN b Nullable(String);
+ALTER TABLE t_stale_part_type_5 ATTACH PART 'all_1_1_0';
+ALTER TABLE t_stale_part_type_5 RENAME COLUMN b TO d SETTINGS mutations_sync = 1;
+
+SELECT 'part type before the rewrite';
+SELECT column, type FROM system.parts_columns
+WHERE database = currentDatabase() AND table = 't_stale_part_type_5' AND active AND column = 'd';
+
+ALTER TABLE t_stale_part_type_5 ADD PROJECTION p_ad (SELECT a, d ORDER BY a);
+ALTER TABLE t_stale_part_type_5 MATERIALIZE COLUMN c, MATERIALIZE PROJECTION p_ad SETTINGS mutations_sync = 1;
+
+SELECT 'part type after the rewrite';
+SELECT column, type FROM system.parts_columns
+WHERE database = currentDatabase() AND table = 't_stale_part_type_5' AND active AND column = 'd';
+
+SELECT 'data';
+SELECT a, d, c FROM t_stale_part_type_5 ORDER BY a;
+
+SELECT 'read from the projection';
+SELECT a, d FROM t_stale_part_type_5 ORDER BY a SETTINGS optimize_use_projections = 1, force_optimize_projection = 1;
+
+DROP TABLE t_stale_part_type_5;

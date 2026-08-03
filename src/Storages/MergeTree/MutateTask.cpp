@@ -952,7 +952,13 @@ getColumnsForNewDataPart(
                     {
                         /// Take a type from source part column.
                         /// It may differ from column type in storage.
-                        it->type = source_col->second;
+                        ///
+                        /// A full rewrite re-reads this column through the interpreter, which
+                        /// applies the rename together with every type change that came after it,
+                        /// so the new part must record the type in storage - see the same-named
+                        /// case below.
+                        if (!rewrites_all_columns)
+                            it->type = source_col->second;
 
                         if (fill_columns_substreams)
                             addRenamedColumnToColumnsSubstreams(new_columns_substreams, source_columns_substreams, it->name, source_col->first, *source_part->getColumnPosition(source_col->first));
@@ -1001,7 +1007,10 @@ getColumnsForNewDataPart(
                                 "Got incorrect mutation commands, column {} was renamed from {}, but it doesn't exist in source columns {}",
                                 it->name, renamed_from, source_columns.toString());
 
-                        it->type = maybe_name_and_type->type;
+                        /// A full rewrite produces this column at the type in storage, the same
+                        /// way it does for the two cases around this one.
+                        if (!rewrites_all_columns)
+                            it->type = maybe_name_and_type->type;
 
                         if (fill_columns_substreams)
                             addRenamedColumnToColumnsSubstreams(new_columns_substreams, source_columns_substreams, it->name, renamed_from, *source_part->getColumnPosition(renamed_from));

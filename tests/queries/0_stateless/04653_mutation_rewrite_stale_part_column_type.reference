@@ -26,3 +26,12 @@ serialization of the merged part
 t	Default
 data
 105	105
+--- a renamed column with a stale type ---
+part type before the rewrite
+d	String
+part type after the rewrite
+d	Nullable(String)
+data
+x	y	x!
+read from the projection
+x	y
