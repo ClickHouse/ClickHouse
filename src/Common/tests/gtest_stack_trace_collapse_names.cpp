@@ -30,6 +30,12 @@ TEST(StackTraceCollapseNames, HidesStdFunctionPlumbing)
     EXPECT_EQ(StackTrace::collapseDemangledNames(function_h, "std::__1::function<void ()>::operator()() const"), "?");
     EXPECT_EQ(StackTrace::collapseDemangledNames(function_h, "std::__1::function<void (std::__1::vector<int>)>::function(std::__1::function<void (std::__1::vector<int>)> const&)"), "?");
     EXPECT_EQ(StackTrace::collapseDemangledNames(function_h, "std::__1::function<void ()>::~function()"), "?");
+    /// The constructor that takes a callable is a function template, so its own template arguments follow
+    /// the member name - this is the "construct from a lambda" frame, the most common one of them all.
+    EXPECT_EQ(
+        StackTrace::collapseDemangledNames(
+            function_h, "std::__1::function<void ()>::function<DB::AsyncLoader::AsyncLoader()::$_0, void>(DB::AsyncLoader::AsyncLoader()::$_0&&)"),
+        "?");
 }
 
 /// Only the type erasure of `std::function` is noise. Its other members do work of their own, so a frame

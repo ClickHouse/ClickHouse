@@ -622,8 +622,10 @@ constexpr std::string_view std_function_plumbing[] = {
 /// The members of `std::function` itself that carry the noise: the type-erasing call operator, and the
 /// constructors and the destructor, which copy, move and destroy the captured callable. Every other
 /// member (`swap`, `target`, `target_type`, `operator bool`, ...) does work of its own and is a normal
-/// frame, so it keeps its name.
-constexpr std::string_view std_function_noisy_members[] = {"operator()", "function(", "~function("};
+/// frame, so it keeps its name. The constructor is spelled both as `function(` (the copy and move
+/// constructors) and as `function<` (the constructor taking a callable, which is a function template,
+/// so its own template arguments follow the name: `function<MyCallable, void>(MyCallable&&)`).
+constexpr std::string_view std_function_noisy_members[] = {"operator()", "function(", "function<", "~function("};
 
 static bool isStdFunctionPlumbing(const String & symbol_name)
 {
