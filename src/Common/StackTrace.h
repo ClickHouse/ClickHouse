@@ -2,12 +2,15 @@
 
 #include <base/defines.h>
 #include <base/types.h>
+#include <base/MemorySanitizer.h>
 #include <Common/FramePointers.h>
 
 #include <string>
 #include <array>
+#include <exception>
 #include <optional>
 #include <functional>
+#include <span>
 /** A standalone build of the parser (see `utils/wasm-parser`) has no signals, no `setjmp` and no
   * way to walk its own stack, and it does not link `StackTrace.cpp`. Everything below that needs
   * those is left out rather than making the whole header unavailable, since `Common/Exception.h`
@@ -26,6 +29,34 @@
 #endif
 #include <ucontext.h>
 #endif
+
+/** The stack trace of the throw that created an exception, recorded inside the `std::exception`
+  * itself by ClickHouse's patched libc++. See `STD_EXCEPTION_HAS_STACK_TRACE` in `base/defines.h`:
+  * these two functions are the only place that copes with a C++ standard library which records
+  * nothing, where they report an empty trace and do nothing respectively.
+  *
+  * The frames are un-poisoned for MSan, which does not see libc++ writing them.
+  */
+inline std::span<void *> getStackTraceOfThrow([[maybe_unused]] const std::exception & e)
+{
+#if STD_EXCEPTION_HAS_STACK_TRACE
+    void ** frames = e.get_stack_trace_frames();
+    const size_t size = e.get_stack_trace_size();
+    __msan_unpoison(frames, size * sizeof(frames[0]));
+    return {frames, size};
+#else
+    return {};
+#endif
+}
+
+/// Make the throw-site stack trace of `from` the throw-site stack trace of `to`.
+inline void copyStackTraceOfThrow([[maybe_unused]] const std::exception & from, [[maybe_unused]] std::exception & to)
+{
+#if STD_EXCEPTION_HAS_STACK_TRACE
+    const auto trace = getStackTraceOfThrow(from);
+    to.set_stack_trace(trace.data(), static_cast<int>(trace.size()));
+#endif
+}
 
 struct NoCapture
 {
