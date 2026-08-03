@@ -77,8 +77,6 @@ void ExpressionStep::transformPipeline(QueryPipelineBuilder & pipeline, const Bu
 {
     auto expression = std::make_shared<ExpressionActions>(std::move(actions_dag), settings.getActionsSettings());
 
-    /// `getNumThreads` is the widest the pipeline has been, so a read that opened fewer streams than
-    /// `max_threads` does not get more branches here than it had below.
     const size_t num_parallel_streams = std::min(settings.max_threads, pipeline.getNumThreads());
     const bool parallelize = parallelize_single_stream && pipeline.getNumStreams() == 1 && num_parallel_streams > 1;
     if (parallelize)

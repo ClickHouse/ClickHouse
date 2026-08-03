@@ -1,5 +1,4 @@
--- The expression lifted above `SortingStep` by `query_plan_execute_functions_after_sorting`
--- is evaluated by several threads, which must not change the order of the rows.
+-- The expression lifted above `SortingStep` is evaluated by several threads, which must not change the order of the rows.
 
 SET query_plan_execute_functions_after_sorting = 1;
 

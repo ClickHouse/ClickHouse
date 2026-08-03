@@ -55,9 +55,8 @@ public:
     void setPreventInputRemoval() { prevent_input_removal = true; }
     bool isInputRemovalPrevented() const { return prevent_input_removal; }
 
-    /// Evaluate the expression by several threads if the pipeline has a single stream at this point.
-    /// The order of rows is preserved. Set for the expressions lifted above a `SortingStep`, which always
-    /// merges the pipeline into one stream, so that they do not become the single-threaded part of the query.
+    /// Evaluate the expression by several threads, preserving the order of rows, if the pipeline has a
+    /// single stream here. Set for expressions lifted above a `SortingStep`, which merges it into one.
     void setParallelizeSingleStream() { parallelize_single_stream = true; }
     bool isSingleStreamParallelized() const { return parallelize_single_stream; }
 

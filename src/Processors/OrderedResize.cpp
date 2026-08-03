@@ -57,8 +57,8 @@ IProcessor::Status OrderedGatherProcessor::prepare()
         return Status::Finished;
     }
 
-    /// Every input is kept needed even while we cannot push, so that all the branches can work at the same time.
-    /// Each of them can run ahead by at most one chunk waiting in its port.
+    /// Every input is kept needed even while we cannot push, otherwise only the branch we are
+    /// waiting for would be allowed to work.
     for (auto & in : inputs)
         if (!in.isFinished())
             in.setNeeded();
@@ -72,8 +72,7 @@ IProcessor::Status OrderedGatherProcessor::prepare()
     {
         if (input.isFinished())
         {
-            /// The scatter dispatches chunks in the same round-robin order, so once an input is exhausted,
-            /// the remaining ones have nothing left either.
+            /// Chunks were dispatched in the same order, so the remaining inputs have nothing left either.
             for (auto & in : inputs)
                 in.close();
 
