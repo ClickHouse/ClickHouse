@@ -15,7 +15,9 @@
 
 #include <Common/Exception.h>
 #include <Common/Macros.h>
+#include <Common/ProxyConfigurationResolverProvider.h>
 #include <Common/RemoteHostFilter.h>
+#include <Common/proxyConfigurationToPocoProxyConfig.h>
 #include <Core/ServerSettings.h>
 #include <IO/ConnectionTimeouts.h>
 #include <IO/GCPOAuth.h>
@@ -133,6 +135,26 @@ static HTTPHeaderEntries parseGCSHeaders(const Poco::Util::AbstractConfiguration
     return headers;
 }
 
+/// The protocol a proxy has to be resolved for: the scheme the client will actually speak, which is
+/// the scheme of the endpoint override when there is one and `https` (the default GCS endpoint)
+/// otherwise. It selects between the `<proxy><http>` and `<proxy><https>` sections, exactly as the
+/// scheme of the S3 endpoint does for an S3 disk.
+static ProxyConfiguration::Protocol gcsProxyProtocol(const String & endpoint_override)
+{
+    if (endpoint_override.empty())
+        return ProxyConfiguration::Protocol::HTTPS;
+    return ProxyConfiguration::protocolFromString(Poco::toLower(Poco::URI(endpoint_override).getScheme()));
+}
+
+std::function<Poco::Net::HTTPClientSession::ProxyConfig()> makeGCSProxyConfigProvider(
+    const std::shared_ptr<ProxyConfigurationResolver> & resolver)
+{
+    if (!resolver)
+        return {};
+
+    return [resolver] { return proxyConfigurationToPocoProxyConfig(resolver->resolve()); };
+}
+
 GCSObjectStorageSettings GCSObjectStorageSettings::loadFromConfig(
     const Poco::Util::AbstractConfiguration & config,
     const String & config_prefix,
@@ -157,6 +179,12 @@ GCSObjectStorageSettings GCSObjectStorageSettings::loadFromConfig(
     result.headers = parseGCSHeaders(config, config_prefix);
     result.connect_timeout_ms = config.getUInt64(config_prefix + ".connect_timeout_ms", DEFAULT_GCS_CONNECT_TIMEOUT_MS);
     result.request_timeout_ms = config.getUInt64(config_prefix + ".request_timeout_ms", DEFAULT_GCS_REQUEST_TIMEOUT_MS);
+
+    /// The same lookup order an S3 disk uses (`S3Settings::loadFromConfigForObjectStorage`): the
+    /// disk-local `<proxy>` section first, then the server-wide `<proxy>` configuration, then the
+    /// `http_proxy` / `https_proxy` / `no_proxy` environment variables.
+    result.proxy_resolver = ProxyConfigurationResolverProvider::getFromOldSettingsFormat(
+        gcsProxyProtocol(result.endpoint_override), config_prefix, config);
 
     result.read_only = config.getBool(config_prefix + ".readonly", false);
     result.list_object_keys_size = config.getUInt64(config_prefix + ".list_object_keys_size", 1000);
@@ -190,7 +218,12 @@ bool GCSObjectStorageSettings::describesSameClientAs(const GCSObjectStorageSetti
         && google_adc_refresh_token == other.google_adc_refresh_token
         && headers == other.headers
         && connect_timeout_ms == other.connect_timeout_ms
-        && request_timeout_ms == other.request_timeout_ms;
+        && request_timeout_ms == other.request_timeout_ms
+        /// Resolvers are compared by identity: two of them can hand out different proxies (and a
+        /// remote one cannot be asked what it would answer without querying it), so only the very
+        /// same resolver object is known to describe the same transport. The cost of the
+        /// conservative answer is a copy that falls back to read + write.
+        && proxy_resolver == other.proxy_resolver;
 }
 
 GCSCredentialSource chooseGCSCredentialSource(const GCSObjectStorageSettings & settings)
@@ -296,6 +329,15 @@ std::unique_ptr<gcs::Client> getGCSClient(const GCSObjectStorageSettings & setti
     options.set<gc::rest_internal::TransferStallTimeoutOption>(request_timeout);
     options.set<gc::rest_internal::DownloadStallTimeoutOption>(request_timeout);
     options.set<::ClickHouse::PocoRestConnectTimeoutOption>(std::chrono::milliseconds(settings.connect_timeout_ms));
+
+    /// A disk carries its own resolver (the disk section can override the server-wide proxy); the
+    /// SQL surface does not, and resolves the server-wide configuration here, which is what an S3
+    /// client built outside of a disk does too (`S3::ClientFactory::create`).
+    auto proxy_resolver = settings.proxy_resolver;
+    if (!proxy_resolver)
+        proxy_resolver = ProxyConfigurationResolverProvider::get(
+            gcsProxyProtocol(settings.endpoint_override), context->getConfigRef());
+    options.set<::ClickHouse::PocoRestProxyConfigProviderOption>(makeGCSProxyConfigProvider(proxy_resolver));
 
     return std::make_unique<gcs::Client>(std::move(options));
 }

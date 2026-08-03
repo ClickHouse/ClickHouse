@@ -10,6 +10,9 @@
 #pragma once
 
 #include <chrono>
+#include <functional>
+
+#include <Poco/Net/HTTPClientSession.h>
 
 namespace ClickHouse
 {
@@ -21,6 +24,17 @@ namespace ClickHouse
 struct PocoRestConnectTimeoutOption
 {
     using Type = std::chrono::milliseconds;
+};
+
+/// Proxy of a single REST request, in the form the Poco session takes it. Upstream's `ProxyOption`
+/// is a fixed value baked into the client, while ClickHouse resolves the proxy per request (the
+/// proxy list rotates, and the remote resolver can hand out a different proxy over time), so the
+/// transport asks for it once per session instead. The provider returns a default-constructed
+/// `ProxyConfig` (empty `host`) to mean "no proxy for this request"; an unset option, or an empty
+/// `std::function`, means the transport falls back to upstream's `ProxyOption`.
+struct PocoRestProxyConfigProviderOption
+{
+    using Type = std::function<Poco::Net::HTTPClientSession::ProxyConfig()>;
 };
 
 }

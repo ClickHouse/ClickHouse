@@ -160,7 +160,23 @@ std::unique_ptr<Poco::Net::HTTPClientSession> MakeSession(
     session = std::make_unique<Poco::Net::HTTPClientSession>(uri.getHost(),
                                                              uri.getPort());
   }
-  if (options.has<ProxyOption>()) {
+  // A per-request proxy resolved by ClickHouse wins over the fixed upstream
+  // ProxyOption: it already carries everything Poco needs (including tunneling
+  // and the no-proxy host pattern), and it can change between two requests of
+  // the same client.
+  bool proxy_from_provider = false;
+  if (options.has<::ClickHouse::PocoRestProxyConfigProviderOption>()) {
+    auto const& provider =
+        options.get<::ClickHouse::PocoRestProxyConfigProviderOption>();
+    if (provider) {
+      proxy_from_provider = true;
+      auto const proxy_config = provider();
+      if (!proxy_config.host.empty()) {
+        session->setProxyConfig(proxy_config);
+      }
+    }
+  }
+  if (!proxy_from_provider && options.has<ProxyOption>()) {
     auto const& proxy = options.get<ProxyOption>();
     if (!proxy.hostname().empty()) {
       // ProxyConfig defaults the scheme to "https"; default the port to match

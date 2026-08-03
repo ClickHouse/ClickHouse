@@ -4,11 +4,15 @@
 
 #if USE_GOOGLE_CLOUD
 
+#include <functional>
 #include <memory>
 #include <base/types.h>
 #include <Common/ObjectStorageKeyGenerator.h>
+#include <Common/ProxyConfigurationResolver.h>
 #include <IO/HTTPHeaderEntries.h>
 #include <Interpreters/Context_fwd.h>
+
+#include <Poco/Net/HTTPClientSession.h>
 
 #include <google/cloud/storage/client.h>
 
@@ -67,6 +71,11 @@ struct GCSObjectStorageSettings
     UInt64 connect_timeout_ms = DEFAULT_GCS_CONNECT_TIMEOUT_MS;
     /// Send / receive timeout of a request.
     UInt64 request_timeout_ms = DEFAULT_GCS_REQUEST_TIMEOUT_MS;
+    /// Proxy of the requests, resolved per request. Set from the disk section (the old
+    /// `<gcs><proxy>` format, then the server-wide `<proxy>` / the environment) exactly like the S3
+    /// disk does. Left unset on the SQL surface: `getGCSClient` then resolves the server-wide
+    /// configuration itself, mirroring what `S3::ClientFactory` does for a non-disk client.
+    std::shared_ptr<ProxyConfigurationResolver> proxy_resolver;
 
     /// Disk-only knobs.
     bool read_only = false;
@@ -123,6 +132,13 @@ GCSCredentialSource chooseGCSCredentialSource(const GCSObjectStorageSettings & s
 /// actually authenticates with, exchange the triple for an access token via IO/GCPOAuth. No-op
 /// otherwise. Shared by the disk and table-function paths.
 void resolveGCSCredentialsToken(GCSObjectStorageSettings & settings, const ContextPtr & context);
+
+/// Wrap a proxy resolver into the callback the Poco-based REST transport of google-cloud-cpp asks
+/// for (`ClickHouse::PocoRestProxyConfigProviderOption`): every request resolves the proxy again, so
+/// a rotating proxy list or a remote resolver behaves the same way it does for S3 and HTTP. Returns
+/// an empty function for a null resolver, which the transport reads as "no proxy".
+std::function<Poco::Net::HTTPClientSession::ProxyConfig()> makeGCSProxyConfigProvider(
+    const std::shared_ptr<ProxyConfigurationResolver> & resolver);
 
 /// Build a native GCS storage client from the parsed settings. The resolved network destination
 /// (the endpoint override, or the default GCS endpoint) is validated against the context's
