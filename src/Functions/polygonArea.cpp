@@ -19,7 +19,7 @@ namespace
 {
 
 template <typename Point>
-class FunctionPolygonArea final : public IFunction
+class FunctionPolygonArea : public IFunction
 {
 public:
     static inline const char * name;

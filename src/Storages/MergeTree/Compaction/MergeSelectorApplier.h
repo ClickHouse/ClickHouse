@@ -17,7 +17,7 @@ struct MergeSelectorChoice
 {
     PartsRange range;
     PartsRange range_patches;
-    MergeType merge_type{};
+    MergeType merge_type;
 
     /// If this merges down to a single part in a partition
     bool final = false;

@@ -152,7 +152,7 @@ JoinExpressionActions::JoinExpressionActions(const Block & left_header, const Bl
 
 using NodeRawPtr = JoinExpressionActions::NodeRawPtr;
 
-static const BitSet & getExpressionSourcesImpl(std::unordered_map<NodeRawPtr, BitSet> & expression_sources, const JoinActionRef & action)
+BitSet getExpressionSourcesImpl(std::unordered_map<NodeRawPtr, BitSet> & expression_sources, const JoinActionRef & action)
 {
     const auto * node = action.getNode();
     if (auto it = expression_sources.find(node); it != expression_sources.end())
@@ -321,7 +321,7 @@ JoinExpressionActions JoinExpressionActions::clone(ActionsDAG::NodeMapping & nod
     return JoinExpressionActions(std::move(result_data));
 }
 
-const BitSet & JoinActionRef::getSourceRelations() const
+BitSet JoinActionRef::getSourceRelations() const
 {
     return getExpressionSourcesImpl(getData()->expression_sources, *this);
 }
@@ -347,7 +347,7 @@ void JoinActionRef::setSourceRelations(const BitSet & source_relations) const
     }
 }
 
-static std::string operatorToFunctionName(JoinConditionOperator op)
+std::string operatorToFunctionName(JoinConditionOperator op)
 {
     switch (op)
     {
@@ -364,7 +364,7 @@ static std::string operatorToFunctionName(JoinConditionOperator op)
     throw Exception(ErrorCodes::LOGICAL_ERROR, "Illegal value for JoinConditionOperator: {}", static_cast<Int32>(op));
 }
 
-static JoinConditionOperator functionNameToOperator(std::string_view name)
+JoinConditionOperator functionNameToOperator(std::string_view name)
 {
     using UnderlyingType = std::underlying_type_t<JoinConditionOperator>;
     for (UnderlyingType i = 0; i < static_cast<UnderlyingType>(JoinConditionOperator::Unknown); ++i)

@@ -35,7 +35,7 @@ namespace
 /** finalizeAggregation(agg_state) - get the result from the aggregation state.
 * Takes state of aggregate function. Returns result of aggregation (finalized state).
 */
-class FunctionEvalMLMethod final : public IFunction
+class FunctionEvalMLMethod : public IFunction
 {
 public:
     static constexpr auto name = "evalMLMethod";

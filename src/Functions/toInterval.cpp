@@ -26,7 +26,7 @@ namespace
 constexpr size_t num_interval_kinds = static_cast<size_t>(IntervalKind::Kind::Year) + 1;
 using IntervalFunctionResolvers = std::array<FunctionOverloadResolverPtr, num_interval_kinds>;
 
-class FunctionToInterval final : public IFunction
+class FunctionToInterval : public IFunction
 {
 public:
     static constexpr auto name = "toInterval";
@@ -66,7 +66,7 @@ private:
     IntervalKind kind;
 };
 
-class FunctionToIntervalOverloadResolver final : public IFunctionOverloadResolver
+class FunctionToIntervalOverloadResolver : public IFunctionOverloadResolver
 {
 public:
     static constexpr auto name = "toInterval";
