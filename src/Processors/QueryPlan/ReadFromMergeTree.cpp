@@ -14,6 +14,7 @@
 #include <Core/ProtocolDefines.h>
 #include <Core/ServerSettings.h>
 #include <Core/Settings.h>
+#include <DataTypes/IDataType.h>
 #include <Formats/FormatSettings.h>
 #include <Functions/IFunction.h>
 #include <IO/Operators.h>
@@ -1245,6 +1246,28 @@ Pipe ReadFromMergeTree::readByLayers(
     return Pipe::unitePipes(std::move(pipes));
 }
 
+/// Whether the whole-part size of a column can be scaled by the fraction of selected rows.
+///
+/// A variable-width type cannot: large values may be concentrated entirely in the selected range.
+/// Neither can `LowCardinality`, whose dictionary is written per part rather than per row, so
+/// reading a handful of rows still pulls in the dictionary that serves them.
+/// `DataTypeLowCardinality::haveMaximumSizeOfValue` delegates to the dictionary type, so a
+/// fixed-size dictionary would otherwise pass the width check.
+static bool canScaleSizeBySelectedRows(const IDataType & type)
+{
+    if (!type.haveMaximumSizeOfValue())
+        return false;
+
+    bool has_low_cardinality = type.lowCardinality();
+    /// `LowCardinality` may sit below `Array`, `Nullable`, `Tuple` and friends.
+    type.forEachChild([&](const IDataType & child)
+    {
+        has_low_cardinality |= child.lowCardinality();
+    });
+
+    return !has_low_cardinality;
+}
+
 /// Estimate the uncompressed size of `column_names` over the mark ranges actually selected in
 /// `parts_with_ranges`.
 ///
@@ -1298,10 +1321,9 @@ static std::optional<size_t> estimateReadBytes(
                 return std::nullopt;
             }
 
-            /// Per-column sizes are stored for the whole part. Scaling a variable-width column by
-            /// selected rows can underestimate arbitrarily when large values are concentrated in the
-            /// selected range.
-            if (selected_rows < data_part.rows_count && !col->type->haveMaximumSizeOfValue())
+            /// Per-column sizes are stored for the whole part, so they can only be scaled down for a
+            /// partial read when the size really is proportional to the number of rows.
+            if (selected_rows < data_part.rows_count && !canScaleSizeBySelectedRows(*col->type))
                 return std::nullopt;
 
             requested_names_by_column[col->getNameInStorage()].emplace(col_name);
