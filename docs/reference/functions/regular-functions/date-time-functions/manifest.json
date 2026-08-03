@@ -1,0 +1,776 @@
+{
+  "version": 2,
+  "functions": 128,
+  "anchorRoutes": {
+    "UTCTimestamp": "/reference/functions/regular-functions/date-time-functions/UTCTimestamp",
+    "YYYYMMDDToDate": "/reference/functions/regular-functions/date-time-functions/YYYYMMDDToDate",
+    "YYYYMMDDToDate32": "/reference/functions/regular-functions/date-time-functions/YYYYMMDDToDate32",
+    "YYYYMMDDhhmmssToDateTime": "/reference/functions/regular-functions/date-time-functions/YYYYMMDDhhmmssToDateTime",
+    "YYYYMMDDhhmmssToDateTime64": "/reference/functions/regular-functions/date-time-functions/YYYYMMDDhhmmssToDateTime64",
+    "addDate": "/reference/functions/regular-functions/date-time-functions/addDate",
+    "addDays": "/reference/functions/regular-functions/date-time-functions/addDays",
+    "addHours": "/reference/functions/regular-functions/date-time-functions/addHours",
+    "addInterval": "/reference/functions/regular-functions/date-time-functions/addInterval",
+    "addMicroseconds": "/reference/functions/regular-functions/date-time-functions/addMicroseconds",
+    "addMilliseconds": "/reference/functions/regular-functions/date-time-functions/addMilliseconds",
+    "addMinutes": "/reference/functions/regular-functions/date-time-functions/addMinutes",
+    "addMonths": "/reference/functions/regular-functions/date-time-functions/addMonths",
+    "addNanoseconds": "/reference/functions/regular-functions/date-time-functions/addNanoseconds",
+    "addQuarters": "/reference/functions/regular-functions/date-time-functions/addQuarters",
+    "addSeconds": "/reference/functions/regular-functions/date-time-functions/addSeconds",
+    "addTupleOfIntervals": "/reference/functions/regular-functions/date-time-functions/addTupleOfIntervals",
+    "addWeeks": "/reference/functions/regular-functions/date-time-functions/addWeeks",
+    "addYears": "/reference/functions/regular-functions/date-time-functions/addYears",
+    "age": "/reference/functions/regular-functions/date-time-functions/age",
+    "changeDay": "/reference/functions/regular-functions/date-time-functions/changeDay",
+    "changeHour": "/reference/functions/regular-functions/date-time-functions/changeHour",
+    "changeMinute": "/reference/functions/regular-functions/date-time-functions/changeMinute",
+    "changeMonth": "/reference/functions/regular-functions/date-time-functions/changeMonth",
+    "changeSecond": "/reference/functions/regular-functions/date-time-functions/changeSecond",
+    "changeYear": "/reference/functions/regular-functions/date-time-functions/changeYear",
+    "dateDiff": "/reference/functions/regular-functions/date-time-functions/dateDiff",
+    "dateName": "/reference/functions/regular-functions/date-time-functions/dateName",
+    "dateTrunc": "/reference/functions/regular-functions/date-time-functions/dateTrunc",
+    "formatDateTime": "/reference/functions/regular-functions/date-time-functions/formatDateTime",
+    "formatDateTimeInJodaSyntax": "/reference/functions/regular-functions/date-time-functions/formatDateTimeInJodaSyntax",
+    "fromDaysSinceYearZero": "/reference/functions/regular-functions/date-time-functions/fromDaysSinceYearZero",
+    "fromDaysSinceYearZero32": "/reference/functions/regular-functions/date-time-functions/fromDaysSinceYearZero32",
+    "fromModifiedJulianDay": "/reference/functions/regular-functions/date-time-functions/fromModifiedJulianDay",
+    "fromModifiedJulianDayOrNull": "/reference/functions/regular-functions/date-time-functions/fromModifiedJulianDayOrNull",
+    "fromUTCTimestamp": "/reference/functions/regular-functions/date-time-functions/fromUTCTimestamp",
+    "fromUnixTimestamp": "/reference/functions/regular-functions/date-time-functions/fromUnixTimestamp",
+    "fromUnixTimestampInJodaSyntax": "/reference/functions/regular-functions/date-time-functions/fromUnixTimestampInJodaSyntax",
+    "localtime": "/reference/functions/regular-functions/date-time-functions/localtime",
+    "makeDate": "/reference/functions/regular-functions/date-time-functions/makeDate",
+    "makeDate32": "/reference/functions/regular-functions/date-time-functions/makeDate32",
+    "makeDateTime": "/reference/functions/regular-functions/date-time-functions/makeDateTime",
+    "makeDateTime64": "/reference/functions/regular-functions/date-time-functions/makeDateTime64",
+    "monthName": "/reference/functions/regular-functions/date-time-functions/monthName",
+    "now": "/reference/functions/regular-functions/date-time-functions/now",
+    "now64": "/reference/functions/regular-functions/date-time-functions/now64",
+    "nowInBlock": "/reference/functions/regular-functions/date-time-functions/nowInBlock",
+    "nowInBlock64": "/reference/functions/regular-functions/date-time-functions/nowInBlock64",
+    "serverTimezone": "/reference/functions/regular-functions/date-time-functions/serverTimezone",
+    "subDate": "/reference/functions/regular-functions/date-time-functions/subDate",
+    "subtractDays": "/reference/functions/regular-functions/date-time-functions/subtractDays",
+    "subtractHours": "/reference/functions/regular-functions/date-time-functions/subtractHours",
+    "subtractInterval": "/reference/functions/regular-functions/date-time-functions/subtractInterval",
+    "subtractMicroseconds": "/reference/functions/regular-functions/date-time-functions/subtractMicroseconds",
+    "subtractMilliseconds": "/reference/functions/regular-functions/date-time-functions/subtractMilliseconds",
+    "subtractMinutes": "/reference/functions/regular-functions/date-time-functions/subtractMinutes",
+    "subtractMonths": "/reference/functions/regular-functions/date-time-functions/subtractMonths",
+    "subtractNanoseconds": "/reference/functions/regular-functions/date-time-functions/subtractNanoseconds",
+    "subtractQuarters": "/reference/functions/regular-functions/date-time-functions/subtractQuarters",
+    "subtractSeconds": "/reference/functions/regular-functions/date-time-functions/subtractSeconds",
+    "subtractTupleOfIntervals": "/reference/functions/regular-functions/date-time-functions/subtractTupleOfIntervals",
+    "subtractWeeks": "/reference/functions/regular-functions/date-time-functions/subtractWeeks",
+    "subtractYears": "/reference/functions/regular-functions/date-time-functions/subtractYears",
+    "timeDiff": "/reference/functions/regular-functions/date-time-functions/timeDiff",
+    "timeSlot": "/reference/functions/regular-functions/date-time-functions/timeSlot",
+    "timeSlots": "/reference/functions/regular-functions/date-time-functions/timeSlots",
+    "timestamp": "/reference/functions/regular-functions/date-time-functions/timestamp",
+    "timezone": "/reference/functions/regular-functions/date-time-functions/timezone",
+    "timezoneOf": "/reference/functions/regular-functions/date-time-functions/timezoneOf",
+    "timezoneOffset": "/reference/functions/regular-functions/date-time-functions/timezoneOffset",
+    "toDayOfMonth": "/reference/functions/regular-functions/date-time-functions/toDayOfMonth",
+    "toDayOfWeek": "/reference/functions/regular-functions/date-time-functions/toDayOfWeek",
+    "toDayOfYear": "/reference/functions/regular-functions/date-time-functions/toDayOfYear",
+    "toDaysInMonth": "/reference/functions/regular-functions/date-time-functions/toDaysInMonth",
+    "toDaysSinceYearZero": "/reference/functions/regular-functions/date-time-functions/toDaysSinceYearZero",
+    "toHour": "/reference/functions/regular-functions/date-time-functions/toHour",
+    "toISOWeek": "/reference/functions/regular-functions/date-time-functions/toISOWeek",
+    "toISOYear": "/reference/functions/regular-functions/date-time-functions/toISOYear",
+    "toLastDayOfMonth": "/reference/functions/regular-functions/date-time-functions/toLastDayOfMonth",
+    "toLastDayOfWeek": "/reference/functions/regular-functions/date-time-functions/toLastDayOfWeek",
+    "toMicrosecond": "/reference/functions/regular-functions/date-time-functions/toMicrosecond",
+    "toMillisecond": "/reference/functions/regular-functions/date-time-functions/toMillisecond",
+    "toMinute": "/reference/functions/regular-functions/date-time-functions/toMinute",
+    "toModifiedJulianDay": "/reference/functions/regular-functions/date-time-functions/toModifiedJulianDay",
+    "toModifiedJulianDayOrNull": "/reference/functions/regular-functions/date-time-functions/toModifiedJulianDayOrNull",
+    "toMonday": "/reference/functions/regular-functions/date-time-functions/toMonday",
+    "toMonth": "/reference/functions/regular-functions/date-time-functions/toMonth",
+    "toMonthNumSinceEpoch": "/reference/functions/regular-functions/date-time-functions/toMonthNumSinceEpoch",
+    "toNanosecond": "/reference/functions/regular-functions/date-time-functions/toNanosecond",
+    "toQuarter": "/reference/functions/regular-functions/date-time-functions/toQuarter",
+    "toRelativeDayNum": "/reference/functions/regular-functions/date-time-functions/toRelativeDayNum",
+    "toRelativeHourNum": "/reference/functions/regular-functions/date-time-functions/toRelativeHourNum",
+    "toRelativeMinuteNum": "/reference/functions/regular-functions/date-time-functions/toRelativeMinuteNum",
+    "toRelativeMonthNum": "/reference/functions/regular-functions/date-time-functions/toRelativeMonthNum",
+    "toRelativeQuarterNum": "/reference/functions/regular-functions/date-time-functions/toRelativeQuarterNum",
+    "toRelativeSecondNum": "/reference/functions/regular-functions/date-time-functions/toRelativeSecondNum",
+    "toRelativeWeekNum": "/reference/functions/regular-functions/date-time-functions/toRelativeWeekNum",
+    "toRelativeYearNum": "/reference/functions/regular-functions/date-time-functions/toRelativeYearNum",
+    "toSecond": "/reference/functions/regular-functions/date-time-functions/toSecond",
+    "toStartOfDay": "/reference/functions/regular-functions/date-time-functions/toStartOfDay",
+    "toStartOfFifteenMinutes": "/reference/functions/regular-functions/date-time-functions/toStartOfFifteenMinutes",
+    "toStartOfFiveMinutes": "/reference/functions/regular-functions/date-time-functions/toStartOfFiveMinutes",
+    "toStartOfHour": "/reference/functions/regular-functions/date-time-functions/toStartOfHour",
+    "toStartOfISOYear": "/reference/functions/regular-functions/date-time-functions/toStartOfISOYear",
+    "toStartOfInterval": "/reference/functions/regular-functions/date-time-functions/toStartOfInterval",
+    "toStartOfMicrosecond": "/reference/functions/regular-functions/date-time-functions/toStartOfMicrosecond",
+    "toStartOfMillisecond": "/reference/functions/regular-functions/date-time-functions/toStartOfMillisecond",
+    "toStartOfMinute": "/reference/functions/regular-functions/date-time-functions/toStartOfMinute",
+    "toStartOfMonth": "/reference/functions/regular-functions/date-time-functions/toStartOfMonth",
+    "toStartOfNanosecond": "/reference/functions/regular-functions/date-time-functions/toStartOfNanosecond",
+    "toStartOfQuarter": "/reference/functions/regular-functions/date-time-functions/toStartOfQuarter",
+    "toStartOfSecond": "/reference/functions/regular-functions/date-time-functions/toStartOfSecond",
+    "toStartOfTenMinutes": "/reference/functions/regular-functions/date-time-functions/toStartOfTenMinutes",
+    "toStartOfWeek": "/reference/functions/regular-functions/date-time-functions/toStartOfWeek",
+    "toStartOfYear": "/reference/functions/regular-functions/date-time-functions/toStartOfYear",
+    "toTimeWithFixedDate": "/reference/functions/regular-functions/date-time-functions/toTimeWithFixedDate",
+    "toTimezone": "/reference/functions/regular-functions/date-time-functions/toTimezone",
+    "toUTCTimestamp": "/reference/functions/regular-functions/date-time-functions/toUTCTimestamp",
+    "toUnixTimestamp": "/reference/functions/regular-functions/date-time-functions/toUnixTimestamp",
+    "toWeek": "/reference/functions/regular-functions/date-time-functions/toWeek",
+    "toYYYYMM": "/reference/functions/regular-functions/date-time-functions/toYYYYMM",
+    "toYYYYMMDD": "/reference/functions/regular-functions/date-time-functions/toYYYYMMDD",
+    "toYYYYMMDDhhmmss": "/reference/functions/regular-functions/date-time-functions/toYYYYMMDDhhmmss",
+    "toYear": "/reference/functions/regular-functions/date-time-functions/toYear",
+    "toYearNumSinceEpoch": "/reference/functions/regular-functions/date-time-functions/toYearNumSinceEpoch",
+    "toYearWeek": "/reference/functions/regular-functions/date-time-functions/toYearWeek",
+    "today": "/reference/functions/regular-functions/date-time-functions/today",
+    "yesterday": "/reference/functions/regular-functions/date-time-functions/yesterday"
+  },
+  "pages": [
+    {
+      "path": "/reference/functions/regular-functions/date-time-functions/UTCTimestamp",
+      "name": "UTCTimestamp",
+      "characters": 897
+    },
+    {
+      "path": "/reference/functions/regular-functions/date-time-functions/YYYYMMDDToDate",
+      "name": "YYYYMMDDToDate",
+      "characters": 899
+    },
+    {
+      "path": "/reference/functions/regular-functions/date-time-functions/YYYYMMDDToDate32",
+      "name": "YYYYMMDDToDate32",
+      "characters": 937
+    },
+    {
+      "path": "/reference/functions/regular-functions/date-time-functions/YYYYMMDDhhmmssToDateTime",
+      "name": "YYYYMMDDhhmmssToDateTime",
+      "characters": 1182
+    },
+    {
+      "path": "/reference/functions/regular-functions/date-time-functions/YYYYMMDDhhmmssToDateTime64",
+      "name": "YYYYMMDDhhmmssToDateTime64",
+      "characters": 1275
+    },
+    {
+      "path": "/reference/functions/regular-functions/date-time-functions/addDate",
+      "name": "addDate",
+      "characters": 1208
+    },
+    {
+      "path": "/reference/functions/regular-functions/date-time-functions/addDays",
+      "name": "addDays",
+      "characters": 1772
+    },
+    {
+      "path": "/reference/functions/regular-functions/date-time-functions/addHours",
+      "name": "addHours",
+      "characters": 1717
+    },
+    {
+      "path": "/reference/functions/regular-functions/date-time-functions/addInterval",
+      "name": "addInterval",
+      "characters": 1553
+    },
+    {
+      "path": "/reference/functions/regular-functions/date-time-functions/addMicroseconds",
+      "name": "addMicroseconds",
+      "characters": 1571
+    },
+    {
+      "path": "/reference/functions/regular-functions/date-time-functions/addMilliseconds",
+      "name": "addMilliseconds",
+      "characters": 1558
+    },
+    {
+      "path": "/reference/functions/regular-functions/date-time-functions/addMinutes",
+      "name": "addMinutes",
+      "characters": 1765
+    },
+    {
+      "path": "/reference/functions/regular-functions/date-time-functions/addMonths",
+      "name": "addMonths",
+      "characters": 1819
+    },
+    {
+      "path": "/reference/functions/regular-functions/date-time-functions/addNanoseconds",
+      "name": "addNanoseconds",
+      "characters": 1556
+    },
+    {
+      "path": "/reference/functions/regular-functions/date-time-functions/addQuarters",
+      "name": "addQuarters",
+      "characters": 1868
+    },
+    {
+      "path": "/reference/functions/regular-functions/date-time-functions/addSeconds",
+      "name": "addSeconds",
+      "characters": 1834
+    },
+    {
+      "path": "/reference/functions/regular-functions/date-time-functions/addTupleOfIntervals",
+      "name": "addTupleOfIntervals",
+      "characters": 1308
+    },
+    {
+      "path": "/reference/functions/regular-functions/date-time-functions/addWeeks",
+      "name": "addWeeks",
+      "characters": 1795
+    },
+    {
+      "path": "/reference/functions/regular-functions/date-time-functions/addYears",
+      "name": "addYears",
+      "characters": 1795
+    },
+    {
+      "path": "/reference/functions/regular-functions/date-time-functions/age",
+      "name": "age",
+      "characters": 3152
+    },
+    {
+      "path": "/reference/functions/regular-functions/date-time-functions/changeDay",
+      "name": "changeDay",
+      "characters": 912
+    },
+    {
+      "path": "/reference/functions/regular-functions/date-time-functions/changeHour",
+      "name": "changeHour",
+      "characters": 842
+    },
+    {
+      "path": "/reference/functions/regular-functions/date-time-functions/changeMinute",
+      "name": "changeMinute",
+      "characters": 857
+    },
+    {
+      "path": "/reference/functions/regular-functions/date-time-functions/changeMonth",
+      "name": "changeMonth",
+      "characters": 924
+    },
+    {
+      "path": "/reference/functions/regular-functions/date-time-functions/changeSecond",
+      "name": "changeSecond",
+      "characters": 856
+    },
+    {
+      "path": "/reference/functions/regular-functions/date-time-functions/changeYear",
+      "name": "changeYear",
+      "characters": 920
+    },
+    {
+      "path": "/reference/functions/regular-functions/date-time-functions/dateDiff",
+      "name": "dateDiff",
+      "characters": 3672
+    },
+    {
+      "path": "/reference/functions/regular-functions/date-time-functions/dateName",
+      "name": "dateName",
+      "characters": 1351
+    },
+    {
+      "path": "/reference/functions/regular-functions/date-time-functions/dateTrunc",
+      "name": "dateTrunc",
+      "characters": 2639
+    },
+    {
+      "path": "/reference/functions/regular-functions/date-time-functions/formatDateTime",
+      "name": "formatDateTime",
+      "characters": 5319
+    },
+    {
+      "path": "/reference/functions/regular-functions/date-time-functions/formatDateTimeInJodaSyntax",
+      "name": "formatDateTimeInJodaSyntax",
+      "characters": 2761
+    },
+    {
+      "path": "/reference/functions/regular-functions/date-time-functions/fromDaysSinceYearZero",
+      "name": "fromDaysSinceYearZero",
+      "characters": 1179
+    },
+    {
+      "path": "/reference/functions/regular-functions/date-time-functions/fromDaysSinceYearZero32",
+      "name": "fromDaysSinceYearZero32",
+      "characters": 1172
+    },
+    {
+      "path": "/reference/functions/regular-functions/date-time-functions/fromModifiedJulianDay",
+      "name": "fromModifiedJulianDay",
+      "characters": 979
+    },
+    {
+      "path": "/reference/functions/regular-functions/date-time-functions/fromModifiedJulianDayOrNull",
+      "name": "fromModifiedJulianDayOrNull",
+      "characters": 1015
+    },
+    {
+      "path": "/reference/functions/regular-functions/date-time-functions/fromUTCTimestamp",
+      "name": "fromUTCTimestamp",
+      "characters": 1299
+    },
+    {
+      "path": "/reference/functions/regular-functions/date-time-functions/fromUnixTimestamp",
+      "name": "fromUnixTimestamp",
+      "characters": 2579
+    },
+    {
+      "path": "/reference/functions/regular-functions/date-time-functions/fromUnixTimestampInJodaSyntax",
+      "name": "fromUnixTimestampInJodaSyntax",
+      "characters": 2411
+    },
+    {
+      "path": "/reference/functions/regular-functions/date-time-functions/localtime",
+      "name": "localtime",
+      "characters": 742
+    },
+    {
+      "path": "/reference/functions/regular-functions/date-time-functions/makeDate",
+      "name": "makeDate",
+      "characters": 1375
+    },
+    {
+      "path": "/reference/functions/regular-functions/date-time-functions/makeDate32",
+      "name": "makeDate32",
+      "characters": 1395
+    },
+    {
+      "path": "/reference/functions/regular-functions/date-time-functions/makeDateTime",
+      "name": "makeDateTime",
+      "characters": 1693
+    },
+    {
+      "path": "/reference/functions/regular-functions/date-time-functions/makeDateTime64",
+      "name": "makeDateTime64",
+      "characters": 2115
+    },
+    {
+      "path": "/reference/functions/regular-functions/date-time-functions/monthName",
+      "name": "monthName",
+      "characters": 768
+    },
+    {
+      "path": "/reference/functions/regular-functions/date-time-functions/now",
+      "name": "now",
+      "characters": 1216
+    },
+    {
+      "path": "/reference/functions/regular-functions/date-time-functions/now64",
+      "name": "now64",
+      "characters": 1140
+    },
+    {
+      "path": "/reference/functions/regular-functions/date-time-functions/nowInBlock",
+      "name": "nowInBlock",
+      "characters": 1419
+    },
+    {
+      "path": "/reference/functions/regular-functions/date-time-functions/nowInBlock64",
+      "name": "nowInBlock64",
+      "characters": 1745
+    },
+    {
+      "path": "/reference/functions/regular-functions/date-time-functions/serverTimezone",
+      "name": "serverTimezone",
+      "characters": 860
+    },
+    {
+      "path": "/reference/functions/regular-functions/date-time-functions/subDate",
+      "name": "subDate",
+      "characters": 1272
+    },
+    {
+      "path": "/reference/functions/regular-functions/date-time-functions/subtractDays",
+      "name": "subtractDays",
+      "characters": 1891
+    },
+    {
+      "path": "/reference/functions/regular-functions/date-time-functions/subtractHours",
+      "name": "subtractHours",
+      "characters": 1834
+    },
+    {
+      "path": "/reference/functions/regular-functions/date-time-functions/subtractInterval",
+      "name": "subtractInterval",
+      "characters": 1627
+    },
+    {
+      "path": "/reference/functions/regular-functions/date-time-functions/subtractMicroseconds",
+      "name": "subtractMicroseconds",
+      "characters": 1662
+    },
+    {
+      "path": "/reference/functions/regular-functions/date-time-functions/subtractMilliseconds",
+      "name": "subtractMilliseconds",
+      "characters": 1650
+    },
+    {
+      "path": "/reference/functions/regular-functions/date-time-functions/subtractMinutes",
+      "name": "subtractMinutes",
+      "characters": 1882
+    },
+    {
+      "path": "/reference/functions/regular-functions/date-time-functions/subtractMonths",
+      "name": "subtractMonths",
+      "characters": 1936
+    },
+    {
+      "path": "/reference/functions/regular-functions/date-time-functions/subtractNanoseconds",
+      "name": "subtractNanoseconds",
+      "characters": 1646
+    },
+    {
+      "path": "/reference/functions/regular-functions/date-time-functions/subtractQuarters",
+      "name": "subtractQuarters",
+      "characters": 2081
+    },
+    {
+      "path": "/reference/functions/regular-functions/date-time-functions/subtractSeconds",
+      "name": "subtractSeconds",
+      "characters": 1882
+    },
+    {
+      "path": "/reference/functions/regular-functions/date-time-functions/subtractTupleOfIntervals",
+      "name": "subtractTupleOfIntervals",
+      "characters": 1163
+    },
+    {
+      "path": "/reference/functions/regular-functions/date-time-functions/subtractWeeks",
+      "name": "subtractWeeks",
+      "characters": 1912
+    },
+    {
+      "path": "/reference/functions/regular-functions/date-time-functions/subtractYears",
+      "name": "subtractYears",
+      "characters": 1912
+    },
+    {
+      "path": "/reference/functions/regular-functions/date-time-functions/timeDiff",
+      "name": "timeDiff",
+      "characters": 2047
+    },
+    {
+      "path": "/reference/functions/regular-functions/date-time-functions/timeSlot",
+      "name": "timeSlot",
+      "characters": 1249
+    },
+    {
+      "path": "/reference/functions/regular-functions/date-time-functions/timeSlots",
+      "name": "timeSlots",
+      "characters": 2577
+    },
+    {
+      "path": "/reference/functions/regular-functions/date-time-functions/timestamp",
+      "name": "timestamp",
+      "characters": 1118
+    },
+    {
+      "path": "/reference/functions/regular-functions/date-time-functions/timezone",
+      "name": "timezone",
+      "characters": 640
+    },
+    {
+      "path": "/reference/functions/regular-functions/date-time-functions/timezoneOf",
+      "name": "timezoneOf",
+      "characters": 821
+    },
+    {
+      "path": "/reference/functions/regular-functions/date-time-functions/timezoneOffset",
+      "name": "timezoneOffset",
+      "characters": 1205
+    },
+    {
+      "path": "/reference/functions/regular-functions/date-time-functions/toDayOfMonth",
+      "name": "toDayOfMonth",
+      "characters": 889
+    },
+    {
+      "path": "/reference/functions/regular-functions/date-time-functions/toDayOfWeek",
+      "name": "toDayOfWeek",
+      "characters": 2009
+    },
+    {
+      "path": "/reference/functions/regular-functions/date-time-functions/toDayOfYear",
+      "name": "toDayOfYear",
+      "characters": 905
+    },
+    {
+      "path": "/reference/functions/regular-functions/date-time-functions/toDaysInMonth",
+      "name": "toDaysInMonth",
+      "characters": 1186
+    },
+    {
+      "path": "/reference/functions/regular-functions/date-time-functions/toDaysSinceYearZero",
+      "name": "toDaysSinceYearZero",
+      "characters": 1366
+    },
+    {
+      "path": "/reference/functions/regular-functions/date-time-functions/toHour",
+      "name": "toHour",
+      "characters": 727
+    },
+    {
+      "path": "/reference/functions/regular-functions/date-time-functions/toISOWeek",
+      "name": "toISOWeek",
+      "characters": 1631
+    },
+    {
+      "path": "/reference/functions/regular-functions/date-time-functions/toISOYear",
+      "name": "toISOYear",
+      "characters": 792
+    },
+    {
+      "path": "/reference/functions/regular-functions/date-time-functions/toLastDayOfMonth",
+      "name": "toLastDayOfMonth",
+      "characters": 1172
+    },
+    {
+      "path": "/reference/functions/regular-functions/date-time-functions/toLastDayOfWeek",
+      "name": "toLastDayOfWeek",
+      "characters": 1856
+    },
+    {
+      "path": "/reference/functions/regular-functions/date-time-functions/toMicrosecond",
+      "name": "toMicrosecond",
+      "characters": 817
+    },
+    {
+      "path": "/reference/functions/regular-functions/date-time-functions/toMillisecond",
+      "name": "toMillisecond",
+      "characters": 863
+    },
+    {
+      "path": "/reference/functions/regular-functions/date-time-functions/toMinute",
+      "name": "toMinute",
+      "characters": 757
+    },
+    {
+      "path": "/reference/functions/regular-functions/date-time-functions/toModifiedJulianDay",
+      "name": "toModifiedJulianDay",
+      "characters": 1022
+    },
+    {
+      "path": "/reference/functions/regular-functions/date-time-functions/toModifiedJulianDayOrNull",
+      "name": "toModifiedJulianDayOrNull",
+      "characters": 1054
+    },
+    {
+      "path": "/reference/functions/regular-functions/date-time-functions/toMonday",
+      "name": "toMonday",
+      "characters": 1286
+    },
+    {
+      "path": "/reference/functions/regular-functions/date-time-functions/toMonth",
+      "name": "toMonth",
+      "characters": 825
+    },
+    {
+      "path": "/reference/functions/regular-functions/date-time-functions/toMonthNumSinceEpoch",
+      "name": "toMonthNumSinceEpoch",
+      "characters": 536
+    },
+    {
+      "path": "/reference/functions/regular-functions/date-time-functions/toNanosecond",
+      "name": "toNanosecond",
+      "characters": 824
+    },
+    {
+      "path": "/reference/functions/regular-functions/date-time-functions/toQuarter",
+      "name": "toQuarter",
+      "characters": 880
+    },
+    {
+      "path": "/reference/functions/regular-functions/date-time-functions/toRelativeDayNum",
+      "name": "toRelativeDayNum",
+      "characters": 1101
+    },
+    {
+      "path": "/reference/functions/regular-functions/date-time-functions/toRelativeHourNum",
+      "name": "toRelativeHourNum",
+      "characters": 1134
+    },
+    {
+      "path": "/reference/functions/regular-functions/date-time-functions/toRelativeMinuteNum",
+      "name": "toRelativeMinuteNum",
+      "characters": 1164
+    },
+    {
+      "path": "/reference/functions/regular-functions/date-time-functions/toRelativeMonthNum",
+      "name": "toRelativeMonthNum",
+      "characters": 1123
+    },
+    {
+      "path": "/reference/functions/regular-functions/date-time-functions/toRelativeQuarterNum",
+      "name": "toRelativeQuarterNum",
+      "characters": 1153
+    },
+    {
+      "path": "/reference/functions/regular-functions/date-time-functions/toRelativeSecondNum",
+      "name": "toRelativeSecondNum",
+      "characters": 1164
+    },
+    {
+      "path": "/reference/functions/regular-functions/date-time-functions/toRelativeWeekNum",
+      "name": "toRelativeWeekNum",
+      "characters": 1108
+    },
+    {
+      "path": "/reference/functions/regular-functions/date-time-functions/toRelativeYearNum",
+      "name": "toRelativeYearNum",
+      "characters": 1116
+    },
+    {
+      "path": "/reference/functions/regular-functions/date-time-functions/toSecond",
+      "name": "toSecond",
+      "characters": 769
+    },
+    {
+      "path": "/reference/functions/regular-functions/date-time-functions/toStartOfDay",
+      "name": "toStartOfDay",
+      "characters": 1022
+    },
+    {
+      "path": "/reference/functions/regular-functions/date-time-functions/toStartOfFifteenMinutes",
+      "name": "toStartOfFifteenMinutes",
+      "characters": 1342
+    },
+    {
+      "path": "/reference/functions/regular-functions/date-time-functions/toStartOfFiveMinutes",
+      "name": "toStartOfFiveMinutes",
+      "characters": 1344
+    },
+    {
+      "path": "/reference/functions/regular-functions/date-time-functions/toStartOfHour",
+      "name": "toStartOfHour",
+      "characters": 1008
+    },
+    {
+      "path": "/reference/functions/regular-functions/date-time-functions/toStartOfISOYear",
+      "name": "toStartOfISOYear",
+      "characters": 1267
+    },
+    {
+      "path": "/reference/functions/regular-functions/date-time-functions/toStartOfInterval",
+      "name": "toStartOfInterval",
+      "characters": 3028
+    },
+    {
+      "path": "/reference/functions/regular-functions/date-time-functions/toStartOfMicrosecond",
+      "name": "toStartOfMicrosecond",
+      "characters": 1217
+    },
+    {
+      "path": "/reference/functions/regular-functions/date-time-functions/toStartOfMillisecond",
+      "name": "toStartOfMillisecond",
+      "characters": 1218
+    },
+    {
+      "path": "/reference/functions/regular-functions/date-time-functions/toStartOfMinute",
+      "name": "toStartOfMinute",
+      "characters": 1155
+    },
+    {
+      "path": "/reference/functions/regular-functions/date-time-functions/toStartOfMonth",
+      "name": "toStartOfMonth",
+      "characters": 1131
+    },
+    {
+      "path": "/reference/functions/regular-functions/date-time-functions/toStartOfNanosecond",
+      "name": "toStartOfNanosecond",
+      "characters": 1208
+    },
+    {
+      "path": "/reference/functions/regular-functions/date-time-functions/toStartOfQuarter",
+      "name": "toStartOfQuarter",
+      "characters": 1234
+    },
+    {
+      "path": "/reference/functions/regular-functions/date-time-functions/toStartOfSecond",
+      "name": "toStartOfSecond",
+      "characters": 1182
+    },
+    {
+      "path": "/reference/functions/regular-functions/date-time-functions/toStartOfTenMinutes",
+      "name": "toStartOfTenMinutes",
+      "characters": 1288
+    },
+    {
+      "path": "/reference/functions/regular-functions/date-time-functions/toStartOfWeek",
+      "name": "toStartOfWeek",
+      "characters": 1866
+    },
+    {
+      "path": "/reference/functions/regular-functions/date-time-functions/toStartOfYear",
+      "name": "toStartOfYear",
+      "characters": 1114
+    },
+    {
+      "path": "/reference/functions/regular-functions/date-time-functions/toTimeWithFixedDate",
+      "name": "toTimeWithFixedDate",
+      "characters": 1416
+    },
+    {
+      "path": "/reference/functions/regular-functions/date-time-functions/toTimezone",
+      "name": "toTimezone",
+      "characters": 1552
+    },
+    {
+      "path": "/reference/functions/regular-functions/date-time-functions/toUTCTimestamp",
+      "name": "toUTCTimestamp",
+      "characters": 1172
+    },
+    {
+      "path": "/reference/functions/regular-functions/date-time-functions/toUnixTimestamp",
+      "name": "toUnixTimestamp",
+      "characters": 1421
+    },
+    {
+      "path": "/reference/functions/regular-functions/date-time-functions/toWeek",
+      "name": "toWeek",
+      "characters": 3416
+    },
+    {
+      "path": "/reference/functions/regular-functions/date-time-functions/toYYYYMM",
+      "name": "toYYYYMM",
+      "characters": 1173
+    },
+    {
+      "path": "/reference/functions/regular-functions/date-time-functions/toYYYYMMDD",
+      "name": "toYYYYMMDD",
+      "characters": 1152
+    },
+    {
+      "path": "/reference/functions/regular-functions/date-time-functions/toYYYYMMDDhhmmss",
+      "name": "toYYYYMMDDhhmmss",
+      "characters": 1331
+    },
+    {
+      "path": "/reference/functions/regular-functions/date-time-functions/toYear",
+      "name": "toYear",
+      "characters": 820
+    },
+    {
+      "path": "/reference/functions/regular-functions/date-time-functions/toYearNumSinceEpoch",
+      "name": "toYearNumSinceEpoch",
+      "characters": 541
+    },
+    {
+      "path": "/reference/functions/regular-functions/date-time-functions/toYearWeek",
+      "name": "toYearWeek",
+      "characters": 2305
+    },
+    {
+      "path": "/reference/functions/regular-functions/date-time-functions/today",
+      "name": "today",
+      "characters": 1155
+    },
+    {
+      "path": "/reference/functions/regular-functions/date-time-functions/yesterday",
+      "name": "yesterday",
+      "characters": 650
+    }
+  ]
+}

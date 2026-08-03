@@ -431,13 +431,17 @@
             "reference/functions/regular-functions/regular-functions-index",
             "reference/functions/regular-functions/ai-functions",
             "reference/functions/regular-functions/arithmetic-functions",
-            "reference/functions/regular-functions/array-functions",
+            {
+              "$ref": "./functions/regular-functions/array-functions/navigation.json"
+            },
             "reference/functions/regular-functions/array-join",
             "reference/functions/regular-functions/bit-functions",
             "reference/functions/regular-functions/bitmap-functions",
             "reference/functions/regular-functions/comparison-functions",
             "reference/functions/regular-functions/conditional-functions",
-            "reference/functions/regular-functions/date-time-functions",
+            {
+              "$ref": "./functions/regular-functions/date-time-functions/navigation.json"
+            },
             "reference/functions/regular-functions/distance-functions",
             "reference/functions/regular-functions/embedded-dict-functions",
             "reference/functions/regular-functions/encoding-functions",
@@ -472,7 +476,9 @@
             "reference/functions/regular-functions/math-functions",
             "reference/functions/regular-functions/nlp-functions",
             "reference/functions/regular-functions/numeric-indexed-vector-functions",
-            "reference/functions/regular-functions/other-functions",
+            {
+              "$ref": "./functions/regular-functions/other-functions/navigation.json"
+            },
             "reference/functions/regular-functions/random-functions",
             "reference/functions/regular-functions/overview",
             "reference/functions/regular-functions/rounding-functions",
@@ -484,7 +490,9 @@
             "reference/functions/regular-functions/time-window-functions",
             "reference/functions/regular-functions/tuple-functions",
             "reference/functions/regular-functions/tuple-map-functions",
-            "reference/functions/regular-functions/type-conversion-functions",
+            {
+              "$ref": "./functions/regular-functions/type-conversion-functions/navigation.json"
+            },
             "reference/functions/regular-functions/ulid-functions",
             "reference/functions/regular-functions/uniqtheta-functions",
             "reference/functions/regular-functions/url-functions",
