@@ -400,7 +400,14 @@ Be careful when using `GLOBAL`. For more information, see the [Distributed subqu
 
 `INNER JOIN`, `LEFT JOIN`, `RIGHT JOIN`, and `FULL JOIN` queries support the implicit type conversion for "join keys". However the query can not be executed, if join keys from the left and the right tables cannot be converted to a single type (for example, `String` and `Int32`).
 
-There is no data type that can hold all the values of both `UInt64` and `Int64`, but the keys of an equality condition in the `ON` section still can be joined: they are converted to the type of the values that these types have in common, which is `UInt64`, holding the values from `0` to `9223372036854775807`. A value outside of this range is not equal to any value from the other side, so it does not match anything. This does not apply to the `USING` section, where the join key is also a column of the result, and to null-safe comparisons (`IS NOT DISTINCT FROM`), where `NULL` matches `NULL`.
+There is no data type that can hold all the values of both `UInt64` and `Int64`, but such keys still can be joined: they are converted to the type of the values that these types have in common, which is `UInt64`, holding the values from `0` to `9223372036854775807`. A value outside of this range is not equal to any value from the other side, so it does not match anything.
+
+This is applied to the equality conditions in the `ON` section, and to the `USING` section of an `INNER JOIN`, where the result contains only the matched values. It is not applied to:
+- the other kinds of `JOIN` with `USING`, where the join key is also a column of the result and can hold the unmatched values;
+- null-safe comparisons (`IS NOT DISTINCT FROM`), where `NULL` matches `NULL`, so the values converted to `NULL` would match each other;
+- the `ASOF` inequality, which needs the order of the values, not only their equality.
+
+It requires the analyzer, which is enabled by default; with [`enable_analyzer = 0`](/operations/settings/settings#enable_analyzer) such a query is still rejected.
 
 **Example**
 
