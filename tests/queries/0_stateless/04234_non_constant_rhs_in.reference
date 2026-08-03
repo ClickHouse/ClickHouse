@@ -33,6 +33,20 @@ SELECT number, number IN (arr), number NOT IN (arr), (number + 2) IN (arr), (num
 0	1	0	0	1
 1	1	0	0	1
 2	1	0	0	1
+-- An array-valued left argument. A non-constant array on the right of `IN` is the set of its elements only
+-- when it is exactly one dimension deeper than the left argument; an equal-depth array is a single set value,
+-- so its type has to match the left argument. Both analyzers agree on all of these.
+SELECT number, [number] IN ([[number], [7]]), [number] NOT IN ([[number], [7]]) FROM numbers(3) ORDER BY number;
+0	1	0
+1	1	0
+2	1	0
+SELECT number, [number] IN ([[7], [8]]) FROM numbers(2) ORDER BY number;
+0	0
+1	0
+SELECT number, [number] IN (arrayMap(y -> [y], [number, 7])) FROM numbers(2) ORDER BY number;
+0	1
+1	1
+SELECT number, [number] IN ([number, 7]) FROM numbers(2); -- { serverError NO_COMMON_TYPE }
 SELECT number, number % 3 GLOBAL IN (number % 2, 1), number % 3 GLOBAL NOT IN (number % 2, 1) FROM numbers(6) ORDER BY number;
 0	1	0
 1	1	0
@@ -130,6 +144,18 @@ SELECT number, [number, number + 1] AS arr, number IN (arr), number NOT IN (arr)
 -- A bare column of the `FROM` subquery on the right of `IN` therefore still names a table there and the
 -- row-wise rewrite is never reached, while the analyzer resolves the same shape as a column.
 SELECT number, number IN (arr), number NOT IN (arr), (number + 2) IN (arr), (number + 2) NOT IN (arr) FROM (SELECT number, [number, number + 1] AS arr FROM numbers(3)) ORDER BY number; -- { serverError UNKNOWN_TABLE }
+-- An array-valued left argument, same as in the analyzer section above.
+SELECT number, [number] IN ([[number], [7]]), [number] NOT IN ([[number], [7]]) FROM numbers(3) ORDER BY number;
+0	1	0
+1	1	0
+2	1	0
+SELECT number, [number] IN ([[7], [8]]) FROM numbers(2) ORDER BY number;
+0	0
+1	0
+SELECT number, [number] IN (arrayMap(y -> [y], [number, 7])) FROM numbers(2) ORDER BY number;
+0	1
+1	1
+SELECT number, [number] IN ([number, 7]) FROM numbers(2); -- { serverError NO_COMMON_TYPE }
 SELECT number, number % 3 GLOBAL IN (number % 2, 1), number % 3 GLOBAL NOT IN (number % 2, 1) FROM numbers(6) ORDER BY number;
 0	1	0
 1	1	0
