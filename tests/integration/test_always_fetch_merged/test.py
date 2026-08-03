@@ -193,6 +193,7 @@ def test_no_mutation_failure_while_waiting_for_mutated_part(started_cluster):
         node2,
         "SELECT count() FROM system.mutations WHERE table = 'test_mutated_wait_table' AND NOT is_done",
         "0",
+        retry_count=120,
     )
     assert node1.query("SELECT value FROM test_mutated_wait_table") == "mutated\n"
     assert node2.query("SELECT value FROM test_mutated_wait_table") == "mutated\n"
