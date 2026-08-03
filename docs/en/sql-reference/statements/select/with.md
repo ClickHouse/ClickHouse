@@ -272,16 +272,14 @@ ORDER BY table_disk_usage DESC
 LIMIT 10;
 ```
 
-**Example 6:** Reusing a lambda-defined common scalar expression in a subquery
-
-Define the common scalar expression as a lambda so that its argument is explicitly bound:
+**Example 6:** Reusing a common scalar expression in a subquery
 
 ```sql
 WITH (value) -> value + 1 AS increment
-SELECT increment(first_result) AS second_increment
+SELECT increment(first_increment) AS second_increment
 FROM
 (
-    SELECT increment(number) AS first_result
+    SELECT increment(number) AS first_increment
     FROM numbers(3)
 );
 ```
