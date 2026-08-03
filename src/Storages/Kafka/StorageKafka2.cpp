@@ -7,6 +7,7 @@
 #include <Formats/FormatFactory.h>
 #include <Formats/FormatParserSharedResources.h>
 #include <IO/EmptyReadBuffer.h>
+#include <IO/ReadHelpers.h>
 #include <Interpreters/Context.h>
 #include <Interpreters/DatabaseCatalog.h>
 #include <Interpreters/ExpressionActions.h>
@@ -118,6 +119,8 @@ namespace KafkaSetting
     extern const KafkaSettingsString kafka_replica_name;
     extern const KafkaSettingsString kafka_schema;
     extern const KafkaSettingsUInt64 kafka_schema_registry_skip_bytes;
+    extern const KafkaSettingsString kafka_partition_shard_num;
+    extern const KafkaSettingsUInt64 kafka_shard_count;
     extern const KafkaSettingsBool kafka_thread_per_consumer;
     extern const KafkaSettingsString kafka_topic_list;
 }
@@ -134,6 +137,7 @@ namespace ErrorCodes
 {
 extern const int NOT_IMPLEMENTED;
 extern const int LOGICAL_ERROR;
+extern const int BAD_ARGUMENTS;
 extern const int QUERY_NOT_ALLOWED;
 extern const int ABORTED;
 extern const int REPLICA_ALREADY_EXISTS;
@@ -162,7 +166,7 @@ StorageKafka2::StorageKafka2(
     , fs_keeper_path(keeper_path)
     , replica_path(keeper_path + "/replicas/" + (*kafka_settings_)[KafkaSetting::kafka_replica_name].value)
     , kafka_settings(std::move(kafka_settings_))
-    , macros_info{.table_id = table_id_}
+    , macros_info{.table_id = table_id_, .shard = getContext()->getMacros()->tryGetValue("shard")}
     , topics(StorageKafkaUtils::parseTopics(getContext()->getMacros()->expand((*kafka_settings)[KafkaSetting::kafka_topic_list].value, macros_info)))
     , brokers(getContext()->getMacros()->expand((*kafka_settings)[KafkaSetting::kafka_broker_list].value, macros_info))
     , group(getContext()->getMacros()->expand((*kafka_settings)[KafkaSetting::kafka_group_name].value, macros_info))
@@ -182,6 +186,8 @@ StorageKafka2::StorageKafka2(
 {
     auto component_guard = Coordination::setCurrentComponent("StorageKafka2::StorageKafka2");
     kafka_settings->sanityCheck(getContext());
+    parsePartitionAffinitySettings();
+
     if ((*kafka_settings)[KafkaSetting::kafka_num_consumers] > 1 && !thread_per_consumer)
         throw Exception(ErrorCodes::NOT_IMPLEMENTED, "With multiple consumers, it is required to use `kafka_thread_per_consumer` setting");
 
@@ -579,7 +585,7 @@ void StorageKafka2::startup()
             try
             {
                 consumers[i] = std::make_shared<KeeperHandlingConsumer>(
-                    createKafkaConsumer(i), getZooKeeper(), fs_keeper_path, replica_name, i, log);
+                    createKafkaConsumer(i), getZooKeeper(), fs_keeper_path, replica_name, i, log, partition_shard_num, shard_count);
                 ++num_created_consumers;
             }
             catch (const cppkafka::Exception &)
@@ -614,6 +620,50 @@ void StorageKafka2::shutdown(bool)
 void StorageKafka2::drop()
 {
     dropReplica();
+}
+
+void StorageKafka2::parsePartitionAffinitySettings()
+{
+    const auto & raw_partition_shard_num = (*kafka_settings)[KafkaSetting::kafka_partition_shard_num].value;
+    const auto shard_count_val = (*kafka_settings)[KafkaSetting::kafka_shard_count].value;
+
+    /// Neither setting specified - affinity disabled.
+    if (raw_partition_shard_num.empty() && shard_count_val == 0)
+        return;
+
+    /// Both must be specified together (enforced by KafkaSettings::sanityCheck).
+    if (raw_partition_shard_num.empty() || shard_count_val == 0)
+        throw Exception(
+            ErrorCodes::LOGICAL_ERROR,
+            "'kafka_partition_shard_num' and 'kafka_shard_count' must be specified together "
+            "(this should have been caught by sanityCheck)");
+
+    /// Validate macro expansion produces a valid integer.
+    const auto & expanded = getContext()->getMacros()->expand(raw_partition_shard_num, macros_info);
+    if (expanded.empty())
+        throw Exception(
+            ErrorCodes::BAD_ARGUMENTS,
+            "'kafka_partition_shard_num' expanded to an empty string after macro substitution (original: '{}')",
+            raw_partition_shard_num);
+
+    UInt64 parsed = 0;
+    if (!tryParse(parsed, expanded))
+        throw Exception(
+            ErrorCodes::BAD_ARGUMENTS,
+            "'kafka_partition_shard_num' must be a valid non-negative integer after macro expansion, got '{}'",
+            expanded);
+
+    if (parsed < 1 || parsed > shard_count_val)
+        throw Exception(
+            ErrorCodes::BAD_ARGUMENTS,
+            "'kafka_partition_shard_num' ({}) must be between 1 and 'kafka_shard_count' ({}) inclusive",
+            parsed,
+            shard_count_val);
+
+    partition_shard_num = parsed;
+    shard_count = shard_count_val;
+
+    LOG_INFO(log, "Partition affinity enabled: partition_shard_num={}, shard_count={}", partition_shard_num, shard_count);
 }
 
 KafkaConsumer2Ptr StorageKafka2::createKafkaConsumer(size_t consumer_number)
@@ -742,9 +792,10 @@ bool StorageKafka2::createTableIfNotExists()
         const auto topic_partition_locks_path = fs_keeper_path / "topic_partition_locks";
         ops.emplace_back(zkutil::makeCreateRequest(topic_partition_locks_path, "", zkutil::CreateMode::Persistent));
 
-        // Create the first replica
+        // Create the first replica - store shard_num as znode data when affinity is enabled
         ops.emplace_back(zkutil::makeCreateRequest(replicas_path, "", zkutil::CreateMode::Persistent));
-        ops.emplace_back(zkutil::makeCreateRequest(replica_path, "", zkutil::CreateMode::Persistent));
+        const String replica_data = shard_count > 0 ? std::to_string(partition_shard_num) : "";
+        ops.emplace_back(zkutil::makeCreateRequest(replica_path, replica_data, zkutil::CreateMode::Persistent));
 
 
         Coordination::Responses responses;
@@ -836,7 +887,8 @@ void StorageKafka2::createReplica()
     LOG_INFO(log, "Creating replica {}", replica_path);
     // TODO: This can cause issues if a new table is created with the same path. To make this work, we should store some
     // metadata about the table to be able to identify that the same table is created, not a new one.
-    const auto code = keeper->tryCreate(replica_path, "", zkutil::CreateMode::Persistent);
+    const String replica_data = shard_count > 0 ? std::to_string(partition_shard_num) : "";
+    const auto code = keeper->tryCreate(replica_path, replica_data, zkutil::CreateMode::Persistent);
 
     switch (code)
     {
@@ -850,6 +902,21 @@ void StorageKafka2::createReplica()
             throw Exception(ErrorCodes::TABLE_IS_DROPPED, "Table {} was suddenly removed", keeper_path);
         default:
             throw Coordination::Exception::fromPath(code, replica_path);
+    }
+
+    if (code == Coordination::Error::ZNODEEXISTS)
+    {
+        String stored_data;
+        if (keeper->tryGet(replica_path, stored_data))
+        {
+            if (stored_data != replica_data)
+                throw Exception(
+                    ErrorCodes::BAD_ARGUMENTS,
+                    "Cannot create replica: the stored shard num '{}' does not match the current value '{}'. "
+                    "Changing kafka_partition_shard_num for an existing table is not supported; "
+                    "use a different kafka_keeper_path for a new shard assignment",
+                    stored_data, replica_data);
+        }
     }
 }
 
