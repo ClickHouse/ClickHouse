@@ -7,6 +7,7 @@
 #include <Analyzer/IQueryTreeNode.h>
 #include <Analyzer/IdentifierNode.h>
 #include <Analyzer/InDepthQueryTreeVisitor.h>
+#include <Analyzer/ListNode.h>
 #include <Analyzer/Passes/QueryAnalysisPass.h>
 #include <Analyzer/QueryTreeBuilder.h>
 #include <Analyzer/TableNode.h>
@@ -1059,25 +1060,52 @@ QueryTreeNodePtr replaceTableExpressionAndRemoveJoin(
     // Select only required columns from the table, because projection list may contain:
     // 1. aggregate functions
     // 2. expressions referencing other tables of JOIN
-    for (auto const & column_name : required_column_names)
+    //
+    // All the identifiers are resolved by a single `QueryAnalysisPass` run. Running the pass once per
+    // identifier would rebuild `AnalysisTableExpressionData` for the whole `Merge` table every time,
+    // which is quadratic in the number of columns. As this function is called once per source table,
+    // the total cost becomes cubic, and a query joining `merge` over many wide tables (for example,
+    // `merge('system', '')`) spends minutes in query planning.
+    if (!required_column_names.empty())
     {
-        QueryTreeNodePtr fake_node = std::make_shared<IdentifierNode>(Identifier{column_name});
+        auto identifiers_list = std::make_shared<ListNode>();
+        identifiers_list->getNodes().reserve(required_column_names.size());
+        for (const auto & column_name : required_column_names)
+            identifiers_list->getNodes().push_back(std::make_shared<IdentifierNode>(Identifier{column_name}));
+
+        QueryTreeNodePtr resolved_identifiers = std::move(identifiers_list);
 
         QueryAnalysisPass query_analysis_pass(original_table_expression);
-        query_analysis_pass.run(fake_node, context);
+        query_analysis_pass.run(resolved_identifiers, context);
 
-        auto * resolved_column = fake_node->as<ColumnNode>();
-        if (!resolved_column)
-            throw Exception(ErrorCodes::LOGICAL_ERROR, "Required column '{}' is not resolved", column_name);
-        auto fake_column = resolved_column->getColumn();
+        auto & resolved_nodes = resolved_identifiers->as<ListNode &>().getNodes();
+        if (resolved_nodes.size() != required_column_names.size())
+            throw Exception(
+                ErrorCodes::LOGICAL_ERROR,
+                "Expected {} resolved columns, got {}",
+                required_column_names.size(),
+                resolved_nodes.size());
 
-        // Identifier is resolved to ColumnNode, but we need to get rid of ALIAS columns
-        // and also fix references to source expression (now column is referencing original table expression).
-        ApplyAliasColumnExpressionsVisitor visitor(replacement_table_expression);
-        visitor.visit(fake_node);
+        projection.reserve(required_column_names.size());
+        projection_columns.reserve(required_column_names.size());
 
-        projection.push_back(fake_node);
-        projection_columns.push_back(fake_column);
+        for (size_t i = 0; i < required_column_names.size(); ++i)
+        {
+            auto & fake_node = resolved_nodes[i];
+
+            auto * resolved_column = fake_node->as<ColumnNode>();
+            if (!resolved_column)
+                throw Exception(ErrorCodes::LOGICAL_ERROR, "Required column '{}' is not resolved", required_column_names[i]);
+            auto fake_column = resolved_column->getColumn();
+
+            // Identifier is resolved to ColumnNode, but we need to get rid of ALIAS columns
+            // and also fix references to source expression (now column is referencing original table expression).
+            ApplyAliasColumnExpressionsVisitor visitor(replacement_table_expression);
+            visitor.visit(fake_node);
+
+            projection.push_back(fake_node);
+            projection_columns.push_back(fake_column);
+        }
     }
 
     query_node->resolveProjectionColumns(std::move(projection_columns));
