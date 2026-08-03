@@ -17,6 +17,8 @@
 #include <Columns/ColumnArray.h>
 #include <Columns/ColumnConst.h>
 #include <DataTypes/DataTypeArray.h>
+#include <DataTypes/DataTypeLowCardinality.h>
+#include <DataTypes/DataTypeNullable.h>
 #include <DataTypes/DataTypesNumber.h>
 #include <DataTypes/NestedUtils.h>
 #include <Interpreters/RequiredSourceColumnsVisitor.h>
@@ -27,7 +29,6 @@
 
 #include <Planner/CollectTableExpressionData.h>
 #include <Planner/Utils.h>
-#include <Planner/CollectSets.h>
 #include <Planner/PlannerActionsVisitor.h>
 #include <Analyzer/QueryTreeBuilder.h>
 #include <Analyzer/Resolve/QueryAnalyzer.h>
@@ -182,11 +183,14 @@ ASTPtr convertRequiredExpressions(Block & block, const NamesAndTypesList & requi
                     "Please specify `DEFAULT` expression in ALTER MODIFY COLUMN statement",
                     required_column.name, column_in_block.type->getName(), required_column.type->getName());
 
-            auto convert_func = makeASTFunction("_CAST",
-                makeASTFunction("ifNull", make_intrusive<ASTIdentifier>(required_column.name), default_value),
-                make_intrusive<ASTLiteral>(required_column.type->getName()));
-
+            /// _CAST(if(isNull(col), _CAST(default, 'T'), _CAST(assumeNotNull(col), 'T')), 'T')
+            auto is_null = makeASTFunction("isNull", make_intrusive<ASTIdentifier>(required_column.name));
+            auto cast_default = makeASTFunction("_CAST", default_value, make_intrusive<ASTLiteral>(required_column.type->getName()));
+            auto cast_value = makeASTFunction("_CAST", makeASTFunction("assumeNotNull", make_intrusive<ASTIdentifier>(required_column.name)), make_intrusive<ASTLiteral>(required_column.type->getName()));
+            auto filled = makeASTFunction("if", std::move(is_null), std::move(cast_default), std::move(cast_value));
+            auto convert_func = makeASTFunction("_CAST", std::move(filled), make_intrusive<ASTLiteral>(required_column.type->getName()));
             conversion_expr_list->children.emplace_back(setAlias(convert_func, required_column.name));
+
             continue;
         }
 
@@ -232,7 +236,7 @@ std::optional<ActionsDAG> createExpressionsAnalyzer(
     for (const auto & column : header.getIndexByName())
         fake_column_descriptions.add(ColumnDescription(column.first, header.getByPosition(column.second).type), /*after_column=*/ "", /*first=*/false, /*add_subcolumns=*/false);
     auto storage = std::make_shared<StorageDummy>(StorageID{"dummy", "dummy"}, fake_column_descriptions);
-    QueryTreeNodePtr fake_table_expression = std::make_shared<TableNode>(storage, execution_context);
+    auto fake_table_expression = std::make_shared<TableNode>(storage, execution_context);
 
     QueryAnalyzer analyzer(false);
     analyzer.resolve(expression, fake_table_expression, execution_context);
@@ -240,8 +244,7 @@ std::optional<ActionsDAG> createExpressionsAnalyzer(
     GlobalPlannerContextPtr global_planner_context = std::make_shared<GlobalPlannerContext>(nullptr, nullptr, nullptr, FiltersForTableExpressionMap{});
     auto planner_context = std::make_shared<PlannerContext>(execution_context, global_planner_context, SelectQueryOptions{});
 
-    collectSourceColumns(expression, planner_context, true /*keep_alias_columns*/);
-    collectSets(expression, *planner_context);
+    collectSetsAndSourceColumns(expression, planner_context, true /*keep_alias_columns*/);
 
     auto actions = buildActionsDAGFromExpressionNode(expression, header.getColumnsWithTypeAndName(), planner_context, {}).first;
     chassert(expression->getChildren().size() == actions.getOutputs().size());
@@ -401,6 +404,29 @@ static bool hasDefault(const StorageSnapshotPtr & storage_snapshot, const NameAn
     return storage_snapshot->getDefault(name_in_storage).has_value();
 }
 
+/// `column` may have come from `Nested::convertToSubcolumns`, which moves the subcolumn delimiter,
+/// so its own `getNameInStorage` is not necessarily the parent. Resolve the parent from metadata.
+static bool isSubcolumnOfAvailableColumn(
+    const StorageSnapshotPtr & storage_snapshot,
+    const NameAndTypePair & column,
+    const NamesAndTypesList & available_columns,
+    const NameSet & additional_available_columns)
+{
+    if (!storage_snapshot || !column.isSubcolumn())
+        return false;
+
+    auto options = GetColumnsOptions(GetColumnsOptions::AllPhysical).withSubcolumns();
+    auto column_in_storage = storage_snapshot->tryGetColumn(options, column.name);
+
+    /// Not a subcolumn according to the metadata: a plain column missing from the part,
+    /// which the offsets branch below legitimately owns.
+    if (!column_in_storage || !column_in_storage->isSubcolumn())
+        return false;
+
+    auto parent_name = column_in_storage->getNameInStorage();
+    return available_columns.contains(parent_name) || additional_available_columns.contains(parent_name);
+}
+
 static String removeTupleElementsFromSubcolumn(String subcolumn_name, const Names & tuple_elements)
 {
     /// Add a dot to the end of name for convenience.
@@ -425,7 +451,8 @@ void fillMissingColumns(
     const NamesAndTypesList & available_columns,
     const NameSet & partially_read_columns,
     StorageSnapshotPtr storage_snapshot,
-    bool share_nested_offsets)
+    bool share_nested_offsets,
+    const NameSet & additional_available_columns)
 {
     size_t num_columns = requested_columns.size();
     if (num_columns != res_columns.size())
@@ -452,6 +479,12 @@ void fillMissingColumns(
 
         /// Nothing to fill or default should be filled in evaluateMissingDefaults.
         if (res_columns[i] || hasDefault(storage_snapshot, *requested_column))
+            continue;
+
+        /// Subcolumn missing from the part's (older) type but whose parent is available (read here
+        /// or produced by an earlier step): defer to evaluateMissingDefaults instead of default-
+        /// filling. Needs a storage_snapshot, i.e. a caller that runs that pass (not Memory engine).
+        if (isSubcolumnOfAvailableColumn(storage_snapshot, *requested_column, available_columns, additional_available_columns))
             continue;
 
         std::vector<ColumnPtr> current_offsets;
