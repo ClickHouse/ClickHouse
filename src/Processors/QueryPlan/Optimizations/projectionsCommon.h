@@ -36,7 +36,7 @@ private:
 
 struct ProjectionCandidate
 {
-    const ProjectionDescription * projection{};
+    const ProjectionDescription * projection;
 
     /// Estimated total marks to read (including parent and projection)
     size_t sum_marks = 0;
@@ -74,7 +74,6 @@ bool analyzeProjectionCandidate(
     const MergeTreeDataSelectExecutor & reader,
     MergeTreeData::MutationsSnapshotPtr empty_mutations_snapshot,
     const Names & required_column_names,
-    const StorageMetadataPtr & parent_metadata,
     ReadFromMergeTree::AnalysisResult & parent_reading_select_result,
     const SelectQueryInfo & projection_query_info,
     const ContextPtr & context);

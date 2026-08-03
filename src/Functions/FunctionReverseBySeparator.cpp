@@ -8,7 +8,6 @@
 #include <Common/Exception.h>
 #include <Common/StringUtils.h>
 #include <Common/PODArray.h>
-#include <Common/VectorWithMemoryTracking.h>
 #include <base/MemorySanitizer.h>
 #include <IO/WriteHelpers.h>
 #include <string_view>
@@ -144,7 +143,7 @@ ColumnPtr FunctionReverseBySeparator::executeImpl(const ColumnsWithTypeAndName &
     res_data.reserve(total_size_estimate);
 
     /// Collect tokens in reverse order
-    VectorWithMemoryTracking<std::string_view> tokens;
+    std::vector<std::string_view> tokens;
     tokens.reserve(8); /// Initial capacity
 
     /// Main processing loop - vectorized execution
@@ -216,7 +215,7 @@ ColumnPtr FunctionReverseBySeparator::executeImpl(const ColumnsWithTypeAndName &
         else
         {
             /// For multi-character separators, use StringSearcher
-            CaseSensitiveStringSearcher searcher(reinterpret_cast<const UInt8 *>(separator.data()), separator.size());
+            ASCIICaseSensitiveStringSearcher searcher(reinterpret_cast<const UInt8*>(separator.data()), separator.size());
             TokenSplitter<decltype(searcher)> splitter(haystack, searcher, separator.size());
 
             tokens.clear();

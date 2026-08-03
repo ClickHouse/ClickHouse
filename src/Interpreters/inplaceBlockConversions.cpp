@@ -17,8 +17,6 @@
 #include <Columns/ColumnArray.h>
 #include <Columns/ColumnConst.h>
 #include <DataTypes/DataTypeArray.h>
-#include <DataTypes/DataTypeLowCardinality.h>
-#include <DataTypes/DataTypeNullable.h>
 #include <DataTypes/DataTypesNumber.h>
 #include <DataTypes/NestedUtils.h>
 #include <Interpreters/RequiredSourceColumnsVisitor.h>
@@ -183,14 +181,11 @@ ASTPtr convertRequiredExpressions(Block & block, const NamesAndTypesList & requi
                     "Please specify `DEFAULT` expression in ALTER MODIFY COLUMN statement",
                     required_column.name, column_in_block.type->getName(), required_column.type->getName());
 
-            /// _CAST(if(isNull(col), _CAST(default, 'T'), _CAST(assumeNotNull(col), 'T')), 'T')
-            auto is_null = makeASTFunction("isNull", make_intrusive<ASTIdentifier>(required_column.name));
-            auto cast_default = makeASTFunction("_CAST", default_value, make_intrusive<ASTLiteral>(required_column.type->getName()));
-            auto cast_value = makeASTFunction("_CAST", makeASTFunction("assumeNotNull", make_intrusive<ASTIdentifier>(required_column.name)), make_intrusive<ASTLiteral>(required_column.type->getName()));
-            auto filled = makeASTFunction("if", std::move(is_null), std::move(cast_default), std::move(cast_value));
-            auto convert_func = makeASTFunction("_CAST", std::move(filled), make_intrusive<ASTLiteral>(required_column.type->getName()));
-            conversion_expr_list->children.emplace_back(setAlias(convert_func, required_column.name));
+            auto convert_func = makeASTFunction("_CAST",
+                makeASTFunction("ifNull", make_intrusive<ASTIdentifier>(required_column.name), default_value),
+                make_intrusive<ASTLiteral>(required_column.type->getName()));
 
+            conversion_expr_list->children.emplace_back(setAlias(convert_func, required_column.name));
             continue;
         }
 
@@ -289,7 +284,7 @@ void performRequiredConversions(Block & block, const NamesAndTypesList & require
     }
 }
 
-static bool needConvertAnyNullToDefault(const Block & header, const NamesAndTypesList & required_columns, const ColumnsDescription & columns)
+bool needConvertAnyNullToDefault(const Block & header, const NamesAndTypesList & required_columns, const ColumnsDescription & columns)
 {
     for (const auto & required_column : required_columns)
     {
@@ -377,19 +372,19 @@ static std::unordered_map<String, ColumnPtr> collectOffsetsColumns(
 
 static ColumnPtr createColumnWithDefaultValue(const IDataType & data_type, const String & subcolumn_name, size_t num_rows)
 {
-    auto const_column = data_type.createColumnConstWithDefaultValue(num_rows);
+    auto column = data_type.createColumnConstWithDefaultValue(num_rows);
 
     /// We must turn a constant column into a full column because the interpreter could infer
     /// that it is constant everywhere but in some blocks (from other parts) it can be a full column.
 
     if (subcolumn_name.empty())
-        return const_column->convertToFullColumnIfConst();
+        return column->convertToFullColumnIfConst();
 
     /// Firstly get subcolumn from const column and then replicate.
-    ColumnPtr data_column = const_column->getDataColumnPtr();
-    data_column = data_type.getSubcolumn(subcolumn_name, data_column);
+    column = assert_cast<const ColumnConst &>(*column).getDataColumnPtr();
+    column = data_type.getSubcolumn(subcolumn_name, column);
 
-    return ColumnConst::create(std::move(data_column), num_rows)->convertToFullColumnIfConst();
+    return ColumnConst::create(std::move(column), num_rows)->convertToFullColumnIfConst();
 }
 
 static bool hasDefault(const StorageSnapshotPtr & storage_snapshot, const NameAndTypePair & column)
@@ -498,17 +493,10 @@ void fillMissingColumns(
             Names tuple_elements;
             SerializationPtr serialization = IDataType::getSerialization(*requested_column);
 
-            /// Collect names of tuple elements on the path to the requested subcolumn, so they are skipped while
-            /// getting the base type of array. Elements below the requested subcolumn belong to its own value type
-            /// and must be kept, otherwise the Tuple wrapper is lost.
-            const auto & requested_subcolumn_name = requested_column->getSubcolumnName();
-            IDataType::forEachSubcolumn([&](const auto & path, const auto & subcolumn_name, const auto &)
+            /// For Nested columns collect names of tuple elements and skip them while getting the base type of array.
+            IDataType::forEachSubcolumn([&](const auto & path, const auto &, const auto &)
             {
-                if (path.back().type != ISerialization::Substream::TupleElement)
-                    return;
-
-                if (subcolumn_name == requested_subcolumn_name
-                    || requested_subcolumn_name.starts_with(subcolumn_name + "."))
+                if (path.back().type == ISerialization::Substream::TupleElement)
                     tuple_elements.push_back(path.back().name_of_substream);
             }, ISerialization::SubstreamData(serialization));
 

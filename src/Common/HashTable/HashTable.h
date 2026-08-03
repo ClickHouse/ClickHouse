@@ -72,7 +72,7 @@ struct HashTableNoState
   * Otherwise the invariants in hash table probing do not met when NaNs are present.
   */
 template <typename T>
-inline ALWAYS_INLINE bool bitEquals(T a, T b)
+inline bool bitEquals(T a, T b)
 {
     if constexpr (is_floating_point<T>)
         /// Note that memcmp with constant size is a compiler builtin.
@@ -173,9 +173,9 @@ struct HashTableCell
     static const Key & getKey(const value_type & value) { return value; }  /// NOLINT(bugprone-return-const-ref-from-parameter)
 
     /// Are the keys at the cells equal?
-    bool ALWAYS_INLINE keyEquals(const Key & key_) const { return bitEquals(key, key_); }
-    bool ALWAYS_INLINE keyEquals(const Key & key_, size_t /*hash_*/) const { return bitEquals(key, key_); }
-    bool ALWAYS_INLINE keyEquals(const Key & key_, size_t /*hash_*/, const State & /*state*/) const { return bitEquals(key, key_); }
+    bool keyEquals(const Key & key_) const { return bitEquals(key, key_); }
+    bool keyEquals(const Key & key_, size_t /*hash_*/) const { return bitEquals(key, key_); }
+    bool keyEquals(const Key & key_, size_t /*hash_*/, const State & /*state*/) const { return bitEquals(key, key_); }
 
     /// If the cell can remember the value of the hash function, then remember it.
     void setHash(size_t /*hash_value*/) {}
@@ -359,11 +359,11 @@ template <bool need_zero_value_storage, typename Cell>
 struct ZeroValueStorage;
 
 template <typename Cell>
-struct ZeroValueStorage<true, Cell> // NOLINT(cppcoreguidelines-pro-type-member-init,hicpp-member-init) - `zero_value_storage` is raw storage for placement new, only written when `has_zero` becomes true
+struct ZeroValueStorage<true, Cell>
 {
 private:
     bool has_zero = false;
-    alignas(Cell) std::byte zero_value_storage[sizeof(Cell)];
+    alignas(Cell) std::byte zero_value_storage[sizeof(Cell)]; /// Storage of element with zero key.
 
 public:
     bool hasZero() const { return has_zero; }
@@ -1074,7 +1074,7 @@ protected:
 
             // The hash table was rehashed, so we have to re-find the key.
             size_t new_place = findCell(key, hash_value, grower.place(hash_value));
-            chassert(!buf[new_place].isZero(*this));
+            assert(!buf[new_place].isZero(*this));
             it = &buf[new_place];
         }
     }
@@ -1151,9 +1151,6 @@ public:
         const auto & key = keyHolderGetKey(key_holder);
         const auto key_hash = hash(key);
         prefetchByHash(key_hash);
-        /// Release any temporary key memory held by the holder (e.g. `SerializedKeyHolder` rolls back the Arena allocation).
-        /// Without this, every prefetch would leak the serialized key bytes in the aggregation pool.
-        keyHolderDiscardKey(key_holder);
     }
 
     /** Insert the key.
@@ -1267,7 +1264,7 @@ public:
             return false;
 
         /// We need to guarantee loop termination because there will be empty position
-        chassert(m_size < grower.bufSize());
+        assert(m_size < grower.bufSize());
 
         size_t next_position = erased_key_position;
 
