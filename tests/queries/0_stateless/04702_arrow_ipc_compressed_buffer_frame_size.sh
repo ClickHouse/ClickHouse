@@ -206,6 +206,28 @@ def zstd_frame(raw):
     return pa.Codec("zstd", compression_level=19).compress(raw, asbytes=True)
 
 
+def zstd_frame_without_declared_size(raw):
+    """One ZSTD frame that omits Frame_Content_Size, which a streaming writer produces and neither
+    ClickHouse nor pyarrow does, so it has to be assembled here.
+
+    Frame_Header_Descriptor 0 selects no content size, no checksum and no dictionary, leaving a
+    Window_Descriptor whose exponent sits in its top 5 bits. The payload goes in Raw blocks:
+    Block_Header is 3 bytes little-endian holding last-block in bit 0, block type in bits 1-2 (0 is
+    Raw) and the block size above them. The block size is capped at min(128 KB, window size), which is
+    also the per-block bound a reader can derive, so the window is set well above the payload.
+    """
+    max_block = 1 << 17
+    out = bytearray(ZSTD_MAGIC + bytes([0x00, (20 - 10) << 3]))
+    pos = 0
+    while True:
+        block = raw[pos:pos + max_block]
+        pos += len(block)
+        last = 1 if pos >= len(raw) else 0
+        out += struct.pack("<I", last | (len(block) << 3))[:3] + block
+        if last:
+            return bytes(out)
+
+
 def batch_meta(data):
     """The RecordBatch message's body offset, body length and per-buffer (offset, length) field offsets."""
     def u16(o):
@@ -360,7 +382,7 @@ for name, frames in (
     open(f"{out}/{name}.arrows", "wb").write(bytes(d))
 
 
-def lone_lz4_frame_buffer(data, prefix_value, frame):
+def lone_frame_buffer(data, prefix_value, frame):
     """Repoint a naturally-empty buffer at a new one carrying `frame`, appended past the body.
 
     Every other buffer's offset stays valid because nothing already in the body moves.
@@ -394,7 +416,7 @@ def empty_lz4_frame(declare_zero):
 for name, declare_zero in (("lz4_empty_frame_forged_prefix", False),
                            ("lz4_empty_frame_zero_size_forged_prefix", True)):
     open(f"{out}/{name}.arrows", "wb").write(
-        lone_lz4_frame_buffer(ch_lz4, 100 * 1024 ** 3, empty_lz4_frame(declare_zero)))
+        lone_frame_buffer(ch_lz4, 100 * 1024 ** 3, empty_lz4_frame(declare_zero)))
 
 # Case 15: a pyarrow LZ4 frame, which omits the optional content size, with a forged prefix below the
 # allocator's ceiling. Nothing pledges a size to contradict, so only the frame's blocks bound it.
@@ -416,6 +438,17 @@ d = bytearray(ch_lz4)
 set_frame_content_size(d, ch_offs[0], 1024 ** 3)
 struct.pack_into("<q", d, ch_offs[0], 4 * 1024 ** 2)
 open(f"{out}/lz4_pledge_above_blocks.arrows", "wb").write(bytes(d))
+
+# Cases 18 and 19: a ZSTD payload whose frame omits its content size, as a streaming writer emits. It
+# declares nothing to compare a prefix against, so only its block structure bounds it. The frame is
+# appended as its own buffer rather than repacked in place: its blocks are Raw, so it does not fit the
+# space the compressed payload occupied. Case 19 is NOT corrupt and must still be read.
+body = b"row data to bound" * 64
+frame = zstd_frame_without_declared_size(body)
+open(f"{out}/zstd_no_declared_size_forged_prefix.arrows", "wb").write(
+    lone_frame_buffer(ch_zstd, 100 * 1024 ** 3, frame))
+open(f"{out}/zstd_no_declared_size.arrows", "wb").write(
+    lone_frame_buffer(ch_zstd, len(body), frame))
 PYEOF
 
 check() {
@@ -446,6 +479,7 @@ check lz4_empty_frame_forged_prefix.arrows 'codec frame declares 0'
 check lz4_empty_frame_zero_size_forged_prefix.arrows 'codec frame declares 0'
 check lz4_no_declared_size_forged_prefix.arrows 'codec frame declares'
 check lz4_pledge_above_blocks.arrows 'blocks can produce at most'
+check zstd_no_declared_size_forged_prefix.arrows 'codec frame declares'
 # Not corrupt: a size the query cannot afford is a resource condition, not a data error. The size a
 # frame's blocks can produce is bounded, so the budget rather than the size is what has to be small.
 check consistent_large.arrows MEMORY_LIMIT_EXCEEDED 1M
@@ -455,7 +489,7 @@ check consistent_large.arrows MEMORY_LIMIT_EXCEEDED 1M
 # buffer whose frame honestly declares the 0 the comparison now sees, and a frame whose recorded size
 # reads 0 over blocks that do produce data (which must not be read as an exact size of zero).
 for f in wellformed_lz4 wellformed_zstd ch_lz4 ch_zstd zstd_multi_frame zstd_skippable_prefix \
-         zstd_empty_frame_honest_prefix lz4_zero_size_over_blocks; do
+         zstd_empty_frame_honest_prefix lz4_zero_size_over_blocks zstd_no_declared_size; do
     $CLICKHOUSE_LOCAL --query "
         SELECT count(), sum(i), uniqExact(s) FROM file('${TMP_DIR}/${f}.arrows', ArrowStream)"
 done

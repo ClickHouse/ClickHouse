@@ -93,14 +93,18 @@ std::optional<FrameContentBound> frameContentBound(CompressionCodec codec, const
 {
     if (codec == CompressionCodec::Zstd)
     {
-        /// Sums every frame of the payload, as the decompression call does, so the result stays
-        /// comparable to the caller's prefix for concatenated and skippable-prefixed frames too.
-        const UInt64 n = ZSTD_findDecompressedSize(src, size);
-        if (n == ZSTD_CONTENTSIZE_ERROR)
+        /// Both calls walk every frame of the payload, as the decompression call does, so their result
+        /// stays comparable to the caller's prefix for concatenated and skippable-prefixed frames too.
+        const UInt64 declared = ZSTD_findDecompressedSize(src, size);
+        if (declared == ZSTD_CONTENTSIZE_ERROR)
             throw Exception(ErrorCodes::INCORRECT_DATA, "Compressed Arrow IPC buffer is not a valid ZSTD frame");
-        if (n == ZSTD_CONTENTSIZE_UNKNOWN)
-            return std::nullopt;
-        return FrameContentBound{n, true};
+        if (declared != ZSTD_CONTENTSIZE_UNKNOWN)
+            return FrameContentBound{declared, true};
+        /// A frame may omit its size, and then only its block structure bounds it.
+        const UInt64 bound = ZSTD_decompressBound(src, size);
+        if (bound == ZSTD_CONTENTSIZE_ERROR)
+            throw Exception(ErrorCodes::INCORRECT_DATA, "Compressed Arrow IPC buffer is not a valid ZSTD frame");
+        return FrameContentBound{bound, false};
     }
 
     /// LZ4F_getFrameInfo consumes the header into the context, so the context must be fresh (it is
