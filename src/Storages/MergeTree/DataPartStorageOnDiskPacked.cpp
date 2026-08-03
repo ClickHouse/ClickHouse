@@ -972,6 +972,8 @@ MutableDataPartStoragePtr DataPartStorageOnDiskPacked::freeze(
              auto projection_storage = getProjection(file);
              auto params_copy = params;
              params_copy.external_transaction = dest_storage->transaction;
+             /// The top-level fsync below covers the whole subtree; don't let each projection re-walk it.
+             params_copy.fsync_part_directory = false;
              projection_storage->freeze(dest_storage->getRelativePath(), file, read_settings, write_settings, save_metadata_callback, params_copy);
          }
     }
@@ -986,6 +988,11 @@ MutableDataPartStoragePtr DataPartStorageOnDiskPacked::freeze(
 
     if (save_metadata_callback)
         save_metadata_callback(disk);
+
+    /// Make the clone durable before the caller commits the covering part, same as the Full-storage
+    /// override (the hardlink/copy above fsyncs nothing). Runs once for the whole subtree here.
+    if (params.fsync_part_directory && !params.external_transaction && !disk->isRemote())
+        fsyncFrozenCloneTree(*disk, fs::path(to) / dir_path);
 
     return dest_storage;
 }
