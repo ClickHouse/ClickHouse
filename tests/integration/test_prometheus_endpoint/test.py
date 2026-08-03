@@ -156,3 +156,34 @@ def test_prometheus_endpoint_reserved_label():
         )
     finally:
         reserved_label_cluster.shutdown()
+
+
+def test_prometheus_endpoint_reserved_family_label():
+    reserved_family_label_cluster = ClickHouseCluster(__file__)
+    reserved_family_label_cluster.add_instance(
+        "node_reserved_family_label",
+        main_configs=["configs/prom_conf_reserved_family_label.xml"],
+    )
+
+    try:
+        # "group" is a per-sample label of histogram/dimensional metric families, so it cannot be
+        # also configured as a constant label - otherwise a sample would carry two "group" labels.
+        with pytest.raises(Exception):
+            reserved_family_label_cluster.start()
+
+        logs = ""
+        error_logs_file = os.path.join(
+            reserved_family_label_cluster.instances_dir,
+            "node_reserved_family_label",
+            "logs",
+            "clickhouse-server.err.log",
+        )
+        with open(error_logs_file, "r") as f:
+            logs = f.read()
+
+        assert (
+            "Invalid Prometheus label name 'group' in the configuration: this name is reserved"
+            in logs
+        )
+    finally:
+        reserved_family_label_cluster.shutdown()

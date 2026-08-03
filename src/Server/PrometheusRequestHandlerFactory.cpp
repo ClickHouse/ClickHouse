@@ -8,6 +8,8 @@
 #include <Server/PrometheusRequestHandler.h>
 #include <Server/PrometheusRequestHandlerConfig.h>
 #include <Common/StringUtils.h>
+#include <Common/HistogramMetrics.h>
+#include <Common/DimensionalMetrics.h>
 
 
 namespace DB
@@ -45,15 +47,31 @@ namespace
         return true;
     }
 
-    /// Names starting with "__" are reserved by Prometheus itself.
-    /// The other names are reserved because `PrometheusMetricsWriter` always writes them itself for
-    /// specific metrics (the "le" label of histogram buckets, and the labels of the "ClickHouse_Info"
-    /// metric); allowing them as constant labels would make a sample contain two labels with the same name.
-    bool isReservedPrometheusLabelName(const String & name)
+    /// Label names that `PrometheusMetricsWriter` writes itself, so they cannot also be used as constant
+    /// labels - otherwise a sample would contain two labels with the same name (invalid exposition).
+    /// This covers the "le" label of histogram buckets, the labels of the "ClickHouse_Info" metric, and
+    /// the per-sample labels of every histogram/dimensional metric family (e.g. "group", "direction",
+    /// "http_method", "part_state"), which are prepended-then-appended without de-duplication.
+    /// (Names starting with "__" are reserved by Prometheus itself and are checked separately.)
+    std::unordered_set<String> getReservedPrometheusLabelNames()
     {
-        static const std::unordered_set<String> reserved_names
+        std::unordered_set<String> reserved_names
             = {"le", "name", "version", "version_describe", "version_major", "version_minor", "version_patch"};
-        return name.starts_with("__") || reserved_names.contains(name);
+
+        HistogramMetrics::Factory::instance().forEachFamily(
+            [&reserved_names](const HistogramMetrics::MetricFamily & family)
+            {
+                for (const auto & label : family.getLabels())
+                    reserved_names.insert(label);
+            });
+        DimensionalMetrics::Factory::instance().forEachFamily(
+            [&reserved_names](const DimensionalMetrics::MetricFamily & family)
+            {
+                for (const auto & label : family.getLabels())
+                    reserved_names.insert(label);
+            });
+
+        return reserved_names;
     }
 
     /// Parses a configuration like this:
@@ -69,6 +87,7 @@ namespace
 
         Strings label_names;
         config.keys(labels_prefix, label_names);
+        const auto reserved_names = getReservedPrometheusLabelNames();
         for (const String & label_name : label_names)
         {
             if (!isValidPrometheusLabelName(label_name))
@@ -76,7 +95,7 @@ namespace
                     ErrorCodes::INVALID_CONFIG_PARAMETER,
                     "Invalid Prometheus label name '{}' in the configuration: label names must match [a-zA-Z_][a-zA-Z0-9_]* and must not be repeated",
                     label_name);
-            if (isReservedPrometheusLabelName(label_name))
+            if (label_name.starts_with("__") || reserved_names.contains(label_name))
                 throw Exception(
                     ErrorCodes::INVALID_CONFIG_PARAMETER,
                     "Invalid Prometheus label name '{}' in the configuration: this name is reserved by Prometheus or by ClickHouse "
