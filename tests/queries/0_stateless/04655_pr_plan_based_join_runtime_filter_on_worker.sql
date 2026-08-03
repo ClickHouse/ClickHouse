@@ -1,7 +1,7 @@
 -- A JOIN shipped by plan-based parallel replicas carries its join runtime filter into the fragment, but the
 -- shipped build step does nothing there: a deserialized step cannot publish its filter, so the replica has
--- to build its own while re-optimizing the fragment. This test asserts it really does, and that the filter
--- is applied, not just planned. See PR #112268 review (comment r3685836765).
+-- to build its own while re-optimizing the fragment. This test asserts it really does, and that the filter is
+-- applied, not just planned. See PR #112268 review (comment r3685836765).
 --
 -- `parallel_replicas_local_plan = 0` puts the whole join on the replicas, so every runtime-filter counter
 -- below can only come from them. A fragment arrives as a plan packet rather than SQL, so its `query_log` row
@@ -31,6 +31,9 @@ SET join_runtime_filter_min_probe_rows = 1;
 -- drop probe rows, so without this the filter is sometimes not created at all.
 SET query_plan_join_swap_table = 'false';
 SET query_plan_optimize_join_order_randomize = 0;
+-- Keep the filter on the row-level path: with index analysis the pruning happens at granule level instead,
+-- so the rows never reach `__applyFilter` and the row counters asserted below stop being comparable.
+SET enable_join_runtime_filters_index_analysis = 0;
 
 -- RIGHT JOIN: the build side is the coordinated side, so this is the shape whose split has to be lifted
 -- through `BuildRuntimeFilterStep` for the join to ship at all.
