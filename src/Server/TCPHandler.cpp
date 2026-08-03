@@ -496,6 +496,13 @@ void TCPHandler::runImpl()
             return;
         }
 
+        /// An interserver peer that failed authentication has not proven knowledge of the
+        /// cluster secret, so nothing is serialized back to it (an exception would disclose
+        /// error details, including whether the named cluster exists); the connection is just
+        /// closed. The failure is recorded in `system.session_log`.
+        if (is_interserver_mode && e.code() == ErrorCodes::AUTHENTICATION_FAILED)
+            throw;
+
         try
         {
             /// We try to send error information to the client.
@@ -2082,6 +2089,39 @@ void TCPHandler::receiveHello()
             LOG_WARNING(LogFrequencyLimiter(log, 10),
                         "Using deprecated interserver protocol because the client is too old. Consider upgrading all nodes in cluster.");
         processClusterNameAndSalt();
+
+        /// Reject interserver mode unless the cluster has a `<secret>`; otherwise any client
+        /// could enter interserver mode and exercise pre-auth protocol packets. An unknown
+        /// cluster (`getCluster` throws) is rejected the same way, so an unauthenticated peer
+        /// cannot distinguish the two cases. The failure is recorded in `system.session_log`
+        /// via `onAuthenticationFailure`, and the connection is closed without serializing
+        /// the exception back to the unauthenticated peer (see the handshake catch block).
+        try
+        {
+            String cluster_secret;
+            try
+            {
+                cluster_secret = server.context()->getCluster(cluster)->getSecret();
+            }
+            catch (const Exception & e)
+            {
+                throw Exception::createRuntime(ErrorCodes::AUTHENTICATION_FAILED, e.message());
+            }
+
+            if (cluster_secret.empty())
+                throw Exception(ErrorCodes::AUTHENTICATION_FAILED,
+                    "Interserver authentication failed: cluster '{}' is not configured with a secret", cluster);
+        }
+        catch (const Exception & e)
+        {
+            if (e.code() != ErrorCodes::AUTHENTICATION_FAILED)
+                throw;
+
+            session = makeSession();
+            session->onAuthenticationFailure(/* user_name= */ std::nullopt, socket().peerAddress(), e);
+            throw;
+        }
+
         return;
     }
 
@@ -3377,12 +3417,21 @@ bool TCPHandler::connectionLimitReached()
 
 Poco::Net::SocketAddress TCPHandler::getClientAddress(const ClientInfo & client_info)
 {
-    /// Extract the last entry from comma separated list of forwarded_for addresses.
-    /// Only the last proxy can be trusted (if any).
+    const bool use_forwarded_address = server.config().getBool("auth_use_forwarded_address", false);
+    if (!use_forwarded_address || client_info.forwarded_for.empty())
+        return socket().peerAddress();
+
+    /// Extract the last entry from the comma-separated list. Only the last proxy can be trusted (if any).
     auto forwarded_address = client_info.getLastForwardedFor();
-    if (forwarded_address && server.config().getBool("auth_use_forwarded_address", false))
-        return *forwarded_address;
-    return socket().peerAddress();
+
+    /// With `auth_use_forwarded_address` enabled, consider an invalid address an error
+    /// instead of silently authenticating with the proxy's address.
+    if (!forwarded_address)
+        throw Exception(
+            ErrorCodes::INCORRECT_DATA,
+            "Invalid forwarded client address: expected an IP literal with an optional numeric port");
+
+    return *forwarded_address;
 }
 
 }
