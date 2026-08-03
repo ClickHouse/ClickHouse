@@ -233,7 +233,6 @@ ASTs InterpreterShowGrantsQuery::getAttachGrantQueries(const IAccessEntity & use
     return getGrantQueriesImpl(user_or_role, nullptr, true, false);
 }
 
-void registerInterpreterShowGrantsQuery(InterpreterFactory & factory);
 void registerInterpreterShowGrantsQuery(InterpreterFactory & factory)
 {
     auto create_fn = [] (const InterpreterFactory::Arguments & args)

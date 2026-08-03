@@ -6,8 +6,6 @@
 #include <Storages/MergeTree/MergeTreeSettings.h>
 #include <Storages/StorageInMemoryMetadata.h>
 #include <base/defines.h>
-#include <Common/Jemalloc.h>
-#include <Common/JemallocMergeTreeArena.h>
 #include <Common/MemoryTrackerBlockerInThread.h>
 
 namespace DB
@@ -19,63 +17,43 @@ namespace ErrorCodes
     extern const int NO_SUCH_COLUMN_IN_TABLE;
 }
 
-Block getIndexBlockAndPermute(const Block & block, const Names & names, const IColumnPermutation * permutation, Block * permuted_columns_cache)
+namespace MergeTreeSetting
 {
-    /// The cache is meaningful only when a permutation is applied: it stores the result
-    /// of `permute()` so that subsequent lookups by name return the already-permuted column.
-    /// If `permutation == nullptr`, there is nothing to amortize, so we ignore the cache.
-    Block * cache = permutation ? permuted_columns_cache : nullptr;
+    extern const MergeTreeSettingsString default_compression_codec;
+}
 
+Block getIndexBlockAndPermute(const Block & block, const Names & names, const IColumnPermutation * permutation)
+{
     Block result;
     for (size_t i = 0, size = names.size(); i < size; ++i)
     {
-        if (cache && cache->has(names[i]))
-        {
-            result.insert(i, cache->getByName(names[i]));
-            continue;
-        }
-
         auto src_column = block.getColumnOrSubcolumnByName(names[i]);
         src_column.column = removeSpecialRepresentations(src_column.column);
         src_column.column = src_column.column->convertToFullColumnIfConst();
+        result.insert(i, src_column);
 
         /// Reorder primary key columns in advance and add them to `primary_key_columns`.
         if (permutation)
-            src_column.column = src_column.column->permute(*permutation, 0);
-
-        if (cache)
-            cache->insert(src_column);
-
-        result.insert(i, src_column);
+        {
+            auto & column = result.getByPosition(i);
+            column.column = column.column->permute(*permutation, 0);
+        }
     }
 
     return result;
 }
 
-Block permuteBlockIfNeeded(const Block & block, const IColumnPermutation * permutation, Block * permuted_columns_cache)
+Block permuteBlockIfNeeded(const Block & block, const IColumnPermutation * permutation)
 {
-    /// See the comment in `getIndexBlockAndPermute`: the cache only stores genuinely
-    /// permuted columns, so it is ignored when `permutation == nullptr`.
-    Block * cache = permutation ? permuted_columns_cache : nullptr;
-
     Block result;
     for (size_t i = 0; i < block.columns(); ++i)
     {
-        const auto & col = block.getByPosition(i);
-        if (cache && cache->has(col.name))
-        {
-            result.insert(i, cache->getByName(col.name));
-            continue;
-        }
-
-        auto column_with_type = col;
+        result.insert(i, block.getByPosition(i));
         if (permutation)
-            column_with_type.column = column_with_type.column->permute(*permutation, 0);
-
-        if (cache)
-            cache->insert(column_with_type);
-
-        result.insert(i, column_with_type);
+        {
+            auto & column = result.getByPosition(i);
+            column.column = column.column->permute(*permutation, 0);
+        }
     }
     return result;
 }
@@ -88,6 +66,7 @@ IMergeTreeDataPartWriter::IMergeTreeDataPartWriter(
     const MergeTreeSettingsPtr & storage_settings_,
     const NamesAndTypesList & columns_list_,
     const StorageMetadataPtr & metadata_snapshot_,
+    const VirtualsDescriptionPtr & virtual_columns_,
     const MergeTreeWriterSettings & settings_,
     MergeTreeIndexGranularityPtr index_granularity_)
     : data_part_name(data_part_name_)
@@ -95,6 +74,7 @@ IMergeTreeDataPartWriter::IMergeTreeDataPartWriter(
     , index_granularity_info(index_granularity_info_)
     , storage_settings(storage_settings_)
     , metadata_snapshot(metadata_snapshot_)
+    , virtual_columns(virtual_columns_)
     , columns_list(columns_list_)
     , settings(settings_)
     , with_final_mark(settings.can_use_adaptive_granularity)
@@ -111,11 +91,6 @@ std::optional<Columns> IMergeTreeDataPartWriter::releaseIndexColumns()
     /// The memory for index was allocated without thread memory tracker.
     /// We need to deallocate it in shrinkToFit without memory tracker as well.
     MemoryTrackerBlockerInThread temporarily_disable_memory_tracker;
-
-    /// `shrinkToFit` reallocates each index column to a right-sized buffer, and that buffer is the
-    /// resident primary index kept for the part's whole lifetime. Route it into the dedicated arena
-    /// (the reload path does the same in `loadIndex`).
-    ScopedJemallocThreadArena mergetree_arena_scope(JemallocMergeTreeArena::getArenaIndex());
 
     Columns result;
     result.reserve(index_columns.size());
@@ -156,18 +131,18 @@ SerializationPtr IMergeTreeDataPartWriter::getSerialization(const String & colum
 
 ASTPtr IMergeTreeDataPartWriter::getCodecDescOrDefault(const String & column_name, CompressionCodecPtr default_codec) const
 {
-    /// The `default_codec` is already resolved by `MergeTreeData::getCompressionCodecForPart`, which
-    /// honors the table-level `default_compression_codec` setting as well as `RECOMPRESS` TTL codecs.
-    /// We must trust it here: re-reading `default_compression_codec` and overriding `default_codec`
-    /// would make a `RECOMPRESS` TTL merge write column streams with the setting's codec while the
-    /// part metadata (`default_compression_codec.txt`) records the TTL codec, so the metadata and the
-    /// actual on-disk data would diverge and recompression would not be applied.
     ASTPtr default_codec_desc = default_codec->getFullCodecDesc();
 
-    if (const auto * column_desc = metadata_snapshot->columns.tryGet(column_name))
+    auto default_compression_codec_mergetree_settings = (*storage_settings)[MergeTreeSetting::default_compression_codec].value;
+    // Prioritize the codec from the settings over `default_codec`
+    if (!default_compression_codec_mergetree_settings.empty())
+        default_codec_desc = CompressionCodecFactory::instance().get(default_compression_codec_mergetree_settings)->getFullCodecDesc();
+
+    const auto & columns = metadata_snapshot->getColumns();
+    if (const auto * column_desc = columns.tryGet(column_name))
         return column_desc->codec ? column_desc->codec : default_codec_desc;
 
-    if (const auto * virtual_desc = metadata_snapshot->virtuals.tryGetDescription(column_name, VirtualsKind::All, VirtualsMaterializationPlace::Reader))
+    if (const auto * virtual_desc = virtual_columns->tryGetDescription(column_name))
         return virtual_desc->codec ? virtual_desc->codec : default_codec_desc;
 
     throw Exception(ErrorCodes::LOGICAL_ERROR, "Unexpected column name: {}", column_name);
@@ -187,6 +162,7 @@ MergeTreeDataPartWriterPtr createMergeTreeDataPartCompactWriter(
         const NamesAndTypesList & columns_list,
         const ColumnPositions & column_positions,
         const StorageMetadataPtr & metadata_snapshot,
+        const VirtualsDescriptionPtr & virtual_columns,
         const std::vector<MergeTreeIndexPtr> & indices_to_recalc,
         const String & marks_file_extension_,
         const CompressionCodecPtr & default_codec_,
@@ -202,6 +178,7 @@ MergeTreeDataPartWriterPtr createMergeTreeDataPartWideWriter(
         const MergeTreeSettingsPtr & storage_settings_,
         const NamesAndTypesList & columns_list,
         const StorageMetadataPtr & metadata_snapshot,
+        const VirtualsDescriptionPtr & virtual_columns,
         const std::vector<MergeTreeIndexPtr> & indices_to_recalc,
         const String & marks_file_extension_,
         const CompressionCodecPtr & default_codec_,
@@ -220,6 +197,7 @@ MergeTreeDataPartWriterPtr createMergeTreeDataPartWriter(
         const NamesAndTypesList & columns_list,
         const ColumnPositions & column_positions,
         const StorageMetadataPtr & metadata_snapshot,
+        const VirtualsDescriptionPtr & virtual_columns,
         const std::vector<MergeTreeIndexPtr> & indices_to_recalc,
         const String & marks_file_extension_,
         const CompressionCodecPtr & default_codec_,
@@ -238,6 +216,7 @@ MergeTreeDataPartWriterPtr createMergeTreeDataPartWriter(
             columns_list,
             column_positions,
             metadata_snapshot,
+            virtual_columns,
             indices_to_recalc,
             marks_file_extension_,
             default_codec_,
@@ -253,6 +232,7 @@ MergeTreeDataPartWriterPtr createMergeTreeDataPartWriter(
             storage_settings_,
             columns_list,
             metadata_snapshot,
+            virtual_columns,
             indices_to_recalc,
             marks_file_extension_,
             default_codec_,

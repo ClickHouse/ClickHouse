@@ -1,8 +1,7 @@
--- The plan assertions below match analyzer-generated column identifiers (`__table2.`) in the legacy
--- `EXPLAIN` output, so both are pinned for the whole file. The old analyzer does not build the plan
--- shape that triggers this bug, so nothing is lost by pinning.
+-- The plan assertions below match analyzer-generated column identifiers (`__table2.`), so the
+-- analyzer is pinned for the whole file. The old analyzer does not build the plan shape that
+-- triggers this bug, so nothing is lost by pinning.
 SET enable_analyzer = 1;
-SET explain_query_plan_default = 'legacy';
 
 DROP TABLE IF EXISTS t1;
 DROP TABLE IF EXISTS t2;
@@ -38,8 +37,7 @@ SELECT count() > 0 FROM (
     WHERE t1.grp = 10 AND t2.reviewer = 100 AND t2.enabled = true
     SETTINGS join_use_nulls = 1, query_plan_merge_filters = 1, query_plan_convert_outer_join_to_inner_join = 1,
              query_plan_remove_unused_columns = 1, query_plan_merge_filter_into_join_condition = 0,
-             query_plan_optimize_join_order_randomize = 0, optimize_move_to_prewhere = 0,
-             query_plan_optimize_prewhere = 0
+             optimize_move_to_prewhere = 0, query_plan_optimize_prewhere = 0
 ) WHERE position(explain, 'AND column: equals(__table2.enabled, 1_Bool)_0') > 0;
 
 -- The rename above is printed by `FilterStep::describeActions`, which splits a clone of the DAG and
@@ -55,8 +53,7 @@ SELECT max(toUInt32OrZero(extract(explain, 'FilterTransform[^0-9]+([0-9]+)'))) >
     WHERE t1.grp = 10 AND t2.reviewer = 100 AND t2.enabled = true
     SETTINGS join_use_nulls = 1, query_plan_merge_filters = 1, query_plan_convert_outer_join_to_inner_join = 1,
              query_plan_remove_unused_columns = 1, query_plan_merge_filter_into_join_condition = 0,
-             query_plan_optimize_join_order_randomize = 0, optimize_move_to_prewhere = 0,
-             query_plan_optimize_prewhere = 0, max_threads = 1
+             optimize_move_to_prewhere = 0, query_plan_optimize_prewhere = 0, max_threads = 1
 );
 
 SELECT 'right join, left-side ON condition repeated in WHERE';
