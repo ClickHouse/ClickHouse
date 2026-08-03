@@ -62,6 +62,16 @@ from ci.praktika.utils import Shell
 # and a `#!` script cannot control its own `argv[0]` - the kernel replaces it
 # with the interpreter. Running the interpreter itself through a symlink named
 # `clickhouse-server` gives the fake exactly the identity of the real thing.
+#
+# The real watchdog does not keep the server's name: `setupWatchdog` writes
+# `clickhouse-watchdog` over its own `argv[0]` in place, truncated to the
+# length of the original - `clickhouse-server` leaves `clickhouse-watchd` - and
+# restores the original name just before each respawn fork, so the next server
+# inherits it. The fake models both renames with `execv` through differently
+# named symlinks (`argv[7]` the server one, `argv[8]` the watchdog one), which
+# keeps the pid while changing the identity, exactly like the in-place `memcpy`.
+# An empty `argv[8]` keeps the watchdog under the server's own name - the shape
+# of the rename window, which the harness must accept as a watchdog too.
 _FAKE_SERVER = """
 import fcntl
 import os
@@ -82,6 +92,8 @@ restart_file = sys.argv[4]
 # previous server died, so the pid file is empty at teardown time.
 restart_mode = sys.argv[5]
 restart_delay = float(sys.argv[6])
+server_exe, watchdog_exe = sys.argv[7], sys.argv[8]
+role = sys.argv[9] if len(sys.argv) > 9 else "entry"
 # Bounded well above `RESPAWN_STOP_ATTEMPTS`, so that a teardown killing only
 # servers loses, yet a failing test cannot leave a process respawning forever.
 RESTART_ALWAYS_LIMIT = 20
@@ -103,49 +115,65 @@ def serve(hand_over):
         time.sleep(0.1)
 
 
-if restart_mode == "delayed":
-    # Detach from the `sh -c ...` wrapper, as "always" does, so that the wrapper
-    # is already gone when the teardown reaps it and the pid file is looked at
-    # immediately after the server died - before this watchdog publishes the
-    # replacement.
-    if os.fork() != 0:
-        os._exit(0)
+def spawn_server_and_wait(hand_over=False):
+    # Fork the server below the watchdog. When the watchdog runs renamed, the
+    # child re-execs through the server symlink - restoring the server's own
+    # name for the child, as the real watchdog's `memcpy` of the original
+    # `argv[0]` before the fork does - keeping the pid the fork gave it.
     if os.fork() == 0:
-        serve(hand_over=False)
+        if watchdog_exe:
+            os.execv(
+                server_exe,
+                [server_exe]
+                + sys.argv[:9]
+                + ["serve-handover" if hand_over else "serve"],
+            )
+        serve(hand_over)
     os.wait()
-    time.sleep(restart_delay)
-    if os.fork() == 0:
-        serve(hand_over=False)
-    os.wait()
+
+
+def watch():
+    if restart_mode == "delayed":
+        spawn_server_and_wait()
+        time.sleep(restart_delay)
+        spawn_server_and_wait()
+    elif restart_mode == "always":
+        for _ in range(RESTART_ALWAYS_LIMIT):
+            spawn_server_and_wait()
+    else:
+        spawn_server_and_wait(hand_over=bool(restart_file))
+        if restart_file:
+            # Restart the server once, keeping the watchdog's and the wrapper's
+            # own pids - which is exactly what makes the pid snapshot taken at
+            # startup stale.
+            spawn_server_and_wait()
     sys.exit(0)
 
-if restart_mode == "always":
+
+if role == "serve":
+    serve(hand_over=False)
+if role == "serve-handover":
+    serve(hand_over=True)
+if role == "watch":
+    watch()
+
+# The entry process, forked by the `sh -c ...` wrapper.
+if restart_mode in ("delayed", "always"):
     # Detach the watchdog from the `sh -c ...` wrapper - fork it, and let the
     # process the wrapper is waiting for exit at once - so that the only thing
     # bringing servers back is the watchdog itself, whether or not the shell
-    # exec'd this process instead of forking it.
+    # exec'd this process instead of forking it. For "delayed" this also makes
+    # the wrapper already gone when the teardown reaps it and the pid file is
+    # looked at immediately after the server died - before this watchdog
+    # publishes the replacement.
     if os.fork() != 0:
         os._exit(0)
-    for _ in range(RESTART_ALWAYS_LIMIT):
-        if os.fork() == 0:
-            serve(hand_over=False)
-        os.wait()
-    sys.exit(0)
-
-if os.fork() == 0:
-    serve(hand_over=bool(restart_file))
-# The watchdog half: outlive the server, as `setupWatchdog` does. `argv[0]`
-# survives the fork, so the server below is indistinguishable from the real one
-# to `_server_process_alive`, just as in CI.
-os.wait()
-if restart_file:
-    # Restart the server once, keeping the watchdog's and the wrapper's own
-    # pids - which is exactly what makes the pid snapshot taken at startup
-    # stale.
-    if os.fork() == 0:
-        serve(hand_over=False)
-    os.wait()
-sys.exit(0)
+# Become the watchdog: outlive the server, as `setupWatchdog` does. The exec
+# through the watchdog symlink is `setupWatchdog`'s in-place rename to
+# `clickhouse-watchdog` - same pid, new `argv[0]`.
+if watchdog_exe:
+    os.execv(watchdog_exe, [watchdog_exe] + sys.argv[:9] + ["watch"])
+watch()
 """
 
 
@@ -166,11 +194,17 @@ def _start_fake_server(
     restart_file="",
     restart_mode="once",
     restart_delay=0,
+    watchdog_name="clickhouse-watchd",
 ):
     """Start wrapper shell -> watchdog -> "server", as the CI harness does.
 
     `name` is the `argv[0]` the fake server runs under - the sole thing that
     makes it the server as far as `_server_process_alive` is concerned.
+    `watchdog_name` is the `argv[0]` the watchdog renames itself to; the
+    default is what `BaseDaemon::setupWatchdog`'s in-place rename leaves for a
+    server started as `clickhouse-server` - `clickhouse-watchdog` truncated to
+    the original name's length. Pass "" to keep the watchdog under the server's
+    own name, the shape of the moments around the rename.
 
     With `restart_file`, the watchdog restarts the server under a new pid once
     that file appears, modelling `CLICKHOUSE_WATCHDOG_RESTART=1`. With
@@ -187,6 +221,10 @@ def _start_fake_server(
     # split as the real `clickhouse-server`, which is a symlink to `clickhouse`.
     server = tmp_path / name
     server.symlink_to(sys.executable)
+    watchdog = ""
+    if watchdog_name:
+        watchdog = tmp_path / watchdog_name
+        watchdog.symlink_to(sys.executable)
     # Always the production pid-file name, whatever the binary is called: an
     # unrelated process must not be taken for the server just because
     # `clickhouse-server.pid` appears somewhere in its command line.
@@ -194,7 +232,8 @@ def _start_fake_server(
     status_file = tmp_path / "status"
     proc = subprocess.Popen(
         f"{server} {script} {pid_file} {status_file} '{ignore_signals}' "
-        f"'{restart_file}' '{restart_mode}' '{restart_delay}'",
+        f"'{restart_file}' '{restart_mode}' '{restart_delay}' "
+        f"'{server}' '{watchdog}'",
         shell=True,
         cwd=tmp_path,
     )
@@ -426,6 +465,79 @@ def test_stop_server_waits_out_a_watchdog_that_respawns_late(monkeypatch, tmp_pa
         _cleanup(proc, ClickHouseProc._current_server_pid(pid_file) or startup_pid)
 
 
+def test_watchdog_discovery_sees_the_renamed_watchdog(tmp_path):
+    # `BaseDaemon::setupWatchdog` renames the watchdog to `clickhouse-watchdog`
+    # in place, so a server started as `clickhouse-server` leaves it named
+    # `clickhouse-watchd` - not a server as far as `_server_process_alive` is
+    # concerned. A watchdog discovery that only accepts the server's own name
+    # therefore returns nothing in `CLICKHOUSE_WATCHDOG_RESTART=1` mode: the
+    # grace-period wait in `_stop_respawned_server` has no watchdog to wait
+    # for, and an empty pid file is taken as final while the renamed parent is
+    # still free to publish a replacement server - the very race the wait
+    # exists to close.
+    proc, pid = _start_fake_server(tmp_path)
+    watchdogs = []
+    try:
+        watchdogs = ClickHouseProc._server_watchdog_pids(pid)
+        assert watchdogs, (
+            "the watchdog discovery does not see a watchdog renamed to "
+            "`clickhouse-watchd`"
+        )
+        for watchdog in watchdogs:
+            assert ClickHouseProc._watchdog_process_alive(watchdog), (
+                f"the renamed watchdog {watchdog} is not accepted as a watchdog"
+            )
+            # And it is exactly the identity split that used to hide it: the
+            # renamed watchdog no longer passes for the server itself.
+            assert not ClickHouseProc._server_process_alive(watchdog), (
+                f"the renamed watchdog {watchdog} passes the *server* identity "
+                "check; this test no longer exercises the rename"
+            )
+    finally:
+        for watchdog in watchdogs:
+            _cleanup(proc, watchdog)
+        _cleanup(proc, pid)
+
+
+def test_watchdog_discovery_accepts_the_untruncated_watchdog_name(tmp_path):
+    # A server started under a name at least as long as `clickhouse-watchdog`
+    # (a path, say) leaves the rename untruncated, so the full name must be
+    # accepted just like the `clickhouse-watchd` truncation.
+    proc, pid = _start_fake_server(tmp_path, watchdog_name="clickhouse-watchdog")
+    watchdogs = []
+    try:
+        watchdogs = ClickHouseProc._server_watchdog_pids(pid)
+        assert watchdogs, (
+            "the watchdog discovery does not see a watchdog named "
+            "`clickhouse-watchdog`"
+        )
+    finally:
+        for watchdog in watchdogs:
+            _cleanup(proc, watchdog)
+        _cleanup(proc, pid)
+
+
+def test_watchdog_discovery_accepts_a_watchdog_still_under_the_server_name(tmp_path):
+    # Around the rename the watchdog still carries the server's own `argv[0]`:
+    # between the fork and the rename, and again around each respawn, when
+    # `setupWatchdog` restores the original name for the next server to
+    # inherit. Both names must count as the watchdog.
+    proc, pid = _start_fake_server(tmp_path, watchdog_name="")
+    watchdogs = []
+    try:
+        watchdogs = ClickHouseProc._server_watchdog_pids(pid)
+        assert watchdogs, (
+            "the watchdog discovery does not see a watchdog that still runs "
+            "under the server's own name"
+        )
+        for watchdog in watchdogs:
+            assert ClickHouseProc._watchdog_process_alive(watchdog)
+    finally:
+        for watchdog in watchdogs:
+            _cleanup(proc, watchdog)
+        _cleanup(proc, pid)
+
+
 def test_stop_server_leaves_an_unrelated_process_alone(monkeypatch, tmp_path):
     # The pid file is read once at startup, so by teardown its pid may belong to
     # an unrelated process the kernel has since given it to. stop_server must not
@@ -433,7 +545,9 @@ def test_stop_server_leaves_an_unrelated_process_alone(monkeypatch, tmp_path):
     # `SIGKILL` from going to a random process on the runner. Note that this
     # process does carry `.../clickhouse-server.pid` in its arguments, the shape
     # a substring search over the whole command line would wrongly accept.
-    proc, pid = _start_fake_server(tmp_path, name="not-a-clickhouse-binary")
+    proc, pid = _start_fake_server(
+        tmp_path, name="not-a-clickhouse-binary", watchdog_name=""
+    )
     try:
         _make_proc(monkeypatch, tmp_path, proc, pid).stop_server()
         assert _pid_alive(pid), "stop_server killed an unrelated process"
@@ -484,7 +598,9 @@ def test_liveness_check_without_proc_rejects_an_unrelated_process(
     # The `argv[0]` identity guard has to hold on the `ps` path too, or a
     # recycled pid gets a SIGKILL meant for the server.
     monkeypatch.setattr(ClickHouseProc, "HAS_PROC", False)
-    proc, pid = _start_fake_server(tmp_path, name="not-a-clickhouse-binary")
+    proc, pid = _start_fake_server(
+        tmp_path, name="not-a-clickhouse-binary", watchdog_name=""
+    )
     try:
         assert not ClickHouseProc._server_process_alive(pid), (
             "the liveness check took an unrelated process for the server"

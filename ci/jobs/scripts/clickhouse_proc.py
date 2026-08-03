@@ -69,6 +69,16 @@ class ClickHouseProc:
     # `argv[0]` the servers are started with (see `self.command` below), used to
     # tell the server apart from a process that has been given its recycled pid.
     SERVER_ARGV0 = "clickhouse-server"
+    # `argv[0]` of the watchdog above the server: `BaseDaemon::setupWatchdog`
+    # renames the original process by writing this name over its `argv[0]` in
+    # place, so it comes out truncated to the length of the name the server was
+    # started under - `clickhouse-server` yields `clickhouse-watchd`.
+    WATCHDOG_ARGV0 = "clickhouse-watchdog"
+    # The shortest truncation of `WATCHDOG_ARGV0` accepted as the watchdog. Any
+    # `argv[0]` at least this long cannot be truncated further by the rename,
+    # and a shorter one (a server started as plain `clickhouse`) would leave a
+    # name too ambiguous to signal.
+    WATCHDOG_ARGV0_MIN = len("clickhouse-watch")
     # How many times `stop_server` takes out a server that the watchdog brought
     # back while the previous one was being stopped, before giving up on it.
     RESPAWN_STOP_ATTEMPTS = 3
@@ -937,7 +947,7 @@ clickhouse-client --query "SELECT count() FROM test.visits"
             still_alive = [
                 watchdog
                 for watchdog in watchdogs
-                if cls._server_process_alive(watchdog)
+                if cls._watchdog_process_alive(watchdog)
             ]
             if not still_alive or cls._current_server_pid(pid_file):
                 return still_alive
@@ -956,7 +966,8 @@ clickhouse-client --query "SELECT count() FROM test.visits"
 
         `BaseDaemon::setupWatchdog` keeps the original process as the watchdog
         and forks the server below it, so the watchdog is the parent of the pid
-        in the pid file and shares its `argv[0]`. Outermost first, so an inner
+        in the pid file - renamed to `clickhouse-watchdog`, which is what
+        `_watchdog_process_alive` checks for. Outermost first, so an inner
         watchdog cannot be restarted by an outer one while it is being killed.
 
         Only called once a server has been seen coming back, or once a watchdog
@@ -969,23 +980,28 @@ clickhouse-client --query "SELECT count() FROM test.visits"
                 f"ClickHouse watchdog process {watchdog} can bring the server "
                 f"back - send KILL signal"
             )
-            cls._signal_server(watchdog, signal.SIGKILL, "KILL")
-            if not cls._wait_server_gone(watchdog, timeout=60):
+            cls._signal_server(
+                watchdog, signal.SIGKILL, "KILL", alive=cls._watchdog_process_alive
+            )
+            if not cls._wait_server_gone(
+                watchdog, timeout=60, alive=cls._watchdog_process_alive
+            ):
                 print(f"WARNING: ClickHouse watchdog process {watchdog} survived KILL")
 
     @classmethod
     def _server_watchdog_pids(cls, pid) -> list:
         """The chain of watchdogs above the server `pid`, outermost first.
 
-        An ancestor counts as a watchdog only while it is a ClickHouse server
-        process itself (the same `argv[0]` check as everywhere else here): above
+        An ancestor counts as a watchdog only while it is a ClickHouse process
+        itself - the renamed `clickhouse-watchdog`, or still `clickhouse-server`
+        in the moments around the rename (see `_watchdog_process_alive`): above
         the watchdog sits the `sh -c ...` wrapper, and killing the wrapper is
         `_reap_server_wrapper`'s business, not this function's.
         """
         watchdogs = []
         for _ in range(cls.WATCHDOG_ANCESTOR_LIMIT):
             pid = cls._parent_pid(pid)
-            if pid <= 1 or not cls._server_process_alive(pid):
+            if pid <= 1 or not cls._watchdog_process_alive(pid):
                 break
             watchdogs.append(pid)
         watchdogs.reverse()
@@ -1095,6 +1111,42 @@ clickhouse-client --query "SELECT count() FROM test.visits"
         both reused and re-handed out inside the teardown window, which is the
         far smaller risk of the two.
         """
+        return cls._process_alive_as(pid, lambda name: name == cls.SERVER_ARGV0)
+
+    @classmethod
+    def _watchdog_process_alive(cls, pid) -> bool:
+        """Whether `pid` is still a live ClickHouse watchdog process.
+
+        The watchdog is not `clickhouse-server`: `BaseDaemon::setupWatchdog`
+        renames it by writing `clickhouse-watchdog` over its `argv[0]` in place,
+        truncated to the length of the name the server was started under - a
+        server started as `clickhouse-server` leaves the watchdog named
+        `clickhouse-watchd`. So any truncation of `WATCHDOG_ARGV0` no shorter
+        than `WATCHDOG_ARGV0_MIN` is accepted.
+
+        The server's own name is accepted as well: the watchdog carries it
+        between the fork and the rename, and again around each respawn, when
+        the original name is restored into `argv[0]` for the next server to
+        inherit. A pid given to this function was found as the watchdog above a
+        live server, so either name means it is still that process.
+        """
+        return cls._process_alive_as(
+            pid,
+            lambda name: name == cls.SERVER_ARGV0
+            or (
+                len(name) >= cls.WATCHDOG_ARGV0_MIN
+                and cls.WATCHDOG_ARGV0.startswith(name)
+            ),
+        )
+
+    @classmethod
+    def _process_alive_as(cls, pid, is_expected_name) -> bool:
+        """Whether `pid` is alive and `is_expected_name` accepts its identity.
+
+        The identity handed to `is_expected_name` is `argv[0]` of the process
+        after stripping the directory; fail-close semantics when the identity
+        cannot be read are described in `_server_process_alive`.
+        """
         try:
             argv0 = cls._process_argv0(pid)
         except ProcessIdentityUnknown as e:
@@ -1104,10 +1156,10 @@ clickhouse-client --query "SELECT count() FROM test.visits"
                 f"{'a live server' if alive else 'gone'}"
             )
             return alive
-        return argv0 is not None and os.path.basename(argv0) == cls.SERVER_ARGV0
+        return argv0 is not None and is_expected_name(os.path.basename(argv0))
 
     @classmethod
-    def _signal_server(cls, pid, sig, name) -> bool:
+    def _signal_server(cls, pid, sig, name, alive=None) -> bool:
         """Send `sig` to the server process itself.
 
         `pid` comes from the server's own `--pid-file`, which is the only handle
@@ -1116,8 +1168,13 @@ clickhouse-client --query "SELECT count() FROM test.visits"
         fork below it (`BaseDaemon::setupWatchdog`). Signalling the wrapper only
         killed the shell - the TRAP produced a useless `core.sh.*` dump instead
         of a dump of the wedged server, and the orphaned server kept running.
+
+        `alive` is the identity check guarding the signal - by default the
+        server's; `_kill_watchdogs` passes `_watchdog_process_alive`, since the
+        watchdog runs under its own name.
         """
-        if not cls._server_process_alive(pid):
+        alive = alive or cls._server_process_alive
+        if not alive(pid):
             print(f"ClickHouse process {pid} is already gone - {name} not sent")
             return False
         print(f"Send {name} signal to ClickHouse process {pid}")
@@ -1129,10 +1186,11 @@ clickhouse-client --query "SELECT count() FROM test.visits"
         return True
 
     @classmethod
-    def _wait_server_gone(cls, pid, timeout) -> bool:
+    def _wait_server_gone(cls, pid, timeout, alive=None) -> bool:
+        alive = alive or cls._server_process_alive
         deadline = time.time() + timeout
         while True:
-            if not cls._server_process_alive(pid):
+            if not alive(pid):
                 return True
             if time.time() >= deadline:
                 return False
