@@ -2,7 +2,7 @@
 
 #include <Storages/MergeTree/MergeTreeReaderStream.h>
 
-#include <turbopfor.h>
+#include <abpfor.h>
 
 namespace ProfileEvents
 {
@@ -153,9 +153,9 @@ bool ProjectionTokenInfo::hasDocInRange(
             dbuf.reset();
             const uint8_t * ptr = dbuf.ptr();
             if (count == TURBOPFOR_BLOCK_SIZE)
-                turbopfor::p4D1Dec256v32(ptr, TURBOPFOR_BLOCK_SIZE, entry->doc_ids, delta_base);
+                bytes = static_cast<UInt32>(abpfor::b256::decodeBlockDelta1(ptr, entry->doc_ids, delta_base));
             else
-                turbopfor::p4D1Dec32(ptr, count, entry->doc_ids, delta_base);
+                bytes = static_cast<UInt32>(abpfor::b256::decodeTailDelta1(ptr, count, entry->doc_ids, delta_base));
             dbuf.advance(bytes);
 
             if (!cache)

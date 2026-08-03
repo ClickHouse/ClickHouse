@@ -5,7 +5,7 @@
 #include <Storages/MergeTree/ProjectionIndex/PostingListData.h>
 #include <Common/Exception.h>
 
-#include <turbopfor.h>
+#include <abpfor.h>
 
 namespace DB
 {
@@ -144,9 +144,9 @@ void PositionCursor::ensurePackedBlockDecoded(size_t lb_idx, size_t pb_idx)
         const uint8_t * p = pst_decode_buf->ptr();
         const uint8_t * end = nullptr;
         if (count == TURBOPFOR_BLOCK_SIZE)
-            end = turbopfor::p4D1Dec256v32(p, TURBOPFOR_BLOCK_SIZE, pb_cache.doc_ids, delta_base);
+            end = abpfor::b256::decodeBlockDelta1(p, pb_cache.doc_ids, delta_base) + p;
         else
-            end = turbopfor::p4D1Dec32(p, count, pb_cache.doc_ids, delta_base);
+            end = abpfor::b256::decodeTailDelta1(p, count, pb_cache.doc_ids, delta_base) + p;
         pst_decode_buf->advance(static_cast<size_t>(end - p));
     }
 
@@ -155,9 +155,9 @@ void PositionCursor::ensurePackedBlockDecoded(size_t lb_idx, size_t pb_idx)
         const uint8_t * p = pst_decode_buf->ptr();
         const uint8_t * end = nullptr;
         if (count == TURBOPFOR_BLOCK_SIZE)
-            end = turbopfor::p4Dec256v32(p, TURBOPFOR_BLOCK_SIZE, pb_cache.freqs);
+            end = abpfor::b256::decodeBlock(p, pb_cache.freqs) + p;
         else
-            end = turbopfor::p4Dec32(p, count, pb_cache.freqs);
+            end = abpfor::b256::decodeTail(p, count, pb_cache.freqs) + p;
         pst_decode_buf->advance(static_cast<size_t>(end - p));
     }
 
@@ -225,9 +225,9 @@ void PositionCursor::ensurePosBlockDecoded(size_t lb_idx, UInt32 pos_block_idx)
     const uint8_t * p = pos_decode_buf->ptr();
     const uint8_t * end = nullptr;
     if (count == TURBOPFOR_BLOCK_SIZE)
-        end = turbopfor::p4Dec256v32(p, TURBOPFOR_BLOCK_SIZE, pos_cache.values);
+        end = abpfor::b256::decodeBlock(p, pos_cache.values) + p;
     else
-        end = turbopfor::p4Dec32(p, count, pos_cache.values);
+        end = abpfor::b256::decodeTail(p, count, pos_cache.values) + p;
     pos_decode_buf->advance(static_cast<size_t>(end - p));
 
     pos_cache.large_block = lb_idx;
@@ -272,9 +272,9 @@ UInt32 PositionCursor::seekDoc(UInt32 doc_id)
                 const uint8_t * p = pos_decode_buf->ptr();
                 const uint8_t * end = nullptr;
                 if (n == TURBOPFOR_BLOCK_SIZE)
-                    end = turbopfor::p4Dec256v32(p, TURBOPFOR_BLOCK_SIZE, pos_cache.values);
+                    end = abpfor::b256::decodeBlock(p, pos_cache.values) + p;
                 else
-                    end = turbopfor::p4Dec32(p, n, pos_cache.values);
+                    end = abpfor::b256::decodeTail(p, n, pos_cache.values) + p;
                 pos_decode_buf->advance(static_cast<size_t>(end - p));
 
                 pos_cache.large_block = SIZE_MAX;
@@ -346,9 +346,9 @@ UInt32 PositionCursor::nextPosition()
             const uint8_t * p = pos_decode_buf->ptr();
             const uint8_t * end = nullptr;
             if (n == TURBOPFOR_BLOCK_SIZE)
-                end = turbopfor::p4Dec256v32(p, TURBOPFOR_BLOCK_SIZE, pos_cache.values);
+                end = abpfor::b256::decodeBlock(p, pos_cache.values) + p;
             else
-                end = turbopfor::p4Dec32(p, n, pos_cache.values);
+                end = abpfor::b256::decodeTail(p, n, pos_cache.values) + p;
             pos_decode_buf->advance(static_cast<size_t>(end - p));
 
             ++pos_cache.pos_block_idx;

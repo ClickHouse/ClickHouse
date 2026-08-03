@@ -15,7 +15,7 @@
 #include <Common/Arena.h>
 #include <Common/Exception.h>
 
-#include <turbopfor.h>
+#include <abpfor.h>
 #include <fmt/ranges.h>
 
 namespace DB
@@ -91,7 +91,7 @@ void TokenWriteContext::add(UInt32 doc_id, PagePool & pool, Arena & chunk_arena,
         doc_deltas.gather(pool, scratch);
         doc_deltas.freeAll(pool);
 
-        uint8_t * end = turbopfor::p4Enc256v32(scratch, TURBOPFOR_BLOCK_SIZE, packed_buffer);
+        uint8_t * end = abpfor::b256::encodeBlock(scratch, packed_buffer) + packed_buffer;
         UInt32 doc_len = static_cast<UInt32>(end - packed_buffer);
         chassert(doc_len <= TURBOPFOR_MAX_ENCODED_SIZE);
         auto * place = chunk_arena.alignedAlloc(doc_len + sizeof(PostingListChunk), alignof(PostingListChunk));
@@ -119,7 +119,7 @@ void TokenWriteContext::finalize(PagePool & pool, Arena & chunk_arena, UInt32 * 
         doc_deltas.gather(pool, scratch);
         doc_deltas.freeAll(pool);
 
-        uint8_t * end = turbopfor::p4Enc32(scratch, tail, packed_buffer);
+        uint8_t * end = abpfor::b256::encodeTail(scratch, tail, packed_buffer) + packed_buffer;
         UInt32 len = static_cast<UInt32>(end - packed_buffer);
         auto * place = chunk_arena.alignedAlloc(len + sizeof(PostingListChunk), alignof(PostingListChunk));
         PostingListChunk * tail_block = new (place) PostingListChunk(last_doc_id, len, block_first_doc_id);
@@ -141,7 +141,7 @@ void TokenWriteContextPhrase::flushBlock(PagePool & pool, Arena & chunk_arena, U
     /// Encode doc_delta block
     doc_deltas.gather(pool, scratch);
     doc_deltas.freeAll(pool);
-    uint8_t * doc_end = turbopfor::p4Enc256v32(scratch, TURBOPFOR_BLOCK_SIZE, packed_buffer);
+    uint8_t * doc_end = abpfor::b256::encodeBlock(scratch, packed_buffer) + packed_buffer;
     UInt32 doc_len = static_cast<UInt32>(doc_end - packed_buffer);
     chassert(doc_len <= TURBOPFOR_MAX_ENCODED_SIZE);
     auto * doc_place = chunk_arena.alignedAlloc(doc_len + sizeof(PostingListChunk), alignof(PostingListChunk));
@@ -161,7 +161,7 @@ void TokenWriteContextPhrase::flushBlock(PagePool & pool, Arena & chunk_arena, U
     UInt32 freq_sum = 0;
     for (UInt32 i = 0; i < TURBOPFOR_BLOCK_SIZE; ++i)
         freq_sum += scratch[i];
-    uint8_t * freq_end = turbopfor::p4Enc256v32(scratch, TURBOPFOR_BLOCK_SIZE, packed_buffer);
+    uint8_t * freq_end = abpfor::b256::encodeBlock(scratch, packed_buffer) + packed_buffer;
     UInt32 freq_len = static_cast<UInt32>(freq_end - packed_buffer);
     auto * freq_place = chunk_arena.alignedAlloc(freq_len + sizeof(PostingListChunk), alignof(PostingListChunk));
     PostingListChunk * freq_chunk = new (freq_place) PostingListChunk(freq_sum, freq_len);
@@ -288,7 +288,7 @@ void TokenWriteContextPhrase::finalize(PagePool & pool, Arena & chunk_arena, UIn
         /// Encode tail doc_deltas
         doc_deltas.gather(pool, scratch);
         doc_deltas.freeAll(pool);
-        uint8_t * end = turbopfor::p4Enc32(scratch, tail, packed_buffer);
+        uint8_t * end = abpfor::b256::encodeTail(scratch, tail, packed_buffer) + packed_buffer;
         UInt32 len = static_cast<UInt32>(end - packed_buffer);
         auto * place = chunk_arena.alignedAlloc(len + sizeof(PostingListChunk), alignof(PostingListChunk));
         PostingListChunk * tail_block = new (place) PostingListChunk(last_doc_id, len, block_first_doc_id);
@@ -306,7 +306,7 @@ void TokenWriteContextPhrase::finalize(PagePool & pool, Arena & chunk_arena, UIn
         UInt32 freq_sum = 0;
         for (UInt32 i = 0; i < tail; ++i)
             freq_sum += scratch[i];
-        end = turbopfor::p4Enc32(scratch, tail, packed_buffer);
+        end = abpfor::b256::encodeTail(scratch, tail, packed_buffer) + packed_buffer;
         UInt32 flen = static_cast<UInt32>(end - packed_buffer);
         place = chunk_arena.alignedAlloc(flen + sizeof(PostingListChunk), alignof(PostingListChunk));
         PostingListChunk * freq_chunk = new (place) PostingListChunk(freq_sum, flen);
@@ -487,9 +487,9 @@ private:
         {
             uint8_t * end = nullptr;
             if constexpr (std::is_same_v<T, UInt32>)
-                end = turbopfor::p4D1Enc256v32(values + p, TURBOPFOR_BLOCK_SIZE, pos_encode_buf, start);
+                end = abpfor::b256::encodeBlockDelta1(values + p, pos_encode_buf, start) + pos_encode_buf;
             else
-                end = turbopfor::p4D1Enc256v64(values + p, TURBOPFOR_BLOCK_SIZE, pos_encode_buf, start);
+                end = abpfor::b256::encodeBlockDelta1(values + p, pos_encode_buf, start) + pos_encode_buf;
             out.write(reinterpret_cast<const char *>(pos_encode_buf), static_cast<size_t>(end - pos_encode_buf));
             start = values[p + TURBOPFOR_BLOCK_SIZE - 1];
             p += TURBOPFOR_BLOCK_SIZE;
@@ -499,9 +499,9 @@ private:
         {
             uint8_t * end = nullptr;
             if constexpr (std::is_same_v<T, UInt32>)
-                end = turbopfor::p4D1Enc32(values + p, remaining, pos_encode_buf, start);
+                end = abpfor::b256::encodeTailDelta1(values + p, remaining, pos_encode_buf, start) + pos_encode_buf;
             else
-                end = turbopfor::p4D1Enc64(values + p, remaining, pos_encode_buf, start);
+                end = abpfor::b256::encodeTailDelta1(values + p, remaining, pos_encode_buf, start) + pos_encode_buf;
             out.write(reinterpret_cast<const char *>(pos_encode_buf), static_cast<size_t>(end - pos_encode_buf));
         }
     }
@@ -561,9 +561,9 @@ private:
     {
         uint8_t * end = nullptr;
         if (is_tail)
-            end = turbopfor::p4Enc32(src, n, pos_encode_buf);
+            end = abpfor::b256::encodeTail(src, n, pos_encode_buf) + pos_encode_buf;
         else
-            end = turbopfor::p4Enc256v32(src, TURBOPFOR_BLOCK_SIZE, pos_encode_buf);
+            end = abpfor::b256::encodeBlock(src, pos_encode_buf) + pos_encode_buf;
         UInt32 encoded_bytes = static_cast<UInt32>(end - pos_encode_buf);
         pos_out->write(reinterpret_cast<const char *>(pos_encode_buf), encoded_bytes);
         pos_block_cum_bytes.push_back(pos_block_cum_bytes.empty() ? encoded_bytes : pos_block_cum_bytes.back() + encoded_bytes);
@@ -1032,9 +1032,9 @@ private:
             const uint8_t * p = dbuf.ptr();
             const uint8_t * end = nullptr;
             if (count == TURBOPFOR_BLOCK_SIZE)
-                end = turbopfor::p4D1Dec256v32(p, TURBOPFOR_BLOCK_SIZE, doc_buffer, last_doc_id);
+                end = abpfor::b256::decodeBlockDelta1(p, doc_buffer, last_doc_id) + p;
             else
-                end = turbopfor::p4D1Dec32(p, count, doc_buffer, last_doc_id);
+                end = abpfor::b256::decodeTailDelta1(p, count, doc_buffer, last_doc_id) + p;
             dbuf.advance(static_cast<size_t>(end - p));
         }
 
@@ -1045,9 +1045,9 @@ private:
             const uint8_t * p = dbuf.ptr();
             const uint8_t * end = nullptr;
             if (count == TURBOPFOR_BLOCK_SIZE)
-                end = turbopfor::p4Dec256v32(p, TURBOPFOR_BLOCK_SIZE, freq_discard);
+                end = abpfor::b256::decodeBlock(p, freq_discard) + p;
             else
-                end = turbopfor::p4Dec32(p, count, freq_discard);
+                end = abpfor::b256::decodeTail(p, count, freq_discard) + p;
             dbuf.advance(static_cast<size_t>(end - p));
         }
 
@@ -1299,13 +1299,13 @@ void PostingListStream::read(
         UInt32 remaining = count;
         while (remaining >= TURBOPFOR_BLOCK_SIZE)
         {
-            src = turbopfor::p4D1Dec256v32(src, TURBOPFOR_BLOCK_SIZE, out + pos, prev);
+            src = abpfor::b256::decodeBlockDelta1(src, out + pos, prev) + src;
             prev = out[pos + TURBOPFOR_BLOCK_SIZE - 1];
             pos += TURBOPFOR_BLOCK_SIZE;
             remaining -= TURBOPFOR_BLOCK_SIZE;
         }
         if (remaining > 0)
-            src = turbopfor::p4D1Dec32(src, remaining, out + pos, prev);
+            src = abpfor::b256::decodeTailDelta1(src, remaining, out + pos, prev) + src;
     };
 
     auto decode_delta1_64 = [](const uint8_t *& src, UInt32 count, UInt64 * out, uint64_t prev)
@@ -1314,13 +1314,13 @@ void PostingListStream::read(
         UInt32 remaining = count;
         while (remaining >= TURBOPFOR_BLOCK_SIZE)
         {
-            src = turbopfor::p4D1Dec256v64(src, TURBOPFOR_BLOCK_SIZE, out + pos, prev);
+            src = abpfor::b256::decodeBlockDelta1(src, out + pos, prev) + src;
             prev = out[pos + TURBOPFOR_BLOCK_SIZE - 1];
             pos += TURBOPFOR_BLOCK_SIZE;
             remaining -= TURBOPFOR_BLOCK_SIZE;
         }
         if (remaining > 0)
-            src = turbopfor::p4D1Dec64(src, remaining, out + pos, prev);
+            src = abpfor::b256::decodeTailDelta1(src, remaining, out + pos, prev) + src;
     };
 
     std::vector<UInt32> lb_ranges(num_large_blocks * 2);
@@ -1462,16 +1462,16 @@ void PostingListStream::write(
                         const uint8_t * p = pos_dbuf.ptr();
                         const uint8_t * end = nullptr;
                         if (n == TURBOPFOR_BLOCK_SIZE)
-                            end = turbopfor::p4Dec256v32(p, TURBOPFOR_BLOCK_SIZE, decode_buf);
+                            end = abpfor::b256::decodeBlock(p, decode_buf) + p;
                         else
-                            end = turbopfor::p4Dec32(p, n, decode_buf);
+                            end = abpfor::b256::decodeTail(p, n, decode_buf) + p;
                         pos_dbuf.advance(static_cast<size_t>(end - p));
 
                         uint8_t * enc_end = nullptr;
                         if (n == TURBOPFOR_BLOCK_SIZE)
-                            enc_end = turbopfor::p4Enc256v32(decode_buf, TURBOPFOR_BLOCK_SIZE, encode_buf);
+                            enc_end = abpfor::b256::encodeBlock(decode_buf, encode_buf) + encode_buf;
                         else
-                            enc_end = turbopfor::p4Enc32(decode_buf, n, encode_buf);
+                            enc_end = abpfor::b256::encodeTail(decode_buf, n, encode_buf) + encode_buf;
                         pos_writer->write(reinterpret_cast<const char *>(encode_buf), static_cast<size_t>(enc_end - encode_buf));
 
                         remaining -= n;
@@ -1571,16 +1571,16 @@ void PostingListStream::write(
                     {
                         const uint8_t * p = dbuf.ptr();
                         const uint8_t * end = (n == TURBOPFOR_BLOCK_SIZE)
-                            ? turbopfor::p4D1Dec256v32(p, TURBOPFOR_BLOCK_SIZE, init_discard, 0)
-                            : turbopfor::p4D1Dec32(p, n, init_discard, 0);
+                            ? abpfor::b256::decodeBlockDelta1(p, init_discard, 0) + p
+                            : abpfor::b256::decodeTailDelta1(p, n, init_discard, 0) + p;
                         dbuf.advance(static_cast<size_t>(end - p));
                     }
 
                     /// Decode freq values
                     {
                         const uint8_t * p = dbuf.ptr();
-                        const uint8_t * end = (n == TURBOPFOR_BLOCK_SIZE) ? turbopfor::p4Dec256v32(p, TURBOPFOR_BLOCK_SIZE, init_freq_buf)
-                                                                          : turbopfor::p4Dec32(p, n, init_freq_buf);
+                        const uint8_t * end = (n == TURBOPFOR_BLOCK_SIZE) ? abpfor::b256::decodeBlock(p, init_freq_buf) + p
+                                                                          : abpfor::b256::decodeTail(p, n, init_freq_buf) + p;
                         dbuf.advance(static_cast<size_t>(end - p));
                     }
 
@@ -1688,9 +1688,9 @@ void PostingListStream::write(
             const uint8_t * p = dbuf.ptr();
             const uint8_t * end = nullptr;
             if (n == TURBOPFOR_BLOCK_SIZE)
-                end = turbopfor::p4Dec256v32(p, TURBOPFOR_BLOCK_SIZE, pos_decoded);
+                end = abpfor::b256::decodeBlock(p, pos_decoded) + p;
             else
-                end = turbopfor::p4Dec32(p, n, pos_decoded);
+                end = abpfor::b256::decodeTail(p, n, pos_decoded) + p;
             dbuf.advance(static_cast<size_t>(end - p));
 
             pos_buf_count = n;
@@ -1820,7 +1820,7 @@ void PostingListStream::write(
         if (pos_writer && freq_buffered > 0)
         {
             chassert(freq_buffered == TURBOPFOR_BLOCK_SIZE);
-            uint8_t * freq_end = turbopfor::p4Enc256v32(freq_buffer_merge, TURBOPFOR_BLOCK_SIZE, freq_packed);
+            uint8_t * freq_end = abpfor::b256::encodeBlock(freq_buffer_merge, freq_packed) + freq_packed;
             freq_bytes = static_cast<UInt32>(freq_end - freq_packed);
             freq_data = reinterpret_cast<const char *>(freq_packed);
         }
@@ -1834,7 +1834,7 @@ void PostingListStream::write(
         if (!pos_deltas_buffer.empty())
             block_writer.feedPositionDeltas(pos_deltas_buffer.data(), static_cast<UInt32>(pos_deltas_buffer.size()));
 
-        uint8_t * end = turbopfor::p4Enc256v32(doc_delta_buffer, TURBOPFOR_BLOCK_SIZE, packed_buffer);
+        uint8_t * end = abpfor::b256::encodeBlock(doc_delta_buffer, packed_buffer) + packed_buffer;
         UInt32 doc_bytes = static_cast<UInt32>(end - packed_buffer);
 
         block_writer.addBlock(
@@ -1860,7 +1860,7 @@ void PostingListStream::write(
         uint8_t freq_packed[TURBOPFOR_MAX_ENCODED_SIZE];
         if (pos_writer && freq_buffered > 0)
         {
-            uint8_t * freq_end = turbopfor::p4Enc32(freq_buffer_merge, freq_buffered, freq_packed);
+            uint8_t * freq_end = abpfor::b256::encodeTail(freq_buffer_merge, freq_buffered, freq_packed) + freq_packed;
             freq_bytes = static_cast<UInt32>(freq_end - freq_packed);
             freq_data = reinterpret_cast<const char *>(freq_packed);
         }
@@ -1872,7 +1872,7 @@ void PostingListStream::write(
         if (!pos_deltas_buffer.empty())
             block_writer.feedPositionDeltas(pos_deltas_buffer.data(), static_cast<UInt32>(pos_deltas_buffer.size()));
 
-        uint8_t * end = turbopfor::p4Enc32(doc_delta_buffer, buffered, packed_buffer);
+        uint8_t * end = abpfor::b256::encodeTail(doc_delta_buffer, buffered, packed_buffer) + packed_buffer;
         UInt32 doc_bytes = static_cast<UInt32>(end - packed_buffer);
 
         block_writer.addBlock(
@@ -2099,7 +2099,7 @@ std::shared_ptr<LargeBlockData> LargeBlockData::decodeFromIndex(
         while (remaining >= TURBOPFOR_BLOCK_SIZE)
         {
             const uint8_t * ptr = dbuf.ptr();
-            const uint8_t * end = turbopfor::p4D1Dec256v32(ptr, TURBOPFOR_BLOCK_SIZE, out + p, prev);
+            const uint8_t * end = abpfor::b256::decodeBlockDelta1(ptr, out + p, prev) + ptr;
             dbuf.advance(static_cast<size_t>(end - ptr));
             prev = out[p + TURBOPFOR_BLOCK_SIZE - 1];
             p += TURBOPFOR_BLOCK_SIZE;
@@ -2108,7 +2108,7 @@ std::shared_ptr<LargeBlockData> LargeBlockData::decodeFromIndex(
         if (remaining > 0)
         {
             const uint8_t * ptr = dbuf.ptr();
-            const uint8_t * end = turbopfor::p4D1Dec32(ptr, remaining, out + p, prev);
+            const uint8_t * end = abpfor::b256::decodeTailDelta1(ptr, remaining, out + p, prev) + ptr;
             dbuf.advance(static_cast<size_t>(end - ptr));
         }
     };
@@ -2138,7 +2138,7 @@ std::shared_ptr<LargeBlockData> LargeBlockData::decodeFromIndex(
             while (remaining >= TURBOPFOR_BLOCK_SIZE)
             {
                 const uint8_t * ptr = dbuf.ptr();
-                const uint8_t * end = turbopfor::p4D1Dec256v64(ptr, TURBOPFOR_BLOCK_SIZE, out + p, prev);
+                const uint8_t * end = abpfor::b256::decodeBlockDelta1(ptr, out + p, prev) + ptr;
                 dbuf.advance(static_cast<size_t>(end - ptr));
                 prev = out[p + TURBOPFOR_BLOCK_SIZE - 1];
                 p += TURBOPFOR_BLOCK_SIZE;
@@ -2147,7 +2147,7 @@ std::shared_ptr<LargeBlockData> LargeBlockData::decodeFromIndex(
             if (remaining > 0)
             {
                 const uint8_t * ptr = dbuf.ptr();
-                const uint8_t * end = turbopfor::p4D1Dec64(ptr, remaining, out + p, prev);
+                const uint8_t * end = abpfor::b256::decodeTailDelta1(ptr, remaining, out + p, prev) + ptr;
                 dbuf.advance(static_cast<size_t>(end - ptr));
             }
         };

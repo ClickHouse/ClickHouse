@@ -6,7 +6,7 @@
 #include <Common/ProfileEvents.h>
 #include <Common/logger_useful.h>
 
-#include <turbopfor.h>
+#include <abpfor.h>
 
 namespace ProfileEvents
 {
@@ -360,9 +360,9 @@ bool ProjectionPostingListCursor::loadPackedBlock(size_t block_idx)
     decoded_count = count;
     decoded_values = decode_buf;
     if (count == TURBOPFOR_BLOCK_SIZE) [[likely]]
-        turbopfor::p4D1Dec256v32(src_ptr, TURBOPFOR_BLOCK_SIZE, decode_buf, delta_base);
+        bytes = static_cast<UInt32>(abpfor::b256::decodeBlockDelta1(src_ptr, decode_buf, delta_base));
     else
-        turbopfor::p4D1Dec32(src_ptr, count, decode_buf, delta_base);
+        bytes = static_cast<UInt32>(abpfor::b256::decodeTailDelta1(src_ptr, count, decode_buf, delta_base));
     index = 0;
 
     /// Validate decoded values: must be strictly monotonically increasing
@@ -673,9 +673,9 @@ void ProjectionPostingListCursor::iterateLargeBlock(
             }
 
             if (count == TURBOPFOR_BLOCK_SIZE) [[likely]]
-                turbopfor::p4D1Dec256v32(src_ptr, TURBOPFOR_BLOCK_SIZE, iter_decode_buf, delta_base);
+                bytes = static_cast<UInt32>(abpfor::b256::decodeBlockDelta1(src_ptr, iter_decode_buf, delta_base));
             else
-                turbopfor::p4D1Dec32(src_ptr, count, iter_decode_buf, delta_base);
+                bytes = static_cast<UInt32>(abpfor::b256::decodeTailDelta1(src_ptr, count, iter_decode_buf, delta_base));
 
             /// Validate: strictly monotonically increasing.
             if (count > 1) [[likely]]
