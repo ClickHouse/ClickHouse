@@ -56,7 +56,7 @@ fromDaysSinceYearZero32 and toDaysSinceYearZero
 saturation at the boundaries of the representable range
 0000-01-01
 0000-01-01
-0000-01-01	0000-01-01
+\N	0000-01-01
 9999-12-31	\N
 text formats
 0079-08-24
