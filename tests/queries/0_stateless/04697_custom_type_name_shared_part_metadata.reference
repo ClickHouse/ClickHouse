@@ -1,0 +1,2 @@
+all_1_1_0	UInt64
+all_2_2_0	SimpleAggregateFunction(sum, UInt64)

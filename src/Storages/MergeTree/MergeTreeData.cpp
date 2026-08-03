@@ -12453,7 +12453,7 @@ size_t MergeTreeData::SharedPartColumnsCacheKeyHash::operator()(const SharedPart
 {
     size_t hash = NamesAndTypesListHash{}(key.columns.get());
     boost::hash_combine(hash, key.collect_nested);
-    boost::hash_combine(hash, std::hash<std::string_view>{}(key.custom_serializations.get()));
+    boost::hash_combine(hash, std::hash<std::string_view>{}(key.customizations.get()));
     return hash;
 }
 
@@ -12463,9 +12463,9 @@ SharedPartColumnsHolder MergeTreeData::getSharedPartColumnsForColumns(const Name
     /// read-only (see `isReadonlySetting` and `isSMTReadonlySetting`) because the read path
     /// resolves the stream file names from its live value, so it never changes on a live table;
     /// the key just guarantees that a bundle can never be shared across different values of it.
-    String custom_serializations = SharedPartColumns::describeCustomSerializations(columns);
+    String customizations = SharedPartColumns::describeCustomizations(columns);
     const SharedPartColumnsCacheKey key{
-        std::cref(columns), std::cref(custom_serializations), (*getSettings())[MergeTreeSetting::share_nested_offsets]};
+        std::cref(columns), std::cref(customizations), (*getSettings())[MergeTreeSetting::share_nested_offsets]};
 
     /// After the first part of each schema every lookup is a hit that does not modify the map,
     /// so a shared lock keeps concurrent part loads parallel (copying the shared_ptr only
@@ -12505,12 +12505,12 @@ SharedPartColumnsHolder MergeTreeData::getSharedPartColumnsForColumns(const Name
         original,
         with_collected_nested ? std::move(with_collected_nested) : original,
         key.collect_nested,
-        std::move(custom_serializations));
+        std::move(customizations));
 
     shared_part_columns_cache.emplace(
         SharedPartColumnsCacheKey{
             std::cref(shared_part_columns->columns),
-            std::cref(shared_part_columns->custom_serializations),
+            std::cref(shared_part_columns->customizations),
             key.collect_nested},
         shared_part_columns);
     shared_part_columns_metric_handle.add(1);
@@ -12532,7 +12532,7 @@ void MergeTreeData::releaseSharedPartColumns(SharedPartColumnsPtr shared_part_co
         auto it = shared_part_columns_cache.find(
             SharedPartColumnsCacheKey{
                 std::cref(shared_part_columns->columns),
-                std::cref(shared_part_columns->custom_serializations),
+                std::cref(shared_part_columns->customizations),
                 shared_part_columns->collect_nested});
         chassert(it != shared_part_columns_cache.end() && it->second == shared_part_columns);
 

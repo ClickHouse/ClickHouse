@@ -1,6 +1,7 @@
 #include <Storages/MergeTree/SharedPartColumns.h>
 
 #include <base/scope_guard.h>
+#include <DataTypes/DataTypeCustom.h>
 #include <DataTypes/IDataType.h>
 #include <DataTypes/NestedUtils.h>
 #include <IO/VarInt.h>
@@ -101,13 +102,13 @@ SharedPartColumns::SharedPartColumns(
     std::shared_ptr<const ColumnsDescription> columns_description_,
     std::shared_ptr<const ColumnsDescription> columns_description_with_collected_nested_,
     bool collect_nested_,
-    String custom_serializations_)
+    String customizations_)
     : columns(std::move(columns_))
     , column_name_to_position(buildColumnPositions(columns))
     , columns_description(std::move(columns_description_))
     , columns_description_with_collected_nested(std::move(columns_description_with_collected_nested_))
     , collect_nested(collect_nested_)
-    , custom_serializations(std::move(custom_serializations_))
+    , customizations(std::move(customizations_))
     , serializations_cache_metric_handle(CurrentMetrics::SharedPartSerializationsCacheSize)
     , serialization_groups_metric_handle(CurrentMetrics::SharedPartSerializationGroupsCacheSize)
     , substreams_cache_metric_handle(CurrentMetrics::SharedPartColumnsSubstreamsCacheSize)
@@ -116,17 +117,23 @@ SharedPartColumns::SharedPartColumns(
 {
 }
 
-String SharedPartColumns::describeCustomSerializations(const NamesAndTypesList & columns)
+String SharedPartColumns::describeCustomizations(const NamesAndTypesList & columns)
 {
     String result;
     UInt32 position = 0;
     for (const auto & column : columns)
     {
-        if (const auto * custom = column.type->getCustomSerialization())
+        const auto * custom_name = column.type->getCustomName();
+        const auto * custom_serialization = column.type->getCustomSerialization();
+        if (custom_name || custom_serialization)
         {
             if (!result.empty())
                 result += ',';
-            result += fmt::format("{}:{}", position, custom->getCustomSerializationIdentity());
+            result += fmt::format(
+                "{}:{}:{}",
+                position,
+                custom_name ? custom_name->getName() : "",
+                custom_serialization ? custom_serialization->getCustomSerializationIdentity() : "");
         }
         ++position;
     }
