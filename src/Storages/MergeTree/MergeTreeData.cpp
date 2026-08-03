@@ -460,6 +460,7 @@ static bool isBestEffortDetachError(std::exception_ptr exception_ptr)
     }
     catch (...)
     {
+        /// Ok to discard: this only classifies an exception the caller still owns and rethrows.
         return false;
     }
 }
@@ -3436,10 +3437,8 @@ try
     for (auto & load_state : unexpected_data_parts)
     {
         std::lock_guard lock(unexpected_data_parts_mutex);
-        /// A previous attempt may have already finished this part before being interrupted by a retryable
-        /// error and rescheduled; skip the parts that are fully done so the retry is idempotent. `finished`
-        /// (not `part`) is the done-marker: the optional detach below runs after `part` is assigned and can
-        /// itself throw retryably, so a set `part` does not mean the per-part work completed.
+        /// `finished` (not `part`) is the done-marker that keeps a rescheduled retry idempotent: the
+        /// optional detach below runs after `part` is assigned and can itself throw retryably.
         if (load_state.finished)
             continue;
         if (unexpected_data_parts_loading_canceled)
@@ -3487,12 +3486,8 @@ try
 
                 if (load_state.is_broken)
                 {
-                    /// renameToDetached moves the part directory before returning. Its pre-move work can still
-                    /// throw a retryable error while the original directory is in place (safe to reschedule and
-                    /// retry); only once the move has begun is the original path gone, so a retryable error from
-                    /// that point must fail fast rather than reschedule the part on its stale path - the same
-                    /// boundary as the outdated-parts loader (see load_outdated_part). The two cases are told
-                    /// apart by checking whether the original directory still exists on disk in the catch below.
+                    /// Remembered so the catch below can tell a pre-move retryable error (directory still in
+                    /// place, safe to reschedule) from a post-move one (stale path, must fail fast).
                     const String original_relative_path = load_state.part->getDataPartStorage().getRelativePath();
                     const DiskPtr disk = load_state.loading_info->disk;
                     try
@@ -3511,10 +3506,8 @@ try
                     }
                     catch (...)
                     {
-                        /// renameToDetached advances the part's path only after moveDirectory succeeds, so a
-                        /// still-present original directory means the move had not happened (pre-move error, safe
-                        /// to reschedule). If it is gone, or the existence check itself fails, be conservative and
-                        /// fail fast rather than risk rescheduling a moved part.
+                        /// A still-present original directory means the move had not happened, so the error is
+                        /// pre-move and safe to reschedule. Anything else fails fast.
                         if (isRetryableException(std::current_exception()))
                         {
                             bool original_directory_still_present = false;
@@ -3557,13 +3550,9 @@ try
             }
             catch (...)
             {
-                /// A non-retryable error means the on-disk set of parts is inconsistent: rethrow so it escapes
-                /// into this worker's future and the post-drain rethrow fails the server fast. A retryable
-                /// error is transient: record it and leave the part unfinished so the rescheduled task retries
-                /// it, but do NOT let it escape into the future. Otherwise the drain (which rethrows the first
-                /// future error in scheduling order) could surface this worker's retryable error ahead of a
-                /// later worker's non-retryable one and reschedule, masking a real inconsistency. Mirrors the
-                /// retryable handling in load_outdated_part.
+                /// Only a non-retryable error may escape into the future: the drain rethrows the first one
+                /// in scheduling order, so a retryable error escaping here could mask a later worker's
+                /// inconsistency. Retryable ones are recorded and the part left unfinished for the retry.
                 if (!isRetryableException(std::current_exception()))
                     throw;
                 retryable_error_while_loading = true;
@@ -3592,12 +3581,8 @@ try
             break;
         }
     }
-    /// Drain the workers and rethrow the first worker error: workers only let NON-retryable (inconsistent
-    /// part) errors escape into their futures - a retryable worker error sets retryable_error_while_loading
-    /// instead - so this rethrows a genuine inconsistency and fails fast, and cannot surface one worker's
-    /// retryable error ahead of another worker's non-retryable one. The local runner's destructor only waits
-    /// (it does not rethrow), so draining here is what inspects the stored worker errors. Mirrors
-    /// loadOutdatedDataParts.
+    /// Only non-retryable errors reach the futures, so this rethrows a genuine inconsistency. Draining
+    /// explicitly is required: the local runner's destructor waits without rethrowing.
     runner.waitForAllToFinishAndRethrowFirstError();
 
     if (retryable_error_while_loading)
@@ -3714,10 +3699,8 @@ try
     ThreadPoolCallbackRunnerLocal<void> runner(getOutdatedPartsLoadingThreadPool().get(), ThreadName::MERGETREE_LOAD_OUTDATED_PARTS);
 
     bool replicated = dynamic_cast<StorageReplicatedMergeTree *>(this) != nullptr;
-    /// Set when the loading task is canceled (server shutdown / table drop) while dispatching. The runner is
-    /// drained AFTER the loop, never under outdated_data_parts_mutex: a worker that hit a retryable error
-    /// requeues its part under that same mutex (see the catch below), so waiting for the runner while holding
-    /// it would deadlock (and the canceling thread is itself waiting for this task via deactivate()).
+    /// Set when the loading task is canceled while dispatching. The runner must be drained AFTER the loop,
+    /// never under outdated_data_parts_mutex: a worker requeues its part under that same mutex.
     bool loading_canceled = false;
     size_t num_parts_left_unloaded = 0;
     /// Only used to gate the pre-cancel-check pause failpoint so a worker is scheduled before the loop parks.
@@ -3761,11 +3744,8 @@ try
             auto blocker_for_runner_thread = CannotAllocateThreadFaultInjector::blockFaultInjections();
 
             LoadPartResult res;
-            /// The original on-disk directory of the loaded part. The directory-moving cleanup steps
-            /// (renameToDetached for broken parts, remove() for duplicates) move the part away from this
-            /// path; their pre-move work (e.g. the zero-copy unlockSharedData Keeper call) can still throw a
-            /// retryable error while the directory is in place. The catch below tells the two cases apart by
-            /// checking whether this original directory still exists on disk - see there.
+            /// The part's original directory, which the cleanup steps move away. Set only once a cleanup
+            /// step is reached, so the catch below can tell a pre-move retryable error from a post-move one.
             String cleanup_original_relative_path;
             try
             {
@@ -3850,19 +3830,9 @@ try
                 if (!is_async || !isRetryableException(std::current_exception()))
                     throw;
 
-                /// A retryable error thrown after a cleanup step already moved the part directory cannot be
-                /// retried by reloading my_part: its original path no longer exists, so the reload would hit
-                /// the broken/duplicate path on a stale name (turning a transient remove error into a later
-                /// terminate, or re-detaching the wrong path). cleanup_original_relative_path is set only once
-                /// the loader reaches the cleanup step; while it is empty (e.g. a retryable error before or
-                /// during loadDataPartWithRetries, or the post-load failpoint) nothing was moved, so requeue.
-                /// Once set, the cleanup steps move the part away from that path only after moveDirectory
-                /// succeeds (renameTo advances the part's path only then, and remove() moves it to a delete_tmp_
-                /// dir and deletes it), so a still-present original directory means the move had not happened
-                /// and the pre-move error (e.g. the zero-copy unlockSharedData Keeper call) is safe to requeue.
-                /// If the cleanup step was reached but the original directory can no longer be proven present
-                /// (it is gone, or the existence check itself fails), be conservative and fail fast rather than
-                /// risk reloading a moved part.
+                /// Empty means no cleanup step was reached, so nothing moved and the part can be requeued.
+                /// Once set, a still-present original directory means the move had not happened either; a
+                /// directory that cannot be proven present fails fast rather than reload a moved part.
                 if (!cleanup_original_relative_path.empty())
                 {
                     bool original_directory_still_present = false;
@@ -3969,10 +3939,8 @@ try
 }
 catch (...)
 {
-    /// A transient retryable error (e.g. MEMORY_LIMIT_EXCEEDED from the memory tracker, or a network
-    /// error) is not a sign of an inconsistent on-disk set of parts, so do not terminate the server for it.
-    /// We can only retry the background task; the synchronous path has no task to reschedule and its caller
-    /// is expected to handle the exception, so it keeps the fail-fast behaviour below.
+    /// A retryable error does not indicate an inconsistent on-disk set of parts, so it must not terminate
+    /// the server. Only the background task can be retried; the synchronous path has none to reschedule.
     if (is_async && outdated_data_parts_loading_task && isRetryableException(std::current_exception()))
     {
         LOG_WARNING(log, "Loading of outdated parts was interrupted by a retryable error, will retry. Exception: {}",

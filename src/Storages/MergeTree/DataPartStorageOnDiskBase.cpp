@@ -742,10 +742,8 @@ void DataPartStorageOnDiskBase::rename(
 
     String from = getRelativePath();
 
-    /// Models a transient error from the pre-move work above (the existence check / stale-target cleanup):
-    /// the directory has not moved yet, so the original path is intact and a caller can still retry. Armed
-    /// only by the outdated/unexpected part loaders (see PartCleanupMoveFailpointGuard) so it does not fire
-    /// for every part rename.
+    /// Pre-move: the directory has not moved yet, so the original path is intact and a caller can retry.
+    /// Armed only by the part loaders (see PartCleanupMoveFailpointGuard), not on every part rename.
     if (part_cleanup_move_failpoints_armed)
         fiu_do_on(FailPoints::mergetree_part_cleanup_inject_pre_move_retryable_exception,
         {
@@ -766,10 +764,8 @@ void DataPartStorageOnDiskBase::rename(
     {
         disk.setLastModified(from, Poco::Timestamp::fromEpochTime(time(nullptr)));
 
-        /// Models a retryable error from moveDirectory itself (e.g. a local fs::rename ENOSPC/EIO, or an
-        /// object-storage metadata write failure). moveDirectory is all-or-nothing - the local disk uses an
-        /// atomic rename and the object-storage disk rolls the metadata transaction back on failure - so a
-        /// throw here leaves the source path intact, which is safe to retry.
+        /// Inside moveDirectory, which is all-or-nothing on both disk kinds, so a throw here still leaves
+        /// the source path intact and is safe to retry.
         if (part_cleanup_move_failpoints_armed)
             fiu_do_on(FailPoints::mergetree_part_cleanup_inject_move_retryable_exception,
             {
@@ -903,10 +899,8 @@ void DataPartStorageOnDiskBase::remove(
         if (!can_remove_description)
             can_remove_description.emplace(can_remove_callback());
 
-        /// Models a transient error from the pre-move work (e.g. the zero-copy can_remove_callback's
-        /// unlockSharedData talks to Keeper): the directory has not moved yet, so the original path is
-        /// intact and a caller can still retry. Armed only by the part loaders (see
-        /// PartCleanupMoveFailpointGuard) so it does not fire for every background part removal.
+        /// Pre-move: the directory has not moved yet, so the original path is intact and a caller can retry.
+        /// Armed only by the part loaders (see PartCleanupMoveFailpointGuard), not on every part removal.
         if (part_cleanup_move_failpoints_armed)
             fiu_do_on(FailPoints::mergetree_part_cleanup_inject_pre_move_retryable_exception,
             {
@@ -915,10 +909,8 @@ void DataPartStorageOnDiskBase::remove(
 
         try
         {
-            /// Models a retryable error from moveDirectory itself (e.g. a local fs::rename ENOSPC/EIO, or an
-            /// object-storage metadata write failure). moveDirectory is all-or-nothing - the local disk uses
-            /// an atomic rename and the object-storage disk rolls the metadata transaction back on failure -
-            /// so a throw here leaves the source path intact, which is safe to retry.
+            /// Inside moveDirectory, which is all-or-nothing on both disk kinds, so a throw here still leaves
+            /// the source path intact and is safe to retry.
             if (part_cleanup_move_failpoints_armed)
                 fiu_do_on(FailPoints::mergetree_part_cleanup_inject_move_retryable_exception,
                 {
