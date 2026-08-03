@@ -1,51 +1,94 @@
 -- { echo }
-SET enable_analyzer = 1;
-
 DROP TABLE IF EXISTS t_left_04545;
 DROP TABLE IF EXISTS t_full_04545;
+DROP TABLE IF EXISTS t_full_nulls_04545;
+DROP TABLE IF EXISTS t_mem_04545;
 DROP TABLE IF EXISTS t_leftj_04545;
 DROP TABLE IF EXISTS t_rightj_04545;
 
 CREATE TABLE t_left_04545 (x Nullable(UInt32), str String) ENGINE = Memory;
 CREATE TABLE t_full_04545 (x UInt32, s String) ENGINE = Join(ALL, FULL, x);
+CREATE TABLE t_mem_04545 (x UInt32, s String) ENGINE = Memory;
 
 INSERT INTO t_left_04545 VALUES (1, 'a'), (2, 'b'), (NULL, 'null_row'), (0, 'left_zero');
 INSERT INTO t_full_04545 VALUES (1, 'x'), (3, 'z');
+INSERT INTO t_mem_04545 VALUES (1, 'x'), (3, 'z');
 
--- FULL JOIN with a StorageJoin key type mismatch (Nullable(UInt32) vs UInt32). An unmatched
--- left row with a NULL key must keep NULL (not the Nullable(0) produced by casting the filled
--- UInt32 default after the join). A real left key 0 that is unmatched must stay 0.
-SELECT x, isNull(x) AS x_is_null, str, s
-FROM t_left_04545 FULL JOIN t_full_04545 USING (x)
-ORDER BY str, x;
+-- The reported bug: FULL JOIN over a Join() engine table whose key type differs from the left
+-- (UInt32 vs Nullable(UInt32)). The unmatched left row with a NULL key must keep NULL, not the
+-- Nullable(0) produced by casting the filled UInt32 default after the join. An unmatched left
+-- key that is genuinely 0 must still read 0.
+--
+-- USING must agree with ON and with a regular right table, under both analyzers and both
+-- join_use_nulls values.
 
+SET enable_analyzer = 1;
+SET join_use_nulls = 0;
+SELECT 'using storage analyzer=1 join_use_nulls=0';
+SELECT x, isNull(x) AS x_is_null, str FROM t_left_04545 FULL JOIN t_full_04545 USING (x) ORDER BY str, x;
+SELECT 'using regular analyzer=1 join_use_nulls=0';
+SELECT x, isNull(x) AS x_is_null, str FROM t_left_04545 FULL JOIN t_mem_04545 USING (x) ORDER BY str, x;
+
+SET enable_analyzer = 0;
+SELECT 'using storage analyzer=0 join_use_nulls=0';
+SELECT x, isNull(x) AS x_is_null, str FROM t_left_04545 FULL JOIN t_full_04545 USING (x) ORDER BY str, x;
+SELECT 'using regular analyzer=0 join_use_nulls=0';
+SELECT x, isNull(x) AS x_is_null, str FROM t_left_04545 FULL JOIN t_mem_04545 USING (x) ORDER BY str, x;
+
+-- The Join() engine bakes join_use_nulls at CREATE time and rejects a query whose value
+-- differs, so the join_use_nulls = 1 arm needs its own table.
+CREATE TABLE t_full_nulls_04545 (x UInt32, s String) ENGINE = Join(ALL, FULL, x) SETTINGS join_use_nulls = 1;
+INSERT INTO t_full_nulls_04545 VALUES (1, 'x'), (3, 'z');
+
+SET enable_analyzer = 1;
+SET join_use_nulls = 1;
+SELECT 'using storage analyzer=1 join_use_nulls=1';
+SELECT x, isNull(x) AS x_is_null, str FROM t_left_04545 FULL JOIN t_full_nulls_04545 USING (x) ORDER BY str, x;
+SELECT 'using regular analyzer=1 join_use_nulls=1';
+SELECT x, isNull(x) AS x_is_null, str FROM t_left_04545 FULL JOIN t_mem_04545 USING (x) ORDER BY str, x;
+
+SET enable_analyzer = 0;
+SELECT 'using storage analyzer=0 join_use_nulls=1';
+SELECT x, isNull(x) AS x_is_null, str FROM t_left_04545 FULL JOIN t_full_nulls_04545 USING (x) ORDER BY str, x;
+SELECT 'using regular analyzer=0 join_use_nulls=1';
+SELECT x, isNull(x) AS x_is_null, str FROM t_left_04545 FULL JOIN t_mem_04545 USING (x) ORDER BY str, x;
+
+-- ON keeps each side's own key column, so the left key stays NULL and the right key keeps the
+-- storage type with its unmatched-left default. This is the reference the USING results above
+-- must agree with for the left key.
+SET join_use_nulls = 0;
+SET enable_analyzer = 1;
+SELECT 'on storage analyzer=1 join_use_nulls=0';
+SELECT t_left_04545.x AS lx, isNull(lx) AS lx_is_null, t_full_04545.x AS rx, str
+FROM t_left_04545 FULL JOIN t_full_04545 ON t_left_04545.x = t_full_04545.x ORDER BY str, lx;
+SELECT 'on regular analyzer=1 join_use_nulls=0';
+SELECT t_left_04545.x AS lx, isNull(lx) AS lx_is_null, t_mem_04545.x AS rx, str
+FROM t_left_04545 FULL JOIN t_mem_04545 ON t_left_04545.x = t_mem_04545.x ORDER BY str, lx;
+
+SET enable_analyzer = 0;
+SELECT 'on storage analyzer=0 join_use_nulls=0';
+SELECT t_left_04545.x AS lx, isNull(lx) AS lx_is_null, t_full_04545.x AS rx, str
+FROM t_left_04545 FULL JOIN t_full_04545 ON t_left_04545.x = t_full_04545.x ORDER BY str, lx;
+SELECT 'on regular analyzer=0 join_use_nulls=0';
+SELECT t_left_04545.x AS lx, isNull(lx) AS lx_is_null, t_mem_04545.x AS rx, str
+FROM t_left_04545 FULL JOIN t_mem_04545 ON t_left_04545.x = t_mem_04545.x ORDER BY str, lx;
+
+-- LEFT resolves the USING key from the left side only; the NULL key must survive.
+SET enable_analyzer = 1;
 CREATE TABLE t_leftj_04545 (x UInt32, s String) ENGINE = Join(ALL, LEFT, x);
 INSERT INTO t_leftj_04545 VALUES (1, 'x'), (3, 'z');
+SELECT 'left join storage';
+SELECT x, isNull(x) AS x_is_null, str FROM t_left_04545 LEFT JOIN t_leftj_04545 USING (x) ORDER BY str, x;
 
--- LEFT JOIN resolves the key from the left side only; the NULL key must survive.
-SELECT x, isNull(x) AS x_is_null, str
-FROM t_left_04545 LEFT JOIN t_leftj_04545 USING (x)
-ORDER BY str, x;
-
+-- RIGHT resolves the USING key from the right (storage) side; right-only keys are kept.
 CREATE TABLE t_rightj_04545 (x UInt32, s String) ENGINE = Join(ALL, RIGHT, x);
 INSERT INTO t_rightj_04545 VALUES (1, 'x'), (3, 'z');
-
--- RIGHT JOIN resolves the key from the right (storage) side; right-only keys are kept.
-SELECT x, isNull(x) AS x_is_null, s
-FROM t_left_04545 RIGHT JOIN t_rightj_04545 USING (x)
-ORDER BY s, x;
-
-DROP TABLE t_left_04545;
-CREATE TABLE t_left_04545 (x Nullable(UInt32), str String) ENGINE = Memory;
-INSERT INTO t_left_04545 VALUES (1, 'a'), (2, 'b');
-
--- FULL JOIN ... ON selects the raw right key: it is not USING-coalesced, so it must keep the
--- storage type and its unmatched-left default (0), not be promoted to Nullable.
-SELECT t_full_04545.x AS rx, isNull(rx) AS rx_is_null
-FROM t_left_04545 FULL JOIN t_full_04545 ON t_left_04545.x = t_full_04545.x
-ORDER BY rx;
+SELECT 'right join storage';
+SELECT x, isNull(x) AS x_is_null, s FROM t_left_04545 RIGHT JOIN t_rightj_04545 USING (x) ORDER BY s, x;
 
 DROP TABLE t_left_04545;
 DROP TABLE t_full_04545;
+DROP TABLE t_full_nulls_04545;
+DROP TABLE t_mem_04545;
 DROP TABLE t_leftj_04545;
 DROP TABLE t_rightj_04545;
