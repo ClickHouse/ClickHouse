@@ -35,9 +35,9 @@ BYOC infrastructures onboarded before external IDs were introduced use the place
 </Accordion>
 
 <Accordion title="Can BYOC use an existing VPC? What about shared VPCs?">
-On AWS and GCP, you can deploy into an existing VPC that lives in the **same** account or project as the BYOC infrastructure. See the customization guides for [AWS](/products/bring-your-own-cloud/onboarding/customization-aws) and [GCP](/products/bring-your-own-cloud/onboarding/customization-gcp). Bringing your own VNet on Azure is coming soon.
+On AWS and GCP, you can deploy into an existing VPC that lives in the **same** account or project as the BYOC infrastructure. See the customization guides for [AWS](/products/bring-your-own-cloud/onboarding/customization-aws) and [GCP](/products/bring-your-own-cloud/onboarding/customization-gcp). On GCP, a **Shared VPC** from a separate host project is also supported: the [onboarding module](https://github.com/ClickHouse/terraform-byoc-onboarding/tree/main/modules/gcp) accepts the host project and subnet directly — see its "Shared VPC" section for the setup and prerequisites. Bringing your own VNet on Azure is coming soon.
 
-Subnets shared from another account (AWS RAM) or a GCP Shared VPC host project are not supported. The recommended pattern is a dedicated account or project for BYOC, connected to your existing network via VPC peering, PrivateLink, Private Service Connect, or Azure Private Link. Note that with a customer-managed VPC, only the private load balancer is enabled by default (see [configuration](/products/bring-your-own-cloud/configuration/configurations)).
+On AWS, subnets shared from another account (AWS RAM) are not supported — use a dedicated account connected to your existing network via VPC peering or PrivateLink instead. Note that with a customer-managed VPC, only the private load balancer is enabled by default (see [configuration](/products/bring-your-own-cloud/configuration/configurations)).
 </Accordion>
 
 <Accordion title="Can BYOC be installed into an existing Kubernetes cluster?">
@@ -91,7 +91,7 @@ After provisioning, do not remove permissions from the management identity unila
 </Accordion>
 
 <Accordion title="What exactly can ClickHouse do in our cloud account? Can our security team review the permissions?">
-All roles and identities and their purposes are documented in the [privilege reference](/products/bring-your-own-cloud/reference/privilege) for AWS, GCP, and Azure. Write permissions of the management identity (an IAM role on AWS, a service account on GCP, a service principal on Azure) are scoped by resource tags and name prefixes such as `clickhouse-cloud-*`, so it cannot modify resources it did not create, and it has **no object-level access to your data buckets** — object access is limited to in-cluster identities scoped to the ClickHouse workloads. Read permissions are broader because they are required for continuous reconciliation.
+All roles and identities and their purposes are documented in the [privilege reference](/products/bring-your-own-cloud/reference/privilege) for AWS, GCP, and Azure. On AWS, write permissions of the management role are scoped by resource tags and name prefixes such as `clickhouse-cloud-*`, so it cannot modify resources it did not create, and it has **no object-level access to your data buckets** — object access is limited to in-cluster identities scoped to the ClickHouse workloads. On GCP and Azure, the onboarding identities hold project- or subscription-scoped permissions instead — one of the reasons a dedicated project or subscription is strongly recommended; the exact privilege surface for each provider is listed in the privilege reference. Read permissions are broader because they are required for continuous reconciliation.
 </Accordion>
 
 <Accordion title="What access do ClickHouse employees have to our environment and data?">
@@ -107,7 +107,7 @@ Only operational metadata: service and backup state events, usage metrics for bi
 </Accordion>
 
 <Accordion title="How does the ClickHouse control plane reach the Kubernetes API in our account? Is Tailscale required?">
-By default, the Kubernetes API endpoint is public but restricted to ClickHouse's NAT IP addresses. For private-only connectivity, two options exist: Tailscale (outbound-only, used by default for troubleshooting access) and, on AWS, a fully private path via VPC Lattice (private preview). Note that this applies only to the Kubernetes API: cloud provider API calls (for example EKS and EC2 on AWS) originate from ClickHouse Cloud's network via cross-account role assumption and can never be routed through Tailscale — see [cloud provider APIs vs the Kubernetes API](/products/bring-your-own-cloud/reference/network-security#cloud-api-vs-kubernetes-api) and [configuration](/products/bring-your-own-cloud/configuration/configurations). Do not remove the ClickHouse IP allowlist entries from the API endpoint — the control plane needs them to manage the cluster.
+By default, the Kubernetes API endpoint is public but restricted to ClickHouse's NAT IP addresses — while this default is in use, do not remove the ClickHouse allowlist entries, since the control plane needs them to manage the cluster. The endpoint can instead be switched to private-only access, coordinated with the ClickHouse team: via Tailscale (outbound-only, also used for troubleshooting access) or, on AWS, via VPC Lattice (private preview) — see [configuration](/products/bring-your-own-cloud/configuration/configurations). Note that this applies only to the Kubernetes API: cloud provider API calls (for example EKS and EC2 on AWS) originate from ClickHouse Cloud's network via cross-account role assumption and can never be routed through Tailscale — see [cloud provider APIs vs the Kubernetes API](/products/bring-your-own-cloud/reference/network-security#cloud-api-vs-kubernetes-api).
 </Accordion>
 
 <Accordion title="What is the size of the VPC/VNet IP range created?">
