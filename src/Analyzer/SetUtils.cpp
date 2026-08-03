@@ -11,6 +11,7 @@
 #include <DataTypes/DataTypeTuple.h>
 
 #include <Interpreters/Set.h>
+#include <Interpreters/castColumn.h>
 #include <Interpreters/convertColumnToType.h>
 
 #include <Common/assert_cast.h>
@@ -112,6 +113,51 @@ std::optional<ColumnPtr> convertColumnToTypeCheckEnum(
             return std::nullopt;
         throw;
     }
+}
+
+/// Fast path for a single native-number key: convert all members with one accurate batch cast instead
+/// of a per-member cast. Applies only when the target and every member's source type are plain native
+/// numbers (no `Bool`/`Decimal`/`Enum`/`Nullable`/wide-int) - exactly the case where
+/// `castColumnAccurateOrNull` provably matches the strict per-member `convertColumnToType` (pinned by
+/// `gtest_convert_column_to_type`). It is element-wise, so per-row results and their order are identical
+/// to the per-member loop; only not-representable values (NULL in the cast result) are dropped, matching
+/// strict conversion into the non-nullable native target. Returns false (caller uses the per-member
+/// loop) for anything else, so no reordering or behavior change can leak in. `out` is the non-nullable
+/// target column being built.
+bool tryConvertNativeNumberMembersBatch(IColumn & out, const SetMembers & members, const DataTypePtr & lhs_type)
+{
+    if (!isNativeNumber(lhs_type) || isBool(lhs_type))
+        return false;
+
+    if (members.empty())
+        return true;
+
+    const DataTypePtr & source_type = members.front().type;
+    if (!isNativeNumber(source_type) || isBool(source_type))
+        return false;
+    for (const auto & member : members)
+        if (!member.type->equals(*source_type))
+            return false;
+
+    /// Gather the size-1 member columns into one column of the (homogeneous) source type. This is a
+    /// plain copy - no conversion - so the single accurate cast below carries all the per-element cost.
+    MutableColumnPtr gathered = source_type->createColumn();
+    gathered->reserve(members.size());
+    for (const auto & member : members)
+        gathered->insertRangeFrom(*member.column, 0, 1);
+
+    ColumnPtr casted = castColumnAccurateOrNull({std::move(gathered), source_type, ""}, lhs_type);
+    casted = casted->convertToFullColumnIfConst();
+    const auto & nullable = assert_cast<const ColumnNullable &>(*casted);
+    const auto & null_map = nullable.getNullMapData();
+    const auto & nested = nullable.getNestedColumn();
+
+    out.reserve(out.size() + null_map.size());
+    for (size_t i = 0, size = null_map.size(); i < size; ++i)
+        if (!null_map[i])
+            out.insertFrom(nested, i);
+
+    return true;
 }
 
 /// Unwrap a non-NULL member column down to its `ColumnTuple` (the member holds a Tuple value at row 0).
@@ -231,13 +277,16 @@ ColumnsWithTypeAndName createBlockFromCollection(
         }
 
         /// Generic single-key column (all cases except `Nullable(Tuple(...))`, e.g. T / Nullable(T) / Tuple() / Tuple(T))
-        for (const auto & member : members)
+        if (!tryConvertNativeNumberMembersBatch(*column, members, lhs_type))
         {
-            auto converted = convertColumnToTypeCheckEnum(*member.column, member.type, lhs_type, params.forbid_unknown_enum_values);
+            for (const auto & member : members)
+            {
+                auto converted = convertColumnToTypeCheckEnum(*member.column, member.type, lhs_type, params.forbid_unknown_enum_values);
 
-            bool need_insert_null = params.transform_null_in && column->isNullable();
-            if (converted && (!(*converted)->isNullAt(0) || need_insert_null))
-                column->insertRangeFrom(**converted, 0, 1);
+                bool need_insert_null = params.transform_null_in && column->isNullable();
+                if (converted && (!(*converted)->isNullAt(0) || need_insert_null))
+                    column->insertRangeFrom(**converted, 0, 1);
+            }
         }
 
         ColumnsWithTypeAndName res(1);
