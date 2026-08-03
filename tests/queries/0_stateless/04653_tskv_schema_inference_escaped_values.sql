@@ -473,14 +473,17 @@ SELECT * FROM format(Regexp, unhex('2D310A')) SETTINGS format_regexp = '^(.+)$',
 -- negative map key must infer a type that reads back. This is the reason group 11 is not a
 -- hand-crafted-input-only concern.
 SELECT 'group 11 round trip: TSKV output for a negative map key reads back';
-SELECT formatRow('TSKV', map(-1, 1) AS m) = 'm={-1:1}\n';
-DESC format(TSKV, ((SELECT formatRow('TSKV', map(-1, 1) AS m)) || (SELECT formatRow('TSKV', map(18446744073709551615, 1) AS m))));
-SELECT * FROM format(TSKV, ((SELECT formatRow('TSKV', map(-1, 1) AS m)) || (SELECT formatRow('TSKV', map(18446744073709551615, 1) AS m))));
+-- The alias must come from a FROM-clause subquery, and the whole document from one scalar subquery:
+-- an inline `expr AS m` names the TSKV key after the expression text without the analyzer, and
+-- concatenating two subqueries in the argument is not a constant expression there.
+SELECT (SELECT formatRow('TSKV', m) FROM (SELECT map(-1, 1) AS m)) = 'm={-1:1}\n';
+DESC format(TSKV, (SELECT (SELECT formatRow('TSKV', m) FROM (SELECT map(-1, 1) AS m)) || (SELECT formatRow('TSKV', m) FROM (SELECT map(18446744073709551615, 1) AS m))));
+SELECT * FROM format(TSKV, (SELECT (SELECT formatRow('TSKV', m) FROM (SELECT map(-1, 1) AS m)) || (SELECT formatRow('TSKV', m) FROM (SELECT map(18446744073709551615, 1) AS m))));
 
 -- The same for a signed zero, which is likewise what the writer emits rather than a hand-written shape:
 -- a negative Float64 zero is written without its fractional part, so the field reads back as the integer
 -- literal -0. Group 13c is therefore not a hand-crafted-input-only concern either.
 SELECT 'group 13c round trip: TSKV output for a negative zero reads back';
-SELECT formatRow('TSKV', -0.0::Float64 AS x) = 'x=-0\n';
-DESC format(TSKV, ((SELECT formatRow('TSKV', -0.0::Float64 AS x)) || (SELECT formatRow('TSKV', 18446744073709551615::UInt64 AS x))));
-SELECT * FROM format(TSKV, ((SELECT formatRow('TSKV', -0.0::Float64 AS x)) || (SELECT formatRow('TSKV', 18446744073709551615::UInt64 AS x))));
+SELECT (SELECT formatRow('TSKV', x) FROM (SELECT -0.0::Float64 AS x)) = 'x=-0\n';
+DESC format(TSKV, (SELECT (SELECT formatRow('TSKV', x) FROM (SELECT -0.0::Float64 AS x)) || (SELECT formatRow('TSKV', x) FROM (SELECT 18446744073709551615::UInt64 AS x))));
+SELECT * FROM format(TSKV, (SELECT (SELECT formatRow('TSKV', x) FROM (SELECT -0.0::Float64 AS x)) || (SELECT formatRow('TSKV', x) FROM (SELECT 18446744073709551615::UInt64 AS x))));
