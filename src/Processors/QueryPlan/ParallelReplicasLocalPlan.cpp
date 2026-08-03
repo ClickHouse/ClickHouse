@@ -66,10 +66,7 @@ static QueryPlan::Node * findReadingStep(QueryPlan::Node * node)
 /// recursively handling nested views with their own UNION ALL.
 ///
 /// `right_branch_selected` (optional out-param) is set to true if the descent to any returned
-/// reading step went through the right child of a `RIGHT JOIN`. The initiator only ever analyzes
-/// the leftmost leaf, so when the parallelized reading step is reached via a right-branch descent
-/// it is a different table expression than the one analyzed, and the pre-analyzed result must not
-/// be reused for it (see `createLocalPlanForParallelReplicas`).
+/// reading step went through the right child of a `RIGHT JOIN`.
 std::vector<QueryPlan::Node *> findReadingSteps(QueryPlan::Node * root, bool allow_view_over_mergetree, bool * right_branch_selected)
 {
     auto * node = root;
@@ -267,15 +264,9 @@ std::pair<QueryPlanPtr, bool> createLocalPlanForParallelReplicas(
     /// is sent (either locally from here or from remote replicas over the network).
     coordinator->setSnapshotReplicaNum(replica_number);
 
-    /// For the first reading step, reuse the pre-analyzed result if available.
-    ///
-    /// The initiator analyzes the leftmost leaf and passes that scan here. `findReadingSteps`
-    /// selects the parallelized scan by join kind, descending into the right child for a
-    /// `RIGHT JOIN`. In that case the parallelized scan is a different table expression than the
-    /// analyzed leftmost leaf, so reusing the pre-analyzed result would apply the wrong table's
-    /// parts and columns to it (`NOT_FOUND_COLUMN_IN_BLOCK`). Reuse only when no right-branch
-    /// descent occurred; otherwise let the scan analyze itself (the same path taken when no
-    /// analysis is passed).
+    /// `analyzed_read_from_merge_tree` is always the leftmost leaf's scan, so it must not be reused
+    /// for a scan reached through a `RIGHT JOIN` right branch: that is a different table expression.
+    /// Passing no analysis makes the scan analyze itself.
     ReadFromMergeTree::AnalysisResultPtr analyzed_result_ptr;
     if (!right_branch_selected && analyzed_read_from_merge_tree.get())
     {

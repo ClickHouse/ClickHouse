@@ -1,9 +1,9 @@
 -- Regression test for https://github.com/ClickHouse/ClickHouse/issues/111206
--- Automatic parallel replicas (parallel_replicas_min_number_of_rows_per_replica > 0) used to fail
--- a RIGHT JOIN that projects a left-table column with NOT_FOUND_COLUMN_IN_BLOCK / THERE_IS_NO_COLUMN.
--- The initiator analyzes the leftmost leaf and passes that scan to the local plan, but the local
--- plan parallelizes the RIGHT table for a RIGHT JOIN, so the left leaf's analysis was applied to
--- the wrong table. Results must be identical to running without parallel replicas.
+-- With `parallel_replicas_min_number_of_rows_per_replica` > 0 the initiator analyzes the leftmost
+-- leaf to estimate the replica count and hands that scan to the local plan, but the local plan
+-- parallelizes the RIGHT table for a RIGHT JOIN, so the left leaf's parts and columns were applied
+-- to the wrong table (`NOT_FOUND_COLUMN_IN_BLOCK` / `THERE_IS_NO_COLUMN`).
+-- Results must be identical to running without parallel replicas.
 
 DROP TABLE IF EXISTS tl;
 DROP TABLE IF EXISTS tr;
@@ -13,8 +13,9 @@ CREATE TABLE tr (k Int32, ver Int32) ENGINE = MergeTree ORDER BY k;
 INSERT INTO tl SELECT number, number FROM numbers(1000);
 INSERT INTO tr SELECT number, number FROM numbers(500);
 
--- automatic_parallel_replicas_mode is pinned to 0: the runner randomizes it to 2 in some runs,
--- which for joins skips building the parallel-replicas plan and would bypass the path under test.
+-- `automatic_parallel_replicas_mode` is a separate feature, pinned to 0 only because the runner
+-- randomizes it to 2 and a non-zero mode forces `enable_parallel_replicas` to 0, which would leave
+-- the path under test unexercised.
 SET enable_analyzer = 1, enable_parallel_replicas = 1, max_parallel_replicas = 3,
     cluster_for_parallel_replicas = 'test_cluster_one_shard_three_replicas_localhost',
     parallel_replicas_for_non_replicated_merge_tree = 1,
