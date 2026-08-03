@@ -229,6 +229,30 @@ SELECT x FROM (SELECT 0 AS x) AS lhs, (SELECT 1 AS x), nonexistent_table_functio
 -- are resolved and the unresolvable table function reports its own error.
 SELECT x FROM (SELECT 0 AS x) AS lhs, (SELECT 1 AS y), nonexistent_table_function_04502(); -- { serverError UNKNOWN_FUNCTION }
 
+-- A join operand can itself be a join: the comma join nests under the explicit `JOIN` here. The nested
+-- join's operands are validated against each other when the nested join is resolved, but a descendant
+-- unaliased subquery can also collide with a sibling of an *enclosing* join, which makes its column just
+-- as unreachable as in the flat case. The validation descends into nested join operands, so the collision
+-- with the enclosing sibling (`x` of `rhs`) requires the alias.
+SELECT x FROM (SELECT 1 AS x), numbers(1) JOIN (SELECT 2 AS x) AS rhs ON true; -- { serverError ALIAS_REQUIRED }
+
+-- The collision forces the alias even when the ambiguous name is never referenced bare, exactly as the
+-- sibling-level check does (the nested subquery's `x` is unqualifiable either way).
+SELECT rhs.x FROM (SELECT 1 AS x), numbers(1) JOIN (SELECT 2 AS x) AS rhs ON true; -- { serverError ALIAS_REQUIRED }
+
+-- With the nested subquery aliased both columns are qualifiable, so the query is allowed.
+SELECT lhs.x, rhs.x FROM (SELECT 1 AS x) AS lhs, numbers(1) JOIN (SELECT 2 AS x) AS rhs ON true;
+
+-- Without a collision across the nesting levels the missing alias stays harmless.
+SELECT y, x FROM (SELECT 1 AS y), numbers(1) JOIN (SELECT 2 AS x) AS rhs ON true;
+
+-- A parenthesized join is a derived table, not a nested join node: its whole column set participates in
+-- the ordinary sibling check, which catches the collision on `x` by itself.
+SELECT x FROM ((SELECT 1 AS x) JOIN numbers(1) ON true) JOIN (SELECT 2 AS x) AS rhs ON true; -- { serverError ALIAS_REQUIRED }
+
+-- Disabling the setting keeps the pre-existing permissive behavior for the nested case as well.
+SELECT rhs.x FROM (SELECT 1 AS x), numbers(1) JOIN (SELECT 2 AS x) AS rhs ON true SETTINGS joined_subquery_requires_alias = 0;
+
 DROP TABLE item;
 DROP TABLE sales;
 DROP TABLE with_number;

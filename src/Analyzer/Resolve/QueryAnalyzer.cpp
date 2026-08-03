@@ -957,6 +957,43 @@ void QueryAnalyzer::validateJoinTableExpressionWithoutAlias(
 
     auto table_expression_node_type = unaliased_expression_node->getNodeType();
 
+    /** A join operand can itself be a join: `FROM (SELECT 1 AS x), numbers(1) JOIN (SELECT 2 AS x) AS rhs
+      * ON true` nests the comma join under the explicit `JOIN`. The nested join's own resolution has already
+      * validated its operands against each other, but a descendant unaliased subquery can still collide with
+      * a sibling of an *enclosing* join (here `rhs`), which makes its column just as unreachable as in the
+      * flat case. Descend into nested join operands and validate them against the enclosing siblings; the
+      * descendant subtree must not count as its own sibling (its columns include the descendant's), so it is
+      * filtered out of the sibling set. A `PASTE JOIN` never required operand aliases, and the strict
+      * pre-relaxation validation never descended into it either, so recursing into one would reject queries
+      * that have always worked; keep its operands exempt.
+      */
+    if (table_expression_node_type == QueryTreeNodeType::JOIN || table_expression_node_type == QueryTreeNodeType::CROSS_JOIN)
+    {
+        if (const auto * nested_join = unaliased_expression_node->as<const JoinNode>(); nested_join && nested_join->getKind() == JoinKind::Paste)
+            return;
+
+        QueryTreeNodes enclosing_sibling_table_expressions;
+        for (const auto & sibling : resolved_sibling_table_expressions)
+            if (sibling.get() != table_expression_node.get() && sibling.get() != unaliased_expression_node.get())
+                enclosing_sibling_table_expressions.push_back(sibling);
+
+        if (enclosing_sibling_table_expressions.empty())
+            return;
+
+        if (const auto * nested_join = unaliased_expression_node->as<const JoinNode>())
+        {
+            validateJoinTableExpressionWithoutAlias(join_node, nested_join->getLeftTableExpressionNode(), enclosing_sibling_table_expressions, scope);
+            validateJoinTableExpressionWithoutAlias(join_node, nested_join->getRightTableExpressionNode(), enclosing_sibling_table_expressions, scope);
+        }
+        else if (const auto * nested_cross_join = unaliased_expression_node->as<const CrossJoinNode>())
+        {
+            for (const auto & nested_table_expression : nested_cross_join->getTableExpressions())
+                validateJoinTableExpressionWithoutAlias(join_node, nested_table_expression, enclosing_sibling_table_expressions, scope);
+        }
+
+        return;
+    }
+
     if (table_expression_node_type != QueryTreeNodeType::TABLE_FUNCTION &&
         table_expression_node_type != QueryTreeNodeType::QUERY &&
         table_expression_node_type != QueryTreeNodeType::UNION)
