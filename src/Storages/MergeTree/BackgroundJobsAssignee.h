@@ -3,10 +3,8 @@
 #include <Core/BackgroundSchedulePoolTaskHolder.h>
 #include <Interpreters/Context_fwd.h>
 #include <Storages/MergeTree/MergeTreeBackgroundExecutor.h>
-#include <Storages/IStorage.h>
 
 #include <pcg_random.hpp>
-#include <Interpreters/StorageID.h>
 
 
 namespace DB
@@ -31,18 +29,6 @@ struct BackgroundTaskSchedulingSettings
 };
 
 class MergeTreeData;
-class BackgroundJobsAssignee;
-
-class IBackgroundOperation
-{
-public:
-    virtual bool scheduleDataProcessingJob(BackgroundJobsAssignee & assignee) = 0;
-    virtual bool scheduleDataMovingJob(BackgroundJobsAssignee & assignee) = 0;
-    virtual bool scheduleStreamingJob(BackgroundJobsAssignee & /*assignee*/) { return false; }
-    virtual Int32 getBiasBackoffSeconds() const { return 0; }
-
-    virtual ~IBackgroundOperation() = default;
-};
 
 class BackgroundJobsAssignee : public WithContext
 {
@@ -55,8 +41,7 @@ public:
     enum class Type : uint8_t
     {
         DataProcessing,
-        Moving,
-        Streaming,
+        Moving
     };
     Type type{Type::DataProcessing};
 
@@ -64,10 +49,6 @@ public:
     void trigger();
     void postpone();
     void finish();
-
-    /// Update the cached storage ID after a table rename,
-    /// so that finish() can correctly find tasks belonging to this storage.
-    void updateStorageID(const StorageID & new_id);
 
     bool scheduleMergeMutateTask(ExecutableTaskPtr merge_task);
     bool scheduleFetchTask(ExecutableTaskPtr fetch_task);
@@ -78,14 +59,12 @@ public:
     ~BackgroundJobsAssignee();
 
     BackgroundJobsAssignee(
-        IBackgroundOperation & data_,
-        const StorageID & storage_id_,
+        MergeTreeData & data_,
         Type type,
         ContextPtr global_context_);
 
 private:
-    IBackgroundOperation & data;
-    StorageID storage_id;
+    MergeTreeData & data;
 
     /// Useful for random backoff timeouts generation
     pcg64 rng;

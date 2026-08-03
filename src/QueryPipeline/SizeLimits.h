@@ -44,8 +44,6 @@ struct SizeLimits
 
     void serialize(WriteBuffer & out) const;
     void deserialize(ReadBuffer & in);
-
-    bool operator==(const SizeLimits & other) const = default;
 };
 
 }

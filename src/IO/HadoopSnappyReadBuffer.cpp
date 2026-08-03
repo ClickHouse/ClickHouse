@@ -33,7 +33,7 @@ inline bool HadoopSnappyDecoder::checkAvailIn(size_t avail_in, int min)
 
 inline void HadoopSnappyDecoder::copyToBuffer(size_t * avail_in, const char ** next_in)
 {
-    chassert(*avail_in + buffer_length <= sizeof(buffer));
+    assert(*avail_in + buffer_length <= sizeof(buffer));
 
     memcpy(buffer + buffer_length, *next_in, *avail_in);
 
@@ -216,7 +216,7 @@ bool HadoopSnappyReadBuffer::nextImpl()
 
     if (decoder->result == Status::OK)
     {
-        (*decoder).reset();
+        decoder->reset();
         if (in->eof())
         {
             eof = true;

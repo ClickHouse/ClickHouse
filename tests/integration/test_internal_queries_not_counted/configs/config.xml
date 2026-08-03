@@ -1,4 +1,0 @@
-<clickhouse>
-    <max_concurrent_queries>1</max_concurrent_queries>
-    <max_concurrent_select_queries>1</max_concurrent_select_queries>
-</clickhouse>

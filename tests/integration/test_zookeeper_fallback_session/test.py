@@ -59,13 +59,11 @@ def test_fallback_session(started_cluster: ClickHouseCluster):
     with PartitionManager() as pm:
         for node in started_cluster.instances.values():
             for zk in ["zoo1", "zoo2"]:
-                pm.add_rule(
+                pm._add_rule(
                     {
-                        "instance": node,
                         "source": node.ip_address,
                         "destination": cluster.get_instance_ip(zk),
                         "action": "REJECT --reject-with tcp-reset",
-                        "protocol": "tcp",
                     }
                 )
 
@@ -98,13 +96,11 @@ def test_fallback_session(started_cluster: ClickHouseCluster):
 
     with PartitionManager() as pm:
         for node in started_cluster.instances.values():
-            pm.add_rule(
+            pm._add_rule(
                 {
-                    "instance": node,
                     "source": node.ip_address,
                     "destination": cluster.get_instance_ip("zoo3"),
                     "action": "REJECT --reject-with tcp-reset",
-                    "protocol": "tcp",
                 }
             )
 

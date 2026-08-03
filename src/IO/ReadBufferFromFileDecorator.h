@@ -1,14 +1,13 @@
 #pragma once
 
 #include <IO/ReadBufferFromFileBase.h>
-#include <IO/IReadBufferMetadataProvider.h>
 
 
 namespace DB
 {
 
 /// Delegates all reads to underlying buffer. Doesn't have own memory.
-class ReadBufferFromFileDecorator : public ReadBufferFromFileBase, public IReadBufferMetadataProvider
+class ReadBufferFromFileDecorator : public ReadBufferFromFileBase
 {
 public:
     explicit ReadBufferFromFileDecorator(std::unique_ptr<SeekableReadBuffer> impl_);
@@ -29,13 +28,6 @@ public:
     ReadBuffer & getWrappedReadBuffer() { return *impl; }
 
     std::optional<size_t> tryGetFileSize() override;
-    std::optional<Field> getMetadata(const String & name) const override;
-
-    /// The swap-based `nextImpl` calls `impl->next()` while `impl` may still have pending data,
-    /// tripping `ReadBuffer::next`'s `chassert(!hasPendingData)` under set()+next(). Force the
-    /// `read(dest, n)` fallback, which drains via `eof() -> next()` at the outer level. Inherited
-    /// by `BoundedReadBuffer`.
-    bool supportsExternalBufferMode() const override { return false; }
 
 protected:
     std::unique_ptr<SeekableReadBuffer> impl;

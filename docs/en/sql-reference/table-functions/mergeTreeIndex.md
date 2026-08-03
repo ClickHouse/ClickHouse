@@ -5,8 +5,9 @@ sidebar_label: 'mergeTreeIndex'
 sidebar_position: 77
 slug: /sql-reference/table-functions/mergeTreeIndex
 title: 'mergeTreeIndex'
-doc_type: 'reference'
 ---
+
+# mergeTreeIndex Table Function
 
 Represents the contents of index and marks files of MergeTree tables. It can be used for introspection.
 

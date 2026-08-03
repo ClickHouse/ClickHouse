@@ -23,6 +23,7 @@ trap 'rm -rf "$TMP_DIR"' EXIT
 
 python3 - "$TMP_DIR" <<'PYEOF'
 import struct, io, sys
+import numpy as np
 import pyarrow as pa
 import pyarrow.ipc as ipc
 
@@ -74,7 +75,8 @@ d = write_arrow(pa.array([3600000000], type=pa.time64('us')))
 open(f'{out}/time64.arrow', 'wb').write(inflate_row_count(d, 1))
 
 # 14. Float16: 1 row → 2-byte body, inflated to 16384 rows
-d = write_arrow(pa.array([1.0], type=pa.float16()))
+# np.float16 input: older pyarrow cannot convert Python floats to halffloat directly
+d = write_arrow(pa.array(np.array([1.0], dtype=np.float16)))
 open(f'{out}/float16.arrow', 'wb').write(inflate_row_count(d, 1))
 
 # 15. Decimal128: 1 row → 16-byte body, inflated to 16384 rows

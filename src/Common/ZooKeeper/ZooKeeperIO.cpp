@@ -70,7 +70,7 @@ size_t size(const Error & x)
 
 void read(OpNum & x, ReadBuffer & in)
 {
-    int32_t raw_op_num = 0;
+    int32_t raw_op_num;
     read(raw_op_num, in);
     x = getOpNum(raw_op_num);
 }
@@ -91,7 +91,7 @@ void read(std::string & s, ReadBuffer & in)
         throw Exception::fromMessage(Error::ZMARSHALLINGERROR, "Negative size while reading string from ZooKeeper");
 
     if (size > MAX_STRING_OR_ARRAY_SIZE)
-        throw Exception(Error::ZMARSHALLINGERROR,"Too large string size while reading from ZooKeeper {}", size);
+        throw Exception::fromMessage(Error::ZMARSHALLINGERROR,"Too large string size while reading from ZooKeeper");
 
     s.resize(size);
     size_t read_bytes = in.read(s.data(), size);
@@ -124,7 +124,7 @@ void read(Stat & stat, ReadBuffer & in)
 
 void read(Error & x, ReadBuffer & in)
 {
-    int32_t code = 0;
+    int32_t code;
     read(code, in);
     x = Coordination::Error(code);
 }

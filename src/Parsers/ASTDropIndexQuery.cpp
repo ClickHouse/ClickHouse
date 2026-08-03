@@ -14,7 +14,7 @@ String ASTDropIndexQuery::getID(char delim) const
 
 ASTPtr ASTDropIndexQuery::clone() const
 {
-    auto res = make_intrusive<ASTDropIndexQuery>(*this);
+    auto res = std::make_shared<ASTDropIndexQuery>(*this);
     res->children.clear();
 
     res->index_name = index_name->clone();
@@ -27,6 +27,8 @@ ASTPtr ASTDropIndexQuery::clone() const
 
 void ASTDropIndexQuery::formatQueryImpl(WriteBuffer & ostr, const FormatSettings & settings, FormatState & state, FormatStateStacked frame) const
 {
+    frame.need_parens = false;
+
     std::string indent_str = settings.one_line ? "" : std::string(4u * frame.indent, ' ');
 
     ostr << indent_str;
@@ -52,7 +54,7 @@ void ASTDropIndexQuery::formatQueryImpl(WriteBuffer & ostr, const FormatSettings
 
 ASTPtr ASTDropIndexQuery::convertToASTAlterCommand() const
 {
-    auto command = make_intrusive<ASTAlterCommand>();
+    auto command = std::make_shared<ASTAlterCommand>();
 
     command->type = ASTAlterCommand::DROP_INDEX;
     command->if_exists = if_exists;

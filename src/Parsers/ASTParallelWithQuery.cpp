@@ -13,7 +13,7 @@ String ASTParallelWithQuery::getID(char delim) const
 
 ASTPtr ASTParallelWithQuery::clone() const
 {
-    auto res = make_intrusive<ASTParallelWithQuery>(*this);
+    auto res = std::make_shared<ASTParallelWithQuery>(*this);
     for (auto & child : res->children)
         child = child->clone();
     return res;
