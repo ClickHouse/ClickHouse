@@ -1,0 +1,92 @@
+-- Tags: no-parallel-replicas
+
+-- Tests that text-search functions (hasAnyTokens/hasAllTokens/hasPhrase) apply the text index's
+-- tokenizer/preprocessor/postprocessor when used outside of the WHERE/PREWHERE filter (SELECT list,
+-- aggregate-function arguments), and that a WHERE result is the same regardless of `use_skip_indexes`.
+
+SET enable_analyzer = 1;
+SET enable_text_index = 1;
+SET use_skip_indexes_on_data_read = 1;
+
+SELECT 'array tokenizer';
+
+DROP TABLE IF EXISTS tab;
+CREATE TABLE tab
+(
+    id UInt64,
+    tags Array(String),
+    INDEX idx_tags tags TYPE text(tokenizer = array)
+)
+ENGINE = MergeTree ORDER BY id
+SETTINGS index_granularity = 4;
+
+INSERT INTO tab SELECT number, if(number < 47, ['make-payment-check'], ['common:a']) FROM numbers(1000);
+
+SELECT '-- SELECT-list / aggregate-argument position (has, hasAnyTokens, hasAllTokens)';
+
+SELECT
+    countIf(has(tags, 'make-payment-check')),
+    countIf(hasAnyTokens(tags, ['make-payment-check'])),
+    countIf(hasAllTokens(tags, ['make-payment-check']))
+FROM tab;
+
+SELECT '-- WHERE is consistent across use_skip_indexes';
+
+SELECT count() FROM tab WHERE hasAnyTokens(tags, ['make-payment-check']) SETTINGS use_skip_indexes = 0;
+SELECT count() FROM tab WHERE hasAllTokens(tags, ['make-payment-check']) SETTINGS use_skip_indexes = 0;
+SELECT count() FROM tab WHERE hasAnyTokens(tags, ['make-payment-check']) SETTINGS use_skip_indexes = 1;
+SELECT count() FROM tab WHERE hasAllTokens(tags, ['make-payment-check']) SETTINGS use_skip_indexes = 1;
+
+SELECT '-- EXPLAIN shows the tokenizer injected into SELECT-list functions';
+
+SELECT replaceRegexpOne(explain, '^[^A-Za-z]*', '') FROM (
+    EXPLAIN actions = 1
+    SELECT hasAnyTokens(tags, ['make-payment-check']), hasAllTokens(tags, ['make-payment-check']) FROM tab
+) WHERE explain ILIKE '%hasAnyTokens%' OR explain ILIKE '%hasAllTokens%';
+
+SELECT '-- EXPLAIN shows the tokenizer injected into the WHERE filter (use_skip_indexes = 0)';
+
+SELECT replaceRegexpOne(explain, '^[^A-Za-z]*', '') FROM (
+    EXPLAIN actions = 1
+    SELECT count() FROM tab WHERE hasAnyTokens(tags, ['make-payment-check']) SETTINGS use_skip_indexes = 0
+) WHERE explain ILIKE '%hasAnyTokens%';
+
+DROP TABLE tab;
+
+SELECT 'preprocessor';
+
+DROP TABLE IF EXISTS tab;
+CREATE TABLE tab
+(
+    id UInt64,
+    s String,
+    INDEX idx_s s TYPE text(tokenizer = splitByNonAlpha, preprocessor = lower(s))
+)
+ENGINE = MergeTree ORDER BY id
+SETTINGS index_granularity = 4;
+
+INSERT INTO tab SELECT number, if(number < 10, 'Hello World', 'foo bar') FROM numbers(1000);
+
+SELECT '-- SELECT-list position (hasAnyTokens, hasAllTokens, hasPhrase)';
+
+SELECT
+    countIf(hasAnyTokens(s, 'hello')),
+    countIf(hasAllTokens(s, 'hello world')),
+    countIf(hasPhrase(s, 'hello world'))
+FROM tab;
+
+SELECT '-- WHERE is consistent across use_skip_indexes';
+
+SELECT count() FROM tab WHERE hasAnyTokens(s, 'hello') SETTINGS use_skip_indexes = 0;
+SELECT count() FROM tab WHERE hasAllTokens(s, 'hello world') SETTINGS use_skip_indexes = 0;
+SELECT count() FROM tab WHERE hasAnyTokens(s, 'hello') SETTINGS use_skip_indexes = 1;
+SELECT count() FROM tab WHERE hasAllTokens(s, 'hello world') SETTINGS use_skip_indexes = 1;
+
+SELECT '-- EXPLAIN shows preprocessor and tokenizer injected into SELECT-list functions';
+
+SELECT replaceRegexpOne(explain, '^[^A-Za-z]*', '') FROM (
+    EXPLAIN actions = 1
+    SELECT hasAnyTokens(s, 'hello'), hasPhrase(s, 'hello world') FROM tab
+) WHERE explain ILIKE '%hasAnyTokens%' OR explain ILIKE '%hasPhrase%';
+
+DROP TABLE tab;
