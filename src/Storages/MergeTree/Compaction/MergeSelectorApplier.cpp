@@ -19,6 +19,7 @@ static MergeSelectorChoice makeTTLIndexClearMergeChoice(PartsRange range, PartsR
     chassert(range.size() == 1);
 
     /// A `TTLClearIndex` entry always preserves source files and never applies patches.
+    /// A subsequent `Regular` selection recalculates stale TTL metadata.
     if (range.front().can_preserve_files_for_index_clear && patch_parts.empty())
         return MergeSelectorChoice{std::move(range), {}, MergeType::TTLClearIndex};
 

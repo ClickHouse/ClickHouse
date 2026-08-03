@@ -65,6 +65,93 @@ def create_table(node, replica):
     )
 
 
+def test_alter_ttl_recalculates_stale_metadata_before_index_clear(started_cluster):
+    node1.query("SYSTEM STOP TTL MERGES")
+    node1.query(
+        """
+        CREATE TABLE ttl_clear_index_stale
+        (
+            delete_at Date,
+            clear_at Date,
+            k UInt64,
+            INDEX idx k TYPE minmax GRANULARITY 1
+        )
+        ENGINE = MergeTree
+        ORDER BY k
+        TTL clear_at + INTERVAL 1 DAY CLEAR INDEX idx
+        SETTINGS
+            index_granularity = 2,
+            index_granularity_bytes = '10Mi',
+            merge_with_ttl_timeout = 1,
+            min_bytes_for_wide_part = 0,
+            min_rows_for_wide_part = 0
+        """
+    )
+    node1.query(
+        "INSERT INTO ttl_clear_index_stale VALUES "
+        "('2000-01-01', '2100-01-01', 1), "
+        "('2100-01-01', '2100-01-01', 2)"
+    )
+    node1.query(
+        """
+        ALTER TABLE ttl_clear_index_stale MODIFY TTL
+            delete_at + INTERVAL 1 DAY DELETE,
+            clear_at + INTERVAL 1 DAY CLEAR INDEX idx
+        SETTINGS materialize_ttl_after_modify = 0
+        """
+    )
+
+    node1.query("SYSTEM START TTL MERGES")
+    assert_eq_with_retry(
+        node1,
+        "SELECT count() FROM ttl_clear_index_stale",
+        "1",
+        retry_count=60,
+    )
+    assert node1.query("SELECT k FROM ttl_clear_index_stale") == "2\n"
+    assert (
+        node1.query(
+            """
+            SELECT sum(secondary_indices_compressed_bytes) > 0
+            FROM system.parts
+            WHERE database = currentDatabase()
+              AND table = 'ttl_clear_index_stale'
+              AND active
+            """
+        )
+        == "1\n"
+    )
+
+    node1.query("SYSTEM FLUSH LOGS")
+    assert_eq_with_retry(
+        node1,
+        """
+        SELECT count() > 0
+        FROM system.part_log
+        WHERE database = currentDatabase()
+          AND table = 'ttl_clear_index_stale'
+          AND event_type = 'MergeParts'
+          AND merge_reason = 'RegularMerge'
+          AND error = 0
+        """,
+        "1",
+    )
+    assert (
+        node1.query(
+            """
+            SELECT count()
+            FROM system.part_log
+            WHERE database = currentDatabase()
+              AND table = 'ttl_clear_index_stale'
+              AND event_type = 'MergeParts'
+              AND merge_reason = 'TTLClearIndexMerge'
+            """
+        )
+        == "0\n"
+    )
+    node1.query("DROP TABLE ttl_clear_index_stale SYNC")
+
+
 def test_source_replica_produces_ttl_clear_index_merge(started_cluster):
     create_table(node1, "r1")
     create_table(node2, "r2")

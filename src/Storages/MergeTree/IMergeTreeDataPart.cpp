@@ -2901,6 +2901,12 @@ bool IMergeTreeDataPart::checkAllTTLCalculated(const StorageMetadataPtr & metada
             return false;
     }
 
+    for (const auto & recompression_desc : metadata_snapshot->getRecompressionTTLs())
+    {
+        if (!ttl_infos.recompression_ttl.contains(recompression_desc.result_column))
+            return false;
+    }
+
     for (const auto & index_clear_desc : metadata_snapshot->getIndexClearTTLs())
     {
         if (!ttl_infos.index_clear_ttl.contains(index_clear_desc.result_column))

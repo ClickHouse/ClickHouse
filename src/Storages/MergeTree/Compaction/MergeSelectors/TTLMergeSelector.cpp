@@ -328,6 +328,9 @@ PartsRanges TTLIndexClearMergeSelector::select(
 
 time_t TTLIndexClearMergeSelector::getTTLForPart(const PartProperties & part) const
 {
+    if (!part.all_ttl_calculated_if_any)
+        return current_time;
+
     return part.next_index_clear_ttl;
 }
 
@@ -336,7 +339,7 @@ bool TTLIndexClearMergeSelector::canConsiderPart(const PartProperties & part) co
     if (part.is_in_volume_where_merges_avoid)
         return false;
 
-    return part.next_index_clear_ttl != 0;
+    return !part.all_ttl_calculated_if_any || part.next_index_clear_ttl != 0;
 }
 
 }

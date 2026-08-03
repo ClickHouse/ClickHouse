@@ -182,11 +182,13 @@ PartProperties buildPartProperties(
     const StoragePolicyPtr & storage_policy,
     time_t current_time)
 {
+    const bool all_ttl_calculated_if_any = part->checkAllTTLCalculated(metadata_snapshot);
+
     return PartProperties{
         .name = part->name,
         .info = part->info,
         .projection_names = getCalculatedProjectionNames(part),
-        .all_ttl_calculated_if_any = part->checkAllTTLCalculated(metadata_snapshot),
+        .all_ttl_calculated_if_any = all_ttl_calculated_if_any,
         .is_in_volume_where_merges_avoid = !part->shallParticipateInMerges(storage_policy),
         .size = part->getExistingBytesOnDisk(),
         .age = current_time - part->modification_time,
@@ -194,7 +196,7 @@ PartProperties buildPartProperties(
         .general_ttl_info = buildGeneralTTLInfo(metadata_snapshot, part),
         .recompression_ttl_info = buildRecompressTTLInfo(metadata_snapshot, part, current_time),
         .next_index_clear_ttl = buildNextIndexClearTTL(metadata_snapshot, part, current_time),
-        .can_preserve_files_for_index_clear = canPreserveFilesForIndexClear(metadata_snapshot, part),
+        .can_preserve_files_for_index_clear = all_ttl_calculated_if_any && canPreserveFilesForIndexClear(metadata_snapshot, part),
     };
 }
 
