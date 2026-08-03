@@ -1,5 +1,4 @@
 #include <Storages/StorageLog.h>
-#include <Storages/LogStreamFileNameLength.h>
 #include <Storages/StorageFactory.h>
 #include <Storages/StorageLogSettings.h>
 #include <Storages/StorageWithCommonVirtualColumns.h>
@@ -8,13 +7,11 @@
 #include <Columns/IColumn.h>
 #include <Common/Exception.h>
 #include <Common/assert_cast.h>
-#include <Common/quoteString.h>
 #include <Core/Settings.h>
 
 #include <Interpreters/evaluateConstantExpression.h>
 
 #include <Parsers/ASTCheckQuery.h>
-#include <Parsers/ASTCreateQuery.h>
 
 #include <Compression/CompressedReadBuffer.h>
 #include <Compression/CompressedWriteBuffer.h>
@@ -49,6 +46,10 @@
 #include <Disks/IDiskTransaction.h>
 
 #include <chrono>
+#include <climits>
+#include <string_view>
+
+#include <unistd.h>
 
 #include <boost/range/adaptor/map.hpp>
 
@@ -78,6 +79,22 @@ namespace ErrorCodes
     extern const int NOT_IMPLEMENTED;
     extern const int ILLEGAL_COLUMN;
     extern const int ARGUMENT_OUT_OF_BOUND;
+}
+
+namespace
+{
+
+/// Longest stream name that still fits `<name>.bin` in one path component of `disk`. Probed like
+/// `computeMaxTableNameLength` does; the disk root exists because `DiskLocal::setup` creates it.
+size_t maxStreamNameLength(const DiskPtr & disk)
+{
+    const auto limit = pathconf(disk->getPath().c_str(), _PC_NAME_MAX);
+    const size_t name_max = limit == -1 ? NAME_MAX : static_cast<size_t>(limit);
+    constexpr size_t extension = std::string_view(DBMS_STORAGE_LOG_DATA_FILE_EXTENSION).size();
+    /// Saturate rather than wrap.
+    return name_max > extension ? name_max - extension : 0;
+}
+
 }
 
 /// NOTE: The lock `StorageLog::rwlock` is NOT kept locked while reading,
@@ -738,14 +755,12 @@ StorageLog::StorageLog(
     const ConstraintsDescription & constraints_,
     const String & comment,
     LoadingStrictnessLevel mode,
-    bool is_fresh_definition_,
     ContextMutablePtr context_)
     : StorageWithCommonVirtualColumns(table_id_)
     , WithMutableContext(context_)
     , engine_name(engine_name_)
     , disk(std::move(disk_))
     , table_path(relative_path_)
-    , is_fresh_definition(is_fresh_definition_)
     , use_marks_file(engine_name == "Log")
     , marks_file_path(table_path + DBMS_STORAGE_LOG_MARKS_FILE_NAME)
     , file_checker(disk, table_path + "sizes.json")
@@ -765,6 +780,11 @@ StorageLog::StorageLog(
     /// Enumerate data files.
     for (const auto & column : storage_metadata.getColumns().getAllPhysical())
         addDataFiles(column);
+
+    /// Only for a fresh definition, so a table created before this check keeps loading, like
+    /// `checkTableNameLength` is skipped for secondary creates.
+    if (mode <= LoadingStrictnessLevel::CREATE)
+        checkStreamFileNameLengths();
 
     /// Ensure the file checker is initialized.
     if (file_checker.empty())
@@ -813,25 +833,6 @@ void StorageLog::addDataFiles(const NameAndTypePair & column)
     ISerialization::StreamCallback stream_callback = [&] (const ISerialization::SubstreamPath & substream_path)
     {
         String data_file_name = ISerialization::getFileNameForStream(column, substream_path, {});
-
-        /// Checked per stream, not per column: a substream appends `.size0`, `.null`, `.<tuple element>`
-        /// and friends, so a column name within the limit can still derive a name over it.
-        if (is_fresh_definition)
-        {
-            const size_t max_length = maxLogStreamFileNameLength(disk);
-            if (data_file_name.length() > max_length)
-                throw Exception(
-                    ErrorCodes::ARGUMENT_OUT_OF_BOUND,
-                    "Column {} of table {} derives the stream file {}{}, which does not fit the file name limit. The max "
-                    "length of a column stream name is {}, current length is {}. Use a shorter column name",
-                    backQuoteIfNeed(column.name),
-                    getStorageID().getNameForLogs(),
-                    data_file_name,
-                    DBMS_STORAGE_LOG_DATA_FILE_EXTENSION,
-                    max_length,
-                    data_file_name.length());
-        }
-
         if (!data_files_by_names.contains(data_file_name))
         {
             DataFile & data_file = data_files.emplace_back();
@@ -846,6 +847,25 @@ void StorageLog::addDataFiles(const NameAndTypePair & column)
 
     for (auto & data_file : data_files)
         data_files_by_names[data_file.name] = &data_file;
+}
+
+void StorageLog::checkStreamFileNameLengths() const
+{
+    const size_t max_length = maxStreamNameLength(disk);
+    for (const auto & data_file : data_files)
+    {
+        /// The derived stream name, not the column name: it is escaped and a substream appends to it.
+        if (data_file.name.length() > max_length)
+            throw Exception(
+                ErrorCodes::ARGUMENT_OUT_OF_BOUND,
+                "Table {} stores a column in file {}{}. The max length of a stream name is {}, current length is {}. "
+                "Use a shorter column name",
+                getStorageID().getNameForLogs(),
+                data_file.name,
+                DBMS_STORAGE_LOG_DATA_FILE_EXTENSION,
+                max_length,
+                data_file.name.length());
+    }
 }
 
 
@@ -948,18 +968,8 @@ void StorageLog::removeUnsavedMarks(const WriteLock & /* already locked for writ
 
 void StorageLog::saveFileSizes(const WriteLock & /* already locked for writing */)
 {
-    try
-    {
-        for (const auto & data_file : data_files)
-            file_checker.update(data_file.path);
-    }
-    catch (...)
-    {
-        /// A table created before the name was refusable reaches the filesystem here, and the refusal
-        /// arrives as an untyped `filesystem_error` that loses its own message. Adds no policy.
-        rethrowIfLogFileNameTooLong(disk, getStorageID().getNameForLogs());
-        throw;
-    }
+    for (const auto & data_file : data_files)
+        file_checker.update(data_file.path);
 
     if (use_marks_file)
         file_checker.update(marks_file_path);
@@ -1134,6 +1144,10 @@ SinkToStoragePtr StorageLog::write(const ASTPtr & /*query*/, const StorageMetada
     WriteLock lock{rwlock, getLockTimeout(local_context)};
     if (!lock)
         throw Exception(ErrorCodes::TIMEOUT_EXCEEDED, "Lock timeout exceeded");
+
+    /// A table created before the check existed reaches the filesystem instead, which refuses the
+    /// name as an untyped `filesystem_error` that loses its own message.
+    checkStreamFileNameLengths();
 
     return std::make_shared<LogSink>(*this, metadata_snapshot, std::move(lock));
 }
@@ -1423,13 +1437,6 @@ void registerStorageLog(StorageFactory & factory)
         String disk_name = getDiskName(*args.storage_def, args.getContext());
         DiskPtr disk = args.getContext()->getDisk(disk_name);
 
-        /// `attach_short_syntax` marks every definition read back from stored metadata, so a restart, a
-        /// short ATTACH and a `Replicated` replay stay exempt. A RESTORE shares SECONDARY_CREATE with
-        /// that replay, so only the restore flag separates them, and it does introduce a definition.
-        const bool is_fresh_definition = args.mode <= LoadingStrictnessLevel::CREATE
-            || (args.mode == LoadingStrictnessLevel::ATTACH && !args.query.attach_short_syntax)
-            || args.is_restore_from_backup;
-
         return std::make_shared<StorageLog>(
             args.engine_name,
             disk,
@@ -1439,7 +1446,6 @@ void registerStorageLog(StorageFactory & factory)
             args.constraints,
             args.comment,
             args.mode,
-            is_fresh_definition,
             args.getContext());
     };
 
