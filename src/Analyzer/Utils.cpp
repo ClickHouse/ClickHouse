@@ -485,13 +485,13 @@ static ASTPtr convertIntoTableExpressionAST(
         const auto & stream_settings = table_expression_modifiers->getStreamSettings();
         if (stream_settings.has_value())
         {
-            ASTStreamSettings ast_stream_settings;
+            auto ast_stream_settings = make_intrusive<ASTStreamSettings>();
             if (stream_settings->cursor)
-                ast_stream_settings.cursor = stream_settings->cursor->clone();
+                ast_stream_settings->setCursor(stream_settings->cursor->clone());
             if (stream_settings->watermark)
-                ast_stream_settings.watermark = stream_settings->watermark->clone();
+                ast_stream_settings->setWatermark(stream_settings->watermark->clone());
 
-            result_table_expression->stream_settings = make_intrusive<ASTStreamSettings>(std::move(ast_stream_settings));
+            result_table_expression->stream_settings = std::move(ast_stream_settings);
             result_table_expression->children.push_back(result_table_expression->stream_settings);
         }
     }
