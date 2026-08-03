@@ -11,6 +11,30 @@ from ci.jobs import docs_autogen_nightly, docs_job_mintlify
 from ci.jobs.scripts.workflow_hooks import feature_docs
 
 
+def test_changelog_check_runs_only_for_relevant_changes(monkeypatch):
+    assert (
+        docs_job_mintlify.CHANGELOGS_CHECK
+        not in docs_job_mintlify.DEFAULT_CHECKS
+    )
+
+    changed_files = ["docs/en/getting-started/example.md"]
+    info = SimpleNamespace(get_changed_files=lambda: changed_files)
+    monkeypatch.setattr(docs_job_mintlify, "Info", lambda: info)
+
+    assert not docs_job_mintlify._changelogs_check_should_run()
+
+    for path in docs_job_mintlify.CHANGELOGS_CHECK_TRIGGERS:
+        changed_files[:] = [path]
+        assert docs_job_mintlify._changelogs_check_should_run()
+
+
+def test_changelog_check_skips_when_changed_files_are_unavailable(monkeypatch):
+    info = SimpleNamespace(get_changed_files=lambda: None)
+    monkeypatch.setattr(docs_job_mintlify, "Info", lambda: info)
+
+    assert not docs_job_mintlify._changelogs_check_should_run()
+
+
 def test_open_bot_pr_scopes_head_to_base_and_repository(monkeypatch):
     commands = []
     monkeypatch.setattr(
