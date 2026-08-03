@@ -77,10 +77,18 @@ bool innerDataTypeIsFloat(const DataTypePtr & type)
         return innerDataTypeIsFloat(type_array->getNestedType());
     if (const DataTypeTuple * type_tuple = typeid_cast<const DataTypeTuple *>(type.get()))
     {
-        for (const auto & subtype : type_tuple->getElements())
-            if (innerDataTypeIsFloat(subtype))
-                return true;
-        return false;
+        /// Every element has to be floating-point. A floating-point time series codec is resolved and
+        /// applied per substream (see the `enumerateStreams` loop below), so for `Tuple(Float64, UInt64)`
+        /// the codec would be applied to the `UInt64` element as well. Accepting the tuple because only
+        /// some of its elements are floating-point would silently bypass the `allow_suspicious_codecs`
+        /// check for the remaining elements.
+        const auto & elements = type_tuple->getElements();
+        if (elements.empty())
+            return false;
+        for (const auto & subtype : elements)
+            if (!innerDataTypeIsFloat(subtype))
+                return false;
+        return true;
     }
     return false;
 }
