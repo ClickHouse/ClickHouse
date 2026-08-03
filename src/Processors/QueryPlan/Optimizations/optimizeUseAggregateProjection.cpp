@@ -1338,6 +1338,7 @@ std::optional<String> optimizeUseAggregateProjections(
                 std::make_shared<const Block>(candidates.column_statistics_projection->block.cloneEmpty())));
         projection_reading = std::make_unique<ReadFromPreparedSource>(std::move(pipe));
         has_parent_parts = false;
+        short_circuited_with_prepared_source = true;
         selected_projection_name = "_column_statistics_aggregation";
     }
     else if (best_candidate == nullptr)

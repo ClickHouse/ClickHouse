@@ -6,11 +6,12 @@
 -- plan, the ReadFromMergeTree step is replaced by a prepared source, so it never sends the empty-ranges
 -- announcement to the coordinator. A follower that does not take the same short-circuit then requests a
 -- stream the coordinator never registered, tripping "Got read request from replica N for unknown
--- stream ..." (LOGICAL_ERROR / server abort in debug and sanitizer builds). This affects four fully
+-- stream ..." (LOGICAL_ERROR / server abort in debug and sanitizer builds). This affects five fully
 -- short-circuiting paths: minmax-count and exact-count aggregate projections, a stored aggregate
--- projection selecting no ranges, and a stored normal projection selecting no ranges. The failpoint
--- forces a follower to skip the short-circuit, deterministically reproducing the plan divergence a
--- homogeneous single-server cluster cannot otherwise create.
+-- projection selecting no ranges, a stored normal projection selecting no ranges, and the
+-- column-statistics min/max aggregation shortcut. The failpoint forces a follower to skip the
+-- short-circuit, deterministically reproducing the plan divergence a homogeneous single-server
+-- cluster cannot otherwise create.
 
 DROP TABLE IF EXISTS t_pr_short_circuit;
 CREATE TABLE t_pr_short_circuit
@@ -26,6 +27,20 @@ ENGINE = MergeTree ORDER BY id SETTINGS index_granularity = 32;
 SYSTEM STOP MERGES t_pr_short_circuit;
 INSERT INTO t_pr_short_circuit SELECT number, number, if(number % 2 = 0, 'a', 'b') FROM numbers(5000);
 INSERT INTO t_pr_short_circuit VALUES (999999999, 0, 'a');
+
+-- Separate table for the column-statistics short-circuit: needs `basic` column statistics and no
+-- explicit projections (otherwise the explicit projection wins and the column-statistics candidate
+-- is never built).
+DROP TABLE IF EXISTS t_pr_short_circuit_col_stats;
+CREATE TABLE t_pr_short_circuit_col_stats
+(
+    id UInt64,
+    v Int32
+)
+ENGINE = MergeTree ORDER BY id SETTINGS auto_statistics_types = 'basic';
+SYSTEM STOP MERGES t_pr_short_circuit_col_stats;
+SET materialize_statistics_on_insert = 1;
+INSERT INTO t_pr_short_circuit_col_stats SELECT number, toInt32(number % 1000) FROM numbers(5000);
 
 SET automatic_parallel_replicas_mode = 0;
 SET enable_parallel_replicas = 1, max_parallel_replicas = 3, parallel_replicas_for_non_replicated_merge_tree = 1;
@@ -46,6 +61,7 @@ SELECT 'exact_count_used', count() > 0 FROM (EXPLAIN SELECT count() FROM t_pr_sh
 SELECT 'minmax_used', count() > 0 FROM (EXPLAIN SELECT min(id), max(id), count() FROM t_pr_short_circuit) WHERE explain ILIKE '%_minmax_count_projection%';
 SELECT 'agg_proj_used', count() > 0 FROM (EXPLAIN SELECT sum(v) FROM t_pr_short_circuit WHERE region = 'nonexistent' GROUP BY region) WHERE explain ILIKE '%agg_proj%';
 SELECT 'normal_proj_used', count() > 0 FROM (EXPLAIN PLAN SELECT id FROM t_pr_short_circuit WHERE region = 'nonexistent') WHERE explain ILIKE '%normal_proj%';
+SELECT 'col_stats_used', count() > 0 FROM (EXPLAIN SELECT min(v), max(v) FROM t_pr_short_circuit_col_stats) WHERE explain ILIKE '%_column_statistics_aggregation%';
 
 SYSTEM ENABLE FAILPOINT parallel_replicas_skip_aggregate_projection_on_follower;
 
@@ -64,6 +80,10 @@ SELECT sum(v) FROM t_pr_short_circuit WHERE region = 'nonexistent' GROUP BY regi
 -- Stored normal projection with an always-false filter (Default mode, no ORDER BY): same short-circuit.
 SELECT id FROM t_pr_short_circuit WHERE region = 'nonexistent' SETTINGS log_comment = '04545_normal_proj';
 
+-- Column-statistics short-circuit: min/max answered entirely from per-part `basic` column statistics,
+-- which also fully detaches ReadFromMergeTree. Same failure path as the four above.
+SELECT min(v), max(v) FROM t_pr_short_circuit_col_stats SETTINGS log_comment = '04545_col_stats';
+
 SYSTEM DISABLE FAILPOINT parallel_replicas_skip_aggregate_projection_on_follower;
 
 -- Liveness: prove parallel replicas actually engaged and a follower reached the coordinator's request
@@ -76,10 +96,11 @@ SELECT
     ProfileEvents['ParallelReplicasHandleRequestMicroseconds'] > 0
 FROM system.query_log
 WHERE current_database = currentDatabase()
-  AND log_comment IN ('04545_exact_count', '04545_minmax', '04545_agg_proj', '04545_normal_proj')
+  AND log_comment IN ('04545_exact_count', '04545_minmax', '04545_agg_proj', '04545_normal_proj', '04545_col_stats')
   AND type = 'QueryFinish'
   AND query_id = initial_query_id
   AND event_time >= now() - INTERVAL 600 SECOND
 ORDER BY log_comment;
 
 DROP TABLE t_pr_short_circuit;
+DROP TABLE t_pr_short_circuit_col_stats;
