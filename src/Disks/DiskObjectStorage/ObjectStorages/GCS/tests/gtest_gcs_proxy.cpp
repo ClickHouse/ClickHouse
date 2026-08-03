@@ -22,7 +22,7 @@ TEST(GCSProxy, TranslatesTheResolvedConfiguration)
     auto resolver = std::make_shared<ProxyListConfigurationResolver>(
         std::vector<Poco::URI>{Poco::URI("http://proxy1:3128")},
         ProxyConfiguration::Protocol::HTTPS,
-        "localhost|127\\.0\\.0\\.1");
+        R"(localhost|127\.0\.0\.1)");
 
     auto provider = makeGCSProxyConfigProvider(resolver);
     ASSERT_TRUE(static_cast<bool>(provider));
@@ -34,7 +34,7 @@ TEST(GCSProxy, TranslatesTheResolvedConfiguration)
     EXPECT_EQ(proxy.originalRequestProtocol, "https");
     /// An HTTPS request over an HTTP proxy goes through a CONNECT tunnel.
     EXPECT_TRUE(proxy.tunnel);
-    EXPECT_EQ(proxy.nonProxyHosts, "localhost|127\\.0\\.0\\.1");
+    EXPECT_EQ(proxy.nonProxyHosts, R"(localhost|127\.0\.0\.1)");
 }
 
 TEST(GCSProxy, ResolvesOnEveryCall)
