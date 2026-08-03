@@ -404,8 +404,16 @@ std::optional<NameSet> StorageObjectStorage::supportedPrewhereColumns(const Stor
     if (configuration->isDataLakeConfiguration())
     {
         /// A wrapper asks its child here without the analyzer having warmed it, as in
-        /// `supportsDelete` / `supportsParallelInsert`. Resolve first, then fail closed.
-        configuration->lazyInitializeIfNeeded(object_storage, query_context);
+        /// `supportsDelete` / `supportsParallelInsert`. `Merge` probes every child before it
+        /// filters them, so an unresolvable one must lose PREWHERE rather than fail the query.
+        try
+        {
+            configuration->lazyInitializeIfNeeded(object_storage, query_context);
+        }
+        catch (...)
+        {
+            tryLogCurrentException(log, "Failed to resolve data lake metadata for the PREWHERE exclusion");
+        }
         if (!configuration->hasInitializedMetadata())
             return NameSet{};
 
