@@ -1219,7 +1219,7 @@ From what size of the aggregation state in bytes, a two-level aggregation begins
 From what number of distinct keys, the `DistinctTransform` hash set is converted to a two-level layout to allow per-bucket parallel filter building. 0 - the conversion is disabled.
 )", 0) \
     DECLARE(UInt64, distinct_two_level_threshold_bytes, 50000000, R"(
-From what size of the `DistinctTransform` hash set in bytes, it is converted to a two-level layout to allow per-bucket parallel filter building. 0 - the byte-based conversion is disabled. Analogous to `group_by_two_level_threshold_bytes`; whichever of the row-count or byte threshold is reached first triggers the conversion.
+From what size of the `DistinctTransform` hash set in bytes, it is converted to a two-level layout to allow per-bucket parallel filter building. 0 - the byte-based conversion is disabled. Whichever of the row-count or byte threshold is reached first triggers the conversion.
 )", 0) \
     DECLARE(UInt64, distinct_two_level_parallel_build_min_rows, 10000, R"(
 Minimum number of rows in a chunk for the `DistinctTransform` to build the two-level filter in parallel across buckets. Smaller chunks use the serial build to avoid the scatter overhead. 0 - no minimum (always build in parallel once the set is two-level and a thread pool is available).

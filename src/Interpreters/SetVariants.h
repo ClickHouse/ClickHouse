@@ -380,8 +380,8 @@ struct SetVariantsTemplate: public Variant
         M(nullable_keys128_two_level) \
         M(nullable_keys256_two_level)
 
-    /// key_string and key_fixed_string are convertible: their parallel build path persists
-    /// keys into per-bucket arenas (see DistinctTransform::buildTwoLevelParallelFilter phase 3).
+    /// key_string and key_fixed_string are convertible: their parallel build persists keys into
+    /// per-bucket arenas (see phase B of `DistinctTransform::buildTwoLevelParallelFilter`).
     #define APPLY_FOR_SET_VARIANTS_CONVERTIBLE_TO_TWO_LEVEL(M) \
         M(key32) M(key64) M(key_string) M(key_fixed_string) \
         M(keys128) M(keys256) M(nullable_keys128) M(nullable_keys256) M(hashed)

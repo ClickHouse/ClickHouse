@@ -90,9 +90,8 @@ private:
 
     std::unique_ptr<ThreadPool> pool;
 
-    /// Policy seam for the per-chunk parallel-vs-serial build decision. Kept as a small
-    /// function so it can later be driven by online per-block signals rather than a fixed
-    /// heuristic. Returns true when a thread pool exists and the chunk clears the min-rows gate.
+    /// Per-chunk parallel-vs-serial build decision. True when a pool exists and the chunk clears
+    /// the min-rows gate. A seam: can later be driven by online per-block signals.
     bool shouldBuildParallel(size_t num_rows) const;
 
     /// Restrictions on the maximum size of the output data.
@@ -101,25 +100,21 @@ private:
     using HashedTwoLevelMethod = SetMethodHashedTwoLevel<TwoLevelHashSet<UInt128, UInt128TrivialHash>>;
     static constexpr size_t two_level_num_fine_buckets = HashedTwoLevelMethod::Data::NUM_BUCKETS;
 
-    /// Persistent scratch buffers for buildTwoLevelParallelFilter, hoisted to avoid
-    /// per-chunk allocator churn. All buffers are resized (not reallocated) each chunk and
-    /// reused; `buildTwoLevelParallelFilter` is only ever called from `transform`, which
-    /// processes one chunk at a time, so there is no concurrent access to the scratch.
+    /// Scratch for buildTwoLevelParallelFilter, hoisted out of the per-chunk path to avoid allocator
+    /// churn: buffers are resized (not reallocated) and reused. Called only from `transform`, one chunk
+    /// at a time, so never accessed concurrently.
     struct TwoLevelScratch
     {
-        /// Fused single-pass partition buffers, indexed `[worker * NUM_BUCKETS + bucket]`. In phase A
-        /// each worker writes only its own rows (no contention, no global prefix-sum, no second pass),
-        /// storing the original row id and the cached hash; the key is re-derived from the row in the
-        /// emplace phase (keeps these buffers key-type independent). Outer vectors are sized once;
-        /// inner arrays are `clear()`-ed (capacity kept) each chunk to avoid per-chunk allocation.
+        /// Phase-A partition buffers, indexed `[worker * NUM_BUCKETS + bucket]`: each worker stores the
+        /// row id and cached hash of its own rows (private, so no prefix-sum pass). The key is re-derived
+        /// from the row at emplace time, keeping these key-type independent. Outer vectors sized once;
+        /// inner arrays `clear()`-ed (capacity kept) per chunk.
         std::vector<PaddedPODArray<UInt32>> local_rows;
         std::vector<PaddedPODArray<UInt64>> local_hashes;
 
-        /// One arena per fine bucket, used only by the string-key parallel build so each bucket
-        /// worker persists its keys without contending on `SetVariants::string_pool`. Lazily
-        /// constructed on first use in the phase-B lambda; each bucket is processed by exactly one
-        /// worker, so the arena is never written concurrently and the arena-backed `std::string_view`
-        /// keys stored in the hash set never dangle.
+        /// One arena per bucket for the string-key build, so each bucket persists its keys without
+        /// contending on `SetVariants::string_pool`. Lazily built in phase B; single-writer per bucket,
+        /// so the arena-backed `std::string_view` keys never dangle.
         std::array<std::unique_ptr<Arena>, two_level_num_fine_buckets> bucket_arenas;
     };
     mutable TwoLevelScratch two_level_scratch;

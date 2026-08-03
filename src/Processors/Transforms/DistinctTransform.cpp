@@ -38,6 +38,11 @@ namespace ErrorCodes
 namespace
 {
 
+/// The two-level build is memory-bandwidth-bound (per-bucket allocate + zero-fill dominates), so
+/// throughput saturates well before very high thread counts. Cap the build pool here regardless of
+/// `max_threads` to avoid spawning threads that only add scheduling and allocator contention.
+constexpr size_t MAX_TWO_LEVEL_BUILD_THREADS = 16;
+
 /// Run `body(worker_idx)` once per worker with deterministic worker_idx, no block stealing.
 /// Use when each worker owns a fixed slice of the input that must match across phases.
 template <typename Body>
@@ -138,17 +143,16 @@ DistinctTransform::DistinctTransform(
             CurrentMetrics::DistinctThreads,
             CurrentMetrics::DistinctThreadsActive,
             CurrentMetrics::DistinctThreadsScheduled,
-            max_threads_);
+            std::min(max_threads_, MAX_TWO_LEVEL_BUILD_THREADS));
 }
 
 DistinctTransform::~DistinctTransform() = default;
 
 bool DistinctTransform::shouldBuildParallel(size_t num_rows) const
 {
-    /// Parallelize the two-level build only when a pool exists and the chunk is large enough to
-    /// amortize the three-phase scatter. `parallel_build_min_rows == 0` removes the minimum, so
-    /// any non-empty chunk uses the parallel path. Structured as a policy hook so the decision can
-    /// later be driven by online per-block signals instead of this fixed heuristic.
+    /// Parallelize only with a pool and a chunk big enough to amortize the scatter.
+    /// `parallel_build_min_rows == 0` disables the minimum. A policy hook: the decision
+    /// can later be driven by online per-block signals instead of this fixed heuristic.
     return pool != nullptr && num_rows > parallel_build_min_rows;
 }
 
@@ -191,25 +195,17 @@ void DistinctTransform::buildFilter(
     }
 }
 
-/// Build the distinctness filter for a chunk against a two-level hash set, parallelized by bucket.
-///
-/// Two phases, two barriers:
-/// A. Each worker makes ONE pass over its row slice, hashing each key and appending `(row, hash)`
-///    into its OWN per-bucket buffers (`local_rows`/`local_hashes[w * NUM_BUCKETS + b]`). Only worker
-///    `w` touches its buffers, so there is no contention, no global prefix-sum and no second pass
-///    over the rows.
-/// B. One task per bucket reads every worker's slice for that bucket and emplaces into the
-///    bucket-local hash table (disjoint buckets -> lock-free). The key is re-derived from the row id
-///    (keeps the buffers key-type independent) and the hash cached in phase A is reused, prefetching
-///    ~16 entries ahead by hash.
-///
-/// For string key families (`KeyType == std::string_view`) the re-derived key still points into the
-/// transient chunk column, so before inserting we copy the bytes into THIS bucket's arena and emplace
-/// the arena-backed view (the stored cell key then outlives the chunk and never dangles). Each bucket
-/// owns its arena and is processed by exactly one worker, so the arena is never written concurrently.
-///
-/// All scratch buffers live in `two_level_scratch` and are reused across chunks; this runs only from
-/// `transform`, one chunk at a time, so there is no concurrent access to the scratch.
+/// Build the chunk's distinctness filter against a two-level set, parallelized by bucket. Two barriers:
+/// A. Each worker scans its own row slice once, appending `(row, hash)` into its own per-bucket buffers
+///    (`local_rows`/`local_hashes[w * NUM_BUCKETS + b]`) — private, so no contention or prefix-sum pass.
+/// B. One task per bucket emplaces every worker's slice for that bucket. Buckets are disjoint, so it is
+///    lock-free; the key is re-derived from the row (buffers stay key-type independent) and phase-A hashes
+///    are reused, prefetching ~16 entries ahead.
+/// String keys (`KeyType == std::string_view`) still point into the transient chunk, so phase B copies the
+/// bytes into this bucket's own arena before emplacing — the stored key outlives the chunk. One worker per
+/// bucket means each arena is single-writer.
+/// Scratch lives in `two_level_scratch`, reused across chunks; called only from `transform` (one chunk at
+/// a time), so never accessed concurrently.
 template <typename Method>
 void DistinctTransform::buildTwoLevelParallelFilter(
     Method & method,
@@ -225,7 +221,12 @@ void DistinctTransform::buildTwoLevelParallelFilter(
 
     using KeyType = typename BucketData::key_type;
 
-    const size_t num_workers = std::min(thread_pool.getMaxThreads(), NUM_BUCKETS);
+    /// Scale worker count to the chunk size so a chunk that barely clears the gate does not fan out to
+    /// the whole pool: each worker should own at least `parallel_build_min_rows` rows. The pool size is
+    /// already capped at construction (`MAX_TWO_LEVEL_BUILD_THREADS`).
+    const size_t grain = std::max<size_t>(parallel_build_min_rows, 1);
+    const size_t work_workers = std::max<size_t>((rows + grain - 1) / grain, 1);
+    const size_t num_workers = std::min({thread_pool.getMaxThreads(), NUM_BUCKETS, work_workers});
     if (num_workers == 0 || rows == 0)
         return;
 
@@ -447,10 +448,9 @@ void DistinctTransform::transform(Chunk & chunk)
     if (data.empty())
         data.init(SetVariants::chooseMethod(column_ptrs, key_sizes));
 
-    /// Promote single-level → two-level once the set exceeds the row-count OR byte threshold,
-    /// for all convertible fixed-width-key families. Two-level lets the per-chunk filter build
-    /// run per-bucket in parallel below. Each threshold of 0 disables that trigger; setting both
-    /// to 0 disables the conversion entirely (mirrors `group_by_two_level_threshold[_bytes]`).
+    /// Promote single-level → two-level once the set crosses the row-count OR byte threshold,
+    /// which unlocks the per-bucket parallel build below. A threshold of 0 disables that trigger;
+    /// both 0 disables promotion entirely.
     if (!is_pre_distinct
         && pool
         && SetVariants::isConvertibleToTwoLevel(data.type)
@@ -491,8 +491,7 @@ void DistinctTransform::transform(Chunk & chunk)
 #undef M
 #undef APPLY_FOR_SET_VARIANTS_DISTINCT
 
-        /// Two-level fixed-width-key families: parallel build when thread pool is available
-        /// and the chunk is large enough to amortize the scatter overhead; serial fallback otherwise.
+        /// Two-level fixed-width-key families: parallel build when `shouldBuildParallel`, else serial.
 #define DISPATCH_TWO_LEVEL(NAME) \
         case SetVariants::Type::NAME: \
         { \
@@ -517,8 +516,8 @@ void DistinctTransform::transform(Chunk & chunk)
         DISPATCH_TWO_LEVEL(nullable_keys128_two_level)
         DISPATCH_TWO_LEVEL(nullable_keys256_two_level)
 
-        /// String two-level variants: parallel build persists keys into per-bucket arenas
-        /// (see phase 3 of `buildTwoLevelParallelFilter`).
+        /// String two-level variants: phase B persists keys into per-bucket arenas
+        /// (see `buildTwoLevelParallelFilter`).
         DISPATCH_TWO_LEVEL(key_string_two_level)
         DISPATCH_TWO_LEVEL(key_fixed_string_two_level)
 #undef DISPATCH_TWO_LEVEL
