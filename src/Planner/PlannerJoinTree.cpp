@@ -2291,8 +2291,8 @@ JoinTreeQueryPlan buildQueryPlanForTableExpression(TableExpressionNodePtr table_
                             /// a StorageDummy for the shard-local table, so each shard receives
                             /// the full view body (aliases, WHERE, etc.) reading from its local table.
                             table_expression_query_info.query_tree = table_expression_query_info.query_tree->cloneAndReplace(
-                                table_expression_query_info.table_expression, inner_query_tree);
-                            table_expression_query_info.table_expression = dist_table_node;
+                                table_expression_query_info.table_expression, std::static_pointer_cast<ITableExpressionNode>(inner_query_tree));
+                            table_expression_query_info.table_expression = std::static_pointer_cast<ITableExpressionNode>(dist_table_node);
                             effective_storage = underlying_dist;
                             auto dist_metadata_snapshot = underlying_dist->getInMemoryMetadataPtr(query_context, false);
                             effective_snapshot = underlying_dist->getStorageSnapshot(dist_metadata_snapshot, query_context);
