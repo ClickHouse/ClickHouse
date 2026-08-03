@@ -1,0 +1,10 @@
+-- renaming and modifying the same column in one ALTER is not supported
+-- a renamed dependent is rematerialized under its new name
+0	1000	1001
+1	1001	1002
+2	1002	1003
+-- explicit MODIFY of a renamed dependent in a later ALTER stays metadata-only
+0
+0	1000	1
+1	1001	2
+2	1002	3

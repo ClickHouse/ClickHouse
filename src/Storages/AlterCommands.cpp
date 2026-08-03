@@ -2431,7 +2431,6 @@ Names AlterCommands::getMaterializedColumnsWithChangedExpansion(
         return {};
 
     std::vector<std::pair<String, String>> renames;
-    NameSet modified_or_dropped;
     for (const auto & command : *this)
     {
         if (command.ignore)
@@ -2439,17 +2438,40 @@ Names AlterCommands::getMaterializedColumnsWithChangedExpansion(
 
         if (command.type == AlterCommand::RENAME_COLUMN)
             renames.emplace_back(command.column_name, command.rename_to);
-        else if (command.type == AlterCommand::MODIFY_COLUMN || command.type == AlterCommand::DROP_COLUMN)
-            modified_or_dropped.insert(command.column_name);
+    }
+
+    /// The columns this ALTER changes explicitly, keyed on their post-ALTER names. `AlterCommands::validate` rejects renaming and
+    /// modifying the same column in a single ALTER, so this currently only maps the names of
+    /// columns renamed by another command of the same ALTER, but keying the exclusions below on
+    /// the post-ALTER name keeps them correct regardless of that restriction and of the order of
+    /// the commands. A dropped column is deliberately not mapped: an ALTER may drop a column and
+    /// rename another one into the freed name, and that renamed column is not the dropped one.
+    NameSet modified_or_dropped_new_names;
+    for (const auto & command : *this)
+    {
+        if (command.ignore)
+            continue;
+
+        if (command.type == AlterCommand::DROP_COLUMN)
+        {
+            modified_or_dropped_new_names.insert(command.column_name);
+        }
+        else if (command.type == AlterCommand::MODIFY_COLUMN)
+        {
+            String name = command.column_name;
+            for (const auto & [from, to] : renames)
+            {
+                if (name == from)
+                    name = to;
+            }
+            modified_or_dropped_new_names.insert(name);
+        }
     }
 
     Names res;
     for (const auto & old_column : old_metadata.columns)
     {
-        /// Explicit changes of the column itself keep the ordinary `MATERIALIZED` semantics:
-        /// the ALTER is metadata-only and existing parts keep the previously computed values.
-        if (old_column.default_desc.kind != ColumnDefaultKind::Materialized || !old_column.default_desc.expression
-            || modified_or_dropped.contains(old_column.name))
+        if (old_column.default_desc.kind != ColumnDefaultKind::Materialized || !old_column.default_desc.expression)
             continue;
 
         String new_name = old_column.name;
@@ -2458,6 +2480,11 @@ Names AlterCommands::getMaterializedColumnsWithChangedExpansion(
             if (new_name == from)
                 new_name = to;
         }
+
+        /// Explicit changes of the column itself keep the ordinary `MATERIALIZED` semantics:
+        /// the ALTER is metadata-only and existing parts keep the previously computed values.
+        if (modified_or_dropped_new_names.contains(new_name))
+            continue;
 
         if (!new_metadata.columns.has(new_name))
             continue;
@@ -2495,18 +2522,7 @@ Names AlterCommands::getMaterializedColumnsWithChangedExpansion(
     /// modified or dropped by this ALTER are excluded for the same reason as above: an
     /// explicit `MODIFY COLUMN ... MATERIALIZED` keeps the ordinary metadata-only semantics
     /// even when its expression reads a rematerialized column. The closure runs over the new
-    /// metadata, so map the explicitly modified names through the renames of the same ALTER.
-    NameSet modified_new_names;
-    for (String name : modified_or_dropped)
-    {
-        for (const auto & [from, to] : renames)
-        {
-            if (name == from)
-                name = to;
-        }
-        modified_new_names.insert(name);
-    }
-
+    /// metadata, so it uses the same post-ALTER names as the exclusion above.
     NameSet changed(res.begin(), res.end());
     bool progress = true;
     while (progress)
@@ -2515,7 +2531,7 @@ Names AlterCommands::getMaterializedColumnsWithChangedExpansion(
         for (const auto & column : new_metadata.columns)
         {
             if (column.default_desc.kind != ColumnDefaultKind::Materialized || !column.default_desc.expression
-                || changed.contains(column.name) || modified_new_names.contains(column.name))
+                || changed.contains(column.name) || modified_or_dropped_new_names.contains(column.name))
                 continue;
 
             ASTPtr expanded = cloneAndExpandColumnDefaultExpressionWithAliases(column.default_desc, new_metadata.columns, context);
