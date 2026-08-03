@@ -338,19 +338,14 @@ DataTypePtr tryInferDataTypeByEscapingRule(const String & field, const FormatSet
             if (auto date_type = tryInferDateOrDateTimeFromString(field, format_settings))
                 return date_type;
 
-            /// The escaped and raw value readers go through readIntTextUnsafe, which stops before a
-            /// leading '+', so a '+' literal here cannot be read back as an unsigned type. See
-            /// hasUnreadableSign. allow_number_leading_zeros (hive partitioning) selects readIntText
-            /// instead, which does accept a '+', but that caller passes no json_info, so nothing is
-            /// recorded for it either way.
+            /// These rules read values with readIntTextUnsafe, which refuses a leading '+'; see
+            /// hasUnreadableSign.
             const bool reader_refuses_plus = !format_settings.allow_number_leading_zeros;
 
             auto type = tryInferDataTypeForSingleField(field, format_settings, json_info, reader_refuses_plus);
 
-            /// An integer starting with '0' or '+' must stay a String: readIntTextUnsafe (see
-            /// ReadHelpers.h) reads the leading '0' as the whole value and stops before a '+',
-            /// so neither reads back as the integer type inference would propose.
-            /// allow_number_leading_zeros (hive partitioning) opts out of both.
+            /// readIntTextUnsafe reads a leading '0' as the whole value and stops before a '+', so an
+            /// integer starting with either cannot be read back and must stay a String.
             if (type && (field[0] == '0' || field[0] == '+') && field.size() != 1 && reader_refuses_plus
                 && isInteger(removeNullable(recursiveRemoveLowCardinality(type))))
                 return std::make_shared<DataTypeString>();

@@ -22,24 +22,12 @@ struct JSONInferenceInfo
     /// It's used in types transformation to change such numbers back to string if needed.
     std::unordered_set<const IDataType *> numbers_parsed_from_json_strings;
 
-    /// Record that `type` was inferred from a literal that an unsigned type cannot read back, which is
-    /// what tells Int64 apart from UInt64 when determining a common type. Where the literal's own text
-    /// is available the recorded property is that it carries a sign the value reader refuses for an
-    /// unsigned target, because the sign is what the integer parsers refuse rather than the value: `-0`
-    /// is as unreadable as `-1` although its value is not negative. Which signs those are depends on
-    /// the reader: every integer reader refuses a `-`, while a `+` is refused only by
-    /// `readIntTextUnsafe`, which `SerializationNumber::deserializeText` uses for the escaped and raw
-    /// rules; `readIntText`, which the JSON deserializer uses, reads `+1` as `1`. So the `+` case is
-    /// recorded only for the callers whose reader refuses it. A caller that only has the parsed value,
-    /// like the JSON parser, records a negative value instead. Use these accessors rather than touching the set: the
-    /// identity is the type's address, so a recorded type has to be kept alive for as long as the
-    /// record is. Otherwise a later allocation can reuse the address of a freed type and be read as
-    /// marked, which silently declines a correct widening.
+    /// Record that `type` was inferred from a literal an unsigned type cannot read back (which ones:
+    /// see `hasUnreadableSign`). Keyed on the type object's ADDRESS, so a recorded type must stay
+    /// alive as long as the record, or a later allocation reuses the address and reads as marked.
     void markNegativeInteger(const DataTypePtr & type)
     {
-        /// Retain the owner only when this identity is new: re-marking an already recorded one, which
-        /// is what carrying provenance over a collapse does to the surviving object, has nothing left
-        /// to keep alive and retaining it again would grow with the number of collapsed elements.
+        /// Retain the owner only for a new identity; re-marking one has nothing left to keep alive.
         if (negative_integers.insert(type.get()).second)
             provenance_keepalive.push_back(type);
     }
@@ -88,12 +76,8 @@ DataTypePtr tryInferDataTypeForSingleField(ReadBuffer & buf, const FormatSetting
 DataTypePtr tryInferDataTypeForSingleField(std::string_view field, const FormatSettings & settings);
 
 /// The same as above, but records inference provenance in json_info (currently: which Int64 came from
-/// a signed literal), so that types transformation can tell Int64 and UInt64 apart.
-/// `reader_refuses_plus` says whether the calling format's value reader refuses a leading '+' for an
-/// unsigned target, which decides whether a '+' literal is recorded as one that cannot be read back.
-/// It is true for the readers that go through `readIntTextUnsafe` and false for the rest; see the
-/// comment on `markNegativeInteger`. The safe answer is the default, so a caller records the '+' case
-/// only by opting in.
+/// a signed literal), so that types transformation can tell Int64 and UInt64 apart. Pass
+/// `reader_refuses_plus` if this caller's value reader goes through `readIntTextUnsafe`.
 DataTypePtr tryInferDataTypeForSingleField(
     std::string_view field, const FormatSettings & settings, JSONInferenceInfo * json_info, bool reader_refuses_plus = false);
 
@@ -136,19 +120,13 @@ void transformInferredTypesIfNeeded(DataTypePtr & first, DataTypePtr & second, c
 void transformInferredTypesIfNeeded(DataTypePtr & first, DataTypePtr & second, const FormatSettings & settings, JSONInferenceInfo * json_info);
 
 /// True if merging these two types could perform the one widening whose correctness depends on
-/// inference provenance: Int64 to UInt64, at the top level or at the same nested position. A caller
-/// that has no provenance available can use this to decline the merge instead of widening blind.
-/// The pairing follows transformTypesRecursively, which is what would run the widening: Nullable is
-/// peeled at every level, and a container is descended into only when both sides are the same
-/// container kind (with matching element counts and names for Tuple). Once the shapes diverge the
-/// answer is false, because the transformation never pairs the integers below that point and there is
-/// no widening there to decline.
+/// inference provenance: Int64 to UInt64, at the top level or at the same nested position, as
+/// transformTypesRecursively would pair them. A caller with no provenance can decline exactly those.
 bool isSignDependentIntegerWidening(const DataTypePtr & first, const DataTypePtr & second);
 
-/// Re-record on `to` the inference provenance held for the equal type `from`, recursively for nested
-/// types. The provenance is keyed on type object identity, so a caller that keeps one of two equal
-/// types and drops the other must call this first or the dropped object's provenance is lost.
-/// Does nothing unless the two types are equal, so it cannot mark a type that is not the same type.
+/// Re-record on `to` the inference provenance held for the equal type `from`, recursively. Keyed on
+/// type object identity, so keeping one of two equal types and dropping the other loses the dropped
+/// object's provenance unless this runs first. Does nothing unless the two types are equal.
 void carryOverInferenceProvenance(const DataTypePtr & from, const DataTypePtr & to, JSONInferenceInfo * json_info);
 
 /// The same as transformInferredTypesIfNeeded but uses some specific transformations for JSON.

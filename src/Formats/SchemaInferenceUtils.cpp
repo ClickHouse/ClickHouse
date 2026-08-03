@@ -1073,17 +1073,9 @@ namespace
         return std::make_shared<DataTypeFloat64>();
     }
 
-    /// True when the integer literal carries a sign that the caller's value reader refuses for an
-    /// unsigned target, so the same text could not be read back if the type were widened. The written
-    /// sign, not the parsed value, is what decides this, and the integer parsers read a sign only as the
-    /// first character, so an arm that consumed a whole span read its sign here or nowhere.
-    /// A '-' is refused by every integer reader: `readIntTextImpl` throws for an unsigned target and
-    /// `readIntTextUnsafe` stops before it. A '+' is reader-dependent, which is what
-    /// `reader_refuses_plus` carries: `readIntTextUnsafe`, which the escaped text deserializer uses,
-    /// reads no '+' at all and stops before it, while `readIntTextImpl`, which the JSON deserializer
-    /// uses, accepts a '+' for an unsigned target and reads the digits after it. So a signed zero, and
-    /// a '+' literal where the reader refuses one, are as unreadable as a negative literal even though
-    /// their value is not negative.
+    /// True when the literal's WRITTEN SIGN (not its parsed value, so `-0` counts) is one the caller's
+    /// value reader refuses for an unsigned target. Every integer reader refuses a '-'; whether a '+'
+    /// is refused is a property of the caller's reader, which is what `reader_refuses_plus` carries.
     bool hasUnreadableSign(std::string_view span, bool reader_refuses_plus)
     {
         if (span.empty())
@@ -1591,22 +1583,11 @@ bool isSignDependentIntegerWidening(const DataTypePtr & first, const DataTypePtr
     if (!first || !second)
         return false;
 
-    /// Widening Int64 to UInt64 is the only transformation whose correctness depends on whether the
-    /// Int64 came from a signed literal, which is recorded as inference provenance. Report
-    /// the pairs that transformIntegers can actually reach, so that a caller with no provenance
-    /// available can decline exactly those.
-    ///
-    /// The pairing must follow transformTypesRecursively, which is what would run the widening: it
-    /// peels Nullable at every level, and descends into a container only when BOTH sides are the same
-    /// container kind, with matching element counts and names for Tuple. Once the shapes diverge it
-    /// stops descending and never pairs the nested integers at all, so there is no widening below that
-    /// point to decline; reporting one there would refuse merges that have nothing to do with the sign
-    /// of an integer (with variant inference enabled such a pair becomes a Variant of both shapes).
+    /// Pair exactly what transformTypesRecursively would pair, no more: a pair it never reaches has no
+    /// widening to decline, so reporting one there refuses an unrelated merge. See the header.
     auto paired = [](const DataTypePtr & lhs, const DataTypePtr & rhs, const auto & self) -> bool
     {
-        /// transformTypesRecursively peels Nullable on either side before comparing, so the merge this
-        /// guards proceeds through asymmetric nullability: comparing the wrapped shapes would miss the
-        /// widening it exists to catch.
+        /// Nullable is peeled on either side before comparing, so an asymmetric one still pairs.
         const auto & left = removeNullable(lhs);
         const auto & right = removeNullable(rhs);
 
@@ -1661,18 +1642,14 @@ bool isSignDependentIntegerWidening(const DataTypePtr & first, const DataTypePtr
 
 void carryOverInferenceProvenance(const DataTypePtr & from, const DataTypePtr & to, JSONInferenceInfo * json_info)
 {
-    /// The provenance is keyed on the type object identity, so dropping one of two equal types loses
-    /// whatever was recorded about it. Walk both in lockstep and re-record on the surviving object.
     if (!json_info || !from || !to || from.get() == to.get() || !from->equals(*to))
         return;
 
     if (json_info->isNegativeInteger(from.get()))
         json_info->markNegativeInteger(to);
 
-    /// The two types are equal, so their children line up: forEachChild visits them in the same order
-    /// for every container type inference produces (Array, Nullable, LowCardinality, Map, Tuple, and
-    /// Variant, whose constructor sorts its variants by name). Object is not one of them, and it is the
-    /// one type whose enumeration order is not fixed by equality, so do not rely on this for Object.
+    /// Equality fixes the child order for every container inference produces, so the two walks line up.
+    /// It does NOT for Object, which inference never yields here: do not reuse this for one.
     std::vector<const IDataType *> from_children;
     std::vector<const IDataType *> to_children;
     from->forEachChild([&](const IDataType & child) { from_children.push_back(&child); });

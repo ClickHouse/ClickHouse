@@ -42,10 +42,9 @@ public:
     virtual void transformTypesIfNeeded(DataTypePtr & type, DataTypePtr & new_type);
     virtual void transformTypesFromDifferentFilesIfNeeded(DataTypePtr & type, DataTypePtr & new_type) { transformTypesIfNeeded(type, new_type); }
 
-    /// Called when two equal types for one column are collapsed into the retained one, which happens
-    /// before transformTypesIfNeeded ever runs. Readers that record inference provenance keyed on the
-    /// type object identity must re-record the dropped type's provenance on the retained one here,
-    /// otherwise a later transformation sees the retained type as if nothing had been recorded.
+    /// Called when two equal types for one column are collapsed, before transformTypesIfNeeded runs. A
+    /// reader holding provenance keyed on type object identity must re-record the dropped type's
+    /// provenance on the retained one here, or it is lost.
     virtual void carryOverProvenanceOnEqualTypes(const DataTypePtr & /*dropped*/, const DataTypePtr & /*retained*/) {}
 
     virtual ~ISchemaReader() = default;
