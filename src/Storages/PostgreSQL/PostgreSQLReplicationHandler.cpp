@@ -377,6 +377,7 @@ PostgreSQLReplicationHandler::PostgreSQLReplicationHandler(
     : WithContext(context_->getGlobalContext())
     , log(getLogger("PostgreSQLReplicationHandler"))
     , is_attach(is_attach_)
+    , is_fresh_definition(is_fresh_definition_)
     , postgres_database(postgres_database_)
     , postgres_schema(replication_settings[MaterializedPostgreSQLSetting::materialized_postgresql_schema])
     , current_database_name(clickhouse_database_)
@@ -420,7 +421,7 @@ PostgreSQLReplicationHandler::PostgreSQLReplicationHandler(
     /// single-server deployment that happens to set both keeps starting up after an upgrade (its metadata
     /// is replayed on startup, and a short-syntax `ATTACH` reuses that same stored definition), while a new
     /// `ON CLUSTER` deployment cannot slip the combination in through `ATTACH ... ON CLUSTER` either.
-    if (is_fresh_definition_ && user_managed_slot && use_unique_replication_consumer_identifier)
+    if (is_fresh_definition && user_managed_slot && use_unique_replication_consumer_identifier)
         throw Exception(
             ErrorCodes::BAD_ARGUMENTS,
             "Cannot use a user-managed replication slot (`materialized_postgresql_replication_slot`) together "
@@ -979,6 +980,17 @@ void PostgreSQLReplicationHandler::adoptLegacyReplicationIdentityIfNeeded(pqxx::
 }
 
 
+bool PostgreSQLReplicationHandler::hasNestedStorage() const
+{
+    for (const auto & entry : materialized_storages)
+    {
+        if (entry.second->tryGetNested())
+            return true;
+    }
+    return false;
+}
+
+
 void PostgreSQLReplicationHandler::startSynchronization(bool throw_on_error)
 {
     postgres::Connection replication_connection(connection_info, /* replication */true);
@@ -1014,14 +1026,16 @@ void PostgreSQLReplicationHandler::startSynchronization(bool throw_on_error)
     ///     and its initial synchronization must be allowed to run through the surviving publication.
     ///
     ///  3. Both the slot and the publication are gone while this replica already holds data from a previous
-    ///     run (a database engine's nested tables exist on disk, or - for the single-table engine - the
-    ///     table exists in metadata, which it only does once its initial sync has succeeded). The slot being
+    ///     run (a database engine's nested tables exist on disk, or - for the single-table engine - a replay
+    ///     of its stored metadata, which it only reaches once its initial sync has succeeded). The slot being
     ///     gone too does not make the re-snapshot any less destructive: it is still the same in-place reload
     ///     into already-populated nested tables as case 2, with the same _sign = 1 / _version = 1 staleness,
     ///     so it fails closed for the same reason. The never-yet-synchronized state is exempted: a database
     ///     engine that has not created a single nested table yet (for example the server restarted before the
     ///     initial background synchronization created the slot and the publication) has nothing to be made
-    ///     stale and must be allowed to run its initial snapshot.
+    ///     stale and must be allowed to run its initial snapshot, and so is a freshly supplied single-table
+    ///     definition (a full-definition `ATTACH TABLE`) whose nested table does not exist yet - it is a
+    ///     brand-new object that has never replicated anything, not a replay of a synchronized one.
     ///
     ///  4. The slot and the publication both survive, but the publication has drifted and no longer publishes
     ///     a table this engine replicates (for example an operator ran ALTER PUBLICATION ... DROP TABLE).
@@ -1064,13 +1078,23 @@ void PostgreSQLReplicationHandler::startSynchronization(bool throw_on_error)
         const bool publication_exists = isPublicationExist(tx);
 
         /// This replica already holds data from a previous run if the database engine kept nested tables on
-        /// disk, or - for the single-table engine, which has no such set - if the table exists in metadata at
-        /// all (a MaterializedPostgreSQL table is only left in metadata once its initial sync has succeeded,
-        /// so an attach implies a completed previous run). A database engine that has not created a single
-        /// nested table yet has nothing to be made stale and is allowed to run its initial snapshot.
+        /// disk. A database engine that has not created a single nested table yet has nothing to be made
+        /// stale and is allowed to run its initial snapshot.
+        ///
+        /// The single-table engine has no such set, and a replay of its stored metadata implies a completed
+        /// previous run (a MaterializedPostgreSQL table is only left in metadata once its initial
+        /// synchronization has succeeded). A full-definition `ATTACH TABLE ... ENGINE = MaterializedPostgreSQL`
+        /// is not such a replay though: it is a freshly supplied definition that introduces a brand-new object
+        /// which has never replicated anything, and it still lands here because StorageMaterializedPostgreSQL
+        /// treats every `LoadingStrictnessLevel::ATTACH` as an attach. Refusing it would leave the table
+        /// retrying forever instead of taking its initial snapshot, so for a fresh definition the nested table
+        /// itself decides: it exists only when a previous object with this UUID already materialized data
+        /// (for example after `DETACH TABLE ... PERMANENTLY`, where re-attaching a full definition really does
+        /// resume over populated nested data).
         const bool has_previously_replicated_data
-            = !is_materialized_postgresql_database
-            || (tables_replicated_by_previous_run && !tables_replicated_by_previous_run->empty());
+            = is_materialized_postgresql_database
+            ? (tables_replicated_by_previous_run && !tables_replicated_by_previous_run->empty())
+            : (!is_fresh_definition || hasNestedStorage());
 
         if (slot_exists && !publication_exists)
             throw Exception(

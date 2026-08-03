@@ -4979,6 +4979,74 @@ def test_legacy_identity_not_adopted_when_nothing_was_replicated_yet(started_clu
     cursor.execute(f'DROP PUBLICATION "{presalt_publication}"')
 
 
+def test_fresh_full_definition_attach_table_bootstraps(started_cluster):
+    # The attach-time fail-closed checks refuse an initial snapshot whenever this replica already holds
+    # data from a previous run. The standalone table engine has no on-disk table set to test that against,
+    # and a replay of its stored metadata does imply a completed previous run - but a full-definition
+    # `ATTACH TABLE ... ENGINE = MaterializedPostgreSQL` is not such a replay. It is a freshly supplied
+    # definition introducing a brand-new object that has never replicated anything, and it still takes the
+    # attach path because StorageMaterializedPostgreSQL treats every LoadingStrictnessLevel::ATTACH as an
+    # attach. With neither a replication slot nor a publication in PostgreSQL, refusing here would make the
+    # `ATTACH` succeed and then leave the background startup task retrying forever without ever
+    # replicating. The table must bootstrap instead: run its initial snapshot and then stream.
+    table = "fresh_attach_table"
+    table_uuid = "00000000-0000-0000-0000-000000110493"
+    pg_manager.create_postgres_table(table)
+    cursor = pg_manager.get_db_cursor()
+    cursor.execute(f"INSERT INTO {table} SELECT i, i FROM generate_series(0, 49) AS i")
+
+    # Neither the slot nor the publication of this brand-new object exists yet.
+    slot = f"postgres_database_{table}_ch_replication_slot"
+    publication = f"postgres_database_{table}_ch_publication"
+    cursor.execute(
+        f"SELECT count(*) FROM pg_replication_slots WHERE slot_name = '{slot}'"
+    )
+    assert 0 == int(cursor.fetchall()[0][0])
+    cursor.execute(f"SELECT count(*) FROM pg_publication WHERE pubname = '{publication}'")
+    assert 0 == int(cursor.fetchall()[0][0])
+
+    instance.query(f"DROP TABLE IF EXISTS {table} SYNC")
+    instance.query(
+        f"""
+        SET allow_experimental_materialized_postgresql_table=1;
+        ATTACH TABLE default.{table} UUID '{table_uuid}' (key Int32, value Int32)
+        ENGINE=MaterializedPostgreSQL('{started_cluster.postgres_ip}:{started_cluster.postgres_port}', 'postgres_database', '{table}', 'postgres', '{pg_pass}')
+        ORDER BY key
+        SETTINGS materialized_postgresql_backoff_min_ms = 100,
+                 materialized_postgresql_backoff_max_ms = 100
+        """
+    )
+
+    # The initial snapshot runs (the `ATTACH` startup is delayed, so this is the background task), and the
+    # slot and the publication this engine needs are created from scratch.
+    check_tables_are_synchronized(instance, table, materialized_database="default")
+    assert 50 == int(instance.query(f"SELECT count() FROM {table}"))
+    cursor.execute(
+        f"SELECT count(*) FROM pg_replication_slots WHERE slot_name = '{slot}'"
+    )
+    assert 1 == int(cursor.fetchall()[0][0])
+    cursor.execute(f"SELECT count(*) FROM pg_publication WHERE pubname = '{publication}'")
+    assert 1 == int(cursor.fetchall()[0][0])
+
+    # And the bootstrapped table keeps streaming from the WAL.
+    cursor.execute(f"INSERT INTO {table} SELECT i, i FROM generate_series(50, 59) AS i")
+    check_tables_are_synchronized(instance, table, materialized_database="default")
+    assert 60 == int(instance.query(f"SELECT count() FROM {table}"))
+
+    instance.query(f"DROP TABLE {table} SYNC")
+    for _ in range(30):
+        cursor.execute(
+            f"SELECT count(*) FROM pg_replication_slots WHERE slot_name = '{slot}'"
+        )
+        if 0 == int(cursor.fetchall()[0][0]):
+            break
+        time.sleep(1)
+    cursor.execute(
+        f"SELECT count(*) FROM pg_replication_slots WHERE slot_name = '{slot}'"
+    )
+    assert 0 == int(cursor.fetchall()[0][0])
+
+
 if __name__ == "__main__":
     cluster.start()
     input("Cluster created, press any key to destroy...")

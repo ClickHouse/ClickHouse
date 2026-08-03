@@ -156,6 +156,11 @@ private:
         const std::set<std::pair<String, String>> & expected,
         const std::set<std::pair<String, String>> & published) const;
 
+    /// Whether any of the storages this handler replicates already has its nested table in the catalog, i.e.
+    /// whether a previous run of an object with this UUID materialized data that must not be silently
+    /// invalidated by a fresh in-place snapshot.
+    bool hasNestedStorage() const;
+
     void assertInitialized() const;
 
     void execWithRetryAndFaultInjection(postgres::Connection & connection, const std::function<void(pqxx::nontransaction &)> & exec) const;
@@ -164,6 +169,12 @@ private:
 
     /// If it is not attach, i.e. a create query, then if publication already exists - always drop it.
     bool is_attach;
+
+    /// Whether this handler was built from a freshly supplied engine definition - a `CREATE`, or an `ATTACH`
+    /// that carries a full engine definition - as opposed to a replay of an already stored definition (server
+    /// startup, `RESTORE`, a short-syntax `ATTACH`). A full-definition `ATTACH TABLE` is an attach as far as
+    /// `is_attach` is concerned, yet it introduces a brand-new object that has never replicated anything.
+    const bool is_fresh_definition;
 
     String postgres_database;
     String postgres_schema;
