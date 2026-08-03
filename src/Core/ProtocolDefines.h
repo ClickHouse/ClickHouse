@@ -67,16 +67,24 @@ static constexpr auto DBMS_MERGE_TREE_PART_INFO_VERSION = 1;
 /// Version 3 adds the parallel-replicas flag (bit 32) on a serialized `ReadFromMergeTree`, telling the
 /// replica to rebuild the read in parallel-reading mode. An older replica would ignore the bit and do a
 /// full non-parallel read, so the serializer fails closed when this flag is set below version 3.
-/// Version 4 adds the `array_join_use_nulls` flag (bit 4) on a serialized `ArrayJoinStep`. An older
+/// Version 4 adds `WindowStep` to the set of serializable steps. An older worker does not register a
+/// "Window" step at all (`QueryPlanStepRegistry::createStep` would throw `UNKNOWN_IDENTIFIER` on it), so
+/// the serializer fails closed instead when talking to a peer below version 4.
+/// Version 5 adds the `array_join_use_nulls` flag (bit 4) on a serialized `ArrayJoinStep`. An older
 /// replica would ignore the bit and pad `LEFT ARRAY JOIN` with defaults instead of `NULL`s, so the
-/// serializer fails closed when this flag is set below version 4.
-static constexpr auto DBMS_QUERY_PLAN_SERIALIZATION_VERSION = 4;
-/// First query-plan serialization version that carries the parallel-replicas flag (bit 32) on a
-/// serialized `ReadFromMergeTree`. Used to gate the flag and to skip replicas that are too old.
-static constexpr auto DBMS_MIN_QUERY_PLAN_SERIALIZATION_VERSION_WITH_PARALLEL_REPLICAS = 3;
+/// serializer fails closed when this flag is set below version 5.
+static constexpr auto DBMS_QUERY_PLAN_SERIALIZATION_VERSION = 5;
+/// The parallel-replicas remote plan is serialized once (at DBMS_QUERY_PLAN_SERIALIZATION_VERSION) and
+/// that one blob is reused for every replica, so a replica below this version must be excluded up front
+/// rather than sent a blob it cannot parse. Tied to DBMS_QUERY_PLAN_SERIALIZATION_VERSION itself so a
+/// future bump can't silently leave this gate behind.
+static constexpr auto DBMS_MIN_QUERY_PLAN_SERIALIZATION_VERSION_WITH_PARALLEL_REPLICAS = DBMS_QUERY_PLAN_SERIALIZATION_VERSION;
+/// First query-plan serialization version that registers a "Window" step. Used to gate serializing a
+/// `WindowStep` for `make_distributed_plan`.
+static constexpr auto DBMS_MIN_QUERY_PLAN_SERIALIZATION_VERSION_WITH_WINDOW_STEP = 4;
 /// First query-plan serialization version that carries the `array_join_use_nulls` flag (bit 4) on a
 /// serialized `ArrayJoinStep`. Used to fail closed against peers that are too old to honor it.
-static constexpr auto DBMS_MIN_QUERY_PLAN_SERIALIZATION_VERSION_WITH_ARRAY_JOIN_USE_NULLS = 4;
+static constexpr auto DBMS_MIN_QUERY_PLAN_SERIALIZATION_VERSION_WITH_ARRAY_JOIN_USE_NULLS = 5;
 /// Version 1 added the initiator's settings changes to the task.
 /// Version 2 added per-stream streaming-exchange ports to exchange_stream_sources.
 static constexpr auto DBMS_DISTRIBUTED_TASK_SERIALIZATION_VERSION = 2;
