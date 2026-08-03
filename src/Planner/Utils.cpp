@@ -204,7 +204,6 @@ ASTPtr queryNodeToSelectQuery(const QueryTreeNodePtr & query_node, bool set_subq
 
 namespace
 {
-<<<<<<< HEAD
 
 /// Within a single `SELECT`'s projection list, strip the alias from any element
 /// whose alias duplicates an earlier element's alias but with a different body.
@@ -269,7 +268,6 @@ void deduplicateProjectionAliasesRecursive(const ASTPtr & ast)
         deduplicateProjectionAliasesRecursive(child);
 }
 
-=======
 class NormalizeAliasMarkerVisitor : public InDepthQueryTreeVisitor<NormalizeAliasMarkerVisitor>
 {
 public:
@@ -313,7 +311,7 @@ void normalizeAliasMarkersInQueryTree(QueryTreeNodePtr & node)
     NormalizeAliasMarkerVisitor visitor;
     visitor.visit(node);
 }
->>>>>>> bdef614e1f2 (Merge pull request #1694 from Altinity/feature/antalya-26.3/pr-1442)
+
 }
 
 ASTPtr queryNodeToDistributedSelectQuery(const QueryTreeNodePtr & query_node)
@@ -322,16 +320,12 @@ ASTPtr queryNodeToDistributedSelectQuery(const QueryTreeNodePtr & query_node)
     /// Now, if cte_name is set for subquery node, AST -> String serialization will only print cte name.
     /// But CTE is defined only for top-level query part, so may not be sent.
     /// Removing cte_name forces subquery to be always printed.
-<<<<<<< HEAD
-    auto ast = queryNodeToSelectQuery(query_node, /*set_subquery_cte_name=*/false);
-
-    deduplicateProjectionAliasesRecursive(ast);
-
-=======
     auto query_node_to_convert = query_node->clone();
     normalizeAliasMarkersInQueryTree(query_node_to_convert);
     auto ast = queryNodeToSelectQuery(query_node_to_convert, /*set_subquery_cte_name=*/false);
->>>>>>> bdef614e1f2 (Merge pull request #1694 from Altinity/feature/antalya-26.3/pr-1442)
+
+    deduplicateProjectionAliasesRecursive(ast);
+
     return ast;
 }
 
