@@ -1,11 +1,13 @@
 -- Tags: replica, shard
 
--- The role/profile introspection functions read shard-local user state: on clusters without an
--- interserver secret the shard user is not the same user as on the initiator, and even with a
--- secret only `current_roles` are propagated - the enabled/default role sets and the settings
--- profiles always come from the shard-local user object. The initiator of a distributed query
--- must ship the calls to the shards instead of folding them into literals computed from its own
--- access state.
+-- The role/profile introspection functions deliberately fold on the initiator of a distributed
+-- query, shipping the initiator's access state to the shards. This keeps the family consistent
+-- with `currentUser`, which reports the propagated `initial_user` on every shard: without a
+-- cluster secret the shard runs the secondary query as a different user, and even with a secret
+-- only `current_roles` are propagated (settings profiles never are), so executing on the shard
+-- would pair the initiator's `currentUser` identity with the shard account's roles/profiles.
+-- This pins that deliberate behavior; revisit if the full role/profile state is ever propagated
+-- to secondary queries.
 
 SELECT currentRoles(), enabledRoles(), defaultRoles()
 FROM clusterAllReplicas('test_cluster_two_shards', system.one)
@@ -19,12 +21,10 @@ SETTINGS enable_analyzer = 1, prefer_localhost_replica = 0, log_comment = '04612
 
 SYSTEM FLUSH LOGS query_log;
 
--- Both shard queries must still contain the function calls, not folded literals: a folded
--- call ships as `_CAST([<initiator values>], ...)` (the projection alias keeps the function
--- name, so the check is anchored on the first call and on the absence of `_CAST`).
--- The shard-side entries do not run in the test database, so they are anchored to the
--- initial query, which does.
-SELECT count() = 2, countIf(query LIKE 'SELECT currentRoles()%' AND query NOT LIKE '%_CAST(%') = 2
+-- Both shard queries must contain the folded literals (`SELECT _CAST(<initiator values>, ...`),
+-- not the function calls. The shard-side entries do not run in the test database, so they are
+-- anchored to the initial query, which does.
+SELECT count() = 2, countIf(query LIKE 'SELECT _CAST(%') = 2
 FROM system.query_log
 WHERE event_date >= yesterday() AND is_initial_query = 0 AND type = 'QueryFinish'
     AND initial_query_id =
@@ -40,7 +40,7 @@ WHERE event_date >= yesterday() AND is_initial_query = 0 AND type = 'QueryFinish
         LIMIT 1
     );
 
-SELECT count() = 2, countIf(query LIKE 'SELECT currentProfiles()%' AND query NOT LIKE '%_CAST(%') = 2
+SELECT count() = 2, countIf(query LIKE 'SELECT _CAST(%') = 2
 FROM system.query_log
 WHERE event_date >= yesterday() AND is_initial_query = 0 AND type = 'QueryFinish'
     AND initial_query_id =
@@ -56,9 +56,9 @@ WHERE event_date >= yesterday() AND is_initial_query = 0 AND type = 'QueryFinish
         LIMIT 1
     );
 
--- The function-cache regression shape: identical calls in the outer scope and an inner
--- clusterAllReplicas scope must not share a FunctionBase, because the built base captures
--- `context->isDistributed()` (`isServerConstant` excludes it from the analyzer function cache).
+-- Value-level consistency: an identical call in the outer (local) scope and in an inner
+-- clusterAllReplicas scope must observe the same initiator state, so grouping by the value
+-- yields a single group.
 SELECT count() AS groups, sum(x) AS total
 FROM
 (
