@@ -28,13 +28,16 @@ struct PuffinFooter
 class PuffinMetadataInputFormat : public IInputFormat
 {
 public:
-    PuffinMetadataInputFormat(ReadBuffer & buf, SharedHeader header_);
+    PuffinMetadataInputFormat(ReadBuffer & buf, SharedHeader header_, const FormatSettings & format_settings_);
 
     String getName() const override { return "PuffinMetadata"; }
+
+    void resetParser() override;
 
 private:
     Chunk read() override;
 
+    bool seekable_read = true;
     PuffinFooter footer;
     bool initialized = false;
     size_t blob_index = 0;
@@ -43,13 +46,17 @@ private:
 class PuffinInputFormat : public IInputFormat
 {
 public:
-    PuffinInputFormat(ReadBuffer & buf, SharedHeader header_);
+    PuffinInputFormat(ReadBuffer & buf, SharedHeader header_, const FormatSettings & format_settings_);
 
     String getName() const override { return "Puffin"; }
+
+    void resetParser() override;
 
 private:
     Chunk read() override;
 
+    bool seekable_read = true;
+    bool need_deleted_rows = true;
     PuffinFooter footer;
     bool initialized = false;
     size_t blob_index = 0;
