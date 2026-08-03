@@ -49,8 +49,8 @@ using AggregatedDataWithUInt64Key = HashMap<UInt64, AggregateDataPtr, HashCRC32<
 using AggregatedDataWithUInt32KeyVoid = HashSet<UInt32, HashCRC32<UInt32>>;
 using AggregatedDataWithUInt64KeyVoid = HashSet<UInt64, HashCRC32<UInt64>>;
 
+using AggregatedDataWithPackedStringKey = HashMap<PackedStringRef, AggregateDataPtr>;
 using AggregatedDataWithShortStringKey = StringHashMap<AggregateDataPtr>;
-
 using AggregatedDataWithStringKey = HashMapWithSavedHash<std::string_view, AggregateDataPtr>;
 /// Void (set) string-key data for the serialized / prealloc_serialized methods. The saved-hash set cell
 /// avoids recomputing the hash of the Arena-held serialized key on every probe.
@@ -69,6 +69,7 @@ using AggregatedDataWithUInt32KeyVoidTwoLevel = TwoLevelHashSet<UInt32, HashCRC3
 using AggregatedDataWithUInt64KeyVoidTwoLevel = TwoLevelHashSet<UInt64, HashCRC32<UInt64>>;
 
 using AggregatedDataWithShortStringKeyTwoLevel = TwoLevelStringHashMap<AggregateDataPtr>;
+using AggregatedDataWithPackedStringKeyTwoLevel = TwoLevelHashMap<PackedStringRef, AggregateDataPtr>;
 
 using AggregatedDataWithStringKeyTwoLevel = TwoLevelHashMapWithSavedHash<std::string_view, AggregateDataPtr>;
 using AggregatedDataWithStringKeyVoidTwoLevel = TwoLevelHashSetWithSavedHash<std::string_view, DefaultHash<std::string_view>>;

@@ -1,6 +1,6 @@
 #pragma once
 
-#if defined(OS_LINUX) || defined(OS_FREEBSD)
+#if defined(OS_LINUX) || defined(OS_FREEBSD) || defined(OS_DARWIN)
 
 #include <chrono>
 
@@ -480,12 +480,22 @@ public:
 
         ProfileEvents::increment(ProfileEvents::FileOpen);
 
+        #if defined(OS_DARWIN)
+        /// macOS has no O_DIRECT; F_NOCACHE (set below) is the closest equivalent.
+        file.fd = ::open(file_path.c_str(), O_RDWR | O_CREAT | O_TRUNC, 0666);
+        #else
         file.fd = ::open(file_path.c_str(), O_RDWR | O_CREAT | O_TRUNC | O_DIRECT, 0666);
+        #endif
         if (file.fd == -1)
         {
             auto error_code = (errno == ENOENT) ? ErrorCodes::FILE_DOESNT_EXIST : ErrorCodes::CANNOT_OPEN_FILE;
             ErrnoException::throwFromPath(error_code, file_path, "Cannot open file {}", file_path);
         }
+
+        #if defined(OS_DARWIN)
+        if (::fcntl(file.fd, F_NOCACHE, 1) == -1)
+            ErrnoException::throwFromPath(ErrorCodes::CANNOT_OPEN_FILE, file_path, "Cannot set F_NOCACHE on file {}", file_path);
+        #endif
 
         allocateSizeForNextPartition();
     }
@@ -509,7 +519,7 @@ public:
         iocb write_request{};
         iocb * write_request_ptr{&write_request};
 
-        #if defined(OS_FREEBSD)
+        #if defined(OS_FREEBSD) || defined(OS_DARWIN)
         write_request.aio.aio_lio_opcode = LIO_WRITE;
         write_request.aio.aio_fildes = file.fd;
         write_request.aio.aio_buf = reinterpret_cast<volatile void *>(const_cast<char *>(buffer));
@@ -543,7 +553,8 @@ public:
         auto bytes_written = eventResult(event);
 
         ProfileEvents::increment(ProfileEvents::AIOWrite);
-        ProfileEvents::increment(ProfileEvents::AIOWriteBytes, bytes_written);
+        if (bytes_written > 0)
+            ProfileEvents::increment(ProfileEvents::AIOWriteBytes, bytes_written);
 
         if (bytes_written != static_cast<decltype(bytes_written)>(block_size * buffer_size_in_blocks))
             throw Exception(ErrorCodes::AIO_WRITE_ERROR,
@@ -580,7 +591,7 @@ public:
         iocb request{};
         iocb * request_ptr = &request;
 
-        #if defined(OS_FREEBSD)
+        #if defined(OS_FREEBSD) || defined(OS_DARWIN)
         request.aio.aio_lio_opcode = LIO_READ;
         request.aio.aio_fildes = file.fd;
         request.aio.aio_buf = reinterpret_cast<volatile void *>(reinterpret_cast<UInt64>(read_buffer_memory.data()));
@@ -660,7 +671,7 @@ public:
 
             char * buffer_place = read_buffer.data() + block_size * (block_to_fetch_index % read_from_file_buffer_blocks_size);
 
-            #if defined(OS_FREEBSD)
+            #if defined(OS_FREEBSD) || defined(OS_DARWIN)
             request.aio.aio_lio_opcode = LIO_READ;
             request.aio.aio_fildes = file.fd;
             request.aio.aio_buf = reinterpret_cast<volatile void *>(reinterpret_cast<UInt64>(buffer_place));
@@ -793,7 +804,21 @@ private:
 
     static int preallocateDiskSpace(int fd, size_t offset, size_t len)
     {
-        #if defined(OS_FREEBSD)
+        #if defined(OS_DARWIN)
+            /// macOS has neither fallocate nor posix_fallocate. F_PREALLOCATE reserves blocks past EOF
+            /// but does not change the file size, so ftruncate sets the size afterwards. We must match
+            /// fallocate's contract of actually reserving space: if the reservation fails (e.g. ENOSPC)
+            /// we fail here rather than letting ftruncate grow a sparse file and pushing the failure
+            /// into a later write, after cache state (evicted index entries) has already changed.
+            fstore_t store{F_ALLOCATECONTIG, F_PEOFPOSMODE, 0, static_cast<off_t>(len), 0};
+            if (::fcntl(fd, F_PREALLOCATE, &store) == -1)
+            {
+                store.fst_flags = F_ALLOCATEALL;
+                if (::fcntl(fd, F_PREALLOCATE, &store) == -1)
+                    return -1;
+            }
+            return ::ftruncate(fd, static_cast<off_t>(offset + len));
+        #elif defined(OS_FREEBSD)
             return posix_fallocate(fd, offset, len);
         #else
             return fallocate(fd, 0, offset, len);
@@ -804,7 +829,7 @@ private:
     {
         char * result = nullptr;
 
-        #if defined(OS_FREEBSD)
+        #if defined(OS_FREEBSD) || defined(OS_DARWIN)
             result = reinterpret_cast<char *>(reinterpret_cast<UInt64>(request.aio.aio_buf));
         #else
             result = reinterpret_cast<char *>(request.aio_buf);

@@ -1,0 +1,44 @@
+{
+  "groups": [
+    {
+      "group": "Página inicial",
+      "icon": "house",
+      "pages": [],
+      "root": "pt-BR/integrations/language-clients/index"
+    },
+    {
+      "$ref": "js/navigation.json"
+    },
+    {
+      "$ref": "python/navigation.json"
+    },
+    {
+      "$ref": "go/navigation.json"
+    },
+    {
+      "$ref": "java/navigation.json"
+    },
+    {
+      "$ref": "csharp/navigation.json"
+    },
+    {
+      "$ref": "rust/navigation.json"
+    },
+    {
+      "$ref": "cpp/navigation.json"
+    },
+    {
+      "$ref": "c/navigation.json"
+    },
+    {
+      "group": "Clientes de terceiros",
+      "icon": "users",
+      "pages": [
+        "pt-BR/integrations/language-clients/third-party/moose-olap",
+        "pt-BR/integrations/language-clients/third-party/client-libraries"
+      ]
+    }
+  ],
+  "icon": "/images/icons/icon-language-clients.svg",
+  "item": "Clientes por linguagem"
+}

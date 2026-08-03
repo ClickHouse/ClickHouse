@@ -18,7 +18,7 @@
 #include <Poco/NullChannel.h>
 #include <Poco/SimpleFileChannel.h>
 #include <Databases/registerDatabases.h>
-#include <Databases/DatabaseFilesystem.h>
+#include <Databases/DatabaseURL.h>
 #include <Databases/DatabaseMemory.h>
 #include <Databases/DatabaseAtomic.h>
 #include <Databases/DatabaseOverlay.h>
@@ -47,6 +47,7 @@
 #include <Common/CurrentMetrics.h>
 #include <Common/NamedCollections/NamedCollectionsFactory.h>
 #include <Common/Jemalloc.h>
+#include <Common/JemallocMergeTreeArena.h>
 #include <Common/StackTrace.h>
 #include <Interpreters/FileCache/FileCacheFactory.h>
 #include <Loggers/OwnFormattingChannel.h>
@@ -59,6 +60,7 @@
 #include <Parsers/ASTInsertQuery.h>
 #include <Common/ErrorHandlers.h>
 #include <Functions/UserDefined/IUserDefinedSQLObjectsStorage.h>
+#include <Functions/UserDefined/UserDefinedSQLFunctionFactory.h>
 #include <Functions/pointInPolygon.h>
 #include <Functions/registerFunctions.h>
 #include <AggregateFunctions/registerAggregateFunctions.h>
@@ -132,6 +134,7 @@ namespace ServerSetting
     extern const ServerSettingsBool jemalloc_enable_background_threads;
     extern const ServerSettingsBool jemalloc_enable_global_profiler;
     extern const ServerSettingsUInt64 jemalloc_max_background_threads_num;
+    extern const ServerSettingsUInt64 jemalloc_merge_tree_arenas;
     extern const ServerSettingsUInt64 jemalloc_profiler_sampling_rate;
     extern const ServerSettingsUInt64 compiled_expression_cache_elements_size;
     extern const ServerSettingsUInt64 compiled_expression_cache_size;
@@ -171,6 +174,10 @@ namespace ServerSetting
     extern const ServerSettingsUInt64 iceberg_metadata_files_cache_size;
     extern const ServerSettingsUInt64 iceberg_metadata_files_cache_max_entries;
     extern const ServerSettingsDouble iceberg_metadata_files_cache_size_ratio;
+    extern const ServerSettingsString paimon_metadata_files_cache_policy;
+    extern const ServerSettingsUInt64 paimon_metadata_files_cache_size;
+    extern const ServerSettingsUInt64 paimon_metadata_files_cache_max_entries;
+    extern const ServerSettingsDouble paimon_metadata_files_cache_size_ratio;
     extern const ServerSettingsString parquet_metadata_cache_policy;
     extern const ServerSettingsUInt64 parquet_metadata_cache_size;
     extern const ServerSettingsUInt64 parquet_metadata_cache_max_entries;
@@ -354,6 +361,16 @@ void LocalServer::initialize(Poco::Util::Application & self)
         loaded_config_path = config_path;
     }
 
+    /// Use <echo_formatted/>, <echo_query_id/>, <enable_progress_table_toggle/> unless the
+    /// corresponding dashed CLI option is specified. Shared with `clickhouse-client`.
+    remapClientConfigurationAliases();
+
+    /// The config file is loaded after the command line is processed, so the option parser
+    /// never sees values that come only from the file. Validate them now, before any query
+    /// can start: a config typo must not fail open (e.g. run a mutating query and only then
+    /// throw from a lazy read at the use site).
+    validateClientConfiguration();
+
     server_settings.loadSettingsFromConfig(config());
 
 #if USE_JEMALLOC
@@ -364,6 +381,10 @@ void LocalServer::initialize(Poco::Util::Application & self)
         server_settings[ServerSetting::jemalloc_collect_global_profile_samples_in_trace_log],
         server_settings[ServerSetting::jemalloc_profiler_sampling_rate]);
 #endif
+
+    /// Create the dedicated MergeTree metadata arena pool before any parts are loaded, same as the
+    /// server. Without this `clickhouse-local` would ignore `jemalloc_merge_tree_arenas`.
+    JemallocMergeTreeArena::initialize(server_settings[ServerSetting::jemalloc_merge_tree_arenas]);
 
     GlobalThreadPool::initialize(
         server_settings[ServerSetting::max_thread_pool_size],
@@ -470,7 +491,12 @@ DatabasePtr createClickHouseLocalDatabaseOverlay(const String & name_, ContextPt
         DatabaseCatalog::getStoreDirPath(default_database_uuid);
 
     overlay->registerNextDatabase(std::make_shared<DatabaseAtomic>(name_, default_database_metadata_path, default_database_uuid, context));
-    overlay->registerNextDatabase(std::make_shared<DatabaseFilesystem>(name_, "", context));
+    /// The URL database handles local files, URLs and object storage uniformly: with the `file://`
+    /// base URL, a plain table name resolves to `file://<name>` -- a path relative to the current
+    /// directory, read by the File engine (globs included) -- while a name with a URL scheme
+    /// (`https://`, `s3://`, ...) is dispatched by the scheme to the matching engine. This enables
+    /// queries like `SELECT * FROM 'data.csv'` and `SELECT * FROM 'https://example.com/data.csv'`.
+    overlay->registerNextDatabase(std::make_shared<DatabaseURL>(name_, "file://", context));
     return overlay;
 }
 
@@ -552,6 +578,12 @@ void LocalServer::tryInitPath()
 
     std::string user_scripts_path = getClientConfiguration().getString("user_scripts_path", fs::path(path) / "user_scripts" / "");
     global_context->setUserScriptsPath(user_scripts_path);
+
+    std::string dynamic_udf_path = getClientConfiguration().getString(
+        "dynamic_user_defined_executable_functions_path",
+        fs::path(path) / "dynamic_user_defined_executable_functions" / "");
+    global_context->setDynamicUserDefinedExecutableFunctionsPath(dynamic_udf_path);
+    fs::create_directories(dynamic_udf_path);
 
     /// Set path for filesystem caches
     String filesystem_caches_path(getClientConfiguration().getString("filesystem_caches_path", fs::path(path) / "cache" / ""));
@@ -681,7 +713,8 @@ void LocalServer::startServers(const ServerType & server_type)
             /* heavy_metrics_update_period_seconds= */ 120,
             metrics_func,
             /* update_jemalloc_epoch_= */ false,
-            /* update_rss_= */ false);
+            /* update_rss_= */ false
+        );
     }
 
     Poco::Net::HTTPServerParams::Ptr http_params = new Poco::Net::HTTPServerParams;
@@ -1032,6 +1065,10 @@ void LocalServer::setupUsers()
     access_control.setEnableUserNameAccessType(config.getBool("access_control_improvements.enable_user_name_access_type", true));
     access_control.setThrowOnInvalidReplicatedAccessEntities(config.getBool("access_control_improvements.throw_on_invalid_replicated_access_entities", true));
 
+    /// Keep in sync with `AccessControl::setupFromMainConfig` and `attachSystemTables`: `system.user_query_log`
+    /// is attached (and thus safe to grant SELECT on implicitly) only when this is enabled.
+    access_control.setUserQueryLogEnabled(config.getBool("query_log.enable_user_query_log", true));
+
     /// Apply user-level configuration from a loaded config file (including those
     /// auto-discovered via `getLocalConfigPath`, e.g. `~/.clickhouse-local/config.xml`).
     if (!loaded_config_path.empty())
@@ -1163,7 +1200,13 @@ try
     /// try to load user defined executable functions, throw on error and die
     try
     {
+        global_context->loadUserDefinedExecutableFunctionDrivers(getClientConfiguration());
         global_context->loadOrReloadUserDefinedExecutableFunctions(getClientConfiguration());
+
+        /// Re-run drivers for previously persisted ATTACH FUNCTION entries whose
+        /// dynamic configuration files are missing.
+        UserDefinedSQLFunctionFactory::instance().reloadDriverBasedFunctions(
+            global_context, global_context->getUserDefinedSQLObjectsStorage());
     }
     catch (...)
     {
@@ -1306,6 +1349,9 @@ void LocalServer::processConfig()
     global_context->setExternalAuthenticatorsConfig(getClientConfiguration());
 
     setupUsers();
+
+    /// SYSTEM ALLOCATE MEMORY is a diagnostic command, harmless to enable in clickhouse-local.
+    global_context->allowSystemAllocateMemory(true);
 
     /// Limit on total number of concurrently executing queries.
     /// Plain `clickhouse-local` runs a single query at a time, but once it is turned into a server
@@ -1536,6 +1582,17 @@ void LocalServer::processConfig()
         LOG_INFO(log, "Lowered Iceberg metadata cache size to {} because the system has limited RAM", formatReadableSizeWithBinarySuffix(iceberg_metadata_files_cache_size));
     }
     global_context->setIcebergMetadataFilesCache(iceberg_metadata_files_cache_policy, iceberg_metadata_files_cache_size, iceberg_metadata_files_cache_max_entries, iceberg_metadata_files_cache_size_ratio);
+
+    String paimon_metadata_files_cache_policy = server_settings[ServerSetting::paimon_metadata_files_cache_policy];
+    size_t paimon_metadata_files_cache_size = server_settings[ServerSetting::paimon_metadata_files_cache_size];
+    size_t paimon_metadata_files_cache_max_entries = server_settings[ServerSetting::paimon_metadata_files_cache_max_entries];
+    double paimon_metadata_files_cache_size_ratio = server_settings[ServerSetting::paimon_metadata_files_cache_size_ratio];
+    if (paimon_metadata_files_cache_size > max_cache_size)
+    {
+        paimon_metadata_files_cache_size = max_cache_size;
+        LOG_INFO(log, "Lowered Paimon metadata cache size to {} because the system has limited RAM", formatReadableSizeWithBinarySuffix(paimon_metadata_files_cache_size));
+    }
+    global_context->setPaimonMetadataFilesCache(paimon_metadata_files_cache_policy, paimon_metadata_files_cache_size, paimon_metadata_files_cache_max_entries, paimon_metadata_files_cache_size_ratio);
 #endif
 #if USE_PARQUET
     String parquet_metadata_cache_policy = server_settings[ServerSetting::parquet_metadata_cache_policy];
@@ -1556,6 +1613,10 @@ void LocalServer::processConfig()
 
     /// Initialize a dummy query condition cache.
     global_context->setQueryConditionCache(DEFAULT_QUERY_CONDITION_CACHE_POLICY, 0, 0);
+
+    /// Initialize a dummy encryption header cache (0 size disables it; still needed so
+    /// system.server_settings can report its size).
+    global_context->setEncryptionHeaderCache(DEFAULT_ENCRYPTION_HEADER_CACHE_POLICY, 0, 0);
 
     /// Initialize a dummy query result cache.
     global_context->setQueryResultCache(0, 0, 0, 0);
@@ -1795,7 +1856,16 @@ void LocalServer::applyCmdSettings(ContextMutablePtr context)
 
 void LocalServer::applyCmdOptions(ContextMutablePtr context)
 {
-    context->setDefaultFormat(getClientConfiguration().getString("output-format", getClientConfiguration().getString("format", is_interactive ? "PrettyCompact" : "TSV")));
+    /// This sets the default output format for the (global) context, which is used by connections
+    /// served by `clickhouse-local` when it acts as a server (`SYSTEM START LISTEN TCP/HTTP`), as
+    /// well as by internal usages that consult the context's default format. It must match a real
+    /// `clickhouse-server`, which defaults to `TabSeparated`.
+    ///
+    /// Do not use the interactive default (`PrettyCompact`) here: that format is only for rendering
+    /// query results in the terminal and is applied separately via `ClientBase::default_output_format`.
+    /// Otherwise a client connecting over HTTP would receive a `PrettyCompact`-formatted response and
+    /// fail to parse it (for example, the version query used during connection handshake).
+    context->setDefaultFormat(getClientConfiguration().getString("output-format", getClientConfiguration().getString("format", "TSV")));
     applyCmdSettings(context);
 }
 
