@@ -176,7 +176,17 @@ for filepath in `find $SCRIPTPATH/.. -type f -or -type l | grep -v "\.\./install
         # The whole chain is followed: a link pointing at another link has to keep both, the
         # way writing through the destination did, so only the final referent is created.
         linktarget=$(resolve_symlink_chain "$destpath")
-        mkdir -p "$(dirname -- "$linktarget")"
+        linkparent=$(dirname -- "$linktarget")
+        if [ ! -d "$linkparent" ]; then
+            # The directory the link points into is not created here. It would be created
+            # with the `umask` of the installation and with no defined ownership, so the
+            # installed file could end up unreachable while the installation reports
+            # success. Writing through the link failed loudly when that directory was
+            # missing, and pointing a destination at a directory that does not exist stays
+            # an error the administrator has to see and fix.
+            echo "Cannot install $destpath: it points at $linktarget, but the directory $linkparent does not exist" >&2
+            exit 1
+        fi
         mv -f "$filepath" "$linktarget"
         chown -h root:root "$linktarget"
         if [ -n "$RESTORECON" ]; then

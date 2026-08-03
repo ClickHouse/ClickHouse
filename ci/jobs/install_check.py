@@ -266,6 +266,23 @@ done
 [ -s /real/config.xml ]
 [ "$(stat -c %a /real/config.xml)" = "$mode" ]
 [ "$(stat -c %U:%G /real/config.xml)" = "root:root" ]""",
+        f"Install tgz over a symlink into a missing directory in {image}": r"""#!/bin/bash -ex
+# A destination pointing into a directory that does not exist is an error the administrator
+# has to see: creating that directory would give it the `umask` of the installation and no
+# defined ownership, which can leave the installed file unreachable while the installation
+# reports success. Writing through the link failed in this case too, so the installer keeps
+# failing instead of materializing a half-usable tree.
+mkdir -p /etc/clickhouse-client
+ln -s /missing/config.xml /etc/clickhouse-client/config.xml
+for pkg in /packages/clickhouse-client*tgz; do
+    package=${pkg%-*}
+    package=${package##*/}
+    tar xf "$pkg"
+    ! "/$package/install/doinst.sh" > /tmp/install.log 2>&1
+done
+grep -q "the directory /missing does not exist" /tmp/install.log
+[ ! -e /missing ]
+[ -L /etc/clickhouse-client/config.xml ]""",
     }
     return test_install(image, tests)
 
