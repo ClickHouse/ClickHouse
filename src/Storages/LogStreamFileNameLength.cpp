@@ -49,7 +49,7 @@ String recoverFailedPath(std::exception_ptr e)
     {
         return errno_error.getPath().value_or("");
     }
-    catch (...)
+    catch (...) /// Ok: classifies only. The exception stays with the caller, which rethrows it.
     {
         return {};
     }
@@ -82,7 +82,7 @@ bool isFilenameTooLongError(std::exception_ptr e)
     {
         return errno_error.getErrno() == ENAMETOOLONG;
     }
-    catch (...)
+    catch (...) /// Ok: classifies only. The exception stays with the caller, which rethrows it.
     {
         return false;
     }

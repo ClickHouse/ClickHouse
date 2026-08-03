@@ -27,8 +27,8 @@ CREATE TABLE t_over_tiny (`ccccccccccccccccccccccccccccccccccccccccccccccccccccc
 -- each `%` below is stored as `%25`, making 84 characters into 252.
 CREATE TABLE t_escaped (`%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%` UInt8) ENGINE = Log; -- { serverError ARGUMENT_OUT_OF_BOUND }
 
--- A substream appends to the column name, so the limit binds on the DERIVED name: `Nested` adds
--- `%2Ea.size0`, which is why 245 characters fit here and 246 do not.
+-- A substream appends to the column name, so the limit binds on the DERIVED name: `Nested` derives
+-- both `%2Ea` and the shared `.size0`, and the longer of the two is why 245 fit here and 246 do not.
 CREATE TABLE t_nested_at_limit (`ccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccc` Nested(a UInt64)) ENGINE = Log;
 INSERT INTO t_nested_at_limit VALUES ([1]);
 SELECT count() FROM t_nested_at_limit;
