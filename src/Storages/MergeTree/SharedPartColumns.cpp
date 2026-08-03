@@ -126,10 +126,12 @@ String SharedPartColumns::describeColumns(const NamesAndTypesList & columns)
         writeStringBinary(column.name, out);
         writeStringBinary(column.type->getName(), out);
 
+        /// One entry per type node, empty when it has no custom serialization, so that the identity of a
+        /// node cannot be read as the identity of another one at a different position.
         auto describe_custom_serialization = [&](const IDataType & type)
         {
-            if (const auto * custom = type.getCustomSerialization())
-                writeStringBinary(custom->getCustomSerializationIdentity(), out);
+            const auto * custom = type.getCustomSerialization();
+            writeStringBinary(custom ? custom->getCustomSerializationIdentity() : "", out);
         };
         describe_custom_serialization(*column.type);
         column.type->forEachChild(describe_custom_serialization);
@@ -489,7 +491,9 @@ std::shared_ptr<const ColumnsSubstreams> SharedPartColumns::internColumnsSubstre
             }
             /// The entry is shared and long-lived, but it was built incrementally (e.g. by a part
             /// writer) and may carry container growth overshoot: intern a compact copy of it.
-            ColumnsSubstreams::ColumnEntryPtr compact = std::make_shared<const ColumnsSubstreams::ColumnEntry>(*entry);
+            /// Not `make_shared<const ColumnEntry>`: `ColumnsSubstreams` mutates a uniquely held entry
+            /// through a `const_cast`, which is only defined when the object itself is not const.
+            ColumnsSubstreams::ColumnEntryPtr compact = std::make_shared<ColumnsSubstreams::ColumnEntry>(*entry);
             it->second = compact;
             if (inserted)
                 substream_entries_metric_handle.add(1);

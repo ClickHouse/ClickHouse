@@ -17,8 +17,12 @@ namespace ErrorCodes
 ColumnsSubstreams::ColumnEntry & ColumnsSubstreams::lastEntryForModification()
 {
     chassert(!columns_substreams.empty());
-    /// Entries are modified only while being built, before they can be shared with other parts.
-    chassert(columns_substreams.back().use_count() == 1);
+    /// Entries are modified only while being built. Once interned they are shared with other parts, and
+    /// this object is copyable, so refuse to modify an entry that someone else can see. Checked in
+    /// release builds too: the copy would silently corrupt the other holders.
+    if (columns_substreams.back().use_count() != 1)
+        throw Exception(ErrorCodes::LOGICAL_ERROR, "Cannot modify the substreams of column {}: they are shared with another data part", columns_substreams.back()->column);
+
     return const_cast<ColumnEntry &>(*columns_substreams.back());
 }
 
