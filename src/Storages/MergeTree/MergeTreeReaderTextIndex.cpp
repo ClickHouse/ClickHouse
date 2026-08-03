@@ -26,10 +26,12 @@ namespace ProfileEvents
     extern const Event TextIndexReaderTotalMicroseconds;
     extern const Event TextIndexPositionsDecodeMicroseconds;
     extern const Event TextIndexPhraseMatchMicroseconds;
-    extern const Event TextIndexBlockedPositionsBlocksRead;
-    extern const Event TextIndexBlockedPositionsBlocksSkipped;
-    extern const Event TextIndexBlockedPositionsBytesRead;
+    extern const Event TextIndexPositionsBlocksRead;
+    extern const Event TextIndexPositionsBlocksTotal;
+    extern const Event TextIndexPositionsBytesRead;
     extern const Event TextIndexPhraseCandidates;
+    extern const Event TextIndexPhraseSearches;
+    extern const Event TextIndexPhraseFallbacks;
 }
 
 namespace DB
@@ -347,7 +349,10 @@ void MergeTreeReaderTextIndex::classifyVirtualColumns()
 
                 log_cardinality -= static_cast<double>(search_query->getTokens().size() - 1) * std::log(static_cast<double>(num_rows_in_part));
                 if (std::exp(log_cardinality) > static_cast<double>(num_rows_in_part) * selectivity_threshold)
+                {
                     use_fallback[i] = true;
+                    ProfileEvents::increment(ProfileEvents::TextIndexPhraseFallbacks);
+                }
             }
         }
     }
@@ -1074,9 +1079,9 @@ PaddedPODArray<UInt32> MergeTreeReaderTextIndex::phraseSearchBlocked(const TextS
 
     ProfileEvents::increment(ProfileEvents::TextIndexPositionsDecodeMicroseconds, decode_us);
     ProfileEvents::increment(ProfileEvents::TextIndexPhraseMatchMicroseconds, match_us);
-    ProfileEvents::increment(ProfileEvents::TextIndexBlockedPositionsBlocksRead, blocks_read);
-    ProfileEvents::increment(ProfileEvents::TextIndexBlockedPositionsBlocksSkipped, blocks_total - blocks_read);
-    ProfileEvents::increment(ProfileEvents::TextIndexBlockedPositionsBytesRead, block_bytes_read);
+    ProfileEvents::increment(ProfileEvents::TextIndexPositionsBlocksRead, blocks_read);
+    ProfileEvents::increment(ProfileEvents::TextIndexPositionsBlocksTotal, blocks_total);
+    ProfileEvents::increment(ProfileEvents::TextIndexPositionsBytesRead, block_bytes_read);
     return matching;
 }
 
@@ -1107,6 +1112,7 @@ void MergeTreeReaderTextIndex::applyPostingsPhrase(
             /// The header deserialization rejects any codec but Blocked, so the part's positions
             /// are always the blocked candidate-driven layout here.
             chassert(static_cast<TextIndexPositionCodec::Encoding>(granule->getPositionsCodec()) == TextIndexPositionCodec::Encoding::BlockedPfor);
+            ProfileEvents::increment(ProfileEvents::TextIndexPhraseSearches);
             return std::make_shared<TextIndexPostingsCacheCell>(
                 std::make_shared<PaddedPODArray<UInt32>>(phraseSearchBlocked(*search_query)));
         });

@@ -134,8 +134,8 @@ SELECT count() FROM tab_m_blocked WHERE hasPhrase(message, 'needle clickhouse') 
 SYSTEM FLUSH LOGS query_log;
 
 SELECT 
-    ProfileEvents['TextIndexBlockedPositionsBlocksRead'] > 0,
-    ProfileEvents['TextIndexBlockedPositionsBlocksSkipped'] > 0
+    ProfileEvents['TextIndexPositionsBlocksRead'] > 0,
+    ProfileEvents['TextIndexPositionsBlocksRead'] < ProfileEvents['TextIndexPositionsBlocksTotal']
 FROM system.query_log
 WHERE current_database = currentDatabase() AND type = 'QueryFinish' AND log_comment = '02346_blocked_positions_needle'
 ORDER BY event_time_microseconds DESC
