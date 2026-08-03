@@ -41,11 +41,8 @@
 #include <Processors/QueryPlan/NegativeLimitByStep.h>
 #include <Processors/QueryPlan/WindowStep.h>
 #include <Processors/QueryPlan/ReadFromRecursiveCTEStep.h>
-<<<<<<< HEAD
 #include <Processors/QueryPlan/ReadFromQueryResultCacheStep.h>
-=======
 #include <Processors/QueryPlan/ObjectFilterStep.h>
->>>>>>> d9d3710bd9b (Merge pull request #1646 from Altinity/frontport/antalya-26.3/fix_remote_calls)
 #include <QueryPipeline/QueryPipelineBuilder.h>
 
 #include <Interpreters/Context.h>

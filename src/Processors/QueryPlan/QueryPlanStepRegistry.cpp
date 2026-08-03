@@ -56,7 +56,6 @@ void registerFilterStep(QueryPlanStepRegistry & registry);
 void registerTotalsHavingStep(QueryPlanStepRegistry & registry);
 void registerExtremesStep(QueryPlanStepRegistry & registry);
 void registerJoinStep(QueryPlanStepRegistry & registry);
-<<<<<<< HEAD
 void registerShuffleSendStep(QueryPlanStepRegistry & registry);
 void registerShuffleReceiveStep(QueryPlanStepRegistry & registry);
 void registerGatherSendStep(QueryPlanStepRegistry & registry);
@@ -64,9 +63,6 @@ void registerGatherReceiveStep(QueryPlanStepRegistry & registry);
 void registerBroadcastSendStep(QueryPlanStepRegistry & registry);
 void registerBroadcastReceiveStep(QueryPlanStepRegistry & registry);
 void registerReadFromMergeTreeStep(QueryPlanStepRegistry & registry);
-=======
-void registerObjectFilterStep(QueryPlanStepRegistry & registry);
->>>>>>> d9d3710bd9b (Merge pull request #1646 from Altinity/frontport/antalya-26.3/fix_remote_calls)
 
 void registerReadFromTableStep(QueryPlanStepRegistry & registry);
 void registerReadFromTableFunctionStep(QueryPlanStepRegistry & registry);
@@ -113,12 +109,9 @@ void QueryPlanStepRegistry::registerPlanSteps()
     registerReadFromTableFunctionStep(registry);
     registerBuildRuntimeFilterStep(registry);
     registerObjectFilterStep(registry);
-<<<<<<< HEAD
 
 
     registerReadFromStorageStep(registry);
-=======
->>>>>>> d9d3710bd9b (Merge pull request #1646 from Altinity/frontport/antalya-26.3/fix_remote_calls)
 }
 
 }

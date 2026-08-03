@@ -3,12 +3,6 @@ import logging
 import os
 import shutil
 import uuid
-<<<<<<< HEAD
-=======
-import threading
-import time
-from email.errors import HeaderParseError
->>>>>>> d9d3710bd9b (Merge pull request #1646 from Altinity/frontport/antalya-26.3/fix_remote_calls)
 
 import pytest
 
@@ -557,11 +551,6 @@ def test_cluster_default_expression(started_cluster):
     assert result == expected_result
 
 
-<<<<<<< HEAD
-@pytest.mark.parametrize("allow_experimental_analyzer", [0, 1])
-@pytest.mark.parametrize("use_partition_strategy", [False, True])
-def test_hive_partitioning(started_cluster, allow_experimental_analyzer, use_partition_strategy):
-=======
 def test_remote_hedged(started_cluster):
     node = started_cluster.instances["s0_0_0"]
     pure_s3 = node.query(
@@ -614,140 +603,6 @@ def test_remote_no_hedged(started_cluster):
     )
 
     assert TSV(pure_s3) == TSV(s3_distributed)
-
-
-@pytest.mark.parametrize("allow_experimental_analyzer", [0, 1])
-def test_hive_partitioning(started_cluster, allow_experimental_analyzer):
-    node = started_cluster.instances["s0_0_0"]
-
-    node.query(f"SET allow_experimental_analyzer = {allow_experimental_analyzer}")
-
-    for i in range(1, 5):
-        exists = node.query(
-            f"""
-            SELECT
-                count()
-                FROM s3('http://minio1:9001/root/data/hive/key={i}/*', 'minio', '{minio_secret_key}', 'Parquet', 'key Int32, value Int32')
-                GROUP BY ALL
-                FORMAT TSV
-            """
-        )
-        if int(exists) == 0:
-            node.query(
-                f"""
-                INSERT
-                    INTO FUNCTION s3('http://minio1:9001/root/data/hive/key={i}/data.parquet', 'minio', '{minio_secret_key}', 'Parquet', 'key Int32, value Int32')
-                    SELECT {i}, {i}
-                    SETTINGS use_hive_partitioning = 0
-                """
-            )
-
-    settings = "enable_filesystem_cache = 0, use_query_cache = 0, use_cache_for_count_from_files = 0, use_iceberg_metadata_files_cache = 0, use_parquet_metadata_cache = 0, use_page_cache_for_object_storage = 0"
-
-    query_id_full = str(uuid.uuid4())
-    result = node.query(
-        f"""
-        SELECT count()
-            FROM s3('http://minio1:9001/root/data/hive/key=**.parquet', 'minio', '{minio_secret_key}', 'Parquet', 'key Int32, value Int32')
-            WHERE key <= 2
-            FORMAT TSV
-            SETTINGS {settings}, use_hive_partitioning = 0
-        """,
-        query_id=query_id_full,
-    )
-    result = int(result)
-    assert result == 2
-
-    query_id_optimized = str(uuid.uuid4())
-    result = node.query(
-        f"""
-        SELECT count()
-            FROM s3('http://minio1:9001/root/data/hive/key=**.parquet', 'minio', '{minio_secret_key}', 'Parquet', 'key Int32, value Int32')
-            WHERE key <= 2
-            FORMAT TSV
-            SETTINGS {settings}, use_hive_partitioning = 1
-        """,
-        query_id=query_id_optimized,
-    )
-    result = int(result)
-    assert result == 2
-
-    query_id_cluster_full = str(uuid.uuid4())
-    result = node.query(
-        f"""
-        SELECT count()
-            FROM s3Cluster(cluster_simple, 'http://minio1:9001/root/data/hive/key=**.parquet', 'minio', '{minio_secret_key}', 'Parquet', 'key Int32, value Int32')
-            WHERE key <= 2
-            FORMAT TSV
-            SETTINGS {settings}, use_hive_partitioning = 0
-        """,
-        query_id=query_id_cluster_full,
-    )
-    result = int(result)
-    assert result == 2
-
-    query_id_cluster_optimized = str(uuid.uuid4())
-    result = node.query(
-        f"""
-        SELECT count()
-            FROM s3Cluster(cluster_simple, 'http://minio1:9001/root/data/hive/key=**.parquet', 'minio', '{minio_secret_key}', 'Parquet', 'key Int32, value Int32')
-            WHERE key <= 2
-            FORMAT TSV
-            SETTINGS {settings}, use_hive_partitioning = 1
-        """,
-        query_id=query_id_cluster_optimized,
-    )
-    result = int(result)
-    assert result == 2
-
-    node.query("SYSTEM FLUSH LOGS ON CLUSTER 'cluster_simple'")
-
-    full_traffic = node.query(
-        f"""
-        SELECT sum(ProfileEvents['ReadBufferFromS3Bytes'])
-            FROM clusterAllReplicas(cluster_simple, system.query_log)
-            WHERE type='QueryFinish' AND initial_query_id='{query_id_full}'
-            FORMAT TSV
-        """
-    )
-    full_traffic = int(full_traffic)
-    assert full_traffic > 0  # 612*4
-
-    optimized_traffic = node.query(
-        f"""
-        SELECT sum(ProfileEvents['ReadBufferFromS3Bytes'])
-            FROM clusterAllReplicas(cluster_simple, system.query_log)
-            WHERE type='QueryFinish' AND initial_query_id='{query_id_optimized}'
-            FORMAT TSV
-        """
-    )
-    optimized_traffic = int(optimized_traffic)
-    assert optimized_traffic > 0  # 612*2
-    assert full_traffic > optimized_traffic
-
-    cluster_full_traffic = node.query(
-        f"""
-        SELECT sum(ProfileEvents['ReadBufferFromS3Bytes'])
-            FROM clusterAllReplicas(cluster_simple, system.query_log)
-            WHERE type='QueryFinish' AND initial_query_id='{query_id_cluster_full}'
-            FORMAT TSV
-        """
-    )
-    cluster_full_traffic = int(cluster_full_traffic)
-    assert cluster_full_traffic == full_traffic
-
-    cluster_optimized_traffic = node.query(
-        f"""
-        SELECT sum(ProfileEvents['ReadBufferFromS3Bytes'])
-            FROM clusterAllReplicas(cluster_simple, system.query_log)
-            WHERE type='QueryFinish' AND initial_query_id='{query_id_cluster_optimized}'
-            FORMAT TSV
-        """
-    )
-    cluster_optimized_traffic = int(cluster_optimized_traffic)
-    assert cluster_optimized_traffic == optimized_traffic
-
-    node.query("SET allow_experimental_analyzer = DEFAULT")
 
 
 def test_joins(started_cluster):
@@ -915,8 +770,9 @@ def test_joins(started_cluster):
     assert len(res) == 25
 
 
-def test_graceful_shutdown(started_cluster):
->>>>>>> d9d3710bd9b (Merge pull request #1646 from Altinity/frontport/antalya-26.3/fix_remote_calls)
+@pytest.mark.parametrize("allow_experimental_analyzer", [0, 1])
+@pytest.mark.parametrize("use_partition_strategy", [False, True])
+def test_hive_partitioning(started_cluster, allow_experimental_analyzer, use_partition_strategy):
     node = started_cluster.instances["s0_0_0"]
 
     data_path = f"root/data/hive_{allow_experimental_analyzer}/{random_string(6)}"

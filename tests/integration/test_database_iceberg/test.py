@@ -17,11 +17,7 @@ from pyiceberg.table.sorting import SortField, SortOrder
 from pyiceberg.transforms import DayTransform, IdentityTransform
 from pyiceberg.types import (
     DoubleType,
-<<<<<<< HEAD
-=======
     LongType,
-    FloatType,
->>>>>>> d9d3710bd9b (Merge pull request #1646 from Altinity/frontport/antalya-26.3/fix_remote_calls)
     NestedField,
     StringType,
     StructType,
@@ -1150,7 +1146,6 @@ def test_gcs(started_cluster):
         assert "Google cloud storage converts to S3" in str(err.value)
 
 
-<<<<<<< HEAD
 def test_invalid_auth_header_format(started_cluster):
     node = started_cluster.instances["node1"]
 
@@ -1187,23 +1182,11 @@ def test_iceberg_file_progress_callback(started_cluster):
 
     test_ref = f"test_progress_callback_{uuid.uuid4().hex[:8]}"
     table_name = f"{test_ref}_table"
-=======
-# TODO - turn on after merge alternative syntax
-def _test_cluster_joins(started_cluster):
-    node = started_cluster.instances["node1"]
-
-    test_ref = f"test_join_tables_{uuid.uuid4()}"
-    table_name = f"{test_ref}_table"
-    table_name_2 = f"{test_ref}_table_2"
-    table_name_local = f"{test_ref}_table_local"
-
->>>>>>> d9d3710bd9b (Merge pull request #1646 from Altinity/frontport/antalya-26.3/fix_remote_calls)
     root_namespace = f"{test_ref}_namespace"
 
     catalog = load_catalog_impl(started_cluster)
     catalog.create_namespace(root_namespace)
 
-<<<<<<< HEAD
     table = create_table(
         catalog,
         root_namespace,
@@ -1258,7 +1241,22 @@ def _test_cluster_joins(started_cluster):
         f"`IcebergIterator::next` did not invoke the file-progress callback "
         f"(regression of PR #105413 wiring)."
     )
-=======
+
+
+# TODO - turn on after merge alternative syntax
+def _test_cluster_joins(started_cluster):
+    node = started_cluster.instances["node1"]
+
+    test_ref = f"test_join_tables_{uuid.uuid4()}"
+    table_name = f"{test_ref}_table"
+    table_name_2 = f"{test_ref}_table_2"
+    table_name_local = f"{test_ref}_table_local"
+
+    root_namespace = f"{test_ref}_namespace"
+
+    catalog = load_catalog_impl(started_cluster)
+    catalog.create_namespace(root_namespace)
+
     schema = Schema(
         NestedField(
             field_id=1,
@@ -1384,4 +1382,3 @@ def _test_cluster_joins(started_cluster):
     )
 
     assert res == "Jack\tBlack\nJack\tSilver\nJohn\tBlack\nJohn\tSilver\n"
->>>>>>> d9d3710bd9b (Merge pull request #1646 from Altinity/frontport/antalya-26.3/fix_remote_calls)

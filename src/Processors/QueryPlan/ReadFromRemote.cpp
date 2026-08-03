@@ -710,12 +710,9 @@ void ReadFromRemote::addLazyPipe(
         auto remote_query_executor = std::make_shared<RemoteQueryExecutor>(
             std::move(connections), query_string, header, my_context, my_throttler, my_scalars, my_external_tables, stage_to_use,
             my_shard.query_plan, /*extension=*/std::nullopt, my_shard.shard_info.pool);
-<<<<<<< HEAD
         remote_query_executor->setDistributedFanout(my_distributed_fanout);
-=======
         remote_query_executor->setRemoteFunction(my_is_remote_function);
         remote_query_executor->setShardCount(my_shard_count);
->>>>>>> d9d3710bd9b (Merge pull request #1646 from Altinity/frontport/antalya-26.3/fix_remote_calls)
 
         auto pipe = createRemoteSourcePipe(
             remote_query_executor, add_agg_info, add_totals, add_extremes, async_read, async_query_sending, parallel_marshalling_threads);

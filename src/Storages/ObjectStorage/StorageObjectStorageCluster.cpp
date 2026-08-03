@@ -284,11 +284,7 @@ RemoteQueryExecutor::Extension StorageObjectStorageCluster::getTaskIteratorExten
         local_context,
         predicate,
         filter,
-<<<<<<< HEAD
         storage_metadata_snapshot->virtuals.getSampleBlock(VirtualsKind::All, VirtualsMaterializationPlace::Reader).getNamesAndTypesList(),
-=======
-        getVirtualsList(),
->>>>>>> d9d3710bd9b (Merge pull request #1646 from Altinity/frontport/antalya-26.3/fix_remote_calls)
         hive_partition_columns_to_read_from_file_path,
         nullptr,
         local_context->getFileProgressCallback(),
