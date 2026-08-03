@@ -32,8 +32,7 @@ bool ToDateTime::convertImpl(String & out, IParser::Pos & pos)
 
     const auto param = getArgument(function_name, pos);
 
-    auto inner = fmt::format("parseDateTime64BestEffortOrNull(toString({0}),9,'UTC')", param);
-    out = fmt::format("substring(replaceOne(toString({}), ' ', 'T'), 1, 27)", inner);
+    out = fmt::format("parseDateTime64BestEffortOrNull(toString({0}),9,'UTC')", param);
     return true;
 }
 
@@ -55,21 +54,7 @@ bool ToInt::convertImpl(String & out, IParser::Pos & pos)
         return false;
 
     const auto param = getArgument(function_name, pos);
-    /// Bind `param` once via the SQL `(<expr>) AS <alias>` pattern so the input expression
-    /// is evaluated exactly once per row. Otherwise non-deterministic arguments such as
-    /// `rand()` would be evaluated independently in each branch and could produce
-    /// inconsistent results within a single `toint(...)` call.
-    const auto unique = generateUniqueIdentifier();
-    const auto p = "_kql_p_" + unique;
-    const auto s = "_kql_s_" + unique;
-    const auto i = "_kql_i_" + unique;
-    const auto f = "_kql_f_" + unique;
-    out = fmt::format(
-        "multiIf(isNull(({0}) AS {1}), NULL, "
-        "isNotNull(toInt32OrNull(toString({1}) AS {2}) AS {3}), {3}, "
-        "isNotNull(toFloat64OrNull({2}) AS {4}) AND NOT isNaN({4}), "
-        "CAST({4} AS Nullable(Int32)), NULL)",
-        param, p, s, i, f);
+    out = fmt::format("toInt32OrNull(toString({0}))", param);
     return true;
 }
 
@@ -80,21 +65,7 @@ bool ToLong::convertImpl(String & out, IParser::Pos & pos)
         return false;
 
     const auto param = getArgument(function_name, pos);
-    /// See the comment in `ToInt::convertImpl`: bind the input once to keep the
-    /// generated SQL deterministic for non-deterministic arguments.
-    const auto unique = generateUniqueIdentifier();
-    const auto p = "_kql_p_" + unique;
-    const auto s = "_kql_s_" + unique;
-    const auto i = "_kql_i_" + unique;
-    const auto f = "_kql_f_" + unique;
-    out = fmt::format(
-        "multiIf(isNull(({0}) AS {1}), NULL, "
-        "isNotNull(toInt64OrNull(toString({1}) AS {2}) AS {3}), {3}, "
-        "startsWith({2}, '0x') OR startsWith({2}, '0X'), "
-        "reinterpretAsInt64(reverse(unhex(right(leftPad(substr({2}, 3), 16, '0'), 16)))), "
-        "isNotNull(toFloat64OrNull({2}) AS {4}) AND NOT isNaN({4}), "
-        "CAST({4} AS Nullable(Int64)), NULL)",
-        param, p, s, i, f);
+    out = fmt::format("toInt64OrNull(toString({0}))", param);
     return true;
 }
 
@@ -127,10 +98,10 @@ bool ToTimeSpan::convertImpl(String & out, IParser::Pos & pos)
         ++pos;
         try
         {
-            auto result = kqlCallToExpression("time", {arg}, pos);
+            auto result = kqlCallToExpression("time", {arg}, pos.max_depth, pos.max_backtracks);
             out = fmt::format("{}", result);
         }
-        catch (const Exception &)
+        catch (...)
         {
             out = "NULL";
         }
@@ -150,7 +121,7 @@ bool ToDecimal::convertImpl(String & out, IParser::Pos & pos)
     ++pos;
     String res;
     int scale = 0;
-    int precision = 0;
+    int precision;
 
     if (pos->type == TokenType::QuotedIdentifier || pos->type == TokenType::StringLiteral)
     {

@@ -8,5 +8,4 @@ WHERE (SELECT count() FROM system.one WHERE number = 2) is NULL;
 
 SELECT *
 FROM numbers(2)
-WHERE (SELECT count() FROM system.one WHERE number = 2) is NULL
-ORDER BY all;
+WHERE (SELECT count() FROM system.one WHERE number = 2) is NULL;

@@ -10,17 +10,7 @@ namespace DB
 {
 namespace
 {
-    void formatIpPrefixBits(const std::optional<MaskBits> & ipv4_prefix_bits,
-                            const std::optional<MaskBits> & ipv6_prefix_bits, WriteBuffer & ostr)
-    {
-        if (ipv4_prefix_bits)
-            ostr << " IPV4_PREFIX_BITS " << static_cast<UInt64>(*ipv4_prefix_bits);
-        if (ipv6_prefix_bits)
-            ostr << " IPV6_PREFIX_BITS " << static_cast<UInt64>(*ipv6_prefix_bits);
-    }
-
-    void formatKeyType(const QuotaKeyType & key_type, const std::optional<MaskBits> & ipv4_prefix_bits,
-                       const std::optional<MaskBits> & ipv6_prefix_bits, WriteBuffer & ostr, const IAST::FormatSettings &)
+    void formatKeyType(const QuotaKeyType & key_type, WriteBuffer & ostr, const IAST::FormatSettings &)
     {
         const auto & type_info = QuotaKeyTypeInfo::get(key_type);
         if (key_type == QuotaKeyType::NONE)
@@ -44,9 +34,6 @@ namespace
         }
 
         ostr << type_info.name;
-
-        if (key_type == QuotaKeyType::IP_ADDRESS || key_type == QuotaKeyType::FORWARDED_IP_ADDRESS)
-            formatIpPrefixBits(ipv4_prefix_bits, ipv6_prefix_bits, ostr);
     }
 
 
@@ -65,7 +52,7 @@ namespace
 
     void formatRenameTo(const String & new_name, WriteBuffer & ostr, const IAST::FormatSettings &)
     {
-        ostr << " RENAME TO " << backQuoteIfNeed(new_name);
+        ostr << " RENAME TO " << backQuote(new_name);
     }
 
 
@@ -146,10 +133,10 @@ String ASTCreateQuotaQuery::getID(char) const
 
 ASTPtr ASTCreateQuotaQuery::clone() const
 {
-    auto res = make_intrusive<ASTCreateQuotaQuery>(*this);
+    auto res = std::make_shared<ASTCreateQuotaQuery>(*this);
 
     if (roles)
-        res->roles = boost::static_pointer_cast<ASTRolesOrUsersSet>(roles->clone());
+        res->roles = std::static_pointer_cast<ASTRolesOrUsersSet>(roles->clone());
 
     return res;
 }
@@ -187,15 +174,7 @@ void ASTCreateQuotaQuery::formatImpl(WriteBuffer & ostr, const FormatSettings & 
         formatRenameTo(new_name, ostr, settings);
 
     if (key_type)
-        formatKeyType(*key_type, ipv4_prefix_bits, ipv6_prefix_bits, ostr, settings);
-    else if (ipv4_prefix_bits || ipv6_prefix_bits)
-    {
-        /// `ALTER QUOTA q IPV4_PREFIX_BITS 16` does not include `KEYED BY`, so
-        /// `key_type` is unset. We still need to format the prefix bits so that
-        /// `ON CLUSTER` distribution (which serializes via `formatWithSecretsOneLine`)
-        /// carries the option to replicas.
-        formatIpPrefixBits(ipv4_prefix_bits, ipv6_prefix_bits, ostr);
-    }
+        formatKeyType(*key_type, ostr, settings);
 
     formatIntervalsWithLimits(all_limits, ostr, settings);
 

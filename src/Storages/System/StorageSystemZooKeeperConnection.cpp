@@ -1,5 +1,4 @@
 #include <Interpreters/Context.h>
-#include <Storages/System/SystemTableSourceRegistry.h>
 #include <Interpreters/ZooKeeperConnectionLog.h>
 #include <DataTypes/DataTypeArray.h>
 #include <DataTypes/DataTypeEnum.h>
@@ -42,7 +41,6 @@ ColumnsDescription StorageSystemZooKeeperConnection::getColumnsDescription()
         },
         /* 11*/ {"availability_zone", std::make_shared<DataTypeString>(), "Availability zone"},
         /* 12*/ {"session_timeout_ms", std::make_shared<DataTypeUInt64>(), "Session timeout (in milliseconds)"},
-        /* 13*/ {"last_zxid_seen", std::make_shared<DataTypeInt64>(), "Last zxid seen by the current session."},
     };
 }
 
@@ -79,7 +77,6 @@ void StorageSystemZooKeeperConnection::fillData(MutableColumns & res_columns, Co
             columns[10]->insert(ZooKeeperConnectionLog::getEnabledFeatureFlags(*zookeeper));
             columns[11]->insert(zookeeper->getConnectedHostAvailabilityZone());
             columns[12]->insert(zookeeper->getSessionTimeoutMS());
-            columns[13]->insert(zookeeper->getLastZXIDSeen());
         }
     };
 
@@ -94,6 +91,3 @@ void StorageSystemZooKeeperConnection::fillData(MutableColumns & res_columns, Co
 }
 
 }
-
-/// Register the source file of this system table for `system.documentation`.
-namespace DB { REGISTER_SYSTEM_TABLE_SOURCE(StorageSystemZooKeeperConnection) }

@@ -3,42 +3,14 @@
 #include <Parsers/SelectUnionMode.h>
 #include <IO/Operators.h>
 #include <Parsers/ASTSelectQuery.h>
-#include <Parsers/QueryParameterVisitor.h>
 
 
 namespace DB
 {
 
-namespace
-{
-
-/// `as<ASTSelectQuery>()` is an exact typeid check, so a derived or nested child of
-/// `list_of_selects` (interpreter passes substitute both) would be skipped and its query
-/// parameters lost. The last branch is the general answer; the first two only keep the memo.
-
-bool childHasQueryParameters(const ASTPtr & child)
-{
-    if (const auto * select_node = child->as<ASTSelectQuery>())
-        return select_node->hasQueryParameters();
-    if (const auto * union_node = child->as<ASTSelectWithUnionQuery>())
-        return union_node->hasQueryParameters();
-    return !analyzeReceiveQueryParams(child).empty();
-}
-
-NameToNameMap childQueryParameters(const ASTPtr & child)
-{
-    if (const auto * select_node = child->as<ASTSelectQuery>())
-        return select_node->getQueryParameters();
-    if (const auto * union_node = child->as<ASTSelectWithUnionQuery>())
-        return union_node->getQueryParameters();
-    return analyzeReceiveQueryParamsWithType(child);
-}
-
-}
-
 ASTPtr ASTSelectWithUnionQuery::clone() const
 {
-    auto res = make_intrusive<ASTSelectWithUnionQuery>(*this);
+    auto res = std::make_shared<ASTSelectWithUnionQuery>(*this);
     res->children.clear();
 
     res->list_of_selects = list_of_selects->clone();
@@ -88,14 +60,11 @@ void ASTSelectWithUnionQuery::formatQueryImpl(WriteBuffer & ostr, const FormatSe
             || mode == SelectUnionMode::EXCEPT_DISTINCT;
     };
 
-    auto get_mode = [&](ASTs::const_iterator it) -> SelectUnionMode
+    auto get_mode = [&](ASTs::const_iterator it)
     {
-        if (is_normalized)
-            return union_mode;
-        auto index = static_cast<size_t>(it - list_of_selects->children.begin()) - 1;
-        if (index >= list_of_modes.size())
-            return union_mode;
-        return list_of_modes[index];
+        return is_normalized
+            ? union_mode
+            : list_of_modes[it - list_of_selects->children.begin() - 1];
     };
 
     for (ASTs::const_iterator it = list_of_selects->children.begin(); it != list_of_selects->children.end(); ++it)
@@ -125,29 +94,10 @@ void ASTSelectWithUnionQuery::formatQueryImpl(WriteBuffer & ostr, const FormatSe
         if (union_node)
             need_parens = true;
 
-        /// When `settings_ast` is set on the whole SelectWithUnionQuery (inherited
-        /// from ASTQueryWithOutput), or a parent query (e.g. EXPLAIN) will append
-        /// SETTINGS after this node (signalled via `frame.parent_has_trailing_settings`),
-        /// and no `out_file` or `format_ast` precedes it in the formatted output,
-        /// the base class formats `SETTINGS ...` immediately after the UNION chain.
-        /// Without parentheses around individual SELECTs, the re-parser's
-        /// `ParserSelectQuery` would consume SETTINGS as part of the last individual
-        /// SELECT, moving it from the outer query to the last SelectQuery and breaking
-        /// the formatting roundtrip.
-        /// When `out_file` or `format_ast` is present, they are formatted before
-        /// SETTINGS, and `ParserSelectQuery` stops before them (it doesn't handle
-        /// INTO OUTFILE or FORMAT), so SETTINGS remains on the outer query.
-        /// Wrapping each SELECT in parentheses prevents this: the parser treats
-        /// each `(SELECT ...)` as a self-contained subquery, and SETTINGS stays on
-        /// the outer query. `ParserUnionQueryElement` flattens single-child
-        /// subqueries back to `SelectQuery`, preserving the AST structure.
-        if ((settings_ast || frame.parent_has_trailing_settings) && !out_file && !format_ast && (*it)->as<ASTSelectQuery>())
-            need_parens = true;
-
         if (need_parens)
         {
             ostr << indent_str;
-            auto subquery = make_intrusive<ASTSubquery>(*it);
+            auto subquery = std::make_shared<ASTSubquery>(*it);
             subquery->format(ostr, settings, state, frame);
         }
         else
@@ -170,10 +120,13 @@ bool ASTSelectWithUnionQuery::hasQueryParameters() const
     {
         for (const auto & child : list_of_selects->children)
         {
-            if (childHasQueryParameters(child))
+            if (auto * select_node = child->as<ASTSelectQuery>())
             {
-                has_query_parameters = true;
-                return has_query_parameters.value();
+                if (select_node->hasQueryParameters())
+                {
+                    has_query_parameters = true;
+                    return has_query_parameters.value();
+                }
             }
         }
         has_query_parameters = false;
@@ -191,8 +144,14 @@ NameToNameMap ASTSelectWithUnionQuery::getQueryParameters() const
 
     for (const auto & child : list_of_selects->children)
     {
-        NameToNameMap child_params = childQueryParameters(child);
-        query_params.insert(child_params.begin(), child_params.end());
+        if (auto * select_node = child->as<ASTSelectQuery>())
+        {
+            if (select_node->hasQueryParameters())
+            {
+                NameToNameMap select_node_param = select_node->getQueryParameters();
+                query_params.insert(select_node_param.begin(), select_node_param.end());
+            }
+        }
     }
 
     return query_params;
