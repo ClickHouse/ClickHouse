@@ -1520,8 +1520,6 @@ class _ResultS3:
             # random delay (0-2s) to reduce contention and minimize race conditions
             # when multiple concurrent jobs attempt to update the workflow report
             time.sleep(random.uniform(0, 2))
-        else:
-            raise RuntimeError(f"Failed to upload workflow result after {MAX_ATTEMPTS} attempts")
 
         print(f"Workflow status changed: [{prev_status}] -> [{new_status}]")
         if prev_status != new_status:
