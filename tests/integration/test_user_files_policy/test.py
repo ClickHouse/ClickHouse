@@ -1140,3 +1140,34 @@ def test_rename_files_after_processing_rejected_on_non_plain_local():
         ).strip()
         == "1"
     )
+
+
+@pytest.mark.parametrize("node", [node_s3, node_encrypted], ids=["s3", "encrypted"])
+def test_local_data_lake_rejected_before_touching_the_filesystem(node):
+    """A local data lake (`IcebergLocal` / `DeltaLakeLocal` / `PaimonLocal`) reads through
+    `LocalObjectStorage`, i.e. the host filesystem namespace, so a non-plain-local
+    `user_files_policy` disk must be rejected.
+
+    Regression for the ordering of that rejection: it used to happen in
+    `DataLakeConfiguration::assertLocalPathCorrect`, i.e. only *after*
+    `StorageLocalConfiguration::createObjectStorage` had already constructed
+    `LocalObjectStorage`, whose constructor eagerly calls `fs::create_directories` on the key
+    prefix. An unsupported configuration therefore mutated the local filesystem before the
+    query failed. The guard must fail closed before the local backend is constructed."""
+    err = node.query_and_get_error(
+        "CREATE TABLE local_data_lake (x UInt64) ENGINE = IcebergLocal('lake_dir')"
+    )
+    assert "not a plain local filesystem disk" in err, err
+
+    # Nothing must have been created on the host filesystem for the rejected table.
+    listing = node.exec_in_container(
+        ["bash", "-c", "find / -xdev -maxdepth 6 -name 'lake_dir' -print || true"]
+    )
+    assert listing.strip() == "", f"rejected query created local paths: {listing}"
+
+    # A plain local policy disk must not be over-rejected: the disk guard passes and the
+    # failure is about the missing Iceberg metadata, not the `user_files_policy` disk.
+    err_local = node_local.query_and_get_error(
+        "CREATE TABLE local_data_lake (x UInt64) ENGINE = IcebergLocal('lake_dir')"
+    )
+    assert "not a plain local filesystem disk" not in err_local, err_local
