@@ -96,7 +96,7 @@ Names PackedFilesReader::getFileNames() const
     return res;
 }
 
-static ReadSettings patchSettings(ReadSettings settings)
+ReadSettings PackedFilesReader::patchSettings(ReadSettings settings)
 {
     settings.local_fs_settings.direct_io_threshold = 0;
     if (settings.local_fs_settings.method == LocalFSReadMethod::mmap)
@@ -118,9 +118,6 @@ std::unique_ptr<ReadBufferFromFileBase> PackedFilesReader::readFile(
     const auto offset = it->second.offset;
     const auto size = it->second.size;
 
-    /// ReadBufferFromFileView doesn't support reading with mmap and direct io methods, because
-    /// they require special alignment which cannot be achieved while reading archive file.
-    /// So just disable them.
     auto in = disk->readFile(data_file_name, patchSettings(settings), read_hint);
     return viewMember(std::move(in), file_name, offset, size);
 }

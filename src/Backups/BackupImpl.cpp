@@ -1187,7 +1187,7 @@ std::unique_ptr<ReadBufferFromFileBase> BackupImpl::readPackedMember(const Membe
 {
     /// TODO(backup-packing): opens the pack per member (a ranged GET each on S3); a batch-restore API could
     /// open each pack once and slice all its members.
-    return PackedFilesReader::viewMember(reader->readFile(member.pack_object), member.pack_object, member.offset, member.size);
+    return PackedFilesReader::viewMember(reader->readFileForView(member.pack_object), member.pack_object, member.offset, member.size);
 }
 
 std::unique_ptr<ReadBufferFromFileBase>
