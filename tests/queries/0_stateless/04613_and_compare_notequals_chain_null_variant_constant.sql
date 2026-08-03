@@ -34,11 +34,16 @@ SELECT count() > 0 FROM (
 ) WHERE explain ILIKE '%function_name: greaterOrEquals%';
 
 -- notEquals is what feeds the NOT IN conversion; a NULL-valued constant must not reach it.
+-- Assert the exact split: the NULL operand stays one `notEquals`, the three real values become
+-- a single `notIn` over exactly ('p','q','r'). A plan where the pass declined fails this.
 SELECT 'notEquals_null_variant';
-SELECT count() > 0 FROM (
+SELECT countIf(explain ILIKE '%function_name: notEquals%') = 1
+   AND countIf(explain ILIKE '%function_name: notIn%') = 1
+   AND countIf(explain ILIKE '%constant_value: Tuple_(\'p\', \'q\', \'r\')%') = 1
+FROM (
     EXPLAIN QUERY TREE
     SELECT * FROM t_04613 WHERE (b != _CAST('ᴺᵁᴸᴸ', 'Variant(Int8, String)')) AND (b != 'p') AND (b != 'q') AND (b != 'r')
-) WHERE explain ILIKE '%function_name: notEquals%';
+);
 
 -- equals against a NULL-valued constant inside an AND chain.
 SELECT 'equals_null_variant';
@@ -63,11 +68,16 @@ SELECT count() > 0 FROM (
 ) WHERE explain ILIKE '%function_name: and%';
 
 -- A NULL-valued constant mixed with a real notEquals chain long enough to trigger NOT IN conversion:
--- the real constants still convert to NOT IN; only the NULL operand is kept as-is.
+-- the real constants still convert to NOT IN; only the NULL operand is kept as-is. The unrelated
+-- `a >= 'm'` conjunct must survive untouched, so require all three nodes exactly once.
 SELECT 'mixed_null_and_real_notequals';
-SELECT count() > 0 FROM (
+SELECT countIf(explain ILIKE '%function_name: notEquals%') = 1
+   AND countIf(explain ILIKE '%function_name: notIn%') = 1
+   AND countIf(explain ILIKE '%constant_value: Tuple_(\'p\', \'q\', \'r\')%') = 1
+   AND countIf(explain ILIKE '%function_name: greaterOrEquals%') = 1
+FROM (
     EXPLAIN QUERY TREE
     SELECT * FROM t_04613 WHERE (b != _CAST('ᴺᵁᴸᴸ', 'Variant(Int8, String)')) AND (b != 'p') AND (b != 'q') AND (b != 'r') AND (a >= 'm')
-) WHERE explain ILIKE '%notIn%' OR explain ILIKE '%function_name: notEquals%';
+);
 
 DROP TABLE t_04613;
