@@ -887,26 +887,12 @@ StorageObjectStorageSource::ReaderHolder StorageObjectStorageSource::createReade
                     if (!column.second.second.type->isNullable())
                         continue;
 
-<<<<<<< HEAD
-                /// Skip columns produced by prewhere or row-level filter expressions —
-                /// they are computed at read time, not stored in the file.
-                if (format_filter_info
-                    && ((format_filter_info->prewhere_info && column_name == format_filter_info->prewhere_info->prewhere_column_name)
-                        || (format_filter_info->row_level_filter && column_name == format_filter_info->row_level_filter->column_name)))
-                    continue;
-=======
-                    /// With View over Iceberg table we have someting like 'materialize(time)' as column_name
-                    /// Simple cheap check
-                    if (column_name.starts_with("materialize(") && column_name.ends_with(")"))
-                        continue;
-
                     /// Skip columns produced by prewhere or row-level filter expressions —
                     /// they are computed at read time, not stored in the file.
                     if (format_filter_info
                         && ((format_filter_info->prewhere_info && column_name == format_filter_info->prewhere_info->prewhere_column_name)
                             || (format_filter_info->row_level_filter && column_name == format_filter_info->row_level_filter->column_name)))
                         continue;
->>>>>>> 2d33dd670ac (Merge pull request #1991 from Altinity/fix/antalya-26.3/stateless-manifests)
 
                     /// Column is nullable and absent in file
                     constant_columns_with_values[column.second.first] =
