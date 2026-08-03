@@ -1178,7 +1178,7 @@ For input it uses the following correspondence between BSON types and ClickHouse
 | `\x12` int64                             | [Int64/UInt64](/sql-reference/data-types/int-uint.md)/[Decimal64](/sql-reference/data-types/decimal.md)/[DateTime64](/sql-reference/data-types/datetime64.md)                                                       |
 
 Other BSON types are not supported. Additionally, it performs conversion between different integer types. 
-For example, it is possible to insert a BSON `int32` value into ClickHouse as [`UInt8`](../../sql-reference/data-types/int-uint.md).
+For example, it is possible to insert a BSON `int32` value into ClickHouse as [`UInt8`](/reference/data-types/int-uint).
 
 Big integers and decimals such as `Int128`/`UInt128`/`Int256`/`UInt256`/`Decimal128`/`Decimal256` can be parsed from a BSON Binary value with the `\x00` binary subtype. 
 In this case, the format will validate that the size of the binary data equals the size of the expected value.
@@ -1239,8 +1239,8 @@ BSON is a binary format that does not display in a human-readable form on the te
 
 | Setting                                                                                                                                                                                               | Description                                                                                  | Default  |
 |-------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------|----------------------------------------------------------------------------------------------|----------|
-| [`output_format_bson_string_as_string`](../../operations/settings/settings-formats.md/#output_format_bson_string_as_string)                                                                           | Use BSON String type instead of Binary for String columns.                                   | `false`  |
-| [`input_format_bson_skip_fields_with_unsupported_types_in_schema_inference`](../../operations/settings/settings-formats.md/#input_format_bson_skip_fields_with_unsupported_types_in_schema_inference) | Allow skipping columns with unsupported types while schema inference for format BSONEachRow. | `false`  |
+| [`output_format_bson_string_as_string`](/reference/settings/formats/output-format#output_format_bson_string_as_string)                                                                           | Use BSON String type instead of Binary for String columns.                                   | `false`  |
+| [`input_format_bson_skip_fields_with_unsupported_types_in_schema_inference`](/reference/settings/formats/input-format#input_format_bson_skip_fields_with_unsupported_types_in_schema_inference) | Allow skipping columns with unsupported types while schema inference for format BSONEachRow. | `false`  |
 )DOCS_MD"});
 }
 

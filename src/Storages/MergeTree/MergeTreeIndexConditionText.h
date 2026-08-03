@@ -194,6 +194,9 @@ private:
     static bool requiresReadingAllTokens(const RPNElement & element);
 
     Block header;
+    /// A private clone of the index tokenizer when it is stateful, so concurrent conditions do not
+    /// share mutable parsing state; null otherwise.
+    std::shared_ptr<const ITokenizer> owned_tokenizer;
     TokenizerPtr tokenizer;
     RPN rpn;
     PreparedSetsPtr prepared_sets;
