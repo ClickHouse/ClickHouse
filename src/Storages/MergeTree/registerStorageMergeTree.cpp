@@ -945,15 +945,20 @@ static StoragePtr create(const StorageFactory::Arguments & args)
                     if (is_fresh_definition && !session_allows)
                         CompressionCodecFactory::instance().validateCodecString(codec, /*sanity_check=*/ false, /*allow_experimental_codecs=*/ false);
                 }
-                else if (!session_allows || !default_profile_allows)
+                else
                 {
+                    /// A config-inherited value is not marked as `changed`, so `checkCompressionCodecSettings`
+                    /// will never look at it. This is the only place that rejects a codec which can never work
+                    /// on an untyped stream (e.g. `T64`, via `requiresColumnTypeToCompress`), so that part of
+                    /// the validation runs unconditionally; only the experimental part follows the gates.
+                    const bool experimental_allowed = session_allows && default_profile_allows;
                     try
                     {
-                        CompressionCodecFactory::instance().validateCodecString(codec, /*sanity_check=*/ false, /*allow_experimental_codecs=*/ false);
+                        CompressionCodecFactory::instance().validateCodecString(codec, /*sanity_check=*/ false, experimental_allowed);
                     }
                     catch (Exception & e)
                     {
-                        if (session_allows)
+                        if (session_allows && !experimental_allowed)
                             e.addMessage(
                                 "The value of the setting '{}' is inherited from the <merge_tree> config defaults and is not stored "
                                 "in the table metadata, so enabling 'allow_experimental_codecs' only in the session is not enough: "
