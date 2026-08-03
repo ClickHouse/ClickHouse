@@ -1215,6 +1215,36 @@ void RemoteQueryExecutor::handleDrainPacket(Packet packet)
                 extremes = adaptBlockStructure(packet.block, *header);
             break;
 
+        case Protocol::Server::MergeTreeReadTaskRequest:
+        case Protocol::Server::MergeTreeAllRangesAnnouncement:
+        case Protocol::Server::ReadTaskRequest:
+            /// A late worker can still ask for work while we are draining: it started slightly after
+            /// the initiator satisfied `LIMIT`, so its first coordinator request crosses our teardown.
+            ///
+            /// We deliberately do not answer it, and answering is in fact impossible here: every path
+            /// into the drain loop runs `tryCancel` first (see `finish`), which sets `cancelled` in
+            /// `MultiplexedConnections` / `HedgedConnections`, and all three response senders
+            /// (`sendMergeTreeReadTaskResponse`, `sendMergeTreeAllRangesAnnouncementResponse`,
+            /// `sendClusterFunctionReadTaskResponse`) return without writing anything once `cancelled`
+            /// is set. Handing out fresh ranges to a replica we have just asked to stop would also be
+            /// wrong on its own.
+            ///
+            /// Dropping the request does not strand the worker either: the same `tryCancel` already
+            /// wrote a `Cancel` packet to *every* replica connection (`MultiplexedConnections::sendCancel`
+            /// / `HedgedConnections::sendCancel` iterate over all replica states). The worker blocks for
+            /// its response in `TCPHandler::receivePartitionMergeTreeReadTaskResponse` /
+            /// `receiveAllRangesAnnouncementResponse` / `receiveClusterFunctionReadTaskResponse`, each of
+            /// which handles `Protocol::Client::Cancel` by calling `processCancel` — so the pending
+            /// `Cancel` is what unblocks the worker, and it never waits for `receive_timeout`.
+            ///
+            /// Disconnecting the connection instead would be actively harmful: it discards that
+            /// replica's trailing `Progress` / `ProfileInfo`, which is exactly the under-counted
+            /// `rows_read` this drain exists to fix.
+            if (log)
+                LOG_TRACE(log, "Dropping coordinator packet {} received during drain; the replica is released by the `Cancel` already sent to it",
+                    Protocol::Server::toString(packet.type));
+            break;
+
         default:
             break;
     }
