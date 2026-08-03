@@ -407,11 +407,12 @@ ReturnType  deserializeTextEscapedAndRawImpl(IColumn & column, ReadBuffer & istr
         /// It can happen only if there is a string instead of a number
         /// or if someone uses tab or LF in TSV null_representation.
         /// In the first case we cannot continue reading anyway. The second case seems to be unlikely.
-        /// We also should delete incorrectly deserialized value from nested column.
-        nested_column.popBack(1);
-
         if constexpr (!throw_exception)
+        {
+            /// We also should delete incorrectly deserialized value from nested column.
+            nested_column.popBack(1);
             return ReturnType(false);
+        }
 
         if (null_representation.contains('\t') || null_representation.contains('\n'))
             throw DB::Exception(ErrorCodes::CANNOT_READ_ALL_DATA, "TSV custom null representation "
@@ -420,6 +421,10 @@ ReturnType  deserializeTextEscapedAndRawImpl(IColumn & column, ReadBuffer & istr
             throw DB::Exception(ErrorCodes::CANNOT_READ_ALL_DATA, "TSV custom null representation "
                 "containing '\\r' may not work correctly for large input.");
 
+        /// The incorrectly deserialized value is still the last row of the nested column here: it is what
+        /// the message below reports, and popping it first would either address an unrelated earlier row or,
+        /// for the first row of a block, underflow to `size() - 1 == SIZE_MAX`. The column is discarded with
+        /// the exception anyway.
         WriteBufferFromOwnString parsed_value;
         if constexpr (escaped)
             nested_serialization->serializeTextEscaped(nested_column, nested_column.size() - 1, parsed_value, settings);
@@ -799,16 +804,19 @@ ReturnType deserializeTextCSVImpl(IColumn & column, ReadBuffer & istr, const For
         /// It can happen only if there is an unquoted string instead of a number
         /// or if someone uses csv delimiter, LF or CR in CSV null representation.
         /// In the first case we cannot continue reading anyway. The second case seems to be unlikely.
-        /// We also should delete incorrectly deserialized value from nested column.
-        nested_column.popBack(1);
-
         if constexpr (!throw_exception)
+        {
+            /// We also should delete incorrectly deserialized value from nested column.
+            nested_column.popBack(1);
             return ReturnType(false);
+        }
 
         if (null_representation.contains(settings.csv.delimiter) || null_representation.contains('\r') || null_representation.contains('\n'))
             throw DB::Exception(ErrorCodes::CANNOT_READ_ALL_DATA, "CSV custom null representation containing "
                                        "format_csv_delimiter, '\\r' or '\\n' may not work correctly for large input.");
 
+        /// See the comment in `deserializeTextEscapedAndRawImpl`: the incorrectly deserialized value must
+        /// still be the last row of the nested column when it is reported here.
         WriteBufferFromOwnString parsed_value;
         nested_serialization->serializeTextCSV(nested_column, nested_column.size() - 1, parsed_value, settings);
         throw DB::Exception(ErrorCodes::CANNOT_READ_ALL_DATA, "Error while parsing \"{}{}\" as Nullable"
