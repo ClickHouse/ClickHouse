@@ -3518,10 +3518,13 @@ This setting applies to [SELECT ... JOIN](/sql-reference/statements/select/join)
 operations and the [Join](/engines/table-engines/special/join) table engine.
 
 If a query contains multiple joins, ClickHouse checks this setting for every
-intermediate result. When the limit is reached, the action depends on the
-chosen [`join_algorithm`](/reference/settings/session-settings/join#join_algorithm) — see
-that setting for the per-algorithm behavior (spill, re-partition, switch, or
-throw/break per [`join_overflow_mode`](/reference/settings/session-settings/join#join_overflow_mode)).
+intermediate result. It is a hard cap for every `join_algorithm`: when the limit
+is reached the query throws or breaks according to
+[`join_overflow_mode`](/reference/settings/session-settings/join#join_overflow_mode).
+It never makes a join spill to disk — that decision belongs to
+[`max_bytes_before_external_join`](/operations/settings/settings#max_bytes_before_external_join)
+and
+[`max_bytes_ratio_before_external_join`](/operations/settings/settings#max_bytes_ratio_before_external_join).
 
 Possible values:
 
@@ -3536,10 +3539,16 @@ This setting applies to [SELECT ... JOIN](/sql-reference/statements/select/join)
 operations and the [Join table engine](/engines/table-engines/special/join).
 
 If a query contains multiple joins, ClickHouse checks this setting for every
-intermediate result. When the limit is reached, the action depends on the
-chosen [`join_algorithm`](/reference/settings/session-settings/join#join_algorithm) — see
-that setting for the per-algorithm behavior (spill, re-partition, switch, or
-throw/break per [`join_overflow_mode`](/reference/settings/session-settings/join#join_overflow_mode)).
+intermediate result. It is a hard cap for every `join_algorithm`: when the limit
+is reached the query throws or breaks according to
+[`join_overflow_mode`](/reference/settings/session-settings/join#join_overflow_mode).
+It never makes a join spill to disk — that decision belongs to
+[`max_bytes_before_external_join`](/operations/settings/settings#max_bytes_before_external_join)
+and
+[`max_bytes_ratio_before_external_join`](/operations/settings/settings#max_bytes_ratio_before_external_join).
+Because it is a cap rather than a trigger, setting it at or below an explicitly
+set `max_bytes_before_external_join` makes the query fail before the join can
+spill at all; ClickHouse logs a warning for that combination.
 
 Possible values:
 
@@ -3552,11 +3561,10 @@ Defines what action ClickHouse performs when a join reaches any of the following
 - [max_bytes_in_join](/reference/settings/session-settings/max-bytes#max_bytes_in_join)
 - [max_rows_in_join](/reference/settings/session-settings/max-rows#max_rows_in_join)
 
-This setting is honored only by the `hash` and `parallel_hash`
-[`join_algorithm`](/reference/settings/session-settings/join#join_algorithm) values. Other
-algorithms (for example, `partial_merge`, `grace_hash`, `auto`) handle the
-limits differently — by spilling to disk, re-partitioning, or switching
-strategy — see
+Every hash-based [`join_algorithm`](/reference/settings/session-settings/join#join_algorithm)
+value honors this setting, including the ones that spill to disk: reaching the
+limit stops the query rather than triggering a spill. `partial_merge` still
+handles the limits by switching strategy — see
 [`join_algorithm`](/reference/settings/session-settings/join#join_algorithm).
 
 Possible values:
@@ -3609,7 +3617,9 @@ Possible values:
 
  [Grace hash join](https://en.wikipedia.org/wiki/Hash_join#Grace_hash_join) is used.  Grace hash provides an algorithm option that provides performant complex joins while limiting memory use.
 
- The first phase of a grace join reads the right table and splits it into N buckets depending on the hash value of key columns (initially, N is `grace_hash_join_initial_buckets`). This is done in a way to ensure that each bucket can be processed independently. Rows from the first bucket are added to an in-memory hash table while the others are saved to disk. If the hash table grows beyond the memory limit (e.g., as set by [`max_bytes_in_join`](/reference/settings/session-settings/max-bytes#max_bytes_in_join), the number of buckets is increased and the assigned bucket for each row. Any rows which don't belong to the current bucket are flushed and reassigned.
+ This value means "force an external hash join": the join is external from the first block on, instead of starting in memory and converting once it outgrows the spill threshold the way `hash` and `parallel_hash` do. It requires a non-zero [`max_bytes_before_external_join`](/operations/settings/settings#max_bytes_before_external_join) or [`max_bytes_ratio_before_external_join`](/operations/settings/settings#max_bytes_ratio_before_external_join), and throws otherwise.
+
+ The first phase of a grace join reads the right table and splits it into N buckets depending on the hash value of key columns (initially, N is `grace_hash_join_initial_buckets`). This is done in a way to ensure that each bucket can be processed independently. Rows from the first bucket are added to an in-memory hash table while the others are saved to disk. If the hash table grows beyond the spill threshold, the number of buckets is increased along with the assigned bucket for each row. Any rows which don't belong to the current bucket are flushed and reassigned.
 
  Supports `INNER/LEFT/RIGHT/FULL ALL/ANY JOIN`.
 
@@ -8302,7 +8312,7 @@ Max backoff in milliseconds for parts update when using `select_sequential_consi
 Max retries for parts update when using `select_sequential_consistency` with `SharedMergeTree`. Only available in ClickHouse Cloud.
 )", 0) \
     DECLARE(UInt64, max_bytes_before_external_join, 0, R"(
-If set to a non-zero value and `join_algorithm` is `hash`, `parallel_hash`, `default`, or `auto`, the hash join will automatically be converted to grace hash join to enable spilling to disk when the right-side data exceeds this many bytes. When set to 0 (default), this absolute byte threshold is disabled, but automatic spilling may still occur via `max_bytes_ratio_before_external_join` (which defaults to `0.5`); set both to `0` to fully disable automatic spilling. It prevents read in order through join optimization.
+If set to a non-zero value, the hash join will automatically be converted to grace hash join to enable spilling to disk when the right-side data exceeds this many bytes. Together with `max_bytes_ratio_before_external_join` this is the single spill trigger for every hash-based `join_algorithm`, including `grace_hash`, which requires one of the two to be non-zero. When set to 0 (default), this absolute byte threshold is disabled, but automatic spilling may still occur via `max_bytes_ratio_before_external_join` (which defaults to `0.5`); set both to `0` to fully disable automatic spilling. It prevents read in order through join optimization.
 )", 0) \
     DECLARE(Double, max_bytes_ratio_before_external_join, 0.5, R"(
 The ratio of available memory that is allowed for `JOIN`. Once reached, the hash join will be converted to grace hash join to spill the right-side data to disk.
@@ -8311,7 +8321,7 @@ For example, if set to `0.6`, `JOIN` will allow using `60%` of the available mem
 
 If both `max_bytes_before_external_join` and `max_bytes_ratio_before_external_join` are set, the smaller resulting threshold is used. If the ratio is `0`, only the absolute setting applies.
 
-Has effect only when `join_algorithm` is `hash`, `parallel_hash`, `default`, or `auto` and a temporary data path is configured.
+Has effect for every hash-based `join_algorithm`, including `grace_hash`, provided a temporary data path is configured.
 )", 0) \
     DECLARE(Bool, enable_join_fixed_hash_table_conversion, true, R"(
 Enable converting the hash table to a flat array for joins when the key is a single integer with a small value range.

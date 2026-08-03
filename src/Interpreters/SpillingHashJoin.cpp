@@ -15,6 +15,38 @@ extern const Event JoinSpillingHashJoinSwitchedToGraceJoin;
 namespace DB
 {
 
+namespace ErrorCodes
+{
+extern const int BAD_ARGUMENTS;
+}
+
+namespace
+{
+
+/// `max_rows_in_join` / `max_bytes_in_join` are hard caps: the join throws (or breaks, depending on
+/// `join_overflow_mode`) when the right side grows past them. A cap at or below the spill threshold is
+/// still honored, but it makes the spilling unreachable, which is rarely what the user meant - it is
+/// what `max_bytes_in_join` used to mean on the standalone `grace_hash` path. Warn rather than reject:
+/// a tight cap is a legitimate request, just a surprising one in this combination.
+///
+/// Only the explicit setting takes part in this check. A ratio-derived threshold depends on the memory
+/// available to the server, so including it would make the warning appear on large machines only.
+void warnIfHardCapMakesSpillingUnreachable(const TableJoin & table_join, const LoggerPtr & log)
+{
+    const size_t threshold = table_join.explicitMaxBytesBeforeExternalJoin();
+    const size_t hard_cap = table_join.sizeLimits().max_bytes;
+    if (threshold != 0 && hard_cap != 0 && hard_cap <= threshold)
+        LOG_WARNING(
+            log,
+            "max_bytes_in_join ({}) is not above max_bytes_before_external_join ({}). It is a hard cap on the right side "
+            "of the JOIN, not a spill trigger, so the query will fail before the join ever spills to disk. Raise "
+            "max_bytes_in_join above the spill threshold, or set it to 0 to rely on spilling alone",
+            hard_cap,
+            threshold);
+}
+
+}
+
 SpillingHashJoin::SpillingHashJoin(
     std::shared_ptr<TableJoin> table_join_,
     SharedHeader left_sample_block_,
@@ -34,6 +66,7 @@ SpillingHashJoin::SpillingHashJoin(
     , any_take_last_row(any_take_last_row_)
     , max_bytes_before_external_join(table_join->maxBytesBeforeExternalJoin())
 {
+    warnIfHardCapMakesSpillingUnreachable(*table_join, log);
     hash_join = std::make_shared<HashJoin>(
         table_join, right_sample_block_, any_take_last_row, /*reserve_num_=*/0, /*instance_id_=*/"",
         /*use_two_level_maps_=*/false, stats_collecting_params_);
@@ -59,6 +92,7 @@ SpillingHashJoin::SpillingHashJoin(
     , any_take_last_row(any_take_last_row_)
     , max_bytes_before_external_join(table_join->maxBytesBeforeExternalJoin())
 {
+    warnIfHardCapMakesSpillingUnreachable(*table_join, log);
     concurrent_join = std::make_shared<ConcurrentHashJoin>(
         table_join,
         concurrent_slots_,
@@ -89,6 +123,18 @@ SpillingHashJoin::SpillingHashJoin(
     , max_bytes_before_external_join(table_join->maxBytesBeforeExternalJoin())
     , force_external(true)
 {
+    warnIfHardCapMakesSpillingUnreachable(*table_join, log);
+
+    /// Force-external mode has no in-memory phase to fall back on, so without a spill threshold
+    /// there would be nothing to bound the size of a bucket.
+    if (max_bytes_before_external_join == 0)
+        throw Exception(
+            ErrorCodes::BAD_ARGUMENTS,
+            "join_algorithm = 'grace_hash' spills to disk and needs a spill threshold, but none resolved to a non-zero "
+            "value. Set max_bytes_before_external_join, or set max_bytes_ratio_before_external_join on a server that has "
+            "memory limits configured (the ratio is ignored without them). Use join_algorithm = 'hash' for a purely "
+            "in-memory join");
+
     grace_join = std::make_shared<GraceHashJoin>(
         initial_num_buckets,
         max_num_buckets,

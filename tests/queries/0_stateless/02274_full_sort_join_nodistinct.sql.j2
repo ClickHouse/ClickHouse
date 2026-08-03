@@ -20,7 +20,7 @@ INSERT INTO tn2 VALUES (1, 'val11'), (1, 'val12'), (NULL, 'val22'), (NULL, 'val2
 
 {% for join_algorithm in ['full_sorting_merge', 'grace_hash'] -%}
 
-SET max_bytes_in_join = '{% if join_algorithm == 'grace_hash' %}10K{% else %}0{% endif %}';
+SET max_bytes_before_external_join = '{% if join_algorithm == 'grace_hash' %}20K{% else %}0{% endif %}';
 
 SET join_algorithm = '{{ join_algorithm }}';
 
@@ -52,7 +52,7 @@ SELECT key, length(t1.s), length(t2.s) FROM {{ t1 }} AS t1 ALL FULL JOIN {{ t2 }
 {% endif -%}
 {% endfor -%}
 {% endfor -%}
-SET max_bytes_in_join = 0;
+SET max_bytes_before_external_join = 0;
 
 {% endfor -%}
 

@@ -64,8 +64,8 @@ public:
         std::shared_ptr<TableJoin> table_join_,
         SharedHeader left_sample_block_, SharedHeader right_sample_block_,
         TemporaryDataOnDiskScopePtr tmp_data_,
-        bool any_take_last_row_ = false,
-        size_t external_join_threshold_ = 0);
+        bool any_take_last_row_,
+        size_t external_join_threshold_);
 
     ~GraceHashJoin() override;
 
@@ -162,6 +162,11 @@ private:
     Block hash_join_sample_block;
     mutable std::mutex hash_join_mutex;
     std::atomic<bool> force_spill = false;
+
+    /// All right-side data fed into this join, in memory and spilled, against which
+    /// `max_rows_in_join` / `max_bytes_in_join` are checked as hard caps.
+    std::atomic<size_t> total_right_rows = 0;
+    std::atomic<size_t> total_right_bytes = 0;
 
     mutable std::mutex totals_mutex;
 };

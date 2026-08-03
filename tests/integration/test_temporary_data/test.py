@@ -33,7 +33,8 @@ def test_tmp_data_no_leftovers(start_cluster):
         "max_bytes_before_external_group_by": "10K",
         "max_bytes_before_external_sort": "10K",
         "join_algorithm": "grace_hash",
-        "max_bytes_in_join": "10K",
+        # Spilling is driven by the byte threshold; `max_bytes_in_join` is a hard cap.
+        "max_bytes_before_external_join": "20K",
         "grace_hash_join_initial_buckets": "16",
     }
 

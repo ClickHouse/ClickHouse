@@ -38,6 +38,7 @@ namespace ErrorCodes
     extern const int LIMIT_EXCEEDED;
     extern const int LOGICAL_ERROR;
     extern const int NOT_IMPLEMENTED;
+    extern const int SET_SIZE_LIMIT_EXCEEDED;
 }
 
 namespace
@@ -279,6 +280,9 @@ GraceHashJoin::GraceHashJoin(
 {
     if (!GraceHashJoin::isSupported(table_join))
         throw Exception(ErrorCodes::NOT_IMPLEMENTED, "GraceHashJoin is not supported for this join type");
+    /// `SpillingHashJoin` rejects a zero threshold before it gets here; without one, `hasMemoryOverflow`
+    /// would report an overflow for every block and rehash until it ran out of buckets.
+    chassert(external_join_threshold > 0);
 }
 
 void GraceHashJoin::initBuckets()
@@ -309,14 +313,28 @@ bool GraceHashJoin::isSupported(const std::shared_ptr<TableJoin> & table_join)
 
 GraceHashJoin::~GraceHashJoin() = default;
 
-bool GraceHashJoin::addBlockToJoin(const Block & block, bool /*check_limits*/)
+bool GraceHashJoin::addBlockToJoin(const Block & block, bool check_limits)
 {
     if (current_bucket == nullptr)
         throw Exception(ErrorCodes::LOGICAL_ERROR, "GraceHashJoin is not initialized");
 
     Block materialized = materializeBlock(block);
+    const size_t rows = materialized.rows();
+    const size_t bytes = materialized.allocatedBytes();
+
+    /// Always accumulate, so that blocks handed over by `SpillingHashJoin` when it switches out of
+    /// its in-memory phase (added with `check_limits = false`) still count towards the hard cap.
+    const size_t new_total_rows = total_right_rows.fetch_add(rows) + rows;
+    const size_t new_total_bytes = total_right_bytes.fetch_add(bytes) + bytes;
+
     addBlockToJoinImpl(std::move(materialized));
-    return true;
+
+    if (!check_limits)
+        return true;
+
+    /// `max_rows_in_join` / `max_bytes_in_join` with `join_overflow_mode` are hard caps on the whole
+    /// right side, not spill triggers: spilling does not buy a query the right to exceed them.
+    return table_join->sizeLimits().check(new_total_rows, new_total_bytes, "JOIN", ErrorCodes::SET_SIZE_LIMIT_EXCEEDED);
 }
 
 bool GraceHashJoin::hasMemoryOverflow(size_t total_rows, size_t total_bytes) const
@@ -326,21 +344,17 @@ bool GraceHashJoin::hasMemoryOverflow(size_t total_rows, size_t total_bytes) con
     /// One row can't be split, avoid loop
     if (total_rows < 2)
         return false;
-    bool has_overflow = !table_join->sizeLimits().softCheck(total_rows, total_bytes);
-
-    /// Auto-spill against the memory cap `SpillingHashJoin` passes as `external_join_threshold`.
-    /// We must keep spilling under the same cap; otherwise the in-memory bucket would just keep
-    /// growing and the owner's spill decision would be meaningless. We use half the threshold for
-    /// the same reason as the owner: the in-memory hash table doubles its buffer in power-of-two
-    /// steps, transiently holding 3X the previous size, so rehashing buckets early prevents that
-    /// doubling from exceeding the cap.
-    if (!has_overflow && external_join_threshold > 0 && total_bytes * 2 >= external_join_threshold)
-        has_overflow = true;
+    /// The spill decision is driven solely by the memory cap `SpillingHashJoin` passes as
+    /// `external_join_threshold`; `max_rows_in_join` / `max_bytes_in_join` are hard caps checked in
+    /// `addBlockToJoin`, not spill triggers. We use half the threshold for the same reason as the
+    /// owner: the in-memory hash table doubles its buffer in power-of-two steps, transiently holding
+    /// 3X the previous size, so rehashing buckets early prevents that doubling from exceeding the
+    /// cap.
+    const bool has_overflow = total_bytes * 2 >= external_join_threshold;
 
     if (has_overflow)
-        LOG_TRACE(log, "Memory overflow, size exceeded {} / {} bytes, {} / {} rows",
-            ReadableSize(total_bytes), ReadableSize(table_join->sizeLimits().max_bytes),
-            total_rows, table_join->sizeLimits().max_rows);
+        LOG_TRACE(log, "Memory overflow, size exceeded {} / {} bytes in {} rows",
+            ReadableSize(total_bytes), ReadableSize(external_join_threshold / 2), total_rows);
 
     return has_overflow;
 }
@@ -783,11 +797,8 @@ void GraceHashJoin::addBlockToJoinImpl(Block block)
         /// in the incoming block: `block.allocatedBytes()` is a misleading lower bound on
         /// the actual hash-table cost (cell overhead, load-factor padding, resize peaks),
         /// so a tiny block could leave a near-full bucket bypassing the pre-check and OOM
-        /// during the resize. Mirrors `SpillingHashJoin::addBlockToJoin`. Skipped when the cap is
-        /// disabled (`external_join_threshold == 0`); the post-insert `hasMemoryOverflow` check
-        /// against `max_rows_in_join` / `max_bytes_in_join` still applies.
-        const bool pre_threshold_overflow = external_join_threshold > 0
-            && pre_total_bytes * 2 >= external_join_threshold;
+        /// during the resize. Mirrors `SpillingHashJoin::addBlockToJoin`.
+        const bool pre_threshold_overflow = pre_total_bytes * 2 >= external_join_threshold;
 
         bool block_added = false;
         if (!pre_threshold_overflow)

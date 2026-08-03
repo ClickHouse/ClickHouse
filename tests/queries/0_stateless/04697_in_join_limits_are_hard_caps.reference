@@ -1,0 +1,9 @@
+max_bytes_in_join stops a spilling join
+max_rows_in_join stops a spilling join
+join_overflow_mode = break truncates instead of throwing
+1
+no cap: spilling completes the join
+2000000
+grace_hash without any spill threshold is rejected
+grace_hash with a spill threshold works
+10
