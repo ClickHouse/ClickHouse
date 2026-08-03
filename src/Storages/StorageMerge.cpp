@@ -21,7 +21,6 @@
 #include <DataTypes/DataTypeLowCardinality.h>
 #include <DataTypes/DataTypeNullable.h>
 #include <DataTypes/DataTypeString.h>
-#include <DataTypes/DataTypesNumber.h>
 #include <DataTypes/getLeastSupertype.h>
 #include <DataTypes/IDataType.h>
 #include <Interpreters/Context.h>
@@ -393,38 +392,41 @@ bool conversionPreservesOrder(const IDataType & from, const IDataType & to)
     if (from.equals(to))
         return true;
 
+    const WhichDataType which_from(from);
     const WhichDataType which_to(to);
 
-    /// An `Enum` is stored as its underlying number, so widening it to an `Enum` that agrees on the
-    /// shared names, or to a signed integer at least as wide, keeps the numeric order. Narrowing is
-    /// refused: the target cannot represent every source value.
-    if (const auto * from_enum8 = typeid_cast<const DataTypeEnum8 *>(&from))
+    /// An `Enum` is stored as its underlying signed number, so widening it to an `Enum` that agrees
+    /// on the shared names, or to a signed integer at least as wide, keeps the numeric order. An
+    /// unmatched `to` falls through, so a `Nullable` one still reaches the unwrapping below.
+    if (const auto * from_enum = dynamic_cast<const IDataTypeEnum *>(&from))
     {
         if (const auto * to_enum = dynamic_cast<const IDataTypeEnum *>(&to))
-            return to_enum->contains(*from_enum8);
-        return which_to.isNativeInt();
-    }
-
-    if (const auto * from_enum16 = typeid_cast<const DataTypeEnum16 *>(&from))
-    {
-        if (const auto * to_enum16 = typeid_cast<const DataTypeEnum16 *>(&to))
-            return to_enum16->contains(*from_enum16);
-        return which_to.isInt16() || which_to.isInt32() || which_to.isInt64();
+        {
+            if (to_enum->contains(*from_enum))
+                return true;
+        }
+        else if (which_to.isNativeInt() && from.getSizeOfValueInMemory() <= to.getSizeOfValueInMemory())
+            return true;
     }
 
     /// Widening a native integer keeps the order when the signedness is preserved or the target is
     /// signed, mirroring `ToNumberMonotonicity`'s expansion branch. An equal width can flip the
     /// sign bit and a narrowing wraps, so both stay refused.
-    if (WhichDataType(from).isNativeInteger() && which_to.isNativeInteger()
+    if (which_from.isNativeInteger() && which_to.isNativeInteger()
         && from.getSizeOfValueInMemory() < to.getSizeOfValueInMemory()
         && (from.isValueRepresentedByUnsignedInteger() == to.isValueRepresentedByUnsignedInteger()
             || !to.isValueRepresentedByUnsignedInteger()))
         return true;
 
-    if (const auto * from_lc = typeid_cast<const DataTypeLowCardinality *>(&from))
+    /// `ColumnLowCardinality::compareAt` compares through the dictionary, so a `LowCardinality`
+    /// column orders exactly like its nested type.
+    const auto * from_lc = typeid_cast<const DataTypeLowCardinality *>(&from);
+    const auto * to_lc = typeid_cast<const DataTypeLowCardinality *>(&to);
+    if (from_lc && to_lc)
+        return conversionPreservesOrder(*from_lc->getDictionaryType(), *to_lc->getDictionaryType());
+    if (from_lc)
         return from_lc->getDictionaryType()->equals(to);
-
-    if (const auto * to_lc = typeid_cast<const DataTypeLowCardinality *>(&to))
+    if (to_lc)
         return to_lc->getDictionaryType()->equals(from);
 
     /// Keeping or adding nullability moves no value: no NULL appears and every non-NULL keeps its
@@ -470,7 +472,9 @@ QueryProcessingStage::Enum StorageMerge::getQueryProcessingStage(
     size_t selected_table_size = 0;
     bool any_child_conversion_breaks_order = false;
     /// These are the types `convertAndFilterSourceStream` casts every child stream to, because the
-    /// same snapshot builds the common header (see `read`).
+    /// same snapshot builds the common header (see `read`). Aliases cross that boundary as well, so
+    /// they are compared too; `Ephemeral` is not, since it is never read from a source table.
+    const GetColumnsOptions order_relevant_columns(GetColumnsOptions::AllPhysicalAndAliases);
     const auto & declared_columns = storage_snapshot->metadata->getColumns();
 
     for (const auto & iterator : database_table_iterators)
@@ -487,9 +491,9 @@ QueryProcessingStage::Enum StorageMerge::getQueryProcessingStage(
                     table->getQueryProcessingStage(local_context, to_stage,
                         table->getStorageSnapshot(table_metadata, local_context), query_info));
 
-                for (const auto & child_column : table_metadata->getColumns().getAllPhysical())
+                for (const auto & child_column : table_metadata->getColumns().get(order_relevant_columns))
                 {
-                    auto declared_column = declared_columns.tryGetPhysical(child_column.name);
+                    auto declared_column = declared_columns.tryGetColumn(order_relevant_columns, child_column.name);
                     if (declared_column && !conversionPreservesOrder(*child_column.type, *declared_column->type))
                         any_child_conversion_breaks_order = true;
                 }

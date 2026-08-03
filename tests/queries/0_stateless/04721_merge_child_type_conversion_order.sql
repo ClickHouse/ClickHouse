@@ -92,3 +92,55 @@ SELECT '-- MergeTree child under read-in-order and aggregation-in-order';
 CREATE TABLE m_mt (`A` UInt64) ENGINE = Merge(currentDatabase(), '^t_neg$');
 SELECT DISTINCT A FROM m_mt ORDER BY A ASC LIMIT 3 SETTINGS optimize_read_in_order = 1;
 SELECT count(), min(A), max(A) FROM (SELECT A, count() FROM m_mt GROUP BY A SETTINGS optimize_aggregation_in_order = 1);
+
+SELECT '-- an ALIAS column crosses the same boundary';
+-- Alias expansion on the analyzer path is not gated on the stage, and the alias expressions are
+-- added below the converting DAG, so an alias whose child type disagrees carries the defect while
+-- every physical column agrees. Reachable through the non-analyzer path here: on the analyzer path
+-- a `Merge` over a `Distributed` with an alias fails with NOT_FOUND_COLUMN_IN_BLOCK regardless of
+-- the types, which is a separate defect. `optimize_respect_aliases` is pinned for the same reason:
+-- with it off, reading such an alias at `FetchColumns` fails with UNKNOWN_IDENTIFIER on plain
+-- master too, for identical declared and child types.
+CREATE TABLE t_alias (A Int64, x Int64 ALIAS A) ENGINE = MergeTree ORDER BY A;
+INSERT INTO t_alias SELECT -number FROM numbers(1000);
+CREATE TABLE dist_alias (A Int64, x Int64 ALIAS A)
+    ENGINE = Distributed('test_cluster_two_shards_localhost', currentDatabase(), t_alias);
+CREATE TABLE m_alias_col (`A` Int64, `x` UInt64) ENGINE = Merge(currentDatabase(), '^dist_alias$');
+CREATE TABLE m_alias_ok  (`A` Int64, `x` Int64)  ENGINE = Merge(currentDatabase(), '^dist_alias$');
+SELECT DISTINCT x FROM m_alias_col ORDER BY x ASC  LIMIT 3 SETTINGS enable_analyzer = 0, optimize_respect_aliases = 1;
+SELECT DISTINCT x FROM m_alias_col ORDER BY x DESC LIMIT 3 SETTINGS enable_analyzer = 0, optimize_respect_aliases = 1;
+SELECT DISTINCT x FROM m_alias_ok  ORDER BY x ASC  LIMIT 3 SETTINGS enable_analyzer = 0, optimize_respect_aliases = 1;
+SELECT count() FROM (EXPLAIN PLAN sorting = 1 SELECT DISTINCT x FROM m_alias_col ORDER BY x ASC) WHERE explain ILIKE '%Merge sorted streams%' SETTINGS enable_analyzer = 0, optimize_respect_aliases = 1;
+SELECT count() > 0 FROM (EXPLAIN PLAN sorting = 1 SELECT DISTINCT x FROM m_alias_ok ORDER BY x ASC) WHERE explain ILIKE '%Merge sorted streams%' SETTINGS enable_analyzer = 0, optimize_respect_aliases = 1;
+
+SELECT '-- order-preserving conversions inside supported wrappers keep the stage';
+-- `Merge` derives all of these itself for a column-list-less table, so refusing them would cost
+-- pushdown on ordinary correct tables. Each returns 1 only when the conversion is accepted.
+SET allow_suspicious_low_cardinality_types = 1;
+CREATE TABLE t_lc_i32 (A LowCardinality(Int32)) ENGINE = MergeTree ORDER BY A;
+INSERT INTO t_lc_i32 SELECT -number % 50 FROM numbers(200);
+CREATE TABLE dist_lc_i32 AS t_lc_i32 ENGINE = Distributed('test_cluster_two_shards_localhost', currentDatabase(), t_lc_i32);
+CREATE TABLE t_e8 (A Enum8('a' = 1, 'b' = 2, 'c' = 3, 'd' = 4)) ENGINE = MergeTree ORDER BY A;
+INSERT INTO t_e8 SELECT ['a', 'b', 'c', 'd'][1 + number % 4] FROM numbers(200);
+CREATE TABLE dist_e8 AS t_e8 ENGINE = Distributed('test_cluster_two_shards_localhost', currentDatabase(), t_e8);
+
+CREATE TABLE m_lc_widen (`A` LowCardinality(Int64))  ENGINE = Merge(currentDatabase(), '^dist_lc_i32$');
+CREATE TABLE m_e8_null  (`A` Nullable(Enum16('a' = 1, 'b' = 2, 'c' = 3, 'd' = 4))) ENGINE = Merge(currentDatabase(), '^dist_e8$');
+CREATE TABLE m_e8_int   (`A` Nullable(Int16))        ENGINE = Merge(currentDatabase(), '^dist_e8$');
+SELECT count() > 0 FROM (EXPLAIN PLAN sorting = 1 SELECT DISTINCT A FROM m_lc_widen ORDER BY A ASC) WHERE explain ILIKE '%Merge sorted streams%';
+SELECT count() > 0 FROM (EXPLAIN PLAN sorting = 1 SELECT DISTINCT A FROM m_e8_null  ORDER BY A ASC) WHERE explain ILIKE '%Merge sorted streams%';
+SELECT count() > 0 FROM (EXPLAIN PLAN sorting = 1 SELECT DISTINCT A FROM m_e8_int   ORDER BY A ASC) WHERE explain ILIKE '%Merge sorted streams%';
+-- Every value assertion is LIMITed like the ones above. Unbounded, they also expose a separate
+-- pre-existing defect: a `Merge` over a `Distributed` emits one DISTINCT block per shard, so each
+-- value appears twice. That reproduces with identical declared and child types, on plain master.
+SELECT DISTINCT A FROM m_lc_widen ORDER BY A ASC LIMIT 3;
+SELECT DISTINCT A FROM m_e8_null  ORDER BY A ASC LIMIT 3;
+SELECT DISTINCT A FROM m_e8_int   ORDER BY A ASC LIMIT 3;
+
+SELECT '-- an equal-width signedness flip inside LowCardinality stays refused';
+CREATE TABLE t_lc_i64 (A LowCardinality(Int64)) ENGINE = MergeTree ORDER BY A;
+INSERT INTO t_lc_i64 SELECT -number % 50 FROM numbers(200);
+CREATE TABLE dist_lc_i64 AS t_lc_i64 ENGINE = Distributed('test_cluster_two_shards_localhost', currentDatabase(), t_lc_i64);
+CREATE TABLE m_lc_flip (`A` LowCardinality(UInt64)) ENGINE = Merge(currentDatabase(), '^dist_lc_i64$');
+SELECT count() FROM (EXPLAIN PLAN sorting = 1 SELECT DISTINCT A FROM m_lc_flip ORDER BY A ASC) WHERE explain ILIKE '%Merge sorted streams%';
+SELECT DISTINCT A FROM m_lc_flip ORDER BY A ASC LIMIT 3;
