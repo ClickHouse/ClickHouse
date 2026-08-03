@@ -49,6 +49,12 @@ using bsoncxx::to_json;
 namespace DB
 {
 
+MongoDBInstanceHolder & MongoDBInstanceHolder::instance()
+{
+    static MongoDBInstanceHolder instance;
+    return instance;
+}
+
 namespace ErrorCodes
 {
     extern const int BAD_ARGUMENTS;
