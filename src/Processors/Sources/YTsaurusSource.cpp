@@ -50,6 +50,9 @@ Chunk YTsaurusTableSourceStaticTable::generate()
     {
         FormatSettings format_settings{.skip_unknown_fields = source_options.settings[YTsaurusSetting::skip_unknown_columns]};
         format_settings.json.read_map_as_array_of_tuples = true;
+        /// YTsaurus stores `timestamp`/`timestamp64` as raw ticks (microseconds for the mapped `DateTime64(6)`), not as
+        /// Unix seconds, so an unquoted number must be read as the raw underlying value.
+        format_settings.read_datetime_number_as_raw_value = true;
         read_buffer = client->readTable(cypress_path, rows_range);
 
         json_row_format = std::make_unique<JSONEachRowRowInputFormat>(
@@ -77,6 +80,9 @@ YTsaurusTableSourceDynamicTableSelect::YTsaurusTableSourceDynamicTableSelect(
     , table_lock(table_lock_)
 {
     format_settings.json.read_map_as_array_of_tuples = true;
+    /// YTsaurus stores `timestamp`/`timestamp64` as raw ticks (microseconds for the mapped `DateTime64(6)`), not as
+    /// Unix seconds, so an unquoted number must be read as the raw underlying value.
+    format_settings.read_datetime_number_as_raw_value = true;
 }
 
 Chunk YTsaurusTableSourceDynamicTableSelect::generate()
@@ -117,6 +123,9 @@ YTsaurusTableSourceDynamicTableLookup::YTsaurusTableSourceDynamicTableLookup(
     , table_lock(table_lock_)
 {
     format_settings.json.read_map_as_array_of_tuples = true;
+    /// YTsaurus stores `timestamp`/`timestamp64` as raw ticks (microseconds for the mapped `DateTime64(6)`), not as
+    /// Unix seconds, so an unquoted number must be read as the raw underlying value.
+    format_settings.read_datetime_number_as_raw_value = true;
 }
 
 Chunk YTsaurusTableSourceDynamicTableLookup::generate()
@@ -186,7 +195,7 @@ Pipe createPipeForStaticTable(
     {
         size_t row_from = i * rows_batch_count;
         size_t row_to = (i + 1 == pipes_num) ? rows_count : (i + 1) * rows_batch_count;
-        YTsaurusClientPtr client_for_source(new YTsaurusClient(*client));
+        auto client_for_source = std::make_shared<YTsaurusClient>(*client);
         pipes.emplace_back(std::make_shared<YTsaurusTableSourceStaticTable>(
             client_for_source,
             cypress_path,
@@ -293,8 +302,7 @@ Pipe YTsaurusSourceFactory::createPipe(
     auto yt_node_type = client->getNodeType(cypress_path);
 
     if (yt_node_type == YTsaurusNodeType::STATIC_TABLE)
-        return createPipeForStaticTable(client, cypress_path, table_cypress_path, source_options, sample_block, max_block_size, max_streams);
-    else if (yt_node_type == YTsaurusNodeType::DYNAMIC_TABLE)
+        return createPipeForStaticTable(client, cypress_path, table_cypress_path, source_options, sample_block, max_block_size, max_streams);    else if (yt_node_type == YTsaurusNodeType::DYNAMIC_TABLE)
         return createPipeForDynamicTable(client, cypress_path, source_options, sample_block, max_block_size);
     else
         throw Exception(ErrorCodes::NOT_IMPLEMENTED, "Node {} has unsupported type.", cypress_path);
