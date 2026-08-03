@@ -7,7 +7,13 @@ in that window published one CIDB row where its passing sibling shard published 
 `checkpoint_collected_results` writes the collected results into the job's existing result
 file before that teardown starts, so the kill costs the job's status but not its results.
 
-Four properties are load-bearing and none is visible from the call site:
+Five properties are load-bearing and none is visible from the call site:
+
+* it must never RAISE. It is called unguarded and `main` has no enclosing try, so a raise
+  here - and it is the first write after `_pre_run` - publishes the bare `RUNNING` the
+  runner then turns into an EMPTY error, on a run that would have completed normally. The
+  final `complete_job` writes these results anyway, so failing is always cheaper than
+  propagating.
 
 * it must actually RUN, and persist the results it was handed. Every structural arm here
   can only show that the call exists, which a guard that is never true satisfies while
@@ -262,6 +268,57 @@ def test_checkpoint_assigns_no_status():
                 ), f"{_CHECKPOINT_HELPER}() assigns .status directly at line {node.lineno}"
 
 
+def test_checkpoint_guards_every_step_against_every_exception():
+    """The helper must wrap all of its work in `except Exception`.
+
+    Structural as well as behavioural: the behavioural arms below are satisfied by an
+    `except OSError`, which leaves `Result.from_fs`'s `JSONDecodeError` propagating. This
+    pins the breadth and the extent - a `try` that starts after the load guards nothing
+    against the raiser the load itself is.
+    """
+    checkpoint = _find_function(_parse(_JOB_SCRIPT), _CHECKPOINT_HELPER)
+    tries = [node for node in ast.walk(checkpoint) if isinstance(node, ast.Try)]
+    assert tries, (
+        f"{_CHECKPOINT_HELPER}() has no try/except: it is called unguarded from main(), "
+        "which has no enclosing try, so any raise here loses the results, the logs and "
+        "the status on a run that would have completed normally"
+    )
+
+    def _catches_everything(node):
+        return any(
+            isinstance(h.type, ast.Name) and h.type.id in ("Exception", "BaseException")
+            for h in node.handlers
+        ) or any(h.type is None for h in node.handlers)
+
+    broad = [node for node in tries if _catches_everything(node)]
+    assert broad, (
+        f"{_CHECKPOINT_HELPER}() catches only "
+        f"{[ast.dump(h.type) for n in tries for h in n.handlers]}: JSONDecodeError from "
+        "Result.from_fs is not an OSError, so a corrupt result file still aborts main()"
+    )
+
+    # Every raiser must be INSIDE one of the broad handlers' bodies, not merely somewhere
+    # in the function: a try that begins after `from_fs` leaves the load exposed.
+    guarded = {
+        node
+        for tried in broad
+        for stmt in tried.body
+        for node in ast.walk(stmt)
+        if isinstance(node, ast.Call)
+    }
+    for attr in ("from_fs", "replace", "dump"):
+        calls = [
+            node
+            for node in ast.walk(checkpoint)
+            if isinstance(node, ast.Call) and _is_named_call(node, attr)
+        ]
+        unguarded = [node.lineno for node in calls if node not in guarded]
+        assert calls and not unguarded, (
+            f"{_CHECKPOINT_HELPER}() calls .{attr}() outside the guarded block at lines "
+            f"{unguarded}: that raiser still aborts main()"
+        )
+
+
 # --- behavioural: driving the real helper against a real result file -----------------
 
 
@@ -347,6 +404,73 @@ def test_checkpoint_preserves_ext(tmp_path):
     assert reread.ext.get("run_url") == _RUN_URL, (
         f"the checkpoint lost ext['run_url'] (got {reread.ext.get('run_url')!r}); "
         "Result.create_from takes no ext, so it must not have been used"
+    )
+
+
+def test_a_failing_write_degrades_to_a_no_op(tmp_path):
+    """A write that raises must cost nothing: the helper returns, the file is untouched.
+
+    The load-bearing arm for the guard. `main()` has no enclosing try and the checkpoint
+    is the FIRST write after `_pre_run`, so a propagated exception publishes the bare
+    `RUNNING` with zero children - and the runner turns that into an empty ERROR on a run
+    that would have completed normally, losing the logs and the status too.
+
+    ENOSPC on the temp write is the realistic raiser: the published file is 2.4 MB for
+    6174 rows with empty info and 4.3 MB with 300-char info.
+    """
+    import builtins
+
+    real_open = builtins.open
+
+    def failing_open(*args, **kwargs):
+        if args and str(args[0]).endswith(".tmp"):
+            raise OSError(28, "No space left on device")
+        return real_open(*args, **kwargs)
+
+    original = Settings.TEMP_DIR
+    try:
+        _seed_running_result(tmp_path)
+        builtins.open = failing_open
+        try:
+            checkpoint_collected_results(_JOB_NAME, _children(3), False)
+        finally:
+            builtins.open = real_open
+        reread = Result.from_fs(_JOB_NAME)
+    finally:
+        builtins.open = real_open
+        Settings.TEMP_DIR = original
+
+    assert reread.status == Result.Status.RUNNING, (
+        f"the published result is [{reread.status}] instead of the untouched RUNNING: a "
+        "failed checkpoint must not alter what _pre_run left"
+    )
+    assert reread.results == [], (
+        f"the failed write still left {len(reread.results)} children behind"
+    )
+    assert reread.ext.get("run_url") == _RUN_URL, "the failed write damaged ext"
+
+
+def test_an_unparseable_result_file_degrades_to_a_no_op(tmp_path):
+    """The second raiser: `Result.from_fs` -> `json.load` on a corrupt file.
+
+    `JSONDecodeError` is a `ValueError`, not an `OSError`, so this arm is what makes
+    `except Exception` necessary rather than merely sufficient.
+    """
+    original = Settings.TEMP_DIR
+    try:
+        _seed_running_result(tmp_path)
+        path = Result.file_name_static(_JOB_NAME)
+        with open(path, "w", encoding="utf-8") as f:
+            f.write('{"name": "truncated", "resul')
+        checkpoint_collected_results(_JOB_NAME, _children(3), False)
+        with open(path, encoding="utf-8") as f:
+            after = f.read()
+    finally:
+        Settings.TEMP_DIR = original
+
+    assert after == '{"name": "truncated", "resul', (
+        f"the helper rewrote the unparseable file as {after[:120]!r}: it must leave what it "
+        "could not read alone"
     )
 
 
@@ -799,11 +923,9 @@ def test_a_kill_during_the_checkpoint_leaves_the_result_file_readable(tmp_path):
 def test_the_checkpoint_leaves_no_temporary_file_behind_on_a_kill(tmp_path):
     """A kill mid-write must not leave a stray temp file in the result directory.
 
-    `TEMP_DIR` is archived and uploaded wholesale, and a half-written result json sitting
-    next to the real one is a diagnostic hazard on exactly the runs that need diagnosing.
-    Unavoidable for a process SIGKILLed mid-write, so this pins the naming instead: the
-    temp name must be distinguishable from the published one, or a reader globbing for
-    results picks up the truncation.
+    A leftover is unavoidable for a process SIGKILLed mid-write, so this pins the naming
+    instead: anyone globbing `result_<job>.json*` must be able to tell the truncation from
+    the published result.
     """
     _kill_during_write(tmp_path, "rename")
 
@@ -831,6 +953,7 @@ if __name__ == "__main__":
         test_checkpoint_uses_the_existing_result_not_a_fresh_one,
         test_checkpoint_publishes_by_rename,
         test_checkpoint_assigns_no_status,
+        test_checkpoint_guards_every_step_against_every_exception,
     ):
         fn()
         print(f"ok {fn.__name__}")
@@ -841,6 +964,8 @@ if __name__ == "__main__":
         test_checkpoint_is_skipped_on_a_local_run,
         test_checkpoint_leaves_the_result_incomplete,
         test_checkpoint_preserves_ext,
+        test_a_failing_write_degrades_to_a_no_op,
+        test_an_unparseable_result_file_degrades_to_a_no_op,
         test_runner_kill_patch_keeps_the_checkpointed_results,
         test_cidb_ingests_the_children_of_a_killed_checkpointed_result,
         test_a_kill_during_a_plain_dump_destroys_the_result_file,

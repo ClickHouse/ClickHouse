@@ -3,6 +3,7 @@ import json
 import os
 import random
 import subprocess
+import traceback
 import zlib
 from pathlib import Path
 
@@ -330,16 +331,25 @@ def checkpoint_collected_results(
     to parse the truncation that a kill mid-write would leave.
 
     Skipped on a local run, which has no runner to publish anything.
+
+    Best-effort, and never raises: the final `complete_job` writes these results
+    again, so a failure here must not cost `main` everything that follows it.
     """
     if is_local_run:
         return
-    result = Result.from_fs(job_name)
-    result.results = list(collected_results)
-    path = Path(result.file_name())
-    tmp_path = path.with_name(f"{path.name}.{os.getpid()}.tmp")
-    with open(tmp_path, "w", encoding="utf8") as f:
-        json.dump(Result.to_dict(result), f, indent=4)
-    os.replace(tmp_path, path)
+    try:
+        result = Result.from_fs(job_name)
+        result.results = list(collected_results)
+        path = Path(result.file_name())
+        tmp_path = path.with_name(f"{path.name}.{os.getpid()}.tmp")
+        with open(tmp_path, "w", encoding="utf8") as f:
+            json.dump(Result.to_dict(result), f, indent=4)
+        os.replace(tmp_path, path)
+    except Exception as e:
+        # No temp-file cleanup here: a cleanup that itself raises would defeat the
+        # guard. A leftover is named `*.tmp`, never the published name.
+        print(f"WARNING: Failed to checkpoint collected results: {e}")
+        traceback.print_exc()
 
 
 def main():
