@@ -503,8 +503,14 @@ std::shared_ptr<const ColumnsSubstreams> SharedPartColumns::internColumnsSubstre
         interned.internColumnEntries([&](const ColumnsSubstreams::ColumnEntryPtr & entry) TSA_NO_THREAD_SAFETY_ANALYSIS
         {
             UInt128 entry_hash = entry_hashes[entry_index++];
-            auto [it, inserted] = substream_entries_cache.try_emplace(entry_hash);
-            if (!inserted)
+
+            /// The entry is shared and long-lived, but it was built incrementally (e.g. by a part
+            /// writer) and may carry container growth overshoot, so what gets interned is a compact copy
+            /// of it. Not `make_shared<const ColumnEntry>`: `ColumnsSubstreams` mutates a uniquely held
+            /// entry through a `const_cast`, which is only defined when the object itself is not const.
+            auto compact = [&] { return std::make_shared<ColumnsSubstreams::ColumnEntry>(*entry); };
+
+            if (auto it = substream_entries_cache.find(entry_hash); it != substream_entries_cache.end())
             {
                 if (auto shared = it->second.lock())
                 {
@@ -514,16 +520,19 @@ std::shared_ptr<const ColumnsSubstreams> SharedPartColumns::internColumnsSubstre
                     /// entry and leave this one unshared. Correctness never depends on the hash.
                     return entry;
                 }
+
+                /// The entry expired: replace it in place, the node is already counted.
+                ColumnsSubstreams::ColumnEntryPtr replacement = compact();
+                it->second = replacement;
+                return replacement;
             }
-            /// The entry is shared and long-lived, but it was built incrementally (e.g. by a part
-            /// writer) and may carry container growth overshoot: intern a compact copy of it.
-            /// Not `make_shared<const ColumnEntry>`: `ColumnsSubstreams` mutates a uniquely held entry
-            /// through a `const_cast`, which is only defined when the object itself is not const.
-            ColumnsSubstreams::ColumnEntryPtr compact = std::make_shared<ColumnsSubstreams::ColumnEntry>(*entry);
-            it->second = compact;
-            if (inserted)
-                substream_entries_metric_handle.add(1);
-            return compact;
+
+            /// Build before inserting: a node published to the map is counted, and counting it must not
+            /// be able to fail afterwards (an allocation here can throw on a memory limit).
+            ColumnsSubstreams::ColumnEntryPtr interned_entry = compact();
+            substream_entries_cache.emplace(entry_hash, interned_entry);
+            substream_entries_metric_handle.add(1);
+            return interned_entry;
         });
         sweepExpiredEntries(substream_entries_cache, substream_entries_size_after_sweep, substream_entries_metric_handle);
     }
