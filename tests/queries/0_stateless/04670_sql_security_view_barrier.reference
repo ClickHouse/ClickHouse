@@ -5,11 +5,19 @@ visible
 0
 0
 0
+0
+0
 ===== nor through the value in a cast error message =====
 0
-===== a view that hides no rows is not a barrier =====
+===== nor after the plan is serialized and optimized again on a shard =====
+0
+0
+===== an outer predicate merges into a view that is not a barrier =====
 1
-===== SQL SECURITY INVOKER is not a barrier either =====
+1
+2
+2
+===== a view that hides no rows keeps PREWHERE =====
 1
 ===== but a filtering DEFINER view keeps the outer predicate out of PREWHERE =====
 0

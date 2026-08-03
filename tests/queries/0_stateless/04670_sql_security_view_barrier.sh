@@ -43,10 +43,12 @@ ${CLICKHOUSE_CLIENT} --user "$user" --query "SELECT secret FROM $db.filtering_vi
 
 echo "===== an outer predicate cannot observe the filtered-out row ====="
 # Without the barrier the outer WHERE and the view's WHERE are merged into one filter over the
-# source table, and throwIf fires on a row the view is supposed to hide.
+# source table, and throwIf fires on a row the view is supposed to hide. `analyzer_inline_views`
+# is a third way in: it replaces the view with its defining subquery before a plan even exists.
 for view in filtering_view filtering_view_none; do
-    for analyzer in 1 0; do
-        ${CLICKHOUSE_CLIENT} --enable_analyzer "$analyzer" --user "$user" --query \
+    for settings in "--enable_analyzer 1" "--enable_analyzer 0" "--enable_analyzer 1 --analyzer_inline_views 1"; do
+        # shellcheck disable=SC2086
+        ${CLICKHOUSE_CLIENT} $settings --user "$user" --query \
             "SELECT * FROM $db.$view WHERE throwIf(secret = 'HIDDEN', 'LEAKED')" 2>&1 |
             grep -c -F "LEAKED"
     done
@@ -59,28 +61,47 @@ echo "===== nor through the value in a cast error message ====="
 ${CLICKHOUSE_CLIENT} --user "$user" --query \
     "SELECT * FROM $db.filtering_view WHERE toUInt8(secret) = 1" 2>&1 | grep -c -F "HIDDEN"
 
+echo "===== nor after the plan is serialized and optimized again on a shard ====="
+# A shard receives the plan as bytes and optimizes it once more, so the barrier has to survive
+# `QueryPlan::serialize`. The shard connects as the restricted user, so the view hides the same
+# row there as it does locally.
+for serialize in 1 0; do
+    ${CLICKHOUSE_CLIENT} --query \
+        "SELECT * FROM remote('127.0.0.1:${CLICKHOUSE_PORT_TCP}', '$db', filtering_view, '$user', '')
+         WHERE throwIf(secret = 'HIDDEN', 'LEAKED')
+         SETTINGS serialize_query_plan = $serialize, enable_analyzer = 1" 2>&1 | grep -c -F "LEAKED"
+done
+
 # The plan shape does not depend on who runs the query, and wrapping EXPLAIN in a subquery needs
-# CREATE TEMPORARY TABLE, so these two run as the default user.
-echo "===== a view that hides no rows is not a barrier ====="
-# PREWHERE for the outer predicate must survive, otherwise every DEFINER view pays for the fix.
+# CREATE TEMPORARY TABLE, so the checks below run as the default user. They pin every setting the
+# shape depends on, because the test also runs with randomized settings.
+echo "===== an outer predicate merges into a view that is not a barrier ====="
+# One `Filter` step means the outer predicate and the view's own predicate ended up in the same
+# filter, which is exactly what must not happen across a barrier.
+for view in projecting_view invoker_view filtering_view filtering_view_none; do
+    ${CLICKHOUSE_CLIENT} --query \
+        "SELECT count() FROM (
+             EXPLAIN actions = 1, indexes = 0 SELECT * FROM $db.$view WHERE secret = 'x'
+             SETTINGS enable_analyzer = 1, query_plan_merge_filters = 1,
+                      optimize_move_to_prewhere = 0, query_plan_optimize_prewhere = 0
+         ) WHERE explain ILIKE '%Filter column:%'"
+done
+
+echo "===== a view that hides no rows keeps PREWHERE ====="
+# Otherwise every DEFINER view would pay for the fix.
 ${CLICKHOUSE_CLIENT} --query \
     "SELECT count() > 0 FROM (
          EXPLAIN actions = 1, indexes = 0 SELECT * FROM $db.projecting_view WHERE secret = 'x'
-         SETTINGS optimize_move_to_prewhere = 1
-     ) WHERE explain ILIKE '%Prewhere filter column: %secret%'"
-
-echo "===== SQL SECURITY INVOKER is not a barrier either ====="
-${CLICKHOUSE_CLIENT} --query \
-    "SELECT count() > 0 FROM (
-         EXPLAIN actions = 1, indexes = 0 SELECT * FROM $db.invoker_view WHERE secret = 'x'
-         SETTINGS optimize_move_to_prewhere = 1
+         SETTINGS enable_analyzer = 1, optimize_move_to_prewhere = 1,
+                  query_plan_optimize_prewhere = 1, enable_multiple_prewhere_read_steps = 1
      ) WHERE explain ILIKE '%Prewhere filter column: %secret%'"
 
 echo "===== but a filtering DEFINER view keeps the outer predicate out of PREWHERE ====="
 ${CLICKHOUSE_CLIENT} --query \
     "SELECT count() > 0 FROM (
          EXPLAIN actions = 1, indexes = 0 SELECT * FROM $db.filtering_view WHERE secret = 'x'
-         SETTINGS optimize_move_to_prewhere = 1
+         SETTINGS enable_analyzer = 1, optimize_move_to_prewhere = 1,
+                  query_plan_optimize_prewhere = 1, enable_multiple_prewhere_read_steps = 1
      ) WHERE explain ILIKE '%Prewhere filter column: %secret%'"
 
 echo "===== results through a barrier view are still correct ====="
