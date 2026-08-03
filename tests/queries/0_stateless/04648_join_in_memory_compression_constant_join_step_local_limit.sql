@@ -5,10 +5,10 @@
 -- `ConstantJoin` consumes `max_memory_usage` as the trigger of its own compaction, so a step-local
 -- value must travel with the step: the planner marks such a step (`JoinSettings::fromContext`
 -- compares the planning scope against the query context) and
--- `QueryPlanSerializationSettings::getMinRequiredVersion` raises the fragment to version 4, the
+-- `QueryPlanSerializationSettings::getMinRequiredVersion` raises the fragment to version 5, the
 -- first version that carries `max_memory_usage` on the wire. The `CROSS` / `COMMA` builder in
 -- `PlannerJoinTree` used to construct its `JoinSettings` straight from the settings reference, so the
--- override looked query-wide, the fragment stayed below version 4, and the receiver rebuilt the join
+-- override looked query-wide, the fragment stayed below version 5, and the receiver rebuilt the join
 -- with the outer query limit.
 --
 -- Serializing the plan for a remote receiver is where the version matters, hence
