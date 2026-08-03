@@ -110,6 +110,13 @@ SHOW CREATE QUOTA ${QUOTA}_i;
 CREATE QUOTA ${QUOTA}_o FOR INTERVAL 1 hour MAX execution_time = 184467440737095516150e-10;
 SHOW CREATE QUOTA ${QUOTA}_o;
 
+-- A hexadecimal mantissa wider than any fixed accumulator is scaled exactly as well: it fits into
+-- the range only after the exponent shifts its lowest bits away, and those bits cannot be dropped
+-- beforehand, because the multiplication by the remaining factor 5^n of the denominator carries
+-- them upwards (0x100000000000000020000000000000001p-94 seconds is 17179869184.000000001).
+CREATE QUOTA ${QUOTA}_v FOR INTERVAL 1 hour MAX execution_time = 0x100000000000000020000000000000001p-94;
+SHOW CREATE QUOTA ${QUOTA}_v;
+
 -- A quoted limit of a scaled type is multiplied by the denominator with integer arithmetic too:
 -- the double product of '18446744073' seconds and 10^9 loses its low bits, so the stored value
 -- used to be 18446744072999999488 nanoseconds and did not round-trip through SHOW CREATE QUOTA.
@@ -135,6 +142,7 @@ DROP QUOTA ${QUOTA}_n;
 DROP QUOTA ${QUOTA}_s;
 DROP QUOTA ${QUOTA}_i;
 DROP QUOTA ${QUOTA}_o;
+DROP QUOTA ${QUOTA}_v;
 DROP QUOTA ${QUOTA}_q;
 DROP QUOTA ${QUOTA}_r;
 "

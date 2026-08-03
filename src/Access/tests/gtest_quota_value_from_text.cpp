@@ -108,6 +108,16 @@ TEST(QuotaValueFromText, Scaled)
     EXPECT_EQ(scale("0x30000000000000000p-64", nanoseconds), exact(3000000000));
     /// The exponent form of the value at the top of the range: its mantissa does not fit on its own.
     EXPECT_EQ(scale("184467440737095516150e-10", nanoseconds), exact(18446744073709551615ULL));
+    /// A hexadecimal mantissa wider than any fixed accumulator: it fits into the range only after the
+    /// exponent shifts its lowest bits away, and those bits cannot be dropped before the value is
+    /// accumulated, because the multiplication by the factor 5^n of the denominator carries them
+    /// upwards (0x100000000000000020000000000000001p-94 seconds is 17179869184.000000001).
+    EXPECT_EQ(
+        scale("0x100000000000000020000000000000001p-94", nanoseconds),
+        exact(17179869184000000001ULL, /* integral= */ false));
+    EXPECT_EQ(
+        scale("0x1000000000000000200000000000000010p-98", nanoseconds),
+        exact(17179869184000000001ULL, /* integral= */ false));
 }
 
 /// A scaled value must be shown back exactly, so that the output of `SHOW CREATE QUOTA` can be

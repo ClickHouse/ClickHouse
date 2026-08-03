@@ -2,8 +2,9 @@
 
 #include <Common/Exception.h>
 #include <Common/StringUtils.h>
-#include <base/arithmeticOverflow.h>
 #include <base/hex.h>
+
+#include <boost/multiprecision/cpp_int.hpp>
 
 #include <algorithm>
 #include <bit>
@@ -129,71 +130,84 @@ bool isIntegralScaledNumericLiteral(const NumericLiteralParts & parts, UInt64 mu
 std::optional<QuotaValue> exactScaledValueOfNumericLiteral(const NumericLiteralParts & parts, UInt64 multiplier)
 {
     const size_t multiplier_zeros = decimalZerosOfPowerOfTen(multiplier);
-    const UInt128 base = parts.is_hex ? 16 : 10;
 
-    /// Trailing zeros of the fractional part do not change the value, while multiplying them in
-    /// could overflow the accumulation for a value that fits (e.g. 18446744073709551615.0).
+    /// Leading zeros of the integer part and trailing zeros of the fractional part do not change
+    /// the value, and dropping them keeps the accumulation below shorter.
     std::string_view integer_part = parts.integer_part;
     std::string_view fractional_part = parts.fractional_part;
+    while (integer_part.starts_with('0'))
+        integer_part.remove_prefix(1);
     while (fractional_part.ends_with('0'))
         fractional_part.remove_suffix(1);
 
+    const size_t digits_count = integer_part.size() + fractional_part.size();
+
+    /// The accumulation below is quadratic in the number of digits, so its length is bounded.
+    /// The bound is far above the longest form of a `Float64`: about 770 digits for a decimal one
+    /// and about 280 for a hexadecimal one, so no literal that a user can mean is left out.
+    static constexpr size_t max_digits_count = 4096;
+    if (digits_count > max_digits_count)
+        return {};
+
     /// The digits of a hexadecimal value are four bits each, while its exponent counts bits.
     /// The scaled value is the mantissa digits shifted by this many digits (bits for a hexadecimal one).
-    Int64 shift = parts.exponent + static_cast<Int64>(multiplier_zeros)
+    const Int64 shift = parts.exponent + static_cast<Int64>(multiplier_zeros)
         - static_cast<Int64>(fractional_part.size()) * (parts.is_hex ? 4 : 1);
 
-    /// A negative shift truncates the lowest digits away in the end; dropping them before the
-    /// accumulation keeps a value that fits exact instead of overflowing the accumulation, both for
-    /// digits below the scale (18446744073.7095516155 scaled by 10^9 is QuotaValue max and a half)
-    /// and for a mantissa that only fits after the shift (184467440737095516150e-1 is QuotaValue max).
-    /// A hexadecimal digit is dropped only when it is zero, and only when the shift covers all of its
-    /// four bits: the multiplication by the remaining factor 5^n of the multiplier below happens
-    /// before the truncation, so truncating a nonzero digit early would not give the same value.
-    const Int64 digit_shift = parts.is_hex ? 4 : 1;
-    for (std::string_view * digits : {&fractional_part, &integer_part})
-    {
-        while (shift <= -digit_shift && !digits->empty() && (!parts.is_hex || digits->back() == '0'))
-        {
-            digits->remove_suffix(1);
-            shift += digit_shift;
-        }
-        if (!digits->empty())
-            break;
-    }
-
-    /// The accumulation is done in a wider type, because the hexadecimal multiplication below needs
-    /// the room and because a positive shift may bring a value back into the QuotaValue range.
-    UInt128 value = 0;
+    /// The mantissa is accumulated in an arbitrary precision integer, because a mantissa that is
+    /// wider than any fixed type can still give a value in range once a negative exponent truncates
+    /// its lowest digits away, and those digits cannot be dropped before the multiplication by the
+    /// remaining factor 5^n of the multiplier below, which carries them upwards
+    /// (0x100000000000000020000000000000001p-94 seconds is exactly 17179869184.000000001, so its
+    /// 129 bits of mantissa give a value of 65 bits after the scaling by 10^9).
+    boost::multiprecision::cpp_int value = 0;
+    const unsigned base = parts.is_hex ? 16 : 10;
     for (std::string_view digits : {integer_part, fractional_part})
     {
         for (char c : digits)
-        {
-            UInt128 digit = parts.is_hex ? static_cast<UInt128>(unhex(c)) : static_cast<UInt128>(c - '0');
-            if (common::mulOverflow(value, base, value) || common::addOverflow(value, digit, value))
-                return {};
-        }
+            value = value * base + static_cast<unsigned>(parts.is_hex ? unhex(c) : c - '0');
     }
 
     /// The multiplier 10^n shifts a decimal value by n digits and a hexadecimal one, whose exponent
     /// counts bits, by n bits; the remaining factor 5^n of a hexadecimal multiplication is applied
     /// here, before the shift, so that the truncation below is done on the multiplied value.
-    if (parts.is_hex && value != 0)
+    if (parts.is_hex)
     {
         for (size_t k = 0; k < multiplier_zeros; ++k)
-        {
-            if (common::mulOverflow(value, static_cast<UInt128>(5), value))
-                return {};
-        }
+            value *= 5;
     }
 
-    const UInt128 unit = parts.is_hex ? 2 : 10;
-    for (; shift < 0 && value != 0; ++shift)
-        value /= unit;
-    for (; shift > 0 && value != 0; --shift)
+    if (shift < 0 && value != 0)
     {
-        if (common::mulOverflow(value, unit, value))
+        const UInt64 amount = static_cast<UInt64>(-shift);
+        if (parts.is_hex)
+        {
+            /// A shift that covers the whole value truncates it to zero; the exponent can be large
+            /// enough to make the shift itself pointless to perform.
+            const UInt64 bits = static_cast<UInt64>(boost::multiprecision::msb(value)) + 1;
+            if (amount >= bits)
+                value = 0;
+            else
+                value >>= amount;
+        }
+        else if (amount >= digits_count)
+        {
+            /// The value is below 10 to the power of the number of its digits.
+            value = 0;
+        }
+        else
+        {
+            for (UInt64 k = 0; k < amount; ++k)
+                value /= 10;
+        }
+    }
+    else if (shift > 0 && value != 0)
+    {
+        /// The result has to fit into 64 bits, so a larger shift cannot give a value in range.
+        if (shift > 64)
             return {};
+        for (Int64 k = 0; k < shift; ++k)
+            value *= parts.is_hex ? 2 : 10;
     }
 
     if (value > std::numeric_limits<QuotaValue>::max())
