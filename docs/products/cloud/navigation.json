@@ -78,6 +78,9 @@
           ]
         },
         {
+          "$ref": "../bring-your-own-cloud/navigation.json"
+        },
+        {
           "group": "Connect and query",
           "pages": [
             "products/cloud/features/sql-console-features/sql-console",
@@ -353,10 +356,7 @@
             "products/cloud/features/support",
             "products/cloud/reference/account-close"
           ]
-        },
-    {
-      "$ref": "../bring-your-own-cloud/navigation.json"
-    }
+        }
   ],
   "icon": "/images/icons/icon-clickhouse-cloud.svg",
   "item": "ClickHouse Cloud"
