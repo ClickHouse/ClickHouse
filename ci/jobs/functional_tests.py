@@ -314,6 +314,34 @@ def reconcile_bugfix_crash_repro(result: Result, fatals: list) -> bool:
     return crash_repro
 
 
+def checkpoint_collected_results(
+    job_name: str, collected_results: list, is_local_run: bool
+):
+    """Persist the results collected so far into the job's existing result file, so
+    a job killed during the post-processing that follows still publishes them.
+
+    Assigns NO status: every status decision in `main` runs after this point, so a
+    status here would be published as the verdict on a killed job. Left `RUNNING`,
+    the runner's `KILLED` patch decides it, and that patch keeps the children.
+
+    Updates the existing result instead of building a fresh one, because
+    `Result.create_from` takes no `ext` and would drop the `run_url`. Published by
+    rename because `Result.dump` truncates in place, and `Result.from_fs` refuses
+    to parse the truncation that a kill mid-write would leave.
+
+    Skipped on a local run, which has no runner to publish anything.
+    """
+    if is_local_run:
+        return
+    result = Result.from_fs(job_name)
+    result.results = list(collected_results)
+    path = Path(result.file_name())
+    tmp_path = path.with_name(f"{path.name}.{os.getpid()}.tmp")
+    with open(tmp_path, "w", encoding="utf8") as f:
+        json.dump(Result.to_dict(result), f, indent=4)
+    os.replace(tmp_path, path)
+
+
 def main():
     args = parse_args()
     test_options = [to.strip() for to in args.options.split(",")]
@@ -989,6 +1017,12 @@ def main():
             runner_exit_code=runner_exit_code,
             is_bugfix_validation=is_labeled_bugfix_validation,
         )
+        # Before any teardown, so an overrun there cannot cost the results.
+        # `results + [test_result]` is the shape `R` is built from below, so the
+        # CIDB insert still finds the per-test rows under the "Tests" sub-result.
+        checkpoint_collected_results(
+            info.job_name, results + [test_result], info.is_local_run
+        )
 
         # Run additional build types for bugfix validation.
         # Exit early on first failure to avoid duplicate test names,
@@ -1162,6 +1196,12 @@ def main():
                         r.set_label(bugfix_bt)
                     test_result.results = bt_result.results
                     test_result.status = bt_result.status
+                    # Per build type, not once after the loop: this REPLACES the
+                    # results, and the next iteration stops the server and
+                    # re-prepares the environment before producing any new ones.
+                    checkpoint_collected_results(
+                        info.job_name, results + [test_result], info.is_local_run
+                    )
                     debug_files += ft_res_processor_bt.debug_files
 
                     if not bt_result.is_ok():

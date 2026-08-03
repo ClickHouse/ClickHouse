@@ -1,0 +1,853 @@
+"""
+Tests for the interim result checkpoint in `ci/jobs/functional_tests.py`.
+
+`main` holds every per-test result in memory from the moment the suite finishes until
+`Result.complete_job` at the very end, and everything in between is teardown. A job killed
+in that window published one CIDB row where its passing sibling shard published 6178.
+`checkpoint_collected_results` writes the collected results into the job's existing result
+file before that teardown starts, so the kill costs the job's status but not its results.
+
+Four properties are load-bearing and none is visible from the call site:
+
+* it must actually RUN, and persist the results it was handed. Every structural arm here
+  can only show that the call exists, which a guard that is never true satisfies while
+  restoring the empty report.
+* it must assign NO status. Every status decision in `main` (the `Check errors` fatal-log
+  rows, the bugfix-validation inversion, `force_ok_exit`) runs after this point, so a
+  status written here would be published as the verdict on a killed job - a
+  bugfix-validation job would report its non-inverted one. Left `RUNNING`, the runner's own
+  `KILLED` patch decides the status, and because `add_error` and `set_status` touch only
+  `ext["errors"]` and `status`, the children survive that patch.
+* it must UPDATE the existing result rather than build a fresh one. `Result.create_from`
+  takes no `ext`, so a replacement would drop the `run_url` that `Runner._pre_run` wrote.
+* it must publish by RENAME. `Result.dump` is `open(..., "w")` + `json.dump`, which
+  truncates before serializing, so a kill mid-write would leave JSON that
+  `Result.from_fs` refuses to parse - turning a lost result into an unreadable one.
+
+Kill-based arms drive a real subprocess: the write is only atomic with respect to a
+process death, which no in-process stub can produce.
+"""
+
+import ast
+import json
+import os
+import signal
+import subprocess
+import sys
+import time
+
+sys.path.insert(0, os.path.join(os.path.dirname(__file__), "../.."))
+
+from ci.jobs.functional_tests import checkpoint_collected_results
+from ci.praktika.cidb import CIDB
+from ci.praktika.result import Result, ResultInfo
+from ci.praktika.settings import Settings
+from ci.praktika.utils import Utils
+
+_JOB_SCRIPT = os.path.abspath(
+    os.path.join(os.path.dirname(__file__), "../jobs/functional_tests.py")
+)
+_REPO_ROOT = os.path.abspath(os.path.join(os.path.dirname(__file__), "../.."))
+
+_CHECKPOINT_HELPER = "checkpoint_collected_results"
+_JOB_NAME = "Stateless tests (checkpoint probe)"
+_RUN_URL = "https://example.invalid/run/1/job/2"
+
+
+# --- structural: the checkpoint is placed and shaped correctly ------------------------
+
+
+def _parse(path):
+    with open(path, encoding="utf-8") as f:
+        return ast.parse(f.read(), filename=path)
+
+
+def _find_function(tree, name):
+    for node in ast.walk(tree):
+        if isinstance(node, ast.FunctionDef) and node.name == name:
+            return node
+    raise AssertionError(f"{name}() not found in {_JOB_SCRIPT}")
+
+
+def _checkpoint_calls(scope):
+    return [
+        node
+        for node in ast.walk(scope)
+        if isinstance(node, ast.Call)
+        and isinstance(node.func, ast.Name)
+        and node.func.id == _CHECKPOINT_HELPER
+    ]
+
+
+def _call_lines(scope, predicate):
+    return sorted(
+        node.lineno
+        for node in ast.walk(scope)
+        if isinstance(node, ast.Call) and predicate(node)
+    )
+
+
+def _is_named_call(node, attr):
+    return isinstance(node.func, ast.Attribute) and node.func.attr == attr
+
+
+def test_checkpoint_precedes_every_teardown_step_in_main():
+    """The first checkpoint must come before the teardown that can outlive the job.
+
+    `stop_log_exports` is the first teardown step and is where the reported run was
+    killed; the final `complete_job` is the only dump today. A checkpoint after either
+    measures nothing.
+
+    Compared against the LAST `complete_job`: the earlier ones are pre-suite early exits
+    ("No tests to run") that terminate the process before there is anything to
+    checkpoint, so comparing against the first would assert an impossible ordering.
+    """
+    main = _find_function(_parse(_JOB_SCRIPT), "main")
+
+    checkpoints = _call_lines(main, lambda n: isinstance(n.func, ast.Name) and n.func.id == _CHECKPOINT_HELPER)
+    teardown = _call_lines(main, lambda n: _is_named_call(n, "stop_log_exports"))
+    dumps = _call_lines(main, lambda n: _is_named_call(n, "complete_job"))
+
+    assert checkpoints, f"main() never calls {_CHECKPOINT_HELPER}: the results are not checkpointed"
+    assert teardown, "main() no longer calls stop_log_exports: this test measures nothing"
+    assert dumps, "main() no longer calls complete_job: this test measures nothing"
+    assert checkpoints[0] < teardown[0], (
+        f"the first checkpoint is at line {checkpoints[0]} but teardown starts at "
+        f"{teardown[0]}: a kill in that window would again discard the results"
+    )
+    assert checkpoints[-1] < dumps[-1], (
+        f"the last checkpoint at line {checkpoints[-1]} is not before the final dump at "
+        f"{dumps[-1]}"
+    )
+
+
+def test_the_bugfix_validation_loop_checkpoints_per_build_type():
+    """A checkpoint must sit INSIDE the build-type loop, not only after it.
+
+    The loop does `test_result.results = bt_result.results` - it REPLACES - and then stops
+    the server and re-prepares the environment before producing any new rows, so a single
+    post-loop checkpoint leaves each earlier build type's results exposed for the whole of
+    the next iteration and unrecoverable from memory.
+    """
+    main = _find_function(_parse(_JOB_SCRIPT), "main")
+
+    loops = [
+        node
+        for node in ast.walk(main)
+        if isinstance(node, ast.For)
+        and any(
+            isinstance(sub, ast.Call) and _is_named_call(sub, "check_fatal_messages_in_logs")
+            for sub in ast.walk(node)
+        )
+        and any(
+            isinstance(sub, ast.Attribute) and sub.attr == "debug_files" for sub in ast.walk(node)
+        )
+    ]
+    assert loops, "the bugfix-validation build-type loop was not found in main()"
+    for loop in loops:
+        assert _checkpoint_calls(loop), (
+            f"the build-type loop at line {loop.lineno} contains no {_CHECKPOINT_HELPER} "
+            "call: each earlier build type's results are replaced before being persisted"
+        )
+
+
+def test_every_checkpoint_call_passes_the_collected_results():
+    """Each call must hand over the results, not a fresh or empty expression.
+
+    `checkpoint_collected_results(name, [], flag)` satisfies every other arm here while
+    writing the empty report the change exists to prevent.
+    """
+    main = _find_function(_parse(_JOB_SCRIPT), "main")
+    calls = _checkpoint_calls(main)
+    assert calls, f"main() never calls {_CHECKPOINT_HELPER}"
+
+    for node in calls:
+        passed = node.args + [kw.value for kw in node.keywords]
+        names = set()
+        for arg in passed:
+            for sub in ast.walk(arg):
+                if isinstance(sub, ast.Name):
+                    names.add(sub.id)
+                elif isinstance(sub, ast.Attribute):
+                    names.add(sub.attr)
+        assert "test_result" in names, (
+            f"the checkpoint at line {node.lineno} does not pass `test_result` "
+            f"(passes {sorted(names)}); anything else can persist an empty report"
+        )
+        assert "is_local_run" in names, (
+            f"the checkpoint at line {node.lineno} hard-codes its local-run flag "
+            f"(passes {sorted(names)}); the helper's guard would decide on a constant"
+        )
+
+
+def test_checkpoint_uses_the_existing_result_not_a_fresh_one():
+    """The helper must build its result with `from_fs`, never `Result.create_from`.
+
+    Asserted as an exact set rather than "no create_from": a rewrite to
+    `create_from(...).dump()` has no `from_fs` at all, so a receiver-only check would
+    pass over nothing.
+    """
+    checkpoint = _find_function(_parse(_JOB_SCRIPT), _CHECKPOINT_HELPER)
+    constructors = sorted(
+        node.func.attr
+        for node in ast.walk(checkpoint)
+        if isinstance(node, ast.Call)
+        and isinstance(node.func, ast.Attribute)
+        and node.func.attr in ("from_fs", "create_from")
+    )
+    assert constructors == ["from_fs"], (
+        f"{_CHECKPOINT_HELPER}() builds its result with {constructors} instead of exactly "
+        "['from_fs']; anything but from_fs discards ext, which holds the run url"
+    )
+
+
+def test_checkpoint_publishes_by_rename():
+    """The helper must write a temporary file and `os.replace` it into place.
+
+    `Result.dump` truncates before serializing, so publishing directly turns a kill
+    mid-write into unreadable JSON. The runtime arm below measures the outcome; this pins
+    the mechanism, because a `dump()` that happens not to be interrupted passes that arm.
+    """
+    checkpoint = _find_function(_parse(_JOB_SCRIPT), _CHECKPOINT_HELPER)
+    replaces = [
+        node
+        for node in ast.walk(checkpoint)
+        if isinstance(node, ast.Call) and _is_named_call(node, "replace")
+    ]
+    assert replaces, (
+        f"{_CHECKPOINT_HELPER}() never calls os.replace: it publishes its write directly, "
+        "so a kill mid-write leaves JSON that Result.from_fs refuses to parse"
+    )
+    # `Result.dump`, not `json.dump`: the helper serializes with the latter into its own
+    # temporary file, which is the whole point. Matched on the receiver so the arm keeps
+    # working if the serialization is spelled differently.
+    result_dumps = [
+        node
+        for node in ast.walk(checkpoint)
+        if isinstance(node, ast.Call)
+        and _is_named_call(node, "dump")
+        and not (isinstance(node.func.value, ast.Name) and node.func.value.id == "json")
+    ]
+    assert result_dumps == [], (
+        f"{_CHECKPOINT_HELPER}() calls Result.dump() at lines "
+        f"{[n.lineno for n in result_dumps]}: dump truncates the published file in place, "
+        "which is what the rename avoids"
+    )
+
+
+def test_checkpoint_assigns_no_status():
+    """The helper must not assign a status anywhere.
+
+    Structural as well as behavioural: the runtime arm sees only the status the helper
+    leaves, not a `set_status` a later refactor puts on a branch it does not exercise.
+    """
+    checkpoint = _find_function(_parse(_JOB_SCRIPT), _CHECKPOINT_HELPER)
+    assignments = sorted(
+        node.func.attr
+        for node in ast.walk(checkpoint)
+        if isinstance(node, ast.Call)
+        and isinstance(node.func, ast.Attribute)
+        and node.func.attr in ("set_status", "set_error", "set_failed", "set_success", "complete_job")
+    )
+    assert assignments == [], (
+        f"{_CHECKPOINT_HELPER}() assigns a status ({assignments}); it would pre-empt the "
+        "fatal-log rows, the bugfix-validation inversion and force_ok_exit, all of which "
+        "run after this point"
+    )
+    for node in ast.walk(checkpoint):
+        if isinstance(node, ast.Assign):
+            for target in node.targets:
+                assert not (
+                    isinstance(target, ast.Attribute) and target.attr == "status"
+                ), f"{_CHECKPOINT_HELPER}() assigns .status directly at line {node.lineno}"
+
+
+# --- behavioural: driving the real helper against a real result file -----------------
+
+
+def _children(count, name="Tests"):
+    return [
+        Result.create_from(
+            name=name,
+            status=Result.Status.OK,
+            results=[
+                Result.create_from(name=f"0000{i}_test", status=Result.Status.OK)
+                for i in range(count)
+            ],
+        )
+    ]
+
+
+def _seed_running_result(tmp_path, name=_JOB_NAME):
+    """Write exactly what `Runner._pre_run` leaves on disk before the job script runs.
+
+    A bare `Result` with a start_time and the run url in `ext`, not `create_from`:
+    `create_from` reads start_time from a file that does not exist yet, so a fixture built
+    with it would leave duration None and make the runner-patch arm assert nothing.
+    """
+    Settings.TEMP_DIR = str(tmp_path)
+    result = Result(name=name, status=Result.Status.RUNNING, start_time=Utils.timestamp())
+    result.add_ext_key_value("run_url", _RUN_URL)
+    result.dump()
+    return result
+
+
+def _checkpointed(tmp_path, collected, is_local_run=False):
+    original = Settings.TEMP_DIR
+    try:
+        _seed_running_result(tmp_path)
+        checkpoint_collected_results(_JOB_NAME, collected, is_local_run)
+        return Result.from_fs(_JOB_NAME)
+    finally:
+        Settings.TEMP_DIR = original
+
+
+def test_checkpoint_persists_the_results(tmp_path):
+    """The arm that catches a checkpoint which never executes.
+
+    Every structural arm above is satisfied by a guard that is never true or a body
+    disabled outright, both of which restore the empty report.
+    """
+    reread = _checkpointed(tmp_path, _children(3))
+
+    assert len(reread.results) == 1, f"expected one 'Tests' child, got {len(reread.results)}"
+    assert len(reread.results[0].results) == 3, (
+        f"the checkpoint persisted {len(reread.results[0].results)} per-test rows instead "
+        "of 3: the write did not reach disk"
+    )
+
+
+def test_checkpoint_is_skipped_on_a_local_run(tmp_path):
+    """A local run has no runner to publish anything, so nothing is written.
+
+    Pins the guard's polarity: inverted, this arm sees the children appear and the arm
+    above sees them vanish, so the two together fix its direction.
+    """
+    reread = _checkpointed(tmp_path, _children(3), is_local_run=True)
+
+    assert reread.results == [], (
+        f"a local run wrote {len(reread.results)} children; the guard is inverted"
+    )
+
+
+def test_checkpoint_leaves_the_result_incomplete(tmp_path):
+    """The checkpoint must stay non-terminal so the harness still decides the status."""
+    reread = _checkpointed(tmp_path, _children(2))
+
+    assert not reread.is_completed(), (
+        f"the checkpoint published a completed status [{reread.status}]: on a killed job "
+        "that half-decided status would be the verdict"
+    )
+
+
+def test_checkpoint_preserves_ext(tmp_path):
+    """`ext` must survive: it carries the run url `Runner._pre_run` wrote."""
+    reread = _checkpointed(tmp_path, _children(2))
+
+    assert reread.ext.get("run_url") == _RUN_URL, (
+        f"the checkpoint lost ext['run_url'] (got {reread.ext.get('run_url')!r}); "
+        "Result.create_from takes no ext, so it must not have been used"
+    )
+
+
+def test_runner_kill_patch_keeps_the_checkpointed_results(tmp_path):
+    """The measured statement of the fix: the empty ERROR becomes a populated ERROR.
+
+    Applies `Runner._get_result_object`'s patch sequence for an incomplete result. Pins
+    the praktika behaviour the fix rests on, so a future change there cannot silently
+    un-fix this - and asserts the honesty half too: the status is NOT kept green.
+    """
+    reread = _checkpointed(tmp_path, _children(5))
+    assert not reread.is_completed(), "precondition: the checkpoint must be incomplete"
+
+    Settings.TEMP_DIR = str(tmp_path)
+    try:
+        reread.add_error(ResultInfo.TIMEOUT).set_status(Result.Status.ERROR)
+        reread.update_duration()
+    finally:
+        Settings.TEMP_DIR = "./ci/tmp"
+
+    assert reread.status == Result.Status.ERROR, (
+        f"the killed job reports [{reread.status}] instead of ERROR: the checkpoint must "
+        "not let a killed job look green"
+    )
+    assert len(reread.results[0].results) == 5, (
+        f"the runner's patch dropped rows ({len(reread.results[0].results)} of 5 left): "
+        "the report would still be empty"
+    )
+    assert reread.duration is not None, "the runner did not fill in the duration"
+
+
+def test_cidb_ingests_the_children_of_a_killed_checkpointed_result(tmp_path):
+    """The quantitative claim: a killed job publishes per-test rows, not just one.
+
+    `CIDB.json_data_generator` finds the per-test rows through the `result_name_for_cidb`
+    sub-result ("Tests" for every functional-test job), so the checkpoint must keep that
+    shape - a flat list of test rows would yield the same single row as no checkpoint.
+    """
+    reread = _checkpointed(tmp_path, _children(6))
+    reread.add_error(ResultInfo.TIMEOUT)
+    reread.status = Result.Status.ERROR
+
+    rows = [json.loads(row) for row in CIDB.json_data_generator(reread, "Tests")]
+    test_rows = [row for row in rows if row["test_name"]]
+
+    assert len(test_rows) == 6, (
+        f"a killed job with a checkpoint yields {len(test_rows)} per-test rows instead of "
+        "6: the run stays invisible to every downstream flaky-detection query"
+    )
+    assert all(row["check_status"] == "error" for row in rows), (
+        "the killed job's rows do not carry the error check_status"
+    )
+
+
+# --- end-to-end: main()'s real post-suite path, killed the way praktika kills ---------
+
+# Drives the real `main()` with the suite, the server and the shells stubbed out, then
+# SIGKILLs the process group inside a teardown step. The measurement is what
+# `Result.from_fs(job_name)` yields afterwards - exactly what `Runner._get_result_object`
+# reads. In-process arms cannot produce this: the loss and the atomicity both depend on a
+# process death mid-flight.
+_MAIN_PROBE = r"""
+import json, os, sys, time
+from pathlib import Path
+sys.path.insert(0, {repo!r})
+from ci.praktika.settings import Settings
+Settings.TEMP_DIR = {tmp!r}
+import ci.praktika._environment as _env
+import ci.jobs.functional_tests as ft
+from ci.praktika.result import Result
+from ci.praktika.utils import Utils
+
+JOB_NAME = {job!r}
+BUILD_TYPES = {build_types!r}
+ROWS = {rows!r}
+BLOCK_ON_STOP_SERVER_CALL = {block_call}
+BLOCKED_MARKER = {blocked!r}
+
+# What `Runner._pre_run` leaves on disk before the job script starts.
+Result(name=JOB_NAME, status=Result.Status.RUNNING,
+       start_time=Utils.timestamp()).add_ext_key_value("run_url", "URL").dump()
+_e = _env._Environment.get()
+_e.JOB_NAME = JOB_NAME
+_e.LOCAL_RUN = False
+_e.PR_LABELS = ["pr-bugfix"]
+_e.dump()
+
+_calls = {{"n": 0}}
+
+
+class _Proc:
+    # Stands in for FTResultsProcessor: rows complete in memory, no server, no suite.
+    def __init__(self, *a, **k):
+        self.debug_files = []
+
+    def run(self, runner_exit_code=None, is_bugfix_validation=False):
+        _calls["n"] += 1
+        tag = BUILD_TYPES[_calls["n"] - 1] if BUILD_TYPES else "run"
+        n = ROWS[_calls["n"] - 1] if isinstance(ROWS, list) else ROWS
+        return Result(name="Tests", status=Result.Status.OK, start_time=1700000000.0,
+                      duration=1.0, results=[
+            Result(name="%s_%05d" % (tag, i), status=Result.Status.OK,
+                   start_time=1700000000.0, duration=0.1) for i in range(n)])
+
+
+class _CH:
+    logs = []
+    extra_tests_results = []
+    client_core_path = ""
+    stateful_setup_error = ""
+
+    def __init__(self, *a, **k):
+        pass
+
+    def __getattr__(self, name):
+        def _ok(*a, **k):
+            # `stop_log_exports` is the first teardown step of a normal run and is where
+            # the reported job was killed. `stop_server` is the per-build-type
+            # stop/re-prepare inside the bugfix-validation loop.
+            if name == "stop_log_exports" and BLOCK_ON_STOP_SERVER_CALL is None:
+                open(BLOCKED_MARKER, "w").close()
+                time.sleep(600)
+            if (
+                name == "stop_server"
+                and BLOCK_ON_STOP_SERVER_CALL is not None
+                and _calls["n"] >= BLOCK_ON_STOP_SERVER_CALL
+            ):
+                open(BLOCKED_MARKER, "w").close()
+                time.sleep(600)
+            return True
+
+        return _ok
+
+    def check_fatal_messages_in_logs(self):
+        # The real method always returns at least one row, and `extend_sub_results`
+        # asserts a non-empty list.
+        return [Result.create_from(name="Exception in test runner",
+                                   status=Result.Status.OK)]
+
+
+class _Targeting:
+    # `get_changed_tests` reads the PR diff, absent here; without it the bugfix job
+    # early-exits with "No tests to run" before the loop under test.
+    def __init__(self, *a, **k):
+        pass
+
+    def get_changed_tests(self):
+        return ["00001_select_1"]
+
+    def get_all_relevant_tests_with_info(self):
+        return (["00001_select_1"], None)
+
+
+ft.FTResultsProcessor = _Proc
+ft.ClickHouseProc = _CH
+ft.Targeting = _Targeting
+ft.run_tests = lambda **kw: 0
+ft.Shell.run = staticmethod(lambda *a, **k: 0)
+ft.Shell.check = staticmethod(lambda *a, **k: True)
+ft.Shell.get_output = staticmethod(lambda *a, **k: "")
+ft.Result.from_commands_run = staticmethod(
+    lambda name, command, **k: Result.create_from(name=name, status=Result.Status.OK))
+_real_is_file = Path.is_file
+Path.is_file = lambda self: True if "clickhouse" in str(self) else _real_is_file(self)
+
+if BUILD_TYPES:
+    ft.bugfix_build_types = lambda name: list(BUILD_TYPES)
+    ft.find_master_builds = lambda build_types=None: {{bt: "url" for bt in build_types}}
+    sys.argv = ["functional_tests.py", "--options", "BugfixValidation, amd_debug",
+                "--test", "00001_select_1"]
+else:
+    sys.argv = ["functional_tests.py", "--options",
+                "amd_msan, WasmEdge, parallel, 1/2"]
+try:
+    ft.main()
+except SystemExit as e:
+    print("EXIT=%s" % e.code, file=sys.stderr)
+"""
+
+
+def _kill_main_in_teardown(
+    tmp_path, build_types=None, rows=6174, block_call=None
+):
+    """Run `main()` and SIGKILL its process group inside teardown.
+
+    Returns (status, per_test_row_names). `status` is `None` when no result file exists.
+    """
+    original = Settings.TEMP_DIR
+    try:
+        _seed_running_result(tmp_path)  # sets TEMP_DIR; the child re-seeds its own
+        blocked = os.path.join(str(tmp_path), "blocked")
+        script = os.path.join(str(tmp_path), "main_probe.py")
+        with open(script, "w", encoding="utf-8") as f:
+            f.write(
+                _MAIN_PROBE.format(
+                    repo=_REPO_ROOT,
+                    tmp=str(tmp_path),
+                    job=_JOB_NAME,
+                    build_types=build_types,
+                    rows=rows,
+                    block_call=block_call,
+                    blocked=blocked,
+                )
+            )
+        log = os.path.join(str(tmp_path), "main_probe.log")
+        log_handle = open(log, "wb")
+        proc = subprocess.Popen(
+            [sys.executable, script],
+            stdout=log_handle,
+            stderr=subprocess.STDOUT,
+            start_new_session=True,
+        )
+        deadline = time.monotonic() + 300
+        while time.monotonic() < deadline and not os.path.exists(blocked):
+            if proc.poll() is not None:
+                raise AssertionError(
+                    "main() exited before reaching the teardown step this arm blocks "
+                    f"in:\n{proc.stdout.read().decode()[-4000:]}"
+                )
+            time.sleep(0.02)
+        assert os.path.exists(blocked), "main() never reached the blocking teardown step"
+        # praktika's watchdog kills the whole process group (`TeePopen`).
+        os.killpg(os.getpgid(proc.pid), signal.SIGKILL)
+        proc.wait(timeout=60)
+        log_handle.close()
+
+        Settings.TEMP_DIR = str(tmp_path)
+        path = Result.file_name_static(_JOB_NAME)
+        if not os.path.exists(path):
+            return None, []
+        with open(path, encoding="utf-8") as f:
+            data = json.load(f)
+        names = []
+        for child in data.get("results", []):
+            if child.get("name") == "Tests":
+                names = [row["name"] for row in child.get("results", [])]
+        return data.get("status"), names
+    finally:
+        Settings.TEMP_DIR = original
+
+
+def test_a_job_killed_in_teardown_still_publishes_every_test_row(tmp_path):
+    """THE measured statement of the fix, end to end.
+
+    `main` is killed in `stop_log_exports` - the first teardown step, and where the
+    reported run died - with all 6174 rows complete in memory. Every one must be on disk.
+    Against pristine master this yields 0, which is the reported defect; the mutation arms
+    (M1: remove the call) reproduce that here.
+    """
+    status, rows = _kill_main_in_teardown(tmp_path, rows=6174)
+
+    assert status is not None, "the killed job left no result file at all"
+    assert len(rows) == 6174, (
+        f"a job killed in teardown published {len(rows)} per-test rows instead of 6174: "
+        "the results it had already finished were discarded"
+    )
+    assert status == Result.Status.RUNNING, (
+        f"the checkpoint published status [{status}] instead of leaving it non-terminal; "
+        "the runner must be the one to decide a killed job's status"
+    )
+
+
+def test_a_bugfix_job_killed_between_build_types_keeps_the_previous_build(tmp_path):
+    """The per-build-type placement, measured rather than inferred.
+
+    Three build types, killed entering the THIRD: the loop has already REPLACED the
+    first build's rows with the second's, so only a checkpoint INSIDE the loop can have
+    saved them. Two build types cannot measure this - the post-suite checkpoint alone
+    still covers the first - which is why this arm uses three.
+    """
+    status, rows = _kill_main_in_teardown(
+        tmp_path,
+        build_types=["bt_first", "bt_second", "bt_third"],
+        rows=[11, 22, 33],
+        block_call=2,
+    )
+
+    second = [name for name in rows if name.startswith("bt_second_")]
+    assert len(second) == 22, (
+        f"the build type completed before the kill published {len(second)} rows instead "
+        f"of 22 (got {rows[:3]}...): a single post-loop checkpoint would leave only "
+        "the stale first build's rows"
+    )
+    assert status == Result.Status.RUNNING, (
+        f"the checkpoint published status [{status}] on a bugfix-validation job: the "
+        "inversion runs later, so a terminal status here would publish the "
+        "un-inverted verdict"
+    )
+
+
+# --- kill-based: atomicity, against a real process death -----------------------------
+
+# Both arms drive PRODUCTION code - the `rename` arm calls `checkpoint_collected_results`,
+# the `direct` arm calls `Result.dump` - and differ only in which one they call.
+#
+# The kill is deterministic rather than timed: `builtins.open` is wrapped so the file
+# object returned for the measured write SIGKILLs the process on its Nth `write` call.
+# `json.dump` writes incrementally, so this lands strictly between the first byte and the
+# last, which is the only window in which the two arms can differ. A `time.sleep` between
+# the write's start and the signal cannot do this - measured, it left the plain dump
+# complete and the negative control passing vacuously.
+_KILL_PROBE = r"""
+import builtins, os, signal, sys
+sys.path.insert(0, {repo!r})
+from ci.jobs.functional_tests import checkpoint_collected_results
+from ci.praktika.result import Result
+from ci.praktika.settings import Settings
+
+Settings.TEMP_DIR = {tmp!r}
+name = {name!r}
+mode = sys.argv[1]
+KILL_AFTER = {kill_after}
+
+collected = [Result.create_from(name="Tests", status=Result.Status.OK, results=[
+    Result.create_from(name="%05d_test" % i, status=Result.Status.OK, info="x" * 200)
+    for i in range({rows})
+])]
+
+_real_open = builtins.open
+
+
+class _KillingFile:
+    # Wraps the write target and kills the process from inside the serialization.
+
+    def __init__(self, f):
+        self._f = f
+        self._writes = 0
+
+    def write(self, data):
+        self._writes += 1
+        if self._writes >= KILL_AFTER:
+            self._f.flush()
+            os.kill(os.getpid(), signal.SIGKILL)
+        return self._f.write(data)
+
+    def __getattr__(self, attr):
+        return getattr(self._f, attr)
+
+    def __enter__(self):
+        return self
+
+    def __exit__(self, *a):
+        return self._f.__exit__(*a)
+
+
+def _patched_open(*args, **kwargs):
+    f = _real_open(*args, **kwargs)
+    if len(args) > 1 and "w" in str(args[1]):
+        return _KillingFile(f)
+    return f
+
+
+open({ready!r}, "w").close()
+builtins.open = _patched_open
+if mode == "rename":
+    checkpoint_collected_results(name, collected, False)
+else:
+    existing = Result.from_fs(name)
+    existing.results = collected
+    existing.dump()
+builtins.open = _real_open
+print("NOT_KILLED", file=sys.stderr)
+"""
+
+
+def _kill_during_write(tmp_path, mode, rows=400, kill_after=5):
+    """Kill a real process from inside its result write. Returns (readable, rows).
+
+    `readable` is whether `Result.from_fs` still parses the published file; `rows` is how
+    many per-test rows it holds (None when unreadable).
+    """
+    original = Settings.TEMP_DIR
+    try:
+        _seed_running_result(tmp_path)
+        ready = os.path.join(str(tmp_path), f"ready.{mode}")
+        script = os.path.join(str(tmp_path), f"probe_{mode}.py")
+        with open(script, "w", encoding="utf-8") as f:
+            f.write(
+                _KILL_PROBE.format(
+                    repo=_REPO_ROOT,
+                    tmp=str(tmp_path),
+                    name=_JOB_NAME,
+                    rows=rows,
+                    ready=ready,
+                    kill_after=kill_after,
+                )
+            )
+        proc = subprocess.run(
+            [sys.executable, script, mode],
+            stdout=subprocess.PIPE,
+            stderr=subprocess.PIPE,
+            timeout=120,
+        )
+        assert os.path.exists(ready), (
+            f"the {mode} probe never reached its write: {proc.stderr.decode()[-2000:]}"
+        )
+        assert b"NOT_KILLED" not in proc.stderr, (
+            f"the {mode} probe survived its write, so no interruption was measured: "
+            f"{proc.stderr.decode()[-2000:]}"
+        )
+        assert proc.returncode == -signal.SIGKILL, (
+            f"the {mode} probe exited with {proc.returncode} instead of SIGKILL: "
+            f"{proc.stderr.decode()[-2000:]}"
+        )
+
+        Settings.TEMP_DIR = str(tmp_path)
+        try:
+            reread = Result.from_fs(_JOB_NAME)
+        except Exception:
+            return False, None
+        return True, len(reread.results[0].results) if reread.results else 0
+    finally:
+        Settings.TEMP_DIR = original
+
+
+def test_a_kill_during_a_plain_dump_destroys_the_result_file(tmp_path):
+    """NEGATIVE CONTROL. Without it the arm below passes on any implementation.
+
+    `Result.dump` is `open(..., "w")` + `json.dump`, so it truncates the published file
+    before serializing: the same interruption must leave JSON `Result.from_fs` cannot
+    parse. This is the failure mode the rename exists to prevent, and asserting it is
+    what makes the arm below a measurement rather than a coincidence.
+    """
+    readable, rows = _kill_during_write(tmp_path, "direct")
+
+    assert not readable, (
+        f"a kill during a plain Result.dump left a parseable file with {rows} rows: the "
+        "interruption did not land inside the write, so the arm below proves nothing"
+    )
+
+
+def test_a_kill_during_the_checkpoint_leaves_the_result_file_readable(tmp_path):
+    """The same interruption against the checkpoint must leave a parseable file.
+
+    Either the previous result or the complete new one - never a truncation. Differs from
+    the control above only in calling `checkpoint_collected_results`.
+    """
+    readable, rows = _kill_during_write(tmp_path, "rename")
+
+    assert readable, (
+        "a kill during the checkpoint left a file Result.from_fs cannot parse: the runner "
+        "then reports a harder failure than the lost result this replaced"
+    )
+    assert rows in (0, 400), (
+        f"the published file holds {rows} rows - neither the previous result (0) nor the "
+        "complete new one (400): the write was not atomic"
+    )
+
+
+def test_the_checkpoint_leaves_no_temporary_file_behind_on_a_kill(tmp_path):
+    """A kill mid-write must not leave a stray temp file in the result directory.
+
+    `TEMP_DIR` is archived and uploaded wholesale, and a half-written result json sitting
+    next to the real one is a diagnostic hazard on exactly the runs that need diagnosing.
+    Unavoidable for a process SIGKILLed mid-write, so this pins the naming instead: the
+    temp name must be distinguishable from the published one, or a reader globbing for
+    results picks up the truncation.
+    """
+    _kill_during_write(tmp_path, "rename")
+
+    published = os.path.basename(Result.file_name_static(_JOB_NAME))
+    leftovers = [
+        name
+        for name in os.listdir(str(tmp_path))
+        if name.startswith(published) and name != published
+    ]
+    for name in leftovers:
+        assert name.endswith(".tmp"), (
+            f"the checkpoint left [{name}] behind, which does not end in .tmp: a reader "
+            f"looking for [{published}*] cannot tell it from the published result"
+        )
+
+
+if __name__ == "__main__":
+    import tempfile
+    from pathlib import Path
+
+    for fn in (
+        test_checkpoint_precedes_every_teardown_step_in_main,
+        test_the_bugfix_validation_loop_checkpoints_per_build_type,
+        test_every_checkpoint_call_passes_the_collected_results,
+        test_checkpoint_uses_the_existing_result_not_a_fresh_one,
+        test_checkpoint_publishes_by_rename,
+        test_checkpoint_assigns_no_status,
+    ):
+        fn()
+        print(f"ok {fn.__name__}")
+    for fn in (
+        test_a_job_killed_in_teardown_still_publishes_every_test_row,
+        test_a_bugfix_job_killed_between_build_types_keeps_the_previous_build,
+        test_checkpoint_persists_the_results,
+        test_checkpoint_is_skipped_on_a_local_run,
+        test_checkpoint_leaves_the_result_incomplete,
+        test_checkpoint_preserves_ext,
+        test_runner_kill_patch_keeps_the_checkpointed_results,
+        test_cidb_ingests_the_children_of_a_killed_checkpointed_result,
+        test_a_kill_during_a_plain_dump_destroys_the_result_file,
+        test_a_kill_during_the_checkpoint_leaves_the_result_file_readable,
+        test_the_checkpoint_leaves_no_temporary_file_behind_on_a_kill,
+    ):
+        with tempfile.TemporaryDirectory() as d:
+            fn(Path(d))
+        print(f"ok {fn.__name__}")
+    print("ok")
