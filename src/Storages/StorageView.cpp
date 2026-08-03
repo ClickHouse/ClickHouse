@@ -237,10 +237,8 @@ StoragePtr StorageView::getUnderlyingMergeTreeStorageForParallelReplicas(const C
     /// Recursively walk the resolved query tree to find the underlying MergeTree storage.
     /// For UNION nodes, all branches must be eligible.
     /// Returns nullptr if the view is not suitable for parallel replicas.
-    ///
-    /// Eligibility must be decided with the context of the enclosing (sub)query, because a
-    /// SETTINGS clause written inside the view body overrides the outer one, and the same
-    /// context is what the replicas use to execute the read.
+    /// Eligibility is decided with the context of the enclosing (sub)query: a SETTINGS clause
+    /// inside the view body overrides the outer one and is what the replicas execute with.
     std::function<StoragePtr(const IQueryTreeNode *, const ContextPtr &)> find_storage
         = [&](const IQueryTreeNode * node, const ContextPtr & node_context) -> StoragePtr
     {
