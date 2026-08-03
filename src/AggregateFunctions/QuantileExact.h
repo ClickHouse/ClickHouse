@@ -106,7 +106,15 @@ void radixSelect(const Value * data, size_t size, SelectTarget * targets, size_t
     size_t range_width = std::bit_width(sample_max - base);
     size_t shift = range_width > 7 ? range_width - 7 : 0;
 
-    auto bucket_of = [base, shift](UInt64 k) { return k < base ? UInt64(0) : std::min<UInt64>(((k - base) >> shift) + 1, radix_buckets - 1); };
+    /// The clamp compares before adding 1 so that (k - base) >> shift == UInt64(-1) (possible
+    /// at shift 0) saturates to the high overflow bucket instead of wrapping to bucket 0.
+    auto bucket_of = [base, shift](UInt64 k)
+    {
+        if (k < base)
+            return UInt64(0);
+        UInt64 slice = (k - base) >> shift;
+        return slice >= radix_buckets - 2 ? UInt64(radix_buckets - 1) : slice + 1;
+    };
 
     std::fill(histogram, histogram + radix_buckets, 0);
     for (size_t j = 0; j < size; ++j)
@@ -191,7 +199,7 @@ template <typename Array, typename Value>
 void selectAtPositions(Array & array, const size_t * positions, size_t count, Value * out)
 {
     /// A stack buffer for the common counts, so that a small state costs no allocation.
-    std::array<QuantileExactImpl::SelectTarget, 16> small_targets;
+    std::array<QuantileExactImpl::SelectTarget, 16> small_targets{};
     VectorWithMemoryTracking<QuantileExactImpl::SelectTarget> large_targets(count > small_targets.size() ? count : 0);
     QuantileExactImpl::SelectTarget * targets = count > small_targets.size() ? large_targets.data() : small_targets.data();
     for (size_t i = 0; i < count; ++i)
@@ -204,7 +212,7 @@ void selectAtPositions(Array & array, const size_t * positions, size_t count, Va
         /// are often tiny and must not pay for histograms.
         if (array.size() >= 4096)
         {
-            std::array<size_t, QuantileExactImpl::radix_buckets> histogram;
+            std::array<size_t, QuantileExactImpl::radix_buckets> histogram{};
             QuantileExactImpl::radixSelect(array.data(), array.size(), targets, count, out, histogram.data());
             return;
         }
@@ -305,7 +313,7 @@ struct QuantileExact : QuantileExactBase<Value, QuantileExact<Value>>
         if (!array.empty())
         {
             size_t n = level < 1 ? static_cast<size_t>(level * static_cast<Float64>(array.size())) : (array.size() - 1);
-            Value value;
+            Value value{};
             selectAtPositions(array, &n, 1, &value);
             return value;
         }
@@ -520,7 +528,7 @@ struct QuantileExactLow : public QuantileExactBase<Value, QuantileExactLow<Value
                 // then return array[1].
                 n = level < 1 ? static_cast<size_t>(level * static_cast<Float64>(array.size())) : (array.size() - 1);
             }
-            Value value;
+            Value value{};
             selectAtPositions(array, &n, 1, &value);
             return value;
         }
@@ -597,7 +605,7 @@ struct QuantileExactHigh : public QuantileExactBase<Value, QuantileExactHigh<Val
                 // level and size of array. Example if level = 0.1 and size of array is 10.
                 n = level < 1 ? static_cast<size_t>(level * static_cast<Float64>(array.size())) : (array.size() - 1);
             }
-            Value value;
+            Value value{};
             selectAtPositions(array, &n, 1, &value);
             return value;
         }
