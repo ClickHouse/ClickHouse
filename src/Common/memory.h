@@ -9,7 +9,10 @@
 #include <Common/CurrentMemoryTracker.h>
 #include <Common/MemoryTrackerUntrackedAllocationsBlockerInThread.h>
 
-#if defined(OS_LINUX)
+/// Emscripten's libc++ defines `_GNU_SOURCE`, and its musl-derived libc does declare
+/// `malloc_usable_size` in `<malloc.h>` - it just does not get pulled in by anything else,
+/// so it has to be included explicitly for the unsized-delete accounting path below.
+#if defined(OS_LINUX) || defined(OS_WASM)
 #    include <malloc.h>
 #elif defined(OS_DARWIN)
 #    include <malloc/malloc.h>
@@ -168,9 +171,7 @@ inline ALWAYS_INLINE size_t untrackMemory(void * ptr [[maybe_unused]], Allocatio
 #else
         if (size)
             actual_size = size;
-    /// Emscripten's libc++ defines `_GNU_SOURCE`, but its musl-derived libc has no
-    /// `malloc_usable_size`.
-#    if defined(_GNU_SOURCE) && !defined(OS_WASM)
+#    if defined(_GNU_SOURCE)
         /// It's innaccurate resource free for sanitizers. malloc_usable_size() result is greater or equal to allocated size.
         else
             actual_size = malloc_usable_size(ptr);
