@@ -1,6 +1,7 @@
 #include <Parsers/FunctionSecretArgumentsFinder.h>
 
 #include <algorithm>
+#include <unordered_set>
 
 #include <Common/KnownObjectNames.h>
 #include <Common/StringUtils.h>
@@ -933,7 +934,38 @@ void FunctionSecretArgumentsFinder::findBigQuerySecretArguments()
     static constexpr std::string_view plain_keys[]
         = {"project", "dataset", "table", "client_id", "billing_project", "base_url", "token_url"};
 
+    /// The positional arguments fill these slots in this order, exactly as
+    /// `BigQueryConfiguration::fromArguments` does; a slot already claimed by a `key = value`
+    /// argument makes the query invalid, but it is logged before validation rejects it.
+    static constexpr std::string_view positional_slots[] = {"project", "dataset", "table", "access_token"};
+
     const size_t start = isNamedCollectionName(0) ? 1 : 0;
+
+    /// The first pass reads the keys: a positional argument is only non-secret when the slot it
+    /// lands on is not claimed by a named argument, and the named arguments can follow it.
+    std::unordered_set<std::string_view> named_slots;
+    bool all_keys_readable = true;
+    for (size_t i = start; i < function->arguments->size(); ++i)
+    {
+        const auto equals_func = function->arguments->at(i)->getFunction();
+        if (!equals_func || equals_func->name() != "equals")
+            continue;
+
+        String key;
+        if (equals_func->arguments && equals_func->arguments->size() == 2
+            && tryGetStringFromArgument(*equals_func->arguments->at(0), &key))
+        {
+            const auto * slot = std::find(std::begin(positional_slots), std::end(positional_slots), key);
+            if (slot != std::end(positional_slots))
+                named_slots.emplace(*slot);
+        }
+        else
+        {
+            /// A key we cannot read may claim any slot, so no positional argument can be trusted.
+            all_keys_readable = false;
+        }
+    }
+
     size_t num_positional = 0;
     for (size_t i = start; i < function->arguments->size(); ++i)
     {
@@ -956,12 +988,14 @@ void FunctionSecretArgumentsFinder::findBigQuerySecretArguments()
         }
         else
         {
+            const size_t slot_index = num_positional;
             ++num_positional;
-            /// Only the first three positional arguments ('project', 'dataset', 'table') are
-            /// not secret: the 4th one is the access token, and anything past it - a positional
-            /// argument after a named collection, or a 5th positional - is invalid, but the
-            /// query is logged before validation rejects it.
-            if (start == 1 || num_positional >= 4)
+            /// Only the positional arguments landing on the free 'project', 'dataset' and 'table'
+            /// slots are not secret: the 4th slot is the access token, and anything past it - a
+            /// positional argument after a named collection, a 5th positional, or one whose slot
+            /// is already taken by a `key = value` argument - is invalid, but the query is logged
+            /// before validation rejects it.
+            if (start == 1 || !all_keys_readable || slot_index >= 3 || named_slots.contains(positional_slots[slot_index]))
                 markSecretArgument(i);
         }
     }

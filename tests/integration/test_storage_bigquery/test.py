@@ -1319,6 +1319,49 @@ def test_secret_masking_fails_closed_on_invalid_arguments():
     assert "stray-secret" not in logged
     assert "[HIDDEN]" in logged
 
+    # A positional argument landing on a slot already claimed by a `key = value` argument is
+    # invalid too: the parser maps positionals onto the 'project', 'dataset', 'table' and
+    # 'access_token' slots strictly by ordinal, so this lone positional is a would-be 'project'
+    # while 'project' is already named - it may well be a misplaced token and must be hidden.
+    query_id = "bigquery-masking-occupied-slot-test"
+    node.query_and_get_error(
+        f"SELECT count() FROM bigquery(project = '{PROJECT}', dataset = '{DATASET}', "
+        f"table = 'test_paging', '{ACCESS_TOKEN}', base_url = '{BASE_URL}')",
+        query_id=query_id,
+    )
+    logged = query_from_log(query_id, event_type="ExceptionBeforeStart")
+    assert logged != ""
+    assert ACCESS_TOKEN not in logged
+    assert "[HIDDEN]" in logged
+    assert BASE_URL in logged
+
+    # The same for the engine form, which is masked by the table-engine finder.
+    node.query("DROP TABLE IF EXISTS bq_engine_occupied_slot")
+    query_id = "bigquery-masking-occupied-slot-engine-test"
+    node.query_and_get_error(
+        f"CREATE TABLE bq_engine_occupied_slot ENGINE = BigQuery(project = '{PROJECT}', "
+        f"dataset = '{DATASET}', table = 'test_paging', '{ACCESS_TOKEN}', base_url = '{BASE_URL}')",
+        query_id=query_id,
+    )
+    logged = query_from_log(query_id, event_type="ExceptionBeforeStart")
+    assert logged != ""
+    assert ACCESS_TOKEN not in logged
+    assert "[HIDDEN]" in logged
+
+    # A key that is a constant expression may claim any slot, so no positional argument can be
+    # trusted: they all fail closed, even the ones that would be 'project' and 'dataset'.
+    query_id = "bigquery-masking-unreadable-key-positional-test"
+    node.query_and_get_error(
+        f"SELECT count() FROM bigquery('{PROJECT}', '{DATASET}', 'test_paging', "
+        f"concat('access', '_token') = '{ACCESS_TOKEN}', base_url = '{BASE_URL}')",
+        query_id=query_id,
+    )
+    logged = query_from_log(query_id, event_type="ExceptionBeforeStart")
+    assert logged != ""
+    assert ACCESS_TOKEN not in logged
+    assert PROJECT not in logged
+    assert "[HIDDEN]" in logged
+
 
 def test_named_target_arguments():
     # `project`, `dataset` and `table` are first-class `key = value` arguments in the
