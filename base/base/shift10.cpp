@@ -5,11 +5,6 @@
 #include <limits>
 
 
-/// `long double` is used deliberately: the integer overloads convert UInt64/Int64 exactly and delay rounding until
-/// after the decimal shift, which `readFloatTextFastImpl` relies on for correct Float64 parsing near rounding
-/// boundaries. `double` would round the integer first and change parsed values, so suppress google-runtime-float here.
-// NOLINTBEGIN(google-runtime-float)
-
 template <typename T>
 static T shift10Impl(T x, int exponent)
 {
@@ -82,5 +77,3 @@ long double shift10(Int64 x, int exponent)
 {
     return shift10Impl(static_cast<long double>(x), exponent);
 }
-
-// NOLINTEND(google-runtime-float)

@@ -98,7 +98,7 @@ struct IntermediateDenominator<UInt32, DenominatorType, denominator_mode>
 template <typename DenominatorType, DenominatorMode denominator_mode>
 struct IntermediateDenominator<UInt64, DenominatorType, denominator_mode>
 {
-    using Type = double;
+    using Type = long double;
 };
 
 template <typename HashValueType, typename DenominatorType>
@@ -179,10 +179,10 @@ public:
 
     DenominatorType get() const
     {
-        double val = rank_count[size - 1];
+        long double val = rank_count[size - 1];
         for (int i = size - 2; i >= 0; --i)
         {
-            val /= 2.0;
+            val /= 2.0L;
             val += rank_count[i];
         }
         return static_cast<DenominatorType>(val);
