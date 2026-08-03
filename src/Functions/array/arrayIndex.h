@@ -12,6 +12,7 @@
 #include <DataTypes/DataTypeMap.h>
 #include <DataTypes/DataTypeNullable.h>
 #include <DataTypes/DataTypeTuple.h>
+#include <DataTypes/DataTypeVariant.h>
 #include <DataTypes/DataTypesNumber.h>
 #include <DataTypes/getLeastSupertype.h>
 #include <Columns/ColumnArray.h>
@@ -40,6 +41,7 @@ namespace ErrorCodes
     extern const int ILLEGAL_COLUMN;
     extern const int ILLEGAL_TYPE_OF_ARGUMENT;
     extern const int LOGICAL_ERROR;
+    extern const int NO_COMMON_TYPE;
 }
 
 using NullMap = PaddedPODArray<UInt8>;
@@ -537,12 +539,9 @@ public:
 
     FunctionArrayIndex() = default;
 
-    /// A null context is benign: `equals` is then built with default ComparisonParams, mirroring
+    /// A null ContextPtr is benign: `equals` is then built with default ComparisonParams, mirroring
     /// FunctionComparison::create. The relation stays correct, only query settings are not applied.
-    explicit FunctionArrayIndex(ContextPtr context_)
-        : equals_resolver(FunctionFactory::instance().get("equals", context_))
-    {
-    }
+    explicit FunctionArrayIndex(ContextPtr context_) : context(std::move(context_)), has_context(true) { }
 
     /// Get function name.
     String getName() const override { return name; }
@@ -720,6 +719,100 @@ private:
         return {nullable_column->getNestedColumnPtr(), removeNullable(operand.type), operand.name};
     }
 
+    /// A column positionally aligned with the original rows, plus a null map marking the rows holding
+    /// no value. A null `operand.column` means every row is NULL.
+    struct PeeledOperand
+    {
+        ColumnWithTypeAndName operand;
+        ColumnPtr null_map_column;
+    };
+
+    /// Replace a Dynamic/Variant operand by the one concrete alternative it holds, or return nothing
+    /// so the caller declines. Mirrors the two fast paths of FunctionVariantAdaptor.
+    static std::optional<PeeledOperand> tryPeelErased(const ColumnWithTypeAndName & operand)
+    {
+        if (!isDynamic(operand.type) && !isVariant(operand.type))
+            return {};
+
+        auto full_column = operand.column->convertToFullColumnIfConst();
+
+        const ColumnVariant * variant_column = nullptr;
+        DataTypes alternative_types;
+        std::optional<ColumnVariant::Discriminator> shared_variant_discriminator;
+
+        if (const auto * dynamic_column = checkAndGetColumn<ColumnDynamic>(full_column.get()))
+        {
+            variant_column = &dynamic_column->getVariantColumn();
+            alternative_types = assert_cast<const DataTypeVariant &>(*dynamic_column->getVariantInfo().variant_type).getVariants();
+            shared_variant_discriminator = dynamic_column->getSharedVariantDiscriminator();
+        }
+        else if (const auto * as_variant = checkAndGetColumn<ColumnVariant>(full_column.get()))
+        {
+            variant_column = as_variant;
+            alternative_types = assert_cast<const DataTypeVariant &>(*operand.type).getVariants();
+        }
+
+        if (!variant_column)
+            return {};
+
+        /// Every row is NULL: there is no alternative to peel, so the answer comes from the null maps
+        /// alone. Comparing anything here would fail, because a Nothing-typed argument is rejected
+        /// unless the result is Nothing too.
+        if (variant_column->hasOnlyNulls())
+            return PeeledOperand{{nullptr, operand.type, operand.name}, ColumnUInt8::create(variant_column->size(), UInt8(1))};
+
+        auto discriminator = variant_column->getGlobalDiscriminatorOfOneNoneEmptyVariant();
+        if (!discriminator || discriminator == shared_variant_discriminator)
+            return {};
+
+        const auto & alternative_type = alternative_types[*discriminator];
+
+        /// Equality for identical Array/Map types is compareAt-based, the very relation the guard
+        /// stops at, so peeling into one would reintroduce it behind the guard's back.
+        if (hasContainer(*alternative_type))
+            return {};
+
+        auto alternative_column = variant_column->getVariantPtrByGlobalDiscriminator(*discriminator);
+
+        if (alternative_column->size() == variant_column->size())
+            return PeeledOperand{{alternative_column, alternative_type, operand.name}, nullptr};
+
+        /// Fewer rows than the column has: the alternative holds only the rows that selected it.
+        PaddedPODArray<UInt8> filter;
+        filter.reserve(variant_column->size());
+        auto local_discriminator = variant_column->localDiscriminatorByGlobal(*discriminator);
+        for (const auto & row_discriminator : variant_column->getLocalDiscriminators())
+            filter.push_back(row_discriminator == local_discriminator);
+
+        auto expanded = IColumn::mutate(std::move(alternative_column));
+        expanded->expand(filter, /* inverted = */ false);
+
+        auto null_map = ColumnUInt8::create(filter.size());
+        auto & null_map_data = null_map->getData();
+        for (size_t row = 0; row < filter.size(); ++row)
+            null_map_data[row] = !filter[row];
+
+        return PeeledOperand{{std::move(expanded), alternative_type, operand.name}, std::move(null_map)};
+    }
+
+    /// True when `type` is an Array or Map, at the top level or inside any chain of Tuple wrappers.
+    static bool hasContainer(const IDataType & type)
+    {
+        checkStackSize();
+
+        if (isArray(type) || isMap(type))
+            return true;
+
+        if (const auto * tuple_type = typeid_cast<const DataTypeTuple *>(&type))
+        {
+            for (const auto & element : tuple_type->getElements())
+                if (hasContainer(*element))
+                    return true;
+        }
+
+        return false;
+    }
+
     /// Split a Tuple operand into its element columns, or return nothing when it is not a plain
     /// Tuple. A Nullable wrapper is removed by unwrapNullable before this is reached.
     static std::optional<ColumnsWithTypeAndName> tryDecomposeTuple(const ColumnWithTypeAndName & operand)
@@ -739,24 +832,81 @@ private:
         return elements;
     }
 
-    /// Evaluate `equals` over `elements` against `needles` (already aligned element-wise) and fold
-    /// the outcome into a match bitmap.
-    ///
-    /// Tuples are decomposed here rather than left to `equals`, because a NULL nested in a Tuple is
-    /// invisible to the fold: ColumnTuple has no isNullAt of its own, so it inherits IColumn's
-    /// `return false`, while Dynamic/Variant/Nullable leaves do report their nullness. Comparing
-    /// element-wise puts every NULL where the fold can see it, and `equals` collapses a row holding
-    /// one to a single NULL that could not settle the row's other positions anyway.
-    ColumnUInt8::MutablePtr evaluateElementwiseEquality(
+    /// Apply one wrapper level's nullness to an already-computed match bitmap: two NULLs match, a
+    /// lone NULL does not. Each level folds its own map, so an outer NULL and a nested one stay
+    /// distinguishable.
+    static void foldNullMaps(
+        PaddedPODArray<UInt8> & matches_data,
+        const ColumnWithTypeAndName & elements,
+        const ColumnPtr & elements_null_map_column,
+        const ColumnWithTypeAndName & needles,
+        const ColumnPtr & needles_null_map_column)
+    {
+        if (!elements_null_map_column && !needles_null_map_column)
+            return;
+
+        /// A column may report its own nullness too, so both sources are consulted: pairing a NULL a
+        /// wrapper knows about with one only the column knows about must still count as two NULLs.
+        for (size_t row = 0; row < matches_data.size(); ++row)
+        {
+            const bool element_is_null = isNullAtRow(elements.column, elements_null_map_column, row);
+            const bool needle_is_null = isNullAtRow(needles.column, needles_null_map_column, row);
+
+            if (element_is_null || needle_is_null)
+                matches_data[row] = element_is_null && needle_is_null;
+        }
+    }
+
+    /// Fold `equals` over `elements` against `needles` into a match bitmap. Nothing means the pair
+    /// cannot be compared, so the caller must abandon the call rather than combine a partial result.
+    /// Tuples are decomposed here because ColumnTuple has no isNullAt to report a NULL nested in one.
+    std::optional<ColumnUInt8::MutablePtr> evaluateElementwiseEquality(
         const ColumnWithTypeAndName & elements, const ColumnWithTypeAndName & needles) const
     {
         checkStackSize();
+
+        const size_t rows = elements.column->size();
 
         /// Hold the null map columns for as long as their data is read below.
         ColumnPtr elements_null_map_column;
         ColumnPtr needles_null_map_column;
         auto bare_elements = unwrapNullable(elements, elements_null_map_column);
         auto bare_needles = unwrapNullable(needles, needles_null_map_column);
+
+        /// Peel before decomposing, so an erased operand holding a Tuple reaches the branch below.
+        if (auto peeled_elements = tryPeelErased(bare_elements))
+        {
+            bare_elements = peeled_elements->operand;
+            foldNullMapInto(elements_null_map_column, peeled_elements->null_map_column);
+        }
+        else if (isDynamic(bare_elements.type) || isVariant(bare_elements.type))
+            return {};
+
+        if (auto peeled_needles = tryPeelErased(bare_needles))
+        {
+            bare_needles = peeled_needles->operand;
+            foldNullMapInto(needles_null_map_column, peeled_needles->null_map_column);
+        }
+        else if (isDynamic(bare_needles.type) || isVariant(bare_needles.type))
+            return {};
+
+        /// A Nothing-typed operand carries no value either, and comparing one is rejected outright
+        /// unless the result is Nothing too, so mark it the same way a fully-NULL erased column is.
+        markAsAllNull(bare_elements, elements_null_map_column, rows);
+        markAsAllNull(bare_needles, needles_null_map_column, rows);
+
+        /// One side holds no value in any row, so nullness alone decides every row. The surviving
+        /// side may still report its own nullness positionally, as a LowCardinality dictionary does,
+        /// so it is asked here the same way the leaf fold asks it.
+        if (!bare_elements.column || !bare_needles.column)
+        {
+            auto matches = ColumnUInt8::create(rows);
+            auto & matches_data = matches->getData();
+            for (size_t row = 0; row < rows; ++row)
+                matches_data[row] = isNullAtRow(bare_elements.column, elements_null_map_column, row)
+                    && isNullAtRow(bare_needles.column, needles_null_map_column, row);
+            return matches;
+        }
 
         if (auto element_parts = tryDecomposeTuple(bare_elements))
         {
@@ -765,44 +915,95 @@ private:
             {
                 /// A tuple matches iff every position does.
                 auto matches = evaluateElementwiseEquality((*element_parts)[0], (*needle_parts)[0]);
-                auto & matches_data = matches->getData();
+                if (!matches)
+                    return {};
+
+                auto & matches_data = (*matches)->getData();
 
                 for (size_t i = 1, size = element_parts->size(); i < size; ++i)
                 {
                     auto part_matches = evaluateElementwiseEquality((*element_parts)[i], (*needle_parts)[i]);
-                    const auto & part_matches_data = part_matches->getData();
+                    if (!part_matches)
+                        return {};
+
+                    const auto & part_matches_data = (*part_matches)->getData();
                     for (size_t row = 0; row < matches_data.size(); ++row)
                         matches_data[row] &= part_matches_data[row];
                 }
 
-                /// Same rule the leaf fold applies, one level out: two NULLs match, a lone NULL does not.
-                if (elements_null_map_column || needles_null_map_column)
-                {
-                    const auto * elements_null_map = elements_null_map_column
-                        ? &assert_cast<const ColumnUInt8 &>(*elements_null_map_column).getData() : nullptr;
-                    const auto * needles_null_map = needles_null_map_column
-                        ? &assert_cast<const ColumnUInt8 &>(*needles_null_map_column).getData() : nullptr;
-
-                    for (size_t row = 0; row < matches_data.size(); ++row)
-                    {
-                        const bool element_is_null = elements_null_map && (*elements_null_map)[row];
-                        const bool needle_is_null = needles_null_map && (*needles_null_map)[row];
-
-                        if (element_is_null || needle_is_null)
-                            matches_data[row] = element_is_null && needle_is_null;
-                    }
-                }
-
+                foldNullMaps(
+                    matches_data, bare_elements, elements_null_map_column, bare_needles, needles_null_map_column);
                 return matches;
             }
         }
 
-        ColumnsWithTypeAndName equals_arguments{elements, needles};
-        auto equals_function = equals_resolver->build(equals_arguments);
-        auto equality_result = equals_function->execute(
-            equals_arguments, equals_function->getResultType(), elements.column->size(), /* dry_run = */ false);
+        /// A resolver instance may resolve only one overload (IFunction.h), and the leaves of a Tuple
+        /// need one each, so this is obtained per pair rather than kept as a member.
+        ColumnsWithTypeAndName equals_arguments{bare_elements, bare_needles};
+        ColumnPtr equality_result;
+        try
+        {
+            auto equals_function = FunctionFactory::instance().get("equals", context)->build(equals_arguments);
+            equality_result
+                = equals_function->execute(equals_arguments, equals_function->getResultType(), rows, /* dry_run = */ false);
+        }
+        catch (const Exception & e)
+        {
+            /// The peeled types are not comparable, which the comparison subsystem alone can decide:
+            /// its String arms are admitted by type and then converted per value. Decline, so the
+            /// existing dispatch answers exactly as it does today.
+            if (e.code() != ErrorCodes::NO_COMMON_TYPE && e.code() != ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT)
+                throw;
+            return {};
+        }
 
-        return foldEqualityResult(equality_result, *elements.column, *needles.column, elements.column->size());
+        auto matches = foldEqualityResult(equality_result, *bare_elements.column, *bare_needles.column, rows);
+        foldNullMaps(matches->getData(), bare_elements, elements_null_map_column, bare_needles, needles_null_map_column);
+        return matches;
+    }
+
+    /// Whether one row of an operand holds no value: either a wrapper level said so, or the column
+    /// itself reports it. A missing column means the operand holds no value in any row.
+    static bool isNullAtRow(const ColumnPtr & column, const ColumnPtr & null_map_column, size_t row)
+    {
+        if (null_map_column && assert_cast<const ColumnUInt8 &>(*null_map_column).getData()[row])
+            return true;
+
+        return !column || column->isNullAt(row);
+    }
+
+    /// Drop a Nothing-typed operand's column and mark every row NULL instead, so the fold answers
+    /// from the null maps rather than attempting a comparison there.
+    static void markAsAllNull(ColumnWithTypeAndName & operand, ColumnPtr & null_map_column, size_t rows)
+    {
+        if (!operand.column || !isNothing(operand.type))
+            return;
+
+        operand.column = nullptr;
+        foldNullMapInto(null_map_column, ColumnUInt8::create(rows, UInt8(1)));
+    }
+
+    /// Merge a newly-peeled level's null map into the one already collected for this operand.
+    /// Both mark absent rows of the same positional space, so a row is NULL if either says so.
+    static void foldNullMapInto(ColumnPtr & accumulated, const ColumnPtr & addition)
+    {
+        if (!addition)
+            return;
+
+        if (!accumulated)
+        {
+            accumulated = addition;
+            return;
+        }
+
+        auto merged = ColumnUInt8::create(assert_cast<const ColumnUInt8 &>(*accumulated).getData().begin(),
+                                         assert_cast<const ColumnUInt8 &>(*accumulated).getData().end());
+        auto & merged_data = merged->getData();
+        const auto & addition_data = assert_cast<const ColumnUInt8 &>(*addition).getData();
+        for (size_t row = 0; row < merged_data.size(); ++row)
+            merged_data[row] |= addition_data[row];
+
+        accumulated = std::move(merged);
     }
 
     /// Reduce a per-element match bitmap to one result per array row.
@@ -837,7 +1038,7 @@ private:
     /// Returns nullptr for every other common type, leaving the existing dispatch untouched.
     ColumnPtr executeErasedEquality(const ColumnsWithTypeAndName & arguments, const DataTypePtr & result_type) const
     {
-        if (!equals_resolver)
+        if (!has_context)
             return nullptr;
 
         auto common_type = tryGetDecayedCommonType(arguments);
@@ -847,6 +1048,11 @@ private:
         const auto & array_type = assert_cast<const DataTypeArray &>(*arguments[0].type);
         auto element_type = array_type.getNestedType();
         const auto & needle_type = arguments[1].type;
+
+        /// LowCardinality elements keep their dictionary fast path, whose null-needle answer depends on
+        /// a dictionary index this comparison has no equivalent for.
+        if (element_type->lowCardinality())
+            return nullptr;
 
         const auto * col_array_const = checkAndGetColumnConstData<ColumnArray>(arguments[0].column.get());
         const auto * col_array = col_array_const ? col_array_const : checkAndGetColumn<ColumnArray>(arguments[0].column.get());
@@ -865,11 +1071,13 @@ private:
             auto matches = evaluateElementwiseEquality(
                 {elements, element_type, "elements"},
                 {needle_const->getDataColumnPtr()->cloneResized(1)->replicate({elements_count}), needle_type, "needle"});
+            if (!matches)
+                return nullptr;
 
             ResultType current = 0;
             for (size_t i = 0; i < elements_count; ++i)
             {
-                if (!matches->getData()[i])
+                if (!(*matches)->getData()[i])
                     continue;
 
                 ConcreteAction::apply(current, i);
@@ -881,36 +1089,6 @@ private:
             return result_type->createColumnConst(arguments[0].column->size(), current);
         }
 
-        /// LowCardinality elements and a const needle: compare dictionary entries rather than every
-        /// element. Materialising instead was measured slower, which is why that fast path exists.
-        if (const auto * elements_lc = checkAndGetColumn<ColumnLowCardinality>(&col_array->getData());
-            elements_lc && needle_const && !col_array_const)
-        {
-            auto dictionary_type = removeLowCardinality(element_type);
-            auto dictionary_matches = LowCardinalityExecutionHelpers::dictionaryMatchesForSelectedIndexes(
-                *elements_lc,
-                [&](const ColumnPtr & dictionary_values) -> ColumnPtr
-                {
-                    /// dictionaryMatchesForSelectedIndexes requires a plain ColumnUInt8, while `equals`
-                    /// over an erased type returns Nullable(UInt8).
-                    return evaluateElementwiseEquality(
-                        {dictionary_values, dictionary_type, "dictionary"},
-                        {needle_const->getDataColumnPtr()->cloneResized(1)->replicate({dictionary_values->size()}),
-                         needle_type,
-                         "needle"});
-                });
-
-            const auto & dictionary_matches_data = assert_cast<const ColumnUInt8 &>(*dictionary_matches).getData();
-            const auto & offsets = col_array->getOffsets();
-
-            auto matches = ColumnUInt8::create(elements_lc->size());
-            auto & matches_data = matches->getData();
-            for (size_t i = 0, size = elements_lc->size(); i < size; ++i)
-                matches_data[i] = dictionary_matches_data[elements_lc->getIndexAt(i)];
-
-            return foldMatchesPerRow(matches_data, offsets);
-        }
-
         auto full_array = arguments[0].column->convertToFullColumnIfConst();
         const auto & array = assert_cast<const ColumnArray &>(*full_array);
         const auto & offsets = array.getOffsets();
@@ -918,8 +1096,10 @@ private:
         auto matches = evaluateElementwiseEquality(
             {array.getDataPtr(), element_type, "elements"},
             {arguments[1].column->convertToFullColumnIfConst()->replicate(offsets), needle_type, "needle"});
+        if (!matches)
+            return nullptr;
 
-        return foldMatchesPerRow(matches->getData(), offsets);
+        return foldMatchesPerRow((*matches)->getData(), offsets);
     }
 
     /** If one or both arguments passed to this function are nullable,
@@ -1622,7 +1802,9 @@ private:
         return col_res;
     }
 
-    /// Null when the function was constructed without a context; executeErasedEquality then declines.
-    FunctionOverloadResolverPtr equals_resolver;
+    ContextPtr context;
+    /// False when the function was default-constructed, i.e. no context was supplied at all;
+    /// executeErasedEquality then declines. A supplied but null ContextPtr still resolves `equals`.
+    bool has_context = false;
 };
 }

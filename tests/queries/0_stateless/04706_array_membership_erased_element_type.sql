@@ -78,7 +78,7 @@ SELECT '-- Array(Variant)';
 
 DROP TABLE IF EXISTS t_var;
 CREATE TABLE t_var (id UInt8, v Array(Variant(UInt8, UInt64))) ENGINE = Memory;
-INSERT INTO t_var VALUES (0, [1::UInt64]), (1, [1::UInt8]), (2, [2::UInt64]);
+INSERT INTO t_var VALUES (0, [1::UInt64]), (1, [2::UInt64]);
 
 SELECT
     id,
@@ -129,6 +129,18 @@ INSERT INTO t_tuple_arr VALUES ([tuple([1::UInt64])]);
 
 SELECT has(v, tuple([1::UInt8])) AS got, toUInt8(arrayExists(x -> x = tuple([1::UInt8]), v)) AS want FROM t_tuple_arr;
 
+-- The same barrier when the declared type is a plain Dynamic and the container is only what it
+-- happens to hold, which a check of the declared type alone would let through.
+DROP TABLE IF EXISTS t_dyn_container;
+CREATE TABLE t_dyn_container (id UInt8, v Array(Dynamic)) ENGINE = Memory;
+INSERT INTO t_dyn_container VALUES (0, [CAST([1::UInt64::Dynamic], 'Dynamic')]),
+    (1, [CAST(map('k', 1::UInt64), 'Dynamic')]), (2, [CAST(tuple([1::UInt64::Dynamic]), 'Dynamic')]);
+
+SELECT has(v, CAST([1::UInt8::Dynamic], 'Dynamic')) AS array_alternative FROM t_dyn_container WHERE id = 0;
+SELECT has(v, CAST(map('k', 1::UInt8), 'Dynamic')) AS map_alternative FROM t_dyn_container WHERE id = 1;
+SELECT has(v, CAST(tuple([1::UInt8::Dynamic]), 'Dynamic')) AS tuple_of_array_alternative
+FROM t_dyn_container WHERE id = 2;
+
 SELECT '-- NULL: two NULLs are equal, per has([NULL], NULL) -> 1';
 
 DROP TABLE IF EXISTS t_null;
@@ -143,12 +155,45 @@ SELECT
     has(CAST(['x'], 'Array(Dynamic)'), NULL) AS got,
     toUInt8(arrayExists(y -> isNull(y), CAST(['x'], 'Array(Dynamic)'))) AS want;
 
+-- A NULL needle whose nullness is reported by the column itself rather than by a wrapper, which is
+-- how a LowCardinality dictionary reports it. All three spellings of the needle agree.
+SET allow_suspicious_low_cardinality_types = 1;
+
+SELECT
+    has(materialize(CAST([NULL], 'Array(Dynamic)')), CAST(NULL, 'LowCardinality(Nullable(String))')) AS low_cardinality_needle,
+    has(materialize(CAST([NULL], 'Array(Dynamic)')), CAST(NULL, 'Nullable(String)')) AS nullable_needle,
+    has(materialize(CAST([NULL], 'Array(Dynamic)')), NULL) AS bare_needle,
+    has(materialize(CAST(['x'], 'Array(Dynamic)')), CAST(NULL, 'LowCardinality(Nullable(String))')) AS no_match_control;
+
+SET allow_suspicious_low_cardinality_types = 0;
+
 -- A NULL needle against non-NULL erased values, and the reverse.
 DROP TABLE IF EXISTS t_null_mix;
 CREATE TABLE t_null_mix (id UInt8, v Array(Dynamic)) ENGINE = Memory;
 INSERT INTO t_null_mix VALUES (0, [1::UInt64, NULL::Dynamic]), (1, [1::UInt64]);
 
 SELECT id, has(v, NULL::Dynamic) AS null_needle, has(v, 1::UInt8) AS value_needle FROM t_null_mix ORDER BY id;
+
+-- Rows where the match sits AFTER a NULL. The values of one stored type are held without the NULL
+-- positions, so the reported position is what detects them being put back in the wrong place.
+DROP TABLE IF EXISTS t_null_interleaved;
+CREATE TABLE t_null_interleaved (id UInt8, v Array(Dynamic)) ENGINE = Memory;
+INSERT INTO t_null_interleaved VALUES (0, [NULL, 1::UInt64]), (1, [NULL, 2::UInt64, 1::UInt64]), (2, [NULL, NULL]);
+
+SELECT
+    id,
+    has(v, 1::UInt8) AS value_got,
+    toUInt8(arrayExists(x -> x = 1::UInt8, v)) AS value_want,
+    indexOf(v, 1::UInt8) AS value_index_got,
+    indexOf(arrayMap(x -> toUInt8(x = 1::UInt8), v), 1) AS value_index_want,
+    countEqual(v, 1::UInt8) AS value_count_got,
+    length(arrayFilter(x -> x = 1::UInt8, v)) AS value_count_want,
+    has(v, NULL) AS null_got,
+    toUInt8(arrayExists(x -> isNull(x), v)) AS null_want,
+    indexOf(v, NULL) AS null_index_got,
+    indexOf(arrayMap(x -> toUInt8(isNull(x)), v), 1) AS null_index_want
+FROM t_null_interleaved
+ORDER BY id;
 
 -- Array(Nullable(T)) with an erased needle keeps its wrapper-level NULL semantics.
 DROP TABLE IF EXISTS t_nullable;
@@ -209,6 +254,32 @@ SELECT
     has(v, tuple(CAST(1::UInt8, 'Variant(UInt8, UInt64)'))) AS value_needle_got
 FROM t_tuple_null_var;
 
+-- The Tuple can also sit BELOW an erased wrapper rather than above it. Whether a wrapper's own
+-- nullness is visible says nothing about a NULL nested under it, so every constructible wrapper
+-- combination is enumerated here; a future one that behaves differently reddens a cell unprompted.
+DROP TABLE IF EXISTS t_dyn_tuple_null;
+CREATE TABLE t_dyn_tuple_null (id UInt8, v Array(Dynamic)) ENGINE = Memory;
+INSERT INTO t_dyn_tuple_null VALUES (0, [CAST(tuple(NULL::Dynamic), 'Dynamic')]),
+    (1, [CAST(tuple('a'::Dynamic), 'Dynamic')]);
+
+SELECT
+    id,
+    has(v, CAST(tuple(NULL::Dynamic), 'Dynamic')) AS null_needle_got,
+    toUInt8(arrayExists(x -> isNotDistinctFrom(x, CAST(tuple(NULL::Dynamic), 'Dynamic')), v)) AS null_needle_want,
+    has(v, CAST(tuple('a'::Dynamic), 'Dynamic')) AS value_needle_got,
+    toUInt8(arrayExists(x -> isNotDistinctFrom(x, CAST(tuple('a'::Dynamic), 'Dynamic')), v)) AS value_needle_want
+FROM t_dyn_tuple_null
+ORDER BY id;
+
+DROP TABLE IF EXISTS t_var_tuple_null;
+CREATE TABLE t_var_tuple_null (v Array(Variant(Tuple(Dynamic), UInt8))) ENGINE = Memory;
+INSERT INTO t_var_tuple_null VALUES ([CAST(tuple(NULL::Dynamic), 'Variant(Tuple(Dynamic), UInt8)')]);
+
+SELECT
+    has(v, CAST(tuple(NULL::Dynamic), 'Variant(Tuple(Dynamic), UInt8)')) AS got,
+    toUInt8(arrayExists(x -> isNotDistinctFrom(x, CAST(tuple(NULL::Dynamic), 'Variant(Tuple(Dynamic), UInt8)')), v)) AS want
+FROM t_var_tuple_null;
+
 -- Paired NULLs are not on their own a match: the non-NULL positions still have to agree.
 DROP TABLE IF EXISTS t_tuple_null_mixed;
 CREATE TABLE t_tuple_null_mixed (id UInt8, v Array(Tuple(Dynamic, UInt8))) ENGINE = Memory;
@@ -228,7 +299,7 @@ SELECT '-- Map: direct has(map, key), mapContainsKey, mapContainsValue';
 
 DROP TABLE IF EXISTS t_map_key;
 CREATE TABLE t_map_key (id UInt8, m Map(Dynamic, UInt8)) ENGINE = Memory;
-INSERT INTO t_map_key VALUES (0, map(1::UInt64, 7)), (1, map(1::UInt8, 7)), (2, map(2::UInt64, 7));
+INSERT INTO t_map_key VALUES (0, map(1::UInt64, 7)), (1, map(2::UInt64, 7));
 
 SELECT id, has(m, 1::UInt8) AS got, toUInt8(arrayExists(x -> x = 1::UInt8, mapKeys(m))) AS want
 FROM t_map_key ORDER BY id;
@@ -244,45 +315,90 @@ INSERT INTO t_map_value VALUES (0, map('k', 1::UInt64)), (1, map('k', 2::UInt64)
 SELECT id, mapContainsValue(m, 1::UInt8) AS got, toUInt8(arrayExists(x -> x = 1::UInt8, mapValues(m))) AS want
 FROM t_map_value ORDER BY id;
 
-SELECT '-- non-erased elements with an erased needle: the common type decides, not the element type';
+SELECT '-- out of contract: comparability that depends on the values, previous behaviour kept';
+
+-- Every cell from here to the end of the next group is a must-not-regress control measured on
+-- pristine master, not a cell this change fixes. The `=` oracle cannot express them: it throws as
+-- soon as any one element is incomparable with the needle, while membership is an existential over
+-- elements and must still answer for the elements that do compare.
 
 DROP TABLE IF EXISTS t_string;
 CREATE TABLE t_string (id UInt8, v Array(String)) ENGINE = Memory;
 INSERT INTO t_string VALUES (0, ['1']), (1, ['2']);
 
--- A String-valued Dynamic needle compares as a String.
+-- A String-valued Dynamic needle compares as a String, which is already correct.
 SELECT id, has(v, '1'::Dynamic) AS got FROM t_string ORDER BY id;
 
--- A numeric Dynamic needle has no common type with String, so membership throws exactly like `=`.
-SELECT has(v, 1::UInt64::Dynamic) FROM t_string; -- { serverError NO_COMMON_TYPE }
-SELECT v[1] = 1::UInt64::Dynamic FROM t_string; -- { serverError NO_COMMON_TYPE }
-
--- With the mismatch setting disabled, `equals` yields NULL there and membership reports no match.
+-- A numeric needle against String elements, under either value of the mismatch setting.
+SELECT id, has(v, 1::UInt64::Dynamic) AS got FROM t_string ORDER BY id;
 SELECT id, has(v, 1::UInt64::Dynamic) AS got FROM t_string ORDER BY id
 SETTINGS dynamic_throw_on_type_mismatch = 0;
 
-SELECT '-- mixed variants: the *_throw_on_type_mismatch settings are inherited from `equals`';
+-- One concrete String alternative is not enough on its own: '1' parses as the needle and 'abc' does
+-- not, so the column has no single answer.
+DROP TABLE IF EXISTS t_str_alt;
+CREATE TABLE t_str_alt (id UInt8, v Array(Dynamic)) ENGINE = Memory;
+INSERT INTO t_str_alt VALUES (0, ['1']), (1, ['1', 'abc']);
 
+SELECT id, has(v, 1::UInt8) AS got, indexOf(v, 1::UInt8) AS idx FROM t_str_alt ORDER BY id;
+
+DROP TABLE IF EXISTS t_date_alt;
+CREATE TABLE t_date_alt (v Array(Dynamic)) ENGINE = Memory;
+INSERT INTO t_date_alt VALUES ([toDate('2020-01-01')]);
+
+SELECT has(v, 1::UInt8) AS got FROM t_date_alt;
+
+SELECT '-- out of contract: an erased column holding several concrete types at once';
+
+-- These answer correctly on master already: an element that cannot be compared with the needle must
+-- neither turn the whole row into an error nor shift the position indexOf reports.
 DROP TABLE IF EXISTS t_mixed_dyn;
 CREATE TABLE t_mixed_dyn (id UInt8, v Array(Dynamic)) ENGINE = Memory;
-INSERT INTO t_mixed_dyn VALUES (0, [1::UInt64]), (1, ['s']), (2, [1::UInt8]);
-
-SELECT has(v, 1::UInt8) FROM t_mixed_dyn WHERE id = 1; -- { serverError NO_COMMON_TYPE }
-
-SELECT id, has(v, 1::UInt8) AS got, toUInt8(arrayExists(x -> x = 1::UInt8, v)) AS want
-FROM t_mixed_dyn ORDER BY id
-SETTINGS dynamic_throw_on_type_mismatch = 0;
-
-DROP TABLE IF EXISTS t_mixed_var;
-CREATE TABLE t_mixed_var (id UInt8, v Array(Variant(String, UInt64))) ENGINE = Memory;
-INSERT INTO t_mixed_var VALUES (0, [1::UInt64]), (1, ['s']);
+INSERT INTO t_mixed_dyn VALUES (0, [1::UInt64]), (1, ['s', 1::UInt8]), (2, [1::UInt8]);
 
 SELECT
     id,
-    has(v, CAST(1::UInt64, 'Variant(String, UInt64)')) AS got,
-    toUInt8(arrayExists(x -> x = CAST(1::UInt64, 'Variant(String, UInt64)'), v)) AS want
-FROM t_mixed_var ORDER BY id
-SETTINGS variant_throw_on_type_mismatch = 0;
+    has(v, 1::UInt8) AS has_present,
+    indexOf(v, 1::UInt8) AS idx,
+    countEqual(v, 1::UInt8) AS cnt,
+    has(v, 2::UInt8) AS has_absent,
+    has(v, 1::UInt64) AS has_crosswidth
+FROM t_mixed_dyn ORDER BY id;
+
+SELECT
+    has(['s'::Dynamic, 1::UInt8::Dynamic], 1::UInt8) AS c_has,
+    indexOf(['s'::Dynamic, 1::UInt8::Dynamic], 1::UInt8) AS c_idx,
+    countEqual(['s'::Dynamic, 1::UInt8::Dynamic, 1::UInt8::Dynamic], 1::UInt8) AS c_cnt,
+    has(['s'::Dynamic, 1::UInt8::Dynamic], 2::UInt8) AS c_absent;
+
+DROP TABLE IF EXISTS t_mixed_map;
+CREATE TABLE t_mixed_map (m Map(Dynamic, UInt8)) ENGINE = Memory;
+INSERT INTO t_mixed_map VALUES (map('s', 1, 1::UInt8, 2));
+
+SELECT has(m, 1::UInt8) AS got FROM t_mixed_map;
+
+DROP TABLE IF EXISTS t_mixed_var;
+CREATE TABLE t_mixed_var (id UInt8, v Array(Variant(String, UInt64))) ENGINE = Memory;
+INSERT INTO t_mixed_var VALUES (0, [1::UInt64]), (1, ['s']), (2, ['s', 1::UInt64]);
+
+SELECT id, has(v, CAST(1::UInt64, 'Variant(String, UInt64)')) AS got FROM t_mixed_var ORDER BY id;
+
+-- Values that overflow into the shared variant are serialised together under one discriminator, so
+-- such a column is left alone as well.
+DROP TABLE IF EXISTS t_shared;
+CREATE TABLE t_shared (v Array(Dynamic(max_types=1))) ENGINE = Memory;
+INSERT INTO t_shared VALUES ([1::UInt64]), (['s']);
+
+SELECT has(v, 1::UInt8) AS got FROM t_shared;
+
+-- An admitted cell answers the same under both values of the mismatch setting: the comparison sees
+-- concrete types, so no adaptor is built and those settings do not reach it.
+DROP TABLE IF EXISTS t_setting;
+CREATE TABLE t_setting (v Array(Dynamic)) ENGINE = Memory;
+INSERT INTO t_setting VALUES ([1::UInt64]);
+
+SELECT has(v, 1::UInt8) AS got FROM t_setting SETTINGS dynamic_throw_on_type_mismatch = 0;
+SELECT has(v, 1::UInt8) AS got FROM t_setting SETTINGS dynamic_throw_on_type_mismatch = 1;
 
 SELECT '-- NULL nested inside a non-null Nullable(Tuple(...)) wrapper';
 

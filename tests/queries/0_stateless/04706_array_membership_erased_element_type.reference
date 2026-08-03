@@ -13,8 +13,7 @@
 1	2
 -- Array(Variant)
 0	1	1
-1	1	1
-2	0	0
+1	0	0
 -- erasure nested in Tuple, at any depth
 1	1
 1	1
@@ -23,12 +22,19 @@
 0	0
 0	0
 0	0
+0
+1
+0
 -- NULL: two NULLs are equal, per has([NULL], NULL) -> 1
 1	1
 1	1
 0	0
+1	1	1	0
 0	1	1
 1	0	1
+0	1	1	2	2	1	1	1	1	1	1
+1	1	1	3	3	1	1	1	1	1	1
+2	0	0	0	0	0	0	1	1	1	1
 0	1
 1	0
 2	0
@@ -39,28 +45,41 @@
 1	1	0
 1	1	0
 0	1	1	0	0
+1	0	0	1	1
+1	1
+0	1	1	0	0
 1	0	0	0	0
 2	0	0	1	1
 -- Map: direct has(map, key), mapContainsKey, mapContainsValue
 0	1	1
-1	1	1
-2	0	0
-0	1	1
-1	1	1
-2	0	0
+1	0	0
 0	1	1
 1	0	0
--- non-erased elements with an erased needle: the common type decides, not the element type
+0	1	1
+1	0	0
+-- out of contract: comparability that depends on the values, previous behaviour kept
 0	1
 1	0
 0	0
 1	0
--- mixed variants: the *_throw_on_type_mismatch settings are inherited from `equals`
-0	1	1
+0	0
+1	0
+0	0	0
 1	0	0
-2	1	1
-0	1	1
-1	0	0
+0
+-- out of contract: an erased column holding several concrete types at once
+0	0	0	0	0	1
+1	1	2	1	0	0
+2	1	1	1	0	0
+1	2	2	0
+1
+0	1
+1	0
+2	1
+0
+0
+1
+1
 -- NULL nested inside a non-null Nullable(Tuple(...)) wrapper
 0	1	1	0	0	0	0	1	1	1	1
 1	0	0	1	1	0	0	0	0	0	0
