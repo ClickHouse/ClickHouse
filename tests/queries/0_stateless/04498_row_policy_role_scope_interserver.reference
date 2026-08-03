@@ -1,0 +1,5 @@
+-- narrow role, remote read: only 'narrow' must be visible
+narrow
+-- admin role, remote read: both rows must be visible (no over-restriction)
+narrow
+secret

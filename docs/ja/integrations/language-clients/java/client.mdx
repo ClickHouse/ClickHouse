@@ -22,7 +22,6 @@ import WideTableWrapper from "/snippets/ja/components/WideTableWrapper/WideTable
 
   * Maven Central (プロジェクトのWebページ) : https://mvnrepository.com/artifact/com.clickhouse/client-v2
   * ナイトリービルド (リポジトリへのリンク) : https://central.sonatype.com/repository/maven-snapshots/
-  * 旧 Nightly build の artifactory (リポジトリへのリンク) : https://s01.oss.sonatype.org/content/repositories/snapshots/
 
   <br />
 
@@ -211,7 +210,7 @@ import WideTableWrapper from "/snippets/ja/components/WideTableWrapper/WideTable
     </Tab>
 
     <Tab title="サーバー設定">
-      | メソッド                                            | 引数                               | 説明                                                                                                                                                            | デフォルト     | キー                       |
+      | Method                                          | Arguments                        | Description                                                                                                                                                   | Default   | Key                      |
       | ----------------------------------------------- | -------------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------- | --------- | ------------------------ |
       | `serverSetting(String name, String value)`      | `name` - 設定名<br />`value` - 設定値  | 各クエリとともにサーバーに渡す設定を指定します。個々の操作の設定で上書きできます。[設定一覧](/ja/concepts/features/configuration/settings/settings-query-level)                                               | `none`    | `none`                   |
       | `serverSetting(String name, Collection values)` | `name` - 設定名<br />`values` - 設定値 | 複数の値を持つ設定をサーバーに渡すよう指定します。たとえば [ロール](/ja/concepts/features/interfaces/http#setting-role-with-query-parameters) です。                                                | `none`    | `none`                   |
@@ -334,7 +333,7 @@ import WideTableWrapper from "/snippets/ja/components/WideTableWrapper/WideTable
   * `full` - クライアント自身でデータをトランスコードでき、raw データストリームを受け入れます
   * `-` - このフォーマットでは、ClickHouse はこの操作をサポートしていません
 
-  このクライアント バージョンでは以下をサポートしています:
+  このクライアントバージョンでは以下をサポートしています:
 
   | フォーマット                                                                                                           |  入力  |  出力  |
   | ---------------------------------------------------------------------------------------------------------------- | :--: | :--: |
@@ -513,7 +512,7 @@ import WideTableWrapper from "/snippets/ja/components/WideTableWrapper/WideTable
   | `serverSetting(String name, String value)`      | 操作に対する個別のサーバー設定を行います。                                                               |
   | `serverSetting(String name, Collection values)` | 操作に対して、個別のサーバー設定に複数の値を設定します。コレクションの各項目は `String` 値である必要があります。                       |
   | `setDBRoles(Collection dbRoles)`                | 操作の実行前に設定する DB ロールを指定します。コレクションの項目は `String` 値である必要があります。                           |
-  | `setOption(String option, Object value)`        | raw形式で設定オプションを指定します。これはサーバー設定ではありません。                                               |
+  | `setOption(String option, Object value)`        | 構成オプションを生の形式で設定します。これはサーバー設定ではありません。                                                |
 
   ### InsertResponse
 
@@ -807,7 +806,7 @@ import WideTableWrapper from "/snippets/ja/components/WideTableWrapper/WideTable
   try (QueryResponse response = client.query("SELECT * FROM my_table").get()) {
       ClickHouseBinaryFormatReader reader = client.newBinaryFormatReader(response);
       while (reader.next() != null) {
-          
+
           Object[] uint64 = reader.getObjectArray("uint64_arr"); // Array(UInt64) -> BigInteger[]
           Object[] arr2d = reader.getObjectArray("arr2d");       // Array(Array(Int64)) -> Object[]
 
@@ -851,7 +850,7 @@ import WideTableWrapper from "/snippets/ja/components/WideTableWrapper/WideTable
   * 設定の定義元が少なくなりました。1 つはビルダーに渡され、もう 1 つは操作設定 (`QuerySettings`、`InsertSettings`) にあります。以前のバージョンではノードごとの設定があり、場合によっては
     環境変数を読み込んでいました。
 
-  ### 設定パラメータの一致
+  ### 設定パラメーターの一致
 
   V1にはconfigurationに関連するenumクラスが3つあります：
 
