@@ -19,6 +19,20 @@ namespace ProfileEvents
 namespace
 {
 
+bool isRetriableError(const Poco::Net::HTTPResponse::HTTPStatus http_status) noexcept
+{
+    static constexpr std::array non_retriable_errors{
+        Poco::Net::HTTPResponse::HTTPStatus::HTTP_BAD_REQUEST,
+        Poco::Net::HTTPResponse::HTTPStatus::HTTP_UNAUTHORIZED,
+        Poco::Net::HTTPResponse::HTTPStatus::HTTP_NOT_FOUND,
+        Poco::Net::HTTPResponse::HTTPStatus::HTTP_FORBIDDEN,
+        Poco::Net::HTTPResponse::HTTPStatus::HTTP_NOT_IMPLEMENTED,
+        Poco::Net::HTTPResponse::HTTPStatus::HTTP_METHOD_NOT_ALLOWED};
+
+    return std::all_of(
+        non_retriable_errors.begin(), non_retriable_errors.end(), [&](const auto status) { return http_status != status; });
+}
+
 Poco::URI getUriAfterRedirect(const Poco::URI & prev_uri, Poco::Net::HTTPResponse & response, bool enable_url_encoding)
 {
     chassert(DB::isRedirect(response.getStatus()));
@@ -187,7 +201,6 @@ ReadWriteBufferFromHTTP::ReadWriteBufferFromHTTP(
     bool use_external_buffer_,
     bool http_skip_not_found_url_,
     HTTPHeaderEntries http_header_entries_,
-    RedirectCallback redirect_callback_,
     bool delay_initialization,
     std::optional<HTTPFileInfo> file_info_)
     : SeekableReadBuffer(nullptr, 0)
@@ -205,7 +218,6 @@ ReadWriteBufferFromHTTP::ReadWriteBufferFromHTTP(
     , use_external_buffer(use_external_buffer_)
     , http_skip_not_found_url(http_skip_not_found_url_)
     , out_stream_callback(std::move(out_stream_callback_))
-    , redirect_callback(std::move(redirect_callback_))
     , redirects(0)
     , http_header_entries {std::move(http_header_entries_)}
     , file_info(file_info_)
@@ -291,9 +303,6 @@ ReadWriteBufferFromHTTP::CallResult ReadWriteBufferFromHTTP::callWithRedirects(
                 " Redirects are restricted to prevent possible attack when a malicious server redirects to an internal resource, bypassing the authentication or firewall.",
                 initial_uri.toString(), max_redirects ? "increase the allowed maximum number of" : "allow");
 
-        if (redirect_callback)
-            redirect_callback(current_uri, uri_redirect);
-
         current_uri = uri_redirect;
         result = callImpl(response, method_, range, true);
     }
@@ -334,7 +343,7 @@ void ReadWriteBufferFromHTTP::doWithRetries(std::function<void()> && callable,
         }
         catch (HTTPException & e)
         {
-            if (!isRetriableHTTPError(e.getHTTPStatus()))
+            if (!isRetriableError(e.getHTTPStatus()))
                 is_retriable = false;
 
             error_message = e.displayText();
@@ -693,13 +702,6 @@ Map ReadWriteBufferFromHTTP::getResponseHeaders() const
     return map;
 }
 
-std::optional<Field> ReadWriteBufferFromHTTP::getMetadata(const String & name) const
-{
-    if (name == "headers")
-        return Field(getResponseHeaders());
-    return std::nullopt;
-}
-
 void ReadWriteBufferFromHTTP::setNextCallback(NextCallback next_callback_)
 {
     next_callback = next_callback_;
@@ -743,9 +745,6 @@ std::optional<time_t> ReadWriteBufferFromHTTP::tryGetLastModificationTime()
 
 ReadWriteBufferFromHTTP::HTTPFileInfo ReadWriteBufferFromHTTP::getFileInfo()
 {
-    if (file_info)
-        return *file_info;
-
     /// May be disabled in case the user knows in advance that the server doesn't support HEAD requests.
     /// Allows to avoid making unnecessary requests in such cases.
     if (!read_settings.http_settings.make_head_request)
@@ -775,8 +774,7 @@ ReadWriteBufferFromHTTP::HTTPFileInfo ReadWriteBufferFromHTTP::getFileInfo()
         throw;
     }
 
-    file_info = parseFileInfo(response, 0);
-    return *file_info;
+    return parseFileInfo(response, 0);
 }
 
 ReadWriteBufferFromHTTP::HTTPFileInfo ReadWriteBufferFromHTTP::parseFileInfo(const Poco::Net::HTTPResponse & response, size_t requested_range_begin)
@@ -837,30 +835,9 @@ ReadWriteBufferFromHTTPPtr BuilderRWBufferFromHTTP::create(const Poco::Net::HTTP
         use_external_buffer,
         http_skip_not_found_url,
         http_header_entries,
-        redirect_callback,
         delay_initialization,
         /*file_info_=*/ std::nullopt));
     return ptr;
-}
-
-void setCredentialsFromURL(Poco::Net::HTTPBasicCredentials & credentials, const Poco::URI & uri)
-{
-    credentials.clear();
-
-    const auto & user_info = uri.getUserInfo();
-    if (user_info.empty())
-        return;
-
-    const auto n = user_info.find(':');
-    if (n != std::string::npos)
-    {
-        credentials.setUsername(user_info.substr(0, n));
-        credentials.setPassword(user_info.substr(n + 1));
-    }
-    else
-    {
-        credentials.setUsername(user_info);
-    }
 }
 
 }

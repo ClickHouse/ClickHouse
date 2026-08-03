@@ -14,10 +14,6 @@
 #include <optional>
 #include <functional>
 
-#ifndef ZOOKEEPER_IMPL
-#define ZOOKEEPER_IMPL
-#endif
-
 namespace DB
 {
 class ReadBuffer;
@@ -80,8 +76,6 @@ struct ZooKeeperRequest : virtual Request
 
     /// Writes length, xid, op_num, then the rest.
     void write(WriteBuffer & out, bool use_xid_64, bool supports_tracing = false) const;
-    // Serialized size of the framed request (xid + op_num + body), matching `write`.
-    size_t requestSize(bool use_xid_64) const;
     std::string toString(bool short_format = false) const;
 
     virtual void writeImpl(WriteBuffer &) const = 0;
@@ -255,8 +249,6 @@ struct ZooKeeperCreateRequest final : public CreateRequest, ZooKeeperRequest
             return OpNum::CreateTTL;
         if (include_stats)
             return OpNum::Create2;
-        if (is_container)
-            return OpNum::CreateContainer;
         return not_exists ? OpNum::CreateIfNotExists : OpNum::Create;
     }
 
@@ -292,7 +284,6 @@ struct ZooKeeperCreate2Response : ZooKeeperCreateResponse
     using ZooKeeperCreateResponse::ZooKeeperCreateResponse;
     Stat zstat;
 
-    void readImpl(ReadBuffer & in) override;
     void writeImpl(WriteBuffer & out) const override;
     size_t sizeImpl() const override;
 
@@ -314,13 +305,6 @@ struct ZooKeeperCreateTTLResponse final : ZooKeeperCreate2Response
     using ZooKeeperCreate2Response::ZooKeeperCreate2Response;
 
     OpNum getOpNum() const override { return OpNum::CreateTTL; }
-};
-
-struct ZooKeeperCreateContainerResponse final : ZooKeeperCreate2Response
-{
-    using ZooKeeperCreate2Response::ZooKeeperCreate2Response;
-
-    OpNum getOpNum() const override { return OpNum::CreateContainer; }
 };
 
 struct ZooKeeperRemoveRequest final : RemoveRequest, ZooKeeperRequest
@@ -478,7 +462,7 @@ struct ZooKeeperListRequest : ListRequest, ZooKeeperRequest
     ZooKeeperListRequest() = default;
     explicit ZooKeeperListRequest(const ListRequest & base) : ListRequest(base) {}
 
-    OpNum getOpNum() const override;
+    OpNum getOpNum() const override { return OpNum::List; }
     void writeImpl(WriteBuffer & out) const override;
     size_t sizeImpl() const override;
     void readImpl(ReadBuffer & in) override;
@@ -489,11 +473,40 @@ struct ZooKeeperListRequest : ListRequest, ZooKeeperRequest
     size_t bytesSize() const override { return ListRequest::bytesSize() + sizeof(xid) + sizeof(has_watch); }
 };
 
-/// TODO: move to ZooKeeperListRequest impl.
 struct ZooKeeperSimpleListRequest final : ZooKeeperListRequest
 {
     OpNum getOpNum() const override { return OpNum::SimpleList; }
     ZooKeeperResponsePtr makeResponse() const override;
+};
+
+struct ZooKeeperFilteredListRequest : ZooKeeperListRequest
+{
+    ListRequestType list_request_type{ListRequestType::ALL};
+
+    OpNum getOpNum() const override { return OpNum::FilteredList; }
+    void writeImpl(WriteBuffer & out) const override;
+    size_t sizeImpl() const override;
+    void readImpl(ReadBuffer & in) override;
+    std::string toStringImpl(bool short_format) const override;
+
+    size_t bytesSize() const override { return ZooKeeperListRequest::bytesSize() + sizeof(list_request_type); }
+};
+
+/// Extension of FilteredListRequest with optional stats and data fields
+struct ZooKeeperFilteredListWithStatsAndDataRequest final : ZooKeeperFilteredListRequest
+{
+    /// Feature LIST_WITH_STAT_AND_DATA: optionally populate stats and data in response
+    bool with_stat = false;
+    bool with_data = false;
+
+    OpNum getOpNum() const override { return OpNum::FilteredListWithStatsAndData; }
+    void writeImpl(WriteBuffer & out) const override;
+    size_t sizeImpl() const override;
+    void readImpl(ReadBuffer & in) override;
+    std::string toStringImpl(bool short_format) const override;
+    ZooKeeperResponsePtr makeResponse() const override;
+
+    size_t bytesSize() const override { return ZooKeeperFilteredListRequest::bytesSize() + sizeof(with_stat) + sizeof(with_data); }
 };
 
 struct ZooKeeperListResponse : ListResponse, ZooKeeperResponse
@@ -508,6 +521,7 @@ struct ZooKeeperListResponse : ListResponse, ZooKeeperResponse
     void fillLogElements(LogElements & elems, size_t idx) const override;
 };
 
+/// Extension of ListResponse with optional stats and data fields
 struct ZooKeeperFilteredListWithStatsAndDataResponse final : ZooKeeperListResponse
 {
     OpNum getOpNum() const override { return OpNum::FilteredListWithStatsAndData; }
@@ -751,7 +765,6 @@ struct ZooKeeperMultiRequest final : MultiRequest<ZooKeeperRequestPtr>, ZooKeepe
     void writeImpl(WriteBuffer & out) const override;
     size_t sizeImpl() const override;
     void readImpl(ReadBuffer & in) override;
-    void addRootPath(const String & root_path) override;
 
     using RequestValidator = std::function<void(const ZooKeeperRequest &)>;
     void readImpl(ReadBuffer & in, RequestValidator request_validator);
@@ -773,9 +786,6 @@ struct ZooKeeperMultiRequest final : MultiRequest<ZooKeeperRequestPtr>, ZooKeepe
     std::optional<OperationType> operation_type;
 private:
     void checkOperationType(OperationType type);
-    size_t computeSizeImpl() const;
-
-    mutable std::optional<size_t> cached_size_impl;
 };
 
 struct ZooKeeperMultiResponse : MultiResponse, ZooKeeperResponse
@@ -902,7 +912,7 @@ enum class PathMatchResult : uint8_t
 {
     NOT_MATCH,
     EXACT,
-    IS_CHILD // descendant, not necessarily direct child
+    IS_CHILD
 };
 
 PathMatchResult matchPath(std::string_view path, std::string_view match_to);

@@ -1,9 +1,6 @@
 #include <Parsers/IAST.h>
 
-#include <Formats/FormatSettings.h>
 #include <IO/Operators.h>
-#include <Poco/JSON/Object.h>
-#include <Poco/JSON/Array.h>
 #include <IO/WriteBufferFromString.h>
 #include <IO/WriteHelpers.h>
 #include <Parsers/ASTFunction.h>
@@ -375,40 +372,6 @@ std::string IAST::dumpTree(size_t indent) const
     return wb.str();
 }
 
-void IAST::writeJSON(WriteBuffer &) const
-{
-    /// Fail closed: an AST node without its own `writeJSON` override has no faithful JSON
-    /// representation. The default would emit `{"type": getID(), ...}` using `getID`, which
-    /// the deserialization factory does not recognize, so `parseQueryToJSON` would silently
-    /// produce a document that `formatQueryFromJSON` / the `clickhouse_json` dialect cannot
-    /// read back. Reject such queries here instead of emitting lossy JSON.
-    throw Exception(ErrorCodes::BAD_ARGUMENTS,
-        "AST node of type '{}' does not support JSON serialization (this query is not supported by parseQueryToJSON)",
-        getID());
-}
-
-void IAST::readJSON(const Poco::JSON::Object & json)
-{
-    /// Default: read children from the "children" array.
-    if (json.has("children"))
-    {
-        auto arr = json.getArray("children");
-        if (!arr)
-            throw Exception(ErrorCodes::BAD_ARGUMENTS, "'children' is not a JSON array during AST JSON deserialization");
-        children.reserve(arr->size());
-        for (unsigned int i = 0; i < arr->size(); ++i)
-        {
-            auto child_obj = arr->getObject(i);
-            if (!child_obj)
-                throw Exception(ErrorCodes::BAD_ARGUMENTS, "Null element at index {} in 'children' array during AST JSON deserialization", i);
-            children.push_back(IAST::createFromJSON(*child_obj));
-        }
-    }
-
-    /// Aliases are read by ASTWithAlias subclasses via JSONObjectReader::readAlias
-    /// in their own readJSON overrides, so we don't handle them here.
-}
-
 /// Decide how to emit `parenthesized` parens. When the node has an alias and we are not in an
 /// operator-chain context (`frame.need_parens == false`), defer to `ASTWithAlias::formatImpl` so
 /// it can emit `(expr) AS alias` instead of `(expr AS alias)` — only the former re-formats to
@@ -452,6 +415,29 @@ static bool decideParensEmission(const IAST & node, IAST::FormatStateStacked & f
             && literal->value.safeGet<Tuple>().size() > 1)
     {
         return false;
+    }
+
+    /// Inside `CODEC` / `STATISTICS` / `BACKUP_NAME` argument lists `frame.allow_operators`
+    /// is forced to `false`, so a multi-argument `Function_tuple` falls back to its
+    /// function-call form `tuple(arg, arg, ...)` instead of the operator form
+    /// `(arg, arg, ...)`. The `RoundBracketsLayer::getResultImpl` single-element path
+    /// sets `parenthesized = true` on any node it unwraps from outer `(...)`, so a query
+    /// like `CODEC(not((tuple(1, 2))))` re-parses to `Function_tuple` with
+    /// `parenthesized = true`. Emitting those parens here would produce
+    /// `CODEC(not((tuple(1, 2))))` on first format but `CODEC(not(((tuple(1, 2)))))` on
+    /// re-format, because the re-parsed inner `Function_not` carries the outer paren on
+    /// itself and the re-parsed `Function_tuple` then adds another one — breaking the
+    /// format-parse-format round-trip with `Inconsistent AST formatting` (STID 1941-1bfa).
+    /// Suppress them here for consistency with the literal-tuple case above; the parser
+    /// canonicalises `(tuple(a, b))` and `tuple(a, b)` to the same value.
+    if (!frame.allow_operators)
+    {
+        if (const auto * func = dynamic_cast<const ASTFunction *>(&node);
+            func && func->name == "tuple"
+                && func->arguments && func->arguments->children.size() > 1)
+        {
+            return false;
+        }
     }
 
     /// `ASTSubquery` without an alias always emits its own enclosing `(SELECT ...)` parens.

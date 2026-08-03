@@ -1,5 +1,4 @@
 #include <Storages/System/StorageSystemKeeperChangelogs.h>
-#include <Storages/System/SystemTableSourceRegistry.h>
 
 #if USE_NURAFT
 
@@ -95,9 +94,5 @@ void StorageSystemKeeperChangelogs::fillData(MutableColumns & res_columns, Conte
 }
 
 }
-
-
-/// Register the source file of this system table for `system.documentation`.
-namespace DB { REGISTER_SYSTEM_TABLE_SOURCE(StorageSystemKeeperChangelogs) }
 
 #endif

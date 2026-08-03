@@ -50,7 +50,7 @@ MergeTreeIndexGranuleSet::MergeTreeIndexGranuleSet(
     const Block & index_sample_block_,
     size_t max_rows_,
     MutableColumns && mutable_columns_,
-    Ranges && set_hyperrectangle_)
+    std::vector<Range> && set_hyperrectangle_)
     : index_name(index_name_)
     , max_rows(max_rows_)
     , block(index_sample_block_.cloneWithColumns(std::move(mutable_columns_)))
@@ -128,14 +128,10 @@ void MergeTreeIndexGranuleSet::deserializeBinary(ReadBuffer & istr, MergeTreeInd
         serializations[i]->deserializeBinaryBulkStatePrefix(settings, state, nullptr);
         serializations[i]->deserializeBinaryBulkWithMultipleStreams(elem.column, 0, rows_to_read, settings, state, nullptr);
 
-        /// Only LowCardinality needs unwrapping to expose a nested Nullable; gate the call so other
-        /// columns are untouched. LC(Nullable(T)) then keeps the NULL sentinel via getExtremesNullLast
-        /// (otherwise IS NULL can wrongly prune); getExtremes on LC materializes internally anyway.
-        const auto column = elem.column->lowCardinality() ? elem.column->convertToFullColumnIfLowCardinality() : elem.column;
-        if (const auto * column_nullable = typeid_cast<const ColumnNullable *>(column.get()))
-            column_nullable->getExtremesNullLast(min_val, max_val, 0, column->size());
+        if (const auto * column_nullable = typeid_cast<const ColumnNullable *>(elem.column.get()))
+            column_nullable->getExtremesNullLast(min_val, max_val, 0, elem.column->size());
         else
-            column->getExtremes(min_val, max_val, 0, column->size());
+            elem.column->getExtremes(min_val, max_val, 0, elem.column->size());
 
         set_hyperrectangle.emplace_back(min_val, true, max_val, true);
     }
@@ -289,14 +285,10 @@ void MergeTreeIndexAggregatorSet::update(const Block & block, size_t * pos, size
             auto filtered_column = block.getByName(index_columns[i]).column->filter(filter, block.rows());
             columns[i]->insertRangeFrom(*filtered_column, 0, filtered_column->size());
 
-            /// Only LowCardinality needs unwrapping to expose a nested Nullable; gate the call so other
-            /// columns are untouched. LC(Nullable(T)) then keeps the NULL sentinel via getExtremesNullLast
-            /// (otherwise IS NULL can wrongly prune); getExtremes on LC materializes internally anyway.
-            const auto extremes_column = filtered_column->lowCardinality() ? filtered_column->convertToFullColumnIfLowCardinality() : filtered_column;
-            if (const auto * column_nullable = typeid_cast<const ColumnNullable *>(extremes_column.get()))
-                column_nullable->getExtremesNullLast(field_min, field_max, 0, extremes_column->size());
+            if (const auto * column_nullable = typeid_cast<const ColumnNullable *>(filtered_column.get()))
+                column_nullable->getExtremesNullLast(field_min, field_max, 0, filtered_column->size());
             else
-                extremes_column->getExtremes(field_min, field_max, 0, extremes_column->size());
+                filtered_column->getExtremes(field_min, field_max, 0, filtered_column->size());
 
             if (set_hyperrectangle.size() <= i)
             {
@@ -324,7 +316,7 @@ bool MergeTreeIndexAggregatorSet::buildFilter(
     size_t limit,
     ClearableSetVariants & variants) const
 {
-    /// Like DistinctSortedStreamTransform.
+    /// Like DistinctSortedTransform.
     typename Method::State state(column_ptrs, key_sizes, nullptr);
 
     bool has_new_data = false;
@@ -601,20 +593,6 @@ const ActionsDAG::Node & MergeTreeIndexConditionSet::traverseDAG(const ActionsDA
             {
                 auto bit_wrapper_function = FunctionFactory::instance().get("__bitWrapperFunc", context);
                 result_node = &result_dag.addFunction(bit_wrapper_function, {atom_node_ptr}, {});
-
-                /// A NULL atom value yields a NULL from `__bitWrapperFunc` rather than a BoolMask.
-                /// That NULL propagates through `__bitBoolMaskAnd`/`Or` and wrongly prunes a granule
-                /// the atom does not exclude. Map a NULL mask to `UNKNOWN_FIELD` (can be true or false).
-                if (isNullableOrLowCardinalityNullable(result_node->result_type))
-                {
-                    auto unknown_name = calculateConstantActionNodeName(UNKNOWN_FIELD);
-                    auto unknown_type = std::make_shared<DataTypeUInt8>();
-                    ColumnConstPtr unknown_column = unknown_type->createColumnConst(1, UNKNOWN_FIELD);
-                    const auto & unknown_node = result_dag.addColumn(std::move(unknown_column), std::move(unknown_type), std::move(unknown_name));
-
-                    auto if_null_function = FunctionFactory::instance().get("ifNull", context);
-                    result_node = &result_dag.addFunction(if_null_function, {result_node, &unknown_node}, {});
-                }
             }
             else
             {
@@ -645,16 +623,7 @@ const ActionsDAG::Node * MergeTreeIndexConditionSet::atomFromDAG(const ActionsDA
         node_to_check = node_to_check->children[0];
 
     if (node_to_check->column)
-    {
-        /// A function folded to a constant still keeps its argument subtree, which may
-        /// reference columns absent from this index's granule block. Re-add it as a leaf
-        /// constant so cloneSubDAG does not pull those foreign inputs into `actions`. Reuse the
-        /// node's existing constant column (a COW pointer) instead of rebuilding one; addColumn
-        /// normalizes its row count.
-        if (node_to_check->type == ActionsDAG::ActionType::FUNCTION)
-            return &result_dag.addColumn(node_to_check->column, node_to_check->result_type, node_to_check->result_name);
         return &node;
-    }
 
     RPNBuilderTreeContext tree_context(context);
     RPNBuilderTreeNode tree_node(node_to_check, tree_context);

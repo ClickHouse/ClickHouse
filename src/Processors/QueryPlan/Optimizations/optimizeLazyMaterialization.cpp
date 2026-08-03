@@ -677,25 +677,10 @@ bool optimizeLazyMaterialization2(QueryPlan::Node & root, QueryPlan & query_plan
         main_plan.addStep(std::move(new_sorting_step));
     }
 
-    /// The replacement plan must produce the header `root` produces. Capture it here, before the
-    /// next line: `LimitStep::updateOutputHeader` mirrors its input header, so `updateInputHeader`
-    /// overwrites it with the main branch header, and `root.step` is moved away right after.
-    auto expected_header = root.step->getOutputHeader();
-
     limit_step->updateInputHeader(main_plan.getCurrentHeader());
     main_plan.addStep(std::move(root.step));
 
-    /// The lazy read re-fetches exactly the rows the main read selected, addressed by their
-    /// global row index (see LazyMaterializingRows::filterRangesAndFillRows). It must not
-    /// re-apply the vector-search rescoring row filter: that filter belongs to the main read
-    /// (which produces the shortlist for sorting), and re-applying it here against the
-    /// vector index candidate set can drop a requested row, leaving the lazy chunk shorter
-    /// than the offsets and raising a LOGICAL_ERROR in prepareLazyChunk.
-    auto lazy_parts = read_from_merge_tree->getParts();
-    for (auto & part : lazy_parts)
-        part.read_hints.use_vector_search_result_filter = false;
-
-    auto lazy_materializing_rows = std::make_shared<LazyMaterializingRows>(std::move(lazy_parts));
+    auto lazy_materializing_rows = std::make_shared<LazyMaterializingRows>(read_from_merge_tree->getParts());
     lazy_reading->setLazyMaterializingRows(lazy_materializing_rows);
     lazy_plan.addStep(std::move(lazy_reading));
 
@@ -742,7 +727,7 @@ bool optimizeLazyMaterialization2(QueryPlan::Node & root, QueryPlan & query_plan
         result_plan.addStep(std::make_unique<ExpressionStep>(result_plan.getCurrentHeader(), std::move(dag)));
     }
 
-    query_plan.replaceNodeWithPlan(&root, std::move(result_plan), std::move(expected_header));
+    query_plan.replaceNodeWithPlan(&root, std::move(result_plan));
 
     return true;
 }

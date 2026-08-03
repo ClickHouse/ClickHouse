@@ -768,7 +768,7 @@ void BackupCoordinationOnCluster::addFileInfos(BackupFileInfos && file_infos_)
     serializeToMultipleZooKeeperNodes(zookeeper_path + "/file_infos/" + current_host, file_infos_str, "addFileInfos");
 }
 
-const BackupFileInfos & BackupCoordinationOnCluster::getFileInfos() const
+BackupFileInfos BackupCoordinationOnCluster::getFileInfos() const
 {
     auto component_guard = Coordination::setCurrentComponent("BackupCoordinationOnCluster::getFileInfos");
     std::lock_guard lock{file_infos_mutex};
@@ -776,12 +776,12 @@ const BackupFileInfos & BackupCoordinationOnCluster::getFileInfos() const
     return file_infos->getFileInfos(current_host);
 }
 
-void BackupCoordinationOnCluster::forEachFileInfoForAllHosts(const std::function<void(const BackupFileInfo &)> & callback) const
+BackupFileInfos BackupCoordinationOnCluster::getFileInfosForAllHosts() const
 {
-    auto component_guard = Coordination::setCurrentComponent("BackupCoordinationOnCluster::forEachFileInfoForAllHosts");
+    auto component_guard = Coordination::setCurrentComponent("BackupCoordinationOnCluster::getFileInfosForAllHosts");
     std::lock_guard lock{file_infos_mutex};
     prepareFileInfos();
-    file_infos->forEachFileInfoForAllHosts(callback);
+    return file_infos->getFileInfosForAllHosts();
 }
 
 void BackupCoordinationOnCluster::prepareFileInfos() const
