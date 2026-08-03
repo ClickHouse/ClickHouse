@@ -1070,6 +1070,19 @@ def main():
                         strict=True,
                     )
                     CH.clean_logs()
+                    # `CH.start()` below wipes the server data directory, so
+                    # the CI-owned `system.<table>_sender` `Distributed` tables
+                    # created by `start_log_exports` in the START stage are
+                    # gone and log export is not set up again for the swapped
+                    # binary. Drop the snapshot: keeping it would leave the
+                    # overload heuristic keyed off names that no longer belong
+                    # to CI, so a bugfix-validation test could create
+                    # `system.query_log_sender` itself and have its shipping
+                    # errors read as CI log-export noise. With an empty set the
+                    # classifier abstains and the run stays on the
+                    # `Server died` path (fail closed). See the
+                    # `clickhouse-gh[bot]` review on PR #106176.
+                    log_export_state["senders"] = set()
                     # The server memory cap must follow the binary being
                     # launched (see the install-stage comment): sanitizer
                     # builds get the tighter 0.7 ratio, the debug build
