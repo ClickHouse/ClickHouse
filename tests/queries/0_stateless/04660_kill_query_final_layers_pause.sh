@@ -11,9 +11,13 @@ CUR_DIR=$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)
 # shellcheck source=../shell_config.sh
 . "$CUR_DIR"/../shell_config.sh
 
+# The layered plan exists only while the two overlapping parts are separate: a background merge would
+# collapse them and silently turn the test into a no-op (or make the failpoint wait hang), so merges are
+# stopped for the table before the parts are created and only restarted at the end.
 ${CLICKHOUSE_CLIENT} -q "
     DROP TABLE IF EXISTS t_final_layers;
     CREATE TABLE t_final_layers (a UInt64, b UInt64) ENGINE = ReplacingMergeTree ORDER BY a;
+    SYSTEM STOP MERGES t_final_layers;
     SET optimize_on_insert = 0;
     INSERT INTO t_final_layers SELECT number, number FROM numbers(100000);
     INSERT INTO t_final_layers SELECT number, number FROM numbers(50000, 100000);
@@ -28,7 +32,7 @@ ${CLICKHOUSE_CLIENT} -q "
 query_id="kill_query_final_layers_pause_${CLICKHOUSE_DATABASE}_$RANDOM"
 output_file="${CLICKHOUSE_TMP}/kill_query_final_layers_pause_${CLICKHOUSE_DATABASE}.out"
 
-trap '${CLICKHOUSE_CLIENT} -q "SYSTEM DISABLE FAILPOINT filter_transform_pause" 2>/dev/null' EXIT
+trap '${CLICKHOUSE_CLIENT} -q "SYSTEM DISABLE FAILPOINT filter_transform_pause" 2>/dev/null; ${CLICKHOUSE_CLIENT} -q "SYSTEM START MERGES t_final_layers" 2>/dev/null' EXIT
 
 # Enable the failpoint before starting the query
 ${CLICKHOUSE_CLIENT} -q "SYSTEM ENABLE FAILPOINT filter_transform_pause"
