@@ -84,13 +84,17 @@ void ReplaceAliasByExpressionMatcher::visit(const ASTIdentifier & column, ASTPtr
                     self(child, bound);
             };
 
+            /// Expand the ALIAS chain (a -> b -> c) before deciding on capture. The inserted expression was
+            /// written at table scope, so its identifiers refer to table columns even when they match a
+            /// lambda parameter name, and only the fully expanded result can be captured.
+            ASTPtr expanded = col_default->expression->clone();
+            Data table_scope{data.columns, {}, data.reject_lambda_capture};
+            Visitor(table_scope).visit(expanded);
+
             if (data.reject_lambda_capture && !data.private_aliases.empty())
-                check_alias_not_captured_by_lambda(col_default->expression, data.private_aliases);
+                check_alias_not_captured_by_lambda(expanded, data.private_aliases);
 
-            ast = col_default->expression->clone();
-
-            /// Revisit the result to expand chained ALIASes (a -> b -> c).
-            Visitor(data).visit(ast);
+            ast = std::move(expanded);
         }
     }
 }

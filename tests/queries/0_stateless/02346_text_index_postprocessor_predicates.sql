@@ -378,6 +378,27 @@ CREATE TABLE tab
 )
 ENGINE = MergeTree ORDER BY tuple(); -- { serverError BAD_ARGUMENTS }
 
+SELECT 'Postprocessor referencing a chained ALIAS through an intermediate name matching the lambda parameter.';
+-- `a` expands to `b` and then to `s`, so nothing is captured and the intermediate name `b` must not be
+-- mistaken for a reference to the lambda parameter.
+CREATE TABLE tab
+(
+    s String,
+    b String ALIAS s,
+    a String ALIAS b,
+    INDEX idx(s) TYPE text(tokenizer = 'splitByNonAlpha', postprocessor = arrayStringConcat(arrayMap(b -> lower(a), [s]), ''))
+)
+ENGINE = MergeTree ORDER BY tuple();
+
+INSERT INTO tab(s) VALUES ('Hello World'), ('FOO bar');
+
+SELECT count() FROM tab WHERE hasToken(s, 'hello');
+SELECT count() FROM tab WHERE hasToken(s, 'world');
+SELECT count() FROM tab WHERE hasToken(s, 'foo');
+SELECT count() FROM tab WHERE hasToken(s, 'missing');
+
+DROP TABLE IF EXISTS tab;
+
 SELECT 'Postprocessor referencing chained ALIAS columns (a -> b -> s).';
 
 CREATE TABLE tab

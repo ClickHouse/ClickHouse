@@ -686,6 +686,27 @@ CREATE TABLE tab
 )
 ENGINE = MergeTree ORDER BY tuple(); -- { serverError BAD_ARGUMENTS }
 
+SELECT '-- Preprocessor referencing a chained ALIAS through an intermediate name matching the lambda parameter';
+-- `a` expands to `b` and then to `s`, so the full expansion is `lower(s)` and nothing is captured:
+-- the intermediate name `b` must not be mistaken for a reference to the lambda parameter.
+CREATE TABLE tab
+(
+    s String,
+    b String ALIAS s,
+    a String ALIAS b,
+    INDEX idx(s) TYPE text(tokenizer = 'splitByNonAlpha', preprocessor = arrayStringConcat(arrayMap(b -> lower(a), splitByChar(' ', s)), ' '))
+)
+ENGINE = MergeTree ORDER BY tuple();
+
+INSERT INTO tab(s) VALUES ('Hello World'), ('FOO bar');
+
+SELECT count() FROM tab WHERE hasToken(s, 'hello');
+SELECT count() FROM tab WHERE hasToken(s, 'world');
+SELECT count() FROM tab WHERE hasToken(s, 'foo');
+SELECT count() FROM tab WHERE hasToken(s, 'missing');
+
+DROP TABLE tab;
+
 SELECT '-- The same capture in a non-text index expression is still accepted';
 -- The rejection above is scoped to the text index `preprocessor` / `postprocessor` arguments.
 -- Index expressions accepted such definitions before, so `ATTACH` must keep working for them.
