@@ -58,6 +58,7 @@ public:
         if (!array_count_function_node->getResultType()->equals(*length_function_node->getResultType()))
             return;
 
+        array_count_function_node->setAlias(node->getAlias());
         node = std::move(array_count_function_node);
     }
 };
