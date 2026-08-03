@@ -16,6 +16,7 @@
 #include <Common/StringUtils.h>
 #include <Common/atomicRename.h>
 #include <Common/escapeForFileName.h>
+#include <Common/filesystemHelpers.h>
 #include <Common/getRandomASCIIString.h>
 #include <Common/logger_useful.h>
 #include <Common/typeid_cast.h>
@@ -1611,7 +1612,7 @@ BlockIO InterpreterCreateQuery::createTable(ASTCreateQuery & create)
             fs::path data_path = fs::path(*create.attach_from_path).lexically_normal();
             if (data_path.is_relative())
                 data_path = (user_files / data_path).lexically_normal();
-            if (!startsWith(data_path, user_files))
+            if (!fileOrSymlinkPathStartsWith(data_path.string(), user_files.string()))
                 throw Exception(ErrorCodes::PATH_ACCESS_DENIED,
                                 "Data directory {} must be inside {} to attach it", String(data_path), String(user_files));
 
@@ -1621,7 +1622,7 @@ BlockIO InterpreterCreateQuery::createTable(ASTCreateQuery & create)
         else
         {
             fs::path data_path = (root_path / *create.attach_from_path).lexically_normal();
-            if (!startsWith(data_path, user_files))
+            if (!fileOrSymlinkPathStartsWith(data_path.string(), user_files.string()))
                 throw Exception(ErrorCodes::PATH_ACCESS_DENIED,
                                 "Data directory {} must be inside {} to attach it", String(data_path), String(user_files));
         }
