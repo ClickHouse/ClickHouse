@@ -1351,6 +1351,10 @@ String StorageFileSource::FilesIterator::next()
         auto task = getContext()->getClusterFunctionReadTaskCallback()();
         if (!task || task->isEmpty())
             return {};
+
+        /// The read task may come from a client impersonating an initiator server, so validate the path.
+        checkCreationIsAllowed(getContext(), getContext()->getUserFilesPath(), task->path, /*can_be_directory=*/ true);
+
         return task->path;
     }
 
