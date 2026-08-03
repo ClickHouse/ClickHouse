@@ -23,3 +23,8 @@ short circuit and	1
 0
 0
 100
+pushdown through sorting	1
+pushdown through aggregation	1
+pushdown into union all branches	3
+pushdown into union distinct branches	2
+0

@@ -103,3 +103,29 @@ SELECT count() FROM numbers(100) WHERE or(1, number = 1);
 SELECT count() FROM numbers(100) WHERE and(materialize(1), CAST(NULL AS Nullable(UInt8)));
 SELECT count() FROM numbers(100) WHERE and(materialize(0), CAST(NULL AS Nullable(UInt8)));
 SELECT count() FROM numbers(100) WHERE or(CAST(NULL AS Nullable(UInt8)), materialize(1));
+
+-- a filter that only meets the `materialize` after `tryPushDownFilter` cloned it into the branches
+-- still folds - the fold runs on `FilterStep` construction, not only from `tryMergeExpressions`
+SELECT 'pushdown through sorting', countIf(explain LIKE '%Filter column: 0%')
+FROM (EXPLAIN PLAN actions = 1
+    SELECT * FROM (SELECT number, materialize(1) AS m FROM numbers(10) ORDER BY number) WHERE m = 5);
+SELECT 'pushdown through aggregation', countIf(explain LIKE '%Filter column: 0%')
+FROM (EXPLAIN PLAN actions = 1
+    SELECT * FROM (SELECT number, materialize(1) AS m FROM numbers(10) GROUP BY number, m) WHERE m = 5);
+SELECT 'pushdown into union all branches', countIf(explain LIKE '%Filter column: 0%')
+FROM (EXPLAIN PLAN actions = 1
+    SELECT * FROM (
+        SELECT number, materialize(1) AS m FROM numbers(10)
+        UNION ALL SELECT number, materialize(2) AS m FROM numbers(10)
+        UNION ALL SELECT number, materialize(3) AS m FROM numbers(10)
+    ) WHERE m = 5);
+SELECT 'pushdown into union distinct branches', countIf(explain LIKE '%Filter column: 0%')
+FROM (EXPLAIN PLAN actions = 1
+    SELECT * FROM (
+        SELECT number, materialize(1) AS m FROM numbers(10)
+        UNION DISTINCT SELECT number, materialize(2) AS m FROM numbers(10)
+    ) WHERE m = 5);
+SELECT count() FROM (
+    SELECT number, materialize(1) AS m FROM numbers(10)
+    UNION ALL SELECT number, materialize(2) AS m FROM numbers(10)
+) WHERE m = 5;

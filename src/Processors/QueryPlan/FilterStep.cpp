@@ -281,6 +281,13 @@ FilterStep::FilterStep(
     , filter_column_name(std::move(filter_column_name_))
     , remove_filter_column(remove_filter_column_)
 {
+    /// The filter column is dropped from the output, so only the predicate's value is observable and it
+    /// is safe to fold a `materialize`-wrapped constant away (#78166). Doing it here covers every way a
+    /// dropped-filter step comes to be - in particular the fresh steps `tryPushDownFilter` creates, which
+    /// neither `tryMergeExpressions` nor `pruneFilterDAGOutputsByPosition` ever sees.
+    if (remove_filter_column)
+        actions_dag.foldFilterPredicateThroughMaterialize(filter_column_name);
+
     actions_dag.removeAliasesForFilter(filter_column_name);
     /// Removing aliases may result in unneeded ALIAS node in DAG.
     /// This should not be an issue by itself,
