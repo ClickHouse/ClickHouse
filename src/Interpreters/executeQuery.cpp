@@ -5,6 +5,7 @@
 #include <Common/Logger.h>
 #include <Loggers/AuditLog.h>
 #include <Common/StringUtils.h>
+#include <Common/quoteString.h>
 #include <Common/logger_useful.h>
 #include <Common/Exception.h>
 #include <Common/formatReadable.h>
@@ -1080,7 +1081,13 @@ static void collectTableIdentifiers(const IAST & ast, AppendFn && append)
 /// Used for queries that fail before `logQueryStart` populates `elem.query_tables`
 /// (EXCEPTION_BEFORE_START), so a failed DDL/DML statement still records which object it
 /// targeted in `OBJECT_NAMES` instead of leaving the field empty.
-static String extractObjectNamesFromAST(const IAST & ast)
+///
+/// The names are formatted exactly like the ones `IInterpreter::extendQueryLogElem` puts into
+/// `elem.query_tables` / `elem.query_databases`: every component is quoted with `backQuoteIfNeed`,
+/// an unqualified table is prefixed with the current database, and a database-level statement
+/// (no table) is recorded as the bare database name without a trailing dot. Consumers therefore
+/// see the same `OBJECT_NAMES` format on the failed-query path as on the normal one.
+static String extractObjectNamesFromAST(const IAST & ast, const String & current_database)
 {
     String result;
     std::unordered_set<String> seen;
@@ -1089,12 +1096,21 @@ static String extractObjectNamesFromAST(const IAST & ast)
         if (database.empty() && table.empty())
             return;
         String name;
-        if (!database.empty())
+        if (table.empty())
         {
-            name += database;
-            name += ".";
+            /// Database-level statement such as `CREATE DATABASE` / `DROP DATABASE`.
+            name = backQuoteIfNeed(database);
         }
-        name += table;
+        else
+        {
+            const String & qualifier = database.empty() ? current_database : database;
+            if (!qualifier.empty())
+            {
+                name += backQuoteIfNeed(qualifier);
+                name += ".";
+            }
+            name += backQuoteIfNeed(table);
+        }
         if (!seen.emplace(name).second)
             return;
         if (!result.empty())
@@ -1255,7 +1271,7 @@ void auditLog(const QueryLogElement & elem, ContextPtr context, const ASTPtr & a
         /// `logQueryStart` populated `query_tables` (e.g. a `RENAME`/`DROP` of a missing table) —
         /// fall back to the object names carried by the AST so the target is still recorded.
         if (object_names.empty() && ast)
-            object_names = extractObjectNamesFromAST(*ast);
+            object_names = extractObjectNamesFromAST(*ast, context ? context->getCurrentDatabase() : String{});
     }
 
     std::string host = elem.client_info.current_address ? elem.client_info.current_address->host().toString() : "Unknown Host";
