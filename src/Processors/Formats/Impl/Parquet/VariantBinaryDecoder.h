@@ -2,6 +2,7 @@
 
 #include <Columns/IColumn.h>
 #include <Common/Exception.h>
+#include <Common/checkStackSize.h>
 #include <DataTypes/IDataType.h>
 #include <Formats/FormatSettings.h>
 
@@ -23,8 +24,16 @@ namespace DB::Parquet::VariantReader
 
 inline void checkVariantReadDepth(const FormatSettings & format_settings, size_t depth)
 {
-    /// max_parser_depth == 0 means unlimited (matching the SQL parser), leaving only checkStackSize.
-    if (format_settings.max_parser_depth != 0 && depth > format_settings.max_parser_depth)
+    /// max_parser_depth == 0 means unlimited (matching the SQL parser), leaving only checkStackSize
+    /// as the backstop. Keep the check out of the default path: when the depth limit is enabled it
+    /// already bounds the recursion, so there is nothing left for checkStackSize to catch.
+    if (format_settings.max_parser_depth == 0)
+    {
+        checkStackSize();
+        return;
+    }
+
+    if (depth > format_settings.max_parser_depth)
     {
         throw Exception(
             ErrorCodes::TOO_DEEP_RECURSION,
@@ -190,6 +199,12 @@ struct SourceState
     bool value_column_is_all_null = true;
     ColumnPtr value_column_holder;
     std::vector<std::optional<std::string_view>> value_values;
+
+    /// Only for a nested `VARIANT` whose rows are elements of an enclosing repeated group and
+    /// therefore do not line up 1:1 with `MetadataState::metadata_by_row`: the `metadata`
+    /// dictionary of the top-level row that owns each of this source's rows. Empty when the rows
+    /// map 1:1, or when the dictionary is shared across all rows (then it is resolved directly).
+    std::vector<const VariantMetadata *> nested_metadata_by_row;
 
     std::unordered_map<size_t, PerTypedOutputState> per_typed_output_state;
 };

@@ -176,7 +176,8 @@ private:
         size_t value_primitive_idx,
         size_t typed_value_output_idx,
         bool string_output_uses_json,
-        bool typed_value_requires_parent_metadata_mapping);
+        bool typed_value_requires_parent_metadata_mapping,
+        bool rows_deeper_than_metadata);
     static void addPrimitiveDependency(OutputColumnInfo & output, size_t primitive_idx);
     void addOutputDependencies(OutputColumnInfo & output, const OutputColumnInfo & dependency_output);
     size_t addVariantPrimitiveColumnAt(

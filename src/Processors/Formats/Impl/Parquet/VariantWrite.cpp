@@ -17,6 +17,7 @@
 #include <Columns/ColumnVariant.h>
 #include <Columns/ColumnVector.h>
 #include <Common/Exception.h>
+#include <Common/checkStackSize.h>
 #include <Core/Field.h>
 #include <Core/UUID.h>
 #include <DataTypes/DataTypeArray.h>
@@ -151,8 +152,16 @@ DataTypePtr getVariantAnalyzeScalarType(const Field & field, const DataTypePtr &
 
 void checkVariantWriteDepth(const FormatSettings & format_settings, size_t depth)
 {
-    /// max_parser_depth == 0 means unlimited (matching the SQL parser), leaving only checkStackSize.
-    if (format_settings.max_parser_depth != 0 && depth > format_settings.max_parser_depth)
+    /// max_parser_depth == 0 means unlimited (matching the SQL parser), leaving only checkStackSize
+    /// as the backstop. Keep the check out of the default path: when the depth limit is enabled it
+    /// already bounds the recursion, so there is nothing left for checkStackSize to catch.
+    if (format_settings.max_parser_depth == 0)
+    {
+        checkStackSize();
+        return;
+    }
+
+    if (depth > format_settings.max_parser_depth)
     {
         throw Exception(
             ErrorCodes::TOO_DEEP_RECURSION,

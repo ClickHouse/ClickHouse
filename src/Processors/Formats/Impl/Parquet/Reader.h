@@ -282,6 +282,11 @@ struct Reader
         size_t metadata_state_slot_idx = UINT64_MAX;
         bool string_output_uses_json = true;
         bool typed_value_requires_parent_metadata_mapping = false;
+        /// True when this source's rows live at a deeper repetition level than its `metadata`
+        /// column, i.e. it is a nested `VARIANT` reusing an enclosing row's dictionary. Its rows
+        /// then do not line up 1:1 with `MetadataState::metadata_by_row` and need a parent-row
+        /// mapping (see `buildNestedMetadataByRow`).
+        bool rows_deeper_than_metadata = false;
     };
 
     struct RowSet
@@ -487,6 +492,13 @@ struct Reader
         std::vector<std::shared_ptr<VariantReader::MetadataState>> variant_metadata_states; // parallel to shared metadata state slots
         std::vector<std::shared_ptr<VariantReader::SourceState>> variant_source_states; // parallel to shared variant source state slots
         std::vector<size_t> variant_outputs_remaining; // parallel to shared variant source state slots
+
+        /// Array offsets of the repeated levels that formOutputColumn is currently recursing
+        /// through, outermost first. A nested shredded `VARIANT` value reuses its enclosing
+        /// top-level row's `metadata` dictionary, so composing these levels maps one of its rows
+        /// back to the top-level row that owns the dictionary. Entries point into offsets columns
+        /// owned by the enclosing formOutputColumn frames and are valid only while they are alive.
+        std::vector<const IColumn::Offsets *> nested_array_offsets;
 
         std::atomic<ReadStage> stage {ReadStage::NotStarted};
         std::atomic<size_t> stage_tasks_remaining {0};

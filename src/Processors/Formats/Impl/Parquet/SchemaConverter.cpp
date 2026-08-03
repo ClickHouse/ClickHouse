@@ -767,7 +767,8 @@ size_t SchemaConverter::addVariantSource(
     size_t value_primitive_idx,
     size_t typed_value_output_idx,
     bool string_output_uses_json,
-    bool typed_value_requires_parent_metadata_mapping)
+    bool typed_value_requires_parent_metadata_mapping,
+    bool rows_deeper_than_metadata)
 {
     std::optional<size_t> state_slot_idx;
     std::optional<size_t> metadata_state_slot_idx;
@@ -789,7 +790,8 @@ size_t SchemaConverter::addVariantSource(
 
         if (source.typed_value_output_idx == typed_value_output_idx
             && source.string_output_uses_json == string_output_uses_json
-            && source.typed_value_requires_parent_metadata_mapping == typed_value_requires_parent_metadata_mapping)
+            && source.typed_value_requires_parent_metadata_mapping == typed_value_requires_parent_metadata_mapping
+            && source.rows_deeper_than_metadata == rows_deeper_than_metadata)
         {
             return source_idx;
         }
@@ -809,6 +811,7 @@ size_t SchemaConverter::addVariantSource(
     source.metadata_state_slot_idx = *metadata_state_slot_idx;
     source.string_output_uses_json = string_output_uses_json;
     source.typed_value_requires_parent_metadata_mapping = typed_value_requires_parent_metadata_mapping;
+    source.rows_deeper_than_metadata = rows_deeper_than_metadata;
     return source_idx;
 }
 
@@ -1269,7 +1272,8 @@ bool SchemaConverter::processSubtreeVariant(TraversalNode & node, size_t depth)
             value_primitive_idx,
             typed_value_output_idx,
             /*string_output_uses_json=*/ true,
-            /*typed_value_requires_parent_metadata_mapping=*/ false);
+            /*typed_value_requires_parent_metadata_mapping=*/ false,
+            /*rows_deeper_than_metadata=*/ false);
         addPrimitiveDependency(output, metadata_primitive_idx);
         addPrimitiveDependency(output, value_primitive_idx);
         if (typed_value_output_idx != UINT64_MAX)
@@ -1285,7 +1289,8 @@ bool SchemaConverter::processSubtreeVariant(TraversalNode & node, size_t depth)
             value_primitive_idx,
             typed_value_output_idx,
             /*string_output_uses_json=*/ false,
-            /*typed_value_requires_parent_metadata_mapping=*/ false);
+            /*typed_value_requires_parent_metadata_mapping=*/ false,
+            /*rows_deeper_than_metadata=*/ false);
         for (const auto & [idx_in_output_block, subcolumn_name] : residual_variant_subcolumns)
         {
             const auto & requested_column = sample_block->getByPosition(idx_in_output_block);
@@ -1451,9 +1456,12 @@ bool SchemaConverter::processSubtreeVariantTypedWrapper(TraversalNode & node, si
         else
             metadata_primitive_idx = getOrAddVariantMetadataPrimitive(node, node.name + ".__variant_metadata");
 
-        bool typed_value_requires_parent_metadata_mapping = false;
-        if (typed_value_output_idx != UINT64_MAX && node.variant && !node.variant->metadata_levels.empty())
-            typed_value_requires_parent_metadata_mapping = levels.back().rep > node.variant->metadata_levels.back().rep;
+        /// This wrapper has no `metadata` child of its own: it reuses the enclosing `VARIANT`'s
+        /// dictionary. When it also sits at a deeper repetition level, its rows are elements of a
+        /// repeated group and need a parent-row mapping onto that dictionary.
+        const bool rows_deeper_than_metadata
+            = node.variant && !node.variant->metadata_levels.empty() && levels.back().rep > node.variant->metadata_levels.back().rep;
+        const bool typed_value_requires_parent_metadata_mapping = typed_value_output_idx != UINT64_MAX && rows_deeper_than_metadata;
 
         node.output_idx = output_columns.size();
         OutputColumnInfo & output = output_columns.emplace_back();
@@ -1469,7 +1477,8 @@ bool SchemaConverter::processSubtreeVariantTypedWrapper(TraversalNode & node, si
             value_primitive_idx,
             typed_value_output_idx,
             /*string_output_uses_json=*/ false,
-            typed_value_requires_parent_metadata_mapping);
+            typed_value_requires_parent_metadata_mapping,
+            rows_deeper_than_metadata);
         addPrimitiveDependency(output, metadata_primitive_idx);
         addPrimitiveDependency(output, value_primitive_idx);
         if (typed_value_output_idx != UINT64_MAX)

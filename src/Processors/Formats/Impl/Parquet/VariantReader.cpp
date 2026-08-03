@@ -19,6 +19,8 @@
 #include <Interpreters/castColumn.h>
 #include <IO/ReadBufferFromString.h>
 
+#include <numeric>
+
 namespace DB::ErrorCodes
 {
     extern const int INCORRECT_DATA;
@@ -260,20 +262,76 @@ void rebuildMetadataByRow(MetadataState & state, const FormatSettings & format_s
     }
 }
 
+/// Map each of `num_rows` nested rows back to the `metadata` dictionary of the top-level row that
+/// owns it. Nested `VARIANT` values (elements of a shredded array, and the values of a shredded
+/// object inside one) share their enclosing top-level row's dictionary, so composing the array
+/// offsets of every repeated level that `Reader::formOutputColumn` is currently inside yields the
+/// element-to-top-level-row mapping. Returns an empty vector when the levels do not line up, in
+/// which case the caller reports malformed data rather than indexing the wrong row's dictionary.
+std::vector<const VariantMetadata *> buildNestedMetadataByRow(
+    const Reader::RowSubgroup & row_subgroup,
+    const MetadataState & metadata_state,
+    size_t num_rows)
+{
+    const size_t top_level_rows = metadata_state.metadata_by_row.size();
+
+    /// Skip the levels above the one the `metadata` column itself lives at.
+    size_t level = 0;
+    while (level < row_subgroup.nested_array_offsets.size()
+           && row_subgroup.nested_array_offsets[level]->size() != top_level_rows)
+        ++level;
+
+    std::vector<size_t> owner_row(top_level_rows);
+    std::iota(owner_row.begin(), owner_row.end(), 0);
+
+    for (; owner_row.size() != num_rows && level < row_subgroup.nested_array_offsets.size(); ++level)
+    {
+        const auto & offsets = *row_subgroup.nested_array_offsets[level];
+        if (offsets.size() != owner_row.size())
+            return {};
+
+        std::vector<size_t> element_owner_row(offsets.empty() ? 0 : offsets.back());
+        size_t element = 0;
+        for (size_t row = 0; row < offsets.size(); ++row)
+            for (; element < offsets[row]; ++element)
+                element_owner_row[element] = owner_row[row];
+
+        owner_row = std::move(element_owner_row);
+    }
+
+    if (owner_row.size() != num_rows)
+        return {};
+
+    std::vector<const VariantMetadata *> result(num_rows);
+    for (size_t row = 0; row < num_rows; ++row)
+        result[row] = metadata_state.metadata_by_row[owner_row[row]];
+
+    return result;
+}
+
 /// Resolve the `metadata` dictionary for a given output row. Nested values (e.g. array elements)
 /// reuse their enclosing value's dictionary, so a consuming output can have more rows than
 /// `metadata_by_row` (which is sized per top-level row). When the dictionary is shared across rows
-/// it is identical for every nested row, so resolve it directly instead of indexing out of bounds.
-const VariantMetadata * getRowMetadata(const MetadataState & state, size_t row)
+/// it is identical for every nested row; otherwise `SourceState::nested_metadata_by_row` carries
+/// the parent-row mapping built above.
+const VariantMetadata * getRowMetadata(
+    const MetadataState & state, const std::vector<const VariantMetadata *> & nested_metadata_by_row, size_t row)
 {
     if (state.metadata_is_shared_across_rows)
         return state.shared_metadata_storage ? &*state.shared_metadata_storage : nullptr;
+    if (row < nested_metadata_by_row.size())
+        return nested_metadata_by_row[row];
     if (row >= state.metadata_by_row.size())
         throw Exception(
             ErrorCodes::INCORRECT_DATA,
             "Malformed `Parquet` `VARIANT`: nested row {} has no parent-row metadata mapping for non-shared `metadata`",
             row);
     return state.metadata_by_row[row];
+}
+
+const VariantMetadata * getRowMetadata(const SourceState & source_state, size_t row)
+{
+    return getRowMetadata(*source_state.metadata_state, source_state.nested_metadata_by_row, row);
 }
 
 const Reader::OutputColumnInfo * getTypedValueOutputInfo(const Reader & reader, const Reader::VariantSourceInfo & source_info)
@@ -315,10 +373,15 @@ bool shouldPreserveEmptyContainers(
 /// path reports it), so they only run when no row is missing metadata.
 bool allRowsHaveMetadata(const SourceState & state, size_t num_rows)
 {
-    if (!state.metadata_state || state.metadata_state->metadata_by_row.size() < num_rows)
+    if (!state.metadata_state)
+        return false;
+
+    const auto & metadata_by_row
+        = state.nested_metadata_by_row.size() == num_rows ? state.nested_metadata_by_row : state.metadata_state->metadata_by_row;
+    if (metadata_by_row.size() < num_rows)
         return false;
     for (size_t row = 0; row < num_rows; ++row)
-        if (!state.metadata_state->metadata_by_row[row])
+        if (!metadata_by_row[row])
             return false;
     return true;
 }
@@ -358,7 +421,7 @@ PreparedRowValue prepareRowValue(
     PreparedRowValue prepared;
     const auto & row_value = state.value_values[row];
     chassert(state.metadata_state);
-    const VariantMetadata * row_metadata = getRowMetadata(*state.metadata_state, row);
+    const VariantMetadata * row_metadata = getRowMetadata(state, row);
     const ConvertedTypedValue * prepared_typed_row = typed_value_rows ? &typed_value_rows->at(row) : nullptr;
     const bool typed_value_present = prepared_typed_row && prepared_typed_row->present;
 
@@ -417,30 +480,11 @@ std::vector<ConvertedTypedValue> & getOrPrepareTypedValueRows(
     {
         const VariantMetadata * const * metadata_by_row = state.metadata_state->metadata_by_row.data();
         std::vector<const VariantMetadata *> replicated_metadata;
-        if (source_info.typed_value_requires_parent_metadata_mapping)
-        {
-            /// Nested `typed_value` rows need a parent-row-to-element-row metadata mapping. When the
-            /// metadata dictionary is shared, every element can reuse the same dictionary. With
-            /// non-shared metadata there is no parent mapping here, so fail instead of indexing the
-            /// wrong row's dictionary.
-            if (!state.metadata_state->metadata_is_shared_across_rows)
-            {
-                if (num_rows != 0)
-                {
-                    throw Exception(
-                        ErrorCodes::INCORRECT_DATA,
-                        "Cannot decode nested `Parquet` `VARIANT` typed values with non-shared `metadata` without parent-row metadata mapping");
-                }
-            }
-            else
-            {
-                const VariantMetadata * shared
-                    = state.metadata_state->shared_metadata_storage ? &*state.metadata_state->shared_metadata_storage : nullptr;
-                replicated_metadata.assign(num_rows, shared);
-                metadata_by_row = replicated_metadata.data();
-            }
-        }
-        else if (num_rows > state.metadata_state->metadata_by_row.size())
+        /// Nested `typed_value` rows are elements of a repeated level, so they do not line up 1:1
+        /// with `metadata_by_row` (which is sized per top-level row). When the dictionary is shared,
+        /// every element reuses the same one; otherwise each element takes the dictionary of the
+        /// top-level row that owns it, resolved into `SourceState::nested_metadata_by_row`.
+        if (source_info.typed_value_requires_parent_metadata_mapping || num_rows > state.metadata_state->metadata_by_row.size())
         {
             if (state.metadata_state->metadata_is_shared_across_rows)
             {
@@ -449,7 +493,11 @@ std::vector<ConvertedTypedValue> & getOrPrepareTypedValueRows(
                 replicated_metadata.assign(num_rows, shared);
                 metadata_by_row = replicated_metadata.data();
             }
-            else
+            else if (state.nested_metadata_by_row.size() == num_rows)
+            {
+                metadata_by_row = state.nested_metadata_by_row.data();
+            }
+            else if (num_rows != 0)
             {
                 throw Exception(
                     ErrorCodes::INCORRECT_DATA,
@@ -625,6 +673,15 @@ SourceState & getOrPrepareSourceState(
     }
     state->value_values.resize(num_rows);
 
+    /// A nested `VARIANT` reuses an enclosing row's dictionary, so its rows do not line up 1:1 with
+    /// `metadata_by_row`. Resolve the owning top-level row of each of them while the enclosing
+    /// `formOutputColumn` frames still publish their array offsets.
+    if (!state->metadata_state->metadata_is_shared_across_rows
+        && (source_info.rows_deeper_than_metadata || num_rows != state->metadata_state->metadata_by_row.size()))
+    {
+        state->nested_metadata_by_row = buildNestedMetadataByRow(row_subgroup, *state->metadata_state, num_rows);
+    }
+
     if (source_info.value_primitive_idx != UINT64_MAX)
     {
         Reader::ColumnSubchunk & value_subchunk = row_subgroup.columns.at(source_info.value_primitive_idx);
@@ -659,6 +716,8 @@ void filterMetadataState(MetadataState & state, const IColumnFilter & filter, si
 void filterSourceState(SourceState & state, const IColumnFilter & filter, size_t result_size_hint, const FormatSettings & /*format_settings*/)
 {
     filterVectorInPlace(state.value_values, filter, result_size_hint);
+    /// The mapping is indexed by unfiltered nested row; it is rebuilt on the next read.
+    state.nested_metadata_by_row.clear();
 
     state.value_column_is_all_null = true;
     for (const auto & value : state.value_values)
@@ -976,6 +1035,17 @@ static MutableColumnPtr tryFormDirectSubcolumnExactFastPaths(
     if (candidates.empty())
         return {};
 
+    /// A nested `VARIANT` reusing an enclosing row's dictionary needs the parent-row mapping; bail
+    /// out to the general path (which reports malformed data) when it cannot be built.
+    std::vector<const VariantMetadata *> nested_metadata_by_row;
+    if (!metadata_state.metadata_is_shared_across_rows
+        && (source_info.rows_deeper_than_metadata || num_rows != metadata_state.metadata_by_row.size()))
+    {
+        nested_metadata_by_row = buildNestedMetadataByRow(row_subgroup, metadata_state, num_rows);
+        if (nested_metadata_by_row.size() != num_rows)
+            return {};
+    }
+
     const size_t requested_output_idx = static_cast<size_t>(&output_info - reader.output_columns.data());
 
     const VariantMetadata * shared_metadata = metadata_state.shared_metadata_storage ? &*metadata_state.shared_metadata_storage : nullptr;
@@ -1068,7 +1138,7 @@ static MutableColumnPtr tryFormDirectSubcolumnExactFastPaths(
     for (size_t row = 0; row < num_rows; ++row)
     {
         auto value_blob = value_accessor.get(row);
-        const VariantMetadata * row_metadata = getRowMetadata(metadata_state, row);
+        const VariantMetadata * row_metadata = getRowMetadata(metadata_state, nested_metadata_by_row, row);
         if (!row_metadata || !value_blob.has_value())
         {
             if (!row_metadata && value_blob.has_value())

@@ -3159,22 +3159,42 @@ MutableColumnPtr Reader::formOutputColumn(RowSubgroup & row_subgroup, size_t out
                 output_info.input_type->getName());
         }
         chassert(output_info.nested_columns.size() == 1);
+        /// Not every primitive in this range repeats at this level: the `metadata` column of a
+        /// nested shredded `VARIANT` is hoisted to the enclosing row, so it is appended to the
+        /// primitive list while the array's subtree is being built but carries no offsets here.
+        auto repeats_at_this_level = [&](size_t primitive_idx)
+        {
+            return row_subgroup.columns.at(primitive_idx).arrays_offsets.size() >= output_info.rep;
+        };
+
+        size_t offsets_primitive_idx = output_info.primitive_start;
+        while (offsets_primitive_idx < output_info.primitive_end && !repeats_at_this_level(offsets_primitive_idx))
+            ++offsets_primitive_idx;
+
         MutableColumnPtr offsets_column;
-        if (output_info.primitive_start < output_info.primitive_end)
-            offsets_column = std::move(row_subgroup.columns.at(output_info.primitive_start).arrays_offsets.at(output_info.rep - 1));
+        if (offsets_primitive_idx < output_info.primitive_end)
+            offsets_column = std::move(row_subgroup.columns.at(offsets_primitive_idx).arrays_offsets.at(output_info.rep - 1));
         else
             /// All subcolumns inside the Array are missing. E.g. Array(Tuple(nonexistent_column Int64)).
             offsets_column = ColumnUInt64::create(num_rows, 0);
 
         /// If it's an array of tuples, every tuple element should have the same array offsets.
         const auto & offsets = assert_cast<const ColumnUInt64 &>(*offsets_column).getData();
-        for (size_t i = output_info.primitive_start + 1; i < output_info.primitive_end; ++i)
+        for (size_t i = offsets_primitive_idx + 1; i < output_info.primitive_end; ++i)
         {
+            if (!repeats_at_this_level(i))
+                continue;
+
             const auto other_offsets_column = std::move(row_subgroup.columns.at(i).arrays_offsets.at(output_info.rep - 1));
             const auto & other_offsets = assert_cast<const ColumnUInt64 &>(*other_offsets_column).getData();
             if (offsets != other_offsets)
-                throw Exception(ErrorCodes::INCORRECT_DATA, "Invalid array of tuples: tuple elements {} and {} have different array lengths", primitive_columns.at(output_info.primitive_start).name, primitive_columns.at(i).name);
+                throw Exception(ErrorCodes::INCORRECT_DATA, "Invalid array of tuples: tuple elements {} and {} have different array lengths", primitive_columns.at(offsets_primitive_idx).name, primitive_columns.at(i).name);
         }
+
+        /// Nested shredded `VARIANT` values inherit the enclosing top-level row's `metadata`
+        /// dictionary; publish this level so VariantReader can map element rows back to it.
+        row_subgroup.nested_array_offsets.push_back(&offsets);
+        SCOPE_EXIT({ row_subgroup.nested_array_offsets.pop_back(); });
 
         MutableColumnPtr nested = formOutputColumn(row_subgroup, output_info.nested_columns.at(0), offsets.back(), skip_cast);
         res = ColumnArray::create(std::move(nested), std::move(offsets_column));
