@@ -142,23 +142,23 @@ void PositionCursor::ensurePackedBlockDecoded(size_t lb_idx, size_t pb_idx)
     /// Decode doc deltas
     {
         const uint8_t * p = pst_decode_buf->ptr();
-        const uint8_t * end = nullptr;
+        uint32_t consumed = 0;
         if (count == ABPFOR_BLOCK_SIZE)
-            end = abpfor::b256::decodeBlockDelta1(p, pb_cache.doc_ids, delta_base) + p;
+            consumed = abpfor::b256::decodeBlockDelta1(p, pb_cache.doc_ids, delta_base);
         else
-            end = abpfor::b256::decodeTailDelta1(p, count, pb_cache.doc_ids, delta_base) + p;
-        pst_decode_buf->advance(static_cast<size_t>(end - p));
+            consumed = abpfor::b256::decodeTailDelta1(p, count, pb_cache.doc_ids, delta_base);
+        pst_decode_buf->advance(consumed);
     }
 
     /// Decode freqs
     {
         const uint8_t * p = pst_decode_buf->ptr();
-        const uint8_t * end = nullptr;
+        uint32_t consumed = 0;
         if (count == ABPFOR_BLOCK_SIZE)
-            end = abpfor::b256::decodeBlock(p, pb_cache.freqs) + p;
+            consumed = abpfor::b256::decodeBlock(p, pb_cache.freqs);
         else
-            end = abpfor::b256::decodeTail(p, count, pb_cache.freqs) + p;
-        pst_decode_buf->advance(static_cast<size_t>(end - p));
+            consumed = abpfor::b256::decodeTail(p, count, pb_cache.freqs);
+        pst_decode_buf->advance(consumed);
     }
 
     /// Validate the decoded packed block before any consumer runs `std::lower_bound` over
@@ -223,12 +223,12 @@ void PositionCursor::ensurePosBlockDecoded(size_t lb_idx, UInt32 pos_block_idx)
         pos_decode_buf->reset();
 
     const uint8_t * p = pos_decode_buf->ptr();
-    const uint8_t * end = nullptr;
+    uint32_t consumed = 0;
     if (count == ABPFOR_BLOCK_SIZE)
-        end = abpfor::b256::decodeBlock(p, pos_cache.values) + p;
+        consumed = abpfor::b256::decodeBlock(p, pos_cache.values);
     else
-        end = abpfor::b256::decodeTail(p, count, pos_cache.values) + p;
-    pos_decode_buf->advance(static_cast<size_t>(end - p));
+        consumed = abpfor::b256::decodeTail(p, count, pos_cache.values);
+    pos_decode_buf->advance(consumed);
 
     pos_cache.large_block = lb_idx;
     pos_cache.pos_block_idx = pos_block_idx;
@@ -270,12 +270,12 @@ UInt32 PositionCursor::seekDoc(UInt32 doc_id)
 
                 UInt32 n = std::min(freq, static_cast<UInt32>(ABPFOR_BLOCK_SIZE));
                 const uint8_t * p = pos_decode_buf->ptr();
-                const uint8_t * end = nullptr;
+                uint32_t consumed = 0;
                 if (n == ABPFOR_BLOCK_SIZE)
-                    end = abpfor::b256::decodeBlock(p, pos_cache.values) + p;
+                    consumed = abpfor::b256::decodeBlock(p, pos_cache.values);
                 else
-                    end = abpfor::b256::decodeTail(p, n, pos_cache.values) + p;
-                pos_decode_buf->advance(static_cast<size_t>(end - p));
+                    consumed = abpfor::b256::decodeTail(p, n, pos_cache.values);
+                pos_decode_buf->advance(consumed);
 
                 pos_cache.large_block = SIZE_MAX;
                 pos_cache.pos_block_idx = 0;
@@ -344,12 +344,12 @@ UInt32 PositionCursor::nextPosition()
             UInt32 remaining = doc_state.freq - doc_state.consumed;
             UInt32 n = std::min(remaining, static_cast<UInt32>(ABPFOR_BLOCK_SIZE));
             const uint8_t * p = pos_decode_buf->ptr();
-            const uint8_t * end = nullptr;
+            uint32_t consumed = 0;
             if (n == ABPFOR_BLOCK_SIZE)
-                end = abpfor::b256::decodeBlock(p, pos_cache.values) + p;
+                consumed = abpfor::b256::decodeBlock(p, pos_cache.values);
             else
-                end = abpfor::b256::decodeTail(p, n, pos_cache.values) + p;
-            pos_decode_buf->advance(static_cast<size_t>(end - p));
+                consumed = abpfor::b256::decodeTail(p, n, pos_cache.values);
+            pos_decode_buf->advance(consumed);
 
             ++pos_cache.pos_block_idx;
             pos_cache.count = n;

@@ -29,8 +29,7 @@ namespace ErrorCodes
 ///   while (has_more_blocks)
 ///   {
 ///       const uint8_t * p = dbuf.ptr();
-///       const uint8_t * end = abpfor::b256::decodeBlockDelta1(p, out, prev) + p;
-///       dbuf.advance(end - p);
+///       dbuf.advance(abpfor::b256::decodeBlockDelta1(p, out, prev));
 ///   }
 ///
 /// ═══════════════════════════════════════════════════════════════════
