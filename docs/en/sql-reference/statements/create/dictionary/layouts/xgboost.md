@@ -171,7 +171,14 @@ LIFETIME(0);
 SELECT predictXGBoost('model', 1.0, 2.0, map('type', 0, 'iteration_end', 0));
 ```
 
-The parameter names map to the prediction parameters of XGBoost's `XGBoosterPredictFromDMatrix`. Only the keys below are accepted; any other key fails the query. Values are Int64 — `strict_shape` is given as `0` or `1`.
+The parameter names map to the prediction parameters of XGBoost's `XGBoosterPredictFromDMatrix`. Only the keys below are accepted; any other key fails the query.
+
+Every parameter is an integer or a boolean, so the `Map` values must be an integer type — `Map(String, Float64)` is rejected at query analysis instead of being truncated, and `strict_shape` is given as `0` or `1`:
+
+```sql
+-- Rejected: the map values are Float64
+SELECT predictXGBoost('model', 1.0, 2.0, map('iteration_end', 2.9));
+```
 
 | Parameter | Description | Default |
 | --- | --- | --- |

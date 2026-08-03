@@ -3,6 +3,7 @@
 #if USE_XGBOOST
 
 #include <atomic>
+#include <limits>
 
 #include <Access/Common/AccessFlags.h>
 #include <Columns/ColumnConst.h>
@@ -22,8 +23,6 @@
 #include <Interpreters/Context.h>
 #include <Interpreters/ExternalDictionariesLoader.h>
 #include <Common/Exception.h>
-#include <Common/FieldVisitorConvertToNumber.h>
-#include <Common/FieldVisitors.h>
 #include <Common/logger_useful.h>
 
 namespace DB
@@ -113,15 +112,17 @@ public:
                     getName(),
                     arguments[i].type->getName());
 
-        /// The optional trailing prediction parameters must be a Map from parameter name (String) to a
-        /// numeric value, e.g. map('type', 0) or {'type': 0}.
+        /// The optional trailing prediction parameters must be a Map from parameter name (String) to an
+        /// integer value, e.g. map('type', 0) or {'type': 0}. Every prediction parameter XGBoost accepts here
+        /// is an integer or a boolean, so fractional values are rejected instead of being truncated: a typo
+        /// such as map('iteration_end', 2.9) must not silently predict with a different number of trees.
         if (feature_end < arguments.size())
         {
             const auto * map_type = checkAndGetDataType<DataTypeMap>(arguments.back().type.get());
-            if (!isString(map_type->getKeyType()) || !isNumber(map_type->getValueType()))
+            if (!isString(map_type->getKeyType()) || !isNativeInteger(map_type->getValueType()))
                 throw Exception(
                     ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT,
-                    "Prediction parameters of function '{}' must be a Map(String, <numeric>), got {}",
+                    "Prediction parameters of function '{}' must be a Map(String, <integer>), got {}",
                     getName(),
                     arguments.back().type->getName());
         }
@@ -206,9 +207,28 @@ private:
         for (const auto & entry : entries)
         {
             const Tuple & key_value = entry.safeGet<Tuple>();
-            params.emplace(key_value[0].safeGet<String>(), applyVisitor(FieldVisitorConvertToNumber<Int64>(), key_value[1]));
+            const String & key = key_value[0].safeGet<String>();
+            params.emplace(key, getIntegerParamValue(key, key_value[1]));
         }
         return params;
+    }
+
+    /// `getReturnTypeImpl` restricts the Map values to native integers, so the field holds either an `Int64` or
+    /// a `UInt64`. Unsigned values that do not fit in an `Int64` are rejected rather than wrapped around.
+    static Int64 getIntegerParamValue(const String & key, const Field & value)
+    {
+        if (value.getType() == Field::Types::Int64)
+            return value.safeGet<Int64>();
+
+        const UInt64 unsigned_value = value.safeGet<UInt64>();
+        if (unsigned_value > static_cast<UInt64>(std::numeric_limits<Int64>::max()))
+            throw Exception(
+                ErrorCodes::BAD_ARGUMENTS,
+                "Value {} of prediction parameter '{}' of function '{}' does not fit in Int64",
+                unsigned_value,
+                key,
+                name);
+        return static_cast<Int64>(unsigned_value);
     }
 
     void validateDictionaryIsXGBoost(const ColumnsWithTypeAndName & arguments) const
@@ -256,11 +276,12 @@ REGISTER_FUNCTION(PredictXGBoost)
             {"String"}},
            {"featureN", "Numeric feature values, positionally in the dictionary's key order.", {"(U)Int*", "Float*"}},
            {"params",
-            "Optional constant Map of XGBoost prediction parameters, from parameter name to a numeric value, e.g. "
-            "`map('type', 0, 'iteration_end', 0)`. See the "
+            "Optional constant Map of XGBoost prediction parameters, from parameter name to an integer value, e.g. "
+            "`map('type', 0, 'iteration_end', 0)`. Every accepted parameter is an integer or a boolean, so fractional "
+            "values are rejected. See the "
             "[prediction parameters](/sql-reference/statements/create/dictionary/layouts/xgboost#prediction-parameters) for "
             "the accepted keys.",
-            {"Map(String, (U)Int*)", "Map(String, Float*)"}}},
+            {"Map(String, (U)Int8/16/32/64)"}}},
         .returned_value = {"The model prediction as Float64, one per row.", {"Float64"}},
         .examples
         = {{"Predict", "SELECT predictXGBoost('model', 1.0, 2.0);", "7.0"},
