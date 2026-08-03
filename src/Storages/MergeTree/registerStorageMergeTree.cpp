@@ -50,6 +50,7 @@ namespace Setting
 {
     extern const SettingsBool allow_deprecated_syntax_for_merge_tree;
     extern const SettingsBool allow_experimental_codecs;
+    extern const SettingsBool allow_experimental_merge_tree_queue;
     extern const SettingsBool allow_experimental_unique_key;
     extern const SettingsBool allow_suspicious_primary_key;
     extern const SettingsBool allow_suspicious_ttl_expressions;
@@ -469,6 +470,18 @@ static StoragePtr create(const StorageFactory::Arguments & args)
     if (merging_params.is_queue && merging_params.mode != MergeTreeData::MergingParams::Ordinary)
         throw Exception(ErrorCodes::UNKNOWN_STORAGE, "MergeTreeQueue does not support merging modes. Used mode: {}", name_part);
 
+    /// The queue engines are experimental: their on-disk layout and the commit-order contract may
+    /// still change. Gate on CREATE only; ATTACH must load existing metadata regardless of the setting.
+    if (merging_params.is_queue
+        && args.mode <= LoadingStrictnessLevel::CREATE
+        && !local_settings[Setting::allow_experimental_merge_tree_queue])
+    {
+        throw Exception(ErrorCodes::SUPPORT_IS_DISABLED,
+            "The {} engine is an experimental feature. "
+            "Set the session setting `allow_experimental_merge_tree_queue = 1` to enable it.",
+            args.engine_name);
+    }
+
     /// The deprecated syntax takes the sorting key from the engine arguments, which contradicts the
     /// queue engines owning their sorting key `(_block_number, _block_offset)`. Reject it instead of
     /// silently creating a queue table without the commit-order key.
@@ -712,6 +725,18 @@ static StoragePtr create(const StorageFactory::Arguments & args)
         /// User-specified ORDER BY or PRIMARY KEY is not allowed.
         if (merging_params.is_queue)
         {
+            /// Block numbers are allocated per partition, so `(_block_number, _block_offset)` is not a
+            /// global commit position in a partitioned table: the same pair matches a row in every
+            /// partition, which breaks both the queue cursor and point lookups by the key. Until the
+            /// engine contract covers partitioning, reject `PARTITION BY` on creation (`ATTACH` still
+            /// loads existing metadata).
+            if (args.storage_def->partition_by && args.mode <= LoadingStrictnessLevel::CREATE)
+                throw Exception(ErrorCodes::BAD_ARGUMENTS,
+                    "PARTITION BY is not supported for the {} engine, because block numbers are allocated "
+                    "per partition and the commit-order key `(_block_number, _block_offset)` would no longer "
+                    "identify a row uniquely.",
+                    args.engine_name);
+
             auto unpack_key_ast = [](IAST * key_ast) -> std::vector<std::string>
             {
                 if (!key_ast)

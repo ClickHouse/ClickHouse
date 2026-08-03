@@ -8341,6 +8341,11 @@ Allows creation of tables with the [TimeSeries](/reference/engines/table-engines
 - 0 — the [TimeSeries](/reference/engines/table-engines/integrations/time-series) table engine is disabled.
 - 1 — the [TimeSeries](/reference/engines/table-engines/integrations/time-series) table engine is enabled.
 )", EXPERIMENTAL) \
+    DECLARE(Bool, allow_experimental_merge_tree_queue, false, R"(
+Allows creation of tables with the experimental `MergeTreeQueue` and `ReplicatedMergeTreeQueue` table engines, which keep the rows in commit order. Possible values:
+- 0 — the `MergeTreeQueue` and `ReplicatedMergeTreeQueue` table engines are disabled.
+- 1 — the `MergeTreeQueue` and `ReplicatedMergeTreeQueue` table engines are enabled.
+)", EXPERIMENTAL) \
     DECLARE(UInt64, unique_key_max_encoded_size, 256, R"(
 Maximum size (in bytes) of the order-preserving binary encoding of a single `UNIQUE KEY` row.
 )", EXPERIMENTAL) \

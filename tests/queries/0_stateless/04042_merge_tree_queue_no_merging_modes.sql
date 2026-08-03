@@ -1,6 +1,13 @@
 -- Tags: no-random-merge-tree-settings
 -- Verify that `MergeTreeQueue` does not support merging modes, ORDER BY, PRIMARY KEY,
--- the deprecated engine syntax, or disabling the virtual columns of its sorting key.
+-- PARTITION BY, the deprecated engine syntax, or disabling the virtual columns of its
+-- sorting key, and that it is gated behind an experimental setting.
+
+select 'the engines are experimental';
+CREATE TABLE mtq_gated(a UInt64) ENGINE = MergeTreeQueue; -- { serverError SUPPORT_IS_DISABLED }
+CREATE TABLE mtq_gated(a UInt64) ENGINE = ReplicatedMergeTreeQueue('/clickhouse/tables/{database}/mtq_gated', '1'); -- { serverError SUPPORT_IS_DISABLED }
+
+set allow_experimental_merge_tree_queue = 1;
 
 select 'SummingMergeTreeQueue';
 CREATE TABLE mtq_summing(a UInt64) ENGINE = SummingMergeTreeQueue ORDER BY a; -- { serverError UNKNOWN_STORAGE }
@@ -19,6 +26,9 @@ CREATE TABLE mtq_order(a UInt64) ENGINE = MergeTreeQueue ORDER BY a; -- { server
 
 select 'PRIMARY KEY is forbidden';
 CREATE TABLE mtq_pk(a UInt64) ENGINE = MergeTreeQueue PRIMARY KEY a; -- { serverError BAD_ARGUMENTS }
+
+select 'PARTITION BY is forbidden';
+CREATE TABLE mtq_partitioned(p UInt64, a UInt64) ENGINE = MergeTreeQueue PARTITION BY p; -- { serverError BAD_ARGUMENTS }
 
 select 'ALTER MODIFY ORDER BY is forbidden';
 drop table if exists mtq_alter_order sync;
