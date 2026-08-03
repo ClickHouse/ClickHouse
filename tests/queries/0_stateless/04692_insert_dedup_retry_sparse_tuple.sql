@@ -39,6 +39,8 @@ SETTINGS ratio_of_defaults_for_sparse_serialization = 0.9;
 
 INSERT INTO t_dedup_sparse_nested_src SELECT number, tuple((number, number < 5)) FROM numbers(20000);
 
+SELECT 'doubly nested source element is sparse', dumpColumnStructure(body) LIKE '%Sparse%' FROM t_dedup_sparse_nested_src LIMIT 1;
+
 CREATE TABLE t_dedup_sparse_nested_dst (id UInt64, body Tuple(inner Tuple(key UInt64, flag Bool)))
 ENGINE = MergeTree ORDER BY id
 SETTINGS non_replicated_deduplication_window = 100, ratio_of_defaults_for_sparse_serialization = 0.9;
@@ -48,6 +50,8 @@ SELECT 'doubly nested tuple, first insert', count() FROM t_dedup_sparse_nested_d
 
 INSERT INTO t_dedup_sparse_nested_dst SELECT * FROM t_dedup_sparse_nested_src SETTINGS insert_deduplication_token = 'token_2';
 SELECT 'doubly nested tuple, repeated insert deduplicated', count() FROM t_dedup_sparse_nested_dst;
+
+SELECT 'doubly nested destination element is still sparse', dumpColumnStructure(body) LIKE '%Sparse%' FROM t_dedup_sparse_nested_dst LIMIT 1;
 
 -- The same, but deduplication happens on a materialized view target, which retries at view level.
 CREATE TABLE t_dedup_sparse_landing (id UInt64, body Tuple(key UInt64, flag Bool))
@@ -66,6 +70,8 @@ SELECT 'materialized view target, first insert', count() FROM t_dedup_sparse_mv_
 
 INSERT INTO t_dedup_sparse_landing SELECT * FROM t_dedup_sparse_src SETTINGS insert_deduplication_token = 'token_3';
 SELECT 'materialized view target, repeated insert deduplicated', count() FROM t_dedup_sparse_mv_target;
+
+SELECT 'materialized view target element is still sparse', dumpColumnStructure(body) LIKE '%Sparse%' FROM t_dedup_sparse_mv_target LIMIT 1;
 
 -- A sparse column at the top level was already handled and must keep working.
 CREATE TABLE t_dedup_sparse_top_src (id UInt64, flag Bool)
