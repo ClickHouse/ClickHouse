@@ -275,7 +275,9 @@ public:
     UInt64 peer_group_start_row_number = 1;
     UInt64 peer_group_number = 1;
     // The ORDER BY peer group used by rank() and dense_rank(): rows comparing equal
-    // w/ORDER BY, independent of the frame type.
+    // w/ORDER BY, independent of the frame type. Tracked only when some function reads it,
+    // as resolved once in the constructor.
+    bool needs_order_by_peer_group = false;
     UInt64 order_by_peer_group_start_row_number = 1;
     UInt64 order_by_peer_group_number = 1;
 

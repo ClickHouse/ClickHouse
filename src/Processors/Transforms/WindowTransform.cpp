@@ -317,6 +317,8 @@ WindowTransform::WindowTransform(SharedHeader input_header_,
         /// Currently we have slightly wrong mixup of the interfaces of Window and Aggregate functions.
         workspace.window_function_impl = dynamic_cast<IWindowFunction *>(const_cast<IAggregateFunction *>(aggregate_function.get()));
 
+        needs_order_by_peer_group |= workspace.window_function_impl && workspace.window_function_impl->needsOrderByPeerGroup();
+
         /// Some functions may have non-standard default frame.
         /// Use it if it's the only function over the current window.
         if (window_description.frame.is_default && functions.size() == 1 && workspace.window_function_impl)
@@ -1331,7 +1333,8 @@ void WindowTransform::appendChunk(Chunk & chunk)
             // Under ROWS the check above compares nothing, so find the boundary here: equal
             // ORDER BY rows are contiguous, the input being sorted by PARTITION BY + ORDER BY.
             // The row number guard keeps this idempotent: the loop below can re-run this row.
-            if (window_description.frame.type == WindowFrame::FrameType::ROWS
+            if (needs_order_by_peer_group
+                && window_description.frame.type == WindowFrame::FrameType::ROWS
                 && current_row_number > order_by_peer_group_start_row_number
                 && !haveEqualOrderByValues(prevRowNumber(current_row), current_row))
             {
@@ -1629,12 +1632,15 @@ void WindowTransform::work()
     // that the frame start can be further than current row for some frame specs
     // (e.g. EXCLUDE CURRENT ROW), so we have to check both.
     chassert(prev_frame_start <= frame_start);
-    // The ORDER BY peer group boundary check reads the row before the current one, so its block
-    // must stay alive. Derived arithmetically, since retreatRowNumber asserts liveness itself.
-    const auto prev_row_block = (current_row.row > 0 || current_row.block == 0)
-        ? current_row.block : current_row.block - 1;
-    const auto first_used_block
-        = std::min({next_output_block_number, prev_frame_start.block, current_row.block, prev_row_block});
+    auto first_used_block = std::min({next_output_block_number, prev_frame_start.block, current_row.block});
+    if (needs_order_by_peer_group)
+    {
+        // The ORDER BY peer group boundary check reads the row before the current one, so its
+        // block must stay alive. Derived arithmetically, since retreatRowNumber asserts liveness.
+        const auto prev_row_block = (current_row.row > 0 || current_row.block == 0)
+            ? current_row.block : current_row.block - 1;
+        first_used_block = std::min(first_used_block, prev_row_block);
+    }
     if (first_block_number < first_used_block)
     {
         blocks.erase(blocks.begin(),
@@ -1657,6 +1663,8 @@ struct WindowFunctionRank final : public StatelessWindowFunction
 
     bool allocatesMemoryInArena() const override { return false; }
 
+    bool needsOrderByPeerGroup() const override { return true; }
+
     void windowInsertResultInto(const WindowTransform * transform,
         size_t function_index) const override
     {
@@ -1674,6 +1682,8 @@ struct WindowFunctionDenseRank final : public StatelessWindowFunction
     {}
 
     bool allocatesMemoryInArena() const override { return false; }
+
+    bool needsOrderByPeerGroup() const override { return true; }
 
     void windowInsertResultInto(const WindowTransform * transform,
         size_t function_index) const override
