@@ -81,8 +81,8 @@ The ClickHouse service should now be accessible from the peered VPC.
 
 To access ClickHouse privately, a private load balancer and endpoint are provisioned for secure connectivity from the user's peered VPC. The private endpoint follows the public endpoint format with a `-private` suffix. For example:
 
-- **Public endpoint**: `h5ju65kv87.mhp0y4dmph.us-west-2.aws.byoc.clickhouse.cloud`
-- **Private endpoint**: `h5ju65kv87-private.mhp0y4dmph.us-west-2.aws.byoc.clickhouse.cloud`
+- **Public endpoint**: `h5ju65kv87.mhp0y4dmph.us-west-2.aws.clickhouse-byoc.com`
+- **Private endpoint**: `h5ju65kv87-private.mhp0y4dmph.us-west-2.aws.clickhouse-byoc.com`
 
 Optional, after verifying that peering is working, you can request the removal of the public load balancer for ClickHouse BYOC.
 

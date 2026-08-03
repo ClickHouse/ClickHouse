@@ -45,7 +45,7 @@ No. The Kubernetes cluster (EKS, GKE, or AKS) is created and fully managed by Cl
 </Accordion>
 
 <Accordion title="Can we run our own workloads in the BYOC cluster or cloud account?">
-In the cloud account: yes, as long as your resources do not touch ClickHouse-provisioned ones (all ClickHouse-created resources carry the tag `clickhouse-byoc=true`), though a dedicated account remains the recommendation.
+In the cloud account: yes, as long as your resources do not touch ClickHouse-provisioned ones (on AWS these all carry the tag `clickhouse-byoc=true`), though a dedicated account remains the recommendation.
 
 In the Kubernetes cluster: it is possible with constraints — use your own node groups with taints and tolerations, stay out of ClickHouse-managed namespaces, and do not install cluster-wide admission controllers or policy engines, which can block reconciliation of ClickHouse components. Describe your plan to support first so we can confirm there are no collisions.
 </Accordion>
@@ -209,7 +209,7 @@ AWS, GCP, and Azure are all generally available. See the [overview](/products/cl
 </Accordion>
 
 <Accordion title="How do we decommission a BYOC environment?">
-Terminate your services and the BYOC infrastructure from the ClickHouse console — do not start by deleting resources or revoking permissions in your cloud provider console, which severs the control-plane connection mid-flight and forces manual cleanup. Once the console-driven termination completes, remove the onboarding stack (CloudFormation stack or Terraform module) and any remaining resources. All ClickHouse-created resources are tagged `clickhouse-byoc=true`, so you can enumerate them afterwards to verify nothing is left.
+Terminate your services and the BYOC infrastructure from the ClickHouse console — do not start by deleting resources or revoking permissions in your cloud provider console, which severs the control-plane connection mid-flight and forces manual cleanup. Once the console-driven termination completes, remove the onboarding stack (CloudFormation stack or Terraform module) and any remaining resources. On AWS, all ClickHouse-created resources are tagged `clickhouse-byoc=true`, so you can enumerate them afterwards to verify nothing is left; on GCP and Azure, the dedicated project or subscription you onboarded bounds what to review.
 </Accordion>
 
 ### Uptime SLAs {#uptime-sla}
