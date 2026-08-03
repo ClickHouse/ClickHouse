@@ -84,7 +84,7 @@ FROM
         sumIf(read_bytes, log_comment = '04665_lazy_on') AS payload_bytes,
         sumIf(read_bytes, log_comment = '04665_lazy_off') AS no_lazy_bytes
     FROM system.query_log
-    WHERE event_date >= yesterday() AND type = 'QueryFinish' AND database = currentDatabase()
+    WHERE event_date >= yesterday() AND type = 'QueryFinish' AND current_database = currentDatabase()
 );
 
 DROP TABLE t_dist_lazy;
