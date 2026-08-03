@@ -11,6 +11,7 @@ DROP TABLE IF EXISTS one;
 CREATE TABLE one (n Int32, m Int32, s String, t String, a Array(Int32), b Array(Int32), d DateTime) ENGINE = Memory;
 INSERT INTO one VALUES (-7, 2, 'Hello World', 'o W', [3, 1, 2], [2, 4], '2013-07-15 10:20:30');
 
+SET allow_experimental_mongo_dialect = 1;
 SET dialect='mongo';
 
 db.one.aggregate([{"$project" : {"abs" : {"$abs" : "$n"}, "add" : {"$add" : ["$n", "$m", 1]}, "sub" : {"$subtract" : ["$n", "$m"]}, "mul" : {"$multiply" : ["$m", 3]}, "div" : {"$divide" : ["$n", "$m"]}, "mod" : {"$mod" : ["$m", 2]}, "pow" : {"$pow" : ["$m", 3]}, "ceil" : {"$ceil" : {"$divide" : ["$n", "$m"]}}, "floor" : {"$floor" : {"$divide" : ["$n", "$m"]}}, "trunc" : {"$trunc" : {"$divide" : ["$n", "$m"]}}, "log" : {"$log" : [8, 2]}}}]);

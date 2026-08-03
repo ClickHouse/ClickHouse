@@ -21,6 +21,7 @@ DROP TABLE IF EXISTS docs;
 CREATE TABLE docs (id Int32, name String, score Nullable(Int32), flags UInt32, tags Array(String), sizes Array(Int32)) ENGINE = Memory;
 INSERT INTO docs VALUES (1, 'alpha', 10, 5, ['red', 'green'], [1, 2, 3]), (2, 'beta', NULL, 12, ['green'], [7]), (3, 'gamma', 30, 0, [], [4, 5]);
 
+SET allow_experimental_mongo_dialect = 1;
 SET dialect='mongo';
 
 db.docs.find({"id" : 2});

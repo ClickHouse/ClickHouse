@@ -19,6 +19,7 @@ DROP TABLE IF EXISTS hits;
 CREATE TABLE hits (CounterID Int32, RegionID Int32, UserID Int64, SearchPhrase String, URL String, ResolutionWidth Int32, EventTime DateTime) ENGINE = MergeTree ORDER BY CounterID;
 INSERT INTO hits VALUES (1, 10, 100, 'hello', 'http://a.example.com/x', 1024, '2013-07-15 10:00:00'), (1, 10, 100, 'hello', 'http://a.example.com/y', 1280, '2013-07-15 10:01:00'), (2, 20, 200, 'world', 'http://b.example.com/z', 1920, '2013-07-16 11:00:00'), (2, 20, 201, '', 'http://b.example.com/w', 800, '2013-07-16 11:30:00');
 
+SET allow_experimental_mongo_dialect = 1;
 SET dialect='mongo';
 
 db.hits.aggregate([{"$group" : {"_id" : null, "c" : {"$sum" : 1}, "w" : {"$sum" : "$ResolutionWidth"}, "a" : {"$avg" : "$ResolutionWidth"}}}]);

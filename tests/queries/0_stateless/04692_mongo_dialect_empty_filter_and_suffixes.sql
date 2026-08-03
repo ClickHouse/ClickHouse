@@ -29,6 +29,7 @@ DROP TABLE IF EXISTS docs;
 CREATE TABLE docs (id Int32, name String) ENGINE = MergeTree ORDER BY id;
 INSERT INTO docs VALUES (1, 'alpha'), (2, '.limit(1)'), (3, '.sort({"id": -1})');
 
+SET allow_experimental_mongo_dialect = 1;
 SET dialect='mongo';
 db.docs.find({"name" : {"$ne" : "nothing"}});
 db.docs.find({"name" : ".limit(1)"});

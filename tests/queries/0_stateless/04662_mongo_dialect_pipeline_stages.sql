@@ -16,6 +16,7 @@ DROP TABLE IF EXISTS events;
 CREATE TABLE events (id Int32, kind String, tags Array(String)) ENGINE = MergeTree ORDER BY id;
 INSERT INTO events VALUES (1, 'click', ['red', 'green']), (2, 'view', ['green']), (3, 'click', []), (4, 'click', ['blue']);
 
+SET allow_experimental_mongo_dialect = 1;
 SET dialect='mongo';
 
 db.events.aggregate([{"$unset" : "tags"}, {"$sort" : {"id" : 1}}]);

@@ -20,6 +20,7 @@ DROP TABLE IF EXISTS users;
 CREATE TABLE users (id Int32, active Bool, score Float64, big Int64, name String) ENGINE = Memory;
 INSERT INTO users VALUES (1, true, 1.5, 5000000000, 'O''Reilly'), (2, false, 2.5, -5000000000, 'plain');
 
+SET allow_experimental_mongo_dialect = 1;
 SET dialect='mongo';
 
 db.users.find({"active" : true});

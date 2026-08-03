@@ -22,7 +22,7 @@ ${CLICKHOUSE_CLIENT} --multiquery "
 "
 
 # `max_threads = 1` makes the read order deterministic: a `find` has no `ORDER BY`.
-MONGO_CLIENT="${CLICKHOUSE_CLIENT} --dialect mongo --max_threads 1"
+MONGO_CLIENT="${CLICKHOUSE_CLIENT} --dialect mongo --allow_experimental_mongo_dialect 1 --max_threads 1"
 
 echo 'both collections'
 ${MONGO_CLIENT} --query "${FIRST}.users.find({});"

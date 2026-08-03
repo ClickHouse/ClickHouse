@@ -22,6 +22,7 @@ DROP TABLE IF EXISTS docs;
 CREATE TABLE docs (id Int32, tags Array(String), flags UInt32) ENGINE = Memory;
 INSERT INTO docs VALUES (1, ['red', 'green'], 5), (2, [], 12);
 
+SET allow_experimental_mongo_dialect = 1;
 SET dialect='mongo';
 
 db.docs.aggregate([{"$match" : {"tags" : {"$all" : []}}}, {"$count" : "c"}]);

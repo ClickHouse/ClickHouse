@@ -37,6 +37,7 @@ ${CLICKHOUSE_CLIENT} --query "
 # the file names carry the database name, which is not.
 QUERIES="${CLICKHOUSE_TMP}/${CLICKHOUSE_DATABASE}_ferretdb_corpus.sql"
 {
+    echo "SET allow_experimental_mongo_dialect = 1;"
     echo "SET dialect = 'mongo';"
     grep -v '^#' "$CORPUS" | sed 's/$/;/'
     # Switching back out of the dialect and reading the marker proves the whole file was consumed:

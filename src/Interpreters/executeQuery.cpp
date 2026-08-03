@@ -149,6 +149,7 @@ namespace Setting
     extern const SettingsBool allow_experimental_analyzer;
     extern const SettingsBool allow_experimental_json_ast_dialect;
     extern const SettingsBool allow_experimental_kusto_dialect;
+    extern const SettingsBool allow_experimental_mongo_dialect;
     extern const SettingsBool allow_experimental_polyglot_dialect;
     extern const SettingsBool allow_experimental_prql_dialect;
     extern const SettingsBool allow_settings_after_format_in_insert;
@@ -1282,6 +1283,10 @@ static BlockIO executeQueryImpl(
         else if (settings[Setting::dialect] == Dialect::mongo && !internal)
         {
 #if USE_RAPIDJSON
+            if (!settings[Setting::allow_experimental_mongo_dialect])
+                throw Exception(
+                    ErrorCodes::SUPPORT_IS_DISABLED,
+                    "Support for the MongoDB dialect is disabled (turn on setting 'allow_experimental_mongo_dialect')");
             Mongo::ParserMongoQuery parser(max_query_size, settings[Setting::max_parser_depth], settings[Setting::max_parser_backtracks]);
             out_ast = parseMongoQuery(parser, begin, end, "", max_query_size, settings[Setting::max_parser_depth], settings[Setting::max_parser_backtracks]);
 #else

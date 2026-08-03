@@ -30,6 +30,7 @@ INSERT INTO test(c0, c1, c2) VALUES (13, 15, 'wx');
 INSERT INTO test(c0, c1, c2) VALUES (16, 11, 'yz');
 INSERT INTO test(c0, c1, c2) VALUES (14, 13, 'ab');
 
+SET allow_experimental_mongo_dialect = 1;
 SET dialect='mongo';
 db.test.find({});
 db.test.find({"c0" : 1});
