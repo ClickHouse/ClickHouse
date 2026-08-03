@@ -1708,7 +1708,7 @@ static ColumnPtr NO_SANITIZE_UNDEFINED convertToIPv4Accurate(
 
     for (size_t i = 0; i < input_rows_count; ++i)
     {
-        IPv4::UnderlyingType value;
+        IPv4::UnderlyingType value = 0;
         if (accurate::convertNumeric<FromFieldType, IPv4::UnderlyingType>(vec_from[i], value))
         {
             vec_to[i] = static_cast<ToFieldType>(value);
