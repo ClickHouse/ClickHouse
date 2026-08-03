@@ -684,17 +684,6 @@ TEST(Common, GlobASTExponentialBacktracking)
     std::string long_candidate(200, 'a');
     GlobAST::GlobString many_stars("*a*a*a*a*a*a*a*a*a*a*b");
     EXPECT_FALSE(many_stars.matches(long_candidate));
-
-    /// The memoization state space (candidate length x pattern expressions) is capped:
-    /// an adversarial combination must be rejected up front instead of allocating an
-    /// arbitrarily large memo table.
-    std::string huge_pattern;
-    for (size_t i = 0; i < 100000; ++i)
-        huge_pattern += "*a";
-    GlobAST::GlobString huge(huge_pattern);
-    EXPECT_THROW(huge.matches(std::string(1000, 'a')), DB::Exception);
-    /// A short candidate against the same pattern stays under the cap and must not throw.
-    EXPECT_FALSE(huge.matches("b"));
 }
 
 TEST(Common, GlobASTFindDoubleDot)
@@ -772,6 +761,58 @@ TEST(Common, GlobASTRangeOverflow)
     EXPECT_FALSE(large_range.matches("99999999999999999999999"));
     EXPECT_TRUE(large_range.matches("0"));
     EXPECT_TRUE(large_range.matches("12345"));
+}
+
+TEST(Common, GlobASTMatchStateSpaceLimit)
+{
+    /// matches caps its memoization state space (candidate length x pattern expressions)
+    /// and throws instead of allocating an unbounded table.
+    GlobAST::GlobString wide(std::string(70, '?'));
+    EXPECT_THROW(wide.matches(std::string(1 << 20, 'a')), DB::Exception);
+
+    /// The same pattern still matches ordinary candidates after the throw
+    /// (the reused per-thread buffer must be left in a valid state).
+    EXPECT_TRUE(wide.matches(std::string(70, 'a')));
+    EXPECT_FALSE(wide.matches(std::string(71, 'a')));
+}
+
+TEST(Common, GlobASTWildcardInsideEnums)
+{
+    /// A '?' inside an enum alternative is a wildcard for matching but is rendered as literal
+    /// text by expand(), so object storage must not turn such a pattern into exact keys. The
+    /// shape passes hasExactlyOneEnum(), so the exact-key guard has to rely on
+    /// hasQuestionOrAsterisk(), which the parser sets for a '?' inside an enum as well.
+    GlobAST::GlobString with_question("file_{a?,b?}.csv");
+    EXPECT_TRUE(with_question.hasExactlyOneEnum());
+    EXPECT_TRUE(with_question.hasQuestionOrAsterisk());
+    EXPECT_TRUE(with_question.matches("file_a1.csv"));
+    EXPECT_TRUE(with_question.matches("file_b2.csv"));
+    EXPECT_FALSE(with_question.matches("file_a.csv"));
+
+    /// A '*' inside a brace group makes the group literal text plus a wildcard rather than an
+    /// enum, so it is not an exact-key candidate either.
+    GlobAST::GlobString with_asterisk("file_{a*,b*}.csv");
+    EXPECT_FALSE(with_asterisk.hasExactlyOneEnum());
+    EXPECT_TRUE(with_asterisk.hasQuestionOrAsterisk());
+
+    /// A plain enum stays expandable.
+    GlobAST::GlobString plain("file_{a,b}.csv");
+    EXPECT_TRUE(plain.hasExactlyOneEnum());
+    EXPECT_FALSE(plain.hasQuestionOrAsterisk());
+}
+
+TEST(Common, GlobASTMatchDeepRecursionGuard)
+{
+    /// A long run of `*` stays far below the memo-table cap against a short candidate
+    /// (the state space is candidate length x expressions), but every asterisk expression
+    /// adds one recursion frame on the zero-consumption branch of matchesImpl. The matcher
+    /// must fail with an exception (stack guard) instead of exhausting the thread stack.
+    GlobAST::GlobString deep(std::string(400000, '*'));
+    EXPECT_THROW(deep.matches("abc"), DB::Exception);
+
+    /// The matcher must stay usable on the same thread after the guard fired.
+    GlobAST::GlobString simple("a*c");
+    EXPECT_TRUE(simple.matches("abc"));
 }
 
 /// Differential fuzzer: the AST matcher (use_glob_ast_parser = 1) must agree with the

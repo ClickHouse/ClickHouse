@@ -1,4 +1,5 @@
 #include <Common/parseGlobs.h>
+#include <Common/checkStackSize.h>
 #include <Common/re2.h>
 #include <Common/UTF8Helpers.h>
 
@@ -449,32 +450,41 @@ bool GlobString::matches(std::string_view candidate) const
 {
     /// Memoization table: (candidate_pos, expression_idx) -> tri-state.
     /// This avoids exponential backtracking for patterns with multiple wildcards.
-    const size_t rows = candidate.size() + 1;
+    /// The state space also bounds the matching work, so cap it before allocating.
+    static constexpr size_t max_match_states = 1ULL << 26;
     const size_t cols = expressions.size() + 1;
-
-    /// The matcher runs once per listed entry inside file/object-storage listing loops,
-    /// so the state space must be bounded before it is allocated. Both factors are
-    /// user-controlled (the glob pattern and, through it, the listing), so cap the
-    /// product rather than either factor; the cap is far above any legitimate
-    /// pattern-times-path size, and the division form cannot overflow.
-    static constexpr size_t max_match_states = 1 << 26;
-    if (rows > max_match_states / cols)
+    size_t memo_size = 0;
+    if (common::mulOverflow(candidate.size() + 1, cols, memo_size) || memo_size > max_match_states)
         throw Exception(
             ErrorCodes::BAD_ARGUMENTS,
-            "Glob match is too complex: pattern with {} expressions against a string of {} bytes "
-            "exceeds {} memoization states. Consider simplifying the glob pattern.",
+            "Glob pattern with {} expressions matched against a string of {} bytes needs more than {} match states. "
+            "Consider simplifying the glob pattern.",
             expressions.size(), candidate.size(), max_match_states);
 
-    /// Reuse one buffer per thread instead of allocating per candidate: the capacity
-    /// sticks between calls, so matching many listed keys against the same pattern does
-    /// not allocate in the loop. The buffer never exceeds max_match_states bytes.
+    /// matches() runs inside file/object-storage listing loops, once per listed key,
+    /// so reuse the buffer across calls instead of allocating a fresh one per key.
     thread_local std::vector<int8_t> memo;
-    memo.assign(rows * cols, 0);
-    return matchesImpl(candidate, 0, 0, memo);
+    memo.assign(memo_size, 0);
+    const bool result = matchesImpl(candidate, 0, 0, memo);
+
+    /// Don't let one oversized candidate pin a large buffer to the thread forever.
+    static constexpr size_t max_kept_memo_bytes = 1ULL << 20;
+    if (memo.capacity() > max_kept_memo_bytes)
+    {
+        memo.clear();
+        memo.shrink_to_fit();
+    }
+
+    return result;
 }
 
 bool GlobString::matchesImpl(std::string_view candidate, size_t pos, size_t expr_idx, std::vector<int8_t> & memo) const
 {
+    /// The memo table bounds the heap, but every backtracking expression (an asterisk, an
+    /// enum, a non-padded range) still adds one recursion frame, so a pattern made of many
+    /// such expressions can exhaust the thread stack. Turn that into an exception.
+    checkStackSize();
+
     const size_t cols = expressions.size() + 1;
     const size_t initial_pos = pos;
     const size_t initial_expr_idx = expr_idx;

@@ -88,10 +88,10 @@ public:
         /// about whether the table is readonly.
         bool hasGlobsIgnorePlaceholders(bool use_glob_ast) const;
         bool hasGlobs(bool use_glob_ast) const;
-        /// Listing prefix of the path: everything before the first glob (with
-        /// use_glob_ast, the first glob under the AST classification, so literal brace
-        /// groups stay inside the prefix). Pass the same use_glob_ast_parser value that
-        /// drives the matcher, or the listing scope and the matcher disagree.
+        std::string cutGlobs(bool supports_partial_prefix) const;
+        /// Setting-aware variant: with use_glob_ast the listing prefix is cut at the first
+        /// expression the AST parser classifies as a glob, so a literal brace group such as
+        /// "tenant_{42}/" stays inside the prefix instead of truncating it at the raw '{'.
         std::string cutGlobs(bool supports_partial_prefix, bool use_glob_ast) const;
     };
 
@@ -355,6 +355,11 @@ public:
     /// tables never set it, so it does not weaken the operator's hard-fail choice for user queries. The internal
     /// table's bootstrap re-credentials the client afterwards.
     bool force_anonymous_load_fallback = false;
+
+    /// Set when a base-URL setting (e.g. `s3_base`) rewrote a relative URL coming from a named
+    /// collection. `initialize` materializes it back into the engine args so that the persisted
+    /// DDL does not depend on the setting at attach time.
+    String url_overridden_by_base_setting;
 
 protected:
     void initializeFromParsedArguments(const StorageParsedArguments & parsed_arguments);

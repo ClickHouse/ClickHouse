@@ -76,7 +76,7 @@ void MongoDBConfiguration::checkCollection() const
     /// The C driver builds the namespace as "<db>.<collection>" and asserts that the collection part is non-empty.
     /// It treats the name as a NUL-terminated C string, so any embedded NUL truncates it and can produce an
     /// effectively empty collection name, which aborts the process inside the driver.
-    if (collection.empty() || collection.find('\0') != String::npos)
+    if (collection.empty() || collection.contains('\0'))
         throw Exception(ErrorCodes::BAD_ARGUMENTS, "MongoDB collection name must be non-empty and must not contain NUL characters");
 }
 
