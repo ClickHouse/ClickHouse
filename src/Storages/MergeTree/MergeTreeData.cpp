@@ -10356,8 +10356,20 @@ UInt64 MergeTreeData::estimateNumberOfRowsToRead(
         storage_snapshot->metadata->getColumns().getAll().getNames(),
         storage_snapshot->metadata,
         query_info,
+        /*top_k_filter_info=*/std::nullopt,
         query_context,
-        query_context->getSettingsRef()[Setting::max_threads]);
+        query_context->getSettingsRef()[Setting::max_threads],
+        /*max_block_numbers_to_read=*/nullptr,
+        /// This is the pre-plan estimate for automatic parallel-replicas sizing. It runs before
+        /// `tryOptimizeTopK`, so it cannot know whether the read will be stamped as a TopK read, and
+        /// therefore whether the `use_query_condition_cache_for_top_k` gate applies to it. Analyzing an
+        /// `ORDER BY ... LIMIT n` query as an apparent plain read here would let it reuse plain
+        /// `SELECT ... WHERE` entries (changing the estimate, and with it `max_parallel_replicas`) and
+        /// record index-analysis exclusions back under the plain condition hash - exactly the
+        /// interaction the gate is supposed to prevent. The estimate is a throwaway analysis, so simply
+        /// do not touch the cache here; the read that actually executes runs its own analysis with the
+        /// gate that matches its final shape.
+        /*use_query_condition_cache=*/false);
 
     UInt64 total_rows = result_ptr->selected_rows;
     if (query_info.trivial_limit > 0 && query_info.trivial_limit < total_rows)
