@@ -214,6 +214,65 @@ def test_secure_port_chosen_when_plain_serves_tls():
         redirect_plain_port_to_secure(add=False)
 
 
+def swallow_established_packets(port, add):
+    """Let the TCP handshake through, but drop everything that is sent afterwards, so that the
+    connection to this port is accepted and then never answered, as by an unresponsive server."""
+    node_both_ports.exec_in_container(
+        [
+            "iptables",
+            "--wait",
+            "-A" if add else "-D",
+            "INPUT",
+            "-p",
+            "tcp",
+            "--dport",
+            str(port),
+            "-s",
+            node_plain_only.ip_address,
+            "-m",
+            "conntrack",
+            "--ctstate",
+            "ESTABLISHED",
+            "-j",
+            "DROP",
+        ],
+        user="root",
+    )
+
+
+def test_an_unresponsive_server_is_not_waited_for_twice():
+    # A server that accepts the connection on the plain port and then does not answer is not a TLS
+    # listener on the plain port: it is simply unresponsive, and its secure port is not going to
+    # answer either. Retrying it there would double the time the client waits before it reports the
+    # failure, which is what the automatic choice is supposed to avoid in the first place. The
+    # timeouts are lowered through a client configuration file, because the connection timeouts are
+    # read from the configuration and not from the settings.
+    node_plain_only.exec_in_container(
+        [
+            "bash",
+            "-c",
+            "printf '<clickhouse><send_timeout>5</send_timeout><receive_timeout>5</receive_timeout>"
+            "<handshake_timeout_ms>5000</handshake_timeout_ms></clickhouse>' > /tmp/timeouts.xml",
+        ],
+    )
+    swallow_established_packets(9000, add=True)
+    swallow_established_packets(9440, add=True)
+    try:
+        output = node_plain_only.exec_in_container(
+            [
+                "bash",
+                "-c",
+                f"clickhouse client --host {node_both_ports.name} --accept-invalid-certificate"
+                " --config-file /tmp/timeouts.xml --query 'SELECT 1' 2>&1 || true",
+            ]
+        )
+        assert "SOCKET_TIMEOUT" in output, output
+        assert "also failed to connect with TLS" not in output, output
+    finally:
+        swallow_established_packets(9440, add=False)
+        swallow_established_packets(9000, add=False)
+
+
 def test_automatic_choice_is_not_applied_to_the_other_addresses():
     # The port and the TLS mode chosen automatically for one address must be remembered for that
     # address only. Here the client first connects to `node_both_ports`, whose plain port is

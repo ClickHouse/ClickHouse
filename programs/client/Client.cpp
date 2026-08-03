@@ -708,8 +708,13 @@ void Client::connect()
                     /// alert record, whose first byte the client reads as an unexpected packet type,
                     /// so `Connection::receiveHello` throws `UNEXPECTED_PACKET_FROM_SERVER`; that is
                     /// the normal outcome of the "plain port serves TLS" case and must be retriable.
+                    ///
+                    /// A timeout is not retriable, in contrast: a plain port that accepts the connection
+                    /// and then does not answer belongs to a server that is unresponsive rather than to a
+                    /// TLS listener, and the secure port of the same server is not going to answer either.
+                    /// Retrying it would double the time the client waits before it reports the failure,
+                    /// which is exactly the delay this feature is supposed to avoid.
                     const bool is_connection_error = e.code() == ErrorCodes::NETWORK_ERROR
-                        || e.code() == ErrorCodes::SOCKET_TIMEOUT
                         || e.code() == ErrorCodes::ATTEMPT_TO_READ_AFTER_EOF
                         || e.code() == ErrorCodes::UNKNOWN_PACKET_FROM_SERVER
                         || e.code() == ErrorCodes::UNEXPECTED_PACKET_FROM_SERVER;
