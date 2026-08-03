@@ -224,6 +224,42 @@ String modifyFilter(const String & json)
     return result;
 }
 
+String serializePipeline(const rapidjson::Value & pipeline)
+{
+    /// The pipeline is copied so that only the `$match` filters are rewritten: everywhere else in
+    /// a pipeline a nested document is a value, not a set of paths.
+    rapidjson::Document normalized;
+    auto & allocator = normalized.GetAllocator();
+    normalized.CopyFrom(pipeline, allocator);
+
+    for (auto & stage : normalized.GetArray())
+    {
+        if (!stage.IsObject())
+            continue;
+        auto match_it = stage.FindMember("$match");
+        if (match_it == stage.MemberEnd() || !match_it->value.IsObject())
+            continue;
+
+        String serialized_match;
+        {
+            rapidjson::StringBuffer buffer;
+            rapidjson::Writer<rapidjson::StringBuffer> writer(buffer);
+            match_it->value.Accept(writer);
+            serialized_match = buffer.GetString();
+        }
+
+        rapidjson::Document modified;
+        if (modified.Parse(modifyFilter(serialized_match).c_str()).HasParseError())
+            throw Exception(ErrorCodes::BAD_ARGUMENTS, "Can not parse the normalized filter of a '$match' stage");
+        match_it->value.CopyFrom(modified, allocator);
+    }
+
+    rapidjson::StringBuffer buffer;
+    rapidjson::Writer<rapidjson::StringBuffer> writer(buffer);
+    normalized.Accept(writer);
+    return buffer.GetString();
+}
+
 String CollectionRef::getQualifiedName() const
 {
     return backQuoteIfNeed(database) + "." + backQuoteIfNeed(collection);

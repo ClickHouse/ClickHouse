@@ -16,6 +16,11 @@ std::vector<std::string> splitByNewline(const std::string & s);
 
 String modifyFilter(const String & json);
 
+/// Serializes an aggregation pipeline, normalizing the filter of every `$match` stage the same
+/// way the filter of a `find` is normalized (see `modifyFilter`): `$match` uses the query syntax,
+/// where a nested document names nested fields rather than holding a value.
+String serializePipeline(const rapidjson::Value & pipeline);
+
 /** The target of a Mongo command: the collection named by the command field itself and the
   * database taken from the `$db` field of the command document. Mongo databases are mapped
   * to ClickHouse databases, so collections with the same name in different Mongo databases

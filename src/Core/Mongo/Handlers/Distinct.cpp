@@ -58,13 +58,21 @@ std::vector<Document> DistinctHandler::handle(const std::vector<OpMessageSection
         pipeline.PushBack(group, allocator);
     }
 
-    String serialized_pipeline;
     {
-        rapidjson::StringBuffer buffer;
-        rapidjson::Writer<rapidjson::StringBuffer> writer(buffer);
-        pipeline.Accept(writer);
-        serialized_pipeline = buffer.GetString();
+        /// MongoDB returns the distinct values in ascending order, and a `GROUP BY` alone
+        /// leaves the order arbitrary.
+        rapidjson::Value direction(1);
+        rapidjson::Value sort_key(rapidjson::kObjectType);
+        sort_key.AddMember("_id", direction, allocator);
+
+        rapidjson::Value sort(rapidjson::kObjectType);
+        sort.AddMember("$sort", sort_key, allocator);
+        pipeline.PushBack(sort, allocator);
     }
+
+    /// The `query` of a `distinct` becomes a `$match` stage, whose filter `serializePipeline`
+    /// normalizes the same way the filter of a `find` is normalized.
+    auto serialized_pipeline = serializePipeline(pipeline);
 
     auto mongo_dialect_query = fmt::format("db.{}.aggregate({})", collection.collection, serialized_pipeline);
 

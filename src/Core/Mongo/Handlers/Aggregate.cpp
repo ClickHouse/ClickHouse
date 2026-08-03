@@ -30,18 +30,12 @@ std::vector<Document> AggregateHandler::handle(const std::vector<OpMessageSectio
     if (pipeline_it == json_representation.MemberEnd() || !pipeline_it->value.IsArray())
         throw Exception(ErrorCodes::BAD_ARGUMENTS, "The 'pipeline' of an 'aggregate' command must be an array of stages");
 
-    String serialized_pipeline;
-    {
-        rapidjson::StringBuffer buffer;
-        rapidjson::Writer<rapidjson::StringBuffer> writer(buffer);
-        pipeline_it->value.Accept(writer);
-        serialized_pipeline = buffer.GetString();
-    }
+    /// A `$match` stage uses the query syntax and is normalized into dotted keys the way the
+    /// filter of a `find` is; the rest of the pipeline is left as written, because there a stage
+    /// names a nested field with an explicit `a.b` path already, and a nested document is a value
+    /// rather than a path.
+    auto serialized_pipeline = serializePipeline(pipeline_it->value);
 
-    /// Unlike the filter of a `find`, a pipeline is not rewritten into dotted keys: a stage names
-    /// a nested field with an explicit `a.b` path already, and a nested document inside a stage is
-    /// a value rather than a path.
-    ///
     /// The database is passed to the parser separately, so that a collection named in the query
     /// text as `db.<collection>` keeps the text independent of the database name, which may itself
     /// be `db`.
