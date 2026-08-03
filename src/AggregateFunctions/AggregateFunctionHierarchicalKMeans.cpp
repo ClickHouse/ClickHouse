@@ -774,8 +774,14 @@ struct HierarchicalKMeansData
 
     /// Uniform in `[0, limit)`. One 32-bit draw does not cover a `limit` past 2^32, which `seen` reaches on a
     /// large enough stream, so widen with a second draw exactly as `ReservoirSampler` does.
+    ///
+    /// Every caller passes a value it has just established is positive, but none of that survives across the
+    /// call boundary for the static analyzer. Guard rather than suppress: the branch is perfectly predicted
+    /// and it removes the divide-by-zero as a class instead of asserting it cannot happen.
     UInt64 genRandom(UInt64 limit)
     {
+        if (limit == 0)
+            return 0;
         if (limit <= static_cast<UInt64>(pcg32_fast::max()))
             return rng() % limit;
         return (static_cast<UInt64>(rng()) * (static_cast<UInt64>(pcg32_fast::max()) + 1ULL) + static_cast<UInt64>(rng())) % limit;
@@ -861,9 +867,11 @@ struct HierarchicalKMeansData
             PaddedPODArray<Float> ours;
             ours.swap(samples);
             samples.insert(other.samples.begin(), other.samples.end());
-            const UInt64 ours_seen = seen;
             seen = other.seen;
-            for (UInt64 i = 0; i < ours_seen; ++i)
+            /// Bounded by the rows actually held rather than by `seen`. The two are equal here - a side with
+            /// `seen <= cap` never dropped anything - but indexing `ours` by its own length is the version
+            /// that stays in bounds if that ever stops holding.
+            for (UInt64 i = 0; i < have_a; ++i)
                 addVector(&ours[i * d], static_cast<UInt32>(d), cap);
             return;
         }
