@@ -48,7 +48,7 @@ bool StorageObjectStorageSettings::hasBuiltin(std::string_view name)
 
 void StorageObjectStorageSettings::loadFromSettingsChanges(const SettingsChanges & changes)
 {
-    for (const auto & [name, value] : changes)
+    for (const auto & [name, value, _] : changes)
     {
         if (impl->has(name))
             impl->set(name, value);
