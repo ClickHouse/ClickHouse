@@ -31,8 +31,12 @@ SYSTEM FLUSH LOGS query_log;
 
 -- Check the version of the replayed insert as recorded on the receiving side. It runs on the shard
 -- with the cluster connection's own default database, so it is identified by the table it writes,
--- not by `current_database`.
-SELECT 'remote_version', count() > 0, min(client_version_major) > 0
+-- not by `current_database`. The batch header is filled with this server's own version, and the
+-- shard is this same server, so the recorded tuple must match `version` exactly - a non-zero but
+-- wrong version would still take wrong version-gated compatibility branches on the shard.
+SELECT 'remote_version', count() > 0,
+    min((client_version_major, client_version_minor, client_version_patch)
+        = (toUInt64(splitByChar('.', version())[1]), toUInt64(splitByChar('.', version())[2]), toUInt64(splitByChar('.', version())[3])))
 FROM system.query_log
 WHERE type = 'QueryFinish' AND is_initial_query = 0 AND event_date >= yesterday()
     AND has(databases, currentDatabase()) AND has(tables, concat(currentDatabase(), '.async_dst'));

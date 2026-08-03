@@ -42,8 +42,13 @@ SYSTEM FLUSH LOGS query_log;
 
 -- Check the version of the forwarded inserts as recorded on the receiving side. They run on the
 -- shard with the cluster connection's own default database, so they are identified by the table
--- they write, not by `current_database`.
-SELECT 'remote_version', count() > 0, min(client_version_major) > 0
+-- they write, not by `current_database`. The synthesized flush context is filled with this
+-- server's own version, and the shard is this same server, so the recorded tuple must match
+-- `version` exactly - a non-zero but wrong version would still take wrong version-gated
+-- compatibility branches on the shard.
+SELECT 'remote_version', count() > 0,
+    min((client_version_major, client_version_minor, client_version_patch)
+        = (toUInt64(splitByChar('.', version())[1]), toUInt64(splitByChar('.', version())[2]), toUInt64(splitByChar('.', version())[3])))
 FROM system.query_log
 WHERE type = 'QueryFinish' AND is_initial_query = 0 AND event_date >= yesterday()
     AND has(databases, currentDatabase()) AND has(tables, concat(currentDatabase(), '.fg_dst'));

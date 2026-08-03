@@ -38,10 +38,15 @@ SELECT 'buffer_flush', x, s FROM buf_mv_dst;
 -- `client_version_*` it reads from the forwarded `ClientInfo`. A synthesized server-side context
 -- keeps the default `ClientInfo::Interface::TCP`, which is exactly the interface for which
 -- `ClientInfo::write` serializes the version, so a zero version is what the shard used to see.
--- Check the version of the forwarded sub-query as recorded on the receiving side.
+-- Check the version of the forwarded sub-query as recorded on the receiving side. The synthesized
+-- context is filled with this server's own version, and the shard is this same server, so the
+-- recorded tuple must match `version` exactly - a non-zero but wrong version would still take
+-- wrong version-gated compatibility branches on the shard.
 SYSTEM FLUSH LOGS query_log;
 
-SELECT 'remote_version', count() > 0, min(client_version_major) > 0
+SELECT 'remote_version', count() > 0,
+    min((client_version_major, client_version_minor, client_version_patch)
+        = (toUInt64(splitByChar('.', version())[1]), toUInt64(splitByChar('.', version())[2]), toUInt64(splitByChar('.', version())[3])))
 FROM system.query_log
 -- The sub-query runs on the shard with its connection's own default database, so it is identified
 -- by the table it reads, not by `current_database`. With `serialize_query_plan = 1` the shard runs
