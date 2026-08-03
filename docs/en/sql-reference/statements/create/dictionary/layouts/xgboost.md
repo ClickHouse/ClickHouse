@@ -16,15 +16,15 @@ The `xgboost` (`XGBOOST`) dictionary trains an [XGBoost](https://xgboost.readthe
 It is suited to tabular regression and binary classification where the features are numeric — for example forecasting a value from several measurements, or scoring rows against a learned target. Multiclass objectives are not supported (see [Layout parameters](#layout-parameters)).
 
 :::note
-The XGBoost integration is experimental. Enable it with the `allow_experimental_xgboost` setting before creating an `XGBOOST` dictionary or calling `predictXGBoost`:
+The XGBoost integration is experimental. Enable it with the `enable_xgboost` setting before creating an `XGBOOST` dictionary or calling `predictXGBoost`:
 
 ```sql
-SET allow_experimental_xgboost = 1;
+SET enable_xgboost = 1;
 ```
 
 `predictXGBoost` is the only way to predict with such a dictionary, so with the setting off an already created dictionary cannot be used either.
 
-A dictionary defined in a server configuration file rather than with `CREATE DICTIONARY` belongs to no session, so it is gated by the server setting instead: enable `allow_experimental_xgboost` in the `default` profile, otherwise the dictionary fails to load and reports the same error in `system.dictionaries`.
+A dictionary defined in a server configuration file rather than with `CREATE DICTIONARY` belongs to no session, so it is gated by the server setting instead: set `enable_xgboost` to `1` in the `default` profile, otherwise the dictionary fails to load and reports the same error in `system.dictionaries`.
 :::
 
 [`predictXGBoost`](/sql-reference/functions/machine-learning-functions#predictxgboost) is the only way to query the dictionary: it takes the features as individual arguments, returns the prediction, and accepts additional [prediction parameters](#prediction-parameters). The dictionary holds a trained model rather than rows, so the generic dictionary interface — [`dictGet`](/sql-reference/functions/ext-dict-functions#dictget), `dictHas` and `SELECT * FROM dict` — is not supported and reports an error (see [Notes](#notes)).
@@ -196,7 +196,7 @@ SELECT predictXGBoost('model', 1.0, 2.0, map('iteration_end', 2.9));
 
 ## Notes {#notes}
 
-- **Computational dictionary semantics.** This is a *computational* dictionary: it holds a trained model, not rows, and `predictXGBoost` is the only way to query it. The generic dictionary interface is not supported and reports an error: `dictGet` (there is no stored attribute to look up — the "key" is a feature vector to predict from), `dictHas` (no keys are stored), `SELECT * FROM dict` and joining the dictionary as a table. Because `predictXGBoost` is the only entry point, the `allow_experimental_xgboost` setting is in charge of every prediction.
+- **Computational dictionary semantics.** This is a *computational* dictionary: it holds a trained model, not rows, and `predictXGBoost` is the only way to query it. The generic dictionary interface is not supported and reports an error: `dictGet` (there is no stored attribute to look up — the "key" is a feature vector to predict from), `dictHas` (no keys are stored), `SELECT * FROM dict` and joining the dictionary as a table. Because `predictXGBoost` is the only entry point, the `enable_xgboost` setting is in charge of every prediction.
 - **Numeric columns only.** Every feature (key) column must be a native numeric type and the target attribute must be `Float32` or `Float64`. Values are read as floats during training and prediction.
 - **`system.dictionaries` reports no stored items.** The dictionary trains a model instead of storing rows, so `element_count` is `0`, as it is for a `direct` dictionary, and `bytes_allocated` is `0` too: the trained model belongs to XGBoost, which does not report how much memory it holds. `query_count` and `found_rate` count the rows predicted through `predictXGBoost`.
 - **Feature order matters.** `predictXGBoost` binds its positional feature arguments to the key columns in declaration order, and the number of feature arguments must match the number of key columns.

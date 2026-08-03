@@ -5,7 +5,7 @@
 -- have an integer value type. A fractional value used to be truncated silently - map('iteration_end', 2.9)
 -- predicted with two trees instead of reporting the typo - so such a Map is now rejected at query analysis.
 
-SET allow_experimental_xgboost = 1;
+SET enable_xgboost = 1;
 
 DROP DICTIONARY IF EXISTS model_04655_xgb;
 DROP TABLE IF EXISTS training_04655;

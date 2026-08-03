@@ -2,7 +2,7 @@
 -- no-fasttest: needs the XGBoost contrib, which is not built in the fast test.
 
 -- The XGBoost integration is experimental and must be enabled explicitly.
-SET allow_experimental_xgboost = 1;
+SET enable_xgboost = 1;
 
 -- Note on why the prediction is never wrapped in count(): count() over a non-nullable column is optimized
 -- to count the rows without evaluating its argument, so count(predictXGBoost(...)) would skip the

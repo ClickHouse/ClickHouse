@@ -32,7 +32,7 @@ void enableAllExperimentalSettings(ContextMutablePtr context)
     context->setSetting("allow_experimental_unique_key", 1);
     context->setSetting("allow_deprecated_error_prone_window_functions", 1);
 
-    context->setSetting("allow_experimental_xgboost", 1);
+    context->setSetting("enable_xgboost", 1);
 
     context->setSetting("allow_suspicious_low_cardinality_types", 1);
     context->setSetting("allow_suspicious_fixed_string_types", 1);

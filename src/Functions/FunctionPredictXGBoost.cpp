@@ -30,7 +30,7 @@ namespace DB
 
 namespace Setting
 {
-extern const SettingsBool allow_experimental_xgboost;
+extern const SettingsBool enable_xgboost;
 }
 
 namespace ErrorCodes
@@ -65,10 +65,10 @@ public:
     }
     static FunctionPtr create(ContextPtr context_)
     {
-        if (!context_->getSettingsRef()[Setting::allow_experimental_xgboost])
+        if (!context_->getSettingsRef()[Setting::enable_xgboost])
             throw Exception(
                 ErrorCodes::SUPPORT_IS_DISABLED,
-                "Function '{}' is experimental. Set `allow_experimental_xgboost` setting to enable it",
+                "Function '{}' is experimental. Set `enable_xgboost = 1` to enable it",
                 name);
 
         return std::make_shared<FunctionPredictXGBoost>(context_);

@@ -20,7 +20,7 @@ namespace DB
 
 namespace Setting
 {
-extern const SettingsBool allow_experimental_xgboost;
+extern const SettingsBool enable_xgboost;
 }
 
 namespace ErrorCodes
@@ -102,7 +102,7 @@ ColumnPtr XGBoostDictionary::getColumn(
 {
     /// The dictionary holds a trained model, not rows: there is no attribute to look up, and the "key" is a
     /// feature vector to predict from rather than a stored key. `predictXGBoost` is the only way to query it,
-    /// which also keeps the experimental `allow_experimental_xgboost` setting in charge of every prediction.
+    /// which also keeps the experimental `enable_xgboost` setting in charge of every prediction.
     throw Exception(
         ErrorCodes::UNSUPPORTED_METHOD,
         "An XGBoost dictionary does not support `dictGet`. Use function `predictXGBoost('{}', feature_1, ...)` to predict",
@@ -144,17 +144,17 @@ void registerDictionaryXGBoost(DictionaryFactory & factory)
             "Dictionary layout `xgboost` is disabled because ClickHouse was built without XGBoost support");
 #else
         /// A dictionary defined in a configuration file never goes through `InterpreterCreateQuery`, so the
-        /// `allow_experimental_xgboost` check that guards `CREATE DICTIONARY` does not see it. Enforce the
+        /// `enable_xgboost` check that guards `CREATE DICTIONARY` does not see it. Enforce the
         /// setting here for that path, against the server settings, since a configuration-file dictionary
         /// belongs to no session.
         ///
         /// A DDL dictionary is exempt: it reaches this creator on every load, including the load that
         /// startup and ATTACH perform for a dictionary created earlier, and those must not depend on the
         /// setting being on now - `InterpreterCreateQuery` already gated its creation.
-        if (!created_from_ddl && !global_context->getSettingsRef()[Setting::allow_experimental_xgboost])
+        if (!created_from_ddl && !global_context->getSettingsRef()[Setting::enable_xgboost])
             throw Exception(
                 ErrorCodes::SUPPORT_IS_DISABLED,
-                "The XGBOOST dictionary layout is experimental. Set `allow_experimental_xgboost` setting to enable it");
+                "The XGBOOST dictionary layout is experimental. Set `enable_xgboost = 1` to enable it");
 
         /// The structure must be a complex key of one or more numeric feature columns, followed by exactly one
         /// floating-point attribute: the training target.

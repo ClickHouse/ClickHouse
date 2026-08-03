@@ -125,7 +125,7 @@ namespace Setting
 {
     extern const SettingsBool allow_experimental_analyzer;
     extern const SettingsBool allow_experimental_codecs;
-    extern const SettingsBool allow_experimental_xgboost;
+    extern const SettingsBool enable_xgboost;
     extern const SettingsBool allow_experimental_database_materialized_postgresql;
     extern const SettingsBool enable_full_text_index;
     extern const SettingsBool allow_statistics;
@@ -1651,7 +1651,7 @@ bool isReplicated(const ASTStorage & storage)
 
 /// Gates dictionaries with the `XGBOOST` layout. The layout is experimental, and it exists only in builds
 /// with XGBoost support - two conditions that ATTACH has to treat differently:
-///  - the `allow_experimental_xgboost` setting guards bringing a new dictionary into existence, so an ATTACH,
+///  - the `enable_xgboost` setting guards bringing a new dictionary into existence, so an ATTACH,
 ///    which only reinstates a dictionary that was created earlier (on startup, or from a backup), bypasses it.
 ///    Otherwise a session with the setting off could not attach metadata that is already on disk.
 ///  - a build without XGBoost, on the other hand, makes the dictionary unusable however it got here: there is
@@ -1666,10 +1666,10 @@ void checkXGBoostLayoutIsAllowed(const ASTCreateQuery & create, [[maybe_unused]]
         return;
 
 #if USE_XGBOOST
-    if (!create.attach && !context->getSettingsRef()[Setting::allow_experimental_xgboost])
+    if (!create.attach && !context->getSettingsRef()[Setting::enable_xgboost])
         throw Exception(
             ErrorCodes::SUPPORT_IS_DISABLED,
-            "The XGBOOST dictionary layout is experimental. Set `allow_experimental_xgboost` setting to enable it");
+            "The XGBOOST dictionary layout is experimental. Set `enable_xgboost = 1` to enable it");
 #else
     throw Exception(
         ErrorCodes::SUPPORT_IS_DISABLED,
