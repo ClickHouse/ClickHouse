@@ -1,5 +1,7 @@
 #include <Disks/IO/CachedOnDiskReadBufferFromFile.h>
 #include <algorithm>
+#include <chrono>
+#include <optional>
 
 #include <Disks/IO/createReadBufferFromFileBase.h>
 #include <Disks/DiskObjectStorage/ObjectStorages/Cached/CachedObjectStorage.h>
@@ -35,6 +37,7 @@ extern const Event CachedReadBufferCreateBufferMicroseconds;
 
 extern const Event CachedReadBufferReadFromCacheHits;
 extern const Event CachedReadBufferReadFromCacheMisses;
+extern const Event CachedReadBufferDownloadWaitTimeouts;
 }
 
 namespace DB
@@ -641,6 +644,9 @@ CachedOnDiskReadBufferFromFile::createReadFromFileSegmentState(
         return create(ReadType::REMOTE_FS_READ_BYPASS_CACHE);
     }
 
+    /// Total time budget for waiting on a concurrent download of this segment, across wait cycles.
+    std::optional<std::chrono::steady_clock::time_point> download_wait_deadline;
+
     while (true)
     {
         switch (download_state)
@@ -665,7 +671,24 @@ CachedOnDiskReadBufferFromFile::createReadFromFileSegmentState(
                     return create(ReadType::CACHED);
                 }
 
-                download_state = file_segment.wait(offset);
+                const auto wait_timeout_ms = info_.cache_settings.wait_for_concurrent_download_timeout_milliseconds;
+                const auto now = std::chrono::steady_clock::now();
+                if (!download_wait_deadline)
+                    download_wait_deadline = now + std::chrono::milliseconds(wait_timeout_ms);
+
+                if (now >= *download_wait_deadline)
+                {
+                    ProfileEvents::increment(ProfileEvents::CachedReadBufferDownloadWaitTimeouts);
+                    LOG_TRACE(
+                        log, "Bypassing cache because waiting for a concurrent download timed out ({} ms). File segment info: {}",
+                        wait_timeout_ms, file_segment.getInfoForLog());
+
+                    return create(ReadType::REMOTE_FS_READ_BYPASS_CACHE);
+                }
+
+                const auto remaining_ms = static_cast<size_t>(
+                    std::chrono::duration_cast<std::chrono::milliseconds>(*download_wait_deadline - now).count());
+                download_state = file_segment.wait(offset, remaining_ms);
                 continue;
             }
             case FileSegment::State::DOWNLOADED:

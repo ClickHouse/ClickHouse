@@ -867,6 +867,7 @@ The server successfully detected this situation and will download merged part fr
     M(CachedReadBufferCacheWriteMicroseconds, "Time spent writing data into filesystem cache", ValueType::Microseconds) \
     M(CachedReadBufferCacheWriteStopped, "Number of times writing a file segment into the filesystem cache was stopped mid-download (space reservation or the cache write failed), after which the read continues bypassing the cache", ValueType::Number) \
     M(CachedReadBufferCreateBufferMicroseconds, "Prepare buffer time", ValueType::Microseconds) \
+    M(CachedReadBufferDownloadWaitTimeouts, "Number of times a read bypassed the filesystem cache because waiting for a concurrent download of the same file segment reached `filesystem_cache_wait_for_concurrent_download_timeout_milliseconds`", ValueType::Number) \
     M(CachedWriteBufferCacheWriteBytes, "Bytes written from source (remote fs, etc) to filesystem cache", ValueType::Bytes) \
     M(CachedWriteBufferCacheWriteMicroseconds, "Time spent writing data into filesystem cache", ValueType::Microseconds) \
     M(CachedWriteBufferCacheWriteStopped, "Number of times write-through caching was stopped (space reservation or the cache write failed, or a covering segment was being evicted), after which the write continues without populating the cache", ValueType::Number) \

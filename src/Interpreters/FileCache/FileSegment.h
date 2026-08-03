@@ -128,8 +128,9 @@ public:
 
     DownloaderId getDownloader() const;
 
-    /// Wait for the change of state from DOWNLOADING to any other.
-    State wait(size_t offset);
+    /// Wait until the downloader either downloads the data at `offset` or releases the segment,
+    /// but no longer than `timeout_ms`. The returned state may still be DOWNLOADING on timeout.
+    State wait(size_t offset, size_t timeout_ms = 60000);
 
     bool isDownloaded() const;
 
