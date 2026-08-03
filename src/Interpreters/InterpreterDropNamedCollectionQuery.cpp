@@ -17,6 +17,7 @@
 #include <Parsers/isDiskFunction.h>
 #include <Common/NamedCollections/NamedCollectionsFactory.h>
 #include <Common/StringUtils.h>
+#include <Common/ZooKeeper/ZooKeeperCommon.h>
 #include <Common/escapeForFileName.h>
 #include <Common/logger_useful.h>
 #include <base/sort.h>
@@ -332,6 +333,9 @@ BlockIO InterpreterDropNamedCollectionQuery::execute()
 
     if (current_context->getSettingsRef()[Setting::check_named_collection_dependencies])
     {
+        /// The metadata probes below can read from a disk whose metadata is kept in Keeper.
+        auto component_guard = Coordination::setCurrentComponent("InterpreterDropNamedCollectionQuery::execute");
+
         auto dependents = NamedCollectionFactory::instance().getDependents(query.collection_name);
         if (!dependents.empty())
         {
